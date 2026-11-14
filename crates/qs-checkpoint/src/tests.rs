@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use proptest::prelude::*;
 
-use super::{CheckpointError, Store, project_files};
+use super::{CheckpointError, CheckpointNumber, Store, project_files};
 
 static DIRS: AtomicUsize = AtomicUsize::new(0);
 
@@ -72,7 +72,7 @@ fn restoring_returns_every_file_as_it_was() {
     let store = Store::open(&root).unwrap();
     let before = snapshot(&root);
     let checkpoint = store.create("before the agent", 1_700_000_000).unwrap();
-    assert_eq!((checkpoint.number, checkpoint.files), (1, 5));
+    assert_eq!((checkpoint.number.get(), checkpoint.files), (1, 5));
     fs::write(
         root.join("world.qc"),
         b"void() worldspawn = { changed; };\n",
@@ -81,7 +81,7 @@ fn restoring_returns_every_file_as_it_was() {
     fs::remove_file(root.join("src/weapons/axe.qc")).unwrap();
     write(&root, &[("added.qc", b"new"), ("new/deep/file.qc", b"x")]);
     write(&root, &[("build/progs.dat", b"built")]);
-    let restored = store.restore(1).unwrap();
+    let restored = store.restore(CheckpointNumber::FIRST).unwrap();
     assert_eq!(snapshot(&root), before);
     assert_eq!(
         restored.removed,
@@ -96,7 +96,7 @@ fn restoring_returns_every_file_as_it_was() {
     );
     assert!(!root.join("new").exists(), "the folders it emptied go");
     assert_eq!(fs::read(root.join("build/progs.dat")).unwrap(), b"built");
-    let again = store.restore(1).unwrap();
+    let again = store.restore(CheckpointNumber::FIRST).unwrap();
     assert!(again.written.is_empty() && again.removed.is_empty());
 }
 
@@ -169,12 +169,16 @@ fn checkpoints_are_listed_and_errors_reported() {
     assert_eq!(listed.len(), 2);
     assert_eq!(listed[1], second);
     assert_eq!(
-        (listed[0].number, listed[0].label.as_str(), listed[0].files),
+        (
+            listed[0].number.get(),
+            listed[0].label.as_str(),
+            listed[0].files
+        ),
         (1, "first", 1)
     );
     assert!(matches!(
-        store.restore(3),
-        Err(CheckpointError::NotFound(3))
+        store.restore(CheckpointNumber::new(3)),
+        Err(CheckpointError::NotFound(n)) if n == CheckpointNumber::new(3)
     ));
     let reference = store.git_dir().join("refs/checkpoints/2");
     let commit = fs::read_to_string(&reference).unwrap();
@@ -184,7 +188,10 @@ fn checkpoints_are_listed_and_errors_reported() {
         .join(&commit[..2])
         .join(commit.trim().get(2..).unwrap());
     fs::write(object, b"not zlib").unwrap();
-    assert!(matches!(store.restore(2), Err(CheckpointError::Corrupt(_))));
+    assert!(matches!(
+        store.restore(CheckpointNumber::new(2)),
+        Err(CheckpointError::Corrupt(_))
+    ));
     fs::write(reference, "nonsense\n").unwrap();
     assert!(matches!(store.list(), Err(CheckpointError::Corrupt(_))));
 }
@@ -235,7 +242,7 @@ proptest! {
         let store = Store::open(&root).unwrap();
         store.create("prop", 0).unwrap();
         prop_assume!(replace(&root, &second));
-        store.restore(1).unwrap();
+        store.restore(CheckpointNumber::FIRST).unwrap();
         prop_assert_eq!(snapshot(&root), before);
         fs::remove_dir_all(&root).unwrap();
     }

@@ -28,6 +28,8 @@ mod tests;
 
 use core::fmt;
 
+use qc_progs::bytes::read_array;
+
 pub use map_wad::{
     MapWad, MapWadEntry, MapWadError, WAD_TYP_MIPTEX_PALETTE, WAD3_MAGIC, WadKind, WadTexture,
 };
@@ -514,9 +516,4 @@ impl MipTexHeader {
 /// The signed little-endian 32-bit integer at `offset`, or 0 past the end of `bytes`.
 fn le_i32(bytes: &[u8], offset: usize) -> i32 {
     read_array(bytes, offset).map_or(0, i32::from_le_bytes)
-}
-
-/// The `N` bytes at `offset`, or `None` past the end of `bytes`.
-fn read_array<const N: usize>(bytes: &[u8], offset: usize) -> Option<[u8; N]> {
-    bytes.get(offset..offset.checked_add(N)?)?.try_into().ok()
 }

@@ -111,13 +111,46 @@ pub struct Zip<R> {
 }
 
 /// The end-of-central-directory record's signature.
-const EOCD: u32 = 0x0605_4b50;
+pub(crate) const EOCD: u32 = 0x0605_4b50;
 /// A central directory record's signature.
-const CENTRAL: u32 = 0x0201_4b50;
+pub(crate) const CENTRAL: u32 = 0x0201_4b50;
 /// A local header's signature.
-const LOCAL: u32 = 0x0403_4b50;
+pub(crate) const LOCAL: u32 = 0x0403_4b50;
 /// The end-of-central-directory record, without its comment.
 const EOCD_SIZE: usize = 22;
+/// The end-of-central-directory record's fields, by offset (APPNOTE 4.3.16): this disk, the
+/// central directory's disk, its entries on this disk and in all, its size and its offset.
+const EOCD_THIS_DISK: usize = 4;
+const EOCD_CD_DISK: usize = 6;
+const EOCD_ON_DISK: usize = 8;
+const EOCD_COUNT: usize = 10;
+const EOCD_CD_SIZE: usize = 12;
+const EOCD_CD_OFFSET: usize = 16;
+/// A central directory header's fields, by offset (APPNOTE 4.3.12): the flags, the method,
+/// the CRC, the sizes, the name's, extra field's and comment's lengths, the local header's
+/// offset and the name.
+const CD_FLAGS: usize = 8;
+const CD_METHOD: usize = 10;
+const CD_CRC: usize = 16;
+const CD_COMPRESSED: usize = 20;
+const CD_SIZE: usize = 24;
+const CD_NAME_LEN: usize = 28;
+const CD_EXTRA_LEN: usize = 30;
+const CD_COMMENT_LEN: usize = 32;
+const CD_OFFSET: usize = 42;
+const CD_NAME: usize = 46;
+/// A local header's name and extra field lengths, by offset (APPNOTE 4.3.7).
+const LOCAL_NAME_LEN: usize = 26;
+const LOCAL_EXTRA_LEN: usize = 28;
+/// The compression methods read: stored and deflated (APPNOTE 4.4.5).
+pub(crate) const STORED: u16 = 0;
+pub(crate) const DEFLATED: u16 = 8;
+/// A zip64 marker: a 16-bit count of all ones.
+const ZIP64_COUNT: u16 = 0xffff;
+/// zip's CRC-32, ISO 3309's reflected polynomial, and a byte's bits.
+const CRC_POLYNOMIAL: u32 = 0xEDB8_8320;
+const BYTE_BITS: u32 = 8;
+
 /// The longest archive comment.
 const MAX_COMMENT: usize = 0xffff;
 /// A local header, without its name and extra field.
@@ -147,18 +180,18 @@ impl<R: Read + Seek> Zip<R> {
             .rev()
             .find(|&i| u32_at(&tail, i) == Some(EOCD))
             .ok_or(ZipError::NotZip)?;
-        let this_disk = u16_at(&tail, at.saturating_add(4)).unwrap_or_default();
-        let cd_disk = u16_at(&tail, at.saturating_add(6)).unwrap_or_default();
-        let on_disk = u16_at(&tail, at.saturating_add(8)).unwrap_or_default();
-        let count = u16_at(&tail, at.saturating_add(10)).unwrap_or_default();
+        let this_disk = u16_at(&tail, at.saturating_add(EOCD_THIS_DISK)).unwrap_or_default();
+        let cd_disk = u16_at(&tail, at.saturating_add(EOCD_CD_DISK)).unwrap_or_default();
+        let on_disk = u16_at(&tail, at.saturating_add(EOCD_ON_DISK)).unwrap_or_default();
+        let count = u16_at(&tail, at.saturating_add(EOCD_COUNT)).unwrap_or_default();
         // miniz: a disk number other than 0 is refused unless both are 1, and every entry
         // must be on this disk.
         if ((this_disk | cd_disk) != 0 && (this_disk != 1 || cd_disk != 1)) || on_disk != count {
             return Err(ZipError::Multidisk);
         }
-        let cd_size = u32_at(&tail, at.saturating_add(12)).unwrap_or_default();
-        let cd_offset = u32_at(&tail, at.saturating_add(16)).unwrap_or_default();
-        if count == 0xffff || cd_size == u32::MAX || cd_offset == u32::MAX {
+        let cd_size = u32_at(&tail, at.saturating_add(EOCD_CD_SIZE)).unwrap_or_default();
+        let cd_offset = u32_at(&tail, at.saturating_add(EOCD_CD_OFFSET)).unwrap_or_default();
+        if count == ZIP64_COUNT || cd_size == u32::MAX || cd_offset == u32::MAX {
             return Err(ZipError::Zip64);
         }
         if u64::from(cd_offset).saturating_add(u64::from(cd_size)) > len {
@@ -176,16 +209,19 @@ impl<R: Read + Seek> Zip<R> {
             if u32_at(&cd, at) != Some(CENTRAL) {
                 return Err(bad());
             }
-            let flags = u16_at(&cd, at.saturating_add(8)).ok_or_else(bad)?;
-            let method = u16_at(&cd, at.saturating_add(10)).ok_or_else(bad)?;
-            let crc = u32_at(&cd, at.saturating_add(16)).ok_or_else(bad)?;
-            let compressed = u32_at(&cd, at.saturating_add(20)).ok_or_else(bad)?;
-            let size = u32_at(&cd, at.saturating_add(24)).ok_or_else(bad)?;
-            let name_len = usize::from(u16_at(&cd, at.saturating_add(28)).ok_or_else(bad)?);
-            let extra_len = usize::from(u16_at(&cd, at.saturating_add(30)).ok_or_else(bad)?);
-            let comment_len = usize::from(u16_at(&cd, at.saturating_add(32)).ok_or_else(bad)?);
-            let offset = u32_at(&cd, at.saturating_add(42)).ok_or_else(bad)?;
-            let name_at = at.saturating_add(46);
+            let flags = u16_at(&cd, at.saturating_add(CD_FLAGS)).ok_or_else(bad)?;
+            let method = u16_at(&cd, at.saturating_add(CD_METHOD)).ok_or_else(bad)?;
+            let crc = u32_at(&cd, at.saturating_add(CD_CRC)).ok_or_else(bad)?;
+            let compressed = u32_at(&cd, at.saturating_add(CD_COMPRESSED)).ok_or_else(bad)?;
+            let size = u32_at(&cd, at.saturating_add(CD_SIZE)).ok_or_else(bad)?;
+            let name_len =
+                usize::from(u16_at(&cd, at.saturating_add(CD_NAME_LEN)).ok_or_else(bad)?);
+            let extra_len =
+                usize::from(u16_at(&cd, at.saturating_add(CD_EXTRA_LEN)).ok_or_else(bad)?);
+            let comment_len =
+                usize::from(u16_at(&cd, at.saturating_add(CD_COMMENT_LEN)).ok_or_else(bad)?);
+            let offset = u32_at(&cd, at.saturating_add(CD_OFFSET)).ok_or_else(bad)?;
+            let name_at = at.saturating_add(CD_NAME);
             let name = cd
                 .get(name_at..name_at.saturating_add(name_len))
                 .ok_or_else(bad)?;
@@ -242,8 +278,8 @@ impl<R: Read + Seek> Zip<R> {
         if u32_at(&local, 0) != Some(LOCAL) {
             return Err(ZipError::LocalHeader);
         }
-        let skip = u16_at(&local, 26)
-            .zip(u16_at(&local, 28))
+        let skip = u16_at(&local, LOCAL_NAME_LEN)
+            .zip(u16_at(&local, LOCAL_EXTRA_LEN))
             .map(|(n, e)| u64::from(n).saturating_add(u64::from(e)))
             .unwrap_or_default();
         self.source
@@ -257,8 +293,8 @@ impl<R: Read + Seek> Zip<R> {
         }
         let size = usize::try_from(member.size).map_err(|_| ZipError::TooLarge)?;
         let bytes = match member.method {
-            0 => data,
-            8 => decompress_to_vec_with_limit(&data, size).map_err(|e| match e.status {
+            STORED => data,
+            DEFLATED => decompress_to_vec_with_limit(&data, size).map_err(|e| match e.status {
                 TINFLStatus::HasMoreOutput => ZipError::Larger,
                 _ => ZipError::Corrupt,
             })?,
@@ -281,10 +317,10 @@ pub fn crc32(bytes: &[u8]) -> u32 {
     let mut crc = u32::MAX;
     for &byte in bytes {
         crc ^= u32::from(byte);
-        for _ in 0..8 {
+        for _ in 0..BYTE_BITS {
             // All ones when the low bit is set, else zero.
             let mask = (crc & 1).wrapping_neg();
-            crc = (crc >> 1) ^ (0xEDB8_8320 & mask);
+            crc = (crc >> 1) ^ (CRC_POLYNOMIAL & mask);
         }
     }
     !crc
@@ -298,7 +334,10 @@ fn u16_at(bytes: &[u8], at: usize) -> Option<u16> {
 
 /// The little-endian `u32` at `at`.
 fn u32_at(bytes: &[u8], at: usize) -> Option<u32> {
-    let b: [u8; 4] = bytes.get(at..at.checked_add(4)?)?.try_into().ok()?;
+    let b: [u8; 4] = bytes
+        .get(at..at.checked_add(size_of::<u32>())?)?
+        .try_into()
+        .ok()?;
     Some(u32::from_le_bytes(b))
 }
 

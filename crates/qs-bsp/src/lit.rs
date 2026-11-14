@@ -7,6 +7,8 @@
 
 use core::fmt;
 
+use qc_progs::bytes::read_array;
+
 use crate::BspLoader;
 
 /// The four bytes a `.lit` file starts with (BSP-18.1).
@@ -87,7 +89,7 @@ impl<'a> Lit<'a> {
             expected,
             actual: bytes.len(),
         };
-        let version = crate::read_array(bytes, 4)
+        let version = read_array(bytes, 4)
             .map(i32::from_le_bytes)
             .ok_or(outdated)?;
         if version != BSP_LIT_VERSION {

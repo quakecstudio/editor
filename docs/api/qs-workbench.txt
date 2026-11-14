@@ -1394,6 +1394,7 @@ use qs_workbench::dock = crate::preview::dock
 use qs_workbench::engine = crate::preview::engine
 use qs_workbench::entities = crate::preview::entities
 use qs_workbench::game_files = crate::preview::game_files
+use qs_workbench::ids::CheckpointNumber = qs_checkpoint::CheckpointNumber
 use qs_workbench::map_edit::ArchWall = shapes::ArchWall
 use qs_workbench::map_edit::Axis = brush_tools::Axis
 use qs_workbench::map_edit::BrushChamferParams = brush_tools::BrushChamferParams

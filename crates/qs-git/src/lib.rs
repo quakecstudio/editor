@@ -30,6 +30,12 @@ use std::process::{Command, Output, Stdio};
 pub use conflict::{Conflict, ConflictIndex, Side, conflicts, resolve};
 pub use diff::{FileDiff, Hunk, HunkIndex};
 
+/// Where a path starts in a `git status --porcelain=v1` entry, after its `XY ` (git-status(1),
+/// "Short Format").
+const PORCELAIN_PATH: usize = 3;
+/// The fields of a commit `log` asks git for: id, author, date and summary.
+const LOG_FIELDS: usize = 4;
+
 /// Why a git operation failed.
 #[derive(Debug)]
 pub enum GitError {
@@ -283,7 +289,8 @@ impl Repo {
         let mut files = Vec::new();
         let mut entries = out.split(|b| *b == 0).filter(|e| !e.is_empty());
         while let Some(entry) = entries.next() {
-            let (Some(x), Some(y), Some(path)) = (entry.first(), entry.get(1), entry.get(3..))
+            let (Some(x), Some(y), Some(path)) =
+                (entry.first(), entry.get(1), entry.get(PORCELAIN_PATH..))
             else {
                 return Err(GitError::Unexpected(String::from_utf8_lossy(entry).into()));
             };
@@ -460,7 +467,7 @@ impl Repo {
         let text = String::from_utf8_lossy(&out);
         text.lines()
             .map(|line| {
-                let mut parts = line.splitn(4, '\0');
+                let mut parts = line.splitn(LOG_FIELDS, '\0');
                 match (parts.next(), parts.next(), parts.next(), parts.next()) {
                     (Some(id), Some(author), Some(date), Some(summary)) => Ok(Commit {
                         id: id.to_owned(),
