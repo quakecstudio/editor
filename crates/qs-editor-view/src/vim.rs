@@ -222,8 +222,8 @@ impl Vim {
                 // replay of its keys would not have.
                 self.recording.clear();
                 self.visual_change = true;
-                let (start, end) = order(self.anchor, *caret);
-                let end = after_char(buffer, end);
+                let (start, end) = self.anchor.order(*caret);
+                let end = buffer.after_char(end);
                 self.mode = Mode::Normal;
                 self.apply(buffer, caret, c, start, end, Kind::Exclusive);
             }
@@ -263,7 +263,12 @@ impl Vim {
             'p' | 'P' => {
                 let count = self.take_count();
                 self.begin_change(&counted(count, c));
-                self.put(buffer, caret, c == 'p', count);
+                self.put(
+                    buffer,
+                    caret,
+                    if c == 'p' { Side::After } else { Side::Before },
+                    count,
+                );
                 self.finish_change();
             }
             'i' | 'a' | 'A' | 'I' | 'o' | 'O' => {
@@ -346,22 +351,30 @@ impl Vim {
         // motion.txt, `cw`: "Special case: When the cursor is in a word, "cw" and "cW" do not
         // include the white space after a word, they only change up to the end of the word."
         let c = match pending {
-            Some(('c', _)) if c == 'w' && !is_blank_at(buffer, *caret) => 'e',
+            Some(('c', _)) if c == 'w' && !buffer.is_blank_at(*caret) => 'e',
             _ => c,
         };
         let line_count = buffer.line_count();
         let (target, kind) = match c {
-            'h' => (step_left(buffer, *caret, total), Kind::Exclusive),
+            'h' => (buffer.step_left(*caret, total), Kind::Exclusive),
             'l' => (
-                step_right(buffer, *caret, total, pending.is_some()),
+                buffer.step_right(
+                    *caret,
+                    total,
+                    if pending.is_some() {
+                        StepEnd::LineEnd
+                    } else {
+                        StepEnd::LastChar
+                    },
+                ),
                 Kind::Exclusive,
             ),
             'j' => (
-                vertical(buffer, *caret, caret.line.saturating_add(total)),
+                buffer.vertical(*caret, caret.line.saturating_add(total)),
                 Kind::Linewise,
             ),
             'k' => (
-                vertical(buffer, *caret, caret.line.saturating_sub(total)),
+                buffer.vertical(*caret, caret.line.saturating_sub(total)),
                 Kind::Linewise,
             ),
             '0' => (Position::new(caret.line, 0), Kind::Exclusive),
@@ -374,12 +387,12 @@ impl Vim {
                     .line
                     .saturating_add(total.saturating_sub(1))
                     .min(line_count.saturating_sub(1));
-                (last_char(buffer, line), Kind::Inclusive)
+                (buffer.last_char(line), Kind::Inclusive)
             }
             'w' => {
                 let mut at = *caret;
                 for _ in 0..total {
-                    at = word_forward(buffer, at);
+                    at = buffer.word_forward(at);
                 }
                 // motion.txt, `w` under an operator: a word motion to the next line stops at
                 // the end of this one.
@@ -387,21 +400,21 @@ impl Vim {
                     at = Position::new(caret.line, buffer.line(caret.line).len());
                 }
                 if pending.is_none() {
-                    at = normal_clamp(buffer, at);
+                    at = buffer.normal_clamp(at);
                 }
                 (at, Kind::Exclusive)
             }
             'b' => {
                 let mut at = *caret;
                 for _ in 0..total {
-                    at = word_backward(buffer, at);
+                    at = buffer.word_backward(at);
                 }
                 (at, Kind::Exclusive)
             }
             'e' => {
                 let mut at = *caret;
                 for _ in 0..total {
-                    at = word_end(buffer, at);
+                    at = buffer.word_end(at);
                 }
                 (at, Kind::Inclusive)
             }
@@ -422,15 +435,15 @@ impl Vim {
         };
         match pending {
             Some((op, _)) => {
-                let (start, end) = order(*caret, target);
+                let (start, end) = caret.order(target);
                 let end = if kind == Kind::Inclusive {
-                    after_char(buffer, end)
+                    buffer.after_char(end)
                 } else {
                     end
                 };
                 self.apply(buffer, caret, op, start, end, kind);
             }
-            None => *caret = normal_clamp(buffer, target),
+            None => *caret = buffer.normal_clamp(target),
         }
     }
 
@@ -448,7 +461,7 @@ impl Vim {
         let register = self.register.take();
         let linewise = kind == Kind::Linewise;
         let (from, to) = if linewise {
-            line_span(buffer, start.line, end.line)
+            buffer.line_span(start.line, end.line)
         } else {
             (start, end)
         };
@@ -468,7 +481,7 @@ impl Vim {
         match op {
             'y' => {
                 // A yank changes nothing, so it is not what `.` repeats.
-                *caret = normal_clamp(buffer, start);
+                *caret = buffer.normal_clamp(start);
                 if self.visual_change {
                     self.finish_change();
                 } else if !self.replaying {
@@ -481,7 +494,7 @@ impl Vim {
                 *caret = if linewise {
                     Position::new(line, first_non_blank(buffer.line(line)))
                 } else {
-                    normal_clamp(buffer, start)
+                    buffer.normal_clamp(start)
                 };
                 self.finish_change();
             }
@@ -507,7 +520,7 @@ impl Vim {
     }
 
     /// Puts the register `count` times after (`p`) or before (`P`) the caret.
-    fn put(&mut self, buffer: &mut Buffer, caret: &mut Position, after: bool, count: usize) {
+    fn put(&mut self, buffer: &mut Buffer, caret: &mut Position, side: Side, count: usize) {
         let name = self.register.take().unwrap_or('"');
         let Some(register) = self.registers.get(&name).cloned() else {
             return;
@@ -515,17 +528,17 @@ impl Vim {
         match register {
             Register::Chars(text) => {
                 let text = text.repeat(count);
-                let at = if after && !buffer.line(caret.line).is_empty() {
+                let at = if side == Side::After && !buffer.line(caret.line).is_empty() {
                     buffer.next(*caret)
                 } else {
                     *caret
                 };
                 let end = buffer.replace(at, at, &text);
-                *caret = normal_clamp(buffer, buffer.previous(end));
+                *caret = buffer.normal_clamp(buffer.previous(end));
             }
             Register::Lines(text) => {
                 let text = text.repeat(count);
-                let line = if after {
+                let line = if side == Side::After {
                     caret.line.saturating_add(1)
                 } else {
                     caret.line
@@ -556,105 +569,11 @@ fn counted(count: usize, key: char) -> Vec<VimKey> {
     keys
 }
 
-/// `a` and `b` in order.
-fn order(a: Position, b: Position) -> (Position, Position) {
-    if b < a { (b, a) } else { (a, b) }
-}
-
-/// The position after the character at `at`, or `at` at the end of its line.
-fn after_char(buffer: &Buffer, at: Position) -> Position {
-    if at.col < buffer.line(at.line).len() {
-        buffer.next(at)
-    } else {
-        at
-    }
-}
-
-/// The text from line `first` to line `last` with the line break that joins them to the rest,
-/// as a linewise delete removes it.
-fn line_span(buffer: &Buffer, first: usize, last: usize) -> (Position, Position) {
-    let lines = buffer.line_count();
-    if last.saturating_add(1) < lines {
-        (
-            Position::new(first, 0),
-            Position::new(last.saturating_add(1), 0),
-        )
-    } else if first > 0 {
-        let above = first.saturating_sub(1);
-        (
-            Position::new(above, buffer.line(above).len()),
-            Position::new(last, buffer.line(last).len()),
-        )
-    } else {
-        (
-            Position::new(first, 0),
-            Position::new(last, buffer.line(last).len()),
-        )
-    }
-}
-
 /// The byte column of `line`'s first non-blank character, or its end when it has none.
 fn first_non_blank(line: &str) -> usize {
     line.char_indices()
         .find(|(_, c)| !c.is_whitespace())
         .map_or(line.len(), |(at, _)| at)
-}
-
-/// The last character of `line`, or its start when it is empty.
-fn last_char(buffer: &Buffer, line: usize) -> Position {
-    let end = Position::new(line, buffer.line(line).len());
-    if end.col == 0 {
-        end
-    } else {
-        buffer.previous(end)
-    }
-}
-
-/// `at` as a Normal mode caret, which rests on a character: never past the last one.
-fn normal_clamp(buffer: &Buffer, at: Position) -> Position {
-    let at = buffer.clamp(at);
-    let len = buffer.line(at.line).len();
-    if len > 0 && at.col >= len {
-        last_char(buffer, at.line)
-    } else {
-        at
-    }
-}
-
-/// `count` characters left on the line.
-fn step_left(buffer: &Buffer, at: Position, count: usize) -> Position {
-    let mut at = at;
-    for _ in 0..count {
-        if at.col == 0 {
-            break;
-        }
-        at = buffer.previous(at);
-    }
-    at
-}
-
-/// `count` characters right on the line; an operator may reach the line's end.
-fn step_right(buffer: &Buffer, at: Position, count: usize, operator: bool) -> Position {
-    let len = buffer.line(at.line).len();
-    let mut at = at;
-    for _ in 0..count {
-        if at.col >= len {
-            break;
-        }
-        at = buffer.next(at);
-    }
-    if operator {
-        at
-    } else {
-        normal_clamp(buffer, at)
-    }
-}
-
-/// `at` moved to line `line`, keeping its character column as far as the line allows.
-fn vertical(buffer: &Buffer, at: Position, line: usize) -> Position {
-    let line = line.min(buffer.line_count().saturating_sub(1));
-    let chars = buffer.char_column(at.line, at.col);
-    normal_clamp(buffer, Position::new(line, buffer.byte_column(line, chars)))
 }
 
 /// A character's word class: 0 white space, 1 a letter, digit or underscore (or a letter of
@@ -669,126 +588,245 @@ fn class(c: char) -> u8 {
     }
 }
 
-/// The character at `at`, `None` at the end of its line.
-fn char_at(buffer: &Buffer, at: Position) -> Option<char> {
-    buffer
-        .line(at.line)
-        .get(at.col..)
-        .and_then(|rest| rest.chars().next())
+/// Which side of the caret `p` and `P` put the register on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Side {
+    /// `p`: after the caret.
+    After,
+    /// `P`: before it.
+    Before,
 }
 
-/// Whether `at` is on white space or at the end of its line.
-fn is_blank_at(buffer: &Buffer, at: Position) -> bool {
-    char_at(buffer, at).is_none_or(char::is_whitespace)
+/// How far right `l` may go: an operator's motion reaches the line's end, a caret's rests on
+/// its last character.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StepEnd {
+    /// The line's end.
+    LineEnd,
+    /// Its last character.
+    LastChar,
 }
 
-/// The next position, across lines; `None` at the end of the text.
-fn forward(buffer: &Buffer, at: Position) -> Option<Position> {
-    if at.col < buffer.line(at.line).len() {
-        Some(buffer.next(at))
-    } else if at.line.saturating_add(1) < buffer.line_count() {
-        Some(Position::new(at.line.saturating_add(1), 0))
-    } else {
-        None
+impl Position {
+    /// This position and `other` in order.
+    fn order(self, other: Self) -> (Self, Self) {
+        if other < self {
+            (other, self)
+        } else {
+            (self, other)
+        }
     }
 }
 
-/// The previous position, across lines; `None` at the start of the text.
-fn backward(buffer: &Buffer, at: Position) -> Option<Position> {
-    if at.col > 0 {
-        Some(buffer.previous(at))
-    } else if at.line > 0 {
-        let line = at.line.saturating_sub(1);
-        Some(Position::new(line, buffer.line(line).len()))
-    } else {
-        None
+impl Buffer {
+    /// The position after the character at `at`, or `at` at the end of its line.
+    fn after_char(&self, at: Position) -> Position {
+        if at.col < self.line(at.line).len() {
+            self.next(at)
+        } else {
+            at
+        }
     }
-}
 
-/// The class at `at`, the end of a line counting as white space; an empty line is its own
-/// word, class 3.
-fn class_at(buffer: &Buffer, at: Position) -> u8 {
-    if buffer.line(at.line).is_empty() {
-        return 3;
+    /// The text from line `first` to line `last` with the line break that joins them to the rest,
+    /// as a linewise delete removes it.
+    fn line_span(&self, first: usize, last: usize) -> (Position, Position) {
+        let lines = self.line_count();
+        if last.saturating_add(1) < lines {
+            (
+                Position::new(first, 0),
+                Position::new(last.saturating_add(1), 0),
+            )
+        } else if first > 0 {
+            let above = first.saturating_sub(1);
+            (
+                Position::new(above, self.line(above).len()),
+                Position::new(last, self.line(last).len()),
+            )
+        } else {
+            (
+                Position::new(first, 0),
+                Position::new(last, self.line(last).len()),
+            )
+        }
     }
-    char_at(buffer, at).map_or(0, class)
-}
 
-/// `w`: the start of the next word, or the end of the text.
-fn word_forward(buffer: &Buffer, at: Position) -> Position {
-    let start = class_at(buffer, at);
-    let mut pos = at;
-    // Leave the word the caret is on.
-    if start != 0 {
-        while let Some(next) = forward(buffer, pos) {
-            pos = next;
-            if next.line != at.line || class_at(buffer, next) != start {
+    /// The last character of `line`, or its start when it is empty.
+    fn last_char(&self, line: usize) -> Position {
+        let end = Position::new(line, self.line(line).len());
+        if end.col == 0 {
+            end
+        } else {
+            self.previous(end)
+        }
+    }
+
+    /// `at` as a Normal mode caret, which rests on a character: never past the last one.
+    fn normal_clamp(&self, at: Position) -> Position {
+        let at = self.clamp(at);
+        let len = self.line(at.line).len();
+        if len > 0 && at.col >= len {
+            self.last_char(at.line)
+        } else {
+            at
+        }
+    }
+
+    /// `count` characters left on the line.
+    fn step_left(&self, at: Position, count: usize) -> Position {
+        let mut at = at;
+        for _ in 0..count {
+            if at.col == 0 {
                 break;
+            }
+            at = self.previous(at);
+        }
+        at
+    }
+
+    /// `count` characters right on the line, at most to `end`.
+    fn step_right(&self, at: Position, count: usize, end: StepEnd) -> Position {
+        let len = self.line(at.line).len();
+        let mut at = at;
+        for _ in 0..count {
+            if at.col >= len {
+                break;
+            }
+            at = self.next(at);
+        }
+        match end {
+            StepEnd::LineEnd => at,
+            StepEnd::LastChar => self.normal_clamp(at),
+        }
+    }
+
+    /// `at` moved to line `line`, keeping its character column as far as the line allows.
+    fn vertical(&self, at: Position, line: usize) -> Position {
+        let line = line.min(self.line_count().saturating_sub(1));
+        let chars = self.char_column(at.line, at.col);
+        self.normal_clamp(Position::new(line, self.byte_column(line, chars)))
+    }
+
+    /// The character at `at`, `None` at the end of its line.
+    fn char_at(&self, at: Position) -> Option<char> {
+        self.line(at.line)
+            .get(at.col..)
+            .and_then(|rest| rest.chars().next())
+    }
+
+    /// Whether `at` is on white space or at the end of its line.
+    fn is_blank_at(&self, at: Position) -> bool {
+        self.char_at(at).is_none_or(char::is_whitespace)
+    }
+
+    /// The next position, across lines; `None` at the end of the text.
+    fn forward(&self, at: Position) -> Option<Position> {
+        if at.col < self.line(at.line).len() {
+            Some(self.next(at))
+        } else if at.line.saturating_add(1) < self.line_count() {
+            Some(Position::new(at.line.saturating_add(1), 0))
+        } else {
+            None
+        }
+    }
+
+    /// The previous position, across lines; `None` at the start of the text.
+    fn backward(&self, at: Position) -> Option<Position> {
+        if at.col > 0 {
+            Some(self.previous(at))
+        } else if at.line > 0 {
+            let line = at.line.saturating_sub(1);
+            Some(Position::new(line, self.line(line).len()))
+        } else {
+            None
+        }
+    }
+
+    /// The class at `at`, the end of a line counting as white space; an empty line is its own
+    /// word, class 3.
+    fn class_at(&self, at: Position) -> u8 {
+        if self.line(at.line).is_empty() {
+            return 3;
+        }
+        self.char_at(at).map_or(0, class)
+    }
+
+    /// `w`: the start of the next word, or the end of the text.
+    fn word_forward(&self, at: Position) -> Position {
+        let start = self.class_at(at);
+        let mut pos = at;
+        // Leave the word the caret is on.
+        if start != 0 {
+            while let Some(next) = self.forward(pos) {
+                pos = next;
+                if next.line != at.line || self.class_at(next) != start {
+                    break;
+                }
+            }
+        }
+        // Skip white space, stopping at an empty line or a word.
+        loop {
+            let here = self.class_at(pos);
+            if (here != 0 && pos != at) || (here == 3 && pos.line != at.line) {
+                return pos;
+            }
+            match self.forward(pos) {
+                Some(next) => pos = next,
+                None => return pos,
             }
         }
     }
-    // Skip white space, stopping at an empty line or a word.
-    loop {
-        let here = class_at(buffer, pos);
-        if (here != 0 && pos != at) || (here == 3 && pos.line != at.line) {
+
+    /// `b`: the start of this word, or of the one before when at a start already.
+    fn word_backward(&self, at: Position) -> Position {
+        let mut pos = at;
+        // Step back over white space and line ends to the previous word's last character.
+        loop {
+            match self.backward(pos) {
+                Some(prev) => pos = prev,
+                None => return pos,
+            }
+            let here = self.class_at(pos);
+            if here == 3 || here != 0 {
+                break;
+            }
+        }
+        if self.class_at(pos) == 3 {
             return pos;
         }
-        match forward(buffer, pos) {
-            Some(next) => pos = next,
-            None => return pos,
+        let word = self.class_at(pos);
+        while let Some(prev) = self.backward(pos) {
+            if prev.line != pos.line || self.class_at(prev) != word {
+                break;
+            }
+            pos = prev;
         }
+        pos
     }
-}
 
-/// `b`: the start of this word, or of the one before when at a start already.
-fn word_backward(buffer: &Buffer, at: Position) -> Position {
-    let mut pos = at;
-    // Step back over white space and line ends to the previous word's last character.
-    loop {
-        match backward(buffer, pos) {
-            Some(prev) => pos = prev,
-            None => return pos,
+    /// `e`: the end of this word, or of the next when at an end already.
+    fn word_end(&self, at: Position) -> Position {
+        let mut pos = at;
+        // Step forward at least once, then over white space.
+        loop {
+            match self.forward(pos) {
+                Some(next) => pos = next,
+                None => return self.normal_clamp(pos),
+            }
+            let here = self.class_at(pos);
+            if here != 0 && here != 3 {
+                break;
+            }
         }
-        let here = class_at(buffer, pos);
-        if here == 3 || here != 0 {
-            break;
+        let word = self.class_at(pos);
+        while let Some(next) = self.forward(pos) {
+            if next.line != pos.line || self.class_at(next) != word {
+                break;
+            }
+            pos = next;
         }
+        pos
     }
-    if class_at(buffer, pos) == 3 {
-        return pos;
-    }
-    let word = class_at(buffer, pos);
-    while let Some(prev) = backward(buffer, pos) {
-        if prev.line != pos.line || class_at(buffer, prev) != word {
-            break;
-        }
-        pos = prev;
-    }
-    pos
-}
-
-/// `e`: the end of this word, or of the next when at an end already.
-fn word_end(buffer: &Buffer, at: Position) -> Position {
-    let mut pos = at;
-    // Step forward at least once, then over white space.
-    loop {
-        match forward(buffer, pos) {
-            Some(next) => pos = next,
-            None => return normal_clamp(buffer, pos),
-        }
-        let here = class_at(buffer, pos);
-        if here != 0 && here != 3 {
-            break;
-        }
-    }
-    let word = class_at(buffer, pos);
-    while let Some(next) = forward(buffer, pos) {
-        if next.line != pos.line || class_at(buffer, next) != word {
-            break;
-        }
-        pos = next;
-    }
-    pos
 }
 
 #[cfg(test)]
