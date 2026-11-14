@@ -11,6 +11,17 @@
 //!
 //! Implements `docs/spec/render.md` REND-1 to REND-6.
 
+/// A vector's components.
+const AXES: usize = 3;
+/// A texel's bytes, red, green, blue and alpha.
+const RGBA_BYTES: usize = 4;
+/// A colour channel's most, an opaque alpha.
+const CHANNEL_MAX: u8 = 255;
+/// A colour's channels, red, green and blue.
+const RGB: usize = 3;
+/// A turn in degrees.
+const FULL_TURN: f32 = 360.0;
+
 mod alias;
 mod anorm_dots;
 mod camera;
@@ -27,15 +38,15 @@ mod play;
 mod skybox;
 mod sprite;
 mod styles;
+mod vector;
 
 pub use alias::{
-    AliasEntity, AliasError, AliasKind, AliasModel, AliasVertex, bob_rotate, entity_light,
-    shade_light,
+    AliasEntity, AliasError, AliasKind, AliasModel, AliasVertex, Shading, bob_rotate, entity_light,
 };
-pub use camera::Camera;
+pub use camera::{Camera, Degrees};
 pub use gpu::{
-    AliasDraw, Assets, FlatDraw, FlatFrame, FlatVertex, Fog, MapCallback, MapRenderer, ModelFrame,
-    PlayerSkin, SkinKey, SpriteDraw, SpriteFrame, View,
+    AliasDraw, Assets, FlatBlend, FlatDraw, FlatFrame, FlatVertex, Fog, MapCallback, MapRenderer,
+    ModelFrame, PlayerSkin, PlayerSlot, SkinKey, SpriteDraw, SpriteFrame, View,
 };
 pub use light::light_point;
 pub use look::Look;

@@ -7,6 +7,7 @@
 
 use super::{add, cross, intersect, sub, transform};
 use crate::camera::Camera;
+use crate::camera::Degrees;
 use crate::look::Look;
 use crate::mesh::tests::{MapSpec, bsp, palette, samples};
 use crate::mesh::{MapMesh, MeshBuilder, Placement};
@@ -94,12 +95,12 @@ fn a_triangle_is_hit_inside_and_on_its_edges_only() {
 #[test]
 fn the_camera_ray_goes_through_the_point_of_the_image() {
     // A narrower view: the edge of the image is 30 degrees off the centre.
-    let mut narrow = Camera::new([0.0; 3], 0.0);
-    narrow.fov_x = 60.0;
+    let mut narrow = Camera::new([0.0; 3], Degrees::new(0.0));
+    narrow.fov_x = Degrees::new(60.0);
     let (_, edge) = narrow.ray(1.0, [1.0, 0.0]);
     let angle = edge[1].atan2(edge[0]).to_degrees();
     assert!((angle + 30.0).abs() < 1e-3, "{angle}");
-    let camera = Camera::new([1.0, 2.0, 3.0], 0.0);
+    let camera = Camera::new([1.0, 2.0, 3.0], Degrees::new(0.0));
     let (origin, centre) = camera.ray(1.0, [0.0, 0.0]);
     assert_eq!(origin, [1.0, 2.0, 3.0]);
     assert_eq!(centre, [1.0, 0.0, 0.0], "straight ahead at yaw 0");

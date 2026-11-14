@@ -111,6 +111,30 @@ const CASES: &[Case] = &[
     ("3l", "abcdef", (0, 0), "3l", "abcdef", (0, 3)),
     ("h at the start", "abc", (0, 0), "h", "abc", (0, 0)),
     ("l at the end", "abc", (0, 2), "l", "abc", (0, 2)),
+    // `h` and `l` with a count, within the line.
+    ("2h", "abcd", (0, 3), "2h", "abcd", (0, 1)),
+    ("3l", "abcd", (0, 0), "3l", "abcd", (0, 3)),
+    // `w`, `b` and `e` past the end of a line, an empty line a word of its own.
+    ("w across a line", "ab\ncd", (0, 0), "w", "ab\ncd", (1, 0)),
+    ("w from blanks", "a  b", (0, 1), "w", "a  b", (0, 3)),
+    (
+        "w onto an empty line",
+        "ab\n\ncd",
+        (0, 0),
+        "w",
+        "ab\n\ncd",
+        (1, 0),
+    ),
+    ("b across a line", "ab\ncd", (1, 0), "b", "ab\ncd", (0, 0)),
+    (
+        "b onto an empty line",
+        "ab\n\ncd",
+        (2, 0),
+        "b",
+        "ab\n\ncd",
+        (1, 0),
+    ),
+    ("e across a line", "a\nbc", (0, 0), "e", "a\nbc", (1, 1)),
     // motion.txt `j`: [count] lines downward, the column kept.
     ("j", "abcd\nabcd", (0, 2), "j", "abcd\nabcd", (1, 2)),
     ("k clamped", "ab\nabcd", (1, 3), "k", "ab\nabcd", (0, 1)),

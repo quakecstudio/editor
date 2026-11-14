@@ -9,7 +9,7 @@
 use qs_client::PoseBlend;
 
 use super::{Md5Model, normal_dot, shade_vector};
-use crate::alias::{AliasEntity, AliasError, AliasVertex};
+use crate::alias::{AliasEntity, AliasError, AliasVertex, Shading};
 use crate::mesh::tests::palette;
 use crate::picture::tests::{files, solid};
 
@@ -90,7 +90,7 @@ fn model_with(spec: &Md5Spec, skins: Vec<(String, Vec<u8>)>) -> Result<Md5Model,
         &md5mesh(spec),
         &read,
         &palette(),
-        false,
+        Shading::Lit,
     )
 }
 
@@ -319,7 +319,7 @@ fn four_skin_frames_fill_the_slots() {
 #[test]
 fn a_bad_mesh_or_animation_is_refused() {
     let read = files(Vec::new());
-    let error = Md5Model::read("progs/x.md5mesh", b"IDPO", &read, &palette(), false);
+    let error = Md5Model::read("progs/x.md5mesh", b"IDPO", &read, &palette(), Shading::Lit);
     assert!(matches!(error, Err(AliasError::Md5(ref m)) if m.starts_with("progs/x.md5mesh: ")));
     let mismatched = model_with(
         &Md5Spec {
@@ -342,7 +342,7 @@ fn a_bad_mesh_or_animation_is_refused() {
         &md5mesh(&Md5Spec::default()),
         &broken,
         &palette(),
-        false,
+        Shading::Lit,
     );
     assert!(matches!(error, Err(AliasError::Md5(_))));
 }
@@ -364,7 +364,7 @@ fn an_animation_with_too_many_frames_is_refused() {
         &md5mesh(&Md5Spec::default()),
         &read,
         &palette(),
-        false,
+        Shading::Lit,
     );
     assert!(
         matches!(error, Err(AliasError::Md5(ref m)) if m == "progs/ogre.md5anim has too many frames"),

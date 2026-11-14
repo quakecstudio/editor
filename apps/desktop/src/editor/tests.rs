@@ -415,7 +415,7 @@ fn the_colours_follow_each_check_of_the_text() {
     let open = app(&harness).shell().workbench().open().unwrap();
     let styler = &editor(&harness).styler;
     assert_ne!(Styler::revision(styler), before);
-    assert_eq!(Styler::revision(styler), open.revision());
+    assert_eq!(Styler::revision(styler).get(), open.revision());
     let line = text(&harness)
         .lines()
         .position(|l| l.contains("return;"))

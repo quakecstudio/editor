@@ -26,7 +26,7 @@ pub struct StyledSpan {
 /// layout cache by the revision, so a styler that colours differently returns a new one.
 pub trait Styler {
     /// Changes whenever any line would be styled differently.
-    fn revision(&self) -> u64;
+    fn revision(&self) -> StyleRevision;
 
     /// The styled runs of line `line`, whose text is `text`, in order and not overlapping; text
     /// no run covers is drawn in the view's text colour.
@@ -38,8 +38,8 @@ pub trait Styler {
 pub struct Plain;
 
 impl Styler for Plain {
-    fn revision(&self) -> u64 {
-        0
+    fn revision(&self) -> StyleRevision {
+        StyleRevision::new(0)
     }
 
     fn spans(&self, _line: usize, _text: &str) -> Vec<StyledSpan> {
@@ -208,11 +208,29 @@ pub(crate) fn line_job(
     job
 }
 
+/// A styler's revision, [`Styler::revision`]: a layout made with another is laid out again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct StyleRevision(u64);
+
+impl StyleRevision {
+    /// Revision `revision`.
+    #[must_use]
+    pub const fn new(revision: u64) -> Self {
+        Self(revision)
+    }
+
+    /// The revision.
+    #[must_use]
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
 /// What a cached layout was made for: the line's text, the styler's revision, the font, the
 /// screen's scale and the width lines wrap at.
 #[derive(Clone, Debug, PartialEq)]
 struct Key {
-    revision: u64,
+    revision: StyleRevision,
     font: FontId,
     pixels_per_point: f32,
     wrap_width: f32,
@@ -236,7 +254,7 @@ impl LayoutCache {
     /// cache when any differs from the last frame's.
     pub(crate) fn begin(
         &mut self,
-        revision: u64,
+        revision: StyleRevision,
         font: &FontId,
         pixels_per_point: f32,
         (wrap_width, inlays): (f32, u64),

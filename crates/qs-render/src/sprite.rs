@@ -15,6 +15,7 @@ use qs_mdl::spr::{
 };
 
 use crate::mesh::{Image, Palette};
+use crate::vector::{add, cross, dot, scale, sub};
 
 /// The palette index a sprite does not draw, `GL_LoadTexture (..., alpha)` with
 /// `TEXPREF_ALPHA` (REND-11.2).
@@ -151,7 +152,7 @@ impl SpriteModel {
         let sprite = Sprite::read(bytes).map_err(|e| SpriteError::Spr(format!("{name}: {e}")))?;
         let mut images = Vec::new();
         let mut frame = |f: &SpriteFrame<'_>| {
-            images.push(image(f, palette));
+            images.push(palette.sprite_image(f));
             Frame {
                 up: f32_of_i32(f.up()),
                 down: f32_of_i32(f.down()),
@@ -202,13 +203,13 @@ impl SpriteModel {
             texture,
         };
         // `glBegin (GL_TRIANGLE_FAN)` over the four corners: two triangles from the first.
-        let quad = [
+        let [a, b, c, d] = [
             corner(frame.down, frame.left, [0.0, 1.0]),
             corner(frame.up, frame.left, [0.0, 0.0]),
             corner(frame.up, frame.right, [1.0, 0.0]),
             corner(frame.down, frame.right, [1.0, 1.0]),
         ];
-        out.extend([quad[0], quad[1], quad[2], quad[0], quad[2], quad[3]]);
+        out.extend([a, b, c, a, c, d]);
         Some(frame.image)
     }
 
@@ -284,25 +285,27 @@ impl SpriteModel {
     }
 }
 
-/// A frame's pixels through `palette`, index 255 transparent (REND-11.2).
-fn image(frame: &SpriteFrame<'_>, palette: &Palette) -> Image {
-    let width = u32::try_from(frame.width).unwrap_or(0).max(1);
-    let height = u32::try_from(frame.height).unwrap_or(0).max(1);
-    let rgba = frame
-        .pixels
-        .iter()
-        .flat_map(|&p| {
-            if p == TRANSPARENT {
-                [0, 0, 0, 0]
-            } else {
-                palette.rgba(p)
-            }
-        })
-        .collect();
-    Image {
-        width,
-        height,
-        rgba,
+impl Palette {
+    /// A sprite frame's pixels through the palette, index 255 transparent (REND-11.2).
+    fn sprite_image(&self, frame: &SpriteFrame<'_>) -> Image {
+        let width = u32::try_from(frame.width).unwrap_or(0).max(1);
+        let height = u32::try_from(frame.height).unwrap_or(0).max(1);
+        let rgba = frame
+            .pixels
+            .iter()
+            .flat_map(|&p| {
+                if p == TRANSPARENT {
+                    [0, 0, 0, 0]
+                } else {
+                    self.rgba(p)
+                }
+            })
+            .collect();
+        Image {
+            width,
+            height,
+            rgba,
+        }
     }
 }
 
@@ -315,30 +318,6 @@ pub(crate) fn angle_vectors([pitch, yaw, roll]: [f32; 3]) -> ([f32; 3], [f32; 3]
     let right = [-sr * sp * cy + cr * sy, -sr * sp * sy - cr * cy, -sr * cp];
     let up = [cr * sp * cy + sr * sy, cr * sp * sy - sr * cy, cr * cp];
     (forward, right, up)
-}
-
-pub(crate) fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-pub(crate) fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
-}
-
-pub(crate) fn add(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
-}
-
-pub(crate) fn sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
-
-pub(crate) fn scale(v: [f32; 3], by: f32) -> [f32; 3] {
-    [v[0] * by, v[1] * by, v[2] * by]
 }
 
 /// `VectorNormalizeFast`'s direction; a zero vector stays zero.
