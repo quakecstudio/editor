@@ -845,18 +845,26 @@ fn read_if(text: &[u8], at: usize) -> Directive {
     }
 }
 
+/// `#pack id`'s word (FTEF-14.39).
+const PACK_ID: &[u8] = b"id";
+/// The byte `#pack` passes over after its word or its number (FTEF-14.39).
+const PACK_PAST: usize = 1;
+
 /// `#pack`, read from `at` after its name: `id` and one byte more passed over, or else a
 /// number read with `QCC_PR_LexInteger` and one byte more; a number above 5 is too many
 /// (FTEF-14.39).
 fn read_pack(text: &[u8], at: usize) -> Directive {
-    let (end, too_many) = if text.get(at..).is_some_and(|rest| rest.starts_with(b"id")) {
-        (at.saturating_add(3), None)
+    let (end, too_many) = if text.get(at..).is_some_and(|rest| rest.starts_with(PACK_ID)) {
+        (
+            at.saturating_add(PACK_ID.len()).saturating_add(PACK_PAST),
+            None,
+        )
     } else {
         let (number_end, value) = lex_integer(text, at);
         let packs = if value == 0 { 1 } else { value };
         // `N` spans `at..number_end`; `#pack N` then passes over one byte more (FTEF-14.39).
         let too_many = (packs > FTE_MAX_PACKS).then_some(at..number_end);
-        (number_end.saturating_add(1), too_many)
+        (number_end.saturating_add(PACK_PAST), too_many)
     };
     Directive::Pack {
         end: skip_to_end_of_line(text, end.min(text.len()), Junk::Checked),
