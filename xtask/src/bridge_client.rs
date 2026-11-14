@@ -296,7 +296,10 @@ fn suite(
     )?;
     steps.push("breakpoint/set".to_owned());
 
-    // BRIDGE-4.11, P3-10: a dry run says what the reload then reports.
+    // BRIDGE-4.11, P3-10: a dry run says what the reload then reports. The game is paused
+    // across both, since a frame between them can spawn or free an entity and change what
+    // migrates.
+    client.pause().map_err(|e| format!("pause: {e}"))?;
     let predicted = client
         .request("reload", json!({ "dry_run": true }))
         .map_err(|e| format!("reload dry_run: {e}"))?;
@@ -319,6 +322,7 @@ fn suite(
             && reloaded.get("lost") == Some(&json!([])),
         "reload migrates the running progs and loses nothing",
     )?;
+    client.resume().map_err(|e| format!("resume: {e}"))?;
     steps.push("reload, predicted by its dry run".to_owned());
 
     let monster = a_monster(client)?;

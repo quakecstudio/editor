@@ -32,16 +32,18 @@ const LICENSE_MARKERS: [&str; 2] = ["GNU GENERAL PUBLIC LICENSE", "Version 3, 29
 const SPECS_MANIFEST: &str = "specs/manifest.tsv";
 
 const SOURCE_EXTENSIONS: [&str; 7] = ["rs", "py", "sh", "c", "h", "qc", "wgsl"];
-const SOURCE_NAMES: [&str; 1] = ["Makefile"];
+// `postinstall` is the macOS installer package's script (packaging/macos/scripts/).
+const SOURCE_NAMES: [&str; 2] = ["Makefile", "postinstall"];
 // `src` is a QuakeC project's file list, `progs.src`, which carries no license line; `route`
 // is an engine oracle script (oracles/README.md), and `scenario` a scenario, a route with assertions
 // (docs/spec/scenario.md).
-// `desktop`, `plist`, `spec`, `wxs`, `vdf`, `acf` and a deb's `control` are the release
+// `desktop`, `plist`, `spec`, `wxs`, `xml`, `vdf`, `acf` and a deb's `control` are the release
 // packages' own files and Steam's (packaging/); `fgd` is an entity definition file, the golden
 // files of `cargo xtask entity-corpus`; `map` is a map's source, the map editor's fixtures.
-const TEXT_EXTENSIONS: [&str; 23] = [
+const TEXT_EXTENSIONS: [&str; 24] = [
     "md", "toml", "yaml", "yml", "json", "jsonl", "lock", "html", "txt", "tsv", "csv", "hex",
-    "src", "route", "scenario", "desktop", "plist", "spec", "wxs", "vdf", "acf", "fgd", "map",
+    "src", "route", "scenario", "desktop", "plist", "spec", "wxs", "xml", "vdf", "acf", "fgd",
+    "map",
 ];
 const TEXT_NAMES: [&str; 4] = [LICENSE_FILE, ".gitignore", ".gitattributes", "control"];
 const COMMENT_OPENERS: [&str; 6] = ["//", "#", "<!--", "/*", "*", "--"];

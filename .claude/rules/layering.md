@@ -6,21 +6,26 @@ Read before adding a crate or a dependency between crates.
 "Architecture"). Never upward. [`docs/layers.md`](../../docs/layers.md) explains the model,
 including why crates in one layer may build on each other.
 
-| Layer | Holds | Crates (existing or planned) |
-| --- | --- | --- |
-| L0 formats | File formats as id defined them: progs.dat, .lno, PAK, WAD2, .map, BSP29/BSP2, MDL; the paths module; logging; diagnostics; the game filesystem and install detection; line diffs; checkpoints as git objects | `qs-paths`, `qs-log`, `qc-diag`, `qc-progs`, `qc-types`, `qc-lno`, `qs-pak`, `qs-wad`, `qs-wav`, `qs-bsp`, `qs-map`, `qs-mdl`, `qs-vfs`, `qs-install`, `qs-diff`, `qs-checkpoint` |
-| L1 VM | What the engine executes: the VM, edicts, builtins | `qc-vm`, `qc-edict`, `qc-builtins`, `qc-trace`, `qs-porting-example` |
-| L2 syntax | Preprocessor, lossless CST, `progs.src` project graph | `qc-lexer`, `qc-preproc`, `qc-syntax`, `qc-project` |
-| L3 semantics | Resolution, types, dialects, engine-target database, LSP, map entity definitions | `qc-sema`, `qc-engines`, `qc-ide` |
-| L4 bridges | Our QuakeC and map compilers; the engine bridge | `qc-codegen`, `qs-map-bsp` |
-| L5 commands | Command engine, session, undo: one registry for the UI, CLI, agent and MCP | `qs-commands` |
-| L6 agent | Agent loop, model providers, checkpoints, MCP and ACP | `qs-agent`, `qs-mcp` |
-| L7 UI | The app on the chosen framework (ADR-0003) | |
-| apps | Desktop app, CLI, LSP server binaries | `apps/*` |
-| tests | Test-only crates, outside the ranking | `qs-tests`, `qs-bench`, `qs-differential` |
-| tooling | Build automation, outside the ranking | `xtask` |
+| Layer | Holds |
+| --- | --- |
+| L0 formats | File formats as id defined them: progs.dat, .lno, PAK, WAD2, .map, BSP29/BSP2, MDL; the paths module; logging; diagnostics; the game filesystem and install detection; line diffs; git; checkpoints as git objects |
+| L1 VM | What the engine executes: the VM, edicts, builtins |
+| L2 syntax | Preprocessor, lossless CST, `progs.src` project graph |
+| L3 semantics | Resolution, types, dialects, engine-target database, LSP, map entity definitions |
+| L4 bridges | Our QuakeC and map compilers (bsp, vis, light); the engine bridge and its client; the preview host's game client, simulation and sound |
+| L5 commands | Command engine, session, undo: one registry for the UI, CLI, agent and MCP; the workbench, layout, settings and templates |
+| L6 agent | Agent loop, model providers, checkpoints, MCP and ACP |
+| L7 UI | The app on the chosen framework (ADR-0003): the code editor view and the wgpu renderer |
+| apps | Desktop app, CLI, LSP server, preview host |
+| tests | Test-only crates, outside the ranking |
+| tooling | Build automation, outside the ranking |
 
-The table is the summary; the design is in
+**Which crate is in which layer** is the generated table in
+[`docs/layers.md`](../../docs/layers.md#the-crates), written from `layers.toml` by
+`cargo xtask layers --write` and checked by `cargo xtask layers`. It is the only list of
+crates; do not copy it here.
+
+The design is in
 [`docs/design/design-doc.md`](../../docs/design/design-doc.md) (Architecture) and
 [`docs/roadmap.md`](../../docs/roadmap.md#how-the-code-is-layered). Each crate's README
 states its layer. Planned crates are named as in the design doc; the final names take the
@@ -29,9 +34,11 @@ project prefix from ADR-0006 (`docs/conventions.md`, Repository layout).
 ## Enforcement
 
 - `layers.toml` maps every crate to a layer and `cargo xtask layers` fails on an upward or
-  unmapped dependency. A new crate is added to `layers.toml` in the same PR.
-- Test-only crates (`qs-tests`, `qs-bench` and `qs-differential`, layer `tests`) and tooling (`xtask`, layer `tooling`) may depend
-  on anything; nothing may depend on them.
+  unmapped dependency, and when the crate table in `docs/layers.md` is stale. A new crate is
+  added to `layers.toml`, and the table rewritten with `cargo xtask layers --write`, in the
+  same PR.
+- Test-only crates (layer `tests`) and tooling (layer `tooling`) may depend on anything;
+  nothing may depend on them.
 
 ## What follows from it
 

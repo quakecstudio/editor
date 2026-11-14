@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- productbuild's distribution for the QuakeC Studio installer package: the one component
+     package, for the whole Mac, on Apple silicon running macOS 11 or later. package.sh fills in
+     @VERSION@. -->
+<installer-gui-script minSpecVersion="2">
+    <title>QuakeC Studio</title>
+    <options customize="never" require-scripts="false" hostArchitectures="arm64"/>
+    <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
+    <volume-check>
+        <allowed-os-versions>
+            <os-version min="11.0"/>
+        </allowed-os-versions>
+    </volume-check>
+    <choices-outline>
+        <line choice="com.quakecstudio.QuakeCStudio"/>
+    </choices-outline>
+    <choice id="com.quakecstudio.QuakeCStudio" visible="false">
+        <pkg-ref id="com.quakecstudio.QuakeCStudio"/>
+    </choice>
+    <pkg-ref id="com.quakecstudio.QuakeCStudio" version="@VERSION@" onConclusion="none">quakec-studio-component.pkg</pkg-ref>
+</installer-gui-script>

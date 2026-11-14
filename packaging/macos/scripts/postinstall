@@ -1,0 +1,14 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Links QuakeC Studio's command-line tools into /usr/local/bin after the package installs the
+# app. The links are made here rather than shipped in the payload, so the installer never
+# changes the owner or mode of an existing /usr/local or /usr/local/bin (a Homebrew setup's,
+# say). $3 is the volume the package installs on.
+set -eu
+
+bin="${3%/}/usr/local/bin"
+mkdir -p "$bin"
+for tool in quakec-ide quakec-lsp; do
+  ln -sfn "/Applications/QuakeC Studio.app/Contents/MacOS/$tool" "$bin/$tool"
+done
