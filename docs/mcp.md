@@ -102,10 +102,18 @@ when it starts.
 | `map.brush_subtract`, `map.brush_merge`, `map.brush_intersect`, `map.brush_hollow` | CSG: carves a brush out of the others of its entity, merges brushes into their convex hull, keeps their common solid, hollows a brush into walls |
 | `map.compile`, `map.leaks` | Compiles the map as it is in the editor to a BSP beside it, with its portal and leak files; reports whether it leaks without writing a file |
 
-A map tool runs as the built-in agent's do (P6-21): the server begins the map's review with
-`map.stage` before it and ends it with `map.unstage` after, so every edit waits as a hunk for
-a person to accept or reject in the app, and a call that changed nothing leaves no review
-open. `map.accept` and `map.reject` are not offered: the decision is the person's.
+A map tool that edits runs as the built-in agent's do (P6-21): the server begins the map's
+review with `map.stage` before it and ends it with `map.unstage` after, so every edit waits as a
+hunk for a person to accept or reject in the app, and a call that changed nothing leaves no
+review open. When review cannot begin the edit is refused, not run unreviewed. The map tools
+that read open no review. `map.accept`, `map.reject`, `map.stage` and `map.unstage` are not
+offered: the decision is the person's.
+
+`map.open` writes, since it replaces the open map, its unsaved and staged edits with it. A map
+tool that edits or compiles also needs the open map's file under a write root, since
+`map.compile` writes beside it: the server asks `map.inspect` for it first. With `--connect`,
+the stage, the edit and the unstage are three calls to the app, so an edit the person makes in
+the app between them joins the review.
 
 `tools/list` gives each tool's input schema, the command's parameter schema. A tool whose
 command the server's registry lacks is not listed. A command that fails answers

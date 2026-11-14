@@ -456,7 +456,10 @@ fn the_map_tools_are_listed_with_their_schemas() {
         "map.compile",
         "map.leaks",
     ] {
-        assert!(map_tools().any(|tool| tool.id == wanted), "{wanted}");
+        assert!(tools.iter().any(|t| t["name"] == wanted), "{wanted}");
+    }
+    for decision in ["map.accept", "map.reject", "map.stage", "map.unstage"] {
+        assert!(tools.iter().all(|t| t["name"] != decision), "{decision}");
     }
     for tool in map_tools() {
         let listed = tools.iter().find(|t| t["name"] == tool.id);
@@ -495,6 +498,8 @@ fn a_room_built_over_mcp_compiles_sealed() {
         init,
         initialized,
         call(1, "map.open", json!({ "path": map })),
+        call(30, "map.inspect", json!({})),
+        call(31, "map.staged", json!({})),
         call(
             2,
             "map.place",
@@ -522,14 +527,28 @@ fn a_room_built_over_mcp_compiles_sealed() {
     let compiled = &answers["21"]["result"];
     assert_eq!(compiled["isError"], false, "{compiled}");
     assert_eq!(compiled["structuredContent"]["seal"], "sealed");
+    let unread = answers["31"]["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(unread).unwrap(),
+        json!([]),
+        "a read opens no review"
+    );
     let staged = answers["22"]["result"]["content"][0]["text"]
         .as_str()
         .unwrap();
+    let hunks: Vec<Value> = serde_json::from_str(staged).unwrap();
+    let brushes: u64 = hunks
+        .iter()
+        .map(|h| h["brushes_added"].as_u64().unwrap())
+        .sum();
+    assert_eq!(brushes, 6, "{staged}");
     assert!(staged.contains("info_player_start"), "{staged}");
 }
 
-// No spec statement: P6-36, P4-13: a read-only server refuses every map tool that writes, and
-// still opens and inspects the map
+// No spec statement: P6-36, P4-13: a read-only server refuses every map tool that writes,
+// map.open included, which replaces the open map; a map tool that reads is not refused
 #[test]
 fn a_read_only_server_refuses_the_map_tools_that_write() {
     let (server, map) = map_server("map-read-only", true);
@@ -538,23 +557,92 @@ fn a_read_only_server_refuses_the_map_tools_that_write() {
         .filter(|tool| tool.access == Access::Write)
         .map(|tool| tool.id)
         .collect();
-    assert!(writes.contains(&"map.place") && writes.contains(&"map.compile"));
-    let mut messages = vec![
-        init,
-        initialized,
-        call(1, "map.open", json!({ "path": map })),
-        call(2, "map.inspect", json!({})),
-    ];
+    for id in ["map.open", "map.place", "map.compile"] {
+        assert!(writes.contains(&id), "{id}");
+    }
+    let mut messages = vec![init, initialized, call(1, "map.staged", json!({}))];
     for (n, id) in (3..).zip(&writes) {
-        messages.push(call(n, id, json!({})));
+        let arguments = if *id == "map.open" {
+            json!({ "path": map })
+        } else {
+            json!({})
+        };
+        messages.push(call(n, id, arguments));
     }
     let answers = exchange(server, &messages);
-    assert_eq!(answers["1"]["result"]["isError"], false, "{}", answers["1"]);
-    assert_eq!(answers["2"]["result"]["isError"], false, "{}", answers["2"]);
+    let read = answers["1"]["result"].to_string();
+    assert!(!read.contains("outside the roots"), "{read}");
     for (n, id) in (3..).zip(&writes) {
         let answer = &answers[&n.to_string()]["result"];
         assert_eq!(answer["isError"], true, "{id}: {answer}");
         let text = answer["content"][0]["text"].as_str().unwrap();
         assert!(text.contains("outside the roots"), "{id}: {text}");
     }
+}
+
+// No spec statement: P6-36, P4-13: connected to the app, a map tool that writes is refused when
+// the map the app has open lies outside the write roots, since it may write beside it, and
+// nothing waits for review
+#[test]
+fn a_map_outside_the_write_roots_is_not_written() {
+    let root = project("map-outside", WORLD);
+    let elsewhere = project("map-elsewhere", WORLD);
+    let map = elsewhere.join("room.map");
+    std::fs::write(&map, "{\n\"classname\" \"worldspawn\"\n}\n").unwrap();
+    let socket = if cfg!(windows) {
+        PathBuf::from(format!(
+            r"\\.\pipe\qs-mcp-map-outside-{}",
+            std::process::id()
+        ))
+    } else {
+        root.join("app.sock")
+    };
+    let host = Host::listen(&socket, || {}).unwrap();
+    let (open, opened) = (root.clone(), map.clone());
+    // The app: its map open outside the server's roots; it answers the list and the inspect.
+    let app = std::thread::spawn(move || {
+        let mut registry = Registry::new();
+        register(&mut registry).unwrap();
+        let mut session = Session::new(Workbench::new(FsLoader, Config::default()), registry);
+        session
+            .execute("project.open", json!({ "path": open }))
+            .unwrap();
+        session
+            .execute("map.open", json!({ "path": opened }))
+            .unwrap();
+        for _ in 0..2 {
+            assert!(host.answer_next(&mut session));
+        }
+        session.execute("map.staged", json!({})).unwrap()
+    });
+    let settings = ServerSettings {
+        project: root.clone(),
+        read: vec![root.clone()],
+        write: vec![root.clone()],
+        name: "quakec-ide".to_owned(),
+        version: "0".to_owned(),
+    };
+    let connected = Server::start(
+        move || Connected::connect(&socket).map_err(|e| e.to_string()),
+        settings,
+        &AGENT_TOOLS,
+    )
+    .unwrap();
+    let [init, initialized] = opening("2025-11-25");
+    let answers = exchange(
+        connected,
+        &[
+            init,
+            initialized,
+            call(
+                1,
+                "map.place",
+                json!({ "classname": "light", "origin": [0.0, 0.0, 64.0] }),
+            ),
+        ],
+    );
+    let answer = &answers["1"]["result"];
+    assert_eq!(answer["isError"], true, "{answer}");
+    assert!(answer.to_string().contains("outside the roots"), "{answer}");
+    assert_eq!(app.join().unwrap(), json!([]));
 }

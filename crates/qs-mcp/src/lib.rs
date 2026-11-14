@@ -91,7 +91,7 @@ pub const AGENT_TOOLS: [Tool; 52] = [
     tool("engine.console", Access::Read),
     tool("engine.screenshot", Access::Write),
     tool("preview.reload", Access::Write),
-    tool("map.open", Access::Read),
+    tool("map.open", Access::Write),
     tool("map.inspect", Access::Read),
     tool("map.staged", Access::Read),
     tool("map.leaks", Access::Read),
@@ -121,30 +121,53 @@ pub const AGENT_TOOLS: [Tool; 52] = [
 
 /// The prefix of the map's commands, whose edits wait for review (P6-21).
 const MAP_COMMANDS: &str = "map.";
-/// The command that begins review of the open map's edits.
+/// The workbench's command that begins review of the open map's edits.
 const STAGE_MAP: &str = "map.stage";
-/// The command that ends the open map's review when nothing waits in it.
+/// The workbench's command that ends the open map's review when nothing waits in it.
 const UNSTAGE_MAP: &str = "map.unstage";
+/// The workbench's command that names the open map's file.
+const INSPECT_MAP: &str = "map.inspect";
+/// The workbench's command that opens a map in place of the open one.
+const OPEN_MAP: &str = "map.open";
+/// The workbench's command that writes the open map's BSP beside it.
+const COMPILE_MAP: &str = "map.compile";
 
-/// Runs `id` on `session`, a map command between `map.stage` and `map.unstage` as the built-in
-/// agent runs it (P6-21): its edits wait as hunks for a person to review, and one that changed
-/// nothing leaves no review open.
-fn run_reviewed<K: Commands>(
+impl Tool {
+    /// Whether it changes the open map, whose edits wait for review (P6-21).
+    fn edits_map(self) -> bool {
+        self.access == Access::Write && self.id.starts_with(MAP_COMMANDS)
+    }
+}
+
+/// Runs `tool` on `session` with `arguments`. A map tool that writes runs as the built-in
+/// agent's do (P6-21): only when the open map's file lies under a write root, since it may
+/// write beside it, and between `map.stage` and `map.unstage`, so its edits wait as hunks for
+/// a person to review and one that changed nothing leaves no review open. It is refused when
+/// review cannot begin, rather than run unreviewed. `map.open` replaces the open map, and its
+/// path is checked as an argument; `map.compile` changes no edit, so it opens no review.
+fn run_tool<K: Commands>(
     session: &mut K,
-    id: &str,
+    tool: Tool,
     arguments: Value,
+    settings: &ServerSettings,
 ) -> Result<Value, ToolError> {
-    let map_command = id.starts_with(MAP_COMMANDS);
-    if map_command {
-        // With no map open, or no review commands, there is nothing to begin; the map command
-        // itself says why it cannot run.
-        let _begun = session.run(STAGE_MAP, Value::Object(serde_json::Map::new()));
+    if !tool.edits_map() || tool.id == OPEN_MAP {
+        return session.run(tool.id, arguments);
     }
-    let result = session.run(id, arguments);
-    if map_command {
-        // Nothing to end is not a failure of the call.
-        let _ended = session.run(UNSTAGE_MAP, Value::Object(serde_json::Map::new()));
+    let none = || Value::Object(serde_json::Map::new());
+    let open = session.run(INSPECT_MAP, none())?;
+    let path = open.get("path").and_then(Value::as_str).unwrap_or_default();
+    let full = lexical(Path::new(path));
+    if !settings.write.iter().any(|root| lies_under(&full, root)) {
+        return Err(ToolError::OutsideRoots { path: full, tool });
     }
+    if tool.id == COMPILE_MAP {
+        return session.run(tool.id, arguments);
+    }
+    session.run(STAGE_MAP, none())?;
+    let result = session.run(tool.id, arguments);
+    // A review with nothing in it is ended; one the edit filled stays for the person.
+    let _ended = session.run(UNSTAGE_MAP, none());
     result
 }
 
@@ -293,7 +316,7 @@ impl Commands for Connected {
 
 /// One call for the session's thread: a command, its arguments, and where to send the result.
 struct Job {
-    name: String,
+    tool: Tool,
     arguments: Value,
     reply: oneshot::Sender<CallToolResult>,
 }
@@ -318,6 +341,8 @@ impl Server {
         settings: ServerSettings,
         tools: &'static [Tool],
     ) -> Result<Self, McpError> {
+        let settings = Arc::new(settings);
+        let shared = Arc::clone(&settings);
         let (jobs, inbox) = mpsc::channel::<Job>();
         let (ready, listed) = mpsc::channel::<Result<Vec<(Tool, McpTool)>, String>>();
         std::thread::spawn(move || {
@@ -341,7 +366,7 @@ impl Server {
                 return;
             }
             while let Ok(job) = inbox.recv() {
-                let result = match run_reviewed(&mut session, &job.name, job.arguments) {
+                let result = match run_tool(&mut session, job.tool, job.arguments, &shared) {
                     Ok(output) => tool_result(output),
                     Err(why) => tool_error(&why.to_string()),
                 };
@@ -356,7 +381,7 @@ impl Server {
         Ok(Self {
             jobs,
             tools: offered.into(),
-            settings: Arc::new(settings),
+            settings,
         })
     }
 
@@ -500,7 +525,7 @@ impl ServerHandler for Server {
         }
         let (reply, answer) = oneshot::channel();
         let job = Job {
-            name,
+            tool,
             arguments,
             reply,
         };
@@ -529,9 +554,8 @@ const DUPLEX_BUFFER: usize = 1 << 16;
 const INSTRUCTIONS: &str = "QuakeC Studio's tools over the project this server was started on: \
     compile, test, run QuakeC in the VM, play scenarios, inspect and drive the running game, \
     read files, stage edits as hunks and keep checkpoints; open a map, place and key its \
-    entities, build its brushes, compile it and find its leaks, each map edit staged for review. \
-    Paths are the project's, absolute or \
-    relative to it.";
+    entities, build its brushes, compile it and find its leaks, each map edit staged for \
+    review. Paths are the project's, absolute or relative to it.";
 
 /// A tool's result for `output`: its JSON as text, and as structured content when it is an
 /// object (MCP 2026-07-28, "Structured Content").
