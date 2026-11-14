@@ -1350,4 +1350,6 @@ pub fn register_map_game<C: HasMap + 'static>(
 }
 
 #[cfg(test)]
+pub(crate) mod testing;
+#[cfg(test)]
 mod tests;

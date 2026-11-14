@@ -6,12 +6,11 @@
     reason = "test code: a failed unwrap or index is a failed test"
 )]
 
-use qc_project::FsLoader;
-use qs_commands::{Registry, Session};
+use qs_commands::Session;
 use serde_json::json;
 
+use crate::map_edit::testing::MapContext;
 use crate::map_edit::{MAP_MOVE_TO, MAP_OPEN, MAP_OUTLINE, MAP_SET_KEY, OutlineRow, RowKind};
-use crate::{Config, Workbench, register};
 
 /// A TrenchBroom map: two linked groups each with an army, a plain group inside a layer with a
 /// door in it, the layer, a light in it, and a monster and a trigger in no layer.
@@ -31,25 +30,23 @@ const MAP: &str = "{\n\"classname\" \"worldspawn\"\n{\n( 0 0 0 ) ( 0 1 0 ) ( 1 0
 {\n\"classname\" \"trigger_once\"\n\"target\" \"gate\"\n}\n\
 {\n\"classname\" \"monster_ogre\"\n\"origin\" \"64 0 0\"\n}\n";
 
-fn open(name: &str) -> Session<Workbench<FsLoader>> {
+fn open(name: &str) -> Session<MapContext> {
     open_text(name, MAP)
 }
 
 /// `text` open as a map, in a fresh directory named `name`.
-fn open_text(name: &str, text: &str) -> Session<Workbench<FsLoader>> {
+fn open_text(name: &str, text: &str) -> Session<MapContext> {
     let dir = std::env::temp_dir().join(format!("qs-wb-outline-{name}-{}", std::process::id()));
     let _gone = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("outline.map");
     std::fs::write(&path, text).unwrap();
-    let mut registry = Registry::new();
-    register(&mut registry).unwrap();
-    let mut session = Session::new(Workbench::new(FsLoader, Config::default()), registry);
+    let mut session = MapContext::session();
     session.execute(MAP_OPEN, json!({ "path": path })).unwrap();
     session
 }
 
-fn outline(session: &mut Session<Workbench<FsLoader>>, filter: &str) -> Vec<OutlineRow> {
+fn outline(session: &mut Session<MapContext>, filter: &str) -> Vec<OutlineRow> {
     let rows = session
         .execute(MAP_OUTLINE, json!({ "filter": filter }))
         .unwrap();

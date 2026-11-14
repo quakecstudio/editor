@@ -6,14 +6,13 @@
     reason = "test code: a failed unwrap or index is a failed test"
 )]
 
-use qc_project::FsLoader;
-use qs_commands::{Registry, Session};
+use qs_commands::Session;
 use serde_json::json;
 
+use crate::map_edit::testing::MapContext;
 use crate::map_edit::{MAP_BRUSH_SHAPE, MAP_OPEN};
-use crate::{Config, Workbench, register};
 
-fn open(name: &str) -> Session<Workbench<FsLoader>> {
+fn open(name: &str) -> Session<MapContext> {
     let dir = std::env::temp_dir().join(format!("qs-wb-shapes-{name}-{}", std::process::id()));
     let _gone = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -23,14 +22,12 @@ fn open(name: &str) -> Session<Workbench<FsLoader>> {
         "{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"func_wall\"\n}\n",
     )
     .unwrap();
-    let mut registry = Registry::new();
-    register(&mut registry).unwrap();
-    let mut session = Session::new(Workbench::new(FsLoader, Config::default()), registry);
+    let mut session = MapContext::session();
     session.execute(MAP_OPEN, json!({ "path": path })).unwrap();
     session
 }
 
-fn brushes(session: &Session<Workbench<FsLoader>>, entity: usize) -> Vec<qs_map::Brush> {
+fn brushes(session: &Session<MapContext>, entity: usize) -> Vec<qs_map::Brush> {
     let map = session.context().map().unwrap();
     map.file().entities[entity].brushes().cloned().collect()
 }

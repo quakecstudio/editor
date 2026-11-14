@@ -8,16 +8,15 @@
               on the grid, exact"
 )]
 
-use qc_project::FsLoader;
-use qs_commands::{Registry, Session};
+use qs_commands::Session;
 use serde_json::{Value, json};
 
+use crate::map_edit::testing::MapContext;
 use crate::map_edit::{
     MAP_BRUSH_CHAMFER, MAP_BRUSH_EXTRUDE, MAP_BRUSH_HOLLOW, MAP_BRUSH_INTERSECT, MAP_BRUSH_SCALE,
     MAP_BRUSH_SHEAR, MAP_BRUSH_SPLIT_EDGE, MAP_BRUSH_SPLIT_FACE, MAP_BRUSH_SWEEP,
     MAP_BRUSH_VERTICES, MAP_OPEN,
 };
-use crate::{Config, Workbench, register};
 
 /// A world with two boxes of `rock`: one 64 units across at the origin, one beside it
 /// overlapping its far half.
@@ -41,25 +40,23 @@ fn map_text() -> String {
     String::from_utf8(file.to_bytes()).unwrap()
 }
 
-fn open(name: &str) -> Session<Workbench<FsLoader>> {
+fn open(name: &str) -> Session<MapContext> {
     let dir = std::env::temp_dir().join(format!("qs-wb-tools-{name}-{}", std::process::id()));
     let _gone = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("tools.map");
     std::fs::write(&path, map_text()).unwrap();
-    let mut registry = Registry::new();
-    register(&mut registry).unwrap();
-    let mut session = Session::new(Workbench::new(FsLoader, Config::default()), registry);
+    let mut session = MapContext::session();
     session.execute(MAP_OPEN, json!({ "path": path })).unwrap();
     session
 }
 
-fn text(session: &Session<Workbench<FsLoader>>) -> String {
+fn text(session: &Session<MapContext>) -> String {
     String::from_utf8(session.context().map().unwrap().file().to_bytes()).unwrap()
 }
 
 /// The world's brushes.
-fn world(session: &Session<Workbench<FsLoader>>) -> Vec<qs_map::Brush> {
+fn world(session: &Session<MapContext>) -> Vec<qs_map::Brush> {
     let map = session.context().map().unwrap();
     map.file().entities[0].brushes().cloned().collect()
 }

@@ -6,13 +6,11 @@
     reason = "test code: a failed unwrap or index is a failed test"
 )]
 
-use qc_project::FsLoader;
-use qs_commands::{Registry, Session};
 use serde_json::json;
 
 use super::MapInspected;
-use crate::map_edit::{MAP_INSPECT, MAP_OPEN, MAP_PLACE, register_map_edit};
-use crate::{Config, Workbench};
+use crate::map_edit::testing::MapContext;
+use crate::map_edit::{MAP_INSPECT, MAP_OPEN, MAP_PLACE};
 
 /// The world, a group `Armory` with a brush from 0 to 128 by 128 by 64, and a monster outside it.
 const MAP: &str = "{\n\"classname\" \"worldspawn\"\n}\n\
@@ -32,9 +30,7 @@ fn the_map_is_inspected_by_room() {
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("keep.map");
     std::fs::write(&path, MAP).unwrap();
-    let mut registry = Registry::new();
-    register_map_edit(&mut registry).unwrap();
-    let mut session = Session::new(Workbench::new(FsLoader, Config::default()), registry);
+    let mut session = MapContext::session();
     assert!(
         session.execute(MAP_INSPECT, json!({})).is_err(),
         "no map open"

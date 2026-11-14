@@ -8,15 +8,14 @@
 
 use std::path::PathBuf;
 
-use qc_project::FsLoader;
-use qs_commands::{Registry, Session};
+use qs_commands::Session;
 use serde_json::json;
 
+use crate::map_edit::testing::MapContext;
 use crate::map_edit::{
     EntityIndex, MAP_DELETE, MAP_EXPORT, MAP_HIDE, MAP_ISOLATE, MAP_LAYERS, MAP_LOCK, MAP_MOVE,
     MAP_OPEN, MAP_SAVE, MAP_SELECT, MAP_SET_KEY, MAP_SET_LAYER, MAP_SHOW_ALL, MAP_UNLOCK_ALL,
 };
-use crate::{Config, Workbench, register};
 
 /// A map as TrenchBroom writes one: two linked groups from its manual, group 1 moved 128
 /// along x, each with a brush and an army; and a locked layer holding a light.
@@ -36,26 +35,24 @@ const MAP: &str = "// Game: Quake\n// Format: Valve\n{\n\"classname\" \"worldspa
 {\n\"classname\" \"light\"\n\"origin\" \"0 0 64\"\n\"_tb_layer\" \"3\"\n}\n";
 
 /// [`MAP`] open in a session, in a fresh directory named `name`.
-fn open(name: &str) -> (PathBuf, Session<Workbench<FsLoader>>) {
+fn open(name: &str) -> (PathBuf, Session<MapContext>) {
     let dir = std::env::temp_dir().join(format!("qs-wb-groups-{name}-{}", std::process::id()));
     let _gone = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("linked.map");
     std::fs::write(&path, MAP).unwrap();
-    let mut registry = Registry::new();
-    register(&mut registry).unwrap();
-    let mut session = Session::new(Workbench::new(FsLoader, Config::default()), registry);
+    let mut session = MapContext::session();
     session.execute(MAP_OPEN, json!({ "path": path })).unwrap();
     (path, session)
 }
 
 /// The open map's text.
-fn text(session: &Session<Workbench<FsLoader>>) -> String {
+fn text(session: &Session<MapContext>) -> String {
     String::from_utf8(session.context().map().unwrap().file().to_bytes()).unwrap()
 }
 
 /// The value of `key` on the open map's entity at `entity`.
-fn value(session: &Session<Workbench<FsLoader>>, entity: usize, key: &str) -> Option<String> {
+fn value(session: &Session<MapContext>, entity: usize, key: &str) -> Option<String> {
     let map = session.context().map()?;
     map.file().entities[entity]
         .value(key.as_bytes())
@@ -171,7 +168,7 @@ fn a_locked_layer_refuses_edits_and_an_export_leaves_it_out() {
 #[test]
 fn a_selection_is_hidden_isolated_and_locked() {
     let (_, mut session) = open("view");
-    let hidden = |session: &Session<Workbench<FsLoader>>| {
+    let hidden = |session: &Session<MapContext>| {
         let map = session.context().map().unwrap();
         (1..7)
             .filter(|&e| map.is_hidden(EntityIndex::new(e)))
@@ -328,9 +325,7 @@ fn moving_an_outer_group_leaves_the_linked_copy() {
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("outer.map");
     std::fs::write(&path, &nested).unwrap();
-    let mut registry = Registry::new();
-    register(&mut registry).unwrap();
-    let mut session = Session::new(Workbench::new(FsLoader, Config::default()), registry);
+    let mut session = MapContext::session();
     session.execute(MAP_OPEN, json!({ "path": path })).unwrap();
     session
         .execute(MAP_MOVE, json!({ "entity": 7, "by": [0.0, 64.0, 0.0] }))
