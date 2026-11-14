@@ -42,7 +42,7 @@ pub fn encode_header(header: &Header, out: &mut Vec<u8>) {
 }
 
 impl Record {
-    /// Appends one binary self to `out` (TRACE-5.6), for an emitter that streams its trace.
+    /// Appends the record's binary form to `out` (TRACE-5.6), for an emitter that streams its trace.
     pub fn encode(&self, out: &mut Vec<u8>) {
         match self {
             Record::Run { function, changes } => {

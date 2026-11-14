@@ -8,10 +8,10 @@
 //! The text and arithmetic of vkQuake's string and math extension builtins (BUILTIN-18.31 to
 //! BUILTIN-18.35): each function is the builtin's body without its parameter reads.
 
+use crate::{NIBBLE_BITS, STRINGTEMP_LENGTH, STRINGTEMP_TEXT};
+
 use qc_vm::convert::{double_to_float, float_to_int, int_to_float};
 
-/// vkQuake's `STRINGTEMP_LENGTH`, a temporary string's bytes, its zero among them.
-const STRINGTEMP_LENGTH: usize = 1024;
 /// 2^63's exponent: the first float past an `i64` (BUILTIN-18.32).
 const I64_LIMIT_EXPONENT: i32 = 63;
 /// `chr2str` stops 6 bytes short of a temporary string, room for one UTF-8 character and the
@@ -25,8 +25,6 @@ const BYTE_CODES: u32 = 0x100;
 /// terminator; `uri_unescape` reads `%` and two digits (BUILTIN-18.32).
 const URI_ESCAPE_ROOM: usize = 4;
 const URI_ESCAPE_LENGTH: usize = 3;
-/// A hexadecimal digit's bits, and its low digit's mask.
-const NIBBLE_BITS: u32 = 4;
 const NIBBLE_MASK: u8 = 0xf;
 /// The value of the hexadecimal digit `A`.
 const HEX_TEN: u8 = 10;
@@ -114,9 +112,9 @@ pub fn chr2str(codes: &[u32]) -> Vec<u8> {
 /// never past a temporary string.
 #[must_use]
 pub fn strpad(pad: i32, text: &[u8]) -> Vec<u8> {
-    let most = i32::try_from(STRINGTEMP_LENGTH.saturating_sub(1)).unwrap_or(i32::MAX);
+    let most = i32::try_from(STRINGTEMP_TEXT).unwrap_or(i32::MAX);
     let len = i32::try_from(text.len()).unwrap_or(i32::MAX);
-    let room = STRINGTEMP_LENGTH.saturating_sub(1);
+    let room = STRINGTEMP_TEXT;
     if pad < 0 {
         let spaces = pad.wrapping_neg().wrapping_sub(len).clamp(0, most);
         let spaces = usize::try_from(spaces).unwrap_or(0);

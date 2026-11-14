@@ -12,6 +12,8 @@
 //!
 //! Implements RRE-1.2 to RRE-1.9, RRE-1.7 and RRE-1.8.
 
+use crate::DECIMAL;
+
 /// The localization file's path in the game's files (RRE-1, `LOC_Init`).
 pub const RRE_LOC_FILE: &str = "localization/loc_english.txt";
 
@@ -34,8 +36,6 @@ struct Entry {
 
 /// The UTF-8 byte order mark a file may start with, skipped (RRE-1.7).
 const UTF8_BOM: [u8; 3] = [0xEF, 0xBB, 0xBF];
-/// An argument number's base, `{0}` to `{9}` and on.
-const DECIMAL: i32 = 10;
 
 /// A loaded localization file, `localization_t` (RRE-1.2): the text as `LOC_LoadFile` left it,
 /// the entries in file order and the open-addressed table of their indices plus one.
@@ -306,7 +306,7 @@ fn loc_parse_arg(text: &[u8], at: usize) -> Option<(i32, usize)> {
     let mut arg: i32 = 0;
     while byte(i).is_ascii_digit() {
         arg = arg
-            .wrapping_mul(DECIMAL)
+            .wrapping_mul(i32::from(DECIMAL))
             .wrapping_add(i32::from(byte(i).wrapping_sub(b'0')));
         i = i.saturating_add(1);
     }

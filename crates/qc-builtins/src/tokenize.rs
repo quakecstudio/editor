@@ -13,6 +13,8 @@
 //! `tokenizebyseparator` fill and `argv`, `argv_start_index` and `argv_end_index` read
 //! (BUILTIN-18.23, BUILTIN-18.24).
 
+use crate::STRINGTEMP_TEXT;
+
 /// The most tokens the list holds, `MAXQCTOKENS`.
 pub const MAX_QC_TOKENS: usize = 64;
 
@@ -24,8 +26,6 @@ const COM_PARSE_MAX_TOKEN_SIZE: usize = 4096;
 pub const MAX_SEPARATORS: usize = 7;
 /// A space, the highest byte C's signed `char` reads as white space: `c <= ' '`.
 pub(crate) const SPACE: i8 = 32;
-/// A temporary string's most bytes before its terminator, which `q_strlcpy` copies.
-const TEMP_STRING_LENGTH: usize = 1023;
 
 /// One token: its text and the byte offsets in the tokenized string it starts and ends at.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -134,7 +134,7 @@ impl Tokens {
     pub fn argv(&self, index: TokenIndex) -> Option<Vec<u8>> {
         self.get(index).map(|token| {
             let text = token.text.split(|&b| b == 0).next().unwrap_or_default();
-            text.get(..text.len().min(TEMP_STRING_LENGTH))
+            text.get(..text.len().min(STRINGTEMP_TEXT))
                 .unwrap_or_default()
                 .to_vec()
         })

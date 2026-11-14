@@ -4,6 +4,8 @@
 //! C's `atof`, `strtod` of the longest prefix that is a number, which vkQuake's extension
 //! builtins call (BUILTIN-18.25).
 
+use crate::{DECIMAL, NIBBLE_BITS};
+
 /// `atof(text)`: leading white space skipped, then an optional sign and a decimal number with
 /// an optional exponent, a hexadecimal one (`0x`, an optional `p` exponent), `inf`, `infinity`
 /// or `nan` in any case; 0 when none is there.
@@ -117,7 +119,7 @@ fn hexadecimal(text: &[u8]) -> Option<f64> {
         let mut seen = false;
         while let Some(d) = rest.get(digit_at).filter(|b| b.is_ascii_digit()) {
             exp = exp
-                .saturating_mul(DECIMAL)
+                .saturating_mul(i64::from(DECIMAL))
                 .saturating_add(i64::from(d.saturating_sub(b'0')));
             seen = true;
             digit_at = digit_at.saturating_add(1);
@@ -150,9 +152,6 @@ struct Mantissa {
 const KEPT: u32 = 60;
 /// A hexadecimal digit's base and bits.
 const HEX: u32 = 16;
-const HEX_BITS: i64 = 4;
-/// A decimal exponent's base.
-const DECIMAL: i64 = 10;
 /// The letters `inf` and `nan` have.
 const SPECIAL_LENGTH: usize = 3;
 /// An `f64`'s mantissa bits below the implicit one, its exponent bias, its largest
@@ -176,12 +175,12 @@ impl Mantissa {
                 .saturating_mul(u64::from(HEX))
                 .saturating_add(u64::from(digit));
             if place == Place::Fraction {
-                self.scale = self.scale.saturating_sub(HEX_BITS);
+                self.scale = self.scale.saturating_sub(i64::from(NIBBLE_BITS));
             }
         } else {
             self.sticky |= digit != 0;
             if place == Place::Whole {
-                self.scale = self.scale.saturating_add(HEX_BITS);
+                self.scale = self.scale.saturating_add(i64::from(NIBBLE_BITS));
             }
         }
     }

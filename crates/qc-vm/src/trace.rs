@@ -87,10 +87,10 @@ impl Trace {
         self.header
     }
 
-    /// Appends a record that carries no change set, such as a string record (TRACE-4.10),
-    /// which a host writes before the next change-carrying record.
-    pub fn push(&mut self, record: Record) {
-        self.records.push(record);
+    /// Appends a string record, engine string `value` now holding `text` (TRACE-4.10), which a
+    /// host writes before the next change-carrying record; it carries no change set.
+    pub fn push_string(&mut self, value: u32, text: Text) {
+        self.records.push(Record::String { value, text });
     }
 
     /// Drops the records so far, for a run whose records are not kept; the change baseline

@@ -7,10 +7,10 @@
 
 //! vkQuake's string buffers (BUILTIN-18.39): 64 buffers, each a list of strings or holes.
 
+use crate::STRINGTEMP_TEXT;
+
 /// `NUMSTRINGBUFS`, how many buffers there are.
 const NUMSTRINGBUFS: usize = 64;
-/// vkQuake's `STRINGTEMP_LENGTH`, the most bytes `bufstr_get` returns, its zero among them.
-const STRINGTEMP_LENGTH: usize = 1024;
 
 /// A buffer's slot, from 0: its handle less `BUFSTRBASE`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -116,7 +116,7 @@ impl StringBuffers {
     pub fn get(&mut self, slot: BufferSlot, index: StringIndex) -> Option<Vec<u8>> {
         let buffer = self.buffer(slot)?;
         let mut text = buffer.get(usize::try_from(index.get()).ok()?)?.clone()?;
-        text.truncate(STRINGTEMP_LENGTH.saturating_sub(1));
+        text.truncate(STRINGTEMP_TEXT);
         Some(text)
     }
 

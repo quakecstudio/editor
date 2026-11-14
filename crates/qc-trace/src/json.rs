@@ -39,7 +39,7 @@ pub fn header_to_json(header: &Header) -> String {
 }
 
 impl Record {
-    /// One self's JSON line, ending in a line feed (TRACE-6.3 to TRACE-6.6).
+    /// The record's JSON line, ending in a line feed (TRACE-6.3 to TRACE-6.6).
     #[must_use]
     pub fn to_json(&self) -> String {
         let mut out = String::new();

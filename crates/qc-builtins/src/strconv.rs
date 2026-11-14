@@ -8,6 +8,8 @@
 //! vkQuake's `strconv`: a string's case and Quake's coloured-character offsets changed byte by
 //! byte (BUILTIN-18.17).
 
+use crate::STRINGTEMP_TEXT;
+
 /// The red half of Quake's characters starts at 128 (BUILTIN-18.17).
 const RED: u8 = 128;
 /// The four digit rows: white, red, and the two special rows 30 below and 98 above the white
@@ -16,13 +18,14 @@ const WHITE_ZERO: u8 = b'0';
 const RED_ZERO: u8 = WHITE_ZERO.wrapping_add(RED);
 const LOW_ZERO: u8 = WHITE_ZERO.wrapping_sub(30);
 const HIGH_ZERO: u8 = WHITE_ZERO.wrapping_add(98);
+/// The rows' nines.
+const LOW_NINE: u8 = LOW_ZERO.wrapping_add(9);
+const HIGH_NINE: u8 = HIGH_ZERO.wrapping_add(9);
 /// `convt` 5 and 6 alternate the halves, 5 starting white (BUILTIN-18.17).
 const ALTERNATE_WHITE_FIRST: i32 = 5;
 /// A byte's position in its half, and the control characters, below 16, that are kept.
 const HALF_MASK: u8 = 0x7f;
 const CONTROL_CHARACTERS: u8 = 16;
-/// `strconv`'s most bytes, a temporary string less its terminator (BUILTIN-18.17).
-const STRCONV_LENGTH: usize = 1023;
 
 /// `chrconv_number`: digit `byte` of the digit row starting at `base`, moved to the row `conv`
 /// names (1 white, 2 red, 3 and 4 the special rows; any other keeps it).
@@ -76,18 +79,17 @@ fn alpha(byte: u8, case_base: u8, half: u8, convc: i32, convt: i32, at: usize) -
 
 /// `strconv(ccase, redalpha, rednum, s)`'s text of `text`, its first 1023 bytes (BUILTIN-18.17).
 pub(crate) fn strconv(ccase: i32, redalpha: i32, rednum: i32, text: &[u8]) -> Vec<u8> {
-    let text = text.get(..text.len().min(STRCONV_LENGTH)).unwrap_or(text);
+    let text = text.get(..text.len().min(STRINGTEMP_TEXT)).unwrap_or(text);
     let mut out = Vec::with_capacity(text.len());
     for (at, &byte) in text.iter().enumerate() {
         let red = byte.wrapping_sub(RED);
-        let nine = |zero: u8| zero.wrapping_add(b'9' - b'0');
         let converted = if byte.is_ascii_digit() {
             number(byte, WHITE_ZERO, rednum)
         } else if red.is_ascii_digit() && byte >= RED {
             number(byte, RED_ZERO, rednum)
-        } else if (HIGH_ZERO..=nine(HIGH_ZERO)).contains(&byte) {
+        } else if (HIGH_ZERO..=HIGH_NINE).contains(&byte) {
             number(byte, HIGH_ZERO, rednum)
-        } else if (LOW_ZERO..=nine(LOW_ZERO)).contains(&byte) {
+        } else if (LOW_ZERO..=LOW_NINE).contains(&byte) {
             number(byte, LOW_ZERO, rednum)
         } else if byte.is_ascii_lowercase() {
             alpha(byte, b'a', 0, ccase, redalpha, at)

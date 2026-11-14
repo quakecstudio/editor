@@ -11,7 +11,7 @@
 
 use libfuzzer_sys::fuzz_target;
 use qc_builtins::localization::{Localization, RRE_VARSTRING_LEN};
-use qc_builtins::tokenize::{MAX_QC_TOKENS, MAX_SEPARATORS, Tokens};
+use qc_builtins::tokenize::{MAX_QC_TOKENS, MAX_SEPARATORS, TokenIndex, Tokens};
 use qc_builtins::{EngineProfile, MockBuiltins, MockEngine};
 use qc_progs::opcode::Opcode;
 use qc_progs::{Function, Progs, ProgsFile, Statement, write};
@@ -74,19 +74,19 @@ fn check_tokens(tokens: &Tokens, count: usize, text: &[u8]) {
     let len = i64::try_from(text.len()).unwrap();
     let mut last = 0;
     for index in 0..count {
-        let (start, end) = (tokens.start(index), tokens.end(index));
+        let (start, end) = (tokens.start(TokenIndex::new(index)), tokens.end(TokenIndex::new(index)));
         assert!(
             last <= start && start <= end && end <= len,
             "{start} {end} {len}"
         );
         last = end;
-        let word = tokens.argv(index).unwrap();
+        let word = tokens.argv(TokenIndex::new(index)).unwrap();
         assert!(word.len() <= TEMP_TEXT);
-        assert_eq!(tokens.argv(index - count), Some(word));
+        assert_eq!(tokens.argv(TokenIndex::new(index - count)), Some(word));
     }
     for index in [count, -count - 1, i32::MAX, i32::MIN] {
-        assert_eq!(tokens.argv(index), None);
-        assert_eq!((tokens.start(index), tokens.end(index)), (-1, -1));
+        assert_eq!(tokens.argv(TokenIndex::new(index)), None);
+        assert_eq!((tokens.start(TokenIndex::new(index)), tokens.end(TokenIndex::new(index))), (-1, -1));
     }
 }
 
@@ -98,11 +98,11 @@ fn tokenizers(text: &[u8], separators: &[Vec<u8>]) {
     let count = tokens.split(text, separators);
     check_tokens(&tokens, count, text);
     for index in 0..i32::try_from(count).unwrap() {
-        let start = usize::try_from(tokens.start(index)).unwrap();
-        let end = usize::try_from(tokens.end(index)).unwrap();
+        let start = usize::try_from(tokens.start(TokenIndex::new(index))).unwrap();
+        let end = usize::try_from(tokens.end(TokenIndex::new(index))).unwrap();
         let slice = text[start..end].split(|&b| b == 0).next().unwrap();
         assert_eq!(
-            tokens.argv(index).unwrap(),
+            tokens.argv(TokenIndex::new(index)).unwrap(),
             slice[..slice.len().min(TEMP_TEXT)]
         );
     }

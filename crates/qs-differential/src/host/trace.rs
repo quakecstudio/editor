@@ -32,8 +32,9 @@ use qc_vm::{Builtins, Context, Machine, Observer, RunError};
 pub struct TraceBuilder {
     /// The VM's trace, which writes every change-carrying record (TRACE-3, TRACE-4).
     trace: VmTrace,
-    /// String records waiting to be flushed before the next change-carrying record (TRACE-4.10).
-    pending_strings: Vec<Record>,
+    /// String records, each a value and its text, waiting to be flushed before the next
+    /// change-carrying record (TRACE-4.10).
+    pending_strings: Vec<(u32, Text)>,
 }
 
 /// The `ftos`/`vtos` buffer's new value and text after a builtin call, waiting for the observer
@@ -172,10 +173,7 @@ impl TraceBuilder {
     /// `begin_change_record`).
     pub fn string_set(&mut self, value: i32, text: Vec<u8>) {
         if let Ok(text) = Text::new(text) {
-            self.pending_strings.push(Record::String {
-                value: value.cast_unsigned(),
-                text,
-            });
+            self.pending_strings.push((value.cast_unsigned(), text));
         }
     }
 
@@ -194,8 +192,8 @@ impl TraceBuilder {
 
     /// Flushes the pending string records before a change-carrying record (TRACE-4.10).
     fn flush_strings(&mut self) {
-        for record in self.pending_strings.drain(..) {
-            self.trace.push(record);
+        for (value, text) in self.pending_strings.drain(..) {
+            self.trace.push_string(value, text);
         }
     }
 }

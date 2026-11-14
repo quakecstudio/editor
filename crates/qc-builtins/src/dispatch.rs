@@ -36,6 +36,7 @@ use crate::tokenize::MAX_SEPARATORS;
 use crate::tokenize::TokenIndex;
 use crate::userinfo::ClientCommand;
 use crate::userinfo::ClientSlot;
+use crate::{STRINGTEMP_LENGTH, STRINGTEMP_TEXT};
 use crate::{atof, cstring, printf, strconv, strftime, vkstrings};
 
 /// The builtin dispatch over a mock engine (DIFF-6, DIFF-7).
@@ -1161,10 +1162,8 @@ impl printf::Args for ParmArgs<'_, '_, '_, '_> {
     }
 }
 
-/// vkQuake's `STRINGTEMP_LENGTH`, a temporary string's buffer, its terminator included.
-const VKQUAKE_STRINGTEMP_LENGTH: usize = 1024;
-/// A temporary string's most bytes before its terminator.
-const TEMP_STRING_LENGTH: usize = VKQUAKE_STRINGTEMP_LENGTH - 1;
+/// [`STRINGTEMP_TEXT`] for `substring`'s `int` arithmetic.
+const STRINGTEMP_TEXT_I32: i32 = 1023;
 /// `clienttype`'s value for an edict that is no client slot (BUILTIN-18.20).
 const CLIENTTYPE_NONE: f32 = 3.0;
 /// `sound`'s volume, `volume * 255`, its attenuation's most and its channels (BUILTIN-12.3).
@@ -1429,7 +1428,7 @@ impl MockBuiltins {
         };
         let value = match text {
             Some(mut text) => {
-                text.truncate(VKQUAKE_STRINGTEMP_LENGTH.saturating_sub(1));
+                text.truncate(STRINGTEMP_TEXT);
                 self.engine.strings.make(text)
             }
             None => 0,
@@ -1476,7 +1475,7 @@ impl MockBuiltins {
     /// bytes.
     fn b_strcase(&mut self, context: &mut Context<'_, '_>, case: Case) -> Result<(), BuiltinError> {
         let mut text = read_parm_string(context, &self.engine, PARM0)?;
-        text.truncate(VKQUAKE_STRINGTEMP_LENGTH.saturating_sub(1));
+        text.truncate(STRINGTEMP_TEXT);
         match case {
             Case::Lower => text.make_ascii_lowercase(),
             Case::Upper => text.make_ascii_uppercase(),
@@ -1537,8 +1536,8 @@ impl MockBuiltins {
             let part = read_parm_string(context, &self.engine, n)?;
             let part = part.split(|&b| b == 0).next().unwrap_or_default();
             out.extend_from_slice(part);
-            if out.len() >= VKQUAKE_STRINGTEMP_LENGTH {
-                out.truncate(VKQUAKE_STRINGTEMP_LENGTH.saturating_sub(1));
+            if out.len() >= STRINGTEMP_LENGTH {
+                out.truncate(STRINGTEMP_TEXT);
                 break;
             }
         }
@@ -1566,9 +1565,7 @@ impl MockBuiltins {
             Vec::new()
         } else {
             let rest = slen.wrapping_sub(start);
-            let take = length
-                .min(rest)
-                .min(i32::try_from(TEMP_STRING_LENGTH).unwrap_or(i32::MAX));
+            let take = length.min(rest).min(STRINGTEMP_TEXT_I32);
             let from = usize::try_from(start).unwrap_or(0);
             let to = from.saturating_add(usize::try_from(take).unwrap_or(0));
             text.get(from..to).unwrap_or_default().to_vec()

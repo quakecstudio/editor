@@ -16,9 +16,7 @@
 use qc_types::PROGS_VECTOR_SLOTS;
 
 use crate::BuiltinError;
-
-/// vkQuake's `STRINGTEMP_LENGTH`, the buffer `sprintf` writes into, its terminator included.
-const STRINGTEMP_LENGTH: usize = 1024;
+use crate::{DECIMAL, STRINGTEMP_LENGTH, STRINGTEMP_TEXT};
 
 /// The longest precision written out. A longer one only adds digits past the buffer, or
 /// zeros that `%g` strips, since a double's exact decimal has fewer than 1100 digits after
@@ -26,8 +24,6 @@ const STRINGTEMP_LENGTH: usize = 1024;
 const MAX_PRECISION: usize = 2000;
 /// `%p`'s width when none is given, eight hexadecimal digits (BUILTIN-18.8).
 const POINTER_WIDTH: i64 = 8;
-/// `strtol`'s base.
-const DECIMAL: i64 = 10;
 /// A wide argument's high word's shift.
 const WORD_BITS: u32 = 32;
 /// `uint64_t`'s top bit, set back after the value less 2^63 is converted.
@@ -100,7 +96,7 @@ struct Out {
 impl Out {
     /// Whether a directive is written: `if (o < end - 1)`.
     fn has_room(&self) -> bool {
-        self.bytes.len() < STRINGTEMP_LENGTH.saturating_sub(1)
+        self.bytes.len() < STRINGTEMP_TEXT
     }
 
     /// Appends what `q_snprintf (o, end - o, ...)` then `o += strlen (o)` keep of `text`: as
@@ -189,7 +185,7 @@ impl Reader<'_> {
         let mut value = 0_i64;
         while self.peek().is_ascii_digit() {
             value = value
-                .saturating_mul(DECIMAL)
+                .saturating_mul(i64::from(DECIMAL))
                 .saturating_add(i64::from(self.peek().saturating_sub(b'0')));
             self.at = self.at.saturating_add(1);
         }

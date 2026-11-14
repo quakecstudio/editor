@@ -19,6 +19,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::DECIMAL;
 use crate::tokenize::{SPACE, com_parse, signed};
 
 /// `SERVER_INFO_STRING_SIZE`, the bytes of a client's `userinfo`, its zero among them.
@@ -35,12 +36,10 @@ const MAX_ARGS: usize = 80;
 const ARG_SIZE: usize = 1024;
 /// A colour's bits, `& 15`, the highest colour, 13, and the top colour's shift (BUILTIN-18.27).
 const COLOR_MASK: i32 = 15;
-const MAX_COLOR: i32 = 13;
+const MAX_COLOR: u8 = 13;
 const TOP_SHIFT: u32 = 4;
 /// `setinfo <key> <value>`'s words (BUILTIN-18.28).
 const SETINFO_WORDS: usize = 3;
-/// `atoi`'s base.
-const DECIMAL: i64 = 10;
 
 /// One client's info string and what vkQuake decodes from it (BUILTIN-18.27).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -111,7 +110,7 @@ impl ClientInfo {
     fn decode(&mut self) -> Decoded {
         let colour = |info: &[u8], key: &[u8]| -> u8 {
             let low = atoi(&info_get_key(info, key, DECODE_SIZE)) & COLOR_MASK;
-            u8::try_from(low.min(MAX_COLOR)).unwrap_or_default()
+            u8::try_from(low.min(i32::from(MAX_COLOR))).unwrap_or(MAX_COLOR)
         };
         let top = colour(&self.userinfo, b"topcolor");
         let bottom = colour(&self.userinfo, b"bottomcolor");
@@ -346,9 +345,13 @@ fn atoi(text: &[u8]) -> i32 {
     while at(text, i).is_ascii_digit() {
         let digit = i64::from(at(text, i).wrapping_sub(b'0'));
         value = if negative {
-            value.saturating_mul(DECIMAL).saturating_sub(digit)
+            value
+                .saturating_mul(i64::from(DECIMAL))
+                .saturating_sub(digit)
         } else {
-            value.saturating_mul(DECIMAL).saturating_add(digit)
+            value
+                .saturating_mul(i64::from(DECIMAL))
+                .saturating_add(digit)
         };
         i = i.saturating_add(1);
     }

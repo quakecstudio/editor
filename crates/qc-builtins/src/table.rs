@@ -372,13 +372,13 @@ const fn b(
 /// A `None` for a number from 1 to 78 is a `PF_Fixme` gap; a `None` for 0 or a number above 78
 /// is outside the table (the VM rejects those before dispatch, VM-14.7, LIMIT-5).
 #[must_use]
-pub fn lookup(number: u32) -> Option<&'static Builtin> {
-    BUILTINS.iter().find(|entry| entry.number.get() == number)
+pub fn lookup(number: BuiltinNumber) -> Option<&'static Builtin> {
+    BUILTINS.iter().find(|entry| entry.number == number)
 }
 
 /// Whether `number` is a `PF_Fixme` gap in 1 to 78 (BUILTIN-1.2); the tests read it.
 #[cfg(test)]
 #[must_use]
 pub(crate) fn is_fixme(number: u32) -> bool {
-    (1..=BUILTIN_MAX_NUMBER).contains(&number) && lookup(number).is_none()
+    (1..=BUILTIN_MAX_NUMBER).contains(&number) && lookup(BuiltinNumber::new(number)).is_none()
 }

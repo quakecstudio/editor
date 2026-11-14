@@ -57,7 +57,7 @@ fn qc_vm::trace::Trace::error_record
 fn qc_vm::trace::Trace::finish
 fn qc_vm::trace::Trace::header
 fn qc_vm::trace::Trace::new
-fn qc_vm::trace::Trace::push
+fn qc_vm::trace::Trace::push_string
 fn qc_vm::trace::Trace::records
 impl qc_vm::error::Divergence: fmt::Display
 impl qc_vm::error::ErrorKind: fmt::Display

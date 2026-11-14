@@ -30,7 +30,7 @@ fn table_has_the_vanilla_numbers() {
     // The present numbers: 1 to 78 minus the gaps (BUILTIN-1.2).
     let gaps = [5u32, 33, 39, 42, 50, 60, 61, 62, 63, 64, 65, 66, 71];
     for number in 1..=BUILTIN_MAX_NUMBER {
-        let present = table::lookup(number).is_some();
+        let present = table::lookup(table::BuiltinNumber::new(number)).is_some();
         if gaps.contains(&number) {
             assert!(!present, "number {number} should be a PF_Fixme gap");
             assert!(table::is_fixme(number), "{number} should be is_fixme");
@@ -44,17 +44,40 @@ fn table_has_the_vanilla_numbers() {
 // spec BUILTIN-5.2: three numbers share a C function under two names.
 #[test]
 fn precache_variants_share_a_c_function() {
-    assert_eq!(table::lookup(75).unwrap().c_function, "PF_precache_model");
-    assert_eq!(table::lookup(76).unwrap().c_function, "PF_precache_sound");
-    assert_eq!(table::lookup(77).unwrap().c_function, "PF_precache_file");
-    assert_eq!(table::lookup(75).unwrap().name, "precache_model2");
+    assert_eq!(
+        table::lookup(table::BuiltinNumber::new(75))
+            .unwrap()
+            .c_function,
+        "PF_precache_model"
+    );
+    assert_eq!(
+        table::lookup(table::BuiltinNumber::new(76))
+            .unwrap()
+            .c_function,
+        "PF_precache_sound"
+    );
+    assert_eq!(
+        table::lookup(table::BuiltinNumber::new(77))
+            .unwrap()
+            .c_function,
+        "PF_precache_file"
+    );
+    assert_eq!(
+        table::lookup(table::BuiltinNumber::new(75)).unwrap().name,
+        "precache_model2"
+    );
 }
 
 // spec BUILTIN-4.4: the class world builtins are the ones a mock cannot reproduce.
 #[test]
 fn world_builtins_have_the_world_class() {
     for number in [16u32, 17, 32, 34, 40, 41, 44, 67] {
-        assert_eq!(table::lookup(number).unwrap().class, Class::World);
+        assert_eq!(
+            table::lookup(table::BuiltinNumber::new(number))
+                .unwrap()
+                .class,
+            Class::World
+        );
     }
 }
 
@@ -979,10 +1002,10 @@ mod mock_engine {
     // is None for a PF_Fixme gap.
     #[test]
     fn lookup_present_and_gap() {
-        let makevectors = table::lookup(1).unwrap();
+        let makevectors = table::lookup(table::BuiltinNumber::new(1)).unwrap();
         assert_eq!(makevectors.name, "makevectors");
         assert_eq!(makevectors.class, Class::Pure);
-        assert!(table::lookup(5).is_none());
+        assert!(table::lookup(table::BuiltinNumber::new(5)).is_none());
     }
 }
 
