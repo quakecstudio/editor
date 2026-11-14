@@ -25,6 +25,7 @@ pub(crate) mod outside;
 pub(crate) mod portals;
 pub(crate) mod process;
 pub(crate) mod prt;
+pub(crate) mod tjunc;
 pub(crate) mod tree;
 pub(crate) mod vec;
 pub(crate) mod winding;

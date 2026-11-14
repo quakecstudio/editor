@@ -25,6 +25,7 @@ use super::output::Writer;
 use super::outside::{Fill, FillType, Filler, Occupant, Prefer};
 use super::portals::{Portalizer, SideMarker};
 use super::prt::fmt_number;
+use super::tjunc::TJuncs;
 use super::tree::{BspInput, Tree, TreeSplit};
 use super::vec::{Bounds, Vec3};
 use crate::{CompileError, Compiled, Hull, Warning};
@@ -255,7 +256,13 @@ impl Compile<'_> {
             map: &self.map,
             originals,
         };
-        let mut fragments = self.writer.emit_vertices(tree, &maker)?;
+        let originals_out = self.writer.emit_vertices(tree, &maker)?;
+        let mut fragments = TJuncs {
+            tree,
+            vertexes: &self.writer.file.vertexes,
+            planes: &self.map.planes,
+        }
+        .fix_all(&originals_out);
         let (first, ranges) =
             self.writer
                 .emit_faces(tree, &self.map.planes, &self.map.texinfos, &mut fragments)?;

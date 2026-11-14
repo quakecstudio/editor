@@ -21,6 +21,7 @@ use qs_bsp::{BSP_MAXLIGHTMAPS, BSP_NUM_AMBIENTS};
 use super::faces::{FaceId, FaceMaker};
 use super::game::{Contents, Game};
 use super::map::{SIDESPACE, SurfFlags, TexinfoNum, Texinfos};
+use super::tjunc::Originals;
 use super::tree::{NodeId, Tree};
 use super::vec::{AXES, PlaneNum, PlaneType, Planes, Vec3};
 use crate::CompileError;
@@ -217,7 +218,7 @@ impl Writer {
         &mut self,
         tree: &Tree,
         maker: &FaceMaker<'_>,
-    ) -> Result<HashMap<FaceId, Vec<Fragment>>, CompileError> {
+    ) -> Result<Originals, CompileError> {
         let mut out = HashMap::new();
         for id in tree.preorder() {
             let Some(node) = tree.node(id) else {
@@ -236,13 +237,7 @@ impl Writer {
                     .iter()
                     .map(|&p| self.vertex(p))
                     .collect::<Result<Vec<u32>, CompileError>>()?;
-                out.insert(
-                    face_id,
-                    vec![Fragment {
-                        vertices,
-                        output: None,
-                    }],
-                );
+                out.insert(face_id, vertices);
             }
         }
         Ok(out)

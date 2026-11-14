@@ -963,3 +963,14 @@ point on a plane (`mathlib.hh`).
   away from the portal's by more than `ANGLEEPSILON`, and its points as `{fmt}` writes them. With no
   detail it is `PRT1`, the leaf count and the portal count; with detail `PRT2`, the leaf count,
   the cluster count and the portal count, then each cluster's leaves and -1.
+- **QBSP-15.47** T-junctions are fixed (`TJunc`, `-tjunc mwt` by default) for each face written:
+  each edge is broken at each vertex, as the file stores it, of a face that welds with this one
+  (`Welds` on the back contents: the same type; never a detail wall with another, see-through
+  with opaque, or anything with empty) within the edge's box grown by 1, that lies strictly
+  between its ends, taken as `float`s, within `DEFAULT_ON_EPSILON` of the line (`PointOnEdge`,
+  `TestEdge`). A face of fewer than three points left is not written, one of three is written as
+  it was; any other is cut by its minimum-weight triangulation in the plane of its tangents
+  (`minimum_weight_triangulation`, a triangle with a corner under 0.01 degrees, as a `float`,
+  weighing just under `DBL_MAX`), the triangles gathered into the longest fans
+  (`compress_triangles_into_fans`), each fragment of more than `-maxedges` (64) vertices split
+  (`SplitFaceIntoFragments`), the list's first fragment moved to its end.
