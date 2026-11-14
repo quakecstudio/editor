@@ -3314,3 +3314,54 @@ fn a_prefab_is_saved_and_dragged_in() {
     harness.run();
     assert_eq!(brush_count(&harness, 0), before);
 }
+
+// spec PRJ-1.6: a file opened from Finder or the command line opens in the nearest project
+// above it, which opens first unless it is open; a map outside every project opens in the
+// one open; a file with no project above it opens its folder when no project is open; a
+// folder is a project
+#[test]
+fn opened_files_open_in_their_project() {
+    let dir = TempDir::new("open-paths");
+    let root = dir.path();
+    let project = root.join("mod/qc");
+    fs::create_dir_all(project.join("client")).unwrap();
+    fs::write(project.join("progs.src"), "progs.dat\nclient/player.qc\n").unwrap();
+    fs::write(project.join("client/player.qc"), "void() player = {};\n").unwrap();
+    fs::create_dir_all(root.join("maps")).unwrap();
+    fs::write(
+        root.join("maps/start.map"),
+        "{\n\"classname\" \"worldspawn\"\n}\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("loose")).unwrap();
+    fs::write(root.join("loose/a.qc"), "void() a = {};\n").unwrap();
+    let mut harness = accessible();
+    let shell = harness.state_mut().as_mut().unwrap().shell_mut();
+
+    shell.open_paths([project.join("client/player.qc")]);
+    assert_eq!(shell.workbench().root(), Some(project.as_path()));
+    assert_eq!(
+        shell
+            .workbench()
+            .open()
+            .map(|open| open.path().to_path_buf()),
+        Some(project.join("client/player.qc"))
+    );
+
+    shell.open_paths([root.join("maps/start.map")]);
+    assert_eq!(shell.workbench().root(), Some(project.as_path()));
+    assert_eq!(
+        shell.workbench().map().map(|map| map.path().to_path_buf()),
+        Some(root.join("maps/start.map"))
+    );
+
+    shell.open_paths([root.join("loose/a.qc")]);
+    assert_eq!(shell.workbench().root(), Some(project.as_path()));
+
+    let mut harness = accessible();
+    let shell = harness.state_mut().as_mut().unwrap().shell_mut();
+    shell.open_paths([root.join("loose/a.qc")]);
+    assert_eq!(shell.workbench().root(), Some(root.join("loose").as_path()));
+    shell.open_paths([root.join("mod/qc")]);
+    assert_eq!(shell.workbench().root(), Some(project.as_path()));
+}

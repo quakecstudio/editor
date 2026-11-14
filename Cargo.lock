@@ -4058,6 +4058,9 @@ dependencies = [
  "egui_kittest",
  "image",
  "muda",
+ "objc2 0.6.5",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
  "qs-agent",
  "qs-bridge",
  "qs-bsp",
@@ -4081,6 +4084,8 @@ dependencies = [
  "skrifa",
  "toml",
  "tracing",
+ "winit",
+ "winresource",
 ]
 
 [[package]]
@@ -6103,6 +6108,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "winresource"
+version = "0.1.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2bc6d36480b829272a5bdabf08e6dca8004761c1da7e35efef800540c66221b"
+dependencies = [
+ "version_check",
 ]
 
 [[package]]

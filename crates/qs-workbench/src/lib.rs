@@ -56,7 +56,7 @@ pub use qc_ide::{
     Code, Completion, Config, DefKind, Diagnostic, FileEdit, FileRange, Highlight, HighlightKind,
     Hover, Modifier, Modifiers, RenameError, Severity, Span, Symbol, SymbolKind, SyntaxClass,
 };
-pub use qc_project::{Dialect, FsLoader, Loader, Target};
+pub use qc_project::{Dialect, FsLoader, Loader, Target, enclosing};
 
 pub use crate::build::{Gravity, ModuleBuilt, Reported};
 pub use crate::commands::*;

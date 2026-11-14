@@ -2,8 +2,9 @@
 Type=Application
 Name=QuakeC Studio
 Comment=QuakeC IDE with its own compiler, live in-game preview and a built-in agent
-Exec=quakec-studio %f
+Exec=quakec-studio %F
 Icon=com.quakecstudio.QuakeCStudio
 Terminal=false
 Categories=Development;IDE;
+MimeType=text/x-quakec;text/x-quake-map;application/x-quake-bsp;inode/directory;
 StartupWMClass=quakec-studio

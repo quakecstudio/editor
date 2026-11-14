@@ -1391,6 +1391,7 @@ use qs_workbench::WATCH = crate::preview::WATCH
 use qs_workbench::WatchParams = crate::preview::WatchParams
 use qs_workbench::debug = crate::preview::debug
 use qs_workbench::dock = crate::preview::dock
+use qs_workbench::enclosing = qc_project::enclosing
 use qs_workbench::engine = crate::preview::engine
 use qs_workbench::entities = crate::preview::entities
 use qs_workbench::game_files = crate::preview::game_files

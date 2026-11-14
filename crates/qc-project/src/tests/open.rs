@@ -6,7 +6,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::{loader, slash};
-use crate::{Dialect, ModuleKind, Project, ProjectError, Target, open, open_dir, open_file};
+use crate::{
+    Dialect, ModuleKind, Project, ProjectError, Target, enclosing, open, open_dir, open_file,
+};
 
 fn modules(project: &Project) -> Vec<(String, ModuleKind, String)> {
     project
@@ -278,4 +280,32 @@ fn open_from_the_file_system() {
     let with_manifest = open(&dir.join(".").join("..").join("game")).unwrap();
     assert_eq!(with_manifest.mod_name, "g");
     assert_eq!(with_manifest.root, from_dir.root);
+}
+
+// spec PRJ-1.6: a file's project is the nearest directory above it with quakec.toml or
+// progs.src, whichever it holds; none when no directory above it is a project
+#[test]
+fn a_file_belongs_to_the_nearest_project_above_it() {
+    let files = [
+        ("mod/quakec.toml", "[project]\n"),
+        ("mod/qc/progs.src", "progs.dat\nworld.qc\n"),
+        ("mod/qc/client/player.qc", ""),
+        ("mod/maps/start.map", ""),
+        ("loose/a.qc", ""),
+    ];
+    let mut loader = loader(&files);
+    assert_eq!(
+        enclosing(&mut loader, Path::new("mod/qc/client/player.qc")),
+        Some(PathBuf::from("mod/qc"))
+    );
+    assert_eq!(
+        enclosing(&mut loader, Path::new("mod/maps/start.map")),
+        Some(PathBuf::from("mod"))
+    );
+    assert_eq!(
+        enclosing(&mut loader, Path::new("mod/qc/progs.src")),
+        Some(PathBuf::from("mod/qc"))
+    );
+    assert_eq!(enclosing(&mut loader, Path::new("loose/a.qc")), None);
+    assert_eq!(enclosing(&mut loader, Path::new("")), None);
 }

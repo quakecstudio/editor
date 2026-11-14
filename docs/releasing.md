@@ -58,9 +58,18 @@ The macOS app's `Info.plist` names its icon (`packaging/macos/QuakeCStudio.icns`
 SVG rendered at 16 to 1024 pixels), gives the text macOS shows when the app first reads a
 project or game folder on the Desktop, in Documents or Downloads, or on a network or
 removable volume, and declares the QuakeC source type (`.qc`, `.qh`) and the map (`.map`) and
-BSP (`.bsp`) types so Finder names them. It claims no document type: the app cannot yet take
-a file Finder opens with it (eframe 0.36 does not pass on the open-document event), so Finder
-does not offer it under Open With.
+BSP (`.bsp`) types so Finder names them.
+
+Every package registers those four file types and folders, so the system offers the app
+under Open With, and the app opens each in its project (PRJ-1.6): `CFBundleDocumentTypes` in
+the Info.plist, the owner of QuakeC source and an alternative for maps, BSPs and folders; on
+Linux the MIME types of `packaging/linux/com.quakecstudio.QuakeCStudio.xml`, which the desktop
+entry lists and passes as `%F`; and in the MSI a ProgID for each kind, with the app under each
+extension's Open With and the default for none. macOS hands the files to a running app
+through the app delegate, which `apps/desktop/src/open_documents.rs` adds to winit's, the
+app's one use of `unsafe`; Windows and Linux start the app with them as its arguments. The
+Windows `quakec-studio.exe` carries the icon (`packaging/windows/quakec-studio.ico`, the SVG
+again) and its version information, which `apps/desktop/build.rs` embeds with winresource.
 
 The Flatpak's sandbox reaches the home directory (projects, and Steam, GOG and Heroic's
 folders, their Flatpak clients' under `~/.var/app` included), `/mnt` and `/media` read only,

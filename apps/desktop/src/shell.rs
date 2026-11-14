@@ -1093,6 +1093,40 @@ impl Shell {
         Ok(())
     }
 
+    /// Opens what macOS or the command line hands the app: a folder as a project, and a file in
+    /// its project (PRJ-1.6), opening that first unless it is the one open; a `.map` or `.bsp`
+    /// then opens in the map editor and any other file in the editor. A file with no project
+    /// above it opens in the open project, or opens its folder, as Open Folder does, when none
+    /// is open; a map needs none.
+    pub fn open_paths(&mut self, paths: impl IntoIterator<Item = PathBuf>) {
+        for path in paths {
+            let path = std::path::absolute(&path).unwrap_or(path);
+            if path.is_dir() {
+                if let Err(error) = self.open_project(&path) {
+                    tracing::warn!(%error, "project not opened");
+                }
+                continue;
+            }
+            let is_map = path.extension().is_some_and(|extension| {
+                extension.eq_ignore_ascii_case(MAP_EXTENSION)
+                    || extension.eq_ignore_ascii_case(BSP_EXTENSION)
+            });
+            let open = self.workbench().root().map(Path::to_path_buf);
+            let project = match qs_workbench::enclosing(&mut FsLoader, &path) {
+                Some(dir) if open.as_ref() != Some(&dir) => Some(dir),
+                Some(_) => None,
+                None if open.is_none() && !is_map => path.parent().map(Path::to_path_buf),
+                None => None,
+            };
+            if let Some(project) = project
+                && let Err(error) = self.open_project(&project)
+            {
+                tracing::warn!(%error, "project not opened");
+            }
+            self.jump(Jump { path, offset: 0 });
+        }
+    }
+
     /// Opens the file a panel's row asks for, through its command, and shows the editor; a
     /// `.map` or `.bsp` opens in the map editor (P5-06).
     fn jump(&mut self, jump: Jump) {

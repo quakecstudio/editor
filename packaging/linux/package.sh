@@ -47,7 +47,7 @@ trap 'rm -rf "$work"' EXIT
 mkdir -p "$out"
 
 # Lays the files out under the prefix $1: the binaries in lib/quakec-studio, the commands
-# linked into bin, the desktop entry, the icon, LICENSE and NOTICE.
+# linked into bin, the desktop entry, the file types it opens, the icon, LICENSE and NOTICE.
 install_tree() {
   local prefix=$1
   install -d "$prefix/bin" "$prefix/lib/quakec-studio"
@@ -60,6 +60,8 @@ install_tree() {
   install -d "$prefix/share/applications" "$prefix/share/icons/hicolor/scalable/apps"
   install -m644 "$here/$APP_ID.desktop" "$prefix/share/applications/"
   install -m644 "$here/$APP_ID.svg" "$prefix/share/icons/hicolor/scalable/apps/"
+  install -d "$prefix/share/mime/packages"
+  install -m644 "$here/$APP_ID.xml" "$prefix/share/mime/packages/"
   install -d "$prefix/share/doc/quakec-studio"
   install -m644 "$root/LICENSE" "$prefix/share/doc/quakec-studio/LICENSE"
   install -m644 "$root/packaging/NOTICE.txt" "$prefix/share/doc/quakec-studio/NOTICE"
@@ -120,7 +122,7 @@ flatpak() {
   done
   install -m644 "$root/LICENSE" "$build/stage/LICENSE"
   install -m644 "$root/packaging/NOTICE.txt" "$build/stage/NOTICE"
-  install -m644 "$here/$APP_ID.desktop" "$here/$APP_ID.svg" "$build/stage/"
+  install -m644 "$here/$APP_ID.desktop" "$here/$APP_ID.svg" "$here/$APP_ID.xml" "$build/stage/"
   cp "$here/$APP_ID.yml" "$build/"
   flatpak-builder --user --force-clean --disable-rofiles-fuse --arch="$arch" \
     --repo="$build/repo" "$build/app" "$build/$APP_ID.yml"

@@ -29,6 +29,9 @@ absolute-paths-allowed-crates = [
     "mimalloc",
     "miniz_oxide",
     "muda",
+    "objc2",
+    "objc2_app_kit",
+    "objc2_foundation",
     "pollster",
     "proptest",
     "raw_window_handle",
@@ -49,6 +52,8 @@ absolute-paths-allowed-crates = [
     "tracing",
     "tracing_subscriber",
     "ureq",
+    "winit",
+    "winresource",
 ]
 
 # Allow breaking the exported API (we're pre-1.0)

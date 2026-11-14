@@ -296,6 +296,17 @@ pub fn open_dir<L: Loader>(loader: &mut L, dir: &Path) -> Result<Project, Projec
     }
 }
 
+/// The project directory a file belongs to (PRJ-1.6): the nearest directory holding
+/// `quakec.toml` or `progs.src`, from the file's own up to the root; `None` when there is none.
+pub fn enclosing<L: Loader>(loader: &mut L, file: &Path) -> Option<PathBuf> {
+    file.ancestors().skip(1).find_map(|dir| {
+        let is_project = [PRJ_MANIFEST, "progs.src"]
+            .iter()
+            .any(|name| loader.load(&dir.join(name)).is_ok());
+        is_project.then(|| dir.to_path_buf())
+    })
+}
+
 /// Opens the project of file `file`: a `quakec.toml`, or any other file as a bare project
 /// (PRJ-1.1, PRJ-1.3).
 ///

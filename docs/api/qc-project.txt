@@ -46,6 +46,7 @@ field qc_project::manifest::Task.command
 field qc_project::manifest::Task.name
 fn qc_project::ModuleKind::as_str
 fn qc_project::ModuleKind::output_file
+fn qc_project::enclosing
 fn qc_project::graph::Define::parse
 fn qc_project::graph::GraphIndex::index
 fn qc_project::graph::build_graph
