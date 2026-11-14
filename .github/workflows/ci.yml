@@ -229,8 +229,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers
-      - if: env.CI_PATH == 'full'
+      # A push to main only fills the caches: the tests passed on the pull request.
+      - if: env.CI_PATH == 'full' && github.event_name != 'push'
         run: cargo nextest run --locked --workspace --all-features
+      - name: Build the tests for the cache
+        if: env.CI_PATH == 'full' && github.event_name == 'push'
+        run: cargo nextest run --locked --workspace --all-features --no-run
       # A snapshot that does not match leaves its new image and the difference beside the
       # golden; they are kept so the change can be seen.
       - name: Keep the snapshots that did not match
@@ -261,10 +265,13 @@ jobs:
         if: env.CI_PATH == 'full'
         env:
           LIVE: ${{ needs.changes.outputs.oracles != 'false' }}
+          EVENT: ${{ github.event_name }}
         # bash on every OS, Windows included, whose default shell is PowerShell.
         shell: bash
         run: |
-          if [ "$LIVE" = true ]; then
+          if [ "$EVENT" = push ]; then
+            cargo xtask oracles build
+          elif [ "$LIVE" = true ]; then
             cargo xtask oracles
           else
             cargo xtask oracles --recorded
@@ -527,27 +534,27 @@ jobs:
         if: env.CI_PATH == 'full'
         run: rustup toolchain install
       - name: Test the language coverage script
-        if: env.CI_PATH == 'full'
+        if: env.CI_PATH == 'full' && github.event_name != 'push'
         working-directory: corpus
         run: python -m unittest test_language_coverage.py
       - name: Check the corpus manifest
-        if: env.CI_PATH == 'full'
+        if: env.CI_PATH == 'full' && github.event_name != 'push'
         run: cargo xtask corpus verify
       # P2-04 (ENGT-1.2): the engine-target tables match what their pinned fact sources give.
       # The sources are the same on every OS, so one runner fetches them.
       - name: Regenerate the engine-target tables and compare
-        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: cargo xtask engines --check
       - name: Fetch the test assets
         if: env.CI_PATH == 'full'
         run: cargo xtask assets fetch
       - name: Check the rerelease precaches
-        if: env.CI_PATH == 'full'
+        if: env.CI_PATH == 'full' && github.event_name != 'push'
         run: cargo xtask assets precache
       # P3-23: id's server, built from the pinned source, plays a route through LibreQuake's
       # start map twice with the same trace, the same as recorded on every OS.
       - name: Play a route through id's server
-        if: env.CI_PATH == 'full'
+        if: env.CI_PATH == 'full' && github.event_name != 'push'
         shell: bash
         env:
           RUNNER_TEMP_DIR: ${{ runner.temp }}
@@ -559,14 +566,14 @@ jobs:
       # P3-25 (DIFF-16): the same route through qs-sim, the same state as id's server's after
       # the map loads and after every frame.
       - name: Compare qs-sim with id's server on the route
-        if: env.CI_PATH == 'full'
+        if: env.CI_PATH == 'full' && github.event_name != 'push'
         run: |
           cargo xtask sim-diff oracles/engine/routes/start.route \
             -- -basedir "$QS_TEST_ASSETS/librequake-lite"
       # P3-04 (DIFF-16.6): console lines, the settings, aliases and waits they run, the same in
       # qs-sim as in id's server.
       - name: Compare the console with id's server
-        if: env.CI_PATH == 'full'
+        if: env.CI_PATH == 'full' && github.event_name != 'push'
         run: |
           cargo xtask sim-diff oracles/engine/routes/console.route \
             -- -basedir "$QS_TEST_ASSETS/librequake-lite"
@@ -575,11 +582,11 @@ jobs:
         if: env.CI_PATH == 'full' && runner.os == 'Linux'
         run: cargo xtask corpus fetch id-1.01
       - name: Check the language spec covers id 1.01
-        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: python corpus/language_coverage.py --source-dir "$QS_TEST_ASSETS/codebase/id-1.01"
       # P1-20: every vanilla corpus file lexes, and progs.src preprocesses, with no errors.
       - name: Lex and preprocess id 1.01
-        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: cargo xtask lex-corpus "$QS_TEST_ASSETS/codebase/id-1.01"
       # P1-11: id's qcc compiles id 1.01 and the VM oracle traces the result. Unit Tests
       # (linux) saves the oracles under the same key, so this job only restores them.
@@ -591,7 +598,7 @@ jobs:
             target/oracles/bin
           key: oracles-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('oracles/**', 'xtask/src/oracles.rs', 'xtask/src/oracles/**') }}
       - name: Compile and trace id 1.01 with the oracles
-        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: cargo xtask oracles id101 "$QS_TEST_ASSETS/codebase/id-1.01"
       - name: Write the rerelease and two FTEQCC mods to the asset cache
         if: env.CI_PATH == 'full' && runner.os == 'Linux'
@@ -602,7 +609,7 @@ jobs:
         if: env.CI_PATH == 'full' && runner.os != 'Linux'
         run: cargo xtask corpus fetch rerelease
       - name: Build the rerelease with quakec-ide
-        if: env.CI_PATH == 'full'
+        if: env.CI_PATH == 'full' && github.event_name != 'push'
         env:
           RUNNER_TEMP_DIR: ${{ runner.temp }}
         run: |
@@ -621,7 +628,7 @@ jobs:
       # passes its sample unit and scenario tests over LibreQuake, and after the build and the
       # scenario's run root nothing under build/ is tracked by git.
       - name: Make, build and test a project from each template
-        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         env:
           RUNNER_TEMP_DIR: ${{ runner.temp }}
         run: |
@@ -648,12 +655,12 @@ jobs:
       # P4-15: each agent eval's scenario defines success: it fails at the task's start and
       # passes with its reference solution, on id 1.01 or the rerelease over LibreQuake.
       - name: Check the agent evals' scenarios
-        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: cargo xtask evals --check
       # P1-21: id 1.01 parses with no errors; every file of each codebase, FTEQCC ones
       # included, round-trips through the tree.
       - name: Parse the corpus
-        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: |
           cargo xtask parse-corpus --vanilla "$QS_TEST_ASSETS/codebase/id-1.01"
           cargo xtask parse-corpus "$QS_TEST_ASSETS/codebase/rerelease" \
@@ -663,11 +670,11 @@ jobs:
       # the parser chain changed (the changes job's parser output), on the weekly and
       # manual runs, and in a merge group if the queue is on.
       - name: Check that deleting any token of id 1.01 leaves a local error
-        if: env.CI_PATH == 'full' && runner.os == 'Linux' && env.DELETIONS == 'true'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux' && env.DELETIONS == 'true'
         run: cargo xtask parse-corpus --deletions "$QS_TEST_ASSETS/codebase/id-1.01"
       # P2-51: the same for the rerelease under the FTEQCC profile.
       - name: Check that deleting any token of the rerelease leaves a local error under FTEQCC
-        if: env.CI_PATH == 'full' && runner.os == 'Linux' && env.DELETIONS == 'true'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux' && env.DELETIONS == 'true'
         run: cargo xtask parse-corpus --fteqcc --deletions "$QS_TEST_ASSETS/codebase/rerelease"
       # P1-26: the pinned FTEQCC compiles the six rerelease codebases to version 6 progs.dat
       # files with vanilla opcodes only, and .lno files. They are kept as oracle artifacts in
@@ -680,7 +687,7 @@ jobs:
       # P2-03: every rerelease codebase parses and resolves with zero errors under the FTEQCC
       # profile, and the vanilla profile rejects each extension with a diagnostic.
       - name: Parse and resolve the rerelease under the FTEQCC profile
-        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: |
           cargo xtask fteqcc-profile \
             "$QS_TEST_ASSETS/codebase/rerelease" \
@@ -691,7 +698,7 @@ jobs:
             "$QS_TEST_ASSETS/codebase/rerelease-mg3"
       # P2-07: every rerelease codebase compiles with our compiler under the FTEQCC profile.
       - name: Compile the rerelease with qc-codegen
-        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: |
           cargo xtask codegen-corpus \
             "$QS_TEST_ASSETS/codebase/rerelease" \
@@ -717,13 +724,13 @@ jobs:
       # P1-14: every progs.dat an oracle compiler builds from the corpus (id 1.01 with id's qcc,
       # the rerelease with FTEQCC) is kept in the cache and round-trips through qc-progs.
       - name: Build the corpus progs and round-trip them through qc-progs
-        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: cargo xtask corpus build
       # P2-54: id 1.01 (vanilla profile) and the rerelease (FTEQCC profile) resolve to the golden
       # indexes in docs/spec/vectors/sema/, and their global definitions agree with the progs
       # the oracle compilers built in the step above (TEST-6).
       - name: Check the semantic model's golden indexes and definitions against the progs
-        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: |
           cargo xtask sema-corpus \
             "$QS_TEST_ASSETS/codebase/id-1.01=$QS_TEST_ASSETS/progs/id-1.01/progs.dat" \
@@ -731,26 +738,26 @@ jobs:
       # P5-03: the entity definitions of id 1.01 and the rerelease match their golden FGD files
       # (docs/spec/vectors/entities/), and each defines every classname LibreQuake's maps use.
       - name: Check the entity definitions against their golden files and the maps
-        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: |
           cargo xtask entity-corpus --maps "$QS_TEST_ASSETS/librequake-lite" \
             "$QS_TEST_ASSETS/codebase/id-1.01" "$QS_TEST_ASSETS/codebase/rerelease"
       # P2-14: the language server, driven over the protocol against the rerelease, gives the
       # answers its golden file records (docs/spec/vectors/lsp/rerelease.txt).
       - name: Drive the language server against the rerelease
-        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: cargo xtask lsp-corpus "$QS_TEST_ASSETS/codebase/rerelease"
       # P4-34 (UI-18): formatting id 1.01 and the rerelease twice gives the same text as once,
       # and each module compiles to the same progs.dat before and after.
       - name: Format id 1.01 and the rerelease and compile them again
-        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: |
           cargo xtask format-corpus --vanilla "$QS_TEST_ASSETS/codebase/id-1.01"
           cargo xtask format-corpus "$QS_TEST_ASSETS/codebase/rerelease"
       # P2-19: every diagnostic of the rerelease, targeting the rerelease and id's engine, is
       # listed in the desktop app's Problems tab, and clicking it opens its file at its place.
       - name: Click every problem of the rerelease in the desktop app
-        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: |
           cargo run --locked -p quakec-studio --example problems_corpus -- \
             "$QS_TEST_ASSETS/codebase/rerelease"
@@ -761,24 +768,24 @@ jobs:
       # job runs it with the same command (docs/ci.md). The full corpus runs nightly
       # (differential.yml).
       - name: Run the fast differential VM suite on id 1.01
-        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: cargo xtask differential --fast
       # P2-09 (COMP-4, COMP-7): the compiler differential. id 1.01 compiled by id's qcc and by
       # qc-codegen with --opt fold off and on; every function called in qc-vm on each progs,
       # 32 rounds, with no divergence and at least 90% of qcc's statements executed (DIFF-12).
       # The 128-round run is nightly (differential.yml).
       - name: Run the compiler differential on id 1.01
-        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: cargo xtask compiler-diff --fast
       # P2-153 (DIFF-14): 200 generated programs of seed 1, each compiled by the pinned FTEQCC
       # and by qc-codegen and compared as id 1.01 is above; 10000 run nightly.
       - name: Run the compiler differential on generated programs
-        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: cargo xtask compiler-diff --generated 200 --seed 1
       # P1-23: every module of each codebase opens with no error in its file graph, and id
       # 1.01's graph has the order of the functions in the progs.dat id's qcc compiled above.
       - name: Open the corpus as projects
-        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: |
           cargo xtask project-corpus --progs "$QS_TEST_ASSETS/progs/id-1.01/progs.dat" \
             "$QS_TEST_ASSETS/codebase/id-1.01"
@@ -792,7 +799,7 @@ jobs:
       # when FTEQCC stops on a compile error or a crash, per PRJ-6). The oracles are restored
       # with the id 1.01 compile step above, so this only builds FTEQCC on a cache miss.
       - name: Check the corpus graph order against FTEQCC
-        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: |
           cargo xtask project-corpus --fteqcc "$QS_TEST_ASSETS/codebase/id-1.01" \
             "$QS_TEST_ASSETS/codebase/rerelease" \
@@ -807,12 +814,12 @@ jobs:
       # Animations.h, which only a case-insensitive file system opens, as FTEQCC's fopen
       # would (PRJ-7.1); its client and server modules each get warning W0402 there (PRJ-7.2).
       - name: Open Xonotic as a project
-        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: |
           cargo xtask corpus fetch xonotic
           cargo xtask project-corpus "$QS_TEST_ASSETS/codebase/xonotic"
       - name: Open FreeCS as a project
-        if: env.CI_PATH == 'full' && runner.os == 'macOS'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'macOS'
         run: |
           cargo xtask corpus fetch freecs-tree
           cargo xtask project-corpus --expect-warning W0402=2 \
@@ -825,7 +832,7 @@ jobs:
       # P2-38: so do Copper and Arcane Dimensions, which FTEQCC builds from list-form
       # progs.src files.
       - name: Parse and resolve the FTEQCC corpus mods under the FTEQCC profile
-        if: env.CI_PATH == 'full' && runner.os == 'macOS'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'macOS'
         run: |
           cargo xtask corpus fetch copper arcane-dimensions
           cargo xtask fteqcc-profile \
@@ -836,23 +843,28 @@ jobs:
             "$QS_TEST_ASSETS/codebase/arcane-dimensions"
       # P5-02: every map of the corpus reads and writes back byte for byte, and every BSP,
       # .lit, alias model, sprite and sound of the LibreQuake lite asset loads.
+      # A push to main skips the steps that fetch these as they check them, so the
+      # downloads cache keeps them for the pull requests.
+      - name: Write the corpus mods the checks fetch to the asset cache
+        if: env.CI_PATH == 'full' && github.event_name == 'push'
+        run: cargo xtask corpus fetch xonotic freecs-tree copper arcane-dimensions
       - name: Write the corpus maps to the asset cache
         if: env.CI_PATH == 'full' && runner.os == 'Linux'
         run: |
           awk '/^\[\[/ { map = ($0 == "[[map]]") } map && $1 == "id" { gsub(/"/, "", $3); print $3 }' \
             corpus/manifest.toml | xargs cargo xtask corpus fetch
       - name: Round-trip the corpus maps
-        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: cargo xtask map-corpus "$QS_TEST_ASSETS/map"
       - name: Decode the LibreQuake lite asset
-        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: cargo run --release -p qs-vfs --example walk -- -basedir "$QS_TEST_ASSETS/librequake-lite"
       # cpal, the preview host's sound output, links ALSA on Linux; the runner image has
       # pkg-config but not ALSA's headers.
       # ALSA's headers for the preview host's sound, and Mesa's software Vulkan driver for its
       # headless screenshots, which draw offscreen through wgpu (P3-05).
       - name: Install ALSA's headers and Mesa's Vulkan driver for the preview host
-        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libasound2-dev mesa-vulkan-drivers
@@ -861,7 +873,7 @@ jobs:
       # (docs/privacy.md). The runner image keeps unprivileged user namespaces off with
       # AppArmor; the check needs one for its network namespace.
       - name: Run the app with the network denied
-        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: |
           sudo apt-get install -y --no-install-recommends strace
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
@@ -870,7 +882,7 @@ jobs:
       # P4-28: the rerelease template exported for players (project.export) and unzipped into
       # a clean copy of LibreQuake, which the bridge client below plays it in.
       - name: Export a template mod and unzip it into a clean game folder
-        if: env.CI_PATH == 'full'
+        if: env.CI_PATH == 'full' && github.event_name != 'push'
         env:
           RUNNER_TEMP_DIR: ${{ runner.temp }}
         run: |
@@ -888,7 +900,7 @@ jobs:
       # built above, reloaded over the map, stopped at a breakpoint and inspected.
       # P4-28: then the exported mod's progs plays, on each OS.
       - name: Run the bridge client against the headless preview host
-        if: env.CI_PATH == 'full'
+        if: env.CI_PATH == 'full' && github.event_name != 'push'
         env:
           RUNNER_TEMP_DIR: ${{ runner.temp }}
         run: |
@@ -898,7 +910,7 @@ jobs:
       # P3-19, SCN-2.5: a scenario played in qs-sim on LibreQuake's start map ten times gives
       # the same result each time, on each OS.
       - name: Play the start scenario ten times
-        if: env.CI_PATH == 'full'
+        if: env.CI_PATH == 'full' && github.event_name != 'push'
         run: |
           cargo xtask scenario xtask/fixtures/scenarios/start.scenario --repeat 10 -- \
             -basedir "$QS_TEST_ASSETS/librequake-lite"
