@@ -162,7 +162,7 @@ fn vis_portals_and_distances() {
 // first on one thread, in the same order
 #[test]
 fn portals_made_on_threads_are_those_made_on_one() {
-    let (mut map, loaded, visible) = grid_brushes(5);
+    let (mut map, loaded, visible) = grid_brushes(8);
     let extent = map.world_extent;
     let mut tree = BspInput {
         planes: &mut map.planes,

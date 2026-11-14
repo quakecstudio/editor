@@ -234,7 +234,7 @@ impl BspBrush {
                 let (Some(current), Some(plane)) = (w.take(), plane) else {
                     break;
                 };
-                w = current.clipped(*plane, POINT_EPSILON, KeepOn::No, winding::Side::Front);
+                w = current.clipped(*plane, POINT_EPSILON, KeepOn::No, winding::Part::Front);
             }
             let w = w.filter(|w| w.points().iter().flatten().all(|c| c.abs() <= extent));
             match (w, side.source) {

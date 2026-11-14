@@ -5,7 +5,7 @@
     reason = "test code: a failed unwrap is a failed test"
 )]
 
-use super::{KeepOn, ON_EPSILON, Side, Winding};
+use super::{KeepOn, ON_EPSILON, Part, Winding};
 use crate::extended::vec::{Plane, normalize};
 
 fn square(z: f64) -> Winding {
@@ -89,11 +89,11 @@ fn clipping_cuts_at_the_plane() {
     let counts = w.counts(x2, ON_EPSILON);
     assert_eq!((counts.front, counts.back, counts.on), (2, 2, 0));
     assert_eq!(
-        w.clone().clipped(x2, ON_EPSILON, KeepOn::No, Side::Front),
+        w.clone().clipped(x2, ON_EPSILON, KeepOn::No, Part::Front),
         Some(front)
     );
     assert_eq!(
-        w.clone().clipped(x2, ON_EPSILON, KeepOn::No, Side::Back),
+        w.clone().clipped(x2, ON_EPSILON, KeepOn::No, Part::Back),
         Some(back)
     );
     let far = Plane {
@@ -133,4 +133,30 @@ fn a_point_at_the_epsilon_is_on_the_plane() {
     };
     let counts = w.counts(x2, 0.5);
     assert_eq!((counts.front, counts.back, counts.on), (0, 0, 3));
+}
+
+// spec QBSP-15.8: the edge from the last point back to the first is cut too, its crossing point
+// in both parts after the last point
+#[test]
+fn the_closing_edge_is_cut() {
+    let w = Winding::new(vec![[0.0, 0.0, 0.0], [0.0, 4.0, 0.0], [4.0, 0.0, 0.0]]);
+    let x2 = Plane {
+        normal: [1.0, 0.0, 0.0],
+        dist: 2.0,
+    };
+    let (front, back) = w.clip(x2, ON_EPSILON, KeepOn::No);
+    let (front, back) = (front.unwrap(), back.unwrap());
+    assert_eq!(
+        front.points(),
+        [[2.0, 2.0, 0.0], [4.0, 0.0, 0.0], [2.0, 0.0, 0.0]]
+    );
+    assert_eq!(
+        back.points(),
+        [
+            [0.0, 0.0, 0.0],
+            [0.0, 4.0, 0.0],
+            [2.0, 2.0, 0.0],
+            [2.0, 0.0, 0.0]
+        ]
+    );
 }

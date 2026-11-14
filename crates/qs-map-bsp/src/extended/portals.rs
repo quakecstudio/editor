@@ -70,6 +70,9 @@ pub(crate) struct Portal {
     pub(crate) sides: Option<[Option<SideRef>; 2]>,
 }
 
+/// The fewest nodes a tree has for its portals to be made on several threads.
+const PARALLEL_NODES: usize = 256;
+
 /// A portal being made, `buildportal_t`.
 #[derive(Clone, Debug, PartialEq)]
 struct BuildPortal {
@@ -177,9 +180,9 @@ impl Portalizer<'_> {
                 break;
             };
             let side = if children[0] == node {
-                winding::Side::Front
+                winding::Part::Front
             } else {
-                winding::Side::Back
+                winding::Part::Back
             };
             w = current.clipped(plane.plane(), BASE_WINDING_EPSILON, KeepOn::No, side);
             node = parent;
@@ -199,7 +202,7 @@ impl Portalizer<'_> {
             } else {
                 p.plane.plane().flipped()
             };
-            w = current.clipped(plane, NODE_PORTAL_EPSILON, KeepOn::No, winding::Side::Front);
+            w = current.clipped(plane, NODE_PORTAL_EPSILON, KeepOn::No, winding::Part::Front);
         }
         let w = w.filter(|w| !w.is_tiny(EDGE_LENGTH_EPSILON))?;
         let (_, children, _) = tree.split_of(id)?;
@@ -413,7 +416,13 @@ impl Portalizer<'_> {
         if head == HeadPortals::Unused {
             around.clear();
         }
-        let built = self.tree_portals(tree, (Tree::HEAD, 0), kind, around);
+        // A small tree is portalized faster than a thread starts.
+        let depth = if tree.nodes.len() < PARALLEL_NODES {
+            PARALLEL_DEPTH
+        } else {
+            0
+        };
+        let built = self.tree_portals(tree, (Tree::HEAD, depth), kind, around);
         for p in built {
             let id = PortalId(tree.portals.len());
             for node in p.nodes {

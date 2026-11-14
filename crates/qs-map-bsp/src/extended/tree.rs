@@ -524,7 +524,7 @@ impl Cutter<'_> {
             let (Some(current), Some(plane)) = (w.take(), self.plane(side.planenum)) else {
                 break;
             };
-            w = current.clipped(plane, ON_EPSILON, KeepOn::No, winding::Side::Back);
+            w = current.clipped(plane, ON_EPSILON, KeepOn::No, winding::Part::Back);
         }
         let Some(mid) = w.filter(|w| !w.is_tiny(TINY_SPLIT)) else {
             return Cut::Whole(Self::mostly_on_side(brush, split));
@@ -944,8 +944,8 @@ impl Builder<'_> {
 
     /// The tree below `node` from `brushes`, `BuildTree_r` (QBSP-15.29): a leaf when no plane
     /// is chosen; else the node split by it, its children's bounds cut at an axial plane facing
-    /// along its axis, its volume cut between them. The two children are built on threads of
-    /// their own down to [`PARALLEL_DEPTH`]: each reads only the planes and its own brushes, and
+    /// along its axis, its volume cut between them. The two children are built at once down to
+    /// [`PARALLEL_DEPTH`] while they hold [`PARALLEL_BRUSHES`] between them: each reads only the planes and its own brushes, and
     /// [`Grown::place`] numbers the nodes as building the front child first would.
     fn grow(
         &self,
@@ -991,7 +991,8 @@ impl Builder<'_> {
             child(back_bounds, back_volume),
         );
         let next = depth.saturating_add(1);
-        let children = if depth < PARALLEL_DEPTH {
+        let brushes = front_brushes.len().saturating_add(back_brushes.len());
+        let children = if depth < PARALLEL_DEPTH && brushes >= PARALLEL_BRUSHES {
             std::thread::scope(|scope| {
                 let front = scope.spawn(|| self.grow(front, front_brushes, split, next));
                 let back = self.grow(back, back_brushes, split, next);
@@ -1023,6 +1024,9 @@ impl Builder<'_> {
 /// How deep the brush BSP and the portals build a node's two children at once: up to 2^4
 /// threads.
 pub(crate) const PARALLEL_DEPTH: usize = 4;
+/// The fewest brushes a node's children hold for the brush BSP to build them at once: fewer
+/// build faster than a thread starts.
+const PARALLEL_BRUSHES: usize = 64;
 
 /// A node built with its children, before it has a number.
 enum Grown {

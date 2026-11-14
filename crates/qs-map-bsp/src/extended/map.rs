@@ -599,7 +599,7 @@ impl Reader<'_> {
                 let (Some(current), Some(behind)) = (w.take(), behind) else {
                     break;
                 };
-                w = current.clipped(*behind, 0.0, KeepOn::No, winding::Side::Front);
+                w = current.clipped(*behind, 0.0, KeepOn::No, winding::Part::Front);
             }
             if let Some(w) = w {
                 for &p in w.points() {

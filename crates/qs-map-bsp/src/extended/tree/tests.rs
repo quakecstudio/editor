@@ -306,7 +306,7 @@ pub(crate) fn grid_brushes(side: i32) -> (LoadedMap, HullBrushes, VisibleFaces) 
 // on one thread, node for node and in the same order
 #[test]
 fn a_tree_built_on_threads_is_the_tree_built_on_one() {
-    let (mut map, loaded, visible) = grid_brushes(5);
+    let (mut map, loaded, visible) = grid_brushes(8);
     let extent = map.world_extent;
     let mut build = |depth| {
         BspInput {
@@ -328,5 +328,6 @@ fn a_tree_built_on_threads_is_the_tree_built_on_one() {
         .max()
         .unwrap();
     assert!(deepest > PARALLEL_DEPTH + 2, "{deepest}");
+    assert!(loaded.brushes.len() >= 2 * super::PARALLEL_BRUSHES);
     assert_eq!(threaded, alone);
 }

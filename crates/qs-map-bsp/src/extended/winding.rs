@@ -201,15 +201,25 @@ impl Winding {
     fn cut_into(&self, plane: Plane, on_epsilon: f64, parts: [Option<&mut Vec<Vec3>>; 2]) {
         let [mut front, mut back] = parts;
         let n = self.0.len();
+        let Some(&first) = self.0.first() else {
+            return;
+        };
+        // Each point's distance is computed once: an edge's far end is the next edge's near
+        // one, and the first point is the last edge's far end.
+        let d_first = plane.distance_to(first);
+        let mut far = d_first;
         for (i, &p1) in self.0.iter().enumerate() {
-            let Some(&p2) = i
-                .saturating_add(1)
-                .checked_rem(n)
-                .and_then(|k| self.0.get(k))
-            else {
-                continue;
+            let next = i.saturating_add(1);
+            let (p2, d2) = if next == n {
+                (first, d_first)
+            } else {
+                let Some(&p2) = self.0.get(next) else {
+                    continue;
+                };
+                (p2, plane.distance_to(p2))
             };
-            let (d1, d2) = (plane.distance_to(p1), plane.distance_to(p2));
+            let d1 = far;
+            far = d2;
             let (side, next_side) = (Side::of(d1, on_epsilon), Side::of(d2, on_epsilon));
             match side {
                 Side::On => {
@@ -271,28 +281,38 @@ impl Winding {
         }
     }
 
-    /// The part of the winding on `side` of `plane`, as [`Winding::clip`] gives it, without
+    /// The `part` of the winding `plane` cuts, as [`Winding::clip`] gives it, without
     /// making the other part or copying a winding wholly on that side.
     pub(crate) fn clipped(
         self,
         plane: Plane,
         on_epsilon: f64,
         keep_on: KeepOn,
-        side: Side,
+        part: Part,
     ) -> Option<Self> {
         match self.lie(plane, on_epsilon, keep_on) {
-            Lie::Whole(whole) => (whole == side).then_some(self),
+            Lie::Whole(Side::Back) => (part == Part::Back).then_some(self),
+            Lie::Whole(_) => (part == Part::Front).then_some(self),
             Lie::Across => {
-                let mut part = Vec::with_capacity(self.0.len().saturating_add(CLIP_RESERVE));
-                let parts = match side {
-                    Side::Back => [None, Some(&mut part)],
-                    _ => [Some(&mut part), None],
+                let mut points = Vec::with_capacity(self.0.len().saturating_add(CLIP_RESERVE));
+                let parts = match part {
+                    Part::Front => [Some(&mut points), None],
+                    Part::Back => [None, Some(&mut points)],
                 };
                 self.cut_into(plane, on_epsilon, parts);
-                Some(Self(part))
+                Some(Self(points))
             }
         }
     }
+}
+
+/// Which part of a cut winding [`Winding::clipped`] gives.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Part {
+    /// The part in front of the plane.
+    Front,
+    /// The part behind it.
+    Back,
 }
 
 /// Where a winding lies against a plane.
