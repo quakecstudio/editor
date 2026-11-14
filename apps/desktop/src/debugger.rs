@@ -9,8 +9,13 @@ use std::path::PathBuf;
 
 use eframe::egui::{self, RichText, Ui};
 use qs_workbench::debug::Location;
-use qs_workbench::{Preview, StepBy};
+use qs_workbench::ids::WatchIndex;
+use qs_workbench::{
+    BREAKPOINT, BreakpointParams, CONSOLE, ConsoleParams, Preview, PreviewStatus, STEP_BY, StepBy,
+    StepByParams, UNWATCH, UnwatchParams, WATCH, WatchParams,
+};
 
+use crate::features::{Commands, ShellRequest};
 use crate::strings::Text;
 use crate::theme::{Theme, Token};
 
@@ -240,4 +245,46 @@ pub(crate) fn console(
             }
         });
     action
+}
+
+/// The Debugger tab's feature (P3-16): what is being typed in its boxes.
+#[derive(Default)]
+pub(crate) struct DebuggerFeature {
+    /// The watch and console boxes.
+    pub(crate) input: DebugInput,
+}
+
+impl DebugAction {
+    /// Runs what the Debugger tab, the console's box or a click in the editor's gutter asked
+    /// for, through its command, saying on the toolbar when it failed; or asks for a line to be
+    /// shown in the editor.
+    pub(crate) fn run(self, commands: &mut Commands<'_>) -> Option<ShellRequest> {
+        let ran = match self {
+            Self::Step(kind) => commands
+                .run::<_, PreviewStatus>(STEP_BY, &StepByParams { kind })
+                .is_some(),
+            Self::Watch(expression) => commands
+                .run::<_, ()>(WATCH, &WatchParams { expression })
+                .is_some(),
+            Self::Unwatch(index) => commands
+                .run::<_, PreviewStatus>(
+                    UNWATCH,
+                    &UnwatchParams {
+                        index: WatchIndex::new(index),
+                    },
+                )
+                .is_some(),
+            Self::Breakpoint { file, line } => commands
+                .run::<_, ()>(BREAKPOINT, &BreakpointParams { file, line })
+                .is_some(),
+            Self::Console(command) => commands
+                .run::<_, ()>(CONSOLE, &ConsoleParams { command })
+                .is_some(),
+            Self::Show { file, line } => return Some(ShellRequest::ShowProjectLine { file, line }),
+        };
+        if !ran {
+            commands.edit_failed();
+        }
+        None
+    }
 }
