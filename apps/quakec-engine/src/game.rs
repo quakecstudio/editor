@@ -200,7 +200,7 @@ enum FrameEnd {
     Ran,
     /// It stopped with a run error, which paused the game (BRIDGE-3.3).
     Failed,
-    /// The debugger stopped it, which paused the game mid-frame (WORLD-9.1).
+    /// The debugger stopped it, which paused the game mid-frame (WORLD-9.6).
     Stopped,
 }
 
@@ -280,6 +280,9 @@ pub(crate) struct Game {
     next_breakpoint: u64,
     /// The world before the frame the debugger may stop (WORLD-9.2).
     snapshot: Option<Snapshot>,
+    /// The level's world before its entities spawned, while a stop in a spawn function holds
+    /// the load: going on spawns again from it (WORLD-9.7).
+    prepared: Option<World>,
     /// Where the frame stopped, while it is stopped.
     halted: Option<Stopped>,
     /// Reads a file of the game's search path, for `reload`; `None` until the host gives it.
@@ -314,6 +317,7 @@ impl Game {
             breakpoints: Vec::new(),
             next_breakpoint: 0,
             snapshot: None,
+            prepared: None,
             halted: None,
             files: None,
             progs_path: "progs.dat".to_owned(),
@@ -348,6 +352,10 @@ impl Game {
             self.debugger()
                 .set_breakpoint(breakpoint.statement, BreakpointEdit::Set);
             self.breakpoints.push(breakpoint);
+        }
+        // WORLD-9.7: a level waiting to spawn with the breakpoints spawns now that it has them.
+        if let Err(error) = self.with_progs(Self::start_load) {
+            tracing::warn!(error = %error.message, "the level did not spawn");
         }
     }
 
@@ -745,7 +753,7 @@ impl Game {
             })),
             // Paused between two frames, no QuakeC is running: the stack is empty.
             // Paused between two frames no QuakeC is running and the stack is empty; at a stop
-            // it is the stopped run's (WORLD-9.1).
+            // it is the stopped run's (WORLD-9.6).
             Some("stack") => {
                 self.require_paused()?;
                 Ok(json!({ "stack": self.stack_now(progs), "time": time }))

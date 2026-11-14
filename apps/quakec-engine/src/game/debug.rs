@@ -9,6 +9,7 @@ use qc_vm::{ErrorKind, StackEntry};
 use qs_bridge::{ErrorCode, RpcError};
 use qs_sim::debug::BreakpointEdit;
 use qs_sim::debug::{Debugger, StepKind, Stop, locate, resolve};
+use qs_sim::spawn::LoadError;
 use qs_sim::{World, WorldError};
 use serde_json::{Map, Value, json};
 
@@ -184,8 +185,15 @@ impl Game {
         self.finish_frame_of(progs, frametime)
     }
 
-    /// Replays the stopped frame from its snapshot with the debugger's new rule (WORLD-9.2).
+    /// Replays the stopped frame from its snapshot with the debugger's new rule (WORLD-9.2), or
+    /// the stopped load's spawning from the prepared world (WORLD-9.7).
     pub(super) fn replay(&mut self, progs: &Progs<'_>) -> FrameEnd {
+        if let Some(prepared) = self.prepared.clone() {
+            let debugger = self.world.debugger().cloned();
+            self.world = prepared;
+            self.world.set_debugger(debugger);
+            return self.finish_load(progs);
+        }
         let Some(snapshot) = self.snapshot.clone() else {
             return FrameEnd::Ran;
         };
@@ -193,6 +201,58 @@ impl Game {
         self.world = snapshot.world;
         self.world.set_debugger(debugger);
         self.finish_frame_of(progs, snapshot.frametime)
+    }
+
+    /// The debugger a level started from this one loads with: these breakpoints, from the
+    /// start of the spawning (WORLD-9.7); none when there is no breakpoint to stop at.
+    pub(crate) fn level_debugger(&self) -> Option<Debugger> {
+        let mut debugger = self.world.debugger()?.clone();
+        debugger.run_to_breakpoint(0);
+        debugger.may_stop().then_some(debugger)
+    }
+
+    /// Keeps the prepared level to spawn once [`Game::carry_from`] has given it the last
+    /// level's breakpoints, so a stop in a spawn function names its breakpoint (WORLD-9.7).
+    pub(crate) fn wait_to_spawn(&mut self) {
+        self.prepared = Some(self.world.clone());
+    }
+
+    /// Spawns the waiting level's entities watched by its debugger, the prepared world kept to
+    /// go on from a stop (WORLD-9.7); see [`Game::finish_load`]. A stop pauses the game and a
+    /// failure is reported, each as a frame's would be.
+    pub(super) fn start_load(&mut self, progs: &Progs<'_>) {
+        if self.prepared.is_some() {
+            let _end = self.finish_load(progs);
+        }
+    }
+
+    /// Spawns the level's entities; paused at a stop in a spawn function, or, once the
+    /// spawning ends, the level settled and the player let in, as a load with no debugger
+    /// does (WORLD-9.7).
+    fn finish_load(&mut self, progs: &Progs<'_>) -> FrameEnd {
+        let spawned = self.world.spawn_map(progs);
+        if let Err(WorldError::Spawn(LoadError::Run(error))) = &spawned
+            && error.kind == ErrorKind::Interrupted
+        {
+            drop(self.world.take_messages());
+            self.stopped_at(progs, error.trace.clone());
+            return FrameEnd::Stopped;
+        }
+        self.prepared = None;
+        self.halted = None;
+        if let Some(debugger) = self.world.debugger_mut() {
+            debugger.run_to_breakpoint(0);
+        }
+        let loaded = spawned
+            .and_then(|()| self.world.settle(progs))
+            .and_then(|()| self.world.connect(progs));
+        match loaded {
+            Ok(()) => FrameEnd::Ran,
+            Err(error) => {
+                self.fail(Some(progs), &error);
+                FrameEnd::Failed
+            }
+        }
     }
 
     /// Runs the frame and answers for how it ended: on to the next frame's breakpoints, paused

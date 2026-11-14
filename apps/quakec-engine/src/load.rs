@@ -15,6 +15,7 @@ use qs_mdl::spr::Sprite;
 use qs_render::{
     Camera, Degrees, Extras, MapMesh, MeshBuilder, Palette, Pics, Placement, Play, Surface,
 };
+use qs_sim::debug::Debugger;
 use qs_sim::localization::{Localization, RRE_LOC_FILE};
 use qs_sim::rerelease::patch_builtins;
 use qs_sim::{HostState, LoadOptions, SaveGame, SpawnParms, World};
@@ -283,7 +284,13 @@ impl Args {
     pub(crate) fn act(&self, game: &mut Game, action: HostAction) -> Acted {
         match action {
             HostAction::Level(next) => {
-                match self.load_map(&next.map, next.carried, Some(next.host), None) {
+                match self.load_map(
+                    &next.map,
+                    next.carried,
+                    Some(next.host),
+                    None,
+                    game.level_debugger(),
+                ) {
                     Ok(loaded) => Acted::Load(Box::new(loaded)),
                     Err(error) => {
                         tracing::warn!(%error, map = next.map, "the next level did not load");
@@ -317,7 +324,7 @@ impl Args {
                     }
                 };
                 let host = game.world().host_state();
-                match self.load_map(&save.map, None, Some(host), Some(&save)) {
+                match self.load_map(&save.map, None, Some(host), Some(&save), None) {
                     Ok(loaded) => Acted::Load(Box::new(loaded)),
                     Err(error) => {
                         game.console_line(&format!("{error}\n"));
@@ -348,6 +355,7 @@ impl Args {
         carried: Option<SpawnParms>,
         host: Option<HostState>,
         save: Option<&SaveGame>,
+        debugger: Option<Debugger>,
     ) -> Result<Loaded, String> {
         let map = map.to_owned();
         let engine = self.engine();
@@ -435,13 +443,22 @@ impl Args {
             settings: Vec::new(),
         };
         let mut world =
-            World::load(&progs, &map, &bsp, files()?, options).map_err(|e| e.to_string())?;
-        world.settle(&progs).map_err(|e| e.to_string())?;
-        // PHYS-10.5: a saved game is read over the settled map before the client enters.
-        if let Some(save) = save {
-            world.restore(&progs, save).map_err(|e| e.to_string())?;
+            World::prepare(&progs, &map, &bsp, files()?, options).map_err(|e| e.to_string())?;
+        // WORLD-9.7: a level started from a debugged one spawns with its breakpoints, and the
+        // game finishes the load once the spawning ends; a saved game loads as it was saved.
+        let debugger = debugger.filter(|_| save.is_none());
+        let watched = debugger.is_some();
+        if watched {
+            world.set_debugger(debugger);
+        } else {
+            world.spawn_map(&progs).map_err(|e| e.to_string())?;
+            world.settle(&progs).map_err(|e| e.to_string())?;
+            // PHYS-10.5: a saved game is read over the settled map before the client enters.
+            if let Some(save) = save {
+                world.restore(&progs, save).map_err(|e| e.to_string())?;
+            }
+            world.connect(&progs).map_err(|e| e.to_string())?;
         }
-        world.connect(&progs).map_err(|e| e.to_string())?;
         let reporting = if self.bridge.is_some() {
             Reporting::Bridge
         } else {
@@ -458,6 +475,9 @@ impl Args {
             .unwrap_or_default();
         game.set_lines(lines);
         game.set_files(files()?);
+        if watched {
+            game.wait_to_spawn();
+        }
         game.announce("progs.dat", &map);
         // The client reads the serverinfo and the spawn messages the connection wrote.
         let mut client = Client::new(qs_client::Game::Standard);

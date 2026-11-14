@@ -1123,7 +1123,7 @@ fn events_named(game: &mut Game, method: &str) -> Vec<Value> {
         .collect()
 }
 
-// spec WORLD-9.1, WORLD-9.4: a breakpoint at a line of a monster's think stops the frame there,
+// spec WORLD-9.6, WORLD-9.4: a breakpoint at a line of a monster's think stops the frame there,
 // raising breakpoint/hit with its location and self, then state/changed to paused
 // spec WORLD-9.3, WORLD-9.2: stepping over and out replays the frame; resume runs it on
 // spec WORLD-9.5: self's fields are inspected and watched where it stopped
@@ -1282,7 +1282,7 @@ fn a_scripted_debug_session() {
     );
 }
 
-// spec WORLD-9.1: with no debugger a frame runs for the frametime it is given, as without one
+// spec WORLD-9.6: with no debugger a frame runs for the frametime it is given, as without one
 #[test]
 fn a_frame_runs_for_its_frametime() {
     let (mut game, _session) = game();
@@ -1567,4 +1567,86 @@ fn window_place_refuses_a_bad_frame() {
 #[test]
 fn a_breakpoint_id_reads_back() {
     assert_eq!(super::debug::BreakpointId::new(7).get(), 7);
+}
+
+// spec WORLD-9.7: a level started from a game with a breakpoint in a spawn function spawns with
+// it and pauses there, raising breakpoint/hit; resuming spawns on, settles the level and lets
+// the player in; a game with no breakpoint starts its next level unwatched
+#[test]
+fn a_breakpoint_in_a_spawn_function_stops_the_next_level() {
+    let dog = "{\n\"classname\" \"monster_dog\"\n\"origin\" \"0 0 40\"\n}\n";
+    let (mut game, mut session) = game_with(dog);
+    assert!(
+        game.level_debugger().is_none(),
+        "no breakpoint, no debugger"
+    );
+    let line = source_line("void() monster_dog = {");
+    let set = call(
+        &mut game,
+        &mut session,
+        "breakpoint/set",
+        &json!({ "file": "t.qc", "line": line }),
+    )
+    .unwrap();
+    assert_eq!(set["location"]["function"], "monster_dog");
+    let debugger = game
+        .level_debugger()
+        .expect("the breakpoint goes to the next level");
+
+    // The next level, as `load_map` prepares it for `restart` or `changelevel`.
+    let (bytes, lines) = progs_with_lines();
+    let progs = Progs::read(&bytes).unwrap();
+    let lump = format!("{{\n\"classname\" \"worldspawn\"\n}}\n{dog}");
+    let map = floor(Box::leak(lump.into_bytes().into_boxed_slice()));
+    let mut world = World::prepare(
+        &progs,
+        "test",
+        &map,
+        Rc::new(|_| None),
+        LoadOptions::default(),
+    )
+    .unwrap();
+    world.set_debugger(Some(debugger));
+    let mut next = Game::new(world, bytes.clone(), Reporting::Bridge);
+    next.set_lines(lines);
+    next.wait_to_spawn();
+    next.carry_from(game);
+    assert_eq!(
+        next.state,
+        super::State::Paused,
+        "the load stopped in the spawn function"
+    );
+    let hits = events_named(&mut next, "breakpoint/hit");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0]["location"]["function"], "monster_dog");
+    assert_eq!(hits[0]["self"], json!(2), "the dog is edict 2");
+    assert_eq!(
+        next.world()
+            .evaluate(&progs, None, "self.nextthink")
+            .unwrap(),
+        qs_sim::QcValue::Float(0.0),
+        "its spawn function has not run"
+    );
+
+    let mut next_session = Session::new();
+    let init = request(
+        0,
+        "initialize",
+        &json!({ "protocolVersion": "1.0", "client": { "name": "test" } }),
+    );
+    next_session.handle(&mut next, init);
+    call(&mut next, &mut next_session, "resume", &json!({})).unwrap();
+    assert_eq!(next.state, super::State::Running);
+    assert!(
+        next.frame(0.1),
+        "the level settled, the player is in, and it runs"
+    );
+    for _ in 0..3 {
+        next.frame(0.1);
+    }
+    assert_eq!(
+        next.world().evaluate(&progs, None, "self.health").unwrap(),
+        qs_sim::QcValue::Float(50.0),
+        "the dog's spawn function set its think, which ran"
+    );
 }
