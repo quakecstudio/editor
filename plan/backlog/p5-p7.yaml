@@ -1168,8 +1168,8 @@ groups:
     - P6-39
     - P6-40
     deliverable:
-    - 'apps/desktop/src/features.rs: one Features struct owning a struct per feature (editors, project, agent, map, entities, git, terminal, debugger), each in its own module with the fields and methods that leave Shell; a closed FeatureAction enum the draw methods return and a closed ShellRequest enum by which one feature asks another, or the window, for something'
-    - 'apps/desktop/src/shell.rs: the window only (session, theme, layout, tabs, palette, finder, keymap, menu, host, toolbar, status bar), naming no feature but Features, at about 1,200 lines'
+    - 'apps/desktop/src/features.rs: one Features struct owning a struct per feature (editors, project, agent, map with the Entities outliner and Properties panel it edits, git, terminal, debugger), each in its own module with the fields and methods that leave Shell; a closed FeatureAction enum the draw methods return and a closed ShellRequest enum by which one feature asks another, or the window, for something'
+    - 'apps/desktop/src/shell.rs: the window (session, theme, layout, tabs, palette, finder, keymap, menu, host, toolbar, status bar, the centre tabs drawing) and the routing between features that has to run at once and in order (jump, an editor request, the pickers, the second pane, the outline, an entity action), holding no feature state of its own: every feature field is in Features. The routing stays because each step of it reaches two or three features and must take effect before the next'
     - 'A method found to be logic rather than drawing or dispatch moved to a command where that is small, and listed in the PR where it is not'
     acceptance:
     - 'Behaviour is unchanged: panels are drawn from the state the frame began with and their actions carried out after, each request handled at once and in order, as now; the desktop tests and snapshot tests pass with no change but moved paths'

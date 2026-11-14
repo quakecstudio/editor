@@ -12,13 +12,20 @@ use std::path::{Path, PathBuf};
 
 use eframe::egui::{self, RichText, Ui};
 use qs_workbench::git::{
-    ConflictIndex, ConflictSide, GitBlameLine, GitBranch, GitChange, GitCommit, GitConflict,
-    GitFile, GitHunk, GitStatus, HunkIndex,
+    ConflictIndex, ConflictSide, GIT_BLAME, GIT_BRANCHES, GIT_COMMIT, GIT_CONFLICTS,
+    GIT_CREATE_BRANCH, GIT_DIFF, GIT_LOG, GIT_RESOLVE, GIT_STAGE, GIT_STATUS, GIT_SWITCH,
+    GIT_UNSTAGE, GitBlameLine, GitBranch, GitBranchParams, GitChange, GitCommit, GitCommitParams,
+    GitConflict, GitDiffParams, GitFile, GitHunk, GitLogParams, GitPathParams, GitResolveParams,
+    GitSide, GitStageParams, GitStatus, HunkIndex,
 };
 
+use crate::features::{Commands, ShellRequest};
 use crate::shell::name_field;
 use crate::strings::{Text, conflict_at};
 use crate::theme::{SECTION_GAP, Theme, Token};
+
+/// How many of the open file's commits the Git tab lists.
+const HISTORY: usize = 50;
 
 /// How many characters of a commit id are shown.
 const SHORT_ID: usize = 8;
@@ -369,4 +376,187 @@ fn history_ui(
         }
     }
     action
+}
+
+/// Whether the Git tab is on screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TabShown {
+    /// Its tab is chosen and the bottom panel is open.
+    Shown,
+    /// It is not on screen.
+    Hidden,
+}
+
+/// The Git tab's feature (P4-35): what it shows and the file it was last read for.
+#[derive(Default)]
+pub(crate) struct GitFeature {
+    /// What the tab shows.
+    pub(crate) view: GitView,
+    /// The open file the repository was last read for.
+    read_for: Option<PathBuf>,
+}
+
+impl GitFeature {
+    /// Reads the repository again for the tab while it is `shown`, when an action made the
+    /// last read stale or another file was opened; a hidden tab is read again when next shown.
+    pub(crate) fn refresh(&mut self, commands: &mut Commands<'_>, shown: TabShown) {
+        let open = commands
+            .session()
+            .context()
+            .workbench
+            .open()
+            .map(|o| o.path().to_path_buf());
+        if shown == TabShown::Hidden {
+            self.view.stale = true;
+            return;
+        }
+        if !self.view.stale && self.read_for == open {
+            return;
+        }
+        self.view.stale = false;
+        self.read_for.clone_from(&open);
+        let blame = self.view.blame;
+        self.view.data = GitData::read(commands, open.as_deref(), blame);
+    }
+
+    /// Runs what the tab asked for, through its command, then reads the repository again;
+    /// the editor is then brought up to date, or a file opened at a line.
+    pub(crate) fn apply(
+        &mut self,
+        action: GitAction,
+        commands: &mut Commands<'_>,
+        shown: TabShown,
+    ) -> ShellRequest {
+        let params =
+            |value: Result<serde_json::Value, serde_json::Error>| value.unwrap_or_default();
+        let ran = match action {
+            GitAction::Refresh => Ok(serde_json::Value::Null),
+            GitAction::Stage(path, hunk) => commands.execute(
+                GIT_STAGE,
+                params(serde_json::to_value(GitStageParams { path, hunk })),
+            ),
+            GitAction::Unstage(path, hunk) => commands.execute(
+                GIT_UNSTAGE,
+                params(serde_json::to_value(GitStageParams { path, hunk })),
+            ),
+            GitAction::Commit(message) => commands.execute(
+                GIT_COMMIT,
+                params(serde_json::to_value(GitCommitParams { message })),
+            ),
+            GitAction::Switch(branch) => commands.execute(
+                GIT_SWITCH,
+                params(serde_json::to_value(GitBranchParams { branch })),
+            ),
+            GitAction::CreateBranch(branch) => commands.execute(
+                GIT_CREATE_BRANCH,
+                params(serde_json::to_value(GitBranchParams { branch })),
+            ),
+            GitAction::Resolve(path, conflict, side) => commands.execute(
+                GIT_RESOLVE,
+                params(serde_json::to_value(GitResolveParams {
+                    path,
+                    conflict,
+                    side,
+                })),
+            ),
+            GitAction::ToggleBlame => {
+                self.view.blame = match self.view.blame {
+                    BlameShown::Hidden => BlameShown::Shown,
+                    BlameShown::Shown => BlameShown::Hidden,
+                };
+                Ok(serde_json::Value::Null)
+            }
+            GitAction::Open(path, line) => {
+                let line = u32::try_from(line).unwrap_or(u32::MAX);
+                return ShellRequest::ShowLine { path, line };
+            }
+        };
+        self.view.stale = true;
+        self.refresh(commands, shown);
+        if let Err(error) = ran {
+            self.view.data.error = Some(error.to_string());
+        }
+        ShellRequest::RefreshEditor
+    }
+}
+
+/// A `git.*` command's file parameter.
+fn path_params(path: &Path) -> GitPathParams {
+    GitPathParams {
+        path: path.to_path_buf(),
+    }
+}
+
+impl GitData {
+    /// What the Git tab shows, read through the `git.*` commands (P4-35): the status, each changed
+    /// file's hunks or a conflicted file's conflicts, the branches, and the open file's history and,
+    /// when shown, its blame. Outside a repository there is no status and no error.
+    fn read(commands: &mut Commands<'_>, open: Option<&Path>, blame: BlameShown) -> Self {
+        let mut data = Self::default();
+        let mut read = |id: &str, params: serde_json::Value| {
+            commands
+                .execute(id, params)
+                .map_err(|error| error.to_string())
+        };
+        let status = read(GIT_STATUS, serde_json::json!({})).and_then(|v| {
+            serde_json::from_value::<Option<GitStatus>>(v).map_err(|e| e.to_string())
+        });
+        let status = match status {
+            Ok(Some(status)) => status,
+            Ok(None) => return data,
+            Err(error) => {
+                data.error = Some(error);
+                return data;
+            }
+        };
+        let to = |params: Result<serde_json::Value, serde_json::Error>| params.unwrap_or_default();
+        for file in &status.files {
+            let path = &file.full_path;
+            let conflicted =
+                file.staged == GitChange::Unmerged || file.unstaged == GitChange::Unmerged;
+            if conflicted {
+                let found = read(GIT_CONFLICTS, to(serde_json::to_value(path_params(path))))
+                    .ok()
+                    .and_then(|v| serde_json::from_value::<Vec<GitConflict>>(v).ok())
+                    .unwrap_or_default();
+                data.conflicts.push((path.clone(), found));
+                continue;
+            }
+            let mut hunks = |side: GitSide| {
+                let params = GitDiffParams {
+                    path: path.clone(),
+                    side,
+                };
+                read(GIT_DIFF, to(serde_json::to_value(params)))
+                    .ok()
+                    .and_then(|v| serde_json::from_value::<Vec<GitHunk>>(v).ok())
+                    .unwrap_or_default()
+            };
+            let unstaged = hunks(GitSide::Unstaged);
+            let staged = hunks(GitSide::Staged);
+            data.hunks.push((path.clone(), unstaged, staged));
+        }
+        data.status = Some(status);
+        data.branches = read(GIT_BRANCHES, serde_json::json!({}))
+            .ok()
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default();
+        if let Some(path) = open {
+            let params = GitLogParams {
+                path: path.to_path_buf(),
+                limit: Some(HISTORY),
+            };
+            data.history = read(GIT_LOG, to(serde_json::to_value(params)))
+                .ok()
+                .and_then(|v| serde_json::from_value(v).ok())
+                .unwrap_or_default();
+            if blame == BlameShown::Shown {
+                data.blame = read(GIT_BLAME, to(serde_json::to_value(path_params(path))))
+                    .ok()
+                    .and_then(|v| serde_json::from_value(v).ok())
+                    .unwrap_or_default();
+            }
+        }
+        data
+    }
 }
