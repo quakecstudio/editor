@@ -12,7 +12,7 @@ use qs_map::qbsp::{QbspMap, load_map_file};
 use super::BrushSet;
 use crate::fixtures::{BrushSpec, MapSpec, map_text};
 use crate::planes::Planes;
-use crate::{Contents, Dialect, Hull, ModelKind};
+use crate::{Contents, Hull, ModelKind};
 
 fn world(brushes: Vec<BrushSpec>) -> QbspMap {
     let spec = MapSpec {
@@ -24,7 +24,7 @@ fn world(brushes: Vec<BrushSpec>) -> QbspMap {
 }
 
 fn load(map: &QbspMap, hull: Hull) -> BrushSet {
-    let limits = Dialect::Id.limits();
+    let limits = crate::QBSP_LIMITS;
     let mut planes = Planes::new(limits.planes);
     let mut warnings = Vec::new();
     BrushSet::load(

@@ -126,6 +126,7 @@ mod lex_corpus;
 mod licenses;
 mod lsp_corpus;
 mod map_corpus;
+mod map_diff;
 mod offline;
 mod oracles;
 mod parse_corpus;
@@ -225,6 +226,8 @@ enum Task {
     LspCorpus(lsp_corpus::Args),
     /// Every .map round-trips.
     MapCorpus(map_corpus::Args),
+    /// The map compiler differential: qs-map-bsp against id's and ericw-tools' qbsp.
+    MapDiff(map_diff::Args),
     /// Each codebase's entity definitions, against their golden FGD and the maps' classnames.
     EntityCorpus(entity_corpus::Args),
     /// Build and run the oracles.
@@ -286,6 +289,10 @@ fn run(root: &Path, task: &Task, ci_steps: &[ci::Step]) -> bool {
         Task::LexCorpus(args) => ("lex-corpus", lex_corpus::main(root, args)),
         Task::LspCorpus(args) => ("lsp-corpus", lsp_corpus::main(root, args)),
         Task::MapCorpus(args) => ("map-corpus", map_corpus::main(root, args)),
+        Task::MapDiff(args) => (
+            "map-diff",
+            map_diff::main(root, &exec::System, &download::CURL, args),
+        ),
         Task::EntityCorpus(args) => ("entity-corpus", entity_corpus::main(root, args)),
         Task::Oracles(args) => ("oracles", oracles::main(root, args)),
         Task::ParseCorpus(args) => ("parse-corpus", parse_corpus::main(root, args)),

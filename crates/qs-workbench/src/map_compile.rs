@@ -82,9 +82,6 @@ impl MapReport {
                 Warning::NoOccupant => seal = Seal::NoOccupant,
                 Warning::NoBrushFaces
                 | Warning::PortalClippedAway
-                | Warning::BadFace(_)
-                | Warning::MixedContents
-                | Warning::NoValidBrushes
                 | Warning::Bsp2(_)
                 | Warning::Map(_) => {}
             }

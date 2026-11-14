@@ -12,7 +12,7 @@ use qs_map::qbsp::{QbspMap, load_map_file};
 use crate::brush::BrushSet;
 use crate::fixtures::{BrushSpec, MapSpec, map_text};
 use crate::planes::Planes;
-use crate::{Contents, Dialect, Face, Hull, ModelKind, Surface};
+use crate::{Contents, Face, Hull, ModelKind, Surface};
 
 fn compile_csg(brushes: Vec<BrushSpec>) -> (QbspMap, Planes, Vec<Surface>) {
     let spec = MapSpec {
@@ -21,7 +21,7 @@ fn compile_csg(brushes: Vec<BrushSpec>) -> (QbspMap, Planes, Vec<Surface>) {
         ..MapSpec::default()
     };
     let map = load_map_file(map_text(&spec).as_bytes()).unwrap();
-    let limits = Dialect::Id.limits();
+    let limits = crate::QBSP_LIMITS;
     let mut planes = Planes::new(limits.planes);
     let set = BrushSet::load(
         &map.entities[0],

@@ -13,14 +13,18 @@ upstream until the license review rules on it (P4-22), so it is described from i
   corpus it gives BSP and portal files byte-identical to qbsp's. Single-precision `vec_t`,
   double-precision epsilons, `Q_rint`, `VectorMA` and qbsp's linked-list orders are kept as the
   spec states them.
-- **`Dialect::Extended`**, the default, reads Valve 220 maps and exact points, has no
-  `MAX_MAP_` limit, warns where qbsp stops on a bad face, a leaf of mixed contents or an entity
-  with no valid brush, and writes BSP29 when every value fits it, else `BSP2` (QBSP-14). Every
-  other rule is the id dialect's.
+- **`Dialect::Extended`**, the default, is ericw-tools' qbsp for Quake, ported cleanly from
+  `ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266` under
+  [ADR-0023](../../docs/adr/0023-ericw-tools-porting-upstream.md) into `src/extended/`
+  ([design](../../docs/design/extended-qbsp.md)): Valve 220 maps and external map instances,
+  double precision, a brush BSP built from the brushes as Quake II's qbsp builds it, the fill
+  from the void, faces from the visible brush sides, T-junctions fixed by minimum-weight
+  triangulation, and BSP29 when every value fits it, else `BSP2` (QBSP-14, QBSP-15). It shares
+  none of the id dialect's pipeline.
 
 - **Layer:** L4 bridges. It depends on `qs-map` to read the map, `qs-bsp` to write the BSP and
   `qs-wad` for the textures.
-- **Spec sections:** QBSP-1 to QBSP-14 in [`qbsp.md`](../../docs/spec/qbsp.md); BSP-23 in
+- **Spec sections:** QBSP-1 to QBSP-15 in [`qbsp.md`](../../docs/spec/qbsp.md); BSP-23 in
   [`bsp.md`](../../docs/spec/bsp.md) for the file it writes; MAP-1 to MAP-7 in
   [`map.md`](../../docs/spec/map.md) for what it reads.
 - **Shipped:** yes.
@@ -36,3 +40,8 @@ files it wrote before stopping, a portal file for one of them; the id dialect gi
 error). The extended
 dialect compiled all 133, 11 of them as `BSP2`. The map differential (P6-07) runs the same
 comparison in CI.
+
+`cargo run --release -p xtask -- map-diff` on 2026-11-13 compared the extended dialect with
+ericw-tools' qbsp on the 26 maps of the map corpus and the two fixtures: 0 of 2000 sampled
+traces differ in any hull, leaks and entities agree on every map, and face counts are within a
+few percent (lq-e2m5 46409 against 46450). The nightly Differential workflow runs it.

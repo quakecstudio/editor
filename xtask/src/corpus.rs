@@ -200,7 +200,7 @@ fn tracked_files(root: &Path) -> Result<Vec<String>, String> {
 }
 
 /// The cache `dest` names, or the default one, checked to be outside the source tree.
-fn cache_dest(root: &Path, dest: Option<&Path>) -> Result<PathBuf, String> {
+pub(crate) fn cache_dest(root: &Path, dest: Option<&Path>) -> Result<PathBuf, String> {
     let dest = dest
         .map(Path::to_path_buf)
         .or_else(|| default_dest(&|key| env::var_os(key).map(PathBuf::from)))

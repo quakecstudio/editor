@@ -37,7 +37,7 @@ const BSP29: i32 = 29;
 /// Where the room is compiled, under `target/oracles`. id's qbsp sets its directories from the
 /// map's absolute path, `SetQdirFromPath` in qutils' `COMMON/CMDLIB.C`, and stops with "no
 /// 'quake' in" a path without a `quake` directory followed by a game directory.
-const WORK: [&str; 3] = ["maps-work", "quake", "id1"];
+pub(crate) const WORK: [&str; 3] = ["maps-work", "quake", "id1"];
 /// The length of a full commit hash in hexadecimal.
 const COMMIT_LEN: usize = 40;
 /// The length of a SHA-256 in hexadecimal.
@@ -128,7 +128,7 @@ fn tool_paths(bin: &Path, prefix: &str) -> [PathBuf; 3] {
 
 /// Fetches and builds both sets of tools, unless every binary is there and the stamp of their
 /// inputs is unchanged.
-fn build(root: &Path, exec: &dyn Exec, net: &dyn Net) -> Result<MapTools, String> {
+pub(crate) fn build(root: &Path, exec: &dyn Exec, net: &dyn Net) -> Result<MapTools, String> {
     let pins = read_pins(root)?;
     let out = root.join(OUT);
     let cache = out.join("src");

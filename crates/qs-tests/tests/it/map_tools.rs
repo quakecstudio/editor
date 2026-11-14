@@ -90,16 +90,7 @@ fn compiles(brushes: &[Brush], what: &str) {
         let faults: Vec<&Warning> = compiled
             .warnings
             .iter()
-            .filter(|w| {
-                matches!(
-                    w,
-                    Warning::NoBrushFaces
-                        | Warning::BadFace(_)
-                        | Warning::MixedContents
-                        | Warning::NoValidBrushes
-                        | Warning::Leak
-                )
-            })
+            .filter(|w| matches!(w, Warning::NoBrushFaces | Warning::Leak))
             .collect();
         assert!(faults.is_empty(), "{what} in {dialect:?}: {faults:?}");
     }
