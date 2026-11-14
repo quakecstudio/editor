@@ -849,8 +849,10 @@ fn read_if(text: &[u8], at: usize) -> Directive {
 /// number read with `QCC_PR_LexInteger` and one byte more; a number above 5 is too many
 /// (FTEF-14.39).
 fn read_pack(text: &[u8], at: usize) -> Directive {
-    let (end, too_many) = if text.get(at..).is_some_and(|rest| rest.starts_with(b"id")) {
-        (at.saturating_add(3), None)
+    const ID: &[u8] = b"id";
+    let (end, too_many) = if text.get(at..).is_some_and(|rest| rest.starts_with(ID)) {
+        // `id` and one byte more.
+        (at.saturating_add(ID.len()).saturating_add(1), None)
     } else {
         let (number_end, value) = lex_integer(text, at);
         let packs = if value == 0 { 1 } else { value };

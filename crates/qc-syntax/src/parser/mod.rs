@@ -57,6 +57,15 @@ pub(crate) const FTEQCC_MAX_NAME: usize = 256;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Precedence(Priorities);
 
+/// A declarator's place in its declaration's list: the first, whose head a `qcfuncs` type's
+/// parameter list may belong to (FTEF-18.36), or a later one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Declarator {
+    /// The first declarator.
+    First,
+    /// One after a `,`.
+    Later,
+}
 impl Precedence {
     /// `TOP_PRIORITY`: the loosest binary operator priority, `priority_class[MAX_PRIORITY_CLASSES]`.
     const fn top(self) -> u8 {
@@ -1778,10 +1787,10 @@ impl<'a> Parser<'a> {
             self.bump();
             return;
         }
-        let mut first = true;
+        let mut order = Declarator::First;
         let function = loop {
-            let function = self.declarator(ty, site, first);
-            first = false;
+            let function = self.declarator(ty, site, order);
+            order = Declarator::Later;
             if !self.at(K::Comma) {
                 break function;
             }
@@ -1819,10 +1828,10 @@ impl<'a> Parser<'a> {
     /// Parses one declarator; returns whether its type is a function type, whose `;` an
     /// FTEQCC declaration may leave out (FTE-17.3). A definition's name is
     /// `QCC_PR_DummyDef`'s, once its type is known (FTEF-20.4).
-    fn declarator(&mut self, ty: TypeShape, site: Site, first: bool) -> bool {
+    fn declarator(&mut self, ty: TypeShape, site: Site, order: Declarator) -> bool {
         self.start_node(K::Declarator);
         let mut ty = ty;
-        let pointer = self.declarator_head(&mut ty, first);
+        let pointer = self.declarator_head(&mut ty, order);
         let mut name = self.found();
         let named = self.name();
         if pointer {
@@ -1911,7 +1920,7 @@ impl<'a> Parser<'a> {
     /// the first declarator's of a type `QCC_PR_ParseType` read with `qcfuncs` on, the type took
     /// any parameter list, and its `ParseFunctionType` finds no list at `(*`, which this leaves
     /// for the name to refuse.
-    fn declarator_head(&mut self, ty: &mut TypeShape, first: bool) -> bool {
+    fn declarator_head(&mut self, ty: &mut TypeShape, order: Declarator) -> bool {
         let mut levels = 0_usize;
         while self.fteqcc() && self.at(K::Star) {
             levels = levels.saturating_add(1);
@@ -1933,7 +1942,7 @@ impl<'a> Parser<'a> {
                 break;
             }
             if self.nth(1).is_some_and(|t| t.kind == K::Star) {
-                if first && ty.qcfuncs && !ty.function {
+                if order == Declarator::First && ty.qcfuncs && !ty.function {
                     break;
                 }
                 // `else { //c-style function pointer while (QCC_PR_CheckToken("*")) isptr++;`
@@ -2635,10 +2644,10 @@ impl<'a> Parser<'a> {
             self.bump_as(K::LocalKw);
         }
         if let Some(ty) = self.type_or_user_type() {
-            let mut first = true;
+            let mut order = Declarator::First;
             loop {
-                self.declarator(ty, Site::Body, first);
-                first = false;
+                self.declarator(ty, Site::Body, order);
+                order = Declarator::Later;
                 if !self.at(K::Comma) {
                     break;
                 }

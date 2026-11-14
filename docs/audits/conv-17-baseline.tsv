@@ -104,8 +104,6 @@ bool-argument	crates/qc-syntax/src/c_scalar.rs	CWords::made
 bool-argument	crates/qc-syntax/src/parser/fte.rs	Parser::fte_param
 bool-argument	crates/qc-syntax/src/parser/fte.rs	Parser::scoped_name
 bool-argument	crates/qc-syntax/src/parser/fte.rs	Parser::sizeof_type_follows
-bool-argument	crates/qc-syntax/src/parser/mod.rs	Parser::declarator
-bool-argument	crates/qc-syntax/src/parser/mod.rs	Parser::declarator_head
 bool-argument	crates/qc-syntax/src/parser/mod.rs	Parser::declare_type_shaped
 bool-argument	crates/qc-syntax/src/parser/mod.rs	Parser::define
 bool-argument	crates/qc-syntax/src/parser/mod.rs	Parser::for_local_decl
@@ -245,7 +243,6 @@ free-fn-on-type	crates/qc-syntax/src/ast.rs	prefix_lists
 free-fn-on-type	crates/qc-syntax/src/ast.rs	scope_of
 free-fn-on-type	crates/qc-syntax/src/ast.rs	scoped_name
 free-fn-on-type	crates/qc-syntax/src/ast.rs	suffix_list
-free-fn-on-type	crates/qc-syntax/src/lib.rs	finish
 free-fn-on-type	crates/qc-syntax/src/recovery.rs	deletable
 free-fn-on-type	crates/qc-syntax/src/recovery.rs	items
 free-fn-on-type	crates/qc-trace/src/binary.rs	encode
@@ -770,7 +767,6 @@ magic-number	crates/qc-preproc/src/fte_directive.rs	false_side:4
 magic-number	crates/qc-preproc/src/fte_directive.rs	join_end:3
 magic-number	crates/qc-preproc/src/fte_directive.rs	read_if:5
 magic-number	crates/qc-preproc/src/fte_directive.rs	read_if:6
-magic-number	crates/qc-preproc/src/fte_directive.rs	read_pack:3
 magic-number	crates/qc-preproc/src/fte_directive.rs	skip_to_end_of_line:3
 magic-number	crates/qc-preproc/src/fte_directive.rs	strtoul:10
 magic-number	crates/qc-preproc/src/fte_directive.rs	strtoul:12

@@ -299,42 +299,45 @@ fn parse_text(
         // Done when this pass read the blocks it was lexed with, or when the passes are spent.
         let settled = parser.blocks() == blocks.as_slice();
         if settled {
-            return finish(parser, text, edits, &blocks, marks, lex);
+            return parser.into_parse(text, edits, &blocks, marks, lex);
         }
         if pass == PASSES {
-            return finish(parser, text, edits, &blocks, marks, lex);
+            return parser.into_parse(text, edits, &blocks, marks, lex);
         }
         blocks = parser.blocks().to_vec();
     }
 }
 
-/// The parse of a text's last pass, which read it with the `extern` blocks `blocks`.
-fn finish(
-    mut parser: parser::Parser<'_>,
-    text: input::Text,
-    edits: &[(usize, FlagEdit)],
-    blocks: &[flags::Block],
-    marks: Vec<(usize, CompilerFlags)>,
-    lex: Vec<(usize, qc_lexer::LexFlags)>,
-) -> Parse {
-    let relexed = if text == input::Text::Preprocessed && !blocks.is_empty() {
-        parser.relexed(&flags::marks(edits, &[], flags::Reading::Lexed))
-    } else {
-        Vec::new()
-    };
-    let parser::Finished {
-        green,
-        diagnostics,
-        keywords,
-        types,
-    } = parser.finish();
-    Parse {
-        green,
-        diagnostics,
-        flags: marks,
-        lex,
-        keywords,
-        types,
-        relexed,
+impl parser::Parser<'_> {
+    /// The parse of a text's last pass, this parser's, which read it with the `extern` blocks
+    /// `blocks`.
+    fn into_parse(
+        mut self,
+        text: input::Text,
+        edits: &[(usize, FlagEdit)],
+        blocks: &[flags::Block],
+        marks: Vec<(usize, CompilerFlags)>,
+        lex: Vec<(usize, qc_lexer::LexFlags)>,
+    ) -> Parse {
+        let relexed = if text == input::Text::Preprocessed && !blocks.is_empty() {
+            self.relexed(&flags::marks(edits, &[], flags::Reading::Lexed))
+        } else {
+            Vec::new()
+        };
+        let parser::Finished {
+            green,
+            diagnostics,
+            keywords,
+            types,
+        } = self.finish();
+        Parse {
+            green,
+            diagnostics,
+            flags: marks,
+            lex,
+            keywords,
+            types,
+            relexed,
+        }
     }
 }
