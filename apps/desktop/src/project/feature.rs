@@ -2,7 +2,7 @@
 
 //! The project's feature (P6-41): the recent projects, why a project did not open, a new
 //! project and an export, the user's settings file, and the guide to the game's files, which the
-//! shell used to hold.
+//! shell used to hold. The user's settings file stays with the shell, which reads it.
 
 use std::path::{Path, PathBuf};
 
@@ -33,8 +33,6 @@ pub(crate) struct ProjectFeature {
     seen_root: Option<PathBuf>,
     /// Why the project asked for did not open, shown in the Project panel.
     pub(crate) error: Option<String>,
-    /// The user's settings file, which keeps the game folder chosen (P3-44).
-    pub(crate) settings_file: Option<PathBuf>,
     /// Where the last export wrote its zip, or why it did not (P4-28).
     pub(crate) export_note: Option<Result<PathBuf, String>>,
     /// Whether the guide to the game's files is shown (P3-21).
@@ -167,17 +165,17 @@ impl ProjectFeature {
     /// Chooses `path` as the game folder, read in place (`preview.choose_game`), and keeps it
     /// in the settings file when it plays, so the next start finds it (P3-44).
     pub(crate) fn choose_game_folder(
-        &self,
         commands: &mut Commands<'_>,
+        settings_file: Option<&Path>,
         path: PathBuf,
     ) -> Option<GameFiles> {
         let chosen: Option<GameFiles> =
             commands.run(CHOOSE_GAME, &ChooseGameParams { path: path.clone() });
         if chosen.as_ref().is_some_and(|files| files.state.plays()) {
-            commands.clear_notice();
-            if let Some(file) = &self.settings_file {
+            commands.set_notice(None);
+            if let Some(file) = settings_file {
                 let value = serde_json::to_value(&path).ok();
-                let saved = SettingsStore::open(file.clone(), None).and_then(|mut store| {
+                let saved = SettingsStore::open(file.to_path_buf(), None).and_then(|mut store| {
                     store.put(SettingsScope::User, Setting::GameFolder, value)
                 });
                 if let Err(error) = saved {
@@ -210,8 +208,8 @@ impl ProjectFeature {
     pub(crate) fn game_guide(
         &mut self,
         commands: &mut Commands<'_>,
-        ctx: &egui::Context,
-        theme: &Theme,
+        settings_file: Option<&Path>,
+        (ctx, theme): (&egui::Context, &Theme),
     ) {
         let Some(files) = &self.guide_files else {
             return;
@@ -223,7 +221,7 @@ impl ProjectFeature {
                     .set_title(Text::ChooseGameTitle.get())
                     .pick_folder();
                 if let Some(path) = picked {
-                    let chosen = self.choose_game_folder(commands, path);
+                    let chosen = Self::choose_game_folder(commands, settings_file, path);
                     if chosen.is_some() {
                         self.guide_files = chosen;
                     }

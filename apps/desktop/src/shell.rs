@@ -61,7 +61,7 @@ use crate::editors::EditorsFeature;
 use crate::entities::EntityAction;
 use crate::fallback::SystemFonts;
 use crate::features::{
-    BottomAction, Commands, FeatureAction, Features, LeftAction, MapShown, ShellRequest,
+    BottomAction, Commands, Dock, FeatureAction, Features, LeftAction, MapShown, ShellRequest,
 };
 use crate::finder::FileFinder;
 use crate::git_panel::TabShown;
@@ -257,6 +257,9 @@ pub struct Shell {
     menu: MenuPlace,
     /// Each feature's state (P6-41).
     features: Features,
+    /// The user's settings file, which keeps the game folder and the agent's permissions
+    /// (P3-44, P4-30).
+    settings_file: Option<PathBuf>,
     /// The key bindings in force, the user's keymap file over the defaults (P4-37).
     keymap: keymap::Keymap,
     /// How the code editor reads keys, from the user's settings (P4-37).
@@ -310,6 +313,7 @@ impl Shell {
             focus_applied: layout.focus_requests,
             preview_error: None,
             menu: MenuPlace::default(),
+            settings_file: None,
             features: Features::new(AgentPanel::new(Box::new(agent::provider_model))),
             keymap: keymap::Keymap::defaults(),
             key_mode: KeyMode::Standard,
@@ -444,7 +448,7 @@ impl Shell {
             Some(qs_settings::KeyMode::Standard) | None => KeyMode::Standard,
         };
         let saved = settings.and_then(|settings| settings.game.folder);
-        self.features.project.settings_file = Some(file);
+        self.settings_file = Some(file);
         if let Some(path) = saved {
             let chosen: Option<GameFiles> = self.run(CHOOSE_GAME, &ChooseGameParams { path });
             if chosen.is_some_and(|files| !files.state.plays()) {
@@ -462,10 +466,8 @@ impl Shell {
     /// Chooses `path` as the game folder, read in place (`preview.choose_game`), and keeps it
     /// in the settings file when it plays, so the next start finds it (P3-44).
     pub fn choose_game_folder(&mut self, path: PathBuf) -> Option<GameFiles> {
-        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
-        self.features
-            .project
-            .choose_game_folder(&mut commands, path)
+        let settings = self.settings_file.clone();
+        ProjectFeature::choose_game_folder(&mut self.commands(), settings.as_deref(), path)
     }
 
     /// The projects opened most recently, the latest first.
@@ -557,7 +559,7 @@ impl Shell {
     ///
     /// No project open, no provider set up, no model or no checkpoint.
     pub fn start_agent(&mut self, task: &str, ctx: &egui::Context) -> Result<(), String> {
-        let settings = self.features.project.settings_file.clone();
+        let settings = self.settings_file.clone();
         self.features
             .agent
             .start(&mut self.session, task, settings.as_deref(), ctx)
@@ -574,7 +576,7 @@ impl Shell {
         entity: &qs_agent::EntityState,
         ctx: &egui::Context,
     ) -> Result<(), String> {
-        let settings = self.features.project.settings_file.clone();
+        let settings = self.settings_file.clone();
         self.features
             .agent
             .ask_about(&mut self.session, entity, settings.as_deref(), ctx)
@@ -589,7 +591,7 @@ impl Shell {
 
     /// Does what the agent panel asked for.
     pub(crate) fn agent_action(&mut self, action: AgentAction, ctx: &egui::Context) {
-        let settings = self.features.project.settings_file.clone();
+        let settings = self.settings_file.clone();
         let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
         self.features
             .agent
@@ -1415,9 +1417,10 @@ impl Shell {
     fn game_guide(&mut self, ui: &mut Ui) {
         let ctx = ui.ctx().clone();
         let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        let settings = self.settings_file.as_deref();
         self.features
             .project
-            .game_guide(&mut commands, &ctx, &self.theme);
+            .game_guide(&mut commands, settings, (&ctx, &self.theme));
     }
 
     /// Draws the map editor in the Map tab when a map is open, running what it asks for;
@@ -1683,8 +1686,13 @@ impl Shell {
                     Panel::Bottom => Text::BottomPanel,
                 };
                 name_area(ui, accesskit::Role::Pane, name);
-                let tabs = (bottom_tab, scope);
-                actions = features.region_ui(ui, theme, panel, (workspace, tabs, map_shown), focus);
+                let dock = Dock {
+                    workspace,
+                    bottom_tab,
+                    scope,
+                    map_shown,
+                };
+                actions = features.region_ui(ui, theme, panel, dock, focus);
             });
         for action in actions {
             self.apply(action, ui.ctx());
@@ -2100,10 +2108,9 @@ impl Shell {
     /// Gives egui a system font for each character of the editor's text that the bundled fonts
     /// lack: the whole text of a file just opened, then the caret's line as it is edited.
     fn cover_characters(&mut self, ctx: &egui::Context) {
-        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
         self.features
             .editors
-            .cover_characters(&mut commands, &mut self.system_fonts, ctx);
+            .cover_characters(&mut self.system_fonts, ctx);
     }
 
     /// The multibuffer the Search tab shows (P4-33).
@@ -2689,7 +2696,7 @@ const STATUS_DOT_PARTS: f32 = 4.0;
 const OUTLINE_WIDTH: f32 = 220.0;
 
 /// How often a frame reads the running host's events.
-const PREVIEW_POLL: std::time::Duration = std::time::Duration::from_millis(50);
+pub(crate) const PREVIEW_POLL: std::time::Duration = std::time::Duration::from_millis(50);
 
 /// An icon and its label, as one string for a button.
 /// Whether `layout`, a panel's size in the layout, was set by a command rather than by a drag of

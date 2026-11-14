@@ -77,6 +77,19 @@ pub(crate) enum MapShown {
     Hidden,
 }
 
+/// What a dock region is drawn from: the workspace as the frame began, and the window's
+/// choices its panels may change.
+pub(crate) struct Dock<'a> {
+    /// The workspace, read as the frame began.
+    pub(crate) workspace: &'a Workspace,
+    /// The bottom panel's tab.
+    pub(crate) bottom_tab: &'a mut BottomTab,
+    /// Which symbols the Symbols section lists.
+    pub(crate) scope: &'a mut SymbolScope,
+    /// Whether the centre shows the map.
+    pub(crate) map_shown: MapShown,
+}
+
 /// What a dock region's panel asked for, carried out by the shell after the frame drew it.
 pub(crate) enum FeatureAction {
     /// Open a file at a place.
@@ -101,13 +114,15 @@ impl Features {
         ui: &mut Ui,
         theme: &Theme,
         panel: Panel,
-        (workspace, (bottom_tab, scope), map_shown): (
-            &Workspace,
-            (&mut BottomTab, &mut SymbolScope),
-            MapShown,
-        ),
+        dock: Dock<'_>,
         focus: FocusNow,
     ) -> Vec<FeatureAction> {
+        let Dock {
+            workspace,
+            bottom_tab,
+            scope,
+            map_shown,
+        } = dock;
         let workbench = &workspace.workbench;
         let preview = &workspace.preview;
         let map_editor = (map_shown == MapShown::Shown && workbench.map().is_some())
@@ -268,11 +283,6 @@ impl<'a> Commands<'a> {
     /// Puts `notice` on the toolbar, or clears it.
     pub(crate) fn set_notice(&mut self, notice: Option<String>) {
         *self.notice = notice;
-    }
-
-    /// Clears the toolbar's notice.
-    pub(crate) fn clear_notice(&mut self) {
-        *self.notice = None;
     }
 
     /// Says on the toolbar that an edit failed.

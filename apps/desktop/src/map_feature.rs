@@ -59,7 +59,7 @@ use crate::map_profiles::ProfileAction;
 use crate::map_review::ReviewAction;
 use crate::map_tools::BrushAction;
 use crate::map_view::MapView;
-use crate::shell::{CentreTab, MAP_BACKUP_INTERVAL, ShellError};
+use crate::shell::{CentreTab, MAP_BACKUP_INTERVAL, ShellError, Workspace};
 
 use qs_map_edit::uv::{FaceAlignParams, FaceUvParams, MAP_FACE_ALIGN, MAP_FACE_UV};
 
@@ -144,7 +144,7 @@ impl MapFeature {
         self.map_editor.profiles_mut().set_portals(None);
         self.map_editor.profiles_mut().clear_run();
         self.load_profiles(commands);
-        self.backed_up.1 = self.map_edits(commands);
+        self.backed_up.1 = commands.session().context().map_edits();
         self.map_editor.set_disk(DiskNotice::None);
         self.map_editor.reset_camera();
         self.map_editor.set_keys(None, None);
@@ -367,7 +367,7 @@ impl MapFeature {
                 MapAction::Find(search) => {
                     let found: Result<MapFound, ShellError> = commands.attempt(MAP_SEARCH, &search);
                     found.map(|found| {
-                        let at = self.map_edits(commands);
+                        let at = commands.session().context().map_edits();
                         self.map_editor.set_found(found, at);
                         serde_json::Value::Null
                     })
@@ -427,7 +427,7 @@ impl MapFeature {
         commands: &mut Commands<'_>,
     ) -> Result<serde_json::Value, ShellError> {
         let found: MapIssues = commands.attempt(MAP_ISSUES, &serde_json::json!({}))?;
-        let at = self.map_edits(commands);
+        let at = commands.session().context().map_edits();
         self.map_editor.set_issues(found.issues, at);
         Ok(serde_json::Value::Null)
     }
@@ -566,7 +566,7 @@ impl MapFeature {
     /// is [`MAP_BACKUP_INTERVAL`] seconds old (P6-20).
     pub(crate) fn back_up_map(&mut self, commands: &mut Commands<'_>, ctx: &egui::Context) {
         let now = ctx.input(|i| i.time);
-        let edits = self.map_edits(commands);
+        let edits = commands.session().context().map_edits();
         let unsaved = commands
             .session()
             .context()
@@ -583,17 +583,6 @@ impl MapFeature {
         if let Err(error) = taken {
             tracing::warn!(%error, "the map could not be backed up");
         }
-    }
-
-    /// The open map's edits, which a list of its issues or matches is good for.
-    pub(crate) fn map_edits(&self, commands: &mut Commands<'_>) -> MapRevision {
-        commands
-            .session()
-            .context()
-            .workbench
-            .map()
-            .map(MapDocument::edits)
-            .unwrap_or_default()
     }
 
     /// Lists the project's prefabs in the map editor's prefab browser; none when no project
@@ -943,5 +932,15 @@ impl MapFeature {
                 },
             ),
         }
+    }
+}
+
+impl Workspace {
+    /// The open map's edits, which a list of its issues or matches is good for.
+    pub(crate) fn map_edits(&self) -> MapRevision {
+        self.workbench
+            .map()
+            .map(MapDocument::edits)
+            .unwrap_or_default()
     }
 }

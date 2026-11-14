@@ -142,9 +142,9 @@ impl AgentFeature {
         settings_file: Option<&Path>,
         ctx: &egui::Context,
     ) {
-        let root = commands.session().context().agent_root();
-        let settings = |root: &Result<PathBuf, String>| match root {
-            Ok(root) => AgentSettings::of(settings_file, root),
+        // The project's settings as they are when read: after a call that may open another.
+        let settings = |commands: &Commands<'_>| match commands.session().context().agent_root() {
+            Ok(root) => AgentSettings::of(settings_file, &root),
             Err(_) => AgentSettings::none(),
         };
         match action {
@@ -163,13 +163,13 @@ impl AgentFeature {
             }
             AgentAction::Permit(index, permit) => {
                 if let Some(kept) = self.panel.permit(commands.session_mut(), index, permit) {
-                    settings(&root).keep(&kept);
+                    settings(commands).keep(&kept);
                 }
             }
             AgentAction::Profile(profile) => {
                 let mut permissions = self.panel.permissions().clone();
                 permissions.profile = profile;
-                settings(&root).keep(&permissions);
+                settings(commands).keep(&permissions);
                 self.panel.set_permissions(permissions);
             }
             AgentAction::Restore(number) => {
@@ -177,7 +177,10 @@ impl AgentFeature {
                     commands.run(RESTORE_CHECKPOINT, &RestoreCheckpointParams { number });
             }
             AgentAction::OpenHistory => {
-                let threads = root
+                let threads = commands
+                    .session()
+                    .context()
+                    .agent_root()
                     .ok()
                     .and_then(|root| history::load(&history::threads_dir(&root)).ok())
                     .unwrap_or_default();

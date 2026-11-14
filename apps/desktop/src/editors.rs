@@ -169,12 +169,7 @@ impl EditorsFeature {
 
     /// Gives egui a system font for each character of the editor's text that the bundled fonts
     /// lack: the whole text of a file just opened, then the caret's line as it is edited.
-    pub(crate) fn cover_characters(
-        &mut self,
-        _commands: &mut Commands<'_>,
-        fonts: &mut SystemFonts,
-        ctx: &egui::Context,
-    ) {
+    pub(crate) fn cover_characters(&mut self, fonts: &mut SystemFonts, ctx: &egui::Context) {
         let Some(editor) = &self.editor else {
             return;
         };

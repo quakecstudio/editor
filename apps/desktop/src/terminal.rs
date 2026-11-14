@@ -13,13 +13,10 @@ use qs_workbench::{TERMINAL_CLOSE, TERMINAL_NEW, TERMINAL_POLL, TERMINAL_SEND};
 
 use crate::features::{Commands, ShellRequest};
 use crate::icons::Icon;
-use crate::shell::BottomTab;
 use crate::shell::name_field;
+use crate::shell::{BottomTab, PREVIEW_POLL};
 use crate::strings::{Text, exit_status};
 use crate::theme::{Theme, Token};
-
-/// How soon the next frame comes while a terminal's process runs, to show its output.
-const OUTPUT_POLL: std::time::Duration = std::time::Duration::from_millis(50);
 
 /// The most lines of a tab's output drawn; older ones are kept but not shown.
 const SHOWN_LINES: usize = 2000;
@@ -189,7 +186,7 @@ impl TerminalFeature {
         }
         let terminals = commands.session().context().workbench.terminals();
         if terminals.tabs().iter().any(|tab| tab.exit().is_none()) {
-            ctx.request_repaint_after(OUTPUT_POLL);
+            ctx.request_repaint_after(PREVIEW_POLL);
         }
         self.view
             .opened(terminals.tabs().len())
