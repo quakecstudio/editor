@@ -44,13 +44,16 @@ jobs:
       id-token: write
       attestations: write
     secrets:
-      APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
-      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      APPLE_CERTIFICATE_NAME: ${{ secrets.APPLE_CERTIFICATE_NAME }}
-      MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APPLICATION_CERTIFICATE_PEM: ${{ secrets.APPLE_APPLICATION_CERTIFICATE_PEM }}
+      APPLE_APPLICATION_KEY_PEM: ${{ secrets.APPLE_APPLICATION_KEY_PEM }}
+      APPLE_APPLICATION_IDENTITY: ${{ secrets.APPLE_APPLICATION_IDENTITY }}
+      APPLE_INSTALLER_CERTIFICATE_PEM: ${{ secrets.APPLE_INSTALLER_CERTIFICATE_PEM }}
+      APPLE_INSTALLER_KEY_PEM: ${{ secrets.APPLE_INSTALLER_KEY_PEM }}
+      APPLE_INSTALLER_IDENTITY: ${{ secrets.APPLE_INSTALLER_IDENTITY }}
+      APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+      APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+      APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+      APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
       TRUSTED_SIGNING_ENDPOINT: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
@@ -103,12 +106,14 @@ jobs:
         with:
           name: librequake-lite
           path: librequake-lite
-      - name: Install the app from the disk image, as a person does
+      # The installer package, checked and installed as a person's double-click would.
+      - name: Install the package
         run: |
-          xcrun stapler validate dist/*.dmg
-          hdiutil attach dist/*.dmg -mountpoint /Volumes/QuakeCStudio -nobrowse
-          cp -R "/Volumes/QuakeCStudio/QuakeC Studio.app" /Applications/
-          hdiutil detach /Volumes/QuakeCStudio
+          pkg=$(ls dist/*.pkg)
+          pkgutil --check-signature "$pkg"
+          spctl --assess --type install --verbose=4 "$pkg"
+          xcrun stapler validate "$pkg"
+          sudo installer -pkg "$pkg" -target /
           app="/Applications/QuakeC Studio.app"
           spctl --assess --type execute --verbose=4 "$app"
           xcrun stapler validate "$app"
@@ -117,11 +122,12 @@ jobs:
             codesign --verify --strict --verbose=2 "$app/Contents/MacOS/$name"
             codesign --display --verbose=2 "$app/Contents/MacOS/$name" 2>&1 | grep -q "flags=.*runtime"
           done
+      # quakec-ide runs from the PATH, through the package's link in /usr/local/bin.
       - name: Check the install
         run: |
-          macos="/Applications/QuakeC Studio.app/Contents/MacOS"
-          "$macos/quakec-ide" --version
-          "$macos/quakec-ide" doctor --check host --game librequake-lite
+          test "$(readlink /usr/local/bin/quakec-lsp)" = "/Applications/QuakeC Studio.app/Contents/MacOS/quakec-lsp"
+          quakec-ide --version
+          quakec-ide doctor --check host --game librequake-lite
       - name: Open the app
         run: |
           open "/Applications/QuakeC Studio.app"
