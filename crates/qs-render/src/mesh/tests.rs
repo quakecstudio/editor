@@ -32,6 +32,8 @@ pub(crate) struct MapSpec {
     pub(crate) lightofs: i32,
     /// Whether the texinfo names a texture.
     pub(crate) textured: bool,
+    /// The face's smallest texture coordinates.
+    pub(crate) texturemins: [i16; 2],
 }
 
 impl Default for MapSpec {
@@ -42,6 +44,7 @@ impl Default for MapSpec {
             styles: [0, 255, 255, 255],
             lightofs: 0,
             textured: true,
+            texturemins: [0, 0],
         }
     }
 }
@@ -116,7 +119,7 @@ pub(crate) fn bsp<'a>(spec: &MapSpec, lighting: &'a [u8]) -> Bsp<'a> {
             texinfo: 0,
             styles: spec.styles,
             lightofs: spec.lightofs,
-            texturemins: [0, 0],
+            texturemins: spec.texturemins,
             extents: [64, 32],
             flags: spec.flags,
             lightmap_size: LIGHTMAP,
@@ -263,6 +266,52 @@ fn lightmap_coordinates_map_texels_to_the_surface() {
             (64.0 + 16.0 + 8.0) / (width * 16.0),
             (32.0 + 8.0) / (height * 16.0)
         ]
+    );
+}
+
+// spec REND-1.3: a face's lightmap coordinates start at its texturemins and its place in the
+// atlas, on a later row once a row is full
+// spec REND-1.14: a face with no texture takes the full-bright texel however tall the atlas
+#[test]
+fn lightmap_coordinates_follow_texturemins_and_the_atlas_row() {
+    let lighting = samples(&[64]);
+    let world = bsp(
+        &MapSpec {
+            texturemins: [16, 16],
+            ..MapSpec::default()
+        },
+        &lighting,
+    );
+    let untextured = bsp(
+        &MapSpec {
+            textured: false,
+            ..MapSpec::default()
+        },
+        &lighting,
+    );
+    let palette = palette();
+    let mut builder = MeshBuilder::new(&palette, Look::GlQuake);
+    // After the full-bright texel, 204 faces 5 texels wide fill the 1024 texel row.
+    for _ in 0..205 {
+        builder.add(&world, &[Placement::WORLD]).unwrap();
+    }
+    builder.add(&untextured, &[Placement::WORLD]).unwrap();
+    let mesh = builder.finish();
+    assert_eq!((mesh.lightmap.width, mesh.lightmap.height), (1024, 6));
+    let wrapped = &mesh.vertices[204 * 4];
+    assert_eq!(
+        wrapped.light,
+        [
+            (-16.0 + 8.0) / (1024.0 * 16.0),
+            (-16.0 + 48.0 + 8.0) / (6.0 * 16.0)
+        ]
+    );
+    let stand_in = &mesh.vertices[205 * 4..];
+    assert_eq!(stand_in.len(), 4);
+    assert!(
+        stand_in
+            .iter()
+            .all(|v| v.light == [0.5 / 1024.0, 0.5 / 6.0])
     );
 }
 
