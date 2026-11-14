@@ -16,7 +16,7 @@ use qs_bsp::{
 
 use qs_client::DynamicLight;
 
-use super::{Changes, Extras, Image, MapMesh, MeshBuilder, MeshError, Palette, Placement};
+use super::{Changes, Extras, Image, MapMesh, MeshBuilder, MeshError, Palette, Placement, Surface};
 use crate::light::light_point;
 use crate::styles::LightStyles;
 
@@ -219,6 +219,26 @@ fn a_face_with_no_texture_is_drawn_with_the_stand_in() {
     assert_eq!((texel(0, 0), texel(15, 15)), (&pink[..], &pink[..]));
     assert_eq!((texel(16, 0), texel(0, 16)), (&black[..], &black[..]));
     assert_eq!(texel(31, 31), &pink[..]);
+}
+
+// spec REND-1.14: a face with no texture has no lightmap, whatever its flags or samples: it
+// takes the full-bright texel and is drawn as a regular face with the stand-in
+#[test]
+fn a_face_with_no_texture_is_full_bright() {
+    for (flags, lightofs) in [(0, 0), (0, -1), (SURF_DRAWTURB, 0), (SURF_DRAWSKY, 0)] {
+        let spec = MapSpec {
+            textured: false,
+            flags,
+            lightofs,
+            ..MapSpec::default()
+        };
+        let mesh = build(&spec, &samples(&[64]));
+        assert_eq!(mesh.lightmap.height, 1, "no texels placed");
+        assert!(mesh.vertices.iter().all(|v| v.light == [0.5 / 1024.0, 0.5]));
+        assert_eq!(mesh.batches.len(), 1);
+        assert_eq!(mesh.batches[0].texture, mesh.textures.len() - 1);
+        assert_eq!(mesh.batches[0].surface, Surface::Lit);
+    }
 }
 
 // spec REND-1.3: lightmap coordinates are (s - texturemins + light_s*16 + 8) over the atlas's
