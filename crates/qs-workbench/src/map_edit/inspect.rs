@@ -11,7 +11,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{EntityIndex, MAP_INSPECT};
-use crate::{HasWorkbench, WorkbenchError};
+use crate::{HasWorkbench, MapEditError};
 
 /// The parameters of `map.inspect`.
 #[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
@@ -92,20 +92,20 @@ impl<C: HasWorkbench + 'static> Command<C> for MapInspect {
         and room, filtered by room or classname.";
     type Params = InspectParams;
     type Output = MapInspected;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: InspectParams,
-    ) -> Result<Outcome<MapInspected, C>, WorkbenchError> {
-        let document = context.workbench().map().ok_or(WorkbenchError::NoMap)?;
+    ) -> Result<Outcome<MapInspected, C>, MapEditError> {
+        let document = context.workbench().map().ok_or(MapEditError::NoMap)?;
         let file = document.file();
         let rooms = file.rooms();
         if let Some(room) = &params.room
             && !rooms.named_any(room)
         {
-            return Err(WorkbenchError::NoRoom { name: room.clone() });
+            return Err(MapEditError::NoRoom { name: room.clone() });
         }
         let text = |bytes: &[u8]| String::from_utf8_lossy(bytes).into_owned();
         let entities = file

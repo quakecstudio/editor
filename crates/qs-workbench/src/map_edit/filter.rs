@@ -161,12 +161,12 @@ impl<L: crate::Loader> Workbench<L> {
             }
         };
         let mut bsp = match &compiled {
-            Some(bytes) => {
-                Bsp::read(bytes, BspLoader::default()).map_err(|error| WorkbenchError::Bsp {
+            Some(bytes) => Bsp::read(bytes, BspLoader::default()).map_err(|error| {
+                crate::MapEditError::Bsp {
                     path: path.clone(),
                     error,
-                })?
-            }
+                }
+            })?,
             None => Bsp::empty(&entities),
         };
         bsp.entity_lump = &entities;

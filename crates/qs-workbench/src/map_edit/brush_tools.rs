@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use super::brushes::{BrushIndex, Lock, snap};
 use super::{EntityIndex, MapDocument, MapEdited, MapStep, edit_map};
 use crate::map_uv::FaceRef;
-use crate::{HasWorkbench, WorkbenchError};
+use crate::{HasWorkbench, MapEditError};
 
 /// The id of `map.brush_scale`.
 pub const MAP_BRUSH_SCALE: &str = "map.brush_scale";
@@ -252,7 +252,7 @@ impl MapDocument {
         &mut self,
         entity: EntityIndex,
         brushes: &[BrushIndex],
-    ) -> Result<[f64; 3], WorkbenchError> {
+    ) -> Result<[f64; 3], MapEditError> {
         let mut low = [f64::INFINITY, f64::INFINITY, f64::INFINITY];
         let mut high = [f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
         for &brush in brushes {
@@ -282,7 +282,7 @@ impl MapDocument {
         brushes: &[BrushIndex],
         map: &Affine,
         lock: Lock,
-    ) -> Result<(), WorkbenchError> {
+    ) -> Result<(), MapEditError> {
         let mut brushes = brushes.to_vec();
         brushes.sort();
         brushes.dedup();
@@ -299,7 +299,7 @@ impl MapDocument {
         entity: EntityIndex,
         brush: BrushIndex,
         tool: impl FnOnce(&Brush) -> Result<Vec<Brush>, BrushError>,
-    ) -> Result<(), WorkbenchError> {
+    ) -> Result<(), MapEditError> {
         let made = tool(&self.brush(entity, brush)?)?;
         self.replace_brush(entity, brush, made)
     }
@@ -327,13 +327,13 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushScale {
         unless lock is free (MAP-15.2).";
     type Params = BrushScaleParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushScaleParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let ((), step) = edit_map(context, |document| {
             let about = match params.about {
                 Some(about) => about,
@@ -356,13 +356,13 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushShear {
         world unless lock is free (MAP-15.2).";
     type Params = BrushShearParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushShearParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let ((), step) = edit_map(context, |document| {
             let about = match params.about {
                 Some(about) => about,
@@ -386,13 +386,13 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushExtrude {
         (MAP-15.3).";
     type Params = BrushExtrudeParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushExtrudeParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let FaceRef {
             entity,
             brush,
@@ -422,13 +422,13 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushSweep {
         (MAP-15.4).";
     type Params = BrushSweepParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushSweepParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let path: Vec<[f64; 3]> = params
             .path
             .iter()
@@ -452,13 +452,13 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushHollow {
         itself with the brush its walls enclose taken out (MAP-15.5).";
     type Params = BrushHollowParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushHollowParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let ((), step) = edit_map(context, |document| {
             document.rework(params.entity, params.brush, |found| {
                 found.hollowed(params.wall)
@@ -477,13 +477,13 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushIntersect {
         of them hold, which takes the first's place (MAP-15.6).";
     type Params = BrushIntersectParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushIntersectParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let ((), step) = edit_map(context, |document| {
             let mut indices = params.brushes.clone();
             indices.sort();
@@ -516,13 +516,13 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushVertices {
         snapped to the grid; the brush becomes the hull of its vertices so moved (MAP-15.7).";
     type Params = BrushVerticesParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushVerticesParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let moves: Vec<([f64; 3], [f64; 3])> = params
             .moves
             .iter()
@@ -546,13 +546,13 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushSplitEdge {
         to the grid, or a distance out from the edge's middle (MAP-15.8).";
     type Params = BrushSplitEdgeParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushSplitEdgeParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let [a, b] = params.edge;
         let ((), step) = edit_map(context, |document| {
             document.rework(params.entity, params.brush, |found| {
@@ -578,13 +578,13 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushSplitFace {
         point snapped to the grid, or a distance out from the face's middle (MAP-15.8).";
     type Params = BrushSplitFaceParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushSplitFaceParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let FaceRef {
             entity,
             brush,
@@ -615,13 +615,13 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushChamfer {
         a distance along each of its two faces (MAP-15.9).";
     type Params = BrushChamferParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushChamferParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let [a, b] = params.edge;
         let ((), step) = edit_map(context, |document| {
             document.rework(params.entity, params.brush, |found| {

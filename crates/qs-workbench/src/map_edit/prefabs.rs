@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use super::brushes::snap;
 use super::{BrushIndex, EntityIndex, MapDocument, MapEdited, edit_map, origin_text};
-use crate::{HasWorkbench, WorkbenchError};
+use crate::{HasWorkbench, MapEditError};
 
 /// The id of `map.prefabs`.
 pub const MAP_PREFABS: &str = "map.prefabs";
@@ -90,13 +90,13 @@ pub struct PrefabSaved {
 }
 
 /// The prefab named `name`, when the name is one a file of the folder can have.
-fn prefab_file(root: &Path, name: &str) -> Result<PathBuf, WorkbenchError> {
+fn prefab_file(root: &Path, name: &str) -> Result<PathBuf, MapEditError> {
     let fine = !name.is_empty()
         && name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
     if !fine {
-        return Err(WorkbenchError::PrefabName {
+        return Err(MapEditError::PrefabName {
             name: name.to_owned(),
         });
     }
@@ -108,20 +108,20 @@ fn prefab_file(root: &Path, name: &str) -> Result<PathBuf, WorkbenchError> {
 
 /// `entity` moved by `by`: its brushes, their textures kept on them, and its origin when it
 /// has one.
-fn moved(entity: &Entity, by: [f64; 3]) -> Result<Entity, WorkbenchError> {
+fn moved(entity: &Entity, by: [f64; 3]) -> Result<Entity, MapEditError> {
     let mut out = entity.clone();
     for item in &mut out.items {
         if let Item::Brush(brush) = item {
             *brush = brush
                 .translated(by, TextureLock::Locked)
-                .map_err(|error| WorkbenchError::Brush { error })?;
+                .map_err(|error| MapEditError::Brush { error })?;
         }
     }
     if entity.value(b"origin").is_some() {
         let [x, y, z] = entity.origin();
         let origin = origin_text([x + by[0], y + by[1], z + by[2]]);
         out.set(b"origin", origin.as_bytes())
-            .map_err(|error| WorkbenchError::Brush {
+            .map_err(|error| MapEditError::Brush {
                 error: qs_map::BrushError::Map(error),
             })?;
     }
@@ -167,7 +167,7 @@ impl MapDocument {
         &mut self,
         prefab: &MapFile,
         origin: [f64; 3],
-    ) -> Result<EntityIndex, WorkbenchError> {
+    ) -> Result<EntityIndex, MapEditError> {
         let mut first = EntityIndex::new(0);
         for (place, entity) in prefab.entities.iter().enumerate() {
             let placed = moved(entity, origin)?;
@@ -199,7 +199,7 @@ impl MapDocument {
         brushes: &[(EntityIndex, BrushIndex)],
         entities: &[EntityIndex],
         grid: Option<f64>,
-    ) -> Result<MapFile, WorkbenchError> {
+    ) -> Result<MapFile, MapEditError> {
         let mut world_brushes = Vec::new();
         let mut whole = std::collections::BTreeSet::new();
         for &(entity, brush) in brushes {
@@ -226,7 +226,7 @@ impl MapDocument {
             kept_entities.push(kept);
         }
         let all: Vec<&Entity> = kept_entities.iter().collect();
-        let [lo, hi] = bounds(world_brushes.iter(), &all).ok_or(WorkbenchError::NoSelection)?;
+        let [lo, hi] = bounds(world_brushes.iter(), &all).ok_or(MapEditError::NoSelection)?;
         let anchor = [
             snap((lo[0] + hi[0]) / 2.0, grid),
             snap((lo[1] + hi[1]) / 2.0, grid),
@@ -235,7 +235,7 @@ impl MapDocument {
         let by = anchor.map(|c| -c);
         let mut prefab =
             MapFile::parse(b"{\n\"classname\" \"worldspawn\"\n}\n").map_err(|error| {
-                WorkbenchError::Brush {
+                MapEditError::Brush {
                     error: qs_map::BrushError::Map(error),
                 }
             })?;
@@ -253,7 +253,7 @@ impl MapDocument {
 
     /// Whether `entity` is the world or one of its layers or groups, whose brushes are the
     /// world's (MAP-9).
-    fn is_world_part(&mut self, entity: EntityIndex) -> Result<bool, WorkbenchError> {
+    fn is_world_part(&mut self, entity: EntityIndex) -> Result<bool, MapEditError> {
         Ok(entity.get() == 0 || self.entity_mut(entity)?.value(CONTAINER_TYPE).is_some())
     }
 }
@@ -273,11 +273,11 @@ impl MapDocument {
 }
 
 impl<L: crate::Loader> crate::Workbench<L> {
-    /// The project's folder, or [`WorkbenchError::NoProject`].
-    fn project_root(&self) -> Result<PathBuf, WorkbenchError> {
+    /// The project's folder, or [`MapEditError::NoProject`].
+    fn project_root(&self) -> Result<PathBuf, MapEditError> {
         self.root()
             .map(Path::to_path_buf)
-            .ok_or(WorkbenchError::NoProject)
+            .ok_or(MapEditError::NoProject)
     }
 }
 
@@ -289,9 +289,9 @@ impl<C: HasWorkbench + 'static> Command<C> for ListPrefabs {
     const SUMMARY: &'static str = "Lists the .map files in the project's prefabs folder.";
     type Params = NoParams;
     type Output = Prefabs;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
-    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<Prefabs, C>, WorkbenchError> {
+    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<Prefabs, C>, MapEditError> {
         let folder = context.workbench().project_root()?.join(PREFAB_FOLDER);
         let mut prefabs: Vec<Prefab> = std::fs::read_dir(&folder)
             .into_iter()
@@ -321,20 +321,20 @@ impl<C: HasWorkbench + 'static> Command<C> for PlacePrefab {
         on the grid: its world's brushes into the world, its other entities after the map's.";
     type Params = PlacePrefabParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: PlacePrefabParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let path = match context.workbench().root() {
             Some(root) if params.path.is_relative() => root.join(&params.path),
             Some(_) | None => params.path.clone(),
         };
         let bytes =
-            std::fs::read(&path).map_err(|_| WorkbenchError::NoFile { path: path.clone() })?;
-        let prefab = MapFile::parse(&bytes).map_err(|error| WorkbenchError::Map {
+            std::fs::read(&path).map_err(|_| MapEditError::NoFile { path: path.clone() })?;
+        let prefab = MapFile::parse(&bytes).map_err(|error| MapEditError::Map {
             path: path.clone(),
             error,
         })?;
@@ -358,13 +358,13 @@ impl<C: HasWorkbench + 'static> Command<C> for SavePrefab {
         as a prefab in the project's prefabs folder, around the middle of their floor.";
     type Params = SavePrefabParams;
     type Output = PrefabSaved;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: SavePrefabParams,
-    ) -> Result<Outcome<PrefabSaved, C>, WorkbenchError> {
+    ) -> Result<Outcome<PrefabSaved, C>, MapEditError> {
         let workbench = context.workbench();
         let root = workbench.project_root()?;
         let path = prefab_file(&root, &params.name)?;
@@ -372,7 +372,7 @@ impl<C: HasWorkbench + 'static> Command<C> for SavePrefab {
             workbench
                 .map_mut()?
                 .prefab_of(&params.brushes, &params.entities, params.grid)?;
-        let save = |error| WorkbenchError::Save {
+        let save = |error| MapEditError::Save {
             path: path.clone(),
             error,
         };

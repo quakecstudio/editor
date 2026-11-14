@@ -18,7 +18,7 @@ use crate::map_edit::MapEdited;
 use crate::map_edit::{BrushIndex, EntityIndex, MAP_BRUSH_TEXTURE, MAP_OPEN};
 use crate::map_textures::TextureSources;
 use crate::preview::{HasPreview, Preview, PreviewConfig};
-use crate::{Config, HasWorkbench, Workbench, WorkbenchError, register, register_preview};
+use crate::{Config, HasWorkbench, MapEditError, Workbench, register, register_preview};
 
 const NEAR: f64 = 1e-6;
 /// The keep map's door, the fifth entity.
@@ -156,7 +156,7 @@ fn missing_textures_and_faces_are_refused() {
         .unwrap_err();
     assert!(
         error.to_string().contains(
-            &WorkbenchError::NoTextureSize {
+            &MapEditError::NoTextureSize {
                 texture: "nowhere".to_owned()
             }
             .to_string()
@@ -178,7 +178,7 @@ fn missing_textures_and_faces_are_refused() {
             json!({ "faces": [face_ref(1), face_ref(99)], "edit": { "kind": "reset" } }),
         )
         .unwrap_err();
-    let wanted = WorkbenchError::NoFace {
+    let wanted = MapEditError::NoFace {
         entity: EntityIndex::new(0),
         brush: BrushIndex::new(0),
         face: FaceIndex::new(99),

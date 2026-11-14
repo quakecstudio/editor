@@ -15,7 +15,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::map_edit::{MAP_EXTENSION, MapSource, edit_map};
-use crate::{HasWorkbench, Workbench, WorkbenchError};
+use crate::{HasWorkbench, MapEditError, Workbench};
 
 /// The id of `map.backup`.
 pub const MAP_BACKUP: &str = "map.backup";
@@ -83,12 +83,12 @@ impl<L: crate::Loader> Workbench<L> {
     ///
     /// # Errors
     ///
-    /// [`WorkbenchError::NoMap`] with no map open, [`WorkbenchError::NoMapSource`] for a BSP,
-    /// and [`WorkbenchError::Save`] when the backup cannot be written.
-    pub fn backup_map(&mut self) -> Result<Backup, WorkbenchError> {
-        let document = self.map().ok_or(WorkbenchError::NoMap)?;
+    /// [`MapEditError::NoMap`] with no map open, [`MapEditError::NoMapSource`] for a BSP,
+    /// and [`MapEditError::Save`] when the backup cannot be written.
+    pub fn backup_map(&mut self) -> Result<Backup, MapEditError> {
+        let document = self.map().ok_or(MapEditError::NoMap)?;
         if let MapSource::Bsp(_) = document.source() {
-            return Err(WorkbenchError::NoMapSource {
+            return Err(MapEditError::NoMapSource {
                 path: document.path().to_path_buf(),
             });
         }
@@ -101,7 +101,7 @@ impl<L: crate::Loader> Workbench<L> {
         let (stem, folder) = stem_and_folder(&map);
         let failed = |path: &Path| {
             let path = path.to_path_buf();
-            move |error| WorkbenchError::Save { path, error }
+            move |error| MapEditError::Save { path, error }
         };
         std::fs::create_dir_all(&folder).map_err(failed(&folder))?;
         let path = folder.join(format!("{stem}.{number}.{MAP_EXTENSION}"));
@@ -117,9 +117,9 @@ impl<L: crate::Loader> Workbench<L> {
     ///
     /// # Errors
     ///
-    /// [`WorkbenchError::NoMap`] with no map open.
-    pub fn map_backups(&self) -> Result<Vec<Backup>, WorkbenchError> {
-        let document = self.map().ok_or(WorkbenchError::NoMap)?;
+    /// [`MapEditError::NoMap`] with no map open.
+    pub fn map_backups(&self) -> Result<Vec<Backup>, MapEditError> {
+        let document = self.map().ok_or(MapEditError::NoMap)?;
         Ok(backups_of(document.path()))
     }
 }
@@ -133,9 +133,9 @@ impl<C: HasWorkbench + 'static> Command<C> for MapBackup {
         its next backup in the autosave folder beside it, keeping the last 20.";
     type Params = NoParams;
     type Output = Backup;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
-    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<Backup, C>, WorkbenchError> {
+    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<Backup, C>, MapEditError> {
         Ok(Outcome::outside_history(context.workbench().backup_map()?))
     }
 }
@@ -149,9 +149,9 @@ impl<C: HasWorkbench + 'static> Command<C> for MapBackups {
         it, the newest first.";
     type Params = NoParams;
     type Output = Vec<Backup>;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
-    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<Vec<Backup>, C>, WorkbenchError> {
+    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<Vec<Backup>, C>, MapEditError> {
         Ok(Outcome::unchanged(context.workbench().map_backups()?))
     }
 }
@@ -173,17 +173,13 @@ impl<C: HasWorkbench + 'static> Command<C> for MapRestoreBackup {
         map, unsaved, as an edit that undo takes back.";
     type Params = RestoreParams;
     type Output = ();
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
-    fn run(
-        &self,
-        context: &mut C,
-        params: RestoreParams,
-    ) -> Result<Outcome<(), C>, WorkbenchError> {
+    fn run(&self, context: &mut C, params: RestoreParams) -> Result<Outcome<(), C>, MapEditError> {
         let path = params.path;
         let bytes =
-            std::fs::read(&path).map_err(|_| WorkbenchError::NoFile { path: path.clone() })?;
-        let file = MapFile::parse(&bytes).map_err(|error| WorkbenchError::Map {
+            std::fs::read(&path).map_err(|_| MapEditError::NoFile { path: path.clone() })?;
+        let file = MapFile::parse(&bytes).map_err(|error| MapEditError::Map {
             path: path.clone(),
             error,
         })?;

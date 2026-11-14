@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use super::{BrushIndex, EntityIndex, MapDocument, MapEdited, edit_map, origin_text};
 use crate::map_textures::{TextureOrigin, TextureSources};
 use crate::preview::HasPreview;
-use crate::{HasWorkbench, WorkbenchError};
+use crate::{HasWorkbench, MapEditError};
 
 /// The id of `map.issues`.
 pub const MAP_ISSUES: &str = "map.issues";
@@ -300,11 +300,11 @@ impl MapDocument {
     }
 
     /// Applies `fix`.
-    fn apply(&mut self, fix: &QuickFix) -> Result<Option<EntityIndex>, WorkbenchError> {
+    fn apply(&mut self, fix: &QuickFix) -> Result<Option<EntityIndex>, MapEditError> {
         match fix {
             QuickFix::RemoveBrush { entity, brush } => {
                 if !is_empty(&self.brush(*entity, *brush)?) {
-                    return Err(WorkbenchError::NotEmpty {
+                    return Err(MapEditError::NotEmpty {
                         entity: *entity,
                         brush: *brush,
                     });
@@ -317,7 +317,7 @@ impl MapDocument {
                     .entity_mut(*entity)?
                     .rename_key(from.as_bytes(), to.as_bytes());
                 match renamed {
-                    Ok(0) => Err(WorkbenchError::NoKey {
+                    Ok(0) => Err(MapEditError::NoKey {
                         entity: *entity,
                         key: from.clone(),
                     }),
@@ -504,15 +504,15 @@ impl<C: HasPreview + 'static> Command<C> for MapIssuesCommand {
         entities' against the server QuakeC.";
     type Params = NoParams;
     type Output = MapIssues;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
-    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<MapIssues, C>, WorkbenchError> {
+    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<MapIssues, C>, MapEditError> {
         let schema = context.workbench().entity_schema().ok();
         let (workbench, preview) = context.workbench_and_preview();
         let game = preview.game_base_path();
         let chosen = preview.game_folder().map(Path::to_path_buf);
         let root: Option<PathBuf> = workbench.root().map(Path::to_path_buf);
-        let document = workbench.map().ok_or(WorkbenchError::NoMap)?;
+        let document = workbench.map().ok_or(MapEditError::NoMap)?;
         let places = line_places(document.file());
         let mut issues = document.own_issues(&places);
         if let Some(schema) = &schema {
@@ -537,13 +537,13 @@ impl<C: HasWorkbench + 'static> Command<C> for MapFix {
     const SUMMARY: &'static str = "Applies a quick fix `map.issues` gave, as one step with undo.";
     type Params = MapFixParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: MapFixParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let (entity, step) = edit_map(context, |document| document.apply(&params.fix))?;
         Ok(Outcome::undoable(MapEdited { entity }, step))
     }
@@ -558,13 +558,13 @@ impl<C: HasWorkbench + 'static> Command<C> for MapSearch {
         value, texture and a box, every part given; text matches in any case.";
     type Params = MapSearchParams;
     type Output = MapFound;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: MapSearchParams,
-    ) -> Result<Outcome<MapFound, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapFound, C>, MapEditError> {
         let document = context.workbench().map_mut()?;
         Ok(Outcome::outside_history(document.search(&params)))
     }

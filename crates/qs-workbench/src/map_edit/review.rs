@@ -17,7 +17,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{EntityIndex, MapDocument, edit_map};
-use crate::{HasWorkbench, Workbench, WorkbenchError};
+use crate::{HasWorkbench, MapEditError, Workbench};
 
 /// The id of `map.stage`.
 pub const MAP_STAGE: &str = "map.stage";
@@ -290,12 +290,12 @@ impl<'a> Review<'a> {
     }
 
     /// The places of `asked`, every hunk when empty, after checking each is a hunk.
-    fn chosen(&self, asked: &[MapHunkNumber]) -> Result<Vec<usize>, WorkbenchError> {
+    fn chosen(&self, asked: &[MapHunkNumber]) -> Result<Vec<usize>, MapEditError> {
         if asked.is_empty() {
             return Ok(self.all());
         }
         match asked.iter().find(|number| number.get() >= self.hunks.len()) {
-            Some(&hunk) => Err(WorkbenchError::NoMapHunk { hunk }),
+            Some(&hunk) => Err(MapEditError::NoMapHunk { hunk }),
             None => Ok(asked.iter().map(|number| number.get()).collect()),
         }
     }
@@ -306,9 +306,9 @@ impl<L: crate::Loader> Workbench<L> {
     ///
     /// # Errors
     ///
-    /// [`WorkbenchError::NoMap`] with no map open.
-    pub fn map_hunks(&self) -> Result<Vec<MapHunk>, WorkbenchError> {
-        let document = self.map().ok_or(WorkbenchError::NoMap)?;
+    /// [`MapEditError::NoMap`] with no map open.
+    pub fn map_hunks(&self) -> Result<Vec<MapHunk>, MapEditError> {
+        let document = self.map().ok_or(MapEditError::NoMap)?;
         Ok(Review::of(document)
             .map(|review| review.listed())
             .unwrap_or_default())
@@ -334,9 +334,9 @@ impl<C: HasWorkbench + 'static> Command<C> for MapStage {
         begin it themselves; while it is open it is left as it is.";
     type Params = NoParams;
     type Output = ();
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
-    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<(), C>, WorkbenchError> {
+    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<(), C>, MapEditError> {
         let document = context.workbench().map_mut()?;
         if document.staged.is_none() {
             document.staged = Some(document.file.clone());
@@ -355,9 +355,9 @@ impl<C: HasWorkbench + 'static> Command<C> for MapUnstage {
         an agent's map command that changed nothing; a review with hunks is left open.";
     type Params = NoParams;
     type Output = ();
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
-    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<(), C>, WorkbenchError> {
+    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<(), C>, MapEditError> {
         context.workbench().map_mut()?.settle_review();
         Ok(Outcome::outside_history(()))
     }
@@ -372,13 +372,9 @@ impl<C: HasWorkbench + 'static> Command<C> for MapStaged {
         entities it is in, and the keys and brushes it adds, changes or removes.";
     type Params = NoParams;
     type Output = Vec<MapHunk>;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
-    fn run(
-        &self,
-        context: &mut C,
-        _: NoParams,
-    ) -> Result<Outcome<Vec<MapHunk>, C>, WorkbenchError> {
+    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<Vec<MapHunk>, C>, MapEditError> {
         Ok(Outcome::unchanged(context.workbench().map_hunks()?))
     }
 }
@@ -401,13 +397,13 @@ impl<C: HasWorkbench + 'static> Command<C> for MapAccept {
         are named: their change is kept and no longer waits.";
     type Params = MapHunksParams;
     type Output = Vec<MapHunk>;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: MapHunksParams,
-    ) -> Result<Outcome<Vec<MapHunk>, C>, WorkbenchError> {
+    ) -> Result<Outcome<Vec<MapHunk>, C>, MapEditError> {
         let workbench = context.workbench();
         let document = workbench.map_mut()?;
         let Some(review) = Review::of(document) else {
@@ -434,14 +430,14 @@ impl<C: HasWorkbench + 'static> Command<C> for MapReject {
         are named: the parts they replaced are put back, as an edit undo takes back.";
     type Params = MapHunksParams;
     type Output = Vec<MapHunk>;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: MapHunksParams,
-    ) -> Result<Outcome<Vec<MapHunk>, C>, WorkbenchError> {
-        let document = context.workbench().map().ok_or(WorkbenchError::NoMap)?;
+    ) -> Result<Outcome<Vec<MapHunk>, C>, MapEditError> {
+        let document = context.workbench().map().ok_or(MapEditError::NoMap)?;
         if document.staged.is_none() {
             return Ok(Outcome::unchanged(Vec::new()));
         }

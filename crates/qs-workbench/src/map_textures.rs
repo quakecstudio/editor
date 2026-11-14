@@ -18,7 +18,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::map_edit::{MapDocument, MapSource};
-use crate::{HasWorkbench, WorkbenchError};
+use crate::{HasWorkbench, MapEditError};
 
 /// The id of `map.textures`.
 pub const MAP_TEXTURES: &str = "map.textures";
@@ -466,9 +466,9 @@ impl<C: HasWorkbench + 'static> Command<C> for MapTexturesCommand {
         that nothing holds.";
     type Params = NoParams;
     type Output = MapTextures;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
-    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<MapTextures, C>, WorkbenchError> {
+    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<MapTextures, C>, MapEditError> {
         let (game, chosen) = context.preview().map_or((None, None), |preview| {
             (
                 preview.game_base_path(),
@@ -476,7 +476,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapTexturesCommand {
             )
         });
         let workbench = context.workbench();
-        let document = workbench.map().ok_or(WorkbenchError::NoMap)?;
+        let document = workbench.map().ok_or(MapEditError::NoMap)?;
         let sources = TextureSources::load(
             document,
             workbench.root(),

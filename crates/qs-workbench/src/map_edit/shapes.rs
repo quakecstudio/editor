@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use super::brushes::{DEFAULT_GRID, snap};
 use super::{EntityIndex, MapEdited, edit_map};
-use crate::{HasWorkbench, WorkbenchError};
+use crate::{HasWorkbench, MapEditError};
 
 /// The id of `map.brush_shape`.
 pub const MAP_BRUSH_SHAPE: &str = "map.brush_shape";
@@ -248,7 +248,7 @@ pub enum ShapeSpec {
 
 impl ShapeSpec {
     /// The shape, its curve on the grid `grid`.
-    fn shape(self, grid: f64) -> Result<Shape, WorkbenchError> {
+    fn shape(self, grid: f64) -> Result<Shape, MapEditError> {
         Ok(match self {
             Self::Cylinder {
                 sides,
@@ -286,7 +286,7 @@ impl ShapeSpec {
                     48 => CurveSides::FortyEight,
                     96 => CurveSides::NinetySix,
                     other => {
-                        return Err(WorkbenchError::Shape {
+                        return Err(MapEditError::Shape {
                             error: ShapeError::CurveSides(other),
                         });
                     }
@@ -337,7 +337,7 @@ pub struct BrushShapeParams {
     pub grid: Option<f64>,
 }
 
-impl From<ShapeError> for WorkbenchError {
+impl From<ShapeError> for MapEditError {
     fn from(error: ShapeError) -> Self {
         Self::Shape { error }
     }
@@ -354,13 +354,13 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushShape {
         step a player climbs; to the world or an entity of the open map, with a texture.";
     type Params = BrushShapeParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushShapeParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let entity = params.entity.unwrap_or(EntityIndex::WORLD);
         let grid = params.grid.unwrap_or(DEFAULT_GRID);
         let shape = params.shape.shape(if grid > 0.0 { grid } else { 1.0 })?;

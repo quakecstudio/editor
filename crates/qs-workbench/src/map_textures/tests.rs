@@ -18,7 +18,7 @@ use serde_json::json;
 
 use super::{MAP_TEXTURES, MapTextures, TextureOrigin, TextureSources, WadState};
 use crate::map_edit::{MAP_OPEN, MAP_SET_KEY};
-use crate::{Config, OPEN_PROJECT, Workbench, WorkbenchError, register};
+use crate::{Config, MapEditError, OPEN_PROJECT, Workbench, register};
 
 /// A texture lump `name`, `width` by `height`, every pixel `index`.
 fn miptex(name: &str, width: u32, height: u32, index: u8) -> Vec<u8> {
@@ -287,9 +287,7 @@ fn map_textures_needs_an_open_map() {
     let mut session = Session::new(Workbench::new(FsLoader, Config::default()), registry);
     let error = session.execute(MAP_TEXTURES, json!({})).unwrap_err();
     assert!(
-        error
-            .to_string()
-            .contains(&WorkbenchError::NoMap.to_string()),
+        error.to_string().contains(&MapEditError::NoMap.to_string()),
         "{error}"
     );
 }
