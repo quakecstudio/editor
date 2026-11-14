@@ -21,7 +21,15 @@ use crate::mesh::{
 use crate::particles::{ParticleVertex, particle_texture};
 use crate::skybox::Skybox;
 use crate::sprite::SpriteVertex;
+use crate::{AXES, CHANNEL_MAX, RGBA_BYTES};
 
+/// The world bind group's skybox binding, the shader's `@binding(3)` (REND-8.2).
+const SKYBOX_BINDING: u32 = 3;
+/// A texel's bytes, as the texture copies count them.
+const RGBA_BYTES_U32: u32 = 4;
+const RGBA_BYTES_U64: u64 = 4;
+/// The console's height over its width, 4:3, when no screen size is given.
+const CONSOLE_ASPECT: f32 = 0.75;
 /// The bytes of a [`crate::mesh::Vertex`] on the GPU: position, texture and light coordinates.
 const VERTEX_BYTES: u64 = 7 * 4;
 /// The bytes of an [`AliasVertex`] on the GPU: position, skin coordinates and shade.
@@ -375,7 +383,7 @@ impl MapRenderer {
                 sampler_entry(2),
                 // The skybox's six faces (REND-8.2).
                 wgpu::BindGroupLayoutEntry {
-                    binding: 3,
+                    binding: SKYBOX_BINDING,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
@@ -590,7 +598,7 @@ impl MapRenderer {
                     resource: wgpu::BindingResource::Sampler(&linear),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 3,
+                    binding: SKYBOX_BINDING,
                     resource: wgpu::BindingResource::TextureView(&skybox),
                 },
             ],
@@ -855,7 +863,7 @@ impl MapRenderer {
         let [x, y] = patch.at;
         let texels = u64::from(image.width)
             .checked_mul(u64::from(image.height))
-            .and_then(|n| n.checked_mul(4))
+            .and_then(|n| n.checked_mul(RGBA_BYTES_U64))
             .and_then(|n| usize::try_from(n).ok());
         if x.saturating_add(image.width) > size.width
             || y.saturating_add(image.height) > size.height
@@ -871,7 +879,7 @@ impl MapRenderer {
             &image.rgba,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(image.width.saturating_mul(4)),
+                bytes_per_row: Some(image.width.saturating_mul(RGBA_BYTES_U32)),
                 rows_per_image: Some(image.height),
             },
             wgpu::Extent3d {
@@ -897,9 +905,9 @@ impl MapRenderer {
         };
         let params = [view.water_alpha, skyfog, view.screen[0], view.screen[1]];
         // REND-8.2: whether the sky is the box, and its faces' size.
-        let sky = self
-            .skybox
-            .map_or([0.0; 4], |[w, h]| [1.0, f32_of_u32(w), f32_of_u32(h), 0.0]);
+        let sky = self.skybox.map_or([0.0; RGBA_BYTES], |[w, h]| {
+            [1.0, f32_of_u32(w), f32_of_u32(h), 0.0]
+        });
         // REND-13.5: what a lightmap texel is multiplied by, the mesh's look's.
         // REND-13.9: the gamma every fragment is raised to.
         let look = [self.light_scale, view.gamma, 0.0, 0.0];
@@ -1185,7 +1193,7 @@ fn sampler(device: &Device, filter: wgpu::FilterMode, address: wgpu::AddressMode
 fn upload_skybox(device: &Device, queue: &Queue, skybox: Option<&Skybox>) -> wgpu::TextureView {
     let [width, height] = skybox.map_or([1, 1], Skybox::size);
     let data = skybox.map_or_else(
-        || [0, 0, 0, 255].repeat(usize::try_from(SKY_FACES).unwrap_or(0)),
+        || [0, 0, 0, CHANNEL_MAX].repeat(usize::try_from(SKY_FACES).unwrap_or(0)),
         Skybox::layers,
     );
     device
@@ -1268,7 +1276,7 @@ impl Default for Fog {
     /// REND-10.1: no fog, grey.
     fn default() -> Self {
         Self {
-            color: [REND_FOG_DEFAULT_GRAY; 3],
+            color: [REND_FOG_DEFAULT_GRAY; AXES],
             density: 0.0,
         }
     }
@@ -1310,7 +1318,7 @@ impl View {
             fog: Fog::default(),
             water_alpha: REND_WATERALPHA,
             skyfog: REND_SKYFOG,
-            screen: [CONWIDTH, CONWIDTH * 3.0 / 4.0],
+            screen: [CONWIDTH, CONWIDTH * CONSOLE_ASPECT],
             gamma: 1.0,
         }
     }
@@ -1392,7 +1400,8 @@ impl CallbackTrait for MapCallback {
                 viewport.height_px,
             ]
             .map(|v| f32_of_i32(v.max(0)));
-            let viewport = (viewport[2] > 0.0 && viewport[3] > 0.0).then_some(viewport);
+            let [_, _, width, height] = viewport;
+            let viewport = (width > 0.0 && height > 0.0).then_some(viewport);
             renderer.draw(pass, self.view.time, viewport);
         }
     }

@@ -13,6 +13,23 @@
 use crate::mesh::GAMMA;
 use qs_client::ConsoleHold;
 
+/// `Draw_FadeScreen`'s alpha: QuakeSpasm's "`glColor4f (0, 0, 0, 0.5)`" and GLQuake's 0.8
+/// (REND-13.7).
+const QUAKESPASM_FADE: f32 = 0.5;
+const GLQUAKE_FADE: f32 = 0.8;
+/// QuakeSpasm's `scr_conalpha` default, "0.5" (REND-13.7).
+const SCR_CONALPHA: f32 = 0.5;
+/// GLQuake's console is opaque past three quarters of the screen, and rises to it at
+/// `1.2 * lines` over that (CON-3.2).
+const QUARTERS: i32 = 3;
+const CONSOLE_ALPHA_RISE: f32 = 1.2;
+/// `R_BuildLightMap`'s shift: 8 with `gl_overbright`, 7 in GLQuake (REND-13.5, REND-5.4).
+const OVERBRIGHT_SHIFT: u32 = 8;
+const GLQUAKE_SHIFT: u32 = 7;
+/// `AdaptFovx`'s 4:3 screen, `height / width == 0.75`, and its degrees in a turn (REND-13.6).
+const FOUR_BY_THREE: f32 = 0.75;
+const FULL_TURN: f64 = 360.0;
+
 /// The look of a frame: how the palette is corrected, how textures are filtered, whether
 /// fullbright texels glow, how bright light can be and how wide the view is (REND-13).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -40,8 +57,8 @@ impl Look {
     /// (REND-13.5, REND-5.4).
     pub(crate) const fn light_shift(self) -> u32 {
         match self {
-            Self::QuakeSpasm => 8,
-            Self::GlQuake => 7,
+            Self::QuakeSpasm => OVERBRIGHT_SHIFT,
+            Self::GlQuake => GLQUAKE_SHIFT,
         }
     }
 
@@ -78,8 +95,8 @@ impl Look {
     #[must_use]
     pub const fn fade_alpha(self) -> f32 {
         match self {
-            Self::QuakeSpasm => 0.5,
-            Self::GlQuake => 0.8,
+            Self::QuakeSpasm => QUAKESPASM_FADE,
+            Self::GlQuake => GLQUAKE_FADE,
         }
     }
 
@@ -91,13 +108,13 @@ impl Look {
     pub fn console_alpha(self, lines: i32, height: i32, forced: ConsoleHold) -> f32 {
         match self {
             Self::QuakeSpasm if forced == ConsoleHold::Forced => 1.0,
-            Self::QuakeSpasm => 0.5,
+            Self::QuakeSpasm => SCR_CONALPHA,
             Self::GlQuake => {
-                let three_quarters = height.saturating_mul(3) >> 2;
+                let three_quarters = height.saturating_mul(QUARTERS) >> 2;
                 if lines > three_quarters {
                     1.0
                 } else {
-                    (1.2 * f32_of(lines) / f32_of(three_quarters.max(1))).min(1.0)
+                    (CONSOLE_ALPHA_RISE * f32_of(lines) / f32_of(three_quarters.max(1))).min(1.0)
                 }
             }
         }
@@ -154,19 +171,21 @@ impl Look {
 fn adapt_fov_x(fov_x: f32, aspect: f32) -> f32 {
     let x = 1.0 / aspect;
     #[expect(
-        clippy::float_cmp,
+        clippy::float_cmp_const,
         reason = "spec REND-13.6: AdaptFovx compares height / width with 0.75 exactly"
     )]
-    let four_by_three = x == 0.75;
+    let four_by_three = x == FOUR_BY_THREE;
     if four_by_three || !x.is_finite() || x <= 0.0 {
         return fov_x;
     }
-    let a = (0.75 / f64::from(x) * (f64::from(fov_x) / 360.0 * core::f64::consts::PI).tan()).atan();
+    let a = (f64::from(FOUR_BY_THREE) / f64::from(x)
+        * (f64::from(fov_x) / FULL_TURN * core::f64::consts::PI).tan())
+    .atan();
     #[expect(
         clippy::cast_possible_truncation,
         reason = "spec REND-13.6: the double stored in AdaptFovx's float a"
     )]
-    let a = (a * 360.0 / core::f64::consts::PI) as f32;
+    let a = (a * FULL_TURN / core::f64::consts::PI) as f32;
     a
 }
 

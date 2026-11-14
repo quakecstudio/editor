@@ -18,6 +18,7 @@
 use qs_client::{DynamicLight, PoseBlend};
 use qs_mdl::mdl::{MDL_EF_ROTATE, MDL_HEADER_SIZE, Mdl, MdlFrameEntry};
 
+use crate::CHANNEL_MAX;
 use crate::anorm_dots::{R_AVERTEXNORMAL_DOTS, SHADEDOT_QUANT};
 use crate::mesh::{Image, Palette};
 
@@ -454,23 +455,33 @@ pub(crate) fn rotate_for_entity(origin: [f32; 3], turn: [f32; 3], position: [f32
 /// shirt's sixteen colours and of the trousers'.
 const TOP_RANGE: usize = 16;
 const BOTTOM_RANGE: usize = 96;
+/// The palette's colours.
+const PALETTE_SIZE: usize = 256;
+/// A player's colours: the shirt in the high nibble, the trousers in the low, each naming a
+/// row of 16 (REND-4.13, CLIENT-1.6).
+const TOP_COLOR_MASK: i32 = 0xf0;
+const BOTTOM_COLOR_MASK: i32 = 0x0f;
+const COLOR_ROW_SHIFT: i32 = 4;
+const COLOR_ROW_LENGTH: u8 = 16;
+/// The rows from 128 on run backwards ("the artists made some backwards ranges").
+const BACKWARDS_ROWS: u8 = 128;
 
 /// `R_TranslatePlayerSkin`'s table for the colours `colors`: every index itself, but the
 /// shirt's and trousers' rows, each moved to its chosen row, a row from 128 on reversed ("the
 /// artists made some backwards ranges.  sigh.") (REND-4.13).
-fn translation(colors: i32) -> [u8; 256] {
-    let mut table = [0_u8; 256];
-    for (i, entry) in (0..=255_u8).zip(table.iter_mut()) {
+fn translation(colors: i32) -> [u8; PALETTE_SIZE] {
+    let mut table = [0_u8; PALETTE_SIZE];
+    for (i, entry) in (0..=CHANNEL_MAX).zip(table.iter_mut()) {
         *entry = i;
     }
-    let top = u8::try_from(colors & 0xf0).unwrap_or(0);
-    let bottom = u8::try_from((colors & 15) << 4).unwrap_or(0);
-    for i in 0..16_u8 {
+    let top = u8::try_from(colors & TOP_COLOR_MASK).unwrap_or(0);
+    let bottom = u8::try_from((colors & BOTTOM_COLOR_MASK) << COLOR_ROW_SHIFT).unwrap_or(0);
+    for i in 0..COLOR_ROW_LENGTH {
         let row = |start: u8| {
-            if start < 128 {
+            if start < BACKWARDS_ROWS {
                 start.saturating_add(i)
             } else {
-                start.saturating_add(15).saturating_sub(i)
+                start.saturating_add(COLOR_ROW_LENGTH - 1).saturating_sub(i)
             }
         };
         let i = usize::from(i);

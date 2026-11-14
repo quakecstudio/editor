@@ -11,6 +11,13 @@
 //!
 //! Implements `docs/spec/render.md` REND-1 to REND-6.
 
+/// A vector's components.
+const AXES: usize = 3;
+/// A texel's bytes, red, green, blue and alpha.
+const RGBA_BYTES: usize = 4;
+/// A colour channel's most, an opaque alpha.
+const CHANNEL_MAX: u8 = 255;
+
 mod alias;
 mod anorm_dots;
 mod camera;
