@@ -21,10 +21,26 @@ use qs_sim::{HostState, LoadOptions, SaveGame, SpawnParms, World};
 use qs_vfs::zip::Zip;
 use qs_vfs::{Element, LoadedFile, StdFs, Vfs};
 
+use crate::AXES;
 use crate::args::{Args, Show};
 use crate::audio::{Audio, CdImage, Device};
 use crate::game::{Game, HostAction, Reporting};
 use crate::keys::{config_path, host_files};
+
+/// `rand ()`'s linear congruential step, `next = next * 1103515245 + 12345`.
+const RAND_MULTIPLIER: u32 = 1_103_515_245;
+/// The step's increment.
+const RAND_INCREMENT: u32 = 12345;
+/// C's `RAND_MAX`, the mask of the value given.
+const RAND_MAX: u32 = 0x7fff_ffff;
+/// How far a viewpoint over a sky's middle rises (down) and looks, in units and degrees.
+const SKY_VIEW: (f32, f32) = (-160.0, -55.0);
+/// How far a viewpoint over water or a lit surface rises and looks down.
+const SURFACE_VIEW: (f32, f32) = (96.0, 55.0);
+/// How far a viewpoint stands back from a surface's middle.
+const STAND_BACK: f32 = 96.0;
+/// The pitch a start at a placed point looks down at.
+const PLACED_PITCH: f32 = 30.0;
 
 /// The height of a player's eyes above its origin, `view_ofs` in id's QuakeC `client.qc`.
 const EYE_HEIGHT: f32 = 22.0;
@@ -135,8 +151,11 @@ pub(crate) struct Rand(u32);
 
 impl Rand {
     fn next(&mut self) -> i32 {
-        self.0 = self.0.wrapping_mul(1_103_515_245).wrapping_add(12345);
-        i32::try_from((self.0 >> 1) & 0x7fff_ffff).unwrap_or(0)
+        self.0 = self
+            .0
+            .wrapping_mul(RAND_MULTIPLIER)
+            .wrapping_add(RAND_INCREMENT);
+        i32::try_from((self.0 >> 1) & RAND_MAX).unwrap_or(0)
     }
 }
 
@@ -392,7 +411,7 @@ pub(crate) fn load(
     let mesh = builder.finish();
     let placed = at.map(|[x, y, z, yaw]| {
         let mut camera = Camera::new([x, y, z], Degrees::new(yaw));
-        camera.turn(Degrees::new(0.0), Degrees::new(30.0));
+        camera.turn(Degrees::new(0.0), Degrees::new(PLACED_PITCH));
         camera
     });
     let camera = placed
@@ -444,18 +463,18 @@ fn facing(mesh: &MapMesh, surface: Surface) -> Option<Camera> {
         .map(|v| v.position)
         .collect();
     let n = f32::from(u16::try_from(corners.len()).ok()?);
-    let mut middle = [0.0_f32; 3];
+    let mut middle = [0.0_f32; AXES];
     for corner in &corners {
         for (m, c) in middle.iter_mut().zip(corner) {
             *m += c / n;
         }
     }
     let (rise, pitch) = match surface {
-        Surface::Sky => (-160.0, -55.0),
-        Surface::Turbulent | Surface::Lit => (96.0, 55.0),
+        Surface::Sky => SKY_VIEW,
+        Surface::Turbulent | Surface::Lit => SURFACE_VIEW,
     };
     let mut camera = Camera::new(
-        [middle[0] - 96.0, middle[1], middle[2] + rise],
+        [middle[0] - STAND_BACK, middle[1], middle[2] + rise],
         Degrees::new(0.0),
     );
     camera.turn(Degrees::new(0.0), Degrees::new(pitch));

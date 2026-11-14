@@ -20,6 +20,15 @@
 
 use std::path::{Path, PathBuf};
 
+/// `/c:`, the bytes of a Windows drive's path in a URI.
+const DRIVE_PREFIX: usize = 3;
+/// A hex digit's bits.
+const NIBBLE_BITS: u32 = 4;
+/// The low hex digit's mask.
+const NIBBLE_MASK: u8 = 0x0F;
+/// The base of a percent-encoding's digits.
+const HEX_RADIX: u32 = 16;
+
 /// Whose rules a path follows: a drive letter and `\` separators are Windows's alone, and on
 /// any other host `/c:/x` is the absolute path it spells and `\` a byte of a file's name.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -63,7 +72,7 @@ pub(crate) fn to_path_on(uri: &str, host: Host) -> Option<PathBuf> {
     // `/c:/x` names the Windows path `c:/x`.
     let bytes = decoded.as_bytes();
     let drive = host == Host::Windows
-        && bytes.len() >= 3
+        && bytes.len() >= DRIVE_PREFIX
         && bytes.get(1).is_some_and(u8::is_ascii_alphabetic)
         && bytes.get(2) == Some(&b':');
     if drive {
@@ -145,8 +154,8 @@ fn push_encoded(out: &mut String, bytes: &[u8]) {
             out.push(char::from(b));
         } else {
             out.push('%');
-            for digit in [b >> 4, b & 0x0F] {
-                let hex = char::from_digit(u32::from(digit), 16).unwrap_or('0');
+            for digit in [b >> NIBBLE_BITS, b & NIBBLE_MASK] {
+                let hex = char::from_digit(u32::from(digit), HEX_RADIX).unwrap_or('0');
                 out.push(hex.to_ascii_uppercase());
             }
         }

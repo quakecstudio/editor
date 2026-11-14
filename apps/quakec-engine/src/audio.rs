@@ -19,6 +19,11 @@ use qs_sound::{
     OggStream, Output, Random, Read, SND_CD_RATE, SfxId, SoundTable, Start, track_files,
 };
 
+/// A 16-bit sample's scale to a float from -1 to 1.
+const SAMPLE_SCALE: f32 = 32768.0;
+/// A CD frame's bytes less one, two 16-bit samples, the mask a read rounds down by.
+const FRAME_MASK: usize = 3;
+
 /// The music files' extensions this host decodes, of QuakeSpasm's `RRE_MUSIC_EXTENSIONS`
 /// (RRE-3.5).
 const MUSIC_CODECS: [&str; 1] = ["ogg"];
@@ -155,7 +160,7 @@ impl MusicStream for CdTrackStream {
             .track
             .end
             .map_or(wanted, |end| end.saturating_sub(self.at));
-        let bytes = usize::try_from(wanted.min(left)).unwrap_or(0) & !3;
+        let bytes = usize::try_from(wanted.min(left)).unwrap_or(0) & !FRAME_MASK;
         if bytes == 0 {
             return Read::End;
         }
@@ -168,7 +173,7 @@ impl MusicStream for CdTrackStream {
             Ok(got) => got,
             Err(_) => return Read::Failed(-1),
         };
-        let read = got & !3;
+        let read = got & !FRAME_MASK;
         if read == 0 {
             return Read::End;
         }
@@ -452,7 +457,7 @@ fn device() -> Result<(u32, Sink), String> {
             device.build_output_stream(
                 config.config(),
                 move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                    fill(&queue, data, channels, |s| f32::from(s) / 32768.0);
+                    fill(&queue, data, channels, |s| f32::from(s) / SAMPLE_SCALE);
                 },
                 errors,
                 None,

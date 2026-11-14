@@ -18,10 +18,12 @@ use qs_workbench::git::{
 
 use crate::shell::name_field;
 use crate::strings::{Text, conflict_at};
-use crate::theme::{Theme, Token};
+use crate::theme::{SECTION_GAP, Theme, Token};
 
 /// How many characters of a commit id are shown.
 const SHORT_ID: usize = 8;
+/// The new branch name field's width.
+const BRANCH_FIELD_WIDTH: f32 = 160.0;
 
 /// What the last refresh read from the repository.
 #[derive(Clone, Debug, Default)]
@@ -154,7 +156,7 @@ pub(crate) fn git_ui(
             let typed = ui.add(
                 egui::TextEdit::singleline(new_branch)
                     .hint_text(Text::NewBranchName.get())
-                    .desired_width(160.0),
+                    .desired_width(BRANCH_FIELD_WIDTH),
             );
             name_field(ui, &typed, Text::NewBranchName);
             let name = new_branch.trim().to_owned();
@@ -309,7 +311,7 @@ fn hunk_ui(ui: &mut Ui, theme: &Theme, hunk: &GitHunk, button: Text) -> bool {
             continue;
         };
         ui.horizontal(|ui| {
-            ui.add_space(theme.space(3));
+            ui.add_space(theme.space(SECTION_GAP));
             ui.label(RichText::new(line).monospace().color(color));
         });
     }

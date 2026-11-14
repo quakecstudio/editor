@@ -37,6 +37,17 @@ const FAILED: char = '\u{2717}';
 const RAN: char = '\u{2713}';
 use crate::theme::{Theme, Token};
 
+/// The characters of a thread's task its list row shows.
+const TITLE_CHARS: usize = 24;
+/// The lines of a change's text a report shows.
+const CHANGE_LINES: usize = 8;
+/// The characters of a message's first line its edit row shows.
+const MESSAGE_CHARS: usize = 48;
+/// The queued-message box's width.
+const QUEUE_BOX_WIDTH: f32 = 200.0;
+/// The tallest a thread's transcript grows before it scrolls.
+const THREAD_MAX_HEIGHT: f32 = 320.0;
+
 /// Makes the model a thread runs on, from the configuration; the window's makes a provider's
 /// with its key from the keychain, a test's a scripted one.
 pub type MakeModel = Box<dyn Fn(&ProviderConfig) -> Result<Box<dyn Model + Send>, String>>;
@@ -692,7 +703,7 @@ impl AgentPanel {
         }
         ui.horizontal_wrapped(|ui| {
             for (index, thread) in self.threads.iter().enumerate() {
-                let title: String = thread.task.chars().take(24).collect();
+                let title: String = thread.task.chars().take(TITLE_CHARS).collect();
                 let label = if thread.running() {
                     format!("{RUNNING} {title}")
                 } else {
@@ -1012,7 +1023,7 @@ fn queue_box(ui: &mut Ui, theme: &Theme, thread: &mut Thread, text: &mut String)
         let typed = ui.add(
             egui::TextEdit::singleline(text)
                 .hint_text(Text::AgentQueueHint.get())
-                .desired_width(200.0),
+                .desired_width(QUEUE_BOX_WIDTH),
         );
         name_field(ui, &typed, Text::AgentQueueHint);
         if ui.button(Text::AgentQueue.get()).clicked() && !text.trim().is_empty() {
@@ -1051,7 +1062,7 @@ fn thread_view(
         &tokens_used(qs_agent::estimated_tokens(transcript)),
     );
     egui::ScrollArea::vertical()
-        .max_height(320.0)
+        .max_height(THREAD_MAX_HEIGHT)
         .stick_to_bottom(true)
         .show(ui, |ui| {
             transcript_view(ui, theme, transcript);
@@ -1119,7 +1130,7 @@ fn edit_messages(
                     .next()
                     .unwrap_or_default()
                     .chars()
-                    .take(48)
+                    .take(MESSAGE_CHARS)
                     .collect();
                 ui.horizontal(|ui| {
                     ui.label(first);
@@ -1165,7 +1176,7 @@ fn changes(ui: &mut Ui, theme: &Theme, staged: &[StagedHunk]) -> Option<AgentAct
             (&hunk.removed, Token::StatusError),
             (&hunk.added, Token::StatusOk),
         ] {
-            for line in lines.lines().take(8) {
+            for line in lines.lines().take(CHANGE_LINES) {
                 ui.label(
                     RichText::new(line)
                         .monospace()

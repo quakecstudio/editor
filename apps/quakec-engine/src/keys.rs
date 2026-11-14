@@ -15,6 +15,9 @@ use qs_sim::keys::{
     K_SPACE, K_TAB, K_UPARROW,
 };
 
+/// The function keys, F1 to F12.
+const FUNCTION_KEYS: u8 = 12;
+
 /// The key number egui's `key` is (INPUT-3.1): a letter as its lower case, a digit or a
 /// punctuation key as the character it types unshifted, the rest by `keys.h`; none for a key
 /// Quake has no number for.
@@ -132,7 +135,7 @@ pub(crate) const fn console_key(key: u8) -> bool {
 
 /// `menubound` (INPUT-3.2): Escape and the function keys, which run their binding in a menu.
 pub(crate) const fn menu_bound(key: u8) -> bool {
-    key == K_ESCAPE || (key >= K_F1 && key < K_F1 + 12)
+    key == K_ESCAPE || (key >= K_F1 && key < K_F1 + FUNCTION_KEYS)
 }
 
 /// Where the server's frame sees the keys going for the key destination `dest` (PHYS-11.9): to

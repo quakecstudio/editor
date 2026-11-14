@@ -29,6 +29,8 @@ const WIDTH: f32 = 640.0;
 const TOP: f32 = 96.0;
 /// The most rows shown before the list scrolls.
 const ROWS: f32 = 10.0;
+/// The room beside the query field, for its icon and the count of matches.
+const QUERY_MARGIN: f32 = 200.0;
 
 /// One file the finder can open: its path, its name and its path under the project.
 #[derive(Clone, Debug)]
@@ -167,7 +169,7 @@ impl FileFinder {
             let field = TextEdit::singleline(&mut self.query)
                 .hint_text(Text::SearchFiles.get())
                 .frame(egui::Frame::NONE)
-                .desired_width(WIDTH - 200.0);
+                .desired_width(WIDTH - QUERY_MARGIN);
             let response = ui.add(field);
             name_field(ui, &response, Text::SearchFiles);
             if self.focus {

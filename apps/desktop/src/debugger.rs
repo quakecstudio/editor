@@ -14,6 +14,9 @@ use qs_workbench::{Preview, StepBy};
 use crate::strings::Text;
 use crate::theme::{Theme, Token};
 
+/// The debugger's columns: the call stack, the variables and the watches.
+const COLUMNS: usize = 3;
+
 /// What the Debugger tab or the console's box asks for.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum DebugAction {
@@ -90,7 +93,7 @@ pub(crate) fn debugger_ui(
         }
     });
     let muted = theme.color(Token::TextMuted);
-    ui.columns(3, |columns| {
+    ui.columns(COLUMNS, |columns| {
         let [stack, watches, breakpoints] = columns else {
             return;
         };
@@ -110,7 +113,7 @@ pub(crate) fn debugger_ui(
 
         watches.label(RichText::new(Text::Watches.get()).strong());
         egui::Grid::new(Text::Watches.get())
-            .num_columns(3)
+            .num_columns(COLUMNS)
             .show(watches, |ui| {
                 for (index, watch) in debugger.watches().iter().enumerate() {
                     ui.label(RichText::new(&watch.expression).monospace());

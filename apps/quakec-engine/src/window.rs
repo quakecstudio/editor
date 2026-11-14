@@ -56,6 +56,18 @@ enum Pointer {
 pub(crate) const FRAME: f64 = 1.0 / 72.0;
 /// `Host_FilterTime`'s longest frame.
 const LONGEST: f64 = 0.1;
+/// The window's size when none is asked for.
+const DEFAULT_SIZE: [f32; 2] = [1280.0, 800.0];
+/// The depth buffer's bits.
+const DEPTH_BITS: u8 = 32;
+/// A triangle's corners, the indices a mesh gives each.
+const TRIANGLE_CORNERS: usize = 3;
+/// The longest frame the view steps by, in seconds, as [`LONGEST`].
+const LONGEST_VIEW_FRAME: f32 = 0.1;
+/// The benchmark's turn, in degrees a second.
+const BENCHMARK_TURN: f32 = 30.0;
+/// The narrowest aspect the 2D layer's height is reckoned for.
+const MIN_ASPECT: f32 = 0.1;
 
 /// Opens the window on the map `loaded` holds and runs the game until it closes or the
 /// bridge's client stops it.
@@ -100,7 +112,7 @@ pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result
         .size
         .as_deref()
         .and_then(|values| <[f32; 2]>::try_from(values).ok())
-        .unwrap_or([1280.0, 800.0]);
+        .unwrap_or(DEFAULT_SIZE);
     let mut viewport = egui::ViewportBuilder::default()
         .with_title(format!("QuakeC Studio preview: {map}"))
         .with_inner_size(size);
@@ -114,11 +126,15 @@ pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result
     let options = eframe::NativeOptions {
         viewport,
         renderer: eframe::Renderer::Wgpu,
-        depth_buffer: 32,
+        depth_buffer: DEPTH_BITS,
         wgpu_options,
         ..eframe::NativeOptions::default()
     };
-    let triangles = mesh.indices.len().checked_div(3).unwrap_or(0);
+    let triangles = mesh
+        .indices
+        .len()
+        .checked_div(TRIANGLE_CORNERS)
+        .unwrap_or(0);
     let camera_origin = camera.origin;
     eframe::run_native(
         "quakec-engine",
@@ -279,7 +295,7 @@ impl eframe::App for Viewer {
     fn ui(&mut self, ui: &mut egui::Ui, window: &mut eframe::Frame) {
         let now = Instant::now();
         let frame = now.duration_since(self.last).as_secs_f32();
-        let seconds = frame.min(0.1);
+        let seconds = frame.min(LONGEST_VIEW_FRAME);
         self.last = now;
         let rect = ui.max_rect();
         let response = ui.allocate_rect(rect, egui::Sense::click());
@@ -347,7 +363,7 @@ impl eframe::App for Viewer {
             // A slow turn, so the whole view around the start is drawn. The first frame
             // starts the clock: the window's own appearance is not the renderer's.
             self.camera
-                .turn(Degrees::new(seconds * 30.0), Degrees::new(0.0));
+                .turn(Degrees::new(seconds * BENCHMARK_TURN), Degrees::new(0.0));
             if self.frames == 0 {
                 self.started = now;
             } else {
@@ -530,7 +546,11 @@ impl Viewer {
             );
             state.renderer.write().callback_resources.insert(renderer);
         }
-        self.triangles = mesh.indices.len().checked_div(3).unwrap_or(0);
+        self.triangles = mesh
+            .indices
+            .len()
+            .checked_div(TRIANGLE_CORNERS)
+            .unwrap_or(0);
         self.map = map;
         self.mesh = mesh;
         self.play = play;
@@ -1107,7 +1127,7 @@ pub(crate) const CONWIDTH: i32 = 640;
     reason = "a rounded height of a few hundred units"
 )]
 pub(crate) fn screen_height(aspect: f32) -> i32 {
-    (f32::from(u16::try_from(CONWIDTH).unwrap_or(640)) / aspect.max(0.1)).round() as i32
+    (f32::from(u16::try_from(CONWIDTH).unwrap_or(u16::MAX)) / aspect.max(MIN_ASPECT)).round() as i32
 }
 
 /// The server's frame as the client's `host_frametime`, in seconds.

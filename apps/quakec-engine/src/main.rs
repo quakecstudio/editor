@@ -19,6 +19,9 @@ mod window;
 
 use std::process::ExitCode;
 
+/// A position's or a direction's axes.
+pub(crate) const AXES: usize = 3;
+
 /// The log file's stem, beside the IDE's in the app's log directory.
 const LOG_FILE_STEM: &str = "quakec-engine";
 

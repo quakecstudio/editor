@@ -31,6 +31,11 @@ use crate::screenshot::{Drawer, Frame};
 use crate::view_script::{Step, ViewScript};
 use crate::window::{CONWIDTH, FRAME, frametime_f32, screen_height};
 
+/// The bytes of an RGBA pixel.
+const RGBA_BYTES: usize = 4;
+/// A full turn, in degrees.
+const FULL_TURN: f32 = 360.0;
+
 /// The view's width per unit of height `pick` assumes: the window's first size, 1280 by 800.
 const ASPECT: f32 = 1.6;
 /// The size an offscreen frame is drawn at: the window's first size.
@@ -136,7 +141,7 @@ pub(crate) fn timerefresh(
         world.read_messages(if ran { FRAME } else { 0.0 });
     }
     let map = world.game.world().map().to_owned();
-    let yaw = |i: u16| f32::from(i) / f32::from(TIMEREFRESH_FRAMES) * 360.0;
+    let yaw = |i: u16| f32::from(i) / f32::from(TIMEREFRESH_FRAMES) * FULL_TURN;
     let count = f64::from(TIMEREFRESH_FRAMES);
     let mut passes = Vec::with_capacity(usize::from(PASSES));
     for _ in 0..PASSES {
@@ -316,7 +321,7 @@ impl Overlay {
 /// `frame` as a binary PPM, `P6`, its alpha dropped (VIEWDIFF-1.4).
 fn ppm(frame: &Frame) -> Vec<u8> {
     let mut bytes = format!("P6\n{} {}\n255\n", frame.width, frame.height).into_bytes();
-    for &[r, g, b, _] in frame.rgba.as_chunks::<4>().0 {
+    for &[r, g, b, _] in frame.rgba.as_chunks::<RGBA_BYTES>().0 {
         bytes.extend([r, g, b]);
     }
     bytes

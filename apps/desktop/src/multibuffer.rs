@@ -21,6 +21,8 @@ use crate::theme::{Theme, Token};
 
 /// How many lines of context an excerpt shows above and below its place.
 const CONTEXT: usize = 1;
+/// The search and replace fields' width.
+const FIELD_WIDTH: f32 = 280.0;
 
 /// What the multibuffer shows.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -340,7 +342,7 @@ fn form_ui(ui: &mut Ui, form: &mut SearchForm) -> Option<MultiAction> {
         let typed = ui.add(
             egui::TextEdit::singleline(&mut form.text)
                 .hint_text(Text::SearchProject.get())
-                .desired_width(280.0),
+                .desired_width(FIELD_WIDTH),
         );
         name_field(ui, &typed, Text::SearchProject);
         if form.focus {
@@ -361,7 +363,7 @@ fn form_ui(ui: &mut Ui, form: &mut SearchForm) -> Option<MultiAction> {
         let typed = ui.add(
             egui::TextEdit::singleline(&mut form.replacement)
                 .hint_text(Text::Replace.get())
-                .desired_width(280.0),
+                .desired_width(FIELD_WIDTH),
         );
         name_field(ui, &typed, Text::Replace);
         if ui

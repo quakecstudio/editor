@@ -142,7 +142,7 @@ use crate::picker::{Picker, PickerKind, PickerRow};
 use crate::project::{self, Jump, SymbolScope};
 use crate::strings::Text;
 use crate::terminal::{TerminalAction, TerminalView, terminal_ui};
-use crate::theme::{Theme, Token, semibold};
+use crate::theme::{SECTION_GAP, Theme, Token, semibold};
 #[cfg(test)]
 use qs_workbench::map_uv::FaceRef;
 use qs_workbench::map_uv::{FaceAlignParams, FaceUvParams, MAP_FACE_ALIGN, MAP_FACE_UV};
@@ -3055,7 +3055,7 @@ impl Shell {
                             Some(LeftAction::Jump(to)) => jump = Some(to),
                             asked => open = asked,
                         }
-                        ui.add_space(theme.space(3));
+                        ui.add_space(theme.space(SECTION_GAP));
                         if preview.state() == PlayState::Stopped {
                             section(ui, theme, Text::Entities, Text::NotPlaying);
                         } else {
@@ -3063,7 +3063,7 @@ impl Shell {
                             entity_action = entities::outliner(ui, theme, preview.entities(), tree);
                         }
                         if let Some(editor) = map_editor {
-                            ui.add_space(theme.space(3));
+                            ui.add_space(theme.space(SECTION_GAP));
                             heading(ui, theme, Text::Map);
                             let selected = workbench.map().and_then(MapDocument::selected);
                             map_actions = editor.outline_ui(ui, theme, selected);
@@ -3722,7 +3722,10 @@ fn breadcrumb(
         .unwrap_or(&editor.path);
     let muted = theme.color(Token::TextMuted);
     let separator = Text::PathSeparator.get();
-    let frame = egui::Frame::NONE.inner_margin(egui::Margin::symmetric(BREADCRUMB_INDENT, 4));
+    let frame = egui::Frame::NONE.inner_margin(egui::Margin::symmetric(
+        BREADCRUMB_INDENT,
+        BREADCRUMB_MARGIN,
+    ));
     frame.show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
@@ -3755,6 +3758,8 @@ fn breadcrumb(
 /// The breadcrumb's indent, in points: the gutter's padding, so it lines up with the line
 /// numbers below it.
 const BREADCRUMB_INDENT: i8 = 12;
+/// The breadcrumb bar's margin above and below.
+const BREADCRUMB_MARGIN: i8 = 4;
 
 /// What a click on a file's tab asks for.
 enum TabAction {
@@ -3864,7 +3869,7 @@ fn right(
     if focus {
         first.request_focus();
     }
-    ui.add_space(theme.space(3));
+    ui.add_space(theme.space(SECTION_GAP));
     heading(ui, theme, Text::Agent);
     let agent_action = agent.ui(ui, theme, &workbench.staged_hunks());
     (entity_action, agent_action, map_actions)
@@ -3939,7 +3944,7 @@ fn left(
                 });
         }
     }
-    ui.add_space(theme.space(3));
+    ui.add_space(theme.space(SECTION_GAP));
     heading(ui, theme, Text::Symbols);
     let symbols = project::symbols_ui(
         ui,
@@ -4299,11 +4304,13 @@ fn status_dot(ui: &mut Ui, colour: egui::Color32) {
     let size = ui.text_style_height(&egui::TextStyle::Small);
     let (rect, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
     ui.painter()
-        .circle_filled(rect.center(), size / 4.0, colour);
+        .circle_filled(rect.center(), size / STATUS_DOT_PARTS, colour);
 }
 
 /// How many of the open file's commits the Git tab lists.
 const HISTORY: usize = 50;
+/// A status dot's radius as a part of the line's height: a quarter.
+const STATUS_DOT_PARTS: f32 = 4.0;
 
 /// The outline panel's width, in points, as the left panel's Symbols are wide.
 const OUTLINE_WIDTH: f32 = 220.0;

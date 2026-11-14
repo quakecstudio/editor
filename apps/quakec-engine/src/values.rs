@@ -3,6 +3,7 @@
 //! BRIDGE-5: QuakeC values as the bridge writes them, `{ "type": ..., "value": ... }`, and read
 //! back for `field/set`.
 
+use crate::AXES;
 use qs_sim::{NamedValue, QcValue};
 use serde_json::{Value, json};
 
@@ -40,7 +41,7 @@ pub(crate) fn from_json(value: &Value) -> Option<QcValue> {
         "float" => QcValue::Float(number(inner?)?),
         "vector" => {
             let items = inner?.as_array()?;
-            let mut vector = [0.0; 3];
+            let mut vector = [0.0; AXES];
             for (out, item) in vector.iter_mut().zip(items) {
                 *out = number(item)?;
             }
