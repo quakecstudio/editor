@@ -96,7 +96,12 @@ fn a_box_is_six_ordered_sides() {
     assert_eq!(given, 4);
     assert_eq!(
         map.texinfos.miptex(),
-        [b"wall".to_vec(), b"dup".to_vec(), b"nonormal".to_vec()]
+        [
+            b"skip".to_vec(),
+            b"wall".to_vec(),
+            b"dup".to_vec(),
+            b"nonormal".to_vec()
+        ]
     );
 }
 
@@ -160,8 +165,8 @@ fn textures_and_surface_flags() {
     assert_eq!(
         map.texinfos.miptex(),
         [
+            b"skip".to_vec(),
             b"WALL".to_vec(),
-            b"SKIP".to_vec(),
             b"*lava1".to_vec(),
             b"sky4".to_vec()
         ]

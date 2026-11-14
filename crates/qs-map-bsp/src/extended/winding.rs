@@ -3,7 +3,8 @@
 // Copyright (C) 1997       Greg Lewis
 // Copyright (C) 2026 QuakeC Studio contributors
 //
-// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: include/common/polylib.hh, area, center, bounds, remove_colinear, plane, from_plane, calc_sides, clip
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: include/qbsp/brushbsp.hh, WindingIsTiny
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: include/common/polylib.hh, area, flip, center, bounds, remove_colinear, plane, from_plane, calc_sides, clip
 
 //! Convex polygons in double precision, ericw-tools' `winding_t`
 //! (`winding_base_t<winding_storage_heap_t<double>>`, QBSP-15.5 to QBSP-15.8).
@@ -16,6 +17,8 @@ use super::vec::{
 pub(crate) const ON_EPSILON: f64 = 0.1;
 /// Half of a whole: a triangle's area is half its cross product's length.
 const HALF: f64 = 0.5;
+/// A winding with this many edges of some length is not tiny.
+const TINY_EDGES: usize = 3;
 /// The room `clip` makes beyond a winding's points for each part, `reserve(size() + 4)`.
 const CLIP_RESERVE: usize = 4;
 
@@ -81,6 +84,26 @@ impl Winding {
                 _ => None,
             })
             .sum()
+    }
+
+    /// The winding facing the other way, its points in reverse order, `flip`.
+    pub(crate) fn flipped(&self) -> Self {
+        Self(self.0.iter().rev().copied().collect())
+    }
+
+    /// Whether it has fewer than three edges longer than `size`, `WindingIsTiny` (QBSP-15.25).
+    pub(crate) fn is_tiny(&self, size: f64) -> bool {
+        let n = self.0.len();
+        let long = (0..n)
+            .filter(|&i| {
+                let at = |k: usize| self.0.get(k.checked_rem(n)?).copied();
+                at(i)
+                    .zip(at(i.saturating_add(1)))
+                    .is_some_and(|(a, b)| length(sub(b, a)) > size)
+            })
+            .take(TINY_EDGES)
+            .count();
+        long < TINY_EDGES
     }
 
     /// The mean of its points, `center`.

@@ -16,7 +16,9 @@
 )]
 
 pub(crate) mod brush;
+pub(crate) mod chop;
 pub(crate) mod game;
 pub(crate) mod map;
+pub(crate) mod tree;
 pub(crate) mod vec;
 pub(crate) mod winding;

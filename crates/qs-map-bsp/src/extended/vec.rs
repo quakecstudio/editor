@@ -326,6 +326,11 @@ impl PlaneNum {
         self.0
     }
 
+    /// The plane of the pair facing its axis's positive side, `planenum & ~1`.
+    pub(crate) const fn positive(self) -> Self {
+        Self(self.0 & !1)
+    }
+
     /// The opposite plane, `planenum ^ 1`.
     pub(crate) const fn opposite(self) -> Self {
         Self(self.0 ^ 1)

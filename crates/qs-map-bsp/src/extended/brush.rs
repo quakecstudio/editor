@@ -17,7 +17,7 @@ use qs_map::{Entity, MapFile};
 
 use super::game::{Contents, Game, MirrorInside};
 use super::map::{
-    EntityNum, LoadedMap, MapBrush, Rotation, SideKind, SurfFlags, TexinfoNum, Texinfos,
+    ChopOrder, EntityNum, LoadedMap, MapBrush, Rotation, SideKind, SurfFlags, TexinfoNum, Texinfos,
 };
 use super::vec::{
     AXES, Bounds, POINT_EPSILON, Plane, PlaneNum, Planes, cross, dot, length, normalize, sub,
@@ -90,6 +90,34 @@ pub(crate) struct Side {
     pub(crate) source: Option<FaceRef>,
     /// Its polygon, empty when it has none.
     pub(crate) winding: Winding,
+    /// What the tree build has noted of it.
+    pub(crate) marks: SideMarks,
+}
+
+/// What the tree build notes of a side, `side_t::onnode` and `side_t::tested`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct SideMarks(u8);
+
+impl SideMarks {
+    /// Its plane is a node's: it never splits again.
+    pub(crate) const ON_NODE: u8 = 0b01;
+    /// Its plane has been scored as a splitter for this node.
+    pub(crate) const TESTED: u8 = 0b10;
+
+    /// Whether any of `bits` is set.
+    pub(crate) const fn has(self, bits: u8) -> bool {
+        self.0 & bits != 0
+    }
+
+    /// The marks with `bits` set.
+    pub(crate) const fn with(self, bits: u8) -> Self {
+        Self(self.0 | bits)
+    }
+
+    /// The marks with `bits` cleared.
+    pub(crate) const fn without(self, bits: u8) -> Self {
+        Self(self.0 & !bits)
+    }
 }
 
 impl Side {
@@ -145,14 +173,14 @@ impl Side {
 }
 
 /// A map brush's place: its entity and its index there.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub(crate) struct BrushRef {
     pub(crate) entity: EntityNum,
     pub(crate) brush: usize,
 }
 
 /// A brush for a hull, `bspbrush_t`.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct BspBrush {
     /// Its sides.
     pub(crate) sides: Vec<Side>,
@@ -162,7 +190,15 @@ pub(crate) struct BspBrush {
     pub(crate) bounds: Bounds,
     /// The map brush it came from.
     pub(crate) source: BrushRef,
+    /// The order it is chopped in, its map brush's `sort_key`.
+    pub(crate) sort_key: (ChopOrder, u32),
+    /// The hull brush it was cut from, `original_ptr`, its own number until it is cut.
+    pub(crate) original: OriginalNum,
 }
+
+/// A brush's number in its hull's list as loaded and sorted, before any is chopped.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct OriginalNum(usize);
 
 impl BspBrush {
     /// Its sides' polygons, `CreateBrushWindings` (QBSP-15.22): each side's plane's square
@@ -341,6 +377,18 @@ pub(crate) struct HullBrushes {
     pub(crate) bounds: Bounds,
 }
 
+impl HullBrushes {
+    /// The brushes in chop order, `sort_key` then line, each its own original
+    /// (`ProcessEntity`, QBSP-15.24).
+    pub(crate) fn sorted(mut self) -> Self {
+        self.brushes.sort_by_key(|b| b.sort_key);
+        for (i, brush) in self.brushes.iter_mut().enumerate() {
+            brush.original = OriginalNum(i);
+        }
+        self
+    }
+}
+
 /// What loading brushes needs at hand.
 pub(crate) struct Loader<'a> {
     pub(crate) file: &'a MapFile,
@@ -358,6 +406,7 @@ impl Loader<'_> {
         let entity = self.map.entities.get(at.entity.get())?;
         let source = entity.brushes.get(at.brush)?;
         let (origin, rotation) = (entity.origin, entity.rotation);
+        let sort_key = source.sort_key();
         let mut sides: Vec<Side> = source
             .faces
             .iter()
@@ -373,6 +422,7 @@ impl Loader<'_> {
                     face,
                 }),
                 winding: Winding::default(),
+                marks: SideMarks::default(),
             })
             .collect();
         if hull != Hull::Draw {
@@ -412,6 +462,8 @@ impl Loader<'_> {
             contents,
             bounds: Bounds::default(),
             source: at,
+            sort_key,
+            original: OriginalNum::default(),
         };
         if !brush.create_windings(&self.map.planes, self.map.world_extent, self.visible) {
             return None;

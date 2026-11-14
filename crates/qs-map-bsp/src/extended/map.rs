@@ -5,6 +5,7 @@
 //
 // Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: qbsp/map.cc, set_planepts, ParseBrushFace, ParseBrush, ParseEntity, Brush_GetContents, IsSkipName, IsNoExpandName, IsSpecialName, IsHintName, SurfFlagsForEntity, FindMiptex, FindTexinfo, CalculateBrushBounds, AddBrushBevels, GetBrushExtents, CalculateWorldExtent, ProcessMapBrushes
 // Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: qbsp/brush.cc, FindTargetEntity, FixRotateOrigin
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: qbsp/qbsp.cc, MakeSkipTexinfo
 // Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: include/common/qvec.hh, Snap
 
 //! Map brushes as ericw-tools' qbsp reads them from a map (QBSP-15.14 to QBSP-15.21): each
@@ -45,6 +46,8 @@ const SKIP_NAMES: [&[u8]; 6] = [
 const NO_EXPAND_NAME: &[u8] = b"bevel";
 /// The texture names that are hint, in any case, `IsHintName`.
 const HINT_NAMES: [&[u8]; 2] = [b"hint", b"hintskip"];
+/// The texture the compile's own sides have.
+const SKIP_TEXTURE: &[u8] = b"skip";
 /// The texture axes of a face that has none.
 const NO_TEXVECS: TexVecs<f32> = [[0.0; 4]; 2];
 /// The prefix of a liquid's texture, special unless lit water is asked for.
@@ -124,6 +127,22 @@ pub(crate) struct Texinfos {
 }
 
 impl Texinfos {
+    /// The skip texinfo the compile gives the sides it makes, `map.skip_texinfo`.
+    pub(crate) const SKIP: TexinfoNum = TexinfoNum(0);
+
+    /// The table ericw-tools' qbsp starts with, `MakeSkipTexinfo`: the texture `skip` and
+    /// [`Texinfos::SKIP`], not drawn, with no axes (QBSP-15.16).
+    pub(crate) fn with_skip() -> Self {
+        Self {
+            miptex: vec![SKIP_TEXTURE.to_vec()],
+            texinfo: vec![Texinfo {
+                vecs: NO_TEXVECS,
+                miptex: 0,
+                flags: SurfFlags::default().with(SurfFlags::NODRAW),
+            }],
+        }
+    }
+
     /// The textures' names, in first-use order.
     pub(crate) fn miptex(&self) -> &[Vec<u8>] {
         &self.miptex
@@ -246,7 +265,7 @@ impl MapBrush {
 }
 
 /// An entity's place in the map, the world first.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct EntityNum(usize);
 
 impl EntityNum {
@@ -800,7 +819,7 @@ fn rotate_origin(file: &MapFile, rotating: &Entity) -> Vec3 {
 /// entities here; the world takes their brushes for each hull (QBSP-15.24).
 pub(crate) fn load(file: &MapFile, game: Game) -> LoadedMap {
     let mut planes = Planes::default();
-    let mut texinfos = Texinfos::default();
+    let mut texinfos = Texinfos::with_skip();
     let mut reader = Reader {
         planes: &mut planes,
         texinfos: &mut texinfos,

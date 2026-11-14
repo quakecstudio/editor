@@ -778,3 +778,71 @@ point on a plane (`mathlib.hh`).
   fence is left out and every other is solid; the map brush's mirror-inside flags, when set,
   and its suppressed clipping of its own type are put back. The hull's bounds are around every
   brush it loads.
+- **QBSP-15.25** A brush's volume (`BrushVolume`) is a third of the sum, over its sides with a
+  polygon, of the polygon's area times the distance behind the side's plane of the first point
+  of the last side with a polygon. A brush is cut by a plane (`SplitBrush`, after Quake II's
+  `qbsp3`): whole behind it when no point of it is 0.1 in front, whole in front when none is 0.1
+  behind; whole on the side its point farthest from the plane is on, the front on a tie
+  (`BrushMostlyOnSide`), when the plane's square clipped behind each side's plane
+  (`clip_back`, `DEFAULT_ON_EPSILON` 0.1) is none or has fewer than three edges longer than 0.02
+  (`WindingIsTiny`). Otherwise each side's polygon is cut with no epsilon into the two parts,
+  each piece keeping the side's plane, texinfo and marks but `tested`; a part with fewer than
+  three sides, or bounds (`update_bounds`) failing or beyond the world's extent, is unsound;
+  both unsound drop the brush, one leaves the brush whole on the other side. Each part then gets
+  the plane's polygon as a side marked on a node with the skip texinfo, the front part on the
+  plane's opposite with the polygon reversed ("`cs.planenum = planenum ^ i ^ 1`"), and a part
+  of volume below `-microvolume`, default 0, is dropped. The skip texinfo is the table's first,
+  made before the map is read (`MakeSkipTexinfo`: texture `skip`, nodraw, no axes).
+- **QBSP-15.26** A box lies against a plane (`BoxOnPlaneSide`): for an axial plane in front
+  when its maximum on the axis is more than `PLANESIDE_EPSILON` (0.001) past the distance and
+  behind when its minimum is more than that below; for another plane in front when the corner
+  leading along the normal is at least 0.001 in front and behind when the trailing corner is less
+  than 0.001 in front. A brush lies against a plane (`TestBrushToPlanenum`) behind and facing it
+  when a side is on the plane, in front and facing when a side is on its opposite, else as its
+  bounds do; across it, each side not on a node, visible and with a polygon that has points more
+  than 0.1 on each side is a split unless hintskip, a hint split when hint, and the brush is an
+  epsilon brush when its farthest point in front is less than 1 in front or its farthest behind
+  less than 1 behind.
+- **QBSP-15.27** A box is divided by a plane (`DivideBounds`): at its distance for an axial
+  plane; for another, on each axis the normal is not within `NORMAL_EPSILON` of parallel to,
+  narrowed to where the box's four edges along that axis cross the plane, the front part's
+  minimum and the back part's maximum where the normal is positive and the reverse where
+  negative. A plane's metric for a node (`SplitPlaneMetric`) is the difference of the two parts'
+  volumes. A plane can split a node (`CheckPlaneAgainstVolume`) only when the node has a volume
+  and the plane cuts it into two sound parts (`CheckSplitBrush`), whose bounds check tests the
+  first axis three times. The fast choice (`ChooseMidPlaneFromList`) takes, in the first of
+  four passes with any candidate (visible structural, invisible structural, visible detail,
+  invisible detail), the side whose positive plane has the least metric, axial planes before
+  any other.
+- **QBSP-15.28** A plane is chosen for a node (`SelectSplitPlane`): none with no brush. The
+  automatic choice is the fast one for a node larger than `-maxnodesize` (1024) less
+  `-epsilon` on an axis, and the precise one otherwise and when the fast finds none. A side is a
+  candidate when it is not a bevel, has a polygon, is not on a node, not tested, not hintskip,
+  visible in passes 0 and 2 and not in 1 and 3, of a detail brush in passes 2 and 3 only, and
+  its positive plane can split the node. Its value is "`5 * facing - 5 * splits - std::abs(front
+  - back)`", 5 more when axial, 1000 less for each epsilon brush, and "`-9999999`" when the last
+  brush tested had a hint split and the side is not a hint; testing marks each brush on the plane
+  tested on its sides on it. The first side of the highest value above -99999 is chosen, and
+  passing to detail marks the node a detail separator. Every tested mark is cleared after.
+- **QBSP-15.29** The tree is built (`BuildTree_r`) from the head (`BrushBSP`), whose bounds are
+  the entity's and every brush's grown by `SIDESPACE` and whose volume is their box's brush
+  (`BrushFromBounds`: +x, +y, +z at the maximum, then -x, -y, -z at the minimum, skip texinfo),
+  each brush's on-node marks cleared first; with no brush the head is a node on plane 0 with two
+  empty leaves. A node with no plane chosen is a leaf of the brushes' contents combined from
+  empty (`LeafNode`) and their originals. Otherwise the node takes the positive plane, its
+  brushes go to the front or back by their side of it (`SplitBrushList`), those across it cut,
+  those facing it with their sides on it marked on a node, and those on neither side dropped; the
+  children's bounds are the node's, cut at the plane on the axis where its normal is exactly 1;
+  its volume is cut between them; the front child is built, then the back.
+- **QBSP-15.30** Brushes are chopped (`ChopBrushes`) in their sorted order, for the clipping
+  hulls always and for the drawing hull with `-chop`, by default off. Each brush is tested
+  against each after it; a pair is left when their boxes at most touch or a side of one is on the
+  opposite of a side of the other (`BrushesDisjoint`). A brush may bite another (`BrushGE`) when
+  not before it in chop order, not detail biting structure, and both solid. Subtracting `b` from
+  `a` (`SubtractBrush`) cuts `a` by each of `b`'s planes, keeping each front part, the last cut
+  first, and leaves `a` untouched when a cut leaves nothing behind. When the second may bite the
+  first: untouched leaves the pair, nothing left removes the first. Then when the first may bite
+  the second likewise. With neither bite, or both leaving more than one piece without
+  `-chopfragment`, the pair is left; otherwise the bite leaving fewer pieces replaces its brush
+  with its pieces, the second's on a tie, and the test goes on from the brush after those pieces
+  or from the first.
