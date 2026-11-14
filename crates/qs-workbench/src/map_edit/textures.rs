@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use qs_bsp::{Bsp, BspLoader};
-use qs_commands::{Command, NoParams, Outcome, Registry};
+use qs_commands::{Command, NoParams, Outcome};
 use qs_map::Compiler;
 use qs_vfs::{FS_GAMENAME, Location, StdFs, Vfs};
 use qs_wad::texture::{DecodedTexture, Palette};
@@ -456,7 +456,7 @@ impl MapDocument {
 }
 
 /// `map.textures`.
-struct MapTexturesCommand;
+pub(super) struct MapTexturesCommand;
 
 impl<C: HasMap + 'static> Command<C> for MapTexturesCommand {
     const ID: &'static str = MAP_TEXTURES;
@@ -480,13 +480,6 @@ impl<C: HasMap + 'static> Command<C> for MapTexturesCommand {
         );
         Ok(Outcome::unchanged(sources.listing(document)))
     }
-}
-
-/// Registers `map.textures`.
-pub(crate) fn register_map_textures<C: HasMap + 'static>(
-    registry: &mut Registry<C>,
-) -> Result<(), qs_commands::RegisterError> {
-    registry.register(MapTexturesCommand)
 }
 
 #[cfg(test)]

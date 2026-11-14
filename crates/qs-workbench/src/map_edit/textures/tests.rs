@@ -9,16 +9,16 @@
 
 use std::path::{Path, PathBuf};
 
-use qc_project::FsLoader;
-use qs_commands::{Registry, Session};
+use qs_commands::Session;
 use qs_wad::WAD_TYP_MIPTEX;
 use qs_wad::texture::Palette;
 use qs_wad::write::WadBuilder;
 use serde_json::json;
 
 use super::{MAP_TEXTURES, MapTextures, TextureOrigin, TextureSources, WadState};
+use crate::MapEditError;
+use crate::map_edit::testing::MapContext;
 use crate::map_edit::{MAP_OPEN, MAP_SET_KEY};
-use crate::{Config, MapEditError, OPEN_PROJECT, Workbench, register};
 
 /// A texture lump `name`, `width` by `height`, every pixel `index`.
 fn miptex(name: &str, width: u32, height: u32, index: u8) -> Vec<u8> {
@@ -103,7 +103,7 @@ impl Default for Scene {
 }
 
 /// The project's root, the game's base directory and a session with the map open.
-fn opened(test: &str, scene: &Scene) -> (PathBuf, PathBuf, Session<Workbench<FsLoader>>) {
+fn opened(test: &str, scene: &Scene) -> (PathBuf, PathBuf, Session<MapContext>) {
     let dir = std::env::temp_dir().join(format!("qs-wb-tex-{test}-{}", std::process::id()));
     let _gone = std::fs::remove_dir_all(&dir);
     let project = dir.join("project");
@@ -131,19 +131,14 @@ fn opened(test: &str, scene: &Scene) -> (PathBuf, PathBuf, Session<Workbench<FsL
         brush(&["brick", "brick", "nope"])
     );
     std::fs::write(project.join("maps/test.map"), map).unwrap();
-    let mut registry = Registry::new();
-    register(&mut registry).unwrap();
-    let mut session = Session::new(Workbench::new(FsLoader, Config::default()), registry);
-    session
-        .execute(OPEN_PROJECT, json!({ "path": project }))
-        .unwrap();
+    let mut session = MapContext::in_project(&project);
     session
         .execute(MAP_OPEN, json!({ "path": project.join("maps/test.map") }))
         .unwrap();
     (project, game, session)
 }
 
-fn sources(project: &Path, game: &Path, session: &Session<Workbench<FsLoader>>) -> TextureSources {
+fn sources(project: &Path, game: &Path, session: &Session<MapContext>) -> TextureSources {
     let workbench = session.context();
     TextureSources::load(workbench.map().unwrap(), Some(project), Some(game), None)
 }
@@ -282,9 +277,7 @@ fn map_textures_answers_the_listing() {
 
 #[test]
 fn map_textures_needs_an_open_map() {
-    let mut registry = Registry::new();
-    register(&mut registry).unwrap();
-    let mut session = Session::new(Workbench::new(FsLoader, Config::default()), registry);
+    let mut session = MapContext::session();
     let error = session.execute(MAP_TEXTURES, json!({})).unwrap_err();
     assert!(
         error.to_string().contains(&MapEditError::NoMap.to_string()),

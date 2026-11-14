@@ -43,6 +43,18 @@ impl MapContext {
         Self::default().into_session()
     }
 
+    /// A session over a context whose project's folder is `root`, with no game.
+    pub(crate) fn in_project(root: &Path) -> Session<Self> {
+        Self {
+            project: TestProject {
+                root: Some(root.to_path_buf()),
+                ..TestProject::default()
+            },
+            ..Self::default()
+        }
+        .into_session()
+    }
+
     /// A session over a context with no project and no game, the map at `path` open.
     pub(crate) fn opened(path: &Path) -> Session<Self> {
         let mut session = Self::session();

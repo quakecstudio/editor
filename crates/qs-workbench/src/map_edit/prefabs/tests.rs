@@ -8,44 +8,13 @@
 
 use std::path::{Path, PathBuf};
 
-use qc_project::FsLoader;
-use qs_commands::{Registry, Session};
+use qs_commands::Session;
 use qs_map::MapFile;
 use serde_json::json;
 
 use super::{MAP_PLACE_PREFAB, MAP_PREFABS, MAP_SAVE_PREFAB, PrefabSaved, Prefabs};
 use crate::map_edit::MAP_OPEN;
-use crate::preview::Preview;
-use crate::{Config, HasWorkbench, Workbench, register};
-
-struct Context {
-    workbench: Workbench<FsLoader>,
-}
-
-impl crate::HasMap for Context {
-    type Project = Workbench<FsLoader>;
-    type Live = Preview;
-
-    fn map_store(&mut self) -> &mut crate::MapStore {
-        self.workbench.maps_mut()
-    }
-
-    fn map_project(&mut self) -> &mut Workbench<FsLoader> {
-        &mut self.workbench
-    }
-
-    fn live_map(&mut self) -> Option<&mut Preview> {
-        None
-    }
-}
-
-impl HasWorkbench for Context {
-    type Loader = FsLoader;
-
-    fn workbench(&mut self) -> &mut Workbench<FsLoader> {
-        &mut self.workbench
-    }
-}
+use crate::map_edit::testing::MapContext;
 
 /// A copy of the desktop's keep project in a folder of its own named `name`.
 fn keep(name: &str) -> PathBuf {
@@ -63,24 +32,16 @@ fn keep(name: &str) -> PathBuf {
 }
 
 /// A session with the copy of the keep project at `dir` and its map open.
-fn session(dir: &Path) -> Session<Context> {
-    let mut registry = Registry::new();
-    register(&mut registry).unwrap();
-    let context = Context {
-        workbench: Workbench::new(FsLoader, Config::default()),
-    };
-    let mut session = Session::new(context, registry);
-    session
-        .execute("project.open", json!({ "path": dir }))
-        .unwrap();
+fn session(dir: &Path) -> Session<MapContext> {
+    let mut session = MapContext::in_project(dir);
     session
         .execute(MAP_OPEN, json!({ "path": dir.join("maps/keep.map") }))
         .unwrap();
     session
 }
 
-fn map(session: &Session<Context>) -> MapFile {
-    session.context().workbench.map().unwrap().file().clone()
+fn map(session: &Session<MapContext>) -> MapFile {
+    session.context().map().unwrap().file().clone()
 }
 
 /// The least and greatest corner of every brush of `file`.
@@ -191,14 +152,7 @@ fn bad_prefabs_are_refused() {
     let listed: Prefabs =
         serde_json::from_value(session.execute(MAP_PREFABS, json!({})).unwrap()).unwrap();
     assert!(listed.prefabs.is_empty(), "no prefabs folder lists none");
-    let mut registry = Registry::new();
-    register(&mut registry).unwrap();
-    let mut bare = Session::new(
-        Context {
-            workbench: Workbench::new(FsLoader, Config::default()),
-        },
-        registry,
-    );
+    let mut bare = MapContext::session();
     assert!(bare.execute(MAP_PREFABS, json!({})).is_err());
 }
 

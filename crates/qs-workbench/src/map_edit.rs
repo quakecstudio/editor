@@ -1330,6 +1330,7 @@ pub(crate) fn register_map_edit<C: HasMap + 'static>(
     registry.register(prefabs::SavePrefab)?;
     registry.register(issues::MapFix)?;
     registry.register(issues::MapSearch)?;
+    registry.register(textures::MapTexturesCommand)?;
     registry.register(MapSave)
 }
 
