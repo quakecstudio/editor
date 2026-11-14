@@ -26,6 +26,7 @@ mod game_guide;
 mod git_panel;
 pub mod icons;
 pub mod keymap;
+pub mod launch;
 mod map_browser;
 pub mod map_editor;
 mod map_fields;
@@ -44,6 +45,8 @@ pub mod map_view;
 #[cfg(target_os = "macos")]
 pub mod menu;
 mod multibuffer;
+#[cfg(target_os = "macos")]
+pub mod open_documents;
 pub mod palette;
 mod picker;
 pub mod project;
@@ -175,6 +178,13 @@ impl App {
                         }
                     }
                 }
+            }
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let opened = open_documents::take();
+            if !opened.is_empty() {
+                self.shell.open_paths(opened);
             }
         }
         self.shell.ui(ui);

@@ -101,6 +101,16 @@ pub const MAP_EXTENSION: &str = "map";
 /// The extension of a compiled map, whose entities `map.open` reads when it has no source.
 pub const BSP_EXTENSION: &str = "bsp";
 
+/// Whether `path` opens in the map editor rather than the code editor: a `.map`, or a `.bsp`
+/// whose entities it edits, by its extension in any case.
+#[must_use]
+pub fn opens_in_map_editor(path: &Path) -> bool {
+    path.extension().is_some_and(|extension| {
+        extension.eq_ignore_ascii_case(MAP_EXTENSION)
+            || extension.eq_ignore_ascii_case(BSP_EXTENSION)
+    })
+}
+
 /// The id of `map.open`.
 pub const MAP_OPEN: &str = "map.open";
 /// The id of `map.select`.

@@ -59,6 +59,10 @@ tracing = { workspace = true, features = ["std"] }
 # Linux, whose libdbus it loads when the dialog opens.
 rfd = { workspace = true, features = ["xdg-portal"] }
 
+[build-dependencies]
+# The Windows .exe's icon and version information (build.rs).
+winresource = { workspace = true }
+
 [dev-dependencies]
 # The offscreen snapshot harness (P2-21): egui's own, rendering through wgpu with no window and
 # comparing PNGs.
@@ -69,6 +73,12 @@ image = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 muda = { workspace = true }
+# The files Finder opens with the app (open_documents.rs): the delegate method winit 0.30 lacks,
+# added between building eframe's event loop and running it.
+objc2 = { workspace = true, features = ["std"] }
+objc2-app-kit = { workspace = true, features = ["std", "NSApplication", "NSResponder"] }
+objc2-foundation = { workspace = true, features = ["std", "NSArray", "NSEnumerator", "NSString", "NSURL"] }
+winit = { workspace = true }
 
 [lints]
 workspace = true

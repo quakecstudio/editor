@@ -57,13 +57,6 @@ use qs_workbench::map_edit::backup::{
 use qs_workbench::map_edit::texture_import::{TEXTURE_IMPORT, TextureImportParams};
 use qs_workbench::map_edit::textures::TextureSources;
 use qs_workbench::map_edit::{
-    BSP_EXTENSION, BspSave, EntityKeys, EntityParams, MAP_COMPARE, MAP_DELETE, MAP_DUPLICATE,
-    MAP_ENTITY, MAP_EXTENSION, MAP_MOVE, MAP_OPEN, MAP_REMOVE_KEY, MAP_RESOLVE, MAP_ROTATE,
-    MAP_SAVE, MAP_SELECT, MAP_SET_KEY, MapDifference, MapDocument, MapOnDisk, MapOpenParams,
-    MapSaved, MoveParams, RemoveKeyParams, ResolveParams, RotateParams, SaveParams,
-    SelectParams as MapSelectParams, SetKeyParams,
-};
-use qs_workbench::map_edit::{
     BrushChamferParams, BrushClipParams, BrushCreateParams, BrushExtrudeParams, BrushHollowParams,
     BrushIntersectParams, BrushMergeParams, BrushMoveParams, BrushParams, BrushScaleParams,
     BrushShapeParams, BrushShearParams, BrushSplitEdgeParams, BrushSplitFaceParams,
@@ -73,6 +66,13 @@ use qs_workbench::map_edit::{
     MAP_BRUSH_SHAPE, MAP_BRUSH_SHEAR, MAP_BRUSH_SPLIT_EDGE, MAP_BRUSH_SPLIT_FACE,
     MAP_BRUSH_SUBTRACT, MAP_BRUSH_SWEEP, MAP_BRUSH_TEXTURE, MAP_BRUSH_VERTEX, MAP_BRUSH_VERTICES,
     NewVertex, VertexMove,
+};
+use qs_workbench::map_edit::{
+    BspSave, EntityKeys, EntityParams, MAP_COMPARE, MAP_DELETE, MAP_DUPLICATE, MAP_ENTITY,
+    MAP_MOVE, MAP_OPEN, MAP_REMOVE_KEY, MAP_RESOLVE, MAP_ROTATE, MAP_SAVE, MAP_SELECT, MAP_SET_KEY,
+    MapDifference, MapDocument, MapOnDisk, MapOpenParams, MapSaved, MoveParams, RemoveKeyParams,
+    ResolveParams, RotateParams, SaveParams, SelectParams as MapSelectParams, SetKeyParams,
+    opens_in_map_editor,
 };
 use qs_workbench::map_edit::{
     EntityListParams, LayerInfo, MAP_HIDE, MAP_ISOLATE, MAP_LAYERS, MAP_LOCK, MAP_SET_LAYER,
@@ -93,6 +93,7 @@ use qs_workbench::map_filter::{FilterParams, MAP_FILTER, MapFiltered};
 use qs_workbench::map_profile::{
     MAP_CHOOSE_PROFILE, MAP_PROFILES, MAP_RUN_PROFILE, Profile, ProfileRun, RunProfileParams,
 };
+use qs_workbench::open_paths::{OPEN_PATHS, OpenPathsParams, PathsOpened, TAKE_OPENED_PATHS};
 use qs_workbench::search::{
     REPLACE_IN_FILE, REPLACE_RANGE, ReplaceInFileParams, ReplaceRangeParams, ReplacedInFile,
 };
@@ -1103,14 +1104,44 @@ impl Shell {
         Ok(())
     }
 
+    /// Opens what macOS or the command line hands the app, through `paths.open`: folders as
+    /// projects and files in their projects (PRJ-1.6). The next frame shows them.
+    pub fn open_paths(&mut self, paths: impl IntoIterator<Item = PathBuf>) {
+        let params = OpenPathsParams {
+            paths: paths.into_iter().collect(),
+        };
+        let _: Option<PathsOpened> = self.run(OPEN_PATHS, &params);
+    }
+
+    /// Shows what `paths.open` opened since the last frame, from this window or another launch
+    /// of the app over its socket: the editor for a file (the map editor shows a map by
+    /// itself), and the window comes to the front, as Zed's does, when anything opened; why a
+    /// path did not open goes on the toolbar.
+    fn follow_opened_paths(&mut self, ctx: &egui::Context) {
+        let taken: Option<Option<PathsOpened>> =
+            self.run(TAKE_OPENED_PATHS, &serde_json::json!({}));
+        let Some(Some(opened)) = taken else {
+            return;
+        };
+        for not_opened in &opened.not_opened {
+            tracing::warn!(path = %not_opened.path.display(), why = ?not_opened.why, "not opened");
+        }
+        // The toolbar says why a path did not open, unsaved changes in particular.
+        if let Some(first) = opened.not_opened.first() {
+            self.preview_error = Some(first.detail.clone());
+        }
+        if opened.file.is_some() && opened.map.is_none() {
+            self.centre_tab = CentreTab::Editor;
+        }
+        if opened.opened > 0 {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
+    }
+
     /// Opens the file a panel's row asks for, through its command, and shows the editor; a
     /// `.map` or `.bsp` opens in the map editor (P5-06).
     fn jump(&mut self, jump: Jump) {
-        let is_map = jump.path.extension().is_some_and(|extension| {
-            extension.eq_ignore_ascii_case(MAP_EXTENSION)
-                || extension.eq_ignore_ascii_case(BSP_EXTENSION)
-        });
-        if is_map {
+        if opens_in_map_editor(&jump.path) {
             self.open_map(jump.path);
             return;
         }
@@ -1645,6 +1676,7 @@ impl Shell {
         {
             ui.ctx().request_repaint();
         }
+        self.follow_opened_paths(ui.ctx());
         if self.session.context().preview.state() != PlayState::Stopped {
             let polled: Option<PreviewStatus> = self.run(POLL, &serde_json::json!({}));
             // BRIDGE-3.5: a click in the paused game picked an edict; open its spawn function.
