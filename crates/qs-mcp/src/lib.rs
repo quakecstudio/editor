@@ -61,8 +61,10 @@ pub struct Tool {
 }
 
 /// The agent's tools (AGT-2) and the commands its loop drives: plan, edit, compile, test,
-/// preview and propose (AGT-1), with checkpoints to roll back (AGT-4).
-pub const AGENT_TOOLS: [Tool; 26] = [
+/// preview and propose (AGT-1), with checkpoints to roll back (AGT-4); and the map's: open,
+/// inspect, place and key entities, build geometry with the brush, shape and CSG commands,
+/// compile and find leaks (MAP-16, MAP-29), each edit waiting for review as the agent's do.
+pub const AGENT_TOOLS: [Tool; 52] = [
     tool("project.symbols", Access::Read),
     tool("project.check", Access::Read),
     tool("file.read", Access::Read),
@@ -89,7 +91,62 @@ pub const AGENT_TOOLS: [Tool; 26] = [
     tool("engine.console", Access::Read),
     tool("engine.screenshot", Access::Write),
     tool("preview.reload", Access::Write),
+    tool("map.open", Access::Read),
+    tool("map.inspect", Access::Read),
+    tool("map.staged", Access::Read),
+    tool("map.leaks", Access::Read),
+    tool("map.compile", Access::Write),
+    tool("map.place", Access::Write),
+    tool("map.set_key", Access::Write),
+    tool("map.brush_create", Access::Write),
+    tool("map.brush_shape", Access::Write),
+    tool("map.brush_delete", Access::Write),
+    tool("map.brush_move", Access::Write),
+    tool("map.brush_texture", Access::Write),
+    tool("map.brush_clip", Access::Write),
+    tool("map.brush_vertex", Access::Write),
+    tool("map.brush_vertices", Access::Write),
+    tool("map.brush_split_edge", Access::Write),
+    tool("map.brush_split_face", Access::Write),
+    tool("map.brush_chamfer", Access::Write),
+    tool("map.brush_extrude", Access::Write),
+    tool("map.brush_scale", Access::Write),
+    tool("map.brush_shear", Access::Write),
+    tool("map.brush_sweep", Access::Write),
+    tool("map.brush_subtract", Access::Write),
+    tool("map.brush_merge", Access::Write),
+    tool("map.brush_intersect", Access::Write),
+    tool("map.brush_hollow", Access::Write),
 ];
+
+/// The prefix of the map's commands, whose edits wait for review (P6-21).
+const MAP_COMMANDS: &str = "map.";
+/// The command that begins review of the open map's edits.
+const STAGE_MAP: &str = "map.stage";
+/// The command that ends the open map's review when nothing waits in it.
+const UNSTAGE_MAP: &str = "map.unstage";
+
+/// Runs `id` on `session`, a map command between `map.stage` and `map.unstage` as the built-in
+/// agent runs it (P6-21): its edits wait as hunks for a person to review, and one that changed
+/// nothing leaves no review open.
+fn run_reviewed<K: Commands>(
+    session: &mut K,
+    id: &str,
+    arguments: Value,
+) -> Result<Value, ToolError> {
+    let map_command = id.starts_with(MAP_COMMANDS);
+    if map_command {
+        // With no map open, or no review commands, there is nothing to begin; the map command
+        // itself says why it cannot run.
+        let _begun = session.run(STAGE_MAP, Value::Object(serde_json::Map::new()));
+    }
+    let result = session.run(id, arguments);
+    if map_command {
+        // Nothing to end is not a failure of the call.
+        let _ended = session.run(UNSTAGE_MAP, Value::Object(serde_json::Map::new()));
+    }
+    result
+}
 
 /// A tool of `id` that touches as `access` says.
 const fn tool(id: &'static str, access: Access) -> Tool {
@@ -284,7 +341,7 @@ impl Server {
                 return;
             }
             while let Ok(job) = inbox.recv() {
-                let result = match session.run(&job.name, job.arguments) {
+                let result = match run_reviewed(&mut session, &job.name, job.arguments) {
                     Ok(output) => tool_result(output),
                     Err(why) => tool_error(&why.to_string()),
                 };
@@ -471,7 +528,9 @@ const DUPLEX_BUFFER: usize = 1 << 16;
 /// What the server tells a client's model about using it.
 const INSTRUCTIONS: &str = "QuakeC Studio's tools over the project this server was started on: \
     compile, test, run QuakeC in the VM, play scenarios, inspect and drive the running game, \
-    read files, stage edits as hunks and keep checkpoints. Paths are the project's, absolute or \
+    read files, stage edits as hunks and keep checkpoints; open a map, place and key its \
+    entities, build its brushes, compile it and find its leaks, each map edit staged for review. \
+    Paths are the project's, absolute or \
     relative to it.";
 
 /// A tool's result for `output`: its JSON as text, and as structured content when it is an

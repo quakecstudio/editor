@@ -12,10 +12,12 @@ use std::path::{Path, PathBuf};
 use qc_project::FsLoader;
 use qs_commands::remote::Host;
 use qs_commands::{Registry, Session};
-use qs_workbench::{Config, Workbench, register};
+use qs_workbench::{
+    Config, HasPreview, HasWorkbench, Preview, PreviewConfig, Workbench, register, register_preview,
+};
 use serde_json::{Value, json};
 
-use super::{AGENT_TOOLS, Connected, Server, ServerSettings};
+use super::{AGENT_TOOLS, Access, Connected, Server, ServerSettings};
 
 /// A fresh project on disk for test `name`: a `progs.src` and a `world.qc` of `world`.
 fn project(name: &str, world: &str) -> PathBuf {
@@ -345,4 +347,214 @@ fn a_connected_server_runs_in_the_apps_session() {
         staged.to_string().contains("world.qc"),
         "the edit is staged in the app's session: {staged}"
     );
+}
+
+/// A workbench and a preview with no game, for the map's commands that compile.
+struct MapContext {
+    workbench: Workbench<FsLoader>,
+    preview: Preview,
+}
+
+impl HasWorkbench for MapContext {
+    type Loader = FsLoader;
+
+    fn workbench(&mut self) -> &mut Workbench<FsLoader> {
+        &mut self.workbench
+    }
+
+    fn preview(&mut self) -> Option<&mut Preview> {
+        Some(&mut self.preview)
+    }
+}
+
+impl HasPreview for MapContext {
+    fn workbench_and_preview(&mut self) -> (&mut Workbench<FsLoader>, &mut Preview) {
+        (&mut self.workbench, &mut self.preview)
+    }
+}
+
+/// A project at `root` with `maps/room.map`, a world with nothing in it, and a server of the
+/// agent's tools over a session that can compile maps, writing under the project unless
+/// `read_only`; the map's path.
+fn map_server(name: &str, read_only: bool) -> (Server, PathBuf) {
+    let root = project(name, WORLD);
+    std::fs::create_dir_all(root.join("maps")).unwrap();
+    let map = root.join("maps/room.map");
+    std::fs::write(&map, "{\n\"classname\" \"worldspawn\"\n}\n").unwrap();
+    let settings = ServerSettings {
+        project: root.clone(),
+        read: vec![root.clone()],
+        write: if read_only {
+            Vec::new()
+        } else {
+            vec![root.clone()]
+        },
+        name: "quakec-ide".to_owned(),
+        version: "0".to_owned(),
+    };
+    let server = Server::start(
+        move || {
+            let mut registry = Registry::new();
+            register(&mut registry).map_err(|e| e.to_string())?;
+            register_preview(&mut registry).map_err(|e| e.to_string())?;
+            let context = MapContext {
+                workbench: Workbench::new(FsLoader, Config::default()),
+                preview: Preview::new(PreviewConfig {
+                    host: None,
+                    app: PathBuf::from("/nowhere/app"),
+                    game: None,
+                    extra: Vec::new(),
+                }),
+            };
+            let mut session = Session::new(context, registry);
+            session
+                .execute("project.open", json!({ "path": root }))
+                .map_err(|e| e.to_string())?;
+            Ok(session)
+        },
+        settings,
+        &AGENT_TOOLS,
+    )
+    .unwrap();
+    (server, map)
+}
+
+/// The map tools the server offers.
+fn map_tools() -> impl Iterator<Item = &'static super::Tool> {
+    AGENT_TOOLS
+        .iter()
+        .filter(|tool| tool.id.starts_with("map."))
+}
+
+// No spec statement: P6-36, MAP-16, MAP-29: tools/list offers the map's tools, each with its
+// command's schema: open, inspect, place, keys, the brush, shape and CSG commands, compile and
+// leaks
+#[test]
+fn the_map_tools_are_listed_with_their_schemas() {
+    let (server, _) = map_server("map-list", false);
+    let [init, initialized] = opening("2025-06-18");
+    let answers = exchange(
+        server,
+        &[
+            init,
+            initialized,
+            json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }),
+        ],
+    );
+    let tools = answers["1"]["result"]["tools"].as_array().unwrap();
+    for wanted in [
+        "map.open",
+        "map.inspect",
+        "map.place",
+        "map.set_key",
+        "map.brush_create",
+        "map.brush_shape",
+        "map.brush_subtract",
+        "map.brush_merge",
+        "map.brush_intersect",
+        "map.brush_hollow",
+        "map.compile",
+        "map.leaks",
+    ] {
+        assert!(map_tools().any(|tool| tool.id == wanted), "{wanted}");
+    }
+    for tool in map_tools() {
+        let listed = tools.iter().find(|t| t["name"] == tool.id);
+        assert!(listed.is_some(), "{} is listed", tool.id);
+        let listed = listed.unwrap();
+        assert_eq!(listed["inputSchema"]["type"], "object", "{}", tool.id);
+    }
+    let create = tools
+        .iter()
+        .find(|t| t["name"] == "map.brush_create")
+        .unwrap();
+    assert!(
+        create["inputSchema"]["properties"]["min"].is_object(),
+        "{create}"
+    );
+}
+
+/// The six walls of a room around -128 to 128, 16 thick.
+const WALLS: [([f64; 3], [f64; 3]); 6] = [
+    ([-144.0, -144.0, -144.0], [144.0, 144.0, -128.0]),
+    ([-144.0, -144.0, 128.0], [144.0, 144.0, 144.0]),
+    ([-144.0, -144.0, -128.0], [-128.0, 144.0, 128.0]),
+    ([128.0, -144.0, -128.0], [144.0, 144.0, 128.0]),
+    ([-128.0, -144.0, -128.0], [128.0, -128.0, 128.0]),
+    ([-128.0, 128.0, -128.0], [128.0, 144.0, 128.0]),
+];
+
+// No spec statement: P6-36, MAP-16, MAP-29: a sealed room built through MCP tool calls alone,
+// a player start and six brushes, finds no leak and compiles sealed, its edits waiting for
+// review
+#[test]
+fn a_room_built_over_mcp_compiles_sealed() {
+    let (server, map) = map_server("map-room", false);
+    let [init, initialized] = opening("2025-11-25");
+    let mut messages = vec![
+        init,
+        initialized,
+        call(1, "map.open", json!({ "path": map })),
+        call(
+            2,
+            "map.place",
+            json!({ "classname": "info_player_start", "origin": [0.0, 0.0, 24.0] }),
+        ),
+    ];
+    for (n, (min, max)) in (3..).zip(WALLS) {
+        messages.push(call(
+            n,
+            "map.brush_create",
+            json!({ "min": min, "max": max, "texture": "wall" }),
+        ));
+    }
+    messages.push(call(20, "map.leaks", json!({})));
+    messages.push(call(21, "map.compile", json!({})));
+    messages.push(call(22, "map.staged", json!({})));
+    let answers = exchange(server, &messages);
+    for id in 1..=8 {
+        let answer = &answers[&id.to_string()]["result"];
+        assert_eq!(answer["isError"], false, "{id}: {answer}");
+    }
+    let leaks = &answers["20"]["result"]["structuredContent"];
+    assert_eq!(leaks["seal"], "sealed", "{leaks}");
+    assert_eq!(leaks["leak"], json!([]));
+    let compiled = &answers["21"]["result"];
+    assert_eq!(compiled["isError"], false, "{compiled}");
+    assert_eq!(compiled["structuredContent"]["seal"], "sealed");
+    let staged = answers["22"]["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap();
+    assert!(staged.contains("info_player_start"), "{staged}");
+}
+
+// No spec statement: P6-36, P4-13: a read-only server refuses every map tool that writes, and
+// still opens and inspects the map
+#[test]
+fn a_read_only_server_refuses_the_map_tools_that_write() {
+    let (server, map) = map_server("map-read-only", true);
+    let [init, initialized] = opening("2025-11-25");
+    let writes: Vec<&str> = map_tools()
+        .filter(|tool| tool.access == Access::Write)
+        .map(|tool| tool.id)
+        .collect();
+    assert!(writes.contains(&"map.place") && writes.contains(&"map.compile"));
+    let mut messages = vec![
+        init,
+        initialized,
+        call(1, "map.open", json!({ "path": map })),
+        call(2, "map.inspect", json!({})),
+    ];
+    for (n, id) in (3..).zip(&writes) {
+        messages.push(call(n, id, json!({})));
+    }
+    let answers = exchange(server, &messages);
+    assert_eq!(answers["1"]["result"]["isError"], false, "{}", answers["1"]);
+    assert_eq!(answers["2"]["result"]["isError"], false, "{}", answers["2"]);
+    for (n, id) in (3..).zip(&writes) {
+        let answer = &answers[&n.to_string()]["result"];
+        assert_eq!(answer["isError"], true, "{id}: {answer}");
+        let text = answer["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("outside the roots"), "{id}: {text}");
+    }
 }
