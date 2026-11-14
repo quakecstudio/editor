@@ -70,9 +70,6 @@ id_newtype!(
     TerminalIndex(usize)
 );
 
-id_newtype!(
-    /// The preview host's id for a breakpoint it took.
-    BreakpointId(u64)
-);
+pub use qs_engine::BreakpointId;
 
 pub use qs_checkpoint::CheckpointNumber;

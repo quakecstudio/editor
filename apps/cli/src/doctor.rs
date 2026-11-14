@@ -11,7 +11,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use qs_engine::{Flavour, LaunchSpec, launch, locate_host, prepare_run_root};
+use qs_engine::{Flavour, LaunchSpec, locate_host, prepare_run_root};
 use qs_install::{Install, examine_folder, find_installs};
 use qs_models::{KeyStore, Keychain, Secret};
 
@@ -135,7 +135,9 @@ fn host(game: Option<&Path>, installs: &[Install]) -> Outcome {
         socket: socket(),
         extra: vec!["--headless".to_owned()],
     };
-    let mut running = launch(&spec, "quakec-ide doctor").map_err(|e| e.to_string())?;
+    let mut running = spec
+        .launch("quakec-ide doctor")
+        .map_err(|e| e.to_string())?;
     let stopped = running
         .client
         .shutdown()

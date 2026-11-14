@@ -11,6 +11,8 @@ publish.workspace = true
 [dependencies]
 qc-builtins = { workspace = true }
 qc-vm = { workspace = true }
+# A sound's entity, which the mixer takes as the client parses it.
+qc-edict = { workspace = true }
 qs-mdl = { workspace = true }
 
 [dev-dependencies]
