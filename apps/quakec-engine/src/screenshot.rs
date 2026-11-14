@@ -8,10 +8,8 @@ use eframe::egui_wgpu::{self, ScreenDescriptor};
 use image::codecs::png::PngEncoder;
 use image::imageops::{FilterType, resize};
 use image::{ExtendedColorType, ImageEncoder, RgbaImage};
+use qs_bridge::base64;
 use qs_render::{MapCallback, Offscreen};
-
-/// RFC 4648's base64 alphabet.
-const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 /// Draws a frame's paint callback offscreen for `screenshot`: on a device with no window in
 /// the headless host, and on the window's own in the windowed one, whose renderer is in that
@@ -124,29 +122,6 @@ pub(crate) fn encode(frame: Frame, size: Option<(u32, u32)>) -> Result<(String, 
         .write_image(image.as_raw(), width, height, ExtendedColorType::Rgba8)
         .map_err(|e| e.to_string())?;
     Ok((base64(&png), width, height))
-}
-
-/// `bytes` in RFC 4648 base64, padded with `=`.
-pub(crate) fn base64(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len().div_ceil(3).saturating_mul(4));
-    let letter = |index: u32| {
-        ALPHABET
-            .get(usize::try_from(index & 63).unwrap_or(0))
-            .map_or('A', |&c| char::from(c))
-    };
-    for chunk in bytes.chunks(3) {
-        let [a, b, c] = [0, 1, 2].map(|i| u32::from(chunk.get(i).copied().unwrap_or(0)));
-        let group = (a << 16) | (b << 8) | c;
-        out.push(letter(group >> 18));
-        out.push(letter(group >> 12));
-        out.push(if chunk.len() > 1 {
-            letter(group >> 6)
-        } else {
-            '='
-        });
-        out.push(if chunk.len() > 2 { letter(group) } else { '=' });
-    }
-    out
 }
 
 #[cfg(test)]

@@ -13,6 +13,8 @@ publish.workspace = true
 qc-edict = { workspace = true }
 # A run's checkpoint, by its number.
 qs-checkpoint = { workspace = true }
+# Base64, which a screenshot crosses the bridge in and an image is sent to a model in.
+qs-bridge = { workspace = true }
 qs-commands = { workspace = true }
 qs-map = { workspace = true }
 # The paths a call's arguments name, worked out by their text.
