@@ -25,11 +25,14 @@ use qc_vm::{Builtins, Context, ErrorKind, Machine, RunError, ServerState};
 use qs_bsp::{Bsp, BspLoader};
 use qs_mdl::Sprite;
 
+use crate::POINT;
 use crate::collision::{
     Body, Collision, CollisionError, Host, MoveKind, Solid, Trace, link_edict, sv_move,
 };
 use crate::debug::{Debugger, Watch};
+use crate::messages::{BIT_MASK, BYTE_SHIFT};
 use crate::messages::{SVC_CENTERPRINT, SVC_PRINT, ServerMessages, WRITE_BYTE, WRITE_ENTITY};
+use crate::physics::MOVETYPE_PUSH;
 use crate::physics::{Sound, dot};
 use crate::rerelease::{BuiltinTable, RRE_NUM_BUILTINS};
 use crate::settings::Setting;
@@ -76,6 +79,11 @@ const SPRINT: u32 = 24;
 const LIGHTSTYLE: u32 = 35;
 /// `particle` (BUILTIN-12.5).
 const PARTICLE: u32 = 48;
+/// `PF_aim`: the start's height above the origin, the straight trace's length, and the half of
+/// `mins + maxs` that is a target's centre (WORLD-8.8).
+const AIM_EYE: f32 = 20.0;
+const AIM_RANGE: f32 = 2048.0;
+const AIM_HALF: f64 = 0.5;
 /// `centerprint` (BUILTIN-11.2).
 const CENTERPRINT: u32 = 73;
 /// `ambientsound` (BUILTIN-12.4).
@@ -84,8 +92,6 @@ const AMBIENTSOUND: u32 = 74;
 const PRECACHE_MODEL2: u32 = 75;
 /// `end[2] -= 256` in `PF_droptofloor` (WORLD-8.5).
 const DROP_DEPTH: f32 = 256.0;
-/// `MOVETYPE_PUSH` (WORLD-1.4).
-const MOVETYPE_PUSH: f32 = 7.0;
 /// `FL_ONGROUND`.
 pub(crate) const FL_ONGROUND: i32 = 512;
 
@@ -703,8 +709,8 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
             .is_some_and(|l| {
                 self.sim
                     .checkpvs
-                    .get(l >> 3)
-                    .is_some_and(|byte| byte & (1 << (l & 7)) != 0)
+                    .get(l >> BYTE_SHIFT)
+                    .is_some_and(|byte| byte & (1 << (l & BIT_MASK)) != 0)
             });
         self.set_return_entity(if visible { chosen } else { 0 })
     }
@@ -720,17 +726,17 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
     fn aim(&mut self) -> Result<(), RunError> {
         let ent = parm_edict(&self.context, 0)?;
         let mut start = self.vector(ent, "origin");
-        start[2] += 20.0;
+        start[2] += AIM_EYE;
         let forward = self.global_vector("v_forward");
         let end = [
-            start[0] + 2048.0 * forward[0],
-            start[1] + 2048.0 * forward[1],
-            start[2] + 2048.0 * forward[2],
+            start[0] + AIM_RANGE * forward[0],
+            start[1] + AIM_RANGE * forward[1],
+            start[2] + AIM_RANGE * forward[2],
         ];
         // "try sending a trace straight"
         let teamplay = self.setting(Setting::Teamplay) != 0.0;
         let team = self.float(ent, "team");
-        let trace = self.trace((start, [0.0; 3], [0.0; 3], end), MoveKind::Normal, ent)?;
+        let trace = self.trace((start, POINT, POINT, end), MoveKind::Normal, ent)?;
         if let Some(hit) = trace.ent
             && self.float(hit, "takedamage") == DAMAGE_AIM
             && (!teamplay || team <= 0.0 || team != self.float(hit, "team"))
@@ -753,9 +759,9 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
             let mins = self.vector(check, "mins");
             let maxs = self.vector(check, "maxs");
             // `origin[j] + 0.5*(mins[j] + maxs[j])`, in double (PHYS-9.7's rule).
-            let mut end = [0.0_f32; 3];
+            let mut end = POINT;
             for (((e, o), lo), hi) in end.iter_mut().zip(origin).zip(mins).zip(maxs) {
-                *e = double_to_float(f64::from(o) + 0.5 * f64::from(lo + hi));
+                *e = double_to_float(f64::from(o) + AIM_HALF * f64::from(lo + hi));
             }
             let (dir, _) =
                 vector_normalize([end[0] - start[0], end[1] - start[1], end[2] - start[2]]);
@@ -764,7 +770,7 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
             if dist < bestdist {
                 continue;
             }
-            let trace = self.trace((start, [0.0; 3], [0.0; 3], end), MoveKind::Normal, ent)?;
+            let trace = self.trace((start, POINT, POINT, end), MoveKind::Normal, ent)?;
             if trace.ent == Some(check) {
                 bestdist = dist;
                 bestent = Some(check);
@@ -786,7 +792,7 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
     /// The system global vector `name`.
     fn global_vector(&self, name: &str) -> [f32; 3] {
         let Some(first) = global_by_name(name).and_then(|v| i32::try_from(v.slot).ok()) else {
-            return [0.0; 3];
+            return POINT;
         };
         core::array::from_fn(|i| {
             let slot = first.saturating_add(i32::try_from(i).unwrap_or(0));

@@ -10,6 +10,7 @@ use qc_types::{DefType, Etype, Slot};
 use qc_vm::ServerState;
 
 use super::{CLIENT, Spawner, World};
+use crate::POINT;
 use crate::builtins::SimCall;
 use crate::collision::MoveKind;
 use crate::spawn::{EdictPlace, SpawnHost, apply_key};
@@ -288,7 +289,7 @@ impl World {
         let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
         call.set_vector(CLIENT, "origin", origin);
         call.set_vector(CLIENT, "angles", angles);
-        call.set_vector(CLIENT, "velocity", [0.0; 3]);
+        call.set_vector(CLIENT, "velocity", POINT);
         call.set_float(CLIENT, "fixangle", 1.0);
         call.link(CLIENT, false)
             .map_err(|e| EditError::Spawn(e.to_string()))
@@ -339,7 +340,7 @@ impl World {
     ) -> Result<LineHit, super::WorldError> {
         let call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
         let trace = call
-            .trace((start, [0.0; 3], [0.0; 3], end), MoveKind::Normal, CLIENT)
+            .trace((start, POINT, POINT, end), MoveKind::Normal, CLIENT)
             .map_err(super::WorldError::Frame)?;
         Ok(LineHit {
             edict: trace.ent.filter(|&n| n != 0).map(EdictNumber::new),

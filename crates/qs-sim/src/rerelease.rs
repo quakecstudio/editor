@@ -90,8 +90,9 @@ pub fn patch_builtins(bytes: &mut [u8]) -> BuiltinTable {
         let at = index
             .checked_mul(FUNCTION_SIZE)
             .and_then(|offset| table.checked_add(offset));
-        if let Some(cell) = at.and_then(|at| bytes.get_mut(at..at.saturating_add(4))) {
-            cell.copy_from_slice(&patch.to_le_bytes());
+        let patch = patch.to_le_bytes();
+        if let Some(cell) = at.and_then(|at| bytes.get_mut(at..at.saturating_add(patch.len()))) {
+            cell.copy_from_slice(&patch);
             patched = BuiltinTable::Rerelease;
         }
     }

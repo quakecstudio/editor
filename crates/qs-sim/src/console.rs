@@ -24,6 +24,7 @@ use qc_vm::convert::float_to_int;
 use crate::host_commands::{COLOR_MASK, COLOR_ROW, MAX_COLOR, Words, atoi, tokenize};
 use crate::input::Button;
 use crate::offsets::FieldOffset;
+use crate::physics::MOVETYPE_STEP;
 use crate::settings::{CLIENT_SETTINGS, SERVER_SETTINGS};
 use crate::world::{ClientCommand, HostCommand, RawState as _, World};
 
@@ -79,9 +80,6 @@ const COMMANDS: [&str; 37] = [
     "version",
     "wait",
 ];
-
-/// `MOVETYPE_STEP` (`WinQuake/server.h`), which `edictcount` counts.
-const MOVETYPE_STEP: f32 = 4.0;
 
 /// A count one more, as `ED_Count`'s `++`, which an edict count cannot overflow.
 const fn add_one(count: usize) -> usize {

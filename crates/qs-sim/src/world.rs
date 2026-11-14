@@ -34,10 +34,12 @@ use crate::input::Button;
 use crate::messages::ServerMessages;
 use crate::messages::{ClientMessages, GameKind};
 use crate::offsets::{FieldOffset, GlobalOffset};
+use crate::physics::MOVETYPE_PUSH;
 use crate::physics::Sound;
 use crate::rerelease::BuiltinTable;
 use crate::settings::{ARCHIVED, CLIENT_SETTINGS, SERVER_SETTINGS};
 use qc_builtins::localization::Localization;
+use save::NUM_SPAWN_PARMS;
 
 use crate::spawn::{
     self, Deathmatch, EdictPlace, FieldDef, LoadError, Parser, SPAWNFLAGS_SLOT, SpawnError,
@@ -48,8 +50,6 @@ use crate::spawn::{
 const MAP_START_TIME: f64 = 1.0;
 /// `SOLID_BSP` (EDICT-10.3): the world is solid.
 const SOLID_BSP: f32 = 4.0;
-/// `MOVETYPE_PUSH` (EDICT-10.2): the world moves as a pusher.
-const MOVETYPE_PUSH: f32 = 7.0;
 /// The client slots a single-player world has.
 const MAXCLIENTS: usize = 1;
 /// The single player's edict.
@@ -146,7 +146,7 @@ pub struct World {
     /// The spawn parms the level the player left kept, used in place of `SetNewParms`'.
     carried: Option<SpawnParms>,
     /// The client's spawn parms, `host_client->spawn_parms`, which a saved game keeps.
-    spawn_parms: [Slot; 16],
+    spawn_parms: [Slot; NUM_SPAWN_PARMS],
     /// Whether a saved game was read into this world, `sv.loadgame` (PHYS-10.5).
     loaded: bool,
     /// The map's name, `sv.name`.
@@ -393,7 +393,7 @@ impl World {
             aliases,
             search_path: options.search_path,
             carried: options.carried,
-            spawn_parms: [Slot::ZERO; 16],
+            spawn_parms: [Slot::ZERO; NUM_SPAWN_PARMS],
             loaded: false,
             map: map.to_owned(),
             map_entities: map_entities::MapEntities::default(),

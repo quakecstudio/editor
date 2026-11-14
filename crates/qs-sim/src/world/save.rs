@@ -28,7 +28,10 @@ const SAVEGAME_COMMENT_LENGTH: usize = 39;
 /// Where the comment's `kills:` count starts, `text+22`.
 const SAVEGAME_KILLS_AT: usize = 22;
 /// `NUM_SPAWN_PARMS` (`server.h`).
-const NUM_SPAWN_PARMS: usize = 16;
+pub(crate) const NUM_SPAWN_PARMS: usize = 16;
+/// "this silliness is so we can load 1.06 save files, which have float skill values": what
+/// is added before the skill is truncated (`Host_Loadgame_f`).
+const SAVED_SKILL_NUDGE: f32 = 0.1;
 /// `MAX_LIGHTSTYLES` (`quakedef.h`).
 const MAX_LIGHTSTYLES: usize = 64;
 /// `char str[32768]`: the most bytes `Host_Loadgame_f` reads for one `{ ... }` block, its
@@ -125,7 +128,7 @@ impl SaveGame {
         }
         // "this silliness is so we can load 1.06 save files, which have float skill values"
         let skill = words.next().map(c_atof).ok_or(SaveError::Truncated)?;
-        let skill = truncate(skill + 0.1);
+        let skill = truncate(skill + SAVED_SKILL_NUDGE);
         let map = words.next().ok_or(SaveError::Truncated)?;
         let map = String::from_utf8_lossy(map).into_owned();
         let time = words.next().map(c_atof).ok_or(SaveError::Truncated)?;

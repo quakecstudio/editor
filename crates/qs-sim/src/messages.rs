@@ -30,6 +30,7 @@ use crate::POINT;
 use crate::builtins::{FL_ONGROUND, SimCall, parm_float, parm_vector};
 use crate::client::wire_angle;
 use crate::collision::{CONTENTS_SOLID, MoveKind};
+use crate::physics::MOVETYPE_STEP;
 use crate::settings::Setting;
 use crate::spawn::c_atof;
 
@@ -64,8 +65,8 @@ const BYTE_MASK: i32 = 0xff;
 /// A PVS row's bytes: `(numleafs + 31) >> 3`, a leaf a bit (NET-3.1).
 const ROW_ROUND_UP: usize = 31;
 /// A leaf's byte in a PVS row, `leaf >> 3`, and its bit, `1 << (leaf & 7)` (NET-3.2).
-const BYTE_SHIFT: usize = 3;
-const BIT_MASK: usize = 7;
+pub(crate) const BYTE_SHIFT: usize = 3;
+pub(crate) const BIT_MASK: usize = 7;
 /// Half: an edict's centre is its origin plus half its mins and maxs (BUILTIN-12.3).
 const HALF: f32 = 0.5;
 /// The bytes `SV_LocalSound` writes, which must fit (RRE-2.4).
@@ -115,8 +116,6 @@ const PROBE_FIRST: i32 = 3;
 const PROBE_DEPTH: f32 = 160.0;
 /// `DEFAULT_VIEWHEIGHT` (NET-4.4).
 const DEFAULT_VIEWHEIGHT: f32 = 22.0;
-/// `MOVETYPE_STEP` (NET-3.3).
-const MOVETYPE_STEP: f32 = 4.0;
 /// `EF_MUZZLEFLASH` (NET-1.3).
 const EF_MUZZLEFLASH: i32 = 2;
 

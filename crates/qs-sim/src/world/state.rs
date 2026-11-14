@@ -7,6 +7,7 @@
 use crate::offsets::{FieldOffset, GlobalOffset};
 use qc_edict::EdictNumber;
 use qc_progs::Progs;
+use qc_types::PROGS_VECTOR_SLOTS;
 use qc_types::{Etype, Slot};
 
 use super::inspect::{NamedValue, QcValue, named};
@@ -108,7 +109,7 @@ pub(super) fn typed_value(
     match etype {
         Etype::Float => QcValue::Float(first.as_f32()),
         Etype::Vector => {
-            let mut vector = [0.0; 3];
+            let mut vector = [0.0; PROGS_VECTOR_SLOTS];
             for (out, slot) in vector.iter_mut().zip(slots) {
                 *out = slot.as_f32();
             }
