@@ -12,8 +12,11 @@ use qc_project::FsLoader;
 use qs_commands::{Registry, Session};
 use serde_json::{Value, json};
 
+use qs_map::MapFile;
+
 use super::{MAP_CHECK, MAP_RENAME_KEY};
-use crate::{Config, OPEN_FILE, OPEN_PROJECT, READ_FILE, RENAME, Workbench, register};
+use crate::map_edit::{EntityIndex, QuickFix};
+use crate::{Config, MapProject, OPEN_FILE, OPEN_PROJECT, READ_FILE, RENAME, Workbench, register};
 
 const CODE: &str = "entity self; .string classname, target, targetname; .float speed;\n\
     void() worldspawn = {};\n\
@@ -102,4 +105,120 @@ fn renaming_a_field_rewrites_the_key_in_open_maps_after_confirmation() {
     assert_eq!(none["maps"], json!([]));
     let bad = session.execute(MAP_RENAME_KEY, json!({ "from": "speed", "to": "a\"b" }));
     assert!(bad.is_err(), "a key cannot hold a quote");
+}
+
+/// A workbench with a project of `code` open, in a fresh directory named `name`.
+fn workbench(name: &str, code: &str) -> Workbench<FsLoader> {
+    let dir = std::env::temp_dir().join(format!("qs-wb-seam-{name}-{}", std::process::id()));
+    let _gone = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("a.qc"), code).unwrap();
+    std::fs::write(dir.join("progs.src"), "progs.dat\na.qc\n").unwrap();
+    let mut workbench = Workbench::new(FsLoader, Config::default());
+    workbench.open_project(&dir).unwrap();
+    workbench
+}
+
+// No spec statement: P6-40, MAP-4: the workbench answers the map editor's questions of the
+// project from its server QuakeC: a class with its keys typed and its spawnflags named, none
+// for a classname the code does not define, and the keys the code fires entities by
+#[test]
+fn the_project_answers_the_map_editor_from_its_quakec() {
+    let code = "entity self, world; .string classname, target, killtarget, targetname;\n\
+        .float spawnflags, speed; float SILENT = 2;\n\
+        entity(entity start, .string fld, string match) find = #18;\n\
+        void() worldspawn = {};\n\
+        void() fire = { local entity t; t = find(world, targetname, self.target);\n\
+            t = find(world, targetname, self.killtarget); };\n\
+        /*QUAKED path_corner (0.5 0.25 0) (-8 -8 -8) (8 8 8) START_ON\n*/\n\
+        void() path_corner = { if (!self.speed) self.speed = 100;\n\
+            if (self.spawnflags & SILENT) fire(); };\n";
+    let mut workbench = workbench("classes", code);
+    assert!(MapProject::project_root(&workbench).is_some());
+    assert_eq!(
+        MapProject::targeting_keys(&mut workbench),
+        ["killtarget", "target"]
+    );
+    let class = workbench.entity_class("path_corner").unwrap();
+    assert_eq!(
+        serde_json::to_value(&class).unwrap(),
+        json!({
+            "name": "path_corner",
+            "found": "documented",
+            "shape": "point",
+            "color": [0.5, 0.25, 0.0],
+            "size": [[-8.0, -8.0, -8.0], [8.0, 8.0, 8.0]],
+            "model": null,
+            "doc": [],
+            "keys": [
+                { "name": "killtarget", "ty": "string", "default": null },
+                { "name": "speed", "ty": "float", "default": "100" },
+                { "name": "target", "ty": "string", "default": null },
+            ],
+            "spawnflags": [
+                { "value": 1, "name": "START_ON" },
+                { "value": 2, "name": "SILENT" },
+            ],
+        })
+    );
+    assert_eq!(workbench.entity_class("worldspawn"), None);
+    assert_eq!(workbench.entity_class("func_nothing"), None);
+}
+
+// No spec statement: P6-40: with no project open the workbench has no folder, no class, no
+// targeting key and no entity check to give the map editor
+#[test]
+fn no_project_answers_the_map_editor_nothing() {
+    let mut workbench = Workbench::new(FsLoader, Config::default());
+    assert_eq!(MapProject::project_root(&workbench), None);
+    assert_eq!(workbench.entity_class("path_corner"), None);
+    assert!(MapProject::targeting_keys(&mut workbench).is_empty());
+    assert!(workbench.entity_check().is_none());
+}
+
+// spec MAP-8.2: the entity check the workbench gives the map editor finds a misspelled key and
+// a misspelled class of a map, each with the edit that puts it right, and a problem with no
+// suggestion with none
+#[test]
+fn the_entity_check_gives_problems_with_their_fixes() {
+    let mut workbench = workbench("check", CODE);
+    let check = workbench.entity_check().unwrap();
+    let map = MapFile::parse(
+        b"{\n\"classname\" \"worldspawn\"\n}\n\
+          {\n\"classname\" \"func_door\"\n\"sped\" \"50\"\n}\n\
+          {\n\"classname\" \"func_dor\"\n}\n\
+          {\n\"origin\" \"0 0 0\"\n}\n",
+    )
+    .unwrap();
+    let problems = check(&map);
+    let fixes: Vec<_> = problems
+        .iter()
+        .map(|problem| (problem.entity.get(), problem.line, problem.fix.clone()))
+        .collect();
+    assert_eq!(
+        fixes,
+        [
+            (
+                1,
+                6,
+                Some(QuickFix::RenameKey {
+                    entity: EntityIndex::new(1),
+                    from: "sped".to_owned(),
+                    to: "speed".to_owned(),
+                })
+            ),
+            (
+                2,
+                9,
+                Some(QuickFix::SetClassname {
+                    entity: EntityIndex::new(2),
+                    classname: "func_door".to_owned(),
+                })
+            ),
+            (3, 11, None),
+            (3, 12, None),
+        ],
+        "{problems:?}"
+    );
+    assert!(problems.iter().all(|problem| !problem.message.is_empty()));
 }
