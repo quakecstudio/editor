@@ -8,20 +8,42 @@
 
 use std::path::{Path, PathBuf};
 
-use qc_project::FsLoader;
-use qs_commands::{Registry, Session};
+use qs_commands::Session;
 use serde_json::{Value, json};
 
+use super::testing::{MapContext, TestProject};
+use super::{ClassInfo, KeyInfo};
 use super::{
     EntityIndex, MAP_DELETE, MAP_DUPLICATE, MAP_ENTITY, MAP_MOVE, MAP_OPEN, MAP_PLACE,
     MAP_REMOVE_KEY, MAP_ROTATE, MAP_SAVE, MAP_SELECT, MAP_SET_KEY,
 };
-use crate::{Config, OPEN_PROJECT, Workbench, register};
 
-const CODE: &str = "entity self; .string classname, target, targetname; .float speed, angle;\n\
-    .vector origin;\nvoid() worldspawn = {};\n\
-    /*QUAKED monster_thing (1 0 0) (-16 -16 -24) (16 16 40)\n*/\n\
-    void() monster_thing = { if (!self.speed) self.speed = 100; if (self.target) self.angle = 1; };\n";
+/// A project whose code defines `monster_thing`, a point class that reads `speed`, 100 when
+/// the map gives none, and `target`; it fires entities by no key of its own.
+fn thing_project() -> TestProject {
+    let key = |name: &str, ty: &str, default: Option<&str>| KeyInfo {
+        name: name.to_owned(),
+        ty: ty.to_owned(),
+        default: default.map(str::to_owned),
+    };
+    TestProject {
+        classes: vec![ClassInfo {
+            name: "monster_thing".to_owned(),
+            found: "documented".to_owned(),
+            shape: "point".to_owned(),
+            color: Some([1.0, 0.0, 0.0]),
+            size: Some([[-16.0, -16.0, -24.0], [16.0, 16.0, 40.0]]),
+            model: None,
+            doc: Vec::new(),
+            keys: vec![
+                key("speed", "float", Some("100")),
+                key("target", "string", None),
+            ],
+            spawnflags: Vec::new(),
+        }],
+        ..TestProject::default()
+    }
+}
 
 const MAP: &str = "// a test map\n{\n\"classname\" \"worldspawn\"\n\"wad\" \"base.wad\"\n\
     {\n( 0 0 0 ) ( 0 1 0 ) ( 1 0 0 ) floor 0 0 0 1 1\n}\n}\n\
@@ -30,28 +52,27 @@ const MAP: &str = "// a test map\n{\n\"classname\" \"worldspawn\"\n\"wad\" \"bas
     ( 0 0 0 ) ( 0 1 0 ) ( 1 0 0 ) door 0 0 0 1 1\n\
     ( 0 0 64 ) ( 1 0 64 ) ( 0 1 64 ) door 0 0 0 1 1\n}\n}\n";
 
-/// A fresh directory named `name` with a project of [`CODE`], `maps/test.map` holding
-/// [`MAP`] and `maps/base.bsp` the spec's base vector; the project open.
-fn project(name: &str) -> (PathBuf, Session<Workbench<FsLoader>>) {
-    project_with(name, CODE)
+/// A fresh directory named `name`, the folder of [`thing_project`], with `maps/test.map`
+/// holding [`MAP`] and `maps/base.bsp` the spec's base vector.
+fn project(name: &str) -> (PathBuf, Session<MapContext>) {
+    project_with(name, thing_project())
 }
 
-/// [`project`] with `code` for its QuakeC.
-pub(super) fn project_with(name: &str, code: &str) -> (PathBuf, Session<Workbench<FsLoader>>) {
+/// [`project`] with `project` for the project, its folder the directory.
+pub(super) fn project_with(name: &str, project: TestProject) -> (PathBuf, Session<MapContext>) {
     let dir = std::env::temp_dir().join(format!("qs-wb-mapedit-{name}-{}", std::process::id()));
     let _gone = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(dir.join("maps")).unwrap();
-    std::fs::write(dir.join("a.qc"), code).unwrap();
-    std::fs::write(dir.join("progs.src"), "progs.dat\na.qc\n").unwrap();
     std::fs::write(dir.join("maps/test.map"), MAP).unwrap();
     std::fs::write(dir.join("maps/base.bsp"), base_bsp()).unwrap();
-    let mut registry = Registry::new();
-    register(&mut registry).unwrap();
-    let mut session = Session::new(Workbench::new(FsLoader, Config::default()), registry);
-    session
-        .execute(OPEN_PROJECT, json!({ "path": dir }))
-        .unwrap();
-    (dir, session)
+    let context = MapContext {
+        project: TestProject {
+            root: Some(dir.clone()),
+            ..project
+        },
+        ..MapContext::default()
+    };
+    (dir, context.into_session())
 }
 
 /// The spec's `base` BSP vector, from its `xxd` dump.
@@ -72,7 +93,7 @@ fn base_bsp() -> Vec<u8> {
 }
 
 /// The open map's text as it would be saved.
-pub(super) fn text(session: &Session<Workbench<FsLoader>>) -> String {
+pub(super) fn text(session: &Session<MapContext>) -> String {
     let map = session.context().map().unwrap();
     String::from_utf8(map.file().to_bytes()).unwrap()
 }

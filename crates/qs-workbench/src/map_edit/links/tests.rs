@@ -6,26 +6,44 @@
     reason = "test code: a failed unwrap or index is a failed test"
 )]
 
-use qc_project::FsLoader;
 use qs_commands::Session;
 use serde_json::json;
 
-use crate::Workbench;
+use crate::map_edit::testing::{MapContext, TestProject};
 use crate::map_edit::tests::{project_with, text};
 use crate::map_edit::{
-    MAP_DUPLICATE, MAP_ENTITY, MAP_LINK, MAP_OPEN, MAP_REMOVE_KEY, MAP_SET_FLAG, MAP_SET_KEY,
+    ClassInfo, FlagInfo, KeyInfo, MAP_DUPLICATE, MAP_ENTITY, MAP_LINK, MAP_OPEN, MAP_REMOVE_KEY,
+    MAP_SET_FLAG, MAP_SET_KEY,
 };
 
-/// QuakeC that fires entities by `target` and `killtarget`, and has a class with named
-/// spawnflags.
-const CODE: &str = "entity self, world; .string classname, target, killtarget, targetname;\n\
-    .float spawnflags; float SILENT = 2;\n\
-    entity(entity start, .string fld, string match) find = #18;\n\
-    void() worldspawn = {};\n\
-    void() fire = { local entity t; t = find(world, targetname, self.target);\n\
-        t = find(world, targetname, self.killtarget); };\n\
-    /*QUAKED path_corner (0.5 0.3 0) (-8 -8 -8) (8 8 8) START_ON\n*/\n\
-    void() path_corner = { if (self.spawnflags & SILENT) fire(); };\n";
+/// A project whose code fires entities by `target` and `killtarget`, and defines
+/// `path_corner` with two named spawnflags.
+fn corner_project() -> TestProject {
+    let key = |name: &str| KeyInfo {
+        name: name.to_owned(),
+        ty: "string".to_owned(),
+        default: None,
+    };
+    let flag = |value: u32, name: &str| FlagInfo {
+        value,
+        name: Some(name.to_owned()),
+    };
+    TestProject {
+        classes: vec![ClassInfo {
+            name: "path_corner".to_owned(),
+            found: "documented".to_owned(),
+            shape: "point".to_owned(),
+            color: Some([0.5, 0.25, 0.0]),
+            size: Some([[-8.0; 3], [8.0; 3]]),
+            model: None,
+            doc: Vec::new(),
+            keys: vec![key("killtarget"), key("target")],
+            spawnflags: vec![flag(1, "START_ON"), flag(2, "SILENT")],
+        }],
+        targeting: vec!["killtarget".to_owned(), "target".to_owned()],
+        ..TestProject::default()
+    }
+}
 
 const MAP: &str = "{\n\"classname\" \"worldspawn\"\n}\n\
     {\n\"classname\" \"path_corner\"\n\"targetname\" \"p1\"\n\"target\" \"p2\"\n}\n\
@@ -33,9 +51,9 @@ const MAP: &str = "{\n\"classname\" \"worldspawn\"\n}\n\
     \"killtarget\" \"gate\"\n}\n\
     {\n\"classname\" \"path_corner\"\n}\n";
 
-/// The fixture's map at `maps/links.map`, open, in a project of [`CODE`].
-fn open(name: &str) -> Session<Workbench<FsLoader>> {
-    let (dir, mut session) = project_with(name, CODE);
+/// The fixture's map at `maps/links.map`, open, in [`corner_project`].
+fn open(name: &str) -> Session<MapContext> {
+    let (dir, mut session) = project_with(name, corner_project());
     let path = dir.join("maps/links.map");
     std::fs::write(&path, MAP).unwrap();
     session.execute(MAP_OPEN, json!({ "path": path })).unwrap();
@@ -267,7 +285,7 @@ fn a_flag_changes_only_its_bit_on_each_entity() {
             json!({ "entity": 1, "also": [2, 3], "flag": 2, "change": "set" }),
         )
         .unwrap();
-    let value = |session: &Session<Workbench<FsLoader>>, entity: usize| {
+    let value = |session: &Session<MapContext>, entity: usize| {
         let map = session.context().map().unwrap();
         String::from_utf8(
             map.file().entities[entity]
