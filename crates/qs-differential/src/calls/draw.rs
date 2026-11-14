@@ -10,7 +10,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use qc_builtins::table;
+use qc_builtins::BuiltinNumber;
 use qc_progs::opcode::Opcode;
 use qc_progs::{Function, Progs, Statement};
 use qc_types::{DefType, Etype, Slot};
@@ -191,7 +191,8 @@ fn is_precache_builtin(function: Function) -> bool {
             .first_statement
             .checked_neg()
             .and_then(|number| u32::try_from(number).ok())
-            .and_then(table::lookup)
+            .map(BuiltinNumber::new)
+            .and_then(BuiltinNumber::builtin)
             .is_some_and(|builtin| builtin.c_function.starts_with("PF_precache_"))
 }
 

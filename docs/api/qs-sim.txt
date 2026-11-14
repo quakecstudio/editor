@@ -84,7 +84,6 @@ enum qs_sim::world::KeyFocus
 enum qs_sim::world::Signon
 enum qs_sim::world::WorldError
 enum qs_sim::world::changes::EdictChange
-enum qs_sim::world::changes::Tracking
 enum qs_sim::world::edit::EditError
 enum qs_sim::world::evaluate::EvalError
 enum qs_sim::world::inspect::QcValue
@@ -597,7 +596,7 @@ use qs_sim::world::SAVEGAME_VERSION = save::SAVEGAME_VERSION
 use qs_sim::world::SaveError = save::SaveError
 use qs_sim::world::SaveGame = save::SaveGame
 use qs_sim::world::State = state::State
-use qs_sim::world::Tracking = changes::Tracking
+use qs_sim::world::Tracking = qc_edict::Tracking
 use qs_sim::world::read_state = state::read_state
 variant qs_sim::collision::CollisionError::BadNode
 variant qs_sim::collision::CollisionError::PushWithoutBsp
@@ -719,8 +718,6 @@ variant qs_sim::world::WorldError::Spawn
 variant qs_sim::world::changes::EdictChange::Changed
 variant qs_sim::world::changes::EdictChange::Removed
 variant qs_sim::world::changes::EdictChange::Spawned
-variant qs_sim::world::changes::Tracking::Off
-variant qs_sim::world::changes::Tracking::On
 variant qs_sim::world::edit::EditError::BadValue
 variant qs_sim::world::edit::EditError::Kept
 variant qs_sim::world::edit::EditError::NoSuchEdict

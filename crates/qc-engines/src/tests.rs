@@ -145,7 +145,7 @@ fn vanilla_is_ids_table() {
         .collect();
     let ids: Vec<BuiltinKey> = BUILTINS
         .iter()
-        .map(|b| BuiltinKey::Number(b.number))
+        .map(|b| BuiltinKey::Number(b.number.get()))
         .collect();
     assert_eq!(numbers, ids);
     for key in [
@@ -179,12 +179,12 @@ fn the_lineage_has_every_id_number() {
     ];
     for (engine, table) in own {
         for id in BUILTINS {
-            let key = BuiltinKey::Number(id.number);
+            let key = BuiltinKey::Number(id.number.get());
             assert!(
                 table.iter().any(|b| b.key == key),
                 "{} lacks #{}",
                 engine.name(),
-                id.number
+                id.number.get()
             );
         }
     }

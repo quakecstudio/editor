@@ -19,7 +19,8 @@
 
 use std::collections::BTreeMap;
 
-use crate::tokenize::{com_parse, signed};
+use crate::DECIMAL;
+use crate::tokenize::{SPACE, com_parse, signed};
 
 /// `SERVER_INFO_STRING_SIZE`, the bytes of a client's `userinfo`, its zero among them.
 pub const SERVER_INFO_STRING_SIZE: usize = 8192;
@@ -33,6 +34,12 @@ const OLD_VALUE_SIZE: usize = 1024;
 const MAX_ARGS: usize = 80;
 /// The bytes of one of `cmd_argv`'s words, its zero among them.
 const ARG_SIZE: usize = 1024;
+/// A colour's bits, `& 15`, the highest colour, 13, and the top colour's shift (BUILTIN-18.27).
+const COLOR_MASK: i32 = 15;
+const MAX_COLOR: u8 = 13;
+const TOP_SHIFT: u32 = 4;
+/// `setinfo <key> <value>`'s words (BUILTIN-18.28).
+const SETINFO_WORDS: usize = 3;
 
 /// One client's info string and what vkQuake decodes from it (BUILTIN-18.27).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -102,12 +109,12 @@ impl ClientInfo {
     /// text masked to 15 and at most 13, and the name from `name`, `unnamed` when it is empty.
     fn decode(&mut self) -> Decoded {
         let colour = |info: &[u8], key: &[u8]| -> u8 {
-            let low = atoi(&info_get_key(info, key, DECODE_SIZE)) & 15;
-            u8::try_from(low.min(13)).unwrap_or(13)
+            let low = atoi(&info_get_key(info, key, DECODE_SIZE)) & COLOR_MASK;
+            u8::try_from(low.min(i32::from(MAX_COLOR))).unwrap_or(MAX_COLOR)
         };
         let top = colour(&self.userinfo, b"topcolor");
         let bottom = colour(&self.userinfo, b"bottomcolor");
-        self.colors = top.wrapping_shl(4) | bottom;
+        self.colors = top.wrapping_shl(TOP_SHIFT) | bottom;
         let mut name = info_get_key(&self.userinfo, b"name", DECODE_SIZE);
         if name.is_empty() {
             name = b"unnamed".to_vec();
@@ -125,6 +132,24 @@ impl ClientInfo {
     }
 }
 
+/// A client's slot, from 0.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ClientSlot(usize);
+
+impl ClientSlot {
+    /// Slot `slot`.
+    #[must_use]
+    pub const fn new(slot: usize) -> Self {
+        Self(slot)
+    }
+
+    /// The slot.
+    #[must_use]
+    pub const fn get(self) -> usize {
+        self.0
+    }
+}
+
 /// Every client's info, by slot from 0; a slot not here has [`ClientInfo::default`].
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Clients {
@@ -134,13 +159,13 @@ pub struct Clients {
 impl Clients {
     /// The info of client slot `slot`, from 0.
     #[must_use]
-    pub fn get(&self, slot: usize) -> ClientInfo {
-        self.slots.get(&slot).cloned().unwrap_or_default()
+    pub fn get(&self, slot: ClientSlot) -> ClientInfo {
+        self.slots.get(&slot.get()).cloned().unwrap_or_default()
     }
 
     /// The info of client slot `slot`, for changing.
-    pub fn get_mut(&mut self, slot: usize) -> &mut ClientInfo {
-        self.slots.entry(slot).or_default()
+    pub fn get_mut(&mut self, slot: ClientSlot) -> &mut ClientInfo {
+        self.slots.entry(slot.get()).or_default()
     }
 }
 
@@ -171,7 +196,7 @@ impl ClientCommand {
         let Some(name) = words.first() else {
             return Self::Nothing;
         };
-        if !name.eq_ignore_ascii_case(b"setinfo") || words.len() != 3 {
+        if !name.eq_ignore_ascii_case(b"setinfo") || words.len() != SETINFO_WORDS {
             return Self::Nothing;
         }
         let (Some(key), Some(value)) = (words.get(1), words.get(2)) else {
@@ -195,7 +220,7 @@ fn tokenize_command(text: &[u8]) -> Vec<Vec<u8>> {
     let mut at = 0;
     loop {
         // `while (*text && *text <= ' ' && *text != '\n')`, `char` signed.
-        while byte(at) != 0 && signed(byte(at)) <= 32 && byte(at) != b'\n' {
+        while byte(at) != 0 && signed(byte(at)) <= SPACE && byte(at) != b'\n' {
             at = at.saturating_add(1);
         }
         if byte(at) == b'\n' || byte(at) == 0 {
@@ -320,9 +345,13 @@ fn atoi(text: &[u8]) -> i32 {
     while at(text, i).is_ascii_digit() {
         let digit = i64::from(at(text, i).wrapping_sub(b'0'));
         value = if negative {
-            value.saturating_mul(10).saturating_sub(digit)
+            value
+                .saturating_mul(i64::from(DECIMAL))
+                .saturating_sub(digit)
         } else {
-            value.saturating_mul(10).saturating_add(digit)
+            value
+                .saturating_mul(i64::from(DECIMAL))
+                .saturating_add(digit)
         };
         i = i.saturating_add(1);
     }

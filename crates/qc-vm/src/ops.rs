@@ -126,15 +126,15 @@ pub(crate) fn execute_statement(
         Opcode::IfNot => branch(machine, progs, st, JumpWhen::Zero),
 
         // VM-14: calls.
-        Opcode::Call0 => call(machine, progs, server, builtins, observer, st, 0),
-        Opcode::Call1 => call(machine, progs, server, builtins, observer, st, 1),
-        Opcode::Call2 => call(machine, progs, server, builtins, observer, st, 2),
-        Opcode::Call3 => call(machine, progs, server, builtins, observer, st, 3),
-        Opcode::Call4 => call(machine, progs, server, builtins, observer, st, 4),
-        Opcode::Call5 => call(machine, progs, server, builtins, observer, st, 5),
-        Opcode::Call6 => call(machine, progs, server, builtins, observer, st, 6),
-        Opcode::Call7 => call(machine, progs, server, builtins, observer, st, 7),
-        Opcode::Call8 => call(machine, progs, server, builtins, observer, st, 8),
+        Opcode::Call0 => machine.call(progs, server, builtins, observer, st, 0),
+        Opcode::Call1 => machine.call(progs, server, builtins, observer, st, 1),
+        Opcode::Call2 => machine.call(progs, server, builtins, observer, st, 2),
+        Opcode::Call3 => machine.call(progs, server, builtins, observer, st, 3),
+        Opcode::Call4 => machine.call(progs, server, builtins, observer, st, 4),
+        Opcode::Call5 => machine.call(progs, server, builtins, observer, st, 5),
+        Opcode::Call6 => machine.call(progs, server, builtins, observer, st, 6),
+        Opcode::Call7 => machine.call(progs, server, builtins, observer, st, 7),
+        Opcode::Call8 => machine.call(progs, server, builtins, observer, st, 8),
 
         // VM-16: returning.
         Opcode::Done | Opcode::Return => done(machine, progs, st),
@@ -840,60 +840,62 @@ fn branch(
 // VM-14 calls
 // ---------------------------------------------------------------------------
 
-/// `CALL0` to `CALL8` (VM-14): call the function in `a` with `argc` arguments.
-fn call(
-    machine: &mut Machine,
-    progs: &Progs<'_>,
-    server: ServerState,
-    builtins: &mut dyn Builtins,
-    observer: &mut dyn Observer,
-    st: &Statement,
-    argc: usize,
-) -> Result<Control, RunError> {
-    let index = read_slot(machine, progs, st.a)?.as_i32();
-    // VM-14.1: set pr_argc to the number in the opcode name.
-    machine.argc = argc;
+impl Machine {
+    /// `CALL0` to `CALL8` (VM-14): call the function in `a` with `argc` arguments.
+    fn call(
+        &mut self,
+        progs: &Progs<'_>,
+        server: ServerState,
+        builtins: &mut dyn Builtins,
+        observer: &mut dyn Observer,
+        st: &Statement,
+        argc: usize,
+    ) -> Result<Control, RunError> {
+        let index = read_slot(self, progs, st.a)?.as_i32();
+        // VM-14.1: set pr_argc to the number in the opcode name.
+        self.argc = argc;
 
-    // VM-14.2: a function index of 0 fails with NULL function.
-    if index == 0 {
-        return Err(machine.run_error(progs, ErrorKind::NullCallFunction));
-    }
-    // VM-14.3: a negative index or one not less than numfunctions fails.
-    let Some(function) = exec::function_at(progs, index) else {
-        return Err(machine.divergence(progs, Divergence::CallOutOfRange { index }));
-    };
-
-    match function.builtin_number() {
-        Some(number) => {
-            // VM-14.7: a builtin; its number is -first_statement, below the table's limit.
-            let limit = builtins.limit();
-            let number = u32::try_from(number)
-                .ok()
-                .filter(|n| limit.is_none_or(|limit| *n < limit));
-            let Some(number) = number else {
-                return Err(machine.run_error(progs, ErrorKind::BadBuiltin));
-            };
-            if number == 0 {
-                // LIMIT-5.2: builtin 0 cannot be called; but first_statement 0 is not
-                // negative, so builtin_number never returns 0. Reject defensively.
-                return Err(machine.run_error(progs, ErrorKind::BadBuiltin));
-            }
-            // VM-14.7: call the builtin directly; no frame, no locals, no parameter copy.
-            let mut context = Context {
-                machine,
-                progs,
-                server,
-                observer,
-            };
-            builtins.call(number, &mut context)?;
-            Ok(Control::Next {
-                builtin: Some(number),
-            })
+        // VM-14.2: a function index of 0 fails with NULL function.
+        if index == 0 {
+            return Err(self.run_error(progs, ErrorKind::NullCallFunction));
         }
-        None => {
-            // VM-14.5: a QC function is entered; execution continues at its first_statement.
-            exec::enter_function(machine, progs, index, &function)?;
-            Ok(NEXT)
+        // VM-14.3: a negative index or one not less than numfunctions fails.
+        let Some(function) = exec::function_at(progs, index) else {
+            return Err(self.divergence(progs, Divergence::CallOutOfRange { index }));
+        };
+
+        match function.builtin_number() {
+            Some(number) => {
+                // VM-14.7: a builtin; its number is -first_statement, below the table's limit.
+                let limit = builtins.limit();
+                let number = u32::try_from(number)
+                    .ok()
+                    .filter(|n| limit.is_none_or(|limit| *n < limit));
+                let Some(number) = number else {
+                    return Err(self.run_error(progs, ErrorKind::BadBuiltin));
+                };
+                if number == 0 {
+                    // LIMIT-5.2: builtin 0 cannot be called; but first_statement 0 is not
+                    // negative, so builtin_number never returns 0. Reject defensively.
+                    return Err(self.run_error(progs, ErrorKind::BadBuiltin));
+                }
+                // VM-14.7: call the builtin directly; no frame, no locals, no parameter copy.
+                let mut context = Context {
+                    machine: self,
+                    progs,
+                    server,
+                    observer,
+                };
+                builtins.call(number, &mut context)?;
+                Ok(Control::Next {
+                    builtin: Some(number),
+                })
+            }
+            None => {
+                // VM-14.5: a QC function is entered; execution continues at its first_statement.
+                exec::enter_function(self, progs, index, &function)?;
+                Ok(NEXT)
+            }
         }
     }
 }
@@ -958,7 +960,9 @@ fn state(machine: &mut Machine, progs: &Progs<'_>, st: &Statement) -> Result<Con
     Ok(NEXT)
 }
 
-/// `(float)((double)time + 0.1)`, 0.1 the double nearest to 0.1 (VM-17.1).
+/// `(float)((double)time + 0.1)`, 0.1 the double nearest to 0.1 (VM-17.1): the next think's
+/// time `OP_STATE` stores, named so the `#[expect]` for its rounding to `f32` stands on this one
+/// conversion rather than on the whole of the opcode.
 #[expect(
     clippy::cast_possible_truncation,
     reason = "spec VM-17.1: id's C (float)((double)time + 0.1); the double sum is rounded to f32 as the field stores a float"

@@ -109,7 +109,8 @@ fn elif_test_end(text: &[u8], hash: usize) -> Option<usize> {
 /// the lexical errors between are the new lexing's. A token lexed again starts a line only where
 /// only white space comes before it on its line.
 pub fn relex_from(lexed: &mut Lexed, text: &[u8], offset: usize, dialect: Dialect) {
-    let Some(relexed) = Relexed::from(&lexed.tokens, text, offset, Lexing::plain(dialect)) else {
+    let lexing = Lexing::plain(dialect);
+    let Some(relexed) = Relexed::from(&lexed.tokens, text, offset, 0, lexing) else {
         return;
     };
     let first = lexed.tokens.partition_point(|t| t.span.end <= offset);

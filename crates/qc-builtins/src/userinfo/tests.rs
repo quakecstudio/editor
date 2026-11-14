@@ -6,8 +6,8 @@
 )]
 
 use super::{
-    ClientCommand, ClientInfo, Clients, Decoded, SERVER_INFO_STRING_SIZE, atoi, info_get_key,
-    info_remove_key, info_set_key,
+    ClientCommand, ClientInfo, ClientSlot, Clients, Decoded, SERVER_INFO_STRING_SIZE, atoi,
+    info_get_key, info_remove_key, info_set_key,
 };
 
 // spec BUILTIN-18.27: Info_GetKey finds a key's value, at most size - 1 bytes of it, and
@@ -136,10 +136,12 @@ fn names_are_unnamed_or_cut() {
 #[test]
 fn clients_keep_their_own_info() {
     let mut clients = Clients::default();
-    assert_eq!(clients.get(3), ClientInfo::default());
-    let _ = clients.get_mut(1).update(b"bottomcolor", b"2");
-    assert_eq!(clients.get(1).colors(), 2);
-    assert_eq!(clients.get(0).colors(), 0);
+    assert_eq!(clients.get(ClientSlot::new(3)), ClientInfo::default());
+    let _ = clients
+        .get_mut(ClientSlot::new(1))
+        .update(b"bottomcolor", b"2");
+    assert_eq!(clients.get(ClientSlot::new(1)).colors(), 2);
+    assert_eq!(clients.get(ClientSlot::new(0)).colors(), 0);
 }
 
 // spec BUILTIN-18.28: from a client only setinfo with two arguments and a key not starting

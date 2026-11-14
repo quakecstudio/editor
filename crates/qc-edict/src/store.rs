@@ -136,6 +136,15 @@ impl fmt::Display for EdictError {
 
 impl core::error::Error for EdictError {}
 
+/// Whether [`EdictStore::track`] records what happens to the edicts (BRIDGE-3.1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tracking {
+    /// Recording.
+    On,
+    /// Not recording.
+    Off,
+}
+
 /// The server's edict array for one map.
 ///
 /// Implements EDICT-1.4: [`LIMIT_MAX_EDICTS`] edicts, numbered from 0, with `num_edicts`
@@ -248,8 +257,8 @@ impl EdictStore {
 
     /// Starts or stops recording what happens to the edicts (BRIDGE-3.1); stopping drops
     /// what was recorded.
-    pub fn track(&mut self, on: bool) {
-        self.events = on.then(Vec::new);
+    pub fn track(&mut self, tracking: Tracking) {
+        self.events = (tracking == Tracking::On).then(Vec::new);
     }
 
     /// What has happened to the edicts since the last call, oldest first; empty when
