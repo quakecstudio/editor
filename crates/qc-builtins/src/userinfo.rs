@@ -125,6 +125,24 @@ impl ClientInfo {
     }
 }
 
+/// A client's slot, from 0.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ClientSlot(usize);
+
+impl ClientSlot {
+    /// Slot `slot`.
+    #[must_use]
+    pub const fn new(slot: usize) -> Self {
+        Self(slot)
+    }
+
+    /// The slot.
+    #[must_use]
+    pub const fn get(self) -> usize {
+        self.0
+    }
+}
+
 /// Every client's info, by slot from 0; a slot not here has [`ClientInfo::default`].
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Clients {
@@ -134,13 +152,13 @@ pub struct Clients {
 impl Clients {
     /// The info of client slot `slot`, from 0.
     #[must_use]
-    pub fn get(&self, slot: usize) -> ClientInfo {
-        self.slots.get(&slot).cloned().unwrap_or_default()
+    pub fn get(&self, slot: ClientSlot) -> ClientInfo {
+        self.slots.get(&slot.get()).cloned().unwrap_or_default()
     }
 
     /// The info of client slot `slot`, for changing.
-    pub fn get_mut(&mut self, slot: usize) -> &mut ClientInfo {
-        self.slots.entry(slot).or_default()
+    pub fn get_mut(&mut self, slot: ClientSlot) -> &mut ClientInfo {
+        self.slots.entry(slot.get()).or_default()
     }
 }
 

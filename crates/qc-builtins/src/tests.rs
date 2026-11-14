@@ -13,6 +13,8 @@
 
 use crate::math;
 use crate::table::{self, BUILTIN_MAX_NUMBER, Class};
+use crate::tokenize::TokenIndex;
+use crate::userinfo::ClientSlot;
 use qc_vm::convert::float_to_int;
 
 /// Compares two f32 by bits, so NaNs and signed zeros are distinguished (DIFF-9.4).
@@ -2778,18 +2780,18 @@ mod bodies {
         f.set_parm_i(2, offsets[1]);
         f.run(ServerState::Active).unwrap();
         assert_eq!(f.field_f(2, "team"), 7.0);
-        assert_eq!(f.engine().clients.get(1).colors(), 6);
+        assert_eq!(f.engine().clients.get(ClientSlot::new(1)).colors(), 6);
         f.set_parm_i(1, offsets[2]);
         f.set_parm_i(2, offsets[3]);
         f.run(ServerState::Active).unwrap();
         assert!(
             f.engine()
                 .clients
-                .get(1)
+                .get(ClientSlot::new(1))
                 .userinfo()
                 .ends_with(b"\\*spectator\\1"),
             "{:?}",
-            f.engine().clients.get(1)
+            f.engine().clients.get(ClientSlot::new(1))
         );
     }
 
@@ -2834,7 +2836,10 @@ mod bodies {
         f.set_parm_i(2, offsets[2]);
         f.run_ok(ServerState::Active);
         assert_eq!(f.return_f(), 3.0);
-        assert_eq!(f.builtins.engine().tokens.argv(2), Some(b"c".to_vec()));
+        assert_eq!(
+            f.builtins.engine().tokens.argv(TokenIndex::new(2)),
+            Some(b"c".to_vec())
+        );
     }
 
     // spec BUILTIN-18.24: tokenizebyseparator reads a separator from each of the seven
@@ -2851,7 +2856,10 @@ mod bodies {
         }
         f.run_ok(ServerState::Active);
         assert_eq!(f.return_f(), 8.0);
-        assert_eq!(f.builtins.engine().tokens.argv(7), Some(b"h8i".to_vec()));
+        assert_eq!(
+            f.builtins.engine().tokens.argv(TokenIndex::new(7)),
+            Some(b"h8i".to_vec())
+        );
         let mut f = Fixture::new(479, 1, strings, 0);
         f.builtins.engine_mut().profile = EngineProfile::VkQuake;
         f.set_parm_i(0, offsets[0]);

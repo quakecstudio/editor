@@ -31,8 +31,11 @@ use crate::mock::{
     BUILTIN_FL_SWIM, EngineProfile, LIMIT_MAX_DATAGRAM, LIMIT_MAX_LIGHTSTYLES, MessageDest,
     MockEngine, Overflow, Precache, Unimplemented, VKQUAKE_MAX_DATAGRAM,
 };
+use crate::strbuf::{BufferSlot, Placement, StringIndex};
 use crate::tokenize::MAX_SEPARATORS;
+use crate::tokenize::TokenIndex;
 use crate::userinfo::ClientCommand;
+use crate::userinfo::ClientSlot;
 use crate::{atof, cstring, printf, strconv, strftime, vkstrings};
 
 /// The builtin dispatch over a mock engine (DIFF-6, DIFF-7).
@@ -1366,7 +1369,10 @@ impl MockBuiltins {
         let active = ent
             .checked_sub(1)
             .is_some_and(|slot| self.engine.clients_active.get(slot) == Some(&true));
-        let client = self.engine.clients.get(ent.saturating_sub(1));
+        let client = self
+            .engine
+            .clients
+            .get(ClientSlot::new(ent.saturating_sub(1)));
         let colors = client.colors();
         let text: Option<Vec<u8>> = if ent == 0 {
             (cstr(&key) == b"*version").then(|| b"vkQuake 1.37.1".to_vec())
@@ -1673,7 +1679,7 @@ impl MockBuiltins {
     /// `argv(n)` (#442), vkQuake's `PF_ArgV` (BUILTIN-18.23): a temporary string of token
     /// `n`, or the null string 0.
     fn b_argv(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let index = read_parm_int(context, 0)?;
+        let index = TokenIndex::new(read_parm_int(context, 0)?);
         match self.engine.tokens.argv(index) {
             Some(text) => {
                 let value = self.engine.strings.make(text);
@@ -1690,7 +1696,7 @@ impl MockBuiltins {
         context: &mut Context<'_, '_>,
         edge: Edge,
     ) -> Result<(), BuiltinError> {
-        let index = read_parm_int(context, 0)?;
+        let index = TokenIndex::new(read_parm_int(context, 0)?);
         let at = match edge {
             Edge::Start => self.engine.tokens.start(index),
             Edge::End => self.engine.tokens.end(index),
@@ -1883,7 +1889,9 @@ impl MockBuiltins {
 
     /// `buf_del(handle)`, vkQuake's `PF_buf_del` (BUILTIN-18.39).
     fn b_buf_del(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let slot = vkstrings::float_to_unsigned(read_parm_float(context, 0)? - 1.0);
+        let slot = BufferSlot::new(vkstrings::float_to_unsigned(
+            read_parm_float(context, 0)? - 1.0,
+        ));
         self.engine.string_buffers.delete(slot);
         Ok(())
     }
@@ -1892,7 +1900,7 @@ impl MockBuiltins {
     /// `(int)`; a buffer not in use leaves the return value as it was.
     fn b_buf_getsize(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
         let slot = float_to_int(read_parm_float(context, 0)? - 1.0);
-        let slot = u32::from_ne_bytes(slot.to_ne_bytes());
+        let slot = BufferSlot::new(u32::from_ne_bytes(slot.to_ne_bytes()));
         match self.engine.string_buffers.size(slot) {
             Some(size) => write_return_float(
                 context,
@@ -1905,8 +1913,10 @@ impl MockBuiltins {
     /// `bufstr_get(handle, index)`, vkQuake's `PF_bufstr_get` (BUILTIN-18.39): the string as a
     /// new temporary string, or 0.
     fn b_bufstr_get(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let slot = vkstrings::float_to_unsigned(read_parm_float(context, 0)? - 1.0);
-        let index = vkstrings::float_to_unsigned(read_parm_float(context, 1)?);
+        let slot = BufferSlot::new(vkstrings::float_to_unsigned(
+            read_parm_float(context, 0)? - 1.0,
+        ));
+        let index = StringIndex::new(vkstrings::float_to_unsigned(read_parm_float(context, 1)?));
         let value = match self.engine.string_buffers.get(slot, index) {
             Some(text) => self.engine.strings.make(text),
             None => 0,
@@ -1918,10 +1928,16 @@ impl MockBuiltins {
     /// first, `order` through `(int)`, true when not 0; a buffer not in use leaves the return
     /// value as it was.
     fn b_bufstr_add(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let slot = vkstrings::float_to_unsigned(read_parm_float(context, 0)? - 1.0);
+        let slot = BufferSlot::new(vkstrings::float_to_unsigned(
+            read_parm_float(context, 0)? - 1.0,
+        ));
         let text = read_parm_string(context, &self.engine, 1)?;
-        let at_end = float_to_int(read_parm_float(context, 2)?) != 0;
-        match self.engine.string_buffers.add(slot, cstr(&text), at_end) {
+        let placement = if float_to_int(read_parm_float(context, 2)?) == 0 {
+            Placement::FirstHole
+        } else {
+            Placement::End
+        };
+        match self.engine.string_buffers.add(slot, cstr(&text), placement) {
             Some(index) => write_return_float(
                 context,
                 int_to_float(i32::try_from(index).unwrap_or(i32::MAX)),
@@ -2082,7 +2098,10 @@ impl MockBuiltins {
         if let Some(active) = self.engine.clients_active.get_mut(slot) {
             *active = false;
         }
-        self.engine.clients.get_mut(slot).clear_name();
+        self.engine
+            .clients
+            .get_mut(ClientSlot::new(slot))
+            .clear_name();
         Ok(())
     }
 
@@ -2104,7 +2123,12 @@ impl MockBuiltins {
         value: &[u8],
     ) -> Result<(), BuiltinError> {
         let slot = edict.index().saturating_sub(1);
-        let Some(decoded) = self.engine.clients.get_mut(slot).update(key, value) else {
+        let Some(decoded) = self
+            .engine
+            .clients
+            .get_mut(ClientSlot::new(slot))
+            .update(key, value)
+        else {
             return Ok(());
         };
         write_field_float(context, edict, SysField::Team, decoded.team)?;

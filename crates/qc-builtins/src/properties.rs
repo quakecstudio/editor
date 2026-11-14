@@ -18,7 +18,7 @@ use crate::BuiltinError;
 use crate::atof::atof;
 use crate::localization::{Localization, RRE_VARSTRING_LEN};
 use crate::printf::{Args, sprintf};
-use crate::tokenize::{MAX_QC_TOKENS, MAX_SEPARATORS, Tokens};
+use crate::tokenize::{MAX_QC_TOKENS, MAX_SEPARATORS, TokenIndex, Tokens};
 
 /// The longest text a temporary string holds, `STRINGTEMP_LENGTH` less its terminator.
 const TEMP_TEXT: usize = 1023;
@@ -56,19 +56,28 @@ fn check_tokens(tokens: &Tokens, count: usize, text: &[u8]) -> Result<(), TestCa
     let len = i64::try_from(text.len()).unwrap();
     let mut last = 0;
     for index in 0..count {
-        let (start, end) = (tokens.start(index), tokens.end(index));
+        let (start, end) = (
+            tokens.start(TokenIndex::new(index)),
+            tokens.end(TokenIndex::new(index)),
+        );
         prop_assert!(
             last <= start && start <= end && end <= len,
             "{start} {end} {len}"
         );
         last = end;
-        let word = tokens.argv(index).unwrap();
+        let word = tokens.argv(TokenIndex::new(index)).unwrap();
         prop_assert!(word.len() <= TEMP_TEXT);
-        prop_assert_eq!(tokens.argv(index - count), Some(word));
+        prop_assert_eq!(tokens.argv(TokenIndex::new(index - count)), Some(word));
     }
     for index in [count, -count - 1] {
-        prop_assert_eq!(tokens.argv(index), None);
-        prop_assert_eq!((tokens.start(index), tokens.end(index)), (-1, -1));
+        prop_assert_eq!(tokens.argv(TokenIndex::new(index)), None);
+        prop_assert_eq!(
+            (
+                tokens.start(TokenIndex::new(index)),
+                tokens.end(TokenIndex::new(index))
+            ),
+            (-1, -1)
+        );
     }
     Ok(())
 }
@@ -246,11 +255,11 @@ proptest! {
         let count = tokens.split(&text, &separators);
         check_tokens(&tokens, count, &text)?;
         for index in 0..i32::try_from(count).unwrap() {
-            let start = usize::try_from(tokens.start(index)).unwrap();
-            let end = usize::try_from(tokens.end(index)).unwrap();
+            let start = usize::try_from(tokens.start(TokenIndex::new(index))).unwrap();
+            let end = usize::try_from(tokens.end(TokenIndex::new(index))).unwrap();
             let slice = text[start..end].split(|&b| b == 0).next().unwrap();
             prop_assert_eq!(
-                tokens.argv(index).unwrap(),
+                tokens.argv(TokenIndex::new(index)).unwrap(),
                 slice[..slice.len().min(TEMP_TEXT)].to_vec()
             );
         }
