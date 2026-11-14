@@ -27,8 +27,14 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
-pub use conflict::{Conflict, Side, conflicts, resolve};
-pub use diff::{FileDiff, Hunk};
+pub use conflict::{Conflict, ConflictIndex, Side, conflicts, resolve};
+pub use diff::{FileDiff, Hunk, HunkIndex};
+
+/// Where a path starts in a `git status --porcelain=v1` entry, after its `XY ` (git-status(1),
+/// "Short Format").
+const PORCELAIN_PATH: usize = 3;
+/// The fields of a commit `log` asks git for: id, author, date and summary.
+const LOG_FIELDS: usize = 4;
 
 /// Why a git operation failed.
 #[derive(Debug)]
@@ -45,7 +51,7 @@ pub enum GitError {
     /// Git's output was not what the command gives.
     Unexpected(String),
     /// The file has no hunk at this index.
-    NoHunk(usize),
+    NoHunk(HunkIndex),
 }
 
 impl fmt::Display for GitError {
@@ -54,7 +60,7 @@ impl fmt::Display for GitError {
             Self::NoGit(error) => write!(f, "git could not be run: {error}"),
             Self::Failed { command, message } => write!(f, "git {command}: {message}"),
             Self::Unexpected(what) => write!(f, "git's output was not as expected: {what}"),
-            Self::NoHunk(index) => write!(f, "the file has no hunk {index}"),
+            Self::NoHunk(index) => write!(f, "the file has no hunk {}", index.get()),
         }
     }
 }
@@ -283,7 +289,8 @@ impl Repo {
         let mut files = Vec::new();
         let mut entries = out.split(|b| *b == 0).filter(|e| !e.is_empty());
         while let Some(entry) = entries.next() {
-            let (Some(x), Some(y), Some(path)) = (entry.first(), entry.get(1), entry.get(3..))
+            let (Some(x), Some(y), Some(path)) =
+                (entry.first(), entry.get(1), entry.get(PORCELAIN_PATH..))
             else {
                 return Err(GitError::Unexpected(String::from_utf8_lossy(entry).into()));
             };
@@ -330,7 +337,7 @@ impl Repo {
     /// # Errors
     ///
     /// [`GitError::NoHunk`] when there is no such hunk, or git refused the patch.
-    pub fn stage_hunk(&self, path: &Path, index: usize) -> Result<(), GitError> {
+    pub fn stage_hunk(&self, path: &Path, index: HunkIndex) -> Result<(), GitError> {
         let diff = self.diff(path, DiffOf::Unstaged)?;
         let patch = diff.patch(index).ok_or(GitError::NoHunk(index))?;
         self.git(&["apply", "--cached", "-"], Some(patch.as_bytes()))
@@ -342,7 +349,7 @@ impl Repo {
     /// # Errors
     ///
     /// [`GitError::NoHunk`] when there is no such hunk, or git refused the patch.
-    pub fn unstage_hunk(&self, path: &Path, index: usize) -> Result<(), GitError> {
+    pub fn unstage_hunk(&self, path: &Path, index: HunkIndex) -> Result<(), GitError> {
         let diff = self.diff(path, DiffOf::Staged)?;
         let patch = diff.patch(index).ok_or(GitError::NoHunk(index))?;
         self.git(
@@ -460,7 +467,7 @@ impl Repo {
         let text = String::from_utf8_lossy(&out);
         text.lines()
             .map(|line| {
-                let mut parts = line.splitn(4, '\0');
+                let mut parts = line.splitn(LOG_FIELDS, '\0');
                 match (parts.next(), parts.next(), parts.next(), parts.next()) {
                     (Some(id), Some(author), Some(date), Some(summary)) => Ok(Commit {
                         id: id.to_owned(),

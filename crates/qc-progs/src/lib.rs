@@ -12,6 +12,7 @@
 //! The format is specified in `docs/spec/progs.md` and its limits in `docs/spec/limits.md`;
 //! [`limits`] names them all.
 
+pub mod bytes;
 pub mod crc;
 pub mod limits;
 pub mod opcode;

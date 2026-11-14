@@ -67,7 +67,4 @@ id_newtype!(
     BreakpointId(u64)
 );
 
-id_newtype!(
-    /// A checkpoint's number, which `checkpoint.restore` takes.
-    CheckpointNumber(u32)
-);
+pub use qs_checkpoint::CheckpointNumber;

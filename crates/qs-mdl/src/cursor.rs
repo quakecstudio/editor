@@ -2,10 +2,7 @@
 
 //! The little-endian reads and the file cursor the alias model and sprite readers share.
 
-/// The `N` bytes at `offset`, or `None` past the end of `bytes`.
-pub(crate) fn read_array<const N: usize>(bytes: &[u8], offset: usize) -> Option<[u8; N]> {
-    bytes.get(offset..offset.checked_add(N)?)?.try_into().ok()
-}
+pub(crate) use qc_progs::bytes::read_array;
 
 /// The signed little-endian 32-bit integer at `offset`, or `None` past the end of `bytes`.
 pub(crate) fn le_i32(bytes: &[u8], offset: usize) -> Option<i32> {

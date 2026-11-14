@@ -241,7 +241,7 @@ Parameters:
 {
   "$defs": {
     "CheckpointNumber": {
-      "description": "A checkpoint's number, which `checkpoint.restore` takes.",
+      "description": "A checkpoint's number, from 1, the ref `refs/checkpoints/<n>`; written to JSON as the bare\nnumber.",
       "format": "uint32",
       "minimum": 0,
       "type": "integer"
@@ -1445,6 +1445,12 @@ Parameters:
 ```json
 {
   "$defs": {
+    "ConflictIndex": {
+      "description": "A conflict's index among a file's conflicts, from 0; written to JSON as the bare number.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
     "ConflictSide": {
       "description": "Which side of a conflict to keep.",
       "oneOf": [
@@ -1471,10 +1477,8 @@ Parameters:
   "description": "The parameters of `git.resolve`.",
   "properties": {
     "conflict": {
-      "description": "The conflict, by its index in `git.conflicts`' list.",
-      "format": "uint",
-      "minimum": 0,
-      "type": "integer"
+      "$ref": "#/$defs/ConflictIndex",
+      "description": "The conflict, by its index in `git.conflicts`' list."
     },
     "path": {
       "description": "The file.",
@@ -1503,19 +1507,29 @@ Parameters:
 
 ```json
 {
+  "$defs": {
+    "HunkIndex": {
+      "description": "A hunk's index in a file's diff, from 0; written to JSON as the bare number.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "description": "The parameters of `git.stage` and `git.unstage`.",
   "properties": {
     "hunk": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/HunkIndex"
+        },
+        {
+          "type": "null"
+        }
+      ],
       "default": null,
-      "description": "One hunk, by its index in `git.diff`'s list of the side it comes from; the whole file\nwithout it.",
-      "format": "uint",
-      "minimum": 0,
-      "type": [
-        "integer",
-        "null"
-      ]
+      "description": "One hunk, by its index in `git.diff`'s list of the side it comes from; the whole file\nwithout it."
     },
     "path": {
       "description": "The file.",
@@ -1579,19 +1593,29 @@ Parameters:
 
 ```json
 {
+  "$defs": {
+    "HunkIndex": {
+      "description": "A hunk's index in a file's diff, from 0; written to JSON as the bare number.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "description": "The parameters of `git.stage` and `git.unstage`.",
   "properties": {
     "hunk": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/HunkIndex"
+        },
+        {
+          "type": "null"
+        }
+      ],
       "default": null,
-      "description": "One hunk, by its index in `git.diff`'s list of the side it comes from; the whole file\nwithout it.",
-      "format": "uint",
-      "minimum": 0,
-      "type": [
-        "integer",
-        "null"
-      ]
+      "description": "One hunk, by its index in `git.diff`'s list of the side it comes from; the whole file\nwithout it."
     },
     "path": {
       "description": "The file.",
