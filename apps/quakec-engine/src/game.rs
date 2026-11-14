@@ -21,7 +21,8 @@ use crate::values::{from_json, named_json, to_json};
 mod debug;
 mod reload;
 
-use debug::{Breakpoint, Snapshot, Step, Stopped};
+pub(crate) use debug::HeldSpawn;
+use debug::{Breakpoint, Loading, Snapshot, Step, Stopped};
 
 /// A screen fraction's default, the middle.
 const SCREEN_CENTRE: f32 = 0.5;
@@ -232,6 +233,9 @@ struct Shot {
 pub(crate) enum HostAction {
     /// Loads a level.
     Level(NextLevel),
+    /// Loads again, with no stop, the level a stop in a spawn function held, now that its
+    /// spawning has ended (WORLD-9.7).
+    Spawned(NextLevel),
     /// Saves the game as `<name>.sav` in the game directory.
     Save(String),
     /// Loads the game in `<name>.sav`.
@@ -280,9 +284,8 @@ pub(crate) struct Game {
     next_breakpoint: u64,
     /// The world before the frame the debugger may stop (WORLD-9.2).
     snapshot: Option<Snapshot>,
-    /// The level's world before its entities spawned, while a stop in a spawn function holds
-    /// the load: going on spawns again from it (WORLD-9.7).
-    prepared: Option<World>,
+    /// Where the level's load is: done, or held by a stop in a spawn function (WORLD-9.7).
+    loading: Loading,
     /// Where the frame stopped, while it is stopped.
     halted: Option<Stopped>,
     /// Reads a file of the game's search path, for `reload`; `None` until the host gives it.
@@ -317,7 +320,7 @@ impl Game {
             breakpoints: Vec::new(),
             next_breakpoint: 0,
             snapshot: None,
-            prepared: None,
+            loading: Loading::Done,
             halted: None,
             files: None,
             progs_path: "progs.dat".to_owned(),
@@ -353,9 +356,9 @@ impl Game {
                 .set_breakpoint(breakpoint.statement, BreakpointEdit::Set);
             self.breakpoints.push(breakpoint);
         }
-        // WORLD-9.7: a level waiting to spawn with the breakpoints spawns now that it has them.
-        if let Err(error) = self.with_progs(Self::start_load) {
-            tracing::warn!(error = %error.message, "the level did not spawn");
+        // WORLD-9.7: a load a spawn function stopped says so now that it has the breakpoints.
+        if let Err(error) = self.with_progs(Self::report_held_stop) {
+            tracing::warn!(error = %error.message, "the stop in the load was not reported");
         }
     }
 
@@ -421,6 +424,9 @@ impl Game {
     /// was entered with (PHYS-10.6). A level change whose `SetChangeParms` fails stops the
     /// game instead.
     pub(crate) fn host_action(&mut self) -> Option<HostAction> {
+        if let Some(level) = self.take_spawned() {
+            return Some(HostAction::Spawned(level));
+        }
         let host = self.world.host_state();
         let action = match self.world.take_host_command()? {
             HostCommand::Restart => HostAction::Level(NextLevel {
@@ -529,7 +535,7 @@ impl Game {
     /// events (BRIDGE-3.2); a frame that fails pauses the game with a `qc/error`
     /// (BRIDGE-3.3). Returns whether a frame ran.
     pub(crate) fn frame(&mut self, frametime: f64) -> bool {
-        if self.state == State::Paused {
+        if self.state == State::Paused || self.loading.holds() {
             return false;
         }
         let ran = self.with_progs(|game, progs| game.run_frame(progs, frametime));

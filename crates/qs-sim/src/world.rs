@@ -21,7 +21,7 @@ use qc_edict::system::{field_by_name, global_by_name};
 use qc_progs::Progs;
 use qc_types::{DefType, Etype, Slot};
 use qc_vm::convert::double_to_float;
-use qc_vm::{Machine, NoObserver, RunError, ServerState};
+use qc_vm::{Machine, NoObserver, Observer, RunError, ServerState};
 use qs_bsp::Bsp;
 use qs_vfs::Registration;
 
@@ -117,8 +117,6 @@ pub enum KeyFocus {
     Elsewhere,
 }
 
-/// A map's world: the VM with its entities spawned, linked in the world's collision. A clone
-/// is a snapshot the debugger replays a frame from (WORLD-9).
 /// The map's entities a prepared world spawns, with the deathmatch and skill they are chosen
 /// at (EDICT-8.4, DIFF-3.5).
 #[derive(Clone)]
@@ -131,6 +129,8 @@ struct PendingSpawn {
     skill: i32,
 }
 
+/// A map's world: the VM with its entities spawned, linked in the world's collision. A clone
+/// is a snapshot the debugger replays a frame from (WORLD-9).
 #[derive(Clone)]
 pub struct World {
     machine: Machine,
@@ -484,6 +484,7 @@ impl World {
             world: self,
             progs,
             state: ServerState::Loading,
+            watch: SpawnWatch::Debugger,
         };
         let spawned = spawn::load_from_file(
             &mut spawner,
@@ -1011,6 +1012,18 @@ struct Spawner<'a, 'p> {
     /// precache builtins work, active for an entity spawned in play, where they stop the run
     /// (`PF_precache_model`: "Precache can only be done in spawn functions").
     state: ServerState,
+    /// Whether the debugger watches the spawn functions: the level's load's, not an entity
+    /// spawned in play or read from a save (WORLD-9.6).
+    watch: SpawnWatch,
+}
+
+/// Whether a [`Spawner`]'s spawn functions run watched by the debugger (WORLD-9.6).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SpawnWatch {
+    /// The level's load: the debugger, when there is one, watches each spawn function.
+    Debugger,
+    /// Run with no debugger.
+    Unwatched,
 }
 
 impl SpawnHost for Spawner<'_, '_> {
@@ -1084,26 +1097,21 @@ impl SpawnHost for Spawner<'_, '_> {
         self.world.set_global("self", Slot::from_i32(value));
         // WORLD-9.6: the level's spawn functions run watched by the debugger, lent so the
         // builtins and it are not borrowed twice; an entity spawned in play runs without it.
-        let mut debugger = match self.state {
-            ServerState::Loading => self.world.builtins.debugger.take(),
-            ServerState::Active => None,
+        let mut debugger = match self.watch {
+            SpawnWatch::Debugger => self.world.builtins.debugger.take(),
+            SpawnWatch::Unwatched => None,
         };
-        let outcome = match debugger.as_mut() {
-            Some(debugger) => self.world.machine.execute_program(
-                self.progs,
-                self.state,
-                &mut self.world.builtins,
-                debugger,
-                function,
-            ),
-            None => self.world.machine.execute_program(
-                self.progs,
-                self.state,
-                &mut self.world.builtins,
-                &mut NoObserver,
-                function,
-            ),
+        let observer: &mut dyn Observer = match debugger.as_mut() {
+            Some(debugger) => debugger,
+            None => &mut NoObserver,
         };
+        let outcome = self.world.machine.execute_program(
+            self.progs,
+            self.state,
+            &mut self.world.builtins,
+            observer,
+            function,
+        );
         if debugger.is_some() {
             self.world.builtins.debugger = debugger;
         }

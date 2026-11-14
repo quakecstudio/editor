@@ -457,3 +457,23 @@ fn a_load_with_no_breakpoint_runs_as_without_a_debugger() {
     );
     assert_eq!(doors(&plain), [[1.0, 2.0, 3.0], [1.0, 2.0, 3.0]]);
 }
+
+// spec WORLD-9.6: an entity spawned during play runs its spawn function without the debugger
+#[test]
+fn an_entity_spawned_in_play_runs_without_the_debugger() {
+    let (mut world, progs_bytes, lines) = prepared();
+    let progs = Progs::read(&progs_bytes).unwrap();
+    world.spawn_map(&progs).unwrap();
+    let health = resolve(&progs, &lines, "t.qc", 3).unwrap();
+    let mut debugger = Debugger::new(lines);
+    debugger.set_breakpoint(health, BreakpointEdit::Set);
+    world.set_debugger(Some(debugger));
+    let pairs = [("classname".to_owned(), "door".to_owned())];
+    let edict = world.spawn_entity(&progs, &pairs).unwrap();
+    assert_eq!(world.debugger().and_then(Debugger::stopped), None);
+    assert_eq!(
+        world.float(edict, "health"),
+        2.0,
+        "its spawn function ran to its end"
+    );
+}

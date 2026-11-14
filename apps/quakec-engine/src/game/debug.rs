@@ -13,7 +13,7 @@ use qs_sim::spawn::LoadError;
 use qs_sim::{World, WorldError};
 use serde_json::{Map, Value, json};
 
-use super::{FrameEnd, Game, Reason, State};
+use super::{FrameEnd, Game, NextLevel, Reason, State};
 use crate::values::to_json;
 
 /// The host's id for a breakpoint it took, which `breakpoint/set` answers (BRIDGE-4.9).
@@ -188,11 +188,8 @@ impl Game {
     /// Replays the stopped frame from its snapshot with the debugger's new rule (WORLD-9.2), or
     /// the stopped load's spawning from the prepared world (WORLD-9.7).
     pub(super) fn replay(&mut self, progs: &Progs<'_>) -> FrameEnd {
-        if let Some(prepared) = self.prepared.clone() {
-            let debugger = self.world.debugger().cloned();
-            self.world = prepared;
-            self.world.set_debugger(debugger);
-            return self.finish_load(progs);
+        if self.loading.holds() {
+            return self.replay_spawning(progs);
         }
         let Some(snapshot) = self.snapshot.clone() else {
             return FrameEnd::Ran;
@@ -211,43 +208,59 @@ impl Game {
         debugger.may_stop().then_some(debugger)
     }
 
-    /// Keeps the prepared level to spawn once [`Game::carry_from`] has given it the last
-    /// level's breakpoints, so a stop in a spawn function names its breakpoint (WORLD-9.7).
-    pub(crate) fn wait_to_spawn(&mut self) {
-        self.prepared = Some(self.world.clone());
+    /// Holds this level's load, which a spawn function stopped, until going on spawns it to its
+    /// end; the host then loads `level` again with no stop (WORLD-9.7).
+    pub(crate) fn hold_load(&mut self, spawn: HeldSpawn, level: NextLevel) {
+        self.loading = Loading::Held { spawn, level };
     }
 
-    /// Spawns the waiting level's entities watched by its debugger, the prepared world kept to
-    /// go on from a stop (WORLD-9.7); see [`Game::finish_load`]. A stop pauses the game and a
-    /// failure is reported, each as a frame's would be.
-    pub(super) fn start_load(&mut self, progs: &Progs<'_>) {
-        if self.prepared.is_some() {
-            let _end = self.finish_load(progs);
+    /// Pauses at the stop a held load's spawning made, once [`Game::carry_from`] has given the
+    /// game the breakpoints that name it (WORLD-9.7).
+    pub(super) fn report_held_stop(&mut self, progs: &Progs<'_>) {
+        let stack = match &mut self.loading {
+            Loading::Held { spawn, .. } => spawn.stack.take(),
+            Loading::Done | Loading::Spawned(_) => None,
+        };
+        if let Some(stack) = stack {
+            self.stopped_at(progs, stack);
         }
     }
 
-    /// Spawns the level's entities; paused at a stop in a spawn function, or, once the
-    /// spawning ends, the level settled and the player let in, as a load with no debugger
-    /// does (WORLD-9.7).
-    fn finish_load(&mut self, progs: &Progs<'_>) -> FrameEnd {
-        let spawned = self.world.spawn_map(progs);
-        if let Err(WorldError::Spawn(LoadError::Run(error))) = &spawned
-            && error.kind == ErrorKind::Interrupted
-        {
-            drop(self.world.take_messages());
-            self.stopped_at(progs, error.trace.clone());
-            return FrameEnd::Stopped;
+    /// The level to load again once a held load's spawning has ended.
+    pub(super) fn take_spawned(&mut self) -> Option<NextLevel> {
+        match core::mem::take(&mut self.loading) {
+            Loading::Spawned(level) => Some(level),
+            other => {
+                self.loading = other;
+                None
+            }
         }
-        self.prepared = None;
-        self.halted = None;
-        if let Some(debugger) = self.world.debugger_mut() {
-            debugger.run_to_breakpoint(0);
-        }
-        let loaded = spawned
-            .and_then(|()| self.world.settle(progs))
-            .and_then(|()| self.world.connect(progs));
-        match loaded {
-            Ok(()) => FrameEnd::Ran,
+    }
+
+    /// Spawns the held load's entities again from its prepared world with the debugger's rule:
+    /// paused at the next stop, or, once the spawning ends, the level asked for again.
+    fn replay_spawning(&mut self, progs: &Progs<'_>) -> FrameEnd {
+        let Loading::Held { spawn, .. } = &self.loading else {
+            return FrameEnd::Ran;
+        };
+        let debugger = self.world.debugger().cloned();
+        self.world = (*spawn.prepared).clone();
+        self.world.set_debugger(debugger);
+        match self.world.spawn_map(progs) {
+            Err(WorldError::Spawn(LoadError::Run(error)))
+                if error.kind == ErrorKind::Interrupted =>
+            {
+                drop(self.world.take_messages());
+                self.stopped_at(progs, error.trace);
+                FrameEnd::Stopped
+            }
+            Ok(()) => {
+                self.halted = None;
+                if let Loading::Held { level, .. } = core::mem::take(&mut self.loading) {
+                    self.loading = Loading::Spawned(level);
+                }
+                FrameEnd::Ran
+            }
             Err(error) => {
                 self.fail(Some(progs), &error);
                 FrameEnd::Failed
@@ -393,4 +406,69 @@ fn function_of(progs: &Progs<'_>, statement: i32) -> i32 {
         }
     }
     best.0
+}
+
+/// A level's load a spawn function stopped (WORLD-9.7): the world before its spawning, which
+/// going on spawns again from, and the stopped run's stack until the game reports the stop.
+pub(crate) struct HeldSpawn {
+    prepared: Box<World>,
+    stack: Option<Vec<StackEntry>>,
+}
+
+impl HeldSpawn {
+    /// Spawns `world`'s map watched by `debugger` (WORLD-9.6). `None` once the spawning has
+    /// ended, the debugger taken off so the level settles and the player enters as with none;
+    /// the held load when a spawn function stopped it.
+    ///
+    /// # Errors
+    ///
+    /// The spawning failed other than by a stop.
+    pub(crate) fn spawn(
+        world: &mut World,
+        progs: &Progs<'_>,
+        debugger: Debugger,
+    ) -> Result<Option<Self>, WorldError> {
+        let prepared = Box::new(world.clone());
+        world.set_debugger(Some(debugger));
+        match world.spawn_map(progs) {
+            Ok(()) => {
+                world.set_debugger(None);
+                Ok(None)
+            }
+            Err(WorldError::Spawn(LoadError::Run(error)))
+                if error.kind == ErrorKind::Interrupted =>
+            {
+                drop(world.take_messages());
+                Ok(Some(Self {
+                    prepared,
+                    stack: Some(error.trace),
+                }))
+            }
+            Err(error) => Err(error),
+        }
+    }
+}
+
+/// Where a level's load is (WORLD-9.7).
+#[derive(Default)]
+pub(super) enum Loading {
+    /// Loaded: the level runs.
+    #[default]
+    Done,
+    /// A spawn function stopped the load, which holds the game paused in it.
+    Held {
+        /// The prepared world and the stop's stack.
+        spawn: HeldSpawn,
+        /// The level, loaded again once the spawning ends.
+        level: NextLevel,
+    },
+    /// The held load's spawning has ended: the host loads the level again.
+    Spawned(NextLevel),
+}
+
+impl Loading {
+    /// Whether the load holds the level, which runs no frame until it is loaded.
+    pub(super) const fn holds(&self) -> bool {
+        !matches!(self, Self::Done)
+    }
 }
