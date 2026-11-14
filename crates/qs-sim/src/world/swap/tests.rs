@@ -12,7 +12,7 @@ use qs_bsp::Bsp;
 use super::{BrushModel, SwapError};
 use crate::collision::CONTENTS_SOLID;
 use crate::fixtures::{CONTENTS_EMPTY, MapSpec, bsp, node, plane};
-use crate::world::tests::{Running, entity, running};
+use crate::world::tests::{Running, bsp_file, entity, running};
 use crate::world::{MapPlace, QcValue, World};
 
 /// A door's spawn: a pushed brush model, as `func_door` sets itself up.
@@ -50,7 +50,7 @@ fn after_deleting_door_a() -> Bsp<'static> {
             plane([0.0, 0.0, 1.0], -6.0, 2),
         ],
         nodes: vec![node(0, [-2, -1])],
-        submodels: vec![([32.0, 0.0, 0.0], [64.0, 16.0, 24.0])],
+        submodels: vec![([32.0, 4.0, 2.0], [64.0, 16.0, 24.0])],
         ..MapSpec::default()
     })
 }
@@ -94,9 +94,9 @@ fn a_renumbered_brush_entity_takes_its_new_model() {
         2.0,
         "*1 is model index 2"
     );
-    assert_eq!(game.world.vector(3, "mins"), [32.0, 0.0, 0.0]);
+    assert_eq!(game.world.vector(3, "mins"), [32.0, 4.0, 2.0]);
     assert_eq!(game.world.vector(3, "maxs"), [64.0, 16.0, 24.0]);
-    assert_eq!(game.world.vector(3, "size"), [32.0, 16.0, 24.0]);
+    assert_eq!(game.world.vector(3, "size"), [32.0, 12.0, 22.0]);
     assert_eq!(game.world.float(3, "health"), 75.0);
     assert_eq!(game.world.vector(1, "origin"), player);
     assert_eq!(
@@ -176,4 +176,57 @@ fn brush_models_are_star_and_a_number() {
     for bad in ["*0", "*01", "*", "1", "*1a", "maps/e1m1.bsp", "*-1"] {
         assert_eq!(BrushModel::parse(bad), None, "{bad}");
     }
+}
+
+// spec BRIDGE-4.15: each other BSP the map precached is the same model index again in the new
+// collision, and an edict showing it still collides there
+#[test]
+fn a_precached_item_bsp_keeps_its_model_index() {
+    let crate_box = MapSpec {
+        planes: vec![
+            plane([0.0, 0.0, 1.0], 10.0, 2),
+            plane([0.0, 0.0, 1.0], 34.0, 2),
+        ],
+        nodes: vec![node(0, [-2, -1])],
+        ..MapSpec::default()
+    };
+    let source = "void() worldspawn = { precache_model(\"maps/b_box.bsp\"); };\n\
+        void() boxed = { self.solid = 4; self.movetype = 7; \
+        setmodel(self, \"maps/b_box.bsp\"); setorigin(self, self.origin); };\n";
+    let files = vec![(
+        "maps/b_box.bsp".to_owned(),
+        bsp_file(&crate_box, [-8.0; 3], [8.0; 3]),
+    )];
+    let mut game = running(
+        &MapSpec::default(),
+        source,
+        &entity("boxed", "300 0 50", ""),
+        files,
+    );
+    let progs = Progs::read(&game.progs).unwrap();
+    let index = game.world.float(2, "modelindex");
+    assert!(game.world.builtins.collision.model(index).is_some());
+    game.world
+        .swap_bsp(&progs, &after_deleting_door_a(), &[])
+        .unwrap();
+    assert!(
+        game.world.builtins.collision.model(index).is_some(),
+        "{index}"
+    );
+    assert!(!game.world.builtins.collision.leafs_of(2).is_empty());
+}
+
+// spec BRIDGE-4.14: a refusal says which model and why, so the editor can show it
+#[test]
+fn refusals_name_the_model() {
+    let star = BrushModel::parse("*4").unwrap();
+    assert_eq!(
+        SwapError::NoSuchModel(star).to_string(),
+        "the new map has no brush model *4"
+    );
+    assert_eq!(
+        SwapError::NotPrecached(star).to_string(),
+        "*4 is not precached by the map; reload the map to load it"
+    );
+    assert_eq!(SwapError::Link("x".to_owned()).to_string(), "linking: x");
 }
