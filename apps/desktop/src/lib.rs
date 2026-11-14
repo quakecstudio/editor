@@ -21,6 +21,7 @@ mod disk_watch;
 mod editor;
 mod entities;
 mod fallback;
+mod features;
 mod finder;
 mod game_guide;
 mod git_panel;

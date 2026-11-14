@@ -67,6 +67,7 @@ use qs_map_edit::{
 use qs_render::{Camera, MapMesh};
 use qs_settings::{Scope as SettingsScope, Setting, SettingsFile, SettingsStore};
 use qs_templates::{GitHub, NEW_PROJECT, NewProjectParams, Template};
+use qs_workbench::TASK_LIST;
 use qs_workbench::checkpoints::{RESTORE_CHECKPOINT, RestoreCheckpointParams};
 use qs_workbench::debug::Location;
 use qs_workbench::dock::DockFrame;
@@ -75,13 +76,8 @@ use qs_workbench::entity_classes::{EntitiesFound, EntitiesParams, PROJECT_ENTITI
 use qs_workbench::export::{ExportParams, Exported, PROJECT_EXPORT};
 use qs_workbench::files_changed::{FILES_CHANGED, FilesChanged, FilesChangedParams};
 use qs_workbench::game_files::GameFiles;
-use qs_workbench::git::{
-    GIT_BLAME, GIT_BRANCHES, GIT_COMMIT, GIT_CONFLICTS, GIT_CREATE_BRANCH, GIT_DIFF, GIT_HEAD_TEXT,
-    GIT_LOG, GIT_RESOLVE, GIT_STAGE, GIT_STATUS, GIT_SWITCH, GIT_UNSTAGE, GitBranchParams,
-    GitChange, GitCommitParams, GitConflict, GitDiffParams, GitHunk, GitLogParams, GitPathParams,
-    GitResolveParams, GitSide, GitStageParams, GitStatus,
-};
-use qs_workbench::ids::{ActionIndex, TerminalIndex, WatchIndex};
+use qs_workbench::git::{GIT_HEAD_TEXT, GitPathParams};
+use qs_workbench::ids::ActionIndex;
 use qs_workbench::map_compile::{
     MAP_LEAKS, MAP_PLAY_FROM_HERE, MAP_PORTALS, MapPortals, PlayFromHereParams,
 };
@@ -94,7 +90,7 @@ use qs_workbench::search::{
     REPLACE_IN_FILE, REPLACE_RANGE, ReplaceInFileParams, ReplaceRangeParams, ReplacedInFile,
 };
 use qs_workbench::staged::HunksParams;
-use qs_workbench::terminal::{CloseParams, Opened, SendParams, TaskInfo};
+use qs_workbench::terminal::TaskInfo;
 use qs_workbench::tools::{PROJECT_FILES, PROJECT_SEARCH, ProjectSearchParams, SearchFound};
 use qs_workbench::{ACCEPT_HUNKS, REJECT_HUNKS};
 use qs_workbench::{
@@ -109,12 +105,7 @@ use qs_workbench::{
     ReloadParams, RenameParams, SAVE_FILE, STEP, STOP, SaveFileParams, TAKE_CHECKED, UPDATE_FILE,
     UpdateFileParams, Workbench,
 };
-use qs_workbench::{
-    BREAKPOINT, BreakpointParams, CONSOLE, ConsoleParams, STEP_BY, StepByParams, UNWATCH,
-    UnwatchParams, WATCH, WatchParams,
-};
 use qs_workbench::{SELECT, SET_FIELD, SelectParams, SelectedEntity, SetFieldParams};
-use qs_workbench::{TASK_LIST, TERMINAL_CLOSE, TERMINAL_NEW, TERMINAL_POLL, TERMINAL_SEND};
 
 use crate::agent::{self, AgentAction, AgentPanel, ThreadIndex};
 use crate::debugger::{self, DebugAction, DebugInput};
@@ -122,9 +113,11 @@ use crate::disk_watch::DiskWatch;
 use crate::editor::{Editor, Popup, Request};
 use crate::entities::{self, EntityAction, Outliner, Properties};
 use crate::fallback::{SystemFonts, families};
+use crate::features::{Commands, Features, ShellRequest};
 use crate::finder::FileFinder;
 use crate::game_guide::{self, Guide, GuideAction};
-use crate::git_panel::{BlameShown, GitAction, GitData, GitView, git_ui};
+use crate::git_panel::TabShown;
+use crate::git_panel::{GitAction, GitView, git_ui};
 use crate::icons::Icon;
 use crate::keymap::{self, Scope};
 use crate::map_editor::{DiskNotice, MapAction, MapEditor, ShowFilter};
@@ -338,12 +331,8 @@ pub struct Shell {
     outliner: Outliner,
     /// The Properties panel's edits.
     properties: Properties,
-    /// The text typed in the Debugger tab's watch box and the console's command box.
-    debug_input: DebugInput,
-    /// The Terminal tab's shown tab and typed line (P4-36).
-    terminal_view: TerminalView,
-    /// The Git tab's state, and the file it last read the history of (P4-35).
-    git_view: (GitView, Option<PathBuf>),
+    /// Each feature's state (P6-41).
+    features: Features,
     /// The multibuffer the Search tab shows (P4-33).
     multibuffer: Multibuffer,
     /// The go to symbol picker and the tab switcher, and the place each row stands for (P4-32).
@@ -434,9 +423,7 @@ impl Shell {
             menu: MenuPlace::default(),
             outliner: Outliner::default(),
             properties: Properties::default(),
-            debug_input: DebugInput::default(),
-            terminal_view: TerminalView::default(),
-            git_view: (GitView::default(), None),
+            features: Features::default(),
             multibuffer: Multibuffer::default(),
             picker: (Picker::default(), Vec::new()),
             editor_seen: 0,
@@ -1427,113 +1414,6 @@ impl Shell {
         self.palette.open(tasks);
     }
 
-    /// Takes the terminal tabs' output and exits; a tab opened since the last frame, by a
-    /// task from the palette or any other caller of its command, is shown in the Terminal
-    /// tab, the bottom panel opened for it (P4-36).
-    fn poll_terminals(&mut self, ctx: &egui::Context) {
-        let terminals = self.session.context().workbench.terminals();
-        if terminals.tabs().is_empty() {
-            self.terminal_view.opened(0);
-            return;
-        }
-        if self.run::<_, bool>(TERMINAL_POLL, &serde_json::json!({})) == Some(true) {
-            ctx.request_repaint();
-        }
-        let terminals = self.session.context().workbench.terminals();
-        if terminals.tabs().iter().any(|tab| tab.exit().is_none()) {
-            ctx.request_repaint_after(PREVIEW_POLL);
-        }
-        if self.terminal_view.opened(terminals.tabs().len()) {
-            self.bottom_tab = BottomTab::Terminal;
-            if !self.layout().panel(Panel::Bottom).visible
-                && let Err(error) = self.toggle(Panel::Bottom)
-            {
-                tracing::warn!(%error, "panel toggle failed");
-            }
-        }
-    }
-
-    /// Reads the repository again for the Git tab while it is shown, when an action made the
-    /// last read stale or another file was opened (P4-35); a hidden tab is read again when
-    /// next shown.
-    fn refresh_git_if_needed(&mut self) {
-        let open = self
-            .session
-            .context()
-            .workbench
-            .open()
-            .map(|o| o.path().to_path_buf());
-        if self.bottom_tab != BottomTab::Git || !self.layout().bottom.visible {
-            self.git_view.0.stale = true;
-            return;
-        }
-        if !self.git_view.0.stale && self.git_view.1 == open {
-            return;
-        }
-        self.git_view.0.stale = false;
-        self.git_view.1.clone_from(&open);
-        let blame = self.git_view.0.blame;
-        self.git_view.0.data = read_git(&mut self.session, open.as_deref(), blame);
-    }
-
-    /// Runs what the Git tab asked for, through its command, then reads the repository and the
-    /// editor's change marks again.
-    fn git_action(&mut self, action: GitAction) {
-        let params =
-            |value: Result<serde_json::Value, serde_json::Error>| value.unwrap_or_default();
-        let ran = match action {
-            GitAction::Refresh => Ok(serde_json::Value::Null),
-            GitAction::Stage(path, hunk) => self.session.execute(
-                GIT_STAGE,
-                params(serde_json::to_value(GitStageParams { path, hunk })),
-            ),
-            GitAction::Unstage(path, hunk) => self.session.execute(
-                GIT_UNSTAGE,
-                params(serde_json::to_value(GitStageParams { path, hunk })),
-            ),
-            GitAction::Commit(message) => self.session.execute(
-                GIT_COMMIT,
-                params(serde_json::to_value(GitCommitParams { message })),
-            ),
-            GitAction::Switch(branch) => self.session.execute(
-                GIT_SWITCH,
-                params(serde_json::to_value(GitBranchParams { branch })),
-            ),
-            GitAction::CreateBranch(branch) => self.session.execute(
-                GIT_CREATE_BRANCH,
-                params(serde_json::to_value(GitBranchParams { branch })),
-            ),
-            GitAction::Resolve(path, conflict, side) => self.session.execute(
-                GIT_RESOLVE,
-                params(serde_json::to_value(GitResolveParams {
-                    path,
-                    conflict,
-                    side,
-                })),
-            ),
-            GitAction::ToggleBlame => {
-                self.git_view.0.blame = match self.git_view.0.blame {
-                    BlameShown::Hidden => BlameShown::Shown,
-                    BlameShown::Shown => BlameShown::Hidden,
-                };
-                Ok(serde_json::Value::Null)
-            }
-            GitAction::Open(path, line) => {
-                let line = u32::try_from(line).unwrap_or(u32::MAX);
-                self.pending_line = Some((path.clone(), line));
-                self.jump(Jump { path, offset: 0 });
-                return;
-            }
-        };
-        self.git_view.0.stale = true;
-        self.refresh_git_if_needed();
-        if let Err(error) = ran {
-            self.git_view.0.data.error = Some(error.to_string());
-        }
-        self.sync_editor();
-        self.mark_changes();
-    }
-
     /// Reads the editor's inlay hints again when its file's analysis changed (P4-34): each
     /// parameter's name before the argument passed as it.
     fn refresh_inlays(&mut self) {
@@ -1585,32 +1465,6 @@ impl Shell {
             .flatten();
         if let Some(editor) = self.editor.as_mut() {
             editor.view.set_gutter_base(base);
-        }
-    }
-
-    /// Runs what the Terminal tab asked for, through its command.
-    fn terminal_action(&mut self, action: TerminalAction) {
-        match action {
-            TerminalAction::New => {
-                let _: Option<Opened> = self.run(TERMINAL_NEW, &serde_json::json!({}));
-            }
-            TerminalAction::Send(tab, line) => {
-                let _: Option<()> = self.run(
-                    TERMINAL_SEND,
-                    &SendParams {
-                        tab: TerminalIndex::new(tab),
-                        line,
-                    },
-                );
-            }
-            TerminalAction::Close(tab) => {
-                let _: Option<()> = self.run(
-                    TERMINAL_CLOSE,
-                    &CloseParams {
-                        tab: TerminalIndex::new(tab),
-                    },
-                );
-            }
         }
     }
 
@@ -1691,8 +1545,14 @@ impl Shell {
             // The host's events are read each frame; a running game asks for frames.
             ui.ctx().request_repaint_after(PREVIEW_POLL);
         }
-        self.poll_terminals(ui.ctx());
-        self.refresh_git_if_needed();
+        let ctx = ui.ctx().clone();
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        if let Some(request) = self.features.terminal.poll(&mut commands, &ctx) {
+            self.request(request);
+        }
+        let shown = self.git_shown();
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        self.features.git.refresh(&mut commands, shown);
         self.keys(ui);
         let pending = self.pending_focus();
         self.toolbar(ui);
@@ -2873,40 +2733,6 @@ impl Shell {
         }
     }
 
-    /// Runs what the Debugger tab, the console's box or a click in the editor's gutter asked
-    /// for, through its command, or shows a line in the editor.
-    fn debug_action(&mut self, action: DebugAction) {
-        let ran = match action {
-            DebugAction::Step(kind) => self
-                .run::<_, PreviewStatus>(STEP_BY, &StepByParams { kind })
-                .is_some(),
-            DebugAction::Watch(expression) => self
-                .run::<_, ()>(WATCH, &WatchParams { expression })
-                .is_some(),
-            DebugAction::Unwatch(index) => self
-                .run::<_, PreviewStatus>(
-                    UNWATCH,
-                    &UnwatchParams {
-                        index: WatchIndex::new(index),
-                    },
-                )
-                .is_some(),
-            DebugAction::Breakpoint { file, line } => self
-                .run::<_, ()>(BREAKPOINT, &BreakpointParams { file, line })
-                .is_some(),
-            DebugAction::Console(command) => self
-                .run::<_, ()>(CONSOLE, &ConsoleParams { command })
-                .is_some(),
-            DebugAction::Show { file, line } => {
-                self.show_line(&file, line);
-                true
-            }
-        };
-        if !ran {
-            self.preview_error = Some(Text::EditFailed.get().to_owned());
-        }
-    }
-
     /// Opens `file`, relative to the project's root, at `line`, from 1.
     fn show_line(&mut self, file: &Path, line: u32) {
         let Some(root) = self.session.context().workbench.root() else {
@@ -3074,9 +2900,9 @@ impl Shell {
         let preview = &self.session.context().preview;
         let tree = &mut self.outliner;
         let properties = &mut self.properties;
-        let debug_input = &mut self.debug_input;
-        let terminal_view = &mut self.terminal_view;
-        let git_view = &mut self.git_view.0;
+        let debug_input = &mut self.features.debugger.input;
+        let terminal_view = &mut self.features.terminal.view;
+        let git_view = &mut self.features.git.view;
         let agent = &mut self.agent;
         let mut agent_action = None;
         let map_editor = (self.centre_tab == CentreTab::Map && workbench.map().is_some())
@@ -3179,9 +3005,18 @@ impl Shell {
             self.entity_action(action, ui.ctx());
         }
         match tab_action {
-            Some(BottomAction::Terminal(action)) => self.terminal_action(action),
-            Some(BottomAction::Git(action)) => self.git_action(action),
-            Some(BottomAction::Debug(action)) => self.debug_action(action),
+            Some(BottomAction::Terminal(action)) => action.run(&mut self.commands()),
+            Some(BottomAction::Git(action)) => {
+                let shown = self.git_shown();
+                let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+                let request = self.features.git.apply(action, &mut commands, shown);
+                self.request(request);
+            }
+            Some(BottomAction::Debug(action)) => {
+                if let Some(request) = action.run(&mut self.commands()) {
+                    self.request(request);
+                }
+            }
             Some(BottomAction::ProblemsAsExcerpts) => self.problems_as_excerpts(),
             Some(BottomAction::Jump(_)) | None => {}
         }
@@ -3235,11 +3070,42 @@ impl Shell {
         id: &str,
         params: &P,
     ) -> Option<O> {
-        match self.attempt(id, params) {
-            Ok(output) => Some(output),
-            Err(error) => {
-                tracing::warn!(%error, command = id, "command failed");
-                None
+        self.commands().run(id, params)
+    }
+
+    /// The commands the features run, and the toolbar's notice.
+    const fn commands(&mut self) -> Commands<'_> {
+        Commands::new(&mut self.session, &mut self.preview_error)
+    }
+
+    /// Whether the Git tab is on screen.
+    fn git_shown(&self) -> TabShown {
+        if self.bottom_tab == BottomTab::Git && self.layout().bottom.visible {
+            TabShown::Shown
+        } else {
+            TabShown::Hidden
+        }
+    }
+
+    /// Carries out what a feature asked of the window or another feature, at once.
+    fn request(&mut self, request: ShellRequest) {
+        match request {
+            ShellRequest::ShowLine { path, line } => {
+                self.pending_line = Some((path.clone(), line));
+                self.jump(Jump { path, offset: 0 });
+            }
+            ShellRequest::ShowProjectLine { file, line } => self.show_line(&file, line),
+            ShellRequest::RefreshEditor => {
+                self.sync_editor();
+                self.mark_changes();
+            }
+            ShellRequest::ShowBottom(tab) => {
+                self.bottom_tab = tab;
+                if !self.layout().panel(Panel::Bottom).visible
+                    && let Err(error) = self.toggle(Panel::Bottom)
+                {
+                    tracing::warn!(%error, "panel toggle failed");
+                }
             }
         }
     }
@@ -3250,10 +3116,7 @@ impl Shell {
         id: &str,
         params: &P,
     ) -> Result<O, ShellError> {
-        serde_json::to_value(params)
-            .map_err(ShellError::from)
-            .and_then(|params| Ok(self.session.execute(id, params)?))
-            .and_then(|output| Ok(serde_json::from_value(output)?))
+        self.commands().attempt(id, params)
     }
 
     /// Shows `places`, each a file's byte range, as the multibuffer's excerpts from `source`,
@@ -3753,7 +3616,10 @@ impl Shell {
             let clicked = editor.view.take_gutter_click();
             if let (Some(file), Some(line)) = (file, clicked) {
                 let line = u32::try_from(line.saturating_add(1)).unwrap_or(u32::MAX);
-                self.debug_action(DebugAction::Breakpoint { file, line });
+                let breakpoint = DebugAction::Breakpoint { file, line };
+                if let Some(request) = breakpoint.run(&mut self.commands()) {
+                    self.request(request);
+                }
             }
             // The panels drawn before the editor this frame show what the requests change on
             // the next.
@@ -4262,83 +4128,6 @@ fn bottom(
     }
 }
 
-/// A `git.*` command's file parameter.
-fn path_params(path: &Path) -> GitPathParams {
-    GitPathParams {
-        path: path.to_path_buf(),
-    }
-}
-
-/// What the Git tab shows, read through the `git.*` commands (P4-35): the status, each changed
-/// file's hunks or a conflicted file's conflicts, the branches, and the open file's history and,
-/// when shown, its blame. Outside a repository there is no status and no error.
-fn read_git(session: &mut Session<Workspace>, open: Option<&Path>, blame: BlameShown) -> GitData {
-    let mut data = GitData::default();
-    let mut read = |id: &str, params: serde_json::Value| {
-        session
-            .execute(id, params)
-            .map_err(|error| error.to_string())
-    };
-    let status = read(GIT_STATUS, serde_json::json!({}))
-        .and_then(|v| serde_json::from_value::<Option<GitStatus>>(v).map_err(|e| e.to_string()));
-    let status = match status {
-        Ok(Some(status)) => status,
-        Ok(None) => return data,
-        Err(error) => {
-            data.error = Some(error);
-            return data;
-        }
-    };
-    let to = |params: Result<serde_json::Value, serde_json::Error>| params.unwrap_or_default();
-    for file in &status.files {
-        let path = &file.full_path;
-        let conflicted = file.staged == GitChange::Unmerged || file.unstaged == GitChange::Unmerged;
-        if conflicted {
-            let found = read(GIT_CONFLICTS, to(serde_json::to_value(path_params(path))))
-                .ok()
-                .and_then(|v| serde_json::from_value::<Vec<GitConflict>>(v).ok())
-                .unwrap_or_default();
-            data.conflicts.push((path.clone(), found));
-            continue;
-        }
-        let mut hunks = |side: GitSide| {
-            let params = GitDiffParams {
-                path: path.clone(),
-                side,
-            };
-            read(GIT_DIFF, to(serde_json::to_value(params)))
-                .ok()
-                .and_then(|v| serde_json::from_value::<Vec<GitHunk>>(v).ok())
-                .unwrap_or_default()
-        };
-        let unstaged = hunks(GitSide::Unstaged);
-        let staged = hunks(GitSide::Staged);
-        data.hunks.push((path.clone(), unstaged, staged));
-    }
-    data.status = Some(status);
-    data.branches = read(GIT_BRANCHES, serde_json::json!({}))
-        .ok()
-        .and_then(|v| serde_json::from_value(v).ok())
-        .unwrap_or_default();
-    if let Some(path) = open {
-        let params = GitLogParams {
-            path: path.to_path_buf(),
-            limit: Some(HISTORY),
-        };
-        data.history = read(GIT_LOG, to(serde_json::to_value(params)))
-            .ok()
-            .and_then(|v| serde_json::from_value(v).ok())
-            .unwrap_or_default();
-        if blame == BlameShown::Shown {
-            data.blame = read(GIT_BLAME, to(serde_json::to_value(path_params(path))))
-                .ok()
-                .and_then(|v| serde_json::from_value(v).ok())
-                .unwrap_or_default();
-        }
-    }
-    data
-}
-
 /// The diagnostics' notes at the ends of `editor`'s lines (P4-34): each problem of its file at
 /// the line its span starts on, a lightbulb on one of a code a quick fix may fix.
 fn line_notes(workbench: &Workbench<FsLoader>, editor: &Editor) -> Vec<LineNote> {
@@ -4448,8 +4237,6 @@ fn status_dot(ui: &mut Ui, colour: egui::Color32) {
         .circle_filled(rect.center(), size / STATUS_DOT_PARTS, colour);
 }
 
-/// How many of the open file's commits the Git tab lists.
-const HISTORY: usize = 50;
 /// A status dot's radius as a part of the line's height: a quarter.
 const STATUS_DOT_PARTS: f32 = 4.0;
 

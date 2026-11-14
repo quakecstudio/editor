@@ -7,12 +7,19 @@
 //! Every string comes from [`crate::strings`]; a test fails on a string literal here.
 
 use eframe::egui::{self, RichText, Ui};
-use qs_workbench::terminal::{Exit, Running, Terminal, Terminals};
+use qs_workbench::ids::TerminalIndex;
+use qs_workbench::terminal::{CloseParams, Exit, Opened, Running, SendParams, Terminal, Terminals};
+use qs_workbench::{TERMINAL_CLOSE, TERMINAL_NEW, TERMINAL_POLL, TERMINAL_SEND};
 
+use crate::features::{Commands, ShellRequest};
 use crate::icons::Icon;
+use crate::shell::BottomTab;
 use crate::shell::name_field;
 use crate::strings::{Text, exit_status};
 use crate::theme::{Theme, Token};
+
+/// How soon the next frame comes while a terminal's process runs, to show its output.
+const OUTPUT_POLL: std::time::Duration = std::time::Duration::from_millis(50);
 
 /// The most lines of a tab's output drawn; older ones are kept but not shown.
 const SHOWN_LINES: usize = 2000;
@@ -149,4 +156,71 @@ pub(crate) fn terminal_ui(
             );
         });
     action
+}
+
+/// The Terminal tab's feature (P4-36): what the tab shows.
+#[derive(Default)]
+pub(crate) struct TerminalFeature {
+    /// The tab's view.
+    pub(crate) view: TerminalView,
+}
+
+impl TerminalFeature {
+    /// Takes the terminal tabs' output and exits; asks for the Terminal tab when a tab opened
+    /// since the last frame, by a task from the palette or any other caller of its command.
+    pub(crate) fn poll(
+        &mut self,
+        commands: &mut Commands<'_>,
+        ctx: &egui::Context,
+    ) -> Option<ShellRequest> {
+        if commands
+            .session()
+            .context()
+            .workbench
+            .terminals()
+            .tabs()
+            .is_empty()
+        {
+            self.view.opened(0);
+            return None;
+        }
+        if commands.run::<_, bool>(TERMINAL_POLL, &serde_json::json!({})) == Some(true) {
+            ctx.request_repaint();
+        }
+        let terminals = commands.session().context().workbench.terminals();
+        if terminals.tabs().iter().any(|tab| tab.exit().is_none()) {
+            ctx.request_repaint_after(OUTPUT_POLL);
+        }
+        self.view
+            .opened(terminals.tabs().len())
+            .then_some(ShellRequest::ShowBottom(BottomTab::Terminal))
+    }
+}
+
+impl TerminalAction {
+    /// Runs what the tab asked for, through its command.
+    pub(crate) fn run(self, commands: &mut Commands<'_>) {
+        match self {
+            Self::New => {
+                let _: Option<Opened> = commands.run(TERMINAL_NEW, &serde_json::json!({}));
+            }
+            Self::Send(tab, line) => {
+                let _: Option<()> = commands.run(
+                    TERMINAL_SEND,
+                    &SendParams {
+                        tab: TerminalIndex::new(tab),
+                        line,
+                    },
+                );
+            }
+            Self::Close(tab) => {
+                let _: Option<()> = commands.run(
+                    TERMINAL_CLOSE,
+                    &CloseParams {
+                        tab: TerminalIndex::new(tab),
+                    },
+                );
+            }
+        }
+    }
 }
