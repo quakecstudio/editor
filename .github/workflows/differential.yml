@@ -164,8 +164,9 @@ jobs:
         env:
           RUNNER_TEMP_DIR: ${{ runner.temp }}
         run: echo "QS_TEST_ASSETS=$RUNNER_TEMP_DIR/test-assets" >> "$GITHUB_ENV"
+      # Release: the extended dialect's brush BSP is too slow unoptimized for the corpus.
       - name: Compare qs-map-bsp with the oracles on every corpus map
-        run: cargo xtask map-diff
+        run: cargo run --locked --release -p xtask -- map-diff
 
   # P3-25 (DIFF-16.5): the server simulation differential on every map of LibreQuake's lite
   # asset, on each OS.
