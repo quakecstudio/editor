@@ -3606,6 +3606,7 @@ dependencies = [
  "qc-vm",
  "qs-mdl",
  "qs-sim",
+ "qs-sound",
 ]
 
 [[package]]

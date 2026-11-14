@@ -21,6 +21,8 @@
 use qc_builtins::math::{anglemod, makevectors, vector_normalize};
 use qc_vm::convert::{double_to_float, double_to_int, int_to_float};
 
+use qs_sound::SoundEntity;
+
 use crate::entity::{Baseline, Entity};
 use crate::hud::{CenterMode, CenterPrint, HUD_GAME_DEATHMATCH, HudInput, HudItem, Placed};
 use crate::message::Reader;
@@ -434,28 +436,6 @@ impl core::fmt::Display for ParseError {
 }
 
 impl core::error::Error for ParseError {}
-
-/// The entity a sound comes from, `S_StartSound`'s `entnum`: an edict, or -1 for a temporary
-/// entity's.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct SoundEntity(i32);
-
-impl SoundEntity {
-    /// A temporary entity's sound.
-    pub const TEMPORARY: Self = Self(-1);
-
-    /// Edict `num`'s sound.
-    #[must_use]
-    pub const fn new(num: i32) -> Self {
-        Self(num)
-    }
-
-    /// The number `S_StartSound` is given.
-    #[must_use]
-    pub const fn get(self) -> i32 {
-        self.0
-    }
-}
 
 /// A model's precache index, `cl.model_precache`'s (CLIENT-1.5).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

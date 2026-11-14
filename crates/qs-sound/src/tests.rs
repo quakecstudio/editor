@@ -12,7 +12,8 @@ use std::collections::HashMap;
 use crate::{
     Ambient, Listener, ListenerLeaf, Loaded, LoopPaint, Mixer, MixerSpec, Random, Reader,
     SND_FIRST_STATIC, SND_MAX_CHANNELS, SND_MAX_DYNAMIC_CHANNELS, SND_MAX_NAME, SND_MAX_SFX,
-    SND_NUM_AMBIENTS, SfxId, SoundData, SoundError, SoundTable, Start, Width, track_files,
+    SND_NUM_AMBIENTS, SfxId, SoundData, SoundEntity, SoundError, SoundTable, Start, Width,
+    track_files,
 };
 
 /// A RIFF WAVE file of one channel: PCM at `rate`, `bits` per sample, the raw sample bytes
@@ -101,7 +102,7 @@ impl Random for Fixed {
 
 fn start(entnum: i32, entchannel: i32, sfx: SfxId, origin: [f32; 3]) -> Start {
     Start {
-        entnum,
+        entnum: SoundEntity::new(entnum),
         entchannel,
         sfx,
         origin,
@@ -199,7 +200,7 @@ fn a_started_channel_s_fields() {
     assert_eq!((channel.leftvol, channel.rightvol), (255, 255));
     assert_eq!(channel.end, 8);
     assert_eq!(channel.pos, 0);
-    assert_eq!((channel.entnum, channel.entchannel), (1, 2));
+    assert_eq!((channel.entnum.get(), channel.entchannel), (1, 2));
     assert_eq!(channel.origin, [1.0, 2.0, 3.0]);
     assert_eq!(channel.dist_mult, 1.0 / 1000.0);
     assert_eq!(channel.master_vol, 255);
@@ -349,7 +350,7 @@ fn picking_a_channel() {
     }
     let ents: Vec<_> = mixer.channels()[SND_NUM_AMBIENTS..SND_FIRST_STATIC]
         .iter()
-        .map(|c| (c.entnum, c.entchannel))
+        .map(|c| (c.entnum.get(), c.entchannel))
         .collect();
     assert!(ents.iter().all(|c| c.0 == 1), "{ents:?}");
     assert_eq!(
@@ -376,14 +377,14 @@ fn silent_and_dataless_sounds_take_the_channel() {
     assert_eq!(mixer.start_sound(&mut table, &mut rand, far), None);
     let taken = mixer.channels()[4];
     assert_eq!(taken.sfx, None);
-    assert_eq!((taken.entnum, taken.entchannel), (2, 1));
+    assert_eq!((taken.entnum.get(), taken.entchannel), (2, 1));
     assert_eq!(
         mixer.start_sound(&mut table, &mut rand, start(3, 1, missing, [0.0; 3])),
         None
     );
     assert_eq!(mixer.channels()[4].sfx, None);
     assert_eq!(
-        mixer.channels()[4].entnum,
+        mixer.channels()[4].entnum.get(),
         3,
         "the same channel, with no life left"
     );
@@ -437,13 +438,13 @@ fn stopping_scans_the_first_eight_channels() {
             .start_sound(&mut table, &mut rand, start(entity, 1, beep, [0.0; 3]))
             .unwrap();
     }
-    assert_eq!(mixer.channels()[11].entnum, 9);
-    mixer.stop_sound(9, 1);
+    assert_eq!(mixer.channels()[11].entnum.get(), 9);
+    mixer.stop_sound(SoundEntity::new(9), 1);
     assert!(
         mixer.channels()[11].sfx.is_some(),
         "channel 11 is past the scan"
     );
-    mixer.stop_sound(5, 1);
+    mixer.stop_sound(SoundEntity::new(5), 1);
     assert_eq!(mixer.channels()[7].sfx, None);
     assert_eq!(mixer.channels()[7].end, 0);
 }
@@ -456,7 +457,7 @@ fn a_local_sound_is_the_view_entity_s() {
         .local_sound(&mut table, &mut Fixed(vec![]), "beep.wav")
         .unwrap();
     let channel = mixer.channels()[index];
-    assert_eq!((channel.entnum, channel.entchannel), (1, -1));
+    assert_eq!((channel.entnum.get(), channel.entchannel), (1, -1));
     assert_eq!((channel.leftvol, channel.rightvol), (255, 255));
     let long = "x".repeat(SND_MAX_NAME + 1);
     assert_eq!(
