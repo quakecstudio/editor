@@ -17,7 +17,7 @@ use qc_types::{DefType, EntityRef, Etype, Slot};
 
 use qc_vm::ServerState;
 
-use super::{CLIENT, Spawner, World, field_slot};
+use super::{CLIENT, SpawnWatch, Spawner, World, field_slot};
 use crate::builtins::SimCall;
 use crate::spawn::{FieldDef, Parser, SpawnError, Token, c_atof, parse_saved_edict, parse_value};
 
@@ -235,6 +235,7 @@ impl World {
                 world: self,
                 progs,
                 state: ServerState::Loading,
+                watch: SpawnWatch::Unwatched,
             };
             let init = parse_saved_edict(&mut spawner, &mut parser, EdictNumber::new(n))
                 .map_err(SaveError::Parse)?;
@@ -291,6 +292,7 @@ impl World {
                 world: self,
                 progs,
                 state: ServerState::Loading,
+                watch: SpawnWatch::Unwatched,
             };
             parse_value(&mut spawner, field, &value, &mut |host, slot, value| {
                 if let Ok(slot) = i32::try_from(slot) {

@@ -9,7 +9,7 @@ use qc_progs::Progs;
 use qc_types::{DefType, Etype, Slot};
 use qc_vm::ServerState;
 
-use super::{CLIENT, Spawner, World};
+use super::{CLIENT, SpawnWatch, Spawner, World};
 use crate::builtins::SimCall;
 use crate::collision::MoveKind;
 use crate::spawn::{EdictPlace, SpawnHost, apply_key};
@@ -191,6 +191,7 @@ impl World {
             world: self,
             progs,
             state: ServerState::Loading,
+            watch: SpawnWatch::Unwatched,
         };
         let n = spawner
             .allocate(EdictPlace::Allocated)
@@ -213,6 +214,7 @@ impl World {
             world: self,
             progs,
             state: ServerState::Active,
+            watch: SpawnWatch::Unwatched,
         }
         .free(n);
         result
@@ -236,6 +238,7 @@ impl World {
             world: self,
             progs,
             state: ServerState::Active,
+            watch: SpawnWatch::Unwatched,
         };
         for (key, value) in pairs {
             apply_key(
@@ -265,6 +268,7 @@ impl World {
             world: self,
             progs,
             state: ServerState::Active,
+            watch: SpawnWatch::Unwatched,
         }
         .free(EdictNumber::new(n));
         Ok(())

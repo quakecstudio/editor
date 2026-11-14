@@ -1178,6 +1178,37 @@ groups:
     - 'A recorded run of the app: a project, a map and the agent panel opened, the Git and Terminal tabs used, an entity edited while the game plays, and the editor following a breakpoint stop'
     verify:
     - 'cargo xtask ci; the recorded run in the PR'
+  - key: P6-42
+    title: 'Breakpoints in spawn functions stop the game when a level loads'
+    labels:
+    - L4-bridges
+    - area:preview
+    - type:bug
+    size: M
+    summary: |
+      A breakpoint in a spawn function, such as func_door's in LibreQuake's doors.qc, does not stop the
+      game when the level loads again with preview.restart (or changelevel). WORLD-9.1 runs the map's
+      spawn functions without a debugger, and the host gives the next level its breakpoints only after it
+      has loaded. A modder setting a breakpoint there expects it to stop; it will (Justin, 2026-11-14:
+      the most intuitive choice, better than TrenchBroom, which cannot debug QuakeC at all).
+    environment: |
+      Found by the recorded run of #942 at 3dd3edea on macOS: the desktop app driven over its socket,
+      LibreQuake's codebase and lq-e0m1, the LibreQuake lite assets.
+    reqs:
+    - ENG-4
+    - GOAL-3
+    depends:
+    - P6-41
+    deliverable:
+    - 'crates/qs-sim: World::load running the map''s spawn functions with a debugger when given one; a stop in a spawn function returns the partly loaded world and where it stopped, and going on replays the load from its inputs, skipping the statements already run, as WORLD-9.2 replays a frame'
+    - 'apps/quakec-engine: a level started by map, restart or changelevel gets the breakpoints before it loads, not after, and the game is paused at a stop during the load'
+    - 'docs/spec/engine/world.md: WORLD-9.1 withdrawn (spawn functions run without a debugger) and replaced by statements that the load runs with the debugger and how a stop in it is gone on from; tests citing them'
+    acceptance:
+    - 'A breakpoint in a spawn function stops the game when the level loads after preview.restart and after changelevel, and the editor follows the stop, shown by a qs-sim test and a host test'
+    - 'Going on from a stop in a spawn function finishes the load with the same world as a load with no breakpoint, shown by a test comparing the two'
+    - 'A level with no breakpoints in spawn functions loads as before; the simulation and view differentials pass'
+    verify:
+    - cargo xtask ci; cargo xtask bridge-client on LibreQuake; the recorded run of #942 repeated with the breakpoint in func_door
   - key: P6-14
     title: Phase 6 gate review
     labels:
@@ -1230,6 +1261,7 @@ groups:
     - P6-39
     - P6-40
     - P6-41
+    - P6-42
     deliverable:
     - docs/gates/p6.md
     acceptance:
