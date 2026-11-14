@@ -13,8 +13,8 @@
 //! The menus a local player uses (MENU): main, single player, load and save, options, help and
 //! the quit prompt, drawn over a faded view and driven by keys.
 
-use crate::console::KeyDest;
-use crate::hud::{Anchor, HudItem, Placed};
+use crate::console::{ConsoleHold, KeyDest};
+use crate::hud::{Anchor, CHAR_SIZE, HudItem, Placed};
 
 /// `MAIN_ITEMS` (MENU-2.1).
 const MAIN_ITEMS: usize = 5;
@@ -32,8 +32,6 @@ const OPTIONS_VIDEO: usize = 12;
 const SLIDER_RANGE: i32 = 10;
 /// `%79s`: the most `fscanf` reads of a save's comment (MENU-6.1).
 const SAVEGAME_SCAN_LENGTH: usize = 79;
-/// A menu character's width and height in pixels.
-const CHAR_SIZE: i32 = 8;
 /// The menu's width, which its layout is in.
 const MENU_WIDTH: i32 = 320;
 /// The top of every menu's title picture.
@@ -371,7 +369,7 @@ pub struct MenuFrame {
     /// Whether the console is down, its background under the menu instead of the fade.
     pub console_down: bool,
     /// `con_forcedup`, which makes that background opaque in QuakeSpasm's look (REND-13.8).
-    pub console_forced: bool,
+    pub console_forced: ConsoleHold,
     /// The screen's height.
     pub screen_height: i32,
     /// The settings the options menu shows.

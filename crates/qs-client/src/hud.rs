@@ -13,7 +13,8 @@
 
 use qc_vm::convert::{float_to_int, int_to_float};
 
-use crate::client::{Score, stat};
+use crate::client::{Score, Scores, stat};
+use crate::console::ConsoleHold;
 
 /// `SBAR_HEIGHT` (HUD-1).
 pub const HUD_SBAR_HEIGHT: i32 = 24;
@@ -51,7 +52,7 @@ const IT_INVULNERABILITY: i32 = 1_048_576;
 const IT_QUAD: i32 = 4_194_304;
 
 /// A console character's width and height in pixels.
-const CHAR_SIZE: i32 = 8;
+pub(crate) const CHAR_SIZE: i32 = 8;
 /// The bar's width, which its layout is in (HUD-1).
 const BAR_WIDTH: i32 = 320;
 /// The digits `Sbar_DrawNum` draws of the armour, health, ammo and intermission numbers.
@@ -87,6 +88,8 @@ const SIGILS: u32 = 4;
 const SIGILS_X: i32 = BAR_WIDTH - 32;
 /// `Sbar_DrawCharacter` draws 4 to the right (HUD-1.5).
 const BAR_CHAR_NUDGE: i32 = 4;
+/// How far left of its block's end the frag list's right marker is (HUD-1.5).
+const FRAG_MARK_INSET: i32 = 4;
 /// `Sbar_ColorForMap`'s offset into a colour row (HUD-1.5).
 const MAP_COLOR_OFFSET: i32 = 8;
 /// A player's colours: the top in the high nibble, the bottom in the low (HUD-1.5).
@@ -236,7 +239,7 @@ pub enum HudItem {
         /// The screen's height.
         height: i32,
         /// `con_forcedup`: the console up with no game to show (CON-3.1).
-        forced: bool,
+        forced: ConsoleHold,
     },
     /// `Draw_FadeScreen`: the screen darkened, black at alpha 0.8 over it (MENU-1.3).
     Fade,
@@ -306,7 +309,7 @@ pub struct HudInput<'a> {
     /// `cl.completed_time`.
     pub completed_time: f32,
     /// `+showscores`.
-    pub showscores: bool,
+    pub showscores: Scores,
     /// `sb_lines`: how many rows of the bar the view size leaves, 0, 24 or more.
     pub lines: i32,
 }
@@ -447,22 +450,21 @@ impl HudInput<'_> {
     /// status bar's items, in drawing order; `screen_height` places the frag list's blocks.
     #[must_use]
     pub fn status_bar(&self, screen_height: i32) -> Vec<Placed> {
-        let input = self;
         let mut out = Vec::new();
-        let stats = input.stats;
-        if input.lines > HUD_SBAR_HEIGHT {
-            inventory(&mut out, input);
-            if input.maxclients != 1 {
-                frags(&mut out, input, screen_height);
+        let stats = self.stats;
+        if self.lines > HUD_SBAR_HEIGHT {
+            inventory(&mut out, self);
+            if self.maxclients != 1 {
+                frags(&mut out, self, screen_height);
             }
         }
-        if input.showscores || stats[stat::HEALTH] <= 0 {
+        if self.showscores == Scores::Shown || stats[stat::HEALTH] <= 0 {
             pic(&mut out, Anchor::Bar, "scorebar", 0, 0);
-            scoreboard(&mut out, input);
-        } else if input.lines != 0 {
+            scoreboard(&mut out, self);
+        } else if self.lines != 0 {
             pic(&mut out, Anchor::Bar, "sbar", 0, 0);
             // HUD-1.2: armour.
-            if input.items & IT_INVULNERABILITY != 0 {
+            if self.items & IT_INVULNERABILITY != 0 {
                 number(
                     &mut out,
                     Anchor::Bar,
@@ -484,15 +486,15 @@ impl HudInput<'_> {
                     NUMBER_DIGITS,
                     NumberColor::warning(armor, HUD_LOW_ARMOR),
                 );
-                if input.items & IT_ARMOR3 != 0 {
+                if self.items & IT_ARMOR3 != 0 {
                     pic(&mut out, Anchor::Bar, "sb_armor3", 0, 0);
-                } else if input.items & IT_ARMOR2 != 0 {
+                } else if self.items & IT_ARMOR2 != 0 {
                     pic(&mut out, Anchor::Bar, "sb_armor2", 0, 0);
-                } else if input.items & IT_ARMOR1 != 0 {
+                } else if self.items & IT_ARMOR1 != 0 {
                     pic(&mut out, Anchor::Bar, "sb_armor1", 0, 0);
                 }
             }
-            face(&mut out, input);
+            face(&mut out, self);
             let health = stats[stat::HEALTH];
             number(
                 &mut out,
@@ -510,7 +512,7 @@ impl HudInput<'_> {
                 (IT_CELLS, "sb_cells"),
             ]
             .into_iter()
-            .find(|(bit, _)| input.items & bit != 0);
+            .find(|(bit, _)| self.items & bit != 0);
             if let Some((_, name)) = ammo_pic {
                 pic(&mut out, Anchor::Bar, name, AMMO_PIC_X, 0);
             }
@@ -523,6 +525,100 @@ impl HudInput<'_> {
                 ammo,
                 NUMBER_DIGITS,
                 NumberColor::warning(ammo, HUD_LOW_AMMO),
+            );
+        }
+        out
+    }
+
+    /// `Sbar_IntermissionOverlay` and `Sbar_FinaleOverlay` (HUD-2.3): the overlay for the
+    /// intermission kind, 1 for the intermission and 2 or 3 for the finale and cutscene.
+    #[must_use]
+    pub fn intermission_overlay(&self) -> Vec<Placed> {
+        let mut out = Vec::new();
+        if self.intermission != 1 {
+            out.push(Placed {
+                anchor: Anchor::Screen,
+                item: HudItem::Lmp {
+                    path: "gfx/finale.lmp".to_owned(),
+                    x: None,
+                    y: FINALE_Y,
+                },
+            });
+            return out;
+        }
+        if self.gametype == HUD_GAME_DEATHMATCH {
+            deathmatch_overlay(&mut out, self);
+            return out;
+        }
+        out.push(Placed {
+            anchor: Anchor::Screen,
+            item: HudItem::Lmp {
+                path: "gfx/complete.lmp".to_owned(),
+                x: Some(COMPLETE_X),
+                y: COMPLETE_Y,
+            },
+        });
+        out.push(Placed {
+            anchor: Anchor::Screen,
+            item: HudItem::Lmp {
+                path: "gfx/inter.lmp".to_owned(),
+                x: Some(0),
+                y: INTER_Y,
+            },
+        });
+        let dig = float_to_int(self.completed_time / MINUTE);
+        let screen_number = |out: &mut Vec<Placed>, x: i32, y: i32, num: i32| {
+            number(
+                out,
+                Anchor::Screen,
+                x,
+                y,
+                num,
+                NUMBER_DIGITS,
+                NumberColor::Normal,
+            );
+        };
+        screen_number(&mut out, INTER_NUMBER_X, INTER_TIME_Y, dig);
+        let minute = float_to_int(MINUTE);
+        let num = float_to_int(self.completed_time - int_to_float(dig.saturating_mul(minute)));
+        pic(
+            &mut out,
+            Anchor::Screen,
+            "num_colon",
+            INTER_COLON_X,
+            INTER_TIME_Y,
+        );
+        pic(
+            &mut out,
+            Anchor::Screen,
+            &format!("num_{}", num.checked_div(DECIMAL).unwrap_or(0)),
+            INTER_TENS_X,
+            INTER_TIME_Y,
+        );
+        pic(
+            &mut out,
+            Anchor::Screen,
+            &format!("num_{}", num.checked_rem(DECIMAL).unwrap_or(0)),
+            INTER_UNITS_X,
+            INTER_TIME_Y,
+        );
+        let stats = self.stats;
+        for (y, done, total) in [
+            (INTER_SECRETS_Y, stat::SECRETS, stat::TOTALSECRETS),
+            (INTER_MONSTERS_Y, stat::MONSTERS, stat::TOTALMONSTERS),
+        ] {
+            screen_number(
+                &mut out,
+                INTER_NUMBER_X,
+                y,
+                stats.get(done).copied().unwrap_or(0),
+            );
+            pic(&mut out, Anchor::Screen, "num_slash", INTER_SLASH_X, y);
+            screen_number(
+                &mut out,
+                INTER_TOTAL_X,
+                y,
+                stats.get(total).copied().unwrap_or(0),
             );
         }
         out
@@ -644,7 +740,7 @@ fn frags(out: &mut Vec<Placed>, input: &HudInput<'_>, screen_height: i32) {
             let right = x
                 .saturating_add(FRAG_BLOCK_COLUMNS)
                 .saturating_mul(CHAR_SIZE)
-                .saturating_sub(BAR_CHAR_NUDGE);
+                .saturating_sub(FRAG_MARK_INSET);
             bar_char(out, right, INVENTORY_Y, FRAG_MARK_RIGHT);
         }
         x = x.saturating_add(FRAG_BLOCK_COLUMNS);
@@ -790,103 +886,6 @@ fn deathmatch_overlay(out: &mut Vec<Placed>, input: &HudInput<'_>) {
             });
         }
         y = y.saturating_add(RANKING_ROW);
-    }
-}
-
-impl HudInput<'_> {
-    /// `Sbar_IntermissionOverlay` and `Sbar_FinaleOverlay` (HUD-2.3): the overlay for the
-    /// intermission kind, 1 for the intermission and 2 or 3 for the finale and cutscene.
-    #[must_use]
-    pub fn intermission_overlay(&self) -> Vec<Placed> {
-        let input = self;
-        let mut out = Vec::new();
-        if input.intermission != 1 {
-            out.push(Placed {
-                anchor: Anchor::Screen,
-                item: HudItem::Lmp {
-                    path: "gfx/finale.lmp".to_owned(),
-                    x: None,
-                    y: FINALE_Y,
-                },
-            });
-            return out;
-        }
-        if input.gametype == HUD_GAME_DEATHMATCH {
-            deathmatch_overlay(&mut out, input);
-            return out;
-        }
-        out.push(Placed {
-            anchor: Anchor::Screen,
-            item: HudItem::Lmp {
-                path: "gfx/complete.lmp".to_owned(),
-                x: Some(COMPLETE_X),
-                y: COMPLETE_Y,
-            },
-        });
-        out.push(Placed {
-            anchor: Anchor::Screen,
-            item: HudItem::Lmp {
-                path: "gfx/inter.lmp".to_owned(),
-                x: Some(0),
-                y: INTER_Y,
-            },
-        });
-        let dig = float_to_int(input.completed_time / MINUTE);
-        let screen_number = |out: &mut Vec<Placed>, x: i32, y: i32, num: i32| {
-            number(
-                out,
-                Anchor::Screen,
-                x,
-                y,
-                num,
-                NUMBER_DIGITS,
-                NumberColor::Normal,
-            );
-        };
-        screen_number(&mut out, INTER_NUMBER_X, INTER_TIME_Y, dig);
-        let minute = float_to_int(MINUTE);
-        let num = float_to_int(input.completed_time - int_to_float(dig.saturating_mul(minute)));
-        pic(
-            &mut out,
-            Anchor::Screen,
-            "num_colon",
-            INTER_COLON_X,
-            INTER_TIME_Y,
-        );
-        pic(
-            &mut out,
-            Anchor::Screen,
-            &format!("num_{}", num.checked_div(DECIMAL).unwrap_or(0)),
-            INTER_TENS_X,
-            INTER_TIME_Y,
-        );
-        pic(
-            &mut out,
-            Anchor::Screen,
-            &format!("num_{}", num.checked_rem(DECIMAL).unwrap_or(0)),
-            INTER_UNITS_X,
-            INTER_TIME_Y,
-        );
-        let stats = input.stats;
-        for (y, done, total) in [
-            (INTER_SECRETS_Y, stat::SECRETS, stat::TOTALSECRETS),
-            (INTER_MONSTERS_Y, stat::MONSTERS, stat::TOTALMONSTERS),
-        ] {
-            screen_number(
-                &mut out,
-                INTER_NUMBER_X,
-                y,
-                stats.get(done).copied().unwrap_or(0),
-            );
-            pic(&mut out, Anchor::Screen, "num_slash", INTER_SLASH_X, y);
-            screen_number(
-                &mut out,
-                INTER_TOTAL_X,
-                y,
-                stats.get(total).copied().unwrap_or(0),
-            );
-        }
-        out
     }
 }
 

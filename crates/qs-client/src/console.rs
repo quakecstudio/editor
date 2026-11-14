@@ -13,7 +13,7 @@
 //! The client's console (CON): the text printed into it, the notify lines, the console drawn
 //! over the view and the line typed into it.
 
-use crate::hud::{Anchor, HudItem, Placed};
+use crate::hud::{Anchor, CHAR_SIZE, HudItem, Placed};
 
 /// `CON_TEXTSIZE`: the bytes of the console's text (CON-1.1).
 pub const CON_TEXTSIZE: usize = 16384;
@@ -36,8 +36,6 @@ pub const CON_HISTORY: usize = 32;
 const UNSET_WIDTH: usize = 38;
 /// The prompt each typed line starts with (CON-4.1).
 const PROMPT: u8 = b']';
-/// A console character's width and height in pixels (CON-2.2, CON-3.3).
-const CHAR_SIZE: i32 = 8;
 /// `>> 3`: pixels to characters.
 const CHAR_SHIFT: i32 = 3;
 /// How far above the console's bottom its input line is drawn, in pixels (CON-3.3, CON-3.4).
@@ -157,7 +155,7 @@ pub struct Console {
     /// `scr_con_current`, the drawn height in pixels (CON-3.1).
     height: f32,
     /// `con_forcedup`, as the last slide had it (CON-3.1).
-    forced: bool,
+    forced: ConsoleHold,
     lines: Vec<[u8; CON_MAX_LINE]>,
     edit: usize,
     history: usize,
@@ -196,7 +194,7 @@ impl Console {
             backscroll: 0,
             times: [0.0; CON_NUM_TIMES],
             height: 0.0,
-            forced: false,
+            forced: ConsoleHold::Sliding,
             lines: vec![line; CON_HISTORY],
             edit: 0,
             history: 0,
@@ -385,8 +383,8 @@ impl Console {
         frametime: f32,
     ) -> i32 {
         let screen = f32_of(screen_height);
-        self.forced = hold == ConsoleHold::Forced;
-        if self.forced {
+        self.forced = hold;
+        if hold == ConsoleHold::Forced {
             self.height = screen;
             return screen_height;
         }

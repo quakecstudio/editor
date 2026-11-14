@@ -8,6 +8,7 @@
 //! is a short over 8, an angle a byte over 256 of a turn, and reading past the end is the
 //! error `Bad server message`.
 
+use crate::view::FULL_TURN;
 use qc_vm::convert::double_to_float;
 
 /// The bytes of a long and a float.
@@ -15,7 +16,6 @@ const LONG_BYTES: usize = 4;
 /// A coordinate's steps per unit, `MSG_ReadShort() * (1.0/8)`.
 const COORD_STEPS: f64 = 8.0;
 /// A turn in degrees.
-const FULL_TURN: f64 = 360.0;
 /// An angle byte's steps per turn, `MSG_ReadChar() * (360.0/256)`.
 const ANGLE_STEPS: f64 = 256.0;
 
@@ -122,6 +122,6 @@ impl<'a> Reader<'a> {
 
     /// `MSG_ReadAngle`: a char times 360 over 256.
     pub fn angle(&mut self) -> f32 {
-        double_to_float(f64::from(self.char()) * (FULL_TURN / ANGLE_STEPS))
+        double_to_float(f64::from(self.char()) * (f64::from(FULL_TURN) / ANGLE_STEPS))
     }
 }

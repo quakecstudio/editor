@@ -507,7 +507,7 @@ impl Play {
         let light = |origin| light_point(bsp, &styles, origin);
         // R_DrawEntitiesOnList: the alias and brush models, then the sprites.
         for entity in scene.entities.iter().chain(&scene.statics) {
-            match self.models.get(entity.model) {
+            match self.models.get(entity.model.get()) {
                 Some(drawn @ (Model::Alias(..) | Model::Md5(..))) => {
                     let player = entity.entity.player(scene.maxclients);
                     let kind = if player.is_some() {
@@ -534,7 +534,7 @@ impl Play {
                     let slot = player.filter(|&s| entity.colormap != 0 && s < PLAYER_SKINS);
                     if let (Some(slot), Some(draw)) = (slot, models.draws.last_mut()) {
                         let key = SkinKey {
-                            model: entity.model,
+                            model: entity.model.get(),
                             skin: alias.skin,
                             colors: scene.colors.get(slot).copied().unwrap_or(0),
                         };
@@ -584,7 +584,7 @@ impl Play {
         // R_DrawViewModel (REND-4.11).
         let mut weapon = ModelFrame::default();
         if let Some(drawn @ (Model::Alias(..) | Model::Md5(..))) =
-            self.models.get(refdef.weapon.model)
+            self.models.get(refdef.weapon.model.get())
         {
             let lit = entity_light(
                 light(refdef.weapon.origin),

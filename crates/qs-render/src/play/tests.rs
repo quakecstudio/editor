@@ -9,7 +9,8 @@
 
 use crate::look::Look;
 use qs_client::{
-    Anchor, DynamicLight, EntitySlot, Hud, HudItem, Placed, Scene, SceneEntity, SceneParticle,
+    Anchor, ConsoleHold, DynamicLight, EntitySlot, Hud, HudItem, ModelIndex, Placed, Scene,
+    SceneEntity, SceneParticle,
 };
 use qs_wad::{WAD_MAGIC, WAD_TYP_QPIC};
 
@@ -382,7 +383,7 @@ fn a_frame_carries_the_lights_the_particles_and_the_world() {
             color: 4,
         }],
         entities: vec![SceneEntity {
-            model: 7,
+            model: ModelIndex::new(7),
             ..SceneEntity::default()
         }],
         ..Scene::default()
@@ -527,7 +528,7 @@ fn players_wear_their_slots_translated_skins() {
     let mut mesh = MapMesh::build(&bsp, &palette(), Look::GlQuake).unwrap();
     let entity = |entity, colormap| SceneEntity {
         entity: EntitySlot::new(entity),
-        model: 1,
+        model: ModelIndex::new(1),
         colormap,
         ..SceneEntity::default()
     };
@@ -644,7 +645,7 @@ fn md5_entities_are_drawn_with_their_skins() {
     let scene = Scene {
         entities: vec![SceneEntity {
             entity: EntitySlot::new(5),
-            model: 1,
+            model: ModelIndex::new(1),
             ..SceneEntity::default()
         }],
         ..Scene::default()
@@ -690,7 +691,7 @@ fn the_console_background_shows_while_it_slides() {
             item: HudItem::ConsoleBack {
                 lines,
                 height: 480,
-                forced: false,
+                forced: ConsoleHold::Sliding,
             },
         }],
         ..Hud::default()
@@ -730,14 +731,20 @@ fn quakespasm_draws_its_canvases() {
     assert_eq!(bar[0].1, [([480.0, 776.0], [320.0, 24.0])]);
     assert_eq!(Look::QuakeSpasm.fade_alpha(), 0.5);
     assert_eq!(Look::GlQuake.fade_alpha(), 0.8);
-    assert_eq!(Look::QuakeSpasm.console_alpha(400, 800, false), 0.5);
     assert_eq!(
-        Look::QuakeSpasm.console_alpha(800, 800, false),
+        Look::QuakeSpasm.console_alpha(400, 800, ConsoleHold::Sliding),
+        0.5
+    );
+    assert_eq!(
+        Look::QuakeSpasm.console_alpha(800, 800, ConsoleHold::Sliding),
         0.5,
         "full height, not forced"
     );
-    assert_eq!(Look::QuakeSpasm.console_alpha(400, 800, true), 1.0);
-    assert!((Look::GlQuake.console_alpha(240, 480, false) - 0.8).abs() < 1e-6);
+    assert_eq!(
+        Look::QuakeSpasm.console_alpha(400, 800, ConsoleHold::Forced),
+        1.0
+    );
+    assert!((Look::GlQuake.console_alpha(240, 480, ConsoleHold::Sliding) - 0.8).abs() < 1e-6);
 }
 
 // spec REND-13.9: QuakeSpasm's look raises the whole frame to gamma and leaves the blend table

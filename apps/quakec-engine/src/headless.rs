@@ -300,7 +300,7 @@ impl Overlay {
             host_time: self.realtime,
             realtime: self.realtime,
             console_down: down,
-            console_forced: false,
+            console_forced: ConsoleHold::Sliding,
             screen_height: height,
             settings,
             bound: Vec::new(),
@@ -419,7 +419,7 @@ impl Headless {
         let origin = self.client.scene().view.origin;
         self.client.set_contents(contents_at(&self.bsp, origin));
         let mut scene = self.client.scene();
-        scene.view.weapon.model = 0;
+        scene.view.weapon.model = qs_client::ModelIndex::NONE;
         self.play
             .frame(&scene, &hud, &self.bsp, &mut self.mesh, aspect)
     }

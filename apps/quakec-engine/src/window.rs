@@ -407,7 +407,7 @@ impl eframe::App for Viewer {
             host_time: realtime,
             realtime,
             console_down,
-            console_forced: false,
+            console_forced: ConsoleHold::Sliding,
             screen_height: self.play.screen[1],
             settings: MenuSettings::read(&|name| world.setting(name).unwrap_or(0.0)),
             bound: self

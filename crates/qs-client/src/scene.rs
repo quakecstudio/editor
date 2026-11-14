@@ -4,6 +4,7 @@
 //! interpolation, the dynamic lights, the particles, the eye and the weapon, and the blend
 //! over the view.
 
+use crate::client::ModelIndex;
 use crate::view::Refdef;
 
 /// How an alias model's poses blend this frame (CLIENT-7.3).
@@ -52,7 +53,7 @@ pub struct SceneEntity {
     /// Its slot.
     pub entity: EntitySlot,
     /// Its model precache index.
-    pub model: usize,
+    pub model: ModelIndex,
     /// Where it is drawn, interpolated (CLIENT-5.4, CLIENT-7.4).
     pub origin: [f32; 3],
     /// Its angles, interpolated.

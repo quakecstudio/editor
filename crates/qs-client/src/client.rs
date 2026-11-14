@@ -25,9 +25,11 @@ use crate::entity::{Baseline, Entity};
 use crate::hud::{CenterMode, CenterPrint, HUD_GAME_DEATHMATCH, HudInput, HudItem, Placed};
 use crate::message::Reader;
 use crate::models::{FrameInfo, ModelInfo, ModelKind, Models, Random, flags};
-use crate::particles::{PART_GRAVITY, Particles, Trail, TrailSpacing};
+use crate::particles::{EXPLOSION_PARTICLES, PART_GRAVITY, Particles, Trail, TrailSpacing};
 use crate::scene::{DynamicLight, EntitySlot, PoseBlend, Scene, SceneEntity, SceneParticle};
-use crate::view::{Contents, Footing, Refdef, ViewInput, ViewSettings, ViewState};
+use crate::view::{
+    AXES, Contents, FULL_TURN, Footing, HALF_TURN, Refdef, ViewInput, ViewSettings, ViewState,
+};
 
 /// `IT_INVISIBILITY`, which hides the view model (REND-4.11).
 const IT_INVISIBILITY: i32 = 524_288;
@@ -122,8 +124,6 @@ pub const CLIENT_LERP_RESET_GAP: f32 = 0.2;
 pub const CLIENT_LERP_SINGLE_POSE: f32 = 0.1;
 /// A step's move lerp time (CLIENT-7.4).
 pub const CLIENT_LERP_MOVE_TIME: f32 = 0.1;
-/// A vector's components, `vec3_t`'s three (`mathlib.h`: "`typedef vec_t vec3_t[3];`").
-const AXES: usize = 3;
 /// The items whose pickup time is kept, `client.h`'s "`float item_gettime[32];`".
 const ITEM_TIMES: usize = 32;
 /// The screen's size until the window gives one: id's lowest video mode, 320 by 200.
@@ -143,8 +143,6 @@ const SOUND_CHANNEL_MASK: i32 = (1 << SOUND_CHANNEL_SHIFT) - 1;
 const PARTICLE_DIRECTION_STEP: f64 = 1.0 / 16.0;
 /// The count byte that means an explosion, `if (msgcount == 255) count = 1024;`.
 const PARTICLE_EXPLOSION_MARKER: i32 = 255;
-/// The particles of an explosion sent as an effect.
-const PARTICLE_EXPLOSION_COUNT: i32 = 1024;
 /// `cl.intermission` for `svc_finale` (CLIENT-1.4).
 const INTERMISSION_FINALE: i32 = 2;
 /// `cl.intermission` for `svc_cutscene`.
@@ -183,20 +181,25 @@ const EXPLOSION_LIGHT_RADIUS: f32 = 350.0;
 const EXPLOSION_LIGHT_TIME: f32 = 0.5;
 /// How fast an explosion's light fades.
 const EXPLOSION_LIGHT_DECAY: f32 = 300.0;
-/// The beam models `CL_ParseBeam` is given for `TE_LIGHTNING3` and `TE_BEAM`.
+/// The beam models `CL_ParseBeam` is given for `TE_LIGHTNING1` to `TE_LIGHTNING3` and
+/// `TE_BEAM`: [`CLIENT_BEAM_MODELS`] indices plus 1.
+const LIGHTNING1_MODEL: usize = 1;
+/// See [`LIGHTNING1_MODEL`].
+const LIGHTNING2_MODEL: usize = 2;
+/// See [`LIGHTNING1_MODEL`].
 const LIGHTNING3_MODEL: usize = 3;
-/// See [`LIGHTNING3_MODEL`].
+/// See [`LIGHTNING1_MODEL`].
 const BEAM_MODEL: usize = 4;
 /// `if (frac < -0.01)`: how far before the last message the time may fall before it is moved.
 const LERP_BEHIND: f32 = -0.01;
 /// `if (frac > 1.01)`: how far past the latest message the time may run.
 const LERP_AHEAD: f32 = 1.01;
-/// Half a turn in degrees: an angle's lerp takes the shorter way (`if (d > 180)`).
-const HALF_TURN: f32 = 180.0;
-/// A turn in degrees.
-const FULL_TURN: f32 = 360.0;
-/// `dl->radius = 200 + (rand()&31)`: a muzzle flash's and a dim light's base radius.
+/// `dl->radius = 200 + (rand()&31)`: a muzzle flash's base radius.
 const FLASH_RADIUS: f32 = 200.0;
+/// `dl->radius = 200 + (rand()&31)`: a dim light's base radius.
+const DIM_RADIUS: f32 = 200.0;
+/// `dl->origin[2] += 16`: how far up a bright light is.
+const BRIGHT_UP: f32 = 16.0;
 /// `rand()&31`: what a light's radius may add.
 const LIGHT_JITTER: i32 = 31;
 /// `VectorMA (dl->origin, 18, fv, dl->origin)`: how far ahead a muzzle flash is.
@@ -219,10 +222,8 @@ const ROCKET_LIGHT_TIME: f32 = 0.01;
 const PITCH_UP: f32 = 90.0;
 /// See [`PITCH_UP`].
 const PITCH_DOWN: f32 = 270.0;
-/// `rand()%360`: a beam segment's roll.
-const FULL_TURN_DEGREES: i32 = 360;
-/// Half a turn in degrees, in double precision, `atan2 (...) * 180 / M_PI`.
-const HALF_TURN_F64: f64 = 180.0;
+/// `rand()%360`: a beam segment's roll, in whole degrees.
+const BEAM_ROLLS: i32 = 360;
 
 /// `STAT_HEALTH` to `STAT_MONSTERS`: the indices into the stats (CLIENT-3).
 pub mod stat {
@@ -457,21 +458,32 @@ impl SoundEntity {
 }
 
 /// A model's precache index, `cl.model_precache`'s (CLIENT-1.5).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ModelIndex(usize);
 
 impl ModelIndex {
+    /// No model: precache index 0.
+    pub const NONE: Self = Self(0);
+
     /// Precache index `index`.
     #[must_use]
     pub const fn new(index: usize) -> Self {
         Self(index)
+    }
+
+    /// The precache index.
+    #[must_use]
+    pub const fn get(self) -> usize {
+        self.0
     }
 }
 
 /// Whether the scoreboard is shown, `+showscores` or `-showscores` (HUD-1.1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Scores {
+    /// `+showscores`: the scoreboard over the bar.
     Shown,
+    /// `-showscores`: the bar.
     Hidden,
 }
 
@@ -515,7 +527,7 @@ pub enum Event {
     /// `svc_stopsound`: the entity and channel (SND-2.6).
     StopSound {
         /// The entity.
-        entity: i32,
+        entity: SoundEntity,
         /// The channel.
         channel: i32,
     },
@@ -662,7 +674,7 @@ pub struct Client {
     punchangle: [f32; 3],
     items: i32,
     item_gettime: [f32; 32],
-    onground: bool,
+    onground: Footing,
     inwater: bool,
     stats: [i32; CLIENT_MAX_STATS],
     maxclients: usize,
@@ -707,7 +719,7 @@ pub struct Client {
     /// The screen's size in pixels, for the centre print and the frag list.
     screen: (i32, i32),
     /// `+showscores` (HUD-1.1).
-    showscores: bool,
+    showscores: Scores,
     /// `sb_lines`: how many rows of the bar the view size leaves (HUD-1.1).
     bar_lines: i32,
 }
@@ -743,7 +755,7 @@ impl Client {
             punchangle: [0.0; AXES],
             items: 0,
             item_gettime: [0.0; ITEM_TIMES],
-            onground: false,
+            onground: Footing::InAir,
             inwater: false,
             stats: [0; CLIENT_MAX_STATS],
             maxclients: 0,
@@ -776,7 +788,7 @@ impl Client {
             center: CenterPrint::default(),
             center_items: Vec::new(),
             screen: DEFAULT_SCREEN,
-            showscores: false,
+            showscores: Scores::Hidden,
             bar_lines: HUD_DEFAULT_LINES,
         }
     }
@@ -838,7 +850,7 @@ impl Client {
 
     /// `+showscores` and `-showscores` (HUD-1.1).
     pub const fn set_showscores(&mut self, scores: Scores) {
-        self.showscores = matches!(scores, Scores::Shown);
+        self.showscores = scores;
     }
 
     /// `sb_lines`: 0 at a view size of 120, 24 at 110, else 48 (HUD-1.1).
@@ -987,7 +999,7 @@ impl Client {
 
     /// `cl.onground`.
     #[must_use]
-    pub const fn onground(&self) -> bool {
+    pub const fn onground(&self) -> Footing {
         self.onground
     }
 
@@ -1115,12 +1127,12 @@ impl Client {
         let mut refdef = self.render_view();
         // `R_DrawViewModel`: no weapon while invisible or dead (REND-4.11).
         if self.items & IT_INVISIBILITY != 0 || self.stats[stat::HEALTH] <= 0 {
-            refdef.weapon.model = 0;
+            refdef.weapon.model = ModelIndex::NONE;
         }
-        let weapon_poses = if refdef.weapon.model == 0 {
+        let weapon_poses = if refdef.weapon.model == ModelIndex::NONE {
             None
         } else {
-            self.weapon.model = refdef.weapon.model;
+            self.weapon.model = refdef.weapon.model.get();
             self.weapon.frame = refdef.weapon.frame;
             self.alias_poses_for_weapon()
         };
@@ -1129,7 +1141,7 @@ impl Client {
             .iter()
             .map(|e| SceneEntity {
                 entity: EntitySlot::NONE,
-                model: e.model,
+                model: ModelIndex::new(e.model),
                 origin: e.origin,
                 angles: e.angles,
                 frame: e.frame,
@@ -1179,11 +1191,7 @@ impl Client {
         self.view.drift_pitch(
             self.time,
             self.time - self.oldtime,
-            if self.onground {
-                Footing::OnGround
-            } else {
-                Footing::InAir
-            },
+            self.onground,
             self.forwardmove,
             self.idealpitch,
             &mut self.viewangles,
@@ -1233,7 +1241,7 @@ impl Client {
         rand: &mut dyn Random,
         events: &mut Vec<Event>,
     ) -> Result<(), ParseError> {
-        self.onground = false;
+        self.onground = Footing::InAir;
         let mut r = Reader::new(bytes);
         loop {
             if r.bad() {
@@ -1304,7 +1312,7 @@ impl Client {
                 SVC_STOPSOUND => {
                     let i = r.short();
                     events.push(Event::StopSound {
-                        entity: i >> SOUND_CHANNEL_SHIFT,
+                        entity: SoundEntity::new(i >> SOUND_CHANNEL_SHIFT),
                         channel: i & SOUND_CHANNEL_MASK,
                     });
                 }
@@ -1330,7 +1338,7 @@ impl Client {
                     let msgcount = r.byte();
                     let color = r.byte();
                     let count = if msgcount == PARTICLE_EXPLOSION_MARKER {
-                        PARTICLE_EXPLOSION_COUNT
+                        EXPLOSION_PARTICLES
                     } else {
                         msgcount
                     };
@@ -1676,7 +1684,11 @@ impl Client {
             }
             self.items = items;
         }
-        self.onground = bits & SU_ONGROUND != 0;
+        self.onground = if bits & SU_ONGROUND != 0 {
+            Footing::OnGround
+        } else {
+            Footing::InAir
+        };
         self.inwater = bits & SU_INWATER != 0;
         self.stats[stat::WEAPONFRAME] = if bits & SU_WEAPONFRAME != 0 {
             r.byte()
@@ -1822,8 +1834,8 @@ impl Client {
             }
             TE_LIGHTNING1 | TE_LIGHTNING2 | TE_LIGHTNING3 | TE_BEAM => {
                 let model = match kind {
-                    TE_LIGHTNING1 => 1,
-                    TE_LIGHTNING2 => 2,
+                    TE_LIGHTNING1 => LIGHTNING1_MODEL,
+                    TE_LIGHTNING2 => LIGHTNING2_MODEL,
                     TE_LIGHTNING3 => LIGHTNING3_MODEL,
                     _ => BEAM_MODEL,
                 };
@@ -2058,77 +2070,43 @@ impl Client {
             if effects & EF_BRIGHTLIGHT != 0 {
                 let radius = BRIGHT_RADIUS + int_to_float(rand.rand() & LIGHT_JITTER);
                 let dl = self.alloc_dlight(n);
-                dl.origin = [origin[0], origin[1], origin[2] + FLASH_UP];
+                dl.origin = [origin[0], origin[1], origin[2] + BRIGHT_UP];
                 dl.radius = radius;
                 dl.die = time + ONE_FRAME;
             }
             if effects & EF_DIMLIGHT != 0 {
-                let radius = FLASH_RADIUS + int_to_float(rand.rand() & LIGHT_JITTER);
+                let radius = DIM_RADIUS + int_to_float(rand.rand() & LIGHT_JITTER);
                 let dl = self.alloc_dlight(n);
                 dl.origin = origin;
                 dl.radius = radius;
                 dl.die = time + ONE_FRAME;
             }
-            if model_flags & flags::GIB != 0 {
+            // The first of the model's trail flags, in `CL_RelinkEntities`' order.
+            let trail = [
+                (flags::GIB, Trail::Blood),
+                (flags::ZOMGIB, Trail::SlightBlood),
+                (flags::TRACER, Trail::Tracer),
+                (flags::TRACER2, Trail::Tracer2),
+                (flags::ROCKET, Trail::Rocket),
+                (flags::GRENADE, Trail::Smoke),
+                (flags::TRACER3, Trail::Voor),
+            ]
+            .into_iter()
+            .find(|&(flag, _)| model_flags & flag != 0);
+            if let Some((_, trail)) = trail {
                 self.particles.rocket_trail(
                     rand,
                     time,
                     (oldorg, origin),
-                    Trail::Blood,
+                    trail,
                     TrailSpacing::Normal,
                 );
-            } else if model_flags & flags::ZOMGIB != 0 {
-                self.particles.rocket_trail(
-                    rand,
-                    time,
-                    (oldorg, origin),
-                    Trail::SlightBlood,
-                    TrailSpacing::Normal,
-                );
-            } else if model_flags & flags::TRACER != 0 {
-                self.particles.rocket_trail(
-                    rand,
-                    time,
-                    (oldorg, origin),
-                    Trail::Tracer,
-                    TrailSpacing::Normal,
-                );
-            } else if model_flags & flags::TRACER2 != 0 {
-                self.particles.rocket_trail(
-                    rand,
-                    time,
-                    (oldorg, origin),
-                    Trail::Tracer2,
-                    TrailSpacing::Normal,
-                );
-            } else if model_flags & flags::ROCKET != 0 {
-                self.particles.rocket_trail(
-                    rand,
-                    time,
-                    (oldorg, origin),
-                    Trail::Rocket,
-                    TrailSpacing::Normal,
-                );
-                let dl = self.alloc_dlight(n);
-                dl.origin = origin;
-                dl.radius = ROCKET_LIGHT_RADIUS;
-                dl.die = time + ROCKET_LIGHT_TIME;
-            } else if model_flags & flags::GRENADE != 0 {
-                self.particles.rocket_trail(
-                    rand,
-                    time,
-                    (oldorg, origin),
-                    Trail::Smoke,
-                    TrailSpacing::Normal,
-                );
-            } else if model_flags & flags::TRACER3 != 0 {
-                self.particles.rocket_trail(
-                    rand,
-                    time,
-                    (oldorg, origin),
-                    Trail::Voor,
-                    TrailSpacing::Normal,
-                );
+                if trail == Trail::Rocket {
+                    let dl = self.alloc_dlight(n);
+                    dl.origin = origin;
+                    dl.radius = ROCKET_LIGHT_RADIUS;
+                    dl.die = time + ROCKET_LIGHT_TIME;
+                }
             }
             let _ = forcelink;
             if i == viewentity {
@@ -2162,7 +2140,7 @@ impl Client {
             .map(|m| ent.setup_alias_frame(m, time, lerp));
         SceneEntity {
             entity: EntitySlot::new(i),
-            model: ent.model,
+            model: ModelIndex::new(ent.model),
             origin,
             angles,
             frame: ent.frame,
@@ -2207,7 +2185,7 @@ impl Client {
             let (yaw, pitch) = if dist[1] == 0.0 && dist[0] == 0.0 {
                 (0.0, if dist[2] > 0.0 { PITCH_UP } else { PITCH_DOWN })
             } else {
-                let yaw = f64::from(dist[1]).atan2(f64::from(dist[0])) * HALF_TURN_F64
+                let yaw = f64::from(dist[1]).atan2(f64::from(dist[0])) * f64::from(HALF_TURN)
                     / core::f64::consts::PI;
                 let mut yaw = int_to_float(double_to_int(yaw));
                 if yaw < 0.0 {
@@ -2215,7 +2193,7 @@ impl Client {
                 }
                 let forward =
                     double_to_float(f64::from(dist[0] * dist[0] + dist[1] * dist[1]).sqrt());
-                let pitch = f64::from(dist[2]).atan2(f64::from(forward)) * HALF_TURN_F64
+                let pitch = f64::from(dist[2]).atan2(f64::from(forward)) * f64::from(HALF_TURN)
                     / core::f64::consts::PI;
                 let mut pitch = int_to_float(double_to_int(pitch));
                 if pitch < 0.0 {
@@ -2236,10 +2214,10 @@ impl Client {
                     return;
                 }
                 count = count.saturating_add(1);
-                let roll = int_to_float(rand.rand().checked_rem(FULL_TURN_DEGREES).unwrap_or(0));
+                let roll = int_to_float(rand.rand().checked_rem(BEAM_ROLLS).unwrap_or(0));
                 self.visedicts.push(SceneEntity {
                     entity: EntitySlot::NONE,
-                    model,
+                    model: ModelIndex::new(model),
                     origin: org,
                     angles: [pitch, yaw, roll],
                     frame: 0,
@@ -2271,20 +2249,18 @@ impl Client {
     }
 }
 
-/// `CL_ParseBaseline` (CLIENT-1.3).
 impl Reader<'_> {
-    /// `CL_ParseBaseline`: a baseline's model, frame, colormap, skin, origin and angles.
+    /// `CL_ParseBaseline` (CLIENT-1.3): a baseline's model, frame, colormap, skin, origin and angles.
     fn baseline(&mut self) -> Baseline {
-        let r = self;
-        let modelindex = usize::try_from(r.byte()).unwrap_or(0);
-        let frame = r.byte();
-        let colormap = r.byte();
-        let skin = r.byte();
+        let modelindex = usize::try_from(self.byte()).unwrap_or(0);
+        let frame = self.byte();
+        let colormap = self.byte();
+        let skin = self.byte();
         let mut origin = [0.0; AXES];
         let mut angles = [0.0; AXES];
         for (o, a) in origin.iter_mut().zip(angles.iter_mut()) {
-            *o = r.coord();
-            *a = r.angle();
+            *o = self.coord();
+            *a = self.angle();
         }
         Baseline {
             origin,
@@ -2298,14 +2274,13 @@ impl Reader<'_> {
     }
 }
 
-/// `R_SetupAliasFrame` (CLIENT-7.3): the poses an entity blends this frame.
 impl Entity {
-    /// `R_SetupAliasFrame`, `lerp.models` its `r_lerpmodels`.
+    /// `R_SetupAliasFrame` (CLIENT-7.3): the poses the entity blends this frame, `lerp.models`
+    /// its `r_lerpmodels`.
     fn setup_alias_frame(&mut self, model: &ModelInfo, time: f32, lerp: LerpSettings) -> PoseBlend {
-        let ent = self;
         let lerp_models = lerp.models;
         let frame = model
-            .frame(usize::try_from(ent.frame).unwrap_or(usize::MAX))
+            .frame(usize::try_from(self.frame).unwrap_or(usize::MAX))
             .unwrap_or(FrameInfo {
                 first_pose: 0,
                 poses: 1,
@@ -2314,44 +2289,44 @@ impl Entity {
         let mut posenum = frame.first_pose;
         let numposes = frame.poses;
         if numposes > 1 {
-            ent.lerp.time = frame.interval;
-            let step = double_to_int(f64::from(time / ent.lerp.time));
+            self.lerp.time = frame.interval;
+            let step = double_to_int(f64::from(time / self.lerp.time));
             let step = usize::try_from(step).unwrap_or(0);
             posenum = posenum.saturating_add(step.checked_rem(numposes).unwrap_or(0));
         } else {
-            ent.lerp.time = CLIENT_LERP_SINGLE_POSE;
+            self.lerp.time = CLIENT_LERP_SINGLE_POSE;
         }
-        if ent.lerpflags.reset_anim {
-            ent.lerp.start = 0.0;
-            ent.lerp.previous_pose = posenum;
-            ent.lerp.current_pose = posenum;
-            ent.lerpflags.reset_anim = false;
-        } else if ent.lerp.current_pose != posenum {
-            if ent.lerpflags.reset_anim2 {
-                ent.lerp.start = 0.0;
-                ent.lerp.previous_pose = posenum;
-                ent.lerp.current_pose = posenum;
-                ent.lerpflags.reset_anim2 = false;
+        if self.lerpflags.reset_anim {
+            self.lerp.start = 0.0;
+            self.lerp.previous_pose = posenum;
+            self.lerp.current_pose = posenum;
+            self.lerpflags.reset_anim = false;
+        } else if self.lerp.current_pose != posenum {
+            if self.lerpflags.reset_anim2 {
+                self.lerp.start = 0.0;
+                self.lerp.previous_pose = posenum;
+                self.lerp.current_pose = posenum;
+                self.lerpflags.reset_anim2 = false;
             } else {
-                ent.lerp.start = f64::from(time);
-                ent.lerp.previous_pose = ent.lerp.current_pose;
-                ent.lerp.current_pose = posenum;
+                self.lerp.start = f64::from(time);
+                self.lerp.previous_pose = self.lerp.current_pose;
+                self.lerp.current_pose = posenum;
             }
         }
         if lerp_models && !model.nolerp {
             let blend =
-                double_to_float((f64::from(time) - ent.lerp.start) / f64::from(ent.lerp.time));
+                double_to_float((f64::from(time) - self.lerp.start) / f64::from(self.lerp.time));
             let blend = blend.clamp(0.0, 1.0);
             #[expect(
                 clippy::float_cmp,
                 reason = "spec CLIENT-7.3: a blend of exactly 1 makes the previous pose the current"
             )]
             if blend == 1.0 {
-                ent.lerp.previous_pose = ent.lerp.current_pose;
+                self.lerp.previous_pose = self.lerp.current_pose;
             }
             PoseBlend {
-                previous: ent.lerp.previous_pose,
-                current: ent.lerp.current_pose,
+                previous: self.lerp.previous_pose,
+                current: self.lerp.current_pose,
                 blend,
             }
         } else {
@@ -2362,30 +2337,27 @@ impl Entity {
             }
         }
     }
-}
 
-impl Entity {
     /// `R_SetupEntityTransform` (CLIENT-7.4): where the entity is drawn this frame, `lerp.moves`
     /// its `r_lerpmove`.
     fn setup_transform(&mut self, time: f32, lerp: LerpSettings) -> ([f32; 3], [f32; 3]) {
-        let ent = self;
-        if ent.lerpflags.reset_move {
-            ent.lerp.move_start = 0.0;
-            ent.lerp.previous_origin = ent.origin;
-            ent.lerp.current_origin = ent.origin;
-            ent.lerp.previous_angles = ent.angles;
-            ent.lerp.current_angles = ent.angles;
-            ent.lerpflags.reset_move = false;
-        } else if ent.moved() {
-            ent.lerp.move_start = f64::from(time);
-            ent.lerp.previous_origin = ent.lerp.current_origin;
-            ent.lerp.current_origin = ent.origin;
-            ent.lerp.previous_angles = ent.lerp.current_angles;
-            ent.lerp.current_angles = ent.angles;
+        if self.lerpflags.reset_move {
+            self.lerp.move_start = 0.0;
+            self.lerp.previous_origin = self.origin;
+            self.lerp.current_origin = self.origin;
+            self.lerp.previous_angles = self.angles;
+            self.lerp.current_angles = self.angles;
+            self.lerpflags.reset_move = false;
+        } else if self.moved() {
+            self.lerp.move_start = f64::from(time);
+            self.lerp.previous_origin = self.lerp.current_origin;
+            self.lerp.current_origin = self.origin;
+            self.lerp.previous_angles = self.lerp.current_angles;
+            self.lerp.current_angles = self.angles;
         }
-        if lerp.moves && ent.lerpflags.movestep {
+        if lerp.moves && self.lerpflags.movestep {
             let blend = double_to_float(
-                (f64::from(time) - ent.lerp.move_start) / f64::from(CLIENT_LERP_MOVE_TIME),
+                (f64::from(time) - self.lerp.move_start) / f64::from(CLIENT_LERP_MOVE_TIME),
             )
             .clamp(0.0, 1.0);
             let mut origin = [0.0; AXES];
@@ -2393,16 +2365,16 @@ impl Entity {
             for i in 0..AXES {
                 let (Some(o), Some(p), Some(c)) = (
                     origin.get_mut(i),
-                    ent.lerp.previous_origin.get(i),
-                    ent.lerp.current_origin.get(i),
+                    self.lerp.previous_origin.get(i),
+                    self.lerp.current_origin.get(i),
                 ) else {
                     break;
                 };
                 *o = p + (c - p) * blend;
                 let (Some(a), Some(p), Some(c)) = (
                     angles.get_mut(i),
-                    ent.lerp.previous_angles.get(i),
-                    ent.lerp.current_angles.get(i),
+                    self.lerp.previous_angles.get(i),
+                    self.lerp.current_angles.get(i),
                 ) else {
                     break;
                 };
@@ -2417,18 +2389,16 @@ impl Entity {
             }
             (origin, angles)
         } else {
-            (ent.origin, ent.angles)
+            (self.origin, self.angles)
         }
     }
-}
 
-/// `VectorCompare`: whether the origin or the angles differ from the current lerp targets
-/// exactly (CLIENT-7.4).
-#[expect(
-    clippy::float_cmp,
-    reason = "spec CLIENT-7.4: an origin or angles that differ at all start a new move lerp"
-)]
-impl Entity {
+    /// `VectorCompare`: whether the origin or the angles differ from the current lerp targets
+    /// exactly (CLIENT-7.4).
+    #[expect(
+        clippy::float_cmp,
+        reason = "spec CLIENT-7.4: an origin or angles that differ at all start a new move lerp"
+    )]
     fn moved(&self) -> bool {
         self.origin != self.lerp.current_origin || self.angles != self.lerp.current_angles
     }

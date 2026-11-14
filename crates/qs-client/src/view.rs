@@ -10,6 +10,7 @@
 //!
 //! Implements VIEW-1 to VIEW-4.
 
+use crate::client::ModelIndex;
 use qc_builtins::math::{anglemod, makevectors, vector_normalize};
 use qc_vm::convert::{double_to_float, double_to_int, float_to_int, int_to_float};
 
@@ -66,8 +67,10 @@ const BOB_SWING: f32 = 0.7;
 const BOB_MIN: f32 = -7.0;
 const BOB_MAX: f32 = 4.0;
 /// Half a turn and a whole one, in degrees (VIEW-3.5).
-const HALF_TURN: f32 = 180.0;
-const FULL_TURN: f32 = 360.0;
+pub(crate) const HALF_TURN: f32 = 180.0;
+pub(crate) const FULL_TURN: f32 = 360.0;
+/// A vector's components, `vec3_t`'s three (`mathlib.h`: "`typedef vec_t vec3_t[3];`").
+pub(crate) const AXES: usize = 3;
 /// The gamma table's entries, and its largest value (VIEW-4.7).
 const GAMMA_ENTRIES: usize = 256;
 const GAMMA_MAX: i32 = 255;
@@ -186,7 +189,7 @@ impl Default for ViewSettings {
     fn default() -> Self {
         Self {
             idlescale: VIEW_IDLESCALE,
-            offsets: <[f32; 3]>::default(),
+            offsets: [0.0; AXES],
             viewsize: VIEW_VIEWSIZE,
             cshiftpercent: VIEW_CSHIFTPERCENT,
             gamma: 1.0,
@@ -254,7 +257,7 @@ pub struct ViewInput {
     /// `cl.punchangle`.
     pub punchangle: [f32; 3],
     /// `cl.onground`.
-    pub onground: bool,
+    pub onground: Footing,
     /// `STAT_HEALTH`.
     pub health: i32,
     /// `cl.intermission` is on.
@@ -280,7 +283,7 @@ pub struct Refdef {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Weapon {
     /// Its model index, 0 for none.
-    pub model: usize,
+    pub model: ModelIndex,
     /// Its origin.
     pub origin: [f32; 3],
     /// Its angles.
@@ -606,7 +609,7 @@ impl ViewState {
             *v += p;
         }
         // VIEW-3.7: smoothed stepping.
-        if input.onground && oz - self.oldz > 0.0 {
+        if input.onground == Footing::OnGround && oz - self.oldz > 0.0 {
             let steptime = input.frametime.max(0.0);
             self.oldz += steptime * STEP_SPEED;
             if self.oldz > oz {
@@ -625,7 +628,7 @@ impl ViewState {
             angles: viewangles,
             entity_angles,
             weapon: Weapon {
-                model: weapon_model,
+                model: ModelIndex::new(weapon_model),
                 origin: weapon_origin,
                 angles: weapon_angles,
                 frame: weapon_frame,
@@ -687,11 +690,13 @@ fn add_idle(angles: &mut [f32; 3], time: f32, idlescale: f32) {
 }
 
 /// How much `scr_viewsize` lifts the weapon (VIEW-3.6).
+#[expect(
+    clippy::float_cmp,
+    reason = "spec VIEW-3.6: the lift is chosen by the view size's exact value"
+)]
 fn viewsize_lift(viewsize: f32) -> f32 {
     VIEWSIZE_LIFTS
         .iter()
-        // VIEW-3.6: chosen by the view size's exact value; for these sizes, none 0 or NaN,
-        // `total_cmp` is C's `==`.
-        .find(|&&(size, _)| size.total_cmp(&viewsize).is_eq())
+        .find(|&&(size, _)| size == viewsize)
         .map_or(0.0, |&(_, lift)| lift)
 }

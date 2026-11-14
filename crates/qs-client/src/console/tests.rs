@@ -229,7 +229,7 @@ fn the_console_draws_its_rows() {
         HudItem::ConsoleBack {
             lines: 240,
             height: 480,
-            forced: false
+            forced: ConsoleHold::Sliding
         }
     );
     // 28 rows from y 0: the newest, beta, at 27 * 8 = 216.
@@ -431,7 +431,7 @@ fn quakespasm_lays_out_its_rows_from_the_bottom() {
         HudItem::ConsoleBack {
             lines: 240,
             height: 480,
-            forced: false
+            forced: ConsoleHold::Sliding
         }
     );
     // 30 rows, 28 of text: moved up by 240, the newest at 480 - 16 - 8 - 240.

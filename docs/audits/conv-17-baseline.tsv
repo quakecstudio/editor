@@ -122,7 +122,6 @@ bool-argument	crates/qs-editor-view/src/view.rs	fold_mark
 bool-argument	crates/qs-editor-view/src/vim.rs	Vim::put
 bool-argument	crates/qs-editor-view/src/vim.rs	step_right
 bool-argument	crates/qs-render/src/alias.rs	shade_light
-bool-argument	crates/qs-render/src/look.rs	Look::console_alpha
 bool-argument	crates/qs-render/src/md5.rs	Md5Model::read
 bool-argument	crates/qs-render/src/play.rs	Play::canvas
 bool-argument	crates/qs-render/src/play.rs	quad

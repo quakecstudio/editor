@@ -47,7 +47,7 @@ const NOWHERE: [f32; 3] = [0.0; 3];
 
 /// `R_ParticleExplosion`'s and `R_BlobExplosion`'s particles, and the count
 /// `R_RunParticleEffect` takes as an explosion (PART-2.1, PART-2.3, PART-2.4).
-const EXPLOSION_PARTICLES: i32 = 1024;
+pub(crate) const EXPLOSION_PARTICLES: i32 = 1024;
 /// An explosion particle's life in seconds, and its starting ramp's mask (PART-2.1).
 const EXPLOSION_LIFE: f32 = 5.0;
 const EXPLOSION_RAMP_MASK: i32 = 3;
@@ -66,6 +66,10 @@ const BLOB_COLORS: i32 = 6;
 const EFFECT_LIFE_STEPS: i32 = 5;
 const EFFECT_LIFE_STEP: f32 = 0.1;
 const COLOR_SPREAD: i32 = 7;
+/// `rand() & 7`: the lava splash's jitter within a cell (PART-2.5).
+const CELL_JITTER_MASK: i32 = 7;
+/// `(rand() & 7) * 0.02`: the teleport splash's extra life (PART-2.6).
+const TELEPORT_LIFE_MASK: i32 = 7;
 const JITTER_MASK: i32 = 15;
 const JITTER_CENTRE: i32 = 8;
 const EFFECT_SPEED: f32 = 15.0;
@@ -373,8 +377,8 @@ impl Particles {
                 let die = time + LAVA_LIFE + life;
                 let color = LAVA_COLOR.wrapping_add(rand.rand() & COLOR_SPREAD);
                 let cell = |n: i32, r: i32| n.wrapping_mul(SPLASH_CELL).wrapping_add(r);
-                let dx = int_to_float(cell(j, rand.rand() & COLOR_SPREAD));
-                let dy = int_to_float(cell(i, rand.rand() & COLOR_SPREAD));
+                let dx = int_to_float(cell(j, rand.rand() & CELL_JITTER_MASK));
+                let dy = int_to_float(cell(i, rand.rand() & CELL_JITTER_MASK));
                 let dir = [dx, dy, LAVA_UP];
                 let [ox, oy, oz] = org;
                 let origin = [
@@ -398,7 +402,7 @@ impl Particles {
         for i in (-SPLASH_HALF..SPLASH_HALF).step_by(TELEPORT_STEP) {
             for j in (-SPLASH_HALF..SPLASH_HALF).step_by(TELEPORT_STEP) {
                 for k in (TELEPORT_LOW..TELEPORT_HIGH).step_by(TELEPORT_STEP) {
-                    let life = int_to_float(rand.rand() & COLOR_SPREAD) * SPLASH_LIFE_STEP;
+                    let life = int_to_float(rand.rand() & TELEPORT_LIFE_MASK) * SPLASH_LIFE_STEP;
                     let die = time + TELEPORT_LIFE + life;
                     let color = TELEPORT_COLOR.wrapping_add(rand.rand() & COLOR_SPREAD);
                     let dir = [

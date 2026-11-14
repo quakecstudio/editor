@@ -519,7 +519,7 @@ fn every_command_is_read() {
             Event::CenterPrint(b"centred".to_vec()),
             Event::StuffText(b"cmd\n".to_vec()),
             Event::StopSound {
-                entity: 5,
+                entity: SoundEntity::new(5),
                 channel: 2
             },
             Event::Pause(true),
@@ -885,7 +885,7 @@ fn the_client_data_is_read() {
     let bytes = m.take();
     frame(&mut client, 0.25, std::slice::from_ref(&bytes));
     assert_eq!(client.idealpitch(), -5.0);
-    assert!(client.onground() && client.inwater());
+    assert!(client.onground() == Footing::OnGround && client.inwater());
     assert_eq!(client.items(), 5 | 32);
     assert_eq!(client.item_gettime()[0], 0.25);
     assert_eq!(client.item_gettime()[5], 0.25);
@@ -904,7 +904,11 @@ fn the_client_data_is_read() {
         "the view height, no bob at rest, the nudge bounded at 30 above the origin"
     );
     frame(&mut client, 0.1, &[datagram(1.0, &[])]);
-    assert!(!client.onground(), "cleared by the next message");
+    assert_eq!(
+        client.onground(),
+        Footing::InAir,
+        "cleared by the next message"
+    );
     assert_eq!(client.idealpitch(), 0.0);
     assert_eq!(client.stats()[stat::ARMOR], 0);
     let mut pack = Client::new(Game::MissionPack);
@@ -1143,7 +1147,7 @@ fn relinking_interpolates_and_drops() {
         1,
         "the player, the view entity, is not drawn"
     );
-    assert_eq!(scene.entities[0].model, THING);
+    assert_eq!(scene.entities[0].model.get(), THING);
     frame(
         &mut client,
         0.05,
@@ -1435,7 +1439,11 @@ fn temporary_entities_and_beams() {
         )
         .unwrap();
     let scene = client.scene();
-    let bolts: Vec<_> = scene.entities.iter().filter(|e| e.model == BOLT).collect();
+    let bolts: Vec<_> = scene
+        .entities
+        .iter()
+        .filter(|e| e.model.get() == BOLT)
+        .collect();
     assert_eq!(bolts.len(), 3);
     assert_eq!(bolts[0].origin, [0.0; 3]);
     assert_eq!(bolts[1].origin, [30.0, 0.0, 0.0]);
@@ -1453,7 +1461,7 @@ fn temporary_entities_and_beams() {
             .scene()
             .entities
             .iter()
-            .filter(|e| e.model == BOLT)
+            .filter(|e| e.model.get() == BOLT)
             .count(),
         1,
         "the same entity's beam is replaced"
@@ -1466,7 +1474,7 @@ fn temporary_entities_and_beams() {
             .scene()
             .entities
             .iter()
-            .filter(|e| e.model == BOLT + 1)
+            .filter(|e| e.model.get() == BOLT + 1)
             .count(),
         0,
         "a beam of no length places nothing"
@@ -1483,7 +1491,7 @@ fn temporary_entities_and_beams() {
         .scene()
         .entities
         .iter()
-        .filter(|e| e.model == BOLT + 3)
+        .filter(|e| e.model.get() == BOLT + 3)
         .cloned()
         .collect();
     assert_eq!(beams.len(), 2);
@@ -1500,7 +1508,7 @@ fn temporary_entities_and_beams() {
         .scene()
         .entities
         .iter()
-        .find(|e| e.model == BOLT + 2)
+        .find(|e| e.model.get() == BOLT + 2)
         .copied()
         .unwrap();
     assert_eq!(bolt3.angles[1], 45.0, "yaw from atan2");
@@ -1515,7 +1523,7 @@ fn temporary_entities_and_beams() {
             .scene()
             .entities
             .iter()
-            .all(|e| e.model < BOLT || e.model > BOLT + 3),
+            .all(|e| e.model.get() < BOLT || e.model.get() > BOLT + 3),
         "every beam ended"
     );
     for i in 0..CLIENT_MAX_TEMP_ENTITIES as i32 + 10 {
@@ -1526,7 +1534,7 @@ fn temporary_entities_and_beams() {
             .scene()
             .entities
             .iter()
-            .filter(|e| e.model == BOLT)
+            .filter(|e| e.model.get() == BOLT)
             .count(),
         24,
         "24 beams, one segment each"
@@ -1553,7 +1561,7 @@ fn temporary_entities_and_beams() {
         .scene()
         .entities
         .iter()
-        .filter(|e| e.model == BOLT)
+        .filter(|e| e.model.get() == BOLT)
         .cloned()
         .collect();
     assert_eq!(
@@ -1569,7 +1577,7 @@ fn temporary_entities_and_beams() {
             .scene()
             .entities
             .iter()
-            .filter(|e| e.model == BOLT)
+            .filter(|e| e.model.get() == BOLT)
             .count(),
         CLIENT_MAX_TEMP_ENTITIES
     );
@@ -2303,7 +2311,7 @@ fn the_eye_and_the_weapon() {
         velocity: [0.0; 3],
         viewheight: 22.0,
         punchangle: [0.0, 0.0, 1.0],
-        onground: true,
+        onground: Footing::OnGround,
         health: 100,
         intermission: false,
         weapon: (3, 2),
@@ -2312,7 +2320,7 @@ fn the_eye_and_the_weapon() {
     // does: prime it in the air.
     view.render(
         &ViewInput {
-            onground: false,
+            onground: Footing::InAir,
             ..still
         },
         &settings,
@@ -2324,7 +2332,7 @@ fn the_eye_and_the_weapon() {
     );
     assert_eq!(r.angles, [5.0, 90.0, 1.0], "the punch angle added");
     assert_eq!(r.entity_angles, [-5.0, 90.0, 0.0]);
-    assert_eq!(r.weapon.model, 3);
+    assert_eq!(r.weapon.model.get(), 3);
     assert_eq!(r.weapon.frame, 2);
     assert_eq!(
         r.weapon.origin,
@@ -2367,7 +2375,7 @@ fn the_eye_and_the_weapon() {
     let mut fresh = ViewState::default();
     fresh.render(
         &ViewInput {
-            onground: false,
+            onground: Footing::InAir,
             ..still
         },
         &settings,
@@ -2396,7 +2404,7 @@ fn the_eye_and_the_weapon() {
     let mut stepping = ViewState::default();
     stepping.render(
         &ViewInput {
-            onground: false,
+            onground: Footing::InAir,
             ..still
         },
         &settings,
@@ -2428,7 +2436,7 @@ fn the_eye_and_the_weapon() {
     };
     let r = view.render(&inter, &settings);
     assert_eq!(r.origin, still.origin);
-    assert_eq!(r.weapon.model, 0);
+    assert_eq!(r.weapon.model.get(), 0);
     assert!((r.angles[1] - (2.0 + (1.0_f32).sin() * 0.3)).abs() < 1e-3);
     let mut client = Client::new(Game::Standard);
     assert_eq!(client.scene().view.origin, [0.0; 3], "no map yet");
@@ -2540,7 +2548,7 @@ fn hud_input<'a>(
         levelname: b"Test",
         intermission: 0,
         completed_time: 0.0,
-        showscores: false,
+        showscores: Scores::Hidden,
         lines: 48,
     }
 }
@@ -2659,7 +2667,7 @@ fn the_status_bar_shows_the_player() {
     stats3[stat::HEALTH] = 50;
     let shown = HudInput {
         stats: &stats3,
-        showscores: true,
+        showscores: Scores::Shown,
         ..input.clone()
     };
     assert!(
@@ -2843,7 +2851,7 @@ fn the_scoreboards() {
         },
     ];
     let mut input = hud_input(&stats, &gettime, &scores);
-    input.showscores = true;
+    input.showscores = Scores::Shown;
     input.time = 65.0;
     input.levelname = b"the Slipgate";
     let bar = input.status_bar(200);
@@ -3205,7 +3213,7 @@ fn the_weapon_follows_the_kicked_view() {
         velocity: [0.0; 3],
         viewheight: 22.0,
         punchangle: [0.0; 3],
-        onground: true,
+        onground: Footing::OnGround,
         health: 100,
         intermission: false,
         weapon: (3, 2),

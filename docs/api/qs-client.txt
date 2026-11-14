@@ -25,6 +25,7 @@ const qs_client::client::CLIENT_TENT_SOUNDS
 const qs_client::client::ClientLimits::QUAKESPASM
 const qs_client::client::ClientLimits::WINQUAKE
 const qs_client::client::HUD_DEFAULT_LINES
+const qs_client::client::ModelIndex::NONE
 const qs_client::client::SoundEntity::TEMPORARY
 const qs_client::client::stat::ACTIVEWEAPON
 const qs_client::client::stat::AMMO
@@ -335,6 +336,7 @@ fn qs_client::client::Client::view_settings
 fn qs_client::client::Client::viewangles
 fn qs_client::client::Client::viewentity
 fn qs_client::client::Client::with_limits
+fn qs_client::client::ModelIndex::get
 fn qs_client::client::ModelIndex::new
 fn qs_client::client::SoundEntity::get
 fn qs_client::client::SoundEntity::new
