@@ -9,6 +9,7 @@ use qs_map::qbsp::{QbspMap, load_map_file};
 use qs_wad::Wad;
 
 use crate::brush::BrushSet;
+use crate::extended::process as extended;
 
 use crate::math::{ORIGIN, Vec3, each};
 use crate::merge::merge_all;
@@ -295,14 +296,7 @@ impl Compiler {
         Ok(match self.dialect {
             Dialect::Id => load_map_file(map)?,
             Dialect::Extended => {
-                let file = MapFile::parse(map).map_err(CompileError::Document)?;
-                let file = match load {
-                    Some(load) => file
-                        .with_external_maps(load)
-                        .map_err(CompileError::ExternalMap)?,
-                    None => file,
-                };
-                QbspMap::from_map_file(&with_world_brush_entities(file))?
+                QbspMap::from_map_file(&with_world_brush_entities(extended_file(map, load)?))?
             }
         })
     }
@@ -313,7 +307,10 @@ impl Compiler {
     ///
     /// The [`CompileError`] qbsp stops with.
     pub fn compile(&self, map: &[u8], wad: Option<&[u8]>) -> Result<Compiled, CompileError> {
-        self.compile_read(self.read(map)?, wad)
+        match self.dialect {
+            Dialect::Id => self.compile_read(self.read(map)?, wad),
+            Dialect::Extended => extended::compile(&extended_file(map, None)?, wad),
+        }
     }
 
     /// Compiles `map` with the textures of `wad`, its external map instances expanded first
@@ -330,7 +327,10 @@ impl Compiler {
         wad: Option<&[u8]>,
         load: Load<'_>,
     ) -> Result<Compiled, CompileError> {
-        self.compile_read(self.read_with(map, Some(load))?, wad)
+        match self.dialect {
+            Dialect::Id => self.compile_read(self.read_with(map, Some(load))?, wad),
+            Dialect::Extended => extended::compile(&extended_file(map, Some(load))?, wad),
+        }
     }
 
     /// Compiles the map read, `qmap`, with the textures of `wad` (QBSP-1).
@@ -392,6 +392,18 @@ impl Compiler {
 /// The textures lump, `WriteMiptex`: a slot per texture the map uses and each animation frame
 /// the WAD holds, each lump copied from the WAD, -1 for one it lacks; empty with no WAD
 /// (MAP-6.3, MAP-6.8).
+/// The map as the extended dialect reads it, its external map instances expanded with the
+/// files `load` reads, when given (QBSP-14.1, QBSP-14.7).
+fn extended_file(map: &[u8], load: Option<Load<'_>>) -> Result<MapFile, CompileError> {
+    let file = MapFile::parse(map).map_err(CompileError::Document)?;
+    match load {
+        Some(load) => file
+            .with_external_maps(load)
+            .map_err(CompileError::ExternalMap),
+        None => Ok(file),
+    }
+}
+
 fn textures(
     map: &QbspMap,
     wad: Option<&[u8]>,

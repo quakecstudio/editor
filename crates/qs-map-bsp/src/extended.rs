@@ -17,10 +17,14 @@
 
 pub(crate) mod brush;
 pub(crate) mod chop;
+pub(crate) mod faces;
 pub(crate) mod game;
 pub(crate) mod map;
+pub(crate) mod output;
 pub(crate) mod outside;
 pub(crate) mod portals;
+pub(crate) mod process;
+pub(crate) mod prt;
 pub(crate) mod tree;
 pub(crate) mod vec;
 pub(crate) mod winding;

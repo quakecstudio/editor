@@ -3,6 +3,7 @@
 // Copyright (C) 1997       Greg Lewis
 // Copyright (C) 2026 QuakeC Studio contributors
 //
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: qbsp/tree.cc, ConvertNodeToLeaf, PruneNodes_R, PruneNodes
 // Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: qbsp/brushbsp.cc, BrushFromBounds, BrushVolume, BoxOnPlaneSide, TestBrushToPlanenum, LeafNode, BrushMostlyOnSide, SplitBrush, CheckSplitBrush, CheckPlaneAgainstVolume, DivideBounds, SplitPlaneMetric, ChooseMidPlaneFromList, SelectSplitPlane, SplitBrushList, BuildTree_r, BrushBSP
 
 //! The brush BSP, ericw-tools' `BrushBSP` after Quake II's (QBSP-15.25 to QBSP-15.29): a tree
@@ -11,6 +12,7 @@
 //! contents of the brushes left in it.
 
 use super::brush::{BspBrush, OriginalNum, Side, SideMarks, VisibleFaces};
+use super::faces::{Face, FaceId};
 use super::game::Contents;
 use super::map::{EntityNum, SIDESPACE, SideKind, SurfFlags, Texinfos};
 use super::portals::{Portal, PortalId};
@@ -133,6 +135,8 @@ pub(crate) struct Leaf {
     pub(crate) occupied: u32,
     /// The entity in it, `occupant`.
     pub(crate) occupant: Option<EntityNum>,
+    /// The faces it touches, `markfaces`.
+    pub(crate) markfaces: Vec<FaceId>,
 }
 
 /// What a node is.
@@ -161,6 +165,8 @@ pub(crate) struct Node {
     pub(crate) kind: NodeKind,
     /// The portals on it, in the order they were added; `node_t::portals` is the reverse.
     pub(crate) portals: Vec<PortalId>,
+    /// The faces on its plane, `facelist`.
+    pub(crate) faces: Vec<FaceId>,
 }
 
 /// A tree, `tree_t`.
@@ -174,6 +180,8 @@ pub(crate) struct Tree {
     pub(crate) portals: Vec<Portal>,
     /// The solid leaf beyond the head's portals, `outside_node`, once portals are made.
     pub(crate) outside: Option<NodeId>,
+    /// Every face made, those on nodes and those merged away.
+    pub(crate) faces: Vec<Face>,
 }
 
 impl Tree {
@@ -201,6 +209,7 @@ impl Tree {
             volume: None,
             kind: NodeKind::Leaf(leaf),
             portals: Vec::new(),
+            faces: Vec::new(),
         }
     }
 
@@ -989,6 +998,53 @@ impl Builder<'_> {
     }
 }
 
+impl Tree {
+    /// The tree with each node of two leaves that are both any solid made one leaf,
+    /// `PruneNodes` (QBSP-15.47): children first; a detail wall leaf made solid; the merged
+    /// leaf's contents combined and its originals both lists' without repeats; the node's faces
+    /// dropped.
+    pub(crate) fn prune(&mut self) {
+        self.prune_below(Self::HEAD);
+    }
+
+    fn prune_below(&mut self, id: NodeId) {
+        let Some((_, [front, back], _)) = self.split_of(id) else {
+            if let Some(leaf) = self.leaf_data_mut(id)
+                && leaf.contents.is_detail_wall()
+            {
+                leaf.contents = Contents::new(Contents::SOLID);
+            }
+            return;
+        };
+        self.prune_below(front);
+        self.prune_below(back);
+        let (Some(a), Some(b)) = (self.leaf_data(front), self.leaf_data(back)) else {
+            return;
+        };
+        if !a.contents.is_any_solid() || !b.contents.is_any_solid() {
+            return;
+        }
+        let contents = Contents::combine(a.contents, b.contents);
+        let (base, other) = if a.original_brushes.len() > b.original_brushes.len() {
+            (a, b)
+        } else {
+            (b, a)
+        };
+        let mut original_brushes = base.original_brushes.clone();
+        original_brushes.extend(&other.original_brushes);
+        original_brushes.sort_unstable();
+        original_brushes.dedup();
+        if let Some(node) = self.node_mut(id) {
+            node.kind = NodeKind::Leaf(Leaf {
+                contents,
+                original_brushes,
+                ..Leaf::default()
+            });
+            node.faces.clear();
+        }
+    }
+}
+
 /// What building a tree from brushes takes besides them.
 pub(crate) struct BspInput<'a> {
     pub(crate) planes: &'a mut Planes,
@@ -1007,6 +1063,7 @@ impl BspInput<'_> {
             bounds,
             portals: Vec::new(),
             outside: None,
+            faces: Vec::new(),
         };
         if brushes.is_empty() {
             let head = tree.push(Tree::leaf(None, bounds, Leaf::default()));

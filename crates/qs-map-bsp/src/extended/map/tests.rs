@@ -374,4 +374,9 @@ fn origin_brushes_and_rotation() {
     assert_eq!(rotating.brushes[0].bounds.maxs, [4.0, 4.0, 4.0]);
     assert!(map.entities[6].brushes.is_empty());
     assert_eq!(map.entities[0].rotation, Rotation::None);
+    assert_eq!(map.entities[0].lmshift, 4);
+    assert_eq!(
+        [0.0, 0.5, 0.25, 2.0, 0.01].map(super::lmshift),
+        [4, 3, 2, 5, 4]
+    );
 }

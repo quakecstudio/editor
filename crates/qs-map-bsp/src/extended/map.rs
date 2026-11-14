@@ -12,7 +12,7 @@
 //! face's plane in double precision, its texinfo and surface flags, each brush's contents,
 //! bounds and bevels, origin brushes and the world's extent.
 
-use qs_map::cnum::{c_atoi, scan_vector};
+use qs_map::cnum::{c_atof, c_atoi, scan_vector};
 use qs_map::geometry::{TexVecs, texvecs};
 use qs_map::{Entity, Face, MapFile};
 
@@ -305,6 +305,30 @@ pub(crate) struct MapEntity {
     pub(crate) rotation: Rotation,
     /// The `origin` the compile writes in its place when it sets one.
     pub(crate) origin_key: Option<Vec3>,
+    /// Its faces' lightmap scale as a power of two, from `_lmscale` (QBSP-15.21).
+    pub(crate) lmshift: u32,
+}
+
+/// The texels of a luxel per unit of `_lmscale`.
+const LUXELS_PER_SCALE: f64 = 16.0;
+/// A lightmap luxel's size in texels with no `_lmscale`.
+const DEFAULT_LUXEL: i64 = 16;
+
+/// The lightmap shift of `_lmscale` `scale`, `ProcessMapBrushes` (QBSP-15.21): 16 times it,
+/// truncated, 16 when that is 0, then how many times it halves to 1.
+fn lmshift(scale: f64) -> u32 {
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "spec QBSP-15.21: `int i = 16 * get_float(\"_lmscale\")` truncates"
+    )]
+    let luxel = (LUXELS_PER_SCALE * scale) as i64;
+    let mut luxel = if luxel == 0 { DEFAULT_LUXEL } else { luxel };
+    let mut shift = 0_u32;
+    while luxel > 1 {
+        shift = shift.saturating_add(1);
+        luxel = luxel.checked_div(2).unwrap_or(0);
+    }
+    shift
 }
 
 /// A map's brushes, ready for each hull.
@@ -843,6 +867,7 @@ pub(crate) fn load(file: &MapFile, game: Game) -> LoadedMap {
                 origin: source.value(b"origin").map_or([0.0; AXES], scan_vector),
                 rotation: Rotation::None,
                 origin_key: None,
+                lmshift: lmshift(source.value(b"_lmscale").map_or(0.0, c_atof)),
             }
         })
         .collect();

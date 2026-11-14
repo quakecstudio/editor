@@ -47,6 +47,14 @@ pub(crate) enum PortalType {
     Vis,
 }
 
+/// Whether the six portals around the head start the tree's portals; the vis portals start
+/// from none.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum HeadPortals {
+    Used,
+    Unused,
+}
+
 /// A portal, `portal_t`.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Portal {
@@ -367,6 +375,11 @@ impl Portalizer<'_> {
 
     /// The tree's portals of `kind`, its old ones freed.
     pub(crate) fn make_portals(&self, tree: &mut Tree, kind: PortalType) {
+        self.make_portals_from(tree, kind, HeadPortals::Used);
+    }
+
+    /// The tree's portals of `kind` from the head's six or from none, its old ones freed.
+    pub(crate) fn make_portals_from(&self, tree: &mut Tree, kind: PortalType, head: HeadPortals) {
         tree.portals.clear();
         for node in &mut tree.nodes {
             node.portals.clear();
@@ -374,8 +387,11 @@ impl Portalizer<'_> {
         if let Some(outside) = tree.outside.take() {
             tree.nodes.truncate(outside.get());
         }
-        let head = self.head_portals(tree);
-        let built = self.tree_portals(tree, Tree::HEAD, kind, head);
+        let mut around = self.head_portals(tree);
+        if head == HeadPortals::Unused {
+            around.clear();
+        }
+        let built = self.tree_portals(tree, Tree::HEAD, kind, around);
         for p in built {
             let id = PortalId(tree.portals.len());
             for node in p.nodes {

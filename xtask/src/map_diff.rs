@@ -72,11 +72,6 @@ const FACE_TOLERANCE: f64 = 0.25;
 /// How many faces either way are within tolerance however small the map, where one brush cut
 /// another way is a large share.
 const FACE_SLACK: f64 = 8.0;
-/// What the extended dialect makes of a `func_detail_illusionary`, an entity ericw-tools leaves
-/// in the world (QBSP-14.8).
-const ILLUSIONARY: &str = "func_illusionary";
-/// The classname QBSP-14.8 turns into [`ILLUSIONARY`].
-const DETAIL_ILLUSIONARY: &str = "func_detail_illusionary";
 /// The classname of an instance of an external map (MAP-14).
 const EXTERNAL_MAP: &str = "misc_external_map";
 
@@ -228,11 +223,7 @@ pub(crate) fn main(
             }
             let (agrees, said) = match (ours, theirs) {
                 (Ok(ours), Ok(theirs)) => {
-                    let illusionaries = match dialect {
-                        Dialect::Id => 0,
-                        Dialect::Extended => count_classname(&text, DETAIL_ILLUSIONARY),
-                    };
-                    let comparison = compare(&ours, &theirs, args.traces, illusionaries)?;
+                    let comparison = compare(&ours, &theirs, args.traces)?;
                     (comparison.agrees(), comparison.to_string())
                 }
                 (Err(ours), Err(theirs)) => (true, format!("both stop: {ours}; {theirs}")),
@@ -403,28 +394,8 @@ fn nudged((from, to): ([f32; 3], [f32; 3])) -> Vec<([f32; 3], [f32; 3])> {
 /// The seed of every map's traces.
 const SEED: u64 = 0x5155_414b;
 
-/// How many entities of the map `text` have the classname `name`, in any case.
-fn count_classname(text: &[u8], name: &str) -> usize {
-    qs_map::MapFile::parse(text).map_or(0, |file| {
-        file.entities
-            .iter()
-            .filter(|entity| {
-                entity
-                    .classname()
-                    .is_some_and(|classname| classname.eq_ignore_ascii_case(name.as_bytes()))
-            })
-            .count()
-    })
-}
-
-/// The two compiles compared; ours has `illusionaries` more [`ILLUSIONARY`] entities, which the
-/// extended dialect makes where ericw-tools merges (QBSP-14.8).
-fn compare(
-    ours: &Compiled,
-    theirs: &Compiled,
-    traces: usize,
-    illusionaries: usize,
-) -> Result<Comparison, String> {
+/// The two compiles compared.
+fn compare(ours: &Compiled, theirs: &Compiled, traces: usize) -> Result<Comparison, String> {
     let a = Bsp::read(&ours.bsp, BspLoader::FitzQuake).map_err(|e| format!("our BSP: {e}"))?;
     let b = Bsp::read(&theirs.bsp, BspLoader::FitzQuake)
         .map_err(|e| format!("the oracle's BSP: {e}"))?;
@@ -475,15 +446,7 @@ fn compare(
     }
     Ok(Comparison {
         leaks: (ours.leaks, theirs.leaks),
-        entities_agree: {
-            let (mine, oracle) = (classnames(&a), classnames(&b));
-            let count = |names: &[String]| names.iter().filter(|n| *n == ILLUSIONARY).count();
-            let others = |names: Vec<String>| -> Vec<String> {
-                names.into_iter().filter(|n| n != ILLUSIONARY).collect()
-            };
-            count(&mine) == count(&oracle).saturating_add(illusionaries)
-                && others(mine) == others(oracle)
-        },
+        entities_agree: classnames(&a) == classnames(&b),
         faces: (a.faces.len(), b.faces.len()),
         traces: counts,
     })
