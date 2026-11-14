@@ -4,16 +4,15 @@
 
 use std::ffi::OsString;
 
-use qs_paths::{Platform, resolve};
+use qs_paths::Platform;
 
 use crate::{LOG_FILE_STEM, log_config};
 
 #[test]
 fn the_server_logs_to_its_own_file_in_the_log_directory() {
-    let dirs = resolve(Platform::Linux, |name| {
-        (name == "HOME").then(|| OsString::from("/home/q"))
-    })
-    .unwrap();
+    let dirs = Platform::Linux
+        .dirs(|name| (name == "HOME").then(|| OsString::from("/home/q")))
+        .unwrap();
     let config = log_config(&dirs);
     assert_eq!(config.dir, dirs.logs());
     assert_eq!(config.file_stem, "quakec-lsp");
