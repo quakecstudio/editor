@@ -26,6 +26,7 @@ use qs_client::DynamicLight;
 use crate::alias::rotate_for_entity;
 use crate::look::Look;
 use crate::styles::LightStyles;
+use crate::vector;
 use crate::{AXES, CHANNEL_MAX, RGBA_BYTES};
 
 /// A face with no texinfo's `vecs`.
@@ -853,7 +854,7 @@ impl Tree {
             return;
         };
         let (normal, dist) = node.plane;
-        let dist = dot3(light.origin, normal) - dist;
+        let dist = vector::dot(light.origin, normal) - dist;
         let [front, back] = node.children;
         if dist > light.radius {
             self.mark(light, bit, front, (faces, marks), depth);
@@ -874,10 +875,6 @@ impl Tree {
         self.mark(light, bit, front, (faces, marks), depth);
         self.mark(light, bit, back, (faces, marks), depth);
     }
-}
-
-fn dot3(a: [f32; 3], b: [f32; 3]) -> f32 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
 /// Every face's light, packed into rows of one texture with a full-bright texel at its corner
@@ -1078,7 +1075,7 @@ impl PlacedLight {
     /// clamped to the face's extents in texture space, within the radius of the light.
     fn reaches(&self, light: &DynamicLight) -> bool {
         let (normal, plane_dist) = self.plane;
-        let dist = dot3(light.origin, normal) - plane_dist;
+        let dist = vector::dot(light.origin, normal) - plane_dist;
         let impact = [
             light.origin[0] - normal[0] * dist,
             light.origin[1] - normal[1] * dist,
@@ -1089,7 +1086,7 @@ impl PlacedLight {
         let off = |vec: [f32; 4], size: usize, min: i16| -> f64 {
             let extent = truncate_i32(f32_of_usize(size.saturating_sub(1)) * TEXEL_UNITS);
             let [x, y, z, offset] = vec;
-            let l = dot3(impact, [x, y, z]) + offset - f32::from(min);
+            let l = vector::dot(impact, [x, y, z]) + offset - f32::from(min);
             let nearest = truncate_i32(l + HALF).clamp(0, extent.max(0));
             f64::from(truncate_i32(l - f32_of_i32(nearest)))
         };
@@ -1106,7 +1103,7 @@ impl PlacedLight {
     /// `R_AddDynamicLights` for one light (REND-7.2).
     fn add_dynamic_light(&self, light: &DynamicLight, sums: &mut [[u32; 3]]) {
         let (normal, plane_dist) = self.plane;
-        let dist = dot3(light.origin, normal) - plane_dist;
+        let dist = vector::dot(light.origin, normal) - plane_dist;
         let rad = light.radius - dist.abs();
         if rad < light.minlight {
             return;
@@ -1119,8 +1116,8 @@ impl PlacedLight {
         ];
         let [[sx, sy, sz, s_offset], [tx, ty, tz, t_offset]] = self.vecs;
         let local = [
-            dot3(impact, [sx, sy, sz]) + s_offset - f32::from(self.texturemins[0]),
-            dot3(impact, [tx, ty, tz]) + t_offset - f32::from(self.texturemins[1]),
+            vector::dot(impact, [sx, sy, sz]) + s_offset - f32::from(self.texturemins[0]),
+            vector::dot(impact, [tx, ty, tz]) + t_offset - f32::from(self.texturemins[1]),
         ];
         let [smax, tmax] = self.size;
         for t in 0..tmax {

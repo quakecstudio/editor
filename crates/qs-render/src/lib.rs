@@ -34,6 +34,7 @@ mod play;
 mod skybox;
 mod sprite;
 mod styles;
+mod vector;
 
 pub use alias::{
     AliasEntity, AliasError, AliasKind, AliasModel, AliasVertex, Shading, bob_rotate, entity_light,

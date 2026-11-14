@@ -15,6 +15,7 @@ use qs_mdl::spr::{
 };
 
 use crate::mesh::{Image, Palette};
+use crate::vector::{cross, dot};
 
 /// The palette index a sprite does not draw, `GL_LoadTexture (..., alpha)` with
 /// `TEXPREF_ALPHA` (REND-11.2).
@@ -317,18 +318,6 @@ pub(crate) fn angle_vectors([pitch, yaw, roll]: [f32; 3]) -> ([f32; 3], [f32; 3]
     let right = [-sr * sp * cy + cr * sy, -sr * sp * sy - cr * cy, -sr * cp];
     let up = [cr * sp * cy + sr * sy, cr * sp * sy - sr * cy, cr * cp];
     (forward, right, up)
-}
-
-pub(crate) fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-pub(crate) fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
 }
 
 pub(crate) fn add(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {

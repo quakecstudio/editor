@@ -4,6 +4,7 @@
 //! pitch looks down when positive, as Quake's `angles` do.
 
 use crate::sprite::angle_vectors;
+use crate::vector::{cross, dot};
 
 /// Where the camera is and where it looks.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -147,18 +148,6 @@ fn clip_from_axes(o: [f32; 3], [f, r, u]: [[f32; 3]; 3], fov_x: f32, aspect: f32
         [0.0, 0.0, range * NEAR, 0.0],
     ];
     multiply(&projection, &view)
-}
-
-fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
 }
 
 /// `a * b` of two column-major matrices.
