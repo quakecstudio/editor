@@ -117,7 +117,7 @@ const ROCKET: usize = 9;
 const GIB: usize = 10;
 
 fn msg() -> Message {
-    Message::new(65536, false)
+    Message::new(65536, qs_sim::Overflow::Fatal)
 }
 
 /// A serverinfo message for `models` and `sounds`, maxclients 1, then `svc_setview` 1.

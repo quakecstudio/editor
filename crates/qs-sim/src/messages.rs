@@ -119,12 +119,33 @@ const SND_VOLUME: i32 = 1;
 const SND_ATTENUATION: i32 = 2;
 const DEFAULT_SOUND_PACKET_VOLUME: i32 = 255;
 
+/// What a [`Message`] does with a write that does not fit: `allowoverflow` (BUILTIN-13.3,
+/// BUILTIN-13.4).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Overflow {
+    /// The buffer is emptied and marked overflowed.
+    Allowed,
+    /// The write is dropped, the fatal error the mock engine reports first.
+    #[default]
+    Fatal,
+}
+
+/// Which game the server runs, which changes how the weapon is sent (NET-4.4).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum GameKind {
+    /// Standard Quake: the weapon's item bits.
+    #[default]
+    Standard,
+    /// `-rogue` or `-hipnotic`: the weapon's bit number.
+    MissionPack,
+}
+
 /// A `sizebuf_t`: bytes written with id's `MSG_Write*` (NET-1.1), up to a size (NET-1.2).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Message {
     bytes: Vec<u8>,
     max: usize,
-    allow_overflow: bool,
+    overflow: Overflow,
     overflowed: bool,
 }
 
@@ -133,11 +154,11 @@ impl Message {
     /// write does not fit (BUILTIN-13.4), one that may not drops the write, which the mock
     /// engine reports as the fatal error first (BUILTIN-13.3).
     #[must_use]
-    pub const fn new(max: usize, allow_overflow: bool) -> Self {
+    pub const fn new(max: usize, overflow: Overflow) -> Self {
         Self {
             bytes: Vec::new(),
             max,
-            allow_overflow,
+            overflow,
             overflowed: false,
         }
     }
@@ -197,7 +218,7 @@ impl Message {
             .checked_add(data.len())
             .is_some_and(|total| total <= self.max);
         if !fits {
-            if !self.allow_overflow || data.len() > self.max {
+            if self.overflow == Overflow::Fatal || data.len() > self.max {
                 return;
             }
             self.overflowed = true;
@@ -378,7 +399,7 @@ impl Default for ClientSlot {
             name: b"player".to_vec(),
             colors: 0,
             old_frags: 0,
-            message: Message::new(NET_MAX_MSGLEN, true),
+            message: Message::new(NET_MAX_MSGLEN, Overflow::Allowed),
         }
     }
 }
@@ -394,7 +415,7 @@ pub(crate) struct ServerMessages {
     pub(crate) baselines: Vec<Baseline>,
     pub(crate) vis: Vis,
     /// `standard_quake`: not `-rogue` or `-hipnotic` (NET-4.4).
-    pub(crate) standard_quake: bool,
+    pub(crate) game: GameKind,
     /// The progs CRC the serverinfo names (NET-2.2).
     pub(crate) crc: i32,
     /// The messages sent, oldest first, each one packet.
@@ -406,13 +427,13 @@ pub(crate) struct ServerMessages {
 impl ServerMessages {
     pub(crate) fn new(bsp: &Bsp<'_>, crc: i32) -> Self {
         Self {
-            datagram: Message::new(NET_MAX_DATAGRAM, false),
-            reliable_datagram: Message::new(NET_MAX_DATAGRAM, false),
-            signon: Message::new(NET_SIGNON_SIZE, false),
+            datagram: Message::new(NET_MAX_DATAGRAM, Overflow::Fatal),
+            reliable_datagram: Message::new(NET_MAX_DATAGRAM, Overflow::Fatal),
+            signon: Message::new(NET_SIGNON_SIZE, Overflow::Fatal),
             client: ClientSlot::default(),
             baselines: Vec::new(),
             vis: Vis::new(bsp),
-            standard_quake: true,
+            game: GameKind::Standard,
             crc,
             outbox: Vec::new(),
             set_angle: None,
@@ -713,7 +734,7 @@ impl SimCall<'_, '_, '_> {
     pub(crate) fn static_bytes(&self) -> Result<Vec<u8>, RunError> {
         let ent = self.edict_of(parm_raw(&self.context, 0));
         let model = self.string_text(self.entity_raw(ent, "model"));
-        let mut out = Message::new(NET_SIGNON_SIZE, false);
+        let mut out = Message::new(NET_SIGNON_SIZE, Overflow::Fatal);
         out.write_byte(SVC_SPAWNSTATIC);
         out.write_byte(self.model_index(&model)?);
         out.write_byte(float_to_int(self.float(ent, "frame")));
@@ -963,7 +984,7 @@ impl SimCall<'_, '_, '_> {
             message.write_angle(angles[1]);
             message.write_angle(0.0);
         }
-        let mut data = Message::new(NET_MAX_MSGLEN, true);
+        let mut data = Message::new(NET_MAX_MSGLEN, Overflow::Allowed);
         self.write_clientdata(client, &mut data)?;
         let slot = &mut self.sim.messages.client;
         slot.message.write_bytes(data.bytes());
@@ -1045,7 +1066,7 @@ impl SimCall<'_, '_, '_> {
 
     /// `SV_SendClientDatagram` (NET-1.5): the datagram for the client of edict `client`.
     fn client_datagram(&mut self, client: usize) -> Result<Vec<u8>, RunError> {
-        let mut msg = Message::new(NET_MAX_DATAGRAM, false);
+        let mut msg = Message::new(NET_MAX_DATAGRAM, Overflow::Fatal);
         msg.write_byte(SVC_TIME);
         msg.write_float(double_to_float(self.clock()));
         self.write_clientdata(client, &mut msg)?;
@@ -1296,7 +1317,7 @@ impl SimCall<'_, '_, '_> {
             msg.write_byte(float_to_int(self.float(ent, field)));
         }
         let weapon = float_to_int(self.float(ent, "weapon"));
-        if self.sim.messages.standard_quake {
+        if self.sim.messages.game == GameKind::Standard {
             msg.write_byte(weapon);
         } else if let Some(bit) = (0..32).find(|&i| weapon & (1 << i) != 0) {
             msg.write_byte(bit);

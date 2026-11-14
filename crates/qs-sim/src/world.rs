@@ -30,9 +30,9 @@ use crate::client::UserCmd;
 use crate::debug::Debugger;
 use crate::host_commands::SignonCommand;
 use crate::input::Button;
-use crate::messages::ClientMessages;
 #[cfg(test)]
 use crate::messages::ServerMessages;
+use crate::messages::{ClientMessages, GameKind};
 use crate::physics::Sound;
 use crate::rerelease::BuiltinTable;
 use crate::settings::{ARCHIVED, CLIENT_SETTINGS, SERVER_SETTINGS};
@@ -452,10 +452,10 @@ impl World {
         self.builtins.messages.set_angle.take()
     }
 
-    /// Whether the game is standard Quake, not `-rogue` or `-hipnotic`, which changes how the
-    /// weapon is sent (NET-4.4); standard by default.
-    pub fn set_standard_quake(&mut self, standard: bool) {
-        self.builtins.messages.standard_quake = standard;
+    /// Which game the server runs, standard Quake or `-rogue` or `-hipnotic`, which changes how
+    /// the weapon is sent (NET-4.4); standard by default.
+    pub fn set_game(&mut self, game: GameKind) {
+        self.builtins.messages.game = game;
     }
 
     /// The messages sent to the client since the last call (NET-1.3): each packet a reliable
@@ -1078,7 +1078,7 @@ mod state;
 #[cfg(test)]
 pub(crate) mod tests;
 
-pub use changes::EdictChange;
+pub use changes::{EdictChange, Tracking};
 pub use edit::{EditError, LineHit};
 pub use evaluate::EvalError;
 pub use inspect::{NamedValue, QcValue};

@@ -8,6 +8,7 @@
 )]
 
 use crate::LoadOptions;
+use crate::messages::{GameKind, Overflow};
 use crate::rerelease::{BuiltinTable, patch_builtins};
 use crate::world::tests::{player_from, player_progs, player_with_options};
 use qc_builtins::localization::Localization;
@@ -181,7 +182,7 @@ fn datagram(bytes: &[u8]) -> (f32, Vec<Update>, Vec<u8>) {
 // ((int) f * 256 / 360) & 255
 #[test]
 fn the_writers_encode_as_id_does() {
-    let mut m = Message::new(64, false);
+    let mut m = Message::new(64, Overflow::Fatal);
     m.write_byte(0x1ff);
     m.write_byte(-1);
     m.write_short(-2);
@@ -211,12 +212,12 @@ fn the_writers_encode_as_id_does() {
 // too big
 #[test]
 fn buffers_hold_their_size() {
-    let mut strict = Message::new(4, false);
+    let mut strict = Message::new(4, Overflow::Fatal);
     strict.write_long(1);
     strict.write_byte(2);
     assert_eq!(strict.len(), 4);
     assert!(!strict.overflowed());
-    let mut loose = Message::new(4, true);
+    let mut loose = Message::new(4, Overflow::Allowed);
     loose.write_long(1);
     loose.write_short(2);
     assert_eq!(loose.bytes(), [2, 0]);
@@ -679,7 +680,7 @@ fn the_client_data_carries_the_player() {
     // Rogue and Hipnotic send the weapon's bit; items2 replaces the serverflags.
     let more2 = format!(".float items2;\n{more}void() PlayerPostThink = {{ self.items2 = 6; }};\n");
     let mut run = player(&ledge(), "self.movetype = 8;", pre, &more2);
-    run.world.set_standard_quake(false);
+    run.world.set_game(GameKind::MissionPack);
     run.packets();
     run.frames(1, 0.1).unwrap();
     let packets = run.packets();
@@ -886,7 +887,7 @@ fn the_spawn_message_drops_what_put_client_in_server_wrote() {
 // messages go out
 #[test]
 fn an_overflowed_message_starts_over() {
-    let mut message = Message::new(4, true);
+    let mut message = Message::new(4, Overflow::Allowed);
     message.write_bytes(&[1, 2, 3]);
     message.write_bytes(&[4, 5]);
     assert!(message.overflowed());

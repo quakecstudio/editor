@@ -34,10 +34,19 @@ pub enum EdictChange {
     },
 }
 
+/// Whether [`World::track_changes`] records what happens to the edicts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tracking {
+    /// Recording.
+    On,
+    /// Not recording.
+    Off,
+}
+
 impl World {
     /// Starts or stops recording what happens to the edicts, for [`World::take_changes`].
-    pub fn track_changes(&mut self, on: bool) {
-        self.machine.edicts_mut().track(on);
+    pub fn track_changes(&mut self, tracking: Tracking) {
+        self.machine.edicts_mut().track(tracking == Tracking::On);
     }
 
     /// What has happened to the edicts since the last call, while tracking is on: each

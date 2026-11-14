@@ -8,6 +8,7 @@ use qc_edict::EdictNumber;
 use qc_progs::Progs;
 use qs_bridge::{Answer, Capabilities, ErrorCode, Host, HostInfo, Id, RpcError};
 use qs_render::Camera;
+use qs_sim::debug::Breakpoint as Toggle;
 use qs_sim::{
     EdictChange, EditError, HostCommand, HostState, MapPlace, SpawnParms, World, WorldError,
 };
@@ -287,7 +288,11 @@ impl Game {
     /// The game of `world`, loaded from `progs`, running.
     pub(crate) fn new(mut world: World, progs: Vec<u8>, reporting: Reporting) -> Self {
         // The edicts' events cost a record of every field write; only a client reads them.
-        world.track_changes(reporting == Reporting::Bridge);
+        world.track_changes(if reporting == Reporting::Bridge {
+            qs_sim::Tracking::On
+        } else {
+            qs_sim::Tracking::Off
+        });
         Self {
             world,
             progs,
@@ -336,7 +341,8 @@ impl Game {
         self.lines = old.lines;
         self.next_breakpoint = old.next_breakpoint;
         for breakpoint in old.breakpoints {
-            self.debugger().set_breakpoint(breakpoint.statement, true);
+            self.debugger()
+                .set_breakpoint(breakpoint.statement, Toggle::Set);
             self.breakpoints.push(breakpoint);
         }
     }
