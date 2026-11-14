@@ -9,7 +9,7 @@ use super::{
     Grabbed, MENU_BINDINGS, MENU_HELP_PAGES, MENU_SAVEGAMES, Menu, MenuEvent, MenuFrame, MenuGame,
     MenuKey, MenuSettings, MenuState, save_comment,
 };
-use crate::console::KeyDest;
+use crate::console::{ConsoleHold, KeyDest};
 use crate::hud::{Anchor, HudItem, Placed};
 
 /// The `.lmp` pictures `items` draw, with where.
@@ -65,7 +65,7 @@ fn frame(dest: KeyDest, time: f64, console_down: bool) -> MenuFrame {
         host_time: time,
         realtime: time,
         console_down,
-        console_forced: false,
+        console_forced: ConsoleHold::Sliding,
         screen_height: 480,
         settings: DEFAULTS,
         bound: Vec::new(),
@@ -121,7 +121,7 @@ fn the_menu_draws_over_a_fade_with_its_sounds() {
         HudItem::ConsoleBack {
             lines: 480,
             height: 480,
-            forced: false
+            forced: ConsoleHold::Sliding
         }
     );
     assert!(menu.draw(&frame(KeyDest::Game, 0.0, false)).0.is_empty());

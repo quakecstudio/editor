@@ -17,10 +17,11 @@ use qs_sim::Message;
 
 use crate::{
     CLIENT_MAX_DLIGHTS, CLIENT_MAX_EDICTS, CLIENT_MAX_STATIC_ENTITIES, CLIENT_MAX_TEMP_ENTITIES,
-    CLIENT_MAX_VISEDICTS, CLIENT_SIGNONS, Client, ClientLimits, Contents, Event, FrameInfo, Game,
-    LerpSettings, ModelInfo, ModelKind, Models, PART_ABSOLUTE_MIN_PARTICLES, PART_RAMP1,
-    PART_RAMP3, ParseError, ParticleType, Particles, Random, Reader, SoundRef, ViewInput,
-    ViewSettings, ViewState, angledelta, calc_bob, calc_roll, flags, gamma_table, stat,
+    CLIENT_MAX_VISEDICTS, CLIENT_SIGNONS, Client, ClientLimits, Contents, Event, Footing,
+    FrameInfo, Game, LerpSettings, ModelIndex, ModelInfo, ModelKind, Models,
+    PART_ABSOLUTE_MIN_PARTICLES, PART_RAMP1, PART_RAMP3, ParseError, ParticleType, Particles,
+    Random, Reader, Scores, SoundEntity, SoundRef, Trail, TrailSpacing, ViewInput, ViewSettings,
+    ViewState, angledelta, calc_bob, calc_roll, flags, gamma_table, stat,
 };
 
 /// `rand ()` returning the values given, then 0.
@@ -323,14 +324,14 @@ fn the_serverinfo_starts_a_map() {
     assert_eq!(client.viewentity(), 1);
     assert_eq!(client.entities()[0].model, 1, "the world");
     assert!(matches!(
-        client.model(THING),
+        client.model(ModelIndex::new(THING)),
         Some(ModelInfo {
             kind: ModelKind::Alias { .. },
             ..
         })
     ));
-    assert!(client.model(0).is_none());
-    assert!(client.model(12).is_none());
+    assert!(client.model(ModelIndex::new(0)).is_none());
+    assert!(client.model(ModelIndex::new(12)).is_none());
     // The divider and the level's name come first (CLIENT-1.7).
     assert_eq!(
         events[2..],
@@ -518,7 +519,7 @@ fn every_command_is_read() {
             Event::CenterPrint(b"centred".to_vec()),
             Event::StuffText(b"cmd\n".to_vec()),
             Event::StopSound {
-                entity: 5,
+                entity: SoundEntity::new(5),
                 channel: 2
             },
             Event::Pause(true),
@@ -884,7 +885,7 @@ fn the_client_data_is_read() {
     let bytes = m.take();
     frame(&mut client, 0.25, std::slice::from_ref(&bytes));
     assert_eq!(client.idealpitch(), -5.0);
-    assert!(client.onground() && client.inwater());
+    assert!(client.onground() == Footing::OnGround && client.inwater());
     assert_eq!(client.items(), 5 | 32);
     assert_eq!(client.item_gettime()[0], 0.25);
     assert_eq!(client.item_gettime()[5], 0.25);
@@ -903,7 +904,11 @@ fn the_client_data_is_read() {
         "the view height, no bob at rest, the nudge bounded at 30 above the origin"
     );
     frame(&mut client, 0.1, &[datagram(1.0, &[])]);
-    assert!(!client.onground(), "cleared by the next message");
+    assert_eq!(
+        client.onground(),
+        Footing::InAir,
+        "cleared by the next message"
+    );
     assert_eq!(client.idealpitch(), 0.0);
     assert_eq!(client.stats()[stat::ARMOR], 0);
     let mut pack = Client::new(Game::MissionPack);
@@ -938,7 +943,7 @@ fn sounds_are_read() {
     let Event::Sound(first) = &events[0] else {
         panic!("{events:?}");
     };
-    assert_eq!((first.entity, first.channel), (7, 5));
+    assert_eq!((first.entity, first.channel), (SoundEntity::new(7), 5));
     assert_eq!(first.sound, SoundRef::Index(2));
     assert_eq!(first.origin, [1.0, 2.0, 3.0]);
     assert!((first.volume - 128.0 / 255.0).abs() < 1e-6);
@@ -1142,7 +1147,7 @@ fn relinking_interpolates_and_drops() {
         1,
         "the player, the view entity, is not drawn"
     );
-    assert_eq!(scene.entities[0].model, THING);
+    assert_eq!(scene.entities[0].model.get(), THING);
     frame(
         &mut client,
         0.05,
@@ -1374,7 +1379,7 @@ fn temporary_entities_and_beams() {
                 assert_eq!(s.sound, SoundRef::Name(name), "type {kind}");
                 assert_eq!(
                     (s.entity, s.channel, s.volume, s.attenuation),
-                    (-1, 0, 1.0, 1.0)
+                    (SoundEntity::TEMPORARY, 0, 1.0, 1.0)
                 );
             }
             None => assert!(events.is_empty(), "type {kind}: {events:?}"),
@@ -1434,7 +1439,11 @@ fn temporary_entities_and_beams() {
         )
         .unwrap();
     let scene = client.scene();
-    let bolts: Vec<_> = scene.entities.iter().filter(|e| e.model == BOLT).collect();
+    let bolts: Vec<_> = scene
+        .entities
+        .iter()
+        .filter(|e| e.model.get() == BOLT)
+        .collect();
     assert_eq!(bolts.len(), 3);
     assert_eq!(bolts[0].origin, [0.0; 3]);
     assert_eq!(bolts[1].origin, [30.0, 0.0, 0.0]);
@@ -1452,7 +1461,7 @@ fn temporary_entities_and_beams() {
             .scene()
             .entities
             .iter()
-            .filter(|e| e.model == BOLT)
+            .filter(|e| e.model.get() == BOLT)
             .count(),
         1,
         "the same entity's beam is replaced"
@@ -1465,7 +1474,7 @@ fn temporary_entities_and_beams() {
             .scene()
             .entities
             .iter()
-            .filter(|e| e.model == BOLT + 1)
+            .filter(|e| e.model.get() == BOLT + 1)
             .count(),
         0,
         "a beam of no length places nothing"
@@ -1482,7 +1491,7 @@ fn temporary_entities_and_beams() {
         .scene()
         .entities
         .iter()
-        .filter(|e| e.model == BOLT + 3)
+        .filter(|e| e.model.get() == BOLT + 3)
         .cloned()
         .collect();
     assert_eq!(beams.len(), 2);
@@ -1499,7 +1508,7 @@ fn temporary_entities_and_beams() {
         .scene()
         .entities
         .iter()
-        .find(|e| e.model == BOLT + 2)
+        .find(|e| e.model.get() == BOLT + 2)
         .copied()
         .unwrap();
     assert_eq!(bolt3.angles[1], 45.0, "yaw from atan2");
@@ -1514,7 +1523,7 @@ fn temporary_entities_and_beams() {
             .scene()
             .entities
             .iter()
-            .all(|e| e.model < BOLT || e.model > BOLT + 3),
+            .all(|e| e.model.get() < BOLT || e.model.get() > BOLT + 3),
         "every beam ended"
     );
     for i in 0..CLIENT_MAX_TEMP_ENTITIES as i32 + 10 {
@@ -1525,7 +1534,7 @@ fn temporary_entities_and_beams() {
             .scene()
             .entities
             .iter()
-            .filter(|e| e.model == BOLT)
+            .filter(|e| e.model.get() == BOLT)
             .count(),
         24,
         "24 beams, one segment each"
@@ -1552,7 +1561,7 @@ fn temporary_entities_and_beams() {
         .scene()
         .entities
         .iter()
-        .filter(|e| e.model == BOLT)
+        .filter(|e| e.model.get() == BOLT)
         .cloned()
         .collect();
     assert_eq!(
@@ -1568,7 +1577,7 @@ fn temporary_entities_and_beams() {
             .scene()
             .entities
             .iter()
-            .filter(|e| e.model == BOLT)
+            .filter(|e| e.model.get() == BOLT)
             .count(),
         CLIENT_MAX_TEMP_ENTITIES
     );
@@ -1980,7 +1989,13 @@ fn every_effect_fills_the_pool_its_way() {
     assert_eq!(last.color, 7);
     assert!((last.die - 1.2).abs() < 1e-6);
     let mut pool = Particles::default();
-    pool.rocket_trail(&mut Fixed(vec![]), 1.0, [0.0; 3], [9.0, 0.0, 0.0], 0);
+    pool.rocket_trail(
+        &mut Fixed(vec![]),
+        1.0,
+        ([0.0; 3], [9.0, 0.0, 0.0]),
+        Trail::Rocket,
+        TrailSpacing::Normal,
+    );
     let p = pool.active();
     assert_eq!(p.len(), 3);
     assert_eq!(p[2].origin, [-3.0, -3.0, -3.0]);
@@ -1988,20 +2003,38 @@ fn every_effect_fills_the_pool_its_way() {
     assert_eq!(p[2].kind, ParticleType::Fire);
     assert_eq!(p[1].origin, [1.0 - 3.0, -3.0, -3.0]);
     pool.clear();
-    pool.rocket_trail(&mut Fixed(vec![]), 1.0, [0.0; 3], [3.0, 0.0, 0.0], 1);
+    pool.rocket_trail(
+        &mut Fixed(vec![]),
+        1.0,
+        ([0.0; 3], [3.0, 0.0, 0.0]),
+        Trail::Smoke,
+        TrailSpacing::Normal,
+    );
     assert_eq!(
         pool.active()[0].color,
         PART_RAMP3[2],
         "smoke starts two steps up the ramp"
     );
     pool.clear();
-    pool.rocket_trail(&mut Fixed(vec![]), 1.0, [0.0; 3], [3.0, 0.0, 0.0], 2);
+    pool.rocket_trail(
+        &mut Fixed(vec![]),
+        1.0,
+        ([0.0; 3], [3.0, 0.0, 0.0]),
+        Trail::Blood,
+        TrailSpacing::Normal,
+    );
     assert_eq!(
         (pool.active()[0].kind, pool.active()[0].color),
         (ParticleType::Grav, 67)
     );
     pool.clear();
-    pool.rocket_trail(&mut Fixed(vec![]), 1.0, [0.0; 3], [6.0, 0.0, 0.0], 3);
+    pool.rocket_trail(
+        &mut Fixed(vec![]),
+        1.0,
+        ([0.0; 3], [6.0, 0.0, 0.0]),
+        Trail::Tracer,
+        TrailSpacing::Normal,
+    );
     let p = pool.active();
     assert_eq!(p.len(), 2);
     assert_eq!(p[1].die, 1.5);
@@ -2013,21 +2046,45 @@ fn every_effect_fills_the_pool_its_way() {
     );
     assert_eq!(p[0].velocity, [0.0, 30.0, 0.0]);
     pool.clear();
-    pool.rocket_trail(&mut Fixed(vec![]), 1.0, [0.0; 3], [3.0, 0.0, 0.0], 5);
+    pool.rocket_trail(
+        &mut Fixed(vec![]),
+        1.0,
+        ([0.0; 3], [3.0, 0.0, 0.0]),
+        Trail::Tracer2,
+        TrailSpacing::Normal,
+    );
     assert_eq!(pool.active()[0].color, 230);
     pool.clear();
-    pool.rocket_trail(&mut Fixed(vec![]), 1.0, [0.0; 3], [12.0, 0.0, 0.0], 4);
+    pool.rocket_trail(
+        &mut Fixed(vec![]),
+        1.0,
+        ([0.0; 3], [12.0, 0.0, 0.0]),
+        Trail::SlightBlood,
+        TrailSpacing::Normal,
+    );
     assert_eq!(
         pool.active().len(),
         2,
         "slight blood takes 6 units a particle"
     );
     pool.clear();
-    pool.rocket_trail(&mut Fixed(vec![]), 1.0, [0.0; 3], [3.0, 0.0, 0.0], 6);
+    pool.rocket_trail(
+        &mut Fixed(vec![]),
+        1.0,
+        ([0.0; 3], [3.0, 0.0, 0.0]),
+        Trail::Voor,
+        TrailSpacing::Normal,
+    );
     assert_eq!((pool.active()[0].color, pool.active()[0].die), (152, 1.3));
     assert_eq!(pool.active()[0].origin, [-8.0; 3]);
     pool.clear();
-    pool.rocket_trail(&mut Fixed(vec![]), 1.0, [0.0; 3], [3.0, 0.0, 0.0], 128);
+    pool.rocket_trail(
+        &mut Fixed(vec![]),
+        1.0,
+        ([0.0; 3], [3.0, 0.0, 0.0]),
+        Trail::Rocket,
+        TrailSpacing::Dense,
+    );
     assert_eq!(pool.active().len(), 3, "128 and up step by 1");
     pool.clear();
     pool.entity_field(&mut Fixed(vec![]), 0.0, [1.0, 2.0, 3.0]);
@@ -2050,22 +2107,46 @@ fn every_effect_fills_the_pool_its_way() {
 #[test]
 fn particles_move_by_their_type() {
     let mut pool = Particles::default();
-    pool.rocket_trail(&mut Fixed(vec![]), 1.0, [0.0; 3], [3.0, 0.0, 0.0], 0);
+    pool.rocket_trail(
+        &mut Fixed(vec![]),
+        1.0,
+        ([0.0; 3], [3.0, 0.0, 0.0]),
+        Trail::Rocket,
+        TrailSpacing::Normal,
+    );
     pool.explosion(&mut Fixed(vec![]), 1.0, [0.0; 3]);
     pool.blob_explosion(&mut Fixed(vec![]), 1.0, [0.0; 3]);
     pool.update(0.0, 0.0, 800.0);
     let blobs = pool.active().to_vec();
     pool.clear();
     for p in blobs.iter().take(4) {
-        pool.rocket_trail(&mut Fixed(vec![]), 1.0, [0.0; 3], [0.0; 3], 0);
+        pool.rocket_trail(
+            &mut Fixed(vec![]),
+            1.0,
+            ([0.0; 3], [0.0; 3]),
+            Trail::Rocket,
+            TrailSpacing::Normal,
+        );
         let _ = p;
     }
     pool.clear();
-    pool.rocket_trail(&mut Fixed(vec![]), 1.0, [0.0; 3], [3.0, 0.0, 0.0], 0);
+    pool.rocket_trail(
+        &mut Fixed(vec![]),
+        1.0,
+        ([0.0; 3], [3.0, 0.0, 0.0]),
+        Trail::Rocket,
+        TrailSpacing::Normal,
+    );
     pool.explosion(&mut Fixed(vec![]), 1.0, [0.0; 3]);
     pool.blob_explosion(&mut Fixed(vec![]), 1.0, [0.0; 3]);
     pool.clear();
-    pool.rocket_trail(&mut Fixed(vec![]), 1.0, [0.0; 3], [3.0, 0.0, 0.0], 0);
+    pool.rocket_trail(
+        &mut Fixed(vec![]),
+        1.0,
+        ([0.0; 3], [3.0, 0.0, 0.0]),
+        Trail::Rocket,
+        TrailSpacing::Normal,
+    );
     pool.explosion(&mut Fixed(vec![]), 1.0, [0.0; 3]);
     pool.explosion2(&mut Fixed(vec![]), 1.0, [0.0; 3], 66, 1);
     pool.teleport_splash(&mut Fixed(vec![]), 1.0, [0.0; 3]);
@@ -2152,49 +2233,49 @@ fn roll_and_bob() {
 fn pitch_drift() {
     let mut view = ViewState::default();
     let mut angles = [20.0, 0.0, 0.0];
-    view.drift_pitch(1.0, 0.1, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.1, Footing::OnGround, 0.0, 0.0, &mut angles);
     assert_eq!(angles[0], 20.0, "nodrift by default");
-    view.drift_pitch(1.0, 0.1, true, 200.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.1, Footing::OnGround, 200.0, 0.0, &mut angles);
     assert!(view.nodrift, "0.1 of running is short of 0.15");
-    view.drift_pitch(1.0, 0.1, true, 200.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.1, Footing::OnGround, 200.0, 0.0, &mut angles);
     assert!(
         !view.nodrift,
         "0.2 of running is past 0.15: the drift starts"
     );
     assert_eq!(angles[0], 20.0, "nothing moves the frame it starts");
-    view.drift_pitch(1.0, 0.01, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.01, Footing::OnGround, 0.0, 0.0, &mut angles);
     assert!(
         (angles[0] - 15.0).abs() < 1e-3,
         "move 0.01 * 500: {}",
         angles[0]
     );
-    view.drift_pitch(1.0, 0.01, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.01, Footing::OnGround, 0.0, 0.0, &mut angles);
     assert!(
         (angles[0] - 9.95).abs() < 1e-3,
         "the velocity grew by 5 to 505: {}",
         angles[0]
     );
-    view.drift_pitch(1.0, 0.01, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.01, Footing::OnGround, 0.0, 0.0, &mut angles);
     assert!((angles[0] - 4.85).abs() < 1e-3, "{}", angles[0]);
-    view.drift_pitch(1.0, 0.01, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.01, Footing::OnGround, 0.0, 0.0, &mut angles);
     assert_eq!(
         angles[0], 0.0,
         "5.15 would overshoot: it lands on the ideal"
     );
-    view.drift_pitch(1.0, 0.01, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.01, Footing::OnGround, 0.0, 0.0, &mut angles);
     assert_eq!(angles[0], 0.0);
     let mut angles = [-10.0, 0.0, 0.0];
-    view.drift_pitch(1.0, 0.01, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.01, Footing::OnGround, 0.0, 0.0, &mut angles);
     assert_eq!(angles[0], -10.0, "the velocity starts from 0 again");
-    view.drift_pitch(1.0, 0.01, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.01, Footing::OnGround, 0.0, 0.0, &mut angles);
     assert!(
         angles[0] > -10.0 && angles[0] <= 0.0,
         "upward too: {}",
         angles[0]
     );
-    view.drift_pitch(1.0, 0.1, false, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.1, Footing::InAir, 0.0, 0.0, &mut angles);
     let held = angles[0];
-    view.drift_pitch(1.0, 0.1, false, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.1, Footing::InAir, 0.0, 0.0, &mut angles);
     assert_eq!(angles[0], held, "not on the ground");
     view.stop_pitch_drift(5.0);
     assert!(view.nodrift);
@@ -2203,7 +2284,7 @@ fn pitch_drift() {
     view.start_pitch_drift(5.1);
     assert!(!view.nodrift);
     let mut angles = [0.0; 3];
-    view.drift_pitch(1.0, 0.1, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.1, Footing::OnGround, 0.0, 0.0, &mut angles);
     assert_eq!(angles[0], 0.0, "no delta");
 }
 
@@ -2230,7 +2311,7 @@ fn the_eye_and_the_weapon() {
         velocity: [0.0; 3],
         viewheight: 22.0,
         punchangle: [0.0, 0.0, 1.0],
-        onground: true,
+        onground: Footing::OnGround,
         health: 100,
         intermission: false,
         weapon: (3, 2),
@@ -2239,7 +2320,7 @@ fn the_eye_and_the_weapon() {
     // does: prime it in the air.
     view.render(
         &ViewInput {
-            onground: false,
+            onground: Footing::InAir,
             ..still
         },
         &settings,
@@ -2251,7 +2332,7 @@ fn the_eye_and_the_weapon() {
     );
     assert_eq!(r.angles, [5.0, 90.0, 1.0], "the punch angle added");
     assert_eq!(r.entity_angles, [-5.0, 90.0, 0.0]);
-    assert_eq!(r.weapon.model, 3);
+    assert_eq!(r.weapon.model.get(), 3);
     assert_eq!(r.weapon.frame, 2);
     assert_eq!(
         r.weapon.origin,
@@ -2294,7 +2375,7 @@ fn the_eye_and_the_weapon() {
     let mut fresh = ViewState::default();
     fresh.render(
         &ViewInput {
-            onground: false,
+            onground: Footing::InAir,
             ..still
         },
         &settings,
@@ -2323,7 +2404,7 @@ fn the_eye_and_the_weapon() {
     let mut stepping = ViewState::default();
     stepping.render(
         &ViewInput {
-            onground: false,
+            onground: Footing::InAir,
             ..still
         },
         &settings,
@@ -2355,7 +2436,7 @@ fn the_eye_and_the_weapon() {
     };
     let r = view.render(&inter, &settings);
     assert_eq!(r.origin, still.origin);
-    assert_eq!(r.weapon.model, 0);
+    assert_eq!(r.weapon.model.get(), 0);
     assert!((r.angles[1] - (2.0 + (1.0_f32).sin() * 0.3)).abs() < 1e-3);
     let mut client = Client::new(Game::Standard);
     assert_eq!(client.scene().view.origin, [0.0; 3], "no map yet");
@@ -2447,10 +2528,7 @@ fn colour_shifts_and_the_blend() {
     );
 }
 
-use crate::{
-    Anchor, CenterPrint, HudInput, HudItem, Placed, Score, intermission_overlay, sort_frags,
-    status_bar,
-};
+use crate::{Anchor, CenterMode, CenterPrint, HudInput, HudItem, Placed, Score, sort_frags};
 
 fn hud_input<'a>(
     stats: &'a [i32; 32],
@@ -2470,7 +2548,7 @@ fn hud_input<'a>(
         levelname: b"Test",
         intermission: 0,
         completed_time: 0.0,
-        showscores: false,
+        showscores: Scores::Hidden,
         lines: 48,
     }
 }
@@ -2515,9 +2593,9 @@ fn the_status_bar_shows_the_player() {
     let mut input = hud_input(&stats, &gettime, &scores);
     input.items = 8192 | 256;
     input.lines = 0;
-    assert!(status_bar(&input, 200).is_empty());
+    assert!(input.status_bar(200).is_empty());
     input.lines = 24;
-    let bar = status_bar(&input, 200);
+    let bar = input.status_bar(200);
     let p = pics(&bar);
     assert_eq!(p[0], ("sbar".to_owned(), 0, 0));
     assert!(
@@ -2546,7 +2624,7 @@ fn the_status_bar_shows_the_player() {
         stats: &stats2,
         ..input.clone()
     };
-    let p = pics(&status_bar(&input2, 200));
+    let p = pics(&input2.status_bar(200));
     assert!(p.iter().any(|(n, _, _)| n == "ibar"));
     assert!(
         p.contains(&("anum_6".to_owned(), 24, 0)) && p.contains(&("disc".to_owned(), 0, 0)),
@@ -2561,7 +2639,7 @@ fn the_status_bar_shows_the_player() {
         items: 32768 | 16384,
         ..input2.clone()
     };
-    let p = pics(&status_bar(&input4, 200));
+    let p = pics(&input4.status_bar(200));
     assert!(
         p.contains(&("sb_armor3".to_owned(), 0, 0)),
         "the armour picture by the first bit set"
@@ -2570,7 +2648,7 @@ fn the_status_bar_shows_the_player() {
         items: 16384,
         ..input2.clone()
     };
-    let p = pics(&status_bar(&input3, 200));
+    let p = pics(&input3.status_bar(200));
     assert!(p.contains(&("sb_armor2".to_owned(), 0, 0)));
     assert!(
         p.contains(&("anum_minus".to_owned(), 24 + 24, 0))
@@ -2583,17 +2661,17 @@ fn the_status_bar_shows_the_player() {
         stats: &stats3,
         ..input.clone()
     };
-    let p = pics(&status_bar(&dead, 200));
+    let p = pics(&dead.status_bar(200));
     assert!(p.contains(&("scorebar".to_owned(), 0, 0)));
     assert!(!p.iter().any(|(n, _, _)| n == "sbar"));
     stats3[stat::HEALTH] = 50;
     let shown = HudInput {
         stats: &stats3,
-        showscores: true,
+        showscores: Scores::Shown,
         ..input.clone()
     };
     assert!(
-        pics(&status_bar(&shown, 200))
+        pics(&shown.status_bar(200))
             .iter()
             .any(|(n, _, _)| n == "scorebar")
     );
@@ -2611,7 +2689,7 @@ fn the_face_follows_health_and_powerups() {
         let mut input = hud_input(&stats, &gettime, &scores);
         input.items = items;
         input.faceanimtime = if pain { 11.0 } else { 0.0 };
-        pics(&status_bar(&input, 200))
+        pics(&input.status_bar(200))
             .into_iter()
             .find(|(n, x, _)| n.starts_with("face") && *x == 112)
             .unwrap()
@@ -2644,7 +2722,7 @@ fn the_inventory_lists_weapons_ammo_and_items() {
     let scores = [];
     let mut input = hud_input(&stats, &gettime, &scores);
     input.items = 1 | 4 | 64 | (1 << 17) | (1 << 22) | (1 << 28) | (1 << 31);
-    let bar = status_bar(&input, 200);
+    let bar = input.status_bar(200);
     let p = pics(&bar);
     assert!(p.contains(&("ibar".to_owned(), 0, -24)));
     assert!(
@@ -2676,13 +2754,13 @@ fn the_inventory_lists_weapons_ammo_and_items() {
         "a leading space is not drawn"
     );
     input.time = 10.35;
-    let p = pics(&status_bar(&input, 200));
+    let p = pics(&input.status_bar(200));
     assert!(
         p.contains(&("inva4_shotgun".to_owned(), 0, -16)),
         "frame (3 % 5) + 2: {p:?}"
     );
     input.time = 10.72;
-    let p = pics(&status_bar(&input, 200));
+    let p = pics(&input.status_bar(200));
     assert!(
         p.contains(&("inva3_shotgun".to_owned(), 0, -16)),
         "frame (7 % 5) + 2"
@@ -2725,7 +2803,7 @@ fn the_frag_list_ranks_the_clients() {
     let mut input = hud_input(&stats, &gettime, &scores);
     input.maxclients = 4;
     input.viewentity = 1;
-    let bar = status_bar(&input, 400);
+    let bar = input.status_bar(400);
     let fills: Vec<_> = bar
         .iter()
         .filter_map(|p| match p.item {
@@ -2773,10 +2851,10 @@ fn the_scoreboards() {
         },
     ];
     let mut input = hud_input(&stats, &gettime, &scores);
-    input.showscores = true;
+    input.showscores = Scores::Shown;
     input.time = 65.0;
     input.levelname = b"the Slipgate";
-    let bar = status_bar(&input, 200);
+    let bar = input.status_bar(200);
     let c = chars(&bar);
     let text = |y: i32, x0: i32| -> String {
         let mut s: Vec<(i32, u8)> = c
@@ -2803,7 +2881,7 @@ fn the_scoreboards() {
     input.gametype = 1;
     input.maxclients = 2;
     input.viewentity = 2;
-    let bar = status_bar(&input, 200);
+    let bar = input.status_bar(200);
     let lmp = bar
         .iter()
         .find(|p| matches!(p.item, HudItem::Lmp { .. }))
@@ -2903,7 +2981,7 @@ fn the_intermission_overlay() {
     let mut input = hud_input(&stats, &gettime, &scores);
     input.intermission = 1;
     input.completed_time = 125.0;
-    let overlay = intermission_overlay(&input);
+    let overlay = input.intermission_overlay();
     assert!(overlay.iter().all(|p| p.anchor == Anchor::Screen));
     let lmps: Vec<_> = overlay
         .iter()
@@ -2941,10 +3019,10 @@ fn the_intermission_overlay() {
         p.contains(&("num_1".to_owned(), 240, 144)) && p.contains(&("num_0".to_owned(), 264, 144))
     );
     input.gametype = 1;
-    let overlay = intermission_overlay(&input);
+    let overlay = input.intermission_overlay();
     assert!(matches!(&overlay[0].item, HudItem::Lmp { path, .. } if path == "gfx/ranking.lmp"));
     input.intermission = 2;
-    let overlay = intermission_overlay(&input);
+    let overlay = input.intermission_overlay();
     assert_eq!(overlay.len(), 1);
     assert!(
         matches!(&overlay[0].item, HudItem::Lmp { path, x: None, y: 16 } if path == "gfx/finale.lmp")
@@ -2960,12 +3038,14 @@ fn the_intermission_overlay() {
 fn the_centre_print() {
     let mut center = CenterPrint::default();
     assert!(
-        center.draw(0.1, 1.0, false, 640, 480).is_empty(),
+        center
+            .draw(0.1, 1.0, CenterMode::Timed, 640, 480)
+            .is_empty(),
         "nothing set"
     );
     center.set(b"hello\nworld", 1.0);
     assert_eq!(center.lines(), 2);
-    let items = center.draw(0.1, 1.1, false, 640, 480);
+    let items = center.draw(0.1, 1.1, CenterMode::Timed, 640, 480);
     assert_eq!(items.len(), 10);
     assert_eq!(
         items[0],
@@ -2983,14 +3063,16 @@ fn the_centre_print() {
             ch: b'w'
         }
     );
-    center.draw(1.0, 2.1, false, 640, 480);
+    center.draw(1.0, 2.1, CenterMode::Timed, 640, 480);
     assert!(
-        center.draw(1.0, 3.1, false, 640, 480).is_empty(),
+        center
+            .draw(1.0, 3.1, CenterMode::Timed, 640, 480)
+            .is_empty(),
         "two seconds are up"
     );
     center.set(b"a\nb\nc\nd\ne", 3.1);
     assert_eq!(
-        center.draw(0.0, 3.1, false, 640, 480)[0],
+        center.draw(0.0, 3.1, CenterMode::Timed, 640, 480)[0],
         HudItem::Char {
             x: 316,
             y: 48,
@@ -3001,26 +3083,32 @@ fn the_centre_print() {
     let long = [b'x'; 50];
     center.set(&long, 4.0);
     assert_eq!(
-        center.draw(0.0, 4.0, false, 640, 480).len(),
+        center.draw(0.0, 4.0, CenterMode::Timed, 640, 480).len(),
         40,
         "cut at 40"
     );
     let huge = vec![b'y'; 2000];
     center.set(&huge, 5.0);
-    assert_eq!(center.draw(0.0, 5.0, false, 640, 480).len(), 40);
+    assert_eq!(center.draw(0.0, 5.0, CenterMode::Timed, 640, 480).len(), 40);
     center.set(b"the end", 10.0);
     assert_eq!(
-        center.draw(0.0, 10.0, true, 320, 200).len(),
+        center
+            .draw(0.0, 10.0, CenterMode::Intermission, 320, 200)
+            .len(),
         1,
         "the first character at once"
     );
     assert_eq!(
-        center.draw(0.0, 10.5, true, 320, 200).len(),
+        center
+            .draw(0.0, 10.5, CenterMode::Intermission, 320, 200)
+            .len(),
         5,
         "8 a second: 4 more"
     );
     assert_eq!(
-        center.draw(5.0, 20.0, true, 320, 200).len(),
+        center
+            .draw(5.0, 20.0, CenterMode::Intermission, 320, 200)
+            .len(),
         7,
         "all of it, and the time no longer matters"
     );
@@ -3040,7 +3128,7 @@ fn the_client_builds_its_hud() {
     frame(&mut client, 0.0, &[m.take()]);
     assert_eq!(client.hud().center.len(), 2);
     client.set_bar_lines(0);
-    client.set_showscores(true);
+    client.set_showscores(Scores::Shown);
     assert!(
         pics(&client.hud().bar)
             .iter()
@@ -3125,7 +3213,7 @@ fn the_weapon_follows_the_kicked_view() {
         velocity: [0.0; 3],
         viewheight: 22.0,
         punchangle: [0.0; 3],
-        onground: true,
+        onground: Footing::OnGround,
         health: 100,
         intermission: false,
         weapon: (3, 2),
@@ -3163,9 +3251,9 @@ fn the_drift_waits_for_a_frame_after_a_stop() {
     let mut view = ViewState::default();
     let mut angles = [20.0, 0.0, 0.0];
     view.stop_pitch_drift(5.0);
-    view.drift_pitch(5.0, 0.2, true, 200.0, 0.0, &mut angles);
+    view.drift_pitch(5.0, 0.2, Footing::OnGround, 200.0, 0.0, &mut angles);
     assert!(view.nodrift, "stopped at this very time");
-    view.drift_pitch(5.1, 0.2, true, 200.0, 0.0, &mut angles);
+    view.drift_pitch(5.1, 0.2, Footing::OnGround, 200.0, 0.0, &mut angles);
     assert!(!view.nodrift);
 }
 
@@ -3191,4 +3279,18 @@ fn a_new_server_prints_its_level_name() {
     assert_eq!(printed[divider].len(), 2 + 1 + 35 + 1 + 2);
     assert_eq!(printed[divider + 1][0], 2);
     assert!(printed[divider + 1].ends_with(b"\n"));
+}
+
+// spec CLIENT-1.6: entities 1 to maxclients are the clients, each drawn through its own slot's
+// colours; the world and every later entity are not a client
+#[test]
+fn an_entity_slot_names_its_client() {
+    use crate::EntitySlot;
+    assert_eq!(EntitySlot::new(1).player(4), Some(0));
+    assert_eq!(EntitySlot::new(4).player(4), Some(3));
+    assert_eq!(EntitySlot::new(5).player(4), None);
+    assert_eq!(EntitySlot::NONE.player(4), None);
+    assert_eq!(EntitySlot::new(1).player(0), None);
+    assert_eq!(EntitySlot::new(7).get(), 7);
+    assert_eq!(EntitySlot::default(), EntitySlot::NONE);
 }

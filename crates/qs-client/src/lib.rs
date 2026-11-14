@@ -28,19 +28,20 @@ pub use client::{
     CLIENT_MAX_MODELS, CLIENT_MAX_SCOREBOARD, CLIENT_MAX_SOUNDS, CLIENT_MAX_STATIC_ENTITIES,
     CLIENT_MAX_STATS, CLIENT_MAX_TEMP_ENTITIES, CLIENT_MAX_VISEDICTS, CLIENT_PROTOCOL_VERSION,
     CLIENT_ROTATE_SPEED, CLIENT_SIGNONS, CLIENT_TELEPORT_DISTANCE, CLIENT_TENT_SOUNDS, Client,
-    ClientLimits, Event, Game, HUD_DEFAULT_LINES, Hud, LerpSettings, ParseError, Score, SoundRef,
-    SoundStart, stat,
+    ClientLimits, Event, Game, HUD_DEFAULT_LINES, Hud, LerpSettings, ModelIndex, ParseError, Score,
+    Scores, SoundEntity, SoundRef, SoundStart, stat,
 };
 pub use console::{
     CON_CURSOR_SPEED, CON_HISTORY, CON_MAX_LINE, CON_NOTIFY_TIME, CON_NUM_TIMES, CON_SPEED,
-    CON_TEXTSIZE, CON_TEXTSIZE_QUAKESPASM, Console, ConsoleKey, KeyDest, Typed,
+    CON_TEXTSIZE, CON_TEXTSIZE_QUAKESPASM, Connection, Console, ConsoleHold, ConsoleKey, InputLine,
+    KeyDest, Typed,
 };
 pub use entity::{Baseline, Entity, Lerp, LerpFlags};
 pub use hud::{
-    Anchor, CenterPrint, HUD_CENTER_LINE_LENGTH, HUD_CENTER_MAX, HUD_CENTERTIME, HUD_FLASH_FRAMES,
-    HUD_GAME_DEATHMATCH, HUD_ITEMS, HUD_LOW_AMMO, HUD_LOW_ARMOR, HUD_LOW_HEALTH, HUD_NUM_WIDTH,
-    HUD_PRINTSPEED, HUD_SBAR_HEIGHT, HUD_WEAPONS, HudInput, HudItem, Placed, color_for_map,
-    intermission_overlay, sort_frags, status_bar,
+    Anchor, CenterMode, CenterPrint, HUD_CENTER_LINE_LENGTH, HUD_CENTER_MAX, HUD_CENTERTIME,
+    HUD_FLASH_FRAMES, HUD_GAME_DEATHMATCH, HUD_ITEMS, HUD_LOW_AMMO, HUD_LOW_ARMOR, HUD_LOW_HEALTH,
+    HUD_NUM_WIDTH, HUD_PRINTSPEED, HUD_SBAR_HEIGHT, HUD_WEAPONS, HudInput, HudItem, Placed,
+    color_for_map, sort_frags,
 };
 pub use menu::{
     Grabbed, MENU_BINDINGS, MENU_HELP_PAGES, MENU_SAVEGAMES, Menu, MenuEvent, MenuFrame, MenuGame,
@@ -51,10 +52,11 @@ pub use models::{FrameInfo, ModelInfo, ModelKind, Models, Random, SYNCTYPE_RAND,
 pub use particles::{
     PART_ABSOLUTE_MIN_PARTICLES, PART_ENTITY_PARTICLES, PART_GRAVITY, PART_GRAVITY_SCALE,
     PART_MAX_PARTICLES, PART_RAMP1, PART_RAMP2, PART_RAMP3, Particle, ParticleType, Particles,
+    Trail, TrailSpacing,
 };
-pub use scene::{DynamicLight, PoseBlend, Scene, SceneEntity, SceneParticle};
+pub use scene::{DynamicLight, EntitySlot, PoseBlend, Scene, SceneEntity, SceneParticle};
 pub use view::{
-    Contents, Refdef, Shift, VIEW_BOB, VIEW_BOBCYCLE, VIEW_BOBUP, VIEW_CENTERMOVE,
+    Contents, Footing, Refdef, Shift, VIEW_BOB, VIEW_BOBCYCLE, VIEW_BOBUP, VIEW_CENTERMOVE,
     VIEW_CENTERSPEED, VIEW_CSHIFTPERCENT, VIEW_FORWARDSPEED, VIEW_IDLE_CYCLES, VIEW_IDLE_LEVELS,
     VIEW_IDLESCALE, VIEW_KICKPITCH, VIEW_KICKROLL, VIEW_KICKTIME, VIEW_NUM_CSHIFTS, VIEW_ROLLANGLE,
     VIEW_ROLLSPEED, VIEW_VIEWSIZE, ViewInput, ViewSettings, ViewState, Weapon, angledelta,

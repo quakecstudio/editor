@@ -8,7 +8,16 @@
 //! is a short over 8, an angle a byte over 256 of a turn, and reading past the end is the
 //! error `Bad server message`.
 
+use crate::view::FULL_TURN;
 use qc_vm::convert::double_to_float;
+
+/// The bytes of a long and a float.
+const LONG_BYTES: usize = 4;
+/// A coordinate's steps per unit, `MSG_ReadShort() * (1.0/8)`.
+const COORD_STEPS: f64 = 8.0;
+/// A turn in degrees.
+/// An angle byte's steps per turn, `MSG_ReadChar() * (360.0/256)`.
+const ANGLE_STEPS: f64 = 256.0;
 
 /// A message being read, `net_message` with `msg_readcount` (CLIENT-1.4).
 #[derive(Clone, Debug)]
@@ -81,7 +90,7 @@ impl<'a> Reader<'a> {
 
     /// `MSG_ReadLong`: a signed little-endian long, -1 past the end.
     pub fn long(&mut self) -> i32 {
-        match self.take(4) {
+        match self.take(LONG_BYTES) {
             Some(&[a, b, c, d]) => i32::from_le_bytes([a, b, c, d]),
             _ => -1,
         }
@@ -89,7 +98,7 @@ impl<'a> Reader<'a> {
 
     /// `MSG_ReadFloat`: four little-endian bytes as a float, -1 past the end.
     pub fn float(&mut self) -> f32 {
-        match self.take(4) {
+        match self.take(LONG_BYTES) {
             Some(&[a, b, c, d]) => f32::from_le_bytes([a, b, c, d]),
             _ => -1.0,
         }
@@ -108,11 +117,11 @@ impl<'a> Reader<'a> {
 
     /// `MSG_ReadCoord`: a short over 8.
     pub fn coord(&mut self) -> f32 {
-        double_to_float(f64::from(self.short()) * (1.0 / 8.0))
+        double_to_float(f64::from(self.short()) * (1.0 / COORD_STEPS))
     }
 
     /// `MSG_ReadAngle`: a char times 360 over 256.
     pub fn angle(&mut self) -> f32 {
-        double_to_float(f64::from(self.char()) * (360.0 / 256.0))
+        double_to_float(f64::from(self.char()) * (f64::from(FULL_TURN) / ANGLE_STEPS))
     }
 }
