@@ -92,7 +92,7 @@ impl core::error::Error for WorldError {}
 #[derive(Clone, Debug, PartialEq)]
 pub struct Entity {
     /// The edict's number.
-    pub number: usize,
+    pub number: EdictNumber,
     /// The model `modelindex` names in the model list, `maps/<map>.bsp`, `*n` for a brush
     /// submodel, or a file such as `progs/soldier.mdl`.
     pub model: String,
@@ -883,7 +883,7 @@ impl World {
                 let index = whole(float(n, "modelindex"))?;
                 let model = precache.get(index).filter(|m| !m.is_empty())?.clone();
                 Some(Entity {
-                    number: n,
+                    number: EdictNumber::new(n),
                     model,
                     origin: vector(n, "origin"),
                     angles: vector(n, "angles"),

@@ -4,7 +4,6 @@
     clippy::unwrap_used,
     clippy::indexing_slicing,
     clippy::panic,
-    clippy::float_cmp_const,
     reason = "test code: a failed unwrap, index or match is a failed test; the values compared are \
               exact"
 )]
@@ -106,7 +105,10 @@ fn seed_start_and_screenshot_lines() {
         Scenario::parse("map a\nseed 4294967295\nstart 1 2 3.5 90\nscreenshot hall-2_b\n").unwrap();
     assert_eq!(scenario.seed, Some(u32::MAX));
     let start = scenario.start.unwrap();
-    assert_eq!((start.origin, start.yaw), ([1.0, 2.0, 3.5], 90.0));
+    assert_eq!(
+        (start.origin, start.yaw),
+        ([1.0, 2.0, 3.5], super::Degrees::new(90.0))
+    );
     assert_eq!(scenario.steps, [Step::Screenshot("hall-2_b".to_owned())]);
     for bad in [
         "map a\nseed 1\nseed 2\n",

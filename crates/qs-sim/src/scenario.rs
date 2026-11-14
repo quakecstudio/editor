@@ -14,7 +14,43 @@ use serde::Serialize;
 use crate::{CLIENT_EDICT, EditError, NamedValue, QcValue, State, UserCmd, World, WorldError};
 
 /// One server frame's length when a scenario does not say: `Host_FilterTime`'s shortest.
-pub const SCN_FRAMETIME: f64 = 1.0 / 72.0;
+pub const SCN_FRAMETIME: Seconds = Seconds(1.0 / 72.0);
+
+/// A length of time in seconds, as a scenario writes it (SCN-1.3).
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+pub struct Seconds(f64);
+
+impl Seconds {
+    /// `seconds` seconds.
+    #[must_use]
+    pub const fn new(seconds: f64) -> Self {
+        Self(seconds)
+    }
+
+    /// The seconds.
+    #[must_use]
+    pub const fn get(self) -> f64 {
+        self.0
+    }
+}
+
+/// An angle in degrees, as a scenario writes it (SCN-1.4).
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+pub struct Degrees(f32);
+
+impl Degrees {
+    /// `degrees` degrees.
+    #[must_use]
+    pub const fn new(degrees: f32) -> Self {
+        Self(degrees)
+    }
+
+    /// The degrees.
+    #[must_use]
+    pub const fn get(self) -> f32 {
+        self.0
+    }
+}
 
 /// The frame in which the player enters the game (SCN-2.1, DIFF-16.1): the client connects in
 /// frame 1 and sends `begin` in frame 4.
@@ -27,8 +63,8 @@ pub struct Scenario {
     pub engine: Vec<String>,
     /// The map.
     pub map: String,
-    /// A server frame's length in seconds.
-    pub frametime: f64,
+    /// A server frame's length.
+    pub frametime: Seconds,
     /// The state the server's random source starts at, `None` for MOVE-6.1's 1 (SCN-1.3).
     pub seed: Option<u32>,
     /// Where the player is put once it has entered the game (SCN-1.4).
@@ -42,8 +78,8 @@ pub struct Scenario {
 pub struct Start {
     /// Where the player stands.
     pub origin: [f32; 3],
-    /// Which way it faces, in degrees.
-    pub yaw: f32,
+    /// Which way it faces.
+    pub yaw: Degrees,
 }
 
 /// One step of a scenario.
@@ -221,6 +257,7 @@ impl Scenario {
                         .parse()
                         .ok()
                         .filter(|t: &f64| *t > 0.0 && *t <= 1.0)
+                        .map(Seconds::new)
                         .ok_or_else(|| error("frametime is above 0, at most 1"))?;
                 }
                 "cmd" => scenario.steps.push(Step::Command(rest.to_owned())),
@@ -255,7 +292,7 @@ impl Scenario {
                     };
                     scenario.start = Some(Start {
                         origin: [x, y, z],
-                        yaw,
+                        yaw: Degrees::new(yaw),
                     });
                 }
                 "expect" => scenario.steps.push(Step::Expect(
@@ -505,7 +542,7 @@ impl Scenario {
                         }
                         world.set_command(cmd);
                         world
-                            .frame(progs, self.frametime)
+                            .frame(progs, self.frametime.get())
                             .map_err(|error| PlayError::Frame { frame, error })?;
                         drop(world.take_messages());
                         // An impulse is sent once.
@@ -515,7 +552,7 @@ impl Scenario {
                             && let Some(start) = self.start
                         {
                             world
-                                .move_player(progs, start.origin, [0.0, start.yaw, 0.0])
+                                .move_player(progs, start.origin, [0.0, start.yaw.get(), 0.0])
                                 .map_err(PlayError::Start)?;
                         }
                         if !visit(Moment::Frame, frame, world).map_err(PlayError::Visit)? {
