@@ -32,7 +32,7 @@ mod tests;
 
 pub use layout::{EdictLayout, LayoutError};
 pub use number::EdictNumber;
-pub use store::{EdictError, EdictEvent, EdictStore};
+pub use store::{EdictError, EdictEvent, EdictStore, Tracking};
 
 /// Bytes of engine state at the start of every edict, before its field slots.
 ///

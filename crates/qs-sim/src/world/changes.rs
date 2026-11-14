@@ -37,7 +37,11 @@ pub enum EdictChange {
 impl World {
     /// Starts or stops recording what happens to the edicts, for [`World::take_changes`].
     pub fn track_changes(&mut self, on: bool) {
-        self.machine.edicts_mut().track(on);
+        self.machine.edicts_mut().track(if on {
+            qc_edict::Tracking::On
+        } else {
+            qc_edict::Tracking::Off
+        });
     }
 
     /// What has happened to the edicts since the last call, while tracking is on: each
