@@ -9,7 +9,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use qc_sema::ir::{BodyStatement, Effect, Name};
+use qc_sema::ir::{BodyStatement, Effect, Name, StatementIndex};
 
 use super::body::call_count;
 
@@ -35,10 +35,12 @@ impl Slots {
     ) -> Result<(), Internal> {
         match self {
             Self::CreationOrder(order) => order.statement(program, statement, index),
-            Self::Overlapping(overlapping) => match statement.temp_words(index) {
-                Some(words) => overlapping.take(program, index, words),
-                None => Ok(()),
-            },
+            Self::Overlapping(overlapping) => {
+                match statement.temp_words(StatementIndex::new(index)) {
+                    Some(words) => overlapping.take(program, index, words),
+                    None => Ok(()),
+                }
+            }
         }
     }
 
@@ -106,7 +108,7 @@ impl CreationOrder {
         statement: &BodyStatement,
         index: u32,
     ) -> Result<(), Internal> {
-        if let Some(words) = statement.temp_words(index) {
+        if let Some(words) = statement.temp_words(StatementIndex::new(index)) {
             let slot = program.allocate(words)?;
             self.slots.insert(index, slot);
         }
@@ -161,7 +163,7 @@ impl Overlapping {
     pub(super) fn new(generated: &[BodyStatement], effects: &[(u32, Effect)]) -> Self {
         let mut last: HashMap<u32, u32> = HashMap::new();
         for (index, statement) in (0_u32..).zip(generated) {
-            if statement.temp_words(index).is_some() {
+            if statement.temp_words(StatementIndex::new(index)).is_some() {
                 last.entry(index).or_insert(index);
             }
         }
@@ -176,7 +178,7 @@ impl Overlapping {
         for statement in generated {
             for name in [statement.b, statement.c].into_iter().flatten() {
                 if let Name::Made(made) = name
-                    && let Some(words) = statement.made_words(made)
+                    && let Some(words) = statement.made_words(StatementIndex::new(made))
                 {
                     let wide = widest.entry(made).or_insert(words);
                     *wide = (*wide).max(words);

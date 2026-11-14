@@ -22,7 +22,6 @@ use crate::check::opcodes;
 use crate::check::opcodes::row;
 use crate::check::reference::{eval_int, word_type};
 use crate::check::truth::Test;
-use crate::check::truth::words;
 use crate::check::{Constness, Fold, Reference, Value, ValueUse};
 use crate::ir;
 use crate::lower::{Qualifier, declares};
@@ -308,7 +307,7 @@ impl Checker<'_> {
         let wider = self.generated.last().is_some_and(|last| {
             let made = opcodes::row(last.op).map(|row| row.types[2].etype());
             let stored = self.etype(&target);
-            made.map_or(1, words) > stored.map_or(1, words)
+            made.map_or(1, Etype::words) > stored.map_or(1, Etype::words)
         });
         let folded = stored.temp.is_some() && stored.temp == self.last_temp && !wider;
         let structured = matches!(self.etype(&target), Some(Etype::Struct | Etype::Union));
@@ -1090,7 +1089,7 @@ impl Checker<'_> {
             let to = local.map(|def| ir::Name::Def(def, at.saturating_mul(width)));
             let wider = self.generated.last().is_some_and(|last| {
                 let made = opcodes::row(last.op).map(|row| row.types[2].etype());
-                made.map_or(1, words) > self.etype(&ty).map_or(1, words)
+                made.map_or(1, Etype::words) > self.etype(&ty).map_or(1, Etype::words)
             });
             if value.temp.is_some() && value.temp == self.last_temp && !wider {
                 self.fold_into(&value, to);

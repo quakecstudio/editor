@@ -141,7 +141,6 @@ free-fn-on-type	crates/qc-codegen/src/ops.rs	select
 free-fn-on-type	crates/qc-codegen/src/write.rs	progdefs
 free-fn-on-type	crates/qc-codegen/src/write.rs	progs
 free-fn-on-type	crates/qc-codegen/src/write.rs	skip_components
-free-fn-on-type	crates/qc-engines/src/check.rs	missing_builtins
 free-fn-on-type	crates/qc-ide/src/hints.rs	function_parameters
 free-fn-on-type	crates/qc-ide/src/hover.rs	builtin_info
 free-fn-on-type	crates/qc-ide/src/hover.rs	declaration
@@ -156,8 +155,6 @@ free-fn-on-type	crates/qc-preproc/src/fte_opcodes.rs	valid_for_target
 free-fn-on-type	crates/qc-progs/src/write.rs	encode_tables
 free-fn-on-type	crates/qc-progs/src/write.rs	write
 free-fn-on-type	crates/qc-sema/src/cast.rs	pointees_agree
-free-fn-on-type	crates/qc-sema/src/check/call.rs	type_params
-free-fn-on-type	crates/qc-sema/src/check/call.rs	variant_parameter
 free-fn-on-type	crates/qc-sema/src/check/emulate.rs	conversion_opcodes
 free-fn-on-type	crates/qc-sema/src/check/fold.rs	lanes
 free-fn-on-type	crates/qc-sema/src/check/fold.rs	lanes_f
@@ -167,13 +164,9 @@ free-fn-on-type	crates/qc-sema/src/check/mod.rs	converts
 free-fn-on-type	crates/qc-sema/src/check/reference.rs	eval_int
 free-fn-on-type	crates/qc-sema/src/check/reference.rs	narrow_bits
 free-fn-on-type	crates/qc-sema/src/check/reference.rs	word_type
-free-fn-on-type	crates/qc-sema/src/check/statement.rs	dropped_block
 free-fn-on-type	crates/qc-sema/src/check/term.rs	signed_arithmetic
 free-fn-on-type	crates/qc-sema/src/check/truth.rs	is_truth
-free-fn-on-type	crates/qc-sema/src/check/truth.rs	words
 free-fn-on-type	crates/qc-sema/src/db.rs	locate_diagnostic
-free-fn-on-type	crates/qc-sema/src/entities.rs	is_spawn_type
-free-fn-on-type	crates/qc-sema/src/entities.rs	key_type
 free-fn-on-type	crates/qc-sema/src/expand.rs	preprocess
 free-fn-on-type	crates/qc-sema/src/lower/body.rs	collect_params
 free-fn-on-type	crates/qc-sema/src/lower/decl.rs	declarator_type
@@ -292,12 +285,7 @@ bare-id	crates/qc-edict/src/system.rs	SysVar.slot
 bare-id	crates/qc-ide/src/host.rs	AnalysisHost::module(index)
 bare-id	crates/qc-preproc/src/fte_opcodes.rs	OpcodeTarget::new(revision)
 bare-id	crates/qc-progs/src/read.rs	Table::get(index)
-bare-id	crates/qc-sema/src/check/mod.rs	TypedBody::origin(index)
-bare-id	crates/qc-sema/src/check/mod.rs	TypedBody::string(index)
 bare-id	crates/qc-sema/src/db.rs	QueryCounts.module_index
-bare-id	crates/qc-sema/src/ir.rs	BodyStatement::made_words(index)
-bare-id	crates/qc-sema/src/ir.rs	BodyStatement::temp_words(index)
-bare-id	crates/qc-sema/src/map_check.rs	MapDiagnostic.entity
 bare-id	crates/qc-sema/src/resolve/scope.rs	Resolver::in_scope_at(index)
 bare-id	crates/qc-trace/src/lib.rs	FieldChange.edict
 bare-id	crates/qc-trace/src/lib.rs	GlobalChange.slot
@@ -783,9 +771,7 @@ magic-number	crates/qc-sema/src/check/term.rs	Checker::size_of:31
 magic-number	crates/qc-sema/src/check/term.rs	Checker::vector_of:3
 magic-number	crates/qc-sema/src/check/truth.rs	Checker::condition_arm:3
 magic-number	crates/qc-sema/src/check/truth.rs	Test::opcode:3
-magic-number	crates/qc-sema/src/check/truth.rs	words:3
 magic-number	crates/qc-sema/src/check/vanilla.rs	Vanilla::call:8
-magic-number	crates/qc-sema/src/ir.rs	BodyStatement::uses:3
 magic-number	crates/qc-sema/src/lower/types.rs	IntConst::of:9.0e15
 magic-number	crates/qc-sema/src/resolve/aggregate.rs	Resolver::read_element:3
 magic-number	crates/qc-sema/src/resolve/global.rs	Resolver::parseentitydata:613

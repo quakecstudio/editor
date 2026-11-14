@@ -98,7 +98,11 @@ impl Checker<'_> {
         let mut effects = Vec::new();
         effects.extend(make(statement.a));
         effects.extend(make(statement.b));
-        effects.extend(statement.temp_words(index).map(ir::Effect::Temp));
+        effects.extend(
+            statement
+                .temp_words(ir::StatementIndex::new(index))
+                .map(ir::Effect::Temp),
+        );
         effects.extend(make(statement.c));
         effects
     }
@@ -134,11 +138,11 @@ impl Checker<'_> {
         let mut dropped = Vec::new();
         for (index, statement) in (first..).zip(statements) {
             while let Some((_, effect)) = between.next_if(|&(at, _)| at <= index) {
-                dropped.push(dropped_block(effect));
+                dropped.push(effect.dropped());
             }
             dropped.extend(Self::statement_effects(statement, index));
         }
-        dropped.extend(between.map(|(_, effect)| dropped_block(effect)));
+        dropped.extend(between.map(|(_, effect)| effect.dropped()));
         self.generated.truncate(from);
         let kept = self.next_made();
         self.effects
@@ -1207,12 +1211,14 @@ impl Checker<'_> {
     }
 }
 
-/// A dropped statement's effect as it is made before the statement after the drop: a block it
-/// took is a temporary nothing reads, since the value it was is gone and the next statement's
-/// value has that statement's index.
-const fn dropped_block(effect: ir::Effect) -> ir::Effect {
-    match effect {
-        ir::Effect::Block(words) => ir::Effect::Temp(words),
-        other => other,
+impl ir::Effect {
+    /// A dropped statement's effect as it is made before the statement after the drop: a block it
+    /// took is a temporary nothing reads, since the value it was is gone and the next statement's
+    /// value has that statement's index.
+    const fn dropped(self) -> ir::Effect {
+        match self {
+            ir::Effect::Block(words) => ir::Effect::Temp(words),
+            other => other,
+        }
     }
 }

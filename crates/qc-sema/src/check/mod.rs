@@ -393,7 +393,7 @@ impl Value {
             });
         }
         if let Some(string) = self.string {
-            return Some(ir::Name::String(string));
+            return Some(ir::Name::String(ir::StringIndex::new(string)));
         }
         if let Some(&(constant, name)) = self.literal.as_deref()
             && self.known() == Some(constant)
@@ -836,11 +836,11 @@ impl TypedBody {
         &self.locals
     }
 
-    /// Where the source statement the generated statement `index` was recorded at starts, a
+    /// Where the source statement the generated statement `at` was recorded at starts, a
     /// byte offset; `None` before the body's first statement, which the function's name is.
     #[must_use]
-    pub fn origin(&self, index: usize) -> Option<usize> {
-        let index = u32::try_from(index).ok()?;
+    pub fn origin(&self, at: ir::StatementIndex) -> Option<usize> {
+        let index = at.get();
         let at = self.origins.partition_point(|&(first, _)| first <= index);
         self.origins
             .get(at.checked_sub(1)?)
@@ -850,9 +850,9 @@ impl TypedBody {
     /// The bytes of the string literal [`ir::Name::String`] `index` names, as FTEQCC's lexer
     /// reads them.
     #[must_use]
-    pub fn string(&self, index: u32) -> Option<&[u8]> {
+    pub fn string(&self, index: ir::StringIndex) -> Option<&[u8]> {
         self.strings
-            .get(usize::try_from(index).ok()?)
+            .get(usize::try_from(index.get()).ok()?)
             .map(Vec::as_slice)
     }
 }

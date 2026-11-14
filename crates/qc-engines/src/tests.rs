@@ -17,7 +17,7 @@ use qc_sema::{FileDiagnostic, FileId, ModuleIndex, ResolveOptions, resolve_modul
 use qc_syntax::{Dialect, Parse};
 
 use crate::check::builtin_number;
-use crate::{BuiltinKey, BuiltinRef, Engine, SOURCES, declared_builtins, missing_builtins, tables};
+use crate::{BuiltinKey, BuiltinRef, Engine, SOURCES, declared_builtins, tables};
 
 /// A module made of `files`, in compilation order and in `dialect`: its parses and its
 /// resolved index.
@@ -48,7 +48,8 @@ fn files_of(parses: &[Parse]) -> Vec<(FileId, &Parse)> {
 /// `engine`.
 fn check_kind(engine: Engine, kind: ModuleKind, files: &[&str]) -> Vec<String> {
     let (parses, index) = module(Dialect::Fteqcc, files);
-    missing_builtins(engine, kind, &files_of(&parses), &index, Dialect::Fteqcc)
+    engine
+        .missing_builtins(kind, &files_of(&parses), &index, Dialect::Fteqcc)
         .into_iter()
         .map(|d| d.diagnostic.message)
         .collect()
@@ -58,13 +59,7 @@ fn check_kind(engine: Engine, kind: ModuleKind, files: &[&str]) -> Vec<String> {
 /// `engine`.
 fn check_in(dialect: Dialect, engine: Engine, files: &[&str]) -> Vec<FileDiagnostic> {
     let (parses, index) = module(dialect, files);
-    missing_builtins(
-        engine,
-        ModuleKind::Ssqc,
-        &files_of(&parses),
-        &index,
-        dialect,
-    )
+    engine.missing_builtins(ModuleKind::Ssqc, &files_of(&parses), &index, dialect)
 }
 
 /// The `W0311` warnings for vanilla `files` checked against `engine`.

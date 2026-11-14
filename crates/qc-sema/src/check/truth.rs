@@ -12,6 +12,7 @@ use qc_preproc::{FteFlag, Op};
 use qc_syntax::ast::{self, AstNode as _};
 use qc_syntax::c_scalar::CScalar;
 
+use crate::VECTOR_WORDS;
 use crate::check::Value;
 use crate::check::constant::Constant;
 use crate::check::emulate::conversion_opcodes;
@@ -559,7 +560,7 @@ impl Checker<'_> {
                 && self.etype_of(&kept.ty) == self.etype_of(&other.ty));
         if !same {
             let other_null = other.known().is_some_and(Constant::null);
-            let same_size = words(a) == words(b);
+            let same_size = a.words() == b.words();
             if other_null && same_size {
                 other.ty = kept.ty.clone();
             } else if kept_null && same_size {
@@ -616,12 +617,14 @@ impl Checker<'_> {
     }
 }
 
-/// The words a value of basic type `etype` takes, `type->size`.
-pub(super) const fn words(etype: Etype) -> u32 {
-    match etype {
-        Etype::Vector => 3,
-        Etype::Int64 | Etype::Uint64 | Etype::Double => 2,
-        _ => 1,
+impl Etype {
+    /// The words a value of this basic type takes, `type->size`.
+    pub(crate) const fn words(self) -> u32 {
+        match self {
+            Self::Vector => VECTOR_WORDS,
+            Self::Int64 | Self::Uint64 | Self::Double => 2,
+            _ => 1,
+        }
     }
 }
 

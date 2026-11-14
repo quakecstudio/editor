@@ -123,7 +123,11 @@ impl Checker<'_> {
             .def()
             .filter(|&def| self.env.definition(def).is_some_and(|d| d.ty.is_function()))
             .and_then(|def| self.env.params(def))
-            .unwrap_or_else(|| function.as_ref().map_or_else(Vec::new, type_params));
+            .unwrap_or_else(|| {
+                function
+                    .as_ref()
+                    .map_or_else(Vec::new, FunctionType::call_params)
+            });
         let Some(function) = function else {
             // A `variant` takes any arguments, and no argument left empty (FTEF-32.9).
             let slots = call.args().map(|list| list.slots()).unwrap_or_default();
@@ -428,7 +432,7 @@ impl Checker<'_> {
                     continue;
                 }
                 let words = self.env.layout(&value.ty).map_or(1, |l| l.words);
-                let vector = words == VECTOR_WORDS || variant_parameter(function, slot);
+                let vector = words == VECTOR_WORDS || function.is_variant_parameter(slot);
                 let folded = first && value.temp.is_some() && value.temp == self.last_temp;
                 first = false;
                 if folded {
@@ -459,7 +463,7 @@ impl Checker<'_> {
                     .get(slot)
                     .and_then(|param| self.env.layout(param))
                     .map_or(1, |l| l.words);
-                let vector = words == VECTOR_WORDS || variant_parameter(function, slot);
+                let vector = words == VECTOR_WORDS || function.is_variant_parameter(slot);
                 let slot = u8::try_from(slot).ok();
                 self.generated.push(ir::BodyStatement {
                     a: slot.map(ir::Name::Default),
@@ -1016,37 +1020,38 @@ fn is_string_literal(expr: &ast::Expr) -> bool {
     matches!(expr, ast::Expr::Literal(l) if l.kind() == Some(ast::LiteralKind::String))
 }
 
-/// The parameters of the function type `function` as a call reads them, from how each is
-/// written (`QCC_typeparam_s`, FTEF-6.25).
-fn type_params(function: &FunctionType) -> Vec<ParamFacts> {
-    (0..function.params.len())
-        .map(|at| {
-            function
-                .labels
-                .0
-                .get(at)
-                .map_or_else(ParamFacts::default, |label| ParamFacts {
-                    name: label.name.clone(),
-                    has_default: label.default.is_some(),
-                    // The code generator passes defaults only to a function it calls by name.
-                    kept_default: false,
-                    optional: label.optional,
-                    out: label.out,
-                })
-        })
-        .collect()
-}
+impl FunctionType {
+    /// The parameters of the function type as a call reads them, from how each is
+    /// written (`QCC_typeparam_s`, FTEF-6.25).
+    fn call_params(&self) -> Vec<ParamFacts> {
+        (0..self.params.len())
+            .map(|at| {
+                self.labels
+                    .0
+                    .get(at)
+                    .map_or_else(ParamFacts::default, |label| ParamFacts {
+                        name: label.name.clone(),
+                        has_default: label.default.is_some(),
+                        // The code generator passes defaults only to a self it calls by name.
+                        kept_default: false,
+                        optional: label.optional,
+                        out: label.out,
+                    })
+            })
+            .collect()
+    }
 
-/// FTE-18.9: whether `function`'s parameter `slot` is a variant or a field of one, which an
-/// argument is stored to by three words, its `size`.
-fn variant_parameter(function: &FunctionType, slot: usize) -> bool {
-    function.params.get(slot).is_some_and(|param| {
-        let held = match param {
-            Type::Field(inner) => inner.as_ref(),
-            other => other,
-        };
-        matches!(held, Type::Named(name) if &**name == "__variant")
-    })
+    /// FTE-18.9: whether the function type's parameter `slot` is a variant or a field of one, which an
+    /// argument is stored to by three words, its `size`.
+    fn is_variant_parameter(&self, slot: usize) -> bool {
+        self.params.get(slot).is_some_and(|param| {
+            let held = match param {
+                Type::Field(inner) => inner.as_ref(),
+                other => other,
+            };
+            matches!(held, Type::Named(name) if &**name == "__variant")
+        })
+    }
 }
 
 /// `CALL0` to `CALL8`, the call of `passed` arguments, the opcode of the count (QC-18.3).

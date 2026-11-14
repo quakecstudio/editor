@@ -170,7 +170,7 @@ impl Db {
             .index
             .defs()
             .iter()
-            .filter(|def| key_type(&def.ty) == KeyType::Vector)
+            .filter(|def| def.ty.key_type() == KeyType::Vector)
             .map(|def| def.name.clone())
             .collect();
         Classes {
@@ -283,7 +283,7 @@ impl Classes<'_> {
         let mut classes = Vec::new();
         let mut seen = HashSet::new();
         for (id, def) in self.index.definitions() {
-            if def.kind != DefKind::Function || !is_spawn_type(&def.ty) || !seen.insert(&def.name) {
+            if def.kind != DefKind::Function || !def.ty.is_spawn() || !seen.insert(&def.name) {
                 continue;
             }
             let Some(body) = self.index.body(id) else {
@@ -522,7 +522,7 @@ impl Classes<'_> {
             .filter(|parent| self.vectors.contains(*parent));
         match parent {
             Some(parent) => (parent.to_owned(), KeyType::Vector),
-            None => (field.name.clone(), key_type(&field.ty)),
+            None => (field.name.clone(), field.ty.key_type()),
         }
     }
 
@@ -721,24 +721,26 @@ fn literal_after(text: &[u8]) -> Option<Arg> {
     value.parse().ok().map(Arg::Float)
 }
 
-/// Whether `ty` is `void()`, the type the engine calls a spawn function as (EDICT-8.6).
-fn is_spawn_type(ty: &Type) -> bool {
-    matches!(ty, Type::Function(f)
-        if f.params.is_empty() && !f.variadic && f.ret == Type::Simple(SimpleType::Void))
-}
+impl Type {
+    /// Whether `ty` is `void()`, the type the engine calls a spawn function as (EDICT-8.6).
+    fn is_spawn(&self) -> bool {
+        matches!(self, Type::Function(f)
+            if f.params.is_empty() && !f.variadic && f.ret == Type::Simple(SimpleType::Void))
+    }
 
-/// A field's key type.
-fn key_type(ty: &Type) -> KeyType {
-    let Type::Field(inner) = ty else {
-        return KeyType::Other;
-    };
-    match &**inner {
-        Type::Simple(SimpleType::Float) => KeyType::Float,
-        Type::Simple(SimpleType::Vector) => KeyType::Vector,
-        Type::Simple(SimpleType::String) => KeyType::String,
-        Type::Simple(SimpleType::Entity) => KeyType::Entity,
-        Type::Function(_) => KeyType::Function,
-        _ => KeyType::Other,
+    /// A field's key type.
+    fn key_type(&self) -> KeyType {
+        let Type::Field(inner) = self else {
+            return KeyType::Other;
+        };
+        match &**inner {
+            Type::Simple(SimpleType::Float) => KeyType::Float,
+            Type::Simple(SimpleType::Vector) => KeyType::Vector,
+            Type::Simple(SimpleType::String) => KeyType::String,
+            Type::Simple(SimpleType::Entity) => KeyType::Entity,
+            Type::Function(_) => KeyType::Function,
+            _ => KeyType::Other,
+        }
     }
 }
 

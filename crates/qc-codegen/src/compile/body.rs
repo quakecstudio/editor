@@ -10,7 +10,7 @@
 
 use qc_diag::Span;
 use qc_progs::opcode::Opcode;
-use qc_sema::ir::{BodyStatement, Effect, Name};
+use qc_sema::ir::{BodyStatement, Effect, Name, StatementIndex};
 use qc_sema::lower::{Qualifier, declares};
 use qc_sema::{DefId, FileId, TypedBody};
 use qc_syntax::ast::{self, AstNode as _};
@@ -86,10 +86,9 @@ impl Compiler<'_> {
                 )?;
                 effects.next();
             }
-            let at = usize::try_from(index)
-                .map_err(|_| Internal::TooLarge)
-                .at(named)?;
-            let origin = body.origin(at).unwrap_or(named.start);
+            let origin = body
+                .origin(StatementIndex::new(index))
+                .unwrap_or(named.start);
             self.program.origin = Some((self.file, origin));
             slots
                 .statement(&mut self.program, statement, index)
@@ -471,7 +470,7 @@ fn writable(body: &TypedBody, returns_value: bool) -> bool {
         usize::try_from(made)
             .ok()
             .and_then(|at| generated.get(at))
-            .and_then(|statement| statement.made_words(made))
+            .and_then(|statement| statement.made_words(StatementIndex::new(made)))
             .is_some()
             || body
                 .effects()
