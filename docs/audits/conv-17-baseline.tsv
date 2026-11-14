@@ -155,8 +155,6 @@ string-error	crates/qs-models/src/anthropic.rs	reply
 string-error	crates/qs-models/src/lib.rs	ProviderModel::take
 string-error	crates/qs-models/src/openai.rs	reply
 string-error	crates/qs-models/src/stream.rs	AnthropicStream::answer
-string-error	crates/qs-sim/src/scenario.rs	parse_expect
-string-error	crates/qs-sim/src/scenario.rs	read
 free-fn-on-type	apps/cli/src/doctor.rs	name
 free-fn-on-type	apps/cli/src/doctor.rs	run
 free-fn-on-type	apps/cli/src/lib.rs	serve_mcp
@@ -372,13 +370,6 @@ free-fn-on-type	crates/qs-sim/src/builtins.rs	parm_vector
 free-fn-on-type	crates/qs-sim/src/collision/hull.rs	hull_for_entity
 free-fn-on-type	crates/qs-sim/src/collision/trace.rs	check
 free-fn-on-type	crates/qs-sim/src/collision/trace.rs	recursive_hull_check
-free-fn-on-type	crates/qs-sim/src/scenario.rs	check
-free-fn-on-type	crates/qs-sim/src/scenario.rs	compare
-free-fn-on-type	crates/qs-sim/src/scenario.rs	play
-free-fn-on-type	crates/qs-sim/src/scenario.rs	read
-free-fn-on-type	crates/qs-sim/src/scenario.rs	run
-free-fn-on-type	crates/qs-sim/src/scenario.rs	shot
-free-fn-on-type	crates/qs-sim/src/scenario.rs	shown
 free-fn-on-type	crates/qs-sim/src/world/reload.rs	change
 free-fn-on-type	crates/qs-sound/src/mixer.rs	paint_channel
 bare-id	apps/desktop/src/agent.rs	AgentPanel::asking(index)

@@ -14,7 +14,7 @@ use qs_engine::{
     Client, ClientError, Flavour, LaunchError, LaunchSpec, RunRoot, RunRootError, StepKind, launch,
     locate_host, prepare_run_root,
 };
-use qs_sim::scenario::{self as scenarios, Report, Scenario, ScenarioError, Shot};
+use qs_sim::scenario::{Report, Scenario, ScenarioError, Shot};
 use qs_sim::{LoadOptions, World};
 use qs_vfs::{LoadedFile, StdFs, Vfs};
 use serde::Serialize;
@@ -196,7 +196,7 @@ pub fn play_on_game(words: &[String], scenario: &Scenario) -> Result<Report, Sce
     let mut world = World::load(&progs, &scenario.map, &bsp, reader, options)
         .map_err(|e| game(e.to_string()))?;
     world.settle(&progs).map_err(|e| game(e.to_string()))?;
-    Ok(scenarios::run(&mut world, &progs, scenario))
+    Ok(scenario.run(&mut world, &progs))
 }
 
 /// Each of `shots` taken by the headless host: the game paused, the player moved to the

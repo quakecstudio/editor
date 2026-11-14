@@ -50,7 +50,7 @@ fn played(text: &str) -> Report {
         0,
     );
     let progs = Progs::read(&run.progs).unwrap();
-    super::run(&mut run.world, &progs, &scenario)
+    scenario.run(&mut run.world, &progs)
 }
 
 // spec SCN-1.1: blank lines and # lines are skipped, a \r before a line's end is left out, and
@@ -261,7 +261,7 @@ fn a_run_error_stops_the_run() {
     // The settle's two frames count too (MOVE-6.2): the progs' frame 12 is the run's 10.
     let mut run = world(LoadOptions::default(), 12);
     let progs = Progs::read(&run.progs).unwrap();
-    let stopped = super::run(&mut run.world, &progs, &scenario);
+    let stopped = scenario.run(&mut run.world, &progs);
     assert!(!stopped.passed);
     assert_eq!(stopped.frames, 10, "{stopped:?}");
     assert!(stopped.error.as_deref().unwrap().starts_with("frame 10: "));

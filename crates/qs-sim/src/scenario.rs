@@ -258,9 +258,9 @@ impl Scenario {
                         yaw,
                     });
                 }
-                "expect" => scenario
-                    .steps
-                    .push(Step::Expect(parse_expect(rest, at).map_err(|m| error(&m))?)),
+                "expect" => scenario.steps.push(Step::Expect(
+                    parse_expect(rest, at).map_err(|m| error(&m.to_string()))?,
+                )),
                 "screenshot" => {
                     let named = !rest.is_empty()
                         && rest
@@ -308,42 +308,74 @@ fn parse_move(text: &str) -> Option<UserCmd> {
     })
 }
 
+/// Why an `expect` line does not parse (SCN-1.5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ExpectError {
+    /// `expect global` without a name, an op and a value.
+    GlobalForm,
+    /// `expect field` without an edict, a name, an op and a value.
+    FieldForm,
+    /// `classname=` with no classname.
+    EmptyClassname,
+    /// An edict that is not a number, `player` or `classname=<name>`.
+    EdictForm,
+    /// Neither `expect global` nor `expect field`.
+    TargetForm,
+    /// No op and value after the target.
+    OpValueForm,
+    /// An op that is not `==`, `!=`, `<`, `<=`, `>` or `>=`.
+    Op,
+    /// A value that does not parse.
+    Value,
+    /// An ordering op on a value that is not a float.
+    OrderedNotFloat,
+}
+
+impl fmt::Display for ExpectError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::GlobalForm => "expect global <name> <op> <value>",
+            Self::FieldForm => "expect field <edict> <name> <op> <value>",
+            Self::EmptyClassname => "classname= names a classname",
+            Self::EdictForm => "an edict is a number, player or classname=<name>",
+            Self::TargetForm => "expect global ... or expect field ...",
+            Self::OpValueForm => "expect ... <op> <value>",
+            Self::Op => "an op is ==, !=, <, <=, > or >=",
+            Self::Value => {
+                "a value is a number, a vector 'x y z', a string in double quotes or an edict #n"
+            }
+            Self::OrderedNotFloat => "<, <=, > and >= compare floats",
+        })
+    }
+}
+
 /// `expect <target> <op> <value>` (SCN-1.5).
-fn parse_expect(text: &str, line: usize) -> Result<Expectation, String> {
+fn parse_expect(text: &str, line: usize) -> Result<Expectation, ExpectError> {
     let (target, rest) = match text.split_once(' ') {
         Some(("global", rest)) => {
-            let (name, rest) = rest
-                .split_once(' ')
-                .ok_or("expect global <name> <op> <value>")?;
+            let (name, rest) = rest.split_once(' ').ok_or(ExpectError::GlobalForm)?;
             (Target::Global(name.to_owned()), rest)
         }
         Some(("field", rest)) => {
-            let (edict, rest) = rest
-                .split_once(' ')
-                .ok_or("expect field <edict> <name> <op> <value>")?;
-            let (name, rest) = rest
-                .split_once(' ')
-                .ok_or("expect field <edict> <name> <op> <value>")?;
+            let (edict, rest) = rest.split_once(' ').ok_or(ExpectError::FieldForm)?;
+            let (name, rest) = rest.split_once(' ').ok_or(ExpectError::FieldForm)?;
             let edict = match edict {
                 "player" => Edict::Player,
                 _ => match edict.strip_prefix("classname=") {
                     Some(class) if !class.is_empty() => Edict::Classname(class.to_owned()),
-                    Some(_) => return Err("classname= names a classname".to_owned()),
-                    None => Edict::Number(edict.parse().map_err(|_| {
-                        "an edict is a number, player or classname=<name>".to_owned()
-                    })?),
+                    Some(_) => return Err(ExpectError::EmptyClassname),
+                    None => Edict::Number(edict.parse().map_err(|_| ExpectError::EdictForm)?),
                 },
             };
             (Target::Field(edict, name.to_owned()), rest)
         }
-        _ => return Err("expect global ... or expect field ...".to_owned()),
+        _ => return Err(ExpectError::TargetForm),
     };
-    let (op, value) = rest.split_once(' ').ok_or("expect ... <op> <value>")?;
-    let op = Op::of(op).ok_or("an op is ==, !=, <, <=, > or >=")?;
-    let value = parse_value(value.trim())
-        .ok_or("a value is a number, a vector 'x y z', a string in double quotes or an edict #n")?;
+    let (op, value) = rest.split_once(' ').ok_or(ExpectError::OpValueForm)?;
+    let op = Op::of(op).ok_or(ExpectError::Op)?;
+    let value = parse_value(value.trim()).ok_or(ExpectError::Value)?;
     if op.orders() && !matches!(value, Expected::Float(_)) {
-        return Err("<, <=, > and >= compare floats".to_owned());
+        return Err(ExpectError::OrderedNotFloat);
     }
     Ok(Expectation {
         line,
@@ -413,84 +445,120 @@ impl<E: fmt::Display> fmt::Display for PlayError<E> {
     }
 }
 
-/// Plays `scenario` in `world`, settled on its map (SCN-2.1): the client connects in frame 1
-/// and answers each signon stage in the next frame, `start` puts the player after frame 4, and
-/// each step runs in order. `visit` sees the world after the map settled and after each frame
-/// (with the frame's number), and at each assertion and screenshot; it stops the play by
-/// answering `false`. Returns the frames run.
-///
-/// # Errors
-///
-/// [`PlayError`]: a frame's run error, a start the player could not be moved to, or the
-/// visitor's error.
-pub fn play<E>(
-    world: &mut World,
-    progs: &Progs<'_>,
-    scenario: &Scenario,
-    mut visit: impl FnMut(Moment<'_>, usize, &World) -> Result<bool, E>,
-) -> Result<usize, PlayError<E>> {
-    let mut frame = 0_usize;
-    if !visit(Moment::Frame, frame, world).map_err(PlayError::Visit)? {
-        return Ok(frame);
-    }
-    let mut cmd = UserCmd::default();
-    for step in &scenario.steps {
-        match step {
-            Step::Move(next) => cmd = *next,
-            Step::Command(text) => world.client_command(text),
-            Step::Console(text) => {
-                world.console(text);
-                world.console("\n");
-            }
-            Step::Expect(expectation) => {
-                if !visit(Moment::Expect(expectation), frame, world).map_err(PlayError::Visit)? {
-                    return Ok(frame);
+impl Scenario {
+    /// Plays the scenario in `world`, settled on its map (SCN-2.1): the client connects in frame 1
+    /// and answers each signon stage in the next frame, `start` puts the player after frame 4, and
+    /// each step runs in order. `visit` sees the world after the map settled and after each frame
+    /// (with the frame's number), and at each assertion and screenshot; it stops the play by
+    /// answering `false`. Returns the frames run.
+    ///
+    /// # Errors
+    ///
+    /// [`PlayError`]: a frame's run error, a start the player could not be moved to, or the
+    /// visitor's error.
+    pub fn play<E>(
+        &self,
+        world: &mut World,
+        progs: &Progs<'_>,
+        mut visit: impl FnMut(Moment<'_>, usize, &World) -> Result<bool, E>,
+    ) -> Result<usize, PlayError<E>> {
+        let mut frame = 0_usize;
+        if !visit(Moment::Frame, frame, world).map_err(PlayError::Visit)? {
+            return Ok(frame);
+        }
+        let mut cmd = UserCmd::default();
+        for step in &self.steps {
+            match step {
+                Step::Move(next) => cmd = *next,
+                Step::Command(text) => world.client_command(text),
+                Step::Console(text) => {
+                    world.console(text);
+                    world.console("\n");
                 }
-            }
-            Step::Screenshot(name) => {
-                if !visit(Moment::Screenshot(name), frame, world).map_err(PlayError::Visit)? {
-                    return Ok(frame);
-                }
-            }
-            Step::Frames(count) => {
-                for _ in 0..*count {
-                    frame = frame.saturating_add(1);
-                    // DIFF-16.1, PHYS-10.7: the client connects in frame 1 and answers each
-                    // signon stage in the next frame, as the oracle's client does.
-                    match frame {
-                        1 => world.connect_next_frame(),
-                        2 => world.client_command("prespawn"),
-                        3 => {
-                            world.client_command("name \"player\"\n");
-                            world.client_command("color 0 0\n");
-                            world.client_command("spawn ");
-                        }
-                        ENTERED => world.client_command("begin"),
-                        _ => {}
-                    }
-                    world.set_command(cmd);
-                    world
-                        .frame(progs, scenario.frametime)
-                        .map_err(|error| PlayError::Frame { frame, error })?;
-                    drop(world.take_messages());
-                    // An impulse is sent once.
-                    cmd.impulse = 0;
-                    // SCN-2.1: the start once the player is in the game.
-                    if frame == ENTERED
-                        && let Some(start) = scenario.start
+                Step::Expect(expectation) => {
+                    if !visit(Moment::Expect(expectation), frame, world)
+                        .map_err(PlayError::Visit)?
                     {
-                        world
-                            .move_player(progs, start.origin, [0.0, start.yaw, 0.0])
-                            .map_err(PlayError::Start)?;
-                    }
-                    if !visit(Moment::Frame, frame, world).map_err(PlayError::Visit)? {
                         return Ok(frame);
+                    }
+                }
+                Step::Screenshot(name) => {
+                    if !visit(Moment::Screenshot(name), frame, world).map_err(PlayError::Visit)? {
+                        return Ok(frame);
+                    }
+                }
+                Step::Frames(count) => {
+                    for _ in 0..*count {
+                        frame = frame.saturating_add(1);
+                        // DIFF-16.1, PHYS-10.7: the client connects in frame 1 and answers each
+                        // signon stage in the next frame, as the oracle's client does.
+                        match frame {
+                            1 => world.connect_next_frame(),
+                            2 => world.client_command("prespawn"),
+                            3 => {
+                                world.client_command("name \"player\"\n");
+                                world.client_command("color 0 0\n");
+                                world.client_command("spawn ");
+                            }
+                            ENTERED => world.client_command("begin"),
+                            _ => {}
+                        }
+                        world.set_command(cmd);
+                        world
+                            .frame(progs, self.frametime)
+                            .map_err(|error| PlayError::Frame { frame, error })?;
+                        drop(world.take_messages());
+                        // An impulse is sent once.
+                        cmd.impulse = 0;
+                        // SCN-2.1: the start once the player is in the game.
+                        if frame == ENTERED
+                            && let Some(start) = self.start
+                        {
+                            world
+                                .move_player(progs, start.origin, [0.0, start.yaw, 0.0])
+                                .map_err(PlayError::Start)?;
+                        }
+                        if !visit(Moment::Frame, frame, world).map_err(PlayError::Visit)? {
+                            return Ok(frame);
+                        }
                     }
                 }
             }
         }
+        Ok(frame)
     }
-    Ok(frame)
+
+    /// Plays the scenario in `world` and checks its assertions (SCN-2).
+    #[must_use]
+    pub fn run(&self, world: &mut World, progs: &Progs<'_>) -> Report {
+        let mut checks = Vec::new();
+        let mut screenshots = Vec::new();
+        let played = self.play(world, progs, |moment, frame, world| {
+            match moment {
+                Moment::Frame => {}
+                Moment::Expect(expectation) => checks.push(expectation.check(world, progs)),
+                Moment::Screenshot(name) => {
+                    screenshots.push(Shot::taken(&world.state(progs), name, frame));
+                }
+            }
+            Ok::<bool, std::convert::Infallible>(true)
+        });
+        let (frames, error) = match played {
+            Ok(frames) => (frames, None),
+            Err(PlayError::Frame { frame, error }) => {
+                (frame, Some(format!("frame {frame}: {error}")))
+            }
+            Err(PlayError::Start(error)) => (ENTERED, Some(format!("the player's start: {error}"))),
+            Err(PlayError::Visit(never)) => match never {},
+        };
+        Report {
+            passed: error.is_none() && checks.iter().all(|check| check.passed),
+            frames,
+            checks,
+            screenshots,
+            error,
+        }
+    }
 }
 
 /// The result of a scenario's run (SCN-2.4).
@@ -536,145 +604,154 @@ pub struct Shot {
     pub angles: [f32; 3],
 }
 
-/// Plays `scenario` in `world` and checks its assertions (SCN-2).
-#[must_use]
-pub fn run(world: &mut World, progs: &Progs<'_>, scenario: &Scenario) -> Report {
-    let mut checks = Vec::new();
-    let mut screenshots = Vec::new();
-    let played = play(world, progs, scenario, |moment, frame, world| {
-        match moment {
-            Moment::Frame => {}
-            Moment::Expect(expectation) => checks.push(check(world, progs, expectation)),
-            Moment::Screenshot(name) => {
-                screenshots.push(shot(&world.state(progs), name, frame));
+impl Expectation {
+    /// The expectation checked against `world` (SCN-2.2).
+    fn check(&self, world: &World, progs: &Progs<'_>) -> Check {
+        let state = world.state(progs);
+        let found = self.target.read(world, &state);
+        let (passed, found) = match found {
+            Ok(value) => match self.value.compare(value) {
+                Some(ordering) => (self.op.holds(ordering), value.shown()),
+                None => (
+                    false,
+                    format!("{}, not of the type expected", value.shown()),
+                ),
+            },
+            Err(why) => (false, why.to_string()),
+        };
+        Check {
+            line: self.line,
+            text: self.text.clone(),
+            passed,
+            found,
+        }
+    }
+}
+
+/// Why an assertion's target has no value (SCN-2.2).
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ReadError {
+    /// No global has the name.
+    NoGlobal(String),
+    /// No edict in use has the classname.
+    NoClassname(String),
+    /// The edict is not in use.
+    NotInUse(usize),
+    /// No field has the name.
+    NoField(String),
+}
+
+impl fmt::Display for ReadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoGlobal(name) => write!(f, "no global {name}"),
+            Self::NoClassname(class) => write!(f, "no edict in use with classname {class}"),
+            Self::NotInUse(number) => write!(f, "edict {number} is not in use"),
+            Self::NoField(name) => write!(f, "no field {name}"),
+        }
+    }
+}
+
+impl Target {
+    /// The value the target names in `state`, or why there is none.
+    fn read<'s>(&self, world: &World, state: &'s State) -> Result<&'s QcValue, ReadError> {
+        let named = |values: &'s [NamedValue], name: &str| {
+            values
+                .iter()
+                .find(|value| value.name == name)
+                .map(|value| &value.value)
+        };
+        match self {
+            Target::Global(name) => {
+                named(&state.globals, name).ok_or_else(|| ReadError::NoGlobal(name.clone()))
+            }
+            Target::Field(edict, name) => {
+                let number = match edict {
+                    Edict::Number(n) => *n,
+                    Edict::Player => CLIENT_EDICT,
+                    Edict::Classname(class) => (0..state.edicts.len())
+                        .find(|n| {
+                            world.in_use(*n)
+                                && state.edicts.get(*n).is_some_and(|fields| {
+                                    named(fields, "classname")
+                                        == Some(&QcValue::String(class.as_bytes().to_vec()))
+                                })
+                        })
+                        .ok_or_else(|| ReadError::NoClassname(class.clone()))?,
+                };
+                if !world.in_use(number) {
+                    return Err(ReadError::NotInUse(number));
+                }
+                let fields = state
+                    .edicts
+                    .get(number)
+                    .ok_or(ReadError::NotInUse(number))?;
+                named(fields, name).ok_or_else(|| ReadError::NoField(name.clone()))
             }
         }
-        Ok::<bool, std::convert::Infallible>(true)
-    });
-    let (frames, error) = match played {
-        Ok(frames) => (frames, None),
-        Err(PlayError::Frame { frame, error }) => (frame, Some(format!("frame {frame}: {error}"))),
-        Err(PlayError::Start(error)) => (ENTERED, Some(format!("the player's start: {error}"))),
-        Err(PlayError::Visit(never)) => match never {},
-    };
-    Report {
-        passed: error.is_none() && checks.iter().all(|check| check.passed),
-        frames,
-        checks,
-        screenshots,
-        error,
     }
 }
 
-/// `expectation` checked against `world` (SCN-2.2).
-fn check(world: &World, progs: &Progs<'_>, expectation: &Expectation) -> Check {
-    let state = world.state(progs);
-    let found = read(world, &state, &expectation.target);
-    let (passed, found) = match found {
-        Ok(value) => match compare(value, &expectation.value) {
-            Some(ordering) => (expectation.op.holds(ordering), shown(value)),
-            None => (false, format!("{}, not of the type expected", shown(value))),
-        },
-        Err(why) => (false, why),
-    };
-    Check {
-        line: expectation.line,
-        text: expectation.text.clone(),
-        passed,
-        found,
-    }
-}
-
-/// The value `target` names in `state`, or why there is none.
-fn read<'s>(world: &World, state: &'s State, target: &Target) -> Result<&'s QcValue, String> {
-    let named = |values: &'s [NamedValue], name: &str| {
-        values
-            .iter()
-            .find(|value| value.name == name)
-            .map(|value| &value.value)
-    };
-    match target {
-        Target::Global(name) => named(&state.globals, name).ok_or(format!("no global {name}")),
-        Target::Field(edict, name) => {
-            let number = match edict {
-                Edict::Number(n) => *n,
-                Edict::Player => CLIENT_EDICT,
-                Edict::Classname(class) => (0..state.edicts.len())
-                    .find(|n| {
-                        world.in_use(*n)
-                            && state.edicts.get(*n).is_some_and(|fields| {
-                                named(fields, "classname")
-                                    == Some(&QcValue::String(class.as_bytes().to_vec()))
-                            })
-                    })
-                    .ok_or(format!("no edict in use with classname {class}"))?,
-            };
-            if !world.in_use(number) {
-                return Err(format!("edict {number} is not in use"));
+impl Expected {
+    /// How `value` compares with the expected value; `None` when they are of different types. A vector, a
+    /// string or an edict is equal or not: `Less` stands for not equal.
+    fn compare(&self, value: &QcValue) -> Option<Option<std::cmp::Ordering>> {
+        use std::cmp::Ordering::{Equal, Less};
+        let equal = |same: bool| Some(Some(if same { Equal } else { Less }));
+        match (value, self) {
+            (QcValue::Float(a), Expected::Float(b)) => Some(a.partial_cmp(b)),
+            (QcValue::Vector(a), Expected::Vector(b)) => {
+                // SCN-1.5: compared exactly, component by component.
+                equal(
+                    a.iter()
+                        .zip(b)
+                        .all(|(x, y)| x.partial_cmp(y) == Some(Equal)),
+                )
             }
-            let fields = state
+            (QcValue::String(a), Expected::String(b)) => equal(a == b.as_bytes()),
+            (QcValue::Entity(a), Expected::Entity(b)) => equal(a == b),
+            _ => None,
+        }
+    }
+}
+
+impl QcValue {
+    /// A value as a scenario writes it.
+    fn shown(&self) -> String {
+        match self {
+            QcValue::Float(f) => f.to_string(),
+            QcValue::Vector([x, y, z]) => format!("'{x} {y} {z}'"),
+            QcValue::String(bytes) => format!("\"{}\"", String::from_utf8_lossy(bytes)),
+            QcValue::Entity(n) => format!("#{n}"),
+            QcValue::Field(name) | QcValue::Function(name) => name.clone(),
+            QcValue::Void => "void".to_owned(),
+        }
+    }
+}
+
+impl Shot {
+    /// The screenshot `name` asked for after frame `frame`: the player's eye (SCN-1.6).
+    fn taken(state: &State, name: &str, frame: usize) -> Self {
+        let vector = |field: &str| {
+            state
                 .edicts
-                .get(number)
-                .ok_or(format!("edict {number} is not in use"))?;
-            named(fields, name).ok_or(format!("no field {name}"))
+                .get(CLIENT_EDICT)
+                .and_then(|fields| fields.iter().find(|f| f.name == field))
+                .and_then(|f| match f.value {
+                    QcValue::Vector(v) => Some(v),
+                    _ => None,
+                })
+                .unwrap_or_default()
+        };
+        let [x, y, z] = vector("origin");
+        let [dx, dy, dz] = vector("view_ofs");
+        Self {
+            name: name.to_owned(),
+            frame,
+            origin: [x, y, z],
+            eye: [x + dx, y + dy, z + dz],
+            angles: vector("v_angle"),
         }
-    }
-}
-
-/// How `value` compares with `expected`; `None` when they are of different types. A vector, a
-/// string or an edict is equal or not: `Less` stands for not equal.
-fn compare(value: &QcValue, expected: &Expected) -> Option<Option<std::cmp::Ordering>> {
-    use std::cmp::Ordering::{Equal, Less};
-    let equal = |same: bool| Some(Some(if same { Equal } else { Less }));
-    match (value, expected) {
-        (QcValue::Float(a), Expected::Float(b)) => Some(a.partial_cmp(b)),
-        (QcValue::Vector(a), Expected::Vector(b)) => {
-            // SCN-1.5: compared exactly, component by component.
-            equal(
-                a.iter()
-                    .zip(b)
-                    .all(|(x, y)| x.partial_cmp(y) == Some(Equal)),
-            )
-        }
-        (QcValue::String(a), Expected::String(b)) => equal(a == b.as_bytes()),
-        (QcValue::Entity(a), Expected::Entity(b)) => equal(a == b),
-        _ => None,
-    }
-}
-
-/// A value as a scenario writes it.
-fn shown(value: &QcValue) -> String {
-    match value {
-        QcValue::Float(f) => f.to_string(),
-        QcValue::Vector([x, y, z]) => format!("'{x} {y} {z}'"),
-        QcValue::String(bytes) => format!("\"{}\"", String::from_utf8_lossy(bytes)),
-        QcValue::Entity(n) => format!("#{n}"),
-        QcValue::Field(name) | QcValue::Function(name) => name.clone(),
-        QcValue::Void => "void".to_owned(),
-    }
-}
-
-/// The screenshot `name` asked for after frame `frame`: the player's eye (SCN-1.6).
-fn shot(state: &State, name: &str, frame: usize) -> Shot {
-    let vector = |field: &str| {
-        state
-            .edicts
-            .get(CLIENT_EDICT)
-            .and_then(|fields| fields.iter().find(|f| f.name == field))
-            .and_then(|f| match f.value {
-                QcValue::Vector(v) => Some(v),
-                _ => None,
-            })
-            .unwrap_or_default()
-    };
-    let [x, y, z] = vector("origin");
-    let [dx, dy, dz] = vector("view_ofs");
-    Shot {
-        name: name.to_owned(),
-        frame,
-        origin: [x, y, z],
-        eye: [x + dx, y + dy, z + dz],
-        angles: vector("v_angle"),
     }
 }
 
