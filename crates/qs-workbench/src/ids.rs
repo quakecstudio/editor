@@ -47,6 +47,14 @@ id_newtype!(
     Edict(u32)
 );
 
+impl From<Edict> for qc_edict::EdictNumber {
+    /// The edict as the VM numbers it; a `u32` fits a `usize` on every target the app builds
+    /// for.
+    fn from(edict: Edict) -> Self {
+        Self::new(usize::try_from(edict.0).unwrap_or(usize::MAX))
+    }
+}
+
 id_newtype!(
     /// A watch expression, by its place in the watch list.
     WatchIndex(usize)
@@ -62,9 +70,6 @@ id_newtype!(
     TerminalIndex(usize)
 );
 
-id_newtype!(
-    /// The preview host's id for a breakpoint it took.
-    BreakpointId(u64)
-);
+pub use qs_engine::BreakpointId;
 
 pub use qs_checkpoint::CheckpointNumber;

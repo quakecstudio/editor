@@ -24,8 +24,8 @@ use qs_install::GameBase;
 use serde_json::{Value, json};
 
 use crate::{
-    Client, ClientError, Flavour, InspectWhat, LaunchError, LaunchSpec, RunRoot, RunRootError,
-    StepKind, WindowPlacement, base64_decode, host_command, locate_host, prepare_run_root,
+    BreakpointId, Client, ClientError, Flavour, InspectWhat, LaunchError, LaunchSpec, RunRoot,
+    RunRootError, StepKind, WindowPlacement, base64_decode, locate_host, prepare_run_root,
 };
 
 /// A folder removed when the test ends.
@@ -175,7 +175,7 @@ fn the_host_command_line() {
         socket: PathBuf::from("/tmp/b.sock"),
         extra: vec!["--nosound".to_owned()],
     };
-    let command = host_command(&spec);
+    let command = spec.command();
     let args: Vec<String> = command
         .get_args()
         .map(|a| a.to_string_lossy().into_owned())
@@ -205,7 +205,8 @@ fn the_host_command_line() {
         extra: Vec::new(),
         ..spec
     };
-    let args: Vec<String> = host_command(&plain)
+    let args: Vec<String> = plain
+        .command()
         .get_args()
         .map(|a| a.to_string_lossy().into_owned())
         .collect();
@@ -218,7 +219,8 @@ fn the_host_command_line() {
         },
         ..plain
     };
-    let args: Vec<String> = host_command(&id1)
+    let args: Vec<String> = id1
+        .command()
         .get_args()
         .map(|a| a.to_string_lossy().into_owned())
         .collect();
@@ -346,7 +348,7 @@ fn the_client_speaks_the_bridge() {
     assert_eq!(paused["method"], "pause");
     let stepped = client.step(StepKind::Frame).unwrap();
     assert_eq!(stepped["params"]["kind"], "frame");
-    let cleared = client.clear_breakpoint(4).unwrap();
+    let cleared = client.clear_breakpoint(BreakpointId::new(4)).unwrap();
     assert_eq!(cleared["params"], json!({ "id": 4 }));
     let evaluated = client.evaluate("self.health").unwrap();
     assert_eq!(evaluated["params"], json!({ "expression": "self.health" }));

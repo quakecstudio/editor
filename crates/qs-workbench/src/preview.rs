@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use qc_project::Loader;
 use qs_engine::{
     Client, ClientError, Flavour, InspectWhat, LaunchError, LaunchSpec, RunRootError, Running,
-    StepKind, WindowPlacement, launch, locate_host, prepare_run_root,
+    StepKind, WindowPlacement, locate_host, prepare_run_root,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -316,7 +316,7 @@ impl Preview {
         match self.debugger.toggle(file, line) {
             Some(removed) => {
                 if let (Some(id), Some(client)) = (removed.id, self.client()) {
-                    client.clear_breakpoint(id.get())?;
+                    client.clear_breakpoint(id)?;
                 }
                 Ok(())
             }
@@ -531,7 +531,7 @@ impl Preview {
             field: field.to_owned(),
             kind,
         })?;
-        let answer = self.live_client()?.set_field(edict.get(), field, value)?;
+        let answer = self.live_client()?.set_field(edict.into(), field, value)?;
         // BRIDGE-4.4: while paused between frames the host holds the edit until it resumes.
         if answer.get("applied").and_then(Value::as_str) == Some("on_resume") {
             self.pending
@@ -609,7 +609,7 @@ impl Preview {
             socket: socket_path(),
             extra,
         };
-        let running = launch(&spec, "QuakeC Studio").map_err(PreviewError::Launch)?;
+        let running = spec.launch("QuakeC Studio").map_err(PreviewError::Launch)?;
         self.live = Some(Live {
             running,
             progs,

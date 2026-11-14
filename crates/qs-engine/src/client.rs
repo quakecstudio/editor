@@ -5,6 +5,7 @@
 //! one method per command, refused before it is sent when the host's capabilities leave it
 //! out (BRIDGE-2.6).
 
+use qc_edict::EdictNumber;
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 use std::io::{self, BufReader, Read, Write};
@@ -441,13 +442,13 @@ impl Client {
     /// The request's [`ClientError`].
     pub fn set_field(
         &mut self,
-        edict: u32,
+        edict: EdictNumber,
         field: &str,
         value: Value,
     ) -> Result<Value, ClientError> {
         self.request(
             "field/set",
-            json!({ "edict": edict, "field": field, "value": value }),
+            json!({ "edict": edict.index(), "field": field, "value": value }),
         )
     }
 
@@ -575,8 +576,8 @@ impl Client {
     /// # Errors
     ///
     /// The request's [`ClientError`].
-    pub fn clear_breakpoint(&mut self, id: u64) -> Result<Value, ClientError> {
-        self.request("breakpoint/clear", json!({ "id": id }))
+    pub fn clear_breakpoint(&mut self, id: BreakpointId) -> Result<Value, ClientError> {
+        self.request("breakpoint/clear", json!({ "id": id.get() }))
     }
 
     /// `evaluate` (BRIDGE-4.9): `expression`'s value while stopped in a frame.
@@ -650,40 +651,76 @@ fn read_messages(read: impl Read, sender: &Sender<Option<Message>>) {
     }
 }
 
+/// The host's id for a breakpoint it took (BRIDGE-4.9); written to JSON as the bare number.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(transparent)]
+pub struct BreakpointId(u64);
+
+impl BreakpointId {
+    /// The breakpoint the host numbered `id`.
+    #[must_use]
+    pub const fn new(id: u64) -> Self {
+        Self(id)
+    }
+
+    /// The host's number for it.
+    #[must_use]
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+impl std::fmt::Display for BreakpointId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// `text` decoded from base64 (RFC 4648, section 4, with `=` padding), as the host writes a
 /// screenshot's PNG; `None` for text that is not base64.
 #[must_use]
 pub fn base64_decode(text: &str) -> Option<Vec<u8>> {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    // Each four symbols of six bits are three bytes; padding stands for the bytes not there.
+    const GROUP_BYTES: usize = 3;
+    const GROUP_SYMBOLS: usize = 4;
+    const SYMBOL_BITS: u32 = 6;
+    const MAX_PADDING: usize = 2;
     let value = |c: u8| -> Option<u32> {
-        let index = match c {
-            b'A'..=b'Z' => c.checked_sub(b'A')?,
-            b'a'..=b'z' => c.checked_sub(b'a')?.checked_add(26)?,
-            b'0'..=b'9' => c.checked_sub(b'0')?.checked_add(52)?,
-            b'+' => 62,
-            b'/' => 63,
-            _ => return None,
-        };
-        Some(u32::from(index))
+        let index = ALPHABET.iter().position(|&symbol| symbol == c)?;
+        u32::try_from(index).ok()
     };
     let bytes = text.trim().as_bytes();
-    if !bytes.len().is_multiple_of(4) {
+    if !bytes.len().is_multiple_of(GROUP_SYMBOLS) {
         return None;
     }
     let mut out = Vec::with_capacity(bytes.len());
-    let (quads, _) = bytes.as_chunks::<4>();
+    let (quads, _) = bytes.as_chunks::<GROUP_SYMBOLS>();
     let last = quads.len().saturating_sub(1);
     for (n, quad) in quads.iter().enumerate() {
         let pad = quad.iter().rev().take_while(|&&c| c == b'=').count();
-        if pad > 2 || (pad > 0 && n != last) {
+        if pad > MAX_PADDING || (pad > 0 && n != last) {
             return None;
         }
         let mut word = 0_u32;
-        for &c in quad.iter().take(4_usize.saturating_sub(pad)) {
-            word = (word << 6) | value(c)?;
+        for &c in quad.iter().take(GROUP_SYMBOLS.saturating_sub(pad)) {
+            word = (word << SYMBOL_BITS) | value(c)?;
         }
-        word <<= 6_u32.checked_mul(u32::try_from(pad).ok()?)?;
+        word <<= SYMBOL_BITS.checked_mul(u32::try_from(pad).ok()?)?;
         let [_, a, b, c] = word.to_be_bytes();
-        out.extend([a, b, c].into_iter().take(3_usize.saturating_sub(pad)));
+        out.extend([a, b, c].into_iter().take(GROUP_BYTES.saturating_sub(pad)));
     }
     Some(out)
 }

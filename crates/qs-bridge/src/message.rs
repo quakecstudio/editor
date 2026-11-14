@@ -64,23 +64,38 @@ pub enum ErrorCode {
 }
 
 impl ErrorCode {
+    // JSON-RPC's codes, then the host's own in JSON-RPC's reserved range (BRIDGE-7.1).
+    const PARSE_ERROR: i64 = -32700;
+    const INVALID_REQUEST: i64 = -32600;
+    const METHOD_NOT_FOUND: i64 = -32601;
+    const INVALID_PARAMS: i64 = -32602;
+    const INTERNAL_ERROR: i64 = -32603;
+    const INCOMPATIBLE_VERSION: i64 = -32001;
+    const NOT_PAUSED: i64 = -32002;
+    const NOT_INITIALIZED: i64 = -32003;
+    const NO_SUCH_EDICT: i64 = -32004;
+    const UNSUPPORTED: i64 = -32005;
+    const BAD_VALUE: i64 = -32006;
+    const NO_SUCH_BREAKPOINT: i64 = -32007;
+    const STOPPED_IN_FRAME: i64 = -32008;
+
     /// The code's number (BRIDGE-7.1).
     #[must_use]
     pub const fn code(self) -> i64 {
         match self {
-            Self::ParseError => -32700,
-            Self::InvalidRequest => -32600,
-            Self::MethodNotFound => -32601,
-            Self::InvalidParams => -32602,
-            Self::InternalError => -32603,
-            Self::IncompatibleVersion => -32001,
-            Self::NotPaused => -32002,
-            Self::NotInitialized => -32003,
-            Self::NoSuchEdict => -32004,
-            Self::Unsupported => -32005,
-            Self::BadValue => -32006,
-            Self::NoSuchBreakpoint => -32007,
-            Self::StoppedInFrame => -32008,
+            Self::ParseError => Self::PARSE_ERROR,
+            Self::InvalidRequest => Self::INVALID_REQUEST,
+            Self::MethodNotFound => Self::METHOD_NOT_FOUND,
+            Self::InvalidParams => Self::INVALID_PARAMS,
+            Self::InternalError => Self::INTERNAL_ERROR,
+            Self::IncompatibleVersion => Self::INCOMPATIBLE_VERSION,
+            Self::NotPaused => Self::NOT_PAUSED,
+            Self::NotInitialized => Self::NOT_INITIALIZED,
+            Self::NoSuchEdict => Self::NO_SUCH_EDICT,
+            Self::Unsupported => Self::UNSUPPORTED,
+            Self::BadValue => Self::BAD_VALUE,
+            Self::NoSuchBreakpoint => Self::NO_SUCH_BREAKPOINT,
+            Self::StoppedInFrame => Self::STOPPED_IN_FRAME,
         }
     }
 }

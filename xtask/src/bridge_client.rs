@@ -11,7 +11,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use qs_engine::{
-    Client, EntityTarget, Flavour, InspectWhat, LaunchSpec, StepKind, launch, prepare_run_root,
+    Client, EntityTarget, Flavour, InspectWhat, LaunchSpec, StepKind, prepare_run_root,
 };
 use qs_workbench::ids::Edict;
 use qs_workbench::map_edit::{EntityIndex, LiveChange};
@@ -73,7 +73,9 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
         socket: socket_path(),
         extra: vec!["--headless".to_owned()],
     };
-    let mut running = launch(&spec, "cargo xtask bridge-client").map_err(|e| e.to_string())?;
+    let mut running = spec
+        .launch("cargo xtask bridge-client")
+        .map_err(|e| e.to_string())?;
     let outcome = suite(
         &mut running.client,
         &args.map,
@@ -490,7 +492,7 @@ fn map_entities(client: &mut Client, monster: u32) -> Result<(), String> {
 fn paused_health(client: &mut Client, monster: u32) -> Result<(), String> {
     let health = json!({ "type": "float", "value": 50.0 });
     let held = client
-        .set_field(monster, "health", health.clone())
+        .set_field(Edict::new(monster).into(), "health", health.clone())
         .map_err(|e| format!("field/set: {e}"))?;
     expect(
         held == json!({ "applied": "on_resume" }),
@@ -648,7 +650,7 @@ fn other_progs(client: &mut Client, progs: &Path, steps: &mut Vec<String>) -> Re
         "a step stops at the next statement and says where",
     )?;
     client
-        .clear_breakpoint(id)
+        .clear_breakpoint(qs_engine::BreakpointId::new(id))
         .map_err(|e| format!("breakpoint/clear: {e}"))?;
     client.take_events();
     client.resume().map_err(|e| format!("resume: {e}"))?;

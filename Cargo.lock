@@ -3663,9 +3663,12 @@ version = "2026.11.1"
 dependencies = [
  "interprocess",
  "proptest",
+ "qc-edict",
  "qs-bridge",
  "qs-install",
  "qs-vfs",
+ "schemars",
+ "serde",
  "serde_json",
  "tracing",
 ]

@@ -11,7 +11,7 @@ use std::rc::Rc;
 use qc_progs::Progs;
 use qs_bsp::{Bsp, BspLoader};
 use qs_engine::{
-    Client, ClientError, Flavour, LaunchError, LaunchSpec, RunRoot, RunRootError, StepKind, launch,
+    Client, ClientError, Flavour, LaunchError, LaunchSpec, RunRoot, RunRootError, StepKind,
     locate_host, prepare_run_root,
 };
 use qs_sim::scenario::{Report, Scenario, ScenarioError, Shot};
@@ -130,7 +130,9 @@ impl Preview {
             socket: socket_path(),
             extra: vec!["--headless".to_owned()],
         };
-        let mut running = launch(&spec, "QuakeC Studio").map_err(ScenarioRunError::Launch)?;
+        let mut running = spec
+            .launch("QuakeC Studio")
+            .map_err(ScenarioRunError::Launch)?;
         let taken = shoot(&mut running.client, &report.screenshots, path, &mut images);
         if let Err(error) = running.client.shutdown() {
             tracing::debug!(%error, "the headless host did not answer shutdown");
