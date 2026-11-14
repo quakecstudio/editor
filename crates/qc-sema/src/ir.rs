@@ -347,6 +347,29 @@ mod tests {
 
     // spec FTE-21.8: a value takes the words a statement writes into it, its result's or a
     // store's, and none from a statement that only reads it
+    // No spec statement: a block's first word written as a result or stored is the block's
+    // vector, and a parameter past the eight registers, an extra slot, is made once, as a
+    // definition is
+    #[test]
+    fn blocks_and_parameters() {
+        let block = Some(Name::MadeWord(2, 0));
+        let at = StatementIndex::new(2);
+        let result = BodyStatement {
+            c: block,
+            ..BodyStatement::bare(Op::MulFv)
+        };
+        let stored = BodyStatement {
+            b: block,
+            ..BodyStatement::bare(Op::StoreV)
+        };
+        assert_eq!(result.made_words(at), Some(3));
+        assert_eq!(stored.made_words(at), Some(3));
+        assert!(!Name::Parameter(7).is_made_once());
+        assert!(Name::Parameter(8).is_made_once());
+        assert!(!Name::Made(2).is_made_once());
+        assert!(Name::Def(DefId::new(1), 0).is_made_once());
+    }
+
     #[test]
     fn made_words_counts_only_writes() {
         let with = |op, b, c| BodyStatement {
