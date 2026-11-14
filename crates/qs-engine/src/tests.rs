@@ -254,6 +254,28 @@ fn the_host_is_found_beside_the_app() {
     assert_eq!(locate_host(Some(&configured), &app).unwrap(), configured);
 }
 
+// P4-18: the macOS package links to the app's tools from /usr/local/bin; run through that
+// link, a tool still finds the host beside its real executable
+#[cfg(unix)]
+#[test]
+fn the_host_is_found_beside_the_app_a_link_names() {
+    let dir = TempDir::new("locate-link");
+    let bundle = dir.0.join("MacOS");
+    let bin = dir.0.join("bin");
+    fs::create_dir_all(&bundle).unwrap();
+    fs::create_dir_all(&bin).unwrap();
+    let app = bundle.join("quakec-ide");
+    fs::write(&app, b"").unwrap();
+    let host = bundle.join("quakec-engine");
+    fs::write(&host, b"").unwrap();
+    let link = bin.join("quakec-ide");
+    std::os::unix::fs::symlink(&app, &link).unwrap();
+    assert_eq!(
+        locate_host(None, &link).unwrap(),
+        fs::canonicalize(&host).unwrap()
+    );
+}
+
 /// A host that offers `pause`, `step`, `breakpoint/clear` and `evaluate` and sends an event
 /// before each answer.
 struct Fake;
