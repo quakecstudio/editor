@@ -33,10 +33,8 @@ use qs_render::{Camera, MapMesh};
 use qs_settings::SettingsFile;
 use qs_templates::{GitHub, Template};
 use qs_workbench::TASK_LIST;
-use qs_workbench::debug::Location;
 use qs_workbench::dock::DockFrame;
 use qs_workbench::game_files::GameFiles;
-use qs_workbench::git::{GIT_HEAD_TEXT, GitPathParams};
 use qs_workbench::ids::ActionIndex;
 use qs_workbench::map_profile::MAP_RUN_PROFILE;
 use qs_workbench::open_paths::{OPEN_PATHS, OpenPathsParams, PathsOpened, TAKE_OPENED_PATHS};
@@ -44,16 +42,14 @@ use qs_workbench::search::{
     REPLACE_IN_FILE, REPLACE_RANGE, ReplaceInFileParams, ReplaceRangeParams, ReplacedInFile,
 };
 use qs_workbench::terminal::TaskInfo;
-use qs_workbench::tools::{PROJECT_FILES, PROJECT_SEARCH, ProjectSearchParams, SearchFound};
-use qs_workbench::{
-    ActionInfo, CODE_ACTIONS, CODE_FIX, Code, CodeActionParams, FORMAT_FILE, INLAY_HINTS, InlayHint,
-};
+use qs_workbench::tools::PROJECT_FILES;
+use qs_workbench::{ActionInfo, CODE_ACTIONS, CODE_FIX, Code, CodeActionParams, FORMAT_FILE};
 use qs_workbench::{
     AtParams, CHOOSE_GAME, CLOSE_FILE, COMPLETE, Candidate, CheckAfterTyping, ChooseGameParams,
-    CloseFileParams, Config, DEFINITION, DOCK, EntryKind, FileText, FsLoader, HOVER, HasPreview,
-    HasWorkbench, HoverInfo, OPEN_FILE, OnLoss, OpenFile, OpenFileParams, PAUSE, PLAY, POLL, Place,
-    PlayParams, PlayState, Preview, PreviewConfig, PreviewStatus, READ_FILE, REFERENCES, RELOAD,
-    RENAME, RESTART, RESUME, ReloadParams, RenameParams, SAVE_FILE, STEP, STOP, SaveFileParams,
+    CloseFileParams, Config, DEFINITION, DOCK, EntryKind, FsLoader, HOVER, HasPreview,
+    HasWorkbench, HoverInfo, OPEN_FILE, OpenFile, OpenFileParams, PAUSE, PLAY, POLL, Place,
+    PlayParams, PlayState, Preview, PreviewConfig, PreviewStatus, REFERENCES, RELOAD, RENAME,
+    RESTART, RESUME, ReloadParams, RenameParams, SAVE_FILE, STEP, STOP, SaveFileParams,
     TAKE_CHECKED, UPDATE_FILE, UpdateFileParams, Workbench,
 };
 use qs_workbench::{SELECT, SET_FIELD, SelectParams, SelectedEntity, SetFieldParams};
@@ -61,8 +57,9 @@ use qs_workbench::{SELECT, SET_FIELD, SelectParams, SelectedEntity, SetFieldPara
 use crate::agent::{self, AgentAction, AgentPanel, ThreadIndex};
 use crate::debugger::{self, DebugAction, DebugInput};
 use crate::editor::{Editor, Popup, Request};
+use crate::editors::EditorsFeature;
 use crate::entities::{self, EntityAction, Properties};
-use crate::fallback::{SystemFonts, families};
+use crate::fallback::SystemFonts;
 use crate::features::{Commands, Features, ShellRequest};
 use crate::finder::FileFinder;
 use crate::git_panel::TabShown;
@@ -1046,63 +1043,13 @@ impl Shell {
     /// Reads the editor's inlay hints again when its file's analysis changed (P4-34): each
     /// parameter's name before the argument passed as it.
     fn refresh_inlays(&mut self) {
-        let Some(revision) = self
-            .session
-            .context()
-            .workbench
-            .open()
-            .map(OpenFile::revision)
-        else {
-            return;
-        };
-        let Some(path) = self
-            .features
-            .editors
-            .editor
-            .as_ref()
-            .filter(|editor| editor.hints_at != Some(revision))
-            .map(|editor| editor.path.clone())
-        else {
-            return;
-        };
-        let hints: Vec<InlayHint> = self
-            .run(INLAY_HINTS, &SaveFileParams { path })
-            .unwrap_or_default();
-        if let Some(editor) = self.features.editors.editor.as_mut() {
-            let buffer = editor.view.state().buffer();
-            let placed: Vec<(Position, String)> = hints
-                .into_iter()
-                .map(|hint| (buffer.position(hint.offset), inlay_text(&hint.name)))
-                .collect();
-            editor.view.set_inlays(placed);
-            editor.hints_at = Some(revision);
-        }
+        self.with_editors(|editors, commands| editors.refresh_inlays(commands));
     }
 
     /// Marks in the editor's gutter its file's changes against the text at `HEAD` (P4-35);
     /// none outside a repository or for a file `HEAD` does not have.
     fn mark_changes(&mut self) {
-        let Some(path) = self
-            .features
-            .editors
-            .editor
-            .as_ref()
-            .map(|editor| editor.path.clone())
-        else {
-            return;
-        };
-        let base = self
-            .session
-            .execute(
-                GIT_HEAD_TEXT,
-                serde_json::to_value(GitPathParams { path }).unwrap_or_default(),
-            )
-            .ok()
-            .and_then(|value| serde_json::from_value::<Option<String>>(value).ok())
-            .flatten();
-        if let Some(editor) = self.features.editors.editor.as_mut() {
-            editor.view.set_gutter_base(base);
-        }
+        self.with_editors(|editors, commands| editors.mark_changes(commands));
     }
 
     /// Shows or hides `panel`, through its command.
@@ -1561,50 +1508,17 @@ impl Shell {
 
     /// Opens `file`, relative to the project's root, at `line`, from 1.
     fn show_line(&mut self, file: &Path, line: u32) {
-        let Some(root) = self.session.context().workbench.root() else {
-            return;
-        };
-        let path = root.join(file);
-        self.features.editors.pending_line = Some((path.clone(), line));
-        self.jump(Jump { path, offset: 0 });
+        self.with_editors(|editors, commands| editors.show_line(commands, file, line));
     }
 
     /// Takes the editor to where the game stopped, once for each stop.
     fn follow_stop(&mut self) {
-        let stop = self
-            .session
-            .context()
-            .preview
-            .debugger()
-            .stopped()
-            .map(|(_, at)| at.clone());
-        if stop == self.features.editors.shown_stop {
-            return;
-        }
-        if let Some(Location {
-            file: Some(file),
-            line: Some(line),
-            ..
-        }) = &stop
-        {
-            self.show_line(file, *line);
-        }
-        self.features.editors.shown_stop = stop;
+        self.with_editors(|editors, commands| editors.follow_stop(commands));
     }
 
     /// Reloads the running game after a save, its error shown on the toolbar.
     fn reload_after_save(&mut self) {
-        if self.session.context().preview.state() == PlayState::Stopped {
-            return;
-        }
-        // P3-10: a reload that would lose a value waits for the modder (`reset_notice`).
-        let params = ReloadParams {
-            on_loss: OnLoss::Ask,
-        };
-        let reloaded: Option<PreviewStatus> = self.run(RELOAD, &params);
-        if reloaded.is_none() {
-            self.preview_error = Some(Text::ReloadFailed.get().to_owned());
-        }
+        self.with_editors(|editors, commands| editors.reload_after_save(commands));
     }
 
     /// Below the toolbar while a reload waits (P3-10, design doc "State honesty"): what it
@@ -1932,6 +1846,25 @@ impl Shell {
         &self.features.map.map_editor
     }
 
+    /// Runs `call` on the editors' feature with the commands, then carries out what it asked
+    /// of the window, in order.
+    fn with_editors<R>(
+        &mut self,
+        call: impl FnOnce(&mut EditorsFeature, &mut Commands<'_>) -> R,
+    ) -> R {
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        let out = call(&mut self.features.editors, &mut commands);
+        self.take_editor_requests();
+        out
+    }
+
+    /// Carries out what the editors' feature asked of the window.
+    fn take_editor_requests(&mut self) {
+        for request in self.features.editors.take_requests() {
+            self.request(request);
+        }
+    }
+
     /// Runs `call` on the map's feature with the commands, then carries out what it asked of
     /// the window, in order.
     fn with_map<R>(&mut self, call: impl FnOnce(&mut MapFeature, &mut Commands<'_>) -> R) -> R {
@@ -1986,27 +1919,9 @@ impl Shell {
         places: Vec<(PathBuf, usize, usize)>,
         truncation: Truncation,
     ) {
-        let mut texts: Vec<(PathBuf, Vec<u8>)> = Vec::new();
-        for (path, _, _) in &places {
-            if texts.iter().any(|(p, _)| p == path) {
-                continue;
-            }
-            let read: Option<FileText> =
-                self.run(READ_FILE, &SaveFileParams { path: path.clone() });
-            if let Some(read) = read {
-                texts.push((path.clone(), read.text.into_bytes()));
-            }
-        }
-        self.features
-            .editors
-            .multibuffer
-            .show(source, &places, truncation, |path| {
-                texts
-                    .iter()
-                    .find(|(p, _)| p == path)
-                    .map(|(_, text)| text.clone())
-            });
-        self.centre_tab = CentreTab::Search;
+        self.with_editors(|editors, commands| {
+            editors.show_places(commands, source, places, truncation);
+        });
     }
 
     /// Does what the multibuffer asked for (P4-33).
@@ -2062,44 +1977,12 @@ impl Shell {
 
     /// Searches the project with the multibuffer's form and shows what it found.
     fn search_project(&mut self) {
-        let form = self.features.editors.multibuffer.form.clone();
-        let params = ProjectSearchParams {
-            text: form.text,
-            case_sensitive: form.case_sensitive,
-            whole_word: form.whole_word,
-            regex: form.regex,
-        };
-        match self.attempt::<_, SearchFound>(PROJECT_SEARCH, &params) {
-            Ok(found) => {
-                let places = found.matches.into_iter().map(|m| (m.path, m.start, m.end));
-                let truncation = if found.truncated {
-                    Truncation::Cut
-                } else {
-                    Truncation::All
-                };
-                self.show_places(MultiSource::Search, places.collect(), truncation);
-            }
-            Err(error) => self.features.editors.multibuffer.error = Some(error.to_string()),
-        }
+        self.with_editors(|editors, commands| editors.search_project(commands));
     }
 
     /// Shows every problem as the multibuffer's excerpts (P4-33).
     fn problems_as_excerpts(&mut self) {
-        let places = self
-            .session
-            .context()
-            .workbench
-            .problems()
-            .iter()
-            .map(|p| {
-                (
-                    p.path.clone(),
-                    p.diagnostic.span.start,
-                    p.diagnostic.span.end,
-                )
-            })
-            .collect();
-        self.show_places(MultiSource::Problems, places, Truncation::All);
+        self.with_editors(|editors, commands| editors.problems_as_excerpts(commands));
     }
 
     /// Runs what the editor asked for, as a frame would after the editor drew.
@@ -2256,75 +2139,19 @@ impl Shell {
     /// Brings the editor up to date with the open file: a new view for another file, the caret
     /// moved for another `file.open` of the same one, none for no file.
     fn sync_editor(&mut self) {
-        // Another file's editor sends its edits before it goes: the workbench keeps them, so
-        // the file shows them when it is opened again.
-        let open_path = self.session.context().workbench.open().map(OpenFile::path);
-        if let Some(editor) = self.features.editors.editor.as_mut()
-            && open_path != Some(editor.path.as_path())
-            && let Some(text) = editor.unsent()
-        {
-            let path = editor.path.clone();
-            let _: Option<()> = self.run(UPDATE_FILE, &UpdateFileParams { path, text });
-        }
-        let workbench = &self.session.context().workbench;
-        let tabs = workbench.tabs();
-        self.features
-            .editors
-            .parked
-            .retain(|path, _| tabs.contains(path));
-        let open = workbench.open();
-        match (open, &mut self.features.editors.editor) {
-            (None, _) => self.features.editors.editor = None,
-            (Some(open), Some(editor)) if editor.path == open.path() => {
-                editor.sync(open, &self.theme);
-            }
-            (Some(open), _) => {
-                if let Some(old) = self.features.editors.editor.take()
-                    && tabs.contains(&old.path)
-                {
-                    self.features.editors.parked.insert(old.path.clone(), old);
-                }
-                let editor = match self.features.editors.parked.remove(open.path()) {
-                    Some(mut editor) => {
-                        editor.sync(open, &self.theme);
-                        editor
-                    }
-                    None => Editor::new(Id::new(EDITOR_AREA), open, &self.theme),
-                };
-                self.features.editors.editor = Some(editor);
-                self.mark_changes();
-            }
-        }
-        if let Some(editor) = self.features.editors.editor.as_mut()
-            && let Some((_, line)) = self
-                .features
-                .editors
-                .pending_line
-                .take_if(|(path, _)| *path == editor.path)
-        {
-            editor.go_to_line(line_index(line));
-        }
+        let theme = &self.theme;
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        self.features.editors.sync_editor(&mut commands, theme);
+        self.take_editor_requests();
     }
 
     /// Gives egui a system font for each character of the editor's text that the bundled fonts
     /// lack: the whole text of a file just opened, then the caret's line as it is edited.
     fn cover_characters(&mut self, ctx: &egui::Context) {
-        let Some(editor) = &self.features.editors.editor else {
-            return;
-        };
-        let state = editor.view.state();
-        let now = (editor.path.clone(), state.revision());
-        if self.features.editors.covered.as_ref() == Some(&now) {
-            return;
-        }
-        let text = match &self.features.editors.covered {
-            Some((path, _)) if *path == now.0 => {
-                state.buffer().line(state.primary().head.line).to_owned()
-            }
-            Some(_) | None => state.buffer().text(),
-        };
-        self.system_fonts.cover(ctx, &families(), &text);
-        self.features.editors.covered = Some(now);
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        self.features
+            .editors
+            .cover_characters(&mut commands, &mut self.system_fonts, ctx);
     }
 
     /// The multibuffer the Search tab shows (P4-33).
@@ -3041,7 +2868,7 @@ fn line_notes(workbench: &Workbench<FsLoader>, editor: &Editor) -> Vec<LineNote>
 }
 
 /// An inlay hint's text: the parameter's name and a colon, as rust-analyzer shows them.
-fn inlay_text(name: &str) -> String {
+pub(crate) fn inlay_text(name: &str) -> String {
     let mut text = name.to_owned();
     text.push(':');
     text.push(' ');
@@ -3059,7 +2886,7 @@ const FIXABLE: [Code; 5] = [
 
 /// A line counted from 1, as the bridge and the debugger count them, counted from 0 as the
 /// editor does.
-fn line_index(line: u32) -> usize {
+pub(crate) fn line_index(line: u32) -> usize {
     usize::try_from(line.saturating_sub(1)).unwrap_or(usize::MAX)
 }
 
