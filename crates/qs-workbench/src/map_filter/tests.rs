@@ -10,9 +10,9 @@ use qs_commands::{Registry, Session};
 use serde_json::json;
 
 use super::{MAP_FILTER, MapFiltered};
-use crate::map_edit::MAP_OPEN;
 use crate::vm_run::tests::system_defs;
 use crate::{Config, OPEN_PROJECT, Workbench, register};
+use qs_map_edit::MAP_OPEN;
 
 /// The spawn functions: a thing, an item its own code removes in deathmatch, and the world.
 const CODE: &str = "void(entity e) remove = #15;\n\

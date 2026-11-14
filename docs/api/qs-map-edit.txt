@@ -1,0 +1,743 @@
+const qs_map_edit::BSP_EXTENSION
+const qs_map_edit::EntityIndex::WORLD
+const qs_map_edit::MAP_DELETE
+const qs_map_edit::MAP_DUPLICATE
+const qs_map_edit::MAP_ENTITY
+const qs_map_edit::MAP_EXTENSION
+const qs_map_edit::MAP_INSPECT
+const qs_map_edit::MAP_MOVE
+const qs_map_edit::MAP_OPEN
+const qs_map_edit::MAP_PLACE
+const qs_map_edit::MAP_REMOVE_KEY
+const qs_map_edit::MAP_ROTATE
+const qs_map_edit::MAP_SAVE
+const qs_map_edit::MAP_SELECT
+const qs_map_edit::MAP_SET_KEY
+const qs_map_edit::backup::BACKUPS_KEPT
+const qs_map_edit::backup::BACKUP_FOLDER
+const qs_map_edit::backup::MAP_BACKUP
+const qs_map_edit::backup::MAP_BACKUPS
+const qs_map_edit::backup::MAP_RESTORE_BACKUP
+const qs_map_edit::brush_tools::MAP_BRUSH_CHAMFER
+const qs_map_edit::brush_tools::MAP_BRUSH_EXTRUDE
+const qs_map_edit::brush_tools::MAP_BRUSH_HOLLOW
+const qs_map_edit::brush_tools::MAP_BRUSH_INTERSECT
+const qs_map_edit::brush_tools::MAP_BRUSH_SCALE
+const qs_map_edit::brush_tools::MAP_BRUSH_SHEAR
+const qs_map_edit::brush_tools::MAP_BRUSH_SPLIT_EDGE
+const qs_map_edit::brush_tools::MAP_BRUSH_SPLIT_FACE
+const qs_map_edit::brush_tools::MAP_BRUSH_SWEEP
+const qs_map_edit::brush_tools::MAP_BRUSH_VERTICES
+const qs_map_edit::brushes::MAP_BRUSH_CLIP
+const qs_map_edit::brushes::MAP_BRUSH_CREATE
+const qs_map_edit::brushes::MAP_BRUSH_DELETE
+const qs_map_edit::brushes::MAP_BRUSH_MERGE
+const qs_map_edit::brushes::MAP_BRUSH_MOVE
+const qs_map_edit::brushes::MAP_BRUSH_SUBTRACT
+const qs_map_edit::brushes::MAP_BRUSH_TEXTURE
+const qs_map_edit::brushes::MAP_BRUSH_VERTEX
+const qs_map_edit::disk::MAP_COMPARE
+const qs_map_edit::disk::MAP_RESOLVE
+const qs_map_edit::flags::MAP_SET_FLAG
+const qs_map_edit::groups::MAP_EXPORT
+const qs_map_edit::groups::MAP_HIDE
+const qs_map_edit::groups::MAP_ISOLATE
+const qs_map_edit::groups::MAP_LAYERS
+const qs_map_edit::groups::MAP_LOCK
+const qs_map_edit::groups::MAP_SET_LAYER
+const qs_map_edit::groups::MAP_SHOW_ALL
+const qs_map_edit::groups::MAP_UNLOCK_ALL
+const qs_map_edit::issues::MAP_FIX
+const qs_map_edit::issues::MAP_ISSUES
+const qs_map_edit::issues::MAP_SEARCH
+const qs_map_edit::links::MAP_LINK
+const qs_map_edit::outline::MAP_MOVE_TO
+const qs_map_edit::outline::MAP_OUTLINE
+const qs_map_edit::prefabs::MAP_PLACE_PREFAB
+const qs_map_edit::prefabs::MAP_PREFABS
+const qs_map_edit::prefabs::MAP_SAVE_PREFAB
+const qs_map_edit::prefabs::PREFAB_FOLDER
+const qs_map_edit::review::MAP_ACCEPT
+const qs_map_edit::review::MAP_REJECT
+const qs_map_edit::review::MAP_STAGE
+const qs_map_edit::review::MAP_STAGED
+const qs_map_edit::review::MAP_UNSTAGE
+const qs_map_edit::shapes::MAP_BRUSH_SHAPE
+const qs_map_edit::texture_import::TEXTURE_FOLDER
+const qs_map_edit::texture_import::TEXTURE_IMPORT
+const qs_map_edit::textures::MAP_TEXTURES
+const qs_map_edit::uv::MAP_FACE_ALIGN
+const qs_map_edit::uv::MAP_FACE_UV
+enum qs_map_edit::BspSave
+enum qs_map_edit::MapSource
+enum qs_map_edit::brush_tools::Axis
+enum qs_map_edit::brush_tools::NewVertex
+enum qs_map_edit::brushes::Keep
+enum qs_map_edit::brushes::Lock
+enum qs_map_edit::disk::Keep
+enum qs_map_edit::disk::MapOnDisk
+enum qs_map_edit::error::MapEditError
+enum qs_map_edit::flags::FlagChange
+enum qs_map_edit::groups::LayerOption
+enum qs_map_edit::groups::Switch
+enum qs_map_edit::inspect::RoomShape
+enum qs_map_edit::issues::QuickFix
+enum qs_map_edit::live::LiveChange
+enum qs_map_edit::outline::RowKind
+enum qs_map_edit::report::Seal
+enum qs_map_edit::review::HunkSide
+enum qs_map_edit::shapes::ArchWall
+enum qs_map_edit::shapes::Circle
+enum qs_map_edit::shapes::Climb
+enum qs_map_edit::shapes::ShapeSpec
+enum qs_map_edit::texture_import::DitherChoice
+enum qs_map_edit::textures::TextureOrigin
+enum qs_map_edit::textures::WadState
+enum qs_map_edit::uv::Axis
+enum qs_map_edit::uv::JustifyTo
+enum qs_map_edit::uv::UvChoice
+field qs_map_edit::EntityKeys.brush
+field qs_map_edit::EntityKeys.classname
+field qs_map_edit::EntityKeys.keys
+field qs_map_edit::EntityKeys.pairs
+field qs_map_edit::EntityKeys.spawnflags
+field qs_map_edit::EntityKeys.targetnames
+field qs_map_edit::EntityParams.entity
+field qs_map_edit::MapEdited.entity
+field qs_map_edit::MapOpenParams.path
+field qs_map_edit::MapOpened.entities
+field qs_map_edit::MapOpened.path
+field qs_map_edit::MapSaved.backup
+field qs_map_edit::MapSaved.path
+field qs_map_edit::MoveParams.by
+field qs_map_edit::MoveParams.entity
+field qs_map_edit::PlaceParams.classname
+field qs_map_edit::PlaceParams.keys
+field qs_map_edit::PlaceParams.origin
+field qs_map_edit::RemoveKeyParams.entity
+field qs_map_edit::RemoveKeyParams.key
+field qs_map_edit::RotateParams.degrees
+field qs_map_edit::RotateParams.entity
+field qs_map_edit::SaveParams.bsp
+field qs_map_edit::SelectParams.entity
+field qs_map_edit::SetKeyParams.also
+field qs_map_edit::SetKeyParams.entity
+field qs_map_edit::SetKeyParams.key
+field qs_map_edit::SetKeyParams.value
+field qs_map_edit::backup::Backup.number
+field qs_map_edit::backup::Backup.path
+field qs_map_edit::backup::RestoreParams.path
+field qs_map_edit::brush_tools::BrushChamferParams.brush
+field qs_map_edit::brush_tools::BrushChamferParams.distance
+field qs_map_edit::brush_tools::BrushChamferParams.edge
+field qs_map_edit::brush_tools::BrushChamferParams.entity
+field qs_map_edit::brush_tools::BrushChamferParams.faces
+field qs_map_edit::brush_tools::BrushExtrudeParams.by
+field qs_map_edit::brush_tools::BrushExtrudeParams.face
+field qs_map_edit::brush_tools::BrushExtrudeParams.grid
+field qs_map_edit::brush_tools::BrushExtrudeParams.lock
+field qs_map_edit::brush_tools::BrushHollowParams.brush
+field qs_map_edit::brush_tools::BrushHollowParams.entity
+field qs_map_edit::brush_tools::BrushHollowParams.wall
+field qs_map_edit::brush_tools::BrushIntersectParams.brushes
+field qs_map_edit::brush_tools::BrushIntersectParams.entity
+field qs_map_edit::brush_tools::BrushScaleParams.about
+field qs_map_edit::brush_tools::BrushScaleParams.brushes
+field qs_map_edit::brush_tools::BrushScaleParams.entity
+field qs_map_edit::brush_tools::BrushScaleParams.factors
+field qs_map_edit::brush_tools::BrushScaleParams.lock
+field qs_map_edit::brush_tools::BrushShearParams.about
+field qs_map_edit::brush_tools::BrushShearParams.along
+field qs_map_edit::brush_tools::BrushShearParams.brushes
+field qs_map_edit::brush_tools::BrushShearParams.by
+field qs_map_edit::brush_tools::BrushShearParams.entity
+field qs_map_edit::brush_tools::BrushShearParams.factor
+field qs_map_edit::brush_tools::BrushShearParams.lock
+field qs_map_edit::brush_tools::BrushSplitEdgeParams.at
+field qs_map_edit::brush_tools::BrushSplitEdgeParams.brush
+field qs_map_edit::brush_tools::BrushSplitEdgeParams.edge
+field qs_map_edit::brush_tools::BrushSplitEdgeParams.entity
+field qs_map_edit::brush_tools::BrushSplitFaceParams.at
+field qs_map_edit::brush_tools::BrushSplitFaceParams.face
+field qs_map_edit::brush_tools::BrushSweepParams.brush
+field qs_map_edit::brush_tools::BrushSweepParams.entity
+field qs_map_edit::brush_tools::BrushSweepParams.grid
+field qs_map_edit::brush_tools::BrushSweepParams.lock
+field qs_map_edit::brush_tools::BrushSweepParams.path
+field qs_map_edit::brush_tools::BrushVerticesParams.brush
+field qs_map_edit::brush_tools::BrushVerticesParams.entity
+field qs_map_edit::brush_tools::BrushVerticesParams.grid
+field qs_map_edit::brush_tools::BrushVerticesParams.moves
+field qs_map_edit::brush_tools::VertexMove.from
+field qs_map_edit::brush_tools::VertexMove.to
+field qs_map_edit::brushes::BrushClipParams.brush
+field qs_map_edit::brushes::BrushClipParams.entity
+field qs_map_edit::brushes::BrushClipParams.keep
+field qs_map_edit::brushes::BrushClipParams.points
+field qs_map_edit::brushes::BrushCreateParams.entity
+field qs_map_edit::brushes::BrushCreateParams.grid
+field qs_map_edit::brushes::BrushCreateParams.max
+field qs_map_edit::brushes::BrushCreateParams.min
+field qs_map_edit::brushes::BrushCreateParams.texture
+field qs_map_edit::brushes::BrushMergeParams.brushes
+field qs_map_edit::brushes::BrushMergeParams.entity
+field qs_map_edit::brushes::BrushMoveParams.brushes
+field qs_map_edit::brushes::BrushMoveParams.by
+field qs_map_edit::brushes::BrushMoveParams.entity
+field qs_map_edit::brushes::BrushMoveParams.grid
+field qs_map_edit::brushes::BrushMoveParams.lock
+field qs_map_edit::brushes::BrushParams.brush
+field qs_map_edit::brushes::BrushParams.entity
+field qs_map_edit::brushes::BrushTextureParams.brushes
+field qs_map_edit::brushes::BrushTextureParams.entity
+field qs_map_edit::brushes::BrushTextureParams.rotate
+field qs_map_edit::brushes::BrushTextureParams.scale
+field qs_map_edit::brushes::BrushTextureParams.shift
+field qs_map_edit::brushes::BrushTextureParams.texture
+field qs_map_edit::brushes::BrushVertexParams.brush
+field qs_map_edit::brushes::BrushVertexParams.entity
+field qs_map_edit::brushes::BrushVertexParams.from
+field qs_map_edit::brushes::BrushVertexParams.grid
+field qs_map_edit::brushes::BrushVertexParams.to
+field qs_map_edit::classes::ClassInfo.color
+field qs_map_edit::classes::ClassInfo.doc
+field qs_map_edit::classes::ClassInfo.found
+field qs_map_edit::classes::ClassInfo.keys
+field qs_map_edit::classes::ClassInfo.model
+field qs_map_edit::classes::ClassInfo.name
+field qs_map_edit::classes::ClassInfo.shape
+field qs_map_edit::classes::ClassInfo.size
+field qs_map_edit::classes::ClassInfo.spawnflags
+field qs_map_edit::classes::FlagInfo.name
+field qs_map_edit::classes::FlagInfo.value
+field qs_map_edit::classes::KeyInfo.default
+field qs_map_edit::classes::KeyInfo.name
+field qs_map_edit::classes::KeyInfo.ty
+field qs_map_edit::disk::MapDifference.entity
+field qs_map_edit::disk::MapDifference.text
+field qs_map_edit::disk::ResolveParams.keep
+field qs_map_edit::flags::SetFlagParams.also
+field qs_map_edit::flags::SetFlagParams.change
+field qs_map_edit::flags::SetFlagParams.entity
+field qs_map_edit::flags::SetFlagParams.flag
+field qs_map_edit::groups::EntityListParams.entities
+field qs_map_edit::groups::ExportParams.path
+field qs_map_edit::groups::LayerInfo.entities
+field qs_map_edit::groups::LayerInfo.entity
+field qs_map_edit::groups::LayerInfo.hidden
+field qs_map_edit::groups::LayerInfo.locked
+field qs_map_edit::groups::LayerInfo.name
+field qs_map_edit::groups::LayerInfo.omit_from_export
+field qs_map_edit::groups::SetLayerParams.layer
+field qs_map_edit::groups::SetLayerParams.setting
+field qs_map_edit::groups::SetLayerParams.switch
+field qs_map_edit::inspect::EntityInfo.classname
+field qs_map_edit::inspect::EntityInfo.entity
+field qs_map_edit::inspect::EntityInfo.origin
+field qs_map_edit::inspect::EntityInfo.room
+field qs_map_edit::inspect::EntityInfo.targetname
+field qs_map_edit::inspect::InspectParams.classname
+field qs_map_edit::inspect::InspectParams.room
+field qs_map_edit::inspect::MapInspected.entities
+field qs_map_edit::inspect::MapInspected.path
+field qs_map_edit::inspect::MapInspected.rooms
+field qs_map_edit::inspect::RoomInfo.bounds
+field qs_map_edit::inspect::RoomInfo.kind
+field qs_map_edit::inspect::RoomInfo.name
+field qs_map_edit::issues::MapFixParams.fix
+field qs_map_edit::issues::MapFound.brushes
+field qs_map_edit::issues::MapFound.entities
+field qs_map_edit::issues::MapIssue.brush
+field qs_map_edit::issues::MapIssue.entity
+field qs_map_edit::issues::MapIssue.fix
+field qs_map_edit::issues::MapIssue.line
+field qs_map_edit::issues::MapIssue.message
+field qs_map_edit::issues::MapIssues.issues
+field qs_map_edit::issues::MapSearchParams.classname
+field qs_map_edit::issues::MapSearchParams.key
+field qs_map_edit::issues::MapSearchParams.texture
+field qs_map_edit::issues::MapSearchParams.value
+field qs_map_edit::issues::MapSearchParams.within
+field qs_map_edit::links::LinkParams.entity
+field qs_map_edit::links::LinkParams.key
+field qs_map_edit::links::LinkParams.target
+field qs_map_edit::outline::MoveToParams.entity
+field qs_map_edit::outline::MoveToParams.into
+field qs_map_edit::outline::OutlineParams.filter
+field qs_map_edit::outline::OutlineRow.brushes
+field qs_map_edit::outline::OutlineRow.entity
+field qs_map_edit::outline::OutlineRow.kind
+field qs_map_edit::outline::OutlineRow.label
+field qs_map_edit::outline::OutlineRow.rows
+field qs_map_edit::outline::OutlineRow.targetname
+field qs_map_edit::prefabs::PlacePrefabParams.grid
+field qs_map_edit::prefabs::PlacePrefabParams.origin
+field qs_map_edit::prefabs::PlacePrefabParams.path
+field qs_map_edit::prefabs::Prefab.name
+field qs_map_edit::prefabs::Prefab.path
+field qs_map_edit::prefabs::PrefabSaved.prefab
+field qs_map_edit::prefabs::Prefabs.prefabs
+field qs_map_edit::prefabs::SavePrefabParams.brushes
+field qs_map_edit::prefabs::SavePrefabParams.entities
+field qs_map_edit::prefabs::SavePrefabParams.grid
+field qs_map_edit::prefabs::SavePrefabParams.name
+field qs_map_edit::report::MapReport.leak
+field qs_map_edit::report::MapReport.missing_textures
+field qs_map_edit::report::MapReport.missing_wads
+field qs_map_edit::report::MapReport.seal
+field qs_map_edit::report::MapReport.warnings
+field qs_map_edit::report::MapReport.written
+field qs_map_edit::review::HunkEntity.classname
+field qs_map_edit::review::HunkEntity.entity
+field qs_map_edit::review::HunkEntity.side
+field qs_map_edit::review::MapHunk.brushes_added
+field qs_map_edit::review::MapHunk.brushes_removed
+field qs_map_edit::review::MapHunk.entities
+field qs_map_edit::review::MapHunk.index
+field qs_map_edit::review::MapHunk.keys
+field qs_map_edit::review::MapHunksParams.hunks
+field qs_map_edit::shapes::BrushShapeParams.entity
+field qs_map_edit::shapes::BrushShapeParams.grid
+field qs_map_edit::shapes::BrushShapeParams.max
+field qs_map_edit::shapes::BrushShapeParams.min
+field qs_map_edit::shapes::BrushShapeParams.shape
+field qs_map_edit::shapes::BrushShapeParams.texture
+field qs_map_edit::store::EntityProblem.entity
+field qs_map_edit::store::EntityProblem.fix
+field qs_map_edit::store::EntityProblem.line
+field qs_map_edit::store::EntityProblem.message
+field qs_map_edit::store::GameFolders.base
+field qs_map_edit::store::GameFolders.chosen
+field qs_map_edit::texture_import::TextureImportParams.dither
+field qs_map_edit::texture_import::TextureImportParams.name
+field qs_map_edit::texture_import::TextureImportParams.path
+field qs_map_edit::texture_import::TextureImported.map_names_wad
+field qs_map_edit::texture_import::TextureImported.name
+field qs_map_edit::texture_import::TextureImported.replaced
+field qs_map_edit::texture_import::TextureImported.wad
+field qs_map_edit::textures::BrowserTexture.height
+field qs_map_edit::textures::BrowserTexture.name
+field qs_map_edit::textures::BrowserTexture.origin
+field qs_map_edit::textures::BrowserTexture.uses
+field qs_map_edit::textures::BrowserTexture.width
+field qs_map_edit::textures::MapTextures.textures
+field qs_map_edit::textures::MapTextures.wads
+field qs_map_edit::textures::WadFound.name
+field qs_map_edit::textures::WadFound.path
+field qs_map_edit::textures::WadFound.state
+field qs_map_edit::uv::FaceAlignParams.from
+field qs_map_edit::uv::FaceAlignParams.to
+field qs_map_edit::uv::FaceRef.brush
+field qs_map_edit::uv::FaceRef.entity
+field qs_map_edit::uv::FaceRef.face
+field qs_map_edit::uv::FaceUvParams.edit
+field qs_map_edit::uv::FaceUvParams.faces
+fn qs_map_edit::EntityIndex::get
+fn qs_map_edit::EntityIndex::is_world
+fn qs_map_edit::EntityIndex::new
+fn qs_map_edit::MapDocument::edits
+fn qs_map_edit::MapDocument::file
+fn qs_map_edit::MapDocument::is_unsaved
+fn qs_map_edit::MapDocument::path
+fn qs_map_edit::MapDocument::report
+fn qs_map_edit::MapDocument::revision
+fn qs_map_edit::MapDocument::selected
+fn qs_map_edit::MapDocument::set_report
+fn qs_map_edit::MapDocument::source
+fn qs_map_edit::MapDocument::watched
+fn qs_map_edit::MapRevision::next
+fn qs_map_edit::MapStore::map
+fn qs_map_edit::MapStore::map_mut
+fn qs_map_edit::MapStore::open_map
+fn qs_map_edit::MapStore::save_map
+fn qs_map_edit::backup::MapStore::backup_map
+fn qs_map_edit::backup::MapStore::map_backups
+fn qs_map_edit::brushes::BrushIndex::get
+fn qs_map_edit::brushes::BrushIndex::new
+fn qs_map_edit::disk::MapDocument::conflict
+fn qs_map_edit::disk::map_files_changed
+fn qs_map_edit::entity_keys
+fn qs_map_edit::groups::MapDocument::hidden_entities
+fn qs_map_edit::groups::MapDocument::is_hidden
+fn qs_map_edit::groups::MapDocument::is_locked
+fn qs_map_edit::outline::MapDocument::outline
+fn qs_map_edit::outline::OutlineRow::count
+fn qs_map_edit::outline::OutlineRow::holds
+fn qs_map_edit::prefabs::MapDocument::external_folders
+fn qs_map_edit::register_map_edit
+fn qs_map_edit::register_map_game
+fn qs_map_edit::report::MapReport::of
+fn qs_map_edit::review::MapHunkNumber::get
+fn qs_map_edit::review::MapHunkNumber::new
+fn qs_map_edit::review::MapStore::map_hunks
+fn qs_map_edit::store::HasMap::game_folders
+fn qs_map_edit::store::HasMap::live_map
+fn qs_map_edit::store::HasMap::map_project
+fn qs_map_edit::store::HasMap::map_store
+fn qs_map_edit::store::LiveMap::game_folders
+fn qs_map_edit::store::LiveMap::plays_in_step
+fn qs_map_edit::store::LiveMap::read_again
+fn qs_map_edit::store::LiveMap::send_changes
+fn qs_map_edit::store::MapProject::entity_check
+fn qs_map_edit::store::MapProject::entity_class
+fn qs_map_edit::store::MapProject::project_root
+fn qs_map_edit::store::MapProject::targeting_keys
+fn qs_map_edit::texture_import::project_wad
+fn qs_map_edit::texture_import::quantized
+fn qs_map_edit::textures::Game::at
+fn qs_map_edit::textures::MapDocument::texture_uses
+fn qs_map_edit::textures::TextureSources::decode
+fn qs_map_edit::textures::TextureSources::from_files
+fn qs_map_edit::textures::TextureSources::has_palette
+fn qs_map_edit::textures::TextureSources::is_stale
+fn qs_map_edit::textures::TextureSources::listing
+fn qs_map_edit::textures::TextureSources::load
+fn qs_map_edit::textures::TextureSources::palette
+fn qs_map_edit::textures::TextureSources::size
+fn qs_map_edit::textures::TextureSources::watched
+fn qs_map_edit::textures::find_wad
+fn qs_map_edit::textures::game_palette
+fn qs_map_edit::uv::FaceIndex::get
+fn qs_map_edit::uv::FaceIndex::new
+impl qs_map_edit::EntityIndex: fmt::Display
+impl qs_map_edit::error::MapEditError: Error
+impl qs_map_edit::error::MapEditError: fmt::Display
+impl qs_map_edit::inspect::RoomShape: From<RoomKind>
+impl qs_map_edit::review::MapHunkNumber: std::fmt::Display
+mod qs_map_edit::backup
+mod qs_map_edit::texture_import
+mod qs_map_edit::textures
+mod qs_map_edit::uv
+struct qs_map_edit::EntityIndex
+struct qs_map_edit::EntityKeys
+struct qs_map_edit::EntityParams
+struct qs_map_edit::MapDocument
+struct qs_map_edit::MapEdited
+struct qs_map_edit::MapOpenParams
+struct qs_map_edit::MapOpened
+struct qs_map_edit::MapRevision
+struct qs_map_edit::MapSaved
+struct qs_map_edit::MoveParams
+struct qs_map_edit::PlaceParams
+struct qs_map_edit::RemoveKeyParams
+struct qs_map_edit::RotateParams
+struct qs_map_edit::SaveParams
+struct qs_map_edit::SelectParams
+struct qs_map_edit::SetKeyParams
+struct qs_map_edit::backup::Backup
+struct qs_map_edit::backup::RestoreParams
+struct qs_map_edit::brush_tools::BrushChamferParams
+struct qs_map_edit::brush_tools::BrushExtrudeParams
+struct qs_map_edit::brush_tools::BrushHollowParams
+struct qs_map_edit::brush_tools::BrushIntersectParams
+struct qs_map_edit::brush_tools::BrushScaleParams
+struct qs_map_edit::brush_tools::BrushShearParams
+struct qs_map_edit::brush_tools::BrushSplitEdgeParams
+struct qs_map_edit::brush_tools::BrushSplitFaceParams
+struct qs_map_edit::brush_tools::BrushSweepParams
+struct qs_map_edit::brush_tools::BrushVerticesParams
+struct qs_map_edit::brush_tools::VertexMove
+struct qs_map_edit::brushes::BrushClipParams
+struct qs_map_edit::brushes::BrushCreateParams
+struct qs_map_edit::brushes::BrushIndex
+struct qs_map_edit::brushes::BrushMergeParams
+struct qs_map_edit::brushes::BrushMoveParams
+struct qs_map_edit::brushes::BrushParams
+struct qs_map_edit::brushes::BrushTextureParams
+struct qs_map_edit::brushes::BrushVertexParams
+struct qs_map_edit::classes::ClassInfo
+struct qs_map_edit::classes::FlagInfo
+struct qs_map_edit::classes::KeyInfo
+struct qs_map_edit::disk::MapDifference
+struct qs_map_edit::disk::ResolveParams
+struct qs_map_edit::flags::SetFlagParams
+struct qs_map_edit::groups::EntityListParams
+struct qs_map_edit::groups::ExportParams
+struct qs_map_edit::groups::LayerInfo
+struct qs_map_edit::groups::SetLayerParams
+struct qs_map_edit::inspect::EntityInfo
+struct qs_map_edit::inspect::InspectParams
+struct qs_map_edit::inspect::MapInspected
+struct qs_map_edit::inspect::RoomInfo
+struct qs_map_edit::issues::MapFixParams
+struct qs_map_edit::issues::MapFound
+struct qs_map_edit::issues::MapIssue
+struct qs_map_edit::issues::MapIssues
+struct qs_map_edit::issues::MapSearchParams
+struct qs_map_edit::links::LinkParams
+struct qs_map_edit::outline::MoveToParams
+struct qs_map_edit::outline::OutlineParams
+struct qs_map_edit::outline::OutlineRow
+struct qs_map_edit::prefabs::PlacePrefabParams
+struct qs_map_edit::prefabs::Prefab
+struct qs_map_edit::prefabs::PrefabSaved
+struct qs_map_edit::prefabs::Prefabs
+struct qs_map_edit::prefabs::SavePrefabParams
+struct qs_map_edit::report::MapReport
+struct qs_map_edit::review::HunkEntity
+struct qs_map_edit::review::MapHunk
+struct qs_map_edit::review::MapHunkNumber
+struct qs_map_edit::review::MapHunksParams
+struct qs_map_edit::shapes::BrushShapeParams
+struct qs_map_edit::store::EntityProblem
+struct qs_map_edit::store::GameFolders
+struct qs_map_edit::store::MapStore
+struct qs_map_edit::texture_import::TextureImportParams
+struct qs_map_edit::texture_import::TextureImported
+struct qs_map_edit::textures::BrowserTexture
+struct qs_map_edit::textures::Game
+struct qs_map_edit::textures::MapTextures
+struct qs_map_edit::textures::TextureSources
+struct qs_map_edit::textures::WadFound
+struct qs_map_edit::uv::FaceAlignParams
+struct qs_map_edit::uv::FaceIndex
+struct qs_map_edit::uv::FaceRef
+struct qs_map_edit::uv::FaceUvParams
+trait qs_map_edit::store::HasMap
+trait qs_map_edit::store::LiveMap
+trait qs_map_edit::store::MapProject
+type qs_map_edit::store::EntityCheck
+type qs_map_edit::store::HasMap::Live
+type qs_map_edit::store::HasMap::Project
+use qs_map_edit::ArchWall = shapes::ArchWall
+use qs_map_edit::Axis = brush_tools::Axis
+use qs_map_edit::BrushChamferParams = brush_tools::BrushChamferParams
+use qs_map_edit::BrushClipParams = brushes::BrushClipParams
+use qs_map_edit::BrushCreateParams = brushes::BrushCreateParams
+use qs_map_edit::BrushExtrudeParams = brush_tools::BrushExtrudeParams
+use qs_map_edit::BrushHollowParams = brush_tools::BrushHollowParams
+use qs_map_edit::BrushIndex = brushes::BrushIndex
+use qs_map_edit::BrushIntersectParams = brush_tools::BrushIntersectParams
+use qs_map_edit::BrushMergeParams = brushes::BrushMergeParams
+use qs_map_edit::BrushMoveParams = brushes::BrushMoveParams
+use qs_map_edit::BrushParams = brushes::BrushParams
+use qs_map_edit::BrushScaleParams = brush_tools::BrushScaleParams
+use qs_map_edit::BrushShapeParams = shapes::BrushShapeParams
+use qs_map_edit::BrushShearParams = brush_tools::BrushShearParams
+use qs_map_edit::BrushSplitEdgeParams = brush_tools::BrushSplitEdgeParams
+use qs_map_edit::BrushSplitFaceParams = brush_tools::BrushSplitFaceParams
+use qs_map_edit::BrushSweepParams = brush_tools::BrushSweepParams
+use qs_map_edit::BrushTextureParams = brushes::BrushTextureParams
+use qs_map_edit::BrushVertexParams = brushes::BrushVertexParams
+use qs_map_edit::BrushVerticesParams = brush_tools::BrushVerticesParams
+use qs_map_edit::Circle = shapes::Circle
+use qs_map_edit::ClassInfo = classes::ClassInfo
+use qs_map_edit::Climb = shapes::Climb
+use qs_map_edit::EntityCheck = store::EntityCheck
+use qs_map_edit::EntityInfo = inspect::EntityInfo
+use qs_map_edit::EntityListParams = groups::EntityListParams
+use qs_map_edit::EntityProblem = store::EntityProblem
+use qs_map_edit::ExportParams = groups::ExportParams
+use qs_map_edit::FlagChange = flags::FlagChange
+use qs_map_edit::FlagInfo = classes::FlagInfo
+use qs_map_edit::GameFolders = store::GameFolders
+use qs_map_edit::HasMap = store::HasMap
+use qs_map_edit::HunkEntity = review::HunkEntity
+use qs_map_edit::HunkSide = review::HunkSide
+use qs_map_edit::InspectParams = inspect::InspectParams
+use qs_map_edit::Keep = disk::Keep
+use qs_map_edit::KeepPart = brushes::Keep
+use qs_map_edit::KeyInfo = classes::KeyInfo
+use qs_map_edit::LayerInfo = groups::LayerInfo
+use qs_map_edit::LayerOption = groups::LayerOption
+use qs_map_edit::LinkParams = links::LinkParams
+use qs_map_edit::LiveChange = live::LiveChange
+use qs_map_edit::LiveMap = store::LiveMap
+use qs_map_edit::Lock = brushes::Lock
+use qs_map_edit::MAP_ACCEPT = review::MAP_ACCEPT
+use qs_map_edit::MAP_BRUSH_CHAMFER = brush_tools::MAP_BRUSH_CHAMFER
+use qs_map_edit::MAP_BRUSH_CLIP = brushes::MAP_BRUSH_CLIP
+use qs_map_edit::MAP_BRUSH_CREATE = brushes::MAP_BRUSH_CREATE
+use qs_map_edit::MAP_BRUSH_DELETE = brushes::MAP_BRUSH_DELETE
+use qs_map_edit::MAP_BRUSH_EXTRUDE = brush_tools::MAP_BRUSH_EXTRUDE
+use qs_map_edit::MAP_BRUSH_HOLLOW = brush_tools::MAP_BRUSH_HOLLOW
+use qs_map_edit::MAP_BRUSH_INTERSECT = brush_tools::MAP_BRUSH_INTERSECT
+use qs_map_edit::MAP_BRUSH_MERGE = brushes::MAP_BRUSH_MERGE
+use qs_map_edit::MAP_BRUSH_MOVE = brushes::MAP_BRUSH_MOVE
+use qs_map_edit::MAP_BRUSH_SCALE = brush_tools::MAP_BRUSH_SCALE
+use qs_map_edit::MAP_BRUSH_SHAPE = shapes::MAP_BRUSH_SHAPE
+use qs_map_edit::MAP_BRUSH_SHEAR = brush_tools::MAP_BRUSH_SHEAR
+use qs_map_edit::MAP_BRUSH_SPLIT_EDGE = brush_tools::MAP_BRUSH_SPLIT_EDGE
+use qs_map_edit::MAP_BRUSH_SPLIT_FACE = brush_tools::MAP_BRUSH_SPLIT_FACE
+use qs_map_edit::MAP_BRUSH_SUBTRACT = brushes::MAP_BRUSH_SUBTRACT
+use qs_map_edit::MAP_BRUSH_SWEEP = brush_tools::MAP_BRUSH_SWEEP
+use qs_map_edit::MAP_BRUSH_TEXTURE = brushes::MAP_BRUSH_TEXTURE
+use qs_map_edit::MAP_BRUSH_VERTEX = brushes::MAP_BRUSH_VERTEX
+use qs_map_edit::MAP_BRUSH_VERTICES = brush_tools::MAP_BRUSH_VERTICES
+use qs_map_edit::MAP_COMPARE = disk::MAP_COMPARE
+use qs_map_edit::MAP_EXPORT = groups::MAP_EXPORT
+use qs_map_edit::MAP_FIX = issues::MAP_FIX
+use qs_map_edit::MAP_HIDE = groups::MAP_HIDE
+use qs_map_edit::MAP_ISOLATE = groups::MAP_ISOLATE
+use qs_map_edit::MAP_ISSUES = issues::MAP_ISSUES
+use qs_map_edit::MAP_LAYERS = groups::MAP_LAYERS
+use qs_map_edit::MAP_LINK = links::MAP_LINK
+use qs_map_edit::MAP_LOCK = groups::MAP_LOCK
+use qs_map_edit::MAP_MOVE_TO = outline::MAP_MOVE_TO
+use qs_map_edit::MAP_OUTLINE = outline::MAP_OUTLINE
+use qs_map_edit::MAP_PLACE_PREFAB = prefabs::MAP_PLACE_PREFAB
+use qs_map_edit::MAP_PREFABS = prefabs::MAP_PREFABS
+use qs_map_edit::MAP_REJECT = review::MAP_REJECT
+use qs_map_edit::MAP_RESOLVE = disk::MAP_RESOLVE
+use qs_map_edit::MAP_SAVE_PREFAB = prefabs::MAP_SAVE_PREFAB
+use qs_map_edit::MAP_SEARCH = issues::MAP_SEARCH
+use qs_map_edit::MAP_SET_FLAG = flags::MAP_SET_FLAG
+use qs_map_edit::MAP_SET_LAYER = groups::MAP_SET_LAYER
+use qs_map_edit::MAP_SHOW_ALL = groups::MAP_SHOW_ALL
+use qs_map_edit::MAP_STAGE = review::MAP_STAGE
+use qs_map_edit::MAP_STAGED = review::MAP_STAGED
+use qs_map_edit::MAP_UNLOCK_ALL = groups::MAP_UNLOCK_ALL
+use qs_map_edit::MAP_UNSTAGE = review::MAP_UNSTAGE
+use qs_map_edit::MapDifference = disk::MapDifference
+use qs_map_edit::MapEditError = error::MapEditError
+use qs_map_edit::MapFixParams = issues::MapFixParams
+use qs_map_edit::MapFound = issues::MapFound
+use qs_map_edit::MapHunk = review::MapHunk
+use qs_map_edit::MapHunkNumber = review::MapHunkNumber
+use qs_map_edit::MapHunksParams = review::MapHunksParams
+use qs_map_edit::MapInspected = inspect::MapInspected
+use qs_map_edit::MapIssue = issues::MapIssue
+use qs_map_edit::MapIssues = issues::MapIssues
+use qs_map_edit::MapOnDisk = disk::MapOnDisk
+use qs_map_edit::MapProject = store::MapProject
+use qs_map_edit::MapReport = report::MapReport
+use qs_map_edit::MapSearchParams = issues::MapSearchParams
+use qs_map_edit::MapStore = store::MapStore
+use qs_map_edit::MoveToParams = outline::MoveToParams
+use qs_map_edit::NewVertex = brush_tools::NewVertex
+use qs_map_edit::OutlineParams = outline::OutlineParams
+use qs_map_edit::OutlineRow = outline::OutlineRow
+use qs_map_edit::PREFAB_FOLDER = prefabs::PREFAB_FOLDER
+use qs_map_edit::PlacePrefabParams = prefabs::PlacePrefabParams
+use qs_map_edit::Prefab = prefabs::Prefab
+use qs_map_edit::PrefabSaved = prefabs::PrefabSaved
+use qs_map_edit::Prefabs = prefabs::Prefabs
+use qs_map_edit::QuickFix = issues::QuickFix
+use qs_map_edit::ResolveParams = disk::ResolveParams
+use qs_map_edit::RoomInfo = inspect::RoomInfo
+use qs_map_edit::RoomShape = inspect::RoomShape
+use qs_map_edit::RowKind = outline::RowKind
+use qs_map_edit::SavePrefabParams = prefabs::SavePrefabParams
+use qs_map_edit::Seal = report::Seal
+use qs_map_edit::SetFlagParams = flags::SetFlagParams
+use qs_map_edit::SetLayerParams = groups::SetLayerParams
+use qs_map_edit::ShapeSpec = shapes::ShapeSpec
+use qs_map_edit::Switch = groups::Switch
+use qs_map_edit::VertexMove = brush_tools::VertexMove
+use qs_map_edit::map_files_changed = disk::map_files_changed
+variant qs_map_edit::BspSave::Ent
+variant qs_map_edit::BspSave::Lump
+variant qs_map_edit::MapSource::Bsp
+variant qs_map_edit::MapSource::Map
+variant qs_map_edit::brush_tools::Axis::X
+variant qs_map_edit::brush_tools::Axis::Y
+variant qs_map_edit::brush_tools::Axis::Z
+variant qs_map_edit::brush_tools::NewVertex::Out
+variant qs_map_edit::brush_tools::NewVertex::Point
+variant qs_map_edit::brushes::Keep::Back
+variant qs_map_edit::brushes::Keep::Both
+variant qs_map_edit::brushes::Keep::Front
+variant qs_map_edit::brushes::Lock::Free
+variant qs_map_edit::brushes::Lock::Locked
+variant qs_map_edit::disk::Keep::Disk
+variant qs_map_edit::disk::Keep::Mine
+variant qs_map_edit::disk::MapOnDisk::Conflict
+variant qs_map_edit::disk::MapOnDisk::Reloaded
+variant qs_map_edit::disk::MapOnDisk::Same
+variant qs_map_edit::error::MapEditError::BadScale
+variant qs_map_edit::error::MapEditError::Brush
+variant qs_map_edit::error::MapEditError::Bsp
+variant qs_map_edit::error::MapEditError::CannotMove
+variant qs_map_edit::error::MapEditError::ChangedOnDisk
+variant qs_map_edit::error::MapEditError::EntOverride
+variant qs_map_edit::error::MapEditError::Image
+variant qs_map_edit::error::MapEditError::Link
+variant qs_map_edit::error::MapEditError::Locked
+variant qs_map_edit::error::MapEditError::Map
+variant qs_map_edit::error::MapEditError::NoBrush
+variant qs_map_edit::error::MapEditError::NoEntity
+variant qs_map_edit::error::MapEditError::NoFace
+variant qs_map_edit::error::MapEditError::NoFile
+variant qs_map_edit::error::MapEditError::NoKey
+variant qs_map_edit::error::MapEditError::NoMap
+variant qs_map_edit::error::MapEditError::NoMapHunk
+variant qs_map_edit::error::MapEditError::NoMapSource
+variant qs_map_edit::error::MapEditError::NoPalette
+variant qs_map_edit::error::MapEditError::NoProject
+variant qs_map_edit::error::MapEditError::NoRoom
+variant qs_map_edit::error::MapEditError::NoSelection
+variant qs_map_edit::error::MapEditError::NoTextureSize
+variant qs_map_edit::error::MapEditError::NotContainer
+variant qs_map_edit::error::MapEditError::NotEmpty
+variant qs_map_edit::error::MapEditError::NotLayer
+variant qs_map_edit::error::MapEditError::NotPointEntity
+variant qs_map_edit::error::MapEditError::PrefabName
+variant qs_map_edit::error::MapEditError::Save
+variant qs_map_edit::error::MapEditError::Shape
+variant qs_map_edit::error::MapEditError::Texture
+variant qs_map_edit::error::MapEditError::Wad
+variant qs_map_edit::error::MapEditError::WadWrite
+variant qs_map_edit::flags::FlagChange::Clear
+variant qs_map_edit::flags::FlagChange::Set
+variant qs_map_edit::groups::LayerOption::Hidden
+variant qs_map_edit::groups::LayerOption::Locked
+variant qs_map_edit::groups::LayerOption::OmitFromExport
+variant qs_map_edit::groups::Switch::Off
+variant qs_map_edit::groups::Switch::On
+variant qs_map_edit::inspect::RoomShape::Group
+variant qs_map_edit::inspect::RoomShape::Layer
+variant qs_map_edit::issues::QuickFix::AddPlayerStart
+variant qs_map_edit::issues::QuickFix::RemoveBrush
+variant qs_map_edit::issues::QuickFix::RenameKey
+variant qs_map_edit::issues::QuickFix::SetClassname
+variant qs_map_edit::live::LiveChange::Edit
+variant qs_map_edit::live::LiveChange::NeedsCompile
+variant qs_map_edit::live::LiveChange::Remove
+variant qs_map_edit::live::LiveChange::Spawn
+variant qs_map_edit::outline::RowKind::Entity
+variant qs_map_edit::outline::RowKind::Group
+variant qs_map_edit::outline::RowKind::Layer
+variant qs_map_edit::outline::RowKind::LinkedGroup
+variant qs_map_edit::report::Seal::Leaks
+variant qs_map_edit::report::Seal::NoOccupant
+variant qs_map_edit::report::Seal::Sealed
+variant qs_map_edit::review::HunkSide::Before
+variant qs_map_edit::review::HunkSide::Now
+variant qs_map_edit::shapes::ArchWall::Filled
+variant qs_map_edit::shapes::ArchWall::Open
+variant qs_map_edit::shapes::Circle::Edges
+variant qs_map_edit::shapes::Circle::Vertices
+variant qs_map_edit::shapes::Climb::East
+variant qs_map_edit::shapes::Climb::North
+variant qs_map_edit::shapes::Climb::South
+variant qs_map_edit::shapes::Climb::West
+variant qs_map_edit::shapes::ShapeSpec::Arch
+variant qs_map_edit::shapes::ShapeSpec::Cone
+variant qs_map_edit::shapes::ShapeSpec::Curve
+variant qs_map_edit::shapes::ShapeSpec::Cylinder
+variant qs_map_edit::shapes::ShapeSpec::Icospheroid
+variant qs_map_edit::shapes::ShapeSpec::Rock
+variant qs_map_edit::shapes::ShapeSpec::SpiralStairs
+variant qs_map_edit::shapes::ShapeSpec::Stairs
+variant qs_map_edit::shapes::ShapeSpec::UvSpheroid
+variant qs_map_edit::texture_import::DitherChoice::FloydSteinberg
+variant qs_map_edit::texture_import::DitherChoice::None
+variant qs_map_edit::textures::TextureOrigin::Bsp
+variant qs_map_edit::textures::TextureOrigin::Missing
+variant qs_map_edit::textures::TextureOrigin::Wad
+variant qs_map_edit::textures::WadState::Missing
+variant qs_map_edit::textures::WadState::Read
+variant qs_map_edit::textures::WadState::Unreadable
+variant qs_map_edit::uv::Axis::S
+variant qs_map_edit::uv::Axis::T
+variant qs_map_edit::uv::JustifyTo::Bottom
+variant qs_map_edit::uv::JustifyTo::Centre
+variant qs_map_edit::uv::JustifyTo::Left
+variant qs_map_edit::uv::JustifyTo::Right
+variant qs_map_edit::uv::JustifyTo::Top
+variant qs_map_edit::uv::UvChoice::Adjust
+variant qs_map_edit::uv::UvChoice::Fit
+variant qs_map_edit::uv::UvChoice::Flip
+variant qs_map_edit::uv::UvChoice::Justify
+variant qs_map_edit::uv::UvChoice::Reset
+variant qs_map_edit::uv::UvChoice::Snap

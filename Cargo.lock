@@ -3739,6 +3739,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "qs-map-edit"
+version = "2026.11.1"
+dependencies = [
+ "image",
+ "qs-bsp",
+ "qs-commands",
+ "qs-diff",
+ "qs-map",
+ "qs-map-bsp",
+ "qs-vfs",
+ "qs-wad",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "qs-map-light"
 version = "2026.11.1"
 dependencies = [
@@ -3766,6 +3784,7 @@ version = "2026.11.1"
 dependencies = [
  "qc-project",
  "qs-commands",
+ "qs-map-edit",
  "qs-paths",
  "qs-workbench",
  "rmcp",
@@ -3901,6 +3920,7 @@ dependencies = [
  "qs-commands",
  "qs-map",
  "qs-map-bsp",
+ "qs-map-edit",
  "qs-map-light",
  "qs-pak",
  "qs-paths",
@@ -3970,6 +3990,7 @@ dependencies = [
  "qs-install",
  "qs-map",
  "qs-map-bsp",
+ "qs-map-edit",
  "qs-map-light",
  "qs-map-vis",
  "qs-pak",
@@ -4027,6 +4048,7 @@ dependencies = [
  "qs-commands",
  "qs-engine",
  "qs-install",
+ "qs-map-edit",
  "qs-mcp",
  "qs-models",
  "qs-paths",
@@ -4066,6 +4088,7 @@ dependencies = [
  "qs-layout",
  "qs-log",
  "qs-map",
+ "qs-map-edit",
  "qs-mdl",
  "qs-models",
  "qs-paths",
@@ -6200,6 +6223,7 @@ dependencies = [
  "qs-layout",
  "qs-map",
  "qs-map-bsp",
+ "qs-map-edit",
  "qs-models",
  "qs-pak",
  "qs-settings",

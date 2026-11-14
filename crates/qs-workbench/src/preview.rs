@@ -24,10 +24,10 @@ use schemars::JsonSchema;
 
 use crate::ids::{BreakpointId, Edict, WatchIndex};
 use crate::map_compile::{MapCompile, MapLeaks, MapPlayFromHere, MapPortalsCommand};
-use crate::map_edit::{LiveChange, register_map_game};
 use crate::map_profile::{MapChooseProfile, MapProfiles, MapRunProfile};
 use crate::{GameFolders, HasWorkbench, LiveMap, ModuleBuilt, Workbench, WorkbenchError};
 use qs_map::Entity;
+use qs_map_edit::{LiveChange, register_map_game};
 
 pub mod debug;
 pub mod dock;

@@ -7,8 +7,8 @@
 use std::path::PathBuf;
 
 use eframe::egui::{self, ColorImage, RichText, TextureHandle, Vec2};
+use qs_map_edit::texture_import::{DitherChoice, quantized};
 use qs_wad::texture::{Palette, TextureName};
-use qs_workbench::map_edit::texture_import::{DitherChoice, quantized};
 
 use crate::strings::Text;
 use crate::theme::{Theme, Token};

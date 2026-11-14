@@ -76,20 +76,10 @@ an edit, so both commands run outside the edit history
   classname or key with the name to write instead; `map.rename_key`, run once the person
   confirms the caution `symbol.rename` gives for a field, renames the key in every open map,
   unsaved and undoable.
-- The open map (`map_edit`, P5-06, MAP-4, MAP-22): `map.open` reads a `.map`, or a shipped
-  `.bsp`'s entity lump; `map.select`, `map.place`, `map.move`, `map.rotate`, `map.delete`,
-  `map.duplicate`, `map.set_key` and `map.remove_key` edit it through `qs-map`'s lossless
-  document, each with undo; `map.entity` gives an entity's keys typed by its class with the
-  map's targetnames; `map.inspect` gives its rooms (MAP-9) and each entity's place, origin
-  and room, for the agent (P5-08); `map.save` writes the `.map`, or a `.ent` beside a BSP or its rewritten
-  entity lump ([`docs/map-editor.md`](../../docs/map-editor.md)). While the preview's game
-  plays the open map, each edit, undo and redo goes to it as a `LiveChange` by the entity's
-  place in the map (P5-07, MAP-12, BRIDGE-4.13). `files.changed` takes the files another
-  program wrote: the open map is read again, or with unsaved edits kept for `map.resolve` and
-  `map.compare`, and changed QuakeC is read again (P5-17, MAP-32); `map.save` refuses to
-  overwrite a newer file. `map.brush_create`, `map.brush_clip`, `map.brush_vertex`,
-  `map.brush_subtract`, `map.brush_merge` and `map.brush_delete` edit brushes through
-  `qs-map`'s brush editing on the 16-unit grid, each one undo step (P6-08).
+- The open map is `qs-map-edit`'s (P6-40): the workbench holds its `MapStore` and answers the
+  map commands' seam from the server QuakeC and the preview. `files.changed` takes the files
+  another program wrote: the open map is read again, or with unsaved edits kept for
+  `map.resolve` and `map.compare`, and changed QuakeC is read again (P5-17, MAP-32).
 - Git (`git`, P4-35, UI-19): `git.status`, `git.diff`, `git.stage` and `git.unstage` (a file
   or one hunk), `git.commit`, `git.branches`, `git.switch`, `git.create_branch`, `git.log`,
   `git.blame`, `git.conflicts`, `git.resolve` and `git.head_text`, over `qs-git` in the open
@@ -123,14 +113,8 @@ an edit, so both commands run outside the edit history
   `checkpoint.restore` puts every file back, deletions included, dropping the editor's
   unsaved text and staged hunks so the IDE shows the checkpoint.
 - `HasWorkbench` and `register`: the commands for any context with a `Workbench`. Such a
-  context also has the open map (`HasMap`): its `MapStore` is the workbench's
-  (`Workbench::maps_mut`), which opens, saves and backs up the map.
-- The map editor's seam (`map_edit`, P6-40): the map commands work on any `HasMap` context
-  and know nothing of QuakeC or the engine. They ask the project for its folder, an entity
-  class, its targeting keys and a check of a map's entities (`MapProject`, answered by the
-  workbench from the server QuakeC) and the game for whether it plays the map, to take a
-  change, and for its folders (`LiveMap`, answered by `Preview`). `register_map_game` adds
-  the map commands only a context with a game offers; `SendLive` sends a `LiveChange` over
-  the bridge.
+  context also has the open map (`qs_map_edit::HasMap`): its `MapStore` is the workbench's
+  (`Workbench::maps_mut`). The workbench answers the map seam (`MapProject` from the server
+  QuakeC, `LiveMap` from `Preview`), and `SendLive` sends a `LiveChange` over the bridge.
 - `OPEN_PROJECT`, `OPEN_FILE` and their parameter types, so the app runs them without
   spelling their ids.

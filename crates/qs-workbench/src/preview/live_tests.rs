@@ -24,8 +24,8 @@ use qs_commands::{Registry, Session};
 use qs_engine::{Client, Running};
 use serde_json::{Value, json};
 
-use crate::map_edit::{MAP_DUPLICATE, MAP_MOVE, MAP_OPEN, MAP_PLACE, register_map_edit};
 use crate::{Config, HasWorkbench, Preview, Workbench};
+use qs_map_edit::{MAP_DUPLICATE, MAP_MOVE, MAP_OPEN, MAP_PLACE, register_map_edit};
 
 /// The world, a monster and a light.
 const MAP: &str = "{\n\"classname\" \"worldspawn\"\n}\n\

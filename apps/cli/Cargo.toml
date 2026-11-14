@@ -17,6 +17,7 @@ name = "quakec-ide"
 path = "src/main.rs"
 
 [dependencies]
+qs-map-edit = { workspace = true }
 # The global allocator (P4-18).
 mimalloc = { workspace = true }
 clap = { workspace = true, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }

@@ -7,7 +7,7 @@
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use qs_workbench::map_edit::{
+use qs_map_edit::{
     BrushIndex, EntityIndex, MapFound, MapIssue, MapRevision, MapSearchParams, QuickFix,
 };
 

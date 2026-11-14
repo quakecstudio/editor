@@ -72,11 +72,11 @@ impl HasLayout for Everything {
     }
 }
 
-impl qs_workbench::HasMap for Everything {
+impl qs_map_edit::HasMap for Everything {
     type Project = Workbench<qc_project::MemoryLoader>;
     type Live = qs_workbench::Preview;
 
-    fn map_store(&mut self) -> &mut qs_workbench::MapStore {
+    fn map_store(&mut self) -> &mut qs_map_edit::MapStore {
         self.workbench.maps_mut()
     }
 

@@ -15,17 +15,17 @@ use eframe::egui::{
     self, Color32, Key, Modifiers, Pos2, Rect, RichText, Sense, Stroke, Ui, WidgetInfo, WidgetType,
 };
 use qs_layout::MapPanes;
-use qs_render::Camera;
-use qs_workbench::map_edit::ClassInfo;
-use qs_workbench::map_edit::MapReport;
-use qs_workbench::map_edit::texture_import::DitherChoice;
-use qs_workbench::map_edit::textures::TextureSources;
+use qs_map_edit::ClassInfo;
+use qs_map_edit::MapReport;
+use qs_map_edit::texture_import::DitherChoice;
+use qs_map_edit::textures::TextureSources;
 #[cfg(test)]
-use qs_workbench::map_edit::uv::FaceRef;
-use qs_workbench::map_edit::{
+use qs_map_edit::uv::FaceRef;
+use qs_map_edit::{
     EntityIndex, EntityKeys, FlagChange, Keep, LayerInfo, MapDocument, MapFound, MapIssue,
     MapRevision, MapSearchParams, OutlineRow, Prefab, QuickFix,
 };
+use qs_render::Camera;
 use qs_workbench::map_filter::{GameMode, Skill};
 
 use crate::map_browser::{ClassDrag, EntityBrowser};

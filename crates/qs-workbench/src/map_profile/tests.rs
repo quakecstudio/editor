@@ -19,10 +19,10 @@ use super::{
 };
 use crate::OPEN_PROJECT;
 use crate::map_compile::tests::{Context, open};
-use crate::map_edit::MAP_OPEN;
-use crate::map_edit::Seal;
-use crate::map_edit::testing::{Opening, room};
 use qs_commands::Session;
+use qs_map_edit::MAP_OPEN;
+use qs_map_edit::Seal;
+use qs_map_edit::testing::{Opening, room};
 
 fn expansions() -> Expansions {
     Expansions::new(

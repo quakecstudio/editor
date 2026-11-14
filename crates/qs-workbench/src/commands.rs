@@ -20,7 +20,6 @@ use crate::entity_classes::register_entities;
 use crate::export::ExportProject;
 use crate::files_changed::FilesChangedCommand;
 use crate::map_check::register_map;
-use crate::map_edit::register_map_edit;
 use crate::map_filter::MapFilter;
 use crate::search::register_search;
 use crate::staged::register_staged;
@@ -31,6 +30,7 @@ use crate::{
     Caution, DefKind, EntryKind, FileRange, HasMap, Location, MapStore, ModuleBuilt, Reported,
     Workbench, WorkbenchError,
 };
+use qs_map_edit::register_map_edit;
 
 /// A context the workbench commands work on: one that has a [`Workbench`], and so the map
 /// open in it.

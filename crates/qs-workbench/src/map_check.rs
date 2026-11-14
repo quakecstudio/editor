@@ -17,8 +17,8 @@ use serde::{Deserialize, Serialize};
 use crate::editing::{Change, Source};
 use crate::editing::{Saved, TextStep};
 use crate::entity_classes::class_info;
-use crate::map_edit::{ClassInfo, EntityIndex, QuickFix};
 use crate::{EntityCheck, EntityProblem, HasWorkbench, MapProject, Workbench, WorkbenchError};
+use qs_map_edit::{ClassInfo, EntityIndex, QuickFix};
 
 /// The id of `map.check`.
 pub const MAP_CHECK: &str = "map.check";

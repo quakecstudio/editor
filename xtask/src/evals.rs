@@ -23,10 +23,10 @@ use qs_agent::{Message, Model, ModelError, Reply, RunConfig, ToolSpec};
 use qs_commands::{Registry, Session};
 use qs_map::MapFile;
 use qs_map_bsp::{Compiler, Dialect as BspDialect, Warning};
+use qs_map_edit::{MAP_OPEN, MapReport};
 use qs_models::{MemoryKeys, ProviderConfig, ProviderKind, ProviderModel, Secret, Usage};
 use qs_templates::{Folder, Template};
 use qs_workbench::map_compile::MAP_COMPILE;
-use qs_workbench::map_edit::{MAP_OPEN, MapReport};
 use qs_workbench::{
     Config, HasPreview, HasWorkbench, OPEN_PROJECT, Preview, PreviewConfig, Workbench,
 };
@@ -199,11 +199,11 @@ struct Context {
     preview: Preview,
 }
 
-impl qs_workbench::HasMap for Context {
+impl qs_map_edit::HasMap for Context {
     type Project = Workbench<FsLoader>;
     type Live = Preview;
 
-    fn map_store(&mut self) -> &mut qs_workbench::MapStore {
+    fn map_store(&mut self) -> &mut qs_map_edit::MapStore {
         self.workbench.maps_mut()
     }
 

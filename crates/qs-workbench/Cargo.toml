@@ -26,6 +26,9 @@ qs-diff = { workspace = true }
 qs-engine = { workspace = true }
 qs-install = { workspace = true }
 qs-map = { workspace = true }
+# Map editing, the commands that need no QuakeC (P6-40); the workbench gives it the project
+# and the game through its seam.
+qs-map-edit = { workspace = true }
 qs-map-bsp = { workspace = true }
 qs-map-light = { workspace = true }
 # map.run_profile: vis in a compile profile (P6-20).
@@ -55,6 +58,8 @@ toml = { workspace = true, features = ["parse", "serde", "std"] }
 tracing = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
+# The map fixtures the map compile tests share with the map editor's.
+qs-map-edit = { workspace = true, features = ["testing"] }
 # A fake preview host for the engine tools' tests, as qs-engine's tests serve one.
 interprocess = { workspace = true }
 qs-bridge = { workspace = true }

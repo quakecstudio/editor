@@ -26,8 +26,8 @@ use std::sync::Arc;
 use eframe::egui::{self, Event, Key, Modifiers};
 use egui_kittest::kittest::Queryable as _;
 use egui_kittest::{Harness, OsThreshold, SnapshotOptions};
-use qs_workbench::map_edit::uv::{FaceIndex, FaceRef};
-use qs_workbench::map_edit::{BrushIndex, EntityIndex};
+use qs_map_edit::uv::{FaceIndex, FaceRef};
+use qs_map_edit::{BrushIndex, EntityIndex};
 use serde_json::{Value, json};
 
 use crate::App;

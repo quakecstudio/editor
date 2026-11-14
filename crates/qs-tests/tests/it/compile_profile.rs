@@ -17,8 +17,8 @@ use qc_progs::Progs;
 use qc_project::FsLoader;
 use qs_bsp::{Bsp, BspLoader};
 use qs_commands::{Registry, Session};
+use qs_map_edit::MAP_OPEN;
 use qs_sim::{LoadOptions, UserCmd, World};
-use qs_workbench::map_edit::MAP_OPEN;
 use qs_workbench::map_profile::{FULL_PROFILE, MAP_RUN_PROFILE, ProfileRun, TaskResult};
 use qs_workbench::{
     Config, HasPreview, HasWorkbench, Preview, PreviewConfig, Workbench, register, register_preview,
@@ -34,11 +34,11 @@ struct Context {
     preview: Preview,
 }
 
-impl qs_workbench::HasMap for Context {
+impl qs_map_edit::HasMap for Context {
     type Project = Workbench<FsLoader>;
     type Live = Preview;
 
-    fn map_store(&mut self) -> &mut qs_workbench::MapStore {
+    fn map_store(&mut self) -> &mut qs_map_edit::MapStore {
         self.workbench.maps_mut()
     }
 

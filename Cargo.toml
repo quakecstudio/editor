@@ -176,6 +176,7 @@ qs-install = { path = "crates/qs-install" }
 qs-layout = { path = "crates/qs-layout" }
 qs-log = { path = "crates/qs-log" }
 qs-map = { path = "crates/qs-map" }
+qs-map-edit = { path = "crates/qs-map-edit" }
 qs-mdl = { path = "crates/qs-mdl" }
 qs-pak = { path = "crates/qs-pak" }
 qs-paths = { path = "crates/qs-paths" }

@@ -15,8 +15,8 @@ use serde_json::{Value, json};
 use qs_map::MapFile;
 
 use super::{MAP_CHECK, MAP_RENAME_KEY};
-use crate::map_edit::{EntityIndex, QuickFix};
 use crate::{Config, MapProject, OPEN_FILE, OPEN_PROJECT, READ_FILE, RENAME, Workbench, register};
+use qs_map_edit::{EntityIndex, QuickFix};
 
 const CODE: &str = "entity self; .string classname, target, targetname; .float speed;\n\
     void() worldspawn = {};\n\

@@ -15,11 +15,11 @@ use qs_wad::texture::Palette;
 use serde_json::json;
 
 use super::{MAP_COMPILE, MAP_LEAKS, MAP_PORTALS, MapPortals};
-use crate::map_edit::testing::{Opening, room};
-use crate::map_edit::texture_import::{DitherChoice, TEXTURE_IMPORT, quantized};
-use crate::map_edit::{MAP_OPEN, MapReport, Seal};
 use crate::preview::{HasPreview, Preview, PreviewConfig};
 use crate::{Config, HasWorkbench, Workbench, register, register_preview};
+use qs_map_edit::testing::{Opening, room};
+use qs_map_edit::texture_import::{DitherChoice, TEXTURE_IMPORT, quantized};
+use qs_map_edit::{MAP_OPEN, MapReport, Seal};
 
 /// A workbench and a preview with no game.
 pub(crate) struct Context {

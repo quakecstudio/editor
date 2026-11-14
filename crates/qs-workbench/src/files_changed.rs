@@ -3,7 +3,7 @@
 //! Maps and QuakeC changed by another program (P5-17, MAP-32). A file watcher, or a test in its
 //! place, tells `files.changed` which files changed; changed QuakeC is read again, so the
 //! entity definitions derived from it follow, and the open map is read again or kept as the
-//! map editor decides (`map_edit::map_files_changed`).
+//! map editor decides (`qs_map_edit::map_files_changed`).
 
 use std::path::{Path, PathBuf};
 
@@ -11,8 +11,8 @@ use qs_commands::{Command, Outcome};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::map_edit::{MapOnDisk, map_files_changed};
 use crate::{HasWorkbench, WorkbenchError};
+use qs_map_edit::{MapOnDisk, map_files_changed};
 
 /// The id of `files.changed`.
 pub const FILES_CHANGED: &str = "files.changed";

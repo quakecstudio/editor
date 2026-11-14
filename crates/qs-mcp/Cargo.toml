@@ -19,6 +19,7 @@ serde_json = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["rt", "io-util", "io-std", "sync"] }
 
 [dev-dependencies]
+qs-map-edit = { workspace = true }
 qc-project = { workspace = true }
 qs-workbench = { workspace = true }
 

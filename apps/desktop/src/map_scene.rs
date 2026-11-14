@@ -9,13 +9,13 @@ use std::path::Path;
 
 use qs_bsp::{Bsp, BspLoader};
 use qs_map::geometry::TexVecs;
+use qs_map_edit::ClassInfo;
+use qs_map_edit::uv::{FaceIndex, FaceRef};
+use qs_map_edit::{BrushIndex, EntityIndex, MapDocument, MapSource};
 use qs_mdl::Mdl;
 use qs_mdl::mdl::MdlFrameEntry;
 use qs_render::{Camera, Degrees};
 use qs_vfs::{StdFs, Vfs};
-use qs_workbench::map_edit::ClassInfo;
-use qs_workbench::map_edit::uv::{FaceIndex, FaceRef};
-use qs_workbench::map_edit::{BrushIndex, EntityIndex, MapDocument, MapSource};
 
 /// A line in map space.
 pub(crate) type Line = [[f32; 3]; 2];

@@ -8,8 +8,8 @@
 use std::collections::BTreeSet;
 
 use eframe::egui::{self, Ui};
-use qs_workbench::map_edit::FlagChange;
-use qs_workbench::map_edit::FlagInfo;
+use qs_map_edit::FlagChange;
+use qs_map_edit::FlagInfo;
 
 use crate::map_scene::{ANGLE, COLOR_SUFFIX, FLOAT_TYPE, SPAWNFLAGS};
 use crate::strings::Text;

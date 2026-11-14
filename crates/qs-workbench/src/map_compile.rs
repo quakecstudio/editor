@@ -19,10 +19,10 @@ use qs_wad::write::WadBuilder;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::map_edit::textures::{Game, find_wad};
-use crate::map_edit::{MapReport, MapSource};
 use crate::preview::{HasPreview, PreviewError};
 use crate::{Workbench, WorkbenchError};
+use qs_map_edit::textures::{Game, find_wad};
+use qs_map_edit::{MapReport, MapSource};
 
 /// The id of `map.leaks`.
 pub const MAP_LEAKS: &str = "map.leaks";

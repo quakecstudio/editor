@@ -21,8 +21,8 @@ use qs_sim::{LoadOptions, MapPlace, World};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::map_edit::{BSP_EXTENSION, EntityIndex, MapSource};
 use crate::{HasWorkbench, Workbench, WorkbenchError};
+use qs_map_edit::{BSP_EXTENSION, EntityIndex, MapSource};
 
 /// The id of `map.filter`.
 pub const MAP_FILTER: &str = "map.filter";

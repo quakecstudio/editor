@@ -9,6 +9,10 @@
 //! depend on them. Normal, dev and build dependencies all count, including
 //! target-specific ones.
 //!
+//! The `[forbidden]` table names direct dependencies a crate may not have whatever their
+//! layers, each a crate name or, ending in `-`, a prefix: `qs-map-edit` reads no QuakeC
+//! (P6-40), so it may not depend on a `qc-` crate, `qs-workbench` or `qs-engine`.
+//!
 //! The table of crates in `docs/layers.md` is written from `layers.toml` and each
 //! crate's package description (`cargo xtask layers --write`), and the check fails
 //! when the table is not what they render, so the document cannot fall behind.
@@ -142,6 +146,7 @@ fn with_table(doc: &str, table: &str) -> Result<String, String> {
 /// Checks every crate's layer and that it depends only on its own layer or lower.
 fn check_dependencies(root: &Path) -> Result<Report, String> {
     let crates = crates_table(root)?;
+    let forbidden = forbidden(root)?;
     let members = members(root)?;
     let mut report = Report::default();
 
@@ -197,6 +202,19 @@ fn check_dependencies(root: &Path) -> Result<Report, String> {
                      only on crates in its own layer or lower, and never on tests or tooling"
                 ));
             }
+        }
+        let barred = forbidden.get(name.as_str()).into_iter().flatten();
+        for (rule, dependency) in barred.flat_map(|rule| {
+            member
+                .dependencies
+                .iter()
+                .filter(move |dependency| bars(rule, dependency))
+                .map(move |dependency| (rule, dependency))
+        }) {
+            ok = false;
+            report.problems.push(format!(
+                "{name} depends on {dependency}, which {FILE} [forbidden] bars it from ({rule:?})"
+            ));
         }
         if ok {
             report.passed.push(format!(
@@ -325,6 +343,44 @@ fn crates_table(root: &Path) -> Result<Table, String> {
         .and_then(Value::as_table)
         .cloned()
         .ok_or_else(|| format!("{FILE} has no [crates] table"))
+}
+
+/// The `[forbidden]` table of `layers.toml`: for each crate named, the dependencies it may
+/// not have; none when the table is absent.
+fn forbidden(root: &Path) -> Result<BTreeMap<String, Vec<String>>, String> {
+    let layers = read_toml(root, FILE)?;
+    let Some(table) = layers.get("forbidden") else {
+        return Ok(BTreeMap::new());
+    };
+    let table = table
+        .as_table()
+        .ok_or_else(|| format!("{FILE}: [forbidden] must be a table"))?;
+    table
+        .iter()
+        .map(|(name, rules)| {
+            let rules = rules
+                .as_array()
+                .ok_or_else(|| format!("{FILE}: forbidden.{name} must be a list"))?
+                .iter()
+                .map(|rule| {
+                    rule.as_str()
+                        .map(str::to_owned)
+                        .ok_or_else(|| format!("{FILE}: forbidden.{name} must list strings"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok((name.clone(), rules))
+        })
+        .collect()
+}
+
+/// Whether the `[forbidden]` entry `rule` bars `dependency`: the same name, or for a rule
+/// ending in `-` a name it starts.
+fn bars(rule: &str, dependency: &str) -> bool {
+    if rule.ends_with('-') {
+        dependency.starts_with(rule)
+    } else {
+        dependency == rule
+    }
 }
 
 /// Every crate `layers.toml` names with its layer, in the file's order; a crate mapped to
@@ -508,6 +564,41 @@ mod tests {
         let root = workspace("stale", &[krate("a", "L9", "")], "gone = \"L0\"\nnum = 3\n");
         let found = check_dependencies(&root).unwrap().problems;
         assert_eq!(found.len(), 3, "{found:?}");
+    }
+
+    // P6-40: the map editor reads no QuakeC, so layers.toml bars qs-map-edit from every qc-
+    // crate, qs-workbench and qs-engine, whatever their layers; a crate it does not bar
+    // passes
+    #[test]
+    fn a_forbidden_dependency_fails_whatever_its_layer() {
+        let specs = [
+            krate("qc-low", "L0", ""),
+            krate("qs-map", "L0", ""),
+            krate("qs-workbench", "L5", ""),
+            krate(
+                "qs-map-edit",
+                "L5",
+                "[dependencies]\nqs-map = { path = \"../qs-map\" }\n\
+                 qc-low = { path = \"../qc-low\" }\n\
+                 [dev-dependencies]\nqs-workbench = { path = \"../qs-workbench\" }\n",
+            ),
+        ];
+        let rule = "\n[forbidden]\nqs-map-edit = [\"qc-\", \"qs-workbench\", \"qs-engine\"]\n";
+        let found = check_dependencies(&workspace("forbidden", &specs, rule))
+            .unwrap()
+            .problems;
+        assert_eq!(found.len(), 2, "{found:?}");
+        assert!(
+            found.iter().any(|p| p.contains("depends on qc-low")),
+            "{found:?}"
+        );
+        assert!(
+            found.iter().any(|p| p.contains("depends on qs-workbench")),
+            "{found:?}"
+        );
+        assert!(problems("forbidden-none", &specs[..2]).is_empty());
+        let bad = "\n[forbidden]\nqs-map-edit = \"qc-\"\n";
+        assert!(check_dependencies(&workspace("forbidden-bad", &specs, bad)).is_err());
     }
 
     #[test]

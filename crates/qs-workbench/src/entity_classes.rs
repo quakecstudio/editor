@@ -12,8 +12,8 @@ use qs_commands::{Command, Outcome, RegisterError, Registry};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::map_edit::{ClassInfo, FlagInfo, KeyInfo};
 use crate::{HasWorkbench, Workbench, WorkbenchError};
+use qs_map_edit::{ClassInfo, FlagInfo, KeyInfo};
 
 /// The id of `project.entities`.
 pub const PROJECT_ENTITIES: &str = "project.entities";
