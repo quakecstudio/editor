@@ -27,8 +27,8 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
-pub use conflict::{Conflict, Side, conflicts, resolve};
-pub use diff::{FileDiff, Hunk};
+pub use conflict::{Conflict, ConflictIndex, Side, conflicts, resolve};
+pub use diff::{FileDiff, Hunk, HunkIndex};
 
 /// Why a git operation failed.
 #[derive(Debug)]
@@ -45,7 +45,7 @@ pub enum GitError {
     /// Git's output was not what the command gives.
     Unexpected(String),
     /// The file has no hunk at this index.
-    NoHunk(usize),
+    NoHunk(HunkIndex),
 }
 
 impl fmt::Display for GitError {
@@ -54,7 +54,7 @@ impl fmt::Display for GitError {
             Self::NoGit(error) => write!(f, "git could not be run: {error}"),
             Self::Failed { command, message } => write!(f, "git {command}: {message}"),
             Self::Unexpected(what) => write!(f, "git's output was not as expected: {what}"),
-            Self::NoHunk(index) => write!(f, "the file has no hunk {index}"),
+            Self::NoHunk(index) => write!(f, "the file has no hunk {}", index.get()),
         }
     }
 }
@@ -330,7 +330,7 @@ impl Repo {
     /// # Errors
     ///
     /// [`GitError::NoHunk`] when there is no such hunk, or git refused the patch.
-    pub fn stage_hunk(&self, path: &Path, index: usize) -> Result<(), GitError> {
+    pub fn stage_hunk(&self, path: &Path, index: HunkIndex) -> Result<(), GitError> {
         let diff = self.diff(path, DiffOf::Unstaged)?;
         let patch = diff.patch(index).ok_or(GitError::NoHunk(index))?;
         self.git(&["apply", "--cached", "-"], Some(patch.as_bytes()))
@@ -342,7 +342,7 @@ impl Repo {
     /// # Errors
     ///
     /// [`GitError::NoHunk`] when there is no such hunk, or git refused the patch.
-    pub fn unstage_hunk(&self, path: &Path, index: usize) -> Result<(), GitError> {
+    pub fn unstage_hunk(&self, path: &Path, index: HunkIndex) -> Result<(), GitError> {
         let diff = self.diff(path, DiffOf::Staged)?;
         let patch = diff.patch(index).ok_or(GitError::NoHunk(index))?;
         self.git(

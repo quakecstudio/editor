@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use qc_project::normalize;
 use qs_commands::{Command, NoParams, Outcome, RegisterError, Registry};
-use qs_git::{Change, DiffOf, GitError, Repo, Side};
+use qs_git::{Change, ConflictIndex, DiffOf, GitError, HunkIndex, Repo, Side};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -436,7 +436,7 @@ git_command!(
     |context, params| {
         let repo = repo(context)?;
         match params.hunk {
-            Some(hunk) => repo.stage_hunk(&params.path, hunk)?,
+            Some(hunk) => repo.stage_hunk(&params.path, HunkIndex::new(hunk))?,
             None => repo.stage(&params.path)?,
         }
     }
@@ -451,7 +451,7 @@ git_command!(
     |context, params| {
         let repo = repo(context)?;
         match params.hunk {
-            Some(hunk) => repo.unstage_hunk(&params.path, hunk)?,
+            Some(hunk) => repo.unstage_hunk(&params.path, HunkIndex::new(hunk))?,
             None => repo.unstage(&params.path)?,
         }
     }
@@ -613,7 +613,7 @@ git_command!(
             ConflictSide::Theirs => Side::Theirs,
             ConflictSide::Both => Side::Both,
         };
-        let resolved = qs_git::resolve(&text, params.conflict, side)
+        let resolved = qs_git::resolve(&text, ConflictIndex::new(params.conflict), side)
             .ok_or(GitCommandError::NoConflict(params.conflict))?;
         let workbench = context.workbench();
         workbench

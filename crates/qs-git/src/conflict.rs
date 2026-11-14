@@ -66,10 +66,28 @@ pub fn conflicts(text: &str) -> Vec<Conflict> {
     out
 }
 
+/// A conflict's index among a file's conflicts, from 0.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ConflictIndex(usize);
+
+impl ConflictIndex {
+    /// Index `index`.
+    #[must_use]
+    pub const fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    /// The index.
+    #[must_use]
+    pub const fn get(self) -> usize {
+        self.0
+    }
+}
+
 /// `text` with conflict `index` replaced by `side`; `None` when there is no such conflict.
 #[must_use]
-pub fn resolve(text: &str, index: usize, side: Side) -> Option<String> {
-    let conflict = *conflicts(text).get(index)?;
+pub fn resolve(text: &str, index: ConflictIndex, side: Side) -> Option<String> {
+    let conflict = *conflicts(text).get(index.get())?;
     let ours_end = conflict.base.unwrap_or(conflict.middle);
     let mut out = String::with_capacity(text.len());
     for (line_index, line) in text.split_inclusive('\n').enumerate() {
