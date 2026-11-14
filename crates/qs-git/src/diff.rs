@@ -20,6 +20,35 @@ pub struct Hunk {
     pub text: String,
 }
 
+/// A hunk's index in a file's diff, from 0; written to JSON as the bare number.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(transparent)]
+pub struct HunkIndex(usize);
+
+impl HunkIndex {
+    /// Index `index`.
+    #[must_use]
+    pub const fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    /// The index.
+    #[must_use]
+    pub const fn get(self) -> usize {
+        self.0
+    }
+}
+
 /// A file's diff: the header lines before its first hunk, and its hunks.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct FileDiff {
@@ -58,8 +87,8 @@ impl FileDiff {
 
     /// The patch of hunk `index` alone: the header and that hunk.
     #[must_use]
-    pub fn patch(&self, index: usize) -> Option<String> {
-        let hunk = self.hunks.get(index)?;
+    pub fn patch(&self, index: HunkIndex) -> Option<String> {
+        let hunk = self.hunks.get(index.get())?;
         let mut patch = self.header.clone();
         patch.push_str(&hunk.text);
         if !patch.ends_with('\n') {

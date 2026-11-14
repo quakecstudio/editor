@@ -481,6 +481,9 @@ version = "2026.11.1"
 [[package]]
 name = "qs-mdl"
 version = "2026.11.1"
+dependencies = [
+ "qc-progs",
+]
 
 [[package]]
 name = "qs-pak"
@@ -543,6 +546,7 @@ name = "qs-vfs"
 version = "2026.11.1"
 dependencies = [
  "miniz_oxide",
+ "qc-progs",
  "qs-pak",
  "qs-wad",
 ]
@@ -550,10 +554,16 @@ dependencies = [
 [[package]]
 name = "qs-wad"
 version = "2026.11.1"
+dependencies = [
+ "qc-progs",
+]
 
 [[package]]
 name = "qs-wav"
 version = "2026.11.1"
+dependencies = [
+ "qc-progs",
+]
 
 [[package]]
 name = "quakec-lsp"

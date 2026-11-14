@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use qc_project::normalize;
 use qs_commands::{Command, NoParams, Outcome, RegisterError, Registry};
 use qs_git::{Change, DiffOf, GitError, Repo, Side};
+pub use qs_git::{ConflictIndex, HunkIndex};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -59,7 +60,7 @@ pub enum GitCommandError {
     /// Files have unsaved changes, which a switch would leave behind.
     Unsaved(Vec<PathBuf>),
     /// The file has no conflict at this index.
-    NoConflict(usize),
+    NoConflict(ConflictIndex),
     /// Reading the project again failed.
     Workbench(WorkbenchError),
 }
@@ -77,7 +78,7 @@ impl fmt::Display for GitCommandError {
                 }
                 Ok(())
             }
-            Self::NoConflict(index) => write!(f, "the file has no conflict {index}"),
+            Self::NoConflict(index) => write!(f, "the file has no conflict {}", index.get()),
             Self::Workbench(error) => error.fmt(f),
         }
     }
@@ -205,7 +206,7 @@ pub struct GitStageParams {
     /// One hunk, by its index in `git.diff`'s list of the side it comes from; the whole file
     /// without it.
     #[serde(default)]
-    pub hunk: Option<usize>,
+    pub hunk: Option<HunkIndex>,
 }
 
 /// The parameters of `git.commit`.
@@ -254,7 +255,7 @@ pub struct GitResolveParams {
     /// The file.
     pub path: PathBuf,
     /// The conflict, by its index in `git.conflicts`' list.
-    pub conflict: usize,
+    pub conflict: ConflictIndex,
     /// The side to keep.
     pub side: ConflictSide,
 }

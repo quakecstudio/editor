@@ -22,9 +22,61 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
 /// The directories under the project root a checkpoint leaves out: git's, the hidden store's
 /// and the build's.
 pub const SKIPPED: [&str; 3] = [".git", ".quakec-studio", "build"];
+
+/// The bytes of an object's id, a SHA-1 digest.
+const ID_BYTES: usize = 20;
+/// The hex digits that spell an object's id.
+const ID_DIGITS: usize = ID_BYTES * 2;
+/// The base of an id's digits.
+const HEX_RADIX: u32 = 16;
+/// The zlib level git writes loose objects at, its default.
+const ZLIB_LEVEL: u8 = 6;
+
+/// An object's id, the SHA-1 of the uncompressed object.
+type ObjectId = [u8; ID_BYTES];
+
+/// A checkpoint's number, from 1, the ref `refs/checkpoints/<n>`; written to JSON as the bare
+/// number.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(transparent)]
+pub struct CheckpointNumber(u32);
+
+impl CheckpointNumber {
+    /// The first checkpoint's.
+    pub const FIRST: Self = Self(1);
+
+    /// The one numbered `value`.
+    #[must_use]
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Its number.
+    #[must_use]
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+
+    /// The number after it.
+    #[must_use]
+    const fn next(self) -> Self {
+        Self(self.0.saturating_add(1))
+    }
+}
+
+impl fmt::Display for CheckpointNumber {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 /// A file's mode in a tree: a regular file.
 const FILE_MODE: &str = "100644";
@@ -39,7 +91,7 @@ pub enum CheckpointError {
     /// A file or a directory could not be read or written.
     Io(PathBuf, io::Error),
     /// No checkpoint has this number.
-    NotFound(u32),
+    NotFound(CheckpointNumber),
     /// An object of the store is missing or is not what git writes.
     Corrupt(String),
 }
@@ -59,8 +111,8 @@ impl std::error::Error for CheckpointError {}
 /// A checkpoint made.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Checkpoint {
-    /// Its number, from 1, the ref `refs/checkpoints/<n>`.
-    pub number: u32,
+    /// Its number.
+    pub number: CheckpointNumber,
     /// Its commit's id, 40 hex digits.
     pub commit: String,
     /// What it was made for, the commit's message.
@@ -153,7 +205,7 @@ impl Store {
         let tree_id = self.write_tree(&tree)?;
         let list = self.list()?;
         let parent = list.last();
-        let number = parent.map_or(1, |p| p.number.saturating_add(1));
+        let number = parent.map_or(CheckpointNumber::FIRST, |p| p.number.next());
         let mut commit = format!("tree {}\n", hex(&tree_id));
         if let Some(parent) = parent {
             commit.push_str(&format!("parent {}\n", parent.commit));
@@ -184,9 +236,16 @@ impl Store {
     pub fn list(&self) -> Result<Vec<Checkpoint>, CheckpointError> {
         let refs = self.git.join("refs/checkpoints");
         let entries = fs::read_dir(&refs).map_err(|e| CheckpointError::Io(refs.clone(), e))?;
-        let mut numbers: Vec<u32> = entries
+        let mut numbers: Vec<CheckpointNumber> = entries
             .filter_map(Result::ok)
-            .filter_map(|entry| entry.file_name().to_str()?.parse().ok())
+            .filter_map(|entry| {
+                entry
+                    .file_name()
+                    .to_str()?
+                    .parse()
+                    .ok()
+                    .map(CheckpointNumber)
+            })
             .collect();
         numbers.sort_unstable();
         numbers
@@ -212,7 +271,7 @@ impl Store {
     ///
     /// [`CheckpointError::NotFound`] when there is no such checkpoint, and [`CheckpointError`]
     /// when the store or a file cannot be read or written.
-    pub fn restore(&self, number: u32) -> Result<Restored, CheckpointError> {
+    pub fn restore(&self, number: CheckpointNumber) -> Result<Restored, CheckpointError> {
         let (_, tree) = self.commit_of(number)?;
         let held = self.read_tree(&tree, Path::new(""))?;
         let mut restored = Restored::default();
@@ -243,7 +302,7 @@ impl Store {
     }
 
     /// Checkpoint `number`'s commit id and its tree's.
-    fn commit_of(&self, number: u32) -> Result<(String, [u8; 20]), CheckpointError> {
+    fn commit_of(&self, number: CheckpointNumber) -> Result<(String, ObjectId), CheckpointError> {
         let reference = self.git.join("refs/checkpoints").join(number.to_string());
         let text = fs::read_to_string(&reference).map_err(|e| match e.kind() {
             io::ErrorKind::NotFound => CheckpointError::NotFound(number),
@@ -275,7 +334,7 @@ impl Store {
     }
 
     /// Writes `body` as an object of `kind` when it is not there; its id.
-    fn write_object(&self, kind: &str, body: &[u8]) -> Result<[u8; 20], CheckpointError> {
+    fn write_object(&self, kind: &str, body: &[u8]) -> Result<ObjectId, CheckpointError> {
         let mut object = format!("{kind} {}\0", body.len()).into_bytes();
         object.extend_from_slice(body);
         let id = sha1_smol::Sha1::from(&object).digest().bytes();
@@ -285,14 +344,14 @@ impl Store {
         let path = dir.join(file);
         if !path.exists() {
             fs::create_dir_all(&dir).map_err(|e| CheckpointError::Io(dir, e))?;
-            let packed = miniz_oxide::deflate::compress_to_vec_zlib(&object, 6);
+            let packed = miniz_oxide::deflate::compress_to_vec_zlib(&object, ZLIB_LEVEL);
             fs::write(&path, packed).map_err(|e| CheckpointError::Io(path, e))?;
         }
         Ok(id)
     }
 
     /// The body of object `id`, which must be of `kind`.
-    fn read_object(&self, id: &[u8; 20], kind: &str) -> Result<Vec<u8>, CheckpointError> {
+    fn read_object(&self, id: &ObjectId, kind: &str) -> Result<Vec<u8>, CheckpointError> {
         let name = hex(id);
         let (folder, file) = name.split_at(2);
         let path = self.git.join("objects").join(folder).join(file);
@@ -316,8 +375,8 @@ impl Store {
     }
 
     /// Writes `dir` as a tree, its folders first written as trees of their own; its id.
-    fn write_tree(&self, dir: &Dir) -> Result<[u8; 20], CheckpointError> {
-        let mut entries: Vec<(Vec<u8>, &str, [u8; 20])> = Vec::new();
+    fn write_tree(&self, dir: &Dir) -> Result<ObjectId, CheckpointError> {
+        let mut entries: Vec<(Vec<u8>, &str, ObjectId)> = Vec::new();
         for (name, id) in &dir.files {
             entries.push((name.as_bytes().to_vec(), FILE_MODE, *id));
         }
@@ -343,9 +402,9 @@ impl Store {
     /// Every file under the tree `id`, by its path under `prefix`, with its blob's id.
     fn read_tree(
         &self,
-        id: &[u8; 20],
+        id: &ObjectId,
         prefix: &Path,
-    ) -> Result<BTreeMap<PathBuf, [u8; 20]>, CheckpointError> {
+    ) -> Result<BTreeMap<PathBuf, ObjectId>, CheckpointError> {
         let body = self.read_object(id, "tree")?;
         let mut files = BTreeMap::new();
         let mut rest = body.as_slice();
@@ -356,10 +415,12 @@ impl Store {
             let after = after.get(1..).ok_or_else(corrupt)?;
             let nul = after.iter().position(|b| *b == 0).ok_or_else(corrupt)?;
             let (name, after) = after.split_at(nul);
-            let entry = after.get(1..21).ok_or_else(corrupt)?;
-            let mut child = [0_u8; 20];
-            child.copy_from_slice(entry);
-            rest = after.get(21..).unwrap_or_default();
+            let (entry, after) = after
+                .get(1..)
+                .and_then(|after| after.split_first_chunk::<ID_BYTES>())
+                .ok_or_else(corrupt)?;
+            let child = *entry;
+            rest = after;
             let name = String::from_utf8_lossy(name).into_owned();
             let path = prefix.join(&name);
             if mode == TREE_MODE.as_bytes() {
@@ -375,13 +436,13 @@ impl Store {
 /// A folder of a tree being written: its files' blob ids and its folders, by name.
 #[derive(Debug, Default)]
 struct Dir {
-    files: BTreeMap<String, [u8; 20]>,
+    files: BTreeMap<String, ObjectId>,
     dirs: BTreeMap<String, Dir>,
 }
 
 impl Dir {
     /// Puts the blob `id` at `path`, making the folders on the way.
-    fn insert(&mut self, path: &Path, id: [u8; 20]) {
+    fn insert(&mut self, path: &Path, id: ObjectId) {
         let parts: Vec<String> = path
             .components()
             .map(|c| c.as_os_str().to_string_lossy().into_owned())
@@ -447,19 +508,19 @@ fn remove_emptied(root: &Path, path: &Path) -> Result<(), CheckpointError> {
 }
 
 /// `id` in lowercase hex.
-fn hex(id: &[u8; 20]) -> String {
+fn hex(id: &ObjectId) -> String {
     id.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// The 20 bytes 40 hex digits spell.
-fn parse_hex(text: &str) -> Option<[u8; 20]> {
-    let mut id = [0_u8; 20];
-    if text.len() != 40 {
+fn parse_hex(text: &str) -> Option<ObjectId> {
+    let mut id = [0_u8; ID_BYTES];
+    if text.len() != ID_DIGITS {
         return None;
     }
     for (slot, pair) in id.iter_mut().zip(text.as_bytes().chunks(2)) {
         let pair = std::str::from_utf8(pair).ok()?;
-        *slot = u8::from_str_radix(pair, 16).ok()?;
+        *slot = u8::from_str_radix(pair, HEX_RADIX).ok()?;
     }
     Some(id)
 }

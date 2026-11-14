@@ -3594,6 +3594,8 @@ version = "2026.11.1"
 dependencies = [
  "miniz_oxide 0.9.1",
  "proptest",
+ "schemars",
+ "serde",
  "sha1_smol",
 ]
 
@@ -3674,6 +3676,8 @@ name = "qs-git"
 version = "2026.11.1"
 dependencies = [
  "proptest",
+ "schemars",
+ "serde",
 ]
 
 [[package]]
@@ -3766,6 +3770,7 @@ name = "qs-mdl"
 version = "2026.11.1"
 dependencies = [
  "proptest",
+ "qc-progs",
 ]
 
 [[package]]
@@ -3916,6 +3921,7 @@ name = "qs-wad"
 version = "2026.11.1"
 dependencies = [
  "proptest",
+ "qc-progs",
 ]
 
 [[package]]
@@ -3923,6 +3929,7 @@ name = "qs-wav"
 version = "2026.11.1"
 dependencies = [
  "proptest",
+ "qc-progs",
 ]
 
 [[package]]

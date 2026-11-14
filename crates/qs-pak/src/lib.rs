@@ -27,6 +27,7 @@ use core::fmt;
 use core::ops::Range;
 use std::io::{self, Read, Seek, SeekFrom};
 
+use qc_progs::bytes::read_array;
 use qc_progs::crc::{PROGS_CRC_INIT, PROGS_CRC_POLY, crc_block};
 
 /// The four bytes a PAK file starts with (PAK-1.1).
@@ -423,11 +424,6 @@ fn read_range<R: Read + Seek>(reader: &mut R, range: Range<u64>) -> Result<Vec<u
 /// The signed little-endian 32-bit integer at `offset`, or 0 past the end of `bytes`.
 fn le_i32(bytes: &[u8], offset: usize) -> i32 {
     read_array(bytes, offset).map_or(0, i32::from_le_bytes)
-}
-
-/// The `N` bytes at `offset`, or `None` past the end of `bytes`.
-fn read_array<const N: usize>(bytes: &[u8], offset: usize) -> Option<[u8; N]> {
-    bytes.get(offset..offset.checked_add(N)?)?.try_into().ok()
 }
 
 /// A memory length as a file length; `usize` is at most 64 bits on every target.

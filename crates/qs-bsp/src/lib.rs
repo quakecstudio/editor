@@ -35,6 +35,8 @@ mod valve_tests;
 
 use core::fmt;
 
+use qc_progs::bytes::read_array;
+
 pub use ent::{BSP_ENT_EXTENSION, ent_file_names};
 pub use lit::{
     BSP_LIT_HEADER_SIZE, BSP_LIT_MAGIC, BSP_LIT_VERSION, FoundLit, Lit, LitChoice, LitError,
@@ -848,11 +850,6 @@ impl<'a> Bsp<'a> {
             }],
         }
     }
-}
-
-/// The `N` bytes at `offset`, or `None` past the end of `bytes`.
-pub(crate) fn read_array<const N: usize>(bytes: &[u8], offset: usize) -> Option<[u8; N]> {
-    bytes.get(offset..offset.checked_add(N)?)?.try_into().ok()
 }
 
 // These read 0 past the end of `bytes`, as the reader always has; `read_array` gives `None`

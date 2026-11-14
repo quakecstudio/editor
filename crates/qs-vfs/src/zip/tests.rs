@@ -330,3 +330,13 @@ proptest::proptest! {
         }
     }
 }
+
+// No spec statement: P4-28, a member deflate does not make smaller is stored, a tie
+// included: five zero bytes deflate to five bytes
+#[test]
+fn a_member_deflate_does_not_shrink_is_stored() {
+    let bytes = super::write_zip(&members(&[("z", &[0; 5])])).unwrap();
+    // APPNOTE 4.3.7: the local header's method is the u16 at 8.
+    assert_eq!(bytes.get(8..10), Some(&super::STORED.to_le_bytes()[..]));
+    assert_eq!(open(&bytes).unwrap().read("z").unwrap(), Some(vec![0; 5]));
+}

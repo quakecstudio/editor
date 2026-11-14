@@ -9,6 +9,9 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+# A hunk's and a conflict's index are commands' parameters in JSON.
+schemars = { workspace = true, features = ["derive", "std"] }
+serde = { workspace = true, features = ["derive", "std"] }
 
 [dev-dependencies]
 proptest = { workspace = true, features = ["std"] }

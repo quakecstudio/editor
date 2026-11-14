@@ -105,6 +105,7 @@ field qc_progs::write::ProgsFile.globals
 field qc_progs::write::ProgsFile.layout
 field qc_progs::write::ProgsFile.statements
 field qc_progs::write::ProgsFile.strings
+fn qc_progs::bytes::read_array
 fn qc_progs::crc::crc_block
 fn qc_progs::crc::crc_init
 fn qc_progs::crc::crc_process_byte
@@ -165,6 +166,7 @@ impl qc_progs::records::Statement: Record
 impl qc_progs::write::ProgsFile: Default
 impl qc_progs::write::WriteError: core::error::Error
 impl qc_progs::write::WriteError: fmt::Display
+mod qc_progs::bytes
 mod qc_progs::crc
 mod qc_progs::limits
 mod qc_progs::opcode

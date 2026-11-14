@@ -44,7 +44,7 @@ pub struct CheckpointMade {
 impl From<Checkpoint> for CheckpointMade {
     fn from(checkpoint: Checkpoint) -> Self {
         Self {
-            number: CheckpointNumber::new(checkpoint.number),
+            number: checkpoint.number,
             commit: checkpoint.commit,
             label: checkpoint.label,
             files: checkpoint.files,
@@ -128,7 +128,7 @@ impl<L: Loader> Workbench<L> {
     /// file put back does not open.
     pub fn restore_checkpoint(
         &mut self,
-        number: u32,
+        number: CheckpointNumber,
     ) -> Result<CheckpointRestored, WorkbenchError> {
         let root = self.root.clone().ok_or(WorkbenchError::NoProject)?;
         let Restored { written, removed } = self
@@ -237,9 +237,7 @@ impl<C: HasWorkbench + 'static> Command<C> for RestoreCheckpoint {
         context: &mut C,
         params: RestoreCheckpointParams,
     ) -> Result<Outcome<CheckpointRestored, C>, WorkbenchError> {
-        let restored = context
-            .workbench()
-            .restore_checkpoint(params.number.get())?;
+        let restored = context.workbench().restore_checkpoint(params.number)?;
         Ok(Outcome::outside_history(restored))
     }
 }

@@ -47,10 +47,14 @@ fn qs_git::Repo::status
 fn qs_git::Repo::switch
 fn qs_git::Repo::unstage
 fn qs_git::Repo::unstage_hunk
+fn qs_git::conflict::ConflictIndex::get
+fn qs_git::conflict::ConflictIndex::new
 fn qs_git::conflict::conflicts
 fn qs_git::conflict::resolve
 fn qs_git::diff::FileDiff::parse
 fn qs_git::diff::FileDiff::patch
+fn qs_git::diff::HunkIndex::get
+fn qs_git::diff::HunkIndex::new
 impl qs_git::GitError: fmt::Display
 impl qs_git::GitError: std::error::Error
 struct qs_git::BlameLine
@@ -60,11 +64,15 @@ struct qs_git::FileStatus
 struct qs_git::Repo
 struct qs_git::Status
 struct qs_git::conflict::Conflict
+struct qs_git::conflict::ConflictIndex
 struct qs_git::diff::FileDiff
 struct qs_git::diff::Hunk
+struct qs_git::diff::HunkIndex
 use qs_git::Conflict = conflict::Conflict
+use qs_git::ConflictIndex = conflict::ConflictIndex
 use qs_git::FileDiff = diff::FileDiff
 use qs_git::Hunk = diff::Hunk
+use qs_git::HunkIndex = diff::HunkIndex
 use qs_git::Side = conflict::Side
 use qs_git::conflicts = conflict::conflicts
 use qs_git::resolve = conflict::resolve

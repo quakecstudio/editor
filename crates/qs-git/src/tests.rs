@@ -13,7 +13,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use proptest::prelude::*;
 
-use crate::{Change, DiffOf, FileDiff, FileStatus, Repo, Side, conflicts, parse_blame, resolve};
+use crate::{
+    Change, ConflictIndex, DiffOf, FileDiff, FileStatus, HunkIndex, Repo, Side, conflicts,
+    parse_blame, resolve,
+};
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 
@@ -114,7 +117,7 @@ fn staging_committing_and_switching_agree_with_the_command_line() {
     assert_eq!(porcelain(&dir), [" M a.qc", "?? new.qc"]);
     assert_eq!(ours(&repo), porcelain(&dir));
 
-    repo.stage_hunk(&file, 0).unwrap();
+    repo.stage_hunk(&file, HunkIndex::new(0)).unwrap();
     assert_eq!(porcelain(&dir), ["MM a.qc", "?? new.qc"]);
     assert_eq!(ours(&repo), porcelain(&dir));
     let staged = git(&dir, &["diff", "--cached"]);
@@ -175,7 +178,7 @@ fn unstaging_a_hunk_or_a_file() {
     .unwrap();
     repo.stage(&file).unwrap();
     assert_eq!(repo.diff(&file, DiffOf::Staged).unwrap().hunks.len(), 2);
-    repo.unstage_hunk(&file, 1).unwrap();
+    repo.unstage_hunk(&file, HunkIndex::new(1)).unwrap();
     assert_eq!(porcelain(&dir), ["MM a.qc"]);
     let staged = git(&dir, &["diff", "--cached"]);
     assert!(
@@ -183,9 +186,13 @@ fn unstaging_a_hunk_or_a_file() {
         "{staged}"
     );
     assert!(matches!(
-        repo.unstage_hunk(&file, 5),
-        Err(crate::GitError::NoHunk(5))
+        repo.unstage_hunk(&file, HunkIndex::new(5)),
+        Err(crate::GitError::NoHunk(index)) if index == HunkIndex::new(5)
     ));
+    assert_eq!(
+        crate::GitError::NoHunk(HunkIndex::new(5)).to_string(),
+        "the file has no hunk 5"
+    );
     repo.unstage(&file).unwrap();
     assert_eq!(porcelain(&dir), [" M a.qc"]);
 
@@ -280,7 +287,7 @@ fn a_merge_conflict_is_resolved_a_side_at_a_time() {
     assert_eq!(ours(&repo), porcelain(&dir));
     let text = std::fs::read_to_string(&file).unwrap();
     assert_eq!(conflicts(&text).len(), 1);
-    let resolved = resolve(&text, 0, Side::Theirs).unwrap();
+    let resolved = resolve(&text, ConflictIndex::new(0), Side::Theirs).unwrap();
     assert_eq!(
         resolved,
         "one\nTHEIRS\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n"
@@ -307,15 +314,19 @@ fn conflicts_are_found_and_resolved_to_a_side() {
     );
     assert_eq!(found[1].base, Some(9));
     assert_eq!(
-        resolve(text, 0, Side::Ours).unwrap(),
+        resolve(text, ConflictIndex::new(0), Side::Ours).unwrap(),
         "a\nours\nb\n<<<<<<< HEAD\nx\n||||||| base\nbase\n=======\ny\n>>>>>>> other\n"
     );
     assert_eq!(
-        resolve(text, 1, Side::Theirs).unwrap(),
+        resolve(text, ConflictIndex::new(1), Side::Theirs).unwrap(),
         "a\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> branch\nb\ny\n"
     );
-    assert!(resolve(text, 1, Side::Both).unwrap().ends_with("b\nx\ny\n"));
-    assert_eq!(resolve(text, 2, Side::Ours), None);
+    assert!(
+        resolve(text, ConflictIndex::new(1), Side::Both)
+            .unwrap()
+            .ends_with("b\nx\ny\n")
+    );
+    assert_eq!(resolve(text, ConflictIndex::new(2), Side::Ours), None);
     assert!(conflicts("<<<<<<< HEAD\nonly ours\n").is_empty());
     assert!(conflicts("<<<<<<<< not a marker\n=======\n>>>>>>>\n").is_empty());
     assert_eq!(
@@ -335,9 +346,9 @@ fn a_diff_reads_its_hunks_and_makes_one_hunk_patches() {
     assert_eq!(diff.hunks.len(), 2);
     assert_eq!((diff.hunks[0].old_start, diff.hunks[0].old_lines), (1, 1));
     assert_eq!((diff.hunks[1].new_start, diff.hunks[1].new_lines), (8, 3));
-    let patch = diff.patch(1).unwrap();
+    let patch = diff.patch(HunkIndex::new(1)).unwrap();
     assert!(patch.starts_with("diff --git") && patch.contains("+TEN") && !patch.contains("+ONE"));
-    assert_eq!(diff.patch(2), None);
+    assert_eq!(diff.patch(HunkIndex::new(2)), None);
     assert!(FileDiff::parse("").unwrap().hunks.is_empty());
     assert!(FileDiff::parse("@@ nonsense\n").is_err());
     assert_eq!(Change::Modified.code(), 'M');
@@ -369,11 +380,12 @@ proptest! {
             "{}<<<<<<< HEAD\n{}=======\n{}>>>>>>> b\n{}",
             lines(&before), lines(&ours), lines(&theirs), lines(&after)
         );
-        let kept = resolve(&text, 0, Side::Both).unwrap();
+        let kept = resolve(&text, ConflictIndex::new(0), Side::Both).unwrap();
         prop_assert_eq!(
             kept,
             format!("{}{}{}{}", lines(&before), lines(&ours), lines(&theirs), lines(&after))
         );
-        prop_assert!(conflicts(&resolve(&text, 0, Side::Ours).unwrap()).is_empty());
+        let resolved = resolve(&text, ConflictIndex::new(0), Side::Ours).unwrap();
+        prop_assert!(conflicts(&resolved).is_empty());
     }
 }
