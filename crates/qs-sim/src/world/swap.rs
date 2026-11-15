@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! A new build of the running map's BSP put in place of the old (BRIDGE-4.14 to BRIDGE-4.16):
+//! A new build of the running map's BSP put in place of the old (BRIDGE-4.14 to BRIDGE-4.18):
 //! the world's collision, PVS and brush model bounds made again from it, every edict, field and
 //! global kept, and each of the map's brush entities given its model in the new build.
 
@@ -66,7 +66,7 @@ struct Placed {
 
 impl World {
     /// Puts `bsp`, a new build of the running map, in place of the old (BRIDGE-4.15), each
-    /// entity of `models` that is in an edict given its brush model (BRIDGE-4.16), then links
+    /// entity of `models` that is in an edict given its brush model (BRIDGE-4.18), then links
     /// every edict in use again; the number of edicts given a model.
     ///
     /// # Errors
@@ -80,10 +80,10 @@ impl World {
         bsp: &Bsp<'_>,
         models: &[(MapPlace, Submodel)],
     ) -> Result<usize, SwapError> {
-        let Placed { given, in_use } = self.placed(progs, bsp, models)?;
+        let Placed { given, in_use } = self.placed(bsp, models)?;
         self.builtins.swap_map(&self.map, bsp);
         for &(edict, model, index) in &given {
-            self.give_model(edict, model, index, bsp);
+            self.give_model(progs, (edict, model, index), bsp);
         }
         let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
         // Linking without touching runs no QuakeC (WORLD-6), so it does not fail part-way.
@@ -102,21 +102,15 @@ impl World {
     /// As [`World::swap_bsp`]'s refusals.
     pub fn check_swap(
         &self,
-        progs: &Progs<'_>,
         bsp: &Bsp<'_>,
         models: &[(MapPlace, Submodel)],
     ) -> Result<(), SwapError> {
-        self.placed(progs, bsp, models).map(|_| ())
+        self.placed(bsp, models).map(|_| ())
     }
 
     /// Each edict `models` places, with its brush model and model index, and the edicts in use
     /// but the world; refused before anything changes (BRIDGE-4.14).
-    fn placed(
-        &self,
-        progs: &Progs<'_>,
-        bsp: &Bsp<'_>,
-        models: &[(MapPlace, Submodel)],
-    ) -> Result<Placed, SwapError> {
+    fn placed(&self, bsp: &Bsp<'_>, models: &[(MapPlace, Submodel)]) -> Result<Placed, SwapError> {
         let last = bsp.models.len().saturating_sub(1);
         let mut given = Vec::with_capacity(models.len());
         for &(place, model) in models {
@@ -129,7 +123,7 @@ impl World {
                 .engine()
                 .precache_index(Precache::Model, &model.name())
                 .ok_or(SwapError::NotPrecached(model))?;
-            if let Some(edict) = self.map_entity(progs, place) {
+            if let Some(edict) = self.map_edict(place) {
                 given.push((edict, model, index));
             }
         }
@@ -154,12 +148,31 @@ impl World {
     }
 
     /// Edict `edict` given brush model `model` of `bsp`, model index `index`, as `setmodel`
-    /// gives it: its `model`, `modelindex`, `mins`, `maxs` and `size` (BRIDGE-4.16).
-    fn give_model(&mut self, edict: usize, model: Submodel, index: usize, bsp: &Bsp<'_>) {
-        let name = self.make_string(model.name().into_bytes());
-        self.set_field(edict, field_slot("model"), Slot::from_i32(name));
-        let index = u16::try_from(index).map_or(f32::MAX, f32::from);
-        self.set_field(edict, field_slot("modelindex"), Slot::from_f32(index));
+    /// gives it: its `model`, `modelindex`, `mins`, `maxs` and `size` (BRIDGE-4.18).
+    fn give_model(
+        &mut self,
+        progs: &Progs<'_>,
+        (edict, model, index): (usize, Submodel, usize),
+        bsp: &Bsp<'_>,
+    ) {
+        // An entity its spawn left showing no model, as id's `InitTrigger` leaves a trigger
+        // (`setmodel`, then `modelindex` 0 and `model` ""), keeps showing none: it takes only
+        // the bounds, where it now touches.
+        let shows = super::whole(self.field(edict, "modelindex").as_f32()).is_some_and(|n| n != 0);
+        // One hidden for now, its `modelindex` 0 but its `model` still a `*n`, as a door that
+        // shows itself again with `setmodel (self, self.model)`, takes the new name, so it shows
+        // the brush it is now.
+        let named = self
+            .string_value(progs, self.field(edict, "model"))
+            .is_some_and(|name| Submodel::parse(&String::from_utf8_lossy(&name)).is_some());
+        if shows || named {
+            let name = self.make_string(model.name().into_bytes());
+            self.set_field(edict, field_slot("model"), Slot::from_i32(name));
+        }
+        if shows {
+            let index = u16::try_from(index).map_or(f32::MAX, f32::from);
+            self.set_field(edict, field_slot("modelindex"), Slot::from_f32(index));
+        }
         let Some(bounds) = bsp.models.get(model.get()) else {
             return;
         };

@@ -500,6 +500,19 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
         let client = preview.client().ok_or(PreviewError::NotRunning)?;
         let angles = params.angles.unwrap_or_default().map(single);
         client.spawn_player_at(origin, angles)?;
+        // P7-02: full vis and full light of the same BSP, swapped in when done; a map that leaks
+        // has no portals to see through, and plays with the fast compile.
+        match compiled.portal_file {
+            Some(portals) => preview.start_full_build(
+                name.clone(),
+                maps.join(format!("{name}.bsp")),
+                (compiled.bsp, portals),
+            ),
+            None => preview.note(
+                "The map leaks: it plays with the fast compile, and its full compile waits for \
+                 it to be sealed",
+            ),
+        }
         let light_warnings: Vec<String> = lit.warnings.iter().map(ToString::to_string).collect();
         if let Some(first) = light_warnings.first() {
             preview.set_status(format!(
