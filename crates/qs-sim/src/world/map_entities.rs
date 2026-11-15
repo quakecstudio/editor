@@ -98,11 +98,8 @@ impl World {
     #[must_use]
     pub fn map_entity(&self, progs: &Progs<'_>, place: MapPlace) -> Option<usize> {
         let entry = self.map_entities.0.get(place.0)?;
-        let taken = entry.taken?;
-        self.taken(taken.edict)
-            .filter(|now| now.freetime.to_bits() == taken.freetime.to_bits())
-            .filter(|now| self.classname(progs, now.edict) == entry.classname)
-            .map(|now| now.edict)
+        self.map_edict(place)
+            .filter(|&edict| self.classname(progs, edict) == entry.classname)
     }
 
     /// The edict the map's entity at `place` took, while it is in use with the `freetime` it had

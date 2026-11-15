@@ -317,3 +317,25 @@ fn a_trigger_keeps_showing_nothing() {
         "the new bounds"
     );
 }
+
+// spec BRIDGE-4.18: an entity hidden for now, its modelindex 0 but its model still a *n, takes
+// the new name, so it shows the brush it is now when it shows itself again
+#[test]
+fn a_hidden_door_takes_its_new_name() {
+    let hidden = "void() door = { self.solid = 4; setmodel(self, self.model); \
+        self.modelindex = 0; };\n";
+    let entities = [
+        entity("door", "0 0 0", "\"model\" \"*1\"\n"),
+        entity("door", "0 0 0", "\"model\" \"*2\"\n"),
+    ]
+    .concat();
+    let mut game = running(&two_doors(), hidden, &entities, Vec::new());
+    let progs = Progs::read(&game.progs).unwrap();
+    game.world.remove_entity(&progs, 2).unwrap();
+    let door_b = [(MapPlace::new(2), Submodel::parse("*1").unwrap())];
+    game.world
+        .swap_bsp(&progs, &after_deleting_door_a(), &door_b)
+        .unwrap();
+    assert_eq!(model_of(&game.world, &progs, 3), b"*1", "the new name");
+    assert_eq!(game.world.float(3, "modelindex"), 0.0, "still hidden");
+}

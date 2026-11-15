@@ -435,7 +435,7 @@ fn suite(
 }
 
 /// `map/swap` of the running map's own BSP, each brush entity by its place in the entity lump
-/// (P7-02, BRIDGE-4.14 to BRIDGE-4.16): the player stands where they stood and every entity
+/// (P7-02, BRIDGE-4.14, BRIDGE-4.15, BRIDGE-4.18): the player stands where they stood and every entity
 /// keeps its place and model.
 fn swap_keeps_the_game(
     client: &mut Client,

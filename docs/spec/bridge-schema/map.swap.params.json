@@ -10,7 +10,7 @@
     },
     "models": {
       "type": "array",
-      "description": "Each brush entity of the map and its brush model in the new BSP (BRIDGE-4.16)",
+      "description": "Each brush entity of the map and its brush model in the new BSP (BRIDGE-4.18)",
       "items": {
         "type": "object",
         "properties": {

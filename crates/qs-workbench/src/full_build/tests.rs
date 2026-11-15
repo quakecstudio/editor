@@ -10,7 +10,7 @@ use qs_bsp::{Bsp, BspLoader};
 use qs_map::{Brush, Item, MapFile, Surface, TexDef};
 use qs_map_bsp::{Compiled, Compiler, Dialect};
 
-use super::{FullBuild, brush_models};
+use super::{FullBuild, FullBuildError, Start, brush_models};
 
 /// A sealed room 256 across with a player start, a light and a door, compiled as Play from here
 /// compiles it, before its light.
@@ -51,40 +51,68 @@ pub(crate) fn compiled_room() -> Compiled {
         .unwrap()
 }
 
+/// A folder of a test's own, taken away when it is dropped.
+pub(crate) struct Scratch(pub(crate) std::path::PathBuf);
+
+impl Scratch {
+    pub(crate) fn new(name: &str) -> Self {
+        static MADE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = MADE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("qs-wb-{name}-{}-{n}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        Self(dir)
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        drop(std::fs::remove_dir_all(&self.0));
+    }
+}
+
+/// The start of a full compile of [`compiled_room`] for the map `map` played from `target`.
+pub(crate) fn start(map: &str, target: std::path::PathBuf) -> Start {
+    let compiled = compiled_room();
+    Start {
+        map: map.to_owned(),
+        target,
+        portals: compiled.portal_file.unwrap(),
+        bsp: compiled.bsp,
+        edits: 0,
+    }
+}
+
 // No spec statement: P7-02: the full compile gives the fast compile's BSP full vis and full
-// light, written where the played BSP is
+// light, written beside the played BSP under a name of its own, which it leaves as it was
 #[test]
 fn a_full_build_sees_and_lights_the_map() {
-    let compiled = compiled_room();
-    let dir = std::env::temp_dir().join(format!("qs-wb-full-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let target = dir.join("room.bsp");
-    let portals = compiled.portal_file.clone().unwrap();
-    let build = FullBuild::start("room".to_owned(), target.clone(), compiled.bsp, portals);
-    let lit = build.wait().unwrap();
-    let bsp = Bsp::read(&lit.bsp, BspLoader::default()).unwrap();
+    let dir = Scratch::new("full");
+    let target = dir.0.join("room.bsp");
+    std::fs::write(&target, b"the fast compile").unwrap();
+    let build = FullBuild::start(start("room", target.clone()));
+    assert!(build.current());
+    let ready = build.wait().unwrap();
+    assert_eq!(ready.bsp, dir.0.join("room.full.bsp"));
+    let bytes = std::fs::read(&ready.bsp).unwrap();
+    let bsp = Bsp::read(&bytes, BspLoader::default()).unwrap();
     assert!(!bsp.visibility.is_empty(), "full vis");
     assert!(bsp.lighting.iter().any(|&b| b > 0), "full light");
-    build.write(&lit).unwrap();
-    assert_eq!(std::fs::read(&target).unwrap(), lit.bsp);
-    assert!(
-        !target.with_extension("lit").exists(),
-        "white light writes no .lit"
-    );
+    assert_eq!(ready.lit, None, "white light writes no .lit");
+    assert_eq!(ready.models, [(3, "*1".to_owned())]);
+    assert_eq!(std::fs::read(&target).unwrap(), b"the fast compile");
+    std::fs::write(&target, b"another compile").unwrap();
+    assert!(!build.current(), "another compile written over it");
 }
 
 // No spec statement: P7-02: a full compile of a map with no portals to see through stops with
-// vis's reason, which the preview says
+// vis's reason
 #[test]
 fn a_full_build_of_broken_portals_says_why() {
-    let compiled = compiled_room();
-    let build = FullBuild::start(
-        "room".to_owned(),
-        std::env::temp_dir().join("qs-wb-full-none.bsp"),
-        compiled.bsp,
-        b"not a portal file".to_vec(),
-    );
-    assert!(build.wait().is_err());
+    let dir = Scratch::new("full-broken");
+    let mut broken = start("room", dir.0.join("room.bsp"));
+    broken.portals = b"not a portal file".to_vec();
+    let error = FullBuild::start(broken).wait().unwrap_err();
+    assert!(matches!(error, FullBuildError::Vis(_)), "{error}");
 }
 
 // spec BRIDGE-4.18: each brush entity of the new build, by its place in the entity lump, and
@@ -93,5 +121,8 @@ fn a_full_build_of_broken_portals_says_why() {
 fn brush_models_are_read_from_the_entity_lump() {
     let compiled = compiled_room();
     assert_eq!(brush_models(&compiled.bsp).unwrap(), [(3, "*1".to_owned())]);
-    assert!(brush_models(b"not a bsp").is_err());
+    assert!(matches!(
+        brush_models(b"not a bsp"),
+        Err(FullBuildError::Bsp(_))
+    ));
 }

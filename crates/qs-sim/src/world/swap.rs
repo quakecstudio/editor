@@ -83,7 +83,7 @@ impl World {
         let Placed { given, in_use } = self.placed(bsp, models)?;
         self.builtins.swap_map(&self.map, bsp);
         for &(edict, model, index) in &given {
-            self.give_model(edict, model, index, bsp);
+            self.give_model(progs, (edict, model, index), bsp);
         }
         let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
         // Linking without touching runs no QuakeC (WORLD-6), so it does not fail part-way.
@@ -149,14 +149,27 @@ impl World {
 
     /// Edict `edict` given brush model `model` of `bsp`, model index `index`, as `setmodel`
     /// gives it: its `model`, `modelindex`, `mins`, `maxs` and `size` (BRIDGE-4.18).
-    fn give_model(&mut self, edict: usize, model: Submodel, index: usize, bsp: &Bsp<'_>) {
+    fn give_model(
+        &mut self,
+        progs: &Progs<'_>,
+        (edict, model, index): (usize, Submodel, usize),
+        bsp: &Bsp<'_>,
+    ) {
         // An entity its spawn left showing no model, as id's `InitTrigger` leaves a trigger
         // (`setmodel`, then `modelindex` 0 and `model` ""), keeps showing none: it takes only
         // the bounds, where it now touches.
         let shows = super::whole(self.field(edict, "modelindex").as_f32()).is_some_and(|n| n != 0);
-        if shows {
+        // One hidden for now, its `modelindex` 0 but its `model` still a `*n`, as a door that
+        // shows itself again with `setmodel (self, self.model)`, takes the new name, so it shows
+        // the brush it is now.
+        let named = self
+            .string_value(progs, self.field(edict, "model"))
+            .is_some_and(|name| Submodel::parse(&String::from_utf8_lossy(&name)).is_some());
+        if shows || named {
             let name = self.make_string(model.name().into_bytes());
             self.set_field(edict, field_slot("model"), Slot::from_i32(name));
+        }
+        if shows {
             let index = u16::try_from(index).map_or(f32::MAX, f32::from);
             self.set_field(edict, field_slot("modelindex"), Slot::from_f32(index));
         }
