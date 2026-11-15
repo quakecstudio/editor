@@ -248,3 +248,46 @@ fn an_instance_draws_its_map_in_place() {
         0
     );
 }
+
+// spec LIGHT-7.4: the scene draws each light's preview, a sphere of three circles at its radius,
+// for the selection or every light, none hidden; a light edited in the map is drawn as it now is
+#[test]
+fn a_light_is_drawn_at_its_reach() {
+    let workbench = keep();
+    let scene = Scene::build(workbench.map().unwrap(), &HashMap::new(), &[], &mut |_| {
+        None
+    });
+    let light = EntityIndex::new(3);
+    assert_eq!(scene.lights.len(), 1);
+    assert_eq!(scene.lights[0].index, light);
+    let reach = |scene: &Scene| {
+        let [x, y, z] = scene.lights[0].lines[0][0];
+        (x * x + y * y + (z - 192.0) * (z - 192.0)).sqrt()
+    };
+    assert!((reach(&scene) - 300.0).abs() < 0.01, "{}", reach(&scene));
+    let none = BTreeSet::new();
+    let chosen = BTreeSet::from([light]);
+    assert_eq!(scene.lights(LinkView::Selection, &none, &none).count(), 0);
+    assert_eq!(scene.lights(LinkView::Selection, &chosen, &none).count(), 1);
+    assert_eq!(scene.lights(LinkView::All, &none, &none).count(), 1);
+    assert_eq!(
+        scene.lights(LinkView::All, &none, &chosen).count(),
+        0,
+        "hidden"
+    );
+
+    let dir = std::env::temp_dir().join(format!("qs-scene-light-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let map = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/keep/maps/keep.map");
+    let text = std::fs::read_to_string(map)
+        .unwrap()
+        .replace("\"light\" \"300\"", "\"light\" \"150\"");
+    let edited = dir.join("keep.map");
+    std::fs::write(&edited, text).unwrap();
+    let mut workbench = Workbench::new(FsLoader, Config::default());
+    workbench.maps_mut().open_map(&edited).unwrap();
+    let scene = Scene::build(workbench.map().unwrap(), &HashMap::new(), &[], &mut |_| {
+        None
+    });
+    assert!((reach(&scene) - 150.0).abs() < 0.01, "{}", reach(&scene));
+}

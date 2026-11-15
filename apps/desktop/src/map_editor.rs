@@ -65,6 +65,8 @@ const BROWSER_HEIGHT: f32 = 188.0;
 const PLACE_DISTANCE: f32 = 256.0;
 /// The radius of the dot at the end of a link that is fired, in points.
 const LINK_END: f32 = 3.0;
+/// How strongly a light's preview is drawn, so it does not hide the brushes behind it.
+const LIGHT_ALPHA: f32 = 0.6;
 /// The width of the new key's and new value's fields, in points.
 const NEW_PAIR_WIDTH: f32 = 90.0;
 /// The map units the camera stands back from a framed box beyond that, so a small entity is not
@@ -294,6 +296,8 @@ pub struct MapEditor {
     also: BTreeSet<EntityIndex>,
     /// Which links the view draws.
     links: LinkView,
+    /// Which lights' previews the map view draws (P7-09, LIGHT-7.4).
+    lights: LinkView,
     /// Which entities the view shows.
     show: ShowFilter,
     /// The entities the filter hides, and the map's edits it was found at.
@@ -706,6 +710,16 @@ impl MapEditor {
                             actions.push(MapAction::Filter(show));
                         }
                     }
+                    ui.separator();
+                    // The selected lights' reach is always drawn; this draws every light's.
+                    let mut every = self.lights == LinkView::All;
+                    if ui.checkbox(&mut every, Text::MapLightsAll.get()).changed() {
+                        self.lights = if every {
+                            LinkView::All
+                        } else {
+                            LinkView::Selection
+                        };
+                    }
                 });
         });
         actions
@@ -981,6 +995,15 @@ impl MapEditor {
             projection.line(&painter, line, link);
             if let Some(end) = projection.point(line[1]) {
                 painter.circle_filled(end, LINK_END, link.color);
+            }
+        }
+        // LIGHT-7.4: each light's reach in its colour, and a spotlight's cone.
+        for light in self.scene.lights(self.lights, &selection, hidden) {
+            let [r, g, b] = light.colour.map(|c| c.clamp(0.0, 1.0));
+            let colour = egui::Color32::from(egui::Rgba::from_rgb(r, g, b));
+            let stroke = Stroke::new(1.0, colour.gamma_multiply(LIGHT_ALPHA));
+            for line in &light.lines {
+                projection.line(&painter, *line, stroke);
             }
         }
         for shape in &self.scene.entities {

@@ -137,6 +137,17 @@ fn scripts() -> Vec<Script> {
             ],
         },
         Script {
+            name: "map-lights",
+            steps: vec![
+                Step::Run("project.open", json!({ "path": keep_fixture() })),
+                Step::Run(
+                    "map.open",
+                    json!({ "path": keep_fixture().join("maps/keep.map") }),
+                ),
+                Step::Run("map.select", json!({ "entity": 3 })),
+            ],
+        },
+        Script {
             name: "map-shapes",
             steps: vec![
                 Step::Run("project.open", json!({ "path": keep_fixture() })),
