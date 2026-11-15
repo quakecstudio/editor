@@ -19,7 +19,7 @@ use qs_layout::{
     CameraSpeed, Direction, Layout, MapCamera, MapCameraParams, MapFov, MapGrid, MapPanes,
     MapShading,
 };
-use qs_map_edit::ClassInfo;
+use qs_map_edit::{BrushIndex, ClassInfo};
 use qs_map_edit::MapReport;
 use qs_map_edit::texture_import::DitherChoice;
 use qs_map_edit::textures::TextureSources;
@@ -153,6 +153,8 @@ pub enum MapAction {
     ListPrefabs,
     /// Copy the prefab at the path into the map at an origin (P6-23).
     PlacePrefab(std::path::PathBuf, [f64; 3]),
+    /// Copy the selection to the clipboard, or paste map text (P7-08).
+    Clipboard(ClipboardAction),
     /// List the map's issues (P6-19).
     CheckIssues,
     /// Apply an issue's quick fix (P6-19).
@@ -1204,6 +1206,28 @@ impl MapEditor {
         {
             actions.push(MapAction::PlacePrefab(path.clone(), dropped_at(at)));
         }
+        // TrenchBroom's Copy, Paste and Paste at Original Position (Cmd+C, Cmd+V, Cmd+Alt+V),
+        // which egui hands over as its copy and paste events while the view has the keyboard.
+        if response.has_focus() {
+            let (copy, pasted, original) = ui.input(|i| {
+                let copy = i.events.iter().any(|e| matches!(e, egui::Event::Copy));
+                let pasted = i.events.iter().find_map(|e| match e {
+                    egui::Event::Paste(text) => Some(text.clone()),
+                    _ => None,
+                });
+                (copy, pasted, i.modifiers.alt)
+            });
+            if copy {
+                actions.push(MapAction::Clipboard(ClipboardAction::Copy(
+                    self.tools.chosen().to_vec(),
+                    selection.iter().copied().collect(),
+                )));
+            }
+            if let Some(text) = pasted {
+                let at = (!original).then(|| dropped_at(pointer.unwrap_or(area.center())));
+                actions.push(MapAction::Clipboard(ClipboardAction::Paste(text, at)));
+            }
+        }
         let painter = ui.painter_at(area);
         painter.rect_filled(area, 0.0, theme.color(Token::SurfaceViewport));
         // P7-13: the textured or lit faces under everything the view draws after, in place of
@@ -1394,8 +1418,7 @@ impl MapEditor {
                 }
                 // TrenchBroom's Reset camera zoom is Ctrl+Alt+Z, which is undo here (Cmd+Z with
                 // an extra Alt), so the zoom is put back from here.
-                if self.zoom != ViewZoom::default()
-                    && ui.button(Text::MapResetZoom.get()).clicked()
+                if self.zoom != ViewZoom::default() && ui.button(Text::MapResetZoom.get()).clicked()
                 {
                     self.zoom = ViewZoom::default();
                 }
@@ -1688,6 +1711,15 @@ impl MapEditor {
             });
         asked.map(|params| MapAction::View(ViewSetting::Camera(params)))
     }
+}
+
+/// A copy of the selection to the clipboard, or a paste of map text (P7-08).
+#[derive(Clone, Debug, PartialEq)]
+pub enum ClipboardAction {
+    /// Copy these brushes and entities as map text.
+    Copy(Vec<(EntityIndex, BrushIndex)>, Vec<EntityIndex>),
+    /// Paste the text with the middle of its floor at the point, or where it was.
+    Paste(String, Option<[f64; 3]>),
 }
 
 /// A change of how the map view looks, a `view.*` command of the layout.

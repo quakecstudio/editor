@@ -211,3 +211,63 @@ fn layers_stay_behind_and_grids_are_asked_for() {
     assert_eq!(after.entities.last().unwrap().origin(), [4.0, 4.0, 32.0]);
     assert_eq!(after.entities.len(), before.entities.len() + 1);
 }
+
+// No spec statement: P7-08: map.copy writes a selection as a .map's text where it is, changing
+// nothing; map.paste adds that text back where it was, as TrenchBroom's Paste at Original
+// Position, or with the middle of its floor at a point on the grid, as its Paste, each one
+// undoable step; text that is not a map's, or holds nothing to place, is refused
+#[test]
+fn a_copy_pastes_in_place_or_at_a_point() {
+    use super::{Copied, MAP_COPY, MAP_PASTE};
+
+    let dir = keep("copy");
+    let mut session = session(&dir);
+    let before = map(&session);
+    let copied: Copied = serde_json::from_value(
+        session
+            .execute(MAP_COPY, json!({ "entities": [2, 4] }))
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(map(&session), before, "a copy changes nothing");
+    let text = MapFile::parse(copied.text.as_bytes()).unwrap();
+    assert_eq!(text.entities.len(), 3, "the world, the ogre and the door");
+    assert_eq!(text.entities[1].value(b"origin"), Some(&b"96 64 24"[..]));
+    assert_eq!(
+        bounds(&text)[0],
+        [224.0, -64.0, 0.0],
+        "the door where it is"
+    );
+    session
+        .execute(MAP_PASTE, json!({ "text": copied.text }))
+        .unwrap();
+    let pasted = map(&session);
+    assert_eq!(pasted.entities.len(), before.entities.len() + 2);
+    let added = &pasted.entities[before.entities.len()];
+    assert_eq!(added.value(b"origin"), Some(&b"96 64 24"[..]));
+    session.undo().unwrap();
+    assert_eq!(map(&session), before);
+    // At a point: the door's floor is 224 to 240 by -64 to 64, the ogre at 96 64 24, so their
+    // floor's middle is 168 0 0; put at 500 4 64 on the 16-unit grid it goes to 496 0 64.
+    session
+        .execute(
+            MAP_PASTE,
+            json!({ "text": copied.text, "at": [500.0, 4.0, 64.0] }),
+        )
+        .unwrap();
+    let moved = map(&session);
+    let ogre = &moved.entities[before.entities.len()];
+    assert_eq!(ogre.value(b"origin"), Some(&b"424 64 88"[..]));
+    for bad in [
+        json!({ "text": "{ not a map" }),
+        json!({ "text": "{\n\"classname\" \"worldspawn\"\n}\n" }),
+    ] {
+        assert!(session.execute(MAP_PASTE, bad.clone()).is_err(), "{bad}");
+    }
+    assert!(
+        session
+            .execute(MAP_COPY, json!({ "entities": [] }))
+            .is_err(),
+        "nothing to copy"
+    );
+}

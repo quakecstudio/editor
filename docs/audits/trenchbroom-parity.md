@@ -92,7 +92,7 @@ Tests are named `crate-or-app path::test`; `desktop` is `apps/desktop/src`, `map
 | Point entities by drag or context menu | Drag from the Entities browser | `desktop tests` | Same |
 | Brush entities from selected brushes | None | none | Gap G13 |
 | Duplicate | `map.duplicate`, with link numbers moved on | `map-edit links::tests::a_duplicate_numbers_its_names_onward` | Beyond |
-| Copy and paste | None | none | Gap G14 |
+| Copy and paste | Cmd+C writes the selection's map text, Cmd+V pastes at the pointer, Cmd+Alt+V where it was (`map.copy`, `map.paste`) | `desktop tests::the_map_view_copies_and_pastes_map_text`, `map-edit prefabs::tests::a_copy_pastes_in_place_or_at_a_point` | Same |
 | Move with mouse or keys | `map.move`, `map.brush_move` | `map-edit brushes::tests::a_brush_moves_with_its_textures_locked` | Same |
 | Rotate tool and rotate by 90 degrees | `map.rotate` | `map-edit tests::angles_turn_by_their_yaw` | Gap G15: right angles only, no rotate tool |
 | Flip | None | none | Gap G15 |
@@ -182,7 +182,6 @@ To close before #823 does:
 | G11 | Axis restriction while moving |
 | G12 | The map view's context menu |
 | G13 | Brush entities from selected brushes and back to the world; a convex brush from placed points; stamping and moving faces; clip snapping and matching a face's plane |
-| G14 | Copy and paste |
 | G15 | Flip, and a rotate tool for any angle |
 | G16 | Replace a texture; the browser's chosen texture for new brushes; filter by WAD; a WAD dropped on the window; alignment shortcuts |
 | G17 | Create and ungroup groups; create, separate and extract linked groups; new layers and the current layer |

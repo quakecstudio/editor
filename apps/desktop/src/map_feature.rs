@@ -31,6 +31,10 @@ use qs_map_edit::{
     ResolveParams, RotateParams, SaveParams, SelectParams as MapSelectParams, SetKeyParams,
 };
 use qs_map_edit::{
+    Copied, CopyParams, MAP_COPY, MAP_PASTE, MAP_PLACE_PREFAB, MAP_PREFABS, MAP_SAVE_PREFAB,
+    PasteParams, PlacePrefabParams, Prefabs, SavePrefabParams,
+};
+use qs_map_edit::{
     EntityListParams, LayerInfo, MAP_HIDE, MAP_ISOLATE, MAP_LAYERS, MAP_LOCK, MAP_SET_LAYER,
     MAP_SHOW_ALL, MAP_UNLOCK_ALL, SetLayerParams,
 };
@@ -40,9 +44,6 @@ use qs_map_edit::{
     MAP_FIX, MAP_ISSUES, MAP_SEARCH, MapFixParams, MapFound, MapIssues, MapRevision,
 };
 use qs_map_edit::{MAP_MOVE_TO, MAP_OUTLINE, MoveToParams, OutlineParams, OutlineRow};
-use qs_map_edit::{
-    MAP_PLACE_PREFAB, MAP_PREFABS, MAP_SAVE_PREFAB, PlacePrefabParams, Prefabs, SavePrefabParams,
-};
 use qs_workbench::entity_classes::{EntitiesFound, EntitiesParams, PROJECT_ENTITIES};
 use qs_workbench::files_changed::{FILES_CHANGED, FilesChanged, FilesChangedParams};
 use qs_workbench::map_compile::{
@@ -55,7 +56,9 @@ use qs_workbench::map_profile::{
 
 use crate::entities::{Outliner, Properties};
 use crate::features::{Commands, ShellRequest};
-use crate::map_editor::{DiskNotice, MapAction, MapEditor, ShowFilter, ViewSetting};
+use crate::map_editor::{
+    ClipboardAction, DiskNotice, MapAction, MapEditor, ShowFilter, ViewSetting,
+};
 use crate::map_groups::GroupAction;
 use crate::map_profiles::ProfileAction;
 use crate::map_review::ReviewAction;
@@ -88,6 +91,8 @@ pub(crate) struct MapFeature {
     pub(crate) properties: Properties,
     /// What the map's glue asked of the window, carried out when the call returns.
     requests: Vec<ShellRequest>,
+    /// The map text the last copy wrote, which the window puts on the clipboard (P7-08).
+    copied: Option<String>,
 }
 
 impl MapFeature {
@@ -354,9 +359,10 @@ impl MapFeature {
                     &PlacePrefabParams {
                         path,
                         origin,
-                        grid: None,
+                        grid: Some(commands.session().context().layout.map_grid.units()),
                     },
                 ),
+                MapAction::Clipboard(action) => self.clipboard_action(commands, action),
                 MapAction::CheckIssues => self.check_map_issues(commands),
                 MapAction::Fix(fix) => {
                     let fixed =
@@ -631,6 +637,32 @@ impl MapFeature {
             self.requests.push(ShellRequest::OpenGameGuide);
         }
         played
+    }
+
+    /// Copies the selection as map text for the window to put on the clipboard, or pastes map
+    /// text on the layout's grid (P7-08).
+    fn clipboard_action(
+        &mut self,
+        commands: &mut Commands<'_>,
+        action: ClipboardAction,
+    ) -> Result<serde_json::Value, ShellError> {
+        match action {
+            ClipboardAction::Copy(brushes, entities) => {
+                let copied: Copied =
+                    commands.attempt(MAP_COPY, &CopyParams { brushes, entities })?;
+                self.copied = Some(copied.text);
+                Ok(serde_json::Value::Null)
+            }
+            ClipboardAction::Paste(text, at) => {
+                let grid = Some(commands.session().context().layout.map_grid.units());
+                commands.attempt(MAP_PASTE, &PasteParams { text, at, grid })
+            }
+        }
+    }
+
+    /// Takes the map text the last copy wrote, for the window's clipboard.
+    pub(crate) const fn take_copied(&mut self) -> Option<String> {
+        self.copied.take()
     }
 
     /// Runs a change of how the map view looks, a `view.*` command of the layout.

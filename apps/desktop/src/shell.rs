@@ -1513,6 +1513,9 @@ impl Shell {
             })
             .inner;
         self.with_map(|map, commands| map.map_actions(commands, actions));
+        if let Some(text) = self.features.map.take_copied() {
+            ui.ctx().copy_text(text);
+        }
         self.with_map(MapFeature::refresh_map_outline);
         if self.with_map(MapFeature::refresh_map_review) {
             // The Properties panel, drawn before the map this frame, shows them on the next.

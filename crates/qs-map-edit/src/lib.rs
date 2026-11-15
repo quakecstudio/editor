@@ -53,8 +53,8 @@ pub use links::{LinkParams, MAP_LINK};
 pub use live::LiveChange;
 pub use outline::{MAP_MOVE_TO, MAP_OUTLINE, MoveToParams, OutlineParams, OutlineRow, RowKind};
 pub use prefabs::{
-    MAP_PLACE_PREFAB, MAP_PREFABS, MAP_SAVE_PREFAB, PREFAB_FOLDER, PlacePrefabParams, Prefab,
-    PrefabSaved, Prefabs, SavePrefabParams,
+    Copied, CopyParams, MAP_COPY, MAP_PASTE, MAP_PLACE_PREFAB, MAP_PREFABS, MAP_SAVE_PREFAB,
+    PREFAB_FOLDER, PasteParams, PlacePrefabParams, Prefab, PrefabSaved, Prefabs, SavePrefabParams,
 };
 pub use report::{MapReport, Seal};
 pub use review::{
@@ -1357,6 +1357,8 @@ pub fn register_map_edit<C: HasMap + 'static>(
     registry.register(prefabs::ListPrefabs)?;
     registry.register(prefabs::PlacePrefab)?;
     registry.register(prefabs::SavePrefab)?;
+    registry.register(prefabs::Copy)?;
+    registry.register(prefabs::Paste)?;
     registry.register(issues::MapFix)?;
     registry.register(issues::MapSearch)?;
     registry.register(textures::MapTexturesCommand)?;

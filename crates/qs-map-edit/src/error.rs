@@ -56,6 +56,11 @@ pub enum MapEditError {
         /// Why.
         error: qs_bsp::BspError,
     },
+    /// Text pasted into the map that is not a map's entities (P7-08).
+    NotMapText {
+        /// Why.
+        error: qs_map::MapError,
+    },
     /// A `.map` that does not parse, or a key it cannot hold.
     Map {
         /// The file.
@@ -220,6 +225,7 @@ impl fmt::Display for MapEditError {
             }
             Self::Bsp { path, error } => write!(f, "{}: {error}", path.display()),
             Self::Map { path, error } => write!(f, "{}: {error}", path.display()),
+            Self::NotMapText { error } => write!(f, "the text pasted is not a map's: {error}"),
             Self::ChangedOnDisk { path } => write!(
                 f,
                 "{}: another program changed it since it was opened; reload it or keep yours \
@@ -303,6 +309,7 @@ impl Error for MapEditError {
             Self::Save { error, .. } => Some(error),
             Self::Bsp { error, .. } => Some(error),
             Self::Map { error, .. } => Some(error),
+            Self::NotMapText { error } => Some(error),
             Self::Image { error, .. } => Some(error),
             Self::Texture { error } => Some(error),
             Self::Wad { error, .. } => Some(error),

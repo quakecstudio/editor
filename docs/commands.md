@@ -80,6 +80,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.choose_profile`](#mapchoose_profile) | Chooses the compile profile map.run_profile runs when given none; none given chooses Full again. |
 | [`map.compare`](#mapcompare) | How the open map's file, changed by another program, differs from the map being edited, entity by entity. |
 | [`map.compile`](#mapcompile) | Compiles the open map, as it is in the editor, or only a region of it, sealed, to a BSP beside it, with its portal and leak files, and reports whether it leaks and the textures its WADs lack. |
+| [`map.copy`](#mapcopy) | Writes brushes of the world and whole entities of the open map         as a .map's text, where they are, for the clipboard; the map is unchanged. |
 | [`map.delete`](#mapdelete) | Deletes an entity of the open map; the world stays. |
 | [`map.duplicate`](#mapduplicate) | Duplicates an entity of the open map, its keys and brushes, in place at the end of the map, and selects the copy; the world is not duplicated. A targetname ending in a number takes the next free number, and the keys the code fires entities by move on by as many. |
 | [`map.entity`](#mapentity) | An entity of the open map: its pairs, the keys its class reads with their types and defaults, and the map's targetnames for its target keys. |
@@ -100,6 +101,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.move_to`](#mapmove_to) | Moves an entity or a group of the open map into a layer or a group, or into the default layer given the world, as TrenchBroom writes it. |
 | [`map.open`](#mapopen) | Opens a .map in the map view, or a shipped .bsp's entities when the map has no .map source; nothing is selected. |
 | [`map.outline`](#mapoutline) | The open map's outline: the default layer and each layer, their groups and linked groups, then their entities by classname and targetname, with brush counts; with filter, only what holds the text and what is around it. |
+| [`map.paste`](#mappaste) | Adds a .map's text to the open map, its world's brushes to the         world and its other entities after the map's: where the text has them, or with the         middle of their floor at a point on the grid. |
 | [`map.place`](#mapplace) | Places a point entity of a classname at an origin in the open map, with the keys given, and selects it. |
 | [`map.place_prefab`](#mapplace_prefab) | Copies a prefab into the open map with its origin at a point on the grid: its world's brushes into the world, its other entities after the map's. |
 | [`map.play_from_here`](#mapplay_from_here) | Compiles the open map fast, with no vis and fast light, into the project's build, starts the game on it and puts the player's eye at a point, facing a way: the map view's camera (MAP-13). |
@@ -3775,6 +3777,64 @@ Parameters:
 }
 ```
 
+## `map.copy`
+
+Writes brushes of the world and whole entities of the open map         as a .map's text, where they are, for the clipboard; the map is unchanged.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.copy`.",
+  "properties": {
+    "brushes": {
+      "default": [],
+      "description": "The brushes, each by its entity: one of the world or of a layer or group is copied into\nthe world; one of another entity brings that entity whole.",
+      "items": {
+        "maxItems": 2,
+        "minItems": 2,
+        "prefixItems": [
+          {
+            "$ref": "#/$defs/EntityIndex"
+          },
+          {
+            "$ref": "#/$defs/BrushIndex"
+          }
+        ],
+        "type": "array"
+      },
+      "type": "array"
+    },
+    "entities": {
+      "default": [],
+      "description": "The entities to copy whole.",
+      "items": {
+        "$ref": "#/$defs/EntityIndex"
+      },
+      "type": "array"
+    }
+  },
+  "title": "CopyParams",
+  "type": "object"
+}
+```
+
 ## `map.delete`
 
 Deletes an entity of the open map; the world stays.
@@ -4814,6 +4874,54 @@ Parameters:
     }
   },
   "title": "OutlineParams",
+  "type": "object"
+}
+```
+
+## `map.paste`
+
+Adds a .map's text to the open map, its world's brushes to the         world and its other entities after the map's: where the text has them, or with the         middle of their floor at a point on the grid.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.paste`.",
+  "properties": {
+    "at": {
+      "default": null,
+      "description": "Where the middle of its floor goes, snapped across to the grid; where the text has it\nwhen absent, as TrenchBroom's Paste at Original Position.",
+      "items": {
+        "format": "double",
+        "type": "number"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "grid": {
+      "default": null,
+      "description": "The grid, in map units; 16 when not given, 0 for none.",
+      "format": "double",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "text": {
+      "description": "A `.map`'s text: its world's brushes go into the world, its other entities after the\nmap's.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "text"
+  ],
+  "title": "PasteParams",
   "type": "object"
 }
 ```

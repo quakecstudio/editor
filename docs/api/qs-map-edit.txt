@@ -53,6 +53,8 @@ const qs_map_edit::issues::MAP_SEARCH
 const qs_map_edit::links::MAP_LINK
 const qs_map_edit::outline::MAP_MOVE_TO
 const qs_map_edit::outline::MAP_OUTLINE
+const qs_map_edit::prefabs::MAP_COPY
+const qs_map_edit::prefabs::MAP_PASTE
 const qs_map_edit::prefabs::MAP_PLACE_PREFAB
 const qs_map_edit::prefabs::MAP_PREFABS
 const qs_map_edit::prefabs::MAP_SAVE_PREFAB
@@ -270,6 +272,12 @@ field qs_map_edit::outline::OutlineRow.kind
 field qs_map_edit::outline::OutlineRow.label
 field qs_map_edit::outline::OutlineRow.rows
 field qs_map_edit::outline::OutlineRow.targetname
+field qs_map_edit::prefabs::Copied.text
+field qs_map_edit::prefabs::CopyParams.brushes
+field qs_map_edit::prefabs::CopyParams.entities
+field qs_map_edit::prefabs::PasteParams.at
+field qs_map_edit::prefabs::PasteParams.grid
+field qs_map_edit::prefabs::PasteParams.text
 field qs_map_edit::prefabs::PlacePrefabParams.grid
 field qs_map_edit::prefabs::PlacePrefabParams.origin
 field qs_map_edit::prefabs::PlacePrefabParams.path
@@ -467,6 +475,9 @@ struct qs_map_edit::links::LinkParams
 struct qs_map_edit::outline::MoveToParams
 struct qs_map_edit::outline::OutlineParams
 struct qs_map_edit::outline::OutlineRow
+struct qs_map_edit::prefabs::Copied
+struct qs_map_edit::prefabs::CopyParams
+struct qs_map_edit::prefabs::PasteParams
 struct qs_map_edit::prefabs::PlacePrefabParams
 struct qs_map_edit::prefabs::Prefab
 struct qs_map_edit::prefabs::PrefabSaved
@@ -522,6 +533,8 @@ use qs_map_edit::BrushVerticesParams = brush_tools::BrushVerticesParams
 use qs_map_edit::Circle = shapes::Circle
 use qs_map_edit::ClassInfo = classes::ClassInfo
 use qs_map_edit::Climb = shapes::Climb
+use qs_map_edit::Copied = prefabs::Copied
+use qs_map_edit::CopyParams = prefabs::CopyParams
 use qs_map_edit::EntityCheck = store::EntityCheck
 use qs_map_edit::EntityInfo = inspect::EntityInfo
 use qs_map_edit::EntityListParams = groups::EntityListParams
@@ -564,6 +577,7 @@ use qs_map_edit::MAP_BRUSH_TEXTURE = brushes::MAP_BRUSH_TEXTURE
 use qs_map_edit::MAP_BRUSH_VERTEX = brushes::MAP_BRUSH_VERTEX
 use qs_map_edit::MAP_BRUSH_VERTICES = brush_tools::MAP_BRUSH_VERTICES
 use qs_map_edit::MAP_COMPARE = disk::MAP_COMPARE
+use qs_map_edit::MAP_COPY = prefabs::MAP_COPY
 use qs_map_edit::MAP_EXPORT = groups::MAP_EXPORT
 use qs_map_edit::MAP_FIX = issues::MAP_FIX
 use qs_map_edit::MAP_HIDE = groups::MAP_HIDE
@@ -574,6 +588,7 @@ use qs_map_edit::MAP_LINK = links::MAP_LINK
 use qs_map_edit::MAP_LOCK = groups::MAP_LOCK
 use qs_map_edit::MAP_MOVE_TO = outline::MAP_MOVE_TO
 use qs_map_edit::MAP_OUTLINE = outline::MAP_OUTLINE
+use qs_map_edit::MAP_PASTE = prefabs::MAP_PASTE
 use qs_map_edit::MAP_PLACE_PREFAB = prefabs::MAP_PLACE_PREFAB
 use qs_map_edit::MAP_PREFABS = prefabs::MAP_PREFABS
 use qs_map_edit::MAP_REJECT = review::MAP_REJECT
@@ -607,6 +622,7 @@ use qs_map_edit::NewVertex = brush_tools::NewVertex
 use qs_map_edit::OutlineParams = outline::OutlineParams
 use qs_map_edit::OutlineRow = outline::OutlineRow
 use qs_map_edit::PREFAB_FOLDER = prefabs::PREFAB_FOLDER
+use qs_map_edit::PasteParams = prefabs::PasteParams
 use qs_map_edit::PlacePrefabParams = prefabs::PlacePrefabParams
 use qs_map_edit::Prefab = prefabs::Prefab
 use qs_map_edit::PrefabSaved = prefabs::PrefabSaved
@@ -669,6 +685,7 @@ variant qs_map_edit::error::MapEditError::NoTextureSize
 variant qs_map_edit::error::MapEditError::NotContainer
 variant qs_map_edit::error::MapEditError::NotEmpty
 variant qs_map_edit::error::MapEditError::NotLayer
+variant qs_map_edit::error::MapEditError::NotMapText
 variant qs_map_edit::error::MapEditError::NotPointEntity
 variant qs_map_edit::error::MapEditError::PrefabName
 variant qs_map_edit::error::MapEditError::Save

@@ -2335,10 +2335,11 @@ fn the_camera_settings_reach_the_3d_view() {
         .unwrap();
     harness.run();
     let inverted = tilt(&mut harness);
-    assert!(normal.abs() > 1.0 && (normal + inverted).abs() < 1e-3, "{normal} {inverted}");
-    harness
-        .get_by_label(Text::MapCameraSettings.get())
-        .click();
+    assert!(
+        normal.abs() > 1.0 && (normal + inverted).abs() < 1e-3,
+        "{normal} {inverted}"
+    );
+    harness.get_by_label(Text::MapCameraSettings.get()).click();
     harness.run();
     for control in [
         Text::MapCameraFov,
@@ -2357,13 +2358,76 @@ fn the_camera_settings_reach_the_3d_view() {
             control.get()
         );
     }
-    harness.get_by_label(Text::MapCameraInvertWheel.get()).click();
+    harness
+        .get_by_label(Text::MapCameraInvertWheel.get())
+        .click();
     harness.run();
     let shell = harness.state().as_ref().unwrap().shell();
     assert_eq!(
         shell.layout().map_camera.wheel,
         qs_layout::Direction::Inverted
     );
+}
+
+// No spec statement: P7-08: in the map view, Cmd+C puts the selection's map text on the
+// clipboard, Cmd+Alt+V pastes it where it was (TrenchBroom's Paste at Original Position) and
+// Cmd+V where the pointer is, each one undoable edit
+#[test]
+fn the_map_view_copies_and_pastes_map_text() {
+    let dir = keep_copy("clipboard");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    harness.get_by_label(Text::MapEditorView.get()).click();
+    harness.run();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("map.select", json!({ "entity": 2 })).unwrap();
+    harness.run();
+    harness.event(egui::Event::Copy);
+    harness.step();
+    let copied = harness
+        .output()
+        .platform_output
+        .commands
+        .iter()
+        .find_map(|command| match command {
+            egui::OutputCommand::CopyText(text) => Some(text.clone()),
+            _ => None,
+        })
+        .expect("the selection was copied");
+    harness.run();
+    assert!(copied.contains("\"classname\" \"monster_ogre\""), "{copied}");
+    let count = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        shell.session().context().workbench.map().unwrap().file().entities.len()
+    };
+    let before = count(&harness);
+    harness.event_modifiers(egui::Event::Paste(copied.clone()), egui::Modifiers::ALT);
+    harness.run();
+    assert_eq!(count(&harness), before + 1);
+    let text = map_text(&harness);
+    assert_eq!(text.matches("\"origin\" \"96 64 24\"").count(), 2, "{text}");
+    let view = harness.get_by_label(Text::MapEditorView.get()).rect();
+    harness.hover_at(view.center());
+    harness.event(egui::Event::Paste(copied));
+    harness.run();
+    assert_eq!(count(&harness), before + 2);
+    assert_eq!(
+        map_text(&harness).matches("\"origin\" \"96 64 24\"").count(),
+        2,
+        "the second paste is elsewhere"
+    );
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("edit.undo", json!({})).unwrap();
+    shell.execute("edit.undo", json!({})).unwrap();
+    harness.run();
+    assert_eq!(count(&harness), before);
 }
 
 /// Drags with the primary button from `from` to `to` in steps, holding `modifiers`.

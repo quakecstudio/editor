@@ -90,6 +90,10 @@ it too.
   (`view.map_camera`, kept in the layout). Cmd+U frames the selection, every selected entity and brush, keeping
   where the camera looks (TrenchBroom's Focus on Selection, Ctrl+U). The Properties panel shows
   the camera's x, y and z, and a value typed or dragged there moves it.
+- **Copy and paste (P7-08):** Cmd+C puts the selected entities and brushes on the clipboard as
+  a `.map`'s text, where they are (`map.copy`); Cmd+V pastes map text with the middle of its
+  floor at the pointer, on the grid, and Cmd+Alt+V where the text has it (`map.paste`), as
+  TrenchBroom's Paste and Paste at Original Position. Text copied from a `.map` file pastes too.
 - **Escape (P7-08):** in the view, Escape drops a drag in progress, else the Vertex tool's picked
   corners, else goes back to Select, else clears the selection, in TrenchBroom's order.
 - **The grid (P7-08):** drawing, dragging and the selection keys snap to the grid, a power of two

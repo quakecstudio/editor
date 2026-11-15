@@ -932,6 +932,11 @@ impl BrushTools {
         actions
     }
 
+    /// The brushes selected, the first chosen first.
+    pub(crate) fn chosen(&self) -> &[BrushRef] {
+        &self.chosen
+    }
+
     /// Escape, as TrenchBroom cancels ("Canceling Operations and Tools"): a drag is dropped,
     /// else the Vertex tool's picked corners, else the tool goes back to Select. False when
     /// there was nothing of the tools' to cancel, so the selection goes instead.
