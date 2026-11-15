@@ -85,6 +85,7 @@ const qs_map_edit::uv::MAP_FACE_UV
 enum qs_map_edit::BspSave
 enum qs_map_edit::MapSource
 enum qs_map_edit::brush_tools::Axis
+enum qs_map_edit::brush_tools::ExtrudeMode
 enum qs_map_edit::brush_tools::NewVertex
 enum qs_map_edit::brushes::Keep
 enum qs_map_edit::brushes::Lock
@@ -150,6 +151,7 @@ field qs_map_edit::brush_tools::BrushExtrudeParams.by
 field qs_map_edit::brush_tools::BrushExtrudeParams.face
 field qs_map_edit::brush_tools::BrushExtrudeParams.grid
 field qs_map_edit::brush_tools::BrushExtrudeParams.lock
+field qs_map_edit::brush_tools::BrushExtrudeParams.mode
 field qs_map_edit::brush_tools::BrushHollowParams.brush
 field qs_map_edit::brush_tools::BrushHollowParams.entity
 field qs_map_edit::brush_tools::BrushHollowParams.wall
@@ -592,6 +594,7 @@ use qs_map_edit::EntityInfo = inspect::EntityInfo
 use qs_map_edit::EntityListParams = groups::EntityListParams
 use qs_map_edit::EntityProblem = store::EntityProblem
 use qs_map_edit::ExportParams = groups::ExportParams
+use qs_map_edit::ExtrudeMode = brush_tools::ExtrudeMode
 use qs_map_edit::FlagChange = flags::FlagChange
 use qs_map_edit::FlagInfo = classes::FlagInfo
 use qs_map_edit::FlipParams = brush_tools::FlipParams
@@ -718,6 +721,10 @@ variant qs_map_edit::MapSource::Map
 variant qs_map_edit::brush_tools::Axis::X
 variant qs_map_edit::brush_tools::Axis::Y
 variant qs_map_edit::brush_tools::Axis::Z
+variant qs_map_edit::brush_tools::ExtrudeMode::Extrude
+variant qs_map_edit::brush_tools::ExtrudeMode::Move
+variant qs_map_edit::brush_tools::ExtrudeMode::Split
+variant qs_map_edit::brush_tools::ExtrudeMode::Stamp
 variant qs_map_edit::brush_tools::NewVertex::Out
 variant qs_map_edit::brush_tools::NewVertex::Point
 variant qs_map_edit::brushes::Keep::Back

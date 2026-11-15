@@ -24,10 +24,11 @@ use qs_map::{Entity, Item, MapFile};
 pub use brush_tools::{
     Axis, BrushChamferParams, BrushExtrudeParams, BrushHollowParams, BrushIntersectParams,
     BrushScaleParams, BrushShearParams, BrushSplitEdgeParams, BrushSplitFaceParams,
-    BrushSweepParams, BrushVerticesParams, FlipParams, MAP_BRUSH_CHAMFER, MAP_BRUSH_EXTRUDE,
-    MAP_BRUSH_HOLLOW, MAP_BRUSH_INTERSECT, MAP_BRUSH_SCALE, MAP_BRUSH_SHEAR, MAP_BRUSH_SPLIT_EDGE,
-    MAP_BRUSH_SPLIT_FACE, MAP_BRUSH_SWEEP, MAP_BRUSH_VERTICES, MAP_FLIP, MAP_REPLACE_TEXTURE,
-    MAP_TURN, NewVertex, ReplaceTextureParams, Replaced, Selection, TurnParams, VertexMove,
+    BrushSweepParams, BrushVerticesParams, ExtrudeMode, FlipParams, MAP_BRUSH_CHAMFER,
+    MAP_BRUSH_EXTRUDE, MAP_BRUSH_HOLLOW, MAP_BRUSH_INTERSECT, MAP_BRUSH_SCALE, MAP_BRUSH_SHEAR,
+    MAP_BRUSH_SPLIT_EDGE, MAP_BRUSH_SPLIT_FACE, MAP_BRUSH_SWEEP, MAP_BRUSH_VERTICES, MAP_FLIP,
+    MAP_REPLACE_TEXTURE, MAP_TURN, NewVertex, ReplaceTextureParams, Replaced, Selection,
+    TurnParams, VertexMove,
 };
 pub use brushes::{
     BrushClipParams, BrushCreateParams, BrushHullParams, BrushIndex, BrushMergeParams,

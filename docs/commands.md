@@ -2069,6 +2069,31 @@ Parameters:
       "minimum": 0,
       "type": "integer"
     },
+    "ExtrudeMode": {
+      "description": "What `map.brush_extrude` does with the face, as TrenchBroom's extrude tool's keys choose\n(P7-08).",
+      "oneOf": [
+        {
+          "const": "extrude",
+          "description": "The face moves along its normal, the brush's other planes kept.",
+          "type": "string"
+        },
+        {
+          "const": "split",
+          "description": "Out, a new brush of what the extrusion would add; in, the brush cut in two (Ctrl).",
+          "type": "string"
+        },
+        {
+          "const": "stamp",
+          "description": "A new brush, the face and its copy moved out (Ctrl+Alt).",
+          "type": "string"
+        },
+        {
+          "const": "move",
+          "description": "The face's corners move along its normal, the other faces tilting (Alt).",
+          "type": "string"
+        }
+      ]
+    },
     "FaceIndex": {
       "description": "A face's place among its brush's faces, from 0, in file order.",
       "format": "uint",
@@ -2141,6 +2166,11 @@ Parameters:
       "$ref": "#/$defs/Lock",
       "default": "locked",
       "description": "Whether its texture stays fixed in the world; locked when not given."
+    },
+    "mode": {
+      "$ref": "#/$defs/ExtrudeMode",
+      "default": "extrude",
+      "description": "What the move does; an extrusion when not given (P7-08)."
     }
   },
   "required": [

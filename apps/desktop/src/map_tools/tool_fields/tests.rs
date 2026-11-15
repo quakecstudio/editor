@@ -128,7 +128,12 @@ fn a_picked_face_extrudes_and_splits() {
     };
     assert_eq!(
         clicked(tools(), &[Text::MapExtrude.get()]),
-        vec![BrushAction::Extrude(face, 16.0, Lock::Locked)]
+        vec![BrushAction::Extrude(
+            face,
+            16.0,
+            Lock::Locked,
+            qs_map_edit::ExtrudeMode::Extrude
+        )]
     );
     assert_eq!(
         clicked(tools(), &[Text::MapSplitFace.get()]),

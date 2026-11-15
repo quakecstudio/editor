@@ -196,6 +196,25 @@ pub struct BrushExtrudeParams {
     /// The grid `by` snaps to; 16 when not given, 0 for none.
     #[serde(default)]
     pub grid: Option<f64>,
+    /// What the move does; an extrusion when not given (P7-08).
+    #[serde(default)]
+    pub mode: ExtrudeMode,
+}
+
+/// What `map.brush_extrude` does with the face, as TrenchBroom's extrude tool's keys choose
+/// (P7-08).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ExtrudeMode {
+    /// The face moves along its normal, the brush's other planes kept.
+    #[default]
+    Extrude,
+    /// Out, a new brush of what the extrusion would add; in, the brush cut in two (Ctrl).
+    Split,
+    /// A new brush, the face and its copy moved out (Ctrl+Alt).
+    Stamp,
+    /// The face's corners move along its normal, the other faces tilting (Alt).
+    Move,
 }
 
 /// The parameters of `map.brush_sweep`.
@@ -483,13 +502,15 @@ impl<C: HasMap + 'static> Command<C> for BrushExtrude {
             face,
         } = params.face;
         let by = snap(params.by, params.grid);
+        let face = BrushFace::new(face.get());
+        let lock = params.lock.into();
         let ((), step) = edit_map(context, |document| {
-            document.rework(entity, brush, |found| {
-                Ok(vec![found.extruded(
-                    BrushFace::new(face.get()),
-                    by,
-                    params.lock.into(),
-                )?])
+            let surface = document.new_surface(None);
+            document.rework(entity, brush, |found| match params.mode {
+                ExtrudeMode::Extrude => Ok(vec![found.extruded(face, by, lock)?]),
+                ExtrudeMode::Split => found.split_extruded(face, by, lock, &surface),
+                ExtrudeMode::Stamp => Ok(vec![found.clone(), found.stamped(face, by, &surface)?]),
+                ExtrudeMode::Move => Ok(vec![found.face_moved(face, by)?]),
             })
         })?;
         Ok(MapEdited::undoable(entity, step))

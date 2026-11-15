@@ -124,12 +124,15 @@ fn qs_map::brush_edit::tools::Affine::turn
 fn qs_map::brush_edit::tools::Brush::chamfered
 fn qs_map::brush_edit::tools::Brush::edge_out
 fn qs_map::brush_edit::tools::Brush::extruded
+fn qs_map::brush_edit::tools::Brush::face_moved
 fn qs_map::brush_edit::tools::Brush::face_out
 fn qs_map::brush_edit::tools::Brush::hollowed
 fn qs_map::brush_edit::tools::Brush::intersected
 fn qs_map::brush_edit::tools::Brush::moved_vertices
 fn qs_map::brush_edit::tools::Brush::split_edge
+fn qs_map::brush_edit::tools::Brush::split_extruded
 fn qs_map::brush_edit::tools::Brush::split_face
+fn qs_map::brush_edit::tools::Brush::stamped
 fn qs_map::brush_edit::tools::Brush::swept
 fn qs_map::brush_edit::tools::Brush::transformed
 fn qs_map::brush_edit::tools::BrushFace::get

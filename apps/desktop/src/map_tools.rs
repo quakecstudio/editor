@@ -21,6 +21,7 @@ use qs_map::shapes::{
     SHAPE_MAX_RINGS, SHAPE_MAX_ROCK_POINTS, SHAPE_MAX_SIDES, SHAPE_MAX_SPHEROID_FACES,
     SHAPE_MIN_RINGS, SHAPE_MIN_ROCK_POINTS, SHAPE_MIN_SIDES, SHAPE_STEP_DEPTH, SHAPE_STEP_HEIGHT,
 };
+use qs_map_edit::ExtrudeMode;
 use qs_map_edit::uv::{FaceRef, UvChoice};
 use qs_map_edit::{
     ArchWall, Axis, BrushIndex, Circle, Climb, EntityIndex, KeepPart, Lock, ShapeSpec,
@@ -207,8 +208,8 @@ pub enum BrushAction {
     Shear(EntityIndex, Vec<BrushIndex>, Axis, Axis, f64, Lock),
     /// Sweep a brush along a path from the origin (MAP-15.4).
     Sweep(EntityIndex, BrushIndex, Vec<[f64; 3]>, Lock),
-    /// Move a face along its normal (MAP-15.3).
-    Extrude(FaceRef, f64, Lock),
+    /// Move a face along its normal (MAP-15.3), in a mode of TrenchBroom's extrude tool (P7-08).
+    Extrude(FaceRef, f64, Lock, ExtrudeMode),
     /// Split a face by a new vertex the distance out from its middle (MAP-15.8).
     SplitFace(FaceRef, f64),
     /// Move several corners of a brush at once (MAP-15.7).
@@ -538,6 +539,30 @@ enum Drag {
     Selection([f32; 3], MapAxis),
     /// A measure, from this point, on the plane across this axis through it.
     Measure([f32; 3], MapAxis),
+    /// A face of a selected brush, from where it was grabbed, along its outward normal, in a
+    /// mode of TrenchBroom's extrude tool (P7-08).
+    Face(FaceRef, [f32; 3], [f32; 3], ExtrudeMode),
+}
+
+impl Drag {
+    /// How far along a face drag's normal the pointer's `ray` is, from where the face was
+    /// grabbed: the nearest point of the normal's line to the ray, on `grid`.
+    fn face_distance(
+        from: [f32; 3],
+        normal: [f32; 3],
+        (start, direction): Ray,
+        grid: MapGrid,
+    ) -> f64 {
+        let dot = |a: [f32; 3], b: [f32; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        let to_start = [start[0] - from[0], start[1] - from[1], start[2] - from[2]];
+        let along = dot(direction, normal);
+        let across = 1.0 - along * along;
+        if across < ALONG_PLANE {
+            return 0.0;
+        }
+        let s = (dot(to_start, normal) - dot(to_start, direction) * along) / across;
+        grid.snap(f64::from(s))
+    }
 }
 
 /// The fewest points that can span a brush: four, a tetrahedron's.
@@ -866,7 +891,7 @@ impl BrushTools {
                 let [x, y, _] = snapped(at_height(ray, single(from[2]))?, grid);
                 Some(moved(from, [x, y, from[2]]))
             }
-            Drag::Ground(_) => None,
+            Drag::Ground(_) | Drag::Face(..) => None,
         }
     }
 
@@ -967,39 +992,42 @@ impl BrushTools {
         if response.drag_started_by(egui::PointerButton::Primary)
             && let Some(at) = ui.input(|i| i.pointer.press_origin())
         {
-            self.drag = match self.tool {
-                MapTool::Select | MapTool::Hull => None,
-                MapTool::Brush | MapTool::Clip | MapTool::Shape => {
-                    at_height(ray(at), 0.0).map(Drag::Ground)
-                }
-                MapTool::Vertex => self
-                    .corner_near(scene, projection, at)
-                    .map(|(b, v)| Drag::Corner(b, v)),
-                MapTool::Move => self.bounds(scene).and_then(|[min, max]| {
-                    let mut middle = ORIGIN;
-                    for ((m, low), high) in middle.iter_mut().zip(min).zip(max) {
-                        *m = single((low + high) / 2.0);
+            let face_drag = self.face_grab(ui, scene, hidden, ray(at));
+            self.drag = face_drag.or_else(|| {
+                match self.tool {
+                    MapTool::Select | MapTool::Hull => None,
+                    MapTool::Brush | MapTool::Clip | MapTool::Shape => {
+                        at_height(ray(at), 0.0).map(Drag::Ground)
                     }
-                    // In the 3D view a move is across the ground, as TrenchBroom's; a 2D view
-                    // moves across its own plane.
-                    let axis = match pane {
-                        Pane::Perspective => MapAxis::Z,
-                        Pane::Plan(_) => MapAxis::facing(ray(at)),
-                    };
-                    axis.meets(ray(at), middle)
-                        .map(|from| Drag::Selection(from, axis))
-                }),
-                MapTool::Measure => {
-                    let (start, direction) = ray(at);
-                    let mut ahead = start;
-                    for (a, d) in ahead.iter_mut().zip(direction) {
-                        *a += d * MEASURE_AHEAD;
+                    MapTool::Vertex => self
+                        .corner_near(scene, projection, at)
+                        .map(|(b, v)| Drag::Corner(b, v)),
+                    MapTool::Move => self.bounds(scene).and_then(|[min, max]| {
+                        let mut middle = ORIGIN;
+                        for ((m, low), high) in middle.iter_mut().zip(min).zip(max) {
+                            *m = single((low + high) / 2.0);
+                        }
+                        // In the 3D view a move is across the ground, as TrenchBroom's; a 2D view
+                        // moves across its own plane.
+                        let axis = match pane {
+                            Pane::Perspective => MapAxis::Z,
+                            Pane::Plan(_) => MapAxis::facing(ray(at)),
+                        };
+                        axis.meets(ray(at), middle)
+                            .map(|from| Drag::Selection(from, axis))
+                    }),
+                    MapTool::Measure => {
+                        let (start, direction) = ray(at);
+                        let mut ahead = start;
+                        for (a, d) in ahead.iter_mut().zip(direction) {
+                            *a += d * MEASURE_AHEAD;
+                        }
+                        let axis = MapAxis::facing(ray(at));
+                        axis.meets(ray(at), ahead)
+                            .map(|from| Drag::Measure(from, axis))
                     }
-                    let axis = MapAxis::facing(ray(at));
-                    axis.meets(ray(at), ahead)
-                        .map(|from| Drag::Measure(from, axis))
                 }
-            };
+            });
             self.dragging_in = self.drag.map(|_| pane);
         }
         let restrict = ui.input(|i| {
@@ -1045,6 +1073,9 @@ impl BrushTools {
             ) = finished
             {
                 self.reshaped = vec![(entity, brush)];
+            }
+            if let Some(BrushAction::Extrude(face, ..)) = &finished {
+                self.reshaped = vec![(face.entity, face.brush)];
             }
             actions.extend(finished);
         }
@@ -1204,6 +1235,41 @@ impl BrushTools {
         Vec::new()
     }
 
+    /// TrenchBroom's extrude tool (P7-08): Shift and a drag on a face of a selected brush moves
+    /// it along its normal; with Cmd it splits, Cmd+Alt stamps, Alt moves the face. The face
+    /// grabbed under `ray`, where, its normal and the mode; none without Shift or a selected
+    /// brush's face there.
+    fn face_grab(
+        &self,
+        ui: &Ui,
+        scene: &Scene,
+        hidden: &BTreeSet<EntityIndex>,
+        (start, direction): Ray,
+    ) -> Option<Drag> {
+        let held = ui.input(|i| i.modifiers);
+        if !held.shift {
+            return None;
+        }
+        let face = scene.pick_face(start, direction, hidden)?;
+        if !self.chosen.contains(&(face.entity, face.brush)) {
+            return None;
+        }
+        let (normal, distance) = scene.face(face)?.plane;
+        let dot = |a: [f32; 3], b: [f32; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        let t = (distance - dot(normal, start)) / dot(normal, direction);
+        let hit = [0, 1, 2].map(|i| {
+            start.get(i).copied().unwrap_or_default()
+                + direction.get(i).copied().unwrap_or_default() * t
+        });
+        let mode = match (held.command, held.alt) {
+            (true, true) => ExtrudeMode::Stamp,
+            (true, false) => ExtrudeMode::Split,
+            (false, true) => ExtrudeMode::Move,
+            (false, false) => ExtrudeMode::Extrude,
+        };
+        Some(Drag::Face(face, hit, normal, mode))
+    }
+
     /// Where `corner` is among the corners picked.
     #[expect(
         clippy::float_cmp,
@@ -1245,6 +1311,10 @@ impl BrushTools {
     )]
     fn finish(&self, drag: Drag, ray: Ray) -> Option<BrushAction> {
         match (self.tool, drag) {
+            (_, Drag::Face(face, from, normal, mode)) => {
+                let by = Drag::face_distance(from, normal, ray, self.grid);
+                (by.abs() > 0.0).then_some(BrushAction::Extrude(face, by, self.lock, mode))
+            }
             (MapTool::Brush, Drag::Ground(from)) => {
                 let to = at_height(ray, from[2])?;
                 let [min, max] = ground_box(from, to, BRUSH_HEIGHT);
@@ -1355,7 +1425,7 @@ impl BrushTools {
         let from = match drag {
             Drag::Ground(from) => snapped_f32(from, self.grid),
             Drag::Corner(_, from) => from.map(single),
-            Drag::Selection(..) | Drag::Measure(..) => return,
+            Drag::Selection(..) | Drag::Measure(..) | Drag::Face(..) => return,
         };
         let Some(to) = pointer.and_then(|ray| at_height(ray, from[2])) else {
             return;
@@ -1365,7 +1435,9 @@ impl BrushTools {
                 let [x, y, _] = snapped_f32(to, self.grid);
                 [x, y, from[2]]
             }
-            Drag::Ground(_) | Drag::Selection(..) | Drag::Measure(..) => snapped_f32(to, self.grid),
+            Drag::Ground(_) | Drag::Selection(..) | Drag::Measure(..) | Drag::Face(..) => {
+                snapped_f32(to, self.grid)
+            }
         };
         match self.tool {
             MapTool::Brush => {

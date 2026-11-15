@@ -406,6 +406,87 @@ impl Brush {
         }
     }
 
+    /// The face `face`'s polygon and its outward plane.
+    fn face_and_plane(&self, face: BrushFace) -> Result<(Vec<[f64; 3]>, Plane<f64>), BrushError> {
+        let polygon = self
+            .face_polygons()
+            .into_iter()
+            .nth(face.get())
+            .flatten()
+            .ok_or(BrushError::Degenerate)?;
+        let plane = self
+            .faces
+            .get(face.get())
+            .and_then(Face::plane)
+            .ok_or(BrushError::Degenerate)?;
+        Ok((polygon, plane))
+    }
+
+    /// TrenchBroom's stamp (its manual, "Stamping Brushes"): a new brush, the hull of face
+    /// `face` and its copy moved `by` along its outward normal, painted with `surface`; this
+    /// brush is unchanged (P7-08).
+    ///
+    /// # Errors
+    ///
+    /// [`BrushError::Degenerate`] for no such face or a move of nothing.
+    pub fn stamped(&self, face: BrushFace, by: f64, surface: &Surface) -> Result<Self, BrushError> {
+        let (polygon, plane) = self.face_and_plane(face)?;
+        let [nx, ny, nz] = plane.normal;
+        let moved = polygon
+            .iter()
+            .map(|&[x, y, z]| [x + nx * by, y + ny * by, z + nz * by]);
+        let points: Vec<[f64; 3]> = polygon.iter().copied().chain(moved).collect();
+        Self::hull(&points, &[self], surface)
+    }
+
+    /// TrenchBroom's split extrusion (its manual, "Extrusion", with Ctrl): out, a new brush of
+    /// what extruding face `face` by `by` would add, the brush kept; in, the brush cut in two
+    /// where the face would be pushed to (P7-08). The new faces are painted with `surface`.
+    ///
+    /// # Errors
+    ///
+    /// As [`Brush::extruded`] and [`Brush::split`].
+    pub fn split_extruded(
+        &self,
+        face: BrushFace,
+        by: f64,
+        lock: TextureLock,
+        surface: &Surface,
+    ) -> Result<Vec<Self>, BrushError> {
+        let (_, plane) = self.face_and_plane(face)?;
+        if by > 0.0 {
+            let grown = self.extruded(face, by, lock)?;
+            let (_, added) = grown.split(plane, surface)?;
+            Ok(vec![self.clone(), added.ok_or(BrushError::Degenerate)?])
+        } else {
+            let inward = Plane {
+                normal: plane.normal,
+                dist: plane.dist + by,
+            };
+            match self.split(inward, surface)? {
+                (Some(kept), Some(cut)) => Ok(vec![kept, cut]),
+                (None, _) | (_, None) => Err(BrushError::Degenerate),
+            }
+        }
+    }
+
+    /// TrenchBroom's face move (its manual, "Moving Faces Instead of Extruding"): face `face`'s
+    /// corners moved `by` along its outward normal, the brush the hull of its corners so moved
+    /// (P7-08).
+    ///
+    /// # Errors
+    ///
+    /// As [`Brush::moved_vertices`].
+    pub fn face_moved(&self, face: BrushFace, by: f64) -> Result<Self, BrushError> {
+        let (polygon, plane) = self.face_and_plane(face)?;
+        let [nx, ny, nz] = plane.normal;
+        let moves: Vec<([f64; 3], [f64; 3])> = polygon
+            .iter()
+            .map(|&[x, y, z]| ([x, y, z], [x + nx * by, y + ny * by, z + nz * by]))
+            .collect();
+        self.moved_vertices(&moves)
+    }
+
     /// The brush with face `face` moved `by` along its outward normal, out for a positive
     /// distance and in for a negative one; the other faces keep their planes and text, and a
     /// face the move leaves with no polygon goes (MAP-15.3).

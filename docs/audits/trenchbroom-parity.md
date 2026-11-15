@@ -98,7 +98,7 @@ Tests are named `crate-or-app path::test`; `desktop` is `apps/desktop/src`, `map
 | Flip | Cmd+F across the view, Cmd+Alt+F up and down, Flip x, y, z in Properties (`map.flip`) | `map-edit brush_tools::tests::a_selection_flips_along_each_axis`, `desktop tests::the_map_view_takes_trenchbrooms_keys` | Same |
 | Scale and shear | `map.brush_scale`, `map.brush_shear` | `map-edit brush_tools::tests::brushes_scale_and_shear` | Same |
 | Delete | `map.delete`, `map.brush_delete` | `map-edit brushes::tests::brushes_are_merged_and_deleted` | Same |
-| Extrude, stamp, move faces | `map.brush_extrude` | `map-edit brush_tools::tests::a_face_extrudes` | Gap G13: no stamping or moving faces |
+| Extrude, stamp, move faces | `map.brush_extrude` | `map-edit brush_tools::tests::a_face_extrudes`, `a_face_splits_stamps_and_moves`, `desktop tests::shift_dragging_a_face_extrudes_or_splits_it` | Same: Shift+drag extrudes, with Cmd splits, Cmd+Alt stamps, Alt moves the face |
 | Clip points, snapping, matching plane | `map.brush_clip` | `map-edit brushes::tests::a_brush_is_clipped` | Gap G13: no snapping to vertices or matching a face's plane |
 | Sweep | `map.brush_sweep` | `map-edit brush_tools::tests::a_brush_sweeps` | Same |
 | Vertex, edge and face tools | `map.brush_vertex`, `map.brush_split_edge`, `map.brush_split_face`, `map.brush_chamfer` | `map-edit brush_tools::tests::vertices_move_and_split`, `an_edge_chamfers` | Beyond: chamfer |
@@ -177,7 +177,7 @@ To close before #823 does:
 | Gap | What TrenchBroom's manual has that we lack |
 | --- | --- |
 | G1 | Entity models drawn textured, not as wireframes |
-| G13 | Stamping and moving faces; clip snapping and matching a face's plane |
+| G13 | Clip points snapped to vertices, and a clip plane matching a face's |
 | G17 | Extracting objects into a new linked group; the current layer new objects go into |
 | G19 | TrenchBroom's query language in the search |
 

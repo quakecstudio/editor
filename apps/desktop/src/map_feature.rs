@@ -891,14 +891,15 @@ impl MapFeature {
                     grid,
                 },
             ),
-            BrushAction::Extrude(face, by, lock) => commands.attempt(
+            BrushAction::Extrude(face, by, lock, mode) => commands.attempt(
                 MAP_BRUSH_EXTRUDE,
                 &BrushExtrudeParams {
                     face,
                     by,
                     lock,
-                    // The distance is the one typed in the panel.
+                    // The distance is the one typed in the panel, or snapped by the drag.
                     grid: Some(0.0),
+                    mode,
                 },
             ),
             BrushAction::Arrange(arrange) => Self::arrange(commands, arrange),

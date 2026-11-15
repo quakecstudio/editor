@@ -423,3 +423,46 @@ fn a_texture_is_replaced_on_the_brushes_or_everywhere() {
         "no face has rock now"
     );
 }
+
+// No spec statement: P7-08: TrenchBroom's extrude tool's modes on a face: a split adds a brush
+// of what the extrusion would add, or cuts the brush in two when pushed in; a stamp adds the
+// prism of the face and its copy; a move moves the face's corners; each one undoable edit
+#[test]
+fn a_face_splits_stamps_and_moves() {
+    use crate::MAP_BRUSH_EXTRUDE;
+
+    let face = json!({ "entity": 0, "brush": 0, "face": 0 });
+    for (mode, by, added) in [
+        ("split", 16.0, 1),
+        ("split", -16.0, 1),
+        ("stamp", 16.0, 1),
+        ("move", 16.0, 0),
+        ("extrude", 16.0, 0),
+    ] {
+        let mut session = open(&format!("extrude-{mode}-{by}"));
+        let before = text(&session);
+        let count = world(&session).len();
+        session
+            .execute(
+                MAP_BRUSH_EXTRUDE,
+                json!({ "face": face, "by": by, "mode": mode }),
+            )
+            .unwrap();
+        let after = world(&session);
+        assert_eq!(after.len(), count + added, "{mode} {by}");
+        assert!(after.iter().all(qs_map::Brush::is_valid), "{mode} {by}");
+        assert_ne!(text(&session), before, "{mode} {by}");
+        session.undo().unwrap();
+        assert_eq!(text(&session), before, "{mode} {by} undoes");
+    }
+    let mut session = open("extrude-too-far");
+    assert!(
+        session
+            .execute(
+                MAP_BRUSH_EXTRUDE,
+                json!({ "face": face, "by": -64.0, "mode": "split" }),
+            )
+            .is_err(),
+        "a cut through the whole brush"
+    );
+}

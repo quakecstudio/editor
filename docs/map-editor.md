@@ -101,6 +101,11 @@ it too.
   Cmd+Shift+D (Linked duplicate) copies it as a group linked to it (`map.link_duplicate`) and
   Separate unlinks it (`map.separate`). Add layer, beside Layers, adds a layer
   (`map.add_layer`). Each is written as TrenchBroom writes it.
+- **Extruding by drag (P7-08):** with a brush selected, Shift and a drag on one of its faces move
+  the face along its normal, on the grid, as TrenchBroom's extrude tool; with Cmd as well the
+  drag splits off a new brush (or, pushed in, cuts the brush in two), with Cmd+Alt it stamps a
+  new brush of the face and its copy, and with Alt it moves the face's corners
+  (`map.brush_extrude`'s modes).
 - **Hull (P7-08):** the Hull tool places a point where each click meets a brush, or the ground,
   on the grid, and Return makes the convex brush around them with the current texture
   (`map.brush_hull`), as TrenchBroom's complex shape tool; Escape clears the points.

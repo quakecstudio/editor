@@ -3305,20 +3305,75 @@ fn the_hull_tool_makes_a_brush_of_the_points_clicked() {
     harness.get_by_label(Text::MapToolHull.get()).click();
     harness.run();
     let view = harness.get_by_label(Text::MapEditorView.get()).rect();
-    let at = |x: f32, y: f32| egui::pos2(view.left() + view.width() * x, view.top() + view.height() * y);
+    let at = |x: f32, y: f32| {
+        egui::pos2(
+            view.left() + view.width() * x,
+            view.top() + view.height() * y,
+        )
+    };
     // Three on the floor, below the middle of the view.
     for point in [at(0.3, 0.85), at(0.7, 0.85), at(0.5, 0.95)] {
         click_at(&mut harness, point);
     }
     harness.key_press(egui::Key::Enter);
     harness.run();
-    assert_eq!(brush_count(&harness, 0), world, "three points make no brush");
+    assert_eq!(
+        brush_count(&harness, 0),
+        world,
+        "three points make no brush"
+    );
     // A fourth on the ceiling, above it.
     click_at(&mut harness, at(0.5, 0.05));
     harness.key_press(egui::Key::Enter);
     harness.run();
-    assert_eq!(brush_count(&harness, 0), world + 1, "{}", map_text(&harness));
+    assert_eq!(
+        brush_count(&harness, 0),
+        world + 1,
+        "{}",
+        map_text(&harness)
+    );
     let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("edit.undo", json!({})).unwrap();
+    harness.run();
+    assert_eq!(map_text(&harness), before);
+}
+
+// No spec statement: P7-08: TrenchBroom's extrude tool in the view: with a brush selected,
+// Shift and a drag on its face move the face along its normal, and with Cmd as well split off
+// a new brush; each one undoable edit
+#[test]
+fn shift_dragging_a_face_extrudes_or_splits_it() {
+    let dir = keep_copy("extrude-drag");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    outside_the_keep(&mut harness);
+    let before = map_text(&harness);
+    let world = brush_count(&harness, 0);
+    harness.get_by_label(Text::MapToolVertex.get()).click();
+    harness.run();
+    let at = drawn_at(&harness, 4);
+    click_at(&mut harness, at);
+    // The west wall, seen from outside: pull its face toward the camera.
+    drag(&mut harness, at, at + egui::vec2(0.0, 80.0), egui::Modifiers::SHIFT);
+    let extruded = map_text(&harness);
+    assert_ne!(extruded, before, "the face moved");
+    assert_eq!(brush_count(&harness, 0), world, "an extrusion adds no brush");
+    drag(
+        &mut harness,
+        at,
+        at + egui::vec2(0.0, 80.0),
+        egui::Modifiers::SHIFT | egui::Modifiers::COMMAND,
+    );
+    assert_eq!(brush_count(&harness, 0), world + 1, "a split adds one");
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("edit.undo", json!({})).unwrap();
     shell.execute("edit.undo", json!({})).unwrap();
     harness.run();
     assert_eq!(map_text(&harness), before);
