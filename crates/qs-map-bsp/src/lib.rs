@@ -229,6 +229,9 @@ pub enum Warning {
 pub enum CompileError {
     /// The map could not be read (MAP-1 to MAP-7).
     Map(QbspError),
+    /// `Bad animating texture <name>`: a `+` texture whose frame is not `0` to `9` or `A` to
+    /// `J` (QBSP-15.53).
+    BadAnimation(Vec<u8>),
     /// The map could not be read by the lossless parser (QBSP-14.1).
     Document(qs_map::MapError),
     /// `FindPlane: normalization error` (QBSP-2.3).
@@ -309,6 +312,9 @@ impl fmt::Display for CompileError {
             Self::TooManyHullPoints => f.write_str("MAX_HULL_POINTS"),
             Self::TooManyHullEdges => f.write_str("MAX_HULL_EDGES"),
             Self::NoValidBrushes => f.write_str("Entity with no valid brushes"),
+            Self::BadAnimation(name) => {
+                write!(f, "Bad animating texture {}", String::from_utf8_lossy(name))
+            }
             Self::MixedContents => f.write_str("Mixed face contents in leafnode"),
             Self::SubdivideFailed => f.write_str("SubdivideFace: didn't split the polygon"),
             Self::SplitFacePoints => f.write_str("SplitFace: numpoints > MAXEDGES"),

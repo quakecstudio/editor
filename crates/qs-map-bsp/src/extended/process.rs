@@ -443,6 +443,9 @@ pub(crate) fn compile(
     subdivide: f32,
 ) -> Result<Compiled, CompileError> {
     let map = load(file, Game::Quake);
+    if let Some(name) = map.texinfos.bad_animation() {
+        return Err(CompileError::BadAnimation(name.to_vec()));
+    }
     let occupants = Occupant::of(map.entities.iter().map(|e| e.origin).zip(&file.entities));
     let mut model_of: Vec<Option<usize>> = Vec::with_capacity(map.entities.len());
     let mut count = 0_usize;

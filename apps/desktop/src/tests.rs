@@ -3878,7 +3878,6 @@ fn outside_the_keep(harness: &mut Harness<'static, Option<App>>) {
         .as_mut()
         .unwrap()
         .shell
-        .map_editor_mut()
-        .set_camera(camera);
+        .set_map_camera(camera);
     harness.run();
 }

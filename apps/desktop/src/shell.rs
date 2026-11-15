@@ -1890,10 +1890,9 @@ impl Shell {
         &self.features.map.map_editor
     }
 
-    /// The map editor, to change, for tests.
-    #[cfg(test)]
-    pub(crate) const fn map_editor_mut(&mut self) -> &mut MapEditor {
-        &mut self.features.map.map_editor
+    /// Puts the map editor's 3D camera at `camera`, as a showcase or a script looks from.
+    pub const fn set_map_camera(&mut self, camera: Camera) {
+        self.features.map.map_editor.set_camera(camera);
     }
 
     /// Carries out what a dock region's panel asked for, after the frame drew it.

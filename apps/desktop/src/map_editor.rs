@@ -41,7 +41,7 @@ use crate::map_prefabs::{PrefabBrowser, PrefabDrag};
 use crate::map_profiles::{ProfileAction, ProfileView};
 use crate::map_review::{ReviewAction, ReviewView};
 use crate::map_scene::{ClassLook, Line, LinkView, SPAWNFLAGS, Scene, load_models, start_camera};
-use crate::map_shading::{ShadedView, TexturedFrom};
+use crate::map_shading::{ShadedView, TRIGGER, TexturedFrom};
 use crate::map_tools::{BrushAction, BrushTools, MapTool, PickMode};
 use crate::shell::name_field;
 use crate::strings::{Text, also_selected, panes_text};
@@ -361,6 +361,12 @@ pub struct MapEditor {
     /// The entities with brushes the textured and lit views draw as faces; the lines of the
     /// rest, such as an external map's instance, are still drawn over them.
     faced: BTreeSet<EntityIndex>,
+    /// The trigger entities, which the textured view leaves out.
+    triggers: BTreeSet<EntityIndex>,
+    /// The scene's brushes with a face the textured view leaves out, by their place in it: a
+    /// trigger's, or one with a clip, skip or hint face. Their edges stay drawn over the faces,
+    /// so they can be seen and picked.
+    outlined: Vec<usize>,
 }
 
 /// A hash of `set`, which changes when the set does.
@@ -463,8 +469,7 @@ impl MapEditor {
         self.camera.as_ref()
     }
 
-    /// Puts the 3D view's camera at `camera`, for tests that aim clicks from a fixed place.
-    #[cfg(test)]
+    /// Puts the 3D view's camera at `camera`: where a script or a test looks from.
     pub(crate) const fn set_camera(&mut self, camera: Camera) {
         self.camera = Some(camera);
     }
@@ -859,6 +864,16 @@ impl MapEditor {
             self.scene = Scene::build(document, &self.classes, &self.targeting, &mut load);
             self.scene_builds = self.scene_builds.wrapping_add(1);
             self.faced = self.scene.brushes.iter().map(|b| b.entity).collect();
+            // Triggers are left out of the textured view, as the game does not draw them.
+            self.triggers = document
+                .file()
+                .entities
+                .iter()
+                .enumerate()
+                .filter(|(_, e)| e.classname().is_some_and(|c| c.starts_with(TRIGGER)))
+                .map(|(index, _)| EntityIndex::new(index))
+                .collect();
+            self.outlined = self.scene.outlined(&self.triggers);
             self.built = Some(built);
             let count = document.file().entities.len();
             self.also.retain(|entity| entity.get() < count);
@@ -870,15 +885,16 @@ impl MapEditor {
         }
         let hidden: BTreeSet<EntityIndex> = self.hidden.union(&self.kept_out.0).copied().collect();
         // P7-13: the textured or lit mesh, made from the scene just built, without the hidden.
+        let unseen: BTreeSet<EntityIndex> = hidden.union(&self.triggers).copied().collect();
         let from = TexturedFrom {
             scene: self.scene_builds,
-            hidden: hash_of(&hidden),
+            hidden: hash_of(&unseen),
             sources: self.textures.loads(),
         };
         self.shaded.refresh(
             (shading, state),
             document,
-            (&self.scene, from, &hidden),
+            (&self.scene, from, &unseen),
             self.textures.sources(),
         );
         let camera = self
@@ -1121,6 +1137,11 @@ impl MapEditor {
         let world = Stroke::new(1.0, theme.color(Token::TextFaint));
         for (owner, line) in &self.scene.lines {
             if !(faces && self.faced.contains(owner)) && !hidden.contains(owner) {
+                projection.line(&painter, *line, world);
+            }
+        }
+        if faces {
+            for line in self.scene.outlined_lines(&self.outlined, hidden) {
                 projection.line(&painter, *line, world);
             }
         }
