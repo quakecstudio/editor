@@ -56,7 +56,8 @@ pub use qc_project::{Dialect, FsLoader, Loader, Target};
 // The map seam's types, for the workbench's own modules; dependants import them from
 // qs_map_edit.
 use qs_map_edit::{
-    EntityCheck, EntityProblem, GameFolders, HasMap, LiveMap, MapEditError, MapProject, MapStore,
+    EntityCheck, EntityIndex, EntityProblem, GameFolders, HasMap, LiveMap, MapEditError,
+    MapProject, MapStore,
 };
 
 pub use crate::build::{Gravity, ModuleBuilt, Reported};
@@ -812,9 +813,15 @@ pub enum WorkbenchError {
     },
     /// A map command could not open, change or save the open map.
     MapEdit(MapEditError),
-    /// A region compile's region has no volume, or the entities it names are in no room with
-    /// brushes (MAP-16.1).
+    /// A region compile's box has no volume, or its rooms no brushes (MAP-16.1).
     NoRegion,
+    /// A region compile names an entity that is in no room (MAP-16.5).
+    NotInRoom {
+        /// The entity.
+        entity: EntityIndex,
+    },
+    /// Play from here with a region puts the player outside it (MAP-16.5).
+    EyeOutsideRegion,
     /// A region's sealing brushes could not be written (MAP-16.3).
     RegionSeal(qs_map::BrushError),
 }
@@ -871,9 +878,15 @@ impl fmt::Display for WorkbenchError {
             Self::MapLump { path, error } => write!(f, "{}: {error}", path.display()),
             Self::Spawn { path, error } => write!(f, "{}: {error}", path.display()),
             Self::MapEdit(error) => error.fmt(f),
-            Self::NoRegion => f.write_str(
-                "the region has no volume: give a box, or entities in rooms with brushes",
+            Self::NoRegion => f.write_str("the region has no volume"),
+            Self::NotInRoom { entity } => write!(
+                f,
+                "entity {} is in no layer or group, so it names no room",
+                entity.get()
             ),
+            Self::EyeOutsideRegion => {
+                f.write_str("the camera is outside the region: play from inside it")
+            }
             Self::RegionSeal(error) => write!(f, "the region's seal: {error}"),
         }
     }
@@ -907,7 +920,7 @@ impl Error for WorkbenchError {
             Self::MapLight { error } => Some(error),
             Self::MapLump { error, .. } => Some(error),
             Self::Spawn { error, .. } => Some(error),
-            Self::NoRegion => None,
+            Self::NoRegion | Self::NotInRoom { .. } | Self::EyeOutsideRegion => None,
             Self::RegionSeal(error) => Some(error),
         }
     }

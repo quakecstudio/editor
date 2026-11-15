@@ -13,7 +13,8 @@ use std::path::{Path, PathBuf};
 
 use qs_bsp::{Bsp, BspLoader};
 use qs_commands::{Command, NoParams, Outcome};
-use qs_map_bsp::{Compiled, Compiler};
+use qs_map::qbsp::QbspWarning;
+use qs_map_bsp::{Compiled, Compiler, Warning};
 use qs_map_light::{Light, Sampling};
 use qs_sim::DEFAULT_VIEWHEIGHT;
 use qs_sim::collision::{CONTENTS_SOLID, HullSet};
@@ -58,10 +59,16 @@ impl<L: crate::Loader> Workbench<L> {
                 .iter()
                 .find_map(|dir| std::fs::read(dir.join(name)).ok())
         };
+        // The region's rooms are named by their places in the map as the editor holds it, before
+        // its omitted layers are taken out.
+        let region = region
+            .map(|region| region.of(document.file()))
+            .transpose()?;
         let mut file = document.file().without_omitted_layers();
-        if let Some(region) = region {
+        // The seal's `skip` is not the map's: a WAD with no `skip` is not reported for it.
+        let seal_only = region.is_some() && !uses_texture(&file, SEAL_TEXTURE);
+        if let Some(region) = &region {
             file = region
-                .of(&file)?
                 .cut(&file, &CompileRegion::seal())
                 .map_err(WorkbenchError::RegionSeal)?;
         }
@@ -86,9 +93,15 @@ impl<L: crate::Loader> Workbench<L> {
             1 => found.pop().map(|(_, bytes)| bytes),
             _ => Some(merged(&found)?),
         };
-        let compiled = compiler
+        let mut compiled = compiler
             .compile_with_externals(&text, wad.as_deref(), &mut load)
             .map_err(failed)?;
+        if seal_only {
+            compiled.warnings.retain(|warning| {
+                !matches!(warning, Warning::Map(QbspWarning::TextureNotFound { name })
+                    if name.as_slice() == SEAL_TEXTURE)
+            });
+        }
         let report = MapReport::of(&compiled, missing_wads);
         let path = document.path().to_path_buf();
         if region.is_none() {
@@ -121,8 +134,9 @@ impl CompileRegion {
     ///
     /// # Errors
     ///
-    /// [`MapEditError::NoEntity`] for an entity past the map's, and
-    /// [`WorkbenchError::NoRegion`] for a region with no volume.
+    /// [`MapEditError::NoEntity`] for an entity past the map's,
+    /// [`WorkbenchError::NotInRoom`] for one in no room, and [`WorkbenchError::NoRegion`] for a
+    /// region with no volume.
     fn of(&self, file: &qs_map::MapFile) -> Result<Region, WorkbenchError> {
         let region = match self {
             Self::Box { min, max } => Region::new(*min, *max),
@@ -134,7 +148,8 @@ impl CompileRegion {
                         .entities
                         .get(entity.get())
                         .ok_or(WorkbenchError::MapEdit(MapEditError::NoEntity { entity }))?;
-                    around.extend(rooms.of(found).first().copied());
+                    let room = rooms.of(found).first().copied();
+                    around.push(room.ok_or(WorkbenchError::NotInRoom { entity })?);
                 }
                 Region::of_rooms(around)
             }
@@ -147,7 +162,7 @@ impl CompileRegion {
     /// ends.
     fn seal() -> Surface {
         Surface {
-            texture: b"skip".to_vec(),
+            texture: SEAL_TEXTURE.to_vec(),
             texdef: TexDef::Standard {
                 shift: [0.0; 2],
                 rotate: 0.0,
@@ -155,6 +170,24 @@ impl CompileRegion {
             },
         }
     }
+}
+
+/// The texture a region is sealed with (MAP-16.4).
+const SEAL_TEXTURE: &[u8] = b"skip";
+/// What a region compile's files are named after, beside the map: `<map>-region.bsp`, so the
+/// whole map's compile is not written over (MAP-16.5).
+const REGION_SUFFIX: &str = "-region";
+
+/// Whether any face of `file` names `texture`, in any case.
+fn uses_texture(file: &qs_map::MapFile, texture: &[u8]) -> bool {
+    file.entities.iter().any(|entity| {
+        entity.brushes().any(|brush| {
+            brush
+                .faces
+                .iter()
+                .any(|face| face.texture().eq_ignore_ascii_case(texture))
+        })
+    })
 }
 
 /// One WAD of the texture lumps of `wads`, each a path and its bytes, in order, the first of
@@ -242,6 +275,15 @@ impl<C: HasPreview + 'static> Command<C> for MapCompile {
         let game = preview.game_base_path();
         let (compiled, mut report, path) =
             workbench.compile_map(game.as_deref(), params.region.as_ref())?;
+        let path = if params.region.is_some() {
+            let stem = path
+                .file_stem()
+                .map(|stem| stem.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            path.with_file_name(format!("{stem}{REGION_SUFFIX}.map"))
+        } else {
+            path
+        };
         let files = [
             ("bsp", Some(&compiled.bsp)),
             ("prt", compiled.portal_file.as_ref()),
@@ -403,6 +445,17 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
         params: PlayFromHereParams,
     ) -> Result<Outcome<PlayedHere, C>, PreviewError> {
         let (workbench, preview) = context.workbench_and_preview();
+        // A region the camera is outside would put the player in the seal: refused before
+        // anything is compiled or written.
+        if let Some(region) = &params.region {
+            let document = workbench
+                .map()
+                .ok_or(PreviewError::Build(WorkbenchError::NoMap))?;
+            let region = region.of(document.file()).map_err(PreviewError::Build)?;
+            if !region.holds(params.eye) {
+                return Err(PreviewError::Build(WorkbenchError::EyeOutsideRegion));
+            }
+        }
         let game = preview.game_base_path();
         let (compiled, report, path) = workbench
             .compile_map(game.as_deref(), params.region.as_ref())

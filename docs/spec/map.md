@@ -730,8 +730,14 @@ part of the map being worked on, sealed. Implemented by `qs_map::Region`.
   region's, a brush that only touches its faces included. The map cut to a region keeps the
   world's key-values and its brushes in the region, and every other entity that has a brush in
   the region, or that has no brush and whose origin (MAP-2.7) lies in the region, edges
-  included; each entity is kept whole, with its key-values and brushes, and in its order, so the
-  world stays the first.
+  included. It also keeps each player start, an entity whose classname starts with
+  `info_player`, since the progs let the player in only at one; one outside the region, which
+  would be in the void past the seal, is moved to the region's middle. Nothing else outside is
+  kept, a target of a kept entity included; in id 1.01 a missing target does not stop the
+  map from spawning: `func_train_find` (`plats.qc`) finds the world for a missing path, and
+  `teleport_touch` (`triggers.qc`) stops with `couldn't find target` only when touched. Each
+  entity is kept whole, with
+  its key-values and brushes, and in its order, so the world stays the first.
 - **MAP-16.3** The cut map is sealed by six world brushes, each 16 units thick, against the
   region's six faces from outside, each reaching 16 units past the region on the other two axes
   so the corners close, painted with the surface given. Nothing inside the region reaches the
@@ -740,8 +746,11 @@ part of the map being worked on, sealed. Implemented by `qs_map::Region`.
   but keeps solid (QBSP-15.23): the cut adds no face and no lightmap, and the player sees the
   void where the region ends, as a region's nodraw brushes show in GtkRadiant.
 - **MAP-16.5** `map.compile` and `map.play_from_here` take an optional `region`: `rooms`, a list of
-  entities, whose region is the box around the innermost room each is or is in (MAP-9.4), or
-  `box`, a least and a greatest corner. With no region the whole map compiles. A region with no
-  volume, or entities in no room with brushes, is refused, and an entity past the map's is
-  named. A region compile's report is not kept as the map's (P6-20).
+  entities by their places in the map as the editor holds it, whose region is the box around
+  the innermost room each is or is in (MAP-9.4), or `box`, a least and a greatest corner. With
+  no region the whole map compiles. A box with no volume is refused; so is an entity in no room,
+  or past the map's, each named. A region `map.compile` writes `<map>-region.bsp` and its portal
+  and leak files beside the map, so the whole map's are kept, and its report is not kept as the
+  map's (P6-20). `map.play_from_here` with a region the camera is outside is refused before
+  anything compiles, since the player would be in the seal.
 

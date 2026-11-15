@@ -5,7 +5,17 @@
 
 use crate::brush_edit::{BrushError, Surface};
 use crate::document::{Brush, Entity, Item, MapFile};
-use crate::rooms::Room;
+use crate::rooms::{Room, grow};
+
+/// The start of the player starts' classnames, `info_player_start` and the rest.
+const PLAYER_START: &[u8] = b"info_player";
+impl Entity {
+    /// Whether it is a player start, its classname starting with `info_player`.
+    fn is_player_start(&self) -> bool {
+        self.classname()
+            .is_some_and(|class| class.starts_with(PLAYER_START))
+    }
+}
 
 /// The thickness of the brushes that seal a cut map (MAP-16.3).
 const SEAL: f64 = 16.0;
@@ -36,19 +46,7 @@ impl Region {
     pub fn of_rooms<'a>(rooms: impl IntoIterator<Item = &'a Room>) -> Option<Self> {
         let mut around: Option<[[f64; 3]; 2]> = None;
         for [min, max] in rooms.into_iter().filter_map(|room| room.bounds) {
-            let [mut lo, mut hi] = around.unwrap_or([min, max]);
-            for axis in 0..AXES {
-                if let (Some(l), Some(h), Some(&a), Some(&b)) = (
-                    lo.get_mut(axis),
-                    hi.get_mut(axis),
-                    min.get(axis),
-                    max.get(axis),
-                ) {
-                    *l = l.min(a);
-                    *h = h.max(b);
-                }
-            }
-            around = Some([lo, hi]);
+            around = Some(grow(Some(grow(around, min)), max));
         }
         around.and_then(|[min, max]| Self::new(min, max))
     }
@@ -90,8 +88,8 @@ impl Region {
         })
     }
 
-    /// Whether `entity`, not the world, is kept in the cut map (MAP-16.2).
-    fn keeps(&self, entity: &Entity) -> bool {
+    /// Whether `entity`, not the world, is in the region (MAP-16.2).
+    fn reaches(&self, entity: &Entity) -> bool {
         if entity.has_brushes() {
             entity.brushes().any(|brush| self.has(brush))
         } else {
@@ -105,24 +103,58 @@ impl Region {
     ///
     /// [`BrushError`] when a sealing brush cannot be written with `surface`.
     pub fn cut(&self, file: &MapFile, surface: &Surface) -> Result<MapFile, BrushError> {
-        let mut cut = file.clone();
-        let mut entities = core::mem::take(&mut cut.entities).into_iter();
-        let mut kept = Vec::new();
-        if let Some(mut world) = entities.next() {
-            world.items.retain(|item| match item {
-                Item::Brush(brush) => self.has(brush),
-                Item::Pair(_) => true,
-            });
-            for [min, max] in self.seals() {
-                world
-                    .items
-                    .push(Item::Brush(Brush::cuboid(min, max, surface)?));
+        let kept = self.kept(file);
+        // A new file of what is kept, not a clone of the whole map: the cut is for the
+        // compiler, which reads no layout.
+        let mut cut = MapFile::new();
+        for (index, entity) in file.entities.iter().enumerate() {
+            if index == 0 {
+                let mut world = Entity::default();
+                for item in &entity.items {
+                    let keep = match item {
+                        Item::Brush(brush) => self.has(brush),
+                        Item::Pair(_) => true,
+                    };
+                    if keep {
+                        world.items.push(item.clone());
+                    }
+                }
+                for [min, max] in self.seals() {
+                    world
+                        .items
+                        .push(Item::Brush(Brush::cuboid(min, max, surface)?));
+                }
+                cut.entities.push(world);
+            } else if kept.get(index).copied().unwrap_or(false) {
+                let mut entity = entity.clone();
+                // A player start outside the region would be in the void, outside the seal.
+                if entity.is_player_start() && !self.holds(entity.origin()) {
+                    let [x, y, z] = self.centre();
+                    entity.set(b"origin", format!("{x} {y} {z}").as_bytes())?;
+                }
+                cut.entities.push(entity);
             }
-            kept.push(world);
         }
-        kept.extend(entities.filter(|entity| self.keeps(entity)));
-        cut.entities = kept;
         Ok(cut)
+    }
+
+    /// Which of `file`'s entities the cut keeps (MAP-16.2): each in the region, and each player
+    /// start, which the progs need to let the player in.
+    fn kept(&self, file: &MapFile) -> Vec<bool> {
+        file.entities
+            .iter()
+            .enumerate()
+            .map(|(index, entity)| index == 0 || self.reaches(entity) || entity.is_player_start())
+            .collect()
+    }
+
+    /// Its middle.
+    fn centre(&self) -> [f64; 3] {
+        let mut centre = self.min;
+        for (c, hi) in centre.iter_mut().zip(self.max) {
+            *c = f64::midpoint(*c, hi);
+        }
+        centre
     }
 
     /// The six sealing boxes, `[min, max]`, against each face from outside and reaching past

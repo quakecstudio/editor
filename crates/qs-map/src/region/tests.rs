@@ -213,3 +213,37 @@ fn a_cut_is_sealed_on_six_sides() {
             .all(|f| f.texture() == b"wall")
     );
 }
+
+// spec MAP-16.2: the cut keeps each player start, one outside the region moved to its middle, and
+// leaves out what lies outside, a target included
+#[test]
+fn a_cut_keeps_the_player_start_inside() {
+    let text = [
+        entity("worldspawn", &[], &cube([0, 0, 0], [128, 128, 16])),
+        entity("info_player_start", &[("origin", "900 900 24")], ""),
+        entity("info_player_deathmatch", &[("origin", "32 32 24")], ""),
+        entity(
+            "func_train",
+            &[("target", "p1")],
+            &cube([16, 16, 16], [32, 32, 48]),
+        ),
+        entity(
+            "path_corner",
+            &[("targetname", "p1"), ("origin", "800 0 0")],
+            "",
+        ),
+    ]
+    .concat();
+    let cut = region()
+        .cut(&MapFile::parse(text.as_bytes()).unwrap(), &wall())
+        .unwrap();
+    assert_eq!(
+        names(&cut),
+        [
+            "worldspawn ",
+            "info_player_start 64 64 32",
+            "info_player_deathmatch 32 32 24",
+            "func_train ",
+        ]
+    );
+}

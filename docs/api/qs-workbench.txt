@@ -978,6 +978,7 @@ variant qs_workbench::CheckAfterTyping::OnTheFrame
 variant qs_workbench::EntryKind::Directory
 variant qs_workbench::EntryKind::File
 variant qs_workbench::WorkbenchError::Checkpoint
+variant qs_workbench::WorkbenchError::EyeOutsideRegion
 variant qs_workbench::WorkbenchError::Map
 variant qs_workbench::WorkbenchError::MapCompile
 variant qs_workbench::WorkbenchError::MapEdit
@@ -991,6 +992,7 @@ variant qs_workbench::WorkbenchError::NoMapSource
 variant qs_workbench::WorkbenchError::NoProject
 variant qs_workbench::WorkbenchError::NoRegion
 variant qs_workbench::WorkbenchError::NotBuilt
+variant qs_workbench::WorkbenchError::NotInRoom
 variant qs_workbench::WorkbenchError::Offset
 variant qs_workbench::WorkbenchError::Pattern
 variant qs_workbench::WorkbenchError::PortalFile
