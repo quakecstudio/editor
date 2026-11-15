@@ -61,7 +61,7 @@ Tests are named `crate-or-app path::test`; `desktop` is `apps/desktop/src`, `map
 | Focus on selection | Choosing an outline row frames the entity | `desktop tests::focus_frames_the_selection_and_escape_clears_it`, `map_scene::tests::the_selection_s_box_holds_its_entities_and_brushes` | Same: Cmd+U frames every selected entity and brush |
 | Move camera to a position | The camera's x, y and z in the Properties panel, always shown | `desktop tests::focus_frames_the_selection_and_escape_clears_it` | Beyond: the position is shown as it moves |
 | 2D views pan and zoom; linked 2D views | Pan and zoom in each 2D pane | `desktop map_panes` tests | Gap G7: 2D views are not linked |
-| FOV setting and temporary zoom | None | none | Gap G6 |
+| FOV setting and temporary zoom | `view.map_camera` field of view, 50 to 150 as TrenchBroom's slider; Shift+wheel zooms, Reset zoom puts it back | `desktop tests::the_camera_settings_reach_the_3d_view`, `qs-layout map_camera::tests` | Same; the reset is a button, as Ctrl+Alt+Z undoes here |
 
 ## Selection
 
@@ -139,7 +139,7 @@ Tests are named `crate-or-app path::test`; `desktop` is `apps/desktop/src`, `map
 | --- | --- | --- | --- |
 | Game configuration: game path | Install detection, the game folder setting | `qs-install` tests | Same |
 | View layout and rendering | `view.map_panes`, shading | `qs-layout` tests | Same |
-| Mouse input preferences | None | none | Gap G6 |
+| Mouse input preferences | Look, pan and fly speeds, inverted look and wheel (`view.map_camera`) | `desktop tests::the_camera_settings_reach_the_3d_view` | Same |
 | Keyboard shortcuts, rebindable | TrenchBroom's defaults | `desktop keymap` tests | Same: a keymap file rebinds |
 
 ## Advanced topics
@@ -177,7 +177,6 @@ To close before #823 does:
 | Gap | What TrenchBroom's manual has that we lack |
 | --- | --- |
 | G1 | Entity models drawn textured, not as wireframes |
-| G6 | The 3D view's field of view, a temporary zoom, and mouse preferences |
 | G7 | Two- and three-pane layouts, a highlight on the focused pane, linked 2D views |
 | G8 | Selection drilling; select all, touching, inside, tall, siblings; invert; deselect all; 2D picking by candidates |
 | G11 | Axis restriction while moving |

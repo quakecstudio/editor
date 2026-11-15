@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use eframe::egui::{self};
 use qs_layout::{
-    MAP_GRID, MAP_PANES, MAP_SHADING, MapGridParams, MapPanesParams, MapShadingParams,
+    MAP_CAMERA, MAP_GRID, MAP_PANES, MAP_SHADING, MapGridParams, MapPanesParams, MapShadingParams,
 };
 use qs_map_edit::backup::{Backup, MAP_BACKUP, MAP_BACKUPS, MAP_RESTORE_BACKUP, RestoreParams};
 use qs_map_edit::texture_import::{TEXTURE_IMPORT, TextureImportParams};
@@ -55,7 +55,7 @@ use qs_workbench::map_profile::{
 
 use crate::entities::{Outliner, Properties};
 use crate::features::{Commands, ShellRequest};
-use crate::map_editor::{DiskNotice, MapAction, MapEditor, ShowFilter};
+use crate::map_editor::{DiskNotice, MapAction, MapEditor, ShowFilter, ViewSetting};
 use crate::map_groups::GroupAction;
 use crate::map_profiles::ProfileAction;
 use crate::map_review::ReviewAction;
@@ -330,11 +330,7 @@ impl MapFeature {
                 MapAction::MoveTo(entity, into) => {
                     commands.attempt(MAP_MOVE_TO, &MoveToParams { entity, into })
                 }
-                MapAction::Panes(panes) => commands.attempt(MAP_PANES, &MapPanesParams { panes }),
-                MapAction::Shading(shading) => {
-                    commands.attempt(MAP_SHADING, &MapShadingParams { shading })
-                }
-                MapAction::Grid(size) => commands.attempt(MAP_GRID, &MapGridParams { size }),
+                MapAction::View(setting) => Self::view_setting(commands, setting),
                 MapAction::ImportTexture(path, name, dither) => {
                     let imported = commands.attempt(
                         TEXTURE_IMPORT,
@@ -635,6 +631,21 @@ impl MapFeature {
             self.requests.push(ShellRequest::OpenGameGuide);
         }
         played
+    }
+
+    /// Runs a change of how the map view looks, a `view.*` command of the layout.
+    fn view_setting(
+        commands: &mut Commands<'_>,
+        setting: ViewSetting,
+    ) -> Result<serde_json::Value, ShellError> {
+        match setting {
+            ViewSetting::Panes(panes) => commands.attempt(MAP_PANES, &MapPanesParams { panes }),
+            ViewSetting::Shading(shading) => {
+                commands.attempt(MAP_SHADING, &MapShadingParams { shading })
+            }
+            ViewSetting::Grid(size) => commands.attempt(MAP_GRID, &MapGridParams { size }),
+            ViewSetting::Camera(params) => commands.attempt(MAP_CAMERA, &params),
+        }
     }
 
     /// Runs a brush edit as its `map.brush_*` command, on the commands' grid.

@@ -2238,12 +2238,132 @@ fn alt_right_drag_orbits_and_right_drag_looks() {
     let before = camera(&harness);
     drag(&mut harness, egui::Modifiers::NONE);
     let looked = camera(&harness);
-    assert_eq!(looked.origin, before.origin, "a look turns where the camera stands");
+    assert_eq!(
+        looked.origin, before.origin,
+        "a look turns where the camera stands"
+    );
     assert!((looked.yaw.get() - before.yaw.get()).abs() > 1.0);
     drag(&mut harness, egui::Modifiers::ALT);
     let orbited = camera(&harness);
-    assert_ne!(orbited.origin, looked.origin, "an orbit swings the camera about a point");
+    assert_ne!(
+        orbited.origin, looked.origin,
+        "an orbit swings the camera about a point"
+    );
     assert!((orbited.yaw.get() - looked.yaw.get()).abs() > 1.0);
+}
+
+// No spec statement: P7-08: the camera settings reach the 3D view: its field of view is the
+// one set, Shift and the wheel narrow it for now and Reset zoom widens it back, an inverted look
+// tilts the other way, and the Properties panel's Camera settings hold the controls; Reset zoom
+// shows while the view is zoomed
+#[test]
+fn the_camera_settings_reach_the_3d_view() {
+    let dir = keep_copy("camera");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    shell
+        .execute("view.map_camera", json!({ "fov": 120 }))
+        .unwrap();
+    harness.run();
+    let camera = |harness: &Harness<'static, Option<App>>| {
+        *harness
+            .state()
+            .as_ref()
+            .unwrap()
+            .shell()
+            .map_editor()
+            .camera()
+            .unwrap()
+    };
+    assert!((camera(&harness).fov_x.get() - 120.0).abs() < 1e-4);
+    let view = harness.get_by_label(Text::MapEditorView.get()).rect();
+    harness.get_by_label(Text::MapEditorView.get()).click();
+    harness.hover_at(view.center());
+    for _ in 0..10 {
+        harness.event_modifiers(
+            egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, 100.0),
+                phase: egui::TouchPhase::Move,
+                modifiers: egui::Modifiers::SHIFT,
+            },
+            egui::Modifiers::SHIFT,
+        );
+        harness.step();
+    }
+    harness.run();
+    let zoomed = camera(&harness);
+    assert!(zoomed.fov_x.get() < 120.0, "{}", zoomed.fov_x.get());
+    harness.get_by_label(Text::MapResetZoom.get()).click();
+    harness.run();
+    assert!((camera(&harness).fov_x.get() - 120.0).abs() < 1e-4);
+    assert!(harness.query_by_label(Text::MapResetZoom.get()).is_none());
+    let tilt = |harness: &mut Harness<'static, Option<App>>| {
+        let before = camera(harness).pitch.get();
+        let from = view.center();
+        harness.event(egui::Event::PointerMoved(from));
+        harness.event(egui::Event::PointerButton {
+            pos: from,
+            button: egui::PointerButton::Secondary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        });
+        harness.step();
+        for step in [10.0, 20.0, 30.0, 40.0] {
+            harness.event(egui::Event::PointerMoved(egui::pos2(from.x, from.y + step)));
+            harness.step();
+        }
+        harness.event(egui::Event::PointerButton {
+            pos: egui::pos2(from.x, from.y + 40.0),
+            button: egui::PointerButton::Secondary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        harness.run();
+        camera(harness).pitch.get() - before
+    };
+    let normal = tilt(&mut harness);
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("view.map_camera", json!({ "look_vertical": "inverted" }))
+        .unwrap();
+    harness.run();
+    let inverted = tilt(&mut harness);
+    assert!(normal.abs() > 1.0 && (normal + inverted).abs() < 1e-3, "{normal} {inverted}");
+    harness
+        .get_by_label(Text::MapCameraSettings.get())
+        .click();
+    harness.run();
+    for control in [
+        Text::MapCameraFov,
+        Text::MapCameraLookSpeed,
+        Text::MapCameraPanSpeed,
+        Text::MapCameraFlySpeed,
+        Text::MapCameraInvertLook,
+        Text::MapCameraInvertWheel,
+    ] {
+        assert!(
+            harness
+                .query_all_by_label_contains(control.get())
+                .next()
+                .is_some(),
+            "{}",
+            control.get()
+        );
+    }
+    harness.get_by_label(Text::MapCameraInvertWheel.get()).click();
+    harness.run();
+    let shell = harness.state().as_ref().unwrap().shell();
+    assert_eq!(
+        shell.layout().map_camera.wheel,
+        qs_layout::Direction::Inverted
+    );
 }
 
 /// Drags with the primary button from `from` to `to` in steps, holding `modifiers`.

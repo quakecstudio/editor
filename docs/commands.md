@@ -181,6 +181,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`view.focus_editor`](#viewfocus_editor) | Gives the keyboard to the editor in the centre. |
 | [`view.focus_left_panel`](#viewfocus_left_panel) | Shows the left panel, Project and Entities, if it is hidden and gives it the keyboard. |
 | [`view.focus_right_panel`](#viewfocus_right_panel) | Shows the right panel, Properties and the agent, if it is hidden and gives it the keyboard. |
+| [`view.map_camera`](#viewmap_camera) | Sets the map editor's camera: the 3D view's field of view, 50 to 150 degrees, how fast the mouse and keys move it, 0.1 to 10 times, and which way a vertical look and the wheel go. Settings not given are kept. |
 | [`view.map_grid`](#viewmap_grid) | Sets the map editor's grid in units, a power of two from 0.125 to 256. |
 | [`view.map_grid_step`](#viewmap_grid_step) | Halves or doubles the map editor's grid, held to 0.125 to 256 units. |
 | [`view.map_panes`](#viewmap_panes) | Splits the map view: the 3D view alone, with a top view in its corner, or beside top, front and side views. |
@@ -7431,6 +7432,123 @@ Parameters:
   "additionalProperties": false,
   "description": "The command takes no parameters: pass the empty object {}.",
   "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.map_camera`
+
+Sets the map editor's camera: the 3D view's field of view, 50 to 150 degrees, how fast the mouse and keys move it, 0.1 to 10 times, and which way a vertical look and the wheel go. Settings not given are kept.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "CameraSpeed": {
+      "description": "How fast the camera moves, as a factor of the editor's own speed: 1 is that speed.",
+      "format": "float",
+      "type": "number"
+    },
+    "Direction": {
+      "description": "Which way a mouse movement moves the camera.",
+      "oneOf": [
+        {
+          "const": "normal",
+          "description": "The ordinary way: up looks up, the wheel away travels forward.",
+          "type": "string"
+        },
+        {
+          "const": "inverted",
+          "description": "The other way, as TrenchBroom's Invert settings.",
+          "type": "string"
+        }
+      ]
+    },
+    "MapFov": {
+      "description": "The 3D view's field of view across, in degrees.",
+      "format": "float",
+      "type": "number"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `view.map_camera`: the settings to change, the rest kept.",
+  "properties": {
+    "fly_speed": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CameraSpeed"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "How fast the keys fly it."
+    },
+    "fov": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MapFov"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The 3D view's field of view, 50 to 150 degrees."
+    },
+    "look_speed": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CameraSpeed"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "How fast a right-drag turns the camera, 0.1 to 10 times the editor's speed."
+    },
+    "look_vertical": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Direction"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Which way a vertical right-drag tilts it."
+    },
+    "pan_speed": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CameraSpeed"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "How fast a middle-drag pans it."
+    },
+    "wheel": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Direction"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Which way the wheel travels it."
+    }
+  },
+  "title": "MapCameraParams",
   "type": "object"
 }
 ```

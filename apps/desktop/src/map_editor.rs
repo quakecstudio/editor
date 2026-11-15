@@ -15,7 +15,10 @@ use eframe::egui::{
     self, Color32, Key, Modifiers, Pos2, Rect, RichText, Sense, Stroke, Ui, WidgetInfo, WidgetType,
 };
 use eframe::egui_wgpu::RenderState;
-use qs_layout::{MapGrid, MapPanes, MapShading};
+use qs_layout::{
+    CameraSpeed, Direction, Layout, MapCamera, MapCameraParams, MapFov, MapGrid, MapPanes,
+    MapShading,
+};
 use qs_map_edit::ClassInfo;
 use qs_map_edit::MapReport;
 use qs_map_edit::texture_import::DitherChoice;
@@ -138,12 +141,8 @@ pub enum MapAction {
     Compare,
     /// Create, cut, reshape, subtract, merge or delete brushes (P6-08).
     Brush(BrushAction),
-    /// Split the map view into other panes (P6-09).
-    Panes(MapPanes),
-    /// Draw the 3D pane as lines, textured or lit (P7-13).
-    Shading(MapShading),
-    /// Snap to this grid (P7-08).
-    Grid(MapGrid),
+    /// Change how the map view looks: its panes, shading, grid or camera.
+    View(ViewSetting),
     /// Import the PNG at the path as a texture of the name (P6-16).
     ImportTexture(std::path::PathBuf, String, DitherChoice),
     /// Compile the map fast and play it with the player at the 3D view's camera (P6-12).
@@ -337,6 +336,10 @@ pub struct MapEditor {
     frame: Option<Framing>,
     /// The point an Alt+right-drag orbits the camera about, while it lasts (P7-08).
     orbit: Option<[f32; 3]>,
+    /// The camera settings, the layout's (P7-08).
+    camera_settings: MapCamera,
+    /// How far Shift and the wheel have zoomed the 3D view in (P7-08).
+    zoom: ViewZoom,
     /// Where each entity's centre was drawn in the last frame, where a link dragged from it
     /// starts.
     centres: Vec<(EntityIndex, Pos2)>,
@@ -681,9 +684,11 @@ impl MapEditor {
         ui: &mut Ui,
         theme: &Theme,
         document: &MapDocument,
-        (layout, shading, grid, state): (MapPanes, MapShading, MapGrid, Option<&RenderState>),
+        (settings, state): (&Layout, Option<&RenderState>),
     ) -> Vec<MapAction> {
-        self.tools.grid = grid;
+        let (layout, shading) = (settings.map_panes, settings.map_shading);
+        self.tools.grid = settings.map_grid;
+        self.camera_settings = settings.map_camera;
         // The tab's own width, which the toolbar wraps within and the view keeps to, so a long
         // toolbar never widens the view under the Properties panel.
         let bounds = ui.available_rect_before_wrap();
@@ -763,7 +768,7 @@ impl MapEditor {
             self.tools.toolbar(ui);
             ui.separator();
             if let Some(shading) = ShadedView::toolbar(ui, shading) {
-                actions.push(MapAction::Shading(shading));
+                actions.push(MapAction::View(ViewSetting::Shading(shading)));
             }
             ui.separator();
             // The pickers keep egui's combo width and cut a long choice short, so a row wraps
@@ -780,7 +785,7 @@ impl MapEditor {
                                 .selectable_label(layout == choice, panes_text(choice).get())
                                 .clicked()
                             {
-                                actions.push(MapAction::Panes(choice));
+                                actions.push(MapAction::View(ViewSetting::Panes(choice)));
                             }
                         }
                     });
@@ -800,7 +805,7 @@ impl MapEditor {
                                 .selectable_label(grid == choice, choice.to_string())
                                 .clicked()
                             {
-                                actions.push(MapAction::Grid(choice));
+                                actions.push(MapAction::View(ViewSetting::Grid(choice)));
                             }
                         }
                     });
@@ -1002,7 +1007,9 @@ impl MapEditor {
                 }
                 if response.dragged_by(egui::PointerButton::Secondary) {
                     let drag = response.drag_delta();
-                    let (yaw, pitch) = (Degrees::new(-drag.x * TURN), Degrees::new(-drag.y * TURN));
+                    let look = TURN * self.camera_settings.look_speed.factor();
+                    let tilt = look * self.camera_settings.look_vertical.sign();
+                    let (yaw, pitch) = (Degrees::new(-drag.x * look), Degrees::new(-drag.y * tilt));
                     match self.orbit {
                         Some(centre) => camera.orbit(centre, yaw, pitch),
                         None => camera.turn(yaw, pitch),
@@ -1013,9 +1020,27 @@ impl MapEditor {
                 }
                 if response.dragged_by(egui::PointerButton::Middle) {
                     let drag = response.drag_delta();
-                    camera.travel(0.0, -drag.x * PAN, drag.y * PAN);
+                    let pan = PAN * self.camera_settings.pan_speed.factor();
+                    camera.travel(0.0, -drag.x * pan, drag.y * pan);
                 }
-                camera.travel(scroll * TRAVEL, 0.0, 0.0);
+                // Shift and the wheel zoom the view for now, as TrenchBroom's; the wheel alone
+                // travels.
+                if ui.input(|i| i.modifiers.shift) {
+                    // egui turns a vertical scroll with Shift held into a horizontal one.
+                    let across = if response.hovered() {
+                        ui.input(|i| i.smooth_scroll_delta.x)
+                    } else {
+                        0.0
+                    };
+                    self.zoom = self.zoom.scrolled(scroll + across);
+                } else {
+                    camera.travel(
+                        scroll * TRAVEL * self.camera_settings.wheel.sign(),
+                        0.0,
+                        0.0,
+                    );
+                }
+                camera.fov_x = self.zoom.fov(self.camera_settings.fov);
                 Projection::perspective(*camera, area)
             }
             Pane::Plan(plan) => {
@@ -1051,7 +1076,7 @@ impl MapEditor {
                 ui.ctx().request_repaint();
             }
             if let Some(grid) = grid_key(ui, self.tools.grid) {
-                actions.push(MapAction::Grid(grid));
+                actions.push(MapAction::View(ViewSetting::Grid(grid)));
             }
             // The arrows move the selection, as TrenchBroom's do, not the keyboard focus, and
             // Escape cancels.
@@ -1070,7 +1095,7 @@ impl MapEditor {
             if pane == Pane::Perspective
                 && let Some(camera) = self.camera.as_mut()
             {
-                fly(ui, camera);
+                fly(ui, camera, self.camera_settings.fly_speed.factor());
                 if let Some(entity) = selected {
                     actions.extend(selection_keys(ui, camera, entity, self.tools.grid));
                 }
@@ -1367,8 +1392,16 @@ impl MapEditor {
                     name_field(ui, &field, name);
                     field.on_hover_text(Text::MapCameraHelp.get());
                 }
+                // TrenchBroom's Reset camera zoom is Ctrl+Alt+Z, which is undo here (Cmd+Z with
+                // an extra Alt), so the zoom is put back from here.
+                if self.zoom != ViewZoom::default()
+                    && ui.button(Text::MapResetZoom.get()).clicked()
+                {
+                    self.zoom = ViewZoom::default();
+                }
             });
         }
+        actions.extend(self.camera_settings_ui(ui));
         actions.extend(self.review.properties(ui, theme));
         actions.extend(self.profiles.controls(ui, theme));
         self.leaks.properties(ui, theme, report);
@@ -1548,7 +1581,7 @@ impl MapEditor {
 }
 
 /// Moves the camera while a fly key is held (TrenchBroom's `CameraFly*`).
-fn fly(ui: &Ui, camera: &mut Camera) {
+fn fly(ui: &Ui, camera: &mut Camera, speed: f32) {
     let (dt, keys) = ui.input(|i| {
         let held = |key| if i.key_down(key) { 1.0 } else { 0.0 };
         let forward = held(Key::W) - held(Key::S);
@@ -1557,7 +1590,7 @@ fn fly(ui: &Ui, camera: &mut Camera) {
         (i.stable_dt, [forward, right, up])
     });
     if keys.iter().any(|k: &f32| *k != 0.0) {
-        let step = FLY_SPEED * dt;
+        let step = FLY_SPEED * speed * dt;
         camera.travel(keys[0] * step, keys[1] * step, keys[2] * step);
         ui.ctx().request_repaint();
     }
@@ -1591,6 +1624,138 @@ const COMPASS_LABEL_LEAST: f32 = 4.0;
 
 /// The camera position fields' names, x, y and z.
 const CAMERA_AXES: [Text; 3] = [Text::MapCameraX, Text::MapCameraY, Text::MapCameraZ];
+
+impl MapEditor {
+    /// The camera settings under the camera's place, folded at first: the field of view, the
+    /// speeds and the directions, each change a `view.map_camera` (P7-08).
+    fn camera_settings_ui(&self, ui: &mut Ui) -> Option<MapAction> {
+        let now = self.camera_settings;
+        let mut asked = None;
+        egui::CollapsingHeader::new(Text::MapCameraSettings.get())
+            .id_salt(core::any::TypeId::of::<MapCamera>())
+            .show(ui, |ui| {
+                let mut fov = now.fov.degrees();
+                let slider = egui::Slider::new(&mut fov, MapFov::MIN..=MapFov::MAX)
+                    .text(Text::MapCameraFov.get());
+                if ui.add(slider).changed()
+                    && let Ok(fov) = MapFov::try_from(fov)
+                {
+                    asked = Some(MapCameraParams {
+                        fov: Some(fov),
+                        ..MapCameraParams::default()
+                    });
+                }
+                for (speed, text, set) in [
+                    (now.look_speed, Text::MapCameraLookSpeed, SpeedOf::Look),
+                    (now.pan_speed, Text::MapCameraPanSpeed, SpeedOf::Pan),
+                    (now.fly_speed, Text::MapCameraFlySpeed, SpeedOf::Fly),
+                ] {
+                    let mut factor = speed.factor();
+                    let slider =
+                        egui::Slider::new(&mut factor, CameraSpeed::MIN..=CameraSpeed::MAX)
+                            .logarithmic(true)
+                            .text(text.get());
+                    if ui.add(slider).changed()
+                        && let Ok(speed) = CameraSpeed::try_from(factor)
+                    {
+                        asked = Some(set.params(speed));
+                    }
+                }
+                for (direction, text, wheel) in [
+                    (now.look_vertical, Text::MapCameraInvertLook, false),
+                    (now.wheel, Text::MapCameraInvertWheel, true),
+                ] {
+                    let mut inverted = direction == Direction::Inverted;
+                    if ui.checkbox(&mut inverted, text.get()).changed() {
+                        let direction = if inverted {
+                            Direction::Inverted
+                        } else {
+                            Direction::Normal
+                        };
+                        asked = Some(if wheel {
+                            MapCameraParams {
+                                wheel: Some(direction),
+                                ..MapCameraParams::default()
+                            }
+                        } else {
+                            MapCameraParams {
+                                look_vertical: Some(direction),
+                                ..MapCameraParams::default()
+                            }
+                        });
+                    }
+                }
+            });
+        asked.map(|params| MapAction::View(ViewSetting::Camera(params)))
+    }
+}
+
+/// A change of how the map view looks, a `view.*` command of the layout.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ViewSetting {
+    /// Split the map view into other panes (P6-09).
+    Panes(MapPanes),
+    /// Draw the 3D pane as lines, textured or lit (P7-13).
+    Shading(MapShading),
+    /// Snap to this grid (P7-08).
+    Grid(MapGrid),
+    /// Change the camera settings (P7-08).
+    Camera(MapCameraParams),
+}
+
+/// Which of the camera's speeds a slider sets.
+#[derive(Clone, Copy, Debug)]
+enum SpeedOf {
+    /// A right-drag's turn.
+    Look,
+    /// A middle-drag's pan.
+    Pan,
+    /// The keys' flight.
+    Fly,
+}
+
+impl SpeedOf {
+    /// `view.map_camera`'s parameters setting this speed to `speed`.
+    fn params(self, speed: CameraSpeed) -> MapCameraParams {
+        let mut params = MapCameraParams::default();
+        match self {
+            Self::Look => params.look_speed = Some(speed),
+            Self::Pan => params.pan_speed = Some(speed),
+            Self::Fly => params.fly_speed = Some(speed),
+        }
+        params
+    }
+}
+
+/// How far Shift and the wheel have zoomed the 3D view in: a factor its field of view is
+/// divided by, 1 at first and again after Reset zoom (P7-08).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct ViewZoom(f32);
+
+impl ViewZoom {
+    /// The farthest in, eight times.
+    const MOST: f32 = 8.0;
+    /// The farthest out, the field of view as set.
+    const LEAST: f32 = 1.0;
+    /// How much a point of scroll zooms, as a power of e per point.
+    const RATE: f32 = 0.005;
+
+    /// Zoomed by `scroll` points: in for a positive one, held within 1 to 8 times.
+    fn scrolled(self, scroll: f32) -> Self {
+        Self((self.0 * (scroll * Self::RATE).exp()).clamp(Self::LEAST, Self::MOST))
+    }
+
+    /// The field of view across, `fov` narrowed by the zoom.
+    fn fov(self, fov: MapFov) -> Degrees {
+        Degrees::new(fov.degrees() / self.0)
+    }
+}
+
+impl Default for ViewZoom {
+    fn default() -> Self {
+        Self(Self::LEAST)
+    }
+}
 
 /// What the view frames on its next frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

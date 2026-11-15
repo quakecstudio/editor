@@ -83,7 +83,11 @@ it too.
   items and other entities can be.
 - **The camera (P7-08):** a right-drag looks and Alt+right-drag orbits about the point of the
   brush under the pointer where the drag began, or 256 units ahead when there is none, as
-  TrenchBroom's camera tool (`shouldOrbit`, `Camera::DefaultPointDistance`). Cmd+U frames the selection, every selected entity and brush, keeping
+  TrenchBroom's camera tool (`shouldOrbit`, `Camera::DefaultPointDistance`). Shift and the wheel
+  zoom the 3D view in for now; Reset zoom beside the camera's place puts it back (TrenchBroom's
+  Ctrl+Alt+Z is undo here). Camera settings, under the camera's place, set the field of view (50
+  to 150 degrees, 90 at first), the look, pan and fly speeds, and inverted look and wheel
+  (`view.map_camera`, kept in the layout). Cmd+U frames the selection, every selected entity and brush, keeping
   where the camera looks (TrenchBroom's Focus on Selection, Ctrl+U). The Properties panel shows
   the camera's x, y and z, and a value typed or dragged there moves it.
 - **Escape (P7-08):** in the view, Escape drops a drag in progress, else the Vertex tool's picked

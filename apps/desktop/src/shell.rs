@@ -1483,9 +1483,7 @@ impl Shell {
     /// Draws the map editor in the Map tab when a map is open, running what it asks for;
     /// whether it did.
     fn map_tab(&mut self, ui: &mut Ui) -> bool {
-        let panes = self.layout().map_panes;
-        let shading = self.layout().map_shading;
-        let grid = self.layout().map_grid;
+        let settings = *self.layout();
         let Some(document) = self.session.context().workbench.map() else {
             return false;
         };
@@ -1509,7 +1507,7 @@ impl Shell {
             .show(ui, |ui| {
                 let size = egui::vec2(ui.available_width(), height);
                 ui.allocate_ui(size, |ui| {
-                    editor.ui(ui, theme, document, (panes, shading, grid, state))
+                    editor.ui(ui, theme, document, (&settings, state))
                 })
                 .inner
             })

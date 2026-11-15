@@ -19,6 +19,13 @@ const qs_layout::editor::TOGGLE_OUTLINE
 const qs_layout::editor::TOGGLE_SOFT_WRAP
 const qs_layout::editor::UNFOLD
 const qs_layout::editor::UNFOLD_ALL
+const qs_layout::map_camera::CameraSpeed::DEFAULT
+const qs_layout::map_camera::CameraSpeed::MAX
+const qs_layout::map_camera::CameraSpeed::MIN
+const qs_layout::map_camera::MAP_CAMERA
+const qs_layout::map_camera::MapFov::DEFAULT
+const qs_layout::map_camera::MapFov::MAX
+const qs_layout::map_camera::MapFov::MIN
 const qs_layout::map_grid::MAP_GRID
 const qs_layout::map_grid::MAP_GRID_STEP
 const qs_layout::map_grid::MapGrid::COARSEST
@@ -40,6 +47,8 @@ enum qs_layout::editor::EditorRequest
 enum qs_layout::editor::Outline
 enum qs_layout::editor::SoftWrap
 enum qs_layout::editor::Split
+enum qs_layout::map_camera::Direction
+enum qs_layout::map_camera::MapCameraError
 enum qs_layout::map_grid::GridStep
 enum qs_layout::map_view::MapPanes
 enum qs_layout::map_view::MapShading
@@ -49,6 +58,7 @@ field qs_layout::Layout.editor_requests
 field qs_layout::Layout.focus
 field qs_layout::Layout.focus_requests
 field qs_layout::Layout.left
+field qs_layout::Layout.map_camera
 field qs_layout::Layout.map_grid
 field qs_layout::Layout.map_panes
 field qs_layout::Layout.map_shading
@@ -63,6 +73,18 @@ field qs_layout::ResizePanelParams.panel
 field qs_layout::ResizePanelParams.size
 field qs_layout::TogglePanelParams.panel
 field qs_layout::editor::GoToLineParams.line
+field qs_layout::map_camera::MapCamera.fly_speed
+field qs_layout::map_camera::MapCamera.fov
+field qs_layout::map_camera::MapCamera.look_speed
+field qs_layout::map_camera::MapCamera.look_vertical
+field qs_layout::map_camera::MapCamera.pan_speed
+field qs_layout::map_camera::MapCamera.wheel
+field qs_layout::map_camera::MapCameraParams.fly_speed
+field qs_layout::map_camera::MapCameraParams.fov
+field qs_layout::map_camera::MapCameraParams.look_speed
+field qs_layout::map_camera::MapCameraParams.look_vertical
+field qs_layout::map_camera::MapCameraParams.pan_speed
+field qs_layout::map_camera::MapCameraParams.wheel
 field qs_layout::map_grid::MapGridParams.size
 field qs_layout::map_grid::MapGridStepParams.step
 field qs_layout::map_view::MapPanesParams.panes
@@ -75,6 +97,9 @@ fn qs_layout::Layout::panel_mut
 fn qs_layout::Layout::read
 fn qs_layout::Layout::write
 fn qs_layout::layout_path
+fn qs_layout::map_camera::CameraSpeed::factor
+fn qs_layout::map_camera::Direction::sign
+fn qs_layout::map_camera::MapFov::degrees
 fn qs_layout::map_grid::MapGrid::all
 fn qs_layout::map_grid::MapGrid::coarser
 fn qs_layout::map_grid::MapGrid::finer
@@ -89,6 +114,12 @@ impl qs_layout::Layout: Default
 impl qs_layout::Layout: HasLayout
 impl qs_layout::LayoutError: Error
 impl qs_layout::LayoutError: fmt::Display
+impl qs_layout::map_camera::CameraSpeed: Default
+impl qs_layout::map_camera::CameraSpeed: TryFrom<f32>
+impl qs_layout::map_camera::MapCameraError: fmt::Display
+impl qs_layout::map_camera::MapCameraError: std::error::Error
+impl qs_layout::map_camera::MapFov: Default
+impl qs_layout::map_camera::MapFov: TryFrom<f32>
 impl qs_layout::map_grid::MapGrid: Default
 impl qs_layout::map_grid::MapGrid: TryFrom<f64>
 impl qs_layout::map_grid::MapGrid: fmt::Display
@@ -103,6 +134,10 @@ struct qs_layout::PanelState
 struct qs_layout::ResizePanelParams
 struct qs_layout::TogglePanelParams
 struct qs_layout::editor::GoToLineParams
+struct qs_layout::map_camera::CameraSpeed
+struct qs_layout::map_camera::MapCamera
+struct qs_layout::map_camera::MapCameraParams
+struct qs_layout::map_camera::MapFov
 struct qs_layout::map_grid::MapGrid
 struct qs_layout::map_grid::MapGridError
 struct qs_layout::map_grid::MapGridParams
@@ -114,6 +149,8 @@ struct qs_layout::zoom::ZoomError
 struct qs_layout::zoom::ZoomParams
 trait qs_layout::HasLayout
 use qs_layout::CLOSE_SPLIT = editor::CLOSE_SPLIT
+use qs_layout::CameraSpeed = map_camera::CameraSpeed
+use qs_layout::Direction = map_camera::Direction
 use qs_layout::EditorRequest = editor::EditorRequest
 use qs_layout::FOLD = editor::FOLD
 use qs_layout::FOLD_ALL = editor::FOLD_ALL
@@ -121,10 +158,15 @@ use qs_layout::GO_TO_LINE = editor::GO_TO_LINE
 use qs_layout::GO_TO_SYMBOL = editor::GO_TO_SYMBOL
 use qs_layout::GoToLineParams = editor::GoToLineParams
 use qs_layout::GridStep = map_grid::GridStep
+use qs_layout::MAP_CAMERA = map_camera::MAP_CAMERA
 use qs_layout::MAP_GRID = map_grid::MAP_GRID
 use qs_layout::MAP_GRID_STEP = map_grid::MAP_GRID_STEP
 use qs_layout::MAP_PANES = map_view::MAP_PANES
 use qs_layout::MAP_SHADING = map_view::MAP_SHADING
+use qs_layout::MapCamera = map_camera::MapCamera
+use qs_layout::MapCameraError = map_camera::MapCameraError
+use qs_layout::MapCameraParams = map_camera::MapCameraParams
+use qs_layout::MapFov = map_camera::MapFov
 use qs_layout::MapGrid = map_grid::MapGrid
 use qs_layout::MapGridError = map_grid::MapGridError
 use qs_layout::MapGridParams = map_grid::MapGridParams
@@ -173,6 +215,10 @@ variant qs_layout::editor::SoftWrap::Width
 variant qs_layout::editor::Split::Down
 variant qs_layout::editor::Split::None
 variant qs_layout::editor::Split::Right
+variant qs_layout::map_camera::Direction::Inverted
+variant qs_layout::map_camera::Direction::Normal
+variant qs_layout::map_camera::MapCameraError::Fov
+variant qs_layout::map_camera::MapCameraError::Speed
 variant qs_layout::map_grid::GridStep::Coarser
 variant qs_layout::map_grid::GridStep::Finer
 variant qs_layout::map_view::MapPanes::Inset

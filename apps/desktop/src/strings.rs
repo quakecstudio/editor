@@ -856,6 +856,22 @@ pub enum Text {
     MapGrid,
     /// Before the 3D camera's position fields (P7-08).
     MapCamera,
+    /// The map camera's settings, folded under its place (P7-08).
+    MapCameraSettings,
+    /// Puts the 3D view's Shift+wheel zoom back.
+    MapResetZoom,
+    /// The 3D view's field of view slider.
+    MapCameraFov,
+    /// The look speed slider.
+    MapCameraLookSpeed,
+    /// The pan speed slider.
+    MapCameraPanSpeed,
+    /// The fly speed slider.
+    MapCameraFlySpeed,
+    /// Invert the vertical look.
+    MapCameraInvertLook,
+    /// Invert the wheel.
+    MapCameraInvertWheel,
     /// The compass's x axis (P7-08).
     CompassX,
     /// The compass's y axis.
@@ -906,7 +922,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 445] = [
+    pub const ALL: [Self; 453] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1329,6 +1345,14 @@ impl Text {
         Self::MapPanesPicker,
         Self::MapGrid,
         Self::MapCamera,
+        Self::MapCameraSettings,
+        Self::MapResetZoom,
+        Self::MapCameraFov,
+        Self::MapCameraLookSpeed,
+        Self::MapCameraPanSpeed,
+        Self::MapCameraFlySpeed,
+        Self::MapCameraInvertLook,
+        Self::MapCameraInvertWheel,
         Self::CompassX,
         Self::CompassY,
         Self::CompassZ,
@@ -1855,6 +1879,14 @@ impl Text {
             Self::MapPanesPicker => "Map view layout",
             Self::MapGrid => "Grid",
             Self::MapCamera => "Camera",
+            Self::MapCameraSettings => "Camera settings",
+            Self::MapResetZoom => "Reset zoom",
+            Self::MapCameraFov => "Field of view",
+            Self::MapCameraLookSpeed => "Look speed",
+            Self::MapCameraPanSpeed => "Pan speed",
+            Self::MapCameraFlySpeed => "Fly speed",
+            Self::MapCameraInvertLook => "Invert the vertical look",
+            Self::MapCameraInvertWheel => "Invert the wheel",
             Self::CompassX => "X",
             Self::CompassY => "Y",
             Self::CompassZ => "Z",
