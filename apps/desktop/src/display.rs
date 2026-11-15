@@ -3,8 +3,9 @@
 //! The system's display settings the app follows (P7-12): its light or dark appearance, and on
 //! macOS the Accessibility > Display settings Increase contrast and Reduce motion, read from
 //! `NSWorkspace` as Apple's Human Interface Guidelines, Accessibility, ask an app to follow
-//! them. They are read when the app starts and each time its window gains focus, as a person
-//! changes them in System Settings and comes back.
+//! them. The appearance is followed each frame, as egui reports it; the accessibility settings
+//! are read when the app starts and each time its window gains focus, as a person changes them
+//! in System Settings and comes back.
 
 use eframe::egui;
 
@@ -26,15 +27,20 @@ impl Display {
     /// nothing.
     #[must_use]
     pub fn read(ctx: &egui::Context) -> Self {
-        let mode = match ctx.system_theme() {
-            Some(egui::Theme::Light) => Mode::Light,
-            Some(egui::Theme::Dark) | None => Mode::Dark,
-        };
         let (contrast, motion) = accessibility();
         Self {
-            mode,
+            mode: Self::mode(ctx),
             contrast,
             motion,
+        }
+    }
+
+    /// The system's appearance, as egui reports it each frame; dark when it reports none.
+    #[must_use]
+    pub fn mode(ctx: &egui::Context) -> Mode {
+        match ctx.system_theme() {
+            Some(egui::Theme::Light) => Mode::Light,
+            Some(egui::Theme::Dark) | None => Mode::Dark,
         }
     }
 }

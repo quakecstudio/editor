@@ -28,8 +28,9 @@ impl Zoom {
     pub const MAX: f32 = 3.0;
     /// 100 percent.
     pub const ACTUAL: Self = Self(1.0);
-    /// How much one step in or out multiplies the zoom: macOS apps' 10 percent.
-    pub const STEP: f32 = 1.1;
+    /// How much one step in or out adds or takes away: 10 percentage points, as egui's own
+    /// Cmd+Plus and Cmd+Minus step (`egui::gui_zoom::zoom_in`), so the menu and the keys agree.
+    pub const STEP: f32 = 0.1;
 
     /// `factor` as a zoom, held to the range.
     #[must_use]
@@ -43,17 +44,25 @@ impl Zoom {
         self.0
     }
 
-    /// One step larger.
+    /// One step larger, rounded to a tenth as egui rounds its own.
     #[must_use]
     pub fn zoomed_in(self) -> Self {
-        Self::new(self.0 * Self::STEP)
+        Self::new(tenths(self.0 + Self::STEP))
     }
 
-    /// One step smaller.
+    /// One step smaller, rounded to a tenth.
     #[must_use]
     pub fn zoomed_out(self) -> Self {
-        Self::new(self.0 / Self::STEP)
+        Self::new(tenths(self.0 - Self::STEP))
     }
+}
+
+/// How many tenths make one, for rounding a zoom as egui rounds its own.
+const TENTHS: f32 = 10.0;
+
+/// `factor` rounded to the nearest tenth.
+fn tenths(factor: f32) -> f32 {
+    (factor * TENTHS).round() / TENTHS
 }
 
 impl Default for Zoom {
@@ -177,13 +186,16 @@ mod tests {
         }
     }
 
-    // No spec statement: P7-12: a step in or out is 10 percent, held to 50 to 300 percent
+    // No spec statement: P7-12: a step in or out is 10 percentage points, as egui's keys step,
+    // rounded to a tenth and held to 50 to 300 percent
     #[test]
-    fn steps_are_ten_percent_within_the_range() {
+    fn steps_are_ten_points_within_the_range() {
         assert_eq!(Zoom::ACTUAL.zoomed_in().get(), 1.1);
-        assert!((Zoom::ACTUAL.zoomed_out().get() - 1.0 / 1.1).abs() < 1e-6);
-        assert_eq!(Zoom::new(2.9).zoomed_in().get(), Zoom::MAX);
-        assert_eq!(Zoom::new(0.52).zoomed_out().get(), Zoom::MIN);
+        assert_eq!(Zoom::ACTUAL.zoomed_out().get(), 0.9);
+        assert_eq!(Zoom::new(1.5).zoomed_in().zoomed_out().get(), 1.5);
+        assert_eq!(Zoom::new(1.54).zoomed_in().get(), 1.6);
+        assert_eq!(Zoom::new(2.95).zoomed_in().get(), Zoom::MAX);
+        assert_eq!(Zoom::new(0.55).zoomed_out().get(), Zoom::MIN);
         assert_eq!(Zoom::new(10.0).get(), Zoom::MAX);
         assert_eq!(Zoom::new(0.0).get(), Zoom::MIN);
         assert_eq!(Zoom::try_from(0.4), Err(super::ZoomError(0.4)));

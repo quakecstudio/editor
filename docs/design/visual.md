@@ -156,7 +156,7 @@ added.
 Short and functional: 100 ms for hover and press feedback, 160 ms ease-out for popovers, panels
 and the inline-edit diff. Nothing animates on its own while the game runs, and every duration is
 zero when the OS asks for reduced motion: on macOS, with Reduce motion on, egui's animation time
-and scroll animation are zero (`theme::apply_motion`), read from `NSWorkspace` when the window
+and scroll animation are zero (`theme::Motion::apply`), read from `NSWorkspace` when the window
 gains focus (`display.rs`).
 
 ## Window chrome

@@ -1718,14 +1718,19 @@ impl Shell {
                 Panel::Bottom => stored.size().y,
             });
         let held = ui.input(|input| input.pointer.any_down());
-        // A panel takes no more than its share of the window, so with large text (P7-12) the
-        // centre keeps its room; the layout keeps the size asked for, drawn again at 100%.
+        // With the interface zoomed past 100% (P7-12) a panel takes no more than its share of
+        // the window, so the centre keeps its room; the layout keeps the size asked for, drawn
+        // again at 100%, where nothing caps it.
         let window = ui.ctx().content_rect().size();
-        let limit = match panel {
-            Panel::Left | Panel::Right => window.x * SIDE_PANEL_SHARE,
-            Panel::Bottom => window.y * BOTTOM_PANEL_SHARE,
-        }
-        .max(qs_layout::MIN_PANEL_SIZE);
+        let limit = if ui.ctx().zoom_factor() > Zoom::ACTUAL.get() {
+            match panel {
+                Panel::Left | Panel::Right => window.x * SIDE_PANEL_SHARE,
+                Panel::Bottom => window.y * BOTTOM_PANEL_SHARE,
+            }
+            .max(qs_layout::MIN_PANEL_SIZE)
+        } else {
+            f32::INFINITY
+        };
         let target = state.size.min(limit);
         let commanded = commanded_size(drawn_size, target, held);
         // `exact_size` pins the size range to one point, so it comes after `min_size`, which
@@ -2815,9 +2820,9 @@ fn status_dot(ui: &mut Ui, colour: egui::Color32) {
 /// A status dot's radius as a part of the line's height: a quarter.
 const STATUS_DOT_PARTS: f32 = 4.0;
 
-/// The most of the window's width a side panel takes.
+/// The most of the window's width a side panel takes when the interface is zoomed in.
 const SIDE_PANEL_SHARE: f32 = 0.3;
-/// The most of the window's height the bottom panel takes.
+/// The most of the window's height the bottom panel takes when the interface is zoomed in.
 const BOTTOM_PANEL_SHARE: f32 = 0.45;
 
 /// The outline panel's width, in points, as the left panel's Symbols are wide.

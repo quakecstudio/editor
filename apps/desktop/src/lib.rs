@@ -75,7 +75,7 @@ use qs_workbench::{CheckAfterTyping, Config};
 
 use crate::display::Display;
 use crate::shell::Shell;
-use crate::theme::{Theme, apply_motion};
+use crate::theme::Theme;
 
 /// Whether the app's look follows the system's display settings (P7-12).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -92,9 +92,11 @@ enum Follow {
 /// Whether the window has the keyboard focus.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Focused {
+    /// No frame has run yet.
+    NotYet,
     /// It has.
     Yes,
-    /// It has not, or no frame has run yet.
+    /// It has not.
     No,
 }
 
@@ -123,7 +125,7 @@ impl App {
             CheckAfterTyping::OffTheFrame,
         )?;
         app.follow = Follow::System {
-            focused: Focused::No,
+            focused: Focused::NotYet,
         };
         Ok(app)
     }
@@ -168,7 +170,7 @@ impl App {
         let display = Display::default();
         let theme = Theme::load_with(display.mode, display.contrast).map_err(AppError::Theme)?;
         theme.apply(ctx);
-        apply_motion(ctx, display.motion);
+        display.motion.apply(ctx);
         let shell =
             Shell::new(layout, layout_file, theme, config, check).map_err(AppError::Commands)?;
         Ok(Self {
@@ -180,8 +182,9 @@ impl App {
         })
     }
 
-    /// Follows the system's display settings: reads them at the first frame and when the
-    /// window gains focus, and remakes the look when they changed.
+    /// Follows the system's display settings: its appearance, which egui reports, on every
+    /// frame, and the accessibility settings at the first frame and when the window gains
+    /// focus; the look is remade when they changed.
     fn follow_display(&mut self, ctx: &egui::Context) {
         let Follow::System { focused } = self.follow else {
             return;
@@ -192,10 +195,14 @@ impl App {
             Focused::No
         };
         self.follow = Follow::System { focused: now };
-        if focused == Focused::Yes {
-            return;
-        }
-        self.show_display(ctx, Display::read(ctx));
+        let display = match (focused, now) {
+            (Focused::NotYet, _) | (Focused::No, Focused::Yes) => Display::read(ctx),
+            (Focused::Yes | Focused::No, _) => Display {
+                mode: Display::mode(ctx),
+                ..self.display
+            },
+        };
+        self.show_display(ctx, display);
     }
 
     /// Remakes the look for `display` when it differs from the look's.
@@ -210,7 +217,7 @@ impl App {
             }
             Err(error) => tracing::warn!(%error, "the theme for the display was not loaded"),
         }
-        apply_motion(ctx, display.motion);
+        display.motion.apply(ctx);
         self.display = display;
     }
 

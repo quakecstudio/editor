@@ -1193,9 +1193,13 @@ impl BrushTools {
         let align = &mut self.align;
         egui::Grid::new(ui.id().with(core::any::TypeId::of::<AlignFields>())).show(ui, |ui| {
             ui.label(Text::MapTextureShift.get());
-            for shift in &mut align.shift {
+            for (shift, name) in align
+                .shift
+                .iter_mut()
+                .zip([Text::MapTextureShiftX, Text::MapTextureShiftY])
+            {
                 let field = ui.add(egui::DragValue::new(shift).speed(ALIGN_STEP));
-                name_field(ui, &field, Text::MapTextureShift);
+                name_field(ui, &field, name);
                 if field.changed() {
                     align.edited.insert(AlignPart::Shift);
                 }
@@ -1203,15 +1207,19 @@ impl BrushTools {
             ui.end_row();
             ui.label(Text::MapTextureRotate.get());
             let rotate = ui.add(egui::DragValue::new(&mut align.rotate).speed(ALIGN_STEP));
-            name_field(ui, &rotate, Text::MapTextureRotate);
+            name_field(ui, &rotate, Text::MapTextureRotation);
             if rotate.changed() {
                 align.edited.insert(AlignPart::Rotate);
             }
             ui.end_row();
             ui.label(Text::MapTextureScale.get());
-            for scale in &mut align.scale {
+            for (scale, name) in align
+                .scale
+                .iter_mut()
+                .zip([Text::MapTextureScaleX, Text::MapTextureScaleY])
+            {
                 let field = ui.add(egui::DragValue::new(scale).speed(SCALE_STEP));
-                name_field(ui, &field, Text::MapTextureScale);
+                name_field(ui, &field, name);
                 if field.changed() {
                     align.edited.insert(AlignPart::Scale);
                 }

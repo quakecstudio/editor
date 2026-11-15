@@ -3645,6 +3645,8 @@ fn the_look_follows_the_display_settings() {
         .show_display(&ctx, wanted);
     harness.run();
     assert_eq!(palette(&harness), (Mode::Light, Contrast::Increased));
+    // egui draws its light style, the one the theme wrote, whatever the system says.
+    assert_eq!(ctx.theme(), egui::Theme::Light);
     assert!(ctx.global_style().animation_time.abs() < f32::EPSILON);
     assert!(!ctx.global_style().visuals.text_cursor.blink);
     let increased = Theme::load_with(Mode::Light, Contrast::Increased).unwrap();
@@ -3755,12 +3757,9 @@ fn every_map_editor_control_has_a_name() {
         );
     }
     for tab in [Text::Entities, Text::MapPrefabs, Text::MapIssues] {
-        if let Some(node) = harness
-            .query_all_by_label(tab.get())
-            .find(|node| node.accesskit_node().role() == Role::Button)
-        {
-            node.click();
-        }
+        harness
+            .get_by_role_and_label(Role::Button, tab.get())
+            .click();
         harness.run();
         found.extend(
             nameless_controls(&harness)

@@ -72,6 +72,27 @@ pub enum Motion {
     Reduced,
 }
 
+impl Motion {
+    /// Sets egui's animations for the motion: none when reduced, so panels, popups and scrolls
+    /// change at once and a text field's caret does not blink (Apple's Human Interface Guidelines, Accessibility: "When this setting is
+    /// active, ensure your app or game responds by reducing automatic and repetitive animations").
+    pub fn apply(self, ctx: &egui::Context) {
+        let defaults = egui::Style::default();
+        ctx.global_style_mut(|style| match self {
+            Motion::Full => {
+                style.animation_time = defaults.animation_time;
+                style.scroll_animation = defaults.scroll_animation;
+                style.visuals.text_cursor.blink = defaults.visuals.text_cursor.blink;
+            }
+            Motion::Reduced => {
+                style.animation_time = 0.0;
+                style.scroll_animation = egui::style::ScrollAnimation::none();
+                style.visuals.text_cursor.blink = false;
+            }
+        });
+    }
+}
+
 /// A colour token the app draws with.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Token {
@@ -442,6 +463,13 @@ impl Theme {
     /// Sets egui's fonts and style to the theme.
     pub fn apply(&self, ctx: &egui::Context) {
         ctx.set_fonts(Self::fonts());
+        // egui keeps a style for dark and one for light and swaps them when the system's
+        // appearance changes; pinning its theme to this one's mode keeps the style written here
+        // the one drawn, until the app follows the change itself.
+        ctx.set_theme(match self.mode {
+            Mode::Dark => egui::Theme::Dark,
+            Mode::Light => egui::Theme::Light,
+        });
         ctx.set_visuals(match self.mode {
             Mode::Dark => egui::Visuals::dark(),
             Mode::Light => egui::Visuals::light(),
@@ -491,25 +519,6 @@ impl Theme {
             visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, color(Token::Focus));
         });
     }
-}
-
-/// Sets egui's animations for `motion`: none when reduced, so panels, popups and scrolls
-/// change at once and a text field's caret does not blink (Apple's Human Interface Guidelines, Accessibility: "When this setting is
-/// active, ensure your app or game responds by reducing automatic and repetitive animations").
-pub fn apply_motion(ctx: &egui::Context, motion: Motion) {
-    let defaults = egui::Style::default();
-    ctx.global_style_mut(|style| match motion {
-        Motion::Full => {
-            style.animation_time = defaults.animation_time;
-            style.scroll_animation = defaults.scroll_animation;
-            style.visuals.text_cursor.blink = defaults.visuals.text_cursor.blink;
-        }
-        Motion::Reduced => {
-            style.animation_time = 0.0;
-            style.scroll_animation = egui::style::ScrollAnimation::none();
-            style.visuals.text_cursor.blink = false;
-        }
-    });
 }
 
 /// `#RRGGBB` as a colour.

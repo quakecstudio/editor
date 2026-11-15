@@ -29,6 +29,8 @@ const AA: f64 = 4.5;
 /// WCAG 2.2 success criterion 1.4.6, level AAA, for normal-size text: the increased-contrast
 /// themes' floor.
 const AAA: f64 = 7.0;
+/// The end of the name of a theme with more contrast, which `[increased]` must name.
+const CONTRAST_SUFFIX: &str = "_contrast";
 
 pub(crate) fn check(root: &Path) -> Result<Report, String> {
     check_text(&repo::read(root, FILE)?)
@@ -156,6 +158,16 @@ fn increased<'a>(
     report: &mut Report,
 ) -> (BTreeSet<&'a str>, f64) {
     let Some(entry) = table.get("increased") else {
+        // A theme named for more contrast is held to AAA, so it may not lose its table.
+        for theme in themes
+            .keys()
+            .filter(|theme| theme.ends_with(CONTRAST_SUFFIX))
+        {
+            report.problems.push(format!(
+                "{FILE}: theme {theme:?} has more contrast but no [increased] table holds it to \
+                 {AAA}:1"
+            ));
+        }
         return (BTreeSet::new(), AAA);
     };
     let min = entry
@@ -184,6 +196,16 @@ fn increased<'a>(
         if !themes.contains_key(*name) {
             report.problems.push(format!(
                 "{FILE}: [increased] names {name:?}, which is not a theme"
+            ));
+        }
+    }
+    for theme in themes
+        .keys()
+        .filter(|theme| theme.ends_with(CONTRAST_SUFFIX))
+    {
+        if !names.contains(theme.as_str()) {
+            report.problems.push(format!(
+                "{FILE}: theme {theme:?} has more contrast but [increased] does not name it"
             ));
         }
     }
@@ -487,11 +509,27 @@ plain = { color = "fg" }
                 .any(|line| line.starts_with("dark_contrast: fg on bg is 4.69:1, below 7:1")),
             "{found:?}"
         );
-        // The same colour in a theme [increased] does not name is held to the rule's 4.5.
+        // A theme with more contrast must be named in [increased], and the table must exist.
+        let found = problems(&with_increased("#777777", "7.0", ""));
         assert!(
-            problems(&with_increased("#777777", "7.0", ""))
+            found
                 .iter()
-                .any(|line| line.contains("[increased] names no themes"))
+                .any(|line| line.contains("[increased] names no themes")),
+            "{found:?}"
+        );
+        assert!(
+            found.iter().any(|line| line
+                .contains("\"dark_contrast\" has more contrast but [increased] does not name it")),
+            "{found:?}"
+        );
+        let without = with_increased("#FFFFFF", "7.0", "\"dark_contrast\"")
+            .replace("[increased]\nthemes = [\"dark_contrast\"]\nmin = 7.0\n", "");
+        let found = problems(&without);
+        assert!(
+            found
+                .iter()
+                .any(|line| line.contains("has more contrast but no [increased] table")),
+            "{found:?}"
         );
         let found = problems(&with_increased("#FFFFFF", "5.0", "\"dark_contrast\""));
         assert!(
