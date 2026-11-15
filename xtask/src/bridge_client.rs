@@ -122,7 +122,7 @@ fn socket_path() -> PathBuf {
     }
 }
 
-/// BRIDGE-2.6: the commands a headless host offers, and those it leaves out.
+/// BRIDGE-2.10: the commands a headless host offers, and those it leaves out.
 fn capabilities(client: &Client) -> Result<(), String> {
     for command in [
         "pause",

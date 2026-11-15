@@ -1,0 +1,269 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#![expect(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "test code: a failed unwrap or match is a failed test"
+)]
+
+use qc_progs::Progs;
+use qs_bsp::Bsp;
+
+use qs_bsp::Submodel;
+
+use super::SwapError;
+use crate::collision::CONTENTS_SOLID;
+use crate::fixtures::{CONTENTS_EMPTY, MapSpec, bsp, node, plane};
+use crate::world::tests::{Running, bsp_file, entity, running};
+use crate::world::{MapPlace, QcValue, World};
+
+/// A door's spawn: a pushed brush model, as `func_door` sets itself up.
+const DOORS: &str = "void() door = { self.solid = 4; self.movetype = 7; \
+    setmodel(self, self.model); setorigin(self, self.origin); };\n";
+
+/// Door A, `*1`, at x = 0 to 16; door B, `*2`, at x = 32 to 64.
+fn two_doors() -> MapSpec {
+    MapSpec {
+        submodels: vec![
+            ([0.0; 3], [16.0; 3]),
+            ([32.0, 0.0, 0.0], [64.0, 16.0, 16.0]),
+        ],
+        ..MapSpec::default()
+    }
+}
+
+/// The map with the two doors running: edict 2 is door A, map entity 1, and edict 3 door B,
+/// map entity 2.
+fn doors() -> Running {
+    let entities = [
+        entity("door", "0 0 0", "\"model\" \"*1\"\n"),
+        entity("door", "0 0 0", "\"model\" \"*2\"\n"),
+    ]
+    .concat();
+    running(&two_doors(), DOORS, &entities, Vec::new())
+}
+
+/// The map after door A was deleted: door B is its one brush model, `*1`, now 24 high, and
+/// its floor is 30 lower.
+fn after_deleting_door_a() -> Bsp<'static> {
+    bsp(&MapSpec {
+        planes: vec![
+            plane([0.0, 0.0, 1.0], -30.0, 2),
+            plane([0.0, 0.0, 1.0], -6.0, 2),
+        ],
+        nodes: vec![node(0, [-2, -1])],
+        submodels: vec![([32.0, 4.0, 2.0], [64.0, 16.0, 24.0])],
+        ..MapSpec::default()
+    })
+}
+
+fn model_of(world: &World, progs: &Progs<'_>, n: usize) -> Vec<u8> {
+    let fields = world.edict_fields(progs, n).unwrap();
+    match &fields.iter().find(|f| f.name == "model").unwrap().value {
+        QcValue::String(text) => text.clone(),
+        other => panic!("model is {other:?}"),
+    }
+}
+
+// spec BRIDGE-4.16: each map entity in an edict takes its brush model in the new BSP, by its
+// place in the map, not its old *n: its model, modelindex, mins, maxs and size as setmodel
+// sets them; the result counts the edicts given a model
+// spec BRIDGE-4.15: the swap keeps every edict's fields as they were
+#[test]
+fn a_renumbered_brush_entity_takes_its_new_model() {
+    let mut game = doors();
+    let progs = Progs::read(&game.progs).unwrap();
+    game.world.set_float_field(3, "health", 75.0);
+    let player = game.world.vector(1, "origin");
+    assert_eq!(
+        game.world.float(3, "modelindex"),
+        3.0,
+        "*2 is model index 3"
+    );
+    // BRIDGE-4.13: the editor took door A out of the game as it deleted it.
+    game.world.remove_entity(&progs, 2).unwrap();
+    let new = after_deleting_door_a();
+    let swapped = game
+        .world
+        .swap_bsp(
+            &progs,
+            &new,
+            &[(MapPlace::new(2), Submodel::parse("*1").unwrap())],
+        )
+        .unwrap();
+    assert_eq!(swapped, 1);
+    assert_eq!(model_of(&game.world, &progs, 3), b"*1");
+    assert_eq!(
+        game.world.float(3, "modelindex"),
+        2.0,
+        "*1 is model index 2"
+    );
+    assert_eq!(game.world.vector(3, "mins"), [32.0, 4.0, 2.0]);
+    assert_eq!(game.world.vector(3, "maxs"), [64.0, 16.0, 24.0]);
+    assert_eq!(game.world.vector(3, "size"), [32.0, 12.0, 22.0]);
+    assert_eq!(game.world.float(3, "health"), 75.0);
+    assert_eq!(game.world.vector(1, "origin"), player);
+}
+
+// spec BRIDGE-4.15: the world's collision is the new BSP's, and the brush models' bounds
+// setmodel reads are its too
+// spec BRIDGE-4.16: every edict in use is linked again in the new collision
+#[test]
+fn the_world_collides_and_links_in_the_new_bsp() {
+    let mut game = doors();
+    let progs = Progs::read(&game.progs).unwrap();
+    let below = [100.0, 100.0, -10.0];
+    let collision = |world: &World| world.builtins.collision.true_point_contents(below).ok();
+    assert_eq!(collision(&game.world), Some(CONTENTS_SOLID));
+    game.world.remove_entity(&progs, 2).unwrap();
+    let door_b = [(MapPlace::new(2), Submodel::parse("*1").unwrap())];
+    game.world
+        .swap_bsp(&progs, &after_deleting_door_a(), &door_b)
+        .unwrap();
+    assert_eq!(collision(&game.world), Some(CONTENTS_EMPTY));
+    assert!(
+        !game.world.builtins.collision.leafs_of(3).is_empty(),
+        "door B is linked again"
+    );
+    let bounds = &game.world.builtins.mock.engine().model_bounds;
+    let star = |name: &str| bounds.iter().filter(|(key, _)| key == name).count();
+    assert_eq!((star("*1"), star("*2")), (1, 0));
+    assert_eq!(star("maps/test.bsp"), 1);
+}
+
+// spec BRIDGE-4.14: a model past the new BSP's last brush model, or one the map never
+// precached, is refused and nothing changes
+#[test]
+fn a_model_the_swap_cannot_give_is_refused() {
+    let mut game = doors();
+    let bytes = game.progs.clone();
+    let progs = Progs::read(&bytes).unwrap();
+    let three = bsp(&MapSpec {
+        submodels: vec![([0.0; 3], [8.0; 3]); 3],
+        ..MapSpec::default()
+    });
+    let star = |name| Submodel::parse(name).unwrap();
+    let refused = |world: &mut World, map: &Bsp<'_>, model| {
+        world.swap_bsp(&progs, map, &[(MapPlace::new(2), star(model))])
+    };
+    assert_eq!(
+        refused(&mut game.world, &after_deleting_door_a(), "*2"),
+        Err(SwapError::NoSuchModel(star("*2")))
+    );
+    assert_eq!(
+        refused(&mut game.world, &three, "*3"),
+        Err(SwapError::NotPrecached(star("*3")))
+    );
+    assert_eq!(game.world.float(3, "modelindex"), 3.0);
+    assert_eq!(game.world.vector(3, "maxs"), [64.0, 16.0, 16.0]);
+    let below = [100.0, 100.0, -10.0];
+    assert_eq!(
+        game.world
+            .builtins
+            .collision
+            .true_point_contents(below)
+            .ok(),
+        Some(CONTENTS_SOLID)
+    );
+}
+
+// spec BRIDGE-4.14: an edict in use showing a brush model the swap does not place, not one of
+// the map's entities, is refused and nothing changes
+#[test]
+fn an_unplaced_brush_edict_is_refused() {
+    let mut game = doors();
+    let progs = Progs::read(&game.progs).unwrap();
+    let door_b = [(MapPlace::new(2), Submodel::parse("*1").unwrap())];
+    assert_eq!(
+        game.world
+            .swap_bsp(&progs, &after_deleting_door_a(), &door_b),
+        Err(SwapError::Unplaced {
+            edict: 2,
+            model: Submodel::parse("*1").unwrap()
+        })
+    );
+    assert_eq!(game.world.float(3, "modelindex"), 3.0, "nothing changed");
+}
+
+// spec BRIDGE-4.15: a brush model the map's model list does not have takes no model index, so
+// a build with more brush models leaves the models precached after them where they were
+#[test]
+fn a_new_brush_model_takes_no_index_of_another_model() {
+    let mut game = doors();
+    let progs = Progs::read(&game.progs).unwrap();
+    let three = bsp(&MapSpec {
+        submodels: vec![([0.0; 3], [8.0; 3]); 3],
+        ..MapSpec::default()
+    });
+    let doors = [
+        (MapPlace::new(1), Submodel::parse("*1").unwrap()),
+        (MapPlace::new(2), Submodel::parse("*2").unwrap()),
+    ];
+    game.world.swap_bsp(&progs, &three, &doors).unwrap();
+    let collision = &game.world.builtins.collision;
+    assert!(collision.model(2.0).is_some() && collision.model(3.0).is_some());
+    assert!(
+        collision.model(4.0).is_none(),
+        "*3 is not in the model list, so index 4 is not it"
+    );
+}
+
+// spec BRIDGE-4.15: each other BSP the map precached is the same model index again in the new
+// collision, and an edict showing it still collides there
+#[test]
+fn a_precached_item_bsp_keeps_its_model_index() {
+    let crate_box = MapSpec {
+        planes: vec![
+            plane([0.0, 0.0, 1.0], 10.0, 2),
+            plane([0.0, 0.0, 1.0], 34.0, 2),
+        ],
+        nodes: vec![node(0, [-2, -1])],
+        ..MapSpec::default()
+    };
+    let source = "void() worldspawn = { precache_model(\"maps/b_box.bsp\"); };\n\
+        void() boxed = { self.solid = 4; self.movetype = 7; \
+        setmodel(self, \"maps/b_box.bsp\"); setorigin(self, self.origin); };\n";
+    let files = vec![(
+        "maps/b_box.bsp".to_owned(),
+        bsp_file(&crate_box, [-8.0; 3], [8.0; 3]),
+    )];
+    let mut game = running(
+        &MapSpec::default(),
+        source,
+        &entity("boxed", "300 0 50", ""),
+        files,
+    );
+    let progs = Progs::read(&game.progs).unwrap();
+    let index = game.world.float(2, "modelindex");
+    assert!(game.world.builtins.collision.model(index).is_some());
+    game.world
+        .swap_bsp(&progs, &after_deleting_door_a(), &[])
+        .unwrap();
+    assert!(
+        game.world.builtins.collision.model(index).is_some(),
+        "{index}"
+    );
+    assert!(!game.world.builtins.collision.leafs_of(2).is_empty());
+}
+
+// spec BRIDGE-4.14: a refusal says which model and why, so the editor can show it
+#[test]
+fn refusals_name_the_model() {
+    let star = Submodel::parse("*4").unwrap();
+    assert_eq!(
+        SwapError::NoSuchModel(star).to_string(),
+        "the new map has no brush model *4"
+    );
+    assert_eq!(
+        SwapError::NotPrecached(star).to_string(),
+        "*4 is not precached by the map; reload the map to load it"
+    );
+    assert_eq!(
+        SwapError::Unplaced {
+            edict: 7,
+            model: star
+        }
+        .to_string(),
+        "edict 7 shows *4 and is not one of the map's entities; reload the map"
+    );
+}

@@ -167,7 +167,7 @@ fn the_events_table_matches_the_schemas() {
     }
 }
 
-// spec BRIDGE-4.9, BRIDGE-2.6: every bridge client operation but launch maps to a command
+// spec BRIDGE-4.9, BRIDGE-2.10: every bridge client operation but launch maps to a command
 // with a params and a result schema, and the capability-flagged ones are exactly the flags
 // `initialize.result.json` declares
 #[test]
@@ -230,7 +230,7 @@ fn the_commands_table_matches_the_schemas_and_capabilities() {
     assert!(listed.contains("-32005"), "the unsupported code is listed");
 }
 
-// spec BRIDGE-1.4, BRIDGE-2.8: the envelope is a request, a notification or a response with
+// spec BRIDGE-1.4, BRIDGE-2.9: the envelope is a request, a notification or a response with
 // exactly one of result and error, and a version is major.minor
 #[test]
 fn the_envelope_and_the_version_shape() {

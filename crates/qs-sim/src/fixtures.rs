@@ -63,6 +63,9 @@ pub(crate) struct MapSpec {
     pub(crate) visibility: Vec<u8>,
     /// Each leaf's `visofs`, when [`MapSpec::visibility`] is not empty.
     pub(crate) visofs: Vec<i32>,
+    /// The bounds of each brush model after the world's, `*1` first; each uses the world's
+    /// nodes and clipnodes.
+    pub(crate) submodels: Vec<([f32; 3], [f32; 3])>,
 }
 
 impl Default for MapSpec {
@@ -81,6 +84,7 @@ impl Default for MapSpec {
             }],
             visibility: Vec::new(),
             visofs: Vec::new(),
+            submodels: Vec::new(),
         }
     }
 }
@@ -111,7 +115,7 @@ pub(crate) fn bsp(spec: &MapSpec) -> Bsp<'static> {
         marksurfaces: Vec::new(),
         edges: Vec::new(),
         surfedges: Vec::new(),
-        models: vec![Model {
+        models: core::iter::once(Model {
             mins: [-1000.0, -1000.0, -1000.0],
             maxs: [1000.0, 500.0, 1000.0],
             origin: [0.0; 3],
@@ -124,6 +128,17 @@ pub(crate) fn bsp(spec: &MapSpec) -> Bsp<'static> {
             firstface: 0,
             numfaces: 0,
             radius: 0.0,
-        }],
+        })
+        .chain(spec.submodels.iter().map(|&(mins, maxs)| Model {
+            mins,
+            maxs,
+            origin: [0.0; 3],
+            headnode: [0; BSP_MAX_MAP_HULLS],
+            visleafs: 0,
+            firstface: 0,
+            numfaces: 0,
+            radius: 0.0,
+        }))
+        .collect(),
     }
 }

@@ -47,5 +47,5 @@ pub use world::{
     CLIENT_EDICT, Change, ChangeKind, ClientCommand, EdictChange, EditError, Entity, EvalError,
     HostCommand, HostState, KeyFocus, LineHit, LoadOptions, MapPlace, Migration, NamedValue,
     QcValue, RawState, Reason, SAVEGAME_VERSION, SaveError, SaveGame, Signon, SpawnParms, State,
-    Tracking, World, WorldError, command_words, read_state,
+    SwapError, Tracking, World, WorldError, command_words, read_state,
 };

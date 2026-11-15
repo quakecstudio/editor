@@ -11,6 +11,7 @@ mod game;
 mod headless;
 mod keys;
 mod load;
+mod map_bsp;
 mod screenshot;
 mod settings;
 mod values;
