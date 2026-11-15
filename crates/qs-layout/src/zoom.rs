@@ -199,5 +199,9 @@ mod tests {
         assert_eq!(Zoom::new(10.0).get(), Zoom::MAX);
         assert_eq!(Zoom::new(0.0).get(), Zoom::MIN);
         assert_eq!(Zoom::try_from(0.4), Err(super::ZoomError(0.4)));
+        assert_eq!(
+            super::ZoomError(0.4).to_string(),
+            "a zoom of 0.4 is outside 0.5 to 3"
+        );
     }
 }

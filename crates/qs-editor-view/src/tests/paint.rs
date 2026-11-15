@@ -647,10 +647,11 @@ fn the_gutter_marks_changes_against_head() {
     };
     // P7-12: a changed line's bar is dashed, an added line's solid, so the two differ in shape
     // and not only in colour.
+    // Each piece is a 3-point-wide bar at the gutter's edge.
     let pieces = |output: &FullOutput, color| {
         filled(output, color)
             .iter()
-            .filter(|r| r.width() <= 3.5)
+            .filter(|r| (r.width() - 3.0).abs() < 0.01)
             .count()
     };
     assert_eq!(marks(&output, harness.style.modified_mark), [1.0, 3.0]);
