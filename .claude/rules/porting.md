@@ -51,6 +51,11 @@ Rules that are easy to miss:
   header, so a port keeps `Copyright 2022 - 2025 Zed Industries, Inc.` above ours. Port the
   behaviour into egui and our commands, not its entities, actions or settings; tests cite the
   Zed setting or function they pin.
+- ericw-tools (`ericwa/ericw-tools`) is portable under the same policy: its `qbsp/` for
+  `qs-map-bsp`'s extended dialect (ADR-0023), its `vis/` and `light/` for `qs-map-vis` and
+  `qs-map-light` (ADR-0025). A port keeps every `Copyright` line of the upstream file's header;
+  `vis/flow.cc` and `vis/vis.cc` have none, so a port of them keeps `vis/main.cc`'s id line. The
+  id dialect and id-exact output stay proved against id's tools.
 - Never commit id's C. Oracles fetch it by commit and checksum.
 - Keep the behaviour, not the C: no globals (they become an explicit context), errors as
   `Err` values, every wrap, truncation and float comparison written out with the `#[expect]`

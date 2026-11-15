@@ -65,12 +65,14 @@ const EMPTY: i32 = -1;
 // spec QBSP-15.46: the drawing hull's leaves and nodes are written with leaf 0 the shared solid
 // leaf, each clipping hull's clip nodes, and the model's bounds without the side space, shrunk
 // by a unit
-// spec QBSP-15.43: edge 0 is unused
+// spec QBSP-15.43: edge 0 is unused, and leaf 0 has no visibility offset of its own, a value
+// initialised `mleaf_t`'s 0
 #[test]
 fn a_sealed_room() {
     let c = compiled(&MapSpec::default());
     let bsp = read(&c);
     assert_eq!(bsp.leafs[0].contents, SOLID);
+    assert_eq!(bsp.leafs[0].visofs, 0);
     assert_eq!(bsp.edges[0], [0, 0]);
     assert_eq!(bsp.models.len(), 1);
     assert_eq!(contents_at(&bsp, [0.0, 0.0, 24.0]), EMPTY);
@@ -196,27 +198,28 @@ fn hulls_by_key() {
     assert_eq!(node.children, [EMPTY, EMPTY]);
 }
 
-// spec QBSP-15.51: the portal file is PRT1 numbered by leaf, with detail too
+// spec QBSP-15.52: with no detail the portal file is PRT1 numbered by leaf; with detail it is
+// PRT2 numbered by cluster, fewer than the leaves, each open leaf listed once in the cluster map,
+// and its portals stop at the detail
 #[test]
 fn portal_files() {
-    let check = |spec: &MapSpec| {
-        let c = compiled(spec);
-        let bsp = read(&c);
-        let prt = String::from_utf8(c.portal_file.clone().unwrap()).unwrap();
-        let mut lines = prt.lines();
-        assert_eq!(lines.next(), Some("PRT1"));
-        let leaves: usize = lines.next().unwrap().parse().unwrap();
-        let portals: usize = lines.next().unwrap().parse().unwrap();
-        let open = bsp
+    let open_leaves = |c: &Compiled| {
+        read(c)
             .leafs
             .iter()
             .skip(1)
             .filter(|l| l.contents != SOLID)
-            .count();
-        assert_eq!(leaves, open, "every open leaf is numbered");
-        assert_eq!(lines.count(), portals);
+            .count()
     };
-    check(&MapSpec::default());
+    let c = compiled(&MapSpec::default());
+    let prt = String::from_utf8(c.portal_file.clone().unwrap()).unwrap();
+    let mut lines = prt.lines();
+    assert_eq!(lines.next(), Some("PRT1"));
+    let leaves: usize = lines.next().unwrap().parse().unwrap();
+    let portals: usize = lines.next().unwrap().parse().unwrap();
+    assert_eq!(leaves, open_leaves(&c), "every open leaf is numbered");
+    assert_eq!(lines.count(), portals);
+
     let mut spec = MapSpec::default();
     spec.entities.push(EntitySpec::brushes(
         "func_detail",
@@ -224,7 +227,43 @@ fn portal_files() {
     ));
     spec.world
         .push(BrushSpec::cube([-100, -8, -64], [-60, 8, 128], "*water"));
-    check(&spec);
+    let c = compiled(&spec);
+    let prt = String::from_utf8(c.portal_file.clone().unwrap()).unwrap();
+    let mut lines = prt.lines();
+    assert_eq!(lines.next(), Some("PRT2"));
+    let leaves: usize = lines.next().unwrap().parse().unwrap();
+    let clusters: usize = lines.next().unwrap().parse().unwrap();
+    let portals: usize = lines.next().unwrap().parse().unwrap();
+    assert_eq!(leaves, open_leaves(&c), "every open leaf is numbered");
+    assert!(clusters < leaves, "{clusters} clusters of {leaves} leaves");
+    let rest: Vec<&str> = lines.collect();
+    let (portal_lines, map) = rest.split_at(portals);
+    assert!(portal_lines.iter().all(|l| {
+        let numbers: Vec<usize> = l
+            .split(' ')
+            .skip(1)
+            .take(2)
+            .map(|n| n.parse().unwrap())
+            .collect();
+        numbers.iter().all(|&n| n < clusters)
+    }));
+    assert_eq!(map.len(), clusters);
+    let mut listed: Vec<usize> = Vec::new();
+    for line in map {
+        let mut words: Vec<&str> = line.split_whitespace().collect();
+        assert_eq!(words.pop(), Some("-1"));
+        listed.extend(words.iter().map(|w| w.parse::<usize>().unwrap()));
+    }
+    let sorted = {
+        let mut sorted = listed.clone();
+        sorted.sort_unstable();
+        sorted
+    };
+    assert_eq!(
+        sorted,
+        (0..leaves).collect::<Vec<_>>(),
+        "each leaf in one cluster"
+    );
 }
 
 // spec QBSP-15.42: the faces only a detail fence's leaves list, written solid, are also listed in

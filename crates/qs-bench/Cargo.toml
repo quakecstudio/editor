@@ -19,6 +19,7 @@ qc-sema = { workspace = true }
 qs-map = { workspace = true }
 qs-map-bsp = { workspace = true }
 qs-map-light = { workspace = true }
+qs-map-vis = { workspace = true }
 quakec-studio = { workspace = true }
 # save_to_game: the project built and reloaded in the windowed preview host (P3-12).
 qs-workbench = { workspace = true }

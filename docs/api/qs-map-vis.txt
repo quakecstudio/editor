@@ -32,6 +32,8 @@ variant qs_map_vis::Level::Two
 variant qs_map_vis::Level::Zero
 variant qs_map_vis::Mode::Fast
 variant qs_map_vis::Mode::Full
+variant qs_map_vis::VisError::ClusterLeaf
+variant qs_map_vis::VisError::ClusterMap
 variant qs_map_vis::VisError::Format
 variant qs_map_vis::VisError::Header
 variant qs_map_vis::VisError::LeafRecursion

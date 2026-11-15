@@ -217,13 +217,18 @@ fn id1_recompile(group: &mut BenchmarkGroup<'_, WallTime>) {
 /// asset cache and sets.
 const MAP_FILE: &str = "QS_BENCH_MAP";
 
-/// Play from here's compile of an id1-sized map (P6-12, P6-37): LibreQuake's lq-e1m1 through
-/// the extended qbsp with no WAD, as the workbench compiles it, then the fast light.
-fn play_from_here_e1m1(group: &mut BenchmarkGroup<'_, WallTime>) {
+/// lq-e1m1's source, from the file [`MAP_FILE`] names.
+fn e1m1_map() -> Vec<u8> {
     let path = std::env::var_os(MAP_FILE).unwrap_or_else(|| {
         panic!("{MAP_FILE} is not set: run the benchmarks through cargo xtask bench")
     });
-    let map = fs::read(path).expect("lq-e1m1.map reads");
+    fs::read(path).expect("lq-e1m1.map reads")
+}
+
+/// Play from here's compile of an id1-sized map (P6-12, P6-37): LibreQuake's lq-e1m1 through
+/// the extended qbsp with no WAD, as the workbench compiles it, then the fast light.
+fn play_from_here_e1m1(group: &mut BenchmarkGroup<'_, WallTime>) {
+    let map = e1m1_map();
     let compiler = qs_map_bsp::Compiler::default().with_dialect(qs_map_bsp::Dialect::Extended);
     group.bench_function("play_from_here_e1m1", |bencher| {
         bencher.iter(|| {
@@ -245,10 +250,7 @@ const ROOM_REACH: ([f64; 3], [f64; 3]) = ([-320.0, -320.0, -128.0], [320.0, 320.
 /// player start and sealed with `skip`, as `map.play_from_here` cuts it, then compiled and lit
 /// as `play_from_here_e1m1` compiles the whole map; at least five times faster than it.
 fn region_compile_e1m1(group: &mut BenchmarkGroup<'_, WallTime>) {
-    let path = std::env::var_os(MAP_FILE).unwrap_or_else(|| {
-        panic!("{MAP_FILE} is not set: run the benchmarks through cargo xtask bench")
-    });
-    let map = fs::read(path).expect("lq-e1m1.map reads");
+    let map = e1m1_map();
     let file = qs_map::MapFile::parse(&map).expect("lq-e1m1.map parses");
     let start = file
         .entities
@@ -285,6 +287,27 @@ fn region_compile_e1m1(group: &mut BenchmarkGroup<'_, WallTime>) {
                 Light::new(Sampling::Fast)
                     .run(&compiled.bsp)
                     .expect("the room lights"),
+            )
+        });
+    });
+}
+
+/// A full compile of an id1-sized map (P7-04, MAP-18): LibreQuake's lq-e1m1 through the extended
+/// qbsp with no WAD, then full vis and full light, as the background full compile runs them.
+fn full_compile_e1m1(group: &mut BenchmarkGroup<'_, WallTime>) {
+    let map = e1m1_map();
+    let compiler = qs_map_bsp::Compiler::default().with_dialect(qs_map_bsp::Dialect::Extended);
+    group.bench_function("full_compile_e1m1", |bencher| {
+        bencher.iter(|| {
+            let compiled = compiler.compile(&map, None).expect("lq-e1m1 compiles");
+            let portals = compiled.portal_file.expect("lq-e1m1 is sealed");
+            let seen = qs_map_vis::Vis::new(qs_map_vis::Mode::default())
+                .run(&compiled.bsp, &String::from_utf8_lossy(&portals))
+                .expect("lq-e1m1 vises");
+            black_box(
+                Light::new(Sampling::Extra)
+                    .run(&seen)
+                    .expect("lq-e1m1 lights"),
             )
         });
     });
@@ -600,6 +623,7 @@ fn budgets(criterion: &mut Criterion) {
     routes(&mut group);
     play_from_here_e1m1(&mut group);
     region_compile_e1m1(&mut group);
+    full_compile_e1m1(&mut group);
     group.finish();
 }
 

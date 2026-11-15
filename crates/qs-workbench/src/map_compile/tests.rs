@@ -276,7 +276,7 @@ fn map_portals_reads_the_last_compiles_portals() {
     let count: usize = text.lines().nth(2).unwrap().trim().parse().unwrap();
     assert_eq!(read.portals.len(), count);
     assert!(read.portals.iter().all(|portal| portal.len() >= 3));
-    std::fs::write(&read.path, "PRT2\n1\n0\n").unwrap();
+    std::fs::write(&read.path, "PRT3\n1\n0\n").unwrap();
     let error = session.execute(MAP_PORTALS, json!({})).unwrap_err();
     assert!(error.to_string().contains("not a portal file"), "{error}");
 }

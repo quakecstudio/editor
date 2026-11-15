@@ -3570,6 +3570,7 @@ dependencies = [
  "qs-map",
  "qs-map-bsp",
  "qs-map-light",
+ "qs-map-vis",
  "qs-workbench",
  "quakec-studio",
  "serde",
@@ -3777,6 +3778,7 @@ dependencies = [
  "qs-map-bsp",
  "qs-wad",
  "sha2",
+ "tracing",
 ]
 
 [[package]]

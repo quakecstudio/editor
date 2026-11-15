@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 1996-1997  Id Software, Inc.
+// Copyright (C) 2026 QuakeC Studio contributors
+//
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: vis/vis.cc, CalcVis, ClusterFlow
 
 //! The visibility compiler (P6-05, `docs/spec/vis.md`): from the portal file qs-map-bsp writes
 //! (QBSP-12), each leaf's potentially visible set, compressed into the BSP's visibility lump,
@@ -9,8 +13,13 @@
 //! reaches (VIS-3). The full mode runs the portal flow at a test level (VIS-4), on every
 //! thread the machine has, in batches that give the same result on any of them (VIS-4.7).
 //!
-//! Nothing is ported: id's vis is not a portable upstream (`docs/porting.md`), so the code is
-//! written from the spec, which was written from vis's source, read and run as an oracle.
+//! A `PRT2` portal file, which ericw-tools' qbsp and ours write for a map with detail, numbers
+//! its portals by cluster of leaves: the flow runs over the clusters, and each leaf sees what its
+//! cluster sees (VIS-7), as ericw-tools' vis does.
+//!
+//! id's vis is not a portable upstream (`docs/porting.md`), so the code of its flow is written
+//! from the spec, which was written from vis's source, read and run as an oracle; the clusters
+//! are ported from ericw-tools (ADR-0025).
 
 mod flow;
 mod lump;
@@ -22,7 +31,7 @@ use core::fmt;
 use qs_bsp::{Bsp, BspLoader};
 
 use crate::flow::{BYTE_BITS, Flow, Leaves};
-use crate::portals::PortalFile;
+use crate::portals::{Format, PortalFile};
 
 pub use crate::flow::{VIS_FLOW_BATCH, VisCounts};
 pub use crate::lump::VIS_MAX_MAP_VISIBILITY;
@@ -62,9 +71,9 @@ impl Default for Mode {
 /// What stops vis, as its errors read.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum VisError {
-    /// `LoadPortals: failed to read header` (VIS-2.1).
+    /// `LoadPortals: failed to read header` (VIS-2.8).
     Header,
-    /// `LoadPortals: not a portal file` (VIS-2.1).
+    /// `LoadPortals: not a portal file` (VIS-2.8).
     NotPortalFile,
     /// `LoadPortals: reading portal <n>` (VIS-2.2).
     Portal {
@@ -78,6 +87,21 @@ pub enum VisError {
     },
     /// `Leaf with too many portals` (VIS-2.4).
     TooManyLeafPortals,
+    /// `Couldn't read cluster map`: a `PRT2` file ends before cluster `cluster` of `clusters`
+    /// has its leaves, or lists leaves with no cluster (VIS-7.2).
+    ClusterMap {
+        /// The cluster.
+        cluster: usize,
+        /// The clusters the file has.
+        clusters: usize,
+    },
+    /// `Invalid leaf number in cluster map`: leaf `leaf` of a file of `leafs` (VIS-7.2).
+    ClusterLeaf {
+        /// The leaf.
+        leaf: usize,
+        /// The vis leaves the file has.
+        leafs: usize,
+    },
     /// `CheckStack: leaf recursion` (VIS-4.5).
     LeafRecursion,
     /// `Leaf portals saw into leaf` (VIS-4.6).
@@ -104,6 +128,12 @@ impl fmt::Display for VisError {
                 write!(f, "LoadPortals: portal {number} has too many points")
             }
             Self::TooManyLeafPortals => f.write_str("Leaf with too many portals"),
+            Self::ClusterMap { cluster, clusters } => {
+                write!(f, "Couldn't read cluster map ({cluster} / {clusters})")
+            }
+            Self::ClusterLeaf { leaf, leafs } => {
+                write!(f, "Invalid leaf number in cluster map ({leaf} >= {leafs})")
+            }
             Self::LeafRecursion => f.write_str("CheckStack: leaf recursion"),
             Self::SawIntoLeaf { leaf } => write!(f, "Leaf portals saw into leaf {leaf}"),
             Self::VismapOverflow => f.write_str("Vismap expansion overflow"),
@@ -187,19 +217,42 @@ impl Vis {
     pub fn visible(&self, prt: &str) -> Result<Visible, VisError> {
         let file = PortalFile::read(prt)?;
         let (rows, counts) = self.rows(&file)?;
-        Ok(Visible {
-            rows: rows.iter().map(|row| row.row(file.leafs)).collect(),
-            counts,
-        })
+        let real = file.clusters.len();
+        let rows = file
+            .clusters
+            .iter()
+            .map(|&cluster| rows.get(cluster).map(|row| row.row(real)))
+            .collect::<Option<_>>()
+            .ok_or(VisError::Format)?;
+        Ok(Visible { rows, counts })
     }
 
+    /// Each cluster's row over the BSP's vis leaves, a leaf seen when its cluster is
+    /// (`ClusterFlow`, VIS-7.3), and the flow's counts.
     fn rows(&self, file: &PortalFile) -> Result<(Vec<Leaves>, VisCounts), VisError> {
         let threads = std::thread::available_parallelism().map_or(1, usize::from);
         let (seen, counts) = match self.mode {
             Mode::Fast => (Flow::new(file, Level::Zero).fast(), VisCounts::default()),
             Mode::Full(level) => Flow::new(file, level).full(threads)?,
         };
-        Ok((Flow::rows(file, &seen)?, counts))
+        let rows = Flow::rows(file, &seen)?;
+        if file.format == Format::Leaves {
+            return Ok((rows, counts));
+        }
+        let real = file.clusters.len();
+        let expanded = rows
+            .iter()
+            .map(|row| {
+                let mut leaves = Leaves::none(real);
+                for (leaf, &cluster) in file.clusters.iter().enumerate() {
+                    if row.has(cluster) {
+                        leaves.add(leaf);
+                    }
+                }
+                leaves
+            })
+            .collect();
+        Ok((expanded, counts))
     }
 
     /// The BSP `bsp` with the visibility its portal file `prt` gives: the compressed rows, each
@@ -212,11 +265,11 @@ impl Vis {
     pub fn run(&self, bsp: &[u8], prt: &str) -> Result<Vec<u8>, VisError> {
         let read = Bsp::read(bsp, BspLoader::FitzQuake).map_err(|_| VisError::Format)?;
         let file = PortalFile::read(prt)?;
-        if read.leafs.len() <= file.leafs {
+        if read.leafs.len() <= file.clusters.len() {
             return Err(VisError::Format);
         }
         let (rows, _) = self.rows(&file)?;
-        lump::written(bsp, &read, &rows)
+        lump::written(bsp, &read, &rows, &file.clusters)
     }
 }
 

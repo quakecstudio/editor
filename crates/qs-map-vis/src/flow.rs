@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 1996-1997  Id Software, Inc.
+// Copyright (C) 2026 QuakeC Studio contributors
+//
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: vis/vis.cc, ClusterFlow
 
 //! What each portal sees: the first-order bound of the leaves it might see (VIS-3), then the
 //! portal flow that narrows it (VIS-4), and each leaf's row from its portals' (VIS-4.6).
 
+use std::borrow::Cow;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::portals::PortalFile;
-use crate::winding::{Flip, Plane, VIS_ON_EPSILON, Winding};
+use crate::portals::{Format, PortalFile};
+use crate::winding::{Clip, Flip, Plane, VIS_ON_EPSILON, Winding};
 use crate::{Level, VisError};
 
 /// Leaves to a word of a row.
@@ -129,6 +134,10 @@ struct Walk<'a> {
     read_earlier: bool,
     seen: Leaves,
     path: Vec<usize>,
+    /// Might-see sets of steps already walked, to be reused instead of allocated.
+    spare: Vec<Leaves>,
+    /// Separating-plane lists of steps already walked, to be reused.
+    plane_spare: Vec<Vec<Plane>>,
     counts: VisCounts,
 }
 
@@ -141,10 +150,10 @@ pub(crate) struct Flow<'a> {
 
 /// One step of a flow's path: the portal's plane, the source and the pass windings so far
 /// (no pass on the first step) and the leaves that might still be seen.
-struct Step {
+struct Step<'w> {
     plane: Plane,
-    source: Winding,
-    pass: Option<Winding>,
+    source: Cow<'w, Winding>,
+    pass: Option<Cow<'w, Winding>>,
     might: Leaves,
 }
 
@@ -210,13 +219,15 @@ impl<'a> Flow<'a> {
         let mut counts = VisCounts::default();
         for batch in order.chunks(VIS_FLOW_BATCH) {
             let results = self.batch(batch, &done, threads);
-            // A flow that read the might-see set of a portal of its batch that one thread would
-            // have flowed first is flowed again, in order, with that portal's exact set; so is
-            // one that failed, which may have failed only on such a set.
+            // For `PRT1`, a flow that read the might-see set of a portal of its batch that one
+            // thread would have flowed first is flowed again, in order, with that portal's exact
+            // set; so is one that failed, which may have failed only on such a set. For `PRT2`
+            // each flow of the batch that did not fail is kept (VIS-7.4).
             for (&portal, flowed) in batch.iter().zip(results) {
-                let flowed = match flowed {
-                    Ok(flowed) if !flowed.read_earlier => flowed,
-                    _ => self.alone(portal, &done)?,
+                let flowed = match (self.file.format, flowed) {
+                    (Format::Leaves, Ok(flowed)) if !flowed.read_earlier => flowed,
+                    (Format::Clusters, Ok(flowed)) => flowed,
+                    (_, _) => self.alone(portal, &done)?,
                 };
                 counts.add(flowed.counts);
                 if let Some(slot) = done.get_mut(portal) {
@@ -266,7 +277,13 @@ impl<'a> Flow<'a> {
                         .spawn_scoped(scope, || {
                             let mut mine = Vec::new();
                             loop {
-                                let at = next.fetch_add(1, Ordering::Relaxed);
+                                // The portals that might see most are last in the batch, and take
+                                // longest: start them first, so the batch ends with short flows.
+                                let taken = next.fetch_add(1, Ordering::Relaxed);
+                                let Some(at) = batch.len().checked_sub(taken.saturating_add(1))
+                                else {
+                                    break;
+                                };
                                 let Some(&portal) = batch.get(at) else {
                                     break;
                                 };
@@ -307,7 +324,7 @@ impl<'a> Flow<'a> {
         let might = self.might.get(p).cloned().ok_or(VisError::Thread)?;
         let head = Step {
             plane: portal.plane,
-            source: portal.winding.clone(),
+            source: Cow::Borrowed(&portal.winding),
             pass: None,
             might,
         };
@@ -318,6 +335,8 @@ impl<'a> Flow<'a> {
             read_earlier: false,
             seen: Leaves::none(self.file.leafs),
             path: Vec::new(),
+            spare: Vec::new(),
+            plane_spare: Vec::new(),
             counts: VisCounts::default(),
         };
         self.leaf_flow(portal.leaf, &head, &mut walk)?;
@@ -330,13 +349,21 @@ impl<'a> Flow<'a> {
 
     /// `RecursiveLeafFlow`: marks `leaf` seen and follows each of its portals that can still
     /// show a leaf not yet seen (VIS-4.2 to VIS-4.5).
-    fn leaf_flow(&self, leaf: usize, previous: &Step, walk: &mut Walk<'_>) -> Result<(), VisError> {
+    fn leaf_flow(
+        &self,
+        leaf: usize,
+        previous: &Step<'_>,
+        walk: &mut Walk<'_>,
+    ) -> Result<(), VisError> {
         bump(&mut walk.counts.chains);
         if walk.path.contains(&leaf) {
             return Err(VisError::LeafRecursion);
         }
         walk.seen.add(leaf);
         walk.path.push(leaf);
+        // The separating planes of this step's source and pass, for the portals whose clip leaves
+        // the source whole: then they are the same for each of them.
+        let mut planes: [Option<Vec<Plane>>; 2] = [None, None];
         for &p in self.file.leaf_portals.get(leaf).into_iter().flatten() {
             let Some(portal) = self.file.portals.get(p) else {
                 continue;
@@ -367,44 +394,80 @@ impl<'a> Flow<'a> {
             if !more {
                 continue;
             }
-            let mut might = previous.might.clone();
-            for (m, t) in might.0.iter_mut().zip(&test.0) {
-                *m &= *t;
-            }
             let back = portal.plane.flipped();
             if previous.plane.same_normal(back) {
                 continue;
             }
             bump(&mut walk.counts.checks);
-            let Some(target) = portal.winding.clipped(walk.base) else {
-                continue;
+            let target = match portal.winding.clip(walk.base) {
+                None => continue,
+                Some(Clip::Whole) => Cow::Borrowed(&portal.winding),
+                Some(Clip::Cut(cut)) => Cow::Owned(cut),
             };
             let Some(pass) = &previous.pass else {
+                let might = Self::intersection(&mut walk.spare, &previous.might, test);
                 let step = Step {
                     plane: portal.plane,
-                    source: previous.source.clone(),
+                    source: Cow::Borrowed(&*previous.source),
                     pass: Some(target),
                     might,
                 };
                 self.leaf_flow(portal.leaf, &step, walk)?;
+                walk.spare.push(step.might);
                 continue;
             };
-            let Some(target) = target.clipped(previous.plane) else {
-                continue;
+            let target = match target.clip(previous.plane) {
+                None => continue,
+                Some(Clip::Whole) => target,
+                Some(Clip::Cut(cut)) => Cow::Owned(cut),
             };
-            let Some(mut source) = previous.source.clipped(back) else {
-                continue;
+            let (mut source, whole) = match previous.source.clip(back) {
+                None => continue,
+                Some(Clip::Whole) => (Cow::Borrowed(&*previous.source), true),
+                Some(Clip::Cut(cut)) => (Cow::Owned(cut), false),
             };
             bump(&mut walk.counts.tests);
             let mut target = target;
             if self.level >= Level::One {
-                let Some(t) = source.separated(pass, target, Flip::Front) else {
+                let clipped = if whole {
+                    let planes = planes[0].get_or_insert_with(|| {
+                        let mut all = walk.plane_spare.pop().unwrap_or_default();
+                        all.clear();
+                        previous.source.separators(pass, Flip::Front, |p| {
+                            all.push(p);
+                            true
+                        });
+                        all
+                    });
+                    planes
+                        .iter()
+                        .try_fold(target, |t, &p| Winding::clip_cow(t, p))
+                } else {
+                    source.separated(pass, target, Flip::Front)
+                };
+                let Some(t) = clipped else {
                     continue;
                 };
                 target = t;
             }
             if self.level >= Level::Two {
-                let Some(t) = pass.separated(&source, target, Flip::Back) else {
+                let clipped = if whole {
+                    let planes = planes[1].get_or_insert_with(|| {
+                        let mut all = walk.plane_spare.pop().unwrap_or_default();
+                        all.clear();
+                        pass.separators(&previous.source, Flip::Back, |p| {
+                            all.push(p);
+                            true
+                        });
+                        all
+                    });
+                    planes
+                        .iter()
+                        .try_fold(target, |t, &p| Winding::clip_cow(t, p))
+                } else {
+                    pass.separated(&source, target, Flip::Back)
+                };
+                let Some(t) = clipped else {
                     continue;
                 };
                 target = t;
@@ -422,6 +485,7 @@ impl<'a> Flow<'a> {
                 source = s;
             }
             bump(&mut walk.counts.passes);
+            let might = Self::intersection(&mut walk.spare, &previous.might, test);
             let step = Step {
                 plane: portal.plane,
                 source,
@@ -429,12 +493,24 @@ impl<'a> Flow<'a> {
                 might,
             };
             self.leaf_flow(portal.leaf, &step, walk)?;
+            walk.spare.push(step.might);
         }
         walk.path.pop();
+        walk.plane_spare.extend(planes.into_iter().flatten());
         Ok(())
     }
 
-    /// `LeafFlow`: each leaf's row, the leaves its portals see and itself (VIS-4.6).
+    /// `previous & test`, in a set taken from `spare` when there is one.
+    fn intersection(spare: &mut Vec<Leaves>, previous: &Leaves, test: &Leaves) -> Leaves {
+        let mut might = spare.pop().unwrap_or_else(|| previous.clone());
+        for ((m, p), t) in might.0.iter_mut().zip(&previous.0).zip(&test.0) {
+            *m = *p & *t;
+        }
+        might
+    }
+
+    /// `LeafFlow`: each leaf's row, the leaves its portals see and itself (VIS-4.6); for a
+    /// cluster, ericw-tools' `ClusterFlow` only warns when its portals see it (VIS-7.3).
     pub(crate) fn rows(file: &PortalFile, seen: &[Leaves]) -> Result<Vec<Leaves>, VisError> {
         let mut rows = Vec::with_capacity(file.leafs);
         for (leaf, portals) in file.leaf_portals.iter().enumerate() {
@@ -445,7 +521,12 @@ impl<'a> Flow<'a> {
                 }
             }
             if !row.add(leaf) {
-                return Err(VisError::SawIntoLeaf { leaf });
+                match file.format {
+                    Format::Leaves => return Err(VisError::SawIntoLeaf { leaf }),
+                    Format::Clusters => {
+                        tracing::warn!("Leaf portals saw into cluster ({leaf})");
+                    }
+                }
             }
             rows.push(row);
         }

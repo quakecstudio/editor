@@ -4,6 +4,8 @@
 //! plane from its points (VIS-2.3), a winding clipped to a plane's front, and the separating
 //! planes that clip one portal by two others (VIS-4.3, VIS-4.4).
 
+use std::borrow::Cow;
+
 /// `ON_EPSILON`, a `double`: each `float` distance is widened to be compared with it (VIS-2.7).
 pub(crate) const VIS_ON_EPSILON: f64 = 0.1;
 /// The origin, a normal of no length.
@@ -105,33 +107,49 @@ impl Winding {
 
     /// `ClipWinding` with `keepon` false: the part in front of `split`, a point within
     /// `ON_EPSILON` of it kept; none when no point is in front (VIS-4.3).
+    #[cfg(test)]
+    pub(crate) fn clipped(&self, split: Plane) -> Option<Self> {
+        match self.clip(split)? {
+            Clip::Whole => Some(self.clone()),
+            Clip::Cut(cut) => Some(cut),
+        }
+    }
+
+    /// [`Self::clipped`] without a copy when nothing is cut: the sides are classified on the
+    /// fly, with no list of distances or sides, and only a winding that is split is allocated.
     #[expect(
         clippy::float_cmp,
         reason = "spec VIS-4.3: vis puts a split point exactly on an axial plane"
     )]
-    pub(crate) fn clipped(&self, split: Plane) -> Option<Self> {
-        let dists: Vec<f64> = self.0.iter().map(|&p| split.side(p)).collect();
-        let sides: Vec<Side> = dists
-            .iter()
-            .map(|&d| {
-                if d > VIS_ON_EPSILON {
-                    Side::Front
-                } else if d < -VIS_ON_EPSILON {
-                    Side::Back
-                } else {
-                    Side::On
-                }
-            })
-            .collect();
-        if !sides.contains(&Side::Front) {
+    pub(crate) fn clip(&self, split: Plane) -> Option<Clip> {
+        let side_of = |p: Vec3| {
+            let d = split.side(p);
+            if d > VIS_ON_EPSILON {
+                Side::Front
+            } else if d < -VIS_ON_EPSILON {
+                Side::Back
+            } else {
+                Side::On
+            }
+        };
+        let (mut front, mut back) = (false, false);
+        for &p in &self.0 {
+            match side_of(p) {
+                Side::Front => front = true,
+                Side::Back => back = true,
+                Side::On => {}
+            }
+        }
+        if !front {
             return None;
         }
-        if !sides.contains(&Side::Back) {
-            return Some(self.clone());
+        if !back {
+            return Some(Clip::Whole);
         }
         let count = self.0.len();
         let mut out = Vec::with_capacity(count.saturating_add(SPLIT_SPARE));
-        for (i, (&p1, &side)) in self.0.iter().zip(&sides).enumerate() {
+        for (i, &p1) in self.0.iter().enumerate() {
+            let side = side_of(p1);
             if side == Side::On {
                 out.push(p1);
                 continue;
@@ -140,18 +158,15 @@ impl Winding {
                 out.push(p1);
             }
             let next = i.saturating_add(1).checked_rem(count).unwrap_or_default();
-            let (Some(&next_side), Some(&p2), Some(&d1), Some(&d2)) = (
-                sides.get(next),
-                self.0.get(next),
-                dists.get(i),
-                dists.get(next),
-            ) else {
+            let Some(&p2) = self.0.get(next) else {
                 continue;
             };
+            let next_side = side_of(p2);
             if next_side == Side::On || next_side == side {
                 continue;
             }
             // The distances are floats; widening them kept their values.
+            let (d1, d2) = (split.side(p1), split.side(p2));
             let t = crate::to_f32(d1) / (crate::to_f32(d1) - crate::to_f32(d2));
             let mid = [0, 1, 2].map(|j| {
                 let n = split.normal.get(j).copied().unwrap_or_default();
@@ -169,16 +184,40 @@ impl Winding {
             });
             out.push(mid);
         }
-        Some(Self(out))
+        Some(Clip::Cut(Self(out)))
+    }
+
+    /// A winding, borrowed or owned, clipped to the front of `split`: itself when nothing is
+    /// cut.
+    pub(crate) fn clip_cow(winding: Cow<'_, Self>, split: Plane) -> Option<Cow<'_, Self>> {
+        match winding.clip(split)? {
+            Clip::Whole => Some(winding),
+            Clip::Cut(cut) => Some(Cow::Owned(cut)),
+        }
     }
 
     /// `ClipToSeperators`: `target` clipped by every plane through an edge of `self`, the
     /// source, and a point of `pass` that has the source behind it and the pass in front, the
     /// back kept when `flip` (VIS-4.4); none when it is clipped away.
-    pub(crate) fn separated(&self, pass: &Self, target: Self, flip: Flip) -> Option<Self> {
+    pub(crate) fn separated<'t>(
+        &self,
+        pass: &Self,
+        target: Cow<'t, Self>,
+        flip: Flip,
+    ) -> Option<Cow<'t, Self>> {
+        let mut target = Some(target);
+        self.separators(pass, flip, |plane| {
+            target = target.take().and_then(|t| Self::clip_cow(t, plane));
+            target.is_some()
+        });
+        target
+    }
+
+    /// Every plane [`Self::separated`] clips by, in its order, passed to `visit` until it
+    /// returns false.
+    pub(crate) fn separators(&self, pass: &Self, flip: Flip, mut visit: impl FnMut(Plane) -> bool) {
         let source = &self.0;
         let count = source.len();
-        let mut target = target;
         for (i, &si) in source.iter().enumerate() {
             let l = i.saturating_add(1).checked_rem(count).unwrap_or_default();
             let Some(&sl) = source.get(l) else {
@@ -234,11 +273,18 @@ impl Winding {
                 if flip == Flip::Back {
                     plane = plane.flipped();
                 }
-                target = target.clipped(plane)?;
+                if !visit(plane) {
+                    return;
+                }
             }
         }
-        Some(target)
     }
+}
+
+/// What clipping a winding to a plane's front leaves: all of it, or a new, smaller winding.
+pub(crate) enum Clip {
+    Whole,
+    Cut(Winding),
 }
 
 /// Which side of a separating plane is kept (VIS-4.4).

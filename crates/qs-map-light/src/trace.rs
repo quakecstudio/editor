@@ -50,6 +50,11 @@ struct Pending {
     side: usize,
 }
 
+thread_local! {
+    /// The stack of split parts a thread's lines share between them.
+    static PENDING: std::cell::Cell<Vec<Pending>> = const { std::cell::Cell::new(Vec::new()) };
+}
+
 impl Tree {
     /// The tree from node 0, each leaf child its leaf's contents (LIGHT-4.1).
     pub(crate) fn new(bsp: &Bsp<'_>) -> Self {
@@ -90,9 +95,20 @@ impl Tree {
     /// behind by less than `ON_EPSILON` to the back; else it is split there, the part on the
     /// start's side first (LIGHT-4.1). The stack of split parts has no limit (LIGHT-4.8).
     pub(crate) fn test_line(&self, start: Vec3, stop: Vec3) -> bool {
+        PENDING.with(|cell| {
+            let mut stack = cell.take();
+            stack.clear();
+            let reaches = self.walk_line(start, stop, &mut stack);
+            cell.set(stack);
+            reaches
+        })
+    }
+
+    /// [`Self::test_line`] with the stack of split parts given, so that it is allocated once per
+    /// thread, not once per line.
+    fn walk_line(&self, start: Vec3, stop: Vec3, stack: &mut Vec<Pending>) -> bool {
         let mut front = start;
         let mut back = stop;
-        let mut stack: Vec<Pending> = Vec::new();
         let mut child = Child::Node(0);
         loop {
             while let Child::Contents(contents) = child {

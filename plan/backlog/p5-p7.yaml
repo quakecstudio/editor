@@ -1833,3 +1833,22 @@ groups:
     - Not published to any marketplace until the legal review (P4-22) signs off
     verify:
     - Recorded manual test per editor attached
+  - key: L-17
+    title: Upgrade the workspace to Rust 1.100
+    labels:
+    - repo
+    - area:process
+    - type:chore
+    size: M
+    reqs:
+    - CONV-1
+    - ARCH-3
+    depends: []
+    deliverable:
+    - 'rust-toolchain.toml, the workspace rust-version, CLAUDE.md and docs/conventions.md on Rust 1.100 (released 2026-11-12, https://blog.rust-lang.org/2026/11/12/Rust-1.100.0/), started no earlier than 2026-11-26 so the release is two weeks old; every new warning fixed, none allowed'
+    - 'The release''s additions adopted where they serve the project, each in the same PR or a linked plan issue: the `Allocator` trait for Vec and Box (per-flow arenas in qs-map-vis and the map compilers, measured against the full_compile_e1m1 budget); core::mem::DropGuard for rollback on error paths; naming the never type where Infallible is used; Cargo''s `cargo::unused_dependencies` lint in `[lints.cargo]`; registry `global-min-publish-age` in .cargo/config.toml alongside deny.toml''s supply-chain checks; and the new build-dir layout checked against the shared build directory the worktrees use'
+    acceptance:
+    - 'make ci passes on Rust 1.100 with zero warnings, including Cargo''s unused-dependency lint'
+    - 'Each adopted API is used in at least one crate with a test that exercises it; any change to a compiler stage''s speed is a recorded cargo xtask bench run'
+    verify:
+    - make ci; cargo xtask bench history

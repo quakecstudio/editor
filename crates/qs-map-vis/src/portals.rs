@@ -1,13 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 1996-1997  Id Software, Inc.
+// Copyright (C) 2026 QuakeC Studio contributors
+//
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: common/prtfile.cc, LoadPrtFile
 
 //! Reading the portal file (VIS-2): each portal of the file as two one-way portals, one in each
-//! of its leaves looking into the other.
+//! of its leaves looking into the other. A `PRT2` file, ericw-tools' (VIS-7), numbers its portals
+//! by cluster of leaves and ends with the leaves of each cluster.
 
 use crate::VisError;
 use crate::winding::{Plane, Winding};
 
-/// The portal file's first word (VIS-2.1).
+/// The portal file's first word (VIS-2.8).
 const PORTAL_FILE: &str = "PRT1";
+/// The first word of ericw-tools' portal file numbered by cluster (VIS-7.1).
+const PORTAL_FILE_2: &str = "PRT2";
 /// `MAX_POINTS_ON_WINDING` (VIS-2.2).
 pub(crate) const VIS_MAX_POINTS_ON_WINDING: usize = 64;
 /// `MAX_PORTALS_ON_LEAF` (VIS-2.4).
@@ -21,16 +28,29 @@ pub(crate) struct Portal {
     pub(crate) leaf: usize,
 }
 
-/// The portal file read: the vis leaves' count, the one-way portals in file order (each file
-/// portal's forward one, then its backward one) and each leaf's portals by place.
+/// Which portal file it is: id's, numbered by leaf, or ericw-tools', numbered by cluster.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Format {
+    /// `PRT1` (VIS-2).
+    Leaves,
+    /// `PRT2` (VIS-7).
+    Clusters,
+}
+
+/// The portal file read: what its portals number (for `PRT2` clusters, for `PRT1` leaves, here
+/// both called leaves), the one-way portals in file order (each file portal's forward one, then
+/// its backward one), each leaf's portals by place, and each real leaf's cluster.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct PortalFile {
+    pub(crate) format: Format,
     pub(crate) leafs: usize,
     pub(crate) portals: Vec<Portal>,
     pub(crate) leaf_portals: Vec<Vec<usize>>,
+    /// The cluster of each of the BSP's vis leaves: itself for `PRT1`.
+    pub(crate) clusters: Vec<usize>,
 }
 
-/// The words of the text after `PRT1`, as `fscanf` reads them, the parentheses apart.
+/// The words of the text after the first, as `fscanf` reads them, the parentheses apart.
 struct Words<'a> {
     rest: std::str::SplitWhitespace<'a>,
 }
@@ -65,19 +85,35 @@ impl PortalFile {
             rest: spaced.split_whitespace(),
         };
         let magic = words.next().ok_or(VisError::Header)?;
-        let (Some(leafs), Some(count)) = (words.int(), words.int()) else {
-            return Err(VisError::Header);
+        let format = match magic {
+            PORTAL_FILE => Format::Leaves,
+            PORTAL_FILE_2 => Format::Clusters,
+            _ => {
+                // id's vis reads the two numbers before it looks at the word (VIS-2.8).
+                return Err(match (words.int(), words.int()) {
+                    (Some(_), Some(_)) => VisError::NotPortalFile,
+                    _ => VisError::Header,
+                });
+            }
         };
-        if magic != PORTAL_FILE {
-            return Err(VisError::NotPortalFile);
-        }
-        let leafs = usize::try_from(leafs).map_err(|_| VisError::Header)?;
-        let count = usize::try_from(count).map_err(|_| VisError::Header)?;
+        let count = |n: Option<i64>| {
+            n.and_then(|n| usize::try_from(n).ok())
+                .ok_or(VisError::Header)
+        };
+        let real = match format {
+            Format::Leaves => None,
+            Format::Clusters => Some(count(words.int())?),
+        };
+        let leafs = count(words.int())?;
+        let portals = count(words.int())?;
         let mut file = Self {
+            format,
             leafs,
-            portals: Vec::with_capacity(count.saturating_mul(2)),
+            portals: Vec::with_capacity(portals.saturating_mul(2)),
             leaf_portals: vec![Vec::new(); leafs],
+            clusters: (0..leafs).collect(),
         };
+        let count = portals;
         for number in 0..count {
             let bad = VisError::Portal { number };
             let (Some(points), Some(a), Some(b)) = (words.int(), words.int(), words.int()) else {
@@ -110,7 +146,43 @@ impl PortalFile {
             file.add(front, back, &winding, plane.flipped())?;
             file.add(back, front, &winding, plane)?;
         }
+        if let Some(real) = real {
+            file.clusters = Self::cluster_map(&mut words, leafs, real)?;
+        }
         Ok(file)
+    }
+
+    /// `LoadPrtFile`'s cluster map: for each cluster in turn, the numbers of its leaves ended by
+    /// a negative one; a leaf in no cluster is in cluster 0, and a file of leaves and no cluster
+    /// is refused (VIS-7.2).
+    fn cluster_map(
+        words: &mut Words<'_>,
+        clusters: usize,
+        real: usize,
+    ) -> Result<Vec<usize>, VisError> {
+        // With no cluster there is no cluster 0 for an unlisted leaf to be in.
+        if clusters == 0 && real > 0 {
+            return Err(VisError::ClusterMap {
+                cluster: 0,
+                clusters,
+            });
+        }
+        let mut map = vec![0; real];
+        for cluster in 0..clusters {
+            loop {
+                let leaf = words
+                    .int()
+                    .ok_or(VisError::ClusterMap { cluster, clusters })?;
+                let Ok(leaf) = usize::try_from(leaf) else {
+                    break;
+                };
+                let slot = map
+                    .get_mut(leaf)
+                    .ok_or(VisError::ClusterLeaf { leaf, leafs: real })?;
+                *slot = cluster;
+            }
+        }
+        Ok(map)
     }
 
     /// Adds the one-way portal in `leaf` through `winding` on `plane`, looking into `into`.
@@ -126,7 +198,8 @@ impl PortalFile {
             .leaf_portals
             .get_mut(leaf)
             .ok_or(VisError::Portal { number: place })?;
-        if list.len() >= VIS_MAX_PORTALS_ON_LEAF {
+        // ericw-tools keeps a cluster's portals in a vector, with no limit (VIS-7.1).
+        if self.format == Format::Leaves && list.len() >= VIS_MAX_PORTALS_ON_LEAF {
             return Err(VisError::TooManyLeafPortals);
         }
         list.push(place);
