@@ -1895,3 +1895,17 @@ fn a_point_in_no_tree_has_no_leaf() {
     bsp.nodes = vec![split(0, [7, -1])];
     assert_eq!(bsp.point_in_leaf([1.0; 3]), None, "no node 7");
 }
+
+// spec BRIDGE-4.14: a submodel is *n with n a whole number from 1, no leading zero, as
+// Mod_LoadBrushModel names it
+#[test]
+fn submodels_are_star_and_a_number() {
+    use crate::Submodel;
+    assert_eq!(Submodel::parse("*12").map(Submodel::get), Some(12));
+    assert_eq!(Submodel::parse("*1").unwrap().name(), "*1");
+    for bad in ["*0", "*01", "*", "1", "*1a", "maps/e1m1.bsp", "*-1"] {
+        assert_eq!(Submodel::parse(bad), None, "{bad}");
+    }
+    assert_eq!(Submodel::new(0), None, "0 is the world");
+    assert_eq!(Submodel::new(3).map(Submodel::get), Some(3));
+}

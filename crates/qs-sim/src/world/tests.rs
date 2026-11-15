@@ -542,7 +542,7 @@ fn spawning_frees_unknown_classes() {
 }
 
 /// A BSP29 file of `spec`'s planes, nodes, leaves and clipnodes and one model over them.
-fn bsp_file(spec: &MapSpec, mins: [f32; 3], maxs: [f32; 3]) -> Vec<u8> {
+pub(crate) fn bsp_file(spec: &MapSpec, mins: [f32; 3], maxs: [f32; 3]) -> Vec<u8> {
     let mut lumps: Vec<Vec<u8>> = vec![Vec::new(); 15];
     for p in &spec.planes {
         let l = &mut lumps[1];

@@ -281,7 +281,7 @@ fn float_field(game: &mut Game, session: &mut Session, edict: usize, name: &str)
         .map_or(Value::Null, |f| f["value"]["value"].clone())
 }
 
-// spec BRIDGE-2.6: the game offers every command it implements, and no other
+// spec BRIDGE-2.10: the game offers every command it implements, and no other
 #[test]
 fn the_game_offers_its_commands() {
     let (mut game, mut session) = game();
@@ -906,7 +906,7 @@ fn the_next_level_carries_what_the_last_one_owed() {
     assert_eq!(responses[0].0, Id::Number(7));
 }
 
-// spec BRIDGE-2.6: a headless host with a GPU device draws offscreen, so it offers screenshot
+// spec BRIDGE-2.10: a headless host with a GPU device draws offscreen, so it offers screenshot
 // as the window does; a frame it could not draw answers each waiting screenshot with an error
 #[test]
 fn an_offscreen_host_offers_screenshot_and_reports_a_failed_frame() {
@@ -941,7 +941,7 @@ fn an_offscreen_host_offers_screenshot_and_reports_a_failed_frame() {
     }
 }
 
-// spec BRIDGE-2.6: a headless host with no GPU device draws nothing, so it leaves screenshot
+// spec BRIDGE-2.10: a headless host with no GPU device draws nothing, so it leaves screenshot
 // out of its capabilities and the session refuses one as unsupported; the rest are as the
 // window's
 #[test]
@@ -1568,6 +1568,159 @@ fn window_place_refuses_a_bad_frame() {
 #[test]
 fn a_breakpoint_id_reads_back() {
     assert_eq!(super::debug::BreakpointId::new(7).get(), 7);
+}
+
+/// A BSP file of a floor at z = `height`, solid below; for the player's hull, 24 higher.
+fn floor_file(height: f32) -> Vec<u8> {
+    use qs_bsp::write::{
+        BspFile, BspFormat, DiskClipNode, DiskLeaf, DiskModel, DiskNode, DiskPlane,
+    };
+    let plane = |dist| DiskPlane {
+        normal: [0.0, 0.0, 1.0],
+        dist,
+        plane_type: 2,
+    };
+    let leaf = |contents| DiskLeaf {
+        contents,
+        visofs: -1,
+        mins: [0.0; 3],
+        maxs: [0.0; 3],
+        firstmarksurface: 0,
+        nummarksurfaces: 0,
+        ambient_level: [0; BSP_NUM_AMBIENTS],
+    };
+    BspFile {
+        entities: b"{\n\"classname\" \"worldspawn\"\n}\n\0".to_vec(),
+        planes: vec![plane(height), plane(height + 24.0)],
+        textures: Vec::new(),
+        vertexes: Vec::new(),
+        visibility: Vec::new(),
+        nodes: vec![DiskNode {
+            planenum: 0,
+            children: [-2, -1],
+            mins: [0.0; 3],
+            maxs: [0.0; 3],
+            firstface: 0,
+            numfaces: 0,
+        }],
+        texinfo: Vec::new(),
+        faces: Vec::new(),
+        lighting: Vec::new(),
+        clipnodes: vec![DiskClipNode {
+            planenum: 1,
+            children: [-1, -2],
+        }],
+        leafs: vec![leaf(-2), leaf(-1)],
+        marksurfaces: Vec::new(),
+        edges: Vec::new(),
+        surfedges: Vec::new(),
+        models: vec![DiskModel {
+            mins: [-1000.0; 3],
+            maxs: [1000.0; 3],
+            origin: [0.0; 3],
+            headnode: [0; 4],
+            visleafs: 0,
+            firstface: 0,
+            numfaces: 0,
+        }],
+    }
+    .to_bytes(BspFormat::Bsp29)
+    .unwrap()
+}
+
+/// The game, with `maps/new.bsp` on its search path: the floor 30 lower.
+fn game_to_swap() -> (Game, Session) {
+    let (mut game, session) = game();
+    let bytes = floor_file(-30.0);
+    game.set_files(Rc::new(move |name: &str| {
+        (name == "maps/new.bsp").then(|| bytes.clone())
+    }));
+    (game, session)
+}
+
+// spec BRIDGE-4.14: map/swap reads its bsp from the game's search path and runs between frames
+// spec BRIDGE-4.15: the swap keeps the player and every edict as they are
+#[test]
+fn a_host_that_draws_nothing_swaps_at_once() {
+    let (mut game, mut session) = game_to_swap();
+    game.set_screen(Screen::Headless);
+    let health = float_field(&mut game, &mut session, 1, "health");
+    let count = float_field(&mut game, &mut session, 2, "count");
+    let result = call(
+        &mut game,
+        &mut session,
+        "map/swap",
+        &json!({ "bsp": "maps/new.bsp", "models": [] }),
+    )
+    .unwrap();
+    assert_eq!(result, json!({ "swapped": 0 }));
+    assert_eq!(float_field(&mut game, &mut session, 1, "health"), health);
+    assert_eq!(float_field(&mut game, &mut session, 2, "count"), count);
+    assert!(game.take_swap().is_none(), "nothing waits to be drawn");
+}
+
+// spec BRIDGE-4.17: a host that draws answers map/swap once it has drawn the new build, which
+// it keeps; the swap waits for it once
+#[test]
+fn a_drawing_host_answers_once_the_new_map_is_drawn() {
+    let (mut game, mut session) = game_to_swap();
+    let swap = json!({ "bsp": "maps/new.bsp", "models": [] });
+    let reply = session.handle(&mut game, request(7, "map/swap", &swap));
+    assert!(reply.response.is_none(), "answered once drawn");
+    let pending = game.take_swap().unwrap();
+    assert!(game.take_swap().is_none(), "the host takes it once");
+    let drawn = game.finish_swap(pending, Ok(())).unwrap();
+    assert_eq!(drawn.bsp().models.len(), 1, "the new build, for the view");
+    let responses = game.take_responses();
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0].0, Id::Number(7));
+    assert_eq!(responses[0].1, Ok(json!({ "swapped": 0 })));
+}
+
+// spec BRIDGE-4.17: a build the host cannot draw is refused, and the world is not swapped
+#[test]
+fn a_build_that_does_not_draw_is_refused() {
+    let (mut game, mut session) = game_to_swap();
+    let bytes = game.progs.clone();
+    let progs = Progs::read(&bytes).unwrap();
+    // Where a line down meets the floor, which the new build puts 30 lower.
+    let floor = |game: &mut Game| {
+        game.world_mut()
+            .trace_line(&progs, [0.0, 0.0, 100.0], [0.0, 0.0, -100.0])
+            .unwrap()
+            .point
+    };
+    let before = floor(&mut game);
+    let swap = json!({ "bsp": "maps/new.bsp", "models": [] });
+    let _later = session.handle(&mut game, request(7, "map/swap", &swap));
+    let pending = game.take_swap().unwrap();
+    assert!(
+        game.finish_swap(pending, Err("no room in the atlas".to_owned()))
+            .is_none()
+    );
+    let responses = game.take_responses();
+    let error = responses[0].1.clone().unwrap_err();
+    assert_eq!(error.code, ErrorCode::InternalError);
+    assert_eq!(error.message, "no room in the atlas");
+    assert_eq!(floor(&mut game), before, "the old map still collides");
+}
+
+// spec BRIDGE-4.14: a model the new BSP does not have, or a bsp that is not there, is -32602
+// at once and nothing changes
+#[test]
+fn a_swap_that_cannot_be_made_is_refused() {
+    let (mut game, mut session) = game_to_swap();
+    let star = json!({ "bsp": "maps/new.bsp", "models": [{ "map_entity": 1, "model": "*1" }] });
+    assert_eq!(
+        code(call(&mut game, &mut session, "map/swap", &star)),
+        ErrorCode::InvalidParams
+    );
+    let gone = json!({ "bsp": "maps/gone.bsp", "models": [] });
+    assert_eq!(
+        code(call(&mut game, &mut session, "map/swap", &gone)),
+        ErrorCode::InvalidParams
+    );
+    assert!(game.take_swap().is_none());
 }
 
 // spec WORLD-9.7: a level started from a game with a breakpoint in a spawn function spawns with

@@ -30,6 +30,7 @@ fn two_rooms(rows: [u8; 2]) -> MapSpec {
         }],
         visibility: rows.to_vec(),
         visofs: vec![-1, 0, 1],
+        submodels: Vec::new(),
     }
 }
 

@@ -277,6 +277,42 @@ pub const BSP_BSP2_FACE_SIZE: usize = 28;
 /// Bytes in a BSP2 marksurface (BSP-17).
 pub const BSP_BSP2_MARKSURFACE_SIZE: usize = 4;
 
+/// A submodel of a map, `*n` with `n` from 1: `Mod_LoadBrushModel` names the map's model `n`
+/// `"*%i"`, and `Mod_FindName` finds a model by its whole name, so `*01` names none.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Submodel(usize);
+
+impl Submodel {
+    /// The submodel `name` names, `*n` with `n` a whole number from 1 written with no leading
+    /// zero; `None` for any other name.
+    #[must_use]
+    pub fn parse(name: &str) -> Option<Self> {
+        let digits = name.strip_prefix('*')?;
+        if digits.starts_with('0') || !digits.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        digits.parse().ok().filter(|&n| n >= 1).map(Self)
+    }
+
+    /// The submodel `n`, from 1; `None` for 0, the world.
+    #[must_use]
+    pub const fn new(n: usize) -> Option<Self> {
+        if n == 0 { None } else { Some(Self(n)) }
+    }
+
+    /// Its name, `*n`.
+    #[must_use]
+    pub fn name(self) -> String {
+        format!("*{}", self.0)
+    }
+
+    /// Its place in a BSP's models, the world's being 0.
+    #[must_use]
+    pub const fn get(self) -> usize {
+        self.0
+    }
+}
+
 /// The compiler limits of BSP-16, `MAX_MAP_*` in id's `bspfile.h`; the engine checks none.
 pub mod limits {
     /// `MAX_MAP_MODELS`.
