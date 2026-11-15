@@ -39,7 +39,9 @@ use crate::map_editor::MIN_VIEW_HEIGHT;
 use crate::map_tools::Readout;
 use crate::palette::highlighted;
 use crate::shell::{CentreTab, EDITOR_AREA, PointerHeld, ZoomStep, commanded_size, dragged_size};
-use crate::strings::{Text, command_count, exit_status, help_for, match_count, missing_textures};
+use crate::strings::{
+    Text, command_count, exit_status, help_for, match_count, missing_textures, replace_with,
+};
 use crate::theme::{Contrast, Mode, Motion, Theme, ThemeError, Token, semibold};
 use crate::{App, AppError};
 
@@ -3092,9 +3094,7 @@ fn a_texture_s_menu_replaces_the_current_texture() {
         .get_by_role_and_label(Role::Button, "floor")
         .click_secondary();
     harness.run();
-    harness
-        .get_by_label(&crate::strings::replace_with("wall", "floor"))
-        .click();
+    harness.get_by_label(&replace_with("wall", "floor")).click();
     harness.run();
     let after = map_text(&harness);
     assert!(!after.contains(") wall "), "{after}");
@@ -3148,7 +3148,9 @@ fn brushes_are_selected_deleted_and_drawn_in_the_view() {
     );
     harness.get_by_label(Text::MapToolBrush.get()).click();
     // P7-08: the texture chosen in the browser is the one a new brush takes.
-    harness.get_by_role_and_label(Role::Button, "ceiling").click();
+    harness
+        .get_by_role_and_label(Role::Button, "ceiling")
+        .click();
     harness.run();
     let ceilings = map_text(&harness).matches(") ceiling ").count();
     let view = harness.get_by_label(Text::MapEditorView.get()).rect();
