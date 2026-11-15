@@ -17,6 +17,7 @@ use qs_bsp::{Bsp, BspLoader};
 use qs_map::{Brush, Item, MapFile, Surface, TexDef};
 use qs_map_light::{Light, Sampling};
 use qs_sim::{LoadOptions, UserCmd, World};
+use qs_wad::write::WadBuilder;
 use qs_workbench::map_compile::PlayFromHereParams;
 
 use crate::shape_stairs::{EYE, FRAME, progs};
@@ -183,14 +184,14 @@ fn a_coloured_light_lights_the_preview_in_colour() {
         texture.extend_from_slice(&value.to_le_bytes());
     }
     texture.resize(40 + 256 + 64 + 16 + 4, 1);
-    let mut wad = qs_wad::write::WadBuilder::new();
+    let mut wad = WadBuilder::new();
     wad.add(b"wall", qs_wad::WAD_TYP_MIPTEX, texture).unwrap();
     let compiled = qs_map_bsp::Compiler::default()
         .compile(&file.to_bytes(), Some(&wad.to_bytes().unwrap()))
         .unwrap();
     let lit = Light::new(Sampling::Extra).run(&compiled.bsp).unwrap();
     let bsp = Bsp::read(&lit.bsp, BspLoader::default()).unwrap();
-    let lit_file = lit.lit.expect("a red light writes a .lit");
+    let lit_file = lit.lit.unwrap();
     let colour = qs_bsp::Lit::read(&lit_file, bsp.lighting.len()).unwrap();
     let colours: Vec<u8> = (0..=255_u8).flat_map(|i| [i, i, i]).collect();
     let palette = qs_render::Palette::read(&colours).unwrap();
