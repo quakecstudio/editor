@@ -112,7 +112,7 @@ impl Scene {
                 let planes = planes_of(selector);
                 match region {
                     Region::Touching => {
-                        let theirs = corners_of(selector);
+                        let theirs = selector.corners();
                         !planes.iter().any(|&plane| all_outside(points, plane))
                             && !own.iter().any(|&plane| all_outside(&theirs, plane))
                     }
@@ -127,7 +127,7 @@ impl Scene {
             .iter()
             .filter(|shape| !hidden.contains(&shape.entity))
             .filter(|shape| !by.contains(&(shape.entity, shape.brush)))
-            .filter(|shape| takes(&corners_of(shape), &shape.planes))
+            .filter(|shape| takes(&shape.corners(), &shape.planes))
             .map(|shape| (shape.entity, shape.brush))
             .collect();
         let entities = self
@@ -141,17 +141,18 @@ impl Scene {
     }
 }
 
-/// A brush's corners as drawn.
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "a brush corner of a map is well inside f32's range"
-)]
-fn corners_of(shape: &BrushShape) -> Vec<[f32; 3]> {
-    shape
-        .vertices
-        .iter()
-        .map(|corner| corner.map(|c| c as f32))
-        .collect()
+impl BrushShape {
+    /// Its corners as drawn.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "a brush corner of a map is well inside f32's range"
+    )]
+    fn corners(&self) -> Vec<[f32; 3]> {
+        self.vertices
+            .iter()
+            .map(|corner| corner.map(|c| c as f32))
+            .collect()
+    }
 }
 
 /// The eight corners of the box `[min, max]`.
