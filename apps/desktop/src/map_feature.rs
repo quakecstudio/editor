@@ -619,6 +619,7 @@ impl MapFeature {
                     f64::from(camera.yaw.get()),
                     0.0,
                 ]),
+                region: None,
             },
         );
         // As Play from the toolbar: the error on the toolbar, and the guide when no game was

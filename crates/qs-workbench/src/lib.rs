@@ -812,6 +812,11 @@ pub enum WorkbenchError {
     },
     /// A map command could not open, change or save the open map.
     MapEdit(MapEditError),
+    /// A region compile's region has no volume, or the entities it names are in no room with
+    /// brushes (MAP-16.1).
+    NoRegion,
+    /// A region's sealing brushes could not be written (MAP-16.3).
+    RegionSeal(qs_map::BrushError),
 }
 
 impl fmt::Display for WorkbenchError {
@@ -866,6 +871,10 @@ impl fmt::Display for WorkbenchError {
             Self::MapLump { path, error } => write!(f, "{}: {error}", path.display()),
             Self::Spawn { path, error } => write!(f, "{}: {error}", path.display()),
             Self::MapEdit(error) => error.fmt(f),
+            Self::NoRegion => f.write_str(
+                "the region has no volume: give a box, or entities in rooms with brushes",
+            ),
+            Self::RegionSeal(error) => write!(f, "the region's seal: {error}"),
         }
     }
 }
@@ -898,6 +907,8 @@ impl Error for WorkbenchError {
             Self::MapLight { error } => Some(error),
             Self::MapLump { error, .. } => Some(error),
             Self::Spawn { error, .. } => Some(error),
+            Self::NoRegion => None,
+            Self::RegionSeal(error) => Some(error),
         }
     }
 }

@@ -115,6 +115,7 @@ enum qs_workbench::git::ConflictSide
 enum qs_workbench::git::GitChange
 enum qs_workbench::git::GitCommandError
 enum qs_workbench::git::GitSide
+enum qs_workbench::map_compile::CompileRegion
 enum qs_workbench::map_filter::GameMode
 enum qs_workbench::map_filter::Skill
 enum qs_workbench::map_profile::ExpandError
@@ -268,10 +269,12 @@ field qs_workbench::map_check::RenameKeyParams.from
 field qs_workbench::map_check::RenameKeyParams.to
 field qs_workbench::map_check::RenamedIn.pairs
 field qs_workbench::map_check::RenamedIn.path
+field qs_workbench::map_compile::MapCompileParams.region
 field qs_workbench::map_compile::MapPortals.path
 field qs_workbench::map_compile::MapPortals.portals
 field qs_workbench::map_compile::PlayFromHereParams.angles
 field qs_workbench::map_compile::PlayFromHereParams.eye
+field qs_workbench::map_compile::PlayFromHereParams.region
 field qs_workbench::map_compile::PlayedHere.light_warnings
 field qs_workbench::map_compile::PlayedHere.map
 field qs_workbench::map_compile::PlayedHere.origin
@@ -771,6 +774,7 @@ struct qs_workbench::map_check::MapChecked
 struct qs_workbench::map_check::MapProblem
 struct qs_workbench::map_check::RenameKeyParams
 struct qs_workbench::map_check::RenamedIn
+struct qs_workbench::map_compile::MapCompileParams
 struct qs_workbench::map_compile::MapPortals
 struct qs_workbench::map_compile::PlayFromHereParams
 struct qs_workbench::map_compile::PlayedHere
@@ -985,6 +989,7 @@ variant qs_workbench::WorkbenchError::NoHunk
 variant qs_workbench::WorkbenchError::NoMap
 variant qs_workbench::WorkbenchError::NoMapSource
 variant qs_workbench::WorkbenchError::NoProject
+variant qs_workbench::WorkbenchError::NoRegion
 variant qs_workbench::WorkbenchError::NotBuilt
 variant qs_workbench::WorkbenchError::Offset
 variant qs_workbench::WorkbenchError::Pattern
@@ -992,6 +997,7 @@ variant qs_workbench::WorkbenchError::PortalFile
 variant qs_workbench::WorkbenchError::ProfilesParse
 variant qs_workbench::WorkbenchError::ProfilesRead
 variant qs_workbench::WorkbenchError::Project
+variant qs_workbench::WorkbenchError::RegionSeal
 variant qs_workbench::WorkbenchError::Rename
 variant qs_workbench::WorkbenchError::Save
 variant qs_workbench::WorkbenchError::Spawn
@@ -1034,6 +1040,8 @@ variant qs_workbench::git::GitCommandError::Unsaved
 variant qs_workbench::git::GitCommandError::Workbench
 variant qs_workbench::git::GitSide::Staged
 variant qs_workbench::git::GitSide::Unstaged
+variant qs_workbench::map_compile::CompileRegion::Box
+variant qs_workbench::map_compile::CompileRegion::Rooms
 variant qs_workbench::map_filter::GameMode::Coop
 variant qs_workbench::map_filter::GameMode::Deathmatch
 variant qs_workbench::map_filter::GameMode::Single

@@ -9,6 +9,10 @@ use crate::rooms::Room;
 
 /// The thickness of the brushes that seal a cut map (MAP-16.3).
 const SEAL: f64 = 16.0;
+/// The axes of a point, x, y and z.
+const AXES: usize = 3;
+/// A box's faces, so the brushes that seal one (MAP-16.3).
+const BOX_FACES: usize = 6;
 
 /// A box of a map, its least corner below its greatest on every axis (MAP-16.1).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -33,7 +37,7 @@ impl Region {
         let mut around: Option<[[f64; 3]; 2]> = None;
         for [min, max] in rooms.into_iter().filter_map(|room| room.bounds) {
             let [mut lo, mut hi] = around.unwrap_or([min, max]);
-            for axis in 0..3 {
+            for axis in 0..AXES {
                 if let (Some(l), Some(h), Some(&a), Some(&b)) = (
                     lo.get_mut(axis),
                     hi.get_mut(axis),
@@ -74,7 +78,7 @@ impl Region {
     #[must_use]
     pub fn has(&self, brush: &Brush) -> bool {
         let corners = brush.vertices();
-        (0..3).all(|axis| {
+        (0..AXES).all(|axis| {
             let along = corners.iter().filter_map(|c| c.get(axis).copied());
             let (lo, hi) = along.fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
                 (lo.min(v), hi.max(v))
@@ -126,8 +130,8 @@ impl Region {
     fn seals(&self) -> Vec<[[f64; 3]; 2]> {
         let grown_min = self.min.map(|c| c - SEAL);
         let grown_max = self.max.map(|c| c + SEAL);
-        let mut out = Vec::with_capacity(6);
-        for axis in 0..3 {
+        let mut out = Vec::with_capacity(BOX_FACES);
+        for axis in 0..AXES {
             let (Some(&lo), Some(&hi)) = (self.min.get(axis), self.max.get(axis)) else {
                 continue;
             };

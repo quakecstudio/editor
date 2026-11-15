@@ -736,4 +736,12 @@ part of the map being worked on, sealed. Implemented by `qs_map::Region`.
   region's six faces from outside, each reaching 16 units past the region on the other two axes
   so the corners close, painted with the surface given. Nothing inside the region reaches the
   void, so a region compile cannot leak through the cut.
+- **MAP-16.4** The workbench seals a region with `skip`, which the extended dialect never draws
+  but keeps solid (QBSP-15.23): the cut adds no face and no lightmap, and the player sees the
+  void where the region ends, as a region's nodraw brushes show in GtkRadiant.
+- **MAP-16.5** `map.compile` and `map.play_from_here` take an optional `region`: `rooms`, a list of
+  entities, whose region is the box around the innermost room each is or is in (MAP-9.4), or
+  `box`, a least and a greatest corner. With no region the whole map compiles. A region with no
+  volume, or entities in no room with brushes, is refused, and an entity past the map's is
+  named. A region compile's report is not kept as the map's (P6-20).
 
