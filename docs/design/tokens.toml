@@ -96,6 +96,89 @@
 # The colour pairs the UI draws. Every foreground on every background in a rule must reach `min`
 # in both themes; `min` may not be below 4.5. A pair not listed here must not be drawn.
 
+# The themes the app uses while the system asks for more contrast (macOS: Accessibility >
+# Display > Increase contrast): each colour of [color.dark] or [color.light] moved toward white or
+# black until every [[contrast]] pair reaches [increased].min, and the borders made visible.
+
+[color.dark_contrast]
+"surface.chrome" = "#161514"
+"surface.toolbar" = "#1D1B1A"
+"surface.tabs" = "#1E1D1B"
+"surface.editor" = "#1A1918"
+"surface.panel" = "#211F1E"
+"surface.raised" = "#2A2826"
+"surface.viewport" = "#121110"
+"surface.current_line" = "#222120"
+"select.focus" = "#2E3640"
+"select.accent" = "#3A2A1E"
+"diff.added" = "#24331F"
+"debug.paused_line" = "#3A3122"
+"status.error_bg" = "#3A2220"
+"text" = "#E8E3DC"
+"text.code" = "#D9D2C7"
+"text.muted" = "#C8C4BD"
+"text.faint" = "#B0ABA4"
+"text.on_accent" = "#1A1918"
+"text.on_select" = "#F2E9DE"
+"text.on_diff" = "#C7E0B6"
+"text.on_error" = "#F2D2CC"
+"accent" = "#F5B88E"
+"focus" = "#A6C9E9"
+"focus.hover" = "#A4C9EA"
+"status.ok" = "#A3D098"
+"status.warn" = "#E8BF6C"
+"status.error" = "#F4AFA7"
+"code.keyword" = "#EBBA9E"
+"code.type" = "#9ECCD9"
+"code.function" = "#E8C77E"
+"code.constant" = "#D9BAE6"
+"code.string" = "#AFCF8B"
+"code.comment" = "#B0ABA4"
+"border" = "#5E5953"
+"border.strong" = "#7A746D"
+"border.window" = "#6A655F"
+"border.warn" = "#8A7240"
+
+[color.light_contrast]
+"surface.chrome" = "#F1EEEA"
+"surface.toolbar" = "#F4F2EE"
+"surface.tabs" = "#F1EEEA"
+"surface.editor" = "#FCFBF9"
+"surface.panel" = "#F4F2EE"
+"surface.raised" = "#ECE8E2"
+"surface.viewport" = "#E4DFD8"
+"surface.current_line" = "#F6F4F0"
+"select.focus" = "#EEF3F8"
+"select.accent" = "#F8E9DC"
+"diff.added" = "#EFF6E9"
+"debug.paused_line" = "#FBF3DF"
+"status.error_bg" = "#FAE6E2"
+"text" = "#22201D"
+"text.code" = "#2E2B27"
+"text.muted" = "#4B4640"
+"text.faint" = "#544F49"
+"text.on_accent" = "#FFFFFF"
+"text.on_select" = "#3A2414"
+"text.on_diff" = "#2C4A1C"
+"text.on_error" = "#6E1F17"
+"accent" = "#7C3910"
+"focus" = "#1D4E7D"
+"focus.hover" = "#1B4C7A"
+"status.ok" = "#2A561F"
+"status.warn" = "#674606"
+"status.error" = "#8A2B21"
+"code.keyword" = "#833E16"
+"code.type" = "#1A586D"
+"code.function" = "#694D0E"
+"code.constant" = "#703C86"
+"code.string" = "#3A5A1F"
+"code.comment" = "#544F49"
+"border" = "#8E877F"
+"border.strong" = "#5C564F"
+"border.window" = "#7A746C"
+"border.warn" = "#8A6A2A"
+
+
 [[contrast]]
 name = "interface text and icons"
 min = 4.5
@@ -167,6 +250,12 @@ name = "text on inline diagnostics"
 min = 4.5
 foreground = ["text.on_error"]
 background = ["status.error_bg"]
+
+# The increased-contrast themes: every [[contrast]] pair reaches `min` there, at least WCAG AAA's
+# 7:1 for text, which `cargo xtask contrast` checks.
+[increased]
+themes = ["dark_contrast", "light_contrast"]
+min = 7.0
 
 # Colours that never carry text or a meaningful icon: dividers and outlines whose component is
 # also told apart by its fill or its label (see visual.md, "Contrast").

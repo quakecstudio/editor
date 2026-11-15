@@ -95,6 +95,12 @@ step of `cargo xtask ci` and fails on any pair below 4.5:1, on a rule that asks 
 colour token that is in no rule, and on a theme missing a token. Its output gives the lowest ratio
 of each rule; at the time of writing the lowest pair is 4.53:1 in both themes.
 
+The app follows the system's appearance, light or dark, and on macOS its Increase contrast
+setting (P7-12): then it draws with `[color.dark_contrast]` or `[color.light_contrast]`, each
+colour of the standard theme moved toward white or black until every listed pair reaches
+`[increased].min`, 7:1 (WCAG AAA), with borders strong enough to see. `cargo xtask contrast` holds
+those two themes to that floor.
+
 Rules the UI layer follows so that only checked pairs are drawn:
 
 - `text.faint` and comments are never drawn on `surface.raised` or a highlighted row; there they
@@ -149,7 +155,9 @@ added.
 
 Short and functional: 100 ms for hover and press feedback, 160 ms ease-out for popovers, panels
 and the inline-edit diff. Nothing animates on its own while the game runs, and every duration is
-zero when the OS asks for reduced motion.
+zero when the OS asks for reduced motion: on macOS, with Reduce motion on, egui's animation time
+and scroll animation are zero (`theme::apply_motion`), read from `NSWorkspace` when the window
+gains focus (`display.rs`).
 
 ## Window chrome
 

@@ -41,6 +41,7 @@ use crate::map_profiles::{ProfileAction, ProfileView};
 use crate::map_review::{ReviewAction, ReviewView};
 use crate::map_scene::{ClassLook, Line, LinkView, SPAWNFLAGS, Scene, load_models, start_camera};
 use crate::map_tools::{BrushAction, BrushTools, MapTool, PickMode};
+use crate::shell::name_field;
 use crate::strings::{Text, also_selected, panes_text};
 use crate::texture_browser::TextureBrowser;
 use crate::theme::{Theme, Token};
@@ -688,18 +689,20 @@ impl MapEditor {
             ui.set_max_width(width);
             self.tools.toolbar(ui);
             ui.separator();
-            egui::ComboBox::from_id_salt(ui.id().with(core::any::TypeId::of::<MapPanes>()))
-                .selected_text(panes_text(layout).get())
-                .show_ui(ui, |ui| {
-                    for choice in MapPanes::ALL {
-                        if ui
-                            .selectable_label(layout == choice, panes_text(choice).get())
-                            .clicked()
-                        {
-                            actions.push(MapAction::Panes(choice));
+            let panes =
+                egui::ComboBox::from_id_salt(ui.id().with(core::any::TypeId::of::<MapPanes>()))
+                    .selected_text(panes_text(layout).get())
+                    .show_ui(ui, |ui| {
+                        for choice in MapPanes::ALL {
+                            if ui
+                                .selectable_label(layout == choice, panes_text(choice).get())
+                                .clicked()
+                            {
+                                actions.push(MapAction::Panes(choice));
+                            }
                         }
-                    }
-                });
+                    });
+            name_field(ui, &panes.response, Text::MapPanesPicker);
             ui.separator();
             ui.label(Text::MapLinks.get());
             ui.selectable_value(
@@ -710,28 +713,30 @@ impl MapEditor {
             ui.selectable_value(&mut self.links, LinkView::All, Text::MapLinksAll.get());
             ui.separator();
             ui.label(Text::MapShow.get());
-            egui::ComboBox::from_id_salt(ui.id().with(core::any::TypeId::of::<ShowFilter>()))
-                .selected_text(self.show.text().get())
-                .show_ui(ui, |ui| {
-                    for show in ShowFilter::ALL {
-                        if ui
-                            .selectable_label(self.show == show, show.text().get())
-                            .clicked()
-                        {
-                            actions.push(MapAction::Filter(show));
+            let show =
+                egui::ComboBox::from_id_salt(ui.id().with(core::any::TypeId::of::<ShowFilter>()))
+                    .selected_text(self.show.text().get())
+                    .show_ui(ui, |ui| {
+                        for show in ShowFilter::ALL {
+                            if ui
+                                .selectable_label(self.show == show, show.text().get())
+                                .clicked()
+                            {
+                                actions.push(MapAction::Filter(show));
+                            }
                         }
-                    }
-                    ui.separator();
-                    // The selected lights' reach is always drawn; this draws every light's.
-                    let mut every = self.lights == LinkView::All;
-                    if ui.checkbox(&mut every, Text::MapLightsAll.get()).changed() {
-                        self.lights = if every {
-                            LinkView::All
-                        } else {
-                            LinkView::Selection
-                        };
-                    }
-                });
+                        ui.separator();
+                        // The selected lights' reach is always drawn; this draws every light's.
+                        let mut every = self.lights == LinkView::All;
+                        if ui.checkbox(&mut every, Text::MapLightsAll.get()).changed() {
+                            self.lights = if every {
+                                LinkView::All
+                            } else {
+                                LinkView::Selection
+                            };
+                        }
+                    });
+            name_field(ui, &show.response, Text::MapShowPicker);
         });
         actions
     }
@@ -1204,7 +1209,7 @@ impl MapEditor {
                         Field::of(key, ty, self.scene.values.get(key))
                     };
                     ui.horizontal(|ui| {
-                        if let Some(set) = field.ui(ui, typed, value) {
+                        if let Some(set) = field.ui(ui, key, typed, value) {
                             let set = MapAction::SetKey(entity, also.clone(), key.clone(), set);
                             actions.push(set);
                         }
@@ -1263,19 +1268,21 @@ impl MapEditor {
             });
         }
         ui.horizontal(|ui| {
-            ui.add(
+            let key = ui.add(
                 egui::TextEdit::singleline(&mut self.adding.0)
                     .hint_text(Text::MapKey.get())
                     .desired_width(NEW_PAIR_WIDTH),
             );
-            ui.add(
+            name_field(ui, &key, Text::MapKey);
+            let value = ui.add(
                 egui::TextEdit::singleline(&mut self.adding.1)
                     .hint_text(Text::MapValue.get())
                     .desired_width(NEW_PAIR_WIDTH),
             );
+            name_field(ui, &value, Text::MapValue);
             let targets = !keys.targetnames.is_empty() && self.targeting.contains(&self.adding.0);
             if targets {
-                egui::ComboBox::from_id_salt(ui.id().with((entity, 1)))
+                let picker = egui::ComboBox::from_id_salt(ui.id().with((entity, 1)))
                     .selected_text(Text::MapTargets.get())
                     .show_ui(ui, |ui| {
                         for name in &keys.targetnames {
@@ -1284,6 +1291,7 @@ impl MapEditor {
                             }
                         }
                     });
+                name_field(ui, &picker.response, Text::MapTargets);
             }
             let ready = !self.adding.0.trim().is_empty();
             if ui

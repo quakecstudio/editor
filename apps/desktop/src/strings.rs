@@ -844,11 +844,23 @@ pub enum Text {
     MapEntitiesTitle,
     /// The map editor's Properties, as their help names them.
     MapPropertiesTitle,
+    /// View, Zoom In: the interface one step larger (P7-12).
+    ZoomInMenu,
+    /// View, Zoom Out: the interface one step smaller (P7-12).
+    ZoomOutMenu,
+    /// View, Actual Size: the interface at 100 percent (P7-12).
+    ActualSizeMenu,
+    /// The map view's layout picker, to a screen reader.
+    MapPanesPicker,
+    /// The map view's entity filter, to a screen reader.
+    MapShowPicker,
+    /// The Shape tool's kind picker, to a screen reader.
+    MapShapeKind,
 }
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 416] = [
+    pub const ALL: [Self; 422] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1265,6 +1277,12 @@ impl Text {
         Self::MapViewTitle,
         Self::MapEntitiesTitle,
         Self::MapPropertiesTitle,
+        Self::ZoomInMenu,
+        Self::ZoomOutMenu,
+        Self::ActualSizeMenu,
+        Self::MapPanesPicker,
+        Self::MapShowPicker,
+        Self::MapShapeKind,
     ];
 
     /// The string, in English.
@@ -1762,6 +1780,12 @@ impl Text {
             Self::MapViewTitle => "Map view",
             Self::MapEntitiesTitle => "Entity classes",
             Self::MapPropertiesTitle => "Map properties",
+            Self::ZoomInMenu => "Zoom In",
+            Self::ZoomOutMenu => "Zoom Out",
+            Self::ActualSizeMenu => "Actual Size",
+            Self::MapPanesPicker => "Map view layout",
+            Self::MapShowPicker => "Show entities",
+            Self::MapShapeKind => "Shape kind",
         }
     }
 }

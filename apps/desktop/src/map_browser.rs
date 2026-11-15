@@ -11,6 +11,7 @@ use eframe::egui::{self, Pos2, Rect, RichText, Sense, Stroke, Ui, Vec2, WidgetIn
 
 use crate::map_editor::{box_lines, rgb};
 use crate::map_scene::{ClassLook, Line};
+use crate::shell::name_field;
 use crate::strings::{Text, class_count};
 use crate::theme::{Theme, Token};
 
@@ -56,11 +57,12 @@ impl EntityBrowser {
 
     /// The header's part: the filter and how many classes it shows of `names`.
     pub(crate) fn header(&mut self, ui: &mut Ui, theme: &Theme, names: &[String]) {
-        ui.add(
+        let filter = ui.add(
             egui::TextEdit::singleline(&mut self.filter)
                 .hint_text(Text::MapFilterEntities.get())
                 .desired_width(FILTER_WIDTH),
         );
+        name_field(ui, &filter, Text::MapFilterEntities);
         let shown = self.shown(names).len();
         ui.label(
             RichText::new(class_count(shown, names.len())).color(theme.color(Token::TextMuted)),

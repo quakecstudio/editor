@@ -1376,9 +1376,15 @@ fn paint_note(
 /// The width of a change mark in the gutter, in points.
 const CHANGE_MARK_WIDTH: f32 = 3.0;
 
+/// The length of each dash of a changed line's mark, and of the gap after it, in points.
+const CHANGE_DASH: f32 = 3.0;
+
 /// Paints `line`'s change mark against `HEAD` at the gutter's left edge, `left`, in its row
-/// from `top`, `height` tall: a bar on an added line, or a changed one when lines were removed
-/// before it too, and a short mark at the top where lines were removed.
+/// from `top`, `height` tall: a solid bar on an added line, a dashed one on a changed line
+/// (one with lines removed before it too), and a short square at the top where lines were
+/// removed. The three differ in shape as well as colour, so colour is never the only sign
+/// (P7-12; Apple's Human Interface Guidelines, Accessibility: "Convey information with more
+/// than color alone").
 fn change_mark(
     painter: &egui::Painter,
     style: &ViewStyle,
@@ -1387,17 +1393,31 @@ fn change_mark(
     (left, top, height): (f32, f32, f32),
 ) {
     let removed = !diff.removed_before(line).is_empty();
-    let (color, bar_height) = match (diff.is_added(line), removed) {
-        (true, false) => (style.added_mark, height),
-        (true, true) => (style.modified_mark, height),
-        (false, true) => (style.removed_mark, CHANGE_MARK_WIDTH),
+    let (color, bar_height, dashed) = match (diff.is_added(line), removed) {
+        (true, false) => (style.added_mark, height, false),
+        (true, true) => (style.modified_mark, height, true),
+        (false, true) => (style.removed_mark, CHANGE_MARK_WIDTH, false),
         (false, false) => return,
     };
-    let bar = Rect::from_min_size(
-        Pos2::new(left, top),
-        Vec2::new(CHANGE_MARK_WIDTH, bar_height),
-    );
-    painter.rect_filled(bar, CornerRadius::ZERO, color);
+    if !dashed {
+        let bar = Rect::from_min_size(
+            Pos2::new(left, top),
+            Vec2::new(CHANGE_MARK_WIDTH, bar_height),
+        );
+        painter.rect_filled(bar, CornerRadius::ZERO, color);
+        return;
+    }
+    let bottom = top + bar_height;
+    let mut from = top;
+    while from < bottom {
+        let to = (from + CHANGE_DASH).min(bottom);
+        let dash = Rect::from_min_max(
+            Pos2::new(left, from),
+            Pos2::new(left + CHANGE_MARK_WIDTH, to),
+        );
+        painter.rect_filled(dash, CornerRadius::ZERO, color);
+        from = to + CHANGE_DASH;
+    }
 }
 
 /// How tall line `galley` is drawn: one row, or each of its wrapped rows.

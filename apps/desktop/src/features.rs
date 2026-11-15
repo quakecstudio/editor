@@ -389,7 +389,8 @@ pub(crate) fn bottom(
 ) -> Option<BottomAction> {
     let focus = focus == FocusNow::Take;
     let problems = workbench.problems();
-    ui.horizontal(|ui| {
+    // Wrapping, so with large text (P7-12) a tab never runs past the panel's edge.
+    ui.horizontal_wrapped(|ui| {
         for (value, text) in [
             (BottomTab::Problems, Text::Problems),
             (BottomTab::Console, Text::Console),

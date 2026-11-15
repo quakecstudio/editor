@@ -189,6 +189,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`view.tab_switcher`](#viewtab_switcher) | Opens the tab switcher: the open files, the one used most recently first. |
 | [`view.toggle_outline`](#viewtoggle_outline) | Shows or hides the outline panel beside the editor: the open file's symbols, the one the caret is in marked. |
 | [`view.toggle_panel`](#viewtoggle_panel) | Shows or hides a panel: Project and Entities on the left, Properties and the agent on the right, or Problems, Console and the debugger at the bottom. |
+| [`view.zoom`](#viewzoom) | Draws the interface's text and icons larger or smaller, from 0.5 (50 percent) to 3 (300 percent); 1 is the actual size. |
 | [`vm.run`](#vmrun) | Builds the open project and calls one QuakeC function in the VM over a mock engine, with globals and the fields of a self edict set first, answering each global and field the call changed and any run error. |
 
 ## `checkpoint.create`
@@ -7654,6 +7655,38 @@ Parameters:
     "panel"
   ],
   "title": "TogglePanelParams",
+  "type": "object"
+}
+```
+
+## `view.zoom`
+
+Draws the interface's text and icons larger or smaller, from 0.5 (50 percent) to 3 (300 percent); 1 is the actual size.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "Zoom": {
+      "description": "How much larger than 100 percent the interface is drawn, as a factor: 1 is 100 percent.",
+      "format": "float",
+      "type": "number"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `view.zoom`.",
+  "properties": {
+    "zoom": {
+      "$ref": "#/$defs/Zoom",
+      "description": "The zoom, from 0.5 (50 percent) to 3 (300 percent)."
+    }
+  },
+  "required": [
+    "zoom"
+  ],
+  "title": "ZoomParams",
   "type": "object"
 }
 ```

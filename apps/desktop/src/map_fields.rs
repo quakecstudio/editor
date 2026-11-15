@@ -12,6 +12,7 @@ use qs_map_edit::FlagChange;
 use qs_map_edit::FlagInfo;
 
 use crate::map_scene::{ANGLE, COLOR_SUFFIX, FLOAT_TYPE, SPAWNFLAGS};
+use crate::shell::{name_field, name_widget};
 use crate::strings::Text;
 
 /// The width of a value's text field, in points.
@@ -86,7 +87,14 @@ impl<'a> Field<'a> {
 
     /// Draws the field over `typed`, the value being typed, for the value `value`; the value
     /// to set once an edit is done.
-    pub(crate) fn ui(self, ui: &mut Ui, typed: &mut String, value: &str) -> Option<String> {
+    /// The field is named `key` to a screen reader.
+    pub(crate) fn ui(
+        self,
+        ui: &mut Ui,
+        key: &str,
+        typed: &mut String,
+        value: &str,
+    ) -> Option<String> {
         let mut set = None;
         ui.horizontal(|ui| {
             let width = match self {
@@ -98,6 +106,7 @@ impl<'a> Field<'a> {
                 [width, ui.spacing().interact_size.y],
                 egui::TextEdit::singleline(typed),
             );
+            name_widget(ui, &edit, key);
             if edit.lost_focus() && typed != value {
                 set = Some(typed.clone());
             }
@@ -122,7 +131,7 @@ impl<'a> Field<'a> {
                     }
                 }
                 Self::Choice(values) => {
-                    egui::ComboBox::from_id_salt(ui.id().with(value))
+                    let picker = egui::ComboBox::from_id_salt(ui.id().with(value))
                         .selected_text(Text::MapChoices.get())
                         .show_ui(ui, |ui| {
                             for choice in values {
@@ -131,6 +140,7 @@ impl<'a> Field<'a> {
                                 }
                             }
                         });
+                    name_field(ui, &picker.response, Text::MapChoices);
                 }
             }
         });
