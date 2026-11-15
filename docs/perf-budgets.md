@@ -31,6 +31,7 @@ one row per budget, the benchmark name in backticks, the budget as a number and 
 | `quakec_mg1` | ENG-17 | 500 us | p99 | [#444](https://github.com/quakecstudio/editor/issues/444) P3-29 | active |
 | `map_load_mg1` | ENG-17 | 1 s | median | [#444](https://github.com/quakecstudio/editor/issues/444) P3-29 | active |
 | `play_from_here_e1m1` | MAP-13 | 6 s | median | [#928](https://github.com/quakecstudio/editor/issues/928) P6-37 | active |
+| `region_compile_e1m1` | MAP-15 | 1.2 s | median | [#178](https://github.com/quakecstudio/editor/issues/178) P7-03 | active |
 <!-- /perf-budgets -->
 
 - **`open_project_and_type`:** open a 50,000-line QuakeC project in the editor and type the first
@@ -88,6 +89,11 @@ one row per budget, the benchmark name in backticks, the budget as a number and 
   `QS_BENCH_MAP`, through the extended qbsp with no WAD, as the workbench compiles it, then the
   fast light. Median within 6 s, which leaves 4 s of P6-12's 10 s from click to playing for
   the preview host to start and load it.
+- **`region_compile_e1m1`:** a region compile of one room of the same map (MAP-15, P7-03): the
+  map cut to the box 320 units across each way, 128 down and 256 up from its player start, and
+  sealed with `skip` (MAP-16), then compiled and lit as `play_from_here_e1m1`. Median within
+  1.2 s, a fifth of `play_from_here_e1m1`'s budget: P7-03 asks a region compile of one room to be
+  at least five times faster than the whole map's.
 
 ### QuakeSpasm's numbers
 
