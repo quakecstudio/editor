@@ -22,6 +22,7 @@ type qs_map_bsp::compile::Load
 use qs_map_bsp::Compiled = compile::Compiled
 use qs_map_bsp::Compiler = compile::Compiler
 use qs_map_bsp::Load = compile::Load
+variant qs_map_bsp::CompileError::BadAnimation
 variant qs_map_bsp::CompileError::BadNormal
 variant qs_map_bsp::CompileError::BogusRange
 variant qs_map_bsp::CompileError::DegenerateEdge
