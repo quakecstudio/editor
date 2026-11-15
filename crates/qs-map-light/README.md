@@ -15,3 +15,8 @@ Nothing is ported: id's `light` is not a portable upstream until the license rev
 (`docs/porting.md`, P4-22), and ericw-tools is cited for its coloured light only. The code is
 written from the spec, which was written from `light`'s source at the pinned commit, read and
 run as an oracle (`cargo xtask oracles maps`).
+
+`cargo xtask light-diff` (P7-01) is the differential. Every corpus map is lit by id's `light` and
+by ours in both modes, and the lightmaps are compared luxel by luxel. The coloured room fixture
+(`oracles/maps/coloured.map`) is also lit by ericw-tools' `light`, and our `.lit`'s hues are
+compared with ericw-tools' in the fast mode.

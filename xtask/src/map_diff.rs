@@ -116,9 +116,9 @@ impl Oracle {
 }
 
 /// One compile of a map: its BSP and whether it leaked.
-struct Compiled {
-    bsp: Vec<u8>,
-    leaks: bool,
+pub(crate) struct Compiled {
+    pub(crate) bsp: Vec<u8>,
+    pub(crate) leaks: bool,
 }
 
 /// What comparing two compiles of a map found.
@@ -176,34 +176,7 @@ pub(crate) fn main(
     net: &dyn Net,
     args: &Args,
 ) -> Result<bool, String> {
-    let corpus = match &args.maps {
-        Some(dir) => dir.clone(),
-        None => {
-            let manifest = Manifest::load(&root.join(MANIFEST))?;
-            let ids = manifest.map.into_iter().map(|entry| entry.id).collect();
-            if !corpus::main(root, &corpus::Args::fetch(ids))? {
-                return Err("the corpus's maps could not be fetched".to_owned());
-            }
-            corpus::cache_dest(root, None)?.join("map")
-        }
-    };
-    let mut maps: Vec<PathBuf> = FIXTURES.iter().map(|map| root.join(map)).collect();
-    let mut found: Vec<PathBuf> = fs::read_dir(&corpus)
-        .map_err(|e| format!("{}: {e}", corpus.display()))?
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| path.extension().is_some_and(|ext| ext == "map"))
-        .collect();
-    found.sort();
-    maps.extend(found);
-    let name = |path: &Path| {
-        path.file_stem()
-            .map(|stem| stem.to_string_lossy().into_owned())
-            .unwrap_or_default()
-    };
-    if !args.only.is_empty() {
-        maps.retain(|path| args.only.contains(&name(path)));
-    }
+    let maps = corpus_maps(root, args.maps.as_deref(), &args.only)?;
     let tools = build(root, exec, net)?;
     let work = WORK
         .iter()
@@ -213,14 +186,17 @@ pub(crate) fn main(
         let text = without_wads(&fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?)
             .map_err(|e| format!("{}: {e}", path.display()))?;
         for (oracle, dialect) in Oracle::of(&text) {
-            let dir = work.join("map-diff").join(oracle.name()).join(name(path));
+            let dir = work
+                .join("map-diff")
+                .join(oracle.name())
+                .join(map_name(path));
             let (ours, externals) = our_compile(&text, dialect, path);
             let theirs =
                 match oracle_compile(exec, oracle.qbsp(&tools), path, &text, &externals, &dir) {
                     Ok(theirs) => theirs,
                     Err(why) => {
                         passed = false;
-                        println!("FAIL  {} ({}): {why}", name(path), oracle.name());
+                        println!("FAIL  {} ({}): {why}", map_name(path), oracle.name());
                         continue;
                     }
                 };
@@ -243,10 +219,50 @@ pub(crate) fn main(
             };
             passed &= agrees;
             let verdict = if agrees { "ok   " } else { "FAIL " };
-            println!("{verdict} {} ({}): {said}", name(path), oracle.name());
+            println!("{verdict} {} ({}): {said}", map_name(path), oracle.name());
         }
     }
     Ok(passed)
+}
+
+/// The maps a differential compiles: the fixtures, then the corpus's (MAP-19), fetched into
+/// the cache, or those in `dir` when given; only those named in `only` when it names any.
+pub(crate) fn corpus_maps(
+    root: &Path,
+    dir: Option<&Path>,
+    only: &[String],
+) -> Result<Vec<PathBuf>, String> {
+    let corpus = match dir {
+        Some(dir) => dir.to_path_buf(),
+        None => {
+            let manifest = Manifest::load(&root.join(MANIFEST))?;
+            let ids = manifest.map.into_iter().map(|entry| entry.id).collect();
+            if !corpus::main(root, &corpus::Args::fetch(ids))? {
+                return Err("the corpus's maps could not be fetched".to_owned());
+            }
+            corpus::cache_dest(root, None)?.join("map")
+        }
+    };
+    let mut maps: Vec<PathBuf> = FIXTURES.iter().map(|map| root.join(map)).collect();
+    let mut found: Vec<PathBuf> = fs::read_dir(&corpus)
+        .map_err(|e| format!("{}: {e}", corpus.display()))?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "map"))
+        .collect();
+    found.sort();
+    maps.extend(found);
+    if !only.is_empty() {
+        maps.retain(|path| only.contains(&map_name(path)));
+    }
+    Ok(maps)
+}
+
+/// A map's name, its file's without `.map`.
+pub(crate) fn map_name(path: &Path) -> String {
+    path.file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 /// Whether two compiles that both stop stop alike: the oracle names the error ours names, or
@@ -266,7 +282,7 @@ const HULL_POINTS_STOP: &str = "MAX_HULL_POINTS";
 /// The map `text` of `path` compiled by `qbsp` in `dir`, emptied first, with the external maps
 /// our compile read, `externals`, copied in from beside the map at the same relative paths; the
 /// oracle's last line when it stops.
-fn oracle_compile(
+pub(crate) fn oracle_compile(
     exec: &dyn Exec,
     qbsp: &Path,
     path: &Path,
@@ -320,7 +336,7 @@ fn oracle_compile(
 }
 
 /// The map `text` with its world's WAD keys ([`WAD_KEYS`]) taken out.
-fn without_wads(text: &[u8]) -> Result<Vec<u8>, qs_map::MapError> {
+pub(crate) fn without_wads(text: &[u8]) -> Result<Vec<u8>, qs_map::MapError> {
     let mut file = qs_map::MapFile::parse(text)?;
     if let Some(world) = file.entities.first_mut() {
         for key in WAD_KEYS {

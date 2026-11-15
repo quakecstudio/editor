@@ -33,6 +33,7 @@ qs-map-light = { workspace = true }
 qs-pak = { workspace = true }
 qs-paths = { workspace = true }
 qs-render = { workspace = true }
+qs-wad = { workspace = true }
 qs-sim = { workspace = true }
 qs-vfs = { workspace = true }
 qs-workbench = { workspace = true }

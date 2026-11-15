@@ -169,3 +169,45 @@ fn the_player_is_put_where_its_box_fits() {
     );
     assert!(at([f64::NAN, 0.0, 80.0]).is_err());
 }
+
+// spec REND-6.1, LIGHT-6.5: a map lit in full mode with a coloured light writes a .lit the
+// preview host's loader reads for the lit BSP, and the map's lightmaps are drawn in its colour
+#[test]
+fn a_coloured_light_lights_the_preview_in_colour() {
+    let mut file = MapFile::parse(&map()).unwrap();
+    file.entities[2].set(b"_color", b"1 0 0").unwrap();
+    // REND-1.14: a face with no texture has no lightmap, so the walls take one from a WAD.
+    let mut texture = b"wall".to_vec();
+    texture.resize(16, 0);
+    for value in [16_u32, 16, 40, 40 + 256, 40 + 256 + 64, 40 + 256 + 64 + 16] {
+        texture.extend_from_slice(&value.to_le_bytes());
+    }
+    texture.resize(40 + 256 + 64 + 16 + 4, 1);
+    let mut wad = qs_wad::write::WadBuilder::new();
+    wad.add(b"wall", qs_wad::WAD_TYP_MIPTEX, texture).unwrap();
+    let compiled = qs_map_bsp::Compiler::default()
+        .compile(&file.to_bytes(), Some(&wad.to_bytes().unwrap()))
+        .unwrap();
+    let lit = Light::new(Sampling::Extra).run(&compiled.bsp).unwrap();
+    let bsp = Bsp::read(&lit.bsp, BspLoader::default()).unwrap();
+    let lit_file = lit.lit.expect("a red light writes a .lit");
+    let colour = qs_bsp::Lit::read(&lit_file, bsp.lighting.len()).unwrap();
+    let colours: Vec<u8> = (0..=255_u8).flat_map(|i| [i, i, i]).collect();
+    let palette = qs_render::Palette::read(&colours).unwrap();
+    let mut builder = qs_render::MeshBuilder::new(&palette, qs_render::Look::GlQuake);
+    let extras = qs_render::Extras {
+        lit: Some(&colour),
+        ..qs_render::Extras::default()
+    };
+    builder
+        .add_with(&bsp, &extras, &[qs_render::Placement::WORLD])
+        .unwrap();
+    let lightmap = builder.finish().lightmap.rgba;
+    // The atlas's first texel is its white one; the faces' lightmaps start after it.
+    let texels: Vec<&[u8]> = lightmap.chunks(4).skip(1).collect();
+    assert!(texels.iter().any(|t| t[0] > 0), "the room is lit");
+    assert!(
+        texels.iter().all(|t| t[1] == 0 && t[2] == 0),
+        "and only in red"
+    );
+}
