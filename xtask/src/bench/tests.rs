@@ -90,6 +90,7 @@ fn the_repository_budget_table_names_every_budget() {
             ("quakec_mg1", 5e5, Statistic::P99),
             ("map_load_mg1", 1e9, Statistic::Median),
             ("play_from_here_e1m1", 6e9, Statistic::Median),
+            ("region_compile_e1m1", 1.2e9, Statistic::Median),
         ]
     );
 }

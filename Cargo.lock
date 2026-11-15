@@ -3567,6 +3567,7 @@ dependencies = [
  "qc-progs",
  "qc-project",
  "qc-sema",
+ "qs-map",
  "qs-map-bsp",
  "qs-map-light",
  "qs-map-vis",

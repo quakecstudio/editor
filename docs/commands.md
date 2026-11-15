@@ -79,7 +79,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.check`](#mapcheck) | Checks a .map: what id's qbsp and ericw-tools read otherwise, and its entities against the project's server QuakeC as the engine reads them: unknown classnames and keys with the closest name, values their field cannot read, and targets and targetnames nothing matches. |
 | [`map.choose_profile`](#mapchoose_profile) | Chooses the compile profile map.run_profile runs when given none; none given chooses Full again. |
 | [`map.compare`](#mapcompare) | How the open map's file, changed by another program, differs from the map being edited, entity by entity. |
-| [`map.compile`](#mapcompile) | Compiles the open map, as it is in the editor, to a BSP beside it, with its portal and leak files, and reports whether it leaks and the textures its WADs lack. |
+| [`map.compile`](#mapcompile) | Compiles the open map, as it is in the editor, or only a region of it, sealed, to a BSP beside it, with its portal and leak files, and reports whether it leaks and the textures its WADs lack. |
 | [`map.delete`](#mapdelete) | Deletes an entity of the open map; the world stays. |
 | [`map.duplicate`](#mapduplicate) | Duplicates an entity of the open map, its keys and brushes, in place at the end of the map, and selects the copy; the world is not duplicated. A targetname ending in a number takes the next free number, and the keys the code fires entities by move on by as many. |
 | [`map.entity`](#mapentity) | An entity of the open map: its pairs, the keys its class reads with their types and defaults, and the map's targetnames for its target keys. |
@@ -3675,16 +3675,97 @@ Parameters:
 
 ## `map.compile`
 
-Compiles the open map, as it is in the editor, to a BSP beside it, with its portal and leak files, and reports whether it leaks and the textures its WADs lack.
+Compiles the open map, as it is in the editor, or only a region of it, sealed, to a BSP beside it, with its portal and leak files, and reports whether it leaks and the textures its WADs lack.
 
 Parameters:
 
 ```json
 {
+  "$defs": {
+    "CompileRegion": {
+      "description": "The part of the open map a compile takes (MAP-16), when it is not the whole map.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "The rooms these entities are, or are in, innermost: a layer's or group's own entity is\nthat room, any other entity the room around it (MAP-9.4). The region is the box around\ntheir bounds (MAP-16.1).",
+          "properties": {
+            "rooms": {
+              "items": {
+                "$ref": "#/$defs/EntityIndex"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "rooms"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The box from `min` to `max`.",
+          "properties": {
+            "box": {
+              "properties": {
+                "max": {
+                  "description": "Its greatest corner.",
+                  "items": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "type": "array"
+                },
+                "min": {
+                  "description": "Its least corner.",
+                  "items": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "min",
+                "max"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "box"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "additionalProperties": false,
-  "description": "The command takes no parameters: pass the empty object {}.",
-  "title": "No parameters",
+  "description": "The parameters of `map.compile`.",
+  "properties": {
+    "region": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CompileRegion"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Only this part of the map, sealed (MAP-16); the whole map when not given."
+    }
+  },
+  "title": "MapCompileParams",
   "type": "object"
 }
 ```
@@ -4839,6 +4920,74 @@ Parameters:
 
 ```json
 {
+  "$defs": {
+    "CompileRegion": {
+      "description": "The part of the open map a compile takes (MAP-16), when it is not the whole map.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "The rooms these entities are, or are in, innermost: a layer's or group's own entity is\nthat room, any other entity the room around it (MAP-9.4). The region is the box around\ntheir bounds (MAP-16.1).",
+          "properties": {
+            "rooms": {
+              "items": {
+                "$ref": "#/$defs/EntityIndex"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "rooms"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The box from `min` to `max`.",
+          "properties": {
+            "box": {
+              "properties": {
+                "max": {
+                  "description": "Its greatest corner.",
+                  "items": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "type": "array"
+                },
+                "min": {
+                  "description": "Its least corner.",
+                  "items": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "min",
+                "max"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "box"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "description": "The parameters of `map.play_from_here`.",
@@ -4866,6 +5015,18 @@ Parameters:
       "maxItems": 3,
       "minItems": 3,
       "type": "array"
+    },
+    "region": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CompileRegion"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Only this part of the map, sealed, so the room being worked on compiles at once\n(MAP-16); the whole map when not given."
     }
   },
   "required": [

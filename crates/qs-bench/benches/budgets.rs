@@ -237,6 +237,59 @@ fn play_from_here_e1m1(group: &mut BenchmarkGroup<'_, WallTime>) {
     });
 }
 
+/// How far a region compile's room reaches from the player start: 320 units across each way,
+/// 128 down and 256 up, about one of lq-e1m1's rooms.
+const ROOM_REACH: ([f64; 3], [f64; 3]) = ([-320.0, -320.0, -128.0], [320.0, 320.0, 256.0]);
+
+/// A region compile of one room of lq-e1m1 (P7-03, MAP-16): the map cut to the room around its
+/// player start and sealed with `skip`, as `map.play_from_here` cuts it, then compiled and lit
+/// as `play_from_here_e1m1` compiles the whole map; at least five times faster than it.
+fn region_compile_e1m1(group: &mut BenchmarkGroup<'_, WallTime>) {
+    let path = std::env::var_os(MAP_FILE).unwrap_or_else(|| {
+        panic!("{MAP_FILE} is not set: run the benchmarks through cargo xtask bench")
+    });
+    let map = fs::read(path).expect("lq-e1m1.map reads");
+    let file = qs_map::MapFile::parse(&map).expect("lq-e1m1.map parses");
+    let start = file
+        .entities
+        .iter()
+        .find(|entity| entity.classname() == Some(b"info_player_start".as_slice()))
+        .map(qs_map::Entity::origin)
+        .expect("lq-e1m1 has a player start");
+    let (low, high) = ROOM_REACH;
+    let corner = |reach: [f64; 3]| {
+        [
+            start[0] + reach[0],
+            start[1] + reach[1],
+            start[2] + reach[2],
+        ]
+    };
+    let region = qs_map::Region::new(corner(low), corner(high)).expect("the room has volume");
+    let skip = qs_map::Surface {
+        texture: b"skip".to_vec(),
+        texdef: qs_map::TexDef::Standard {
+            shift: [0.0; 2],
+            rotate: 0.0,
+            scale: [1.0; 2],
+        },
+    };
+    let compiler = qs_map_bsp::Compiler::default().with_dialect(qs_map_bsp::Dialect::Extended);
+    group.bench_function("region_compile_e1m1", |bencher| {
+        bencher.iter(|| {
+            let cut = region
+                .cut(&file, &skip)
+                .expect("the room is sealed")
+                .to_bytes();
+            let compiled = compiler.compile(&cut, None).expect("the room compiles");
+            black_box(
+                Light::new(Sampling::Fast)
+                    .run(&compiled.bsp)
+                    .expect("the room lights"),
+            )
+        });
+    });
+}
+
 /// A full compile of an id1-sized map (P7-04, MAP-14): LibreQuake's lq-e1m1 through the extended
 /// qbsp with no WAD, then full vis and full light, as the background full compile runs them.
 fn full_compile_e1m1(group: &mut BenchmarkGroup<'_, WallTime>) {
@@ -570,6 +623,7 @@ fn budgets(criterion: &mut Criterion) {
     save_to_game(&mut group);
     routes(&mut group);
     play_from_here_e1m1(&mut group);
+    region_compile_e1m1(&mut group);
     full_compile_e1m1(&mut group);
     group.finish();
 }
