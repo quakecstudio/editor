@@ -125,6 +125,7 @@ mod host;
 mod layers;
 mod lex_corpus;
 mod licenses;
+mod light_diff;
 mod lsp_corpus;
 mod map_corpus;
 mod map_diff;
@@ -229,6 +230,9 @@ enum Task {
     MapCorpus(map_corpus::Args),
     /// The map compiler differential: qs-map-bsp against id's and ericw-tools' qbsp.
     MapDiff(map_diff::Args),
+    /// The light compiler differential: qs-map-light's lightmaps against id's light, and its
+    /// coloured light against ericw-tools'.
+    LightDiff(light_diff::Args),
     /// Each codebase's entity definitions, against their golden FGD and the maps' classnames.
     EntityCorpus(entity_corpus::Args),
     /// Build and run the oracles.
@@ -294,6 +298,10 @@ fn run(root: &Path, task: &Task, ci_steps: &[ci::Step]) -> bool {
         Task::MapDiff(args) => (
             "map-diff",
             map_diff::main(root, &exec::System, &download::CURL, args),
+        ),
+        Task::LightDiff(args) => (
+            "light-diff",
+            light_diff::main(root, &exec::System, &download::CURL, args),
         ),
         Task::EntityCorpus(args) => ("entity-corpus", entity_corpus::main(root, args)),
         Task::Oracles(args) => ("oracles", oracles::main(root, args)),

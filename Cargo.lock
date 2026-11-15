@@ -3927,6 +3927,7 @@ dependencies = [
  "qs-render",
  "qs-sim",
  "qs-vfs",
+ "qs-wad",
  "qs-workbench",
  "serde_json",
 ]
@@ -6240,6 +6241,7 @@ dependencies = [
  "qs-map",
  "qs-map-bsp",
  "qs-map-edit",
+ "qs-map-light",
  "qs-models",
  "qs-pak",
  "qs-settings",
