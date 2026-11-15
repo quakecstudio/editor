@@ -90,6 +90,7 @@ milestone (`MVP-3`). All of them wait for the MVP gate.
 | Next-edit suggestions | Editor and UI; moved out of the MVP by [ADR-0007](adr/0007-mvp-scope.md) | [P4-11](https://github.com/quakecstudio/editor/issues/122) Next-edit suggestions |
 | External agents in the panel over ACP | Editor and UI, Product principles; moved out of the MVP by [ADR-0007](adr/0007-mvp-scope.md) | [P4-14](https://github.com/quakecstudio/editor/issues/125) Host external agents over ACP |
 | Windows and Linux desktop checks | MVP scope; moved out of P4-24 and P4-23 by Justin on 2026-11-11, who has no Windows or Linux desktop | [L-16](https://github.com/quakecstudio/editor/issues/851) Windows and Linux desktop checks |
+| Rust 1.100 and its new APIs | Conventions (CONV-1); asked for by Justin on 2026-11-14 | [L-17](https://github.com/quakecstudio/editor/issues/956) Upgrade the workspace to Rust 1.100 |
 | In-app update check | Quality, testing and release; moved out of the MVP by [ADR-0007](adr/0007-mvp-scope.md) | [P4-19](https://github.com/quakecstudio/editor/issues/130) Update mechanism |
 | Editor integrations for VS Code, Zed and Neovim | Language server; moved out of Phase 2 by Justin on 2026-10-29, as it serves other editors and not the IDE or the engine | [P2-16](https://github.com/quakecstudio/editor/issues/72) Package editor integrations for VS Code, Zed and Neovim |
 
