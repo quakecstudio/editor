@@ -26,10 +26,13 @@ use quakec_studio::map_view::DEPTH_FORMAT;
 use quakec_studio::strings::Text;
 use serde_json::{Value, json};
 
-/// Where the hall of lq_e1m1 is seen from: east of its pillar, looking west.
-const HALL: [f32; 3] = [200.0, 900.0, 400.0];
-/// A red light of the hall: entity 185 of lq_e1m1, `_color 237 51 59`.
-const RED_LIGHT: usize = 185;
+/// Where the pool room of lq_e1m1 is seen from: its south-east corner, looking north-west over
+/// the slime and lava pools to the consoles.
+const ROOM: [f32; 3] = [380.0, -850.0, 170.0];
+/// The camera's yaw and pitch in the pool room, in degrees.
+const ROOM_VIEW: (f32, f32) = (160.0, 12.0);
+/// A green light over the slime: entity 1327 of lq_e1m1, `_color 143 240 164`.
+const GREEN_LIGHT: usize = 1327;
 
 /// LibreQuake's QuakeC is FTEQCC's dialect, with `#ifdef` for QuakeWorld.
 const MANIFEST: &str =
@@ -138,7 +141,7 @@ fn scenes() -> Vec<Scene> {
             Step::Run("view.toggle_panel", json!({ "panel": "bottom" })),
         ]
     };
-    let hall = || Step::Look(HALL, 180.0, 10.0);
+    let room = || Step::Look(ROOM, ROOM_VIEW.0, ROOM_VIEW.1);
     let clear = || Step::HidePoints(None);
     vec![
         Scene {
@@ -147,19 +150,19 @@ fn scenes() -> Vec<Scene> {
             steps: Vec::new(),
         },
         Scene {
-            name: "showcase-lit",
-            opens: Opens::Map("e1/lq_e1m1.map"),
-            steps: vec![lit(), hall(), clear()],
-        },
-        Scene {
             name: "showcase-lit-wide",
             opens: Opens::Map("e1/lq_e1m1.map"),
-            steps: [vec![lit(), hall(), clear()], wide().into()].concat(),
+            steps: [
+                vec![lit(), room(), clear()],
+                wide().into(),
+                vec![Step::Run("view.toggle_panel", json!({ "panel": "right" }))],
+            ]
+            .concat(),
         },
         Scene {
             name: "showcase-textured",
             opens: Opens::Map("e1/lq_e1m1.map"),
-            steps: [vec![textured(), clear()], wide().into()].concat(),
+            steps: [vec![textured(), room(), clear()], wide().into()].concat(),
         },
         Scene {
             name: "showcase-light-reach",
@@ -167,9 +170,9 @@ fn scenes() -> Vec<Scene> {
             steps: [
                 vec![
                     lit(),
-                    hall(),
-                    Step::HidePoints(Some(RED_LIGHT)),
-                    Step::Run("map.select", json!({ "entity": RED_LIGHT })),
+                    room(),
+                    Step::HidePoints(Some(GREEN_LIGHT)),
+                    Step::Run("map.select", json!({ "entity": GREEN_LIGHT })),
                 ],
                 wide().into(),
             ]
@@ -181,7 +184,7 @@ fn scenes() -> Vec<Scene> {
             steps: [
                 vec![
                     lit(),
-                    hall(),
+                    room(),
                     clear(),
                     Step::Run("view.map_panes", json!({ "panes": "quad" })),
                 ],
