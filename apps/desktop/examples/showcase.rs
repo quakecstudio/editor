@@ -11,16 +11,24 @@
 //! ```text
 //! cargo run --release -p quakec-studio --example showcase -- --librequake <dir> --out <dir>
 //! ```
+//!
+//! The debugger scene plays LibreQuake's QuakeC in the preview host, so it needs the host built
+//! (`cargo build --release -p quakec-engine`) and found through `QS_PREVIEW_HOST`, and a game
+//! folder holding LibreQuake's lite data in `id1`, through `QS_GAME_DIR`
+//! (`cargo xtask assets fetch` puts one in the test-assets cache).
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::time::{Duration, Instant};
 
 use clap::Parser;
-use eframe::egui::{self, TexturesDelta};
+use eframe::egui::{self, TexturesDelta, accesskit::Role};
 use eframe::egui_wgpu::{self, ScreenDescriptor};
 use egui_kittest::kittest::Queryable as _;
 use egui_kittest::{Harness, TestRenderer};
 use qs_render::{Camera, Degrees, Offscreen};
+use qs_workbench::engine::ENGINE_SCREENSHOT;
+use qs_workbench::{BREAKPOINT, PLAY, PlayState, STOP, WATCH};
 use quakec_studio::App;
 use quakec_studio::map_view::DEPTH_FORMAT;
 use quakec_studio::strings::Text;
@@ -47,6 +55,15 @@ const PROFILES: &str = "[[profile]]\nname = \"Showcase\"\ntasks = [{ task = \"bs
 
 /// The window's size in points, the snapshot harness's.
 const SIZE: [f32; 2] = [1440.0, 900.0];
+/// The map the debugger scene plays: one of LibreQuake's lite game data, with monsters that
+/// stand until they see the player.
+const DEBUGGER_MAP: &str = "lq_e0m1";
+/// How long the debugger scene waits for the game to reach its breakpoint.
+const STOP_WAIT: Duration = Duration::from_secs(60);
+/// How long the debugger scene waits between frames while the game starts.
+const PREVIEW_FRAME: Duration = Duration::from_millis(50);
+/// The frames run after each step, so what it did is drawn.
+const SETTLE_FRAMES: usize = 4;
 
 /// The showcase's options.
 #[derive(Parser)]
@@ -112,6 +129,13 @@ enum Step {
     Look([f32; 3], f32, f32),
     /// Hide every point entity in the editor but this one, so the map shows.
     HidePoints(Option<usize>),
+    /// Set a breakpoint in this file of the project, on the line holding this text.
+    Breakpoint(&'static str, &'static str),
+    /// Play this map and wait until the game stops at a breakpoint, then write the game's frame
+    /// beside the scene's own image.
+    PlayToStop(&'static str),
+    /// Click the button with this label, such as a panel's tab.
+    Click(Text),
 }
 
 /// What a scene opens: a map of the game folder, compiled, or a QuakeC file of `qcsrc` at the
@@ -143,11 +167,25 @@ fn scenes() -> Vec<Scene> {
     };
     let room = || Step::Look(ROOM, ROOM_VIEW.0, ROOM_VIEW.1);
     let clear = || Step::HidePoints(None);
+    let watch = |expression: &str| Step::Run(WATCH, json!({ "expression": expression }));
     vec![
         Scene {
             name: "showcase-code",
             opens: Opens::Code("weapons.qc", "void() W_FireRocket ="),
             steps: Vec::new(),
+        },
+        Scene {
+            name: "showcase-debugger",
+            opens: Opens::Code("ai.qc", "void() ai_stand ="),
+            steps: vec![
+                Step::Breakpoint("ai.qc", "if (time > self.pausetime)"),
+                watch("self.classname"),
+                watch("self.health"),
+                watch("self.enemy.classname"),
+                Step::PlayToStop(DEBUGGER_MAP),
+                Step::Click(Text::Debugger),
+                Step::Run("view.toggle_panel", json!({ "panel": "right" })),
+            ],
         },
         Scene {
             name: "showcase-lit-wide",
@@ -279,6 +317,40 @@ fn run(args: &Args) -> Result<(), String> {
                         .execute("map.hide", json!({ "entities": hidden }))
                         .map_err(|e| format!("map.hide: {e}"))?;
                 }
+                Step::Breakpoint(file, text) => {
+                    let source = std::fs::read_to_string(map.with_file_name(file))
+                        .map_err(|e| e.to_string())?;
+                    let line = source
+                        .lines()
+                        .position(|line| line.contains(text))
+                        .and_then(|index| u32::try_from(index).ok())
+                        .ok_or_else(|| format!("{text} not in {file}"))?;
+                    app.shell_mut()
+                        .execute(
+                            BREAKPOINT,
+                            json!({ "file": file, "line": line.saturating_add(1) }),
+                        )
+                        .map_err(|e| format!("{BREAKPOINT}: {e}"))?;
+                }
+                Step::PlayToStop(on) => {
+                    app.shell_mut()
+                        .execute(PLAY, json!({ "map": on }))
+                        .map_err(|e| format!("{PLAY}: {e}"))?;
+                    stopped(&mut harness)?;
+                    let game = args.out.join(format!("{}-game.png", scene.name));
+                    let app = harness.state_mut().as_mut().ok_or("no app")?;
+                    app.shell_mut()
+                        .execute(ENGINE_SCREENSHOT, json!({ "path": game }))
+                        .map_err(|e| format!("{ENGINE_SCREENSHOT}: {e}"))?;
+                }
+                Step::Click(label) => {
+                    harness
+                        .get_by_role_and_label(Role::Button, label.get())
+                        .click();
+                    harness.run_steps(1);
+                    // The pointer leaves the window, so the shot shows no cursor on the tab.
+                    harness.event(egui::Event::PointerGone);
+                }
                 Step::Look(origin, yaw, pitch) => {
                     let (origin, yaw, pitch) = match args.look.as_deref() {
                         Some(&[x, y, z, yaw, pitch]) => ([x, y, z], yaw, pitch),
@@ -289,13 +361,42 @@ fn run(args: &Args) -> Result<(), String> {
                     app.shell_mut().set_map_camera(camera);
                 }
             }
-            harness.run();
+            harness.run_steps(SETTLE_FRAMES);
         }
         let image = harness.render()?;
         let path = args.out.join(format!("{}.png", scene.name));
         image.save(&path).map_err(|e| e.to_string())?;
+        let app = harness.state_mut().as_mut().ok_or("no app")?;
+        if app.shell_mut().session().context().preview.state() != PlayState::Stopped {
+            app.shell_mut()
+                .execute(STOP, json!({}))
+                .map_err(|e| format!("{STOP}: {e}"))?;
+        }
     }
     Ok(())
+}
+
+/// Runs frames until the game stops at a breakpoint, or [`STOP_WAIT`] passes.
+fn stopped(harness: &mut Harness<'static, Option<App>>) -> Result<(), String> {
+    let started = Instant::now();
+    loop {
+        harness.step();
+        let app = harness.state_mut().as_mut().ok_or("no app")?;
+        let preview = &app.shell_mut().session().context().preview;
+        if preview.debugger().stopped().is_some() {
+            return Ok(());
+        }
+        if let Some(error) = preview
+            .status()
+            .filter(|_| preview.state() == PlayState::Stopped)
+        {
+            return Err(format!("the game stopped: {error}"));
+        }
+        if started.elapsed() > STOP_WAIT {
+            return Err("the game never reached the breakpoint".to_owned());
+        }
+        std::thread::sleep(PREVIEW_FRAME);
+    }
 }
 
 /// Every entity of the map at `path` with no brush, the world aside, but `keep`.
