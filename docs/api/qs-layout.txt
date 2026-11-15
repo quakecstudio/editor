@@ -21,6 +21,11 @@ const qs_layout::editor::UNFOLD
 const qs_layout::editor::UNFOLD_ALL
 const qs_layout::map_view::MAP_PANES
 const qs_layout::map_view::MapPanes::ALL
+const qs_layout::zoom::ZOOM
+const qs_layout::zoom::Zoom::ACTUAL
+const qs_layout::zoom::Zoom::MAX
+const qs_layout::zoom::Zoom::MIN
+const qs_layout::zoom::Zoom::STEP
 enum qs_layout::Focus
 enum qs_layout::LayoutError
 enum qs_layout::Panel
@@ -40,6 +45,7 @@ field qs_layout::Layout.outline
 field qs_layout::Layout.right
 field qs_layout::Layout.soft_wrap
 field qs_layout::Layout.split
+field qs_layout::Layout.zoom
 field qs_layout::PanelState.size
 field qs_layout::PanelState.visible
 field qs_layout::ResizePanelParams.panel
@@ -47,6 +53,7 @@ field qs_layout::ResizePanelParams.size
 field qs_layout::TogglePanelParams.panel
 field qs_layout::editor::GoToLineParams.line
 field qs_layout::map_view::MapPanesParams.panes
+field qs_layout::zoom::ZoomParams.zoom
 fn qs_layout::HasLayout::layout_mut
 fn qs_layout::Layout::as_written
 fn qs_layout::Layout::panel
@@ -55,16 +62,27 @@ fn qs_layout::Layout::read
 fn qs_layout::Layout::write
 fn qs_layout::layout_path
 fn qs_layout::register
+fn qs_layout::zoom::Zoom::get
+fn qs_layout::zoom::Zoom::new
+fn qs_layout::zoom::Zoom::zoomed_in
+fn qs_layout::zoom::Zoom::zoomed_out
 impl qs_layout::Layout: Default
 impl qs_layout::Layout: HasLayout
 impl qs_layout::LayoutError: Error
 impl qs_layout::LayoutError: fmt::Display
+impl qs_layout::zoom::Zoom: Default
+impl qs_layout::zoom::Zoom: TryFrom<f32>
+impl qs_layout::zoom::ZoomError: fmt::Display
+impl qs_layout::zoom::ZoomError: std::error::Error
 struct qs_layout::Layout
 struct qs_layout::PanelState
 struct qs_layout::ResizePanelParams
 struct qs_layout::TogglePanelParams
 struct qs_layout::editor::GoToLineParams
 struct qs_layout::map_view::MapPanesParams
+struct qs_layout::zoom::Zoom
+struct qs_layout::zoom::ZoomError
+struct qs_layout::zoom::ZoomParams
 trait qs_layout::HasLayout
 use qs_layout::CLOSE_SPLIT = editor::CLOSE_SPLIT
 use qs_layout::EditorRequest = editor::EditorRequest
@@ -87,6 +105,10 @@ use qs_layout::TOGGLE_OUTLINE = editor::TOGGLE_OUTLINE
 use qs_layout::TOGGLE_SOFT_WRAP = editor::TOGGLE_SOFT_WRAP
 use qs_layout::UNFOLD = editor::UNFOLD
 use qs_layout::UNFOLD_ALL = editor::UNFOLD_ALL
+use qs_layout::ZOOM = zoom::ZOOM
+use qs_layout::Zoom = zoom::Zoom
+use qs_layout::ZoomError = zoom::ZoomError
+use qs_layout::ZoomParams = zoom::ZoomParams
 variant qs_layout::Focus::Editor
 variant qs_layout::Focus::Panel
 variant qs_layout::LayoutError::Encode

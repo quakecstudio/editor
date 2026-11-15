@@ -634,15 +634,28 @@ fn the_gutter_marks_changes_against_head() {
         .set_gutter_base(Some("one\ntwo\nthree\nfour\ngone\nfive".to_owned()));
     let output = harness.frame(Vec::new(), &Plain);
     let m = measures(&harness, &output);
-    let row_of = |rect: &Rect| ((rect.top() - m.view.top()) / m.row).round();
+    // A dash lower in a row still belongs to it.
+    let row_of = |rect: &Rect| ((rect.top() - m.view.top()) / m.row + 0.01).floor();
     let marks = |output: &FullOutput, color| -> Vec<f32> {
-        filled(output, color)
+        let mut rows: Vec<f32> = filled(output, color)
             .iter()
             .filter(|r| r.width() <= 3.5)
             .map(row_of)
-            .collect()
+            .collect();
+        rows.dedup();
+        rows
+    };
+    // P7-12: a changed line's bar is dashed, an added line's solid, so the two differ in shape
+    // and not only in colour.
+    // Each piece is a 3-point-wide bar at the gutter's edge.
+    let pieces = |output: &FullOutput, color| {
+        filled(output, color)
+            .iter()
+            .filter(|r| (r.width() - 3.0).abs() < 0.01)
+            .count()
     };
     assert_eq!(marks(&output, harness.style.modified_mark), [1.0, 3.0]);
+    assert!(pieces(&output, harness.style.modified_mark) >= 4);
     assert!(marks(&output, harness.style.added_mark).is_empty());
     harness
         .view
@@ -651,6 +664,7 @@ fn the_gutter_marks_changes_against_head() {
     harness.view.state_mut().insert("\nsix");
     let output = harness.frame(Vec::new(), &Plain);
     assert_eq!(marks(&output, harness.style.added_mark), [5.0]);
+    assert_eq!(pieces(&output, harness.style.added_mark), 1);
     harness.view.set_gutter_base(None);
     let output = harness.frame(Vec::new(), &Plain);
     assert!(marks(&output, harness.style.modified_mark).is_empty());

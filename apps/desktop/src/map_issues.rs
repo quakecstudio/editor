@@ -10,6 +10,7 @@ use qs_map_edit::{EntityIndex, MapFound, MapIssue, MapRevision, MapSearchParams}
 
 use crate::map_browser::FILTER_WIDTH;
 use crate::map_editor::MapAction;
+use crate::shell::name_field;
 use crate::strings::{
     Text, brush_place, entity_place, fix_label, issue_count, issue_line, map_found_count,
 };
@@ -180,6 +181,7 @@ impl IssueBrowser {
                     .hint_text(label.get())
                     .desired_width(FILTER_WIDTH),
             );
+            name_field(ui, &field, label);
             entered |= field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         }
         ui.horizontal(|ui| {

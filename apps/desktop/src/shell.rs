@@ -26,7 +26,7 @@ use qs_editor_view::{
 };
 use qs_layout::{
     EditorRequest, Focus, GO_TO_LINE, HasLayout, Layout, Outline, Panel, RESIZE_PANEL,
-    ResizePanelParams, SoftWrap, Split, TOGGLE_PANEL, TogglePanelParams,
+    ResizePanelParams, SoftWrap, Split, TOGGLE_PANEL, TogglePanelParams, Zoom, ZoomParams,
 };
 use qs_map_edit::opens_in_map_editor;
 use qs_render::{Camera, MapMesh};
@@ -195,6 +195,17 @@ pub enum CentreTab {
     Search,
 }
 
+/// Which way a zoom item moves the interface's size.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ZoomStep {
+    /// One step larger.
+    In,
+    /// One step smaller.
+    Out,
+    /// Back to 100 percent.
+    Actual,
+}
+
 /// Whether a pointer button is held, as one is during a drag.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum PointerHeld {
@@ -237,6 +248,8 @@ pub struct Shell {
     layout_file: Option<PathBuf>,
     /// The layout last written to `layout_file`.
     saved: Layout,
+    /// The zoom factor the last frame drew at.
+    zoom_drawn: f32,
     bottom_tab: BottomTab,
     centre_tab: CentreTab,
     /// Each panel's size as drawn in the last frame, left, right and bottom.
@@ -303,6 +316,7 @@ impl Shell {
             theme,
             layout_file,
             saved: layout,
+            zoom_drawn: Zoom::ACTUAL.get(),
             bottom_tab: BottomTab::default(),
             centre_tab: CentreTab::default(),
             drawn: [None; 3],
@@ -328,6 +342,44 @@ impl Shell {
     /// session (AGT-7): `quakec-ide mcp --connect` runs the agent's tools here.
     pub fn set_host(&mut self, host: Host) {
         self.host = Some(host);
+    }
+
+    /// Zooms the interface one step `step`, through `view.zoom` (P7-12).
+    pub fn zoom(&mut self, step: ZoomStep) {
+        let zoom = self.layout().zoom;
+        let zoom = match step {
+            ZoomStep::In => zoom.zoomed_in(),
+            ZoomStep::Out => zoom.zoomed_out(),
+            ZoomStep::Actual => Zoom::ACTUAL,
+        };
+        let _: Option<Zoom> = self.run(qs_layout::ZOOM, &ZoomParams { zoom });
+    }
+
+    /// Draws at the layout's zoom: one set by a command is applied, and one egui's keys set
+    /// (Cmd+Plus, Cmd+Minus, Cmd+0) is held to the range and kept through `view.zoom`.
+    fn follow_zoom(&mut self, ctx: &egui::Context) {
+        let drawn = ctx.zoom_factor();
+        let asked = self.layout().zoom;
+        if (drawn - self.zoom_drawn).abs() > f32::EPSILON {
+            let zoom = Zoom::new(drawn);
+            let _: Option<Zoom> = self.run(qs_layout::ZOOM, &ZoomParams { zoom });
+            ctx.set_zoom_factor(zoom.get());
+            self.zoom_drawn = zoom.get();
+        } else if (asked.get() - drawn).abs() > f32::EPSILON {
+            ctx.set_zoom_factor(asked.get());
+            self.zoom_drawn = asked.get();
+        }
+    }
+
+    /// The theme the window draws with.
+    #[must_use]
+    pub const fn theme(&self) -> &Theme {
+        &self.theme
+    }
+
+    /// Draws with `theme` from the next frame, as the system's display settings changed.
+    pub fn set_theme(&mut self, theme: Theme) {
+        self.theme = theme;
     }
 
     /// The layout as it is now.
@@ -1099,6 +1151,7 @@ impl Shell {
 
     /// Draws the window for one frame.
     pub fn ui(&mut self, ui: &mut Ui) {
+        self.follow_zoom(ui.ctx());
         // P4-09: what the agent's models sent since the last frame; their calls run here.
         if self.features.agent.panel.pump(&mut self.session) {
             ui.ctx().request_repaint();
@@ -1665,14 +1718,31 @@ impl Shell {
                 Panel::Bottom => stored.size().y,
             });
         let held = ui.input(|input| input.pointer.any_down());
-        let commanded = commanded_size(drawn_size, state.size, held);
+        // With the interface zoomed past 100% (P7-12) a panel takes no more than its share of
+        // the window, so the centre keeps its room; the layout keeps the size asked for, drawn
+        // again at 100%, where nothing caps it.
+        let window = ui.ctx().content_rect().size();
+        let limit = if ui.ctx().zoom_factor() > Zoom::ACTUAL.get() {
+            match panel {
+                Panel::Left | Panel::Right => window.x * SIDE_PANEL_SHARE,
+                Panel::Bottom => window.y * BOTTOM_PANEL_SHARE,
+            }
+            .max(qs_layout::MIN_PANEL_SIZE)
+        } else {
+            f32::INFINITY
+        };
+        let target = state.size.min(limit);
+        let commanded = commanded_size(drawn_size, target, held);
         // `exact_size` pins the size range to one point, so it comes after `min_size`, which
         // would widen it again.
-        let builder = builder.resizable(true).min_size(qs_layout::MIN_PANEL_SIZE);
+        let builder = builder
+            .resizable(true)
+            .min_size(qs_layout::MIN_PANEL_SIZE)
+            .max_size(limit);
         let builder = if commanded {
-            builder.exact_size(state.size)
+            builder.exact_size(target)
         } else {
-            builder.default_size(state.size)
+            builder.default_size(target)
         };
         let shown = builder
             .frame(frame)
@@ -1703,7 +1773,22 @@ impl Shell {
                     scope,
                     map_shown,
                 };
-                actions = features.region_ui(ui, theme, panel, dock, focus);
+                actions = match panel {
+                    // The right panel's sections run as long and as wide as their contents, so
+                    // it scrolls when they pass its edges, as they do with large text (P7-12),
+                    // rather than pushing past the panel. The left panel's lists scroll in
+                    // their own shares of it.
+                    Panel::Right => {
+                        egui::ScrollArea::both()
+                            .id_salt(Area::Panel(panel))
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| features.region_ui(ui, theme, panel, dock, focus))
+                            .inner
+                    }
+                    Panel::Left | Panel::Bottom => {
+                        features.region_ui(ui, theme, panel, dock, focus)
+                    }
+                };
             });
         for action in actions {
             self.apply(action, ui.ctx());
@@ -2527,8 +2612,13 @@ pub(crate) fn name_area(ui: &Ui, role: accesskit::Role, name: Text) {
 /// its node's label becomes `name`, and nothing else about it changes, so the widget's own
 /// output events are not sent again.
 pub(crate) fn name_field(ui: &Ui, response: &Response, name: Text) {
+    name_widget(ui, response, name.get());
+}
+
+/// As [`name_field`], for a name that is the user's data, such as a key's.
+pub(crate) fn name_widget(ui: &Ui, response: &Response, name: &str) {
     ui.ctx().accesskit_node_builder(response.id, |node| {
-        node.set_label(name.get());
+        node.set_label(name);
     });
 }
 
@@ -2729,6 +2819,11 @@ fn status_dot(ui: &mut Ui, colour: egui::Color32) {
 
 /// A status dot's radius as a part of the line's height: a quarter.
 const STATUS_DOT_PARTS: f32 = 4.0;
+
+/// The most of the window's width a side panel takes when the interface is zoomed in.
+const SIDE_PANEL_SHARE: f32 = 0.3;
+/// The most of the window's height the bottom panel takes when the interface is zoomed in.
+const BOTTOM_PANEL_SHARE: f32 = 0.45;
 
 /// The outline panel's width, in points, as the left panel's Symbols are wide.
 const OUTLINE_WIDTH: f32 = 220.0;

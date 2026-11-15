@@ -31,6 +31,7 @@ use crate::map_panes::{Pane, Projection};
 use crate::map_scene::{Scene, single};
 pub(crate) use crate::map_uv::PickMode;
 use crate::map_uv::UvEditor;
+use crate::shell::name_field;
 use crate::strings::{Text, apply_texture, measure_readout, move_readout, selection_size};
 use crate::theme::{Theme, Token};
 use tool_fields::ToolFields;
@@ -453,13 +454,14 @@ impl ShapeOptions {
 
     /// The shape's settings in the toolbar.
     fn toolbar(&mut self, ui: &mut Ui) {
-        egui::ComboBox::from_id_salt(ui.id().with(core::any::TypeId::of::<ShapeKind>()))
+        let kind = egui::ComboBox::from_id_salt(ui.id().with(core::any::TypeId::of::<ShapeKind>()))
             .selected_text(self.kind.text().get())
             .show_ui(ui, |ui| {
                 for kind in ShapeKind::ALL {
                     ui.selectable_value(&mut self.kind, kind, kind.text().get());
                 }
             });
+        name_field(ui, &kind.response, Text::MapShapeKind);
         match self.kind {
             ShapeKind::Curve => {
                 ui.label(Text::MapShapeSides.get());
@@ -475,7 +477,8 @@ impl ShapeOptions {
             | ShapeKind::Rock
             | ShapeKind::SpiralStairs => {
                 ui.label(Text::MapShapeSides.get());
-                ui.add(egui::DragValue::new(&mut self.sides).range(SIDES));
+                let sides = ui.add(egui::DragValue::new(&mut self.sides).range(SIDES));
+                name_field(ui, &sides, Text::MapShapeSides);
             }
         }
         if self.kind.takes_circle() {
@@ -494,7 +497,8 @@ impl ShapeOptions {
             || self.kind == ShapeKind::Arch
         {
             ui.label(Text::MapShapeWall.get());
-            ui.add(egui::DragValue::new(&mut self.wall).speed(WALL_STEP));
+            let wall = ui.add(egui::DragValue::new(&mut self.wall).speed(WALL_STEP));
+            name_field(ui, &wall, Text::MapShapeWall);
         }
         if self.kind == ShapeKind::Stairs {
             for (climb, text) in [
@@ -1189,29 +1193,34 @@ impl BrushTools {
         let align = &mut self.align;
         egui::Grid::new(ui.id().with(core::any::TypeId::of::<AlignFields>())).show(ui, |ui| {
             ui.label(Text::MapTextureShift.get());
-            for shift in &mut align.shift {
-                if ui
-                    .add(egui::DragValue::new(shift).speed(ALIGN_STEP))
-                    .changed()
-                {
+            for (shift, name) in align
+                .shift
+                .iter_mut()
+                .zip([Text::MapTextureShiftX, Text::MapTextureShiftY])
+            {
+                let field = ui.add(egui::DragValue::new(shift).speed(ALIGN_STEP));
+                name_field(ui, &field, name);
+                if field.changed() {
                     align.edited.insert(AlignPart::Shift);
                 }
             }
             ui.end_row();
             ui.label(Text::MapTextureRotate.get());
-            if ui
-                .add(egui::DragValue::new(&mut align.rotate).speed(ALIGN_STEP))
-                .changed()
-            {
+            let rotate = ui.add(egui::DragValue::new(&mut align.rotate).speed(ALIGN_STEP));
+            name_field(ui, &rotate, Text::MapTextureRotation);
+            if rotate.changed() {
                 align.edited.insert(AlignPart::Rotate);
             }
             ui.end_row();
             ui.label(Text::MapTextureScale.get());
-            for scale in &mut align.scale {
-                if ui
-                    .add(egui::DragValue::new(scale).speed(SCALE_STEP))
-                    .changed()
-                {
+            for (scale, name) in align
+                .scale
+                .iter_mut()
+                .zip([Text::MapTextureScaleX, Text::MapTextureScaleY])
+            {
+                let field = ui.add(egui::DragValue::new(scale).speed(SCALE_STEP));
+                name_field(ui, &field, name);
+                if field.changed() {
                     align.edited.insert(AlignPart::Scale);
                 }
             }

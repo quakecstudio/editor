@@ -78,7 +78,8 @@ muda = { workspace = true }
 # The files Finder opens with the app (open_documents.rs): the delegate method winit 0.30 lacks,
 # added between building eframe's event loop and running it.
 objc2 = { workspace = true, features = ["std"] }
-objc2-app-kit = { workspace = true, features = ["std", "NSApplication", "NSResponder"] }
+# NSWorkspace's Increase contrast and Reduce motion settings, which the theme follows (display.rs).
+objc2-app-kit = { workspace = true, features = ["std", "NSAccessibility", "NSApplication", "NSResponder", "NSWorkspace"] }
 objc2-foundation = { workspace = true, features = ["std", "NSArray", "NSEnumerator", "NSString", "NSURL"] }
 winit = { workspace = true }
 

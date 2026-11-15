@@ -49,6 +49,50 @@ pub enum Mode {
     Light,
 }
 
+/// The standard palette, or the one with more contrast that the system's Increase Contrast
+/// setting asks for (P7-12; Apple's Human Interface Guidelines, Accessibility: "ensure it at
+/// least provides a higher contrast color scheme when the system setting Increase Contrast is
+/// turned on").
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Contrast {
+    /// `[color.dark]` or `[color.light]`.
+    #[default]
+    Standard,
+    /// `[color.dark_contrast]` or `[color.light_contrast]`: every text pair at 7:1 or more.
+    Increased,
+}
+
+/// Whether animations run, or the system's Reduce Motion setting stops them (P7-12).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Motion {
+    /// Animations run for the tokens' `[motion]` durations.
+    #[default]
+    Full,
+    /// No animation: every change shows at once.
+    Reduced,
+}
+
+impl Motion {
+    /// Sets egui's animations for the motion: none when reduced, so panels, popups and scrolls
+    /// change at once and a text field's caret does not blink (Apple's Human Interface Guidelines, Accessibility: "When this setting is
+    /// active, ensure your app or game responds by reducing automatic and repetitive animations").
+    pub fn apply(self, ctx: &egui::Context) {
+        let defaults = egui::Style::default();
+        ctx.global_style_mut(|style| match self {
+            Motion::Full => {
+                style.animation_time = defaults.animation_time;
+                style.scroll_animation = defaults.scroll_animation;
+                style.visuals.text_cursor.blink = defaults.visuals.text_cursor.blink;
+            }
+            Motion::Reduced => {
+                style.animation_time = 0.0;
+                style.scroll_animation = egui::style::ScrollAnimation::none();
+                style.visuals.text_cursor.blink = false;
+            }
+        });
+    }
+}
+
 /// A colour token the app draws with.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Token {
@@ -205,6 +249,8 @@ struct Tokens {
 struct Palettes {
     dark: BTreeMap<String, String>,
     light: BTreeMap<String, String>,
+    dark_contrast: BTreeMap<String, String>,
+    light_contrast: BTreeMap<String, String>,
 }
 
 /// One step of the type scale.
@@ -303,6 +349,7 @@ impl std::error::Error for ThemeError {}
 #[derive(Clone, Debug, PartialEq)]
 pub struct Theme {
     mode: Mode,
+    contrast: Contrast,
     colors: BTreeMap<Token, Color32>,
     /// The type scale.
     pub type_scale: TypeScale,
@@ -320,10 +367,21 @@ impl Theme {
     ///
     /// [`ThemeError`] when the tokens lack a value the app draws with.
     pub fn load(mode: Mode) -> Result<Self, ThemeError> {
+        Self::load_with(mode, Contrast::Standard)
+    }
+
+    /// The theme of `mode` with `contrast` from the built-in tokens.
+    ///
+    /// # Errors
+    ///
+    /// [`ThemeError`] when the tokens lack a value the app draws with.
+    pub fn load_with(mode: Mode, contrast: Contrast) -> Result<Self, ThemeError> {
         let tokens: Tokens = toml::from_str(TOKENS).map_err(ThemeError::Tokens)?;
-        let palette = match mode {
-            Mode::Dark => &tokens.color.dark,
-            Mode::Light => &tokens.color.light,
+        let palette = match (mode, contrast) {
+            (Mode::Dark, Contrast::Standard) => &tokens.color.dark,
+            (Mode::Light, Contrast::Standard) => &tokens.color.light,
+            (Mode::Dark, Contrast::Increased) => &tokens.color.dark_contrast,
+            (Mode::Light, Contrast::Increased) => &tokens.color.light_contrast,
         };
         let mut colors = BTreeMap::new();
         for token in Token::ALL {
@@ -334,12 +392,19 @@ impl Theme {
         }
         Ok(Self {
             mode,
+            contrast,
             colors,
             type_scale: tokens.type_scale,
             space: tokens.space.scale,
             size: tokens.size,
             radius: tokens.radius,
         })
+    }
+
+    /// Which palette the theme is: its mode and contrast.
+    #[must_use]
+    pub const fn palette(&self) -> (Mode, Contrast) {
+        (self.mode, self.contrast)
     }
 
     /// The colour of `token`.
@@ -398,6 +463,13 @@ impl Theme {
     /// Sets egui's fonts and style to the theme.
     pub fn apply(&self, ctx: &egui::Context) {
         ctx.set_fonts(Self::fonts());
+        // egui keeps a style for dark and one for light and swaps them when the system's
+        // appearance changes; pinning its theme to this one's mode keeps the style written here
+        // the one drawn, until the app follows the change itself.
+        ctx.set_theme(match self.mode {
+            Mode::Dark => egui::Theme::Dark,
+            Mode::Light => egui::Theme::Light,
+        });
         ctx.set_visuals(match self.mode {
             Mode::Dark => egui::Visuals::dark(),
             Mode::Light => egui::Visuals::light(),

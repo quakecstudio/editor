@@ -29,6 +29,7 @@ use qs_workbench::debug::Location;
 use serde_json::json;
 
 use crate::debugger::place;
+use crate::display::Display;
 use crate::editor::Request;
 use crate::help::Topic;
 use crate::icons::Icon;
@@ -36,9 +37,9 @@ use crate::keymap;
 use crate::launch::{Launch, forward_paths};
 use crate::map_tools::Readout;
 use crate::palette::highlighted;
-use crate::shell::{CentreTab, EDITOR_AREA, PointerHeld, commanded_size, dragged_size};
+use crate::shell::{CentreTab, EDITOR_AREA, PointerHeld, ZoomStep, commanded_size, dragged_size};
 use crate::strings::{Text, command_count, exit_status, help_for, match_count, missing_textures};
-use crate::theme::{Mode, Theme, ThemeError, Token, semibold};
+use crate::theme::{Contrast, Mode, Motion, Theme, ThemeError, Token, semibold};
 use crate::{App, AppError};
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
@@ -843,6 +844,17 @@ fn accessible() -> Harness<'static, Option<App>> {
     *harness.state_mut() = Some(app);
     harness.run();
     harness
+}
+
+/// Runs the command `id` with `params` in `harness`'s app, then a frame.
+fn run_command_with(
+    harness: &mut Harness<'static, Option<App>>,
+    id: &str,
+    params: serde_json::Value,
+) {
+    let app = harness.state_mut().as_mut().unwrap();
+    app.shell.execute(id, params).unwrap();
+    harness.run();
 }
 
 /// Runs the command `id` with no parameters in `harness`'s app, then a frame.
@@ -3565,4 +3577,252 @@ fn every_panel_tab_and_tool_has_help() {
         harness.query_by_value(Text::MapBrushHint.get()).is_some()
             || harness.query_all_by_label(Text::MapBrushHint.get()).count() > 0
     );
+}
+
+// QA-9: the interface zooms to 300 percent: view.zoom sets the size egui draws at, egui's own
+// zoom keys are kept in the layout and held to the range, and the menu's steps are 10 percent
+#[test]
+fn the_interface_zooms_and_the_layout_keeps_it() {
+    let mut harness = accessible();
+    let zoom = |harness: &Harness<'static, Option<App>>| {
+        harness.state().as_ref().unwrap().shell.layout().zoom.get()
+    };
+    run_command_with(&mut harness, qs_layout::ZOOM, json!({ "zoom": 2.0 }));
+    assert!((harness.ctx.zoom_factor() - 2.0).abs() < f32::EPSILON);
+    // As Cmd+Minus does.
+    harness.ctx.set_zoom_factor(1.5);
+    harness.run();
+    assert!((zoom(&harness) - 1.5).abs() < f32::EPSILON);
+    harness.ctx.set_zoom_factor(9.0);
+    harness.run();
+    assert!((zoom(&harness) - qs_layout::Zoom::MAX).abs() < f32::EPSILON);
+    assert!((harness.ctx.zoom_factor() - qs_layout::Zoom::MAX).abs() < f32::EPSILON);
+    harness
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .shell
+        .zoom(ZoomStep::Actual);
+    harness.run();
+    assert!((harness.ctx.zoom_factor() - 1.0).abs() < f32::EPSILON);
+    harness
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .shell
+        .zoom(ZoomStep::In);
+    harness.run();
+    assert!((zoom(&harness) - 1.1).abs() < 1e-6);
+    harness
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .shell
+        .zoom(ZoomStep::Out);
+    harness.run();
+    assert!((zoom(&harness) - 1.0).abs() < 1e-6);
+}
+
+// QA-9: the look follows the display settings: light or dark, the increased-contrast palette,
+// and no animation with reduced motion; a fixed app keeps its look through focus changes
+#[test]
+fn the_look_follows_the_display_settings() {
+    let mut harness = accessible();
+    let ctx = harness.ctx.clone();
+    let palette = |harness: &Harness<'static, Option<App>>| {
+        harness.state().as_ref().unwrap().shell.theme().palette()
+    };
+    assert_eq!(palette(&harness), (Mode::Dark, Contrast::Standard));
+    let wanted = Display {
+        mode: Mode::Light,
+        contrast: Contrast::Increased,
+        motion: Motion::Reduced,
+    };
+    harness
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .show_display(&ctx, wanted);
+    harness.run();
+    assert_eq!(palette(&harness), (Mode::Light, Contrast::Increased));
+    // egui draws its light style, the one the theme wrote, whatever the system says.
+    assert_eq!(ctx.theme(), egui::Theme::Light);
+    assert!(ctx.global_style().animation_time.abs() < f32::EPSILON);
+    assert!(!ctx.global_style().visuals.text_cursor.blink);
+    let increased = Theme::load_with(Mode::Light, Contrast::Increased).unwrap();
+    assert_eq!(
+        ctx.global_style().visuals.panel_fill,
+        increased.color(Token::SurfacePanel)
+    );
+    harness
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .show_display(&ctx, Display::default());
+    harness.run();
+    assert_eq!(palette(&harness), (Mode::Dark, Contrast::Standard));
+    assert!(ctx.global_style().animation_time > 0.0);
+    // A fixed app does not read the system's settings when its window gains focus.
+    harness.input_mut().focused = false;
+    harness.run();
+    harness.input_mut().focused = true;
+    harness.run();
+    assert_eq!(palette(&harness), (Mode::Dark, Contrast::Standard));
+}
+
+// QA-9: each increased-contrast palette's muted text is further from its panel than the
+// standard palette's
+#[test]
+fn the_increased_palettes_have_more_contrast() {
+    for mode in [Mode::Dark, Mode::Light] {
+        let standard = Theme::load_with(mode, Contrast::Standard).unwrap();
+        let increased = Theme::load_with(mode, Contrast::Increased).unwrap();
+        let gap = |theme: &Theme| {
+            let [r, g, b, _] = theme.color(Token::TextMuted).to_array();
+            let [pr, pg, pb, _] = theme.color(Token::SurfacePanel).to_array();
+            r.abs_diff(pr) as u32 + g.abs_diff(pg) as u32 + b.abs_diff(pb) as u32
+        };
+        assert!(gap(&increased) > gap(&standard), "{mode:?}");
+    }
+}
+
+/// The controls `harness` shows with no name a screen reader can say: their roles and values.
+fn nameless_controls(harness: &Harness<'static, Option<App>>) -> Vec<String> {
+    harness
+        .root()
+        .children_recursive()
+        .filter(|node| {
+            matches!(
+                node.accesskit_node().role(),
+                Role::Button
+                    | Role::TextInput
+                    | Role::MultilineTextInput
+                    | Role::CheckBox
+                    | Role::RadioButton
+                    | Role::ComboBox
+                    | Role::SpinButton
+                    | Role::Slider
+                    | Role::Link
+                    | Role::Tab
+            )
+        })
+        .filter(|node| {
+            node.accesskit_node()
+                .label()
+                .is_none_or(|label| label.trim().is_empty())
+        })
+        .map(|node| {
+            format!(
+                "{:?} {:?}",
+                node.accesskit_node().role(),
+                node.accesskit_node().value()
+            )
+        })
+        .collect()
+}
+
+// QA-9: every control of the map editor, its tools' settings and each bottom tab has a name a
+// screen reader can say
+#[test]
+fn every_map_editor_control_has_a_name() {
+    let dir = keep_copy("names");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    shell.execute("map.select", json!({ "entity": 2 })).unwrap();
+    harness.run();
+    let mut found = Vec::new();
+    found.extend(nameless_controls(&harness));
+    for tool in [
+        Text::MapToolBrush,
+        Text::MapToolClip,
+        Text::MapToolVertex,
+        Text::MapToolMove,
+        Text::MapToolMeasure,
+        Text::MapToolShape,
+    ] {
+        harness
+            .get_by_role_and_label(Role::Button, tool.get())
+            .click();
+        harness.run();
+        found.extend(
+            nameless_controls(&harness)
+                .into_iter()
+                .map(|c| format!("{tool:?}: {c}")),
+        );
+    }
+    for tab in [Text::Entities, Text::MapPrefabs, Text::MapIssues] {
+        harness
+            .get_by_role_and_label(Role::Button, tab.get())
+            .click();
+        harness.run();
+        found.extend(
+            nameless_controls(&harness)
+                .into_iter()
+                .map(|c| format!("{tab:?}: {c}")),
+        );
+    }
+    for tab in [Text::Console, Text::Debugger, Text::Terminal, Text::Git] {
+        harness
+            .get_by_role_and_label(Role::Button, tab.get())
+            .click();
+        harness.run();
+        found.extend(
+            nameless_controls(&harness)
+                .into_iter()
+                .map(|c| format!("{tab:?}: {c}")),
+        );
+    }
+    found.sort();
+    found.dedup();
+    assert!(found.is_empty(), "{found:#?}");
+}
+
+// QA-9: an app that follows the system reads its accessibility settings at the first frame and
+// each time its window gains focus, not on every frame, and follows the appearance each frame
+#[test]
+fn the_settings_are_read_at_the_start_and_on_focus() {
+    let ctx = egui::Context::default();
+    let mut app = App::checked_on_the_frame(&ctx, None).unwrap();
+    app.follow = crate::Follow::System {
+        focused: crate::Focused::NotYet,
+    };
+    let reads = std::cell::Cell::new(0_u32);
+    let increased = |ctx: &egui::Context| {
+        reads.set(reads.get() + 1);
+        Display {
+            mode: Display::mode(ctx),
+            contrast: Contrast::Increased,
+            motion: Motion::Reduced,
+        }
+    };
+    let frame = |app: &mut App, focused: bool| {
+        let input = RawInput {
+            focused,
+            ..RawInput::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| app.follow_display_with(ui.ctx(), increased));
+        output.textures_delta.clear();
+    };
+    frame(&mut app, true);
+    assert_eq!(reads.get(), 1, "read at the first frame");
+    assert_eq!(
+        app.shell.theme().palette(),
+        (Mode::Dark, Contrast::Increased)
+    );
+    frame(&mut app, true);
+    frame(&mut app, false);
+    frame(&mut app, false);
+    assert_eq!(reads.get(), 1, "not read while focus stays or is lost");
+    assert_eq!(
+        app.shell.theme().palette(),
+        (Mode::Dark, Contrast::Increased)
+    );
+    frame(&mut app, true);
+    assert_eq!(reads.get(), 2, "read again when focus comes back");
 }

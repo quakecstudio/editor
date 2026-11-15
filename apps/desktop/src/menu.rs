@@ -9,6 +9,7 @@ use muda::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu
 use qs_layout::{Layout, Panel};
 use qs_templates::Template;
 
+use crate::shell::ZoomStep;
 use crate::strings::Text;
 
 /// A menu item chosen.
@@ -24,6 +25,8 @@ pub enum MenuChoice {
     ExportMod,
     /// A View item: show or hide the panel.
     Toggle(Panel),
+    /// View, Zoom In, Zoom Out or Actual Size (P7-12).
+    Zoom(ZoomStep),
 }
 
 /// The menu bar, kept alive while the app runs.
@@ -34,6 +37,7 @@ pub struct MenuBar {
     game_files: MenuItem,
     export_mod: MenuItem,
     items: [(Panel, CheckMenuItem); 3],
+    zooms: [(ZoomStep, MenuItem); 3],
 }
 
 impl MenuBar {
@@ -91,10 +95,34 @@ impl MenuBar {
                 &game_files,
             ],
         )?;
+        // Cmd+Plus, Cmd+Minus and Cmd+0 are egui's own zoom keys, so the items have no
+        // accelerator, which would take the keys first and zoom twice.
+        let zooms = [
+            (
+                ZoomStep::In,
+                MenuItem::new(Text::ZoomInMenu.get(), true, None),
+            ),
+            (
+                ZoomStep::Out,
+                MenuItem::new(Text::ZoomOutMenu.get(), true, None),
+            ),
+            (
+                ZoomStep::Actual,
+                MenuItem::new(Text::ActualSizeMenu.get(), true, None),
+            ),
+        ];
         let view = Submenu::with_items(
             Text::ViewMenu.get(),
             true,
-            &[&items[0].1, &items[1].1, &items[2].1],
+            &[
+                &items[0].1,
+                &items[1].1,
+                &items[2].1,
+                &PredefinedMenuItem::separator(),
+                &zooms[0].1,
+                &zooms[1].1,
+                &zooms[2].1,
+            ],
         )?;
         let menu = Menu::with_items(&[&app, &file, &view])?;
         menu.init_for_nsapp();
@@ -105,6 +133,7 @@ impl MenuBar {
             game_files,
             export_mod,
             items,
+            zooms,
         })
     }
 
@@ -128,6 +157,10 @@ impl MenuBar {
                 self.items.iter().find(|(_, item)| item.id() == event.id())
             {
                 chosen.push(MenuChoice::Toggle(*panel));
+            } else if let Some((step, _)) =
+                self.zooms.iter().find(|(_, item)| item.id() == event.id())
+            {
+                chosen.push(MenuChoice::Zoom(*step));
             }
         }
         chosen

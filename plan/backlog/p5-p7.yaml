@@ -1481,7 +1481,7 @@ groups:
     acceptance:
     - 'egui_kittest accessibility queries find a name and role for every control of every panel, tool and dialog'
     - 'Every screen lays out without clipping at 200 percent text, checked by snapshot tests'
-    - 'cargo xtask contrast passes WCAG AA for the normal and increased-contrast themes, light and dark'
+    - 'cargo xtask contrast passes WCAG AA for the standard themes and AAA (7:1) for the increased-contrast themes, light and dark, and the app follows the system''s light or dark appearance'
     - 'With Reduce Motion on, no animation runs; with Increase Contrast on, the high-contrast theme is used; both checked by tests'
     verify:
     - 'kittest tests, snapshot tests and cargo xtask contrast in CI; a VoiceOver pass recorded with Accessibility Inspector on the reference Mac'

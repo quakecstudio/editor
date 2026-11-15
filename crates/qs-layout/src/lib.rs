@@ -25,6 +25,7 @@ mod editor;
 mod map_view;
 #[cfg(test)]
 mod tests;
+mod zoom;
 
 pub use editor::{
     CLOSE_SPLIT, EditorRequest, FOLD, FOLD_ALL, GO_TO_LINE, GO_TO_SYMBOL, GoToLineParams, Outline,
@@ -32,6 +33,7 @@ pub use editor::{
     TOGGLE_SOFT_WRAP, UNFOLD, UNFOLD_ALL,
 };
 pub use map_view::{MAP_PANES, MapPanes, MapPanesParams};
+pub use zoom::{ZOOM, Zoom, ZoomError, ZoomParams};
 
 /// The layout file's name in the app's data directory (`qs_paths::AppDirs::data`).
 pub(crate) const LAYOUT_FILE: &str = "layout.toml";
@@ -108,6 +110,8 @@ pub struct Layout {
     pub outline: Outline,
     /// How the map view is split into panes (P6-09).
     pub map_panes: MapPanes,
+    /// How large the interface is drawn (P7-12).
+    pub zoom: Zoom,
     /// The last one-off editor action a command asked for, which the window carries out once.
     /// Not written to the file.
     #[serde(skip)]
@@ -141,6 +145,7 @@ impl Default for Layout {
             soft_wrap: SoftWrap::Off,
             outline: Outline::Hidden,
             map_panes: MapPanes::Single,
+            zoom: Zoom::ACTUAL,
             editor_request: None,
             editor_requests: 0,
         }
@@ -320,6 +325,7 @@ pub fn register<C: HasLayout + 'static>(registry: &mut Registry<C>) -> Result<()
     registry.register(FocusArea::<RightPanel>::new())?;
     registry.register(FocusArea::<BottomPanel>::new())?;
     map_view::register(registry)?;
+    zoom::register(registry)?;
     editor::register(registry)
 }
 

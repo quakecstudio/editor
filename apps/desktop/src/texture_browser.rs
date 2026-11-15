@@ -16,6 +16,7 @@ use qs_map_edit::{MapDocument, MapRevision};
 use qs_wad::texture::DecodedTexture;
 
 use crate::map_browser::{FILTER_WIDTH, filter_shows};
+use crate::shell::name_field;
 use crate::strings::{Text, texture_count, wad_label};
 use crate::texture_import::{ImportChoice, ImportPreview};
 use crate::theme::{Theme, Token};
@@ -119,11 +120,12 @@ impl TextureBrowser {
             self.listing = sources.listing(document);
             self.listed = Some(listed);
         }
-        ui.add(
+        let filter = ui.add(
             egui::TextEdit::singleline(&mut self.filter)
                 .hint_text(Text::MapFilterTextures.get())
                 .desired_width(FILTER_WIDTH),
         );
+        name_field(ui, &filter, Text::MapFilterTextures);
         let wads: Vec<String> = self.listing.wads.iter().map(wad_label).collect();
         let shown = self.shown().len();
         ui.label(

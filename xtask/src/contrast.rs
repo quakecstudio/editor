@@ -9,6 +9,10 @@
 //! decorative, so a new colour cannot skip the check, and every theme must
 //! define the same tokens. `[syntax]` entries must name colour tokens.
 //!
+//! The themes `[increased]` names, which the app uses while the system asks for more contrast
+//! (P7-12), must reach `[increased].min` on every pair, and that floor may not be below
+//! [`AAA`].
+//!
 //! The ratio is WCAG 2.2's: `(L1 + 0.05) / (L2 + 0.05)` over the relative
 //! luminance of each sRGB colour, with no rounding.
 
@@ -22,6 +26,11 @@ use crate::{Report, repo};
 pub(crate) const FILE: &str = "docs/design/tokens.toml";
 /// WCAG 2.2 success criterion 1.4.3, level AA, for normal-size text.
 const AA: f64 = 4.5;
+/// WCAG 2.2 success criterion 1.4.6, level AAA, for normal-size text: the increased-contrast
+/// themes' floor.
+const AAA: f64 = 7.0;
+/// The end of the name of a theme with more contrast, which `[increased]` must name.
+const CONTRAST_SUFFIX: &str = "_contrast";
 
 pub(crate) fn check(root: &Path) -> Result<Report, String> {
     check_text(&repo::read(root, FILE)?)
@@ -71,6 +80,7 @@ fn ratio(first: Rgb, second: Rgb) -> f64 {
 }
 
 /// One `[[contrast]]` rule.
+#[derive(Clone)]
 struct Rule {
     name: String,
     min: f64,
@@ -123,13 +133,83 @@ fn check_text(text: &str) -> Result<Report, String> {
         }
     }
     check_syntax(&table, &known, &mut report);
+    let (increased, floor) = increased(&table, &themes, &mut report);
 
     for (theme, colors) in &themes {
         for rule in &rules {
-            check_rule(theme, colors, rule, &mut report);
+            if increased.contains(theme.as_str()) {
+                let raised = Rule {
+                    min: rule.min.max(floor),
+                    ..rule.clone()
+                };
+                check_rule(theme, colors, &raised, &mut report);
+            } else {
+                check_rule(theme, colors, rule, &mut report);
+            }
         }
     }
     Ok(report)
+}
+
+/// The themes `[increased]` names and the floor their pairs must reach; none without the table.
+fn increased<'a>(
+    table: &'a Table,
+    themes: &BTreeMap<String, BTreeMap<String, Rgb>>,
+    report: &mut Report,
+) -> (BTreeSet<&'a str>, f64) {
+    let Some(entry) = table.get("increased") else {
+        // A theme named for more contrast is held to AAA, so it may not lose its table.
+        for theme in themes
+            .keys()
+            .filter(|theme| theme.ends_with(CONTRAST_SUFFIX))
+        {
+            report.problems.push(format!(
+                "{FILE}: theme {theme:?} has more contrast but no [increased] table holds it to \
+                 {AAA}:1"
+            ));
+        }
+        return (BTreeSet::new(), AAA);
+    };
+    let min = entry
+        .get("min")
+        .and_then(|value| {
+            value.as_float().or_else(|| {
+                value
+                    .as_integer()
+                    .and_then(|int| i32::try_from(int).ok())
+                    .map(f64::from)
+            })
+        })
+        .unwrap_or(0.0);
+    if min < AAA {
+        report.problems.push(format!(
+            "{FILE}: [increased] asks for {min}:1; WCAG AAA needs at least {AAA}:1"
+        ));
+    }
+    let names: BTreeSet<&str> = strings(entry.get("themes")).collect();
+    if names.is_empty() {
+        report
+            .problems
+            .push(format!("{FILE}: [increased] names no themes"));
+    }
+    for name in &names {
+        if !themes.contains_key(*name) {
+            report.problems.push(format!(
+                "{FILE}: [increased] names {name:?}, which is not a theme"
+            ));
+        }
+    }
+    for theme in themes
+        .keys()
+        .filter(|theme| theme.ends_with(CONTRAST_SUFFIX))
+    {
+        if !names.contains(theme.as_str()) {
+            report.problems.push(format!(
+                "{FILE}: theme {theme:?} has more contrast but [increased] does not name it"
+            ));
+        }
+    }
+    (names, min.max(AAA))
 }
 
 /// The colour tokens of each theme in `[color.<theme>]`.
@@ -405,6 +485,70 @@ plain = { color = "fg" }
 
     fn problems(text: &str) -> Vec<String> {
         check_text(text).unwrap().problems
+    }
+
+    /// `PASSING` with a `dark_contrast` theme whose `fg` is `fg` and an `[increased]` table.
+    fn with_increased(fg: &str, min: &str, themes: &str) -> String {
+        PASSING.replace(
+            "[[contrast]]",
+            &format!(
+                "[color.dark_contrast]\nbg = \"#000000\"\nfg = \"{fg}\"\nline = \"#111111\"\n\
+                 [increased]\nthemes = [{themes}]\nmin = {min}\n[[contrast]]"
+            ),
+        )
+    }
+
+    #[test]
+    fn an_increased_theme_must_reach_aaa() {
+        // #777777 on black is 4.69:1: AA, not AAA.
+        assert!(problems(&with_increased("#FFFFFF", "7.0", "\"dark_contrast\"")).is_empty());
+        let found = problems(&with_increased("#777777", "7.0", "\"dark_contrast\""));
+        assert!(
+            found
+                .iter()
+                .any(|line| line.starts_with("dark_contrast: fg on bg is 4.69:1, below 7:1")),
+            "{found:?}"
+        );
+        // A theme with more contrast must be named in [increased], and the table must exist.
+        let found = problems(&with_increased("#777777", "7.0", ""));
+        assert!(
+            found
+                .iter()
+                .any(|line| line.contains("[increased] names no themes")),
+            "{found:?}"
+        );
+        assert!(
+            found.iter().any(|line| line
+                .contains("\"dark_contrast\" has more contrast but [increased] does not name it")),
+            "{found:?}"
+        );
+        let without = with_increased("#FFFFFF", "7.0", "\"dark_contrast\"")
+            .replace("[increased]\nthemes = [\"dark_contrast\"]\nmin = 7.0\n", "");
+        let found = problems(&without);
+        assert!(
+            found
+                .iter()
+                .any(|line| line.contains("has more contrast but no [increased] table")),
+            "{found:?}"
+        );
+        let found = problems(&with_increased("#FFFFFF", "5.0", "\"dark_contrast\""));
+        assert!(
+            found
+                .iter()
+                .any(|line| line.contains("[increased] asks for 5:1")),
+            "{found:?}"
+        );
+        let found = problems(&with_increased(
+            "#FFFFFF",
+            "7.0",
+            "\"dark_contrast\", \"nope\"",
+        ));
+        assert!(
+            found
+                .iter()
+                .any(|line| line.contains("names \"nope\", which is not a theme")),
+            "{found:?}"
+        );
     }
 
     #[test]

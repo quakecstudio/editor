@@ -31,6 +31,8 @@ use qs_map_edit::{BrushIndex, EntityIndex};
 use serde_json::{Value, json};
 
 use crate::App;
+use crate::display::Display;
+use crate::theme::{Contrast, Mode, Motion};
 
 /// The window's size in points, the play-loop mockup's.
 const SIZE: [f32; 2] = [1440.0, 900.0];
@@ -53,6 +55,8 @@ enum Step {
     /// Select these faces of the open map, each an entity, a brush and a face, as Alt-clicks
     /// would.
     Faces(&'static [[usize; 3]]),
+    /// Show the look the system's display settings ask for (P7-12).
+    Display(Display),
 }
 
 /// A named sequence of steps, whose final frame is the snapshot.
@@ -73,6 +77,32 @@ fn scripts() -> Vec<Script> {
         Script {
             name: "shell",
             steps: Vec::new(),
+        },
+        Script {
+            name: "shell-light",
+            steps: vec![Step::Display(Display {
+                mode: Mode::Light,
+                ..Display::default()
+            })],
+        },
+        Script {
+            name: "shell-contrast",
+            steps: vec![Step::Display(Display {
+                contrast: Contrast::Increased,
+                ..Display::default()
+            })],
+        },
+        Script {
+            name: "shell-light-contrast",
+            steps: vec![Step::Display(Display {
+                mode: Mode::Light,
+                contrast: Contrast::Increased,
+                motion: Motion::Reduced,
+            })],
+        },
+        Script {
+            name: "shell-zoom-200",
+            steps: vec![Step::Run("view.zoom", json!({ "zoom": 2.0 }))],
         },
         Script {
             name: "shell-left-hidden",
@@ -128,6 +158,18 @@ fn scripts() -> Vec<Script> {
         Script {
             name: "map-editor",
             steps: vec![
+                Step::Run("project.open", json!({ "path": keep_fixture() })),
+                Step::Run(
+                    "map.open",
+                    json!({ "path": keep_fixture().join("maps/keep.map") }),
+                ),
+                Step::Run("map.select", json!({ "entity": 2 })),
+            ],
+        },
+        Script {
+            name: "map-editor-zoom-200",
+            steps: vec![
+                Step::Run("view.zoom", json!({ "zoom": 2.0 })),
                 Step::Run("project.open", json!({ "path": keep_fixture() })),
                 Step::Run(
                     "map.open",
@@ -409,6 +451,11 @@ fn run(script: &Script) -> Harness<'static, Option<App>> {
                     .collect();
                 let app = harness.state_mut().as_mut().unwrap();
                 app.shell.select_map_faces(&faces);
+            }
+            Step::Display(display) => {
+                let ctx = harness.ctx.clone();
+                let app = harness.state_mut().as_mut().unwrap();
+                app.show_display(&ctx, *display);
             }
             Step::WaitTerminals => {
                 let running = |harness: &Harness<'static, Option<App>>| {

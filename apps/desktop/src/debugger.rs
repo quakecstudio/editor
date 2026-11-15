@@ -16,6 +16,7 @@ use qs_workbench::{
 };
 
 use crate::features::{Commands, ShellRequest};
+use crate::shell::name_field;
 use crate::strings::Text;
 use crate::theme::{Theme, Token};
 
@@ -142,6 +143,7 @@ pub(crate) fn debugger_ui(
                 .code_editor()
                 .desired_width(f32::INFINITY),
         );
+        name_field(watches, &typed, Text::AddWatch);
         if typed.lost_focus()
             && watches.input(|i| i.key_pressed(egui::Key::Enter))
             && !input.watch.trim().is_empty()
@@ -212,6 +214,7 @@ pub(crate) fn console(
                             .frame(egui::Frame::NONE)
                             .desired_width(f32::INFINITY),
                     );
+                    name_field(ui, &typed, Text::ConsoleCommand);
                     let entered =
                         typed.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                     if entered && !input.console.trim().is_empty() {
@@ -220,11 +223,12 @@ pub(crate) fn console(
                         action = Some(DebugAction::Console(std::mem::take(&mut input.console)));
                     }
                 });
-                filter.add(
+                let field = filter.add(
                     egui::TextEdit::singleline(&mut input.filter)
                         .hint_text(Text::FilterConsole.get())
                         .desired_width(f32::INFINITY),
                 );
+                name_field(filter, &field, Text::FilterConsole);
             });
         });
     egui::ScrollArea::vertical()

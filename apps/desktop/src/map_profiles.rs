@@ -10,6 +10,7 @@ use qs_workbench::map_profile::{ProfileRun, TaskResult};
 use crate::keymap::RUN_PROFILE;
 use crate::map_editor::MapAction;
 use crate::map_panes::Projection;
+use crate::shell::name_field;
 use crate::strings::{Text, profile_done, profile_failed};
 use crate::theme::{Theme, Token};
 
@@ -94,7 +95,7 @@ impl ProfileView {
         let mut actions = Vec::new();
         ui.horizontal_wrapped(|ui| {
             let mut chosen = self.chosen.clone();
-            egui::ComboBox::from_id_salt(Text::MapProfilePicker.get())
+            let picker = egui::ComboBox::from_id_salt(Text::MapProfilePicker.get())
                 .selected_text(chosen.as_str())
                 .show_ui(ui, |ui| {
                     for name in &self.names {
@@ -103,6 +104,7 @@ impl ProfileView {
                 })
                 .response
                 .on_hover_text(Text::MapProfilePicker.get());
+            name_field(ui, &picker, Text::MapProfilePicker);
             if chosen != self.chosen {
                 actions.push(MapAction::Profile(ProfileAction::Choose(chosen)));
             }

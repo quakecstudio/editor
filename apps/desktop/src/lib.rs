@@ -18,6 +18,7 @@ pub mod bench;
 mod code_style;
 mod debugger;
 mod disk_watch;
+pub mod display;
 mod editor;
 mod editors;
 mod entities;
@@ -72,14 +73,41 @@ use eframe::egui;
 use qs_layout::Layout;
 use qs_workbench::{CheckAfterTyping, Config};
 
+use crate::display::Display;
 use crate::shell::Shell;
-use crate::theme::{Mode, Theme};
+use crate::theme::Theme;
+
+/// Whether the app's look follows the system's display settings (P7-12).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Follow {
+    /// It reads them at the first frame and each time the window gains focus.
+    System {
+        /// Whether the window had focus at the last frame.
+        focused: Focused,
+    },
+    /// It keeps the look it started with, so tests and tools draw the same each run.
+    Fixed,
+}
+
+/// Whether the window has the keyboard focus.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Focused {
+    /// No frame has run yet.
+    NotYet,
+    /// It has.
+    Yes,
+    /// It has not.
+    No,
+}
 
 /// The app: the window's state and, on macOS, the menu bar.
 pub struct App {
     shell: Shell,
     #[cfg(target_os = "macos")]
     menu: Option<menu::MenuBar>,
+    /// The display settings the look was made for.
+    display: Display,
+    follow: Follow,
 }
 
 impl App {
@@ -90,12 +118,16 @@ impl App {
     ///
     /// [`AppError`] when the built-in theme or the window's commands are broken.
     pub fn new(ctx: &egui::Context, layout_file: Option<PathBuf>) -> Result<Self, AppError> {
-        Self::with_analysis(
+        let mut app = Self::with_analysis(
             ctx,
             layout_file,
             Config::default(),
             CheckAfterTyping::OffTheFrame,
-        )
+        )?;
+        app.follow = Follow::System {
+            focused: Focused::NotYet,
+        };
+        Ok(app)
     }
 
     /// As [`App::new`], but each edit is checked on the frame that sends it, for tests and
@@ -135,15 +167,67 @@ impl App {
             }),
             None => Layout::default(),
         };
-        let theme = Theme::load(Mode::Dark).map_err(AppError::Theme)?;
+        let display = Display::default();
+        let theme = Theme::load_with(display.mode, display.contrast).map_err(AppError::Theme)?;
         theme.apply(ctx);
+        display.motion.apply(ctx);
         let shell =
             Shell::new(layout, layout_file, theme, config, check).map_err(AppError::Commands)?;
         Ok(Self {
             #[cfg(target_os = "macos")]
             menu: None,
             shell,
+            display,
+            follow: Follow::Fixed,
         })
+    }
+
+    /// Follows the system's display settings: its appearance, which egui reports, on every
+    /// frame, and the accessibility settings at the first frame and when the window gains
+    /// focus; the look is remade when they changed.
+    fn follow_display(&mut self, ctx: &egui::Context) {
+        self.follow_display_with(ctx, Display::read);
+    }
+
+    /// [`App::follow_display`], reading the settings with `read`.
+    fn follow_display_with(
+        &mut self,
+        ctx: &egui::Context,
+        read: impl FnOnce(&egui::Context) -> Display,
+    ) {
+        let Follow::System { focused } = self.follow else {
+            return;
+        };
+        let now = if ctx.input(|input| input.focused) {
+            Focused::Yes
+        } else {
+            Focused::No
+        };
+        self.follow = Follow::System { focused: now };
+        let display = match (focused, now) {
+            (Focused::NotYet, _) | (Focused::No, Focused::Yes) => read(ctx),
+            (Focused::Yes | Focused::No, _) => Display {
+                mode: Display::mode(ctx),
+                ..self.display
+            },
+        };
+        self.show_display(ctx, display);
+    }
+
+    /// Remakes the look for `display` when it differs from the look's.
+    fn show_display(&mut self, ctx: &egui::Context, display: Display) {
+        if display == self.display {
+            return;
+        }
+        match Theme::load_with(display.mode, display.contrast) {
+            Ok(theme) => {
+                theme.apply(ctx);
+                self.shell.set_theme(theme);
+            }
+            Err(error) => tracing::warn!(%error, "the theme for the display was not loaded"),
+        }
+        display.motion.apply(ctx);
+        self.display = display;
     }
 
     /// Installs the macOS menu bar, on the main thread, as `muda` requires.
@@ -168,6 +252,7 @@ impl App {
 
     /// Draws one frame, after running the menu items chosen since the last.
     pub fn frame(&mut self, ui: &mut egui::Ui) {
+        self.follow_display(ui.ctx());
         #[cfg(target_os = "macos")]
         if let Some(menu) = &self.menu {
             for choice in menu.chosen() {
@@ -176,6 +261,7 @@ impl App {
                     menu::MenuChoice::NewProject(template) => self.shell.new_project(template),
                     menu::MenuChoice::GameFiles => self.shell.show_game_guide(),
                     menu::MenuChoice::ExportMod => self.shell.export_mod(),
+                    menu::MenuChoice::Zoom(step) => self.shell.zoom(step),
                     menu::MenuChoice::Toggle(panel) => {
                         if let Err(error) = self.shell.toggle(panel) {
                             tracing::warn!(%error, "panel toggle failed");
