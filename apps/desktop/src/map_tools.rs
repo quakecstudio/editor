@@ -596,6 +596,26 @@ fn at_height((start, direction): Ray, z: f32) -> Option<[f32; 3]> {
     (t > 0.0).then(|| [start[0] + direction[0] * t, start[1] + direction[1] * t, z])
 }
 
+/// How a Move drag is held to an axis, by the keys held (TrenchBroom's axis restriction).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Restrict {
+    /// Across the drag's plane.
+    Free,
+    /// Up and down only, with Alt.
+    Vertical,
+    /// Along the axis moved farthest, with Shift.
+    OneAxis,
+}
+
+/// `point`, a grid point of a map, as drawn.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "a grid point of a map is well inside f32's range"
+)]
+fn single_point(point: [f64; 3]) -> [f32; 3] {
+    point.map(|c| c as f32)
+}
+
 /// One of the map's axes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MapAxis {
@@ -625,6 +645,13 @@ impl MapAxis {
         } else {
             Self::X
         }
+    }
+
+    /// The upright axis, x or y, `ray` runs most along: the upright plane across it faces the
+    /// camera most squarely.
+    fn upright_facing((_, direction): Ray) -> Self {
+        let [x, y, _] = direction.map(f32::abs);
+        if x >= y { Self::X } else { Self::Y }
     }
 
     /// Where `ray` meets the plane across this axis through `through`, ahead of its start.
@@ -772,16 +799,45 @@ impl BrushTools {
     }
 
     /// What a Move or Measure drag shows with the pointer on `ray`.
-    fn readout(drag: Drag, ray: Ray, grid: MapGrid) -> Option<Readout> {
+    fn readout(drag: Drag, ray: Ray, grid: MapGrid, restrict: Restrict) -> Option<Readout> {
         let moved = |from: [f64; 3], to: [f64; 3]| Readout::Move {
             by: [to[0] - from[0], to[1] - from[1], to[2] - from[2]],
             at: to,
         };
         match drag {
-            Drag::Selection(from, axis) => Some(moved(
-                snapped(from, grid),
-                snapped(axis.meets(ray, from)?, grid),
-            )),
+            Drag::Selection(from, axis) => {
+                // TrenchBroom's axis restriction: Alt moves up and down, across the upright
+                // plane facing the camera most; Shift keeps the farthest axis of the move.
+                let plane = match restrict {
+                    Restrict::Vertical => MapAxis::upright_facing(ray),
+                    Restrict::Free | Restrict::OneAxis => axis,
+                };
+                let from = snapped(from, grid);
+                let mut to = snapped(plane.meets(ray, single_point(from))?, grid);
+                match restrict {
+                    Restrict::Vertical => {
+                        let [fx, fy, _] = from;
+                        let [_, _, tz] = to;
+                        to = [fx, fy, tz];
+                    }
+                    Restrict::OneAxis => {
+                        let by: Vec<f64> =
+                            to.iter().zip(from).map(|(t, f)| (t - f).abs()).collect();
+                        let far = by
+                            .iter()
+                            .enumerate()
+                            .max_by(|a, b| a.1.total_cmp(b.1))
+                            .map_or(0, |(i, _)| i);
+                        for (i, (c, f)) in to.iter_mut().zip(from).enumerate() {
+                            if i != far {
+                                *c = f;
+                            }
+                        }
+                    }
+                    Restrict::Free => {}
+                }
+                Some(moved(from, to))
+            }
             Drag::Measure(from, axis) => Some(Readout::Measure {
                 from: snapped(from, grid),
                 to: snapped(axis.meets(ray, from)?, grid),
@@ -896,7 +952,12 @@ impl BrushTools {
                     for ((m, low), high) in middle.iter_mut().zip(min).zip(max) {
                         *m = single((low + high) / 2.0);
                     }
-                    let axis = MapAxis::facing(ray(at));
+                    // In the 3D view a move is across the ground, as TrenchBroom's; a 2D view
+                    // moves across its own plane.
+                    let axis = match pane {
+                        Pane::Perspective => MapAxis::Z,
+                        Pane::Plan(_) => MapAxis::facing(ray(at)),
+                    };
                     axis.meets(ray(at), middle)
                         .map(|from| Drag::Selection(from, axis))
                 }),
@@ -913,12 +974,21 @@ impl BrushTools {
             };
             self.dragging_in = self.drag.map(|_| pane);
         }
+        let restrict = ui.input(|i| {
+            if i.modifiers.alt {
+                Restrict::Vertical
+            } else if i.modifiers.shift {
+                Restrict::OneAxis
+            } else {
+                Restrict::Free
+            }
+        });
         if self.dragging_in != Some(pane) {
             return actions;
         }
         if let Some(drag) = self.drag
             && let Some(at) = ui.ctx().pointer_latest_pos()
-            && let Some(readout) = Self::readout(drag, ray(at), self.grid)
+            && let Some(readout) = Self::readout(drag, ray(at), self.grid, restrict)
         {
             self.shown = Some(readout);
         }
@@ -927,7 +997,7 @@ impl BrushTools {
         {
             self.drag = None;
             if let Some(at) = ui.ctx().pointer_latest_pos() {
-                self.shown = Self::readout(drag, ray(at), self.grid).or(self.shown);
+                self.shown = Self::readout(drag, ray(at), self.grid, restrict).or(self.shown);
             }
             if let (Drag::Selection(..), Some(Readout::Move { by, .. })) = (drag, self.shown)
                 && by.iter().any(|c| c.abs() > 0.0)
@@ -1443,7 +1513,7 @@ mod tests {
     )]
 
     use super::{
-        AlignFields, AlignPart, BrushAction, BrushTools, Drag, MapAxis, MapTool, Readout,
+        AlignFields, AlignPart, BrushAction, BrushTools, Drag, MapAxis, MapTool, Readout, Restrict,
         TextureChange, at_height,
     };
     use crate::map_scene::{BrushShape, Scene};
@@ -1474,6 +1544,35 @@ mod tests {
         assert!(tools.cancel());
         assert!(tools.chosen.is_empty());
         assert!(!tools.cancel(), "nothing of the tools' is left");
+    }
+
+    // No spec statement: P7-08: TrenchBroom's axis restriction on a Move drag: free it moves
+    // across its plane, with Shift along the axis it moved farthest, with Alt up and down across
+    // the upright plane facing the camera
+    #[test]
+    fn a_move_is_held_to_an_axis_by_the_keys() {
+        let by = |ray: super::Ray, restrict: Restrict| match BrushTools::readout(
+            Drag::Selection([0.0; 3], MapAxis::Z),
+            ray,
+            MapGrid::DEFAULT,
+            restrict,
+        ) {
+            Some(Readout::Move { by, .. }) => by,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(by(down_from(40.0, 10.0), Restrict::Free), [48.0, 16.0, 0.0]);
+        assert_eq!(
+            by(down_from(40.0, 10.0), Restrict::OneAxis),
+            [48.0, 0.0, 0.0]
+        );
+        assert_eq!(
+            by(down_from(5.0, -70.0), Restrict::OneAxis),
+            [0.0, -64.0, 0.0]
+        );
+        // From the east, looking west and a little down: the upright plane across x.
+        let length = (1.0_f32 + 0.04).sqrt();
+        let slanted = ([100.0, 0.0, 50.0], [-1.0 / length, 0.0, -0.2 / length]);
+        assert_eq!(by(slanted, Restrict::Vertical), [0.0, 0.0, 32.0]);
     }
 
     fn down_from(x: f32, y: f32) -> super::Ray {
@@ -1645,6 +1744,7 @@ mod tests {
             Drag::Selection([0.0; 3], MapAxis::Z),
             level,
             MapGrid::DEFAULT,
+            Restrict::Free,
         );
         assert_eq!(
             readout,
@@ -1667,6 +1767,7 @@ mod tests {
             Drag::Corner(brush, [64.0; 3]),
             down_from(90.0, 70.0),
             MapGrid::DEFAULT,
+            Restrict::Free,
         );
         assert_eq!(
             readout,
@@ -1679,7 +1780,8 @@ mod tests {
             BrushTools::readout(
                 Drag::Ground([0.0; 3]),
                 down_from(1.0, 1.0),
-                MapGrid::DEFAULT
+                MapGrid::DEFAULT,
+                Restrict::Free
             ),
             None
         );

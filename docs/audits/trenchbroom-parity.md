@@ -84,7 +84,7 @@ Tests are named `crate-or-app path::test`; `desktop` is `apps/desktop/src`, `map
 | Wad files with a smart editor; drop a wad on the window | The `wad` key, Import texture | `map-edit texture_import::tests::an_import_extends_the_key_the_map_uses` | Gap G16: a WAD dropped on the window is not added |
 | Tools: modal and permanent | Toolbar: Select, Brush, Clip, Vertex, Move, Measure, Shape | `desktop map_tools` tests | Same |
 | Cancel a drag or a tool with Escape | Escape drops a drag, then picked corners, then the tool, then the selection | `desktop map_tools::tests::escape_cancels_the_drag_then_the_corners_then_the_tool`, `desktop tests::escape_in_the_map_view_clears_the_selection` | Same |
-| Axis restriction while moving | None | none | Gap G11 |
+| Axis restriction while moving | The Move tool moves across the ground in 3D, up and down with Alt, along the farthest axis with Shift | `desktop map_tools::tests::a_move_is_held_to_an_axis_by_the_keys` | Same; no thicker trace line |
 | Grid from 0.125 to 256, set from the menu or Alt+Ctrl+wheel | `view.map_grid`, the toolbar's Grid picker, TrenchBroom's + - and 1 to 9 | `desktop tests::the_grid_keys_set_the_step_the_selection_moves_by`, `qs-layout map_grid::tests` | Same |
 | Map view context menu: group, layers, select all of a class, reveal material, create entities | Entities browser context menu only | none | Gap G12 |
 | Simple shapes by drag in 3D and 2D | Brush tool | `map-edit brushes::tests::a_box_is_created_on_the_grid` | Same |
@@ -179,7 +179,6 @@ To close before #823 does:
 | G1 | Entity models drawn textured, not as wireframes |
 | G7 | Two- and three-pane layouts, a highlight on the focused pane, linked 2D views |
 | G8 | Selection drilling; 2D picking by candidates |
-| G11 | Axis restriction while moving |
 | G12 | The map view's context menu |
 | G13 | Brush entities from selected brushes and back to the world; a convex brush from placed points; stamping and moving faces; clip snapping and matching a face's plane |
 | G16 | Filter the browser by WAD; a WAD dropped on the window; alignment shortcuts |

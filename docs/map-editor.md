@@ -108,6 +108,9 @@ it too.
   Properties panel turns the selection by any angle, 15 degrees at first, and flips it along x,
   y or z. Both go about the middle of the selection's box, point entities' facing with it
   (`map.flip`, `map.turn`).
+- **Moving on an axis (P7-08):** the Move tool moves the selection across the ground in the 3D
+  view and across its own plane in a 2D view; Alt moves it up and down, and Shift keeps it on the
+  axis it has moved farthest, as TrenchBroom's axis restriction.
 - **Textures (P7-08):** the texture chosen in the browser is the current one, which a new brush
   or shape takes (else the map's last face's). A texture's menu (right-click) replaces the
   current texture with it on the selected brushes, or on every brush when none is selected
