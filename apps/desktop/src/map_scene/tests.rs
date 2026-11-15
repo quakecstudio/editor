@@ -75,7 +75,7 @@ fn the_selection_s_box_holds_its_entities_and_brushes() {
     let ogre = EntityIndex::new(2);
     let door = EntityIndex::new(4);
     assert_eq!(
-        scene.bounds_of([ogre].into_iter(), None),
+        scene.bounds_of(core::iter::once(ogre), None),
         Some([[88.0, 56.0, 16.0], [104.0, 72.0, 32.0]])
     );
     assert_eq!(
@@ -84,13 +84,13 @@ fn the_selection_s_box_holds_its_entities_and_brushes() {
     );
     assert_eq!(
         scene.bounds_of(
-            [ogre].into_iter(),
+            core::iter::once(ogre),
             Some([[-16.0, 0.0, 0.0], [0.0, 8.0, 300.0]])
         ),
         Some([[-16.0, 0.0, 0.0], [104.0, 72.0, 300.0]])
     );
     assert_eq!(
-        scene.bounds_of([EntityIndex::new(0)].into_iter(), None),
+        scene.bounds_of(core::iter::once(EntityIndex::new(0)), None),
         None
     );
     assert_eq!(scene.bounds_of(core::iter::empty(), None), None);

@@ -978,7 +978,7 @@ impl MapEditor {
         let rect = ui.available_rect_before_wrap();
         let selected = document.selected();
         let framed = match self.frame.take() {
-            Some(Framing::Entity(entity)) => self.scene.bounds_of([entity].into_iter(), None),
+            Some(Framing::Entity(entity)) => self.scene.bounds_of(core::iter::once(entity), None),
             Some(Framing::Selection) => self.scene.bounds_of(
                 selected.into_iter().chain(self.also.iter().copied()),
                 self.tools.bounds(&self.scene),
