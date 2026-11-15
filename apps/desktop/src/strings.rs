@@ -538,6 +538,8 @@ pub enum Text {
     MapBrushClass,
     /// The map view's choice of the links it draws.
     MapLinks,
+    /// Every light's preview drawn, not only the selected ones' (P7-09).
+    MapLightsAll,
     /// Draw the links of the selection.
     MapLinksSelected,
     /// Draw every link.
@@ -778,7 +780,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 381] = [
+    pub const ALL: [Self; 382] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1042,6 +1044,7 @@ impl Text {
         Self::MapPlaceHint,
         Self::MapBrushClass,
         Self::MapLinks,
+        Self::MapLightsAll,
         Self::MapLinksSelected,
         Self::MapLinksAll,
         Self::MapToolSelect,
@@ -1450,6 +1453,7 @@ impl Text {
             Self::MapPlaceHint => "Drag into the map to place",
             Self::MapBrushClass => "A brush entity: made from brushes",
             Self::MapLinks => "Links",
+            Self::MapLightsAll => "Every light",
             Self::MapLinksSelected => "Selected",
             Self::MapLinksAll => "Every link",
             Self::MapToolSelect => "Select",

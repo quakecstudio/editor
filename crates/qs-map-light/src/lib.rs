@@ -15,6 +15,7 @@
 mod entities;
 mod face;
 mod lump;
+mod preview;
 mod trace;
 
 use core::fmt;
@@ -28,11 +29,13 @@ use crate::face::Scene;
 use crate::lump::Colour;
 use crate::trace::Tree;
 
+pub use crate::entities::EntityId;
 pub use crate::entities::{
     LIGHT_DEFAULT_LEVEL, LIGHT_FIRST_SWITCHED_STYLE, LIGHT_MAX_MAP_ENTITIES,
     LIGHT_MAX_MAP_ENTSTRING, LIGHT_MAX_SWITCHED,
 };
 pub use crate::lump::LIGHT_MAX_MAP_LIGHTING;
+pub use crate::preview::{Cone, LightPreview};
 
 /// The style of an unused lightmap slot (LIGHT-5.1).
 pub(crate) const NO_STYLE: u8 = 255;

@@ -870,3 +870,138 @@ fn bsp2_faces_are_lit() {
         assert_eq!((face.planenum, face.texinfo), (want.planenum, want.texinfo));
     }
 }
+
+// spec LIGHT-7.1: a light's preview radius is its light value over scaledist: every face farther
+// from the light gets none of it, and a nearer face does
+#[test]
+fn the_preview_radius_is_where_the_light_ends() {
+    for value in [50_u16, 64, 100, 300] {
+        let text = light_at("128 128 64", &format!("\"light\" \"{value}\"\n"));
+        let bsp = room(&text);
+        let previews = Light::default()
+            .previews(Bsp::read(&bsp, BspLoader::FitzQuake).unwrap().entities())
+            .unwrap();
+        assert_eq!(previews.len(), 1, "{value}");
+        let preview = &previews[0];
+        assert_eq!(preview.radius, f32::from(value));
+        let lit = Light::default().run(&bsp).unwrap();
+        let read = Bsp::read(&lit.bsp, BspLoader::FitzQuake).unwrap();
+        let (mut nearer, mut nearer_lit) = (false, false);
+        for face in &read.faces {
+            let plane = &read.planes[face.planenum];
+            let [nx, ny, nz] = plane.normal;
+            let normal = if face.side == 0 {
+                [nx, ny, nz]
+            } else {
+                [-nx, -ny, -nz]
+            };
+            let dist = if face.side == 0 {
+                plane.dist
+            } else {
+                -plane.dist
+            };
+            let [x, y, z] = preview.origin;
+            let away = x * normal[0] + y * normal[1] + z * normal[2] - dist;
+            let size = face.lightmap_size[0] * face.lightmap_size[1];
+            let light = usize::try_from(face.lightofs)
+                .ok()
+                .and_then(|at| read.lighting.get(at..at + size))
+                .unwrap_or_default();
+            let any = light.iter().any(|&b| b > 0);
+            if away >= preview.radius {
+                assert!(!any, "{value}: a face {away} away is lit");
+            } else if away > 0.0 {
+                nearer = true;
+                nearer_lit |= any;
+            }
+        }
+        assert_eq!(
+            nearer_lit, nearer,
+            "{value}: a face within the radius is lit"
+        );
+    }
+}
+
+// spec LIGHT-7.2: a preview's colour is the light's _color as light reads it, each channel over
+// 255, and white for none
+// spec LIGHT-7.3: a spotlight's preview has its cone: the aim toward its target and the whole
+// cone's angle, 40 when angle is 0
+#[test]
+fn a_preview_has_the_colour_and_the_cone() {
+    let text = [
+        light_at(
+            "0 0 64",
+            "\"_color\" \"1 0.5 0\"\n\"target\" \"t\"\n\"angle\" \"30\"\n",
+        ),
+        light_at("0 0 64", "\"target\" \"t\"\n"),
+        "{\n\"classname\" \"info_null\"\n\"targetname\" \"t\"\n\"origin\" \"0 0 0\"\n}\n"
+            .to_owned(),
+        light_at("64 0 64", "\"_color\" \"255 128 0\"\n"),
+    ]
+    .concat();
+    let previews = Light::default().previews(text.as_bytes()).unwrap();
+    assert_eq!(previews.len(), 3, "the info_null is no light");
+    assert_eq!(previews[0].colour, [1.0, 0.5, 0.0]);
+    let cone = previews[0].cone.unwrap();
+    assert_eq!(cone.aim, [0.0, 0.0, -1.0]);
+    assert_eq!(cone.degrees, 30.0);
+    assert_eq!(previews[1].colour, [1.0; 3], "white for none");
+    assert_eq!(previews[1].cone.unwrap().degrees, 40.0);
+    assert_eq!(previews[2].cone, None);
+    assert_eq!(previews[2].colour, [1.0, 128.0 / 255.0, 0.0]);
+    assert_eq!(previews[2].entity.index(), 3);
+    assert!(Light::default().previews(b"{ \"classname\"").is_err());
+}
+
+// spec LIGHT-7.1: in each light vector, a face beyond every light's preview radius is unlit, and
+// some face within one is lit
+#[test]
+fn every_vector_is_lit_only_within_its_previews() {
+    let mut checked = 0;
+    for line in vector("results.tsv").lines().skip(1) {
+        let map = line.split('\t').next().unwrap();
+        let bsp = unxxd(&vector(&format!("{map}.bsp.txt")));
+        let lit = Light::new(Sampling::Fast).run(&bsp).unwrap();
+        let read = Bsp::read(&lit.bsp, BspLoader::FitzQuake).unwrap();
+        let previews = Light::default().previews(read.entities()).unwrap();
+        assert!(!previews.is_empty(), "{map}");
+        let mut within_lit = false;
+        for face in &read.faces {
+            let plane = &read.planes[face.planenum];
+            let sign = if face.side == 0 { 1.0 } else { -1.0 };
+            let reached = previews.iter().any(|preview| {
+                let [x, y, z] = preview.origin;
+                let [nx, ny, nz] = plane.normal;
+                let away = sign * (x * nx + y * ny + z * nz - plane.dist);
+                away > 0.0 && away < preview.radius
+            });
+            let size = face.lightmap_size[0] * face.lightmap_size[1];
+            let any = usize::try_from(face.lightofs)
+                .ok()
+                .and_then(|at| read.lighting.get(at..at + size))
+                .is_some_and(|light| light.iter().any(|&b| b > 0));
+            assert!(reached || !any, "{map}: a face beyond every light is lit");
+            within_lit |= reached && any;
+        }
+        assert!(within_lit, "{map}");
+        checked += 1;
+    }
+    assert!(checked >= 4);
+}
+
+// spec LIGHT-7.1: a light of a value below 0 lights nothing, so it has no preview
+// spec LIGHT-7.3: a spotlight whose target is at its own origin has no aim, so no cone
+#[test]
+fn a_light_that_reaches_nothing_has_no_preview() {
+    let text = [
+        light_at("0 0 64", "\"light\" \"-200\"\n"),
+        light_at("0 0 64", "\"target\" \"here\"\n"),
+        "{\n\"classname\" \"info_null\"\n\"targetname\" \"here\"\n\"origin\" \"0 0 64\"\n}\n"
+            .to_owned(),
+    ]
+    .concat();
+    let previews = Light::default().previews(text.as_bytes()).unwrap();
+    assert_eq!(previews.len(), 1, "the negative light has none");
+    assert_eq!(previews[0].entity.index(), 1);
+    assert_eq!(previews[0].cone, None);
+}

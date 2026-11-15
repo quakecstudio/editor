@@ -12,6 +12,7 @@ use qs_map::geometry::TexVecs;
 use qs_map_edit::ClassInfo;
 use qs_map_edit::uv::{FaceIndex, FaceRef};
 use qs_map_edit::{BrushIndex, EntityIndex, MapDocument, MapSource};
+use qs_map_light::{Light, LightPreview};
 use qs_mdl::Mdl;
 use qs_mdl::mdl::MdlFrameEntry;
 use qs_render::{Camera, Degrees};
@@ -119,6 +120,131 @@ pub(crate) struct Scene {
     pub(crate) fired: Vec<(EntityIndex, EntityIndex, Line)>,
     /// Every brush of a `.map`, for picking and editing (P6-08).
     pub(crate) brushes: Vec<BrushShape>,
+    /// Each light's preview, as the light compiler reads it (P7-09, LIGHT-7).
+    pub(crate) lights: Vec<LightShape>,
+}
+
+/// A light's preview as drawn (LIGHT-7.4): a sphere of three circles at its radius and, for a
+/// spotlight, its cone's edge.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct LightShape {
+    /// The light.
+    pub(crate) index: EntityIndex,
+    /// Its colour, each channel 0 to 1 (LIGHT-7.2).
+    pub(crate) colour: [f32; 3],
+    /// The lines.
+    pub(crate) lines: Vec<Line>,
+}
+
+/// The segments a preview's circle is drawn with.
+const CIRCLE_SEGMENTS: u16 = 48;
+/// How near straight up or down a spotlight's aim may be and still be crossed with the up axis
+/// for its cone's directions; nearer, the x axis is used.
+const NEAR_VERTICAL: f32 = 0.9;
+/// The lines a spotlight's cone edge is drawn with.
+const CONE_EDGES: u16 = 8;
+
+impl LightShape {
+    /// The lines of `preview` (LIGHT-7.4).
+    fn of(index: EntityIndex, preview: &LightPreview) -> Self {
+        let [x, y, z] = preview.origin;
+        let r = preview.radius;
+        let mut lines = Vec::new();
+        let step = core::f32::consts::TAU / f32::from(CIRCLE_SEGMENTS);
+        for n in 0..CIRCLE_SEGMENTS {
+            let (a, b) = (step * f32::from(n), step * f32::from(n.saturating_add(1)));
+            let (ca, sa, cb, sb) = (a.cos() * r, a.sin() * r, b.cos() * r, b.sin() * r);
+            lines.push([[x + ca, y + sa, z], [x + cb, y + sb, z]]);
+            lines.push([[x + ca, y, z + sa], [x + cb, y, z + sb]]);
+            lines.push([[x, y + ca, z + sa], [x, y + cb, z + sb]]);
+        }
+        if let Some(cone) = &preview.cone {
+            let aim = cone.aim;
+            // Two directions at right angles to the aim and each other.
+            let up = if aim[2].abs() < NEAR_VERTICAL {
+                [0.0, 0.0, 1.0]
+            } else {
+                [1.0, 0.0, 0.0]
+            };
+            let u = unit(cross(aim, up));
+            let v = cross(aim, u);
+            let half = cone.degrees.to_radians() / 2.0;
+            let (along, out) = (half.cos() * r, half.sin() * r);
+            let step = core::f32::consts::TAU / f32::from(CONE_EDGES);
+            for n in 0..CONE_EDGES {
+                let t = step * f32::from(n);
+                let (c, s) = (t.cos() * out, t.sin() * out);
+                let end = [
+                    x + aim[0] * along + u[0] * c + v[0] * s,
+                    y + aim[1] * along + u[1] * c + v[1] * s,
+                    z + aim[2] * along + u[2] * c + v[2] * s,
+                ];
+                lines.push([preview.origin, end]);
+            }
+        }
+        Self {
+            index,
+            colour: preview.colour,
+            lines,
+        }
+    }
+}
+
+fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+fn unit(v: [f32; 3]) -> [f32; 3] {
+    let length = v.iter().map(|c| c * c).sum::<f32>().sqrt();
+    if length > 0.0 {
+        v.map(|c| c / length)
+    } else {
+        v
+    }
+}
+
+/// The previews of `file`'s lights (LIGHT-7). A key the light compiler stops on, as one being
+/// typed may be, takes out only its own entity: the others are read without it, each keeping its
+/// place.
+fn light_previews(file: &qs_map::MapFile) -> Vec<LightPreview> {
+    let light = Light::default();
+    let all: Vec<&qs_map::Entity> = file.entities.iter().collect();
+    if let Ok(previews) = light.previews(&entity_lump(&all)) {
+        return previews;
+    }
+    // An entity that does not read alone is written with no keys, so the places stay the map's.
+    let empty = qs_map::Entity::default();
+    let readable: Vec<&qs_map::Entity> = file
+        .entities
+        .iter()
+        .map(|entity| {
+            if light.previews(&entity_lump(&[entity])).is_ok() {
+                entity
+            } else {
+                &empty
+            }
+        })
+        .collect();
+    light.previews(&entity_lump(&readable)).unwrap_or_default()
+}
+
+/// The entities' key-values as an entity lump, which the light compiler reads (LIGHT-2.7).
+fn entity_lump(entities: &[&qs_map::Entity]) -> Vec<u8> {
+    let mut lump = Vec::new();
+    for entity in entities {
+        lump.extend_from_slice(b"{\n");
+        for pair in entity.pairs() {
+            for part in [&b"\""[..], pair.key(), b"\" \"", pair.value(), b"\"\n"] {
+                lump.extend_from_slice(part);
+            }
+        }
+        lump.extend_from_slice(b"}\n");
+    }
+    lump
 }
 
 /// One brush as drawn, picked and edited (P6-08).
@@ -377,6 +503,13 @@ impl Scene {
             });
         }
         scene.fired = scene.find_links();
+        // LIGHT-7: each light as the light compiler reads the map's keys; a lump it cannot read
+        // draws none.
+        // The keys as the editor holds them, a BSP's included, so an edit shows at once.
+        scene.lights = light_previews(document.file())
+            .iter()
+            .map(|preview| LightShape::of(EntityIndex::new(preview.entity.index()), preview))
+            .collect();
         scene
     }
 
@@ -404,6 +537,23 @@ impl Scene {
             }
         }
         fired
+    }
+
+    /// The previews of the lights `view` asks for: the selection's or every one, none hidden
+    /// (LIGHT-7.4).
+    pub(crate) fn lights(
+        &self,
+        view: LinkView,
+        selection: &BTreeSet<EntityIndex>,
+        hidden: &BTreeSet<EntityIndex>,
+    ) -> impl Iterator<Item = &LightShape> {
+        self.lights.iter().filter(move |light| {
+            !hidden.contains(&light.index)
+                && match view {
+                    LinkView::All => true,
+                    LinkView::Selection => selection.contains(&light.index),
+                }
+        })
     }
 
     /// The entity not in `hidden` whose box the ray from `start` along `direction` enters

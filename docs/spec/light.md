@@ -230,3 +230,23 @@ file beside the BSP (BSP-18) as well as the grey lump.
   max(), see LightNormalize in MarkV 1036").
 - **LIGHT-6.5** Our `qs-map-light` writes a `.lit` when any light has a colour other than white, and
   the grey lump by LIGHT-6.4, so a map with white light only lights as id's `light` does.
+
+## LIGHT-7 Light previews
+
+**Source:** this project's design (P7-09, MAP-10): the map editor draws each light as `light`
+lights the map, read by the same reader (LIGHT-2), so what the modder sees is what compiles.
+
+### Behaviour
+
+- **LIGHT-7.1** A light's preview radius is its light value (LIGHT-2.1, LIGHT-2.2) over
+  `scaledist` (LIGHT-1.2): a face farther than it lights nothing (LIGHT-4.2), and at it the
+  amount (LIGHT-4.3) is 0.
+- **LIGHT-7.2** A light's preview colour is its `_color` as LIGHT-6.1 reads it, each channel
+  over 255; white for a light with none.
+- **LIGHT-7.3** A spotlight's preview has its cone: the aim, the unit direction from its origin
+  to its target's (LIGHT-2.6), and the whole cone's angle, its `angle` in degrees, 40 when it is
+  0 (LIGHT-4.4).
+- **LIGHT-7.4** The map view draws the previews of the selected lights, or of every light with
+  **Every light** in its **Show** list, from the map as the editor holds it in each frame, so an edit of a light's key shows in the frame
+  it is made: a sphere of three circles at the radius in the light's colour, and for a
+  spotlight the cone's edge out to the radius.
