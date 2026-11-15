@@ -153,6 +153,8 @@ pub(crate) enum Area {
     Outline,
     /// The editor's second pane.
     SecondPane,
+    /// The Map tab, when it scrolls (P7-12).
+    MapTab,
 }
 
 /// Where the app's menu is (P3-44).
@@ -1488,11 +1490,23 @@ impl Shell {
         if self.centre_tab != CentreTab::Map {
             return false;
         }
-        let actions = self
-            .features
-            .map
-            .map_editor
-            .ui(ui, &self.theme, document, panes);
+        let editor = &mut self.features.map.map_editor;
+        let theme = &self.theme;
+        // With large text (P7-12) the toolbar's rows can leave the view and the browser no
+        // room; then the tab scrolls, at its least height, rather than drawing under the
+        // bottom panel.
+        let actions = if ui.available_height() < MAP_TAB_MIN_HEIGHT {
+            egui::ScrollArea::vertical()
+                .id_salt(Area::MapTab)
+                .show(ui, |ui| {
+                    let size = egui::vec2(ui.available_width(), MAP_TAB_MIN_HEIGHT);
+                    ui.allocate_ui(size, |ui| editor.ui(ui, theme, document, panes))
+                        .inner
+                })
+                .inner
+        } else {
+            editor.ui(ui, theme, document, panes)
+        };
         self.with_map(|map, commands| map.map_actions(commands, actions));
         self.with_map(MapFeature::refresh_map_outline);
         if self.with_map(MapFeature::refresh_map_review) {
@@ -2819,6 +2833,10 @@ fn status_dot(ui: &mut Ui, colour: egui::Color32) {
 
 /// A status dot's radius as a part of the line's height: a quarter.
 const STATUS_DOT_PARTS: f32 = 4.0;
+
+/// The least height the Map tab is drawn at, in points: room for its toolbar, a usable view
+/// and the browser below it; a shorter centre scrolls.
+const MAP_TAB_MIN_HEIGHT: f32 = 420.0;
 
 /// The most of the window's width a side panel takes when the interface is zoomed in.
 const SIDE_PANEL_SHARE: f32 = 0.3;

@@ -689,8 +689,13 @@ impl MapEditor {
             ui.set_max_width(width);
             self.tools.toolbar(ui);
             ui.separator();
+            // The pickers keep egui's combo width and cut a long choice short, so a row wraps
+            // before one rather than letting it run past the centre (P7-12, large text).
+            let combo = ui.spacing().combo_width;
             let panes =
                 egui::ComboBox::from_id_salt(ui.id().with(core::any::TypeId::of::<MapPanes>()))
+                    .width(combo)
+                    .truncate()
                     .selected_text(panes_text(layout).get())
                     .show_ui(ui, |ui| {
                         for choice in MapPanes::ALL {
@@ -712,9 +717,25 @@ impl MapEditor {
             );
             ui.selectable_value(&mut self.links, LinkView::All, Text::MapLinksAll.get());
             ui.separator();
+            // Show and its picker stay on one row.
+            let label = ui.fonts_mut(|fonts| {
+                fonts
+                    .layout_no_wrap(
+                        Text::MapShow.get().to_owned(),
+                        egui::TextStyle::Body.resolve(ui.style()),
+                        egui::Color32::PLACEHOLDER,
+                    )
+                    .size()
+                    .x
+            });
+            if ui.available_size_before_wrap().x < label + ui.spacing().item_spacing.x + combo {
+                ui.end_row();
+            }
             ui.label(Text::MapShow.get());
             let show =
                 egui::ComboBox::from_id_salt(ui.id().with(core::any::TypeId::of::<ShowFilter>()))
+                    .width(combo)
+                    .truncate()
                     .selected_text(self.show.text().get())
                     .show_ui(ui, |ui| {
                         for show in ShowFilter::ALL {
