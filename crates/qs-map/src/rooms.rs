@@ -98,7 +98,7 @@ pub(crate) fn container_id(value: &[u8]) -> Option<u64> {
 }
 
 /// The box `bounds` grown to hold `point`.
-fn grow(bounds: Option<[[f64; 3]; 2]>, point: [f64; 3]) -> [[f64; 3]; 2] {
+pub(crate) fn grow(bounds: Option<[[f64; 3]; 2]>, point: [f64; 3]) -> [[f64; 3]; 2] {
     let [mut min, mut max] = bounds.unwrap_or([point, point]);
     for ((lo, hi), p) in min.iter_mut().zip(max.iter_mut()).zip(point) {
         *lo = lo.min(p);

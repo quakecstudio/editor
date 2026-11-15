@@ -359,3 +359,132 @@ fn an_imported_texture_compiles_into_the_bsp() {
     .unwrap();
     assert_eq!(compiled, shown);
 }
+
+// spec MAP-16.3: a region compile is sealed, so a room open to the void compiles in a region
+// around it with no leak
+// spec MAP-16.4: the seal is skip, solid and never drawn: no face of the region's BSP is skip,
+// and a WAD with no skip is not reported for it
+// spec MAP-16.5: a region map.compile writes its files under the map's name and -region, so the
+// whole map's are kept
+#[test]
+fn a_region_around_an_open_room_does_not_leak() {
+    let path = room("region-open", "wall", Opening::Open);
+    let mut session = open(&path);
+    let whole = report(&mut session, MAP_COMPILE);
+    assert!(!whole.leak.is_empty(), "the whole map leaks");
+    let whole_bsp = std::fs::read(path.with_extension("bsp")).unwrap();
+    let region =
+        json!({ "region": { "box": { "min": [-200, -200, -200], "max": [200, 200, 200] } } });
+    let made: MapReport =
+        serde_json::from_value(session.execute(MAP_COMPILE, region).unwrap()).unwrap();
+    assert!(made.leak.is_empty(), "the region is sealed");
+    assert!(
+        made.missing_textures.is_empty(),
+        "{:?}",
+        made.missing_textures
+    );
+    let region_path = path.with_file_name("region-open-region.bsp");
+    assert!(made.written.contains(&region_path), "{:?}", made.written);
+    assert_eq!(
+        std::fs::read(path.with_extension("bsp")).unwrap(),
+        whole_bsp,
+        "the whole map's BSP is kept"
+    );
+    let bytes = std::fs::read(&region_path).unwrap();
+    let bsp = qs_bsp::Bsp::read(&bytes, qs_bsp::BspLoader::default()).unwrap();
+    assert!(!bsp.faces.is_empty());
+    for face in &bsp.faces {
+        let slot = bsp.texinfo[face.texinfo].texture;
+        let name = slot
+            .and_then(|slot| bsp.textures.get(slot))
+            .and_then(Option::as_ref)
+            .map(|texture| texture.name.clone());
+        assert_ne!(name.as_deref(), Some(&b"skip"[..]), "a seal face is drawn");
+    }
+}
+
+// spec MAP-16.1: a box with no volume is refused
+// spec MAP-16.5: map.compile takes a region of rooms or a box; an entity in no room, or past the
+// map's, is refused and named
+#[test]
+fn a_region_with_no_volume_is_refused() {
+    let path = room("region-none", "wall", Opening::Sealed);
+    let mut session = open(&path);
+    let flat = json!({ "region": { "box": { "min": [0, 0, 0], "max": [64, 64, 0] } } });
+    let error = session.execute(MAP_COMPILE, flat).unwrap_err();
+    assert!(error.to_string().contains("no volume"), "{error}");
+    let roomless = json!({ "region": { "rooms": [1] } });
+    let error = session.execute(MAP_COMPILE, roomless).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("entity 1 is in no layer or group"),
+        "{error}"
+    );
+    let past = json!({ "region": { "rooms": [9] } });
+    let error = session.execute(MAP_COMPILE, past).unwrap_err();
+    assert!(error.to_string().contains('9'), "{error}");
+}
+
+// spec MAP-16.5: play from here with a region the camera is outside is refused before anything
+// compiles
+#[test]
+fn play_from_outside_the_region_is_refused() {
+    let path = room("region-eye", "wall", Opening::Sealed);
+    let mut session = open(&path);
+    let params = json!({
+        "eye": [500, 500, 500],
+        "region": { "box": { "min": [-200, -200, -200], "max": [200, 200, 200] } }
+    });
+    let error = session
+        .execute(super::MAP_PLAY_FROM_HERE, params)
+        .unwrap_err();
+    assert!(error.to_string().contains("outside the region"), "{error}");
+    assert!(!path.with_extension("bsp").exists(), "nothing was compiled");
+}
+
+// spec MAP-16.1: the region of a layer is the box around its brushes: compiling it leaves out
+// the brushes of the map outside it
+#[test]
+fn a_layer_compiles_as_its_region() {
+    let path = room("region-layer", "wall", Opening::Sealed);
+    // A layer of two pillars in opposite corners of the room, and a block far outside it in the
+    // world.
+    let mut text = std::fs::read(&path).unwrap();
+    text.extend_from_slice(
+        b"\n{\n\"classname\" \"func_group\"\n\"_tb_type\" \"_tb_layer\"\n\
+          \"_tb_name\" \"Pillar\"\n\"_tb_id\" \"1\"\n}\n",
+    );
+    let mut file = MapFile::parse(&text).unwrap();
+    let surface = Surface {
+        texture: b"wall".to_vec(),
+        texdef: TexDef::Standard {
+            shift: [0.0; 2],
+            rotate: 0.0,
+            scale: [1.0; 2],
+        },
+    };
+    for (min, max) in [
+        ([-112.0, -112.0, -128.0], [-96.0, -96.0, 100.0]),
+        ([96.0, 96.0, -128.0], [112.0, 112.0, 100.0]),
+    ] {
+        let pillar = Brush::cuboid(min, max, &surface).unwrap();
+        file.entities[2].items.push(Item::Brush(pillar));
+    }
+    let far = Brush::cuboid([4000.0; 3], [4064.0; 3], &surface).unwrap();
+    file.entities[0].items.push(Item::Brush(far));
+    std::fs::write(&path, file.to_bytes()).unwrap();
+    let mut session = open(&path);
+    let rooms = json!({ "region": { "rooms": [2] } });
+    let made: MapReport =
+        serde_json::from_value(session.execute(MAP_COMPILE, rooms).unwrap()).unwrap();
+    assert!(made.leak.is_empty());
+    let bsp = std::fs::read(path.with_file_name("region-layer-region.bsp")).unwrap();
+    let read = qs_bsp::Bsp::read(&bsp, qs_bsp::BspLoader::default()).unwrap();
+    let world = read.models[0];
+    assert!(
+        world.maxs.iter().all(|&c| c < 1000.0),
+        "the far block is left out: {:?}",
+        world.maxs
+    );
+}

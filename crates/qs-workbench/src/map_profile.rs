@@ -509,7 +509,7 @@ fn run_task<C: HasPreview>(
             let (workbench, preview) = context.workbench_and_preview();
             let game = preview.game_base_path();
             let (compiled, report, _) = workbench
-                .compile_map(game.as_deref())
+                .compile_map(game.as_deref(), None)
                 .map_err(TaskError::Workbench)?;
             write(&bsp, &compiled.bsp)?;
             for (extension, bytes) in [
