@@ -3,16 +3,16 @@
 // Copyright (C) 1997       Greg Lewis
 // Copyright (C) 2026 QuakeC Studio contributors
 //
-// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: qbsp/prtfile.cc, WritePortals_r, NumberLeafs_r, WritePortalfile, WritePortalFile
-// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: common/prtfile.cc, WritePortal, WritePortalfile
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: qbsp/prtfile.cc, WritePortals_r, WritePTR2ClusterMapping_r, NumberLeafs_r, WritePortalfile, WritePortalFile
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: common/prtfile.cc, WritePortal, WritePTR2ClusterMapping, WritePortalfile
 
-//! The portal file vis reads, ericw-tools' `WritePortalFile` (QBSP-15.51): the portals of the
-//! pruned tree, numbered by leaf as `PRT1`, which `qs-map-vis` reads.
+//! The portal file vis reads, ericw-tools' `WritePortalFile` (QBSP-15.52): the vis portals of
+//! the pruned tree, numbered by leaf as `PRT1`, or by cluster as `PRT2` when the map has detail.
 
 use std::collections::HashMap;
 
 use super::portals::{HeadPortals, PortalType, Portalizer};
-use super::tree::{NodeId, Tree};
+use super::tree::{NodeId, Separator, Tree};
 use super::vec::{NORMAL_EPSILON, dot};
 
 /// `ANGLEEPSILON`: a portal's polygon facing away from its plane by more than this is read
@@ -24,7 +24,7 @@ const SMALLEST_PLAIN: f64 = 1e-4;
 const LARGEST_PLAIN: f64 = 1e16;
 
 /// `value` as `{fmt}`'s `{}` writes a `double`: the shortest digits that read back, with an
-/// exponent of at least two digits below 1e-4 or from 1e16 (QBSP-15.51).
+/// exponent of at least two digits below 1e-4 or from 1e16 (QBSP-15.52).
 pub(crate) fn fmt_number(value: f64) -> String {
     let magnitude = value.abs();
     if magnitude != 0.0 && (magnitude < SMALLEST_PLAIN || magnitude >= LARGEST_PLAIN) {
@@ -41,40 +41,122 @@ pub(crate) fn fmt_number(value: f64) -> String {
     format!("{value}")
 }
 
-impl Tree {
-    /// `NumberLeafs_r` with no cluster: each leaf not any solid numbered in order.
-    fn number_leaves(&self) -> HashMap<NodeId, i64> {
-        let mut numbers = HashMap::new();
-        let mut next = 0_i64;
-        for leaf in self.leaves_below(Self::HEAD) {
-            if self
-                .leaf_data(leaf)
-                .is_some_and(|l| !l.contents.is_any_solid())
+/// The vis leaves' and clusters' numbers, `NumberLeafs_r`'s: each leaf not any solid by its
+/// place, and each cluster, a detail separator not under one or a leaf not under one, by its
+/// place in the walk.
+struct Numbers {
+    leaves: HashMap<NodeId, i64>,
+    clusters: HashMap<NodeId, i64>,
+    count: i64,
+    /// Whether any detail separator made a cluster: then the file is `PRT2`.
+    detail: bool,
+}
+
+impl Numbers {
+    /// The leaves in each cluster, in leaf order, a line each: `WritePTR2ClusterMapping`.
+    fn cluster_map(&self) -> String {
+        let mut by_cluster: Vec<Vec<i64>> =
+            vec![Vec::new(); usize::try_from(self.count).unwrap_or(0)];
+        let mut leaves: Vec<(i64, i64)> = self
+            .leaves
+            .iter()
+            .filter_map(|(node, &leaf)| Some((leaf, *self.clusters.get(node)?)))
+            .collect();
+        leaves.sort_unstable();
+        for (leaf, cluster) in leaves {
+            if let Some(list) = usize::try_from(cluster)
+                .ok()
+                .and_then(|c| by_cluster.get_mut(c))
             {
-                numbers.insert(leaf, next);
-                next = next.saturating_add(1);
+                list.push(leaf);
             }
+        }
+        let mut out = String::new();
+        for list in by_cluster {
+            for leaf in list {
+                out.push_str(&format!("{leaf} "));
+            }
+            out.push_str("-1\n");
+        }
+        out
+    }
+}
+
+impl Tree {
+    /// `NumberLeafs_r` (QBSP-15.52): front first, a detail separator not under another cluster
+    /// starts one that every leaf below it is in; a leaf not under one is its own.
+    fn number_leaves(&self) -> Numbers {
+        let mut numbers = Numbers {
+            leaves: HashMap::new(),
+            clusters: HashMap::new(),
+            count: 0,
+            detail: false,
+        };
+        let mut next_leaf = 0_i64;
+        let mut stack: Vec<(NodeId, Option<i64>)> = vec![(Self::HEAD, None)];
+        while let Some((at, mut cluster)) = stack.pop() {
+            if let Some((_, [front, back], separator)) = self.split_of(at) {
+                if cluster.is_none() && separator == Separator::Detail {
+                    numbers.detail = true;
+                    numbers.clusters.insert(at, numbers.count);
+                    cluster = Some(numbers.count);
+                    numbers.count = numbers.count.saturating_add(1);
+                }
+                stack.push((back, cluster));
+                stack.push((front, cluster));
+                continue;
+            }
+            if self
+                .leaf_data(at)
+                .is_none_or(|leaf| leaf.contents.is_any_solid())
+            {
+                continue;
+            }
+            numbers.leaves.insert(at, next_leaf);
+            next_leaf = next_leaf.saturating_add(1);
+            let own = cluster.unwrap_or_else(|| {
+                let own = numbers.count;
+                numbers.count = numbers.count.saturating_add(1);
+                own
+            });
+            numbers.clusters.insert(at, own);
         }
         numbers
     }
 
-    /// `WritePortals_r` by leaf: for each leaf not any solid, each portal it is in front of that
-    /// vis sees through, as its two leaf numbers, swapped when the polygon faces away from the
-    /// plane, and its points.
-    fn write_portals(&self, numbers: &HashMap<NodeId, i64>) -> Vec<String> {
+    /// `WritePortals_r`: for each leaf not any solid, or each cluster when the file is `PRT2`,
+    /// each portal it is in front of that vis sees through, as its two numbers, swapped when
+    /// the polygon faces away from the plane, and its points.
+    fn write_portals(&self, numbers: &Numbers) -> Vec<String> {
+        let by = if numbers.detail {
+            &numbers.clusters
+        } else {
+            &numbers.leaves
+        };
         let mut out = Vec::new();
-        for leaf in self.leaves_below(Self::HEAD) {
-            if !numbers.contains_key(&leaf) {
+        let mut stack = vec![Self::HEAD];
+        while let Some(at) = stack.pop() {
+            if let Some((_, [front, back], separator)) = self.split_of(at)
+                && separator != Separator::Detail
+            {
+                stack.push(back);
+                stack.push(front);
                 continue;
             }
-            for portal in self.portals_of(leaf) {
+            if self
+                .leaf_data(at)
+                .is_some_and(|leaf| leaf.contents.is_any_solid())
+            {
+                continue;
+            }
+            for portal in self.portals_of(at) {
                 let Some(p) = self.portal(portal) else {
                     continue;
                 };
-                if p.winding.is_empty() || p.nodes[0] != leaf || !self.vis_floods(portal) {
+                if p.winding.is_empty() || p.nodes[0] != at || !self.vis_floods(portal) {
                     continue;
                 }
-                let number = |node: NodeId| numbers.get(&node).copied().unwrap_or(-1);
+                let number = |node: NodeId| by.get(&node).copied().unwrap_or(-1);
                 let (front, back) = (number(p.nodes[0]), number(p.nodes[1]));
                 let reversed = p
                     .winding
@@ -96,28 +178,31 @@ impl Tree {
         out
     }
 
-    /// The portal file of the pruned tree, `WritePortalFile` (QBSP-15.51): `PRT1`, numbered by
-    /// leaf, its portals made from none around the head and through detail separators too, then
-    /// the vis portals, which stop at them, made for the detail fence fixup.
+    /// The portal file, `WritePortalFile` (QBSP-15.52): the vis portals, which stop at detail
+    /// separators, made from none around the head; `PRT1` numbered by leaf when no detail
+    /// separator made a cluster, else `PRT2` numbered by cluster with the leaves of each.
     pub(crate) fn portal_file(&mut self, portalizer: &Portalizer<'_>) -> Vec<u8> {
-        portalizer.make_portals_from(self, PortalType::Tree, HeadPortals::Unused);
+        portalizer.make_portals_from(self, PortalType::Vis, HeadPortals::Unused);
         let numbers = self.number_leaves();
         let portals = self.write_portals(&numbers);
-        let mut text = format!("PRT1\n{}\n{}\n", numbers.len(), portals.len());
+        let mut text = if numbers.detail {
+            format!(
+                "PRT2\n{}\n{}\n{}\n",
+                numbers.leaves.len(),
+                numbers.count,
+                portals.len()
+            )
+        } else {
+            format!("PRT1\n{}\n{}\n", numbers.leaves.len(), portals.len())
+        };
         for line in portals {
             text.push_str(&line);
             text.push('\n');
         }
-        portalizer.make_vis_portals(self);
+        if numbers.detail {
+            text.push_str(&numbers.cluster_map());
+        }
         text.into_bytes()
-    }
-}
-
-impl Portalizer<'_> {
-    /// The tree's vis portals, `WritePortalFile`'s: the head's six made for the outside leaf and
-    /// not used, every node's made from none around the head.
-    pub(crate) fn make_vis_portals(&self, tree: &mut Tree) {
-        self.make_portals_from(tree, PortalType::Vis, HeadPortals::Unused);
     }
 }
 

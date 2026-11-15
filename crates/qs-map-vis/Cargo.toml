@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 qs-bsp = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true, features = ["std"] }

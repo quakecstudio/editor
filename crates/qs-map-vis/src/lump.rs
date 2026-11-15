@@ -81,12 +81,12 @@ pub(crate) fn compress(row: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Each vis leaf's four ambient levels: full for a kind it sees a face of, else none (VIS-6).
-/// vis's distances come to that: each is 0.25 or 1020, and the level past 100 reads the slime
-/// one, which no face sets (VIS-6.2, VIS-6.3).
-fn ambients(bsp: &Bsp<'_>, rows: &[Leaves]) -> Vec<[u8; AMBIENTS]> {
+/// Each vis leaf's four ambient levels, from the row of its cluster in `clusters`: full for a
+/// kind it sees a face of, else none (VIS-6). vis's distances come to that: each is 0.25 or
+/// 1020, and the level past 100 reads the slime one, which no face sets (VIS-6.2, VIS-6.3).
+fn ambients(bsp: &Bsp<'_>, rows: &[Leaves], clusters: &[usize]) -> Vec<[u8; AMBIENTS]> {
     // The kinds each vis leaf's faces emit.
-    let emits: Vec<[bool; AMBIENTS]> = (0..rows.len())
+    let emits: Vec<[bool; AMBIENTS]> = (0..clusters.len())
         .map(|leaf| {
             let mut kinds = [false; AMBIENTS];
             let Some(found) = bsp.leafs.get(leaf.saturating_add(1)) else {
@@ -115,9 +115,13 @@ fn ambients(bsp: &Bsp<'_>, rows: &[Leaves]) -> Vec<[u8; AMBIENTS]> {
             kinds
         })
         .collect();
-    rows.iter()
-        .map(|row| {
+    clusters
+        .iter()
+        .map(|&cluster| {
             let mut levels = [SILENT; AMBIENTS];
+            let Some(row) = rows.get(cluster) else {
+                return levels;
+            };
             for (leaf, kinds) in emits.iter().enumerate() {
                 if !row.has(leaf) {
                     continue;
@@ -179,19 +183,29 @@ const ORDER: [LumpId; BSP_HEADER_LUMPS] = [
 
 /// `bytes` with the rows' visibility lump, each vis leaf's `visofs` and ambient levels, laid
 /// out as `WriteBSPFile` writes a file: the header, then each lump in its order, padded to
-/// four bytes (VIS-5.2, VIS-5.6, VIS-6).
-pub(crate) fn written(bytes: &[u8], bsp: &Bsp<'_>, rows: &[Leaves]) -> Result<Vec<u8>, VisError> {
-    let leafs = rows.len();
+/// four bytes (VIS-5.2, VIS-5.6, VIS-6). `rows` has one row for each cluster, each vis leaf's
+/// in `clusters`; the leaves of a cluster share its row, as ericw-tools writes them (VIS-7.3).
+pub(crate) fn written(
+    bytes: &[u8],
+    bsp: &Bsp<'_>,
+    rows: &[Leaves],
+    clusters: &[usize],
+) -> Result<Vec<u8>, VisError> {
+    let leafs = clusters.len();
     let mut lump = Vec::new();
-    let mut offsets = Vec::with_capacity(leafs);
+    let mut starts = Vec::with_capacity(rows.len());
     for row in rows {
-        offsets.push(lump.len());
+        starts.push(lump.len());
         lump.extend(compress(&row.row(leafs)));
     }
     if lump.len() > VIS_MAX_MAP_VISIBILITY {
         return Err(VisError::VismapOverflow);
     }
-    let levels = ambients(bsp, rows);
+    let offsets: Vec<usize> = clusters
+        .iter()
+        .map(|&cluster| starts.get(cluster).copied().ok_or(VisError::Format))
+        .collect::<Result<_, _>>()?;
+    let levels = ambients(bsp, rows, clusters);
     let record = leaf_size(bsp.version).ok_or(VisError::Format)?;
     let ambient_at = record.checked_sub(AMBIENTS).ok_or(VisError::Format)?;
     let stored = |id: LumpId| -> Result<&[u8], VisError> {

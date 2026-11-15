@@ -5,7 +5,7 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::portals::PortalFile;
+use crate::portals::{Format, PortalFile};
 use crate::winding::{Flip, Plane, VIS_ON_EPSILON, Winding};
 use crate::{Level, VisError};
 
@@ -210,13 +210,15 @@ impl<'a> Flow<'a> {
         let mut counts = VisCounts::default();
         for batch in order.chunks(VIS_FLOW_BATCH) {
             let results = self.batch(batch, &done, threads);
-            // A flow that read the might-see set of a portal of its batch that one thread would
-            // have flowed first is flowed again, in order, with that portal's exact set; so is
-            // one that failed, which may have failed only on such a set.
+            // For `PRT1`, a flow that read the might-see set of a portal of its batch that one
+            // thread would have flowed first is flowed again, in order, with that portal's exact
+            // set; so is one that failed, which may have failed only on such a set. For `PRT2`
+            // each flow of the batch is kept (VIS-7.4).
             for (&portal, flowed) in batch.iter().zip(results) {
-                let flowed = match flowed {
-                    Ok(flowed) if !flowed.read_earlier => flowed,
-                    _ => self.alone(portal, &done)?,
+                let flowed = match (self.file.format, flowed) {
+                    (Format::Leaves, Ok(flowed)) if !flowed.read_earlier => flowed,
+                    (Format::Clusters, flowed) => flowed?,
+                    (Format::Leaves, _) => self.alone(portal, &done)?,
                 };
                 counts.add(flowed.counts);
                 if let Some(slot) = done.get_mut(portal) {
@@ -434,7 +436,8 @@ impl<'a> Flow<'a> {
         Ok(())
     }
 
-    /// `LeafFlow`: each leaf's row, the leaves its portals see and itself (VIS-4.6).
+    /// `LeafFlow`: each leaf's row, the leaves its portals see and itself (VIS-4.6); for a
+    /// cluster, ericw-tools' `ClusterFlow` only warns when its portals see it (VIS-7.3).
     pub(crate) fn rows(file: &PortalFile, seen: &[Leaves]) -> Result<Vec<Leaves>, VisError> {
         let mut rows = Vec::with_capacity(file.leafs);
         for (leaf, portals) in file.leaf_portals.iter().enumerate() {
@@ -445,7 +448,12 @@ impl<'a> Flow<'a> {
                 }
             }
             if !row.add(leaf) {
-                return Err(VisError::SawIntoLeaf { leaf });
+                match file.format {
+                    Format::Leaves => return Err(VisError::SawIntoLeaf { leaf }),
+                    Format::Clusters => {
+                        tracing::warn!("Leaf portals saw into cluster ({leaf})");
+                    }
+                }
             }
             rows.push(row);
         }

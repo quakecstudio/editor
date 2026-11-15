@@ -92,7 +92,9 @@ impl Writer {
             contents: Game::Quake
                 .to_native(Contents::new(Contents::SOLID))
                 .map_or(0, |n| n.value()),
-            visofs: -1,
+            // `emplace_back` value-initialises the leaf: `visofs` is 0, not the -1 of a leaf
+            // `ExportLeaf` writes.
+            visofs: 0,
             mins: [0.0; AXES],
             maxs: [0.0; AXES],
             firstmarksurface: 0,

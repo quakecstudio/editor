@@ -972,16 +972,20 @@ point on a plane (`mathlib.hh`).
   texture"), but for the skip texture the compile makes itself when no face of the map names it:
   ericw-tools warns for that one too, though it is no texture of the map's (a deliberate
   divergence in what is reported, not in what is written).
-- **QBSP-15.51** The portal file (`WritePortalFile`) is made from the pruned tree's portals,
-  begun from no portal around the head. Leaves that are not any solid are numbered in order
-  (`NumberLeafs_r`), and each writes each portal it is in front of that vis sees through, with
-  its two numbers, swapped when the polygon's own plane faces away from the portal's by more than
-  `ANGLEEPSILON`, and its points as `{fmt}` writes them: `PRT1`, the leaf count and the portal
-  count. A deliberate divergence: ericw-tools stops these portals at detail separators and
-  numbers by cluster in a `PRT2` file when the tree has detail, which its own vis reads;
-  `qs-map-vis` reads `PRT1` only, so the portals go through detail separators and are numbered
-  by leaf. Without detail the two files are the same. The vis portals, stopping at detail
-  separators, are made afterwards for the detail fence fixup (QBSP-15.42).
+- **QBSP-15.51** **Withdrawn** 2026-11-14: it numbered a map with detail by leaf in `PRT1`, a
+  divergence from ericw-tools made because `qs-map-vis` read `PRT1` only; it reads `PRT2` now
+  (VIS-7, ADR-0025); replaced by QBSP-15.52.
+- **QBSP-15.52** The portal file (`WritePortalFile`) is made from the vis portals of the pruned
+  tree, which stop at detail separators, begun from no portal around the head. Front first,
+  each leaf that is not any solid is numbered in order, and each cluster in order
+  (`NumberLeafs_r`): a detail separator not under another starts a cluster that every leaf below
+  it is in, and a leaf under none is a cluster of its own. With no detail separator the file is
+  `PRT1`, the leaf count and the portal count, and each leaf writes each portal it is in front of
+  that vis sees through (`WritePortals_r`); with one it is `PRT2`, the leaf count, the cluster
+  count and the portal count, and each cluster writes them, by cluster numbers, followed by each
+  cluster's leaves in leaf order, each line ended by `-1` (`WritePTR2ClusterMapping`). A portal
+  is written with its two numbers, swapped when the polygon's own plane faces away from the
+  portal's by more than `ANGLEEPSILON`, and its points as `{fmt}` writes them.
 - **QBSP-15.47** T-junctions are fixed (`TJunc`, `-tjunc mwt` by default) for each face written:
   each edge is broken at each vertex, as the file stores it, of a face that welds with this one
   (`Welds` on the back contents: the same type; never a detail wall with another, see-through

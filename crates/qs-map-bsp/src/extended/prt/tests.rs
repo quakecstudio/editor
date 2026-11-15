@@ -2,7 +2,7 @@
 
 use super::fmt_number;
 
-// spec QBSP-15.51: numbers are written as `{fmt}` writes them, the shortest digits that read
+// spec QBSP-15.52: numbers are written as `{fmt}` writes them, the shortest digits that read
 // back, with a two-digit exponent below 1e-4 or from 1e16
 #[test]
 fn numbers_as_fmt_writes_them() {

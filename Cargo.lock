@@ -3778,6 +3778,7 @@ dependencies = [
  "qs-map-bsp",
  "qs-wad",
  "sha2",
+ "tracing",
 ]
 
 [[package]]

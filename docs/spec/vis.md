@@ -17,6 +17,10 @@ code is ported:
 | Short name | Repository and commit | Files read |
 | --- | --- | --- |
 | vis | [id-Software/Quake-Tools](https://github.com/id-Software/Quake-Tools)@`c0d1b91c74eb654365ac7755bc837e497caaca73` | `qutils/VIS/VIS.C`, `VIS.H`, `FLOW.C`, `SOUNDPVS.C`; `qutils/COMMON/BSPFILE.H` |
+| ericw-tools | [ericwa/ericw-tools](https://github.com/ericwa/ericw-tools)@`36eec1da2a194467e6baac2f444c2dd04b57d266` | `common/prtfile.cc`, `vis/vis.cc` (VIS-7 only) |
+
+VIS-7 is ericw-tools' portal file numbered by cluster of leaves, which its qbsp and ours write
+for a map with detail (QBSP-15.52); it is ported from ericw-tools (ADR-0025).
 
 `vis` is built without `DOUBLEVEC_T`, as `qbsp` is (QBSP), so `vec_t` is `float`.
 
@@ -44,9 +48,8 @@ code is ported:
 
 ### Behaviour
 
-- **VIS-2.1** The file starts with the text `PRT1`, the number of vis leaves and the number of
-  portals (QBSP-12.2). Another first word stops the run with `LoadPortals: not a portal file`,
-  and a header not read stops it with `LoadPortals: failed to read header`.
+- **VIS-2.1** **Withdrawn** 2026-11-14: `qs-map-vis` reads ericw-tools' `PRT2` too, which this
+  statement refused (ADR-0025); replaced by VIS-2.8.
 - **VIS-2.2** Each portal is its point count, two leaf numbers and its points, each read as a
   `double` and stored as a `float`. A point count over `MAX_POINTS_ON_WINDING`, or a leaf number
   greater than the number of leaves (as unsigned, so a negative number too), stops the run.
@@ -68,6 +71,10 @@ code is ported:
   distance of exactly `0.1f`, which is a little over 0.1, is beyond `ON_EPSILON`. The sums of
   squares in `VectorNormalize` and the `1/sqrt(length)` of `ClipToSeperators` are worked in
   `double` too, and stored as `float`.
+- **VIS-2.8** The file starts with the text `PRT1`, the number of vis leaves and the number of
+  portals (QBSP-12.2), or with `PRT2`, read as VIS-7.1. Another first word stops the run with
+  `LoadPortals: not a portal file` once the two numbers after it are read, and a header not read
+  stops it with `LoadPortals: failed to read header`.
 
 ### Constants
 
@@ -206,3 +213,34 @@ lava sounds.
 | --- | --- | --- |
 | `VIS_AMBIENT_FAR` | 1020 | `SOUNDPVS.C`, the initial distance |
 | `VIS_AMBIENT_NEAR` | 100 | `SOUNDPVS.C`, `dists[j] < 100` |
+
+## VIS-7 Clusters of leaves
+
+**Source:** ericw-tools `common/prtfile.cc`, `LoadPrtFile`; `vis/vis.cc`, `LoadPortals`,
+`ClusterFlow`, `CalcVis`.
+
+A map with detail has its leaves grouped into clusters: the leaves below a detail separator are
+one cluster, and each other leaf is one of its own (QBSP-15.52). Vis flows the clusters, which
+are far fewer, and each leaf sees what its cluster sees.
+
+### Behaviour
+
+- **VIS-7.1** A `PRT2` file's header is `PRT2`, the BSP's vis leaves, the clusters and the
+  portals. Its portals are read as VIS-2.2 and VIS-2.3, numbered by cluster, and VIS-3 and VIS-4
+  run over the clusters as over leaves. VIS-2.4's limit does not apply: ericw-tools keeps a
+  cluster's portals in a vector.
+- **VIS-7.2** The portals are followed by the cluster map: for each cluster in turn, the numbers
+  of its leaves and then a negative number. A leaf number at or past the vis leaves stops the run
+  with `Invalid leaf number in cluster map`, and a file that ends before every cluster's list
+  does with `Couldn't read cluster map`. A leaf no cluster lists is in cluster 0.
+- **VIS-7.3** Each cluster's row is VIS-4.6's, except that a cluster whose portals see it is
+  only warned of (`Leaf portals saw into cluster`). A vis leaf sees each vis leaf whose cluster
+  its cluster's row holds; the leaves of a cluster share the cluster's compressed row and its
+  `visofs`, and each leaf's ambient levels (VIS-6) are found from that row.
+- **VIS-7.4** A `PRT2` file is flowed in VIS-4.7's batches, but each flow of a batch is kept: no
+  portal is flowed again with the exact set of a portal before it in its batch. The result is the
+  same on any number of threads; it is not always a single thread's. ericw-tools' vis gives its
+  threads the next portal as each comes free (`GetNextPortal`), so its own result depends on
+  their timing, and there is no single-thread result to match; flowing again made the flow of
+  LibreQuake's `lq-e1m1` mostly serial (15.1 s against 5.3 s on ten threads, the same average
+  of visible leaves).

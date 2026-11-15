@@ -201,7 +201,8 @@ fn every_clear_line_is_seen() {
 // corners it sees less: its two ends do not see each other
 #[test]
 fn the_flow_narrows_what_might_be_seen() {
-    let (bsp, prt) = snake("*water");
+    // A water floor is detail in the extended dialect, and its clusters see no less in full.
+    let (bsp, prt) = snake("floor");
     let read = Bsp::read(&bsp, BspLoader::FitzQuake).unwrap();
     let fast = Vis::new(Mode::Fast).visible(&prt).unwrap();
     let full = Vis::new(Mode::default()).visible(&prt).unwrap();
@@ -313,19 +314,20 @@ fn portal_windings_are_each_portal_once() {
     );
     assert_eq!(portal_windings(&prt(1, &[])), Ok(Vec::new()));
     assert_eq!(
-        portal_windings("PRT2\n1\n0\n"),
+        portal_windings("PRT3\n1\n0\n"),
         Err(VisError::NotPortalFile)
     );
 }
 
-// spec VIS-2.1, VIS-2.2, VIS-2.4, VIS-2.6: a bad header, another first word, a short or bad
+// spec VIS-2.8, VIS-2.2, VIS-2.4, VIS-2.6: a bad header, another first word, a short or bad
 // portal, a leaf out of range, too many points and too many portals on a leaf stop the run
 #[test]
 fn bad_portal_files_stop_the_run() {
     let read = |text: &str| PortalFile::read(text).map(|_| ());
     assert_eq!(read("PRT1\n2\n"), Err(VisError::Header));
     assert_eq!(read(""), Err(VisError::Header));
-    assert_eq!(read("PRT2\n2\n0\n"), Err(VisError::NotPortalFile));
+    assert_eq!(read("PRT3\n2\n0\n"), Err(VisError::NotPortalFile));
+    assert_eq!(read("PRT3\n2\n"), Err(VisError::Header));
     assert_eq!(read(&prt(2, &[(&SQUARE, 0, 1)])), Ok(()));
     assert_eq!(read("PRT1\n2\n1\n4 0"), Err(VisError::Portal { number: 0 }));
     assert_eq!(
@@ -347,6 +349,76 @@ fn bad_portal_files_stop_the_run() {
     assert_eq!(read(bad_point), Err(VisError::Portal { number: 0 }));
     let crowded: Vec<(&[[f32; 3]], i64, i64)> = (0..129).map(|_| (&SQUARE[..], 0, 1)).collect();
     assert_eq!(read(&prt(2, &crowded)), Err(VisError::TooManyLeafPortals));
+}
+
+/// A `PRT2` file: `real` vis leaves, the portals between `clusters` clusters, and each cluster's
+/// leaves.
+fn prt2(real: usize, clusters: &[&[usize]], portals: &[(&[[f32; 3]], i64, i64)]) -> String {
+    let leaves = prt(clusters.len(), portals);
+    let mut text = format!("PRT2\n{real}\n{}", leaves.strip_prefix("PRT1\n").unwrap());
+    for leaves in clusters {
+        for leaf in *leaves {
+            text.push_str(&format!("{leaf} "));
+        }
+        text.push_str("-1\n");
+    }
+    text
+}
+
+// spec VIS-7.1, VIS-7.2: a PRT2 file numbers its portals by cluster and maps each vis leaf to its
+// cluster, one no cluster lists to cluster 0; a cluster may have more than 128 portals
+#[test]
+fn a_prt2_file_maps_leaves_to_clusters() {
+    let text = prt2(4, &[&[1], &[0, 3]], &[(&SQUARE, 0, 1)]);
+    let file = PortalFile::read(&text).unwrap();
+    assert_eq!(file.leafs, 2);
+    assert_eq!(file.clusters, [1, 0, 0, 1]);
+    assert_eq!(file.leaf_portals, [vec![0], vec![1]]);
+    let crowded: Vec<(&[[f32; 3]], i64, i64)> = (0..129).map(|_| (&SQUARE[..], 0, 1)).collect();
+    assert!(PortalFile::read(&prt2(2, &[&[0], &[1]], &crowded)).is_ok());
+}
+
+// spec VIS-7.2: a leaf number past the vis leaves, or a file that ends before every cluster's
+// leaves, stops the run
+#[test]
+fn a_bad_cluster_map_stops_the_run() {
+    let read = |text: &str| PortalFile::read(text).map(|_| ());
+    let portal = [(&SQUARE[..], 0, 1)];
+    assert_eq!(
+        read(&prt2(2, &[&[0], &[2]], &portal)),
+        Err(VisError::ClusterLeaf { leaf: 2 })
+    );
+    let short = prt2(2, &[&[0], &[1]], &portal);
+    let short = short.strip_suffix("1 -1\n").unwrap();
+    assert_eq!(read(short), Err(VisError::ClusterMap { cluster: 1 }));
+    assert_eq!(read("PRT2\n2\n1\n"), Err(VisError::Header));
+}
+
+// spec VIS-7.3: each vis leaf sees the leaves of the clusters its cluster sees, and a cluster
+// whose portals see it is only warned of
+#[test]
+fn leaves_see_what_their_cluster_sees() {
+    let moved = SQUARE.map(|[x, y, z]| [x + 64.0, y, z]);
+    // Clusters 0, 1 and 2 in a row; leaves 0 and 3 in cluster 0, 1 in 1, 2 in 2.
+    let text = prt2(
+        4,
+        &[&[0, 3], &[1], &[2]],
+        &[(&SQUARE, 0, 1), (&moved, 1, 2)],
+    );
+    for mode in [Mode::Fast, Mode::default()] {
+        let seen = Vis::new(mode).visible(&text).unwrap();
+        assert_eq!(seen.leafs(), 4);
+        for from in 0..4 {
+            for to in 0..4 {
+                assert!(seen.sees(from, to), "{mode:?}: {from} sees {to}");
+            }
+        }
+    }
+    let apart = prt2(3, &[&[0, 2], &[1]], &[]);
+    let seen = Vis::new(Mode::Fast).visible(&apart).unwrap();
+    assert!(seen.sees(0, 2) && seen.sees(2, 0) && !seen.sees(0, 1) && !seen.sees(1, 2));
+    let looped = prt2(1, &[&[0]], &[(&SQUARE, 0, 0)]);
+    assert!(Vis::new(Mode::Fast).visible(&looped).is_ok());
 }
 
 // spec VIS-2.3: each file portal is two one-way portals: the forward one in the first leaf on
@@ -438,7 +510,8 @@ fn might_see_floods_through_facing_portals() {
 // spec VIS-4.7, VIS-4.8: the full mode gives the same sets and counts on one thread as on several
 #[test]
 fn threads_do_not_change_the_result() {
-    let (_, prt) = snake("*water");
+    let (_, prt) = snake("floor");
+    assert!(prt.starts_with("PRT1"));
     let file = PortalFile::read(&prt).unwrap();
     let one = Flow::new(&file, Level::Two).full(1).unwrap();
     let many = Flow::new(&file, Level::Two).full(8).unwrap();
@@ -527,7 +600,8 @@ fn every_vector_matches_id_vis() {
     assert_eq!(checked, 18, "three maps, six modes each");
 }
 
-// spec VIS-2.1, VIS-2.2, VIS-2.4, VIS-4.5, VIS-4.6, VIS-5.2: each error reads as vis's message
+// spec VIS-2.8, VIS-2.2, VIS-2.4, VIS-4.5, VIS-4.6, VIS-5.2, VIS-7.2: each error reads as vis's
+// message
 #[test]
 fn errors_read_as_vis_writes_them() {
     let cases = [
@@ -550,6 +624,14 @@ fn errors_read_as_vis_writes_them() {
         (VisError::VismapOverflow, "Vismap expansion overflow"),
         (VisError::Format, "the BSP cannot be given visibility"),
         (VisError::Thread, "a vis thread could not be run"),
+        (
+            VisError::ClusterMap { cluster: 2 },
+            "LoadPortals: couldn't read cluster map at cluster 2",
+        ),
+        (
+            VisError::ClusterLeaf { leaf: 7 },
+            "LoadPortals: invalid leaf number in cluster map (7)",
+        ),
     ];
     for (error, text) in cases {
         assert_eq!(error.to_string(), text);
@@ -676,9 +758,10 @@ fn the_lump_may_fill_max_map_visibility() {
     };
     let (bsp, _) = snake("*water");
     let read = Bsp::read(&bsp, BspLoader::FitzQuake).unwrap();
-    let at_most = written(&bsp, &read, &rows_of(VIS_MAX_MAP_VISIBILITY));
+    let each: Vec<usize> = (0..LEAFS).collect();
+    let at_most = written(&bsp, &read, &rows_of(VIS_MAX_MAP_VISIBILITY), &each);
     assert_ne!(at_most, Err(VisError::VismapOverflow));
-    let over = written(&bsp, &read, &rows_of(VIS_MAX_MAP_VISIBILITY + 1));
+    let over = written(&bsp, &read, &rows_of(VIS_MAX_MAP_VISIBILITY + 1), &each);
     assert_eq!(over, Err(VisError::VismapOverflow));
 }
 
@@ -788,4 +871,55 @@ fn padding_keeps_the_input_visibility() {
     );
     let fresh = Vis::default().run(&bsp, &prt).unwrap();
     assert!(fresh[end..end.next_multiple_of(4)].iter().all(|&b| b == 0));
+}
+
+// spec VIS-7.3: the snake with a water floor, which is detail, flows by cluster, and its rows,
+// the leaves' shared offsets into them and their ambient levels are those ericw-tools' vis
+// writes at levels 2 and 4 (`ericw-vis -level <n>` on ericw-tools' qbsp's BSP and PRT2, which
+// match ours byte for byte)
+#[test]
+fn clusters_vis_as_ericw_tools_does() {
+    let (bsp, prt) = snake("*water");
+    assert!(prt.starts_with("PRT2\n9\n7\n"));
+    for level in [crate::Level::Two, crate::Level::Four] {
+        let vised = Vis::new(Mode::Full(level)).run(&bsp, &prt).unwrap();
+        let read = Bsp::read(&vised, BspLoader::FitzQuake).unwrap();
+        assert_eq!(
+            read.visibility,
+            [
+                0xe5, 0x00, 0x01, 0xfa, 0x01, 0xe5, 0x00, 0x01, 0xea, 0x00, 0x01, 0x12, 0x01, 0xef,
+                0x00, 0x01, 0x12, 0x01
+            ]
+        );
+        let offsets: Vec<i32> = read.leafs.iter().map(|leaf| leaf.visofs).collect();
+        assert_eq!(offsets, [0, 0, 3, 5, 8, 11, 13, 13, 13, 16]);
+        let water: Vec<u8> = read
+            .leafs
+            .iter()
+            .map(|leaf| leaf.ambient_level[0])
+            .collect();
+        assert_eq!(water, [0, 255, 255, 255, 255, 0, 255, 255, 255, 0]);
+    }
+}
+
+// spec VIS-7.4: for PRT2 each flow of a batch is kept, none flowed again, so the counts are not
+// a single thread's; the result is still the same on any number of threads
+#[test]
+fn a_prt2_batch_keeps_its_flows() {
+    const CELLS: usize = 40;
+    let leaves = tube(CELLS);
+    let each: Vec<usize> = (0..CELLS).collect();
+    let mut clusters = format!("PRT2\n{CELLS}\n{}", leaves.strip_prefix("PRT1\n").unwrap());
+    for leaf in &each {
+        clusters.push_str(&format!("{leaf} -1\n"));
+    }
+    let by_leaf = PortalFile::read(&leaves).unwrap();
+    let by_cluster = PortalFile::read(&clusters).unwrap();
+    assert_eq!(by_cluster.clusters, each);
+    let single = Flow::new(&by_leaf, Level::Two).full(8).unwrap();
+    let one = Flow::new(&by_cluster, Level::Two).full(1).unwrap();
+    let many = Flow::new(&by_cluster, Level::Two).full(8).unwrap();
+    assert_eq!(one, many);
+    assert_eq!(one.0, single.0, "a tube is seen end to end either way");
+    assert_ne!(one.1, single.1, "flows read later portals' might-see sets");
 }
