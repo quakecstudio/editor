@@ -35,6 +35,7 @@ qs-workbench = { workspace = true }
 qs-map-edit = { workspace = true }
 qs-map = { workspace = true }
 qs-map-bsp = { workspace = true }
+qs-map-light = { workspace = true }
 qs-pak = { workspace = true }
 qs-vfs = { workspace = true }
 qs-bsp = { workspace = true }
