@@ -24,7 +24,7 @@ const HELP_SIZE: f32 = 20.0;
 const HELP_WIDTH: f32 = 280.0;
 
 /// What a help button explains.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Topic {
     /// The toolbar's play controls.
     Toolbar,
@@ -112,8 +112,10 @@ impl Topic {
             Self::Toolbar => Text::Toolbar,
             Self::Project => Text::Project,
             Self::Symbols => Text::Symbols,
-            Self::Entities | Self::MapEntities => Text::Entities,
-            Self::Properties | Self::MapProperties => Text::Properties,
+            Self::Entities => Text::Entities,
+            Self::MapEntities => Text::MapEntitiesTitle,
+            Self::Properties => Text::Properties,
+            Self::MapProperties => Text::MapPropertiesTitle,
             Self::MapOutline => Text::Map,
             Self::MapView => Text::MapViewTitle,
             Self::Agent => Text::Agent,
@@ -197,33 +199,38 @@ impl Topic {
 /// A `?` button for `topic`: its tooltip names what it helps with, and a click opens a popup
 /// with the explanation and a link to the guide.
 pub(crate) fn button(ui: &mut Ui, theme: &Theme, topic: Topic) -> Response {
-    let name = strings::help_for(topic.title().get());
-    let button = Button::new(
-        RichText::new("?")
-            .small()
-            .color(theme.color(Token::TextMuted)),
-    )
-    .min_size(Vec2::splat(HELP_SIZE))
-    .corner_radius(HELP_SIZE / 2.0);
-    let response = ui.add(button).on_hover_text(&name);
-    // A screen reader reads the button by what it helps with, not by its `?`.
-    ui.ctx().accesskit_node_builder(response.id, |node| {
-        node.set_label(name.as_str());
-    });
-    egui::Popup::from_toggle_button_response(&response).show(|ui| {
-        ui.set_max_width(HELP_WIDTH);
-        ui.label(topic.summary().get());
-        let link = ui.link(Text::HelpReadMore.get());
-        // A link to a screen reader, named by its text, and opened by Enter or a click.
-        ui.ctx().accesskit_node_builder(link.id, |node| {
-            node.set_role(egui::accesskit::Role::Link);
-            node.set_label(Text::HelpReadMore.get());
+    // Keyed by the topic, so the popup's state does not move with the widgets before it, and a
+    // tab row's button for another tab is another button, whose popup starts closed.
+    ui.push_id(topic, |ui| {
+        let name = strings::help_for(topic.title().get());
+        let button = Button::new(
+            RichText::new("?")
+                .small()
+                .color(theme.color(Token::TextMuted)),
+        )
+        .min_size(Vec2::splat(HELP_SIZE))
+        .corner_radius(HELP_SIZE / 2.0);
+        let response = ui.add(button).on_hover_text(&name);
+        // A screen reader reads the button by what it helps with, not by its `?`.
+        ui.ctx().accesskit_node_builder(response.id, |node| {
+            node.set_label(name.as_str());
         });
-        if link.clicked() {
-            ui.ctx().open_url(egui::OpenUrl::new_tab(topic.url()));
-        }
-    });
-    response
+        egui::Popup::from_toggle_button_response(&response).show(|ui| {
+            ui.set_max_width(HELP_WIDTH);
+            ui.label(topic.summary().get());
+            let link = ui.link(Text::HelpReadMore.get());
+            // A link to a screen reader, named by its text, and opened by Enter or a click.
+            ui.ctx().accesskit_node_builder(link.id, |node| {
+                node.set_role(egui::accesskit::Role::Link);
+                node.set_label(Text::HelpReadMore.get());
+            });
+            if link.clicked() {
+                ui.ctx().open_url(egui::OpenUrl::new_tab(topic.url()));
+            }
+        });
+        response
+    })
+    .inner
 }
 
 /// Opens each guide link the frame asked for in the system's browser.
@@ -241,39 +248,34 @@ pub(crate) fn open_links(ctx: &egui::Context) {
 }
 
 /// The guide links the frame asked to open, taken from egui's output, which has no browser of
-/// its own here; any other address is dropped, as the app opens only its guide.
+/// its own here; any other request is left where it is.
 fn take_links(ctx: &egui::Context) -> Vec<String> {
-    let urls = ctx.output_mut(|output| {
+    ctx.output_mut(|output| {
         let mut urls = Vec::new();
         output.commands.retain(|command| match command {
-            egui::OutputCommand::OpenUrl(open) => {
+            egui::OutputCommand::OpenUrl(open) if open.url.starts_with(GUIDE) => {
                 urls.push(open.url.clone());
                 false
             }
-            egui::OutputCommand::CopyText(_) | egui::OutputCommand::CopyImage(_) => true,
+            egui::OutputCommand::OpenUrl(_)
+            | egui::OutputCommand::CopyText(_)
+            | egui::OutputCommand::CopyImage(_) => true,
         });
         urls
-    });
-    urls.into_iter()
-        .filter(|url| {
-            let guide = url.starts_with(GUIDE);
-            if !guide {
-                tracing::warn!(%url, "not a user guide link; not opened");
-            }
-            guide
-        })
-        .collect()
+    })
 }
 
 /// The system's command that opens `url` in the browser.
 fn browser(url: &str) -> std::process::Command {
     #[cfg(target_os = "macos")]
-    let mut command = std::process::Command::new("open");
+    let (program, before): (&str, &[&str]) = ("open", &[]);
+    // `start`'s first quoted argument is the window's title, so an empty one comes first.
     #[cfg(target_os = "windows")]
-    let mut command = std::process::Command::new("explorer");
+    let (program, before): (&str, &[&str]) = ("cmd", &["/C", "start", ""]);
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let mut command = std::process::Command::new("xdg-open");
-    command.arg(url);
+    let (program, before): (&str, &[&str]) = ("xdg-open", &[]);
+    let mut command = std::process::Command::new(program);
+    command.args(before).arg(url);
     command
 }
 

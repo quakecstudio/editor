@@ -146,12 +146,7 @@ impl Features {
                 }
                 ui.add_space(theme.space(SECTION_GAP));
                 if preview.state() == PlayState::Stopped {
-                    section(
-                        ui,
-                        theme,
-                        (Text::Entities, Topic::Entities),
-                        Text::NotPlaying,
-                    );
+                    section(ui, theme, Topic::Entities, Text::NotPlaying);
                 } else {
                     heading_with_help(ui, theme, Text::Entities, Topic::Entities);
                     entity_action =
@@ -367,12 +362,7 @@ pub(crate) fn right(
         map_actions = map_editor.properties(ui, theme, report);
         first
     } else if preview.state() == PlayState::Stopped {
-        section(
-            ui,
-            theme,
-            (Text::Properties, Topic::Properties),
-            Text::NotPlaying,
-        )
+        section(ui, theme, Topic::Properties, Text::NotPlaying)
     } else {
         let first = heading_with_help(ui, theme, Text::Properties, Topic::Properties);
         entity_action = entities::properties(ui, theme, preview, properties);

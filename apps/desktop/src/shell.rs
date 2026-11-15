@@ -2532,15 +2532,10 @@ pub(crate) fn name_field(ui: &Ui, response: &Response, name: Text) {
     });
 }
 
-/// A panel section: its heading and, until it has content, one line of explanation; the
-/// heading's response.
-pub(crate) fn section(
-    ui: &mut Ui,
-    theme: &Theme,
-    (text, topic): (Text, Topic),
-    empty: Text,
-) -> Response {
-    let heading = heading_with_help(ui, theme, text, topic);
+/// A panel section: its heading, named for `topic`, with its help and, until it has content,
+/// one line of explanation; the heading's response.
+pub(crate) fn section(ui: &mut Ui, theme: &Theme, topic: Topic, empty: Text) -> Response {
+    let heading = heading_with_help(ui, theme, topic.title(), topic);
     note(ui, theme, empty);
     heading
 }

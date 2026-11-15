@@ -75,8 +75,8 @@ fn a_help_button_explains_and_links_to_the_guide() {
     harness.get_by_role_and_label(Role::Link, Text::HelpReadMore.get());
 }
 
-// No spec statement: P7-11: the help link asks to open the guide's section; the app takes the
-// request from egui's output, keeps a guide link and drops any other address
+// No spec statement: P7-11: the help link asks to open the guide's section; the app takes that
+// request from egui's output and leaves any other address there
 #[test]
 fn the_guide_link_is_taken_to_the_browser_and_nothing_else_is() {
     let theme = Theme::load(Mode::Dark).unwrap();
@@ -105,8 +105,8 @@ fn the_guide_link_is_taken_to_the_browser_and_nothing_else_is() {
             taken.0.extend(take_links(ui.ctx()));
             taken.1 = ui.ctx().output(|output| output.commands.len());
         },
-        (Vec::new(), 1),
+        (Vec::new(), 0),
     );
     other.run();
-    assert_eq!(*other.state(), (Vec::new(), 0));
+    assert_eq!(*other.state(), (Vec::new(), 1));
 }

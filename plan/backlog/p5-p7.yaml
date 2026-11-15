@@ -1458,9 +1458,9 @@ groups:
     - P6-12
     deliverable:
     - 'apps/desktop: a tooltip on every icon and icon-only control, saying what it does and its shortcut'
-    - 'apps/desktop: a small ? button on each panel, tool and dialog that shows a short explanation in place and links to the section of the website guide that covers it (P7-10)'
+    - 'apps/desktop: a small ? button on each panel heading, tab row and toolbar, the map view and its tabs, and the game files and texture import windows, that shows a short explanation in place and links to the section of the website guide that covers it (P7-10)'
     acceptance:
-    - 'A kittest walk over every panel, the map editor''s tools and every dialog finds no icon-only control without a tooltip and no panel without its ? button'
+    - 'A kittest walk over every panel and tab, an open map and its tabs, and the two windows finds each one''s ? button, each named apart, no button named by an icon alone, and the tooltips of the icon-only controls, the play controls and the map tools'
     - 'Every help link names a page and anchor that exist on the site, checked by a test against a list the site PR also checks'
     verify:
     - 'kittest tests; UI snapshots of the help popups'

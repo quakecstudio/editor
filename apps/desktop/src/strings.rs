@@ -840,11 +840,15 @@ pub enum Text {
     MapSelectHint,
     /// The map view and its tools, as its help names them.
     MapViewTitle,
+    /// The map editor's entity classes, as their help names them.
+    MapEntitiesTitle,
+    /// The map editor's Properties, as their help names them.
+    MapPropertiesTitle,
 }
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 414] = [
+    pub const ALL: [Self; 416] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1259,6 +1263,8 @@ impl Text {
         Self::WarningCount,
         Self::MapSelectHint,
         Self::MapViewTitle,
+        Self::MapEntitiesTitle,
+        Self::MapPropertiesTitle,
     ];
 
     /// The string, in English.
@@ -1754,6 +1760,8 @@ impl Text {
                 "Click an entity or brush to select it; drag to move entities and Alt-drag to link them"
             }
             Self::MapViewTitle => "Map view",
+            Self::MapEntitiesTitle => "Entity classes",
+            Self::MapPropertiesTitle => "Map properties",
         }
     }
 }

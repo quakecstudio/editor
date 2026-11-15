@@ -1631,6 +1631,8 @@ fn go_to_symbol_the_outline_and_soft_wrap() {
     run_command(&mut harness, qs_layout::TOGGLE_OUTLINE);
     harness.run();
     harness.get_by_role_and_label(Role::Pane, Text::Outline.get());
+    // QA-16: the outline has its help.
+    assert!(has_help(&harness, Topic::Outline));
     assert_eq!(
         harness.query_all_by_label("Ember_Touch").count(),
         2,
@@ -3537,6 +3539,7 @@ fn every_panel_tab_and_tool_has_help() {
     for (tab, topic) in [
         (Text::MapPrefabs, Topic::MapPrefabs),
         (Text::MapIssues, Topic::MapIssues),
+        (Text::Entities, Topic::MapEntities),
     ] {
         harness
             .get_by_role_and_label(Role::Button, tab.get())
@@ -3545,6 +3548,14 @@ fn every_panel_tab_and_tool_has_help() {
         assert!(has_help(&harness, topic), "{topic:?}");
     }
     assert_eq!(wordless_buttons(&harness), Vec::<String>::new());
+    // No two help buttons share a name, so a screen reader tells them apart.
+    let helps: Vec<String> = harness
+        .query_all_by_label_contains(&help_for(""))
+        .filter(|node| node.accesskit_node().role() == Role::Button)
+        .filter_map(|node| node.accesskit_node().label())
+        .collect();
+    let unique: BTreeSet<&String> = helps.iter().collect();
+    assert_eq!(unique.len(), helps.len(), "{helps:?}");
     // Each map tool's tooltip says what it does.
     harness
         .get_by_role_and_label(Role::Button, Text::MapToolBrush.get())
