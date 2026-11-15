@@ -41,7 +41,7 @@ use crate::map_prefabs::{PrefabBrowser, PrefabDrag};
 use crate::map_profiles::{ProfileAction, ProfileView};
 use crate::map_review::{ReviewAction, ReviewView};
 use crate::map_scene::{ClassLook, Line, LinkView, SPAWNFLAGS, Scene, load_models, start_camera};
-use crate::map_shading::ShadedView;
+use crate::map_shading::{ShadedView, TexturedFrom};
 use crate::map_tools::{BrushAction, BrushTools, MapTool, PickMode};
 use crate::shell::name_field;
 use crate::strings::{Text, also_selected, panes_text};
@@ -356,6 +356,19 @@ pub struct MapEditor {
     review: ReviewView,
     /// How the 3D view draws the map (P7-13).
     shaded: ShadedView,
+    /// How many times the scene was built, which the textured mesh follows.
+    scene_builds: u64,
+    /// The entities with brushes the textured and lit views draw as faces; the lines of the
+    /// rest, such as an external map's instance, are still drawn over them.
+    faced: BTreeSet<EntityIndex>,
+}
+
+/// A hash of `set`, which changes when the set does.
+fn hash_of(set: &BTreeSet<EntityIndex>) -> u64 {
+    use std::hash::{Hash as _, Hasher as _};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    set.hash(&mut hasher);
+    hasher.finish()
 }
 
 /// The browsers of the tab below the map view, as the mockup has them.
@@ -386,8 +399,12 @@ impl MapEditor {
         reason = "test code: one call into the shading module"
     )]
     pub(crate) fn textured_mesh(&self) -> qs_render::MapMesh {
-        self.scene
-            .textured_mesh(self.textures.sources(), qs_render::Look::QuakeSpasm)
+        let sources = self.textures.sources();
+        self.scene.textured_mesh(
+            &mut |name| crate::map_shading::decoded(sources, name),
+            &BTreeSet::new(),
+            qs_render::Look::QuakeSpasm,
+        )
     }
 }
 
@@ -835,24 +852,30 @@ impl MapEditor {
             let externals = &mut self.externals;
             let mut load = |name: &str| externals.read(document, name);
             self.scene = Scene::build(document, &self.classes, &self.targeting, &mut load);
+            self.scene_builds = self.scene_builds.wrapping_add(1);
+            self.faced = self.scene.brushes.iter().map(|b| b.entity).collect();
             self.built = Some(built);
             let count = document.file().entities.len();
             self.also.retain(|entity| entity.get() < count);
             self.tools.keep_found(&self.scene);
         }
-        // P7-13: the textured or lit mesh, made from the scene just built.
-        self.shaded.refresh(
-            shading,
-            state,
-            document,
-            &self.scene,
-            self.textures.sources(),
-        );
         if self.kept_out.1 != Some(document.revision()) {
             let kept_out = document.hidden_entities();
             self.kept_out = (kept_out, Some(document.revision()));
         }
         let hidden: BTreeSet<EntityIndex> = self.hidden.union(&self.kept_out.0).copied().collect();
+        // P7-13: the textured or lit mesh, made from the scene just built, without the hidden.
+        let from = TexturedFrom {
+            scene: self.scene_builds,
+            hidden: hash_of(&hidden),
+            sources: self.textures.loads(),
+        };
+        self.shaded.refresh(
+            (shading, state),
+            document,
+            (&self.scene, from, &hidden),
+            self.textures.sources(),
+        );
         let camera = self
             .camera
             .get_or_insert_with(|| start_camera(document, &self.scene));
@@ -1092,7 +1115,7 @@ impl MapEditor {
         }
         let world = Stroke::new(1.0, theme.color(Token::TextFaint));
         for (owner, line) in &self.scene.lines {
-            if !faces && !hidden.contains(owner) {
+            if !(faces && self.faced.contains(owner)) && !hidden.contains(owner) {
                 projection.line(&painter, *line, world);
             }
         }

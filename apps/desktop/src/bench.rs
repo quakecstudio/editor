@@ -4,7 +4,7 @@
 //! a `defs.qc`, 50,000 lines in all, which the `editor_bench` example measures in a window and
 //! `qs-bench`'s budgets measure headless.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -16,6 +16,7 @@ use qs_render::Look;
 
 use crate::entities::{Outliner, outliner as draw_outliner};
 use crate::map_scene::Scene;
+use crate::map_shading::missing;
 use crate::theme::{Mode, Theme};
 
 /// The project's files of QuakeC, and each one's lines.
@@ -131,5 +132,8 @@ pub fn outliner(ui: &mut Ui, entities: &Entities, filter: &str) {
 #[must_use]
 pub fn textured_mesh(document: &qs_map_edit::MapDocument) -> usize {
     let scene = Scene::build(document, &HashMap::new(), &[], &mut |_| None);
-    scene.textured_mesh(None, Look::QuakeSpasm).vertices.len()
+    scene
+        .textured_mesh(&mut |_| missing(), &BTreeSet::new(), Look::QuakeSpasm)
+        .vertices
+        .len()
 }
