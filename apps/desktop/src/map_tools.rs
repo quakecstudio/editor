@@ -565,6 +565,12 @@ impl Drag {
     }
 }
 
+/// The most clip points a plane takes.
+const CLIP_POINTS: usize = 3;
+
+/// How far above the second of two clip points the guessed third is, in map units.
+const CLIP_UP: f64 = 1.0;
+
 /// The fewest points that can span a brush: four, a tetrahedron's.
 const HULL_LEAST: usize = 4;
 
@@ -625,6 +631,8 @@ pub(crate) struct BrushTools {
     pub(crate) grid: MapGrid,
     /// The points the Hull tool has placed (P7-08).
     hull: Vec<[f64; 3]>,
+    /// The clip points placed with the Clip tool, up to three (P7-08).
+    clip_points: Vec<[f64; 3]>,
     /// The degrees Turn turns the selection by (P7-08).
     turn_by: TurnBy,
 }
@@ -926,6 +934,9 @@ impl BrushTools {
         pane: Pane,
     ) -> Vec<BrushAction> {
         let ray = |at: Pos2| projection.ray(at);
+        if let Some(asked) = self.point_tools(ui, response, scene, hidden, (&ray, pane)) {
+            return asked;
+        }
         let mut actions = Vec::new();
         if response.clicked()
             && let Some(at) = response.interact_pointer_pos()
@@ -985,9 +996,6 @@ impl BrushTools {
                 None if shift => {}
                 None => self.chosen.clear(),
             }
-        }
-        if self.tool == MapTool::Hull {
-            return self.hull_input(ui, response, scene, hidden, &ray);
         }
         if response.drag_started_by(egui::PointerButton::Primary)
             && let Some(at) = ui.input(|i| i.pointer.press_origin())
@@ -1186,6 +1194,9 @@ impl BrushTools {
             self.hull.clear();
             return true;
         }
+        if self.clip_points.pop().is_some() {
+            return true;
+        }
         if self.tool != MapTool::Select {
             self.tool = MapTool::Select;
             return true;
@@ -1268,6 +1279,111 @@ impl BrushTools {
             (false, false) => ExtrudeMode::Extrude,
         };
         Some(Drag::Face(face, hit, normal, mode))
+    }
+
+    /// The tools that place points, the Clip and Hull tools (P7-08): what they asked, when
+    /// they took the input.
+    fn point_tools(
+        &mut self,
+        ui: &Ui,
+        response: &Response,
+        scene: &Scene,
+        hidden: &BTreeSet<EntityIndex>,
+        (ray, pane): (&dyn Fn(Pos2) -> Ray, Pane),
+    ) -> Option<Vec<BrushAction>> {
+        match self.tool {
+            MapTool::Clip => self.clip_input(ui, response, scene, hidden, (ray, pane)),
+            MapTool::Hull => Some(self.hull_input(ui, response, scene, hidden, ray)),
+            MapTool::Select
+            | MapTool::Brush
+            | MapTool::Vertex
+            | MapTool::Move
+            | MapTool::Measure
+            | MapTool::Shape => None,
+        }
+    }
+
+    /// TrenchBroom's clip points (P7-08, its manual's "Clip Points" and "Matching Clip Plane"):
+    /// with a brush selected, a click on one of its faces in the 3D view places a point there,
+    /// on the face and its grid; in a 2D view anywhere, on the grid, at the selected brush's
+    /// middle depth; a double-click on a face makes the plane that face's; Return clips the
+    /// selected brush by the plane through the points, two guessing a third straight up. What
+    /// the input asked, when the clip points took it.
+    fn clip_input(
+        &mut self,
+        ui: &Ui,
+        response: &Response,
+        scene: &Scene,
+        hidden: &BTreeSet<EntityIndex>,
+        (ray, pane): (&dyn Fn(Pos2) -> Ray, Pane),
+    ) -> Option<Vec<BrushAction>> {
+        let &(entity, brush) = self.chosen.first()?;
+        if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter))
+            && self.clip_points.len() >= 2
+        {
+            let points = core::mem::take(&mut self.clip_points);
+            let [a, b] = [points.first()?, points.get(1)?].map(|p| *p);
+            let c = points
+                .get(2)
+                .copied()
+                .unwrap_or([b[0], b[1], b[2] + CLIP_UP]);
+            self.reshaped = vec![(entity, brush)];
+            return Some(vec![BrushAction::Clip(entity, brush, [a, b, c], self.keep)]);
+        }
+        let at = response.interact_pointer_pos()?;
+        let (start, direction) = ray(at);
+        if response.double_clicked()
+            && let Some(face) = scene.pick_face(start, direction, hidden)
+            && (face.entity, face.brush) == (entity, brush)
+            && let Some(shape) = scene.face(face)
+        {
+            let corners = &shape.polygon;
+            let step = corners.len().checked_div(CLIP_POINTS).unwrap_or_default();
+            self.clip_points = [0, step, step.saturating_mul(2)]
+                .iter()
+                .filter_map(|&i| corners.get(i).copied())
+                .collect();
+            return Some(Vec::new());
+        }
+        if !response.clicked() || self.clip_points.len() >= CLIP_POINTS {
+            return None;
+        }
+        let point = match pane {
+            Pane::Perspective => {
+                let face = scene.pick_face(start, direction, hidden)?;
+                if (face.entity, face.brush) != (entity, brush) {
+                    return None;
+                }
+                let (normal, distance) = scene.face(face)?.plane;
+                let dot = |a: [f32; 3], b: [f32; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+                let t = (distance - dot(normal, start)) / dot(normal, direction);
+                let hit = [0, 1, 2].map(|i| {
+                    start.get(i).copied().unwrap_or_default()
+                        + direction.get(i).copied().unwrap_or_default() * t
+                });
+                // On the grid, then back onto the face along its normal: glued to it.
+                let snapped = snapped(hit, self.grid);
+                let normal = normal.map(f64::from);
+                let off = snapped[0] * normal[0] + snapped[1] * normal[1] + snapped[2] * normal[2]
+                    - f64::from(distance);
+                [0, 1, 2].map(|i| {
+                    snapped.get(i).copied().unwrap_or_default()
+                        - normal.get(i).copied().unwrap_or_default() * off
+                })
+            }
+            Pane::Plan(plan) => {
+                let [min, max] = self.bounds(scene)?;
+                let axis = plan.axis();
+                let depth = (min.get(axis)? + max.get(axis)?) / 2.0;
+                let mut point = snapped(start, self.grid);
+                if let Some(c) = point.get_mut(axis) {
+                    *c = depth;
+                }
+                point
+            }
+        };
+        self.clip_points.push(point);
+        Some(Vec::new())
     }
 
     /// Where `corner` is among the corners picked.
@@ -1382,8 +1498,8 @@ impl BrushTools {
     ) {
         let accent = Stroke::new(2.0, theme.color(Token::Accent));
         self.uv.draw(painter, projection, theme, scene);
-        // The Hull tool's points, each a dot.
-        for &point in &self.hull {
+        // The Hull tool's points and the clip points, each a dot.
+        for &point in self.hull.iter().chain(&self.clip_points) {
             if let Some(at) = projection.point(single_point(point)) {
                 painter.circle_filled(at, VERTEX_DOT, accent.color);
             }

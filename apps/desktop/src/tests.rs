@@ -3361,10 +3361,19 @@ fn shift_dragging_a_face_extrudes_or_splits_it() {
     let at = drawn_at(&harness, 4);
     click_at(&mut harness, at);
     // The west wall, seen from outside: pull its face toward the camera.
-    drag(&mut harness, at, at + egui::vec2(0.0, 80.0), egui::Modifiers::SHIFT);
+    drag(
+        &mut harness,
+        at,
+        at + egui::vec2(0.0, 80.0),
+        egui::Modifiers::SHIFT,
+    );
     let extruded = map_text(&harness);
     assert_ne!(extruded, before, "the face moved");
-    assert_eq!(brush_count(&harness, 0), world, "an extrusion adds no brush");
+    assert_eq!(
+        brush_count(&harness, 0),
+        world,
+        "an extrusion adds no brush"
+    );
     drag(
         &mut harness,
         at,
@@ -3374,6 +3383,53 @@ fn shift_dragging_a_face_extrudes_or_splits_it() {
     assert_eq!(brush_count(&harness, 0), world + 1, "a split adds one");
     let shell = &mut harness.state_mut().as_mut().unwrap().shell;
     shell.execute("edit.undo", json!({})).unwrap();
+    shell.execute("edit.undo", json!({})).unwrap();
+    harness.run();
+    assert_eq!(map_text(&harness), before);
+}
+
+// No spec statement: P7-08: TrenchBroom's clip points: with a brush selected and the Clip
+// tool, clicks in a 2D view place points on the grid, and Return cuts the brush by the plane
+// through them, here both parts kept; Escape takes the last point back first
+#[test]
+fn clip_points_cut_the_selected_brush() {
+    let dir = keep_copy("clip-points");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    shell
+        .execute("view.map_panes", json!({ "panes": "double" }))
+        .unwrap();
+    harness.run();
+    outside_the_keep(&mut harness);
+    let before = map_text(&harness);
+    let world = brush_count(&harness, 0);
+    harness.get_by_label(Text::MapToolClip.get()).click();
+    harness.run();
+    harness.get_by_label(Text::KeepBoth.get()).click();
+    harness.run();
+    // The west wall, from the 3D view, then two points across it in the top view.
+    let at = drawn_at(&harness, 4);
+    click_at(&mut harness, at);
+    let top = harness.get_by_label(Text::MapViewTop.get()).rect();
+    // Along x through the view's middle, y 0, where the wall runs from -256 to 256.
+    let across = |x: f32| egui::pos2(top.left() + top.width() * x, top.center().y);
+    click_at(&mut harness, across(0.2));
+    click_at(&mut harness, across(0.9));
+    click_at(&mut harness, across(0.95));
+    harness.key_press(egui::Key::Escape);
+    harness.run();
+    harness.get_by_label(Text::MapViewTop.get()).focus();
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    harness.run();
+    assert_eq!(brush_count(&harness, 0), world + 1, "{}", map_text(&harness));
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
     shell.execute("edit.undo", json!({})).unwrap();
     harness.run();
     assert_eq!(map_text(&harness), before);

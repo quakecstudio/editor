@@ -101,6 +101,12 @@ it too.
   Cmd+Shift+D (Linked duplicate) copies it as a group linked to it (`map.link_duplicate`) and
   Separate unlinks it (`map.separate`). Add layer, beside Layers, adds a layer
   (`map.add_layer`). Each is written as TrenchBroom writes it.
+- **Clip points (P7-08):** with a brush selected and the Clip tool, a click on one of its faces
+  in the 3D view places a clip point there, on the face and its grid, and a click in a 2D view
+  places one anywhere on the grid; a double-click on a face makes the clip plane that face's.
+  Return clips the brush by the plane through the points (two guess a third straight up), and
+  Escape takes the last point back, as TrenchBroom's clip tool. A drag still cuts along a
+  line on the ground.
 - **Extruding by drag (P7-08):** with a brush selected, Shift and a drag on one of its faces move
   the face along its normal, on the grid, as TrenchBroom's extrude tool; with Cmd as well the
   drag splits off a new brush (or, pushed in, cuts the brush in two), with Cmd+Alt it stamps a
