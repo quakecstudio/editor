@@ -446,8 +446,7 @@ impl MapEditor {
         self.camera.as_ref()
     }
 
-    /// Puts the 3D view's camera at `camera`, for tests that aim clicks from a fixed place.
-    #[cfg(test)]
+    /// Puts the 3D view's camera at `camera`: where a script or a test looks from.
     pub(crate) const fn set_camera(&mut self, camera: Camera) {
         self.camera = Some(camera);
     }
