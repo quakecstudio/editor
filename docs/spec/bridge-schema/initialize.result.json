@@ -54,6 +54,9 @@
         "field/set": {
           "type": "boolean"
         },
+        "map/swap": {
+          "type": "boolean"
+        },
         "pause": {
           "type": "boolean"
         },

@@ -1174,6 +1174,7 @@ mod map_entities;
 mod reload;
 mod save;
 mod state;
+mod swap;
 #[cfg(test)]
 pub(crate) mod tests;
 
@@ -1186,3 +1187,4 @@ pub use qc_edict::Tracking;
 pub use reload::{Change, ChangeKind, Migration, Reason};
 pub use save::{SAVEGAME_VERSION, SaveError, SaveGame};
 pub use state::{RawState, State, read_state};
+pub use swap::SwapError;

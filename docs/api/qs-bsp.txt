@@ -245,6 +245,10 @@ fn qs_bsp::BspVersion::sample_bytes
 fn qs_bsp::Face::style_count
 fn qs_bsp::LumpId::index
 fn qs_bsp::LumpId::name
+fn qs_bsp::Submodel::get
+fn qs_bsp::Submodel::name
+fn qs_bsp::Submodel::new
+fn qs_bsp::Submodel::parse
 fn qs_bsp::Texture::mip
 fn qs_bsp::ent::ent_file_names
 fn qs_bsp::hull_for_size
@@ -292,6 +296,7 @@ struct qs_bsp::Lump
 struct qs_bsp::Model
 struct qs_bsp::Node
 struct qs_bsp::Plane
+struct qs_bsp::Submodel
 struct qs_bsp::Texinfo
 struct qs_bsp::Texture
 struct qs_bsp::lit::FoundLit

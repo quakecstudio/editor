@@ -91,6 +91,7 @@ enum qs_sim::world::inspect::QcValue
 enum qs_sim::world::reload::ChangeKind
 enum qs_sim::world::reload::Reason
 enum qs_sim::world::save::SaveError
+enum qs_sim::world::swap::SwapError
 field qs_sim::client::UserCmd.angles
 field qs_sim::client::UserCmd.buttons
 field qs_sim::client::UserCmd.forward
@@ -231,6 +232,7 @@ fn qs_sim::collision::Collision::leafs_of
 fn qs_sim::collision::Collision::model
 fn qs_sim::collision::Collision::new
 fn qs_sim::collision::Collision::point_contents
+fn qs_sim::collision::Collision::rebuilt
 fn qs_sim::collision::Collision::sets
 fn qs_sim::collision::Collision::true_point_contents
 fn qs_sim::collision::Collision::unlink
@@ -421,6 +423,8 @@ fn qs_sim::world::state::RawState::global
 fn qs_sim::world::state::RawState::num_edicts
 fn qs_sim::world::state::RawState::string
 fn qs_sim::world::state::read_state
+fn qs_sim::world::swap::World::check_swap
+fn qs_sim::world::swap::World::swap_bsp
 impl qs_sim::builtins::SimBuiltins: Builtins
 impl qs_sim::collision::CollisionError: core::error::Error
 impl qs_sim::collision::CollisionError: core::fmt::Display
@@ -439,6 +443,8 @@ impl qs_sim::world::evaluate::EvalError: fmt::Display
 impl qs_sim::world::reload::Reason: core::fmt::Display
 impl qs_sim::world::save::SaveError: core::error::Error
 impl qs_sim::world::save::SaveError: core::fmt::Display
+impl qs_sim::world::swap::SwapError: core::error::Error
+impl qs_sim::world::swap::SwapError: core::fmt::Display
 mod qs_sim::collision
 mod qs_sim::debug
 mod qs_sim::input
@@ -546,6 +552,7 @@ use qs_sim::SimBuiltins = builtins::SimBuiltins
 use qs_sim::Sound = physics::Sound
 use qs_sim::SpawnParms = world::SpawnParms
 use qs_sim::State = world::State
+use qs_sim::SwapError = world::SwapError
 use qs_sim::Tracking = world::Tracking
 use qs_sim::UserCmd = client::UserCmd
 use qs_sim::World = world::World
@@ -600,6 +607,7 @@ use qs_sim::world::SAVEGAME_VERSION = save::SAVEGAME_VERSION
 use qs_sim::world::SaveError = save::SaveError
 use qs_sim::world::SaveGame = save::SaveGame
 use qs_sim::world::State = state::State
+use qs_sim::world::SwapError = swap::SwapError
 use qs_sim::world::Tracking = qc_edict::Tracking
 use qs_sim::world::read_state = state::read_state
 variant qs_sim::collision::CollisionError::BadNode
@@ -755,3 +763,7 @@ variant qs_sim::world::save::SaveError::Parse
 variant qs_sim::world::save::SaveError::TooManyEdicts
 variant qs_sim::world::save::SaveError::Truncated
 variant qs_sim::world::save::SaveError::Version
+variant qs_sim::world::swap::SwapError::Link
+variant qs_sim::world::swap::SwapError::NoSuchModel
+variant qs_sim::world::swap::SwapError::NotPrecached
+variant qs_sim::world::swap::SwapError::Unplaced

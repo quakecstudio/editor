@@ -1,0 +1,13 @@
+{
+  "bsp": "maps/keep.bsp",
+  "models": [
+    {
+      "map_entity": 3,
+      "model": "*1"
+    },
+    {
+      "map_entity": 7,
+      "model": "*2"
+    }
+  ]
+}

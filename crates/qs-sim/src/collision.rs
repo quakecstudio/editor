@@ -15,7 +15,7 @@ mod hull;
 mod trace;
 
 use qc_vm::RunError;
-use qs_bsp::Bsp;
+use qs_bsp::{Bsp, Submodel};
 
 pub use area::{
     AREA_DEPTH, Area, FL_ITEM, FL_MONSTER, LeafTree, MAX_ENT_LEAFS, MoveKind, box_on_plane_side,
@@ -170,6 +170,45 @@ impl Collision {
         };
         for model in &bsp.models {
             collision.models.push(Some(brush(0, model)));
+        }
+        collision
+    }
+
+    /// `SV_ClearWorld` for a new build of the running map (BRIDGE-4.15): its world model is
+    /// model index 1 and each submodel at the index `index_of` gives it, its place in the
+    /// running map's model list, a submodel the list does not have taking none; each brush model
+    /// of `old` from another BSP (an item's) is kept at its index with its hulls.
+    #[must_use]
+    pub fn rebuilt(
+        bsp: &Bsp<'_>,
+        index_of: impl Fn(Submodel) -> Option<usize>,
+        old: &Self,
+    ) -> Self {
+        let mut collision = Self::new(bsp);
+        collision.models.truncate(2);
+        let place = |collision: &mut Self, index: usize, model: BrushModel| {
+            if collision.models.len() <= index {
+                collision.models.resize(index.saturating_add(1), None);
+            }
+            if let Some(slot) = collision.models.get_mut(index) {
+                *slot = Some(model);
+            }
+        };
+        for (n, model) in bsp.models.iter().enumerate() {
+            if let Some(index) = Submodel::new(n).and_then(&index_of) {
+                place(&mut collision, index, brush(0, model));
+            }
+        }
+        for (index, model) in old.models.iter().enumerate() {
+            let Some(model) = model.filter(|model| model.set != 0) else {
+                continue;
+            };
+            let Some(hulls) = old.sets.get(model.set) else {
+                continue;
+            };
+            let set = collision.sets.len();
+            collision.sets.push(hulls.clone());
+            place(&mut collision, index, BrushModel { set, ..model });
         }
         collision
     }
