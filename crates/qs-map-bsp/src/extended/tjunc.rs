@@ -317,7 +317,7 @@ impl TJuncs<'_> {
                 }
             }
             if best.len() <= 1 {
-                for tri in triangles.drain(..) {
+                for tri in triangles {
                     out.push(tri.iter().map(|&i| vertex(i)).collect());
                 }
                 break;

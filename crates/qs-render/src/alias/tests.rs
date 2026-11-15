@@ -582,7 +582,7 @@ fn player_colours_translate_the_entitys_skin() {
     let model = read(
         &MdlSpec {
             skins: vec![
-                SkinSpec::Single([0].into_iter().chain([16; 15]).collect()),
+                SkinSpec::Single(core::iter::once(0).chain([16; 15]).collect()),
                 SkinSpec::Group(vec![vec![17; 16], vec![18; 16]]),
             ],
             ..MdlSpec::default()

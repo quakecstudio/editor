@@ -637,7 +637,7 @@ fn reviewer_name_length_boundary_is_exact() {
 // no later `*/` is unterminated (E0501).
 #[test]
 fn reviewer_block_comment_boundaries() {
-    assert!(kinds(b"/**/x").iter().eq([name("x")].iter()));
+    assert_eq!(kinds(b"/**/x"), [name("x")]);
     assert!(codes(b"/**/x").is_empty());
     // `/*/` is a whole comment: the search for `*/` starts one byte past the first `/`,
     // so `/*/x` closes the comment at once and leaves `x`.
