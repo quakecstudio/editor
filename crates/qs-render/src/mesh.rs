@@ -932,7 +932,7 @@ pub struct Lightmaps {
 const ATLAS_MAX_HEIGHT: usize = 8192;
 
 impl Lightmaps {
-    fn new(look: Look) -> Self {
+    pub(crate) fn new(look: Look) -> Self {
         Self {
             look,
             faces: Vec::new(),
@@ -1580,7 +1580,7 @@ fn f32_of(n: u32) -> f32 {
 }
 
 /// A count as an index; a mesh this large does not fit a GPU index buffer anyway.
-fn u32_of(n: usize) -> u32 {
+pub(crate) fn u32_of(n: usize) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)
 }
 

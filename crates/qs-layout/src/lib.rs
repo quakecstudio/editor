@@ -32,7 +32,9 @@ pub use editor::{
     PROJECT_SEARCH_VIEW, SPLIT_DOWN, SPLIT_RIGHT, SoftWrap, Split, TAB_SWITCHER, TOGGLE_OUTLINE,
     TOGGLE_SOFT_WRAP, UNFOLD, UNFOLD_ALL,
 };
-pub use map_view::{MAP_PANES, MapPanes, MapPanesParams};
+pub use map_view::{
+    MAP_PANES, MAP_SHADING, MapPanes, MapPanesParams, MapShading, MapShadingParams,
+};
 pub use zoom::{ZOOM, Zoom, ZoomError, ZoomParams};
 
 /// The layout file's name in the app's data directory (`qs_paths::AppDirs::data`).
@@ -110,6 +112,8 @@ pub struct Layout {
     pub outline: Outline,
     /// How the map view is split into panes (P6-09).
     pub map_panes: MapPanes,
+    /// How the map view's 3D pane draws the map (P7-13).
+    pub map_shading: MapShading,
     /// How large the interface is drawn (P7-12).
     pub zoom: Zoom,
     /// The last one-off editor action a command asked for, which the window carries out once.
@@ -145,6 +149,7 @@ impl Default for Layout {
             soft_wrap: SoftWrap::Off,
             outline: Outline::Hidden,
             map_panes: MapPanes::Single,
+            map_shading: MapShading::Lines,
             zoom: Zoom::ACTUAL,
             editor_request: None,
             editor_requests: 0,

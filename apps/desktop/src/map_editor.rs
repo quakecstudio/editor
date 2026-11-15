@@ -14,7 +14,8 @@ use std::collections::{BTreeSet, HashMap};
 use eframe::egui::{
     self, Color32, Key, Modifiers, Pos2, Rect, RichText, Sense, Stroke, Ui, WidgetInfo, WidgetType,
 };
-use qs_layout::MapPanes;
+use eframe::egui_wgpu::RenderState;
+use qs_layout::{MapPanes, MapShading};
 use qs_map_edit::ClassInfo;
 use qs_map_edit::MapReport;
 use qs_map_edit::texture_import::DitherChoice;
@@ -40,6 +41,7 @@ use crate::map_prefabs::{PrefabBrowser, PrefabDrag};
 use crate::map_profiles::{ProfileAction, ProfileView};
 use crate::map_review::{ReviewAction, ReviewView};
 use crate::map_scene::{ClassLook, Line, LinkView, SPAWNFLAGS, Scene, load_models, start_camera};
+use crate::map_shading::ShadedView;
 use crate::map_tools::{BrushAction, BrushTools, MapTool, PickMode};
 use crate::shell::name_field;
 use crate::strings::{Text, also_selected, panes_text};
@@ -63,6 +65,8 @@ const KEY_COLUMNS: usize = 3;
 /// The height of the entity browser below the view, in points (the mockup's texture
 /// browser), at most half the space.
 const BROWSER_HEIGHT: f32 = 188.0;
+/// How far in from the 3D pane's corner the Lit view's note is written, in points.
+const NOTE_MARGIN: f32 = 8.0;
 /// The least height of the map view, in points, however short the centre.
 pub(crate) const MIN_VIEW_HEIGHT: f32 = 160.0;
 /// The least height of the browser below the view: its tabs and a row of its contents.
@@ -137,6 +141,8 @@ pub enum MapAction {
     Brush(BrushAction),
     /// Split the map view into other panes (P6-09).
     Panes(MapPanes),
+    /// Draw the 3D pane as lines, textured or lit (P7-13).
+    Shading(MapShading),
     /// Import the PNG at the path as a texture of the name (P6-16).
     ImportTexture(std::path::PathBuf, String, DitherChoice),
     /// Compile the map fast and play it with the player at the 3D view's camera (P6-12).
@@ -348,6 +354,8 @@ pub struct MapEditor {
     profiles: ProfileView,
     /// The map edits waiting for review (P6-21).
     review: ReviewView,
+    /// How the 3D view draws the map (P7-13).
+    shaded: ShadedView,
 }
 
 /// The browsers of the tab below the map view, as the mockup has them.
@@ -362,6 +370,25 @@ pub(crate) enum BottomTab {
     Prefabs,
     /// The issue browser and search (P6-19).
     Issues,
+}
+
+impl MapEditor {
+    /// How the 3D view draws the map, for tests.
+    #[cfg(test)]
+    pub(crate) const fn shaded(&self) -> &ShadedView {
+        &self.shaded
+    }
+
+    /// The textured mesh of the scene as drawn now, for tests.
+    #[cfg(test)]
+    #[expect(
+        clippy::absolute_paths,
+        reason = "test code: one call into the shading module"
+    )]
+    pub(crate) fn textured_mesh(&self) -> qs_render::MapMesh {
+        self.scene
+            .textured_mesh(self.textures.sources(), qs_render::Look::QuakeSpasm)
+    }
 }
 
 impl MapEditor {
@@ -417,6 +444,12 @@ impl MapEditor {
     /// The 3D view's camera: where Play from here puts the player (P6-12).
     pub(crate) const fn camera(&self) -> Option<&Camera> {
         self.camera.as_ref()
+    }
+
+    /// Puts the 3D view's camera at `camera`, for tests that aim clicks from a fixed place.
+    #[cfg(test)]
+    pub(crate) const fn set_camera(&mut self, camera: Camera) {
+        self.camera = Some(camera);
     }
 
     /// Takes why the last map command asked for was refused, or none when it ran.
@@ -627,7 +660,7 @@ impl MapEditor {
         ui: &mut Ui,
         theme: &Theme,
         document: &MapDocument,
-        layout: MapPanes,
+        (layout, shading, state): (MapPanes, MapShading, Option<&RenderState>),
     ) -> Vec<MapAction> {
         // The tab's own width, which the toolbar wraps within and the view keeps to, so a long
         // toolbar never widens the view under the Properties panel.
@@ -647,7 +680,7 @@ impl MapEditor {
             .min(full.height() - MIN_VIEW_HEIGHT);
         let (view, below) = full.split_top_bottom_at_y(full.bottom() - height);
         let mut view_ui = ui.new_child(egui::UiBuilder::new().max_rect(view));
-        actions.extend(self.view(&mut view_ui, theme, document, layout));
+        actions.extend(self.view(&mut view_ui, theme, document, (layout, shading, state)));
         let mut browser_ui = ui.new_child(egui::UiBuilder::new().max_rect(below));
         self.issues.follow(document.edits());
         browser_ui.horizontal(|ui| {
@@ -701,6 +734,10 @@ impl MapEditor {
         ui.horizontal_wrapped(|ui| {
             ui.set_max_width(width);
             self.tools.toolbar(ui);
+            ui.separator();
+            if let Some(shading) = self.shaded.toolbar(ui) {
+                actions.push(MapAction::Shading(shading));
+            }
             ui.separator();
             // The pickers keep egui's combo width and cut a long choice short, so a row wraps
             // before one rather than letting it run past the centre (P7-12, large text).
@@ -786,7 +823,7 @@ impl MapEditor {
         ui: &mut Ui,
         theme: &Theme,
         document: &MapDocument,
-        layout: MapPanes,
+        (layout, shading, state): (MapPanes, MapShading, Option<&RenderState>),
     ) -> Vec<MapAction> {
         let built = (
             document.path().to_path_buf(),
@@ -803,12 +840,22 @@ impl MapEditor {
             self.also.retain(|entity| entity.get() < count);
             self.tools.keep_found(&self.scene);
         }
+        // P7-13: the textured or lit mesh, made from the scene just built.
+        self.shaded.refresh(
+            shading,
+            state,
+            document,
+            &self.scene,
+            self.textures.sources(),
+        );
         if self.kept_out.1 != Some(document.revision()) {
             let kept_out = document.hidden_entities();
             self.kept_out = (kept_out, Some(document.revision()));
         }
         let hidden: BTreeSet<EntityIndex> = self.hidden.union(&self.kept_out.0).copied().collect();
-        let camera = self.camera.get_or_insert_with(|| start_camera(document));
+        let camera = self
+            .camera
+            .get_or_insert_with(|| start_camera(document, &self.scene));
         if self
             .leaks
             .fly(camera, ui.input(|i| i.stable_dt), document.report())
@@ -1037,11 +1084,28 @@ impl MapEditor {
         }
         let painter = ui.painter_at(area);
         painter.rect_filled(area, 0.0, theme.color(Token::SurfaceViewport));
+        // P7-13: the textured or lit faces under everything the view draws after, in place of
+        // the world's edges.
+        let faces = pane == Pane::Perspective && self.shaded.draws_faces();
+        if faces && let Some(camera) = &self.camera {
+            self.shaded.paint(ui, area, camera);
+        }
         let world = Stroke::new(1.0, theme.color(Token::TextFaint));
         for (owner, line) in &self.scene.lines {
-            if !hidden.contains(owner) {
+            if !faces && !hidden.contains(owner) {
                 projection.line(&painter, *line, world);
             }
+        }
+        if pane == Pane::Perspective
+            && let Some(note) = self.shaded.note()
+        {
+            painter.text(
+                area.shrink(NOTE_MARGIN).left_top(),
+                egui::Align2::LEFT_TOP,
+                note.get(),
+                egui::FontId::proportional(PANE_LABEL_SIZE),
+                theme.color(Token::Text),
+            );
         }
         let link = Stroke::new(1.0, theme.color(Token::Focus));
         let mut centres = Vec::new();

@@ -180,13 +180,19 @@ fn a_bsp_brush_entity_is_boxed_by_its_submodel() {
     assert_eq!(door.bounds, [[-1.0, -1.0, -1.0], [65.0, 65.0, 9.0]]);
 }
 
-// No spec statement: P5-06: the camera starts behind and above the player start, facing as it
-// does
+// No spec statement: P5-06, P7-13: the camera starts behind and above the player start, facing
+// as it does, and no further back than 16 units short of the first brush behind it, so it
+// starts in the player's room; with no brush behind, 128 units back
 #[test]
 fn the_camera_starts_behind_the_player_start() {
     let workbench = keep();
-    let camera = start_camera(workbench.map().unwrap());
-    assert_eq!(camera.origin, [-320.0, 0.0, 88.0]);
+    let document = workbench.map().unwrap();
+    let scene = Scene::build(document, &HashMap::new(), &[], &mut |_| None);
+    let camera = start_camera(document, &scene);
+    // The player start is at x -192 and the room's west wall's inner face at x -256.
+    assert_eq!(camera.origin, [-240.0, 0.0, 88.0]);
+    let open = start_camera(document, &Scene::default());
+    assert_eq!(open.origin, [-320.0, 0.0, 88.0]);
     assert!(camera.yaw.get().abs() < f32::EPSILON);
     assert!(camera.pitch.get() > 0.0, "looking down at it");
 }

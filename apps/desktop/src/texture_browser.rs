@@ -177,6 +177,11 @@ impl TextureBrowser {
         }
     }
 
+    /// Where the textures are read from, once found.
+    pub(crate) const fn sources(&self) -> Option<&TextureSources> {
+        self.sources.as_ref()
+    }
+
     /// The texture `name` as the browser decodes it, for tests.
     #[cfg(test)]
     pub(crate) fn decoded(&self, name: &str) -> Option<DecodedTexture> {

@@ -1484,6 +1484,7 @@ impl Shell {
     /// whether it did.
     fn map_tab(&mut self, ui: &mut Ui) -> bool {
         let panes = self.layout().map_panes;
+        let shading = self.layout().map_shading;
         let Some(document) = self.session.context().workbench.map() else {
             return false;
         };
@@ -1492,6 +1493,7 @@ impl Shell {
         }
         let editor = &mut self.features.map.map_editor;
         let theme = &self.theme;
+        let state = self.render_state.as_ref();
         // The map editor keeps a least height for its view and browser; when the centre is
         // shorter, as with large text (P7-12), the tab scrolls rather than drawing under the
         // bottom panel. Only its scroll bar scrolls it: the wheel and drags are the view's.
@@ -1505,8 +1507,10 @@ impl Shell {
             })
             .show(ui, |ui| {
                 let size = egui::vec2(ui.available_width(), height);
-                ui.allocate_ui(size, |ui| editor.ui(ui, theme, document, panes))
-                    .inner
+                ui.allocate_ui(size, |ui| {
+                    editor.ui(ui, theme, document, (panes, shading, state))
+                })
+                .inner
             })
             .inner;
         self.with_map(|map, commands| map.map_actions(commands, actions));
@@ -1884,6 +1888,12 @@ impl Shell {
     #[cfg(test)]
     pub(crate) const fn map_editor(&self) -> &MapEditor {
         &self.features.map.map_editor
+    }
+
+    /// The map editor, to change, for tests.
+    #[cfg(test)]
+    pub(crate) const fn map_editor_mut(&mut self) -> &mut MapEditor {
+        &mut self.features.map.map_editor
     }
 
     /// Carries out what a dock region's panel asked for, after the frame drew it.

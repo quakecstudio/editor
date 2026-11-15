@@ -2068,6 +2068,7 @@ fn entities_are_placed_and_linked_without_typing() {
         .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
         .unwrap();
     harness.run();
+    outside_the_keep(&mut harness);
     harness.run();
     lowest(&harness, Text::Entities.get()).click();
     harness.run();
@@ -2417,6 +2418,7 @@ fn brushes_are_selected_deleted_and_drawn_in_the_view() {
         .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
         .unwrap();
     harness.run();
+    outside_the_keep(&mut harness);
     harness.run();
     let before = map_text(&harness);
     let (world, door) = (brush_count(&harness, 0), brush_count(&harness, 4));
@@ -2492,6 +2494,7 @@ fn the_move_and_measure_tools_show_the_edit_they_make() {
         .execute("view.map_panes", json!({ "panes": "quad" }))
         .unwrap();
     harness.run();
+    outside_the_keep(&mut harness);
     harness.run();
     let before = map_text(&harness);
     harness.get_by_label(Text::MapToolMove.get()).click();
@@ -3298,6 +3301,7 @@ fn a_prefab_is_saved_and_dragged_in() {
         .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
         .unwrap();
     harness.run();
+    outside_the_keep(&mut harness);
     harness.run();
     let before = brush_count(&harness, 0);
     harness.get_by_label(Text::MapToolVertex.get()).click();
@@ -3861,4 +3865,20 @@ fn the_map_tab_keeps_its_view_and_browser_at_200_percent() {
         (show.center().y - label.center().y).abs() < show.height(),
         "{show:?} {label:?}"
     );
+}
+
+/// Puts the map editor's camera where it started before P7-13 kept it inside the player's
+/// room: 128 units behind the keep's player start, outside the west wall, as the tests that aim
+/// their clicks from there were written for.
+fn outside_the_keep(harness: &mut Harness<'static, Option<App>>) {
+    let mut camera = qs_render::Camera::new([-320.0, 0.0, 88.0], qs_render::Degrees::new(0.0));
+    camera.pitch = qs_render::Degrees::new(15.0);
+    harness
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .shell
+        .map_editor_mut()
+        .set_camera(camera);
+    harness.run();
 }

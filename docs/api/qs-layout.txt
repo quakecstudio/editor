@@ -20,7 +20,9 @@ const qs_layout::editor::TOGGLE_SOFT_WRAP
 const qs_layout::editor::UNFOLD
 const qs_layout::editor::UNFOLD_ALL
 const qs_layout::map_view::MAP_PANES
+const qs_layout::map_view::MAP_SHADING
 const qs_layout::map_view::MapPanes::ALL
+const qs_layout::map_view::MapShading::ALL
 const qs_layout::zoom::ZOOM
 const qs_layout::zoom::Zoom::ACTUAL
 const qs_layout::zoom::Zoom::MAX
@@ -34,6 +36,7 @@ enum qs_layout::editor::Outline
 enum qs_layout::editor::SoftWrap
 enum qs_layout::editor::Split
 enum qs_layout::map_view::MapPanes
+enum qs_layout::map_view::MapShading
 field qs_layout::Layout.bottom
 field qs_layout::Layout.editor_request
 field qs_layout::Layout.editor_requests
@@ -41,6 +44,7 @@ field qs_layout::Layout.focus
 field qs_layout::Layout.focus_requests
 field qs_layout::Layout.left
 field qs_layout::Layout.map_panes
+field qs_layout::Layout.map_shading
 field qs_layout::Layout.outline
 field qs_layout::Layout.right
 field qs_layout::Layout.soft_wrap
@@ -53,6 +57,7 @@ field qs_layout::ResizePanelParams.size
 field qs_layout::TogglePanelParams.panel
 field qs_layout::editor::GoToLineParams.line
 field qs_layout::map_view::MapPanesParams.panes
+field qs_layout::map_view::MapShadingParams.shading
 field qs_layout::zoom::ZoomParams.zoom
 fn qs_layout::HasLayout::layout_mut
 fn qs_layout::Layout::as_written
@@ -80,6 +85,7 @@ struct qs_layout::ResizePanelParams
 struct qs_layout::TogglePanelParams
 struct qs_layout::editor::GoToLineParams
 struct qs_layout::map_view::MapPanesParams
+struct qs_layout::map_view::MapShadingParams
 struct qs_layout::zoom::Zoom
 struct qs_layout::zoom::ZoomError
 struct qs_layout::zoom::ZoomParams
@@ -92,8 +98,11 @@ use qs_layout::GO_TO_LINE = editor::GO_TO_LINE
 use qs_layout::GO_TO_SYMBOL = editor::GO_TO_SYMBOL
 use qs_layout::GoToLineParams = editor::GoToLineParams
 use qs_layout::MAP_PANES = map_view::MAP_PANES
+use qs_layout::MAP_SHADING = map_view::MAP_SHADING
 use qs_layout::MapPanes = map_view::MapPanes
 use qs_layout::MapPanesParams = map_view::MapPanesParams
+use qs_layout::MapShading = map_view::MapShading
+use qs_layout::MapShadingParams = map_view::MapShadingParams
 use qs_layout::Outline = editor::Outline
 use qs_layout::PROJECT_SEARCH_VIEW = editor::PROJECT_SEARCH_VIEW
 use qs_layout::SPLIT_DOWN = editor::SPLIT_DOWN
@@ -137,3 +146,6 @@ variant qs_layout::editor::Split::Right
 variant qs_layout::map_view::MapPanes::Inset
 variant qs_layout::map_view::MapPanes::Quad
 variant qs_layout::map_view::MapPanes::Single
+variant qs_layout::map_view::MapShading::Lines
+variant qs_layout::map_view::MapShading::Lit
+variant qs_layout::map_view::MapShading::Textured

@@ -7,7 +7,7 @@
 use std::path::{Path, PathBuf};
 
 use eframe::egui::{self};
-use qs_layout::{MAP_PANES, MapPanesParams};
+use qs_layout::{MAP_PANES, MAP_SHADING, MapPanesParams, MapShadingParams};
 use qs_map_edit::backup::{Backup, MAP_BACKUP, MAP_BACKUPS, MAP_RESTORE_BACKUP, RestoreParams};
 use qs_map_edit::texture_import::{TEXTURE_IMPORT, TextureImportParams};
 use qs_map_edit::textures::TextureSources;
@@ -329,6 +329,9 @@ impl MapFeature {
                     commands.attempt(MAP_MOVE_TO, &MoveToParams { entity, into })
                 }
                 MapAction::Panes(panes) => commands.attempt(MAP_PANES, &MapPanesParams { panes }),
+                MapAction::Shading(shading) => {
+                    commands.attempt(MAP_SHADING, &MapShadingParams { shading })
+                }
                 MapAction::ImportTexture(path, name, dither) => {
                     let imported = commands.attempt(
                         TEXTURE_IMPORT,

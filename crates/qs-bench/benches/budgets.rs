@@ -225,6 +225,22 @@ fn e1m1_map() -> Vec<u8> {
     fs::read(path).expect("lq-e1m1.map reads")
 }
 
+/// The map editor's textured view after an edit (P7-13): lq-e1m1's scene built again and its
+/// every brush face laid out as the mesh the renderer draws.
+fn textured_view_e1m1(group: &mut BenchmarkGroup<'_, WallTime>) {
+    let dir = std::env::temp_dir().join(format!("qs-bench-textured-{}", std::process::id()));
+    fs::create_dir_all(&dir).expect("the bench folder is made");
+    let path = dir.join("lq_e1m1.map");
+    fs::write(&path, e1m1_map()).expect("the map is written");
+    let mut workbench =
+        qs_workbench::Workbench::new(qs_workbench::FsLoader, qs_workbench::Config::default());
+    workbench.maps_mut().open_map(&path).expect("lq-e1m1 opens");
+    let document = workbench.map().expect("the map is open");
+    group.bench_function("textured_view_e1m1", |bencher| {
+        bencher.iter(|| black_box(bench::textured_mesh(document)));
+    });
+}
+
 /// Play from here's compile of an id1-sized map (P6-12, P6-37): LibreQuake's lq-e1m1 through
 /// the extended qbsp with no WAD, as the workbench compiles it, then the fast light.
 fn play_from_here_e1m1(group: &mut BenchmarkGroup<'_, WallTime>) {
@@ -624,6 +640,7 @@ fn budgets(criterion: &mut Criterion) {
     play_from_here_e1m1(&mut group);
     region_compile_e1m1(&mut group);
     full_compile_e1m1(&mut group);
+    textured_view_e1m1(&mut group);
     group.finish();
 }
 

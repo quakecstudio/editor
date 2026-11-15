@@ -41,6 +41,8 @@ Format: one row per file, the path in backticks relative to the repository root.
 | `apps/desktop/snapshots/map-leak.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |
 | `apps/desktop/snapshots/map-lights.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |
 | `apps/desktop/snapshots/map-panes.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |
+| `apps/desktop/snapshots/map-lit.png` | QuakeC Studio contributors | Rendered by the map view's tests (`apps/desktop/src/map_view/tests.rs`) | GPL-3.0-or-later |
+| `apps/desktop/snapshots/map-textured.png` | QuakeC Studio contributors | Rendered by the map view's tests (`apps/desktop/src/map_view/tests.rs`) | GPL-3.0-or-later |
 | `apps/desktop/snapshots/map-editor-zoom-200.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |
 | `apps/desktop/snapshots/shell-contrast.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |
 | `apps/desktop/snapshots/shell-light.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |
