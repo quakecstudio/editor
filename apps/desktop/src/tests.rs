@@ -1987,6 +1987,59 @@ fn the_map_view_takes_trenchbrooms_keys() {
     assert_eq!(map_text(&harness), before);
 }
 
+// No spec statement: P7-08: TrenchBroom's grid keys set the map editor's grid while the view
+// has the keyboard, - halving it, + doubling it and 1 to 9 setting 1 to 256 units, the toolbar's
+// picker shows it, and the arrows and Page Up then move the selection by it
+#[test]
+fn the_grid_keys_set_the_step_the_selection_moves_by() {
+    let dir = keep_copy("grid");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    harness.get_by_label(Text::MapEditorView.get()).click();
+    harness.run();
+    let grid = |harness: &Harness<'static, Option<App>>| {
+        harness.state().as_ref().unwrap().shell().layout().map_grid.units()
+    };
+    assert_eq!(grid(&harness), 16.0);
+    harness.key_press(egui::Key::Minus);
+    harness.run();
+    assert_eq!(grid(&harness), 8.0);
+    harness.key_press(egui::Key::Plus);
+    harness.key_press(egui::Key::Plus);
+    harness.run();
+    assert_eq!(grid(&harness), 32.0);
+    harness.key_press(egui::Key::Num9);
+    harness.run();
+    assert_eq!(grid(&harness), 256.0);
+    harness.key_press(egui::Key::Plus);
+    harness.run();
+    assert_eq!(grid(&harness), 256.0, "held at the coarsest");
+    harness.key_press(egui::Key::Num3);
+    harness.run();
+    assert_eq!(grid(&harness), 4.0);
+    let picker = harness.get_by_label(Text::MapGridPicker.get());
+    assert_eq!(picker.accesskit_node().value().as_deref(), Some("4"));
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("map.select", json!({ "entity": 2 })).unwrap();
+    harness.run();
+    assert!(map_text(&harness).contains("\"origin\" \"96 64 24\""));
+    harness.key_press(egui::Key::ArrowUp);
+    harness.key_press(egui::Key::PageUp);
+    harness.run();
+    assert!(
+        map_text(&harness).contains("\"origin\" \"100 64 28\""),
+        "{}",
+        map_text(&harness)
+    );
+}
+
 /// Drags with the primary button from `from` to `to` in steps, holding `modifiers`.
 fn drag(
     harness: &mut Harness<'static, Option<App>>,

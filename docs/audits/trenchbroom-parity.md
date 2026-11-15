@@ -85,7 +85,7 @@ Tests are named `crate-or-app path::test`; `desktop` is `apps/desktop/src`, `map
 | Tools: modal and permanent | Toolbar: Select, Brush, Clip, Vertex, Move, Measure, Shape | `desktop map_tools` tests | Same |
 | Cancel a drag or a tool with Escape | Escape ends a pick only | none | Gap G18 |
 | Axis restriction while moving | None | none | Gap G11 |
-| Grid from 0.125 to 256, set from the menu or Alt+Ctrl+wheel | A fixed 16-unit grid | none | Gap G10 |
+| Grid from 0.125 to 256, set from the menu or Alt+Ctrl+wheel | `view.map_grid`, the toolbar's Grid picker, TrenchBroom's + - and 1 to 9 | `desktop tests::the_grid_keys_set_the_step_the_selection_moves_by`, `qs-layout map_grid::tests` | Same |
 | Map view context menu: group, layers, select all of a class, reveal material, create entities | Entities browser context menu only | none | Gap G12 |
 | Simple shapes by drag in 3D and 2D | Brush tool | `map-edit brushes::tests::a_box_is_created_on_the_grid` | Same |
 | Complex shape tool: points to a convex brush | Shape tool: cylinders, cones, arches, spheroids, rocks, curves | `map-edit shapes::tests::a_shape_is_added_in_one_undoable_step` | Gap G13: no hull of placed points |
@@ -184,7 +184,6 @@ To close before #823 does:
 | G6 | The 3D view's field of view, a temporary zoom, and mouse preferences |
 | G7 | Two- and three-pane layouts, a highlight on the focused pane, linked 2D views |
 | G8 | Selection drilling; select all, touching, inside, tall, siblings; invert; deselect all; 2D picking by candidates |
-| G10 | A grid from 0.125 to 256 units, set from the menu or the wheel |
 | G11 | Axis restriction while moving |
 | G12 | The map view's context menu |
 | G13 | Brush entities from selected brushes and back to the world; a convex brush from placed points; stamping and moving faces; clip snapping and matching a face's plane |

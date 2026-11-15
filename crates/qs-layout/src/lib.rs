@@ -22,6 +22,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 mod editor;
+mod map_grid;
 mod map_view;
 #[cfg(test)]
 mod tests;
@@ -31,6 +32,9 @@ pub use editor::{
     CLOSE_SPLIT, EditorRequest, FOLD, FOLD_ALL, GO_TO_LINE, GO_TO_SYMBOL, GoToLineParams, Outline,
     PROJECT_SEARCH_VIEW, SPLIT_DOWN, SPLIT_RIGHT, SoftWrap, Split, TAB_SWITCHER, TOGGLE_OUTLINE,
     TOGGLE_SOFT_WRAP, UNFOLD, UNFOLD_ALL,
+};
+pub use map_grid::{
+    GridStep, MAP_GRID, MAP_GRID_STEP, MapGrid, MapGridError, MapGridParams, MapGridStepParams,
 };
 pub use map_view::{
     MAP_PANES, MAP_SHADING, MapPanes, MapPanesParams, MapShading, MapShadingParams,
@@ -114,6 +118,8 @@ pub struct Layout {
     pub map_panes: MapPanes,
     /// How the map view's 3D pane draws the map (P7-13).
     pub map_shading: MapShading,
+    /// The map editor's grid (P7-08).
+    pub map_grid: MapGrid,
     /// How large the interface is drawn (P7-12).
     pub zoom: Zoom,
     /// The last one-off editor action a command asked for, which the window carries out once.
@@ -150,6 +156,7 @@ impl Default for Layout {
             outline: Outline::Hidden,
             map_panes: MapPanes::Single,
             map_shading: MapShading::Lines,
+            map_grid: MapGrid::DEFAULT,
             zoom: Zoom::ACTUAL,
             editor_request: None,
             editor_requests: 0,
@@ -330,6 +337,7 @@ pub fn register<C: HasLayout + 'static>(registry: &mut Registry<C>) -> Result<()
     registry.register(FocusArea::<RightPanel>::new())?;
     registry.register(FocusArea::<BottomPanel>::new())?;
     map_view::register(registry)?;
+    map_grid::register(registry)?;
     zoom::register(registry)?;
     editor::register(registry)
 }

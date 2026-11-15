@@ -15,7 +15,7 @@ use eframe::egui::{
     self, Color32, Key, Modifiers, Pos2, Rect, RichText, Sense, Stroke, Ui, WidgetInfo, WidgetType,
 };
 use eframe::egui_wgpu::RenderState;
-use qs_layout::{MapPanes, MapShading};
+use qs_layout::{MapGrid, MapPanes, MapShading};
 use qs_map_edit::ClassInfo;
 use qs_map_edit::MapReport;
 use qs_map_edit::texture_import::DitherChoice;
@@ -57,7 +57,6 @@ const PAN: f32 = 1.0;
 /// Map units a second the fly keys move the camera (TrenchBroom: W, S, A, D, Q, X).
 const FLY_SPEED: f32 = 512.0;
 /// TrenchBroom's grid, `Grid(4)`: 2^4 units, the step the arrow keys move a selection.
-pub(crate) const GRID: f64 = 16.0;
 /// TrenchBroom turns a selection by a right angle (`half_pi`).
 const QUARTER_TURN: f64 = 90.0;
 /// The key editor's columns: the key, its value and its buttons.
@@ -143,6 +142,8 @@ pub enum MapAction {
     Panes(MapPanes),
     /// Draw the 3D pane as lines, textured or lit (P7-13).
     Shading(MapShading),
+    /// Snap to this grid (P7-08).
+    Grid(MapGrid),
     /// Import the PNG at the path as a texture of the name (P6-16).
     ImportTexture(std::path::PathBuf, String, DitherChoice),
     /// Compile the map fast and play it with the player at the 3D view's camera (P6-12).
@@ -677,8 +678,9 @@ impl MapEditor {
         ui: &mut Ui,
         theme: &Theme,
         document: &MapDocument,
-        (layout, shading, state): (MapPanes, MapShading, Option<&RenderState>),
+        (layout, shading, grid, state): (MapPanes, MapShading, MapGrid, Option<&RenderState>),
     ) -> Vec<MapAction> {
+        self.tools.grid = grid;
         // The tab's own width, which the toolbar wraps within and the view keeps to, so a long
         // toolbar never widens the view under the Properties panel.
         let bounds = ui.available_rect_before_wrap();
@@ -782,6 +784,25 @@ impl MapEditor {
             name_field(ui, &panes.response, Text::MapPanesPicker);
             // A choice cut short is read whole on hover.
             panes.response.on_hover_text(panes_text(layout).get());
+            ui.separator();
+            ui.label(Text::MapGrid.get());
+            let grid = self.tools.grid;
+            let picked =
+                egui::ComboBox::from_id_salt(ui.id().with(core::any::TypeId::of::<MapGrid>()))
+                    .width(combo)
+                    .selected_text(grid.to_string())
+                    .show_ui(ui, |ui| {
+                        for choice in MapGrid::all() {
+                            if ui
+                                .selectable_label(grid == choice, choice.to_string())
+                                .clicked()
+                            {
+                                actions.push(MapAction::Grid(choice));
+                            }
+                        }
+                    });
+            name_field(ui, &picked.response, Text::MapGridPicker);
+            picked.response.on_hover_text(Text::MapGridPicker.get());
             ui.separator();
             ui.label(Text::MapLinks.get());
             ui.selectable_value(
@@ -987,6 +1008,9 @@ impl MapEditor {
             if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
                 self.picking = None;
             }
+            if let Some(grid) = grid_key(ui, self.tools.grid) {
+                actions.push(MapAction::Grid(grid));
+            }
             // The arrows move the selection, as TrenchBroom's do, not the keyboard focus.
             ui.memory_mut(|memory| {
                 memory.set_focus_lock_filter(
@@ -1003,7 +1027,7 @@ impl MapEditor {
             {
                 fly(ui, camera);
                 if let Some(entity) = selected {
-                    actions.extend(selection_keys(ui, camera, entity));
+                    actions.extend(selection_keys(ui, camera, entity, self.tools.grid));
                 }
             }
             let chosen: Vec<EntityIndex> = selection.iter().copied().collect();
@@ -1082,7 +1106,7 @@ impl MapEditor {
         }
         let dropped_at = |at: Pos2| {
             let (start, direction) = ray(at);
-            let snap = |c: f32| (f64::from(c) / GRID).round() * GRID;
+            let snap = |c: f32| self.tools.grid.snap(f64::from(c));
             let distance = match pane {
                 Pane::Perspective => PLACE_DISTANCE,
                 // On the ground in the top view; on the line through the map's middle in the
@@ -1457,16 +1481,47 @@ fn fly(ui: &Ui, camera: &mut Camera) {
     }
 }
 
+/// TrenchBroom's grid keys (its "Increase Grid Size", "Decrease Grid Size" and "Set Grid Size"
+/// actions): + doubles `grid` and - halves it; 1 to 9 set 1 to 256 units.
+fn grid_key(ui: &Ui, grid: MapGrid) -> Option<MapGrid> {
+    const DIGITS: [Key; 9] = [
+        Key::Num1,
+        Key::Num2,
+        Key::Num3,
+        Key::Num4,
+        Key::Num5,
+        Key::Num6,
+        Key::Num7,
+        Key::Num8,
+        Key::Num9,
+    ];
+    ui.input_mut(|i| {
+        if i.consume_key(Modifiers::NONE, Key::Plus) || i.consume_key(Modifiers::NONE, Key::Equals)
+        {
+            return Some(grid.coarser());
+        }
+        if i.consume_key(Modifiers::NONE, Key::Minus) {
+            return Some(grid.finer());
+        }
+        let digit = DIGITS
+            .iter()
+            .position(|&key| i.consume_key(Modifiers::NONE, key))?;
+        let power = u8::try_from(digit).ok()?;
+        MapGrid::try_from(f64::from(power).exp2()).ok()
+    })
+}
+
 /// TrenchBroom's keys on the selection: the arrows and Page Up and Down move it by the grid,
 /// along the map axis nearest the camera's; Alt with Left or Right turns it; Delete deletes it;
 /// Ctrl+D (Cmd+D) duplicates it.
-fn selection_keys(ui: &Ui, camera: &Camera, entity: EntityIndex) -> Vec<MapAction> {
+fn selection_keys(ui: &Ui, camera: &Camera, entity: EntityIndex, grid: MapGrid) -> Vec<MapAction> {
+    let step = grid.units();
     let [forward, right, _] = camera.axes();
     let snap = |v: [f32; 3]| -> [f64; 3] {
         if v[0].abs() >= v[1].abs() {
-            [f64::from(v[0].signum()) * GRID, 0.0, 0.0]
+            [f64::from(v[0].signum()) * step, 0.0, 0.0]
         } else {
-            [0.0, f64::from(v[1].signum()) * GRID, 0.0]
+            [0.0, f64::from(v[1].signum()) * step, 0.0]
         }
     };
     let negate = |v: [f64; 3]| v.map(|c| -c);
@@ -1483,8 +1538,8 @@ fn selection_keys(ui: &Ui, camera: &Camera, entity: EntityIndex) -> Vec<MapActio
             (Key::ArrowDown, negate(snap(forward))),
             (Key::ArrowRight, snap(right)),
             (Key::ArrowLeft, negate(snap(right))),
-            (Key::PageUp, [0.0, 0.0, GRID]),
-            (Key::PageDown, [0.0, 0.0, -GRID]),
+            (Key::PageUp, [0.0, 0.0, step]),
+            (Key::PageDown, [0.0, 0.0, -step]),
         ];
         for (key, by) in moves {
             if i.consume_key(Modifiers::NONE, key) {

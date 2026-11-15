@@ -181,6 +181,8 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`view.focus_editor`](#viewfocus_editor) | Gives the keyboard to the editor in the centre. |
 | [`view.focus_left_panel`](#viewfocus_left_panel) | Shows the left panel, Project and Entities, if it is hidden and gives it the keyboard. |
 | [`view.focus_right_panel`](#viewfocus_right_panel) | Shows the right panel, Properties and the agent, if it is hidden and gives it the keyboard. |
+| [`view.map_grid`](#viewmap_grid) | Sets the map editor's grid in units, a power of two from 0.125 to 256. |
+| [`view.map_grid_step`](#viewmap_grid_step) | Halves or doubles the map editor's grid, held to 0.125 to 256 units. |
 | [`view.map_panes`](#viewmap_panes) | Splits the map view: the 3D view alone, with a top view in its corner, or beside top, front and side views. |
 | [`view.map_shading`](#viewmap_shading) | Draws the map view's 3D pane as the brushes' edges, as their textured faces, or lit by the last compile's lightmaps. |
 | [`view.project_search`](#viewproject_search) | Opens the project search: every match in the project's files as a multibuffer of editable excerpts, to edit or replace in place. |
@@ -7429,6 +7431,80 @@ Parameters:
   "additionalProperties": false,
   "description": "The command takes no parameters: pass the empty object {}.",
   "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.map_grid`
+
+Sets the map editor's grid in units, a power of two from 0.125 to 256.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "MapGrid": {
+      "description": "The map editor's grid: 2 to the power of its exponent, in units.",
+      "format": "double",
+      "type": "number"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `view.map_grid`.",
+  "properties": {
+    "size": {
+      "$ref": "#/$defs/MapGrid",
+      "description": "The grid in units: a power of two from 0.125 to 256."
+    }
+  },
+  "required": [
+    "size"
+  ],
+  "title": "MapGridParams",
+  "type": "object"
+}
+```
+
+## `view.map_grid_step`
+
+Halves or doubles the map editor's grid, held to 0.125 to 256 units.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "GridStep": {
+      "description": "Which way `view.map_grid_step` steps the grid.",
+      "oneOf": [
+        {
+          "const": "finer",
+          "description": "Half the step, as TrenchBroom's Decrease Grid Size.",
+          "type": "string"
+        },
+        {
+          "const": "coarser",
+          "description": "Twice the step, as TrenchBroom's Increase Grid Size.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `view.map_grid_step`.",
+  "properties": {
+    "step": {
+      "$ref": "#/$defs/GridStep",
+      "description": "Which way."
+    }
+  },
+  "required": [
+    "step"
+  ],
+  "title": "MapGridStepParams",
   "type": "object"
 }
 ```

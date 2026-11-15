@@ -852,6 +852,10 @@ pub enum Text {
     ActualSizeMenu,
     /// The map view's layout picker, to a screen reader.
     MapPanesPicker,
+    /// The map editor's grid picker, before its size (P7-08).
+    MapGrid,
+    /// The map editor's grid picker, to a screen reader and on hover.
+    MapGridPicker,
     /// The map view's entity filter, to a screen reader.
     MapShowPicker,
     /// The Shape tool's kind picker, to a screen reader.
@@ -886,7 +890,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 435] = [
+    pub const ALL: [Self; 437] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1307,6 +1311,8 @@ impl Text {
         Self::ZoomOutMenu,
         Self::ActualSizeMenu,
         Self::MapPanesPicker,
+        Self::MapGrid,
+        Self::MapGridPicker,
         Self::MapShowPicker,
         Self::MapShapeKind,
         Self::MapTextureShiftX,
@@ -1823,6 +1829,11 @@ impl Text {
             Self::ZoomOutMenu => "Zoom Out",
             Self::ActualSizeMenu => "Actual Size",
             Self::MapPanesPicker => "Map view layout",
+            Self::MapGrid => "Grid",
+            Self::MapGridPicker => {
+                "The grid drawing and moving snap to, in units: + and - halve or double it, 1 \
+                 to 9 set 1 to 256"
+            }
             Self::MapShowPicker => "Show entities",
             Self::MapShapeKind => "Shape kind",
             Self::MapTextureShiftX => "Texture shift X",

@@ -74,8 +74,12 @@ it too.
   groups that name each other are shown under the default layer.
 - **Brushes (P6-08, MAP-2):** the toolbar holds Select, Brush, Clip and Vertex. With a brush
   tool, a click selects the first brush the pointer's ray enters, by its faces, and Shift+click
-  adds or removes one. Each edit is a `map.brush_*` command on the 16-unit grid, undone in one
-  step, and kept convex: one that would leave a brush with no volume is refused.
+  adds or removes one. Each edit is a `map.brush_*` command on the grid, undone in one step, and
+  kept convex: one that would leave a brush with no volume is refused.
+- **The grid (P7-08):** drawing, dragging and the selection keys snap to the grid, a power of two
+  from 0.125 to 256 units, 16 at first, as TrenchBroom's. The toolbar's Grid picker sets it
+  (`view.map_grid`), and while the view has the keyboard - halves it, + doubles it
+  (`view.map_grid_step`) and 1 to 9 set 1 to 256 units, TrenchBroom's keys. The layout keeps it.
   - Brush: a drag on the ground (height 0) draws a box 64 units tall in the world
     (`map.brush_create`), with the texture of the map's last face.
   - Clip: a drag on the ground draws the cut line, and the selected brush is cut by the vertical

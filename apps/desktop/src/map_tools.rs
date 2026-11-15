@@ -26,7 +26,7 @@ use qs_map_edit::{
     ArchWall, Axis, BrushIndex, Circle, Climb, EntityIndex, KeepPart, Lock, ShapeSpec,
 };
 
-use crate::map_editor::{GRID, box_lines};
+use crate::map_editor::box_lines;
 use crate::map_panes::{Pane, Projection};
 use crate::map_scene::{Scene, single};
 pub(crate) use crate::map_uv::PickMode;
@@ -34,6 +34,7 @@ use crate::map_uv::UvEditor;
 use crate::shell::name_field;
 use crate::strings::{Text, apply_texture, measure_readout, move_readout, selection_size};
 use crate::theme::{Theme, Token};
+use qs_layout::MapGrid;
 use tool_fields::ToolFields;
 
 mod tool_fields;
@@ -558,6 +559,8 @@ pub(crate) struct BrushTools {
     fields: ToolFields,
     /// The corners of the first selected brush the Vertex tool picked with Ctrl+click.
     corners: Vec<[f64; 3]>,
+    /// The grid drags snap to (P7-08), the layout's.
+    pub(crate) grid: MapGrid,
 }
 
 /// A ray in map space: where it starts and its direction.
@@ -620,9 +623,9 @@ impl MapAxis {
     }
 }
 
-/// `point` on the grid, as the commands snap it.
-fn snapped(point: [f32; 3]) -> [f64; 3] {
-    point.map(|c| (f64::from(c) / GRID).round() * GRID)
+/// `point` on `grid`, as the commands snap it.
+fn snapped(point: [f32; 3], grid: MapGrid) -> [f64; 3] {
+    point.map(|c| grid.snap(f64::from(c)))
 }
 
 /// `point` on the grid, for drawing.
@@ -630,8 +633,8 @@ fn snapped(point: [f32; 3]) -> [f64; 3] {
     clippy::cast_possible_truncation,
     reason = "a grid point of a map is well inside f32's range"
 )]
-fn snapped_f32(point: [f32; 3]) -> [f32; 3] {
-    snapped(point).map(|c| c as f32)
+fn snapped_f32(point: [f32; 3], grid: MapGrid) -> [f32; 3] {
+    snapped(point, grid).map(|c| c as f32)
 }
 
 /// The box from `a` to `b` on the ground, `height` tall.
@@ -748,21 +751,22 @@ impl BrushTools {
     }
 
     /// What a Move or Measure drag shows with the pointer on `ray`.
-    fn readout(drag: Drag, ray: Ray) -> Option<Readout> {
+    fn readout(drag: Drag, ray: Ray, grid: MapGrid) -> Option<Readout> {
         let moved = |from: [f64; 3], to: [f64; 3]| Readout::Move {
             by: [to[0] - from[0], to[1] - from[1], to[2] - from[2]],
             at: to,
         };
         match drag {
-            Drag::Selection(from, axis) => {
-                Some(moved(snapped(from), snapped(axis.meets(ray, from)?)))
-            }
+            Drag::Selection(from, axis) => Some(moved(
+                snapped(from, grid),
+                snapped(axis.meets(ray, from)?, grid),
+            )),
             Drag::Measure(from, axis) => Some(Readout::Measure {
-                from: snapped(from),
-                to: snapped(axis.meets(ray, from)?),
+                from: snapped(from, grid),
+                to: snapped(axis.meets(ray, from)?, grid),
             }),
             Drag::Corner(_, from) => {
-                let [x, y, _] = snapped(at_height(ray, single(from[2]))?);
+                let [x, y, _] = snapped(at_height(ray, single(from[2]))?, grid);
                 Some(moved(from, [x, y, from[2]]))
             }
             Drag::Ground(_) => None,
@@ -893,7 +897,7 @@ impl BrushTools {
         }
         if let Some(drag) = self.drag
             && let Some(at) = ui.ctx().pointer_latest_pos()
-            && let Some(readout) = Self::readout(drag, ray(at))
+            && let Some(readout) = Self::readout(drag, ray(at), self.grid)
         {
             self.shown = Some(readout);
         }
@@ -902,7 +906,7 @@ impl BrushTools {
         {
             self.drag = None;
             if let Some(at) = ui.ctx().pointer_latest_pos() {
-                self.shown = Self::readout(drag, ray(at)).or(self.shown);
+                self.shown = Self::readout(drag, ray(at), self.grid).or(self.shown);
             }
             if let (Drag::Selection(..), Some(Readout::Move { by, .. })) = (drag, self.shown)
                 && by.iter().any(|c| c.abs() > 0.0)
@@ -972,20 +976,26 @@ impl BrushTools {
             (MapTool::Brush, Drag::Ground(from)) => {
                 let to = at_height(ray, from[2])?;
                 let [min, max] = ground_box(from, to, BRUSH_HEIGHT);
-                Some(BrushAction::Create(snapped(min), snapped(max)))
+                Some(BrushAction::Create(
+                    snapped(min, self.grid),
+                    snapped(max, self.grid),
+                ))
             }
             (MapTool::Shape, Drag::Ground(from)) => {
                 let to = at_height(ray, from[2])?;
                 let [min, max] = ground_box(from, to, SHAPE_HEIGHT);
                 Some(BrushAction::Shape(
-                    snapped(min),
-                    snapped(max),
+                    snapped(min, self.grid),
+                    snapped(max, self.grid),
                     self.shape.spec(),
                 ))
             }
             (MapTool::Clip, Drag::Ground(from)) => {
                 let &(entity, brush) = self.chosen.first()?;
-                let (a, b) = (snapped(from), snapped(at_height(ray, from[2])?));
+                let (a, b) = (
+                    snapped(from, self.grid),
+                    snapped(at_height(ray, from[2])?, self.grid),
+                );
                 (a != b).then(|| {
                     let above = [b[0], b[1], b[2] + 1.0];
                     BrushAction::Clip(entity, brush, [a, b, above], self.keep)
@@ -993,7 +1003,7 @@ impl BrushTools {
             }
             (MapTool::Vertex, Drag::Corner((entity, brush), from)) => {
                 let to = at_height(ray, single(from[2]))?;
-                let [x, y, _] = snapped(to);
+                let [x, y, _] = snapped(to, self.grid);
                 if self.corners.len() > 1 && self.corners.contains(&from) {
                     let by = [x - from[0], y - from[1]];
                     let moves = self
@@ -1062,7 +1072,7 @@ impl BrushTools {
             return;
         };
         let from = match drag {
-            Drag::Ground(from) => snapped_f32(from),
+            Drag::Ground(from) => snapped_f32(from, self.grid),
             Drag::Corner(_, from) => from.map(single),
             Drag::Selection(..) | Drag::Measure(..) => return,
         };
@@ -1071,10 +1081,10 @@ impl BrushTools {
         };
         let to = match drag {
             Drag::Corner(..) => {
-                let [x, y, _] = snapped_f32(to);
+                let [x, y, _] = snapped_f32(to, self.grid);
                 [x, y, from[2]]
             }
-            Drag::Ground(_) | Drag::Selection(..) | Drag::Measure(..) => snapped_f32(to),
+            Drag::Ground(_) | Drag::Selection(..) | Drag::Measure(..) => snapped_f32(to, self.grid),
         };
         match self.tool {
             MapTool::Brush => {
@@ -1324,6 +1334,7 @@ mod tests {
         TextureChange, at_height,
     };
     use crate::map_scene::{BrushShape, Scene};
+    use qs_layout::MapGrid;
     use qs_map_edit::{BrushIndex, EntityIndex, KeepPart};
 
     fn down_from(x: f32, y: f32) -> super::Ray {
@@ -1491,7 +1502,11 @@ mod tests {
         assert_eq!(MapAxis::facing(([0.0; 3], [-0.9, 0.2, 0.1])), MapAxis::X);
         // Started looking down; the pointer now runs nearly level, but the ground is kept.
         let level = ([0.0, 0.0, 100.0], [0.9, 0.0, -0.1]);
-        let readout = BrushTools::readout(Drag::Selection([0.0; 3], MapAxis::Z), level);
+        let readout = BrushTools::readout(
+            Drag::Selection([0.0; 3], MapAxis::Z),
+            level,
+            MapGrid::DEFAULT,
+        );
         assert_eq!(
             readout,
             Some(Readout::Move {
@@ -1509,7 +1524,11 @@ mod tests {
     #[test]
     fn a_corner_drag_shows_its_move() {
         let brush = (EntityIndex::new(0), BrushIndex::new(0));
-        let readout = BrushTools::readout(Drag::Corner(brush, [64.0; 3]), down_from(90.0, 70.0));
+        let readout = BrushTools::readout(
+            Drag::Corner(brush, [64.0; 3]),
+            down_from(90.0, 70.0),
+            MapGrid::DEFAULT,
+        );
         assert_eq!(
             readout,
             Some(Readout::Move {
@@ -1518,7 +1537,11 @@ mod tests {
             })
         );
         assert_eq!(
-            BrushTools::readout(Drag::Ground([0.0; 3]), down_from(1.0, 1.0)),
+            BrushTools::readout(
+                Drag::Ground([0.0; 3]),
+                down_from(1.0, 1.0),
+                MapGrid::DEFAULT
+            ),
             None
         );
     }

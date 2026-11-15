@@ -7,7 +7,9 @@
 use std::path::{Path, PathBuf};
 
 use eframe::egui::{self};
-use qs_layout::{MAP_PANES, MAP_SHADING, MapPanesParams, MapShadingParams};
+use qs_layout::{
+    MAP_GRID, MAP_PANES, MAP_SHADING, MapGridParams, MapPanesParams, MapShadingParams,
+};
 use qs_map_edit::backup::{Backup, MAP_BACKUP, MAP_BACKUPS, MAP_RESTORE_BACKUP, RestoreParams};
 use qs_map_edit::texture_import::{TEXTURE_IMPORT, TextureImportParams};
 use qs_map_edit::textures::TextureSources;
@@ -332,6 +334,7 @@ impl MapFeature {
                 MapAction::Shading(shading) => {
                     commands.attempt(MAP_SHADING, &MapShadingParams { shading })
                 }
+                MapAction::Grid(size) => commands.attempt(MAP_GRID, &MapGridParams { size }),
                 MapAction::ImportTexture(path, name, dither) => {
                     let imported = commands.attempt(
                         TEXTURE_IMPORT,
@@ -645,6 +648,7 @@ impl MapFeature {
         commands: &mut Commands<'_>,
         action: BrushAction,
     ) -> Result<serde_json::Value, ShellError> {
+        let grid = Some(commands.session().context().layout.map_grid.units());
         match action {
             BrushAction::Create(min, max) => commands.attempt(
                 MAP_BRUSH_CREATE,
@@ -653,7 +657,7 @@ impl MapFeature {
                     min,
                     max,
                     texture: None,
-                    grid: None,
+                    grid,
                 },
             ),
             BrushAction::Clip(entity, brush, points, keep) => commands.attempt(
@@ -720,7 +724,7 @@ impl MapFeature {
                         name,
                         brushes,
                         entities,
-                        grid: None,
+                        grid,
                     },
                 );
                 // The browser lists the new prefab.
@@ -734,7 +738,7 @@ impl MapFeature {
                     max,
                     shape,
                     texture: None,
-                    grid: None,
+                    grid,
                 },
             ),
             BrushAction::Hollow(entity, brush, wall) => commands.attempt(
@@ -778,7 +782,7 @@ impl MapFeature {
                     brush,
                     path,
                     lock,
-                    grid: None,
+                    grid,
                 },
             ),
             BrushAction::Extrude(face, by, lock) => commands.attempt(
