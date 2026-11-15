@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use qs_workbench::map_edit::Prefab;
+use qs_map_edit::Prefab;
 
 use super::PrefabBrowser;
 use crate::map_editor::MapAction;

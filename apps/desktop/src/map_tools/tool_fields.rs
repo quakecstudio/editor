@@ -8,7 +8,7 @@
 
 use eframe::egui::{self, Ui};
 use qs_map::MAP_MAX_CHAMFER_FACES;
-use qs_workbench::map_edit::{Axis, BrushIndex, EntityIndex};
+use qs_map_edit::{Axis, BrushIndex, EntityIndex};
 
 use super::{BrushAction, BrushTools};
 use crate::strings::Text;

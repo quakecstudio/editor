@@ -12,6 +12,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use eframe::egui::accesskit::{Role, Toggled};
 use eframe::egui::{self, FontId, Pos2, RawInput, Rect, Vec2};
@@ -21,19 +22,20 @@ use qs_commands::palette::search;
 use qs_commands::params::{self, Input};
 use qs_commands::remote::{Client, Host};
 use qs_layout::{Focus, Layout, Panel};
+use qs_map_edit::EntityIndex;
+use qs_map_edit::texture_import::project_wad;
 use qs_wad::write::WadBuilder;
 use qs_workbench::debug::Location;
-use qs_workbench::map_edit::EntityIndex;
-use qs_workbench::texture_import::project_wad;
 use serde_json::json;
 
 use crate::debugger::place;
 use crate::editor::Request;
 use crate::icons::Icon;
 use crate::keymap;
+use crate::launch::{Launch, forward_paths};
 use crate::map_tools::Readout;
 use crate::palette::highlighted;
-use crate::shell::{EDITOR_AREA, PointerHeld, commanded_size, dragged_size};
+use crate::shell::{CentreTab, EDITOR_AREA, PointerHeld, commanded_size, dragged_size};
 use crate::strings::{Text, command_count, exit_status, match_count, missing_textures};
 use crate::theme::{Mode, Theme, ThemeError, Token, semibold};
 use crate::{App, AppError};
@@ -289,12 +291,17 @@ fn the_ui_code_has_no_string_literals() {
         ("terminal.rs", include_str!("terminal.rs")),
         ("picker.rs", include_str!("picker.rs")),
         ("git_panel.rs", include_str!("git_panel.rs")),
+        ("features.rs", include_str!("features.rs")),
+        ("agent/feature.rs", include_str!("agent/feature.rs")),
+        ("project/feature.rs", include_str!("project/feature.rs")),
         ("multibuffer.rs", include_str!("multibuffer.rs")),
         ("project.rs", include_str!("project.rs")),
         ("editor.rs", include_str!("editor.rs")),
+        ("editors.rs", include_str!("editors.rs")),
         ("code_style.rs", include_str!("code_style.rs")),
         ("menu.rs", include_str!("menu.rs")),
         ("map_editor.rs", include_str!("map_editor.rs")),
+        ("map_feature.rs", include_str!("map_feature.rs")),
         ("map_browser.rs", include_str!("map_browser.rs")),
         ("map_fields.rs", include_str!("map_fields.rs")),
         ("map_groups.rs", include_str!("map_groups.rs")),
@@ -2161,7 +2168,8 @@ fn entities_are_placed_and_linked_without_typing() {
 #[test]
 fn the_map_filter_is_found_again_after_an_edit() {
     use crate::map_editor::{MapEditor, ShowFilter};
-    use qs_workbench::map_edit::{GameMode, MapRevision, Skill};
+    use qs_map_edit::MapRevision;
+    use qs_workbench::map_filter::{GameMode, Skill};
 
     let mut editor = MapEditor::default();
     let read = MapRevision::default();
@@ -3313,4 +3321,126 @@ fn a_prefab_is_saved_and_dragged_in() {
     shell.execute("edit.undo", json!({})).unwrap();
     harness.run();
     assert_eq!(brush_count(&harness, 0), before);
+}
+
+// spec PRJ-1.6: a file opened from Finder or the command line opens in the nearest project
+// above it, which opens first unless it is open; a map outside every project opens in the
+// one open; a file with no project above it opens its folder when no project is open; a
+// folder is a project
+#[test]
+fn opened_files_open_in_their_project() {
+    let dir = TempDir::new("open-paths");
+    let root = dir.path();
+    let project = root.join("mod/qc");
+    fs::create_dir_all(project.join("client")).unwrap();
+    fs::write(project.join("progs.src"), "progs.dat\nclient/player.qc\n").unwrap();
+    fs::write(project.join("client/player.qc"), "void() player = {};\n").unwrap();
+    fs::create_dir_all(root.join("maps")).unwrap();
+    fs::write(
+        root.join("maps/start.map"),
+        "{\n\"classname\" \"worldspawn\"\n}\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("loose")).unwrap();
+    fs::write(root.join("loose/a.qc"), "void() a = {};\n").unwrap();
+    let mut harness = accessible();
+    let shell = harness.state_mut().as_mut().unwrap().shell_mut();
+
+    shell.open_paths([project.join("client/player.qc")]);
+    assert_eq!(shell.workbench().root(), Some(project.as_path()));
+    assert_eq!(
+        shell
+            .workbench()
+            .open()
+            .map(|open| open.path().to_path_buf()),
+        Some(project.join("client/player.qc"))
+    );
+
+    shell.open_paths([root.join("maps/start.map")]);
+    assert_eq!(shell.workbench().root(), Some(project.as_path()));
+    assert_eq!(
+        shell.workbench().map().map(|map| map.path().to_path_buf()),
+        Some(root.join("maps/start.map"))
+    );
+
+    shell.open_paths([root.join("loose/a.qc")]);
+    assert_eq!(shell.workbench().root(), Some(project.as_path()));
+
+    let mut harness = accessible();
+    let shell = harness.state_mut().as_mut().unwrap().shell_mut();
+    shell.open_paths([root.join("loose/a.qc")]);
+    assert_eq!(shell.workbench().root(), Some(root.join("loose").as_path()));
+    shell.open_paths([root.join("mod/qc")]);
+    assert_eq!(shell.workbench().root(), Some(project.as_path()));
+}
+
+// spec PRJ-1.6: a second launch with paths hands them to the window already running, over the
+// app's socket, which opens them in their project and shows them; with no paths, or no window
+// answering, the launch opens its own; of launches that start together, the one holding the
+// app's lock file opens the window
+#[test]
+fn a_second_launch_hands_its_paths_to_the_running_window() {
+    let dir = TempDir::new("forward");
+    let project = dir.path().join("mod");
+    fs::create_dir_all(&project).unwrap();
+    fs::write(project.join("progs.src"), "progs.dat\nworld.qc\n").unwrap();
+    fs::write(project.join("world.qc"), "void() worldspawn = {};\n").unwrap();
+    let socket = if cfg!(windows) {
+        PathBuf::from(format!(
+            r"\\.\pipe\quakec-studio-forward-{}",
+            std::process::id()
+        ))
+    } else {
+        dir.path().join("app.sock")
+    };
+    let world = project.join("world.qc");
+    let lock = dir.path().join("cache/app.lock");
+    assert!(!forward_paths(&socket, std::slice::from_ref(&world)));
+    // The first launch takes the lock and opens the window; another that starts while no
+    // window answers yet opens its own once it has waited.
+    let first = Launch::claim(
+        Some(&lock),
+        &socket,
+        std::slice::from_ref(&world),
+        Duration::ZERO,
+    );
+    assert!(matches!(first, Launch::Window(Some(_))), "{first:?}");
+    let second = Launch::claim(
+        Some(&lock),
+        &socket,
+        std::slice::from_ref(&world),
+        Duration::ZERO,
+    );
+    assert!(matches!(second, Launch::Window(None)), "{second:?}");
+
+    let ctx = egui::Context::default();
+    let mut app = App::checked_on_the_frame(&ctx, None).unwrap();
+    let (woken, wake) = std::sync::mpsc::channel();
+    let host = Host::listen(&socket, move || {
+        let _sent = woken.send(());
+    })
+    .unwrap();
+    app.shell_mut().set_host(host);
+    assert!(!forward_paths(&socket, &[]));
+    let start = project.join("start.map");
+    fs::write(&start, "{\n\"classname\" \"worldspawn\"\n}\n").unwrap();
+    app.shell_mut().open_paths([start]);
+    frame(&ctx, &mut app);
+    assert_eq!(app.shell().centre_tab(), CentreTab::Map);
+    // With the window answering, a launch that cannot take the lock hands it its paths.
+    let forwarded = std::thread::spawn({
+        let world = world.clone();
+        move || Launch::claim(Some(&lock), &socket, &[world], Duration::ZERO)
+    });
+    wake.recv().unwrap();
+    frame(&ctx, &mut app);
+    assert!(matches!(forwarded.join().unwrap(), Launch::Forwarded));
+    drop(first);
+    let workbench = app.shell().workbench();
+    assert_eq!(workbench.root(), Some(project.as_path()));
+    assert_eq!(
+        workbench.open().map(|open| open.path().to_path_buf()),
+        Some(world)
+    );
+    assert_eq!(app.shell().centre_tab(), CentreTab::Editor);
 }

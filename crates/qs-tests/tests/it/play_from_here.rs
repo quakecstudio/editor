@@ -17,6 +17,7 @@ use qs_bsp::{Bsp, BspLoader};
 use qs_map::{Brush, Item, MapFile, Surface, TexDef};
 use qs_map_light::{Light, Sampling};
 use qs_sim::{LoadOptions, UserCmd, World};
+use qs_workbench::map_compile::PlayFromHereParams;
 
 use crate::shape_stairs::{EYE, FRAME, progs};
 
@@ -143,4 +144,28 @@ fn a_map_with_no_wad_draws_with_the_stand_in() {
         &[159, 91, 83, 255],
         "pink at the top left"
     );
+}
+
+// No spec statement: MAP-13: the player's origin goes view_ofs below the camera, moved up to the
+// nearest height its box fits when the camera is near the floor; a camera inside a wall, or not a
+// point, has no room
+#[test]
+fn the_player_is_put_where_its_box_fits() {
+    let compiled = qs_map_bsp::Compiler::default()
+        .compile(&map(), None)
+        .unwrap();
+    let bsp = Bsp::read(&compiled.bsp, BspLoader::default()).unwrap();
+    let at = |eye: [f64; 3]| PlayFromHereParams { eye, angles: None }.origin_in(&bsp);
+    assert_eq!(at([-96.0, 40.0, 80.0]).unwrap(), [-96.0, 40.0, 58.0]);
+    let low = at([-96.0, 40.0, 30.0]).unwrap();
+    assert_eq!([low[0], low[1]], [-96.0, 40.0]);
+    assert!(
+        (24.0..=25.0).contains(&low[2]),
+        "lifted onto the floor: {low:?}"
+    );
+    assert!(
+        at([0.0, 80.0, 80.0]).is_err(),
+        "inside the wall between the rooms"
+    );
+    assert!(at([f64::NAN, 0.0, 80.0]).is_err());
 }

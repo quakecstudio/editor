@@ -313,7 +313,7 @@ impl Entities {
     }
 
     /// `WriteEntitiesToString`: each entity with keys, its keys last read first, and the NUL
-    /// that ends the text (LIGHT-1.6); only the id dialect has its length limit (LIGHT-1.7).
+    /// that ends the text (LIGHT-1.6); only the id dialect has its length limit (LIGHT-1.9).
     pub(crate) fn written(&self, dialect: Dialect) -> Result<Vec<u8>, LightError> {
         let mut out = Vec::new();
         for entity in &self.all {

@@ -36,6 +36,7 @@ const qs_sim::keys::K_SHIFT
 const qs_sim::keys::K_SPACE
 const qs_sim::keys::K_TAB
 const qs_sim::keys::K_UPARROW
+const qs_sim::messages::DEFAULT_VIEWHEIGHT
 const qs_sim::messages::NET_FAT_PVS_DISTANCE
 const qs_sim::messages::NET_GAME_COOP
 const qs_sim::messages::NET_GAME_DEATHMATCH
@@ -370,6 +371,7 @@ fn qs_sim::world::World::load
 fn qs_sim::world::World::machine
 fn qs_sim::world::World::map
 fn qs_sim::world::World::player_view
+fn qs_sim::world::World::prepare
 fn qs_sim::world::World::qc_time
 fn qs_sim::world::World::save_spawn_parms
 fn qs_sim::world::World::set_command
@@ -380,6 +382,7 @@ fn qs_sim::world::World::set_setting
 fn qs_sim::world::World::setting
 fn qs_sim::world::World::settle
 fn qs_sim::world::World::signon
+fn qs_sim::world::World::spawn_map
 fn qs_sim::world::World::take_client_commands
 fn qs_sim::world::World::take_host_command
 fn qs_sim::world::World::take_messages
@@ -511,6 +514,7 @@ use qs_sim::Change = world::Change
 use qs_sim::ChangeKind = world::ChangeKind
 use qs_sim::ClientCommand = world::ClientCommand
 use qs_sim::ClientMessages = messages::ClientMessages
+use qs_sim::DEFAULT_VIEWHEIGHT = messages::DEFAULT_VIEWHEIGHT
 use qs_sim::EdictChange = world::EdictChange
 use qs_sim::EdictNumber = qc_edict::EdictNumber
 use qs_sim::EditError = world::EditError

@@ -193,6 +193,14 @@ impl AppDirs {
     pub fn app_socket(&self) -> &Path {
         &self.app_socket
     }
+
+    /// The file the desktop app holds a lock on while its window is open: `app.lock` in the
+    /// cache directory. Of several launches at once, the one that takes the lock opens the
+    /// window and the others hand it their paths over [`AppDirs::app_socket`].
+    #[must_use]
+    pub fn app_lock(&self) -> PathBuf {
+        self.cache.join(APP_LOCK)
+    }
 }
 
 /// Resolves the directories for the running platform from the process environment.
@@ -246,6 +254,8 @@ where
 /// `base` with each of `parts` joined in turn.
 /// The file name of the app's socket on macOS and Linux.
 const APP_SOCKET: &str = "app.sock";
+/// The name of the desktop app's lock file.
+const APP_LOCK: &str = "app.lock";
 
 /// A named pipe for the user whose cache directory is `cache`: Windows has no socket files, so
 /// the pipe's name carries the directory, its letters and digits kept and the rest made `-`.
@@ -499,6 +509,7 @@ mod tests {
             .dirs(env_of(&[("HOME", "/Users/q")]))
             .unwrap();
         assert_eq!(mac.app_socket(), mac.cache().join("app.sock"));
+        assert_eq!(mac.app_lock(), mac.cache().join("app.lock"));
         let linux = Platform::Linux
             .dirs(env_of(&[("HOME", "/home/q")]))
             .unwrap();

@@ -29,3 +29,4 @@ cp -a %{tree}/. %{buildroot}/
 /usr/lib/quakec-studio
 /usr/share/applications/com.quakecstudio.QuakeCStudio.desktop
 /usr/share/icons/hicolor/scalable/apps/com.quakecstudio.QuakeCStudio.svg
+/usr/share/mime/packages/com.quakecstudio.QuakeCStudio.xml

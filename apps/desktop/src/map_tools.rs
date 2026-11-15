@@ -21,10 +21,10 @@ use qs_map::shapes::{
     SHAPE_MAX_RINGS, SHAPE_MAX_ROCK_POINTS, SHAPE_MAX_SIDES, SHAPE_MAX_SPHEROID_FACES,
     SHAPE_MIN_RINGS, SHAPE_MIN_ROCK_POINTS, SHAPE_MIN_SIDES, SHAPE_STEP_DEPTH, SHAPE_STEP_HEIGHT,
 };
-use qs_workbench::map_edit::{
+use qs_map_edit::uv::{FaceRef, UvChoice};
+use qs_map_edit::{
     ArchWall, Axis, BrushIndex, Circle, Climb, EntityIndex, KeepPart, Lock, ShapeSpec,
 };
-use qs_workbench::map_uv::{FaceRef, UvChoice};
 
 use crate::map_editor::{GRID, box_lines};
 use crate::map_panes::{Pane, Projection};
@@ -1301,7 +1301,7 @@ mod tests {
         TextureChange, at_height,
     };
     use crate::map_scene::{BrushShape, Scene};
-    use qs_workbench::map_edit::{BrushIndex, EntityIndex, KeepPart};
+    use qs_map_edit::{BrushIndex, EntityIndex, KeepPart};
 
     fn down_from(x: f32, y: f32) -> super::Ray {
         ([x, y, 100.0], [0.0, 0.0, -1.0])

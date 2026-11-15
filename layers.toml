@@ -38,6 +38,7 @@ qs-models = "L6"
 qs-diff = "L0"
 qs-layout = "L5"
 qs-settings = "L5"
+qs-map-edit = "L5"
 qs-workbench = "L5"
 qs-bridge = "L4"
 qs-engine = "L4"
@@ -60,3 +61,8 @@ qs-vfs = "L0"
 qs-wad = "L0"
 qs-wav = "L0"
 xtask = "tooling"
+
+# Direct dependencies a crate may not have, whatever their layers: a crate name, or a prefix
+# ending in `-`. The map editor reads no QuakeC (P6-40).
+[forbidden]
+qs-map-edit = ["qc-", "qs-workbench", "qs-engine"]

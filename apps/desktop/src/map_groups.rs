@@ -5,7 +5,7 @@
 //! show the selection again. Each is a [`GroupAction`] the shell runs as a `map.*` command.
 
 use eframe::egui::{Key, Modifiers, RichText, Ui};
-use qs_workbench::map_edit::{EntityIndex, LayerInfo, LayerOption, Switch};
+use qs_map_edit::{EntityIndex, LayerInfo, LayerOption, Switch};
 
 use crate::strings::{Text, layer_count};
 use crate::theme::{Theme, Token};

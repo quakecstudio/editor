@@ -3,7 +3,10 @@
 //! The debugger (WORLD-9): breakpoints by line, stopping before a statement, stepping by
 //! replaying the frame from a snapshot, and where a statement is.
 
+use std::rc::Rc;
+
 use crate::debug::BreakpointEdit;
+use crate::spawn::LoadError;
 use qc_progs::Progs;
 use qc_vm::ErrorKind;
 
@@ -83,7 +86,7 @@ fn replay(run: &mut Running, snapshot: &World) -> Option<Stop> {
 
 // spec WORLD-9.4: a breakpoint at a file and line is the first statement on that line of a
 // function in that file; a line with none resolves to nothing
-// spec WORLD-9.1: a frame stops before the breakpoint's statement, nothing of it run
+// spec WORLD-9.6: a frame stops before the breakpoint's statement, nothing of it run
 #[test]
 fn a_breakpoint_stops_the_think_before_its_line() {
     let (mut run, lines) = ticking();
@@ -209,7 +212,7 @@ fn stepping_replays_the_frame() {
     assert_eq!(run.world.float(2, "armorvalue"), 3.0);
 }
 
-// spec WORLD-9.1: without breakpoints, or set to finish, the frames run as without a debugger
+// spec WORLD-9.6: without breakpoints, or set to finish, the frames run as without a debugger
 #[test]
 fn a_debugger_without_breakpoints_changes_nothing() {
     let (mut run, _) = ticking();
@@ -343,4 +346,134 @@ fn watch_expressions_read_the_stopped_state() {
     assert_eq!(eval("1 + 2"), Err(EvalError::Syntax));
     assert_eq!(eval("'1 2'"), Err(EvalError::Syntax));
     assert_eq!(eval("self..frags"), Err(EvalError::Syntax));
+}
+
+/// A door whose spawn function sets fields on three lines.
+const SPAWNING: &str = "void() door = {
+    self.frags = 1;
+    self.health = 2;
+    self.armorvalue = 3;
+};
+";
+
+/// Two doors' world before they spawn, its progs and the progs' lines.
+fn prepared() -> (World, Vec<u8>, Vec<i32>) {
+    let (progs_bytes, lines) = compile_with_lines(SPAWNING);
+    let progs = Progs::read(&progs_bytes).unwrap();
+    let lump = format!(
+        "{{\n\"classname\" \"worldspawn\"\n}}\n{}{}",
+        entity("door", "0 0 0", ""),
+        entity("door", "64 0 0", "")
+    );
+    let mut map = super::bsp(&ledge());
+    map.entity_lump = Box::leak(lump.into_bytes().into_boxed_slice());
+    let read: crate::ModelFiles = Rc::new(|_: &str| None);
+    let world = World::prepare(&progs, "test", &map, read, LoadOptions::default()).unwrap();
+    (world, progs_bytes, lines)
+}
+
+/// Spawns `world`'s entities; the stop when the debugger stopped the spawning.
+fn spawn(world: &mut World, progs: &Progs<'_>) -> Option<Stop> {
+    match world.spawn_map(progs) {
+        Ok(()) => None,
+        Err(WorldError::Spawn(LoadError::Run(error))) if error.kind == ErrorKind::Interrupted => {
+            world.debugger().and_then(Debugger::stopped)
+        }
+        Err(error) => panic!("{error}"),
+    }
+}
+
+/// Each door's three fields.
+fn doors(world: &World) -> Vec<[f32; 3]> {
+    [2, 3]
+        .map(|edict| {
+            [
+                world.float(edict, "frags"),
+                world.float(edict, "health"),
+                world.float(edict, "armorvalue"),
+            ]
+        })
+        .to_vec()
+}
+
+// spec WORLD-9.6: a breakpoint in a spawn function stops the level's spawning before its line
+// spec WORLD-9.7: going on replays the spawning from the prepared world, skipping the counted
+// statements, to the next stop and then to the load a world with no debugger makes
+#[test]
+fn a_breakpoint_in_a_spawn_function_stops_the_load() {
+    let (prepared, progs_bytes, lines) = prepared();
+    let progs = Progs::read(&progs_bytes).unwrap();
+    let health = resolve(&progs, &lines, "t.qc", 3).unwrap();
+    let mut debugger = Debugger::new(lines);
+    debugger.set_breakpoint(health, BreakpointEdit::Set);
+
+    let mut world = prepared.clone();
+    world.set_debugger(Some(debugger));
+    let first = spawn(&mut world, &progs).expect("the first door stops");
+    assert_eq!(first.breakpoint, Some(health));
+    assert_eq!(
+        doors(&world),
+        [[1.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+        "the first door stopped before its health"
+    );
+
+    let mut go_on = |stop: Stop| {
+        let mut debugger = world.debugger().cloned().unwrap();
+        debugger.run_to_breakpoint(stop.count);
+        world = prepared.clone();
+        world.set_debugger(Some(debugger));
+        spawn(&mut world, &progs)
+    };
+    let second = go_on(first).expect("the second door stops at the same line");
+    assert_eq!(second.breakpoint, Some(health));
+    assert!(second.count > first.count);
+    assert_eq!(
+        go_on(second),
+        None,
+        "going on from the last stop finishes the load"
+    );
+
+    let mut plain = prepared.clone();
+    plain.spawn_map(&progs).unwrap();
+    assert_eq!(doors(&world), doors(&plain));
+    assert_eq!(doors(&plain), [[1.0, 2.0, 3.0], [1.0, 2.0, 3.0]]);
+}
+
+// spec WORLD-9.6: with a debugger and no breakpoint the spawning runs as without one
+#[test]
+fn a_load_with_no_breakpoint_runs_as_without_a_debugger() {
+    let (prepared, progs_bytes, lines) = prepared();
+    let progs = Progs::read(&progs_bytes).unwrap();
+    let mut world = prepared.clone();
+    world.set_debugger(Some(Debugger::new(lines)));
+    assert_eq!(spawn(&mut world, &progs), None);
+    let mut plain = prepared;
+    plain.spawn_map(&progs).unwrap();
+    assert_eq!(doors(&world), doors(&plain));
+    assert_eq!(
+        plain.spawn_map(&progs).ok(),
+        Some(()),
+        "nothing spawns twice"
+    );
+    assert_eq!(doors(&plain), [[1.0, 2.0, 3.0], [1.0, 2.0, 3.0]]);
+}
+
+// spec WORLD-9.6: an entity spawned during play runs its spawn function without the debugger
+#[test]
+fn an_entity_spawned_in_play_runs_without_the_debugger() {
+    let (mut world, progs_bytes, lines) = prepared();
+    let progs = Progs::read(&progs_bytes).unwrap();
+    world.spawn_map(&progs).unwrap();
+    let health = resolve(&progs, &lines, "t.qc", 3).unwrap();
+    let mut debugger = Debugger::new(lines);
+    debugger.set_breakpoint(health, BreakpointEdit::Set);
+    world.set_debugger(Some(debugger));
+    let pairs = [("classname".to_owned(), "door".to_owned())];
+    let edict = world.spawn_entity(&progs, &pairs).unwrap();
+    assert_eq!(world.debugger().and_then(Debugger::stopped), None);
+    assert_eq!(
+        world.float(edict, "health"),
+        2.0,
+        "its spawn function ran to its end"
+    );
 }

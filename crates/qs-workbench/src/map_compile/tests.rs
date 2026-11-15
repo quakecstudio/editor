@@ -11,18 +11,37 @@ use std::path::{Path, PathBuf};
 use qc_project::FsLoader;
 use qs_commands::{Registry, Session as Commands};
 use qs_map::{Brush, Item, MapFile, Surface, TexDef};
-use qs_wad::write::WadBuilder;
+use qs_wad::texture::Palette;
 use serde_json::json;
 
-use super::{MAP_COMPILE, MAP_LEAKS, MAP_PORTALS, MapPortals, MapReport, Seal};
-use crate::map_edit::MAP_OPEN;
+use super::{MAP_COMPILE, MAP_LEAKS, MAP_PORTALS, MapPortals};
 use crate::preview::{HasPreview, Preview, PreviewConfig};
 use crate::{Config, HasWorkbench, Workbench, register, register_preview};
+use qs_map_edit::testing::{Opening, room};
+use qs_map_edit::texture_import::{DitherChoice, TEXTURE_IMPORT, quantized};
+use qs_map_edit::{MAP_OPEN, MapReport, Seal};
 
 /// A workbench and a preview with no game.
 pub(crate) struct Context {
     pub(crate) workbench: Workbench<FsLoader>,
     preview: Preview,
+}
+
+impl crate::HasMap for Context {
+    type Project = Workbench<FsLoader>;
+    type Live = Preview;
+
+    fn map_store(&mut self) -> &mut crate::MapStore {
+        self.workbench.maps_mut()
+    }
+
+    fn map_project(&mut self) -> &mut Workbench<FsLoader> {
+        &mut self.workbench
+    }
+
+    fn live_map(&mut self) -> Option<&mut Preview> {
+        Some(&mut self.preview)
+    }
 }
 
 impl HasWorkbench for Context {
@@ -31,81 +50,12 @@ impl HasWorkbench for Context {
     fn workbench(&mut self) -> &mut Workbench<FsLoader> {
         &mut self.workbench
     }
-
-    fn preview(&mut self) -> Option<&mut Preview> {
-        Some(&mut self.preview)
-    }
 }
 
 impl HasPreview for Context {
     fn workbench_and_preview(&mut self) -> (&mut Workbench<FsLoader>, &mut Preview) {
         (&mut self.workbench, &mut self.preview)
     }
-}
-
-/// A texture lump `name`, 16 by 16, every pixel 1.
-fn miptex(name: &str) -> Vec<u8> {
-    let mut lump = name.as_bytes().to_vec();
-    lump.resize(16, 0);
-    for value in [16_u32, 16, 40, 40 + 256, 40 + 256 + 64, 40 + 256 + 64 + 16] {
-        lump.extend_from_slice(&value.to_le_bytes());
-    }
-    lump.resize(40 + 256 + 64 + 16 + 4, 1);
-    lump
-}
-
-/// A room of six walls of `wall` around -128 to 128, its +y wall left out when `open`, the
-/// first wall's texture `first`, with a player start inside, naming `test.wad`; written with
-/// that WAD (holding only `wall`) into a folder of its own; the map's path.
-pub(crate) fn room(name: &str, first: &str, open: Opening) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("qs-wb-compile-{name}-{}", std::process::id()));
-    let _gone = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    let mut wad = WadBuilder::new();
-    wad.add(b"wall", qs_wad::WAD_TYP_MIPTEX, miptex("wall"))
-        .unwrap();
-    std::fs::write(dir.join("test.wad"), wad.to_bytes().unwrap()).unwrap();
-    let mut file = MapFile::parse(
-        b"{\n\"classname\" \"worldspawn\"\n\"wad\" \"test.wad\"\n}\n\
-          {\n\"classname\" \"info_player_start\"\n\"origin\" \"0 0 24\"\n}\n",
-    )
-    .unwrap();
-    let surface = |texture: &str| Surface {
-        texture: texture.as_bytes().to_vec(),
-        texdef: TexDef::Standard {
-            shift: [0.0; 2],
-            rotate: 0.0,
-            scale: [1.0; 2],
-        },
-    };
-    let (a, b) = (128.0, 144.0);
-    let walls = [
-        ([-b, -b, -b], [b, b, -a]),
-        ([-b, -b, a], [b, b, b]),
-        ([-b, -b, -a], [-a, b, a]),
-        ([a, -b, -a], [b, b, a]),
-        ([-a, -b, -a], [a, -a, a]),
-        ([-a, a, -a], [a, b, a]),
-    ];
-    let kept = match open {
-        Opening::Sealed => walls.len(),
-        Opening::Open => walls.len().saturating_sub(1),
-    };
-    for (i, (min, max)) in walls.into_iter().take(kept).enumerate() {
-        let texture = if i == 0 { first } else { "wall" };
-        let brush = Brush::cuboid(min, max, &surface(texture)).unwrap();
-        file.entities[0].items.push(Item::Brush(brush));
-    }
-    let path = dir.join(format!("{name}.map"));
-    std::fs::write(&path, file.to_bytes()).unwrap();
-    path
-}
-
-/// Whether the room has its +y wall.
-#[derive(Clone, Copy)]
-pub(crate) enum Opening {
-    Sealed,
-    Open,
 }
 
 /// A session with the map at `path` open.
@@ -346,4 +296,66 @@ fn a_leaking_compile_removes_the_last_portal_file() {
     assert_eq!(found.seal, Seal::Leaks);
     assert!(!path.with_extension("prt").exists());
     assert!(session.execute(MAP_PORTALS, json!({})).is_err());
+}
+
+// No spec statement: P6-16: an imported texture put on a brush compiles into the BSP with the
+// picture the preview showed, from the WAD the import named in the map's world
+#[test]
+fn an_imported_texture_compiles_into_the_bsp() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/desktop/fixtures/keep");
+    let dir = std::env::temp_dir().join(format!("qs-wb-compile-import-{}", std::process::id()));
+    let _gone = std::fs::remove_dir_all(&dir);
+    for file in [
+        "progs.src",
+        "defs.qc",
+        "world.qc",
+        "maps/keep.map",
+        "gfx/keep.wad",
+        "gfx/palette.lmp",
+    ] {
+        let to = dir.join(file);
+        std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+        std::fs::copy(fixture.join(file), to).unwrap();
+    }
+    let image = dir.join("brick16.png");
+    let picture = image::RgbaImage::from_pixel(16, 16, image::Rgba([200, 40, 30, 255]));
+    let mut png = std::io::Cursor::new(Vec::new());
+    picture.write_to(&mut png, image::ImageFormat::Png).unwrap();
+    std::fs::write(&image, png.into_inner()).unwrap();
+    let mut session = open(&dir.join("maps/keep.map"));
+    session
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    session
+        .execute(TEXTURE_IMPORT, json!({ "path": image }))
+        .unwrap();
+    session
+        .execute(
+            "map.brush_texture",
+            json!({ "entity": 4, "brushes": [0], "texture": "brick16" }),
+        )
+        .unwrap();
+    let report: MapReport =
+        serde_json::from_value(session.execute("map.compile", json!({})).unwrap()).unwrap();
+    assert!(report.missing_textures.is_empty(), "{report:?}");
+    let bsp_bytes = std::fs::read(dir.join("maps/keep.bsp")).unwrap();
+    let bsp = qs_bsp::Bsp::read(&bsp_bytes, qs_bsp::BspLoader::default()).unwrap();
+    let texture = bsp
+        .textures
+        .iter()
+        .flatten()
+        .find(|texture| texture.name == b"brick16")
+        .unwrap();
+    let palette = Palette::from_lmp(&std::fs::read(dir.join("gfx/palette.lmp")).unwrap()).unwrap();
+    let compiled = palette
+        .decode_pixels(b"brick16", texture.width, texture.height, texture.pixels)
+        .unwrap();
+    let shown = quantized(
+        &std::fs::read(&image).unwrap(),
+        "brick16",
+        &palette,
+        DitherChoice::None,
+    )
+    .unwrap();
+    assert_eq!(compiled, shown);
 }

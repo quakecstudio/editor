@@ -4,7 +4,8 @@
 
   The MSI of QuakeC Studio (P4-18), built with WiX 5 by packaging/windows/package.sh, which
   fills in @MSI_VERSION@. The upgrade code is the same for every version, so a new MSI
-  replaces the old.
+  replaces the old. The file types it registers are those the macOS Info.plist and the Linux
+  MIME types declare: .qc, .qh, .map and .bsp.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="QuakeC Studio" Manufacturer="QuakeC Studio contributors"
@@ -16,6 +17,35 @@
     </StandardDirectory>
     <ComponentGroup Id="Files" Directory="INSTALLFOLDER">
       <Component><File Source="quakec-studio.exe" /></Component>
+      <!-- The files Explorer offers to open with the app (Open with), passed as its argument.
+           The app becomes the default for no type: Windows asks the user, or keeps theirs. -->
+      <Component Id="FileTypes" Guid="7D2E4A6C-1B3F-4C5D-8E9A-2F4B6C8D0E1A">
+        <RegistryValue Root="HKLM" Key="Software\Classes\QuakeCStudio.Source" Value="QuakeC source" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\QuakeCStudio.Source\DefaultIcon"
+            Value="&quot;[INSTALLFOLDER]quakec-studio.exe&quot;,0" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\QuakeCStudio.Source\shell\open\command"
+            Value="&quot;[INSTALLFOLDER]quakec-studio.exe&quot; &quot;%1&quot;" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\QuakeCStudio.Map" Value="Quake map source" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\QuakeCStudio.Map\DefaultIcon"
+            Value="&quot;[INSTALLFOLDER]quakec-studio.exe&quot;,0" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\QuakeCStudio.Map\shell\open\command"
+            Value="&quot;[INSTALLFOLDER]quakec-studio.exe&quot; &quot;%1&quot;" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\QuakeCStudio.Bsp" Value="Quake BSP level" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\QuakeCStudio.Bsp\DefaultIcon"
+            Value="&quot;[INSTALLFOLDER]quakec-studio.exe&quot;,0" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\QuakeCStudio.Bsp\shell\open\command"
+            Value="&quot;[INSTALLFOLDER]quakec-studio.exe&quot; &quot;%1&quot;" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.qc\OpenWithProgids" Name="QuakeCStudio.Source"
+            Value="" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.qh\OpenWithProgids" Name="QuakeCStudio.Source"
+            Value="" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.map\OpenWithProgids" Name="QuakeCStudio.Map"
+            Value="" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.bsp\OpenWithProgids" Name="QuakeCStudio.Bsp"
+            Value="" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\QuakeC Studio" Name="FileTypes" Type="integer"
+            Value="1" KeyPath="yes" />
+      </Component>
       <Component><File Source="quakec-engine.exe" /></Component>
       <Component><File Source="quakec-ide.exe" /></Component>
       <Component><File Source="quakec-lsp.exe" /></Component>

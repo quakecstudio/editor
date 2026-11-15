@@ -13,8 +13,9 @@ use std::time::Duration;
 use qs_engine::{
     Client, EntityTarget, Flavour, InspectWhat, LaunchSpec, StepKind, prepare_run_root,
 };
+use qs_map_edit::{EntityIndex, LiveChange};
+use qs_workbench::SendLive;
 use qs_workbench::ids::Edict;
-use qs_workbench::map_edit::{EntityIndex, LiveChange};
 use serde_json::{Value, json};
 
 /// How long an event may take to come.

@@ -12,8 +12,6 @@
 //!
 //! Every string comes from [`crate::strings`]; a test fails on a string literal here.
 
-use qs_agent::history;
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use eframe::egui::containers::panel::PanelState;
@@ -27,124 +25,65 @@ use qs_editor_view::{
     Fixable, KeyMode, LineNote, NoteSeverity, Position, Selection, ViewStyle, Wrap,
 };
 use qs_layout::{
-    EditorRequest, Focus, GO_TO_LINE, HasLayout, Layout, MAP_PANES, MapPanesParams, Outline, Panel,
-    RESIZE_PANEL, ResizePanelParams, SoftWrap, Split, TOGGLE_PANEL, TogglePanelParams,
+    EditorRequest, Focus, GO_TO_LINE, HasLayout, Layout, Outline, Panel, RESIZE_PANEL,
+    ResizePanelParams, SoftWrap, Split, TOGGLE_PANEL, TogglePanelParams,
 };
+use qs_map_edit::opens_in_map_editor;
 use qs_render::{Camera, MapMesh};
-use qs_settings::{Scope as SettingsScope, Setting, SettingsFile, SettingsStore};
-use qs_templates::{GitHub, NEW_PROJECT, NewProjectParams, Template};
-use qs_workbench::checkpoints::{RESTORE_CHECKPOINT, RestoreCheckpointParams};
-use qs_workbench::debug::Location;
+use qs_settings::SettingsFile;
+use qs_templates::{GitHub, Template};
+use qs_workbench::TASK_LIST;
 use qs_workbench::dock::DockFrame;
-use qs_workbench::engine::{ENGINE_SCREENSHOT, EngineScreenshotParams, Screenshot};
-use qs_workbench::entity_classes::{EntitiesFound, EntitiesParams, PROJECT_ENTITIES};
-use qs_workbench::export::{ExportParams, Exported, PROJECT_EXPORT};
 use qs_workbench::game_files::GameFiles;
-use qs_workbench::git::{
-    GIT_BLAME, GIT_BRANCHES, GIT_COMMIT, GIT_CONFLICTS, GIT_CREATE_BRANCH, GIT_DIFF, GIT_HEAD_TEXT,
-    GIT_LOG, GIT_RESOLVE, GIT_STAGE, GIT_STATUS, GIT_SWITCH, GIT_UNSTAGE, GitBranchParams,
-    GitChange, GitCommitParams, GitConflict, GitDiffParams, GitHunk, GitLogParams, GitPathParams,
-    GitResolveParams, GitSide, GitStageParams, GitStatus,
-};
-use qs_workbench::ids::{ActionIndex, TerminalIndex, WatchIndex};
-use qs_workbench::map_backup::{
-    Backup, MAP_BACKUP, MAP_BACKUPS, MAP_RESTORE_BACKUP, RestoreParams,
-};
-use qs_workbench::map_compile::{
-    MAP_LEAKS, MAP_PLAY_FROM_HERE, MAP_PORTALS, MapPortals, PlayFromHereParams,
-};
-use qs_workbench::map_edit::{
-    BSP_EXTENSION, BspSave, EntityKeys, EntityParams, FILES_CHANGED, FilesChanged,
-    FilesChangedParams, MAP_COMPARE, MAP_DELETE, MAP_DUPLICATE, MAP_ENTITY, MAP_EXTENSION,
-    MAP_MOVE, MAP_OPEN, MAP_REMOVE_KEY, MAP_RESOLVE, MAP_ROTATE, MAP_SAVE, MAP_SELECT, MAP_SET_KEY,
-    MapDifference, MapDocument, MapOnDisk, MapOpenParams, MapSaved, MoveParams, RemoveKeyParams,
-    ResolveParams, RotateParams, SaveParams, SelectParams as MapSelectParams, SetKeyParams,
-};
-use qs_workbench::map_edit::{
-    BrushChamferParams, BrushClipParams, BrushCreateParams, BrushExtrudeParams, BrushHollowParams,
-    BrushIntersectParams, BrushMergeParams, BrushMoveParams, BrushParams, BrushScaleParams,
-    BrushShapeParams, BrushShearParams, BrushSplitEdgeParams, BrushSplitFaceParams,
-    BrushSweepParams, BrushTextureParams, BrushVertexParams, BrushVerticesParams,
-    MAP_BRUSH_CHAMFER, MAP_BRUSH_CLIP, MAP_BRUSH_CREATE, MAP_BRUSH_DELETE, MAP_BRUSH_EXTRUDE,
-    MAP_BRUSH_HOLLOW, MAP_BRUSH_INTERSECT, MAP_BRUSH_MERGE, MAP_BRUSH_MOVE, MAP_BRUSH_SCALE,
-    MAP_BRUSH_SHAPE, MAP_BRUSH_SHEAR, MAP_BRUSH_SPLIT_EDGE, MAP_BRUSH_SPLIT_FACE,
-    MAP_BRUSH_SUBTRACT, MAP_BRUSH_SWEEP, MAP_BRUSH_TEXTURE, MAP_BRUSH_VERTEX, MAP_BRUSH_VERTICES,
-    NewVertex, VertexMove,
-};
-use qs_workbench::map_edit::{
-    EntityListParams, LayerInfo, MAP_HIDE, MAP_ISOLATE, MAP_LAYERS, MAP_LOCK, MAP_SET_LAYER,
-    MAP_SHOW_ALL, MAP_UNLOCK_ALL, SetLayerParams,
-};
-use qs_workbench::map_edit::{
-    FilterParams, LinkParams, MAP_FILTER, MAP_LINK, MAP_PLACE, MAP_SET_FLAG, MapFiltered,
-    PlaceParams, SetFlagParams,
-};
-use qs_workbench::map_edit::{MAP_ACCEPT, MAP_REJECT, MAP_STAGED, MapHunk, MapHunksParams};
-use qs_workbench::map_edit::{
-    MAP_FIX, MAP_ISSUES, MAP_SEARCH, MapFixParams, MapFound, MapIssues, MapRevision,
-};
-use qs_workbench::map_edit::{MAP_MOVE_TO, MAP_OUTLINE, MoveToParams, OutlineParams, OutlineRow};
-use qs_workbench::map_edit::{
-    MAP_PLACE_PREFAB, MAP_PREFABS, MAP_SAVE_PREFAB, PlacePrefabParams, Prefabs, SavePrefabParams,
-};
-use qs_workbench::map_profile::{
-    MAP_CHOOSE_PROFILE, MAP_PROFILES, MAP_RUN_PROFILE, Profile, ProfileRun, RunProfileParams,
-};
-use qs_workbench::map_textures::TextureSources;
+use qs_workbench::ids::ActionIndex;
+use qs_workbench::map_profile::MAP_RUN_PROFILE;
+use qs_workbench::open_paths::{OPEN_PATHS, OpenPathsParams, PathsOpened, TAKE_OPENED_PATHS};
 use qs_workbench::search::{
     REPLACE_IN_FILE, REPLACE_RANGE, ReplaceInFileParams, ReplaceRangeParams, ReplacedInFile,
 };
-use qs_workbench::staged::HunksParams;
-use qs_workbench::terminal::{CloseParams, Opened, SendParams, TaskInfo};
-use qs_workbench::texture_import::{TEXTURE_IMPORT, TextureImportParams};
-use qs_workbench::tools::{PROJECT_FILES, PROJECT_SEARCH, ProjectSearchParams, SearchFound};
-use qs_workbench::{ACCEPT_HUNKS, REJECT_HUNKS};
-use qs_workbench::{
-    ActionInfo, CODE_ACTIONS, CODE_FIX, Code, CodeActionParams, FORMAT_FILE, INLAY_HINTS, InlayHint,
-};
+use qs_workbench::terminal::TaskInfo;
+use qs_workbench::tools::PROJECT_FILES;
+use qs_workbench::{ActionInfo, CODE_ACTIONS, CODE_FIX, Code, CodeActionParams, FORMAT_FILE};
 use qs_workbench::{
     AtParams, CHOOSE_GAME, CLOSE_FILE, COMPLETE, Candidate, CheckAfterTyping, ChooseGameParams,
-    CloseFileParams, Config, DEFINITION, DOCK, EntryKind, FileText, FsLoader, GAME, HOVER,
-    HasPreview, HasWorkbench, HoverInfo, OPEN_FILE, OPEN_PROJECT, OnLoss, OpenFile, OpenFileParams,
-    OpenProjectParams, PAUSE, PLAY, POLL, Place, PlayParams, PlayState, Preview, PreviewConfig,
-    PreviewStatus, READ_FILE, REFERENCES, RELOAD, RENAME, RESTART, RESUME, RecentProjects,
-    ReloadParams, RenameParams, SAVE_FILE, STEP, STOP, SaveFileParams, TAKE_CHECKED, UPDATE_FILE,
-    UpdateFileParams, Workbench,
-};
-use qs_workbench::{
-    BREAKPOINT, BreakpointParams, CONSOLE, ConsoleParams, STEP_BY, StepByParams, UNWATCH,
-    UnwatchParams, WATCH, WatchParams,
+    CloseFileParams, Config, DEFINITION, DOCK, EntryKind, FsLoader, HOVER, HasPreview,
+    HasWorkbench, HoverInfo, OPEN_FILE, OpenFile, OpenFileParams, PAUSE, PLAY, POLL, Place,
+    PlayParams, PlayState, Preview, PreviewConfig, PreviewStatus, REFERENCES, RELOAD, RENAME,
+    RESTART, RESUME, ReloadParams, RenameParams, SAVE_FILE, STEP, STOP, SaveFileParams,
+    TAKE_CHECKED, UPDATE_FILE, UpdateFileParams, Workbench,
 };
 use qs_workbench::{SELECT, SET_FIELD, SelectParams, SelectedEntity, SetFieldParams};
-use qs_workbench::{TASK_LIST, TERMINAL_CLOSE, TERMINAL_NEW, TERMINAL_POLL, TERMINAL_SEND};
 
 use crate::agent::{self, AgentAction, AgentPanel, ThreadIndex};
-use crate::debugger::{self, DebugAction, DebugInput};
-use crate::disk_watch::DiskWatch;
+use crate::debugger::DebugAction;
 use crate::editor::{Editor, Popup, Request};
-use crate::entities::{self, EntityAction, Outliner, Properties};
-use crate::fallback::{SystemFonts, families};
+use crate::editors::EditorsFeature;
+use crate::entities::EntityAction;
+use crate::fallback::SystemFonts;
+use crate::features::{
+    BottomAction, Commands, Dock, FeatureAction, Features, LeftAction, MapShown, ShellRequest,
+};
 use crate::finder::FileFinder;
-use crate::game_guide::{self, Guide, GuideAction};
-use crate::git_panel::{BlameShown, GitAction, GitData, GitView, git_ui};
+use crate::git_panel::TabShown;
 use crate::icons::Icon;
 use crate::keymap::{self, Scope};
-use crate::map_editor::{DiskNotice, MapAction, MapEditor, ShowFilter};
-use crate::map_groups::GroupAction;
+use crate::map_editor::MapAction;
+#[cfg(test)]
+use crate::map_editor::MapEditor;
+use crate::map_feature::MapFeature;
 use crate::map_profiles::ProfileAction;
-use crate::map_review::ReviewAction;
-use crate::map_tools::BrushAction;
 use crate::map_view::{self, MapView};
-use crate::multibuffer::{MultiAction, Multibuffer, Source as MultiSource, multibuffer_ui};
+#[cfg(test)]
+use crate::multibuffer::Multibuffer;
+use crate::multibuffer::{MultiAction, Source as MultiSource, multibuffer_ui};
 use crate::palette::Palette;
-use crate::picker::{Picker, PickerKind, PickerRow};
+use crate::picker::{PickerKind, PickerRow};
+use crate::project::ProjectFeature;
 use crate::project::{self, Jump, SymbolScope};
 use crate::strings::{Text, Truncation};
-use crate::terminal::{TerminalAction, TerminalView, terminal_ui};
-use crate::theme::{SECTION_GAP, Theme, Token, semibold};
+use crate::theme::{Theme, Token, semibold};
 #[cfg(test)]
-use qs_workbench::map_uv::FaceRef;
-use qs_workbench::map_uv::{FaceAlignParams, FaceUvParams, MAP_FACE_ALIGN, MAP_FACE_UV};
+use qs_map_edit::uv::FaceRef;
 
 /// What the window's commands work on.
 #[derive(Debug)]
@@ -163,15 +102,28 @@ impl HasPreview for Workspace {
     }
 }
 
+impl qs_map_edit::HasMap for Workspace {
+    type Project = Workbench<FsLoader>;
+    type Live = Preview;
+
+    fn map_store(&mut self) -> &mut qs_map_edit::MapStore {
+        self.workbench.maps_mut()
+    }
+
+    fn map_project(&mut self) -> &mut Workbench<FsLoader> {
+        &mut self.workbench
+    }
+
+    fn live_map(&mut self) -> Option<&mut Preview> {
+        Some(&mut self.preview)
+    }
+}
+
 impl HasWorkbench for Workspace {
     type Loader = FsLoader;
 
     fn workbench(&mut self) -> &mut Workbench<FsLoader> {
         &mut self.workbench
-    }
-
-    fn preview(&mut self) -> Option<&mut Preview> {
-        Some(&mut self.preview)
     }
 }
 
@@ -253,7 +205,7 @@ pub(crate) enum PointerHeld {
 
 /// Whether an area takes the keyboard focus this frame, as a focus request asked.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum FocusNow {
+pub(crate) enum FocusNow {
     /// It takes it.
     Take,
     /// It leaves it where it is.
@@ -273,12 +225,8 @@ impl FocusNow {
 
 /// The editor's area, whose egui id is the editor view's.
 pub(crate) const EDITOR_AREA: Area = Area::Editor;
-/// How far the player's eye is above its origin: id's `self.view_ofs = '0 0 22'` in
-/// `PutClientInServer`, so the eye is where the camera was (MAP-13).
-const PLAYER_EYE: f64 = 22.0;
-
 /// How often the open map is backed up while it has unsaved edits, in seconds (P6-20).
-const MAP_BACKUP_INTERVAL: f64 = 60.0;
+pub(crate) const MAP_BACKUP_INTERVAL: f64 = 60.0;
 
 /// The window's state.
 pub struct Shell {
@@ -297,79 +245,29 @@ pub struct Shell {
     /// The file finder.
     pub(crate) finder: FileFinder,
     symbol_scope: SymbolScope,
-    editor: Option<Editor>,
     system_fonts: SystemFonts,
     /// The window's wgpu device and formats, which the map view draws with.
     render_state: Option<RenderState>,
-    map: Option<MapView>,
-    /// The map editor's view and key editor (P5-06).
-    map_editor: MapEditor,
-    /// The map the map editor last showed, to notice one newly opened.
-    map_opened: Option<PathBuf>,
-    /// When the open map was last backed up, in egui seconds, and at which of its edits
-    /// (P6-20).
-    backed_up: (f64, MapRevision),
-    /// The modified times of the open map and the project's QuakeC, to notice another
-    /// program's writes (P5-17).
-    disk_watch: DiskWatch,
-    /// The editor's file and text revision whose characters have fonts.
-    covered: Option<(PathBuf, u64)>,
     /// The count of focus commands the shell has applied (`Layout::focus_requests`): the
     /// layout's when the window opens, so the keyboard moves only when a focus command runs.
     focus_applied: u64,
     /// The last play-loop command's error, shown on the toolbar until the next one.
     preview_error: Option<String>,
-    /// What the last export did: the zip's path, or why it failed (P4-28).
-    export_note: Option<Result<PathBuf, String>>,
-    /// Whether the guide to the game's files is shown (P3-21), and what it last found.
-    guide: (Guide, Option<GameFiles>),
-    /// The user's settings file, which keeps the game folder chosen (P3-44).
-    settings_file: Option<PathBuf>,
     /// Where the app's menu is: the system's menu bar, or the toolbar in the window (P3-44).
     menu: MenuPlace,
-    /// The Entities outliner's filter.
-    outliner: Outliner,
-    /// The Properties panel's edits.
-    properties: Properties,
-    /// The text typed in the Debugger tab's watch box and the console's command box.
-    debug_input: DebugInput,
-    /// The Terminal tab's shown tab and typed line (P4-36).
-    terminal_view: TerminalView,
-    /// The Git tab's state, and the file it last read the history of (P4-35).
-    git_view: (GitView, Option<PathBuf>),
-    /// The multibuffer the Search tab shows (P4-33).
-    multibuffer: Multibuffer,
-    /// The go to symbol picker and the tab switcher, and the place each row stands for (P4-32).
-    picker: (Picker, Vec<Jump>),
-    /// The count of editor actions the layout had asked for when last carried out.
-    editor_seen: u64,
-    /// The editor of the second pane while the editor is split, showing a file not being
-    /// edited, or the same one.
-    second: Option<Editor>,
-    /// Where the game last stopped that the editor was taken to.
-    shown_stop: Option<Location>,
-    /// The line, from 1, of the file to show once it is open in the editor.
-    pending_line: Option<(PathBuf, u32)>,
-    /// The editors of the tabs not shown, with their carets and undo histories.
-    parked: BTreeMap<PathBuf, Editor>,
-    /// The projects opened most recently, and the file they are kept in.
-    recent: (RecentProjects, Option<PathBuf>),
+    /// Each feature's state (P6-41).
+    features: Features,
+    /// The user's settings file, which keeps the game folder and the agent's permissions
+    /// (P3-44, P4-30).
+    settings_file: Option<PathBuf>,
     /// The key bindings in force, the user's keymap file over the defaults (P4-37).
     keymap: keymap::Keymap,
     /// How the code editor reads keys, from the user's settings (P4-37).
     key_mode: KeyMode,
     /// The IDE's window as last given to `preview.dock`.
     dock_frame: Option<DockFrame>,
-    /// The project open in the last frame, to see when another opens.
-    seen_root: Option<PathBuf>,
-    /// Why the last project asked for did not open.
-    project_error: Option<String>,
     /// The socket other processes run the window's commands on (AGT-7), once it is served.
     host: Option<Host>,
-    /// The agent panel's threads and provider (P4-09).
-    agent: AgentPanel,
-    /// An inline edit's answer, while the model writes it (P4-10).
-    inline: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
     /// The window's egui context, to ask for a frame from another thread.
     ctx: Option<egui::Context>,
 }
@@ -410,42 +308,17 @@ impl Shell {
             palette: Palette::default(),
             finder: FileFinder::default(),
             symbol_scope: SymbolScope::default(),
-            editor: None,
             system_fonts: SystemFonts::new(&Theme::bundled_fonts()),
             render_state: None,
-            map: None,
-            map_editor: MapEditor::default(),
-            map_opened: None,
-            backed_up: (0.0, MapRevision::default()),
-            disk_watch: DiskWatch::default(),
-            covered: None,
             focus_applied: layout.focus_requests,
             preview_error: None,
-            export_note: None,
-            guide: (Guide::Hidden, None),
-            settings_file: None,
             menu: MenuPlace::default(),
-            outliner: Outliner::default(),
-            properties: Properties::default(),
-            debug_input: DebugInput::default(),
-            terminal_view: TerminalView::default(),
-            git_view: (GitView::default(), None),
-            multibuffer: Multibuffer::default(),
-            picker: (Picker::default(), Vec::new()),
-            editor_seen: 0,
-            second: None,
-            shown_stop: None,
-            pending_line: None,
-            parked: BTreeMap::new(),
-            recent: (RecentProjects::default(), None),
+            settings_file: None,
+            features: Features::new(AgentPanel::new(Box::new(agent::provider_model))),
             keymap: keymap::Keymap::defaults(),
             key_mode: KeyMode::Standard,
-            seen_root: None,
             dock_frame: None,
-            project_error: None,
             host: None,
-            agent: AgentPanel::new(Box::new(agent::provider_model)),
-            inline: None,
             ctx: None,
         })
     }
@@ -490,7 +363,9 @@ impl Shell {
     /// The file in the editor and its primary caret, once the editor has drawn it.
     #[must_use]
     pub fn caret(&self) -> Option<(&Path, Position)> {
-        self.editor
+        self.features
+            .editors
+            .editor
             .as_ref()
             .map(|editor| (editor.path.as_path(), editor.view.state().primary().head))
     }
@@ -498,19 +373,19 @@ impl Shell {
     /// The editor of the second pane, while the editor is split (P4-32).
     #[cfg(test)]
     pub(crate) const fn second_pane_editor(&self) -> Option<&Editor> {
-        self.second.as_ref()
+        self.features.editors.second.as_ref()
     }
 
     /// The editor, once it has drawn a file.
     #[cfg(test)]
     pub(crate) const fn editor(&self) -> Option<&Editor> {
-        self.editor.as_ref()
+        self.features.editors.editor.as_ref()
     }
 
     /// The editor, once it has drawn a file, to change.
     #[cfg(test)]
     pub(crate) const fn editor_mut(&mut self) -> Option<&mut Editor> {
-        self.editor.as_mut()
+        self.features.editors.editor.as_mut()
     }
 
     /// Replaces the system font fallback, as a test does to choose what the "system" has.
@@ -528,7 +403,9 @@ impl Shell {
     /// The editor's text, edits included, once the editor has drawn a file.
     #[must_use]
     pub fn editor_text(&self) -> Option<String> {
-        self.editor
+        self.features
+            .editors
+            .editor
             .as_ref()
             .map(|editor| editor.view.state().buffer().text())
     }
@@ -556,7 +433,7 @@ impl Shell {
 
     /// Reads the recent projects from `file`, and keeps them there.
     pub fn set_recent_file(&mut self, file: PathBuf) {
-        self.recent = (RecentProjects::load(&file), Some(file));
+        self.features.project.set_recent_file(file);
     }
 
     /// Reads and keeps the user's settings in `file` (P3-44): the game folder chosen before is
@@ -589,27 +466,14 @@ impl Shell {
     /// Chooses `path` as the game folder, read in place (`preview.choose_game`), and keeps it
     /// in the settings file when it plays, so the next start finds it (P3-44).
     pub fn choose_game_folder(&mut self, path: PathBuf) -> Option<GameFiles> {
-        let chosen: Option<GameFiles> =
-            self.run(CHOOSE_GAME, &ChooseGameParams { path: path.clone() });
-        if chosen.as_ref().is_some_and(|files| files.state.plays()) {
-            self.preview_error = None;
-            if let Some(file) = &self.settings_file {
-                let value = serde_json::to_value(&path).ok();
-                let saved = SettingsStore::open(file.clone(), None).and_then(|mut store| {
-                    store.put(SettingsScope::User, Setting::GameFolder, value)
-                });
-                if let Err(error) = saved {
-                    tracing::warn!(%error, "the game folder was not saved");
-                }
-            }
-        }
-        chosen
+        let settings = self.settings_file.clone();
+        ProjectFeature::choose_game_folder(&mut self.commands(), settings.as_deref(), path)
     }
 
     /// The projects opened most recently, the latest first.
     #[must_use]
     pub fn recent_projects(&self) -> &[PathBuf] {
-        self.recent.0.projects()
+        self.features.project.recent_projects()
     }
 
     /// Asks for a project folder with the system's dialog, as Zed's Open does by default
@@ -626,13 +490,13 @@ impl Shell {
     /// The agent panel.
     #[must_use]
     pub const fn agent(&self) -> &AgentPanel {
-        &self.agent
+        &self.features.agent.panel
     }
 
     /// The report of agent thread `index`, once it has ended.
     #[must_use]
     pub fn agent_report(&self, index: ThreadIndex) -> Option<&qs_agent::RunReport> {
-        self.agent.report(index)
+        self.features.agent.panel.report(index)
     }
 
     /// Asks the agent's model for an inline edit of `selection` in the editor's file at `path`
@@ -648,38 +512,21 @@ impl Shell {
         instruction: &str,
     ) -> Result<(), String> {
         let file = self
+            .features
+            .editors
             .editor
             .as_ref()
             .map(|editor| editor.view.state().buffer().text())
             .unwrap_or_default();
-        let prompt = qs_agent::inline_prompt(path, &file, selection, instruction);
         let ctx = self.ctx.clone();
-        let answered = self.agent.ask_once(prompt, move || {
-            if let Some(ctx) = &ctx {
-                ctx.request_repaint();
-            }
-        })?;
-        self.inline = Some(answered);
-        Ok(())
-    }
-
-    /// Shows an inline edit's answer in the editor once it has come; whether it has.
-    fn take_inline(&mut self) -> bool {
-        let Some(answer) = self
-            .inline
-            .as_ref()
-            .and_then(|answered| answered.try_recv().ok())
-        else {
-            return false;
-        };
-        self.show_inline(answer);
-        true
+        self.features
+            .agent
+            .start_inline((path, &file), selection, instruction, ctx)
     }
 
     /// Shows an inline edit's answer, or why there is none, in the editor.
     fn show_inline(&mut self, answer: Result<String, String>) {
-        self.inline = None;
-        if let Some(editor) = self.editor.as_mut() {
+        if let Some(editor) = self.features.editors.editor.as_mut() {
             match answer {
                 Ok(text) => editor.propose(&text),
                 Err(why) => editor.inline_failed(why),
@@ -690,23 +537,19 @@ impl Shell {
     /// Waits for an inline edit's answer and shows it. For tests.
     #[cfg(test)]
     pub(crate) fn wait_inline(&mut self) {
-        if let Some(answer) = self
-            .inline
-            .as_ref()
-            .and_then(|answered| answered.recv().ok())
-        {
+        if let Some(answer) = self.features.agent.wait_inline() {
             self.show_inline(answer);
         }
     }
 
     /// The agent panel, to drive its threads.
     pub const fn agent_mut(&mut self) -> &mut AgentPanel {
-        &mut self.agent
+        &mut self.features.agent.panel
     }
 
     /// Keeps the agent's provider configuration in `file` (P4-07).
     pub fn set_agent_file(&mut self, file: PathBuf) {
-        self.agent.set_config_file(file);
+        self.features.agent.panel.set_config_file(file);
     }
 
     /// Starts an agent thread on `task` over the open project (P4-09), each `@` mention it
@@ -716,10 +559,10 @@ impl Shell {
     ///
     /// No project open, no provider set up, no model or no checkpoint.
     pub fn start_agent(&mut self, task: &str, ctx: &egui::Context) -> Result<(), String> {
-        let root = self.agent_root()?;
-        let live = self.live();
-        let task = qs_agent::expand_mentions(&mut self.session, &root, task, &live);
-        self.start_thread(&root, &task, ctx)
+        let settings = self.settings_file.clone();
+        self.features
+            .agent
+            .start(&mut self.session, task, settings.as_deref(), ctx)
     }
 
     /// Starts an agent thread about `entity`, its state attached (Ask about this, UI-9); why
@@ -733,270 +576,52 @@ impl Shell {
         entity: &qs_agent::EntityState,
         ctx: &egui::Context,
     ) -> Result<(), String> {
-        let root = self.agent_root()?;
-        self.start_thread(&root, &entity.ask_about(), ctx)
-    }
-
-    /// The open project's folder, which an agent thread works in.
-    fn agent_root(&self) -> Result<PathBuf, String> {
-        self.workbench()
-            .root()
-            .map(Path::to_path_buf)
-            .ok_or_else(|| Text::NoProject.get().to_owned())
-    }
-
-    /// Starts a thread on `task` as given, over the project in `root`, its calls decided by the
-    /// profile and tool rules the project's settings hold now (P4-30).
-    fn start_thread(&mut self, root: &Path, task: &str, ctx: &egui::Context) -> Result<(), String> {
-        if let Some(permissions) = self.agent_permissions(root) {
-            self.agent.set_permissions(permissions);
-        }
-        let ctx = ctx.clone();
-        self.agent
-            .start(&mut self.session, root, task, move || ctx.request_repaint())
-    }
-
-    /// What the running game shows now, for `@entity` and `@error` (PRIN-2): the selected
-    /// edict with its fields as the Properties panel writes them, and the console's last error.
-    fn live(&self) -> qs_agent::Live {
-        let preview = &self.session.context().preview;
-        let entities = preview.entities();
-        let entity = entities.selected().map(|selected| qs_agent::EntityState {
-            edict: selected.edict.into(),
-            classname: selected.classname.clone(),
-            fields: selected
-                .fields
-                .iter()
-                .map(|field| (field.name.clone(), entities.show(&field.value)))
-                .collect(),
-        });
-        let error = preview
-            .console()
-            .filter(|line| line.is_error())
-            .last()
-            .map(|line| line.text.clone());
-        qs_agent::Live { entity, error }
-    }
-
-    /// The user's and the project at `root`'s settings, when the window keeps a settings file.
-    fn settings_store(&self, root: &Path) -> Option<SettingsStore> {
-        let user = self.settings_file.clone()?;
-        SettingsStore::open(user, Some(qs_settings::project_settings_path(root)))
-            .map_err(|error| tracing::warn!(%error, "settings not read"))
-            .ok()
-    }
-
-    /// The agent's profile and tool rules as the settings set them (P4-30).
-    fn agent_permissions(&self, root: &Path) -> Option<qs_agent::Permissions> {
-        let store = self.settings_store(root)?;
-        let value = |setting| store.value(setting).0;
-        Some(qs_agent::Permissions {
-            profile: serde_json::from_value(value(Setting::AgentProfile)).unwrap_or_default(),
-            rules: serde_json::from_value(value(Setting::ToolPermissions)).unwrap_or_default(),
-        })
-    }
-
-    /// Keeps `permissions` in the open project's settings, the profile and the rules.
-    fn keep_agent_permissions(&self, permissions: &qs_agent::Permissions) {
-        let Some(root) = self.workbench().root().map(Path::to_path_buf) else {
-            return;
-        };
-        let Some(mut store) = self.settings_store(&root) else {
-            return;
-        };
-        for (setting, value) in [
-            (
-                Setting::AgentProfile,
-                serde_json::to_value(permissions.profile),
-            ),
-            (
-                Setting::ToolPermissions,
-                serde_json::to_value(&permissions.rules),
-            ),
-        ] {
-            let kept = value.map_err(|error| error.to_string()).and_then(|value| {
-                store
-                    .put(SettingsScope::Project, setting, Some(value))
-                    .map_err(|error| error.to_string())
-            });
-            if let Err(error) = kept {
-                tracing::warn!(%error, "the agent's permissions were not kept");
-            }
-        }
+        let settings = self.settings_file.clone();
+        self.features
+            .agent
+            .ask_about(&mut self.session, entity, settings.as_deref(), ctx)
     }
 
     /// Waits for the next thing agent thread `index`'s model sends and takes it; `false` when
     /// its model has ended. For tests.
     #[cfg(test)]
     pub(crate) fn wait_agent(&mut self, index: ThreadIndex) -> bool {
-        self.agent.wait(&mut self.session, index)
+        self.features.agent.panel.wait(&mut self.session, index)
     }
 
     /// Does what the agent panel asked for.
     pub(crate) fn agent_action(&mut self, action: AgentAction, ctx: &egui::Context) {
-        match action {
-            AgentAction::Start(task) => {
-                let started = self.start_agent(&task, ctx);
-                self.agent.set_error(started.err());
-            }
-            AgentAction::SaveSetup => self.agent.save_setup_to_keychain(),
-            AgentAction::Accept(hunks) => {
-                let _accepted: Option<serde_json::Value> =
-                    self.run(ACCEPT_HUNKS, &HunksParams { hunks });
-            }
-            AgentAction::Reject(hunks) => {
-                let _rejected: Option<serde_json::Value> =
-                    self.run(REJECT_HUNKS, &HunksParams { hunks });
-            }
-            AgentAction::Permit(index, permit) => {
-                if let Some(kept) = self.agent.permit(&mut self.session, index, permit) {
-                    self.keep_agent_permissions(&kept);
-                }
-            }
-            AgentAction::Profile(profile) => {
-                let mut permissions = self.agent.permissions().clone();
-                permissions.profile = profile;
-                self.keep_agent_permissions(&permissions);
-                self.agent.set_permissions(permissions);
-            }
-            AgentAction::Restore(number) => {
-                let _restored: Option<serde_json::Value> =
-                    self.run(RESTORE_CHECKPOINT, &RestoreCheckpointParams { number });
-            }
-            AgentAction::OpenHistory => {
-                let threads = self
-                    .agent_root()
-                    .ok()
-                    .and_then(|root| history::load(&history::threads_dir(&root)).ok())
-                    .unwrap_or_default();
-                self.agent.show_history(threads);
-            }
-            AgentAction::AttachScreenshot => {
-                let shot: Option<Screenshot> = self.run(
-                    ENGINE_SCREENSHOT,
-                    &EngineScreenshotParams {
-                        path: None,
-                        size: None,
-                    },
-                );
-                match shot.map(|shot| std::fs::read(&shot.path)) {
-                    Some(Ok(bytes)) => self.agent.attach_png(&bytes),
-                    Some(Err(error)) => self.agent.set_error(Some(error.to_string())),
-                    None => self
-                        .agent
-                        .set_error(Some(Text::GameStopped.get().to_owned())),
-                }
-            }
-            AgentAction::RunAgain(index, at, text) => {
-                let ctx = ctx.clone();
-                let ran = self
-                    .agent
-                    .run_again(&mut self.session, (index, at, text), move || {
-                        ctx.request_repaint()
-                    });
-                self.agent.set_error(ran.err());
-            }
-        }
-    }
-
-    /// After the agent's threads took their models' events (P4-31): the editor opens the last
-    /// file a call named while it follows the agent, and a thread that finished asks for the
-    /// modder's attention, as the system shows it (the dock or the taskbar).
-    fn after_agent(&mut self, ctx: &egui::Context) {
-        if let Some(path) = self.agent.take_followed().pop() {
-            let path = if path.is_absolute() {
-                path
-            } else {
-                self.agent_root()
-                    .map(|root| root.join(&path))
-                    .unwrap_or(path)
-            };
-            if path.is_file() {
-                self.jump(Jump { path, offset: 0 });
-            }
-        }
-        if self.agent.take_finished() > 0 {
-            ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(
-                egui::UserAttentionType::Informational,
-            ));
-        }
+        let settings = self.settings_file.clone();
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        self.features
+            .agent
+            .apply(action, &mut commands, settings.as_deref(), ctx);
     }
 
     /// Asks for a new folder with the system's dialog, makes a project of `template` there
     /// (`project.new`, P4-17) and opens it, saying why when it could not.
     pub fn new_project(&mut self, template: Template) {
-        let picked = rfd::FileDialog::new()
-            .set_title(Text::NewProjectTitle.get())
-            .save_file();
-        let Some(folder) = picked else {
-            return;
-        };
-        let params = NewProjectParams {
-            template,
-            path: folder.clone(),
-        };
-        let made = serde_json::to_value(params)
-            .map_err(|error| error.to_string())
-            .and_then(|params| {
-                self.execute(NEW_PROJECT, params)
-                    .map_err(|error| error.to_string())
-            });
-        match made {
-            Ok(_) => self.open_asked(&folder),
-            Err(error) => self.project_error = Some(error),
-        }
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        self.features.project.new_project(&mut commands, template);
     }
 
-    /// Exports the open project for players (`project.export`, P4-28), checked against the game
-    /// folder Play reads (the first install found when none was chosen); the status bar says
+    /// Exports the open project for players (`project.export`, P4-28); the status bar says
     /// where the zip is or why there is none.
     pub fn export_mod(&mut self) {
-        let game = self
-            .session
-            .context()
-            .preview
-            .game_folder()
-            .map(Path::to_path_buf);
-        let params = ExportParams {
-            game,
-            ..ExportParams::default()
-        };
-        let exported = serde_json::to_value(params)
-            .map_err(|error| error.to_string())
-            .and_then(|params| {
-                self.execute(PROJECT_EXPORT, params)
-                    .map_err(|error| error.to_string())
-            })
-            .and_then(|answer| {
-                serde_json::from_value::<Exported>(answer).map_err(|error| error.to_string())
-            });
-        self.export_note = Some(exported.map(|exported| exported.path));
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        self.features.project.export(&mut commands);
     }
 
     /// What the last export did, for tests.
     #[cfg(test)]
     pub(crate) const fn export_note(&self) -> Option<&Result<PathBuf, String>> {
-        self.export_note.as_ref()
+        self.features.project.export_note.as_ref()
     }
 
-    /// Opens the project in `folder`, saying why when it does not open; a recent project that
-    /// no longer opens comes off the list.
+    /// Opens the project in `folder`, saying why when it does not open.
     fn open_asked(&mut self, folder: &Path) {
-        // A folder with no project file opens empty, as Zed opens any folder; one that is not
-        // there any more, as a recent project may be, does not.
-        let opened = if folder.is_dir() {
-            self.open_project(folder).map_err(|error| error.to_string())
-        } else {
-            Err(format!("{} {}", Text::FolderGone.get(), folder.display()))
-        };
-        match opened {
-            Ok(()) => self.project_error = None,
-            Err(error) => {
-                self.project_error = Some(error.to_string());
-                self.recent.0.forget(folder);
-                self.save_recent();
-            }
-        }
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        self.features.project.open(&mut commands, folder);
     }
 
     /// Tells the preview where the IDE's window is and whether it has the focus, through
@@ -1025,30 +650,7 @@ impl Shell {
 
     /// Puts the project just opened first in the recent projects.
     fn note_project(&mut self) {
-        let root = self
-            .session
-            .context()
-            .workbench
-            .root()
-            .map(Path::to_path_buf);
-        if root == self.seen_root {
-            return;
-        }
-        if let Some(root) = &root
-            && self.recent.0.opened(root)
-        {
-            self.save_recent();
-        }
-        self.seen_root = root;
-    }
-
-    /// Writes the recent projects to their file, if they have one.
-    fn save_recent(&self) {
-        if let Some(file) = &self.recent.1
-            && let Err(error) = self.recent.0.save(file)
-        {
-            tracing::warn!(%error, "recent projects not written");
-        }
+        self.features.project.note_project(self.session.context());
     }
 
     /// Gives the shell the window's wgpu device and formats, which the map view draws with.
@@ -1063,7 +665,7 @@ impl Shell {
             return false;
         };
         map_view::install(state, mesh);
-        self.map = Some(MapView::new(camera));
+        self.features.map.map = Some(MapView::new(camera));
         self.centre_tab = CentreTab::Map;
         true
     }
@@ -1077,7 +679,7 @@ impl Shell {
     /// The map view, once a map is shown.
     #[must_use]
     pub const fn map_view(&self) -> Option<&MapView> {
-        self.map.as_ref()
+        self.features.map.map.as_ref()
     }
 
     /// Opens the project in `path`, through its command.
@@ -1086,22 +688,48 @@ impl Shell {
     ///
     /// [`ShellError`] when the command fails.
     pub fn open_project(&mut self, path: &Path) -> Result<(), ShellError> {
-        let params = serde_json::to_value(OpenProjectParams {
-            path: path.to_path_buf(),
-        })?;
-        self.session.execute(OPEN_PROJECT, params)?;
-        Ok(())
+        ProjectFeature::open_project(&mut self.commands(), path)
+    }
+
+    /// Opens what macOS or the command line hands the app, through `paths.open`: folders as
+    /// projects and files in their projects (PRJ-1.6). The next frame shows them.
+    pub fn open_paths(&mut self, paths: impl IntoIterator<Item = PathBuf>) {
+        let params = OpenPathsParams {
+            paths: paths.into_iter().collect(),
+        };
+        let _: Option<PathsOpened> = self.run(OPEN_PATHS, &params);
+    }
+
+    /// Shows what `paths.open` opened since the last frame, from this window or another launch
+    /// of the app over its socket: the editor for a file (the map editor shows a map by
+    /// itself), and the window comes to the front, as Zed's does, when anything opened; why a
+    /// path did not open goes on the toolbar.
+    fn follow_opened_paths(&mut self, ctx: &egui::Context) {
+        let taken: Option<Option<PathsOpened>> =
+            self.run(TAKE_OPENED_PATHS, &serde_json::json!({}));
+        let Some(Some(opened)) = taken else {
+            return;
+        };
+        for not_opened in &opened.not_opened {
+            tracing::warn!(path = %not_opened.path.display(), why = ?not_opened.why, "not opened");
+        }
+        // The toolbar says why a path did not open, unsaved changes in particular.
+        if let Some(first) = opened.not_opened.first() {
+            self.preview_error = Some(first.detail.clone());
+        }
+        if opened.file.is_some() && opened.map.is_none() {
+            self.centre_tab = CentreTab::Editor;
+        }
+        if opened.opened > 0 {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
     }
 
     /// Opens the file a panel's row asks for, through its command, and shows the editor; a
     /// `.map` or `.bsp` opens in the map editor (P5-06).
     fn jump(&mut self, jump: Jump) {
-        let is_map = jump.path.extension().is_some_and(|extension| {
-            extension.eq_ignore_ascii_case(MAP_EXTENSION)
-                || extension.eq_ignore_ascii_case(BSP_EXTENSION)
-        });
-        if is_map {
-            self.open_map(jump.path);
+        if opens_in_map_editor(&jump.path) {
+            self.with_map(|map, commands| map.open_map(commands, jump.path));
             return;
         }
         let params = OpenFileParams {
@@ -1120,10 +748,10 @@ impl Shell {
     /// Carries out the editor action the layout last asked for, once (P4-32).
     fn editor_request(&mut self) {
         let layout = *self.layout();
-        if layout.editor_requests == self.editor_seen {
+        if layout.editor_requests == self.features.editors.editor_seen {
             return;
         }
-        self.editor_seen = layout.editor_requests;
+        self.features.editors.editor_seen = layout.editor_requests;
         let Some(request) = layout.editor_request else {
             return;
         };
@@ -1137,8 +765,8 @@ impl Shell {
             EditorRequest::GoToSymbol => return self.open_symbol_picker(),
             EditorRequest::TabSwitcher => return self.open_tab_switcher(),
             EditorRequest::ProjectSearch => {
-                self.multibuffer.source = MultiSource::Search;
-                self.multibuffer.form.focus = true;
+                self.features.editors.multibuffer.source = MultiSource::Search;
+                self.features.editors.multibuffer.form.focus = true;
                 self.centre_tab = CentreTab::Search;
                 return;
             }
@@ -1148,7 +776,7 @@ impl Shell {
             | EditorRequest::UnfoldAll
             | EditorRequest::GoToLine(_) => {}
         }
-        let Some(editor) = self.editor.as_mut() else {
+        let Some(editor) = self.features.editors.editor.as_mut() else {
             return;
         };
         let line = editor.view.state().primary().head.line;
@@ -1185,8 +813,15 @@ impl Shell {
         let Some(open) = self.session.context().workbench.open() else {
             return;
         };
-        let caret = self.editor.as_ref().map_or(0, Editor::caret_offset);
+        let caret = self
+            .features
+            .editors
+            .editor
+            .as_ref()
+            .map_or(0, Editor::caret_offset);
         let buffer = self
+            .features
+            .editors
             .editor
             .as_ref()
             .map(|editor| editor.view.state().buffer());
@@ -1212,8 +847,12 @@ impl Shell {
         }
         self.palette.close();
         self.finder.close();
-        self.picker.0.open(PickerKind::Symbols, rows, selected);
-        self.picker.1 = places;
+        self.features
+            .editors
+            .picker
+            .0
+            .open(PickerKind::Symbols, rows, selected);
+        self.features.editors.picker.1 = places;
     }
 
     /// Opens the tab switcher: the open files, the one used most recently first and the one
@@ -1225,9 +864,16 @@ impl Shell {
         let mut places = Vec::new();
         for path in workbench.history() {
             let offset = self
+                .features
+                .editors
                 .parked
                 .get(path)
-                .or(self.editor.as_ref().filter(|e| e.path == *path))
+                .or(self
+                    .features
+                    .editors
+                    .editor
+                    .as_ref()
+                    .filter(|e| e.path == *path))
                 .map_or(0, Editor::caret_offset);
             rows.push(PickerRow {
                 name: path
@@ -1247,8 +893,12 @@ impl Shell {
         }
         self.palette.close();
         self.finder.close();
-        self.picker.0.open(PickerKind::Tabs, rows, 1);
-        self.picker.1 = places;
+        self.features
+            .editors
+            .picker
+            .0
+            .open(PickerKind::Tabs, rows, 1);
+        self.features.editors.picker.1 = places;
     }
 
     /// The editor's second pane (P4-32), while the layout splits the editor: made from the open
@@ -1257,20 +907,21 @@ impl Shell {
     fn second_pane(&mut self, ui: &mut Ui) {
         let split = self.layout().split;
         if split == Split::None || self.centre_tab != CentreTab::Editor {
-            self.second = None;
+            self.features.editors.second = None;
             return;
         }
-        let Some(editor) = &self.editor else {
+        let Some(editor) = &self.features.editors.editor else {
             return;
         };
         let theme = &self.theme;
-        let second = match &mut self.second {
+        let second = match &mut self.features.editors.second {
             Some(second) => second,
             None => match self.session.context().workbench.open() {
-                Some(open) => {
-                    self.second
-                        .insert(Editor::new(Id::new(Area::SecondPane), open, theme))
-                }
+                Some(open) => self.features.editors.second.insert(Editor::new(
+                    Id::new(Area::SecondPane),
+                    open,
+                    theme,
+                )),
                 None => return,
             },
         };
@@ -1305,7 +956,10 @@ impl Shell {
     /// Makes the second pane the one being edited and the first the second: its file is opened
     /// in the workbench, after the first pane's edits are sent.
     fn swap_panes(&mut self, ctx: &egui::Context) {
-        let (Some(mut first), Some(mut second)) = (self.editor.take(), self.second.take()) else {
+        let (Some(mut first), Some(mut second)) = (
+            self.features.editors.editor.take(),
+            self.features.editors.second.take(),
+        ) else {
             return;
         };
         if let Some(text) = first.unsent() {
@@ -1315,16 +969,16 @@ impl Shell {
         first.view.set_id(Id::new(Area::SecondPane));
         second.view.set_id(Id::new(EDITOR_AREA));
         if first.path == second.path {
-            self.editor = Some(second);
-            self.second = Some(first);
+            self.features.editors.editor = Some(second);
+            self.features.editors.second = Some(first);
         } else {
             let (from, to) = (first.path.clone(), second.path.clone());
             let offset = second.caret_offset();
-            self.editor = Some(first);
-            self.parked.insert(to.clone(), second);
+            self.features.editors.editor = Some(first);
+            self.features.editors.parked.insert(to.clone(), second);
             self.jump(Jump { path: to, offset });
             self.sync_editor();
-            self.second = self.parked.remove(&from);
+            self.features.editors.second = self.features.editors.parked.remove(&from);
         }
         ctx.memory_mut(|m| m.request_focus(Id::new(EDITOR_AREA)));
     }
@@ -1335,7 +989,7 @@ impl Shell {
         if self.layout().outline != Outline::Shown || self.centre_tab != CentreTab::Editor {
             return;
         }
-        let Some(editor) = &self.editor else {
+        let Some(editor) = &self.features.editors.editor else {
             return;
         };
         let Some(open) = self.session.context().workbench.open() else {
@@ -1386,195 +1040,20 @@ impl Shell {
         } else {
             Vec::new()
         };
-        self.picker.0.close();
+        self.features.editors.picker.0.close();
         self.palette.open(tasks);
-    }
-
-    /// Takes the terminal tabs' output and exits; a tab opened since the last frame, by a
-    /// task from the palette or any other caller of its command, is shown in the Terminal
-    /// tab, the bottom panel opened for it (P4-36).
-    fn poll_terminals(&mut self, ctx: &egui::Context) {
-        let terminals = self.session.context().workbench.terminals();
-        if terminals.tabs().is_empty() {
-            self.terminal_view.opened(0);
-            return;
-        }
-        if self.run::<_, bool>(TERMINAL_POLL, &serde_json::json!({})) == Some(true) {
-            ctx.request_repaint();
-        }
-        let terminals = self.session.context().workbench.terminals();
-        if terminals.tabs().iter().any(|tab| tab.exit().is_none()) {
-            ctx.request_repaint_after(PREVIEW_POLL);
-        }
-        if self.terminal_view.opened(terminals.tabs().len()) {
-            self.bottom_tab = BottomTab::Terminal;
-            if !self.layout().panel(Panel::Bottom).visible
-                && let Err(error) = self.toggle(Panel::Bottom)
-            {
-                tracing::warn!(%error, "panel toggle failed");
-            }
-        }
-    }
-
-    /// Reads the repository again for the Git tab while it is shown, when an action made the
-    /// last read stale or another file was opened (P4-35); a hidden tab is read again when
-    /// next shown.
-    fn refresh_git_if_needed(&mut self) {
-        let open = self
-            .session
-            .context()
-            .workbench
-            .open()
-            .map(|o| o.path().to_path_buf());
-        if self.bottom_tab != BottomTab::Git || !self.layout().bottom.visible {
-            self.git_view.0.stale = true;
-            return;
-        }
-        if !self.git_view.0.stale && self.git_view.1 == open {
-            return;
-        }
-        self.git_view.0.stale = false;
-        self.git_view.1.clone_from(&open);
-        let blame = self.git_view.0.blame;
-        self.git_view.0.data = read_git(&mut self.session, open.as_deref(), blame);
-    }
-
-    /// Runs what the Git tab asked for, through its command, then reads the repository and the
-    /// editor's change marks again.
-    fn git_action(&mut self, action: GitAction) {
-        let params =
-            |value: Result<serde_json::Value, serde_json::Error>| value.unwrap_or_default();
-        let ran = match action {
-            GitAction::Refresh => Ok(serde_json::Value::Null),
-            GitAction::Stage(path, hunk) => self.session.execute(
-                GIT_STAGE,
-                params(serde_json::to_value(GitStageParams { path, hunk })),
-            ),
-            GitAction::Unstage(path, hunk) => self.session.execute(
-                GIT_UNSTAGE,
-                params(serde_json::to_value(GitStageParams { path, hunk })),
-            ),
-            GitAction::Commit(message) => self.session.execute(
-                GIT_COMMIT,
-                params(serde_json::to_value(GitCommitParams { message })),
-            ),
-            GitAction::Switch(branch) => self.session.execute(
-                GIT_SWITCH,
-                params(serde_json::to_value(GitBranchParams { branch })),
-            ),
-            GitAction::CreateBranch(branch) => self.session.execute(
-                GIT_CREATE_BRANCH,
-                params(serde_json::to_value(GitBranchParams { branch })),
-            ),
-            GitAction::Resolve(path, conflict, side) => self.session.execute(
-                GIT_RESOLVE,
-                params(serde_json::to_value(GitResolveParams {
-                    path,
-                    conflict,
-                    side,
-                })),
-            ),
-            GitAction::ToggleBlame => {
-                self.git_view.0.blame = match self.git_view.0.blame {
-                    BlameShown::Hidden => BlameShown::Shown,
-                    BlameShown::Shown => BlameShown::Hidden,
-                };
-                Ok(serde_json::Value::Null)
-            }
-            GitAction::Open(path, line) => {
-                let line = u32::try_from(line).unwrap_or(u32::MAX);
-                self.pending_line = Some((path.clone(), line));
-                self.jump(Jump { path, offset: 0 });
-                return;
-            }
-        };
-        self.git_view.0.stale = true;
-        self.refresh_git_if_needed();
-        if let Err(error) = ran {
-            self.git_view.0.data.error = Some(error.to_string());
-        }
-        self.sync_editor();
-        self.mark_changes();
     }
 
     /// Reads the editor's inlay hints again when its file's analysis changed (P4-34): each
     /// parameter's name before the argument passed as it.
     fn refresh_inlays(&mut self) {
-        let Some(revision) = self
-            .session
-            .context()
-            .workbench
-            .open()
-            .map(OpenFile::revision)
-        else {
-            return;
-        };
-        let Some(path) = self
-            .editor
-            .as_ref()
-            .filter(|editor| editor.hints_at != Some(revision))
-            .map(|editor| editor.path.clone())
-        else {
-            return;
-        };
-        let hints: Vec<InlayHint> = self
-            .run(INLAY_HINTS, &SaveFileParams { path })
-            .unwrap_or_default();
-        if let Some(editor) = self.editor.as_mut() {
-            let buffer = editor.view.state().buffer();
-            let placed: Vec<(Position, String)> = hints
-                .into_iter()
-                .map(|hint| (buffer.position(hint.offset), inlay_text(&hint.name)))
-                .collect();
-            editor.view.set_inlays(placed);
-            editor.hints_at = Some(revision);
-        }
+        self.with_editors(|editors, commands| editors.refresh_inlays(commands));
     }
 
     /// Marks in the editor's gutter its file's changes against the text at `HEAD` (P4-35);
     /// none outside a repository or for a file `HEAD` does not have.
     fn mark_changes(&mut self) {
-        let Some(path) = self.editor.as_ref().map(|editor| editor.path.clone()) else {
-            return;
-        };
-        let base = self
-            .session
-            .execute(
-                GIT_HEAD_TEXT,
-                serde_json::to_value(GitPathParams { path }).unwrap_or_default(),
-            )
-            .ok()
-            .and_then(|value| serde_json::from_value::<Option<String>>(value).ok())
-            .flatten();
-        if let Some(editor) = self.editor.as_mut() {
-            editor.view.set_gutter_base(base);
-        }
-    }
-
-    /// Runs what the Terminal tab asked for, through its command.
-    fn terminal_action(&mut self, action: TerminalAction) {
-        match action {
-            TerminalAction::New => {
-                let _: Option<Opened> = self.run(TERMINAL_NEW, &serde_json::json!({}));
-            }
-            TerminalAction::Send(tab, line) => {
-                let _: Option<()> = self.run(
-                    TERMINAL_SEND,
-                    &SendParams {
-                        tab: TerminalIndex::new(tab),
-                        line,
-                    },
-                );
-            }
-            TerminalAction::Close(tab) => {
-                let _: Option<()> = self.run(
-                    TERMINAL_CLOSE,
-                    &CloseParams {
-                        tab: TerminalIndex::new(tab),
-                    },
-                );
-            }
-        }
+        self.with_editors(|editors, commands| editors.mark_changes(commands));
     }
 
     /// Shows or hides `panel`, through its command.
@@ -1620,13 +1099,16 @@ impl Shell {
     /// Draws the window for one frame.
     pub fn ui(&mut self, ui: &mut Ui) {
         // P4-09: what the agent's models sent since the last frame; their calls run here.
-        if self.agent.pump(&mut self.session) {
+        if self.features.agent.panel.pump(&mut self.session) {
             ui.ctx().request_repaint();
         }
         // A test drives the models by hand, outside a frame: what they named is taken here.
-        self.after_agent(ui.ctx());
+        if let Some(request) = self.features.agent.after(self.session.context(), ui.ctx()) {
+            self.request(request);
+        }
         self.ctx = Some(ui.ctx().clone());
-        if self.take_inline() {
+        if let Some(answer) = self.features.agent.take_inline() {
+            self.show_inline(answer);
             ui.ctx().request_repaint();
         }
         // AGT-7: commands sent over the socket run first, so the frame draws what they did.
@@ -1635,6 +1117,7 @@ impl Shell {
         {
             ui.ctx().request_repaint();
         }
+        self.follow_opened_paths(ui.ctx());
         if self.session.context().preview.state() != PlayState::Stopped {
             let polled: Option<PreviewStatus> = self.run(POLL, &serde_json::json!({}));
             // BRIDGE-3.5: a click in the paused game picked an edict; open its spawn function.
@@ -1653,8 +1136,14 @@ impl Shell {
             // The host's events are read each frame; a running game asks for frames.
             ui.ctx().request_repaint_after(PREVIEW_POLL);
         }
-        self.poll_terminals(ui.ctx());
-        self.refresh_git_if_needed();
+        let ctx = ui.ctx().clone();
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        if let Some(request) = self.features.terminal.poll(&mut commands, &ctx) {
+            self.request(request);
+        }
+        let shown = self.git_shown();
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        self.features.git.refresh(&mut commands, shown);
         self.keys(ui);
         let pending = self.pending_focus();
         self.toolbar(ui);
@@ -1702,16 +1191,21 @@ impl Shell {
         );
         match chosen {
             Some((path, Some(line))) => {
-                self.pending_line = Some((path.clone(), line));
+                self.features.editors.pending_line = Some((path.clone(), line));
                 self.jump(Jump { path, offset: 0 });
             }
             Some((path, None)) => {
-                let offset = self.parked.get(&path).map_or(0, Editor::caret_offset);
+                let offset = self
+                    .features
+                    .editors
+                    .parked
+                    .get(&path)
+                    .map_or(0, Editor::caret_offset);
                 self.jump(Jump { path, offset });
             }
             None => {}
         }
-        let (picker, places) = &mut self.picker;
+        let (picker, places) = &mut self.features.editors.picker;
         if let Some(index) = picker.show(ui, Id::new(Area::Picker), &self.theme)
             && let Some(place) = places.get(index).cloned()
         {
@@ -1739,7 +1233,7 @@ impl Shell {
         }
         if ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_FILE_FINDER)) {
             self.palette.close();
-            self.picker.0.close();
+            self.features.editors.picker.0.close();
             self.finder.open();
             return;
         }
@@ -1762,7 +1256,9 @@ impl Shell {
             // A profile run by its key shows its notice and reads the portals again, as the
             // button's does.
             if binding.command == MAP_RUN_PROFILE {
-                self.map_actions(vec![MapAction::Profile(ProfileAction::Run)]);
+                self.with_map(|map, commands| {
+                    map.map_actions(commands, vec![MapAction::Profile(ProfileAction::Run)]);
+                });
                 continue;
             }
             if let Err(error) = self.session.execute(
@@ -1898,787 +1394,33 @@ impl Shell {
         };
         let failed = result.is_err();
         self.preview_error = result.err().map(|error| error.to_string());
-        // P3-21: Play that failed for want of the game opens the guide to its files.
         if failed && id == PLAY {
-            let files: Option<GameFiles> = self.run(GAME, &serde_json::json!({}));
-            if let Some(files) = files {
-                self.guide = (Guide::for_files(&files), Some(files));
-            }
+            self.open_guide_to_missing_files();
         }
     }
 
-    /// Opens the guide to the game's files (P3-21), from the File menu: what the game folder,
-    /// or the first install found, holds and lacks, and the folder picker.
+    /// P3-21: Play that failed for want of the game opens the guide to its files.
+    fn open_guide_to_missing_files(&mut self) {
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        self.features
+            .project
+            .open_guide_to_missing_files(&mut commands);
+    }
+
+    /// Opens the guide to the game's files (P3-21), from the File menu.
     pub fn show_game_guide(&mut self) {
-        let files: Option<GameFiles> = self.run(GAME, &serde_json::json!({}));
-        self.guide = (Guide::Shown, files);
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        self.features.project.show_game_guide(&mut commands);
     }
 
-    /// The guide to the game's files while it is shown: a chosen folder is read in place and
-    /// kept for Play when it plays (`preview.choose_game`), so Play works without a restart.
+    /// The guide to the game's files while it is shown (P3-21).
     fn game_guide(&mut self, ui: &mut Ui) {
-        let (shown, Some(files)) = &self.guide else {
-            return;
-        };
-        match game_guide::window(ui.ctx(), &self.theme, *shown, files) {
-            Some(GuideAction::Close) => self.guide.0 = Guide::Hidden,
-            Some(GuideAction::ChooseFolder) => {
-                let picked = rfd::FileDialog::new()
-                    .set_title(Text::ChooseGameTitle.get())
-                    .pick_folder();
-                if let Some(path) = picked {
-                    let chosen = self.choose_game_folder(path);
-                    if chosen.is_some() {
-                        self.guide.1 = chosen;
-                    }
-                }
-            }
-            None => {}
-        }
-    }
-
-    /// Opens the map at `path` in the map editor; [`Shell::sync_map`] shows it.
-    fn open_map(&mut self, path: PathBuf) {
-        let opened: Result<serde_json::Value, ShellError> =
-            self.attempt(MAP_OPEN, &MapOpenParams { path });
-        if let Err(error) = opened {
-            tracing::warn!(%error, "map not opened");
-        }
-    }
-
-    /// When a map was opened since the last frame, by `map.open` from anywhere: gives the map
-    /// editor the project's entity classes and their models, starts its camera at the player
-    /// start and shows the Map tab.
-    fn sync_map(&mut self) {
-        let path = self
-            .session
-            .context()
-            .workbench
-            .map()
-            .map(|document| document.path().to_path_buf());
-        // The profile chosen from anywhere, the palette and the agent too, is the one shown.
-        let chosen = self.session.context().workbench.chosen_profile().to_owned();
-        self.map_editor.profiles_mut().set_chosen(chosen);
-        if path == self.map_opened {
-            // The world named other WADs, or another game was chosen (P6-10).
-            let context = self.session.context();
-            let chosen = context.preview.game_folder();
-            if context
-                .workbench
-                .map()
-                .is_some_and(|document| self.map_editor.textures_stale(document, chosen))
-            {
-                self.load_map_textures();
-            }
-            return;
-        }
-        self.map_opened.clone_from(&path);
-        if path.is_none() {
-            return;
-        }
-        self.load_map_classes();
-        self.load_map_textures();
-        // Another map's portals and last run are not this one's.
-        self.map_editor.profiles_mut().set_portals(None);
-        self.map_editor.profiles_mut().clear_run();
-        self.load_profiles();
-        self.backed_up.1 = self.map_edits();
-        self.map_editor.set_disk(DiskNotice::None);
-        self.map_editor.reset_camera();
-        self.map_editor.set_keys(None, None);
-        self.centre_tab = CentreTab::Map;
-    }
-
-    /// Gives the map editor the open map's textures: the WADs its world names, found in the
-    /// project, beside the map or in the detected game, and the game's palette (P6-10).
-    fn load_map_textures(&mut self) {
-        let context = self.session.context();
-        let Some(document) = context.workbench.map() else {
-            return;
-        };
-        let game = context.preview.game_base_path();
-        let sources = TextureSources::load(
-            document,
-            context.workbench.root(),
-            game.as_deref(),
-            context.preview.game_folder(),
-        );
-        self.map_editor.set_texture_sources(sources);
-        let root = self
-            .session
-            .context()
-            .workbench
-            .root()
-            .map(Path::to_path_buf);
-        self.map_editor.set_project_root(root);
-    }
-
-    /// Gives the map editor the project's entity classes and their models.
-    fn load_map_classes(&mut self) {
-        let classes: Result<EntitiesFound, ShellError> =
-            self.attempt(PROJECT_ENTITIES, &EntitiesParams::default());
-        let context = self.session.context();
-        let project = context.workbench.root().map(Path::to_path_buf);
-        let game = context.preview.game_base_path();
-        match classes {
-            Ok(found) => {
-                self.map_editor.set_classes(
-                    found.classes.iter(),
-                    project.as_deref(),
-                    game.as_deref(),
-                );
-                self.map_editor.set_targeting(found.targeting);
-            }
-            Err(error) => tracing::warn!(%error, "no entity classes for the map"),
-        }
-    }
-
-    /// Looks at the open map's file and the project's QuakeC for another program's writes
-    /// (P5-17): a map with no unsaved edits is read again, one with unsaved edits says so, and
-    /// changed QuakeC gives the map editor its classes again.
-    fn watch_disk(&mut self, ctx: &egui::Context) {
-        ctx.request_repaint_after(DiskWatch::every());
-        let now = std::time::Instant::now();
-        if !self.disk_watch.due(now) {
-            return;
-        }
-        let workbench = &self.session.context().workbench;
-        let mut paths = workbench.project_files();
-        paths.extend(
-            workbench
-                .map()
-                .map(MapDocument::watched)
-                .unwrap_or_default(),
-        );
-        paths.extend(self.map_editor.texture_watched());
-        paths.extend(self.map_editor.external_watched());
-        let changed = self.disk_watch.changed(now, paths);
-        if !changed.is_empty() {
-            self.files_changed(changed);
-        }
-    }
-
-    /// Takes `paths` as the watcher does when another program wrote them, for tests, which
-    /// do not wait on the clock.
-    #[cfg(test)]
-    pub(crate) fn files_written(&mut self, paths: Vec<PathBuf>) {
-        self.files_changed(paths);
-    }
-
-    /// Asks whether the open map's files changed, whatever their modified times say.
-    fn check_map_on_disk(&mut self) {
-        let watched = self
-            .session
-            .context()
-            .workbench
-            .map()
-            .map(MapDocument::watched)
-            .unwrap_or_default();
-        if !watched.is_empty() {
-            self.files_changed(watched);
-        }
-    }
-
-    /// Gives `changed` to `files.changed` and shows what it did.
-    fn files_changed(&mut self, changed: Vec<PathBuf>) {
-        let map = self.session.context().workbench.map().is_some();
-        let wads = self.map_editor.texture_watched();
-        let wad_changed = changed.iter().any(|path| wads.contains(path));
-        let externals = self.map_editor.external_watched();
-        // An external map written by another program is drawn again (MAP-14).
-        if changed.iter().any(|path| externals.contains(path)) {
-            self.map_editor.externals_changed();
-        }
-        let found: Result<FilesChanged, ShellError> =
-            self.attempt(FILES_CHANGED, &FilesChangedParams { paths: changed });
-        match found {
-            Ok(found) => {
-                if found.quakec && map {
-                    self.load_map_classes();
-                }
-                match found.map {
-                    MapOnDisk::Same => {}
-                    MapOnDisk::Reloaded => self.map_editor.set_disk(DiskNotice::None),
-                    MapOnDisk::Conflict => self.map_editor.set_disk(DiskNotice::Changed),
-                }
-                // A WAD written by another program, or a map read again whose world may name
-                // other WADs, gives the browser its textures again (MAP-32).
-                if map && (wad_changed || found.map == MapOnDisk::Reloaded) {
-                    self.load_map_textures();
-                }
-            }
-            Err(error) => tracing::warn!(%error, "the changed files were not read"),
-        }
-    }
-
-    /// Runs what the map editor asked for as `map.*` commands, then reads the selected
-    /// entity's keys again.
-    fn map_actions(&mut self, actions: Vec<MapAction>) {
-        if actions.is_empty() {
-            return;
-        }
-        for action in actions {
-            let result: Result<serde_json::Value, ShellError> = match action {
-                MapAction::Select(entity) => self.attempt(MAP_SELECT, &MapSelectParams { entity }),
-                MapAction::Move(entity, by) => self.attempt(MAP_MOVE, &MoveParams { entity, by }),
-                MapAction::Rotate(entity, degrees) => {
-                    self.attempt(MAP_ROTATE, &RotateParams { entity, degrees })
-                }
-                MapAction::Delete(entity) => self.attempt(MAP_DELETE, &EntityParams { entity }),
-                MapAction::Duplicate(entity) => {
-                    self.attempt(MAP_DUPLICATE, &EntityParams { entity })
-                }
-                MapAction::SetKey(entity, also, key, value) => self.attempt(
-                    MAP_SET_KEY,
-                    &SetKeyParams {
-                        entity,
-                        key,
-                        value,
-                        also,
-                    },
-                ),
-                MapAction::Place(classname, origin) => self.attempt(
-                    MAP_PLACE,
-                    &PlaceParams {
-                        classname,
-                        origin,
-                        keys: Vec::new(),
-                    },
-                ),
-                MapAction::SetFlag(entity, also, flag, change) => self.attempt(
-                    MAP_SET_FLAG,
-                    &SetFlagParams {
-                        entity,
-                        also,
-                        flag,
-                        change,
-                    },
-                ),
-                MapAction::Link(entity, key, target) => self.attempt(
-                    MAP_LINK,
-                    &LinkParams {
-                        entity,
-                        key,
-                        target,
-                    },
-                ),
-                MapAction::Filter(show) => self.filter_map(show).map(|()| serde_json::Value::Null),
-                MapAction::Group(action) => self.group_action(action),
-                MapAction::MoveTo(entity, into) => {
-                    self.attempt(MAP_MOVE_TO, &MoveToParams { entity, into })
-                }
-                MapAction::Panes(panes) => self.attempt(MAP_PANES, &MapPanesParams { panes }),
-                MapAction::ImportTexture(path, name, dither) => {
-                    let imported = self.attempt(
-                        TEXTURE_IMPORT,
-                        &TextureImportParams {
-                            path,
-                            name: Some(name),
-                            dither,
-                        },
-                    );
-                    // The browser and the open map read the WAD again, the new texture in it.
-                    self.load_map_textures();
-                    imported
-                }
-                MapAction::CheckLeaks => self
-                    .execute(MAP_LEAKS, serde_json::json!({}))
-                    .map_err(ShellError::from),
-                MapAction::PlayFromHere => self.play_from_here(),
-                MapAction::ListPrefabs => self.list_prefabs(),
-                MapAction::PlacePrefab(path, origin) => self.attempt(
-                    MAP_PLACE_PREFAB,
-                    &PlacePrefabParams {
-                        path,
-                        origin,
-                        grid: None,
-                    },
-                ),
-                MapAction::CheckIssues => self.check_map_issues(),
-                MapAction::Fix(fix) => {
-                    let fixed =
-                        self.attempt::<_, serde_json::Value>(MAP_FIX, &MapFixParams { fix });
-                    // The list shows the map as it now is, the issue fixed gone.
-                    fixed.and_then(|_| self.check_map_issues())
-                }
-                MapAction::Profile(action) => self.profile_action(action),
-                MapAction::Review(action) => self.review_action(action),
-                MapAction::Find(search) => {
-                    let found: Result<MapFound, ShellError> = self.attempt(MAP_SEARCH, &search);
-                    found.map(|found| {
-                        let at = self.map_edits();
-                        self.map_editor.set_found(found, at);
-                        serde_json::Value::Null
-                    })
-                }
-                MapAction::RemoveKey(entity, key) => {
-                    self.attempt(MAP_REMOVE_KEY, &RemoveKeyParams { entity, key })
-                }
-                MapAction::Save => {
-                    let saved: Result<MapSaved, ShellError> =
-                        self.attempt(MAP_SAVE, &SaveParams { bsp: BspSave::Ent });
-                    match saved {
-                        Ok(saved) => {
-                            self.disk_watch.wrote(saved.path);
-                            Ok(serde_json::Value::Null)
-                        }
-                        Err(error) => {
-                            // A refusal may be a change the watcher missed: look now, so the
-                            // notice offers a way out.
-                            self.check_map_on_disk();
-                            Err(error)
-                        }
-                    }
-                }
-                MapAction::Resolve(keep) => {
-                    let resolved: Result<serde_json::Value, ShellError> =
-                        self.attempt(MAP_RESOLVE, &ResolveParams { keep });
-                    if resolved.is_ok() {
-                        self.map_editor.set_disk(DiskNotice::None);
-                    }
-                    resolved
-                }
-                MapAction::Brush(action) => self.brush_action(action),
-                MapAction::Compare => {
-                    let compared: Result<Vec<MapDifference>, ShellError> =
-                        self.attempt(MAP_COMPARE, &serde_json::json!({}));
-                    compared.map(|differences| {
-                        let lines = differences
-                            .into_iter()
-                            .map(|d| format!("{}: {}", d.entity, d.text))
-                            .collect();
-                        self.map_editor.set_disk(DiskNotice::Compared(lines));
-                        serde_json::Value::Null
-                    })
-                }
-            };
-            let refused = result.err().map(|error| {
-                tracing::warn!(%error, "map edit refused");
-                error.to_string()
-            });
-            self.map_editor.set_refused(refused);
-        }
-    }
-
-    /// Lists the open map's issues in the map editor's issue browser (P6-19).
-    fn check_map_issues(&mut self) -> Result<serde_json::Value, ShellError> {
-        let found: MapIssues = self.attempt(MAP_ISSUES, &serde_json::json!({}))?;
-        let at = self.map_edits();
-        self.map_editor.set_issues(found.issues, at);
-        Ok(serde_json::Value::Null)
-    }
-
-    /// Accepts or rejects map edits waiting for review, and shows the hunks left (P6-21).
-    fn review_action(&mut self, action: ReviewAction) -> Result<serde_json::Value, ShellError> {
-        let (id, hunks) = match action {
-            ReviewAction::Accept(hunks) => (MAP_ACCEPT, hunks),
-            ReviewAction::Reject(hunks) => (MAP_REJECT, hunks),
-        };
-        let left: Vec<MapHunk> = self.attempt(id, &MapHunksParams { hunks })?;
-        let revision = self
-            .session
-            .context()
-            .workbench
-            .map()
-            .map(MapDocument::revision);
-        self.map_editor.review_mut().set_hunks(left, revision);
-        Ok(serde_json::Value::Null)
-    }
-
-    /// Reads the map edits waiting for review again when the map changed, its review included,
-    /// from anywhere: the agent, MCP and the palette too (P6-21); whether it did.
-    fn refresh_map_review(&mut self) -> bool {
-        let Some(revision) = self
-            .session
-            .context()
-            .workbench
-            .map()
-            .map(MapDocument::revision)
-        else {
-            return false;
-        };
-        if !self.map_editor.review().stale(revision) {
-            return false;
-        }
-        let read: Result<Vec<MapHunk>, ShellError> =
-            self.attempt(MAP_STAGED, &serde_json::json!({}));
-        self.map_editor
-            .review_mut()
-            .set_hunks(read.unwrap_or_default(), Some(revision));
-        true
-    }
-
-    /// Runs a compile control's action (P6-20).
-    fn profile_action(&mut self, action: ProfileAction) -> Result<serde_json::Value, ShellError> {
-        match action {
-            ProfileAction::Choose(name) => {
-                let chosen = self.attempt::<_, String>(
-                    MAP_CHOOSE_PROFILE,
-                    &RunProfileParams {
-                        profile: Some(name),
-                    },
-                );
-                self.load_profiles();
-                chosen.map(|_| serde_json::Value::Null)
-            }
-            ProfileAction::Run => self.run_profile(),
-            ProfileAction::ShowPortals => {
-                let read: Result<MapPortals, ShellError> =
-                    self.attempt(MAP_PORTALS, &serde_json::json!({}));
-                read.map(|read| {
-                    self.map_editor
-                        .profiles_mut()
-                        .set_portals(Some(read.portals));
-                    serde_json::Value::Null
-                })
-            }
-            ProfileAction::HidePortals => {
-                self.map_editor.profiles_mut().set_portals(None);
-                Ok(serde_json::Value::Null)
-            }
-            ProfileAction::RestoreBackup => self.restore_backup(),
-        }
-    }
-
-    /// Gives the map editor the compile profiles and the one chosen (P6-20).
-    fn load_profiles(&mut self) {
-        let listed: Result<Vec<Profile>, ShellError> =
-            self.attempt(MAP_PROFILES, &serde_json::json!({}));
-        let names = listed
-            .map(|profiles| profiles.into_iter().map(|profile| profile.name).collect())
-            .unwrap_or_default();
-        let chosen = self.session.context().workbench.chosen_profile().to_owned();
-        self.map_editor.profiles_mut().set_profiles(names, chosen);
-    }
-
-    /// Runs the chosen compile profile and shows how it ended; the portals shown are read
-    /// again, from the compile just made (P6-20).
-    fn run_profile(&mut self) -> Result<serde_json::Value, ShellError> {
-        let ran: Result<ProfileRun, ShellError> =
-            self.attempt(MAP_RUN_PROFILE, &RunProfileParams::default());
-        let run = ran?;
-        self.map_editor.profiles_mut().set_run(run);
-        if self.map_editor.profiles().shows_portals() {
-            let read: Result<MapPortals, ShellError> =
-                self.attempt(MAP_PORTALS, &serde_json::json!({}));
-            if let Ok(read) = read {
-                self.map_editor
-                    .profiles_mut()
-                    .set_portals(Some(read.portals));
-            }
-        }
-        Ok(serde_json::Value::Null)
-    }
-
-    /// Puts the open map's newest backup in the editor (P6-20).
-    fn restore_backup(&mut self) -> Result<serde_json::Value, ShellError> {
-        let listed: Vec<Backup> = self.attempt(MAP_BACKUPS, &serde_json::json!({}))?;
-        let Some(newest) = listed.into_iter().next() else {
-            return Ok(serde_json::Value::Null);
-        };
-        self.attempt(MAP_RESTORE_BACKUP, &RestoreParams { path: newest.path })
-    }
-
-    /// Backs the open map up when it has edits not saved or backed up and the last backup
-    /// is [`MAP_BACKUP_INTERVAL`] seconds old (P6-20).
-    fn back_up_map(&mut self, ctx: &egui::Context) {
-        let now = ctx.input(|i| i.time);
-        let edits = self.map_edits();
-        let unsaved = self
-            .session
-            .context()
-            .workbench
-            .map()
-            .is_some_and(MapDocument::is_unsaved);
-        let (at, backed) = self.backed_up;
-        if !unsaved || edits == backed || now - at < MAP_BACKUP_INTERVAL {
-            return;
-        }
-        self.backed_up = (now, edits);
-        let taken: Result<Backup, ShellError> = self.attempt(MAP_BACKUP, &serde_json::json!({}));
-        if let Err(error) = taken {
-            tracing::warn!(%error, "the map could not be backed up");
-        }
-    }
-
-    /// The open map's edits, which a list of its issues or matches is good for.
-    fn map_edits(&self) -> MapRevision {
-        self.session
-            .context()
-            .workbench
-            .map()
-            .map(MapDocument::edits)
-            .unwrap_or_default()
-    }
-
-    /// Selects these faces of the open map for the UV editor, as Alt-clicks would.
-    #[cfg(test)]
-    pub(crate) fn select_map_faces(&mut self, faces: &[FaceRef]) {
-        self.map_editor.select_faces(faces);
-    }
-
-    /// Lists the project's prefabs in the map editor's prefab browser; none when no project
-    /// is open, so the browser does not ask again (P6-23).
-    fn list_prefabs(&mut self) -> Result<serde_json::Value, ShellError> {
-        let found: Result<Prefabs, ShellError> = self.attempt(MAP_PREFABS, &serde_json::json!({}));
-        let prefabs = found
-            .as_ref()
-            .map(|found| found.prefabs.clone())
-            .unwrap_or_default();
-        self.map_editor.set_prefabs(prefabs);
-        found.map(|_| serde_json::Value::Null)
-    }
-
-    /// Compiles the open map fast and plays it with the player's eye at the 3D view's camera,
-    /// facing its way (P6-12, MAP-13).
-    fn play_from_here(&mut self) -> Result<serde_json::Value, ShellError> {
-        let Some(camera) = self.map_editor.camera().copied() else {
-            return Ok(serde_json::Value::Null);
-        };
-        let [x, y, z] = camera.origin.map(f64::from);
-        self.attempt(
-            MAP_PLAY_FROM_HERE,
-            &PlayFromHereParams {
-                at: [x, y, z - PLAYER_EYE],
-                angles: Some([
-                    f64::from(camera.pitch.get()),
-                    f64::from(camera.yaw.get()),
-                    0.0,
-                ]),
-            },
-        )
-    }
-
-    /// Runs a brush edit as its `map.brush_*` command, on the commands' grid.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "one arm per brush action, each its command's parameters: one match reads \
-                  better whole than split"
-    )]
-    fn brush_action(&mut self, action: BrushAction) -> Result<serde_json::Value, ShellError> {
-        match action {
-            BrushAction::Create(min, max) => self.attempt(
-                MAP_BRUSH_CREATE,
-                &BrushCreateParams {
-                    entity: None,
-                    min,
-                    max,
-                    texture: None,
-                    grid: None,
-                },
-            ),
-            BrushAction::Clip(entity, brush, points, keep) => self.attempt(
-                MAP_BRUSH_CLIP,
-                &BrushClipParams {
-                    entity,
-                    brush,
-                    points,
-                    keep,
-                },
-            ),
-            BrushAction::Vertex(entity, brush, from, to) => self.attempt(
-                MAP_BRUSH_VERTEX,
-                &BrushVertexParams {
-                    entity,
-                    brush,
-                    from,
-                    to,
-                    // The view has snapped the corner across its plane and keeps its height.
-                    grid: Some(0.0),
-                },
-            ),
-            BrushAction::Subtract(entity, brush) => {
-                self.attempt(MAP_BRUSH_SUBTRACT, &BrushParams { entity, brush })
-            }
-            BrushAction::Merge(entity, brushes) => {
-                self.attempt(MAP_BRUSH_MERGE, &BrushMergeParams { entity, brushes })
-            }
-            BrushAction::Delete(entity, brush) => {
-                self.attempt(MAP_BRUSH_DELETE, &BrushParams { entity, brush })
-            }
-            BrushAction::Move(entity, brushes, by, lock) => self.attempt(
-                MAP_BRUSH_MOVE,
-                &BrushMoveParams {
-                    entity,
-                    brushes,
-                    by,
-                    lock,
-                    // The view has snapped the move to the grid.
-                    grid: Some(0.0),
-                },
-            ),
-            BrushAction::Texture(entity, brushes, change) => self.attempt(
-                MAP_BRUSH_TEXTURE,
-                &BrushTextureParams {
-                    entity,
-                    brushes,
-                    texture: change.texture,
-                    shift: change.shift,
-                    rotate: change.rotate,
-                    scale: change.scale,
-                },
-            ),
-            BrushAction::Uv(faces, edit) => {
-                self.attempt(MAP_FACE_UV, &FaceUvParams { faces, edit })
-            }
-            BrushAction::AlignFaces(from, to) => {
-                self.attempt(MAP_FACE_ALIGN, &FaceAlignParams { from, to })
-            }
-            BrushAction::SavePrefab(name, brushes, entities) => {
-                let saved = self.attempt::<_, serde_json::Value>(
-                    MAP_SAVE_PREFAB,
-                    &SavePrefabParams {
-                        name,
-                        brushes,
-                        entities,
-                        grid: None,
-                    },
-                );
-                // The browser lists the new prefab.
-                saved.and_then(|_| self.list_prefabs())
-            }
-            BrushAction::Shape(min, max, shape) => self.attempt(
-                MAP_BRUSH_SHAPE,
-                &BrushShapeParams {
-                    entity: None,
-                    min,
-                    max,
-                    shape,
-                    texture: None,
-                    grid: None,
-                },
-            ),
-            BrushAction::Hollow(entity, brush, wall) => self.attempt(
-                MAP_BRUSH_HOLLOW,
-                &BrushHollowParams {
-                    entity,
-                    brush,
-                    wall,
-                },
-            ),
-            BrushAction::Intersect(entity, brushes) => self.attempt(
-                MAP_BRUSH_INTERSECT,
-                &BrushIntersectParams { entity, brushes },
-            ),
-            BrushAction::Scale(entity, brushes, factors, lock) => self.attempt(
-                MAP_BRUSH_SCALE,
-                &BrushScaleParams {
-                    entity,
-                    brushes,
-                    factors,
-                    about: None,
-                    lock,
-                },
-            ),
-            BrushAction::Shear(entity, brushes, along, by, factor, lock) => self.attempt(
-                MAP_BRUSH_SHEAR,
-                &BrushShearParams {
-                    entity,
-                    brushes,
-                    along,
-                    by,
-                    factor,
-                    about: None,
-                    lock,
-                },
-            ),
-            BrushAction::Sweep(entity, brush, path, lock) => self.attempt(
-                MAP_BRUSH_SWEEP,
-                &BrushSweepParams {
-                    entity,
-                    brush,
-                    path,
-                    lock,
-                    grid: None,
-                },
-            ),
-            BrushAction::Extrude(face, by, lock) => self.attempt(
-                MAP_BRUSH_EXTRUDE,
-                &BrushExtrudeParams {
-                    face,
-                    by,
-                    lock,
-                    // The distance is the one typed in the panel.
-                    grid: Some(0.0),
-                },
-            ),
-            BrushAction::SplitFace(face, by) => self.attempt(
-                MAP_BRUSH_SPLIT_FACE,
-                &BrushSplitFaceParams {
-                    face,
-                    at: NewVertex::Out { by },
-                },
-            ),
-            BrushAction::Vertices(entity, brush, moves) => self.attempt(
-                MAP_BRUSH_VERTICES,
-                &BrushVerticesParams {
-                    entity,
-                    brush,
-                    moves: moves
-                        .into_iter()
-                        .map(|(from, to)| VertexMove { from, to })
-                        .collect(),
-                    // The view has snapped the move to the grid.
-                    grid: Some(0.0),
-                },
-            ),
-            BrushAction::SplitEdge(entity, brush, edge, by) => self.attempt(
-                MAP_BRUSH_SPLIT_EDGE,
-                &BrushSplitEdgeParams {
-                    entity,
-                    brush,
-                    edge,
-                    at: NewVertex::Out { by },
-                },
-            ),
-            BrushAction::Chamfer(entity, brush, edge, distance, faces) => self.attempt(
-                MAP_BRUSH_CHAMFER,
-                &BrushChamferParams {
-                    entity,
-                    brush,
-                    edge,
-                    distance,
-                    faces,
-                },
-            ),
-        }
-    }
-
-    /// The map editor, for tests to find where it drew the map's entities.
-    #[cfg(test)]
-    pub(crate) const fn map_editor(&self) -> &MapEditor {
-        &self.map_editor
-    }
-
-    /// Finds the entities the game does not spawn under `show` with `map.filter`, for the map
-    /// editor to hide; every entity shown when it fails.
-    fn filter_map(&mut self, show: ShowFilter) -> Result<(), ShellError> {
-        let Some(edits) = self
-            .session
-            .context()
-            .workbench
-            .map()
-            .map(MapDocument::edits)
-        else {
-            return Ok(());
-        };
-        let Some((skill, mode)) = show.game() else {
-            self.map_editor.set_hidden(show, Some(Vec::new()), edits);
-            return Ok(());
-        };
-        let filtered: Result<MapFiltered, ShellError> =
-            self.attempt(MAP_FILTER, &FilterParams { skill, mode });
-        match filtered {
-            Ok(filtered) => {
-                self.map_editor
-                    .set_hidden(show, Some(filtered.removed), edits);
-                Ok(())
-            }
-            Err(error) => {
-                self.map_editor.set_hidden(show, None, edits);
-                Err(error)
-            }
-        }
+        let ctx = ui.ctx().clone();
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        let settings = self.settings_file.as_deref();
+        self.features
+            .project
+            .game_guide(&mut commands, settings, (&ctx, &self.theme));
     }
 
     /// Draws the map editor in the Map tab when a map is open, running what it asks for;
@@ -2691,90 +1433,35 @@ impl Shell {
         if self.centre_tab != CentreTab::Map {
             return false;
         }
-        let actions = self.map_editor.ui(ui, &self.theme, document, panes);
-        self.map_actions(actions);
-        self.refresh_map_outline();
-        if self.refresh_map_review() {
+        let actions = self
+            .features
+            .map
+            .map_editor
+            .ui(ui, &self.theme, document, panes);
+        self.with_map(|map, commands| map.map_actions(commands, actions));
+        self.with_map(MapFeature::refresh_map_outline);
+        if self.with_map(MapFeature::refresh_map_review) {
             // The Properties panel, drawn before the map this frame, shows them on the next.
             ui.ctx().request_repaint();
         }
         if let Some(document) = self.session.context().workbench.map()
-            && let Some(show) = self.map_editor.filter_stale(document.edits())
-            && let Err(error) = self.filter_map(show)
+            && let Some(show) = self.features.map.map_editor.filter_stale(document.edits())
+            && let Err(error) = self.with_map(|map, commands| map.filter_map(commands, show))
         {
             tracing::warn!(%error, "the map filter was not found again");
-            self.map_editor.set_refused(Some(error.to_string()));
+            self.features
+                .map
+                .map_editor
+                .set_refused(Some(error.to_string()));
         }
         if let Some(document) = self.session.context().workbench.map()
-            && self.map_editor.keys_stale(document.revision())
+            && self.features.map.map_editor.keys_stale(document.revision())
         {
-            self.refresh_map_keys();
+            self.with_map(MapFeature::refresh_map_keys);
             // The Properties panel, drawn before the map this frame, shows them on the next.
             ui.ctx().request_repaint();
         }
         true
-    }
-
-    /// Reads the open map's outline again when the map or the outline's filter changed since it
-    /// was read (P5-16).
-    fn refresh_map_outline(&mut self) {
-        // The rows change with the map's edits, not with the selection.
-        let Some(revision) = self
-            .session
-            .context()
-            .workbench
-            .map()
-            .map(MapDocument::edits)
-        else {
-            return;
-        };
-        let Some(filter) = self.map_editor.outline_stale(revision) else {
-            return;
-        };
-        let params = OutlineParams {
-            filter: Some(filter.clone()),
-        };
-        let rows: Result<Vec<OutlineRow>, ShellError> = self.attempt(MAP_OUTLINE, &params);
-        self.map_editor
-            .set_outline(rows.unwrap_or_default(), revision, filter);
-    }
-
-    /// Reads the keys of the open map's selected entity for the key editor.
-    fn refresh_map_keys(&mut self) {
-        let map = self.session.context().workbench.map();
-        let revision = map.map(MapDocument::revision);
-        let selected = map.and_then(MapDocument::selected);
-        let keys = selected.and_then(|entity| {
-            let keys: Result<EntityKeys, ShellError> =
-                self.attempt(MAP_ENTITY, &EntityParams { entity });
-            keys.ok().map(|keys| (entity, keys))
-        });
-        self.map_editor.set_keys(keys, revision);
-        let layers: Result<Vec<LayerInfo>, ShellError> =
-            self.attempt(MAP_LAYERS, &serde_json::json!({}));
-        self.map_editor.set_layers(layers.unwrap_or_default());
-    }
-
-    /// Runs a hide, isolate, lock or layer change from the map editor as its `map.*` command
-    /// (P5-14).
-    fn group_action(&mut self, action: GroupAction) -> Result<serde_json::Value, ShellError> {
-        match action {
-            GroupAction::Hide(entities) => self.attempt(MAP_HIDE, &EntityListParams { entities }),
-            GroupAction::Isolate(entities) => {
-                self.attempt(MAP_ISOLATE, &EntityListParams { entities })
-            }
-            GroupAction::Lock(entities) => self.attempt(MAP_LOCK, &EntityListParams { entities }),
-            GroupAction::ShowAll => self.attempt(MAP_SHOW_ALL, &serde_json::json!({})),
-            GroupAction::UnlockAll => self.attempt(MAP_UNLOCK_ALL, &serde_json::json!({})),
-            GroupAction::SetLayer(layer, setting, switch) => self.attempt(
-                MAP_SET_LAYER,
-                &SetLayerParams {
-                    layer,
-                    setting,
-                    switch,
-                },
-            ),
-        }
     }
 
     /// Runs what the outliner or the Properties panel asked for: a selection or a field's new
@@ -2789,9 +1476,9 @@ impl Shell {
                 {
                     return;
                 }
-                if let Some(entity) = self.live().entity {
+                if let Some(entity) = self.session.context().live().entity {
                     let started = self.ask_about(&entity, ctx);
-                    self.agent.set_error(started.err());
+                    self.features.agent.panel.set_error(started.err());
                 }
                 return;
             }
@@ -2824,86 +1511,19 @@ impl Shell {
         }
     }
 
-    /// Runs what the Debugger tab, the console's box or a click in the editor's gutter asked
-    /// for, through its command, or shows a line in the editor.
-    fn debug_action(&mut self, action: DebugAction) {
-        let ran = match action {
-            DebugAction::Step(kind) => self
-                .run::<_, PreviewStatus>(STEP_BY, &StepByParams { kind })
-                .is_some(),
-            DebugAction::Watch(expression) => self
-                .run::<_, ()>(WATCH, &WatchParams { expression })
-                .is_some(),
-            DebugAction::Unwatch(index) => self
-                .run::<_, PreviewStatus>(
-                    UNWATCH,
-                    &UnwatchParams {
-                        index: WatchIndex::new(index),
-                    },
-                )
-                .is_some(),
-            DebugAction::Breakpoint { file, line } => self
-                .run::<_, ()>(BREAKPOINT, &BreakpointParams { file, line })
-                .is_some(),
-            DebugAction::Console(command) => self
-                .run::<_, ()>(CONSOLE, &ConsoleParams { command })
-                .is_some(),
-            DebugAction::Show { file, line } => {
-                self.show_line(&file, line);
-                true
-            }
-        };
-        if !ran {
-            self.preview_error = Some(Text::EditFailed.get().to_owned());
-        }
-    }
-
     /// Opens `file`, relative to the project's root, at `line`, from 1.
     fn show_line(&mut self, file: &Path, line: u32) {
-        let Some(root) = self.session.context().workbench.root() else {
-            return;
-        };
-        let path = root.join(file);
-        self.pending_line = Some((path.clone(), line));
-        self.jump(Jump { path, offset: 0 });
+        self.with_editors(|editors, commands| editors.show_line(commands, file, line));
     }
 
     /// Takes the editor to where the game stopped, once for each stop.
     fn follow_stop(&mut self) {
-        let stop = self
-            .session
-            .context()
-            .preview
-            .debugger()
-            .stopped()
-            .map(|(_, at)| at.clone());
-        if stop == self.shown_stop {
-            return;
-        }
-        if let Some(Location {
-            file: Some(file),
-            line: Some(line),
-            ..
-        }) = &stop
-        {
-            self.show_line(file, *line);
-        }
-        self.shown_stop = stop;
+        self.with_editors(|editors, commands| editors.follow_stop(commands));
     }
 
     /// Reloads the running game after a save, its error shown on the toolbar.
     fn reload_after_save(&mut self) {
-        if self.session.context().preview.state() == PlayState::Stopped {
-            return;
-        }
-        // P3-10: a reload that would lose a value waits for the modder (`reset_notice`).
-        let params = ReloadParams {
-            on_loss: OnLoss::Ask,
-        };
-        let reloaded: Option<PreviewStatus> = self.run(RELOAD, &params);
-        if reloaded.is_none() {
-            self.preview_error = Some(Text::ReloadFailed.get().to_owned());
-        }
+        self.with_editors(|editors, commands| editors.reload_after_save(commands));
     }
 
     /// Below the toolbar while a reload waits (P3-10, design doc "State honesty"): what it
@@ -2986,7 +1606,7 @@ impl Shell {
                         PlayState::Paused => Text::PreviewPaused,
                     };
                     ui.label(RichText::new(running.get()).small().color(muted));
-                    match &self.export_note {
+                    match &self.features.project.export_note {
                         Some(Ok(path)) => {
                             let text = format!("{} {}", Text::ExportedTo.get(), path.display());
                             ui.label(RichText::new(text).small().color(muted));
@@ -3003,10 +1623,6 @@ impl Shell {
 
     /// Draws `panel`, giving it the keyboard when `focus`: its first heading, or the bottom
     /// panel's selected tab, takes it.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "one pass lays out each panel's contents and runs what they asked for, in order"
-    )]
     fn panel(&mut self, ui: &mut Ui, panel: Panel, focus: FocusNow) {
         let state = *self.layout().panel(panel);
         let theme = &self.theme;
@@ -3021,24 +1637,14 @@ impl Shell {
             .stroke(egui::Stroke::new(1.0, theme.color(Token::Border)));
         let bottom_tab = &mut self.bottom_tab;
         let scope = &mut self.symbol_scope;
-        let workbench = &self.session.context().workbench;
-        let preview = &self.session.context().preview;
-        let tree = &mut self.outliner;
-        let properties = &mut self.properties;
-        let debug_input = &mut self.debug_input;
-        let terminal_view = &mut self.terminal_view;
-        let git_view = &mut self.git_view.0;
-        let agent = &mut self.agent;
-        let mut agent_action = None;
-        let map_editor = (self.centre_tab == CentreTab::Map && workbench.map().is_some())
-            .then_some(&mut self.map_editor);
-        let mut map_actions = Vec::new();
-        let recent_projects = self.recent.0.projects();
-        let project_error = self.project_error.as_deref();
-        let mut open: Option<LeftAction> = None;
-        let mut entity_action = None;
-        let mut tab_action = None;
-        let mut jump = None;
+        let workspace = self.session.context();
+        let map_shown = if self.centre_tab == CentreTab::Map {
+            MapShown::Shown
+        } else {
+            MapShown::Hidden
+        };
+        let features = &mut self.features;
+        let mut actions = Vec::new();
         let mut expanded = state.visible;
         // A size the layout was given by a command, not by a drag of the panel's edge, is
         // drawn: egui keeps the size it last drew and reads `default_size` only the first time.
@@ -3080,70 +1686,16 @@ impl Shell {
                     Panel::Bottom => Text::BottomPanel,
                 };
                 name_area(ui, accesskit::Role::Pane, name);
-                match panel {
-                    Panel::Left => {
-                        let recent = (recent_projects, project_error);
-                        match left(ui, theme, (workbench, recent), scope, focus) {
-                            Some(LeftAction::Jump(to)) => jump = Some(to),
-                            asked => open = asked,
-                        }
-                        ui.add_space(theme.space(SECTION_GAP));
-                        if preview.state() == PlayState::Stopped {
-                            section(ui, theme, Text::Entities, Text::NotPlaying);
-                        } else {
-                            heading(ui, theme, Text::Entities);
-                            entity_action = entities::outliner(ui, theme, preview.entities(), tree);
-                        }
-                        if let Some(editor) = map_editor {
-                            ui.add_space(theme.space(SECTION_GAP));
-                            heading(ui, theme, Text::Map);
-                            let selected = workbench.map().and_then(MapDocument::selected);
-                            map_actions = editor.outline_ui(ui, theme, selected);
-                        }
-                    }
-                    Panel::Right => {
-                        let panels = (properties, agent, map_editor);
-                        let asked = right(ui, theme, (workbench, preview), panels, focus);
-                        (entity_action, agent_action, map_actions) = asked;
-                    }
-                    Panel::Bottom => {
-                        match bottom(
-                            ui,
-                            theme,
-                            bottom_tab,
-                            (workbench, preview, debug_input),
-                            (terminal_view, git_view),
-                            focus,
-                        ) {
-                            Some(BottomAction::Jump(to)) => jump = Some(to),
-                            Some(asked) => tab_action = Some(asked),
-                            None => {}
-                        }
-                    }
-                }
+                let dock = Dock {
+                    workspace,
+                    bottom_tab,
+                    scope,
+                    map_shown,
+                };
+                actions = features.region_ui(ui, theme, panel, dock, focus);
             });
-        if let Some(jump) = jump {
-            self.jump(jump);
-        }
-        self.map_actions(map_actions);
-        if let Some(action) = entity_action {
-            self.entity_action(action, ui.ctx());
-        }
-        match tab_action {
-            Some(BottomAction::Terminal(action)) => self.terminal_action(action),
-            Some(BottomAction::Git(action)) => self.git_action(action),
-            Some(BottomAction::Debug(action)) => self.debug_action(action),
-            Some(BottomAction::ProblemsAsExcerpts) => self.problems_as_excerpts(),
-            Some(BottomAction::Jump(_)) | None => {}
-        }
-        if let Some(action) = agent_action {
-            self.agent_action(action, ui.ctx());
-        }
-        match open {
-            Some(LeftAction::Open(folder)) => self.open_asked(&folder),
-            Some(LeftAction::OpenFolder) => self.open_folder(),
-            Some(LeftAction::New(template)) => self.new_project(template),
-            Some(LeftAction::Jump(_)) | None => {}
+        for action in actions {
+            self.apply(action, ui.ctx());
         }
         // A panel dragged shut is hidden through its command too.
         if expanded != state.visible
@@ -3186,11 +1738,126 @@ impl Shell {
         id: &str,
         params: &P,
     ) -> Option<O> {
-        match self.attempt(id, params) {
-            Ok(output) => Some(output),
-            Err(error) => {
-                tracing::warn!(%error, command = id, "command failed");
-                None
+        self.commands().run(id, params)
+    }
+
+    /// The commands the features run, and the toolbar's notice.
+    const fn commands(&mut self) -> Commands<'_> {
+        Commands::new(&mut self.session, &mut self.preview_error)
+    }
+
+    /// Whether the Git tab is on screen.
+    fn git_shown(&self) -> TabShown {
+        if self.bottom_tab == BottomTab::Git && self.layout().bottom.visible {
+            TabShown::Shown
+        } else {
+            TabShown::Hidden
+        }
+    }
+
+    /// Takes `paths` as the watcher does when another program wrote them, for tests, which
+    /// do not wait on the clock.
+    #[cfg(test)]
+    pub(crate) fn files_written(&mut self, paths: Vec<PathBuf>) {
+        self.with_map(|map, commands| map.files_changed(commands, paths));
+    }
+
+    /// Selects these faces of the open map for the UV editor, as Alt-clicks would.
+    #[cfg(test)]
+    pub(crate) fn select_map_faces(&mut self, faces: &[FaceRef]) {
+        self.features.map.map_editor.select_faces(faces);
+    }
+
+    /// The map editor, for tests to find where it drew the map's entities.
+    #[cfg(test)]
+    pub(crate) const fn map_editor(&self) -> &MapEditor {
+        &self.features.map.map_editor
+    }
+
+    /// Carries out what a dock region's panel asked for, after the frame drew it.
+    fn apply(&mut self, action: FeatureAction, ctx: &egui::Context) {
+        match action {
+            FeatureAction::Jump(jump) => self.jump(jump),
+            FeatureAction::Map(map_actions) => {
+                self.with_map(|map, commands| map.map_actions(commands, map_actions));
+            }
+            FeatureAction::Entity(action) => self.entity_action(action, ctx),
+            FeatureAction::Bottom(BottomAction::Terminal(action)) => {
+                action.run(&mut self.commands());
+            }
+            FeatureAction::Bottom(BottomAction::Git(action)) => {
+                let shown = self.git_shown();
+                let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+                let request = self.features.git.apply(action, &mut commands, shown);
+                self.request(request);
+            }
+            FeatureAction::Bottom(BottomAction::Debug(action)) => {
+                if let Some(request) = action.run(&mut self.commands()) {
+                    self.request(request);
+                }
+            }
+            FeatureAction::Bottom(BottomAction::ProblemsAsExcerpts) => self.problems_as_excerpts(),
+            FeatureAction::Bottom(BottomAction::Jump(_)) => {}
+            FeatureAction::Agent(action) => self.agent_action(action, ctx),
+            FeatureAction::Left(LeftAction::Open(folder)) => self.open_asked(&folder),
+            FeatureAction::Left(LeftAction::OpenFolder) => self.open_folder(),
+            FeatureAction::Left(LeftAction::New(template)) => self.new_project(template),
+            FeatureAction::Left(LeftAction::Jump(_)) => {}
+        }
+    }
+
+    /// Runs `call` on the editors' feature with the commands, then carries out what it asked
+    /// of the window, in order.
+    fn with_editors<R>(
+        &mut self,
+        call: impl FnOnce(&mut EditorsFeature, &mut Commands<'_>) -> R,
+    ) -> R {
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        let out = call(&mut self.features.editors, &mut commands);
+        self.take_editor_requests();
+        out
+    }
+
+    /// Carries out what the editors' feature asked of the window.
+    fn take_editor_requests(&mut self) {
+        for request in self.features.editors.take_requests() {
+            self.request(request);
+        }
+    }
+
+    /// Runs `call` on the map's feature with the commands, then carries out what it asked of
+    /// the window, in order.
+    fn with_map<R>(&mut self, call: impl FnOnce(&mut MapFeature, &mut Commands<'_>) -> R) -> R {
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        let out = call(&mut self.features.map, &mut commands);
+        for request in self.features.map.take_requests() {
+            self.request(request);
+        }
+        out
+    }
+
+    /// Carries out what a feature asked of the window or another feature, at once.
+    fn request(&mut self, request: ShellRequest) {
+        match request {
+            ShellRequest::Jump(jump) => self.jump(jump),
+            ShellRequest::ShowLine { path, line } => {
+                self.features.editors.pending_line = Some((path.clone(), line));
+                self.jump(Jump { path, offset: 0 });
+            }
+            ShellRequest::ShowProjectLine { file, line } => self.show_line(&file, line),
+            ShellRequest::RefreshEditor => {
+                self.sync_editor();
+                self.mark_changes();
+            }
+            ShellRequest::ShowCentre(tab) => self.centre_tab = tab,
+            ShellRequest::OpenGameGuide => self.open_guide_to_missing_files(),
+            ShellRequest::ShowBottom(tab) => {
+                self.bottom_tab = tab;
+                if !self.layout().panel(Panel::Bottom).visible
+                    && let Err(error) = self.toggle(Panel::Bottom)
+                {
+                    tracing::warn!(%error, "panel toggle failed");
+                }
             }
         }
     }
@@ -3201,10 +1868,7 @@ impl Shell {
         id: &str,
         params: &P,
     ) -> Result<O, ShellError> {
-        serde_json::to_value(params)
-            .map_err(ShellError::from)
-            .and_then(|params| Ok(self.session.execute(id, params)?))
-            .and_then(|output| Ok(serde_json::from_value(output)?))
+        self.commands().attempt(id, params)
     }
 
     /// Shows `places`, each a file's byte range, as the multibuffer's excerpts from `source`,
@@ -3215,24 +1879,9 @@ impl Shell {
         places: Vec<(PathBuf, usize, usize)>,
         truncation: Truncation,
     ) {
-        let mut texts: Vec<(PathBuf, Vec<u8>)> = Vec::new();
-        for (path, _, _) in &places {
-            if texts.iter().any(|(p, _)| p == path) {
-                continue;
-            }
-            let read: Option<FileText> =
-                self.run(READ_FILE, &SaveFileParams { path: path.clone() });
-            if let Some(read) = read {
-                texts.push((path.clone(), read.text.into_bytes()));
-            }
-        }
-        self.multibuffer.show(source, &places, truncation, |path| {
-            texts
-                .iter()
-                .find(|(p, _)| p == path)
-                .map(|(_, text)| text.clone())
+        self.with_editors(|editors, commands| {
+            editors.show_places(commands, source, places, truncation);
         });
-        self.centre_tab = CentreTab::Search;
     }
 
     /// Does what the multibuffer asked for (P4-33).
@@ -3240,7 +1889,7 @@ impl Shell {
         match action {
             MultiAction::Search => self.search_project(),
             MultiAction::ReplaceAll => {
-                let form = self.multibuffer.form.clone();
+                let form = self.features.editors.multibuffer.form.clone();
                 let files: Vec<PathBuf> = self
                     .run(PROJECT_FILES, &serde_json::json!({}))
                     .unwrap_or_default();
@@ -3256,14 +1905,15 @@ impl Shell {
                     };
                     if let Err(error) = self.attempt::<_, ReplacedInFile>(REPLACE_IN_FILE, &params)
                     {
-                        self.multibuffer.error = Some(error.to_string());
+                        self.features.editors.multibuffer.error = Some(error.to_string());
                         return;
                     }
                 }
                 self.search_project();
             }
             MultiAction::Edit(index, text) => {
-                let Some(excerpt) = self.multibuffer.excerpts.get(index.get()) else {
+                let Some(excerpt) = self.features.editors.multibuffer.excerpts.get(index.get())
+                else {
                     return;
                 };
                 let params = ReplaceRangeParams {
@@ -3273,58 +1923,26 @@ impl Shell {
                     text: text.clone(),
                 };
                 match self.attempt::<_, ()>(REPLACE_RANGE, &params) {
-                    Ok(()) => self.multibuffer.edited(index, text),
-                    Err(error) => self.multibuffer.error = Some(error.to_string()),
+                    Ok(()) => self.features.editors.multibuffer.edited(index, text),
+                    Err(error) => self.features.editors.multibuffer.error = Some(error.to_string()),
                 }
             }
             MultiAction::Open(path, offset) => {
                 self.jump(Jump { path, offset });
                 // The editor takes the keyboard, at the caret it went to, once it is drawn.
-                self.multibuffer.refocus = true;
+                self.features.editors.multibuffer.refocus = true;
             }
         }
     }
 
     /// Searches the project with the multibuffer's form and shows what it found.
     fn search_project(&mut self) {
-        let form = self.multibuffer.form.clone();
-        let params = ProjectSearchParams {
-            text: form.text,
-            case_sensitive: form.case_sensitive,
-            whole_word: form.whole_word,
-            regex: form.regex,
-        };
-        match self.attempt::<_, SearchFound>(PROJECT_SEARCH, &params) {
-            Ok(found) => {
-                let places = found.matches.into_iter().map(|m| (m.path, m.start, m.end));
-                let truncation = if found.truncated {
-                    Truncation::Cut
-                } else {
-                    Truncation::All
-                };
-                self.show_places(MultiSource::Search, places.collect(), truncation);
-            }
-            Err(error) => self.multibuffer.error = Some(error.to_string()),
-        }
+        self.with_editors(|editors, commands| editors.search_project(commands));
     }
 
     /// Shows every problem as the multibuffer's excerpts (P4-33).
     fn problems_as_excerpts(&mut self) {
-        let places = self
-            .session
-            .context()
-            .workbench
-            .problems()
-            .iter()
-            .map(|p| {
-                (
-                    p.path.clone(),
-                    p.diagnostic.span.start,
-                    p.diagnostic.span.end,
-                )
-            })
-            .collect();
-        self.show_places(MultiSource::Problems, places, Truncation::All);
+        self.with_editors(|editors, commands| editors.problems_as_excerpts(commands));
     }
 
     /// Runs what the editor asked for, as a frame would after the editor drew.
@@ -3337,7 +1955,7 @@ impl Shell {
     /// unsent text so every answer is about the text on screen.
     fn handle(&mut self, requests: Vec<Request>) {
         for request in requests {
-            let Some(editor) = self.editor.as_mut() else {
+            let Some(editor) = self.features.editors.editor.as_mut() else {
                 return;
             };
             let path = editor.path.clone();
@@ -3365,7 +1983,7 @@ impl Shell {
                         self.run(SAVE_FILE, &SaveFileParams { path: path.clone() });
                     if saved.is_some() {
                         // The editor's own write is no other program's (P5-17).
-                        self.disk_watch.wrote(path);
+                        self.features.map.disk_watch.wrote(path);
                         self.reload_after_save();
                     }
                     None
@@ -3471,7 +2089,7 @@ impl Shell {
                     .map(Popup::InlineFailed),
             };
             if let Some(popup) = popup
-                && let Some(editor) = self.editor.as_mut()
+                && let Some(editor) = self.features.editors.editor.as_mut()
             {
                 editor.popup = Some(popup);
             }
@@ -3481,74 +2099,24 @@ impl Shell {
     /// Brings the editor up to date with the open file: a new view for another file, the caret
     /// moved for another `file.open` of the same one, none for no file.
     fn sync_editor(&mut self) {
-        // Another file's editor sends its edits before it goes: the workbench keeps them, so
-        // the file shows them when it is opened again.
-        let open_path = self.session.context().workbench.open().map(OpenFile::path);
-        if let Some(editor) = self.editor.as_mut()
-            && open_path != Some(editor.path.as_path())
-            && let Some(text) = editor.unsent()
-        {
-            let path = editor.path.clone();
-            let _: Option<()> = self.run(UPDATE_FILE, &UpdateFileParams { path, text });
-        }
-        let workbench = &self.session.context().workbench;
-        let tabs = workbench.tabs();
-        self.parked.retain(|path, _| tabs.contains(path));
-        let open = workbench.open();
-        match (open, &mut self.editor) {
-            (None, _) => self.editor = None,
-            (Some(open), Some(editor)) if editor.path == open.path() => {
-                editor.sync(open, &self.theme);
-            }
-            (Some(open), _) => {
-                if let Some(old) = self.editor.take()
-                    && tabs.contains(&old.path)
-                {
-                    self.parked.insert(old.path.clone(), old);
-                }
-                let editor = match self.parked.remove(open.path()) {
-                    Some(mut editor) => {
-                        editor.sync(open, &self.theme);
-                        editor
-                    }
-                    None => Editor::new(Id::new(EDITOR_AREA), open, &self.theme),
-                };
-                self.editor = Some(editor);
-                self.mark_changes();
-            }
-        }
-        if let Some(editor) = self.editor.as_mut()
-            && let Some((_, line)) = self.pending_line.take_if(|(path, _)| *path == editor.path)
-        {
-            editor.go_to_line(line_index(line));
-        }
+        let theme = &self.theme;
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        self.features.editors.sync_editor(&mut commands, theme);
+        self.take_editor_requests();
     }
 
     /// Gives egui a system font for each character of the editor's text that the bundled fonts
     /// lack: the whole text of a file just opened, then the caret's line as it is edited.
     fn cover_characters(&mut self, ctx: &egui::Context) {
-        let Some(editor) = &self.editor else {
-            return;
-        };
-        let state = editor.view.state();
-        let now = (editor.path.clone(), state.revision());
-        if self.covered.as_ref() == Some(&now) {
-            return;
-        }
-        let text = match &self.covered {
-            Some((path, _)) if *path == now.0 => {
-                state.buffer().line(state.primary().head.line).to_owned()
-            }
-            Some(_) | None => state.buffer().text(),
-        };
-        self.system_fonts.cover(ctx, &families(), &text);
-        self.covered = Some(now);
+        self.features
+            .editors
+            .cover_characters(&mut self.system_fonts, ctx);
     }
 
     /// The multibuffer the Search tab shows (P4-33).
     #[cfg(test)]
     pub(crate) const fn multibuffer(&self) -> &Multibuffer {
-        &self.multibuffer
+        &self.features.editors.multibuffer
     }
 
     /// Draws the Search tab: the multibuffer, and does what it asked for (P4-33).
@@ -3564,7 +2132,12 @@ impl Shell {
             .fill(theme.color(Token::SurfaceEditor))
             .inner_margin(theme.space(2))
             .show(ui, |ui| {
-                multibuffer_ui(ui, theme, &mut self.multibuffer, root.as_deref())
+                multibuffer_ui(
+                    ui,
+                    theme,
+                    &mut self.features.editors.multibuffer,
+                    root.as_deref(),
+                )
             })
             .inner;
         if let Some(action) = asked {
@@ -3582,12 +2155,14 @@ impl Shell {
     )]
     fn centre(&mut self, ui: &mut Ui, focus: FocusNow) {
         self.sync_editor();
-        self.sync_map();
-        self.back_up_map(ui.ctx());
-        self.watch_disk(ui.ctx());
+        self.with_map(MapFeature::sync_map);
+        let ctx = ui.ctx().clone();
+        self.with_map(|map, commands| map.back_up_map(commands, &ctx));
+        self.with_map(|map, commands| map.watch_disk(commands, &ctx));
         self.cover_characters(ui.ctx());
-        let editor_shown = self.centre_tab == CentreTab::Editor && self.editor.is_some();
-        let refocus = std::mem::take(&mut self.multibuffer.refocus);
+        let editor_shown =
+            self.centre_tab == CentreTab::Editor && self.features.editors.editor.is_some();
+        let refocus = std::mem::take(&mut self.features.editors.multibuffer.refocus);
         if (focus == FocusNow::Take || refocus) && editor_shown {
             self.focus_editor(ui.ctx());
         }
@@ -3635,9 +2210,16 @@ impl Shell {
         match chosen {
             Some(TabAction::Show(path)) => {
                 let offset = self
+                    .features
+                    .editors
                     .parked
                     .get(&path)
-                    .or(self.editor.as_ref().filter(|e| e.path == path))
+                    .or(self
+                        .features
+                        .editors
+                        .editor
+                        .as_ref()
+                        .filter(|e| e.path == path))
                     .map_or(0, Editor::caret_offset);
                 self.jump(Jump { path, offset });
             }
@@ -3659,7 +2241,7 @@ impl Shell {
         };
         let theme = &self.theme;
         if self.centre_tab == CentreTab::Editor
-            && let Some(editor) = &mut self.editor
+            && let Some(editor) = &mut self.features.editors.editor
         {
             editor.view.set_wrap(wrap);
             let context = self.session.context();
@@ -3704,7 +2286,10 @@ impl Shell {
             let clicked = editor.view.take_gutter_click();
             if let (Some(file), Some(line)) = (file, clicked) {
                 let line = u32::try_from(line.saturating_add(1)).unwrap_or(u32::MAX);
-                self.debug_action(DebugAction::Breakpoint { file, line });
+                let breakpoint = DebugAction::Breakpoint { file, line };
+                if let Some(request) = breakpoint.run(&mut self.commands()) {
+                    self.request(request);
+                }
             }
             // The panels drawn before the editor this frame show what the requests change on
             // the next.
@@ -3718,7 +2303,7 @@ impl Shell {
             return;
         }
         if self.centre_tab == CentreTab::Map
-            && let Some(map) = &mut self.map
+            && let Some(map) = &mut self.features.map.map
         {
             map.ui(ui);
             return;
@@ -3913,7 +2498,7 @@ pub(crate) fn dragged_size(previous: Option<f32>, now: Option<f32>, dragging: bo
 
 /// Names the area `ui` draws for a screen reader (QA-9): its node, egui's generic container,
 /// gets `role` and `name`.
-fn name_area(ui: &Ui, role: accesskit::Role, name: Text) {
+pub(crate) fn name_area(ui: &Ui, role: accesskit::Role, name: Text) {
     ui.ctx().accesskit_node_builder(ui.unique_id(), |node| {
         node.set_role(role);
         node.set_label(name.get());
@@ -3929,43 +2514,9 @@ pub(crate) fn name_field(ui: &Ui, response: &Response, name: Text) {
     });
 }
 
-/// The right panel: the Properties of the selected entity while the game runs, or the key
-/// editor of the open map's while the Map tab shows it (P5-06), then the agent panel (P4-09);
-/// what each asked for. Its first heading takes the keyboard when `focus`.
-fn right(
-    ui: &mut Ui,
-    theme: &Theme,
-    (workbench, preview): (&Workbench<FsLoader>, &Preview),
-    (properties, agent, map_editor): (&mut Properties, &mut AgentPanel, Option<&mut MapEditor>),
-    focus: FocusNow,
-) -> (Option<EntityAction>, Option<AgentAction>, Vec<MapAction>) {
-    let focus = focus == FocusNow::Take;
-    let mut entity_action = None;
-    let mut map_actions = Vec::new();
-    let first = if let Some(map_editor) = map_editor {
-        let first = heading(ui, theme, Text::Properties);
-        let report = workbench.map().and_then(MapDocument::report);
-        map_actions = map_editor.properties(ui, theme, report);
-        first
-    } else if preview.state() == PlayState::Stopped {
-        section(ui, theme, Text::Properties, Text::NotPlaying)
-    } else {
-        let first = heading(ui, theme, Text::Properties);
-        entity_action = entities::properties(ui, theme, preview, properties);
-        first
-    };
-    if focus {
-        first.request_focus();
-    }
-    ui.add_space(theme.space(SECTION_GAP));
-    heading(ui, theme, Text::Agent);
-    let agent_action = agent.ui(ui, theme, &workbench.staged_hunks());
-    (entity_action, agent_action, map_actions)
-}
-
 /// A panel section: its heading and, until it has content, one line of explanation; the
 /// heading's response.
-fn section(ui: &mut Ui, theme: &Theme, text: Text, empty: Text) -> Response {
+pub(crate) fn section(ui: &mut Ui, theme: &Theme, text: Text, empty: Text) -> Response {
     let heading = heading(ui, theme, text);
     note(ui, theme, empty);
     heading
@@ -3973,7 +2524,7 @@ fn section(ui: &mut Ui, theme: &Theme, text: Text, empty: Text) -> Response {
 
 /// A panel section's heading: a heading to a screen reader, and where the keyboard lands when
 /// a focus command names the panel, so Tab moves on into the section.
-fn heading(ui: &mut Ui, theme: &Theme, text: Text) -> Response {
+pub(crate) fn heading(ui: &mut Ui, theme: &Theme, text: Text) -> Response {
     let response = ui.add(
         egui::Label::new(
             RichText::new(text.get())
@@ -3991,121 +2542,9 @@ fn heading(ui: &mut Ui, theme: &Theme, text: Text) -> Response {
 }
 
 /// The share of the left panel's height the Project tree may take.
-const TREE_SHARE: f32 = 0.35;
+pub(crate) const TREE_SHARE: f32 = 0.35;
 /// The share of the left panel's height the Symbols list may take.
-const SYMBOLS_SHARE: f32 = 0.4;
-
-/// The left panel's Project and Symbols sections; the row chosen, if any.
-fn left(
-    ui: &mut Ui,
-    theme: &Theme,
-    (workbench, (recent, error)): (&Workbench<FsLoader>, (&[PathBuf], Option<&str>)),
-    scope: &mut SymbolScope,
-    focus: FocusNow,
-) -> Option<LeftAction> {
-    let focus = focus == FocusNow::Take;
-    let height = ui.available_height();
-    let mut jump = None;
-    let project = heading(ui, theme, Text::Project);
-    if focus {
-        project.request_focus();
-    }
-    match workbench.root() {
-        None => {
-            if let Some(action) = no_project(ui, theme, recent, error) {
-                return Some(action);
-            }
-        }
-        Some(root) => {
-            ui.label(RichText::new(project::root_name(root)).strong());
-            let open = workbench.open().map(OpenFile::path);
-            egui::ScrollArea::vertical()
-                .id_salt(Area::Section(Text::Project))
-                .max_height(height * TREE_SHARE)
-                .auto_shrink([false, true])
-                .show(ui, |ui| {
-                    let rows = project::Rows {
-                        open,
-                        unsaved: &|path| workbench.is_unsaved(path),
-                        mark: theme.color(Token::StatusWarn),
-                    };
-                    jump = project::tree_ui(ui, workbench.tree(), &rows);
-                });
-        }
-    }
-    ui.add_space(theme.space(SECTION_GAP));
-    heading(ui, theme, Text::Symbols);
-    let symbols = project::symbols_ui(
-        ui,
-        theme,
-        scope,
-        workbench.open(),
-        workbench.project_symbols(),
-        height * SYMBOLS_SHARE,
-    );
-    jump.or(symbols).map(LeftAction::Jump)
-}
-
-/// What a click in the left panel asks for.
-enum LeftAction {
-    /// Open a file at a place.
-    Jump(Jump),
-    /// Open this project folder.
-    Open(PathBuf),
-    /// Ask for a project folder with the system's dialog.
-    OpenFolder,
-    /// Make a new project from a template.
-    New(Template),
-}
-
-/// The Project section with no project open: an Open Folder button, why the last one did not
-/// open, and the recent projects, each a row that opens it, as Zed's welcome page offers them.
-fn no_project(
-    ui: &mut Ui,
-    theme: &Theme,
-    recent: &[PathBuf],
-    error: Option<&str>,
-) -> Option<LeftAction> {
-    let mut action = None;
-    note(ui, theme, Text::NoProject);
-    ui.horizontal_wrapped(|ui| {
-        if ui.button(Text::OpenFolderButton.get()).clicked() {
-            action = Some(LeftAction::OpenFolder);
-        }
-        for (template, text) in [
-            (Template::Id1, Text::NewId1Menu),
-            (Template::Rerelease, Text::NewRereleaseMenu),
-        ] {
-            if ui.button(text.get()).clicked() {
-                action = Some(LeftAction::New(template));
-            }
-        }
-    });
-    if let Some(error) = error {
-        ui.add(
-            egui::Label::new(RichText::new(error).color(theme.color(Token::StatusError))).wrap(),
-        );
-    }
-    if recent.is_empty() {
-        return action;
-    }
-    ui.add_space(theme.space(2));
-    ui.label(
-        RichText::new(Text::RecentProjects.get())
-            .small()
-            .color(theme.color(Token::TextMuted)),
-    );
-    for folder in recent {
-        let name = project::root_name(folder);
-        let row = ui
-            .add(Button::new(name).frame_when_inactive(false))
-            .on_hover_text(folder.to_string_lossy());
-        if row.clicked() {
-            action = Some(LeftAction::Open(folder.clone()));
-        }
-    }
-    action
-}
+pub(crate) const SYMBOLS_SHARE: f32 = 0.4;
 
 impl Theme {
     /// The editor's colours and font, from the theme's tokens.
@@ -4137,157 +2576,8 @@ impl Theme {
 }
 
 /// A line of muted text, wrapped to the panel's width.
-fn note(ui: &mut Ui, theme: &Theme, text: Text) {
+pub(crate) fn note(ui: &mut Ui, theme: &Theme, text: Text) {
     ui.add(egui::Label::new(RichText::new(text.get()).color(theme.color(Token::TextMuted))).wrap());
-}
-
-/// What a click or a typed line in the bottom panel asks for.
-enum BottomAction {
-    /// Open the problem's place.
-    Jump(Jump),
-    /// What the Debugger tab or the console's box asked for.
-    Debug(DebugAction),
-    /// What the Terminal tab asked for.
-    Terminal(TerminalAction),
-    /// What the Git tab asked for.
-    Git(GitAction),
-    /// Show every problem as excerpts in the multibuffer (P4-33).
-    ProblemsAsExcerpts,
-}
-
-/// The bottom panel: its tabs, and the Problems list, the console or the Debugger tab; what a
-/// click in it asked for, if anything.
-fn bottom(
-    ui: &mut Ui,
-    theme: &Theme,
-    tab: &mut BottomTab,
-    (workbench, preview, input): (&Workbench<FsLoader>, &Preview, &mut DebugInput),
-    (terminal_view, git_view): (&mut TerminalView, &mut GitView),
-    focus: FocusNow,
-) -> Option<BottomAction> {
-    let focus = focus == FocusNow::Take;
-    let problems = workbench.problems();
-    ui.horizontal(|ui| {
-        for (value, text) in [
-            (BottomTab::Problems, Text::Problems),
-            (BottomTab::Console, Text::Console),
-            (BottomTab::Debugger, Text::Debugger),
-            (BottomTab::Terminal, Text::Terminal),
-            (BottomTab::Git, Text::Git),
-        ] {
-            let label = match (value, problems.len()) {
-                (BottomTab::Problems, shown @ 1..) => format!("{} {shown}", text.get()),
-                _ => text.get().to_owned(),
-            };
-            let response = ui.selectable_value(tab, value, label);
-            if focus && *tab == value {
-                response.request_focus();
-            }
-        }
-    });
-    ui.separator();
-    match tab {
-        BottomTab::Problems => {
-            if !problems.is_empty() && ui.small_button(Text::OpenAsMultibuffer.get()).clicked() {
-                return Some(BottomAction::ProblemsAsExcerpts);
-            }
-            project::problems_ui(ui, theme, problems, workbench.root()).map(BottomAction::Jump)
-        }
-        BottomTab::Console if preview.state() != PlayState::Stopped => {
-            debugger::console(ui, theme, preview, input).map(BottomAction::Debug)
-        }
-        BottomTab::Console => {
-            note(ui, theme, Text::ConsoleIdle);
-            None
-        }
-        BottomTab::Debugger => {
-            debugger::debugger_ui(ui, theme, preview, input).map(BottomAction::Debug)
-        }
-        BottomTab::Terminal => {
-            terminal_ui(ui, theme, workbench.terminals(), terminal_view).map(BottomAction::Terminal)
-        }
-        BottomTab::Git => {
-            let open = workbench.open().map(|open| open.path().to_path_buf());
-            git_ui(ui, theme, git_view, open.as_ref()).map(BottomAction::Git)
-        }
-    }
-}
-
-/// A `git.*` command's file parameter.
-fn path_params(path: &Path) -> GitPathParams {
-    GitPathParams {
-        path: path.to_path_buf(),
-    }
-}
-
-/// What the Git tab shows, read through the `git.*` commands (P4-35): the status, each changed
-/// file's hunks or a conflicted file's conflicts, the branches, and the open file's history and,
-/// when shown, its blame. Outside a repository there is no status and no error.
-fn read_git(session: &mut Session<Workspace>, open: Option<&Path>, blame: BlameShown) -> GitData {
-    let mut data = GitData::default();
-    let mut read = |id: &str, params: serde_json::Value| {
-        session
-            .execute(id, params)
-            .map_err(|error| error.to_string())
-    };
-    let status = read(GIT_STATUS, serde_json::json!({}))
-        .and_then(|v| serde_json::from_value::<Option<GitStatus>>(v).map_err(|e| e.to_string()));
-    let status = match status {
-        Ok(Some(status)) => status,
-        Ok(None) => return data,
-        Err(error) => {
-            data.error = Some(error);
-            return data;
-        }
-    };
-    let to = |params: Result<serde_json::Value, serde_json::Error>| params.unwrap_or_default();
-    for file in &status.files {
-        let path = &file.full_path;
-        let conflicted = file.staged == GitChange::Unmerged || file.unstaged == GitChange::Unmerged;
-        if conflicted {
-            let found = read(GIT_CONFLICTS, to(serde_json::to_value(path_params(path))))
-                .ok()
-                .and_then(|v| serde_json::from_value::<Vec<GitConflict>>(v).ok())
-                .unwrap_or_default();
-            data.conflicts.push((path.clone(), found));
-            continue;
-        }
-        let mut hunks = |side: GitSide| {
-            let params = GitDiffParams {
-                path: path.clone(),
-                side,
-            };
-            read(GIT_DIFF, to(serde_json::to_value(params)))
-                .ok()
-                .and_then(|v| serde_json::from_value::<Vec<GitHunk>>(v).ok())
-                .unwrap_or_default()
-        };
-        let unstaged = hunks(GitSide::Unstaged);
-        let staged = hunks(GitSide::Staged);
-        data.hunks.push((path.clone(), unstaged, staged));
-    }
-    data.status = Some(status);
-    data.branches = read(GIT_BRANCHES, serde_json::json!({}))
-        .ok()
-        .and_then(|v| serde_json::from_value(v).ok())
-        .unwrap_or_default();
-    if let Some(path) = open {
-        let params = GitLogParams {
-            path: path.to_path_buf(),
-            limit: Some(HISTORY),
-        };
-        data.history = read(GIT_LOG, to(serde_json::to_value(params)))
-            .ok()
-            .and_then(|v| serde_json::from_value(v).ok())
-            .unwrap_or_default();
-        if blame == BlameShown::Shown {
-            data.blame = read(GIT_BLAME, to(serde_json::to_value(path_params(path))))
-                .ok()
-                .and_then(|v| serde_json::from_value(v).ok())
-                .unwrap_or_default();
-        }
-    }
-    data
 }
 
 /// The diagnostics' notes at the ends of `editor`'s lines (P4-34): each problem of its file at
@@ -4319,7 +2609,7 @@ fn line_notes(workbench: &Workbench<FsLoader>, editor: &Editor) -> Vec<LineNote>
 }
 
 /// An inlay hint's text: the parameter's name and a colon, as rust-analyzer shows them.
-fn inlay_text(name: &str) -> String {
+pub(crate) fn inlay_text(name: &str) -> String {
     let mut text = name.to_owned();
     text.push(':');
     text.push(' ');
@@ -4337,7 +2627,7 @@ const FIXABLE: [Code; 5] = [
 
 /// A line counted from 1, as the bridge and the debugger count them, counted from 0 as the
 /// editor does.
-fn line_index(line: u32) -> usize {
+pub(crate) fn line_index(line: u32) -> usize {
     usize::try_from(line.saturating_sub(1)).unwrap_or(usize::MAX)
 }
 
@@ -4399,8 +2689,6 @@ fn status_dot(ui: &mut Ui, colour: egui::Color32) {
         .circle_filled(rect.center(), size / STATUS_DOT_PARTS, colour);
 }
 
-/// How many of the open file's commits the Git tab lists.
-const HISTORY: usize = 50;
 /// A status dot's radius as a part of the line's height: a quarter.
 const STATUS_DOT_PARTS: f32 = 4.0;
 
@@ -4408,7 +2696,7 @@ const STATUS_DOT_PARTS: f32 = 4.0;
 const OUTLINE_WIDTH: f32 = 220.0;
 
 /// How often a frame reads the running host's events.
-const PREVIEW_POLL: std::time::Duration = std::time::Duration::from_millis(50);
+pub(crate) const PREVIEW_POLL: std::time::Duration = std::time::Duration::from_millis(50);
 
 /// An icon and its label, as one string for a button.
 /// Whether `layout`, a panel's size in the layout, was set by a command rather than by a drag of

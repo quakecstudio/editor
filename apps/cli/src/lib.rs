@@ -271,15 +271,28 @@ struct Cli<L> {
     workbench: Workbench<L>,
 }
 
+impl<L: Loader> qs_map_edit::HasMap for Cli<L> {
+    type Project = Workbench<L>;
+    type Live = Preview;
+
+    fn map_store(&mut self) -> &mut qs_map_edit::MapStore {
+        self.workbench.maps_mut()
+    }
+
+    fn map_project(&mut self) -> &mut Workbench<L> {
+        &mut self.workbench
+    }
+
+    fn live_map(&mut self) -> Option<&mut Preview> {
+        None
+    }
+}
+
 impl<L: Loader> HasWorkbench for Cli<L> {
     type Loader = L;
 
     fn workbench(&mut self) -> &mut Workbench<L> {
         &mut self.workbench
-    }
-
-    fn preview(&mut self) -> Option<&mut Preview> {
-        None
     }
 }
 
@@ -595,15 +608,28 @@ struct McpContext<L> {
     preview: Preview,
 }
 
+impl<L: Loader> qs_map_edit::HasMap for McpContext<L> {
+    type Project = Workbench<L>;
+    type Live = Preview;
+
+    fn map_store(&mut self) -> &mut qs_map_edit::MapStore {
+        self.workbench.maps_mut()
+    }
+
+    fn map_project(&mut self) -> &mut Workbench<L> {
+        &mut self.workbench
+    }
+
+    fn live_map(&mut self) -> Option<&mut Preview> {
+        Some(&mut self.preview)
+    }
+}
+
 impl<L: Loader> HasWorkbench for McpContext<L> {
     type Loader = L;
 
     fn workbench(&mut self) -> &mut Workbench<L> {
         &mut self.workbench
-    }
-
-    fn preview(&mut self) -> Option<&mut Preview> {
-        Some(&mut self.preview)
     }
 }
 

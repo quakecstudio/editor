@@ -15,6 +15,7 @@ use qs_mdl::spr::Sprite;
 use qs_render::{
     Camera, Degrees, Extras, Look, MapMesh, MeshBuilder, Palette, Pics, Placement, Play, Surface,
 };
+use qs_sim::debug::Debugger;
 use qs_sim::localization::{Localization, RRE_LOC_FILE};
 use qs_sim::rerelease::patch_builtins;
 use qs_sim::{HostState, LoadOptions, SaveGame, SpawnParms, World};
@@ -24,7 +25,7 @@ use qs_vfs::{Element, LoadedFile, StdFs, Vfs};
 use crate::AXES;
 use crate::args::{Args, Show};
 use crate::audio::{Audio, CdImage, Device};
-use crate::game::{Game, HostAction, Reporting};
+use crate::game::{Game, HeldSpawn, HostAction, NextLevel, Reporting};
 use crate::keys::{config_path, host_files};
 
 /// `rand ()`'s linear congruential step, `next = next * 1103515245 + 12345`.
@@ -340,6 +341,15 @@ pub(crate) fn map_mesh(
 #[cfg(test)]
 mod tests;
 
+/// The breakpoints a level loads with, and the level, which a stop in a spawn function holds
+/// to load again once its spawning ends (WORLD-9.7).
+pub(crate) struct Watched {
+    /// The last level's debugger, from the start of the spawning.
+    pub(crate) debugger: Debugger,
+    /// The level.
+    pub(crate) level: NextLevel,
+}
+
 /// What the host does after a host command (PHYS-13.6).
 pub(crate) enum Acted {
     /// Plays this level now.
@@ -356,14 +366,13 @@ impl Args {
     pub(crate) fn act(&self, game: &mut Game, action: HostAction) -> Acted {
         match action {
             HostAction::Level(next) => {
-                match self.load_map(&next.map, next.carried, Some(next.host), None) {
-                    Ok(loaded) => Acted::Load(Box::new(loaded)),
-                    Err(error) => {
-                        tracing::warn!(%error, map = next.map, "the next level did not load");
-                        Acted::Stay
-                    }
-                }
+                let watched = game.level_debugger().map(|debugger| Watched {
+                    debugger,
+                    level: next.clone(),
+                });
+                self.next_level(next, watched)
             }
+            HostAction::Spawned(next) => self.next_level(next, None),
             HostAction::Save(name) => {
                 let path = self.save_path(&name);
                 game.console_line(&format!("Saving game to {}...\n", path.display()));
@@ -390,7 +399,7 @@ impl Args {
                     }
                 };
                 let host = game.world().host_state();
-                match self.load_map(&save.map, None, Some(host), Some(&save)) {
+                match self.load_map(&save.map, None, Some(host), Some(&save), None) {
                     Ok(loaded) => Acted::Load(Box::new(loaded)),
                     Err(error) => {
                         game.console_line(&format!("{error}\n"));
@@ -399,6 +408,18 @@ impl Args {
                 }
             }
             HostAction::Quit => Acted::Quit,
+        }
+    }
+
+    /// Loads `next`, its spawning watched by `watched`'s breakpoints when given (WORLD-9.7);
+    /// stays on this level when it does not load.
+    fn next_level(&self, next: NextLevel, watched: Option<Watched>) -> Acted {
+        match self.load_map(&next.map, next.carried, Some(next.host), None, watched) {
+            Ok(loaded) => Acted::Load(Box::new(loaded)),
+            Err(error) => {
+                tracing::warn!(%error, map = next.map, "the next level did not load");
+                Acted::Stay
+            }
         }
     }
 
@@ -421,6 +442,7 @@ impl Args {
         carried: Option<SpawnParms>,
         host: Option<HostState>,
         save: Option<&SaveGame>,
+        watched: Option<Watched>,
     ) -> Result<Loaded, String> {
         let map = map.to_owned();
         let engine = self.engine();
@@ -508,13 +530,26 @@ impl Args {
             settings: Vec::new(),
         };
         let mut world =
-            World::load(&progs, &map, &bsp, files()?, options).map_err(|e| e.to_string())?;
-        world.settle(&progs).map_err(|e| e.to_string())?;
-        // PHYS-10.5: a saved game is read over the settled map before the client enters.
-        if let Some(save) = save {
-            world.restore(&progs, save).map_err(|e| e.to_string())?;
+            World::prepare(&progs, &map, &bsp, files()?, options).map_err(|e| e.to_string())?;
+        // WORLD-9.6, WORLD-9.7: a level started from a debugged one spawns watched by its
+        // breakpoints; a stop holds the load, and the rest of it waits for the spawning to end.
+        let held = match watched {
+            Some(Watched { debugger, level }) => HeldSpawn::spawn(&mut world, &progs, debugger)
+                .map_err(|e| e.to_string())?
+                .map(|spawn| (spawn, level)),
+            None => {
+                world.spawn_map(&progs).map_err(|e| e.to_string())?;
+                None
+            }
+        };
+        if held.is_none() {
+            world.settle(&progs).map_err(|e| e.to_string())?;
+            // PHYS-10.5: a saved game is read over the settled map before the client enters.
+            if let Some(save) = save {
+                world.restore(&progs, save).map_err(|e| e.to_string())?;
+            }
+            world.connect(&progs).map_err(|e| e.to_string())?;
         }
-        world.connect(&progs).map_err(|e| e.to_string())?;
         let reporting = if self.bridge.is_some() {
             Reporting::Bridge
         } else {
@@ -531,7 +566,10 @@ impl Args {
             .unwrap_or_default();
         game.set_lines(lines);
         game.set_files(files()?);
-        game.announce("progs.dat", &map);
+        match held {
+            Some((spawn, level)) => game.hold_load(spawn, level),
+            None => game.announce("progs.dat", &map),
+        }
         // The client reads the serverinfo and the spawn messages the connection wrote.
         let mut client = Client::new(qs_client::Game::Standard);
         let mut describer = Describer { read: reader()? };

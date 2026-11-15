@@ -52,7 +52,7 @@ enum Rule {
     Finish,
 }
 
-/// Where a run stopped (WORLD-9.1).
+/// Where a run stopped (WORLD-9.6).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Stop {
     /// The statements asked about in the frame up to and including this one, the replay's
@@ -325,7 +325,7 @@ pub fn resolve(progs: &Progs<'_>, lines: &[i32], file: &str, line: i32) -> Optio
     best
 }
 
-/// The observer of a frame's runs (WORLD-9.1, PHYS-13.7): each statement counted against its
+/// The observer of a frame's runs (WORLD-9.6, PHYS-13.7): each statement counted against its
 /// function, as id's `pr_xfunction->profile++` counts it, then the debugger asked, when there
 /// is one.
 pub(crate) struct Watch<'a> {

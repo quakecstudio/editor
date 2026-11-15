@@ -462,7 +462,7 @@ impl Vm<'_, '_, '_> {
         match self {
             Self::Builtin(context) => context.execute_program(sim, function),
             Self::Frame { machine, progs } => {
-                // WORLD-9.1, PHYS-13.7: the debugger, when there is one, and the profile counts
+                // WORLD-9.6, PHYS-13.7: the debugger, when there is one, and the profile counts
                 // watch the run; they are lent so the builtins and they are not borrowed twice.
                 let mut debugger = sim.debugger.take();
                 let mut profile = core::mem::take(&mut sim.profile);

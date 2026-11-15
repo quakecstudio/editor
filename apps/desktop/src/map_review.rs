@@ -5,7 +5,7 @@
 //! once, as the agent's code edits are reviewed.
 
 use eframe::egui::{RichText, Ui};
-use qs_workbench::map_edit::{MapHunk, MapHunkNumber, MapRevision};
+use qs_map_edit::{MapHunk, MapHunkNumber, MapRevision};
 
 use crate::map_editor::MapAction;
 use crate::strings::{Text, map_hunk};
