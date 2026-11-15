@@ -33,7 +33,7 @@ one row per budget, the benchmark name in backticks, the budget as a number and 
 | `play_from_here_e1m1` | MAP-13 | 6 s | median | [#928](https://github.com/quakecstudio/editor/issues/928) P6-37 | active |
 | `region_compile_e1m1` | MAP-15 | 1.2 s | median | [#178](https://github.com/quakecstudio/editor/issues/178) P7-03 | active |
 | `full_compile_e1m1` | MAP-18 | 8 s | median | [#179](https://github.com/quakecstudio/editor/issues/179) P7-04 | active |
-| `textured_view_e1m1` | MAP-17 | 250 ms | median | [#964](https://github.com/quakecstudio/editor/issues/964) P7-13 | active |
+| `textured_view_e1m1` | MAP-17 | 50 ms | median | [#964](https://github.com/quakecstudio/editor/issues/964) P7-13 | active |
 <!-- /perf-budgets -->
 
 - **`open_project_and_type`:** open a 50,000-line QuakeC project in the editor and type the first
@@ -103,8 +103,9 @@ one row per budget, the benchmark name in backticks, the budget as a number and 
   0.7 s. ericw-tools' qbsp, vis and light take 2.2 s, 1.3 s and 8.0 s on the same machine.
 - **`textured_view_e1m1`:** the map editor's textured view after an edit (P7-13): lq-e1m1's
   scene built again and every brush face laid out as the mesh the renderer draws, as each edit
-  rebuilds it before the next frame. At most 250 ms at the median, so an edit shows textured
-  within a quarter second; the GPU upload and the frame are the renderer's, as for the map view.
+  rebuilds it before the next frame. At most 50 ms at the median, a few frames, so an edit shows
+  textured at once; 10.4 ms on ref-mac on 2026-11-15. The GPU upload and the frame are the
+  renderer's, as for the map view.
 
 ### QuakeSpasm's numbers
 
