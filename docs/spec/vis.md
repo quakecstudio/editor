@@ -231,14 +231,17 @@ are far fewer, and each leaf sees what its cluster sees.
   cluster's portals in a vector.
 - **VIS-7.2** The portals are followed by the cluster map: for each cluster in turn, the numbers
   of its leaves and then a negative number. A leaf number at or past the vis leaves stops the run
-  with `Invalid leaf number in cluster map`, and a file that ends before every cluster's list
-  does with `Couldn't read cluster map`. A leaf no cluster lists is in cluster 0.
+  with `Invalid leaf number in cluster map (<leaf> >= <leaves>)`, and a file that ends before
+  every cluster's list does with `Couldn't read cluster map (<cluster> / <clusters>)`. A leaf no
+  cluster lists is in cluster 0; a file of vis leaves and no cluster, which has no cluster 0, is
+  refused as one that ends before cluster 0's list (ericw-tools does not check it).
 - **VIS-7.3** Each cluster's row is VIS-4.6's, except that a cluster whose portals see it is
   only warned of (`Leaf portals saw into cluster`). A vis leaf sees each vis leaf whose cluster
   its cluster's row holds; the leaves of a cluster share the cluster's compressed row and its
   `visofs`, and each leaf's ambient levels (VIS-6) are found from that row.
-- **VIS-7.4** A `PRT2` file is flowed in VIS-4.7's batches, but each flow of a batch is kept: no
-  portal is flowed again with the exact set of a portal before it in its batch. The result is the
+- **VIS-7.4** A `PRT2` file is flowed in VIS-4.7's batches, but each flow of a batch that did not
+  fail is kept: no portal is flowed again with the exact set of a portal before it in its batch,
+  and one that failed is flowed again alone, as VIS-4.7 flows it. The result is the
   same on any number of threads; it is not always a single thread's. ericw-tools' vis gives its
   threads the next portal as each comes free (`GetNextPortal`), so its own result depends on
   their timing, and there is no single-thread result to match; flowing again made the flow of

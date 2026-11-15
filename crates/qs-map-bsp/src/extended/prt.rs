@@ -41,6 +41,15 @@ pub(crate) fn fmt_number(value: f64) -> String {
     format!("{value}")
 }
 
+/// Which portal file is written: by leaf, or by cluster when a detail separator made one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Format {
+    /// `PRT1`, numbered by leaf.
+    Leaves,
+    /// `PRT2`, numbered by cluster, with each cluster's leaves.
+    Clusters,
+}
+
 /// The vis leaves' and clusters' numbers, `NumberLeafs_r`'s: each leaf not any solid by its
 /// place, and each cluster, a detail separator not under one or a leaf not under one, by its
 /// place in the walk.
@@ -48,11 +57,28 @@ struct Numbers {
     leaves: HashMap<NodeId, i64>,
     clusters: HashMap<NodeId, i64>,
     count: i64,
-    /// Whether any detail separator made a cluster: then the file is `PRT2`.
-    detail: bool,
+    /// `PRT2` when a detail separator made a cluster, else `PRT1`.
+    format: Format,
 }
 
 impl Numbers {
+    /// The numbers the portals are written by.
+    const fn by(&self) -> &HashMap<NodeId, i64> {
+        match self.format {
+            Format::Leaves => &self.leaves,
+            Format::Clusters => &self.clusters,
+        }
+    }
+
+    /// The file's header for `portals` portals.
+    fn header(&self, portals: usize) -> String {
+        let leaves = self.leaves.len();
+        match self.format {
+            Format::Leaves => format!("PRT1\n{leaves}\n{portals}\n"),
+            Format::Clusters => format!("PRT2\n{leaves}\n{}\n{portals}\n", self.count),
+        }
+    }
+
     /// The leaves in each cluster, in leaf order, a line each: `WritePTR2ClusterMapping`.
     fn cluster_map(&self) -> String {
         let mut by_cluster: Vec<Vec<i64>> =
@@ -90,14 +116,14 @@ impl Tree {
             leaves: HashMap::new(),
             clusters: HashMap::new(),
             count: 0,
-            detail: false,
+            format: Format::Leaves,
         };
         let mut next_leaf = 0_i64;
         let mut stack: Vec<(NodeId, Option<i64>)> = vec![(Self::HEAD, None)];
         while let Some((at, mut cluster)) = stack.pop() {
             if let Some((_, [front, back], separator)) = self.split_of(at) {
                 if cluster.is_none() && separator == Separator::Detail {
-                    numbers.detail = true;
+                    numbers.format = Format::Clusters;
                     numbers.clusters.insert(at, numbers.count);
                     cluster = Some(numbers.count);
                     numbers.count = numbers.count.saturating_add(1);
@@ -128,11 +154,7 @@ impl Tree {
     /// each portal it is in front of that vis sees through, as its two numbers, swapped when
     /// the polygon faces away from the plane, and its points.
     fn write_portals(&self, numbers: &Numbers) -> Vec<String> {
-        let by = if numbers.detail {
-            &numbers.clusters
-        } else {
-            &numbers.leaves
-        };
+        let by = numbers.by();
         let mut out = Vec::new();
         let mut stack = vec![Self::HEAD];
         while let Some(at) = stack.pop() {
@@ -185,21 +207,12 @@ impl Tree {
         portalizer.make_portals_from(self, PortalType::Vis, HeadPortals::Unused);
         let numbers = self.number_leaves();
         let portals = self.write_portals(&numbers);
-        let mut text = if numbers.detail {
-            format!(
-                "PRT2\n{}\n{}\n{}\n",
-                numbers.leaves.len(),
-                numbers.count,
-                portals.len()
-            )
-        } else {
-            format!("PRT1\n{}\n{}\n", numbers.leaves.len(), portals.len())
-        };
+        let mut text = numbers.header(portals.len());
         for line in portals {
             text.push_str(&line);
             text.push('\n');
         }
-        if numbers.detail {
+        if numbers.format == Format::Clusters {
             text.push_str(&numbers.cluster_map());
         }
         text.into_bytes()

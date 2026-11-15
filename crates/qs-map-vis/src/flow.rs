@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 1996-1997  Id Software, Inc.
+// Copyright (C) 2026 QuakeC Studio contributors
+//
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: vis/vis.cc, ClusterFlow
 
 //! What each portal sees: the first-order bound of the leaves it might see (VIS-3), then the
 //! portal flow that narrows it (VIS-4), and each leaf's row from its portals' (VIS-4.6).
@@ -213,12 +217,12 @@ impl<'a> Flow<'a> {
             // For `PRT1`, a flow that read the might-see set of a portal of its batch that one
             // thread would have flowed first is flowed again, in order, with that portal's exact
             // set; so is one that failed, which may have failed only on such a set. For `PRT2`
-            // each flow of the batch is kept (VIS-7.4).
+            // each flow of the batch that did not fail is kept (VIS-7.4).
             for (&portal, flowed) in batch.iter().zip(results) {
                 let flowed = match (self.file.format, flowed) {
                     (Format::Leaves, Ok(flowed)) if !flowed.read_earlier => flowed,
-                    (Format::Clusters, flowed) => flowed?,
-                    (Format::Leaves, _) => self.alone(portal, &done)?,
+                    (Format::Clusters, Ok(flowed)) => flowed,
+                    (_, _) => self.alone(portal, &done)?,
                 };
                 counts.add(flowed.counts);
                 if let Some(slot) = done.get_mut(portal) {

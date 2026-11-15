@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 1996-1997  Id Software, Inc.
+// Copyright (C) 2026 QuakeC Studio contributors
+//
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: vis/vis.cc, CalcVis, ClusterFlow
 
 //! The visibility compiler (P6-05, `docs/spec/vis.md`): from the portal file qs-map-bsp writes
 //! (QBSP-12), each leaf's potentially visible set, compressed into the BSP's visibility lump,
@@ -83,16 +87,20 @@ pub enum VisError {
     },
     /// `Leaf with too many portals` (VIS-2.4).
     TooManyLeafPortals,
-    /// `Couldn't read cluster map`: a `PRT2` file ends before cluster `cluster`'s leaves do
-    /// (VIS-7.2).
+    /// `Couldn't read cluster map`: a `PRT2` file ends before cluster `cluster` of `clusters`
+    /// has its leaves, or lists leaves with no cluster (VIS-7.2).
     ClusterMap {
         /// The cluster.
         cluster: usize,
+        /// The clusters the file has.
+        clusters: usize,
     },
-    /// `Invalid leaf number in cluster map` (VIS-7.2).
+    /// `Invalid leaf number in cluster map`: leaf `leaf` of a file of `leafs` (VIS-7.2).
     ClusterLeaf {
         /// The leaf.
         leaf: usize,
+        /// The vis leaves the file has.
+        leafs: usize,
     },
     /// `CheckStack: leaf recursion` (VIS-4.5).
     LeafRecursion,
@@ -120,17 +128,11 @@ impl fmt::Display for VisError {
                 write!(f, "LoadPortals: portal {number} has too many points")
             }
             Self::TooManyLeafPortals => f.write_str("Leaf with too many portals"),
-            Self::ClusterMap { cluster } => {
-                write!(
-                    f,
-                    "LoadPortals: couldn't read cluster map at cluster {cluster}"
-                )
+            Self::ClusterMap { cluster, clusters } => {
+                write!(f, "Couldn't read cluster map ({cluster} / {clusters})")
             }
-            Self::ClusterLeaf { leaf } => {
-                write!(
-                    f,
-                    "LoadPortals: invalid leaf number in cluster map ({leaf})"
-                )
+            Self::ClusterLeaf { leaf, leafs } => {
+                write!(f, "Invalid leaf number in cluster map ({leaf} >= {leafs})")
             }
             Self::LeafRecursion => f.write_str("CheckStack: leaf recursion"),
             Self::SawIntoLeaf { leaf } => write!(f, "Leaf portals saw into leaf {leaf}"),
@@ -216,15 +218,13 @@ impl Vis {
         let file = PortalFile::read(prt)?;
         let (rows, counts) = self.rows(&file)?;
         let real = file.clusters.len();
-        Ok(Visible {
-            rows: file
-                .clusters
-                .iter()
-                .filter_map(|&cluster| rows.get(cluster))
-                .map(|row| row.row(real))
-                .collect(),
-            counts,
-        })
+        let rows = file
+            .clusters
+            .iter()
+            .map(|&cluster| rows.get(cluster).map(|row| row.row(real)))
+            .collect::<Option<_>>()
+            .ok_or(VisError::Format)?;
+        Ok(Visible { rows, counts })
     }
 
     /// Each cluster's row over the BSP's vis leaves, a leaf seen when its cluster is

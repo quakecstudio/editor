@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 1996-1997  Id Software, Inc.
+// Copyright (C) 2026 QuakeC Studio contributors
+//
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: vis/vis.cc, ClusterFlow
 
 //! The visibility lump (VIS-5) and the ambient levels (VIS-6), written into a BSP: the rows
 //! compressed one after another, each vis leaf's `visofs` and `ambient_level` set in place.
@@ -115,13 +119,11 @@ fn ambients(bsp: &Bsp<'_>, rows: &[Leaves], clusters: &[usize]) -> Vec<[u8; AMBI
             kinds
         })
         .collect();
-    clusters
+    // The leaves of a cluster share its row, so its levels are found once.
+    let by_row: Vec<[u8; AMBIENTS]> = rows
         .iter()
-        .map(|&cluster| {
+        .map(|row| {
             let mut levels = [SILENT; AMBIENTS];
-            let Some(row) = rows.get(cluster) else {
-                return levels;
-            };
             for (leaf, kinds) in emits.iter().enumerate() {
                 if !row.has(leaf) {
                     continue;
@@ -134,6 +136,10 @@ fn ambients(bsp: &Bsp<'_>, rows: &[Leaves], clusters: &[usize]) -> Vec<[u8; AMBI
             }
             levels
         })
+        .collect();
+    clusters
+        .iter()
+        .map(|&cluster| by_row.get(cluster).copied().unwrap_or([SILENT; AMBIENTS]))
         .collect()
 }
 

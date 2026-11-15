@@ -153,20 +153,32 @@ impl PortalFile {
     }
 
     /// `LoadPrtFile`'s cluster map: for each cluster in turn, the numbers of its leaves ended by
-    /// a negative one; a leaf in no cluster is in cluster 0 (VIS-7.2).
+    /// a negative one; a leaf in no cluster is in cluster 0, and a file of leaves and no cluster
+    /// is refused (VIS-7.2).
     fn cluster_map(
         words: &mut Words<'_>,
         clusters: usize,
         real: usize,
     ) -> Result<Vec<usize>, VisError> {
+        // With no cluster there is no cluster 0 for an unlisted leaf to be in.
+        if clusters == 0 && real > 0 {
+            return Err(VisError::ClusterMap {
+                cluster: 0,
+                clusters,
+            });
+        }
         let mut map = vec![0; real];
         for cluster in 0..clusters {
             loop {
-                let leaf = words.int().ok_or(VisError::ClusterMap { cluster })?;
+                let leaf = words
+                    .int()
+                    .ok_or(VisError::ClusterMap { cluster, clusters })?;
                 let Ok(leaf) = usize::try_from(leaf) else {
                     break;
                 };
-                let slot = map.get_mut(leaf).ok_or(VisError::ClusterLeaf { leaf })?;
+                let slot = map
+                    .get_mut(leaf)
+                    .ok_or(VisError::ClusterLeaf { leaf, leafs: real })?;
                 *slot = cluster;
             }
         }

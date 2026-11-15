@@ -386,11 +386,24 @@ fn a_bad_cluster_map_stops_the_run() {
     let portal = [(&SQUARE[..], 0, 1)];
     assert_eq!(
         read(&prt2(2, &[&[0], &[2]], &portal)),
-        Err(VisError::ClusterLeaf { leaf: 2 })
+        Err(VisError::ClusterLeaf { leaf: 2, leafs: 2 })
     );
     let short = prt2(2, &[&[0], &[1]], &portal);
     let short = short.strip_suffix("1 -1\n").unwrap();
-    assert_eq!(read(short), Err(VisError::ClusterMap { cluster: 1 }));
+    assert_eq!(
+        read(short),
+        Err(VisError::ClusterMap {
+            cluster: 1,
+            clusters: 2
+        })
+    );
+    assert_eq!(
+        read("PRT2\n3\n0\n0\n"),
+        Err(VisError::ClusterMap {
+            cluster: 0,
+            clusters: 0
+        })
+    );
     assert_eq!(read("PRT2\n2\n1\n"), Err(VisError::Header));
 }
 
@@ -625,12 +638,15 @@ fn errors_read_as_vis_writes_them() {
         (VisError::Format, "the BSP cannot be given visibility"),
         (VisError::Thread, "a vis thread could not be run"),
         (
-            VisError::ClusterMap { cluster: 2 },
-            "LoadPortals: couldn't read cluster map at cluster 2",
+            VisError::ClusterMap {
+                cluster: 2,
+                clusters: 5,
+            },
+            "Couldn't read cluster map (2 / 5)",
         ),
         (
-            VisError::ClusterLeaf { leaf: 7 },
-            "LoadPortals: invalid leaf number in cluster map (7)",
+            VisError::ClusterLeaf { leaf: 7, leafs: 7 },
+            "Invalid leaf number in cluster map (7 >= 7)",
         ),
     ];
     for (error, text) in cases {
@@ -921,5 +937,7 @@ fn a_prt2_batch_keeps_its_flows() {
     let many = Flow::new(&by_cluster, Level::Two).full(8).unwrap();
     assert_eq!(one, many);
     assert_eq!(one.0, single.0, "a tube is seen end to end either way");
+    // The tube's flows read their batch-mates' might-see sets, so a single thread's would be
+    // flowed again; equal counts would mean PRT2 flowed them again too.
     assert_ne!(one.1, single.1, "flows read later portals' might-see sets");
 }
