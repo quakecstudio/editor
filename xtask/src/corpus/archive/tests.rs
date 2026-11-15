@@ -34,8 +34,8 @@ fn header(name: &str, prefix: &str, size: usize, kind: u8) -> [u8; 512] {
     h
 }
 
-fn push_entry(out: &mut Vec<u8>, header: [u8; 512], data: &[u8]) {
-    out.extend_from_slice(&header);
+fn push_entry(out: &mut Vec<u8>, header: &[u8; 512], data: &[u8]) {
+    out.extend_from_slice(header);
     out.extend_from_slice(data);
     out.resize(out.len().div_ceil(512) * 512, 0);
 }
@@ -47,7 +47,7 @@ pub(crate) fn tar(files: &[(&str, &[u8])]) -> Vec<u8> {
     let comment = b"52 comment=cccccccccccccccccccccccccccccccccccccccc\n";
     push_entry(
         &mut out,
-        header("pax_global_header", "", comment.len(), b'g'),
+        &header("pax_global_header", "", comment.len(), b'g'),
         comment,
     );
     for (name, data) in files {
@@ -61,12 +61,12 @@ pub(crate) fn tar(files: &[(&str, &[u8])]) -> Vec<u8> {
             let record = format!("{len}{record}");
             push_entry(
                 &mut out,
-                header("pax", "", record.len(), b'x'),
+                &header("pax", "", record.len(), b'x'),
                 record.as_bytes(),
             );
-            push_entry(&mut out, header("long", "", data.len(), b'0'), data);
+            push_entry(&mut out, &header("long", "", data.len(), b'0'), data);
         } else {
-            push_entry(&mut out, header(name, "", data.len(), b'0'), data);
+            push_entry(&mut out, &header(name, "", data.len(), b'0'), data);
         }
     }
     out.extend_from_slice(&[0; 1024]);
@@ -170,16 +170,16 @@ fn only_files_the_filter_keeps_are_read() {
 #[test]
 fn ustar_prefixes_gnu_long_names_and_other_types_are_handled() {
     let mut t = Vec::new();
-    push_entry(&mut t, header("defs.qc", "r-c/deep/dir", 2, b'0'), b"ok");
-    push_entry(&mut t, header("r-c/dir/", "", 0, b'5'), b"");
-    push_entry(&mut t, header("r-c/link", "", 0, b'2'), b"");
+    push_entry(&mut t, &header("defs.qc", "r-c/deep/dir", 2, b'0'), b"ok");
+    push_entry(&mut t, &header("r-c/dir/", "", 0, b'5'), b"");
+    push_entry(&mut t, &header("r-c/link", "", 0, b'2'), b"");
     let long = format!("r-c/{}.qc", "l".repeat(150));
     push_entry(
         &mut t,
-        header("././@LongLink", "", long.len() + 1, b'L'),
+        &header("././@LongLink", "", long.len() + 1, b'L'),
         format!("{long}\0").as_bytes(),
     );
-    push_entry(&mut t, header("trunc", "", 3, 0), b"gnu");
+    push_entry(&mut t, &header("trunc", "", 3, 0), b"gnu");
     t.extend_from_slice(&[0; 1024]);
     let files = read_all(&gzip(&t)).unwrap();
     let names: Vec<&str> = files.iter().map(|(n, _)| n.as_str()).collect();
@@ -223,7 +223,7 @@ fn malformed_tars_are_errors() {
     let mut bad_sum = Vec::new();
     let mut h = header("r-c/a.qc", "", 1, b'0');
     h[0] = b'R';
-    push_entry(&mut bad_sum, h, b"x");
+    push_entry(&mut bad_sum, &h, b"x");
     assert!(err(&bad_sum).contains("checksum"));
 
     let mut not_octal = header("r-c/a.qc", "", 1, b'0');
@@ -232,7 +232,7 @@ fn malformed_tars_are_errors() {
     let sum: u32 = not_octal.iter().map(|&b| u32::from(b)).sum();
     not_octal[148..156].copy_from_slice(format!("{sum:06o}\0 ").as_bytes());
     let mut t = Vec::new();
-    push_entry(&mut t, not_octal, b"x");
+    push_entry(&mut t, &not_octal, b"x");
     assert!(err(&t).contains("not octal"));
 
     let mut short = Vec::new();
@@ -245,7 +245,7 @@ fn malformed_tars_are_errors() {
 
     assert!(err(&[0; 100]).contains("truncated tar header"));
     let mut no_end = Vec::new();
-    push_entry(&mut no_end, header("r-c/a.qc", "", 1, b'0'), b"x");
+    push_entry(&mut no_end, &header("r-c/a.qc", "", 1, b'0'), b"x");
     assert!(err(&no_end).contains("no end-of-archive block"));
 }
 

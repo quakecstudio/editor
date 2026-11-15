@@ -380,8 +380,8 @@ fn a_baseline_statement_is_not_counted_against_a_crate() {
         ("X-1.1".to_owned(), "X-1".to_owned()),
         ("X-1.2".to_owned(), "X-1".to_owned()),
     ];
-    let cited = ["X-1.1".to_owned()].into_iter().collect();
-    let baseline = ["X-1.2".to_owned()].into_iter().collect();
+    let cited = BTreeSet::from(["X-1.1".to_owned()]);
+    let baseline = BTreeSet::from(["X-1.2".to_owned()]);
     let score = spec_score(&claims(&["X-1"], &[]), &statements, &baseline, &cited).unwrap();
     assert_eq!(score, self::score(1, 1));
     assert!(score.failures.is_empty(), "{:?}", score.failures);
@@ -454,7 +454,7 @@ fn a_disclaimed_section_or_statement_is_not_the_crates() {
         ("X-1.1".to_owned(), "X-1".to_owned()),
         ("X-1.2".to_owned(), "X-1".to_owned()),
     ];
-    let cited: BTreeSet<String> = ["X-1.1".to_owned()].into_iter().collect();
+    let cited: BTreeSet<String> = BTreeSet::from(["X-1.1".to_owned()]);
     let mut claims = claims(&["X-1"], &[]);
     claims.disclaimed = vec!["X-1.2".to_owned()];
     let score = spec_score(&claims, &statements, &BTreeSet::new(), &cited).unwrap();
@@ -485,7 +485,7 @@ fn a_claimed_statement_is_counted_once_and_must_be_active_and_owned() {
     let score = spec_score(
         &claims(&["X-1"], &["Y-1.1", "X-1.1"]),
         &statements,
-        &["X-1.2".to_owned()].into_iter().collect(),
+        &BTreeSet::from(["X-1.2".to_owned()]),
         &cited,
     )
     .unwrap();
@@ -512,7 +512,7 @@ fn a_claimed_statement_is_counted_once_and_must_be_active_and_owned() {
     let baselined = spec_score(
         &claims(&[], &["Y-1.2"]),
         &statements,
-        &["Y-1.2".to_owned()].into_iter().collect(),
+        &BTreeSet::from(["Y-1.2".to_owned()]),
         &cited,
     )
     .unwrap_err();

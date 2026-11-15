@@ -232,7 +232,7 @@ fn search_stops_at_its_limit() {
     assert!(
         workbench
             .search(&SearchOptions {
-                text: "".to_owned(),
+                text: String::new(),
                 ..SearchOptions::default()
             })
             .matches
