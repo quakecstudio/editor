@@ -1484,7 +1484,53 @@ groups:
     - 'cargo xtask contrast passes WCAG AA for the standard themes and AAA (7:1) for the increased-contrast themes, light and dark, and the app follows the system''s light or dark appearance'
     - 'With Reduce Motion on, no animation runs; with Increase Contrast on, the high-contrast theme is used; both checked by tests'
     verify:
-    - 'kittest tests, snapshot tests and cargo xtask contrast in CI; a VoiceOver pass recorded with Accessibility Inspector on the reference Mac'
+    - 'kittest tests, snapshot tests and cargo xtask contrast in CI; the VoiceOver pass moved to L-19 (Justin, 2026-11-15)'
+  - key: P7-13
+    title: 'Textured and lit 3D view in the map editor'
+    labels:
+    - L7-ui
+    - area:map
+    - type:feature
+    size: L
+    reqs:
+    - MAP-17
+    - MAP-3
+    - MAP-30
+    summary: |
+      Justin, 2026-11-15: the map editor's 3D view draws brushes as lines, where TrenchBroom draws them textured; the editor should go past it. MAP-17 asks for one wgpu renderer for live brushes and compiled BSPs with lightmaps, and qs-render already draws a BSP with its lightmaps for the map view.
+    depends:
+    - P7-02
+    deliverable:
+    - 'apps/desktop and crates/qs-render: the map editor''s 3D view drawn three ways, chosen in its toolbar: Wireframe (today''s lines), Textured (each brush face as a solid polygon with its WAD texture, its alignment and a light shade by face direction, as TrenchBroom draws it) and Lit (the last compile''s BSP with its lightmaps and coloured light from the .lit, kept up to date by the background full compile of P7-02)'
+    - 'The editor''s overlays (selection, links, light reach, leak trail, tool handles) drawn over every mode, and the 2D views unchanged'
+    acceptance:
+    - 'Textured mode draws every face of the corpus maps with its texture and alignment, matching the compiled BSP''s texture coordinates for the same face, checked by a test against qs-map-bsp''s output'
+    - 'Lit mode draws the last compile''s lightmaps and coloured light, the same pixels the map view draws for that BSP, and says when the map has changed since that compile'
+    - 'Frame time in each mode on the largest corpus map stays within the editor''s budget in docs/perf-budgets.md, recorded by cargo xtask bench'
+    verify:
+    - 'Unit tests on the face mesh; UI snapshots of each mode; cargo xtask bench'
+  - key: P7-14
+    title: 'Showcase screenshots for the website and the guide'
+    labels:
+    - repo
+    - area:docs
+    - type:chore
+    size: M
+    reqs:
+    - QA-8
+    - MAP-30
+    depends:
+    - P7-13
+    summary: |
+      Justin, 2026-11-15: the screenshots show grey boxes and lines; they should show textured, lit maps and what the editor does that TrenchBroom and other editors cannot, with a wow factor.
+    deliverable:
+    - 'Snapshot-harness scripts in apps/desktop/src/snapshots.rs rendering showcase scenes from the LibreQuake corpus maps, compiled with full light: the lit and textured 3D view with coloured light, Play from here with the game docked beside the map, the leak trail through a lit map, the light reach preview, the agent and the debugger stopped in QuakeC while the map runs, the IDE at 200 percent zoom and in the increased-contrast theme'
+    - 'quakecstudio/site: the landing page and every guide page use them, with alt text; apps/desktop/snapshots and the guide refreshed from them; each image listed in ATTRIBUTION.md with LibreQuake''s licence'
+    acceptance:
+    - 'Every screenshot on the site and in the guide shows textures and lighting where it shows a map, and is rendered by the harness, so a rerun reproduces it'
+    - 'The landing page shows at least four capabilities TrenchBroom''s manual does not list, each named in its caption'
+    verify:
+    - 'The snapshot tests; the site PR deployed to dev and reviewed by Justin'
   - key: P7-06
     title: Phase 7 gate review
     labels:
@@ -1508,6 +1554,8 @@ groups:
     - P7-10
     - P7-11
     - P7-12
+    - P7-13
+    - P7-14
     deliverable:
     - docs/gates/p7.md
     acceptance:
@@ -1915,3 +1963,48 @@ groups:
     - 'Each adopted API is used in at least one crate with a test that exercises it; any change to a compiler stage''s speed is a recorded cargo xtask bench run'
     verify:
     - make ci; cargo xtask bench history
+  - key: L-18
+    title: Audit each crate's performance, one crate at a time
+    labels:
+    - repo
+    - area:process
+    - type:chore
+    size: L
+    reqs:
+    - PRIN-5
+    - TEST-8
+    summary: |
+      Justin, 2026-11-15: a performance-engineer audit of every crate, one by one, as CONV-17 audited type design: allocations first, then the small CPU wins, each kept only with a measurement that shows it. The P7-04 pass on qs-map-vis and qs-map-light (Cow windings, pooled sets, a thread_local stack: 287 s to 6.16 s for lq-e1m1's full compile) is the worked example.
+    depends: []
+    deliverable:
+    - 'docs/audits/perf.md: one section per crate, in the order of expected payoff (the VM and compiler, the map tools, the editor view and renderer, the simulation, then the rest), each listing what the checklist found, what was changed with its before and after numbers, and what was left with the reason'
+    - 'The checklist each crate is held to, at the top of docs/audits/perf.md: needless clones and to_owned, collections grown without capacity, collect-then-iterate, format! and String building on per-frame or per-statement paths, Box and Arc churn in loops, repeated hashing or lookups, quadratic scans, work done each egui frame that could be cached, and the clippy perf lints'
+    - 'Each change in its own PR per crate or small group of crates, with the measurement: a qs-bench budget, a criterion benchmark or a dhat allocation count, before and after'
+    - 'docs/audits/perf-baseline.tsv: the clippy perf findings left, which only shrinks, checked by cargo xtask conventions as conv-17-baseline.tsv is; the lints already at zero turned on at once (vec_box, box_collection, useless_vec, inefficient_to_string, unnecessary_to_owned, iter_overeager_cloned, redundant_allocation, large_enum_variant, ptr_arg and the rest at zero on 2026-11-15), and redundant_clone (74), needless_collect (18), assigning_clones (16), implicit_clone (8), format_collect (30) and string_add (22) as their crates are done'
+    acceptance:
+    - 'Every crate in layers.toml has its section in docs/audits/perf.md, its findings fixed or recorded with a reason'
+    - 'No change alters output: each crate''s tests, differentials and snapshots pass unchanged'
+    - 'No budget in docs/perf-budgets.md regresses, and every change claimed as a win has its before and after numbers in the audit'
+    - 'The clippy perf lints the audit finds cheap to hold are turned on in the workspace lints, with zero violations'
+    verify:
+    - The audit report merged; cargo xtask bench history before and after; make ci
+  - key: L-19
+    title: VoiceOver pass over the app
+    labels:
+    - repo
+    - area:process
+    - type:test
+    - needs:human
+    size: S
+    reqs:
+    - QA-9
+    summary: |
+      The person-run verification of P7-12, moved here by Justin on 2026-11-15: the app's names, roles and settings are built and tested in CI (docs/audits/accessibility.md); this is the pass with VoiceOver itself.
+    depends:
+    - P7-12
+    deliverable:
+    - 'The result of the steps in docs/audits/accessibility.md, "Checks a person makes", recorded on the issue: VoiceOver reading each panel, tool and dialog by name and role; Accessibility Inspector''s audit; Increase contrast and Reduce motion followed'
+    acceptance:
+    - 'VoiceOver reads every control of the window, the map editor and its tools by its name and role, and Accessibility Inspector''s audit reports no missing label; each miss is filed as a type:bug'
+    verify:
+    - The recorded pass on the issue
