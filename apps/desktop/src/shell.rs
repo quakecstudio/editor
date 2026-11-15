@@ -153,6 +153,8 @@ pub(crate) enum Area {
     Outline,
     /// The editor's second pane.
     SecondPane,
+    /// The Map tab, when it scrolls (P7-12).
+    MapTab,
 }
 
 /// Where the app's menu is (P3-44).
@@ -1488,11 +1490,25 @@ impl Shell {
         if self.centre_tab != CentreTab::Map {
             return false;
         }
-        let actions = self
-            .features
-            .map
-            .map_editor
-            .ui(ui, &self.theme, document, panes);
+        let editor = &mut self.features.map.map_editor;
+        let theme = &self.theme;
+        // The map editor keeps a least height for its view and browser; when the centre is
+        // shorter, as with large text (P7-12), the tab scrolls rather than drawing under the
+        // bottom panel. Only its scroll bar scrolls it: the wheel and drags are the view's.
+        let height = ui.available_height();
+        let actions = egui::ScrollArea::vertical()
+            .id_salt(Area::MapTab)
+            .scroll_source(egui::scroll_area::ScrollSource {
+                scroll_bar: true,
+                drag: egui::scroll_area::DragScroll::Never,
+                mouse_wheel: false,
+            })
+            .show(ui, |ui| {
+                let size = egui::vec2(ui.available_width(), height);
+                ui.allocate_ui(size, |ui| editor.ui(ui, theme, document, panes))
+                    .inner
+            })
+            .inner;
         self.with_map(|map, commands| map.map_actions(commands, actions));
         self.with_map(MapFeature::refresh_map_outline);
         if self.with_map(MapFeature::refresh_map_review) {
