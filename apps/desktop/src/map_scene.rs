@@ -207,10 +207,35 @@ fn unit(v: [f32; 3]) -> [f32; 3] {
     }
 }
 
-/// The map's key-values as an entity lump, which the light compiler reads (LIGHT-2.7).
-fn entity_lump(file: &qs_map::MapFile) -> Vec<u8> {
+/// The previews of `file`'s lights (LIGHT-7). A key the light compiler stops on, as one being
+/// typed may be, takes out only its own entity: the others are read without it, each keeping its
+/// place.
+fn light_previews(file: &qs_map::MapFile) -> Vec<LightPreview> {
+    let light = Light::default();
+    let all: Vec<&qs_map::Entity> = file.entities.iter().collect();
+    if let Ok(previews) = light.previews(&entity_lump(&all)) {
+        return previews;
+    }
+    // An entity that does not read alone is written with no keys, so the places stay the map's.
+    let empty = qs_map::Entity::default();
+    let readable: Vec<&qs_map::Entity> = file
+        .entities
+        .iter()
+        .map(|entity| {
+            if light.previews(&entity_lump(&[entity])).is_ok() {
+                entity
+            } else {
+                &empty
+            }
+        })
+        .collect();
+    light.previews(&entity_lump(&readable)).unwrap_or_default()
+}
+
+/// The entities' key-values as an entity lump, which the light compiler reads (LIGHT-2.7).
+fn entity_lump(entities: &[&qs_map::Entity]) -> Vec<u8> {
     let mut lump = Vec::new();
-    for entity in &file.entities {
+    for entity in entities {
         lump.extend_from_slice(b"{\n");
         for pair in entity.pairs() {
             for part in [&b"\""[..], pair.key(), b"\" \"", pair.value(), b"\"\n"] {
@@ -480,21 +505,11 @@ impl Scene {
         scene.fired = scene.find_links();
         // LIGHT-7: each light as the light compiler reads the map's keys; a lump it cannot read
         // draws none.
-        let lump = match &bsp {
-            Some(bsp) => bsp.entities().to_vec(),
-            None => entity_lump(document.file()),
-        };
-        scene.lights = Light::default()
-            .previews(&lump)
-            .map(|previews| {
-                previews
-                    .iter()
-                    .map(|preview| {
-                        LightShape::of(EntityIndex::new(preview.entity.index()), preview)
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        // The keys as the editor holds them, a BSP's included, so an edit shows at once.
+        scene.lights = light_previews(document.file())
+            .iter()
+            .map(|preview| LightShape::of(EntityIndex::new(preview.entity.index()), preview))
+            .collect();
         scene
     }
 

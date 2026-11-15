@@ -42,27 +42,27 @@ impl Light {
         let entities = Entities::read(lump, self.dialect, &mut Vec::new())?;
         let mut out = Vec::new();
         for (place, light) in entities.all.iter().enumerate() {
-            if !light.is_light() {
+            // A light of a value below 0 lights nothing (LIGHT-4.2): it has no reach to draw.
+            if light.light <= 0 {
                 continue;
             }
             let cone = light
                 .target_entity
                 .and_then(|target| entities.all.get(target.index()))
-                .map(|target| {
+                .and_then(|target| {
                     let mut aim = [0.0; AXES];
                     for (a, (t, o)) in aim.iter_mut().zip(target.origin.iter().zip(light.origin)) {
                         *a = t - o;
                     }
                     let length = aim.iter().map(|c| c * c).sum::<f32>().sqrt();
-                    if length > 0.0 {
-                        aim = aim.map(|c| c / length);
-                    }
+                    aim = aim.map(|c| c / length);
                     let degrees = if light.angle == 0.0 {
                         crate::to_f32(DEFAULT_CONE)
                     } else {
                         light.angle
                     };
-                    Cone { aim, degrees }
+                    // A target at the light's own origin gives it no aim, and no cone to draw.
+                    (length > 0.0).then_some(Cone { aim, degrees })
                 });
             out.push(LightPreview {
                 entity: EntityId(place),

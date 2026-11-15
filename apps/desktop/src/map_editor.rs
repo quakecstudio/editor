@@ -67,6 +67,9 @@ const PLACE_DISTANCE: f32 = 256.0;
 const LINK_END: f32 = 3.0;
 /// How strongly a light's preview is drawn, so it does not hide the brushes behind it.
 const LIGHT_ALPHA: f32 = 0.6;
+/// The brightest a light's every channel may be and still be drawn in the muted colour, so a
+/// black light's reach is seen.
+const VISIBLE_COLOUR: f32 = 0.05;
 /// The width of the new key's and new value's fields, in points.
 const NEW_PAIR_WIDTH: f32 = 90.0;
 /// The map units the camera stands back from a framed box beyond that, so a small entity is not
@@ -999,8 +1002,15 @@ impl MapEditor {
         }
         // LIGHT-7.4: each light's reach in its colour, and a spotlight's cone.
         for light in self.scene.lights(self.lights, &selection, hidden) {
-            let [r, g, b] = light.colour.map(|c| c.clamp(0.0, 1.0));
-            let colour = egui::Color32::from(egui::Rgba::from_rgb(r, g, b));
+            // `_color` is the modder's sRGB colour; a black light is drawn muted to be seen.
+            let [r, g, b] = light
+                .colour
+                .map(|c| egui::ecolor::linear_from_gamma(c.clamp(0.0, 1.0)));
+            let colour = if light.colour.iter().all(|&c| c < VISIBLE_COLOUR) {
+                theme.color(Token::TextMuted)
+            } else {
+                egui::Color32::from(egui::Rgba::from_rgb(r, g, b))
+            };
             let stroke = Stroke::new(1.0, colour.gamma_multiply(LIGHT_ALPHA));
             for line in &light.lines {
                 projection.line(&painter, *line, stroke);

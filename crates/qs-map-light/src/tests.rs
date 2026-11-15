@@ -988,3 +988,20 @@ fn every_vector_is_lit_only_within_its_previews() {
     }
     assert!(checked >= 4);
 }
+
+// spec LIGHT-7.1: a light of a value below 0 lights nothing, so it has no preview
+// spec LIGHT-7.3: a spotlight whose target is at its own origin has no aim, so no cone
+#[test]
+fn a_light_that_reaches_nothing_has_no_preview() {
+    let text = [
+        light_at("0 0 64", "\"light\" \"-200\"\n"),
+        light_at("0 0 64", "\"target\" \"here\"\n"),
+        "{\n\"classname\" \"info_null\"\n\"targetname\" \"here\"\n\"origin\" \"0 0 64\"\n}\n"
+            .to_owned(),
+    ]
+    .concat();
+    let previews = Light::default().previews(text.as_bytes()).unwrap();
+    assert_eq!(previews.len(), 1, "the negative light has none");
+    assert_eq!(previews[0].entity.index(), 1);
+    assert_eq!(previews[0].cone, None);
+}

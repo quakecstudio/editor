@@ -276,16 +276,19 @@ fn a_light_is_drawn_at_its_reach() {
         "hidden"
     );
 
+    // A bad key on another entity, as one being typed, takes out only that entity.
     let dir = std::env::temp_dir().join(format!("qs-scene-light-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let map = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/keep/maps/keep.map");
     let text = std::fs::read_to_string(map)
         .unwrap()
-        .replace("\"light\" \"300\"", "\"light\" \"150\"");
+        .replace("\"light\" \"300\"", "\"light\" \"150\"")
+        .replace("\"origin\" \"96 64 24\"", "\"origin\" \"96 64\"");
     let edited = dir.join("keep.map");
     std::fs::write(&edited, text).unwrap();
     let mut workbench = Workbench::new(FsLoader, Config::default());
     workbench.maps_mut().open_map(&edited).unwrap();
+    drop(std::fs::remove_dir_all(&dir));
     let scene = Scene::build(workbench.map().unwrap(), &HashMap::new(), &[], &mut |_| {
         None
     });
