@@ -35,6 +35,7 @@ use crate::help::Topic;
 use crate::icons::Icon;
 use crate::keymap;
 use crate::launch::{Launch, forward_paths};
+use crate::map_editor::MIN_VIEW_HEIGHT;
 use crate::map_tools::Readout;
 use crate::palette::highlighted;
 use crate::shell::{CentreTab, EDITOR_AREA, PointerHeld, ZoomStep, commanded_size, dragged_size};
@@ -3825,4 +3826,39 @@ fn the_settings_are_read_at_the_start_and_on_focus() {
     );
     frame(&mut app, true);
     assert_eq!(reads.get(), 2, "read again when focus comes back");
+}
+
+// QA-9: at 200 percent zoom in a 1440 by 900 window the Map tab keeps its view at its least
+// height and its browser's tabs below it, scrolling rather than drawing under the bottom panel
+#[test]
+fn the_map_tab_keeps_its_view_and_browser_at_200_percent() {
+    let dir = keep_copy("zoomed");
+    let mut harness = accessible();
+    run_command_with(&mut harness, qs_layout::ZOOM, json!({ "zoom": 2.0 }));
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    let view = harness.get_by_label(Text::MapEditorView.get()).rect();
+    assert!(view.height() >= MIN_VIEW_HEIGHT - 1.0, "{view:?}");
+    let textures = harness
+        .get_by_role_and_label(Role::Button, Text::MapTextures.get())
+        .rect();
+    assert!(
+        textures.top() >= view.bottom() - 1.0,
+        "{textures:?} {view:?}"
+    );
+    // The Show picker stays beside its label, within the centre.
+    let show = harness
+        .get_by_role_and_label(Role::ComboBox, Text::MapShowPicker.get())
+        .rect();
+    let label = harness.get_by_label(Text::MapShow.get()).rect();
+    assert!(
+        (show.center().y - label.center().y).abs() < show.height(),
+        "{show:?} {label:?}"
+    );
 }

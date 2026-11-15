@@ -63,6 +63,10 @@ const KEY_COLUMNS: usize = 3;
 /// The height of the entity browser below the view, in points (the mockup's texture
 /// browser), at most half the space.
 const BROWSER_HEIGHT: f32 = 188.0;
+/// The least height of the map view, in points, however short the centre.
+pub(crate) const MIN_VIEW_HEIGHT: f32 = 160.0;
+/// The least height of the browser below the view: its tabs and a row of its contents.
+const MIN_BROWSER_HEIGHT: f32 = 120.0;
 /// How far in front of the camera a class dropped into the view is placed, in map units.
 const PLACE_DISTANCE: f32 = 256.0;
 /// The radius of the dot at the end of a link that is fired, in points.
@@ -631,7 +635,16 @@ impl MapEditor {
         let mut actions = self.toolbar(ui, layout, bounds.width());
         let mut full = ui.available_rect_before_wrap();
         full.max.x = full.max.x.min(bounds.max.x);
-        let height = BROWSER_HEIGHT.min(full.height() / 2.0);
+        // The view and the browser keep their least heights below however many rows the
+        // toolbar took; a parent too short for them scrolls (P7-12, large text).
+        full.max.y = full
+            .max
+            .y
+            .max(full.min.y + MIN_VIEW_HEIGHT + MIN_BROWSER_HEIGHT);
+        let height = BROWSER_HEIGHT
+            .min(full.height() / 2.0)
+            .max(MIN_BROWSER_HEIGHT)
+            .min(full.height() - MIN_VIEW_HEIGHT);
         let (view, below) = full.split_top_bottom_at_y(full.bottom() - height);
         let mut view_ui = ui.new_child(egui::UiBuilder::new().max_rect(view));
         actions.extend(self.view(&mut view_ui, theme, document, layout));
@@ -708,6 +721,8 @@ impl MapEditor {
                         }
                     });
             name_field(ui, &panes.response, Text::MapPanesPicker);
+            // A choice cut short is read whole on hover.
+            panes.response.on_hover_text(panes_text(layout).get());
             ui.separator();
             ui.label(Text::MapLinks.get());
             ui.selectable_value(
@@ -717,18 +732,19 @@ impl MapEditor {
             );
             ui.selectable_value(&mut self.links, LinkView::All, Text::MapLinksAll.get());
             ui.separator();
-            // Show and its picker stay on one row.
-            let label = ui.fonts_mut(|fonts| {
-                fonts
-                    .layout_no_wrap(
-                        Text::MapShow.get().to_owned(),
-                        egui::TextStyle::Body.resolve(ui.style()),
-                        egui::Color32::PLACEHOLDER,
-                    )
-                    .size()
-                    .x
-            });
-            if ui.available_size_before_wrap().x < label + ui.spacing().item_spacing.x + combo {
+            let show_label = egui::WidgetText::from(Text::MapShow.get())
+                .into_galley(
+                    ui,
+                    Some(egui::TextWrapMode::Extend),
+                    f32::INFINITY,
+                    egui::TextStyle::Body,
+                )
+                .size()
+                .x;
+            let row_started = ui.available_size_before_wrap().x < ui.max_rect().width();
+            let show_row = show_label + ui.spacing().item_spacing.x + combo;
+            if row_started && ui.available_size_before_wrap().x < show_row {
+                // The label is no use apart from its picker.
                 ui.end_row();
             }
             ui.label(Text::MapShow.get());
@@ -758,6 +774,7 @@ impl MapEditor {
                         }
                     });
             name_field(ui, &show.response, Text::MapShowPicker);
+            show.response.on_hover_text(self.show.text().get());
         });
         actions
     }
