@@ -141,8 +141,10 @@ it too.
   map (`map.run_profile`), as TrenchBroom's compile profiles are: `bsp` (qs-map-bsp, the map as it
   is in the editor, to a BSP beside it with its portal and leak files), `vis` and `light` (on that
   BSP, each `full` or `fast`), `tool` (a program and its arguments, run in the map's folder),
-  `copy`, and `launch` (the BSP and its `.lit` copied into the project's build and the game
-  started on it). Paths take `${MAP}`, `${MAP_DIR}`, `${MAP_NAME}`, `${BSP}`, `${PROJECT}` and
+  `copy`, `rename` (a file moved, its folder made), `delete` (files by a name with `*` and `?`,
+  TrenchBroom's Delete Files), and `launch` (the BSP and its `.lit` copied into the project's
+  build and the game started on it). A relative path in `rename` and `delete` is taken from the
+  map's folder. Paths take `${MAP}`, `${MAP_DIR}`, `${MAP_NAME}`, `${BSP}`, `${PROJECT}` and
   `${GAME}`. Full and Fast are built in; a project adds its own in `compile-profiles.toml`:
 
   ```toml

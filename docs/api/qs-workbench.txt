@@ -1069,8 +1069,10 @@ variant qs_workbench::map_profile::LightSpeed::Fast
 variant qs_workbench::map_profile::LightSpeed::Full
 variant qs_workbench::map_profile::Task::Bsp
 variant qs_workbench::map_profile::Task::Copy
+variant qs_workbench::map_profile::Task::Delete
 variant qs_workbench::map_profile::Task::Launch
 variant qs_workbench::map_profile::Task::Light
+variant qs_workbench::map_profile::Task::Rename
 variant qs_workbench::map_profile::Task::Tool
 variant qs_workbench::map_profile::Task::Vis
 variant qs_workbench::map_profile::TaskError::Copy
