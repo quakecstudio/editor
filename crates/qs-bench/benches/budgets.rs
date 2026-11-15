@@ -290,7 +290,7 @@ fn region_compile_e1m1(group: &mut BenchmarkGroup<'_, WallTime>) {
     });
 }
 
-/// A full compile of an id1-sized map (P7-04, MAP-14): LibreQuake's lq-e1m1 through the extended
+/// A full compile of an id1-sized map (P7-04, MAP-18): LibreQuake's lq-e1m1 through the extended
 /// qbsp with no WAD, then full vis and full light, as the background full compile runs them.
 fn full_compile_e1m1(group: &mut BenchmarkGroup<'_, WallTime>) {
     let path = std::env::var_os(MAP_FILE).unwrap_or_else(|| {
