@@ -6,6 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
+use std::sync::Arc;
 
 use qs_bsp::{Bsp, BspLoader};
 use qs_map::geometry::TexVecs;
@@ -757,21 +758,29 @@ pub(crate) fn start_camera(document: &MapDocument, scene: &Scene) -> Camera {
     camera
 }
 
-/// The wireframe of each class model the project's folder or the game holds: the edges of its
-/// first frame's triangles (MDL-4, MDL-5).
+/// The class models the project's folder or the game holds, by name.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ClassModels {
+    /// Each one's wireframe: the edges of its first frame's triangles (MDL-4, MDL-5).
+    pub(crate) lines: HashMap<String, Vec<Line>>,
+    /// Each one's file, which the textured and lit views draw with its skin (P7-08).
+    pub(crate) files: HashMap<String, Arc<[u8]>>,
+}
+
+/// The models of `classes` the project's folder or the game holds.
 #[must_use]
 pub(crate) fn load_models(
     classes: &HashMap<String, ClassLook>,
     project: Option<&Path>,
     game: Option<&Path>,
-) -> HashMap<String, Vec<Line>> {
+) -> ClassModels {
     let vfs = game.and_then(|base| {
         let base = base.to_string_lossy().into_owned();
         Vfs::new(StdFs, &["-basedir", base.as_str()], ".").ok()
     });
-    let mut models = HashMap::new();
+    let mut models = ClassModels::default();
     for model in classes.values().filter_map(|class| class.model.as_ref()) {
-        if models.contains_key(model) {
+        if models.lines.contains_key(model) {
             continue;
         }
         let bytes = project
@@ -781,8 +790,11 @@ pub(crate) fn load_models(
                     .and_then(|vfs| vfs.load(model.as_bytes()).ok().flatten())
                     .map(qs_vfs::LoadedFile::into_bytes)
             });
-        if let Some(lines) = bytes.as_deref().and_then(mdl_lines) {
-            models.insert(model.clone(), lines);
+        if let Some(bytes) = bytes
+            && let Some(lines) = mdl_lines(&bytes)
+        {
+            models.lines.insert(model.clone(), lines);
+            models.files.insert(model.clone(), Arc::from(bytes));
         }
     }
     models

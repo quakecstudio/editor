@@ -11,6 +11,7 @@ use eframe::egui::{Sense, Ui, WidgetInfo, WidgetType};
 use eframe::egui_wgpu::{self, RenderState, wgpu};
 use qs_render::{Camera, Degrees, MapCallback, MapMesh, MapRenderer, View};
 
+use crate::map_shading::PosedModels;
 use crate::strings::Text;
 
 /// The depth buffer the window draws with, which the map view's depth test needs:
@@ -97,10 +98,22 @@ pub fn install(state: &RenderState, mesh: &MapMesh) {
     state.renderer.write().callback_resources.insert(renderer);
 }
 
-/// Puts a renderer of `mesh` in `state`'s callback resources as the map editor's (P7-13),
-/// beside the map view's, replacing the editor's one there.
-pub(crate) fn install_editor(state: &RenderState, mesh: &MapMesh) {
-    let renderer = qs_render::EditorRenderer(renderer(state, mesh));
+/// Puts a renderer of `mesh` and the class models `posed` in `state`'s callback resources as
+/// the map editor's (P7-13, P7-08), beside the map view's, replacing the editor's one there.
+pub(crate) fn install_editor(state: &RenderState, mesh: &MapMesh, posed: &PosedModels) {
+    let assets = qs_render::Assets {
+        skins: &posed.skins,
+        ..qs_render::Assets::default()
+    };
+    let mut renderer = MapRenderer::new(
+        &state.device,
+        &state.queue,
+        (state.target_format, DEPTH_FORMAT),
+        mesh,
+        &assets,
+    );
+    renderer.set_models(&state.device, &state.queue, &posed.frame);
+    let renderer = qs_render::EditorRenderer(renderer);
     state.renderer.write().callback_resources.insert(renderer);
 }
 

@@ -300,6 +300,8 @@ pub struct MapEditor {
     /// The classnames, sorted, as the browser lists them.
     names: Vec<String>,
     models: HashMap<String, Vec<Line>>,
+    /// The class models' files, which the textured and lit views draw (P7-08).
+    model_files: HashMap<String, std::sync::Arc<[u8]>>,
     browser: EntityBrowser,
     /// The selected entity's keys, as `map.entity` gave them.
     keys: Option<(EntityIndex, EntityKeys)>,
@@ -447,7 +449,9 @@ impl MapEditor {
             .collect();
         self.names = self.classes.keys().cloned().collect();
         self.names.sort();
-        self.models = load_models(&self.classes, project, game);
+        let models = load_models(&self.classes, project, game);
+        self.models = models.lines;
+        self.model_files = models.files;
         self.built = None;
     }
 
@@ -960,7 +964,7 @@ impl MapEditor {
             (shading, state),
             document,
             (&self.scene, from, &unseen),
-            self.textures.sources(),
+            (self.textures.sources(), &self.model_files),
         );
         let camera = self
             .camera
@@ -1407,7 +1411,14 @@ impl MapEditor {
                     projection.line(&painter, line, stroke);
                 }
             }
-            if let Some(lines) = shape.model.as_ref().and_then(|m| self.models.get(m)) {
+            // The textured and lit faces draw the model with its skin in place of its wireframe.
+            let skinned = |model: &&String| faces && self.model_files.contains_key(*model);
+            if let Some(lines) = shape
+                .model
+                .as_ref()
+                .filter(|model| !skinned(model))
+                .and_then(|m| self.models.get(m))
+            {
                 let (sin, cos) = shape.yaw.to_radians().sin_cos();
                 let place = |p: [f32; 3]| {
                     [

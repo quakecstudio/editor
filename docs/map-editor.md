@@ -9,8 +9,9 @@ it too.
 - **What it draws:** a `.map`'s brushes, cut from their planes (MAP-3.4), or a BSP's faces, as
   lines. Each point entity is a box in its class's colour, at the size its `/*QUAKED*/` comment
   or `setsize` gives (`project.entities`, P5-03). When the project's folder or the game holds
-  the class's model, the first frame of that model is drawn as a wireframe preview. The
-  selection is drawn in the accent colour.
+  the class's model, the first frame of that model is drawn at the entity, turned to its
+  angle: as a wireframe in Lines, and with its first skin in Textured and Lit, as TrenchBroom
+  draws models (P7-08). The selection is drawn in the accent colour.
 - **The key editor:**
   - It lists the entity's pairs with their values, and a Remove button for each.
   - It shows the keys the entity's class reads but does not set, each with its type and

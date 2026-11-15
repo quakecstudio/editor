@@ -44,7 +44,7 @@ Tests are named `crate-or-app path::test`; `desktop` is `apps/desktop/src`, `map
 | FGD, ENT and DEF entity definitions | The mod's own QuakeC, and FGD files | `qc-sema entities::tests` | Beyond: read from the code the game runs |
 | Mod support | The project is the mod | `qs-workbench` project tests | Same |
 | Entity link visualisation | Links for the selection or every entity, from the keys the QuakeC compares with `targetname` | `desktop tests::links_follow_the_keys_the_code_fires_by` | Beyond: a mod's own target keys link |
-| 3D models in the editor | The model's first frame as a wireframe | `desktop map_scene` model test | Gap G1: TrenchBroom draws models textured |
+| 3D models in the editor | Textured and Lit draw each point entity's class model with its skin, first frame, at its origin and angle; Lines draws its wireframe | `desktop map_shading::tests::point_entities_show_their_models_skinned` | Same |
 | Smart entity property editors | Spawnflags, angle, colour, choices, targets | `map-edit links::tests::the_spawnflags_named_by_the_code_come_with_the_keys` | Same |
 
 ## Getting started
@@ -172,11 +172,7 @@ What we do that the manual does not list:
 
 ## Gaps
 
-To close before #823 does:
-
-| Gap | What TrenchBroom's manual has that we lack |
-| --- | --- |
-| G1 | Entity models drawn textured, not as wireframes |
+None left: every row above is Same or Better, or Different with its reason.
 
 Automatic updates are left to Justin: an update check would make a network request, which P4-16
 rules out without a provider.
