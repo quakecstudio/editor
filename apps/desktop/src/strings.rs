@@ -858,6 +858,18 @@ pub enum Text {
     MapCamera,
     /// The map camera's settings, folded under its place (P7-08).
     MapCameraSettings,
+    /// After an angle's number.
+    DegreesSuffix,
+    /// The angle the selection turns by, to a screen reader.
+    MapTurnBy,
+    /// Turns the selection by the angle.
+    MapTurn,
+    /// Flips the selection along x.
+    MapFlipX,
+    /// Flips the selection along y.
+    MapFlipY,
+    /// Flips the selection along z.
+    MapFlipZ,
     /// Puts the 3D view's Shift+wheel zoom back.
     MapResetZoom,
     /// The 3D view's field of view slider.
@@ -922,7 +934,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 453] = [
+    pub const ALL: [Self; 459] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1346,6 +1358,12 @@ impl Text {
         Self::MapGrid,
         Self::MapCamera,
         Self::MapCameraSettings,
+        Self::DegreesSuffix,
+        Self::MapTurnBy,
+        Self::MapTurn,
+        Self::MapFlipX,
+        Self::MapFlipY,
+        Self::MapFlipZ,
         Self::MapResetZoom,
         Self::MapCameraFov,
         Self::MapCameraLookSpeed,
@@ -1880,6 +1898,12 @@ impl Text {
             Self::MapGrid => "Grid",
             Self::MapCamera => "Camera",
             Self::MapCameraSettings => "Camera settings",
+            Self::DegreesSuffix => "°",
+            Self::MapTurnBy => "Degrees to turn the selection by",
+            Self::MapTurn => "Turn",
+            Self::MapFlipX => "Flip x",
+            Self::MapFlipY => "Flip y",
+            Self::MapFlipZ => "Flip z",
             Self::MapResetZoom => "Reset zoom",
             Self::MapCameraFov => "Field of view",
             Self::MapCameraLookSpeed => "Look speed",

@@ -89,6 +89,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.face_uv`](#mapface_uv) | Fits, justifies, flips, resets, snaps or adjusts the texture of faces of the open map, at the size its WAD gives it (MAP-13). |
 | [`map.filter`](#mapfilter) | The entities of the open map the game removes at a skill and in a kind of game (single, coop or deathmatch), found by spawning the map with the project's program: those the spawnflags rule out and those the QuakeC removes. |
 | [`map.fix`](#mapfix) | Applies a quick fix `map.issues` gave, as one step with undo. |
+| [`map.flip`](#mapflip) | Mirrors entities and brushes along an axis through the middle of their box: brushes and point entities' origins, and their facing, as TrenchBroom's Flip. |
 | [`map.hide`](#maphide) | Hides entities of the open map in the editor until map.show_all (TrenchBroom's Hide Selection); the map is not changed. |
 | [`map.inspect`](#mapinspect) | The open map's rooms (TrenchBroom's named layers and groups, with their bounds) and its entities: each one's place, classname, origin, targetname and room, filtered by room or classname. |
 | [`map.isolate`](#mapisolate) | Hides every entity of the open map but these in the editor until map.show_all (TrenchBroom's Isolate Selection); the map is not changed. |
@@ -126,6 +127,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.stage`](#mapstage) | Begins review of the open map's edits: the map as it is now is kept, and each edit after it waits as a hunk to accept or reject. The agent's map edits begin it themselves; while it is open it is left as it is. |
 | [`map.staged`](#mapstaged) | Lists the open map's hunks waiting for review: for each, the entities it is in, and the keys and brushes it adds, changes or removes. |
 | [`map.textures`](#maptextures) | Lists the open map's textures: those of the WADs its world names, found in the project, beside the map or in the game, and of the BSP it was opened from, each with its size and how many faces use it, and the names its faces use that nothing holds. |
+| [`map.turn`](#mapturn) | Turns entities and brushes by degrees about the vertical through the middle of their box, counter-clockwise seen from above: brushes and point entities' origins and facing, as TrenchBroom's Rotate. |
 | [`map.unlock_all`](#mapunlock_all) | Unlocks every entity of the open map locked in the editor; a locked layer stays locked. |
 | [`map.unstage`](#mapunstage) | Ends the open map's review when nothing waits in it, as after an agent's map command that changed nothing; a review with hunks is left open. |
 | [`paths.open`](#pathsopen) | Opens folders as projects, and files in the nearest project above each (a folder holding quakec.toml or progs.src): a .map or .bsp in the map editor, any other file in the editor. A file outside every project opens in the open project, or opens its folder when none is open. |
@@ -4512,6 +4514,111 @@ Parameters:
 }
 ```
 
+## `map.flip`
+
+Mirrors entities and brushes along an axis through the middle of their box: brushes and point entities' origins, and their facing, as TrenchBroom's Flip.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "Axis": {
+      "description": "An axis of the world.",
+      "oneOf": [
+        {
+          "const": "x",
+          "description": "x.",
+          "type": "string"
+        },
+        {
+          "const": "y",
+          "description": "y.",
+          "type": "string"
+        },
+        {
+          "const": "z",
+          "description": "z.",
+          "type": "string"
+        }
+      ]
+    },
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "Lock": {
+      "description": "Whether a moved brush's textures stay fixed in the world (P6-09, MAP-11.2).",
+      "oneOf": [
+        {
+          "const": "locked",
+          "description": "Texture lock on: the textures stay where they are in the world.",
+          "type": "string"
+        },
+        {
+          "const": "free",
+          "description": "Texture lock off: the textures move with the brush.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.flip`.",
+  "properties": {
+    "axis": {
+      "$ref": "#/$defs/Axis",
+      "description": "The axis flipped along: x mirrors left and right."
+    },
+    "brushes": {
+      "default": [],
+      "description": "Brushes, each by its entity.",
+      "items": {
+        "maxItems": 2,
+        "minItems": 2,
+        "prefixItems": [
+          {
+            "$ref": "#/$defs/EntityIndex"
+          },
+          {
+            "$ref": "#/$defs/BrushIndex"
+          }
+        ],
+        "type": "array"
+      },
+      "type": "array"
+    },
+    "entities": {
+      "default": [],
+      "description": "Whole entities: a point entity's origin and facing, every brush of a brush entity.",
+      "items": {
+        "$ref": "#/$defs/EntityIndex"
+      },
+      "type": "array"
+    },
+    "lock": {
+      "$ref": "#/$defs/Lock",
+      "default": "locked",
+      "description": "Whether their textures stay fixed in the world; locked when not given."
+    }
+  },
+  "required": [
+    "axis"
+  ],
+  "title": "FlipParams",
+  "type": "object"
+}
+```
+
 ## `map.hide`
 
 Hides entities of the open map in the editor until map.show_all (TrenchBroom's Hide Selection); the map is not changed.
@@ -5909,6 +6016,92 @@ Parameters:
   "additionalProperties": false,
   "description": "The command takes no parameters: pass the empty object {}.",
   "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `map.turn`
+
+Turns entities and brushes by degrees about the vertical through the middle of their box, counter-clockwise seen from above: brushes and point entities' origins and facing, as TrenchBroom's Rotate.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "Lock": {
+      "description": "Whether a moved brush's textures stay fixed in the world (P6-09, MAP-11.2).",
+      "oneOf": [
+        {
+          "const": "locked",
+          "description": "Texture lock on: the textures stay where they are in the world.",
+          "type": "string"
+        },
+        {
+          "const": "free",
+          "description": "Texture lock off: the textures move with the brush.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.turn`.",
+  "properties": {
+    "brushes": {
+      "default": [],
+      "description": "Brushes, each by its entity.",
+      "items": {
+        "maxItems": 2,
+        "minItems": 2,
+        "prefixItems": [
+          {
+            "$ref": "#/$defs/EntityIndex"
+          },
+          {
+            "$ref": "#/$defs/BrushIndex"
+          }
+        ],
+        "type": "array"
+      },
+      "type": "array"
+    },
+    "degrees": {
+      "description": "Degrees to turn about the vertical through the selection's middle, counter-clockwise\nseen from above.",
+      "format": "double",
+      "type": "number"
+    },
+    "entities": {
+      "default": [],
+      "description": "Whole entities: a point entity's origin and facing, every brush of a brush entity.",
+      "items": {
+        "$ref": "#/$defs/EntityIndex"
+      },
+      "type": "array"
+    },
+    "lock": {
+      "$ref": "#/$defs/Lock",
+      "default": "locked",
+      "description": "Whether their textures stay fixed in the world; locked when not given."
+    }
+  },
+  "required": [
+    "degrees"
+  ],
+  "title": "TurnParams",
   "type": "object"
 }
 ```

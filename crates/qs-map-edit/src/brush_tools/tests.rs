@@ -281,3 +281,101 @@ fn an_edge_chamfers() {
         &json!({ "entity": 0, "brush": 0, "edge": [[0, 0, 64], [64, 64, 64]], "distance": 16 }),
     );
 }
+
+/// A session on a map of one world box, 0 to 64, and three point entities: one facing 30
+/// degrees at 32 0 32, one facing straight up at 0 64 0, and one with `angles` 10 30 0.
+fn arranged(name: &str) -> Session<MapContext> {
+    let dir = std::env::temp_dir().join(format!("qs-wb-arrange-{name}-{}", std::process::id()));
+    let _gone = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("arrange.map");
+    let mut text = map_text();
+    text.push_str(
+        "{\n\"classname\" \"info_null\"\n\"origin\" \"32 0 32\"\n\"angle\" \"30\"\n}\n\
+         {\n\"classname\" \"info_null\"\n\"origin\" \"0 64 0\"\n\"angle\" \"-1\"\n}\n\
+         {\n\"classname\" \"info_null\"\n\"origin\" \"64 64 64\"\n\"angles\" \"10 30 0\"\n}\n",
+    );
+    std::fs::write(&path, text).unwrap();
+    let mut session = MapContext::session();
+    session.execute(MAP_OPEN, json!({ "path": path })).unwrap();
+    session
+}
+
+/// Entity `entity`'s value of `key`.
+fn key(session: &Session<MapContext>, entity: usize, key: &str) -> String {
+    let map = session.context().map().unwrap();
+    let value = map.file().entities[entity].value(key.as_bytes()).unwrap();
+    String::from_utf8(value.to_vec()).unwrap()
+}
+
+// No spec statement: P7-08: map.flip mirrors a selection along an axis through the middle of its
+// box, as TrenchBroom's Flip: brushes and point entities' origins, a yaw across x to 180 less it
+// and across y to its negative, an up facing to down across z; one undo takes it back
+#[test]
+fn a_selection_flips_along_each_axis() {
+    use crate::MAP_FLIP;
+
+    // The box of the world's first brush, 0 to 64, and the entity at 32 0 32: middle 32 32 32.
+    let selection = json!({ "entities": [1], "brushes": [[0, 0]] });
+    let mut session = arranged("flip-x");
+    let before = text(&session);
+    let mut params = selection.clone();
+    params["axis"] = json!("y");
+    session.execute(MAP_FLIP, params).unwrap();
+    assert_eq!(key(&session, 1, "origin"), "32 64 32");
+    assert_eq!(key(&session, 1, "angle"), "330");
+    session.undo().unwrap();
+    assert_eq!(text(&session), before);
+    let mut params = selection;
+    params["axis"] = json!("x");
+    session.execute(MAP_FLIP, params).unwrap();
+    assert_eq!(key(&session, 1, "origin"), "32 0 32");
+    assert_eq!(key(&session, 1, "angle"), "150");
+    assert!(world(&session).iter().all(qs_map::Brush::is_valid));
+    // Straight up turns down across z; `angles` keeps its yaw and negates its pitch.
+    let mut session = arranged("flip-z");
+    session
+        .execute(MAP_FLIP, json!({ "entities": [2, 3], "axis": "z" }))
+        .unwrap();
+    assert_eq!(key(&session, 2, "angle"), "-2");
+    assert_eq!(key(&session, 3, "angles"), "-10 30 0");
+    assert_eq!(key(&session, 3, "origin"), "64 64 0");
+}
+
+// No spec statement: P7-08: map.turn turns a selection about the vertical through the middle of
+// its box: a right angle keeps brushes on the grid, a point entity's yaw turns with it and a
+// facing straight up stays; nothing selected, or the world as a whole entity, is refused
+#[test]
+fn a_selection_turns_about_the_vertical() {
+    use crate::MAP_TURN;
+
+    let mut session = arranged("turn");
+    session
+        .execute(
+            MAP_TURN,
+            json!({ "entities": [1, 2], "brushes": [[0, 0]], "degrees": 90 }),
+        )
+        .unwrap();
+    // The middle of 0 0 0 to 64 64 64 is 32 32 32: 32 0 32 turns to 64 32 32 and 0 64 0 to
+    // 0 0 0.
+    assert_eq!(key(&session, 1, "origin"), "64 32 32");
+    assert_eq!(key(&session, 1, "angle"), "120");
+    assert_eq!(key(&session, 2, "origin"), "0 0 0");
+    assert_eq!(key(&session, 2, "angle"), "-1");
+    let corners = world(&session)[0].vertices();
+    assert!(
+        corners.iter().flatten().all(|c| c.fract() == 0.0),
+        "{corners:?}"
+    );
+    session
+        .execute(MAP_TURN, json!({ "entities": [3], "degrees": 45 }))
+        .unwrap();
+    assert_eq!(key(&session, 3, "angles"), "10 75 0");
+    for bad in [
+        json!({ "degrees": 90 }),
+        json!({ "entities": [0], "degrees": 90 }),
+        json!({ "entities": [99], "degrees": 90 }),
+    ] {
+        assert!(session.execute(MAP_TURN, bad.clone()).is_err(), "{bad}");
+    }
+}

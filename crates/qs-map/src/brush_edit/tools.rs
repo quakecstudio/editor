@@ -70,6 +70,16 @@ impl WorldAxis {
     }
 }
 
+/// Right angles in a whole turn.
+const QUARTERS_IN_TURN: f64 = 4.0;
+
+/// One right angle of a turn.
+const ONE_RIGHT_ANGLE: f64 = 1.0;
+/// Two right angles, half a turn.
+const TWO_RIGHT_ANGLES: f64 = 2.0;
+/// Three right angles, three quarters of a turn.
+const THREE_RIGHT_ANGLES: f64 = 3.0;
+
 /// An affine map of the world, `p' = linear * p + offset`, `linear` given by rows.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Affine {
@@ -100,6 +110,34 @@ impl Affine {
             *cell = factor;
         }
         Some(Self::about(about, linear))
+    }
+
+    /// The turn by `degrees` about the vertical line through `about`, counter-clockwise seen
+    /// from above, as an entity's yaw turns (P7-08). A right angle's sine and cosine are taken
+    /// as exactly 0 and 1, so a brush on the grid turned a right angle stays on it.
+    #[must_use]
+    pub fn turn(about: [f64; 3], degrees: f64) -> Self {
+        let quarters = degrees / QUARTER;
+        #[expect(
+            clippy::float_cmp,
+            clippy::float_cmp_const,
+            reason = "a whole number of right angles is the case turned exactly"
+        )]
+        let (sin, cos) = if quarters.round() == quarters {
+            let q = quarters.rem_euclid(QUARTERS_IN_TURN);
+            if q == ONE_RIGHT_ANGLE {
+                (1.0, 0.0)
+            } else if q == TWO_RIGHT_ANGLES {
+                (0.0, -1.0)
+            } else if q == THREE_RIGHT_ANGLES {
+                (-1.0, 0.0)
+            } else {
+                (0.0, 1.0)
+            }
+        } else {
+            degrees.to_radians().sin_cos()
+        };
+        Self::about(about, [[cos, -sin, 0.0], [sin, cos, 0.0], [0.0, 0.0, 1.0]])
     }
 
     /// The move by `by`.

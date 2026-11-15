@@ -24,9 +24,10 @@ use qs_map::{Entity, Item, MapFile};
 pub use brush_tools::{
     Axis, BrushChamferParams, BrushExtrudeParams, BrushHollowParams, BrushIntersectParams,
     BrushScaleParams, BrushShearParams, BrushSplitEdgeParams, BrushSplitFaceParams,
-    BrushSweepParams, BrushVerticesParams, MAP_BRUSH_CHAMFER, MAP_BRUSH_EXTRUDE, MAP_BRUSH_HOLLOW,
-    MAP_BRUSH_INTERSECT, MAP_BRUSH_SCALE, MAP_BRUSH_SHEAR, MAP_BRUSH_SPLIT_EDGE,
-    MAP_BRUSH_SPLIT_FACE, MAP_BRUSH_SWEEP, MAP_BRUSH_VERTICES, NewVertex, VertexMove,
+    BrushSweepParams, BrushVerticesParams, FlipParams, MAP_BRUSH_CHAMFER, MAP_BRUSH_EXTRUDE,
+    MAP_BRUSH_HOLLOW, MAP_BRUSH_INTERSECT, MAP_BRUSH_SCALE, MAP_BRUSH_SHEAR, MAP_BRUSH_SPLIT_EDGE,
+    MAP_BRUSH_SPLIT_FACE, MAP_BRUSH_SWEEP, MAP_BRUSH_VERTICES, MAP_FLIP, MAP_TURN, NewVertex,
+    Selection, TurnParams, VertexMove,
 };
 pub use brushes::{
     BrushClipParams, BrushCreateParams, BrushIndex, BrushMergeParams, BrushMoveParams, BrushParams,
@@ -1345,6 +1346,8 @@ pub fn register_map_edit<C: HasMap + 'static>(
     registry.register(brushes::BrushTexture)?;
     registry.register(shapes::BrushShape)?;
     registry.register(brush_tools::BrushScale)?;
+    registry.register(brush_tools::Flip)?;
+    registry.register(brush_tools::Turn)?;
     registry.register(brush_tools::BrushShear)?;
     registry.register(brush_tools::BrushExtrude)?;
     registry.register(brush_tools::BrushSweep)?;

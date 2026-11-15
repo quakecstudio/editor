@@ -94,8 +94,8 @@ Tests are named `crate-or-app path::test`; `desktop` is `apps/desktop/src`, `map
 | Duplicate | `map.duplicate`, with link numbers moved on | `map-edit links::tests::a_duplicate_numbers_its_names_onward` | Beyond |
 | Copy and paste | Cmd+C writes the selection's map text, Cmd+V pastes at the pointer, Cmd+Alt+V where it was (`map.copy`, `map.paste`) | `desktop tests::the_map_view_copies_and_pastes_map_text`, `map-edit prefabs::tests::a_copy_pastes_in_place_or_at_a_point` | Same |
 | Move with mouse or keys | `map.move`, `map.brush_move` | `map-edit brushes::tests::a_brush_moves_with_its_textures_locked` | Same |
-| Rotate tool and rotate by 90 degrees | `map.rotate` | `map-edit tests::angles_turn_by_their_yaw` | Gap G15: right angles only, no rotate tool |
-| Flip | None | none | Gap G15 |
+| Rotate tool and rotate by 90 degrees | `map.rotate` | `map-edit brush_tools::tests::a_selection_turns_about_the_vertical`, `desktop tests::selected_brushes_turn_and_flip_from_properties` | Same: Alt+Left and Right turn the selection a right angle, Turn in Properties by any angle, 15 at first (`map.turn`) |
+| Flip | Cmd+F across the view, Cmd+Alt+F up and down, Flip x, y, z in Properties (`map.flip`) | `map-edit brush_tools::tests::a_selection_flips_along_each_axis`, `desktop tests::the_map_view_takes_trenchbrooms_keys` | Same |
 | Scale and shear | `map.brush_scale`, `map.brush_shear` | `map-edit brush_tools::tests::brushes_scale_and_shear` | Same |
 | Delete | `map.delete`, `map.brush_delete` | `map-edit brushes::tests::brushes_are_merged_and_deleted` | Same |
 | Extrude, stamp, move faces | `map.brush_extrude` | `map-edit brush_tools::tests::a_face_extrudes` | Gap G13: no stamping or moving faces |
@@ -182,7 +182,6 @@ To close before #823 does:
 | G11 | Axis restriction while moving |
 | G12 | The map view's context menu |
 | G13 | Brush entities from selected brushes and back to the world; a convex brush from placed points; stamping and moving faces; clip snapping and matching a face's plane |
-| G15 | Flip, and a rotate tool for any angle |
 | G16 | Replace a texture; the browser's chosen texture for new brushes; filter by WAD; a WAD dropped on the window; alignment shortcuts |
 | G17 | Create and ungroup groups; create, separate and extract linked groups; new layers and the current layer |
 | G19 | TrenchBroom's query language in the search |

@@ -1961,6 +1961,13 @@ fn the_map_view_takes_trenchbrooms_keys() {
     harness.key_press_modifiers(egui::Modifiers::ALT, egui::Key::ArrowRight);
     harness.run();
     assert!(map_text(&harness).contains("\"angle\" \"270\""));
+    // P7-08: Cmd+F flips the selection across the view: facing +x, along y, so 270 becomes 90
+    // and the ogre, alone, stays where it is.
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::F);
+    harness.run();
+    assert!(map_text(&harness).contains("\"origin\" \"112 64 40\"\n\"angle\" \"90\""));
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::F);
+    harness.run();
     let entities = |harness: &Harness<'static, Option<App>>| {
         let shell = harness.state().as_ref().unwrap().shell();
         let map = shell.session().context().workbench.map().unwrap();
@@ -1980,7 +1987,7 @@ fn the_map_view_takes_trenchbrooms_keys() {
         "{saved}"
     );
     let shell = &mut harness.state_mut().as_mut().unwrap().shell;
-    for _ in 0..5 {
+    for _ in 0..7 {
         shell.execute("edit.undo", json!({})).unwrap();
     }
     harness.run();
@@ -2402,10 +2409,21 @@ fn the_map_view_copies_and_pastes_map_text() {
         })
         .expect("the selection was copied");
     harness.run();
-    assert!(copied.contains("\"classname\" \"monster_ogre\""), "{copied}");
+    assert!(
+        copied.contains("\"classname\" \"monster_ogre\""),
+        "{copied}"
+    );
     let count = |harness: &Harness<'static, Option<App>>| {
         let shell = harness.state().as_ref().unwrap().shell();
-        shell.session().context().workbench.map().unwrap().file().entities.len()
+        shell
+            .session()
+            .context()
+            .workbench
+            .map()
+            .unwrap()
+            .file()
+            .entities
+            .len()
     };
     let before = count(&harness);
     harness.event_modifiers(egui::Event::Paste(copied.clone()), egui::Modifiers::ALT);
@@ -2419,7 +2437,9 @@ fn the_map_view_copies_and_pastes_map_text() {
     harness.run();
     assert_eq!(count(&harness), before + 2);
     assert_eq!(
-        map_text(&harness).matches("\"origin\" \"96 64 24\"").count(),
+        map_text(&harness)
+            .matches("\"origin\" \"96 64 24\"")
+            .count(),
         2,
         "the second paste is elsewhere"
     );
@@ -2841,6 +2861,43 @@ fn alt_click_picks_a_face_for_the_uv_editor() {
     click_at(&mut harness, at);
     assert!(harness.query_by_label(Text::MapFaces.get()).is_none());
     let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("edit.undo", json!({})).unwrap();
+    harness.run();
+    assert_eq!(map_text(&harness), before);
+}
+
+// No spec statement: P7-08: with brushes selected, Properties turns them by the angle typed,
+// 15 degrees at first, and flips them along x, y or z, each one undoable edit
+#[test]
+fn selected_brushes_turn_and_flip_from_properties() {
+    let dir = keep_copy("arrange");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    outside_the_keep(&mut harness);
+    harness.run();
+    let before = map_text(&harness);
+    harness.get_by_label(Text::MapToolVertex.get()).click();
+    harness.run();
+    let at = drawn_at(&harness, 4);
+    click_at(&mut harness, at);
+    let turn_by = harness.get_by_label(Text::MapTurnBy.get());
+    assert_eq!(turn_by.accesskit_node().numeric_value(), Some(15.0));
+    harness.get_by_label(Text::MapTurn.get()).click();
+    harness.run();
+    let turned = map_text(&harness);
+    assert_ne!(turned, before, "the wall turned");
+    harness.get_by_label(Text::MapFlipZ.get()).click();
+    harness.run();
+    assert_ne!(map_text(&harness), turned, "and flipped");
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("edit.undo", json!({})).unwrap();
     shell.execute("edit.undo", json!({})).unwrap();
     harness.run();
     assert_eq!(map_text(&harness), before);

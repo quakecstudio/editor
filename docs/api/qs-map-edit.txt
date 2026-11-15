@@ -28,6 +28,8 @@ const qs_map_edit::brush_tools::MAP_BRUSH_SPLIT_EDGE
 const qs_map_edit::brush_tools::MAP_BRUSH_SPLIT_FACE
 const qs_map_edit::brush_tools::MAP_BRUSH_SWEEP
 const qs_map_edit::brush_tools::MAP_BRUSH_VERTICES
+const qs_map_edit::brush_tools::MAP_FLIP
+const qs_map_edit::brush_tools::MAP_TURN
 const qs_map_edit::brushes::MAP_BRUSH_CLIP
 const qs_map_edit::brushes::MAP_BRUSH_CREATE
 const qs_map_edit::brushes::MAP_BRUSH_DELETE
@@ -170,6 +172,14 @@ field qs_map_edit::brush_tools::BrushVerticesParams.brush
 field qs_map_edit::brush_tools::BrushVerticesParams.entity
 field qs_map_edit::brush_tools::BrushVerticesParams.grid
 field qs_map_edit::brush_tools::BrushVerticesParams.moves
+field qs_map_edit::brush_tools::FlipParams.axis
+field qs_map_edit::brush_tools::FlipParams.lock
+field qs_map_edit::brush_tools::FlipParams.selection
+field qs_map_edit::brush_tools::Selection.brushes
+field qs_map_edit::brush_tools::Selection.entities
+field qs_map_edit::brush_tools::TurnParams.degrees
+field qs_map_edit::brush_tools::TurnParams.lock
+field qs_map_edit::brush_tools::TurnParams.selection
 field qs_map_edit::brush_tools::VertexMove.from
 field qs_map_edit::brush_tools::VertexMove.to
 field qs_map_edit::brushes::BrushClipParams.brush
@@ -443,6 +453,9 @@ struct qs_map_edit::brush_tools::BrushSplitEdgeParams
 struct qs_map_edit::brush_tools::BrushSplitFaceParams
 struct qs_map_edit::brush_tools::BrushSweepParams
 struct qs_map_edit::brush_tools::BrushVerticesParams
+struct qs_map_edit::brush_tools::FlipParams
+struct qs_map_edit::brush_tools::Selection
+struct qs_map_edit::brush_tools::TurnParams
 struct qs_map_edit::brush_tools::VertexMove
 struct qs_map_edit::brushes::BrushClipParams
 struct qs_map_edit::brushes::BrushCreateParams
@@ -542,6 +555,7 @@ use qs_map_edit::EntityProblem = store::EntityProblem
 use qs_map_edit::ExportParams = groups::ExportParams
 use qs_map_edit::FlagChange = flags::FlagChange
 use qs_map_edit::FlagInfo = classes::FlagInfo
+use qs_map_edit::FlipParams = brush_tools::FlipParams
 use qs_map_edit::GameFolders = store::GameFolders
 use qs_map_edit::HasMap = store::HasMap
 use qs_map_edit::HunkEntity = review::HunkEntity
@@ -580,6 +594,7 @@ use qs_map_edit::MAP_COMPARE = disk::MAP_COMPARE
 use qs_map_edit::MAP_COPY = prefabs::MAP_COPY
 use qs_map_edit::MAP_EXPORT = groups::MAP_EXPORT
 use qs_map_edit::MAP_FIX = issues::MAP_FIX
+use qs_map_edit::MAP_FLIP = brush_tools::MAP_FLIP
 use qs_map_edit::MAP_HIDE = groups::MAP_HIDE
 use qs_map_edit::MAP_ISOLATE = groups::MAP_ISOLATE
 use qs_map_edit::MAP_ISSUES = issues::MAP_ISSUES
@@ -600,6 +615,7 @@ use qs_map_edit::MAP_SET_LAYER = groups::MAP_SET_LAYER
 use qs_map_edit::MAP_SHOW_ALL = groups::MAP_SHOW_ALL
 use qs_map_edit::MAP_STAGE = review::MAP_STAGE
 use qs_map_edit::MAP_STAGED = review::MAP_STAGED
+use qs_map_edit::MAP_TURN = brush_tools::MAP_TURN
 use qs_map_edit::MAP_UNLOCK_ALL = groups::MAP_UNLOCK_ALL
 use qs_map_edit::MAP_UNSTAGE = review::MAP_UNSTAGE
 use qs_map_edit::MapDifference = disk::MapDifference
@@ -634,10 +650,12 @@ use qs_map_edit::RoomShape = inspect::RoomShape
 use qs_map_edit::RowKind = outline::RowKind
 use qs_map_edit::SavePrefabParams = prefabs::SavePrefabParams
 use qs_map_edit::Seal = report::Seal
+use qs_map_edit::Selection = brush_tools::Selection
 use qs_map_edit::SetFlagParams = flags::SetFlagParams
 use qs_map_edit::SetLayerParams = groups::SetLayerParams
 use qs_map_edit::ShapeSpec = shapes::ShapeSpec
 use qs_map_edit::Switch = groups::Switch
+use qs_map_edit::TurnParams = brush_tools::TurnParams
 use qs_map_edit::VertexMove = brush_tools::VertexMove
 use qs_map_edit::map_files_changed = disk::map_files_changed
 variant qs_map_edit::BspSave::Ent

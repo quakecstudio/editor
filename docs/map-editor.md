@@ -90,6 +90,12 @@ it too.
   (`view.map_camera`, kept in the layout). Cmd+U frames the selection, every selected entity and brush, keeping
   where the camera looks (TrenchBroom's Focus on Selection, Ctrl+U). The Properties panel shows
   the camera's x, y and z, and a value typed or dragged there moves it.
+- **Flip and turn (P7-08):** Cmd+F flips the selection across the view, along the map axis
+  nearest the camera's right, and Cmd+Alt+F up and down (TrenchBroom's Ctrl+F and Ctrl+Alt+F);
+  Alt+Left and Right turn it a right angle about the vertical. With brushes selected, the
+  Properties panel turns the selection by any angle, 15 degrees at first, and flips it along x,
+  y or z. Both go about the middle of the selection's box, point entities' facing with it
+  (`map.flip`, `map.turn`).
 - **Copy and paste (P7-08):** Cmd+C puts the selected entities and brushes on the clipboard as
   a `.map`'s text, where they are (`map.copy`); Cmd+V pastes map text with the middle of its
   floor at the pointer, on the grid, and Cmd+Alt+V where the text has it (`map.paste`), as

@@ -26,7 +26,7 @@ use qs_map_edit::{
     ArchWall, Axis, BrushIndex, Circle, Climb, EntityIndex, KeepPart, Lock, ShapeSpec,
 };
 
-use crate::map_editor::box_lines;
+use crate::map_editor::{Arrange, box_lines};
 use crate::map_panes::{Pane, Projection};
 use crate::map_scene::{Scene, single};
 pub(crate) use crate::map_uv::PickMode;
@@ -162,6 +162,8 @@ impl MapTool {
 pub enum BrushAction {
     /// Create a box brush in the world from one corner to the other.
     Create([f64; 3], [f64; 3]),
+    /// Flip or turn the selected brushes and entities (P7-08).
+    Arrange(Arrange),
     /// Cut a brush by the plane through three points, keeping the parts chosen.
     Clip(EntityIndex, BrushIndex, [[f64; 3]; 3], KeepPart),
     /// Move a corner of a brush from one point to another.
@@ -527,6 +529,20 @@ enum Drag {
     Measure([f32; 3], MapAxis),
 }
 
+/// The degrees the Turn button turns the selection by: 15 at first, TrenchBroom's grid angle
+/// (`Grid::angle`, 15 degrees).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct TurnBy(f64);
+
+impl Default for TurnBy {
+    fn default() -> Self {
+        Self(TURN_BY)
+    }
+}
+
+/// TrenchBroom's default rotation step, its grid's angle, in degrees.
+const TURN_BY: f64 = 15.0;
+
 /// The brush tools' state.
 #[derive(Debug, Default)]
 pub(crate) struct BrushTools {
@@ -538,8 +554,9 @@ pub(crate) struct BrushTools {
     /// The corners each selected brush had when it was last seen: an edit or undo that moves
     /// brushes along leaves a place naming another brush, whose corners differ.
     seen: BTreeMap<BrushRef, Vec<[f64; 3]>>,
-    /// The brush the last clip or vertex move asked for reshapes, which stays selected.
-    reshaped: Option<BrushRef>,
+    /// The brushes the last clip, vertex move, flip or turn asked to reshape, which stay
+    /// selected.
+    reshaped: Vec<BrushRef>,
     drag: Option<Drag>,
     /// The pane the drag started in, the only one that reads it.
     dragging_in: Option<Pane>,
@@ -561,6 +578,8 @@ pub(crate) struct BrushTools {
     corners: Vec<[f64; 3]>,
     /// The grid drags snap to (P7-08), the layout's.
     pub(crate) grid: MapGrid,
+    /// The degrees Turn turns the selection by (P7-08).
+    turn_by: TurnBy,
 }
 
 /// A ray in map space: where it starts and its direction.
@@ -679,17 +698,17 @@ impl BrushTools {
     /// Forgets the selected brushes `scene` no longer has where they were: none is at the
     /// place, or another brush is, other than the one the last clip or vertex move reshaped.
     pub(crate) fn keep_found(&mut self, scene: &Scene) {
-        let reshaped = self.reshaped.take();
+        let reshaped = core::mem::take(&mut self.reshaped);
         let seen = &mut self.seen;
         self.chosen.retain(|&chosen| {
             let Some(shape) = scene.brush(chosen.0, chosen.1) else {
                 return false;
             };
             let same = seen.get(&chosen) == Some(&shape.vertices);
-            if same || reshaped == Some(chosen) {
+            if same || reshaped.contains(&chosen) {
                 seen.insert(chosen, shape.vertices.clone());
             }
-            same || reshaped == Some(chosen)
+            same || reshaped.contains(&chosen)
         });
         let chosen = &self.chosen;
         self.seen.retain(|brush, _| chosen.contains(brush));
@@ -925,7 +944,7 @@ impl BrushTools {
                 | BrushAction::Vertices(entity, brush, ..),
             ) = finished
             {
-                self.reshaped = Some((entity, brush));
+                self.reshaped = vec![(entity, brush)];
             }
             actions.extend(finished);
         }
@@ -1193,6 +1212,43 @@ impl BrushTools {
         );
     }
 
+    /// The selection flipped along an axis or turned by any angle, as TrenchBroom's Flip and
+    /// Rotate tool (P7-08).
+    fn arrange_row(&mut self, ui: &mut Ui, entities: &[EntityIndex]) -> Vec<BrushAction> {
+        let mut asked = Vec::new();
+        ui.horizontal_wrapped(|ui| {
+            let turn = ui.add(
+                egui::DragValue::new(&mut self.turn_by.0)
+                    .speed(1.0)
+                    .suffix(Text::DegreesSuffix.get()),
+            );
+            name_field(ui, &turn, Text::MapTurnBy);
+            if ui.button(Text::MapTurn.get()).clicked() {
+                self.reshaped.clone_from(&self.chosen);
+                asked.push(BrushAction::Arrange(Arrange::Turn(
+                    entities.to_vec(),
+                    self.chosen.clone(),
+                    self.turn_by.0,
+                )));
+            }
+            for (axis, text) in [
+                (Axis::X, Text::MapFlipX),
+                (Axis::Y, Text::MapFlipY),
+                (Axis::Z, Text::MapFlipZ),
+            ] {
+                if ui.button(text.get()).clicked() {
+                    self.reshaped.clone_from(&self.chosen);
+                    asked.push(BrushAction::Arrange(Arrange::Flip(
+                        entities.to_vec(),
+                        self.chosen.clone(),
+                        axis,
+                    )));
+                }
+            }
+        });
+        asked
+    }
+
     /// The selected brushes' size, texture alignment and buttons in the Properties panel, the
     /// texture chosen in the browser `texture`; what they asked for.
     pub(crate) fn properties(
@@ -1220,6 +1276,7 @@ impl BrushTools {
                 max[2] - min[2],
             ]));
         }
+        actions.extend(self.arrange_row(ui, entities));
         let mut by_entity: BTreeMap<EntityIndex, Vec<BrushIndex>> = BTreeMap::new();
         for &(e, b) in &self.chosen {
             by_entity.entry(e).or_default().push(b);
@@ -1540,11 +1597,11 @@ mod tests {
         assert!(tools.seen.is_empty());
         tools.chosen = vec![second];
         tools.seen.insert(second, vec![b]);
-        tools.reshaped = Some(second);
+        tools.reshaped = vec![second];
         tools.keep_found(&scene(&[a, [32.0; 3]]));
         assert_eq!(tools.chosen, vec![second], "reshaped by the last edit");
         assert_eq!(tools.seen.get(&second), Some(&vec![[32.0; 3]]));
-        assert_eq!(tools.reshaped, None);
+        assert!(tools.reshaped.is_empty());
         tools.keep_found(&scene(&[a]));
         assert!(tools.chosen.is_empty(), "gone");
     }

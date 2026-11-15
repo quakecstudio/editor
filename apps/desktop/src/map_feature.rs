@@ -26,9 +26,9 @@ use qs_map_edit::{
 };
 use qs_map_edit::{
     BspSave, EntityKeys, EntityParams, MAP_COMPARE, MAP_DELETE, MAP_DUPLICATE, MAP_ENTITY,
-    MAP_MOVE, MAP_OPEN, MAP_REMOVE_KEY, MAP_RESOLVE, MAP_ROTATE, MAP_SAVE, MAP_SELECT, MAP_SET_KEY,
+    MAP_MOVE, MAP_OPEN, MAP_REMOVE_KEY, MAP_RESOLVE, MAP_SAVE, MAP_SELECT, MAP_SET_KEY,
     MapDifference, MapDocument, MapOnDisk, MapOpenParams, MapSaved, MoveParams, RemoveKeyParams,
-    ResolveParams, RotateParams, SaveParams, SelectParams as MapSelectParams, SetKeyParams,
+    ResolveParams, SaveParams, SelectParams as MapSelectParams, SetKeyParams,
 };
 use qs_map_edit::{
     Copied, CopyParams, MAP_COPY, MAP_PASTE, MAP_PLACE_PREFAB, MAP_PREFABS, MAP_SAVE_PREFAB,
@@ -38,6 +38,7 @@ use qs_map_edit::{
     EntityListParams, LayerInfo, MAP_HIDE, MAP_ISOLATE, MAP_LAYERS, MAP_LOCK, MAP_SET_LAYER,
     MAP_SHOW_ALL, MAP_UNLOCK_ALL, SetLayerParams,
 };
+use qs_map_edit::{FlipParams, Lock, MAP_FLIP, MAP_TURN, Selection, TurnParams};
 use qs_map_edit::{LinkParams, MAP_LINK, MAP_PLACE, MAP_SET_FLAG, PlaceParams, SetFlagParams};
 use qs_map_edit::{MAP_ACCEPT, MAP_REJECT, MAP_STAGED, MapHunk, MapHunksParams};
 use qs_map_edit::{
@@ -57,7 +58,7 @@ use qs_workbench::map_profile::{
 use crate::entities::{Outliner, Properties};
 use crate::features::{Commands, ShellRequest};
 use crate::map_editor::{
-    ClipboardAction, DiskNotice, MapAction, MapEditor, ShowFilter, ViewSetting,
+    Arrange, ClipboardAction, DiskNotice, MapAction, MapEditor, ShowFilter, ViewSetting,
 };
 use crate::map_groups::GroupAction;
 use crate::map_profiles::ProfileAction;
@@ -287,9 +288,7 @@ impl MapFeature {
                 MapAction::Move(entity, by) => {
                     commands.attempt(MAP_MOVE, &MoveParams { entity, by })
                 }
-                MapAction::Rotate(entity, degrees) => {
-                    commands.attempt(MAP_ROTATE, &RotateParams { entity, degrees })
-                }
+                MapAction::Arrange(arrange) => Self::arrange(commands, arrange),
                 MapAction::Delete(entity) => commands.attempt(MAP_DELETE, &EntityParams { entity }),
                 MapAction::Duplicate(entity) => {
                     commands.attempt(MAP_DUPLICATE, &EntityParams { entity })
@@ -639,6 +638,31 @@ impl MapFeature {
         played
     }
 
+    /// Flips or turns the selection (P7-08).
+    fn arrange(
+        commands: &mut Commands<'_>,
+        arrange: Arrange,
+    ) -> Result<serde_json::Value, ShellError> {
+        match arrange {
+            Arrange::Flip(entities, brushes, axis) => commands.attempt(
+                MAP_FLIP,
+                &FlipParams {
+                    selection: Selection { entities, brushes },
+                    axis,
+                    lock: Lock::default(),
+                },
+            ),
+            Arrange::Turn(entities, brushes, degrees) => commands.attempt(
+                MAP_TURN,
+                &TurnParams {
+                    selection: Selection { entities, brushes },
+                    degrees,
+                    lock: Lock::default(),
+                },
+            ),
+        }
+    }
+
     /// Copies the selection as map text for the window to put on the clipboard, or pastes map
     /// text on the layout's grid (P7-08).
     fn clipboard_action(
@@ -838,6 +862,7 @@ impl MapFeature {
                     grid: Some(0.0),
                 },
             ),
+            BrushAction::Arrange(arrange) => Self::arrange(commands, arrange),
             BrushAction::SplitFace(face, by) => commands.attempt(
                 MAP_BRUSH_SPLIT_FACE,
                 &BrushSplitFaceParams {

@@ -19,12 +19,12 @@ use qs_layout::{
     CameraSpeed, Direction, Layout, MapCamera, MapCameraParams, MapFov, MapGrid, MapPanes,
     MapShading,
 };
-use qs_map_edit::{BrushIndex, ClassInfo};
 use qs_map_edit::MapReport;
 use qs_map_edit::texture_import::DitherChoice;
 use qs_map_edit::textures::TextureSources;
 #[cfg(test)]
 use qs_map_edit::uv::FaceRef;
+use qs_map_edit::{Axis, BrushIndex, ClassInfo};
 use qs_map_edit::{
     EntityIndex, EntityKeys, FlagChange, Keep, LayerInfo, MapDocument, MapFound, MapIssue,
     MapRevision, MapSearchParams, OutlineRow, Prefab, QuickFix,
@@ -110,8 +110,8 @@ pub enum MapAction {
     Select(Option<EntityIndex>),
     /// Move an entity by map units.
     Move(EntityIndex, [f64; 3]),
-    /// Turn an entity by degrees about the vertical.
-    Rotate(EntityIndex, f64),
+    /// Flip or turn the selection (P7-08).
+    Arrange(Arrange),
     /// Delete an entity.
     Delete(EntityIndex),
     /// Duplicate an entity.
@@ -1077,6 +1077,12 @@ impl MapEditor {
                 self.frame = Some(Framing::Selection);
                 ui.ctx().request_repaint();
             }
+            actions.extend(arrange_keys(
+                ui,
+                &self.camera,
+                &selection,
+                self.tools.chosen(),
+            ));
             if let Some(grid) = grid_key(ui, self.tools.grid) {
                 actions.push(MapAction::View(ViewSetting::Grid(grid)));
             }
@@ -1798,6 +1804,64 @@ enum Framing {
     Selection,
 }
 
+/// A flip or turn of the selection: its whole entities and its brushes (P7-08).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Arrange {
+    /// Mirror along an axis (`map.flip`).
+    Flip(Vec<EntityIndex>, Vec<(EntityIndex, BrushIndex)>, Axis),
+    /// Turn by degrees about the vertical (`map.turn`).
+    Turn(Vec<EntityIndex>, Vec<(EntityIndex, BrushIndex)>, f64),
+}
+
+/// TrenchBroom's keys that flip and turn the selection: Cmd+F (its Ctrl+F) flips it across the
+/// view, along the map axis nearest the camera's right, Cmd+Alt+F flips it up and down, and
+/// Alt with Left or Right turns it a right angle about the vertical.
+fn arrange_keys(
+    ui: &Ui,
+    camera: &Option<Camera>,
+    entities: &BTreeSet<EntityIndex>,
+    brushes: &[(EntityIndex, BrushIndex)],
+) -> Vec<MapAction> {
+    if entities.is_empty() && brushes.is_empty() {
+        return Vec::new();
+    }
+    let across = camera.map_or(Axis::X, |camera| {
+        let [_, right, _] = camera.axes();
+        if right[0].abs() >= right[1].abs() {
+            Axis::X
+        } else {
+            Axis::Y
+        }
+    });
+    let mut asked = Vec::new();
+    ui.input_mut(|i| {
+        if i.consume_key(Modifiers::COMMAND | Modifiers::ALT, Key::F) {
+            asked.push(Arrange::Flip(Vec::new(), Vec::new(), Axis::Z));
+        }
+        if i.consume_key(Modifiers::COMMAND, Key::F) {
+            asked.push(Arrange::Flip(Vec::new(), Vec::new(), across));
+        }
+        if i.consume_key(Modifiers::ALT, Key::ArrowLeft) {
+            asked.push(Arrange::Turn(Vec::new(), Vec::new(), -QUARTER_TURN));
+        }
+        if i.consume_key(Modifiers::ALT, Key::ArrowRight) {
+            asked.push(Arrange::Turn(Vec::new(), Vec::new(), QUARTER_TURN));
+        }
+    });
+    let whole: Vec<EntityIndex> = entities.iter().copied().collect();
+    asked
+        .into_iter()
+        .map(|arrange| {
+            MapAction::Arrange(match arrange {
+                Arrange::Flip(_, _, axis) => Arrange::Flip(whole.clone(), brushes.to_vec(), axis),
+                Arrange::Turn(_, _, degrees) => {
+                    Arrange::Turn(whole.clone(), brushes.to_vec(), degrees)
+                }
+            })
+        })
+        .collect()
+}
+
 /// TrenchBroom's grid keys (its "Increase Grid Size", "Decrease Grid Size" and "Set Grid Size"
 /// actions): + doubles `grid` and - halves it; 1 to 9 set 1 to 256 units.
 fn grid_key(ui: &Ui, grid: MapGrid) -> Option<MapGrid> {
@@ -1844,12 +1908,6 @@ fn selection_keys(ui: &Ui, camera: &Camera, entity: EntityIndex, grid: MapGrid) 
     let negate = |v: [f64; 3]| v.map(|c| -c);
     let mut actions = Vec::new();
     ui.input_mut(|i| {
-        if i.consume_key(Modifiers::ALT, Key::ArrowLeft) {
-            actions.push(MapAction::Rotate(entity, -QUARTER_TURN));
-        }
-        if i.consume_key(Modifiers::ALT, Key::ArrowRight) {
-            actions.push(MapAction::Rotate(entity, QUARTER_TURN));
-        }
         let moves = [
             (Key::ArrowUp, snap(forward)),
             (Key::ArrowDown, negate(snap(forward))),
