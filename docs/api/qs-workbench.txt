@@ -111,6 +111,7 @@ enum qs_workbench::build::Gravity
 enum qs_workbench::commands::CandidateKind
 enum qs_workbench::export::ExportError
 enum qs_workbench::export::GameNeeded
+enum qs_workbench::full_build::FullBuildError
 enum qs_workbench::git::ConflictSide
 enum qs_workbench::git::GitChange
 enum qs_workbench::git::GitCommandError
@@ -519,6 +520,7 @@ fn qs_workbench::editing::Workbench::update
 fn qs_workbench::entity_classes::Workbench::entity_classes
 fn qs_workbench::entity_classes::Workbench::targeting_keys
 fn qs_workbench::export::Workbench::export
+fn qs_workbench::full_build::brush_models
 fn qs_workbench::git::register_git
 fn qs_workbench::map_check::Workbench::check_map
 fn qs_workbench::map_check::Workbench::entity_schema
@@ -668,6 +670,8 @@ impl qs_workbench::checkpoints::CheckpointMade: From<Checkpoint>
 impl qs_workbench::commands::CandidateKind: From<DefKind>
 impl qs_workbench::export::ExportError: fmt::Display
 impl qs_workbench::export::ExportError: std::error::Error
+impl qs_workbench::full_build::FullBuildError: core::error::Error
+impl qs_workbench::full_build::FullBuildError: core::fmt::Display
 impl qs_workbench::git::GitChange: From<Change>
 impl qs_workbench::git::GitCommandError: From<GitError>
 impl qs_workbench::git::GitCommandError: fmt::Display
@@ -702,6 +706,7 @@ mod qs_workbench::checkpoints
 mod qs_workbench::entity_classes
 mod qs_workbench::export
 mod qs_workbench::files_changed
+mod qs_workbench::full_build
 mod qs_workbench::git
 mod qs_workbench::ids
 mod qs_workbench::map_check
@@ -1022,6 +1027,12 @@ variant qs_workbench::export::ExportError::Workbench
 variant qs_workbench::export::ExportError::Zip
 variant qs_workbench::export::GameNeeded::Original
 variant qs_workbench::export::GameNeeded::Rerelease
+variant qs_workbench::full_build::FullBuildError::Bsp
+variant qs_workbench::full_build::FullBuildError::Entities
+variant qs_workbench::full_build::FullBuildError::Light
+variant qs_workbench::full_build::FullBuildError::Stopped
+variant qs_workbench::full_build::FullBuildError::Vis
+variant qs_workbench::full_build::FullBuildError::Write
 variant qs_workbench::git::ConflictSide::Both
 variant qs_workbench::git::ConflictSide::Ours
 variant qs_workbench::git::ConflictSide::Theirs

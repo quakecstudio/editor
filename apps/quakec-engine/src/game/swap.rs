@@ -35,10 +35,7 @@ impl Game {
     /// `map/swap` on a host that draws: checked now, answered once the host has drawn the new
     /// build ([`Game::finish_swap`]); a refusal is answered at once and changes nothing.
     pub(super) fn ask_swap(&mut self, id: &Id, params: &Value) -> Answer {
-        let checked = self
-            .with_progs(|game, progs| game.check_swap(progs, params))
-            .and_then(|checked| checked);
-        match checked {
+        match self.check_swap(params) {
             Ok((bsp, models)) => {
                 self.swap = Some(PendingSwap {
                     id: id.clone(),
@@ -57,7 +54,7 @@ impl Game {
         progs: &Progs<'_>,
         params: &Value,
     ) -> Result<Value, RpcError> {
-        let (bsp, models) = self.check_swap(progs, params)?;
+        let (bsp, models) = self.check_swap(params)?;
         self.apply_swap(progs, &bsp, &models)
     }
 
@@ -88,11 +85,7 @@ impl Game {
 
     /// The new build `params` names and its models, read as `reload` reads its progs and
     /// checked as the swap checks them (BRIDGE-4.14).
-    fn check_swap(
-        &self,
-        progs: &Progs<'_>,
-        params: &Value,
-    ) -> Result<(MapBsp, Vec<(MapPlace, Submodel)>), RpcError> {
+    fn check_swap(&self, params: &Value) -> Result<(MapBsp, Vec<(MapPlace, Submodel)>), RpcError> {
         self.require_between_frames()?;
         let invalid = |why: String| RpcError::new(ErrorCode::InvalidParams, why);
         let path = params
@@ -101,13 +94,11 @@ impl Game {
             .ok_or_else(|| invalid("map/swap takes bsp".to_owned()))?;
         let models = models_param(params)?;
         let bsp = MapBsp::read(self.read_file(path)?).map_err(|e| invalid(e.message(path)))?;
-        self.world
-            .check_swap(progs, bsp.bsp(), &models)
-            .map_err(refusal)?;
+        self.world.check_swap(bsp.bsp(), &models).map_err(refusal)?;
         Ok((bsp, models))
     }
 
-    /// The checked swap put in place (BRIDGE-4.15, BRIDGE-4.16) and the changes reported.
+    /// The checked swap put in place (BRIDGE-4.15, BRIDGE-4.18) and the changes reported.
     fn apply_swap(
         &mut self,
         progs: &Progs<'_>,

@@ -15,7 +15,9 @@ Read these in order the first time:
    game.
 5. [The agent](agent.md): asking the built-in agent to do a task, and reviewing what it did.
 6. [MCP](mcp.md): giving the same tools to Claude Code or another agent.
-7. [Troubleshooting](troubleshooting.md): when something does not work.
+7. [The map editor](map-editor.md): building a map, compiling it, finding a leak, and playing it
+   from where you stand.
+8. [Troubleshooting](troubleshooting.md): when something does not work.
 
 Reference pages:
 

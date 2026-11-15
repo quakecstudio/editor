@@ -13,8 +13,8 @@ use std::time::{Duration, Instant};
 
 use qc_project::Loader;
 use qs_engine::{
-    Client, ClientError, EntityTarget, Flavour, InspectWhat, LaunchError, LaunchSpec, RunRootError,
-    Running, StepKind, WindowPlacement, locate_host, prepare_run_root,
+    Client, ClientError, EntityTarget, ErrorCode, Flavour, InspectWhat, LaunchError, LaunchSpec,
+    RunRootError, Running, StepKind, WindowPlacement, locate_host, prepare_run_root,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -22,6 +22,7 @@ use serde_json::Value;
 use qs_commands::{Command, NoParams, Outcome, RegisterError, Registry};
 use schemars::JsonSchema;
 
+use crate::full_build::{FullBuild, Start};
 use crate::ids::{BreakpointId, Edict, WatchIndex};
 use crate::map_compile::{MapCompile, MapLeaks, MapPlayFromHere, MapPortalsCommand};
 use crate::map_profile::{MapChooseProfile, MapProfiles, MapRunProfile};
@@ -204,6 +205,9 @@ struct Live {
     classnames: Vec<String>,
     /// Whether the map editor's list of entities is the game's (P5-07).
     step: Step,
+    /// How many of the map editor's changes have been sent, each of which may move the map's
+    /// entities in the game (BRIDGE-4.13).
+    edits: u64,
 }
 
 /// Whether the map editor's entities and the game's are in step (P5-07).
@@ -240,6 +244,10 @@ pub struct Preview {
     debugger: Debugger,
     /// The IDE's window as last told, and the placement last sent to the host.
     dock: (Option<DockFrame>, Option<WindowPlacement>),
+    /// The full compile of the map Play from here started, swapped in when it is done (P7-02).
+    full_build: Option<FullBuild>,
+    /// A full compile asked for while one runs, which starts when it is done: only one runs.
+    queued: Option<Start>,
 }
 
 impl core::fmt::Debug for Preview {
@@ -268,6 +276,8 @@ impl Preview {
             pending: Vec::new(),
             debugger: Debugger::new(),
             dock: (None, None),
+            full_build: None,
+            queued: None,
         }
     }
 
@@ -626,6 +636,7 @@ impl Preview {
             map: None,
             classnames: Vec::new(),
             step: Step::Unchecked,
+            edits: 0,
         });
         self.state = PlayState::Playing;
         self.status = Some(format!("Playing {mod_name}"));
@@ -739,6 +750,8 @@ impl Preview {
 
     /// Stops the host: `shutdown`, then a kill when it has not stopped in time.
     pub fn stop(&mut self) {
+        self.full_build = None;
+        self.queued = None;
         let Some(mut live) = self.live.take() else {
             return;
         };
@@ -786,10 +799,175 @@ impl Preview {
             }
             Err(_) => {
                 self.live = None;
+                self.full_build = None;
+                self.queued = None;
                 self.state = PlayState::Stopped;
                 self.status = Some("The game closed".to_owned());
                 self.entities.clear();
             }
+        }
+        self.finish_full_build();
+    }
+
+    /// A warning for the console, from a command.
+    pub(crate) fn note(&mut self, text: &str) {
+        self.push_line(text, "warning");
+    }
+
+    /// Starts the full compile of the map `map` the game plays from `target`, `bsp` the fast
+    /// compile's BSP before its light and `portals` its portal file, to be swapped in when it is
+    /// done (P7-02); one asked for while another runs waits for it, the other's result dropped.
+    pub(crate) fn start_full_build(
+        &mut self,
+        map: String,
+        target: PathBuf,
+        (bsp, portals): (Vec<u8>, Vec<u8>),
+    ) {
+        let edits = self.live.as_ref().map_or(0, |live| live.edits);
+        let start = Start {
+            map,
+            target,
+            bsp,
+            portals,
+            edits,
+        };
+        if self.full_build.is_some() {
+            self.queued = Some(start);
+        } else {
+            self.full_build = Some(FullBuild::start(start));
+        }
+    }
+
+    /// The full compile, once it is done: a queued one started in its place, or this one swapped
+    /// in ([`Preview::swap_full_build`]).
+    fn finish_full_build(&mut self) {
+        let Some(build) = self.full_build.as_mut() else {
+            return;
+        };
+        if build.ready.is_none() {
+            let Some(built) = build.take() else {
+                return;
+            };
+            if let Some(next) = self.queued.take() {
+                if let Ok(ready) = &built {
+                    drop(std::fs::remove_file(&ready.bsp));
+                }
+                self.full_build = Some(FullBuild::start(next));
+                return;
+            }
+            match built {
+                Ok(ready) => build.ready = Some(ready),
+                Err(error) => {
+                    self.full_build = None;
+                    self.note(&format!("The full compile was not swapped in: {error}"));
+                    return;
+                }
+            }
+        }
+        self.swap_full_build();
+    }
+
+    /// The full compile that is ready swapped into the game in place of the fast one
+    /// (BRIDGE-4.14), the player where they stand, then put where the played BSP is; said in the
+    /// console. It is dropped when the game has left its map, when the map's entities were edited
+    /// in the game since it started, which moves their places, or when another compile was
+    /// written over the played BSP; it is tried again while the game is stopped at a statement.
+    fn swap_full_build(&mut self) {
+        let Some(build) = self.full_build.as_ref() else {
+            return;
+        };
+        let live = self.live.as_ref();
+        let on_map = live
+            .and_then(|live| live.map.as_deref())
+            .is_some_and(|map| map.eq_ignore_ascii_case(&build.map));
+        let edited = live.is_some_and(|live| live.edits != build.edits);
+        let stale = !build.current();
+        let Some(ready) = build.ready.as_ref() else {
+            return;
+        };
+        if !on_map || edited || stale {
+            drop(std::fs::remove_file(&ready.bsp));
+            self.full_build = None;
+            if edited {
+                self.note("The full compile was not swapped in: the map's entities changed in the game while it ran; it comes with the next Play from here");
+            }
+            return;
+        }
+        // The `.lit` beside the played BSP is the one the host draws the swapped one with; the
+        // fast one's is put back if the swap is refused.
+        let colour = build.target.with_extension("lit");
+        let before = std::fs::read(&colour).ok();
+        let put = |bytes: Option<&Vec<u8>>| match bytes {
+            Some(bytes) => std::fs::write(&colour, bytes),
+            None if colour.exists() => std::fs::remove_file(&colour),
+            None => Ok(()),
+        };
+        let (side, models, target) = (
+            ready.bsp.clone(),
+            ready.models.clone(),
+            build.target.clone(),
+        );
+        let swapped = put(ready.lit.as_ref())
+            .map_err(|error| format!("{}: {error}", colour.display()))
+            .and_then(|()| {
+                let client = self.client().ok_or("the game stopped")?;
+                client
+                    .swap_map(&side.to_string_lossy(), &models)
+                    .map_err(|error| match error {
+                        ClientError::Rpc {
+                            code: ErrorCode::StoppedInFrame,
+                            ..
+                        } => RETRY.to_owned(),
+                        other => other.to_string(),
+                    })
+            });
+        match swapped {
+            Ok(_) => {
+                self.full_build = None;
+                match std::fs::rename(&side, &target) {
+                    Ok(()) => self.push_line("The full compile is in: full vis and light", "print"),
+                    Err(error) => self.note(&format!(
+                        "The full compile is in, but {} was not written: {error}",
+                        target.display()
+                    )),
+                }
+            }
+            Err(why) => {
+                if let Err(error) = put(before.as_ref()) {
+                    tracing::warn!(%error, "the fast compile's .lit was not put back");
+                }
+                if why != RETRY {
+                    drop(std::fs::remove_file(&side));
+                    self.full_build = None;
+                    self.note(&format!("The full compile was not swapped in: {why}"));
+                }
+            }
+        }
+    }
+
+    /// Waits for the full compile and swaps it in. For tests.
+    #[cfg(test)]
+    pub(crate) fn wait_for_full_build(&mut self) {
+        // As the poll does: one queued behind it starts in its place, its result dropped.
+        while let Some(next) = self.queued.take() {
+            if let Some(Ok(ready)) = self.full_build.as_ref().map(FullBuild::wait) {
+                drop(std::fs::remove_file(&ready.bsp));
+            }
+            self.full_build = Some(FullBuild::start(next));
+        }
+        let built = self.full_build.as_ref().map(FullBuild::wait);
+        match built {
+            Some(Ok(ready)) => {
+                if let Some(build) = self.full_build.as_mut() {
+                    build.ready = Some(ready);
+                }
+                self.swap_full_build();
+            }
+            Some(Err(error)) => {
+                self.full_build = None;
+                self.note(&format!("The full compile was not swapped in: {error}"));
+            }
+            None => {}
         }
     }
 
@@ -932,6 +1110,7 @@ impl Preview {
             if live.step == Step::Apart {
                 break;
             }
+            live.edits = live.edits.saturating_add(1);
             let sent = match change {
                 LiveChange::NeedsCompile { .. } => Err(
                     "a brush entity reaches the game at the next compile; later edits wait for it"
@@ -1053,6 +1232,10 @@ fn socket_path() -> PathBuf {
         std::env::temp_dir().join(format!("{name}.sock"))
     }
 }
+
+/// What a full compile's swap refused while the game is stopped at a statement says, so it is
+/// tried again (BRIDGE-4.14).
+const RETRY: &str = "stopped in a frame";
 
 /// Sends a change of the map's entities to a game.
 pub trait SendLive {
@@ -1792,6 +1975,7 @@ impl Preview {
             map: Some(map.to_owned()),
             classnames: classnames.iter().map(|&name| name.to_owned()).collect(),
             step: Step::Unchecked,
+            edits: 0,
         });
         preview.state = PlayState::Playing;
         preview

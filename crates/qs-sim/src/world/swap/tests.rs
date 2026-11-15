@@ -65,7 +65,7 @@ fn model_of(world: &World, progs: &Progs<'_>, n: usize) -> Vec<u8> {
     }
 }
 
-// spec BRIDGE-4.16: each map entity in an edict takes its brush model in the new BSP, by its
+// spec BRIDGE-4.18: each map entity in an edict takes its brush model in the new BSP, by its
 // place in the map, not its old *n: its model, modelindex, mins, maxs and size as setmodel
 // sets them; the result counts the edicts given a model
 // spec BRIDGE-4.15: the swap keeps every edict's fields as they were
@@ -107,7 +107,7 @@ fn a_renumbered_brush_entity_takes_its_new_model() {
 
 // spec BRIDGE-4.15: the world's collision is the new BSP's, and the brush models' bounds
 // setmodel reads are its too
-// spec BRIDGE-4.16: every edict in use is linked again in the new collision
+// spec BRIDGE-4.18: every edict in use is linked again in the new collision
 #[test]
 fn the_world_collides_and_links_in_the_new_bsp() {
     let mut game = doors();
@@ -266,4 +266,76 @@ fn refusals_name_the_model() {
         .to_string(),
         "edict 7 shows *4 and is not one of the map's entities; reload the map"
     );
+}
+
+// spec BRIDGE-4.18: a brush entity whose spawn function renamed it is still found in its edict
+// and takes its model
+#[test]
+fn a_door_that_renames_itself_takes_its_model() {
+    let renamed = "void() door = { self.solid = 4; self.movetype = 7; \
+        setmodel(self, self.model); setorigin(self, self.origin); self.classname = \"moved\"; };\n";
+    let entities = [
+        entity("door", "0 0 0", "\"model\" \"*1\"\n"),
+        entity("door", "0 0 0", "\"model\" \"*2\"\n"),
+    ]
+    .concat();
+    let mut game = running(&two_doors(), renamed, &entities, Vec::new());
+    let progs = Progs::read(&game.progs).unwrap();
+    game.world.remove_entity(&progs, 2).unwrap();
+    let door_b = [(MapPlace::new(2), Submodel::parse("*1").unwrap())];
+    let swapped = game
+        .world
+        .swap_bsp(&progs, &after_deleting_door_a(), &door_b)
+        .unwrap();
+    assert_eq!(swapped, 1);
+    assert_eq!(model_of(&game.world, &progs, 3), b"*1");
+}
+
+// spec BRIDGE-4.18: an entity its spawn left showing no model, as a trigger, takes the new
+// bounds and keeps showing none
+#[test]
+fn a_trigger_keeps_showing_nothing() {
+    let trigger = "void() door = { self.solid = 1; setmodel(self, self.model); \
+        self.modelindex = 0; self.model = \"\"; };\n";
+    let entities = [
+        entity("door", "0 0 0", "\"model\" \"*1\"\n"),
+        entity("door", "0 0 0", "\"model\" \"*2\"\n"),
+    ]
+    .concat();
+    let mut game = running(&two_doors(), trigger, &entities, Vec::new());
+    let progs = Progs::read(&game.progs).unwrap();
+    game.world.remove_entity(&progs, 2).unwrap();
+    let door_b = [(MapPlace::new(2), Submodel::parse("*1").unwrap())];
+    game.world
+        .swap_bsp(&progs, &after_deleting_door_a(), &door_b)
+        .unwrap();
+    assert_eq!(game.world.float(3, "modelindex"), 0.0);
+    assert_eq!(model_of(&game.world, &progs, 3), b"");
+    assert_eq!(
+        game.world.vector(3, "maxs"),
+        [64.0, 16.0, 24.0],
+        "the new bounds"
+    );
+}
+
+// spec BRIDGE-4.18: an entity hidden for now, its modelindex 0 but its model still a *n, takes
+// the new name, so it shows the brush it is now when it shows itself again
+#[test]
+fn a_hidden_door_takes_its_new_name() {
+    let hidden = "void() door = { self.solid = 4; setmodel(self, self.model); \
+        self.modelindex = 0; };\n";
+    let entities = [
+        entity("door", "0 0 0", "\"model\" \"*1\"\n"),
+        entity("door", "0 0 0", "\"model\" \"*2\"\n"),
+    ]
+    .concat();
+    let mut game = running(&two_doors(), hidden, &entities, Vec::new());
+    let progs = Progs::read(&game.progs).unwrap();
+    game.world.remove_entity(&progs, 2).unwrap();
+    let door_b = [(MapPlace::new(2), Submodel::parse("*1").unwrap())];
+    game.world
+        .swap_bsp(&progs, &after_deleting_door_a(), &door_b)
+        .unwrap();
+    assert_eq!(model_of(&game.world, &progs, 3), b"*1", "the new name");
+    assert_eq!(game.world.float(3, "modelindex"), 0.0, "still hidden");
 }
