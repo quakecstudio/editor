@@ -371,6 +371,13 @@ fn the_map_editor_draws_the_map_textured_and_lit() {
     harness.run();
     assert!(dir.join("maps/keep.bsp").exists());
     assert_eq!(note(&harness), None, "the compile is the map's newest");
+    // The compile's notice in Properties gives its time, which differs each run: the golden
+    // image leaves the right panel out.
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("view.toggle_panel", json!({ "panel": "right" }))
+        .unwrap();
+    harness.run();
     // Every corner of the compiled keep has a corner of the textured view at its place with the
     // same texture coordinates: the editor lays textures out as qs-map-bsp writes them.
     let bytes = std::fs::read(dir.join("maps/keep.bsp")).unwrap();
@@ -419,6 +426,11 @@ fn the_map_editor_draws_the_map_textured_and_lit() {
             .draws_faces()
     };
     assert!(draws(&harness));
+    // A selection is not an edit: the compile is still the map's.
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("map.select", json!({ "entity": 2 })).unwrap();
+    harness.run();
+    assert_eq!(note(&harness), None);
     let shell = &mut harness.state_mut().as_mut().unwrap().shell;
     shell
         .execute(
