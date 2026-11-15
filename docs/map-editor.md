@@ -100,7 +100,9 @@ it too.
   group's own entity selected, Cmd+Shift+G (Ungroup) takes its contents out (`map.ungroup`),
   Cmd+Shift+D (Linked duplicate) copies it as a group linked to it (`map.link_duplicate`) and
   Separate unlinks it (`map.separate`). Add layer, beside Layers, adds a layer
-  (`map.add_layer`). Each is written as TrenchBroom writes it.
+  (`map.add_layer`), and "New objects in" picks the current layer: a brush drawn goes into the
+  layer's own entity and a point entity placed names it, as TrenchBroom's current layer. Each is
+  written as TrenchBroom writes it.
 - **Clip points (P7-08):** with a brush selected and the Clip tool, a click on one of its faces
   in the 3D view places a clip point there, on the face and its grid, and a click in a 2D view
   places one anywhere on the grid; a double-click on a face makes the clip plane that face's.

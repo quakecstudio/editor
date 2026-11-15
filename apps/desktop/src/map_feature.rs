@@ -10,6 +10,7 @@ use eframe::egui::{self};
 use qs_layout::{
     MAP_CAMERA, MAP_GRID, MAP_PANES, MAP_SHADING, MapGridParams, MapPanesParams, MapShadingParams,
 };
+use qs_map_edit::LAYER_KEY;
 use qs_map_edit::backup::{Backup, MAP_BACKUP, MAP_BACKUPS, MAP_RESTORE_BACKUP, RestoreParams};
 use qs_map_edit::texture_import::{AddWadParams, MAP_ADD_WAD};
 use qs_map_edit::texture_import::{TEXTURE_IMPORT, TextureImportParams};
@@ -315,14 +316,7 @@ impl MapFeature {
                         also,
                     },
                 ),
-                MapAction::Place(classname, origin) => commands.attempt(
-                    MAP_PLACE,
-                    &PlaceParams {
-                        classname,
-                        origin,
-                        keys: Vec::new(),
-                    },
-                ),
+                MapAction::Place(classname, origin) => self.place(commands, classname, origin),
                 MapAction::SetFlag(entity, also, flag, change) => commands.attempt(
                     MAP_SET_FLAG,
                     &SetFlagParams {
@@ -674,6 +668,30 @@ impl MapFeature {
         }
     }
 
+    /// Places an entity of `classname` at `origin`, naming the current layer, as TrenchBroom
+    /// puts a new entity there (P7-08).
+    fn place(
+        &self,
+        commands: &mut Commands<'_>,
+        classname: String,
+        origin: [f64; 3],
+    ) -> Result<serde_json::Value, ShellError> {
+        let keys = self
+            .map_editor
+            .current_layer()
+            .map(|(_, id)| (LAYER_KEY.to_owned(), id.text()))
+            .into_iter()
+            .collect();
+        commands.attempt(
+            MAP_PLACE,
+            &PlaceParams {
+                classname,
+                origin,
+                keys,
+            },
+        )
+    }
+
     /// Flips or turns the selection (P7-08).
     fn arrange(
         commands: &mut Commands<'_>,
@@ -755,11 +773,14 @@ impl MapFeature {
         // TrenchBroom's current material: the texture chosen in the browser, else the map's
         // last face's.
         let texture = self.map_editor.current_texture();
+        // A new brush goes into the current layer's own entity, as TrenchBroom keeps a layer's
+        // brushes; the world's for the default layer.
+        let layer = self.map_editor.current_layer().map(|(entity, _)| entity);
         match action {
             BrushAction::Create(min, max) => commands.attempt(
                 MAP_BRUSH_CREATE,
                 &BrushCreateParams {
-                    entity: None,
+                    entity: layer,
                     min,
                     max,
                     texture: texture.clone(),
@@ -839,7 +860,7 @@ impl MapFeature {
             BrushAction::Shape(min, max, shape) => commands.attempt(
                 MAP_BRUSH_SHAPE,
                 &BrushShapeParams {
-                    entity: None,
+                    entity: layer,
                     min,
                     max,
                     shape,

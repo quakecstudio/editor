@@ -962,11 +962,13 @@ pub enum Text {
     MapToolHull,
     /// What the Hull tool does.
     MapHullHint,
+    /// Before the layer picker for new objects (P7-08).
+    MapCurrentLayer,
 }
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 475] = [
+    pub const ALL: [Self; 476] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1402,6 +1404,7 @@ impl Text {
         Self::MapLinkDuplicate,
         Self::MapSeparate,
         Self::MapAddLayer,
+        Self::MapCurrentLayer,
         Self::MapToolHull,
         Self::MapHullHint,
         Self::MapEveryWad,
@@ -1962,6 +1965,7 @@ impl Text {
             Self::MapLinkDuplicate => "Linked duplicate",
             Self::MapSeparate => "Separate",
             Self::MapAddLayer => "Add layer",
+            Self::MapCurrentLayer => "New objects in",
             Self::MapEveryWad => "Every WAD",
             Self::MapWadPicker => "WAD shown",
             Self::MapCreateBrushEntity => "Create brush entity",

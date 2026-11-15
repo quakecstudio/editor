@@ -115,7 +115,7 @@ fn a_locked_layer_refuses_edits_and_an_export_leaves_it_out() {
     let layers = session.execute(MAP_LAYERS, json!({})).unwrap();
     assert_eq!(
         layers,
-        json!([{ "entity": 5, "name": "Lights", "hidden": false, "locked": true,
+        json!([{ "entity": 5, "id": 3, "name": "Lights", "hidden": false, "locked": true,
                  "omit_from_export": true, "entities": 1 }])
     );
     assert!(

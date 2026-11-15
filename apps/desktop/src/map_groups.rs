@@ -61,7 +61,12 @@ impl Grouping<'_> {
 }
 
 /// The map's layers, each with its settings as checkboxes; what was changed.
-pub(crate) fn layers_ui(ui: &mut Ui, theme: &Theme, layers: &[LayerInfo]) -> Vec<GroupAction> {
+pub(crate) fn layers_ui(
+    ui: &mut Ui,
+    theme: &Theme,
+    layers: &[LayerInfo],
+    current: &mut Option<EntityIndex>,
+) -> Vec<GroupAction> {
     let mut actions = Vec::new();
     ui.horizontal_wrapped(|ui| {
         ui.label(RichText::new(Text::MapLayers.get()).strong());
@@ -69,6 +74,19 @@ pub(crate) fn layers_ui(ui: &mut Ui, theme: &Theme, layers: &[LayerInfo]) -> Vec
             actions.push(GroupAction::AddLayer);
         }
     });
+    // TrenchBroom's current layer: what new brushes and entities go into (P7-08).
+    if !layers.is_empty() {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(Text::MapCurrentLayer.get());
+            ui.radio_value(current, None, Text::MapDefaultLayer.get());
+            for layer in layers {
+                ui.radio_value(current, Some(layer.entity), &layer.name);
+            }
+        });
+    }
+    if current.is_some_and(|entity| layers.iter().all(|l| l.entity != entity)) {
+        *current = None;
+    }
     for layer in layers {
         ui.horizontal_wrapped(|ui| {
             ui.label(&layer.name);

@@ -24,7 +24,7 @@ use qs_map_edit::texture_import::DitherChoice;
 use qs_map_edit::textures::TextureSources;
 #[cfg(test)]
 use qs_map_edit::uv::FaceRef;
-use qs_map_edit::{Axis, BrushIndex, ClassInfo};
+use qs_map_edit::{Axis, BrushIndex, ClassInfo, LayerId};
 use qs_map_edit::{
     EntityIndex, EntityKeys, FlagChange, Keep, LayerInfo, MapDocument, MapFound, MapIssue,
     MapRevision, MapSearchParams, OutlineRow, Prefab, QuickFix,
@@ -345,6 +345,8 @@ pub struct MapEditor {
     orbit: Option<[f32; 3]>,
     /// Where the view's context menu last opened (P7-08).
     menu_at: Option<Pos2>,
+    /// The layer new brushes and entities go into, or the default layer (P7-08).
+    current_layer: Option<EntityIndex>,
     /// The camera settings, the layout's (P7-08).
     camera_settings: MapCamera,
     /// How far Shift and the wheel have zoomed the 3D view in (P7-08).
@@ -1587,7 +1589,7 @@ impl MapEditor {
                 .map(MapAction::Group),
         );
         actions.extend(
-            layers_ui(ui, theme, &self.layers)
+            layers_ui(ui, theme, &self.layers, &mut self.current_layer)
                 .into_iter()
                 .map(MapAction::Group),
         );
@@ -1944,6 +1946,14 @@ impl MapEditor {
     /// Selects `entities` besides the document's own selection (P7-08).
     pub(crate) fn select_also(&mut self, entities: BTreeSet<EntityIndex>) {
         self.also = entities;
+    }
+
+    /// The layer new brushes and entities go into, its own entity and its id; none for the
+    /// default layer (P7-08).
+    pub(crate) fn current_layer(&self) -> Option<(EntityIndex, LayerId)> {
+        let entity = self.current_layer?;
+        let layer = self.layers.iter().find(|l| l.entity == entity)?;
+        Some((entity, layer.id))
     }
 
     /// How many layers the map has.

@@ -3428,11 +3428,87 @@ fn clip_points_cut_the_selected_brush() {
     harness.key_press(egui::Key::Enter);
     harness.run();
     harness.run();
-    assert_eq!(brush_count(&harness, 0), world + 1, "{}", map_text(&harness));
+    assert_eq!(
+        brush_count(&harness, 0),
+        world + 1,
+        "{}",
+        map_text(&harness)
+    );
     let shell = &mut harness.state_mut().as_mut().unwrap().shell;
     shell.execute("edit.undo", json!({})).unwrap();
     harness.run();
     assert_eq!(map_text(&harness), before);
+}
+
+// No spec statement: P7-08: TrenchBroom's current layer: with a layer chosen, a brush drawn goes
+// into the layer's own entity and a point entity placed names the layer
+#[test]
+fn new_objects_go_into_the_current_layer() {
+    let dir = keep_copy("current-layer");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    outside_the_keep(&mut harness);
+    harness.get_by_label(Text::MapAddLayer.get()).click();
+    harness.run();
+    harness.run();
+    let layer = {
+        let shell = harness.state().as_ref().unwrap().shell();
+        shell
+            .session()
+            .context()
+            .workbench
+            .map()
+            .unwrap()
+            .file()
+            .entities
+            .len()
+            - 1
+    };
+    harness
+        .get_by_role_and_label(Role::RadioButton, "Layer 1")
+        .click();
+    harness.run();
+    harness.get_by_label(Text::MapToolBrush.get()).click();
+    harness.run();
+    let view = harness.get_by_label(Text::MapEditorView.get()).rect();
+    let below = view.center() + egui::vec2(0.0, view.height() / 3.0);
+    drag(
+        &mut harness,
+        below - egui::vec2(60.0, 0.0),
+        below + egui::vec2(60.0, 20.0),
+        egui::Modifiers::NONE,
+    );
+    assert_eq!(brush_count(&harness, layer), 1, "the brush is the layer's");
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("map.select", json!({ "entity": 2 })).unwrap();
+    harness.run();
+    harness
+        .get_by_label(Text::MapEditorView.get())
+        .click_secondary();
+    harness.run();
+    harness
+        .get_by_label_contains(Text::MapCreatePointEntity.get())
+        .hover();
+    harness.run();
+    harness
+        .query_all_by_role_and_label(Role::Button, "light")
+        .last()
+        .unwrap()
+        .click();
+    harness.run();
+    let text = map_text(&harness);
+    assert!(
+        text.contains("\"classname\" \"light\"\n\"origin\""),
+        "{text}"
+    );
+    assert!(text.matches("\"_tb_layer\" \"1\"").count() >= 1, "{text}");
 }
 
 // No spec statement: P6-08, MAP-2: a click with a brush tool selects the first brush the ray

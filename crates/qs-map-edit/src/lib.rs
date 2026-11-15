@@ -48,8 +48,9 @@ pub use disk::{
 pub use error::MapEditError;
 pub use flags::{FlagChange, MAP_SET_FLAG, SetFlagParams};
 pub use groups::{
-    EntityListParams, ExportParams, LayerInfo, LayerOption, MAP_EXPORT, MAP_HIDE, MAP_ISOLATE,
-    MAP_LAYERS, MAP_LOCK, MAP_SET_LAYER, MAP_SHOW_ALL, MAP_UNLOCK_ALL, SetLayerParams, Switch,
+    EntityListParams, ExportParams, LAYER_KEY, LayerId, LayerInfo, LayerOption, MAP_EXPORT,
+    MAP_HIDE, MAP_ISOLATE, MAP_LAYERS, MAP_LOCK, MAP_SET_LAYER, MAP_SHOW_ALL, MAP_UNLOCK_ALL,
+    SetLayerParams, Switch,
 };
 pub use inspect::{EntityInfo, InspectParams, MapInspected, RoomInfo, RoomShape};
 pub use issues::{
