@@ -113,6 +113,25 @@ impl Camera {
             Degrees::new((self.pitch.get() + pitch.get()).clamp(-PITCH_LIMIT, PITCH_LIMIT));
     }
 
+    /// Turns it by `yaw` and `pitch` degrees about `centre`, as TrenchBroom's
+    /// `Camera::orbit`: its place swings about `centre` as its heading turns, so `centre` stays
+    /// where the camera sees it. The pitch is held within ±89 as [`Camera::turn`] holds it.
+    pub fn orbit(&mut self, centre: [f32; 3], yaw: Degrees, pitch: Degrees) {
+        let [ox, oy, oz] = self.origin;
+        let [cx, cy, cz] = centre;
+        let offset = [ox - cx, oy - cy, oz - cz];
+        let dot = |[x, y, z]: [f32; 3]| x * offset[0] + y * offset[1] + z * offset[2];
+        let [forward, right, up] = self.axes();
+        let [f, r, u] = [dot(forward), dot(right), dot(up)];
+        self.turn(yaw, pitch);
+        let [[fx, fy, fz], [rx, ry, rz], [ux, uy, uz]] = self.axes();
+        self.origin = [
+            cx + fx * f + rx * r + ux * u,
+            cy + fy * f + ry * r + uy * u,
+            cz + fz * f + rz * r + uz * u,
+        ];
+    }
+
     /// The ray from the eye through the point `(x, y)` of an image `aspect` wide per unit of
     /// height, `x` and `y` from -1 at the left and bottom to 1 at the right and top, as clip
     /// space has them: its origin and its unit direction.
@@ -259,6 +278,40 @@ mod tests {
         assert!((camera.pitch.get() - 89.0).abs() < f32::EPSILON);
         camera.turn(Degrees::new(-450.0), Degrees::new(0.0));
         assert!(camera.yaw.get().abs() < f32::EPSILON);
+    }
+
+    // No spec statement: P7-08: orbiting turns the camera about a centre as TrenchBroom's
+    // orbit does: the centre stays at the same place in view and the same distance away
+    #[test]
+    fn orbiting_keeps_the_centre_where_it_was_seen() {
+        let mut camera = Camera::new([-100.0, 0.0, 0.0], Degrees::new(0.0));
+        let centre = [0.0, 0.0, 0.0];
+        camera.orbit(centre, Degrees::new(90.0), Degrees::new(0.0));
+        assert!((camera.yaw.get() - 90.0).abs() < 1e-4);
+        let near = |a: [f32; 3], b: [f32; 3]| (0..3).all(|i| (a[i] - b[i]).abs() < 1e-3);
+        assert!(
+            near(camera.origin, [0.0, -100.0, 0.0]),
+            "{:?}",
+            camera.origin
+        );
+        camera.orbit(centre, Degrees::new(0.0), Degrees::new(-30.0));
+        let distance = camera.origin.iter().map(|c| c * c).sum::<f32>().sqrt();
+        assert!((distance - 100.0).abs() < 1e-3, "{distance}");
+        let [forward, _, _] = camera.axes();
+        let to_centre = camera.origin.map(|c| -c / distance);
+        assert!(near(forward, to_centre), "still looking at it");
+        assert!(camera.origin[2].abs() > 10.0, "swung off the level");
+        // A centre off to the side stays off to the side.
+        let mut camera = Camera::new([0.0, 0.0, 0.0], Degrees::new(0.0));
+        let aside = [100.0, -50.0, 0.0];
+        let seen = |c: &Camera| {
+            let [f, r, _] = c.axes();
+            let v = [0, 1, 2].map(|i| aside[i] - c.origin[i]);
+            (0..3).map(|i| r[i] * v[i]).sum::<f32>() / (0..3).map(|i| f[i] * v[i]).sum::<f32>()
+        };
+        let before = seen(&camera);
+        camera.orbit(aside, Degrees::new(45.0), Degrees::new(10.0));
+        assert!((seen(&camera) - before).abs() < 1e-3);
     }
 
     // No spec statement: P5-16: framing a box keeps the camera's direction and puts the whole

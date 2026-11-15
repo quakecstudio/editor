@@ -39,7 +39,10 @@ use crate::map_editor::MIN_VIEW_HEIGHT;
 use crate::map_tools::Readout;
 use crate::palette::highlighted;
 use crate::shell::{CentreTab, EDITOR_AREA, PointerHeld, ZoomStep, commanded_size, dragged_size};
-use crate::strings::{Text, command_count, exit_status, help_for, match_count, missing_textures};
+use crate::strings::{
+    Text, command_count, exit_status, help_for, match_count, missing_textures, replace_with,
+    select_all_of,
+};
 use crate::theme::{Contrast, Mode, Motion, Theme, ThemeError, Token, semibold};
 use crate::{App, AppError};
 
@@ -1961,6 +1964,13 @@ fn the_map_view_takes_trenchbrooms_keys() {
     harness.key_press_modifiers(egui::Modifiers::ALT, egui::Key::ArrowRight);
     harness.run();
     assert!(map_text(&harness).contains("\"angle\" \"270\""));
+    // P7-08: Cmd+F flips the selection across the view: facing +x, along y, so 270 becomes 90
+    // and the ogre, alone, stays where it is.
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::F);
+    harness.run();
+    assert!(map_text(&harness).contains("\"origin\" \"112 64 40\"\n\"angle\" \"90\""));
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::F);
+    harness.run();
     let entities = |harness: &Harness<'static, Option<App>>| {
         let shell = harness.state().as_ref().unwrap().shell();
         let map = shell.session().context().workbench.map().unwrap();
@@ -1980,11 +1990,467 @@ fn the_map_view_takes_trenchbrooms_keys() {
         "{saved}"
     );
     let shell = &mut harness.state_mut().as_mut().unwrap().shell;
-    for _ in 0..5 {
+    for _ in 0..7 {
         shell.execute("edit.undo", json!({})).unwrap();
     }
     harness.run();
     assert_eq!(map_text(&harness), before);
+}
+
+// No spec statement: P7-08: TrenchBroom's grid keys set the map editor's grid while the view
+// has the keyboard, - halving it, + doubling it and 1 to 9 setting 1 to 256 units, the toolbar's
+// picker shows it, and the arrows and Page Up then move the selection by it
+#[test]
+fn the_grid_keys_set_the_step_the_selection_moves_by() {
+    let dir = keep_copy("grid");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    harness.get_by_label(Text::MapEditorView.get()).click();
+    harness.run();
+    let grid = |harness: &Harness<'static, Option<App>>| {
+        harness
+            .state()
+            .as_ref()
+            .unwrap()
+            .shell()
+            .layout()
+            .map_grid
+            .units()
+    };
+    assert_eq!(grid(&harness), 16.0);
+    harness.key_press(egui::Key::Minus);
+    harness.run();
+    assert_eq!(grid(&harness), 8.0);
+    harness.key_press(egui::Key::Plus);
+    harness.key_press(egui::Key::Plus);
+    harness.run();
+    assert_eq!(grid(&harness), 32.0);
+    harness.key_press(egui::Key::Num9);
+    harness.run();
+    assert_eq!(grid(&harness), 256.0);
+    harness.key_press(egui::Key::Plus);
+    harness.run();
+    assert_eq!(grid(&harness), 256.0, "held at the coarsest");
+    harness.key_press(egui::Key::Num3);
+    harness.run();
+    assert_eq!(grid(&harness), 4.0);
+    let picker = harness.get_by_label(Text::MapGridPicker.get());
+    assert_eq!(picker.accesskit_node().value().as_deref(), Some("4"));
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("map.select", json!({ "entity": 2 })).unwrap();
+    harness.run();
+    assert!(map_text(&harness).contains("\"origin\" \"96 64 24\""));
+    harness.key_press(egui::Key::ArrowUp);
+    harness.key_press(egui::Key::PageUp);
+    harness.run();
+    assert!(
+        map_text(&harness).contains("\"origin\" \"100 64 28\""),
+        "{}",
+        map_text(&harness)
+    );
+}
+
+// No spec statement: P7-08: Cmd+U frames the selection, as TrenchBroom's Focus on Selection;
+// Escape in the map view, with no drag, picked corner or tool to cancel, clears the selection,
+// as TrenchBroom's "Selection Tool: Discard current selection"
+#[test]
+fn focus_frames_the_selection_and_escape_clears_it() {
+    let dir = keep_copy("focus");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    harness.get_by_label(Text::MapEditorView.get()).click();
+    harness.run();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("map.select", json!({ "entity": 2 })).unwrap();
+    harness.run();
+    let selected = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        shell
+            .session()
+            .context()
+            .workbench
+            .map()
+            .unwrap()
+            .selected()
+    };
+    assert_eq!(selected(&harness), Some(EntityIndex::new(2)));
+    // P7-08: Cmd+U, TrenchBroom's Focus on Selection, frames the ogre: the camera keeps its
+    // heading and stands back from the ogre's box along it.
+    let camera = |harness: &Harness<'static, Option<App>>| {
+        *harness
+            .state()
+            .as_ref()
+            .unwrap()
+            .shell()
+            .map_editor()
+            .camera()
+            .unwrap()
+    };
+    let before = camera(&harness);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::U);
+    harness.run();
+    let framed = camera(&harness);
+    assert_ne!(framed.origin, before.origin);
+    assert!((framed.yaw.get() - before.yaw.get()).abs() < f32::EPSILON);
+    let [forward, _, _] = framed.axes();
+    // The middle of the ogre's box, -32 -32 -24 to 32 32 64 about its origin, 96 64 24.
+    let to_ogre = [
+        96.0 - framed.origin[0],
+        64.0 - framed.origin[1],
+        44.0 - framed.origin[2],
+    ];
+    let along: f32 = to_ogre.iter().zip(forward).map(|(a, b)| a * b).sum();
+    let off: f32 = to_ogre.iter().map(|c| c * c).sum::<f32>() - along * along;
+    assert!(along > 0.0 && off.abs() < 1.0, "the ogre is dead ahead");
+    // The Properties panel shows where the camera now stands, a field per axis.
+    let x = harness.get_by_label(Text::MapCameraX.get());
+    let shown = x.accesskit_node().numeric_value().unwrap();
+    assert!(
+        (shown - f64::from(framed.origin[0])).abs() < 1e-3,
+        "{shown}"
+    );
+    harness.key_press(egui::Key::Escape);
+    harness.run();
+    assert_eq!(selected(&harness), None);
+}
+
+// No spec statement: P7-08: the 2D views draw TrenchBroom's soft map bounds for Quake,
+// -4096 to 4096 on each axis, in the warning colour, as its manual's orange guide; the 3D view
+// does not
+#[test]
+fn the_2d_views_draw_the_soft_map_bounds() {
+    let dir = keep_copy("bounds");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    let guide = |harness: &Harness<'static, Option<App>>| {
+        let warn = harness
+            .state()
+            .as_ref()
+            .unwrap()
+            .shell()
+            .theme()
+            .color(Token::StatusWarn);
+        fn walk(shape: &egui::Shape, warn: egui::Color32, count: &mut usize) {
+            match shape {
+                egui::Shape::LineSegment { stroke, .. } if stroke.color == warn => *count += 1,
+                egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| walk(s, warn, count)),
+                _ => {}
+            }
+        }
+        let mut count = 0;
+        for clipped in &harness.output().shapes {
+            walk(&clipped.shape, warn, &mut count);
+        }
+        count
+    };
+    assert_eq!(guide(&harness), 0, "the 3D view alone draws no bounds");
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("view.map_panes", json!({ "panes": "quad" }))
+        .unwrap();
+    harness.run();
+    // Zoomed all the way out over the top view, the box around the map shows.
+    let view = harness.get_by_label(Text::MapEditorView.get()).rect();
+    let top = egui::pos2(
+        view.center().x + view.width() / 4.0,
+        view.top() + view.height() / 4.0,
+    );
+    harness.hover_at(top);
+    for _ in 0..20 {
+        harness.event(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -400.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: egui::Modifiers::NONE,
+        });
+        harness.step();
+    }
+    harness.run();
+    assert!(guide(&harness) >= 4, "{}", guide(&harness));
+}
+
+// No spec statement: P7-08: a right-drag looks, turning the camera where it stands, while an
+// Alt+right-drag orbits it about the point under the pointer, as TrenchBroom's camera tool
+#[test]
+fn alt_right_drag_orbits_and_right_drag_looks() {
+    let dir = keep_copy("orbit");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    let camera = |harness: &Harness<'static, Option<App>>| {
+        *harness
+            .state()
+            .as_ref()
+            .unwrap()
+            .shell()
+            .map_editor()
+            .camera()
+            .unwrap()
+    };
+    let view = harness.get_by_label(Text::MapEditorView.get()).rect();
+    let drag = |harness: &mut Harness<'static, Option<App>>, modifiers: egui::Modifiers| {
+        let from = view.center();
+        harness.event_modifiers(egui::Event::PointerMoved(from), modifiers);
+        harness.event_modifiers(
+            egui::Event::PointerButton {
+                pos: from,
+                button: egui::PointerButton::Secondary,
+                pressed: true,
+                modifiers,
+            },
+            modifiers,
+        );
+        harness.step();
+        for step in [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0] {
+            let to = egui::pos2(from.x + step, from.y);
+            harness.event_modifiers(egui::Event::PointerMoved(to), modifiers);
+            harness.step();
+        }
+        let to = egui::pos2(from.x + 80.0, from.y);
+        harness.event_modifiers(
+            egui::Event::PointerButton {
+                pos: to,
+                button: egui::PointerButton::Secondary,
+                pressed: false,
+                modifiers,
+            },
+            modifiers,
+        );
+        harness.run();
+    };
+    let before = camera(&harness);
+    drag(&mut harness, egui::Modifiers::NONE);
+    let looked = camera(&harness);
+    assert_eq!(
+        looked.origin, before.origin,
+        "a look turns where the camera stands"
+    );
+    assert!((looked.yaw.get() - before.yaw.get()).abs() > 1.0);
+    drag(&mut harness, egui::Modifiers::ALT);
+    let orbited = camera(&harness);
+    assert_ne!(
+        orbited.origin, looked.origin,
+        "an orbit swings the camera about a point"
+    );
+    assert!((orbited.yaw.get() - looked.yaw.get()).abs() > 1.0);
+}
+
+// No spec statement: P7-08: the camera settings reach the 3D view: its field of view is the
+// one set, Shift and the wheel narrow it for now and Reset zoom widens it back, an inverted look
+// tilts the other way, and the Properties panel's Camera settings hold the controls; Reset zoom
+// shows while the view is zoomed
+#[test]
+fn the_camera_settings_reach_the_3d_view() {
+    let dir = keep_copy("camera");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    shell
+        .execute("view.map_camera", json!({ "fov": 120 }))
+        .unwrap();
+    harness.run();
+    let camera = |harness: &Harness<'static, Option<App>>| {
+        *harness
+            .state()
+            .as_ref()
+            .unwrap()
+            .shell()
+            .map_editor()
+            .camera()
+            .unwrap()
+    };
+    assert!((camera(&harness).fov_x.get() - 120.0).abs() < 1e-4);
+    let view = harness.get_by_label(Text::MapEditorView.get()).rect();
+    harness.get_by_label(Text::MapEditorView.get()).click();
+    harness.hover_at(view.center());
+    for _ in 0..10 {
+        harness.event_modifiers(
+            egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, 100.0),
+                phase: egui::TouchPhase::Move,
+                modifiers: egui::Modifiers::SHIFT,
+            },
+            egui::Modifiers::SHIFT,
+        );
+        harness.step();
+    }
+    harness.run();
+    let zoomed = camera(&harness);
+    assert!(zoomed.fov_x.get() < 120.0, "{}", zoomed.fov_x.get());
+    harness.get_by_label(Text::MapResetZoom.get()).click();
+    harness.run();
+    assert!((camera(&harness).fov_x.get() - 120.0).abs() < 1e-4);
+    assert!(harness.query_by_label(Text::MapResetZoom.get()).is_none());
+    let tilt = |harness: &mut Harness<'static, Option<App>>| {
+        let before = camera(harness).pitch.get();
+        let from = view.center();
+        harness.event(egui::Event::PointerMoved(from));
+        harness.event(egui::Event::PointerButton {
+            pos: from,
+            button: egui::PointerButton::Secondary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        });
+        harness.step();
+        for step in [10.0, 20.0, 30.0, 40.0] {
+            harness.event(egui::Event::PointerMoved(egui::pos2(from.x, from.y + step)));
+            harness.step();
+        }
+        harness.event(egui::Event::PointerButton {
+            pos: egui::pos2(from.x, from.y + 40.0),
+            button: egui::PointerButton::Secondary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        harness.run();
+        camera(harness).pitch.get() - before
+    };
+    let normal = tilt(&mut harness);
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("view.map_camera", json!({ "look_vertical": "inverted" }))
+        .unwrap();
+    harness.run();
+    let inverted = tilt(&mut harness);
+    assert!(
+        normal.abs() > 1.0 && (normal + inverted).abs() < 1e-3,
+        "{normal} {inverted}"
+    );
+    harness.get_by_label(Text::MapCameraSettings.get()).click();
+    harness.run();
+    for control in [
+        Text::MapCameraFov,
+        Text::MapCameraLookSpeed,
+        Text::MapCameraPanSpeed,
+        Text::MapCameraFlySpeed,
+        Text::MapCameraInvertLook,
+        Text::MapCameraInvertWheel,
+    ] {
+        assert!(
+            harness
+                .query_all_by_label_contains(control.get())
+                .next()
+                .is_some(),
+            "{}",
+            control.get()
+        );
+    }
+    harness
+        .get_by_label(Text::MapCameraInvertWheel.get())
+        .click();
+    harness.run();
+    let shell = harness.state().as_ref().unwrap().shell();
+    assert_eq!(
+        shell.layout().map_camera.wheel,
+        qs_layout::Direction::Inverted
+    );
+}
+
+// No spec statement: P7-08: in the map view, Cmd+C puts the selection's map text on the
+// clipboard, Cmd+Alt+V pastes it where it was (TrenchBroom's Paste at Original Position) and
+// Cmd+V where the pointer is, each one undoable edit
+#[test]
+fn the_map_view_copies_and_pastes_map_text() {
+    let dir = keep_copy("clipboard");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    harness.get_by_label(Text::MapEditorView.get()).click();
+    harness.run();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("map.select", json!({ "entity": 2 })).unwrap();
+    harness.run();
+    harness.event(egui::Event::Copy);
+    harness.step();
+    let copied = harness
+        .output()
+        .platform_output
+        .commands
+        .iter()
+        .find_map(|command| match command {
+            egui::OutputCommand::CopyText(text) => Some(text.clone()),
+            _ => None,
+        })
+        .expect("the selection was copied");
+    harness.run();
+    assert!(
+        copied.contains("\"classname\" \"monster_ogre\""),
+        "{copied}"
+    );
+    let count = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        shell
+            .session()
+            .context()
+            .workbench
+            .map()
+            .unwrap()
+            .file()
+            .entities
+            .len()
+    };
+    let before = count(&harness);
+    harness.event_modifiers(egui::Event::Paste(copied.clone()), egui::Modifiers::ALT);
+    harness.run();
+    assert_eq!(count(&harness), before + 1);
+    let text = map_text(&harness);
+    assert_eq!(text.matches("\"origin\" \"96 64 24\"").count(), 2, "{text}");
+    let view = harness.get_by_label(Text::MapEditorView.get()).rect();
+    harness.hover_at(view.center());
+    harness.event(egui::Event::Paste(copied));
+    harness.run();
+    assert_eq!(count(&harness), before + 2);
+    assert_eq!(
+        map_text(&harness)
+            .matches("\"origin\" \"96 64 24\"")
+            .count(),
+        2,
+        "the second paste is elsewhere"
+    );
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("edit.undo", json!({})).unwrap();
+    shell.execute("edit.undo", json!({})).unwrap();
+    harness.run();
+    assert_eq!(count(&harness), before);
 }
 
 /// Drags with the primary button from `from` to `to` in steps, holding `modifiers`.
@@ -2368,8 +2834,8 @@ fn click_with(harness: &mut Harness<'static, Option<App>>, at: Pos2, modifiers: 
 }
 
 // No spec statement: P6-22, MAP-13: with the Select tool an Alt-click picks the face in the way,
-// the UV editor flips its texture through a command that undoes, and a plain click lets the
-// face go
+// the UV editor flips its texture through a command that undoes, the alignment keys shift and
+// turn it (P7-08), and a plain click lets the face go
 #[test]
 fn alt_click_picks_a_face_for_the_uv_editor() {
     let dir = keep_copy("uv-faces");
@@ -2394,13 +2860,702 @@ fn alt_click_picks_a_face_for_the_uv_editor() {
     harness.get_by_label(Text::MapUvFlipS.get()).click();
     harness.run();
     harness.run();
-    assert_ne!(map_text(&harness), before, "Flip S changed the face");
+    let flipped = map_text(&harness);
+    assert_ne!(flipped, before, "Flip S changed the face");
+    // P7-08: with the face picked and the view holding the keyboard, Right shifts its texture
+    // by the grid and Page Up turns it 15 degrees, TrenchBroom's alignment keys; the ogre,
+    // selected or not, stays where it is.
+    harness.get_by_label(Text::MapEditorView.get()).focus();
+    harness.run();
+    harness.key_press(egui::Key::ArrowRight);
+    harness.run();
+    let shifted = map_text(&harness);
+    assert_ne!(shifted, flipped, "Right shifted the texture");
+    harness.key_press(egui::Key::PageUp);
+    harness.run();
+    assert_ne!(map_text(&harness), shifted, "Page Up turned it");
     click_at(&mut harness, at);
     assert!(harness.query_by_label(Text::MapFaces.get()).is_none());
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    for _ in 0..3 {
+        shell.execute("edit.undo", json!({})).unwrap();
+    }
+    harness.run();
+    assert_eq!(map_text(&harness), before);
+}
+
+// No spec statement: P7-08: with brushes selected, Properties turns them by the angle typed,
+// 15 degrees at first, and flips them along x, y or z, each one undoable edit
+#[test]
+fn selected_brushes_turn_and_flip_from_properties() {
+    let dir = keep_copy("arrange");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    outside_the_keep(&mut harness);
+    harness.run();
+    let before = map_text(&harness);
+    harness.get_by_label(Text::MapToolVertex.get()).click();
+    harness.run();
+    let at = drawn_at(&harness, 4);
+    click_at(&mut harness, at);
+    let turn_by = harness.get_by_label(Text::MapTurnBy.get());
+    assert_eq!(turn_by.accesskit_node().numeric_value(), Some(15.0));
+    harness.get_by_label(Text::MapTurn.get()).click();
+    harness.run();
+    let turned = map_text(&harness);
+    assert_ne!(turned, before, "the wall turned");
+    harness.get_by_label(Text::MapFlipZ.get()).click();
+    harness.run();
+    assert_ne!(map_text(&harness), turned, "and flipped");
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("edit.undo", json!({})).unwrap();
+    shell.execute("edit.undo", json!({})).unwrap();
+    harness.run();
+    assert_eq!(map_text(&harness), before);
+}
+
+// No spec statement: P7-08: TrenchBroom's selection keys in the map view: Cmd+A selects every
+// entity and world brush, Cmd+Alt+A inverts that to nothing, Cmd+Shift+A clears; Select
+// siblings takes every brush of the selected brushes' entities; Cmd+T selects what the selected
+// brush touches and deletes it, one undo bringing it back
+#[test]
+fn the_selection_keys_select_all_invert_siblings_and_touching() {
+    let dir = keep_copy("select");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    outside_the_keep(&mut harness);
+    harness.get_by_label(Text::MapEditorView.get()).click();
+    harness.run();
+    let picked = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        let editor = shell.map_editor();
+        let selected = shell
+            .session()
+            .context()
+            .workbench
+            .map()
+            .unwrap()
+            .selected();
+        (
+            selected.into_iter().count() + editor.also_count(),
+            editor.chosen_count(),
+        )
+    };
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.run();
+    let world = brush_count(&harness, 0);
+    assert_eq!(
+        picked(&harness),
+        (4, world),
+        "every entity but the world, every world brush"
+    );
+    harness.key_press_modifiers(
+        egui::Modifiers::COMMAND | egui::Modifiers::ALT,
+        egui::Key::A,
+    );
+    harness.run();
+    assert_eq!(picked(&harness), (0, 0), "the inverse of everything");
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.key_press_modifiers(
+        egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+        egui::Key::A,
+    );
+    harness.run();
+    assert_eq!(picked(&harness), (0, 0));
+    // The west wall, with the Vertex tool; Select siblings takes all six walls.
+    harness.get_by_label(Text::MapToolVertex.get()).click();
+    harness.run();
+    let at = drawn_at(&harness, 4);
+    click_at(&mut harness, at);
+    assert_eq!(picked(&harness).1, 1);
+    harness.get_by_label(Text::MapSelectSiblings.get()).click();
+    harness.run();
+    assert_eq!(picked(&harness).1, world);
+    // Back to the west wall alone: Cmd+T takes the floor, ceiling and two side walls it meets,
+    // and deletes it.
+    harness.key_press_modifiers(
+        egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+        egui::Key::A,
+    );
+    harness.run();
+    click_at(&mut harness, at);
+    let before = map_text(&harness);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::T);
+    harness.run();
+    harness.run();
+    assert_eq!(
+        brush_count(&harness, 0),
+        world - 1,
+        "the selecting brush went"
+    );
+    assert_eq!(picked(&harness).1, 4, "the four walls it touched");
     let shell = &mut harness.state_mut().as_mut().unwrap().shell;
     shell.execute("edit.undo", json!({})).unwrap();
     harness.run();
     assert_eq!(map_text(&harness), before);
+}
+
+// No spec statement: P7-08: Cmd+G groups the selection, and with the group's own entity
+// selected Cmd+Shift+D makes a linked duplicate, Separate unlinks it and Cmd+Shift+G ungroups
+// it, as TrenchBroom's keys; Add layer adds a layer; each one undoable edit
+#[test]
+fn groups_and_layers_are_made_from_the_view() {
+    let dir = keep_copy("groups");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    harness.get_by_label(Text::MapEditorView.get()).click();
+    harness.run();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("map.select", json!({ "entity": 2 })).unwrap();
+    harness.run();
+    let before = map_text(&harness);
+    let count = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        shell
+            .session()
+            .context()
+            .workbench
+            .map()
+            .unwrap()
+            .file()
+            .entities
+            .len()
+    };
+    let entities = count(&harness);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::G);
+    harness.run();
+    assert_eq!(count(&harness), entities + 1);
+    assert!(map_text(&harness).contains("\"_tb_name\" \"Group 1\""));
+    let group = entities;
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("map.select", json!({ "entity": group }))
+        .unwrap();
+    harness.run();
+    harness.key_press_modifiers(
+        egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+        egui::Key::D,
+    );
+    harness.run();
+    assert_eq!(
+        count(&harness),
+        entities + 3,
+        "the group and the ogre copied"
+    );
+    assert_eq!(map_text(&harness).matches("_tb_linked_group_id").count(), 2);
+    harness.get_by_label(Text::MapSeparate.get()).click();
+    harness.run();
+    assert_eq!(map_text(&harness).matches("_tb_linked_group_id").count(), 1);
+    // The keyboard back to the view, the group still selected.
+    harness.get_by_label(Text::MapEditorView.get()).focus();
+    harness.run();
+    harness.key_press_modifiers(
+        egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+        egui::Key::G,
+    );
+    harness.run();
+    assert_eq!(count(&harness), entities + 2, "the first group gone");
+    harness.get_by_label(Text::MapAddLayer.get()).click();
+    harness.run();
+    assert!(map_text(&harness).contains("\"_tb_name\" \"Layer 1\""));
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    for _ in 0..5 {
+        shell.execute("edit.undo", json!({})).unwrap();
+    }
+    harness.run();
+    assert_eq!(map_text(&harness), before);
+}
+
+// No spec statement: P7-08: with an entity of a linked group selected, the view's menu extracts
+// it into a new group in each linked copy, the new groups linked to each other, as
+// TrenchBroom's Extract Linked Groups; one undo takes it back
+#[test]
+fn the_view_s_menu_extracts_from_linked_groups() {
+    let dir = keep_copy("extract");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    shell
+        .execute("map.group", json!({ "name": "pair", "entities": [1, 2] }))
+        .unwrap();
+    let group = shell
+        .session()
+        .context()
+        .workbench
+        .map()
+        .unwrap()
+        .file()
+        .entities
+        .len()
+        - 1;
+    shell
+        .execute("map.link_duplicate", json!({ "group": group }))
+        .unwrap();
+    shell.execute("map.select", json!({ "entity": 2 })).unwrap();
+    harness.run();
+    let before = map_text(&harness);
+    assert_eq!(before.matches("_tb_linked_group_id").count(), 2);
+    harness
+        .get_by_label(Text::MapEditorView.get())
+        .click_secondary();
+    harness.run();
+    harness.get_by_label(Text::MapExtractLinked.get()).click();
+    harness.run();
+    assert_eq!(map_text(&harness).matches("_tb_linked_group_id").count(), 4);
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("edit.undo", json!({})).unwrap();
+    harness.run();
+    assert_eq!(map_text(&harness), before);
+}
+
+// No spec statement: P7-08: a texture chosen in the browser is the current one, and another's
+// menu replaces it with that one on every face of the map, as TrenchBroom's Replace Material;
+// one undo takes it back
+#[test]
+fn a_texture_s_menu_replaces_the_current_texture() {
+    let dir = keep_copy("replace");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    let before = map_text(&harness);
+    assert!(before.contains(") wall "), "{before}");
+    harness.get_by_role_and_label(Role::Button, "wall").click();
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::Button, "floor")
+        .click_secondary();
+    harness.run();
+    harness.get_by_label(&replace_with("wall", "floor")).click();
+    harness.run();
+    let after = map_text(&harness);
+    assert!(!after.contains(") wall "), "{after}");
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("edit.undo", json!({})).unwrap();
+    harness.run();
+    assert_eq!(map_text(&harness), before);
+}
+
+// No spec statement: P7-08: the map view's context menu, as TrenchBroom's: with an entity
+// selected it offers grouping, hiding and selecting every entity of its class; Create point
+// entity places one of a class where the menu opened
+#[test]
+fn the_view_s_context_menu_places_and_selects() {
+    let dir = keep_copy("menu");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("map.select", json!({ "entity": 2 })).unwrap();
+    harness.run();
+    let count = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        shell
+            .session()
+            .context()
+            .workbench
+            .map()
+            .unwrap()
+            .file()
+            .entities
+            .len()
+    };
+    let before = count(&harness);
+    harness
+        .get_by_label(Text::MapEditorView.get())
+        .click_secondary();
+    harness.run();
+    // Each also in Properties: the menu's makes a second.
+    for entry in [Text::MapGroup, Text::MapHide, Text::MapIsolate] {
+        let found = harness.query_all_by_label(entry.get()).count();
+        assert_eq!(found, 2, "{}", entry.get());
+    }
+    harness.get_by_label(&select_all_of("monster_ogre")).click();
+    harness.run();
+    let selected = harness
+        .state()
+        .as_ref()
+        .unwrap()
+        .shell()
+        .session()
+        .context()
+        .workbench
+        .map()
+        .unwrap()
+        .selected();
+    assert_eq!(selected, Some(EntityIndex::new(2)));
+    harness
+        .get_by_label(Text::MapEditorView.get())
+        .click_secondary();
+    harness.run();
+    assert_eq!(
+        harness.query_all_by_label(Text::MapGroup.get()).count(),
+        2,
+        "the menu is open"
+    );
+    harness
+        .get_by_label_contains(Text::MapCreatePointEntity.get())
+        .hover();
+    harness.run();
+    // The submenu's, after the Entities browser's of the same name.
+    harness
+        .query_all_by_role_and_label(Role::Button, "light")
+        .last()
+        .unwrap()
+        .click();
+    harness.run();
+    assert_eq!(count(&harness), before + 1, "a light placed");
+    assert!(
+        map_text(&harness)
+            .matches("\"classname\" \"light\"")
+            .count()
+            >= 2
+    );
+}
+
+// No spec statement: P7-08: a WAD file dropped on the window joins the map's `wad` key, by its
+// path from the map's folder when under it, as TrenchBroom appends a dropped WAD; one it names
+// already is not named twice; one undo takes it back
+#[test]
+fn a_dropped_wad_joins_the_maps() {
+    let dir = keep_copy("drop-wad");
+    let wad = dir.join("maps/extra.wad");
+    fs::write(&wad, b"WAD2").unwrap();
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    let before = map_text(&harness);
+    let drop = |harness: &mut Harness<'static, Option<App>>| {
+        harness
+            .input_mut()
+            .dropped_files
+            .push(std::sync::Arc::new(Dropped(wad.clone())));
+        harness.run();
+    };
+    drop(&mut harness);
+    let after = map_text(&harness);
+    assert!(after.contains(";extra.wad\""), "{after}");
+    drop(&mut harness);
+    assert_eq!(map_text(&harness), after, "named once");
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("edit.undo", json!({})).unwrap();
+    harness.run();
+    assert_eq!(map_text(&harness), before);
+}
+
+// No spec statement: P7-08: the pane with the keyboard is outlined in the focus colour, as
+// TrenchBroom marks the focused viewport; with the keyboard elsewhere no pane is
+#[test]
+fn the_focused_pane_is_outlined() {
+    let dir = keep_copy("focus-pane");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    shell
+        .execute("view.map_panes", json!({ "panes": "double" }))
+        .unwrap();
+    harness.run();
+    let outlined = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        let focus = shell.theme().color(Token::Focus);
+        fn walk(shape: &egui::Shape, focus: egui::Color32, count: &mut usize) {
+            match shape {
+                egui::Shape::Rect(rect) if rect.stroke.color == focus => *count += 1,
+                egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| walk(s, focus, count)),
+                _ => {}
+            }
+        }
+        let mut count = 0;
+        for clipped in &harness.output().shapes {
+            walk(&clipped.shape, focus, &mut count);
+        }
+        count
+    };
+    let before = outlined(&harness);
+    harness.get_by_label(Text::MapViewTop.get()).click();
+    harness.run();
+    assert_eq!(outlined(&harness), before + 1, "the top view outlined");
+    harness.get_by_label(Text::MapEditorView.get()).click();
+    harness.run();
+    assert_eq!(
+        outlined(&harness),
+        before + 1,
+        "the 3D view, and the top view no more"
+    );
+}
+
+// No spec statement: P7-08: the Hull tool places a point where each click meets a brush, and
+// Return makes the convex brush around them, as TrenchBroom's complex shape tool: three points
+// make nothing, four off one plane make a brush, one undoable edit
+#[test]
+fn the_hull_tool_makes_a_brush_of_the_points_clicked() {
+    let dir = keep_copy("hull");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    let before = map_text(&harness);
+    let world = brush_count(&harness, 0);
+    harness.get_by_label(Text::MapToolHull.get()).click();
+    harness.run();
+    let view = harness.get_by_label(Text::MapEditorView.get()).rect();
+    let at = |x: f32, y: f32| {
+        egui::pos2(
+            view.left() + view.width() * x,
+            view.top() + view.height() * y,
+        )
+    };
+    // Three on the floor, below the middle of the view.
+    for point in [at(0.3, 0.85), at(0.7, 0.85), at(0.5, 0.95)] {
+        click_at(&mut harness, point);
+    }
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    assert_eq!(
+        brush_count(&harness, 0),
+        world,
+        "three points make no brush"
+    );
+    // A fourth on the ceiling, above it.
+    click_at(&mut harness, at(0.5, 0.05));
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    assert_eq!(
+        brush_count(&harness, 0),
+        world + 1,
+        "{}",
+        map_text(&harness)
+    );
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("edit.undo", json!({})).unwrap();
+    harness.run();
+    assert_eq!(map_text(&harness), before);
+}
+
+// No spec statement: P7-08: TrenchBroom's extrude tool in the view: with a brush selected,
+// Shift and a drag on its face move the face along its normal, and with Cmd as well split off
+// a new brush; each one undoable edit
+#[test]
+fn shift_dragging_a_face_extrudes_or_splits_it() {
+    let dir = keep_copy("extrude-drag");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    outside_the_keep(&mut harness);
+    let before = map_text(&harness);
+    let world = brush_count(&harness, 0);
+    harness.get_by_label(Text::MapToolVertex.get()).click();
+    harness.run();
+    let at = drawn_at(&harness, 4);
+    click_at(&mut harness, at);
+    // The west wall, seen from outside: pull its face toward the camera.
+    drag(
+        &mut harness,
+        at,
+        at + egui::vec2(0.0, 80.0),
+        egui::Modifiers::SHIFT,
+    );
+    let extruded = map_text(&harness);
+    assert_ne!(extruded, before, "the face moved");
+    assert_eq!(
+        brush_count(&harness, 0),
+        world,
+        "an extrusion adds no brush"
+    );
+    drag(
+        &mut harness,
+        at,
+        at + egui::vec2(0.0, 80.0),
+        egui::Modifiers::SHIFT | egui::Modifiers::COMMAND,
+    );
+    assert_eq!(brush_count(&harness, 0), world + 1, "a split adds one");
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("edit.undo", json!({})).unwrap();
+    shell.execute("edit.undo", json!({})).unwrap();
+    harness.run();
+    assert_eq!(map_text(&harness), before);
+}
+
+// No spec statement: P7-08: TrenchBroom's clip points: with a brush selected and the Clip
+// tool, clicks in a 2D view place points on the grid, and Return cuts the brush by the plane
+// through them, here both parts kept; Escape takes the last point back first
+#[test]
+fn clip_points_cut_the_selected_brush() {
+    let dir = keep_copy("clip-points");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    shell
+        .execute("view.map_panes", json!({ "panes": "double" }))
+        .unwrap();
+    harness.run();
+    outside_the_keep(&mut harness);
+    let before = map_text(&harness);
+    let world = brush_count(&harness, 0);
+    harness.get_by_label(Text::MapToolClip.get()).click();
+    harness.run();
+    harness.get_by_label(Text::KeepBoth.get()).click();
+    harness.run();
+    // The west wall, from the 3D view, then two points across it in the top view.
+    let at = drawn_at(&harness, 4);
+    click_at(&mut harness, at);
+    let top = harness.get_by_label(Text::MapViewTop.get()).rect();
+    // Along x through the view's middle, y 0, where the wall runs from -256 to 256.
+    let across = |x: f32| egui::pos2(top.left() + top.width() * x, top.center().y);
+    click_at(&mut harness, across(0.2));
+    click_at(&mut harness, across(0.9));
+    click_at(&mut harness, across(0.95));
+    harness.key_press(egui::Key::Escape);
+    harness.run();
+    harness.get_by_label(Text::MapViewTop.get()).focus();
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    harness.run();
+    assert_eq!(
+        brush_count(&harness, 0),
+        world + 1,
+        "{}",
+        map_text(&harness)
+    );
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("edit.undo", json!({})).unwrap();
+    harness.run();
+    assert_eq!(map_text(&harness), before);
+}
+
+// No spec statement: P7-08: TrenchBroom's current layer: with a layer chosen, a brush drawn goes
+// into the layer's own entity and a point entity placed names the layer
+#[test]
+fn new_objects_go_into_the_current_layer() {
+    let dir = keep_copy("current-layer");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    outside_the_keep(&mut harness);
+    harness.get_by_label(Text::MapAddLayer.get()).click();
+    harness.run();
+    harness.run();
+    let layer = {
+        let shell = harness.state().as_ref().unwrap().shell();
+        shell
+            .session()
+            .context()
+            .workbench
+            .map()
+            .unwrap()
+            .file()
+            .entities
+            .len()
+            - 1
+    };
+    harness
+        .get_by_role_and_label(Role::RadioButton, "Layer 1")
+        .click();
+    harness.run();
+    harness.get_by_label(Text::MapToolBrush.get()).click();
+    harness.run();
+    let view = harness.get_by_label(Text::MapEditorView.get()).rect();
+    let below = view.center() + egui::vec2(0.0, view.height() / 3.0);
+    drag(
+        &mut harness,
+        below - egui::vec2(60.0, 0.0),
+        below + egui::vec2(60.0, 20.0),
+        egui::Modifiers::NONE,
+    );
+    assert_eq!(brush_count(&harness, layer), 1, "the brush is the layer's");
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("map.select", json!({ "entity": 2 })).unwrap();
+    harness.run();
+    harness
+        .get_by_label(Text::MapEditorView.get())
+        .click_secondary();
+    harness.run();
+    harness
+        .get_by_label_contains(Text::MapCreatePointEntity.get())
+        .hover();
+    harness.run();
+    harness
+        .query_all_by_role_and_label(Role::Button, "light")
+        .last()
+        .unwrap()
+        .click();
+    harness.run();
+    let text = map_text(&harness);
+    assert!(
+        text.contains("\"classname\" \"light\"\n\"origin\""),
+        "{text}"
+    );
+    assert!(text.matches("\"_tb_layer\" \"1\"").count() >= 1, "{text}");
 }
 
 // No spec statement: P6-08, MAP-2: a click with a brush tool selects the first brush the ray
@@ -2446,7 +3601,12 @@ fn brushes_are_selected_deleted_and_drawn_in_the_view() {
         (world - 1, door - 1)
     );
     harness.get_by_label(Text::MapToolBrush.get()).click();
+    // P7-08: the texture chosen in the browser is the one a new brush takes.
+    harness
+        .get_by_role_and_label(Role::Button, "ceiling")
+        .click();
     harness.run();
+    let ceilings = map_text(&harness).matches(") ceiling ").count();
     let view = harness.get_by_label(Text::MapEditorView.get()).rect();
     let below = view.center() + egui::vec2(0.0, view.height() / 3.0);
     drag(
@@ -2456,6 +3616,11 @@ fn brushes_are_selected_deleted_and_drawn_in_the_view() {
         egui::Modifiers::NONE,
     );
     assert_eq!(brush_count(&harness, 0), world, "{}", map_text(&harness));
+    assert_eq!(
+        map_text(&harness).matches(") ceiling ").count(),
+        ceilings + 6,
+        "the new brush's six faces take the chosen texture"
+    );
     let shell = &mut harness.state_mut().as_mut().unwrap().shell;
     for _ in 0..3 {
         shell.execute("edit.undo", json!({})).unwrap();

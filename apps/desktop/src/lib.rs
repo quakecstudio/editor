@@ -44,6 +44,7 @@ mod map_prefabs;
 mod map_profiles;
 mod map_review;
 mod map_scene;
+mod map_select;
 mod map_shading;
 mod map_tools;
 mod map_uv;

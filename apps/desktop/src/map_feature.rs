@@ -7,10 +7,20 @@
 use std::path::{Path, PathBuf};
 
 use eframe::egui::{self};
-use qs_layout::{MAP_PANES, MAP_SHADING, MapPanesParams, MapShadingParams};
+use qs_layout::{
+    MAP_CAMERA, MAP_GRID, MAP_PANES, MAP_SHADING, MapGridParams, MapPanesParams, MapShadingParams,
+};
+use qs_map_edit::EntityIndex;
+use qs_map_edit::LAYER_KEY;
 use qs_map_edit::backup::{Backup, MAP_BACKUP, MAP_BACKUPS, MAP_RESTORE_BACKUP, RestoreParams};
+use qs_map_edit::texture_import::{AddWadParams, MAP_ADD_WAD};
 use qs_map_edit::texture_import::{TEXTURE_IMPORT, TextureImportParams};
 use qs_map_edit::textures::TextureSources;
+use qs_map_edit::{
+    AddLayerParams, ContainerParams, ExtractLinkedParams, GroupParams, MAP_ADD_LAYER,
+    MAP_EXTRACT_LINKED, MAP_GROUP, MAP_LINK_DUPLICATE, MAP_MAKE_BRUSH_ENTITY, MAP_MAKE_STRUCTURAL,
+    MAP_SEPARATE, MAP_UNGROUP, MakeBrushEntityParams, MakeStructuralParams,
+};
 use qs_map_edit::{
     BrushChamferParams, BrushClipParams, BrushCreateParams, BrushExtrudeParams, BrushHollowParams,
     BrushIntersectParams, BrushMergeParams, BrushMoveParams, BrushParams, BrushScaleParams,
@@ -22,15 +32,24 @@ use qs_map_edit::{
     MAP_BRUSH_SUBTRACT, MAP_BRUSH_SWEEP, MAP_BRUSH_TEXTURE, MAP_BRUSH_VERTEX, MAP_BRUSH_VERTICES,
     NewVertex, VertexMove,
 };
+use qs_map_edit::{BrushHullParams, MAP_BRUSH_HULL};
 use qs_map_edit::{
     BspSave, EntityKeys, EntityParams, MAP_COMPARE, MAP_DELETE, MAP_DUPLICATE, MAP_ENTITY,
-    MAP_MOVE, MAP_OPEN, MAP_REMOVE_KEY, MAP_RESOLVE, MAP_ROTATE, MAP_SAVE, MAP_SELECT, MAP_SET_KEY,
+    MAP_MOVE, MAP_OPEN, MAP_REMOVE_KEY, MAP_RESOLVE, MAP_SAVE, MAP_SELECT, MAP_SET_KEY,
     MapDifference, MapDocument, MapOnDisk, MapOpenParams, MapSaved, MoveParams, RemoveKeyParams,
-    ResolveParams, RotateParams, SaveParams, SelectParams as MapSelectParams, SetKeyParams,
+    ResolveParams, SaveParams, SelectParams as MapSelectParams, SetKeyParams,
+};
+use qs_map_edit::{
+    Copied, CopyParams, MAP_COPY, MAP_PASTE, MAP_PLACE_PREFAB, MAP_PREFABS, MAP_SAVE_PREFAB,
+    PasteParams, PlacePrefabParams, Prefabs, SavePrefabParams,
 };
 use qs_map_edit::{
     EntityListParams, LayerInfo, MAP_HIDE, MAP_ISOLATE, MAP_LAYERS, MAP_LOCK, MAP_SET_LAYER,
     MAP_SHOW_ALL, MAP_UNLOCK_ALL, SetLayerParams,
+};
+use qs_map_edit::{
+    FlipParams, Lock, MAP_FLIP, MAP_REPLACE_TEXTURE, MAP_TURN, ReplaceTextureParams, Selection,
+    TurnParams,
 };
 use qs_map_edit::{LinkParams, MAP_LINK, MAP_PLACE, MAP_SET_FLAG, PlaceParams, SetFlagParams};
 use qs_map_edit::{MAP_ACCEPT, MAP_REJECT, MAP_STAGED, MapHunk, MapHunksParams};
@@ -38,9 +57,6 @@ use qs_map_edit::{
     MAP_FIX, MAP_ISSUES, MAP_SEARCH, MapFixParams, MapFound, MapIssues, MapRevision,
 };
 use qs_map_edit::{MAP_MOVE_TO, MAP_OUTLINE, MoveToParams, OutlineParams, OutlineRow};
-use qs_map_edit::{
-    MAP_PLACE_PREFAB, MAP_PREFABS, MAP_SAVE_PREFAB, PlacePrefabParams, Prefabs, SavePrefabParams,
-};
 use qs_workbench::entity_classes::{EntitiesFound, EntitiesParams, PROJECT_ENTITIES};
 use qs_workbench::files_changed::{FILES_CHANGED, FilesChanged, FilesChangedParams};
 use qs_workbench::map_compile::{
@@ -53,13 +69,16 @@ use qs_workbench::map_profile::{
 
 use crate::entities::{Outliner, Properties};
 use crate::features::{Commands, ShellRequest};
-use crate::map_editor::{DiskNotice, MapAction, MapEditor, ShowFilter};
+use crate::map_editor::{
+    Arrange, ClipboardAction, DiskNotice, MapAction, MapEditor, MenuAction, ShowFilter, ViewSetting,
+};
 use crate::map_groups::GroupAction;
 use crate::map_profiles::ProfileAction;
 use crate::map_review::ReviewAction;
 use crate::map_tools::BrushAction;
 use crate::map_view::MapView;
 use crate::shell::{CentreTab, MAP_BACKUP_INTERVAL, ShellError, Workspace};
+use crate::strings::{group_name, layer_name};
 
 use qs_map_edit::uv::{FaceAlignParams, FaceUvParams, MAP_FACE_ALIGN, MAP_FACE_UV};
 
@@ -86,6 +105,8 @@ pub(crate) struct MapFeature {
     pub(crate) properties: Properties,
     /// What the map's glue asked of the window, carried out when the call returns.
     requests: Vec<ShellRequest>,
+    /// The map text the last copy wrote, which the window puts on the clipboard (P7-08).
+    copied: Option<String>,
 }
 
 impl MapFeature {
@@ -280,9 +301,9 @@ impl MapFeature {
                 MapAction::Move(entity, by) => {
                     commands.attempt(MAP_MOVE, &MoveParams { entity, by })
                 }
-                MapAction::Rotate(entity, degrees) => {
-                    commands.attempt(MAP_ROTATE, &RotateParams { entity, degrees })
-                }
+                MapAction::Arrange(arrange) => Self::arrange(commands, arrange),
+                MapAction::Menu(menu) => self.menu_action(commands, menu),
+                MapAction::AddWad(path) => commands.attempt(MAP_ADD_WAD, &AddWadParams { path }),
                 MapAction::Delete(entity) => commands.attempt(MAP_DELETE, &EntityParams { entity }),
                 MapAction::Duplicate(entity) => {
                     commands.attempt(MAP_DUPLICATE, &EntityParams { entity })
@@ -296,14 +317,7 @@ impl MapFeature {
                         also,
                     },
                 ),
-                MapAction::Place(classname, origin) => commands.attempt(
-                    MAP_PLACE,
-                    &PlaceParams {
-                        classname,
-                        origin,
-                        keys: Vec::new(),
-                    },
-                ),
+                MapAction::Place(classname, origin) => self.place(commands, classname, origin),
                 MapAction::SetFlag(entity, also, flag, change) => commands.attempt(
                     MAP_SET_FLAG,
                     &SetFlagParams {
@@ -328,10 +342,7 @@ impl MapFeature {
                 MapAction::MoveTo(entity, into) => {
                     commands.attempt(MAP_MOVE_TO, &MoveToParams { entity, into })
                 }
-                MapAction::Panes(panes) => commands.attempt(MAP_PANES, &MapPanesParams { panes }),
-                MapAction::Shading(shading) => {
-                    commands.attempt(MAP_SHADING, &MapShadingParams { shading })
-                }
+                MapAction::View(setting) => Self::view_setting(commands, setting),
                 MapAction::ImportTexture(path, name, dither) => {
                     let imported = commands.attempt(
                         TEXTURE_IMPORT,
@@ -355,9 +366,10 @@ impl MapFeature {
                     &PlacePrefabParams {
                         path,
                         origin,
-                        grid: None,
+                        grid: Some(commands.session().context().layout.map_grid.units()),
                     },
                 ),
+                MapAction::Clipboard(action) => self.clipboard_action(commands, action),
                 MapAction::CheckIssues => self.check_map_issues(commands),
                 MapAction::Fix(fix) => {
                     let fixed =
@@ -369,11 +381,16 @@ impl MapFeature {
                 MapAction::Review(action) => self.review_action(commands, action),
                 MapAction::Find(search) => {
                     let found: Result<MapFound, ShellError> = commands.attempt(MAP_SEARCH, &search);
-                    found.map(|found| {
+                    found.and_then(|found| {
                         let at = commands.session().context().map_edits();
+                        let entity = self.map_editor.select_found(&found);
                         self.map_editor.set_found(found, at);
-                        serde_json::Value::Null
+                        commands.attempt(MAP_SELECT, &MapSelectParams { entity })
                     })
+                }
+                MapAction::SelectFound(found) => {
+                    let entity = self.map_editor.select_found(&found);
+                    commands.attempt(MAP_SELECT, &MapSelectParams { entity })
                 }
                 MapAction::RemoveKey(entity, key) => {
                     commands.attempt(MAP_REMOVE_KEY, &RemoveKeyParams { entity, key })
@@ -634,6 +651,141 @@ impl MapFeature {
         played
     }
 
+    /// Runs what the view's context menu asked that no other action does (P7-08).
+    fn menu_action(
+        &mut self,
+        commands: &mut Commands<'_>,
+        action: MenuAction,
+    ) -> Result<serde_json::Value, ShellError> {
+        match action {
+            MenuAction::MakeBrushEntity(classname, brushes) => commands.attempt(
+                MAP_MAKE_BRUSH_ENTITY,
+                &MakeBrushEntityParams { classname, brushes },
+            ),
+            MenuAction::MakeStructural(entity) => {
+                commands.attempt(MAP_MAKE_STRUCTURAL, &MakeStructuralParams { entity })
+            }
+            MenuAction::ExtractLinked(entities) => {
+                // The group the first names, its own entity.
+                let group = commands
+                    .session()
+                    .context()
+                    .workbench
+                    .map()
+                    .and_then(|map| {
+                        let entities_now = &map.file().entities;
+                        let id = entities_now.get(entities.first()?.get())?.group()?;
+                        entities_now
+                        .iter()
+                        .position(|e| {
+                            matches!(e.container(), Some((qs_map::RoomKind::Group, g)) if g == id)
+                        })
+                        .map(EntityIndex::new)
+                    });
+                let Some(group) = group else {
+                    return Ok(serde_json::Value::Null);
+                };
+                commands.attempt(MAP_EXTRACT_LINKED, &ExtractLinkedParams { group, entities })
+            }
+            MenuAction::SelectAll(entities) => {
+                let mut entities = entities.into_iter();
+                let entity = entities.next();
+                self.map_editor.select_also(entities.collect());
+                commands.attempt(MAP_SELECT, &MapSelectParams { entity })
+            }
+        }
+    }
+
+    /// Places an entity of `classname` at `origin`, naming the current layer, as TrenchBroom
+    /// puts a new entity there (P7-08).
+    fn place(
+        &self,
+        commands: &mut Commands<'_>,
+        classname: String,
+        origin: [f64; 3],
+    ) -> Result<serde_json::Value, ShellError> {
+        let keys = self
+            .map_editor
+            .current_layer()
+            .map(|(_, id)| (LAYER_KEY.to_owned(), id.text()))
+            .into_iter()
+            .collect();
+        commands.attempt(
+            MAP_PLACE,
+            &PlaceParams {
+                classname,
+                origin,
+                keys,
+            },
+        )
+    }
+
+    /// Flips or turns the selection (P7-08).
+    fn arrange(
+        commands: &mut Commands<'_>,
+        arrange: Arrange,
+    ) -> Result<serde_json::Value, ShellError> {
+        match arrange {
+            Arrange::Flip(entities, brushes, axis) => commands.attempt(
+                MAP_FLIP,
+                &FlipParams {
+                    selection: Selection { entities, brushes },
+                    axis,
+                    lock: Lock::default(),
+                },
+            ),
+            Arrange::Turn(entities, brushes, degrees) => commands.attempt(
+                MAP_TURN,
+                &TurnParams {
+                    selection: Selection { entities, brushes },
+                    degrees,
+                    lock: Lock::default(),
+                },
+            ),
+        }
+    }
+
+    /// Copies the selection as map text for the window to put on the clipboard, or pastes map
+    /// text on the layout's grid (P7-08).
+    fn clipboard_action(
+        &mut self,
+        commands: &mut Commands<'_>,
+        action: ClipboardAction,
+    ) -> Result<serde_json::Value, ShellError> {
+        match action {
+            ClipboardAction::Copy(brushes, entities) => {
+                let copied: Copied =
+                    commands.attempt(MAP_COPY, &CopyParams { brushes, entities })?;
+                self.copied = Some(copied.text);
+                Ok(serde_json::Value::Null)
+            }
+            ClipboardAction::Paste(text, at) => {
+                let grid = Some(commands.session().context().layout.map_grid.units());
+                commands.attempt(MAP_PASTE, &PasteParams { text, at, grid })
+            }
+        }
+    }
+
+    /// Takes the map text the last copy wrote, for the window's clipboard.
+    pub(crate) const fn take_copied(&mut self) -> Option<String> {
+        self.copied.take()
+    }
+
+    /// Runs a change of how the map view looks, a `view.*` command of the layout.
+    fn view_setting(
+        commands: &mut Commands<'_>,
+        setting: ViewSetting,
+    ) -> Result<serde_json::Value, ShellError> {
+        match setting {
+            ViewSetting::Panes(panes) => commands.attempt(MAP_PANES, &MapPanesParams { panes }),
+            ViewSetting::Shading(shading) => {
+                commands.attempt(MAP_SHADING, &MapShadingParams { shading })
+            }
+            ViewSetting::Grid(size) => commands.attempt(MAP_GRID, &MapGridParams { size }),
+            ViewSetting::Camera(params) => commands.attempt(MAP_CAMERA, &params),
+        }
+    }
+
     /// Runs a brush edit as its `map.brush_*` command, on the commands' grid.
     #[expect(
         clippy::too_many_lines,
@@ -645,15 +797,22 @@ impl MapFeature {
         commands: &mut Commands<'_>,
         action: BrushAction,
     ) -> Result<serde_json::Value, ShellError> {
+        let grid = Some(commands.session().context().layout.map_grid.units());
+        // TrenchBroom's current material: the texture chosen in the browser, else the map's
+        // last face's.
+        let texture = self.map_editor.current_texture();
+        // A new brush goes into the current layer's own entity, as TrenchBroom keeps a layer's
+        // brushes; the world's for the default layer.
+        let layer = self.map_editor.current_layer().map(|(entity, _)| entity);
         match action {
             BrushAction::Create(min, max) => commands.attempt(
                 MAP_BRUSH_CREATE,
                 &BrushCreateParams {
-                    entity: None,
+                    entity: layer,
                     min,
                     max,
-                    texture: None,
-                    grid: None,
+                    texture: texture.clone(),
+                    grid,
                 },
             ),
             BrushAction::Clip(entity, brush, points, keep) => commands.attempt(
@@ -720,7 +879,7 @@ impl MapFeature {
                         name,
                         brushes,
                         entities,
-                        grid: None,
+                        grid,
                     },
                 );
                 // The browser lists the new prefab.
@@ -729,12 +888,12 @@ impl MapFeature {
             BrushAction::Shape(min, max, shape) => commands.attempt(
                 MAP_BRUSH_SHAPE,
                 &BrushShapeParams {
-                    entity: None,
+                    entity: layer,
                     min,
                     max,
                     shape,
-                    texture: None,
-                    grid: None,
+                    texture,
+                    grid,
                 },
             ),
             BrushAction::Hollow(entity, brush, wall) => commands.attempt(
@@ -778,18 +937,33 @@ impl MapFeature {
                     brush,
                     path,
                     lock,
-                    grid: None,
+                    grid,
                 },
             ),
-            BrushAction::Extrude(face, by, lock) => commands.attempt(
+            BrushAction::Extrude(face, by, lock, mode) => commands.attempt(
                 MAP_BRUSH_EXTRUDE,
                 &BrushExtrudeParams {
                     face,
                     by,
                     lock,
-                    // The distance is the one typed in the panel.
+                    // The distance is the one typed in the panel, or snapped by the drag.
                     grid: Some(0.0),
+                    mode,
                 },
+            ),
+            BrushAction::Arrange(arrange) => Self::arrange(commands, arrange),
+            BrushAction::Hull(points) => commands.attempt(
+                MAP_BRUSH_HULL,
+                &BrushHullParams {
+                    entity: layer,
+                    points,
+                    texture: texture.clone(),
+                    grid,
+                },
+            ),
+            BrushAction::ReplaceTexture(from, to, brushes) => commands.attempt(
+                MAP_REPLACE_TEXTURE,
+                &ReplaceTextureParams { from, to, brushes },
             ),
             BrushAction::SplitFace(face, by) => commands.attempt(
                 MAP_BRUSH_SPLIT_FACE,
@@ -935,6 +1109,47 @@ impl MapFeature {
                     switch,
                 },
             ),
+            GroupAction::Group(entities, brushes) => {
+                let groups = commands
+                    .session()
+                    .context()
+                    .workbench
+                    .map()
+                    .map_or(0, |map| {
+                        let entities = &map.file().entities;
+                        let group = |e: &&qs_map::Entity| {
+                            matches!(e.container(), Some((qs_map::RoomKind::Group, _)))
+                        };
+                        entities.iter().filter(group).count()
+                    });
+                let name = group_name(groups.saturating_add(1));
+                commands.attempt(
+                    MAP_GROUP,
+                    &GroupParams {
+                        name,
+                        entities,
+                        brushes,
+                    },
+                )
+            }
+            GroupAction::Ungroup(group) => {
+                commands.attempt(MAP_UNGROUP, &ContainerParams { group })
+            }
+            GroupAction::LinkDuplicate(group) => {
+                commands.attempt(MAP_LINK_DUPLICATE, &ContainerParams { group })
+            }
+            GroupAction::Separate(group) => {
+                commands.attempt(MAP_SEPARATE, &ContainerParams { group })
+            }
+            GroupAction::AddLayer => {
+                let count = self.map_editor.layer_count();
+                commands.attempt(
+                    MAP_ADD_LAYER,
+                    &AddLayerParams {
+                        name: layer_name(count.saturating_add(1)),
+                    },
+                )
+            }
         }
     }
 }

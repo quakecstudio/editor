@@ -9,6 +9,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use eframe::egui::{Rect, Ui};
@@ -19,10 +20,10 @@ use qs_map::MapFile;
 use qs_map_edit::textures::TextureSources;
 use qs_map_edit::{EntityIndex, MapDocument, MapRevision};
 use qs_render::{
-    Camera, EditorCallback, Extras, FlatFace, Image, Look, MapMesh, MeshBuilder, Placement, Shade,
-    View,
+    AliasDraw, AliasEntity, AliasModel, Camera, EditorCallback, Extras, FlatFace, Image, Look,
+    MapMesh, MeshBuilder, ModelFrame, Placement, Shade, View,
 };
-use qs_wad::texture::{Palette, PaletteIndex};
+use qs_wad::texture::Palette;
 
 use crate::map_scene::{FaceShape, Line, Scene};
 use crate::map_view;
@@ -144,7 +145,7 @@ impl ShadedView {
         (shading, state): (MapShading, Option<&RenderState>),
         document: &MapDocument,
         (scene, from, hidden): (&Scene, TexturedFrom, &BTreeSet<EntityIndex>),
-        sources: Option<&TextureSources>,
+        (sources, models): (Option<&TextureSources>, &HashMap<String, Arc<[u8]>>),
     ) {
         self.shading = shading;
         let Some(state) = state else {
@@ -166,11 +167,17 @@ impl ShadedView {
                             .clone()
                     };
                     let mesh = scene.textured_mesh(&mut image, hidden, Look::QuakeSpasm);
-                    map_view::install_editor(state, &mesh);
+                    let palette = sources.and_then(TextureSources::palette);
+                    let posed = scene.posed_models(models, palette, hidden);
+                    map_view::install_editor(state, &mesh, &posed);
                     self.made = Some(Made::Textured(from));
                 }
             }
-            MapShading::Lit => self.refresh_lit(state, document, sources),
+            MapShading::Lit => {
+                let palette = sources.and_then(TextureSources::palette);
+                let pose = || scene.posed_models(models, palette, hidden);
+                self.refresh_lit(state, document, sources, &pose);
+            }
         }
     }
 
@@ -181,6 +188,7 @@ impl ShadedView {
         state: &RenderState,
         document: &MapDocument,
         sources: Option<&TextureSources>,
+        pose: &dyn Fn() -> PosedModels,
     ) {
         let path = document.path();
         let bsp = path.with_extension("bsp");
@@ -202,7 +210,7 @@ impl ShadedView {
                 .and_then(|palette| lit(&bsp, palette))
             {
                 Ok(mesh) => {
-                    map_view::install_editor(state, &mesh);
+                    map_view::install_editor(state, &mesh, &pose());
                     Loaded::Drawn
                 }
                 Err(error) => {
@@ -415,14 +423,84 @@ const PINK: [u8; 4] = [159, 91, 83, 255];
 /// `notexture_data`'s black.
 const BLACK: [u8; 4] = [0, 0, 0, 255];
 
+/// The light the editor draws a model in: the most GLQuake's caps let an entity's
+/// `ambientlight` and `shadelight` reach together (REND-4.7), a `shadelight` of 64 over 200.
+const MODEL_LIGHT: f32 = 192.0;
+
+/// What the editor raises a model's shade by: 200 over that `shadelight` of 64, so each vertex
+/// is its normal's shade dot itself (REND-4.8), the skin as it is where the vertex faces the
+/// light and darker where it faces away, as the textured faces are shaded by the way they
+/// face; the game's caps would draw it at a third of that.
+const MODEL_SHADE_GAIN: f32 = 200.0 / 64.0;
+
+/// The class models of a scene, posed for the renderer: every skin image, and each entity's
+/// first frame at its origin, turned to its angle.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct PosedModels {
+    /// Every model's skin images, one model's after another's.
+    pub(crate) skins: Vec<Image>,
+    /// The entities' triangles and the skin each run is drawn with.
+    pub(crate) frame: ModelFrame,
+}
+
+impl Scene {
+    /// The class models of the point entities not `hidden`, read from `files` through
+    /// `palette`, posed at their first frame and first skin, as TrenchBroom shows an entity's
+    /// model; none without a palette.
+    pub(crate) fn posed_models(
+        &self,
+        files: &HashMap<String, Arc<[u8]>>,
+        palette: Option<&Palette>,
+        hidden: &BTreeSet<EntityIndex>,
+    ) -> PosedModels {
+        let mut posed = PosedModels::default();
+        let Some(palette) = palette.map(qs_render::Palette::from) else {
+            return posed;
+        };
+        let mut read: HashMap<&str, Option<(AliasModel, usize)>> = HashMap::new();
+        for shape in &self.entities {
+            if shape.brush || hidden.contains(&shape.index) {
+                continue;
+            }
+            let Some(name) = shape.model.as_deref() else {
+                continue;
+            };
+            let model = read.entry(name).or_insert_with(|| {
+                let model = AliasModel::read(name, files.get(name)?, &palette).ok()?;
+                let first = posed.skins.len();
+                posed.skins.extend(model.images().iter().cloned());
+                Some((model, first))
+            });
+            let Some((model, first)) = model else {
+                continue;
+            };
+            let start = posed.frame.vertices.len();
+            let entity =
+                AliasEntity::new(shape.origin, [0.0, shape.yaw.get(), 0.0], 0, 0, MODEL_LIGHT);
+            let image = model.draw(&entity, 0.0, &mut posed.frame.vertices);
+            for vertex in posed.frame.vertices.iter_mut().skip(start) {
+                vertex.shade = (vertex.shade * MODEL_SHADE_GAIN).min(1.0);
+            }
+            let (Ok(first_vertex), Ok(count)) = (
+                u32::try_from(start),
+                u32::try_from(posed.frame.vertices.len().saturating_sub(start)),
+            ) else {
+                continue;
+            };
+            posed.frame.draws.push(AliasDraw {
+                skin: first.saturating_add(image),
+                first: first_vertex,
+                count,
+            });
+        }
+        posed
+    }
+}
+
 /// The mesh of the BSP at `path`, every model at its compiled place, lit by its lightmaps and
 /// the `.lit` beside it, through `palette`.
 fn lit(path: &Path, palette: &Palette) -> Result<MapMesh, String> {
-    // `gfx/palette.lmp`'s 768 bytes, as the renderer reads a palette.
-    let bytes: Vec<u8> = (0..=u8::MAX)
-        .flat_map(|index| palette.colour(PaletteIndex::new(index)))
-        .collect();
-    let palette = qs_render::Palette::read(&bytes).map_err(|e| e.to_string())?;
+    let palette = qs_render::Palette::from(palette);
     let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
     let bsp = Bsp::read(&bytes, BspLoader::FitzQuake).map_err(|e| e.to_string())?;
     let lit_bytes = std::fs::read(path.with_extension("lit")).ok();

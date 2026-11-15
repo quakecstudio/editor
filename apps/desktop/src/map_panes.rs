@@ -42,6 +42,19 @@ pub(crate) fn panes(layout: MapPanes, rect: Rect) -> Vec<(Pane, Rect)> {
             );
             vec![(Pane::Perspective, rect), (Pane::Plan(Plan::Top), corner)]
         }
+        MapPanes::Double => {
+            let (left, right) = rect.split_left_right_at_fraction(HALF);
+            vec![(Pane::Perspective, left), (Pane::Plan(Plan::Top), right)]
+        }
+        MapPanes::Triple => {
+            let (left, right) = rect.split_left_right_at_fraction(HALF);
+            let (upper, lower) = right.split_top_bottom_at_fraction(HALF);
+            vec![
+                (Pane::Perspective, left),
+                (Pane::Plan(Plan::Top), upper),
+                (Pane::Plan(Plan::Front), lower),
+            ]
+        }
         MapPanes::Quad => {
             let (top, bottom) = rect.split_top_bottom_at_fraction(HALF);
             let (a, b) = top.split_left_right_at_fraction(HALF);
@@ -89,6 +102,26 @@ pub(crate) enum Plan {
 }
 
 impl Plan {
+    /// The map axis the view looks along: 2 for z in the top view, 1 for y in the front, 0 for
+    /// x in the side.
+    pub(crate) const fn axis(self) -> usize {
+        match self {
+            Self::Top => 2,
+            Self::Front => 1,
+            Self::Side => 0,
+        }
+    }
+
+    /// The map axes across and up the view: x and y for the top view, x and z for the front,
+    /// y and z for the side.
+    const fn axes(self) -> [usize; 2] {
+        match self {
+            Self::Top => [0, 1],
+            Self::Front => [0, 2],
+            Self::Side => [1, 2],
+        }
+    }
+
     /// `p` in the view's plane: across and up the screen.
     const fn flat(self, [x, y, z]: [f32; 3]) -> [f32; 2] {
         match self {
@@ -138,6 +171,25 @@ impl PlanCamera {
     pub(crate) fn zoom(&mut self, scroll: f32) {
         let scaled = self.scale * (-scroll * PLAN_ZOOM_RATE).exp();
         self.scale = scaled.clamp(*PLAN_ZOOM.start(), *PLAN_ZOOM.end());
+    }
+
+    /// This view of `plan` following `leader`'s view of `led_by`, as TrenchBroom links its 2D
+    /// views (its `Link2DCameras`, on by default): the same zoom, and each map axis the two
+    /// views share at the same place (P7-08).
+    pub(crate) fn follow(&mut self, plan: Plan, leader: Self, led_by: Plan) {
+        self.scale = leader.scale;
+        let [mine_across, mine_up] = plan.axes();
+        let [theirs_across, theirs_up] = led_by.axes();
+        for (axis, value) in [
+            (theirs_across, leader.centre[0]),
+            (theirs_up, leader.centre[1]),
+        ] {
+            if axis == mine_across {
+                self.centre[0] = value;
+            } else if axis == mine_up {
+                self.centre[1] = value;
+            }
+        }
     }
 }
 
@@ -233,6 +285,23 @@ impl Projection {
         }
     }
 
+    /// The way the map axis `axis` runs across the pane, in points per map unit along the
+    /// pane's right and down, for its compass (P7-08): the camera's turn alone, whatever its
+    /// place.
+    pub(crate) fn compass(&self, axis: [f32; 3]) -> Vec2 {
+        match self.lens {
+            Lens::Perspective(camera) => {
+                let [_, right, up] = camera.axes();
+                let dot = |a: [f32; 3]| a[0] * axis[0] + a[1] * axis[1] + a[2] * axis[2];
+                Vec2::new(dot(right), -dot(up))
+            }
+            Lens::Plan(plan, _) => {
+                let [across, up] = plan.flat(axis);
+                Vec2::new(across, -up)
+            }
+        }
+    }
+
     /// Where `p` is in the pane, when it is in front of the near plane.
     pub(crate) fn point(&self, p: [f32; 3]) -> Option<Pos2> {
         let v = self.view(p);
@@ -295,6 +364,25 @@ mod tests {
         }
     }
 
+    // No spec statement: P7-08: the compass shows each map axis as the pane sees it: in the top
+    // view x runs right and y up; facing +x in the 3D view, y runs left, z up and x away
+    #[test]
+    fn the_compass_turns_with_the_view() {
+        use qs_render::{Camera, Degrees};
+
+        let top = Projection::plan(Plan::Top, PlanCamera::new(Plan::Top, [0.0; 3]), RECT);
+        assert_eq!(top.compass([1.0, 0.0, 0.0]), Vec2::new(1.0, 0.0));
+        assert_eq!(top.compass([0.0, 1.0, 0.0]), Vec2::new(0.0, -1.0));
+        assert_eq!(top.compass([0.0, 0.0, 1.0]), Vec2::new(0.0, 0.0));
+        let side = Projection::plan(Plan::Side, PlanCamera::new(Plan::Side, [0.0; 3]), RECT);
+        assert_eq!(side.compass([0.0, 1.0, 0.0]), Vec2::new(1.0, 0.0));
+        let ahead = Projection::perspective(Camera::new([0.0; 3], Degrees::new(0.0)), RECT);
+        let near = |v: Vec2, w: Vec2| (v - w).length() < 1e-5;
+        assert!(near(ahead.compass([1.0, 0.0, 0.0]), Vec2::new(0.0, 0.0)));
+        assert!(near(ahead.compass([0.0, 1.0, 0.0]), Vec2::new(-1.0, 0.0)));
+        assert!(near(ahead.compass([0.0, 0.0, 1.0]), Vec2::new(0.0, -1.0)));
+    }
+
     // No spec statement: P6-09: panning follows the pointer and zooming stays in its range
     #[test]
     fn a_plan_view_pans_and_zooms() {
@@ -330,8 +418,43 @@ mod tests {
                 Pane::Plan(Plan::Side)
             ]
         );
-        let quad = panes(MapPanes::Quad, RECT);
-        let area: f32 = quad.iter().map(|(_, r)| r.area()).sum();
-        assert_eq!(area, RECT.area());
+        // P7-08: TrenchBroom's two and three panes: the 3D view beside the top view, and
+        // beside the top over the front.
+        assert_eq!(
+            of(MapPanes::Double),
+            [Pane::Perspective, Pane::Plan(Plan::Top)]
+        );
+        assert_eq!(
+            of(MapPanes::Triple),
+            [
+                Pane::Perspective,
+                Pane::Plan(Plan::Top),
+                Pane::Plan(Plan::Front)
+            ]
+        );
+        for layout in [MapPanes::Double, MapPanes::Triple, MapPanes::Quad] {
+            let split = panes(layout, RECT);
+            let area: f32 = split.iter().map(|(_, r)| r.area()).sum();
+            assert_eq!(area, RECT.area(), "{layout:?} covers the view once");
+        }
+    }
+
+    // No spec statement: P7-08: the 2D views are linked, as TrenchBroom's by default: one
+    // following another takes its zoom and the place of each map axis they share
+    #[test]
+    fn linked_views_share_their_zoom_and_common_axes() {
+        let mut top = PlanCamera::new(Plan::Top, [0.0; 3]);
+        top.pan(Vec2::new(-10.0, 20.0));
+        top.zoom(100.0);
+        let mut front = PlanCamera::new(Plan::Front, [0.0, 0.0, 64.0]);
+        front.follow(Plan::Front, top, Plan::Top);
+        assert_eq!(front.scale, top.scale);
+        assert_eq!(front.centre, [top.centre[0], 64.0], "x shared, z kept");
+        let mut side = PlanCamera::new(Plan::Side, [0.0, 0.0, 32.0]);
+        side.follow(Plan::Side, top, Plan::Top);
+        assert_eq!(side.centre, [top.centre[1], 32.0], "y shared, z kept");
+        let mut again = PlanCamera::new(Plan::Top, [5.0, 5.0, 0.0]);
+        again.follow(Plan::Top, side, Plan::Side);
+        assert_eq!(again.centre, [5.0, side.centre[0]], "y from the side view");
     }
 }

@@ -160,6 +160,29 @@ fn bounds<'a>(
     found
 }
 
+/// Where a prefab or a copy is moved to as it is made.
+#[derive(Clone, Copy, Debug)]
+enum Anchor {
+    /// The middle of its floor to the origin, across on the grid: a prefab, placed later at a
+    /// point.
+    FloorMiddle(Option<f64>),
+    /// Nowhere: a copy keeps its place, as TrenchBroom's Copy writes the objects "as if they
+    /// were saved to a map".
+    InPlace,
+}
+
+/// No move at all: where a copy, or a paste at its original place, goes by.
+const UNMOVED: [f64; 3] = [0.0, 0.0, 0.0];
+
+/// The middle of the floor of the box `[lo, hi]`, across on `grid`.
+fn floor_middle([lo, hi]: [[f64; 3]; 2], grid: Option<f64>) -> [f64; 3] {
+    [
+        snap((lo[0] + hi[0]) / 2.0, grid),
+        snap((lo[1] + hi[1]) / 2.0, grid),
+        lo[2],
+    ]
+}
+
 impl MapDocument {
     /// Copies `prefab` into the map at `origin`: its world's brushes into the world, its other
     /// entities after the map's; the first entity added, or the world.
@@ -189,16 +212,17 @@ impl MapDocument {
         Ok(first)
     }
 
-    /// The prefab of `brushes` and `entities`, moved so the middle of their floor is the
-    /// origin, across on `grid` and up exactly. A brush of the world, or of a layer or group,
-    /// goes into the prefab's world; one of another entity brings that entity whole, as an
-    /// entity named does. A layer or group named gives its brushes to the world, and an entity's
-    /// keys placing it in this map's layers and groups are left out.
+    /// The prefab of `brushes` and `entities`, moved by `anchor`: a prefab's so the middle of
+    /// their floor is the origin, across on its grid and up exactly; a copy's not at all. A
+    /// brush of the world, or of a layer or group, goes into the prefab's world; one of another
+    /// entity brings that entity whole, as an entity named does. A layer or group named gives its
+    /// brushes to the world, and an entity's keys placing it in this map's layers and groups are
+    /// left out.
     fn prefab_of(
         &mut self,
         brushes: &[(EntityIndex, BrushIndex)],
         entities: &[EntityIndex],
-        grid: Option<f64>,
+        anchor: Anchor,
     ) -> Result<MapFile, MapEditError> {
         let mut world_brushes = Vec::new();
         let mut whole = std::collections::BTreeSet::new();
@@ -226,13 +250,11 @@ impl MapDocument {
             kept_entities.push(kept);
         }
         let all: Vec<&Entity> = kept_entities.iter().collect();
-        let [lo, hi] = bounds(world_brushes.iter(), &all).ok_or(MapEditError::NoSelection)?;
-        let anchor = [
-            snap((lo[0] + hi[0]) / 2.0, grid),
-            snap((lo[1] + hi[1]) / 2.0, grid),
-            lo[2],
-        ];
-        let by = anchor.map(|c| -c);
+        let floor = bounds(world_brushes.iter(), &all).ok_or(MapEditError::NoSelection)?;
+        let by = match anchor {
+            Anchor::FloorMiddle(grid) => floor_middle(floor, grid).map(|c| -c),
+            Anchor::InPlace => UNMOVED,
+        };
         let mut prefab =
             MapFile::parse(b"{\n\"classname\" \"worldspawn\"\n}\n").map_err(|error| {
                 MapEditError::Brush {
@@ -368,7 +390,7 @@ impl<C: HasMap + 'static> Command<C> for SavePrefab {
         let prefab = context.map_store().map_mut()?.prefab_of(
             &params.brushes,
             &params.entities,
-            params.grid,
+            Anchor::FloorMiddle(params.grid),
         )?;
         let save = |error| MapEditError::Save {
             path: path.clone(),
@@ -384,6 +406,114 @@ impl<C: HasMap + 'static> Command<C> for SavePrefab {
                 path,
             },
         }))
+    }
+}
+
+/// The id of the command that writes a selection as map text, for the clipboard (P7-08).
+pub const MAP_COPY: &str = "map.copy";
+
+/// The id of the command that adds map text to the map, as pasted (P7-08).
+pub const MAP_PASTE: &str = "map.paste";
+
+/// The parameters of `map.copy`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CopyParams {
+    /// The brushes, each by its entity: one of the world or of a layer or group is copied into
+    /// the world; one of another entity brings that entity whole.
+    #[serde(default)]
+    pub brushes: Vec<(EntityIndex, BrushIndex)>,
+    /// The entities to copy whole.
+    #[serde(default)]
+    pub entities: Vec<EntityIndex>,
+}
+
+/// What `map.copy` wrote: the selection as a `.map`'s text, where it was.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Copied {
+    /// The text.
+    pub text: String,
+}
+
+/// The parameters of `map.paste`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PasteParams {
+    /// A `.map`'s text: its world's brushes go into the world, its other entities after the
+    /// map's.
+    pub text: String,
+    /// Where the middle of its floor goes, snapped across to the grid; where the text has it
+    /// when absent, as TrenchBroom's Paste at Original Position.
+    #[serde(default)]
+    pub at: Option<[f64; 3]>,
+    /// The grid, in map units; 16 when not given, 0 for none.
+    #[serde(default)]
+    pub grid: Option<f64>,
+}
+
+/// `map.copy`.
+pub(super) struct Copy;
+
+impl<C: HasMap + 'static> Command<C> for Copy {
+    const ID: &'static str = MAP_COPY;
+    const SUMMARY: &'static str = "Writes brushes of the world and whole entities of the open map \
+        as a .map's text, where they are, for the clipboard; the map is unchanged.";
+    type Params = CopyParams;
+    type Output = Copied;
+    type Error = MapEditError;
+
+    fn run(&self, context: &mut C, params: CopyParams) -> Result<Outcome<Copied, C>, MapEditError> {
+        let copy = context.map_store().map_mut()?.prefab_of(
+            &params.brushes,
+            &params.entities,
+            Anchor::InPlace,
+        )?;
+        let text = String::from_utf8_lossy(&copy.to_bytes()).into_owned();
+        Ok(Outcome::outside_history(Copied { text }))
+    }
+}
+
+/// `map.paste`.
+pub(super) struct Paste;
+
+impl<C: HasMap + 'static> Command<C> for Paste {
+    const ID: &'static str = MAP_PASTE;
+    const SUMMARY: &'static str = "Adds a .map's text to the open map, its world's brushes to the \
+        world and its other entities after the map's: where the text has them, or with the \
+        middle of their floor at a point on the grid.";
+    type Params = PasteParams;
+    type Output = MapEdited;
+    type Error = MapEditError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: PasteParams,
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
+        let pasted = MapFile::parse(params.text.as_bytes())
+            .map_err(|error| MapEditError::NotMapText { error })?;
+        let all: Vec<&Entity> = pasted.entities.iter().skip(1).collect();
+        let world = pasted
+            .entities
+            .first()
+            .into_iter()
+            .flat_map(Entity::brushes);
+        let found = bounds(world, &all).ok_or(MapEditError::NoSelection)?;
+        let by = match params.at {
+            Some(at) => {
+                let from = floor_middle(found, Some(0.0));
+                let to = [snap(at[0], params.grid), snap(at[1], params.grid), at[2]];
+                [to[0] - from[0], to[1] - from[1], to[2] - from[2]]
+            }
+            None => UNMOVED,
+        };
+        let (entity, step) = edit_map(context, |document| document.place_prefab(&pasted, by))?;
+        Ok(Outcome::undoable(
+            MapEdited {
+                entity: Some(entity),
+            },
+            step,
+        ))
     }
 }
 

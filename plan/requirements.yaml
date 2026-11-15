@@ -166,6 +166,7 @@ sections:
       - {id: UI-20, kind: implied, text: "An integrated terminal and project tasks"}
       - {id: UI-21, kind: implied, text: "Custom keybindings and a vim mode"}
       - {id: UI-22, kind: implied, text: "Agent panel controls on a par with Zed's agent docs: tool permissions and profiles, following the agent, thread history and search, editing and queueing messages, token usage and compaction, images as context, notifications"}
+      - {id: UI-23, kind: implied, text: "Every command reachable from the keyboard: a default shortcut for each, TrenchBroom's where it has one, and a command line that runs any command with its parameters, as AutoCAD's command window does"}
 
   - id: MAP
     title: Map editor

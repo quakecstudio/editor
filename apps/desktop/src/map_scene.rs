@@ -6,6 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
+use std::sync::Arc;
 
 use qs_bsp::{Bsp, BspLoader};
 use qs_map::geometry::TexVecs;
@@ -90,6 +91,8 @@ pub(crate) struct EntityShape {
     pub(crate) model: Option<String>,
     /// Whether it has brushes.
     pub(crate) brush: bool,
+    /// Its classname, when it has one (P7-08).
+    pub(crate) classname: Option<String>,
     /// Its `targetname`, when it has one.
     pub(crate) targetname: Option<String>,
     /// The values of the keys it fires entities by (MAP-8.8).
@@ -249,6 +252,35 @@ fn entity_lump(entities: &[&qs_map::Entity]) -> Vec<u8> {
     lump
 }
 
+impl Scene {
+    /// The box around `entities` and `brushes`, a box of selected brushes' corners; none when
+    /// neither holds anything drawn.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "a brush corner of a map is well inside f32's range"
+    )]
+    pub(crate) fn bounds_of(
+        &self,
+        entities: impl Iterator<Item = EntityIndex>,
+        brushes: Option<[[f64; 3]; 2]>,
+    ) -> Option<[[f32; 3]; 2]> {
+        let boxes = entities
+            .filter_map(|entity| self.entities.iter().find(|s| s.index == entity))
+            .map(|shape| shape.bounds)
+            .chain(brushes.map(|bounds| bounds.map(|corner| corner.map(|c| c as f32))));
+        boxes.reduce(|[min, max], [low, high]| {
+            [
+                [min[0].min(low[0]), min[1].min(low[1]), min[2].min(low[2])],
+                [
+                    max[0].max(high[0]),
+                    max[1].max(high[1]),
+                    max[2].max(high[2]),
+                ],
+            ]
+        })
+    }
+}
+
 /// One brush as drawn, picked and edited (P6-08).
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct BrushShape {
@@ -295,7 +327,7 @@ impl FaceShape {
 impl BrushShape {
     /// How far along the ray from `start` along `direction` it enters the brush's solid, 0
     /// when it starts inside; none when it misses.
-    fn entered(&self, start: [f32; 3], direction: [f32; 3]) -> Option<f32> {
+    pub(crate) fn entered(&self, start: [f32; 3], direction: [f32; 3]) -> Option<f32> {
         self.entered_by(start, direction, self.planes.iter().copied())
             .map(|(t, _)| t)
     }
@@ -492,6 +524,7 @@ impl Scene {
                 color: class.and_then(|c| c.color),
                 model: class.and_then(|c| c.model.clone()),
                 brush: entity.is_brush_entity(),
+                classname: entity.classname().map(text),
                 targetname: entity
                     .value(TARGETNAME.as_bytes())
                     .filter(|name| !name.is_empty())
@@ -593,6 +626,22 @@ impl Scene {
             .filter_map(|shape| shape.entered(start, direction).map(|t| (t, shape)))
             .min_by(|a, b| a.0.total_cmp(&b.0))
             .map(|(_, shape)| (shape.entity, shape.brush))
+    }
+
+    /// How far along the ray from `start` along unit `direction` it first enters a brush none
+    /// of whose entities is in `hidden`.
+    #[must_use]
+    pub(crate) fn hit_distance(
+        &self,
+        start: [f32; 3],
+        direction: [f32; 3],
+        hidden: &BTreeSet<EntityIndex>,
+    ) -> Option<f32> {
+        self.brushes
+            .iter()
+            .filter(|shape| !hidden.contains(&shape.entity))
+            .filter_map(|shape| shape.entered(start, direction))
+            .min_by(f32::total_cmp)
     }
 
     /// The face the ray from `start` along `direction` enters first, of a brush none of whose
@@ -709,21 +758,29 @@ pub(crate) fn start_camera(document: &MapDocument, scene: &Scene) -> Camera {
     camera
 }
 
-/// The wireframe of each class model the project's folder or the game holds: the edges of its
-/// first frame's triangles (MDL-4, MDL-5).
+/// The class models the project's folder or the game holds, by name.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ClassModels {
+    /// Each one's wireframe: the edges of its first frame's triangles (MDL-4, MDL-5).
+    pub(crate) lines: HashMap<String, Vec<Line>>,
+    /// Each one's file, which the textured and lit views draw with its skin (P7-08).
+    pub(crate) files: HashMap<String, Arc<[u8]>>,
+}
+
+/// The models of `classes` the project's folder or the game holds.
 #[must_use]
 pub(crate) fn load_models(
     classes: &HashMap<String, ClassLook>,
     project: Option<&Path>,
     game: Option<&Path>,
-) -> HashMap<String, Vec<Line>> {
+) -> ClassModels {
     let vfs = game.and_then(|base| {
         let base = base.to_string_lossy().into_owned();
         Vfs::new(StdFs, &["-basedir", base.as_str()], ".").ok()
     });
-    let mut models = HashMap::new();
+    let mut models = ClassModels::default();
     for model in classes.values().filter_map(|class| class.model.as_ref()) {
-        if models.contains_key(model) {
+        if models.lines.contains_key(model) {
             continue;
         }
         let bytes = project
@@ -733,8 +790,11 @@ pub(crate) fn load_models(
                     .and_then(|vfs| vfs.load(model.as_bytes()).ok().flatten())
                     .map(qs_vfs::LoadedFile::into_bytes)
             });
-        if let Some(lines) = bytes.as_deref().and_then(mdl_lines) {
-            models.insert(model.clone(), lines);
+        if let Some(bytes) = bytes
+            && let Some(lines) = mdl_lines(&bytes)
+        {
+            models.lines.insert(model.clone(), lines);
+            models.files.insert(model.clone(), Arc::from(bytes));
         }
     }
     models

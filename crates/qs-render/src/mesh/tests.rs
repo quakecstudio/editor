@@ -1239,3 +1239,14 @@ fn light_point_ignores_the_dynamic_lights() {
     let after = light_point(&bsp, &LightStyles::unset(), [8.0, 8.0, 10.0]);
     assert_eq!((before, after), (50, 50));
 }
+
+// No spec statement: P7-08: a WAD's texture palette becomes the renderer's with the same 256
+// colours, as gfx/palette.lmp's bytes read
+#[test]
+fn a_wad_palette_is_the_same_colours() {
+    let bytes: Vec<u8> = (0..768_u32).map(|i| (i % 251) as u8).collect();
+    use qs_wad::texture::Palette as WadPalette;
+
+    let wad = WadPalette::from_lmp(&bytes).unwrap();
+    assert_eq!(Palette::from(&wad), Palette::read(&bytes).unwrap());
+}

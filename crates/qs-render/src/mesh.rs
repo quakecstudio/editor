@@ -22,6 +22,7 @@
 
 use qs_bsp::{Bsp, Face, Lit, SURF_DRAWSKY, SURF_DRAWTURB, Texinfo};
 use qs_client::DynamicLight;
+use qs_wad::texture::{Palette as WadPalette, PaletteIndex};
 
 use crate::alias::rotate_for_entity;
 use crate::look::Look;
@@ -85,6 +86,17 @@ impl core::error::Error for MeshError {}
 /// The 256 colours texture pixels index (REND-1.8).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Palette([[u8; 3]; 256]);
+
+impl From<&WadPalette> for Palette {
+    /// The same colours as a WAD's texture palette, as `gfx/palette.lmp` holds them.
+    fn from(palette: &WadPalette) -> Self {
+        let mut colours = Self([[0; _]; _]);
+        for (colour, index) in colours.0.iter_mut().zip(0..=u8::MAX) {
+            *colour = palette.colour(PaletteIndex::new(index));
+        }
+        colours
+    }
+}
 
 impl Palette {
     /// The palette `gfx/palette.lmp` holds: 256 red, green and blue triples.

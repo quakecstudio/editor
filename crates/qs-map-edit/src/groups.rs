@@ -36,6 +36,9 @@ pub const MAP_LAYERS: &str = "map.layers";
 /// The id of `map.export`.
 pub const MAP_EXPORT: &str = "map.export";
 
+/// The key a member names its layer by, TrenchBroom's `_tb_layer` (MAP-9.2).
+pub const LAYER_KEY: &str = "_tb_layer";
+
 /// The key holding a layer's or group's name (MAP-9.1).
 pub(super) const NAME_KEY: &[u8] = b"_tb_name";
 
@@ -155,11 +158,26 @@ pub struct ExportParams {
     pub path: PathBuf,
 }
 
+/// A layer's `_tb_id`, which a member names in `_tb_layer` (MAP-9.1, MAP-9.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(transparent)]
+pub struct LayerId(u64);
+
+impl LayerId {
+    /// The id as `_tb_layer` writes it.
+    #[must_use]
+    pub fn text(self) -> String {
+        self.0.to_string()
+    }
+}
+
 /// One layer, as `map.layers` lists it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct LayerInfo {
     /// Its own entity.
     pub entity: EntityIndex,
+    /// Its `_tb_id`, which a member names in `_tb_layer` (P7-08).
+    pub id: LayerId,
     /// Its `_tb_name`.
     pub name: String,
     /// Hidden in the editor.
@@ -218,7 +236,7 @@ impl MapDocument {
     }
 
     /// The entities of `file` that are locked: by `map.lock`, or in a locked layer.
-    fn locked_in(&self, file: &MapFile) -> BTreeSet<EntityIndex> {
+    pub(super) fn locked_in(&self, file: &MapFile) -> BTreeSet<EntityIndex> {
         let mut locked = Self::in_layers(file, LayerOption::Locked);
         locked.extend(self.view.locked.iter().copied());
         locked
@@ -346,6 +364,7 @@ impl MapDocument {
                     let own = place;
                     Some(LayerInfo {
                         entity: EntityIndex::new(place),
+                        id: LayerId(id.get()),
                         name: entity
                             .value(NAME_KEY)
                             .map(|name| String::from_utf8_lossy(name).into_owned())

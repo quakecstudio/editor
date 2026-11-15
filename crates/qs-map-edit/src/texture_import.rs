@@ -17,7 +17,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::textures::{Game, game_palette};
-use crate::{EntityIndex, MapSource, edit_map};
+use crate::{EntityIndex, MapEdited, MapSource, edit_map};
 use crate::{HasMap, MapEditError, MapProject};
 
 /// The id of `texture.import`.
@@ -308,6 +308,70 @@ impl<C: HasMap + 'static> Command<C> for TextureImport {
                 .map_err(|error| MapEditError::Map { path: map, error })
         })?;
         Ok(Outcome::undoable(imported, step))
+    }
+}
+
+/// The id of the command that adds a WAD file to the map's list (P7-08).
+pub const MAP_ADD_WAD: &str = "map.add_wad";
+
+/// The parameters of `map.add_wad`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AddWadParams {
+    /// The WAD file.
+    pub path: PathBuf,
+}
+
+/// `map.add_wad`.
+pub(super) struct AddWad;
+
+impl<C: HasMap + 'static> Command<C> for AddWad {
+    const ID: &'static str = MAP_ADD_WAD;
+    const SUMMARY: &'static str = "Adds a WAD file to the open map's list in its world's `wad` \
+        or `_wad` key, by its path from the map's folder when it is under it, as TrenchBroom \
+        adds a WAD dropped on its window; one listed already is not listed again.";
+    type Params = AddWadParams;
+    type Output = MapEdited;
+    type Error = MapEditError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: AddWadParams,
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
+        let document = context.map_store().map().ok_or(MapEditError::NoMap)?;
+        let map = document.path().to_path_buf();
+        let folder = map.parent().map(Path::to_path_buf).unwrap_or_default();
+        let named = params.path.strip_prefix(&folder).unwrap_or(&params.path);
+        let named = named.to_string_lossy().replace('\\', "/");
+        let world = document
+            .file()
+            .entities
+            .first()
+            .ok_or(MapEditError::NoMap)?;
+        let key = WAD_KEYS
+            .into_iter()
+            .find(|key| world.value(key).is_some_and(|value| !value.is_empty()))
+            .unwrap_or(b"wad");
+        let listed = String::from_utf8_lossy(world.value(key).unwrap_or_default()).into_owned();
+        let added = MapEdited {
+            entity: Some(EntityIndex::WORLD),
+        };
+        if listed.split(WAD_SEPARATOR).any(|wad| wad == named) {
+            return Ok(Outcome::outside_history(added));
+        }
+        let value = if listed.trim().is_empty() {
+            named
+        } else {
+            format!("{listed}{WAD_SEPARATOR}{named}")
+        };
+        let ((), step) = edit_map(context, |document| {
+            document
+                .entity_mut(EntityIndex::WORLD)?
+                .set(key, value.as_bytes())
+                .map_err(|error| MapEditError::Map { path: map, error })
+        })?;
+        Ok(Outcome::undoable(added, step))
     }
 }
 

@@ -452,6 +452,31 @@ impl Entity {
         }
     }
 
+    /// The link id of this group, its `_tb_linked_group_id` when not blank (MAP-9.5).
+    #[must_use]
+    pub fn link_id(&self) -> Option<String> {
+        self.value(LINK_KEY)
+            .filter(|id| !id.is_empty())
+            .map(|id| String::from_utf8_lossy(id).into_owned())
+    }
+
+    /// Links this group to every group whose link id is `id`, or unlinks it, its
+    /// transformation dropped with the link (MAP-9.5, P7-08).
+    ///
+    /// # Errors
+    ///
+    /// As [`Entity::set`].
+    pub fn set_link_id(&mut self, id: Option<&str>) -> Result<(), MapError> {
+        match id {
+            Some(id) => self.set(LINK_KEY, id.as_bytes()),
+            None => {
+                self.remove(LINK_KEY);
+                self.remove(TRANSFORMATION_KEY);
+                Ok(())
+            }
+        }
+    }
+
     /// The layer this entity names in `_tb_layer` (MAP-9.2).
     #[must_use]
     pub fn layer(&self) -> Option<ContainerId> {

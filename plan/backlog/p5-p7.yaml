@@ -2009,3 +2009,30 @@ groups:
     - 'VoiceOver reads every control of the window, the map editor and its tools by its name and role, and Accessibility Inspector''s audit reports no missing label; each miss is filed as a type:bug'
     verify:
     - The recorded pass on the issue
+  - key: L-20
+    title: A keyboard shortcut for every command, and a command line to drive them
+    labels:
+    - L7-ui
+    - area:editor
+    - type:feature
+    size: L
+    reqs:
+    - UI-23
+    - UI-21
+    - MAP-20
+    summary: |
+      Justin, 2026-11-15: every command gets a keyboard shortcut. Where TrenchBroom has a shortcut for the same action, ours is TrenchBroom's; otherwise we choose our own. AutoCAD is the model for the rest: its 3D view controls and its command window let most of the program be driven from the keyboard, and QuakeC Studio should do the same, over the one command registry the UI, CLI, agent and MCP share.
+    depends:
+    - P4-37
+    deliverable:
+    - 'apps/desktop keymap: a default shortcut for every command a person runs from the window, TrenchBroom''s where its app/TrenchBroom/src/ui/ActionManager.cpp at TrenchBroom/TrenchBroom@8f329f11e65e3d21b355a42bcae199cb3e4e0812 binds the same action, our own otherwise, each with the platform''s modifier (Cmd on macOS, Ctrl elsewhere)'
+    - 'docs/keymap.md, generated from the registry and the keymap by cargo xtask keymap as docs/commands.md is: every command, its shortcut and context, and the TrenchBroom action it matches'
+    - 'A command line docked in the window, as AutoCAD''s command window: typing a command id or a short alias runs it, asking for each parameter in turn from the command''s schema with its default, with completion and history; a point, entity, brush or face asked for can be typed or picked in the map view'
+    - 'Keyboard control of the map views: orbit, pan, zoom, the standard views (top, bottom, front, back, left, right, isometric) and saved views, from keys and from the command line'
+    acceptance:
+    - 'A test over the registry fails when a command run from the window has no default shortcut, or when two shortcuts collide in one context'
+    - 'Every shortcut for an action TrenchBroom also has equals TrenchBroom''s default in ActionManager.cpp at the pinned commit, each listed in docs/keymap.md with TrenchBroom''s action name; each deliberate difference (Cmd+B compiles here) is listed with its reason'
+    - 'Every command runs from the command line with its parameters asked for in turn, checked by a kittest test over the registry'
+    - 'The map editor''s 3D view turns to each standard view and orbits, pans and zooms from the keyboard alone, in kittest tests'
+    verify:
+    - 'kittest tests; cargo xtask keymap --check in CI; docs/keymap.md reviewed against ActionManager.cpp'

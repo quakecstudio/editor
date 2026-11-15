@@ -8,6 +8,7 @@
 
 use eframe::egui::{self, Ui};
 use qs_map::MAP_MAX_CHAMFER_FACES;
+use qs_map_edit::ExtrudeMode;
 use qs_map_edit::{Axis, BrushIndex, EntityIndex};
 
 use super::{BrushAction, BrushTools};
@@ -208,7 +209,12 @@ impl BrushTools {
         let fields = &mut self.fields;
         ui.horizontal_wrapped(|ui| {
             if ui.button(Text::MapExtrude.get()).clicked() {
-                actions.push(BrushAction::Extrude(face, fields.extrude, lock));
+                actions.push(BrushAction::Extrude(
+                    face,
+                    fields.extrude,
+                    lock,
+                    ExtrudeMode::Extrude,
+                ));
             }
             ui.add(egui::DragValue::new(&mut fields.extrude).speed(LENGTH_STEP));
             if ui.button(Text::MapSplitFace.get()).clicked() {

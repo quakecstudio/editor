@@ -15,13 +15,15 @@ use eframe::egui::{
     self, Color32, Key, Modifiers, Pos2, Rect, RichText, Sense, Stroke, Ui, WidgetInfo, WidgetType,
 };
 use eframe::egui_wgpu::RenderState;
-use qs_layout::{MapPanes, MapShading};
-use qs_map_edit::ClassInfo;
+use qs_layout::{
+    CameraSpeed, Direction, Layout, MapCamera, MapCameraParams, MapFov, MapGrid, MapPanes,
+    MapShading,
+};
 use qs_map_edit::MapReport;
 use qs_map_edit::texture_import::DitherChoice;
 use qs_map_edit::textures::TextureSources;
-#[cfg(test)]
 use qs_map_edit::uv::FaceRef;
+use qs_map_edit::{Axis, BrushIndex, ClassInfo, LayerId};
 use qs_map_edit::{
     EntityIndex, EntityKeys, FlagChange, Keep, LayerInfo, MapDocument, MapFound, MapIssue,
     MapRevision, MapSearchParams, OutlineRow, Prefab, QuickFix,
@@ -32,7 +34,7 @@ use qs_workbench::map_filter::{GameMode, Skill};
 use crate::help::{self, Topic};
 use crate::map_browser::{ClassDrag, EntityBrowser};
 use crate::map_fields::{Field, spawnflags};
-use crate::map_groups::{GroupAction, layers_ui, overview_keys, selection_ui};
+use crate::map_groups::{GroupAction, Grouping, layers_ui, overview_keys, selection_ui};
 use crate::map_issues::IssueBrowser;
 use crate::map_leaks::LeakView;
 use crate::map_outline::{OutlineAction, OutlineView};
@@ -41,10 +43,11 @@ use crate::map_prefabs::{PrefabBrowser, PrefabDrag};
 use crate::map_profiles::{ProfileAction, ProfileView};
 use crate::map_review::{ReviewAction, ReviewView};
 use crate::map_scene::{ClassLook, Line, LinkView, SPAWNFLAGS, Scene, load_models, start_camera};
+use crate::map_select::{Picked, Region};
 use crate::map_shading::{ShadedView, TRIGGER, TexturedFrom};
 use crate::map_tools::{BrushAction, BrushTools, MapTool, PickMode};
 use crate::shell::name_field;
-use crate::strings::{Text, also_selected, panes_text};
+use crate::strings::{Text, also_selected, panes_text, select_all_of};
 use crate::texture_browser::TextureBrowser;
 use crate::theme::{Theme, Token};
 
@@ -57,7 +60,6 @@ const PAN: f32 = 1.0;
 /// Map units a second the fly keys move the camera (TrenchBroom: W, S, A, D, Q, X).
 const FLY_SPEED: f32 = 512.0;
 /// TrenchBroom's grid, `Grid(4)`: 2^4 units, the step the arrow keys move a selection.
-pub(crate) const GRID: f64 = 16.0;
 /// TrenchBroom turns a selection by a right angle (`half_pi`).
 const QUARTER_TURN: f64 = 90.0;
 /// The key editor's columns: the key, its value and its buttons.
@@ -108,8 +110,8 @@ pub enum MapAction {
     Select(Option<EntityIndex>),
     /// Move an entity by map units.
     Move(EntityIndex, [f64; 3]),
-    /// Turn an entity by degrees about the vertical.
-    Rotate(EntityIndex, f64),
+    /// Flip or turn the selection (P7-08).
+    Arrange(Arrange),
     /// Delete an entity.
     Delete(EntityIndex),
     /// Duplicate an entity.
@@ -129,6 +131,10 @@ pub enum MapAction {
     Group(GroupAction),
     /// Move an entity or group into a layer or group, the world for the default layer (P5-16).
     MoveTo(EntityIndex, EntityIndex),
+    /// What the view's context menu asked that no other action does (P7-08).
+    Menu(MenuAction),
+    /// Add a WAD file to the map's `wad` key (P7-08).
+    AddWad(std::path::PathBuf),
     /// Remove a key of an entity.
     RemoveKey(EntityIndex, String),
     /// Save the map.
@@ -139,10 +145,8 @@ pub enum MapAction {
     Compare,
     /// Create, cut, reshape, subtract, merge or delete brushes (P6-08).
     Brush(BrushAction),
-    /// Split the map view into other panes (P6-09).
-    Panes(MapPanes),
-    /// Draw the 3D pane as lines, textured or lit (P7-13).
-    Shading(MapShading),
+    /// Change how the map view looks: its panes, shading, grid or camera.
+    View(ViewSetting),
     /// Import the PNG at the path as a texture of the name (P6-16).
     ImportTexture(std::path::PathBuf, String, DitherChoice),
     /// Compile the map fast and play it with the player at the 3D view's camera (P6-12).
@@ -153,12 +157,16 @@ pub enum MapAction {
     ListPrefabs,
     /// Copy the prefab at the path into the map at an origin (P6-23).
     PlacePrefab(std::path::PathBuf, [f64; 3]),
+    /// Copy the selection to the clipboard, or paste map text (P7-08).
+    Clipboard(ClipboardAction),
     /// List the map's issues (P6-19).
     CheckIssues,
     /// Apply an issue's quick fix (P6-19).
     Fix(QuickFix),
     /// Search the map's entities and brushes (P6-19).
     Find(MapSearchParams),
+    /// Select what a search found, in place of the selection (P7-08).
+    SelectFound(MapFound),
     /// Choose or run a compile profile, show the portals or restore a backup (P6-20).
     Profile(ProfileAction),
     /// Accept or reject map edits waiting for review (P6-21).
@@ -292,6 +300,8 @@ pub struct MapEditor {
     /// The classnames, sorted, as the browser lists them.
     names: Vec<String>,
     models: HashMap<String, Vec<Line>>,
+    /// The class models' files, which the textured and lit views draw (P7-08).
+    model_files: HashMap<String, std::sync::Arc<[u8]>>,
     browser: EntityBrowser,
     /// The selected entity's keys, as `map.entity` gave them.
     keys: Option<(EntityIndex, EntityKeys)>,
@@ -331,8 +341,19 @@ pub struct MapEditor {
     layers: Vec<LayerInfo>,
     /// The map outline in the left panel (P5-16).
     outline: OutlineView,
-    /// The entity to frame in the view on its next frame, chosen in the outline.
-    frame: Option<EntityIndex>,
+    /// What to frame in the view on its next frame: an entity chosen in the outline, or the
+    /// selection (Cmd+U).
+    frame: Option<Framing>,
+    /// The point an Alt+right-drag orbits the camera about, while it lasts (P7-08).
+    orbit: Option<[f32; 3]>,
+    /// Where the view's context menu last opened (P7-08).
+    menu_at: Option<Pos2>,
+    /// The layer new brushes and entities go into, or the default layer (P7-08).
+    current_layer: Option<EntityIndex>,
+    /// The camera settings, the layout's (P7-08).
+    camera_settings: MapCamera,
+    /// How far Shift and the wheel have zoomed the 3D view in (P7-08).
+    zoom: ViewZoom,
     /// Where each entity's centre was drawn in the last frame, where a link dragged from it
     /// starts.
     centres: Vec<(EntityIndex, Pos2)>,
@@ -428,7 +449,9 @@ impl MapEditor {
             .collect();
         self.names = self.classes.keys().cloned().collect();
         self.names.sort();
-        self.models = load_models(&self.classes, project, game);
+        let models = load_models(&self.classes, project, game);
+        self.models = models.lines;
+        self.model_files = models.files;
         self.built = None;
     }
 
@@ -469,6 +492,18 @@ impl MapEditor {
         self.camera.as_ref()
     }
 
+    /// How many entities are selected besides the document's own selection, for tests.
+    #[cfg(test)]
+    pub(crate) fn also_count(&self) -> usize {
+        self.also.len()
+    }
+
+    /// How many brushes are selected, for tests.
+    #[cfg(test)]
+    pub(crate) fn chosen_count(&self) -> usize {
+        self.tools.chosen().len()
+    }
+
     /// Puts the 3D view's camera at `camera`: where a script or a test looks from.
     pub(crate) const fn set_camera(&mut self, camera: Camera) {
         self.camera = Some(camera);
@@ -502,7 +537,7 @@ impl MapEditor {
         for action in self.outline.ui(ui, theme, selected) {
             match action {
                 OutlineAction::Choose(entity) => {
-                    self.frame = Some(entity);
+                    self.frame = Some(Framing::Entity(entity));
                     self.also.clear();
                     actions.push(MapAction::Select(Some(entity)));
                 }
@@ -682,8 +717,11 @@ impl MapEditor {
         ui: &mut Ui,
         theme: &Theme,
         document: &MapDocument,
-        (layout, shading, state): (MapPanes, MapShading, Option<&RenderState>),
+        (settings, state): (&Layout, Option<&RenderState>),
     ) -> Vec<MapAction> {
+        let (layout, shading) = (settings.map_panes, settings.map_shading);
+        self.tools.grid = settings.map_grid;
+        self.camera_settings = settings.map_camera;
         // The tab's own width, which the toolbar wraps within and the view keeps to, so a long
         // toolbar never widens the view under the Properties panel.
         let bounds = ui.available_rect_before_wrap();
@@ -731,7 +769,19 @@ impl MapEditor {
         });
         browser_ui.separator();
         match self.bottom {
-            BottomTab::Textures => self.textures.body(&mut browser_ui, theme),
+            BottomTab::Textures => {
+                self.textures.body(&mut browser_ui, theme);
+                if let Some(path) = self.textures.take_dropped_wad() {
+                    actions.push(MapAction::AddWad(path));
+                }
+                if let Some((from, to)) = self.textures.take_replace() {
+                    actions.push(MapAction::Brush(BrushAction::ReplaceTexture(
+                        from,
+                        to,
+                        self.tools.chosen().to_vec(),
+                    )));
+                }
+            }
             BottomTab::Entities => self.browser.body(
                 &mut browser_ui,
                 theme,
@@ -763,7 +813,7 @@ impl MapEditor {
             self.tools.toolbar(ui);
             ui.separator();
             if let Some(shading) = ShadedView::toolbar(ui, shading) {
-                actions.push(MapAction::Shading(shading));
+                actions.push(MapAction::View(ViewSetting::Shading(shading)));
             }
             ui.separator();
             // The pickers keep egui's combo width and cut a long choice short, so a row wraps
@@ -780,13 +830,32 @@ impl MapEditor {
                                 .selectable_label(layout == choice, panes_text(choice).get())
                                 .clicked()
                             {
-                                actions.push(MapAction::Panes(choice));
+                                actions.push(MapAction::View(ViewSetting::Panes(choice)));
                             }
                         }
                     });
             name_field(ui, &panes.response, Text::MapPanesPicker);
             // A choice cut short is read whole on hover.
             panes.response.on_hover_text(panes_text(layout).get());
+            ui.separator();
+            ui.label(Text::MapGrid.get());
+            let grid = self.tools.grid;
+            let picked =
+                egui::ComboBox::from_id_salt(ui.id().with(core::any::TypeId::of::<MapGrid>()))
+                    .width(combo)
+                    .selected_text(grid.to_string())
+                    .show_ui(ui, |ui| {
+                        for choice in MapGrid::all() {
+                            if ui
+                                .selectable_label(grid == choice, choice.to_string())
+                                .clicked()
+                            {
+                                actions.push(MapAction::View(ViewSetting::Grid(choice)));
+                            }
+                        }
+                    });
+            name_field(ui, &picked.response, Text::MapGridPicker);
+            picked.response.on_hover_text(Text::MapGridPicker.get());
             ui.separator();
             ui.label(Text::MapLinks.get());
             ui.selectable_value(
@@ -895,7 +964,7 @@ impl MapEditor {
             (shading, state),
             document,
             (&self.scene, from, &unseen),
-            self.textures.sources(),
+            (self.textures.sources(), &self.model_files),
         );
         let camera = self
             .camera
@@ -907,13 +976,19 @@ impl MapEditor {
             ui.ctx().request_repaint();
         }
         let rect = ui.available_rect_before_wrap();
-        if let Some(entity) = self.frame.take()
-            && let Some(shape) = self.scene.entities.iter().find(|s| s.index == entity)
-        {
-            let aspect = rect.width() / rect.height().max(1.0);
-            camera.frame(shape.bounds, aspect, FRAME_MARGIN);
-        }
         let selected = document.selected();
+        let framed = match self.frame.take() {
+            Some(Framing::Entity(entity)) => self.scene.bounds_of(core::iter::once(entity), None),
+            Some(Framing::Selection) => self.scene.bounds_of(
+                selected.into_iter().chain(self.also.iter().copied()),
+                self.tools.bounds(&self.scene),
+            ),
+            None => None,
+        };
+        if let Some(bounds) = framed {
+            let aspect = rect.width() / rect.height().max(1.0);
+            camera.frame(bounds, aspect, FRAME_MARGIN);
+        }
         if selected.is_none() {
             self.also.clear();
         }
@@ -958,6 +1033,11 @@ impl MapEditor {
         if response.clicked() || response.secondary_clicked() {
             response.request_focus();
         }
+        if response.secondary_clicked() {
+            self.menu_at = response
+                .interact_pointer_pos()
+                .or_else(|| ui.ctx().pointer_latest_pos());
+        }
         let scroll = if response.hovered() {
             ui.input(|i| i.smooth_scroll_delta.y)
         } else {
@@ -969,15 +1049,78 @@ impl MapEditor {
         let projection = match pane {
             Pane::Perspective => {
                 let camera = self.camera.get_or_insert(start);
+                // TrenchBroom's orbit: Alt with the right button turns about the point under
+                // the pointer where the drag began, else 256 units ahead along its ray
+                // (`Camera::DefaultPointDistance`).
+                if response.drag_started_by(egui::PointerButton::Secondary) {
+                    let at = ui.input(|i| i.pointer.press_origin());
+                    self.orbit = at.filter(|_| ui.input(|i| i.modifiers.alt)).map(|at| {
+                        let (from, way) = Projection::perspective(*camera, area).ray(at);
+                        let t = self
+                            .scene
+                            .hit_distance(from, way, hidden)
+                            .unwrap_or(ORBIT_DISTANCE);
+                        [0, 1, 2].map(|i| {
+                            from.get(i).copied().unwrap_or_default()
+                                + way.get(i).copied().unwrap_or_default() * t
+                        })
+                    });
+                }
                 if response.dragged_by(egui::PointerButton::Secondary) {
                     let drag = response.drag_delta();
-                    camera.turn(Degrees::new(-drag.x * TURN), Degrees::new(-drag.y * TURN));
+                    let look = TURN * self.camera_settings.look_speed.factor();
+                    let tilt = look * self.camera_settings.look_vertical.sign();
+                    let (yaw, pitch) = (Degrees::new(-drag.x * look), Degrees::new(-drag.y * tilt));
+                    match self.orbit {
+                        Some(centre) => camera.orbit(centre, yaw, pitch),
+                        None => camera.turn(yaw, pitch),
+                    }
+                }
+                if response.drag_stopped() {
+                    self.orbit = None;
                 }
                 if response.dragged_by(egui::PointerButton::Middle) {
                     let drag = response.drag_delta();
-                    camera.travel(0.0, -drag.x * PAN, drag.y * PAN);
+                    let pan = PAN * self.camera_settings.pan_speed.factor();
+                    camera.travel(0.0, -drag.x * pan, drag.y * pan);
                 }
-                camera.travel(scroll * TRAVEL, 0.0, 0.0);
+                // Shift and the wheel zoom the view for now, as TrenchBroom's; Cmd and the wheel
+                // drill the brush selection, a notch a step (the raw scroll, not egui's smoothed
+                // one); the wheel alone travels.
+                let notch: f32 = ui.input(|i| {
+                    i.events
+                        .iter()
+                        .filter_map(|event| match event {
+                            egui::Event::MouseWheel { delta, .. } => Some(delta.y),
+                            _ => None,
+                        })
+                        .sum()
+                });
+                let drilled = notch.abs() > 0.0
+                    && ui.input(|i| i.modifiers.command)
+                    && response.hover_pos().is_some_and(|at| {
+                        let ray = Projection::perspective(*camera, area).ray(at);
+                        self.tools.drill(&self.scene, ray, notch, hidden)
+                    });
+                let held_command = ui.input(|i| i.modifiers.command);
+                if drilled || held_command {
+                    // Cmd and the wheel never travel.
+                } else if ui.input(|i| i.modifiers.shift) {
+                    // egui turns a vertical scroll with Shift held into a horizontal one.
+                    let across = if response.hovered() {
+                        ui.input(|i| i.smooth_scroll_delta.x)
+                    } else {
+                        0.0
+                    };
+                    self.zoom = self.zoom.scrolled(scroll + across);
+                } else {
+                    camera.travel(
+                        scroll * TRAVEL * self.camera_settings.wheel.sign(),
+                        0.0,
+                        0.0,
+                    );
+                }
+                camera.fov_x = self.zoom.fov(self.camera_settings.fov);
                 Projection::perspective(*camera, area)
             }
             Pane::Plan(plan) => {
@@ -985,13 +1128,23 @@ impl MapEditor {
                     .plans
                     .entry(plan)
                     .or_insert_with(|| PlanCamera::new(plan, start.origin));
+                let before = *view;
                 if response.dragged_by(egui::PointerButton::Secondary)
                     || response.dragged_by(egui::PointerButton::Middle)
                 {
                     view.pan(response.drag_delta());
                 }
                 view.zoom(scroll);
-                Projection::plan(plan, *view, area)
+                let leader = *view;
+                // The other 2D views follow this one, linked as TrenchBroom links them.
+                if leader != before {
+                    for (other, camera) in &mut self.plans {
+                        if *other != plan {
+                            camera.follow(*other, leader, plan);
+                        }
+                    }
+                }
+                Projection::plan(plan, leader, area)
             }
         };
         let mut actions = Vec::new();
@@ -1000,30 +1153,63 @@ impl MapEditor {
             .chain(self.also.iter().copied())
             .collect();
         if response.has_focus() {
-            if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
-                self.picking = None;
+            if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape))
+                && self.picking.take().is_none()
+                && !self.tools.cancel()
+            {
+                self.also.clear();
+                actions.push(MapAction::Select(None));
             }
-            // The arrows move the selection, as TrenchBroom's do, not the keyboard focus.
+            // TrenchBroom's Focus on Selection, Ctrl+U (Cmd+U on macOS, as Qt maps Ctrl).
+            if ui.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::U)) {
+                self.frame = Some(Framing::Selection);
+                ui.ctx().request_repaint();
+            }
+            actions.extend(arrange_keys(
+                ui,
+                &self.camera,
+                &selection,
+                self.tools.chosen(),
+            ));
+            actions.extend(self.select_keys(ui, pane, &selection, hidden));
+            if let Some(grid) = grid_key(ui, self.tools.grid) {
+                actions.push(MapAction::View(ViewSetting::Grid(grid)));
+            }
+            // The arrows move the selection, as TrenchBroom's do, not the keyboard focus, and
+            // Escape cancels.
             ui.memory_mut(|memory| {
                 memory.set_focus_lock_filter(
                     response.id,
                     egui::EventFilter {
                         horizontal_arrows: true,
                         vertical_arrows: true,
+                        // Escape cancels in the view rather than taking its keyboard away.
+                        escape: true,
                         ..egui::EventFilter::default()
                     },
                 );
             });
+            // With faces picked, the arrows and Page Up and Down align their texture rather
+            // than move the selection, as TrenchBroom's.
+            actions.extend(self.tools.uv_keys(ui).map(MapAction::Brush));
+            // The overview and group keys first: Cmd+Shift+D is Create Linked Duplicate before
+            // Cmd+D can take it as Duplicate.
+            let chosen: Vec<EntityIndex> = selection.iter().copied().collect();
+            let world = self.world_brushes();
+            let grouping = self.grouping(&chosen, &world);
+            actions.extend(
+                overview_keys(ui, &chosen, grouping)
+                    .into_iter()
+                    .map(MapAction::Group),
+            );
             if pane == Pane::Perspective
                 && let Some(camera) = self.camera.as_mut()
             {
-                fly(ui, camera);
+                fly(ui, camera, self.camera_settings.fly_speed.factor());
                 if let Some(entity) = selected {
-                    actions.extend(selection_keys(ui, camera, entity));
+                    actions.extend(selection_keys(ui, camera, entity, self.tools.grid));
                 }
             }
-            let chosen: Vec<EntityIndex> = selection.iter().copied().collect();
-            actions.extend(overview_keys(ui, &chosen).into_iter().map(MapAction::Group));
             if ui.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::S)) {
                 actions.push(MapAction::Save);
             }
@@ -1098,7 +1284,7 @@ impl MapEditor {
         }
         let dropped_at = |at: Pos2| {
             let (start, direction) = ray(at);
-            let snap = |c: f32| (f64::from(c) / GRID).round() * GRID;
+            let snap = |c: f32| self.tools.grid.snap(f64::from(c));
             let distance = match pane {
                 Pane::Perspective => PLACE_DISTANCE,
                 // On the ground in the top view; on the line through the map's middle in the
@@ -1125,6 +1311,32 @@ impl MapEditor {
             && let Some(at) = pointer
         {
             actions.push(MapAction::PlacePrefab(path.clone(), dropped_at(at)));
+        }
+        // TrenchBroom's map view context menu (P7-08): grouping, brush entities, a point
+        // entity where the menu opened, the class of the selection, and layers.
+        let menu_at = self.menu_at.map(dropped_at);
+        actions.extend(self.context_menu(&response, selected, &selection, menu_at));
+        // TrenchBroom's Copy, Paste and Paste at Original Position (Cmd+C, Cmd+V, Cmd+Alt+V),
+        // which egui hands over as its copy and paste events while the view has the keyboard.
+        if response.has_focus() {
+            let (copy, pasted, original) = ui.input(|i| {
+                let copy = i.events.iter().any(|e| matches!(e, egui::Event::Copy));
+                let pasted = i.events.iter().find_map(|e| match e {
+                    egui::Event::Paste(text) => Some(text.clone()),
+                    _ => None,
+                });
+                (copy, pasted, i.modifiers.alt)
+            });
+            if copy {
+                actions.push(MapAction::Clipboard(ClipboardAction::Copy(
+                    self.tools.chosen().to_vec(),
+                    selection.iter().copied().collect(),
+                )));
+            }
+            if let Some(text) = pasted {
+                let at = (!original).then(|| dropped_at(pointer.unwrap_or(area.center())));
+                actions.push(MapAction::Clipboard(ClipboardAction::Paste(text, at)));
+            }
         }
         let painter = ui.painter_at(area);
         painter.rect_filled(area, 0.0, theme.color(Token::SurfaceViewport));
@@ -1199,7 +1411,14 @@ impl MapEditor {
                     projection.line(&painter, line, stroke);
                 }
             }
-            if let Some(lines) = shape.model.as_ref().and_then(|m| self.models.get(m)) {
+            // The textured and lit faces draw the model with its skin in place of its wireframe.
+            let skinned = |model: &&String| faces && self.model_files.contains_key(*model);
+            if let Some(lines) = shape
+                .model
+                .as_ref()
+                .filter(|model| !skinned(model))
+                .and_then(|m| self.models.get(m))
+            {
                 let (sin, cos) = shape.yaw.to_radians().sin_cos();
                 let place = |p: [f32; 3]| {
                     [
@@ -1223,7 +1442,41 @@ impl MapEditor {
         self.profiles.draw(&painter, &projection, theme);
         self.tools
             .draw(&painter, &projection, theme, &self.scene, pointer.map(ray));
+        // The pane with the keyboard is outlined, as TrenchBroom marks the focused viewport.
+        if response.has_focus() {
+            painter.rect_stroke(
+                area.shrink(FOCUS_WIDTH),
+                0.0,
+                Stroke::new(FOCUS_WIDTH, theme.color(Token::Focus)),
+                egui::StrokeKind::Inside,
+            );
+        }
+        // A compass in the pane's lower left corner, as TrenchBroom's: the map's x, y and z axes
+        // as the pane sees them, each with its letter.
+        let (cx, cy) = (area.left() + COMPASS_INSET, area.bottom() - COMPASS_INSET);
+        let centre = egui::pos2(cx, cy);
+        for (axis, token, letter) in COMPASS {
+            let way = projection.compass(axis);
+            let (dx, dy) = (way.x * COMPASS_LENGTH, way.y * COMPASS_LENGTH);
+            let colour = theme.color(token);
+            let end = egui::pos2(cx + dx, cy + dy);
+            painter.line_segment([centre, end], Stroke::new(2.0, colour));
+            if dx.hypot(dy) > COMPASS_LABEL_LEAST {
+                painter.text(
+                    egui::pos2(cx + dx * COMPASS_LABEL_OUT, cy + dy * COMPASS_LABEL_OUT),
+                    egui::Align2::CENTER_CENTER,
+                    letter.get(),
+                    egui::FontId::proportional(PANE_LABEL_SIZE),
+                    colour,
+                );
+            }
+        }
         if let Pane::Plan(_) = pane {
+            // The soft map bounds as a guide, in the 2D views as TrenchBroom draws them.
+            let bounds = Stroke::new(1.0, theme.color(Token::StatusWarn));
+            for line in box_lines(SOFT_BOUNDS) {
+                projection.line(&painter, line, bounds);
+            }
             painter.text(
                 egui::pos2(
                     area.left() + PANE_LABEL_INSET,
@@ -1248,7 +1501,6 @@ impl MapEditor {
     }
 
     /// Selects these faces for the UV editor, as Alt-clicks would.
-    #[cfg(test)]
     pub(crate) fn select_faces(&mut self, faces: &[FaceRef]) {
         for &face in faces {
             self.tools.select_face(face, &self.scene);
@@ -1284,6 +1536,25 @@ impl MapEditor {
                 actions.push(MapAction::PlayFromHere);
             }
         });
+        // P7-08: where the 3D camera stands, which a value typed moves it to, as TrenchBroom's
+        // Move Camera to... but always shown.
+        if let Some(camera) = &mut self.camera {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(Text::MapCamera.get());
+                for (axis, name) in camera.origin.iter_mut().zip(CAMERA_AXES) {
+                    let field = ui.add(egui::DragValue::new(axis).speed(1.0).max_decimals(1));
+                    name_field(ui, &field, name);
+                    field.on_hover_text(Text::MapCameraHelp.get());
+                }
+                // TrenchBroom's Reset camera zoom is Ctrl+Alt+Z, which is undo here (Cmd+Z with
+                // an extra Alt), so the zoom is put back from here.
+                if self.zoom != ViewZoom::default() && ui.button(Text::MapResetZoom.get()).clicked()
+                {
+                    self.zoom = ViewZoom::default();
+                }
+            });
+        }
+        actions.extend(self.camera_settings_ui(ui));
         actions.extend(self.review.properties(ui, theme));
         actions.extend(self.profiles.controls(ui, theme));
         self.leaks.properties(ui, theme, report);
@@ -1321,9 +1592,15 @@ impl MapEditor {
                 .into_iter()
                 .map(MapAction::Brush),
         );
-        actions.extend(selection_ui(ui, &chosen).into_iter().map(MapAction::Group));
+        let world = self.world_brushes();
+        let grouping = self.grouping(&chosen, &world);
         actions.extend(
-            layers_ui(ui, theme, &self.layers)
+            selection_ui(ui, &chosen, grouping)
+                .into_iter()
+                .map(MapAction::Group),
+        );
+        actions.extend(
+            layers_ui(ui, theme, &self.layers, &mut self.current_layer)
                 .into_iter()
                 .map(MapAction::Group),
         );
@@ -1463,7 +1740,7 @@ impl MapEditor {
 }
 
 /// Moves the camera while a fly key is held (TrenchBroom's `CameraFly*`).
-fn fly(ui: &Ui, camera: &mut Camera) {
+fn fly(ui: &Ui, camera: &mut Camera, speed: f32) {
     let (dt, keys) = ui.input(|i| {
         let held = |key| if i.key_down(key) { 1.0 } else { 0.0 };
         let forward = held(Key::W) - held(Key::S);
@@ -1472,40 +1749,574 @@ fn fly(ui: &Ui, camera: &mut Camera) {
         (i.stable_dt, [forward, right, up])
     });
     if keys.iter().any(|k: &f32| *k != 0.0) {
-        let step = FLY_SPEED * dt;
+        let step = FLY_SPEED * speed * dt;
         camera.travel(keys[0] * step, keys[1] * step, keys[2] * step);
         ui.ctx().request_repaint();
     }
 }
 
+/// The soft map bounds drawn as a guide in the 2D views (P7-08): TrenchBroom's for Quake, its
+/// `games/Quake/GameConfig.cfg`'s `"softMapBounds":"-4096 -4096 -4096 4096 4096 4096"`, where
+/// players, items and other entities can be.
+const SOFT_BOUNDS: [[f32; 3]; 2] = [[-4096.0; 3], [4096.0; 3]];
+
+/// The width of the outline around the pane with the keyboard, in points.
+const FOCUS_WIDTH: f32 = 2.0;
+
+/// How far ahead an orbit's centre is when nothing is under the pointer: TrenchBroom's
+/// `Camera::DefaultPointDistance`, 256 units.
+const ORBIT_DISTANCE: f32 = 256.0;
+
+/// The compass's axes: the map's x, y and z, in red, green and blue as TrenchBroom draws them,
+/// from the theme's error, ok and focus colours, each with its letter.
+const COMPASS: [([f32; 3], Token, Text); 3] = [
+    ([1.0, 0.0, 0.0], Token::StatusError, Text::CompassX),
+    ([0.0, 1.0, 0.0], Token::StatusOk, Text::CompassY),
+    ([0.0, 0.0, 1.0], Token::Focus, Text::CompassZ),
+];
+/// How far the compass's centre is from the pane's lower left corner, in points.
+const COMPASS_INSET: f32 = 36.0;
+/// How long an axis lying across the pane is drawn, in points.
+const COMPASS_LENGTH: f32 = 22.0;
+/// How far past an axis's end its letter is, as a share of its length.
+const COMPASS_LABEL_OUT: f32 = 1.35;
+/// The shortest an axis is drawn, in points, and still has its letter: one pointing at the
+/// viewer has none, so its letter does not cover the others.
+const COMPASS_LABEL_LEAST: f32 = 4.0;
+
+/// The camera position fields' names, x, y and z.
+const CAMERA_AXES: [Text; 3] = [Text::MapCameraX, Text::MapCameraY, Text::MapCameraZ];
+
+impl MapEditor {
+    /// The camera settings under the camera's place, folded at first: the field of view, the
+    /// speeds and the directions, each change a `view.map_camera` (P7-08).
+    fn camera_settings_ui(&self, ui: &mut Ui) -> Option<MapAction> {
+        let now = self.camera_settings;
+        let mut asked = None;
+        egui::CollapsingHeader::new(Text::MapCameraSettings.get())
+            .id_salt(core::any::TypeId::of::<MapCamera>())
+            .show(ui, |ui| {
+                let mut fov = now.fov.degrees();
+                let slider = egui::Slider::new(&mut fov, MapFov::MIN..=MapFov::MAX)
+                    .text(Text::MapCameraFov.get());
+                if ui.add(slider).changed()
+                    && let Ok(fov) = MapFov::try_from(fov)
+                {
+                    asked = Some(MapCameraParams {
+                        fov: Some(fov),
+                        ..MapCameraParams::default()
+                    });
+                }
+                for (speed, text, set) in [
+                    (now.look_speed, Text::MapCameraLookSpeed, SpeedOf::Look),
+                    (now.pan_speed, Text::MapCameraPanSpeed, SpeedOf::Pan),
+                    (now.fly_speed, Text::MapCameraFlySpeed, SpeedOf::Fly),
+                ] {
+                    let mut factor = speed.factor();
+                    let slider =
+                        egui::Slider::new(&mut factor, CameraSpeed::MIN..=CameraSpeed::MAX)
+                            .logarithmic(true)
+                            .text(text.get());
+                    if ui.add(slider).changed()
+                        && let Ok(speed) = CameraSpeed::try_from(factor)
+                    {
+                        asked = Some(set.params(speed));
+                    }
+                }
+                for (direction, text, wheel) in [
+                    (now.look_vertical, Text::MapCameraInvertLook, false),
+                    (now.wheel, Text::MapCameraInvertWheel, true),
+                ] {
+                    let mut inverted = direction == Direction::Inverted;
+                    if ui.checkbox(&mut inverted, text.get()).changed() {
+                        let direction = if inverted {
+                            Direction::Inverted
+                        } else {
+                            Direction::Normal
+                        };
+                        asked = Some(if wheel {
+                            MapCameraParams {
+                                wheel: Some(direction),
+                                ..MapCameraParams::default()
+                            }
+                        } else {
+                            MapCameraParams {
+                                look_vertical: Some(direction),
+                                ..MapCameraParams::default()
+                            }
+                        });
+                    }
+                }
+            });
+        asked.map(|params| MapAction::View(ViewSetting::Camera(params)))
+    }
+}
+
+/// What the view's context menu asks that no other action does (P7-08).
+#[derive(Clone, Debug, PartialEq)]
+pub enum MenuAction {
+    /// Make the world's brushes a brush entity of the class.
+    MakeBrushEntity(String, Vec<BrushIndex>),
+    /// Give a brush entity's brushes back to the world.
+    MakeStructural(EntityIndex),
+    /// Select these entities.
+    SelectAll(Vec<EntityIndex>),
+    /// Extract these entities of a linked group into new linked groups.
+    ExtractLinked(Vec<EntityIndex>),
+}
+
+/// A copy of the selection to the clipboard, or a paste of map text (P7-08).
+#[derive(Clone, Debug, PartialEq)]
+pub enum ClipboardAction {
+    /// Copy these brushes and entities as map text.
+    Copy(Vec<(EntityIndex, BrushIndex)>, Vec<EntityIndex>),
+    /// Paste the text with the middle of its floor at the point, or where it was.
+    Paste(String, Option<[f64; 3]>),
+}
+
+/// A change of how the map view looks, a `view.*` command of the layout.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ViewSetting {
+    /// Split the map view into other panes (P6-09).
+    Panes(MapPanes),
+    /// Draw the 3D pane as lines, textured or lit (P7-13).
+    Shading(MapShading),
+    /// Snap to this grid (P7-08).
+    Grid(MapGrid),
+    /// Change the camera settings (P7-08).
+    Camera(MapCameraParams),
+}
+
+/// Which of the camera's speeds a slider sets.
+#[derive(Clone, Copy, Debug)]
+enum SpeedOf {
+    /// A right-drag's turn.
+    Look,
+    /// A middle-drag's pan.
+    Pan,
+    /// The keys' flight.
+    Fly,
+}
+
+impl SpeedOf {
+    /// `view.map_camera`'s parameters setting this speed to `speed`.
+    fn params(self, speed: CameraSpeed) -> MapCameraParams {
+        let mut params = MapCameraParams::default();
+        match self {
+            Self::Look => params.look_speed = Some(speed),
+            Self::Pan => params.pan_speed = Some(speed),
+            Self::Fly => params.fly_speed = Some(speed),
+        }
+        params
+    }
+}
+
+/// How far Shift and the wheel have zoomed the 3D view in: a factor its field of view is
+/// divided by, 1 at first and again after Reset zoom (P7-08).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct ViewZoom(f32);
+
+impl ViewZoom {
+    /// The farthest in, eight times.
+    const MOST: f32 = 8.0;
+    /// The farthest out, the field of view as set.
+    const LEAST: f32 = 1.0;
+    /// How much a point of scroll zooms, as a power of e per point.
+    const RATE: f32 = 0.005;
+
+    /// Zoomed by `scroll` points: in for a positive one, held within 1 to 8 times.
+    fn scrolled(self, scroll: f32) -> Self {
+        Self((self.0 * (scroll * Self::RATE).exp()).clamp(Self::LEAST, Self::MOST))
+    }
+
+    /// The field of view across, `fov` narrowed by the zoom.
+    fn fov(self, fov: MapFov) -> Degrees {
+        Degrees::new(fov.degrees() / self.0)
+    }
+}
+
+impl Default for ViewZoom {
+    fn default() -> Self {
+        Self(Self::LEAST)
+    }
+}
+
+/// What the view frames on its next frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Framing {
+    /// An entity chosen in the outline.
+    Entity(EntityIndex),
+    /// Every selected entity and brush (P7-08).
+    Selection,
+}
+
+impl MapEditor {
+    /// The texture chosen in the browser, which new brushes take (P7-08).
+    pub(crate) fn current_texture(&self) -> Option<String> {
+        self.textures.selected().map(str::to_owned)
+    }
+
+    /// Selects what a search found in place of the selection, as TrenchBroom's search does:
+    /// its faces, or its brushes and entities; the first entity, which the document selects,
+    /// is given back (P7-08).
+    pub(crate) fn select_found(&mut self, found: &MapFound) -> Option<EntityIndex> {
+        self.tools.choose(found.brushes.clone(), &self.scene);
+        self.select_faces(&found.faces);
+        let mut entities = found.entities.iter().copied();
+        let first = entities.next();
+        self.select_also(entities.collect());
+        first
+    }
+
+    /// Selects `entities` besides the document's own selection (P7-08).
+    pub(crate) fn select_also(&mut self, entities: BTreeSet<EntityIndex>) {
+        self.also = entities;
+    }
+
+    /// The layer new brushes and entities go into, its own entity and its id; none for the
+    /// default layer (P7-08).
+    pub(crate) fn current_layer(&self) -> Option<(EntityIndex, LayerId)> {
+        let entity = self.current_layer?;
+        let layer = self.layers.iter().find(|l| l.entity == entity)?;
+        Some((entity, layer.id))
+    }
+
+    /// How many layers the map has.
+    pub(crate) fn layer_count(&self) -> usize {
+        self.layers.len()
+    }
+
+    /// The view's context menu, as TrenchBroom's (P7-08): group and ungroup, a brush entity of
+    /// the world's brushes selected and back, a point entity where it opened, every entity of
+    /// the selection's class, hide and isolate, and the layer to move the selection to.
+    fn context_menu(
+        &self,
+        response: &egui::Response,
+        selected: Option<EntityIndex>,
+        selection: &BTreeSet<EntityIndex>,
+        at: Option<[f64; 3]>,
+    ) -> Vec<MapAction> {
+        let chosen: Vec<EntityIndex> = selection.iter().copied().collect();
+        let world = self.world_brushes();
+        let grouping = self.grouping(&chosen, &world);
+        let class_of = |brush: bool| -> Vec<&String> {
+            self.names
+                .iter()
+                .filter(|name| {
+                    self.classes
+                        .get(*name)
+                        .is_some_and(|look| look.brush == brush)
+                })
+                .collect()
+        };
+        let shape_of = |entity: EntityIndex| self.scene.entities.iter().find(|s| s.index == entity);
+        let brush_entity = selected.filter(|&entity| shape_of(entity).is_some_and(|s| s.brush));
+        let classname = selected.and_then(|entity| shape_of(entity)?.classname.clone());
+        let in_group = self.keys.as_ref().is_some_and(|(_, keys)| keys.in_group());
+        let mut asked = Vec::new();
+        let _menu = response.clone().context_menu(|ui| {
+            if ui
+                .add_enabled(grouping.any(), egui::Button::new(Text::MapGroup.get()))
+                .clicked()
+            {
+                asked.push(MapAction::Group(grouping.grouped()));
+            }
+            if let Some(group) = grouping.group
+                && ui.button(Text::MapUngroup.get()).clicked()
+            {
+                asked.push(MapAction::Group(GroupAction::Ungroup(group)));
+            }
+            if !world.is_empty() {
+                ui.menu_button(Text::MapCreateBrushEntity.get(), |ui| {
+                    for name in class_of(true) {
+                        if ui.button(name).clicked() {
+                            asked.push(MapAction::Menu(MenuAction::MakeBrushEntity(
+                                name.clone(),
+                                world.clone(),
+                            )));
+                        }
+                    }
+                });
+            }
+            if let Some(entity) = brush_entity
+                && ui.button(Text::MapMakeStructural.get()).clicked()
+            {
+                asked.push(MapAction::Menu(MenuAction::MakeStructural(entity)));
+            }
+            if in_group && ui.button(Text::MapExtractLinked.get()).clicked() {
+                asked.push(MapAction::Menu(MenuAction::ExtractLinked(chosen.clone())));
+            }
+            if let Some(at) = at {
+                ui.menu_button(Text::MapCreatePointEntity.get(), |ui| {
+                    for name in class_of(false) {
+                        if ui.button(name).clicked() {
+                            asked.push(MapAction::Place(name.clone(), at));
+                        }
+                    }
+                });
+            }
+            if let Some(classname) = &classname
+                && ui.button(select_all_of(classname)).clicked()
+            {
+                let all = self
+                    .scene
+                    .entities
+                    .iter()
+                    .filter(|shape| shape.classname.as_ref() == Some(classname))
+                    .map(|shape| shape.index)
+                    .collect();
+                asked.push(MapAction::Menu(MenuAction::SelectAll(all)));
+            }
+            if !chosen.is_empty() {
+                if ui.button(Text::MapHide.get()).clicked() {
+                    asked.push(MapAction::Group(GroupAction::Hide(chosen.clone())));
+                }
+                if ui.button(Text::MapIsolate.get()).clicked() {
+                    asked.push(MapAction::Group(GroupAction::Isolate(chosen.clone())));
+                }
+                if !self.layers.is_empty() {
+                    ui.menu_button(Text::MapMoveToLayer.get(), |ui| {
+                        for layer in &self.layers {
+                            if ui.button(&layer.name).clicked() {
+                                for &entity in &chosen {
+                                    asked.push(MapAction::MoveTo(entity, layer.entity));
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+            if !asked.is_empty() {
+                ui.close();
+            }
+        });
+        asked
+    }
+
+    /// The world's brushes selected, which a new group takes (P7-08).
+    fn world_brushes(&self) -> Vec<BrushIndex> {
+        self.tools
+            .chosen()
+            .iter()
+            .filter(|(entity, _)| entity.is_world())
+            .map(|&(_, brush)| brush)
+            .collect()
+    }
+
+    /// What the selection can be grouped from, and the group it is when the one entity whose
+    /// keys are shown is a group's own entity (MAP-9.1).
+    fn grouping<'a>(&self, entities: &'a [EntityIndex], brushes: &'a [BrushIndex]) -> Grouping<'a> {
+        let group = self
+            .keys
+            .as_ref()
+            .and_then(|(entity, keys)| keys.is_group().then_some(*entity));
+        Grouping {
+            entities,
+            brushes,
+            group,
+        }
+    }
+
+    /// TrenchBroom's selection keys (P7-08): Cmd+A selects everything, Cmd+Alt+A inverts the
+    /// selection and Cmd+Shift+A clears it; Cmd+T, Cmd+E and Cmd+Shift+E select what the
+    /// selected brushes touch, hold, or hold stretched along the view's axis, and delete them,
+    /// as TrenchBroom's Select Touching, Inside and Tall do.
+    fn select_keys(
+        &mut self,
+        ui: &Ui,
+        pane: Pane,
+        selection: &BTreeSet<EntityIndex>,
+        hidden: &BTreeSet<EntityIndex>,
+    ) -> Vec<MapAction> {
+        let tall = match pane {
+            Pane::Plan(plan) => plan.axis(),
+            Pane::Perspective => Z_AXIS,
+        };
+        let asked = ui.input_mut(|i| {
+            let mut key = |modifiers, key| i.consume_key(modifiers, key);
+            if key(Modifiers::COMMAND | Modifiers::ALT, Key::A) {
+                Some(SelectKey::Invert)
+            } else if key(Modifiers::COMMAND | Modifiers::SHIFT, Key::A) {
+                Some(SelectKey::Clear)
+            } else if key(Modifiers::COMMAND, Key::A) {
+                Some(SelectKey::All)
+            } else if key(Modifiers::COMMAND | Modifiers::SHIFT, Key::E) {
+                Some(SelectKey::By(Region::Tall(tall)))
+            } else if key(Modifiers::COMMAND, Key::E) {
+                Some(SelectKey::By(Region::Inside))
+            } else if key(Modifiers::COMMAND, Key::T) {
+                Some(SelectKey::By(Region::Touching))
+            } else {
+                None
+            }
+        });
+        let Some(asked) = asked else {
+            return Vec::new();
+        };
+        let now = Picked {
+            entities: selection.iter().copied().collect(),
+            brushes: self.tools.chosen().to_vec(),
+        };
+        let mut actions = Vec::new();
+        let picked = match asked {
+            SelectKey::All => self.scene.all(hidden),
+            SelectKey::Invert => self.scene.inverted(&now, hidden),
+            SelectKey::Clear => Picked::default(),
+            SelectKey::By(region) => {
+                let mut picked = self.scene.picked_by(&now.brushes, region, hidden);
+                // The selecting brushes go, the last of each entity first so the rest keep
+                // their places; the brushes picked after one in its entity move down a place.
+                let mut gone = now.brushes.clone();
+                gone.sort();
+                for &(entity, brush) in gone.iter().rev() {
+                    actions.push(MapAction::Brush(BrushAction::Delete(entity, brush)));
+                }
+                for (entity, brush) in &mut picked.brushes {
+                    let before = gone
+                        .iter()
+                        .filter(|&&(e, b)| e == *entity && b < *brush)
+                        .count();
+                    *brush = BrushIndex::new(brush.get().saturating_sub(before));
+                }
+                picked
+            }
+        };
+        let mut entities = picked.entities.into_iter();
+        let first = entities.next();
+        self.also = entities.collect();
+        actions.insert(0, MapAction::Select(first));
+        self.tools.choose(picked.brushes, &self.scene);
+        actions
+    }
+}
+
+/// A selection key's command.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SelectKey {
+    /// Select All.
+    All,
+    /// Invert Selection.
+    Invert,
+    /// Deselect All.
+    Clear,
+    /// Select what the selected brushes pick.
+    By(Region),
+}
+
+/// The vertical, 2: what Select Tall stretches along in the 3D view, as the top view sees it.
+const Z_AXIS: usize = 2;
+
+/// A flip or turn of the selection: its whole entities and its brushes (P7-08).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Arrange {
+    /// Mirror along an axis (`map.flip`).
+    Flip(Vec<EntityIndex>, Vec<(EntityIndex, BrushIndex)>, Axis),
+    /// Turn by degrees about the vertical (`map.turn`).
+    Turn(Vec<EntityIndex>, Vec<(EntityIndex, BrushIndex)>, f64),
+}
+
+/// TrenchBroom's keys that flip and turn the selection: Cmd+F (its Ctrl+F) flips it across the
+/// view, along the map axis nearest the camera's right, Cmd+Alt+F flips it up and down, and
+/// Alt with Left or Right turns it a right angle about the vertical.
+fn arrange_keys(
+    ui: &Ui,
+    camera: &Option<Camera>,
+    entities: &BTreeSet<EntityIndex>,
+    brushes: &[(EntityIndex, BrushIndex)],
+) -> Vec<MapAction> {
+    if entities.is_empty() && brushes.is_empty() {
+        return Vec::new();
+    }
+    let across = camera.map_or(Axis::X, |camera| {
+        let [_, right, _] = camera.axes();
+        if right[0].abs() >= right[1].abs() {
+            Axis::X
+        } else {
+            Axis::Y
+        }
+    });
+    let mut asked = Vec::new();
+    ui.input_mut(|i| {
+        if i.consume_key(Modifiers::COMMAND | Modifiers::ALT, Key::F) {
+            asked.push(Arrange::Flip(Vec::new(), Vec::new(), Axis::Z));
+        }
+        if i.consume_key(Modifiers::COMMAND, Key::F) {
+            asked.push(Arrange::Flip(Vec::new(), Vec::new(), across));
+        }
+        if i.consume_key(Modifiers::ALT, Key::ArrowLeft) {
+            asked.push(Arrange::Turn(Vec::new(), Vec::new(), -QUARTER_TURN));
+        }
+        if i.consume_key(Modifiers::ALT, Key::ArrowRight) {
+            asked.push(Arrange::Turn(Vec::new(), Vec::new(), QUARTER_TURN));
+        }
+    });
+    let whole: Vec<EntityIndex> = entities.iter().copied().collect();
+    asked
+        .into_iter()
+        .map(|arrange| {
+            MapAction::Arrange(match arrange {
+                Arrange::Flip(_, _, axis) => Arrange::Flip(whole.clone(), brushes.to_vec(), axis),
+                Arrange::Turn(_, _, degrees) => {
+                    Arrange::Turn(whole.clone(), brushes.to_vec(), degrees)
+                }
+            })
+        })
+        .collect()
+}
+
+/// TrenchBroom's grid keys (its "Increase Grid Size", "Decrease Grid Size" and "Set Grid Size"
+/// actions): + doubles `grid` and - halves it; 1 to 9 set 1 to 256 units.
+fn grid_key(ui: &Ui, grid: MapGrid) -> Option<MapGrid> {
+    const DIGITS: [Key; 9] = [
+        Key::Num1,
+        Key::Num2,
+        Key::Num3,
+        Key::Num4,
+        Key::Num5,
+        Key::Num6,
+        Key::Num7,
+        Key::Num8,
+        Key::Num9,
+    ];
+    ui.input_mut(|i| {
+        if i.consume_key(Modifiers::NONE, Key::Plus) || i.consume_key(Modifiers::NONE, Key::Equals)
+        {
+            return Some(grid.coarser());
+        }
+        if i.consume_key(Modifiers::NONE, Key::Minus) {
+            return Some(grid.finer());
+        }
+        let digit = DIGITS
+            .iter()
+            .position(|&key| i.consume_key(Modifiers::NONE, key))?;
+        let power = u8::try_from(digit).ok()?;
+        MapGrid::try_from(f64::from(power).exp2()).ok()
+    })
+}
+
 /// TrenchBroom's keys on the selection: the arrows and Page Up and Down move it by the grid,
 /// along the map axis nearest the camera's; Alt with Left or Right turns it; Delete deletes it;
 /// Ctrl+D (Cmd+D) duplicates it.
-fn selection_keys(ui: &Ui, camera: &Camera, entity: EntityIndex) -> Vec<MapAction> {
+fn selection_keys(ui: &Ui, camera: &Camera, entity: EntityIndex, grid: MapGrid) -> Vec<MapAction> {
+    let step = grid.units();
     let [forward, right, _] = camera.axes();
     let snap = |v: [f32; 3]| -> [f64; 3] {
         if v[0].abs() >= v[1].abs() {
-            [f64::from(v[0].signum()) * GRID, 0.0, 0.0]
+            [f64::from(v[0].signum()) * step, 0.0, 0.0]
         } else {
-            [0.0, f64::from(v[1].signum()) * GRID, 0.0]
+            [0.0, f64::from(v[1].signum()) * step, 0.0]
         }
     };
     let negate = |v: [f64; 3]| v.map(|c| -c);
     let mut actions = Vec::new();
     ui.input_mut(|i| {
-        if i.consume_key(Modifiers::ALT, Key::ArrowLeft) {
-            actions.push(MapAction::Rotate(entity, -QUARTER_TURN));
-        }
-        if i.consume_key(Modifiers::ALT, Key::ArrowRight) {
-            actions.push(MapAction::Rotate(entity, QUARTER_TURN));
-        }
         let moves = [
             (Key::ArrowUp, snap(forward)),
             (Key::ArrowDown, negate(snap(forward))),
             (Key::ArrowRight, snap(right)),
             (Key::ArrowLeft, negate(snap(right))),
-            (Key::PageUp, [0.0, 0.0, GRID]),
-            (Key::PageDown, [0.0, 0.0, -GRID]),
+            (Key::PageUp, [0.0, 0.0, step]),
+            (Key::PageDown, [0.0, 0.0, -step]),
         ];
         for (key, by) in moves {
             if i.consume_key(Modifiers::NONE, key) {

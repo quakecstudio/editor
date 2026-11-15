@@ -330,3 +330,59 @@ fn a_brush_s_faces_are_aligned() {
     );
     assert_eq!(text(&session), before);
 }
+
+// No spec statement: P7-08: map.brush_hull adds the convex brush around points on the grid, as
+// TrenchBroom's complex shape tool, a point inside the others' shape adding no face, to the
+// world or the entity given; points spanning no volume are refused
+#[test]
+fn points_make_a_convex_brush() {
+    use crate::MAP_BRUSH_HULL;
+
+    let mut session = open("hull");
+    let before = world(&session).len();
+    session
+        .execute(
+            MAP_BRUSH_HULL,
+            json!({
+                "points": [
+                    [0.0, 0.0, 0.0], [64.0, 0.0, 0.0], [0.0, 64.0, 0.0], [0.0, 0.0, 64.0],
+                    [8.0, 8.0, 8.0]
+                ],
+                "texture": "rock"
+            }),
+        )
+        .unwrap();
+    let brushes = world(&session);
+    assert_eq!(brushes.len(), before + 1);
+    let made = brushes.last().unwrap();
+    assert!(made.is_valid());
+    assert_eq!(made.faces.len(), 4, "a tetrahedron");
+    session.undo().unwrap();
+    assert_eq!(world(&session).len(), before);
+    assert!(
+        session
+            .execute(
+                MAP_BRUSH_HULL,
+                json!({ "points": [[0.0, 0.0, 0.0], [64.0, 0.0, 0.0], [0.0, 64.0, 0.0]] })
+            )
+            .is_err(),
+        "flat"
+    );
+    // Into the entity given, such as the current layer's.
+    session
+        .execute(crate::MAP_ADD_LAYER, json!({ "name": "Details" }))
+        .unwrap();
+    let layer = session.context().map().unwrap().file().entities.len() - 1;
+    session
+        .execute(
+            MAP_BRUSH_HULL,
+            json!({
+                "entity": layer,
+                "points": [[0.0, 0.0, 0.0], [64.0, 0.0, 0.0], [0.0, 64.0, 0.0], [0.0, 0.0, 64.0]]
+            }),
+        )
+        .unwrap();
+    let file = session.context().map().unwrap().file().clone();
+    assert_eq!(file.entities[layer].brushes().count(), 1);
+    assert_eq!(world(&session).len(), before);
+}

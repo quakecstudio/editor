@@ -95,6 +95,22 @@ pub enum Task {
     /// `${BSP}`, and the `.lit` beside it when there is one, copied into the project's build,
     /// and the game started on the map.
     Launch,
+    /// A file renamed or moved, each path expanded and a relative one taken from `${MAP_DIR}`;
+    /// the folders of `to` are made, and a file there is replaced (TrenchBroom's Rename File,
+    /// P7-08).
+    Rename {
+        /// The file.
+        from: String,
+        /// Its new path.
+        to: String,
+    },
+    /// Files deleted: the path expanded, a relative one taken from `${MAP_DIR}`, its file name
+    /// matching with `*` for any run of characters and `?` for any one (TrenchBroom's Delete
+    /// Files, P7-08). None matching is no error.
+    Delete {
+        /// The file, or files by a pattern in its name.
+        target: String,
+    },
 }
 
 impl Task {
@@ -108,6 +124,65 @@ impl Task {
             Self::Tool { .. } => "tool",
             Self::Copy { .. } => "copy",
             Self::Launch => "launch",
+            Self::Rename { .. } => "rename",
+            Self::Delete { .. } => "delete",
+        }
+    }
+}
+
+/// A file name with `*` for any run of characters and `?` for any one, as TrenchBroom's Delete
+/// Files reads one (P7-08).
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct NamePattern(String);
+
+impl NamePattern {
+    /// Whether `name` is one this pattern names.
+    fn matches(&self, name: &str) -> bool {
+        let pattern: Vec<char> = self.0.chars().collect();
+        let name: Vec<char> = name.chars().collect();
+        // The places in the pattern reached so far, from each of which the rest may match.
+        let mut reached = vec![false; pattern.len().saturating_add(1)];
+        if let Some(first) = reached.first_mut() {
+            *first = true;
+        }
+        close_stars(&pattern, &mut reached);
+        for c in name {
+            let mut next = vec![false; reached.len()];
+            for (place, p) in pattern.iter().enumerate() {
+                if !reached.get(place).copied().unwrap_or_default() {
+                    continue;
+                }
+                let after = place.saturating_add(1);
+                match p {
+                    '*' => {
+                        if let Some(stay) = next.get_mut(place) {
+                            *stay = true;
+                        }
+                    }
+                    '?' => set(&mut next, after),
+                    p if *p == c => set(&mut next, after),
+                    _ => {}
+                }
+            }
+            close_stars(&pattern, &mut next);
+            reached = next;
+        }
+        reached.last().copied().unwrap_or_default()
+    }
+}
+
+/// Marks `place` reached.
+fn set(reached: &mut [bool], place: usize) {
+    if let Some(r) = reached.get_mut(place) {
+        *r = true;
+    }
+}
+
+/// Marks every place after a `*` reached wherever the `*` is: a star may match nothing.
+fn close_stars(pattern: &[char], reached: &mut [bool]) {
+    for (place, p) in pattern.iter().enumerate() {
+        if *p == '*' && reached.get(place).copied().unwrap_or_default() {
+            set(reached, place.saturating_add(1));
         }
     }
 }
@@ -346,6 +421,15 @@ pub enum TaskError {
         /// Why.
         error: std::io::Error,
     },
+    /// A file could not be renamed.
+    Rename {
+        /// The file renamed.
+        from: PathBuf,
+        /// Its new name.
+        to: PathBuf,
+        /// Why.
+        error: std::io::Error,
+    },
     /// A program ended with a status other than success.
     Tool {
         /// The program.
@@ -366,6 +450,14 @@ impl std::fmt::Display for TaskError {
             Self::Light(error) => error.fmt(f),
             Self::Expand(error) => error.fmt(f),
             Self::Io { path, error } => write!(f, "{}: {error}", path.display()),
+            Self::Rename { from, to, error } => {
+                write!(
+                    f,
+                    "cannot rename {} to {}: {error}",
+                    from.display(),
+                    to.display()
+                )
+            }
             Self::Copy { from, to, error } => {
                 write!(
                     f,
@@ -391,7 +483,9 @@ impl std::error::Error for TaskError {
             Self::Vis(error) => Some(error),
             Self::Light(error) => Some(error),
             Self::Expand(error) => Some(error),
-            Self::Io { error, .. } | Self::Copy { error, .. } => Some(error),
+            Self::Io { error, .. } | Self::Copy { error, .. } | Self::Rename { error, .. } => {
+                Some(error)
+            }
             Self::Tool { .. } => None,
         }
     }
@@ -586,6 +680,36 @@ fn run_task<C: HasPreview>(
                 to: to.clone(),
                 error,
             })?;
+            Ok(None)
+        }
+        Task::Rename { from, to } => {
+            let in_map_dir = |path: String| expansions.map_dir().join(path);
+            let (from, to) = (in_map_dir(expand(from)?), in_map_dir(expand(to)?));
+            if let Some(folder) = to.parent() {
+                std::fs::create_dir_all(folder).map_err(io(folder))?;
+            }
+            std::fs::rename(&from, &to).map_err(|error| TaskError::Rename {
+                from: from.clone(),
+                to: to.clone(),
+                error,
+            })?;
+            Ok(None)
+        }
+        Task::Delete { target } => {
+            let target = expansions.map_dir().join(expand(target)?);
+            let (Some(folder), Some(pattern)) = (target.parent(), target.file_name()) else {
+                return Ok(None);
+            };
+            let pattern = NamePattern(pattern.to_string_lossy().into_owned());
+            let Ok(entries) = std::fs::read_dir(folder) else {
+                return Ok(None);
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() && pattern.matches(&entry.file_name().to_string_lossy()) {
+                    std::fs::remove_file(&path).map_err(io(&path))?;
+                }
+            }
             Ok(None)
         }
         Task::Launch => {

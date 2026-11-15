@@ -5,6 +5,7 @@
 //! literal in the UI modules.
 
 use qs_map_edit::textures::{WadFound, WadState};
+use qs_map_edit::uv::FaceRef;
 use qs_map_edit::{BrushIndex, EntityIndex, QuickFix};
 use qs_map_edit::{HunkSide, MapHunk};
 
@@ -492,6 +493,10 @@ pub enum Text {
     MapLayoutSingle,
     /// The map view's layout of the 3D view with a top view in its corner.
     MapLayoutInset,
+    /// The map view beside a top view (P7-08).
+    MapLayoutDouble,
+    /// The map view beside top and front views (P7-08).
+    MapLayoutTriple,
     /// The map view's layout of the 3D view and three 2D views.
     MapLayoutQuad,
     /// The top view, as a screen reader names it.
@@ -636,16 +641,10 @@ pub enum Text {
     MapIssuesHint,
     /// What the issue list says of a map with none.
     MapNoIssues,
-    /// The search's classname field.
-    MapSearchClass,
-    /// The search's key field.
-    MapSearchKey,
-    /// The search's value field.
-    MapSearchValue,
-    /// The search's texture field.
-    MapSearchTexture,
-    /// The search's box field.
-    MapSearchWithin,
+    /// The map search's box, for text or a query (P7-08).
+    MapSearchQuery,
+    /// The map search box's syntax reference, on hover (P7-08).
+    MapSearchSyntax,
     /// The heading of the selected faces' texture editing.
     MapFaces,
     /// How to select and edit faces' textures.
@@ -852,6 +851,78 @@ pub enum Text {
     ActualSizeMenu,
     /// The map view's layout picker, to a screen reader.
     MapPanesPicker,
+    /// The map editor's grid picker, before its size (P7-08).
+    MapGrid,
+    /// Before the 3D camera's position fields (P7-08).
+    MapCamera,
+    /// The map camera's settings, folded under its place (P7-08).
+    MapCameraSettings,
+    /// After an angle's number.
+    DegreesSuffix,
+    /// The angle the selection turns by, to a screen reader.
+    MapTurnBy,
+    /// Turns the selection by the angle.
+    MapTurn,
+    /// Flips the selection along x.
+    MapFlipX,
+    /// Selects every brush of the entities holding the selected brushes.
+    MapSelectSiblings,
+    /// Puts the selection in a new group.
+    MapGroup,
+    /// Takes a group's contents out of it.
+    MapUngroup,
+    /// Copies a group as one linked to it.
+    MapLinkDuplicate,
+    /// Unlinks a group.
+    MapSeparate,
+    /// Adds a layer.
+    MapAddLayer,
+    /// The texture browser's WAD picker's choice of every WAD (P7-08).
+    MapEveryWad,
+    /// The texture browser's WAD picker, to a screen reader.
+    MapWadPicker,
+    /// The view menu's submenu of brush classes for the selected world brushes.
+    MapCreateBrushEntity,
+    /// Gives a brush entity's brushes back to the world.
+    MapMakeStructural,
+    /// The view menu's submenu of point classes to place where it opened.
+    MapCreatePointEntity,
+    /// The view menu's submenu of layers to move the selection to.
+    MapMoveToLayer,
+    /// Flips the selection along y.
+    MapFlipY,
+    /// Flips the selection along z.
+    MapFlipZ,
+    /// Puts the 3D view's Shift+wheel zoom back.
+    MapResetZoom,
+    /// The 3D view's field of view slider.
+    MapCameraFov,
+    /// The look speed slider.
+    MapCameraLookSpeed,
+    /// The pan speed slider.
+    MapCameraPanSpeed,
+    /// The fly speed slider.
+    MapCameraFlySpeed,
+    /// Invert the vertical look.
+    MapCameraInvertLook,
+    /// Invert the wheel.
+    MapCameraInvertWheel,
+    /// The compass's x axis (P7-08).
+    CompassX,
+    /// The compass's y axis.
+    CompassY,
+    /// The compass's z axis.
+    CompassZ,
+    /// The camera's position fields, on hover.
+    MapCameraHelp,
+    /// The camera's x field, to a screen reader.
+    MapCameraX,
+    /// The camera's y field, to a screen reader.
+    MapCameraY,
+    /// The camera's z field, to a screen reader.
+    MapCameraZ,
+    /// The map editor's grid picker, to a screen reader and on hover.
+    MapGridPicker,
     /// The map view's entity filter, to a screen reader.
     MapShowPicker,
     /// The Shape tool's kind picker, to a screen reader.
@@ -882,11 +953,19 @@ pub enum Text {
     MapLitNone,
     /// Lit, when the map was saved after its last compile.
     MapLitStale,
+    /// The Hull tool (P7-08).
+    MapToolHull,
+    /// What the Hull tool does.
+    MapHullHint,
+    /// Before the layer picker for new objects (P7-08).
+    MapCurrentLayer,
+    /// The view menu's entry extracting the selection into new linked groups (P7-08).
+    MapExtractLinked,
 }
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 435] = [
+    pub const ALL: [Self; 474] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1127,6 +1206,8 @@ impl Text {
         Self::MapNoOccupant,
         Self::MapLayoutSingle,
         Self::MapLayoutInset,
+        Self::MapLayoutDouble,
+        Self::MapLayoutTriple,
         Self::MapLayoutQuad,
         Self::MapViewTop,
         Self::MapViewFront,
@@ -1199,11 +1280,8 @@ impl Text {
         Self::MapCheckIssues,
         Self::MapIssuesHint,
         Self::MapNoIssues,
-        Self::MapSearchClass,
-        Self::MapSearchKey,
-        Self::MapSearchValue,
-        Self::MapSearchTexture,
-        Self::MapSearchWithin,
+        Self::MapSearchQuery,
+        Self::MapSearchSyntax,
         Self::MapFaces,
         Self::MapFacesHint,
         Self::MapUvFit,
@@ -1307,6 +1385,46 @@ impl Text {
         Self::ZoomOutMenu,
         Self::ActualSizeMenu,
         Self::MapPanesPicker,
+        Self::MapGrid,
+        Self::MapCamera,
+        Self::MapCameraSettings,
+        Self::DegreesSuffix,
+        Self::MapTurnBy,
+        Self::MapTurn,
+        Self::MapFlipX,
+        Self::MapSelectSiblings,
+        Self::MapGroup,
+        Self::MapUngroup,
+        Self::MapLinkDuplicate,
+        Self::MapSeparate,
+        Self::MapAddLayer,
+        Self::MapExtractLinked,
+        Self::MapCurrentLayer,
+        Self::MapToolHull,
+        Self::MapHullHint,
+        Self::MapEveryWad,
+        Self::MapWadPicker,
+        Self::MapCreateBrushEntity,
+        Self::MapMakeStructural,
+        Self::MapCreatePointEntity,
+        Self::MapMoveToLayer,
+        Self::MapFlipY,
+        Self::MapFlipZ,
+        Self::MapResetZoom,
+        Self::MapCameraFov,
+        Self::MapCameraLookSpeed,
+        Self::MapCameraPanSpeed,
+        Self::MapCameraFlySpeed,
+        Self::MapCameraInvertLook,
+        Self::MapCameraInvertWheel,
+        Self::CompassX,
+        Self::CompassY,
+        Self::CompassZ,
+        Self::MapCameraHelp,
+        Self::MapCameraX,
+        Self::MapCameraY,
+        Self::MapCameraZ,
+        Self::MapGridPicker,
         Self::MapShowPicker,
         Self::MapShapeKind,
         Self::MapTextureShiftX,
@@ -1587,6 +1705,8 @@ impl Text {
             }
             Self::MapLayoutSingle => "3D",
             Self::MapLayoutInset => "3D + top",
+            Self::MapLayoutDouble => "2 views",
+            Self::MapLayoutTriple => "3 views",
             Self::MapLayoutQuad => "4 views",
             Self::MapViewTop => "Top",
             Self::MapViewFront => "Front",
@@ -1621,6 +1741,10 @@ impl Text {
             Self::MapToolVertex => "Vertex",
             Self::MapToolShape => "Shape",
             Self::MapShapeHint => "Drag a box to fill it with the shape",
+            Self::MapToolHull => "Hull",
+            Self::MapHullHint => {
+                "Click points on the map; Return makes the convex brush around them"
+            }
             Self::ShapeCylinder => "Cylinder",
             Self::ShapeCone => "Cone",
             Self::ShapeArch => "Arch",
@@ -1663,11 +1787,15 @@ impl Text {
             Self::MapCheckIssues => "Check map",
             Self::MapIssuesHint => "Check the map to list its issues",
             Self::MapNoIssues => "The map has no issues",
-            Self::MapSearchClass => "Class",
-            Self::MapSearchKey => "Has key",
-            Self::MapSearchValue => "Has value",
-            Self::MapSearchTexture => "Has texture",
-            Self::MapSearchWithin => "Within: x y z x y z",
+            Self::MapSearchQuery => "Search: text or a query",
+            Self::MapSearchSyntax => {
+                "Text finds names, classnames, keys, values, textures and layer and group names. \
+                 A query, as TrenchBroom's: fields type, name, classname, properties, entity, \
+                 materials, material, normal, tags, bounds, center, layerName, groupName, \
+                 visible, locked; == != < <= > >= && || ! + - * /; is, like (* ? %), contains, \
+                 in, distanceTo, intersects, vec(x, y, z), bbox(min, max). For example: \
+                 classname is \"light\" && properties.light > 300, material like \"sky*\"."
+            }
             Self::MapFaces => "Faces",
             Self::MapFacesHint => {
                 "Alt-click faces to edit their textures. Drag the view to shift, Shift-drag to rotate, Cmd-drag (Ctrl-drag off macOS) to scale"
@@ -1823,6 +1951,47 @@ impl Text {
             Self::ZoomOutMenu => "Zoom Out",
             Self::ActualSizeMenu => "Actual Size",
             Self::MapPanesPicker => "Map view layout",
+            Self::MapGrid => "Grid",
+            Self::MapCamera => "Camera",
+            Self::MapCameraSettings => "Camera settings",
+            Self::DegreesSuffix => "°",
+            Self::MapTurnBy => "Degrees to turn the selection by",
+            Self::MapTurn => "Turn",
+            Self::MapFlipX => "Flip x",
+            Self::MapSelectSiblings => "Select siblings",
+            Self::MapGroup => "Group",
+            Self::MapUngroup => "Ungroup",
+            Self::MapLinkDuplicate => "Linked duplicate",
+            Self::MapSeparate => "Separate",
+            Self::MapAddLayer => "Add layer",
+            Self::MapExtractLinked => "Extract into linked groups",
+            Self::MapCurrentLayer => "New objects in",
+            Self::MapEveryWad => "Every WAD",
+            Self::MapWadPicker => "WAD shown",
+            Self::MapCreateBrushEntity => "Create brush entity",
+            Self::MapMakeStructural => "Make structural",
+            Self::MapCreatePointEntity => "Create point entity",
+            Self::MapMoveToLayer => "Move to layer",
+            Self::MapFlipY => "Flip y",
+            Self::MapFlipZ => "Flip z",
+            Self::MapResetZoom => "Reset zoom",
+            Self::MapCameraFov => "Field of view",
+            Self::MapCameraLookSpeed => "Look speed",
+            Self::MapCameraPanSpeed => "Pan speed",
+            Self::MapCameraFlySpeed => "Fly speed",
+            Self::MapCameraInvertLook => "Invert the vertical look",
+            Self::MapCameraInvertWheel => "Invert the wheel",
+            Self::CompassX => "X",
+            Self::CompassY => "Y",
+            Self::CompassZ => "Z",
+            Self::MapCameraHelp => "Where the 3D camera stands: type or drag a value to move it",
+            Self::MapCameraX => "Camera x",
+            Self::MapCameraY => "Camera y",
+            Self::MapCameraZ => "Camera z",
+            Self::MapGridPicker => {
+                "The grid drawing and moving snap to, in units: + and - halve or double it, 1 \
+                 to 9 set 1 to 256"
+            }
             Self::MapShowPicker => "Show entities",
             Self::MapShapeKind => "Shape kind",
             Self::MapTextureShiftX => "Texture shift X",
@@ -2001,10 +2170,21 @@ pub fn issue_line(line: u32, message: &str) -> String {
     }
 }
 
-/// How many entities and brushes a map search matched (P6-19).
+/// How many entities, brushes and faces a map search matched (P6-19, P7-08).
 #[must_use]
-pub fn map_found_count(entities: usize, brushes: usize) -> String {
-    format!("{entities} entities, {brushes} brushes")
+pub fn map_found_count(entities: usize, brushes: usize, faces: usize) -> String {
+    format!("{entities} entities, {brushes} brushes, {faces} faces")
+}
+
+/// A face named by its entity's, brush's and own place (P7-08).
+#[must_use]
+pub fn face_place(face: FaceRef) -> String {
+    format!(
+        "entity {}, brush {}, face {}",
+        face.entity.get(),
+        face.brush.get(),
+        face.face.get()
+    )
 }
 
 /// An entity named by its place in the map, the world first (P6-19).
@@ -2103,6 +2283,30 @@ pub fn also_selected(count: usize) -> String {
     }
 }
 
+/// A texture's menu entry replacing the current texture with it (P7-08).
+#[must_use]
+pub fn replace_with(current: &str, with: &str) -> String {
+    format!("Replace {current} with {with}")
+}
+
+/// The view menu's entry selecting every entity of `classname` (P7-08).
+#[must_use]
+pub fn select_all_of(classname: &str) -> String {
+    format!("Select all {classname}")
+}
+
+/// A new group's name, the map's `n`th (P7-08).
+#[must_use]
+pub fn group_name(n: usize) -> String {
+    format!("Group {n}")
+}
+
+/// A new layer's name, the map's `n`th (P7-08).
+#[must_use]
+pub fn layer_name(n: usize) -> String {
+    format!("Layer {n}")
+}
+
 /// How many entities a layer holds (P5-14).
 #[must_use]
 pub fn layer_count(count: usize) -> String {
@@ -2126,6 +2330,8 @@ pub(crate) const fn panes_text(panes: qs_layout::MapPanes) -> Text {
     match panes {
         qs_layout::MapPanes::Single => Text::MapLayoutSingle,
         qs_layout::MapPanes::Inset => Text::MapLayoutInset,
+        qs_layout::MapPanes::Double => Text::MapLayoutDouble,
+        qs_layout::MapPanes::Triple => Text::MapLayoutTriple,
         qs_layout::MapPanes::Quad => Text::MapLayoutQuad,
     }
 }

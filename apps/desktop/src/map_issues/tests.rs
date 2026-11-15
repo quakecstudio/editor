@@ -7,13 +7,14 @@
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
+use qs_map_edit::uv::{FaceIndex, FaceRef};
 use qs_map_edit::{
     BrushIndex, EntityIndex, MapFound, MapIssue, MapRevision, MapSearchParams, QuickFix,
 };
 
-use super::{IssueBrowser, SearchFields};
+use super::IssueBrowser;
 use crate::map_editor::MapAction;
-use crate::strings::{Text, brush_place, entity_place, fix_label, issue_line};
+use crate::strings::{Text, brush_place, entity_place, face_place, fix_label, issue_line};
 use crate::theme::{Mode, Theme};
 
 fn rename() -> QuickFix {
@@ -87,45 +88,49 @@ fn issues_fix_and_select() {
     assert_eq!(checked, vec![MapAction::CheckIssues]);
 }
 
-// No spec statement: P6-19: Find asks for the search the fields give, each part trimmed and an
-// empty one left out, and a match selects its entity
+// No spec statement: P6-19, P7-08: Find, or Enter in the box, asks for the search typed; a
+// match selects its entity, a face match its face
 #[test]
 fn the_search_finds_and_selects() {
-    let fields = SearchFields {
-        classname: " ogre ".to_owned(),
-        key: String::new(),
-        value: "gate".to_owned(),
-        texture: "  ".to_owned(),
-        within: "0 0 0 64 64".to_owned(),
-    };
-    assert_eq!(
-        fields.params(),
-        MapSearchParams {
-            classname: Some("ogre".to_owned()),
-            value: Some("gate".to_owned()),
-            ..MapSearchParams::default()
-        }
-    );
     let browser = IssueBrowser {
-        fields: fields.clone(),
+        query: "classname is \"light\"".to_owned(),
         ..IssueBrowser::default()
     };
     let found = after(browser, |harness| {
         harness.get_by_label(Text::Find.get()).click();
     });
-    assert_eq!(found, vec![MapAction::Find(fields.params())]);
+    let asked = MapSearchParams {
+        query: "classname is \"light\"".to_owned(),
+    };
+    assert_eq!(found, vec![MapAction::Find(asked)]);
+    let face = FaceRef {
+        entity: EntityIndex::new(0),
+        brush: BrushIndex::new(2),
+        face: FaceIndex::new(5),
+    };
     let mut browser = IssueBrowser::default();
     browser.set_found(
         MapFound {
             entities: vec![EntityIndex::new(3)],
             brushes: vec![(EntityIndex::new(3), BrushIndex::new(0))],
+            faces: vec![face],
         },
         MapRevision::default(),
     );
     let chosen = after(browser, |harness| {
         harness.get_by_label(&entity_place(3)).click();
+        harness.get_by_label(&face_place(face)).click();
     });
-    assert_eq!(chosen, vec![MapAction::Select(Some(EntityIndex::new(3)))]);
+    assert_eq!(
+        chosen,
+        vec![
+            MapAction::Select(Some(EntityIndex::new(3))),
+            MapAction::SelectFound(MapFound {
+                faces: vec![face],
+                ..MapFound::default()
+            }),
+        ]
+    );
 }
 
 // No spec statement: P6-19: another map's issues and matches are forgotten
@@ -139,26 +144,15 @@ fn clearing_forgets_both() {
     assert!(after(browser, |_| {}).is_empty());
 }
 
-// No spec statement: P6-19: the box is six numbers, least corner then greatest; anything else
-// searches everywhere; a brush match selects its entity
+// No spec statement: P6-19: a brush match selects its entity
 #[test]
-fn the_box_and_brush_matches() {
-    let fields = |within: &str| SearchFields {
-        within: within.to_owned(),
-        ..SearchFields::default()
-    };
-    assert_eq!(
-        fields(" -8 0 16  64 32.5 128 ").params().within,
-        Some([[-8.0, 0.0, 16.0], [64.0, 32.5, 128.0]])
-    );
-    for other in ["", "1 2 3 4 5", "1 2 3 4 5 6 7", "1 2 3 x 5 6"] {
-        assert_eq!(fields(other).params().within, None, "{other}");
-    }
+fn a_brush_match_selects_its_entity() {
     let mut browser = IssueBrowser::default();
     browser.set_found(
         MapFound {
             entities: Vec::new(),
             brushes: vec![(EntityIndex::new(4), BrushIndex::new(1))],
+            faces: Vec::new(),
         },
         MapRevision::default(),
     );

@@ -1483,8 +1483,7 @@ impl Shell {
     /// Draws the map editor in the Map tab when a map is open, running what it asks for;
     /// whether it did.
     fn map_tab(&mut self, ui: &mut Ui) -> bool {
-        let panes = self.layout().map_panes;
-        let shading = self.layout().map_shading;
+        let settings = *self.layout();
         let Some(document) = self.session.context().workbench.map() else {
             return false;
         };
@@ -1508,12 +1507,15 @@ impl Shell {
             .show(ui, |ui| {
                 let size = egui::vec2(ui.available_width(), height);
                 ui.allocate_ui(size, |ui| {
-                    editor.ui(ui, theme, document, (panes, shading, state))
+                    editor.ui(ui, theme, document, (&settings, state))
                 })
                 .inner
             })
             .inner;
         self.with_map(|map, commands| map.map_actions(commands, actions));
+        if let Some(text) = self.features.map.take_copied() {
+            ui.ctx().copy_text(text);
+        }
         self.with_map(MapFeature::refresh_map_outline);
         if self.with_map(MapFeature::refresh_map_review) {
             // The Properties panel, drawn before the map this frame, shows them on the next.

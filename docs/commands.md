@@ -55,6 +55,8 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`git.switch`](#gitswitch) | Checks out a branch, as git switch does, and reads the project's files again; refused while files have unsaved edits. |
 | [`git.unstage`](#gitunstage) | Unstages a file, or one hunk of its staged changes. |
 | [`map.accept`](#mapaccept) | Accepts hunks of the open map's review, every one when none are named: their change is kept and no longer waits. |
+| [`map.add_layer`](#mapadd_layer) | Adds an empty layer to the open map, as TrenchBroom writes one. |
+| [`map.add_wad`](#mapadd_wad) | Adds a WAD file to the open map's list in its world's `wad` or `_wad` key, by its path from the map's folder when it is under it, as TrenchBroom adds a WAD dropped on its window; one listed already is not listed again. |
 | [`map.backup`](#mapbackup) | Writes the open map, as it is in the editor, saved or not, as its next backup in the autosave folder beside it, keeping the last 20. |
 | [`map.backups`](#mapbackups) | Lists the open map's backups in the autosave folder beside it, the newest first. |
 | [`map.brush_chamfer`](#mapbrush_chamfer) | Chamfers an edge of a brush into one or more bevel faces, from a distance along each of its two faces (MAP-15.9). |
@@ -63,6 +65,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.brush_delete`](#mapbrush_delete) | Deletes a brush of an entity of the open map. |
 | [`map.brush_extrude`](#mapbrush_extrude) | Moves a face of a brush along its normal by a distance snapped to the grid, out or in, its texture fixed in the world unless lock is free (MAP-15.3). |
 | [`map.brush_hollow`](#mapbrush_hollow) | Hollows a brush into walls of a thickness: the brush becomes itself with the brush its walls enclose taken out (MAP-15.5). |
+| [`map.brush_hull`](#mapbrush_hull) | Adds to the world, or the entity given, the convex brush around points snapped to the grid, with a texture, as TrenchBroom's complex shape tool makes one. |
 | [`map.brush_intersect`](#mapbrush_intersect) | Replaces two or more brushes of an entity with the solid all of them hold, which takes the first's place (MAP-15.6). |
 | [`map.brush_merge`](#mapbrush_merge) | Merges two or more brushes of an entity of the open map into their convex hull, which takes the first's place. |
 | [`map.brush_move`](#mapbrush_move) | Moves brushes of an entity by an offset snapped to the grid (16 units unless given), their textures fixed in the world unless lock is free. |
@@ -80,14 +83,18 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.choose_profile`](#mapchoose_profile) | Chooses the compile profile map.run_profile runs when given none; none given chooses Full again. |
 | [`map.compare`](#mapcompare) | How the open map's file, changed by another program, differs from the map being edited, entity by entity. |
 | [`map.compile`](#mapcompile) | Compiles the open map, as it is in the editor, or only a region of it, sealed, to a BSP beside it, with its portal and leak files, and reports whether it leaks and the textures its WADs lack. |
+| [`map.copy`](#mapcopy) | Writes brushes of the world and whole entities of the open map as a .map's text, where they are, for the clipboard; the map is unchanged. |
 | [`map.delete`](#mapdelete) | Deletes an entity of the open map; the world stays. |
 | [`map.duplicate`](#mapduplicate) | Duplicates an entity of the open map, its keys and brushes, in place at the end of the map, and selects the copy; the world is not duplicated. A targetname ending in a number takes the next free number, and the keys the code fires entities by move on by as many. |
 | [`map.entity`](#mapentity) | An entity of the open map: its pairs, the keys its class reads with their types and defaults, and the map's targetnames for its target keys. |
 | [`map.export`](#mapexport) | Writes the open map to another .map without the layers marked to be left out of exports and the entities in them (TrenchBroom's Export). |
+| [`map.extract_linked`](#mapextract_linked) | Moves entities of a linked group, and the same entities of every group linked to it, into new groups linked to each other (TrenchBroom's Extract Linked Groups). |
 | [`map.face_align`](#mapface_align) | Carries one face's texture alignment onto other faces of the open map, so the texture continues across the line their planes share (MAP-13.8). |
 | [`map.face_uv`](#mapface_uv) | Fits, justifies, flips, resets, snaps or adjusts the texture of faces of the open map, at the size its WAD gives it (MAP-13). |
 | [`map.filter`](#mapfilter) | The entities of the open map the game removes at a skill and in a kind of game (single, coop or deathmatch), found by spawning the map with the project's program: those the spawnflags rule out and those the QuakeC removes. |
 | [`map.fix`](#mapfix) | Applies a quick fix `map.issues` gave, as one step with undo. |
+| [`map.flip`](#mapflip) | Mirrors entities and brushes along an axis through the middle of their box: brushes and point entities' origins, and their facing, as TrenchBroom's Flip. |
+| [`map.group`](#mapgroup) | Puts entities and brushes of the world in a new group, in the layer or group the first is in, as TrenchBroom writes a group. |
 | [`map.hide`](#maphide) | Hides entities of the open map in the editor until map.show_all (TrenchBroom's Hide Selection); the map is not changed. |
 | [`map.inspect`](#mapinspect) | The open map's rooms (TrenchBroom's named layers and groups, with their bounds) and its entities: each one's place, classname, origin, targetname and room, filtered by room or classname. |
 | [`map.isolate`](#mapisolate) | Hides every entity of the open map but these in the editor until map.show_all (TrenchBroom's Isolate Selection); the map is not changed. |
@@ -95,11 +102,15 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.layers`](#maplayers) | The open map's TrenchBroom layers: each one's name, whether it is hidden, locked or left out of exports, and how many entities are in it. |
 | [`map.leaks`](#mapleaks) | Compiles the open map in memory and reports whether it leaks, with the trail from the entity the outside reaches out to the void, and the textures its WADs lack. |
 | [`map.link`](#maplink) | Points a key of an entity of the open map, one the code fires entities by such as target or killtarget, at another entity: the key takes the other's targetname, and the other its classname and the next free number as one when it has none. |
+| [`map.link_duplicate`](#maplink_duplicate) | Copies a group and its entities as a new group linked to it, so an edit in one is made in the other (TrenchBroom's Create Linked Duplicate). |
 | [`map.lock`](#maplock) | Locks entities of the open map against edits until map.unlock_all; the map is not changed. |
+| [`map.make_brush_entity`](#mapmake_brush_entity) | Makes brushes of the world a new brush entity of a class, such as func_door (TrenchBroom's Create Brush Entity). |
+| [`map.make_structural`](#mapmake_structural) | Gives a brush entity's brushes back to the world, in the layer or group the entity was in, and removes the entity (TrenchBroom's Make Structural). |
 | [`map.move`](#mapmove) | Moves an entity of the open map: a point entity's origin, a brush entity's brushes. |
 | [`map.move_to`](#mapmove_to) | Moves an entity or a group of the open map into a layer or a group, or into the default layer given the world, as TrenchBroom writes it. |
 | [`map.open`](#mapopen) | Opens a .map in the map view, or a shipped .bsp's entities when the map has no .map source; nothing is selected. |
 | [`map.outline`](#mapoutline) | The open map's outline: the default layer and each layer, their groups and linked groups, then their entities by classname and targetname, with brush counts; with filter, only what holds the text and what is around it. |
+| [`map.paste`](#mappaste) | Adds a .map's text to the open map, its world's brushes to the world and its other entities after the map's: where the text has them, or with the middle of their floor at a point on the grid. |
 | [`map.place`](#mapplace) | Places a point entity of a classname at an origin in the open map, with the keys given, and selects it. |
 | [`map.place_prefab`](#mapplace_prefab) | Copies a prefab into the open map with its origin at a point on the grid: its world's brushes into the world, its other entities after the map's. |
 | [`map.play_from_here`](#mapplay_from_here) | Compiles the open map fast, with no vis and fast light, into the project's build, starts the game on it and puts the player's eye at a point, facing a way: the map view's camera (MAP-13). |
@@ -109,14 +120,16 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.reject`](#mapreject) | Rejects hunks of the open map's review, every one when none are named: the parts they replaced are put back, as an edit undo takes back. |
 | [`map.remove_key`](#mapremove_key) | Removes every pair with a key from an entity of the open map. |
 | [`map.rename_key`](#maprename_key) | Renames a key in every open .map, keeping each value and its formatting: what to run once the person confirms, after symbol.rename renames a field a map may name. Nothing is saved. |
+| [`map.replace_texture`](#mapreplace_texture) | Puts one texture in another's place on the faces of brushes, or of every brush of the map, keeping their alignment (TrenchBroom's Replace Material). |
 | [`map.resolve`](#mapresolve) | After another program changed the open map's file while it had unsaved edits: keep disk to read the file again, or mine to keep the edits and save them over it. |
 | [`map.restore_backup`](#maprestore_backup) | Puts a backup of the open map in the editor in place of the map, unsaved, as an edit that undo takes back. |
 | [`map.rotate`](#maprotate) | Turns a point entity of the open map about the vertical: its angle, or its angles' yaw. |
 | [`map.run_profile`](#maprun_profile) | Runs a compile profile on the open map, the one chosen when none is named: its tasks in order, each timed, stopping at the first that fails; reports each task's time and result. |
 | [`map.save`](#mapsave) | Saves the open map: a .map over itself; a BSP's entities as a .ent beside it (bsp: ent, the default) or into the BSP's entity lump (bsp: lump). |
 | [`map.save_prefab`](#mapsave_prefab) | Writes brushes of the world and whole entities of the open map as a prefab in the project's prefabs folder, around the middle of their floor. |
-| [`map.search`](#mapsearch) | Finds the open map's entities and brushes by classname, key, value, texture and a box, every part given; text matches in any case. |
+| [`map.search`](#mapsearch) | Finds the open map's objects as TrenchBroom's search does: text found in names, classnames, keys, values, textures, smart tags and layer and group names, ignoring case, or a query in its query language, which finds entities, groups, brushes, the contents of layers, or faces. |
 | [`map.select`](#mapselect) | Selects an entity of the open map, or clears the selection. |
+| [`map.separate`](#mapseparate) | Unlinks a group from the groups linked to it, which then change on their own (TrenchBroom's Separate Linked Groups). |
 | [`map.set_flag`](#mapset_flag) | Sets or clears one spawnflag of an entity of the open map, and of the entities in also, in one step, keeping each entity's other flags. |
 | [`map.set_key`](#mapset_key) | Sets a key of an entity of the open map, and of the entities in also with it in one step: its last occurrence keeps its place and formatting, a new key goes after the others. |
 | [`map.set_layer`](#mapset_layer) | Turns a layer of the open map hidden, locked or left out of exports on or off, written as TrenchBroom writes it. |
@@ -124,6 +137,8 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.stage`](#mapstage) | Begins review of the open map's edits: the map as it is now is kept, and each edit after it waits as a hunk to accept or reject. The agent's map edits begin it themselves; while it is open it is left as it is. |
 | [`map.staged`](#mapstaged) | Lists the open map's hunks waiting for review: for each, the entities it is in, and the keys and brushes it adds, changes or removes. |
 | [`map.textures`](#maptextures) | Lists the open map's textures: those of the WADs its world names, found in the project, beside the map or in the game, and of the BSP it was opened from, each with its size and how many faces use it, and the names its faces use that nothing holds. |
+| [`map.turn`](#mapturn) | Turns entities and brushes by degrees about the vertical through the middle of their box, counter-clockwise seen from above: brushes and point entities' origins and facing, as TrenchBroom's Rotate. |
+| [`map.ungroup`](#mapungroup) | Takes a group's entities and brushes out of it into the layer or group it is in, or the world's, and removes the group. |
 | [`map.unlock_all`](#mapunlock_all) | Unlocks every entity of the open map locked in the editor; a locked layer stays locked. |
 | [`map.unstage`](#mapunstage) | Ends the open map's review when nothing waits in it, as after an agent's map command that changed nothing; a review with hunks is left open. |
 | [`paths.open`](#pathsopen) | Opens folders as projects, and files in the nearest project above each (a folder holding quakec.toml or progs.src): a .map or .bsp in the map editor, any other file in the editor. A file outside every project opens in the open project, or opens its folder when none is open. |
@@ -181,6 +196,9 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`view.focus_editor`](#viewfocus_editor) | Gives the keyboard to the editor in the centre. |
 | [`view.focus_left_panel`](#viewfocus_left_panel) | Shows the left panel, Project and Entities, if it is hidden and gives it the keyboard. |
 | [`view.focus_right_panel`](#viewfocus_right_panel) | Shows the right panel, Properties and the agent, if it is hidden and gives it the keyboard. |
+| [`view.map_camera`](#viewmap_camera) | Sets the map editor's camera: the 3D view's field of view, 50 to 150 degrees, how fast the mouse and keys move it, 0.1 to 10 times, and which way a vertical look and the wheel go. Settings not given are kept. |
+| [`view.map_grid`](#viewmap_grid) | Sets the map editor's grid in units, a power of two from 0.125 to 256. |
+| [`view.map_grid_step`](#viewmap_grid_step) | Halves or doubles the map editor's grid, held to 0.125 to 256 units. |
 | [`view.map_panes`](#viewmap_panes) | Splits the map view: the 3D view alone, with a top view in its corner, or beside top, front and side views. |
 | [`view.map_shading`](#viewmap_shading) | Draws the map view's 3D pane as the brushes' edges, as their textured faces, or lit by the last compile's lightmaps. |
 | [`view.project_search`](#viewproject_search) | Opens the project search: every match in the project's files as a multibuffer of editable excerpts, to edit or replace in place. |
@@ -1668,6 +1686,56 @@ Parameters:
 }
 ```
 
+## `map.add_layer`
+
+Adds an empty layer to the open map, as TrenchBroom writes one.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.add_layer`.",
+  "properties": {
+    "name": {
+      "description": "The layer's name.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "title": "AddLayerParams",
+  "type": "object"
+}
+```
+
+## `map.add_wad`
+
+Adds a WAD file to the open map's list in its world's `wad` or `_wad` key, by its path from the map's folder when it is under it, as TrenchBroom adds a WAD dropped on its window; one listed already is not listed again.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.add_wad`.",
+  "properties": {
+    "path": {
+      "description": "The WAD file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "AddWadParams",
+  "type": "object"
+}
+```
+
 ## `map.backup`
 
 Writes the open map, as it is in the editor, saved or not, as its next backup in the autosave folder beside it, keeping the last 20.
@@ -2002,6 +2070,31 @@ Parameters:
       "minimum": 0,
       "type": "integer"
     },
+    "ExtrudeMode": {
+      "description": "What `map.brush_extrude` does with the face, as TrenchBroom's extrude tool's keys choose\n(P7-08).",
+      "oneOf": [
+        {
+          "const": "extrude",
+          "description": "The face moves along its normal, the brush's other planes kept.",
+          "type": "string"
+        },
+        {
+          "const": "split",
+          "description": "Out, a new brush of what the extrusion would add; in, the brush cut in two (Ctrl).",
+          "type": "string"
+        },
+        {
+          "const": "stamp",
+          "description": "A new brush, the face and its copy moved out (Ctrl+Alt).",
+          "type": "string"
+        },
+        {
+          "const": "move",
+          "description": "The face's corners move along its normal, the other faces tilting (Alt).",
+          "type": "string"
+        }
+      ]
+    },
     "FaceIndex": {
       "description": "A face's place among its brush's faces, from 0, in file order.",
       "format": "uint",
@@ -2074,6 +2167,11 @@ Parameters:
       "$ref": "#/$defs/Lock",
       "default": "locked",
       "description": "Whether its texture stays fixed in the world; locked when not given."
+    },
+    "mode": {
+      "$ref": "#/$defs/ExtrudeMode",
+      "default": "extrude",
+      "description": "What the move does; an extrusion when not given (P7-08)."
     }
   },
   "required": [
@@ -2131,6 +2229,77 @@ Parameters:
     "wall"
   ],
   "title": "BrushHollowParams",
+  "type": "object"
+}
+```
+
+## `map.brush_hull`
+
+Adds to the world, or the entity given, the convex brush around points snapped to the grid, with a texture, as TrenchBroom's complex shape tool makes one.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.brush_hull`.",
+  "properties": {
+    "entity": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EntityIndex"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The entity to add it to, such as the current layer's; the world when not given."
+    },
+    "grid": {
+      "default": null,
+      "description": "The grid the points snap to, in map units; 16 when not given, 0 for none.",
+      "format": "double",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "points": {
+      "description": "The points, each snapped to the grid; the brush is the convex shape around them.",
+      "items": {
+        "items": {
+          "format": "double",
+          "type": "number"
+        },
+        "maxItems": 3,
+        "minItems": 3,
+        "type": "array"
+      },
+      "type": "array"
+    },
+    "texture": {
+      "default": null,
+      "description": "Its texture; the texture of the map's last brush face when not given.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "points"
+  ],
+  "title": "BrushHullParams",
   "type": "object"
 }
 ```
@@ -3772,6 +3941,64 @@ Parameters:
 }
 ```
 
+## `map.copy`
+
+Writes brushes of the world and whole entities of the open map as a .map's text, where they are, for the clipboard; the map is unchanged.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.copy`.",
+  "properties": {
+    "brushes": {
+      "default": [],
+      "description": "The brushes, each by its entity: one of the world or of a layer or group is copied into\nthe world; one of another entity brings that entity whole.",
+      "items": {
+        "maxItems": 2,
+        "minItems": 2,
+        "prefixItems": [
+          {
+            "$ref": "#/$defs/EntityIndex"
+          },
+          {
+            "$ref": "#/$defs/BrushIndex"
+          }
+        ],
+        "type": "array"
+      },
+      "type": "array"
+    },
+    "entities": {
+      "default": [],
+      "description": "The entities to copy whole.",
+      "items": {
+        "$ref": "#/$defs/EntityIndex"
+      },
+      "type": "array"
+    }
+  },
+  "title": "CopyParams",
+  "type": "object"
+}
+```
+
 ## `map.delete`
 
 Deletes an entity of the open map; the world stays.
@@ -3892,6 +4119,47 @@ Parameters:
     "path"
   ],
   "title": "ExportParams",
+  "type": "object"
+}
+```
+
+## `map.extract_linked`
+
+Moves entities of a linked group, and the same entities of every group linked to it, into new groups linked to each other (TrenchBroom's Extract Linked Groups).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.extract_linked`.",
+  "properties": {
+    "entities": {
+      "description": "The entities of it to extract.",
+      "items": {
+        "$ref": "#/$defs/EntityIndex"
+      },
+      "type": "array"
+    },
+    "group": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The linked group's own entity."
+    }
+  },
+  "required": [
+    "group",
+    "entities"
+  ],
+  "title": "ExtractLinkedParams",
   "type": "object"
 }
 ```
@@ -4449,6 +4717,166 @@ Parameters:
 }
 ```
 
+## `map.flip`
+
+Mirrors entities and brushes along an axis through the middle of their box: brushes and point entities' origins, and their facing, as TrenchBroom's Flip.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "Axis": {
+      "description": "An axis of the world.",
+      "oneOf": [
+        {
+          "const": "x",
+          "description": "x.",
+          "type": "string"
+        },
+        {
+          "const": "y",
+          "description": "y.",
+          "type": "string"
+        },
+        {
+          "const": "z",
+          "description": "z.",
+          "type": "string"
+        }
+      ]
+    },
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "Lock": {
+      "description": "Whether a moved brush's textures stay fixed in the world (P6-09, MAP-11.2).",
+      "oneOf": [
+        {
+          "const": "locked",
+          "description": "Texture lock on: the textures stay where they are in the world.",
+          "type": "string"
+        },
+        {
+          "const": "free",
+          "description": "Texture lock off: the textures move with the brush.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.flip`.",
+  "properties": {
+    "axis": {
+      "$ref": "#/$defs/Axis",
+      "description": "The axis flipped along: x mirrors left and right."
+    },
+    "brushes": {
+      "default": [],
+      "description": "Brushes, each by its entity.",
+      "items": {
+        "maxItems": 2,
+        "minItems": 2,
+        "prefixItems": [
+          {
+            "$ref": "#/$defs/EntityIndex"
+          },
+          {
+            "$ref": "#/$defs/BrushIndex"
+          }
+        ],
+        "type": "array"
+      },
+      "type": "array"
+    },
+    "entities": {
+      "default": [],
+      "description": "Whole entities: a point entity's origin and facing, every brush of a brush entity.",
+      "items": {
+        "$ref": "#/$defs/EntityIndex"
+      },
+      "type": "array"
+    },
+    "lock": {
+      "$ref": "#/$defs/Lock",
+      "default": "locked",
+      "description": "Whether their textures stay fixed in the world; locked when not given."
+    }
+  },
+  "required": [
+    "axis"
+  ],
+  "title": "FlipParams",
+  "type": "object"
+}
+```
+
+## `map.group`
+
+Puts entities and brushes of the world in a new group, in the layer or group the first is in, as TrenchBroom writes a group.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.group`.",
+  "properties": {
+    "brushes": {
+      "default": [],
+      "description": "Brushes of the world to move into it.",
+      "items": {
+        "$ref": "#/$defs/BrushIndex"
+      },
+      "type": "array"
+    },
+    "entities": {
+      "default": [],
+      "description": "Whole entities to put in it.",
+      "items": {
+        "$ref": "#/$defs/EntityIndex"
+      },
+      "type": "array"
+    },
+    "name": {
+      "description": "The group's name.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "title": "GroupParams",
+  "type": "object"
+}
+```
+
 ## `map.hide`
 
 Hides entities of the open map in the editor until map.show_all (TrenchBroom's Hide Selection); the map is not changed.
@@ -4646,6 +5074,39 @@ Parameters:
 }
 ```
 
+## `map.link_duplicate`
+
+Copies a group and its entities as a new group linked to it, so an edit in one is made in the other (TrenchBroom's Create Linked Duplicate).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.ungroup`, `map.link_duplicate` and `map.separate`.",
+  "properties": {
+    "group": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The group's own entity."
+    }
+  },
+  "required": [
+    "group"
+  ],
+  "title": "ContainerParams",
+  "type": "object"
+}
+```
+
 ## `map.lock`
 
 Locks entities of the open map against edits until map.unlock_all; the map is not changed.
@@ -4678,6 +5139,80 @@ Parameters:
     "entities"
   ],
   "title": "EntityListParams",
+  "type": "object"
+}
+```
+
+## `map.make_brush_entity`
+
+Makes brushes of the world a new brush entity of a class, such as func_door (TrenchBroom's Create Brush Entity).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.make_brush_entity`.",
+  "properties": {
+    "brushes": {
+      "description": "The world's brushes it takes.",
+      "items": {
+        "$ref": "#/$defs/BrushIndex"
+      },
+      "type": "array"
+    },
+    "classname": {
+      "description": "The new entity's classname, such as `func_door`.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "classname",
+    "brushes"
+  ],
+  "title": "MakeBrushEntityParams",
+  "type": "object"
+}
+```
+
+## `map.make_structural`
+
+Gives a brush entity's brushes back to the world, in the layer or group the entity was in, and removes the entity (TrenchBroom's Make Structural).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.make_structural`.",
+  "properties": {
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The brush entity."
+    }
+  },
+  "required": [
+    "entity"
+  ],
+  "title": "MakeStructuralParams",
   "type": "object"
 }
 ```
@@ -4811,6 +5346,54 @@ Parameters:
     }
   },
   "title": "OutlineParams",
+  "type": "object"
+}
+```
+
+## `map.paste`
+
+Adds a .map's text to the open map, its world's brushes to the world and its other entities after the map's: where the text has them, or with the middle of their floor at a point on the grid.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.paste`.",
+  "properties": {
+    "at": {
+      "default": null,
+      "description": "Where the middle of its floor goes, snapped across to the grid; where the text has it\nwhen absent, as TrenchBroom's Paste at Original Position.",
+      "items": {
+        "format": "double",
+        "type": "number"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "grid": {
+      "default": null,
+      "description": "The grid, in map units; 16 when not given, 0 for none.",
+      "format": "double",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "text": {
+      "description": "A `.map`'s text: its world's brushes go into the world, its other entities after the\nmap's.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "text"
+  ],
+  "title": "PasteParams",
   "type": "object"
 }
 ```
@@ -5189,6 +5772,68 @@ Parameters:
 }
 ```
 
+## `map.replace_texture`
+
+Puts one texture in another's place on the faces of brushes, or of every brush of the map, keeping their alignment (TrenchBroom's Replace Material).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.replace_texture`.",
+  "properties": {
+    "brushes": {
+      "default": [],
+      "description": "The brushes it is replaced on; every brush of the map when empty.",
+      "items": {
+        "maxItems": 2,
+        "minItems": 2,
+        "prefixItems": [
+          {
+            "$ref": "#/$defs/EntityIndex"
+          },
+          {
+            "$ref": "#/$defs/BrushIndex"
+          }
+        ],
+        "type": "array"
+      },
+      "type": "array"
+    },
+    "from": {
+      "description": "The texture replaced, in any case.",
+      "type": "string"
+    },
+    "to": {
+      "description": "The texture put in its place.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "from",
+    "to"
+  ],
+  "title": "ReplaceTextureParams",
+  "type": "object"
+}
+```
+
 ## `map.resolve`
 
 After another program changed the open map's file while it had unsaved edits: keep disk to read the file again, or mine to keep the edits and save them over it.
@@ -5437,7 +6082,7 @@ Parameters:
 
 ## `map.search`
 
-Finds the open map's entities and brushes by classname, key, value, texture and a box, every part given; text matches in any case.
+Finds the open map's objects as TrenchBroom's search does: text found in names, classnames, keys, values, textures, smart tags and layer and group names, ignoring case, or a query in its query language, which finds entities, groups, brushes, the contents of layers, or faces.
 
 Parameters:
 
@@ -5445,60 +6090,16 @@ Parameters:
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The parameters of `map.search`: what an entity or brush must match, every part given.",
+  "description": "The parameters of `map.search`.",
   "properties": {
-    "classname": {
-      "default": null,
-      "description": "Text the classname holds, in any case.",
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "key": {
-      "default": null,
-      "description": "Text a key holds, in any case.",
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "texture": {
-      "default": null,
-      "description": "Text a brush's face's texture name holds, in any case.",
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "value": {
-      "default": null,
-      "description": "Text a value holds, in any case: of a key matching `key` when that is given.",
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "within": {
-      "default": null,
-      "description": "A box, least corner then greatest: a point entity's origin lies in it, a brush's box\nmeets it.",
-      "items": {
-        "items": {
-          "format": "double",
-          "type": "number"
-        },
-        "maxItems": 3,
-        "minItems": 3,
-        "type": "array"
-      },
-      "maxItems": 2,
-      "minItems": 2,
-      "type": [
-        "array",
-        "null"
-      ]
+    "query": {
+      "description": "Text to find in names, classnames, keys, values, textures, smart tags and layer and\ngroup names, ignoring case, or a query in TrenchBroom's query language, such as\n`classname is \"light\" && properties.light > 300` or `material like \"sky*\"`.",
+      "type": "string"
     }
   },
+  "required": [
+    "query"
+  ],
   "title": "MapSearchParams",
   "type": "object"
 }
@@ -5537,6 +6138,39 @@ Parameters:
     }
   },
   "title": "SelectParams",
+  "type": "object"
+}
+```
+
+## `map.separate`
+
+Unlinks a group from the groups linked to it, which then change on their own (TrenchBroom's Separate Linked Groups).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.ungroup`, `map.link_duplicate` and `map.separate`.",
+  "properties": {
+    "group": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The group's own entity."
+    }
+  },
+  "required": [
+    "group"
+  ],
+  "title": "ContainerParams",
   "type": "object"
 }
 ```
@@ -5798,6 +6432,125 @@ Parameters:
   "additionalProperties": false,
   "description": "The command takes no parameters: pass the empty object {}.",
   "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `map.turn`
+
+Turns entities and brushes by degrees about the vertical through the middle of their box, counter-clockwise seen from above: brushes and point entities' origins and facing, as TrenchBroom's Rotate.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "Lock": {
+      "description": "Whether a moved brush's textures stay fixed in the world (P6-09, MAP-11.2).",
+      "oneOf": [
+        {
+          "const": "locked",
+          "description": "Texture lock on: the textures stay where they are in the world.",
+          "type": "string"
+        },
+        {
+          "const": "free",
+          "description": "Texture lock off: the textures move with the brush.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.turn`.",
+  "properties": {
+    "brushes": {
+      "default": [],
+      "description": "Brushes, each by its entity.",
+      "items": {
+        "maxItems": 2,
+        "minItems": 2,
+        "prefixItems": [
+          {
+            "$ref": "#/$defs/EntityIndex"
+          },
+          {
+            "$ref": "#/$defs/BrushIndex"
+          }
+        ],
+        "type": "array"
+      },
+      "type": "array"
+    },
+    "degrees": {
+      "description": "Degrees to turn about the vertical through the selection's middle, counter-clockwise\nseen from above.",
+      "format": "double",
+      "type": "number"
+    },
+    "entities": {
+      "default": [],
+      "description": "Whole entities: a point entity's origin and facing, every brush of a brush entity.",
+      "items": {
+        "$ref": "#/$defs/EntityIndex"
+      },
+      "type": "array"
+    },
+    "lock": {
+      "$ref": "#/$defs/Lock",
+      "default": "locked",
+      "description": "Whether their textures stay fixed in the world; locked when not given."
+    }
+  },
+  "required": [
+    "degrees"
+  ],
+  "title": "TurnParams",
+  "type": "object"
+}
+```
+
+## `map.ungroup`
+
+Takes a group's entities and brushes out of it into the layer or group it is in, or the world's, and removes the group.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.ungroup`, `map.link_duplicate` and `map.separate`.",
+  "properties": {
+    "group": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The group's own entity."
+    }
+  },
+  "required": [
+    "group"
+  ],
+  "title": "ContainerParams",
   "type": "object"
 }
 ```
@@ -7433,6 +8186,197 @@ Parameters:
 }
 ```
 
+## `view.map_camera`
+
+Sets the map editor's camera: the 3D view's field of view, 50 to 150 degrees, how fast the mouse and keys move it, 0.1 to 10 times, and which way a vertical look and the wheel go. Settings not given are kept.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "CameraSpeed": {
+      "description": "How fast the camera moves, as a factor of the editor's own speed: 1 is that speed.",
+      "format": "float",
+      "type": "number"
+    },
+    "Direction": {
+      "description": "Which way a mouse movement moves the camera.",
+      "oneOf": [
+        {
+          "const": "normal",
+          "description": "The ordinary way: up looks up, the wheel away travels forward.",
+          "type": "string"
+        },
+        {
+          "const": "inverted",
+          "description": "The other way, as TrenchBroom's Invert settings.",
+          "type": "string"
+        }
+      ]
+    },
+    "MapFov": {
+      "description": "The 3D view's field of view across, in degrees.",
+      "format": "float",
+      "type": "number"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `view.map_camera`: the settings to change, the rest kept.",
+  "properties": {
+    "fly_speed": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CameraSpeed"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "How fast the keys fly it."
+    },
+    "fov": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MapFov"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The 3D view's field of view, 50 to 150 degrees."
+    },
+    "look_speed": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CameraSpeed"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "How fast a right-drag turns the camera, 0.1 to 10 times the editor's speed."
+    },
+    "look_vertical": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Direction"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Which way a vertical right-drag tilts it."
+    },
+    "pan_speed": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CameraSpeed"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "How fast a middle-drag pans it."
+    },
+    "wheel": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Direction"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Which way the wheel travels it."
+    }
+  },
+  "title": "MapCameraParams",
+  "type": "object"
+}
+```
+
+## `view.map_grid`
+
+Sets the map editor's grid in units, a power of two from 0.125 to 256.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "MapGrid": {
+      "description": "The map editor's grid: 2 to the power of its exponent, in units.",
+      "format": "double",
+      "type": "number"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `view.map_grid`.",
+  "properties": {
+    "size": {
+      "$ref": "#/$defs/MapGrid",
+      "description": "The grid in units: a power of two from 0.125 to 256."
+    }
+  },
+  "required": [
+    "size"
+  ],
+  "title": "MapGridParams",
+  "type": "object"
+}
+```
+
+## `view.map_grid_step`
+
+Halves or doubles the map editor's grid, held to 0.125 to 256 units.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "GridStep": {
+      "description": "Which way `view.map_grid_step` steps the grid.",
+      "oneOf": [
+        {
+          "const": "finer",
+          "description": "Half the step, as TrenchBroom's Decrease Grid Size.",
+          "type": "string"
+        },
+        {
+          "const": "coarser",
+          "description": "Twice the step, as TrenchBroom's Increase Grid Size.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `view.map_grid_step`.",
+  "properties": {
+    "step": {
+      "$ref": "#/$defs/GridStep",
+      "description": "Which way."
+    }
+  },
+  "required": [
+    "step"
+  ],
+  "title": "MapGridStepParams",
+  "type": "object"
+}
+```
+
 ## `view.map_panes`
 
 Splits the map view: the 3D view alone, with a top view in its corner, or beside top, front and side views.
@@ -7453,6 +8397,16 @@ Parameters:
         {
           "const": "inset",
           "description": "The 3D view with a top view in its lower right corner.",
+          "type": "string"
+        },
+        {
+          "const": "double",
+          "description": "The 3D view beside a top view, TrenchBroom's two panes (P7-08).",
+          "type": "string"
+        },
+        {
+          "const": "triple",
+          "description": "The 3D view beside a top view over a front view, TrenchBroom's three panes (P7-08).",
           "type": "string"
         },
         {

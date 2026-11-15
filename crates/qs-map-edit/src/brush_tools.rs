@@ -39,6 +39,76 @@ pub const MAP_BRUSH_SPLIT_FACE: &str = "map.brush_split_face";
 /// The id of `map.brush_chamfer`.
 pub const MAP_BRUSH_CHAMFER: &str = "map.brush_chamfer";
 
+/// The id of the command that mirrors a selection along an axis (P7-08).
+pub const MAP_FLIP: &str = "map.flip";
+
+/// The id of the command that turns a selection about the vertical (P7-08).
+pub const MAP_TURN: &str = "map.turn";
+
+/// The id of the command that puts one texture in another's place (P7-08).
+pub const MAP_REPLACE_TEXTURE: &str = "map.replace_texture";
+
+/// The parameters of `map.replace_texture`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReplaceTextureParams {
+    /// The texture replaced, in any case.
+    pub from: String,
+    /// The texture put in its place.
+    pub to: String,
+    /// The brushes it is replaced on; every brush of the map when empty.
+    #[serde(default)]
+    pub brushes: Vec<(EntityIndex, BrushIndex)>,
+}
+
+/// What `map.replace_texture` did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Replaced {
+    /// How many faces took the new texture.
+    pub faces: usize,
+}
+
+/// A selection to flip or turn: whole entities and brushes of entities.
+#[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Selection {
+    /// Whole entities: a point entity's origin and facing, every brush of a brush entity.
+    #[serde(default)]
+    pub entities: Vec<EntityIndex>,
+    /// Brushes, each by its entity.
+    #[serde(default)]
+    pub brushes: Vec<(EntityIndex, BrushIndex)>,
+}
+
+/// The parameters of `map.flip`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FlipParams {
+    /// What to flip.
+    #[serde(flatten)]
+    pub selection: Selection,
+    /// The axis flipped along: x mirrors left and right.
+    pub axis: Axis,
+    /// Whether their textures stay fixed in the world; locked when not given.
+    #[serde(default)]
+    pub lock: Lock,
+}
+
+/// The parameters of `map.turn`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TurnParams {
+    /// What to turn.
+    #[serde(flatten)]
+    pub selection: Selection,
+    /// Degrees to turn about the vertical through the selection's middle, counter-clockwise
+    /// seen from above.
+    pub degrees: f64,
+    /// Whether their textures stay fixed in the world; locked when not given.
+    #[serde(default)]
+    pub lock: Lock,
+}
+
 /// An axis of the world.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -49,6 +119,17 @@ pub enum Axis {
     Y,
     /// z.
     Z,
+}
+
+impl Axis {
+    /// The scale factors that mirror along this axis.
+    const fn mirror(self) -> [f64; 3] {
+        match self {
+            Self::X => [-1.0, 1.0, 1.0],
+            Self::Y => [1.0, -1.0, 1.0],
+            Self::Z => [1.0, 1.0, -1.0],
+        }
+    }
 }
 
 impl From<Axis> for WorldAxis {
@@ -115,6 +196,25 @@ pub struct BrushExtrudeParams {
     /// The grid `by` snaps to; 16 when not given, 0 for none.
     #[serde(default)]
     pub grid: Option<f64>,
+    /// What the move does; an extrusion when not given (P7-08).
+    #[serde(default)]
+    pub mode: ExtrudeMode,
+}
+
+/// What `map.brush_extrude` does with the face, as TrenchBroom's extrude tool's keys choose
+/// (P7-08).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ExtrudeMode {
+    /// The face moves along its normal, the brush's other planes kept.
+    #[default]
+    Extrude,
+    /// Out, a new brush of what the extrusion would add; in, the brush cut in two (Ctrl).
+    Split,
+    /// A new brush, the face and its copy moved out (Ctrl+Alt).
+    Stamp,
+    /// The face's corners move along its normal, the other faces tilting (Alt).
+    Move,
 }
 
 /// The parameters of `map.brush_sweep`.
@@ -307,7 +407,10 @@ impl MapDocument {
 
 impl MapEdited {
     /// The undoable outcome of an edit to `entity`.
-    fn undoable<C: HasMap + 'static>(entity: EntityIndex, step: MapStep) -> Outcome<Self, C> {
+    pub(super) fn undoable<C: HasMap + 'static>(
+        entity: EntityIndex,
+        step: MapStep,
+    ) -> Outcome<Self, C> {
         Outcome::undoable(
             Self {
                 entity: Some(entity),
@@ -399,13 +502,15 @@ impl<C: HasMap + 'static> Command<C> for BrushExtrude {
             face,
         } = params.face;
         let by = snap(params.by, params.grid);
+        let face = BrushFace::new(face.get());
+        let lock = params.lock.into();
         let ((), step) = edit_map(context, |document| {
-            document.rework(entity, brush, |found| {
-                Ok(vec![found.extruded(
-                    BrushFace::new(face.get()),
-                    by,
-                    params.lock.into(),
-                )?])
+            let surface = document.new_surface(None);
+            document.rework(entity, brush, |found| match params.mode {
+                ExtrudeMode::Extrude => Ok(vec![found.extruded(face, by, lock)?]),
+                ExtrudeMode::Split => found.split_extruded(face, by, lock, &surface),
+                ExtrudeMode::Stamp => Ok(vec![found.clone(), found.stamped(face, by, &surface)?]),
+                ExtrudeMode::Move => Ok(vec![found.face_moved(face, by)?]),
             })
         })?;
         Ok(MapEdited::undoable(entity, step))
@@ -634,6 +739,252 @@ impl<C: HasMap + 'static> Command<C> for BrushChamfer {
             })
         })?;
         Ok(MapEdited::undoable(params.entity, step))
+    }
+}
+
+/// How a point entity's facing changes as its selection is flipped or turned.
+#[derive(Clone, Copy, Debug)]
+enum Facing {
+    /// Mirrored along an axis.
+    Flipped(Axis),
+    /// Turned by degrees about the vertical.
+    Turned(f64),
+}
+
+impl Facing {
+    /// `angles`, pitch, yaw and roll, as they become: across x a yaw becomes 180 less it,
+    /// across y its negative, across z a pitch its negative and straight up and down swap; a
+    /// turn adds to the yaw. Straight up and down keep under a flip across x or y or a turn.
+    fn of(self, angles: [f64; 3]) -> [f64; 3] {
+        let [pitch, yaw, roll] = angles;
+        let straight = [super::UP, super::DOWN].contains(&angles);
+        let wrap = |degrees: f64| degrees.rem_euclid(super::FULL_TURN);
+        match self {
+            Self::Flipped(Axis::Z) if [super::UP].contains(&angles) => super::DOWN,
+            Self::Flipped(Axis::Z) if [super::DOWN].contains(&angles) => super::UP,
+            _ if straight => angles,
+            Self::Flipped(Axis::X) => [pitch, wrap(super::FULL_TURN / 2.0 - yaw), roll],
+            Self::Flipped(Axis::Y) => [pitch, wrap(-yaw), roll],
+            Self::Flipped(Axis::Z) => [-pitch, yaw, roll],
+            Self::Turned(degrees) => [pitch, wrap(yaw + degrees), roll],
+        }
+    }
+}
+
+impl MapDocument {
+    /// The middle of the box around `selection`: its brushes' corners, every brush of its
+    /// brush entities and its point entities' origins.
+    fn selection_middle(&mut self, selection: &Selection) -> Result<[f64; 3], MapEditError> {
+        let mut points = Vec::new();
+        for &(entity, brush) in &selection.brushes {
+            points.extend(self.brush(entity, brush)?.vertices());
+        }
+        for &entity in &selection.entities {
+            let found = self.entity_mut(entity)?;
+            if found.has_brushes() {
+                points.extend(found.brushes().flat_map(Brush::vertices));
+            } else {
+                points.push(found.origin());
+            }
+        }
+        let mut low = [f64::INFINITY, f64::INFINITY, f64::INFINITY];
+        let mut high = [f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
+        for point in points {
+            for ((lo, hi), c) in low.iter_mut().zip(&mut high).zip(point) {
+                *lo = lo.min(c);
+                *hi = hi.max(c);
+            }
+        }
+        if low.iter().any(|c| !c.is_finite()) {
+            return Err(MapEditError::NoSelection);
+        }
+        let [lx, ly, lz] = low;
+        let [hx, hy, hz] = high;
+        Ok([(lx + hx) / 2.0, (ly + hy) / 2.0, (lz + hz) / 2.0])
+    }
+
+    /// `selection` mapped by `map`: its brushes, every brush of its brush entities, and its
+    /// point entities' origins, their facing changed as `facing` says. The world is not a
+    /// whole entity to move.
+    fn arrange(
+        &mut self,
+        selection: &Selection,
+        map: &Affine,
+        facing: Facing,
+        lock: Lock,
+    ) -> Result<(), MapEditError> {
+        let mut by_entity: std::collections::BTreeMap<EntityIndex, Vec<BrushIndex>> =
+            std::collections::BTreeMap::new();
+        for &(entity, brush) in &selection.brushes {
+            by_entity.entry(entity).or_default().push(brush);
+        }
+        for &entity in &selection.entities {
+            if entity.is_world() {
+                return Err(MapEditError::NotPointEntity { entity });
+            }
+            let found = self.entity_mut(entity)?;
+            if found.has_brushes() {
+                let count = found.brushes().count();
+                by_entity
+                    .entry(entity)
+                    .or_default()
+                    .extend((0..count).map(BrushIndex::new));
+                continue;
+            }
+            let origin = super::origin_text(map.apply(found.origin()));
+            let angles = found.angles().map(|angles| facing.of(angles));
+            let mut result = found.set(b"origin", origin.as_bytes());
+            if let Some([pitch, yaw, roll]) = angles {
+                result = result.and_then(|()| {
+                    if found.value(b"angles").is_some() {
+                        let text = [pitch, yaw, roll].map(super::number).join(" ");
+                        found.set(b"angles", text.as_bytes())
+                    } else {
+                        found.set(b"angle", super::number(yaw).as_bytes())
+                    }
+                });
+            }
+            result.map_err(|error| self.map_error(error))?;
+        }
+        for (entity, brushes) in by_entity {
+            self.transform(entity, &brushes, map, lock)?;
+        }
+        Ok(())
+    }
+}
+
+/// `map.replace_texture`.
+pub(super) struct ReplaceTexture;
+
+impl<C: HasMap + 'static> Command<C> for ReplaceTexture {
+    const ID: &'static str = MAP_REPLACE_TEXTURE;
+    const SUMMARY: &'static str = "Puts one texture in another's place on the faces of brushes, \
+        or of every brush of the map, keeping their alignment (TrenchBroom's Replace Material).";
+    type Params = ReplaceTextureParams;
+    type Output = Replaced;
+    type Error = MapEditError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: ReplaceTextureParams,
+    ) -> Result<Outcome<Replaced, C>, MapEditError> {
+        let (faces, step) = edit_map(context, |document| {
+            let from = params.from.as_bytes();
+            let mut replaced = 0_usize;
+            // Over the whole map, a locked entity's faces are left as they are, as TrenchBroom
+            // leaves what cannot be selected; a brush chosen in one is refused by the lock.
+            let locked = document.locked_in(&document.file);
+            let chosen = |entity: usize, brush: usize| {
+                if params.brushes.is_empty() {
+                    return !locked.contains(&EntityIndex::new(entity));
+                }
+                params
+                    .brushes
+                    .contains(&(EntityIndex::new(entity), BrushIndex::new(brush)))
+            };
+            for (place, entity) in document.file.entities.iter_mut().enumerate() {
+                let brushes = entity.items.iter_mut().filter_map(|item| match item {
+                    qs_map::Item::Brush(brush) => Some(brush),
+                    qs_map::Item::Pair(_) => None,
+                });
+                for (index, brush) in brushes.enumerate() {
+                    if !chosen(place, index) {
+                        continue;
+                    }
+                    for face in &mut brush.faces {
+                        if face.texture().eq_ignore_ascii_case(from) {
+                            let (points, texdef) = (*face.points(), *face.texdef());
+                            face.set(points, params.to.as_bytes(), texdef)
+                                .map_err(|error| MapEditError::Brush {
+                                    error: BrushError::Map(error),
+                                })?;
+                            replaced = replaced.saturating_add(1);
+                        }
+                    }
+                }
+            }
+            if replaced == 0 {
+                return Err(MapEditError::NoTexture {
+                    texture: params.from.clone(),
+                });
+            }
+            Ok(replaced)
+        })?;
+        Ok(Outcome::undoable(Replaced { faces }, step))
+    }
+}
+
+/// `map.flip`.
+pub(super) struct Flip;
+
+impl<C: HasMap + 'static> Command<C> for Flip {
+    const ID: &'static str = MAP_FLIP;
+    const SUMMARY: &'static str = "Mirrors entities and brushes along an axis through the middle \
+        of their box: brushes and point entities' origins, and their facing, as TrenchBroom's \
+        Flip.";
+    type Params = FlipParams;
+    type Output = MapEdited;
+    type Error = MapEditError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: FlipParams,
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
+        let ((), step) = edit_map(context, |document| {
+            let about = document.selection_middle(&params.selection)?;
+            let map = Affine::scale(about, params.axis.mirror());
+            document.arrange(
+                &params.selection,
+                &map,
+                Facing::Flipped(params.axis),
+                params.lock,
+            )
+        })?;
+        Ok(MapEdited::undoable(params.selection.first(), step))
+    }
+}
+
+/// `map.turn`.
+pub(super) struct Turn;
+
+impl<C: HasMap + 'static> Command<C> for Turn {
+    const ID: &'static str = MAP_TURN;
+    const SUMMARY: &'static str = "Turns entities and brushes by degrees about the vertical \
+        through the middle of their box, counter-clockwise seen from above: brushes and point \
+        entities' origins and facing, as TrenchBroom's Rotate.";
+    type Params = TurnParams;
+    type Output = MapEdited;
+    type Error = MapEditError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: TurnParams,
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
+        let ((), step) = edit_map(context, |document| {
+            let about = document.selection_middle(&params.selection)?;
+            let map = Affine::turn(about, params.degrees);
+            document.arrange(
+                &params.selection,
+                &map,
+                Facing::Turned(params.degrees),
+                params.lock,
+            )
+        })?;
+        Ok(MapEdited::undoable(params.selection.first(), step))
+    }
+}
+
+impl Selection {
+    /// Its first entity, which the edit reports.
+    fn first(&self) -> EntityIndex {
+        self.entities
+            .first()
+            .copied()
+            .or_else(|| self.brushes.first().map(|&(entity, _)| entity))
+            .unwrap_or(EntityIndex::new(0))
     }
 }
 

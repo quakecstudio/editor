@@ -24,25 +24,33 @@ use qs_map::{Entity, Item, MapFile};
 pub use brush_tools::{
     Axis, BrushChamferParams, BrushExtrudeParams, BrushHollowParams, BrushIntersectParams,
     BrushScaleParams, BrushShearParams, BrushSplitEdgeParams, BrushSplitFaceParams,
-    BrushSweepParams, BrushVerticesParams, MAP_BRUSH_CHAMFER, MAP_BRUSH_EXTRUDE, MAP_BRUSH_HOLLOW,
-    MAP_BRUSH_INTERSECT, MAP_BRUSH_SCALE, MAP_BRUSH_SHEAR, MAP_BRUSH_SPLIT_EDGE,
-    MAP_BRUSH_SPLIT_FACE, MAP_BRUSH_SWEEP, MAP_BRUSH_VERTICES, NewVertex, VertexMove,
+    BrushSweepParams, BrushVerticesParams, ExtrudeMode, FlipParams, MAP_BRUSH_CHAMFER,
+    MAP_BRUSH_EXTRUDE, MAP_BRUSH_HOLLOW, MAP_BRUSH_INTERSECT, MAP_BRUSH_SCALE, MAP_BRUSH_SHEAR,
+    MAP_BRUSH_SPLIT_EDGE, MAP_BRUSH_SPLIT_FACE, MAP_BRUSH_SWEEP, MAP_BRUSH_VERTICES, MAP_FLIP,
+    MAP_REPLACE_TEXTURE, MAP_TURN, NewVertex, ReplaceTextureParams, Replaced, Selection,
+    TurnParams, VertexMove,
 };
 pub use brushes::{
-    BrushClipParams, BrushCreateParams, BrushIndex, BrushMergeParams, BrushMoveParams, BrushParams,
-    BrushTextureParams, BrushVertexParams, Keep as KeepPart, Lock, MAP_BRUSH_CLIP,
-    MAP_BRUSH_CREATE, MAP_BRUSH_DELETE, MAP_BRUSH_MERGE, MAP_BRUSH_MOVE, MAP_BRUSH_SUBTRACT,
-    MAP_BRUSH_TEXTURE, MAP_BRUSH_VERTEX,
+    BrushClipParams, BrushCreateParams, BrushHullParams, BrushIndex, BrushMergeParams,
+    BrushMoveParams, BrushParams, BrushTextureParams, BrushVertexParams, Keep as KeepPart, Lock,
+    MAP_BRUSH_CLIP, MAP_BRUSH_CREATE, MAP_BRUSH_DELETE, MAP_BRUSH_HULL, MAP_BRUSH_MERGE,
+    MAP_BRUSH_MOVE, MAP_BRUSH_SUBTRACT, MAP_BRUSH_TEXTURE, MAP_BRUSH_VERTEX,
 };
 pub use classes::{ClassInfo, FlagInfo, KeyInfo};
+pub use containers::{
+    AddLayerParams, ContainerParams, ExtractLinkedParams, GroupParams, MAP_ADD_LAYER,
+    MAP_EXTRACT_LINKED, MAP_GROUP, MAP_LINK_DUPLICATE, MAP_MAKE_BRUSH_ENTITY, MAP_MAKE_STRUCTURAL,
+    MAP_SEPARATE, MAP_UNGROUP, MakeBrushEntityParams, MakeStructuralParams,
+};
 pub use disk::{
     Keep, MAP_COMPARE, MAP_RESOLVE, MapDifference, MapOnDisk, ResolveParams, map_files_changed,
 };
 pub use error::MapEditError;
 pub use flags::{FlagChange, MAP_SET_FLAG, SetFlagParams};
 pub use groups::{
-    EntityListParams, ExportParams, LayerInfo, LayerOption, MAP_EXPORT, MAP_HIDE, MAP_ISOLATE,
-    MAP_LAYERS, MAP_LOCK, MAP_SET_LAYER, MAP_SHOW_ALL, MAP_UNLOCK_ALL, SetLayerParams, Switch,
+    EntityListParams, ExportParams, LAYER_KEY, LayerId, LayerInfo, LayerOption, MAP_EXPORT,
+    MAP_HIDE, MAP_ISOLATE, MAP_LAYERS, MAP_LOCK, MAP_SET_LAYER, MAP_SHOW_ALL, MAP_UNLOCK_ALL,
+    SetLayerParams, Switch,
 };
 pub use inspect::{EntityInfo, InspectParams, MapInspected, RoomInfo, RoomShape};
 pub use issues::{
@@ -53,8 +61,8 @@ pub use links::{LinkParams, MAP_LINK};
 pub use live::LiveChange;
 pub use outline::{MAP_MOVE_TO, MAP_OUTLINE, MoveToParams, OutlineParams, OutlineRow, RowKind};
 pub use prefabs::{
-    MAP_PLACE_PREFAB, MAP_PREFABS, MAP_SAVE_PREFAB, PREFAB_FOLDER, PlacePrefabParams, Prefab,
-    PrefabSaved, Prefabs, SavePrefabParams,
+    Copied, CopyParams, MAP_COPY, MAP_PASTE, MAP_PLACE_PREFAB, MAP_PREFABS, MAP_SAVE_PREFAB,
+    PREFAB_FOLDER, PasteParams, PlacePrefabParams, Prefab, PrefabSaved, Prefabs, SavePrefabParams,
 };
 pub use report::{MapReport, Seal};
 pub use review::{
@@ -68,6 +76,7 @@ pub mod backup;
 mod brush_tools;
 mod brushes;
 mod classes;
+mod containers;
 mod disk;
 mod error;
 mod flags;
@@ -78,6 +87,7 @@ mod links;
 mod live;
 mod outline;
 mod prefabs;
+mod query;
 mod report;
 mod review;
 mod shapes;
@@ -628,6 +638,31 @@ pub struct EntityKeys {
     /// Whether it has brushes.
     pub brush: bool,
 }
+
+impl EntityKeys {
+    /// Whether the entity is in a group, naming one in `_tb_group` (MAP-9.2, P7-08).
+    #[must_use]
+    pub fn in_group(&self) -> bool {
+        self.pairs.iter().any(|(key, _)| key == GROUP_KEY)
+    }
+
+    /// Whether the entity is a group's own entity, its `_tb_type` `_tb_group` (MAP-9.1, P7-08).
+    #[must_use]
+    pub fn is_group(&self) -> bool {
+        self.pairs
+            .iter()
+            .any(|(key, value)| key == GROUP_TYPE_KEY && value == GROUP_TYPE)
+    }
+}
+
+/// The key naming a layer's or group's kind (MAP-9.1).
+const GROUP_TYPE_KEY: &str = "_tb_type";
+
+/// The key a member names its group by (MAP-9.2).
+const GROUP_KEY: &str = "_tb_group";
+
+/// A group's `_tb_type` (MAP-9.1).
+const GROUP_TYPE: &str = "_tb_group";
 
 impl MapStore {
     /// The map open in the map view.
@@ -1345,6 +1380,11 @@ pub fn register_map_edit<C: HasMap + 'static>(
     registry.register(brushes::BrushTexture)?;
     registry.register(shapes::BrushShape)?;
     registry.register(brush_tools::BrushScale)?;
+    registry.register(brush_tools::Flip)?;
+    registry.register(brush_tools::Turn)?;
+    registry.register(brush_tools::ReplaceTexture)?;
+    registry.register(brushes::BrushHull)?;
+    registry.register(texture_import::AddWad)?;
     registry.register(brush_tools::BrushShear)?;
     registry.register(brush_tools::BrushExtrude)?;
     registry.register(brush_tools::BrushSweep)?;
@@ -1357,6 +1397,16 @@ pub fn register_map_edit<C: HasMap + 'static>(
     registry.register(prefabs::ListPrefabs)?;
     registry.register(prefabs::PlacePrefab)?;
     registry.register(prefabs::SavePrefab)?;
+    registry.register(prefabs::Copy)?;
+    registry.register(containers::Group)?;
+    registry.register(containers::Ungroup)?;
+    registry.register(containers::AddLayer)?;
+    registry.register(containers::LinkDuplicate)?;
+    registry.register(containers::Separate)?;
+    registry.register(containers::MakeBrushEntity)?;
+    registry.register(containers::MakeStructural)?;
+    registry.register(containers::ExtractLinked)?;
+    registry.register(prefabs::Paste)?;
     registry.register(issues::MapFix)?;
     registry.register(issues::MapSearch)?;
     registry.register(textures::MapTexturesCommand)?;

@@ -195,3 +195,126 @@ fn the_textured_view_leaves_out_unseen_textures() {
         "a hidden one is not drawn"
     );
 }
+
+/// A model of one triangle, (0, 0, 0), (2, 4, 6) and (6, 6, 6) as its scale of 2 places them,
+/// with one 4 by 4 skin of colour 1.
+fn triangle_mdl() -> Vec<u8> {
+    let mut out = b"IDPO".to_vec();
+    let int = |out: &mut Vec<u8>, v: i32| out.extend(v.to_le_bytes());
+    let float = |out: &mut Vec<u8>, v: f32| out.extend(v.to_le_bytes());
+    int(&mut out, 6);
+    // scale, scale_origin, radius, eye
+    for v in [2.0, 2.0, 2.0, 0.0, 0.0, 0.0, 8.0, 0.0, 0.0, 0.0] {
+        float(&mut out, v);
+    }
+    // skins, skin width and height, vertices, triangles, frames, sync type, flags
+    for v in [1, 4, 4, 3, 1, 1, 0, 0] {
+        int(&mut out, v);
+    }
+    float(&mut out, 1.0);
+    int(&mut out, 0);
+    out.extend([1_u8; 16]);
+    for (s, t) in [(0, 0), (1, 2), (3, 3)] {
+        for v in [0, s, t] {
+            int(&mut out, v);
+        }
+    }
+    for v in [1, 0, 1, 2] {
+        int(&mut out, v);
+    }
+    int(&mut out, 0);
+    out.extend([0, 0, 0, 0, 255, 255, 255, 0]);
+    out.extend([b'f'; 16]);
+    for vertex in [[0_u8, 0, 0], [1, 2, 3], [3, 3, 3]] {
+        out.extend(vertex);
+        out.push(0);
+    }
+    out
+}
+
+// No spec statement: P7-08: the textured and lit views draw each point entity's class model with
+// its skin, as TrenchBroom does: its first frame at the entity's origin, turned by its angle;
+// a model read once for every entity showing it; nothing for a hidden entity, a brush entity,
+// a model whose file is missing or does not read, or with no palette
+#[test]
+fn point_entities_show_their_models_skinned() {
+    use std::collections::{BTreeSet, HashMap};
+    use std::sync::Arc;
+
+    use qs_map_edit::EntityIndex;
+    use qs_render::Degrees;
+    use qs_wad::texture::Palette;
+
+    let shape =
+        |index: usize, model: &str, origin: [f32; 3], yaw: f32| crate::map_scene::EntityShape {
+            index: EntityIndex::new(index),
+            bounds: [origin, origin],
+            origin,
+            yaw: Degrees::new(yaw),
+            color: None,
+            model: Some(model.to_owned()),
+            brush: false,
+            classname: None,
+            targetname: None,
+            targets: Vec::new(),
+        };
+    let door = crate::map_scene::EntityShape {
+        brush: true,
+        ..shape(5, "progs/a.mdl", [0.0; 3], 0.0)
+    };
+    let scene = crate::map_scene::Scene {
+        entities: vec![
+            shape(1, "progs/a.mdl", [100.0, 0.0, 0.0], 0.0),
+            shape(2, "progs/a.mdl", [0.0, 0.0, 0.0], 90.0),
+            shape(3, "progs/a.mdl", [0.0; 3], 0.0),
+            shape(4, "progs/gone.mdl", [0.0; 3], 0.0),
+            shape(6, "progs/bad.mdl", [0.0; 3], 0.0),
+            door,
+        ],
+        ..crate::map_scene::Scene::default()
+    };
+    let files: HashMap<String, Arc<[u8]>> = HashMap::from([
+        ("progs/a.mdl".to_owned(), Arc::from(triangle_mdl())),
+        ("progs/bad.mdl".to_owned(), Arc::from(b"IDPO".to_vec())),
+    ]);
+    let palette = Palette::from_lmp(&[64; 768]).ok();
+    let hidden = BTreeSet::from([EntityIndex::new(3)]);
+    let posed = scene.posed_models(&files, palette.as_ref(), &hidden);
+    assert_eq!(posed.skins.len(), 1, "the model's one skin, read once");
+    assert_eq!(posed.frame.draws.len(), 2, "the two entities shown");
+    assert_eq!(posed.frame.vertices.len(), 6);
+    assert!(
+        posed
+            .frame
+            .draws
+            .iter()
+            .all(|draw| draw.skin == 0 && draw.count == 3)
+    );
+    assert!(
+        posed
+            .frame
+            .vertices
+            .iter()
+            .all(|v| v.shade > 0.5 && v.shade <= 1.0),
+        "lit as the faces are, not as dimly as the game's caps"
+    );
+    let positions: Vec<[f32; 3]> = posed.frame.vertices.iter().map(|v| v.position).collect();
+    assert!(
+        positions.contains(&[100.0, 0.0, 0.0]),
+        "at its origin: {positions:?}"
+    );
+    assert!(positions.contains(&[102.0, 4.0, 6.0]), "{positions:?}");
+    let turned = positions
+        .iter()
+        .skip(3)
+        .any(|p| (p[0] + 4.0).abs() < 1e-3 && (p[1] - 2.0).abs() < 1e-3);
+    assert!(turned, "the second turned a quarter: {positions:?}");
+    assert!(
+        scene
+            .posed_models(&files, None, &hidden)
+            .frame
+            .draws
+            .is_empty(),
+        "no palette, no skins"
+    );
+}

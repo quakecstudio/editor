@@ -2,64 +2,30 @@
 
 //! The issue browser and map search (P6-19, MAP-28), in the tab below the map view: what
 //! `map.issues` last found, each issue with the entity it is about, which a click selects, and
-//! its quick fix as a button; and a search by class, key, value and texture whose matches
-//! select the same way. Each is a [`MapAction`] the shell runs as a command.
+//! its quick fix as a button; and a search box taking text or a query in TrenchBroom's query
+//! language, whose matches Find selects, each also selecting its own. Each is a [`MapAction`]
+//! the shell runs as a command.
 
 use eframe::egui::{self, RichText, Ui};
+use qs_map_edit::uv::FaceRef;
 use qs_map_edit::{EntityIndex, MapFound, MapIssue, MapRevision, MapSearchParams};
 
 use crate::map_browser::FILTER_WIDTH;
 use crate::map_editor::MapAction;
 use crate::shell::name_field;
 use crate::strings::{
-    Text, brush_place, entity_place, fix_label, issue_count, issue_line, map_found_count,
+    Text, brush_place, entity_place, face_place, fix_label, issue_count, issue_line,
+    map_found_count,
 };
 use crate::theme::{Theme, Token};
-
-/// The search's fields, as typed.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-struct SearchFields {
-    classname: String,
-    key: String,
-    value: String,
-    texture: String,
-    /// A box as six numbers: the least corner, then the greatest.
-    within: String,
-}
-
-impl SearchFields {
-    /// The search the fields ask for: each part typed, trimmed; the box when it is six
-    /// numbers.
-    fn params(&self) -> MapSearchParams {
-        let part = |text: &str| {
-            let text = text.trim();
-            (!text.is_empty()).then(|| text.to_owned())
-        };
-        let numbers: Vec<f64> = self
-            .within
-            .split_whitespace()
-            .map_while(|word| word.parse().ok())
-            .collect();
-        let within = match numbers.as_slice() {
-            &[x0, y0, z0, x1, y1, z1] => Some([[x0, y0, z0], [x1, y1, z1]]),
-            _ => None,
-        };
-        MapSearchParams {
-            classname: part(&self.classname),
-            key: part(&self.key),
-            value: part(&self.value),
-            texture: part(&self.texture),
-            within,
-        }
-    }
-}
 
 /// The issue browser's state: the issues last found and the search.
 #[derive(Debug, Default)]
 pub(crate) struct IssueBrowser {
     /// The issues `map.issues` last gave; none before the map is checked.
     issues: Option<Vec<MapIssue>>,
-    fields: SearchFields,
+    /// The search as typed.
+    query: String,
     /// What the last search found.
     found: Option<MapFound>,
     /// The map's edits the issues and matches were found at.
@@ -164,61 +130,77 @@ impl IssueBrowser {
         actions
     }
 
-    /// The search's fields, its Find button and what it found, each selecting its entity.
+    /// The search box, its Find button and what it found, each row selecting its own.
     fn search(&mut self, ui: &mut Ui, theme: &Theme) -> Vec<MapAction> {
         let mut actions = Vec::new();
-        let mut entered = false;
-        let fields = &mut self.fields;
-        for (label, text) in [
-            (Text::MapSearchClass, &mut fields.classname),
-            (Text::MapSearchKey, &mut fields.key),
-            (Text::MapSearchValue, &mut fields.value),
-            (Text::MapSearchTexture, &mut fields.texture),
-            (Text::MapSearchWithin, &mut fields.within),
-        ] {
-            let field = ui.add(
-                egui::TextEdit::singleline(text)
-                    .hint_text(label.get())
-                    .desired_width(FILTER_WIDTH),
-            );
-            name_field(ui, &field, label);
-            entered |= field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        let field = ui.add(
+            egui::TextEdit::singleline(&mut self.query)
+                .hint_text(Text::MapSearchQuery.get())
+                .desired_width(FILTER_WIDTH),
+        );
+        name_field(ui, &field, Text::MapSearchQuery);
+        let field = field.on_hover_text(Text::MapSearchSyntax.get());
+        let entered = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        if ui.button(Text::Find.get()).clicked() || entered {
+            actions.push(MapAction::Find(MapSearchParams {
+                query: self.query.clone(),
+            }));
         }
-        ui.horizontal(|ui| {
-            if ui.button(Text::Find.get()).clicked() || entered {
-                actions.push(MapAction::Find(self.fields.params()));
-            }
-        });
         let Some(found) = &self.found else {
             return actions;
         };
         ui.label(
-            RichText::new(map_found_count(found.entities.len(), found.brushes.len()))
-                .color(theme.color(Token::TextMuted)),
+            RichText::new(map_found_count(
+                found.entities.len(),
+                found.brushes.len(),
+                found.faces.len(),
+            ))
+            .color(theme.color(Token::TextMuted)),
         );
-        let rows: Vec<(EntityIndex, String)> = found
+        let rows: Vec<(Found, String)> = found
             .entities
             .iter()
-            .map(|&entity| (entity, entity_place(entity.get())))
+            .map(|&entity| (Found::Entity(entity), entity_place(entity.get())))
             .chain(
                 found
                     .brushes
                     .iter()
-                    .map(|&(entity, brush)| (entity, brush_place(entity, brush))),
+                    .map(|&(entity, brush)| (Found::Entity(entity), brush_place(entity, brush))),
+            )
+            .chain(
+                found
+                    .faces
+                    .iter()
+                    .map(|&face| (Found::Face(face), face_place(face))),
             )
             .collect();
         let row = ui.spacing().interact_size.y;
         egui::ScrollArea::vertical()
             .id_salt(ui.id().with(core::any::TypeId::of::<MapFound>()))
             .show_rows(ui, row, rows.len(), |ui, shown| {
-                for (entity, text) in rows.get(shown).unwrap_or_default() {
+                for (place, text) in rows.get(shown).unwrap_or_default() {
                     if ui.add(egui::Button::new(text).frame(false)).clicked() {
-                        actions.push(MapAction::Select(Some(*entity)));
+                        actions.push(match *place {
+                            Found::Entity(entity) => MapAction::Select(Some(entity)),
+                            Found::Face(face) => MapAction::SelectFound(MapFound {
+                                faces: vec![face],
+                                ..MapFound::default()
+                            }),
+                        });
                     }
                 }
             });
         actions
     }
+}
+
+/// What a row of the search's matches selects.
+#[derive(Clone, Copy, Debug)]
+enum Found {
+    /// An entity, or the entity of a brush.
+    Entity(EntityIndex),
+    /// A face.
+    Face(FaceRef),
 }
 
 #[cfg(test)]

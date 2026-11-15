@@ -9,8 +9,9 @@ it too.
 - **What it draws:** a `.map`'s brushes, cut from their planes (MAP-3.4), or a BSP's faces, as
   lines. Each point entity is a box in its class's colour, at the size its `/*QUAKED*/` comment
   or `setsize` gives (`project.entities`, P5-03). When the project's folder or the game holds
-  the class's model, the first frame of that model is drawn as a wireframe preview. The
-  selection is drawn in the accent colour.
+  the class's model, the first frame of that model is drawn at the entity, turned to its
+  angle: as a wireframe in Lines, and with its first skin in Textured and Lit, as TrenchBroom
+  draws models (P7-08). The selection is drawn in the accent colour.
 - **The key editor:**
   - It lists the entity's pairs with their values, and a Remove button for each.
   - It shows the keys the entity's class reads but does not set, each with its type and
@@ -74,8 +75,99 @@ it too.
   groups that name each other are shown under the default layer.
 - **Brushes (P6-08, MAP-2):** the toolbar holds Select, Brush, Clip and Vertex. With a brush
   tool, a click selects the first brush the pointer's ray enters, by its faces, and Shift+click
-  adds or removes one. Each edit is a `map.brush_*` command on the 16-unit grid, undone in one
-  step, and kept convex: one that would leave a brush with no volume is refused.
+  adds or removes one. Each edit is a `map.brush_*` command on the grid, undone in one step, and
+  kept convex: one that would leave a brush with no volume is refused.
+- **Compass (P7-08):** each pane's lower left corner shows the map's x, y and z axes as the pane
+  sees them, in red, green and blue with their letters, as TrenchBroom's compass.
+- **Map bounds (P7-08):** the 2D views draw the soft map bounds, -4096 to 4096 units on each
+  axis, in the warning colour, the box TrenchBroom's Quake configuration draws: where players,
+  items and other entities can be.
+- **The camera (P7-08):** a right-drag looks and Alt+right-drag orbits about the point of the
+  brush under the pointer where the drag began, or 256 units ahead when there is none, as
+  TrenchBroom's camera tool (`shouldOrbit`, `Camera::DefaultPointDistance`). Shift and the wheel
+  zoom the 3D view in for now; Reset zoom beside the camera's place puts it back (TrenchBroom's
+  Ctrl+Alt+Z is undo here). Camera settings, under the camera's place, set the field of view (50
+  to 150 degrees, 90 at first), the look, pan and fly speeds, and inverted look and wheel
+  (`view.map_camera`, kept in the layout). Cmd+U frames the selection, every selected entity and brush, keeping
+  where the camera looks (TrenchBroom's Focus on Selection, Ctrl+U). The Properties panel shows
+  the camera's x, y and z, and a value typed or dragged there moves it.
+- **The view's menu (P7-08):** right-click in the view for Group and Ungroup, Create brush
+  entity (the selected world brushes as an entity of a brush class, `map.make_brush_entity`),
+  Make structural (a brush entity's brushes back to the world, `map.make_structural`), Create
+  point entity (one of a point class where the menu opened), Select all of the selection's
+  class, Hide, Isolate and Move to layer, as TrenchBroom's map view menu.
+- **Making groups and layers (P7-08):** Cmd+G (or Group in Properties) puts the selected
+  entities and world brushes in a new group, named "Group 1" and on (`map.group`). With a
+  group's own entity selected, Cmd+Shift+G (Ungroup) takes its contents out (`map.ungroup`),
+  Cmd+Shift+D (Linked duplicate) copies it as a group linked to it (`map.link_duplicate`) and
+  Separate unlinks it (`map.separate`). With an entity of a linked group selected, the view's
+  menu's "Extract into linked groups" moves it, and the same entity of every linked copy, into
+  new groups linked to each other (`map.extract_linked`). Add layer, beside Layers, adds a layer
+  (`map.add_layer`), and "New objects in" picks the current layer: a brush drawn goes into the
+  layer's own entity and a point entity placed names it, as TrenchBroom's current layer. Each is
+  written as TrenchBroom writes it.
+- **Search (P7-08):** the Issues tab's search box takes text or a query in TrenchBroom's query
+  language (`map.search`), and Find selects every match, as TrenchBroom's search replaces the
+  selection. Text finds names, classnames, keys, values, textures, smart tags and layer and group
+  names, ignoring case, `*`, `?` and `%` matching the whole value. A query such as
+  `classname is "light" && properties.light > 300` finds entities, groups and brushes,
+  `material like "sky*"` finds faces, and `type is layer && name is "Details"` selects what a
+  layer holds. Nothing hidden or locked is found; hovering over the box shows the syntax.
+- **Clip points (P7-08):** with a brush selected and the Clip tool, a click on one of its faces
+  in the 3D view places a clip point there, on the face and its grid, and a click in a 2D view
+  places one anywhere on the grid; a double-click on a face makes the clip plane that face's.
+  Return clips the brush by the plane through the points (two guess a third straight up), and
+  Escape takes the last point back, as TrenchBroom's clip tool. A drag still cuts along a
+  line on the ground.
+- **Extruding by drag (P7-08):** with a brush selected, Shift and a drag on one of its faces move
+  the face along its normal, on the grid, as TrenchBroom's extrude tool; with Cmd as well the
+  drag splits off a new brush (or, pushed in, cuts the brush in two), with Cmd+Alt it stamps a
+  new brush of the face and its copy, and with Alt it moves the face's corners
+  (`map.brush_extrude`'s modes).
+- **Hull (P7-08):** the Hull tool places a point where each click meets a brush, or the ground,
+  on the grid, and Return makes the convex brush around them with the current texture
+  (`map.brush_hull`), as TrenchBroom's complex shape tool; Escape clears the points.
+- **Panes (P7-08):** the view is the 3D view alone, with a top view inset, beside a top view
+  ("2 views"), beside top and front views ("3 views"), or with top, front and side views ("4
+  views"). The pane with the keyboard is outlined, and the 2D views are linked as TrenchBroom's
+  are by default: panning or zooming one moves the others along the axes they share.
+- **Picking behind (P7-08):** in the 3D view, with a brush selected under the pointer, Cmd and the
+  wheel step the selection to the brush behind it (up) or in front (down), TrenchBroom's
+  selection drilling; a click in a 2D view takes the smallest brush across it under the pointer,
+  so one behind another can be picked.
+- **Selecting (P7-08):** Cmd+A selects every entity and world brush not hidden, Cmd+Alt+A
+  inverts the selection and Cmd+Shift+A clears it. With brushes selected, Cmd+T selects what
+  they touch, Cmd+E what lies inside them and Cmd+Shift+E what lies inside them stretched along
+  the view's axis, then deletes them, as TrenchBroom's Select Touching, Inside and Tall; Select
+  siblings in Properties takes every brush of their entities (TrenchBroom's Ctrl+B is Compile
+  here).
+- **Flip and turn (P7-08):** Cmd+F flips the selection across the view, along the map axis
+  nearest the camera's right, and Cmd+Alt+F up and down (TrenchBroom's Ctrl+F and Ctrl+Alt+F);
+  Alt+Left and Right turn it a right angle about the vertical. With brushes selected, the
+  Properties panel turns the selection by any angle, 15 degrees at first, and flips it along x,
+  y or z. Both go about the middle of the selection's box, point entities' facing with it
+  (`map.flip`, `map.turn`).
+- **Moving on an axis (P7-08):** the Move tool moves the selection across the ground in the 3D
+  view and across its own plane in a 2D view; Alt moves it up and down, and Shift keeps it on the
+  axis it has moved farthest, as TrenchBroom's axis restriction.
+- **Textures (P7-08):** the texture chosen in the browser is the current one, which a new brush
+  or shape takes (else the map's last face's). With more than one WAD the browser shows one at a
+  time or every one, and a WAD file dropped on the window joins the map's `wad` key. With faces
+  picked (Alt-click), the arrows shift their texture by the grid (twice with Shift, 1 with Cmd)
+  and Page Up and Down turn it 15 degrees (90 with Shift, 1 with Cmd), TrenchBroom's alignment
+  keys. A texture's menu (right-click) replaces the
+  current texture with it on the selected brushes, or on every brush when none is selected
+  (`map.replace_texture`), as TrenchBroom's Replace Material.
+- **Copy and paste (P7-08):** Cmd+C puts the selected entities and brushes on the clipboard as
+  a `.map`'s text, where they are (`map.copy`); Cmd+V pastes map text with the middle of its
+  floor at the pointer, on the grid, and Cmd+Alt+V where the text has it (`map.paste`), as
+  TrenchBroom's Paste and Paste at Original Position. Text copied from a `.map` file pastes too.
+- **Escape (P7-08):** in the view, Escape drops a drag in progress, else the Vertex tool's picked
+  corners, else goes back to Select, else clears the selection, in TrenchBroom's order.
+- **The grid (P7-08):** drawing, dragging and the selection keys snap to the grid, a power of two
+  from 0.125 to 256 units, 16 at first, as TrenchBroom's. The toolbar's Grid picker sets it
+  (`view.map_grid`), and while the view has the keyboard - halves it, + doubles it
+  (`view.map_grid_step`) and 1 to 9 set 1 to 256 units, TrenchBroom's keys. The layout keeps it.
   - Brush: a drag on the ground (height 0) draws a box 64 units tall in the world
     (`map.brush_create`), with the texture of the map's last face.
   - Clip: a drag on the ground draws the cut line, and the selected brush is cut by the vertical
@@ -99,8 +191,10 @@ it too.
   map (`map.run_profile`), as TrenchBroom's compile profiles are: `bsp` (qs-map-bsp, the map as it
   is in the editor, to a BSP beside it with its portal and leak files), `vis` and `light` (on that
   BSP, each `full` or `fast`), `tool` (a program and its arguments, run in the map's folder),
-  `copy`, and `launch` (the BSP and its `.lit` copied into the project's build and the game
-  started on it). Paths take `${MAP}`, `${MAP_DIR}`, `${MAP_NAME}`, `${BSP}`, `${PROJECT}` and
+  `copy`, `rename` (a file moved, its folder made), `delete` (files by a name with `*` and `?`,
+  TrenchBroom's Delete Files), and `launch` (the BSP and its `.lit` copied into the project's
+  build and the game started on it). A relative path in `rename` and `delete` is taken from the
+  map's folder. Paths take `${MAP}`, `${MAP_DIR}`, `${MAP_NAME}`, `${BSP}`, `${PROJECT}` and
   `${GAME}`. Full and Fast are built in; a project adds its own in `compile-profiles.toml`:
 
   ```toml

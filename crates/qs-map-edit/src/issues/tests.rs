@@ -16,7 +16,7 @@ use super::{
     MAP_FIX, MAP_ISSUES, MAP_SEARCH, MapFound, MapIssue, MapIssues, NO_START, NO_VOLUME, QuickFix,
 };
 use crate::testing::{MapContext, TestProject};
-use crate::{BrushIndex, EntityIndex, EntityProblem, MAP_OPEN};
+use crate::{BrushIndex, ClassInfo, EntityIndex, EntityProblem, MAP_HIDE, MAP_LOCK, MAP_OPEN};
 
 /// The desktop's keep project: its QuakeC defines the ogre, the light, the door and the
 /// player start.
@@ -253,58 +253,175 @@ fn format_and_texture_issues_are_placed() {
     );
 }
 
-fn search(session: &mut Session<MapContext>, params: serde_json::Value) -> MapFound {
-    serde_json::from_value(session.execute(MAP_SEARCH, params).unwrap()).unwrap()
+/// A session of the map `text`, whose project gives the ogre a box 64 across.
+fn search_session(text: &str) -> Session<MapContext> {
+    let context = MapContext {
+        project: TestProject {
+            root: Some(keep()),
+            classes: vec![ClassInfo {
+                name: "monster_ogre".to_owned(),
+                found: "documented".to_owned(),
+                shape: "point".to_owned(),
+                color: None,
+                size: Some([[-32.0, -32.0, -24.0], [32.0, 32.0, 64.0]]),
+                model: None,
+                doc: Vec::new(),
+                keys: Vec::new(),
+                spawnflags: Vec::new(),
+            }],
+            ..TestProject::default()
+        },
+        ..MapContext::default()
+    };
+    let mut session = context.into_session();
+    let dir = std::env::temp_dir()
+        .join(format!("qs-wb-issues-{}", std::process::id()))
+        .join("search");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("fixture.map");
+    std::fs::write(&path, text).unwrap();
+    session.execute(MAP_OPEN, json!({ "path": path })).unwrap();
+    session
 }
 
-// No spec statement: P6-19: the search finds entities by class, key and value and brushes by
-// texture and box, every part given, in any case
+fn search(session: &mut Session<MapContext>, query: &str) -> MapFound {
+    serde_json::from_value(
+        session
+            .execute(MAP_SEARCH, json!({ "query": query }))
+            .unwrap(),
+    )
+    .unwrap()
+}
+
+// No spec statement: P7-08: map.search finds what TrenchBroom's search finds: text in
+// classnames, keys and values, textures and layer and group names; a query by its fields;
+// brushes by their entity and textures; faces alone by texture and normal; a layer by what it
+// holds; a box from the class's size; nothing hidden
 #[test]
-fn search_by_class_key_texture_and_box() {
+fn search_by_text_and_query() {
     let ogre =
         "{\n\"classname\" \"monster_ogre\"\n\"origin\" \"64 0 24\"\n\"target\" \"gate\"\n}\n";
     let door = format!(
         "{{\n\"classname\" \"func_door\"\n\"targetname\" \"gate\"\n{}}}\n",
         cuboid([96, -16, 0], [112, 16, 96]).replace("wall", "door")
     );
-    let rest = START.to_owned() + ogre + &door;
-    let mut session = session("search", &map(&room(), &rest));
+    let lights = "{\n\"classname\" \"light\"\n\"origin\" \"0 0 64\"\n\"light\" \"400\"\n}\n\
+        {\n\"classname\" \"light\"\n\"origin\" \"0 0 96\"\n\"light\" \"bright\"\n}\n";
+    let layer = "{\n\"classname\" \"func_group\"\n\"_tb_type\" \"_tb_layer\"\n\"_tb_name\" \"Details\"\n\
+        \"_tb_id\" \"1\"\n}\n\
+        {\n\"classname\" \"func_group\"\n\"_tb_type\" \"_tb_group\"\n\"_tb_name\" \"Hallway\"\n\
+        \"_tb_id\" \"2\"\n\"_tb_layer\" \"1\"\n}\n\
+        {\n\"classname\" \"info_null\"\n\"origin\" \"500 0 0\"\n\"_tb_group\" \"2\"\n}\n";
+    let rest = START.to_owned() + ogre + &door + lights + layer;
+    let mut session = search_session(&map(&room(), &rest));
     let e = EntityIndex::new;
     let b = BrushIndex::new;
+    let entities = |session: &mut Session<MapContext>, query: &str| search(session, query).entities;
+    assert_eq!(entities(&mut session, "OGRE"), [e(2)]);
+    assert_eq!(entities(&mut session, "gate"), [e(2), e(3)]);
+    assert_eq!(entities(&mut session, "monster_*"), [e(2)]);
     assert_eq!(
-        search(&mut session, json!({ "classname": "OGRE" })).entities,
-        vec![e(2)]
+        entities(&mut session, "hallway"),
+        [e(7), e(8)],
+        "by its name, by its group's"
     );
     assert_eq!(
-        search(&mut session, json!({ "value": "gate" })).entities,
-        vec![e(2), e(3)]
+        entities(&mut session, "properties.targetname is \"gate\""),
+        [e(3)]
     );
     assert_eq!(
-        search(
+        entities(
             &mut session,
-            json!({ "key": "targetname", "value": "gate" })
-        )
-        .entities,
-        vec![e(3)]
+            "classname is \"light\" && properties.light > 300"
+        ),
+        [e(4)],
+        "a light whose light is no number does not match"
     );
-    let doors = search(&mut session, json!({ "texture": "DOOR" }));
+    assert_eq!(
+        entities(&mut session, "properties contains \"target\""),
+        [e(2)]
+    );
+    let doors = search(&mut session, "materials like \"DOOR\"");
     assert_eq!(
         (doors.entities, doors.brushes),
-        (vec![e(3)], vec![(e(3), b(0))])
+        (vec![], vec![(e(3), b(0))])
+    );
+    assert_eq!(
+        search(&mut session, "entity.classname is \"func_door\"").brushes,
+        [(e(3), b(0))]
+    );
+    assert_eq!(
+        search(&mut session, "tags contains \"Func\"").brushes,
+        [(e(3), b(0))]
+    );
+    let floors = search(&mut session, "material like \"wall\" && normal.z > 0.7");
+    assert!(floors.entities.is_empty() && floors.brushes.is_empty());
+    assert_eq!(floors.faces.len(), 2, "the floor's top and the ceiling's");
+    assert!(floors.faces.iter().all(|face| face.entity == e(0)));
+    assert_eq!(
+        search(&mut session, "material like \"door\"").faces.len(),
+        6
     );
     let near = search(
         &mut session,
-        json!({ "within": [[32.0, -32.0, 0.0], [100.0, 32.0, 64.0]] }),
+        "bounds intersects bbox(vec(32, -32, 0), vec(100, 32, 64))",
     );
-    assert_eq!(near.entities, vec![e(0), e(2), e(3)]);
+    assert_eq!(near.entities, [e(2), e(3)]);
+    assert_eq!(near.brushes, [(e(0), b(0)), (e(3), b(0))]);
     assert_eq!(
-        near.brushes,
-        vec![(e(0), b(0)), (e(3), b(0))],
-        "the floor's top meets the box; the ceiling does not"
+        entities(&mut session, "bounds.max.z is 88"),
+        [e(2)],
+        "the ogre's class box: 24 up from 64"
     );
-    let everything = search(&mut session, json!({}));
-    assert_eq!(everything.entities.len(), 4);
-    assert!(everything.brushes.is_empty());
+    assert_eq!(
+        entities(&mut session, "center distanceTo vec(0, 0, 64) < 1"),
+        [e(4)],
+        "a light of no known class is 16 across"
+    );
+    let details = search(&mut session, "type is layer && name is \"Details\"");
+    assert_eq!((details.entities, details.brushes), (vec![e(7)], vec![]));
+    let default = search(&mut session, "type is layer && name is \"Default Layer\"");
+    assert_eq!(default.entities, [e(1), e(2), e(3), e(4), e(5)]);
+    assert_eq!(default.brushes, [(e(0), b(0)), (e(0), b(1))]);
+    assert_eq!(entities(&mut session, "groupName is \"Hallway\""), [e(8)]);
+    assert_eq!(
+        entities(&mut session, "layerName is \"Details\""),
+        [e(7), e(8)]
+    );
+    assert_eq!(
+        entities(&mut session, "type is group && name like \"Hall*\""),
+        [e(7)]
+    );
+    assert_eq!(
+        entities(&mut session, "!(classname like \"info_*\")"),
+        [e(2), e(3), e(4), e(5)]
+    );
+    for nothing in ["", "light is red", "\"\"", "true", "properties.message"] {
+        assert_eq!(
+            search(&mut session, nothing),
+            MapFound::default(),
+            "{nothing}"
+        );
+    }
+    session
+        .execute(MAP_HIDE, json!({ "entities": [2] }))
+        .unwrap();
+    assert!(
+        entities(&mut session, "ogre").is_empty(),
+        "nothing hidden is found"
+    );
+    session
+        .execute(MAP_LOCK, json!({ "entities": [3] }))
+        .unwrap();
+    assert!(
+        entities(&mut session, "gate").is_empty(),
+        "nor anything locked"
+    );
+    assert!(
+        search(&mut session, "materials like \"door\"")
+            .brushes
+            .is_empty()
+    );
 }
 
 /// Runs `fix` and gives its error's text, checking the map is unchanged.

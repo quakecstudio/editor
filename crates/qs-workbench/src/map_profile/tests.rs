@@ -314,3 +314,75 @@ fn files_of_an_earlier_compile_are_removed() {
     assert_eq!(stopped.tasks.len(), 2, "{stopped:?}");
     assert!(matches!(stopped.tasks[1].result, TaskResult::Failed { .. }));
 }
+
+// No spec statement: P7-08: a name pattern of TrenchBroom's Delete Files takes `*` for any run
+// of characters, none included, and `?` for any one; anything else must match exactly
+#[test]
+fn a_name_pattern_matches_with_stars_and_marks() {
+    let matches = |pattern: &str, name: &str| super::NamePattern(pattern.to_owned()).matches(name);
+    for (pattern, name) in [
+        ("*.prt", "e1m1.prt"),
+        ("*", ""),
+        ("e?m1.*", "e1m1.bsp"),
+        ("*m*", "m"),
+        ("a*b*c", "aXXbYc"),
+        ("exact.log", "exact.log"),
+    ] {
+        assert!(matches(pattern, name), "{pattern} {name}");
+    }
+    for (pattern, name) in [
+        ("*.prt", "e1m1.bsp"),
+        ("e?m1", "e11m1"),
+        ("?", ""),
+        ("a*b", "ab c"),
+        ("exact.log", "exact.logs"),
+    ] {
+        assert!(!matches(pattern, name), "{pattern} {name}");
+    }
+}
+
+// No spec statement: P7-08: a profile renames a file, its folder made and a relative path taken
+// from the map's folder, and deletes the files a pattern names, none matching being no error;
+// a rename of a file that is not there fails its task
+#[test]
+fn a_profile_renames_and_deletes_files() {
+    let file = "[[profile]]\nname = \"Tidy\"\ntasks = [\
+         { task = \"rename\", from = \"a.log\", to = \"logs/b.log\" }, \
+         { task = \"delete\", target = \"${MAP_DIR}/*.tmp\" }, \
+         { task = \"delete\", target = \"none-*.here\" }]\n\n\
+         [[profile]]\nname = \"Missing\"\ntasks = [\
+         { task = \"rename\", from = \"gone.log\", to = \"b.log\" }]\n";
+    let (mut session, map) = project("profile-tidy", Some(file));
+    let dir = map.parent().unwrap();
+    std::fs::write(dir.join("a.log"), b"a").unwrap();
+    for name in ["one.tmp", "two.tmp", "keep.txt"] {
+        std::fs::write(dir.join(name), b"x").unwrap();
+    }
+    let ran = run(&mut session, "Tidy");
+    assert!(ran.succeeded(), "{ran:?}");
+    assert!(!dir.join("a.log").exists());
+    assert_eq!(std::fs::read(dir.join("logs/b.log")).unwrap(), b"a");
+    assert!(!dir.join("one.tmp").exists() && !dir.join("two.tmp").exists());
+    assert!(dir.join("keep.txt").exists());
+    let missing = run(&mut session, "Missing");
+    assert!(!missing.succeeded(), "{missing:?}");
+    assert!(
+        format!("{missing:?}").contains("cannot rename"),
+        "said as a rename: {missing:?}"
+    );
+    assert_eq!(
+        Task::Delete {
+            target: String::new()
+        }
+        .name(),
+        "delete"
+    );
+    assert_eq!(
+        Task::Rename {
+            from: String::new(),
+            to: String::new()
+        }
+        .name(),
+        "rename"
+    );
+}

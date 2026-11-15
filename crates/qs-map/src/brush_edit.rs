@@ -389,6 +389,17 @@ impl Brush {
         Ok(pieces)
     }
 
+    /// The convex brush around `points`, every face painted with `surface`: TrenchBroom's
+    /// complex shape tool's brush of the points placed (P7-08).
+    ///
+    /// # Errors
+    ///
+    /// [`BrushError::Degenerate`] when the points span no volume, and [`BrushError::Map`]
+    /// when a face cannot be written.
+    pub fn convex_hull(points: &[[f64; 3]], surface: &Surface) -> Result<Self, BrushError> {
+        Self::hull(points, &[], surface)
+    }
+
     /// The convex hull of `points`, each face painted as the face of `from` whose normal is
     /// nearest its own, or with `surface` when `from` has none.
     pub(crate) fn hull(
