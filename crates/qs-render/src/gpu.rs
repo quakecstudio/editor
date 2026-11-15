@@ -1416,17 +1416,68 @@ impl CallbackTrait for MapCallback {
         resources: &CallbackResources,
     ) {
         if let Some(renderer) = resources.get::<MapRenderer>() {
-            let viewport = info.viewport_in_pixels();
-            let viewport = [
-                viewport.left_px,
-                viewport.top_px,
-                viewport.width_px,
-                viewport.height_px,
-            ]
-            .map(|v| f32_of_i32(v.max(0)));
-            let [_, _, width, height] = viewport;
-            let viewport = (width > 0.0 && height > 0.0).then_some(viewport);
-            renderer.draw(pass, self.view.time, viewport);
+            renderer.draw_in(&info, pass, self.view.time);
+        }
+    }
+}
+
+impl MapRenderer {
+    /// Draws the map in `info`'s viewport, none when it has no area, at `time`.
+    fn draw_in(
+        &self,
+        info: &epaint::PaintCallbackInfo,
+        pass: &mut wgpu::RenderPass<'static>,
+        time: f32,
+    ) {
+        let viewport = info.viewport_in_pixels();
+        let viewport = [
+            viewport.left_px,
+            viewport.top_px,
+            viewport.width_px,
+            viewport.height_px,
+        ]
+        .map(|v| f32_of_i32(v.max(0)));
+        let [_, _, width, height] = viewport;
+        let viewport = (width > 0.0 && height > 0.0).then_some(viewport);
+        self.draw(pass, time, viewport);
+    }
+}
+
+/// The map editor's renderer (P7-13), kept in egui's callback resources beside the map view's
+/// [`MapRenderer`], so the editor's 3D view and a BSP open in the map view each keep their own.
+pub struct EditorRenderer(pub MapRenderer);
+
+/// One frame of the map editor's 3D view: the world alone, drawn from the [`EditorRenderer`]
+/// in egui's callback resources under the editor's own lines.
+#[derive(Clone)]
+pub struct EditorCallback {
+    /// What it is drawn with.
+    pub view: View,
+}
+
+impl CallbackTrait for EditorCallback {
+    fn prepare(
+        &self,
+        _device: &Device,
+        queue: &Queue,
+        _screen: &ScreenDescriptor,
+        _encoder: &mut wgpu::CommandEncoder,
+        resources: &mut CallbackResources,
+    ) -> Vec<wgpu::CommandBuffer> {
+        if let Some(EditorRenderer(renderer)) = resources.get_mut::<EditorRenderer>() {
+            renderer.set_view(queue, &self.view);
+        }
+        Vec::new()
+    }
+
+    fn paint(
+        &self,
+        info: epaint::PaintCallbackInfo,
+        pass: &mut wgpu::RenderPass<'static>,
+        resources: &CallbackResources,
+    ) {
+        if let Some(EditorRenderer(renderer)) = resources.get::<EditorRenderer>() {
+            renderer.draw_in(&info, pass, self.view.time);
         }
     }
 }

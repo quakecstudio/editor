@@ -182,6 +182,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`view.focus_left_panel`](#viewfocus_left_panel) | Shows the left panel, Project and Entities, if it is hidden and gives it the keyboard. |
 | [`view.focus_right_panel`](#viewfocus_right_panel) | Shows the right panel, Properties and the agent, if it is hidden and gives it the keyboard. |
 | [`view.map_panes`](#viewmap_panes) | Splits the map view: the 3D view alone, with a top view in its corner, or beside top, front and side views. |
+| [`view.map_shading`](#viewmap_shading) | Draws the map view's 3D pane as the brushes' edges, as their textured faces, or lit by the last compile's lightmaps. |
 | [`view.project_search`](#viewproject_search) | Opens the project search: every match in the project's files as a multibuffer of editable excerpts, to edit or replace in place. |
 | [`view.resize_panel`](#viewresize_panel) | Sets the width of the left or right panel, or the height of the bottom panel, in points. |
 | [`view.split_down`](#viewsplit_down) | Splits the editor into two panes, one above the other, the second showing the open file. |
@@ -7475,6 +7476,53 @@ Parameters:
     "panes"
   ],
   "title": "MapPanesParams",
+  "type": "object"
+}
+```
+
+## `view.map_shading`
+
+Draws the map view's 3D pane as the brushes' edges, as their textured faces, or lit by the last compile's lightmaps.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "MapShading": {
+      "description": "How the map view's 3D pane draws the map (P7-13).",
+      "oneOf": [
+        {
+          "const": "lines",
+          "description": "The brushes' edges.",
+          "type": "string"
+        },
+        {
+          "const": "textured",
+          "description": "The brushes' faces with their textures, shaded by the way they face.",
+          "type": "string"
+        },
+        {
+          "const": "lit",
+          "description": "The last compile's BSP with its lightmaps and coloured light.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `view.map_shading`.",
+  "properties": {
+    "shading": {
+      "$ref": "#/$defs/MapShading",
+      "description": "The shading."
+    }
+  },
+  "required": [
+    "shading"
+  ],
+  "title": "MapShadingParams",
   "type": "object"
 }
 ```

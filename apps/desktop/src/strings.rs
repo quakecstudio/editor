@@ -866,11 +866,27 @@ pub enum Text {
     MapTextureScaleY,
     /// The texture's rotation field, to a screen reader.
     MapTextureRotation,
+    /// The map view's shading that draws brushes as their edges (P7-13).
+    MapShadeLines,
+    /// The map view's shading that draws brush faces textured (P7-13).
+    MapShadeTextured,
+    /// The map view's shading that draws the last compile's light (P7-13).
+    MapShadeLit,
+    /// Lines' tooltip.
+    MapShadeLinesHint,
+    /// Textured's tooltip.
+    MapShadeTexturedHint,
+    /// Lit's tooltip.
+    MapShadeLitHint,
+    /// Lit, with no compile of the map yet.
+    MapLitNone,
+    /// Lit, when the map was saved after its last compile.
+    MapLitStale,
 }
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 427] = [
+    pub const ALL: [Self; 435] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1298,6 +1314,14 @@ impl Text {
         Self::MapTextureScaleX,
         Self::MapTextureScaleY,
         Self::MapTextureRotation,
+        Self::MapShadeLines,
+        Self::MapShadeTextured,
+        Self::MapShadeLit,
+        Self::MapShadeLinesHint,
+        Self::MapShadeTexturedHint,
+        Self::MapShadeLitHint,
+        Self::MapLitNone,
+        Self::MapLitStale,
     ];
 
     /// The string, in English.
@@ -1806,6 +1830,18 @@ impl Text {
             Self::MapTextureScaleX => "Texture scale X",
             Self::MapTextureScaleY => "Texture scale Y",
             Self::MapTextureRotation => "Texture rotation",
+            Self::MapShadeLines => "Lines",
+            Self::MapShadeTextured => "Textured",
+            Self::MapShadeLit => "Lit",
+            Self::MapShadeLinesHint => "Brushes as their edges",
+            Self::MapShadeTexturedHint => {
+                "Brush faces with their textures, shaded by the way they face"
+            }
+            Self::MapShadeLitHint => {
+                "The last compile's light and coloured light on the map's textures"
+            }
+            Self::MapLitNone => "Compile the map to see it lit.",
+            Self::MapLitStale => "Lit shows the last compile; the map has changed since.",
         }
     }
 }

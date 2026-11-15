@@ -93,14 +93,27 @@ impl MapView {
 /// Puts a renderer of `mesh` in `state`'s callback resources, for the window's target format
 /// and [`DEPTH_FORMAT`], replacing the one there.
 pub fn install(state: &RenderState, mesh: &MapMesh) {
-    let renderer = MapRenderer::new(
+    let renderer = renderer(state, mesh);
+    state.renderer.write().callback_resources.insert(renderer);
+}
+
+/// Puts a renderer of `mesh` in `state`'s callback resources as the map editor's (P7-13),
+/// beside the map view's, replacing the editor's one there.
+pub(crate) fn install_editor(state: &RenderState, mesh: &MapMesh) {
+    let renderer = qs_render::EditorRenderer(renderer(state, mesh));
+    state.renderer.write().callback_resources.insert(renderer);
+}
+
+/// A renderer of `mesh` on `state`'s device, for the window's target format and
+/// [`DEPTH_FORMAT`].
+fn renderer(state: &RenderState, mesh: &MapMesh) -> MapRenderer {
+    MapRenderer::new(
         &state.device,
         &state.queue,
         (state.target_format, DEPTH_FORMAT),
         mesh,
         &qs_render::Assets::default(),
-    );
-    state.renderer.write().callback_resources.insert(renderer);
+    )
 }
 
 /// Seconds as the shader takes them.

@@ -25,6 +25,7 @@ const FULL_TURN: f32 = 360.0;
 mod alias;
 mod anorm_dots;
 mod camera;
+mod flat;
 mod gpu;
 mod light;
 mod look;
@@ -44,9 +45,11 @@ pub use alias::{
     AliasEntity, AliasError, AliasKind, AliasModel, AliasVertex, Shading, bob_rotate, entity_light,
 };
 pub use camera::{Camera, Degrees};
+pub use flat::{FlatFace, Shade};
 pub use gpu::{
-    AliasDraw, Assets, FlatBlend, FlatDraw, FlatFrame, FlatVertex, Fog, MapCallback, MapRenderer,
-    ModelFrame, PlayerSkin, PlayerSlot, SkinKey, SpriteDraw, SpriteFrame, View,
+    AliasDraw, Assets, EditorCallback, EditorRenderer, FlatBlend, FlatDraw, FlatFrame, FlatVertex,
+    Fog, MapCallback, MapRenderer, ModelFrame, PlayerSkin, PlayerSlot, SkinKey, SpriteDraw,
+    SpriteFrame, View,
 };
 pub use light::light_point;
 pub use look::Look;

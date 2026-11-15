@@ -63,11 +63,63 @@ impl<C: HasLayout + 'static> Command<C> for SetMapPanes {
     }
 }
 
-/// Registers `view.map_panes`.
+/// The id of the command that sets how the map view's 3D pane draws the map (P7-13).
+pub const MAP_SHADING: &str = "view.map_shading";
+
+/// How the map view's 3D pane draws the map (P7-13).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MapShading {
+    /// The brushes' edges.
+    #[default]
+    Lines,
+    /// The brushes' faces with their textures, shaded by the way they face.
+    Textured,
+    /// The last compile's BSP with its lightmaps and coloured light.
+    Lit,
+}
+
+impl MapShading {
+    /// Every shading, in the toolbar's order.
+    pub const ALL: [Self; 3] = [Self::Lines, Self::Textured, Self::Lit];
+}
+
+/// The parameters of `view.map_shading`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MapShadingParams {
+    /// The shading.
+    pub shading: MapShading,
+}
+
+/// `view.map_shading`.
+struct SetMapShading;
+
+impl<C: HasLayout + 'static> Command<C> for SetMapShading {
+    const ID: &'static str = MAP_SHADING;
+    const SUMMARY: &'static str = "Draws the map view's 3D pane as the brushes' edges, as their \
+        textured faces, or lit by the last compile's lightmaps.";
+    type Params = MapShadingParams;
+    type Output = MapShading;
+    type Error = Infallible;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: MapShadingParams,
+    ) -> Result<Outcome<MapShading, C>, Infallible> {
+        let layout = context.layout_mut();
+        layout.map_shading = params.shading;
+        Ok(Outcome::outside_history(layout.map_shading))
+    }
+}
+
+/// Registers `view.map_panes` and `view.map_shading`.
 pub(crate) fn register<C: HasLayout + 'static>(
     registry: &mut Registry<C>,
 ) -> Result<(), RegisterError> {
-    registry.register(SetMapPanes)
+    registry.register(SetMapPanes)?;
+    registry.register(SetMapShading)
 }
 
 #[cfg(test)]
@@ -80,7 +132,7 @@ mod tests {
     use qs_commands::{Registry, Session};
     use serde_json::json;
 
-    use super::{MAP_PANES, MapPanes};
+    use super::{MAP_PANES, MAP_SHADING, MapPanes, MapShading};
     use crate::Layout;
 
     // No spec statement: P6-09: view.map_panes sets the map view's layout outside the undo
@@ -106,6 +158,33 @@ mod tests {
         assert!(
             session
                 .execute(MAP_PANES, json!({ "panes": "eight" }))
+                .is_err()
+        );
+    }
+
+    // No spec statement: P7-13: view.map_shading sets the 3D pane's shading outside the undo
+    // history, the layout file keeps it, and an older file reads as lines
+    #[test]
+    fn the_map_view_s_shading_is_set_and_kept() {
+        let mut registry = Registry::new();
+        crate::register(&mut registry).unwrap();
+        let mut session = Session::new(Layout::default(), registry);
+        for shading in MapShading::ALL {
+            let name = serde_json::to_value(shading).unwrap();
+            session
+                .execute(MAP_SHADING, json!({ "shading": name }))
+                .unwrap();
+            assert_eq!(session.context().map_shading, shading);
+        }
+        assert!(session.undo().is_err());
+        let written = toml::to_string(&session.context().as_written()).unwrap();
+        let read: Layout = toml::from_str(&written).unwrap();
+        assert_eq!(read.map_shading, MapShading::Lit);
+        let older: Layout = toml::from_str("[left]\nvisible = true\nsize = 240.0\n").unwrap();
+        assert_eq!(older.map_shading, MapShading::Lines);
+        assert!(
+            session
+                .execute(MAP_SHADING, json!({ "shading": "shiny" }))
                 .is_err()
         );
     }

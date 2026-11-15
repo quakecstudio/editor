@@ -28,6 +28,8 @@ const DEFAULT_BOX: [[f32; 3]; 2] = [[-8.0; 3], [8.0; 3]];
 /// view rather than around the eye.
 const START_BACK: f32 = 128.0;
 const START_UP: f32 = 64.0;
+/// How far short of the first brush behind the player start the camera stops.
+const START_CLEAR: f32 = 16.0;
 /// How far down the camera looks at first, in degrees.
 const START_PITCH: f32 = 15.0;
 
@@ -674,9 +676,11 @@ const MAP_ORIGIN: [f32; 3] = [0.0; 3];
 const NO_START_YAW: f32 = 90.0;
 
 /// Where the camera starts: behind and above the first player start, facing as it does and
-/// looking down at it, else at the map's origin.
+/// looking down at it, else at the map's origin; pulled back only as far as the first brush
+/// of `scene` behind it, less [`START_CLEAR`], so it starts inside the room the player starts
+/// in, where the textured and lit views show the room and not a wall's back (P7-13).
 #[must_use]
-pub(crate) fn start_camera(document: &MapDocument) -> Camera {
+pub(crate) fn start_camera(document: &MapDocument, scene: &Scene) -> Camera {
     let start = document
         .file()
         .entities
@@ -687,10 +691,18 @@ pub(crate) fn start_camera(document: &MapDocument) -> Camera {
         let origin = start.origin().map(single);
         camera.yaw = Degrees::new(single(start.yaw()));
         let (sin, cos) = camera.yaw.to_radians().sin_cos();
+        let eye = [origin[0], origin[1], origin[2] + START_UP];
+        let back = [-cos, -sin, 0.0];
+        let clear = scene
+            .brushes
+            .iter()
+            .filter_map(|brush| brush.entered(eye, back))
+            .fold(START_BACK + START_CLEAR, f32::min);
+        let distance = (clear - START_CLEAR).clamp(0.0, START_BACK);
         camera.origin = [
-            origin[0] - cos * START_BACK,
-            origin[1] - sin * START_BACK,
-            origin[2] + START_UP,
+            eye[0] + back[0] * distance,
+            eye[1] + back[1] * distance,
+            eye[2],
         ];
         camera.pitch = Degrees::new(START_PITCH);
     }
