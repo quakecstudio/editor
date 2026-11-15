@@ -14,6 +14,10 @@ use qs_map_edit::backup::{Backup, MAP_BACKUP, MAP_BACKUPS, MAP_RESTORE_BACKUP, R
 use qs_map_edit::texture_import::{TEXTURE_IMPORT, TextureImportParams};
 use qs_map_edit::textures::TextureSources;
 use qs_map_edit::{
+    AddLayerParams, ContainerParams, GroupParams, MAP_ADD_LAYER, MAP_GROUP, MAP_LINK_DUPLICATE,
+    MAP_SEPARATE, MAP_UNGROUP,
+};
+use qs_map_edit::{
     BrushChamferParams, BrushClipParams, BrushCreateParams, BrushExtrudeParams, BrushHollowParams,
     BrushIntersectParams, BrushMergeParams, BrushMoveParams, BrushParams, BrushScaleParams,
     BrushShapeParams, BrushShearParams, BrushSplitEdgeParams, BrushSplitFaceParams,
@@ -66,6 +70,7 @@ use crate::map_review::ReviewAction;
 use crate::map_tools::BrushAction;
 use crate::map_view::MapView;
 use crate::shell::{CentreTab, MAP_BACKUP_INTERVAL, ShellError, Workspace};
+use crate::strings::{group_name, layer_name};
 
 use qs_map_edit::uv::{FaceAlignParams, FaceUvParams, MAP_FACE_ALIGN, MAP_FACE_UV};
 
@@ -1007,6 +1012,47 @@ impl MapFeature {
                     switch,
                 },
             ),
+            GroupAction::Group(entities, brushes) => {
+                let groups = commands
+                    .session()
+                    .context()
+                    .workbench
+                    .map()
+                    .map_or(0, |map| {
+                        let entities = &map.file().entities;
+                        let group = |e: &&qs_map::Entity| {
+                            matches!(e.container(), Some((qs_map::RoomKind::Group, _)))
+                        };
+                        entities.iter().filter(group).count()
+                    });
+                let name = group_name(groups.saturating_add(1));
+                commands.attempt(
+                    MAP_GROUP,
+                    &GroupParams {
+                        name,
+                        entities,
+                        brushes,
+                    },
+                )
+            }
+            GroupAction::Ungroup(group) => {
+                commands.attempt(MAP_UNGROUP, &ContainerParams { group })
+            }
+            GroupAction::LinkDuplicate(group) => {
+                commands.attempt(MAP_LINK_DUPLICATE, &ContainerParams { group })
+            }
+            GroupAction::Separate(group) => {
+                commands.attempt(MAP_SEPARATE, &ContainerParams { group })
+            }
+            GroupAction::AddLayer => {
+                let count = self.map_editor.layer_count();
+                commands.attempt(
+                    MAP_ADD_LAYER,
+                    &AddLayerParams {
+                        name: layer_name(count.saturating_add(1)),
+                    },
+                )
+            }
         }
     }
 }

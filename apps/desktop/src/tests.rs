@@ -2991,6 +2991,84 @@ fn the_selection_keys_select_all_invert_siblings_and_touching() {
     assert_eq!(map_text(&harness), before);
 }
 
+// No spec statement: P7-08: Cmd+G groups the selection, and with the group's own entity
+// selected Cmd+Shift+D makes a linked duplicate, Separate unlinks it and Cmd+Shift+G ungroups
+// it, as TrenchBroom's keys; Add layer adds a layer; each one undoable edit
+#[test]
+fn groups_and_layers_are_made_from_the_view() {
+    let dir = keep_copy("groups");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    harness.get_by_label(Text::MapEditorView.get()).click();
+    harness.run();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("map.select", json!({ "entity": 2 })).unwrap();
+    harness.run();
+    let before = map_text(&harness);
+    let count = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        shell
+            .session()
+            .context()
+            .workbench
+            .map()
+            .unwrap()
+            .file()
+            .entities
+            .len()
+    };
+    let entities = count(&harness);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::G);
+    harness.run();
+    assert_eq!(count(&harness), entities + 1);
+    assert!(map_text(&harness).contains("\"_tb_name\" \"Group 1\""));
+    let group = entities;
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("map.select", json!({ "entity": group }))
+        .unwrap();
+    harness.run();
+    harness.key_press_modifiers(
+        egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+        egui::Key::D,
+    );
+    harness.run();
+    assert_eq!(
+        count(&harness),
+        entities + 3,
+        "the group and the ogre copied"
+    );
+    assert_eq!(map_text(&harness).matches("_tb_linked_group_id").count(), 2);
+    harness.get_by_label(Text::MapSeparate.get()).click();
+    harness.run();
+    assert_eq!(map_text(&harness).matches("_tb_linked_group_id").count(), 1);
+    // The keyboard back to the view, the group still selected.
+    harness.get_by_label(Text::MapEditorView.get()).focus();
+    harness.run();
+    harness.key_press_modifiers(
+        egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+        egui::Key::G,
+    );
+    harness.run();
+    assert_eq!(count(&harness), entities + 2, "the first group gone");
+    harness.get_by_label(Text::MapAddLayer.get()).click();
+    harness.run();
+    assert!(map_text(&harness).contains("\"_tb_name\" \"Layer 1\""));
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    for _ in 0..5 {
+        shell.execute("edit.undo", json!({})).unwrap();
+    }
+    harness.run();
+    assert_eq!(map_text(&harness), before);
+}
+
 // No spec statement: P6-08, MAP-2: a click with a brush tool selects the first brush the ray
 // enters, by its faces, and Delete brush in Properties deletes it; the Brush tool draws a box on
 // the floor with a drag; each through a command, so each undoes

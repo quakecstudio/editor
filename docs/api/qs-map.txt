@@ -209,9 +209,11 @@ fn qs_map::linked::Entity::group
 fn qs_map::linked::Entity::is_linked_group
 fn qs_map::linked::Entity::layer
 fn qs_map::linked::Entity::layer_settings
+fn qs_map::linked::Entity::link_id
 fn qs_map::linked::Entity::mentions
 fn qs_map::linked::Entity::put_in
 fn qs_map::linked::Entity::set_layer_setting
+fn qs_map::linked::Entity::set_link_id
 fn qs_map::linked::Entity::set_transform
 fn qs_map::linked::Entity::text
 fn qs_map::linked::Entity::transform
@@ -251,6 +253,8 @@ fn qs_map::region::Region::max
 fn qs_map::region::Region::min
 fn qs_map::region::Region::new
 fn qs_map::region::Region::of_rooms
+fn qs_map::rooms::Entity::container_of
+fn qs_map::rooms::MapFile::free_container_id
 fn qs_map::rooms::MapFile::rooms
 fn qs_map::rooms::Room::holds
 fn qs_map::rooms::Rooms::holds

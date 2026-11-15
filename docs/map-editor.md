@@ -90,6 +90,12 @@ it too.
   (`view.map_camera`, kept in the layout). Cmd+U frames the selection, every selected entity and brush, keeping
   where the camera looks (TrenchBroom's Focus on Selection, Ctrl+U). The Properties panel shows
   the camera's x, y and z, and a value typed or dragged there moves it.
+- **Making groups and layers (P7-08):** Cmd+G (or Group in Properties) puts the selected
+  entities and world brushes in a new group, named "Group 1" and on (`map.group`). With a
+  group's own entity selected, Cmd+Shift+G (Ungroup) takes its contents out (`map.ungroup`),
+  Cmd+Shift+D (Linked duplicate) copies it as a group linked to it (`map.link_duplicate`) and
+  Separate unlinks it (`map.separate`). Add layer, beside Layers, adds a layer
+  (`map.add_layer`). Each is written as TrenchBroom writes it.
 - **Selecting (P7-08):** Cmd+A selects every entity and world brush not hidden, Cmd+Alt+A
   inverts the selection and Cmd+Shift+A clears it. With brushes selected, Cmd+T selects what
   they touch, Cmd+E what lies inside them and Cmd+Shift+E what lies inside them stretched along

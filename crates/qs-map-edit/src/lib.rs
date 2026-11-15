@@ -635,6 +635,22 @@ pub struct EntityKeys {
     pub brush: bool,
 }
 
+impl EntityKeys {
+    /// Whether the entity is a group's own entity, its `_tb_type` `_tb_group` (MAP-9.1, P7-08).
+    #[must_use]
+    pub fn is_group(&self) -> bool {
+        self.pairs
+            .iter()
+            .any(|(key, value)| key == GROUP_TYPE_KEY && value == GROUP_TYPE)
+    }
+}
+
+/// The key naming a layer's or group's kind (MAP-9.1).
+const GROUP_TYPE_KEY: &str = "_tb_type";
+
+/// A group's `_tb_type` (MAP-9.1).
+const GROUP_TYPE: &str = "_tb_group";
+
 impl MapStore {
     /// The map open in the map view.
     #[must_use]

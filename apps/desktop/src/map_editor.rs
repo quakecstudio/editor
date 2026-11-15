@@ -35,7 +35,7 @@ use qs_workbench::map_filter::{GameMode, Skill};
 use crate::help::{self, Topic};
 use crate::map_browser::{ClassDrag, EntityBrowser};
 use crate::map_fields::{Field, spawnflags};
-use crate::map_groups::{GroupAction, layers_ui, overview_keys, selection_ui};
+use crate::map_groups::{GroupAction, Grouping, layers_ui, overview_keys, selection_ui};
 use crate::map_issues::IssueBrowser;
 use crate::map_leaks::LeakView;
 use crate::map_outline::{OutlineAction, OutlineView};
@@ -1130,6 +1130,16 @@ impl MapEditor {
                     },
                 );
             });
+            // The overview and group keys first: Cmd+Shift+D is Create Linked Duplicate before
+            // Cmd+D can take it as Duplicate.
+            let chosen: Vec<EntityIndex> = selection.iter().copied().collect();
+            let world = self.world_brushes();
+            let grouping = self.grouping(&chosen, &world);
+            actions.extend(
+                overview_keys(ui, &chosen, grouping)
+                    .into_iter()
+                    .map(MapAction::Group),
+            );
             if pane == Pane::Perspective
                 && let Some(camera) = self.camera.as_mut()
             {
@@ -1138,8 +1148,6 @@ impl MapEditor {
                     actions.extend(selection_keys(ui, camera, entity, self.tools.grid));
                 }
             }
-            let chosen: Vec<EntityIndex> = selection.iter().copied().collect();
-            actions.extend(overview_keys(ui, &chosen).into_iter().map(MapAction::Group));
             if ui.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::S)) {
                 actions.push(MapAction::Save);
             }
@@ -1503,7 +1511,13 @@ impl MapEditor {
                 .into_iter()
                 .map(MapAction::Brush),
         );
-        actions.extend(selection_ui(ui, &chosen).into_iter().map(MapAction::Group));
+        let world = self.world_brushes();
+        let grouping = self.grouping(&chosen, &world);
+        actions.extend(
+            selection_ui(ui, &chosen, grouping)
+                .into_iter()
+                .map(MapAction::Group),
+        );
         actions.extend(
             layers_ui(ui, theme, &self.layers)
                 .into_iter()
@@ -1840,6 +1854,35 @@ enum Framing {
 }
 
 impl MapEditor {
+    /// How many layers the map has.
+    pub(crate) fn layer_count(&self) -> usize {
+        self.layers.len()
+    }
+
+    /// The world's brushes selected, which a new group takes (P7-08).
+    fn world_brushes(&self) -> Vec<BrushIndex> {
+        self.tools
+            .chosen()
+            .iter()
+            .filter(|(entity, _)| entity.is_world())
+            .map(|&(_, brush)| brush)
+            .collect()
+    }
+
+    /// What the selection can be grouped from, and the group it is when the one entity whose
+    /// keys are shown is a group's own entity (MAP-9.1).
+    fn grouping<'a>(&self, entities: &'a [EntityIndex], brushes: &'a [BrushIndex]) -> Grouping<'a> {
+        let group = self
+            .keys
+            .as_ref()
+            .and_then(|(entity, keys)| keys.is_group().then_some(*entity));
+        Grouping {
+            entities,
+            brushes,
+            group,
+        }
+    }
+
     /// TrenchBroom's selection keys (P7-08): Cmd+A selects everything, Cmd+Alt+A inverts the
     /// selection and Cmd+Shift+A clears it; Cmd+T, Cmd+E and Cmd+Shift+E select what the
     /// selected brushes touch, hold, or hold stretched along the view's axis, and delete them,

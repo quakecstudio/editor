@@ -55,6 +55,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`git.switch`](#gitswitch) | Checks out a branch, as git switch does, and reads the project's files again; refused while files have unsaved edits. |
 | [`git.unstage`](#gitunstage) | Unstages a file, or one hunk of its staged changes. |
 | [`map.accept`](#mapaccept) | Accepts hunks of the open map's review, every one when none are named: their change is kept and no longer waits. |
+| [`map.add_layer`](#mapadd_layer) | Adds an empty layer to the open map, as TrenchBroom writes one. |
 | [`map.backup`](#mapbackup) | Writes the open map, as it is in the editor, saved or not, as its next backup in the autosave folder beside it, keeping the last 20. |
 | [`map.backups`](#mapbackups) | Lists the open map's backups in the autosave folder beside it, the newest first. |
 | [`map.brush_chamfer`](#mapbrush_chamfer) | Chamfers an edge of a brush into one or more bevel faces, from a distance along each of its two faces (MAP-15.9). |
@@ -90,6 +91,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.filter`](#mapfilter) | The entities of the open map the game removes at a skill and in a kind of game (single, coop or deathmatch), found by spawning the map with the project's program: those the spawnflags rule out and those the QuakeC removes. |
 | [`map.fix`](#mapfix) | Applies a quick fix `map.issues` gave, as one step with undo. |
 | [`map.flip`](#mapflip) | Mirrors entities and brushes along an axis through the middle of their box: brushes and point entities' origins, and their facing, as TrenchBroom's Flip. |
+| [`map.group`](#mapgroup) | Puts entities and brushes of the world in a new group, in the layer or group the first is in, as TrenchBroom writes a group. |
 | [`map.hide`](#maphide) | Hides entities of the open map in the editor until map.show_all (TrenchBroom's Hide Selection); the map is not changed. |
 | [`map.inspect`](#mapinspect) | The open map's rooms (TrenchBroom's named layers and groups, with their bounds) and its entities: each one's place, classname, origin, targetname and room, filtered by room or classname. |
 | [`map.isolate`](#mapisolate) | Hides every entity of the open map but these in the editor until map.show_all (TrenchBroom's Isolate Selection); the map is not changed. |
@@ -97,6 +99,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.layers`](#maplayers) | The open map's TrenchBroom layers: each one's name, whether it is hidden, locked or left out of exports, and how many entities are in it. |
 | [`map.leaks`](#mapleaks) | Compiles the open map in memory and reports whether it leaks, with the trail from the entity the outside reaches out to the void, and the textures its WADs lack. |
 | [`map.link`](#maplink) | Points a key of an entity of the open map, one the code fires entities by such as target or killtarget, at another entity: the key takes the other's targetname, and the other its classname and the next free number as one when it has none. |
+| [`map.link_duplicate`](#maplink_duplicate) | Copies a group and its entities as a new group linked to it, so an edit in one is made in the other (TrenchBroom's Create Linked Duplicate). |
 | [`map.lock`](#maplock) | Locks entities of the open map against edits until map.unlock_all; the map is not changed. |
 | [`map.move`](#mapmove) | Moves an entity of the open map: a point entity's origin, a brush entity's brushes. |
 | [`map.move_to`](#mapmove_to) | Moves an entity or a group of the open map into a layer or a group, or into the default layer given the world, as TrenchBroom writes it. |
@@ -120,6 +123,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.save_prefab`](#mapsave_prefab) | Writes brushes of the world and whole entities of the open map as a prefab in the project's prefabs folder, around the middle of their floor. |
 | [`map.search`](#mapsearch) | Finds the open map's entities and brushes by classname, key, value, texture and a box, every part given; text matches in any case. |
 | [`map.select`](#mapselect) | Selects an entity of the open map, or clears the selection. |
+| [`map.separate`](#mapseparate) | Unlinks a group from the groups linked to it, which then change on their own (TrenchBroom's Separate Linked Groups). |
 | [`map.set_flag`](#mapset_flag) | Sets or clears one spawnflag of an entity of the open map, and of the entities in also, in one step, keeping each entity's other flags. |
 | [`map.set_key`](#mapset_key) | Sets a key of an entity of the open map, and of the entities in also with it in one step: its last occurrence keeps its place and formatting, a new key goes after the others. |
 | [`map.set_layer`](#mapset_layer) | Turns a layer of the open map hidden, locked or left out of exports on or off, written as TrenchBroom writes it. |
@@ -128,6 +132,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.staged`](#mapstaged) | Lists the open map's hunks waiting for review: for each, the entities it is in, and the keys and brushes it adds, changes or removes. |
 | [`map.textures`](#maptextures) | Lists the open map's textures: those of the WADs its world names, found in the project, beside the map or in the game, and of the BSP it was opened from, each with its size and how many faces use it, and the names its faces use that nothing holds. |
 | [`map.turn`](#mapturn) | Turns entities and brushes by degrees about the vertical through the middle of their box, counter-clockwise seen from above: brushes and point entities' origins and facing, as TrenchBroom's Rotate. |
+| [`map.ungroup`](#mapungroup) | Takes a group's entities and brushes out of it into the layer or group it is in, or the world's, and removes the group. |
 | [`map.unlock_all`](#mapunlock_all) | Unlocks every entity of the open map locked in the editor; a locked layer stays locked. |
 | [`map.unstage`](#mapunstage) | Ends the open map's review when nothing waits in it, as after an agent's map command that changed nothing; a review with hunks is left open. |
 | [`paths.open`](#pathsopen) | Opens folders as projects, and files in the nearest project above each (a folder holding quakec.toml or progs.src): a .map or .bsp in the map editor, any other file in the editor. A file outside every project opens in the open project, or opens its folder when none is open. |
@@ -1671,6 +1676,31 @@ Parameters:
     }
   },
   "title": "MapHunksParams",
+  "type": "object"
+}
+```
+
+## `map.add_layer`
+
+Adds an empty layer to the open map, as TrenchBroom writes one.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.add_layer`.",
+  "properties": {
+    "name": {
+      "description": "The layer's name.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "title": "AddLayerParams",
   "type": "object"
 }
 ```
@@ -4619,6 +4649,61 @@ Parameters:
 }
 ```
 
+## `map.group`
+
+Puts entities and brushes of the world in a new group, in the layer or group the first is in, as TrenchBroom writes a group.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.group`.",
+  "properties": {
+    "brushes": {
+      "default": [],
+      "description": "Brushes of the world to move into it.",
+      "items": {
+        "$ref": "#/$defs/BrushIndex"
+      },
+      "type": "array"
+    },
+    "entities": {
+      "default": [],
+      "description": "Whole entities to put in it.",
+      "items": {
+        "$ref": "#/$defs/EntityIndex"
+      },
+      "type": "array"
+    },
+    "name": {
+      "description": "The group's name.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "title": "GroupParams",
+  "type": "object"
+}
+```
+
 ## `map.hide`
 
 Hides entities of the open map in the editor until map.show_all (TrenchBroom's Hide Selection); the map is not changed.
@@ -4812,6 +4897,39 @@ Parameters:
     "target"
   ],
   "title": "LinkParams",
+  "type": "object"
+}
+```
+
+## `map.link_duplicate`
+
+Copies a group and its entities as a new group linked to it, so an edit in one is made in the other (TrenchBroom's Create Linked Duplicate).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.ungroup`, `map.link_duplicate` and `map.separate`.",
+  "properties": {
+    "group": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The group's own entity."
+    }
+  },
+  "required": [
+    "group"
+  ],
+  "title": "ContainerParams",
   "type": "object"
 }
 ```
@@ -5759,6 +5877,39 @@ Parameters:
 }
 ```
 
+## `map.separate`
+
+Unlinks a group from the groups linked to it, which then change on their own (TrenchBroom's Separate Linked Groups).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.ungroup`, `map.link_duplicate` and `map.separate`.",
+  "properties": {
+    "group": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The group's own entity."
+    }
+  },
+  "required": [
+    "group"
+  ],
+  "title": "ContainerParams",
+  "type": "object"
+}
+```
+
 ## `map.set_flag`
 
 Sets or clears one spawnflag of an entity of the open map, and of the entities in also, in one step, keeping each entity's other flags.
@@ -6102,6 +6253,39 @@ Parameters:
     "degrees"
   ],
   "title": "TurnParams",
+  "type": "object"
+}
+```
+
+## `map.ungroup`
+
+Takes a group's entities and brushes out of it into the layer or group it is in, or the world's, and removes the group.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.ungroup`, `map.link_duplicate` and `map.separate`.",
+  "properties": {
+    "group": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The group's own entity."
+    }
+  },
+  "required": [
+    "group"
+  ],
+  "title": "ContainerParams",
   "type": "object"
 }
 ```

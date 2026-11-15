@@ -129,9 +129,9 @@ Tests are named `crate-or-app path::test`; `desktop` is `apps/desktop/src`, `map
 | Filtering and rendering options | Show by skill, coop and deathmatch from the QuakeC; shading Lines, Textured, Lit | `desktop tests::the_map_filter_is_found_again_after_an_edit` | Beyond: what the game spawns, and a lit view |
 | Hide and isolate | `map.hide`, `map.isolate`, `map.show_all` | `map-edit groups::tests::a_selection_is_hidden_isolated_and_locked` | Same |
 | Locking | Any selection, not only layers | as above | Beyond |
-| Groups: create, open, close, ungroup | Read and moved; `map.move_to` | `map-edit groups::tests::moving_a_group_moves_its_contents_and_transformation` | Gap G17: no group or ungroup |
-| Linked groups: create, separate, extract, protected properties | Edits copied, protected keys kept | `map-edit groups::tests::an_edit_in_a_linked_group_changes_every_copy_in_one_step` | Gap G17: no create, separate or extract |
-| Layers: create, hide, lock, omit from export, current layer | `map.set_layer`, `map.layers`, `map.export` | `map-edit groups::tests::a_locked_layer_refuses_edits_and_an_export_leaves_it_out` | Gap G17: no new layer or current layer |
+| Groups: create, open, close, ungroup | Read and moved; `map.move_to` | `map-edit containers::tests::a_selection_is_grouped_and_ungrouped`, `desktop tests::groups_and_layers_are_made_from_the_view` | Same: Cmd+G, Cmd+Shift+G, Group and Ungroup in Properties (`map.group`, `map.ungroup`) |
+| Linked groups: create, separate, extract, protected properties | Edits copied, protected keys kept | `map-edit containers::tests::layers_are_added_and_groups_linked_and_separated`, `desktop tests::groups_and_layers_are_made_from_the_view` | Gap G17: create (Cmd+Shift+D) and separate made; extracting into a new linked group is not |
+| Layers: create, hide, lock, omit from export, current layer | `map.set_layer`, `map.layers`, `map.export` | `map-edit groups::tests::a_locked_layer_refuses_edits_and_an_export_leaves_it_out`, `desktop tests::groups_and_layers_are_made_from_the_view` | Gap G17: Add layer made (`map.add_layer`); no current layer |
 
 ## Preferences
 
@@ -183,7 +183,7 @@ To close before #823 does:
 | G12 | The map view's context menu |
 | G13 | Brush entities from selected brushes and back to the world; a convex brush from placed points; stamping and moving faces; clip snapping and matching a face's plane |
 | G16 | Replace a texture; the browser's chosen texture for new brushes; filter by WAD; a WAD dropped on the window; alignment shortcuts |
-| G17 | Create and ungroup groups; create, separate and extract linked groups; new layers and the current layer |
+| G17 | Extracting objects into a new linked group; the current layer new objects go into |
 | G19 | TrenchBroom's query language in the search |
 | G20 | Rename and delete tasks in compile profiles |
 

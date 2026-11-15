@@ -38,6 +38,11 @@ const qs_map_edit::brushes::MAP_BRUSH_MOVE
 const qs_map_edit::brushes::MAP_BRUSH_SUBTRACT
 const qs_map_edit::brushes::MAP_BRUSH_TEXTURE
 const qs_map_edit::brushes::MAP_BRUSH_VERTEX
+const qs_map_edit::containers::MAP_ADD_LAYER
+const qs_map_edit::containers::MAP_GROUP
+const qs_map_edit::containers::MAP_LINK_DUPLICATE
+const qs_map_edit::containers::MAP_SEPARATE
+const qs_map_edit::containers::MAP_UNGROUP
 const qs_map_edit::disk::MAP_COMPARE
 const qs_map_edit::disk::MAP_RESOLVE
 const qs_map_edit::flags::MAP_SET_FLAG
@@ -225,6 +230,11 @@ field qs_map_edit::classes::FlagInfo.value
 field qs_map_edit::classes::KeyInfo.default
 field qs_map_edit::classes::KeyInfo.name
 field qs_map_edit::classes::KeyInfo.ty
+field qs_map_edit::containers::AddLayerParams.name
+field qs_map_edit::containers::ContainerParams.group
+field qs_map_edit::containers::GroupParams.brushes
+field qs_map_edit::containers::GroupParams.entities
+field qs_map_edit::containers::GroupParams.name
 field qs_map_edit::disk::MapDifference.entity
 field qs_map_edit::disk::MapDifference.text
 field qs_map_edit::disk::ResolveParams.keep
@@ -353,6 +363,7 @@ field qs_map_edit::uv::FaceUvParams.faces
 fn qs_map_edit::EntityIndex::get
 fn qs_map_edit::EntityIndex::is_world
 fn qs_map_edit::EntityIndex::new
+fn qs_map_edit::EntityKeys::is_group
 fn qs_map_edit::MapDocument::edits
 fn qs_map_edit::MapDocument::file
 fn qs_map_edit::MapDocument::is_unsaved
@@ -468,6 +479,9 @@ struct qs_map_edit::brushes::BrushVertexParams
 struct qs_map_edit::classes::ClassInfo
 struct qs_map_edit::classes::FlagInfo
 struct qs_map_edit::classes::KeyInfo
+struct qs_map_edit::containers::AddLayerParams
+struct qs_map_edit::containers::ContainerParams
+struct qs_map_edit::containers::GroupParams
 struct qs_map_edit::disk::MapDifference
 struct qs_map_edit::disk::ResolveParams
 struct qs_map_edit::flags::SetFlagParams
@@ -522,6 +536,7 @@ trait qs_map_edit::store::MapProject
 type qs_map_edit::store::EntityCheck
 type qs_map_edit::store::HasMap::Live
 type qs_map_edit::store::HasMap::Project
+use qs_map_edit::AddLayerParams = containers::AddLayerParams
 use qs_map_edit::ArchWall = shapes::ArchWall
 use qs_map_edit::Axis = brush_tools::Axis
 use qs_map_edit::BrushChamferParams = brush_tools::BrushChamferParams
@@ -546,6 +561,7 @@ use qs_map_edit::BrushVerticesParams = brush_tools::BrushVerticesParams
 use qs_map_edit::Circle = shapes::Circle
 use qs_map_edit::ClassInfo = classes::ClassInfo
 use qs_map_edit::Climb = shapes::Climb
+use qs_map_edit::ContainerParams = containers::ContainerParams
 use qs_map_edit::Copied = prefabs::Copied
 use qs_map_edit::CopyParams = prefabs::CopyParams
 use qs_map_edit::EntityCheck = store::EntityCheck
@@ -557,6 +573,7 @@ use qs_map_edit::FlagChange = flags::FlagChange
 use qs_map_edit::FlagInfo = classes::FlagInfo
 use qs_map_edit::FlipParams = brush_tools::FlipParams
 use qs_map_edit::GameFolders = store::GameFolders
+use qs_map_edit::GroupParams = containers::GroupParams
 use qs_map_edit::HasMap = store::HasMap
 use qs_map_edit::HunkEntity = review::HunkEntity
 use qs_map_edit::HunkSide = review::HunkSide
@@ -571,6 +588,7 @@ use qs_map_edit::LiveChange = live::LiveChange
 use qs_map_edit::LiveMap = store::LiveMap
 use qs_map_edit::Lock = brushes::Lock
 use qs_map_edit::MAP_ACCEPT = review::MAP_ACCEPT
+use qs_map_edit::MAP_ADD_LAYER = containers::MAP_ADD_LAYER
 use qs_map_edit::MAP_BRUSH_CHAMFER = brush_tools::MAP_BRUSH_CHAMFER
 use qs_map_edit::MAP_BRUSH_CLIP = brushes::MAP_BRUSH_CLIP
 use qs_map_edit::MAP_BRUSH_CREATE = brushes::MAP_BRUSH_CREATE
@@ -595,11 +613,13 @@ use qs_map_edit::MAP_COPY = prefabs::MAP_COPY
 use qs_map_edit::MAP_EXPORT = groups::MAP_EXPORT
 use qs_map_edit::MAP_FIX = issues::MAP_FIX
 use qs_map_edit::MAP_FLIP = brush_tools::MAP_FLIP
+use qs_map_edit::MAP_GROUP = containers::MAP_GROUP
 use qs_map_edit::MAP_HIDE = groups::MAP_HIDE
 use qs_map_edit::MAP_ISOLATE = groups::MAP_ISOLATE
 use qs_map_edit::MAP_ISSUES = issues::MAP_ISSUES
 use qs_map_edit::MAP_LAYERS = groups::MAP_LAYERS
 use qs_map_edit::MAP_LINK = links::MAP_LINK
+use qs_map_edit::MAP_LINK_DUPLICATE = containers::MAP_LINK_DUPLICATE
 use qs_map_edit::MAP_LOCK = groups::MAP_LOCK
 use qs_map_edit::MAP_MOVE_TO = outline::MAP_MOVE_TO
 use qs_map_edit::MAP_OUTLINE = outline::MAP_OUTLINE
@@ -610,12 +630,14 @@ use qs_map_edit::MAP_REJECT = review::MAP_REJECT
 use qs_map_edit::MAP_RESOLVE = disk::MAP_RESOLVE
 use qs_map_edit::MAP_SAVE_PREFAB = prefabs::MAP_SAVE_PREFAB
 use qs_map_edit::MAP_SEARCH = issues::MAP_SEARCH
+use qs_map_edit::MAP_SEPARATE = containers::MAP_SEPARATE
 use qs_map_edit::MAP_SET_FLAG = flags::MAP_SET_FLAG
 use qs_map_edit::MAP_SET_LAYER = groups::MAP_SET_LAYER
 use qs_map_edit::MAP_SHOW_ALL = groups::MAP_SHOW_ALL
 use qs_map_edit::MAP_STAGE = review::MAP_STAGE
 use qs_map_edit::MAP_STAGED = review::MAP_STAGED
 use qs_map_edit::MAP_TURN = brush_tools::MAP_TURN
+use qs_map_edit::MAP_UNGROUP = containers::MAP_UNGROUP
 use qs_map_edit::MAP_UNLOCK_ALL = groups::MAP_UNLOCK_ALL
 use qs_map_edit::MAP_UNSTAGE = review::MAP_UNSTAGE
 use qs_map_edit::MapDifference = disk::MapDifference
@@ -702,6 +724,7 @@ variant qs_map_edit::error::MapEditError::NoSelection
 variant qs_map_edit::error::MapEditError::NoTextureSize
 variant qs_map_edit::error::MapEditError::NotContainer
 variant qs_map_edit::error::MapEditError::NotEmpty
+variant qs_map_edit::error::MapEditError::NotGroup
 variant qs_map_edit::error::MapEditError::NotLayer
 variant qs_map_edit::error::MapEditError::NotMapText
 variant qs_map_edit::error::MapEditError::NotPointEntity

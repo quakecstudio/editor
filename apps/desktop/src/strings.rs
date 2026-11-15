@@ -868,6 +868,16 @@ pub enum Text {
     MapFlipX,
     /// Selects every brush of the entities holding the selected brushes.
     MapSelectSiblings,
+    /// Puts the selection in a new group.
+    MapGroup,
+    /// Takes a group's contents out of it.
+    MapUngroup,
+    /// Copies a group as one linked to it.
+    MapLinkDuplicate,
+    /// Unlinks a group.
+    MapSeparate,
+    /// Adds a layer.
+    MapAddLayer,
     /// Flips the selection along y.
     MapFlipY,
     /// Flips the selection along z.
@@ -936,7 +946,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 460] = [
+    pub const ALL: [Self; 465] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1365,6 +1375,11 @@ impl Text {
         Self::MapTurn,
         Self::MapFlipX,
         Self::MapSelectSiblings,
+        Self::MapGroup,
+        Self::MapUngroup,
+        Self::MapLinkDuplicate,
+        Self::MapSeparate,
+        Self::MapAddLayer,
         Self::MapFlipY,
         Self::MapFlipZ,
         Self::MapResetZoom,
@@ -1906,6 +1921,11 @@ impl Text {
             Self::MapTurn => "Turn",
             Self::MapFlipX => "Flip x",
             Self::MapSelectSiblings => "Select siblings",
+            Self::MapGroup => "Group",
+            Self::MapUngroup => "Ungroup",
+            Self::MapLinkDuplicate => "Linked duplicate",
+            Self::MapSeparate => "Separate",
+            Self::MapAddLayer => "Add layer",
             Self::MapFlipY => "Flip y",
             Self::MapFlipZ => "Flip z",
             Self::MapResetZoom => "Reset zoom",
@@ -2204,6 +2224,18 @@ pub fn also_selected(count: usize) -> String {
         1 => "1 more selected: key edits set it too".to_owned(),
         n => format!("{n} more selected: key edits set them too"),
     }
+}
+
+/// A new group's name, the map's `n`th (P7-08).
+#[must_use]
+pub fn group_name(n: usize) -> String {
+    format!("Group {n}")
+}
+
+/// A new layer's name, the map's `n`th (P7-08).
+#[must_use]
+pub fn layer_name(n: usize) -> String {
+    format!("Layer {n}")
 }
 
 /// How many entities a layer holds (P5-14).

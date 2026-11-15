@@ -63,10 +63,17 @@ fn a_selection_is_grouped_and_ungrouped() {
         .unwrap();
     let grouped = map(&session);
     let group = grouped.entities.last().unwrap();
-    assert_eq!(group.container(), Some((RoomKind::Group, ContainerId::new(1))));
+    assert_eq!(
+        group.container(),
+        Some((RoomKind::Group, ContainerId::new(1)))
+    );
     assert_eq!(group.value(b"_tb_name"), Some(&b"lamp"[..]));
     assert_eq!(group.brushes().count(), 1);
-    assert_eq!(grouped.entities[0].brushes().count(), 1, "one world brush left");
+    assert_eq!(
+        grouped.entities[0].brushes().count(),
+        1,
+        "one world brush left"
+    );
     assert_eq!(grouped.entities[1].group(), Some(ContainerId::new(1)));
     assert_eq!(grouped.entities[2].group(), None);
     let group_place = grouped.entities.len() - 1;
@@ -80,7 +87,11 @@ fn a_selection_is_grouped_and_ungrouped() {
     session.undo().unwrap();
     session.undo().unwrap();
     assert_eq!(map(&session), before);
-    assert!(session.execute(MAP_GROUP, json!({ "name": "none" })).is_err());
+    assert!(
+        session
+            .execute(MAP_GROUP, json!({ "name": "none" }))
+            .is_err()
+    );
     assert!(session.execute(MAP_UNGROUP, json!({ "group": 1 })).is_err());
     assert!(
         session
@@ -100,7 +111,10 @@ fn layers_are_added_and_groups_linked_and_separated() {
         .execute(MAP_ADD_LAYER, json!({ "name": "lights" }))
         .unwrap();
     let layer = map(&session).entities.last().unwrap().clone();
-    assert_eq!(layer.container(), Some((RoomKind::Layer, ContainerId::new(1))));
+    assert_eq!(
+        layer.container(),
+        Some((RoomKind::Layer, ContainerId::new(1)))
+    );
     assert_eq!(layer.value(b"_tb_name"), Some(&b"lights"[..]));
     session
         .execute(MAP_GROUP, json!({ "name": "pair", "entities": [1, 2] }))
@@ -118,7 +132,10 @@ fn layers_are_added_and_groups_linked_and_separated() {
     let copy = &linked.entities[group + 1];
     assert!(source.link_id().is_some());
     assert_eq!(source.link_id(), copy.link_id());
-    assert_eq!(copy.container(), Some((RoomKind::Group, ContainerId::new(3))));
+    assert_eq!(
+        copy.container(),
+        Some((RoomKind::Group, ContainerId::new(3)))
+    );
     let copied: Vec<_> = linked.entities[group + 2..]
         .iter()
         .map(|e| (e.classname().unwrap().to_vec(), e.group()))

@@ -5,7 +5,7 @@
 //! show the selection again. Each is a [`GroupAction`] the shell runs as a `map.*` command.
 
 use eframe::egui::{Key, Modifiers, RichText, Ui};
-use qs_map_edit::{EntityIndex, LayerInfo, LayerOption, Switch};
+use qs_map_edit::{BrushIndex, EntityIndex, LayerInfo, LayerOption, Switch};
 
 use crate::strings::{Text, layer_count};
 use crate::theme::{Theme, Token};
@@ -25,15 +25,50 @@ pub enum GroupAction {
     UnlockAll,
     /// Turn a layer's setting on or off.
     SetLayer(EntityIndex, LayerOption, Switch),
+    /// Put entities and world brushes in a new group (P7-08).
+    Group(Vec<EntityIndex>, Vec<BrushIndex>),
+    /// Take a group's contents out of it.
+    Ungroup(EntityIndex),
+    /// Copy a group as one linked to it.
+    LinkDuplicate(EntityIndex),
+    /// Unlink a group from the groups linked to it.
+    Separate(EntityIndex),
+    /// Add a layer.
+    AddLayer,
+}
+
+/// What a selection can be grouped from, and the group it is, if it is one (P7-08).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Grouping<'a> {
+    /// The entities selected.
+    pub(crate) entities: &'a [EntityIndex],
+    /// The world's brushes selected.
+    pub(crate) brushes: &'a [BrushIndex],
+    /// The group the selection is, when the one entity selected is a group's own.
+    pub(crate) group: Option<EntityIndex>,
+}
+
+impl Grouping<'_> {
+    /// Whether there is anything to group.
+    fn any(&self) -> bool {
+        !self.entities.is_empty() || !self.brushes.is_empty()
+    }
+
+    /// The new group of the selection.
+    fn grouped(&self) -> GroupAction {
+        GroupAction::Group(self.entities.to_vec(), self.brushes.to_vec())
+    }
 }
 
 /// The map's layers, each with its settings as checkboxes; what was changed.
 pub(crate) fn layers_ui(ui: &mut Ui, theme: &Theme, layers: &[LayerInfo]) -> Vec<GroupAction> {
     let mut actions = Vec::new();
-    if layers.is_empty() {
-        return actions;
-    }
-    ui.label(RichText::new(Text::MapLayers.get()).strong());
+    ui.horizontal_wrapped(|ui| {
+        ui.label(RichText::new(Text::MapLayers.get()).strong());
+        if ui.button(Text::MapAddLayer.get()).clicked() {
+            actions.push(GroupAction::AddLayer);
+        }
+    });
     for layer in layers {
         ui.horizontal_wrapped(|ui| {
             ui.label(&layer.name);
@@ -61,9 +96,36 @@ pub(crate) fn layers_ui(ui: &mut Ui, theme: &Theme, layers: &[LayerInfo]) -> Vec
     actions
 }
 
-/// The selection's buttons: hide, isolate and lock it, and show and unlock everything.
-pub(crate) fn selection_ui(ui: &mut Ui, selection: &[EntityIndex]) -> Vec<GroupAction> {
+/// The selection's buttons: hide, isolate and lock it, and show and unlock everything; group
+/// it, and ungroup, duplicate linked or separate the group it is.
+pub(crate) fn selection_ui(
+    ui: &mut Ui,
+    selection: &[EntityIndex],
+    grouping: Grouping<'_>,
+) -> Vec<GroupAction> {
     let mut actions = Vec::new();
+    ui.horizontal_wrapped(|ui| {
+        if ui
+            .add_enabled(
+                grouping.any(),
+                eframe::egui::Button::new(Text::MapGroup.get()),
+            )
+            .clicked()
+        {
+            actions.push(grouping.grouped());
+        }
+        if let Some(group) = grouping.group {
+            for (text, action) in [
+                (Text::MapUngroup, GroupAction::Ungroup(group)),
+                (Text::MapLinkDuplicate, GroupAction::LinkDuplicate(group)),
+                (Text::MapSeparate, GroupAction::Separate(group)),
+            ] {
+                if ui.button(text.get()).clicked() {
+                    actions.push(action);
+                }
+            }
+        }
+    });
     ui.horizontal_wrapped(|ui| {
         let chosen = !selection.is_empty();
         if ui
@@ -96,10 +158,23 @@ pub(crate) fn selection_ui(ui: &mut Ui, selection: &[EntityIndex]) -> Vec<GroupA
 
 /// TrenchBroom's overview keys while the view has the keyboard (`ActionManager.cpp`:
 /// "Menu/View/Isolate" Ctrl+I, "Menu/View/Hide" Ctrl+Alt+I, "Menu/View/Show All"
-/// Ctrl+Shift+I; Cmd for Ctrl on macOS).
-pub(crate) fn overview_keys(ui: &Ui, selection: &[EntityIndex]) -> Vec<GroupAction> {
+/// Ctrl+Shift+I; "Menu/Edit/Group" Ctrl+G, "Menu/Edit/Ungroup" Ctrl+Shift+G, "Menu/Edit/Create
+/// Linked Duplicate" Ctrl+Shift+D; Cmd for Ctrl on macOS).
+pub(crate) fn overview_keys(
+    ui: &Ui,
+    selection: &[EntityIndex],
+    grouping: Grouping<'_>,
+) -> Vec<GroupAction> {
     let mut actions = Vec::new();
     ui.input_mut(|i| {
+        if i.consume_key(Modifiers::COMMAND | Modifiers::SHIFT, Key::G) {
+            actions.extend(grouping.group.map(GroupAction::Ungroup));
+        } else if i.consume_key(Modifiers::COMMAND, Key::G) && grouping.any() {
+            actions.push(grouping.grouped());
+        }
+        if i.consume_key(Modifiers::COMMAND | Modifiers::SHIFT, Key::D) {
+            actions.extend(grouping.group.map(GroupAction::LinkDuplicate));
+        }
         if i.consume_key(Modifiers::COMMAND | Modifiers::ALT, Key::I) {
             if !selection.is_empty() {
                 actions.push(GroupAction::Hide(selection.to_vec()));
