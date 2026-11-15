@@ -406,6 +406,36 @@ fn the_map_editor_draws_the_map_textured_and_lit() {
     if let Err(error) = harness.try_snapshot_options("map-lit", &options) {
         failures.push(error.to_string());
     }
+    // An edit after the compile makes it stale; with the BSP gone nothing is drawn; a BSP that
+    // will not load is not drawn, and not read again until it is written again.
+    let draws = |harness: &Harness<'static, Option<App>>| {
+        harness
+            .state()
+            .as_ref()
+            .unwrap()
+            .shell()
+            .map_editor()
+            .shaded()
+            .draws_faces()
+    };
+    assert!(draws(&harness));
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute(
+            "map.set_key",
+            json!({ "entity": 0, "key": "message", "value": "changed" }),
+        )
+        .unwrap();
+    harness.run();
+    assert_eq!(note(&harness), Some(Text::MapLitStale));
+    std::fs::remove_file(dir.join("maps/keep.bsp")).unwrap();
+    harness.run();
+    assert_eq!(note(&harness), Some(Text::MapLitNone));
+    assert!(!draws(&harness));
+    std::fs::write(dir.join("maps/keep.bsp"), b"not a bsp").unwrap();
+    harness.run();
+    assert!(!draws(&harness));
+    assert_eq!(note(&harness), Some(Text::MapLitNone));
     assert!(failures.is_empty(), "{failures:#?}");
 }
 

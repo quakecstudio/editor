@@ -7,6 +7,7 @@
 //!
 //! Every string comes from [`crate::strings`]; a test fails on a string literal here.
 
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -14,16 +15,17 @@ use eframe::egui::{Rect, Ui};
 use eframe::egui_wgpu::{self, RenderState};
 use qs_bsp::{Bsp, BspLoader, Lit};
 use qs_layout::MapShading;
+use qs_map::MapFile;
 use qs_map_edit::textures::TextureSources;
-use qs_map_edit::{MapDocument, MapRevision};
+use qs_map_edit::{EntityIndex, MapDocument, MapRevision};
 use qs_render::{
-    Camera, EditorCallback, EditorRenderer, Extras, FlatFace, Image, Look, MapMesh, MapRenderer,
-    MeshBuilder, Placement, Shade, View,
+    Camera, EditorCallback, Extras, FlatFace, Image, Look, MapMesh, MeshBuilder, Placement, Shade,
+    View,
 };
 use qs_wad::texture::{Palette, PaletteIndex};
 
 use crate::map_scene::{FaceShape, Scene};
-use crate::map_view::DEPTH_FORMAT;
+use crate::map_view;
 use crate::strings::Text;
 
 /// The toolbar's label of `shading`.
@@ -44,13 +46,34 @@ const fn hint(shading: MapShading) -> Text {
     }
 }
 
+/// What a textured mesh is made from, each part a count or hash that changes when it does: the
+/// scene's builds, the entities hidden, and the texture sources' loads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TexturedFrom {
+    /// How many times the scene was built.
+    pub(crate) scene: u64,
+    /// A hash of the entities hidden.
+    pub(crate) hidden: u64,
+    /// How many times the texture sources were loaded.
+    pub(crate) sources: u64,
+}
+
+/// Whether a compiled BSP was drawn or would not load.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Loaded {
+    /// It is drawn.
+    Drawn,
+    /// It would not load; it is not read again until it is written again.
+    Failed,
+}
+
 /// What the renderer was last given, so it is made again only when that changes.
 #[derive(Clone, Debug, PartialEq)]
 enum Made {
-    /// The textured faces of the map at a revision.
-    Textured(PathBuf, MapRevision),
+    /// The textured faces of the scene.
+    Textured(TexturedFrom),
     /// The compiled BSP at its time on disk.
-    Lit(PathBuf, Option<SystemTime>),
+    Lit(PathBuf, SystemTime, Loaded),
 }
 
 /// The state of the Lit view's compile.
@@ -58,9 +81,9 @@ enum Made {
 pub(crate) enum LitState {
     /// The map has no BSP beside it yet.
     NoCompile,
-    /// The BSP is at least as new as the map.
+    /// The BSP is the map as it is now.
     Current,
-    /// The map was saved after the BSP was written.
+    /// The map was edited, or saved, after the BSP was written.
     Stale,
 }
 
@@ -70,6 +93,11 @@ pub(crate) struct ShadedView {
     shading: MapShading,
     made: Option<Made>,
     lit: Option<LitState>,
+    /// The map's revision the BSP drawn was compiled from: the one when the compile was first
+    /// seen, none when the saved map was already newer than it.
+    compiled_at: Option<MapRevision>,
+    /// Each texture decoded, by name, and the sources' load they were decoded from.
+    images: (HashMap<String, Image>, u64),
 }
 
 impl ShadedView {
@@ -97,64 +125,102 @@ impl ShadedView {
         }
     }
 
-    /// Whether the renderer draws the faces this frame, so the view leaves out the world's
-    /// edges.
+    /// Whether the renderer draws the faces this frame, so the view leaves out the edges of
+    /// the brushes it draws.
     pub(crate) const fn draws_faces(&self) -> bool {
         match self.shading {
             MapShading::Lines => false,
             MapShading::Textured => matches!(self.made, Some(Made::Textured(..))),
-            MapShading::Lit => matches!(self.made, Some(Made::Lit(..))),
+            MapShading::Lit => matches!(self.made, Some(Made::Lit(_, _, Loaded::Drawn))),
         }
     }
 
-    /// Makes the renderer's mesh again when the shading, the map or its compile changed:
-    /// the textured faces of `scene` with `sources`' textures, or the BSP beside the map.
+    /// Makes the renderer's mesh again when the shading, the scene or the compile changed:
+    /// the textured faces of `scene` not `hidden`, made from `from`, with `sources`' textures,
+    /// or the BSP beside the map.
     pub(crate) fn refresh(
         &mut self,
-        shading: MapShading,
-        state: Option<&RenderState>,
+        (shading, state): (MapShading, Option<&RenderState>),
         document: &MapDocument,
-        scene: &Scene,
+        (scene, from, hidden): (&Scene, TexturedFrom, &BTreeSet<EntityIndex>),
         sources: Option<&TextureSources>,
     ) {
         self.shading = shading;
         let Some(state) = state else {
             return;
         };
-        let Some(palette) = sources.and_then(TextureSources::palette) else {
-            return;
-        };
-        let path = document.path().to_path_buf();
         match self.shading {
             MapShading::Lines => {}
             MapShading::Textured => {
-                let want = Made::Textured(path, document.revision());
-                if self.made.as_ref() != Some(&want) {
-                    let mesh = scene.textured_mesh(sources, Look::QuakeSpasm);
-                    install(state, &mesh);
-                    self.made = Some(want);
-                }
-            }
-            MapShading::Lit => {
-                let bsp = path.with_extension("bsp");
-                let written = modified(&bsp);
-                self.lit = Some(match (written, modified(&path)) {
-                    (None, _) => LitState::NoCompile,
-                    (Some(bsp), Some(map)) if map > bsp => LitState::Stale,
-                    (Some(_), _) => LitState::Current,
-                });
-                let want = Made::Lit(bsp.clone(), written);
-                if written.is_some() && self.made.as_ref() != Some(&want) {
-                    match lit(&bsp, palette) {
-                        Ok(mesh) => {
-                            install(state, &mesh);
-                            self.made = Some(want);
-                        }
-                        Err(error) => tracing::warn!(%error, path = %bsp.display(), "lit view"),
+                if self.made != Some(Made::Textured(from)) {
+                    let (images, loaded) = &mut self.images;
+                    if *loaded != from.sources {
+                        images.clear();
+                        *loaded = from.sources;
                     }
+                    let mut image = |name: &str| {
+                        images
+                            .entry(name.to_ascii_lowercase())
+                            .or_insert_with(|| decoded(sources, name))
+                            .clone()
+                    };
+                    let mesh = scene.textured_mesh(&mut image, hidden, Look::QuakeSpasm);
+                    map_view::install_editor(state, &mesh);
+                    self.made = Some(Made::Textured(from));
                 }
             }
+            MapShading::Lit => self.refresh_lit(state, document, sources),
         }
+    }
+
+    /// Follows the BSP beside the map: drawn again when it is written again, none drawn when it
+    /// is gone, and the map's revision it was compiled from noted when it is first seen.
+    fn refresh_lit(
+        &mut self,
+        state: &RenderState,
+        document: &MapDocument,
+        sources: Option<&TextureSources>,
+    ) {
+        let path = document.path();
+        let bsp = path.with_extension("bsp");
+        let Some(written) = modified(&bsp) else {
+            self.lit = Some(LitState::NoCompile);
+            if matches!(self.made, Some(Made::Lit(..))) {
+                self.made = None;
+            }
+            return;
+        };
+        let seen =
+            matches!(&self.made, Some(Made::Lit(drawn, at, _)) if *drawn == bsp && *at == written);
+        if !seen {
+            let saved_after = modified(path).is_some_and(|map| map > written);
+            self.compiled_at = (!saved_after).then(|| document.revision());
+            let loaded = match sources
+                .and_then(TextureSources::palette)
+                .ok_or_else(|| "no palette".to_owned())
+                .and_then(|palette| lit(&bsp, palette))
+            {
+                Ok(mesh) => {
+                    map_view::install_editor(state, &mesh);
+                    Loaded::Drawn
+                }
+                Err(error) => {
+                    tracing::warn!(%error, path = %bsp.display(), "the lit view's BSP");
+                    Loaded::Failed
+                }
+            };
+            self.made = Some(Made::Lit(bsp, written, loaded));
+        }
+        // A BSP that would not load asks for a compile, as a missing one does.
+        self.lit = Some(
+            if matches!(self.made, Some(Made::Lit(_, _, Loaded::Failed))) {
+                LitState::NoCompile
+            } else if self.compiled_at == Some(document.revision()) {
+                LitState::Current
+            } else {
+                LitState::Stale
+            },
+        );
     }
 
     /// Paints the faces in the 3D pane `area`, seen by `camera`, under what the view draws
@@ -176,23 +242,6 @@ impl ShadedView {
 /// The time `path` was last written, none when it cannot be read.
 fn modified(path: &Path) -> Option<SystemTime> {
     std::fs::metadata(path).and_then(|m| m.modified()).ok()
-}
-
-/// Puts a renderer of `mesh` in `state`'s callback resources as the editor's, replacing the
-/// one there.
-fn install(state: &RenderState, mesh: &MapMesh) {
-    let renderer = MapRenderer::new(
-        &state.device,
-        &state.queue,
-        (state.target_format, DEPTH_FORMAT),
-        mesh,
-        &qs_render::Assets::default(),
-    );
-    state
-        .renderer
-        .write()
-        .callback_resources
-        .insert(EditorRenderer(renderer));
 }
 
 impl FaceShape {
@@ -222,14 +271,18 @@ impl FaceShape {
 }
 
 impl Scene {
-    /// The textured mesh of the scene's brush faces: each texture decoded from `sources`, one
-    /// the sources lack drawn as Quake's black and pink checker, and each face shaded by its
-    /// normal.
-    pub(crate) fn textured_mesh(&self, sources: Option<&TextureSources>, look: Look) -> MapMesh {
+    /// The textured mesh of the scene's brush faces but those of the entities `hidden`: each
+    /// texture's image from `image`, and each face shaded by its normal.
+    pub(crate) fn textured_mesh(
+        &self,
+        image: &mut dyn FnMut(&str) -> Image,
+        hidden: &BTreeSet<EntityIndex>,
+        look: Look,
+    ) -> MapMesh {
         let mut names: Vec<&str> = Vec::new();
         let mut images: Vec<Image> = Vec::new();
         let mut faces = Vec::new();
-        for brush in &self.brushes {
+        for brush in self.brushes.iter().filter(|b| !hidden.contains(&b.entity)) {
             for face in &brush.faces {
                 let slot = match names
                     .iter()
@@ -238,14 +291,14 @@ impl Scene {
                     Some(slot) => slot,
                     None => {
                         names.push(&face.texture);
-                        images.push(decoded(sources, &face.texture));
+                        images.push(image(&face.texture));
                         names.len().saturating_sub(1)
                     }
                 };
-                let Some(image) = images.get(slot) else {
+                let Some(drawn) = images.get(slot) else {
                     continue;
                 };
-                if let Some(flat) = face.flat(slot, image) {
+                if let Some(flat) = face.flat(slot, drawn) {
                     faces.push(flat);
                 }
             }
@@ -296,27 +349,45 @@ const SHADE_X: f32 = 0.8;
 /// How much light a wall facing y keeps, past the floor.
 const SHADE_Y: f32 = 0.6;
 
-/// The texture `name` from `sources` as an image; Quake's 2 by 2 black and pink checker when
-/// it is not found (REND-13, `notexture_mip`).
-fn decoded(sources: Option<&TextureSources>, name: &str) -> Image {
+/// The texture `name` from `sources` as an image; when it is not found, Quake's black and pink
+/// checker (`notexture_mip`, REND-13) at a missing texture's size, two blocks of 32 texels a
+/// side, so it repeats every 64 units as QuakeSpasm stretches it.
+pub(crate) fn decoded(sources: Option<&TextureSources>, name: &str) -> Image {
     match sources.and_then(|sources| sources.decode(name)) {
         Some(texture) => Image {
             width: texture.width,
             height: texture.height,
             rgba: texture.rgba,
         },
-        None => Image {
-            width: 2,
-            height: 2,
-            rgba: MISSING.to_vec(),
-        },
+        None => missing(),
     }
 }
 
-/// Quake's missing-texture checker, `notexture_data`: pink, black, black, pink.
-const MISSING: [u8; 16] = [
-    159, 91, 83, 255, 0, 0, 0, 255, 0, 0, 0, 255, 159, 91, 83, 255,
-];
+/// Quake's missing-texture checker, [`MISSING_SIDE`] texels a side in blocks of half that.
+pub(crate) fn missing() -> Image {
+    let half = MISSING_BLOCK;
+    let mut rgba = Vec::new();
+    for row in 0..MISSING_SIDE {
+        for column in 0..MISSING_SIDE {
+            let pink = (row < half) == (column < half);
+            rgba.extend(if pink { PINK } else { BLACK });
+        }
+    }
+    Image {
+        width: MISSING_SIDE,
+        height: MISSING_SIDE,
+        rgba,
+    }
+}
+
+/// A missing texture's side in texels.
+const MISSING_SIDE: u32 = 64;
+/// A missing texture's checker block's side in texels: half its side.
+const MISSING_BLOCK: u32 = 32;
+/// `notexture_data`'s pink.
+const PINK: [u8; 4] = [159, 91, 83, 255];
+/// `notexture_data`'s black.
+const BLACK: [u8; 4] = [0, 0, 0, 255];
 
 /// The mesh of the BSP at `path`, every model at its compiled place, lit by its lightmaps and
 /// the `.lit` beside it, through `palette`.
@@ -332,12 +403,7 @@ fn lit(path: &Path, palette: &Palette) -> Result<MapMesh, String> {
     let lit = lit_bytes
         .as_deref()
         .and_then(|bytes| Lit::read(bytes, bsp.lighting.len()).ok());
-    let placements: Vec<Placement> = (0..bsp.models.len())
-        .map(|model| Placement {
-            model,
-            ..Placement::WORLD
-        })
-        .collect();
+    let placements = placements(&bsp);
     let mut builder = MeshBuilder::new(&palette, Look::QuakeSpasm);
     let extras = Extras {
         lit: lit.as_ref(),
@@ -348,6 +414,42 @@ fn lit(path: &Path, palette: &Palette) -> Result<MapMesh, String> {
         .map_err(|e| e.to_string())?;
     Ok(builder.finish())
 }
+
+/// The world and each brush entity's model at its origin, as the engine places them; triggers
+/// are left out, as the engine does not draw them.
+fn placements(bsp: &Bsp<'_>) -> Vec<Placement> {
+    let mut placements = vec![Placement::WORLD];
+    let Ok(file) = MapFile::parse(bsp.entities()) else {
+        return placements;
+    };
+    for entity in &file.entities {
+        let Some(model) = entity
+            .value(b"model")
+            .and_then(|m| m.strip_prefix(b"*"))
+            .and_then(|m| std::str::from_utf8(m).ok())
+            .and_then(|m| m.parse::<usize>().ok())
+        else {
+            continue;
+        };
+        if entity
+            .classname()
+            .is_some_and(|name| name.starts_with(TRIGGER))
+            || model == 0
+            || model >= bsp.models.len()
+        {
+            continue;
+        }
+        placements.push(Placement {
+            model,
+            origin: entity.origin().map(to_f32),
+            ..Placement::WORLD
+        });
+    }
+    placements
+}
+
+/// The start of a trigger's classname: `trigger_multiple`, `trigger_teleport` and the rest.
+const TRIGGER: &[u8] = b"trigger_";
 
 /// A map coordinate as the renderer takes it.
 #[expect(

@@ -39,6 +39,8 @@ const HATCH: f32 = 12.0;
 pub(crate) struct TextureBrowser {
     filter: String,
     sources: Option<TextureSources>,
+    /// How many times [`TextureBrowser::set_sources`] loaded them.
+    loads: u64,
     listing: MapTextures,
     /// The map and edits the listing was made for, so a face's new texture is counted.
     listed: Option<(PathBuf, MapRevision)>,
@@ -67,6 +69,7 @@ impl TextureBrowser {
     /// next shown.
     pub(crate) fn set_sources(&mut self, sources: TextureSources) {
         self.sources = Some(sources);
+        self.loads = self.loads.wrapping_add(1);
         self.listed = None;
         self.pictures.clear();
         self.decodes = 0;
@@ -175,6 +178,11 @@ impl TextureBrowser {
                 Some((path, name, dither))
             }
         }
+    }
+
+    /// How many times the sources were loaded, which views of the textures follow.
+    pub(crate) const fn loads(&self) -> u64 {
+        self.loads
     }
 
     /// Where the textures are read from, once found.
