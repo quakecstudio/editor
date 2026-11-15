@@ -32,7 +32,7 @@ one row per budget, the benchmark name in backticks, the budget as a number and 
 | `map_load_mg1` | ENG-17 | 1 s | median | [#444](https://github.com/quakecstudio/editor/issues/444) P3-29 | active |
 | `play_from_here_e1m1` | MAP-13 | 6 s | median | [#928](https://github.com/quakecstudio/editor/issues/928) P6-37 | active |
 | `region_compile_e1m1` | MAP-15 | 1.2 s | median | [#178](https://github.com/quakecstudio/editor/issues/178) P7-03 | active |
-| `full_compile_e1m1` | MAP-18 | 12 s | median | [#179](https://github.com/quakecstudio/editor/issues/179) P7-04 | active |
+| `full_compile_e1m1` | MAP-18 | 8 s | median | [#179](https://github.com/quakecstudio/editor/issues/179) P7-04 | active |
 <!-- /perf-budgets -->
 
 - **`open_project_and_type`:** open a 50,000-line QuakeC project in the editor and type the first
@@ -97,9 +97,9 @@ one row per budget, the benchmark name in backticks, the budget as a number and 
   at least five times faster than the whole map's.
 - **`full_compile_e1m1`:** a full compile of the same map (MAP-18, P7-04), as the background
   full compile runs it after Play from here (P7-02): the extended qbsp, full vis at level 2 from
-  its `PRT2` portal file (VIS-7), and full light with extra sampling. Median within 12 s; 9.69 s
-  on the reference Mac (Apple M5, 10 cores), of which the BSP is 3.1 s, vis 5.3 s and light
-  0.9 s. ericw-tools' qbsp, vis and light take 2.2 s, 1.3 s and 8.0 s on the same machine.
+  its `PRT2` portal file (VIS-7), and full light with extra sampling. Median within 8 s; 6.16 s
+  on the reference Mac (Apple M5, 10 cores), of which the BSP is 3.1 s, vis 2.3 s and light
+  0.7 s. ericw-tools' qbsp, vis and light take 2.2 s, 1.3 s and 8.0 s on the same machine.
 
 ### QuakeSpasm's numbers
 
