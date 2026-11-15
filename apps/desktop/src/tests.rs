@@ -3087,6 +3087,53 @@ fn groups_and_layers_are_made_from_the_view() {
     assert_eq!(map_text(&harness), before);
 }
 
+// No spec statement: P7-08: with an entity of a linked group selected, the view's menu extracts
+// it into a new group in each linked copy, the new groups linked to each other, as
+// TrenchBroom's Extract Linked Groups; one undo takes it back
+#[test]
+fn the_view_s_menu_extracts_from_linked_groups() {
+    let dir = keep_copy("extract");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    shell
+        .execute("map.group", json!({ "name": "pair", "entities": [1, 2] }))
+        .unwrap();
+    let group = shell
+        .session()
+        .context()
+        .workbench
+        .map()
+        .unwrap()
+        .file()
+        .entities
+        .len()
+        - 1;
+    shell
+        .execute("map.link_duplicate", json!({ "group": group }))
+        .unwrap();
+    shell.execute("map.select", json!({ "entity": 2 })).unwrap();
+    harness.run();
+    let before = map_text(&harness);
+    assert_eq!(before.matches("_tb_linked_group_id").count(), 2);
+    harness
+        .get_by_label(Text::MapEditorView.get())
+        .click_secondary();
+    harness.run();
+    harness.get_by_label(Text::MapExtractLinked.get()).click();
+    harness.run();
+    assert_eq!(map_text(&harness).matches("_tb_linked_group_id").count(), 4);
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("edit.undo", json!({})).unwrap();
+    harness.run();
+    assert_eq!(map_text(&harness), before);
+}
+
 // No spec statement: P7-08: a texture chosen in the browser is the current one, and another's
 // menu replaces it with that one on every face of the map, as TrenchBroom's Replace Material;
 // one undo takes it back

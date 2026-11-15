@@ -88,6 +88,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.duplicate`](#mapduplicate) | Duplicates an entity of the open map, its keys and brushes, in place at the end of the map, and selects the copy; the world is not duplicated. A targetname ending in a number takes the next free number, and the keys the code fires entities by move on by as many. |
 | [`map.entity`](#mapentity) | An entity of the open map: its pairs, the keys its class reads with their types and defaults, and the map's targetnames for its target keys. |
 | [`map.export`](#mapexport) | Writes the open map to another .map without the layers marked to be left out of exports and the entities in them (TrenchBroom's Export). |
+| [`map.extract_linked`](#mapextract_linked) | Moves entities of a linked group, and the same entities of every group linked to it, into new groups linked to each other (TrenchBroom's Extract Linked Groups). |
 | [`map.face_align`](#mapface_align) | Carries one face's texture alignment onto other faces of the open map, so the texture continues across the line their planes share (MAP-13.8). |
 | [`map.face_uv`](#mapface_uv) | Fits, justifies, flips, resets, snaps or adjusts the texture of faces of the open map, at the size its WAD gives it (MAP-13). |
 | [`map.filter`](#mapfilter) | The entities of the open map the game removes at a skill and in a kind of game (single, coop or deathmatch), found by spawning the map with the project's program: those the spawnflags rule out and those the QuakeC removes. |
@@ -4098,6 +4099,47 @@ Parameters:
     "path"
   ],
   "title": "ExportParams",
+  "type": "object"
+}
+```
+
+## `map.extract_linked`
+
+Moves entities of a linked group, and the same entities of every group linked to it, into new groups linked to each other (TrenchBroom's Extract Linked Groups).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.extract_linked`.",
+  "properties": {
+    "entities": {
+      "description": "The entities of it to extract.",
+      "items": {
+        "$ref": "#/$defs/EntityIndex"
+      },
+      "type": "array"
+    },
+    "group": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The linked group's own entity."
+    }
+  },
+  "required": [
+    "group",
+    "entities"
+  ],
+  "title": "ExtractLinkedParams",
   "type": "object"
 }
 ```

@@ -38,9 +38,9 @@ pub use brushes::{
 };
 pub use classes::{ClassInfo, FlagInfo, KeyInfo};
 pub use containers::{
-    AddLayerParams, ContainerParams, GroupParams, MAP_ADD_LAYER, MAP_GROUP, MAP_LINK_DUPLICATE,
-    MAP_MAKE_BRUSH_ENTITY, MAP_MAKE_STRUCTURAL, MAP_SEPARATE, MAP_UNGROUP, MakeBrushEntityParams,
-    MakeStructuralParams,
+    AddLayerParams, ContainerParams, ExtractLinkedParams, GroupParams, MAP_ADD_LAYER,
+    MAP_EXTRACT_LINKED, MAP_GROUP, MAP_LINK_DUPLICATE, MAP_MAKE_BRUSH_ENTITY, MAP_MAKE_STRUCTURAL,
+    MAP_SEPARATE, MAP_UNGROUP, MakeBrushEntityParams, MakeStructuralParams,
 };
 pub use disk::{
     Keep, MAP_COMPARE, MAP_RESOLVE, MapDifference, MapOnDisk, ResolveParams, map_files_changed,
@@ -639,6 +639,12 @@ pub struct EntityKeys {
 }
 
 impl EntityKeys {
+    /// Whether the entity is in a group, naming one in `_tb_group` (MAP-9.2, P7-08).
+    #[must_use]
+    pub fn in_group(&self) -> bool {
+        self.pairs.iter().any(|(key, _)| key == GROUP_KEY)
+    }
+
     /// Whether the entity is a group's own entity, its `_tb_type` `_tb_group` (MAP-9.1, P7-08).
     #[must_use]
     pub fn is_group(&self) -> bool {
@@ -650,6 +656,9 @@ impl EntityKeys {
 
 /// The key naming a layer's or group's kind (MAP-9.1).
 const GROUP_TYPE_KEY: &str = "_tb_type";
+
+/// The key a member names its group by (MAP-9.2).
+const GROUP_KEY: &str = "_tb_group";
 
 /// A group's `_tb_type` (MAP-9.1).
 const GROUP_TYPE: &str = "_tb_group";
@@ -1395,6 +1404,7 @@ pub fn register_map_edit<C: HasMap + 'static>(
     registry.register(containers::Separate)?;
     registry.register(containers::MakeBrushEntity)?;
     registry.register(containers::MakeStructural)?;
+    registry.register(containers::ExtractLinked)?;
     registry.register(prefabs::Paste)?;
     registry.register(issues::MapFix)?;
     registry.register(issues::MapSearch)?;

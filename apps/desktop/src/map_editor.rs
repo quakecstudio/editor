@@ -1850,6 +1850,8 @@ pub enum MenuAction {
     MakeStructural(EntityIndex),
     /// Select these entities.
     SelectAll(Vec<EntityIndex>),
+    /// Extract these entities of a linked group into new linked groups.
+    ExtractLinked(Vec<EntityIndex>),
 }
 
 /// A copy of the selection to the clipboard, or a paste of map text (P7-08).
@@ -1987,6 +1989,7 @@ impl MapEditor {
         let shape_of = |entity: EntityIndex| self.scene.entities.iter().find(|s| s.index == entity);
         let brush_entity = selected.filter(|&entity| shape_of(entity).is_some_and(|s| s.brush));
         let classname = selected.and_then(|entity| shape_of(entity)?.classname.clone());
+        let in_group = self.keys.as_ref().is_some_and(|(_, keys)| keys.in_group());
         let mut asked = Vec::new();
         let _menu = response.clone().context_menu(|ui| {
             if ui
@@ -2016,6 +2019,9 @@ impl MapEditor {
                 && ui.button(Text::MapMakeStructural.get()).clicked()
             {
                 asked.push(MapAction::Menu(MenuAction::MakeStructural(entity)));
+            }
+            if in_group && ui.button(Text::MapExtractLinked.get()).clicked() {
+                asked.push(MapAction::Menu(MenuAction::ExtractLinked(chosen.clone())));
             }
             if let Some(at) = at {
                 ui.menu_button(Text::MapCreatePointEntity.get(), |ui| {

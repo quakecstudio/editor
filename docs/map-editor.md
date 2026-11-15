@@ -99,7 +99,9 @@ it too.
   entities and world brushes in a new group, named "Group 1" and on (`map.group`). With a
   group's own entity selected, Cmd+Shift+G (Ungroup) takes its contents out (`map.ungroup`),
   Cmd+Shift+D (Linked duplicate) copies it as a group linked to it (`map.link_duplicate`) and
-  Separate unlinks it (`map.separate`). Add layer, beside Layers, adds a layer
+  Separate unlinks it (`map.separate`). With an entity of a linked group selected, the view's
+  menu's "Extract into linked groups" moves it, and the same entity of every linked copy, into
+  new groups linked to each other (`map.extract_linked`). Add layer, beside Layers, adds a layer
   (`map.add_layer`), and "New objects in" picks the current layer: a brush drawn goes into the
   layer's own entity and a point entity placed names it, as TrenchBroom's current layer. Each is
   written as TrenchBroom writes it.

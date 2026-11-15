@@ -10,15 +10,16 @@ use eframe::egui::{self};
 use qs_layout::{
     MAP_CAMERA, MAP_GRID, MAP_PANES, MAP_SHADING, MapGridParams, MapPanesParams, MapShadingParams,
 };
+use qs_map_edit::EntityIndex;
 use qs_map_edit::LAYER_KEY;
 use qs_map_edit::backup::{Backup, MAP_BACKUP, MAP_BACKUPS, MAP_RESTORE_BACKUP, RestoreParams};
 use qs_map_edit::texture_import::{AddWadParams, MAP_ADD_WAD};
 use qs_map_edit::texture_import::{TEXTURE_IMPORT, TextureImportParams};
 use qs_map_edit::textures::TextureSources;
 use qs_map_edit::{
-    AddLayerParams, ContainerParams, GroupParams, MAP_ADD_LAYER, MAP_GROUP, MAP_LINK_DUPLICATE,
-    MAP_MAKE_BRUSH_ENTITY, MAP_MAKE_STRUCTURAL, MAP_SEPARATE, MAP_UNGROUP, MakeBrushEntityParams,
-    MakeStructuralParams,
+    AddLayerParams, ContainerParams, ExtractLinkedParams, GroupParams, MAP_ADD_LAYER,
+    MAP_EXTRACT_LINKED, MAP_GROUP, MAP_LINK_DUPLICATE, MAP_MAKE_BRUSH_ENTITY, MAP_MAKE_STRUCTURAL,
+    MAP_SEPARATE, MAP_UNGROUP, MakeBrushEntityParams, MakeStructuralParams,
 };
 use qs_map_edit::{
     BrushChamferParams, BrushClipParams, BrushCreateParams, BrushExtrudeParams, BrushHollowParams,
@@ -658,6 +659,28 @@ impl MapFeature {
             ),
             MenuAction::MakeStructural(entity) => {
                 commands.attempt(MAP_MAKE_STRUCTURAL, &MakeStructuralParams { entity })
+            }
+            MenuAction::ExtractLinked(entities) => {
+                // The group the first names, its own entity.
+                let group = commands
+                    .session()
+                    .context()
+                    .workbench
+                    .map()
+                    .and_then(|map| {
+                        let entities_now = &map.file().entities;
+                        let id = entities_now.get(entities.first()?.get())?.group()?;
+                        entities_now
+                        .iter()
+                        .position(|e| {
+                            matches!(e.container(), Some((qs_map::RoomKind::Group, g)) if g == id)
+                        })
+                        .map(EntityIndex::new)
+                    });
+                let Some(group) = group else {
+                    return Ok(serde_json::Value::Null);
+                };
+                commands.attempt(MAP_EXTRACT_LINKED, &ExtractLinkedParams { group, entities })
             }
             MenuAction::SelectAll(entities) => {
                 let mut entities = entities.into_iter();

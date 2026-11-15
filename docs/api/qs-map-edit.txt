@@ -41,6 +41,7 @@ const qs_map_edit::brushes::MAP_BRUSH_SUBTRACT
 const qs_map_edit::brushes::MAP_BRUSH_TEXTURE
 const qs_map_edit::brushes::MAP_BRUSH_VERTEX
 const qs_map_edit::containers::MAP_ADD_LAYER
+const qs_map_edit::containers::MAP_EXTRACT_LINKED
 const qs_map_edit::containers::MAP_GROUP
 const qs_map_edit::containers::MAP_LINK_DUPLICATE
 const qs_map_edit::containers::MAP_MAKE_BRUSH_ENTITY
@@ -247,6 +248,8 @@ field qs_map_edit::classes::KeyInfo.name
 field qs_map_edit::classes::KeyInfo.ty
 field qs_map_edit::containers::AddLayerParams.name
 field qs_map_edit::containers::ContainerParams.group
+field qs_map_edit::containers::ExtractLinkedParams.entities
+field qs_map_edit::containers::ExtractLinkedParams.group
 field qs_map_edit::containers::GroupParams.brushes
 field qs_map_edit::containers::GroupParams.entities
 field qs_map_edit::containers::GroupParams.name
@@ -383,6 +386,7 @@ field qs_map_edit::uv::FaceUvParams.faces
 fn qs_map_edit::EntityIndex::get
 fn qs_map_edit::EntityIndex::is_world
 fn qs_map_edit::EntityIndex::new
+fn qs_map_edit::EntityKeys::in_group
 fn qs_map_edit::EntityKeys::is_group
 fn qs_map_edit::MapDocument::edits
 fn qs_map_edit::MapDocument::file
@@ -505,6 +509,7 @@ struct qs_map_edit::classes::FlagInfo
 struct qs_map_edit::classes::KeyInfo
 struct qs_map_edit::containers::AddLayerParams
 struct qs_map_edit::containers::ContainerParams
+struct qs_map_edit::containers::ExtractLinkedParams
 struct qs_map_edit::containers::GroupParams
 struct qs_map_edit::containers::MakeBrushEntityParams
 struct qs_map_edit::containers::MakeStructuralParams
@@ -598,6 +603,7 @@ use qs_map_edit::EntityInfo = inspect::EntityInfo
 use qs_map_edit::EntityListParams = groups::EntityListParams
 use qs_map_edit::EntityProblem = store::EntityProblem
 use qs_map_edit::ExportParams = groups::ExportParams
+use qs_map_edit::ExtractLinkedParams = containers::ExtractLinkedParams
 use qs_map_edit::ExtrudeMode = brush_tools::ExtrudeMode
 use qs_map_edit::FlagChange = flags::FlagChange
 use qs_map_edit::FlagInfo = classes::FlagInfo
@@ -644,6 +650,7 @@ use qs_map_edit::MAP_BRUSH_VERTICES = brush_tools::MAP_BRUSH_VERTICES
 use qs_map_edit::MAP_COMPARE = disk::MAP_COMPARE
 use qs_map_edit::MAP_COPY = prefabs::MAP_COPY
 use qs_map_edit::MAP_EXPORT = groups::MAP_EXPORT
+use qs_map_edit::MAP_EXTRACT_LINKED = containers::MAP_EXTRACT_LINKED
 use qs_map_edit::MAP_FIX = issues::MAP_FIX
 use qs_map_edit::MAP_FLIP = brush_tools::MAP_FLIP
 use qs_map_edit::MAP_GROUP = containers::MAP_GROUP

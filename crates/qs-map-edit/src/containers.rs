@@ -30,6 +30,19 @@ pub const MAP_LINK_DUPLICATE: &str = "map.link_duplicate";
 /// The id of the command that unlinks a group from the groups linked to it.
 pub const MAP_SEPARATE: &str = "map.separate";
 
+/// The id of the command that moves members of a linked group into a new linked group.
+pub const MAP_EXTRACT_LINKED: &str = "map.extract_linked";
+
+/// The parameters of `map.extract_linked`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ExtractLinkedParams {
+    /// The linked group's own entity.
+    pub group: EntityIndex,
+    /// The entities of it to extract.
+    pub entities: Vec<EntityIndex>,
+}
+
 /// The id of the command that makes world brushes a brush entity.
 pub const MAP_MAKE_BRUSH_ENTITY: &str = "map.make_brush_entity";
 
@@ -417,6 +430,89 @@ impl<C: HasMap + 'static> Command<C> for MakeStructural {
             Ok(())
         })?;
         Ok(Outcome::undoable(MapEdited { entity: None }, step))
+    }
+}
+
+/// `map.extract_linked`.
+pub(super) struct ExtractLinked;
+
+impl<C: HasMap + 'static> Command<C> for ExtractLinked {
+    const ID: &'static str = MAP_EXTRACT_LINKED;
+    const SUMMARY: &'static str = "Moves entities of a linked group, and the same entities of \
+        every group linked to it, into new groups linked to each other (TrenchBroom's Extract \
+        Linked Groups).";
+    type Params = ExtractLinkedParams;
+    type Output = MapEdited;
+    type Error = MapEditError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: ExtractLinkedParams,
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
+        let (entity, step) = edit_map(context, |document| {
+            let id = document.group_id(params.group)?;
+            let link =
+                document
+                    .entity_mut(params.group)?
+                    .link_id()
+                    .ok_or(MapEditError::NotGroup {
+                        entity: params.group,
+                    })?;
+            let members = document.members_of(id);
+            let places: Vec<usize> = params
+                .entities
+                .iter()
+                .filter_map(|entity| members.iter().position(|m| m == entity))
+                .collect();
+            if places.is_empty() || places.len() == members.len() {
+                return Err(MapEditError::NoSelection);
+            }
+            let linked: Vec<EntityIndex> = document
+                .file
+                .entities
+                .iter()
+                .enumerate()
+                .filter(|(_, entity)| {
+                    matches!(entity.container(), Some((RoomKind::Group, _)))
+                        && entity.link_id().as_deref() == Some(link.as_str())
+                })
+                .map(|(place, _)| EntityIndex::new(place))
+                .collect();
+            let new_link = format!("{LINK_PREFIX}{}", document.file.free_container_id().get());
+            let mut first = None;
+            for group in linked {
+                let group_id = document.group_id(group)?;
+                let parent = document.parent_of(group)?;
+                let name = document
+                    .entity_mut(group)?
+                    .text(b"_tb_name")
+                    .unwrap_or_default();
+                let new_id = document.file.free_container_id();
+                let made = Entity::container_of(RoomKind::Group, new_id, &name)
+                    .and_then(|mut made| {
+                        made.put_in(parent)?;
+                        made.set_link_id(Some(&new_link))?;
+                        Ok(made)
+                    })
+                    .map_err(|error| document.map_error(error))?;
+                let theirs = document.members_of(group_id);
+                for &place in &places {
+                    let Some(&member) = theirs.get(place) else {
+                        continue;
+                    };
+                    let found = document.entity_mut(member)?;
+                    let moved = found.put_in(Some((RoomKind::Group, new_id)));
+                    moved.map_err(|error| document.map_error(error))?;
+                }
+                document.file.push_entity(made);
+                first.get_or_insert(EntityIndex::new(
+                    document.file.entities.len().saturating_sub(1),
+                ));
+            }
+            first.ok_or(MapEditError::NoSelection)
+        })?;
+        Ok(MapEdited::undoable(entity, step))
     }
 }
 

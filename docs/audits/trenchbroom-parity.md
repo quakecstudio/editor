@@ -130,7 +130,7 @@ Tests are named `crate-or-app path::test`; `desktop` is `apps/desktop/src`, `map
 | Hide and isolate | `map.hide`, `map.isolate`, `map.show_all` | `map-edit groups::tests::a_selection_is_hidden_isolated_and_locked` | Same |
 | Locking | Any selection, not only layers | as above | Beyond |
 | Groups: create, open, close, ungroup | Read and moved; `map.move_to` | `map-edit containers::tests::a_selection_is_grouped_and_ungrouped`, `desktop tests::groups_and_layers_are_made_from_the_view` | Same: Cmd+G, Cmd+Shift+G, Group and Ungroup in Properties (`map.group`, `map.ungroup`) |
-| Linked groups: create, separate, extract, protected properties | Edits copied, protected keys kept | `map-edit containers::tests::layers_are_added_and_groups_linked_and_separated`, `desktop tests::groups_and_layers_are_made_from_the_view` | Gap G17: create (Cmd+Shift+D) and separate made; extracting into a new linked group is not |
+| Linked groups: create, separate, extract, protected properties | Edits copied, protected keys kept | `map-edit containers::tests::layers_are_added_and_groups_linked_and_separated`, `desktop tests::groups_and_layers_are_made_from_the_view`, `map-edit containers::tests::entities_are_extracted_into_new_linked_groups`, `desktop tests::the_view_s_menu_extracts_from_linked_groups` | Same: create (Cmd+Shift+D), separate, and extract from the view's menu (`map.extract_linked`) |
 | Layers: create, hide, lock, omit from export, current layer | `map.set_layer`, `map.layers`, `map.export` | `map-edit groups::tests::a_locked_layer_refuses_edits_and_an_export_leaves_it_out`, `desktop tests::groups_and_layers_are_made_from_the_view`, `desktop tests::new_objects_go_into_the_current_layer` | Same: Add layer (`map.add_layer`), and the current layer new brushes and entities go into |
 
 ## Preferences
@@ -177,7 +177,6 @@ To close before #823 does:
 | Gap | What TrenchBroom's manual has that we lack |
 | --- | --- |
 | G1 | Entity models drawn textured, not as wireframes |
-| G17 | Extracting objects into a new linked group |
 | G19 | TrenchBroom's query language in the search |
 
 Automatic updates are left to Justin: an update check would make a network request, which P4-16

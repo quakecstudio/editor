@@ -964,11 +964,13 @@ pub enum Text {
     MapHullHint,
     /// Before the layer picker for new objects (P7-08).
     MapCurrentLayer,
+    /// The view menu's entry extracting the selection into new linked groups (P7-08).
+    MapExtractLinked,
 }
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 476] = [
+    pub const ALL: [Self; 477] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1404,6 +1406,7 @@ impl Text {
         Self::MapLinkDuplicate,
         Self::MapSeparate,
         Self::MapAddLayer,
+        Self::MapExtractLinked,
         Self::MapCurrentLayer,
         Self::MapToolHull,
         Self::MapHullHint,
@@ -1965,6 +1968,7 @@ impl Text {
             Self::MapLinkDuplicate => "Linked duplicate",
             Self::MapSeparate => "Separate",
             Self::MapAddLayer => "Add layer",
+            Self::MapExtractLinked => "Extract into linked groups",
             Self::MapCurrentLayer => "New objects in",
             Self::MapEveryWad => "Every WAD",
             Self::MapWadPicker => "WAD shown",

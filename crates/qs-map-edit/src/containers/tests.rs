@@ -205,3 +205,65 @@ fn brushes_become_a_brush_entity_and_structural_again() {
             .is_err()
     );
 }
+
+// No spec statement: P7-08: map.extract_linked moves entities of a linked group, and the same
+// entities of every group linked to it, into new groups linked to each other, as TrenchBroom's
+// Extract Linked Groups; extracting all of a group, or from a group not linked, is refused
+#[test]
+fn entities_are_extracted_into_new_linked_groups() {
+    use super::MAP_EXTRACT_LINKED;
+
+    let mut session = session("extract");
+    session
+        .execute(MAP_GROUP, json!({ "name": "pair", "entities": [1, 2] }))
+        .unwrap();
+    let group = map(&session).entities.len() - 1;
+    assert!(
+        session
+            .execute(
+                MAP_EXTRACT_LINKED,
+                json!({ "group": group, "entities": [1] })
+            )
+            .is_err(),
+        "not linked yet"
+    );
+    session
+        .execute(MAP_LINK_DUPLICATE, json!({ "group": group }))
+        .unwrap();
+    let before = map(&session);
+    let link = before.entities[group].link_id().unwrap();
+    session
+        .execute(
+            MAP_EXTRACT_LINKED,
+            json!({ "group": group, "entities": [1] }),
+        )
+        .unwrap();
+    let after = map(&session);
+    let groups: Vec<(ContainerId, Option<String>)> = after
+        .entities
+        .iter()
+        .filter_map(|e| match e.container() {
+            Some((RoomKind::Group, id)) => Some((id, e.link_id())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(groups.len(), 4, "{groups:?}");
+    let new_link = groups[2].1.clone().unwrap();
+    assert_ne!(new_link, link);
+    assert_eq!(groups[3].1.as_deref(), Some(new_link.as_str()));
+    assert_eq!(groups[1].1.as_deref(), Some(link.as_str()));
+    // The light left the first group for the first new one; the ogre stayed.
+    assert_eq!(after.entities[1].group(), Some(groups[2].0));
+    assert_eq!(after.entities[2].group(), Some(groups[0].0));
+    session.undo().unwrap();
+    assert_eq!(map(&session), before);
+    assert!(
+        session
+            .execute(
+                MAP_EXTRACT_LINKED,
+                json!({ "group": group, "entities": [1, 2] })
+            )
+            .is_err(),
+        "all of it"
+    );
+}
