@@ -182,4 +182,16 @@ fn the_textured_view_leaves_out_unseen_textures() {
         [0, 2]
     );
     assert_eq!(scene.outlined(&BTreeSet::new()), [0]);
+    let mut scene = scene;
+    for brush in &mut scene.brushes {
+        brush.lines = vec![[[0.0; 3], [1.0, 0.0, 0.0]]];
+    }
+    let outlined = [0, 2];
+    let drawn = |hidden: &BTreeSet<EntityIndex>| scene.outlined_lines(&outlined, hidden).count();
+    assert_eq!(drawn(&BTreeSet::new()), 2);
+    assert_eq!(
+        drawn(&BTreeSet::from([EntityIndex::new(2)])),
+        1,
+        "a hidden one is not drawn"
+    );
 }

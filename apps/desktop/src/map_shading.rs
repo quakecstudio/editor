@@ -24,7 +24,7 @@ use qs_render::{
 };
 use qs_wad::texture::{Palette, PaletteIndex};
 
-use crate::map_scene::{FaceShape, Scene};
+use crate::map_scene::{FaceShape, Line, Scene};
 use crate::map_view;
 use crate::strings::Text;
 
@@ -284,6 +284,19 @@ impl Scene {
             .filter(|(_, b)| triggers.contains(&b.entity) || b.faces.iter().any(FaceShape::unseen))
             .map(|(index, _)| index)
             .collect()
+    }
+
+    /// The edges of the `outlined` brushes ([`Scene::outlined`]) not of a `hidden` entity.
+    pub(crate) fn outlined_lines<'a>(
+        &'a self,
+        outlined: &'a [usize],
+        hidden: &'a BTreeSet<EntityIndex>,
+    ) -> impl Iterator<Item = &'a Line> + 'a {
+        outlined
+            .iter()
+            .filter_map(|&index| self.brushes.get(index))
+            .filter(|brush| !hidden.contains(&brush.entity))
+            .flat_map(|brush| &brush.lines)
     }
 
     pub(crate) fn textured_mesh(

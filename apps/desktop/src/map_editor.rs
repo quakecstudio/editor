@@ -1141,14 +1141,8 @@ impl MapEditor {
             }
         }
         if faces {
-            let outlined = self
-                .outlined
-                .iter()
-                .filter_map(|&i| self.scene.brushes.get(i));
-            for brush in outlined.filter(|b| !hidden.contains(&b.entity)) {
-                for line in &brush.lines {
-                    projection.line(&painter, *line, world);
-                }
+            for line in self.scene.outlined_lines(&self.outlined, hidden) {
+                projection.line(&painter, *line, world);
             }
         }
         if pane == Pane::Perspective
