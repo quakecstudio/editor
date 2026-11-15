@@ -24,6 +24,7 @@ use qs_commands::{Registry, Session};
 use qs_engine::{Client, Running};
 use serde_json::{Value, json};
 
+use crate::full_build::tests::compiled_room;
 use crate::{Config, HasWorkbench, Preview, Workbench};
 use qs_map_edit::{MAP_DUPLICATE, MAP_MOVE, MAP_OPEN, MAP_PLACE, register_map_edit};
 
@@ -45,7 +46,7 @@ impl Host for Recording {
     }
 
     fn capabilities(&self) -> Capabilities {
-        Capabilities::of(["entity/spawn", "entity/edit", "entity/remove"])
+        Capabilities::of(["entity/spawn", "entity/edit", "entity/remove", "map/swap"])
     }
 
     fn call(&mut self, _id: &Id, method: &str, params: &Value) -> Answer {
@@ -264,5 +265,59 @@ fn a_map_out_of_step_sends_nothing() {
     assert!(
         notes.iter().any(|n| n.contains("brush entity")),
         "{notes:?}"
+    );
+}
+
+// spec BRIDGE-4.18: a full compile, once done, is written where the played BSP is and swapped
+// into the game on its map, each brush entity named by its place and its model; one for a map
+// the game is not on is dropped
+#[test]
+fn a_full_build_is_swapped_into_the_running_game() {
+    let dir = std::env::temp_dir().join(format!("qs-wb-full-swap-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (client, seen) = recording_client();
+    // The host's process stands in for the game's; the test binary listing its tests exits.
+    let child = std::process::Command::new(std::env::current_exe().unwrap())
+        .arg("--list")
+        .stdout(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let preview = &mut Preview::playing(Running { child, client }, "TEST", &LOADED);
+    let compiled = compiled_room();
+    let portals = compiled.portal_file.clone().unwrap();
+    let target = dir.join("test.bsp");
+    preview.start_full_build(
+        "test".to_owned(),
+        target.clone(),
+        (compiled.bsp.clone(), portals.clone()),
+    );
+    preview.wait_for_full_build();
+    let sent = std::mem::take(&mut *seen.lock().unwrap());
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert_eq!(sent[0].0, "map/swap");
+    assert_eq!(
+        sent[0].1,
+        json!({
+            "bsp": target.to_string_lossy(),
+            "models": [{ "map_entity": 3, "model": "*1" }],
+        })
+    );
+    assert!(target.exists(), "the full compile is written first");
+    assert!(
+        preview
+            .console()
+            .any(|line| line.text.contains("The full compile is in")),
+        "said in the console"
+    );
+
+    preview.start_full_build(
+        "other".to_owned(),
+        dir.join("other.bsp"),
+        (compiled.bsp, portals),
+    );
+    preview.wait_for_full_build();
+    assert!(
+        seen.lock().unwrap().is_empty(),
+        "the game is not on that map"
     );
 }

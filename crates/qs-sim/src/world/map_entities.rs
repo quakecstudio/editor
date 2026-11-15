@@ -105,6 +105,17 @@ impl World {
             .map(|now| now.edict)
     }
 
+    /// The edict the map's entity at `place` took, while it is in use with the `freetime` it had
+    /// then, whatever classname it holds now: a spawn function may rename its entity, as
+    /// LibreQuake's `func_door` names itself `door`, and a swap must still find it
+    /// (BRIDGE-4.18). `None` when it is in none.
+    pub(crate) fn map_edict(&self, place: MapPlace) -> Option<usize> {
+        let taken = self.map_entities.0.get(place.0)?.taken?;
+        self.taken(taken.edict)
+            .filter(|now| now.freetime.to_bits() == taken.freetime.to_bits())
+            .map(|now| now.edict)
+    }
+
     /// Puts a map entity of `classname` at `place` in the list, in edict `edict` or none: the
     /// entities from `place` on move one later. A place past the end is the end.
     pub fn insert_map_entity(

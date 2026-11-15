@@ -198,7 +198,7 @@ A command is a request from the client, answered with a result on success or an 
   | edit entity | `entity/edit` | yes | sets key-values on an edict as its spawn would parse them (EDICT-8) |
   | spawn player at | `player/spawn_at` | yes | moves the player to an origin and angles, as a teleporter would |
   | dock | `window/place` | yes | places the host's window at a rectangle of the desktop and keeps it above other windows or not (BRIDGE-4.10), so it stays beside the IDE (ENG-9) |
-  | swap map | `map/swap` | yes | puts a new build of the running map's BSP in place of the old, keeping every edict and global, each brush entity of the map given its model in the new build (BRIDGE-4.14 to BRIDGE-4.17, MAP-14) |
+  | swap map | `map/swap` | yes | puts a new build of the running map's BSP in place of the old, keeping every edict and global, each brush entity of the map given its model in the new build (BRIDGE-4.14, BRIDGE-4.15, BRIDGE-4.17, BRIDGE-4.18, MAP-14) |
 
 - **BRIDGE-4.10** `window/place` takes the window's outer frame as `x`, `y`, `width` and
   `height` in the desktop's logical points, from the top left of the main display, and
@@ -263,13 +263,10 @@ A command is a request from the client, answered with a result on success or an 
   index, so the models precached after the map's keep theirs. Each other BSP the map precached
   (an item's `maps/b_bh25.bsp`) keeps its hulls at its own index. The PVS and the brush models'
   bounds `setmodel` reads (WORLD-8.2) are the new BSP's too.
-- **BRIDGE-4.16** Each entity of `models` that is in an edict (BRIDGE-4.13) takes its `model`:
-  its `model` field that name, its `modelindex` that name's place in the precache list, and its
-  `mins`, `maxs` and `size` the new brush model's bounds, as `setmodel` sets them. An entity in
-  no edict is passed over. Then every edict in use but the world is linked again
-  (`SV_LinkEdict` without touching, WORLD-6), in edict order, since the new collision starts
-  with none linked; an edict with no solid stays unlinked as before. The result is `swapped`,
-  the number of edicts given a model.
+- **BRIDGE-4.16** **Withdrawn** 2026-11-15: it gave a model to each entity of `models` in an
+  edict as BRIDGE-4.13 finds it, which needs the edict to hold the lump's classname, so a brush
+  entity whose spawn function renames it, as LibreQuake's `func_door` names itself `door`, was
+  not found and the swap refused it; replaced by BRIDGE-4.18.
 - **BRIDGE-4.17** A host that draws (a window, or `--headless` with a GPU device) answers
   `map/swap` once it has made the new BSP's mesh, before its next frame: its faces, lightmaps
   and `.lit` beside it, and the brush entities' models by their new `modelindex`. A build it
@@ -280,6 +277,17 @@ A command is a request from the client, answered with a result on success or an 
   the map's brush entities, so deleting one renumbers those after it, and an entity the
   editor removed or added has already left or entered the game (BRIDGE-4.13), so the game
   follows the map.
+- **BRIDGE-4.18** Each entity of `models` whose edict is still the one its spawn left in use,
+  with the `freetime` it had then (BRIDGE-4.13), whatever classname it holds now, takes its
+  `model`'s bounds as its `mins`, `maxs` and `size`, as `setmodel` sets them, and, when it
+  shows a model, `modelindex` not 0, its `model` field that name and its `modelindex` that
+  name's place in the precache list. A spawn function may rename its entity, as LibreQuake's
+  `func_door` names itself `door` (`doors.qc`), and one may set a model and then show none, as
+  id 1.01's `InitTrigger` (`subs.qc`) does for a trigger: `setmodel`, then `modelindex` 0 and
+  `model` "", so a trigger keeps showing nothing and touches where its brush now is. An entity in no edict is passed over. Then every edict in use but the world is
+  linked again (`SV_LinkEdict` without touching, WORLD-6), in edict order, since the new
+  collision starts with none linked; an edict with no solid stays unlinked as before. The result
+  is `swapped`, the number of edicts given a model.
 
 ## BRIDGE-5 Values
 

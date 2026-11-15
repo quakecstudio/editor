@@ -14,7 +14,9 @@ use qs_engine::{
     Client, EntityTarget, Flavour, InspectWhat, LaunchSpec, StepKind, prepare_run_root,
 };
 use qs_map_edit::{EntityIndex, LiveChange};
+use qs_vfs::{LoadedFile, StdFs, Vfs};
 use qs_workbench::SendLive;
+use qs_workbench::full_build::brush_models;
 use qs_workbench::ids::Edict;
 use serde_json::{Value, json};
 
@@ -67,6 +69,19 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
     // LibreQuake's `id1` is not the registered game, and id's engine refuses a mod on it
     // (FS-4.5), so the host plays the run root's `id1` alone.
     run_root.game = None;
+    // The map's BSP as the host reads it, whose brush entities a swap names (P7-02).
+    let words = [
+        "-basedir".to_owned(),
+        run_root.path.to_string_lossy().into_owned(),
+    ];
+    let vfs = Vfs::new(StdFs, &words, ".").map_err(|e| format!("{e:?}"))?;
+    let name = format!("maps/{}.bsp", args.map);
+    let map_bsp = vfs
+        .load(name.as_bytes())
+        .map_err(|e| format!("{name}: {e:?}"))?
+        .map(LoadedFile::into_bytes)
+        .ok_or_else(|| format!("{name} is not on the game's search path"))?;
+    let models = brush_models(&map_bsp).map_err(|e| format!("{name}: {e}"))?;
     let spec = LaunchSpec {
         host,
         run_root,
@@ -79,7 +94,7 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
         .map_err(|e| e.to_string())?;
     let outcome = suite(
         &mut running.client,
-        &args.map,
+        (&args.map, &models),
         args.progs.as_deref(),
         args.exported.as_deref(),
     );
@@ -243,7 +258,7 @@ fn engine_tools(client: &mut Client) -> Result<(), String> {
 /// Every step, each named when it passed; the first that fails stops the suite.
 fn suite(
     client: &mut Client,
-    map: &str,
+    (map, models): (&str, &[(usize, String)]),
     progs: Option<&Path>,
     exported: Option<&Path>,
 ) -> Result<Vec<String>, String> {
@@ -403,6 +418,9 @@ fn suite(
     expect(hit.get("point").is_some(), "pick says where the ray stops")?;
     steps.push("player/spawn_at and pick".to_owned());
 
+    swap_keeps_the_game(client, map, models)?;
+    steps.push("map/swap of the map's own BSP keeps the player and every entity".to_owned());
+
     if let Some(progs) = progs {
         other_progs(client, progs, &mut steps)?;
     }
@@ -414,6 +432,43 @@ fn suite(
     client.shutdown().map_err(|e| format!("shutdown: {e}"))?;
     steps.push("shutdown".to_owned());
     Ok(steps)
+}
+
+/// `map/swap` of the running map's own BSP, each brush entity by its place in the entity lump
+/// (P7-02, BRIDGE-4.14 to BRIDGE-4.16): the player stands where they stood and every entity
+/// keeps its place and model.
+fn swap_keeps_the_game(
+    client: &mut Client,
+    map: &str,
+    models: &[(usize, String)],
+) -> Result<(), String> {
+    let entities = |client: &mut Client| -> Result<Value, String> {
+        client
+            .inspect(InspectWhat::Entities)
+            .map_err(|e| format!("engine.inspect entities: {e}"))
+            .map(|found| found.get("entities").cloned().unwrap_or(Value::Null))
+    };
+    // Paused, so the monsters and the player stand still between the two looks.
+    client.pause().map_err(|e| format!("pause: {e}"))?;
+    let before = entities(client)?;
+    let swapped = client
+        .swap_map(&format!("maps/{map}.bsp"), models)
+        .map_err(|e| format!("map/swap: {e}"))?;
+    // Each listed entity in an edict takes its model; one the map inhibits is in none.
+    let given = swapped
+        .get("swapped")
+        .and_then(Value::as_u64)
+        .and_then(|n| usize::try_from(n).ok());
+    expect(
+        given.is_some_and(|n| n > 0 && n <= models.len()),
+        "map/swap gives the brush entities their models",
+    )?;
+    expect(
+        entities(client)? == before,
+        "map/swap keeps the player and every entity where they were",
+    )?;
+    client.resume().map_err(|e| format!("resume: {e}"))?;
+    Ok(())
 }
 
 /// The map's lowest-numbered live monster, whose health is edited while paused (P3-14). A

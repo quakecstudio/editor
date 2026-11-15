@@ -22,12 +22,14 @@ use serde_json::Value;
 use qs_commands::{Command, NoParams, Outcome, RegisterError, Registry};
 use schemars::JsonSchema;
 
+use crate::full_build::{FullBuild, FullBuildError, brush_models};
 use crate::ids::{BreakpointId, Edict, WatchIndex};
 use crate::map_compile::{MapCompile, MapLeaks, MapPlayFromHere, MapPortalsCommand};
 use crate::map_profile::{MapChooseProfile, MapProfiles, MapRunProfile};
 use crate::{GameFolders, HasWorkbench, LiveMap, ModuleBuilt, Workbench, WorkbenchError};
 use qs_map::Entity;
 use qs_map_edit::{LiveChange, register_map_game};
+use qs_map_light::Lighted;
 
 pub mod debug;
 pub mod dock;
@@ -240,6 +242,8 @@ pub struct Preview {
     debugger: Debugger,
     /// The IDE's window as last told, and the placement last sent to the host.
     dock: (Option<DockFrame>, Option<WindowPlacement>),
+    /// The full compile of the map Play from here started, swapped in when it is done (P7-02).
+    full_build: Option<FullBuild>,
 }
 
 impl core::fmt::Debug for Preview {
@@ -268,6 +272,7 @@ impl Preview {
             pending: Vec::new(),
             debugger: Debugger::new(),
             dock: (None, None),
+            full_build: None,
         }
     }
 
@@ -739,6 +744,7 @@ impl Preview {
 
     /// Stops the host: `shutdown`, then a kill when it has not stopped in time.
     pub fn stop(&mut self) {
+        self.full_build = None;
         let Some(mut live) = self.live.take() else {
             return;
         };
@@ -786,10 +792,78 @@ impl Preview {
             }
             Err(_) => {
                 self.live = None;
+                self.full_build = None;
                 self.state = PlayState::Stopped;
                 self.status = Some("The game closed".to_owned());
                 self.entities.clear();
             }
+        }
+        self.finish_full_build();
+    }
+
+    /// A warning for the console, from a command.
+    pub(crate) fn note(&mut self, text: &str) {
+        self.push_line(text, "warning");
+    }
+
+    /// Starts the full compile of the map `map` the game plays from `target`, `bsp` the fast
+    /// compile's BSP before its light and `portals` its portal file, in place of any earlier
+    /// one, to be swapped in when it is done (P7-02).
+    pub(crate) fn start_full_build(
+        &mut self,
+        map: String,
+        target: PathBuf,
+        (bsp, portals): (Vec<u8>, Vec<u8>),
+    ) {
+        self.full_build = Some(FullBuild::start(map, target, bsp, portals));
+    }
+
+    /// The full compile, once it is done, swapped in ([`Preview::swap_full_build`]).
+    fn finish_full_build(&mut self) {
+        let Some(built) = self.full_build.as_ref().and_then(FullBuild::take) else {
+            return;
+        };
+        if let Some(build) = self.full_build.take() {
+            self.swap_full_build(&build, built);
+        }
+    }
+
+    /// `built`, the full compile `build` made, put in place of the fast one the game plays and
+    /// swapped in (BRIDGE-4.14), the player where they stand; said in the console. A full
+    /// compile of a map the game is no longer on is dropped.
+    fn swap_full_build(&mut self, build: &FullBuild, built: Result<Lighted, FullBuildError>) {
+        let on_map = self
+            .live
+            .as_ref()
+            .and_then(|live| live.map.as_deref())
+            .is_some_and(|map| map.eq_ignore_ascii_case(&build.map));
+        if !on_map {
+            return;
+        }
+        let swapped = built.map_err(|error| error.to_string()).and_then(|lit| {
+            build.write(&lit).map_err(|error| error.to_string())?;
+            let models = brush_models(&lit.bsp).map_err(|error| error.to_string())?;
+            let target = build.target.to_string_lossy().into_owned();
+            let client = self.client().ok_or("the game stopped")?;
+            client
+                .swap_map(&target, &models)
+                .map_err(|error| error.to_string())
+        });
+        match swapped {
+            Ok(_) => self.push_line("The full compile is in: full vis and light", "print"),
+            Err(why) => self.push_line(
+                &format!("The full compile was not swapped in: {why}"),
+                "warning",
+            ),
+        }
+    }
+
+    /// Waits for the full compile and swaps it in. For tests.
+    #[cfg(test)]
+    pub(crate) fn wait_for_full_build(&mut self) {
+        if let Some(build) = self.full_build.take() {
+            let built = build.wait();
+            self.swap_full_build(&build, built);
         }
     }
 
