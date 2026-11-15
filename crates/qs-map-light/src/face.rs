@@ -33,7 +33,7 @@ const TRIES: usize = 6;
 /// A sample of more than this gives its light's style a lightmap (LIGHT-4.5).
 const REAL_LIGHT: f32 = 1.0;
 /// The cone of a spotlight with no `angle`, in degrees (LIGHT-4.4).
-const DEFAULT_CONE: f64 = 40.0;
+pub(crate) const DEFAULT_CONE: f64 = 40.0;
 /// Degrees to a half turn.
 const HALF_TURN: f64 = 180.0;
 /// The brightest byte (LIGHT-5.2).
@@ -103,7 +103,7 @@ const fn int_of(value: f32) -> i32 {
     clippy::cast_precision_loss,
     reason = "spec LIGHT-4.2: C converts the int light value to float to compare and subtract"
 )]
-const fn float_of(value: i32) -> f32 {
+pub(crate) const fn float_of(value: i32) -> f32 {
     value as f32
 }
 

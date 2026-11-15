@@ -17,11 +17,20 @@ field qs_map_light::Lighted.warnings
 field qs_map_light::Scale.cos
 field qs_map_light::Scale.dist
 field qs_map_light::Scale.range
+field qs_map_light::preview::Cone.aim
+field qs_map_light::preview::Cone.degrees
+field qs_map_light::preview::LightPreview.colour
+field qs_map_light::preview::LightPreview.cone
+field qs_map_light::preview::LightPreview.entity
+field qs_map_light::preview::LightPreview.origin
+field qs_map_light::preview::LightPreview.radius
 fn qs_map_light::Light::new
 fn qs_map_light::Light::run
 fn qs_map_light::Light::with_dialect
 fn qs_map_light::Light::with_scale
+fn qs_map_light::entities::EntityId::index
 fn qs_map_light::face::FaceId::index
+fn qs_map_light::preview::Light::previews
 impl qs_map_light::LightError: fmt::Display
 impl qs_map_light::LightError: std::error::Error
 impl qs_map_light::LightWarning: fmt::Display
@@ -29,8 +38,13 @@ impl qs_map_light::Scale: Default
 struct qs_map_light::Light
 struct qs_map_light::Lighted
 struct qs_map_light::Scale
+struct qs_map_light::entities::EntityId
 struct qs_map_light::face::FaceId
+struct qs_map_light::preview::Cone
+struct qs_map_light::preview::LightPreview
+use qs_map_light::Cone = crate::preview::Cone
 use qs_map_light::Dialect = qs_map_bsp::Dialect
+use qs_map_light::EntityId = crate::entities::EntityId
 use qs_map_light::FaceId = crate::face::FaceId
 use qs_map_light::LIGHT_DEFAULT_LEVEL = crate::entities::LIGHT_DEFAULT_LEVEL
 use qs_map_light::LIGHT_FIRST_SWITCHED_STYLE = crate::entities::LIGHT_FIRST_SWITCHED_STYLE
@@ -38,6 +52,7 @@ use qs_map_light::LIGHT_MAX_MAP_ENTITIES = crate::entities::LIGHT_MAX_MAP_ENTITI
 use qs_map_light::LIGHT_MAX_MAP_ENTSTRING = crate::entities::LIGHT_MAX_MAP_ENTSTRING
 use qs_map_light::LIGHT_MAX_MAP_LIGHTING = crate::lump::LIGHT_MAX_MAP_LIGHTING
 use qs_map_light::LIGHT_MAX_SWITCHED = crate::entities::LIGHT_MAX_SWITCHED
+use qs_map_light::LightPreview = crate::preview::LightPreview
 variant qs_map_light::LightError::BadStyle
 variant qs_map_light::LightError::EntityTextTooLong
 variant qs_map_light::LightError::ExpectedBrace

@@ -37,11 +37,12 @@ pub(crate) const FULL: f32 = 255.0;
 
 /// An entity's place in the entity lump.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct EntityId(usize);
+pub struct EntityId(pub(crate) usize);
 
 impl EntityId {
     /// Its place.
-    pub(crate) const fn index(self) -> usize {
+    #[must_use]
+    pub const fn index(self) -> usize {
         self.0
     }
 }

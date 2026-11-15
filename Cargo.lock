@@ -4095,6 +4095,7 @@ dependencies = [
  "qs-log",
  "qs-map",
  "qs-map-edit",
+ "qs-map-light",
  "qs-mdl",
  "qs-models",
  "qs-paths",
