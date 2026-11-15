@@ -932,6 +932,31 @@ impl BrushTools {
         actions
     }
 
+    /// Escape, as TrenchBroom cancels ("Canceling Operations and Tools"): a drag is dropped,
+    /// else the Vertex tool's picked corners, else the tool goes back to Select. False when
+    /// there was nothing of the tools' to cancel, so the selection goes instead.
+    pub(crate) fn cancel(&mut self) -> bool {
+        if self.drag.take().is_some() {
+            self.dragging_in = None;
+            self.shown = None;
+            return true;
+        }
+        if !self.corners.is_empty() {
+            self.corners.clear();
+            return true;
+        }
+        if self.tool != MapTool::Select {
+            self.tool = MapTool::Select;
+            return true;
+        }
+        if self.chosen.is_empty() {
+            return false;
+        }
+        self.chosen.clear();
+        self.uv.clear();
+        true
+    }
+
     /// Where `corner` is among the corners picked.
     #[expect(
         clippy::float_cmp,
@@ -1336,6 +1361,32 @@ mod tests {
     use crate::map_scene::{BrushShape, Scene};
     use qs_layout::MapGrid;
     use qs_map_edit::{BrushIndex, EntityIndex, KeepPart};
+
+    // No spec statement: P7-08: Escape cancels as TrenchBroom's manual's table says: a drag
+    // first, then the Vertex tool's picked corners, then the tool, then the brushes chosen;
+    // with nothing left it is not the tools'
+    #[test]
+    fn escape_cancels_the_drag_then_the_corners_then_the_tool() {
+        let mut tools = BrushTools {
+            tool: MapTool::Vertex,
+            drag: Some(Drag::Ground([0.0; 3])),
+            corners: vec![[0.0; 3]],
+            chosen: vec![(EntityIndex::new(0), BrushIndex::new(0))],
+            ..BrushTools::default()
+        };
+        assert!(tools.cancel());
+        assert_eq!(tools.drag, None);
+        assert_eq!(tools.corners.len(), 1);
+        assert!(tools.cancel());
+        assert!(tools.corners.is_empty());
+        assert_eq!(tools.tool, MapTool::Vertex);
+        assert!(tools.cancel());
+        assert_eq!(tools.tool, MapTool::Select);
+        assert_eq!(tools.chosen.len(), 1);
+        assert!(tools.cancel());
+        assert!(tools.chosen.is_empty());
+        assert!(!tools.cancel(), "nothing of the tools' is left");
+    }
 
     fn down_from(x: f32, y: f32) -> super::Ray {
         ([x, y, 100.0], [0.0, 0.0, -1.0])

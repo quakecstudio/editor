@@ -2040,6 +2040,35 @@ fn the_grid_keys_set_the_step_the_selection_moves_by() {
     );
 }
 
+// No spec statement: P7-08: Escape in the map view, with no drag, picked corner or tool to
+// cancel, clears the selection, as TrenchBroom's "Selection Tool: Discard current selection"
+#[test]
+fn escape_in_the_map_view_clears_the_selection() {
+    let dir = keep_copy("escape");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    harness.get_by_label(Text::MapEditorView.get()).click();
+    harness.run();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("map.select", json!({ "entity": 2 })).unwrap();
+    harness.run();
+    let selected = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        shell.session().context().workbench.map().unwrap().selected()
+    };
+    assert_eq!(selected(&harness), Some(EntityIndex::new(2)));
+    harness.key_press(egui::Key::Escape);
+    harness.run();
+    assert_eq!(selected(&harness), None);
+}
+
 /// Drags with the primary button from `from` to `to` in steps, holding `modifiers`.
 fn drag(
     harness: &mut Harness<'static, Option<App>>,

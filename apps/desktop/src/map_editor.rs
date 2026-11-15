@@ -1005,19 +1005,26 @@ impl MapEditor {
             .chain(self.also.iter().copied())
             .collect();
         if response.has_focus() {
-            if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
-                self.picking = None;
+            if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape))
+                && self.picking.take().is_none()
+                && !self.tools.cancel()
+            {
+                self.also.clear();
+                actions.push(MapAction::Select(None));
             }
             if let Some(grid) = grid_key(ui, self.tools.grid) {
                 actions.push(MapAction::Grid(grid));
             }
-            // The arrows move the selection, as TrenchBroom's do, not the keyboard focus.
+            // The arrows move the selection, as TrenchBroom's do, not the keyboard focus, and
+            // Escape cancels.
             ui.memory_mut(|memory| {
                 memory.set_focus_lock_filter(
                     response.id,
                     egui::EventFilter {
                         horizontal_arrows: true,
                         vertical_arrows: true,
+                        // Escape cancels in the view rather than taking its keyboard away.
+                        escape: true,
                         ..egui::EventFilter::default()
                     },
                 );

@@ -83,7 +83,7 @@ Tests are named `crate-or-app path::test`; `desktop` is `apps/desktop/src`, `map
 | Entity definition files (`_tb_def`) | The mod's QuakeC, FGD files | `qs-workbench entity_classes::tests` | Beyond |
 | Wad files with a smart editor; drop a wad on the window | The `wad` key, Import texture | `map-edit texture_import::tests::an_import_extends_the_key_the_map_uses` | Gap G16: a WAD dropped on the window is not added |
 | Tools: modal and permanent | Toolbar: Select, Brush, Clip, Vertex, Move, Measure, Shape | `desktop map_tools` tests | Same |
-| Cancel a drag or a tool with Escape | Escape ends a pick only | none | Gap G18 |
+| Cancel a drag or a tool with Escape | Escape drops a drag, then picked corners, then the tool, then the selection | `desktop map_tools::tests::escape_cancels_the_drag_then_the_corners_then_the_tool`, `desktop tests::escape_in_the_map_view_clears_the_selection` | Same |
 | Axis restriction while moving | None | none | Gap G11 |
 | Grid from 0.125 to 256, set from the menu or Alt+Ctrl+wheel | `view.map_grid`, the toolbar's Grid picker, TrenchBroom's + - and 1 to 9 | `desktop tests::the_grid_keys_set_the_step_the_selection_moves_by`, `qs-layout map_grid::tests` | Same |
 | Map view context menu: group, layers, select all of a class, reveal material, create entities | Entities browser context menu only | none | Gap G12 |
@@ -191,7 +191,6 @@ To close before #823 does:
 | G15 | Flip, and a rotate tool for any angle |
 | G16 | Replace a texture; the browser's chosen texture for new brushes; filter by WAD; a WAD dropped on the window; alignment shortcuts |
 | G17 | Create and ungroup groups; create, separate and extract linked groups; new layers and the current layer |
-| G18 | Escape cancels a drag or the current tool |
 | G19 | TrenchBroom's query language in the search |
 | G20 | Rename and delete tasks in compile profiles |
 

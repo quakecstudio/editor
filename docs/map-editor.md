@@ -76,6 +76,8 @@ it too.
   tool, a click selects the first brush the pointer's ray enters, by its faces, and Shift+click
   adds or removes one. Each edit is a `map.brush_*` command on the grid, undone in one step, and
   kept convex: one that would leave a brush with no volume is refused.
+- **Escape (P7-08):** in the view, Escape drops a drag in progress, else the Vertex tool's picked
+  corners, else goes back to Select, else clears the selection, in TrenchBroom's order.
 - **The grid (P7-08):** drawing, dragging and the selection keys snap to the grid, a power of two
   from 0.125 to 256 units, 16 at first, as TrenchBroom's. The toolbar's Grid picker sets it
   (`view.map_grid`), and while the view has the keyboard - halves it, + doubles it
