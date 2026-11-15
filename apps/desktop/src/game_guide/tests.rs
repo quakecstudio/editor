@@ -12,7 +12,7 @@ use egui_kittest::kittest::Queryable;
 use qs_workbench::game_files::{GameFiles, GameState};
 
 use super::{Guide, GuideAction, guide, how_to_get};
-use crate::strings::Text;
+use crate::strings::{Text, help_for};
 use crate::theme::{Mode, Theme};
 
 /// Game data in `state`, at `/games/quake`, lacking `missing`.
@@ -118,4 +118,19 @@ fn the_guide_opens_unless_the_game_is_found() {
             "{state:?}"
         );
     }
+}
+
+// No spec statement: P7-11: the guide's window has its help button
+#[test]
+fn the_window_has_its_help() {
+    let theme = Theme::load(Mode::Dark).unwrap();
+    let mut harness = Harness::new_ui_state(
+        move |ui, files: &mut GameFiles| {
+            let _action = super::window(ui.ctx(), &theme, Guide::Shown, files);
+        },
+        files(GameState::Missing, &["id1/pak0.pak"]),
+    );
+    harness.run();
+    let name = help_for(Text::GameGuide.get());
+    assert!(harness.query_by_label(&name).is_some());
 }

@@ -1,0 +1,18 @@
+# The user guide sections the app's help buttons open (apps/desktop/src/help.rs),
+# as page#anchor under https://www.quakecstudio.com/docs/. The site checks each exists.
+agent.html#give-it-a-task
+debugging.html#breakpoints
+map-editor.html#2-open-a-map
+map-editor.html#3-edit-entities
+map-editor.html#4-build-with-brushes
+map-editor.html#6-find-a-leak
+opening-a-mod.html#git
+opening-a-mod.html#moving-around-the-code
+opening-a-mod.html#searching-the-project
+opening-a-mod.html#the-terminal
+opening-a-mod.html#what-you-see
+play-loop.html#entities-and-properties
+play-loop.html#save-to-reload
+play-loop.html#the-console
+play-loop.html#the-toolbar
+troubleshooting.html#play-says-it-cannot-find-quake

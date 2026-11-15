@@ -26,6 +26,7 @@ mod features;
 mod finder;
 mod game_guide;
 mod git_panel;
+mod help;
 pub mod icons;
 pub mod keymap;
 pub mod launch;
@@ -201,6 +202,7 @@ impl App {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.frame(ui);
+        help::open_links(ui.ctx());
     }
 }
 

@@ -326,7 +326,7 @@ issues:
   - P4-09
   - P3-12
   deliverable:
-  - 'docs/guide/: getting started, opening a mod, the play loop, debugging, the agent, MCP, troubleshooting; screenshots from the snapshot harness'
+  - 'The user guide on the website (P7-10): getting started, opening a mod, the play loop, debugging, the agent, MCP, troubleshooting; screenshots from the snapshot harness'
   acceptance:
   - A new user follows getting started to a running mod without other help (tested with one person)
   verify:

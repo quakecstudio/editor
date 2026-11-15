@@ -223,6 +223,7 @@ sections:
       - {id: QA-14, kind: implied, text: "Apple Developer ID and Windows code-signing credentials available to CI ahead of release"}
       - {id: QA-12, kind: implied, text: "New-project templates (rerelease and id1 based), using the GPLv2 rerelease QuakeC as the doc's licensing table allows"}
       - {id: QA-15, kind: stated, text: "Export a mod as a zip players can install: progs.dat, maps and the project's own assets, optionally packed into a PAK, with a README and license notices, never id's game data"}
+      - {id: QA-16, kind: implied, text: "Inline help: every icon has a tooltip, and each panel, tool and dialog has a ? button with a short explanation linking to the website guide"}
 
   - id: MVP
     title: MVP scope and milestones

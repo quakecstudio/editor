@@ -28,6 +28,7 @@ use qs_map_edit::{
 use qs_render::Camera;
 use qs_workbench::map_filter::{GameMode, Skill};
 
+use crate::help::{self, Topic};
 use crate::map_browser::{ClassDrag, EntityBrowser};
 use crate::map_fields::{Field, spawnflags};
 use crate::map_groups::{GroupAction, layers_ui, overview_keys, selection_ui};
@@ -644,6 +645,13 @@ impl MapEditor {
             ui.selectable_value(&mut self.bottom, BottomTab::Entities, Text::Entities.get());
             ui.selectable_value(&mut self.bottom, BottomTab::Prefabs, Text::MapPrefabs.get());
             ui.selectable_value(&mut self.bottom, BottomTab::Issues, Text::MapIssues.get());
+            let topic = match self.bottom {
+                BottomTab::Textures => Topic::MapTextures,
+                BottomTab::Entities => Topic::MapEntities,
+                BottomTab::Prefabs => Topic::MapPrefabs,
+                BottomTab::Issues => Topic::MapIssues,
+            };
+            help::button(ui, theme, topic);
             ui.separator();
             match self.bottom {
                 BottomTab::Textures => self.textures.header(ui, theme, document),

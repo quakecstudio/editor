@@ -31,6 +31,10 @@ Nothing else goes over the network:
   own local socket (`app.sock`). The language server talks over stdin and stdout.
 - A model provider's key is kept in the system keychain (`qs_models::Keychain`), never in a file,
   and is sent only to that provider.
+- A help popup's **Read more in the user guide** opens that section of
+  `https://www.quakecstudio.com/docs/` in the system's browser, and only when clicked; the app
+  hands the address to `open` (macOS), `explorer` (Windows) or `xdg-open` (Linux) and makes no
+  request itself.
 
 The build tools in `xtask/` fetch id's sources, the test corpus and the cached specifications
 for development and CI. They are not part of the app.

@@ -30,13 +30,14 @@ use serde_json::json;
 
 use crate::debugger::place;
 use crate::editor::Request;
+use crate::help::Topic;
 use crate::icons::Icon;
 use crate::keymap;
 use crate::launch::{Launch, forward_paths};
 use crate::map_tools::Readout;
 use crate::palette::highlighted;
 use crate::shell::{CentreTab, EDITOR_AREA, PointerHeld, commanded_size, dragged_size};
-use crate::strings::{Text, command_count, exit_status, match_count, missing_textures};
+use crate::strings::{Text, command_count, exit_status, help_for, match_count, missing_textures};
 use crate::theme::{Mode, Theme, ThemeError, Token, semibold};
 use crate::{App, AppError};
 
@@ -1630,6 +1631,8 @@ fn go_to_symbol_the_outline_and_soft_wrap() {
     run_command(&mut harness, qs_layout::TOGGLE_OUTLINE);
     harness.run();
     harness.get_by_role_and_label(Role::Pane, Text::Outline.get());
+    // QA-16: the outline has its help.
+    assert!(has_help(&harness, Topic::Outline));
     assert_eq!(
         harness.query_all_by_label("Ember_Touch").count(),
         2,
@@ -3443,4 +3446,123 @@ fn a_second_launch_hands_its_paths_to_the_running_window() {
         Some(world)
     );
     assert_eq!(app.shell().centre_tab(), CentreTab::Editor);
+}
+
+/// Whether `harness` shows the help button for `topic`.
+fn has_help(harness: &Harness<'static, Option<App>>, topic: Topic) -> bool {
+    let name = help_for(topic.title().get());
+    harness
+        .query_all_by_label(&name)
+        .any(|node| node.accesskit_node().role() == Role::Button)
+}
+
+/// The buttons `harness` shows whose name has no word in it, such as an icon's character alone.
+fn wordless_buttons(harness: &Harness<'static, Option<App>>) -> Vec<String> {
+    harness
+        .root()
+        .children_recursive()
+        .filter(|node| node.accesskit_node().role() == Role::Button)
+        .filter_map(|node| node.accesskit_node().label())
+        .filter(|label| !label.chars().any(char::is_alphabetic))
+        .collect()
+}
+
+// QA-16: every panel heading, the toolbar, the centre's and the bottom panel's tabs, and the
+// map editor's tab row have a help button for what they show; no button is named by an icon
+// alone; the icon-only and play controls have tooltips.
+#[test]
+fn every_panel_tab_and_tool_has_help() {
+    let dir = keep_copy("help");
+    let mut harness = accessible();
+    for topic in [
+        Topic::Toolbar,
+        Topic::Project,
+        Topic::Symbols,
+        Topic::Entities,
+        Topic::Properties,
+        Topic::Agent,
+        Topic::Problems,
+        Topic::Editor,
+    ] {
+        assert!(has_help(&harness, topic), "{topic:?}");
+    }
+    assert_eq!(wordless_buttons(&harness), Vec::<String>::new());
+    for (tab, topic) in [
+        (Text::Console, Topic::Console),
+        (Text::Debugger, Topic::Debugger),
+        (Text::Terminal, Topic::Terminal),
+        (Text::Git, Topic::Git),
+        (Text::ProjectSearch, Topic::Search),
+        (Text::Game, Topic::Game),
+    ] {
+        harness
+            .get_by_role_and_label(Role::Button, tab.get())
+            .click();
+        harness.run();
+        assert!(has_help(&harness, topic), "{topic:?}");
+    }
+    // A tooltip says what an icon-only control and each play control does: the tooltip is a
+    // second node with the control's name.
+    harness
+        .get_by_role_and_label(Role::Button, Text::ToggleLeftPanel.get())
+        .hover();
+    harness.run();
+    let tip = Text::ToggleLeftPanel.get();
+    assert!(harness.query_all_by_value(tip).count() + harness.query_all_by_label(tip).count() > 1);
+    let step = harness
+        .query_all_by_label_contains(Text::Step.get())
+        .find(|node| node.accesskit_node().role() == Role::Button)
+        .unwrap();
+    step.hover();
+    harness.run();
+    assert!(
+        harness.query_by_value(Text::StepHint.get()).is_some()
+            || harness.query_by_label(Text::StepHint.get()).is_some()
+    );
+
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    for topic in [
+        Topic::MapOutline,
+        Topic::MapProperties,
+        Topic::MapView,
+        Topic::MapTextures,
+    ] {
+        assert!(has_help(&harness, topic), "{topic:?}");
+    }
+    for (tab, topic) in [
+        (Text::MapPrefabs, Topic::MapPrefabs),
+        (Text::MapIssues, Topic::MapIssues),
+        (Text::Entities, Topic::MapEntities),
+    ] {
+        harness
+            .get_by_role_and_label(Role::Button, tab.get())
+            .click();
+        harness.run();
+        assert!(has_help(&harness, topic), "{topic:?}");
+    }
+    assert_eq!(wordless_buttons(&harness), Vec::<String>::new());
+    // No two help buttons share a name, so a screen reader tells them apart.
+    let helps: Vec<String> = harness
+        .query_all_by_label_contains(&help_for(""))
+        .filter(|node| node.accesskit_node().role() == Role::Button)
+        .filter_map(|node| node.accesskit_node().label())
+        .collect();
+    let unique: BTreeSet<&String> = helps.iter().collect();
+    assert_eq!(unique.len(), helps.len(), "{helps:?}");
+    // Each map tool's tooltip says what it does.
+    harness
+        .get_by_role_and_label(Role::Button, Text::MapToolBrush.get())
+        .hover();
+    harness.run();
+    assert!(
+        harness.query_by_value(Text::MapBrushHint.get()).is_some()
+            || harness.query_all_by_label(Text::MapBrushHint.get()).count() > 0
+    );
 }

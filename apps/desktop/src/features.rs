@@ -22,11 +22,12 @@ use crate::editors::EditorsFeature;
 use crate::entities::{self, EntityAction, Properties};
 use crate::git_panel::GitFeature;
 use crate::git_panel::{GitAction, GitView, git_ui};
+use crate::help::{self, Topic};
 use crate::map_editor::{MapAction, MapEditor};
 use crate::map_feature::MapFeature;
 use crate::project::ProjectFeature;
 use crate::project::{self, Jump, SymbolScope};
-use crate::shell::{Area, FocusNow, SYMBOLS_SHARE, TREE_SHARE, heading, note, section};
+use crate::shell::{Area, FocusNow, SYMBOLS_SHARE, TREE_SHARE, heading_with_help, note, section};
 use crate::shell::{BottomTab, CentreTab, ShellError, Workspace};
 use crate::strings::Text;
 use crate::terminal::TerminalFeature;
@@ -145,15 +146,15 @@ impl Features {
                 }
                 ui.add_space(theme.space(SECTION_GAP));
                 if preview.state() == PlayState::Stopped {
-                    section(ui, theme, Text::Entities, Text::NotPlaying);
+                    section(ui, theme, Topic::Entities, Text::NotPlaying);
                 } else {
-                    heading(ui, theme, Text::Entities);
+                    heading_with_help(ui, theme, Text::Entities, Topic::Entities);
                     entity_action =
                         entities::outliner(ui, theme, preview.entities(), &mut self.map.outliner);
                 }
                 if let Some(editor) = map_editor {
                     ui.add_space(theme.space(SECTION_GAP));
-                    heading(ui, theme, Text::Map);
+                    heading_with_help(ui, theme, Text::Map, Topic::MapOutline);
                     let selected = workbench.map().and_then(MapDocument::selected);
                     map_actions = editor.outline_ui(ui, theme, selected);
                 }
@@ -302,7 +303,7 @@ pub(crate) fn left(
     let focus = focus == FocusNow::Take;
     let height = ui.available_height();
     let mut jump = None;
-    let project = heading(ui, theme, Text::Project);
+    let project = heading_with_help(ui, theme, Text::Project, Topic::Project);
     if focus {
         project.request_focus();
     }
@@ -330,7 +331,7 @@ pub(crate) fn left(
         }
     }
     ui.add_space(theme.space(SECTION_GAP));
-    heading(ui, theme, Text::Symbols);
+    heading_with_help(ui, theme, Text::Symbols, Topic::Symbols);
     let symbols = project::symbols_ui(
         ui,
         theme,
@@ -356,14 +357,14 @@ pub(crate) fn right(
     let mut entity_action = None;
     let mut map_actions = Vec::new();
     let first = if let Some(map_editor) = map_editor {
-        let first = heading(ui, theme, Text::Properties);
+        let first = heading_with_help(ui, theme, Text::Properties, Topic::MapProperties);
         let report = workbench.map().and_then(MapDocument::report);
         map_actions = map_editor.properties(ui, theme, report);
         first
     } else if preview.state() == PlayState::Stopped {
-        section(ui, theme, Text::Properties, Text::NotPlaying)
+        section(ui, theme, Topic::Properties, Text::NotPlaying)
     } else {
-        let first = heading(ui, theme, Text::Properties);
+        let first = heading_with_help(ui, theme, Text::Properties, Topic::Properties);
         entity_action = entities::properties(ui, theme, preview, properties);
         first
     };
@@ -371,7 +372,7 @@ pub(crate) fn right(
         first.request_focus();
     }
     ui.add_space(theme.space(SECTION_GAP));
-    heading(ui, theme, Text::Agent);
+    heading_with_help(ui, theme, Text::Agent, Topic::Agent);
     let agent_action = agent.ui(ui, theme, &workbench.staged_hunks());
     (entity_action, agent_action, map_actions)
 }
@@ -405,6 +406,14 @@ pub(crate) fn bottom(
                 response.request_focus();
             }
         }
+        let topic = match tab {
+            BottomTab::Problems => Topic::Problems,
+            BottomTab::Console => Topic::Console,
+            BottomTab::Debugger => Topic::Debugger,
+            BottomTab::Terminal => Topic::Terminal,
+            BottomTab::Git => Topic::Git,
+        };
+        help::button(ui, theme, topic);
     });
     ui.separator();
     match tab {

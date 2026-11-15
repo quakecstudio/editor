@@ -65,6 +65,7 @@ use crate::features::{
 };
 use crate::finder::FileFinder;
 use crate::git_panel::TabShown;
+use crate::help::{self, Topic};
 use crate::icons::Icon;
 use crate::keymap::{self, Scope};
 use crate::map_editor::MapAction;
@@ -1011,7 +1012,7 @@ impl Shell {
             )
             .show(ui, |ui| {
                 name_area(ui, accesskit::Role::Pane, Text::Outline);
-                heading(ui, theme, Text::Outline);
+                heading_with_help(ui, theme, Text::Outline, Topic::Outline);
                 if open.outline().is_empty() {
                     note(ui, theme, Text::NoOutline);
                 }
@@ -1297,6 +1298,7 @@ impl Shell {
                 name_area(ui, accesskit::Role::Toolbar, Text::Toolbar);
                 ui.horizontal_centered(|ui| {
                     control = play_controls(ui, theme, state);
+                    help::button(ui, theme, Topic::Toolbar);
                     ui.separator();
                     ui.label(Text::PreviewHost.get());
                     ui.label(
@@ -1597,8 +1599,17 @@ impl Shell {
                     let muted = theme.color(Token::TextMuted);
                     let (errors, warnings) =
                         project::counts(self.session.context().workbench.problems());
-                    for (icon, value) in [(Icon::Error, errors), (Icon::Warning, warnings)] {
-                        ui.label(RichText::new(count(icon, value)).small().color(muted));
+                    for (icon, value, name) in [
+                        (Icon::Error, errors, Text::ErrorCount),
+                        (Icon::Warning, warnings, Text::WarningCount),
+                    ] {
+                        let response = ui
+                            .label(RichText::new(count(icon, value)).small().color(muted))
+                            .on_hover_text(name.get());
+                        // Read as its name and number, not the icon's character.
+                        ui.ctx().accesskit_node_builder(response.id, |node| {
+                            node.set_label(format!("{} {value}", name.get()));
+                        });
                     }
                     let running = match self.session.context().preview.state() {
                         PlayState::Stopped => Text::PreviewStopped,
@@ -2204,6 +2215,13 @@ impl Shell {
                             response.request_focus();
                         }
                     }
+                    let topic = match self.centre_tab {
+                        CentreTab::Editor => Topic::Editor,
+                        CentreTab::Search => Topic::Search,
+                        CentreTab::Game => Topic::Game,
+                        CentreTab::Map => Topic::MapView,
+                    };
+                    help::button(ui, theme, topic);
                 });
             });
         let switched = chosen.is_some();
@@ -2514,12 +2532,22 @@ pub(crate) fn name_field(ui: &Ui, response: &Response, name: Text) {
     });
 }
 
-/// A panel section: its heading and, until it has content, one line of explanation; the
-/// heading's response.
-pub(crate) fn section(ui: &mut Ui, theme: &Theme, text: Text, empty: Text) -> Response {
-    let heading = heading(ui, theme, text);
+/// A panel section: its heading, named for `topic`, with its help and, until it has content,
+/// one line of explanation; the heading's response.
+pub(crate) fn section(ui: &mut Ui, theme: &Theme, topic: Topic, empty: Text) -> Response {
+    let heading = heading_with_help(ui, theme, topic.title(), topic);
     note(ui, theme, empty);
     heading
+}
+
+/// A panel's heading with its help button beside it (P7-11): the heading's response.
+pub(crate) fn heading_with_help(ui: &mut Ui, theme: &Theme, text: Text, topic: Topic) -> Response {
+    ui.horizontal(|ui| {
+        let response = heading(ui, theme, text);
+        help::button(ui, theme, topic);
+        response
+    })
+    .inner
 }
 
 /// A panel section's heading: a heading to a screen reader, and where the keyboard lands when
@@ -2543,8 +2571,9 @@ pub(crate) fn heading(ui: &mut Ui, theme: &Theme, text: Text) -> Response {
 
 /// The share of the left panel's height the Project tree may take.
 pub(crate) const TREE_SHARE: f32 = 0.35;
-/// The share of the left panel's height the Symbols list may take.
-pub(crate) const SYMBOLS_SHARE: f32 = 0.4;
+/// The share of the left panel's height the Symbols list may take, leaving the headings below
+/// it, each as tall as its 20-point help button, in the window.
+pub(crate) const SYMBOLS_SHARE: f32 = 0.38;
 
 impl Theme {
     /// The editor's colours and font, from the theme's tokens.
@@ -2661,15 +2690,24 @@ fn play_controls(ui: &mut Ui, theme: &Theme, state: PlayState) -> Option<&'stati
     let pause = Button::new(labelled(Icon::Pause, pause_text))
         .frame(state == PlayState::Paused)
         .selected(state == PlayState::Paused);
-    if ui.add_enabled(state == PlayState::Playing, pause).clicked() {
+    if ui
+        .add_enabled(state == PlayState::Playing, pause)
+        .on_hover_text(Text::PauseHint.get())
+        .on_disabled_hover_text(Text::PauseHint.get())
+        .clicked()
+    {
         chosen = Some(PAUSE);
     }
-    for (icon, text, id) in [
-        (Icon::Step, Text::Step, STEP),
-        (Icon::Restart, Text::RestartMap, RESTART),
+    for (icon, text, hint, id) in [
+        (Icon::Step, Text::Step, Text::StepHint, STEP),
+        (Icon::Restart, Text::RestartMap, Text::RestartHint, RESTART),
     ] {
         let button = Button::new(labelled(icon, text)).frame(false);
-        if ui.add_enabled(running, button).clicked() {
+        let response = ui
+            .add_enabled(running, button)
+            .on_hover_text(hint.get())
+            .on_disabled_hover_text(hint.get());
+        if response.clicked() {
             chosen = Some(id);
         }
     }

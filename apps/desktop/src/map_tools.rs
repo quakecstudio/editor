@@ -128,6 +128,19 @@ impl MapTool {
         }
     }
 
+    /// What the tool does, in its toolbar button's tooltip.
+    const fn tooltip(self) -> Text {
+        match self {
+            Self::Select => Text::MapSelectHint,
+            Self::Brush => Text::MapBrushHint,
+            Self::Clip => Text::MapClipHint,
+            Self::Vertex => Text::MapVertexHint,
+            Self::Move => Text::MapMoveHint,
+            Self::Measure => Text::MapMeasureHint,
+            Self::Shape => Text::MapShapeHint,
+        }
+    }
+
     /// What to do with the tool, shown beside the toolbar.
     const fn hint(self) -> Option<Text> {
         match self {
@@ -679,7 +692,8 @@ impl BrushTools {
     /// The tool selector, and the clip's side when clipping.
     pub(crate) fn toolbar(&mut self, ui: &mut Ui) {
         for tool in MapTool::ALL {
-            ui.selectable_value(&mut self.tool, tool, tool.text().get());
+            ui.selectable_value(&mut self.tool, tool, tool.text().get())
+                .on_hover_text(tool.tooltip().get());
         }
         if self.tool == MapTool::Shape {
             ui.separator();
