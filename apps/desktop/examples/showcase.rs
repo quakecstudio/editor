@@ -20,11 +20,23 @@ use eframe::egui::{self, TexturesDelta};
 use eframe::egui_wgpu::{self, ScreenDescriptor};
 use egui_kittest::kittest::Queryable as _;
 use egui_kittest::{Harness, TestRenderer};
+use qs_render::{Camera, Degrees, Offscreen};
 use quakec_studio::App;
 use quakec_studio::map_view::DEPTH_FORMAT;
 use quakec_studio::strings::Text;
-use qs_render::{Camera, Degrees, Offscreen};
 use serde_json::{Value, json};
+
+/// Where the hall of lq_e1m1 is seen from, south of its coloured lights.
+const HALL: [f32; 3] = [-96.0, 560.0, 330.0];
+/// A red light of the hall: entity 185 of lq_e1m1, `_color 237 51 59`.
+const RED_LIGHT: usize = 185;
+
+/// The compile profile the showcase compiles each map with.
+const PROFILE: &str = "Showcase";
+
+/// [`PROFILE`] as `compile-profiles.toml` writes it.
+const PROFILES: &str = "[[profile]]\nname = \"Showcase\"\ntasks = [{ task = \"bsp\" }, \
+    { task = \"vis\" }, { task = \"light\" }]\n";
 
 /// The window's size in points, the snapshot harness's.
 const SIZE: [f32; 2] = [1440.0, 900.0];
@@ -39,6 +51,12 @@ struct Args {
     /// Where the PNGs are written.
     #[arg(long)]
     out: PathBuf,
+    /// Look from here instead, as `x,y,z,yaw,pitch`, to find a scene's view.
+    #[arg(long, value_delimiter = ',', allow_hyphen_values = true)]
+    look: Option<Vec<f32>>,
+    /// Render only the scenes whose names contain this.
+    #[arg(long)]
+    only: Option<String>,
 }
 
 /// egui_kittest's renderer as `qs_render::Offscreen`, with the depth buffer the window has.
@@ -73,13 +91,14 @@ impl TestRenderer for DepthRenderer {
 }
 
 /// One step of a scene.
+#[derive(Clone)]
 enum Step {
     /// Run a command with its parameters.
     Run(&'static str, Value),
-    /// Click the control named so.
-    Click(Text),
     /// Look from here, yaw and pitch in degrees.
     Look([f32; 3], f32, f32),
+    /// Hide every point entity in the editor but this one, so the map shows.
+    HidePoints(Option<usize>),
 }
 
 /// A scene: its file name and its steps after the map opens.
@@ -93,21 +112,53 @@ struct Scene {
 fn scenes() -> Vec<Scene> {
     let lit = || Step::Run("view.map_shading", json!({ "shading": "lit" }));
     let textured = || Step::Run("view.map_shading", json!({ "shading": "textured" }));
+    let wide = || {
+        [
+            Step::Run("view.toggle_panel", json!({ "panel": "left" })),
+            Step::Run("view.toggle_panel", json!({ "panel": "bottom" })),
+        ]
+    };
+    // The hall of lq_e1m1 its blue and red lights colour.
+    let hall = || Step::Look(HALL, 90.0, 8.0);
+    let clear = || Step::HidePoints(None);
     vec![
         Scene {
             name: "showcase-lit",
             map: "e1/lq_e1m1.map",
-            steps: vec![lit()],
+            steps: vec![lit(), hall(), clear()],
+        },
+        Scene {
+            name: "showcase-lit-wide",
+            map: "e1/lq_e1m1.map",
+            steps: [vec![lit(), hall(), clear()], wide().into()].concat(),
         },
         Scene {
             name: "showcase-textured",
             map: "e1/lq_e1m1.map",
-            steps: vec![textured()],
+            steps: [vec![textured(), hall(), clear()], wide().into()].concat(),
+        },
+        Scene {
+            name: "showcase-light-reach",
+            map: "e1/lq_e1m1.map",
+            steps: [
+                vec![
+                    lit(),
+                    hall(),
+                    Step::HidePoints(Some(RED_LIGHT)),
+                    Step::Run("map.select", json!({ "entity": RED_LIGHT })),
+                ],
+                wide().into(),
+            ]
+            .concat(),
         },
         Scene {
             name: "showcase-quad",
             map: "e1/lq_e1m1.map",
-            steps: vec![lit(), Step::Run("view.map_panes", json!({ "panes": "quad" }))],
+            steps: vec![
+                lit(),
+                hall(),
+                Step::Run("view.map_panes", json!({ "panes": "quad" })),
+            ],
         },
     ]
 }
@@ -125,7 +176,20 @@ fn main() -> ExitCode {
 fn run(args: &Args) -> Result<(), String> {
     std::fs::create_dir_all(&args.out).map_err(|e| e.to_string())?;
     let game = args.librequake.join("lq1");
+    // A profile of the BSP, full vis and full light, with no launch: the showcase has no game
+    // to start.
+    let profiles = game.join("compile-profiles.toml");
+    if !profiles.exists() {
+        std::fs::write(&profiles, PROFILES).map_err(|e| e.to_string())?;
+    }
     for scene in scenes() {
+        if args
+            .only
+            .as_ref()
+            .is_some_and(|only| !scene.name.contains(only.as_str()))
+        {
+            continue;
+        }
         let map = game.join("maps/src").join(scene.map);
         let mut harness = harness()?;
         let app = harness.state_mut().as_mut().ok_or("no app")?;
@@ -146,12 +210,21 @@ fn run(args: &Args) -> Result<(), String> {
                         .execute(id, params.clone())
                         .map_err(|e| format!("{id}: {e}"))?;
                 }
+                Step::HidePoints(keep) => {
+                    let hidden = point_entities(&map, *keep)?;
+                    app.shell_mut()
+                        .execute("map.hide", json!({ "entities": hidden }))
+                        .map_err(|e| format!("map.hide: {e}"))?;
+                }
                 Step::Look(origin, yaw, pitch) => {
-                    let mut camera = Camera::new(*origin, Degrees::new(*yaw));
-                    camera.pitch = Degrees::new(*pitch);
+                    let (origin, yaw, pitch) = match args.look.as_deref() {
+                        Some(&[x, y, z, yaw, pitch]) => ([x, y, z], yaw, pitch),
+                        _ => (*origin, *yaw, *pitch),
+                    };
+                    let mut camera = Camera::new(origin, Degrees::new(yaw));
+                    camera.pitch = Degrees::new(pitch);
                     app.shell_mut().set_map_camera(camera);
                 }
-                Step::Click(text) => harness.get_by_label(text.get()).click(),
             }
             harness.run();
         }
@@ -162,7 +235,21 @@ fn run(args: &Args) -> Result<(), String> {
     Ok(())
 }
 
-/// Compiles the open map with the Full profile, unless its BSP is newer than it.
+/// Every entity of the map at `path` with no brush, the world aside, but `keep`.
+fn point_entities(path: &Path, keep: Option<usize>) -> Result<Vec<usize>, String> {
+    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+    let file = qs_map::MapFile::parse(&bytes).map_err(|e| e.to_string())?;
+    Ok(file
+        .entities
+        .iter()
+        .enumerate()
+        .skip(1)
+        .filter(|(index, entity)| Some(*index) != keep && entity.brushes().next().is_none())
+        .map(|(index, _)| index)
+        .collect())
+}
+
+/// Compiles the open map with [`PROFILE`], unless its BSP is newer than it.
 fn compiled(harness: &mut Harness<'static, Option<App>>, map: &Path) -> Result<(), String> {
     let modified = |path: &Path| std::fs::metadata(path).and_then(|m| m.modified()).ok();
     if modified(&map.with_extension("bsp")) >= modified(map) && modified(map).is_some() {
@@ -170,7 +257,7 @@ fn compiled(harness: &mut Harness<'static, Option<App>>, map: &Path) -> Result<(
     }
     let app = harness.state_mut().as_mut().ok_or("no app")?;
     app.shell_mut()
-        .execute("map.choose_profile", json!({ "profile": "Full" }))
+        .execute("map.choose_profile", json!({ "profile": PROFILE }))
         .map_err(|e| e.to_string())?;
     harness.run();
     harness.get_by_label(Text::MapCompileProfile.get()).click();

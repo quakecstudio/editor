@@ -101,12 +101,13 @@ pub(crate) struct ShadedView {
 }
 
 impl ShadedView {
-    /// The toolbar's choice of shading: the one clicked, which `view.map_shading` sets.
-    pub(crate) fn toolbar(&self, ui: &mut Ui) -> Option<MapShading> {
+    /// The toolbar's choice of shading, `current` the layout's this frame: the one clicked,
+    /// which `view.map_shading` sets.
+    pub(crate) fn toolbar(ui: &mut Ui, current: MapShading) -> Option<MapShading> {
         let mut chosen = None;
         for shading in MapShading::ALL {
             if ui
-                .selectable_label(self.shading == shading, text(shading).get())
+                .selectable_label(current == shading, text(shading).get())
                 .on_hover_text(hint(shading).get())
                 .clicked()
             {

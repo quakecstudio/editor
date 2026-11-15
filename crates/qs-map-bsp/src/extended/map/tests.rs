@@ -381,3 +381,56 @@ fn origin_brushes_and_rotation() {
         [4, 3, 2, 5, 4]
     );
 }
+
+// spec QBSP-15.53: a `+` texture adds each lower frame of its sequence the map lacks, after it
+// and in order: digits from 0, letters from A in either case; a frame the map names itself, in
+// any case, is not added twice
+#[test]
+fn animated_textures_add_their_lower_frames() {
+    let map = world(vec![
+        BrushSpec::cube([0, 0, 0], [8, 8, 8], "+3lava"),
+        BrushSpec::cube([16, 0, 0], [24, 8, 8], "+0LAVA"),
+        BrushSpec::cube([32, 0, 0], [40, 8, 8], "+catek"),
+        BrushSpec::cube([48, 0, 0], [56, 8, 8], "+0slime"),
+    ]);
+    assert_eq!(
+        map.texinfos.miptex(),
+        [
+            b"skip".to_vec(),
+            b"+3lava".to_vec(),
+            b"+0lava".to_vec(),
+            b"+1lava".to_vec(),
+            b"+2lava".to_vec(),
+            b"+catek".to_vec(),
+            b"+Aatek".to_vec(),
+            b"+Batek".to_vec(),
+            b"+0slime".to_vec(),
+        ]
+    );
+    assert_eq!(map.texinfos.bad_animation(), None);
+}
+
+// spec QBSP-15.53: a `+` texture whose frame is not 0 to 9 or A to J stops the compile with
+// `Bad animating texture`; a `+` alone is frame 0 and adds nothing
+#[test]
+fn a_bad_animating_texture_stops_the_compile() {
+    let map = world(vec![
+        BrushSpec::cube([0, 0, 0], [8, 8, 8], "+xlava"),
+        BrushSpec::cube([16, 0, 0], [24, 8, 8], "+klava"),
+        BrushSpec::cube([32, 0, 0], [40, 8, 8], "+"),
+    ]);
+    assert_eq!(map.texinfos.bad_animation(), Some(&b"+xlava"[..]));
+    assert_eq!(
+        map.texinfos.miptex(),
+        [
+            b"skip".to_vec(),
+            b"+xlava".to_vec(),
+            b"+klava".to_vec(),
+            b"+".to_vec()
+        ]
+    );
+    assert_eq!(
+        crate::CompileError::BadAnimation(b"+xlava".to_vec()).to_string(),
+        "Bad animating texture +xlava"
+    );
+}

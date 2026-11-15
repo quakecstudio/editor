@@ -3,7 +3,7 @@
 // Copyright (C) 1997       Greg Lewis
 // Copyright (C) 2026 QuakeC Studio contributors
 //
-// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: qbsp/map.cc, set_planepts, ParseBrushFace, ParseBrush, ParseEntity, Brush_GetContents, IsSkipName, IsNoExpandName, IsSpecialName, IsHintName, SurfFlagsForEntity, FindMiptex, FindTexinfo, CalculateBrushBounds, AddBrushBevels, GetBrushExtents, CalculateWorldExtent, ProcessMapBrushes
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: qbsp/map.cc, set_planepts, ParseBrushFace, ParseBrush, ParseEntity, Brush_GetContents, IsSkipName, IsNoExpandName, IsSpecialName, IsHintName, SurfFlagsForEntity, FindMiptex, AddAnimTex, FindTexinfo, CalculateBrushBounds, AddBrushBevels, GetBrushExtents, CalculateWorldExtent, ProcessMapBrushes
 // Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: qbsp/brush.cc, FindTargetEntity, FixRotateOrigin
 // Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: qbsp/qbsp.cc, MakeSkipTexinfo
 // Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: include/common/qvec.hh, Snap
@@ -124,6 +124,9 @@ pub(crate) struct TexinfoNum(usize);
 pub(crate) struct Texinfos {
     miptex: Vec<Vec<u8>>,
     texinfo: Vec<Texinfo>,
+    /// The first `+` texture whose frame is not a digit or a letter `A` to `J`, which stops the
+    /// compile (QBSP-15.53).
+    bad_animation: Option<Vec<u8>>,
 }
 
 impl Texinfos {
@@ -140,7 +143,13 @@ impl Texinfos {
                 miptex: 0,
                 flags: SurfFlags::default().with(SurfFlags::NODRAW),
             }],
+            bad_animation: None,
         }
+    }
+
+    /// The first `+` texture with a frame that is not one, `Bad animating texture` (QBSP-15.53).
+    pub(crate) fn bad_animation(&self) -> Option<&[u8]> {
+        self.bad_animation.as_deref()
     }
 
     /// The textures' names, in first-use order.
@@ -174,7 +183,44 @@ impl Texinfos {
             return found;
         }
         self.miptex.push(name.to_vec());
-        self.miptex.len().saturating_sub(1)
+        let index = self.miptex.len().saturating_sub(1);
+        if name.first() == Some(&b'+') {
+            self.add_anim_tex(name);
+        }
+        index
+    }
+
+    /// `AddAnimTex` (QBSP-15.53): after a `+` texture, each lower frame of its sequence the map
+    /// lacks, in order, "otherwise many Quake engines will exit with an error loading the bsp":
+    /// frames `0` up to it for a digit, `A` up to it for a letter `A` to `J` in either case. Any
+    /// other frame is noted to stop the compile.
+    fn add_anim_tex(&mut self, name: &[u8]) {
+        // `name[1]` is the NUL of a name of one character: frame 0, no frames to add.
+        let frame = name.get(1).copied().unwrap_or(0).to_ascii_uppercase();
+        let (base, frame) = match frame {
+            b'0'..=b'9' => (b'0', frame.saturating_sub(b'0')),
+            b'A'..=b'J' => (b'A', frame.saturating_sub(b'A')),
+            0 => (b'0', 0),
+            _ => {
+                if self.bad_animation.is_none() {
+                    self.bad_animation = Some(name.to_vec());
+                }
+                return;
+            }
+        };
+        for lower in 0..frame {
+            let mut framename = name.to_vec();
+            if let Some(second) = framename.get_mut(1) {
+                *second = base.saturating_add(lower);
+            }
+            if !self
+                .miptex
+                .iter()
+                .any(|m| m.eq_ignore_ascii_case(&framename))
+            {
+                self.miptex.push(framename);
+            }
+        }
     }
 
     /// `texinfo`'s number, added when no texinfo is exactly it, `FindTexinfo` (QBSP-15.16).

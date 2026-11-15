@@ -681,7 +681,7 @@ impl MapEditor {
         // The tab's own width, which the toolbar wraps within and the view keeps to, so a long
         // toolbar never widens the view under the Properties panel.
         let bounds = ui.available_rect_before_wrap();
-        let mut actions = self.toolbar(ui, layout, bounds.width());
+        let mut actions = self.toolbar(ui, (layout, shading), bounds.width());
         let mut full = ui.available_rect_before_wrap();
         full.max.x = full.max.x.min(bounds.max.x);
         // The view and the browser keep their least heights below however many rows the
@@ -744,14 +744,19 @@ impl MapEditor {
     }
 
     /// The links shown and the filter by skill and game; the filter chosen.
-    fn toolbar(&mut self, ui: &mut Ui, layout: MapPanes, width: f32) -> Vec<MapAction> {
+    fn toolbar(
+        &mut self,
+        ui: &mut Ui,
+        (layout, shading): (MapPanes, MapShading),
+        width: f32,
+    ) -> Vec<MapAction> {
         let mut actions = Vec::new();
         // Wrapping, so the tools and their settings never widen the view past the centre.
         ui.horizontal_wrapped(|ui| {
             ui.set_max_width(width);
             self.tools.toolbar(ui);
             ui.separator();
-            if let Some(shading) = self.shaded.toolbar(ui) {
+            if let Some(shading) = ShadedView::toolbar(ui, shading) {
                 actions.push(MapAction::Shading(shading));
             }
             ui.separator();
