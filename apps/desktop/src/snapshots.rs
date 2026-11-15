@@ -24,14 +24,18 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use eframe::egui::{self, Event, Key, Modifiers};
+use eframe::egui_wgpu;
 use egui_kittest::kittest::Queryable as _;
 use egui_kittest::{Harness, OsThreshold, SnapshotOptions};
 use qs_map_edit::uv::{FaceIndex, FaceRef};
 use qs_map_edit::{BrushIndex, EntityIndex};
+use qs_render::Offscreen;
 use serde_json::{Value, json};
 
 use crate::App;
 use crate::display::Display;
+use crate::map_view::DEPTH_FORMAT;
+use crate::map_view::tests::DepthRenderer;
 use crate::theme::{Contrast, Mode, Motion};
 
 /// The window's size in points, the play-loop mockup's.
@@ -163,6 +167,7 @@ fn scripts() -> Vec<Script> {
                     "map.open",
                     json!({ "path": keep_fixture().join("maps/keep.map") }),
                 ),
+                Step::Run("view.map_shading", json!({ "shading": "textured" })),
                 Step::Run("map.select", json!({ "entity": 2 })),
             ],
         },
@@ -175,6 +180,7 @@ fn scripts() -> Vec<Script> {
                     "map.open",
                     json!({ "path": keep_fixture().join("maps/keep.map") }),
                 ),
+                Step::Run("view.map_shading", json!({ "shading": "textured" })),
                 Step::Run("map.select", json!({ "entity": 2 })),
             ],
         },
@@ -186,6 +192,7 @@ fn scripts() -> Vec<Script> {
                     "map.open",
                     json!({ "path": keep_fixture().join("maps/keep.map") }),
                 ),
+                Step::Run("view.map_shading", json!({ "shading": "textured" })),
                 Step::Run("map.select", json!({ "entity": 3 })),
             ],
         },
@@ -197,6 +204,7 @@ fn scripts() -> Vec<Script> {
                     "map.open",
                     json!({ "path": keep_fixture().join("maps/keep.map") }),
                 ),
+                Step::Run("view.map_shading", json!({ "shading": "textured" })),
                 Step::Run(
                     "map.brush_shape",
                     json!({
@@ -235,6 +243,7 @@ fn scripts() -> Vec<Script> {
                     "map.open",
                     json!({ "path": keep_fixture().join("maps/keep.map") }),
                 ),
+                Step::Run("view.map_shading", json!({ "shading": "textured" })),
                 Step::Run("view.map_panes", json!({ "panes": "quad" })),
                 Step::Run("map.select", json!({ "entity": 2 })),
             ],
@@ -247,6 +256,7 @@ fn scripts() -> Vec<Script> {
                     "map.open",
                     json!({ "path": keep_fixture().join("maps/keep.map") }),
                 ),
+                Step::Run("view.map_shading", json!({ "shading": "textured" })),
                 Step::Run("map.brush_delete", json!({ "entity": 0, "brush": 2 })),
                 Step::Run(
                     "map.brush_texture",
@@ -263,6 +273,7 @@ fn scripts() -> Vec<Script> {
                     "map.open",
                     json!({ "path": keep_fixture().join("maps/keep.map") }),
                 ),
+                Step::Run("view.map_shading", json!({ "shading": "textured" })),
                 Step::Drop(brick_png, "wall"),
             ],
         },
@@ -274,6 +285,7 @@ fn scripts() -> Vec<Script> {
                     "map.open",
                     json!({ "path": keep_fixture().join("maps/keep.map") }),
                 ),
+                Step::Run("view.map_shading", json!({ "shading": "textured" })),
                 Step::Run(
                     "map.set_key",
                     json!({ "entity": 2, "key": "sped", "value": "200" }),
@@ -294,6 +306,7 @@ fn scripts() -> Vec<Script> {
                     "map.open",
                     json!({ "path": keep_fixture().join("maps/keep.map") }),
                 ),
+                Step::Run("view.map_shading", json!({ "shading": "textured" })),
                 Step::Run(
                     "map.brush_texture",
                     json!({ "entity": 0, "brushes": [2], "rotate": 30.0, "scale": [0.5, 0.5] }),
@@ -377,9 +390,24 @@ fn tasks_fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/tasks")
 }
 
-/// The most pixels each OS may differ from the macOS golden by.
-fn max_failed_pixels() -> OsThreshold<usize> {
-    OsThreshold::new(0).linux(400).windows(400)
+impl Script {
+    /// The most pixels each OS may differ from the macOS golden by. Linux's and Windows'
+    /// software rasterizers filter textures a little differently, so a script that draws the
+    /// map's 3D view textured may differ there by up to 6,000 pixels, half a percent of the
+    /// window, as `map-textured` may (2,477 to 2,502 on the Linux runner on 2026-11-15); the
+    /// rest by 400.
+    fn max_failed_pixels(&self) -> OsThreshold<usize> {
+        let textured = json!({ "shading": "textured" });
+        let draws_textures = self
+            .steps
+            .iter()
+            .any(|step| matches!(step, Step::Run("view.map_shading", p) if *p == textured));
+        if draws_textures {
+            OsThreshold::new(0).linux(6_000).windows(6_000)
+        } else {
+            OsThreshold::new(0).linux(400).windows(400)
+        }
+    }
 }
 
 /// Where the goldens are kept.
@@ -388,12 +416,22 @@ fn goldens() -> PathBuf {
 }
 
 /// A harness running the app, made from the harness's context before the first frame so the
-/// theme's fonts are in place when it draws.
+/// theme's fonts are in place when it draws, on a wgpu device with the window's depth buffer,
+/// which the map editor's textured and lit views draw on (P7-13).
 fn harness() -> Harness<'static, Option<App>> {
+    let state = egui_kittest::wgpu::create_render_state(
+        egui_kittest::wgpu::default_wgpu_setup(),
+        egui_wgpu::RendererOptions {
+            depth_stencil_format: Some(DEPTH_FORMAT),
+            ..egui_wgpu::RendererOptions::PREDICTABLE
+        },
+    );
     let mut harness = Harness::builder()
         .with_size(SIZE)
         .with_pixels_per_point(1.0)
-        .wgpu()
+        .renderer(DepthRenderer {
+            offscreen: Offscreen::from_state(state.clone(), DEPTH_FORMAT),
+        })
         .build_ui_state(
             |ui, app: &mut Option<App>| {
                 if let Some(app) = app {
@@ -402,7 +440,8 @@ fn harness() -> Harness<'static, Option<App>> {
             },
             None,
         );
-    let app = App::checked_on_the_frame(&harness.ctx, None).unwrap();
+    let mut app = App::checked_on_the_frame(&harness.ctx, None).unwrap();
+    app.shell_mut().set_render_state(Some(state));
     *harness.state_mut() = Some(app);
     harness
 }
@@ -479,9 +518,6 @@ fn run(script: &Script) -> Harness<'static, Option<App>> {
 // QA-3: every script's last frame matches its golden image, within each OS's allowance.
 #[test]
 fn every_script_matches_its_golden() {
-    let options = SnapshotOptions::new()
-        .output_path(goldens())
-        .max_failed_pixels(max_failed_pixels());
     let screenshots = std::env::var_os("QS_SCREENSHOTS").map(PathBuf::from);
     let mut failures = Vec::new();
     for script in scripts() {
@@ -493,6 +529,9 @@ fn every_script_matches_its_golden() {
                 .save(dir.join(format!("{}.png", script.name)))
                 .unwrap();
         }
+        let options = SnapshotOptions::new()
+            .output_path(goldens())
+            .max_failed_pixels(script.max_failed_pixels());
         if let Err(error) = harness.try_snapshot_options(script.name, &options) {
             failures.push(format!("{}: {error}", script.name));
         }

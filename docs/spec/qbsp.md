@@ -986,6 +986,7 @@ point on a plane (`mathlib.hh`).
   cluster's leaves in leaf order, each line ended by `-1` (`WritePTR2ClusterMapping`). A portal
   is written with its two numbers, swapped when the polygon's own plane faces away from the
   portal's by more than `ANGLEEPSILON`, and its points as `{fmt}` writes them.
+- **QBSP-15.53** A `+` texture adds, after it, each lower frame of its sequence the map does not already have in any case (`AddAnimTex`, called from `FindMiptex`): its second character, a letter upper-cased, is the frame; for a digit, frames `0` up to it, and for a letter `A` to `J`, frames `A` up to it, each the name with that character replaced. ericw-tools' reason: "Always add the lower numbered animation frames first, otherwise many Quake engines will exit with an error loading the bsp." Any other second character stops the compile with `Bad animating texture <name>`; a `+` alone is frame 0 and adds nothing.
 - **QBSP-15.47** T-junctions are fixed (`TJunc`, `-tjunc mwt` by default) for each face written:
   each edge is broken at each vertex, as the file stores it, of a face that welds with this one
   (`Welds` on the back contents: the same type; never a detail wall with another, see-through

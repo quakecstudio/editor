@@ -1524,10 +1524,11 @@ groups:
     summary: |
       Justin, 2026-11-15: the screenshots show grey boxes and lines; they should show textured, lit maps and what the editor does that TrenchBroom and other editors cannot, with a wow factor.
     deliverable:
-    - 'Snapshot-harness scripts in apps/desktop/src/snapshots.rs rendering showcase scenes from the LibreQuake corpus maps, compiled with full light: the lit and textured 3D view with coloured light, Play from here with the game docked beside the map, the leak trail through a lit map, the light reach preview, the agent and the debugger stopped in QuakeC while the map runs, the IDE at 200 percent zoom and in the increased-contrast theme'
+    - 'apps/desktop/examples/showcase.rs, rendering showcase scenes on the snapshot harness from LibreQuake, which is not in the repository, its maps compiled with full light: the lit and textured 3D view with coloured light, the light reach preview, the debugger stopped in QuakeC while the map runs and the game''s frame at that moment, and QuakeC with its diagnostics'
+    - 'apps/desktop/src/snapshots.rs: every map script draws the 3D view textured; the IDE at 200 percent zoom and in the increased-contrast theme'
     - 'quakecstudio/site: the landing page and every guide page use them, with alt text; apps/desktop/snapshots and the guide refreshed from them; each image listed in ATTRIBUTION.md with LibreQuake''s licence'
     acceptance:
-    - 'Every screenshot on the site and in the guide shows textures and lighting where it shows a map, and is rendered by the harness, so a rerun reproduces it'
+    - 'Every screenshot on the landing page that shows a map shows its textures and compiled lighting, and every map screenshot in the guide its textures; each is rendered by the showcase example or the snapshot harness, so a rerun reproduces it'
     - 'The landing page shows at least four capabilities TrenchBroom''s manual does not list, each named in its caption'
     verify:
     - 'The snapshot tests; the site PR deployed to dev and reviewed by Justin'

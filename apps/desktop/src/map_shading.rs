@@ -24,7 +24,7 @@ use qs_render::{
 };
 use qs_wad::texture::{Palette, PaletteIndex};
 
-use crate::map_scene::{FaceShape, Scene};
+use crate::map_scene::{FaceShape, Line, Scene};
 use crate::map_view;
 use crate::strings::Text;
 
@@ -274,6 +274,31 @@ impl FaceShape {
 impl Scene {
     /// The textured mesh of the scene's brush faces but those of the entities `hidden`: each
     /// texture's image from `image`, and each face shaded by its normal.
+    /// The brushes, by their place, with a face the textured view leaves out: those of
+    /// `triggers`, and those with an unseen face ([`FaceShape::unseen`]). The map editor draws
+    /// their edges over the faces, so they stay visible and can be picked.
+    pub(crate) fn outlined(&self, triggers: &BTreeSet<EntityIndex>) -> Vec<usize> {
+        self.brushes
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| triggers.contains(&b.entity) || b.faces.iter().any(FaceShape::unseen))
+            .map(|(index, _)| index)
+            .collect()
+    }
+
+    /// The edges of the `outlined` brushes ([`Scene::outlined`]) not of a `hidden` entity.
+    pub(crate) fn outlined_lines<'a>(
+        &'a self,
+        outlined: &'a [usize],
+        hidden: &'a BTreeSet<EntityIndex>,
+    ) -> impl Iterator<Item = &'a Line> + 'a {
+        outlined
+            .iter()
+            .filter_map(|&index| self.brushes.get(index))
+            .filter(|brush| !hidden.contains(&brush.entity))
+            .flat_map(|brush| &brush.lines)
+    }
+
     pub(crate) fn textured_mesh(
         &self,
         image: &mut dyn FnMut(&str) -> Image,
@@ -284,7 +309,7 @@ impl Scene {
         let mut images: Vec<Image> = Vec::new();
         let mut faces = Vec::new();
         for brush in self.brushes.iter().filter(|b| !hidden.contains(&b.entity)) {
-            for face in &brush.faces {
+            for face in brush.faces.iter().filter(|f| !f.unseen()) {
                 let slot = match names
                     .iter()
                     .position(|n| n.eq_ignore_ascii_case(&face.texture))
@@ -416,6 +441,32 @@ fn lit(path: &Path, palette: &Palette) -> Result<MapMesh, String> {
     Ok(builder.finish())
 }
 
+impl FaceShape {
+    /// Whether the game never draws this face, so the textured view leaves it out as the lit
+    /// one does: its texture, the name after its last `/`, is a nodraw or hint one
+    /// (QBSP-15.16), `clip` (QBSP-4.1) or `origin` (QBSP-15.13), in any case.
+    pub(crate) fn unseen(&self) -> bool {
+        let name = self.texture.rsplit('/').next().unwrap_or_default();
+        UNSEEN
+            .iter()
+            .any(|unseen| name.eq_ignore_ascii_case(unseen))
+    }
+}
+
+/// The textures of [`FaceShape::unseen`].
+const UNSEEN: [&str; 10] = [
+    "skip",
+    "*waterskip",
+    "*slimeskip",
+    "*lavaskip",
+    "bevel",
+    "null",
+    "hint",
+    "hintskip",
+    "clip",
+    "origin",
+];
+
 /// The world and each brush entity's model at its origin, as the engine places them; triggers
 /// are left out, as the engine does not draw them.
 fn placements(bsp: &Bsp<'_>) -> Vec<Placement> {
@@ -450,7 +501,7 @@ fn placements(bsp: &Bsp<'_>) -> Vec<Placement> {
 }
 
 /// The start of a trigger's classname: `trigger_multiple`, `trigger_teleport` and the rest.
-const TRIGGER: &[u8] = b"trigger_";
+pub(crate) const TRIGGER: &[u8] = b"trigger_";
 
 /// A map coordinate as the renderer takes it.
 #[expect(
