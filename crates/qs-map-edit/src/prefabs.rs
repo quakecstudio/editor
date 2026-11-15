@@ -171,6 +171,9 @@ enum Anchor {
     InPlace,
 }
 
+/// No move at all: where a copy, or a paste at its original place, goes by.
+const UNMOVED: [f64; 3] = [0.0, 0.0, 0.0];
+
 /// The middle of the floor of the box `[lo, hi]`, across on `grid`.
 fn floor_middle([lo, hi]: [[f64; 3]; 2], grid: Option<f64>) -> [f64; 3] {
     [
@@ -249,7 +252,7 @@ impl MapDocument {
         let floor = bounds(world_brushes.iter(), &all).ok_or(MapEditError::NoSelection)?;
         let by = match anchor {
             Anchor::FloorMiddle(grid) => floor_middle(floor, grid).map(|c| -c),
-            Anchor::InPlace => [0.0; 3],
+            Anchor::InPlace => UNMOVED,
         };
         let mut prefab =
             MapFile::parse(b"{\n\"classname\" \"worldspawn\"\n}\n").map_err(|error| {
@@ -498,7 +501,7 @@ impl<C: HasMap + 'static> Command<C> for Paste {
                 let to = [snap(at[0], params.grid), snap(at[1], params.grid), at[2]];
                 [to[0] - from[0], to[1] - from[1], to[2] - from[2]]
             }
-            None => [0.0; 3],
+            None => UNMOVED,
         };
         let (entity, step) = edit_map(context, |document| document.place_prefab(&pasted, by))?;
         Ok(Outcome::undoable(
