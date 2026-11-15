@@ -7,51 +7,31 @@
 use qc_builtins::mock::Precache;
 use qc_progs::Progs;
 use qc_types::Slot;
-use qs_bsp::Bsp;
+use qc_vm::RunError;
+use qs_bsp::{Bsp, Submodel};
 
 use super::{World, field_slot};
 use crate::builtins::SimCall;
 use crate::world::MapPlace;
 
-/// A brush model of a map, `*n` with `n` from 1 (WORLD-5.1).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BrushModel(usize);
-
-impl BrushModel {
-    /// The brush model `name` names, `*n` with `n` a whole number from 1 written with no
-    /// leading zero; `None` for another name.
-    #[must_use]
-    pub fn parse(name: &str) -> Option<Self> {
-        let digits = name.strip_prefix('*')?;
-        if digits.starts_with('0') || !digits.bytes().all(|b| b.is_ascii_digit()) {
-            return None;
-        }
-        digits.parse().ok().filter(|&n| n >= 1).map(Self)
-    }
-
-    /// Its name, `*n`.
-    #[must_use]
-    pub fn name(self) -> String {
-        format!("*{}", self.0)
-    }
-
-    /// Its place in a BSP's models, the world's being 0.
-    #[must_use]
-    pub const fn get(self) -> usize {
-        self.0
-    }
-}
-
 /// Why a swap was refused; nothing changed (BRIDGE-4.14).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SwapError {
     /// The model is past the new BSP's last brush model.
-    NoSuchModel(BrushModel),
+    NoSuchModel(Submodel),
     /// The map's model precache list has no such model: the client read the list when it
     /// joined, so a brush entity added since waits for the map to load again.
-    NotPrecached(BrushModel),
+    NotPrecached(Submodel),
+    /// An edict in use shows a brush model the swap does not place: it is not one of the map's
+    /// entities, and its `*n` may be another brush in the new build.
+    Unplaced {
+        /// The edict.
+        edict: usize,
+        /// The brush model it shows.
+        model: Submodel,
+    },
     /// An edict could not be linked again.
-    Link(String),
+    Link(RunError),
 }
 
 impl core::fmt::Display for SwapError {
@@ -65,12 +45,24 @@ impl core::fmt::Display for SwapError {
                 "{} is not precached by the map; reload the map to load it",
                 model.name()
             ),
-            Self::Link(why) => write!(f, "linking: {why}"),
+            Self::Unplaced { edict, model } => write!(
+                f,
+                "edict {edict} shows {} and is not one of the map's entities; reload the map",
+                model.name()
+            ),
+            Self::Link(error) => write!(f, "linking: {}", error.message()),
         }
     }
 }
 
 impl core::error::Error for SwapError {}
+
+/// What a swap places: each edict `models` gives a brush model, with the model and its index
+/// in the precache list, and every edict in use but the world, which it links again.
+struct Placed {
+    given: Vec<(usize, Submodel, usize)>,
+    in_use: Vec<usize>,
+}
 
 impl World {
     /// Puts `bsp`, a new build of the running map, in place of the old (BRIDGE-4.15), each
@@ -80,13 +72,51 @@ impl World {
     /// # Errors
     ///
     /// [`SwapError::NoSuchModel`] or [`SwapError::NotPrecached`] for a model the swap cannot
-    /// give, before anything changes (BRIDGE-4.14); [`SwapError::Link`] when linking fails.
+    /// give, and [`SwapError::Unplaced`] for an edict showing a brush model it does not place,
+    /// before anything changes (BRIDGE-4.14); [`SwapError::Link`] when linking fails.
     pub fn swap_bsp(
         &mut self,
         progs: &Progs<'_>,
         bsp: &Bsp<'_>,
-        models: &[(MapPlace, BrushModel)],
+        models: &[(MapPlace, Submodel)],
     ) -> Result<usize, SwapError> {
+        let Placed { given, in_use } = self.placed(progs, bsp, models)?;
+        self.builtins.swap_map(&self.map, bsp);
+        for &(edict, model, index) in &given {
+            self.give_model(edict, model, index, bsp);
+        }
+        let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
+        // Linking without touching runs no QuakeC (WORLD-6), so it does not fail part-way.
+        in_use
+            .into_iter()
+            .try_for_each(|n| call.link(n, false))
+            .map_err(SwapError::Link)?;
+        Ok(given.len())
+    }
+
+    /// Whether `bsp` and `models` would swap in, as [`World::swap_bsp`] checks them, with
+    /// nothing changed: a host checks a swap before it draws the new build (BRIDGE-4.17).
+    ///
+    /// # Errors
+    ///
+    /// As [`World::swap_bsp`]'s refusals.
+    pub fn check_swap(
+        &self,
+        progs: &Progs<'_>,
+        bsp: &Bsp<'_>,
+        models: &[(MapPlace, Submodel)],
+    ) -> Result<(), SwapError> {
+        self.placed(progs, bsp, models).map(|_| ())
+    }
+
+    /// Each edict `models` places, with its brush model and model index, and the edicts in use
+    /// but the world; refused before anything changes (BRIDGE-4.14).
+    fn placed(
+        &self,
+        progs: &Progs<'_>,
+        bsp: &Bsp<'_>,
+        models: &[(MapPlace, Submodel)],
+    ) -> Result<Placed, SwapError> {
         let last = bsp.models.len().saturating_sub(1);
         let mut given = Vec::with_capacity(models.len());
         for &(place, model) in models {
@@ -103,22 +133,29 @@ impl World {
                 given.push((edict, model, index));
             }
         }
-        self.builtins.swap_map(&self.map, bsp);
-        for &(edict, model, index) in &given {
-            self.give_model(edict, model, index, bsp);
+        let in_use: Vec<usize> = (1..self.num_edicts()).filter(|&n| self.in_use(n)).collect();
+        for &edict in &in_use {
+            if given.iter().any(|&(placed, _, _)| placed == edict) {
+                continue;
+            }
+            if let Some(model) = self.brush_model_of(edict) {
+                return Err(SwapError::Unplaced { edict, model });
+            }
         }
-        let linked: Vec<usize> = (1..self.num_edicts()).filter(|&n| self.in_use(n)).collect();
-        let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
-        for n in linked {
-            call.link(n, false)
-                .map_err(|e| SwapError::Link(e.to_string()))?;
-        }
-        Ok(given.len())
+        Ok(Placed { given, in_use })
+    }
+
+    /// The brush model edict `edict` shows by its `modelindex`, when the precache list names a
+    /// `*n` there.
+    fn brush_model_of(&self, edict: usize) -> Option<Submodel> {
+        let index = super::whole(self.field(edict, "modelindex").as_f32())?;
+        let engine = self.builtins.mock.engine();
+        Submodel::parse(engine.model_precache.get(index)?)
     }
 
     /// Edict `edict` given brush model `model` of `bsp`, model index `index`, as `setmodel`
     /// gives it: its `model`, `modelindex`, `mins`, `maxs` and `size` (BRIDGE-4.16).
-    fn give_model(&mut self, edict: usize, model: BrushModel, index: usize, bsp: &Bsp<'_>) {
+    fn give_model(&mut self, edict: usize, model: Submodel, index: usize, bsp: &Bsp<'_>) {
         let name = self.make_string(model.name().into_bytes());
         self.set_field(edict, field_slot("model"), Slot::from_i32(name));
         let index = u16::try_from(index).map_or(f32::MAX, f32::from);

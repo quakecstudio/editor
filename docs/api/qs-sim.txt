@@ -232,6 +232,7 @@ fn qs_sim::collision::Collision::leafs_of
 fn qs_sim::collision::Collision::model
 fn qs_sim::collision::Collision::new
 fn qs_sim::collision::Collision::point_contents
+fn qs_sim::collision::Collision::rebuilt
 fn qs_sim::collision::Collision::sets
 fn qs_sim::collision::Collision::true_point_contents
 fn qs_sim::collision::Collision::unlink
@@ -422,9 +423,7 @@ fn qs_sim::world::state::RawState::global
 fn qs_sim::world::state::RawState::num_edicts
 fn qs_sim::world::state::RawState::string
 fn qs_sim::world::state::read_state
-fn qs_sim::world::swap::BrushModel::get
-fn qs_sim::world::swap::BrushModel::name
-fn qs_sim::world::swap::BrushModel::parse
+fn qs_sim::world::swap::World::check_swap
 fn qs_sim::world::swap::World::swap_bsp
 impl qs_sim::builtins::SimBuiltins: Builtins
 impl qs_sim::collision::CollisionError: core::error::Error
@@ -503,12 +502,10 @@ struct qs_sim::world::reload::Change
 struct qs_sim::world::reload::Migration
 struct qs_sim::world::save::SaveGame
 struct qs_sim::world::state::State
-struct qs_sim::world::swap::BrushModel
 trait qs_sim::collision::Host
 trait qs_sim::spawn::SpawnHost
 trait qs_sim::world::state::RawState
 type qs_sim::builtins::ModelFiles
-use qs_sim::BrushModel = world::BrushModel
 use qs_sim::CLIENT_EDICT = world::CLIENT_EDICT
 use qs_sim::Change = world::Change
 use qs_sim::ChangeKind = world::ChangeKind
@@ -594,7 +591,6 @@ use qs_sim::collision::test_entity_position = area::test_entity_position
 use qs_sim::command_words = world::command_words
 use qs_sim::localization = qc_builtins::localization
 use qs_sim::read_state = world::read_state
-use qs_sim::world::BrushModel = swap::BrushModel
 use qs_sim::world::Change = reload::Change
 use qs_sim::world::ChangeKind = reload::ChangeKind
 use qs_sim::world::EdictChange = changes::EdictChange
@@ -770,3 +766,4 @@ variant qs_sim::world::save::SaveError::Version
 variant qs_sim::world::swap::SwapError::Link
 variant qs_sim::world::swap::SwapError::NoSuchModel
 variant qs_sim::world::swap::SwapError::NotPrecached
+variant qs_sim::world::swap::SwapError::Unplaced

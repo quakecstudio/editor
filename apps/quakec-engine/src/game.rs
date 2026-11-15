@@ -22,6 +22,8 @@ mod debug;
 mod reload;
 mod swap;
 
+pub(crate) use swap::PendingSwap;
+
 pub(crate) use debug::HeldSpawn;
 use debug::{Breakpoint, Loading, Snapshot, Step, Stopped};
 
@@ -294,9 +296,8 @@ pub(crate) struct Game {
     files: Option<qs_sim::ModelFiles>,
     /// The name the progs was read by, which `reload` reads again by default.
     progs_path: String,
-    /// The BSP the last `map/swap` put in place, until the window takes it to draw
-    /// (BRIDGE-4.17).
-    swapped: Option<Vec<u8>>,
+    /// The `map/swap` waiting for the host to draw its BSP (BRIDGE-4.17).
+    swap: Option<swap::PendingSwap>,
 }
 
 impl Game {
@@ -329,7 +330,7 @@ impl Game {
             halted: None,
             files: None,
             progs_path: "progs.dat".to_owned(),
-            swapped: None,
+            swap: None,
         }
     }
 
@@ -965,6 +966,9 @@ impl Host for Game {
                     "window/place takes x, y, width, height and above".to_owned(),
                 )),
             });
+        }
+        if method == "map/swap" && self.screen.draws() {
+            return self.ask_swap(id, params);
         }
         if method == "screenshot" && self.screen.draws() {
             let size = |name: &str| {

@@ -14,7 +14,7 @@
 use qc_builtins::math::vector_normalize;
 use std::rc::Rc;
 
-use qc_builtins::mock::{BUILTIN_CHECKCLIENT_INTERVAL, BUILTIN_FL_NOTARGET, ModelBounds};
+use qc_builtins::mock::{BUILTIN_CHECKCLIENT_INTERVAL, BUILTIN_FL_NOTARGET, ModelBounds, Precache};
 use qc_builtins::{MockBuiltins, MockEngine};
 use qc_edict::EdictNumber;
 use qc_edict::system::{field_by_name, global_by_name};
@@ -22,7 +22,7 @@ use qc_progs::Progs;
 use qc_types::{EntityRef, PROGS_OFS_RETURN, Slot, ofs_parm};
 use qc_vm::convert::{double_to_float, float_to_int, int_to_float};
 use qc_vm::{Builtins, Context, ErrorKind, Machine, RunError, ServerState};
-use qs_bsp::{Bsp, BspLoader};
+use qs_bsp::{Bsp, BspLoader, Submodel};
 use qs_mdl::Sprite;
 
 use crate::collision::{
@@ -35,7 +35,6 @@ use crate::physics::MoveType;
 use crate::physics::{Sound, dot};
 use crate::rerelease::{BuiltinTable, RRE_NUM_BUILTINS};
 use crate::settings::Setting;
-use crate::world::BrushModel;
 use crate::{HALF, POINT, ZERO};
 
 /// `setorigin`.
@@ -165,31 +164,22 @@ impl SimBuiltins {
     }
 
     /// The map `name`'s collision, PVS and brush model bounds made again from `bsp`, a new
-    /// build of it (BRIDGE-4.15): the world model index 1 and `*n` index `1 + n`, each other
-    /// BSP of the precache list at its own index again; no edict is linked.
+    /// build of it (BRIDGE-4.15): the world model index 1 and each `*n` at its place in the
+    /// model precache list, each other BSP of the list at its own index again; no edict is
+    /// linked.
     pub(crate) fn swap_map(&mut self, name: &str, bsp: &Bsp<'_>) {
-        self.collision = Collision::new(bsp);
+        let engine = self.mock.engine();
+        // The other BSPs are not the map's: their hulls are kept, not read again.
+        self.collision = Collision::rebuilt(
+            bsp,
+            |submodel| engine.precache_index(Precache::Model, &submodel.name()),
+            &self.collision,
+        );
         let world = format!("maps/{name}.bsp");
-        let others: Vec<(usize, String)> = self
-            .mock
-            .engine()
-            .model_precache
-            .iter()
-            .enumerate()
-            .filter(|(_, model)| model.ends_with(".bsp") && **model != world)
-            .map(|(index, model)| (index, model.clone()))
-            .collect();
-        for (index, model) in others {
-            if let Some(bytes) = (self.files)(&model)
-                && let Ok(other) = Bsp::read(&bytes, BspLoader::default())
-            {
-                self.collision.add_brush(index, &other);
-            }
-        }
         self.messages.vis = Vis::new(bsp);
         self.checkpvs.clear();
         let bounds = &mut self.mock.engine_mut().model_bounds;
-        bounds.retain(|(key, _)| *key != world && BrushModel::parse(key).is_none());
+        bounds.retain(|(key, _)| *key != world && Submodel::parse(key).is_none());
         bounds.extend(brush_model_bounds(name, bsp));
     }
 

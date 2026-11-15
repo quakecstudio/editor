@@ -247,7 +247,10 @@ A command is a request from the client, answered with a result on success or an 
   (invalid params), and nothing changes, when the BSP does not load, when a `model` is not
   `*n` with `n` from 1 to the new BSP's last brush model, or when a `model` is not in the
   map's model precache list: the client read that list when it joined, so a brush entity
-  added since the map loaded waits for the map to load again (BRIDGE-4.12). While a frame is
+  added since the map loaded waits for the map to load again (BRIDGE-4.12). It is answered the
+  same when an edict in use shows, by its `modelindex`, a brush model `*n` that `models` does
+  not place: it is not one of the map's entities, and its `*n` may be another brush in the new
+  build, so the map is loaded again instead. While a frame is
   stopped at a statement it is answered with `-32008` (stopped in frame), as `reload` is
   (BRIDGE-4.7). It runs between two server frames. Not id's: the engine has no command that
   changes a running map's BSP.
@@ -255,9 +258,11 @@ A command is a request from the client, answered with a result on success or an 
   sends no message to the player: the player stays where they stand and keeps their health,
   items and view, and each entity keeps its think, its velocity and its state. In their place
   it makes the world's collision from the new BSP as `SV_ClearWorld` does at a map's load
-  (WORLD-5.1): the world as model index 1, brush model `*n` as index `1 + n`, and each other
-  BSP the map precached (an item's `maps/b_bh25.bsp`) at its own index again. The PVS and the
-  brush models' bounds `setmodel` reads (WORLD-8.2) are the new BSP's too.
+  (WORLD-5.1): the world as model index 1 and each brush model `*n` at its place in the model
+  precache list, where the map's load put it; a brush model the list does not have takes no
+  index, so the models precached after the map's keep theirs. Each other BSP the map precached
+  (an item's `maps/b_bh25.bsp`) keeps its hulls at its own index. The PVS and the brush models'
+  bounds `setmodel` reads (WORLD-8.2) are the new BSP's too.
 - **BRIDGE-4.16** Each entity of `models` that is in an edict (BRIDGE-4.13) takes its `model`:
   its `model` field that name, its `modelindex` that name's place in the precache list, and its
   `mins`, `maxs` and `size` the new brush model's bounds, as `setmodel` sets them. An entity in
@@ -265,8 +270,12 @@ A command is a request from the client, answered with a result on success or an 
   (`SV_LinkEdict` without touching, WORLD-6), in edict order, since the new collision starts
   with none linked; an edict with no solid stays unlinked as before. The result is `swapped`,
   the number of edicts given a model.
-- **BRIDGE-4.17** After a swap the host draws the new BSP: its faces, lightmaps and `.lit`
-  beside it, and the brush entities' models by their new `modelindex`. The editor matches its
+- **BRIDGE-4.17** A host that draws (a window, or `--headless` with a GPU device) answers
+  `map/swap` once it has made the new BSP's mesh, before its next frame: its faces, lightmaps
+  and `.lit` beside it, and the brush entities' models by their new `modelindex`. A build it
+  cannot draw is answered with `-32603` (internal error) and the reason, and nothing changes;
+  one it draws is swapped in, answered, and drawn from then on. A host that draws nothing
+  swaps at once. The editor matches its
   map's entities to the new BSP by place, not by `*n`: a brush entity's `*n` is its place among
   the map's brush entities, so deleting one renumbers those after it, and an entity the
   editor removed or added has already left or entered the game (BRIDGE-4.13), so the game

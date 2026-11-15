@@ -1640,10 +1640,10 @@ fn game_to_swap() -> (Game, Session) {
 
 // spec BRIDGE-4.14: map/swap reads its bsp from the game's search path and runs between frames
 // spec BRIDGE-4.15: the swap keeps the player and every edict as they are
-// spec BRIDGE-4.17: the host keeps the swapped BSP for its window to draw
 #[test]
-fn a_swap_keeps_the_game_and_gives_the_window_the_new_map() {
+fn a_host_that_draws_nothing_swaps_at_once() {
     let (mut game, mut session) = game_to_swap();
+    game.set_screen(Screen::Headless);
     let health = float_field(&mut game, &mut session, 1, "health");
     let count = float_field(&mut game, &mut session, 2, "count");
     let result = call(
@@ -1656,12 +1656,57 @@ fn a_swap_keeps_the_game_and_gives_the_window_the_new_map() {
     assert_eq!(result, json!({ "swapped": 0 }));
     assert_eq!(float_field(&mut game, &mut session, 1, "health"), health);
     assert_eq!(float_field(&mut game, &mut session, 2, "count"), count);
-    assert_eq!(game.take_swapped(), Some(floor_file(-30.0)));
-    assert_eq!(game.take_swapped(), None, "the window takes it once");
+    assert!(game.take_swap().is_none(), "nothing waits to be drawn");
+}
+
+// spec BRIDGE-4.17: a host that draws answers map/swap once it has drawn the new build, which
+// it keeps; the swap waits for it once
+#[test]
+fn a_drawing_host_answers_once_the_new_map_is_drawn() {
+    let (mut game, mut session) = game_to_swap();
+    let swap = json!({ "bsp": "maps/new.bsp", "models": [] });
+    let reply = session.handle(&mut game, request(7, "map/swap", &swap));
+    assert!(reply.response.is_none(), "answered once drawn");
+    let pending = game.take_swap().unwrap();
+    assert!(game.take_swap().is_none(), "the host takes it once");
+    let drawn = game.finish_swap(pending, Ok(())).unwrap();
+    assert_eq!(drawn.bsp().models.len(), 1, "the new build, for the view");
+    let responses = game.take_responses();
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0].0, Id::Number(7));
+    assert_eq!(responses[0].1, Ok(json!({ "swapped": 0 })));
+}
+
+// spec BRIDGE-4.17: a build the host cannot draw is refused, and the world is not swapped
+#[test]
+fn a_build_that_does_not_draw_is_refused() {
+    let (mut game, mut session) = game_to_swap();
+    let bytes = game.progs.clone();
+    let progs = Progs::read(&bytes).unwrap();
+    // Where a line down meets the floor, which the new build puts 30 lower.
+    let floor = |game: &mut Game| {
+        game.world_mut()
+            .trace_line(&progs, [0.0, 0.0, 100.0], [0.0, 0.0, -100.0])
+            .unwrap()
+            .point
+    };
+    let before = floor(&mut game);
+    let swap = json!({ "bsp": "maps/new.bsp", "models": [] });
+    let _later = session.handle(&mut game, request(7, "map/swap", &swap));
+    let pending = game.take_swap().unwrap();
+    assert!(
+        game.finish_swap(pending, Err("no room in the atlas".to_owned()))
+            .is_none()
+    );
+    let responses = game.take_responses();
+    let error = responses[0].1.clone().unwrap_err();
+    assert_eq!(error.code, ErrorCode::InternalError);
+    assert_eq!(error.message, "no room in the atlas");
+    assert_eq!(floor(&mut game), before, "the old map still collides");
 }
 
 // spec BRIDGE-4.14: a model the new BSP does not have, or a bsp that is not there, is -32602
-// and nothing changes
+// at once and nothing changes
 #[test]
 fn a_swap_that_cannot_be_made_is_refused() {
     let (mut game, mut session) = game_to_swap();
@@ -1675,7 +1720,7 @@ fn a_swap_that_cannot_be_made_is_refused() {
         code(call(&mut game, &mut session, "map/swap", &gone)),
         ErrorCode::InvalidParams
     );
-    assert_eq!(game.take_swapped(), None);
+    assert!(game.take_swap().is_none());
 }
 
 // spec WORLD-9.7: a level started from a game with a breakpoint in a spawn function spawns with

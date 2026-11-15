@@ -12,7 +12,6 @@
 use std::time::{Duration, Instant};
 
 use eframe::egui_wgpu::wgpu;
-use qs_bsp::Bsp;
 use std::path::Path;
 
 use qs_client::{
@@ -24,9 +23,10 @@ use crate::args::Args;
 use crate::audio::Audio;
 use crate::bridge::Bridge;
 use crate::contents::contents_at;
-use crate::game::{Eye, Game, Screen};
+use crate::game::{Eye, Game, PendingSwap, Screen};
 use crate::keys::focus;
-use crate::load::{Acted, Describer, Loaded, Rand};
+use crate::load::{Acted, Describer, Loaded, Rand, map_mesh};
+use crate::map_bsp::MapBsp;
 use crate::screenshot::{Drawer, Frame};
 use crate::view_script::{Step, ViewScript};
 use crate::window::{CONWIDTH, FRAME, frametime_f32, screen_height};
@@ -59,6 +59,9 @@ impl Args {
         loop {
             if !bridge.serve(&mut world.game) {
                 return Ok(());
+            }
+            if let Some(swap) = world.game.take_swap() {
+                world.draw_swap(offscreen.as_ref(), swap);
             }
             let ran = world.game.frame(FRAME);
             if let Some(action) = world.game.host_action() {
@@ -341,6 +344,8 @@ impl Frame {
 /// What a headless host keeps of a loaded map.
 struct Headless {
     game: Game,
+    /// The map's name, `maps/<map>.bsp`'s.
+    map: String,
     client: Client,
     describer: Describer,
     rand: Rand,
@@ -348,7 +353,7 @@ struct Headless {
     /// What a frame is drawn from: the map's mesh, its renderer's assets and the BSP.
     mesh: MapMesh,
     play: Play,
-    bsp: Bsp<'static>,
+    bsp: MapBsp,
     /// The sound, mixed and dropped, or kept for `--view-script`.
     audio: Audio,
     /// What the map's first client frame printed (CLIENT-1.7).
@@ -360,6 +365,7 @@ impl Headless {
     fn new(loaded: Loaded, drawer: Option<&Drawer>) -> Self {
         let Loaded {
             mut game,
+            map,
             client,
             describer,
             rand,
@@ -388,6 +394,7 @@ impl Headless {
         }
         Self {
             game,
+            map,
             client,
             describer,
             rand,
@@ -402,6 +409,49 @@ impl Headless {
 
     /// The client's view drawn at [`SIZE`], as the window draws it: the 3D scene through the
     /// map's paint callback, and the 2D layer of GLQuake's 640 wide console.
+    /// The swap waiting for its BSP to be drawn (BRIDGE-4.17), as the window draws it: the mesh
+    /// made from the new build and given to `drawer`'s device, then the swap put in place; a
+    /// build that does not draw is refused, and the old one stays drawn.
+    fn draw_swap(&mut self, drawer: Option<&Drawer>, swap: PendingSwap) {
+        let describer = &self.describer;
+        let read = |name: &str| {
+            describer
+                .read(name)
+                .ok_or_else(|| format!("{name} is not on the search path"))
+        };
+        let palette = self.play.palette().clone();
+        let mesh = map_mesh(
+            (&self.map, swap.bsp().bsp()),
+            self.game.world(),
+            &read,
+            (&palette, self.mesh.look),
+        );
+        let (mesh, instances) = match mesh {
+            Ok(mesh) => mesh,
+            Err(why) => {
+                let _refused = self.game.finish_swap(swap, Err(why));
+                return;
+            }
+        };
+        let Some(bsp) = self.game.finish_swap(swap, Ok(())) else {
+            return;
+        };
+        self.play.set_instances(instances);
+        if let Some(drawer) = drawer {
+            let state = drawer.offscreen().state();
+            let renderer = MapRenderer::new(
+                &state.device,
+                &state.queue,
+                (state.target_format, DEPTH),
+                &mesh,
+                &self.play.assets(),
+            );
+            state.renderer.write().callback_resources.insert(renderer);
+        }
+        self.mesh = mesh;
+        self.bsp = bsp;
+    }
+
     fn draw(&mut self, drawer: &mut Drawer) -> Result<Frame, String> {
         let callback = self.callback(None);
         drawer.draw(callback, SIZE)
@@ -417,13 +467,13 @@ impl Headless {
         }
         // `V_SetContentsColor`: the leaf the eye is in tints the view (VIEW-4.3).
         self.client
-            .set_contents(contents_at(&self.bsp, scene.view.origin));
+            .set_contents(contents_at(self.bsp.bsp(), scene.view.origin));
         let hud = self.client.hud();
         self.play.screen = [CONWIDTH, screen_height(ASPECT)];
         self.client
             .set_screen(self.play.screen[0], self.play.screen[1]);
         self.play
-            .frame(&scene, &hud, &self.bsp, &mut self.mesh, ASPECT)
+            .frame(&scene, &hud, self.bsp.bsp(), &mut self.mesh, ASPECT)
     }
 
     /// The client's view alone, on an image `aspect` wide per unit of height: no status bar,
@@ -433,11 +483,12 @@ impl Headless {
         // `V_SetContentsColor`: the leaf the eye is in tints the view (VIEW-4.3), before the
         // scene that carries the tint is taken.
         let origin = self.client.scene().view.origin;
-        self.client.set_contents(contents_at(&self.bsp, origin));
+        self.client
+            .set_contents(contents_at(self.bsp.bsp(), origin));
         let mut scene = self.client.scene();
         scene.view.weapon.model = qs_client::ModelIndex::NONE;
         self.play
-            .frame(&scene, &hud, &self.bsp, &mut self.mesh, aspect)
+            .frame(&scene, &hud, self.bsp.bsp(), &mut self.mesh, aspect)
     }
 
     /// The client's frame: it reads what the server wrote, and the eye `pick` looks from is
@@ -460,7 +511,7 @@ impl Headless {
         // `S_Update (r_origin, vpn, vright, vup)`, once a host frame.
         if self.audio.captures() {
             self.audio
-                .update(&self.bsp, view.origin, view.angles, frametime);
+                .update(self.bsp.bsp(), view.origin, view.angles, frametime);
         }
         self.game.set_eye(Eye {
             origin: view.origin,

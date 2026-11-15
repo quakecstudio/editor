@@ -15,7 +15,6 @@ use std::time::Instant;
 
 use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
-use qs_bsp::{Bsp, BspLoader};
 use qs_client::{
     CON_TEXTSIZE, CON_TEXTSIZE_QUAKESPASM, Client, Connection, Console, ConsoleHold, ConsoleKey,
     Event, Grabbed, KeyDest, MENU_BINDINGS, Menu, MenuEvent, MenuFrame, MenuGame, MenuKey,
@@ -31,12 +30,13 @@ use crate::args::Args;
 use crate::audio::Audio;
 use crate::bridge::Bridge;
 use crate::contents::contents_at;
-use crate::game::{Eye, Game, Placement, Screen};
+use crate::game::{Eye, Game, PendingSwap, Placement, Screen};
 use crate::keys::{
     MouseLook, STARTUP, config_path, configuration, focus, keynum, modifier_keys, mouse_key,
     mouse_motion, runs_binding, wheel_key,
 };
 use crate::load::{Acted, Describer, Loaded, Rand, map_mesh};
+use crate::map_bsp::MapBsp;
 use crate::screenshot::Drawer;
 use crate::settings::HostSettings;
 
@@ -233,7 +233,7 @@ struct Viewer {
     /// The IDE's connection, when the host was started with `-bridge`.
     bridge: Option<Bridge>,
     client: Client,
-    bsp: Bsp<'static>,
+    bsp: MapBsp,
     describer: Describer,
     rand: Rand,
     fly: bool,
@@ -344,8 +344,8 @@ impl eframe::App for Viewer {
         self.hold_pointer(ui, click);
         // The bridge's commands run between two server frames (BRIDGE-4.3).
         self.serve_bridge(ui);
-        if let Some(bytes) = self.game.take_swapped() {
-            self.draw_swapped(window, bytes);
+        if let Some(swap) = self.game.take_swap() {
+            self.draw_swap(window, swap);
         }
         if self.fly {
             self.fly_around(ui, seconds);
@@ -400,7 +400,8 @@ impl eframe::App for Viewer {
 
         // `R_SetupFrame`'s `V_SetContentsColor (r_viewleaf->contents)`: the leaf the eye was
         // in last frame tints this one (VIEW-4.3).
-        self.client.set_contents(contents_at(&self.bsp, self.eye));
+        self.client
+            .set_contents(contents_at(self.bsp.bsp(), self.eye));
         let scene = self.client.scene();
         let (origin, angles) = if self.fly {
             (
@@ -425,7 +426,7 @@ impl eframe::App for Viewer {
         });
         // `S_Update (r_origin, vpn, vright, vup)`, once a host frame.
         self.audio.update(
-            &self.bsp,
+            self.bsp.bsp(),
             scene.view.origin,
             scene.view.angles,
             f64::from(seconds),
@@ -462,7 +463,7 @@ impl eframe::App for Viewer {
         }
         let mut callback = self
             .play
-            .frame(&scene, &hud, &self.bsp, &mut self.mesh, aspect);
+            .frame(&scene, &hud, self.bsp.bsp(), &mut self.mesh, aspect);
         if self.fly {
             let mut view = View::new(
                 self.camera.clip_from_world(aspect),
@@ -592,35 +593,35 @@ impl Viewer {
         self.behind = 0.0;
     }
 
-    /// The swapped BSP drawn (BRIDGE-4.17): the mesh, the renderer and the BSP the view reads
-    /// made again from it, the brush entities placed by their new models; a BSP that does not
-    /// draw leaves the old one drawn, and says why.
-    fn draw_swapped(&mut self, window: &eframe::Frame, bytes: Vec<u8>) {
-        // The view reads the BSP for as long as the map runs, as the map's load keeps it.
-        let bytes: &'static [u8] = Vec::leak(bytes);
-        let bsp = match Bsp::read(bytes, BspLoader::default()) {
-            Ok(bsp) => bsp,
-            Err(error) => {
-                tracing::warn!(error = %error.message(&self.map), "the swapped map is not drawn");
-                return;
-            }
-        };
+    /// The swap waiting for its BSP to be drawn (BRIDGE-4.17): the mesh made from the new build,
+    /// the brush entities placed by their new models, then the swap put in place and the mesh,
+    /// its renderer and the BSP the view reads with it; a build that does not draw is refused,
+    /// and the old one stays drawn.
+    fn draw_swap(&mut self, window: &eframe::Frame, swap: PendingSwap) {
         let palette = self.play.palette().clone();
         let describer = &self.describer;
-        let read = |name: &str| describer.read(name);
-        let mesh = match map_mesh(
-            (&self.map, &bsp),
+        let read = |name: &str| {
+            describer
+                .read(name)
+                .ok_or_else(|| format!("{name} is not on the search path"))
+        };
+        let mesh = map_mesh(
+            (&self.map, swap.bsp().bsp()),
             self.game.world(),
             &read,
             (&palette, self.mesh.look),
-            &mut self.play,
-        ) {
+        );
+        let (mesh, instances) = match mesh {
             Ok(mesh) => mesh,
-            Err(error) => {
-                tracing::warn!(%error, "the swapped map is not drawn");
+            Err(why) => {
+                let _refused = self.game.finish_swap(swap, Err(why));
                 return;
             }
         };
+        let Some(bsp) = self.game.finish_swap(swap, Ok(())) else {
+            return;
+        };
+        self.play.set_instances(instances);
         if let Some(state) = window.wgpu_render_state() {
             let renderer = MapRenderer::new(
                 &state.device,

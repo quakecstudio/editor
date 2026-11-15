@@ -1418,3 +1418,40 @@ fn a_second_bsp_is_its_own_brush_model() {
     assert_eq!(collision.model(1.0).unwrap().set, 2);
     assert_eq!(collision.model(5.0).unwrap().set, 1);
 }
+
+// spec BRIDGE-4.15: a new build of the map puts each submodel at the index the model list gives
+// it, none for one the list lacks, and keeps another BSP's model at its index with its hulls
+#[test]
+fn a_rebuilt_map_keeps_the_model_list_and_other_bsps() {
+    let map = MapSpec {
+        submodels: vec![([0.0; 3], [8.0; 3]), ([16.0; 3], [24.0; 3])],
+        ..MapSpec::default()
+    };
+    let raised = MapSpec {
+        planes: vec![
+            plane([0.0, 0.0, 1.0], 50.0, 2),
+            plane([0.0, 0.0, 1.0], 74.0, 2),
+        ],
+        ..MapSpec::default()
+    };
+    let mut old = Collision::new(&bsp(&map));
+    old.add_brush(5, &bsp(&raised));
+    // The list: *1 at index 2 and *2 at 7, past the item at 5.
+    let index_of = |submodel: qs_bsp::Submodel| match submodel.get() {
+        1 => Some(2),
+        2 => Some(7),
+        _ => None,
+    };
+    let rebuilt = Collision::rebuilt(&bsp(&map), index_of, &old);
+    assert_eq!(rebuilt.model(1.0).unwrap().set, 0, "the world");
+    assert_eq!(rebuilt.model(2.0).unwrap().maxs, [8.0; 3]);
+    assert!(rebuilt.model(3.0).is_none(), "*2 is not at 1 + 2");
+    assert_eq!(rebuilt.model(7.0).unwrap().mins, [16.0; 3]);
+    let item = *rebuilt.model(5.0).unwrap();
+    assert_ne!(item.set, 0, "the item keeps hulls of its own");
+    let hull = rebuilt.sets()[item.set].hull(0, item.heads);
+    assert_eq!(
+        hull.point_contents(hull.first, [0.0, 0.0, 49.0]).unwrap(),
+        CONTENTS_SOLID
+    );
+}
