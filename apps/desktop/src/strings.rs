@@ -776,11 +776,75 @@ pub enum Text {
     MapUnlockAll,
     /// The command palette's name to a screen reader.
     CommandPalette,
+    /// A help popup's link to the section of the website's user guide.
+    HelpReadMore,
+    /// Help for the toolbar's play controls.
+    HelpToolbar,
+    /// Help for the Project section.
+    HelpProject,
+    /// Help for the Symbols section.
+    HelpSymbols,
+    /// Help for the running game's Entities section.
+    HelpEntities,
+    /// Help for the running game's Properties section.
+    HelpProperties,
+    /// Help for the map's outline in the left panel.
+    HelpMapOutline,
+    /// Help for the map editor's Properties section.
+    HelpMapProperties,
+    /// Help for the agent panel.
+    HelpAgent,
+    /// Help for the file outline.
+    HelpOutline,
+    /// Help for the Git tab.
+    HelpGit,
+    /// Help for the Problems tab.
+    HelpProblems,
+    /// Help for the Console tab.
+    HelpConsole,
+    /// Help for the Debugger tab.
+    HelpDebugger,
+    /// Help for the Terminal tab.
+    HelpTerminal,
+    /// Help for the code editor.
+    HelpEditor,
+    /// Help for the Search tab.
+    HelpSearch,
+    /// Help for the Game tab.
+    HelpGame,
+    /// Help for the map view and its tools.
+    HelpMapView,
+    /// Help for the map editor's Textures tab.
+    HelpMapTextures,
+    /// Help for the map editor's Entities tab.
+    HelpMapEntities,
+    /// Help for the map editor's Prefabs tab.
+    HelpMapPrefabs,
+    /// Help for the map editor's Issues tab.
+    HelpMapIssues,
+    /// Help for the window that finds the game's files.
+    HelpGameGuide,
+    /// Help for the texture import window.
+    HelpTextureImport,
+    /// The toolbar's Pause button's tooltip.
+    PauseHint,
+    /// The toolbar's Step button's tooltip.
+    StepHint,
+    /// The toolbar's Restart map button's tooltip.
+    RestartHint,
+    /// The status bar's error count, to a screen reader and in its tooltip.
+    ErrorCount,
+    /// The status bar's warning count, to a screen reader and in its tooltip.
+    WarningCount,
+    /// The map editor's Select tool's tooltip.
+    MapSelectHint,
+    /// The map view and its tools, as its help names them.
+    MapViewTitle,
 }
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 382] = [
+    pub const ALL: [Self; 414] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1163,6 +1227,38 @@ impl Text {
         Self::MapShowAll,
         Self::MapUnlockAll,
         Self::CommandPalette,
+        Self::HelpReadMore,
+        Self::HelpToolbar,
+        Self::HelpProject,
+        Self::HelpSymbols,
+        Self::HelpEntities,
+        Self::HelpProperties,
+        Self::HelpMapOutline,
+        Self::HelpMapProperties,
+        Self::HelpAgent,
+        Self::HelpOutline,
+        Self::HelpGit,
+        Self::HelpProblems,
+        Self::HelpConsole,
+        Self::HelpDebugger,
+        Self::HelpTerminal,
+        Self::HelpEditor,
+        Self::HelpSearch,
+        Self::HelpGame,
+        Self::HelpMapView,
+        Self::HelpMapTextures,
+        Self::HelpMapEntities,
+        Self::HelpMapPrefabs,
+        Self::HelpMapIssues,
+        Self::HelpGameGuide,
+        Self::HelpTextureImport,
+        Self::PauseHint,
+        Self::StepHint,
+        Self::RestartHint,
+        Self::ErrorCount,
+        Self::WarningCount,
+        Self::MapSelectHint,
+        Self::MapViewTitle,
     ];
 
     /// The string, in English.
@@ -1578,6 +1674,86 @@ impl Text {
             Self::MapShowAll => "Show all",
             Self::MapUnlockAll => "Unlock all",
             Self::CommandPalette => "Command palette",
+            Self::HelpReadMore => "Read more in the user guide",
+            Self::HelpToolbar => {
+                "Play builds your mod and starts the game; while it runs, each save reloads the new code in it. Pause, Step and Restart map act on the running game."
+            }
+            Self::HelpProject => {
+                "The files your project compiles, in the order the compiler reads them. Click one to open it."
+            }
+            Self::HelpSymbols => {
+                "The open file's functions, globals and fields; All lists every file's. Click one to go to it."
+            }
+            Self::HelpEntities => {
+                "Every entity in the running game, grouped by classname. Click one to see its fields in Properties."
+            }
+            Self::HelpProperties => {
+                "The selected entity's fields. Pause the game to edit them; the new values reach the game when you resume."
+            }
+            Self::HelpMapOutline => {
+                "The open map's layers and entities. Click one to select it in the view."
+            }
+            Self::HelpMapProperties => {
+                "The compile controls, then the selection's keys: edit a value in place, add a key its QuakeC class reads, or pick an entity to target in the view."
+            }
+            Self::HelpAgent => {
+                "Ask the built-in agent to do a task in your project, then review each change before you keep it. It sends nothing anywhere until you set up a provider."
+            }
+            Self::HelpOutline => "The open file's definitions, in order. Click one to go to it.",
+            Self::HelpGit => {
+                "What changed since the last commit: stage a file or one hunk of it, write a message and commit. Switch or create branches, and see who last changed each line."
+            }
+            Self::HelpProblems => {
+                "Every error and warning in the project, checked as you type. Click one to go to its place."
+            }
+            Self::HelpConsole => {
+                "What the running game prints. Type a console command, such as impulse 9, in the box to send it to the game."
+            }
+            Self::HelpDebugger => {
+                "Click a line number in the editor to set a breakpoint. When the game stops there, the call stack and your watches show here, and you can step through the code."
+            }
+            Self::HelpTerminal => {
+                "Shells and tasks run in your project's folder, each in a tab of its own with its output."
+            }
+            Self::HelpEditor => {
+                "Your QuakeC, each name coloured by what it is. F12 goes to a definition, Shift+F12 lists its references and F2 renames it everywhere."
+            }
+            Self::HelpSearch => {
+                "Search the whole project. Each result is shown in its file with a line around it, and can be edited in place or replaced in every file at once."
+            }
+            Self::HelpGame => {
+                "The running game. Play starts it and each save reloads your code in it; pause it and click an entity to select it."
+            }
+            Self::HelpMapView => {
+                "Select picks entities and brushes. Brush, Shape, Clip, Vertex and Move make and change brushes, and Measure reads a distance. Drag the view to turn, and fly with W, A, S, D, Q and X."
+            }
+            Self::HelpMapTextures => {
+                "Click a texture to choose it, then Apply paints the selected brushes with it. Drop a PNG on the window to import it into the project's WAD."
+            }
+            Self::HelpMapEntities => {
+                "The entity classes your mod's QuakeC defines. Drag one into the view to place it."
+            }
+            Self::HelpMapPrefabs => {
+                "Brushes and entities kept to use again. Drag one into the view to copy it in; Save as prefab in Properties keeps the selection."
+            }
+            Self::HelpMapIssues => {
+                "Check map lists the map's problems against your mod's QuakeC: a key no field of its class reads, or a texture no WAD holds."
+            }
+            Self::HelpGameGuide => {
+                "QuakeC Studio reads your own copy of Quake where it is installed and never copies it. Choose the folder that holds id1."
+            }
+            Self::HelpTextureImport => {
+                "The picture's colours are matched to Quake's palette, by nearest colour or dithered, and the texture is written into your project's own WAD."
+            }
+            Self::PauseHint => "Pause the game between frames",
+            Self::StepHint => "Run one server frame of the paused game",
+            Self::RestartHint => "Start the running map again",
+            Self::ErrorCount => "Errors",
+            Self::WarningCount => "Warnings",
+            Self::MapSelectHint => {
+                "Click an entity or brush to select it; drag to move entities and Alt-drag to link them"
+            }
+            Self::MapViewTitle => "Map view",
         }
     }
 }
@@ -1864,4 +2040,10 @@ pub(crate) const fn panes_text(panes: qs_layout::MapPanes) -> Text {
         qs_layout::MapPanes::Inset => Text::MapLayoutInset,
         qs_layout::MapPanes::Quad => Text::MapLayoutQuad,
     }
+}
+
+/// A help button's tooltip and its name to a screen reader: the help for `title` (P7-11).
+#[must_use]
+pub fn help_for(title: &str) -> String {
+    format!("Help: {title}")
 }

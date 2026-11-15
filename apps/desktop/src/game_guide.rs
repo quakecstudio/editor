@@ -7,6 +7,7 @@
 use eframe::egui::{self, RichText, Ui};
 use qs_workbench::game_files::{GameFiles, GameState};
 
+use crate::help::{self, Topic};
 use crate::strings::Text;
 use crate::theme::{Theme, Token};
 
@@ -118,6 +119,7 @@ pub(crate) fn window(
         .resizable(false)
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
         .show(ctx, |ui| {
+            help::button(ui, theme, Topic::GameGuide);
             action = guide(ui, theme, files);
         });
     action

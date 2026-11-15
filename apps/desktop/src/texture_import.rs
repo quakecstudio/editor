@@ -10,6 +10,7 @@ use eframe::egui::{self, ColorImage, RichText, TextureHandle, Vec2};
 use qs_map_edit::texture_import::{DitherChoice, quantized};
 use qs_wad::texture::{Palette, TextureName};
 
+use crate::help::{self, Topic};
 use crate::strings::Text;
 use crate::theme::{Theme, Token};
 
@@ -133,6 +134,7 @@ impl ImportPreview {
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
             .show(ctx, |ui| {
+                help::button(ui, theme, Topic::TextureImport);
                 let file = self.path.file_name().map(|name| name.to_string_lossy());
                 ui.label(
                     RichText::new(file.unwrap_or_default()).color(theme.color(Token::TextMuted)),

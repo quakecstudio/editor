@@ -679,7 +679,9 @@ impl BrushTools {
     /// The tool selector, and the clip's side when clipping.
     pub(crate) fn toolbar(&mut self, ui: &mut Ui) {
         for tool in MapTool::ALL {
-            ui.selectable_value(&mut self.tool, tool, tool.text().get());
+            let tip = tool.hint().unwrap_or(Text::MapSelectHint);
+            ui.selectable_value(&mut self.tool, tool, tool.text().get())
+                .on_hover_text(tip.get());
         }
         if self.tool == MapTool::Shape {
             ui.separator();
