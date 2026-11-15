@@ -2218,8 +2218,8 @@ fn alt_right_drag_orbits_and_right_drag_looks() {
             modifiers,
         );
         harness.step();
-        for step in 1..=8 {
-            let to = egui::pos2(from.x + 10.0 * step as f32, from.y);
+        for step in [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0] {
+            let to = egui::pos2(from.x + step, from.y);
             harness.event_modifiers(egui::Event::PointerMoved(to), modifiers);
             harness.step();
         }
