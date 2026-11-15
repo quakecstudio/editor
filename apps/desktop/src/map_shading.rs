@@ -93,8 +93,8 @@ pub(crate) struct ShadedView {
     shading: MapShading,
     made: Option<Made>,
     lit: Option<LitState>,
-    /// The map's revision the BSP drawn was compiled from: the one when the compile was first
-    /// seen, none when the saved map was already newer than it.
+    /// The map's edits the BSP drawn was compiled from, which a selection leaves alone: those
+    /// when the compile was first seen, none when the saved map was already newer than it.
     compiled_at: Option<MapRevision>,
     /// Each texture decoded, by name, and the sources' load they were decoded from.
     images: (HashMap<String, Image>, u64),
@@ -195,7 +195,7 @@ impl ShadedView {
             matches!(&self.made, Some(Made::Lit(drawn, at, _)) if *drawn == bsp && *at == written);
         if !seen {
             let saved_after = modified(path).is_some_and(|map| map > written);
-            self.compiled_at = (!saved_after).then(|| document.revision());
+            self.compiled_at = (!saved_after).then(|| document.edits());
             let loaded = match sources
                 .and_then(TextureSources::palette)
                 .ok_or_else(|| "no palette".to_owned())
@@ -216,7 +216,7 @@ impl ShadedView {
         self.lit = Some(
             if matches!(self.made, Some(Made::Lit(_, _, Loaded::Failed))) {
                 LitState::NoCompile
-            } else if self.compiled_at == Some(document.revision()) {
+            } else if self.compiled_at == Some(document.edits()) {
                 LitState::Current
             } else {
                 LitState::Stale
