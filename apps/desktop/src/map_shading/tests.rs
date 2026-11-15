@@ -133,38 +133,53 @@ fn the_lit_view_places_brush_models_and_leaves_out_triggers() {
     assert_eq!(placements[1].origin, [8.0, 0.0, 0.0]);
 }
 
-// No spec statement: P7-13: the textured view leaves out the faces the game never draws, tool
-// textures in any case, as the lit view does
+// spec QBSP-15.16: the textured view leaves out the faces the game never draws, by the name
+// after the last `/` in any case, as the lit view does, and keeps their brushes' edges
 #[test]
 fn the_textured_view_leaves_out_unseen_textures() {
     use std::collections::BTreeSet;
 
+    use qs_map_edit::EntityIndex;
     use qs_render::Look;
 
+    let textured = |name: &str| {
+        let mut face = floor_brush(0, 0.0).faces[0].clone();
+        face.texture = name.to_owned();
+        face
+    };
     for unseen in [
         "CLIP",
         "skip",
         "Hint",
         "hintskip",
         "origin",
-        "trigger",
         "*waterskip",
+        "null",
+        "bevel",
+        "tools/clip",
+        "base/SKIP",
     ] {
-        assert!(super::is_unseen(unseen), "{unseen}");
+        assert!(textured(unseen).unseen(), "{unseen}");
     }
-    for seen in ["wall", "clipper", "*water0", "sky4"] {
-        assert!(!super::is_unseen(seen), "{seen}");
+    for seen in ["wall", "clipper", "*water0", "sky4", "trigger", "clip/wall"] {
+        assert!(!textured(seen).unseen(), "{seen}");
     }
     let mut clip = floor_brush(0, 0.0);
     clip.faces[0].texture = "clip".to_owned();
     let scene = crate::map_scene::Scene {
-        brushes: vec![clip, floor_brush(1, 8.0)],
+        brushes: vec![clip, floor_brush(1, 8.0), floor_brush(2, 16.0)],
         ..crate::map_scene::Scene::default()
     };
     let mesh = scene.textured_mesh(
         &mut |_| super::missing(),
-        &BTreeSet::new(),
+        &BTreeSet::from([EntityIndex::new(2)]),
         Look::QuakeSpasm,
     );
     assert_eq!(mesh.indices.len(), 6);
+    // The clip brush and the trigger keep their edges over the faces.
+    assert_eq!(
+        scene.outlined(&BTreeSet::from([EntityIndex::new(2)])),
+        [0, 2]
+    );
+    assert_eq!(scene.outlined(&BTreeSet::new()), [0]);
 }

@@ -1895,12 +1895,6 @@ impl Shell {
         self.features.map.map_editor.set_camera(camera);
     }
 
-    /// The map editor, to change, for tests.
-    #[cfg(test)]
-    pub(crate) const fn map_editor_mut(&mut self) -> &mut MapEditor {
-        &mut self.features.map.map_editor
-    }
-
     /// Carries out what a dock region's panel asked for, after the frame drew it.
     fn apply(&mut self, action: FeatureAction, ctx: &egui::Context) {
         match action {

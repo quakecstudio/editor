@@ -6,7 +6,9 @@
 //!
 //! LibreQuake is not in this repository (corpus/manifest.toml), so the scenes are rendered from a
 //! checkout of it whose `texture-wads/` holds its WADs built from their PNGs, as LibreQuake's
-//! `compile_wads.py` builds them:
+//! `compile_wads.py` builds them, at the commit [`LIBREQUAKE`]. A map scene compiles its map
+//! with the Showcase profile, written to `lq1/compile-profiles.toml`, unless its BSP is newer
+//! than it; delete the BSP to compile it again:
 //!
 //! ```text
 //! cargo run --release -p quakec-studio --example showcase -- --librequake <dir> --out <dir>
@@ -58,6 +60,10 @@ const SIZE: [f32; 2] = [1440.0, 900.0];
 /// The map the debugger scene plays: one of LibreQuake's lite game data, with monsters that
 /// stand until they see the player.
 const DEBUGGER_MAP: &str = "lq_e0m1";
+/// The LibreQuake commit the scenes are framed on.
+const LIBREQUAKE: &str = "681890f1216d339a989b55d7c6a6cfd95db0b33e";
+/// How long a map scene waits for its map's full compile.
+const COMPILE_WAIT: Duration = Duration::from_secs(600);
 /// How long the debugger scene waits for the game to reach its breakpoint.
 const STOP_WAIT: Duration = Duration::from_secs(60);
 /// How long the debugger scene waits between frames while the game starts.
@@ -253,9 +259,15 @@ fn run(args: &Args) -> Result<(), String> {
     // A profile of the BSP, full vis and full light, with no launch: the showcase has no game
     // to start.
     let profiles = game.join("compile-profiles.toml");
-    if !profiles.exists() {
+    if profiles.exists() {
+        let held = std::fs::read_to_string(&profiles).map_err(|e| e.to_string())?;
+        if !held.contains(PROFILES) {
+            return Err(format!("{} lacks the Showcase profile", profiles.display()));
+        }
+    } else {
         std::fs::write(&profiles, PROFILES).map_err(|e| e.to_string())?;
     }
+    pinned(&game.join("maps/src/e1/lq_e1m1.map"))?;
     for scene in scenes() {
         if args
             .only
@@ -425,8 +437,30 @@ fn compiled(harness: &mut Harness<'static, Option<App>>, map: &Path) -> Result<(
         .map_err(|e| e.to_string())?;
     harness.run();
     harness.get_by_label(Text::MapCompileProfile.get()).click();
-    harness.run();
-    harness.run();
+    let started = Instant::now();
+    while modified(&map.with_extension("bsp")) < modified(map) {
+        if started.elapsed() > COMPILE_WAIT {
+            return Err(format!("{} did not compile", map.display()));
+        }
+        harness.step();
+        std::thread::sleep(PREVIEW_FRAME);
+    }
+    harness.run_steps(SETTLE_FRAMES);
+    Ok(())
+}
+
+/// Checks the map at `path` is the one the scenes were framed on: [`GREEN_LIGHT`] is its green
+/// light, as at LibreQuake's commit [`LIBREQUAKE`].
+fn pinned(path: &Path) -> Result<(), String> {
+    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+    let file = qs_map::MapFile::parse(&bytes).map_err(|e| e.to_string())?;
+    let light = file.entities.get(GREEN_LIGHT);
+    if light.and_then(|e| e.value(b"_color")) != Some(&b"143 240 164"[..]) {
+        return Err(format!(
+            "{} is not LibreQuake's at {LIBREQUAKE}: entity {GREEN_LIGHT} is not its green light",
+            path.display()
+        ));
+    }
     Ok(())
 }
 

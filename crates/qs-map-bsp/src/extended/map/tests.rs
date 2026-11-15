@@ -433,4 +433,10 @@ fn a_bad_animating_texture_stops_the_compile() {
         crate::CompileError::BadAnimation(b"+xlava".to_vec()).to_string(),
         "Bad animating texture +xlava"
     );
+    let alone = world(vec![BrushSpec::cube([0, 0, 0], [8, 8, 8], "+")]);
+    assert_eq!(
+        alone.texinfos.bad_animation(),
+        None,
+        "a `+` alone is frame 0"
+    );
 }

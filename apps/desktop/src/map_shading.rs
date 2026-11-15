@@ -274,6 +274,18 @@ impl FaceShape {
 impl Scene {
     /// The textured mesh of the scene's brush faces but those of the entities `hidden`: each
     /// texture's image from `image`, and each face shaded by its normal.
+    /// The brushes, by their place, with a face the textured view leaves out: those of
+    /// `triggers`, and those with an unseen face ([`FaceShape::unseen`]). The map editor draws
+    /// their edges over the faces, so they stay visible and can be picked.
+    pub(crate) fn outlined(&self, triggers: &BTreeSet<EntityIndex>) -> Vec<usize> {
+        self.brushes
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| triggers.contains(&b.entity) || b.faces.iter().any(FaceShape::unseen))
+            .map(|(index, _)| index)
+            .collect()
+    }
+
     pub(crate) fn textured_mesh(
         &self,
         image: &mut dyn FnMut(&str) -> Image,
@@ -284,7 +296,7 @@ impl Scene {
         let mut images: Vec<Image> = Vec::new();
         let mut faces = Vec::new();
         for brush in self.brushes.iter().filter(|b| !hidden.contains(&b.entity)) {
-            for face in brush.faces.iter().filter(|f| !is_unseen(&f.texture)) {
+            for face in brush.faces.iter().filter(|f| !f.unseen()) {
                 let slot = match names
                     .iter()
                     .position(|n| n.eq_ignore_ascii_case(&face.texture))
@@ -416,17 +428,20 @@ fn lit(path: &Path, palette: &Palette) -> Result<MapMesh, String> {
     Ok(builder.finish())
 }
 
-/// Whether a face of texture `name` is one the game never draws, so the textured view leaves
-/// it out as the lit one does: the skip, hint, clip, origin and trigger textures, in any case
-/// (QBSP-15.16).
-fn is_unseen(name: &str) -> bool {
-    UNSEEN
-        .iter()
-        .any(|unseen| name.eq_ignore_ascii_case(unseen))
+impl FaceShape {
+    /// Whether the game never draws this face, so the textured view leaves it out as the lit
+    /// one does: its texture, the name after its last `/`, is a nodraw or hint one
+    /// (QBSP-15.16), `clip` (QBSP-4.1) or `origin` (QBSP-15.13), in any case.
+    pub(crate) fn unseen(&self) -> bool {
+        let name = self.texture.rsplit('/').next().unwrap_or_default();
+        UNSEEN
+            .iter()
+            .any(|unseen| name.eq_ignore_ascii_case(unseen))
+    }
 }
 
-/// The textures of [`is_unseen`].
-const UNSEEN: [&str; 11] = [
+/// The textures of [`FaceShape::unseen`].
+const UNSEEN: [&str; 10] = [
     "skip",
     "*waterskip",
     "*slimeskip",
@@ -437,7 +452,6 @@ const UNSEEN: [&str; 11] = [
     "hintskip",
     "clip",
     "origin",
-    "trigger",
 ];
 
 /// The world and each brush entity's model at its origin, as the engine places them; triggers

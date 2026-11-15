@@ -363,6 +363,10 @@ pub struct MapEditor {
     faced: BTreeSet<EntityIndex>,
     /// The trigger entities, which the textured view leaves out.
     triggers: BTreeSet<EntityIndex>,
+    /// The scene's brushes with a face the textured view leaves out, by their place in it: a
+    /// trigger's, or one with a clip, skip or hint face. Their edges stay drawn over the faces,
+    /// so they can be seen and picked.
+    outlined: Vec<usize>,
 }
 
 /// A hash of `set`, which changes when the set does.
@@ -869,6 +873,7 @@ impl MapEditor {
                 .filter(|(_, e)| e.classname().is_some_and(|c| c.starts_with(TRIGGER)))
                 .map(|(index, _)| EntityIndex::new(index))
                 .collect();
+            self.outlined = self.scene.outlined(&self.triggers);
             self.built = Some(built);
             let count = document.file().entities.len();
             self.also.retain(|entity| entity.get() < count);
@@ -1133,6 +1138,17 @@ impl MapEditor {
         for (owner, line) in &self.scene.lines {
             if !(faces && self.faced.contains(owner)) && !hidden.contains(owner) {
                 projection.line(&painter, *line, world);
+            }
+        }
+        if faces {
+            let outlined = self
+                .outlined
+                .iter()
+                .filter_map(|&i| self.scene.brushes.get(i));
+            for brush in outlined.filter(|b| !hidden.contains(&b.entity)) {
+                for line in &brush.lines {
+                    projection.line(&painter, *line, world);
+                }
             }
         }
         if pane == Pane::Perspective

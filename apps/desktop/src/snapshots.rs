@@ -180,6 +180,7 @@ fn scripts() -> Vec<Script> {
                     "map.open",
                     json!({ "path": keep_fixture().join("maps/keep.map") }),
                 ),
+                Step::Run("view.map_shading", json!({ "shading": "textured" })),
                 Step::Run("map.select", json!({ "entity": 2 })),
             ],
         },
