@@ -173,6 +173,10 @@ jobs:
       # Release: the extended dialect's brush BSP is too slow unoptimized for the corpus.
       - name: Compare qs-map-bsp with the oracles on every corpus map
         run: cargo run --locked --release -p xtask -- map-diff
+      # P7-01 (MAP-10): each map's lightmaps against id's light, and the coloured room's hues
+      # against ericw-tools' light.
+      - name: Compare qs-map-light with the oracles on every corpus map
+        run: cargo run --locked --release -p xtask -- light-diff
 
   # P3-25 (DIFF-16.5): the server simulation differential on every map of LibreQuake's lite
   # asset, on each OS.
