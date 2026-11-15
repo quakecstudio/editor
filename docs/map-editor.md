@@ -117,7 +117,11 @@ it too.
   view and across its own plane in a 2D view; Alt moves it up and down, and Shift keeps it on the
   axis it has moved farthest, as TrenchBroom's axis restriction.
 - **Textures (P7-08):** the texture chosen in the browser is the current one, which a new brush
-  or shape takes (else the map's last face's). A texture's menu (right-click) replaces the
+  or shape takes (else the map's last face's). With more than one WAD the browser shows one at a
+  time or every one, and a WAD file dropped on the window joins the map's `wad` key. With faces
+  picked (Alt-click), the arrows shift their texture by the grid (twice with Shift, 1 with Cmd)
+  and Page Up and Down turn it 15 degrees (90 with Shift, 1 with Cmd), TrenchBroom's alignment
+  keys. A texture's menu (right-click) replaces the
   current texture with it on the selected brushes, or on every brush when none is selected
   (`map.replace_texture`), as TrenchBroom's Replace Material.
 - **Copy and paste (P7-08):** Cmd+C puts the selected entities and brushes on the clipboard as

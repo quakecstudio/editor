@@ -10,6 +10,7 @@ use eframe::egui::{self};
 use qs_layout::{
     MAP_CAMERA, MAP_GRID, MAP_PANES, MAP_SHADING, MapGridParams, MapPanesParams, MapShadingParams,
 };
+use qs_map_edit::EntityIndex;
 use qs_map_edit::backup::{Backup, MAP_BACKUP, MAP_BACKUPS, MAP_RESTORE_BACKUP, RestoreParams};
 use qs_map_edit::texture_import::{TEXTURE_IMPORT, TextureImportParams};
 use qs_map_edit::textures::TextureSources;
@@ -104,6 +105,9 @@ pub(crate) struct MapFeature {
     /// The map text the last copy wrote, which the window puts on the clipboard (P7-08).
     copied: Option<String>,
 }
+
+/// The world's key naming the map's WADs, `;` between them.
+const WAD_KEY: &str = "wad";
 
 impl MapFeature {
     /// What the map's glue asked of the window since the last call.
@@ -299,6 +303,7 @@ impl MapFeature {
                 }
                 MapAction::Arrange(arrange) => Self::arrange(commands, arrange),
                 MapAction::Menu(menu) => self.menu_action(commands, menu),
+                MapAction::AddWad(path) => Self::add_wad(commands, &path),
                 MapAction::Delete(entity) => commands.attempt(MAP_DELETE, &EntityParams { entity }),
                 MapAction::Duplicate(entity) => {
                     commands.attempt(MAP_DUPLICATE, &EntityParams { entity })
@@ -646,6 +651,43 @@ impl MapFeature {
             self.requests.push(ShellRequest::OpenGameGuide);
         }
         played
+    }
+
+    /// Adds the WAD at `path` to the map's `wad` key, after those it names, by its path from
+    /// the map's folder when it is under it (P7-08, TrenchBroom appending a dropped WAD).
+    fn add_wad(commands: &mut Commands<'_>, path: &Path) -> Result<serde_json::Value, ShellError> {
+        let Some(map) = commands.session().context().workbench.map() else {
+            return Ok(serde_json::Value::Null);
+        };
+        let folder = map
+            .path()
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_default();
+        let named = path.strip_prefix(&folder).unwrap_or(path);
+        let named = named.to_string_lossy().replace('\\', "/");
+        let world = map.file().entities.first();
+        let now = world
+            .and_then(|world| world.value(WAD_KEY.as_bytes()))
+            .map(|value| String::from_utf8_lossy(value).into_owned())
+            .unwrap_or_default();
+        if now.split(';').any(|wad| wad == named) {
+            return Ok(serde_json::Value::Null);
+        }
+        let value = if now.is_empty() {
+            named
+        } else {
+            format!("{now};{named}")
+        };
+        commands.attempt(
+            MAP_SET_KEY,
+            &SetKeyParams {
+                entity: EntityIndex::new(0),
+                key: WAD_KEY.to_owned(),
+                value,
+                also: Vec::new(),
+            },
+        )
     }
 
     /// Runs what the view's context menu asked that no other action does (P7-08).

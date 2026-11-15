@@ -81,7 +81,7 @@ Tests are named `crate-or-app path::test`; `desktop` is `apps/desktop/src`, `map
 | --- | --- | --- | --- |
 | Mods editor (`_tb_mod`) | The project and the game folder | none | Not for Quake as TrenchBroom does it: the project is the mod |
 | Entity definition files (`_tb_def`) | The mod's QuakeC, FGD files | `qs-workbench entity_classes::tests` | Beyond |
-| Wad files with a smart editor; drop a wad on the window | The `wad` key, Import texture | `map-edit texture_import::tests::an_import_extends_the_key_the_map_uses` | Gap G16: a WAD dropped on the window is not added |
+| Wad files with a smart editor; drop a wad on the window | The `wad` key, Import texture | `map-edit texture_import::tests::an_import_extends_the_key_the_map_uses`, `desktop tests::a_dropped_wad_joins_the_maps` | Same: a dropped WAD joins `wad` |
 | Tools: modal and permanent | Toolbar: Select, Brush, Clip, Vertex, Move, Measure, Shape | `desktop map_tools` tests | Same |
 | Cancel a drag or a tool with Escape | Escape drops a drag, then picked corners, then the tool, then the selection | `desktop map_tools::tests::escape_cancels_the_drag_then_the_corners_then_the_tool`, `desktop tests::escape_in_the_map_view_clears_the_selection` | Same |
 | Axis restriction while moving | The Move tool moves across the ground in 3D, up and down with Alt, along the farthest axis with Shift | `desktop map_tools::tests::a_move_is_held_to_an_axis_by_the_keys` | Same; no thicker trace line |
@@ -106,14 +106,14 @@ Tests are named `crate-or-app path::test`; `desktop` is `apps/desktop/src`, `map
 | CSG convex merge, subtraction, hollow, intersection | All four | as above | Same |
 | Special brush and face types (clip, skip, hint, trigger) | Drawn as edges in the textured view; issues for misuse | `desktop map_shading::tests::the_textured_view_leaves_out_unseen_textures` | Same |
 | Material browser | Textures tab with uses and filter | `map-edit textures::tests::every_texture_of_the_wad_and_the_map_is_listed_with_its_uses` | Same |
-| Filter material collections | Filter by name | `desktop` texture browser tests | Gap G16: not by WAD |
+| Filter material collections | Filter by name | `desktop texture_browser::tests::the_browser_shows_one_wad_or_every_one` | Same: by name and by WAD |
 | Projection modes (paraxial, parallel) | Standard and Valve 220 read and written | `map uv::tests` | Same |
 | Material for new brushes | The map's last face's texture | `desktop tests::brushes_are_selected_deleted_and_drawn_in_the_view` | Same: the texture chosen in the browser, else the map's last face's |
 | Assign materials | `map.brush_texture` | `map-edit` tests | Same |
 | Replace materials | A texture's menu in the browser replaces the chosen one with it, on the selected brushes or everywhere (`map.replace_texture`) | `map-edit brush_tools::tests::a_texture_is_replaced_on_the_brushes_or_everywhere`, `desktop tests::a_texture_s_menu_replaces_the_current_texture` | Same |
 | Align, justify and fit | `map.face_uv`, `map.face_align` | `map-edit uv::tests::alignment_carries_across_the_corner` | Same |
 | Face attribute editor | The UV editor's fields | `desktop map_uv` tests | Same |
-| Alignment keyboard shortcuts | None | none | Gap G16 |
+| Alignment keyboard shortcuts | With faces picked: arrows shift by the grid (Shift twice, Cmd 1), Page Up and Down turn 15 degrees (Shift 90, Cmd 1) | `desktop tests::alt_click_picks_a_face_for_the_uv_editor` | Same; shifts along s and t, not the camera |
 | UV editor | The UV editor | `desktop map_uv` tests | Same |
 | Default entity properties | The keys the class reads, with their defaults | `map-edit links::tests::the_spawnflags_named_by_the_code_come_with_the_keys` | Beyond: from the QuakeC |
 | Edit properties, several entities at once | `map.set_key` with `also` | `map-edit links::tests::a_key_is_set_on_several_entities_at_once` | Same |
@@ -180,7 +180,6 @@ To close before #823 does:
 | G7 | Two- and three-pane layouts, a highlight on the focused pane, linked 2D views |
 | G8 | Selection drilling; 2D picking by candidates |
 | G13 | A convex brush from placed points; stamping and moving faces; clip snapping and matching a face's plane |
-| G16 | Filter the browser by WAD; a WAD dropped on the window; alignment shortcuts |
 | G17 | Extracting objects into a new linked group; the current layer new objects go into |
 | G19 | TrenchBroom's query language in the search |
 

@@ -878,6 +878,10 @@ pub enum Text {
     MapSeparate,
     /// Adds a layer.
     MapAddLayer,
+    /// The texture browser's WAD picker's choice of every WAD (P7-08).
+    MapEveryWad,
+    /// The texture browser's WAD picker, to a screen reader.
+    MapWadPicker,
     /// The view menu's submenu of brush classes for the selected world brushes.
     MapCreateBrushEntity,
     /// Gives a brush entity's brushes back to the world.
@@ -954,7 +958,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 469] = [
+    pub const ALL: [Self; 471] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1388,6 +1392,8 @@ impl Text {
         Self::MapLinkDuplicate,
         Self::MapSeparate,
         Self::MapAddLayer,
+        Self::MapEveryWad,
+        Self::MapWadPicker,
         Self::MapCreateBrushEntity,
         Self::MapMakeStructural,
         Self::MapCreatePointEntity,
@@ -1938,6 +1944,8 @@ impl Text {
             Self::MapLinkDuplicate => "Linked duplicate",
             Self::MapSeparate => "Separate",
             Self::MapAddLayer => "Add layer",
+            Self::MapEveryWad => "Every WAD",
+            Self::MapWadPicker => "WAD shown",
             Self::MapCreateBrushEntity => "Create brush entity",
             Self::MapMakeStructural => "Make structural",
             Self::MapCreatePointEntity => "Create point entity",

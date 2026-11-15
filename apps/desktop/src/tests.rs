@@ -2834,8 +2834,8 @@ fn click_with(harness: &mut Harness<'static, Option<App>>, at: Pos2, modifiers: 
 }
 
 // No spec statement: P6-22, MAP-13: with the Select tool an Alt-click picks the face in the way,
-// the UV editor flips its texture through a command that undoes, and a plain click lets the
-// face go
+// the UV editor flips its texture through a command that undoes, the alignment keys shift and
+// turn it (P7-08), and a plain click lets the face go
 #[test]
 fn alt_click_picks_a_face_for_the_uv_editor() {
     let dir = keep_copy("uv-faces");
@@ -2860,11 +2860,26 @@ fn alt_click_picks_a_face_for_the_uv_editor() {
     harness.get_by_label(Text::MapUvFlipS.get()).click();
     harness.run();
     harness.run();
-    assert_ne!(map_text(&harness), before, "Flip S changed the face");
+    let flipped = map_text(&harness);
+    assert_ne!(flipped, before, "Flip S changed the face");
+    // P7-08: with the face picked and the view holding the keyboard, Right shifts its texture
+    // by the grid and Page Up turns it 15 degrees, TrenchBroom's alignment keys; the ogre,
+    // selected or not, stays where it is.
+    harness.get_by_label(Text::MapEditorView.get()).focus();
+    harness.run();
+    harness.key_press(egui::Key::ArrowRight);
+    harness.run();
+    let shifted = map_text(&harness);
+    assert_ne!(shifted, flipped, "Right shifted the texture");
+    harness.key_press(egui::Key::PageUp);
+    harness.run();
+    assert_ne!(map_text(&harness), shifted, "Page Up turned it");
     click_at(&mut harness, at);
     assert!(harness.query_by_label(Text::MapFaces.get()).is_none());
     let shell = &mut harness.state_mut().as_mut().unwrap().shell;
-    shell.execute("edit.undo", json!({})).unwrap();
+    for _ in 0..3 {
+        shell.execute("edit.undo", json!({})).unwrap();
+    }
     harness.run();
     assert_eq!(map_text(&harness), before);
 }
@@ -3125,7 +3140,15 @@ fn the_view_s_context_menu_places_and_selects() {
     harness.run();
     let count = |harness: &Harness<'static, Option<App>>| {
         let shell = harness.state().as_ref().unwrap().shell();
-        shell.session().context().workbench.map().unwrap().file().entities.len()
+        shell
+            .session()
+            .context()
+            .workbench
+            .map()
+            .unwrap()
+            .file()
+            .entities
+            .len()
     };
     let before = count(&harness);
     harness
@@ -3137,17 +3160,29 @@ fn the_view_s_context_menu_places_and_selects() {
         let found = harness.query_all_by_label(entry.get()).count();
         assert_eq!(found, 2, "{}", entry.get());
     }
-    harness
-        .get_by_label(&select_all_of("monster_ogre"))
-        .click();
+    harness.get_by_label(&select_all_of("monster_ogre")).click();
     harness.run();
-    let selected = harness.state().as_ref().unwrap().shell().session().context().workbench.map().unwrap().selected();
+    let selected = harness
+        .state()
+        .as_ref()
+        .unwrap()
+        .shell()
+        .session()
+        .context()
+        .workbench
+        .map()
+        .unwrap()
+        .selected();
     assert_eq!(selected, Some(EntityIndex::new(2)));
     harness
         .get_by_label(Text::MapEditorView.get())
         .click_secondary();
     harness.run();
-    assert_eq!(harness.query_all_by_label(Text::MapGroup.get()).count(), 2, "the menu is open");
+    assert_eq!(
+        harness.query_all_by_label(Text::MapGroup.get()).count(),
+        2,
+        "the menu is open"
+    );
     harness
         .get_by_label_contains(Text::MapCreatePointEntity.get())
         .hover();
@@ -3160,7 +3195,48 @@ fn the_view_s_context_menu_places_and_selects() {
         .click();
     harness.run();
     assert_eq!(count(&harness), before + 1, "a light placed");
-    assert!(map_text(&harness).matches("\"classname\" \"light\"").count() >= 2);
+    assert!(
+        map_text(&harness)
+            .matches("\"classname\" \"light\"")
+            .count()
+            >= 2
+    );
+}
+
+// No spec statement: P7-08: a WAD file dropped on the window joins the map's `wad` key, by its
+// path from the map's folder when under it, as TrenchBroom appends a dropped WAD; one it names
+// already is not named twice; one undo takes it back
+#[test]
+fn a_dropped_wad_joins_the_maps() {
+    let dir = keep_copy("drop-wad");
+    let wad = dir.join("maps/extra.wad");
+    fs::write(&wad, b"WAD2").unwrap();
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    let before = map_text(&harness);
+    let drop = |harness: &mut Harness<'static, Option<App>>| {
+        harness
+            .input_mut()
+            .dropped_files
+            .push(std::sync::Arc::new(Dropped(wad.clone())));
+        harness.run();
+    };
+    drop(&mut harness);
+    let after = map_text(&harness);
+    assert!(after.contains(";extra.wad\""), "{after}");
+    drop(&mut harness);
+    assert_eq!(map_text(&harness), after, "named once");
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("edit.undo", json!({})).unwrap();
+    harness.run();
+    assert_eq!(map_text(&harness), before);
 }
 
 // No spec statement: P6-08, MAP-2: a click with a brush tool selects the first brush the ray

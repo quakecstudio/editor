@@ -16,7 +16,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use eframe::egui::{self, Painter, Pos2, Response, Stroke, Ui};
+use eframe::egui::{self, Key, Modifiers, Painter, Pos2, Response, Stroke, Ui};
 use qs_map::shapes::{
     SHAPE_MAX_RINGS, SHAPE_MAX_ROCK_POINTS, SHAPE_MAX_SIDES, SHAPE_MAX_SPHEROID_FACES,
     SHAPE_MIN_RINGS, SHAPE_MIN_ROCK_POINTS, SHAPE_MIN_SIDES, SHAPE_STEP_DEPTH, SHAPE_STEP_HEIGHT,
@@ -531,6 +531,12 @@ enum Drag {
     Measure([f32; 3], MapAxis),
 }
 
+/// The degrees Page Up and Down turn a picked face's texture, TrenchBroom's grid angle.
+const ALIGN_TURN: f64 = 15.0;
+
+/// The degrees they turn it with Shift held.
+const ALIGN_TURN_MOST: f64 = 90.0;
+
 /// The degrees the Turn button turns the selection by: 15 at first, TrenchBroom's grid angle
 /// (`Grid::angle`, 15 degrees).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1021,6 +1027,46 @@ impl BrushTools {
             actions.extend(finished);
         }
         actions
+    }
+
+    /// TrenchBroom's texture alignment keys while faces are picked (P7-08, its manual's
+    /// "Material Alignment Keyboard Shortcuts"): the arrows shift the texture by the grid, twice
+    /// it with Shift and 1 with Cmd; Page Up and Down turn it 15 degrees, 90 with Shift and 1
+    /// with Cmd. None with no face picked, the keys left for the selection.
+    pub(crate) fn uv_keys(&self, ui: &Ui) -> Option<BrushAction> {
+        let faces = self.uv.faces();
+        if faces.is_empty() {
+            return None;
+        }
+        let grid = self.grid.units();
+        ui.input_mut(|i| {
+            for (modifiers, step, angle) in [
+                (Modifiers::SHIFT, grid * 2.0, ALIGN_TURN_MOST),
+                (Modifiers::COMMAND, 1.0, 1.0),
+                (Modifiers::NONE, grid, ALIGN_TURN),
+            ] {
+                for (key, shift, rotate) in [
+                    (Key::ArrowLeft, [-step, 0.0], 0.0),
+                    (Key::ArrowRight, [step, 0.0], 0.0),
+                    (Key::ArrowUp, [0.0, step], 0.0),
+                    (Key::ArrowDown, [0.0, -step], 0.0),
+                    (Key::PageUp, [0.0, 0.0], angle),
+                    (Key::PageDown, [0.0, 0.0], -angle),
+                ] {
+                    if i.consume_key(modifiers, key) {
+                        return Some(BrushAction::Uv(
+                            faces,
+                            UvChoice::Adjust {
+                                shift,
+                                rotate,
+                                scale: [1.0, 1.0],
+                            },
+                        ));
+                    }
+                }
+            }
+            None
+        })
     }
 
     /// The brushes selected, the first chosen first.

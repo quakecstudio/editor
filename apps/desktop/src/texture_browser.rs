@@ -49,6 +49,10 @@ pub(crate) struct TextureBrowser {
     selected: Option<String>,
     /// The replacement a texture's menu asked for: the texture replaced and its replacement.
     replace: Option<(String, String)>,
+    /// The WAD the browser shows alone, or every one (P7-08, TrenchBroom's collection filter).
+    wad: Option<String>,
+    /// A WAD file dropped on the window this frame, to add to the map's (P7-08).
+    dropped_wad: Option<PathBuf>,
     /// How many textures were decoded since the sources were set.
     decodes: usize,
     /// The image being imported, shown quantized before it is saved (P6-16).
@@ -103,6 +107,11 @@ impl TextureBrowser {
         self.selected.as_deref()
     }
 
+    /// Takes the WAD file dropped on the window, to add to the map's (P7-08).
+    pub(crate) fn take_dropped_wad(&mut self) -> Option<PathBuf> {
+        self.dropped_wad.take()
+    }
+
     /// Takes the replacement asked for in a texture's menu: the texture replaced and the one
     /// put in its place (P7-08).
     pub(crate) fn take_replace(&mut self) -> Option<(String, String)> {
@@ -137,6 +146,19 @@ impl TextureBrowser {
                 .desired_width(FILTER_WIDTH),
         );
         name_field(ui, &filter, Text::MapFilterTextures);
+        if self.listing.wads.len() > 1 {
+            let every = Text::MapEveryWad.get();
+            let picked = egui::ComboBox::from_id_salt(ui.id().with(Text::MapWadPicker))
+                .selected_text(self.wad.as_deref().unwrap_or(every))
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.wad, None, every);
+                    for wad in &self.listing.wads {
+                        let name = Some(wad.name.clone());
+                        ui.selectable_value(&mut self.wad, name, &wad.name);
+                    }
+                });
+            name_field(ui, &picked.response, Text::MapWadPicker);
+        }
         let wads: Vec<String> = self.listing.wads.iter().map(wad_label).collect();
         let shown = self.shown().len();
         ui.label(
@@ -163,6 +185,11 @@ impl TextureBrowser {
             .iter()
             .enumerate()
             .filter(|(_, texture)| filter_shows(&self.filter, &texture.name))
+            .filter(|(_, texture)| match (&self.wad, &texture.origin) {
+                (None, _) => true,
+                (Some(wad), TextureOrigin::Wad { wad: from }) => wad == from,
+                (Some(_), TextureOrigin::Bsp | TextureOrigin::Missing) => false,
+            })
             .map(|(index, _)| index)
             .collect()
     }
@@ -230,6 +257,17 @@ impl TextureBrowser {
         if let Some(path) = dropped {
             self.import = ImportPreview::open(path);
         }
+        // A WAD dropped on the window joins the map's, as TrenchBroom appends it to `wad`.
+        self.dropped_wad = ui.input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .map(|file| file.path().to_path_buf())
+                .find(|path| {
+                    path.extension()
+                        .is_some_and(|e| e.eq_ignore_ascii_case(WAD_EXTENSION))
+                })
+        });
         let shown = self.shown();
         let count = u16::try_from(shown.len()).map_or(f32::from(u16::MAX), f32::from);
         let width = count * (CELL + GAP);
@@ -374,5 +412,56 @@ fn hatch(painter: &egui::Painter, rect: egui::Rect, color: egui::Color32) {
         let end = egui::pos2(rect.left() + offset - rect.height(), rect.bottom());
         painter.line_segment([start, end], stroke);
         offset += HATCH;
+    }
+}
+
+/// A WAD file's extension.
+const WAD_EXTENSION: &str = "wad";
+
+#[cfg(test)]
+mod tests {
+    use qs_map_edit::textures::{BrowserTexture, MapTextures, TextureOrigin, WadFound, WadState};
+
+    use super::TextureBrowser;
+
+    // No spec statement: P7-08: the browser shows one WAD's textures alone when one is picked, as
+    // TrenchBroom filters by material collection, and every texture with none picked
+    #[test]
+    fn the_browser_shows_one_wad_or_every_one() {
+        let texture = |name: &str, origin: TextureOrigin| BrowserTexture {
+            name: name.to_owned(),
+            origin,
+            width: 16,
+            height: 16,
+            uses: 0,
+        };
+        let wad = |name: &str| TextureOrigin::Wad {
+            wad: name.to_owned(),
+        };
+        let mut browser = TextureBrowser {
+            listing: MapTextures {
+                wads: ["a.wad", "b.wad"]
+                    .map(|name| WadFound {
+                        name: name.to_owned(),
+                        path: None,
+                        state: WadState::Missing,
+                    })
+                    .to_vec(),
+                textures: vec![
+                    texture("rock", wad("a.wad")),
+                    texture("metal", wad("b.wad")),
+                    texture("sky1", wad("a.wad")),
+                    texture("gone", TextureOrigin::Missing),
+                ],
+            },
+            ..TextureBrowser::default()
+        };
+        assert_eq!(browser.shown(), [0, 1, 2, 3]);
+        browser.wad = Some("a.wad".to_owned());
+        assert_eq!(browser.shown(), [0, 2]);
+        browser.wad = Some("b.wad".to_owned());
+        assert_eq!(browser.shown(), [1]);
+        browser.filter = "zzz".to_owned();
+        assert!(browser.shown().is_empty());
     }
 }

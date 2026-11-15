@@ -134,6 +134,8 @@ pub enum MapAction {
     MoveTo(EntityIndex, EntityIndex),
     /// What the view's context menu asked that no other action does (P7-08).
     Menu(MenuAction),
+    /// Add a WAD file to the map's `wad` key (P7-08).
+    AddWad(std::path::PathBuf),
     /// Remove a key of an entity.
     RemoveKey(EntityIndex, String),
     /// Save the map.
@@ -762,6 +764,9 @@ impl MapEditor {
         match self.bottom {
             BottomTab::Textures => {
                 self.textures.body(&mut browser_ui, theme);
+                if let Some(path) = self.textures.take_dropped_wad() {
+                    actions.push(MapAction::AddWad(path));
+                }
                 if let Some((from, to)) = self.textures.take_replace() {
                     actions.push(MapAction::Brush(BrushAction::ReplaceTexture(
                         from,
@@ -1148,6 +1153,9 @@ impl MapEditor {
                     },
                 );
             });
+            // With faces picked, the arrows and Page Up and Down align their texture rather
+            // than move the selection, as TrenchBroom's.
+            actions.extend(self.tools.uv_keys(ui).map(MapAction::Brush));
             // The overview and group keys first: Cmd+Shift+D is Create Linked Duplicate before
             // Cmd+D can take it as Duplicate.
             let chosen: Vec<EntityIndex> = selection.iter().copied().collect();
