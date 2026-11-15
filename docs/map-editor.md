@@ -108,6 +108,10 @@ it too.
   Properties panel turns the selection by any angle, 15 degrees at first, and flips it along x,
   y or z. Both go about the middle of the selection's box, point entities' facing with it
   (`map.flip`, `map.turn`).
+- **Textures (P7-08):** the texture chosen in the browser is the current one, which a new brush
+  or shape takes (else the map's last face's). A texture's menu (right-click) replaces the
+  current texture with it on the selected brushes, or on every brush when none is selected
+  (`map.replace_texture`), as TrenchBroom's Replace Material.
 - **Copy and paste (P7-08):** Cmd+C puts the selected entities and brushes on the clipboard as
   a `.map`'s text, where they are (`map.copy`); Cmd+V pastes map text with the middle of its
   floor at the pointer, on the grid, and Cmd+Alt+V where the text has it (`map.paste`), as

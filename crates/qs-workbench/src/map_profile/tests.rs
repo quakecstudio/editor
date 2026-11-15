@@ -366,7 +366,13 @@ fn a_profile_renames_and_deletes_files() {
     assert!(dir.join("keep.txt").exists());
     let missing = run(&mut session, "Missing");
     assert!(!missing.succeeded(), "{missing:?}");
-    assert_eq!(Task::Delete { target: String::new() }.name(), "delete");
+    assert_eq!(
+        Task::Delete {
+            target: String::new()
+        }
+        .name(),
+        "delete"
+    );
     assert_eq!(
         Task::Rename {
             from: String::new(),

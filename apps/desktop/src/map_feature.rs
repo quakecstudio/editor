@@ -42,7 +42,10 @@ use qs_map_edit::{
     EntityListParams, LayerInfo, MAP_HIDE, MAP_ISOLATE, MAP_LAYERS, MAP_LOCK, MAP_SET_LAYER,
     MAP_SHOW_ALL, MAP_UNLOCK_ALL, SetLayerParams,
 };
-use qs_map_edit::{FlipParams, Lock, MAP_FLIP, MAP_TURN, Selection, TurnParams};
+use qs_map_edit::{
+    FlipParams, Lock, MAP_FLIP, MAP_REPLACE_TEXTURE, MAP_TURN, ReplaceTextureParams, Selection,
+    TurnParams,
+};
 use qs_map_edit::{LinkParams, MAP_LINK, MAP_PLACE, MAP_SET_FLAG, PlaceParams, SetFlagParams};
 use qs_map_edit::{MAP_ACCEPT, MAP_REJECT, MAP_STAGED, MapHunk, MapHunksParams};
 use qs_map_edit::{
@@ -721,6 +724,9 @@ impl MapFeature {
         action: BrushAction,
     ) -> Result<serde_json::Value, ShellError> {
         let grid = Some(commands.session().context().layout.map_grid.units());
+        // TrenchBroom's current material: the texture chosen in the browser, else the map's
+        // last face's.
+        let texture = self.map_editor.current_texture();
         match action {
             BrushAction::Create(min, max) => commands.attempt(
                 MAP_BRUSH_CREATE,
@@ -728,7 +734,7 @@ impl MapFeature {
                     entity: None,
                     min,
                     max,
-                    texture: None,
+                    texture: texture.clone(),
                     grid,
                 },
             ),
@@ -809,7 +815,7 @@ impl MapFeature {
                     min,
                     max,
                     shape,
-                    texture: None,
+                    texture,
                     grid,
                 },
             ),
@@ -868,6 +874,10 @@ impl MapFeature {
                 },
             ),
             BrushAction::Arrange(arrange) => Self::arrange(commands, arrange),
+            BrushAction::ReplaceTexture(from, to, brushes) => commands.attempt(
+                MAP_REPLACE_TEXTURE,
+                &ReplaceTextureParams { from, to, brushes },
+            ),
             BrushAction::SplitFace(face, by) => commands.attempt(
                 MAP_BRUSH_SPLIT_FACE,
                 &BrushSplitFaceParams {

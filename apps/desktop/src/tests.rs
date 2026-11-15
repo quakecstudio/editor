@@ -3069,6 +3069,41 @@ fn groups_and_layers_are_made_from_the_view() {
     assert_eq!(map_text(&harness), before);
 }
 
+// No spec statement: P7-08: a texture chosen in the browser is the current one, and another's
+// menu replaces it with that one on every face of the map, as TrenchBroom's Replace Material;
+// one undo takes it back
+#[test]
+fn a_texture_s_menu_replaces_the_current_texture() {
+    let dir = keep_copy("replace");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    let before = map_text(&harness);
+    assert!(before.contains(") wall "), "{before}");
+    harness.get_by_role_and_label(Role::Button, "wall").click();
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::Button, "floor")
+        .click_secondary();
+    harness.run();
+    harness
+        .get_by_label(&crate::strings::replace_with("wall", "floor"))
+        .click();
+    harness.run();
+    let after = map_text(&harness);
+    assert!(!after.contains(") wall "), "{after}");
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("edit.undo", json!({})).unwrap();
+    harness.run();
+    assert_eq!(map_text(&harness), before);
+}
+
 // No spec statement: P6-08, MAP-2: a click with a brush tool selects the first brush the ray
 // enters, by its faces, and Delete brush in Properties deletes it; the Brush tool draws a box on
 // the floor with a drag; each through a command, so each undoes
@@ -3112,7 +3147,10 @@ fn brushes_are_selected_deleted_and_drawn_in_the_view() {
         (world - 1, door - 1)
     );
     harness.get_by_label(Text::MapToolBrush.get()).click();
+    // P7-08: the texture chosen in the browser is the one a new brush takes.
+    harness.get_by_role_and_label(Role::Button, "ceiling").click();
     harness.run();
+    let ceilings = map_text(&harness).matches(") ceiling ").count();
     let view = harness.get_by_label(Text::MapEditorView.get()).rect();
     let below = view.center() + egui::vec2(0.0, view.height() / 3.0);
     drag(
@@ -3122,6 +3160,11 @@ fn brushes_are_selected_deleted_and_drawn_in_the_view() {
         egui::Modifiers::NONE,
     );
     assert_eq!(brush_count(&harness, 0), world, "{}", map_text(&harness));
+    assert_eq!(
+        map_text(&harness).matches(") ceiling ").count(),
+        ceilings + 6,
+        "the new brush's six faces take the chosen texture"
+    );
     let shell = &mut harness.state_mut().as_mut().unwrap().shell;
     for _ in 0..3 {
         shell.execute("edit.undo", json!({})).unwrap();

@@ -379,3 +379,47 @@ fn a_selection_turns_about_the_vertical() {
         assert!(session.execute(MAP_TURN, bad.clone()).is_err(), "{bad}");
     }
 }
+
+// No spec statement: P7-08: map.replace_texture puts one texture in another's place, in any
+// case, on the brushes given or on every brush, as TrenchBroom's Replace Material; one undo
+// takes it back, and a texture no face has is refused
+#[test]
+fn a_texture_is_replaced_on_the_brushes_or_everywhere() {
+    use crate::{MAP_REPLACE_TEXTURE, Replaced};
+
+    let mut session = open("replace");
+    let before = text(&session);
+    let replaced: Replaced = serde_json::from_value(
+        session
+            .execute(
+                MAP_REPLACE_TEXTURE,
+                json!({ "from": "ROCK", "to": "metal", "brushes": [[0, 1]] }),
+            )
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(replaced.faces, 6);
+    let brushes = world(&session);
+    assert!(brushes[0].faces.iter().all(|f| f.texture() == b"rock"));
+    assert!(brushes[1].faces.iter().all(|f| f.texture() == b"metal"));
+    session.undo().unwrap();
+    assert_eq!(text(&session), before);
+    session
+        .execute(
+            MAP_REPLACE_TEXTURE,
+            json!({ "from": "rock", "to": "metal" }),
+        )
+        .unwrap();
+    assert!(
+        world(&session)
+            .iter()
+            .flat_map(|b| &b.faces)
+            .all(|f| f.texture() == b"metal")
+    );
+    assert!(
+        session
+            .execute(MAP_REPLACE_TEXTURE, json!({ "from": "rock", "to": "x" }))
+            .is_err(),
+        "no face has rock now"
+    );
+}

@@ -108,9 +108,9 @@ Tests are named `crate-or-app path::test`; `desktop` is `apps/desktop/src`, `map
 | Material browser | Textures tab with uses and filter | `map-edit textures::tests::every_texture_of_the_wad_and_the_map_is_listed_with_its_uses` | Same |
 | Filter material collections | Filter by name | `desktop` texture browser tests | Gap G16: not by WAD |
 | Projection modes (paraxial, parallel) | Standard and Valve 220 read and written | `map uv::tests` | Same |
-| Material for new brushes | The map's last face's texture | `map-edit brushes::tests::a_box_is_created_on_the_grid` | Gap G16: not the browser's chosen texture |
+| Material for new brushes | The map's last face's texture | `desktop tests::brushes_are_selected_deleted_and_drawn_in_the_view` | Same: the texture chosen in the browser, else the map's last face's |
 | Assign materials | `map.brush_texture` | `map-edit` tests | Same |
-| Replace materials | None | none | Gap G16 |
+| Replace materials | A texture's menu in the browser replaces the chosen one with it, on the selected brushes or everywhere (`map.replace_texture`) | `map-edit brush_tools::tests::a_texture_is_replaced_on_the_brushes_or_everywhere`, `desktop tests::a_texture_s_menu_replaces_the_current_texture` | Same |
 | Align, justify and fit | `map.face_uv`, `map.face_align` | `map-edit uv::tests::alignment_carries_across_the_corner` | Same |
 | Face attribute editor | The UV editor's fields | `desktop map_uv` tests | Same |
 | Alignment keyboard shortcuts | None | none | Gap G16 |
@@ -182,7 +182,7 @@ To close before #823 does:
 | G11 | Axis restriction while moving |
 | G12 | The map view's context menu |
 | G13 | Brush entities from selected brushes and back to the world; a convex brush from placed points; stamping and moving faces; clip snapping and matching a face's plane |
-| G16 | Replace a texture; the browser's chosen texture for new brushes; filter by WAD; a WAD dropped on the window; alignment shortcuts |
+| G16 | Filter the browser by WAD; a WAD dropped on the window; alignment shortcuts |
 | G17 | Extracting objects into a new linked group; the current layer new objects go into |
 | G19 | TrenchBroom's query language in the search |
 

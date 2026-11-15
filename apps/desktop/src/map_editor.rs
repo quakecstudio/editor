@@ -756,7 +756,16 @@ impl MapEditor {
         });
         browser_ui.separator();
         match self.bottom {
-            BottomTab::Textures => self.textures.body(&mut browser_ui, theme),
+            BottomTab::Textures => {
+                self.textures.body(&mut browser_ui, theme);
+                if let Some((from, to)) = self.textures.take_replace() {
+                    actions.push(MapAction::Brush(BrushAction::ReplaceTexture(
+                        from,
+                        to,
+                        self.tools.chosen().to_vec(),
+                    )));
+                }
+            }
             BottomTab::Entities => self.browser.body(
                 &mut browser_ui,
                 theme,
@@ -1854,6 +1863,11 @@ enum Framing {
 }
 
 impl MapEditor {
+    /// The texture chosen in the browser, which new brushes take (P7-08).
+    pub(crate) fn current_texture(&self) -> Option<String> {
+        self.textures.selected().map(str::to_owned)
+    }
+
     /// How many layers the map has.
     pub(crate) fn layer_count(&self) -> usize {
         self.layers.len()

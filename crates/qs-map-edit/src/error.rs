@@ -62,6 +62,11 @@ pub enum MapEditError {
         /// The entity.
         entity: EntityIndex,
     },
+    /// No face of the brushes has the texture to replace (P7-08).
+    NoTexture {
+        /// The texture.
+        texture: String,
+    },
     /// Text pasted into the map that is not a map's entities (P7-08).
     NotMapText {
         /// Why.
@@ -233,6 +238,7 @@ impl fmt::Display for MapEditError {
             Self::Map { path, error } => write!(f, "{}: {error}", path.display()),
             Self::NotMapText { error } => write!(f, "the text pasted is not a map's: {error}"),
             Self::NotGroup { entity } => write!(f, "entity {entity} is no group, or not linked"),
+            Self::NoTexture { texture } => write!(f, "no face has the texture {texture}"),
             Self::ChangedOnDisk { path } => write!(
                 f,
                 "{}: another program changed it since it was opened; reload it or keep yours \
@@ -329,6 +335,7 @@ impl Error for MapEditError {
             | Self::PrefabName { .. }
             | Self::NoSelection
             | Self::NotGroup { .. }
+            | Self::NoTexture { .. }
             | Self::NoMap
             | Self::NoEntity { .. }
             | Self::NotPointEntity { .. }

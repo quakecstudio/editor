@@ -2226,6 +2226,12 @@ pub fn also_selected(count: usize) -> String {
     }
 }
 
+/// A texture's menu entry replacing the current texture with it (P7-08).
+#[must_use]
+pub fn replace_with(current: &str, with: &str) -> String {
+    format!("Replace {current} with {with}")
+}
+
 /// A new group's name, the map's `n`th (P7-08).
 #[must_use]
 pub fn group_name(n: usize) -> String {

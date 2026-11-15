@@ -164,6 +164,8 @@ pub enum BrushAction {
     Create([f64; 3], [f64; 3]),
     /// Flip or turn the selected brushes and entities (P7-08).
     Arrange(Arrange),
+    /// Put the second texture in the first's place on the brushes, or everywhere (P7-08).
+    ReplaceTexture(String, String, Vec<BrushRef>),
     /// Cut a brush by the plane through three points, keeping the parts chosen.
     Clip(EntityIndex, BrushIndex, [[f64; 3]; 3], KeepPart),
     /// Move a corner of a brush from one point to another.

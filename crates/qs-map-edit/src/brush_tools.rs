@@ -45,6 +45,29 @@ pub const MAP_FLIP: &str = "map.flip";
 /// The id of the command that turns a selection about the vertical (P7-08).
 pub const MAP_TURN: &str = "map.turn";
 
+/// The id of the command that puts one texture in another's place (P7-08).
+pub const MAP_REPLACE_TEXTURE: &str = "map.replace_texture";
+
+/// The parameters of `map.replace_texture`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReplaceTextureParams {
+    /// The texture replaced, in any case.
+    pub from: String,
+    /// The texture put in its place.
+    pub to: String,
+    /// The brushes it is replaced on; every brush of the map when empty.
+    #[serde(default)]
+    pub brushes: Vec<(EntityIndex, BrushIndex)>,
+}
+
+/// What `map.replace_texture` did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Replaced {
+    /// How many faces took the new texture.
+    pub faces: usize,
+}
+
 /// A selection to flip or turn: whole entities and brushes of entities.
 #[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -806,6 +829,63 @@ impl MapDocument {
             self.transform(entity, &brushes, map, lock)?;
         }
         Ok(())
+    }
+}
+
+/// `map.replace_texture`.
+pub(super) struct ReplaceTexture;
+
+impl<C: HasMap + 'static> Command<C> for ReplaceTexture {
+    const ID: &'static str = MAP_REPLACE_TEXTURE;
+    const SUMMARY: &'static str = "Puts one texture in another's place on the faces of brushes, \
+        or of every brush of the map, keeping their alignment (TrenchBroom's Replace Material).";
+    type Params = ReplaceTextureParams;
+    type Output = Replaced;
+    type Error = MapEditError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: ReplaceTextureParams,
+    ) -> Result<Outcome<Replaced, C>, MapEditError> {
+        let (faces, step) = edit_map(context, |document| {
+            let from = params.from.as_bytes();
+            let mut replaced = 0_usize;
+            let chosen = |entity: usize, brush: usize| {
+                params.brushes.is_empty()
+                    || params
+                        .brushes
+                        .contains(&(EntityIndex::new(entity), BrushIndex::new(brush)))
+            };
+            for (place, entity) in document.file.entities.iter_mut().enumerate() {
+                let brushes = entity.items.iter_mut().filter_map(|item| match item {
+                    qs_map::Item::Brush(brush) => Some(brush),
+                    qs_map::Item::Pair(_) => None,
+                });
+                for (index, brush) in brushes.enumerate() {
+                    if !chosen(place, index) {
+                        continue;
+                    }
+                    for face in &mut brush.faces {
+                        if face.texture().eq_ignore_ascii_case(from) {
+                            let (points, texdef) = (*face.points(), *face.texdef());
+                            face.set(points, params.to.as_bytes(), texdef)
+                                .map_err(|error| MapEditError::Brush {
+                                    error: BrushError::Map(error),
+                                })?;
+                            replaced = replaced.saturating_add(1);
+                        }
+                    }
+                }
+            }
+            if replaced == 0 {
+                return Err(MapEditError::NoTexture {
+                    texture: params.from.clone(),
+                });
+            }
+            Ok(replaced)
+        })?;
+        Ok(Outcome::undoable(Replaced { faces }, step))
     }
 }
 

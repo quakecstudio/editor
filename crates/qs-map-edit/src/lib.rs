@@ -26,8 +26,8 @@ pub use brush_tools::{
     BrushScaleParams, BrushShearParams, BrushSplitEdgeParams, BrushSplitFaceParams,
     BrushSweepParams, BrushVerticesParams, FlipParams, MAP_BRUSH_CHAMFER, MAP_BRUSH_EXTRUDE,
     MAP_BRUSH_HOLLOW, MAP_BRUSH_INTERSECT, MAP_BRUSH_SCALE, MAP_BRUSH_SHEAR, MAP_BRUSH_SPLIT_EDGE,
-    MAP_BRUSH_SPLIT_FACE, MAP_BRUSH_SWEEP, MAP_BRUSH_VERTICES, MAP_FLIP, MAP_TURN, NewVertex,
-    Selection, TurnParams, VertexMove,
+    MAP_BRUSH_SPLIT_FACE, MAP_BRUSH_SWEEP, MAP_BRUSH_VERTICES, MAP_FLIP, MAP_REPLACE_TEXTURE,
+    MAP_TURN, NewVertex, ReplaceTextureParams, Replaced, Selection, TurnParams, VertexMove,
 };
 pub use brushes::{
     BrushClipParams, BrushCreateParams, BrushIndex, BrushMergeParams, BrushMoveParams, BrushParams,
@@ -1369,6 +1369,7 @@ pub fn register_map_edit<C: HasMap + 'static>(
     registry.register(brush_tools::BrushScale)?;
     registry.register(brush_tools::Flip)?;
     registry.register(brush_tools::Turn)?;
+    registry.register(brush_tools::ReplaceTexture)?;
     registry.register(brush_tools::BrushShear)?;
     registry.register(brush_tools::BrushExtrude)?;
     registry.register(brush_tools::BrushSweep)?;

@@ -29,6 +29,7 @@ const qs_map_edit::brush_tools::MAP_BRUSH_SPLIT_FACE
 const qs_map_edit::brush_tools::MAP_BRUSH_SWEEP
 const qs_map_edit::brush_tools::MAP_BRUSH_VERTICES
 const qs_map_edit::brush_tools::MAP_FLIP
+const qs_map_edit::brush_tools::MAP_REPLACE_TEXTURE
 const qs_map_edit::brush_tools::MAP_TURN
 const qs_map_edit::brushes::MAP_BRUSH_CLIP
 const qs_map_edit::brushes::MAP_BRUSH_CREATE
@@ -180,6 +181,10 @@ field qs_map_edit::brush_tools::BrushVerticesParams.moves
 field qs_map_edit::brush_tools::FlipParams.axis
 field qs_map_edit::brush_tools::FlipParams.lock
 field qs_map_edit::brush_tools::FlipParams.selection
+field qs_map_edit::brush_tools::ReplaceTextureParams.brushes
+field qs_map_edit::brush_tools::ReplaceTextureParams.from
+field qs_map_edit::brush_tools::ReplaceTextureParams.to
+field qs_map_edit::brush_tools::Replaced.faces
 field qs_map_edit::brush_tools::Selection.brushes
 field qs_map_edit::brush_tools::Selection.entities
 field qs_map_edit::brush_tools::TurnParams.degrees
@@ -465,6 +470,8 @@ struct qs_map_edit::brush_tools::BrushSplitFaceParams
 struct qs_map_edit::brush_tools::BrushSweepParams
 struct qs_map_edit::brush_tools::BrushVerticesParams
 struct qs_map_edit::brush_tools::FlipParams
+struct qs_map_edit::brush_tools::ReplaceTextureParams
+struct qs_map_edit::brush_tools::Replaced
 struct qs_map_edit::brush_tools::Selection
 struct qs_map_edit::brush_tools::TurnParams
 struct qs_map_edit::brush_tools::VertexMove
@@ -627,6 +634,7 @@ use qs_map_edit::MAP_PASTE = prefabs::MAP_PASTE
 use qs_map_edit::MAP_PLACE_PREFAB = prefabs::MAP_PLACE_PREFAB
 use qs_map_edit::MAP_PREFABS = prefabs::MAP_PREFABS
 use qs_map_edit::MAP_REJECT = review::MAP_REJECT
+use qs_map_edit::MAP_REPLACE_TEXTURE = brush_tools::MAP_REPLACE_TEXTURE
 use qs_map_edit::MAP_RESOLVE = disk::MAP_RESOLVE
 use qs_map_edit::MAP_SAVE_PREFAB = prefabs::MAP_SAVE_PREFAB
 use qs_map_edit::MAP_SEARCH = issues::MAP_SEARCH
@@ -666,6 +674,8 @@ use qs_map_edit::Prefab = prefabs::Prefab
 use qs_map_edit::PrefabSaved = prefabs::PrefabSaved
 use qs_map_edit::Prefabs = prefabs::Prefabs
 use qs_map_edit::QuickFix = issues::QuickFix
+use qs_map_edit::ReplaceTextureParams = brush_tools::ReplaceTextureParams
+use qs_map_edit::Replaced = brush_tools::Replaced
 use qs_map_edit::ResolveParams = disk::ResolveParams
 use qs_map_edit::RoomInfo = inspect::RoomInfo
 use qs_map_edit::RoomShape = inspect::RoomShape
@@ -721,6 +731,7 @@ variant qs_map_edit::error::MapEditError::NoPalette
 variant qs_map_edit::error::MapEditError::NoProject
 variant qs_map_edit::error::MapEditError::NoRoom
 variant qs_map_edit::error::MapEditError::NoSelection
+variant qs_map_edit::error::MapEditError::NoTexture
 variant qs_map_edit::error::MapEditError::NoTextureSize
 variant qs_map_edit::error::MapEditError::NotContainer
 variant qs_map_edit::error::MapEditError::NotEmpty

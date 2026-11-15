@@ -17,7 +17,7 @@ use qs_wad::texture::DecodedTexture;
 
 use crate::map_browser::{FILTER_WIDTH, filter_shows};
 use crate::shell::name_field;
-use crate::strings::{Text, texture_count, wad_label};
+use crate::strings::{Text, replace_with, texture_count, wad_label};
 use crate::texture_import::{ImportChoice, ImportPreview};
 use crate::theme::{Theme, Token};
 
@@ -47,6 +47,8 @@ pub(crate) struct TextureBrowser {
     /// Each texture decoded so far, by name; `None` for one with nothing to show.
     pictures: HashMap<String, Option<TextureHandle>>,
     selected: Option<String>,
+    /// The replacement a texture's menu asked for: the texture replaced and its replacement.
+    replace: Option<(String, String)>,
     /// How many textures were decoded since the sources were set.
     decodes: usize,
     /// The image being imported, shown quantized before it is saved (P6-16).
@@ -99,6 +101,12 @@ impl TextureBrowser {
     /// The texture chosen, which the Properties panel can put on the selected brushes.
     pub(crate) fn selected(&self) -> Option<&str> {
         self.selected.as_deref()
+    }
+
+    /// Takes the replacement asked for in a texture's menu: the texture replaced and the one
+    /// put in its place (P7-08).
+    pub(crate) fn take_replace(&mut self) -> Option<(String, String)> {
+        self.replace.take()
     }
 
     /// How many textures were decoded since the sources were set.
@@ -259,6 +267,17 @@ impl TextureBrowser {
             if response.clicked() {
                 self.selected = Some(texture.name.clone());
             }
+            // TrenchBroom's Replace Material: the current texture, the one chosen, put in this
+            // one's place.
+            let current = self.selected.clone();
+            let _menu = response.clone().context_menu(|ui| {
+                if let Some(current) = current.filter(|c| !c.eq_ignore_ascii_case(&texture.name))
+                    && ui.button(replace_with(&current, &texture.name)).clicked()
+                {
+                    self.replace = Some((current, texture.name.clone()));
+                    ui.close();
+                }
+            });
             if texture.origin == TextureOrigin::Missing {
                 response.on_hover_text(Text::MapTextureMissing.get());
             }

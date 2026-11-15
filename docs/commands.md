@@ -115,6 +115,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.reject`](#mapreject) | Rejects hunks of the open map's review, every one when none are named: the parts they replaced are put back, as an edit undo takes back. |
 | [`map.remove_key`](#mapremove_key) | Removes every pair with a key from an entity of the open map. |
 | [`map.rename_key`](#maprename_key) | Renames a key in every open .map, keeping each value and its formatting: what to run once the person confirms, after symbol.rename renames a field a map may name. Nothing is saved. |
+| [`map.replace_texture`](#mapreplace_texture) | Puts one texture in another's place on the faces of brushes, or of every brush of the map, keeping their alignment (TrenchBroom's Replace Material). |
 | [`map.resolve`](#mapresolve) | After another program changed the open map's file while it had unsaved edits: keep disk to read the file again, or mine to keep the edits and save them over it. |
 | [`map.restore_backup`](#maprestore_backup) | Puts a backup of the open map in the editor in place of the map, unsaved, as an edit that undo takes back. |
 | [`map.rotate`](#maprotate) | Turns a point entity of the open map about the vertical: its angle, or its angles' yaw. |
@@ -5521,6 +5522,68 @@ Parameters:
     "to"
   ],
   "title": "RenameKeyParams",
+  "type": "object"
+}
+```
+
+## `map.replace_texture`
+
+Puts one texture in another's place on the faces of brushes, or of every brush of the map, keeping their alignment (TrenchBroom's Replace Material).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.replace_texture`.",
+  "properties": {
+    "brushes": {
+      "default": [],
+      "description": "The brushes it is replaced on; every brush of the map when empty.",
+      "items": {
+        "maxItems": 2,
+        "minItems": 2,
+        "prefixItems": [
+          {
+            "$ref": "#/$defs/EntityIndex"
+          },
+          {
+            "$ref": "#/$defs/BrushIndex"
+          }
+        ],
+        "type": "array"
+      },
+      "type": "array"
+    },
+    "from": {
+      "description": "The texture replaced, in any case.",
+      "type": "string"
+    },
+    "to": {
+      "description": "The texture put in its place.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "from",
+    "to"
+  ],
+  "title": "ReplaceTextureParams",
   "type": "object"
 }
 ```
