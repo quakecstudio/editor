@@ -18,6 +18,7 @@ qc-sema = { workspace = true }
 # play_from_here_e1m1: Play from here's compile and light of lq-e1m1 (P6-37).
 qs-map-bsp = { workspace = true }
 qs-map-light = { workspace = true }
+qs-map-vis = { workspace = true }
 quakec-studio = { workspace = true }
 # save_to_game: the project built and reloaded in the windowed preview host (P3-12).
 qs-workbench = { workspace = true }

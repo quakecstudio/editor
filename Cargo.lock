@@ -3569,6 +3569,7 @@ dependencies = [
  "qc-sema",
  "qs-map-bsp",
  "qs-map-light",
+ "qs-map-vis",
  "qs-workbench",
  "quakec-studio",
  "serde",

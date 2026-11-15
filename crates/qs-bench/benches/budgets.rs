@@ -237,6 +237,30 @@ fn play_from_here_e1m1(group: &mut BenchmarkGroup<'_, WallTime>) {
     });
 }
 
+/// A full compile of an id1-sized map (P7-04, MAP-14): LibreQuake's lq-e1m1 through the extended
+/// qbsp with no WAD, then full vis and full light, as the background full compile runs them.
+fn full_compile_e1m1(group: &mut BenchmarkGroup<'_, WallTime>) {
+    let path = std::env::var_os(MAP_FILE).unwrap_or_else(|| {
+        panic!("{MAP_FILE} is not set: run the benchmarks through cargo xtask bench")
+    });
+    let map = fs::read(path).expect("lq-e1m1.map reads");
+    let compiler = qs_map_bsp::Compiler::default().with_dialect(qs_map_bsp::Dialect::Extended);
+    group.bench_function("full_compile_e1m1", |bencher| {
+        bencher.iter(|| {
+            let compiled = compiler.compile(&map, None).expect("lq-e1m1 compiles");
+            let portals = compiled.portal_file.expect("lq-e1m1 is sealed");
+            let seen = qs_map_vis::Vis::new(qs_map_vis::Mode::default())
+                .run(&compiled.bsp, &String::from_utf8_lossy(&portals))
+                .expect("lq-e1m1 vises");
+            black_box(
+                Light::new(Sampling::Extra)
+                    .run(&seen)
+                    .expect("lq-e1m1 lights"),
+            )
+        });
+    });
+}
+
 /// The variable naming a game root holding `id1` (a Steam or GOG install, or LibreQuake's)
 /// that `save_to_game` plays in the windowed preview host; with none, as on the CI runners,
 /// which have no display and no game, the benchmark is a placeholder.
@@ -546,6 +570,7 @@ fn budgets(criterion: &mut Criterion) {
     save_to_game(&mut group);
     routes(&mut group);
     play_from_here_e1m1(&mut group);
+    full_compile_e1m1(&mut group);
     group.finish();
 }
 
