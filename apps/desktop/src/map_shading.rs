@@ -284,7 +284,7 @@ impl Scene {
         let mut images: Vec<Image> = Vec::new();
         let mut faces = Vec::new();
         for brush in self.brushes.iter().filter(|b| !hidden.contains(&b.entity)) {
-            for face in &brush.faces {
+            for face in brush.faces.iter().filter(|f| !is_unseen(&f.texture)) {
                 let slot = match names
                     .iter()
                     .position(|n| n.eq_ignore_ascii_case(&face.texture))
@@ -416,6 +416,30 @@ fn lit(path: &Path, palette: &Palette) -> Result<MapMesh, String> {
     Ok(builder.finish())
 }
 
+/// Whether a face of texture `name` is one the game never draws, so the textured view leaves
+/// it out as the lit one does: the skip, hint, clip, origin and trigger textures, in any case
+/// (QBSP-15.16).
+fn is_unseen(name: &str) -> bool {
+    UNSEEN
+        .iter()
+        .any(|unseen| name.eq_ignore_ascii_case(unseen))
+}
+
+/// The textures of [`is_unseen`].
+const UNSEEN: [&str; 11] = [
+    "skip",
+    "*waterskip",
+    "*slimeskip",
+    "*lavaskip",
+    "bevel",
+    "null",
+    "hint",
+    "hintskip",
+    "clip",
+    "origin",
+    "trigger",
+];
+
 /// The world and each brush entity's model at its origin, as the engine places them; triggers
 /// are left out, as the engine does not draw them.
 fn placements(bsp: &Bsp<'_>) -> Vec<Placement> {
@@ -450,7 +474,7 @@ fn placements(bsp: &Bsp<'_>) -> Vec<Placement> {
 }
 
 /// The start of a trigger's classname: `trigger_multiple`, `trigger_teleport` and the rest.
-const TRIGGER: &[u8] = b"trigger_";
+pub(crate) const TRIGGER: &[u8] = b"trigger_";
 
 /// A map coordinate as the renderer takes it.
 #[expect(

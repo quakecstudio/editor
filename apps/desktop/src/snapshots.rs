@@ -24,14 +24,18 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use eframe::egui::{self, Event, Key, Modifiers};
+use eframe::egui_wgpu;
 use egui_kittest::kittest::Queryable as _;
 use egui_kittest::{Harness, OsThreshold, SnapshotOptions};
 use qs_map_edit::uv::{FaceIndex, FaceRef};
 use qs_map_edit::{BrushIndex, EntityIndex};
+use qs_render::Offscreen;
 use serde_json::{Value, json};
 
 use crate::App;
 use crate::display::Display;
+use crate::map_view::DEPTH_FORMAT;
+use crate::map_view::tests::DepthRenderer;
 use crate::theme::{Contrast, Mode, Motion};
 
 /// The window's size in points, the play-loop mockup's.
@@ -163,6 +167,7 @@ fn scripts() -> Vec<Script> {
                     "map.open",
                     json!({ "path": keep_fixture().join("maps/keep.map") }),
                 ),
+                Step::Run("view.map_shading", json!({ "shading": "textured" })),
                 Step::Run("map.select", json!({ "entity": 2 })),
             ],
         },
@@ -186,6 +191,7 @@ fn scripts() -> Vec<Script> {
                     "map.open",
                     json!({ "path": keep_fixture().join("maps/keep.map") }),
                 ),
+                Step::Run("view.map_shading", json!({ "shading": "textured" })),
                 Step::Run("map.select", json!({ "entity": 3 })),
             ],
         },
@@ -197,6 +203,7 @@ fn scripts() -> Vec<Script> {
                     "map.open",
                     json!({ "path": keep_fixture().join("maps/keep.map") }),
                 ),
+                Step::Run("view.map_shading", json!({ "shading": "textured" })),
                 Step::Run(
                     "map.brush_shape",
                     json!({
@@ -235,6 +242,7 @@ fn scripts() -> Vec<Script> {
                     "map.open",
                     json!({ "path": keep_fixture().join("maps/keep.map") }),
                 ),
+                Step::Run("view.map_shading", json!({ "shading": "textured" })),
                 Step::Run("view.map_panes", json!({ "panes": "quad" })),
                 Step::Run("map.select", json!({ "entity": 2 })),
             ],
@@ -247,6 +255,7 @@ fn scripts() -> Vec<Script> {
                     "map.open",
                     json!({ "path": keep_fixture().join("maps/keep.map") }),
                 ),
+                Step::Run("view.map_shading", json!({ "shading": "textured" })),
                 Step::Run("map.brush_delete", json!({ "entity": 0, "brush": 2 })),
                 Step::Run(
                     "map.brush_texture",
@@ -263,6 +272,7 @@ fn scripts() -> Vec<Script> {
                     "map.open",
                     json!({ "path": keep_fixture().join("maps/keep.map") }),
                 ),
+                Step::Run("view.map_shading", json!({ "shading": "textured" })),
                 Step::Drop(brick_png, "wall"),
             ],
         },
@@ -274,6 +284,7 @@ fn scripts() -> Vec<Script> {
                     "map.open",
                     json!({ "path": keep_fixture().join("maps/keep.map") }),
                 ),
+                Step::Run("view.map_shading", json!({ "shading": "textured" })),
                 Step::Run(
                     "map.set_key",
                     json!({ "entity": 2, "key": "sped", "value": "200" }),
@@ -294,6 +305,7 @@ fn scripts() -> Vec<Script> {
                     "map.open",
                     json!({ "path": keep_fixture().join("maps/keep.map") }),
                 ),
+                Step::Run("view.map_shading", json!({ "shading": "textured" })),
                 Step::Run(
                     "map.brush_texture",
                     json!({ "entity": 0, "brushes": [2], "rotate": 30.0, "scale": [0.5, 0.5] }),
@@ -388,12 +400,22 @@ fn goldens() -> PathBuf {
 }
 
 /// A harness running the app, made from the harness's context before the first frame so the
-/// theme's fonts are in place when it draws.
+/// theme's fonts are in place when it draws, on a wgpu device with the window's depth buffer,
+/// which the map editor's textured and lit views draw on (P7-13).
 fn harness() -> Harness<'static, Option<App>> {
+    let state = egui_kittest::wgpu::create_render_state(
+        egui_kittest::wgpu::default_wgpu_setup(),
+        egui_wgpu::RendererOptions {
+            depth_stencil_format: Some(DEPTH_FORMAT),
+            ..egui_wgpu::RendererOptions::PREDICTABLE
+        },
+    );
     let mut harness = Harness::builder()
         .with_size(SIZE)
         .with_pixels_per_point(1.0)
-        .wgpu()
+        .renderer(DepthRenderer {
+            offscreen: Offscreen::from_state(state.clone(), DEPTH_FORMAT),
+        })
         .build_ui_state(
             |ui, app: &mut Option<App>| {
                 if let Some(app) = app {
@@ -402,7 +424,8 @@ fn harness() -> Harness<'static, Option<App>> {
             },
             None,
         );
-    let app = App::checked_on_the_frame(&harness.ctx, None).unwrap();
+    let mut app = App::checked_on_the_frame(&harness.ctx, None).unwrap();
+    app.shell_mut().set_render_state(Some(state));
     *harness.state_mut() = Some(app);
     harness
 }

@@ -126,4 +126,4 @@ fn seconds(value: f64) -> f32 {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

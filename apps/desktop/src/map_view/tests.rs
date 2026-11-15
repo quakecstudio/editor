@@ -36,8 +36,8 @@ use serde_json::json;
 
 /// egui-kittest's test renderer as `qs_render::Offscreen`, with a depth buffer in its render
 /// pass as the app's window has (`depth_buffer: 32`).
-struct DepthRenderer {
-    offscreen: Offscreen,
+pub(crate) struct DepthRenderer {
+    pub(crate) offscreen: Offscreen,
 }
 
 impl TestRenderer for DepthRenderer {

@@ -132,3 +132,39 @@ fn the_lit_view_places_brush_models_and_leaves_out_triggers() {
     assert_eq!(placements[1].model, 2);
     assert_eq!(placements[1].origin, [8.0, 0.0, 0.0]);
 }
+
+// No spec statement: P7-13: the textured view leaves out the faces the game never draws, tool
+// textures in any case, as the lit view does
+#[test]
+fn the_textured_view_leaves_out_unseen_textures() {
+    use std::collections::BTreeSet;
+
+    use qs_render::Look;
+
+    for unseen in [
+        "CLIP",
+        "skip",
+        "Hint",
+        "hintskip",
+        "origin",
+        "trigger",
+        "*waterskip",
+    ] {
+        assert!(super::is_unseen(unseen), "{unseen}");
+    }
+    for seen in ["wall", "clipper", "*water0", "sky4"] {
+        assert!(!super::is_unseen(seen), "{seen}");
+    }
+    let mut clip = floor_brush(0, 0.0);
+    clip.faces[0].texture = "clip".to_owned();
+    let scene = crate::map_scene::Scene {
+        brushes: vec![clip, floor_brush(1, 8.0)],
+        ..crate::map_scene::Scene::default()
+    };
+    let mesh = scene.textured_mesh(
+        &mut |_| super::missing(),
+        &BTreeSet::new(),
+        Look::QuakeSpasm,
+    );
+    assert_eq!(mesh.indices.len(), 6);
+}

@@ -26,10 +26,14 @@ use quakec_studio::map_view::DEPTH_FORMAT;
 use quakec_studio::strings::Text;
 use serde_json::{Value, json};
 
-/// Where the hall of lq_e1m1 is seen from, south of its coloured lights.
-const HALL: [f32; 3] = [-96.0, 560.0, 330.0];
+/// Where the hall of lq_e1m1 is seen from: east of its pillar, looking west.
+const HALL: [f32; 3] = [200.0, 900.0, 400.0];
 /// A red light of the hall: entity 185 of lq_e1m1, `_color 237 51 59`.
 const RED_LIGHT: usize = 185;
+
+/// LibreQuake's QuakeC is FTEQCC's dialect, with `#ifdef` for QuakeWorld.
+const MANIFEST: &str =
+    "[project]\ndialect = \"fteqcc\"\n\n[[module]]\nkind = \"ssqc\"\nsrc = \"progs.src\"\n";
 
 /// The compile profile the showcase compiles each map with.
 const PROFILE: &str = "Showcase";
@@ -69,6 +73,12 @@ impl TestRenderer for DepthRenderer {
         self.offscreen.update_textures(delta);
     }
 
+    #[expect(
+        clippy::arithmetic_side_effects,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "the window's size in pixels: a few thousand, rounded and held at 0"
+    )]
     fn render(
         &mut self,
         ctx: &egui::Context,
@@ -101,10 +111,20 @@ enum Step {
     HidePoints(Option<usize>),
 }
 
-/// A scene: its file name and its steps after the map opens.
+/// What a scene opens: a map of the game folder, compiled, or a QuakeC file of `qcsrc` at the
+/// start of a line holding some text.
+#[derive(Clone, Copy)]
+enum Opens {
+    /// The map at this path under `lq1/maps/src`.
+    Map(&'static str),
+    /// The QuakeC file, and the text whose line the editor shows.
+    Code(&'static str, &'static str),
+}
+
+/// A scene: its file name, what it opens and its steps after.
 struct Scene {
     name: &'static str,
-    map: &'static str,
+    opens: Opens,
     steps: Vec<Step>,
 }
 
@@ -118,28 +138,32 @@ fn scenes() -> Vec<Scene> {
             Step::Run("view.toggle_panel", json!({ "panel": "bottom" })),
         ]
     };
-    // The hall of lq_e1m1 its blue and red lights colour.
-    let hall = || Step::Look(HALL, 90.0, 8.0);
+    let hall = || Step::Look(HALL, 180.0, 10.0);
     let clear = || Step::HidePoints(None);
     vec![
         Scene {
+            name: "showcase-code",
+            opens: Opens::Code("weapons.qc", "void() W_FireRocket ="),
+            steps: Vec::new(),
+        },
+        Scene {
             name: "showcase-lit",
-            map: "e1/lq_e1m1.map",
+            opens: Opens::Map("e1/lq_e1m1.map"),
             steps: vec![lit(), hall(), clear()],
         },
         Scene {
             name: "showcase-lit-wide",
-            map: "e1/lq_e1m1.map",
+            opens: Opens::Map("e1/lq_e1m1.map"),
             steps: [vec![lit(), hall(), clear()], wide().into()].concat(),
         },
         Scene {
             name: "showcase-textured",
-            map: "e1/lq_e1m1.map",
-            steps: [vec![textured(), hall(), clear()], wide().into()].concat(),
+            opens: Opens::Map("e1/lq_e1m1.map"),
+            steps: [vec![textured(), clear()], wide().into()].concat(),
         },
         Scene {
             name: "showcase-light-reach",
-            map: "e1/lq_e1m1.map",
+            opens: Opens::Map("e1/lq_e1m1.map"),
             steps: [
                 vec![
                     lit(),
@@ -153,12 +177,17 @@ fn scenes() -> Vec<Scene> {
         },
         Scene {
             name: "showcase-quad",
-            map: "e1/lq_e1m1.map",
-            steps: vec![
-                lit(),
-                hall(),
-                Step::Run("view.map_panes", json!({ "panes": "quad" })),
-            ],
+            opens: Opens::Map("e1/lq_e1m1.map"),
+            steps: [
+                vec![
+                    lit(),
+                    hall(),
+                    clear(),
+                    Step::Run("view.map_panes", json!({ "panes": "quad" })),
+                ],
+                wide().into(),
+            ]
+            .concat(),
         },
     ]
 }
@@ -166,7 +195,11 @@ fn scenes() -> Vec<Scene> {
 fn main() -> ExitCode {
     let args = Args::parse();
     if let Err(error) = run(&args) {
-        tracing::error!(%error, "showcase");
+        // The one line the showcase prints: why it stopped.
+        #[expect(clippy::print_stderr, reason = "an example's command-line error")]
+        {
+            eprintln!("showcase: {error}");
+        }
         return ExitCode::FAILURE;
     }
     ExitCode::SUCCESS
@@ -190,18 +223,45 @@ fn run(args: &Args) -> Result<(), String> {
         {
             continue;
         }
-        let map = game.join("maps/src").join(scene.map);
         let mut harness = harness()?;
-        let app = harness.state_mut().as_mut().ok_or("no app")?;
-        let shell = app.shell_mut();
-        shell
-            .execute("project.open", json!({ "path": game }))
-            .map_err(|e| e.to_string())?;
-        shell
-            .execute("map.open", json!({ "path": map }))
-            .map_err(|e| e.to_string())?;
-        harness.run();
-        compiled(&mut harness, &map)?;
+        let map = match scene.opens {
+            Opens::Map(path) => {
+                let map = game.join("maps/src").join(path);
+                let app = harness.state_mut().as_mut().ok_or("no app")?;
+                let shell = app.shell_mut();
+                shell
+                    .execute("project.open", json!({ "path": game }))
+                    .map_err(|e| e.to_string())?;
+                shell
+                    .execute("map.open", json!({ "path": map }))
+                    .map_err(|e| e.to_string())?;
+                harness.run();
+                compiled(&mut harness, &map)?;
+                map
+            }
+            Opens::Code(file, text) => {
+                let code = args.librequake.join("qcsrc");
+                let manifest = code.join("quakec.toml");
+                if !manifest.exists() {
+                    std::fs::write(&manifest, MANIFEST).map_err(|e| e.to_string())?;
+                }
+                let path = code.join(file);
+                let source = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+                let offset = source
+                    .find(text)
+                    .ok_or_else(|| format!("{text} not in {file}"))?;
+                let app = harness.state_mut().as_mut().ok_or("no app")?;
+                let shell = app.shell_mut();
+                shell
+                    .execute("project.open", json!({ "path": code }))
+                    .map_err(|e| e.to_string())?;
+                shell
+                    .execute("file.open", json!({ "path": path, "offset": offset }))
+                    .map_err(|e| e.to_string())?;
+                harness.run();
+                path
+            }
+        };
         for step in &scene.steps {
             let app = harness.state_mut().as_mut().ok_or("no app")?;
             match step {
