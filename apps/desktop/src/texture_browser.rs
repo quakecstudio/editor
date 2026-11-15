@@ -9,11 +9,11 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use eframe::egui::{self, ColorImage, RichText, Sense, Stroke, TextureHandle, Ui, Vec2};
+use qs_map_edit::texture_import::DitherChoice;
+use qs_map_edit::textures::{BrowserTexture, MapTextures, TextureOrigin, TextureSources};
+use qs_map_edit::{MapDocument, MapRevision};
 #[cfg(test)]
 use qs_wad::texture::DecodedTexture;
-use qs_workbench::map_edit::{MapDocument, MapRevision};
-use qs_workbench::map_textures::{BrowserTexture, MapTextures, TextureOrigin, TextureSources};
-use qs_workbench::texture_import::DitherChoice;
 
 use crate::map_browser::{FILTER_WIDTH, filter_shows};
 use crate::strings::{Text, texture_count, wad_label};

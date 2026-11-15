@@ -1,0 +1,35 @@
+[package]
+name = "qs-map-edit"
+description = "Map editing: the open map, its entities, brushes, textures and layers, and the map commands that need no QuakeC"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+qs-commands = { workspace = true }
+# map.compare: the line diff of the map being edited against the one on disk.
+qs-diff = { workspace = true }
+qs-map = { workspace = true }
+# The report a compile gives the map view (MapReport::of).
+qs-map-bsp = { workspace = true }
+# A BSP's entities, which map.open edits when the map has no source.
+qs-bsp = { workspace = true }
+# The game's files, where textures and the palette are found.
+qs-vfs = { workspace = true }
+qs-wad = { workspace = true }
+# texture.import: a PNG read and quantized into the project's WAD.
+image = { workspace = true, features = ["png"] }
+schemars = { workspace = true, features = ["derive", "std"] }
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true, features = ["std"] }
+tracing = { workspace = true, features = ["std"] }
+
+[features]
+# The map context and fixtures of `testing`, for the workbench's map compile tests.
+testing = []
+
+[lints]
+workspace = true

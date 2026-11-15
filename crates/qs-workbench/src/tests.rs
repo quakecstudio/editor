@@ -568,3 +568,29 @@ fn quick_fixes_and_inlay_hints_through_the_commands() {
         .collect();
     assert_eq!(names, ["a", "b"]);
 }
+
+// No spec statement: P6-40: a map command's error reads the same when the workbench carries
+// it, and its cause is still reached
+#[test]
+fn the_workbench_shows_a_map_error_as_it_is() {
+    use std::error::Error as _;
+
+    use qs_map_edit::MapEditError;
+
+    assert_eq!(
+        WorkbenchError::from(MapEditError::NoMap).to_string(),
+        "no map is open"
+    );
+    let save = || MapEditError::Save {
+        path: PathBuf::from("a.map"),
+        error: std::io::Error::other("full"),
+    };
+    let carried = WorkbenchError::from(save());
+    assert_eq!(carried.to_string(), save().to_string());
+    assert_eq!(carried.to_string(), "a.map: cannot be written: full");
+    assert_eq!(
+        carried.source().map(ToString::to_string),
+        Some("full".to_owned())
+    );
+    assert!(WorkbenchError::from(MapEditError::NoMap).source().is_none());
+}

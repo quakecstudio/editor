@@ -19,15 +19,19 @@ mod code_style;
 mod debugger;
 mod disk_watch;
 mod editor;
+mod editors;
 mod entities;
 mod fallback;
+mod features;
 mod finder;
 mod game_guide;
 mod git_panel;
 pub mod icons;
 pub mod keymap;
+pub mod launch;
 mod map_browser;
 pub mod map_editor;
+mod map_feature;
 mod map_fields;
 mod map_groups;
 mod map_issues;
@@ -44,6 +48,8 @@ pub mod map_view;
 #[cfg(target_os = "macos")]
 pub mod menu;
 mod multibuffer;
+#[cfg(target_os = "macos")]
+pub mod open_documents;
 pub mod palette;
 mod picker;
 pub mod project;
@@ -175,6 +181,13 @@ impl App {
                         }
                     }
                 }
+            }
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let opened = open_documents::take();
+            if !opened.is_empty() {
+                self.shell.open_paths(opened);
             }
         }
         self.shell.ui(ui);

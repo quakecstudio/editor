@@ -3739,6 +3739,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "qs-map-edit"
+version = "2026.11.1"
+dependencies = [
+ "image",
+ "qs-bsp",
+ "qs-commands",
+ "qs-diff",
+ "qs-map",
+ "qs-map-bsp",
+ "qs-vfs",
+ "qs-wad",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "qs-map-light"
 version = "2026.11.1"
 dependencies = [
@@ -3766,6 +3784,7 @@ version = "2026.11.1"
 dependencies = [
  "qc-project",
  "qs-commands",
+ "qs-map-edit",
  "qs-paths",
  "qs-workbench",
  "rmcp",
@@ -3901,6 +3920,7 @@ dependencies = [
  "qs-commands",
  "qs-map",
  "qs-map-bsp",
+ "qs-map-edit",
  "qs-map-light",
  "qs-pak",
  "qs-paths",
@@ -3970,6 +3990,7 @@ dependencies = [
  "qs-install",
  "qs-map",
  "qs-map-bsp",
+ "qs-map-edit",
  "qs-map-light",
  "qs-map-vis",
  "qs-pak",
@@ -4027,6 +4048,7 @@ dependencies = [
  "qs-commands",
  "qs-engine",
  "qs-install",
+ "qs-map-edit",
  "qs-mcp",
  "qs-models",
  "qs-paths",
@@ -4058,6 +4080,9 @@ dependencies = [
  "egui_kittest",
  "image",
  "muda",
+ "objc2 0.6.5",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
  "qs-agent",
  "qs-bridge",
  "qs-bsp",
@@ -4066,6 +4091,7 @@ dependencies = [
  "qs-layout",
  "qs-log",
  "qs-map",
+ "qs-map-edit",
  "qs-mdl",
  "qs-models",
  "qs-paths",
@@ -4081,6 +4107,8 @@ dependencies = [
  "skrifa",
  "toml",
  "tracing",
+ "winit",
+ "winresource",
 ]
 
 [[package]]
@@ -6106,6 +6134,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "winresource"
+version = "0.1.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2bc6d36480b829272a5bdabf08e6dca8004761c1da7e35efef800540c66221b"
+dependencies = [
+ "version_check",
+]
+
+[[package]]
 name = "wit-bindgen"
 version = "0.57.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6200,6 +6237,7 @@ dependencies = [
  "qs-layout",
  "qs-map",
  "qs-map-bsp",
+ "qs-map-edit",
  "qs-models",
  "qs-pak",
  "qs-settings",

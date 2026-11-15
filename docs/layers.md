@@ -102,6 +102,7 @@ README says more.
 | L4 | `qs-sound` | The preview host's sound engine: channels, spatialization, ambient and static sounds, and the mixer, as id's snd_dma.c and snd_mix.c play them |
 | L5 | `qs-commands` | The QuakeC Studio command engine: one registry of commands with stable ids, JSON Schema parameters, undo steps and a panic guard |
 | L5 | `qs-layout` | The workbench layout: which panels are shown and their sizes, kept across restarts, and the commands that change it |
+| L5 | `qs-map-edit` | Map editing: the open map, its entities, brushes, textures and layers, and the map commands that need no QuakeC |
 | L5 | `qs-settings` | QuakeC Studio settings: user and project settings files, their schema, and the commands that read and change them |
 | L5 | `qs-templates` | New-project templates: starters from id's QuakeC, fetched by commit under their GPLv2 terms and checked by SHA-256, with quakec.toml and a sample test |
 | L5 | `qs-workbench` | The open project and file: the file tree, symbols and problems the panels list, and the commands that open a project or a file |

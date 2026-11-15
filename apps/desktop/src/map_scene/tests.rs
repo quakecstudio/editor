@@ -9,7 +9,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
-use qs_workbench::map_edit::EntityIndex;
+use qs_map_edit::EntityIndex;
 use qs_workbench::{Config, FsLoader, Workbench};
 
 use super::{ClassLook, LinkView, Scene, start_camera};
@@ -18,7 +18,7 @@ use super::{ClassLook, LinkView, Scene, start_camera};
 fn keep() -> Workbench<FsLoader> {
     let mut workbench = Workbench::new(FsLoader, Config::default());
     let map = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/keep/maps/keep.map");
-    workbench.open_map(&map).unwrap();
+    workbench.maps_mut().open_map(&map).unwrap();
     workbench
 }
 
@@ -170,7 +170,7 @@ fn a_bsp_brush_entity_is_boxed_by_its_submodel() {
     )
     .unwrap();
     let mut workbench = Workbench::new(FsLoader, Config::default());
-    workbench.open_map(&bsp).unwrap();
+    workbench.maps_mut().open_map(&bsp).unwrap();
     let scene = Scene::build(workbench.map().unwrap(), &HashMap::new(), &[], &mut |_| {
         None
     });
@@ -213,7 +213,7 @@ fn an_instance_draws_its_map_in_place() {
         ( 0 0 0 ) ( 1 0 0 ) ( 0 1 0 ) rock 0 0 0 1 1\n\
         ( 0 0 64 ) ( 0 1 64 ) ( 1 0 64 ) rock 0 0 0 1 1\n}\n}\n";
     let mut workbench = Workbench::new(FsLoader, Config::default());
-    workbench.open_map(&map).unwrap();
+    workbench.maps_mut().open_map(&map).unwrap();
     let document = workbench.map().unwrap();
     let mut asked = Vec::new();
     let scene = Scene::build(document, &HashMap::new(), &[], &mut |name| {

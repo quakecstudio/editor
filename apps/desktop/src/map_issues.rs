@@ -6,7 +6,7 @@
 //! select the same way. Each is a [`MapAction`] the shell runs as a command.
 
 use eframe::egui::{self, RichText, Ui};
-use qs_workbench::map_edit::{EntityIndex, MapFound, MapIssue, MapRevision, MapSearchParams};
+use qs_map_edit::{EntityIndex, MapFound, MapIssue, MapRevision, MapSearchParams};
 
 use crate::map_browser::FILTER_WIDTH;
 use crate::map_editor::MapAction;

@@ -157,7 +157,10 @@ implementing the `raw-window-handle` traits (winit's windows do), so only the de
 its own platform work inside its own crates. `unsafe_code` therefore stays `deny` in every crate. If a
 later need is proven, the `unsafe` goes in one platform crate with a module-level
 `#[expect(unsafe_code, reason = "...")]` and a `SAFETY:` comment on every block, and this
-section changes in the same PR.
+section changes in the same PR. The one exception so far is the desktop app's macOS-only
+`apps/desktop/src/open_documents.rs` (ADR-0024), which receives the files macOS opens with the
+app: its two functions each carry `#[expect(unsafe_code, reason = "...")]`, as narrow as the
+lint allows, and it stays in the app rather than a crate of its own for about 80 lines.
 
 Test code keeps `[lints] workspace = true`. As in vouch, each test module opts out of the
 no-panic lints locally with

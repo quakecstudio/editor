@@ -21,7 +21,7 @@ use qc_edict::system::{field_by_name, global_by_name};
 use qc_progs::Progs;
 use qc_types::{DefType, Etype, Slot};
 use qc_vm::convert::double_to_float;
-use qc_vm::{Machine, NoObserver, RunError, ServerState};
+use qc_vm::{Machine, NoObserver, Observer, RunError, ServerState};
 use qs_bsp::Bsp;
 use qs_vfs::Registration;
 
@@ -117,6 +117,18 @@ pub enum KeyFocus {
     Elsewhere,
 }
 
+/// The map's entities a prepared world spawns, with the deathmatch and skill they are chosen
+/// at (EDICT-8.4, DIFF-3.5).
+#[derive(Clone)]
+struct PendingSpawn {
+    /// The entity lump's text.
+    entities: Vec<u8>,
+    /// The `deathmatch` setting.
+    deathmatch: f32,
+    /// The clamped skill.
+    skill: i32,
+}
+
 /// A map's world: the VM with its entities spawned, linked in the world's collision. A clone
 /// is a snapshot the debugger replays a frame from (WORLD-9).
 #[derive(Clone)]
@@ -153,6 +165,9 @@ pub struct World {
     map: String,
     /// The edict each of the map's entities became, for the editor's live edits (MAP-12).
     map_entities: map_entities::MapEntities,
+    /// The map's entities waiting to spawn, from [`World::prepare`] until
+    /// [`World::spawn_map`] (WORLD-9.7).
+    pending_spawn: Option<PendingSpawn>,
 }
 
 /// What the host gives a world besides its map and progs.
@@ -310,12 +325,32 @@ impl World {
     /// fields, then the globals, then the entities (EDICT-4.1, EDICT-11.4, EDICT-8). The
     /// builtins link each entity in the world's collision (WORLD-8); `files` reads the other
     /// models the progs precaches, and `options` holds what the host loaded before the map.
+    /// It is [`World::prepare`] then [`World::spawn_map`].
     ///
     /// # Errors
     ///
     /// [`WorldError::Progs`] when the progs cannot back an edict store, and
     /// [`WorldError::Spawn`] when spawning fails.
     pub fn load(
+        progs: &Progs<'_>,
+        map: &str,
+        bsp: &Bsp<'_>,
+        files: ModelFiles,
+        options: LoadOptions,
+    ) -> Result<Self, WorldError> {
+        let mut world = Self::prepare(progs, map, bsp, files, options)?;
+        world.spawn_map(progs)?;
+        Ok(world)
+    }
+
+    /// The world of the map `map` before its entities spawn: the world's fields and the
+    /// globals (EDICT-4.1, EDICT-11.4), the entities kept for [`World::spawn_map`]. A host
+    /// keeps a clone of it to go on from a stop in the spawning (WORLD-9.7).
+    ///
+    /// # Errors
+    ///
+    /// [`WorldError::Progs`] when the progs cannot back an edict store.
+    pub fn prepare(
         progs: &Progs<'_>,
         map: &str,
         bsp: &Bsp<'_>,
@@ -397,6 +432,7 @@ impl World {
             loaded: false,
             map: map.to_owned(),
             map_entities: map_entities::MapEntities::default(),
+            pending_spawn: None,
         };
         let entities = bsp.entities();
         // EDICT-4.1: the world's fields.
@@ -421,22 +457,45 @@ impl World {
         // EDICT-11.4: `deathmatch` and `coop` from the settings (DIFF-3.4).
         world.set_global("deathmatch", Slot::from_f32(deathmatch));
         world.set_global("coop", Slot::from_f32(coop));
-        // EDICT-8: the entities, at the settings' skill and deathmatch (DIFF-3.5).
+        world.pending_spawn = Some(PendingSpawn {
+            entities: entities.to_vec(),
+            deathmatch,
+            skill,
+        });
+        Ok(world)
+    }
+
+    /// Spawns the map's entities [`World::prepare`] kept, at the settings' skill and deathmatch
+    /// (EDICT-8, DIFF-3.5), each spawn function watched by the debugger when there is one
+    /// (WORLD-9.6); then the server is active. Nothing is spawned a second time.
+    ///
+    /// # Errors
+    ///
+    /// [`WorldError::Spawn`] when spawning fails, or a debugger stopped it (VM-20.1's
+    /// `interrupted`).
+    pub fn spawn_map(&mut self, progs: &Progs<'_>) -> Result<(), WorldError> {
+        let Some(pending) = self.pending_spawn.take() else {
+            return Ok(());
+        };
+        if let Some(debugger) = &mut self.builtins.debugger {
+            debugger.begin_frame();
+        }
         let mut spawner = Spawner {
-            world: &mut world,
+            world: self,
             progs,
             state: ServerState::Loading,
+            watch: SpawnWatch::Debugger,
         };
         let spawned = spawn::load_from_file(
             &mut spawner,
-            entities,
-            Deathmatch::from_setting(deathmatch),
-            skill,
+            &pending.entities,
+            Deathmatch::from_setting(pending.deathmatch),
+            pending.skill,
         )
         .map_err(WorldError::Spawn)?;
-        world.map_entities = map_entities::MapEntities::loaded(&world, &spawned);
-        world.builtins.mock.engine_mut().server_active = true;
-        Ok(world)
+        self.map_entities = map_entities::MapEntities::loaded(self, &spawned);
+        self.builtins.mock.engine_mut().server_active = true;
+        Ok(())
     }
 
     /// The rest of `SV_SpawnServer`: the two settle frames, run without the `frametime`
@@ -575,7 +634,7 @@ impl World {
         }
     }
 
-    /// The debugger the frames run with, `None` to run without one (WORLD-9.1).
+    /// The debugger the frames run with, `None` to run without one (WORLD-9.6).
     pub fn set_debugger(&mut self, debugger: Option<Debugger>) {
         self.builtins.debugger = debugger;
     }
@@ -953,6 +1012,18 @@ struct Spawner<'a, 'p> {
     /// precache builtins work, active for an entity spawned in play, where they stop the run
     /// (`PF_precache_model`: "Precache can only be done in spawn functions").
     state: ServerState,
+    /// Whether the debugger watches the spawn functions: the level's load's, not an entity
+    /// spawned in play or read from a save (WORLD-9.6).
+    watch: SpawnWatch,
+}
+
+/// Whether a [`Spawner`]'s spawn functions run watched by the debugger (WORLD-9.6).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SpawnWatch {
+    /// The level's load: the debugger, when there is one, watches each spawn function.
+    Debugger,
+    /// Run with no debugger.
+    Unwatched,
 }
 
 impl SpawnHost for Spawner<'_, '_> {
@@ -1024,13 +1095,27 @@ impl SpawnHost for Spawner<'_, '_> {
         // EDICT-8.6: set self to the entity and call the function.
         let value = self.world.entity_value(edict.index());
         self.world.set_global("self", Slot::from_i32(value));
-        self.world.machine.execute_program(
+        // WORLD-9.6: the level's spawn functions run watched by the debugger, lent so the
+        // builtins and it are not borrowed twice; an entity spawned in play runs without it.
+        let mut debugger = match self.watch {
+            SpawnWatch::Debugger => self.world.builtins.debugger.take(),
+            SpawnWatch::Unwatched => None,
+        };
+        let observer: &mut dyn Observer = match debugger.as_mut() {
+            Some(debugger) => debugger,
+            None => &mut NoObserver,
+        };
+        let outcome = self.world.machine.execute_program(
             self.progs,
             self.state,
             &mut self.world.builtins,
-            &mut NoObserver,
+            observer,
             function,
-        )
+        );
+        if debugger.is_some() {
+            self.world.builtins.debugger = debugger;
+        }
+        outcome
     }
 
     fn free(&mut self, edict: EdictNumber) {

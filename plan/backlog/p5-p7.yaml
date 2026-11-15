@@ -1024,7 +1024,7 @@ groups:
     depends:
     - P6-12
     summary: |
-      The Phase 6 gate review (docs/gates/p6.md) compiled a new map built from brushes with qs-map-bsp, qs-map-vis and qs-map-light and no WAD, put it in a game's maps folder and ran `quakec-engine -basedir <game> --timerefresh -300 0 46 <map>`. The host stops with `buffer slice can not be empty` from wgpu-30.0.1 `src/api/buffer.rs:683`, exit 101, in `qs_render::gpu::MapRenderer::draw_world` (`crates/qs-render/src/gpu.rs:971`, `self.vertices.slice(..)`): no face has a texture, so the world's vertex buffer is empty. The same map compiled with a WAD holding its six textures draws, exit 0. New brushes take `__TB_empty` when no texture is chosen (`crates/qs-workbench/src/map_edit/brushes.rs:38`), which no WAD holds, so Play from here on a new map with no WAD reaches this panic. The CI tests of Play from here and of the compile profiles play the map in qs-sim only and never draw it.
+      The Phase 6 gate review (docs/gates/p6.md) compiled a new map built from brushes with qs-map-bsp, qs-map-vis and qs-map-light and no WAD, put it in a game's maps folder and ran `quakec-engine -basedir <game> --timerefresh -300 0 46 <map>`. The host stops with `buffer slice can not be empty` from wgpu-30.0.1 `src/api/buffer.rs:683`, exit 101, in `qs_render::gpu::MapRenderer::draw_world` (`crates/qs-render/src/gpu.rs:971`, `self.vertices.slice(..)`): no face has a texture, so the world's vertex buffer is empty. The same map compiled with a WAD holding its six textures draws, exit 0. New brushes take `__TB_empty` when no texture is chosen (`crates/qs-map-edit/src/brushes.rs:38`), which no WAD holds, so Play from here on a new map with no WAD reaches this panic. The CI tests of Play from here and of the compile profiles play the map in qs-sim only and never draw it.
     environment: |
       macOS (Apple M5), main at c702f4cc, release build; LibreQuake lite as the game; the map is the gate review's two rooms, a corridor with a func_door, a func_button, stairs and three lights, written with no WAD key
     deliverable:
@@ -1148,7 +1148,7 @@ groups:
     - 'layers.toml and xtask/src/layers.rs: a rule that qs-map-edit depends directly on no qc-* crate, qs-workbench or qs-engine, checked by cargo xtask layers'
     - 'A test in crates/qs-tests/tests/it pinning the command ids of the CLI''s registry and of MCP''s, written before any command moves'
     acceptance:
-    - 'Behaviour is unchanged: the command ids of the CLI and of MCP are what they were, docs/commands.md does not change, and every test passes with no change but moved paths, the HasMap implementation each command context gains, and the error variants three assertions name'
+    - 'Behaviour is unchanged: the command ids of the CLI and of MCP are what they were, docs/commands.md does not change, and every test passes. The map editor''s tests run on qs-map-edit''s own map context, whose project answers what each test gives it, in place of a Workbench; the workbench keeps tests that run map.issues and map.fix and the map check through its own QuakeC, so the seam is tested end to end'
     - 'cargo xtask layers fails when a qc-* crate is added to qs-map-edit''s dependencies, shown by a test; docs/api/qs-map-edit.txt names no qc_ path'
     - 'The text of every error a map command returns is what it was (WorkbenchError carries MapEditError and shows it unchanged)'
     - 'No ratchet is lowered, cargo xtask conventions passes with no new CONV-17 baseline line, and a baseline line changes only to follow moved code'
@@ -1168,8 +1168,8 @@ groups:
     - P6-39
     - P6-40
     deliverable:
-    - 'apps/desktop/src/features.rs: one Features struct owning a struct per feature (editors, project, agent, map, entities, git, terminal, debugger), each in its own module with the fields and methods that leave Shell; a closed FeatureAction enum the draw methods return and a closed ShellRequest enum by which one feature asks another, or the window, for something'
-    - 'apps/desktop/src/shell.rs: the window only (session, theme, layout, tabs, palette, finder, keymap, menu, host, toolbar, status bar), naming no feature but Features, at about 1,200 lines'
+    - 'apps/desktop/src/features.rs: one Features struct owning a struct per feature (editors, project, agent, map with the Entities outliner and Properties panel it edits, git, terminal, debugger), each in its own module with the fields and methods that leave Shell; a closed FeatureAction enum the draw methods return and a closed ShellRequest enum by which one feature asks another, or the window, for something'
+    - 'apps/desktop/src/shell.rs: the window (session, theme, layout, tabs, palette, finder, keymap, menu, host, toolbar, status bar, the centre tabs drawing) and the routing between features that has to run at once and in order (jump, an editor request, the pickers, the second pane, the outline, an entity action), holding no feature state of its own: every feature field is in Features. The routing stays because each step of it reaches two or three features and must take effect before the next'
     - 'A method found to be logic rather than drawing or dispatch moved to a command where that is small, and listed in the PR where it is not'
     acceptance:
     - 'Behaviour is unchanged: panels are drawn from the state the frame began with and their actions carried out after, each request handled at once and in order, as now; the desktop tests and snapshot tests pass with no change but moved paths'
@@ -1178,6 +1178,37 @@ groups:
     - 'A recorded run of the app: a project, a map and the agent panel opened, the Git and Terminal tabs used, an entity edited while the game plays, and the editor following a breakpoint stop'
     verify:
     - 'cargo xtask ci; the recorded run in the PR'
+  - key: P6-42
+    title: 'Breakpoints in spawn functions stop the game when a level loads'
+    labels:
+    - L4-bridges
+    - area:preview
+    - type:bug
+    size: M
+    summary: |
+      A breakpoint in a spawn function, such as func_door's in LibreQuake's doors.qc, does not stop the
+      game when the level loads again with preview.restart (or changelevel). WORLD-9.1 runs the map's
+      spawn functions without a debugger, and the host gives the next level its breakpoints only after it
+      has loaded. A modder setting a breakpoint there expects it to stop; it will (Justin, 2026-11-14:
+      the most intuitive choice, better than TrenchBroom, which cannot debug QuakeC at all).
+    environment: |
+      Found by the recorded run of #942 at 3dd3edea on macOS: the desktop app driven over its socket,
+      LibreQuake's codebase and lq-e0m1, the LibreQuake lite assets.
+    reqs:
+    - ENG-4
+    - GOAL-3
+    depends:
+    - P6-41
+    deliverable:
+    - 'crates/qs-sim: World::load running the map''s spawn functions with a debugger when given one; a stop in a spawn function returns the partly loaded world and where it stopped, and going on replays the load from its inputs, skipping the statements already run, as WORLD-9.2 replays a frame'
+    - 'apps/quakec-engine: a level started by map, restart or changelevel gets the breakpoints before it loads, not after, and the game is paused at a stop during the load'
+    - 'docs/spec/engine/world.md: WORLD-9.1 withdrawn (spawn functions run without a debugger) and replaced by statements that the load runs with the debugger and how a stop in it is gone on from; tests citing them'
+    acceptance:
+    - 'A breakpoint in a spawn function stops the game when the level loads after preview.restart and after changelevel, and the editor follows the stop, shown by a qs-sim test and a host test'
+    - 'Going on from a stop in a spawn function finishes the load with the same world as a load with no breakpoint, shown by a test comparing the two'
+    - 'A level with no breakpoints in spawn functions loads as before; the simulation and view differentials pass'
+    verify:
+    - cargo xtask ci; cargo xtask bridge-client on LibreQuake; the recorded run of #942 repeated with the breakpoint in func_door
   - key: P6-14
     title: Phase 6 gate review
     labels:
@@ -1230,6 +1261,7 @@ groups:
     - P6-39
     - P6-40
     - P6-41
+    - P6-42
     deliverable:
     - docs/gates/p6.md
     acceptance:

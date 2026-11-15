@@ -24,10 +24,11 @@ use qs_bsp::{
     BSP_HEADER_LUMPS, BSP_MAX_MAP_HULLS, BSP_NUM_AMBIENTS, Bsp, BspVersion, ClipNode, Leaf, Lump,
     Model, Node, Plane,
 };
+use qs_sim::debug::{BreakpointEdit, Debugger, resolve};
 use qs_sim::{LoadOptions, World};
 use serde_json::{Value, json};
 
-use super::{Eye, Game, HostAction, NextLevel, Placement, Reporting, Screen};
+use super::{Eye, Game, HeldSpawn, HostAction, NextLevel, Placement, Reporting, Screen};
 use crate::screenshot::Frame;
 
 /// The QuakeC the tests run: a crate the map places, a counter `StartFrame` raises, a
@@ -1123,7 +1124,7 @@ fn events_named(game: &mut Game, method: &str) -> Vec<Value> {
         .collect()
 }
 
-// spec WORLD-9.1, WORLD-9.4: a breakpoint at a line of a monster's think stops the frame there,
+// spec WORLD-9.6, WORLD-9.4: a breakpoint at a line of a monster's think stops the frame there,
 // raising breakpoint/hit with its location and self, then state/changed to paused
 // spec WORLD-9.3, WORLD-9.2: stepping over and out replays the frame; resume runs it on
 // spec WORLD-9.5: self's fields are inspected and watched where it stopped
@@ -1282,7 +1283,7 @@ fn a_scripted_debug_session() {
     );
 }
 
-// spec WORLD-9.1: with no debugger a frame runs for the frametime it is given, as without one
+// spec WORLD-9.6: with no debugger a frame runs for the frametime it is given, as without one
 #[test]
 fn a_frame_runs_for_its_frametime() {
     let (mut game, _session) = game();
@@ -1567,4 +1568,143 @@ fn window_place_refuses_a_bad_frame() {
 #[test]
 fn a_breakpoint_id_reads_back() {
     assert_eq!(super::debug::BreakpointId::new(7).get(), 7);
+}
+
+// spec WORLD-9.7: a level started from a game with a breakpoint in a spawn function spawns with
+// it and pauses there, raising breakpoint/hit; resuming spawns on, settles the level and lets
+// the player in; a game with no breakpoint starts its next level unwatched
+#[test]
+fn a_breakpoint_in_a_spawn_function_stops_the_next_level() {
+    let dog = "{\n\"classname\" \"monster_dog\"\n\"origin\" \"0 0 40\"\n}\n";
+    let (mut game, mut session) = game_with(dog);
+    assert!(
+        game.level_debugger().is_none(),
+        "no breakpoint, no debugger"
+    );
+    let line = source_line("void() monster_dog = {");
+    let set = call(
+        &mut game,
+        &mut session,
+        "breakpoint/set",
+        &json!({ "file": "t.qc", "line": line }),
+    )
+    .unwrap();
+    assert_eq!(set["location"]["function"], "monster_dog");
+    let debugger = game
+        .level_debugger()
+        .expect("the breakpoint goes to the next level");
+
+    // The next level, as `load_map` spawns it for `restart` or `changelevel`.
+    let (bytes, lines) = progs_with_lines();
+    let progs = Progs::read(&bytes).unwrap();
+    let lump = format!("{{\n\"classname\" \"worldspawn\"\n}}\n{dog}");
+    let map = floor(Box::leak(lump.into_bytes().into_boxed_slice()));
+    let mut world = World::prepare(
+        &progs,
+        "test",
+        &map,
+        Rc::new(|_| None),
+        LoadOptions::default(),
+    )
+    .unwrap();
+    let held = HeldSpawn::spawn(&mut world, &progs, debugger)
+        .unwrap()
+        .expect("the spawning stops in monster_dog");
+    let level = NextLevel {
+        map: "test".to_owned(),
+        carried: None,
+        host: world.host_state(),
+    };
+    let mut next = Game::new(world, bytes.clone(), Reporting::Bridge);
+    next.set_lines(lines);
+    next.hold_load(held, level);
+    next.carry_from(game);
+    assert_eq!(
+        next.state,
+        super::State::Paused,
+        "the load stopped in the spawn function"
+    );
+    let hits = events_named(&mut next, "breakpoint/hit");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0]["location"]["function"], "monster_dog");
+    assert_eq!(hits[0]["self"], json!(2), "the dog is edict 2");
+    assert_eq!(
+        next.world()
+            .evaluate(&progs, None, "self.nextthink")
+            .unwrap(),
+        qs_sim::QcValue::Float(0.0),
+        "its spawn function has not run"
+    );
+    assert!(next.host_action().is_none(), "the load is held");
+
+    let mut next_session = Session::new();
+    let init = request(
+        0,
+        "initialize",
+        &json!({ "protocolVersion": "1.0", "client": { "name": "test" } }),
+    );
+    next_session.handle(&mut next, init);
+    call(&mut next, &mut next_session, "resume", &json!({})).unwrap();
+    assert_eq!(next.state, super::State::Running);
+    assert!(
+        !next.frame(0.1),
+        "a load whose spawning ended runs no frame before the level loads again"
+    );
+    assert!(
+        next.world()
+            .evaluate(&progs, None, "self.nextthink")
+            .is_ok_and(|value| value != qs_sim::QcValue::Float(0.0)),
+        "the spawning ran to its end"
+    );
+    match next.host_action() {
+        Some(HostAction::Spawned(level)) => assert_eq!(level.map, "test"),
+        other => panic!("the level loads again: {other:?}"),
+    }
+    assert!(next.host_action().is_none(), "asked for once");
+}
+
+// spec WORLD-9.7: a level whose spawning does not stop loads as a level with no debugger,
+// settled and connected without one
+#[test]
+fn a_breakpoint_outside_the_spawn_functions_loads_the_level_at_once() {
+    let dog = "{\n\"classname\" \"monster_dog\"\n\"origin\" \"0 0 40\"\n}\n";
+    let (bytes, lines) = progs_with_lines();
+    let progs = Progs::read(&bytes).unwrap();
+    let lump = format!("{{\n\"classname\" \"worldspawn\"\n}}\n{dog}");
+    let map = floor(Box::leak(lump.into_bytes().into_boxed_slice()));
+    let prepare = || {
+        World::prepare(
+            &progs,
+            "test",
+            &map,
+            Rc::new(|_| None),
+            LoadOptions::default(),
+        )
+        .unwrap()
+    };
+    // A line of the dog's think, which runs in the settle frames.
+    let line = i32::try_from(source_line("    self.frags = self.frags + 1;")).unwrap();
+    let think = resolve(&progs, &lines, "t.qc", line).unwrap();
+    let mut debugger = Debugger::new(lines);
+    debugger.set_breakpoint(think, BreakpointEdit::Set);
+    let mut world = prepare();
+    let held = HeldSpawn::spawn(&mut world, &progs, debugger).unwrap();
+    assert!(held.is_none(), "nothing stopped the spawning");
+    assert!(
+        world.debugger().is_none(),
+        "the level settles with no debugger"
+    );
+    let mut plain = prepare();
+    plain.spawn_map(&progs).unwrap();
+    for world in [&mut world, &mut plain] {
+        world.settle(&progs).unwrap();
+        world.connect(&progs).unwrap();
+    }
+    for expression in ["self.nextthink", "self.health"] {
+        assert_eq!(
+            world.evaluate(&progs, None, expression).unwrap(),
+            plain.evaluate(&progs, None, expression).unwrap(),
+            "{expression}"
+        );
+    }
 }

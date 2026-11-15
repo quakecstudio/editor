@@ -67,7 +67,7 @@ impl args::Args {
                 ..args.clone()
             };
             let start = std::time::Instant::now();
-            let loaded = args.load_map(&args.map, None, None, None)?;
+            let loaded = args.load_map(&args.map, None, None, None, None)?;
             let line = loaded.timerefresh(start.elapsed(), eye)?;
             let mut out = std::io::stdout().lock();
             std::io::Write::write_all(&mut out, format!("{line}\n").as_bytes())
@@ -83,7 +83,7 @@ impl args::Args {
                 .map_err(|error| format!("{}: {error}", script.display()))?;
             let script = view_script::ViewScript::parse(&text)?;
             // `load` keeps the sound for a view script (VIEWDIFF-1.3).
-            let loaded = args.load_map(&script.map, None, None, None)?;
+            let loaded = args.load_map(&script.map, None, None, None, None)?;
             let size = args
                 .view_size
                 .as_deref()
@@ -96,11 +96,11 @@ impl args::Args {
                 nosound: true,
                 ..args.clone()
             };
-            let loaded = args.load_map(&args.map, None, None, None)?;
+            let loaded = args.load_map(&args.map, None, None, None, None)?;
             let path = args.bridge.as_deref().ok_or("--headless needs -bridge")?;
             return args.run_headless(loaded, listen(path)?);
         }
-        let loaded = args.load_map(&args.map, None, None, None)?;
+        let loaded = args.load_map(&args.map, None, None, None, None)?;
         let bridge = match &args.bridge {
             Some(path) => Some(listen(path)?),
             None => None,

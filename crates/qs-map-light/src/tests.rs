@@ -224,7 +224,7 @@ fn bad_entity_text_stops_the_run() {
     assert!(entities("{ }\n".repeat(1024).as_bytes()).is_ok());
 }
 
-// spec LIGHT-1.7: the extended dialect has none of light's fixed tables
+// spec LIGHT-1.9: the extended dialect has none of light's fixed tables
 #[test]
 fn the_extended_dialect_has_no_fixed_tables() {
     let many = "{ \"classname\" \"info_null\" }\n".repeat(1100);
@@ -405,7 +405,7 @@ fn with_axes(bytes: &[u8], axes: impl Fn([[f32; 4]; 2]) -> [[f32; 4]; 2]) -> Vec
     out
 }
 
-// spec LIGHT-1.7, LIGHT-3.2, LIGHT-3.6:
+// spec LIGHT-1.10, LIGHT-3.2, LIGHT-3.6:
 // a face over 17 luxels, and a texture axis at right angles to a face, stop the run in the id
 // dialect; the extended one leaves such a face unlit with a warning and lights the rest
 #[test]
@@ -720,7 +720,7 @@ fn old_lighting_is_not_read() {
     assert_eq!(Light::default().run(&valve), Err(LightError::Format));
 }
 
-// spec LIGHT-1.5, LIGHT-1.7: a lighting lump past MAX_MAP_LIGHTING stops the run in the id
+// spec LIGHT-1.5, LIGHT-1.9: a lighting lump past MAX_MAP_LIGHTING stops the run in the id
 // dialect only; a lump of exactly it does not
 #[test]
 fn lighting_has_light_s_limit_in_the_id_dialect() {

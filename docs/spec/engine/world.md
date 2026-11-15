@@ -274,13 +274,9 @@ statements are what each asks of the world.
 
 ### Behaviour
 
-- **WORLD-9.1** A world may run its frames with a debugger, the VM's observer for every run a
-  frame starts (thinks, touches, the client's functions, physics callbacks); runs outside a
-  frame, such as the map's spawn functions, run without one. The debugger counts the
-  statements a frame asks about from 0 and stops the run before a statement its rule names,
-  recording the count, the function, the statement, the call depth and the breakpoint if one;
-  the frame then fails with VM-20.1's `interrupted`. With no breakpoint and its rule to stop at
-  breakpoints, or set to finish, it stops nothing and the frames run as without it.
+- **WORLD-9.1** **Withdrawn** 2026-11-14: it ran the map's spawn functions without a debugger,
+  so a breakpoint in one never stopped when a level loaded, where a modder setting it expects it
+  to (P6-42); replaced by WORLD-9.6 and WORLD-9.7.
 - **WORLD-9.2** A world is cloned before a frame a debugger may stop. A stop is gone on from by
   replaying the frame from that clone with a rule that skips the statements the stop's count
   covers: the world is deterministic (MOVE-6, DIFF-16), so the replay runs the same
@@ -307,6 +303,24 @@ statements are what each asks of the world.
   a field read from what is not an entity, or other text has no value. The frame's function's
   locals are read where they live, in the globals, so an outer frame of a recursive function
   reads the innermost one's.
+- **WORLD-9.6** A world may run with a debugger, the VM's observer for every run a frame starts
+  (thinks, touches, the client's functions, physics callbacks) and for each spawn function the
+  level's load runs (EDICT-8.6); an entity spawned during play, by `entity/spawn` or a live
+  edit, runs without it. The debugger counts the statements a frame, or the load's spawning,
+  asks about from 0 and stops the run before a statement its rule names, recording the count,
+  the function, the statement, the call depth and the breakpoint if one; the frame, or the
+  spawning, then fails with VM-20.1's `interrupted`. With no breakpoint and its rule to stop at
+  breakpoints, or set to finish, it stops nothing and the world runs as without it.
+- **WORLD-9.7** A level's load is its preparation, the world's fields and the globals
+  (EDICT-4.1, EDICT-11.4), then the spawning of the map's entities (EDICT-8). A level started
+  by `map`, `restart` or `changelevel` has the breakpoints before its spawning. A spawning that
+  does not stop takes the debugger off, and the level settles and lets the player in as with no
+  debugger. A stop holds the load: the host keeps the prepared world as the clone the stop is
+  gone on from, as WORLD-9.2 keeps a frame's, runs no frame, and replays the spawning from it
+  with a rule that skips the statements the stop's count covers. Once a replayed spawning
+  ends, the host loads the level again with no debugger, so the level that plays is the one a
+  load with no breakpoint makes.
+
 ## WORLD-10 Reloading the progs
 
 **Source:** this project's design (P3-03, [#91](https://github.com/quakecstudio/editor/issues/91)):

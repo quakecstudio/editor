@@ -13,7 +13,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use qs_map::{MapFile, TexDef, qbsp};
-use qs_workbench::map_edit::OutlineRow;
+use qs_map_edit::OutlineRow;
 use qs_workbench::{Config, FsLoader, Workbench};
 
 /// Every `.map` file under `dir`, sorted.
@@ -83,7 +83,10 @@ fn outline_once(path: &Path, count: usize) -> Result<(), String> {
         }
     }
     let mut workbench = Workbench::new(FsLoader, Config::default());
-    let document = workbench.open_map(path).map_err(|e| e.to_string())?;
+    let document = workbench
+        .maps_mut()
+        .open_map(path)
+        .map_err(|e| e.to_string())?;
     let mut seen = Vec::new();
     walk(&document.outline(None), &mut seen);
     seen.sort_unstable();

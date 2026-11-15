@@ -22,6 +22,10 @@ use qs_workbench::{HunkId, StagedHunk};
 use crate::shell::name_field;
 use crate::strings::{Text, queued_count, tokens_used};
 
+mod feature;
+
+pub(crate) use feature::AgentFeature;
+
 #[cfg(test)]
 mod tests;
 

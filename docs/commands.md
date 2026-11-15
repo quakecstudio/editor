@@ -102,7 +102,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.outline`](#mapoutline) | The open map's outline: the default layer and each layer, their groups and linked groups, then their entities by classname and targetname, with brush counts; with filter, only what holds the text and what is around it. |
 | [`map.place`](#mapplace) | Places a point entity of a classname at an origin in the open map, with the keys given, and selects it. |
 | [`map.place_prefab`](#mapplace_prefab) | Copies a prefab into the open map with its origin at a point on the grid: its world's brushes into the world, its other entities after the map's. |
-| [`map.play_from_here`](#mapplay_from_here) | Compiles the open map fast, with no vis and fast light, into the project's build, starts the game on it and puts the player at a point, facing a way: the map view's camera (MAP-13). |
+| [`map.play_from_here`](#mapplay_from_here) | Compiles the open map fast, with no vis and fast light, into the project's build, starts the game on it and puts the player's eye at a point, facing a way: the map view's camera (MAP-13). |
 | [`map.portals`](#mapportals) | Reads the portal file the open map's last compile wrote beside it, each portal's points, to show where the map's leaves meet. |
 | [`map.prefabs`](#mapprefabs) | Lists the .map files in the project's prefabs folder. |
 | [`map.profiles`](#mapprofiles) | Lists the compile profiles: the built-in Full and Fast, then the project's own from compile-profiles.toml, each its name and its tasks. |
@@ -126,6 +126,8 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.textures`](#maptextures) | Lists the open map's textures: those of the WADs its world names, found in the project, beside the map or in the game, and of the BSP it was opened from, each with its size and how many faces use it, and the names its faces use that nothing holds. |
 | [`map.unlock_all`](#mapunlock_all) | Unlocks every entity of the open map locked in the editor; a locked layer stays locked. |
 | [`map.unstage`](#mapunstage) | Ends the open map's review when nothing waits in it, as after an agent's map command that changed nothing; a review with hunks is left open. |
+| [`paths.open`](#pathsopen) | Opens folders as projects, and files in the nearest project above each (a folder holding quakec.toml or progs.src): a .map or .bsp in the map editor, any other file in the editor. A file outside every project opens in the open project, or opens its folder when none is open. |
+| [`paths.take_opened`](#pathstake_opened) | Takes what the last paths.open opened, once, or null: the desktop app shows it and comes to the front when another launch sent the paths. |
 | [`preview.breakpoint`](#previewbreakpoint) | Adds a breakpoint at a line of a file, or takes it away when there is one; set in the running game too and in each game that starts. |
 | [`preview.choose_game`](#previewchoose_game) | Chooses the folder the preview reads the game from, in place, and says what it holds; a folder that cannot be played is not kept. |
 | [`preview.console`](#previewconsole) | Runs a command in the running game's console. |
@@ -4831,7 +4833,7 @@ Parameters:
 
 ## `map.play_from_here`
 
-Compiles the open map fast, with no vis and fast light, into the project's build, starts the game on it and puts the player at a point, facing a way: the map view's camera (MAP-13).
+Compiles the open map fast, with no vis and fast light, into the project's build, starts the game on it and puts the player's eye at a point, facing a way: the map view's camera (MAP-13).
 
 Parameters:
 
@@ -4855,8 +4857,8 @@ Parameters:
         "null"
       ]
     },
-    "at": {
-      "description": "Where the player starts: the map view's camera.",
+    "eye": {
+      "description": "Where the player's eye goes: the map view's camera. The player's origin is\n`view_ofs` below it, moved up or down to the nearest place its box fits.",
       "items": {
         "format": "double",
         "type": "number"
@@ -4867,7 +4869,7 @@ Parameters:
     }
   },
   "required": [
-    "at"
+    "eye"
   ],
   "title": "PlayFromHereParams",
   "type": "object"
@@ -5656,6 +5658,50 @@ Parameters:
 ## `map.unstage`
 
 Ends the open map's review when nothing waits in it, as after an agent's map command that changed nothing; a review with hunks is left open.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `paths.open`
+
+Opens folders as projects, and files in the nearest project above each (a folder holding quakec.toml or progs.src): a .map or .bsp in the map editor, any other file in the editor. A file outside every project opens in the open project, or opens its folder when none is open.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `paths.open`.",
+  "properties": {
+    "paths": {
+      "description": "Folders to open as projects, and files to open in the nearest project above each, in\norder; a path relative to the app's working directory is made absolute.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "paths"
+  ],
+  "title": "OpenPathsParams",
+  "type": "object"
+}
+```
+
+## `paths.take_opened`
+
+Takes what the last paths.open opened, once, or null: the desktop app shows it and comes to the front when another launch sent the paths.
 
 Parameters:
 

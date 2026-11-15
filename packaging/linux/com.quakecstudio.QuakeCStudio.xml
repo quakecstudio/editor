@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SPDX-License-Identifier: GPL-3.0-or-later
+
+  The file types QuakeC Studio opens (shared-mime-info), which its desktop entry lists, so a
+  file manager names them and offers the app: the types the macOS Info.plist and the MSI
+  declare.
+-->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="text/x-quakec">
+    <comment>QuakeC source</comment>
+    <sub-class-of type="text/plain"/>
+    <glob pattern="*.qc"/>
+    <glob pattern="*.qh"/>
+  </mime-type>
+  <mime-type type="text/x-quake-map">
+    <comment>Quake map source</comment>
+    <sub-class-of type="text/plain"/>
+    <glob pattern="*.map"/>
+  </mime-type>
+  <mime-type type="application/x-quake-bsp">
+    <comment>Quake BSP level</comment>
+    <glob pattern="*.bsp"/>
+  </mime-type>
+</mime-info>
