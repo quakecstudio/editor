@@ -326,7 +326,7 @@ impl FaceShape {
 impl BrushShape {
     /// How far along the ray from `start` along `direction` it enters the brush's solid, 0
     /// when it starts inside; none when it misses.
-    fn entered(&self, start: [f32; 3], direction: [f32; 3]) -> Option<f32> {
+    pub(crate) fn entered(&self, start: [f32; 3], direction: [f32; 3]) -> Option<f32> {
         self.entered_by(start, direction, self.planes.iter().copied())
             .map(|(t, _)| t)
     }

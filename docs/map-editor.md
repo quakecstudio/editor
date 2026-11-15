@@ -101,6 +101,10 @@ it too.
   Cmd+Shift+D (Linked duplicate) copies it as a group linked to it (`map.link_duplicate`) and
   Separate unlinks it (`map.separate`). Add layer, beside Layers, adds a layer
   (`map.add_layer`). Each is written as TrenchBroom writes it.
+- **Picking behind (P7-08):** in the 3D view, with a brush selected under the pointer, Cmd and the
+  wheel step the selection to the brush behind it (up) or in front (down), TrenchBroom's
+  selection drilling; a click in a 2D view takes the smallest brush across it under the pointer,
+  so one behind another can be picked.
 - **Selecting (P7-08):** Cmd+A selects every entity and world brush not hidden, Cmd+Alt+A
   inverts the selection and Cmd+Shift+A clears it. With brushes selected, Cmd+T selects what
   they touch, Cmd+E what lies inside them and Cmd+Shift+E what lies inside them stretched along

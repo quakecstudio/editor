@@ -14,6 +14,7 @@ use qs_workbench::{Config, FsLoader, Workbench};
 
 use super::{Picked, Region};
 use crate::map_scene::Scene;
+use crate::map_tools::BrushTools;
 
 /// A map whose world holds, in order: the selecting box 0 to 64; one overlapping it, 32 to 96;
 /// one inside it, 16 to 48; one far off at 200; and one inside it across but high above,
@@ -116,4 +117,37 @@ fn all_inverted_and_siblings() {
     let shown = scene.all(&hidden);
     assert_eq!(shown.entities, [EntityIndex::new(1)]);
     assert!(shown.brushes.is_empty());
+}
+
+// No spec statement: P7-08: a ray down through the map meets the brushes under it nearest
+// first; a 2D view's click picks the smallest of them across the view, as TrenchBroom picks
+// the smallest visible area; Cmd and the wheel drill the selection along the ray, up away from
+// the camera and down toward it, as its selection drilling
+#[test]
+fn a_ray_orders_drills_and_picks_the_smallest_across() {
+    let scene = scene("drill");
+    let none = BTreeSet::new();
+    let down = ([40.0, 40.0, 1000.0], [0.0, 0.0, -1.0]);
+    assert_eq!(
+        scene.brushes_along(down.0, down.1, &none),
+        [world(4), world(1), world(0), world(2)]
+    );
+    assert_eq!(
+        scene.pick_across(down.0, down.1, 2, &none),
+        Some(world(4)),
+        "of the two 32 across, the nearer"
+    );
+    let hidden = BTreeSet::from([EntityIndex::new(0)]);
+    assert!(scene.brushes_along(down.0, down.1, &hidden).is_empty());
+    let mut tools = BrushTools::default();
+    tools.choose(vec![world(1)], &scene);
+    assert!(tools.drill(&scene, down, 1.0, &none));
+    assert_eq!(tools.chosen(), [world(0)], "pushed away");
+    assert!(tools.drill(&scene, down, -1.0, &none));
+    assert_eq!(tools.chosen(), [world(1)], "pulled back");
+    assert!(tools.drill(&scene, down, -1.0, &none));
+    assert!(tools.drill(&scene, down, -1.0, &none));
+    assert_eq!(tools.chosen(), [world(4)], "held at the nearest");
+    tools.choose(vec![world(3)], &scene);
+    assert!(!tools.drill(&scene, down, 1.0, &none), "not under the pointer");
 }

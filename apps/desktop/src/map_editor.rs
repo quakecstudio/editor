@@ -1077,9 +1077,28 @@ impl MapEditor {
                     let pan = PAN * self.camera_settings.pan_speed.factor();
                     camera.travel(0.0, -drag.x * pan, drag.y * pan);
                 }
-                // Shift and the wheel zoom the view for now, as TrenchBroom's; the wheel alone
-                // travels.
-                if ui.input(|i| i.modifiers.shift) {
+                // Shift and the wheel zoom the view for now, as TrenchBroom's; Cmd and the wheel
+                // drill the brush selection, a notch a step (the raw scroll, not egui's smoothed
+                // one); the wheel alone travels.
+                let notch: f32 = ui.input(|i| {
+                    i.events
+                        .iter()
+                        .filter_map(|event| match event {
+                            egui::Event::MouseWheel { delta, .. } => Some(delta.y),
+                            _ => None,
+                        })
+                        .sum()
+                });
+                let drilled = notch.abs() > 0.0
+                    && ui.input(|i| i.modifiers.command)
+                    && response.hover_pos().is_some_and(|at| {
+                        let ray = Projection::perspective(*camera, area).ray(at);
+                        self.tools.drill(&self.scene, ray, notch, hidden)
+                    });
+                let held_command = ui.input(|i| i.modifiers.command);
+                if drilled || held_command {
+                    // Cmd and the wheel never travel.
+                } else if ui.input(|i| i.modifiers.shift) {
                     // egui turns a vertical scroll with Shift held into a horizontal one.
                     let across = if response.hovered() {
                         ui.input(|i| i.smooth_scroll_delta.x)
@@ -1088,11 +1107,7 @@ impl MapEditor {
                     };
                     self.zoom = self.zoom.scrolled(scroll + across);
                 } else {
-                    camera.travel(
-                        scroll * TRAVEL * self.camera_settings.wheel.sign(),
-                        0.0,
-                        0.0,
-                    );
+                    camera.travel(scroll * TRAVEL * self.camera_settings.wheel.sign(), 0.0, 0.0);
                 }
                 camera.fov_x = self.zoom.fov(self.camera_settings.fov);
                 Projection::perspective(*camera, area)

@@ -923,7 +923,12 @@ impl BrushTools {
             }
             self.uv.clear();
             self.corners.clear();
-            let picked = scene.pick_brush(start, direction, hidden);
+            // The 3D view picks the brush in front; a 2D view the smallest across it under the
+            // pointer, so a brush behind another can be clicked, as TrenchBroom picks.
+            let picked = match pane {
+                Pane::Perspective => scene.pick_brush(start, direction, hidden),
+                Pane::Plan(plan) => scene.pick_across(start, direction, plan.axis(), hidden),
+            };
             if let Some(brush) = picked
                 && let Some(shape) = scene.brush(brush.0, brush.1)
             {
@@ -1067,6 +1072,35 @@ impl BrushTools {
             }
             None
         })
+    }
+
+    /// TrenchBroom's selection drilling (P7-08): with a brush selected under the pointer, Cmd
+    /// and the wheel step the selection to the next brush behind it, scrolling up, or in front,
+    /// scrolling down. Whether it drilled, so the wheel does not also travel.
+    pub(crate) fn drill(
+        &mut self,
+        scene: &Scene,
+        (start, direction): Ray,
+        scroll: f32,
+        hidden: &BTreeSet<EntityIndex>,
+    ) -> bool {
+        let along = scene.brushes_along(start, direction, hidden);
+        let Some(now) = self
+            .chosen
+            .first()
+            .and_then(|chosen| along.iter().position(|b| b == chosen))
+        else {
+            return false;
+        };
+        let next = if scroll > 0.0 {
+            now.saturating_add(1)
+        } else {
+            now.saturating_sub(1)
+        };
+        if let Some(&brush) = along.get(next) {
+            self.choose(vec![brush], scene);
+        }
+        true
     }
 
     /// The brushes selected, the first chosen first.

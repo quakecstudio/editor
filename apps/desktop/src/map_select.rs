@@ -35,6 +35,9 @@ pub(crate) enum Region {
     Tall(usize),
 }
 
+/// The map's axes, x, y and z.
+const AXES: usize = 3;
+
 /// How far a point may be past a plane and still be on it, in map units.
 const ON_PLANE: f32 = 0.01;
 
@@ -82,6 +85,55 @@ impl Scene {
             .filter(|shape| owners.contains(&shape.entity))
             .map(|shape| (shape.entity, shape.brush))
             .collect()
+    }
+
+    /// Every brush the ray from `start` along `direction` enters, nearest first, none hidden:
+    /// what selection drilling steps through (P7-08).
+    pub(crate) fn brushes_along(
+        &self,
+        start: [f32; 3],
+        direction: [f32; 3],
+        hidden: &BTreeSet<EntityIndex>,
+    ) -> Vec<BrushRef> {
+        let mut entered: Vec<(f32, BrushRef)> = self
+            .brushes
+            .iter()
+            .filter(|shape| !hidden.contains(&shape.entity))
+            .filter_map(|shape| {
+                let t = shape.entered(start, direction)?;
+                Some((t, (shape.entity, shape.brush)))
+            })
+            .collect();
+        entered.sort_by(|a, b| a.0.total_cmp(&b.0));
+        entered.into_iter().map(|(_, brush)| brush).collect()
+    }
+
+    /// The brush a click in a 2D view picks: of those under the pointer along the view's
+    /// `axis`, the one smallest across the view, as TrenchBroom picks the smallest visible
+    /// area there (its manual's "Selecting Objects"), here by each brush's box.
+    pub(crate) fn pick_across(
+        &self,
+        start: [f32; 3],
+        direction: [f32; 3],
+        axis: usize,
+        hidden: &BTreeSet<EntityIndex>,
+    ) -> Option<BrushRef> {
+        let across = |shape: &BrushShape| {
+            let corners = shape.corners();
+            let extent = |i: usize| {
+                let values = corners.iter().filter_map(|c| c.get(i).copied());
+                let (low, high) = values.fold((f32::INFINITY, f32::NEG_INFINITY), |(l, h), v| {
+                    (l.min(v), h.max(v))
+                });
+                high - low
+            };
+            (0..AXES).filter(|&i| i != axis).map(extent).product::<f32>()
+        };
+        self.brushes_along(start, direction, hidden)
+            .into_iter()
+            .filter_map(|(entity, brush)| self.brush(entity, brush).map(|s| (across(s), s)))
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, shape)| (shape.entity, shape.brush))
     }
 
     /// What the brushes `by` pick in `region`, themselves left out, nothing hidden picked.
