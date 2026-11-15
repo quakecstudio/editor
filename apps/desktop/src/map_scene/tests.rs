@@ -65,6 +65,34 @@ fn the_scene_holds_the_brushes_and_the_entities_boxes() {
     );
 }
 
+// No spec statement: P7-08: Focus on Selection frames the box around every selected entity and
+// brush; with nothing drawn selected there is nothing to frame
+#[test]
+fn the_selection_s_box_holds_its_entities_and_brushes() {
+    let workbench = keep();
+    let document = workbench.map().unwrap();
+    let scene = Scene::build(document, &HashMap::new(), &[], &mut |_| None);
+    let ogre = EntityIndex::new(2);
+    let door = EntityIndex::new(4);
+    assert_eq!(
+        scene.bounds_of([ogre].into_iter(), None),
+        Some([[88.0, 56.0, 16.0], [104.0, 72.0, 32.0]])
+    );
+    assert_eq!(
+        scene.bounds_of([ogre, door].into_iter(), None),
+        Some([[88.0, -64.0, 0.0], [240.0, 72.0, 128.0]])
+    );
+    assert_eq!(
+        scene.bounds_of(
+            [ogre].into_iter(),
+            Some([[-16.0, 0.0, 0.0], [0.0, 8.0, 300.0]])
+        ),
+        Some([[-16.0, 0.0, 0.0], [104.0, 72.0, 300.0]])
+    );
+    assert_eq!(scene.bounds_of([EntityIndex::new(0)].into_iter(), None), None);
+    assert_eq!(scene.bounds_of(core::iter::empty(), None), None);
+}
+
 // No spec statement: P5-06: a ray picks the nearest box it enters, and none when it misses
 #[test]
 fn a_ray_picks_the_nearest_box() {

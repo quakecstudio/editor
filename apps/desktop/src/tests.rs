@@ -2040,11 +2040,12 @@ fn the_grid_keys_set_the_step_the_selection_moves_by() {
     );
 }
 
-// No spec statement: P7-08: Escape in the map view, with no drag, picked corner or tool to
-// cancel, clears the selection, as TrenchBroom's "Selection Tool: Discard current selection"
+// No spec statement: P7-08: Cmd+U frames the selection, as TrenchBroom's Focus on Selection;
+// Escape in the map view, with no drag, picked corner or tool to cancel, clears the selection,
+// as TrenchBroom's "Selection Tool: Discard current selection"
 #[test]
-fn escape_in_the_map_view_clears_the_selection() {
-    let dir = keep_copy("escape");
+fn focus_frames_the_selection_and_escape_clears_it() {
+    let dir = keep_copy("focus");
     let mut harness = accessible();
     let shell = &mut harness.state_mut().as_mut().unwrap().shell;
     shell
@@ -2064,6 +2065,34 @@ fn escape_in_the_map_view_clears_the_selection() {
         shell.session().context().workbench.map().unwrap().selected()
     };
     assert_eq!(selected(&harness), Some(EntityIndex::new(2)));
+    // P7-08: Cmd+U, TrenchBroom's Focus on Selection, frames the ogre: the camera keeps its
+    // heading and stands back from the ogre's box along it.
+    let camera = |harness: &Harness<'static, Option<App>>| {
+        *harness
+            .state()
+            .as_ref()
+            .unwrap()
+            .shell()
+            .map_editor()
+            .camera()
+            .unwrap()
+    };
+    let before = camera(&harness);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::U);
+    harness.run();
+    let framed = camera(&harness);
+    assert_ne!(framed.origin, before.origin);
+    assert!((framed.yaw.get() - before.yaw.get()).abs() < f32::EPSILON);
+    let [forward, _, _] = framed.axes();
+    // The middle of the ogre's box, -32 -32 -24 to 32 32 64 about its origin, 96 64 24.
+    let to_ogre = [96.0 - framed.origin[0], 64.0 - framed.origin[1], 44.0 - framed.origin[2]];
+    let along: f32 = to_ogre.iter().zip(forward).map(|(a, b)| a * b).sum();
+    let off: f32 = to_ogre.iter().map(|c| c * c).sum::<f32>() - along * along;
+    assert!(along > 0.0 && off.abs() < 1.0, "the ogre is dead ahead");
+    // The Properties panel shows where the camera now stands, a field per axis.
+    let x = harness.get_by_label(Text::MapCameraX.get());
+    let shown = x.accesskit_node().numeric_value().unwrap();
+    assert!((shown - f64::from(framed.origin[0])).abs() < 1e-3, "{shown}");
     harness.key_press(egui::Key::Escape);
     harness.run();
     assert_eq!(selected(&harness), None);

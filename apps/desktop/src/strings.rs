@@ -854,6 +854,16 @@ pub enum Text {
     MapPanesPicker,
     /// The map editor's grid picker, before its size (P7-08).
     MapGrid,
+    /// Before the 3D camera's position fields (P7-08).
+    MapCamera,
+    /// The camera's position fields, on hover.
+    MapCameraHelp,
+    /// The camera's x field, to a screen reader.
+    MapCameraX,
+    /// The camera's y field, to a screen reader.
+    MapCameraY,
+    /// The camera's z field, to a screen reader.
+    MapCameraZ,
     /// The map editor's grid picker, to a screen reader and on hover.
     MapGridPicker,
     /// The map view's entity filter, to a screen reader.
@@ -890,7 +900,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 437] = [
+    pub const ALL: [Self; 442] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1312,6 +1322,11 @@ impl Text {
         Self::ActualSizeMenu,
         Self::MapPanesPicker,
         Self::MapGrid,
+        Self::MapCamera,
+        Self::MapCameraHelp,
+        Self::MapCameraX,
+        Self::MapCameraY,
+        Self::MapCameraZ,
         Self::MapGridPicker,
         Self::MapShowPicker,
         Self::MapShapeKind,
@@ -1830,6 +1845,11 @@ impl Text {
             Self::ActualSizeMenu => "Actual Size",
             Self::MapPanesPicker => "Map view layout",
             Self::MapGrid => "Grid",
+            Self::MapCamera => "Camera",
+            Self::MapCameraHelp => "Where the 3D camera stands: type or drag a value to move it",
+            Self::MapCameraX => "Camera x",
+            Self::MapCameraY => "Camera y",
+            Self::MapCameraZ => "Camera z",
             Self::MapGridPicker => {
                 "The grid drawing and moving snap to, in units: + and - halve or double it, 1 \
                  to 9 set 1 to 256"

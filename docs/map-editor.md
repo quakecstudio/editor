@@ -76,6 +76,9 @@ it too.
   tool, a click selects the first brush the pointer's ray enters, by its faces, and Shift+click
   adds or removes one. Each edit is a `map.brush_*` command on the grid, undone in one step, and
   kept convex: one that would leave a brush with no volume is refused.
+- **The camera (P7-08):** Cmd+U frames the selection, every selected entity and brush, keeping
+  where the camera looks (TrenchBroom's Focus on Selection, Ctrl+U). The Properties panel shows
+  the camera's x, y and z, and a value typed or dragged there moves it.
 - **Escape (P7-08):** in the view, Escape drops a drag in progress, else the Vertex tool's picked
   corners, else goes back to Select, else clears the selection, in TrenchBroom's order.
 - **The grid (P7-08):** drawing, dragging and the selection keys snap to the grid, a power of two

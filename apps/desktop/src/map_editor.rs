@@ -332,8 +332,9 @@ pub struct MapEditor {
     layers: Vec<LayerInfo>,
     /// The map outline in the left panel (P5-16).
     outline: OutlineView,
-    /// The entity to frame in the view on its next frame, chosen in the outline.
-    frame: Option<EntityIndex>,
+    /// What to frame in the view on its next frame: an entity chosen in the outline, or the
+    /// selection (Cmd+U).
+    frame: Option<Framing>,
     /// Where each entity's centre was drawn in the last frame, where a link dragged from it
     /// starts.
     centres: Vec<(EntityIndex, Pos2)>,
@@ -498,7 +499,7 @@ impl MapEditor {
         for action in self.outline.ui(ui, theme, selected) {
             match action {
                 OutlineAction::Choose(entity) => {
-                    self.frame = Some(entity);
+                    self.frame = Some(Framing::Entity(entity));
                     self.also.clear();
                     actions.push(MapAction::Select(Some(entity)));
                 }
@@ -912,13 +913,19 @@ impl MapEditor {
             ui.ctx().request_repaint();
         }
         let rect = ui.available_rect_before_wrap();
-        if let Some(entity) = self.frame.take()
-            && let Some(shape) = self.scene.entities.iter().find(|s| s.index == entity)
-        {
-            let aspect = rect.width() / rect.height().max(1.0);
-            camera.frame(shape.bounds, aspect, FRAME_MARGIN);
-        }
         let selected = document.selected();
+        let framed = match self.frame.take() {
+            Some(Framing::Entity(entity)) => self.scene.bounds_of([entity].into_iter(), None),
+            Some(Framing::Selection) => self.scene.bounds_of(
+                selected.into_iter().chain(self.also.iter().copied()),
+                self.tools.bounds(&self.scene),
+            ),
+            None => None,
+        };
+        if let Some(bounds) = framed {
+            let aspect = rect.width() / rect.height().max(1.0);
+            camera.frame(bounds, aspect, FRAME_MARGIN);
+        }
         if selected.is_none() {
             self.also.clear();
         }
@@ -1011,6 +1018,11 @@ impl MapEditor {
             {
                 self.also.clear();
                 actions.push(MapAction::Select(None));
+            }
+            // TrenchBroom's Focus on Selection, Ctrl+U (Cmd+U on macOS, as Qt maps Ctrl).
+            if ui.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::U)) {
+                self.frame = Some(Framing::Selection);
+                ui.ctx().request_repaint();
             }
             if let Some(grid) = grid_key(ui, self.tools.grid) {
                 actions.push(MapAction::Grid(grid));
@@ -1294,6 +1306,18 @@ impl MapEditor {
                 actions.push(MapAction::PlayFromHere);
             }
         });
+        // P7-08: where the 3D camera stands, which a value typed moves it to, as TrenchBroom's
+        // Move Camera to... but always shown.
+        if let Some(camera) = &mut self.camera {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(Text::MapCamera.get());
+                for (axis, name) in camera.origin.iter_mut().zip(CAMERA_AXES) {
+                    let field = ui.add(egui::DragValue::new(axis).speed(1.0).max_decimals(1));
+                    name_field(ui, &field, name);
+                    field.on_hover_text(Text::MapCameraHelp.get());
+                }
+            });
+        }
         actions.extend(self.review.properties(ui, theme));
         actions.extend(self.profiles.controls(ui, theme));
         self.leaks.properties(ui, theme, report);
@@ -1486,6 +1510,18 @@ fn fly(ui: &Ui, camera: &mut Camera) {
         camera.travel(keys[0] * step, keys[1] * step, keys[2] * step);
         ui.ctx().request_repaint();
     }
+}
+
+/// The camera position fields' names, x, y and z.
+const CAMERA_AXES: [Text; 3] = [Text::MapCameraX, Text::MapCameraY, Text::MapCameraZ];
+
+/// What the view frames on its next frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Framing {
+    /// An entity chosen in the outline.
+    Entity(EntityIndex),
+    /// Every selected entity and brush (P7-08).
+    Selection,
 }
 
 /// TrenchBroom's grid keys (its "Increase Grid Size", "Decrease Grid Size" and "Set Grid Size"

@@ -735,7 +735,7 @@ impl BrushTools {
     }
 
     /// The box around the selected brushes' corners, when any is selected.
-    fn bounds(&self, scene: &Scene) -> Option<[[f64; 3]; 2]> {
+    pub(crate) fn bounds(&self, scene: &Scene) -> Option<[[f64; 3]; 2]> {
         let corners = self
             .chosen
             .iter()

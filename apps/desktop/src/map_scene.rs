@@ -249,6 +249,31 @@ fn entity_lump(entities: &[&qs_map::Entity]) -> Vec<u8> {
     lump
 }
 
+impl Scene {
+    /// The box around `entities` and `brushes`, a box of selected brushes' corners; none when
+    /// neither holds anything drawn.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "a brush corner of a map is well inside f32's range"
+    )]
+    pub(crate) fn bounds_of(
+        &self,
+        entities: impl Iterator<Item = EntityIndex>,
+        brushes: Option<[[f64; 3]; 2]>,
+    ) -> Option<[[f32; 3]; 2]> {
+        let boxes = entities
+            .filter_map(|entity| self.entities.iter().find(|s| s.index == entity))
+            .map(|shape| shape.bounds)
+            .chain(brushes.map(|bounds| bounds.map(|corner| corner.map(|c| c as f32))));
+        boxes.reduce(|[min, max], [low, high]| {
+            [
+                [min[0].min(low[0]), min[1].min(low[1]), min[2].min(low[2])],
+                [max[0].max(high[0]), max[1].max(high[1]), max[2].max(high[2])],
+            ]
+        })
+    }
+}
+
 /// One brush as drawn, picked and edited (P6-08).
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct BrushShape {

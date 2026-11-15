@@ -58,8 +58,8 @@ Tests are named `crate-or-app path::test`; `desktop` is `apps/desktop/src`, `map
 | Map bounds shown as a guide | None | none | Gap G3 |
 | Look by right-drag; move with keys; speed on the wheel | Right-drag looks, WASD flies | `desktop tests::the_camera_starts_behind_the_player_start` | Same: WASD flies, the wheel travels |
 | Orbit about a clicked point | None | none | Gap G4 |
-| Focus on selection | Choosing an outline row frames the entity | `map-edit outline::tests` | Gap G5: no command frames the selection |
-| Move camera to a position | None | none | Gap G5 |
+| Focus on selection | Choosing an outline row frames the entity | `desktop tests::focus_frames_the_selection_and_escape_clears_it`, `map_scene::tests::the_selection_s_box_holds_its_entities_and_brushes` | Same: Cmd+U frames every selected entity and brush |
+| Move camera to a position | The camera's x, y and z in the Properties panel, always shown | `desktop tests::focus_frames_the_selection_and_escape_clears_it` | Beyond: the position is shown as it moves |
 | 2D views pan and zoom; linked 2D views | Pan and zoom in each 2D pane | `desktop map_panes` tests | Gap G7: 2D views are not linked |
 | FOV setting and temporary zoom | None | none | Gap G6 |
 
@@ -180,7 +180,6 @@ To close before #823 does:
 | G2 | A compass in each viewport |
 | G3 | Map bounds drawn as a guide |
 | G4 | Orbiting the camera about a clicked point |
-| G5 | Focus the camera on the selection; move the camera to a position |
 | G6 | The 3D view's field of view, a temporary zoom, and mouse preferences |
 | G7 | Two- and three-pane layouts, a highlight on the focused pane, linked 2D views |
 | G8 | Selection drilling; select all, touching, inside, tall, siblings; invert; deselect all; 2D picking by candidates |
