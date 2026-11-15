@@ -186,6 +186,15 @@ impl App {
     /// frame, and the accessibility settings at the first frame and when the window gains
     /// focus; the look is remade when they changed.
     fn follow_display(&mut self, ctx: &egui::Context) {
+        self.follow_display_with(ctx, Display::read);
+    }
+
+    /// [`App::follow_display`], reading the settings with `read`.
+    fn follow_display_with(
+        &mut self,
+        ctx: &egui::Context,
+        read: impl FnOnce(&egui::Context) -> Display,
+    ) {
         let Follow::System { focused } = self.follow else {
             return;
         };
@@ -196,7 +205,7 @@ impl App {
         };
         self.follow = Follow::System { focused: now };
         let display = match (focused, now) {
-            (Focused::NotYet, _) | (Focused::No, Focused::Yes) => Display::read(ctx),
+            (Focused::NotYet, _) | (Focused::No, Focused::Yes) => read(ctx),
             (Focused::Yes | Focused::No, _) => Display {
                 mode: Display::mode(ctx),
                 ..self.display

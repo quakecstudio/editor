@@ -3782,3 +3782,47 @@ fn every_map_editor_control_has_a_name() {
     found.dedup();
     assert!(found.is_empty(), "{found:#?}");
 }
+
+// QA-9: an app that follows the system reads its accessibility settings at the first frame and
+// each time its window gains focus, not on every frame, and follows the appearance each frame
+#[test]
+fn the_settings_are_read_at_the_start_and_on_focus() {
+    let ctx = egui::Context::default();
+    let mut app = App::checked_on_the_frame(&ctx, None).unwrap();
+    app.follow = crate::Follow::System {
+        focused: crate::Focused::NotYet,
+    };
+    let reads = std::cell::Cell::new(0_u32);
+    let increased = |ctx: &egui::Context| {
+        reads.set(reads.get() + 1);
+        Display {
+            mode: Display::mode(ctx),
+            contrast: Contrast::Increased,
+            motion: Motion::Reduced,
+        }
+    };
+    let frame = |app: &mut App, focused: bool| {
+        let input = RawInput {
+            focused,
+            ..RawInput::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| app.follow_display_with(ui.ctx(), increased));
+        output.textures_delta.clear();
+    };
+    frame(&mut app, true);
+    assert_eq!(reads.get(), 1, "read at the first frame");
+    assert_eq!(
+        app.shell.theme().palette(),
+        (Mode::Dark, Contrast::Increased)
+    );
+    frame(&mut app, true);
+    frame(&mut app, false);
+    frame(&mut app, false);
+    assert_eq!(reads.get(), 1, "not read while focus stays or is lost");
+    assert_eq!(
+        app.shell.theme().palette(),
+        (Mode::Dark, Contrast::Increased)
+    );
+    frame(&mut app, true);
+    assert_eq!(reads.get(), 2, "read again when focus comes back");
+}
