@@ -514,7 +514,9 @@ fn the_fog_command_sets_the_density_and_keeps_the_colour() {
 fn players_wear_their_slots_translated_skins() {
     let mut play = play();
     let bytes = mdl(&MdlSpec {
-        skins: vec![SkinSpec::Single([0].into_iter().chain([16; 15]).collect())],
+        skins: vec![SkinSpec::Single(
+            core::iter::once(0).chain([16; 15]).collect(),
+        )],
         ..MdlSpec::default()
     });
     play.load_models(

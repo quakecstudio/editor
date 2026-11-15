@@ -556,7 +556,7 @@ impl Args {
         } else {
             Reporting::Off
         };
-        let mut game = Game::new(world, progs_bytes.to_vec(), reporting);
+        let mut game = Game::new(world, progs_bytes.clone(), reporting);
         // BRIDGE-3.4, WORLD-9.4: the line of each statement, from the `.lno` beside the progs when
         // it is one for this progs (LNO-4.1).
         let lines = read("progs.lno")
