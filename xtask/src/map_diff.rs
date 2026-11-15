@@ -218,8 +218,12 @@ pub(crate) fn main(
                 (Ok(_), Err(theirs)) => (false, format!("only the oracle stops: {theirs}")),
             };
             passed &= agrees;
-            let verdict = if agrees { "ok   " } else { "FAIL " };
-            println!("{verdict} {} ({}): {said}", map_name(path), oracle.name());
+            println!(
+                "{} {} ({}): {said}",
+                verdict(agrees),
+                map_name(path),
+                oracle.name()
+            );
         }
     }
     Ok(passed)
@@ -263,6 +267,11 @@ pub(crate) fn map_name(path: &Path) -> String {
     path.file_stem()
         .map(|stem| stem.to_string_lossy().into_owned())
         .unwrap_or_default()
+}
+
+/// The word a differential's line starts with: `ok` or `FAIL`, padded to one width.
+pub(crate) const fn verdict(agrees: bool) -> &'static str {
+    if agrees { "ok   " } else { "FAIL " }
 }
 
 /// Whether two compiles that both stop stop alike: the oracle names the error ours names, or

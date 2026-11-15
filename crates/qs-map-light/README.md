@@ -18,5 +18,5 @@ run as an oracle (`cargo xtask oracles maps`).
 
 `cargo xtask light-diff` (P7-01) is the differential. Every corpus map is lit by id's `light` and
 by ours in both modes, and the lightmaps are compared luxel by luxel. The coloured room fixture
-(`oracles/maps/coloured.map`) is also lit by ericw-tools' `light`, and our `.lit`'s hues are
-compared with ericw-tools' in the fast mode.
+(`oracles/maps/coloured.map`) is also lit by ericw-tools' `light`, and our `.lit` is compared
+with ericw-tools' channel by channel in the fast mode.
