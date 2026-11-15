@@ -955,6 +955,7 @@ impl MapFeature {
             BrushAction::Hull(points) => commands.attempt(
                 MAP_BRUSH_HULL,
                 &BrushHullParams {
+                    entity: layer,
                     points,
                     texture: texture.clone(),
                     grid,

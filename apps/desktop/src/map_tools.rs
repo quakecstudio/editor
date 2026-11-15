@@ -568,8 +568,37 @@ impl Drag {
 /// The most clip points a plane takes.
 const CLIP_POINTS: usize = 3;
 
-/// How far above the second of two clip points the guessed third is, in map units.
+/// How far from the second of two clip points the guessed third is, in map units.
 const CLIP_UP: f64 = 1.0;
+/// The map's up axis, z.
+const UP_AXIS: usize = 2;
+/// How much of two clip points' squared distance must lie off an axis for a third point along
+/// it to make a plane: two points nearly along the axis would make a degenerate one.
+const ALONG_AXIS: f64 = 0.01;
+
+/// The third point of a clip plane through `a` and `b`: one along the axis `first`, the view's
+/// in a 2D view or up in the 3D view, as TrenchBroom's two-point clip makes a plane along the
+/// view, or along the first axis the two do not lie along, so the plane is never degenerate.
+fn third_clip_point(a: [f64; 3], b: [f64; 3], first: usize) -> [f64; 3] {
+    let squared = |axis: Option<usize>| -> f64 {
+        a.iter()
+            .zip(b)
+            .enumerate()
+            .filter(|&(i, _)| Some(i) != axis)
+            .map(|(_, (x, y))| (y - x) * (y - x))
+            .sum()
+    };
+    let span = squared(None);
+    let axis = core::iter::once(first)
+        .chain(0..=UP_AXIS)
+        .find(|&axis| squared(Some(axis)) > span * ALONG_AXIS)
+        .unwrap_or(first);
+    let mut c = b;
+    if let Some(v) = c.get_mut(axis) {
+        *v += CLIP_UP;
+    }
+    c
+}
 
 /// The fewest points that can span a brush: four, a tetrahedron's.
 const HULL_LEAST: usize = 4;
@@ -970,8 +999,7 @@ impl BrushTools {
                 self.pick_face((start, direction), scene, hidden, mode);
                 return actions;
             }
-            self.uv.clear();
-            self.corners.clear();
+            self.forget_points();
             // The 3D view picks the brush in front; a 2D view the smallest across it under the
             // pointer, so a brush behind another can be clicked, as TrenchBroom picks.
             let picked = match pane {
@@ -1172,8 +1200,15 @@ impl BrushTools {
             }
         }
         self.chosen = brushes;
+        self.forget_points();
+    }
+
+    /// Forgets what was picked on the brushes chosen, which a new choice does not keep: the
+    /// faces, the Vertex tool's corners and the clip points.
+    fn forget_points(&mut self) {
         self.uv.clear();
         self.corners.clear();
+        self.clip_points.clear();
     }
 
     /// Escape, as TrenchBroom cancels ("Canceling Operations and Tools"): a drag is dropped,
@@ -1257,7 +1292,8 @@ impl BrushTools {
         (start, direction): Ray,
     ) -> Option<Drag> {
         let held = ui.input(|i| i.modifiers);
-        if !held.shift {
+        // Shift on the Move tool holds its drag to one axis, so a face is not grabbed there.
+        if !held.shift || self.tool == MapTool::Move {
             return None;
         }
         let face = scene.pick_face(start, direction, hidden)?;
@@ -1322,10 +1358,14 @@ impl BrushTools {
         {
             let points = core::mem::take(&mut self.clip_points);
             let [a, b] = [points.first()?, points.get(1)?].map(|p| *p);
+            let first = match pane {
+                Pane::Plan(plan) => plan.axis(),
+                Pane::Perspective => UP_AXIS,
+            };
             let c = points
                 .get(2)
                 .copied()
-                .unwrap_or([b[0], b[1], b[2] + CLIP_UP]);
+                .unwrap_or_else(|| third_clip_point(a, b, first));
             self.reshaped = vec![(entity, brush)];
             return Some(vec![BrushAction::Clip(entity, brush, [a, b, c], self.keep)]);
         }
@@ -1848,7 +1888,7 @@ mod tests {
 
     use super::{
         AlignFields, AlignPart, BrushAction, BrushTools, Drag, MapAxis, MapTool, Readout, Restrict,
-        TextureChange, at_height,
+        TextureChange, at_height, third_clip_point,
     };
     use crate::map_scene::{BrushShape, Scene};
     use qs_layout::MapGrid;
@@ -2143,5 +2183,40 @@ mod tests {
             (all.shift, all.scale, all.texture),
             (Some([0.0; 2]), Some([1.0; 2]), None)
         );
+    }
+
+    // No spec statement: P7-08: two clip points make a plane with a third along the view's
+    // axis, or up in 3D, as TrenchBroom's two-point clip; two points along that axis take the
+    // next axis instead, so the plane is never degenerate
+    #[test]
+    fn two_clip_points_never_make_a_degenerate_plane() {
+        let flat = [[0.0, 0.0, 0.0], [64.0, 0.0, 0.0]];
+        assert_eq!(third_clip_point(flat[0], flat[1], 2), [64.0, 0.0, 1.0]);
+        assert_eq!(third_clip_point(flat[0], flat[1], 1), [64.0, 1.0, 0.0]);
+        let stacked = [[0.0, 0.0, 0.0], [0.0, 0.0, 64.0]];
+        assert_eq!(
+            third_clip_point(stacked[0], stacked[1], 2),
+            [1.0, 0.0, 64.0],
+            "x, the first axis they do not lie along"
+        );
+        let along_x = [[0.0, 0.0, 0.0], [64.0, 0.0, 0.0]];
+        assert_eq!(
+            third_clip_point(along_x[0], along_x[1], 0),
+            [64.0, 1.0, 0.0]
+        );
+        let same = [[8.0; 3], [8.0; 3]];
+        assert_eq!(third_clip_point(same[0], same[1], 2), [8.0, 8.0, 9.0]);
+    }
+
+    // No spec statement: P7-08: choosing other brushes drops the clip points placed on the
+    // last, so Return never clips a brush by points on another
+    #[test]
+    fn a_new_choice_drops_the_clip_points() {
+        let mut tools = BrushTools {
+            clip_points: vec![[0.0; 3], [64.0, 0.0, 0.0]],
+            ..BrushTools::default()
+        };
+        tools.choose(Vec::new(), &Scene::default());
+        assert!(tools.clip_points.is_empty());
     }
 }

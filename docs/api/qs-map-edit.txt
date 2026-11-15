@@ -209,6 +209,7 @@ field qs_map_edit::brushes::BrushCreateParams.grid
 field qs_map_edit::brushes::BrushCreateParams.max
 field qs_map_edit::brushes::BrushCreateParams.min
 field qs_map_edit::brushes::BrushCreateParams.texture
+field qs_map_edit::brushes::BrushHullParams.entity
 field qs_map_edit::brushes::BrushHullParams.grid
 field qs_map_edit::brushes::BrushHullParams.points
 field qs_map_edit::brushes::BrushHullParams.texture

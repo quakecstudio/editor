@@ -25,6 +25,9 @@ pub const MAP_BRUSH_HULL: &str = "map.brush_hull";
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct BrushHullParams {
+    /// The entity to add it to, such as the current layer's; the world when not given.
+    #[serde(default)]
+    pub entity: Option<EntityIndex>,
     /// The points, each snapped to the grid; the brush is the convex shape around them.
     pub points: Vec<[f64; 3]>,
     /// Its texture; the texture of the map's last brush face when not given.
@@ -40,8 +43,9 @@ pub(super) struct BrushHull;
 
 impl<C: HasMap + 'static> Command<C> for BrushHull {
     const ID: &'static str = MAP_BRUSH_HULL;
-    const SUMMARY: &'static str = "Adds to the world the convex brush around points snapped to \
-        the grid, with a texture, as TrenchBroom's complex shape tool makes one.";
+    const SUMMARY: &'static str = "Adds to the world, or the entity given, the convex brush \
+        around points snapped to the grid, with a texture, as TrenchBroom's complex shape tool \
+        makes one.";
     type Params = BrushHullParams;
     type Output = MapEdited;
     type Error = MapEditError;
@@ -51,7 +55,9 @@ impl<C: HasMap + 'static> Command<C> for BrushHull {
         context: &mut C,
         params: BrushHullParams,
     ) -> Result<Outcome<MapEdited, C>, MapEditError> {
+        let entity = params.entity.unwrap_or(EntityIndex::WORLD);
         let ((), step) = edit_map(context, |document| {
+            document.editable(entity)?;
             let points: Vec<[f64; 3]> = params
                 .points
                 .iter()
@@ -59,15 +65,12 @@ impl<C: HasMap + 'static> Command<C> for BrushHull {
                 .collect();
             let surface = document.new_surface(params.texture.as_deref());
             let brush = Brush::convex_hull(&points, &surface)?;
-            document
-                .entity_mut(EntityIndex::WORLD)?
-                .items
-                .push(Item::Brush(brush));
+            document.entity_mut(entity)?.items.push(Item::Brush(brush));
             Ok(())
         })?;
         Ok(Outcome::undoable(
             MapEdited {
-                entity: Some(EntityIndex::WORLD),
+                entity: Some(entity),
             },
             step,
         ))

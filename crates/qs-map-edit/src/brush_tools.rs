@@ -872,11 +872,16 @@ impl<C: HasMap + 'static> Command<C> for ReplaceTexture {
         let (faces, step) = edit_map(context, |document| {
             let from = params.from.as_bytes();
             let mut replaced = 0_usize;
+            // Over the whole map, a locked entity's faces are left as they are, as TrenchBroom
+            // leaves what cannot be selected; a brush chosen in one is refused by the lock.
+            let locked = document.locked_in(&document.file);
             let chosen = |entity: usize, brush: usize| {
-                params.brushes.is_empty()
-                    || params
-                        .brushes
-                        .contains(&(EntityIndex::new(entity), BrushIndex::new(brush)))
+                if params.brushes.is_empty() {
+                    return !locked.contains(&EntityIndex::new(entity));
+                }
+                params
+                    .brushes
+                    .contains(&(EntityIndex::new(entity), BrushIndex::new(brush)))
             };
             for (place, entity) in document.file.entities.iter_mut().enumerate() {
                 let brushes = entity.items.iter_mut().filter_map(|item| match item {

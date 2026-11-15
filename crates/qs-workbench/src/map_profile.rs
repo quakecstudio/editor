@@ -421,6 +421,15 @@ pub enum TaskError {
         /// Why.
         error: std::io::Error,
     },
+    /// A file could not be renamed.
+    Rename {
+        /// The file renamed.
+        from: PathBuf,
+        /// Its new name.
+        to: PathBuf,
+        /// Why.
+        error: std::io::Error,
+    },
     /// A program ended with a status other than success.
     Tool {
         /// The program.
@@ -441,6 +450,14 @@ impl std::fmt::Display for TaskError {
             Self::Light(error) => error.fmt(f),
             Self::Expand(error) => error.fmt(f),
             Self::Io { path, error } => write!(f, "{}: {error}", path.display()),
+            Self::Rename { from, to, error } => {
+                write!(
+                    f,
+                    "cannot rename {} to {}: {error}",
+                    from.display(),
+                    to.display()
+                )
+            }
             Self::Copy { from, to, error } => {
                 write!(
                     f,
@@ -466,7 +483,9 @@ impl std::error::Error for TaskError {
             Self::Vis(error) => Some(error),
             Self::Light(error) => Some(error),
             Self::Expand(error) => Some(error),
-            Self::Io { error, .. } | Self::Copy { error, .. } => Some(error),
+            Self::Io { error, .. } | Self::Copy { error, .. } | Self::Rename { error, .. } => {
+                Some(error)
+            }
             Self::Tool { .. } => None,
         }
     }
@@ -669,7 +688,7 @@ fn run_task<C: HasPreview>(
             if let Some(folder) = to.parent() {
                 std::fs::create_dir_all(folder).map_err(io(folder))?;
             }
-            std::fs::rename(&from, &to).map_err(|error| TaskError::Copy {
+            std::fs::rename(&from, &to).map_err(|error| TaskError::Rename {
                 from: from.clone(),
                 to: to.clone(),
                 error,

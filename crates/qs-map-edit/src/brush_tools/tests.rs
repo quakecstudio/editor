@@ -381,8 +381,8 @@ fn a_selection_turns_about_the_vertical() {
 }
 
 // No spec statement: P7-08: map.replace_texture puts one texture in another's place, in any
-// case, on the brushes given or on every brush, as TrenchBroom's Replace Material; one undo
-// takes it back, and a texture no face has is refused
+// case, on the brushes given or on every brush not locked, as TrenchBroom's Replace Material;
+// one undo takes it back, and a texture no face has is refused
 #[test]
 fn a_texture_is_replaced_on_the_brushes_or_everywhere() {
     use crate::{MAP_REPLACE_TEXTURE, Replaced};
@@ -404,6 +404,20 @@ fn a_texture_is_replaced_on_the_brushes_or_everywhere() {
     assert!(brushes[1].faces.iter().all(|f| f.texture() == b"metal"));
     session.undo().unwrap();
     assert_eq!(text(&session), before);
+    // Over the whole map, a locked entity's faces are left alone, not the edit refused.
+    session
+        .execute(crate::MAP_LOCK, json!({ "entities": [0] }))
+        .unwrap();
+    let skipped = session
+        .execute(
+            MAP_REPLACE_TEXTURE,
+            json!({ "from": "rock", "to": "metal" }),
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(!skipped.contains("locked"), "{skipped}");
+    assert_eq!(text(&session), before);
+    session.execute(crate::MAP_UNLOCK_ALL, json!({})).unwrap();
     session
         .execute(
             MAP_REPLACE_TEXTURE,

@@ -1080,6 +1080,7 @@ variant qs_workbench::map_profile::TaskError::Expand
 variant qs_workbench::map_profile::TaskError::Io
 variant qs_workbench::map_profile::TaskError::Light
 variant qs_workbench::map_profile::TaskError::Preview
+variant qs_workbench::map_profile::TaskError::Rename
 variant qs_workbench::map_profile::TaskError::Tool
 variant qs_workbench::map_profile::TaskError::Vis
 variant qs_workbench::map_profile::TaskError::Workbench

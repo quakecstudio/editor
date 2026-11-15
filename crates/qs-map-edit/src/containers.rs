@@ -7,7 +7,7 @@
 //! unlinks a group from the groups linked to it.
 
 use qs_commands::{Command, Outcome};
-use qs_map::{ContainerId, Entity, Item, RoomKind};
+use qs_map::{ContainerId, Entity, EntityPlace, Item, LinkError, RoomKind};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -110,6 +110,19 @@ impl MapDocument {
             .or_else(|| found.group().map(|id| (RoomKind::Group, id))))
     }
 
+    /// The entity whose brushes are `container`'s own: the layer's or group's entity, or the
+    /// world's for none (MAP-9.1).
+    fn holder_of(&self, container: Option<(RoomKind, ContainerId)>) -> EntityIndex {
+        container
+            .and_then(|container| {
+                self.file
+                    .entities
+                    .iter()
+                    .position(|entity| entity.container() == Some(container))
+            })
+            .map_or(EntityIndex::new(0), EntityIndex::new)
+    }
+
     /// `group`'s id, refused when it is no group's own entity.
     fn group_id(&mut self, group: EntityIndex) -> Result<ContainerId, MapEditError> {
         match self.entity_mut(group)?.container() {
@@ -170,7 +183,12 @@ impl<C: HasMap + 'static> Command<C> for Group {
                 group.items.insert(0, Item::Brush(moved));
             }
             for &entity in &params.entities {
-                if entity.is_world() {
+                // Neither the world nor a layer goes in a group (MAP-9.1).
+                let layer = matches!(
+                    document.entity_mut(entity)?.container(),
+                    Some((RoomKind::Layer, _))
+                );
+                if entity.is_world() || layer {
                     return Err(MapEditError::NotPointEntity { entity });
                 }
                 document.editable(entity)?;
@@ -207,7 +225,11 @@ impl<C: HasMap + 'static> Command<C> for Ungroup {
             let id = document.group_id(params.group)?;
             document.editable(params.group)?;
             let parent = document.parent_of(params.group)?;
-            for member in document.members_of(id) {
+            let members = document.members_of(id);
+            for &member in &members {
+                document.editable(member)?;
+            }
+            for member in members {
                 let found = document.entity_mut(member)?;
                 let left = found.put_in(parent);
                 left.map_err(|error| document.map_error(error))?;
@@ -219,15 +241,7 @@ impl<C: HasMap + 'static> Command<C> for Ungroup {
                 .filter(|item| matches!(item, Item::Brush(_)))
                 .cloned()
                 .collect();
-            let into = match parent {
-                Some((RoomKind::Group, parent_id)) => document
-                    .file
-                    .entities
-                    .iter()
-                    .position(|entity| entity.container() == Some((RoomKind::Group, parent_id)))
-                    .map_or(EntityIndex::new(0), EntityIndex::new),
-                Some((RoomKind::Layer, _)) | None => EntityIndex::new(0),
-            };
+            let into = document.holder_of(parent);
             document.entity_mut(into)?.items.extend(brushes);
             document.file.entities.remove(params.group.get());
             document.view.deleted(params.group);
@@ -284,6 +298,19 @@ impl<C: HasMap + 'static> Command<C> for LinkDuplicate {
     ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let (entity, step) = edit_map(context, |document| {
             let id = document.group_id(params.group)?;
+            // A linked group holding a group is not kept in step with its copies (MAP-9.5), so
+            // one is not made.
+            let members = document.members_of(id);
+            for &member in &members {
+                if matches!(
+                    document.entity_mut(member)?.container(),
+                    Some((RoomKind::Group, _))
+                ) {
+                    return Err(MapEditError::Link {
+                        error: LinkError::Nested(EntityPlace::new(params.group.get())),
+                    });
+                }
+            }
             let copy_id = document.file.free_container_id();
             let link = match document.entity_mut(params.group)?.link_id() {
                 Some(link) => link,
@@ -300,8 +327,7 @@ impl<C: HasMap + 'static> Command<C> for LinkDuplicate {
                 .set(b"_tb_id", copy_id.get().to_string().as_bytes())
                 .and_then(|()| copy.set_link_id(Some(&link)));
             made.map_err(|error| document.map_error(error))?;
-            let members: Vec<Entity> = document
-                .members_of(id)
+            let members: Vec<Entity> = members
                 .into_iter()
                 .map(|member| document.entity_mut(member).map(|found| found.clone()))
                 .collect::<Result<_, _>>()?;
@@ -395,8 +421,9 @@ pub(super) struct MakeStructural;
 
 impl<C: HasMap + 'static> Command<C> for MakeStructural {
     const ID: &'static str = MAP_MAKE_STRUCTURAL;
-    const SUMMARY: &'static str = "Gives a brush entity's brushes back to the world and removes \
-        the entity (TrenchBroom's Make Structural).";
+    const SUMMARY: &'static str = "Gives a brush entity's brushes back to the world, in the \
+        layer or group the entity was in, and removes the entity (TrenchBroom's Make \
+        Structural).";
     type Params = MakeStructuralParams;
     type Output = MapEdited;
     type Error = MapEditError;
@@ -420,10 +447,10 @@ impl<C: HasMap + 'static> Command<C> for MakeStructural {
                 .filter(|item| matches!(item, Item::Brush(_)))
                 .cloned()
                 .collect();
-            document
-                .entity_mut(EntityIndex::new(0))?
-                .items
-                .extend(brushes);
+            // The brushes stay in the layer or group the entity was in.
+            let parent = document.parent_of(entity)?;
+            let into = document.holder_of(parent);
+            document.entity_mut(into)?.items.extend(brushes);
             document.file.entities.remove(entity.get());
             document.view.deleted(entity);
             document.selected = None;

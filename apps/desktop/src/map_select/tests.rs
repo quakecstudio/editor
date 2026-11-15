@@ -16,6 +16,30 @@ use super::{Picked, Region};
 use crate::map_scene::Scene;
 use crate::map_tools::BrushTools;
 
+/// A scene of `file`, written to its own folder `name`.
+fn scene_of(name: &str, file: &MapFile) -> Scene {
+    let dir = std::env::temp_dir().join(format!("qs-select-{name}-{}", std::process::id()));
+    let _gone = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("select.map");
+    std::fs::write(&path, file.to_bytes()).unwrap();
+    let mut workbench = Workbench::new(FsLoader, Config::default());
+    workbench.maps_mut().open_map(&path).unwrap();
+    let document = workbench.map().unwrap();
+    Scene::build(document, &HashMap::new(), &[], &mut |_| None)
+}
+
+fn rock() -> Surface {
+    Surface {
+        texture: b"rock".to_vec(),
+        texdef: TexDef::Standard {
+            shift: [0.0, 0.0],
+            rotate: 0.0,
+            scale: [1.0, 1.0],
+        },
+    }
+}
+
 /// A map whose world holds, in order: the selecting box 0 to 64; one overlapping it, 32 to 96;
 /// one inside it, 16 to 48; one far off at 200; and one inside it across but high above,
 /// z 500 to 564. Its entities: a light inside the box at 32 32 32 and one far off at 1000 0 0.
@@ -152,5 +176,55 @@ fn a_ray_orders_drills_and_picks_the_smallest_across() {
     assert!(
         !tools.drill(&scene, down, 1.0, &none),
         "not under the pointer"
+    );
+}
+
+// No spec statement: P7-08: Select Touching leaves out brushes kept apart only along the cross
+// of an edge of each, which no face plane parts: two tetrahedra whose edges cross 8 units
+// apart do not touch, and touch once they meet
+#[test]
+fn edges_crossing_apart_do_not_touch() {
+    for (gap, touching) in [(8.0, false), (0.0, true)] {
+        let mut file = MapFile::parse(b"{\n\"classname\" \"worldspawn\"\n}\n").unwrap();
+        let below = [
+            [-32.0, 0.0, 32.0],
+            [32.0, 0.0, 32.0],
+            [0.0, -32.0, 0.0],
+            [0.0, 32.0, 0.0],
+        ];
+        let above = [
+            [0.0, -32.0, 32.0 + gap],
+            [0.0, 32.0, 32.0 + gap],
+            [-32.0, 0.0, 64.0 + gap],
+            [32.0, 0.0, 64.0 + gap],
+        ];
+        for points in [below, above] {
+            let brush = Brush::convex_hull(&points, &rock()).unwrap();
+            file.entities[0].items.push(Item::Brush(brush));
+        }
+        let scene = scene_of(&format!("edges-{gap}"), &file);
+        let picked = scene.picked_by(&[world(0)], Region::Touching, &BTreeSet::new());
+        assert_eq!(picked.brushes == [world(1)], touching, "gap {gap}");
+    }
+}
+
+// No spec statement: P7-08: a brush entity's own brush selects what it touches but not the
+// entity that holds it
+#[test]
+fn a_brush_does_not_select_its_own_entity() {
+    let mut file = MapFile::parse(
+        b"{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"func_detail\"\n}\n\
+          {\n\"classname\" \"light\"\n\"origin\" \"32 32 32\"\n}\n",
+    )
+    .unwrap();
+    let brush = Brush::cuboid([0.0; 3], [64.0; 3], &rock()).unwrap();
+    file.entities[1].items.push(Item::Brush(brush));
+    let scene = scene_of("owner", &file);
+    let by = [(EntityIndex::new(1), BrushIndex::new(0))];
+    let picked = scene.picked_by(&by, Region::Touching, &BTreeSet::new());
+    assert_eq!(
+        picked.entities,
+        [EntityIndex::new(2)],
+        "the light, not the func_detail"
     );
 }

@@ -267,3 +267,99 @@ fn entities_are_extracted_into_new_linked_groups() {
         "all of it"
     );
 }
+
+// No spec statement: P7-08: ungrouping a group, or making a brush entity structural, leaves its
+// brushes in the layer it was in, its own entity's, not the default layer; a group holding a
+// locked entity is not ungrouped
+#[test]
+fn brushes_stay_in_their_layer_and_locks_hold() {
+    use super::{MAP_MAKE_BRUSH_ENTITY, MAP_MAKE_STRUCTURAL};
+    use crate::{MAP_LOCK, MAP_MOVE_TO};
+
+    let mut session = session("stay");
+    session
+        .execute(MAP_ADD_LAYER, json!({ "name": "Details" }))
+        .unwrap();
+    let layer = map(&session).entities.len() - 1;
+    session
+        .execute(MAP_GROUP, json!({ "name": "g", "brushes": [0] }))
+        .unwrap();
+    let group = map(&session).entities.len() - 1;
+    session
+        .execute(MAP_MOVE_TO, json!({ "entity": group, "into": layer }))
+        .unwrap();
+    session
+        .execute(MAP_UNGROUP, json!({ "group": group }))
+        .unwrap();
+    let ungrouped = map(&session);
+    assert_eq!(
+        ungrouped.entities[layer].brushes().count(),
+        1,
+        "in the layer"
+    );
+    assert_eq!(ungrouped.entities[0].brushes().count(), 1, "the other left");
+    session
+        .execute(
+            MAP_MAKE_BRUSH_ENTITY,
+            json!({ "classname": "func_wall", "brushes": [0] }),
+        )
+        .unwrap();
+    let wall = map(&session).entities.len() - 1;
+    session
+        .execute(MAP_MOVE_TO, json!({ "entity": wall, "into": layer }))
+        .unwrap();
+    session
+        .execute(MAP_MAKE_STRUCTURAL, json!({ "entity": wall }))
+        .unwrap();
+    let structural = map(&session);
+    assert_eq!(structural.entities[layer].brushes().count(), 2);
+    assert_eq!(structural.entities[0].brushes().count(), 0);
+    session
+        .execute(MAP_GROUP, json!({ "name": "lamp", "entities": [1] }))
+        .unwrap();
+    let lamp = map(&session).entities.len() - 1;
+    session
+        .execute(MAP_LOCK, json!({ "entities": [1] }))
+        .unwrap();
+    let before = map(&session);
+    assert!(
+        session
+            .execute(MAP_UNGROUP, json!({ "group": lamp }))
+            .is_err()
+    );
+    assert_eq!(map(&session), before);
+}
+
+// No spec statement: P7-08: a group holding a group is not linked-duplicated, since a linked
+// group holding a group is not kept in step with its copies (MAP-9.5); a layer is not grouped
+#[test]
+fn nested_groups_are_not_linked_and_layers_not_grouped() {
+    let mut session = session("nested");
+    session
+        .execute(MAP_GROUP, json!({ "name": "inner", "entities": [1] }))
+        .unwrap();
+    let inner = map(&session).entities.len() - 1;
+    session
+        .execute(MAP_GROUP, json!({ "name": "outer", "entities": [inner] }))
+        .unwrap();
+    let outer = map(&session).entities.len() - 1;
+    let before = map(&session);
+    let refused = session
+        .execute(MAP_LINK_DUPLICATE, json!({ "group": outer }))
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("holds a group"), "{refused}");
+    assert_eq!(map(&session), before);
+    session
+        .execute(MAP_LINK_DUPLICATE, json!({ "group": inner }))
+        .unwrap();
+    session
+        .execute(MAP_ADD_LAYER, json!({ "name": "Details" }))
+        .unwrap();
+    let layer = map(&session).entities.len() - 1;
+    assert!(
+        session
+            .execute(MAP_GROUP, json!({ "name": "x", "entities": [layer] }))
+            .is_err()
+    );
+}

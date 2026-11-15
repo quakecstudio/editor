@@ -213,10 +213,11 @@ impl MapDocument {
     }
 
     /// The prefab of `brushes` and `entities`, moved by `anchor`: a prefab's so the middle of
-    /// their floor is the origin, across on its grid and up exactly; a copy's not at all. A brush of the world, or of a layer or group,
-    /// goes into the prefab's world; one of another entity brings that entity whole, as an
-    /// entity named does. A layer or group named gives its brushes to the world, and an entity's
-    /// keys placing it in this map's layers and groups are left out.
+    /// their floor is the origin, across on its grid and up exactly; a copy's not at all. A
+    /// brush of the world, or of a layer or group, goes into the prefab's world; one of another
+    /// entity brings that entity whole, as an entity named does. A layer or group named gives its
+    /// brushes to the world, and an entity's keys placing it in this map's layers and groups are
+    /// left out.
     fn prefab_of(
         &mut self,
         brushes: &[(EntityIndex, BrushIndex)],
@@ -455,7 +456,8 @@ pub(super) struct Copy;
 
 impl<C: HasMap + 'static> Command<C> for Copy {
     const ID: &'static str = MAP_COPY;
-    const SUMMARY: &'static str = "Writes brushes of the world and whole entities of the open map         as a .map's text, where they are, for the clipboard; the map is unchanged.";
+    const SUMMARY: &'static str = "Writes brushes of the world and whole entities of the open map \
+        as a .map's text, where they are, for the clipboard; the map is unchanged.";
     type Params = CopyParams;
     type Output = Copied;
     type Error = MapEditError;
@@ -476,7 +478,9 @@ pub(super) struct Paste;
 
 impl<C: HasMap + 'static> Command<C> for Paste {
     const ID: &'static str = MAP_PASTE;
-    const SUMMARY: &'static str = "Adds a .map's text to the open map, its world's brushes to the         world and its other entities after the map's: where the text has them, or with the         middle of their floor at a point on the grid.";
+    const SUMMARY: &'static str = "Adds a .map's text to the open map, its world's brushes to the \
+        world and its other entities after the map's: where the text has them, or with the \
+        middle of their floor at a point on the grid.";
     type Params = PasteParams;
     type Output = MapEdited;
     type Error = MapEditError;

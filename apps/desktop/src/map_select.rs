@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 
 use qs_map_edit::{BrushIndex, EntityIndex};
 
-use crate::map_scene::{BrushShape, Scene};
+use crate::map_scene::{BrushShape, Line, Scene};
 
 /// A brush, by its entity and its place among the entity's brushes.
 pub(crate) type BrushRef = (EntityIndex, BrushIndex);
@@ -161,8 +161,9 @@ impl Scene {
                 Region::Touching | Region::Inside => shape.planes.clone(),
             }
         };
-        // Two convex solids touch unless a face plane of one has all of the other past it.
-        let takes = |points: &[[f32; 3]], own: &[([f32; 3], f32)]| {
+        // Two convex solids touch unless a face plane of one has all of the other past it, or the
+        // cross of an edge of each parts them (the separating axis test).
+        let takes = |points: &[[f32; 3]], own: &[([f32; 3], f32)], edges: &[[f32; 3]]| {
             selectors.iter().any(|selector| {
                 let planes = planes_of(selector);
                 match region {
@@ -170,6 +171,12 @@ impl Scene {
                         let theirs = selector.corners();
                         !planes.iter().any(|&plane| all_outside(points, plane))
                             && !own.iter().any(|&plane| all_outside(&theirs, plane))
+                            && !edges_part(
+                                points,
+                                edges,
+                                &theirs,
+                                &edge_directions(&selector.lines),
+                            )
                     }
                     Region::Inside | Region::Tall(_) => planes
                         .iter()
@@ -182,14 +189,28 @@ impl Scene {
             .iter()
             .filter(|shape| !hidden.contains(&shape.entity))
             .filter(|shape| !by.contains(&(shape.entity, shape.brush)))
-            .filter(|shape| takes(&shape.corners(), &shape.planes))
+            .filter(|shape| {
+                takes(
+                    &shape.corners(),
+                    &shape.planes,
+                    &edge_directions(&shape.lines),
+                )
+            })
             .map(|shape| (shape.entity, shape.brush))
             .collect();
+        // The entities holding the selecting brushes are left out with them.
+        let owners: BTreeSet<EntityIndex> = by.iter().map(|&(entity, _)| entity).collect();
         let entities = self
             .entities
             .iter()
-            .filter(|shape| !hidden.contains(&shape.index))
-            .filter(|shape| takes(&box_corners(shape.bounds), &box_planes(shape.bounds)))
+            .filter(|shape| !hidden.contains(&shape.index) && !owners.contains(&shape.index))
+            .filter(|shape| {
+                takes(
+                    &box_corners(shape.bounds),
+                    &box_planes(shape.bounds),
+                    &BOX_EDGES,
+                )
+            })
             .map(|shape| shape.index)
             .collect();
         Picked { entities, brushes }
@@ -240,6 +261,43 @@ fn outside(point: [f32; 3], (normal, distance): ([f32; 3], f32)) -> bool {
     let [nx, ny, nz] = normal;
     let [x, y, z] = point;
     nx * x + ny * y + nz * z - distance > ON_PLANE
+}
+
+/// The directions of a box's edges: the map's axes.
+const BOX_EDGES: [[f32; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+
+/// Each of `lines`' directions, unnormalized.
+fn edge_directions(lines: &[Line]) -> Vec<[f32; 3]> {
+    lines
+        .iter()
+        .map(|&[[ax, ay, az], [bx, by, bz]]| [bx - ax, by - ay, bz - az])
+        .collect()
+}
+
+/// Whether the cross of an edge direction of each of two convex solids is an axis along which
+/// their corners `a` and `b` lie apart, by more than [`ON_PLANE`].
+fn edges_part(a: &[[f32; 3]], a_edges: &[[f32; 3]], b: &[[f32; 3]], b_edges: &[[f32; 3]]) -> bool {
+    let dot = |[x, y, z]: [f32; 3], [u, v, w]: [f32; 3]| x * u + y * v + z * w;
+    let span = |points: &[[f32; 3]], axis: [f32; 3]| {
+        points
+            .iter()
+            .map(|&p| dot(p, axis))
+            .fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), d| {
+                (lo.min(d), hi.max(d))
+            })
+    };
+    a_edges.iter().any(|&[ax, ay, az]| {
+        b_edges.iter().any(|&[bx, by, bz]| {
+            let axis = [ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx];
+            let length = dot(axis, axis).sqrt();
+            if length < f32::EPSILON {
+                return false;
+            }
+            let ((a_lo, a_hi), (b_lo, b_hi)) = (span(a, axis), span(b, axis));
+            let gap = ON_PLANE * length;
+            a_hi + gap < b_lo || b_hi + gap < a_lo
+        })
+    })
 }
 
 /// Whether every one of `points` is past the plane: the plane parts them from the brush.

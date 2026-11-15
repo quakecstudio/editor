@@ -236,7 +236,7 @@ impl MapDocument {
     }
 
     /// The entities of `file` that are locked: by `map.lock`, or in a locked layer.
-    fn locked_in(&self, file: &MapFile) -> BTreeSet<EntityIndex> {
+    pub(super) fn locked_in(&self, file: &MapFile) -> BTreeSet<EntityIndex> {
         let mut locked = Self::in_layers(file, LayerOption::Locked);
         locked.extend(self.view.locked.iter().copied());
         locked
