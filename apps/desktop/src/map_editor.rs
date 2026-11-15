@@ -44,6 +44,7 @@ use crate::map_prefabs::{PrefabBrowser, PrefabDrag};
 use crate::map_profiles::{ProfileAction, ProfileView};
 use crate::map_review::{ReviewAction, ReviewView};
 use crate::map_scene::{ClassLook, Line, LinkView, SPAWNFLAGS, Scene, load_models, start_camera};
+use crate::map_select::{Picked, Region};
 use crate::map_shading::{ShadedView, TexturedFrom};
 use crate::map_tools::{BrushAction, BrushTools, MapTool, PickMode};
 use crate::shell::name_field;
@@ -470,6 +471,18 @@ impl MapEditor {
     /// The 3D view's camera: where Play from here puts the player (P6-12).
     pub(crate) const fn camera(&self) -> Option<&Camera> {
         self.camera.as_ref()
+    }
+
+    /// How many entities are selected besides the document's own selection, for tests.
+    #[cfg(test)]
+    pub(crate) fn also_count(&self) -> usize {
+        self.also.len()
+    }
+
+    /// How many brushes are selected, for tests.
+    #[cfg(test)]
+    pub(crate) fn chosen_count(&self) -> usize {
+        self.tools.chosen().len()
     }
 
     /// Puts the 3D view's camera at `camera`, for tests that aim clicks from a fixed place.
@@ -1083,6 +1096,7 @@ impl MapEditor {
                 &selection,
                 self.tools.chosen(),
             ));
+            actions.extend(self.select_keys(ui, pane, &selection, hidden));
             if let Some(grid) = grid_key(ui, self.tools.grid) {
                 actions.push(MapAction::View(ViewSetting::Grid(grid)));
             }
@@ -1803,6 +1817,96 @@ enum Framing {
     /// Every selected entity and brush (P7-08).
     Selection,
 }
+
+impl MapEditor {
+    /// TrenchBroom's selection keys (P7-08): Cmd+A selects everything, Cmd+Alt+A inverts the
+    /// selection and Cmd+Shift+A clears it; Cmd+T, Cmd+E and Cmd+Shift+E select what the
+    /// selected brushes touch, hold, or hold stretched along the view's axis, and delete them,
+    /// as TrenchBroom's Select Touching, Inside and Tall do.
+    fn select_keys(
+        &mut self,
+        ui: &Ui,
+        pane: Pane,
+        selection: &BTreeSet<EntityIndex>,
+        hidden: &BTreeSet<EntityIndex>,
+    ) -> Vec<MapAction> {
+        let tall = match pane {
+            Pane::Plan(plan) => plan.axis(),
+            Pane::Perspective => Z_AXIS,
+        };
+        let asked = ui.input_mut(|i| {
+            let mut key = |modifiers, key| i.consume_key(modifiers, key);
+            if key(Modifiers::COMMAND | Modifiers::ALT, Key::A) {
+                Some(SelectKey::Invert)
+            } else if key(Modifiers::COMMAND | Modifiers::SHIFT, Key::A) {
+                Some(SelectKey::Clear)
+            } else if key(Modifiers::COMMAND, Key::A) {
+                Some(SelectKey::All)
+            } else if key(Modifiers::COMMAND | Modifiers::SHIFT, Key::E) {
+                Some(SelectKey::By(Region::Tall(tall)))
+            } else if key(Modifiers::COMMAND, Key::E) {
+                Some(SelectKey::By(Region::Inside))
+            } else if key(Modifiers::COMMAND, Key::T) {
+                Some(SelectKey::By(Region::Touching))
+            } else {
+                None
+            }
+        });
+        let Some(asked) = asked else {
+            return Vec::new();
+        };
+        let now = Picked {
+            entities: selection.iter().copied().collect(),
+            brushes: self.tools.chosen().to_vec(),
+        };
+        let mut actions = Vec::new();
+        let picked = match asked {
+            SelectKey::All => self.scene.all(hidden),
+            SelectKey::Invert => self.scene.inverted(&now, hidden),
+            SelectKey::Clear => Picked::default(),
+            SelectKey::By(region) => {
+                let mut picked = self.scene.picked_by(&now.brushes, region, hidden);
+                // The selecting brushes go, the last of each entity first so the rest keep
+                // their places; the brushes picked after one in its entity move down a place.
+                let mut gone = now.brushes.clone();
+                gone.sort();
+                for &(entity, brush) in gone.iter().rev() {
+                    actions.push(MapAction::Brush(BrushAction::Delete(entity, brush)));
+                }
+                for (entity, brush) in &mut picked.brushes {
+                    let before = gone
+                        .iter()
+                        .filter(|&&(e, b)| e == *entity && b < *brush)
+                        .count();
+                    *brush = BrushIndex::new(brush.get().saturating_sub(before));
+                }
+                picked
+            }
+        };
+        let mut entities = picked.entities.into_iter();
+        let first = entities.next();
+        self.also = entities.collect();
+        actions.insert(0, MapAction::Select(first));
+        self.tools.choose(picked.brushes, &self.scene);
+        actions
+    }
+}
+
+/// A selection key's command.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SelectKey {
+    /// Select All.
+    All,
+    /// Invert Selection.
+    Invert,
+    /// Deselect All.
+    Clear,
+    /// Select what the selected brushes pick.
+    By(Region),
+}
+
+/// The vertical, 2: what Select Tall stretches along in the 3D view, as the top view sees it.
+const Z_AXIS: usize = 2;
 
 /// A flip or turn of the selection: its whole entities and its brushes (P7-08).
 #[derive(Clone, Debug, PartialEq)]

@@ -89,6 +89,16 @@ pub(crate) enum Plan {
 }
 
 impl Plan {
+    /// The map axis the view looks along: 2 for z in the top view, 1 for y in the front, 0 for
+    /// x in the side.
+    pub(crate) const fn axis(self) -> usize {
+        match self {
+            Self::Top => 2,
+            Self::Front => 1,
+            Self::Side => 0,
+        }
+    }
+
     /// `p` in the view's plane: across and up the screen.
     const fn flat(self, [x, y, z]: [f32; 3]) -> [f32; 2] {
         match self {

@@ -956,6 +956,19 @@ impl BrushTools {
         &self.chosen
     }
 
+    /// Selects `brushes` of `scene` in place of the brushes selected (P7-08).
+    pub(crate) fn choose(&mut self, brushes: Vec<BrushRef>, scene: &Scene) {
+        self.seen.clear();
+        for &brush in &brushes {
+            if let Some(shape) = scene.brush(brush.0, brush.1) {
+                self.seen.insert(brush, shape.vertices.clone());
+            }
+        }
+        self.chosen = brushes;
+        self.uv.clear();
+        self.corners.clear();
+    }
+
     /// Escape, as TrenchBroom cancels ("Canceling Operations and Tools"): a drag is dropped,
     /// else the Vertex tool's picked corners, else the tool goes back to Select. False when
     /// there was nothing of the tools' to cancel, so the selection goes instead.
@@ -1214,8 +1227,19 @@ impl BrushTools {
 
     /// The selection flipped along an axis or turned by any angle, as TrenchBroom's Flip and
     /// Rotate tool (P7-08).
-    fn arrange_row(&mut self, ui: &mut Ui, entities: &[EntityIndex]) -> Vec<BrushAction> {
+    fn arrange_row(
+        &mut self,
+        ui: &mut Ui,
+        entities: &[EntityIndex],
+        scene: &Scene,
+    ) -> Vec<BrushAction> {
         let mut asked = Vec::new();
+        // TrenchBroom's Select Siblings (its Ctrl+B is Compile here): every brush of the
+        // entities holding the brushes selected.
+        if ui.button(Text::MapSelectSiblings.get()).clicked() {
+            let siblings = scene.siblings(&self.chosen);
+            self.choose(siblings, scene);
+        }
         ui.horizontal_wrapped(|ui| {
             let turn = ui.add(
                 egui::DragValue::new(&mut self.turn_by.0)
@@ -1276,7 +1300,7 @@ impl BrushTools {
                 max[2] - min[2],
             ]));
         }
-        actions.extend(self.arrange_row(ui, entities));
+        actions.extend(self.arrange_row(ui, entities, scene));
         let mut by_entity: BTreeMap<EntityIndex, Vec<BrushIndex>> = BTreeMap::new();
         for &(e, b) in &self.chosen {
             by_entity.entry(e).or_default().push(b);

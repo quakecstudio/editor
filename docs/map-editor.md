@@ -90,6 +90,12 @@ it too.
   (`view.map_camera`, kept in the layout). Cmd+U frames the selection, every selected entity and brush, keeping
   where the camera looks (TrenchBroom's Focus on Selection, Ctrl+U). The Properties panel shows
   the camera's x, y and z, and a value typed or dragged there moves it.
+- **Selecting (P7-08):** Cmd+A selects every entity and world brush not hidden, Cmd+Alt+A
+  inverts the selection and Cmd+Shift+A clears it. With brushes selected, Cmd+T selects what
+  they touch, Cmd+E what lies inside them and Cmd+Shift+E what lies inside them stretched along
+  the view's axis, then deletes them, as TrenchBroom's Select Touching, Inside and Tall; Select
+  siblings in Properties takes every brush of their entities (TrenchBroom's Ctrl+B is Compile
+  here).
 - **Flip and turn (P7-08):** Cmd+F flips the selection across the view, along the map axis
   nearest the camera's right, and Cmd+Alt+F up and down (TrenchBroom's Ctrl+F and Ctrl+Alt+F);
   Alt+Left and Right turn it a right angle about the vertical. With brushes selected, the

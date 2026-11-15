@@ -70,8 +70,8 @@ Tests are named `crate-or-app path::test`; `desktop` is `apps/desktop/src`, `map
 | Click selects; Ctrl+click adds | Click selects; Shift+click adds | `desktop tests` | Same |
 | Selection drilling with the wheel in 3D | None | none | Gap G8 |
 | 2D click picks by the candidates under the pointer | First brush the ray enters | none | Gap G8 |
-| Select all, select touching, select inside, select tall | None | none | Gap G8 |
-| Select siblings, invert selection, deselect all | Deselect by clicking the void | none | Gap G8 |
+| Select all, select touching, select inside, select tall | Cmd+A, Cmd+T, Cmd+E, Cmd+Shift+E, as TrenchBroom's (the selecting brushes deleted) | `desktop map_select::tests`, `desktop tests::the_selection_keys_select_all_invert_siblings_and_touching` | Same |
+| Select siblings, invert selection, deselect all | Select siblings in Properties (Ctrl+B is Compile here), Cmd+Alt+A, Cmd+Shift+A and Escape | as above | Same |
 | Select brush faces with Shift+click; all faces by double click | The UV editor's face pick | `desktop map_uv` tests | Same: the UV editor picks faces |
 | Search box with plain text and queries | `map.search` by class, key, texture and box | `map-edit issues::tests::search_by_class_key_texture_and_box` | Gap G19: plain fields, not TrenchBroom's query language |
 
@@ -178,7 +178,7 @@ To close before #823 does:
 | --- | --- |
 | G1 | Entity models drawn textured, not as wireframes |
 | G7 | Two- and three-pane layouts, a highlight on the focused pane, linked 2D views |
-| G8 | Selection drilling; select all, touching, inside, tall, siblings; invert; deselect all; 2D picking by candidates |
+| G8 | Selection drilling; 2D picking by candidates |
 | G11 | Axis restriction while moving |
 | G12 | The map view's context menu |
 | G13 | Brush entities from selected brushes and back to the world; a convex brush from placed points; stamping and moving faces; clip snapping and matching a face's plane |

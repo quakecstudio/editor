@@ -866,6 +866,8 @@ pub enum Text {
     MapTurn,
     /// Flips the selection along x.
     MapFlipX,
+    /// Selects every brush of the entities holding the selected brushes.
+    MapSelectSiblings,
     /// Flips the selection along y.
     MapFlipY,
     /// Flips the selection along z.
@@ -934,7 +936,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 459] = [
+    pub const ALL: [Self; 460] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1362,6 +1364,7 @@ impl Text {
         Self::MapTurnBy,
         Self::MapTurn,
         Self::MapFlipX,
+        Self::MapSelectSiblings,
         Self::MapFlipY,
         Self::MapFlipZ,
         Self::MapResetZoom,
@@ -1902,6 +1905,7 @@ impl Text {
             Self::MapTurnBy => "Degrees to turn the selection by",
             Self::MapTurn => "Turn",
             Self::MapFlipX => "Flip x",
+            Self::MapSelectSiblings => "Select siblings",
             Self::MapFlipY => "Flip y",
             Self::MapFlipZ => "Flip z",
             Self::MapResetZoom => "Reset zoom",

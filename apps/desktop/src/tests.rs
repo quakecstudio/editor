@@ -2903,6 +2903,71 @@ fn selected_brushes_turn_and_flip_from_properties() {
     assert_eq!(map_text(&harness), before);
 }
 
+// No spec statement: P7-08: TrenchBroom's selection keys in the map view: Cmd+A selects every
+// entity and world brush, Cmd+Alt+A inverts that to nothing, Cmd+Shift+A clears; Select
+// siblings takes every brush of the selected brushes' entities; Cmd+T selects what the selected
+// brush touches and deletes it, one undo bringing it back
+#[test]
+fn the_selection_keys_select_all_invert_siblings_and_touching() {
+    let dir = keep_copy("select");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    outside_the_keep(&mut harness);
+    harness.get_by_label(Text::MapEditorView.get()).click();
+    harness.run();
+    let picked = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        let editor = shell.map_editor();
+        let selected = shell.session().context().workbench.map().unwrap().selected();
+        (
+            selected.into_iter().count() + editor.also_count(),
+            editor.chosen_count(),
+        )
+    };
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.run();
+    let world = brush_count(&harness, 0);
+    assert_eq!(picked(&harness), (4, world), "every entity but the world, every world brush");
+    harness.key_press_modifiers(egui::Modifiers::COMMAND | egui::Modifiers::ALT, egui::Key::A);
+    harness.run();
+    assert_eq!(picked(&harness), (0, 0), "the inverse of everything");
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::A);
+    harness.run();
+    assert_eq!(picked(&harness), (0, 0));
+    // The west wall, with the Vertex tool; Select siblings takes all six walls.
+    harness.get_by_label(Text::MapToolVertex.get()).click();
+    harness.run();
+    let at = drawn_at(&harness, 4);
+    click_at(&mut harness, at);
+    assert_eq!(picked(&harness).1, 1);
+    harness.get_by_label(Text::MapSelectSiblings.get()).click();
+    harness.run();
+    assert_eq!(picked(&harness).1, world);
+    // Back to the west wall alone: Cmd+T takes the floor, ceiling and two side walls it meets,
+    // and deletes it.
+    harness.key_press_modifiers(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::A);
+    harness.run();
+    click_at(&mut harness, at);
+    let before = map_text(&harness);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::T);
+    harness.run();
+    harness.run();
+    assert_eq!(brush_count(&harness, 0), world - 1, "the selecting brush went");
+    assert_eq!(picked(&harness).1, 4, "the four walls it touched");
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("edit.undo", json!({})).unwrap();
+    harness.run();
+    assert_eq!(map_text(&harness), before);
+}
+
 // No spec statement: P6-08, MAP-2: a click with a brush tool selects the first brush the ray
 // enters, by its faces, and Delete brush in Properties deletes it; the Brush tool draws a box on
 // the floor with a drag; each through a command, so each undoes
