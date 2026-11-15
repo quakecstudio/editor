@@ -233,6 +233,23 @@ impl Projection {
         }
     }
 
+    /// The way the map axis `axis` runs across the pane, in points per map unit along the
+    /// pane's right and down, for its compass (P7-08): the camera's turn alone, whatever its
+    /// place.
+    pub(crate) fn compass(&self, axis: [f32; 3]) -> Vec2 {
+        match self.lens {
+            Lens::Perspective(camera) => {
+                let [_, right, up] = camera.axes();
+                let dot = |a: [f32; 3]| a[0] * axis[0] + a[1] * axis[1] + a[2] * axis[2];
+                Vec2::new(dot(right), -dot(up))
+            }
+            Lens::Plan(plan, _) => {
+                let [across, up] = plan.flat(axis);
+                Vec2::new(across, -up)
+            }
+        }
+    }
+
     /// Where `p` is in the pane, when it is in front of the near plane.
     pub(crate) fn point(&self, p: [f32; 3]) -> Option<Pos2> {
         let v = self.view(p);
@@ -293,6 +310,25 @@ mod tests {
             assert_eq!(back, across, "{plan:?}");
             assert_eq!(direction.iter().map(|c| c.abs()).sum::<f32>(), 1.0);
         }
+    }
+
+    // No spec statement: P7-08: the compass shows each map axis as the pane sees it: in the top
+    // view x runs right and y up; facing +x in the 3D view, y runs left, z up and x away
+    #[test]
+    fn the_compass_turns_with_the_view() {
+        use qs_render::{Camera, Degrees};
+
+                let top = Projection::plan(Plan::Top, PlanCamera::new(Plan::Top, [0.0; 3]), RECT);
+        assert_eq!(top.compass([1.0, 0.0, 0.0]), Vec2::new(1.0, 0.0));
+        assert_eq!(top.compass([0.0, 1.0, 0.0]), Vec2::new(0.0, -1.0));
+        assert_eq!(top.compass([0.0, 0.0, 1.0]), Vec2::new(0.0, 0.0));
+        let side = Projection::plan(Plan::Side, PlanCamera::new(Plan::Side, [0.0; 3]), RECT);
+        assert_eq!(side.compass([0.0, 1.0, 0.0]), Vec2::new(1.0, 0.0));
+        let ahead = Projection::perspective(Camera::new([0.0; 3], Degrees::new(0.0)), RECT);
+        let near = |v: Vec2, w: Vec2| (v - w).length() < 1e-5;
+        assert!(near(ahead.compass([1.0, 0.0, 0.0]), Vec2::new(0.0, 0.0)));
+        assert!(near(ahead.compass([0.0, 1.0, 0.0]), Vec2::new(-1.0, 0.0)));
+        assert!(near(ahead.compass([0.0, 0.0, 1.0]), Vec2::new(0.0, -1.0)));
     }
 
     // No spec statement: P6-09: panning follows the pointer and zooming stays in its range

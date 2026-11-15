@@ -76,6 +76,8 @@ it too.
   tool, a click selects the first brush the pointer's ray enters, by its faces, and Shift+click
   adds or removes one. Each edit is a `map.brush_*` command on the grid, undone in one step, and
   kept convex: one that would leave a brush with no volume is refused.
+- **Compass (P7-08):** each pane's lower left corner shows the map's x, y and z axes as the pane
+  sees them, in red, green and blue with their letters, as TrenchBroom's compass.
 - **Map bounds (P7-08):** the 2D views draw the soft map bounds, -4096 to 4096 units on each
   axis, in the warning colour, the box TrenchBroom's Quake configuration draws: where players,
   items and other entities can be.

@@ -53,7 +53,7 @@ Tests are named `crate-or-app path::test`; `desktop` is `apps/desktop/src`, `map
 | --- | --- | --- | --- |
 | Main window: menu, toolbar, editing area, inspector, info panel | Menu, toolbar, Map tab, Properties panel, bottom panel | `desktop snapshots` | Same |
 | One to four viewports; 2D top, front and side | `view.map_panes`: one or four | `qs-layout` map view tests | Gap G7: no two- or three-pane layout |
-| Compass in each viewport | None | none | Gap G2 |
+| Compass in each viewport | X, Y and Z in each pane's lower left, each with its letter | `desktop map_panes::tests::the_compass_turns_with_the_view` | Same |
 | Viewport focus highlight | The pane under the pointer takes input, with no highlight | none | Gap G7 |
 | Map bounds shown as a guide | TrenchBroom's Quake soft bounds, -4096 to 4096, in the 2D views | `desktop tests::the_2d_views_draw_the_soft_map_bounds` | Same; not editable per map |
 | Look by right-drag; move with keys; speed on the wheel | Right-drag looks, WASD flies | `desktop tests::the_camera_starts_behind_the_player_start` | Same: WASD flies, the wheel travels |
@@ -177,7 +177,6 @@ To close before #823 does:
 | Gap | What TrenchBroom's manual has that we lack |
 | --- | --- |
 | G1 | Entity models drawn textured, not as wireframes |
-| G2 | A compass in each viewport |
 | G4 | Orbiting the camera about a clicked point |
 | G6 | The 3D view's field of view, a temporary zoom, and mouse preferences |
 | G7 | Two- and three-pane layouts, a highlight on the focused pane, linked 2D views |

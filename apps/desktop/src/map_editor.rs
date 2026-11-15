@@ -1245,6 +1245,26 @@ impl MapEditor {
         self.profiles.draw(&painter, &projection, theme);
         self.tools
             .draw(&painter, &projection, theme, &self.scene, pointer.map(ray));
+        // A compass in the pane's lower left corner, as TrenchBroom's: the map's x, y and z axes
+        // as the pane sees them, each with its letter.
+        let (cx, cy) = (area.left() + COMPASS_INSET, area.bottom() - COMPASS_INSET);
+        let centre = egui::pos2(cx, cy);
+        for (axis, token, letter) in COMPASS {
+            let way = projection.compass(axis);
+            let (dx, dy) = (way.x * COMPASS_LENGTH, way.y * COMPASS_LENGTH);
+            let colour = theme.color(token);
+            let end = egui::pos2(cx + dx, cy + dy);
+            painter.line_segment([centre, end], Stroke::new(2.0, colour));
+            if dx.hypot(dy) > COMPASS_LABEL_LEAST {
+                painter.text(
+                    egui::pos2(cx + dx * COMPASS_LABEL_OUT, cy + dy * COMPASS_LABEL_OUT),
+                    egui::Align2::CENTER_CENTER,
+                    letter.get(),
+                    egui::FontId::proportional(PANE_LABEL_SIZE),
+                    colour,
+                );
+            }
+        }
         if let Pane::Plan(_) = pane {
             // The soft map bounds as a guide, in the 2D views as TrenchBroom draws them.
             let bounds = Stroke::new(1.0, theme.color(Token::StatusWarn));
@@ -1521,6 +1541,23 @@ fn fly(ui: &Ui, camera: &mut Camera) {
 /// `games/Quake/GameConfig.cfg`'s `"softMapBounds":"-4096 -4096 -4096 4096 4096 4096"`, where
 /// players, items and other entities can be.
 const SOFT_BOUNDS: [[f32; 3]; 2] = [[-4096.0; 3], [4096.0; 3]];
+
+/// The compass's axes: the map's x, y and z, in red, green and blue as TrenchBroom draws them,
+/// from the theme's error, ok and focus colours, each with its letter.
+const COMPASS: [([f32; 3], Token, Text); 3] = [
+    ([1.0, 0.0, 0.0], Token::StatusError, Text::CompassX),
+    ([0.0, 1.0, 0.0], Token::StatusOk, Text::CompassY),
+    ([0.0, 0.0, 1.0], Token::Focus, Text::CompassZ),
+];
+/// How far the compass's centre is from the pane's lower left corner, in points.
+const COMPASS_INSET: f32 = 36.0;
+/// How long an axis lying across the pane is drawn, in points.
+const COMPASS_LENGTH: f32 = 22.0;
+/// How far past an axis's end its letter is, as a share of its length.
+const COMPASS_LABEL_OUT: f32 = 1.35;
+/// The shortest an axis is drawn, in points, and still has its letter: one pointing at the
+/// viewer has none, so its letter does not cover the others.
+const COMPASS_LABEL_LEAST: f32 = 4.0;
 
 /// The camera position fields' names, x, y and z.
 const CAMERA_AXES: [Text; 3] = [Text::MapCameraX, Text::MapCameraY, Text::MapCameraZ];

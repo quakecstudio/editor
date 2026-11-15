@@ -856,6 +856,12 @@ pub enum Text {
     MapGrid,
     /// Before the 3D camera's position fields (P7-08).
     MapCamera,
+    /// The compass's x axis (P7-08).
+    CompassX,
+    /// The compass's y axis.
+    CompassY,
+    /// The compass's z axis.
+    CompassZ,
     /// The camera's position fields, on hover.
     MapCameraHelp,
     /// The camera's x field, to a screen reader.
@@ -900,7 +906,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 442] = [
+    pub const ALL: [Self; 445] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1323,6 +1329,9 @@ impl Text {
         Self::MapPanesPicker,
         Self::MapGrid,
         Self::MapCamera,
+        Self::CompassX,
+        Self::CompassY,
+        Self::CompassZ,
         Self::MapCameraHelp,
         Self::MapCameraX,
         Self::MapCameraY,
@@ -1846,6 +1855,9 @@ impl Text {
             Self::MapPanesPicker => "Map view layout",
             Self::MapGrid => "Grid",
             Self::MapCamera => "Camera",
+            Self::CompassX => "X",
+            Self::CompassY => "Y",
+            Self::CompassZ => "Z",
             Self::MapCameraHelp => "Where the 3D camera stands: type or drag a value to move it",
             Self::MapCameraX => "Camera x",
             Self::MapCameraY => "Camera y",
