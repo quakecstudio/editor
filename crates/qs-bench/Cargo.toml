@@ -16,6 +16,7 @@ qc-progs = { workspace = true }
 qc-project = { workspace = true }
 qc-sema = { workspace = true }
 # play_from_here_e1m1: Play from here's compile and light of lq-e1m1 (P6-37).
+qs-map = { workspace = true }
 qs-map-bsp = { workspace = true }
 qs-map-light = { workspace = true }
 quakec-studio = { workspace = true }
