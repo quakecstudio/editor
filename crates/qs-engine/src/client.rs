@@ -526,6 +526,25 @@ impl Client {
         self.request("entity/edit", params)
     }
 
+    /// `map/swap` (BRIDGE-4.14): the BSP at `bsp`, a new build of the running map, put in place
+    /// of the old, each of `models`, a map entity's place (BRIDGE-4.13) and its brush model
+    /// `*n` in the new build, given its model.
+    ///
+    /// # Errors
+    ///
+    /// The request's [`ClientError`].
+    pub fn swap_map(
+        &mut self,
+        bsp: &str,
+        models: &[(usize, String)],
+    ) -> Result<Value, ClientError> {
+        let models: Vec<Value> = models
+            .iter()
+            .map(|(place, model)| json!({ "map_entity": place, "model": model }))
+            .collect();
+        self.request("map/swap", json!({ "bsp": bsp, "models": models }))
+    }
+
     /// `player/spawn_at` (BRIDGE-4.9).
     ///
     /// # Errors

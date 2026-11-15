@@ -50,6 +50,7 @@ fn qs_engine::client::Client::shutdown
 fn qs_engine::client::Client::spawn
 fn qs_engine::client::Client::spawn_player_at
 fn qs_engine::client::Client::step
+fn qs_engine::client::Client::swap_map
 fn qs_engine::client::Client::take_events
 fn qs_engine::client::Client::wait_event
 fn qs_engine::launch::LaunchSpec::command
