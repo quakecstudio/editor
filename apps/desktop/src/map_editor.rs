@@ -1107,7 +1107,11 @@ impl MapEditor {
                     };
                     self.zoom = self.zoom.scrolled(scroll + across);
                 } else {
-                    camera.travel(scroll * TRAVEL * self.camera_settings.wheel.sign(), 0.0, 0.0);
+                    camera.travel(
+                        scroll * TRAVEL * self.camera_settings.wheel.sign(),
+                        0.0,
+                        0.0,
+                    );
                 }
                 camera.fov_x = self.zoom.fov(self.camera_settings.fov);
                 Projection::perspective(*camera, area)

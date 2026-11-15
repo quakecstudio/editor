@@ -104,11 +104,14 @@ pub(crate) enum MapTool {
     Measure,
     /// Fill a box with a shape of brushes.
     Shape,
+    /// Place points and make the convex brush around them (P7-08, TrenchBroom's complex
+    /// shape tool).
+    Hull,
 }
 
 impl MapTool {
     /// Every tool, in the toolbar's order.
-    const ALL: [Self; 7] = [
+    const ALL: [Self; 8] = [
         Self::Select,
         Self::Brush,
         Self::Clip,
@@ -116,6 +119,7 @@ impl MapTool {
         Self::Move,
         Self::Measure,
         Self::Shape,
+        Self::Hull,
     ];
 
     const fn text(self) -> Text {
@@ -127,6 +131,7 @@ impl MapTool {
             Self::Move => Text::MapToolMove,
             Self::Measure => Text::MapToolMeasure,
             Self::Shape => Text::MapToolShape,
+            Self::Hull => Text::MapToolHull,
         }
     }
 
@@ -140,6 +145,7 @@ impl MapTool {
             Self::Move => Text::MapMoveHint,
             Self::Measure => Text::MapMeasureHint,
             Self::Shape => Text::MapShapeHint,
+            Self::Hull => Text::MapHullHint,
         }
     }
 
@@ -153,6 +159,7 @@ impl MapTool {
             Self::Move => Some(Text::MapMoveHint),
             Self::Measure => Some(Text::MapMeasureHint),
             Self::Shape => Some(Text::MapShapeHint),
+            Self::Hull => Some(Text::MapHullHint),
         }
     }
 }
@@ -164,6 +171,8 @@ pub enum BrushAction {
     Create([f64; 3], [f64; 3]),
     /// Flip or turn the selected brushes and entities (P7-08).
     Arrange(Arrange),
+    /// Add the convex brush around the points (P7-08).
+    Hull(Vec<[f64; 3]>),
     /// Put the second texture in the first's place on the brushes, or everywhere (P7-08).
     ReplaceTexture(String, String, Vec<BrushRef>),
     /// Cut a brush by the plane through three points, keeping the parts chosen.
@@ -531,6 +540,9 @@ enum Drag {
     Measure([f32; 3], MapAxis),
 }
 
+/// The fewest points that can span a brush: four, a tetrahedron's.
+const HULL_LEAST: usize = 4;
+
 /// The degrees Page Up and Down turn a picked face's texture, TrenchBroom's grid angle.
 const ALIGN_TURN: f64 = 15.0;
 
@@ -586,6 +598,8 @@ pub(crate) struct BrushTools {
     corners: Vec<[f64; 3]>,
     /// The grid drags snap to (P7-08), the layout's.
     pub(crate) grid: MapGrid,
+    /// The points the Hull tool has placed (P7-08).
+    hull: Vec<[f64; 3]>,
     /// The degrees Turn turns the selection by (P7-08).
     turn_by: TurnBy,
 }
@@ -947,11 +961,14 @@ impl BrushTools {
                 None => self.chosen.clear(),
             }
         }
+        if self.tool == MapTool::Hull {
+            return self.hull_input(ui, response, scene, hidden, &ray);
+        }
         if response.drag_started_by(egui::PointerButton::Primary)
             && let Some(at) = ui.input(|i| i.pointer.press_origin())
         {
             self.drag = match self.tool {
-                MapTool::Select => None,
+                MapTool::Select | MapTool::Hull => None,
                 MapTool::Brush | MapTool::Clip | MapTool::Shape => {
                     at_height(ray(at), 0.0).map(Drag::Ground)
                 }
@@ -1134,6 +1151,10 @@ impl BrushTools {
             self.corners.clear();
             return true;
         }
+        if !self.hull.is_empty() {
+            self.hull.clear();
+            return true;
+        }
         if self.tool != MapTool::Select {
             self.tool = MapTool::Select;
             return true;
@@ -1144,6 +1165,43 @@ impl BrushTools {
         self.chosen.clear();
         self.uv.clear();
         true
+    }
+
+    /// The Hull tool (P7-08): a click places a point where it meets the first brush, or the
+    /// ground, and Return makes the convex brush around the points, as TrenchBroom's complex
+    /// shape tool.
+    fn hull_input(
+        &mut self,
+        ui: &Ui,
+        response: &Response,
+        scene: &Scene,
+        hidden: &BTreeSet<EntityIndex>,
+        ray: &dyn Fn(Pos2) -> Ray,
+    ) -> Vec<BrushAction> {
+        if response.clicked()
+            && let Some(at) = response.interact_pointer_pos()
+        {
+            let (start, direction) = ray(at);
+            let met = scene
+                .hit_distance(start, direction, hidden)
+                .map(|t| {
+                    [0, 1, 2].map(|i| {
+                        start.get(i).copied().unwrap_or_default()
+                            + direction.get(i).copied().unwrap_or_default() * t
+                    })
+                })
+                .or_else(|| at_height(ray(at), 0.0));
+            if let Some(point) = met {
+                self.hull.push(snapped(point, self.grid));
+            }
+            return Vec::new();
+        }
+        if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter))
+            && self.hull.len() >= HULL_LEAST
+        {
+            return vec![BrushAction::Hull(core::mem::take(&mut self.hull))];
+        }
+        Vec::new()
     }
 
     /// Where `corner` is among the corners picked.
@@ -1236,7 +1294,8 @@ impl BrushTools {
                 | MapTool::Vertex
                 | MapTool::Move
                 | MapTool::Measure
-                | MapTool::Shape,
+                | MapTool::Shape
+                | MapTool::Hull,
                 _,
             ) => None,
         }
@@ -1253,6 +1312,12 @@ impl BrushTools {
     ) {
         let accent = Stroke::new(2.0, theme.color(Token::Accent));
         self.uv.draw(painter, projection, theme, scene);
+        // The Hull tool's points, each a dot.
+        for &point in &self.hull {
+            if let Some(at) = projection.point(single_point(point)) {
+                painter.circle_filled(at, VERTEX_DOT, accent.color);
+            }
+        }
         for &(entity, brush) in &self.chosen {
             let Some(shape) = scene.brush(entity, brush) else {
                 continue;
@@ -1277,7 +1342,9 @@ impl BrushTools {
         let showing = match self.tool {
             MapTool::Move | MapTool::Measure => true,
             MapTool::Vertex => self.drag.is_some(),
-            MapTool::Select | MapTool::Brush | MapTool::Clip | MapTool::Shape => false,
+            MapTool::Select | MapTool::Brush | MapTool::Clip | MapTool::Shape | MapTool::Hull => {
+                false
+            }
         };
         if showing && let Some(readout) = self.shown {
             self.draw_readout(painter, projection, theme, scene, readout);
@@ -1328,7 +1395,7 @@ impl BrushTools {
                     painter.circle_filled(at, VERTEX_DOT, focus.color);
                 }
             }
-            MapTool::Select | MapTool::Move | MapTool::Measure => {}
+            MapTool::Select | MapTool::Move | MapTool::Measure | MapTool::Hull => {}
         }
     }
 

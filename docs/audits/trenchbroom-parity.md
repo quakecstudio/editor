@@ -88,7 +88,7 @@ Tests are named `crate-or-app path::test`; `desktop` is `apps/desktop/src`, `map
 | Grid from 0.125 to 256, set from the menu or Alt+Ctrl+wheel | `view.map_grid`, the toolbar's Grid picker, TrenchBroom's + - and 1 to 9 | `desktop tests::the_grid_keys_set_the_step_the_selection_moves_by`, `qs-layout map_grid::tests` | Same |
 | Map view context menu: group, layers, select all of a class, reveal material, create entities | Right-click in the view: Group, Ungroup, Create brush entity, Make structural, Create point entity, Select all of the class, Hide, Isolate, Move to layer | `desktop tests::the_view_s_context_menu_places_and_selects` | Same; reveal a material is the browser's selection |
 | Simple shapes by drag in 3D and 2D | Brush tool | `map-edit brushes::tests::a_box_is_created_on_the_grid` | Same |
-| Complex shape tool: points to a convex brush | Shape tool: cylinders, cones, arches, spheroids, rocks, curves | `map-edit shapes::tests::a_shape_is_added_in_one_undoable_step` | Gap G13: no hull of placed points |
+| Complex shape tool: points to a convex brush | Shape tool: cylinders, cones, arches, spheroids, rocks, curves | `map-edit shapes::tests::a_shape_is_added_in_one_undoable_step`, `map-edit brushes::tests::points_make_a_convex_brush`, `desktop tests::the_hull_tool_makes_a_brush_of_the_points_clicked` | Beyond: the Hull tool makes the convex brush of points clicked (`map.brush_hull`), and the Shape tool's cylinders, cones, arches, spheroids, rocks and curves |
 | Point entities by drag or context menu | Drag from the Entities browser | `desktop tests` | Same |
 | Brush entities from selected brushes | Create brush entity in the view's menu (`map.make_brush_entity`); Make structural back (`map.make_structural`) | `map-edit containers::tests::brushes_become_a_brush_entity_and_structural_again` | Same |
 | Duplicate | `map.duplicate`, with link numbers moved on | `map-edit links::tests::a_duplicate_numbers_its_names_onward` | Beyond |
@@ -177,7 +177,7 @@ To close before #823 does:
 | Gap | What TrenchBroom's manual has that we lack |
 | --- | --- |
 | G1 | Entity models drawn textured, not as wireframes |
-| G13 | A convex brush from placed points; stamping and moving faces; clip snapping and matching a face's plane |
+| G13 | Stamping and moving faces; clip snapping and matching a face's plane |
 | G17 | Extracting objects into a new linked group; the current layer new objects go into |
 | G19 | TrenchBroom's query language in the search |
 

@@ -180,7 +180,10 @@ impl PlanCamera {
         self.scale = leader.scale;
         let [mine_across, mine_up] = plan.axes();
         let [theirs_across, theirs_up] = led_by.axes();
-        for (axis, value) in [(theirs_across, leader.centre[0]), (theirs_up, leader.centre[1])] {
+        for (axis, value) in [
+            (theirs_across, leader.centre[0]),
+            (theirs_up, leader.centre[1]),
+        ] {
             if axis == mine_across {
                 self.centre[0] = value;
             } else if axis == mine_up {

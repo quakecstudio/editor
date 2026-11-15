@@ -17,6 +17,62 @@ use crate::{HasMap, MapEditError};
 
 /// The id of `map.brush_create`.
 pub const MAP_BRUSH_CREATE: &str = "map.brush_create";
+
+/// The id of the command that adds the convex brush around points (P7-08).
+pub const MAP_BRUSH_HULL: &str = "map.brush_hull";
+
+/// The parameters of `map.brush_hull`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BrushHullParams {
+    /// The points, each snapped to the grid; the brush is the convex shape around them.
+    pub points: Vec<[f64; 3]>,
+    /// Its texture; the texture of the map's last brush face when not given.
+    #[serde(default)]
+    pub texture: Option<String>,
+    /// The grid the points snap to, in map units; 16 when not given, 0 for none.
+    #[serde(default)]
+    pub grid: Option<f64>,
+}
+
+/// `map.brush_hull`.
+pub(super) struct BrushHull;
+
+impl<C: HasMap + 'static> Command<C> for BrushHull {
+    const ID: &'static str = MAP_BRUSH_HULL;
+    const SUMMARY: &'static str = "Adds to the world the convex brush around points snapped to \
+        the grid, with a texture, as TrenchBroom's complex shape tool makes one.";
+    type Params = BrushHullParams;
+    type Output = MapEdited;
+    type Error = MapEditError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: BrushHullParams,
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
+        let ((), step) = edit_map(context, |document| {
+            let points: Vec<[f64; 3]> = params
+                .points
+                .iter()
+                .map(|p| p.map(|c| snap(c, params.grid)))
+                .collect();
+            let surface = document.new_surface(params.texture.as_deref());
+            let brush = Brush::convex_hull(&points, &surface)?;
+            document
+                .entity_mut(EntityIndex::WORLD)?
+                .items
+                .push(Item::Brush(brush));
+            Ok(())
+        })?;
+        Ok(Outcome::undoable(
+            MapEdited {
+                entity: Some(EntityIndex::WORLD),
+            },
+            step,
+        ))
+    }
+}
 /// The id of `map.brush_clip`.
 pub const MAP_BRUSH_CLIP: &str = "map.brush_clip";
 /// The id of `map.brush_vertex`.

@@ -30,10 +30,10 @@ pub use brush_tools::{
     MAP_TURN, NewVertex, ReplaceTextureParams, Replaced, Selection, TurnParams, VertexMove,
 };
 pub use brushes::{
-    BrushClipParams, BrushCreateParams, BrushIndex, BrushMergeParams, BrushMoveParams, BrushParams,
-    BrushTextureParams, BrushVertexParams, Keep as KeepPart, Lock, MAP_BRUSH_CLIP,
-    MAP_BRUSH_CREATE, MAP_BRUSH_DELETE, MAP_BRUSH_MERGE, MAP_BRUSH_MOVE, MAP_BRUSH_SUBTRACT,
-    MAP_BRUSH_TEXTURE, MAP_BRUSH_VERTEX,
+    BrushClipParams, BrushCreateParams, BrushHullParams, BrushIndex, BrushMergeParams,
+    BrushMoveParams, BrushParams, BrushTextureParams, BrushVertexParams, Keep as KeepPart, Lock,
+    MAP_BRUSH_CLIP, MAP_BRUSH_CREATE, MAP_BRUSH_DELETE, MAP_BRUSH_HULL, MAP_BRUSH_MERGE,
+    MAP_BRUSH_MOVE, MAP_BRUSH_SUBTRACT, MAP_BRUSH_TEXTURE, MAP_BRUSH_VERTEX,
 };
 pub use classes::{ClassInfo, FlagInfo, KeyInfo};
 pub use containers::{
@@ -1371,6 +1371,7 @@ pub fn register_map_edit<C: HasMap + 'static>(
     registry.register(brush_tools::Flip)?;
     registry.register(brush_tools::Turn)?;
     registry.register(brush_tools::ReplaceTexture)?;
+    registry.register(brushes::BrushHull)?;
     registry.register(texture_import::AddWad)?;
     registry.register(brush_tools::BrushShear)?;
     registry.register(brush_tools::BrushExtrude)?;

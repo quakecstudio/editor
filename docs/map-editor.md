@@ -101,6 +101,9 @@ it too.
   Cmd+Shift+D (Linked duplicate) copies it as a group linked to it (`map.link_duplicate`) and
   Separate unlinks it (`map.separate`). Add layer, beside Layers, adds a layer
   (`map.add_layer`). Each is written as TrenchBroom writes it.
+- **Hull (P7-08):** the Hull tool places a point where each click meets a brush, or the ground,
+  on the grid, and Return makes the convex brush around them with the current texture
+  (`map.brush_hull`), as TrenchBroom's complex shape tool; Escape clears the points.
 - **Panes (P7-08):** the view is the 3D view alone, with a top view inset, beside a top view
   ("2 views"), beside top and front views ("3 views"), or with top, front and side views ("4
   views"). The pane with the keyboard is outlined, and the 2D views are linked as TrenchBroom's

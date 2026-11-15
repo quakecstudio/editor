@@ -149,5 +149,8 @@ fn a_ray_orders_drills_and_picks_the_smallest_across() {
     assert!(tools.drill(&scene, down, -1.0, &none));
     assert_eq!(tools.chosen(), [world(4)], "held at the nearest");
     tools.choose(vec![world(3)], &scene);
-    assert!(!tools.drill(&scene, down, 1.0, &none), "not under the pointer");
+    assert!(
+        !tools.drill(&scene, down, 1.0, &none),
+        "not under the pointer"
+    );
 }

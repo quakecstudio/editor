@@ -65,6 +65,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.brush_delete`](#mapbrush_delete) | Deletes a brush of an entity of the open map. |
 | [`map.brush_extrude`](#mapbrush_extrude) | Moves a face of a brush along its normal by a distance snapped to the grid, out or in, its texture fixed in the world unless lock is free (MAP-15.3). |
 | [`map.brush_hollow`](#mapbrush_hollow) | Hollows a brush into walls of a thickness: the brush becomes itself with the brush its walls enclose taken out (MAP-15.5). |
+| [`map.brush_hull`](#mapbrush_hull) | Adds to the world the convex brush around points snapped to the grid, with a texture, as TrenchBroom's complex shape tool makes one. |
 | [`map.brush_intersect`](#mapbrush_intersect) | Replaces two or more brushes of an entity with the solid all of them hold, which takes the first's place (MAP-15.6). |
 | [`map.brush_merge`](#mapbrush_merge) | Merges two or more brushes of an entity of the open map into their convex hull, which takes the first's place. |
 | [`map.brush_move`](#mapbrush_move) | Moves brushes of an entity by an offset snapped to the grid (16 units unless given), their textures fixed in the world unless lock is free. |
@@ -2197,6 +2198,57 @@ Parameters:
     "wall"
   ],
   "title": "BrushHollowParams",
+  "type": "object"
+}
+```
+
+## `map.brush_hull`
+
+Adds to the world the convex brush around points snapped to the grid, with a texture, as TrenchBroom's complex shape tool makes one.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.brush_hull`.",
+  "properties": {
+    "grid": {
+      "default": null,
+      "description": "The grid the points snap to, in map units; 16 when not given, 0 for none.",
+      "format": "double",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "points": {
+      "description": "The points, each snapped to the grid; the brush is the convex shape around them.",
+      "items": {
+        "items": {
+          "format": "double",
+          "type": "number"
+        },
+        "maxItems": 3,
+        "minItems": 3,
+        "type": "array"
+      },
+      "type": "array"
+    },
+    "texture": {
+      "default": null,
+      "description": "Its texture; the texture of the map's last brush face when not given.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "points"
+  ],
+  "title": "BrushHullParams",
   "type": "object"
 }
 ```

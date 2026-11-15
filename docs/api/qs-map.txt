@@ -105,6 +105,7 @@ field qs_map::rooms::Room.bounds
 field qs_map::rooms::Room.kind
 field qs_map::rooms::Room.name
 fn qs_map::align::TexDef::aligned
+fn qs_map::brush_edit::Brush::convex_hull
 fn qs_map::brush_edit::Brush::corners
 fn qs_map::brush_edit::Brush::cuboid
 fn qs_map::brush_edit::Brush::is_valid

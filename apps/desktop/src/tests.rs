@@ -3273,14 +3273,55 @@ fn the_focused_pane_is_outlined() {
         count
     };
     let before = outlined(&harness);
-    harness
-        .get_by_label(Text::MapViewTop.get())
-        .click();
+    harness.get_by_label(Text::MapViewTop.get()).click();
     harness.run();
     assert_eq!(outlined(&harness), before + 1, "the top view outlined");
     harness.get_by_label(Text::MapEditorView.get()).click();
     harness.run();
-    assert_eq!(outlined(&harness), before + 1, "the 3D view, and the top view no more");
+    assert_eq!(
+        outlined(&harness),
+        before + 1,
+        "the 3D view, and the top view no more"
+    );
+}
+
+// No spec statement: P7-08: the Hull tool places a point where each click meets a brush, and
+// Return makes the convex brush around them, as TrenchBroom's complex shape tool: three points
+// make nothing, four off one plane make a brush, one undoable edit
+#[test]
+fn the_hull_tool_makes_a_brush_of_the_points_clicked() {
+    let dir = keep_copy("hull");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    let before = map_text(&harness);
+    let world = brush_count(&harness, 0);
+    harness.get_by_label(Text::MapToolHull.get()).click();
+    harness.run();
+    let view = harness.get_by_label(Text::MapEditorView.get()).rect();
+    let at = |x: f32, y: f32| egui::pos2(view.left() + view.width() * x, view.top() + view.height() * y);
+    // Three on the floor, below the middle of the view.
+    for point in [at(0.3, 0.85), at(0.7, 0.85), at(0.5, 0.95)] {
+        click_at(&mut harness, point);
+    }
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    assert_eq!(brush_count(&harness, 0), world, "three points make no brush");
+    // A fourth on the ceiling, above it.
+    click_at(&mut harness, at(0.5, 0.05));
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    assert_eq!(brush_count(&harness, 0), world + 1, "{}", map_text(&harness));
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("edit.undo", json!({})).unwrap();
+    harness.run();
+    assert_eq!(map_text(&harness), before);
 }
 
 // No spec statement: P6-08, MAP-2: a click with a brush tool selects the first brush the ray

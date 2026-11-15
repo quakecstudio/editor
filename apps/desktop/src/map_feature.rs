@@ -30,6 +30,7 @@ use qs_map_edit::{
     MAP_BRUSH_SUBTRACT, MAP_BRUSH_SWEEP, MAP_BRUSH_TEXTURE, MAP_BRUSH_VERTEX, MAP_BRUSH_VERTICES,
     NewVertex, VertexMove,
 };
+use qs_map_edit::{BrushHullParams, MAP_BRUSH_HULL};
 use qs_map_edit::{
     BspSave, EntityKeys, EntityParams, MAP_COMPARE, MAP_DELETE, MAP_DUPLICATE, MAP_ENTITY,
     MAP_MOVE, MAP_OPEN, MAP_REMOVE_KEY, MAP_RESOLVE, MAP_SAVE, MAP_SELECT, MAP_SET_KEY,
@@ -901,6 +902,14 @@ impl MapFeature {
                 },
             ),
             BrushAction::Arrange(arrange) => Self::arrange(commands, arrange),
+            BrushAction::Hull(points) => commands.attempt(
+                MAP_BRUSH_HULL,
+                &BrushHullParams {
+                    points,
+                    texture: texture.clone(),
+                    grid,
+                },
+            ),
             BrushAction::ReplaceTexture(from, to, brushes) => commands.attempt(
                 MAP_REPLACE_TEXTURE,
                 &ReplaceTextureParams { from, to, brushes },

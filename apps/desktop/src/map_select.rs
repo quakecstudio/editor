@@ -127,7 +127,10 @@ impl Scene {
                 });
                 high - low
             };
-            (0..AXES).filter(|&i| i != axis).map(extent).product::<f32>()
+            (0..AXES)
+                .filter(|&i| i != axis)
+                .map(extent)
+                .product::<f32>()
         };
         self.brushes_along(start, direction, hidden)
             .into_iter()

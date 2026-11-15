@@ -958,11 +958,15 @@ pub enum Text {
     MapLitNone,
     /// Lit, when the map was saved after its last compile.
     MapLitStale,
+    /// The Hull tool (P7-08).
+    MapToolHull,
+    /// What the Hull tool does.
+    MapHullHint,
 }
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 473] = [
+    pub const ALL: [Self; 475] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1398,6 +1402,8 @@ impl Text {
         Self::MapLinkDuplicate,
         Self::MapSeparate,
         Self::MapAddLayer,
+        Self::MapToolHull,
+        Self::MapHullHint,
         Self::MapEveryWad,
         Self::MapWadPicker,
         Self::MapCreateBrushEntity,
@@ -1737,6 +1743,10 @@ impl Text {
             Self::MapToolVertex => "Vertex",
             Self::MapToolShape => "Shape",
             Self::MapShapeHint => "Drag a box to fill it with the shape",
+            Self::MapToolHull => "Hull",
+            Self::MapHullHint => {
+                "Click points on the map; Return makes the convex brush around them"
+            }
             Self::ShapeCylinder => "Cylinder",
             Self::ShapeCone => "Cone",
             Self::ShapeArch => "Arch",
