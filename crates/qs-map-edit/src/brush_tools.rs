@@ -365,7 +365,10 @@ impl MapDocument {
 
 impl MapEdited {
     /// The undoable outcome of an edit to `entity`.
-    fn undoable<C: HasMap + 'static>(entity: EntityIndex, step: MapStep) -> Outcome<Self, C> {
+    pub(super) fn undoable<C: HasMap + 'static>(
+        entity: EntityIndex,
+        step: MapStep,
+    ) -> Outcome<Self, C> {
         Outcome::undoable(
             Self {
                 entity: Some(entity),

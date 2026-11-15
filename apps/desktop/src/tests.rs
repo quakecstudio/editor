@@ -2925,7 +2925,13 @@ fn the_selection_keys_select_all_invert_siblings_and_touching() {
     let picked = |harness: &Harness<'static, Option<App>>| {
         let shell = harness.state().as_ref().unwrap().shell();
         let editor = shell.map_editor();
-        let selected = shell.session().context().workbench.map().unwrap().selected();
+        let selected = shell
+            .session()
+            .context()
+            .workbench
+            .map()
+            .unwrap()
+            .selected();
         (
             selected.into_iter().count() + editor.also_count(),
             editor.chosen_count(),
@@ -2934,12 +2940,22 @@ fn the_selection_keys_select_all_invert_siblings_and_touching() {
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
     harness.run();
     let world = brush_count(&harness, 0);
-    assert_eq!(picked(&harness), (4, world), "every entity but the world, every world brush");
-    harness.key_press_modifiers(egui::Modifiers::COMMAND | egui::Modifiers::ALT, egui::Key::A);
+    assert_eq!(
+        picked(&harness),
+        (4, world),
+        "every entity but the world, every world brush"
+    );
+    harness.key_press_modifiers(
+        egui::Modifiers::COMMAND | egui::Modifiers::ALT,
+        egui::Key::A,
+    );
     harness.run();
     assert_eq!(picked(&harness), (0, 0), "the inverse of everything");
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
-    harness.key_press_modifiers(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::A);
+    harness.key_press_modifiers(
+        egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+        egui::Key::A,
+    );
     harness.run();
     assert_eq!(picked(&harness), (0, 0));
     // The west wall, with the Vertex tool; Select siblings takes all six walls.
@@ -2953,14 +2969,21 @@ fn the_selection_keys_select_all_invert_siblings_and_touching() {
     assert_eq!(picked(&harness).1, world);
     // Back to the west wall alone: Cmd+T takes the floor, ceiling and two side walls it meets,
     // and deletes it.
-    harness.key_press_modifiers(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::A);
+    harness.key_press_modifiers(
+        egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+        egui::Key::A,
+    );
     harness.run();
     click_at(&mut harness, at);
     let before = map_text(&harness);
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::T);
     harness.run();
     harness.run();
-    assert_eq!(brush_count(&harness, 0), world - 1, "the selecting brush went");
+    assert_eq!(
+        brush_count(&harness, 0),
+        world - 1,
+        "the selecting brush went"
+    );
     assert_eq!(picked(&harness).1, 4, "the four walls it touched");
     let shell = &mut harness.state_mut().as_mut().unwrap().shell;
     shell.execute("edit.undo", json!({})).unwrap();

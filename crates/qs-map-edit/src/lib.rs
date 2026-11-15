@@ -36,6 +36,10 @@ pub use brushes::{
     MAP_BRUSH_TEXTURE, MAP_BRUSH_VERTEX,
 };
 pub use classes::{ClassInfo, FlagInfo, KeyInfo};
+pub use containers::{
+    AddLayerParams, ContainerParams, GroupParams, MAP_ADD_LAYER, MAP_GROUP, MAP_LINK_DUPLICATE,
+    MAP_SEPARATE, MAP_UNGROUP,
+};
 pub use disk::{
     Keep, MAP_COMPARE, MAP_RESOLVE, MapDifference, MapOnDisk, ResolveParams, map_files_changed,
 };
@@ -69,6 +73,7 @@ pub mod backup;
 mod brush_tools;
 mod brushes;
 mod classes;
+mod containers;
 mod disk;
 mod error;
 mod flags;
@@ -1361,6 +1366,11 @@ pub fn register_map_edit<C: HasMap + 'static>(
     registry.register(prefabs::PlacePrefab)?;
     registry.register(prefabs::SavePrefab)?;
     registry.register(prefabs::Copy)?;
+    registry.register(containers::Group)?;
+    registry.register(containers::Ungroup)?;
+    registry.register(containers::AddLayer)?;
+    registry.register(containers::LinkDuplicate)?;
+    registry.register(containers::Separate)?;
     registry.register(prefabs::Paste)?;
     registry.register(issues::MapFix)?;
     registry.register(issues::MapSearch)?;

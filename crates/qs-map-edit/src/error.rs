@@ -56,6 +56,12 @@ pub enum MapEditError {
         /// Why.
         error: qs_bsp::BspError,
     },
+    /// An entity that is no group's own entity, or a group not linked, where one is needed
+    /// (P7-08).
+    NotGroup {
+        /// The entity.
+        entity: EntityIndex,
+    },
     /// Text pasted into the map that is not a map's entities (P7-08).
     NotMapText {
         /// Why.
@@ -226,6 +232,7 @@ impl fmt::Display for MapEditError {
             Self::Bsp { path, error } => write!(f, "{}: {error}", path.display()),
             Self::Map { path, error } => write!(f, "{}: {error}", path.display()),
             Self::NotMapText { error } => write!(f, "the text pasted is not a map's: {error}"),
+            Self::NotGroup { entity } => write!(f, "entity {entity} is no group, or not linked"),
             Self::ChangedOnDisk { path } => write!(
                 f,
                 "{}: another program changed it since it was opened; reload it or keep yours \
@@ -321,6 +328,7 @@ impl Error for MapEditError {
             | Self::NoProject
             | Self::PrefabName { .. }
             | Self::NoSelection
+            | Self::NotGroup { .. }
             | Self::NoMap
             | Self::NoEntity { .. }
             | Self::NotPointEntity { .. }

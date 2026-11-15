@@ -3,7 +3,7 @@
 //! Rooms: TrenchBroom's layers and groups, the names a mapper gives parts of a map (MAP-9),
 //! described from TrenchBroom's `isLayer`, `isGroup` and `extractContainerInfo`, not ported.
 
-use crate::{Entity, MapFile};
+use crate::{ContainerId, Entity, MapError, MapFile};
 
 /// The classname TrenchBroom saves a layer or a group as (MAP-9.1).
 const CONTAINER_CLASSNAME: &[u8] = b"func_group";
@@ -27,6 +27,14 @@ impl RoomKind {
             b"_tb_layer" => Some(Self::Layer),
             b"_tb_group" => Some(Self::Group),
             _ => None,
+        }
+    }
+
+    /// The `_tb_type` an entity of this kind has (MAP-9.1).
+    const fn type_value(self) -> &'static [u8] {
+        match self {
+            Self::Layer => b"_tb_layer",
+            Self::Group => b"_tb_group",
         }
     }
 
@@ -119,6 +127,35 @@ impl Entity {
     /// The container that is this entity, for a layer's or group's own entity.
     pub(crate) fn own_container(&self) -> Option<(RoomKind, u64)> {
         RoomKind::of(self).zip(self.value(b"_tb_id").and_then(container_id))
+    }
+
+    /// A new layer's or group's own entity, as TrenchBroom writes one (MAP-9.1): a
+    /// `func_group` whose `_tb_type` is its kind, `_tb_name` `name` and `_tb_id` `id` (P7-08).
+    ///
+    /// # Errors
+    ///
+    /// As [`Entity::set`], for a name a key cannot hold.
+    pub fn container_of(kind: RoomKind, id: ContainerId, name: &str) -> Result<Self, MapError> {
+        let mut entity = Self::new();
+        entity.set(b"classname", CONTAINER_CLASSNAME)?;
+        entity.set(b"_tb_type", kind.type_value())?;
+        entity.set(b"_tb_name", name.as_bytes())?;
+        entity.set(b"_tb_id", id.get().to_string().as_bytes())?;
+        Ok(entity)
+    }
+}
+
+impl MapFile {
+    /// An id no layer or group of the map has: one more than the greatest (P7-08).
+    #[must_use]
+    pub fn free_container_id(&self) -> ContainerId {
+        let most = self
+            .entities
+            .iter()
+            .filter_map(|entity| entity.own_container().map(|(_, id)| id))
+            .max()
+            .unwrap_or(0);
+        ContainerId::new(most.saturating_add(1))
     }
 }
 
