@@ -1246,6 +1246,11 @@ impl MapEditor {
         self.tools
             .draw(&painter, &projection, theme, &self.scene, pointer.map(ray));
         if let Pane::Plan(_) = pane {
+            // The soft map bounds as a guide, in the 2D views as TrenchBroom draws them.
+            let bounds = Stroke::new(1.0, theme.color(Token::StatusWarn));
+            for line in box_lines(SOFT_BOUNDS) {
+                projection.line(&painter, line, bounds);
+            }
             painter.text(
                 egui::pos2(
                     area.left() + PANE_LABEL_INSET,
@@ -1511,6 +1516,11 @@ fn fly(ui: &Ui, camera: &mut Camera) {
         ui.ctx().request_repaint();
     }
 }
+
+/// The soft map bounds drawn as a guide in the 2D views (P7-08): TrenchBroom's for Quake, its
+/// `games/Quake/GameConfig.cfg`'s `"softMapBounds":"-4096 -4096 -4096 4096 4096 4096"`, where
+/// players, items and other entities can be.
+const SOFT_BOUNDS: [[f32; 3]; 2] = [[-4096.0; 3], [4096.0; 3]];
 
 /// The camera position fields' names, x, y and z.
 const CAMERA_AXES: [Text; 3] = [Text::MapCameraX, Text::MapCameraY, Text::MapCameraZ];

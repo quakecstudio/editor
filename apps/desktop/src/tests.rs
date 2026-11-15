@@ -2098,6 +2098,65 @@ fn focus_frames_the_selection_and_escape_clears_it() {
     assert_eq!(selected(&harness), None);
 }
 
+// No spec statement: P7-08: the 2D views draw TrenchBroom's soft map bounds for Quake,
+// -4096 to 4096 on each axis, in the warning colour, as its manual's orange guide; the 3D view
+// does not
+#[test]
+fn the_2d_views_draw_the_soft_map_bounds() {
+    let dir = keep_copy("bounds");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    let guide = |harness: &Harness<'static, Option<App>>| {
+        let warn = harness
+            .state()
+            .as_ref()
+            .unwrap()
+            .shell()
+            .theme()
+            .color(Token::StatusWarn);
+        fn walk(shape: &egui::Shape, warn: egui::Color32, count: &mut usize) {
+            match shape {
+                egui::Shape::LineSegment { stroke, .. } if stroke.color == warn => *count += 1,
+                egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| walk(s, warn, count)),
+                _ => {}
+            }
+        }
+        let mut count = 0;
+        for clipped in &harness.output().shapes {
+            walk(&clipped.shape, warn, &mut count);
+        }
+        count
+    };
+    assert_eq!(guide(&harness), 0, "the 3D view alone draws no bounds");
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("view.map_panes", json!({ "panes": "quad" }))
+        .unwrap();
+    harness.run();
+    // Zoomed all the way out over the top view, the box around the map shows.
+    let view = harness.get_by_label(Text::MapEditorView.get()).rect();
+    let top = egui::pos2(view.center().x + view.width() / 4.0, view.top() + view.height() / 4.0);
+    harness.hover_at(top);
+    for _ in 0..20 {
+        harness.event(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -400.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: egui::Modifiers::NONE,
+        });
+        harness.step();
+    }
+    harness.run();
+    assert!(guide(&harness) >= 4, "{}", guide(&harness));
+}
+
 /// Drags with the primary button from `from` to `to` in steps, holding `modifiers`.
 fn drag(
     harness: &mut Harness<'static, Option<App>>,

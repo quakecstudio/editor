@@ -55,7 +55,7 @@ Tests are named `crate-or-app path::test`; `desktop` is `apps/desktop/src`, `map
 | One to four viewports; 2D top, front and side | `view.map_panes`: one or four | `qs-layout` map view tests | Gap G7: no two- or three-pane layout |
 | Compass in each viewport | None | none | Gap G2 |
 | Viewport focus highlight | The pane under the pointer takes input, with no highlight | none | Gap G7 |
-| Map bounds shown as a guide | None | none | Gap G3 |
+| Map bounds shown as a guide | TrenchBroom's Quake soft bounds, -4096 to 4096, in the 2D views | `desktop tests::the_2d_views_draw_the_soft_map_bounds` | Same; not editable per map |
 | Look by right-drag; move with keys; speed on the wheel | Right-drag looks, WASD flies | `desktop tests::the_camera_starts_behind_the_player_start` | Same: WASD flies, the wheel travels |
 | Orbit about a clicked point | None | none | Gap G4 |
 | Focus on selection | Choosing an outline row frames the entity | `desktop tests::focus_frames_the_selection_and_escape_clears_it`, `map_scene::tests::the_selection_s_box_holds_its_entities_and_brushes` | Same: Cmd+U frames every selected entity and brush |
@@ -178,7 +178,6 @@ To close before #823 does:
 | --- | --- |
 | G1 | Entity models drawn textured, not as wireframes |
 | G2 | A compass in each viewport |
-| G3 | Map bounds drawn as a guide |
 | G4 | Orbiting the camera about a clicked point |
 | G6 | The 3D view's field of view, a temporary zoom, and mouse preferences |
 | G7 | Two- and three-pane layouts, a highlight on the focused pane, linked 2D views |

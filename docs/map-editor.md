@@ -76,6 +76,9 @@ it too.
   tool, a click selects the first brush the pointer's ray enters, by its faces, and Shift+click
   adds or removes one. Each edit is a `map.brush_*` command on the grid, undone in one step, and
   kept convex: one that would leave a brush with no volume is refused.
+- **Map bounds (P7-08):** the 2D views draw the soft map bounds, -4096 to 4096 units on each
+  axis, in the warning colour, the box TrenchBroom's Quake configuration draws: where players,
+  items and other entities can be.
 - **The camera (P7-08):** Cmd+U frames the selection, every selected entity and brush, keeping
   where the camera looks (TrenchBroom's Focus on Selection, Ctrl+U). The Properties panel shows
   the camera's x, y and z, and a value typed or dragged there moves it.
