@@ -56,6 +56,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`git.unstage`](#gitunstage) | Unstages a file, or one hunk of its staged changes. |
 | [`map.accept`](#mapaccept) | Accepts hunks of the open map's review, every one when none are named: their change is kept and no longer waits. |
 | [`map.add_layer`](#mapadd_layer) | Adds an empty layer to the open map, as TrenchBroom writes one. |
+| [`map.add_wad`](#mapadd_wad) | Adds a WAD file to the open map's list in its world's `wad` or `_wad` key, by its path from the map's folder when it is under it, as TrenchBroom adds a WAD dropped on its window; one listed already is not listed again. |
 | [`map.backup`](#mapbackup) | Writes the open map, as it is in the editor, saved or not, as its next backup in the autosave folder beside it, keeping the last 20. |
 | [`map.backups`](#mapbackups) | Lists the open map's backups in the autosave folder beside it, the newest first. |
 | [`map.brush_chamfer`](#mapbrush_chamfer) | Chamfers an edge of a brush into one or more bevel faces, from a distance along each of its two faces (MAP-15.9). |
@@ -1704,6 +1705,31 @@ Parameters:
     "name"
   ],
   "title": "AddLayerParams",
+  "type": "object"
+}
+```
+
+## `map.add_wad`
+
+Adds a WAD file to the open map's list in its world's `wad` or `_wad` key, by its path from the map's folder when it is under it, as TrenchBroom adds a WAD dropped on its window; one listed already is not listed again.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.add_wad`.",
+  "properties": {
+    "path": {
+      "description": "The WAD file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "AddWadParams",
   "type": "object"
 }
 ```

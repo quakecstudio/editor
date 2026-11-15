@@ -1371,6 +1371,7 @@ pub fn register_map_edit<C: HasMap + 'static>(
     registry.register(brush_tools::Flip)?;
     registry.register(brush_tools::Turn)?;
     registry.register(brush_tools::ReplaceTexture)?;
+    registry.register(texture_import::AddWad)?;
     registry.register(brush_tools::BrushShear)?;
     registry.register(brush_tools::BrushExtrude)?;
     registry.register(brush_tools::BrushSweep)?;

@@ -75,6 +75,7 @@ const qs_map_edit::review::MAP_STAGE
 const qs_map_edit::review::MAP_STAGED
 const qs_map_edit::review::MAP_UNSTAGE
 const qs_map_edit::shapes::MAP_BRUSH_SHAPE
+const qs_map_edit::texture_import::MAP_ADD_WAD
 const qs_map_edit::texture_import::TEXTURE_FOLDER
 const qs_map_edit::texture_import::TEXTURE_IMPORT
 const qs_map_edit::textures::MAP_TEXTURES
@@ -346,6 +347,7 @@ field qs_map_edit::store::EntityProblem.line
 field qs_map_edit::store::EntityProblem.message
 field qs_map_edit::store::GameFolders.base
 field qs_map_edit::store::GameFolders.chosen
+field qs_map_edit::texture_import::AddWadParams.path
 field qs_map_edit::texture_import::TextureImportParams.dither
 field qs_map_edit::texture_import::TextureImportParams.name
 field qs_map_edit::texture_import::TextureImportParams.path
@@ -533,6 +535,7 @@ struct qs_map_edit::shapes::BrushShapeParams
 struct qs_map_edit::store::EntityProblem
 struct qs_map_edit::store::GameFolders
 struct qs_map_edit::store::MapStore
+struct qs_map_edit::texture_import::AddWadParams
 struct qs_map_edit::texture_import::TextureImportParams
 struct qs_map_edit::texture_import::TextureImported
 struct qs_map_edit::textures::BrowserTexture
