@@ -390,9 +390,24 @@ fn tasks_fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/tasks")
 }
 
-/// The most pixels each OS may differ from the macOS golden by.
-fn max_failed_pixels() -> OsThreshold<usize> {
-    OsThreshold::new(0).linux(400).windows(400)
+impl Script {
+    /// The most pixels each OS may differ from the macOS golden by. Linux's and Windows'
+    /// software rasterizers filter textures a little differently, so a script that draws the
+    /// map's 3D view textured may differ there by up to 6,000 pixels, half a percent of the
+    /// window, as `map-textured` may (2,477 to 2,502 on the Linux runner on 2026-11-15); the
+    /// rest by 400.
+    fn max_failed_pixels(&self) -> OsThreshold<usize> {
+        let textured = json!({ "shading": "textured" });
+        let draws_textures = self
+            .steps
+            .iter()
+            .any(|step| matches!(step, Step::Run("view.map_shading", p) if *p == textured));
+        if draws_textures {
+            OsThreshold::new(0).linux(6_000).windows(6_000)
+        } else {
+            OsThreshold::new(0).linux(400).windows(400)
+        }
+    }
 }
 
 /// Where the goldens are kept.
@@ -503,9 +518,6 @@ fn run(script: &Script) -> Harness<'static, Option<App>> {
 // QA-3: every script's last frame matches its golden image, within each OS's allowance.
 #[test]
 fn every_script_matches_its_golden() {
-    let options = SnapshotOptions::new()
-        .output_path(goldens())
-        .max_failed_pixels(max_failed_pixels());
     let screenshots = std::env::var_os("QS_SCREENSHOTS").map(PathBuf::from);
     let mut failures = Vec::new();
     for script in scripts() {
@@ -517,6 +529,9 @@ fn every_script_matches_its_golden() {
                 .save(dir.join(format!("{}.png", script.name)))
                 .unwrap();
         }
+        let options = SnapshotOptions::new()
+            .output_path(goldens())
+            .max_failed_pixels(script.max_failed_pixels());
         if let Err(error) = harness.try_snapshot_options(script.name, &options) {
             failures.push(format!("{}: {error}", script.name));
         }
