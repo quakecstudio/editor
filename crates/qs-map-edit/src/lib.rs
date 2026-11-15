@@ -87,6 +87,7 @@ mod links;
 mod live;
 mod outline;
 mod prefabs;
+mod query;
 mod report;
 mod review;
 mod shapes;

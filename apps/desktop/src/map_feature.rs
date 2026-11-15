@@ -381,11 +381,16 @@ impl MapFeature {
                 MapAction::Review(action) => self.review_action(commands, action),
                 MapAction::Find(search) => {
                     let found: Result<MapFound, ShellError> = commands.attempt(MAP_SEARCH, &search);
-                    found.map(|found| {
+                    found.and_then(|found| {
                         let at = commands.session().context().map_edits();
+                        let entity = self.map_editor.select_found(&found);
                         self.map_editor.set_found(found, at);
-                        serde_json::Value::Null
+                        commands.attempt(MAP_SELECT, &MapSelectParams { entity })
                     })
+                }
+                MapAction::SelectFound(found) => {
+                    let entity = self.map_editor.select_found(&found);
+                    commands.attempt(MAP_SELECT, &MapSelectParams { entity })
                 }
                 MapAction::RemoveKey(entity, key) => {
                     commands.attempt(MAP_REMOVE_KEY, &RemoveKeyParams { entity, key })

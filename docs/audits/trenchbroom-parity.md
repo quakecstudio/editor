@@ -73,7 +73,7 @@ Tests are named `crate-or-app path::test`; `desktop` is `apps/desktop/src`, `map
 | Select all, select touching, select inside, select tall | Cmd+A, Cmd+T, Cmd+E, Cmd+Shift+E, as TrenchBroom's (the selecting brushes deleted) | `desktop map_select::tests`, `desktop tests::the_selection_keys_select_all_invert_siblings_and_touching` | Same |
 | Select siblings, invert selection, deselect all | Select siblings in Properties (Ctrl+B is Compile here), Cmd+Alt+A, Cmd+Shift+A and Escape | as above | Same |
 | Select brush faces with Shift+click; all faces by double click | The UV editor's face pick | `desktop map_uv` tests | Same: the UV editor picks faces |
-| Search box with plain text and queries | `map.search` by class, key, texture and box | `map-edit issues::tests::search_by_class_key_texture_and_box` | Gap G19: plain fields, not TrenchBroom's query language |
+| Search box with plain text and queries | `map.search` takes text or a query; Find selects every match | `map-edit issues::tests::search_by_text_and_query`, `map-edit query::tests` | Same: text and queries decided as TrenchBroom decides, faces and layers searched alone, nothing hidden or locked selected |
 
 ## Editing
 
@@ -152,7 +152,7 @@ Tests are named `crate-or-app path::test`; `desktop` is `apps/desktop/src`, `map
 | Compile profiles: export map, run tool, launch engine, copy, rename, delete | `bsp`, `vis`, `light`, `tool`, `copy`, `launch` | `qs-workbench map_profile::tests::a_profile_renames_and_deletes_files`, `a_name_pattern_matches_with_stars_and_marks` | Same: `rename` and `delete`, with `*` and `?` in the file name |
 | Launching game engines | Play and Play from here in our engine | `qs-bench play_from_here_e1m1` | Beyond |
 | Expression language in profiles and definitions | `${MAP}` and five more variables | `qs-workbench map_compile` tests | Same for profiles; definitions are QuakeC |
-| Query language | `map.search` | as above | Gap G19 |
+| Query language | `map.search` | as above | Same: the fields, object types, operators and functions of the manual's Syntax table; map literals, ranges, switch and bitwise terms, which the table leaves out, read as text |
 | Automatic backups | `map.backup` | as above | Same |
 | Display models for entities from definitions | Models from the QuakeC's `setmodel` | `desktop map_scene` tests | Same: the model the QuakeC sets |
 | Point and portal files | Leak trail and portals | as above | Same |
@@ -177,7 +177,6 @@ To close before #823 does:
 | Gap | What TrenchBroom's manual has that we lack |
 | --- | --- |
 | G1 | Entity models drawn textured, not as wireframes |
-| G19 | TrenchBroom's query language in the search |
 
 Automatic updates are left to Justin: an update check would make a network request, which P4-16
 rules out without a provider.

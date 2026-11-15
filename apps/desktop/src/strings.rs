@@ -5,6 +5,7 @@
 //! literal in the UI modules.
 
 use qs_map_edit::textures::{WadFound, WadState};
+use qs_map_edit::uv::FaceRef;
 use qs_map_edit::{BrushIndex, EntityIndex, QuickFix};
 use qs_map_edit::{HunkSide, MapHunk};
 
@@ -640,16 +641,10 @@ pub enum Text {
     MapIssuesHint,
     /// What the issue list says of a map with none.
     MapNoIssues,
-    /// The search's classname field.
-    MapSearchClass,
-    /// The search's key field.
-    MapSearchKey,
-    /// The search's value field.
-    MapSearchValue,
-    /// The search's texture field.
-    MapSearchTexture,
-    /// The search's box field.
-    MapSearchWithin,
+    /// The map search's box, for text or a query (P7-08).
+    MapSearchQuery,
+    /// The map search box's syntax reference, on hover (P7-08).
+    MapSearchSyntax,
     /// The heading of the selected faces' texture editing.
     MapFaces,
     /// How to select and edit faces' textures.
@@ -970,7 +965,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 477] = [
+    pub const ALL: [Self; 474] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1285,11 +1280,8 @@ impl Text {
         Self::MapCheckIssues,
         Self::MapIssuesHint,
         Self::MapNoIssues,
-        Self::MapSearchClass,
-        Self::MapSearchKey,
-        Self::MapSearchValue,
-        Self::MapSearchTexture,
-        Self::MapSearchWithin,
+        Self::MapSearchQuery,
+        Self::MapSearchSyntax,
         Self::MapFaces,
         Self::MapFacesHint,
         Self::MapUvFit,
@@ -1795,11 +1787,15 @@ impl Text {
             Self::MapCheckIssues => "Check map",
             Self::MapIssuesHint => "Check the map to list its issues",
             Self::MapNoIssues => "The map has no issues",
-            Self::MapSearchClass => "Class",
-            Self::MapSearchKey => "Has key",
-            Self::MapSearchValue => "Has value",
-            Self::MapSearchTexture => "Has texture",
-            Self::MapSearchWithin => "Within: x y z x y z",
+            Self::MapSearchQuery => "Search: text or a query",
+            Self::MapSearchSyntax => {
+                "Text finds names, classnames, keys, values, textures and layer and group names. \
+                 A query, as TrenchBroom's: fields type, name, classname, properties, entity, \
+                 materials, material, normal, tags, bounds, center, layerName, groupName, \
+                 visible, locked; == != < <= > >= && || ! + - * /; is, like (* ? %), contains, \
+                 in, distanceTo, intersects, vec(x, y, z), bbox(min, max). For example: \
+                 classname is \"light\" && properties.light > 300, material like \"sky*\"."
+            }
             Self::MapFaces => "Faces",
             Self::MapFacesHint => {
                 "Alt-click faces to edit their textures. Drag the view to shift, Shift-drag to rotate, Cmd-drag (Ctrl-drag off macOS) to scale"
@@ -2174,10 +2170,21 @@ pub fn issue_line(line: u32, message: &str) -> String {
     }
 }
 
-/// How many entities and brushes a map search matched (P6-19).
+/// How many entities, brushes and faces a map search matched (P6-19, P7-08).
 #[must_use]
-pub fn map_found_count(entities: usize, brushes: usize) -> String {
-    format!("{entities} entities, {brushes} brushes")
+pub fn map_found_count(entities: usize, brushes: usize, faces: usize) -> String {
+    format!("{entities} entities, {brushes} brushes, {faces} faces")
+}
+
+/// A face named by its entity's, brush's and own place (P7-08).
+#[must_use]
+pub fn face_place(face: FaceRef) -> String {
+    format!(
+        "entity {}, brush {}, face {}",
+        face.entity.get(),
+        face.brush.get(),
+        face.face.get()
+    )
 }
 
 /// An entity named by its place in the map, the world first (P6-19).

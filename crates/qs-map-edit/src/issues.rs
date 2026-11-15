@@ -5,7 +5,9 @@
 //! a missing player start, textures its WADs lack, and, with a project open, its entities'
 //! against the server QuakeC (MAP-8). Each issue gives the entity or brush it is about and a
 //! quick fix where one exists; `map.fix` applies one as a step with undo. `map.search` finds
-//! entities and brushes by class, key, value, texture and bounds.
+//! what a text or a query in TrenchBroom's query language matches (`crate::query`).
+
+use std::collections::BTreeSet;
 
 use qs_commands::{Command, NoParams, Outcome};
 use qs_map::{Brush, Entity, Face, Item, MapFile};
@@ -13,7 +15,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{BrushIndex, EntityIndex, MapDocument, MapEdited, edit_map, origin_text};
+use crate::query::{PointSizes, Query};
 use crate::textures::{TextureOrigin, TextureSources};
+use crate::uv::FaceRef;
 use crate::{EntityProblem, HasMap, MapEditError, MapProject};
 
 /// The id of `map.issues`.
@@ -96,26 +100,14 @@ pub struct MapFixParams {
     pub fix: QuickFix,
 }
 
-/// The parameters of `map.search`: what an entity or brush must match, every part given.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+/// The parameters of `map.search`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MapSearchParams {
-    /// Text the classname holds, in any case.
-    #[serde(default)]
-    pub classname: Option<String>,
-    /// Text a key holds, in any case.
-    #[serde(default)]
-    pub key: Option<String>,
-    /// Text a value holds, in any case: of a key matching `key` when that is given.
-    #[serde(default)]
-    pub value: Option<String>,
-    /// Text a brush's face's texture name holds, in any case.
-    #[serde(default)]
-    pub texture: Option<String>,
-    /// A box, least corner then greatest: a point entity's origin lies in it, a brush's box
-    /// meets it.
-    #[serde(default)]
-    pub within: Option<[[f64; 3]; 2]>,
+    /// Text to find in names, classnames, keys, values, textures, smart tags and layer and
+    /// group names, ignoring case, or a query in TrenchBroom's query language, such as
+    /// `classname is "light" && properties.light > 300` or `material like "sky*"`.
+    pub query: String,
 }
 
 /// What `map.search` answers.
@@ -123,9 +115,10 @@ pub struct MapSearchParams {
 pub struct MapFound {
     /// The entities matching, in file order.
     pub entities: Vec<EntityIndex>,
-    /// The brushes matching, in file order: those of a matching entity, when a texture or a
-    /// box is given.
+    /// The brushes matching, in file order, and those of a layer matching.
     pub brushes: Vec<(EntityIndex, BrushIndex)>,
+    /// The faces matching, in file order: a query finds faces or other objects, never both.
+    pub faces: Vec<FaceRef>,
 }
 
 /// Where a line of the map is: the entity and brush holding it.
@@ -187,7 +180,7 @@ fn is_empty(brush: &Brush) -> bool {
 }
 
 /// The least and greatest of `corners`, if there are any.
-fn bounds(corners: impl IntoIterator<Item = [f64; 3]>) -> Option<[[f64; 3]; 2]> {
+pub(crate) fn bounds(corners: impl IntoIterator<Item = [f64; 3]>) -> Option<[[f64; 3]; 2]> {
     let mut found: Option<[[f64; 3]; 2]> = None;
     for corner in corners {
         let [lo, hi] = found.unwrap_or([corner, corner]);
@@ -210,7 +203,7 @@ fn bounds(corners: impl IntoIterator<Item = [f64; 3]>) -> Option<[[f64; 3]; 2]> 
 }
 
 /// The least and greatest corner of `brush`, if it has corners.
-fn bounds_of(brush: &Brush) -> Option<[[f64; 3]; 2]> {
+pub(crate) fn bounds_of(brush: &Brush) -> Option<[[f64; 3]; 2]> {
     bounds(brush.vertices())
 }
 
@@ -345,73 +338,6 @@ impl MapDocument {
             }
         }
     }
-
-    /// The entities and brushes `search` matches.
-    fn search(&self, search: &MapSearchParams) -> MapFound {
-        let holds_text = |text: &[u8], part: Option<&String>| {
-            part.is_none_or(|part| {
-                String::from_utf8_lossy(text)
-                    .to_lowercase()
-                    .contains(&part.to_lowercase())
-            })
-        };
-        let mut found = MapFound::default();
-        for (e, entity) in self.file().entities.iter().enumerate() {
-            let class = holds_text(
-                entity.classname().unwrap_or_default(),
-                search.classname.as_ref(),
-            );
-            let keyed = (search.key.is_none() && search.value.is_none())
-                || entity.pairs().any(|pair| {
-                    holds_text(pair.key(), search.key.as_ref())
-                        && holds_text(pair.value(), search.value.as_ref())
-                });
-            if !class || !keyed {
-                continue;
-            }
-            let brushes: Vec<BrushIndex> = entity
-                .brushes()
-                .enumerate()
-                .filter(|(_, brush)| {
-                    let textured = search.texture.is_none()
-                        || brush
-                            .faces
-                            .iter()
-                            .any(|f| holds_text(f.texture(), search.texture.as_ref()));
-                    let inside = search.within.is_none_or(|within| {
-                        bounds_of(brush).is_some_and(|bounds| meets(bounds, within))
-                    });
-                    textured && inside
-                })
-                .map(|(b, _)| BrushIndex::new(b))
-                .collect();
-            let index = EntityIndex::new(e);
-            let matches = if entity.has_brushes() {
-                (search.texture.is_none() && search.within.is_none()) || !brushes.is_empty()
-            } else {
-                search.texture.is_none()
-                    && search
-                        .within
-                        .is_none_or(|within| meets([entity.origin(), entity.origin()], within))
-            };
-            if matches {
-                found.entities.push(index);
-            }
-            if search.texture.is_some() || search.within.is_some() {
-                found
-                    .brushes
-                    .extend(brushes.into_iter().map(|b| (index, b)));
-            }
-        }
-        found
-    }
-}
-
-/// Whether two boxes, each least corner then greatest, meet.
-fn meets([a_lo, a_hi]: [[f64; 3]; 2], [b_lo, b_hi]: [[f64; 3]; 2]) -> bool {
-    let below = a_lo.iter().zip(b_hi).all(|(a, b)| *a <= b);
-    let above = b_lo.iter().zip(a_hi).all(|(b, a)| *b <= a);
-    below && above
 }
 
 /// The message of a brush with no volume.
@@ -516,8 +442,10 @@ pub(crate) struct MapSearch;
 
 impl<C: HasMap + 'static> Command<C> for MapSearch {
     const ID: &'static str = MAP_SEARCH;
-    const SUMMARY: &'static str = "Finds the open map's entities and brushes by classname, key, \
-        value, texture and a box, every part given; text matches in any case.";
+    const SUMMARY: &'static str = "Finds the open map's objects as TrenchBroom's search does: \
+        text found in names, classnames, keys, values, textures, smart tags and layer and group \
+        names, ignoring case, or a query in its query language, which finds entities, groups, \
+        brushes, the contents of layers, or faces.";
     type Params = MapSearchParams;
     type Output = MapFound;
     type Error = MapEditError;
@@ -527,8 +455,28 @@ impl<C: HasMap + 'static> Command<C> for MapSearch {
         context: &mut C,
         params: MapSearchParams,
     ) -> Result<Outcome<MapFound, C>, MapEditError> {
+        let classnames: BTreeSet<String> = context
+            .map_store()
+            .map_mut()?
+            .file()
+            .entities
+            .iter()
+            .filter_map(|entity| entity.classname())
+            .map(|name| String::from_utf8_lossy(name).into_owned())
+            .collect();
+        let project = context.map_project();
+        let sizes = classnames
+            .into_iter()
+            .filter_map(|name| {
+                let [min, max] = project.entity_class(&name)?.size?;
+                Some((name, [min.map(f64::from), max.map(f64::from)]))
+            })
+            .collect();
         let document = context.map_store().map_mut()?;
-        Ok(Outcome::outside_history(document.search(&params)))
+        let query = Query::parse(&params.query);
+        Ok(Outcome::outside_history(
+            document.query(&query, &PointSizes::new(sizes)),
+        ))
     }
 }
 

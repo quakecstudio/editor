@@ -127,7 +127,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.run_profile`](#maprun_profile) | Runs a compile profile on the open map, the one chosen when none is named: its tasks in order, each timed, stopping at the first that fails; reports each task's time and result. |
 | [`map.save`](#mapsave) | Saves the open map: a .map over itself; a BSP's entities as a .ent beside it (bsp: ent, the default) or into the BSP's entity lump (bsp: lump). |
 | [`map.save_prefab`](#mapsave_prefab) | Writes brushes of the world and whole entities of the open map as a prefab in the project's prefabs folder, around the middle of their floor. |
-| [`map.search`](#mapsearch) | Finds the open map's entities and brushes by classname, key, value, texture and a box, every part given; text matches in any case. |
+| [`map.search`](#mapsearch) | Finds the open map's objects as TrenchBroom's search does: text found in names, classnames, keys, values, textures, smart tags and layer and group names, ignoring case, or a query in its query language, which finds entities, groups, brushes, the contents of layers, or faces. |
 | [`map.select`](#mapselect) | Selects an entity of the open map, or clears the selection. |
 | [`map.separate`](#mapseparate) | Unlinks a group from the groups linked to it, which then change on their own (TrenchBroom's Separate Linked Groups). |
 | [`map.set_flag`](#mapset_flag) | Sets or clears one spawnflag of an entity of the open map, and of the entities in also, in one step, keeping each entity's other flags. |
@@ -6062,7 +6062,7 @@ Parameters:
 
 ## `map.search`
 
-Finds the open map's entities and brushes by classname, key, value, texture and a box, every part given; text matches in any case.
+Finds the open map's objects as TrenchBroom's search does: text found in names, classnames, keys, values, textures, smart tags and layer and group names, ignoring case, or a query in its query language, which finds entities, groups, brushes, the contents of layers, or faces.
 
 Parameters:
 
@@ -6070,60 +6070,16 @@ Parameters:
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The parameters of `map.search`: what an entity or brush must match, every part given.",
+  "description": "The parameters of `map.search`.",
   "properties": {
-    "classname": {
-      "default": null,
-      "description": "Text the classname holds, in any case.",
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "key": {
-      "default": null,
-      "description": "Text a key holds, in any case.",
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "texture": {
-      "default": null,
-      "description": "Text a brush's face's texture name holds, in any case.",
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "value": {
-      "default": null,
-      "description": "Text a value holds, in any case: of a key matching `key` when that is given.",
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "within": {
-      "default": null,
-      "description": "A box, least corner then greatest: a point entity's origin lies in it, a brush's box\nmeets it.",
-      "items": {
-        "items": {
-          "format": "double",
-          "type": "number"
-        },
-        "maxItems": 3,
-        "minItems": 3,
-        "type": "array"
-      },
-      "maxItems": 2,
-      "minItems": 2,
-      "type": [
-        "array",
-        "null"
-      ]
+    "query": {
+      "description": "Text to find in names, classnames, keys, values, textures, smart tags and layer and\ngroup names, ignoring case, or a query in TrenchBroom's query language, such as\n`classname is \"light\" && properties.light > 300` or `material like \"sky*\"`.",
+      "type": "string"
     }
   },
+  "required": [
+    "query"
+  ],
   "title": "MapSearchParams",
   "type": "object"
 }

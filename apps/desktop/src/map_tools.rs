@@ -772,7 +772,6 @@ impl BrushTools {
     }
 
     /// Adds `face` to the faces selected, as an Alt-Shift-click would.
-    #[cfg(test)]
     pub(crate) fn select_face(&mut self, face: FaceRef, scene: &Scene) {
         self.uv.pick(Some(face), scene, PickMode::Toggle);
     }

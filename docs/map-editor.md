@@ -105,6 +105,13 @@ it too.
   (`map.add_layer`), and "New objects in" picks the current layer: a brush drawn goes into the
   layer's own entity and a point entity placed names it, as TrenchBroom's current layer. Each is
   written as TrenchBroom writes it.
+- **Search (P7-08):** the Issues tab's search box takes text or a query in TrenchBroom's query
+  language (`map.search`), and Find selects every match, as TrenchBroom's search replaces the
+  selection. Text finds names, classnames, keys, values, textures, smart tags and layer and group
+  names, ignoring case, `*`, `?` and `%` matching the whole value. A query such as
+  `classname is "light" && properties.light > 300` finds entities, groups and brushes,
+  `material like "sky*"` finds faces, and `type is layer && name is "Details"` selects what a
+  layer holds. Nothing hidden or locked is found; hovering over the box shows the syntax.
 - **Clip points (P7-08):** with a brush selected and the Clip tool, a click on one of its faces
   in the 3D view places a clip point there, on the face and its grid, and a click in a 2D view
   places one anywhere on the grid; a double-click on a face makes the clip plane that face's.

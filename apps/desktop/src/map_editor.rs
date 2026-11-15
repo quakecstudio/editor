@@ -22,7 +22,6 @@ use qs_layout::{
 use qs_map_edit::MapReport;
 use qs_map_edit::texture_import::DitherChoice;
 use qs_map_edit::textures::TextureSources;
-#[cfg(test)]
 use qs_map_edit::uv::FaceRef;
 use qs_map_edit::{Axis, BrushIndex, ClassInfo, LayerId};
 use qs_map_edit::{
@@ -166,6 +165,8 @@ pub enum MapAction {
     Fix(QuickFix),
     /// Search the map's entities and brushes (P6-19).
     Find(MapSearchParams),
+    /// Select what a search found, in place of the selection (P7-08).
+    SelectFound(MapFound),
     /// Choose or run a compile profile, show the portals or restore a backup (P6-20).
     Profile(ProfileAction),
     /// Accept or reject map edits waiting for review (P6-21).
@@ -1489,7 +1490,6 @@ impl MapEditor {
     }
 
     /// Selects these faces for the UV editor, as Alt-clicks would.
-    #[cfg(test)]
     pub(crate) fn select_faces(&mut self, faces: &[FaceRef]) {
         for &face in faces {
             self.tools.select_face(face, &self.scene);
@@ -1943,6 +1943,18 @@ impl MapEditor {
     /// The texture chosen in the browser, which new brushes take (P7-08).
     pub(crate) fn current_texture(&self) -> Option<String> {
         self.textures.selected().map(str::to_owned)
+    }
+
+    /// Selects what a search found in place of the selection, as TrenchBroom's search does:
+    /// its faces, or its brushes and entities; the first entity, which the document selects,
+    /// is given back (P7-08).
+    pub(crate) fn select_found(&mut self, found: &MapFound) -> Option<EntityIndex> {
+        self.tools.choose(found.brushes.clone(), &self.scene);
+        self.select_faces(&found.faces);
+        let mut entities = found.entities.iter().copied();
+        let first = entities.next();
+        self.select_also(entities.collect());
+        first
     }
 
     /// Selects `entities` besides the document's own selection (P7-08).
