@@ -157,3 +157,51 @@ fn layers_are_added_and_groups_linked_and_separated() {
             .is_err()
     );
 }
+
+// No spec statement: P7-08: map.make_brush_entity makes world brushes a brush entity of a class,
+// as TrenchBroom's Create Brush Entity, and map.make_structural gives its brushes back to the
+// world and removes it, as its Make Structural; a point entity, a group or the world is refused
+#[test]
+fn brushes_become_a_brush_entity_and_structural_again() {
+    use super::{MAP_MAKE_BRUSH_ENTITY, MAP_MAKE_STRUCTURAL};
+
+    let mut session = session("brush-entity");
+    let before = map(&session);
+    session
+        .execute(
+            MAP_MAKE_BRUSH_ENTITY,
+            json!({ "classname": "func_door", "brushes": [1] }),
+        )
+        .unwrap();
+    let made = map(&session);
+    let door = made.entities.last().unwrap();
+    assert_eq!(door.classname(), Some(&b"func_door"[..]));
+    assert_eq!(door.brushes().count(), 1);
+    assert_eq!(made.entities[0].brushes().count(), 1);
+    let place = made.entities.len() - 1;
+    session
+        .execute(MAP_MAKE_STRUCTURAL, json!({ "entity": place }))
+        .unwrap();
+    let back = map(&session);
+    assert_eq!(back.entities.len(), before.entities.len());
+    assert_eq!(back.entities[0].brushes().count(), 2);
+    session.undo().unwrap();
+    session.undo().unwrap();
+    assert_eq!(map(&session), before);
+    for entity in [0, 1] {
+        assert!(
+            session
+                .execute(MAP_MAKE_STRUCTURAL, json!({ "entity": entity }))
+                .is_err(),
+            "{entity}"
+        );
+    }
+    assert!(
+        session
+            .execute(
+                MAP_MAKE_BRUSH_ENTITY,
+                json!({ "classname": "func_wall", "brushes": [] })
+            )
+            .is_err()
+    );
+}

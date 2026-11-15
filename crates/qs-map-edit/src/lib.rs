@@ -38,7 +38,8 @@ pub use brushes::{
 pub use classes::{ClassInfo, FlagInfo, KeyInfo};
 pub use containers::{
     AddLayerParams, ContainerParams, GroupParams, MAP_ADD_LAYER, MAP_GROUP, MAP_LINK_DUPLICATE,
-    MAP_SEPARATE, MAP_UNGROUP,
+    MAP_MAKE_BRUSH_ENTITY, MAP_MAKE_STRUCTURAL, MAP_SEPARATE, MAP_UNGROUP, MakeBrushEntityParams,
+    MakeStructuralParams,
 };
 pub use disk::{
     Keep, MAP_COMPARE, MAP_RESOLVE, MapDifference, MapOnDisk, ResolveParams, map_files_changed,
@@ -1388,6 +1389,8 @@ pub fn register_map_edit<C: HasMap + 'static>(
     registry.register(containers::AddLayer)?;
     registry.register(containers::LinkDuplicate)?;
     registry.register(containers::Separate)?;
+    registry.register(containers::MakeBrushEntity)?;
+    registry.register(containers::MakeStructural)?;
     registry.register(prefabs::Paste)?;
     registry.register(issues::MapFix)?;
     registry.register(issues::MapSearch)?;

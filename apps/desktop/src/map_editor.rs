@@ -48,7 +48,7 @@ use crate::map_select::{Picked, Region};
 use crate::map_shading::{ShadedView, TRIGGER, TexturedFrom};
 use crate::map_tools::{BrushAction, BrushTools, MapTool, PickMode};
 use crate::shell::name_field;
-use crate::strings::{Text, also_selected, panes_text};
+use crate::strings::{Text, also_selected, panes_text, select_all_of};
 use crate::texture_browser::TextureBrowser;
 use crate::theme::{Theme, Token};
 
@@ -132,6 +132,8 @@ pub enum MapAction {
     Group(GroupAction),
     /// Move an entity or group into a layer or group, the world for the default layer (P5-16).
     MoveTo(EntityIndex, EntityIndex),
+    /// What the view's context menu asked that no other action does (P7-08).
+    Menu(MenuAction),
     /// Remove a key of an entity.
     RemoveKey(EntityIndex, String),
     /// Save the map.
@@ -339,6 +341,8 @@ pub struct MapEditor {
     frame: Option<Framing>,
     /// The point an Alt+right-drag orbits the camera about, while it lasts (P7-08).
     orbit: Option<[f32; 3]>,
+    /// Where the view's context menu last opened (P7-08).
+    menu_at: Option<Pos2>,
     /// The camera settings, the layout's (P7-08).
     camera_settings: MapCamera,
     /// How far Shift and the wheel have zoomed the 3D view in (P7-08).
@@ -1017,6 +1021,11 @@ impl MapEditor {
         if response.clicked() || response.secondary_clicked() {
             response.request_focus();
         }
+        if response.secondary_clicked() {
+            self.menu_at = response
+                .interact_pointer_pos()
+                .or_else(|| ui.ctx().pointer_latest_pos());
+        }
         let scroll = if response.hovered() {
             ui.input(|i| i.smooth_scroll_delta.y)
         } else {
@@ -1259,6 +1268,10 @@ impl MapEditor {
         {
             actions.push(MapAction::PlacePrefab(path.clone(), dropped_at(at)));
         }
+        // TrenchBroom's map view context menu (P7-08): grouping, brush entities, a point
+        // entity where the menu opened, the class of the selection, and layers.
+        let menu_at = self.menu_at.map(dropped_at);
+        actions.extend(self.context_menu(&response, selected, &selection, menu_at));
         // TrenchBroom's Copy, Paste and Paste at Original Position (Cmd+C, Cmd+V, Cmd+Alt+V),
         // which egui hands over as its copy and paste events while the view has the keyboard.
         if response.has_focus() {
@@ -1777,6 +1790,17 @@ impl MapEditor {
     }
 }
 
+/// What the view's context menu asks that no other action does (P7-08).
+#[derive(Clone, Debug, PartialEq)]
+pub enum MenuAction {
+    /// Make the world's brushes a brush entity of the class.
+    MakeBrushEntity(String, Vec<BrushIndex>),
+    /// Give a brush entity's brushes back to the world.
+    MakeStructural(EntityIndex),
+    /// Select these entities.
+    SelectAll(Vec<EntityIndex>),
+}
+
 /// A copy of the selection to the clipboard, or a paste of map text (P7-08).
 #[derive(Clone, Debug, PartialEq)]
 pub enum ClipboardAction {
@@ -1868,9 +1892,117 @@ impl MapEditor {
         self.textures.selected().map(str::to_owned)
     }
 
+    /// Selects `entities` besides the document's own selection (P7-08).
+    pub(crate) fn select_also(&mut self, entities: BTreeSet<EntityIndex>) {
+        self.also = entities;
+    }
+
     /// How many layers the map has.
     pub(crate) fn layer_count(&self) -> usize {
         self.layers.len()
+    }
+
+    /// The view's context menu, as TrenchBroom's (P7-08): group and ungroup, a brush entity of
+    /// the world's brushes selected and back, a point entity where it opened, every entity of
+    /// the selection's class, hide and isolate, and the layer to move the selection to.
+    fn context_menu(
+        &self,
+        response: &egui::Response,
+        selected: Option<EntityIndex>,
+        selection: &BTreeSet<EntityIndex>,
+        at: Option<[f64; 3]>,
+    ) -> Vec<MapAction> {
+        let chosen: Vec<EntityIndex> = selection.iter().copied().collect();
+        let world = self.world_brushes();
+        let grouping = self.grouping(&chosen, &world);
+        let class_of = |brush: bool| -> Vec<&String> {
+            self.names
+                .iter()
+                .filter(|name| {
+                    self.classes
+                        .get(*name)
+                        .is_some_and(|look| look.brush == brush)
+                })
+                .collect()
+        };
+        let shape_of = |entity: EntityIndex| self.scene.entities.iter().find(|s| s.index == entity);
+        let brush_entity = selected.filter(|&entity| shape_of(entity).is_some_and(|s| s.brush));
+        let classname = selected.and_then(|entity| shape_of(entity)?.classname.clone());
+        let mut asked = Vec::new();
+        let _menu = response.clone().context_menu(|ui| {
+            if ui
+                .add_enabled(grouping.any(), egui::Button::new(Text::MapGroup.get()))
+                .clicked()
+            {
+                asked.push(MapAction::Group(grouping.grouped()));
+            }
+            if let Some(group) = grouping.group
+                && ui.button(Text::MapUngroup.get()).clicked()
+            {
+                asked.push(MapAction::Group(GroupAction::Ungroup(group)));
+            }
+            if !world.is_empty() {
+                ui.menu_button(Text::MapCreateBrushEntity.get(), |ui| {
+                    for name in class_of(true) {
+                        if ui.button(name).clicked() {
+                            asked.push(MapAction::Menu(MenuAction::MakeBrushEntity(
+                                name.clone(),
+                                world.clone(),
+                            )));
+                        }
+                    }
+                });
+            }
+            if let Some(entity) = brush_entity
+                && ui.button(Text::MapMakeStructural.get()).clicked()
+            {
+                asked.push(MapAction::Menu(MenuAction::MakeStructural(entity)));
+            }
+            if let Some(at) = at {
+                ui.menu_button(Text::MapCreatePointEntity.get(), |ui| {
+                    for name in class_of(false) {
+                        if ui.button(name).clicked() {
+                            asked.push(MapAction::Place(name.clone(), at));
+                        }
+                    }
+                });
+            }
+            if let Some(classname) = &classname
+                && ui.button(select_all_of(classname)).clicked()
+            {
+                let all = self
+                    .scene
+                    .entities
+                    .iter()
+                    .filter(|shape| shape.classname.as_ref() == Some(classname))
+                    .map(|shape| shape.index)
+                    .collect();
+                asked.push(MapAction::Menu(MenuAction::SelectAll(all)));
+            }
+            if !chosen.is_empty() {
+                if ui.button(Text::MapHide.get()).clicked() {
+                    asked.push(MapAction::Group(GroupAction::Hide(chosen.clone())));
+                }
+                if ui.button(Text::MapIsolate.get()).clicked() {
+                    asked.push(MapAction::Group(GroupAction::Isolate(chosen.clone())));
+                }
+                if !self.layers.is_empty() {
+                    ui.menu_button(Text::MapMoveToLayer.get(), |ui| {
+                        for layer in &self.layers {
+                            if ui.button(&layer.name).clicked() {
+                                for &entity in &chosen {
+                                    asked.push(MapAction::MoveTo(entity, layer.entity));
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+            if !asked.is_empty() {
+                ui.close();
+            }
+        });
+        asked
     }
 
     /// The world's brushes selected, which a new group takes (P7-08).

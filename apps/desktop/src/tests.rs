@@ -41,6 +41,7 @@ use crate::palette::highlighted;
 use crate::shell::{CentreTab, EDITOR_AREA, PointerHeld, ZoomStep, commanded_size, dragged_size};
 use crate::strings::{
     Text, command_count, exit_status, help_for, match_count, missing_textures, replace_with,
+    select_all_of,
 };
 use crate::theme::{Contrast, Mode, Motion, Theme, ThemeError, Token, semibold};
 use crate::{App, AppError};
@@ -3102,6 +3103,64 @@ fn a_texture_s_menu_replaces_the_current_texture() {
     shell.execute("edit.undo", json!({})).unwrap();
     harness.run();
     assert_eq!(map_text(&harness), before);
+}
+
+// No spec statement: P7-08: the map view's context menu, as TrenchBroom's: with an entity
+// selected it offers grouping, hiding and selecting every entity of its class; Create point
+// entity places one of a class where the menu opened
+#[test]
+fn the_view_s_context_menu_places_and_selects() {
+    let dir = keep_copy("menu");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("map.select", json!({ "entity": 2 })).unwrap();
+    harness.run();
+    let count = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        shell.session().context().workbench.map().unwrap().file().entities.len()
+    };
+    let before = count(&harness);
+    harness
+        .get_by_label(Text::MapEditorView.get())
+        .click_secondary();
+    harness.run();
+    // Each also in Properties: the menu's makes a second.
+    for entry in [Text::MapGroup, Text::MapHide, Text::MapIsolate] {
+        let found = harness.query_all_by_label(entry.get()).count();
+        assert_eq!(found, 2, "{}", entry.get());
+    }
+    harness
+        .get_by_label(&select_all_of("monster_ogre"))
+        .click();
+    harness.run();
+    let selected = harness.state().as_ref().unwrap().shell().session().context().workbench.map().unwrap().selected();
+    assert_eq!(selected, Some(EntityIndex::new(2)));
+    harness
+        .get_by_label(Text::MapEditorView.get())
+        .click_secondary();
+    harness.run();
+    assert_eq!(harness.query_all_by_label(Text::MapGroup.get()).count(), 2, "the menu is open");
+    harness
+        .get_by_label_contains(Text::MapCreatePointEntity.get())
+        .hover();
+    harness.run();
+    // The submenu's, after the Entities browser's of the same name.
+    harness
+        .query_all_by_role_and_label(Role::Button, "light")
+        .last()
+        .unwrap()
+        .click();
+    harness.run();
+    assert_eq!(count(&harness), before + 1, "a light placed");
+    assert!(map_text(&harness).matches("\"classname\" \"light\"").count() >= 2);
 }
 
 // No spec statement: P6-08, MAP-2: a click with a brush tool selects the first brush the ray

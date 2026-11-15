@@ -90,6 +90,11 @@ it too.
   (`view.map_camera`, kept in the layout). Cmd+U frames the selection, every selected entity and brush, keeping
   where the camera looks (TrenchBroom's Focus on Selection, Ctrl+U). The Properties panel shows
   the camera's x, y and z, and a value typed or dragged there moves it.
+- **The view's menu (P7-08):** right-click in the view for Group and Ungroup, Create brush
+  entity (the selected world brushes as an entity of a brush class, `map.make_brush_entity`),
+  Make structural (a brush entity's brushes back to the world, `map.make_structural`), Create
+  point entity (one of a point class where the menu opened), Select all of the selection's
+  class, Hide, Isolate and Move to layer, as TrenchBroom's map view menu.
 - **Making groups and layers (P7-08):** Cmd+G (or Group in Properties) puts the selected
   entities and world brushes in a new group, named "Group 1" and on (`map.group`). With a
   group's own entity selected, Cmd+Shift+G (Ungroup) takes its contents out (`map.ungroup`),

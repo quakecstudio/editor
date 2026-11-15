@@ -86,11 +86,11 @@ Tests are named `crate-or-app path::test`; `desktop` is `apps/desktop/src`, `map
 | Cancel a drag or a tool with Escape | Escape drops a drag, then picked corners, then the tool, then the selection | `desktop map_tools::tests::escape_cancels_the_drag_then_the_corners_then_the_tool`, `desktop tests::escape_in_the_map_view_clears_the_selection` | Same |
 | Axis restriction while moving | The Move tool moves across the ground in 3D, up and down with Alt, along the farthest axis with Shift | `desktop map_tools::tests::a_move_is_held_to_an_axis_by_the_keys` | Same; no thicker trace line |
 | Grid from 0.125 to 256, set from the menu or Alt+Ctrl+wheel | `view.map_grid`, the toolbar's Grid picker, TrenchBroom's + - and 1 to 9 | `desktop tests::the_grid_keys_set_the_step_the_selection_moves_by`, `qs-layout map_grid::tests` | Same |
-| Map view context menu: group, layers, select all of a class, reveal material, create entities | Entities browser context menu only | none | Gap G12 |
+| Map view context menu: group, layers, select all of a class, reveal material, create entities | Right-click in the view: Group, Ungroup, Create brush entity, Make structural, Create point entity, Select all of the class, Hide, Isolate, Move to layer | `desktop tests::the_view_s_context_menu_places_and_selects` | Same; reveal a material is the browser's selection |
 | Simple shapes by drag in 3D and 2D | Brush tool | `map-edit brushes::tests::a_box_is_created_on_the_grid` | Same |
 | Complex shape tool: points to a convex brush | Shape tool: cylinders, cones, arches, spheroids, rocks, curves | `map-edit shapes::tests::a_shape_is_added_in_one_undoable_step` | Gap G13: no hull of placed points |
 | Point entities by drag or context menu | Drag from the Entities browser | `desktop tests` | Same |
-| Brush entities from selected brushes | None | none | Gap G13 |
+| Brush entities from selected brushes | Create brush entity in the view's menu (`map.make_brush_entity`); Make structural back (`map.make_structural`) | `map-edit containers::tests::brushes_become_a_brush_entity_and_structural_again` | Same |
 | Duplicate | `map.duplicate`, with link numbers moved on | `map-edit links::tests::a_duplicate_numbers_its_names_onward` | Beyond |
 | Copy and paste | Cmd+C writes the selection's map text, Cmd+V pastes at the pointer, Cmd+Alt+V where it was (`map.copy`, `map.paste`) | `desktop tests::the_map_view_copies_and_pastes_map_text`, `map-edit prefabs::tests::a_copy_pastes_in_place_or_at_a_point` | Same |
 | Move with mouse or keys | `map.move`, `map.brush_move` | `map-edit brushes::tests::a_brush_moves_with_its_textures_locked` | Same |
@@ -179,8 +179,7 @@ To close before #823 does:
 | G1 | Entity models drawn textured, not as wireframes |
 | G7 | Two- and three-pane layouts, a highlight on the focused pane, linked 2D views |
 | G8 | Selection drilling; 2D picking by candidates |
-| G12 | The map view's context menu |
-| G13 | Brush entities from selected brushes and back to the world; a convex brush from placed points; stamping and moving faces; clip snapping and matching a face's plane |
+| G13 | A convex brush from placed points; stamping and moving faces; clip snapping and matching a face's plane |
 | G16 | Filter the browser by WAD; a WAD dropped on the window; alignment shortcuts |
 | G17 | Extracting objects into a new linked group; the current layer new objects go into |
 | G19 | TrenchBroom's query language in the search |

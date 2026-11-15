@@ -50,12 +50,12 @@ pub(crate) struct Grouping<'a> {
 
 impl Grouping<'_> {
     /// Whether there is anything to group.
-    fn any(&self) -> bool {
+    pub(crate) fn any(&self) -> bool {
         !self.entities.is_empty() || !self.brushes.is_empty()
     }
 
     /// The new group of the selection.
-    fn grouped(&self) -> GroupAction {
+    pub(crate) fn grouped(&self) -> GroupAction {
         GroupAction::Group(self.entities.to_vec(), self.brushes.to_vec())
     }
 }

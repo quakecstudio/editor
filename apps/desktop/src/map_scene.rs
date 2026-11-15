@@ -90,6 +90,8 @@ pub(crate) struct EntityShape {
     pub(crate) model: Option<String>,
     /// Whether it has brushes.
     pub(crate) brush: bool,
+    /// Its classname, when it has one (P7-08).
+    pub(crate) classname: Option<String>,
     /// Its `targetname`, when it has one.
     pub(crate) targetname: Option<String>,
     /// The values of the keys it fires entities by (MAP-8.8).
@@ -521,6 +523,7 @@ impl Scene {
                 color: class.and_then(|c| c.color),
                 model: class.and_then(|c| c.model.clone()),
                 brush: entity.is_brush_entity(),
+                classname: entity.classname().map(text),
                 targetname: entity
                     .value(TARGETNAME.as_bytes())
                     .filter(|name| !name.is_empty())

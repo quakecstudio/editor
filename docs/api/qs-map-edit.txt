@@ -42,6 +42,8 @@ const qs_map_edit::brushes::MAP_BRUSH_VERTEX
 const qs_map_edit::containers::MAP_ADD_LAYER
 const qs_map_edit::containers::MAP_GROUP
 const qs_map_edit::containers::MAP_LINK_DUPLICATE
+const qs_map_edit::containers::MAP_MAKE_BRUSH_ENTITY
+const qs_map_edit::containers::MAP_MAKE_STRUCTURAL
 const qs_map_edit::containers::MAP_SEPARATE
 const qs_map_edit::containers::MAP_UNGROUP
 const qs_map_edit::disk::MAP_COMPARE
@@ -240,6 +242,9 @@ field qs_map_edit::containers::ContainerParams.group
 field qs_map_edit::containers::GroupParams.brushes
 field qs_map_edit::containers::GroupParams.entities
 field qs_map_edit::containers::GroupParams.name
+field qs_map_edit::containers::MakeBrushEntityParams.brushes
+field qs_map_edit::containers::MakeBrushEntityParams.classname
+field qs_map_edit::containers::MakeStructuralParams.entity
 field qs_map_edit::disk::MapDifference.entity
 field qs_map_edit::disk::MapDifference.text
 field qs_map_edit::disk::ResolveParams.keep
@@ -489,6 +494,8 @@ struct qs_map_edit::classes::KeyInfo
 struct qs_map_edit::containers::AddLayerParams
 struct qs_map_edit::containers::ContainerParams
 struct qs_map_edit::containers::GroupParams
+struct qs_map_edit::containers::MakeBrushEntityParams
+struct qs_map_edit::containers::MakeStructuralParams
 struct qs_map_edit::disk::MapDifference
 struct qs_map_edit::disk::ResolveParams
 struct qs_map_edit::flags::SetFlagParams
@@ -628,6 +635,8 @@ use qs_map_edit::MAP_LAYERS = groups::MAP_LAYERS
 use qs_map_edit::MAP_LINK = links::MAP_LINK
 use qs_map_edit::MAP_LINK_DUPLICATE = containers::MAP_LINK_DUPLICATE
 use qs_map_edit::MAP_LOCK = groups::MAP_LOCK
+use qs_map_edit::MAP_MAKE_BRUSH_ENTITY = containers::MAP_MAKE_BRUSH_ENTITY
+use qs_map_edit::MAP_MAKE_STRUCTURAL = containers::MAP_MAKE_STRUCTURAL
 use qs_map_edit::MAP_MOVE_TO = outline::MAP_MOVE_TO
 use qs_map_edit::MAP_OUTLINE = outline::MAP_OUTLINE
 use qs_map_edit::MAP_PASTE = prefabs::MAP_PASTE
@@ -648,6 +657,8 @@ use qs_map_edit::MAP_TURN = brush_tools::MAP_TURN
 use qs_map_edit::MAP_UNGROUP = containers::MAP_UNGROUP
 use qs_map_edit::MAP_UNLOCK_ALL = groups::MAP_UNLOCK_ALL
 use qs_map_edit::MAP_UNSTAGE = review::MAP_UNSTAGE
+use qs_map_edit::MakeBrushEntityParams = containers::MakeBrushEntityParams
+use qs_map_edit::MakeStructuralParams = containers::MakeStructuralParams
 use qs_map_edit::MapDifference = disk::MapDifference
 use qs_map_edit::MapEditError = error::MapEditError
 use qs_map_edit::MapFixParams = issues::MapFixParams
@@ -733,6 +744,7 @@ variant qs_map_edit::error::MapEditError::NoRoom
 variant qs_map_edit::error::MapEditError::NoSelection
 variant qs_map_edit::error::MapEditError::NoTexture
 variant qs_map_edit::error::MapEditError::NoTextureSize
+variant qs_map_edit::error::MapEditError::NotBrushEntity
 variant qs_map_edit::error::MapEditError::NotContainer
 variant qs_map_edit::error::MapEditError::NotEmpty
 variant qs_map_edit::error::MapEditError::NotGroup

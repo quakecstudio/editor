@@ -30,6 +30,30 @@ pub const MAP_LINK_DUPLICATE: &str = "map.link_duplicate";
 /// The id of the command that unlinks a group from the groups linked to it.
 pub const MAP_SEPARATE: &str = "map.separate";
 
+/// The id of the command that makes world brushes a brush entity.
+pub const MAP_MAKE_BRUSH_ENTITY: &str = "map.make_brush_entity";
+
+/// The id of the command that gives a brush entity's brushes back to the world.
+pub const MAP_MAKE_STRUCTURAL: &str = "map.make_structural";
+
+/// The parameters of `map.make_brush_entity`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MakeBrushEntityParams {
+    /// The new entity's classname, such as `func_door`.
+    pub classname: String,
+    /// The world's brushes it takes.
+    pub brushes: Vec<BrushIndex>,
+}
+
+/// The parameters of `map.make_structural`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MakeStructuralParams {
+    /// The brush entity.
+    pub entity: EntityIndex,
+}
+
 /// The parameters of `map.group`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -309,6 +333,90 @@ impl<C: HasMap + 'static> Command<C> for Separate {
             unlinked.map_err(|error| document.map_error(error))
         })?;
         Ok(MapEdited::undoable(params.group, step))
+    }
+}
+
+/// `map.make_brush_entity`.
+pub(super) struct MakeBrushEntity;
+
+impl<C: HasMap + 'static> Command<C> for MakeBrushEntity {
+    const ID: &'static str = MAP_MAKE_BRUSH_ENTITY;
+    const SUMMARY: &'static str = "Makes brushes of the world a new brush entity of a class, \
+        such as func_door (TrenchBroom's Create Brush Entity).";
+    type Params = MakeBrushEntityParams;
+    type Output = MapEdited;
+    type Error = MapEditError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: MakeBrushEntityParams,
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
+        let (entity, step) = edit_map(context, |document| {
+            if params.brushes.is_empty() {
+                return Err(MapEditError::NoSelection);
+            }
+            let mut made = Entity::new();
+            made.set(b"classname", params.classname.as_bytes())
+                .map_err(|error| document.map_error(error))?;
+            let world = EntityIndex::new(0);
+            let mut brushes = params.brushes.clone();
+            brushes.sort();
+            brushes.dedup();
+            for &brush in brushes.iter().rev() {
+                let moved = document.brush(world, brush)?;
+                document.replace_brush(world, brush, Vec::new())?;
+                made.items.insert(1, Item::Brush(moved));
+            }
+            document.file.push_entity(made);
+            Ok(EntityIndex::new(
+                document.file.entities.len().saturating_sub(1),
+            ))
+        })?;
+        Ok(MapEdited::undoable(entity, step))
+    }
+}
+
+/// `map.make_structural`.
+pub(super) struct MakeStructural;
+
+impl<C: HasMap + 'static> Command<C> for MakeStructural {
+    const ID: &'static str = MAP_MAKE_STRUCTURAL;
+    const SUMMARY: &'static str = "Gives a brush entity's brushes back to the world and removes \
+        the entity (TrenchBroom's Make Structural).";
+    type Params = MakeStructuralParams;
+    type Output = MapEdited;
+    type Error = MapEditError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: MakeStructuralParams,
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
+        let ((), step) = edit_map(context, |document| {
+            let entity = params.entity;
+            let found = document.entity_mut(entity)?;
+            if entity.is_world() || !found.has_brushes() || found.container().is_some() {
+                return Err(MapEditError::NotBrushEntity { entity });
+            }
+            document.editable(entity)?;
+            let brushes: Vec<Item> = document
+                .entity_mut(entity)?
+                .items
+                .iter()
+                .filter(|item| matches!(item, Item::Brush(_)))
+                .cloned()
+                .collect();
+            document
+                .entity_mut(EntityIndex::new(0))?
+                .items
+                .extend(brushes);
+            document.file.entities.remove(entity.get());
+            document.view.deleted(entity);
+            document.selected = None;
+            Ok(())
+        })?;
+        Ok(Outcome::undoable(MapEdited { entity: None }, step))
     }
 }
 

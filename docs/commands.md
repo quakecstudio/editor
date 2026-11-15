@@ -101,6 +101,8 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.link`](#maplink) | Points a key of an entity of the open map, one the code fires entities by such as target or killtarget, at another entity: the key takes the other's targetname, and the other its classname and the next free number as one when it has none. |
 | [`map.link_duplicate`](#maplink_duplicate) | Copies a group and its entities as a new group linked to it, so an edit in one is made in the other (TrenchBroom's Create Linked Duplicate). |
 | [`map.lock`](#maplock) | Locks entities of the open map against edits until map.unlock_all; the map is not changed. |
+| [`map.make_brush_entity`](#mapmake_brush_entity) | Makes brushes of the world a new brush entity of a class, such as func_door (TrenchBroom's Create Brush Entity). |
+| [`map.make_structural`](#mapmake_structural) | Gives a brush entity's brushes back to the world and removes the entity (TrenchBroom's Make Structural). |
 | [`map.move`](#mapmove) | Moves an entity of the open map: a point entity's origin, a brush entity's brushes. |
 | [`map.move_to`](#mapmove_to) | Moves an entity or a group of the open map into a layer or a group, or into the default layer given the world, as TrenchBroom writes it. |
 | [`map.open`](#mapopen) | Opens a .map in the map view, or a shipped .bsp's entities when the map has no .map source; nothing is selected. |
@@ -4967,6 +4969,80 @@ Parameters:
     "entities"
   ],
   "title": "EntityListParams",
+  "type": "object"
+}
+```
+
+## `map.make_brush_entity`
+
+Makes brushes of the world a new brush entity of a class, such as func_door (TrenchBroom's Create Brush Entity).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.make_brush_entity`.",
+  "properties": {
+    "brushes": {
+      "description": "The world's brushes it takes.",
+      "items": {
+        "$ref": "#/$defs/BrushIndex"
+      },
+      "type": "array"
+    },
+    "classname": {
+      "description": "The new entity's classname, such as `func_door`.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "classname",
+    "brushes"
+  ],
+  "title": "MakeBrushEntityParams",
+  "type": "object"
+}
+```
+
+## `map.make_structural`
+
+Gives a brush entity's brushes back to the world and removes the entity (TrenchBroom's Make Structural).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.make_structural`.",
+  "properties": {
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The brush entity."
+    }
+  },
+  "required": [
+    "entity"
+  ],
+  "title": "MakeStructuralParams",
   "type": "object"
 }
 ```

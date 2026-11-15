@@ -878,6 +878,14 @@ pub enum Text {
     MapSeparate,
     /// Adds a layer.
     MapAddLayer,
+    /// The view menu's submenu of brush classes for the selected world brushes.
+    MapCreateBrushEntity,
+    /// Gives a brush entity's brushes back to the world.
+    MapMakeStructural,
+    /// The view menu's submenu of point classes to place where it opened.
+    MapCreatePointEntity,
+    /// The view menu's submenu of layers to move the selection to.
+    MapMoveToLayer,
     /// Flips the selection along y.
     MapFlipY,
     /// Flips the selection along z.
@@ -946,7 +954,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 465] = [
+    pub const ALL: [Self; 469] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1380,6 +1388,10 @@ impl Text {
         Self::MapLinkDuplicate,
         Self::MapSeparate,
         Self::MapAddLayer,
+        Self::MapCreateBrushEntity,
+        Self::MapMakeStructural,
+        Self::MapCreatePointEntity,
+        Self::MapMoveToLayer,
         Self::MapFlipY,
         Self::MapFlipZ,
         Self::MapResetZoom,
@@ -1926,6 +1938,10 @@ impl Text {
             Self::MapLinkDuplicate => "Linked duplicate",
             Self::MapSeparate => "Separate",
             Self::MapAddLayer => "Add layer",
+            Self::MapCreateBrushEntity => "Create brush entity",
+            Self::MapMakeStructural => "Make structural",
+            Self::MapCreatePointEntity => "Create point entity",
+            Self::MapMoveToLayer => "Move to layer",
             Self::MapFlipY => "Flip y",
             Self::MapFlipZ => "Flip z",
             Self::MapResetZoom => "Reset zoom",
@@ -2230,6 +2246,12 @@ pub fn also_selected(count: usize) -> String {
 #[must_use]
 pub fn replace_with(current: &str, with: &str) -> String {
     format!("Replace {current} with {with}")
+}
+
+/// The view menu's entry selecting every entity of `classname` (P7-08).
+#[must_use]
+pub fn select_all_of(classname: &str) -> String {
+    format!("Select all {classname}")
 }
 
 /// A new group's name, the map's `n`th (P7-08).

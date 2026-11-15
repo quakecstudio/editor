@@ -15,7 +15,8 @@ use qs_map_edit::texture_import::{TEXTURE_IMPORT, TextureImportParams};
 use qs_map_edit::textures::TextureSources;
 use qs_map_edit::{
     AddLayerParams, ContainerParams, GroupParams, MAP_ADD_LAYER, MAP_GROUP, MAP_LINK_DUPLICATE,
-    MAP_SEPARATE, MAP_UNGROUP,
+    MAP_MAKE_BRUSH_ENTITY, MAP_MAKE_STRUCTURAL, MAP_SEPARATE, MAP_UNGROUP, MakeBrushEntityParams,
+    MakeStructuralParams,
 };
 use qs_map_edit::{
     BrushChamferParams, BrushClipParams, BrushCreateParams, BrushExtrudeParams, BrushHollowParams,
@@ -65,7 +66,7 @@ use qs_workbench::map_profile::{
 use crate::entities::{Outliner, Properties};
 use crate::features::{Commands, ShellRequest};
 use crate::map_editor::{
-    Arrange, ClipboardAction, DiskNotice, MapAction, MapEditor, ShowFilter, ViewSetting,
+    Arrange, ClipboardAction, DiskNotice, MapAction, MapEditor, MenuAction, ShowFilter, ViewSetting,
 };
 use crate::map_groups::GroupAction;
 use crate::map_profiles::ProfileAction;
@@ -297,6 +298,7 @@ impl MapFeature {
                     commands.attempt(MAP_MOVE, &MoveParams { entity, by })
                 }
                 MapAction::Arrange(arrange) => Self::arrange(commands, arrange),
+                MapAction::Menu(menu) => self.menu_action(commands, menu),
                 MapAction::Delete(entity) => commands.attempt(MAP_DELETE, &EntityParams { entity }),
                 MapAction::Duplicate(entity) => {
                     commands.attempt(MAP_DUPLICATE, &EntityParams { entity })
@@ -644,6 +646,29 @@ impl MapFeature {
             self.requests.push(ShellRequest::OpenGameGuide);
         }
         played
+    }
+
+    /// Runs what the view's context menu asked that no other action does (P7-08).
+    fn menu_action(
+        &mut self,
+        commands: &mut Commands<'_>,
+        action: MenuAction,
+    ) -> Result<serde_json::Value, ShellError> {
+        match action {
+            MenuAction::MakeBrushEntity(classname, brushes) => commands.attempt(
+                MAP_MAKE_BRUSH_ENTITY,
+                &MakeBrushEntityParams { classname, brushes },
+            ),
+            MenuAction::MakeStructural(entity) => {
+                commands.attempt(MAP_MAKE_STRUCTURAL, &MakeStructuralParams { entity })
+            }
+            MenuAction::SelectAll(entities) => {
+                let mut entities = entities.into_iter();
+                let entity = entities.next();
+                self.map_editor.select_also(entities.collect());
+                commands.attempt(MAP_SELECT, &MapSelectParams { entity })
+            }
+        }
     }
 
     /// Flips or turns the selection (P7-08).
