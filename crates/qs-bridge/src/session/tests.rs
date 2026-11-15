@@ -92,7 +92,7 @@ fn initialize_comes_first() {
 
 // spec BRIDGE-2.2: initialize is answered with the version, the host and its capabilities,
 // one boolean per flagged command, as the result's schema says
-// spec BRIDGE-2.6: the capabilities are the flagged commands, initialize, shutdown and
+// spec BRIDGE-2.10: the capabilities are the flagged commands, initialize, shutdown and
 // inspect among none of them
 #[test]
 fn initialize_answers_with_the_host_and_its_capabilities() {
@@ -101,23 +101,24 @@ fn initialize_answers_with_the_host_and_its_capabilities() {
     let params = json!({ "protocolVersion": "1.3", "client": { "name": "test" } });
     let result = outcome(session.handle(&mut host, request("initialize", params))).unwrap();
     assert!(session.is_initialized());
-    assert_eq!(result["protocolVersion"], "1.2");
+    assert_eq!(result["protocolVersion"], "1.3");
     assert_eq!(result["host"]["engine"], "test");
     assert_eq!(result["capabilities"]["pause"], true);
     assert_eq!(result["capabilities"]["reload"], false);
-    assert_eq!(result["capabilities"].as_object().unwrap().len(), 16);
+    assert_eq!(result["capabilities"].as_object().unwrap().len(), 17);
     assert!(result["capabilities"].get("inspect").is_none());
     assert!(schema_checks("initialize.result", &result));
-    assert_eq!(BRIDGE_COMMANDS.iter().filter(|(_, f)| *f).count(), 16);
+    assert_eq!(BRIDGE_COMMANDS.iter().filter(|(_, f)| *f).count(), 17);
     assert!(
         !is_flagged("initialize")
             && !is_flagged("inspect")
             && is_flagged("evaluate")
             && is_flagged("window/place")
+            && is_flagged("map/swap")
     );
 }
 
-// spec BRIDGE-2.8: another major is -32001 and the connection closes; a higher minor is
+// spec BRIDGE-2.9: another major is -32001 and the connection closes; a higher minor is
 // accepted; params that fail initialize's schema are -32602
 #[test]
 fn the_major_version_must_match() {
@@ -135,7 +136,7 @@ fn the_major_version_must_match() {
     );
 }
 
-// spec BRIDGE-2.6: a command whose capability is off is -32005
+// spec BRIDGE-2.10: a command whose capability is off is -32005
 // spec BRIDGE-4.2: params that fail the command's schema are -32602 and nothing runs
 // spec BRIDGE-6.2: an unknown method is -32601
 #[test]

@@ -3,7 +3,7 @@
 //! The bridge client (BRIDGE-1 to BRIDGE-7): requests framed and numbered, each answered by
 //! the response with its id; the host's events kept, in order, as they come between them; and
 //! one method per command, refused before it is sent when the host's capabilities leave it
-//! out (BRIDGE-2.6).
+//! out (BRIDGE-2.10).
 
 use qc_edict::EdictNumber;
 use std::collections::{BTreeMap, VecDeque};
@@ -44,7 +44,7 @@ pub enum ClientError {
         /// Its message, for the person.
         message: String,
     },
-    /// The host's capabilities leave the command out (BRIDGE-2.6).
+    /// The host's capabilities leave the command out (BRIDGE-2.10).
     Unsupported(String),
     /// No answer came within the time given.
     Timeout,
@@ -227,7 +227,7 @@ impl Client {
         Ok(result)
     }
 
-    /// Whether the host offers `method` (BRIDGE-2.6): every command a capability does not
+    /// Whether the host offers `method` (BRIDGE-2.10): every command a capability does not
     /// flag, and each flagged one the host said it has.
     #[must_use]
     pub fn offers(&self, method: &str) -> bool {

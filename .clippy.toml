@@ -39,6 +39,7 @@ absolute-paths-allowed-crates = [
     "rfd",
     "rmcp",
     "schemars",
+    "self_cell",
     "serde",
     "serde_json",
     "sha1_smol",

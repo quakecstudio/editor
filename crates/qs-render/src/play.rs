@@ -15,7 +15,7 @@
 
 use std::sync::Arc;
 
-use qs_bsp::Bsp;
+use qs_bsp::{Bsp, Submodel};
 use qs_client::{Anchor, EntitySlot, HUD_SBAR_HEIGHT, Hud, HudItem, Scene, SceneEntity};
 use qs_wad::{Conchars, QPic, WAD_CONCHARS_TRANSPARENT, Wad};
 
@@ -347,7 +347,7 @@ impl Play {
 
     /// Reads every model the client precached, `names` by index, through `read`: alias
     /// models and sprites as images for the renderer, `*n` as the mesh's model `n`, and any
-    /// other `.bsp` as an external brush model whose instances [`Play::add_instance`] places.
+    /// other `.bsp` as an external brush model whose instances [`Play::set_instances`] places.
     /// With [`Play::md5_models`], an `.mdl` is its MD5 model where `rank`, the search-path
     /// element a file is found in, the first 0, does not put the `.mdl` before it
     /// (REND-12.1).
@@ -375,8 +375,9 @@ impl Play {
                 }
                 None => None,
             };
-            let model = if let Some(n) = name.strip_prefix('*') {
-                n.parse().map_or(Model::None, Model::Submodel)
+            // `*n` names the map's submodel `n` only as `Mod_LoadBrushModel` names it.
+            let model = if name.starts_with('*') {
+                Submodel::parse(name).map_or(Model::None, |n| Model::Submodel(n.get()))
             } else if let Some(model) = replacement {
                 let first = self.skins.len();
                 self.skins.extend_from_slice(model.images());
@@ -451,9 +452,16 @@ impl Play {
         Some((md5, bytes))
     }
 
-    /// Records that entity `entity`'s external brush model is the mesh's model `mesh_model`.
-    pub fn add_instance(&mut self, entity: EntitySlot, mesh_model: usize) {
-        self.instances.push((entity, mesh_model));
+    /// The palette its skins and pictures are read through.
+    #[must_use]
+    pub const fn palette(&self) -> &Palette {
+        &self.palette
+    }
+
+    /// The external brush models placed: each entity and its mesh's model, in place of the
+    /// last, for a mesh made again (BRIDGE-4.17).
+    pub fn set_instances(&mut self, instances: Vec<(EntitySlot, usize)>) {
+        self.instances = instances;
     }
 
     /// The images the renderer is made with.

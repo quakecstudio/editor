@@ -101,7 +101,7 @@ impl Game {
 
     /// The bytes of `path`: a host path when it is absolute, else a name on the game's search
     /// path.
-    fn read_file(&self, path: &str) -> Result<Vec<u8>, RpcError> {
+    pub(super) fn read_file(&self, path: &str) -> Result<Vec<u8>, RpcError> {
         let missing = || RpcError::new(ErrorCode::InvalidParams, format!("{path} is not found"));
         if Path::new(path).is_absolute() {
             return std::fs::read(path).map_err(|_| missing());
