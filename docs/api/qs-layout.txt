@@ -221,9 +221,11 @@ variant qs_layout::map_camera::MapCameraError::Fov
 variant qs_layout::map_camera::MapCameraError::Speed
 variant qs_layout::map_grid::GridStep::Coarser
 variant qs_layout::map_grid::GridStep::Finer
+variant qs_layout::map_view::MapPanes::Double
 variant qs_layout::map_view::MapPanes::Inset
 variant qs_layout::map_view::MapPanes::Quad
 variant qs_layout::map_view::MapPanes::Single
+variant qs_layout::map_view::MapPanes::Triple
 variant qs_layout::map_view::MapShading::Lines
 variant qs_layout::map_view::MapShading::Lit
 variant qs_layout::map_view::MapShading::Textured

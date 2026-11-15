@@ -492,6 +492,10 @@ pub enum Text {
     MapLayoutSingle,
     /// The map view's layout of the 3D view with a top view in its corner.
     MapLayoutInset,
+    /// The map view beside a top view (P7-08).
+    MapLayoutDouble,
+    /// The map view beside top and front views (P7-08).
+    MapLayoutTriple,
     /// The map view's layout of the 3D view and three 2D views.
     MapLayoutQuad,
     /// The top view, as a screen reader names it.
@@ -958,7 +962,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 471] = [
+    pub const ALL: [Self; 473] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1199,6 +1203,8 @@ impl Text {
         Self::MapNoOccupant,
         Self::MapLayoutSingle,
         Self::MapLayoutInset,
+        Self::MapLayoutDouble,
+        Self::MapLayoutTriple,
         Self::MapLayoutQuad,
         Self::MapViewTop,
         Self::MapViewFront,
@@ -1695,6 +1701,8 @@ impl Text {
             }
             Self::MapLayoutSingle => "3D",
             Self::MapLayoutInset => "3D + top",
+            Self::MapLayoutDouble => "2 views",
+            Self::MapLayoutTriple => "3 views",
             Self::MapLayoutQuad => "4 views",
             Self::MapViewTop => "Top",
             Self::MapViewFront => "Front",
@@ -2297,6 +2305,8 @@ pub(crate) const fn panes_text(panes: qs_layout::MapPanes) -> Text {
     match panes {
         qs_layout::MapPanes::Single => Text::MapLayoutSingle,
         qs_layout::MapPanes::Inset => Text::MapLayoutInset,
+        qs_layout::MapPanes::Double => Text::MapLayoutDouble,
+        qs_layout::MapPanes::Triple => Text::MapLayoutTriple,
         qs_layout::MapPanes::Quad => Text::MapLayoutQuad,
     }
 }

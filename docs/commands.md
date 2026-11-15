@@ -8300,6 +8300,16 @@ Parameters:
           "type": "string"
         },
         {
+          "const": "double",
+          "description": "The 3D view beside a top view, TrenchBroom's two panes (P7-08).",
+          "type": "string"
+        },
+        {
+          "const": "triple",
+          "description": "The 3D view beside a top view over a front view, TrenchBroom's three panes (P7-08).",
+          "type": "string"
+        },
+        {
           "const": "quad",
           "description": "The 3D view and the top, front and side views, two by two.",
           "type": "string"

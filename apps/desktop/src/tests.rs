@@ -3239,6 +3239,50 @@ fn a_dropped_wad_joins_the_maps() {
     assert_eq!(map_text(&harness), before);
 }
 
+// No spec statement: P7-08: the pane with the keyboard is outlined in the focus colour, as
+// TrenchBroom marks the focused viewport; with the keyboard elsewhere no pane is
+#[test]
+fn the_focused_pane_is_outlined() {
+    let dir = keep_copy("focus-pane");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    shell
+        .execute("view.map_panes", json!({ "panes": "double" }))
+        .unwrap();
+    harness.run();
+    let outlined = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        let focus = shell.theme().color(Token::Focus);
+        fn walk(shape: &egui::Shape, focus: egui::Color32, count: &mut usize) {
+            match shape {
+                egui::Shape::Rect(rect) if rect.stroke.color == focus => *count += 1,
+                egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| walk(s, focus, count)),
+                _ => {}
+            }
+        }
+        let mut count = 0;
+        for clipped in &harness.output().shapes {
+            walk(&clipped.shape, focus, &mut count);
+        }
+        count
+    };
+    let before = outlined(&harness);
+    harness
+        .get_by_label(Text::MapViewTop.get())
+        .click();
+    harness.run();
+    assert_eq!(outlined(&harness), before + 1, "the top view outlined");
+    harness.get_by_label(Text::MapEditorView.get()).click();
+    harness.run();
+    assert_eq!(outlined(&harness), before + 1, "the 3D view, and the top view no more");
+}
+
 // No spec statement: P6-08, MAP-2: a click with a brush tool selects the first brush the ray
 // enters, by its faces, and Delete brush in Properties deletes it; the Brush tool draws a box on
 // the floor with a drag; each through a command, so each undoes

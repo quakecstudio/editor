@@ -101,6 +101,10 @@ it too.
   Cmd+Shift+D (Linked duplicate) copies it as a group linked to it (`map.link_duplicate`) and
   Separate unlinks it (`map.separate`). Add layer, beside Layers, adds a layer
   (`map.add_layer`). Each is written as TrenchBroom writes it.
+- **Panes (P7-08):** the view is the 3D view alone, with a top view inset, beside a top view
+  ("2 views"), beside top and front views ("3 views"), or with top, front and side views ("4
+  views"). The pane with the keyboard is outlined, and the 2D views are linked as TrenchBroom's
+  are by default: panning or zooming one moves the others along the axes they share.
 - **Picking behind (P7-08):** in the 3D view, with a brush selected under the pointer, Cmd and the
   wheel step the selection to the brush behind it (up) or in front (down), TrenchBroom's
   selection drilling; a click in a 2D view takes the smallest brush across it under the pointer,

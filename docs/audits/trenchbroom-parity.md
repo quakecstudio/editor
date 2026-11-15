@@ -52,15 +52,15 @@ Tests are named `crate-or-app path::test`; `desktop` is `apps/desktop/src`, `map
 | TrenchBroom | Ours | Test | Verdict |
 | --- | --- | --- | --- |
 | Main window: menu, toolbar, editing area, inspector, info panel | Menu, toolbar, Map tab, Properties panel, bottom panel | `desktop snapshots` | Same |
-| One to four viewports; 2D top, front and side | `view.map_panes`: one or four | `qs-layout` map view tests | Gap G7: no two- or three-pane layout |
+| One to four viewports; 2D top, front and side | `view.map_panes`: one or four | `desktop map_panes::tests::the_layouts_split_the_view` | Beyond: one, two, three and four panes, and the 3D view with a top view inset |
 | Compass in each viewport | X, Y and Z in each pane's lower left, each with its letter | `desktop map_panes::tests::the_compass_turns_with_the_view` | Same |
-| Viewport focus highlight | The pane under the pointer takes input, with no highlight | none | Gap G7 |
+| Viewport focus highlight | The pane with the keyboard is outlined | `desktop tests::the_focused_pane_is_outlined` | Same |
 | Map bounds shown as a guide | TrenchBroom's Quake soft bounds, -4096 to 4096, in the 2D views | `desktop tests::the_2d_views_draw_the_soft_map_bounds` | Same; not editable per map |
 | Look by right-drag; move with keys; speed on the wheel | Right-drag looks, WASD flies | `desktop tests::the_camera_starts_behind_the_player_start` | Same: WASD flies, the wheel travels |
 | Orbit about a clicked point | Alt+right-drag orbits about the brush point under the pointer, else 256 units ahead | `desktop tests::alt_right_drag_orbits_and_right_drag_looks`, `qs-render camera::tests::orbiting_keeps_the_centre_where_it_was_seen`, `map_scene::tests::a_ray_s_hit_is_its_first_brush` | Same |
 | Focus on selection | Choosing an outline row frames the entity | `desktop tests::focus_frames_the_selection_and_escape_clears_it`, `map_scene::tests::the_selection_s_box_holds_its_entities_and_brushes` | Same: Cmd+U frames every selected entity and brush |
 | Move camera to a position | The camera's x, y and z in the Properties panel, always shown | `desktop tests::focus_frames_the_selection_and_escape_clears_it` | Beyond: the position is shown as it moves |
-| 2D views pan and zoom; linked 2D views | Pan and zoom in each 2D pane | `desktop map_panes` tests | Gap G7: 2D views are not linked |
+| 2D views pan and zoom; linked 2D views | Pan and zoom in each 2D pane | `desktop map_panes::tests::linked_views_share_their_zoom_and_common_axes` | Same: linked, as TrenchBroom's default |
 | FOV setting and temporary zoom | `view.map_camera` field of view, 50 to 150 as TrenchBroom's slider; Shift+wheel zooms, Reset zoom puts it back | `desktop tests::the_camera_settings_reach_the_3d_view`, `qs-layout map_camera::tests` | Same; the reset is a button, as Ctrl+Alt+Z undoes here |
 
 ## Selection
@@ -177,7 +177,6 @@ To close before #823 does:
 | Gap | What TrenchBroom's manual has that we lack |
 | --- | --- |
 | G1 | Entity models drawn textured, not as wireframes |
-| G7 | Two- and three-pane layouts, a highlight on the focused pane, linked 2D views |
 | G13 | A convex brush from placed points; stamping and moving faces; clip snapping and matching a face's plane |
 | G17 | Extracting objects into a new linked group; the current layer new objects go into |
 | G19 | TrenchBroom's query language in the search |

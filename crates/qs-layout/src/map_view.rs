@@ -24,13 +24,23 @@ pub enum MapPanes {
     Single,
     /// The 3D view with a top view in its lower right corner.
     Inset,
+    /// The 3D view beside a top view, TrenchBroom's two panes (P7-08).
+    Double,
+    /// The 3D view beside a top view over a front view, TrenchBroom's three panes (P7-08).
+    Triple,
     /// The 3D view and the top, front and side views, two by two.
     Quad,
 }
 
 impl MapPanes {
     /// Every layout, in the toolbar's order.
-    pub const ALL: [Self; 3] = [Self::Single, Self::Inset, Self::Quad];
+    pub const ALL: [Self; 5] = [
+        Self::Single,
+        Self::Inset,
+        Self::Double,
+        Self::Triple,
+        Self::Quad,
+    ];
 }
 
 /// The parameters of `view.map_panes`.

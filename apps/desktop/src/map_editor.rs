@@ -1117,13 +1117,23 @@ impl MapEditor {
                     .plans
                     .entry(plan)
                     .or_insert_with(|| PlanCamera::new(plan, start.origin));
+                let before = *view;
                 if response.dragged_by(egui::PointerButton::Secondary)
                     || response.dragged_by(egui::PointerButton::Middle)
                 {
                     view.pan(response.drag_delta());
                 }
                 view.zoom(scroll);
-                Projection::plan(plan, *view, area)
+                let leader = *view;
+                // The other 2D views follow this one, linked as TrenchBroom links them.
+                if leader != before {
+                    for (other, camera) in &mut self.plans {
+                        if *other != plan {
+                            camera.follow(*other, leader, plan);
+                        }
+                    }
+                }
+                Projection::plan(plan, leader, area)
             }
         };
         let mut actions = Vec::new();
@@ -1414,6 +1424,15 @@ impl MapEditor {
         self.profiles.draw(&painter, &projection, theme);
         self.tools
             .draw(&painter, &projection, theme, &self.scene, pointer.map(ray));
+        // The pane with the keyboard is outlined, as TrenchBroom marks the focused viewport.
+        if response.has_focus() {
+            painter.rect_stroke(
+                area.shrink(FOCUS_WIDTH),
+                0.0,
+                Stroke::new(FOCUS_WIDTH, theme.color(Token::Focus)),
+                egui::StrokeKind::Inside,
+            );
+        }
         // A compass in the pane's lower left corner, as TrenchBroom's: the map's x, y and z axes
         // as the pane sees them, each with its letter.
         let (cx, cy) = (area.left() + COMPASS_INSET, area.bottom() - COMPASS_INSET);
@@ -1723,6 +1742,9 @@ fn fly(ui: &Ui, camera: &mut Camera, speed: f32) {
 /// `games/Quake/GameConfig.cfg`'s `"softMapBounds":"-4096 -4096 -4096 4096 4096 4096"`, where
 /// players, items and other entities can be.
 const SOFT_BOUNDS: [[f32; 3]; 2] = [[-4096.0; 3], [4096.0; 3]];
+
+/// The width of the outline around the pane with the keyboard, in points.
+const FOCUS_WIDTH: f32 = 2.0;
 
 /// How far ahead an orbit's centre is when nothing is under the pointer: TrenchBroom's
 /// `Camera::DefaultPointDistance`, 256 units.
