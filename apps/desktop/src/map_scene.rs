@@ -268,7 +268,11 @@ impl Scene {
         boxes.reduce(|[min, max], [low, high]| {
             [
                 [min[0].min(low[0]), min[1].min(low[1]), min[2].min(low[2])],
-                [max[0].max(high[0]), max[1].max(high[1]), max[2].max(high[2])],
+                [
+                    max[0].max(high[0]),
+                    max[1].max(high[1]),
+                    max[2].max(high[2]),
+                ],
             ]
         })
     }
@@ -618,6 +622,22 @@ impl Scene {
             .filter_map(|shape| shape.entered(start, direction).map(|t| (t, shape)))
             .min_by(|a, b| a.0.total_cmp(&b.0))
             .map(|(_, shape)| (shape.entity, shape.brush))
+    }
+
+    /// How far along the ray from `start` along unit `direction` it first enters a brush none
+    /// of whose entities is in `hidden`.
+    #[must_use]
+    pub(crate) fn hit_distance(
+        &self,
+        start: [f32; 3],
+        direction: [f32; 3],
+        hidden: &BTreeSet<EntityIndex>,
+    ) -> Option<f32> {
+        self.brushes
+            .iter()
+            .filter(|shape| !hidden.contains(&shape.entity))
+            .filter_map(|shape| shape.entered(start, direction))
+            .min_by(f32::total_cmp)
     }
 
     /// The face the ray from `start` along `direction` enters first, of a brush none of whose

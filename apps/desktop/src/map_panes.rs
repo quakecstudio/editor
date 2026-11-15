@@ -318,7 +318,7 @@ mod tests {
     fn the_compass_turns_with_the_view() {
         use qs_render::{Camera, Degrees};
 
-                let top = Projection::plan(Plan::Top, PlanCamera::new(Plan::Top, [0.0; 3]), RECT);
+        let top = Projection::plan(Plan::Top, PlanCamera::new(Plan::Top, [0.0; 3]), RECT);
         assert_eq!(top.compass([1.0, 0.0, 0.0]), Vec2::new(1.0, 0.0));
         assert_eq!(top.compass([0.0, 1.0, 0.0]), Vec2::new(0.0, -1.0));
         assert_eq!(top.compass([0.0, 0.0, 1.0]), Vec2::new(0.0, 0.0));

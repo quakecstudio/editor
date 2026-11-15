@@ -57,7 +57,7 @@ Tests are named `crate-or-app path::test`; `desktop` is `apps/desktop/src`, `map
 | Viewport focus highlight | The pane under the pointer takes input, with no highlight | none | Gap G7 |
 | Map bounds shown as a guide | TrenchBroom's Quake soft bounds, -4096 to 4096, in the 2D views | `desktop tests::the_2d_views_draw_the_soft_map_bounds` | Same; not editable per map |
 | Look by right-drag; move with keys; speed on the wheel | Right-drag looks, WASD flies | `desktop tests::the_camera_starts_behind_the_player_start` | Same: WASD flies, the wheel travels |
-| Orbit about a clicked point | None | none | Gap G4 |
+| Orbit about a clicked point | Alt+right-drag orbits about the brush point under the pointer, else 256 units ahead | `desktop tests::alt_right_drag_orbits_and_right_drag_looks`, `qs-render camera::tests::orbiting_keeps_the_centre_where_it_was_seen`, `map_scene::tests::a_ray_s_hit_is_its_first_brush` | Same |
 | Focus on selection | Choosing an outline row frames the entity | `desktop tests::focus_frames_the_selection_and_escape_clears_it`, `map_scene::tests::the_selection_s_box_holds_its_entities_and_brushes` | Same: Cmd+U frames every selected entity and brush |
 | Move camera to a position | The camera's x, y and z in the Properties panel, always shown | `desktop tests::focus_frames_the_selection_and_escape_clears_it` | Beyond: the position is shown as it moves |
 | 2D views pan and zoom; linked 2D views | Pan and zoom in each 2D pane | `desktop map_panes` tests | Gap G7: 2D views are not linked |
@@ -177,7 +177,6 @@ To close before #823 does:
 | Gap | What TrenchBroom's manual has that we lack |
 | --- | --- |
 | G1 | Entity models drawn textured, not as wireframes |
-| G4 | Orbiting the camera about a clicked point |
 | G6 | The 3D view's field of view, a temporary zoom, and mouse preferences |
 | G7 | Two- and three-pane layouts, a highlight on the focused pane, linked 2D views |
 | G8 | Selection drilling; select all, touching, inside, tall, siblings; invert; deselect all; 2D picking by candidates |

@@ -2005,7 +2005,14 @@ fn the_grid_keys_set_the_step_the_selection_moves_by() {
     harness.get_by_label(Text::MapEditorView.get()).click();
     harness.run();
     let grid = |harness: &Harness<'static, Option<App>>| {
-        harness.state().as_ref().unwrap().shell().layout().map_grid.units()
+        harness
+            .state()
+            .as_ref()
+            .unwrap()
+            .shell()
+            .layout()
+            .map_grid
+            .units()
     };
     assert_eq!(grid(&harness), 16.0);
     harness.key_press(egui::Key::Minus);
@@ -2062,7 +2069,13 @@ fn focus_frames_the_selection_and_escape_clears_it() {
     harness.run();
     let selected = |harness: &Harness<'static, Option<App>>| {
         let shell = harness.state().as_ref().unwrap().shell();
-        shell.session().context().workbench.map().unwrap().selected()
+        shell
+            .session()
+            .context()
+            .workbench
+            .map()
+            .unwrap()
+            .selected()
     };
     assert_eq!(selected(&harness), Some(EntityIndex::new(2)));
     // P7-08: Cmd+U, TrenchBroom's Focus on Selection, frames the ogre: the camera keeps its
@@ -2085,14 +2098,21 @@ fn focus_frames_the_selection_and_escape_clears_it() {
     assert!((framed.yaw.get() - before.yaw.get()).abs() < f32::EPSILON);
     let [forward, _, _] = framed.axes();
     // The middle of the ogre's box, -32 -32 -24 to 32 32 64 about its origin, 96 64 24.
-    let to_ogre = [96.0 - framed.origin[0], 64.0 - framed.origin[1], 44.0 - framed.origin[2]];
+    let to_ogre = [
+        96.0 - framed.origin[0],
+        64.0 - framed.origin[1],
+        44.0 - framed.origin[2],
+    ];
     let along: f32 = to_ogre.iter().zip(forward).map(|(a, b)| a * b).sum();
     let off: f32 = to_ogre.iter().map(|c| c * c).sum::<f32>() - along * along;
     assert!(along > 0.0 && off.abs() < 1.0, "the ogre is dead ahead");
     // The Properties panel shows where the camera now stands, a field per axis.
     let x = harness.get_by_label(Text::MapCameraX.get());
     let shown = x.accesskit_node().numeric_value().unwrap();
-    assert!((shown - f64::from(framed.origin[0])).abs() < 1e-3, "{shown}");
+    assert!(
+        (shown - f64::from(framed.origin[0])).abs() < 1e-3,
+        "{shown}"
+    );
     harness.key_press(egui::Key::Escape);
     harness.run();
     assert_eq!(selected(&harness), None);
@@ -2142,7 +2162,10 @@ fn the_2d_views_draw_the_soft_map_bounds() {
     harness.run();
     // Zoomed all the way out over the top view, the box around the map shows.
     let view = harness.get_by_label(Text::MapEditorView.get()).rect();
-    let top = egui::pos2(view.center().x + view.width() / 4.0, view.top() + view.height() / 4.0);
+    let top = egui::pos2(
+        view.center().x + view.width() / 4.0,
+        view.top() + view.height() / 4.0,
+    );
     harness.hover_at(top);
     for _ in 0..20 {
         harness.event(egui::Event::MouseWheel {
@@ -2155,6 +2178,72 @@ fn the_2d_views_draw_the_soft_map_bounds() {
     }
     harness.run();
     assert!(guide(&harness) >= 4, "{}", guide(&harness));
+}
+
+// No spec statement: P7-08: a right-drag looks, turning the camera where it stands, while an
+// Alt+right-drag orbits it about the point under the pointer, as TrenchBroom's camera tool
+#[test]
+fn alt_right_drag_orbits_and_right_drag_looks() {
+    let dir = keep_copy("orbit");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    let camera = |harness: &Harness<'static, Option<App>>| {
+        *harness
+            .state()
+            .as_ref()
+            .unwrap()
+            .shell()
+            .map_editor()
+            .camera()
+            .unwrap()
+    };
+    let view = harness.get_by_label(Text::MapEditorView.get()).rect();
+    let drag = |harness: &mut Harness<'static, Option<App>>, modifiers: egui::Modifiers| {
+        let from = view.center();
+        harness.event_modifiers(egui::Event::PointerMoved(from), modifiers);
+        harness.event_modifiers(
+            egui::Event::PointerButton {
+                pos: from,
+                button: egui::PointerButton::Secondary,
+                pressed: true,
+                modifiers,
+            },
+            modifiers,
+        );
+        harness.step();
+        for step in 1..=8 {
+            let to = egui::pos2(from.x + 10.0 * step as f32, from.y);
+            harness.event_modifiers(egui::Event::PointerMoved(to), modifiers);
+            harness.step();
+        }
+        let to = egui::pos2(from.x + 80.0, from.y);
+        harness.event_modifiers(
+            egui::Event::PointerButton {
+                pos: to,
+                button: egui::PointerButton::Secondary,
+                pressed: false,
+                modifiers,
+            },
+            modifiers,
+        );
+        harness.run();
+    };
+    let before = camera(&harness);
+    drag(&mut harness, egui::Modifiers::NONE);
+    let looked = camera(&harness);
+    assert_eq!(looked.origin, before.origin, "a look turns where the camera stands");
+    assert!((looked.yaw.get() - before.yaw.get()).abs() > 1.0);
+    drag(&mut harness, egui::Modifiers::ALT);
+    let orbited = camera(&harness);
+    assert_ne!(orbited.origin, looked.origin, "an orbit swings the camera about a point");
+    assert!((orbited.yaw.get() - looked.yaw.get()).abs() > 1.0);
 }
 
 /// Drags with the primary button from `from` to `to` in steps, holding `modifiers`.

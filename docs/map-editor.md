@@ -81,7 +81,9 @@ it too.
 - **Map bounds (P7-08):** the 2D views draw the soft map bounds, -4096 to 4096 units on each
   axis, in the warning colour, the box TrenchBroom's Quake configuration draws: where players,
   items and other entities can be.
-- **The camera (P7-08):** Cmd+U frames the selection, every selected entity and brush, keeping
+- **The camera (P7-08):** a right-drag looks and Alt+right-drag orbits about the point of the
+  brush under the pointer where the drag began, or 256 units ahead when there is none, as
+  TrenchBroom's camera tool (`shouldOrbit`, `Camera::DefaultPointDistance`). Cmd+U frames the selection, every selected entity and brush, keeping
   where the camera looks (TrenchBroom's Focus on Selection, Ctrl+U). The Properties panel shows
   the camera's x, y and z, and a value typed or dragged there moves it.
 - **Escape (P7-08):** in the view, Escape drops a drag in progress, else the Vertex tool's picked

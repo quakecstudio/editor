@@ -335,6 +335,8 @@ pub struct MapEditor {
     /// What to frame in the view on its next frame: an entity chosen in the outline, or the
     /// selection (Cmd+U).
     frame: Option<Framing>,
+    /// The point an Alt+right-drag orbits the camera about, while it lasts (P7-08).
+    orbit: Option<[f32; 3]>,
     /// Where each entity's centre was drawn in the last frame, where a link dragged from it
     /// starts.
     centres: Vec<(EntityIndex, Pos2)>,
@@ -981,9 +983,33 @@ impl MapEditor {
         let projection = match pane {
             Pane::Perspective => {
                 let camera = self.camera.get_or_insert(start);
+                // TrenchBroom's orbit: Alt with the right button turns about the point under
+                // the pointer where the drag began, else 256 units ahead along its ray
+                // (`Camera::DefaultPointDistance`).
+                if response.drag_started_by(egui::PointerButton::Secondary) {
+                    let at = ui.input(|i| i.pointer.press_origin());
+                    self.orbit = at.filter(|_| ui.input(|i| i.modifiers.alt)).map(|at| {
+                        let (from, way) = Projection::perspective(*camera, area).ray(at);
+                        let t = self
+                            .scene
+                            .hit_distance(from, way, hidden)
+                            .unwrap_or(ORBIT_DISTANCE);
+                        [0, 1, 2].map(|i| {
+                            from.get(i).copied().unwrap_or_default()
+                                + way.get(i).copied().unwrap_or_default() * t
+                        })
+                    });
+                }
                 if response.dragged_by(egui::PointerButton::Secondary) {
                     let drag = response.drag_delta();
-                    camera.turn(Degrees::new(-drag.x * TURN), Degrees::new(-drag.y * TURN));
+                    let (yaw, pitch) = (Degrees::new(-drag.x * TURN), Degrees::new(-drag.y * TURN));
+                    match self.orbit {
+                        Some(centre) => camera.orbit(centre, yaw, pitch),
+                        None => camera.turn(yaw, pitch),
+                    }
+                }
+                if response.drag_stopped() {
+                    self.orbit = None;
                 }
                 if response.dragged_by(egui::PointerButton::Middle) {
                     let drag = response.drag_delta();
@@ -1541,6 +1567,10 @@ fn fly(ui: &Ui, camera: &mut Camera) {
 /// `games/Quake/GameConfig.cfg`'s `"softMapBounds":"-4096 -4096 -4096 4096 4096 4096"`, where
 /// players, items and other entities can be.
 const SOFT_BOUNDS: [[f32; 3]; 2] = [[-4096.0; 3], [4096.0; 3]];
+
+/// How far ahead an orbit's centre is when nothing is under the pointer: TrenchBroom's
+/// `Camera::DefaultPointDistance`, 256 units.
+const ORBIT_DISTANCE: f32 = 256.0;
 
 /// The compass's axes: the map's x, y and z, in red, green and blue as TrenchBroom draws them,
 /// from the theme's error, ok and focus colours, each with its letter.

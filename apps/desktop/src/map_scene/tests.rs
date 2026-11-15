@@ -89,8 +89,33 @@ fn the_selection_s_box_holds_its_entities_and_brushes() {
         ),
         Some([[-16.0, 0.0, 0.0], [104.0, 72.0, 300.0]])
     );
-    assert_eq!(scene.bounds_of([EntityIndex::new(0)].into_iter(), None), None);
+    assert_eq!(
+        scene.bounds_of([EntityIndex::new(0)].into_iter(), None),
+        None
+    );
     assert_eq!(scene.bounds_of(core::iter::empty(), None), None);
+}
+
+// No spec statement: P7-08: an orbit turns about the first brush the pointer's ray enters, at
+// that distance; a hidden brush is passed by, and a ray that meets none has no distance
+#[test]
+fn a_ray_s_hit_is_its_first_brush() {
+    let workbench = keep();
+    let document = workbench.map().unwrap();
+    let scene = Scene::build(document, &HashMap::new(), &[], &mut |_| None);
+    let inside = [0.0, 0.0, 64.0];
+    let east = [1.0, 0.0, 0.0];
+    let door = EntityIndex::new(4);
+    let to_door = scene.hit_distance(inside, east, &BTreeSet::new()).unwrap();
+    assert!((to_door - 224.0).abs() < 1e-3, "{to_door}");
+    let past = scene
+        .hit_distance(inside, east, &BTreeSet::from([door]))
+        .unwrap();
+    assert!(past > to_door, "{past}");
+    assert_eq!(
+        scene.hit_distance([0.0, 0.0, 9999.0], [0.0, 0.0, 1.0], &BTreeSet::new()),
+        None
+    );
 }
 
 // No spec statement: P5-06: a ray picks the nearest box it enters, and none when it misses
