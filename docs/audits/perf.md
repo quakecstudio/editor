@@ -104,8 +104,8 @@ Left, with the reason:
 - **Each file's lowered declarations are cloned** for the code generator (`compile_module`,
   `decls.push(lowered.clone())`), about 3% of a recompile. Avoiding the clone means changing
   `qc_sema::resolve_module`'s public signature for that 3%.
-- **The clippy lints still off** find 37 sites in the shipped code of `qc-preproc`, `qc-syntax`,
-  `qc-sema` and `qc-codegen` (2026-11-15): 24 `or_fun_call` (most a span computed for a default,
+- **The clippy lints still off** find 38 sites in the shipped code of `qc-preproc`, `qc-syntax`,
+  `qc-sema` and `qc-codegen` (2026-11-15): 21 `or_fun_call` (most a span computed for a default,
   a few nanoseconds), 7 `needless_pass_by_value`, 5 `format_push_string` (`qc-codegen`'s
   `progdefs.h` writer and one in `qc-preproc`, once per compile), 3 `assigning_clones` and one
   each of `redundant_clone` and `needless_collect`. None is in the profile above; they are fixed
