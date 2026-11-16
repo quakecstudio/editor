@@ -1,8 +1,8 @@
 # ADR-0026: Follow the later engines in the preview host by category, the simulation staying id's
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-15
-- **Decided by:** pending
+- **Decided by:** Justin Plock, 2026-11-15
 - **Issue:** [#449](https://github.com/quakecstudio/editor/issues/449)
 - **Requirements:** ENG-2, ENG-15
 
@@ -65,7 +65,7 @@ question the issue asks: whether any id behaviour in the simulation gives way.
 
 ## Decision
 
-Recommended: B. It writes down the rule the host already follows and Justin set on 2026-10-29,
+B, as Justin chose on 2026-11-15. It writes down the rule the host already follows and Justin set on 2026-10-29,
 "the best of all of the reference engines", while keeping the one thing the project's fidelity
 rests on: the server simulation matches id's engine frame by frame (ENG-15, P3-25), so the
 differential suite keeps proving the game logic modders write against. Everything a player sees
@@ -77,18 +77,17 @@ change down.
 
 ## Consequences
 
-If B is accepted:
 
-- `plan/`: each change adopted under B that is not yet in the host is filed as a port issue
-  naming the engine, file and function, its spec statement and its expected differential
-  difference, in a phase the plan chooses. From the notes above: lightstyle interpolation and
+- `plan/`: the changes adopted under B that are not yet in the host are one post-MVP issue
+  (L-21), each port in it naming the engine, file and function, its spec statement and its
+  expected differential difference. From the notes above: lightstyle interpolation and
   lightmapped liquids (Ironwail), the viewmodel interpolation fix for animations above 10 Hz and
   lit water (QuakeSpasm), Ironwail's z-fighting work-around in place of `gl_zfix`, and protocols
   666 and 999 for demos and the bridge's messages where the host writes them. Performance ports
   (Ironwail's GPU culling and lightmap updates, vkQuake's multithreaded loading) are filed under
   #966's audit, each with a measurement.
-- `docs/spec/`: each category's rule is stated once in the engine spec's introduction, and every
-  existing adoption above names it.
+- `docs/porting.md`, "Which source is authoritative": the rule per category is stated once there,
+  and each spec statement of an adoption cites this ADR.
 - `qs-sim` keeps id's behaviour; a later engine's simulation fix is out of scope unless a later
   ADR revisits ENG-15.
 - What becomes harder: every client-side change carries two behaviours, the default and id's
