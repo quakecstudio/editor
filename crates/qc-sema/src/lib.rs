@@ -92,6 +92,7 @@ pub use map_check::{EntitySchema, FieldValue, MapDiagnostic, MapDiagnosticKind};
 pub use resolve::InitialValue;
 pub use resolve::{
     FileDiagnostic, MemberShape, ModuleIndex, ResolveOptions, StructShape, resolve_module,
+    resolve_module_at_targets,
 };
 pub use symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
 pub use ty::{FunctionType, SimpleType, Type};

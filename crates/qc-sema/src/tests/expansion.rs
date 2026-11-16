@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use qc_diag::{Code, Span};
+use qc_preproc::CommandLine;
 use qc_project::{FileGraph, Form, GraphFile, Via};
 use qc_syntax::Dialect;
 
@@ -539,6 +540,94 @@ fn module_input_from_a_graph() {
     assert_eq!(input.compiled, [FileId::new(0)]);
 }
 
+// spec PRJ-4.13: under GMQCC a source-form module source is the file compiled, before any file it
+// lists, and no prelude; under FTEQCC the same graph keeps it as the prelude
+#[test]
+fn a_gmqcc_source_form_root_is_compiled() {
+    let file = |path: &str, via| GraphFile {
+        path: PathBuf::from(path),
+        name: Some(path.to_owned()),
+        via,
+        parent: None,
+    };
+    let graph = FileGraph {
+        form: Some(Form::Source),
+        files: vec![
+            file("progs.inc", Via::Root),
+            file("defs.qh", Via::Include),
+            file("listed.qc", Via::IncludeList),
+        ],
+        ..FileGraph::default()
+    };
+    let module = |dialect| qc_project::Module {
+        name: "progs".to_owned(),
+        kind: qc_project::ModuleKind::Ssqc,
+        src: PathBuf::from("progs.inc"),
+        dialect,
+        target: qc_project::Target::Quake,
+        output: PathBuf::from("progs.dat"),
+        defines: Vec::new(),
+        include_dirs: Vec::new(),
+        graph: graph.clone(),
+    };
+    let gmqcc = ModuleInput::from_module(&module(qc_project::Dialect::Gmqcc));
+    assert!(gmqcc.prelude.is_empty());
+    assert_eq!(gmqcc.compiled, [FileId::new(0), FileId::new(2)]);
+    let fteqcc = ModuleInput::from_module(&module(qc_project::Dialect::Fteqcc));
+    assert_eq!(fteqcc.prelude, [FileId::new(0)]);
+    assert_eq!(fteqcc.compiled, [FileId::new(2)]);
+}
+
+// spec PRJ-4.14: a GMQCC module is read with `-std=gmqcc`, so `[[accumulate]]` parses and a
+// function may be defined again; an FTEQCC module gets no command line
+#[test]
+fn a_gmqcc_module_reads_gmqcc_code() {
+    let spec = |dialect| qc_project::Module {
+        name: "progs".to_owned(),
+        kind: qc_project::ModuleKind::Ssqc,
+        src: PathBuf::from("progs.src"),
+        dialect,
+        target: qc_project::Target::Quake,
+        output: PathBuf::from("progs.dat"),
+        defines: Vec::new(),
+        include_dirs: Vec::new(),
+        graph: FileGraph::default(),
+    };
+    let gmqcc = ModuleInput::from_module(&spec(qc_project::Dialect::Gmqcc));
+    assert_eq!(gmqcc.command_line, CommandLine::new(&["-std=gmqcc"]));
+    let fteqcc = ModuleInput::from_module(&spec(qc_project::Dialect::Fteqcc));
+    assert_eq!(fteqcc.command_line, CommandLine::default());
+    let text = "void print(string s) = #1;\n[[accumulate]] void f() { print(\"a\"); };\n[[accumulate]] void f() { print(\"b\"); };\n";
+    let (mut db, mut input) = module(&[("a.qc", text)], &["a.qc"], Dialect::Gmqcc);
+    input.command_line = gmqcc.command_line;
+    let analysis = db.analyze_module(&input);
+    let errors: Vec<_> = analysis
+        .diagnostics()
+        .filter(|d| d.diagnostic.code.severity() == qc_diag::Severity::Error)
+        .collect();
+    assert!(errors.is_empty(), "{errors:?}");
+}
+
+// spec PRJ-4.13: a GMQCC module whose source is QuakeC including its files defines what they
+// define, the source's own definitions first
+#[test]
+fn a_gmqcc_source_form_module_defines_its_includes() {
+    let files = [
+        ("progs.inc", "float in_root;\n#include \"defs.qh\"\n"),
+        ("defs.qh", "float in_include;\n"),
+    ];
+    let (mut db, mut input) = module(&files, &["progs.inc"], Dialect::Gmqcc);
+    input.prelude.clear();
+    let analysis = db.analyze_module(&input);
+    let names: Vec<_> = analysis
+        .index
+        .defs
+        .iter()
+        .map(|d| d.name.as_str())
+        .collect();
+    assert_eq!(names, ["in_root", "in_include"]);
+}
+
 // spec PRJ-5.4: a module's defines are defined before its first file, in both dialects and in
 // FTEQCC's second autoprototyping pass: `#ifdef X` takes its first side with `X` defined and the
 // other without, and a define's body is its text
@@ -976,4 +1065,24 @@ fn lexer_flags_hold_from_the_right_token() {
     let (mut db, input) = module(&[("t.qc", source)], &["t.qc"], Dialect::Fteqcc);
     let analysis = db.analyze_module(&input);
     assert!(analysis.syntax.is_empty(), "{:?}", analysis.syntax);
+}
+
+// spec GMQ-13.1, FTEF-32.7: `...(index, TYPE)` reads a variadic argument as TYPE in a function with
+// `...`; outside one it is E0346
+#[test]
+fn gmqcc_reads_variadic_arguments() {
+    let analyse = |text: &str| {
+        let (mut db, mut input) = module(&[("a.qc", text)], &["a.qc"], Dialect::Gmqcc);
+        input.command_line = CommandLine::new(&["-std=gmqcc"]);
+        let analysis = db.analyze_module(&input);
+        analysis
+            .diagnostics()
+            .filter(|d| d.diagnostic.code.severity() == qc_diag::Severity::Error)
+            .map(|d| d.diagnostic.code)
+            .collect::<Vec<_>>()
+    };
+    let read = "entity first(float a, ...) { entity e = ...(0, entity); return e; };\n";
+    assert_eq!(analyse(read), []);
+    let outside = "entity first(float a) { return ...(0, entity); };\n";
+    assert_eq!(analyse(outside), [Code::E0346]);
 }

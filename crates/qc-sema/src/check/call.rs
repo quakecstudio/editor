@@ -759,7 +759,7 @@ impl Checker<'_> {
                     Type::Simple(SimpleType::Void).into(),
                 ))))
             }
-            "va_arg" => {
+            "va_arg" | "..." => {
                 let index = self.value(args.first().cloned())?;
                 let arg_span = args.first().map_or(span, |a| a.syntax().span());
                 if index.ty != Type::Unknown {

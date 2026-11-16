@@ -4,8 +4,10 @@
 # xonotic codebase's `project` in corpus/manifest.toml). Xonotic builds with the C
 # preprocessor (qcsrc/Makefile: `CPP := cc -xc -E`), and qcsrc/tools/qcc.sh runs it with
 # `-I.`, `-DGMQCC` (the default compiler) and its QCCDEFS at their defaults, then the defines
-# of each mode. WATERMARK is `git describe` there; any string does here. `__STDC__=1` is what
-# the C preprocessor defines itself.
+# of each mode. WATERMARK is `git describe` there; any string does here. `__STDC__` is left
+# undefined: with it, lib/misc.qh takes the P99 macros written for the C preprocessor, and without
+# it the `__VA_COUNT__` forms Xonotic keeps for GMQCC's own preprocessor, which is the one this
+# project is read with (docs/spec/project-file.md PRJ-4.13, PRJ-4.14).
 
 [project]
 name = "Xonotic"
@@ -19,7 +21,6 @@ name = "server"
 src = "server/progs.inc"
 include_dirs = ["."]
 defines = [
-  "__STDC__=1",
   "GMQCC",
   "NDEBUG=1",
   "XONOTIC=1",
@@ -37,7 +38,6 @@ name = "client"
 src = "client/progs.inc"
 include_dirs = ["."]
 defines = [
-  "__STDC__=1",
   "GMQCC",
   "NDEBUG=1",
   "XONOTIC=1",
@@ -55,7 +55,6 @@ name = "menu"
 src = "menu/progs.inc"
 include_dirs = ["."]
 defines = [
-  "__STDC__=1",
   "GMQCC",
   "NDEBUG=1",
   "XONOTIC=1",
