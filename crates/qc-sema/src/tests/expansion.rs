@@ -1086,3 +1086,21 @@ fn gmqcc_reads_variadic_arguments() {
     let outside = "entity first(float a) { return ...(0, entity); };\n";
     assert_eq!(analyse(outside), [Code::E0346]);
 }
+
+// spec GMQ-22.1: under GMQCC an element of an array of fields picked inside `e.( )` is the field
+// its index names, at a constant index or another; FTEQCC's target without `OP_GLOBALADDRESS`
+// refuses the array's address there
+#[test]
+fn a_gmqcc_field_array_element_is_picked_inside_e_parens() {
+    let text = "entity self;\n.float _scores[4];\nfloat id;\n\
+                void t() { float s = self.(_scores[id]); float u = self.(_scores[2]); }\n";
+    let found = |dialect: Dialect| {
+        let (mut db, mut input) = module(&[("a.qc", text)], &["a.qc"], dialect);
+        if dialect == Dialect::Gmqcc {
+            input.command_line = CommandLine::new(&["-std=gmqcc"]);
+        }
+        codes(&db.analyze_module(&input))
+    };
+    assert!(!found(Dialect::Gmqcc).contains(&Code::E0331));
+    assert!(found(Dialect::Fteqcc).contains(&Code::E0331));
+}

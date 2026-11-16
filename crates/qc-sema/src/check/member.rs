@@ -113,9 +113,13 @@ impl Checker<'_> {
                     .and_then(ast::IndexExpr::cast)
                     .and_then(|index| index.base())
                     .is_some_and(|b| b.syntax() == field.syntax());
+                // GMQ-22.1: an element picked inside `e.( )` is already the field.
+                let picked =
+                    self.env.field_array_accessors() && matches!(selector, ast::Expr::Paren(_));
                 if let Reference::Field(f) = &value.reference
                     && f.def.is_some_and(|def| self.env.is_array(def))
                     && !indexed
+                    && !picked
                 {
                     let head = Value {
                         reference: Reference::ArrayHead(None),
@@ -247,6 +251,25 @@ impl Checker<'_> {
                 (ty, name, token.span(), Some(id))
             }
             ast::Expr::Paren(paren) => {
+                // GMQ-22.1: an element of an array of fields is the field its index names, which
+                // the array's accessor gives; the body is not followed.
+                if self.env.field_array_accessors()
+                    && let Some(ast::Expr::Index(index)) = paren.expr()
+                    && let Some(ast::Expr::Name(array)) = index.base()
+                    && let Some(token) = array.name()
+                    && let Some(def) = self.env.reference(token.span().start)
+                    && self.env.is_array(def)
+                    && let Some(Type::Field(held)) = self.env.definition(def).map(|d| d.ty.clone())
+                {
+                    self.value(index.index())?;
+                    self.followed = false;
+                    return Ok(Value::field_of(
+                        base,
+                        token.text_lossless(),
+                        held.as_ref().clone(),
+                        Some(def),
+                    ));
+                }
                 // `QCC_GetSRefName` of the value: a definition's name, `IMMEDIATE`, or a
                 // temporary's type.
                 let value = self.expr_of(paren.expr())?;

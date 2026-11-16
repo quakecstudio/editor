@@ -36,6 +36,17 @@ pub(in crate::resolve) struct Profile {
     qcfuncs_off: bool,
     /// The output format `QCC_PR_FinishCompilation` reads (FTEF-22.5).
     target: Option<TargetFormat>,
+    /// How an array of fields is indexed inside `e.( )`.
+    field_arrays: FieldArrays,
+}
+
+/// How an element of an array of fields is reached inside `e.( )`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FieldArrays {
+    /// FTEQCC's: the array named alone is its head, whose address is taken (FTEF-31.6).
+    Addressed,
+    /// GMQCC's: the array's accessor gives the field the index names (GMQ-22.1).
+    Accessed,
 }
 
 impl Profile {
@@ -53,7 +64,18 @@ impl Profile {
             case_insensitive: fteqcc && options.case_insensitive,
             qcfuncs_off: fteqcc && options.qcfuncs_off,
             target: options.target.filter(|_| fteqcc),
+            field_arrays: if options.dialect == qc_syntax::Dialect::Gmqcc {
+                FieldArrays::Accessed
+            } else {
+                FieldArrays::Addressed
+            },
         }
+    }
+
+    /// GMQ-22.1: an element of an array of fields, `e.(arr[i])`, is the field the index names,
+    /// which GMQCC's array accessor gives (`parser_create_array_accessor`).
+    pub(in crate::resolve) const fn field_array_accessors(self) -> bool {
+        matches!(self.field_arrays, FieldArrays::Accessed)
     }
 
     const fn fteqcc(self) -> bool {

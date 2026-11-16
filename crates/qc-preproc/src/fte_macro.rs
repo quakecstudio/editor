@@ -19,7 +19,7 @@
 use std::ops::Range;
 use std::rc::Rc;
 
-use qc_lexer::{Code, Span, TokenKind, is_fteqcc_whitespace, is_name_char, is_name_start};
+use qc_lexer::{Code, Dialect, Span, TokenKind, is_fteqcc_whitespace, is_name_char, is_name_start};
 
 use crate::fte_directive::{
     self, Bytes, Definer, FTE_MAX_MACRO_NAME, Gap, Resume, TextStart, WORD_TOO_LONG, WhiteStop,
@@ -910,6 +910,16 @@ enum Refused {
     After(usize),
 }
 
+/// What `#__VA_ARGS__` writes in a variadic macro's body.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RestHash {
+    /// FTEQCC's: `#` and the token, `__VA_ARGS__` naming no parameter (FTEF-14.78).
+    Stray,
+    /// The C preprocessor's, which Xonotic's GMQCC build runs first: the variadic arguments'
+    /// text as one string (GMQ-21.1).
+    Stringized,
+}
+
 /// The text of an expansion as `QCC_PR_ExpandPreProcessorMacro` writes it.
 struct Writer<'a> {
     body: &'a Text,
@@ -924,6 +934,8 @@ struct Writer<'a> {
     at: FileSpan,
     /// Each word after a `#` that names no parameter, and where it is (FTEF-14.78).
     strays: std::cell::RefCell<Vec<(Vec<u8>, FileSpan)>>,
+    /// What `#__VA_ARGS__` writes.
+    rest_hash: RestHash,
 }
 
 impl Writer<'_> {
@@ -983,12 +995,28 @@ impl Writer<'_> {
                         break;
                     };
                     at = word.next;
-                    match self.argument_of(&word.token) {
-                        Some(arg) => {
+                    // GMQ-21.1: `#__VA_ARGS__` is the variadic arguments as one string, `""` when
+                    // none is given.
+                    let rest = (self.rest_hash == RestHash::Stringized
+                        && self.variadic == Variadic::Yes
+                        && word.token == b"__VA_ARGS__")
+                        .then(|| {
+                            self.call
+                                .args
+                                .get(named)
+                                .filter(|_| self.call.args.len() == named.saturating_add(1))
+                                .map_or_else(Vec::new, |arg| arg.bytes().to_vec())
+                        });
+                    match (self.argument_of(&word.token), rest) {
+                        (_, Some(rest)) => {
+                            let span = self.place(self.body, hash..word.next);
+                            out.push(&markup(rest.trim_ascii()), Origin::Made(span));
+                        }
+                        (Some(arg), None) => {
                             let span = self.place(self.body, hash..word.next);
                             out.push(&markup(arg.bytes()), Origin::Made(span));
                         }
-                        None => {
+                        (None, None) => {
                             let span = self.place(self.body, hash..word.next);
                             self.strays.borrow_mut().push((word.token.clone(), span));
                             out.push_from(self.body, hash..hash.saturating_add(1));
@@ -1293,6 +1321,11 @@ impl<L: Loader> Preprocessor<L> {
                     limit,
                     at: use_.span,
                     strays: std::cell::RefCell::default(),
+                    rest_hash: if self.dialect == Dialect::Gmqcc {
+                        RestHash::Stringized
+                    } else {
+                        RestHash::Stray
+                    },
                 };
                 let written = writer.write().map(Rc::new);
                 // FTEF-14.78: `if (!c->evil) QCC_PR_ParseWarning(0, "'#%s' is not a macro

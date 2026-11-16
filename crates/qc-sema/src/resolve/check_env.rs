@@ -597,6 +597,10 @@ impl Env for BodyEnv<'_, '_> {
         self.resolver.profile.fteqcc_diagnostics()
     }
 
+    fn field_array_accessors(&self) -> bool {
+        self.resolver.profile.field_array_accessors()
+    }
+
     fn report(&mut self, code: Code, span: Span, message: String) {
         self.resolver.settle(span.start);
         let location = self.resolver.at(self.file, span);
