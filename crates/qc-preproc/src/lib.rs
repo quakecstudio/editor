@@ -1006,6 +1006,31 @@ impl Run {
         }
     }
 
+    /// The open chunks, set aside so that a chunk opened now is read alone (GMQ-21.6); the
+    /// count of each macro's open chunks stays, so a macro is not expanded inside itself.
+    pub(crate) fn set_aside_chunks(&mut self) -> Vec<ChunkReader> {
+        match &mut self.guard {
+            Guard::Chunks { open, .. } => std::mem::take(open),
+            Guard::HideSets(_) => Vec::new(),
+        }
+    }
+
+    /// Puts back the chunks [`Run::set_aside_chunks`] set aside, under any still open.
+    pub(crate) fn restore_chunks(&mut self, mut outer: Vec<ChunkReader>) {
+        if let Guard::Chunks { open, .. } = &mut self.guard {
+            outer.append(open);
+            *open = outer;
+        }
+    }
+
+    /// The open chunk `k`, from the first opened.
+    pub(crate) fn chunk_at_mut(&mut self, k: usize) -> Option<&mut ChunkReader> {
+        match &mut self.guard {
+            Guard::Chunks { open, .. } => open.get_mut(k),
+            Guard::HideSets(_) => None,
+        }
+    }
+
     /// Puts `chunk` back as the one being read.
     fn push_chunk(&mut self, chunk: ChunkReader) {
         if let Guard::Chunks { open, .. } = &mut self.guard {

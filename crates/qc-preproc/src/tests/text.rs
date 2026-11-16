@@ -1017,3 +1017,124 @@ fn an_expansion_ending_in_a_function_like_name_takes_the_following_group_under_g
     let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
     assert_eq!(touching(&out), "g(1 + 2)");
 }
+
+// spec GMQ-21.4: under GMQCC a directive at the start of a line inside a macro call's arguments
+// is run, as the C preprocessor Xonotic runs first runs it: an argument is its text around the
+// directive and what the directive skips, with its line break; FTEQCC runs one only after the
+// `(` or a `,`
+#[test]
+fn a_directive_inside_a_macro_argument_is_run_under_gmqcc() {
+    let text = "#define A(c, n, t, v) f(n, v)\nA(H, m, string, // x\n#ifdef CSQC\n    \"a\"\n\
+                #else\n    \"b\"\n#endif\n);\nA(H, k, int, x\n#define Q 1\ny Q);\n";
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", text.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Gmqcc);
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    assert_eq!(touching(&out), r#"f(m, "b" ) ; f(k, x y 1) ;"#);
+    assert!(codes(&out).is_empty(), "{:?}", codes(&out));
+    // Through a variadic macro, after a line comment, as Xonotic's `ATTRIB` reads it.
+    let mut loader = MemoryLoader::new();
+    let text = "#define CSQC\n#define OVERLOAD_(F, ...) F##_##__VA_COUNT__(__VA_ARGS__)\n\
+                #define EVAL_ATTRIB(...) __VA_ARGS__\n\
+                #define ATTRIB(...) EVAL_ATTRIB(OVERLOAD_(ATTRIB, __VA_ARGS__))\n\
+                #define ATTRIB_4(c, n, t, v) f(n, v)\nATTRIB(H, m, string, // ...\n#ifdef CSQC\n\
+                (p(\"x\") == \"\")\n? \"a\" // c\n: \"b\"\n#else\n\"b\"\n#endif\n);\n";
+    loader.insert("a.qc", text.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Gmqcc);
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    assert_eq!(touching(&out), r#"f(m, (p("x") == "") ? "a" : "b" ) ;"#);
+}
+
+// spec GMQ-21.5: under GMQCC a parameter list continued across lines by `\` names its
+// parameters as written across them, as the C preprocessor joins the lines first; FTEQCC keeps
+// the `\` and the line break in the name
+#[test]
+fn a_parameter_list_continued_across_lines_is_joined_under_gmqcc() {
+    let text = "#define R(x, y, \\\n z, ...) z\nR(a, b, c, d)\n";
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", text.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Gmqcc);
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    assert_eq!(touching(&out), "c");
+    let (fteqcc, _) = fte(text);
+    assert!(fteqcc.contains('z'), "{fteqcc}");
+}
+
+// spec GMQ-21.6: under GMQCC each argument is macro-expanded alone before it replaces its
+// parameter, as C's do, so a nested paste is of the expanded text: `P2(P2(x,y),z)` is `xyz`;
+// P99's emptiness test, which Xonotic's `MUTATOR_CALLHOOK` uses, then works
+// spec GMQ-21.3: a function-like macro's name at the end of a chunk takes the group after the
+// chunk in the text below it
+#[test]
+fn an_argument_is_expanded_before_it_replaces_its_parameter_under_gmqcc() {
+    let text = "#define C2(a,b) a##b\n#define P2(a,b) C2(a,b)\nP2(P2(x,y),z)\n\
+                #define ARG(_1, _2, _3, ...) _3\n#define HAS_COMMA(...) ARG(__VA_ARGS__, 1, 0, 0)\n\
+                #define EQ_(...) ,\n#define IS_EMPTY(...) HAS_COMMA(EQ_ __VA_ARGS__ ())\n\
+                IS_EMPTY() IS_EMPTY(x)\n#define ID(f) f\n#define G(x) [x]\nID(G)(1)\n";
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", text.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Gmqcc);
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    assert_eq!(touching(&out), "xyz 1 0 [1]");
+    let (fteqcc, _) = fte("#define C2(a,b) a##b\n#define P2(a,b) C2(a,b)\nP2(P2(x,y),z)\n");
+    assert_eq!(fteqcc, "xy z");
+}
+
+// spec GMQ-21.7: under GMQCC a comment inside a macro call's arguments is white space, so a
+// `,` in it separates nothing
+#[test]
+fn a_comment_inside_a_macro_argument_is_white_space_under_gmqcc() {
+    let text = "#define F(a, b) [b]\nF(1, x // y, z\n w /* p, q */)\n";
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", text.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Gmqcc);
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    assert_eq!(touching(&out), "[x w ]");
+    assert!(codes(&out).is_empty(), "{:?}", codes(&out));
+}
+
+// spec GMQ-21.8: under GMQCC a last variadic argument left empty after its comma is none: it is
+// not counted by `__VA_COUNT__`, and `, ## __VA_ARGS__` of it takes the comma away, as Xonotic's
+// `TRANSMUTE(Player, this)` relies on
+#[test]
+fn a_last_empty_variadic_argument_is_none_under_gmqcc() {
+    let text = "#define O(F, ...) F##_##__VA_COUNT__(__VA_ARGS__)\n\
+                #define T(c, t, ...) O(s##c, t,##__VA_ARGS__)\n#define U(c, t, ...) T(c, t, __VA_ARGS__)\n\
+                U(P, e) U(P, e, 1) O(f, a, ) O(f, a, b)\n";
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", text.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Gmqcc);
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    assert_eq!(touching(&out), "sP_1(e) sP_2(e,1) f_1(a) f_2(a, b)");
+    let (fteqcc, _) = fte("#define O(F, ...) F##_##__VA_COUNT__(__VA_ARGS__)\nO(f, a, )\n");
+    assert!(fteqcc.contains("f_2"), "{fteqcc}");
+}
+
+// spec GMQ-21.6: an argument whose parameter stands after `#` or beside `##`, or that the body
+// does not name, is not expanded, so a use in it that would be an error is none
+// spec GMQ-21.8: an only variadic argument left empty, or holding only a comment, is none, and
+// `#__VA_ARGS__` stringizes what is given
+// spec GMQ-21.5: a `...` written after a continued line makes the macro variadic, and a name given
+// twice across the lines is a duplicate
+#[test]
+fn gmqcc_argument_rules_at_their_edges() {
+    let run = |text: &str| {
+        let mut loader = MemoryLoader::new();
+        loader.insert("a.qc", text.as_bytes());
+        let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Gmqcc);
+        let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+        (touching(&out), codes(&out))
+    };
+    let (text, codes) =
+        run("#define S(x) #x\n#define G(a,b) a b\n#define U(x) u\nS(G(1)) U(G(1))\n");
+    assert_eq!((text.as_str(), codes), (r#""G(1)" u"#, vec![]));
+    let (text, _) = run(
+        "#define O(F, ...) F##_##__VA_COUNT__(__VA_ARGS__)\nO(f, ) O(f,) O(f, a, /* c */)\n\
+         #define L(a, ...) f(a, #__VA_ARGS__)\nL(1, x, )\n",
+    );
+    assert_eq!(text, r#"f_0() f_0() f_1(a) f(1, "x")"#);
+    let (text, _) = run("#define R(x, \\\n ...) [__VA_ARGS__]\nR(1, 2, 3)\n");
+    assert_eq!(text, "[2, 3]");
+    let (_, codes) = run("#define D(x, \\\n x) [x]\n");
+    assert!(codes.contains(&Code::E0115), "{codes:?}");
+}

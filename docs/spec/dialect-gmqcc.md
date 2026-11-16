@@ -324,7 +324,7 @@ constructs above that the FTEQCC grammar lacks. The recorded run is
   name (GMQ-16), `noref` (GMQ-17), two touching `*` (GMQ-18), and `goto` or a `:` touching a
   name (GMQ-19).
 
-## GMQ-21 Stringizing the variadic arguments
+## GMQ-21 Macro expansion as Xonotic is preprocessed
 
 **Source:** `ftepp.cpp`, `ftepp_macro_expand`, at the commit above. Xonotic: `qcsrc/Makefile`
 (`CPP := cc -xc -E`), `lib/deglobalization.qh` (`#define DEGLOB_LOG(kind, name, ...)
@@ -362,10 +362,61 @@ this should already be stringized").
   ORDERED(FOREACH_ENTITY_CLASS)(class, cond, body)`. GMQCC's own preprocessor reads an
   expansion's output as a string of its own (`lex_open_string(ftepp->output_string, ...)`), so
   this is a deliberate divergence from it as in GMQ-21.1. The group is the one in the text the use
-  stands in, past the strings and comments in it; one beyond that text's end, as after a chain of
-  object-like macros (`#define W ORDERED(F)` and `W(1, 2)`), is not taken, where the C
-  preprocessor would take it. FTEQCC finds a function-like macro's `(` only in the text it stands
-  in (FTEF-14.22).
+  stands in, past the strings and comments in it; when that text ends after the use, as an
+  expansion's does, the group is the one that follows in the text below it, another expansion's or
+  the file's, so `#define W ORDERED(F)` and `W(1, 2)` call `F_U(1, 2)` too. FTEQCC finds a
+  function-like macro's `(` only in the text it stands in (FTEF-14.22).
+- **GMQ-21.4** Under this dialect a directive at the start of a line inside a macro call's
+  arguments is run as it would be outside the call, and the argument is its text around the
+  directive and what the directive skips, the line break before the directive kept. Xonotic's
+  `common/items/item/health.qh` writes `ATTRIB(HealthSmall, m_icon, string, // ...` with `#ifdef
+  CSQC`, `#else` and `#endif` among its last argument's lines. C leaves this undefined (C11, N1570
+  6.10.3p11: "If there are sequences of preprocessing tokens within the list of arguments that
+  would otherwise act as preprocessing directives, the behavior is undefined."), and the C
+  preprocessor Xonotic runs first defines it: "GNU CPP processes arbitrary directives within
+  macro arguments in exactly the same way as it would have processed the directive were the
+  function-like macro invocation not present" (the GCC manual, Directives Within Macro
+  Arguments, fetched 2026-11-16). FTEQCC runs a directive only in the white space after the `(`
+  or a `,` (FTEF-14.45).
+- **GMQ-21.5** Under this dialect a `#define`'s parameter list continued across lines by a `\`
+  before each line break names its parameters as written across the lines: `#define R(x, y, \`
+  then ` z, ...) z` has the parameters `x`, `y` and `z`. The C preprocessor Xonotic runs first
+  joins the lines before it reads any token: "Each instance of a backslash character (\)
+  immediately followed by a new-line character is deleted, splicing physical source lines to
+  form logical source lines." (C11, N1570 5.1.1.2, phase 2). Xonotic's `lib/p99.qh` writes
+  `P00_ARG` so.
+  FTEQCC keeps the `\`, the line break and the white space after them in the name
+  (`QCC_PR_PreProcessor_Define` passes over only `qcc_iswhitesameline` bytes before a
+  parameter), so its `z` is never replaced.
+- **GMQ-21.6** Under this dialect each argument of a function-like macro's use is macro-expanded
+  alone before it replaces its parameter, unless the parameter is beside `##` or after `#`:
+  "Before being substituted, each argument's preprocessing tokens are completely macro replaced
+  as if they formed the rest of the preprocessing file; no other preprocessing tokens are
+  available." (C11, N1570 6.10.3.1). So `P2(P2(x,y),z)` of `#define C2(a,b) a##b` and `#define
+  P2(a,b) C2(a,b)` is `xyz`, where FTEQCC, which writes an argument as it is (FTEF-14.20), gives
+  `xy z`. Xonotic's `lib/p99.qh` `P99_IS_EMPTY` and `P99_PASTE5`, which `MUTATOR_CALLHOOK` and
+  `OVERLOAD` use, depend on it. The expanded argument's tokens are its text, a space between two
+  that do not touch. Only an argument whose parameter the body names beside no `#` or `##`,
+  and that names a macro or a built-in constant, is expanded, so `S(G(1))` of `#define S(x) #x`
+  reports nothing of `G`'s use. A deliberate divergence: the model keeps FTEQCC's rule that a
+  macro is not expanded while its own expansion is open (FTEF-14.17), not C's mark on each token
+  its expansion made, so a macro that names itself through an argument, `#define A F(A)` with
+  `#define F(x) [x]`, expands again until FTEQCC's open-chunk limit, where C gives `[A]`.
+- **GMQ-21.7** Under this dialect a comment inside a macro call's arguments is white space, so a
+  `,` or `)` in it separates or ends nothing: `F(1, x // y, z` then ` w)` passes `x w` as `F`'s
+  second argument. The C preprocessor replaces "Each comment ... by one space character" before
+  it reads a macro's arguments (C11, N1570 5.1.1.2, phase 3), and Xonotic's `IL_EACH` bodies hold
+  comments with commas. FTEQCC's scan takes a comment's bytes as the argument's (FTEF-14.22).
+- **GMQ-21.8** Under this dialect a last variadic argument left empty after its comma is none:
+  `__VA_COUNT__` does not count it, `__VA_ARGS__` does not write it, and `, ## __VA_ARGS__` of
+  none takes the comma away. So `O(f, a, )` of `#define O(F, ...) F##_##__VA_COUNT__(__VA_ARGS__)`
+  is `f_1(a)`, where FTEQCC counts the empty argument (FTEF-14.26) and writes `f_2(a, )`. GMQCC's
+  `ftepp_macro_call_params` reads an argument only `while (ftepp->token != ')')`, so the `)` after
+  the last comma ends the list before an empty argument is pushed, and `TOKEN_VA_ARGS` writes
+  nothing `if (!varargs)` (`ftepp.cpp` at the commit above). Xonotic's `lib/oo.qh`, read without
+  `__STDC__` (PRJ-4.13), writes `#define _TRANSMUTE(cname, this, ...) OVERLOAD(spawn##cname,
+  this,##__VA_ARGS__)`, which `TRANSMUTE(Player, this)` calls with the variadic arguments empty.
+  The arguments are judged as written, before they are expanded (GMQ-21.6).
 
 ## GMQ-22 Arrays of fields
 
