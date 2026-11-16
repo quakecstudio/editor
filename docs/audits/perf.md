@@ -200,9 +200,15 @@ main thread's 5,379, `Play::frame` and the map's GPU preparation most of the res
 
 | Change | Before | After |
 | --- | --- | --- |
-| `Game::host_action` takes the progs' host command first and copies the host state (every setting, the command buffer and the aliases) only when there is one, not every frame | 109 samples (2.0%) | 1 sample |
+| `Game::host_action` takes the progs' host command first and copies the host state (every setting, the command buffer and the aliases) only when there is one, not every frame | 109 samples, about 0.9 us a frame | 1 sample |
 
 The host's 74 tests pass.
 
-Left, with the reason: `Play::frame`, the renderer's frame, is the host's largest CPU cost; it
-belongs to the renderer's section, which is audited next with the map view's line drawing.
+`--benchmark` draws about 12,000 frames a second with no vsync, so a cost paid once a frame is
+counted far more often than in play at 72 Hz: the change is a small, certain saving, not a
+visible one.
+
+Left, with the reason: `Play::frame`'s largest part in that run is `MapMesh::relight_with`,
+which already makes again only the faces whose light changed, as `R_RenderDynamicLightmaps`
+does, and pays a pass over every face's styles each frame; at the route's 159 us p99 frame
+against its 383 us budget there is nothing to win that a person would see.
