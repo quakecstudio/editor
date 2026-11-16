@@ -216,9 +216,6 @@ pub(crate) struct Program {
     pub(crate) defs: Vec<Def>,
     /// Where in [`Program::defs`] each definition of the semantic model is, once made.
     places: HashMap<DefId, usize>,
-    /// The function `CLASS::NAME` of each virtual member a body defines, whose field is the
-    /// member's own place (FTEF-9.21).
-    member_functions: HashMap<DefId, usize>,
     /// The global area, a word per global offset: its length is `numpr_globals`.
     pub(crate) globals: Vec<u32>,
     /// The string table, without the padding [`crate::write`] adds.
@@ -257,7 +254,6 @@ impl Program {
         Self {
             defs: Vec::new(),
             places: HashMap::new(),
-            member_functions: HashMap::new(),
             globals: vec![0; RESERVED_OFS],
             strings: vec![0],
             statements: vec![Statement::default()],
@@ -703,42 +699,6 @@ impl Program {
             }
         }
         Ok(place)
-    }
-
-    /// FTEF-9.21: the function `CLASS::NAME` a body of the virtual member `id` defines, made now
-    /// if it is new (`QCC_PR_GetDef(newparm, membername, NULL, true, 0, gdf_flags)`); `None` for
-    /// a definition that is no class's virtual member.
-    pub(crate) fn member_function(
-        &mut self,
-        index: &ModuleIndex,
-        id: DefId,
-    ) -> Result<Option<usize>, Internal> {
-        if let Some(&place) = self.member_functions.get(&id) {
-            return Ok(Some(place));
-        }
-        let definition = index.def(id).ok_or(Internal::NoDefinition)?;
-        let Some(class) = definition
-            .member_of
-            .filter(|_| {
-                definition.kind == DefKind::Field && matches!(definition.ty, Type::Function(_))
-            })
-            .and_then(|class| index.def(class))
-        else {
-            return Ok(None);
-        };
-        let name = format!("{}::{}", class.name, definition.name);
-        let ty = ValueType::Of(definition.ty.clone());
-        let place = self.generated(&name, ty, 1)?;
-        if let Some(def) = self.defs.get_mut(place) {
-            def.constant = true;
-        }
-        self.member_functions.insert(id, place);
-        Ok(Some(place))
-    }
-
-    /// FTEF-9.21: the function a body of the virtual member `id` defined, when one did.
-    pub(crate) fn member_function_made(&self, id: DefId) -> Option<usize> {
-        self.member_functions.get(&id).copied()
     }
 
     /// FTEF-9.21: the member `id` of the class `class`, holding `held`, as the entity field

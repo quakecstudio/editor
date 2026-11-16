@@ -437,11 +437,12 @@ impl<'a> Compiler<'a> {
                 }
                 Some(ast::Initializer::Body(body)) => {
                     // FTEF-9.21: a virtual member's body is the function `CLASS::NAME`.
-                    let place = self
-                        .program
-                        .member_function(self.index, id)
-                        .at(name.span())?
-                        .unwrap_or(place);
+                    let place = match self.index.virtual_function(id) {
+                        Some(function) => {
+                            self.program.get_def(self.index, function).at(name.span())?
+                        }
+                        None => place,
+                    };
                     self.function(
                         (&written, &declarator),
                         &name,
@@ -664,7 +665,7 @@ impl<'a> Compiler<'a> {
                 let typed = self
                     .typed_body()
                     .ok_or(Abort::Internal(Internal::Unfollowed, span))?;
-                self.write_body(typed, body, span)?;
+                self.write_body(typed, Some(body), span)?;
                 code
             }
         };

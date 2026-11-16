@@ -87,6 +87,8 @@ pub(crate) trait Env {
     fn definition(&self, def: DefId) -> Option<&Definition>;
     /// Whether a definition is an array (`def->arraysize`, FTEF-19.8).
     fn is_array(&self, def: DefId) -> bool;
+    /// FTEF-9.21: the function `CLASS::NAME` a body of the virtual member `member` defines.
+    fn virtual_function(&self, member: DefId) -> Option<DefId>;
     /// GMQ-22.1: whether an element of an array of fields inside `e.( )` is the field the index
     /// names, as GMQCC's array accessor gives it.
     fn field_array_accessors(&self) -> bool;
@@ -785,6 +787,17 @@ pub struct TypedBody {
 }
 
 impl TypedBody {
+    /// A body the model writes itself, with no text of its own: its statements and the strings
+    /// they name (FTEF-9.22).
+    pub(crate) fn written(generated: Vec<ir::BodyStatement>, strings: Vec<Vec<u8>>) -> Self {
+        Self {
+            generated,
+            strings,
+            followed: true,
+            ..Self::default()
+        }
+    }
+
     /// The type of the expression at `span`, if the check typed one there.
     #[must_use]
     pub fn type_at(&self, span: Span) -> Option<&Type> {

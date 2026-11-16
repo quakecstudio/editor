@@ -338,7 +338,7 @@ impl Checker<'_> {
         index: &Value,
         kind: ElementKind,
         span: Span,
-    ) -> Result<bool, Fatal> {
+    ) -> Result<ArrayRead, Fatal> {
         let vector = kind == ElementKind::VectorComponent;
         let target = self.env.target_at(span.start);
         let index_etype = self.etype_of(&index.ty);
@@ -376,12 +376,12 @@ impl Checker<'_> {
             match load {
                 Some(op) if !self.global => {
                     let loaded = self.emit(op, element, &index, span)?;
-                    self.array_loaded = Some(loaded);
+                    return Ok(ArrayRead::Loaded(loaded));
                 }
                 Some(_) => {}
                 None => self.followed = false,
             }
-            return Ok(false);
+            return Ok(ArrayRead::Indexed);
         }
         if length_prefix {
             if index_etype != Some(Etype::Float) {
@@ -395,13 +395,13 @@ impl Checker<'_> {
                     self.env.report(Code::W0319, span, message);
                 }
             }
-            return Ok(false);
+            return Ok(ArrayRead::Indexed);
         }
         let float = self.converted(index, Etype::Float, span)?;
         if vector {
             let three = Value::constant(Constant::float(VECTOR_WORDS_FLOAT));
             self.emit(Op::DivF, &float, &three, span)?;
-            return Ok(false);
+            return Ok(ArrayRead::Indexed);
         }
         // A vector array's getter takes the element's index, its words' divided by 3.
         let divided = self.etype_of(&element.ty) == Some(Etype::Vector) && !self.global;
@@ -434,8 +434,8 @@ impl Checker<'_> {
             Some(Etype::Struct | Etype::Union)
         );
         if !self.global && structured && size > 1 && !divided && !big_struct {
-            self.struct_element(element, &float, size);
-            return Ok(true);
+            let block = self.struct_element(element, &float, size);
+            return Ok(ArrayRead::Block(block));
         }
         // FTEF-19.78: the read is `ArrayGet*`'s call: the index stored to its parameter unless
         // it folds, `CALL1`, the value the call's in the return global.
@@ -465,7 +465,7 @@ impl Checker<'_> {
             self.live_return = Some(self.env.layout(&element.ty).map_or(1, |l| l.words));
             self.live_call = self.last_made();
         }
-        Ok(true)
+        Ok(ArrayRead::Called)
     }
 
     /// An element read: a narrow one by its bits, one at a constant index the array's own
@@ -479,29 +479,36 @@ impl Checker<'_> {
         } else {
             ElementKind::Element
         };
-        let called = element.index.known().is_none()
-            && self.load_from_array(&value, &element.index, kind, span)?;
-        // FTEF-31.19: an element `OP_LOADA_*` loaded is the value it made.
-        if let Some(loaded) = self.array_loaded.take() {
-            return Ok(Value {
-                reference: Reference::Global,
-                ty: value.ty,
-                ..loaded
-            });
-        }
-        // A struct read word by word is the block its words were stored to.
-        if let Some(block) = self.block_read.take() {
-            return Ok(Value {
-                reference: Reference::Global,
-                sym: Sym::Temp,
-                made: Some(block),
-                word: 0,
-                temp: None,
-                returned: false,
-                call: None,
-                ..value
-            });
-        }
+        let read = if element.index.known().is_none() {
+            self.load_from_array(&value, &element.index, kind, span)?
+        } else {
+            ArrayRead::Indexed
+        };
+        let called = match read {
+            ArrayRead::Indexed => false,
+            ArrayRead::Called => true,
+            // FTEF-31.19: an element `OP_LOADA_*` loaded is the value it made.
+            ArrayRead::Loaded(loaded) => {
+                return Ok(Value {
+                    reference: Reference::Global,
+                    ty: value.ty,
+                    ..loaded
+                });
+            }
+            // A struct read word by word is the block its words were stored to.
+            ArrayRead::Block(block) => {
+                return Ok(Value {
+                    reference: Reference::Global,
+                    sym: Sym::Temp,
+                    made: Some(block),
+                    word: 0,
+                    temp: None,
+                    returned: false,
+                    call: None,
+                    ..value
+                });
+            }
+        };
         // A constant index is the array's own definition at that word; any other is
         // loaded into a temporary, and by the `ArrayGet` function into its return.
         // A constant vector's component at a constant index is still the immediate it
@@ -527,8 +534,9 @@ impl Checker<'_> {
     }
 
     /// FTE-13.12: the struct element of `size` words at the float index `index`, read by the
-    /// array's getter a word at a time into a block, which [`Checker::block_read`] names.
-    fn struct_element(&mut self, element: &Value, index: &Value, size: u32) {
+    /// array's getter a word at a time into a block: the generated statement the block is made
+    /// at, which the read's value is.
+    fn struct_element(&mut self, element: &Value, index: &Value, size: u32) -> u32 {
         let first = self.next_made();
         self.effects.push((first, ir::Effect::Block(size)));
         let getter = element.sym.def().map(ir::Name::ArrayGet);
@@ -564,7 +572,7 @@ impl Checker<'_> {
             });
         }
         self.last_temp = None;
-        self.block_read = Some(first);
+        first
     }
 
     /// FTEF-31.3: `QCC_LoadFromPointer`: the index made an integer, then the load of the
@@ -1420,4 +1428,16 @@ fn narrow_bits(ty: &Type) -> Option<u32> {
         Some(CScalar::Int16 | CScalar::Uint16) => Some(16),
         _ => None,
     }
+}
+
+/// How `QCC_LoadFromArray` read an element at an index that is no constant (FTEF-31.2).
+enum ArrayRead {
+    /// As an index into the array's own words, or not followed: the element is the array's.
+    Indexed,
+    /// By the array's getter, whose value is in the return global (FTEF-19.78).
+    Called,
+    /// FTEF-31.19: by `OP_LOADA_*`, the value it made.
+    Loaded(Value),
+    /// FTE-13.12: a struct's words by the getter into a block, made at this statement.
+    Block(u32),
 }

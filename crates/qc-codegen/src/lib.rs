@@ -288,6 +288,15 @@ fn compile_lowered(
             span,
             internal,
         })?;
+    // FTE-21.8: the shared temporaries the spawn functions took, laid out after them.
+    compiler
+        .program
+        .resolve_shared_temps()
+        .map_err(|internal| CompileError::Internal {
+            file: FileId::new(0),
+            span: Span::new(0, 0),
+            internal,
+        })?;
     if !compiler.errors.is_empty() {
         return Err(CompileError::Diagnostics(compiler.errors));
     }

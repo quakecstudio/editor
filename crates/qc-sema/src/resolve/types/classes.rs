@@ -2,7 +2,7 @@
 // Copyright (c) 2004-2025 FTE's team and its contributors
 // Copyright (C) 2026 QuakeC Studio contributors
 //
-// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_comp.c, QCC_PR_ParseDefs
+// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_comp.c, QCC_PR_ParseDefs, QCC_PR_EmitClassFromFunction, QCC_PR_EmitClassFunctionTable
 
 //! Classes and accessors: their members, parents, member functions and the
 //! member lookup of an access (FTEF-9, FTEF-10, FTEF-17.1 to FTEF-17.3).
@@ -12,6 +12,8 @@ use qc_diag::{Code, Span};
 use std::collections::HashMap;
 
 use crate::cast::Kind;
+use crate::check::TypedBody;
+use crate::ir;
 use crate::lower::ArrayDim;
 use crate::lower::{
     MemberBase, MemberKind, MemberStorage, Qualification, RawClass, RawDecl, RawMember, RawUse,
@@ -21,6 +23,7 @@ use crate::resolve::{
 };
 use crate::symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
 use crate::ty::{SimpleType, Type};
+use qc_preproc::Op;
 
 impl<'a> Resolver<'a> {
     /// `accessor Name : Base` (FTEF-10.6): the base is a type and no struct or union, and the
@@ -528,6 +531,136 @@ impl<'a> Resolver<'a> {
         if let Some(facts) = self.fact_mut(id) {
             facts.constant = true;
         }
+        self.spawnfuncs.push((id, class));
+    }
+
+    /// FTEF-9.22: the body of each class's spawn function the program gives none, as
+    /// `QCC_PR_EmitClassFromFunction` writes it after every file.
+    pub(in crate::resolve) fn write_spawn_functions(&mut self) {
+        for (spawnfunc, class) in std::mem::take(&mut self.spawnfuncs) {
+            if self.index.def(spawnfunc).is_none_or(|d| d.initialized) {
+                continue;
+            }
+            let body = self.spawn_function(class);
+            self.index.bodies.insert(spawnfunc, body);
+            self.index.spawn_functions.push(spawnfunc);
+        }
+    }
+
+    /// FTEF-9.22: `QCC_PR_EmitClassFromFunction`'s body for the class `class`:
+    /// `self.classname = "CLASS"` when `classname` is a field; then for each class from the root
+    /// down, each virtual member with a body that no class below it declares again stored its
+    /// function, `self.__mNAME = CLASS::NAME` (`QCC_PR_EmitClassFunctionTable`); then each
+    /// constructor `CLASS::CLASS` called, the class's own first and its parents' after; then
+    /// `DONE`. A program with no `self` has no body the model follows.
+    fn spawn_function(&self, class: DefId) -> TypedBody {
+        let Some(this) = self.lookup_global("self") else {
+            return TypedBody::default();
+        };
+        let name = self
+            .index
+            .def(class)
+            .map(|d| d.name.clone())
+            .unwrap_or_default();
+        let members = self.index.class_members(&Type::Named(name.as_str().into()));
+        // The class, then each parent.
+        let mut chain = vec![class];
+        while chain.len() < MAX_CLASS_DEPTH
+            && let Some(parent) = chain.last().and_then(|&c| self.parent_of(c))
+        {
+            chain.push(parent);
+        }
+        let mut body = SpawnBody::default();
+        let classname = self
+            .lookup_global("classname")
+            .filter(|&id| self.index.def(id).is_some_and(|d| d.kind == DefKind::Field));
+        if let Some(classname) = classname {
+            let text = name
+                .chars()
+                .map(|c| u8::try_from(u32::from(c)).unwrap_or(b'?'))
+                .collect();
+            let string = body.string(text);
+            body.store_through(this, classname, string);
+        }
+        // `QCC_PR_EmitClassFunctionTable` recurses to the root before it reads a class.
+        for (depth, owner) in chain.iter().enumerate().rev() {
+            let below = chain.get(..depth).unwrap_or_default();
+            for &member in &members {
+                let Some(def) = self.index.def(member) else {
+                    continue;
+                };
+                if def.member_of != Some(*owner) {
+                    continue;
+                }
+                // "Member function %s was not defined": a member with no body is left empty.
+                let Some(function) = self.index.virtual_function(member) else {
+                    continue;
+                };
+                // A class below that declares the member again fills the field itself.
+                let overridden = members.iter().any(|&other| {
+                    self.index.def(other).is_some_and(|o| {
+                        o.name == def.name && o.member_of.is_some_and(|c| below.contains(&c))
+                    })
+                });
+                if !overridden {
+                    body.store_through(this, member, ir::Name::Def(function, 0));
+                }
+            }
+        }
+        for &owner in &chain {
+            let Some(owner_name) = self.index.def(owner).map(|d| d.name.as_str()) else {
+                continue;
+            };
+            let constructor = members.iter().copied().find(|&member| {
+                self.index.def(member).is_some_and(|d| {
+                    d.member_of == Some(owner)
+                        && d.kind == DefKind::Function
+                        && d.name == owner_name
+                })
+            });
+            if let Some(constructor) = constructor {
+                body.statements.push(ir::BodyStatement {
+                    a: Some(ir::Name::Def(constructor, 0)),
+                    ..ir::BodyStatement::bare(Op::Call0)
+                });
+            }
+        }
+        body.statements.push(ir::BodyStatement::bare(Op::Done));
+        TypedBody::written(body.statements, body.strings)
+    }
+
+    /// FTEF-9.21: the function `CLASS::NAME` a body of the virtual member `member` defines,
+    /// declared the first time (`QCC_PR_GetDef(newparm, membername, NULL, true, 0,
+    /// gdf_flags)`): a constant of the member's type. Nothing for a member that is no virtual
+    /// one, a field of function type.
+    pub(in crate::resolve) fn declare_virtual_function(&mut self, member: DefId) {
+        if self.index.virtual_functions.contains_key(&member) {
+            return;
+        }
+        let Some(def) = self.index.def(member) else {
+            return;
+        };
+        let Some(class) = def
+            .member_of
+            .filter(|_| def.kind == DefKind::Field && self.resolved(&def.ty).is_function())
+        else {
+            return;
+        };
+        let function = Definition {
+            name: def.name.clone(),
+            ty: def.ty.clone(),
+            kind: DefKind::Function,
+            location: def.location,
+            owner: None,
+            initialized: true,
+            member_of: Some(class),
+            generated: true,
+        };
+        let id = self.push_def(function);
+        if let Some(facts) = self.fact_mut(id) {
+            facts.constant = true;
+        }
+        self.index.virtual_functions.insert(member, id);
     }
 
     /// An FTEQCC `Class::member` definition (FTEF-17.2): it defines the member the class or
@@ -839,5 +972,38 @@ impl Resolver<'_> {
             class = self.parent_of(current);
         }
         None
+    }
+}
+
+/// The statements and strings of a spawn function's body as it is written (FTEF-9.22).
+#[derive(Default)]
+struct SpawnBody {
+    statements: Vec<ir::BodyStatement>,
+    strings: Vec<Vec<u8>>,
+}
+
+impl SpawnBody {
+    /// The string immediate of `text`, one of the body's strings.
+    fn string(&mut self, text: Vec<u8>) -> ir::Name {
+        let index = u32::try_from(self.strings.len()).unwrap_or(u32::MAX);
+        self.strings.push(text);
+        ir::Name::String(ir::StringIndex::new(index))
+    }
+
+    /// `point = OP_ADDRESS(entity, field); OP_STOREP_FNC(value, point)`, as FTEQCC stores each
+    /// word of a spawn function, a string's included.
+    fn store_through(&mut self, entity: DefId, field: DefId, value: ir::Name) {
+        let point = u32::try_from(self.statements.len()).unwrap_or(u32::MAX);
+        self.statements.push(ir::BodyStatement {
+            a: Some(ir::Name::Def(entity, 0)),
+            b: Some(ir::Name::Def(field, 0)),
+            c: Some(ir::Name::Made(point)),
+            ..ir::BodyStatement::bare(Op::Address)
+        });
+        self.statements.push(ir::BodyStatement {
+            a: Some(value),
+            b: Some(ir::Name::Made(point)),
+            ..ir::BodyStatement::bare(Op::StorepFnc)
+        });
     }
 }

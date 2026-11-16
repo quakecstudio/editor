@@ -62,19 +62,6 @@ pub(super) struct Checker<'e> {
     /// The names the body makes without a statement that reads them, by the index of the next
     /// generated statement then: a fold's immediate, and what a dropped branch named.
     pub(super) effects: Vec<(u32, ir::Effect)>,
-    /// The generated statement whose block a struct element read through an array's getter
-    /// last filled, word by word, which the read's value is.
-    pub(super) block_read: Option<u32>,
-    /// The value an element read at an index that is no constant last loaded by `OP_LOADA_*`
-    /// (FTEF-31.19), which the read's value is.
-    pub(super) array_loaded: Option<Value>,
-    /// FTEF-9.24: the object a method's call is made with as `self`, for the next call's
-    /// statements, when it is not `self`.
-    pub(super) newself: Option<ir::Name>,
-    /// FTEF-9.24: the temporary that kept `self` across the call just written, restored after it.
-    pub(super) kept_self: Option<u32>,
-    /// FTEF-29.17: the value of the field's in-place update just written.
-    pub(super) in_place_result: Option<Value>,
     /// The words of a call's value a statement read word by word and freed not, which the
     /// next statement's clobber copies out of the return global (FTE-18.13).
     pub(super) unfreed: Option<u32>,
@@ -150,11 +137,6 @@ impl<'e> Checker<'e> {
             ret_local: false,
             followed: true,
             effects: Vec::new(),
-            block_read: None,
-            array_loaded: None,
-            newself: None,
-            kept_self: None,
-            in_place_result: None,
             unfreed: None,
             keeps_condition: false,
             live_call: None,
