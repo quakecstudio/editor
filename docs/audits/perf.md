@@ -191,6 +191,34 @@ before returning changed none of them on the reference Mac (`id1_recompile` 50.6
 50.45 ms, `full_compile_e1m1` 6.041 s against 6.045 s), which has the cores to spare, so the
 benchmark is left as it is; a runner with fewer cores is where it would show first.
 
+### The renderer: `qs-render`
+
+Measured in the release preview host with line tables, unstripped, in `--benchmark` mode on
+id1's e1m1: no vsync, the free camera turning, 14 s, its main thread sampled for 10 s by
+`sample`. Reference Mac, 2026-11-16, three runs each.
+
+Most of the host's own work in a frame was `Play::frame`, and most of that was its first line,
+`MapMesh::relight_with`. Every frame, that line allocated a mark for each face and asked each
+face whether a style it reads had changed. In e1m1 the styles change ten times a second, while
+the host draws thousands of frames. `relight_with` now returns at once when the styles are the
+ones applied and no light is lit now or was last frame, the case in which its loop skipped every
+face. `Lightmaps::mark_lights` gives no marks, and allocates nothing, when no light is lit. The
+light is drawn as before: the face loop runs whenever a style changes or a light is lit.
+
+| Change | Before | After |
+| --- | --- | --- |
+| `relight_with` skips the frame when nothing it reads changed | 908, 900 samples of 5,732 and 5,731 (16%), 11,741 to 12,114 fps | 0 samples of 5,698 and 5,713, 14,289 to 14,603 fps (+20%) |
+
+`frame_e1m1`, the budget's `timerefresh` pass (128 frames offscreen at one time, 383 us at
+the 99th percentile), is the GPU's: five passes each took a median of 0.0203 s (159 us a frame)
+before and after, so the budget is unchanged. `qs-render`'s 166 tests pass unchanged.
+
+Left, with the reason: what remains of the frame is the alias models' vertices, built on the
+CPU each frame (`AliasModel::draw_skinned`, 128 samples), and the GPU's preparation of the
+frame's buffers. Building the alias vertices on the GPU would take most of it, at the cost of
+id's own interpolation, which the tests pin; at a frame's tenth of a millisecond it waits for a
+scene where it shows.
+
 ### The simulation and the preview host: `qs-sim`, `qs-client`, `apps/quakec-engine`
 
 The engine routes hold their budgets (`server_frame_e1m1` 477.83 us p99 against 1 ms, QuakeC
