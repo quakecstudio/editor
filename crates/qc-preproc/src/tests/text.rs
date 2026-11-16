@@ -987,6 +987,13 @@ fn va_opt_writes_its_text_only_with_variadic_arguments_under_gmqcc() {
     let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
     assert_eq!(touching(&out), "f(1 ) f(1 , g((2))) f(1 )");
     assert!(codes(&out).is_empty(), "{:?}", codes(&out));
+    // White space before a kept group's `)`, and variadic arguments of only a comment.
+    let mut loader = MemoryLoader::new();
+    let text = "#define O(a, ...) f(a __VA_OPT__(, g(__VA_ARGS__) ))\nO(1, 2)\nO(1, /* none */)\n";
+    loader.insert("a.qc", text.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Gmqcc);
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    assert_eq!(touching(&out), "f(1 , g(2) ) f(1 )");
 }
 
 // spec GMQ-21.3: under GMQCC, an expansion that ends with a function-like macro's name takes the
@@ -1002,4 +1009,11 @@ fn an_expansion_ending_in_a_function_like_name_takes_the_following_group_under_g
     assert_eq!(touching(&out), "g(1 + 2) h(3)");
     let (fteqcc, _) = fte(text);
     assert!(fteqcc.contains("F_U"), "{fteqcc}");
+    // A `)` in a comment inside the group is not its close.
+    let mut loader = MemoryLoader::new();
+    let text = "#define ORDERED(F) F##_U\n#define F_U(a, b) g(a + b)\nORDERED(F)(1, // c )\n 2)\n";
+    loader.insert("a.qc", text.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Gmqcc);
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    assert_eq!(touching(&out), "g(1 + 2)");
 }

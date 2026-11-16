@@ -989,6 +989,12 @@ impl Writer<'_> {
             };
             out.push_from(self.body, at..white_end);
             at = white_end;
+            // A kept `__VA_OPT__`'s `)` after white space is dropped too.
+            if opt_closes.last() == Some(&at) {
+                opt_closes.pop();
+                at = at.saturating_add(1);
+                continue;
+            }
             // Everything written so far, the pieces before this one included.
             if out.bytes.len() > self.limit {
                 return None;
@@ -1076,9 +1082,10 @@ impl Writer<'_> {
                 && let Some(close) = matching_paren(bytes, open)
             {
                 // GMQ-21.2: `__VA_OPT__(x)` is `x` when variadic arguments are given.
+                // Given when they hold a token: white space and comments are none.
                 let given = self
                     .rest()
-                    .is_some_and(|arg| !arg.bytes().trim_ascii().is_empty());
+                    .is_some_and(|arg| c_stringize(arg.bytes()) != b"\"\"");
                 if given {
                     opt_closes.push(close);
                     at = open.saturating_add(1);
@@ -1145,7 +1152,8 @@ impl Writer<'_> {
     }
 }
 
-/// The offset of the `)` that closes the `(` at `open` in `bytes`, past the strings between.
+/// The offset of the `)` that closes the `(` at `open` in `bytes`, past the strings and
+/// comments between.
 fn matching_paren(bytes: &[u8], open: usize) -> Option<usize> {
     let mut depth = 0_usize;
     let mut at = open;
@@ -1153,6 +1161,13 @@ fn matching_paren(bytes: &[u8], open: usize) -> Option<usize> {
         match byte {
             b'"' => {
                 at = copied_string_end(bytes, at);
+                continue;
+            }
+            b'/' if matches!(byte_at(bytes, at.saturating_add(1)), Some(b'/' | b'*')) => {
+                at = match whitespace(bytes, at) {
+                    Gap::Text(end) | Gap::LineStart(end) => end.max(at.saturating_add(1)),
+                    Gap::Unclosed(_) => return None,
+                };
                 continue;
             }
             b'(' => depth = depth.saturating_add(1),
@@ -1563,9 +1578,6 @@ impl<L: Loader> Preprocessor<L> {
         true
     }
 
-    /// The text the name `item` stands in and the offset after the name: the innermost chunk
-    /// for a name read from a chunk, which is the chunk being read, and otherwise the file the
-    /// name is in.
     /// GMQ-21.3: under GMQCC, an expansion `text` that ends with the name of a function-like
     /// macro takes the parenthesised group that follows the use in the text it stands in, as the
     /// C preprocessor Xonotic runs first rescans the expansion with the text after it:
@@ -1616,6 +1628,9 @@ impl<L: Loader> Preprocessor<L> {
         Rc::new(joined)
     }
 
+    /// The text the name `item` stands in and the offset after the name: the innermost chunk
+    /// for a name read from a chunk, which is the chunk being read, and otherwise the file the
+    /// name is in.
     fn use_text(&self, run: &Run, item: &Item) -> Option<(Bytes, usize)> {
         match item.place {
             Place::Chunk(end) => Some((run.chunks().last()?.bytes(), end)),

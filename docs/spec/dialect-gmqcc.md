@@ -349,8 +349,8 @@ this should already be stringized").
   is written as it is. Xonotic is never built that way, and `lib/deglobalization.qh` relies on the
   C behaviour in 165 places.
 - **GMQ-21.2** Under this dialect, `__VA_OPT__(x)` in a variadic macro's body is `x`, its own
-  `__VA_ARGS__` written, when the variadic arguments are given and not empty, and nothing
-  otherwise, as the C preprocessor Xonotic runs first writes it: `O(1)` and `O(1, )` of `#define
+  `__VA_ARGS__` written, when the variadic arguments are given and hold a token, white space and
+  comments being none, and nothing otherwise, as the C preprocessor Xonotic runs first writes it: `O(1)` and `O(1, )` of `#define
   O(a, ...) f(a __VA_OPT__(, g(__VA_ARGS__)))` are `f(1)`, `O(1, 2)` is `f(1, g(2))`. GMQCC's own
   preprocessor has no `__VA_OPT__`, a deliberate divergence from it as in GMQ-21.1; Xonotic's
   `server/compat/quake3.qh` writes `__VA_OPT__(this.count *= (__VA_ARGS__);)`.
@@ -361,8 +361,11 @@ this should already be stringized").
   `G(3)`. Xonotic's `lib/iter.qh` writes `#define FOREACH_ENTITY_CLASS(class, cond, body)
   ORDERED(FOREACH_ENTITY_CLASS)(class, cond, body)`. GMQCC's own preprocessor reads an
   expansion's output as a string of its own (`lex_open_string(ftepp->output_string, ...)`), so
-  this is a deliberate divergence from it as in GMQ-21.1. FTEQCC finds a function-like macro's
-  `(` only in the text it stands in (FTEF-14.22).
+  this is a deliberate divergence from it as in GMQ-21.1. The group is the one in the text the use
+  stands in, past the strings and comments in it; one beyond that text's end, as after a chain of
+  object-like macros (`#define W ORDERED(F)` and `W(1, 2)`), is not taken, where the C
+  preprocessor would take it. FTEQCC finds a function-like macro's `(` only in the text it stands
+  in (FTEF-14.22).
 
 ## GMQ-22 Arrays of fields
 

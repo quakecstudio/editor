@@ -424,6 +424,13 @@ malformed directive without a diagnostic.
   among them, only to its first NUL byte, as id's `LoadFile` and the lexer end its text (QC-1.1),
   so a directive after the NUL is not followed. Under the FTEQCC and GMQCC dialects a NUL is a
   space (FTEF-14.64).
+- **PRJ-5.17** Under the GMQCC dialect a `#pragma once` mark (PRJ-5.9) names the file its name
+  reaches: the name is kept and compared with each `.`, each empty part after the first and each
+  `..` after a directory taken out, so `x/y/../b.qh` and `x//b.qh` are `x/b.qh`. Xonotic's
+  `common/` headers include `"../teams.qh"` from below a directory that included it as
+  `"teams.qh"`. The C preprocessor Xonotic runs first marks the file itself, which these names
+  reach. Under FTEQCC the name is compared as written, `QCC_FindBestInclude`'s
+  `if (!strcmp(onced->name, fullname))` (FTEF-14.40).
 
 ## PRJ-6 The file graph
 
