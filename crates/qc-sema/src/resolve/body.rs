@@ -12,13 +12,15 @@
 use crate::resolve::Init;
 use qc_diag::{Code, Span};
 use qc_preproc::FteFlag;
-use qc_syntax::ast::AstNode as _;
+use qc_syntax::CompilerFlags;
+use qc_syntax::ast::{self, AstNode as _};
 
+use crate::InitialValue;
 use crate::cast::{Kind, Source, Supply};
 use crate::check::{array_length, check_body, check_initialiser};
 use crate::lower::{
-    ArrayDim, Qualifier, RawAlias, RawBody, RawDecl, RawLocal, RawUse, StatePart, UseKind,
-    ValueKind,
+    ArrayDim, Qualifier, RawAlias, RawBody, RawDecl, RawLocal, RawUse, RawValue, StatePart,
+    UseKind, ValueKind,
 };
 use crate::resolve::aggregate::{AggregateSite, Initialised};
 use crate::resolve::check_env::{BodyEnv, FunctionName};
@@ -438,20 +440,62 @@ impl<'a> Resolver<'a> {
             return;
         };
         let checked = match &value.kind {
-            ValueKind::Name(source) => self.converted_variable(source, &decl.ty),
+            ValueKind::Name(source) => {
+                self.converted_variable(source, &decl.ty)
+                    || self.converted_constant(source, &decl.ty)
+            }
             ValueKind::Cast(cast) => self.cast_checked(cast),
             _ => true,
         };
         if !checked {
             return;
         }
-        let written = value.written_types.clone();
         let Some(owner) = self.lookup_global(&decl.name) else {
             return;
         };
-        let ty = decl.ty.clone();
+        if let Some(value) = self.fold_global(file, owner, (&expr, value), &decl.ty, decl.flags) {
+            self.index.initial_values.insert(owner, value);
+        }
+    }
+
+    /// FTEF-34.9: folds each item of `decl`'s aggregate initialiser in `items`, an expression
+    /// with the type of the element it initialises, which a compiler writes in its place.
+    pub(in crate::resolve) fn fold_aggregate_items(
+        &mut self,
+        file: FileId,
+        decl: &RawDecl,
+        items: Vec<(RawValue, Type)>,
+    ) {
+        let Some(owner) = self.lookup_global(&decl.name) else {
+            return;
+        };
+        for (value, ty) in items {
+            let Some(expr) = value.syntax.clone() else {
+                continue;
+            };
+            if let Some(folded) = self.fold_global(file, owner, (&expr, &value), &ty, decl.flags) {
+                self.index
+                    .item_values
+                    .insert((file, value.span.start), folded);
+            }
+        }
+    }
+
+    /// FTEF-34.9: what `expr`, the value `value` written for the global `owner` with type `ty`,
+    /// folds to, read at global scope under `flags`, as `QCC_PR_ParseInitializerType` evaluates
+    /// it.
+    pub(in crate::resolve) fn fold_global(
+        &mut self,
+        file: FileId,
+        owner: DefId,
+        (expr, value): (&ast::Expr, &RawValue),
+        ty: &Type,
+        flags: CompilerFlags,
+    ) -> Option<InitialValue> {
+        let written = value.written_types.clone();
+        let name = self.index.def(owner)?.name.clone();
         let uses = self.use_defs.clone();
-        let flags = [(0, decl.flags)];
+        let flags = [(0, flags)];
         let reported = self.index.diagnostics.len();
         let mut env = BodyEnv {
             resolver: self,
@@ -467,9 +511,7 @@ impl<'a> Resolver<'a> {
             locals: &[],
             naming: FunctionName::Named,
         };
-        if let Some(value) = check_initialiser(&mut env, &expr, &ty, &decl.name) {
-            self.index.initial_values.insert(owner, value);
-        }
+        check_initialiser(&mut env, expr, ty, &name)
     }
 
     /// A definition the attribute `alias(TARGET)` gives (FTEF-21.9): `QCC_PR_GetDef (NULL,

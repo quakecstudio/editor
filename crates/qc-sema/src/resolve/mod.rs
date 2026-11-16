@@ -40,7 +40,7 @@ use crate::check::constant::Constant;
 use crate::expand::{OriginMap, ProtoPlan};
 use crate::lower::{
     ArrayDim, BuiltinFunction, FileDecls, LiteralValue, RawBody, RawDecl, RawParam, RawParamInfo,
-    RawUse, StructMember,
+    RawUse, RawValue, StructMember,
 };
 use crate::symbol::{DefId, Definition, FileId, Location, Reference};
 use crate::ty::Type;
@@ -109,6 +109,9 @@ pub struct ModuleIndex {
     /// FTEQCC profile (FTEF-34.9), and each enum's item whose value the model computes
     /// (FTEF-19.10), which a compiler writes to the global's words.
     pub(crate) initial_values: HashMap<DefId, InitialValue>,
+    /// What each item of a global's aggregate initialiser that is an expression folds to under
+    /// an FTEQCC profile (FTEF-34.9), by its file and where it starts.
+    pub(crate) item_values: HashMap<(FileId, usize), InitialValue>,
     /// The elements of each array definition whose size the model knows, `arraysize`
     /// (FTEF-19.8): a written number, or the count of an unsized array's initialiser.
     pub(crate) arrays: HashMap<DefId, u32>,
@@ -261,6 +264,13 @@ impl ModuleIndex {
     #[must_use]
     pub fn initial_value(&self, def: DefId) -> Option<&InitialValue> {
         self.initial_values.get(&def)
+    }
+
+    /// What the item of a global's aggregate initialiser in `file` starting at `at` folds to,
+    /// when it is an expression the model folds (FTEF-34.9).
+    #[must_use]
+    pub fn item_value(&self, file: FileId, at: usize) -> Option<&InitialValue> {
+        self.item_values.get(&(file, at))
     }
 
     /// The elements of the array `def`, when the model knows its size (FTEF-19.8).
@@ -511,6 +521,7 @@ pub(crate) fn resolve_mapped(
         structs: HashSet::new(),
         strict_enums: HashMap::new(),
         folded_sizes: HashMap::new(),
+        aggregate_items: Vec::new(),
         paths: HashSet::new(),
         enum_types: HashMap::new(),
         enum_values: HashMap::new(),
@@ -756,6 +767,9 @@ struct Resolver<'a> {
     /// The size each global array whose size is an expression folds to, by where its
     /// declaration's name starts (FTEF-19.62).
     folded_sizes: HashMap<usize, u32>,
+    /// The items of the global being declared's aggregate initialiser that are expressions,
+    /// each with its type, folded once the global's uses are resolved (FTEF-34.9).
+    aggregate_items: Vec<(RawValue, Type)>,
     /// The paths each list of sounds, models, textures and files holds (FTEF-17.19).
     paths: HashSet<(PathList, String)>,
     /// The definitions whose last initialiser was `weak` or that are `accumulate`, which the
@@ -972,8 +986,10 @@ impl<'a> Resolver<'a> {
                 if decl.enum_item.is_none() {
                     let uses: Vec<RawUse> = uses.into_iter().cloned().collect();
                     self.resolve_uses(file_id, None, &uses);
+                    let items = std::mem::take(&mut self.aggregate_items);
                     if last {
                         self.check_global_initialiser(file_id, decl);
+                        self.fold_aggregate_items(file_id, decl, items);
                     }
                 }
                 for pending in pending {
