@@ -158,7 +158,7 @@ jobs:
             lipo "dist/bin/$name" -verify_arch arm64
           done
       - name: Write the third-party notices
-        run: cargo xtask notices --out packaging/THIRD-PARTY.txt
+        run: cargo xtask notices --target aarch64-apple-darwin --out packaging/THIRD-PARTY.txt
       - name: Lay out the app
         run: packaging/macos/package.sh app dist/bin "$VERSION" dist
       # Both Developer ID identities, from the PEM certificates and keys smoketurner-infra's
@@ -359,7 +359,7 @@ jobs:
       - name: Install WiX
         run: dotnet tool install --global wix --version 5.0.2
       - name: Write the third-party notices
-        run: cargo xtask notices --out packaging/THIRD-PARTY.txt
+        run: cargo xtask notices --target "$TARGET" --out packaging/THIRD-PARTY.txt
       - name: Make the zip and the MSI
         run: |
           packaging/windows/package.sh zip "$ARCH" "target/$TARGET/release" "$VERSION" dist
@@ -437,7 +437,7 @@ jobs:
           rpmspec --define "pkg_version $VERSION" --define "tree /nonexistent" \
             -P packaging/linux/quakec-studio.spec > /dev/null
       - name: Write the third-party notices
-        run: cargo xtask notices --out packaging/THIRD-PARTY.txt
+        run: cargo xtask notices --target "$ARCH-unknown-linux-gnu" --out packaging/THIRD-PARTY.txt
       - name: Make the deb, the rpm, the AppImage and the Flatpak
         run: |
           for format in deb rpm appimage flatpak; do

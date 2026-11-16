@@ -48,12 +48,12 @@ fn license_accepted(license: &str) -> bool {
 
 /// One row of the attribution table.
 #[derive(Debug, PartialEq, Eq)]
-struct Entry {
+pub(crate) struct Entry {
     line: usize,
-    path: String,
-    author: String,
-    source: String,
-    license: String,
+    pub(crate) path: String,
+    pub(crate) author: String,
+    pub(crate) source: String,
+    pub(crate) license: String,
 }
 
 pub(crate) fn is_asset(path: &Path) -> bool {
@@ -112,7 +112,7 @@ pub(crate) fn check(root: &Path, files: &[String]) -> Result<Report, String> {
 }
 
 /// The rows of the `Path | Author | Source | License` table.
-fn entries(doc: &str) -> Result<Vec<Entry>, String> {
+pub(crate) fn entries(doc: &str) -> Result<Vec<Entry>, String> {
     let mut entries = Vec::new();
     let mut lines = doc.lines().enumerate();
     let found = lines.by_ref().any(|(_, line)| cells(line) == COLUMNS);

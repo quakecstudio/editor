@@ -87,16 +87,31 @@ C) is rejected: it is the FAQ's case of a license text with no statement, and se
 that case.
 
 **FTEQW is read as GPL-2.0-or-later.** Its README places it under "the same license as the
-original Quake sources", which is version 2 or any later version. The words "the GNU General
-Public License Version 2" name that license's first version, so its ports under ADR-0017 stand.
+original Quake sources, the GNU General Public License Version 2." Read alone, the last words
+name version 2 with no "any later version", which under section 9 would be version 2 only,
+incompatible with this project. They are not alone. The sentence's own subject is "the same
+license as the original Quake sources", and that license, in every file of id's release, is
+"version 2 of the License, or (at your option) any later version". The sentence names that
+license first and then calls it by its name and first version; it does not say "only". FTEQW's own files
+carry no notice that narrows it. So the project reads FTEQW as granting what id's sources grant,
+and its ports under ADR-0017 stand. This is the reading with the most weight on the README's
+words, and it is a determination, not a certainty. A notice from FTEQW's authors limiting it to
+version 2 only would end it, and the FTEQCC ports would then have to be rewritten from the
+oracle's behaviour, as ADR-0017's option A describes.
 
 **The release meets LIC-6 with one change made here: every package now carries
 `THIRD-PARTY`.** `cargo xtask notices --out` writes it from `cargo metadata` and
-`ATTRIBUTION.md`, and the release build runs it before packaging. It lists each crate the
-shipped binaries link, with its version, its license expression and the license files it ships
-(a text shared word for word is written once), then each bundled asset of another license, with
-its license text. `cargo xtask ci` runs `cargo xtask notices --check`, which fails when a linked
-crate states no license.
+`ATTRIBUTION.md`, and the release build runs it before packaging. It lists each crate the shipped
+binaries link on the build's target, with its version, its authors, its license expression and
+the license files it ships. A text shared word for word is written once. A procedural macro is
+left out, since it runs in the compiler and is linked into nothing, and so is what only it
+depends on. A crate that ships no license file, 65 of the 453 linked on every target on 2026-11-16 (`egui` and `objc2`
+among them), is given the SPDX standard text of its license, kept in `packaging/licenses/`
+(SPDX's license-list-data `v3.29.0`). Of a choice of licenses, the first with a standard text is
+the one written. Then the file lists each bundled asset of another license, with its license
+text. `cargo xtask ci` runs `cargo xtask notices --check`, which renders the
+notices for every target and fails when a linked crate states no license, a license has no
+standard text, or a file cannot be read.
 
 No outside review or counsel's letter is sought. The verification of P4-22 is this ADR,
 accepted by Justin.
