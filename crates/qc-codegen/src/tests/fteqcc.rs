@@ -3726,6 +3726,43 @@ fn an_fte_switch_is_written_with_its_operands() {
     assert_ne!(range.c, 0);
 }
 
+// spec FTEF-31.20: on an FTE target whose stores take an offset an element store at an index
+// that is no constant is `GLOBALADDRESS` of the array alone, then `STOREP_*` of the value through
+// that address at the integer index
+#[test]
+fn an_fte_element_store_is_storep_at_the_index() {
+    let compiled = compile_fteqcc(
+        "#pragma target fte\nvoid f(float i, float r, vector w) { float x[6]; vector v[4]; \
+         x[i] = r; v[i] = w; };\n",
+    )
+    .unwrap();
+    let number = |op: qc_preproc::Op| u32::try_from(op.number()).unwrap();
+    let statements = &compiled.progs.statements;
+    let addresses: Vec<_> = statements
+        .iter()
+        .filter(|s| s.op == number(qc_preproc::Op::Globaladdress))
+        .collect();
+    assert_eq!(addresses.len(), 2);
+    assert!(addresses.iter().all(|s| s.a != 0 && s.b == 0 && s.c != 0));
+    let store_f = statements
+        .iter()
+        .find(|s| s.op == number(qc_preproc::Op::StorepF))
+        .unwrap();
+    assert!(store_f.a != 0 && store_f.c != 0);
+    assert!(addresses.iter().any(|s| s.c == store_f.b));
+    let store_v = statements
+        .iter()
+        .find(|s| s.op == number(qc_preproc::Op::StorepV))
+        .unwrap();
+    assert!(addresses.iter().any(|s| s.c == store_v.b));
+    assert_ne!(store_f.c, 0);
+    assert!(
+        !statements
+            .iter()
+            .any(|s| s.op == number(qc_preproc::Op::Call2))
+    );
+}
+
 // spec FTEF-31.19: on an FTE target an element read at an index that is no constant is
 // `LOADA_*` of the array and the integer index, a float's `LOADA_F` and a struct member's at the
 // member's word

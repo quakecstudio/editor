@@ -978,7 +978,7 @@ impl Checker<'_> {
     }
 
     /// `STOREP_*` of a value of type `target`, by its basic type.
-    fn storep_op(&self, target: &Type) -> Op {
+    pub(super) fn storep_op(&self, target: &Type) -> Op {
         match self.etype(target) {
             Some(Etype::Vector) => Op::StorepV,
             Some(Etype::String) => Op::StorepS,
@@ -1128,6 +1128,12 @@ impl Checker<'_> {
             return Ok(());
         };
         if element.index.known().is_some() || self.global {
+            return Ok(());
+        }
+        // FTEF-31.5: a target with an address to store through stores by it, not by
+        // `ArraySet*`, as [`Checker::store_reference`] writes (FTEF-31.20).
+        let opcodes = self.env.target_at(span.start);
+        if opcodes.valid(Op::Globaladdress) || opcodes.valid(Op::GstorepF) {
             return Ok(());
         }
         if element.vector {

@@ -5291,6 +5291,14 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   by `OP_LOADA_I64`, and a struct or union word by word into a temporary. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_LoadFromArray`.
+- **FTEF-31.20** On a target with `OP_GLOBALADDRESS` whose stores take an offset
+  (`QCC_OPCode_StorePOffset`, FTE's from revision 5712), an element store at an index that is no
+  constant takes the array's address alone, `addr = QCC_PR_Statement(&pr_opcodes[OP_GLOBALADDRESS],
+  base, nullsref, NULL)`, then stores through it at the index made an integer,
+  `QCC_StoreToPointer(addr, index.cast?QCC_SupplyConversion(index, ev_integer, true):index,
+  source, t)`: `OP_STOREP_*` of the value, the address and the index. No `ArraySet` call is made.
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_StoreToArray`, `QCC_OPCode_StorePOffset`.
 
 ## FTEF-32 Calls
 

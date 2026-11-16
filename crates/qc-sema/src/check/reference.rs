@@ -1100,8 +1100,45 @@ impl Checker<'_> {
                 } = element.as_ref();
                 let target = self.env.target_at(span.start);
                 if target.valid(Op::Globaladdress) || target.valid(Op::GstorepF) {
-                    if self.etype_of(&index.ty) != Some(Etype::Integer) {
-                        self.converted(index, Etype::Integer, span)?;
+                    // FTEF-31.20: on FTE's target, whose stores take an offset, the array's
+                    // address, then the index made an integer, then `OP_STOREP_*` of the value
+                    // through the address at the index.
+                    let through = target.valid(Op::Globaladdress)
+                        && target.stores_at_offset()
+                        && !self.global;
+                    let address = through.then(|| {
+                        let made = self.next_made();
+                        self.generated.push(ir::BodyStatement {
+                            a: self.name_of(lhs),
+                            c: Some(ir::Name::Made(made)),
+                            ..ir::BodyStatement::bare(Op::Globaladdress)
+                        });
+                        let temp = Some(self.env.temps().take(1));
+                        self.last_temp = temp;
+                        made
+                    });
+                    let index = if self.etype_of(&index.ty) == Some(Etype::Integer) {
+                        index.clone()
+                    } else {
+                        self.converted(index, Etype::Integer, span)?
+                    };
+                    match address {
+                        Some(made) => {
+                            let storep = self.storep_op(&lhs.ty);
+                            self.generated.push(ir::BodyStatement {
+                                a: self.name_of(stored),
+                                b: Some(ir::Name::Made(made)),
+                                c: self.name_of(&index),
+                                ..ir::BodyStatement::bare(storep)
+                            });
+                            if stored.returned {
+                                self.live_return = None;
+                                self.live_call = None;
+                            }
+                            self.last_temp = None;
+                        }
+                        None if !self.global => self.followed = false,
+                        None => {}
                     }
                     return Ok(());
                 }
