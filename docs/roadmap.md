@@ -109,6 +109,7 @@ Closed, each with its gate report:
 - Phase 3, live preview ([report](gates/p3.md)).
 - Phase 5, map entity editing ([report](gates/p5.md)).
 - Phase 6, brushes and map compiler ([report](gates/p6.md)).
+- Phase 7, lighting, region compile and performance ([report](gates/p7.md)).
 
 Open:
 
@@ -116,7 +117,6 @@ Open:
   ([#136](https://github.com/quakecstudio/editor/issues/136)) is the MVP release and waits for
   the steps only a person can take: the license review, the MVP acceptance on macOS, the
   Windows and Linux checks and the release itself.
-- Phase 7, lighting, region compile and performance: the current phase.
 
 The largest risk on the way to the MVP is the Rust preview host (R-11).
 
