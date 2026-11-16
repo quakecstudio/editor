@@ -69,7 +69,44 @@ its before and after numbers, and what was left with the reason.
 4. The simulation: `qs-sim`, `qs-client`.
 5. The rest.
 
-No crate has been audited yet; the first pass turned on the lints above and fixed the few sites
-they found: two in shipped code (`qs-map-bsp`'s T-junction fan consumes its triangles instead
-of draining them; the preview host clones its progs without the slice copy) and the rest in
-tests and `xtask`.
+The first pass turned on the lints above and fixed the few sites they found: two in shipped
+code (`qs-map-bsp`'s T-junction fan consumes its triangles instead of draining them; the preview
+host clones its progs without the slice copy) and the rest in tests and `xtask`.
+
+### The compiler: `qc-preproc`, `qc-sema`, `qc-codegen`
+
+Measured with `id1_recompile`: one function of id 1.01 edited, then the module rebuilt through
+the same database to progs bytes. Criterion, 10 samples, on the reference Mac (Apple M5),
+2026-11-15. Profiled with `sample` over a build with line tables, keeping only the stacks under
+the benchmark's own loop.
+
+| Change | Before | After |
+| --- | --- | --- |
+| `qc-sema` `expand::render`: each token's database file is looked up once per source file, not by hashing its whole path once per token | 56.5 ms | 52.7 ms (-6.7%) |
+| `qc-codegen` `Program::immediate`: an immediate's value is compared before its type, so the scan over every definition, id's `PR_ParseImmediate` order kept, rules most out with a word compare | 52.7 ms | 51.0 ms |
+| Both | 56.5 ms | 51.0 ms (-9.8%), within the 200 ms budget |
+
+No output changes: the `qc-preproc`, `qc-sema` and `qc-codegen` suites pass (1,468 tests), and
+`cargo xtask compiler-diff --fast` reports 0 divergences on id 1.01.
+
+Left, with the reason:
+
+- **The module is resolved twice.** `compile_module` takes the analysis's diagnostics from
+  `Db::analyze_module`, which resolves the module with its source map (FTEQCC's first pass, the
+  autoproto plan, `extensions.qc`). `compile_lowered` then resolves it again with no source map,
+  numbering files by their place in the module. Resolution is about a third of a recompile, but
+  the two indexes differ on FTEQCC codebases, so sharing one is a change to the compiler's design,
+  proved by the full compiler differential, not a tweak.
+- **The scan for an equal immediate** is still linear in the definitions, as id's is (QC-20.2).
+  An index would have to follow every definition whose initialised value or flags change after it
+  is made, to keep returning id's first match. Before this change the scan was a fifth of a
+  recompile, and the recompile is four times under its budget.
+- **Each file's lowered declarations are cloned** for the code generator (`compile_module`,
+  `decls.push(lowered.clone())`), about 3% of a recompile. Avoiding the clone means changing
+  `qc_sema::resolve_module`'s public signature for that 3%.
+- **The clippy lints still off** find 37 sites in the shipped code of `qc-preproc`, `qc-syntax`,
+  `qc-sema` and `qc-codegen` (2026-11-15): 24 `or_fun_call` (most a span computed for a default,
+  a few nanoseconds), 7 `needless_pass_by_value`, 5 `format_push_string` (`qc-codegen`'s
+  `progdefs.h` writer and one in `qc-preproc`, once per compile), 3 `assigning_clones` and one
+  each of `redundant_clone` and `needless_collect`. None is in the profile above; they are fixed
+  when the lints are turned on for the whole workspace.
