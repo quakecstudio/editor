@@ -2154,3 +2154,25 @@ groups:
     - 'The accessibility, snapshot and zoom tests pass at 100 and 200 percent'
     verify:
     - 'kittest tests; snapshot tests; Justin''s review of the snapshots'
+  - key: L-25
+    title: A build ignores #pragma target, which the check reads
+    labels:
+    - L4-bridges
+    - area:compiler
+    - type:bug
+    size: M
+    reqs:
+    - COMP-1
+    - COMP-2
+    summary: |
+      Found while checking #193's acceptance on FreeHL (the freecs-tree corpus, valve/src): `quakec-ide check` reports 0 errors, but `quakec-ide build` fails every module with 2,662 E0320 errors such as `Opcode "+|ADD_I" not valid for target. Consider the use of: #pragma target fte` in Nuclide's src/common/common.h, although each progs.src starts with `#pragma target fte_5768`. qc_codegen::compile_module takes the analysis's diagnostics from Db::analyze_module and then resolves the module a second time in compile_lowered with qc_sema::resolve_module, which passes no source map (Sources::default()). Resolver::target_at (crates/qc-sema/src/resolve/aggregate.rs) reads the target from the source map's per-file marks, finds none and falls back to OpcodeTarget::default(), id's, so every integer opcode an FTE target allows is refused. COMP-2 asks that as-you-type errors be exactly the build's.
+    environment: |
+      macOS (Apple M5), main at ed9b7702, release build of quakec-ide; cargo xtask corpus fetch freecs-tree, then quakec-ide check and quakec-ide build on a copy of its valve/src
+    depends: []
+    deliverable:
+    - 'qc-codegen: the code generator reads each file at the target the check read it at, the marks of `#pragma target` included, so a build reports no error the check does not; the module is resolved once for both, or the second resolution is given the analysis''s source map'
+    acceptance:
+    - 'A test builds a module whose source sets `#pragma target fte` and whose compiled file uses an integer opcode, with no error, and fails before the fix'
+    - 'quakec-ide build on freecs-tree''s valve/src reports no E0320 that quakec-ide check does not, recorded in the PR'
+    verify:
+    - 'cargo test -p qc-codegen; the FreeHL build recorded in the PR'
