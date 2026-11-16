@@ -760,9 +760,10 @@ impl Checker<'_> {
                 _ => at,
             };
             if let Reference::ArrayHead(Some(MemberArray { pointer: true, .. })) = base.reference {
+                let named = self.name_of(&base);
                 return Ok(Value {
                     readonly: false,
-                    reference: Reference::pointer(label, Some(at), None),
+                    reference: Reference::pointer(label, Some(at), named),
                     ..Value::of(base.ty)
                 });
             }

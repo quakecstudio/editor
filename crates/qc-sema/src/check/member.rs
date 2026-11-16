@@ -676,8 +676,14 @@ impl Checker<'_> {
                 let (member, offset) = self.struct_member(pointee, selector);
                 // A member array through the pointer is indexed through it (FTEF-6.24).
                 if let Reference::ArrayHead(Some(array)) = member.reference {
+                    // The array keeps what names the pointer, which its elements are read and
+                    // stored through (FTEF-31.21).
                     return Ok(Value {
                         name: Some(base.label()),
+                        sym: base.sym,
+                        made: base.made,
+                        word: base.word,
+                        call: base.call,
                         reference: Reference::ArrayHead(Some(MemberArray {
                             pointer: true,
                             ..array

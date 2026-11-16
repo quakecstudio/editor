@@ -4118,3 +4118,34 @@ fn the_complement_of_an_opaque_float_is_a_subtraction_from_minus_one() {
     assert_eq!(sub.op, u32::try_from(Op::SubF.number()).unwrap());
     assert_eq!(sub.a, immediate(&compiled.progs, -1.0));
 }
+
+// spec FTEF-31.21: a member array's element through a pointer, `p->a[i]`, is stored and loaded
+// through the pointer at the member's word plus the index
+#[test]
+fn a_member_array_element_through_a_pointer_is_stored_through_it() {
+    use qc_preproc::Op;
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\ntypedef struct { float a; string m_str[4]; } seat_t;\n\
+         seat_t *pSeat;\nstring r;\nvoid t(void) { int i = 1; pSeat->m_str[i] = \"x\"; };\n\
+         void u(void) { int i = 2; r = pSeat->m_str[i]; };\n",
+    )
+    .unwrap();
+    let p = &compiled.progs;
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let find = |name: &str, op: Op| {
+        body(p, name)
+            .into_iter()
+            .find(|s| s.op == number(op))
+            .unwrap()
+    };
+    let store = find("t", Op::StorepS);
+    assert_eq!(
+        (store.b, store.c),
+        (global(p, "pSeat"), find("t", Op::AddI).c)
+    );
+    let load = find("u", Op::LoadpS);
+    assert_eq!(
+        (load.a, load.b, load.c),
+        (global(p, "pSeat"), find("u", Op::AddI).c, global(p, "r"))
+    );
+}
