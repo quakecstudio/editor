@@ -27,14 +27,17 @@ use crate::shape_stairs::system_defs;
 const CLASSES: &str = "\
 #pragma target fte_5768
 entity() spawn = #14;
-class Base { float m_a; vector m_v; float m_c; float m_z; void Base(void); virtual void(void) Draw; };
+class Base { float m_a; vector m_v; float m_c; float m_z; float m_s; void Base(void); virtual void(void) Draw; nonvirtual void(float f) Set; };
+void Base::Set(float f) { m_s = f; };
 void Base::Base(void) { m_a = 1; m_v = '4 5 6'; m_c = m_v[1]; m_z = m_v_z; };
 void Base::Draw(void) { m_a = 5; };
 class Child : Base { float m_b; void Child(void); virtual void(void) Draw; };
 void Child::Child(void) { m_b = m_a + 1; };
-void Child::Draw(void) { m_b = 9; };
+void Child::Draw(void) { m_b = 9; super::Draw(); };
 entity made;
-void t() { made = spawn(Child); };
+entity before;
+float order;
+void t() { before = self; made = spawn(Child); Child c = (Child)made; order = c.m_b; c.Draw(); c.Set(7); };
 void() main = {};
 void() StartFrame = {};
 void() PlayerPreThink = {};
@@ -123,9 +126,13 @@ fn a_spawned_class_runs_its_spawn_function() {
         let ofs = usize::try_from(word(file, name)).unwrap();
         machine.edicts().field(EdictNumber::new(1), ofs).unwrap()
     };
-    assert_eq!(field("Base::__mm_a").as_f32().to_bits(), 1.0_f32.to_bits());
+    // `Child::Draw` called `super::Draw`, `Base::Draw`, which set `m_a` to 5.
+    assert_eq!(field("Base::__mm_a").as_f32().to_bits(), 5.0_f32.to_bits());
     // The child's constructor ran first, when `m_a` was still 0.
-    assert_eq!(field("Child::__mm_b").as_f32().to_bits(), 1.0_f32.to_bits());
+    let order = machine
+        .global(i32::try_from(word_ofs(file, "order")).unwrap())
+        .unwrap();
+    assert_eq!(order.as_f32().to_bits(), 1.0_f32.to_bits());
     assert_eq!(string(file, field("classname").as_i32()), "Child");
     assert_eq!(field("Base::__mDraw").bits(), function(file, "Child::Draw"));
     assert_ne!(word(file, "Base::__mm_a"), word(file, "Child::__mm_b"));
@@ -136,6 +143,17 @@ fn a_spawned_class_runs_its_spawn_function() {
         assert_eq!(slot.as_f32().to_bits(), expected.to_bits());
     }
     assert_eq!(field("Base::__mm_c").as_f32().to_bits(), 5.0_f32.to_bits());
+    // spec FTEF-9.24: a method called through an object runs with the object as `self`, the
+    // virtual one the object's own function, and `self` is restored after it.
+    assert_eq!(field("Child::__mm_b").as_f32().to_bits(), 9.0_f32.to_bits());
+    assert_eq!(field("Base::__mm_s").as_f32().to_bits(), 7.0_f32.to_bits());
+    let this = machine
+        .global(i32::try_from(word_ofs(file, "self")).unwrap())
+        .unwrap();
+    let before = machine
+        .global(i32::try_from(word_ofs(file, "before")).unwrap())
+        .unwrap();
+    assert_eq!(this.bits(), before.bits());
     assert_eq!(field("Base::__mm_z").as_f32().to_bits(), 6.0_f32.to_bits());
 }
 

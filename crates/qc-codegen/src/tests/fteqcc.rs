@@ -4015,3 +4015,90 @@ fn a_vector_of_integer_components_stores_each_by_store_if() {
     assert_eq!(stores[1].b, stores[0].b + 1);
     assert_eq!(stores[0].a, global(&compiled.progs, "a"));
 }
+
+// spec FTEF-29.17: a field's compound assignment on a target with the in-place opcode is the
+// field's address, then that opcode through it
+#[test]
+fn a_field_compound_assignment_updates_in_place() {
+    use qc_preproc::Op;
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\nentity self;\n.float health;\nvoid t(void) { self.health += 1; };\n",
+    )
+    .unwrap();
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let statements = body(&compiled.progs, "t");
+    let address = &statements[0];
+    let update = &statements[1];
+    assert_eq!(
+        (address.op, address.a, address.b),
+        (
+            number(Op::Address),
+            global(&compiled.progs, "self"),
+            global(&compiled.progs, "health")
+        )
+    );
+    assert_eq!((update.op, update.b), (number(Op::AddstorepF), address.c));
+}
+
+// spec FTEF-27.9: a pointer's comparison is the entity one of the same operands
+#[test]
+fn a_pointer_comparison_names_its_operands() {
+    use qc_preproc::Op;
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\nint *p;\nfloat r;\nvoid t(void) { r = p == __NULL__; };\n",
+    )
+    .unwrap();
+    let eq = body(&compiled.progs, "t")
+        .into_iter()
+        .find(|s| s.op == u32::try_from(Op::EqE.number()).unwrap())
+        .unwrap();
+    assert_eq!(eq.a, global(&compiled.progs, "p"));
+}
+
+// spec FTEF-9.18: `super::m()` calls the parent's function `CLASS::NAME`, not its field
+#[test]
+fn a_super_call_calls_the_parent_s_function() {
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\nentity self;\nentity() spawn = #14;\n\
+         class P { float m_x; virtual void(void) R; };\nvoid P::R(void) { m_x = 1; };\n\
+         class W : P { virtual void(void) R; };\nvoid W::R(void) { super::R(); };\n",
+    )
+    .unwrap();
+    let call = body(&compiled.progs, "W::R")[0];
+    assert_eq!(call.a, global(&compiled.progs, "P::R"));
+}
+
+// spec FTEF-31.23: `&g` of a global is `OP_GLOBALADDRESS` of it
+#[test]
+fn the_address_of_a_global_is_its_globaladdress() {
+    use qc_preproc::Op;
+    let compiled =
+        compile_fteqcc("#pragma target fte_5768\nfloat g;\nfloat *p;\nvoid t(void) { p = &g; };\n")
+            .unwrap();
+    let address = body(&compiled.progs, "t")[0];
+    assert_eq!(
+        (address.op, address.a),
+        (
+            u32::try_from(Op::Globaladdress.number()).unwrap(),
+            global(&compiled.progs, "g")
+        )
+    );
+}
+
+// spec FTEF-31.18: a string's character at a float index is `OP_LOADP_C` of the string and the
+// index, at an integer one `OP_LOADP_U8`
+#[test]
+fn a_string_character_is_loaded_from_the_string() {
+    use qc_preproc::Op;
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\nvoid t(void) { string s = \"abc\"; float i = 1; float c = s[i]; };\n\
+         void u(void) { string s = \"abc\"; int i = 1; int c = s[i]; };\n",
+    )
+    .unwrap();
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    for (name, op) in [("t", Op::LoadpC), ("u", Op::LoadpU8)] {
+        let statements = body(&compiled.progs, name);
+        let load = statements.iter().find(|s| s.op == number(op)).unwrap();
+        assert_eq!((load.a, load.b), (statements[0].b, statements[1].b));
+    }
+}

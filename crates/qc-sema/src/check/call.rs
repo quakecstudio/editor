@@ -92,9 +92,31 @@ impl Checker<'_> {
             }),
             _ => false,
         };
-        let mut func = match self.function.own.clone().filter(|_| prior) {
-            Some(own) => Value::of(Type::Function(own.into())),
-            None => self.read(callee, callee_span)?,
+        // FTEF-9.24: a method called through an object is called with the object as `self`; a
+        // nonvirtual one is its function `CLASS::NAME`, no field read.
+        let self_def = self.env.helper("self");
+        let newself = match (&callee.reference, member) {
+            (Reference::Field(field), Some(_)) => self
+                .copied(field.entity, field.entity_call)
+                .filter(|&object| self_def.is_none_or(|def| object != ir::Name::Def(def, 0))),
+            _ => None,
+        };
+        let nonvirtual = member
+            .filter(|(_, d)| d.kind == DefKind::Function)
+            .map(|_| ());
+        let mut func = match (self.function.own.clone().filter(|_| prior), member_def) {
+            (Some(own), _) => Value::of(Type::Function(own.into())),
+            (None, Some(def)) if nonvirtual.is_some() => {
+                let ty = self
+                    .env
+                    .definition(def)
+                    .map_or(Type::Unknown, |d| d.ty.clone());
+                Value {
+                    sym: Sym::Def(def, true, 0),
+                    ..Value::of(ty)
+                }
+            }
+            (None, _) => self.read(callee, callee_span)?,
         };
         if method_name.is_some() {
             func.name = method_name;
@@ -313,6 +335,7 @@ impl Checker<'_> {
         }
         // FTE-18.7: an empty slot is given its parameter's default.
         let defaulted: Vec<bool> = passed.iter().map(Option::is_none).collect();
+        self.newself = newself;
         self.call_statements(
             &function,
             passed_count,
@@ -320,6 +343,14 @@ impl Checker<'_> {
             &field_loads,
         );
         let call = self.last_made();
+        // `self` restored from where it was kept.
+        if let (Some(kept), Some(this)) = (self.kept_self.take(), self_def) {
+            self.generated.push(ir::BodyStatement {
+                a: Some(ir::Name::Made(kept)),
+                b: Some(ir::Name::Def(this, 0)),
+                ..ir::BodyStatement::bare(Op::StoreEnt)
+            });
+        }
         // `out` arguments are stored back after the call (`QCC_PR_GenerateFunctionCallRef`).
         for (reference, param) in passed.iter().zip(&params) {
             let Some(reference) = reference.as_ref().filter(|_| param.out) else {
@@ -411,7 +442,35 @@ impl Checker<'_> {
         };
         // In a function, the statements of the call: each argument a parameter takes stored to
         // its slot unless the statement before made it (FTE-18.12), then the call.
+        let newself = self.newself.take();
         if !self.global {
+            // FTEF-9.24: `oself = self; self = object;`, and an argument that names `self`
+            // names the kept one (`arglist[i]->base = oself`).
+            let this = self.env.helper("self");
+            let kept = match (newself, this) {
+                (Some(object), Some(this)) => {
+                    let kept = self.next_made();
+                    self.generated.push(ir::BodyStatement {
+                        a: Some(ir::Name::Def(this, 0)),
+                        b: Some(ir::Name::Made(kept)),
+                        ..ir::BodyStatement::bare(Op::StoreEnt)
+                    });
+                    self.generated.push(ir::BodyStatement {
+                        a: Some(object),
+                        b: Some(ir::Name::Def(this, 0)),
+                        ..ir::BodyStatement::bare(Op::StoreEnt)
+                    });
+                    self.kept_self = Some(kept);
+                    Some((this, kept))
+                }
+                _ => None,
+            };
+            let renamed = |name: Option<ir::Name>| match (name, kept) {
+                (Some(ir::Name::Def(def, 0)), Some((this, kept))) if def == this => {
+                    Some(ir::Name::Made(kept))
+                }
+                _ => name,
+            };
             // `copyop[2] = OP_LOAD_V; copyop[0] = OP_LOAD_F;`: by the field's size, not its type.
             for field in field_loads.iter().filter(|field| field.slot < passed) {
                 let slot = u8::try_from(field.slot).ok().map(ir::Name::Parameter);
@@ -421,7 +480,7 @@ impl Checker<'_> {
                     .iter()
                     .map(|&s| ir::BodyStatement {
                         op: if s.op == Op::LoadV { s.op } else { Op::LoadF },
-                        a: self.copied(s.a, field.entity_call),
+                        a: renamed(self.copied(s.a, field.entity_call)),
                         c: slot,
                         ..s
                     })
@@ -457,7 +516,7 @@ impl Checker<'_> {
                     let from = if defaulted.get(slot).copied().unwrap_or(false) {
                         u8::try_from(slot).ok().map(ir::Name::Default)
                     } else {
-                        self.name_of(value)
+                        renamed(self.name_of(value))
                     };
                     self.generated.push(ir::BodyStatement {
                         a: from,

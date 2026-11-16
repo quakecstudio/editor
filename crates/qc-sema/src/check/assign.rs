@@ -296,7 +296,12 @@ impl Checker<'_> {
                 };
                 match self.compound(&place, &rhs, spelling, ops, in_place, span)? {
                     Some(value) => value,
-                    None => return Ok(Value::of(lhs.ty)),
+                    None => {
+                        return Ok(self
+                            .in_place_result
+                            .take()
+                            .unwrap_or_else(|| Value::of(lhs.ty)));
+                    }
                 }
             }
         };
@@ -456,7 +461,7 @@ impl Checker<'_> {
             return Ok(None);
         };
         let target = self.env.target_at(span.start);
-        let updates_in_place = in_place.iter().any(|&op| {
+        let updates_in_place = in_place.iter().copied().find(|&op| {
             target.valid(op)
                 && row(op).is_some_and(|r| {
                     r.types[1].etype() == from
@@ -464,7 +469,37 @@ impl Checker<'_> {
                         && r.types[2].etype() == to
                 })
         });
-        if matches!(lhs.reference, Reference::Field(_)) && updates_in_place {
+        if let (Reference::Field(field), Some(op)) = (&lhs.reference, updates_in_place) {
+            // FTEF-29.17: `FLDADDRESS` of the entity and the field, then the in-place opcode of
+            // the value through that address, whose result is the assignment's value.
+            if !self.global {
+                let Some(def) = field.def else {
+                    self.followed = false;
+                    return Ok(None);
+                };
+                let address = self.next_made();
+                self.generated.push(ir::BodyStatement {
+                    a: self.copied(field.entity, field.entity_call),
+                    b: Some(ir::Name::Def(def, 0)),
+                    c: Some(ir::Name::Made(address)),
+                    ..ir::BodyStatement::bare(Op::Address)
+                });
+                let result = self.next_made();
+                self.generated.push(ir::BodyStatement {
+                    a: self.name_of(rhs),
+                    b: Some(ir::Name::Made(address)),
+                    c: Some(ir::Name::Made(result)),
+                    ..ir::BodyStatement::bare(op)
+                });
+                self.read_returned(rhs);
+                let temp = Some(self.env.temps().take(1));
+                self.last_temp = temp;
+                self.in_place_result = Some(Value {
+                    made: Some(result),
+                    temp,
+                    ..Value::of(lhs.ty.clone())
+                });
+            }
             return Ok(None);
         }
         // `lhsd = QCC_RefToDef(lhsr, false)`: the left side read, which for a string's character

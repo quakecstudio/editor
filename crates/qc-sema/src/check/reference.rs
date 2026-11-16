@@ -171,7 +171,11 @@ impl Checker<'_> {
                     self.supplied(&index, &Type::Named("__int32".into()), span)?
                 };
                 let op = if float_index { Op::LoadpC } else { Op::LoadpU8 };
-                let string = Value::of(Type::Simple(SimpleType::String));
+                let string = Value {
+                    ty: Type::Simple(SimpleType::String),
+                    reference: Reference::Global,
+                    ..value.clone()
+                };
                 // FTEF-31.18: the load's own type, an emulated `OP_LOADP_U8`'s the `__uint32` of
                 // its last shift.
                 self.emit(op, &string, &index, span)
@@ -929,11 +933,13 @@ impl Checker<'_> {
         } else {
             Type::Named("__int32".into())
         };
+        // The character keeps what names the string, which its load reads (FTEF-31.18).
+        let plain = Value::of(ty.clone());
         Ok(Value {
-            readonly: string.readonly,
-            name: string.name,
+            ty,
+            constness: plain.constness,
             reference: Reference::Character(Box::new(at)),
-            ..Value::of(ty)
+            ..string
         })
     }
 
@@ -1003,12 +1009,48 @@ impl Checker<'_> {
                     );
                     self.env.report(Code::W0250, span, message);
                 }
-                if let Reference::Element(element) = &value.reference
-                    && element.index.known().is_none()
-                {
-                    self.converted(&element.index, Etype::Integer, span)?;
+                let index = match &value.reference {
+                    Reference::Element(element) if element.index.known().is_none() => {
+                        Some(self.converted(&element.index, Etype::Integer, span)?)
+                    }
+                    _ => None,
+                };
+                if self.global {
+                    return Ok(pointer_to(&value.ty));
                 }
-                Ok(pointer_to(&value.ty))
+                // FTEF-31.23: `OP_GLOBALADDRESS` of the definition, and of an element the integer
+                // index (`QCC_PR_Statement(&pr_opcodes[OP_GLOBALADDRESS], operand->base,
+                // operand->index.cast?QCC_SupplyConversion(operand->index, ev_integer,
+                // true):nullsref, NULL)`).
+                let base = match &value.reference {
+                    Reference::Element(element) if index.is_some() => value
+                        .sym
+                        .def()
+                        .map(|def| ir::Name::Def(def, 0))
+                        .filter(|_| !element.vector),
+                    Reference::Element(_) | Reference::Global | Reference::ArrayHead(None) => {
+                        self.name_of(&value)
+                    }
+                    _ => None,
+                };
+                let Some(base) = base else {
+                    self.followed = false;
+                    return Ok(pointer_to(&value.ty));
+                };
+                let made = self.next_made();
+                self.generated.push(ir::BodyStatement {
+                    a: Some(base),
+                    b: index.as_ref().and_then(|index| self.name_of(index)),
+                    c: Some(ir::Name::Made(made)),
+                    ..ir::BodyStatement::bare(Op::Globaladdress)
+                });
+                let temp = Some(self.env.temps().take(1));
+                self.last_temp = temp;
+                Ok(Value {
+                    temp,
+                    made: Some(made),
+                    ..pointer_to(&value.ty)
+                })
             }
             Reference::Pointer(pointer) => {
                 // FTEF-31.12: `&p[i]` of an 8- or 16-bit pointee is `p + i` in bytes, by
