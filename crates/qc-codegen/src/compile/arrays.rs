@@ -599,7 +599,7 @@ impl Compiler<'_> {
     /// FTE-13.10: the words of an initialiser's value that is no literal but a constant of type
     /// `ty`, a constant's name or an expression that folds with no statement, as
     /// `QCC_PR_GenerateInitializerType` copies `QCC_SRef_EvalConst`.
-    fn constant_words(&mut self, ty: &ValueType, expr: &ast::Expr) -> Lowered<Vec<u32>> {
+    pub(super) fn constant_words(&mut self, ty: &ValueType, expr: &ast::Expr) -> Lowered<Vec<u32>> {
         let span = expr.syntax().span();
         let place = self.constant_place(self.file, expr, span)?;
         let value = self.def_value(place, span)?;

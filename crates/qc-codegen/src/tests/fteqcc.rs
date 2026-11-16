@@ -3837,3 +3837,42 @@ fn an_array_sized_by_a_suffixed_number_takes_its_initialiser() {
     assert_eq!([float("h", 0), float("h", 1)], [4.0, 5.0]);
     assert!(global(p, "after") >= global(p, "h") + 2);
 }
+
+// spec FTEF-27.4: a float shift on a target with the integer one is `OP_LSHIFT_I` of the converted
+// operands, whose integer value the expression goes on with
+#[test]
+fn a_float_shift_is_the_integer_shift_s_value() {
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\nfloat top;\nvoid t(float a) { top = a + (a << 8); };\n",
+    )
+    .unwrap();
+    let number = |op: qc_preproc::Op| u32::try_from(op.number()).unwrap();
+    let statements = &compiled.progs.statements;
+    let shift = statements
+        .iter()
+        .find(|s| s.op == number(qc_preproc::Op::LshiftI))
+        .unwrap();
+    assert!(
+        statements
+            .iter()
+            .any(|s| (s.a == shift.c || s.b == shift.c) && s.op != number(qc_preproc::Op::LshiftI))
+    );
+}
+
+// spec FTEF-19.58: a global initialised with a constant of its type, a string or a vector, holds
+// the constant's words
+#[test]
+fn a_global_named_after_a_string_or_vector_constant_holds_its_words() {
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\nconst string f = \"a;b\";\nvar string s = f;\n\
+         const vector v = '1 2 3';\nvar vector w = v;\nvoid t() {};\n",
+    )
+    .unwrap();
+    let p = &compiled.progs;
+    let word = |name: &str, i: i32| p.globals[usize::try_from(global(p, name) + i).unwrap()].bits();
+    assert_eq!(word("s", 0), word("f", 0));
+    assert_eq!(string(p, i32::try_from(word("s", 0)).unwrap()), "a;b");
+    for i in 0..3 {
+        assert_eq!(word("w", i), word("v", i));
+    }
+}
