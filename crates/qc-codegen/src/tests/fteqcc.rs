@@ -3726,6 +3726,43 @@ fn an_fte_switch_is_written_with_its_operands() {
     assert_ne!(range.c, 0);
 }
 
+// spec FTEF-31.20: on an FTE target whose stores take an offset an element store at an index
+// that is no constant is `GLOBALADDRESS` of the array alone, then `STOREP_*` of the value through
+// that address at the integer index
+#[test]
+fn an_fte_element_store_is_storep_at_the_index() {
+    let compiled = compile_fteqcc(
+        "#pragma target fte\nvoid f(float i, float r, vector w) { float x[6]; vector v[4]; \
+         x[i] = r; v[i] = w; };\n",
+    )
+    .unwrap();
+    let number = |op: qc_preproc::Op| u32::try_from(op.number()).unwrap();
+    let statements = &compiled.progs.statements;
+    let addresses: Vec<_> = statements
+        .iter()
+        .filter(|s| s.op == number(qc_preproc::Op::Globaladdress))
+        .collect();
+    assert_eq!(addresses.len(), 2);
+    assert!(addresses.iter().all(|s| s.a != 0 && s.b == 0 && s.c != 0));
+    let store_f = statements
+        .iter()
+        .find(|s| s.op == number(qc_preproc::Op::StorepF))
+        .unwrap();
+    assert!(store_f.a != 0 && store_f.c != 0);
+    assert!(addresses.iter().any(|s| s.c == store_f.b));
+    let store_v = statements
+        .iter()
+        .find(|s| s.op == number(qc_preproc::Op::StorepV))
+        .unwrap();
+    assert!(addresses.iter().any(|s| s.c == store_v.b));
+    assert_ne!(store_f.c, 0);
+    assert!(
+        !statements
+            .iter()
+            .any(|s| s.op == number(qc_preproc::Op::Call2))
+    );
+}
+
 // spec FTEF-31.19: on an FTE target an element read at an index that is no constant is
 // `LOADA_*` of the array and the integer index, a float's `LOADA_F` and a struct member's at the
 // member's word
@@ -3748,4 +3785,55 @@ fn an_fte_element_read_is_loada() {
         .find(|s| s.op == number(qc_preproc::Op::LoadaV))
         .unwrap();
     assert!(loada_v.a != 0 && loada_v.b != 0 && loada_v.c != 0);
+}
+
+// spec FTEF-19.72: a global initialised with a constant of a type that converts to its own holds
+// the constant folded to its type, a float's integer and an integer's float
+#[test]
+fn a_converted_constant_initialiser_is_folded() {
+    let compiled = compile_fteqcc(
+        "#pragma target fte\nconst float three = 3;\nconst int two = 2;\nint i = three;\n\
+         float f = two;\n",
+    )
+    .unwrap();
+    let p = &compiled.progs;
+    let word = |name: &str| p.globals[usize::try_from(global(p, name)).unwrap()].bits();
+    assert_eq!(word("i"), 3);
+    assert_eq!(f32::from_bits(word("f")), 2.0);
+}
+
+// spec FTEF-34.9: an item of a global's aggregate initialiser that is an expression is folded at
+// global scope, a vector array's `[0/256, 72/128]` its three floats
+#[test]
+fn an_aggregate_item_expression_is_folded() {
+    let compiled = compile_fteqcc(
+        "#pragma target fte\nvector g[2] = { [0/256, 72/128], [24/256, 1] };\nvoid() t = {};\n",
+    )
+    .unwrap();
+    let p = &compiled.progs;
+    let at = global(p, "g");
+    let float = |i: i32| f32::from_bits(p.globals[usize::try_from(at + i).unwrap()].bits());
+    assert_eq!([float(0), float(1), float(2)], [0.0, 0.5625, 0.0]);
+    assert_eq!([float(3), float(4), float(5)], [0.093_75, 1.0, 0.0]);
+}
+
+// spec FTEF-19.62: an array's size written as a number the lowering does not read, `3i` or
+// `0x2`, is folded, and its initialiser is read against it
+#[test]
+fn an_array_sized_by_a_suffixed_number_takes_its_initialiser() {
+    let compiled = compile_fteqcc(
+        "#pragma target fte\nfloat g[3i] = { 1, 2, 3 };\nfloat h[0x2] = { 4, 5 };\n\
+         float after;\nvoid() t = {};\n",
+    )
+    .unwrap();
+    let p = &compiled.progs;
+    let float = |name: &str, i: i32| {
+        f32::from_bits(p.globals[usize::try_from(global(p, name) + i).unwrap()].bits())
+    };
+    assert_eq!(
+        [float("g", 0), float("g", 1), float("g", 2)],
+        [1.0, 2.0, 3.0]
+    );
+    assert_eq!([float("h", 0), float("h", 1)], [4.0, 5.0]);
+    assert!(global(p, "after") >= global(p, "h") + 2);
 }

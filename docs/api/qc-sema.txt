@@ -191,6 +191,7 @@ fn qc_sema::resolve::ModuleIndex::defs
 fn qc_sema::resolve::ModuleIndex::diagnostics
 fn qc_sema::resolve::ModuleIndex::initial_value
 fn qc_sema::resolve::ModuleIndex::is_constant
+fn qc_sema::resolve::ModuleIndex::item_value
 fn qc_sema::resolve::ModuleIndex::redeclarations
 fn qc_sema::resolve::ModuleIndex::refs
 fn qc_sema::resolve::ModuleIndex::struct_shape

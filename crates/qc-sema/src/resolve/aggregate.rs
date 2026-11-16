@@ -12,7 +12,7 @@
 use qc_diag::Code;
 use qc_preproc::{Op, OpcodeTarget};
 
-use crate::lower::{RawAggregate, RawBraces, RawElement, RawValue};
+use crate::lower::{RawAggregate, RawBraces, RawElement, RawValue, ValueKind};
 use crate::resolve::{Fatal, Holder, Resolver};
 use crate::symbol::FileId;
 use crate::ty::{SimpleType, Type};
@@ -213,8 +213,13 @@ impl Resolver<'_> {
         value: &RawValue,
         def: Initialised<'_>,
     ) -> Result<(), Fatal> {
-        self.check_value(file, def.name, ty, Some(value), def.holder)
-            .map(drop)
+        self.check_value(file, def.name, ty, Some(value), def.holder)?;
+        // FTEF-34.9: a global's item that is an expression is read at global scope, as the
+        // global's own value would be, and folded once the global is declared.
+        if matches!(def.holder, Holder::Global) && matches!(value.kind, ValueKind::Other) {
+            self.aggregate_items.push((value.clone(), ty.clone()));
+        }
+        Ok(())
     }
 
     /// FTEF-19.56: a pointer's braces are a nameless array of what it points to, each element

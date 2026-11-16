@@ -240,6 +240,9 @@ impl BodyStatement {
             Op::Goto => [true, false, false],
             Op::IfI | Op::IfnotI | Op::IfS | Op::IfnotS | Op::IfF | Op::IfnotF => [a, true, c],
             Op::Return | Op::Done => [false; OPERANDS],
+            // FTEF-31.20: on a target whose stores take an offset the address is the array's
+            // alone, `QCC_PR_Statement(&pr_opcodes[OP_GLOBALADDRESS], base, nullsref, NULL)`.
+            Op::Globaladdress => [a, false, c],
             _ => [a, b, c],
         }
     }

@@ -98,6 +98,7 @@ milestone (`MVP-3`). All of them wait for the MVP gate.
 | ericw-tools' sunlight, sky dome, surface lights, minimum light and phong | Map editor (MAP-21); scheduled by [ADR-0027](adr/0027-advanced-lighting.md), Justin, 2026-11-15 | [L-22](https://github.com/quakecstudio/editor/issues/979) Port ericw-tools' sunlight, sky dome, surface lights, minimum light and phong |
 | ericw-tools' dirt and bounce | Map editor (MAP-21); scheduled by [ADR-0027](adr/0027-advanced-lighting.md), Justin, 2026-11-15 | [L-23](https://github.com/quakecstudio/editor/issues/980) Port ericw-tools' dirt and bounce lighting |
 | Side panels with icons rather than text | Editor and UI (UI-2); asked for by Justin on 2026-11-15 | [L-24](https://github.com/quakecstudio/editor/issues/981) Make the side panels less text heavy |
+| A build that reads `#pragma target` as the check does | Compiler (COMP-2); found by #187's work on 2026-11-16 | [L-25](https://github.com/quakecstudio/editor/issues/993) A build ignores #pragma target, which the check reads |
 | In-app update check | Quality, testing and release; moved out of the MVP by [ADR-0007](adr/0007-mvp-scope.md) | [P4-19](https://github.com/quakecstudio/editor/issues/130) Update mechanism |
 | Editor integrations for VS Code, Zed and Neovim | Language server; moved out of Phase 2 by Justin on 2026-10-29, as it serves other editors and not the IDE or the engine | [P2-16](https://github.com/quakecstudio/editor/issues/72) Package editor integrations for VS Code, Zed and Neovim |
 
