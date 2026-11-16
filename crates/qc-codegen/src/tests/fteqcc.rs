@@ -3908,3 +3908,21 @@ fn a_member_through_a_pointer_at_an_index_is_loaded_and_stored_at_it() {
     let mul = t2.iter().find(|s| s.0 == number(Op::MulI)).unwrap();
     assert_eq!((load.1, load.2, load.3), (pointer, mul.3, global(p, "r")));
 }
+
+// spec FTE-18.11: a field argument is loaded straight into its slot, by its size, a class-typed
+// field given to an `entity` parameter among them, whose cast keeps its words
+#[test]
+fn a_class_field_argument_is_loaded_into_its_entity_slot() {
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\nentity self;\nentity() spawn = #14;\nvoid(entity e) take = #1;\n\
+         class W { W m_other; virtual void(void) Draw; };\nvoid W::Draw(void) {};\n\
+         void t(void) { W w = spawn(W); take(w.m_other); };\n",
+    )
+    .unwrap();
+    let field = global(&compiled.progs, "W::__mm_other");
+    let load = body(&compiled.progs, "t")
+        .into_iter()
+        .find(|s| s.b == field)
+        .unwrap();
+    assert_eq!(load.c, 4);
+}

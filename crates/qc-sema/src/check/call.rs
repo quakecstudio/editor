@@ -21,7 +21,7 @@ use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::fold;
 use crate::check::reference::expected_after;
 use crate::check::term::string_immediate;
-use crate::check::{Constness, CvarValue, ParamFacts, PathList, Reference, Sym, Value};
+use crate::check::{Constness, CvarValue, ParamFacts, PathList, Reference, Sym, Value, converts};
 use crate::ir;
 use crate::ty::{FunctionType, SimpleType, Type};
 use crate::{MAX_PARMS, VECTOR_WORDS, VECTOR_WORDS_FLOAT, VECTOR_WORDS_INT};
@@ -221,8 +221,14 @@ impl Checker<'_> {
                         value = self.ftoi_field(field, ftoi, param);
                         continue_after_conversion = true;
                     }
+                    // A cast that keeps the words, a class's entity as an `entity` among them,
+                    // leaves the held-back load as it is.
                     None => {
-                        if matches!(reference.reference, Reference::Field(_)) {
+                        let converted = match (self.etype_of(&value.ty), self.etype_of(param)) {
+                            (Some(from), Some(to)) => converts(from, to),
+                            _ => true,
+                        };
+                        if converted && matches!(reference.reference, Reference::Field(_)) {
                             self.followed = false;
                         }
                     }
