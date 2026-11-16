@@ -29,3 +29,6 @@ apps/desktop/snapshots/*.old.png
 # cargo-mutants output
 mutants.out/
 mutants.out.old/
+
+# Written by `cargo xtask notices` for a release package.
+/packaging/THIRD-PARTY.txt

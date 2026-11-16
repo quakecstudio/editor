@@ -29,7 +29,7 @@ pub(crate) enum Step {
 }
 
 /// The steps, cheapest first.
-pub(crate) const STEPS: [Step; 20] = [
+pub(crate) const STEPS: [Step; 21] = [
     Step::Cargo(&["fmt", "--all", "--check"]),
     Step::Program("plan", "python3", &["plan/check.py"]),
     Step::Program(
@@ -51,6 +51,7 @@ pub(crate) const STEPS: [Step; 20] = [
     Step::Xtask("layers"),
     Step::Xtask("licenses"),
     Step::Xtask("attribution"),
+    Step::Xtask("notices"),
     Step::Xtask("contrast"),
     Step::Cargo(&[
         "clippy",
@@ -294,6 +295,7 @@ mod tests {
             "cargo xtask layers",
             "cargo xtask licenses",
             "cargo xtask attribution",
+            "cargo xtask notices",
             "cargo xtask contrast",
             "cargo deny --locked --all-features check advisories bans licenses sources",
             "cargo check --manifest-path fuzz/Cargo.toml --locked",
@@ -420,6 +422,7 @@ mod tests {
                 "layers",
                 "licenses",
                 "attribution",
+                "notices",
                 "contrast",
                 "run",
                 "commands",

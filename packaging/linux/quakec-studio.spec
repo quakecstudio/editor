@@ -23,6 +23,7 @@ cp -a %{tree}/. %{buildroot}/
 %files
 %license /usr/share/doc/quakec-studio/LICENSE
 %doc /usr/share/doc/quakec-studio/NOTICE
+%doc /usr/share/doc/quakec-studio/THIRD-PARTY
 /usr/bin/quakec-studio
 /usr/bin/quakec-ide
 /usr/bin/quakec-lsp

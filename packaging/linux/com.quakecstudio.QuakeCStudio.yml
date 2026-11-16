@@ -29,7 +29,7 @@ modules:
     buildsystem: simple
     build-commands:
       - install -Dm755 -t /app/bin quakec-studio quakec-engine quakec-ide quakec-lsp
-      - install -Dm644 -t /app/share/doc/quakec-studio LICENSE NOTICE
+      - install -Dm644 -t /app/share/doc/quakec-studio LICENSE NOTICE THIRD-PARTY
       - install -Dm644 com.quakecstudio.QuakeCStudio.desktop -t /app/share/applications
       - install -Dm644 com.quakecstudio.QuakeCStudio.svg -t /app/share/icons/hicolor/scalable/apps
       - install -Dm644 com.quakecstudio.QuakeCStudio.xml -t /app/share/mime/packages

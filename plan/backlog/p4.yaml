@@ -313,24 +313,6 @@ issues:
   - From the Flatpak sandbox, Steam detection, preview host launch and keychain access all work
   verify:
   - Release dry run with install tests
-- key: P4-20
-  title: User documentation
-  labels:
-  - repo
-  - area:docs
-  - type:chore
-  size: M
-  reqs:
-  - QA-8
-  depends:
-  - P4-09
-  - P3-12
-  deliverable:
-  - 'The user guide on the website (P7-10): getting started, opening a mod, the play loop, debugging, the agent, MCP, troubleshooting; screenshots from the snapshot harness'
-  acceptance:
-  - A new user follows getting started to a running mod without other help (tested with one person)
-  verify:
-  - Usability test notes attached
 - key: P4-21
   title: Publish the compatibility list
   labels:
@@ -367,13 +349,13 @@ issues:
   - P4-17
   - P0-16
   deliverable:
-  - docs/adr/00NN-license-review.md summarizing the review of notices, corresponding source, dependency licenses and corpus handling
+  - docs/adr/0029-license-review.md summarizing the review of notices, corresponding source, dependency licenses and corpus handling
   - 'A ruling on id''s map tools in Quake-Tools/qutils, whose files carry no license notice and whose COPYING is GPL-2.0 without an "or later" grant: whether P6 may port them under GPL-3.0-or-later
     (see docs/porting.md)'
   acceptance:
-  - Sign-off received before the first public release
+  - 'The review''s findings and rulings recorded in ADR-0029 and accepted by Justin, who decided on 2026-11-16 that no outside approval is sought; each finding the release must act on fixed in the same change'
   verify:
-  - Counsel's letter or notes referenced (kept private if needed)
+  - ADR-0029 merged as Accepted; cargo xtask notices --check passes in cargo xtask ci, and the release build writes THIRD-PARTY into every package
 - key: P4-23
   title: Verify performance budgets
   labels:
@@ -554,7 +536,6 @@ issues:
   - P4-16
   - P4-17
   - P4-18
-  - P4-20
   - P4-21
   - P4-22
   - P4-23
@@ -571,7 +552,7 @@ issues:
   deliverable:
   - docs/gates/p4.md, release notes and the published MVP release
   acceptance:
-  - 'Gate met: MVP demo passes on all three OSes; signed builds published'
+  - 'Gate met: MVP demo passes on macOS; the release''s builds published from CI, signed where the release pipeline signs them. The Windows and Linux desktop checks are L-16 (LATER), moved by Justin on 2026-11-16: he is not testing on Windows or Linux now'
   - 'No stragglers: every issue in the phase milestone on GitHub is closed, including follow-ups filed during the phase, none was deferred to a later phase, and no PR linked to the phase is open'
   verify:
   - Justin's sign-off comment linking the release

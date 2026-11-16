@@ -1593,6 +1593,26 @@ groups:
     - The gate report merged with `Closes`, linking the CI runs; the reviewer's closing comment lists the phase's issues, all closed
 - milestone: LATER
   issues:
+  - key: P4-20
+    title: User documentation
+    labels:
+    - repo
+    - area:docs
+    - type:chore
+    size: M
+    summary: |
+      Moved to LATER by Justin on 2026-11-16: the guide is written (#831, on the website under P7-10), and no one is going to record a new user's usability notes now.
+    reqs:
+    - QA-8
+    depends:
+    - P4-09
+    - P3-12
+    deliverable:
+    - 'The user guide on the website (P7-10): getting started, opening a mod, the play loop, debugging, the agent, MCP, troubleshooting; screenshots from the snapshot harness'
+    acceptance:
+    - A new user follows getting started to a running mod without other help (tested with one person)
+    verify:
+    - Usability test notes attached
   - key: L-16
     title: Windows and Linux desktop checks
     labels:
@@ -1607,7 +1627,7 @@ groups:
     - ENG-9
     - PRIN-5
     summary: |
-      The manual checks that need a Windows or Linux desktop, moved out of P4-24 and P4-23 by Justin on 2026-11-11: he has none, and CI's Windows and Linux runners already cover these paths on LibreQuake (install, play, the run roots and the release packages). They wait for someone with those machines.
+      The manual checks that need a Windows or Linux desktop, moved out of P4-24 and P4-23 by Justin on 2026-11-11: he has none, and CI's Windows and Linux runners already cover these paths on LibreQuake (install, play, the run roots and the release packages). The P4 gate's MVP demo on Windows and Linux joined them on 2026-11-16. They wait for someone with those machines.
     depends:
     - P4-24
     deliverable:

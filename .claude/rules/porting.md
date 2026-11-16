@@ -32,7 +32,8 @@ GPL source may be ported directly. A port is done when four things exist togethe
 Rules that are easy to miss:
 
 - Port only from an upstream and commit listed in `docs/porting.md`. `Quake-Tools/qutils/`
-  (the map tools) is not portable until the license review rules on it (P4-22).
+  (the map tools) is portable since ADR-0029 ruled it GPL with no version stated; a port keeps
+  `Copyright (C) 1996-1997 Id Software, Inc.` as the `qcc/` ports do.
 - FTEQCC (`fte-team/fteqw`, `engine/qclib/`) is portable under ADR-0017's clean-port policy:
   port its behaviour, not its structure; cite its functions as the authority; write the Rust
   fresh in our lexer, preprocessor, CST and semantic model, with no globals, no transliterated

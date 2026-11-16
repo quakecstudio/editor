@@ -3,7 +3,8 @@
 #
 # Packages QuakeC Studio's Linux binaries (P4-18): a deb, an rpm, an AppImage and a Flatpak,
 # each holding the desktop app, the preview host beside it (qs-engine's `locate_host` finds it
-# there), the command line and the language server, with LICENSE and NOTICE.
+# there), the command line and the language server, with LICENSE, NOTICE and THIRD-PARTY
+# (written by `cargo xtask notices` first).
 #
 #   packaging/linux/package.sh <deb|rpm|appimage|flatpak> <x86_64|aarch64> <bin-dir> <version> <out-dir>
 #
@@ -65,6 +66,7 @@ install_tree() {
   install -d "$prefix/share/doc/quakec-studio"
   install -m644 "$root/LICENSE" "$prefix/share/doc/quakec-studio/LICENSE"
   install -m644 "$root/packaging/NOTICE.txt" "$prefix/share/doc/quakec-studio/NOTICE"
+  install -m644 "$root/packaging/THIRD-PARTY.txt" "$prefix/share/doc/quakec-studio/THIRD-PARTY"
 }
 
 deb() {
@@ -122,6 +124,7 @@ flatpak() {
   done
   install -m644 "$root/LICENSE" "$build/stage/LICENSE"
   install -m644 "$root/packaging/NOTICE.txt" "$build/stage/NOTICE"
+  install -m644 "$root/packaging/THIRD-PARTY.txt" "$build/stage/THIRD-PARTY"
   install -m644 "$here/$APP_ID.desktop" "$here/$APP_ID.svg" "$here/$APP_ID.xml" "$build/stage/"
   cp "$here/$APP_ID.yml" "$build/"
   flatpak-builder --user --force-clean --disable-rofiles-fuse --arch="$arch" \
