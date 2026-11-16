@@ -341,6 +341,12 @@ this should already be stringized").
   && macro_params_find(...)`), `__VA_ARGS__` is a token of its own (`TOKEN_VA_ARGS`), and so `#`
   is written as it is. Xonotic is never built that way, and `lib/deglobalization.qh` relies on the
   C behaviour in 165 places.
+- **GMQ-21.2** Under this dialect, `__VA_OPT__(x)` in a variadic macro's body is `x`, its own
+  `__VA_ARGS__` written, when the variadic arguments are given and not empty, and nothing
+  otherwise, as the C preprocessor Xonotic runs first writes it: `O(1)` and `O(1, )` of `#define
+  O(a, ...) f(a __VA_OPT__(, g(__VA_ARGS__)))` are `f(1)`, `O(1, 2)` is `f(1, g(2))`. GMQCC's own
+  preprocessor has no `__VA_OPT__`, a deliberate divergence from it as in GMQ-21.1; Xonotic's
+  `server/compat/quake3.qh` writes `__VA_OPT__(this.count *= (__VA_ARGS__);)`.
 
 ## GMQ-22 Arrays of fields
 

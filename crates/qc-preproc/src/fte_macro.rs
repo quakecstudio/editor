@@ -910,14 +910,16 @@ enum Refused {
     After(usize),
 }
 
-/// What `#__VA_ARGS__` writes in a variadic macro's body.
+/// How a variadic macro's body reads `#__VA_ARGS__` and `__VA_OPT__`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum RestHash {
-    /// FTEQCC's: `#` and the token, `__VA_ARGS__` naming no parameter (FTEF-14.78).
-    Stray,
-    /// The C preprocessor's, which Xonotic's GMQCC build runs first: the variadic arguments'
-    /// text as one string (GMQ-21.1).
-    Stringized,
+enum Variadics {
+    /// FTEQCC's: `#__VA_ARGS__` is `#` and the token, `__VA_ARGS__` naming no parameter
+    /// (FTEF-14.78), and `__VA_OPT__` is a plain name.
+    Fteqcc,
+    /// The C preprocessor's, which Xonotic's GMQCC build runs first: `#__VA_ARGS__` is the
+    /// variadic arguments' text as one string (GMQ-21.1), and `__VA_OPT__(x)` is `x` when they
+    /// are given and nothing when not (GMQ-21.2).
+    Cpp,
 }
 
 /// The text of an expansion as `QCC_PR_ExpandPreProcessorMacro` writes it.
@@ -935,7 +937,7 @@ struct Writer<'a> {
     /// Each word after a `#` that names no parameter, and where it is (FTEF-14.78).
     strays: std::cell::RefCell<Vec<(Vec<u8>, FileSpan)>>,
     /// What `#__VA_ARGS__` writes.
-    rest_hash: RestHash,
+    variadics: Variadics,
 }
 
 impl Writer<'_> {
@@ -963,7 +965,14 @@ impl Writer<'_> {
         let named = self.params.len();
         let mut out = Text::default();
         let mut at = 0_usize;
+        // GMQ-21.2: the `)` of each `__VA_OPT__(` kept open, dropped when it is reached.
+        let mut opt_closes: Vec<usize> = Vec::new();
         loop {
+            if opt_closes.last() == Some(&at) {
+                opt_closes.pop();
+                at = at.saturating_add(1);
+                continue;
+            }
             let whitestart = out.bytes.len();
             // `QCC_PR_LexWhitespace(true)` runs no directive, so it stops at a line's `#` too.
             let white_end = match whitespace(bytes, at) {
@@ -997,7 +1006,7 @@ impl Writer<'_> {
                     at = word.next;
                     // GMQ-21.1: `#__VA_ARGS__` is the variadic arguments as one string, `""` when
                     // none is given.
-                    let rest = (self.rest_hash == RestHash::Stringized
+                    let rest = (self.variadics == Variadics::Cpp
                         && self.variadic == Variadic::Yes
                         && word.token == b"__VA_ARGS__")
                         .then(|| {
@@ -1053,6 +1062,27 @@ impl Writer<'_> {
                     out.push_from(arg, 0..arg.bytes.len());
                 } else if noargexpand && out.bytes.last() == Some(&b',') {
                     out.truncate(out.bytes.len().saturating_sub(1));
+                }
+            } else if self.variadics == Variadics::Cpp
+                && self.variadic == Variadic::Yes
+                && word.token == b"__VA_OPT__"
+                && let Some(open) = (at..bytes.len())
+                    .find(|&i| !byte_at(bytes, i).is_some_and(is_fteqcc_whitespace))
+                    .filter(|&i| byte_at(bytes, i) == Some(b'('))
+                && let Some(close) = matching_paren(bytes, open)
+            {
+                // GMQ-21.2: `__VA_OPT__(x)` is `x` when variadic arguments are given.
+                let given = self
+                    .call
+                    .args
+                    .get(named)
+                    .filter(|_| self.call.args.len() == named.saturating_add(1))
+                    .is_some_and(|arg| !arg.bytes().trim_ascii().is_empty());
+                if given {
+                    opt_closes.push(close);
+                    at = open.saturating_add(1);
+                } else {
+                    at = close.saturating_add(1);
                 }
             } else if self.variadic == Variadic::Yes && word.token == b"__VA_COUNT__" {
                 // `QC_snprintfz(tmp, sizeof(tmp), "%i", param-1+extraparam);`
@@ -1117,6 +1147,30 @@ impl Writer<'_> {
 /// `QCC_PR_ExpandStrCatMarkup`: `bytes` with `\` before each line break, `\` and `"` (a NUL ends
 /// an argument's text, so none is in it), and
 /// in `"` quotes, the string `#param` writes (FTEF-14.31).
+/// The offset of the `)` that closes the `(` at `open` in `bytes`, past the strings between.
+fn matching_paren(bytes: &[u8], open: usize) -> Option<usize> {
+    let mut depth = 0_usize;
+    let mut at = open;
+    while let Some(byte) = byte_at(bytes, at) {
+        match byte {
+            b'"' => {
+                at = copied_string_end(bytes, at);
+                continue;
+            }
+            b'(' => depth = depth.saturating_add(1),
+            b')' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(at);
+                }
+            }
+            _ => {}
+        }
+        at = at.saturating_add(1);
+    }
+    None
+}
+
 fn markup(bytes: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(bytes.len().saturating_add(2));
     out.push(b'"');
@@ -1321,10 +1375,10 @@ impl<L: Loader> Preprocessor<L> {
                     limit,
                     at: use_.span,
                     strays: std::cell::RefCell::default(),
-                    rest_hash: if self.dialect == Dialect::Gmqcc {
-                        RestHash::Stringized
+                    variadics: if self.dialect == Dialect::Gmqcc {
+                        Variadics::Cpp
                     } else {
-                        RestHash::Stray
+                        Variadics::Fteqcc
                     },
                 };
                 let written = writer.write().map(Rc::new);
