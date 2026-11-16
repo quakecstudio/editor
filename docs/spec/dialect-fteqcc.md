@@ -5282,6 +5282,15 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_StatementFlags` (`OP_LOADP_U8`, `OP_CONV_FU`), `QCC_TryEvaluateCast`,
   `QCC_PR_RefExpression`.
+- **FTEF-31.19** On a target with `OP_LOADA_F` (FTE's), an element read at an index that is no
+  constant is loaded by `OP_LOADA_*` of the array, at the element's own word, and the index made
+  an integer (`QCC_LoadFromArray`, `accel == 2`, `index = QCC_SupplyConversion(index,
+  ev_integer, true)`): `OP_LOADA_S` for a string, `_F` a float, `_V` a vector, `_ENT` an entity,
+  `_FLD` a field, `_FNC` a function and `_I` an integer or a pointer ("no OP_LOADA_P"), each
+  `QCC_PR_StatementFlags (&pr_opcodes[OP_LOADA_F], base, index, NULL, flags)`; a 64-bit value
+  by `OP_LOADA_I64`, and a struct or union word by word into a temporary. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_LoadFromArray`.
 
 ## FTEF-32 Calls
 
