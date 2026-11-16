@@ -380,9 +380,10 @@ pub struct MapEditor {
     shaded: ShadedView,
     /// How many times the scene was built, which the textured mesh follows.
     scene_builds: u64,
-    /// The entities with brushes the textured and lit views draw as faces; the lines of the
-    /// rest, such as an external map's instance, are still drawn over them.
-    faced: BTreeSet<EntityIndex>,
+    /// The scene's lines whose entity has no brushes the textured and lit views draw as faces,
+    /// such as a point entity's box or an external map's instance: the lines still drawn over
+    /// the faces. Kept with the scene, so a frame does not test every brush edge (#966).
+    unfaced: Vec<(EntityIndex, Line)>,
     /// The trigger entities, which the textured view leaves out.
     triggers: BTreeSet<EntityIndex>,
     /// The scene's brushes with a face the textured view leaves out, by their place in it: a
@@ -946,7 +947,15 @@ impl MapEditor {
             let mut load = |name: &str| externals.read(document, name);
             self.scene = Scene::build(document, &self.classes, &self.targeting, &mut load);
             self.scene_builds = self.scene_builds.wrapping_add(1);
-            self.faced = self.scene.brushes.iter().map(|b| b.entity).collect();
+            let faced: BTreeSet<EntityIndex> =
+                self.scene.brushes.iter().map(|b| b.entity).collect();
+            self.unfaced = self
+                .scene
+                .lines
+                .iter()
+                .filter(|(owner, _)| !faced.contains(owner))
+                .copied()
+                .collect();
             // Triggers are left out of the textured view, as the game does not draw them.
             self.triggers = document
                 .file()
@@ -1361,8 +1370,13 @@ impl MapEditor {
             self.shaded.paint(ui, area, camera);
         }
         let world = Stroke::new(1.0, theme.color(Token::TextFaint));
-        for (owner, line) in &self.scene.lines {
-            if !(faces && self.faced.contains(owner)) && !hidden.contains(owner) {
+        let lines = if faces {
+            &self.unfaced
+        } else {
+            &self.scene.lines
+        };
+        for (owner, line) in lines {
+            if !hidden.contains(owner) {
                 projection.line(&painter, *line, world);
             }
         }
