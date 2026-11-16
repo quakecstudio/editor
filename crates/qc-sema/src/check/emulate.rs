@@ -141,8 +141,17 @@ impl Checker<'_> {
         if opaque(lhs) || opaque(rhs) {
             self.emitted = self.emitted.saturating_add(1);
             // An opcode the target lacks is emulated by the code generator, which follows the
-            // value; the intermediate layer holds no fragment of it.
+            // value; the intermediate layer holds no fragment of it. `~a` is the subtraction
+            // from -1 FTEQCC writes whatever `a` is (`case OP_BITNOT_F: op =
+            // &pr_opcodes[OP_SUB_F]; var_b = var_a; var_a = QCC_MakeFloatConst(-1);`).
             if !self.env.target_at(span.start).valid(op) {
+                if let Emulation::Complement(sub) = emulation(op) {
+                    let value = self.complement(sub, lhs, span);
+                    return Ok(Value {
+                        constness: Constness::Opaque,
+                        ..value
+                    });
+                }
                 self.followed = false;
             }
             // Its value decides no folding or emulation; the comparison warnings read no value.

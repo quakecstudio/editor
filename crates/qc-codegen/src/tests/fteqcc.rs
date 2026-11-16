@@ -4102,3 +4102,83 @@ fn a_string_character_is_loaded_from_the_string() {
         assert_eq!((load.a, load.b), (statements[0].b, statements[1].b));
     }
 }
+
+// spec FTEF-27.9: `~` of a float on a target without `OP_BITNOT_F` is a subtraction from -1, of a
+// constant the model holds no value of (an enum item that redefines a constant) included
+#[test]
+fn the_complement_of_an_opaque_float_is_a_subtraction_from_minus_one() {
+    use qc_preproc::Op;
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\nconst float EF_NODRAW = 16;\n\
+         typedef enum { EF_NODRAW = (1<<4) } effects_t;\nfloat b;\n\
+         void t(void) { b &= ~EF_NODRAW; };\n",
+    )
+    .unwrap();
+    let sub = body(&compiled.progs, "t")[0];
+    assert_eq!(sub.op, u32::try_from(Op::SubF.number()).unwrap());
+    assert_eq!(sub.a, immediate(&compiled.progs, -1.0));
+}
+
+// spec FTEF-31.21: a member array's element through a pointer, `p->a[i]`, is stored and loaded
+// through the pointer at the member's word plus the index
+#[test]
+fn a_member_array_element_through_a_pointer_is_stored_through_it() {
+    use qc_preproc::Op;
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\ntypedef struct { float a; string m_str[4]; } seat_t;\n\
+         seat_t *pSeat;\nstring r;\nvoid t(void) { int i = 1; pSeat->m_str[i] = \"x\"; };\n\
+         void u(void) { int i = 2; r = pSeat->m_str[i]; };\n",
+    )
+    .unwrap();
+    let p = &compiled.progs;
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let find = |name: &str, op: Op| {
+        body(p, name)
+            .into_iter()
+            .find(|s| s.op == number(op))
+            .unwrap()
+    };
+    let store = find("t", Op::StorepS);
+    assert_eq!(
+        (store.b, store.c),
+        (global(p, "pSeat"), find("t", Op::AddI).c)
+    );
+    let load = find("u", Op::LoadpS);
+    assert_eq!(
+        (load.a, load.b, load.c),
+        (global(p, "pSeat"), find("u", Op::AddI).c, global(p, "r"))
+    );
+}
+
+// spec FTE-20.5: an integer literal's immediate holds its own words, `1i` the integer 1, which
+// shares no word with the float `1.0`; `0i` and `0.0` share theirs
+#[test]
+fn an_integer_literal_is_its_own_words() {
+    use qc_preproc::Op;
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\nint g;\nfloat r;\nvoid t(void) { if (g >= 1i) { r = 1; } };\n",
+    )
+    .unwrap();
+    let p = &compiled.progs;
+    let compare = body(p, "t")[0];
+    assert_eq!(compare.op, u32::try_from(Op::GeI.number()).unwrap());
+    assert_eq!(words(p, compare.b, 1), [1]);
+    assert_ne!(compare.b, immediate(p, 1.0));
+}
+
+// spec FTEF-23.9: an operand cast to the row's type by no conversion opcode, an `int` multiplied
+// by an unsigned, is its own word: `k = 4u * g` is `MUL_I 0x4i, g, k`
+#[test]
+fn an_int_cast_to_unsigned_keeps_its_word() {
+    use qc_preproc::Op;
+    let compiled =
+        compile_fteqcc("#pragma target fte_5768\nint g;\nint k;\nvoid t(void) { k = 4u * g; };\n")
+            .unwrap();
+    let p = &compiled.progs;
+    let mul = body(p, "t")[0];
+    assert_eq!(mul.op, u32::try_from(Op::MulI.number()).unwrap());
+    assert_eq!(
+        (words(p, mul.a, 1), mul.b, mul.c),
+        (vec![4], global(p, "g"), global(p, "k"))
+    );
+}
