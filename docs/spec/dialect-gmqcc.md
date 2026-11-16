@@ -288,3 +288,38 @@ operator. Xonotic: `lib/compiler.qh` defines `QCC_SUPPORT_POW`.
 - **GMQ-18.1** `a ** b` raises `a` to the power `b`, as `pow(a, b)` and `__builtin_pow(a, b)` do.
   `tests/exponentiation.qc` sets `hundy` to 10 and expects `ftos(hundy ** 2)` and
   `ftos(pow(hundy, 2))` each to print "100".
+
+## GMQ-19 `goto` and labels
+
+**Source:** `tests/goto.qc` (options `-std=gmqcc`). Xonotic: `lib/compiler.qh` defines
+`LABEL(id)` as `:id`, used with `goto` (`client/hud/panel/scoreboard.qc`,
+`LABEL(downarrow_action);`).
+
+### Behaviour
+
+- **GMQ-19.1** A label is written as a colon before its name, `:name`, where a statement may
+  stand, and `goto name;` jumps to it. `tests/goto.qc` writes `:label_1; print("label_1",
+  "\n"); goto label_5;` and expects its jumps to print the labels in the order its comment
+  gives: label_3, label_2, label_4, label_3, label_1, label_5.
+- **GMQ-19.2** `goto` may take a conditional choice between two labels.
+  `tests/goto.qc`: `goto (x == y) ? label_1 : label_2;` goes to `label_2` while `x` is 1 and `y`
+  is 2.
+
+## GMQ-20 The corpus inventory
+
+**Source:** `xtask/src/gmqcc_coverage.rs`.
+
+`cargo xtask gmqcc-coverage <dir>...` scans every `.qc`, `.qh`, `.inc` and `.h` file under the
+GMQCC corpus (Xonotic's `qcsrc`, fetched with `cargo xtask corpus fetch xonotic`) for the
+constructs above that the FTEQCC grammar lacks. The recorded run is
+[`vectors/dialect-gmqcc/coverage.txt`](vectors/dialect-gmqcc/coverage.txt).
+
+### Behaviour
+
+- **GMQ-20.1** Every construct class the scan finds is named by a section of this file, and every
+  class it looks for is found in the corpus; the scan fails otherwise.
+- **GMQ-20.2** Each class is found by its tokens, a directive's body included, since Xonotic
+  writes several of them through C preprocessor macros: `_` then `(` then a string (GMQ-6),
+  `return` then `=` (GMQ-9), `nil` (GMQ-12), `...` then a name or `(` (GMQ-13), `[[` then a
+  name (GMQ-16), `noref` (GMQ-17), two touching `*` (GMQ-18), and `goto` or a `:` touching a
+  name (GMQ-19).

@@ -71,6 +71,10 @@
 //!   FTEQCC dialect constructs beyond the rerelease subset, grouped into the
 //!   classes of `docs/spec/dialect-fteqcc.md` (P2-25); it fails on a class no
 //!   section names.
+//! - `gmqcc-coverage`: scans every `.qc`, `.qh`, `.inc` and `.h` file under the
+//!   GMQCC corpus (Xonotic) for the GMQCC constructs, grouped into the classes of
+//!   `docs/spec/dialect-gmqcc.md` (L-10); it fails on a class no section names,
+//!   or a section the corpus does not use.
 //! - `fteqcc-profile`: preprocesses, parses and resolves every module of each
 //!   rerelease codebase under the FTEQCC profile (P2-03) and fails on any error,
 //!   then checks the vanilla profile rejects each extension; `--warnings` prints
@@ -121,6 +125,7 @@ mod fteqcc_coverage;
 mod fteqcc_full_coverage;
 mod fteqcc_profile;
 mod fuzz;
+mod gmqcc_coverage;
 mod host;
 mod layers;
 mod lex_corpus;
@@ -202,6 +207,8 @@ enum Task {
     FteqccCoverage(fteqcc_coverage::Args),
     /// The FTEQCC corpus mods' full-dialect classes.
     FteqccFullCoverage(fteqcc_full_coverage::Args),
+    /// The GMQCC corpus's dialect classes.
+    GmqccCoverage(gmqcc_coverage::Args),
     /// A scenario played in qs-sim on a game, repeated, each result the same (SCN-2.5).
     Scenario(scenario::Args),
     /// The agent's evals: check each task's scenario, or run the tasks on a model (P4-15).
@@ -291,6 +298,7 @@ fn run(root: &Path, task: &Task, ci_steps: &[ci::Step]) -> bool {
             fteqcc_full_coverage::main(root, args),
         ),
         Task::FteqccProfile(args) => ("fteqcc-profile", fteqcc_profile::main(root, args)),
+        Task::GmqccCoverage(args) => ("gmqcc-coverage", gmqcc_coverage::main(root, args)),
         Task::Fuzz(args) => ("fuzz", fuzz::main(root, args)),
         Task::LexCorpus(args) => ("lex-corpus", lex_corpus::main(root, args)),
         Task::LspCorpus(args) => ("lsp-corpus", lsp_corpus::main(root, args)),
@@ -484,6 +492,7 @@ mod tests {
             "fteqcc-coverage",
             "fteqcc-full-coverage",
             "fteqcc-profile",
+            "gmqcc-coverage",
             "lex-corpus",
             "lsp-corpus",
             "map-corpus",
