@@ -30,7 +30,7 @@ use crate::resolve::{
     Scope, ScopedFacts,
 };
 use crate::symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
-use crate::ty::Type;
+use crate::ty::{SimpleType, Type};
 
 impl<'a> Resolver<'a> {
     /// Declares, or checks, the next-think name of a state header (QC-13.6).
@@ -227,6 +227,13 @@ impl<'a> Resolver<'a> {
                 self.report(Code::E0404, location, "bad parm order".to_owned());
             }
             previous = def;
+        }
+        // FTEF-15.3: the variadic arguments' count is a `float` local after the parameters.
+        if let Some((name, span)) = &body.arg_count {
+            self.settle(span.start);
+            let location = self.at(file, *span);
+            let float = Type::Simple(SimpleType::Float);
+            self.declare_scoped(scope, name, &float, DefKind::Local, location);
         }
         // The body's name uses, the state header's first: its frame and next function.
         self.use_defs.clear();

@@ -38,6 +38,9 @@ pub(crate) struct RawBody {
     pub state_literals: Vec<(StatePart, RawValue)>,
     /// The parameters with no name, each by its number from 1 and its span (FTEF-19.1).
     pub unnamed_params: Vec<(usize, Span)>,
+    /// FTEF-15.3: the variadic arguments' count after `...`, a `float` local of the body
+    /// (`QCC_PR_DummyDef(type_float, pr_parm_argcount_name, ...)`): its name and span.
+    pub arg_count: Option<(String, Span)>,
     /// What lowering found wrong in the body that resolution does not see: a `typedef` that
     /// defines no type or has storage qualifiers (FTEF-19.9).
     pub diagnostics: Vec<Diagnostic>,
@@ -178,6 +181,9 @@ pub(super) fn lower_body(fn_body: &ast::FunctionBody, fn_ty: &Type, cx: Cx<'_>) 
         &mut body.params,
         &mut body.unnamed_params,
     );
+    body.arg_count = param_list_of(fn_body)
+        .and_then(|list| list.count_name())
+        .map(|token| (token.text_lossless(), token.span()));
     // FTEF-18.3, FTEF-18.28: a state header's expressions are values of the function, read
     // before its next-think name is declared (FTEF-19.14).
     if let Some(state) = fn_body.state() {

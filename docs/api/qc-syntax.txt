@@ -132,6 +132,7 @@ fn qc_syntax::ast::Param::array_suffixes
 fn qc_syntax::ast::Param::default_value
 fn qc_syntax::ast::Param::name
 fn qc_syntax::ast::Param::ty
+fn qc_syntax::ast::ParamList::count_name
 fn qc_syntax::ast::ParamList::is_variadic
 fn qc_syntax::ast::ParamList::params
 fn qc_syntax::ast::ParamList::qcc_parm_names

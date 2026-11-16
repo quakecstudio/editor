@@ -2481,6 +2481,15 @@ declares parameters without names or with `optional` and `__out`.
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_GenerateQCFunction`, `QCC_PR_ParseImmediateStatements`.
 
+- **FTEF-15.12** A `type ...` that ends a parameter list adds no parameter: `QCC_PR_ParseFunctionType`
+  reads the type, then `if (QCC_PR_CheckToken ("...")) { ftype->vargs = true; break; }` before
+  `numparms++`. The name after `...`, written alone or after a type (`...count`,
+  `string...count`), is the variadic arguments' count (`pr_parm_argcount_name = ...;
+  ftype->vargcount = true;`), which a body of the function has as a `float` local
+  (`QCC_PR_DummyDef(type_float, pr_parm_argcount_name, pr_scope, ...)`), so `void g(float a,
+  string...cmdargc) { float n = cmdargc; }` reads it. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_ParseFunctionType`; `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseImmediateStatements`.
 ## FTEF-16 Statements and expressions
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseStatement`, `QCC_PR_RefTerm`, `QCC_PR_ParseRefValue`
