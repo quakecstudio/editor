@@ -892,9 +892,13 @@ impl Parser<'_> {
             self.bump();
         }
         if self.at(K::Ellipsis) {
-            // `type ...`: the variadic arguments are of this type.
+            // `type ...`: the variadic arguments are of this type, and the name after them, if
+            // any, is the argument count's (FTEF-15.3), `string...count`.
             self.bump();
             self.finish_node();
+            if self.at(K::Name) {
+                self.bump();
+            }
             return None;
         }
         if self.at(K::LParen) && self.nth(1).is_some_and(|t| t.kind == K::Star) {

@@ -14,7 +14,7 @@ use qc_syntax::Dialect;
 use crate::db::{Db, ModuleAnalysis};
 use crate::expand::{Files, ModuleInput, OriginMap, preprocess};
 use crate::lower::lower_file;
-use crate::symbol::{FileId, Location};
+use crate::symbol::{DefKind, FileId, Location};
 use crate::ty::{SimpleType, Type};
 
 /// A module of named files: every file is put in a database under its name, and the ones
@@ -1130,4 +1130,25 @@ fn a_gmqcc_field_array_element_past_the_end_is_reported() {
         index.body(t).unwrap().type_at(span),
         Some(&Type::Field(Type::Simple(SimpleType::Float).into()))
     );
+}
+
+// spec FTEF-15.12: the name after `...`, `...count` or `string...count`, is the variadic
+// arguments' count, a `float` local of the body; a `type ...` is no parameter
+#[test]
+fn the_name_after_an_ellipsis_is_the_argument_count() {
+    let text = "void f(float a, ...count) { float n = count; };\n\
+                void g(float a, string...cmdargc) { float n = cmdargc; string s = ...(0, string); };\n\
+                void h() { g(1, \"x\", \"y\"); f(2); };\n";
+    let (mut db, mut input) = module(&[("a.qc", text)], &["a.qc"], Dialect::Gmqcc);
+    input.command_line = CommandLine::new(&["-std=gmqcc"]);
+    let analysis = db.analyze_module(&input);
+    let codes: Vec<_> = analysis.diagnostics().map(|d| d.diagnostic.code).collect();
+    assert_eq!(codes, Vec::<Code>::new());
+    let count = analysis
+        .index
+        .defs()
+        .iter()
+        .find(|d| d.name == "cmdargc")
+        .unwrap();
+    assert_eq!(count.kind, DefKind::Local);
 }

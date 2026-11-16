@@ -788,15 +788,24 @@ impl FunctionType {
 }
 
 impl ParamList {
-    /// The parameters, in order; none for `(...)`.
+    /// The parameters, in order; none for `(...)`. A `type ...` that ends the list is no
+    /// parameter: it gives the variadic arguments' type (FTEF-15.3).
     pub fn params(&self) -> impl Iterator<Item = Param> {
-        children(&self.0)
+        children(&self.0).filter(|param: &Param| param.syntax().token_of(K::Ellipsis).is_none())
     }
 
-    /// Whether it is `(...)` (QC-10.4).
+    /// Whether it is `(...)` (QC-10.4), or ends with `type ...` (FTEF-15.3).
     #[must_use]
     pub fn is_variadic(&self) -> bool {
         self.0.token_of(K::Ellipsis).is_some()
+            || children(&self.0).any(|param: Param| param.syntax().token_of(K::Ellipsis).is_some())
+    }
+
+    /// FTEF-15.3: the name of the variadic arguments' count after `...`, `...count` or
+    /// `string...count`, the one name the list holds outside a parameter.
+    #[must_use]
+    pub fn count_name(&self) -> Option<SyntaxToken> {
+        self.0.token_of(K::Name)
     }
 
     /// The name id's `qcc` gives each parameter of a body defined with this list (QC-13.11):
