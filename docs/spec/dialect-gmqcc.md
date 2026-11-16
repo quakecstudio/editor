@@ -19,6 +19,10 @@ GPL-3.0-or-later. It is not a registered porting upstream ([`../porting.md`](../
 these statements describe what GMQCC accepts, so that we parse and resolve it, and no code is
 ported from it. Each statement quotes the manual's text where the manual has it.
 
+Where the manual is silent or disagrees with GMQCC's code, the statement says so and follows
+the code at the same commit (`main.cpp`, `opts.cpp`), or GMQCC's own tests in `tests/`, whose
+`.tmpl` files give each test's options and expected output.
+
 Implemented by the GMQCC dialect profile (L-02, #186). No code implements a statement here
 yet, so every statement is listed in [`coverage-baseline.tsv`](coverage-baseline.tsv) until
 L-02's tests cite it.
@@ -46,6 +50,12 @@ Xonotic's build script passes `-std=gmqcc -O3 -Werror -Wall -Wno-field-redeclare
   the standard; a flag after it overrides the standard.
 - **GMQ-1.3** A Xonotic module is compiled with `-std=gmqcc` and, after it, `-futf8`,
   `-freturn-assignments`, `-frelaxed-switch` and `-Ooverlap-locals`, which are sections below.
+- **GMQ-1.4** GMQCC's code turns on more under `-std=gmqcc` than the manual lists, and the code
+  is what GMQCC does: `main.cpp`'s `-std=gmqcc` branch (lines 136 to 150 at the pinned commit)
+  also sets `SHORT_LOGIC`, `UNTYPED_NIL`, `VARIADIC_ARGS` and `EXPRESSIONS_FOR_BUILTINS` and the
+  `BREAKDEF` warning, which GMQ-12 to GMQ-15 describe. `CORRECT_TERNARY` and
+  `ADJUST_VECTOR_FIELDS` are on by default (`opts.cpp`, `opts_init`, lines 75 and 76), and
+  `-std=gmqcc` leaves them on.
 
 ## GMQ-2 Vector fields
 
@@ -171,3 +181,110 @@ Xonotic's build script requires this optimisation ("`-Ooverlap-locals` is requir
   use neither local arrays nor have locals which are seen as possibly uninitialized use the same
   local section", and of the risk: "only as long as the functions cannot be called in a
   recursive manner".
+
+## GMQ-12 `nil`
+
+**Source:** `doc/gmqcc.1`, COMPILE FLAGS, `-funtyped-nil`; on under `-std=gmqcc` (GMQ-1.4).
+Xonotic: `lib/compiler.qh` defines `QCC_SUPPORT_NIL`, and `lib/nil.qh` then defines `func_null`
+and `string_null` as `nil`.
+
+### Behaviour
+
+- **GMQ-12.1** `nil` is a global of no type that may be assigned to anything, with no type check.
+  The manual: "Adds a global named 'nil' which is of no type and can be assigned to anything. No
+  typechecking will be performed on assignments. Assigning to it is forbidden, using it in any
+  other kind of expression is also not allowed."
+- **GMQ-12.2** Assigning `nil` zeroes the whole target. The manual: "the nil global is an actual
+  global filled with zeroes, and can be assigned to anything including fields, vectors or
+  function pointers, and they end up becoming zeroed."
+
+## GMQ-13 Variadic arguments
+
+**Source:** `doc/gmqcc.1`, COMPILE FLAGS, `-fvariadic-args`; on under `-std=gmqcc` (GMQ-1.4).
+Xonotic: `common/notifications/all.qc`, `Local_Notification(..., ...count)`;
+`common/minigames/cl_minigames.qc`, `...(i,string)`.
+
+### Behaviour
+
+- **GMQ-13.1** A function's last parameter may be `...` with a name, optionally after a type,
+  which holds the number of variadic arguments passed, and `...(index, type)` reads the variadic
+  argument `index` as `type`. The manual: "Allow variadic parameters to be accessed by QC code.
+  This can be achieved via the '...' function, which takes a parameter index and a typename";
+  its example `void vafunc(string...count)` loops `for (i = 0; i < count; ++i)
+  print(...(i, string), "\n");`.
+- **GMQ-13.2** GMQCC's test `tests/varargs.qc` calls `nbva(1, "Hello", "You", "There")` on
+  `void nbva(float a, string...count)` and expects "You gave me 3 additional parameters", and
+  `...(0, string)` gives "Hello": the count excludes the named parameters, and index 0 is the
+  first variadic argument.
+
+## GMQ-14 Short-circuit logic
+
+**Source:** `doc/gmqcc.1`, COMPILE FLAGS, `-fshort-logic`; on under `-std=gmqcc` (GMQ-1.4).
+
+### Behaviour
+
+- **GMQ-14.1** `&&` and `||` stop at the first operand that decides them, and give 0 or 1. The
+  manual: "Perform early out in logical AND and OR expressions. The final result will be either a
+  0 or a 1".
+
+## GMQ-15 Builtin numbers
+
+**Source:** `doc/gmqcc.1`, COMPILE FLAGS, `-fexpressions-for-builtins`; on under `-std=gmqcc`
+(GMQ-1.4).
+
+### Behaviour
+
+- **GMQ-15.1** A builtin's number may be any constant expression. The manual: "Usually
+  builtin-numbers are just immediate constants. With this flag expressions can be used, as long
+  as they are compile-time constant"; its example `void printB() = #2-1;`.
+
+## GMQ-16 Attributes
+
+**Source:** `doc/gmqcc.1`, COMPILE WARNINGS, `-Wunknown-attribute`, and COMPILE FLAGS,
+`-fdefault-eraseable`; `tests/accumulate.qc`, `tests/aliases.qc`. Xonotic: `lib/compiler.qh`
+defines `QCC_SUPPORT_ACCUMULATE`, `QCC_SUPPORT_ERASEABLE` and `QCC_SUPPORT_ALIAS`, and
+`lib/_all.inc` then defines `ACCUMULATE` as `[[accumulate]]`, `ERASEABLE` as `[[eraseable]]` and
+`ALIAS(var)` as `[[alias(var)]]`.
+
+### Behaviour
+
+- **GMQ-16.1** A definition may be preceded by attributes in double brackets. An attribute GMQCC
+  does not know is warned about: "Warn on an unknown attribute. The warning will include only the
+  first token inside the enclosing attribute-brackets."
+- **GMQ-16.2** `[[accumulate]]` on a function lets it be defined more than once, each definition's
+  body run after the ones before it. `tests/accumulate.qc` defines `[[accumulate]] void foo ()`
+  three times, printing `"hello "`, `"accumulation "` and `"world\n"`, and expects one call of `foo()`
+  to print "hello accumulation world".
+- **GMQ-16.3** `[[alias("name")]]` declares another name for the definition `name`.
+  `tests/aliases.qc` declares `[[alias("alias_2")]] void alias_2_aliased();` and
+  `[[alias("alias_1")]] float alias_1_aliased;`, and expects a call of `alias_2_aliased()` to run
+  `alias_2` and `alias_1_aliased` to read `alias_1`'s 3.14; a `vector` alias's components are
+  named `alias_3_aliased_x` and so on.
+- **GMQ-16.4** `[[eraseable]]` lets GMQCC remove the definition if it is unused. The manual, of
+  `-fdefault-eraseable`: it "permits the compiler to remove unused functions, variables and
+  statements. This is equivlant to putting [[eraseable]] on all definitions", and `[[noerase]]`
+  prevents it.
+
+## GMQ-17 `noref`
+
+**Source:** `doc/gmqcc.1`, COMPILE WARNINGS, `-Wunused-variable`; `tests/noref.qc`. Xonotic:
+`lib/spawnfunc.qh`, `noref bool require_spawnfunc_prefix;`.
+
+### Behaviour
+
+- **GMQ-17.1** `noref` before a declaration keeps an unused variable from being warned about,
+  and `#pragma noref 1` to `#pragma noref 0` does so for every declaration between. The manual:
+  "This can be avoided by adding the noref keyword in front of the variable declaration.
+  Additionally a complete section of unreferenced variables can be opened using #pragma noref 1
+  and closed via #pragma noref 0."
+
+## GMQ-18 Exponentiation
+
+**Source:** `tests/exponentiation.qc` (options `-std=gmqcc`). The manual does not describe the
+operator. Xonotic: `lib/compiler.qh` defines `QCC_SUPPORT_POW`.
+
+### Behaviour
+
+- **GMQ-18.1** `a ** b` raises `a` to the power `b`, as `pow(a, b)` and `__builtin_pow(a, b)` do.
+  `tests/exponentiation.qc` sets `hundy` to 10 and expects `ftos(hundy ** 2)` and
+  `ftos(pow(hundy, 2))` each to print "100".
