@@ -446,7 +446,7 @@ impl Resolver<'_> {
         }
         let Some(source) = found else {
             // FTEF-19.80: `nil` with no definition is the integer 0, a constant the global is.
-            if source_name == "nil" {
+            if source_name == "nil" && self.profile.fteqcc_diagnostics() {
                 return Ok(None);
             }
             // FTEF-19.48: the unknown name, reported where it is used, is then no constant; an
