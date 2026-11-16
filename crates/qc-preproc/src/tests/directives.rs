@@ -1218,3 +1218,16 @@ fn gmqcc_defines_no_fteqcc_macros() {
     pp.restart();
     assert!(!pp.is_defined("FTEQCC") && !pp.is_defined("__FTEQCC__"));
 }
+
+// spec PRJ-5.9: under GMQCC `#pragma once` marks the file, so a later name that reaches it through
+// `..` reads nothing
+#[test]
+fn pragma_once_marks_a_file_reached_through_a_parent_name_under_gmqcc() {
+    let files = [
+        ("src/a.qc", "#include \"x/b.qh\"\n#include \"x/y/d.qh\"\n"),
+        ("src/x/b.qh", "#pragma once\nb\n"),
+        ("src/x/y/d.qh", "#include \"../b.qh\"\nd\n"),
+    ];
+    let gmqcc = compile_in(&files, "src/a.qc", qc_lexer::Dialect::Gmqcc);
+    assert_eq!((tokens(&gmqcc), codes(&gmqcc)), ("b d".to_owned(), vec![]));
+}
