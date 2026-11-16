@@ -373,7 +373,7 @@ impl Checker<'_> {
                         ..field.as_ref().clone()
                     })),
                     readonly: base.readonly,
-                    ..component.clone()
+                    ..component
                 }
             }
             // Another vector is read, a field's by `LOAD_V`, and the component is its word.

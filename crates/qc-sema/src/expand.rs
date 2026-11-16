@@ -472,6 +472,9 @@ fn render<L: Loader>(pp: &Preprocessor<L>, files: &Files<'_>, tokens: &[PpToken]
     let mut out = Rendered::default();
     let mut last_line = None;
     let mut last: Option<&PpToken> = None;
+    // The database file of the last token's source, which the next token nearly always shares:
+    // looking each token's file up by its whole path was a fifth of a recompile (#966).
+    let mut known: Option<(qc_preproc::FileId, Option<FileId>)> = None;
     for token in tokens {
         let origin = pp.origin(token);
         let line = pp.sources().line(origin);
@@ -495,7 +498,22 @@ fn render<L: Loader>(pp: &Preprocessor<L>, files: &Files<'_>, tokens: &[PpToken]
         }
         last = Some(token);
         out.starts.push(out.text.len());
-        if let Some(location) = source_location(pp, files, origin) {
+        let file = match known {
+            Some((id, file)) if id == origin.file => file,
+            _ => {
+                let file = pp
+                    .sources()
+                    .file(origin.file)
+                    .and_then(|source| files.ids.get(&source.path).copied());
+                known = Some((origin.file, file));
+                file
+            }
+        };
+        if let (Some(file), Some(source)) = (file, pp.sources().file(origin.file)) {
+            let location = Location {
+                file,
+                span: source.file_span(origin.span),
+            };
             out.origins.origins.push((out.text.len(), location));
         }
         let own = token

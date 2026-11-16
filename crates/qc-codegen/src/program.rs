@@ -844,12 +844,15 @@ impl Program {
     /// table (QC-20.4, QC-20.5).
     pub(crate) fn immediate(&mut self, literal: &Literal) -> Result<usize, Internal> {
         let ty = literal.ty();
+        // The value is compared before the type: it rules out nearly every definition with a
+        // word or two, where comparing types walks them (#966). Both are pure, so the first
+        // match is the one id's scan finds.
         let found = self.defs.iter().position(|d| {
             d.initialized
                 && (d.constant || self.literal_sharing == LiteralSharing::Initialised)
                 && d.count.is_none()
-                && d.ty == ty
                 && self.holds(d.ofs, literal)
+                && d.ty == ty
         });
         if let Some(place) = found {
             return Ok(place);
