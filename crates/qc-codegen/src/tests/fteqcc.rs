@@ -3725,3 +3725,27 @@ fn an_fte_switch_is_written_with_its_operands() {
     assert_ne!(range.b, 0);
     assert_ne!(range.c, 0);
 }
+
+// spec FTEF-31.19: on an FTE target an element read at an index that is no constant is
+// `LOADA_*` of the array and the integer index, a float's `LOADA_F` and a struct member's at the
+// member's word
+#[test]
+fn an_fte_element_read_is_loada() {
+    let compiled = compile_fteqcc(
+        "#pragma target fte\ntypedef struct { float a; vector v; } pair_t;\nfloat r;\nvector w;\n\
+         void f(int i) { float x[6]; pair_t p[4]; r = x[i]; w = p[i].v; };\n",
+    )
+    .unwrap();
+    let number = |op: qc_preproc::Op| u32::try_from(op.number()).unwrap();
+    let statements = &compiled.progs.statements;
+    let loada_f = statements
+        .iter()
+        .find(|s| s.op == number(qc_preproc::Op::LoadaF))
+        .unwrap();
+    assert!(loada_f.a != 0 && loada_f.b != 0 && loada_f.c != 0);
+    let loada_v = statements
+        .iter()
+        .find(|s| s.op == number(qc_preproc::Op::LoadaV))
+        .unwrap();
+    assert!(loada_v.a != 0 && loada_v.b != 0 && loada_v.c != 0);
+}
