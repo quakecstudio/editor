@@ -941,6 +941,15 @@ struct Writer<'a> {
 }
 
 impl Writer<'_> {
+    /// The variadic argument, when one was given: `if (param-1 == c->numparams)`.
+    fn rest(&self) -> Option<&Text> {
+        let named = self.params.len();
+        self.call
+            .args
+            .get(named)
+            .filter(|_| self.call.args.len() == named.saturating_add(1))
+    }
+
     /// The argument of the named parameter `token`, `!STRCMP(qcc_token, c->params[p])`.
     fn argument_of(&self, token: &[u8]) -> Option<&Text> {
         let p = self.params.iter().position(|p| p.as_slice() == token)?;
@@ -962,7 +971,6 @@ impl Writer<'_> {
     /// right before; `__VA_COUNT__` is FTEQCC's count; every other token is copied.
     fn write(&self) -> Option<Text> {
         let bytes = self.body.bytes();
-        let named = self.params.len();
         let mut out = Text::default();
         let mut at = 0_usize;
         // GMQ-21.2: the `)` of each `__VA_OPT__(` kept open, dropped when it is reached.
@@ -1010,20 +1018,22 @@ impl Writer<'_> {
                         && self.variadic == Variadic::Yes
                         && word.token == b"__VA_ARGS__")
                         .then(|| {
-                            self.call
-                                .args
-                                .get(named)
-                                .filter(|_| self.call.args.len() == named.saturating_add(1))
+                            self.rest()
                                 .map_or_else(Vec::new, |arg| arg.bytes().to_vec())
                         });
                     match (self.argument_of(&word.token), rest) {
                         (_, Some(rest)) => {
                             let span = self.place(self.body, hash..word.next);
-                            out.push(&markup(rest.trim_ascii()), Origin::Made(span));
+                            out.push(&c_stringize(&rest), Origin::Made(span));
                         }
                         (Some(arg), None) => {
                             let span = self.place(self.body, hash..word.next);
-                            out.push(&markup(arg.bytes()), Origin::Made(span));
+                            // GMQ-21.1: `#param` is C's `#` too where the C preprocessor runs.
+                            let string = match self.variadics {
+                                Variadics::Cpp => c_stringize(arg.bytes()),
+                                Variadics::Fteqcc => markup(arg.bytes()),
+                            };
+                            out.push(&string, Origin::Made(span));
                         }
                         (None, None) => {
                             let span = self.place(self.body, hash..word.next);
@@ -1052,13 +1062,7 @@ impl Writer<'_> {
                     self.argument(arg, &mut out);
                 }
             } else if self.variadic == Variadic::Yes && word.token == b"__VA_ARGS__" {
-                // `if (param-1 == c->numparams)`: a variadic argument was given.
-                if let Some(arg) = self
-                    .call
-                    .args
-                    .get(named)
-                    .filter(|_| self.call.args.len() == named.saturating_add(1))
-                {
+                if let Some(arg) = self.rest() {
                     out.push_from(arg, 0..arg.bytes.len());
                 } else if noargexpand && out.bytes.last() == Some(&b',') {
                     out.truncate(out.bytes.len().saturating_sub(1));
@@ -1073,10 +1077,7 @@ impl Writer<'_> {
             {
                 // GMQ-21.2: `__VA_OPT__(x)` is `x` when variadic arguments are given.
                 let given = self
-                    .call
-                    .args
-                    .get(named)
-                    .filter(|_| self.call.args.len() == named.saturating_add(1))
+                    .rest()
                     .is_some_and(|arg| !arg.bytes().trim_ascii().is_empty());
                 if given {
                     opt_closes.push(close);
@@ -1144,9 +1145,6 @@ impl Writer<'_> {
     }
 }
 
-/// `QCC_PR_ExpandStrCatMarkup`: `bytes` with `\` before each line break, `\` and `"` (a NUL ends
-/// an argument's text, so none is in it), and
-/// in `"` quotes, the string `#param` writes (FTEF-14.31).
 /// The offset of the `)` that closes the `(` at `open` in `bytes`, past the strings between.
 fn matching_paren(bytes: &[u8], open: usize) -> Option<usize> {
     let mut depth = 0_usize;
@@ -1171,6 +1169,9 @@ fn matching_paren(bytes: &[u8], open: usize) -> Option<usize> {
     None
 }
 
+/// `QCC_PR_ExpandStrCatMarkup`: `bytes` with `\` before each line break, `\` and `"` (a NUL ends
+/// an argument's text, so none is in it), and in `"` quotes, the string `#param` writes
+/// (FTEF-14.31).
 fn markup(bytes: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(bytes.len().saturating_add(2));
     out.push(b'"');
@@ -1181,6 +1182,69 @@ fn markup(bytes: &[u8]) -> Vec<u8> {
             b'"' => out.extend_from_slice(b"\\\""),
             _ => out.push(byte),
         }
+    }
+    out.push(b'"');
+    out
+}
+
+/// GMQ-21.1: the string C's `#` makes of `bytes`, an argument's text (C11 6.10.3.2): each run of
+/// white space between its tokens, a comment or a continued line among it, one space; none
+/// before the first or after the last; `\` before each `"` and `\` of a string literal or a
+/// character constant, and every other byte as it is spelled.
+fn c_stringize(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len().saturating_add(2));
+    out.push(b'"');
+    let mut space = false;
+    let mut at = 0_usize;
+    while let Some(byte) = byte_at(bytes, at) {
+        let next = byte_at(bytes, at.saturating_add(1));
+        let gap_end = match (byte, next) {
+            (b'/', Some(b'/')) => Some(
+                (at..bytes.len())
+                    .find(|&i| byte_at(bytes, i) == Some(b'\n'))
+                    .unwrap_or(bytes.len()),
+            ),
+            (b'/', Some(b'*')) => Some(
+                bytes
+                    .get(at.saturating_add(2)..)
+                    .and_then(|rest| rest.windows(2).position(|w| w == b"*/"))
+                    .map_or(bytes.len(), |end| at.saturating_add(end).saturating_add(4)),
+            ),
+            (b'\\', Some(b'\n')) => Some(at.saturating_add(2)),
+            (white, _) if white.is_ascii_whitespace() => Some(at.saturating_add(1)),
+            _ => None,
+        };
+        if let Some(end) = gap_end {
+            space = true;
+            at = end;
+            continue;
+        }
+        if space && out.len() > 1 {
+            out.push(b' ');
+        }
+        space = false;
+        if matches!(byte, b'"' | b'\'') {
+            // A literal's `"` and `\` are escaped, its delimiters among them.
+            let mut end = at.saturating_add(1);
+            while let Some(inner) = byte_at(bytes, end) {
+                end = end.saturating_add(1);
+                if inner == b'\\' {
+                    end = end.saturating_add(1);
+                } else if inner == byte {
+                    break;
+                }
+            }
+            for &inner in bytes.get(at..end.min(bytes.len())).unwrap_or_default() {
+                if matches!(inner, b'"' | b'\\') {
+                    out.push(b'\\');
+                }
+                out.push(inner);
+            }
+            at = end;
+            continue;
+        }
+        out.push(byte);
+        at = at.saturating_add(1);
     }
     out.push(b'"');
     out

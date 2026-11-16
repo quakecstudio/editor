@@ -967,6 +967,11 @@ fn hash_va_args_is_the_variadic_arguments_as_a_string_under_gmqcc() {
     let (text, codes) = gmqcc(source);
     assert_eq!(text, r#"f(1, "\"o\", x + 2") f(1, "")"#);
     assert!(codes.is_empty(), "{codes:?}");
+    // C11 6.10.3.2: white space, a comment and a line break between tokens are one space, and
+    // a string literal's `"` and `\` are escaped.
+    let (text, _) =
+        gmqcc("#define L(a, ...) f(a, #__VA_ARGS__)\nL(1,  x /* c */ +\n  2, \"a\\\"b\")\n");
+    assert_eq!(text, r#"f(1, "x + 2, \"a\\\"b\"")"#);
     let (_, codes) = fte(source);
     assert!(codes.contains(&Code::W0117));
 }

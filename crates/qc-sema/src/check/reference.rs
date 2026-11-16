@@ -864,7 +864,7 @@ impl Checker<'_> {
 
     /// "(constant) array index out of bounds (0 <= I < N)" for a constant index past an array's
     /// end.
-    fn bounds(&mut self, constant: Option<i32>, length: Option<u32>, span: Span) {
+    pub(super) fn bounds(&mut self, constant: Option<i32>, length: Option<u32>, span: Span) {
         if let (Some(i), Some(length)) = (constant, length)
             && u32::from_le_bytes(i.to_le_bytes()) >= length
         {

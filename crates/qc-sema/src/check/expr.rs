@@ -215,10 +215,14 @@ impl<'e> Checker<'e> {
         // (QC-27.15).
         let checked = self.term(expr);
         if let Ok(value) = &checked {
-            let span = expr.syntax().span();
-            self.types.insert((span.start, span.end), value.ty.clone());
+            self.record_type(expr.syntax().span(), value.ty.clone());
         }
         checked
+    }
+
+    /// Records `ty` as the type of the expression at `span`, [`TypedBody::type_at`]'s.
+    pub(super) fn record_type(&mut self, span: Span, ty: Type) {
+        self.types.insert((span.start, span.end), ty);
     }
 
     /// The value of `expr` by its kind. Each kind is its own method, so that the frame a nested
