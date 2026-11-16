@@ -160,3 +160,55 @@ and the textured and lit views draw those alone.
 | The textured view's frame: only the lines of entities without faces are visited | 2.84 ms median, 3.06 ms p99 | 1.52 ms median, 2.24 ms p99 (-46%) |
 
 The app's 227 tests pass, its snapshots among them, so the view draws what it drew.
+
+Tried and not kept: working out the camera's axes and the tangent of its field of view once per
+frame, not once per point projected (`map_panes.rs`, `Projection::view` and `screen`). Over
+three pairs of runs the median frame fell from 1.53 ms to 1.37 ms, but the 95th percentile rose
+from 2.1 ms to 2.4 ms and the 99th from 2.2 ms to 2.7 ms, so it is not a measured win.
+
+Left, with the reason: what remains of the frame is egui's tessellation of the lines still drawn
+(point entities' boxes, the outlined brushes, links), one shape each, and their projection. Drawing
+them as one mesh would take most of it, at the cost of the view's own line drawing; at 1.5 ms of
+an 8.33 ms frame it waits for a map where it shows.
+
+### The map compilers: `qs-map-bsp`, `qs-map-vis`, `qs-map-light`
+
+The P7-04 pass is this group's audit (Cow windings, pooled sets, a `thread_local` stack: lq-e1m1's
+full compile from 287 s to 6.16 s). A `sample` of `full_compile_e1m1` over 60 s with line tables
+(2026-11-15, 6.04 s median against the 8 s budget) finds the time where the algorithms put it:
+light's `Tree::cast_ray` (21,209 samples of its own), vis's `Winding::clip` (12,479) and its
+separating planes (12,129), and qbsp's tree growth across its threads. Allocation is about a
+tenth of the samples, most of it in qbsp's `Builder::grow`, `Winding::clip` and
+`Winding::clipped`, which already reserve their room and consume what they cut. Nothing was
+changed: no single site is large enough to move the budget's median by a measurable step.
+
+### The benchmarks themselves
+
+`check_after_typing` leaves its check thread working after it returns: its 220 pauses, made
+instantly with a set clock, are checked in a few passes of the 50,000-line project, about 17 s
+of one thread in the run sampled above, beside the benchmarks after it. Waiting for that thread
+before returning changed none of them on the reference Mac (`id1_recompile` 50.66 ms against
+50.45 ms, `full_compile_e1m1` 6.041 s against 6.045 s), which has the cores to spare, so the
+benchmark is left as it is; a runner with fewer cores is where it would show first.
+
+### The simulation and the preview host: `qs-sim`, `qs-client`, `apps/quakec-engine`
+
+The engine routes hold their budgets (`server_frame_e1m1` 477.83 us p99 against 1 ms, QuakeC
+90.67 us of it). A `sample` of the release host in `--benchmark` mode on e1m1 for 10 s, with line
+tables (2026-11-16), finds the simulation small beside drawing: `World::frame` 29 samples of the
+main thread's 5,379, `Play::frame` and the map's GPU preparation most of the rest.
+
+| Change | Before | After |
+| --- | --- | --- |
+| `Game::host_action` takes the progs' host command first and copies the host state (every setting, the command buffer and the aliases) only when there is one, not every frame | 109 samples, about 0.9 us a frame | 1 sample |
+
+The host's 74 tests pass.
+
+`--benchmark` draws about 12,000 frames a second with no vsync, so a cost paid once a frame is
+counted far more often than in play at 72 Hz: the change is a small, certain saving, not a
+visible one.
+
+Left, with the reason: `Play::frame`'s largest part in that run is `MapMesh::relight_with`,
+which already makes again only the faces whose light changed, as `R_RenderDynamicLightmaps`
+does, and pays a pass over every face's styles each frame; at the route's 159 us p99 frame
+against its 383 us budget there is nothing to win that a person would see.
