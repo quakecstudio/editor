@@ -153,12 +153,26 @@ impl Docks {
     }
 }
 
+/// What `view.show_panel` does when the dock already shows the panel.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum WhenShown {
+    /// Hide the dock, as a second click on Zed's status-bar button does.
+    #[default]
+    Hide,
+    /// Keep it shown, as showing a panel for something it holds does.
+    Keep,
+}
+
 /// The parameters of `view.show_panel`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ShowPanelParams {
     /// The panel.
     pub panel: DockPanel,
+    /// What to do when its dock already shows it: hide the dock unless `keep`.
+    #[serde(default)]
+    pub when_shown: WhenShown,
 }
 
 /// The parameters of `view.move_panel`.
@@ -177,7 +191,8 @@ struct ShowPanel;
 impl<C: HasLayout + 'static> Command<C> for ShowPanel {
     const ID: &'static str = SHOW_PANEL;
     const SUMMARY: &'static str = "Shows a panel in its dock, opening the dock; when the dock \
-        already shows it, hides the dock, as a click on Zed's status-bar button does.";
+        already shows it, hides the dock, as a click on Zed's status-bar button does, unless \
+        when_shown is keep.";
     type Params = ShowPanelParams;
     type Output = Docks;
     type Error = core::convert::Infallible;
@@ -191,7 +206,7 @@ impl<C: HasLayout + 'static> Command<C> for ShowPanel {
         let dock = layout.docks.place(params.panel);
         let showing = layout.docks.shown(dock) == Some(params.panel);
         let state = layout.panel_mut(dock);
-        if showing && state.visible {
+        if showing && state.visible && params.when_shown == WhenShown::Hide {
             state.visible = false;
         } else {
             state.visible = true;
@@ -301,6 +316,10 @@ mod tests {
             .execute(SHOW_PANEL, json!({ "panel": "map" }))
             .unwrap();
         assert!(session.context().left.visible, "and opens again");
+        session
+            .execute(SHOW_PANEL, json!({ "panel": "map", "when_shown": "keep" }))
+            .unwrap();
+        assert!(session.context().left.visible, "kept open when asked");
         assert!(session.undo().is_err());
         let written = toml::to_string(&session.context().as_written()).unwrap();
         let read: Layout = toml::from_str(&written).unwrap();

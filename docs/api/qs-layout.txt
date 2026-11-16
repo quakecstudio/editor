@@ -47,6 +47,7 @@ enum qs_layout::Focus
 enum qs_layout::LayoutError
 enum qs_layout::Panel
 enum qs_layout::docks::DockPanel
+enum qs_layout::docks::WhenShown
 enum qs_layout::editor::EditorRequest
 enum qs_layout::editor::Outline
 enum qs_layout::editor::SoftWrap
@@ -80,6 +81,7 @@ field qs_layout::TogglePanelParams.panel
 field qs_layout::docks::MovePanelParams.dock
 field qs_layout::docks::MovePanelParams.panel
 field qs_layout::docks::ShowPanelParams.panel
+field qs_layout::docks::ShowPanelParams.when_shown
 field qs_layout::editor::GoToLineParams.line
 field qs_layout::map_camera::MapCamera.fly_speed
 field qs_layout::map_camera::MapCamera.fov
@@ -208,6 +210,7 @@ use qs_layout::TOGGLE_OUTLINE = editor::TOGGLE_OUTLINE
 use qs_layout::TOGGLE_SOFT_WRAP = editor::TOGGLE_SOFT_WRAP
 use qs_layout::UNFOLD = editor::UNFOLD
 use qs_layout::UNFOLD_ALL = editor::UNFOLD_ALL
+use qs_layout::WhenShown = docks::WhenShown
 use qs_layout::ZOOM = zoom::ZOOM
 use qs_layout::Zoom = zoom::Zoom
 use qs_layout::ZoomError = zoom::ZoomError
@@ -232,6 +235,8 @@ variant qs_layout::docks::DockPanel::Project
 variant qs_layout::docks::DockPanel::Properties
 variant qs_layout::docks::DockPanel::Symbols
 variant qs_layout::docks::DockPanel::Terminal
+variant qs_layout::docks::WhenShown::Hide
+variant qs_layout::docks::WhenShown::Keep
 variant qs_layout::editor::EditorRequest::AskLine
 variant qs_layout::editor::EditorRequest::Fold
 variant qs_layout::editor::EditorRequest::FoldAll

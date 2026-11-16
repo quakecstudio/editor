@@ -5,7 +5,7 @@
 
 use eframe::egui::{Button, Response, Ui};
 
-use crate::shell::name_field;
+use crate::shell::name_widget;
 use crate::strings::{Text, icon_hint};
 
 /// Whether an icon button is the one chosen, as Zed's `IconButton::toggle_state`.
@@ -68,11 +68,33 @@ pub enum Icon {
     Grid,
     /// `eye`: what the view shows.
     Show,
+    /// `folder`: the Project panel.
+    Project,
+    /// `list-tree`: the Symbols panel.
+    Symbols,
+    /// `boxes`: the Entities panel.
+    Entities,
+    /// `map`: the Map panel.
+    MapOutline,
+    /// `sliders-horizontal`: the Properties panel.
+    Properties,
+    /// `sparkles`: the Agent panel.
+    Agent,
+    /// `circle-alert`: the Problems panel.
+    Problems,
+    /// `scroll-text`: the Console panel.
+    Console,
+    /// `bug`: the Debugger panel.
+    Debugger,
+    /// `terminal`: the Terminal panel.
+    Terminal,
+    /// `git-branch`: the Git panel.
+    Git,
 }
 
 impl Icon {
     /// Every icon.
-    pub const ALL: [Self; 24] = [
+    pub const ALL: [Self; 35] = [
         Self::Play,
         Self::Pause,
         Self::Step,
@@ -97,6 +119,17 @@ impl Icon {
         Self::Link,
         Self::Grid,
         Self::Show,
+        Self::Project,
+        Self::Symbols,
+        Self::Entities,
+        Self::MapOutline,
+        Self::Properties,
+        Self::Agent,
+        Self::Problems,
+        Self::Console,
+        Self::Debugger,
+        Self::Terminal,
+        Self::Git,
     ];
 
     /// The icon's character in `lucide.ttf`.
@@ -127,6 +160,17 @@ impl Icon {
             Self::Link => '\u{e102}',
             Self::Grid => '\u{e0ef}',
             Self::Show => '\u{e0ba}',
+            Self::Project => '\u{e0d7}',
+            Self::Symbols => '\u{e408}',
+            Self::Entities => '\u{e2d0}',
+            Self::MapOutline => '\u{e110}',
+            Self::Properties => '\u{e29a}',
+            Self::Agent => '\u{e412}',
+            Self::Problems => '\u{e077}',
+            Self::Console => '\u{e45f}',
+            Self::Debugger => '\u{e20c}',
+            Self::Terminal => '\u{e181}',
+            Self::Git => '\u{e0e2}',
         }
     }
 
@@ -134,12 +178,21 @@ impl Icon {
     /// toggle state: named `name` for VoiceOver, and on hover its name and `detail`, what it
     /// does (P7-15).
     pub(crate) fn toggle(self, ui: &mut Ui, state: Toggled, name: Text, detail: Text) -> Response {
+        self.toggle_named(ui, state, name.get(), detail.get())
+    }
+
+    /// As [`Icon::toggle`], for a name made of others, such as a panel's button's.
+    pub(crate) fn toggle_named(
+        self,
+        ui: &mut Ui,
+        state: Toggled,
+        name: &str,
+        detail: &str,
+    ) -> Response {
         // egui's selectable button: framed when selected or hovered, bare otherwise.
         let button = Button::selectable(state == Toggled::On, self.char().to_string());
-        let response = ui
-            .add(button)
-            .on_hover_text(icon_hint(name.get(), detail.get()));
-        name_field(ui, &response, name);
+        let response = ui.add(button).on_hover_text(icon_hint(name, detail));
+        name_widget(ui, &response, name);
         response
     }
 }

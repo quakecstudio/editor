@@ -959,11 +959,21 @@ pub enum Text {
     MapExtractLinked,
     /// What the links toggle of the map editor's toolbar does (P7-15).
     MapLinksHint,
+    /// The Map panel with no map open in the centre (P7-15).
+    MapOutlineIdle,
+    /// A status-bar button's tooltip: what a click and a right-click do (P7-15).
+    PanelButtonHint,
+    /// The status-bar menu's entry moving a panel to the left dock (P7-15).
+    MoveToLeftDock,
+    /// The status-bar menu's entry moving a panel to the right dock (P7-15).
+    MoveToRightDock,
+    /// The status-bar menu's entry moving a panel to the bottom dock (P7-15).
+    MoveToBottomDock,
 }
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 473] = [
+    pub const ALL: [Self; 478] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1231,6 +1241,11 @@ impl Text {
         Self::MapLightsAll,
         Self::MapLinksAll,
         Self::MapLinksHint,
+        Self::MapOutlineIdle,
+        Self::PanelButtonHint,
+        Self::MoveToLeftDock,
+        Self::MoveToRightDock,
+        Self::MoveToBottomDock,
         Self::MapToolSelect,
         Self::MapToolBrush,
         Self::MapToolClip,
@@ -1731,6 +1746,15 @@ impl Text {
             Self::MapLightsAll => "Every light",
             Self::MapLinksAll => "Every link",
             Self::MapLinksHint => "draws every entity's links; off, only the selection's",
+            Self::PanelButtonHint => {
+                "shows it; click again to hide its dock; right-click to move it to another dock"
+            }
+            Self::MoveToLeftDock => "Move to the left dock",
+            Self::MoveToRightDock => "Move to the right dock",
+            Self::MoveToBottomDock => "Move to the bottom dock",
+            Self::MapOutlineIdle => {
+                "Open a map in the Map tab to see its layers, groups and entities."
+            }
             Self::MapToolSelect => "Select",
             Self::MapToolBrush => "Brush",
             Self::MapToolClip => "Clip",
@@ -2164,6 +2188,13 @@ pub fn issue_line(line: u32, message: &str) -> String {
     } else {
         format!("line {line}: {message}")
     }
+}
+
+/// The name of a panel's status-bar button: its title and "panel", as Zed's "Project Panel"
+/// (P7-15).
+#[must_use]
+pub fn panel_button(title: &str) -> String {
+    format!("{title} panel")
 }
 
 /// An icon button's tooltip: its name, then what it does (P7-15).

@@ -30,7 +30,9 @@ mod map_view;
 mod tests;
 mod zoom;
 
-pub use docks::{DockPanel, Docks, MOVE_PANEL, MovePanelParams, SHOW_PANEL, ShowPanelParams};
+pub use docks::{
+    DockPanel, Docks, MOVE_PANEL, MovePanelParams, SHOW_PANEL, ShowPanelParams, WhenShown,
+};
 pub use editor::{
     CLOSE_SPLIT, EditorRequest, FOLD, FOLD_ALL, GO_TO_LINE, GO_TO_SYMBOL, GoToLineParams, Outline,
     PROJECT_SEARCH_VIEW, SPLIT_DOWN, SPLIT_RIGHT, SoftWrap, Split, TAB_SWITCHER, TOGGLE_OUTLINE,

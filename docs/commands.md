@@ -204,7 +204,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`view.move_panel`](#viewmove_panel) | Moves a panel to another dock, where it shows, as Zed's status-bar menu moves one. |
 | [`view.project_search`](#viewproject_search) | Opens the project search: every match in the project's files as a multibuffer of editable excerpts, to edit or replace in place. |
 | [`view.resize_panel`](#viewresize_panel) | Sets the width of the left or right panel, or the height of the bottom panel, in points. |
-| [`view.show_panel`](#viewshow_panel) | Shows a panel in its dock, opening the dock; when the dock already shows it, hides the dock, as a click on Zed's status-bar button does. |
+| [`view.show_panel`](#viewshow_panel) | Shows a panel in its dock, opening the dock; when the dock already shows it, hides the dock, as a click on Zed's status-bar button does, unless when_shown is keep. |
 | [`view.split_down`](#viewsplit_down) | Splits the editor into two panes, one above the other, the second showing the open file. |
 | [`view.split_right`](#viewsplit_right) | Splits the editor into two panes side by side, the second showing the open file. |
 | [`view.tab_switcher`](#viewtab_switcher) | Opens the tab switcher: the open files, the one used most recently first. |
@@ -8666,7 +8666,7 @@ Parameters:
 
 ## `view.show_panel`
 
-Shows a panel in its dock, opening the dock; when the dock already shows it, hides the dock, as a click on Zed's status-bar button does.
+Shows a panel in its dock, opening the dock; when the dock already shows it, hides the dock, as a click on Zed's status-bar button does, unless when_shown is keep.
 
 Parameters:
 
@@ -8732,6 +8732,21 @@ Parameters:
           "type": "string"
         }
       ]
+    },
+    "WhenShown": {
+      "description": "What `view.show_panel` does when the dock already shows the panel.",
+      "oneOf": [
+        {
+          "const": "hide",
+          "description": "Hide the dock, as a second click on Zed's status-bar button does.",
+          "type": "string"
+        },
+        {
+          "const": "keep",
+          "description": "Keep it shown, as showing a panel for something it holds does.",
+          "type": "string"
+        }
+      ]
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -8741,6 +8756,11 @@ Parameters:
     "panel": {
       "$ref": "#/$defs/DockPanel",
       "description": "The panel."
+    },
+    "when_shown": {
+      "$ref": "#/$defs/WhenShown",
+      "default": "hide",
+      "description": "What to do when its dock already shows it: hide the dock unless `keep`."
     }
   },
   "required": [

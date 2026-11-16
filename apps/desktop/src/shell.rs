@@ -25,8 +25,9 @@ use qs_editor_view::{
     Fixable, KeyMode, LineNote, NoteSeverity, Position, Selection, ViewStyle, Wrap,
 };
 use qs_layout::{
-    EditorRequest, Focus, GO_TO_LINE, HasLayout, Layout, Outline, Panel, RESIZE_PANEL,
-    ResizePanelParams, SoftWrap, Split, TOGGLE_PANEL, TogglePanelParams, Zoom, ZoomParams,
+    DockPanel, Docks, EditorRequest, Focus, GO_TO_LINE, HasLayout, Layout, MovePanelParams,
+    Outline, Panel, RESIZE_PANEL, ResizePanelParams, ShowPanelParams, SoftWrap, Split,
+    TOGGLE_PANEL, TogglePanelParams, WhenShown, Zoom, ZoomParams,
 };
 use qs_map_edit::opens_in_map_editor;
 use qs_render::{Camera, MapMesh};
@@ -63,10 +64,12 @@ use crate::fallback::SystemFonts;
 use crate::features::{
     BottomAction, Commands, Dock, FeatureAction, Features, LeftAction, MapShown, ShellRequest,
 };
+use crate::features::{panel_icon, panel_topic};
 use crate::finder::FileFinder;
 use crate::git_panel::TabShown;
 use crate::help::{self, Topic};
 use crate::icons::Icon;
+use crate::icons::Toggled;
 use crate::keymap::{self, Scope};
 use crate::map_editor::MapAction;
 #[cfg(test)]
@@ -81,6 +84,7 @@ use crate::palette::Palette;
 use crate::picker::{PickerKind, PickerRow};
 use crate::project::ProjectFeature;
 use crate::project::{self, Jump, SymbolScope};
+use crate::strings::panel_button;
 use crate::strings::{Text, Truncation};
 use crate::theme::{Theme, Token, semibold};
 #[cfg(test)]
@@ -167,20 +171,13 @@ pub enum MenuPlace {
     InWindow,
 }
 
-/// The tab shown in the bottom panel.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum BottomTab {
-    /// Problems.
-    #[default]
-    Problems,
-    /// Console.
-    Console,
-    /// The debugger.
-    Debugger,
-    /// The terminal tabs (P4-36).
-    Terminal,
-    /// Git (P4-35).
-    Git,
+/// What a click in the status bar asked for (P7-15).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StatusAsk {
+    /// Show this panel, or hide its dock when it shows already.
+    Show(DockPanel),
+    /// Move this panel to that dock.
+    Move(DockPanel, Panel),
 }
 
 /// The tab shown in the centre.
@@ -252,7 +249,6 @@ pub struct Shell {
     saved: Layout,
     /// The zoom factor the last frame drew at.
     zoom_drawn: f32,
-    bottom_tab: BottomTab,
     centre_tab: CentreTab,
     /// Each panel's size as drawn in the last frame, left, right and bottom.
     pub(crate) drawn: [Option<f32>; 3],
@@ -319,7 +315,6 @@ impl Shell {
             layout_file,
             saved: layout,
             zoom_drawn: Zoom::ACTUAL.get(),
-            bottom_tab: BottomTab::default(),
             centre_tab: CentreTab::default(),
             drawn: [None; 3],
             palette: Palette::default(),
@@ -1205,7 +1200,20 @@ impl Shell {
         self.toolbar(ui);
         self.reset_notice(ui);
         self.game_guide(ui);
-        self.status_bar(ui);
+        match self.status_bar(ui) {
+            Some(StatusAsk::Show(panel)) => {
+                let params = ShowPanelParams {
+                    panel,
+                    when_shown: WhenShown::Hide,
+                };
+                let _: Option<Docks> = self.run(qs_layout::SHOW_PANEL, &params);
+            }
+            Some(StatusAsk::Move(panel, dock)) => {
+                let params = MovePanelParams { panel, dock };
+                let _: Option<Docks> = self.run(qs_layout::MOVE_PANEL, &params);
+            }
+            None => {}
+        }
         for panel in [Panel::Left, Panel::Right, Panel::Bottom] {
             self.panel(ui, panel, FocusNow::of(pending, Focus::Panel(panel)));
         }
@@ -1659,8 +1667,11 @@ impl Shell {
         Some(layout.focus)
     }
 
-    fn status_bar(&self, ui: &mut Ui) {
+    /// The status bar: the panels' buttons, as Zed's, and the problems and the game's state;
+    /// what a click on a panel's button, or its menu, asked for.
+    fn status_bar(&self, ui: &mut Ui) -> Option<StatusAsk> {
         let theme = &self.theme;
+        let mut asked = None;
         egui::Panel::bottom(Id::new(Area::StatusBar))
             .exact_size(theme.size.status_bar)
             .frame(
@@ -1671,6 +1682,10 @@ impl Shell {
             .show(ui, |ui| {
                 name_area(ui, accesskit::Role::Status, Text::StatusBar);
                 ui.horizontal_centered(|ui| {
+                    // Zed's order: the left dock's panels first, the right and bottom docks'
+                    // at the far end.
+                    asked = self.panel_buttons(ui, Panel::Left);
+                    ui.separator();
                     let muted = theme.color(Token::TextMuted);
                     let (errors, warnings) =
                         project::counts(self.session.context().workbench.problems());
@@ -1703,8 +1718,50 @@ impl Shell {
                         }
                         None => {}
                     }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        for dock in [Panel::Right, Panel::Bottom] {
+                            asked = asked.or(self.panel_buttons(ui, dock));
+                        }
+                    });
                 });
             });
+        asked
+    }
+
+    /// The status-bar buttons of `dock`'s panels, each on while its panel shows; a click shows
+    /// the panel or hides the dock, and its menu moves it to another dock (P7-15).
+    fn panel_buttons(&self, ui: &mut Ui, dock: Panel) -> Option<StatusAsk> {
+        let layout = self.layout();
+        let docks = layout.docks;
+        let open = layout.panel(dock).visible;
+        let mut asked = None;
+        for panel in docks.panels(dock) {
+            let (title, _) = panel_topic(panel);
+            let state = if open && docks.shown(dock) == Some(panel) {
+                Toggled::On
+            } else {
+                Toggled::Off
+            };
+            let name = panel_button(title.get());
+            let response =
+                panel_icon(panel).toggle_named(ui, state, &name, Text::PanelButtonHint.get());
+            if response.clicked() {
+                asked = Some(StatusAsk::Show(panel));
+            }
+            response.context_menu(|ui| {
+                for (to, text) in [
+                    (Panel::Left, Text::MoveToLeftDock),
+                    (Panel::Right, Text::MoveToRightDock),
+                    (Panel::Bottom, Text::MoveToBottomDock),
+                ] {
+                    if to != dock && ui.button(text.get()).clicked() {
+                        asked = Some(StatusAsk::Move(panel, to));
+                        ui.close();
+                    }
+                }
+            });
+        }
+        asked
     }
 
     /// Draws `panel`, giving it the keyboard when `focus`: its first heading, or the bottom
@@ -1721,7 +1778,6 @@ impl Shell {
             .fill(theme.color(Token::SurfacePanel))
             .inner_margin(theme.space(1))
             .stroke(egui::Stroke::new(1.0, theme.color(Token::Border)));
-        let bottom_tab = &mut self.bottom_tab;
         let scope = &mut self.symbol_scope;
         let workspace = self.session.context();
         let map_shown = if self.centre_tab == CentreTab::Map {
@@ -1791,7 +1847,6 @@ impl Shell {
                 name_area(ui, accesskit::Role::Pane, name);
                 let dock = Dock {
                     workspace,
-                    bottom_tab,
                     scope,
                     map_shown,
                 };
@@ -1866,7 +1921,9 @@ impl Shell {
 
     /// Whether the Git tab is on screen.
     fn git_shown(&self) -> TabShown {
-        if self.bottom_tab == BottomTab::Git && self.layout().bottom.visible {
+        let layout = self.layout();
+        let dock = layout.docks.place(DockPanel::Git);
+        if layout.docks.shown(dock) == Some(DockPanel::Git) && layout.panel(dock).visible {
             TabShown::Shown
         } else {
             TabShown::Hidden
@@ -1974,13 +2031,12 @@ impl Shell {
             }
             ShellRequest::ShowCentre(tab) => self.centre_tab = tab,
             ShellRequest::OpenGameGuide => self.open_guide_to_missing_files(),
-            ShellRequest::ShowBottom(tab) => {
-                self.bottom_tab = tab;
-                if !self.layout().panel(Panel::Bottom).visible
-                    && let Err(error) = self.toggle(Panel::Bottom)
-                {
-                    tracing::warn!(%error, "panel toggle failed");
-                }
+            ShellRequest::ShowPanel(panel) => {
+                let params = ShowPanelParams {
+                    panel,
+                    when_shown: WhenShown::Keep,
+                };
+                let _: Option<Docks> = self.run(qs_layout::SHOW_PANEL, &params);
             }
         }
     }
@@ -2685,12 +2741,6 @@ pub(crate) fn heading(ui: &mut Ui, theme: &Theme, text: Text) -> Response {
     });
     response
 }
-
-/// The share of the left panel's height the Project tree may take.
-pub(crate) const TREE_SHARE: f32 = 0.35;
-/// The share of the left panel's height the Symbols list may take, leaving the headings below
-/// it, each as tall as its 20-point help button, in the window.
-pub(crate) const SYMBOLS_SHARE: f32 = 0.38;
 
 impl Theme {
     /// The editor's colours and font, from the theme's tokens.
