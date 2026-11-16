@@ -815,6 +815,50 @@ heavily class-based (547 `class` declarations across the three mods).
   `pr_token`), not its value: `0x0`, `00`, `0.0` and `-0` are "Can only initialise member
   functions". A vector immediate is lexed component by component into `pr_token`, which keeps
   the last component's text, so `'1 0 0'` and `'0 0 0'` are taken and `'0 0 1'` is refused.
+- **FTEF-9.21** A class's data member, and a virtual member function, is an entity field
+  named `CLASS::__mNAME` (`#define MEMBERFIELDNAME "__m%s"`;
+  `QC_snprintfz(membername, sizeof(membername), "%s::"MEMBERFIELDNAME, classname, parmname);
+  d = QCC_PR_DummyDef(fieldtype, membername, ...)`) of the member's type. A member a parent
+  class has, a virtual function given again among them, is the parent's field
+  (`basicindex = pp[i].ofs; found = true; ... if (found) continue;`), with no definition of its
+  own. A new member names the entity field `NAME` when one is defined (`d = QCC_PR_GetDef(NULL, parmname, NULL, 0, 0, GDF_CONST);
+  if (d) basicindex = 0;`). A nonvirtual or static member, and a member function's body, is the
+  global `CLASS::NAME` (`QC_snprintfz(membername, sizeof(membername), "%s::%s", classname,
+  parmname); ... QCC_PR_GetDef(newparm, membername, NULL, true, 0, gdf_flags)`), so a virtual
+  member's body is a function apart from its field. Without such an entity field, FTEQCC lays
+  each member into a pool shared by every class's members of the same basic type (`::*float`,
+  `::float[N]`). Our compiler gives each member an entity field of its own, so its offsets differ
+  from FTEQCC's and it takes more entity fields; a program reads and writes the same values. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_ParseEntClass`; `engine/qclib/qcc_pr_comp.c`, `MEMBERFIELDNAME`.
+- **FTEF-9.22** A class's `spawnfunc_CLASS` that the program gives no body is written after
+  every file (`if (!strncmp(d->name, "spawnfunc_", 10)) { t = QCC_TypeForName(d->name+10); if
+  (t && t->type == ev_entity) QCC_PR_EmitClassFromFunction(d, t); }`). Its body is:
+  1. `self.classname` set to the class's name when `classname` is a field, through `OP_ADDRESS`
+     and `OP_STOREP_FNC`.
+  2. The function table (`QCC_PR_EmitClassFunctionTable`). For each class from the root down,
+     each virtual member function that no class below it declares again, and that has a body, is
+     stored to its field: `OP_ADDRESS` of `self` and the field, then `OP_STOREP_FNC` of
+     `CLASS::NAME`. One with no body is skipped ("Member function %s was not defined").
+  3. A `CALL0` of each constructor `CLASS::CLASS` that is defined, the class's own first and then
+     each parent's (`for (parenttype = basetype; parenttype; parenttype =
+     parenttype->parentclass)`). With `flag_rootconstructor`, which is off by default, the calls
+     are reversed.
+  4. `DONE`.
+
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qccmain.c`,
+  `QCC_WriteData`'s function loop; `engine/qclib/qcc_pr_comp.c`, `QCC_PR_EmitClassFromFunction`,
+  `QCC_PR_EmitClassFunctionTable`.
+- **FTEF-9.23** `spawn(CLASS)` in a function calls `spawn` and then `spawnfunc_CLASS` with the
+  new entity as `self` (`result = QCC_PR_GenerateFunctionCallRef(nullsref, func, NULL, 0); ...
+  QCC_PR_GenerateFunctionCallRef(result, func, NULL, 0)`): `self` is kept in a temporary
+  (`OP_STORE_ENT self, oself`), the entity is stored to `self`, the entity is copied out of the
+  return global before the call, the call is made and `self` is restored. Its value is the
+  entity, of the class's type. Our compiler writes no statements for named field values,
+  `spawn(CLASS, fld: value)`, or a placement spawn, `spawn(existing, CLASS)`, and does not lower
+  a function that uses one. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall` (`"spawn"`),
+  `QCC_PR_GenerateFunctionCallRef` (`newself`).
 
 ## FTEF-10 Accessors
 

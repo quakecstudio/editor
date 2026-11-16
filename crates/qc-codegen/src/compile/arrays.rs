@@ -460,7 +460,7 @@ impl Compiler<'_> {
     }
 
     /// The offset of the string immediate `text`.
-    fn string_immediate(&mut self, text: Vec<u8>, span: Span) -> Lowered<u32> {
+    pub(super) fn string_immediate(&mut self, text: Vec<u8>, span: Span) -> Lowered<u32> {
         let place = self.program.immediate(&Literal::String(text)).at(span)?;
         Ok(self.program.def(place).at(span)?.ofs)
     }

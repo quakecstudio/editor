@@ -36,6 +36,7 @@ use crate::program::{self, Literal, OFS_PARM0, Program, ValueType, operand, type
 mod allocate;
 mod arrays;
 mod body;
+mod classes;
 
 /// Why a declaration's code stopped: a construct the compiler cannot lower, which the semantic
 /// model should have refused.
@@ -430,6 +431,12 @@ impl<'a> Compiler<'a> {
                     }
                 }
                 Some(ast::Initializer::Body(body)) => {
+                    // FTEF-9.21: a virtual member's body is the function `CLASS::NAME`.
+                    let place = self
+                        .program
+                        .member_function(self.index, id)
+                        .at(name.span())?
+                        .unwrap_or(place);
                     self.function(
                         (&written, &declarator),
                         &name,

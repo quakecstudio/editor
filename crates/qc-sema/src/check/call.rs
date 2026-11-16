@@ -952,7 +952,71 @@ impl Checker<'_> {
             }
             self.value(arg.value())?;
         }
-        Ok(Some(base))
+        if !named.is_empty() || at != 1 {
+            self.followed = false;
+            return Ok(Some(base));
+        }
+        Ok(Some(self.spawn_statements(&class, base)))
+    }
+
+    /// FTEF-9.23: the statements of `spawn(Class)` in a function, as FTEQCC's `spawn`
+    /// intrinsic writes them: the call of `spawn`, then `spawnfunc_Class` called with the new
+    /// entity as `self` (`QCC_PR_GenerateFunctionCallRef(result, func, NULL, 0)`): `self` kept
+    /// in a temporary, the entity stored to `self`, the entity copied out of the return global
+    /// before the call (`QCC_ClobberDef`), the call, and `self` restored. Its value is the
+    /// entity, as the class.
+    fn spawn_statements(&mut self, class: &Type, base: Value) -> Value {
+        if self.global {
+            return base;
+        }
+        let spawnfunc = self
+            .env
+            .class_name(class)
+            .and_then(|name| self.env.helper(&format!("spawnfunc_{name}")));
+        let (Some(spawn), Some(this), Some(spawnfunc)) =
+            (self.env.helper("spawn"), self.env.helper("self"), spawnfunc)
+        else {
+            self.followed = false;
+            return base;
+        };
+        let def = |def| Some(ir::Name::Def(def, 0));
+        self.clobber_return();
+        self.generated.push(ir::BodyStatement {
+            a: def(spawn),
+            ..ir::BodyStatement::bare(Op::Call0)
+        });
+        let call = self.last_made();
+        self.live_return = Some(1);
+        self.live_call = call;
+        let spawned = Value {
+            returned: true,
+            call,
+            ..base
+        };
+        // `oself = self`, then `self = result`.
+        let kept = self.next_made();
+        self.generated.push(ir::BodyStatement {
+            a: def(this),
+            b: Some(ir::Name::Made(kept)),
+            ..ir::BodyStatement::bare(Op::StoreEnt)
+        });
+        self.generated.push(ir::BodyStatement {
+            a: self.name_of(&spawned),
+            b: def(this),
+            ..ir::BodyStatement::bare(Op::StoreEnt)
+        });
+        self.clobber_return();
+        self.generated.push(ir::BodyStatement {
+            a: def(spawnfunc),
+            ..ir::BodyStatement::bare(Op::Call0)
+        });
+        self.generated.push(ir::BodyStatement {
+            a: Some(ir::Name::Made(kept)),
+            b: def(this),
+            ..ir::BodyStatement::bare(Op::StoreEnt)
+        });
+        self.last_temp = None;
+        spawned
     }
 
     /// FTEF-17.19: the path a call names by a constant string: a `precache_` function's first

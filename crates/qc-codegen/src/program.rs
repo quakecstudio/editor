@@ -17,7 +17,7 @@ use std::collections::HashMap;
 
 use qc_progs::opcode::Opcode;
 use qc_progs::{Function, Statement};
-use qc_sema::{DefId, FileId, FunctionType, ModuleIndex, SimpleType, Type};
+use qc_sema::{DefId, DefKind, FileId, FunctionType, ModuleIndex, SimpleType, Type};
 use qc_types::Etype;
 
 use crate::Internal;
@@ -216,6 +216,9 @@ pub(crate) struct Program {
     pub(crate) defs: Vec<Def>,
     /// Where in [`Program::defs`] each definition of the semantic model is, once made.
     places: HashMap<DefId, usize>,
+    /// The function `CLASS::NAME` of each virtual member a body defines, whose field is the
+    /// member's own place (FTEF-9.21).
+    member_functions: HashMap<DefId, usize>,
     /// The global area, a word per global offset: its length is `numpr_globals`.
     pub(crate) globals: Vec<u32>,
     /// The string table, without the padding [`crate::write`] adds.
@@ -254,6 +257,7 @@ impl Program {
         Self {
             defs: Vec::new(),
             places: HashMap::new(),
+            member_functions: HashMap::new(),
             globals: vec![0; RESERVED_OFS],
             strings: vec![0],
             statements: vec![Statement::default()],
@@ -622,6 +626,16 @@ impl Program {
                 _ => written.clone(),
             })
         });
+        // FTEF-9.21: a class's data or virtual member is the entity field `CLASS::__mNAME`
+        // (`QCC_PR_ParseEntClass`, `MEMBERFIELDNAME`), which names the entity field `NAME` when
+        // one is defined (`d = QCC_PR_GetDef(NULL, parmname, ...); if (d) basicindex = 0;`).
+        let class = definition
+            .member_of
+            .filter(|_| definition.kind == DefKind::Field && ty.field_inner().is_none())
+            .and_then(|class| index.def(class));
+        if let (Some(class), ValueType::Of(held)) = (class, &ty) {
+            return self.member_field(index, id, &class.name, held.clone());
+        }
         // FTE-21.9: a function's own definition takes the open block's offsets, a global the
         // globals' whatever block is open.
         let in_block = definition.owner.is_some() && self.block.is_some();
@@ -632,8 +646,13 @@ impl Program {
         };
         let place = self.defs.len();
         let count = index.array_len(id);
+        // FTEF-9.21: a nonvirtual or static member is the global `CLASS::NAME`.
+        let name = match definition.member_of.and_then(|class| index.def(class)) {
+            Some(class) => format!("{}::{}", class.name, definition.name),
+            None => definition.name.clone(),
+        };
         self.defs.push(Def {
-            name: definition.name.clone(),
+            name,
             ty: ty.clone(),
             ofs,
             scope: definition.owner,
@@ -683,6 +702,115 @@ impl Program {
                     .ok_or(Internal::TooLarge)?;
             }
         }
+        Ok(place)
+    }
+
+    /// FTEF-9.21: the function `CLASS::NAME` a body of the virtual member `id` defines, made now
+    /// if it is new (`QCC_PR_GetDef(newparm, membername, NULL, true, 0, gdf_flags)`); `None` for
+    /// a definition that is no class's virtual member.
+    pub(crate) fn member_function(
+        &mut self,
+        index: &ModuleIndex,
+        id: DefId,
+    ) -> Result<Option<usize>, Internal> {
+        if let Some(&place) = self.member_functions.get(&id) {
+            return Ok(Some(place));
+        }
+        let definition = index.def(id).ok_or(Internal::NoDefinition)?;
+        let Some(class) = definition
+            .member_of
+            .filter(|_| {
+                definition.kind == DefKind::Field && matches!(definition.ty, Type::Function(_))
+            })
+            .and_then(|class| index.def(class))
+        else {
+            return Ok(None);
+        };
+        let name = format!("{}::{}", class.name, definition.name);
+        let ty = ValueType::Of(definition.ty.clone());
+        let place = self.generated(&name, ty, 1)?;
+        if let Some(def) = self.defs.get_mut(place) {
+            def.constant = true;
+        }
+        self.member_functions.insert(id, place);
+        Ok(Some(place))
+    }
+
+    /// FTEF-9.21: the function a body of the virtual member `id` defined, when one did.
+    pub(crate) fn member_function_made(&self, id: DefId) -> Option<usize> {
+        self.member_functions.get(&id).copied()
+    }
+
+    /// FTEF-9.21: the member `id` of the class `class`, holding `held`, as the entity field
+    /// `CLASS::__mNAME`: the entity field `NAME`'s offset when one is defined, else a new one.
+    fn member_field(
+        &mut self,
+        index: &ModuleIndex,
+        id: DefId,
+        class: &str,
+        held: Type,
+    ) -> Result<usize, Internal> {
+        let definition = index.def(id).ok_or(Internal::NoDefinition)?;
+        let name = definition.name.clone();
+        // A member a parent class has is the parent's field (`basicindex = pp[i].ofs; found =
+        // true;`), for which FTEQCC makes no definition.
+        let parent_member = index
+            .class_members(&Type::Named(class.into()))
+            .into_iter()
+            .find(|&other| {
+                index.def(other).is_some_and(|d| {
+                    d.name == name
+                        && d.member_of != definition.member_of
+                        && d.kind == DefKind::Field
+                })
+            });
+        if let Some(parent_member) = parent_member {
+            let place = self.get_def(index, parent_member)?;
+            self.places.insert(id, place);
+            return Ok(place);
+        }
+        let entity_field = index
+            .definitions()
+            .find(|(_, d)| d.name == name && d.member_of.is_none() && d.kind == DefKind::Field)
+            .map(|(other, _)| other);
+        let shared = match entity_field {
+            Some(other) => {
+                let place = self.get_def(index, other)?;
+                let ofs = self.defs.get(place).ok_or(Internal::NoDefinition)?.ofs;
+                Some(self.word(ofs))
+            }
+            None => None,
+        };
+        let ty = ValueType::Of(Type::Field(held.into()));
+        let words = type_words(index, &ty);
+        let ofs = self.allocate_global(words)?;
+        let place = self.defs.len();
+        self.defs.push(Def {
+            name: format!("{class}::__m{name}"),
+            ty: ty.clone(),
+            ofs,
+            scope: None,
+            initialized: false,
+            constant: index.is_constant(id),
+            count: index.array_len(id),
+            id: Some(id),
+        });
+        self.places.insert(id, place);
+        let field = match shared {
+            Some(word) => word,
+            None => {
+                let field = self.size_fields;
+                let inner = ty.field_inner().ok_or(Internal::Unsupported)?;
+                let count = index.array_len(id).unwrap_or(1);
+                let taken = inner.words().checked_mul(count).ok_or(Internal::TooLarge)?;
+                self.size_fields = self
+                    .size_fields
+                    .checked_add(taken)
+                    .ok_or(Internal::TooLarge)?;
+                field
+            }
+        };
+        self.set_words(ofs, &[field])?;
         Ok(place)
     }
 
