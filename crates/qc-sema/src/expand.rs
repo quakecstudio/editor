@@ -90,7 +90,7 @@ impl ModuleInput {
     /// directories and its defines (PRJ-5.4).
     #[must_use]
     pub fn from_module(module: &Module) -> Self {
-        Self {
+        let mut input = Self {
             include_dirs: module.include_dirs.clone(),
             defines: module
                 .defines
@@ -98,7 +98,17 @@ impl ModuleInput {
                 .map(|d| (d.name.clone(), d.value.clone()))
                 .collect(),
             ..Self::from_graph(&module.graph)
+        };
+        // PRJ-4.13: GMQCC has no source form; a source that is QuakeC is the file it compiles,
+        // its `#include`s read where they stand, as it compiles a file named on its command line.
+        // PRJ-4.14: and the module is read as FTEQCC reads GMQCC's code, with `-std=gmqcc`.
+        if module.dialect == qc_project::Dialect::Gmqcc {
+            let mut compiled = core::mem::take(&mut input.prelude);
+            compiled.append(&mut input.compiled);
+            input.compiled = compiled;
+            input.command_line = CommandLine::new(&["-std=gmqcc"]);
         }
+        input
     }
 }
 

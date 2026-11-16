@@ -261,6 +261,18 @@ FTEQCC `QCC_main` (the `#!` and `*qcc_token == '#'` tests, after `QCC_LoadFile`)
   same directory and compiled in the order listed (QC-23.3). The `progs.src` itself is not
   compiled. Under the vanilla dialect a list with no token is error `E0401` (QCD-5.1); under the
   FTEQCC and GMQCC dialects it is no error (PRJ-4.9).
+- **PRJ-4.13** Under the GMQCC dialect a module's source in source form is the file compiled,
+  with the files it brings in with `#include` read where they stand; it is not a prelude whose
+  own tokens are left out (QC-9.8). GMQCC has no source form: `main.cpp` compiles a file named on
+  its command line as QuakeC (`item.type = TYPE_QC;`, "it's a QC filename") and reads only a
+  `progs.src` as a list (graphitemaster/gmqcc@`888ad563c7ff825ef049105adc9142e46a7cfb83`).
+  Xonotic, the GMQCC corpus, builds this way: its `qcsrc/tools/qcc.sh` runs the C preprocessor
+  over `server/progs.inc` and passes gmqcc the one file that results.
+- **PRJ-4.14** Under the GMQCC dialect a module is read with the command line `-std=gmqcc`, as
+  FTEQCC reads code written for GMQCC (FTEF-14.72, FTEF-20.1): `qc_preproc`'s `-std=gmqcc` sets
+  FTEQCC's `attributes` (GMQ-16), `dblstarexp` (GMQ-18), `assumevar` (GMQ-5.1), `cpriority`
+  (GMQ-7.1), `ifvector` and `vectorlogic` (GMQ-3.1) among its flags, and its warnings, with no
+  `-std=` option in the project file.
 
 ## PRJ-5 Directives the graph follows
 
