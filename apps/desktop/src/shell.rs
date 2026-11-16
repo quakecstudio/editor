@@ -1862,8 +1862,17 @@ impl Shell {
                             .show(ui, |ui| features.region_ui(ui, theme, panel, dock, focus))
                             .inner
                     }
+                    // Contents wider or taller than the panel, a long name in the outline,
+                    // are cut at its edge: laid out in a child of exactly the panel's room, so
+                    // egui never stores them as the panel's size, which grew the panel on one
+                    // frame and set it back on the next.
                     Panel::Left | Panel::Bottom => {
-                        features.region_ui(ui, theme, panel, dock, focus)
+                        let room = ui.available_rect_before_wrap();
+                        let mut inside = ui.new_child(egui::UiBuilder::new().max_rect(room));
+                        inside.shrink_clip_rect(room);
+                        let asked = features.region_ui(&mut inside, theme, panel, dock, focus);
+                        ui.advance_cursor_after_rect(room);
+                        asked
                     }
                 };
             });
