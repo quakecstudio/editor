@@ -4102,3 +4102,19 @@ fn a_string_character_is_loaded_from_the_string() {
         assert_eq!((load.a, load.b), (statements[0].b, statements[1].b));
     }
 }
+
+// spec FTEF-27.9: `~` of a float on a target without `OP_BITNOT_F` is a subtraction from -1, of a
+// constant the model holds no value of (an enum item that redefines a constant) included
+#[test]
+fn the_complement_of_an_opaque_float_is_a_subtraction_from_minus_one() {
+    use qc_preproc::Op;
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\nconst float EF_NODRAW = 16;\n\
+         typedef enum { EF_NODRAW = (1<<4) } effects_t;\nfloat b;\n\
+         void t(void) { b &= ~EF_NODRAW; };\n",
+    )
+    .unwrap();
+    let sub = body(&compiled.progs, "t")[0];
+    assert_eq!(sub.op, u32::try_from(Op::SubF.number()).unwrap());
+    assert_eq!(sub.a, immediate(&compiled.progs, -1.0));
+}
