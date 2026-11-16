@@ -4084,3 +4084,21 @@ fn the_address_of_a_global_is_its_globaladdress() {
         )
     );
 }
+
+// spec FTEF-31.18: a string's character at a float index is `OP_LOADP_C` of the string and the
+// index, at an integer one `OP_LOADP_U8`
+#[test]
+fn a_string_character_is_loaded_from_the_string() {
+    use qc_preproc::Op;
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\nvoid t(void) { string s = \"abc\"; float i = 1; float c = s[i]; };\n\
+         void u(void) { string s = \"abc\"; int i = 1; int c = s[i]; };\n",
+    )
+    .unwrap();
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    for (name, op) in [("t", Op::LoadpC), ("u", Op::LoadpU8)] {
+        let statements = body(&compiled.progs, name);
+        let load = statements.iter().find(|s| s.op == number(op)).unwrap();
+        assert_eq!((load.a, load.b), (statements[0].b, statements[1].b));
+    }
+}

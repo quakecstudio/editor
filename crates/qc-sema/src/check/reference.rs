@@ -171,7 +171,11 @@ impl Checker<'_> {
                     self.supplied(&index, &Type::Named("__int32".into()), span)?
                 };
                 let op = if float_index { Op::LoadpC } else { Op::LoadpU8 };
-                let string = Value::of(Type::Simple(SimpleType::String));
+                let string = Value {
+                    ty: Type::Simple(SimpleType::String),
+                    reference: Reference::Global,
+                    ..value.clone()
+                };
                 // FTEF-31.18: the load's own type, an emulated `OP_LOADP_U8`'s the `__uint32` of
                 // its last shift.
                 self.emit(op, &string, &index, span)
@@ -929,11 +933,13 @@ impl Checker<'_> {
         } else {
             Type::Named("__int32".into())
         };
+        // The character keeps what names the string, which its load reads (FTEF-31.18).
+        let plain = Value::of(ty.clone());
         Ok(Value {
-            readonly: string.readonly,
-            name: string.name,
+            ty,
+            constness: plain.constness,
             reference: Reference::Character(Box::new(at)),
-            ..Value::of(ty)
+            ..string
         })
     }
 
