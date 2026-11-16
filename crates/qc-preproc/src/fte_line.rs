@@ -12,7 +12,7 @@ use crate::fte_directive::{
     Directive, IfTest, Junk, TextStart, byte_at, condition, read, simple_get_token,
     skip_to_end_of_line, starts_line,
 };
-use crate::fte_macro::{Reading, read_define};
+use crate::fte_macro::{Reading, Splices, read_define};
 use crate::{FileId, Lexing, Relexed, merge_errors};
 
 /// Under an FTEQCC dialect, where the text of the directive whose `#` is at `hash` in a file's
@@ -57,7 +57,7 @@ pub fn fte_directive_end(text: &[u8], from: usize, hash: usize) -> Option<usize>
         Directive::NotIf { word } => word.end,
         Directive::Define { word_end, .. } => {
             let reading = Reading::File(FileId::new(0), text);
-            line(read_define(&reading, word_end).1)
+            line(read_define(&reading, word_end, Splices::Kept).1)
         }
         Directive::Eof => text
             .get(hash..)

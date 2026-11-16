@@ -20,7 +20,7 @@ use super::{
     WORD_TOO_LONG, byte_at, com_parse, condition, elif_defined, lossy, qcc_load_as, read,
     simple_get_token, skip_side, skip_to_end_of_line, starts_line, too_long, whitespace,
 };
-use crate::fte_macro::{Reading, read_define};
+use crate::fte_macro::{Reading, Splices, read_define};
 use crate::{FileId, Lexing, TokenStream, Variadic};
 
 /// The most `#includelist`s and `#pragma DONT_COMPILE_THIS_FILE`s one inside another's reading
@@ -428,7 +428,7 @@ impl FteFileReader {
             | Directive::Pack { end, .. } => self.at = end.at,
             Directive::Define { definer, word_end } => {
                 let reading = Reading::File(FileId::new(0), text);
-                let (read, stop) = read_define(&reading, word_end);
+                let (read, stop) = read_define(&reading, word_end, Splices::Kept);
                 if let Ok(definition) = read {
                     let name = lossy(text.get(definition.name.clone()).unwrap_or_default());
                     let value = lossy(definition.value.bytes());
