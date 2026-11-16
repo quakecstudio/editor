@@ -4005,6 +4005,15 @@ fn a_ternary_of_mixed_arms_converts_the_integer_arm() {
     assert!(!has("t1", Op::StoreIf));
     assert!(has("t2", Op::StoreIf));
     assert!(!has("t2", Op::ConvItof));
+    // A truth arm is `ev_boolean`, so FTEQCC neither converts nor rewrites the store; the body
+    // is not followed.
+    for arms in ["(a < b) : r", "r : (a < b)"] {
+        let text = format!(
+            "#pragma target fte_5768\nfloat x;\nfloat a;\nfloat b;\n\
+             void t(void) {{ int r = 1; x = (r == -1) ? {arms}; }};\n"
+        );
+        assert!(compile_fteqcc(&text).is_err(), "{arms}");
+    }
 }
 
 // spec FTEF-30.7: a vector of integer components stores each to its word of the temporary with

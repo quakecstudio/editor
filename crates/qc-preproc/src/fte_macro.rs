@@ -1207,6 +1207,8 @@ fn markup(bytes: &[u8]) -> Vec<u8> {
 /// before the first or after the last; `\` before each `"` and `\` of a string literal or a
 /// character constant, and every other byte as it is spelled.
 fn c_stringize(bytes: &[u8]) -> Vec<u8> {
+    // A block comment's `/*` and `*/`, past which its end is.
+    const COMMENT_MARKS: usize = 4;
     let mut out = Vec::with_capacity(bytes.len().saturating_add(2));
     out.push(b'"');
     let mut space = false;
@@ -1223,7 +1225,9 @@ fn c_stringize(bytes: &[u8]) -> Vec<u8> {
                 bytes
                     .get(at.saturating_add(2)..)
                     .and_then(|rest| rest.windows(2).position(|w| w == b"*/"))
-                    .map_or(bytes.len(), |end| at.saturating_add(end).saturating_add(4)),
+                    .map_or(bytes.len(), |end| {
+                        at.saturating_add(end).saturating_add(COMMENT_MARKS)
+                    }),
             ),
             (b'\\', Some(b'\n')) => Some(at.saturating_add(2)),
             (white, _) if white.is_ascii_whitespace() => Some(at.saturating_add(1)),

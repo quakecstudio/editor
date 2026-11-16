@@ -5185,9 +5185,12 @@ reference are FTEF-31's.
   ternary`. With an integer first arm and a float last, the first arm's store becomes
   `OP_STORE_IF` (`truthstore->op = OP_STORE_IF; r.cast = type_float;`): `x = c ? r : 2.5f;`
   writes `STORE_IF r, ternary`. A signed and an unsigned integer arm take the unsigned type
-  with the same words. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
-  `engine/qclib/qcc_pr_comp.c`, the ternary in `QCC_PR_Expression`; checked against the pinned
-  FTEQCC's `-Fwasm` output for both forms.
+  with the same words. A truth value is neither (`ev_boolean`, FTEF-30.15): `c ? (a < b) : r`
+  stores `r` with `STORE_I` unconverted and `c ? r : (a < b)` stores it with `STORE_F`, each with
+  the warning "Type mismatch on ternary operator", and the model does not follow such a body.
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  the ternary in `QCC_PR_RefExpression`; checked against the pinned FTEQCC's `-Fwasm` output for
+  each form (2026-11-16 for the truth arms).
 
 ## FTEF-31 References
 

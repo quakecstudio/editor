@@ -718,7 +718,12 @@ impl Program {
         let name = definition.name.clone();
         // QC-11.12: a vector member's component is a float field at the vector's field and its
         // word, `_x`, `_y` or `_z`.
-        let component = COMPONENTS.iter().zip(0_u32..).find_map(|(suffix, word)| {
+        // Only a generated component, which a vector member makes, is looked up.
+        let generated = COMPONENTS
+            .iter()
+            .zip(0_u32..)
+            .filter(|_| definition.generated);
+        let component = generated.into_iter().find_map(|(suffix, word)| {
             let vector = name.strip_suffix(suffix)?;
             let (vector, _) = index.definitions().find(|(_, d)| {
                 d.name == vector
@@ -728,7 +733,7 @@ impl Program {
             })?;
             Some((vector, word))
         });
-        if let Some((vector, word)) = component.filter(|_| definition.generated) {
+        if let Some((vector, word)) = component {
             let vector_place = self.get_def(index, vector)?;
             let vector_ofs = self
                 .defs
