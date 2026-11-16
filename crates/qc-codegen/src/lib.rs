@@ -307,6 +307,12 @@ fn compile_lowered(
     if compiler.dialect == Dialect::Fteqcc {
         if write::needs_fte32(&progs) {
             progs.format = Format::Fte32;
+        } else if resolve
+            .target
+            .is_some_and(qc_preproc::TargetFormat::writes_version_7)
+        {
+            // FTE-24.3: an FTE target's 16-bit layout is version 7, its operands unsigned.
+            progs.format = Format::Fte16;
         } else {
             write::wrap_short_operands(&mut progs);
         }
