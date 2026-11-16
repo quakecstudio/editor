@@ -5162,6 +5162,16 @@ reference are FTEF-31's.
   `c ? x : (K0 && K2)` stores the float `1` and `c ? (1 && 6) : (0 || 0)` the floats `1` and
   `0`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_RefExpression`.
+- **FTEF-30.18** A ternary whose arms are a float and an integer is a float. With a float first
+  arm and an integer last, the last is converted before its store (`else if (r.cast->type ==
+  ev_float && (val.cast->type == ev_integer||val.cast->type == ev_uint)) val =
+  QCC_SupplyConversion(val, ev_float, true);`): `x = c ? 2.5f : r;` writes `CONV_IF r,
+  ternary`. With an integer first arm and a float last, the first arm's store becomes
+  `OP_STORE_IF` (`truthstore->op = OP_STORE_IF; r.cast = type_float;`): `x = c ? r : 2.5f;`
+  writes `STORE_IF r, ternary`. A signed and an unsigned integer arm take the unsigned type
+  with the same words. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, the ternary in `QCC_PR_Expression`; checked against the pinned
+  FTEQCC's `-Fwasm` output for both forms.
 
 ## FTEF-31 References
 

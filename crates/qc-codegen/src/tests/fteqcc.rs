@@ -3974,3 +3974,44 @@ fn a_compound_assignment_through_a_pointer_loads_operates_and_stores() {
         (number(Op::StorepF), add.3, pointer, load.2)
     );
 }
+
+// spec FTEF-30.18: a ternary of a float arm and an integer arm converts the integer last arm
+// before its store, and makes an integer first arm's store `OP_STORE_IF`
+#[test]
+fn a_ternary_of_mixed_arms_converts_the_integer_arm() {
+    use qc_preproc::Op;
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\nfloat x;\nvoid t1(void) { int r = 1; x = (r == -1) ? 2.5f : r; };\n\
+         void t2(void) { int r = 1; x = (r == -1) ? r : 2.5f; };\n",
+    )
+    .unwrap();
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let has = |name: &str, op: Op| {
+        body(&compiled.progs, name)
+            .iter()
+            .any(|s| s.op == number(op))
+    };
+    assert!(has("t1", Op::ConvItof));
+    assert!(!has("t1", Op::StoreIf));
+    assert!(has("t2", Op::StoreIf));
+    assert!(!has("t2", Op::ConvItof));
+}
+
+// spec FTEF-30.7: a vector of integer components stores each to its word of the temporary with
+// `OP_STORE_IF`, then the vector
+#[test]
+fn a_vector_of_integer_components_stores_each_by_store_if() {
+    use qc_preproc::Op;
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\nvector v;\nvoid t(void) { int a = 1; int b = 2; v = [a, b]; };\n",
+    )
+    .unwrap();
+    let store_if = u32::try_from(Op::StoreIf.number()).unwrap();
+    let stores: Vec<_> = body(&compiled.progs, "t")
+        .into_iter()
+        .filter(|s| s.op == store_if)
+        .collect();
+    assert_eq!(stores.len(), 2);
+    assert_eq!(stores[1].b, stores[0].b + 1);
+    assert_eq!(stores[0].a, global(&compiled.progs, "a"));
+}
