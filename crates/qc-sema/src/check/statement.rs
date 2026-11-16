@@ -157,7 +157,8 @@ impl Checker<'_> {
     }
 
     /// Names the target of each jump of the body whose target is known, and its condition
-    /// once [`Checker::branch`] named it: `b` of `IF`, `IFNOT` and `CASE`, `a` of `GOTO`.
+    /// once [`Checker::branch`] named it: `b` of `IF`, `IFNOT`, `OP_SWITCH_*` and `CASE`, `c` of
+    /// `CASERANGE`, `a` of `GOTO` (FTEF-34.18).
     pub(super) fn name_jumps(&mut self) {
         for (made, target) in self.layout.jumps() {
             let Some(statement) = usize::try_from(made)
@@ -169,7 +170,15 @@ impl Checker<'_> {
             let target = Some(ir::Name::Jump(target));
             match statement.op {
                 Op::Goto => statement.a = target,
-                Op::IfI | Op::IfnotI => statement.b = target,
+                Op::IfI
+                | Op::IfnotI
+                | Op::SwitchF
+                | Op::SwitchE
+                | Op::SwitchV
+                | Op::SwitchS
+                | Op::SwitchFnc
+                | Op::Case => statement.b = target,
+                Op::Caserange => statement.c = target,
                 _ => {}
             }
         }
@@ -689,6 +698,12 @@ impl Checker<'_> {
         // FTE-18.13: the jump copies a call's value the cases still read.
         self.clobber_return();
         let patch1 = self.jump(step, switch_op, None, line);
+        // FTEF-34.18: `OP_SWITCH_*` reads the switch's value, `QCC_PR_StatementFlags
+        // (&pr_opcodes[op], e, nullsref, &patch1, ...)`.
+        let scrutinee = self.name_of(&value);
+        if hcstyle && let Some(statement) = self.generated.last_mut() {
+            statement.a = scrutinee;
+        }
         let body = self.here();
         // FTEF-16.16: each `case` read while the body is, at any depth, is this switch's.
         self.switches.push(Vec::new());
@@ -742,7 +757,23 @@ impl Checker<'_> {
                 None => None,
             };
             if hcstyle {
-                self.jump(Step::Branch, Op::Case, Some(case.at), line);
+                // FTEF-34.18: `OP_CASE` of the value, or `OP_CASERANGE` of its bounds.
+                let op = if max.is_some() {
+                    Op::Caserange
+                } else {
+                    Op::Case
+                };
+                self.jump(Step::Branch, op, Some(case.at), line);
+                let (low, high) = (
+                    self.name_of(&min),
+                    max.as_ref().and_then(|m| self.name_of(m)),
+                );
+                if let Some(statement) = self.generated.last_mut() {
+                    statement.a = low;
+                    if max.is_some() {
+                        statement.b = high;
+                    }
+                }
                 continue;
             }
             match max {
