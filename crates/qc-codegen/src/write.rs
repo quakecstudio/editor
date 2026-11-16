@@ -165,6 +165,22 @@ pub(crate) fn wrap_short_operands(progs: &mut ProgsFile) {
     }
 }
 
+/// FTE-24.3: each operand of version 7's 16-bit layout as the `unsigned short` its low 16 bits
+/// are, so a jump's negative offset is written as 65536 plus it, as FTEQCC's
+/// `(unsigned short)PRLittleShort((unsigned short)a)` writes it.
+pub(crate) fn wrap_unsigned_operands(progs: &mut ProgsFile) {
+    const SHORT_SPAN: i32 = 0x1_0000;
+    /// The least `short`, the lowest operand a 16-bit statement holds.
+    const SHORT_MIN: i32 = -0x8000;
+    for statement in &mut progs.statements {
+        for operand in [&mut statement.a, &mut statement.b, &mut statement.c] {
+            if (SHORT_MIN..0).contains(operand) {
+                *operand = operand.wrapping_add(SHORT_SPAN);
+            }
+        }
+    }
+}
+
 /// How the global definition list is written (FTE-13.13).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Records {

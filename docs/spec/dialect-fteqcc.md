@@ -5642,3 +5642,12 @@ name, a literal or a constant. The layout is FTEQCC's at its default optimisatio
   after a nested function's error too, where FTEQCC stops. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseInitializerType_Internal`, `QCC_PR_FinaliseFunction`.
+- **FTEF-34.18** With `OP_SWITCH_*` on the target (FTEF-34.5), the switch's statement reads its
+  value and jumps to the case table, `QCC_PR_StatementFlags (&pr_opcodes[op], e, nullsref,
+  &patch1, STFL_DISCARDRESULT)`, the jump in `b`; each `case` of one value is `OP_CASE` of the
+  value with its jump in `b`, `QCC_PR_Statement (&pr_opcodes[OP_CASE], dmin, nullsref, &patch3)`
+  and `patch3->b.jumpofs = &statements[pr_cases[i]] - patch3`; and a range is `OP_CASERANGE` of
+  its two bounds with its jump in `c`, `QCC_PR_Statement (&pr_opcodes[OP_CASERANGE], dmin, dmax,
+  &patch3)` and `patch3->c.jumpofs = ...`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseStatement`, the `switch` case.
