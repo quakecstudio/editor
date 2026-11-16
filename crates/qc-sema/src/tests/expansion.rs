@@ -15,6 +15,7 @@ use crate::db::{Db, ModuleAnalysis};
 use crate::expand::{Files, ModuleInput, OriginMap, preprocess};
 use crate::lower::lower_file;
 use crate::symbol::{FileId, Location};
+use crate::ty::{SimpleType, Type};
 
 /// A module of named files: every file is put in a database under its name, and the ones
 /// named in `compiled` are compiled in that order. Returns the database and the input.
@@ -1092,15 +1093,41 @@ fn gmqcc_reads_variadic_arguments() {
 // refuses the array's address there
 #[test]
 fn a_gmqcc_field_array_element_is_picked_inside_e_parens() {
-    let text = "entity self;\n.float _scores[4];\nfloat id;\n\
-                void t() { float s = self.(_scores[id]); float u = self.(_scores[2]); }\n";
-    let found = |dialect: Dialect| {
+    let found = |text: &str, dialect: Dialect| {
         let (mut db, mut input) = module(&[("a.qc", text)], &["a.qc"], dialect);
         if dialect == Dialect::Gmqcc {
             input.command_line = CommandLine::new(&["-std=gmqcc"]);
         }
         codes(&db.analyze_module(&input))
     };
-    assert!(!found(Dialect::Gmqcc).contains(&Code::E0331));
-    assert!(found(Dialect::Fteqcc).contains(&Code::E0331));
+    let text = "entity self;\n.float _scores[4];\nfloat id;\n\
+                void t() { float s = self.(_scores[id]); float u = self.(_scores[2]); }\n";
+    assert!(!found(text, Dialect::Gmqcc).contains(&Code::E0331));
+    assert!(found(text, Dialect::Fteqcc).contains(&Code::E0331));
+    // Only an element is picked: the array named alone is still its head.
+    let bare = "entity self;\n.float _scores[4];\nvoid t() { float s = self.(_scores); }\n";
+    assert!(found(bare, Dialect::Gmqcc).contains(&Code::E0331));
+}
+
+// spec GMQ-22.2: under GMQCC a constant index past an array of fields' end, picked inside
+// `e.( )`, is reported as any array's is; the element's type is the field's
+#[test]
+fn a_gmqcc_field_array_element_past_the_end_is_reported() {
+    let text = "entity self;\n.float _scores[4];\nvoid t() { float s = self.(_scores[9]); }\n";
+    let (mut db, mut input) = module(&[("a.qc", text)], &["a.qc"], Dialect::Gmqcc);
+    input.command_line = CommandLine::new(&["-std=gmqcc"]);
+    let analysis = db.analyze_module(&input);
+    assert!(codes(&analysis).contains(&Code::W0249));
+    let index = &analysis.index;
+    let t = index
+        .definitions()
+        .find(|(_, d)| d.name == "t")
+        .map(|(id, _)| id)
+        .unwrap();
+    let start = text.find("_scores[9]").unwrap();
+    let span = Span::new(start, start + "_scores[9]".len());
+    assert_eq!(
+        index.body(t).unwrap().type_at(span),
+        Some(&Type::Field(Type::Simple(SimpleType::Float).into()))
+    );
 }

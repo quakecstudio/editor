@@ -213,8 +213,15 @@ impl<'a> Compiler<'a> {
             self.scope = None;
             let result = if let Some(declaration) = ast::Declaration::cast(item.clone()) {
                 self.declaration(&declaration)
-            } else if let Some(enumeration) = ast::EnumDecl::cast(item) {
+            } else if let Some(enumeration) = ast::EnumDecl::cast(item.clone()) {
                 self.enumeration(&enumeration)
+            } else if let Some(typedef) = ast::TypedefDecl::cast(item) {
+                // FTE-15.5: `typedef enum { ... } NAME;` defines its items as an `enum` does.
+                typedef
+                    .syntax()
+                    .children()
+                    .filter_map(ast::EnumDecl::cast)
+                    .try_for_each(|enumeration| self.enumeration(&enumeration))
             } else {
                 Ok(())
             };
@@ -250,8 +257,15 @@ impl<'a> Compiler<'a> {
                         .at(name.span())
                         .map(drop)
                 })
-            } else if let Some(enumeration) = ast::EnumDecl::cast(item) {
+            } else if let Some(enumeration) = ast::EnumDecl::cast(item.clone()) {
                 self.enumeration(&enumeration)
+            } else if let Some(typedef) = ast::TypedefDecl::cast(item) {
+                // FTE-15.5: `typedef enum { ... } NAME;` defines its items as an `enum` does.
+                typedef
+                    .syntax()
+                    .children()
+                    .filter_map(ast::EnumDecl::cast)
+                    .try_for_each(|enumeration| self.enumeration(&enumeration))
             } else {
                 Ok(())
             };

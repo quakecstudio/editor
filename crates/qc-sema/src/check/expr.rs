@@ -12,7 +12,7 @@ use qc_diag::{Code, Span};
 use qc_preproc::{FteFlag, Op};
 use qc_syntax::ast::{self, AstNode as _, BinaryOp};
 
-use crate::cast::Source;
+use crate::cast::{ConstType, Source};
 use crate::check::assign::{assign_spelling, lexed_string};
 use crate::check::constant::{Constant, unquoted};
 use crate::check::convert::{Choice, Operand, choose_opcode};
@@ -197,10 +197,14 @@ impl<'e> Checker<'e> {
         // (QC-27.15).
         let checked = self.term(expr);
         if let Ok(value) = &checked {
-            let span = expr.syntax().span();
-            self.types.insert((span.start, span.end), value.ty.clone());
+            self.record_type(expr.syntax().span(), value.ty.clone());
         }
         checked
+    }
+
+    /// Records `ty` as the type of the expression at `span`, [`TypedBody::type_at`]'s.
+    pub(super) fn record_type(&mut self, span: Span, ty: Type) {
+        self.types.insert((span.start, span.end), ty);
     }
 
     /// The value of `expr` by its kind. Each kind is its own method, so that the frame a nested
@@ -323,9 +327,13 @@ impl<'e> Checker<'e> {
                 let lexed = qc_lexer::lex_with(token.text(), qc_syntax::Dialect::Fteqcc);
                 let literal = match lexed.tokens.as_slice() {
                     [lexed] => match lexed.kind {
+                        // A one-word constant only: a 64-bit one's words are not the float's.
                         qc_lexer::TokenKind::Float(value)
-                            if value.to_bits()
-                                == u32::from_le_bytes(constant.i().to_le_bytes()) =>
+                            if value.to_bits() == constant.u()
+                                && matches!(
+                                    constant.ty,
+                                    ConstType::Float | ConstType::Integer | ConstType::Uint
+                                ) =>
                         {
                             Some((
                                 constant,
@@ -540,6 +548,15 @@ impl<'e> Checker<'e> {
         }
         // A constant converted to the row's type is folded by FTEQCC's conversion, which the
         // model does not follow: its value no longer decides anything (FTEF-26.13).
+        // FTEF-23.9: a cast between a signed and an unsigned integer of one width keeps the
+        // word (`src.cast = cast; //fine, just treat it as-is`).
+        let free_cast = |operand: Operand, row: OpType| {
+            matches!(
+                (operand.etype, row.etype()),
+                (Etype::Integer | Etype::Uint, Etype::Integer | Etype::Uint)
+                    | (Etype::Int64 | Etype::Uint64, Etype::Int64 | Etype::Uint64)
+            )
+        };
         let constness = |value: &Value, operand: Operand, row: OpType| {
             if row.etype() == operand.etype
                 || value.constness == Constness::Variable
@@ -559,11 +576,7 @@ impl<'e> Checker<'e> {
                 constness: constness(value, operand, row),
                 // A null constant is cast with no statement, `QCC_MakeIntConst(0)` of the
                 // row's type, still a constant (FTEF-28.4).
-                // A cast that takes no conversion opcode, `int` to `uint`, keeps the word.
-                sym: if kept
-                    || value.null()
-                    || conversion_opcodes(operand.etype, row.etype()).is_empty()
-                {
+                sym: if kept || value.null() || free_cast(operand, row) {
                     value.sym
                 } else {
                     Sym::Temp

@@ -1160,18 +1160,18 @@ pub fn join_paths(name: &[u8], base: &[u8]) -> Vec<u8> {
     joined
 }
 
-/// `name` with each `.` and each `..` after a directory taken out, as the file it reaches is
-/// named: `a/b/../c.qh` is `a/c.qh`. A `..` with no directory before it is kept.
+/// `name` with each `.`, each empty part after the first and each `..` after a directory taken
+/// out, as the file it reaches is named (PRJ-5.17): `a/b/../c.qh` and `a//b/../c.qh` are
+/// `a/c.qh`, `/../c.qh` is `/c.qh`. A `..` with no directory before it is kept.
 fn lexical_name(name: &[u8]) -> Vec<u8> {
     let mut parts: Vec<&[u8]> = Vec::new();
     for part in name.split(|&b| b == b'/' || b == b'\\') {
-        match part {
-            b"." => {}
-            b".."
-                if parts
-                    .last()
-                    .is_some_and(|last| *last != b"..".as_slice() && !last.is_empty()) =>
-            {
+        match (part, parts.last()) {
+            (b".", _) => {}
+            // The root, the empty part before a leading `/`, is kept; any later is no part.
+            (b"", Some(_)) => {}
+            (b"..", Some(&b"")) => {}
+            (b"..", Some(last)) if *last != b"..".as_slice() => {
                 parts.pop();
             }
             _ => parts.push(part),
@@ -1916,15 +1916,9 @@ impl<L: Loader> Preprocessor<L> {
             run.report(Code::E0111, format!("cannot include {shown}: {reason}"), at);
             return;
         };
-        // PRJ-5.9: `#pragma once` marks the file; under GMQCC a name that reaches it through
-        // `..`, as Xonotic's `"../teams.qh"` does, names the same file.
-        let marked = if self.dialect == Dialect::Gmqcc {
-            let full = lexical_name(&full);
-            self.fte.once.iter().any(|once| lexical_name(once) == full)
-        } else {
-            self.fte.once.contains(&full)
-        };
-        if marked {
+        // PRJ-5.9: `#pragma once` marks the file; PRJ-5.17: under GMQCC by the file a name
+        // reaches, `"../teams.qh"` as Xonotic writes it among them.
+        if self.fte.once.contains(&self.once_name(full.clone())) {
             return;
         }
         if run.cursors.iter().any(|c| c.path == path) {
@@ -1970,6 +1964,7 @@ impl<L: Loader> Preprocessor<L> {
             PragmaName::DontCompileThisFile => return self.fte_dont_compile(run, bytes, end),
             PragmaName::Once => {
                 let marked = self.pragma_base(run, bytes);
+                let marked = self.once_name(marked);
                 self.fte.once.push(marked);
             }
             PragmaName::File if !self.fte.flags.no_file_line() => {
@@ -2142,6 +2137,15 @@ impl<L: Loader> Preprocessor<L> {
 impl<L: Loader> Preprocessor<L> {
     /// The name `#pragma once` marks and `#pragma includedir` joins its directory to: the file
     /// being compiled (FTEF-14.70), or under GMQCC the file holding the pragma (PRJ-5.12).
+    /// The name a `#pragma once` mark is kept and looked up by: as written (PRJ-5.9), and under
+    /// GMQCC the file it reaches (PRJ-5.17).
+    fn once_name(&self, name: Vec<u8>) -> Vec<u8> {
+        match self.dialect {
+            Dialect::Gmqcc => lexical_name(&name),
+            _ => name,
+        }
+    }
+
     fn pragma_base(&self, run: &Run, bytes: &Bytes) -> Vec<u8> {
         let holding = match bytes {
             Bytes::File(file, _) if self.dialect == Dialect::Gmqcc => {

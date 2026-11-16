@@ -377,7 +377,7 @@ impl Checker<'_> {
             match load {
                 Some(op) if !self.global => {
                     let loaded = self.emit(op, element, &index, span)?;
-                    return Ok(ArrayRead::Loaded(loaded));
+                    return Ok(ArrayRead::Loaded(Box::new(loaded)));
                 }
                 Some(_) => {}
                 None => self.followed = false,
@@ -493,7 +493,7 @@ impl Checker<'_> {
                 return Ok(Value {
                     reference: Reference::Global,
                     ty: value.ty,
-                    ..loaded
+                    ..*loaded
                 });
             }
             // A struct read word by word is the block its words were stored to.
@@ -799,8 +799,12 @@ impl Checker<'_> {
                 Reference::ArrayHead(Some(member)) => self.member_array_index(member, at, span)?,
                 _ => at,
             };
-            if let Reference::ArrayHead(Some(MemberArray { pointer: true, .. })) = base.reference {
-                let named = self.name_of(&base);
+            if let Reference::ArrayHead(Some(MemberArray {
+                through: Some(named),
+                ..
+            })) = base.reference
+            {
+                let named = Some(named);
                 return Ok(Value {
                     readonly: false,
                     reference: Reference::pointer(label, Some(at), named),
@@ -904,7 +908,7 @@ impl Checker<'_> {
 
     /// "(constant) array index out of bounds (0 <= I < N)" for a constant index past an array's
     /// end.
-    fn bounds(&mut self, constant: Option<i32>, length: Option<u32>, span: Span) {
+    pub(super) fn bounds(&mut self, constant: Option<i32>, length: Option<u32>, span: Span) {
         if let (Some(i), Some(length)) = (constant, length)
             && u32::from_le_bytes(i.to_le_bytes()) >= length
         {
@@ -1012,7 +1016,7 @@ impl Checker<'_> {
             Reference::Field(_) | Reference::Accessor(_) => Ok(pointer_to(&value.ty)),
             // FTEF-6.24: a member array through a pointer is the pointer plus its offset.
             Reference::ArrayHead(Some(MemberArray {
-                pointer: true,
+                through: Some(_),
                 word,
                 ..
             })) => {
@@ -1469,7 +1473,7 @@ enum ArrayRead {
     /// By the array's getter, whose value is in the return global (FTEF-19.78).
     Called,
     /// FTEF-31.19: by `OP_LOADA_*`, the value it made.
-    Loaded(Value),
+    Loaded(Box<Value>),
     /// FTE-13.12: a struct's words by the getter into a block, made at this statement.
     Block(u32),
 }

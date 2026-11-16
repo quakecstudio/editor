@@ -447,17 +447,22 @@ impl Checker<'_> {
         (before, result): (usize, Option<u32>),
         span: Span,
     ) -> Checked {
-        // FTEF-30.18: mixed arms, as `QCC_PR_ParseTernary` reconciles them: a float first arm
+        // FTEF-30.18: mixed arms, as `QCC_PR_RefExpression` reconciles them: a float first arm
         // and an integer last, the last converted before its store (`val =
         // QCC_SupplyConversion(val, ev_float, true)`); an integer first arm and a float last,
         // the first arm's store made `OP_STORE_IF` (`truthstore->op = OP_STORE_IF`); a signed
         // and an unsigned integer, the same words.
         let (kept_etype, other_etype) = (self.etype_of(&kept.ty), self.etype_of(&other.ty));
         let (other, op) = match (kept_etype, other_etype) {
-            (Some(Etype::Float), Some(Etype::Integer | Etype::Uint)) if !is_truth(&other.ty) => (
-                self.converted(&other, Etype::Float, span)?,
-                Some(Op::StoreF),
-            ),
+            // `r.cast->type == ev_float`: a truth value is `ev_boolean`, neither arm one.
+            (Some(Etype::Float), Some(Etype::Integer | Etype::Uint))
+                if !is_truth(&kept.ty) && !is_truth(&other.ty) =>
+            {
+                (
+                    self.converted(&other, Etype::Float, span)?,
+                    Some(Op::StoreF),
+                )
+            }
             _ => (other, op),
         };
         let first_store = result
@@ -469,7 +474,9 @@ impl Checker<'_> {
             });
         match (kept_etype, self.etype_of(&other.ty)) {
             (a, b) if a == b => {}
-            (Some(Etype::Integer), Some(Etype::Float)) if !is_truth(&kept.ty) => {
+            (Some(Etype::Integer), Some(Etype::Float))
+                if !is_truth(&kept.ty) && !is_truth(&other.ty) =>
+            {
                 match first_store.and_then(|at| self.generated.get_mut(at)) {
                     Some(store) => store.op = Op::StoreIf,
                     None => self.followed = false,
@@ -573,10 +580,8 @@ impl Checker<'_> {
             return Ok(Value::unknown());
         };
         match (a, b) {
+            // FTEF-30.18: a float first arm's integer last one is converted before this.
             (Etype::Integer, Etype::Float) => kept.ty = other.ty.clone(),
-            (Etype::Float, Etype::Integer | Etype::Uint) => {
-                other = self.converted(&other, Etype::Float, span)?;
-            }
             (Etype::Uint, Etype::Integer) | (Etype::Uint64, Etype::Int64) => {
                 other.ty = kept.ty.clone();
             }

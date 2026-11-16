@@ -3927,7 +3927,7 @@ fn a_class_field_argument_is_loaded_into_its_entity_slot() {
     assert_eq!(load.c, 4);
 }
 
-// spec FTE-18.11: a field argument a parameter of another type converts is loaded where it is
+// spec FTEF-32.18: a field argument a parameter of another type converts is loaded where it is
 // written, and its value converted into the slot: `takei(self.fl)` is `LOAD_F` to a temporary,
 // then `CONV_FTOI` of it to the parameter
 #[test]
@@ -3973,6 +3973,16 @@ fn a_compound_assignment_through_a_pointer_loads_operates_and_stores() {
         (store.0, store.1, store.2, store.3),
         (number(Op::StorepF), add.3, pointer, load.2)
     );
+    // At an index, the same: loaded at the index, operated on, stored back at it.
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\ntypedef struct { float a; string b; } s_t;\ns_t *g_s;\n\
+         void t(int i) { g_s[i].a *= 3; };\n",
+    )
+    .unwrap();
+    let ops: Vec<u32> = body(&compiled.progs, "t").iter().map(|s| s.op).collect();
+    let mul = ops.iter().position(|&op| op == number(Op::MulF)).unwrap();
+    assert!(ops[..mul].contains(&number(Op::LoadpF)), "{ops:?}");
+    assert!(ops[mul..].contains(&number(Op::StorepF)), "{ops:?}");
 }
 
 // spec FTEF-30.18: a ternary of a float arm and an integer arm converts the integer last arm
@@ -3995,6 +4005,15 @@ fn a_ternary_of_mixed_arms_converts_the_integer_arm() {
     assert!(!has("t1", Op::StoreIf));
     assert!(has("t2", Op::StoreIf));
     assert!(!has("t2", Op::ConvItof));
+    // A truth arm is `ev_boolean`, so FTEQCC neither converts nor rewrites the store; the body
+    // is not followed.
+    for arms in ["(a < b) : r", "r : (a < b)"] {
+        let text = format!(
+            "#pragma target fte_5768\nfloat x;\nfloat a;\nfloat b;\n\
+             void t(void) {{ int r = 1; x = (r == -1) ? {arms}; }};\n"
+        );
+        assert!(compile_fteqcc(&text).is_err(), "{arms}");
+    }
 }
 
 // spec FTEF-30.7: a vector of integer components stores each to its word of the temporary with
@@ -4103,20 +4122,29 @@ fn a_string_character_is_loaded_from_the_string() {
     }
 }
 
-// spec FTEF-27.9: `~` of a float on a target without `OP_BITNOT_F` is a subtraction from -1, of a
-// constant the model holds no value of (an enum item that redefines a constant) included
+// spec FTE-15.5: a `typedef enum`'s items are constant globals with their values, as an `enum`'s
+// are
+// spec FTEF-19.10: an item's value that is an expression is folded, `(1<<4)` 16, so `~` of it
+// folds too: `b &= ~EF_NODRAW` is `BITAND b, -17f, b`, as the pinned FTEQCC's `-Fwasm` writes it
 #[test]
-fn the_complement_of_an_opaque_float_is_a_subtraction_from_minus_one() {
+fn a_typedef_enum_item_is_its_folded_value() {
     use qc_preproc::Op;
     let compiled = compile_fteqcc(
         "#pragma target fte_5768\nconst float EF_NODRAW = 16;\n\
-         typedef enum { EF_NODRAW = (1<<4) } effects_t;\nfloat b;\n\
-         void t(void) { b &= ~EF_NODRAW; };\n",
+         typedef enum { EF_NODRAW = (1<<4) } effects_t;\ntypedef enum { C = 5 } e_t;\nfloat b;\n\
+         void t(void) { b &= ~EF_NODRAW; };\nvoid u(void) { b = C; };\n",
     )
     .unwrap();
-    let sub = body(&compiled.progs, "t")[0];
-    assert_eq!(sub.op, u32::try_from(Op::SubF.number()).unwrap());
-    assert_eq!(sub.a, immediate(&compiled.progs, -1.0));
+    let p = &compiled.progs;
+    let and = body(p, "t")[0];
+    assert_eq!(and.op, u32::try_from(Op::BitandF.number()).unwrap());
+    assert_eq!(
+        (and.a, and.b, and.c),
+        (global(p, "b"), immediate(p, -17.0), global(p, "b"))
+    );
+    let store = body(p, "u")[0];
+    let word = p.globals[usize::try_from(store.a).unwrap()].bits();
+    assert_eq!(word, 5.0_f32.to_bits());
 }
 
 // spec FTEF-31.21: a member array's element through a pointer, `p->a[i]`, is stored and loaded

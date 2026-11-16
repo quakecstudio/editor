@@ -272,10 +272,30 @@ impl<'a> Resolver<'a> {
                     Some(_) | None => None,
                 }
             }
-            ValueKind::Translate(_)
-            | ValueKind::Indexed(_)
-            | ValueKind::Cast(_)
-            | ValueKind::Other => None,
+            // FTEF-19.10: an expression is folded as a global's initialiser is, `(1<<4)` 16.
+            ValueKind::Other => self.folded_enum_value(file, value, wanted),
+            ValueKind::Translate(_) | ValueKind::Indexed(_) | ValueKind::Cast(_) => None,
+        }
+    }
+
+    /// FTEF-19.10: the value of an item's expression `value` of the kind `kind`, folded at
+    /// global scope as FTEQCC's `QCC_PR_Expression` and `QCC_SRef_EvalConst` read it (FTEF-34.9);
+    /// `None` when it does not fold. The fold's own diagnostics are a global's, not an item's,
+    /// and are not kept.
+    fn folded_enum_value(&mut self, file: FileId, value: &RawValue, kind: Kind) -> Option<f64> {
+        let expr = value.syntax.clone()?;
+        let ty = match kind {
+            Kind::Float => Type::Simple(SimpleType::Float),
+            Kind::Integer => Type::Named("__int32".into()),
+            _ => return None,
+        };
+        let reported = self.index.diagnostics.len();
+        let folded = self.fold_expression(file, (&expr, value), &ty);
+        self.index.diagnostics.truncate(reported);
+        let word = *folded?.words().first()?;
+        match kind {
+            Kind::Float => Some(f64::from(f32::from_bits(word))),
+            _ => Some(f64::from(i32::from_le_bytes(word.to_le_bytes()))),
         }
     }
 

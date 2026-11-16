@@ -18,7 +18,7 @@ use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::pointer;
-use crate::check::reference::expected_after;
+use crate::check::reference::{eval_int, expected_after};
 use crate::check::{Bitfield, Constness, ElementRef, FieldRef, MemberArray, Reference, Value};
 use crate::ir;
 use crate::ty::{SimpleType, Type};
@@ -114,8 +114,7 @@ impl Checker<'_> {
                     .and_then(|index| index.base())
                     .is_some_and(|b| b.syntax() == field.syntax());
                 // GMQ-22.1: an element picked inside `e.( )` is already the field.
-                let picked =
-                    self.env.field_array_accessors() && matches!(selector, ast::Expr::Paren(_));
+                let picked = self.picked_field(&selector).is_some();
                 if let Reference::Field(f) = &value.reference
                     && f.def.is_some_and(|def| self.env.is_array(def))
                     && !indexed
@@ -253,21 +252,22 @@ impl Checker<'_> {
             ast::Expr::Paren(paren) => {
                 // GMQ-22.1: an element of an array of fields is the field its index names, which
                 // the array's accessor gives; the body is not followed.
-                if self.env.field_array_accessors()
-                    && let Some(ast::Expr::Index(index)) = paren.expr()
-                    && let Some(ast::Expr::Name(array)) = index.base()
-                    && let Some(token) = array.name()
-                    && let Some(def) = self.env.reference(token.span().start)
-                    && self.env.is_array(def)
-                    && let Some(Type::Field(held)) = self.env.definition(def).map(|d| d.ty.clone())
-                {
-                    self.value(index.index())?;
+                if let Some(picked) = self.picked_field(selector) {
+                    let at = self.value(picked.index.index())?;
+                    // GMQ-22.2: a constant index past the array's end.
+                    let constant = at.known().and_then(eval_int);
+                    let length = self.env.array_length(picked.def);
+                    self.bounds(constant, length, picked.index.syntax().span());
                     self.followed = false;
+                    let element = Type::Field(picked.held.clone().into());
+                    for span in [picked.index.syntax().span(), paren.syntax().span()] {
+                        self.record_type(span, element.clone());
+                    }
                     return Ok(Value::field_of(
                         base,
-                        token.text_lossless(),
-                        held.as_ref().clone(),
-                        Some(def),
+                        picked.name,
+                        picked.held,
+                        Some(picked.def),
                     ));
                 }
                 // `QCC_GetSRefName` of the value: a definition's name, `IMMEDIATE`, or a
@@ -520,7 +520,7 @@ impl Checker<'_> {
             Reference::ArrayHead(Some(MemberArray {
                 length: member.length,
                 word: member.position.map_or(0, |position| position >> 5),
-                pointer: false,
+                through: None,
             }))
         } else {
             Reference::Global
@@ -701,17 +701,14 @@ impl Checker<'_> {
                 // A member array through the pointer is indexed through it (FTEF-6.24).
                 if let Reference::ArrayHead(Some(array)) = member.reference {
                     // The array keeps what names the pointer, which its elements are read and
-                    // stored through (FTEF-31.21).
+                    // stored through (FTEF-31.21); the array itself is no definition.
+                    let through = self.name_of(base);
+                    if through.is_none() && !self.global {
+                        self.followed = false;
+                    }
                     return Ok(Value {
                         name: Some(base.label()),
-                        sym: base.sym,
-                        made: base.made,
-                        word: base.word,
-                        call: base.call,
-                        reference: Reference::ArrayHead(Some(MemberArray {
-                            pointer: true,
-                            ..array
-                        })),
+                        reference: Reference::ArrayHead(Some(MemberArray { through, ..array })),
                         ..member
                     });
                 }
@@ -807,4 +804,49 @@ pub(super) fn next_token(node: &qc_syntax::SyntaxNode) -> Option<qc_syntax::Synt
         .into_iter()
         .flat_map(|root| root.tokens().collect::<Vec<_>>())
         .find(|token| !token.kind().is_trivia() && token.span().start >= end)
+}
+
+/// GMQ-22.1: an element of an array of fields picked inside `e.( )`, `e.(arr[i])`.
+struct PickedField {
+    /// The `arr[i]`.
+    index: ast::IndexExpr,
+    /// The array's name.
+    name: String,
+    /// The array's definition.
+    def: DefId,
+    /// The type each field holds.
+    held: Type,
+}
+
+impl Checker<'_> {
+    /// The element of an array of fields `selector`, the parenthesised selector of `e.( )`,
+    /// picks, under a dialect whose arrays of fields give their element's field (GMQ-22.1).
+    fn picked_field(&self, selector: &ast::Expr) -> Option<PickedField> {
+        let ast::Expr::Paren(paren) = selector else {
+            return None;
+        };
+        if !self.env.field_array_accessors() {
+            return None;
+        }
+        let Some(ast::Expr::Index(index)) = paren.expr() else {
+            return None;
+        };
+        let Some(ast::Expr::Name(array)) = index.base() else {
+            return None;
+        };
+        let token = array.name()?;
+        let def = self.env.reference(token.span().start)?;
+        if !self.env.is_array(def) {
+            return None;
+        }
+        let Some(Type::Field(held)) = self.env.definition(def).map(|d| d.ty.clone()) else {
+            return None;
+        };
+        Some(PickedField {
+            index,
+            name: token.text_lossless(),
+            def,
+            held: held.as_ref().clone(),
+        })
+    }
 }

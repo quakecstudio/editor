@@ -484,6 +484,35 @@ impl<'a> Resolver<'a> {
     /// FTEF-34.9: what `expr`, the value `value` written for the global `owner` with type `ty`,
     /// folds to, read at global scope under `flags`, as `QCC_PR_ParseInitializerType` evaluates
     /// it.
+    /// FTEF-19.10: what `expr`, an enum item's value, folds to as `ty` at global scope, as
+    /// [`Self::fold_global`] folds a global's initialiser.
+    pub(in crate::resolve) fn fold_expression(
+        &mut self,
+        file: FileId,
+        (expr, value): (&ast::Expr, &RawValue),
+        ty: &Type,
+    ) -> Option<InitialValue> {
+        let written = value.written_types.clone();
+        let uses = self.use_defs.clone();
+        let flags = [(0, CompilerFlags::default())];
+        let reported = self.index.diagnostics.len();
+        let mut env = BodyEnv {
+            resolver: self,
+            file,
+            owner: None,
+            reported,
+            in_class: false,
+            inline_member: false,
+            uses: &uses,
+            flags: &flags,
+            lex: &[],
+            written: &written,
+            locals: &[],
+            naming: FunctionName::Named,
+        };
+        check_initialiser(&mut env, expr, ty, "")
+    }
+
     pub(in crate::resolve) fn fold_global(
         &mut self,
         file: FileId,

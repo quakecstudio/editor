@@ -22,6 +22,8 @@ enum Compiler {
     /// FTEQCC, in the rerelease subset or the full dialect (`dialect-fteqcc-rerelease.md`,
     /// `dialect-fteqcc.md`).
     Fteqcc,
+    /// GMQCC as Xonotic builds with it, on FTEQCC's language (`dialect-gmqcc.md`).
+    Gmqcc,
 }
 
 /// The dialect and the module-wide options a module is resolved with.
@@ -36,50 +38,38 @@ pub(in crate::resolve) struct Profile {
     qcfuncs_off: bool,
     /// The output format `QCC_PR_FinishCompilation` reads (FTEF-22.5).
     target: Option<TargetFormat>,
-    /// How an array of fields is indexed inside `e.( )`.
-    field_arrays: FieldArrays,
-}
-
-/// How an element of an array of fields is reached inside `e.( )`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum FieldArrays {
-    /// FTEQCC's: the array named alone is its head, whose address is taken (FTEF-31.6).
-    Addressed,
-    /// GMQCC's: the array's accessor gives the field the index names (GMQ-22.1).
-    Accessed,
 }
 
 impl Profile {
     /// The profile of `options`. FTEQCC's options mean nothing under `qcc`, so they are off.
     pub(in crate::resolve) fn new(options: ResolveOptions) -> Self {
-        let compiler = if options.dialect.has_fteqcc_extensions() {
+        let compiler = if options.dialect == qc_syntax::Dialect::Gmqcc {
+            Compiler::Gmqcc
+        } else if options.dialect.has_fteqcc_extensions() {
             Compiler::Fteqcc
         } else {
             Compiler::Qcc
         };
-        let fteqcc = compiler == Compiler::Fteqcc;
+        let fteqcc = matches!(compiler, Compiler::Fteqcc | Compiler::Gmqcc);
         Self {
             compiler,
             autoproto: fteqcc && options.autoproto,
             case_insensitive: fteqcc && options.case_insensitive,
             qcfuncs_off: fteqcc && options.qcfuncs_off,
             target: options.target.filter(|_| fteqcc),
-            field_arrays: if options.dialect == qc_syntax::Dialect::Gmqcc {
-                FieldArrays::Accessed
-            } else {
-                FieldArrays::Addressed
-            },
         }
     }
 
     /// GMQ-22.1: an element of an array of fields, `e.(arr[i])`, is the field the index names,
-    /// which GMQCC's array accessor gives (`parser_create_array_accessor`).
+    /// which GMQCC's array accessor gives (`parser_create_array_accessor`); FTEQCC takes the
+    /// array's address (FTEF-31.6).
     pub(in crate::resolve) const fn field_array_accessors(self) -> bool {
-        matches!(self.field_arrays, FieldArrays::Accessed)
+        matches!(self.compiler, Compiler::Gmqcc)
     }
 
+    /// FTEQCC's language, which GMQCC's dialect builds on.
     const fn fteqcc(self) -> bool {
-        matches!(self.compiler, Compiler::Fteqcc)
+        matches!(self.compiler, Compiler::Fteqcc | Compiler::Gmqcc)
     }
 
     /// FTEQCC reads the module twice with autoprototyping, declaring in the first pass and

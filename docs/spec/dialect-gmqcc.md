@@ -334,16 +334,23 @@ this should already be stringized").
 ### Behaviour
 
 - **GMQ-21.1** Under this dialect, `#__VA_ARGS__` in a variadic macro's body is the variadic
-  arguments' text, trimmed, as one string, `""` when none is given, as the C preprocessor that
-  Xonotic runs before GMQCC writes it: `L(1, "o", x + 2)` of `#define L(a, ...) f(a,
-  #__VA_ARGS__)` is `f(1, "\"o\", x + 2")`. This is a deliberate divergence from GMQCC's own
+  arguments' text as one string, `""` when none is given, as the C preprocessor that Xonotic runs
+  before GMQCC writes it: `L(1, "o", x + 2)` of `#define L(a, ...) f(a, #__VA_ARGS__)` is `f(1,
+  "\"o\", x + 2")`. The string is C's `#` (C11, N1570 6.10.3.2): "Each occurrence of white space
+  between the argument's preprocessing tokens becomes a single space character in the character
+  string literal. White space before the first preprocessing token and after the last
+  preprocessing token composing the argument is deleted. ... a \ character is inserted before
+  each " and \ character of a character constant or string literal (including the delimiting "
+  characters)", and a comment is white space, "Each comment is replaced by one space character"
+  (5.1.1.2). A named parameter's `#param` is the same string; FTEQCC's keeps the text's white
+  space and comments (`QCC_PR_ExpandStrCatMarkup`, FTEF-14.31). This is a deliberate divergence from GMQCC's own
   preprocessor. There, `case '#':` stringizes only a parameter's name (`nextok == TOKEN_IDENT ...
   && macro_params_find(...)`), `__VA_ARGS__` is a token of its own (`TOKEN_VA_ARGS`), and so `#`
   is written as it is. Xonotic is never built that way, and `lib/deglobalization.qh` relies on the
   C behaviour in 165 places.
 - **GMQ-21.2** Under this dialect, `__VA_OPT__(x)` in a variadic macro's body is `x`, its own
-  `__VA_ARGS__` written, when the variadic arguments are given and not empty, and nothing
-  otherwise, as the C preprocessor Xonotic runs first writes it: `O(1)` and `O(1, )` of `#define
+  `__VA_ARGS__` written, when the variadic arguments are given and hold a token, white space and
+  comments being none, and nothing otherwise, as the C preprocessor Xonotic runs first writes it: `O(1)` and `O(1, )` of `#define
   O(a, ...) f(a __VA_OPT__(, g(__VA_ARGS__)))` are `f(1)`, `O(1, 2)` is `f(1, g(2))`. GMQCC's own
   preprocessor has no `__VA_OPT__`, a deliberate divergence from it as in GMQ-21.1; Xonotic's
   `server/compat/quake3.qh` writes `__VA_OPT__(this.count *= (__VA_ARGS__);)`.
@@ -354,8 +361,11 @@ this should already be stringized").
   `G(3)`. Xonotic's `lib/iter.qh` writes `#define FOREACH_ENTITY_CLASS(class, cond, body)
   ORDERED(FOREACH_ENTITY_CLASS)(class, cond, body)`. GMQCC's own preprocessor reads an
   expansion's output as a string of its own (`lex_open_string(ftepp->output_string, ...)`), so
-  this is a deliberate divergence from it as in GMQ-21.1. FTEQCC finds a function-like macro's
-  `(` only in the text it stands in (FTEF-14.22).
+  this is a deliberate divergence from it as in GMQ-21.1. The group is the one in the text the use
+  stands in, past the strings and comments in it; one beyond that text's end, as after a chain of
+  object-like macros (`#define W ORDERED(F)` and `W(1, 2)`), is not taken, where the C
+  preprocessor would take it. FTEQCC finds a function-like macro's `(` only in the text it stands
+  in (FTEF-14.22).
 
 ## GMQ-22 Arrays of fields
 
@@ -370,7 +380,12 @@ _scores[MAX_SCORE];`, `#define scores(this) _scores[(this).m_id]`), used as
   its index names, at a constant index or another. GMQCC's `[` takes a field whose type is an
   array (`exprs[0]->m_vtype == TYPE_FIELD && exprs[0]->m_next->m_vtype == TYPE_ARRAY`), and a
   global array of fields gets accessor functions that give the field (`parse_variable`'s
-  `"%s##SETF"`, made by `parser_create_array_accessor`). FTEQCC on a target without `OP_GLOBALADDRESS` takes the array's address there,
-  which is the error `E0331` (FTEF-31.6); under this dialect it is not. The model does not follow
-  the body that reads such an element.
-
+  `"%s##SETF"`, made by `parser_create_array_accessor`). FTEQCC on a target without
+  `OP_GLOBALADDRESS` takes the array's address there, which is the error `E0331` (FTEF-31.6);
+  under this dialect it is not. Only an element is picked: the array named alone, `e.(arr)`, is
+  its head as under FTEQCC. The model does not follow the body that reads such an element.
+- **GMQ-22.2** A constant index past the end of an array of fields picked inside `e.( )` is
+  reported as any array's is, the warning `W0249` "(constant) array index out of bounds (0 <= I <
+  N)". GMQCC refuses it, `ast_array_index::codegen`'s `if (arridx >= m_array->m_count) {
+  compile_error(m_context, "array index out of bounds: %i", arridx); return false; }` (`ast.cpp`
+  at the commit above); the model's diagnostics under this dialect are FTEQCC's.
