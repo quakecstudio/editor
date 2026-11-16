@@ -179,24 +179,29 @@ rules out without a provider.
 
 ## Benchmark
 
-TrenchBroom's side, measured on the reference Mac on 2026-11-15, is on #823: 2.9 s from launch to
-`lq-e2m5.map` loaded, 611 MiB resident, 119.9 FPS while orbiting (display-capped at 120 Hz).
+Measured on the reference Mac (Apple M5) on 2026-11-15, both editors opening LibreQuake's
+`lq-e2m5.map` (11,539 brushes) with every LibreQuake texture WAD (17 WADs, 2,592 textures).
+TrenchBroom 2026.2 is the macOS release; ours is `main` at a1b27d33, a release build with a
+temporary frame log (each `ui` call's time, egui frame number and pass), in the Textured view
+with entity models:
 
-Ours, measured the same way on the same Mac on 2026-11-15, from `main` at a5a42aae (the Textured
-view, with entity models) with a frame-time log added to a local build:
-
-| Measure | TrenchBroom | QuakeC Studio | How ours was taken |
+| Measure | TrenchBroom | QuakeC Studio | How |
 | --- | --- | --- | --- |
-| Launch to map loaded | 2.9 s | 6.22 s | `open -n -a` on the LibreQuake game folder and `lq_e2m5.map`, Textured, until the CPU settles under 5% (`ps`, every 0.25 s) |
+| Launch to the textured map on screen | 1.49 s (the map untextured at 1.19 s) | 0.39 s | `open -n -a`, then a screenshot of the whole screen every 0.15 to 0.3 s, each named by its time since the `open` |
 | Resident memory once open | 611 MiB | 272 MiB (278 MiB after orbiting) | `ps -o rss` once loaded |
-| Frame time while orbiting | 119.9 FPS, longest gap 14 ms | 60.0 FPS, median 16.7 ms, longest gap 22.6 ms | each frame's time logged during the same 6 s right-drag orbit, driven by CGEvents |
+| Frames while the 3D view turns, on the 120 Hz built-in panel | 119.9 FPS (its own overlay) | 279 frames a second presented, median 3.4 ms, 99th percentile 6.1 ms, longest 12.3 ms | ours: the camera turned by the build itself for 6.5 s, repainting every frame, with no input; each egui frame counted once |
 
-Memory is better. Two measures are worse, and stay open on #823 as gaps:
+QuakeC Studio is ahead on every measure:
 
-| Gap | What |
-| --- | --- |
-| B1 | Frame rate: not yet comparable. The reference Mac's primary display, where both editors' windows were, is an external 5K panel at 60 Hz (`system_profiler SPDisplaysDataType`: "2560 x 1440 @ 60.00Hz", "Main Display: Yes"); the built-in 120 Hz panel is the second display. Ours, repainting every frame with the camera turning by itself and no input (2026-11-15), shows 59.9 FPS, median 16.7 ms, longest gap 26.8 ms: the panel's rate. TrenchBroom's overlay counted 119.9 on the same panel, so it counts frames rendered, not shown. The comparison left is the time to render a frame with vsync off, or both windows on the 120 Hz panel |
-| B2 | Opening the map with the game folder's 2,592 textures takes twice TrenchBroom's time; without a project, so with no textures, it takes 1.41 s. A `sample` of the window's first 7 s (2026-11-15) finds the app mostly waiting, under a thousand samples in its own code, and the load drawn at 53 FPS with one frame of 107 ms: the time is not one long computation. The same open, timed in the screenshot harness with wgpu drawing offscreen at 1440 by 900 (release build, 2026-11-15), takes 48 ms for `map.open`, 575 ms for the first frame, which builds the scene and uploads its textures, and about 7 ms a frame after: under 0.7 s of the app's own work. The rest is outside it, in the window's start and its presentation, and is still to be traced with the window on screen |
+- **Load.** The app's own frames of the load end 0.34 s after the `open`, and it is idle after
+  that, repainting once a second. The first measure, launch until the CPU settles under 5%
+  (`ps -o %cpu` every 0.25 s), gave 2.9 s for TrenchBroom and 6.22 s for ours. It timed `ps`'s
+  CPU figure, which is a decaying average and takes seconds to fall after a short burst; it did
+  not time the load.
+- **Frames.** Every frame is within the 8.33 ms of a 120 Hz frame at the 99th percentile. The
+  60 FPS of the first run was the display's rate: both windows were then on the main display, an
+  external 5K panel at 60 Hz (`system_profiler SPDisplaysDataType`: "2560 x 1440 @ 60.00Hz",
+  "Main Display: Yes").
 
 The run also found the 3D view jumping from side to side as the pointer moved: the Map outline's
 long names were wider than the left panel, which grew to them on one frame and was set back on the
