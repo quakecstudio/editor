@@ -2036,6 +2036,32 @@ groups:
     - 'The map editor''s 3D view turns to each standard view and orbits, pans and zooms from the keyboard alone, in kittest tests'
     verify:
     - 'kittest tests; cargo xtask keymap --check in CI; docs/keymap.md reviewed against ActionManager.cpp'
+  - key: L-21
+    title: Port the later engines' client-side improvements ADR-0026 adopts
+    labels:
+    - apps
+    - area:preview
+    - type:feature
+    size: L
+    reqs:
+    - ENG-2
+    - ENG-15
+    summary: |
+      ADR-0026 (Justin, 2026-11-15, option B): the preview host follows the QuakeSpasm lineage by category, the server simulation staying id's. These are the adopted changes not yet in the host, from the three engines' notes at their pinned commits.
+    depends:
+    - L-13
+    deliverable:
+    - 'Ironwail''s lightstyle interpolation and lightmapped liquids, ported from andrei-drexler/ironwail at the commit docs/porting.md pins'
+    - 'QuakeSpasm''s viewmodel interpolation fix for animations above 10 Hz and its lit water, ported from sezero/quakespasm at the pinned commit'
+    - 'Ironwail''s z-fighting work-around for the original levels in place of gl_zfix, id''s drawing behind an option'
+    - 'FitzQuake''s protocol 666 and RMQ''s 999 where the host writes messages (demos and the bridge), 15 kept'
+    - 'Each port with a statement in docs/spec/engine/ citing its upstream file and function and ADR-0026, and its expected difference listed in the view differential (VIEWDIFF)'
+    acceptance:
+    - 'Each port''s default is the later engine''s and id''s behaviour is one option away, each tested both ways'
+    - 'cargo xtask sim-diff passes unchanged: the server simulation still matches id''s server frame by frame'
+    - 'cargo xtask view-diff passes with each port''s difference listed as expected and no other'
+    verify:
+    - 'The tests citing each new statement; cargo xtask sim-diff and view-diff'
   - key: L-22
     title: Port ericw-tools' sunlight, sky dome, surface lights, minimum light and phong
     labels:
