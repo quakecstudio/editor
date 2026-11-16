@@ -562,8 +562,13 @@ impl Env for BodyEnv<'_, '_> {
 
     fn component(&self, def: DefId, word: u32) -> Option<DefId> {
         let suffix = ["_x", "_y", "_z"].get(usize::try_from(word).ok()?)?;
-        let name = &self.resolver.index.def(def)?.name;
-        self.resolver.lookup_global(&format!("{name}{suffix}"))
+        let definition = self.resolver.index.def(def)?;
+        let name = format!("{}{suffix}", definition.name);
+        // FTEF-9.21: a vector member's component is its class's member.
+        match definition.member_of {
+            Some(class) => self.resolver.member_in(class, &name),
+            None => self.resolver.lookup_global(&name),
+        }
     }
 
     fn field_component(&self, def: DefId) -> bool {

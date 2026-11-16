@@ -752,6 +752,45 @@ impl Program {
     ) -> Result<usize, Internal> {
         let definition = index.def(id).ok_or(Internal::NoDefinition)?;
         let name = definition.name.clone();
+        // QC-11.12: a vector member's component is a float field at the vector's field and its
+        // word, `_x`, `_y` or `_z`.
+        let component = COMPONENTS.iter().zip(0_u32..).find_map(|(suffix, word)| {
+            let vector = name.strip_suffix(suffix)?;
+            let (vector, _) = index.definitions().find(|(_, d)| {
+                d.name == vector
+                    && d.member_of == definition.member_of
+                    && d.kind == DefKind::Field
+                    && !d.generated
+            })?;
+            Some((vector, word))
+        });
+        if let Some((vector, word)) = component.filter(|_| definition.generated) {
+            let vector_place = self.get_def(index, vector)?;
+            let vector_ofs = self
+                .defs
+                .get(vector_place)
+                .ok_or(Internal::NoDefinition)?
+                .ofs;
+            let field = self
+                .word(vector_ofs)
+                .checked_add(word)
+                .ok_or(Internal::TooLarge)?;
+            let ofs = self.allocate_global(1)?;
+            let place = self.defs.len();
+            self.defs.push(Def {
+                name: format!("{class}::__m{name}"),
+                ty: ValueType::FloatField,
+                ofs,
+                scope: None,
+                initialized: false,
+                constant: false,
+                count: None,
+                id: Some(id),
+            });
+            self.places.insert(id, place);
+            self.set_words(ofs, &[field])?;
+            return Ok(place);
+        }
         // A member a parent class has is the parent's field (`basicindex = pp[i].ofs; found =
         // true;`), for which FTEQCC makes no definition.
         let parent_member = index

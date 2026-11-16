@@ -27,8 +27,8 @@ use crate::shape_stairs::system_defs;
 const CLASSES: &str = "\
 #pragma target fte_5768
 entity() spawn = #14;
-class Base { float m_a; void Base(void); virtual void(void) Draw; };
-void Base::Base(void) { m_a = 1; };
+class Base { float m_a; vector m_v; float m_c; float m_z; void Base(void); virtual void(void) Draw; };
+void Base::Base(void) { m_a = 1; m_v = '4 5 6'; m_c = m_v[1]; m_z = m_v_z; };
 void Base::Draw(void) { m_a = 5; };
 class Child : Base { float m_b; void Child(void); virtual void(void) Draw; };
 void Child::Child(void) { m_b = m_a + 1; };
@@ -78,7 +78,8 @@ fn function(progs: &ProgsFile, name: &str) -> u32 {
 // the most derived class's function and calls the child's constructor before its parent's
 // spec FTEF-9.23: `spawn(CLASS)` calls `spawn`, then the class's spawn function with the new
 // entity as `self`, and is the new entity
-// spec FTEF-9.21: each data member and virtual member is an entity field of its own
+// spec FTEF-9.21: each data member and virtual member is an entity field of its own, a vector's
+// components at its words
 #[test]
 fn a_spawned_class_runs_its_spawn_function() {
     let mut db = Db::new();
@@ -128,6 +129,14 @@ fn a_spawned_class_runs_its_spawn_function() {
     assert_eq!(string(file, field("classname").as_i32()), "Child");
     assert_eq!(field("Base::__mDraw").bits(), function(file, "Child::Draw"));
     assert_ne!(word(file, "Base::__mm_a"), word(file, "Child::__mm_b"));
+    // A vector member's words, and its components read by index and by name.
+    let v = usize::try_from(word(file, "Base::__mm_v")).unwrap();
+    for (i, expected) in [4.0_f32, 5.0, 6.0].into_iter().enumerate() {
+        let slot = machine.edicts().field(EdictNumber::new(1), v + i).unwrap();
+        assert_eq!(slot.as_f32().to_bits(), expected.to_bits());
+    }
+    assert_eq!(field("Base::__mm_c").as_f32().to_bits(), 5.0_f32.to_bits());
+    assert_eq!(field("Base::__mm_z").as_f32().to_bits(), 6.0_f32.to_bits());
 }
 
 /// The offset of the global named `name`.
