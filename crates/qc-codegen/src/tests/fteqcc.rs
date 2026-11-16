@@ -4165,3 +4165,20 @@ fn an_integer_literal_is_its_own_words() {
     assert_eq!(words(p, compare.b, 1), [1]);
     assert_ne!(compare.b, immediate(p, 1.0));
 }
+
+// spec FTEF-23.9: an operand cast to the row's type by no conversion opcode, an `int` multiplied
+// by an unsigned, is its own word: `k = 4u * g` is `MUL_I 0x4i, g, k`
+#[test]
+fn an_int_cast_to_unsigned_keeps_its_word() {
+    use qc_preproc::Op;
+    let compiled =
+        compile_fteqcc("#pragma target fte_5768\nint g;\nint k;\nvoid t(void) { k = 4u * g; };\n")
+            .unwrap();
+    let p = &compiled.progs;
+    let mul = body(p, "t")[0];
+    assert_eq!(mul.op, u32::try_from(Op::MulI.number()).unwrap());
+    assert_eq!(
+        (words(p, mul.a, 1), mul.b, mul.c),
+        (vec![4], global(p, "g"), global(p, "k"))
+    );
+}

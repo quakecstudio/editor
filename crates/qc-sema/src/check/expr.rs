@@ -577,7 +577,11 @@ impl<'e> Checker<'e> {
                 constness: constness(value, operand, row),
                 // A null constant is cast with no statement, `QCC_MakeIntConst(0)` of the
                 // row's type, still a constant (FTEF-28.4).
-                sym: if kept || value.null() {
+                // A cast that takes no conversion opcode, `int` to `uint`, keeps the word.
+                sym: if kept
+                    || value.null()
+                    || conversion_opcodes(operand.etype, row.etype()).is_empty()
+                {
                     value.sym
                 } else {
                     Sym::Temp

@@ -117,12 +117,11 @@ impl Constant {
         let kind = match self.ty {
             ConstType::Float => ir::ImmediateKind::Float,
             ConstType::Vector => ir::ImmediateKind::Vector,
-            ConstType::Integer => ir::ImmediateKind::Integer,
-            ConstType::Uint
-            | ConstType::String
-            | ConstType::Int64
-            | ConstType::Uint64
-            | ConstType::Double => return None,
+            // An unsigned word is an integer's bits, `0x4i` for `sizeof(string)` (FTEF-30.11).
+            ConstType::Integer | ConstType::Uint => ir::ImmediateKind::Integer,
+            ConstType::String | ConstType::Int64 | ConstType::Uint64 | ConstType::Double => {
+                return None;
+            }
         };
         Some(ir::Immediate {
             kind,
