@@ -1055,7 +1055,7 @@ impl Checker<'_> {
             target.fteqcc_scalar(),
             Some(CScalar::Int8 | CScalar::Uint8 | CScalar::Int16 | CScalar::Uint16)
         ) && lhs.bitfield.is_none();
-        if pointer.named.is_none() || (pointer.index.is_some() && !word) {
+        if pointer.named.is_none() || !word {
             self.followed = false;
             return Ok(());
         }

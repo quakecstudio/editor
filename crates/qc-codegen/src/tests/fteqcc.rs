@@ -3927,7 +3927,7 @@ fn a_class_field_argument_is_loaded_into_its_entity_slot() {
     assert_eq!(load.c, 4);
 }
 
-// spec FTE-18.11: a field argument a parameter of another type converts is loaded where it is
+// spec FTEF-32.18: a field argument a parameter of another type converts is loaded where it is
 // written, and its value converted into the slot: `takei(self.fl)` is `LOAD_F` to a temporary,
 // then `CONV_FTOI` of it to the parameter
 #[test]
@@ -3973,6 +3973,16 @@ fn a_compound_assignment_through_a_pointer_loads_operates_and_stores() {
         (store.0, store.1, store.2, store.3),
         (number(Op::StorepF), add.3, pointer, load.2)
     );
+    // At an index, the same: loaded at the index, operated on, stored back at it.
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\ntypedef struct { float a; string b; } s_t;\ns_t *g_s;\n\
+         void t(int i) { g_s[i].a *= 3; };\n",
+    )
+    .unwrap();
+    let ops: Vec<u32> = body(&compiled.progs, "t").iter().map(|s| s.op).collect();
+    let mul = ops.iter().position(|&op| op == number(Op::MulF)).unwrap();
+    assert!(ops[..mul].contains(&number(Op::LoadpF)), "{ops:?}");
+    assert!(ops[mul..].contains(&number(Op::StorepF)), "{ops:?}");
 }
 
 // spec FTEF-30.18: a ternary of a float arm and an integer arm converts the integer last arm

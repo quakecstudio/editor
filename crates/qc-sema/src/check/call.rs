@@ -230,8 +230,8 @@ impl Checker<'_> {
                 && !self.env.typecmp(&value.ty, param)
             {
                 // FTEF-26.3: a float field of an `int` parameter is loaded straight into the
-                // slot of `ftoi`, whose value is the argument; any other converted field
-                // argument is not followed.
+                // slot of `ftoi`, whose value is the argument; FTEF-32.21: any other converted
+                // field argument is loaded where it is read and its value converted.
                 let ftoi = (self.etype_of(&value.ty) == Some(Etype::Float)
                     && self.etype_of(param) == Some(Etype::Integer))
                 .then(|| self.env.helper("ftoi"))
@@ -255,9 +255,15 @@ impl Checker<'_> {
                         // field): its held load goes back where it was.
                         if converted
                             && held
+                            && !self.global
                             && let Some(field) = field_loads.pop()
                         {
                             self.generated.extend(field.load);
+                            // The load reads the call's entity, which no later call keeps.
+                            if field.entity_call.is_some() && self.live_call == field.entity_call {
+                                self.live_return = None;
+                                self.live_call = None;
+                            }
                         } else if converted && matches!(reference.reference, Reference::Field(_)) {
                             self.followed = false;
                         }

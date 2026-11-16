@@ -5388,8 +5388,11 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   FTEQCC the in-place opcode of the operation through the pointer, `ADDSTOREP_F 2f, g_s,
   temp_0`, with the index added to the pointer first by `OP_ADD_PIW` (the pinned FTEQCC's
   `-Fwasm` output). Our compiler writes the member loaded through the pointer at the index
-  (FTEF-31.21), the operation, and the store back through the pointer at the same index. That
-  leaves the same value in memory with different opcodes, a divergence from FTEQCC's output.
+  (FTEF-31.21), the operation, and the store back through the pointer at the same index, an
+  index that is no integer converted for each. That leaves the same value in memory with
+  different opcodes, a divergence from FTEQCC's output. A store through a pointer of a value no
+  one `STOREP_*` stores, a narrow integer, a bitfield, a 64-bit value or a struct, is not
+  followed.
 - **FTEF-31.23** `&g` of a global, an array or an element is `OP_GLOBALADDRESS` of the
   definition, with the integer index for an element at an index that is no constant
   (`QCC_PR_Statement(&pr_opcodes[OP_GLOBALADDRESS], operand->base,
@@ -5549,6 +5552,14 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   REF_ARRAY, base, idx, ...)` in `QCC_PR_ParseRefArrayPointer`), so `floor(('4 0 0').x)` is
   called, though an operator of it folds (FTEF-26.13). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`.
+- **FTEF-32.18** A field argument that its parameter's type converts, other than FTEF-26.3's
+  float field of an `int` parameter, is loaded where it is read, into a temporary, and the
+  temporary converted into the parameter's slot: `takei(self.fl)` of `void(int i) takei` on
+  `fte_5768` is `LOAD_F self, fl, temp`, `CONV_FTOI temp, OFS_PARM0`, `CALL1 takei`. FTEQCC
+  converts the temporary in place and passes it in a register, `LOADF_F self, fl, temp_0`,
+  `CONV_FI temp_0, temp_0`, `CALL1H takei, temp_0` (the pinned FTEQCC's `-Fwasm` output,
+  2026-11-16): the same value is passed, with different opcodes, a divergence from FTEQCC's
+  output. At global scope such an argument is not followed.
 ## FTEF-33 Builtin argument checks
 
 **Source:** `qcc_pr_comp.c`, `QCC_VerifyFormatString`, `QCC_VerifyArgs_sendevent`,

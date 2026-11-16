@@ -455,3 +455,16 @@ fn parameter_forms_resolve() {
     };
     assert!(func.params.is_empty());
 }
+
+// spec FTEF-31.22: a store through a pointer of a value no one `STOREP_*` stores, a narrow integer
+// here, is not followed; a float's compound one is
+#[test]
+fn a_narrow_store_through_a_pointer_is_not_followed() {
+    let index = fte_index_of(
+        "#pragma target fte_5768\n__int8 *pc;\nfloat *pf;\n\
+         void m() = { *pc = 1; };\nvoid f() = { *pf += 1; };\n",
+    );
+    let body = |name: &str| index.body(defs_named(&index, name)[0]).unwrap();
+    assert!(!body("m").followed());
+    assert!(body("f").followed());
+}
