@@ -1,0 +1,12 @@
+# cargo xtask gmqcc-coverage <cache>/codebase/xonotic, 2026-11-16, xonotic-data.pk3dir@7068eb6bb838b97064a4e55646f3df9c3bd633e6 (qcsrc)
+gmqcc-coverage: <cache>/codebase/xonotic: 1789 files
+gmqcc-coverage: files with each class:
+  _("...")                 485  GMQ-6 (in spec)
+  return = ...              39  GMQ-9 (in spec)
+  nil                        4  GMQ-12 (in spec)
+  ...count, ...(i, T)       12  GMQ-13 (in spec)
+  [[attribute]]              2  GMQ-16 (in spec)
+  noref                     39  GMQ-17 (in spec)
+  **                        39  GMQ-18 (in spec)
+  goto, :label              29  GMQ-19 (in spec)
+gmqcc-coverage: every construct is in the spec
