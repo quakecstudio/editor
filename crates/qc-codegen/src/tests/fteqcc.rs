@@ -4210,3 +4210,23 @@ fn an_int_cast_to_unsigned_keeps_its_word() {
         (vec![4], global(p, "g"), global(p, "k"))
     );
 }
+
+// spec FTEF-19.80: a global initialised with `nil` is zero, and `nil` read in a body the
+// constant 0
+#[test]
+fn a_nil_initialiser_is_zero() {
+    let compiled = compile_fteqcc(
+        "string s = nil;\nvar void(float) fp = nil;\nfloat k = nil;\n\
+                        void t(void) { s = nil; };\n",
+    )
+    .unwrap();
+    let p = &compiled.progs;
+    for name in ["s", "fp", "k"] {
+        let word = p.globals[usize::try_from(global(p, name)).unwrap()].bits();
+        assert_eq!(word, 0, "{name}");
+    }
+    // Read in a body it is the constant 0 too.
+    let store = body(p, "t")[0];
+    assert_eq!(p.globals[usize::try_from(store.a).unwrap()].bits(), 0);
+    assert_eq!(store.b, global(p, "s"));
+}

@@ -3773,6 +3773,12 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   t;` declare nothing, as the pinned FTEQCC compiles them. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseDefs`, `QCC_PR_ParseType`.
+- **FTEF-19.80** `nil` that names no definition is the integer constant 0 (`QCC_PR_ParseRefValue`:
+  `if (!strcmp(name, "nil")) d = QCC_MakeIntConst(0);`), so a global or `static` initialised with
+  it, `string s = nil;`, `var void(float) f = nil;`, is no unknown value of FTEF-19.48 and is
+  zero, with no diagnostic, as the pinned FTEQCC compiles it (2026-11-16); read in a body it is
+  that constant too. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`.
 
 ## FTEF-20 Keywords
 
