@@ -213,11 +213,10 @@ light is drawn as before: the face loop runs whenever a style changes or a light
 the 99th percentile), is the GPU's: five passes each took a median of 0.0203 s (159 us a frame)
 before and after, so the budget is unchanged. `qs-render`'s 166 tests pass unchanged.
 
-Left, with the reason: what remains of the frame is the alias models' vertices, built on the
-CPU each frame (`AliasModel::draw_skinned`, 128 samples), and the GPU's preparation of the
-frame's buffers. Building the alias vertices on the GPU would take most of it, at the cost of
-id's own interpolation, which the tests pin; at a frame's tenth of a millisecond it waits for a
-scene where it shows.
+Left, with the reason: what remains of the frame is the view model's vertices, built on the CPU
+each frame (`play.rs:615`, `Model::draw_alias`, 128 samples), and the preparation of the frame's
+buffers for the GPU. At a few hundredths of a millisecond a frame on e1m1, no single site is
+large enough to move a budget; a scene with many alias models is where they would show first.
 
 ### The simulation and the preview host: `qs-sim`, `qs-client`, `apps/quakec-engine`
 
