@@ -789,6 +789,7 @@ fn is_intrinsic(name: &str) -> bool {
             | "used_model"
             | "used_sound"
             | "va_arg"
+            | "..."
             | "_"
     )
 }

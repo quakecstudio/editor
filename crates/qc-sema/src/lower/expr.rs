@@ -233,7 +233,7 @@ fn lower_call(call: &ast::CallExpr, cx: Cx<'_>, uses: &mut Vec<RawUse>) {
     };
     let skip = usize::from(callee_name.as_deref() == Some("autocvar"));
     // FTEF-32.7: `va_arg(index, TYPE)` reads its second argument as a type.
-    let va_arg = callee_name.as_deref() == Some("va_arg");
+    let va_arg = matches!(callee_name.as_deref(), Some("va_arg" | "..."));
     if let Some(args) = call.args() {
         for (at, arg) in args.args().enumerate().skip(skip) {
             if va_arg
