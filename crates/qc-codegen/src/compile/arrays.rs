@@ -587,7 +587,12 @@ impl Compiler<'_> {
                 ]
             }
             Some(_) => return Err(Abort::Internal(Internal::Unsupported, span)),
-            None => self.constant_words(ty, expr)?,
+            // FTEF-34.9: an item of a global's aggregate that is an expression, as the semantic
+            // model folded it.
+            None => match self.index.item_value(self.file, span.start) {
+                Some(folded) => folded.words().to_vec(),
+                None => self.constant_words(ty, expr)?,
+            },
         })
     }
 

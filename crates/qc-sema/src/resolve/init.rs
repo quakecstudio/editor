@@ -377,25 +377,28 @@ impl Resolver<'_> {
     /// FTEF-19.72: whether a global's value, the global variable `source_name`, is converted to
     /// `ty` by opcodes, which the check stage reads at global scope (FTEF-34.9).
     pub(in crate::resolve) fn converted_variable(&self, source_name: &str, ty: &Type) -> bool {
+        self.converted_global(source_name, ty)
+            .is_some_and(|source| !self.facts.get(source.index()).is_some_and(|f| f.constant))
+    }
+
+    /// FTEF-19.72: whether a global's value, the global constant `source_name`, converts to `ty`
+    /// by folding, which the check stage does at global scope.
+    pub(in crate::resolve) fn converted_constant(&self, source_name: &str, ty: &Type) -> bool {
+        self.converted_global(source_name, ty)
+            .is_some_and(|source| self.facts.get(source.index()).is_some_and(|f| f.constant))
+    }
+
+    /// The global `source_name` under FTEQCC's diagnostics, when its type converts to `ty` by
+    /// opcodes (FTEF-22).
+    fn converted_global(&self, source_name: &str, ty: &Type) -> Option<DefId> {
         if !self.profile.fteqcc_diagnostics() {
-            return false;
+            return None;
         }
-        let Some(source) = self.lookup_used_global(source_name) else {
-            return false;
-        };
-        if self.facts.get(source.index()).is_some_and(|f| f.constant) {
-            return false;
-        }
-        let Some(source_ty) = self
-            .index
-            .def(source)
-            .map(|d| word_type(&self.resolved(&d.ty)))
-        else {
-            return false;
-        };
+        let source = self.lookup_used_global(source_name)?;
+        let source_ty = word_type(&self.resolved(&self.index.def(source)?.ty));
         match (self.shape(&source_ty), self.shape(ty)) {
-            (Some(from), Some(to)) => converts(from.etype, to.etype),
-            _ => false,
+            (Some(from), Some(to)) if converts(from.etype, to.etype) => Some(source),
+            _ => None,
         }
     }
 

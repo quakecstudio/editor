@@ -173,6 +173,25 @@ fn build_module(module: ModuleBuild<'_>) -> Result<ModuleBuilt, WorkbenchError> 
             }
         }
         Err(CompileError::Diagnostics(errors)) => (false, errors.iter().map(report).collect()),
+        // The construct the compiler stopped at, so a modder can find it.
+        Err(CompileError::Internal {
+            file,
+            span,
+            internal,
+        }) => (
+            false,
+            vec![Reported {
+                place: db.file_path(file).map(|path| Place {
+                    path: path.to_path_buf(),
+                    start: span.start,
+                    end: span.end,
+                    location: Location::of(db.file_text(file), span.start),
+                }),
+                gravity: Gravity::Error,
+                code: "internal".to_owned(),
+                message: format!("the compiler stopped: {internal:?}"),
+            }],
+        ),
         Err(error) => (
             false,
             vec![Reported {

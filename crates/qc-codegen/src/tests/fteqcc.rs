@@ -3786,3 +3786,33 @@ fn an_fte_element_read_is_loada() {
         .unwrap();
     assert!(loada_v.a != 0 && loada_v.b != 0 && loada_v.c != 0);
 }
+
+// spec FTEF-19.72: a global initialised with a constant of a type that converts to its own holds
+// the constant folded to its type, a float's integer and an integer's float
+#[test]
+fn a_converted_constant_initialiser_is_folded() {
+    let compiled = compile_fteqcc(
+        "#pragma target fte\nconst float three = 3;\nconst int two = 2;\nint i = three;\n\
+         float f = two;\n",
+    )
+    .unwrap();
+    let p = &compiled.progs;
+    let word = |name: &str| p.globals[usize::try_from(global(p, name)).unwrap()].bits();
+    assert_eq!(word("i"), 3);
+    assert_eq!(f32::from_bits(word("f")), 2.0);
+}
+
+// spec FTEF-34.9: an item of a global's aggregate initialiser that is an expression is folded at
+// global scope, a vector array's `[0/256, 72/128]` its three floats
+#[test]
+fn an_aggregate_item_expression_is_folded() {
+    let compiled = compile_fteqcc(
+        "#pragma target fte\nvector g[2] = { [0/256, 72/128], [24/256, 1] };\nvoid() t = {};\n",
+    )
+    .unwrap();
+    let p = &compiled.progs;
+    let at = global(p, "g");
+    let float = |i: i32| f32::from_bits(p.globals[usize::try_from(at + i).unwrap()].bits());
+    assert_eq!([float(0), float(1), float(2)], [0.0, 0.5625, 0.0]);
+    assert_eq!([float(3), float(4), float(5)], [0.093_75, 1.0, 0.0]);
+}
