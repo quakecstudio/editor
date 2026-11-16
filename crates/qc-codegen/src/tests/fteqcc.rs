@@ -4149,3 +4149,19 @@ fn a_member_array_element_through_a_pointer_is_stored_through_it() {
         (global(p, "pSeat"), find("u", Op::AddI).c, global(p, "r"))
     );
 }
+
+// spec FTE-20.5: an integer literal's immediate holds its own words, `1i` the integer 1, which
+// shares no word with the float `1.0`; `0i` and `0.0` share theirs
+#[test]
+fn an_integer_literal_is_its_own_words() {
+    use qc_preproc::Op;
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\nint g;\nfloat r;\nvoid t(void) { if (g >= 1i) { r = 1; } };\n",
+    )
+    .unwrap();
+    let p = &compiled.progs;
+    let compare = body(p, "t")[0];
+    assert_eq!(compare.op, u32::try_from(Op::GeI.number()).unwrap());
+    assert_eq!(words(p, compare.b, 1), [1]);
+    assert_ne!(compare.b, immediate(p, 1.0));
+}
