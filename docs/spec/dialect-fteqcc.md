@@ -5358,6 +5358,12 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   `QCC_LoadFromPointer`, `QCC_StoreToPointer`. Checked against the pinned FTEQCC's `-Fwasm`
   output for `g_s[i].b = "x"`, `r = g_s[i].a`, `g_s->a = 2`, `r = g_s->a` and
   `g_s[f].v = '1 2 3'`.
+- **FTEF-31.22** A compound assignment through a pointer, `p->a += 2` or `p[i].a *= 3`, is in
+  FTEQCC the in-place opcode of the operation through the pointer, `ADDSTOREP_F 2f, g_s,
+  temp_0`, with the index added to the pointer first by `OP_ADD_PIW` (the pinned FTEQCC's
+  `-Fwasm` output). Our compiler writes the member loaded through the pointer at the index
+  (FTEF-31.21), the operation, and the store back through the pointer at the same index. That
+  leaves the same value in memory with different opcodes, a divergence from FTEQCC's output.
 
 ## FTEF-32 Calls
 
