@@ -106,6 +106,15 @@ impl Compiler<'_> {
                     *word = self.resolve(name, index, (body, &slots), named)?;
                 }
             }
+            // FTEF-9.18: a call that names a virtual member, `super::m()` or `CLASS::m()`, calls
+            // its function `CLASS::NAME`, not the member's field.
+            if let Some(Name::Def(callee, 0)) = statement.a
+                && op.is_some_and(is_call)
+                && let Some(place) = self.program.member_function(self.index, callee).at(named)?
+                && let Some(first) = operands.first_mut()
+            {
+                *first = operand(self.program.def(place).at(named)?.ofs).at(named)?;
+            }
             self.program.emit_number(number, operands);
             // FTE-21.8: an operand in a shared temporary takes its real offset at the end.
             for (operand, name) in (0_u8..).zip([statement.a, statement.b, statement.c]) {

@@ -5390,6 +5390,13 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   `-Fwasm` output). Our compiler writes the member loaded through the pointer at the index
   (FTEF-31.21), the operation, and the store back through the pointer at the same index. That
   leaves the same value in memory with different opcodes, a divergence from FTEQCC's output.
+- **FTEF-31.23** `&g` of a global, an array or an element is `OP_GLOBALADDRESS` of the
+  definition, with the integer index for an element at an index that is no constant
+  (`QCC_PR_Statement(&pr_opcodes[OP_GLOBALADDRESS], operand->base,
+  operand->index.cast?QCC_SupplyConversion(operand->index, ev_integer, true):nullsref, NULL)`):
+  `TCP_Send(&tcp_irc, "x")` is `GLOBALADDRESS tcp_irc, offset_0, temp_0` (the pinned FTEQCC's
+  `-Fwasm` output). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_GenerateAddressOf`.
 
 ## FTEF-32 Calls
 

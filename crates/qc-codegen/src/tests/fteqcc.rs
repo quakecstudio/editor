@@ -4054,3 +4054,33 @@ fn a_pointer_comparison_names_its_operands() {
         .unwrap();
     assert_eq!(eq.a, global(&compiled.progs, "p"));
 }
+
+// spec FTEF-9.18: `super::m()` calls the parent's function `CLASS::NAME`, not its field
+#[test]
+fn a_super_call_calls_the_parent_s_function() {
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\nentity self;\nentity() spawn = #14;\n\
+         class P { float m_x; virtual void(void) R; };\nvoid P::R(void) { m_x = 1; };\n\
+         class W : P { virtual void(void) R; };\nvoid W::R(void) { super::R(); };\n",
+    )
+    .unwrap();
+    let call = body(&compiled.progs, "W::R")[0];
+    assert_eq!(call.a, global(&compiled.progs, "P::R"));
+}
+
+// spec FTEF-31.23: `&g` of a global is `OP_GLOBALADDRESS` of it
+#[test]
+fn the_address_of_a_global_is_its_globaladdress() {
+    use qc_preproc::Op;
+    let compiled =
+        compile_fteqcc("#pragma target fte_5768\nfloat g;\nfloat *p;\nvoid t(void) { p = &g; };\n")
+            .unwrap();
+    let address = body(&compiled.progs, "t")[0];
+    assert_eq!(
+        (address.op, address.a),
+        (
+            u32::try_from(Op::Globaladdress.number()).unwrap(),
+            global(&compiled.progs, "g")
+        )
+    );
+}
