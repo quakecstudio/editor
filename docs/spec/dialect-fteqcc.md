@@ -5282,6 +5282,15 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_StatementFlags` (`OP_LOADP_U8`, `OP_CONV_FU`), `QCC_TryEvaluateCast`,
   `QCC_PR_RefExpression`.
+- **FTEF-31.19** On a target with `OP_LOADA_F` (FTE's), an element read at an index that is no
+  constant is loaded by `OP_LOADA_*` of the array, at the element's own word, and the index made
+  an integer (`QCC_LoadFromArray`, `accel == 2`, `index = QCC_SupplyConversion(index,
+  ev_integer, true)`): `OP_LOADA_S` for a string, `_F` a float, `_V` a vector, `_ENT` an entity,
+  `_FLD` a field, `_FNC` a function and `_I` an integer or a pointer ("no OP_LOADA_P"), each
+  `QCC_PR_StatementFlags (&pr_opcodes[OP_LOADA_F], base, index, NULL, flags)`; a 64-bit value
+  by `OP_LOADA_I64`, and a struct or union word by word into a temporary. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_LoadFromArray`.
 
 ## FTEF-32 Calls
 
@@ -5642,3 +5651,12 @@ name, a literal or a constant. The layout is FTEQCC's at its default optimisatio
   after a nested function's error too, where FTEQCC stops. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseInitializerType_Internal`, `QCC_PR_FinaliseFunction`.
+- **FTEF-34.18** With `OP_SWITCH_*` on the target (FTEF-34.5), the switch's statement reads its
+  value and jumps to the case table, `QCC_PR_StatementFlags (&pr_opcodes[op], e, nullsref,
+  &patch1, STFL_DISCARDRESULT)`, the jump in `b`; each `case` of one value is `OP_CASE` of the
+  value with its jump in `b`, `QCC_PR_Statement (&pr_opcodes[OP_CASE], dmin, nullsref, &patch3)`
+  and `patch3->b.jumpofs = &statements[pr_cases[i]] - patch3`; and a range is `OP_CASERANGE` of
+  its two bounds with its jump in `c`, `QCC_PR_Statement (&pr_opcodes[OP_CASERANGE], dmin, dmax,
+  &patch3)` and `patch3->c.jumpofs = ...`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseStatement`, the `switch` case.

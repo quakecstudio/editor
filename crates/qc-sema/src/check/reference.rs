@@ -348,8 +348,32 @@ impl Checker<'_> {
             && target.valid(Op::FetchGblF);
         let as_integer = target.valid(Op::LoadaF) || target.valid(Op::GloadF);
         if as_integer {
-            if index_etype != Some(Etype::Integer) {
-                self.converted(index, Etype::Integer, span)?;
+            let index = if index_etype == Some(Etype::Integer) {
+                index.clone()
+            } else {
+                self.converted(index, Etype::Integer, span)?
+            };
+            // FTEF-31.19: FTE's `OP_LOADA_*` of the array and the integer index, by the element's
+            // type (`QCC_LoadFromArray`, `accel == 2`); a struct's words and DarkPlaces'
+            // `OP_GLOAD_*` are not followed yet.
+            let load = match self.etype_of(&element.ty) {
+                Some(Etype::Float) => Some(Op::LoadaF),
+                Some(Etype::Vector) => Some(Op::LoadaV),
+                Some(Etype::String) => Some(Op::LoadaS),
+                Some(Etype::Entity) => Some(Op::LoadaEnt),
+                Some(Etype::Field) => Some(Op::LoadaFld),
+                Some(Etype::Function) => Some(Op::LoadaFnc),
+                Some(Etype::Integer | Etype::Pointer) => Some(Op::LoadaI),
+                _ => None,
+            }
+            .filter(|_| target.valid(Op::LoadaF));
+            match load {
+                Some(op) if !self.global => {
+                    let loaded = self.emit(op, element, &index, span)?;
+                    self.array_loaded = Some(loaded);
+                }
+                Some(_) => {}
+                None => self.followed = false,
             }
             return Ok(false);
         }
@@ -451,6 +475,14 @@ impl Checker<'_> {
         };
         let called = element.index.known().is_none()
             && self.load_from_array(&value, &element.index, kind, span)?;
+        // FTEF-31.19: an element `OP_LOADA_*` loaded is the value it made.
+        if let Some(loaded) = self.array_loaded.take() {
+            return Ok(Value {
+                reference: Reference::Global,
+                ty: value.ty,
+                ..loaded
+            });
+        }
         // A struct read word by word is the block its words were stored to.
         if let Some(block) = self.block_read.take() {
             return Ok(Value {

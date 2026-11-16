@@ -3700,3 +3700,52 @@ fn an_fte_target_writes_version_7_with_fte_opcodes() {
     let standard = compile_fteqcc("float a;\nvoid() f = { a = 2; };\n").unwrap();
     assert_eq!(standard.progs.format, qc_progs::Format::V6);
 }
+
+// spec FTEF-34.18, FTE-24.3: under a target with `OP_SWITCH_F`, a switch is `SWITCH_F` of its
+// value with its jump to the case table, each case `CASE` of its value and a range `CASERANGE` of
+// its bounds, each with its jump, a jump back written as its unsigned low 16 bits
+#[test]
+fn an_fte_switch_is_written_with_its_operands() {
+    let compiled = compile_fteqcc(
+        "#pragma target fte\nfloat g;\nvoid(float i) f = {\n\tswitch (i) {\n\tcase 0: g = 1; \
+         break;\n\tcase 2 .. 4: g = 2; break;\n\tdefault: g = 3;\n\t}\n};\n",
+    )
+    .unwrap();
+    let number = |op: qc_preproc::Op| u32::try_from(op.number()).unwrap();
+    let statements = &compiled.progs.statements;
+    let find = |op| statements.iter().find(|s| s.op == number(op)).unwrap();
+    let switch = find(qc_preproc::Op::SwitchF);
+    assert_ne!(switch.a, 0);
+    assert_ne!(switch.b, 0);
+    let case = find(qc_preproc::Op::Case);
+    assert_ne!(case.a, 0);
+    assert_ne!(case.b, 0);
+    let range = find(qc_preproc::Op::Caserange);
+    assert_ne!(range.a, 0);
+    assert_ne!(range.b, 0);
+    assert_ne!(range.c, 0);
+}
+
+// spec FTEF-31.19: on an FTE target an element read at an index that is no constant is
+// `LOADA_*` of the array and the integer index, a float's `LOADA_F` and a struct member's at the
+// member's word
+#[test]
+fn an_fte_element_read_is_loada() {
+    let compiled = compile_fteqcc(
+        "#pragma target fte\ntypedef struct { float a; vector v; } pair_t;\nfloat r;\nvector w;\n\
+         void f(int i) { float x[6]; pair_t p[4]; r = x[i]; w = p[i].v; };\n",
+    )
+    .unwrap();
+    let number = |op: qc_preproc::Op| u32::try_from(op.number()).unwrap();
+    let statements = &compiled.progs.statements;
+    let loada_f = statements
+        .iter()
+        .find(|s| s.op == number(qc_preproc::Op::LoadaF))
+        .unwrap();
+    assert!(loada_f.a != 0 && loada_f.b != 0 && loada_f.c != 0);
+    let loada_v = statements
+        .iter()
+        .find(|s| s.op == number(qc_preproc::Op::LoadaV))
+        .unwrap();
+    assert!(loada_v.a != 0 && loada_v.b != 0 && loada_v.c != 0);
+}

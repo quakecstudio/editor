@@ -65,6 +65,9 @@ pub(super) struct Checker<'e> {
     /// The generated statement whose block a struct element read through an array's getter
     /// last filled, word by word, which the read's value is.
     pub(super) block_read: Option<u32>,
+    /// The value an element read at an index that is no constant last loaded by `OP_LOADA_*`
+    /// (FTEF-31.19), which the read's value is.
+    pub(super) array_loaded: Option<Value>,
     /// The words of a call's value a statement read word by word and freed not, which the
     /// next statement's clobber copies out of the return global (FTE-18.13).
     pub(super) unfreed: Option<u32>,
@@ -141,6 +144,7 @@ impl<'e> Checker<'e> {
             followed: true,
             effects: Vec::new(),
             block_read: None,
+            array_loaded: None,
             unfreed: None,
             keeps_condition: false,
             live_call: None,

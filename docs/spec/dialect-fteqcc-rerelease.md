@@ -1425,7 +1425,9 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
 - **FTE-24.3** On the FTE targets (`QCF_FTE`, `QCF_FTEH2`, `QCF_FTEDEBUG`) and QSS's (`QCF_QSS`)
   a program is written in version 7 (PROGS-19): `progs.version = PROG_EXTENDEDVERSION;`, in the
   32-bit layout when FTE-24.1's reasons hold, `PROG_SECONDARYVERSION32`, else in the 16-bit one,
-  `progs.secondaryversion = PROG_SECONDARYVERSION16;`, whose operands are unsigned (PROGS-19.2).
+  `progs.secondaryversion = PROG_SECONDARYVERSION16;`, whose operands are unsigned (PROGS-19.2):
+  each is written as its low 16 bits, as FTE-24.2's cast writes version 6's, so a jump back,
+  whose offset is negative, is written as 65536 plus its offset.
   On DarkPlaces' target (`QCF_DARKPLACES`) the 16-bit layout stays version 6, `if
   (qcc_targetformat == QCF_DARKPLACES) progs.version = PROG_VERSION;`. A statement of an
   opcode beyond id's (FTEF-25) is written by its number in either.

@@ -313,6 +313,7 @@ fn compile_lowered(
         {
             // FTE-24.3: an FTE target's 16-bit layout is version 7, its operands unsigned.
             progs.format = Format::Fte16;
+            write::wrap_unsigned_operands(&mut progs);
         } else {
             write::wrap_short_operands(&mut progs);
         }
