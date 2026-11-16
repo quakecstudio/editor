@@ -1402,8 +1402,14 @@ impl<L: Loader> Preprocessor<L> {
             return self.refuse(run, item, use_.refused);
         };
         run.expanded.expansions = run.expanded.expansions.saturating_add(1);
-        if let Some(call) = &use_.call {
-            self.resume_after(run, &item, call.after);
+        let mut resume = use_.call.as_ref().map(|call| call.after);
+        let text = if self.dialect == Dialect::Gmqcc {
+            self.cpp_rescan(run, &item, text, &mut resume)
+        } else {
+            text
+        };
+        if let Some(after) = resume {
+            self.resume_after(run, &item, after);
         }
         let id = ExpansionId::new(self.expansions.len());
         self.expansions.push(Expansion {
@@ -1496,6 +1502,56 @@ impl<L: Loader> Preprocessor<L> {
     /// The text the name `item` stands in and the offset after the name: the innermost chunk
     /// for a name read from a chunk, which is the chunk being read, and otherwise the file the
     /// name is in.
+    /// GMQ-21.3: under GMQCC, an expansion `text` that ends with the name of a function-like
+    /// macro takes the parenthesised group that follows the use in the text it stands in, as the
+    /// C preprocessor Xonotic runs first rescans the expansion with the text after it:
+    /// `ORDERED(F)(a, b)` of `#define ORDERED(F) F##_UNORDERED` calls `F_UNORDERED(a, b)`.
+    /// `resume` is moved past the group taken.
+    fn cpp_rescan(
+        &self,
+        run: &Run,
+        item: &Item,
+        text: Rc<Text>,
+        resume: &mut Option<usize>,
+    ) -> Rc<Text> {
+        let written = text.bytes.trim_ascii_end();
+        let start = written
+            .iter()
+            .rposition(|&b| !is_name_char(b))
+            .map_or(0, |at| at.saturating_add(1));
+        let last = written.get(start..).unwrap_or_default();
+        let function_like = last.first().is_some_and(|&b| is_name_start(b))
+            && self
+                .macros
+                .get(&String::from_utf8_lossy(last))
+                .is_some_and(|mac| mac.params.is_some());
+        if !function_like {
+            return text;
+        }
+        let Some((bytes, name_end)) = self.use_text(run, item) else {
+            return text;
+        };
+        let from = resume.unwrap_or(name_end);
+        let outer = bytes.bytes();
+        let Some(open) =
+            (from..outer.len()).find(|&at| !outer.get(at).is_some_and(u8::is_ascii_whitespace))
+        else {
+            return text;
+        };
+        if outer.get(open) != Some(&b'(') {
+            return text;
+        }
+        let Some(close) = matching_paren(outer, open) else {
+            return text;
+        };
+        let after = close.saturating_add(1);
+        let taken = bytes.reading().copy(from..after);
+        let mut joined = (*text).clone();
+        joined.push_from(&taken, 0..taken.bytes.len());
+        *resume = Some(after);
+        Rc::new(joined)
+    }
+
     fn use_text(&self, run: &Run, item: &Item) -> Option<(Bytes, usize)> {
         match item.place {
             Place::Chunk(end) => Some((run.chunks().last()?.bytes(), end)),

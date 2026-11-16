@@ -983,3 +983,18 @@ fn va_opt_writes_its_text_only_with_variadic_arguments_under_gmqcc() {
     assert_eq!(touching(&out), "f(1 ) f(1 , g((2))) f(1 )");
     assert!(codes(&out).is_empty(), "{:?}", codes(&out));
 }
+
+// spec GMQ-21.3: under GMQCC, an expansion that ends with a function-like macro's name takes the
+// parenthesised group after the use, as the C preprocessor rescans; FTEQCC leaves the name
+#[test]
+fn an_expansion_ending_in_a_function_like_name_takes_the_following_group_under_gmqcc() {
+    let text = "#define ORDERED(F) F##_U\n#define F_U(a, b) g(a + b)\nORDERED(F)(1, 2)\n\
+                #define LATE G\n#define G(x) h(x)\nLATE(3)\n";
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", text.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Gmqcc);
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    assert_eq!(touching(&out), "g(1 + 2) h(3)");
+    let (fteqcc, _) = fte(text);
+    assert!(fteqcc.contains("F_U"), "{fteqcc}");
+}

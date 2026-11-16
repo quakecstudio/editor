@@ -347,6 +347,15 @@ this should already be stringized").
   O(a, ...) f(a __VA_OPT__(, g(__VA_ARGS__)))` are `f(1)`, `O(1, 2)` is `f(1, g(2))`. GMQCC's own
   preprocessor has no `__VA_OPT__`, a deliberate divergence from it as in GMQ-21.1; Xonotic's
   `server/compat/quake3.qh` writes `__VA_OPT__(this.count *= (__VA_ARGS__);)`.
+- **GMQ-21.3** Under this dialect, an expansion whose text ends with the name of a function-like
+  macro takes the parenthesised group that follows the use, as the C preprocessor Xonotic runs
+  first rescans an expansion together with the text after it. `ORDERED(F)(a, b)` of `#define
+  ORDERED(F) F##_UNORDERED` calls `F_UNORDERED(a, b)`, and `LATE(3)` of `#define LATE G` calls
+  `G(3)`. Xonotic's `lib/iter.qh` writes `#define FOREACH_ENTITY_CLASS(class, cond, body)
+  ORDERED(FOREACH_ENTITY_CLASS)(class, cond, body)`. GMQCC's own preprocessor reads an
+  expansion's output as a string of its own (`lex_open_string(ftepp->output_string, ...)`), so
+  this is a deliberate divergence from it as in GMQ-21.1. FTEQCC finds a function-like macro's
+  `(` only in the text it stands in (FTEF-14.22).
 
 ## GMQ-22 Arrays of fields
 
