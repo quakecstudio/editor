@@ -692,7 +692,15 @@ pub(super) fn raw_aggregate(
 pub(super) fn size_expr(declarator: &ast::Declarator) -> Option<ast::Expr> {
     let suffix = declarator.array_suffixes().next()?;
     match suffix.children().find_map(ast::Expr::cast)? {
-        ast::Expr::Literal(_) => None,
+        // FTEF-19.62: a number the lowering reads is the size; any other, such as `3i` or
+        // `0x10`, `QCC_PR_IntConstExpr` folds as an expression.
+        ast::Expr::Literal(literal)
+            if literal
+                .token()
+                .is_some_and(|t| t.text_lossless().parse::<u32>().is_ok()) =>
+        {
+            None
+        }
         expr => Some(expr),
     }
 }
