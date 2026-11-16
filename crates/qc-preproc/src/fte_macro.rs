@@ -987,6 +987,45 @@ impl Writer<'_> {
             .filter(|_| self.call.args.len() == named.saturating_add(1))
     }
 
+    /// GMQ-21.8: how much of the variadic arguments `arg` are given: all of them, but under
+    /// GMQCC a last one left empty after its comma is none, as `ftepp_macro_call_params` stops
+    /// at the `)` that follows the comma before reading an argument.
+    fn given_len(&self, arg: &Text) -> usize {
+        let bytes = arg.bytes();
+        if self.variadics == Variadics::Fteqcc {
+            return bytes.len();
+        }
+        if bytes.trim_ascii().is_empty() {
+            return 0;
+        }
+        let mut depth = 0_usize;
+        let mut last_comma = None;
+        let mut at = 0_usize;
+        while let Some(byte) = byte_at(bytes, at) {
+            match byte {
+                b'"' => {
+                    at = copied_string_end(bytes, at);
+                    continue;
+                }
+                b'(' => depth = depth.saturating_add(1),
+                b')' => depth = depth.saturating_sub(1),
+                b',' if depth == 0 => last_comma = Some(at),
+                _ => {}
+            }
+            at = at.saturating_add(1);
+        }
+        match last_comma {
+            Some(comma)
+                if bytes
+                    .get(comma.saturating_add(1)..)
+                    .is_some_and(|rest| rest.trim_ascii().is_empty()) =>
+            {
+                comma
+            }
+            _ => bytes.len(),
+        }
+    }
+
     /// The argument of the named parameter `token`, `!STRCMP(qcc_token, c->params[p])`.
     fn argument_of(&self, token: &[u8]) -> Option<&Text> {
         let p = self.params.iter().position(|p| p.as_slice() == token)?;
@@ -1106,12 +1145,22 @@ impl Writer<'_> {
                     None => self.argument(arg, &mut out),
                 }
             } else if self.variadic == Variadic::Yes && word.token == b"__VA_ARGS__" {
-                if let Some(arg) = self.rest() {
+                // GMQ-21.8 reads the arguments as written; their expansion is written.
+                let rest = self.rest().map(|raw| {
+                    let given = self.given_len(raw);
                     let arg = self
                         .expanded(self.params.len())
                         .filter(|_| !pasted)
-                        .unwrap_or(arg);
-                    out.push_from(arg, 0..arg.bytes.len());
+                        .unwrap_or(raw);
+                    let len = match given {
+                        0 => 0,
+                        _ if given < raw.bytes.len() => self.given_len(arg),
+                        _ => arg.bytes.len(),
+                    };
+                    (arg, len)
+                });
+                if let Some((arg, len)) = rest.filter(|&(_, len)| len > 0) {
+                    out.push_from(arg, 0..len);
                 } else if noargexpand && out.bytes.last() == Some(&b',') {
                     out.truncate(out.bytes.len().saturating_sub(1));
                 }
@@ -1135,13 +1184,18 @@ impl Writer<'_> {
                     at = close.saturating_add(1);
                 }
             } else if self.variadic == Variadic::Yes && word.token == b"__VA_COUNT__" {
-                // `QC_snprintfz(tmp, sizeof(tmp), "%i", param-1+extraparam);`
+                // `QC_snprintfz(tmp, sizeof(tmp), "%i", param-1+extraparam);`; GMQ-21.8: under
+                // GMQCC a last argument left empty after its comma is none.
                 let count = self
                     .call
                     .args
                     .len()
                     .saturating_sub(1)
-                    .saturating_add(self.call.extra);
+                    .saturating_add(self.call.extra)
+                    .saturating_sub(usize::from(
+                        self.rest()
+                            .is_some_and(|arg| self.given_len(arg) < arg.bytes.len()),
+                    ));
                 let span = self.place(self.body, word.start..word.next);
                 out.push(count.to_string().as_bytes(), Origin::Made(span));
             } else {

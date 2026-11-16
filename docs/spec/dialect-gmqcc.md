@@ -324,7 +324,7 @@ constructs above that the FTEQCC grammar lacks. The recorded run is
   name (GMQ-16), `noref` (GMQ-17), two touching `*` (GMQ-18), and `goto` or a `:` touching a
   name (GMQ-19).
 
-## GMQ-21 Stringizing the variadic arguments
+## GMQ-21 Macro expansion as Xonotic is preprocessed
 
 **Source:** `ftepp.cpp`, `ftepp_macro_expand`, at the commit above. Xonotic: `qcsrc/Makefile`
 (`CPP := cc -xc -E`), `lib/deglobalization.qh` (`#define DEGLOB_LOG(kind, name, ...)
@@ -402,7 +402,16 @@ this should already be stringized").
   second argument. The C preprocessor replaces "Each comment ... by one space character" before
   it reads a macro's arguments (C11, N1570 5.1.1.2, phase 3), and Xonotic's `IL_EACH` bodies hold
   comments with commas. FTEQCC's scan takes a comment's bytes as the argument's (FTEF-14.22).
-
+- **GMQ-21.8** Under this dialect a last variadic argument left empty after its comma is none:
+  `__VA_COUNT__` does not count it, `__VA_ARGS__` does not write it, and `, ## __VA_ARGS__` of
+  none takes the comma away. So `O(f, a, )` of `#define O(F, ...) F##_##__VA_COUNT__(__VA_ARGS__)`
+  is `f_1(a)`, where FTEQCC counts the empty argument (FTEF-14.26) and writes `f_2(a, )`. GMQCC's
+  `ftepp_macro_call_params` reads an argument only `while (ftepp->token != ')')`, so the `)` after
+  the last comma ends the list before an empty argument is pushed, and `TOKEN_VA_ARGS` writes
+  nothing `if (!varargs)` (`ftepp.cpp` at the commit above). Xonotic's `lib/oo.qh`, read without
+  `__STDC__` (PRJ-4.13), writes `#define _TRANSMUTE(cname, this, ...) OVERLOAD(spawn##cname,
+  this,##__VA_ARGS__)`, which `TRANSMUTE(Player, this)` calls with the variadic arguments empty.
+  The arguments are judged as written, before they are expanded (GMQ-21.6).
 
 ## GMQ-22 Arrays of fields
 

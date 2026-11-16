@@ -1092,3 +1092,20 @@ fn a_comment_inside_a_macro_argument_is_white_space_under_gmqcc() {
     assert_eq!(touching(&out), "[x w]");
     assert!(codes(&out).is_empty(), "{:?}", codes(&out));
 }
+
+// spec GMQ-21.8: under GMQCC a last variadic argument left empty after its comma is none: it is
+// not counted by `__VA_COUNT__`, and `, ## __VA_ARGS__` of it takes the comma away, as Xonotic's
+// `TRANSMUTE(Player, this)` relies on
+#[test]
+fn a_last_empty_variadic_argument_is_none_under_gmqcc() {
+    let text = "#define O(F, ...) F##_##__VA_COUNT__(__VA_ARGS__)\n\
+                #define T(c, t, ...) O(s##c, t,##__VA_ARGS__)\n#define U(c, t, ...) T(c, t, __VA_ARGS__)\n\
+                U(P, e) U(P, e, 1) O(f, a, ) O(f, a, b)\n";
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", text.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Gmqcc);
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    assert_eq!(touching(&out), "sP_1(e) sP_2(e,1) f_1(a) f_2(a, b)");
+    let (fteqcc, _) = fte("#define O(F, ...) F##_##__VA_COUNT__(__VA_ARGS__)\nO(f, a, )\n");
+    assert!(fteqcc.contains("f_2"), "{fteqcc}");
+}
