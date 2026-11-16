@@ -194,7 +194,9 @@ fn qc_sema::resolve::ModuleIndex::is_constant
 fn qc_sema::resolve::ModuleIndex::item_value
 fn qc_sema::resolve::ModuleIndex::redeclarations
 fn qc_sema::resolve::ModuleIndex::refs
+fn qc_sema::resolve::ModuleIndex::spawn_functions
 fn qc_sema::resolve::ModuleIndex::struct_shape
+fn qc_sema::resolve::ModuleIndex::virtual_function
 fn qc_sema::resolve::resolve_module
 fn qc_sema::resolve::resolve_module_at_targets
 fn qc_sema::symbol::DefId::index

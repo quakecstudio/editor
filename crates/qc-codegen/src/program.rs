@@ -36,6 +36,10 @@ pub(crate) const OFS_PARM0: u32 = 4;
 /// The `_x`, `_y` and `_z` suffixes of a vector's components (QC-11.7).
 const COMPONENTS: [&str; 3] = ["_x", "_y", "_z"];
 
+/// FTEQCC's `MEMBERFIELDNAME`, `"__m%s"`: what a class member's entity field is named after its
+/// class's `CLASS::`, `CLASS::__mNAME` (FTEF-9.21).
+const MEMBER_FIELD_PREFIX: &str = "__m";
+
 /// A type as `qcc`'s expressions carry it (QC-10): one the semantic model gives, or `qcc`'s
 /// own `type_floatfield`, the type of a vector field's components, which no type written in the
 /// source is (QC-11.12).
@@ -738,7 +742,7 @@ impl Program {
             let ofs = self.allocate_global(1)?;
             let place = self.defs.len();
             self.defs.push(Def {
-                name: format!("{class}::__m{name}"),
+                name: format!("{class}::{MEMBER_FIELD_PREFIX}{name}"),
                 ty: ValueType::FloatField,
                 ofs,
                 scope: None,
@@ -785,7 +789,7 @@ impl Program {
         let ofs = self.allocate_global(words)?;
         let place = self.defs.len();
         self.defs.push(Def {
-            name: format!("{class}::__m{name}"),
+            name: format!("{class}::{MEMBER_FIELD_PREFIX}{name}"),
             ty: ty.clone(),
             ofs,
             scope: None,

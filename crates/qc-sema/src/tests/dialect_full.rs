@@ -292,13 +292,10 @@ fn a_spawn_function_is_written_by_the_model() {
     // `B`'s own `V`, not `A`'s, which `B` declares again.
     assert_eq!(name(generated[2].b), "B::V");
     assert_eq!(name(generated[3].a), "B::V");
-    assert!(
-        index.defs[match generated[3].a {
-            Some(ir::Name::Def(def, 0)) => def.index(),
-            _ => unreachable!(),
-        }]
-        .generated
-    );
+    let Some(ir::Name::Def(function, 0)) = generated[3].a else {
+        panic!("no function stored: {:?}", generated[3]);
+    };
+    assert!(index.defs[function.index()].generated);
     assert_eq!(name(generated[4].a), "B::B");
     assert_eq!(name(generated[5].a), "A::A");
     // A spawn function the program defines is its own.
