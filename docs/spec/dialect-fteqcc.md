@@ -859,6 +859,17 @@ heavily class-based (547 `class` declarations across the three mods).
   a function that uses one. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall` (`"spawn"`),
   `QCC_PR_GenerateFunctionCallRef` (`newself`).
+- **FTEF-9.24** A method called through an object, `obj.M(args)`, is called with the object as
+  `self` (`QCC_PR_GenerateFunctionCallRef(newself, ...)`). `self` is kept in a temporary
+  (`OP_STORE_ENT self, oself`), the object is stored to `self`, the arguments go to their slots
+  with any argument naming `self` reading the kept one (`arglist[i]->base = oself`), the call is
+  made, and `self` is restored. A virtual method is the function its field holds, loaded from the
+  object before `self` changes (`LOADF_FNC w, W::__mDraw`). A nonvirtual one is the global
+  `CLASS::NAME`, `CALL1H W::Set, 2f`, with no field read. A call through `self` or `this`
+  changes nothing (`if (newself.ofs != self.ofs || newself.sym != self.sym)`). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GenerateFunctionCallRef`; checked against the pinned FTEQCC's `-Fwasm` output for a
+  virtual and a nonvirtual call.
 
 ## FTEF-10 Accessors
 

@@ -68,6 +68,11 @@ pub(super) struct Checker<'e> {
     /// The value an element read at an index that is no constant last loaded by `OP_LOADA_*`
     /// (FTEF-31.19), which the read's value is.
     pub(super) array_loaded: Option<Value>,
+    /// FTEF-9.24: the object a method's call is made with as `self`, for the next call's
+    /// statements, when it is not `self`.
+    pub(super) newself: Option<ir::Name>,
+    /// FTEF-9.24: the temporary that kept `self` across the call just written, restored after it.
+    pub(super) kept_self: Option<u32>,
     /// The words of a call's value a statement read word by word and freed not, which the
     /// next statement's clobber copies out of the return global (FTE-18.13).
     pub(super) unfreed: Option<u32>,
@@ -145,6 +150,8 @@ impl<'e> Checker<'e> {
             effects: Vec::new(),
             block_read: None,
             array_loaded: None,
+            newself: None,
+            kept_self: None,
             unfreed: None,
             keeps_condition: false,
             live_call: None,
