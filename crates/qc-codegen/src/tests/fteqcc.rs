@@ -3688,3 +3688,15 @@ fn a_case_at_a_dropped_branchs_start_keeps_its_label() {
         .count();
     assert_eq!(tests, 2, "a test for each case: {t:?}");
 }
+
+// spec FTE-24.3: an FTE target writes version 7 in the 16-bit layout, an opcode beyond id's by its
+// FTE number; the standard target keeps version 6
+#[test]
+fn an_fte_target_writes_version_7_with_fte_opcodes() {
+    let fte = compile_fteqcc("#pragma target fte\nint a;\nvoid() f = { a = 2; };\n").unwrap();
+    assert_eq!(fte.progs.format, qc_progs::Format::Fte16);
+    let store_i = u32::try_from(qc_preproc::Op::StoreI.number()).unwrap();
+    assert!(fte.progs.statements.iter().any(|s| s.op == store_i));
+    let standard = compile_fteqcc("float a;\nvoid() f = { a = 2; };\n").unwrap();
+    assert_eq!(standard.progs.format, qc_progs::Format::V6);
+}
