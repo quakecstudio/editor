@@ -130,7 +130,7 @@ impl Checker<'_> {
                         .and_then(|made| self.generated.get_mut(made))
                 {
                     statement.a = entity;
-                    statement.b = field.def.map(|def| ir::Name::Def(def, 0));
+                    statement.b = field.operand();
                 }
                 // A load of a call's entity reads it out of the return global.
                 if entity == Some(ir::Name::Return) {
@@ -308,6 +308,7 @@ impl Checker<'_> {
         }
         // At a constant index it is the component's field, read by `LOAD_F`.
         if let (Reference::Field(field), Some(i)) = (&base.reference, constant)
+            && field.selected.is_none()
             && let Some(component) = field
                 .def
                 .and_then(|def| self.env.component(def, u32::from_le_bytes(i.to_le_bytes())))
@@ -533,6 +534,46 @@ impl Checker<'_> {
         })
     }
 
+    /// The element at `at` of the array of fields `def` that `base`, an entity's field, reads:
+    /// loaded from the array as the index is read, the field it selects.
+    fn field_array_element(
+        &mut self,
+        base: Value,
+        def: crate::DefId,
+        at: Value,
+        span: Span,
+    ) -> Checked {
+        // The index counts elements of the field's type, a vector's three words each.
+        let at = self.scaled_index(&base.ty, at, span)?;
+        if at.known().is_some() {
+            return Ok(base);
+        }
+        let array = Value {
+            sym: Sym::Def(def, false, 0),
+            ..Value::of(base.ty.clone())
+        };
+        match self.load_from_array(&array, &at, ElementKind::Element, span)? {
+            // FTEF-31.19: the field `OP_LOADA_*` loaded is the one the entity's is read or
+            // stored at.
+            ArrayRead::Loaded(loaded) => {
+                if let Reference::Field(field) = &base.reference {
+                    let selected = self.name_of(&loaded);
+                    return Ok(Value {
+                        reference: Reference::Field(Box::new(FieldRef {
+                            selected,
+                            ..field.as_ref().clone()
+                        })),
+                        ..base
+                    });
+                }
+            }
+            ArrayRead::Indexed => {}
+            // A field the getter returns is not followed to the read or store of it.
+            ArrayRead::Called | ArrayRead::Block(_) => self.followed = false,
+        }
+        Ok(base)
+    }
+
     /// FTE-13.12: the struct element of `size` words at the float index `index`, read by the
     /// array's getter a word at a time into a block: the generated statement the block is made
     /// at, which the read's value is.
@@ -740,24 +781,15 @@ impl Checker<'_> {
         if let Some(element) = self.accessor_index(&base, &at) {
             return Ok(element);
         }
-        // An array of fields, `this.arr[i]`: the field the index selects, loaded from the array
-        // of fields as the index is read, an entity's field to read or store.
+        // An array of fields, `this.arr[i]`: the field the index selects, an entity's field to
+        // read or store.
         if let Reference::Field(field) = &base.reference
             && let Some(def) = field.def
             && self.env.is_array(def)
         {
             let length = self.env.array_length(def);
             self.bounds(constant, length, span);
-            // The index counts elements of the field's type, a vector's three words each.
-            let at = self.scaled_index(&base.ty, at, span)?;
-            if at.known().is_none() {
-                let field = Value {
-                    sym: Sym::Def(def, false, 0),
-                    ..Value::of(base.ty.clone())
-                };
-                self.load_from_array(&field, &at, ElementKind::Element, span)?;
-            }
-            return Ok(base);
+            return self.field_array_element(base, def, at, span);
         }
         if base.is_array_head() {
             let length = self.head_length(&base);
@@ -965,7 +997,7 @@ impl Checker<'_> {
                 let made = self.next_made();
                 self.generated.push(ir::BodyStatement {
                     a: self.copied(field.entity, field.entity_call),
-                    b: field.def.map(|def| ir::Name::Def(def, 0)),
+                    b: field.operand(),
                     c: Some(ir::Name::Made(made)),
                     ..ir::BodyStatement::bare(Op::Address)
                 });

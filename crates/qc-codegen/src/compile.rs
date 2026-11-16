@@ -15,6 +15,7 @@
 //! arguments must have its parameters' types.
 
 use crate::back_end::{BackEnd, Layout};
+use qc_lexer::latin1_encode;
 use std::collections::HashMap;
 
 use qc_diag::Span;
@@ -682,7 +683,10 @@ impl<'a> Compiler<'a> {
                 .set_words(def.ofs, &[u32::from_ne_bytes(number.to_ne_bytes())])
                 .at(span)?;
         }
-        let s_name = self.program.copy_string(&latin1(&record_name)).at(span)?;
+        let s_name = self
+            .program
+            .copy_string(&latin1_encode(&record_name))
+            .at(span)?;
         // FTE-21.10: FTEQCC's record counts the named parameters of a variadic function
         // (`funcs[i].numparms = p`); id's `qcc` writes -1 (QC-13.3).
         let numparms = if function_type.variadic && !self.dialect.has_fteqcc_extensions() {
@@ -848,7 +852,7 @@ impl<'a> Compiler<'a> {
         let mut moved = *self.program.functions.get(number).at(span)?;
         moved.s_name = self
             .program
-            .copy_string(&latin1(&format!("prior*{}", def.name)))
+            .copy_string(&latin1_encode(&format!("prior*{}", def.name)))
             .at(span)?;
         let prior_number = operand_index(self.program.functions.len()).at(span)?;
         self.program.functions.push(moved);
@@ -1070,13 +1074,6 @@ fn branch(from: usize, to: usize) -> Result<i32, Internal> {
     let from = i64::try_from(from).map_err(|_| Internal::TooLarge)?;
     let to = i64::try_from(to).map_err(|_| Internal::TooLarge)?;
     i32::try_from(to.checked_sub(from).ok_or(Internal::TooLarge)?).map_err(|_| Internal::TooLarge)
-}
-
-/// The bytes of a name the syntax tree gave as one `char` per byte (Latin-1).
-pub(crate) fn latin1(text: &str) -> Vec<u8> {
-    text.chars()
-        .map(|c| u8::try_from(u32::from(c)).unwrap_or(b'?'))
-        .collect()
 }
 
 /// A statement or function index as the `i32` a record stores.

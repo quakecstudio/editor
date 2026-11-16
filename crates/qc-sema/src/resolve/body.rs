@@ -136,9 +136,6 @@ impl<'a> Resolver<'a> {
     ) {
         // A body is read in its own unit (FTEF-19.12).
         self.unit = file;
-        if class.is_some() {
-            self.declare_virtual_function(def);
-        }
         self.body_typedefs.clone_from(&body.typedefs);
         self.resolve_body(file, def, class, body, decl, FunctionName::Named);
         self.body_typedefs.clear();

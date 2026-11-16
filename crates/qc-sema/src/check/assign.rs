@@ -469,14 +469,14 @@ impl Checker<'_> {
             // FTEF-29.17: `FLDADDRESS` of the entity and the field, then the in-place opcode of
             // the value through that address, whose result is the assignment's value.
             if !self.global {
-                let Some(def) = field.def else {
+                let Some(field_operand) = field.operand() else {
                     self.followed = false;
                     return Ok(Compounded::Unchecked);
                 };
                 let address = self.next_made();
                 self.generated.push(ir::BodyStatement {
                     a: self.copied(field.entity, field.entity_call),
-                    b: Some(ir::Name::Def(def, 0)),
+                    b: Some(field_operand),
                     c: Some(ir::Name::Made(address)),
                     ..ir::BodyStatement::bare(Op::Address)
                 });
@@ -916,7 +916,7 @@ impl Checker<'_> {
         let address = u32::try_from(self.generated.len()).ok().map(ir::Name::Made);
         self.generated.push(ir::BodyStatement {
             a: self.copied(field.entity, field.entity_call),
-            b: field.def.map(|def| ir::Name::Def(def, 0)),
+            b: field.operand(),
             c: address,
             ..ir::BodyStatement::bare(Op::Address)
         });

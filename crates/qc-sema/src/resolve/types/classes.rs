@@ -267,7 +267,11 @@ impl<'a> Resolver<'a> {
                 }
                 id
             };
+            let function = self.declare_virtual_function(id);
             if let Some(body) = &member.body {
+                if let Some(function) = function {
+                    self.mark_initialized(function);
+                }
                 pending.push((file, id, Some(def), body, None));
             }
         }
@@ -538,10 +542,15 @@ impl<'a> Resolver<'a> {
     /// `QCC_PR_EmitClassFromFunction` writes it after every file.
     pub(in crate::resolve) fn write_spawn_functions(&mut self) {
         for (spawnfunc, class) in std::mem::take(&mut self.spawnfuncs) {
-            if self.index.def(spawnfunc).is_none_or(|d| d.initialized) {
+            let Some(location) = self
+                .index
+                .def(spawnfunc)
+                .filter(|d| !d.initialized)
+                .map(|d| d.location)
+            else {
                 continue;
-            }
-            let body = self.spawn_function(class);
+            };
+            let body = self.spawn_function(class, location);
             self.index.bodies.insert(spawnfunc, body);
             self.index.spawn_functions.push(spawnfunc);
         }
@@ -552,10 +561,16 @@ impl<'a> Resolver<'a> {
     /// down, each virtual member with a body that no class below it declares again stored its
     /// function, `self.__mNAME = CLASS::NAME` (`QCC_PR_EmitClassFunctionTable`); then each
     /// constructor `CLASS::CLASS` called, the class's own first and its parents' after; then
-    /// `DONE`. A program with no `self` has no body the model follows.
-    fn spawn_function(&self, class: DefId) -> TypedBody {
-        let Some(this) = self.lookup_global("self") else {
-            return TypedBody::default();
+    /// `DONE`. A program with no `self` has one made, an entity declared at the class,
+    /// `location` (`QCC_PR_GetSRef(type_entity, "self", NULL, true, 0, false)`).
+    fn spawn_function(&mut self, class: DefId, location: Location) -> TypedBody {
+        let this = match self.lookup_global("self") {
+            Some(this) => this,
+            None => {
+                let entity = Type::Simple(SimpleType::Entity);
+                let kind = entity.top_level_kind();
+                self.declare_global("self", &entity, kind, location, Init::Uninitialized)
+            }
         };
         let name = self
             .index
@@ -575,11 +590,7 @@ impl<'a> Resolver<'a> {
             .lookup_global("classname")
             .filter(|&id| self.index.def(id).is_some_and(|d| d.kind == DefKind::Field));
         if let Some(classname) = classname {
-            let text = name
-                .chars()
-                .map(|c| u8::try_from(u32::from(c)).unwrap_or(b'?'))
-                .collect();
-            let string = body.string(text);
+            let string = body.string(qc_lexer::latin1_encode(&name));
             body.store_through(this, classname, string);
         }
         // `QCC_PR_EmitClassFunctionTable` recurses to the root before it reads a class.
@@ -593,7 +604,11 @@ impl<'a> Resolver<'a> {
                     continue;
                 }
                 // "Member function %s was not defined": a member with no body is left empty.
-                let Some(function) = self.index.virtual_function(member) else {
+                let Some(function) = self
+                    .index
+                    .virtual_function(member)
+                    .filter(|&f| self.index.def(f).is_some_and(|d| d.initialized))
+                else {
                     continue;
                 };
                 // A class below that declares the member again fills the field itself.
@@ -630,29 +645,25 @@ impl<'a> Resolver<'a> {
     }
 
     /// FTEF-9.21: the function `CLASS::NAME` a body of the virtual member `member` defines,
-    /// declared the first time (`QCC_PR_GetDef(newparm, membername, NULL, true, 0,
-    /// gdf_flags)`): a constant of the member's type. Nothing for a member that is no virtual
-    /// one, a field of function type.
-    pub(in crate::resolve) fn declare_virtual_function(&mut self, member: DefId) {
-        if self.index.virtual_functions.contains_key(&member) {
-            return;
+    /// declared with the member (`QCC_PR_GetDef(newparm, membername, NULL, true, 0,
+    /// gdf_flags)`): a constant of the member's type, initialised once a declaration of the
+    /// member gives it a body. `None` for a member that is no virtual one, a field of function
+    /// type.
+    pub(in crate::resolve) fn declare_virtual_function(&mut self, member: DefId) -> Option<DefId> {
+        if let Some(&function) = self.index.virtual_functions.get(&member) {
+            return Some(function);
         }
-        let Some(def) = self.index.def(member) else {
-            return;
-        };
-        let Some(class) = def
+        let def = self.index.def(member)?;
+        let class = def
             .member_of
-            .filter(|_| def.kind == DefKind::Field && self.resolved(&def.ty).is_function())
-        else {
-            return;
-        };
+            .filter(|_| def.kind == DefKind::Field && self.resolved(&def.ty).is_function())?;
         let function = Definition {
             name: def.name.clone(),
             ty: def.ty.clone(),
             kind: DefKind::Function,
             location: def.location,
             owner: None,
-            initialized: true,
+            initialized: false,
             member_of: Some(class),
             generated: true,
         };
@@ -661,6 +672,7 @@ impl<'a> Resolver<'a> {
             facts.constant = true;
         }
         self.index.virtual_functions.insert(member, id);
+        Some(id)
     }
 
     /// An FTEQCC `Class::member` definition (FTEF-17.2): it defines the member the class or
@@ -752,6 +764,11 @@ impl<'a> Resolver<'a> {
                 )
             }
         };
+        if let Some(function) = self.declare_virtual_function(member)
+            && decl.body().is_some()
+        {
+            self.mark_initialized(function);
+        }
         decl.body()
             .map(|body| vec![(file, member, Some(class), body, Some(decl))])
             .unwrap_or_default()

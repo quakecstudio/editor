@@ -7,10 +7,11 @@
 //! file, and this writes it after the array functions, from its statements as any body.
 
 use qc_diag::Span;
+use qc_lexer::latin1_encode;
 use qc_progs::Function;
 use qc_sema::{DefId, FileId, Location};
 
-use super::{Abort, At, Compiler, Lowered, latin1, operand_index};
+use super::{Abort, At, Compiler, Lowered, operand_index};
 use crate::Internal;
 use crate::program::operand;
 
@@ -55,7 +56,7 @@ impl Compiler<'_> {
             .initialise_words(place, &[u32::from_ne_bytes(number.to_ne_bytes())])
             .at(span)?;
         let name = self.program.def(place).at(span)?.name.clone();
-        let s_name = self.program.copy_string(&latin1(&name)).at(span)?;
+        let s_name = self.program.copy_string(&latin1_encode(&name)).at(span)?;
         let s_file = self.s_files.get(&file).copied().at(span)?;
         self.program.functions.push(Function {
             first_statement,

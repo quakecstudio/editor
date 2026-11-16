@@ -140,6 +140,18 @@ pub enum CompileError {
     },
 }
 
+impl CompileError {
+    /// `internal` in a pass over the whole module, which no source span locates: the layout
+    /// of its blocks and temporaries, or its writing.
+    const fn unlocated(internal: Internal) -> Self {
+        Self::Internal {
+            file: FileId::new(0),
+            span: Span::new(0, 0),
+            internal,
+        }
+    }
+}
+
 /// What the compiler could not lower, which no module the semantic model accepts under the
 /// vanilla profile has.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -259,21 +271,13 @@ fn compile_lowered(
     compiler
         .program
         .resolve_blocks()
-        .map_err(|internal| CompileError::Internal {
-            file: FileId::new(0),
-            span: Span::new(0, 0),
-            internal,
-        })?;
+        .map_err(CompileError::unlocated)?;
     // FTE-21.8: then the module's shared temporaries, as `QCC_FinaliseTemps` follows
     // `QCC_UnmarshalLocals`.
     compiler
         .program
         .resolve_shared_temps()
-        .map_err(|internal| CompileError::Internal {
-            file: FileId::new(0),
-            span: Span::new(0, 0),
-            internal,
-        })?;
+        .map_err(CompileError::unlocated)?;
     compiler
         .emit_array_functions()
         .map_err(|(internal, file, span)| CompileError::Internal {
@@ -292,11 +296,7 @@ fn compile_lowered(
     compiler
         .program
         .resolve_shared_temps()
-        .map_err(|internal| CompileError::Internal {
-            file: FileId::new(0),
-            span: Span::new(0, 0),
-            internal,
-        })?;
+        .map_err(CompileError::unlocated)?;
     if !compiler.errors.is_empty() {
         return Err(CompileError::Diagnostics(compiler.errors));
     }
@@ -313,13 +313,8 @@ fn compile_lowered(
     } else {
         write::Records::Qcc
     };
-    let mut progs = write::progs(compiler.program, crc, &index, records).map_err(|internal| {
-        CompileError::Internal {
-            file: FileId::new(0),
-            span: Span::new(0, 0),
-            internal,
-        }
-    })?;
+    let mut progs =
+        write::progs(compiler.program, crc, &index, records).map_err(CompileError::unlocated)?;
     if compiler.dialect == Dialect::Fteqcc {
         if write::needs_fte32(&progs) {
             progs.format = Format::Fte32;
