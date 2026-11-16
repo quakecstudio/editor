@@ -5046,3 +5046,42 @@ fn outside_the_keep(harness: &mut Harness<'static, Option<App>>) {
         .set_map_camera(camera);
     harness.run();
 }
+
+// No spec statement: P7-12: a panel's contents wider than it never widen it: it keeps the size
+// the layout gives it, frame after frame, rather than growing to its contents on one frame and
+// being set back the next, which made the whole centre jump from side to side
+#[test]
+fn a_panel_keeps_its_size_with_contents_wider_than_it() {
+    let dir = keep_copy("panel-width");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    // The outline's row of a group whose name no panel of this width holds.
+    shell
+        .execute(
+            "map.group",
+            json!({ "name": "a_group_whose_name_runs_far_past_the_edge_of_the_panel", "entities": [2] }),
+        )
+        .unwrap();
+    let mut lefts = Vec::new();
+    for _ in 0..6 {
+        harness.run();
+        let tab = harness.get_by_role_and_label(Role::Button, Text::Editor.get());
+        lefts.push(tab.rect().min.x);
+    }
+    assert!(
+        lefts
+            .iter()
+            .all(|left| (left - lefts.first().unwrap()).abs() < 0.5),
+        "the centre stays put each frame: {lefts:?}"
+    );
+    assert!(
+        lefts.first().unwrap() < &(240.0 + 24.0),
+        "the centre starts after the panel's own size: {lefts:?}"
+    );
+}
