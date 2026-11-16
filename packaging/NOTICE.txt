@@ -13,7 +13,9 @@ with; every release links its tag.
 Parts of QuakeC Studio are ported from id Software's GPL source code of Quake
 (Copyright (C) 1996-1997 Id Software, Inc.) and from other GPL projects, each named in the
 header of the file that ports it. ATTRIBUTION.md in the source lists the authors and licenses
-of the fonts and other assets bundled with the app.
+of the fonts and other assets bundled with the app. THIRD-PARTY, beside this file, lists every
+crate the programs link and every asset they bundle, each with its license and the license
+text it ships.
 
 QuakeC Studio is an independent project and is not affiliated with or endorsed by id Software,
 ZeniMax Media or Bethesda. Quake game data is not included: the app uses a copy of the game

@@ -22,8 +22,8 @@ a ported file must keep.
 | Upstream | Commit | License | Copyright line to keep |
 | --- | --- | --- | --- |
 | [`id-Software/Quake`](https://github.com/id-Software/Quake) | `bf4ac424ce754894ac8f1dae6a3981954bc9852d` | GPL-2.0-or-later (file headers) | `Copyright (C) 1996-1997 Id Software, Inc.` |
-| [`id-Software/Quake-Tools`](https://github.com/id-Software/Quake-Tools), `qcc/` only | `c0d1b91c74eb654365ac7755bc837e497caaca73` | GPL-2.0-or-later (file headers) | `Copyright (C) 1996-1997 Id Software, Inc.` |
-| [`fte-team/fteqw`](https://github.com/fte-team/fteqw), `engine/qclib/` only ([ADR-0017](adr/0017-port-fteqcc.md)) | `f937b9d88f71fc4429db5fe56c6a98d922711b2e` | GPL-2.0: `README.md` "FTEQW is supplied to you under the terms of the same license as the original Quake sources, the GNU General Public License Version 2.", `engine/qclib/LICENSE` the GPL-2.0 text; the `qcc_*.c` files carry no notice, so a ported file keeps the README's line | `Copyright (c) 2004-2025 FTE's team and its contributors` |
+| [`id-Software/Quake-Tools`](https://github.com/id-Software/Quake-Tools), `qcc/` and `qutils/` (qbsp, vis, light and the other map tools) | `c0d1b91c74eb654365ac7755bc837e497caaca73` | `qcc/`: GPL-2.0-or-later (file headers). `qutils/`: GPL with no version stated, so any version, GPL-3.0-or-later among them ([ADR-0029](adr/0029-license-review.md)): its files carry no notice, `qutils/COPYING` is the GPL-2.0 text, whose section 9 lets a program that "does not specify a version number" be used under "any version ever published", and id's commit releases them "to be GPL" | `Copyright (C) 1996-1997 Id Software, Inc.` |
+| [`fte-team/fteqw`](https://github.com/fte-team/fteqw), `engine/qclib/` only ([ADR-0017](adr/0017-port-fteqcc.md)) | `f937b9d88f71fc4429db5fe56c6a98d922711b2e` | GPL-2.0-or-later as [ADR-0029](adr/0029-license-review.md) reads it: `README.md` "FTEQW is supplied to you under the terms of the same license as the original Quake sources, the GNU General Public License Version 2.", `engine/qclib/LICENSE` the GPL-2.0 text; the `qcc_*.c` files carry no notice, so a ported file keeps the README's line | `Copyright (c) 2004-2025 FTE's team and its contributors` |
 | [`sezero/quakespasm`](https://github.com/sezero/quakespasm), for the preview host ([ADR-0018](adr/0018-quakespasm-lineage-porting-upstreams.md)) | `c9c8ee9895961669c4674e8f8ca8c64cc43e38b5` | GPL-2.0-or-later: a file's own header must say "either version 2 of the License, or (at your option) any later version"; `LICENSE.txt` is the GPL-2.0 text | `Copyright (C) 1996-2001 Id Software, Inc.`, `Copyright (C) 2002-2009 John Fitzgibbons and others`, `Copyright (C) 2010-2014 QuakeSpasm developers`, `Copyright (C) 1999-2005 Id Software, Inc.` and `Copyright (C) 2010-2018 O.Sezer <sezero@users.sourceforge.net>` (`Quake/bgmusic.c`) |
 | [`andrei-drexler/ironwail`](https://github.com/andrei-drexler/ironwail), for the preview host ([ADR-0018](adr/0018-quakespasm-lineage-porting-upstreams.md)) | `08d578136ff43d7d1ef38e636dfbfd3e844be7cd` | GPL-2.0-or-later: a file's own header must say "either version 2 of the License, or (at your option) any later version"; `LICENSE.txt` is the GPL-2.0 text | `Copyright (C) 1996-2001 Id Software, Inc.`, `Copyright (C) 2002-2009 John Fitzgibbons and others`, `Copyright (C) 2010-2014 QuakeSpasm developers`, `Copyright (C) 2016 Spike`, `Copyright (C) 2022 A. Drexler` |
 | [`Novum/vkQuake`](https://github.com/Novum/vkQuake), for the preview host ([ADR-0018](adr/0018-quakespasm-lineage-porting-upstreams.md)) | `27789d7333a46674474d871137bb71e056719628` | GPL-2.0-or-later: a file's own header must say "either version 2 of the License, or (at your option) any later version"; `LICENSE.txt` is the GPL-2.0 text | `Copyright (C) 1996-2001 Id Software, Inc.`, `Copyright (C) 2002-2009 John Fitzgibbons and others`, `Copyright (C) 2010-2014 QuakeSpasm developers`, `Copyright (C) 2016 Spike`, `Copyright (C) 2016 Axel Gneiting`, `Copyright (C) 1996-1997 Id Software, Inc.` |
@@ -39,13 +39,6 @@ checks the rest against the cited file. An upstream file whose first `Copyright`
 the row (vkQuake's files that carry only `Copyright (C) 2023 Axel Gneiting`, say) needs that
 line added to the row before it is ported. Bundled third-party files (`lodepng.c`, `miniz.c`,
 `strlcpy.c`, ...) and files with no notice are not portable.
-
-**Not yet portable:** `Quake-Tools/qutils/` (qbsp, vis, light and the other map tools). Its
-files carry no license notice and its `COPYING` is GPL-2.0 with no "or later" grant, so it is
-not established that it can be combined with GPL-3.0-or-later code. The license compliance
-review ([#133](https://github.com/quakecstudio/editor/issues/133), P4-22) rules on it before
-Phase 6 ports the map tools. Until then the map tools may be read and used as oracles, not
-ported.
 
 Adding an upstream (GMQCC, ...) is a PR that adds a row here after
 checking that its license allows use under GPL-3.0-or-later, and records the copyright lines its
@@ -91,7 +84,7 @@ with its reason and an expected difference in the engine differential against id
 | L0 formats | WAD2 | `WinQuake/wad.c`, `wad.h` |
 | L0 formats | BSP29, MDL | `WinQuake/bspfile.h`, `modelgen.h`, `model.c` (`Mod_LoadBrushModel`, `Mod_LoadAliasModel`); for BSPs, `model.c` and `gl_model.c` are authoritative for the WinQuake and GLQuake loader modes |
 | L0 formats | BSP loading by default | QuakeSpasm (`sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`, `Quake/gl_model.c`) as `docs/spec/bsp.md` BSP-20 describes it, read for description and not ported ([ADR-0012](adr/0012-bsp-loader-default.md)) |
-| L0 formats | .lno, BSP2, .map | No portable id source: `.lno` and BSP2 come from FTEQCC, GMQCC and ericw-tools once registered above; `.map` from `qutils/QBSP/MAP.C` after the P4-22 ruling |
+| L0 formats | .lno, BSP2, .map | No portable id source: `.lno` and BSP2 come from FTEQCC, GMQCC and ericw-tools once registered above; `.map` from `qutils/QBSP/MAP.C` (ADR-0029) |
 | L1 VM | Opcodes, calls, local stack, runaway guard | `WinQuake/pr_exec.c` |
 | L1 VM | Edicts, fields, system globals, entity lump parsing | `WinQuake/pr_edict.c`, `progdefs.h`, `progs.h` |
 | L1 VM | Builtins | `WinQuake/pr_cmds.c` |

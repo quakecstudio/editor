@@ -3,7 +3,7 @@
 #
 # Packages QuakeC Studio's Windows binaries (P4-18): a portable zip and an MSI, each holding
 # the desktop app, the preview host beside it (qs-engine's `locate_host` finds it there), the
-# command line and the language server, with LICENSE and NOTICE. The MSI installs for every
+# command line and the language server, with LICENSE, NOTICE and THIRD-PARTY (written by `cargo xtask notices` first). The MSI installs for every
 # user under Program Files, adds a Start menu shortcut and puts the folder on the system PATH
 # for `quakec-ide`; its WiX source is quakec-studio.wxs beside this script, with the version
 # filled in. On a tag the release signs the executables before they are packaged; the MSI
@@ -33,6 +33,7 @@ for binary in "${BINARIES[@]}"; do
 done
 cp LICENSE "$stage/LICENSE.txt"
 cp packaging/NOTICE.txt "$stage/NOTICE.txt"
+cp packaging/THIRD-PARTY.txt "$stage/THIRD-PARTY.txt"
 name="quakec-studio-$version-windows-$arch"
 
 zip() {

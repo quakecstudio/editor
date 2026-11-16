@@ -41,6 +41,7 @@ index below lists every ADR, in order, with the title and status its file states
 | [0026](0026-preview-host-later-engine-improvements.md) | Follow the later engines in the preview host by category, the simulation staying id's | Accepted |
 | [0027](0027-advanced-lighting.md) | Schedule ericw-tools' advanced lighting by how much the corpus uses it | Accepted |
 | [0028](0028-embedded-game-view.md) | Show the game inside the IDE by running the preview host's game in the IDE's process | Accepted |
+| [0029](0029-license-review.md) | Release under the license review's findings, and port id's map tools as GPL | Accepted |
 <!-- /adr:index -->
 
 A `type:decision` issue reserves the ADR number its deliverable names in `plan/backlog/`;

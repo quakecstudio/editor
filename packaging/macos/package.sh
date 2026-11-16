@@ -8,7 +8,7 @@
 #
 # <bin-dir> holds the four arm64 release binaries. The app holds them all in
 # Contents/MacOS, the preview host beside the app as qs-engine's `locate_host` looks for it,
-# and LICENSE, NOTICE and the icon in Contents/Resources; its Info.plist is the one beside this script
+# and LICENSE, NOTICE, THIRD-PARTY (`cargo xtask notices`) and the icon in Contents/Resources; its Info.plist is the one beside this script
 # with the version filled in. The package installs the app in /Applications, and its
 # scripts/postinstall links to the app's quakec-ide and quakec-lsp in /usr/local/bin; it is
 # built with pkgbuild from components.plist and with productbuild from distribution.xml, all
@@ -36,6 +36,7 @@ app() {
   done
   install -m644 LICENSE "$contents/Resources/LICENSE"
   install -m644 packaging/NOTICE.txt "$contents/Resources/NOTICE"
+  install -m644 packaging/THIRD-PARTY.txt "$contents/Resources/THIRD-PARTY"
   install -m644 packaging/macos/QuakeCStudio.icns "$contents/Resources/QuakeCStudio.icns"
   sed "s/@VERSION@/$version/g" packaging/macos/Info.plist >"$contents/Info.plist"
   plutil -lint "$contents/Info.plist"

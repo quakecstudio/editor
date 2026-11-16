@@ -111,6 +111,7 @@ cargo xtask deny-fixtures                 # deny.toml rejects bad licenses and w
 cargo xtask layers [--write]              # no crate depends on a higher layer (layers.toml); check (or write) the crate table of docs/layers.md
 cargo xtask licenses                      # SPDX lines and ported-file headers; skips cached specs
 cargo xtask attribution                   # every asset is listed in ATTRIBUTION.md
+cargo xtask notices --out <file>          # the third-party notices a release package carries (ADR-0029); --check: every linked crate states a license
 cargo xtask oracles                       # build the oracles from id's sources, run the VM vectors and the builtin and grammar differentials (network, C compiler)
 cargo xtask oracles maps                  # build id's qbsp, vis and light and ericw-tools (CMake, TBB, Embree 4) and compile a room with each (network)
 cargo run --release -p xtask -- map-diff [--map <name>]...  # qs-map-bsp against id's qbsp and ericw-tools' qbsp on every corpus map: leaks, entities, faces, traces (P6-07; release, the brush BSP is slow unoptimized)

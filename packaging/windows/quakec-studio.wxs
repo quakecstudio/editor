@@ -51,6 +51,7 @@
       <Component><File Source="quakec-lsp.exe" /></Component>
       <Component><File Source="LICENSE.txt" /></Component>
       <Component><File Source="NOTICE.txt" /></Component>
+      <Component><File Source="THIRD-PARTY.txt" /></Component>
       <Component Id="PathEntry" Guid="5E7A1C3B-2D4F-4A6B-8C9E-0F1A2B3C4D5E">
         <Environment Id="Path" Name="PATH" Value="[INSTALLFOLDER]" Part="last"
             Action="set" System="yes" />

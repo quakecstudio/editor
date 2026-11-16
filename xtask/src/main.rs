@@ -16,6 +16,8 @@
 //! - `licenses`: checks the SPDX header of every file and the ported-file
 //!   header rule in `docs/porting.md`.
 //! - `attribution`: checks every asset file is listed in `ATTRIBUTION.md`.
+//! - `notices`: writes the third-party notices a release package carries
+//!   (`--out`), or checks every crate the binaries link states a license.
 //! - `contrast`: checks every colour pair in `docs/design/tokens.toml` meets
 //!   WCAG AA in both themes.
 //! - `bench`: runs the performance-budget benchmarks, checks them against
@@ -134,6 +136,7 @@ mod light_diff;
 mod lsp_corpus;
 mod map_corpus;
 mod map_diff;
+mod notices;
 mod offline;
 mod oracles;
 mod parse_corpus;
@@ -231,6 +234,9 @@ enum Task {
     LexCorpus(lex_corpus::Args),
     /// SPDX lines and ported-file headers.
     Licenses,
+    /// Write the third-party notices a release package carries, or check every linked crate
+    /// states a license.
+    Notices(notices::Args),
     /// The language server over a codebase, against its golden file.
     LspCorpus(lsp_corpus::Args),
     /// Every .map round-trips.
@@ -318,6 +324,7 @@ fn run(root: &Path, task: &Task, ci_steps: &[ci::Step]) -> bool {
         Task::Ratchet(args) => ("ratchet", ratchet::main(root, args)),
         Task::Readiness(args) => ("readiness", readiness::main(root, args)),
         Task::SemaCorpus(args) => ("sema-corpus", sema_corpus::main(root, args)),
+        Task::Notices(args) => ("notices", notices::main(root, args)),
         Task::Scenario(args) => ("scenario", scenario::main(root, args)),
         Task::Evals(args) => ("evals", evals::main(root, args)),
         Task::Compatibility(args) => ("compatibility", compatibility::main(root, args)),
@@ -374,6 +381,7 @@ pub(crate) fn in_process_check(command: &str) -> Option<Check> {
         "layers" => Some(layers::check),
         "licenses" => Some(licenses::run),
         "attribution" => Some(attribution::run),
+        "notices" => Some(notices::check),
         "contrast" => Some(contrast::check),
         "commands" => Some(commands::check),
         _ => None,
