@@ -23,7 +23,7 @@ use qc_lexer::{Code, Dialect, Span, TokenKind, is_fteqcc_whitespace, is_name_cha
 
 use crate::fte_directive::{
     self, Bytes, Definer, FTE_MAX_MACRO_NAME, Gap, Resume, TextStart, WORD_TOO_LONG, WhiteStop,
-    byte_at, simple_get_token, too_long, whitespace,
+    byte_at, simple_get_token, skip_blanks, too_long, whitespace,
 };
 use crate::{
     Body, Expansion, ExpansionId, FTE_MAX_EXPANDED_TOKENS, FTE_MAX_OPEN_CHUNKS, FileId, FileSpan,
@@ -839,8 +839,9 @@ fn read_body(reading: &Reading<'_>, mut at: usize) -> (Text, usize, Option<usize
 /// (FTEF-14.22).
 struct Scanned {
     /// Each argument's bytes, `paramoffset[p]`: from after the white space and comments that
-    /// follow its `(` or `,` to its `,` or `)`.
-    args: Vec<Range<usize>>,
+    /// follow its `(` or `,` to its `,` or `)`, in pieces around the directives run inside it
+    /// (GMQ-21.4).
+    args: Vec<Vec<Range<usize>>>,
     /// `extraparam`: the commas of a variadic macro's arguments after its named ones.
     extra: usize,
     /// Whether a comma came after more arguments than FTEQCC takes, "Too many parameters in
@@ -1691,7 +1692,14 @@ impl<L: Loader> Preprocessor<L> {
                 args: scanned
                     .args
                     .iter()
-                    .map(|range| reading.copy(range.clone()))
+                    .map(|pieces| {
+                        let mut arg = Text::default();
+                        for piece in pieces {
+                            let copied = reading.copy(piece.clone());
+                            arg.push_from(&copied, 0..copied.bytes.len());
+                        }
+                        arg
+                    })
                     .collect(),
                 extra: scanned.extra,
                 too_many: scanned.too_many,
@@ -1733,7 +1741,8 @@ impl<L: Loader> Preprocessor<L> {
     /// passes over it, `(` and `)` nest, and a `,` or `)` outside them ends an argument, every
     /// other byte (a character constant's, a comment's) being part of it. The white space after
     /// the `(` and each `,` is read as `QCC_PR_LexWhitespace(false)` reads it, which runs the
-    /// directives at the starts of its lines (FTEF-14.45). [`ScanEnd::Eof`] when the text ends
+    /// directives at the starts of its lines (FTEF-14.45); under GMQCC a directive at a line's
+    /// start inside an argument is run too (GMQ-21.4). [`ScanEnd::Eof`] when the text ends
     /// first, "EOF on macro call", or a directive ends it; [`ScanEnd::Unclosed`] when it ends in a
     /// comment there (FTEF-14.67).
     fn fte_scan_arguments(
@@ -1752,6 +1761,8 @@ impl<L: Loader> Preprocessor<L> {
             .fte_whitespace(run, bytes, open.saturating_add(1))
             .map_err(white)?;
         let mut start = at;
+        // The pieces of the argument being read before a directive inside it.
+        let mut pieces = Vec::new();
         let mut args = Vec::new();
         let mut extra = 0_usize;
         let mut too_many = false;
@@ -1762,13 +1773,28 @@ impl<L: Loader> Preprocessor<L> {
                 at = string_end(text, at);
                 byte = byte_at(text, at).ok_or(ScanEnd::Eof)?;
             }
+            // GMQ-21.4: under GMQCC a directive at the start of a line inside an argument is
+            // run, as the C preprocessor Xonotic runs first runs it; the argument is its text
+            // around the directive and what it skips.
+            if self.dialect == Dialect::Gmqcc
+                && byte == b'\n'
+                && byte_at(text, skip_blanks(text, at.saturating_add(1))) == Some(b'#')
+            {
+                // The line break ends a line comment before it, as it does in the file.
+                pieces.push(start..at.saturating_add(1));
+                // From the line break, which the directive's line starts after.
+                at = self.fte_whitespace(run, bytes, at).map_err(white)?;
+                start = at;
+                continue;
+            }
             match byte {
                 b'(' => level = level.saturating_add(1),
                 b',' | b')' if level == 0 => {
                     if byte == b',' && variadic == Variadic::Yes && args.len() >= named {
                         extra = extra.saturating_add(1);
                     } else {
-                        args.push(start..at);
+                        pieces.push(start..at);
+                        args.push(std::mem::take(&mut pieces));
                         if byte == b')' {
                             return Ok(Scanned {
                                 args,

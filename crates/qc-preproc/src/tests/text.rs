@@ -1017,3 +1017,30 @@ fn an_expansion_ending_in_a_function_like_name_takes_the_following_group_under_g
     let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
     assert_eq!(touching(&out), "g(1 + 2)");
 }
+
+// spec GMQ-21.4: under GMQCC a directive at the start of a line inside a macro call's arguments
+// is run, as the C preprocessor Xonotic runs first runs it: an argument is its text around the
+// directive and what the directive skips, with its line break; FTEQCC runs one only after the
+// `(` or a `,`
+#[test]
+fn a_directive_inside_a_macro_argument_is_run_under_gmqcc() {
+    let text = "#define A(c, n, t, v) f(n, v)\nA(H, m, string, // x\n#ifdef CSQC\n    \"a\"\n\
+                #else\n    \"b\"\n#endif\n);\nA(H, k, int, x\n#define Q 1\ny Q);\n";
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", text.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Gmqcc);
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    assert_eq!(touching(&out), r#"f(m, "b") ; f(k, x y 1 ) ;"#);
+    assert!(codes(&out).is_empty(), "{:?}", codes(&out));
+    // Through a variadic macro, after a line comment, as Xonotic's `ATTRIB` reads it.
+    let mut loader = MemoryLoader::new();
+    let text = "#define CSQC\n#define OVERLOAD_(F, ...) F##_##__VA_COUNT__(__VA_ARGS__)\n\
+                #define EVAL_ATTRIB(...) __VA_ARGS__\n\
+                #define ATTRIB(...) EVAL_ATTRIB(OVERLOAD_(ATTRIB, __VA_ARGS__))\n\
+                #define ATTRIB_4(c, n, t, v) f(n, v)\nATTRIB(H, m, string, // ...\n#ifdef CSQC\n\
+                (p(\"x\") == \"\")\n? \"a\" // c\n: \"b\"\n#else\n\"b\"\n#endif\n);\n";
+    loader.insert("a.qc", text.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Gmqcc);
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    assert_eq!(touching(&out), r#"f(m, (p("x") == "") ? "a" : "b") ;"#);
+}

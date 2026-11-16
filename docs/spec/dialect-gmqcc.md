@@ -366,6 +366,18 @@ this should already be stringized").
   object-like macros (`#define W ORDERED(F)` and `W(1, 2)`), is not taken, where the C
   preprocessor would take it. FTEQCC finds a function-like macro's `(` only in the text it stands
   in (FTEF-14.22).
+- **GMQ-21.4** Under this dialect a directive at the start of a line inside a macro call's
+  arguments is run as it would be outside the call, and the argument is its text around the
+  directive and what the directive skips, the line break before the directive kept. Xonotic's
+  `common/items/item/health.qh` writes `ATTRIB(HealthSmall, m_icon, string, // ...` with `#ifdef
+  CSQC`, `#else` and `#endif` among its last argument's lines. C leaves this undefined (C11, N1570
+  6.10.3p11: "If there are sequences of preprocessing tokens within the list of arguments that
+  would otherwise act as preprocessing directives, the behavior is undefined."), and the C
+  preprocessor Xonotic runs first defines it: "GNU CPP processes arbitrary directives within
+  macro arguments in exactly the same way as it would have processed the directive were the
+  function-like macro invocation not present" (the GCC manual, Directives Within Macro
+  Arguments, fetched 2026-11-16). FTEQCC runs a directive only in the white space after the `(`
+  or a `,` (FTEF-14.45).
 
 ## GMQ-22 Arrays of fields
 
