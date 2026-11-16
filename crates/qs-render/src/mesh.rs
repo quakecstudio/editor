@@ -305,6 +305,12 @@ impl MapMesh {
         lights: &[DynamicLight],
     ) -> Vec<LightmapPatch> {
         let marks = self.lightmaps.mark_lights(lights);
+        // Nothing to make again: no style a face reads changed, no light marks a face now and
+        // none did last frame, so every face below would be skipped.
+        if marks.is_empty() && self.lightmaps.marks.is_empty() && *styles == self.lightmaps.applied
+        {
+            return Vec::new();
+        }
         let mut changes = Changes::default();
         // Only the faces whose light changed are made again, as `R_RenderDynamicLightmaps`
         // rebuilds only a stale or lit face.
@@ -959,7 +965,15 @@ impl Lightmaps {
     /// `R_PushDlights`: each live light (radius not 0) pushed through every model's nodes;
     /// each face's bits, one per light, in the lights' order, the first 32 (REND-7.1,
     /// REND-7.5).
+    /// No marks at all, an empty list, when no light is live: a face with no mark has none.
     fn mark_lights(&self, lights: &[DynamicLight]) -> Vec<u64> {
+        let live = lights
+            .iter()
+            .take(REND_MAX_DLIGHTS)
+            .any(|light| light.radius != 0.0);
+        if !live {
+            return Vec::new();
+        }
         let mut marks = vec![0_u64; self.faces.len()];
         for (i, light) in lights.iter().take(REND_MAX_DLIGHTS).enumerate() {
             if light.radius == 0.0 {
