@@ -190,3 +190,19 @@ of one thread in the run sampled above, beside the benchmarks after it. Waiting 
 before returning changed none of them on the reference Mac (`id1_recompile` 50.66 ms against
 50.45 ms, `full_compile_e1m1` 6.041 s against 6.045 s), which has the cores to spare, so the
 benchmark is left as it is; a runner with fewer cores is where it would show first.
+
+### The simulation and the preview host: `qs-sim`, `qs-client`, `apps/quakec-engine`
+
+The engine routes hold their budgets (`server_frame_e1m1` 477.83 us p99 against 1 ms, QuakeC
+90.67 us of it). A `sample` of the release host in `--benchmark` mode on e1m1 for 10 s, with line
+tables (2026-11-16), finds the simulation small beside drawing: `World::frame` 29 samples of the
+main thread's 5,379, `Play::frame` and the map's GPU preparation most of the rest.
+
+| Change | Before | After |
+| --- | --- | --- |
+| `Game::host_action` takes the progs' host command first and copies the host state (every setting, the command buffer and the aliases) only when there is one, not every frame | 109 samples (2.0%) | 1 sample |
+
+The host's 74 tests pass.
+
+Left, with the reason: `Play::frame`, the renderer's frame, is the host's largest CPU cost; it
+belongs to the renderer's section, which is audited next with the map view's line drawing.

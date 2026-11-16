@@ -434,8 +434,11 @@ impl Game {
         if let Some(level) = self.take_spawned() {
             return Some(HostAction::Spawned(level));
         }
+        let command = self.world.take_host_command()?;
+        // Made only when the progs asked for something: most frames ask for nothing, and the
+        // state copies every setting and alias (#966).
         let host = self.world.host_state();
-        let action = match self.world.take_host_command()? {
+        let action = match command {
             HostCommand::Restart => HostAction::Level(NextLevel {
                 map: self.world.map().to_owned(),
                 carried: self.world.carried(),
