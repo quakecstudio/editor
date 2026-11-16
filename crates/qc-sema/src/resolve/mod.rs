@@ -320,6 +320,28 @@ pub fn resolve_module(files: &[FileDecls], options: ResolveOptions) -> ModuleInd
     resolve_mapped(files, &Sources::default(), options)
 }
 
+/// [`resolve_module`] of files each read at the output targets `targets` gives it, by its
+/// place in `files`, and the offsets they hold from (FTEF-25), as [`crate::Db::expanded_targets`]
+/// gives them: a build checks each file at the target its analysis read it at.
+#[must_use]
+pub fn resolve_module_at_targets(
+    files: &[FileDecls],
+    targets: &[&[(usize, OpcodeTarget)]],
+    options: ResolveOptions,
+) -> ModuleIndex {
+    let sources: Vec<FileSource<'_>> = (0..files.len())
+        .map(|index| FileSource {
+            targets: targets.get(index).copied().unwrap_or_default(),
+            ..FileSource::default()
+        })
+        .collect();
+    let sources = Sources {
+        files: &sources,
+        ..Sources::default()
+    };
+    resolve_mapped(files, &sources, options)
+}
+
 /// What [`resolve_mapped`] knows of where the files' declarations came from.
 #[derive(Default)]
 pub(crate) struct Sources<'a> {
