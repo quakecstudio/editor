@@ -14,8 +14,8 @@ use qc_sema::{ModuleIndex, StructShape};
 use qc_types::{Etype, Slot};
 
 use crate::Internal;
-use crate::compile::latin1;
 use crate::program::{Def, Program, RESERVED_OFS, ValueType, type_words};
+use qc_lexer::latin1_encode;
 
 /// `PR_WriteProgdefs` (QC-25.5, QC-25.6): the text of `progdefs.h` and the CRC of it up to the
 /// `#define` line, which is appended with that CRC.
@@ -57,7 +57,7 @@ pub(crate) fn progdefs(program: &Program) -> (String, u16) {
         }
     }
     text.push_str("} entvars_t;\n\n");
-    let crc = crc_block(&latin1(&text));
+    let crc = crc_block(&latin1_encode(&text));
     text.push_str(&format!("#define PROGHEADER_CRC {crc}\n"));
     (text, crc)
 }
@@ -125,7 +125,7 @@ fn element_records(
     out.push(DefRecord {
         type_bits,
         ofs,
-        s_name: program.copy_string(&latin1(name))?,
+        s_name: program.copy_string(&latin1_encode(name))?,
     });
     if let Some(shape) = shape {
         member_records(out, program, name, shape, ofs)?;
@@ -147,7 +147,7 @@ fn member_records(
         out.push(DefRecord {
             type_bits: u32::from(ValueType::Of(member.ty.clone()).etype().number()),
             ofs: at,
-            s_name: program.copy_string(&latin1(&format!("{name}.{}", member.name)))?,
+            s_name: program.copy_string(&latin1_encode(&format!("{name}.{}", member.name)))?,
         });
     }
     Ok(())
@@ -214,7 +214,7 @@ pub(crate) fn progs(
             field_defs.push(DefRecord {
                 type_bits: u32::from(inner.etype().number()),
                 ofs: program.word(def.ofs),
-                s_name: program.copy_string(&latin1(&def.name))?,
+                s_name: program.copy_string(&latin1_encode(&def.name))?,
             });
         }
         let saved = !def.initialized
@@ -249,7 +249,7 @@ pub(crate) fn progs(
         global_defs.push(DefRecord {
             type_bits,
             ofs: def.ofs,
-            s_name: program.copy_string(&latin1(&def.name))?,
+            s_name: program.copy_string(&latin1_encode(&def.name))?,
         });
     }
     let mut strings = program.strings;

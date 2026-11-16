@@ -14,13 +14,14 @@
 //! stores the word.
 
 use qc_diag::Span;
+use qc_lexer::latin1_encode;
 use qc_progs::Function;
 use qc_progs::opcode::Opcode;
 use qc_sema::{DefId, FileId, FunctionType, Location, SimpleType, Type};
 use qc_syntax::ast::{self, AstNode};
 use qc_types::Etype;
 
-use super::{Abort, At, Compiler, Lowered, Value, ValueKind, latin1, literal_of, operand_index};
+use super::{Abort, At, Compiler, Lowered, Value, ValueKind, literal_of, operand_index};
 use crate::Internal;
 use crate::ops::{self, Operator};
 use crate::program::{Literal, OFS_PARM0, OFS_RETURN, ValueType, operand, type_words};
@@ -222,7 +223,7 @@ impl Compiler<'_> {
             .set_words(ofs, &[u32::from_ne_bytes(number.to_ne_bytes())])
             .at(span)?;
         let name = self.program.def(getter.place).at(span)?.name.clone();
-        let s_name = self.program.copy_string(&latin1(&name)).at(span)?;
+        let s_name = self.program.copy_string(&latin1_encode(&name)).at(span)?;
         let s_file = self.s_files.get(&file).copied().at(span)?;
         self.program.functions.push(Function {
             first_statement,
@@ -295,7 +296,7 @@ impl Compiler<'_> {
             .set_words(ofs, &[u32::from_ne_bytes(number.to_ne_bytes())])
             .at(span)?;
         let name = self.program.def(setter.place).at(span)?.name.clone();
-        let s_name = self.program.copy_string(&latin1(&name)).at(span)?;
+        let s_name = self.program.copy_string(&latin1_encode(&name)).at(span)?;
         let s_file = self.s_files.get(&file).copied().at(span)?;
         let value_size =
             u8::try_from(value_words).map_err(|_| Abort::Internal(Internal::TooLarge, span))?;

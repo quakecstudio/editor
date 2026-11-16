@@ -233,6 +233,10 @@ impl Env for BodyEnv<'_, '_> {
         self.resolver.index.def(def)
     }
 
+    fn virtual_function(&self, member: DefId) -> Option<DefId> {
+        self.resolver.index.virtual_function(member)
+    }
+
     fn first_field(&self, def: DefId) -> bool {
         self.resolver
             .index

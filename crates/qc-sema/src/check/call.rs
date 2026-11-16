@@ -116,7 +116,21 @@ impl Checker<'_> {
                     ..Value::of(ty)
                 }
             }
-            (None, _) => self.read(callee, callee_span)?,
+            (None, _) => {
+                let read = self.read(callee, callee_span)?;
+                // FTEF-9.18: a scoped call of a virtual member, `super::m()` or `CLASS::m()`,
+                // names its function `CLASS::NAME`, not the member's field.
+                match read.sym {
+                    Sym::Def(member, _, 0) => match self.env.virtual_function(member) {
+                        Some(function) => Value {
+                            sym: Sym::Def(function, true, 0),
+                            ..read
+                        },
+                        None => read,
+                    },
+                    _ => read,
+                }
+            }
         };
         if method_name.is_some() {
             func.name = method_name;
@@ -335,16 +349,15 @@ impl Checker<'_> {
         }
         // FTE-18.7: an empty slot is given its parameter's default.
         let defaulted: Vec<bool> = passed.iter().map(Option::is_none).collect();
-        self.newself = newself;
-        self.call_statements(
+        let kept = self.call_statements(
             &function,
             passed_count,
             (callee, &values, &defaulted),
-            &field_loads,
+            (newself, &field_loads),
         );
         let call = self.last_made();
         // `self` restored from where it was kept.
-        if let (Some(kept), Some(this)) = (self.kept_self.take(), self_def) {
+        if let (Some(kept), Some(this)) = (kept, self_def) {
             self.generated.push(ir::BodyStatement {
                 a: Some(ir::Name::Made(kept)),
                 b: Some(ir::Name::Def(this, 0)),
@@ -425,13 +438,16 @@ impl Checker<'_> {
     /// parameter takes stored to its slot by its size, `STORE_V` for three words or a variant's
     /// and `STORE_F` for one, the first folded into the statement that made it, then each
     /// default a parameter takes, then `CALLn` of the callee; its value the return global.
+    /// FTEF-9.24: called with `newself`, the object a method is called through when it is not
+    /// `self`, `self` is kept and set to it first; the temporary that kept it is returned, for
+    /// `self` to be restored from after the call.
     fn call_statements(
         &mut self,
         function: &FunctionType,
         count: usize,
         (callee, values, defaulted): (Option<ir::Name>, &[Value], &[bool]),
-        field_loads: &[FieldLoad],
-    ) {
+        (newself, field_loads): (Option<ir::Name>, &[FieldLoad]),
+    ) -> Option<u32> {
         // The arguments written and each parameter after them that takes its default
         // (FTE-18.7), of which a parameter takes its own.
         let count = count.max(values.len());
@@ -442,126 +458,126 @@ impl Checker<'_> {
         };
         // In a function, the statements of the call: each argument a parameter takes stored to
         // its slot unless the statement before made it (FTE-18.12), then the call.
-        let newself = self.newself.take();
-        if !self.global {
-            // FTEF-9.24: `oself = self; self = object;`, and an argument that names `self`
-            // names the kept one (`arglist[i]->base = oself`).
-            let this = self.env.helper("self");
-            let kept = match (newself, this) {
-                (Some(object), Some(this)) => {
-                    let kept = self.next_made();
-                    self.generated.push(ir::BodyStatement {
-                        a: Some(ir::Name::Def(this, 0)),
-                        b: Some(ir::Name::Made(kept)),
-                        ..ir::BodyStatement::bare(Op::StoreEnt)
-                    });
-                    self.generated.push(ir::BodyStatement {
-                        a: Some(object),
-                        b: Some(ir::Name::Def(this, 0)),
-                        ..ir::BodyStatement::bare(Op::StoreEnt)
-                    });
-                    self.kept_self = Some(kept);
-                    Some((this, kept))
-                }
-                _ => None,
-            };
-            let renamed = |name: Option<ir::Name>| match (name, kept) {
-                (Some(ir::Name::Def(def, 0)), Some((this, kept))) if def == this => {
-                    Some(ir::Name::Made(kept))
-                }
-                _ => name,
-            };
-            // `copyop[2] = OP_LOAD_V; copyop[0] = OP_LOAD_F;`: by the field's size, not its type.
-            for field in field_loads.iter().filter(|field| field.slot < passed) {
-                let slot = u8::try_from(field.slot).ok().map(ir::Name::Parameter);
-                // The entity read, a copy of a call's value when a later call copied it.
-                let by_size: Vec<ir::BodyStatement> = field
-                    .load
-                    .iter()
-                    .map(|&s| ir::BodyStatement {
-                        op: if s.op == Op::LoadV { s.op } else { Op::LoadF },
-                        a: renamed(self.copied(s.a, field.entity_call)),
-                        c: slot,
-                        ..s
-                    })
-                    .collect();
-                self.generated.extend(by_size);
-                // The load reads the entity, which is no longer referenced after it.
-                if field.entity_call.is_some() && self.live_call == field.entity_call {
-                    self.live_return = None;
-                    self.live_call = None;
-                }
-            }
-            // FTE-18.12: only the first store can fold, into the statement that made its
-            // value; every later one follows a store or a load.
-            let mut first = field_loads.iter().all(|field| field.slot >= passed);
-            for (slot, value) in values.iter().take(passed).enumerate() {
-                if value.returned {
-                    self.live_return = None;
-                }
-                if field_loads.iter().any(|field| field.slot == slot) {
-                    continue;
-                }
-                let words = self.env.layout(&value.ty).map_or(1, |l| l.words);
-                let vector = words == VECTOR_WORDS || function.is_variant_parameter(slot);
-                let folded = first && value.temp.is_some() && value.temp == self.last_temp;
-                first = false;
-                if folded {
-                    let slot = u8::try_from(slot).ok().map(ir::Name::Parameter);
-                    self.fold_into(value, slot);
-                }
-                if !folded {
-                    // An empty slot's value is its parameter's default, which the code generator
-                    // reads (FTE-18.7).
-                    let from = if defaulted.get(slot).copied().unwrap_or(false) {
-                        u8::try_from(slot).ok().map(ir::Name::Default)
-                    } else {
-                        renamed(self.name_of(value))
-                    };
-                    self.generated.push(ir::BodyStatement {
-                        a: from,
-                        b: u8::try_from(slot).ok().map(ir::Name::Parameter),
-                        ..ir::BodyStatement::bare(if vector { Op::StoreV } else { Op::StoreF })
-                    });
-                }
-            }
-            // FTE-18.7: each parameter after the arguments that takes its default is stored it,
-            // named as the default, which the code generator reads; which defaults it keeps under
-            // autoprototyping (FTE-18.8) the model does not know.
-            for slot in values.len()..passed {
-                let words = function
-                    .params
-                    .get(slot)
-                    .and_then(|param| self.env.layout(param))
-                    .map_or(1, |l| l.words);
-                let vector = words == VECTOR_WORDS || function.is_variant_parameter(slot);
-                let slot = u8::try_from(slot).ok();
+        if self.global {
+            return None;
+        }
+        // FTEF-9.24: `oself = self; self = object;`, and an argument that names `self`
+        // names the kept one (`arglist[i]->base = oself`).
+        let this = self.env.helper("self");
+        let kept = match (newself, this) {
+            (Some(object), Some(this)) => {
+                let kept = self.next_made();
                 self.generated.push(ir::BodyStatement {
-                    a: slot.map(ir::Name::Default),
-                    b: slot.map(ir::Name::Parameter),
+                    a: Some(ir::Name::Def(this, 0)),
+                    b: Some(ir::Name::Made(kept)),
+                    ..ir::BodyStatement::bare(Op::StoreEnt)
+                });
+                self.generated.push(ir::BodyStatement {
+                    a: Some(object),
+                    b: Some(ir::Name::Def(this, 0)),
+                    ..ir::BodyStatement::bare(Op::StoreEnt)
+                });
+                Some((this, kept))
+            }
+            _ => None,
+        };
+        let renamed = |name: Option<ir::Name>| match (name, kept) {
+            (Some(ir::Name::Def(def, 0)), Some((this, kept))) if def == this => {
+                Some(ir::Name::Made(kept))
+            }
+            _ => name,
+        };
+        // `copyop[2] = OP_LOAD_V; copyop[0] = OP_LOAD_F;`: by the field's size, not its type.
+        for field in field_loads.iter().filter(|field| field.slot < passed) {
+            let slot = u8::try_from(field.slot).ok().map(ir::Name::Parameter);
+            // The entity read, a copy of a call's value when a later call copied it.
+            let by_size: Vec<ir::BodyStatement> = field
+                .load
+                .iter()
+                .map(|&s| ir::BodyStatement {
+                    op: if s.op == Op::LoadV { s.op } else { Op::LoadF },
+                    a: renamed(self.copied(s.a, field.entity_call)),
+                    c: slot,
+                    ..s
+                })
+                .collect();
+            self.generated.extend(by_size);
+            // The load reads the entity, which is no longer referenced after it.
+            if field.entity_call.is_some() && self.live_call == field.entity_call {
+                self.live_return = None;
+                self.live_call = None;
+            }
+        }
+        // FTE-18.12: only the first store can fold, into the statement that made its
+        // value; every later one follows a store or a load.
+        let mut first = field_loads.iter().all(|field| field.slot >= passed);
+        for (slot, value) in values.iter().take(passed).enumerate() {
+            if value.returned {
+                self.live_return = None;
+            }
+            if field_loads.iter().any(|field| field.slot == slot) {
+                continue;
+            }
+            let words = self.env.layout(&value.ty).map_or(1, |l| l.words);
+            let vector = words == VECTOR_WORDS || function.is_variant_parameter(slot);
+            let folded = first && value.temp.is_some() && value.temp == self.last_temp;
+            first = false;
+            if folded {
+                let slot = u8::try_from(slot).ok().map(ir::Name::Parameter);
+                self.fold_into(value, slot);
+            }
+            if !folded {
+                // An empty slot's value is its parameter's default, which the code generator
+                // reads (FTE-18.7).
+                let from = if defaulted.get(slot).copied().unwrap_or(false) {
+                    u8::try_from(slot).ok().map(ir::Name::Default)
+                } else {
+                    renamed(self.name_of(value))
+                };
+                self.generated.push(ir::BodyStatement {
+                    a: from,
+                    b: u8::try_from(slot).ok().map(ir::Name::Parameter),
                     ..ir::BodyStatement::bare(if vector { Op::StoreV } else { Op::StoreF })
                 });
             }
-            let call = [
-                Op::Call0,
-                Op::Call1,
-                Op::Call2,
-                Op::Call3,
-                Op::Call4,
-                Op::Call5,
-                Op::Call6,
-                Op::Call7,
-                Op::Call8,
-            ];
-            if let Some(&call) = call.get(passed) {
-                self.clobber_return();
-                self.generated.push(ir::BodyStatement {
-                    a: callee,
-                    ..ir::BodyStatement::bare(call)
-                });
-                self.last_temp = None;
-            }
         }
+        // FTE-18.7: each parameter after the arguments that takes its default is stored it,
+        // named as the default, which the code generator reads; which defaults it keeps under
+        // autoprototyping (FTE-18.8) the model does not know.
+        for slot in values.len()..passed {
+            let words = function
+                .params
+                .get(slot)
+                .and_then(|param| self.env.layout(param))
+                .map_or(1, |l| l.words);
+            let vector = words == VECTOR_WORDS || function.is_variant_parameter(slot);
+            let slot = u8::try_from(slot).ok();
+            self.generated.push(ir::BodyStatement {
+                a: slot.map(ir::Name::Default),
+                b: slot.map(ir::Name::Parameter),
+                ..ir::BodyStatement::bare(if vector { Op::StoreV } else { Op::StoreF })
+            });
+        }
+        let call = [
+            Op::Call0,
+            Op::Call1,
+            Op::Call2,
+            Op::Call3,
+            Op::Call4,
+            Op::Call5,
+            Op::Call6,
+            Op::Call7,
+            Op::Call8,
+        ];
+        if let Some(&call) = call.get(passed) {
+            self.clobber_return();
+            self.generated.push(ir::BodyStatement {
+                a: callee,
+                ..ir::BodyStatement::bare(call)
+            });
+            self.last_temp = None;
+        }
+        kept.map(|(_, kept)| kept)
     }
 
     /// `random()`, `random(scale)` and `random(low, high)`: each argument made a float, of

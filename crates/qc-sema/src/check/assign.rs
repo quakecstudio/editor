@@ -295,13 +295,9 @@ impl Checker<'_> {
                     ..lhs.clone()
                 };
                 match self.compound(&place, &rhs, spelling, ops, in_place, span)? {
-                    Some(value) => value,
-                    None => {
-                        return Ok(self
-                            .in_place_result
-                            .take()
-                            .unwrap_or_else(|| Value::of(lhs.ty)));
-                    }
+                    Compounded::Store(value) => value,
+                    Compounded::InPlace(value) => return Ok(value),
+                    Compounded::Unchecked => return Ok(Value::of(lhs.ty)),
                 }
             }
         };
@@ -447,7 +443,7 @@ impl Checker<'_> {
     /// FTEF-29.2: a compound assignment's opcode, the first of `ops` whose operands are the
     /// target's and the value's basic types, else after the value is cast to the target's type;
     /// "Type mismatch on assignment" when none. A field updated in place by an opcode of
-    /// `in_place` the target has is no further checked. `None` when nothing more is checked.
+    /// `in_place` the target has is written in place.
     fn compound(
         &mut self,
         lhs: &Value,
@@ -456,9 +452,9 @@ impl Checker<'_> {
         ops: &[Op],
         in_place: &[Op],
         span: Span,
-    ) -> Result<Option<Value>, Fatal> {
+    ) -> Result<Compounded, Fatal> {
         let (Some(to), Some(from)) = (self.etype(&lhs.ty), self.etype(&rhs.ty)) else {
-            return Ok(None);
+            return Ok(Compounded::Unchecked);
         };
         let target = self.env.target_at(span.start);
         let updates_in_place = in_place.iter().copied().find(|&op| {
@@ -473,14 +469,14 @@ impl Checker<'_> {
             // FTEF-29.17: `FLDADDRESS` of the entity and the field, then the in-place opcode of
             // the value through that address, whose result is the assignment's value.
             if !self.global {
-                let Some(def) = field.def else {
+                let Some(field_operand) = field.operand() else {
                     self.followed = false;
-                    return Ok(None);
+                    return Ok(Compounded::Unchecked);
                 };
                 let address = self.next_made();
                 self.generated.push(ir::BodyStatement {
                     a: self.copied(field.entity, field.entity_call),
-                    b: Some(ir::Name::Def(def, 0)),
+                    b: Some(field_operand),
                     c: Some(ir::Name::Made(address)),
                     ..ir::BodyStatement::bare(Op::Address)
                 });
@@ -494,13 +490,13 @@ impl Checker<'_> {
                 self.read_returned(rhs);
                 let temp = Some(self.env.temps().take(1));
                 self.last_temp = temp;
-                self.in_place_result = Some(Value {
+                return Ok(Compounded::InPlace(Value {
                     made: Some(result),
                     temp,
                     ..Value::of(lhs.ty.clone())
-                });
+                }));
             }
-            return Ok(None);
+            return Ok(Compounded::Unchecked);
         }
         // `lhsd = QCC_RefToDef(lhsr, false)`: the left side read, which for a string's character
         // is the load's own type (FTEF-31.18).
@@ -542,7 +538,9 @@ impl Checker<'_> {
                     let message = format!(
                         "Type mismatch on assignment. {left} {spelling} {right} is not supported"
                     );
-                    return self.fatal(Code::E0323, span, message).map(Some);
+                    return self
+                        .fatal(Code::E0323, span, message)
+                        .map(Compounded::Store);
                 };
                 (op, cast)
             }
@@ -570,15 +568,17 @@ impl Checker<'_> {
             Supply::Converted => {}
             Supply::Lax => {
                 self.env.report(Code::W0243, span, message());
-                return Ok(Some(value));
+                return Ok(Compounded::Store(value));
             }
             Supply::Explicit | Supply::Mismatch => {
                 let message = message();
-                return self.fatal(Code::E0324, span, message).map(Some);
+                return self
+                    .fatal(Code::E0324, span, message)
+                    .map(Compounded::Store);
             }
         }
         self.convert_to(&value, &lhs.ty, span).map(|converted| {
-            Some(Value {
+            Compounded::Store(Value {
                 ty: lhs.ty.clone(),
                 ..converted
             })
@@ -916,7 +916,7 @@ impl Checker<'_> {
         let address = u32::try_from(self.generated.len()).ok().map(ir::Name::Made);
         self.generated.push(ir::BodyStatement {
             a: self.copied(field.entity, field.entity_call),
-            b: field.def.map(|def| ir::Name::Def(def, 0)),
+            b: field.operand(),
             c: address,
             ..ir::BodyStatement::bare(Op::Address)
         });
@@ -1565,4 +1565,14 @@ fn array_size(suffix: &SyntaxNode) -> Option<usize> {
         return None;
     };
     literal.token()?.text_lossless().parse().ok()
+}
+
+/// What a compound assignment leaves to the assignment around it (FTEF-29.2).
+enum Compounded {
+    /// The value to store to the target.
+    Store(Value),
+    /// FTEF-29.17: the update written in place, whose value is the assignment's.
+    InPlace(Value),
+    /// Nothing more is checked.
+    Unchecked,
 }
