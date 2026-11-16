@@ -1,8 +1,8 @@
 # ADR-0027: Schedule ericw-tools' advanced lighting by how much the corpus uses it
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-15
-- **Decided by:** pending
+- **Decided by:** Justin Plock, 2026-11-15
 - **Issue:** [#195](https://github.com/quakecstudio/editor/issues/195)
 - **Requirements:** MAP-21
 
@@ -44,14 +44,14 @@ How LibreQuake, the corpus's largest map set, uses them: of its 91 `.map` files 
 
 | Option | Consequences |
 | --- | --- |
-| A. All of them, in two tranches by use (recommended) | First tranche: sunlight with its penumbra and second sun, the sky dome, surface lights, minimum light and phong, each a port from ericw-tools' `light/` with a spec section in `docs/spec/light.md` and a differential against ericw-tools' `light` (the `light-diff` of P7-01, ericw mode). Second tranche: dirt and bounce, the costliest to compute, each with a `qs-bench` budget so the background full compile (P7-02) keeps its time. Two new post-MVP issues per tranche: spec and port. |
+| A. All of them, in two tranches by use (recommended) | First tranche: sunlight with its penumbra and second sun, the sky dome, surface lights, minimum light and phong, each a port from ericw-tools' `light/` with a spec section in `docs/spec/light.md` and a differential against ericw-tools' `light` (the `light-diff` of P7-01, ericw mode). Second tranche: dirt and bounce, the costliest to compute, each with a `qs-bench` budget so the background full compile (P7-02) keeps its time. One post-MVP issue per tranche, each feature's spec section and port together. |
 | B. The first tranche only | As A without dirt and bounce: maps that use them (21 and 19 of LibreQuake's) keep compiling flatter than ericw-tools makes them. |
 | C. None: a profile runs ericw-tools' own `light` | No port. A modder who needs these features adds ericw-tools' `light` as an external task in a compile profile (P7-08's profile tasks). The Lit view, the background compile and region compile do not have them, and the external tool is a separate install. |
 | D. Reject all | MAP-21 is closed unmet; half of LibreQuake's maps light differently with our tools than with the tools they were built for. |
 
 ## Decision
 
-Recommended: A. The corpus answers the question: about half of LibreQuake's maps rely on the sky
+A, as Justin chose on 2026-11-15. The corpus answers the question: about half of LibreQuake's maps rely on the sky
 dome, phong, minimum light, surface lights or sunlight, so a modder opening them sees darker,
 flatter lighting in our Lit view and our compile than the map's author saw. Porting them from
 ericw-tools, which ADR-0025 already allows, with the same differential P7-01 used for coloured
@@ -61,11 +61,9 @@ keep within its budget.
 
 ## Consequences
 
-If A is accepted:
-
-- `plan/`: four issues in the post-MVP backlog, or in the phase the plan schedules them into:
-  "Spec: ericw-tools' sunlight, sky dome, surface lights, minimum light and phong" and its port,
-  then "Spec: ericw-tools' dirt and bounce" and its port. Each port's acceptance holds
+- `plan/`: two issues in the post-MVP backlog, one per tranche, each a port with its spec
+  sections as `docs/porting.md` requires: L-22, "Port ericw-tools' sunlight, sky dome, surface
+  lights, minimum light and phong", then L-23, "Port ericw-tools' dirt and bounce lighting". Each port's acceptance holds
   `light-diff` to ericw-tools' output on the corpus maps that use its keys, and dirt and bounce
   each add a `qs-bench` budget.
 - `docs/spec/light.md`: a section per feature, written from ericw-tools' `light/` at the pinned

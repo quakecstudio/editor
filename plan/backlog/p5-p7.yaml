@@ -2036,3 +2036,46 @@ groups:
     - 'The map editor''s 3D view turns to each standard view and orbits, pans and zooms from the keyboard alone, in kittest tests'
     verify:
     - 'kittest tests; cargo xtask keymap --check in CI; docs/keymap.md reviewed against ActionManager.cpp'
+  - key: L-22
+    title: Port ericw-tools' sunlight, sky dome, surface lights, minimum light and phong
+    labels:
+    - L4-bridges
+    - area:map
+    - type:feature
+    size: L
+    reqs:
+    - MAP-21
+    summary: |
+      ADR-0027's first tranche (Justin, 2026-11-15, option A): the advanced lighting about half of LibreQuake's maps use. Counted over its 91 maps: _sunlight2 in 47, _phong in 44, _minlight in 43, _surface in 42, _sunlight in 41 and _sunlight_penumbra in 28.
+    depends:
+    - L-12
+    deliverable:
+    - 'qs-map-light: sunlight (_sunlight, _sun_mangle, _sunlight_penumbra and the second sun), the sky dome (_sunlight2), surface lights (_surface), minimum light (_minlight) and phong (_phong), each ported from ericw-tools'' light/ at the commit docs/porting.md pins'
+    - 'docs/spec/light.md: a section per feature, written from ericw-tools'' light/ at that commit, with tests citing each statement'
+    acceptance:
+    - 'cargo xtask light-diff in ericw mode holds qs-map-light''s lightmaps to ericw-tools'' light on every corpus map that uses these keys'
+    - 'full_compile_e1m1 stays within its budget in docs/perf-budgets.md'
+    verify:
+    - 'cargo run --release -p xtask -- light-diff; cargo xtask bench'
+  - key: L-23
+    title: Port ericw-tools' dirt and bounce lighting
+    labels:
+    - L4-bridges
+    - area:map
+    - type:feature
+    size: L
+    reqs:
+    - MAP-21
+    summary: |
+      ADR-0027's second tranche: dirt (ambient occlusion) and bounce, used by 21 and 19 of LibreQuake's 91 maps. They are the costliest features to compute, so each gets a qs-bench budget to keep the background full compile (P7-02) within its time.
+    depends:
+    - L-22
+    deliverable:
+    - 'qs-map-light: dirt (_dirt and its settings) and bounce (_bounce), ported from ericw-tools'' light/ at the pinned commit'
+    - 'docs/spec/light.md: a section for each, with tests citing each statement'
+    - 'A qs-bench budget for each in docs/perf-budgets.md, on a LibreQuake map that uses it'
+    acceptance:
+    - 'cargo xtask light-diff in ericw mode holds the lightmaps to ericw-tools'' light on every corpus map that uses _dirt or _bounce'
+    - 'The two new budgets and full_compile_e1m1 hold in cargo xtask bench'
+    verify:
+    - 'cargo run --release -p xtask -- light-diff; cargo xtask bench'

@@ -38,7 +38,7 @@ index below lists every ADR, in order, with the title and status its file states
 | [0023](0023-ericw-tools-porting-upstream.md) | Make ericw-tools' qbsp the extended dialect's porting upstream | Accepted |
 | [0024](0024-unsafe-for-macos-open-documents.md) | Allow one unsafe module to receive the files macOS opens with the app | Accepted |
 | [0025](0025-ericw-tools-vis-and-light.md) | Port ericw-tools' vis and light as well as its qbsp | Accepted |
-| [0027](0027-advanced-lighting.md) | Schedule ericw-tools' advanced lighting by how much the corpus uses it | Proposed |
+| [0027](0027-advanced-lighting.md) | Schedule ericw-tools' advanced lighting by how much the corpus uses it | Accepted |
 <!-- /adr:index -->
 
 A `type:decision` issue reserves the ADR number its deliverable names in `plan/backlog/`;
