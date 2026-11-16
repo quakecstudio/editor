@@ -1030,7 +1030,7 @@ fn a_directive_inside_a_macro_argument_is_run_under_gmqcc() {
     loader.insert("a.qc", text.as_bytes());
     let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Gmqcc);
     let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
-    assert_eq!(touching(&out), r#"f(m, "b") ; f(k, x y 1) ;"#);
+    assert_eq!(touching(&out), r#"f(m, "b" ) ; f(k, x y 1) ;"#);
     assert!(codes(&out).is_empty(), "{:?}", codes(&out));
     // Through a variadic macro, after a line comment, as Xonotic's `ATTRIB` reads it.
     let mut loader = MemoryLoader::new();
@@ -1089,7 +1089,7 @@ fn a_comment_inside_a_macro_argument_is_white_space_under_gmqcc() {
     loader.insert("a.qc", text.as_bytes());
     let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Gmqcc);
     let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
-    assert_eq!(touching(&out), "[x w]");
+    assert_eq!(touching(&out), "[x w ]");
     assert!(codes(&out).is_empty(), "{:?}", codes(&out));
 }
 
@@ -1108,4 +1108,33 @@ fn a_last_empty_variadic_argument_is_none_under_gmqcc() {
     assert_eq!(touching(&out), "sP_1(e) sP_2(e,1) f_1(a) f_2(a, b)");
     let (fteqcc, _) = fte("#define O(F, ...) F##_##__VA_COUNT__(__VA_ARGS__)\nO(f, a, )\n");
     assert!(fteqcc.contains("f_2"), "{fteqcc}");
+}
+
+// spec GMQ-21.6: an argument whose parameter stands after `#` or beside `##`, or that the body
+// does not name, is not expanded, so a use in it that would be an error is none
+// spec GMQ-21.8: an only variadic argument left empty, or holding only a comment, is none, and
+// `#__VA_ARGS__` stringizes what is given
+// spec GMQ-21.5: a `...` written after a continued line makes the macro variadic, and a name given
+// twice across the lines is a duplicate
+#[test]
+fn gmqcc_argument_rules_at_their_edges() {
+    let run = |text: &str| {
+        let mut loader = MemoryLoader::new();
+        loader.insert("a.qc", text.as_bytes());
+        let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Gmqcc);
+        let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+        (touching(&out), codes(&out))
+    };
+    let (text, codes) =
+        run("#define S(x) #x\n#define G(a,b) a b\n#define U(x) u\nS(G(1)) U(G(1))\n");
+    assert_eq!((text.as_str(), codes), (r#""G(1)" u"#, vec![]));
+    let (text, _) = run(
+        "#define O(F, ...) F##_##__VA_COUNT__(__VA_ARGS__)\nO(f, ) O(f,) O(f, a, /* c */)\n\
+         #define L(a, ...) f(a, #__VA_ARGS__)\nL(1, x, )\n",
+    );
+    assert_eq!(text, r#"f_0() f_0() f_1(a) f(1, "x")"#);
+    let (text, _) = run("#define R(x, \\\n ...) [__VA_ARGS__]\nR(1, 2, 3)\n");
+    assert_eq!(text, "[2, 3]");
+    let (_, codes) = run("#define D(x, \\\n x) [x]\n");
+    assert!(codes.contains(&Code::E0115), "{codes:?}");
 }

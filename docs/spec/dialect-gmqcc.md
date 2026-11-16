@@ -396,7 +396,12 @@ this should already be stringized").
   P2(a,b) C2(a,b)` is `xyz`, where FTEQCC, which writes an argument as it is (FTEF-14.20), gives
   `xy z`. Xonotic's `lib/p99.qh` `P99_IS_EMPTY` and `P99_PASTE5`, which `MUTATOR_CALLHOOK` and
   `OVERLOAD` use, depend on it. The expanded argument's tokens are its text, a space between two
-  that do not touch.
+  that do not touch. Only an argument whose parameter the body names beside no `#` or `##`,
+  and that names a macro or a built-in constant, is expanded, so `S(G(1))` of `#define S(x) #x`
+  reports nothing of `G`'s use. A deliberate divergence: the model keeps FTEQCC's rule that a
+  macro is not expanded while its own expansion is open (FTEF-14.17), not C's mark on each token
+  its expansion made, so a macro that names itself through an argument, `#define A F(A)` with
+  `#define F(x) [x]`, expands again until FTEQCC's open-chunk limit, where C gives `[A]`.
 - **GMQ-21.7** Under this dialect a comment inside a macro call's arguments is white space, so a
   `,` or `)` in it separates or ends nothing: `F(1, x // y, z` then ` w)` passes `x w` as `F`'s
   second argument. The C preprocessor replaces "Each comment ... by one space character" before
