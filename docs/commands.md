@@ -201,8 +201,10 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`view.map_grid_step`](#viewmap_grid_step) | Halves or doubles the map editor's grid, held to 0.125 to 256 units. |
 | [`view.map_panes`](#viewmap_panes) | Splits the map view: the 3D view alone, with a top view in its corner, or beside top, front and side views. |
 | [`view.map_shading`](#viewmap_shading) | Draws the map view's 3D pane as the brushes' edges, as their textured faces, or lit by the last compile's lightmaps. |
+| [`view.move_panel`](#viewmove_panel) | Moves a panel to another dock, where it shows, as Zed's status-bar menu moves one. |
 | [`view.project_search`](#viewproject_search) | Opens the project search: every match in the project's files as a multibuffer of editable excerpts, to edit or replace in place. |
 | [`view.resize_panel`](#viewresize_panel) | Sets the width of the left or right panel, or the height of the bottom panel, in points. |
+| [`view.show_panel`](#viewshow_panel) | Shows a panel in its dock, opening the dock; when the dock already shows it, hides the dock, as a click on Zed's status-bar button does, unless when_shown is keep. |
 | [`view.split_down`](#viewsplit_down) | Splits the editor into two panes, one above the other, the second showing the open file. |
 | [`view.split_right`](#viewsplit_right) | Splits the editor into two panes side by side, the second showing the open file. |
 | [`view.tab_switcher`](#viewtab_switcher) | Opens the tab switcher: the open files, the one used most recently first. |
@@ -8481,6 +8483,118 @@ Parameters:
 }
 ```
 
+## `view.move_panel`
+
+Moves a panel to another dock, where it shows, as Zed's status-bar menu moves one.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "DockPanel": {
+      "description": "One panel a dock shows.",
+      "oneOf": [
+        {
+          "const": "project",
+          "description": "The project's files.",
+          "type": "string"
+        },
+        {
+          "const": "symbols",
+          "description": "The open file's symbols, or the project's.",
+          "type": "string"
+        },
+        {
+          "const": "entities",
+          "description": "The running game's entities.",
+          "type": "string"
+        },
+        {
+          "const": "map",
+          "description": "The open map's outline.",
+          "type": "string"
+        },
+        {
+          "const": "properties",
+          "description": "The selection's properties.",
+          "type": "string"
+        },
+        {
+          "const": "agent",
+          "description": "The agent.",
+          "type": "string"
+        },
+        {
+          "const": "problems",
+          "description": "The problems.",
+          "type": "string"
+        },
+        {
+          "const": "console",
+          "description": "The game's console.",
+          "type": "string"
+        },
+        {
+          "const": "debugger",
+          "description": "The debugger.",
+          "type": "string"
+        },
+        {
+          "const": "terminal",
+          "description": "The terminals.",
+          "type": "string"
+        },
+        {
+          "const": "git",
+          "description": "Git.",
+          "type": "string"
+        }
+      ]
+    },
+    "Panel": {
+      "description": "One of the panels around the centre (UI-2).",
+      "oneOf": [
+        {
+          "const": "left",
+          "description": "Project and Entities.",
+          "type": "string"
+        },
+        {
+          "const": "right",
+          "description": "Properties and the agent.",
+          "type": "string"
+        },
+        {
+          "const": "bottom",
+          "description": "Problems, Console and the debugger.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `view.move_panel`.",
+  "properties": {
+    "dock": {
+      "$ref": "#/$defs/Panel",
+      "description": "The dock it moves to."
+    },
+    "panel": {
+      "$ref": "#/$defs/DockPanel",
+      "description": "The panel."
+    }
+  },
+  "required": [
+    "panel",
+    "dock"
+  ],
+  "title": "MovePanelParams",
+  "type": "object"
+}
+```
+
 ## `view.project_search`
 
 Opens the project search: every match in the project's files as a multibuffer of editable excerpts, to edit or replace in place.
@@ -8546,6 +8660,113 @@ Parameters:
     "size"
   ],
   "title": "ResizePanelParams",
+  "type": "object"
+}
+```
+
+## `view.show_panel`
+
+Shows a panel in its dock, opening the dock; when the dock already shows it, hides the dock, as a click on Zed's status-bar button does, unless when_shown is keep.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "DockPanel": {
+      "description": "One panel a dock shows.",
+      "oneOf": [
+        {
+          "const": "project",
+          "description": "The project's files.",
+          "type": "string"
+        },
+        {
+          "const": "symbols",
+          "description": "The open file's symbols, or the project's.",
+          "type": "string"
+        },
+        {
+          "const": "entities",
+          "description": "The running game's entities.",
+          "type": "string"
+        },
+        {
+          "const": "map",
+          "description": "The open map's outline.",
+          "type": "string"
+        },
+        {
+          "const": "properties",
+          "description": "The selection's properties.",
+          "type": "string"
+        },
+        {
+          "const": "agent",
+          "description": "The agent.",
+          "type": "string"
+        },
+        {
+          "const": "problems",
+          "description": "The problems.",
+          "type": "string"
+        },
+        {
+          "const": "console",
+          "description": "The game's console.",
+          "type": "string"
+        },
+        {
+          "const": "debugger",
+          "description": "The debugger.",
+          "type": "string"
+        },
+        {
+          "const": "terminal",
+          "description": "The terminals.",
+          "type": "string"
+        },
+        {
+          "const": "git",
+          "description": "Git.",
+          "type": "string"
+        }
+      ]
+    },
+    "WhenShown": {
+      "description": "What `view.show_panel` does when the dock already shows the panel.",
+      "oneOf": [
+        {
+          "const": "hide",
+          "description": "Hide the dock, as a second click on Zed's status-bar button does.",
+          "type": "string"
+        },
+        {
+          "const": "keep",
+          "description": "Keep it shown, as showing a panel for something it holds does.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `view.show_panel`.",
+  "properties": {
+    "panel": {
+      "$ref": "#/$defs/DockPanel",
+      "description": "The panel."
+    },
+    "when_shown": {
+      "$ref": "#/$defs/WhenShown",
+      "default": "hide",
+      "description": "What to do when its dock already shows it: hide the dock unless `keep`."
+    }
+  },
+  "required": [
+    "panel"
+  ],
+  "title": "ShowPanelParams",
   "type": "object"
 }
 ```

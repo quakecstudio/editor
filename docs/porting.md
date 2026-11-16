@@ -112,6 +112,18 @@ When sources disagree:
   id source (then it cites the registered upstream it follows). The FTEQCC dialect has no id
   source: FTEQW's `engine/qclib` at its pinned commit is its authority.
 
+For the preview host, where id's engine and the QuakeSpasm lineage differ
+([ADR-0026](adr/0026-preview-host-later-engine-improvements.md)):
+
+- **The server simulation is id's** (`qs-sim`), so the engine oracle's frame-by-frame differential
+  holds (ENG-15). A later engine's simulation fix is not taken.
+- **A client-side defect id has** (drawing, sound, input, the 2D layer) is fixed as the later
+  engine fixes it, by default, with id's behaviour behind an option.
+- **Limits and formats** are the later engines' by default, id's behind an option.
+- **The frame rate** is decoupled from the server's, as vkQuake and Ironwail do.
+- **Rendering** has the later engines' look by default and GLQuake's as the other look.
+- **Performance** changes are taken wherever the output is the same, each with a measurement.
+
 ## File headers
 
 Every source file starts with the SPDX line ([`conventions.md`](conventions.md#source-file-headers)).

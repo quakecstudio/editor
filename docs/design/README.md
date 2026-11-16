@@ -25,6 +25,8 @@ These are design targets for the UI layer (L7), not screenshots. The app is buil
 | [`05-map-editor.png`](mockups/05-map-editor.png) | Map editor: 3D and top views, map tools, play from here, background full compile, typed entity keys from QuakeC, an unknown-key diagnostic, the texture browser | MAP-1 to MAP-5, MAP-7, MAP-13, MAP-14 |
 | [`06-theme-and-chrome.png`](mockups/06-theme-and-chrome.png) | Theme tokens for dark and light with contrast ratios, code colours, type, spacing, and window chrome on macOS, Windows and Linux | UI-14, UI-15, QA-9 |
 
+The docks and the icon toolbar (P7-15) have no board: Justin approved the app's own snapshots in [`apps/desktop/snapshots/`](../../apps/desktop/snapshots/) as their reference on 2026-11-15, so `shell.png`, `map-editor.png` and the others there supersede the boards' panel tabs and text toolbar.
+
 The embedded game view (ENG-10) is post-MVP and is deliberately not in the v1 mockups.
 
 The toolbar shows the preview host as a status, with no engine picker, and the palette has no "choose the engine" command: the IDE runs only its own preview host ([ADR-0005](../adr/0005-default-preview-target.md)). Boards 01 to 04 were re-exported from their sources with only that change.

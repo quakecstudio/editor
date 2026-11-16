@@ -240,6 +240,13 @@ fn harness(
     std::fs::write(root.join(".quakec-studio/settings.toml"), settings).unwrap();
     app.shell_mut()
         .set_settings_file(root.join("config").join("settings.toml"));
+    // P7-15: the right dock shows the Agent panel.
+    app.shell_mut()
+        .execute(
+            qs_layout::SHOW_PANEL,
+            serde_json::json!({ "panel": "agent", "when_shown": "keep" }),
+        )
+        .unwrap();
     *harness.state_mut() = Some(app);
     harness.run();
     (root, harness, gates.remove(0))

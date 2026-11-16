@@ -25,6 +25,7 @@ use qs_render::{
 };
 use qs_wad::texture::Palette;
 
+use crate::icons::{Icon, Toggled};
 use crate::map_scene::{FaceShape, Line, Scene};
 use crate::map_view;
 use crate::strings::Text;
@@ -107,9 +108,18 @@ impl ShadedView {
     pub(crate) fn toolbar(ui: &mut Ui, current: MapShading) -> Option<MapShading> {
         let mut chosen = None;
         for shading in MapShading::ALL {
-            if ui
-                .selectable_label(current == shading, text(shading).get())
-                .on_hover_text(hint(shading).get())
+            let icon = match shading {
+                MapShading::Lines => Icon::Lines,
+                MapShading::Textured => Icon::Textured,
+                MapShading::Lit => Icon::Lit,
+            };
+            let state = if current == shading {
+                Toggled::On
+            } else {
+                Toggled::Off
+            };
+            if icon
+                .toggle(ui, state, text(shading), hint(shading))
                 .clicked()
             {
                 chosen = Some(shading);
