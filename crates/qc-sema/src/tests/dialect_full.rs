@@ -12,6 +12,7 @@ use qc_syntax::Dialect;
 use super::fte_index_of;
 use crate::db::Db;
 use crate::expand::ModuleInput;
+use crate::ir;
 use crate::resolve::ModuleIndex;
 use crate::symbol::{DefId, DefKind, FileId};
 use crate::ty::Type;
@@ -131,7 +132,10 @@ fn member_kinds_and_definitions() {
     assert_eq!(kind("Make"), DefKind::Function);
     assert_eq!(kind("m_flTime"), DefKind::Field);
     // Base and Thing each declare `Spawned`; each definition refers to its own.
-    let spawned = defs_named(&index, "Spawned");
+    let spawned: Vec<DefId> = defs_named(&index, "Spawned")
+        .into_iter()
+        .filter(|d| !index.defs[d.index()].generated)
+        .collect();
     assert_eq!(spawned.len(), 2);
     let defined: Vec<_> = targets(&index, CLASSES, "Spawned");
     assert!(defined.contains(&spawned[0]) && defined.contains(&spawned[1]));
@@ -196,6 +200,159 @@ fn classes_define_spawn_functions() {
     let defined =
         fte_index_of("class A { };\nvoid() spawnfunc_A = { };\nvoid() f = { spawnfunc_A(); };\n");
     assert_eq!(errors(&defined), Vec::<Code>::new());
+}
+
+/// Two classes for their spawn functions: `B` declares `V` again, and `A` gives `W` no body.
+const SPAWNED: &str = "\
+entity self;
+.string classname;
+class A { virtual void() V; virtual void() W; void A(void); };
+void A::V(void) { };
+void A::A(void) { };
+class B : A { virtual void() V; void B(void); };
+void B::V(void) { super::V(); };
+void B::B(void) { };
+";
+
+// spec FTEF-9.21: a virtual member's body defines the function `CLASS::NAME`, a member of its
+// class the model makes, which a scoped call, `super::m()`, calls.
+#[test]
+fn a_virtual_member_body_defines_its_function() {
+    let index = fte_index_of(SPAWNED);
+    assert_eq!(messages(&index), ["function A::W has no body"]);
+    let member = |class: &str, name: &str| {
+        defs_named(&index, name)
+            .into_iter()
+            .find(|d| {
+                let def = &index.defs[d.index()];
+                !def.generated
+                    && def
+                        .member_of
+                        .is_some_and(|c| index.defs[c.index()].name == class)
+            })
+            .unwrap()
+    };
+    let base_v = member("A", "V");
+    let function = index.virtual_function(base_v).unwrap();
+    let def = &index.defs[function.index()];
+    assert_eq!(def.kind, DefKind::Function);
+    assert_eq!(def.member_of, index.defs[base_v.index()].member_of);
+    assert!(def.generated);
+    assert!(def.initialized);
+    // `W` has no body, so its function is not defined.
+    let w = index.virtual_function(member("A", "W")).unwrap();
+    assert!(!index.defs[w.index()].initialized);
+    // `super::V()` in `B::V` calls `A`'s function, not the field.
+    let calls: Vec<_> = index
+        .body(member("B", "V"))
+        .unwrap()
+        .generated()
+        .iter()
+        .filter(|s| s.op == qc_preproc::Op::Call0)
+        .map(|s| s.a)
+        .collect();
+    assert_eq!(calls, [Some(ir::Name::Def(function, 0))]);
+    // A scoped call written before the body it calls calls the function too.
+    let early = fte_index_of(
+        "entity self;\nclass A { virtual void() V; };\nclass B : A { virtual void() V; };\n\
+         void B::V(void) { super::V(); };\nvoid A::V(void) { };\n",
+    );
+    let b_v = defs_named(&early, "V")
+        .into_iter()
+        .find(|d| {
+            let def = &early.defs[d.index()];
+            !def.generated
+                && def
+                    .member_of
+                    .is_some_and(|c| early.defs[c.index()].name == "B")
+        })
+        .unwrap();
+    let a_v = defs_named(&early, "V")
+        .into_iter()
+        .find(|d| {
+            let def = &early.defs[d.index()];
+            !def.generated
+                && def
+                    .member_of
+                    .is_some_and(|c| early.defs[c.index()].name == "A")
+        })
+        .unwrap();
+    let call = early
+        .body(b_v)
+        .unwrap()
+        .generated()
+        .iter()
+        .find(|s| s.op == qc_preproc::Op::Call0)
+        .map(|s| s.a);
+    assert_eq!(
+        call,
+        Some(early.virtual_function(a_v).map(|f| ir::Name::Def(f, 0)))
+    );
+    assert!(early.virtual_function(a_v).is_some());
+}
+
+// spec FTEF-9.22: a class's spawn function the program gives no body is the model's: the class's
+// name stored to `classname`, each virtual member's function from the root down that no class
+// below declares again, and each constructor called, the class's own first
+#[test]
+fn a_spawn_function_is_written_by_the_model() {
+    use qc_preproc::Op;
+    let index = fte_index_of(SPAWNED);
+    let spawnfunc = |name: &str| defs_named(&index, name)[0];
+    assert_eq!(
+        index.spawn_functions(),
+        [spawnfunc("spawnfunc_A"), spawnfunc("spawnfunc_B")]
+    );
+    let body = index.body(spawnfunc("spawnfunc_B")).unwrap();
+    assert!(body.followed());
+    let ops: Vec<Op> = body.generated().iter().map(|s| s.op).collect();
+    assert_eq!(
+        ops,
+        [
+            Op::Address,
+            Op::StorepFnc,
+            Op::Address,
+            Op::StorepFnc,
+            Op::Call0,
+            Op::Call0,
+            Op::Done
+        ]
+    );
+    assert_eq!(body.string(ir::StringIndex::new(0)), Some(b"B".as_slice()));
+    let name = |n: Option<ir::Name>| match n {
+        Some(ir::Name::Def(def, 0)) => {
+            let def = &index.defs[def.index()];
+            let class = def.member_of.map(|c| index.defs[c.index()].name.clone());
+            format!("{}::{}", class.unwrap_or_default(), def.name)
+        }
+        other => format!("{other:?}"),
+    };
+    let generated = body.generated();
+    // `B`'s own `V`, not `A`'s, which `B` declares again.
+    assert_eq!(name(generated[2].b), "B::V");
+    assert_eq!(name(generated[3].a), "B::V");
+    let Some(ir::Name::Def(function, 0)) = generated[3].a else {
+        panic!("no function stored: {:?}", generated[3]);
+    };
+    assert!(index.defs[function.index()].generated);
+    assert_eq!(name(generated[4].a), "B::B");
+    assert_eq!(name(generated[5].a), "A::A");
+    // A spawn function the program defines is its own.
+    let defined = fte_index_of("class A { };\nvoid() spawnfunc_A = { };\n");
+    assert_eq!(defined.spawn_functions(), []);
+}
+
+// spec FTEF-31.2: an array of fields read through an entity at an index that is no constant,
+// by the array's getter, is not followed to the field read, which would read the array's first
+#[test]
+fn a_field_array_element_by_its_getter_is_not_followed() {
+    let index = fte_index_of(
+        "#pragma target fte\n.float arr[4];\nentity e;\nfloat r;\n\
+         void f(int i) = { r = e.arr[i]; };\nvoid g() = { r = e.arr[1]; };\n",
+    );
+    let body = |name: &str| index.body(defs_named(&index, name)[0]).unwrap();
+    assert!(!body("f").followed());
+    assert!(body("g").followed());
 }
 
 // spec FTEF-17.1: a type's name may be declared again: a class forward, a typedef twice.

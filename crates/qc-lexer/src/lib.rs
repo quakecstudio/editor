@@ -637,6 +637,16 @@ pub fn latin1(bytes: &[u8]) -> String {
     bytes.iter().copied().map(char::from).collect()
 }
 
+/// The bytes of `text`, each character the byte of its code (QC-1.1): a name the syntax tree
+/// gave as one `char` per byte, written back as Latin-1; a character past 255, which no source
+/// byte makes, is `?`.
+#[must_use]
+pub fn latin1_encode(text: &str) -> Vec<u8> {
+    text.chars()
+        .map(|c| u8::try_from(u32::from(c)).unwrap_or(b'?'))
+        .collect()
+}
+
 /// Whether `b` may start a name: an ASCII letter or `_` (QC-3.1).
 #[must_use]
 pub const fn is_name_start(b: u8) -> bool {

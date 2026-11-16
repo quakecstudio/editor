@@ -34,6 +34,7 @@ fn qc_lexer::is_name_char
 fn qc_lexer::is_name_start
 fn qc_lexer::is_whitespace
 fn qc_lexer::latin1
+fn qc_lexer::latin1_encode
 fn qc_lexer::lex
 fn qc_lexer::lex_flagged
 fn qc_lexer::lex_marked

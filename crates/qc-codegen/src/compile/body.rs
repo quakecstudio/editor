@@ -27,7 +27,8 @@ use crate::program::{Literal, OFS_RETURN, operand, type_words};
 
 impl Compiler<'_> {
     /// Writes `body`'s statements as the code of the function being compiled, `named` the span
-    /// of its name, the origin of the statements before its first source statement.
+    /// of its name, the origin of the statements before its first source statement. `syntax` is
+    /// the body's text, none for a body the semantic model wrote itself (FTEF-9.22).
     ///
     /// [`Internal::Unfollowed`] for a body [`writable`] refuses, and
     /// [`Internal::DefaultUnknown`] for one whose calls pass a default the semantic model did
@@ -35,7 +36,7 @@ impl Compiler<'_> {
     pub(super) fn write_body(
         &mut self,
         body: &TypedBody,
-        syntax: &ast::FunctionBody,
+        syntax: Option<&ast::FunctionBody>,
         named: Span,
     ) -> Lowered<()> {
         // A bare `return` names the `ret*` local under FTEQCC (FTE-18.10); id's `qcc` writes
@@ -46,7 +47,7 @@ impl Compiler<'_> {
         if !self.defaults_kept(body) {
             return Err(Internal::DefaultUnknown).at(named);
         }
-        let syntax = Rc::new(BodySyntax::of(syntax));
+        let syntax = Rc::new(syntax.map(BodySyntax::of).unwrap_or_default());
         self.writing = Some(Rc::clone(&syntax));
         let written = self.write_statements(body, &syntax, named);
         self.writing = None;
@@ -105,15 +106,6 @@ impl Compiler<'_> {
                 if let Some(name) = name {
                     *word = self.resolve(name, index, (body, &slots), named)?;
                 }
-            }
-            // FTEF-9.18: a call that names a virtual member, `super::m()` or `CLASS::m()`, calls
-            // its function `CLASS::NAME`, not the member's field.
-            if let Some(Name::Def(callee, 0)) = statement.a
-                && op.is_some_and(is_call)
-                && let Some(place) = self.program.member_function(self.index, callee).at(named)?
-                && let Some(first) = operands.first_mut()
-            {
-                *first = operand(self.program.def(place).at(named)?.ofs).at(named)?;
             }
             self.program.emit_number(number, operands);
             // FTE-21.8: an operand in a shared temporary takes its real offset at the end.
@@ -577,6 +569,7 @@ fn is_call(op: Opcode) -> bool {
 /// What the writer looks up in a body's syntax, read in one pass over it: each declarator by
 /// where its name starts, and the default of the first `autocvar(NAME, default)` call of each
 /// `NAME`.
+#[derive(Default)]
 pub(super) struct BodySyntax {
     declarators: HashMap<usize, ast::Declarator>,
     autocvars: HashMap<String, ast::Expr>,

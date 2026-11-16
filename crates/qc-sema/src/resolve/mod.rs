@@ -129,6 +129,12 @@ pub struct ModuleIndex {
     pub(crate) class_names: HashMap<String, DefId>,
     /// Each FTEQCC class's parent, by the classes' type-name definitions.
     pub(crate) class_parents: HashMap<DefId, DefId>,
+    /// FTEF-9.21: the function `CLASS::NAME` a body of each virtual member defines, by the
+    /// member.
+    pub(crate) virtual_functions: HashMap<DefId, DefId>,
+    /// FTEF-9.22: each class's spawn function the program gives no body, whose body the model
+    /// writes, in declaration order.
+    pub(crate) spawn_functions: Vec<DefId>,
 }
 
 /// A struct's or union's layout as FTEQCC places it (FTEF-6.13): the words it takes and where
@@ -236,6 +242,22 @@ impl ModuleIndex {
             class = self.class_parents.get(&current).copied();
         }
         out
+    }
+
+    /// FTEF-9.21: the function `CLASS::NAME` a body of the virtual member `member` defines, when
+    /// one does: the definition the body is written to, and a scoped call (`super::m()`,
+    /// `CLASS::m()`) calls.
+    #[must_use]
+    pub fn virtual_function(&self, member: DefId) -> Option<DefId> {
+        self.virtual_functions.get(&member).copied()
+    }
+
+    /// FTEF-9.22: each class's spawn function `spawnfunc_CLASS` the program gives no body, in
+    /// declaration order: its body, [`ModuleIndex::body`], is the model's, written after every
+    /// file.
+    #[must_use]
+    pub fn spawn_functions(&self) -> &[DefId] {
+        &self.spawn_functions
     }
 
     /// The types of the body of the function `def`, when it has one (`crate::check`).
@@ -530,6 +552,7 @@ pub(crate) fn resolve_mapped(
         type_defs: HashSet::new(),
         body_typedefs: Vec::new(),
         var_members: HashSet::new(),
+        spawnfuncs: Vec::new(),
         accessor_bases: HashMap::new(),
         accessors: HashMap::new(),
         typedef_params: HashMap::new(),
@@ -754,6 +777,8 @@ struct Resolver<'a> {
     body_typedefs: Vec<(String, Span)>,
     /// The `var` members of each class, by the class and the member's name (FTEF-19.41).
     var_members: HashSet<(DefId, String)>,
+    /// Each class's spawn function the model declared, with the class (FTEF-9.5).
+    spawnfuncs: Vec<(DefId, DefId)>,
     /// The base type of each accessor (FTEF-10.6).
     accessor_bases: HashMap<String, Type>,
     /// Each accessor's and class's `get` and `set` members, by the owner and the member's name
@@ -1036,6 +1061,7 @@ impl<'a> Resolver<'a> {
             .collect();
         self.index.class_names = self.class_names.clone();
         self.index.class_parents = parents;
+        self.write_spawn_functions();
         self.index
     }
 }

@@ -385,6 +385,7 @@ impl Checker<'_> {
                 if bare
                     && !self.global
                     && let Reference::Field(field) = &base.reference
+                    && field.selected.is_none()
                     && let Some(component_def) = field.def.and_then(|def| {
                         self.env
                             .component(def, u32::try_from(word).unwrap_or(u32::MAX))
