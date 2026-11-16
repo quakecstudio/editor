@@ -40,8 +40,8 @@ use crate::map_tools::Readout;
 use crate::palette::highlighted;
 use crate::shell::{CentreTab, EDITOR_AREA, PointerHeld, ZoomStep, commanded_size, dragged_size};
 use crate::strings::{
-    Text, command_count, exit_status, help_for, match_count, missing_textures, replace_with,
-    select_all_of,
+    Text, command_count, exit_status, help_for, icon_hint, match_count, missing_textures,
+    replace_with, select_all_of,
 };
 use crate::theme::{Contrast, Mode, Motion, Theme, ThemeError, Token, semibold};
 use crate::{App, AppError};
@@ -4743,9 +4743,9 @@ fn every_panel_tab_and_tool_has_help() {
         .get_by_role_and_label(Role::Button, Text::MapToolBrush.get())
         .hover();
     harness.run();
+    let hint = icon_hint(Text::MapToolBrush.get(), Text::MapBrushHint.get());
     assert!(
-        harness.query_by_value(Text::MapBrushHint.get()).is_some()
-            || harness.query_all_by_label(Text::MapBrushHint.get()).count() > 0
+        harness.query_by_value(&hint).is_some() || harness.query_all_by_label(&hint).count() > 0
     );
 }
 

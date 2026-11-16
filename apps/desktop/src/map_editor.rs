@@ -32,6 +32,7 @@ use qs_render::Camera;
 use qs_workbench::map_filter::{GameMode, Skill};
 
 use crate::help::{self, Topic};
+use crate::icons::{Icon, Toggled};
 use crate::map_browser::{ClassDrag, EntityBrowser};
 use crate::map_fields::{Field, spawnflags};
 use crate::map_groups::{GroupAction, Grouping, layers_ui, overview_keys, selection_ui};
@@ -838,7 +839,12 @@ impl MapEditor {
             // A choice cut short is read whole on hover.
             panes.response.on_hover_text(panes_text(layout).get());
             ui.separator();
-            ui.label(Text::MapGrid.get());
+            let label = ui
+                .add(egui::Label::new(Icon::Grid.char().to_string()).sense(egui::Sense::hover()))
+                .on_hover_text(Text::MapGrid.get());
+            label.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::WidgetType::Label, true, Text::MapGrid.get())
+            });
             let grid = self.tools.grid;
             let picked =
                 egui::ComboBox::from_id_salt(ui.id().with(core::any::TypeId::of::<MapGrid>()))
@@ -857,15 +863,18 @@ impl MapEditor {
             name_field(ui, &picked.response, Text::MapGridPicker);
             picked.response.on_hover_text(Text::MapGridPicker.get());
             ui.separator();
-            ui.label(Text::MapLinks.get());
-            ui.selectable_value(
-                &mut self.links,
-                LinkView::Selection,
-                Text::MapLinksSelected.get(),
-            );
-            ui.selectable_value(&mut self.links, LinkView::All, Text::MapLinksAll.get());
+            let (state, other) = match self.links {
+                LinkView::All => (Toggled::On, LinkView::Selection),
+                LinkView::Selection => (Toggled::Off, LinkView::All),
+            };
+            if Icon::Link
+                .toggle(ui, state, Text::MapLinksAll, Text::MapLinksHint)
+                .clicked()
+            {
+                self.links = other;
+            }
             ui.separator();
-            let show_label = egui::WidgetText::from(Text::MapShow.get())
+            let show_label = egui::WidgetText::from(Icon::Show.char().to_string())
                 .into_galley(
                     ui,
                     Some(egui::TextWrapMode::Extend),
@@ -880,7 +889,12 @@ impl MapEditor {
                 // The label is no use apart from its picker.
                 ui.end_row();
             }
-            ui.label(Text::MapShow.get());
+            let label = ui
+                .add(egui::Label::new(Icon::Show.char().to_string()).sense(egui::Sense::hover()))
+                .on_hover_text(Text::MapShow.get());
+            label.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::WidgetType::Label, true, Text::MapShow.get())
+            });
             let show =
                 egui::ComboBox::from_id_salt(ui.id().with(core::any::TypeId::of::<ShowFilter>()))
                     .width(combo)
