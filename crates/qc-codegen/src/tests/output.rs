@@ -12,7 +12,7 @@ use qc_types::Slot;
 
 use super::{compile_files, compile_source, global, progs, string};
 use crate::write::{needs_fte32, wrap_short_operands};
-use crate::{Precache, compile_module};
+use crate::{CompileError, Precache, compile_module};
 
 // spec QC-25.1: statement 0, function 0, global and field definition 0 and string 0 are
 // placeholders.
@@ -427,4 +427,40 @@ fn a_vanilla_operand_past_32767_is_refused() {
         program(last + 1),
         Err(crate::CompileError::Write(_))
     ));
+}
+
+// spec FTEF-27.5: an opcode the target has is not refused: a build reads each file at the target
+// its analysis read it at (L-25, COMP-2), a `#pragma target fte` in the module's source-form
+// `progs.src` or in the compiled file itself, and refuses `ADD_I` with E0320 only under id's
+#[test]
+fn a_build_reads_the_target_a_pragma_sets() {
+    let refused = |root: &str, file: &str| {
+        let mut db = Db::new();
+        db.set_dialect(qc_syntax::Dialect::Fteqcc);
+        for (i, (name, text)) in [("progs.src", root), ("a.qc", file)]
+            .into_iter()
+            .enumerate()
+        {
+            db.set_file(
+                FileId::new(i),
+                PathBuf::from(name),
+                text.as_bytes().to_vec(),
+            );
+        }
+        let input = ModuleInput {
+            prelude: vec![FileId::new(0)],
+            compiled: vec![FileId::new(1)],
+            ..ModuleInput::default()
+        };
+        // Integer arithmetic is not lowered yet (L-08, #192), so only the target's refusal is read.
+        matches!(
+            compile_module(&mut db, &input, |_| "a.qc".to_owned()),
+            Err(CompileError::Diagnostics(errors))
+                if errors.iter().any(|e| e.diagnostic.code == qc_diag::Code::E0320)
+        )
+    };
+    let adds = "int a;\nint b;\nvoid f() { a = a + b; };\n";
+    assert!(!refused("#pragma target fte\n", adds));
+    assert!(!refused("", &format!("#pragma target fte\n{adds}")));
+    assert!(refused("", adds));
 }

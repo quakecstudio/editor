@@ -52,7 +52,10 @@ use qc_lexer::LineIndex;
 use qc_lno::LnoFile;
 use qc_progs::{Format, ProgsFile, WriteError};
 use qc_sema::lower::{FileDecls, lower_file};
-use qc_sema::{Db, FileDiagnostic, FileId, ModuleInput, ResolveOptions, resolve_module};
+use qc_sema::{
+    Db, FileDiagnostic, FileId, ModuleInput, ResolveOptions, resolve_module,
+    resolve_module_at_targets,
+};
 use qc_syntax::{Dialect, Parse};
 
 use crate::compile::Compiler;
@@ -183,7 +186,7 @@ pub fn compile(units: &[Unit<'_>]) -> Result<Compiled, CompileError> {
     };
     // Each unit is indexed by line once, the first time a statement comes from it.
     let mut lines: HashMap<FileId, LineIndex> = HashMap::new();
-    compile_lowered(units, &decls, vanilla, |file, at| {
+    compile_lowered(units, &decls, &[], vanilla, |file, at| {
         let Some(unit) = units.get(file.index()) else {
             return 0;
         };
@@ -194,14 +197,20 @@ pub fn compile(units: &[Unit<'_>]) -> Result<Compiled, CompileError> {
     })
 }
 
-/// [`compile`] of units whose parses are lowered already, `decls[i]` from `units[i]`.
+/// [`compile`] of units whose parses are lowered already, `decls[i]` from `units[i]`, each read
+/// at the output targets `targets[i]` gives (FTEF-25), or at id's when there are none.
 fn compile_lowered(
     units: &[Unit<'_>],
     decls: &[FileDecls],
+    targets: &[&[(usize, qc_preproc::OpcodeTarget)]],
     resolve: ResolveOptions,
     mut line_of: impl FnMut(FileId, usize) -> i32,
 ) -> Result<Compiled, CompileError> {
-    let index = resolve_module(decls, resolve);
+    let index = if targets.is_empty() {
+        resolve_module(decls, resolve)
+    } else {
+        resolve_module_at_targets(decls, targets, resolve)
+    };
     let mut errors: Vec<FileDiagnostic> = Vec::new();
     for (i, unit) in units.iter().enumerate() {
         errors.extend(unit.parse.diagnostics().iter().map(|d| FileDiagnostic {
@@ -360,9 +369,16 @@ pub fn compile_module(
         units.push(Unit { name, parse });
         decls.push(lowered.clone());
     }
+    // L-25, COMP-2: each file is built at the targets its analysis read it at, its
+    // `#pragma target`s included, so the build refuses no opcode the check allows.
+    let targets: Vec<&[(usize, qc_preproc::OpcodeTarget)]> = input
+        .compiled
+        .iter()
+        .map(|&id| db.expanded_targets(id))
+        .collect();
     // Each source file is indexed by line once, the first time a statement comes from it.
     let mut lines: HashMap<FileId, LineIndex> = HashMap::new();
-    let mut compiled = compile_lowered(&units, &decls, analysis.options, |file, at| {
+    let mut compiled = compile_lowered(&units, &decls, &targets, analysis.options, |file, at| {
         // QC-27.19: the line in the source file the expansion's text came from (QC-9.7).
         let id = input.compiled.get(file.index()).copied().unwrap_or(file);
         let (source, at) = db

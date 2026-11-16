@@ -172,6 +172,9 @@ pub struct Db {
     expanded: HashMap<(FileId, bool), ExpandedFile>,
     /// Where each span of each compiled file's last expansion came from (QC-9.7).
     origins: HashMap<FileId, OriginMap>,
+    /// Under FTEQCC, each compiled file's output targets and the offsets of its last expansion
+    /// they hold from (FTEF-25), as the analysis read them.
+    targets: HashMap<FileId, Vec<(usize, qc_preproc::OpcodeTarget)>>,
     /// The memoized analysis of a module read through the preprocessor.
     analysis: Option<Memo<(ModuleInput, Rc<ModuleAnalysis>)>>,
     /// Query-run counters.
@@ -558,12 +561,12 @@ impl Db {
     /// Keeps where each span of each compiled file's expansion came from (QC-9.7), for
     /// [`Db::expanded_origins`].
     fn remember_origins(&mut self, input: &ModuleInput, files: Vec<Rendered>) {
-        self.origins = input
-            .compiled
-            .iter()
-            .copied()
-            .zip(files.into_iter().map(|rendered| rendered.origins))
-            .collect();
+        self.origins.clear();
+        self.targets.clear();
+        for (&file, rendered) in input.compiled.iter().zip(files) {
+            self.origins.insert(file, rendered.origins);
+            self.targets.insert(file, rendered.targets);
+        }
     }
 
     /// FTEF-12.18: the first pass of a two-pass compile, read with its own flags, warning
@@ -632,6 +635,14 @@ impl Db {
     #[must_use]
     pub fn expanded_origins(&self, file: FileId) -> Option<&OriginMap> {
         self.origins.get(&file)
+    }
+
+    /// Under FTEQCC, the output targets compiled file `file`'s expansion was read with and the
+    /// offsets they hold from (FTEF-25), as [`Db::analyze_module`] last read it; empty before a
+    /// module that compiles it has been analysed, or under vanilla.
+    #[must_use]
+    pub fn expanded_targets(&self, file: FileId) -> &[(usize, qc_preproc::OpcodeTarget)] {
+        self.targets.get(&file).map_or(&[][..], Vec::as_slice)
     }
 
     /// The parse and lowering of compiled file `file` whose expansion is `rendered`: the cached

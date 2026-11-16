@@ -138,6 +138,7 @@ fn qc_sema::db::Db::dialect
 fn qc_sema::db::Db::expanded_decls
 fn qc_sema::db::Db::expanded_origins
 fn qc_sema::db::Db::expanded_parse
+fn qc_sema::db::Db::expanded_targets
 fn qc_sema::db::Db::file_path
 fn qc_sema::db::Db::file_text
 fn qc_sema::db::Db::module_index
@@ -194,6 +195,7 @@ fn qc_sema::resolve::ModuleIndex::redeclarations
 fn qc_sema::resolve::ModuleIndex::refs
 fn qc_sema::resolve::ModuleIndex::struct_shape
 fn qc_sema::resolve::resolve_module
+fn qc_sema::resolve::resolve_module_at_targets
 fn qc_sema::symbol::DefId::index
 fn qc_sema::symbol::DefKind::is_global
 fn qc_sema::symbol::FileId::index
@@ -295,6 +297,7 @@ use qc_sema::lower::Qualifier = decl::Qualifier
 use qc_sema::lower::ValueKind = decl::ValueKind
 use qc_sema::lower::declares = decl::declares
 use qc_sema::resolve_module = resolve::resolve_module
+use qc_sema::resolve_module_at_targets = resolve::resolve_module_at_targets
 variant qc_sema::cast::Cast::Implicit
 variant qc_sema::cast::Cast::Lax
 variant qc_sema::cast::Cast::Refused
