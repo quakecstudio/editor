@@ -1160,6 +1160,26 @@ pub fn join_paths(name: &[u8], base: &[u8]) -> Vec<u8> {
     joined
 }
 
+/// `name` with each `.` and each `..` after a directory taken out, as the file it reaches is
+/// named: `a/b/../c.qh` is `a/c.qh`. A `..` with no directory before it is kept.
+fn lexical_name(name: &[u8]) -> Vec<u8> {
+    let mut parts: Vec<&[u8]> = Vec::new();
+    for part in name.split(|&b| b == b'/' || b == b'\\') {
+        match part {
+            b"." => {}
+            b".."
+                if parts
+                    .last()
+                    .is_some_and(|last| *last != b"..".as_slice() && !last.is_empty()) =>
+            {
+                parts.pop();
+            }
+            _ => parts.push(part),
+        }
+    }
+    parts.join(b"/".as_slice())
+}
+
 /// `QCC_FindBestInclude`'s names for `name`, in the order it tries them: joined to `compiling`,
 /// the name of the file being compiled, and then to each include directory (FTEF-14.40).
 pub(crate) fn include_candidates(name: &[u8], compiling: &[u8], dirs: &[Vec<u8>]) -> Vec<Vec<u8>> {
@@ -1896,7 +1916,15 @@ impl<L: Loader> Preprocessor<L> {
             run.report(Code::E0111, format!("cannot include {shown}: {reason}"), at);
             return;
         };
-        if self.fte.once.contains(&full) {
+        // PRJ-5.9: `#pragma once` marks the file; under GMQCC a name that reaches it through
+        // `..`, as Xonotic's `"../teams.qh"` does, names the same file.
+        let marked = if self.dialect == Dialect::Gmqcc {
+            let full = lexical_name(&full);
+            self.fte.once.iter().any(|once| lexical_name(once) == full)
+        } else {
+            self.fte.once.contains(&full)
+        };
+        if marked {
             return;
         }
         if run.cursors.iter().any(|c| c.path == path) {
