@@ -432,6 +432,14 @@ malformed directive without a diagnostic.
   reach. Under FTEQCC the name is compared as written, `QCC_FindBestInclude`'s
   `if (!strcmp(onced->name, fullname))` (FTEF-14.40).
 
+- **PRJ-5.18** Under the GMQCC dialect an `#include` of a file that is open, being read, reads it
+  again inside itself, as the C preprocessor Xonotic runs first does, until 200 files are open:
+  "Nesting levels of '#include' files. We impose an arbitrary limit of 200 levels, to avoid
+  runaway recursion." (the GCC manual, Implementation limits, fetched 2026-11-16). Past that it is
+  `E0112`. Xonotic's generated `menu/xonotic/guide/_mod.qh` includes `guide.qh`, which includes
+  `_mod.qh` again; the files it includes carry `#pragma once`, so the second reading ends. Under
+  the FTEQCC dialect an `#include` of an open file is `E0112` "recursive #include of PATH".
+
 ## PRJ-6 The file graph
 
 **Source:** this project; the order is QC-23.3 and FTEQCC's.

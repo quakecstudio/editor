@@ -1160,6 +1160,10 @@ pub fn join_paths(name: &[u8], base: &[u8]) -> Vec<u8> {
     joined
 }
 
+/// PRJ-5.18: the C preprocessor's limit on nested `#include`s, GCC's: "We impose an arbitrary
+/// limit of 200 levels, to avoid runaway recursion."
+const CPP_MAX_INCLUDE_DEPTH: usize = 200;
+
 /// `name` with each `.`, each empty part after the first and each `..` after a directory taken
 /// out, as the file it reaches is named (PRJ-5.17): `a/b/../c.qh` and `a//b/../c.qh` are
 /// `a/c.qh`, `/../c.qh` is `/c.qh`. A `..` with no directory before it is kept.
@@ -1921,7 +1925,13 @@ impl<L: Loader> Preprocessor<L> {
         if self.fte.once.contains(&self.once_name(full.clone())) {
             return;
         }
-        if run.cursors.iter().any(|c| c.path == path) {
+        // PRJ-5.18: under GMQCC a file already open is read again inside itself, as the C
+        // preprocessor reads it, up to its nesting limit.
+        let recursive = match self.dialect {
+            Dialect::Gmqcc => run.cursors.len() >= CPP_MAX_INCLUDE_DEPTH,
+            _ => run.cursors.iter().any(|c| c.path == path),
+        };
+        if recursive {
             let message = format!("recursive #include of {}", path.display());
             run.report(Code::E0112, message, at);
             return;

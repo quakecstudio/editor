@@ -1241,3 +1241,26 @@ fn pragma_once_marks_a_file_reached_through_a_parent_name_under_gmqcc() {
     let gmqcc = compile_in(&recursive, "src/a.qc", qc_lexer::Dialect::Gmqcc);
     assert!(codes(&gmqcc).contains(&Code::E0112), "{:?}", codes(&gmqcc));
 }
+
+// spec PRJ-5.18: under GMQCC an `#include` of a file that is open reads it again inside itself,
+// as Xonotic's guide `_mod.qh` and `guide.qh` include each other, and a `#pragma once` file ends
+// the second reading; under FTEQCC it is E0112
+#[test]
+fn an_open_file_is_read_again_inside_itself_under_gmqcc() {
+    let files = [
+        ("src/a.qc", "#include \"m.qh\"\n"),
+        ("src/m.qh", "#include \"g.qh\"\nm\n"),
+        ("src/g.qh", "#pragma once\n#include \"m.qh\"\ng\n"),
+    ];
+    let gmqcc = compile_in(&files, "src/a.qc", qc_lexer::Dialect::Gmqcc);
+    assert_eq!(
+        (tokens(&gmqcc), codes(&gmqcc)),
+        ("m g m".to_owned(), vec![])
+    );
+    let fteqcc = compile_in(&files, "src/a.qc", qc_lexer::Dialect::Fteqcc);
+    assert!(
+        codes(&fteqcc).contains(&Code::E0112),
+        "{:?}",
+        codes(&fteqcc)
+    );
+}
