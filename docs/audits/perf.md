@@ -110,3 +110,22 @@ Left, with the reason:
   `progdefs.h` writer and one in `qc-preproc`, once per compile), 3 `assigning_clones` and one
   each of `redundant_clone` and `needless_collect`. None is in the profile above; they are fixed
   when the lints are turned on for the whole workspace.
+
+### The map editor's view: `apps/desktop`
+
+Measured in the app itself, release build with line tables, on `lq_e2m5.map` (11,539 brushes,
+every LibreQuake texture), Textured, the window on the 120 Hz panel, the 3D camera turned by a
+temporary hook for 6.5 s with no input, and each frame's UI time logged (`App::ui`, which builds
+the frame's shapes; the GPU draws after it). Reference Mac, 2026-11-15, two runs each.
+
+`sample` over the turn put most of the main thread in `MapEditor::pane`'s own code and
+`Projection::line`: every frame tested each of the scene's brush edges against the set of
+entities drawn as faces, only to skip nearly all of them. The lines of entities without faces
+(point entities' boxes, an external map's instance) are now kept with the scene when it is built,
+and the textured and lit views draw those alone.
+
+| Change | Before | After |
+| --- | --- | --- |
+| The textured view's frame: only the lines of entities without faces are visited | 2.84 ms median, 3.06 ms p99 | 1.52 ms median, 2.24 ms p99 (-46%) |
+
+The app's 227 tests pass, its snapshots among them, so the view draws what it drew.
