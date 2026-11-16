@@ -3837,3 +3837,92 @@ fn an_array_sized_by_a_suffixed_number_takes_its_initialiser() {
     assert_eq!([float("h", 0), float("h", 1)], [4.0, 5.0]);
     assert!(global(p, "after") >= global(p, "h") + 2);
 }
+
+// spec FTEF-27.4: a float shift on a target with the integer one is `OP_LSHIFT_I` of the converted
+// operands, whose integer value the expression goes on with
+#[test]
+fn a_float_shift_is_the_integer_shift_s_value() {
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\nfloat top;\nvoid t(float a) { top = a + (a << 8); };\n",
+    )
+    .unwrap();
+    let number = |op: qc_preproc::Op| u32::try_from(op.number()).unwrap();
+    let statements = &compiled.progs.statements;
+    let shift = statements
+        .iter()
+        .find(|s| s.op == number(qc_preproc::Op::LshiftI))
+        .unwrap();
+    assert!(
+        statements
+            .iter()
+            .any(|s| (s.a == shift.c || s.b == shift.c) && s.op != number(qc_preproc::Op::LshiftI))
+    );
+}
+
+// spec FTEF-19.58: a global initialised with a constant of its type, a string or a vector, holds
+// the constant's words
+#[test]
+fn a_global_named_after_a_string_or_vector_constant_holds_its_words() {
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\nconst string f = \"a;b\";\nvar string s = f;\n\
+         const vector v = '1 2 3';\nvar vector w = v;\nvoid t() {};\n",
+    )
+    .unwrap();
+    let p = &compiled.progs;
+    let word = |name: &str, i: i32| p.globals[usize::try_from(global(p, name) + i).unwrap()].bits();
+    assert_eq!(word("s", 0), word("f", 0));
+    assert_eq!(string(p, i32::try_from(word("s", 0)).unwrap()), "a;b");
+    for i in 0..3 {
+        assert_eq!(word("w", i), word("v", i));
+    }
+}
+
+// spec FTEF-31.21: through a pointer at an index, a member is loaded by `OP_LOADP_*` of the
+// pointer and the integer index and stored by the value's `OP_STOREP_*` with the index as its
+// offset: `g_s[i].b = "x"` is `MUL_I`, `ADD_I` of the member's word, `STOREP_S`
+#[test]
+fn a_member_through_a_pointer_at_an_index_is_loaded_and_stored_at_it() {
+    use qc_preproc::Op;
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\ntypedef struct { float a; string b; vector v; } s_t;\n\
+         s_t *g_s;\nfloat r;\nvoid t1() { int i = 1; g_s[i].b = \"x\"; };\n\
+         void t2() { int i = 1; r = g_s[i].a; };\n",
+    )
+    .unwrap();
+    let p = &compiled.progs;
+    let pointer = global(p, "g_s");
+    let ops = |name: &str| -> Vec<(u32, i32, i32, i32)> {
+        body(p, name)
+            .iter()
+            .map(|s| (s.op, s.a, s.b, s.c))
+            .collect()
+    };
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let t1 = ops("t1");
+    let store = t1.iter().find(|s| s.0 == number(Op::StorepS)).unwrap();
+    let add = t1.iter().find(|s| s.0 == number(Op::AddI)).unwrap();
+    assert_eq!(store.2, pointer);
+    assert_eq!(store.3, add.3);
+    let t2 = ops("t2");
+    let load = t2.iter().find(|s| s.0 == number(Op::LoadpF)).unwrap();
+    let mul = t2.iter().find(|s| s.0 == number(Op::MulI)).unwrap();
+    assert_eq!((load.1, load.2, load.3), (pointer, mul.3, global(p, "r")));
+}
+
+// spec FTE-18.11: a field argument is loaded straight into its slot, by its size, a class-typed
+// field given to an `entity` parameter among them, whose cast keeps its words
+#[test]
+fn a_class_field_argument_is_loaded_into_its_entity_slot() {
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\nentity self;\nentity() spawn = #14;\nvoid(entity e) take = #1;\n\
+         class W { W m_other; virtual void(void) Draw; };\nvoid W::Draw(void) {};\n\
+         void t(void) { W w = spawn(W); take(w.m_other); };\n",
+    )
+    .unwrap();
+    let field = global(&compiled.progs, "W::__mm_other");
+    let load = body(&compiled.progs, "t")
+        .into_iter()
+        .find(|s| s.b == field)
+        .unwrap();
+    assert_eq!(load.c, 4);
+}

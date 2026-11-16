@@ -73,8 +73,8 @@ fn type_name(etype: Etype) -> &'static str {
     }
 }
 
-/// The progs of [`PLAYER`] after id's system definitions.
-pub(crate) fn progs() -> Vec<u8> {
+/// id's system definitions, `defs.qc`'s globals and fields, which the VM lays out.
+pub(crate) fn system_defs() -> String {
     let mut defs = String::new();
     for var in SYSTEM_GLOBALS {
         writeln!(defs, "{} {};", type_name(var.etype), var.name).unwrap();
@@ -84,7 +84,12 @@ pub(crate) fn progs() -> Vec<u8> {
         writeln!(defs, ".{} {};", type_name(var.etype), var.name).unwrap();
     }
     defs.push_str("void end_sys_fields;\n");
-    let files = [("defs.qc", defs), ("player.qc", PLAYER.to_owned())];
+    defs
+}
+
+/// The progs of [`PLAYER`] after id's system definitions.
+pub(crate) fn progs() -> Vec<u8> {
+    let files = [("defs.qc", system_defs()), ("player.qc", PLAYER.to_owned())];
     let mut db = Db::new();
     let mut input = ModuleInput::default();
     for (i, (name, text)) in files.iter().enumerate() {

@@ -956,11 +956,12 @@ impl Checker<'_> {
                 } else {
                     (Op::RshiftI, "OP_RSHIFT_F*")
                 };
+                // FTEF-27.4: the integer shift's own value, `return
+                // QCC_PR_StatementFlags(&pr_opcodes[OP_LSHIFT_I], var_a, var_b, NULL, 0);`.
                 if self.env.target_at(span.start).valid(int_op) {
                     let lhs = self.emit(Op::ConvFtoi, lhs, &Value::unknown(), span)?;
                     let rhs = self.emit(Op::ConvFtoi, rhs, &Value::unknown(), span)?;
-                    self.emit(int_op, &lhs, &rhs, span)?;
-                    return Ok(result);
+                    return self.emit(int_op, &lhs, &rhs, span);
                 }
                 // FTE-19.11: `floor(a * pow(2, b))` or `floor(a / pow(2, b))` with `powf` or
                 // `pow` and `floor`; else `bitshift(a, b)` or `bitshift(a, 0 - b)`.

@@ -368,10 +368,7 @@ impl<'e> Checker<'e> {
         {
             let message = "'self' used inside OO function, use 'this'.".to_owned();
             self.env.report(Code::W0316, token.span(), message);
-            return Value {
-                name: Some("this".to_owned()),
-                ..Value::of(class)
-            };
+            return self.this(class);
         }
         let Some(def) = self.env.reference(token.span().start) else {
             // FTEF-17.14: `this` is the entity `self` as the function's class.
@@ -379,14 +376,26 @@ impl<'e> Checker<'e> {
                 && token.text() == b"this"
                 && let Some(class) = self.env.this_type()
             {
-                return Value {
-                    name: Some("this".to_owned()),
-                    ..Value::of(class)
-                };
+                return self.this(class);
             }
             return Value::unknown();
         };
         self.def_value(def, &token, scoped)
+    }
+
+    /// FTEF-17.14: `this` in a member function, of type `class`: the global `self` as the
+    /// class, `d = QCC_PR_GetSRef(type_entity, "self", NULL, true, 0, false); d.cast =
+    /// pr_classtype;`, which a statement names as `self`.
+    fn this(&self, class: Type) -> Value {
+        let sym = self
+            .env
+            .helper("self")
+            .map_or(Sym::Temp, |def| Sym::Def(def, self.env.constant(def), 0));
+        Value {
+            name: Some("this".to_owned()),
+            sym,
+            ..Value::of(class)
+        }
     }
 
     /// The value of the definition `def` named by `token`, `::`-scoped or not
@@ -421,10 +430,7 @@ impl<'e> Checker<'e> {
             && self.env.in_class()
             && !scoped
         {
-            let this = Value {
-                name: Some("this".to_owned()),
-                ..Value::unknown()
-            };
+            let this = self.this(Type::Unknown);
             return Value::field_of(&this, name, held, Some(def));
         }
         Value {

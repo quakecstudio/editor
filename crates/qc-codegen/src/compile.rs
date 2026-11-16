@@ -36,6 +36,7 @@ use crate::program::{self, Literal, OFS_PARM0, Program, ValueType, operand, type
 mod allocate;
 mod arrays;
 mod body;
+mod classes;
 
 /// Why a declaration's code stopped: a construct the compiler cannot lower, which the semantic
 /// model should have refused.
@@ -422,14 +423,25 @@ impl<'a> Compiler<'a> {
                         if self.dialect.has_fteqcc_extensions() && self.constant(place) {
                             self.program.alias_immediate(place).at(span)?;
                         }
-                    } else {
-                        let value = self.index.initial_value(id).at(span)?;
+                    } else if let Some(value) = self.index.initial_value(id) {
                         self.program
                             .initialise_words(place, value.words())
                             .at(span)?;
+                    } else {
+                        // FTEF-19.58: a constant of the same type named, a string's or a
+                        // vector's, gives its words.
+                        let ty = self.program.def(place).at(span)?.ty.clone();
+                        let words = self.constant_words(&ty, &expr)?;
+                        self.program.initialise_words(place, &words).at(span)?;
                     }
                 }
                 Some(ast::Initializer::Body(body)) => {
+                    // FTEF-9.21: a virtual member's body is the function `CLASS::NAME`.
+                    let place = self
+                        .program
+                        .member_function(self.index, id)
+                        .at(name.span())?
+                        .unwrap_or(place);
                     self.function(
                         (&written, &declarator),
                         &name,

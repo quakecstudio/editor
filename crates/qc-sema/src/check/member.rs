@@ -537,7 +537,7 @@ impl Checker<'_> {
                 let span = field.syntax().span();
                 let index = self.member_index(pointer.index.as_ref(), offset, span)?;
                 Value {
-                    reference: Reference::pointer(pointer.base.clone(), Some(index)),
+                    reference: Reference::pointer(pointer.base.clone(), Some(index), pointer.named),
                     ..member
                 }
             }
@@ -687,7 +687,7 @@ impl Checker<'_> {
                 }
                 let index = self.member_index(None, offset, span)?;
                 Ok(Value {
-                    reference: Reference::pointer(base.label(), Some(index)),
+                    reference: Reference::pointer(base.label(), Some(index), self.name_of(base)),
                     ..member
                 })
             }

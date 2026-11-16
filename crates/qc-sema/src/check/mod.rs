@@ -670,12 +670,8 @@ impl Reference {
     }
 
     /// What the pointer labelled `base` points at, at `index`.
-    pub(crate) fn pointer(base: String, index: Option<Value>) -> Self {
-        Self::Pointer(Box::new(PointerRef {
-            base,
-            index,
-            named: None,
-        }))
+    pub(crate) fn pointer(base: String, index: Option<Value>, named: Option<ir::Name>) -> Self {
+        Self::Pointer(Box::new(PointerRef { base, index, named }))
     }
 
     /// `*p` of the pointer labelled `base` that names `named` as an operand.

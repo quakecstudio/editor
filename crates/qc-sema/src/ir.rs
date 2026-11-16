@@ -243,6 +243,17 @@ impl BodyStatement {
             // FTEF-31.20: on a target whose stores take an offset the address is the array's
             // alone, `QCC_PR_Statement(&pr_opcodes[OP_GLOBALADDRESS], base, nullsref, NULL)`.
             Op::Globaladdress => [a, false, c],
+            // FTEF-31.21: a load through a pointer with no index reads at its offset 0,
+            // `QCC_LoadFromPointer(source, nullsref, type)`.
+            Op::LoadpF
+            | Op::LoadpV
+            | Op::LoadpS
+            | Op::LoadpEnt
+            | Op::LoadpFld
+            | Op::LoadpFnc
+            | Op::LoadpI
+            | Op::LoadpP
+            | Op::LoadpI64 => [a, false, c],
             _ => [a, b, c],
         }
     }

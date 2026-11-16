@@ -159,7 +159,8 @@ impl Checker<'_> {
                     }
                     index => index.clone(),
                 };
-                self.load_from_pointer(value, index.as_ref(), span)
+                let named = pointer.named;
+                self.load_from_pointer(value, (named, index.as_ref()), span)
             }
             Reference::Character(index) => {
                 let float_index = self.etype_of(&index.ty) == Some(Etype::Float);
@@ -201,12 +202,13 @@ impl Checker<'_> {
             let offset = at.wrapping_mul(bits) & 31;
             return self.extend_bits(value, offset, bits, span);
         }
-        self.address_of(value.clone(), span)?;
+        let address = self.address_of(value.clone(), span)?;
+        let named = self.name_of(&address);
         let narrow = Value {
             reference: Reference::Global,
             ..value
         };
-        self.load_from_pointer(narrow, None, span)
+        self.load_from_pointer(narrow, (named, None), span)
     }
 
     /// FTEF-2.12: an element at a constant index of an array of 8- or 16-bit integers, or a
@@ -563,7 +565,12 @@ impl Checker<'_> {
 
     /// FTEF-31.3: `QCC_LoadFromPointer`: the index made an integer, then the load of the
     /// pointee's type; a struct or union word by word (FTEF-6.14).
-    fn load_from_pointer(&mut self, value: Value, index: Option<&Value>, span: Span) -> Checked {
+    fn load_from_pointer(
+        &mut self,
+        value: Value,
+        (named, index): (Option<ir::Name>, Option<&Value>),
+        span: Span,
+    ) -> Checked {
         // FTEF-6.15, FTEF-27.10: a bitfield and an 8- or 16-bit integer by `OP_LOADP_I8`,
         // `OP_LOADP_U8` and the 16-bit loads, the index 0 when there is none.
         let narrow = match value.bitfield {
@@ -590,6 +597,7 @@ impl Checker<'_> {
             let pointer = Value::of(Type::Pointer(value.ty.clone().into()));
             let zero = Value::constant(Constant::uint(0));
             let loaded = self.emit(op, &pointer, index.unwrap_or(&zero), span)?;
+            self.name_last(op, named, None);
             // The narrow loads give an `int` or a `uint` (`type_c`), a bitfield its own type.
             let ty = match (value.bitfield, narrow.1) {
                 (Some(_), _) => word_type(&value.ty),
@@ -637,8 +645,12 @@ impl Checker<'_> {
                 });
             }
         };
+        // `QCC_PR_StatementFlags(&pr_opcodes[op], source, idx, NULL, ...)`: the pointer and the
+        // integer index, none when there is no index.
         let pointer = Value::of(Type::Pointer(value.ty.clone().into()));
-        let loaded = self.emit(op, &pointer, &Value::unknown(), span)?;
+        let at = index.cloned().unwrap_or_else(Value::unknown);
+        let loaded = self.emit(op, &pointer, &at, span)?;
+        self.name_last(op, named, None);
         Ok(Value {
             ty: value.ty,
             ..loaded
@@ -746,7 +758,7 @@ impl Checker<'_> {
             if let Reference::ArrayHead(Some(MemberArray { pointer: true, .. })) = base.reference {
                 return Ok(Value {
                     readonly: false,
-                    reference: Reference::pointer(label, Some(at)),
+                    reference: Reference::pointer(label, Some(at), None),
                     ..Value::of(base.ty)
                 });
             }
@@ -758,10 +770,11 @@ impl Checker<'_> {
         match (self.etype_of(&base.ty), &base.ty) {
             (Some(Etype::Pointer), Type::Pointer(pointee)) => {
                 let at = self.scaled_index(pointee, at, span)?;
-                self.read(base.clone(), span)?;
+                let pointer = self.read(base.clone(), span)?;
+                let named = self.name_of(&pointer);
                 Ok(Value {
                     readonly: false,
-                    reference: Reference::pointer(label, Some(at)),
+                    reference: Reference::pointer(label, Some(at), named),
                     ..Value::of(pointee.as_ref().clone())
                 })
             }
@@ -1044,7 +1057,7 @@ impl Checker<'_> {
                 Some(Etype::Float) => {
                     return Ok(Value {
                         readonly: false,
-                        reference: Reference::pointer(operand.label(), None),
+                        reference: Reference::pointer(operand.label(), None, None),
                         ..Value::of(Type::Simple(SimpleType::Float))
                     });
                 }

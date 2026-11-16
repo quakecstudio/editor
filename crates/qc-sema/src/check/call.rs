@@ -21,7 +21,7 @@ use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::fold;
 use crate::check::reference::expected_after;
 use crate::check::term::string_immediate;
-use crate::check::{Constness, CvarValue, ParamFacts, PathList, Reference, Sym, Value};
+use crate::check::{Constness, CvarValue, ParamFacts, PathList, Reference, Sym, Value, converts};
 use crate::ir;
 use crate::ty::{FunctionType, SimpleType, Type};
 use crate::{MAX_PARMS, VECTOR_WORDS, VECTOR_WORDS_FLOAT, VECTOR_WORDS_INT};
@@ -221,8 +221,14 @@ impl Checker<'_> {
                         value = self.ftoi_field(field, ftoi, param);
                         continue_after_conversion = true;
                     }
+                    // A cast that keeps the words, a class's entity as an `entity` among them,
+                    // leaves the held-back load as it is.
                     None => {
-                        if matches!(reference.reference, Reference::Field(_)) {
+                        let converted = match (self.etype_of(&value.ty), self.etype_of(param)) {
+                            (Some(from), Some(to)) => converts(from, to),
+                            _ => true,
+                        };
+                        if converted && matches!(reference.reference, Reference::Field(_)) {
                             self.followed = false;
                         }
                     }
@@ -577,7 +583,12 @@ impl Checker<'_> {
     }
 
     /// Generates `op` of `a` and `b` into a value of its own; the statement's index.
-    fn push_made(&mut self, op: Op, a: Option<ir::Name>, b: Option<ir::Name>) -> Option<u32> {
+    pub(super) fn push_made(
+        &mut self,
+        op: Op,
+        a: Option<ir::Name>,
+        b: Option<ir::Name>,
+    ) -> Option<u32> {
         let made = u32::try_from(self.generated.len()).ok();
         self.generated.push(ir::BodyStatement {
             a,
@@ -952,7 +963,71 @@ impl Checker<'_> {
             }
             self.value(arg.value())?;
         }
-        Ok(Some(base))
+        if !named.is_empty() || at != 1 {
+            self.followed = false;
+            return Ok(Some(base));
+        }
+        Ok(Some(self.spawn_statements(&class, base)))
+    }
+
+    /// FTEF-9.23: the statements of `spawn(Class)` in a function, as FTEQCC's `spawn`
+    /// intrinsic writes them: the call of `spawn`, then `spawnfunc_Class` called with the new
+    /// entity as `self` (`QCC_PR_GenerateFunctionCallRef(result, func, NULL, 0)`): `self` kept
+    /// in a temporary, the entity stored to `self`, the entity copied out of the return global
+    /// before the call (`QCC_ClobberDef`), the call, and `self` restored. Its value is the
+    /// entity, as the class.
+    fn spawn_statements(&mut self, class: &Type, base: Value) -> Value {
+        if self.global {
+            return base;
+        }
+        let spawnfunc = self
+            .env
+            .class_name(class)
+            .and_then(|name| self.env.helper(&format!("spawnfunc_{name}")));
+        let (Some(spawn), Some(this), Some(spawnfunc)) =
+            (self.env.helper("spawn"), self.env.helper("self"), spawnfunc)
+        else {
+            self.followed = false;
+            return base;
+        };
+        let def = |def| Some(ir::Name::Def(def, 0));
+        self.clobber_return();
+        self.generated.push(ir::BodyStatement {
+            a: def(spawn),
+            ..ir::BodyStatement::bare(Op::Call0)
+        });
+        let call = self.last_made();
+        self.live_return = Some(1);
+        self.live_call = call;
+        let spawned = Value {
+            returned: true,
+            call,
+            ..base
+        };
+        // `oself = self`, then `self = result`.
+        let kept = self.next_made();
+        self.generated.push(ir::BodyStatement {
+            a: def(this),
+            b: Some(ir::Name::Made(kept)),
+            ..ir::BodyStatement::bare(Op::StoreEnt)
+        });
+        self.generated.push(ir::BodyStatement {
+            a: self.name_of(&spawned),
+            b: def(this),
+            ..ir::BodyStatement::bare(Op::StoreEnt)
+        });
+        self.clobber_return();
+        self.generated.push(ir::BodyStatement {
+            a: def(spawnfunc),
+            ..ir::BodyStatement::bare(Op::Call0)
+        });
+        self.generated.push(ir::BodyStatement {
+            a: Some(ir::Name::Made(kept)),
+            b: def(this),
+            ..ir::BodyStatement::bare(Op::StoreEnt)
+        });
+        self.last_temp = None;
+        spawned
     }
 
     /// FTEF-17.19: the path a call names by a constant string: a `precache_` function's first
