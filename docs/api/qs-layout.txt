@@ -6,6 +6,9 @@ const qs_layout::MIN_PANEL_SIZE
 const qs_layout::Panel::ALL
 const qs_layout::RESIZE_PANEL
 const qs_layout::TOGGLE_PANEL
+const qs_layout::docks::DockPanel::ALL
+const qs_layout::docks::MOVE_PANEL
+const qs_layout::docks::SHOW_PANEL
 const qs_layout::editor::CLOSE_SPLIT
 const qs_layout::editor::FOLD
 const qs_layout::editor::FOLD_ALL
@@ -43,6 +46,7 @@ const qs_layout::zoom::Zoom::STEP
 enum qs_layout::Focus
 enum qs_layout::LayoutError
 enum qs_layout::Panel
+enum qs_layout::docks::DockPanel
 enum qs_layout::editor::EditorRequest
 enum qs_layout::editor::Outline
 enum qs_layout::editor::SoftWrap
@@ -53,6 +57,7 @@ enum qs_layout::map_grid::GridStep
 enum qs_layout::map_view::MapPanes
 enum qs_layout::map_view::MapShading
 field qs_layout::Layout.bottom
+field qs_layout::Layout.docks
 field qs_layout::Layout.editor_request
 field qs_layout::Layout.editor_requests
 field qs_layout::Layout.focus
@@ -72,6 +77,9 @@ field qs_layout::PanelState.visible
 field qs_layout::ResizePanelParams.panel
 field qs_layout::ResizePanelParams.size
 field qs_layout::TogglePanelParams.panel
+field qs_layout::docks::MovePanelParams.dock
+field qs_layout::docks::MovePanelParams.panel
+field qs_layout::docks::ShowPanelParams.panel
 field qs_layout::editor::GoToLineParams.line
 field qs_layout::map_camera::MapCamera.fly_speed
 field qs_layout::map_camera::MapCamera.fov
@@ -96,6 +104,10 @@ fn qs_layout::Layout::panel
 fn qs_layout::Layout::panel_mut
 fn qs_layout::Layout::read
 fn qs_layout::Layout::write
+fn qs_layout::docks::DockPanel::home
+fn qs_layout::docks::Docks::panels
+fn qs_layout::docks::Docks::place
+fn qs_layout::docks::Docks::shown
 fn qs_layout::layout_path
 fn qs_layout::map_camera::CameraSpeed::factor
 fn qs_layout::map_camera::Direction::sign
@@ -114,6 +126,7 @@ impl qs_layout::Layout: Default
 impl qs_layout::Layout: HasLayout
 impl qs_layout::LayoutError: Error
 impl qs_layout::LayoutError: fmt::Display
+impl qs_layout::docks::Docks: Default
 impl qs_layout::map_camera::CameraSpeed: Default
 impl qs_layout::map_camera::CameraSpeed: TryFrom<f32>
 impl qs_layout::map_camera::MapCameraError: fmt::Display
@@ -133,6 +146,9 @@ struct qs_layout::Layout
 struct qs_layout::PanelState
 struct qs_layout::ResizePanelParams
 struct qs_layout::TogglePanelParams
+struct qs_layout::docks::Docks
+struct qs_layout::docks::MovePanelParams
+struct qs_layout::docks::ShowPanelParams
 struct qs_layout::editor::GoToLineParams
 struct qs_layout::map_camera::CameraSpeed
 struct qs_layout::map_camera::MapCamera
@@ -151,6 +167,8 @@ trait qs_layout::HasLayout
 use qs_layout::CLOSE_SPLIT = editor::CLOSE_SPLIT
 use qs_layout::CameraSpeed = map_camera::CameraSpeed
 use qs_layout::Direction = map_camera::Direction
+use qs_layout::DockPanel = docks::DockPanel
+use qs_layout::Docks = docks::Docks
 use qs_layout::EditorRequest = editor::EditorRequest
 use qs_layout::FOLD = editor::FOLD
 use qs_layout::FOLD_ALL = editor::FOLD_ALL
@@ -163,6 +181,7 @@ use qs_layout::MAP_GRID = map_grid::MAP_GRID
 use qs_layout::MAP_GRID_STEP = map_grid::MAP_GRID_STEP
 use qs_layout::MAP_PANES = map_view::MAP_PANES
 use qs_layout::MAP_SHADING = map_view::MAP_SHADING
+use qs_layout::MOVE_PANEL = docks::MOVE_PANEL
 use qs_layout::MapCamera = map_camera::MapCamera
 use qs_layout::MapCameraError = map_camera::MapCameraError
 use qs_layout::MapCameraParams = map_camera::MapCameraParams
@@ -175,10 +194,13 @@ use qs_layout::MapPanes = map_view::MapPanes
 use qs_layout::MapPanesParams = map_view::MapPanesParams
 use qs_layout::MapShading = map_view::MapShading
 use qs_layout::MapShadingParams = map_view::MapShadingParams
+use qs_layout::MovePanelParams = docks::MovePanelParams
 use qs_layout::Outline = editor::Outline
 use qs_layout::PROJECT_SEARCH_VIEW = editor::PROJECT_SEARCH_VIEW
+use qs_layout::SHOW_PANEL = docks::SHOW_PANEL
 use qs_layout::SPLIT_DOWN = editor::SPLIT_DOWN
 use qs_layout::SPLIT_RIGHT = editor::SPLIT_RIGHT
+use qs_layout::ShowPanelParams = docks::ShowPanelParams
 use qs_layout::SoftWrap = editor::SoftWrap
 use qs_layout::Split = editor::Split
 use qs_layout::TAB_SWITCHER = editor::TAB_SWITCHER
@@ -199,6 +221,17 @@ variant qs_layout::LayoutError::Write
 variant qs_layout::Panel::Bottom
 variant qs_layout::Panel::Left
 variant qs_layout::Panel::Right
+variant qs_layout::docks::DockPanel::Agent
+variant qs_layout::docks::DockPanel::Console
+variant qs_layout::docks::DockPanel::Debugger
+variant qs_layout::docks::DockPanel::Entities
+variant qs_layout::docks::DockPanel::Git
+variant qs_layout::docks::DockPanel::Map
+variant qs_layout::docks::DockPanel::Problems
+variant qs_layout::docks::DockPanel::Project
+variant qs_layout::docks::DockPanel::Properties
+variant qs_layout::docks::DockPanel::Symbols
+variant qs_layout::docks::DockPanel::Terminal
 variant qs_layout::editor::EditorRequest::AskLine
 variant qs_layout::editor::EditorRequest::Fold
 variant qs_layout::editor::EditorRequest::FoldAll
