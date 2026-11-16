@@ -342,3 +342,20 @@ this should already be stringized").
   is written as it is. Xonotic is never built that way, and `lib/deglobalization.qh` relies on the
   C behaviour in 165 places.
 
+## GMQ-22 Arrays of fields
+
+**Source:** `parser.cpp`, the `[` operator in `parser_sy_apply_operator`, `parse_variable` and
+`parser_create_array_accessor`, at the commit above. Xonotic: `common/scores.qh` (`.int
+_scores[MAX_SCORE];`, `#define scores(this) _scores[(this).m_id]`), used as
+`pl.(scores(ps_primary))`.
+
+### Behaviour
+
+- **GMQ-22.1** An element of an array of fields picked inside `e.( )`, `e.(arr[i])`, is the field
+  its index names, at a constant index or another. GMQCC's `[` takes a field whose type is an
+  array (`exprs[0]->m_vtype == TYPE_FIELD && exprs[0]->m_next->m_vtype == TYPE_ARRAY`), and a
+  global array of fields gets accessor functions that give the field (`parse_variable`'s
+  `"%s##SETF"`, made by `parser_create_array_accessor`). FTEQCC on a target without `OP_GLOBALADDRESS` takes the array's address there,
+  which is the error `E0331` (FTEF-31.6); under this dialect it is not. The model does not follow
+  the body that reads such an element.
+
