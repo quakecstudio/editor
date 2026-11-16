@@ -27,6 +27,7 @@ use qs_map_edit::{
     ArchWall, Axis, BrushIndex, Circle, Climb, EntityIndex, KeepPart, Lock, ShapeSpec,
 };
 
+use crate::icons::{Icon, Toggled};
 use crate::map_editor::{Arrange, box_lines};
 use crate::map_panes::{Pane, Projection};
 use crate::map_scene::{Scene, single};
@@ -133,6 +134,20 @@ impl MapTool {
             Self::Measure => Text::MapToolMeasure,
             Self::Shape => Text::MapToolShape,
             Self::Hull => Text::MapToolHull,
+        }
+    }
+
+    /// Its toolbar button's icon (P7-15).
+    const fn icon(self) -> Icon {
+        match self {
+            Self::Select => Icon::Select,
+            Self::Brush => Icon::Brush,
+            Self::Clip => Icon::Clip,
+            Self::Vertex => Icon::Vertex,
+            Self::Move => Icon::Move,
+            Self::Measure => Icon::Measure,
+            Self::Shape => Icon::Shape,
+            Self::Hull => Icon::Hull,
         }
     }
 
@@ -828,8 +843,18 @@ impl BrushTools {
     /// The tool selector, and the clip's side when clipping.
     pub(crate) fn toolbar(&mut self, ui: &mut Ui) {
         for tool in MapTool::ALL {
-            ui.selectable_value(&mut self.tool, tool, tool.text().get())
-                .on_hover_text(tool.tooltip().get());
+            let state = if self.tool == tool {
+                Toggled::On
+            } else {
+                Toggled::Off
+            };
+            if tool
+                .icon()
+                .toggle(ui, state, tool.text(), tool.tooltip())
+                .clicked()
+            {
+                self.tool = tool;
+            }
         }
         if self.tool == MapTool::Shape {
             ui.separator();

@@ -1532,6 +1532,32 @@ groups:
     - 'The landing page shows at least four capabilities TrenchBroom''s manual does not list, each named in its caption'
     verify:
     - 'The snapshot tests; the site PR deployed to dev and reviewed by Justin'
+  - key: P7-15
+    title: 'Zed''s docks and an icon toolbar for a calmer window'
+    labels:
+    - L7-ui
+    - area:editor
+    - type:feature
+    size: L
+    reqs:
+    - UI-2
+    - UI-14
+    - UI-15
+    summary: |
+      Justin, 2026-11-15: the panels and toolbars are too text-heavy. He chose Zed's model: each panel its own, one shown per dock, chosen by a small icon button in the status bar, as Zed's `PanelButtons` (zed-industries/zed@4a6121bb, crates/workspace/src/dock.rs) renders `IconButton`s with `Tooltip::for_action`, a toggle state and a right-click menu that moves the panel to another dock; and the map editor's toolbar as icons, its text only in tooltips with the shortcut.
+    depends:
+    - P7-12
+    deliverable:
+    - 'apps/desktop and crates/qs-layout: the left, right and bottom docks each show one panel at a time: Project, Symbols, Entities and Map on the left; Properties and Agent on the right; Problems, Console, Debugger, Terminal and Git at the bottom; the layout keeps each dock''s panel, which dock each panel is in, and whether the dock is open, through view.* commands'
+    - 'The status bar: one Lucide icon button per panel, grouped by dock as Zed''s are, active when its panel shows; a click shows that panel or hides its dock when it already shows; the tooltip gives its name and shortcut; a right-click menu moves it to another dock or hides it'
+    - 'The map editor''s toolbar: each tool, shading and pane layout a Lucide icon button with a tooltip of its name and shortcut and its accessible name (P7-11, P7-12); the grid, link and Show choices as compact pickers'
+    - 'docs/design/README.md: the app''s snapshots in apps/desktop/snapshots/ named as the reference for the docks and the icon toolbar, which Justin approved on 2026-11-15 in place of redrawn mockups'
+    acceptance:
+    - 'Every panel is reached from its status-bar icon and from its shortcut; switching a dock''s panel and moving a panel to another dock are kept across a restart'
+    - 'No toolbar of the map editor shows text but its pickers; every icon has a tooltip with its name and shortcut and an accessible name, checked by a test over the toolbars'
+    - 'The accessibility, snapshot and zoom tests pass at 100 and 200 percent'
+    verify:
+    - 'kittest tests; snapshot tests; Justin''s approval of the snapshots'
   - key: P7-06
     title: Phase 7 gate review
     labels:
@@ -1557,6 +1583,7 @@ groups:
     - P7-12
     - P7-13
     - P7-14
+    - P7-15
     deliverable:
     - docs/gates/p7.md
     acceptance:
@@ -2105,3 +2132,25 @@ groups:
     - 'The two new budgets and full_compile_e1m1 hold in cargo xtask bench'
     verify:
     - 'cargo run --release -p xtask -- light-diff; cargo xtask bench'
+  - key: L-24
+    title: Make the side panels less text heavy
+    labels:
+    - L7-ui
+    - area:editor
+    - type:feature
+    size: M
+    reqs:
+    - UI-2
+    - UI-14
+    summary: |
+      Justin, 2026-11-15, approving P7-15: the side panels are still very text heavy. Zed's panels are the model: its project panel and outline panel show a file-type or symbol-kind icon on each row, collapse each level, and keep actions in a hover toolbar and the context menu rather than as text on the panel.
+    depends:
+    - P7-15
+    deliverable:
+    - 'apps/desktop: the Project, Symbols, Entities, Map and Properties panels show an icon per row kind (file type, symbol kind, entity class group, brush, layer, group) from the bundled Lucide font, collapse every level, and move their actions into an icon toolbar on hover and the context menu, as Zed''s project and outline panels do (zed-industries/zed@4a6121bb)'
+    - 'Each panel''s header text cut to its title; a panel''s explanation moves to its ? help (P7-11)'
+    acceptance:
+    - 'No side panel shows a text button: every action is an icon with a tooltip and an accessible name, or a context-menu item, checked by a test over the panels'
+    - 'The accessibility, snapshot and zoom tests pass at 100 and 200 percent'
+    verify:
+    - 'kittest tests; snapshot tests; Justin''s review of the snapshots'

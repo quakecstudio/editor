@@ -21,7 +21,7 @@ use egui_kittest::kittest::{NodeT as _, Queryable as _};
 use qs_commands::palette::search;
 use qs_commands::params::{self, Input};
 use qs_commands::remote::{Client, Host};
-use qs_layout::{Focus, Layout, Panel};
+use qs_layout::{DockPanel, Focus, Layout, Panel};
 use qs_map_edit::EntityIndex;
 use qs_map_edit::texture_import::project_wad;
 use qs_wad::write::WadBuilder;
@@ -31,6 +31,7 @@ use serde_json::json;
 use crate::debugger::place;
 use crate::display::Display;
 use crate::editor::Request;
+use crate::features::panel_topic;
 use crate::help::Topic;
 use crate::icons::Icon;
 use crate::keymap;
@@ -40,8 +41,8 @@ use crate::map_tools::Readout;
 use crate::palette::highlighted;
 use crate::shell::{CentreTab, EDITOR_AREA, PointerHeld, ZoomStep, commanded_size, dragged_size};
 use crate::strings::{
-    Text, command_count, exit_status, help_for, match_count, missing_textures, replace_with,
-    select_all_of,
+    Text, command_count, exit_status, help_for, icon_hint, match_count, missing_textures,
+    panel_button, replace_with, select_all_of,
 };
 use crate::theme::{Contrast, Mode, Motion, Theme, ThemeError, Token, semibold};
 use crate::{App, AppError};
@@ -373,14 +374,9 @@ fn the_window_paints_every_region() {
         Text::PreviewDocked,
         Text::Project,
         Text::NoProject,
-        Text::Entities,
         Text::NotPlaying,
         Text::Properties,
-        Text::Agent,
-        Text::NoAgent,
         Text::Problems,
-        Text::Console,
-        Text::Debugger,
         Text::NoProblems,
         Text::Editor,
         Text::Game,
@@ -850,6 +846,16 @@ fn accessible() -> Harness<'static, Option<App>> {
     harness
 }
 
+/// Shows `panel` in its dock through `view.show_panel`, keeping it shown when it already is
+/// (P7-15), then runs a frame.
+fn show_panel(harness: &mut Harness<'static, Option<App>>, panel: DockPanel) {
+    run_command_with(
+        harness,
+        qs_layout::SHOW_PANEL,
+        json!({ "panel": panel, "when_shown": "keep" }),
+    );
+}
+
 /// Runs the command `id` with `params` in `harness`'s app, then a frame.
 fn run_command_with(
     harness: &mut Harness<'static, Option<App>>,
@@ -884,11 +890,10 @@ fn every_area_and_control_has_a_name() {
         (Role::Pane, Text::Centre),
         (Role::Dialog, Text::CommandPalette),
         (Role::TextInput, Text::SearchCommands),
+        // P7-15: each dock shows one panel; the others are a status-bar button away.
         (Role::Heading, Text::Project),
-        (Role::Heading, Text::Symbols),
-        (Role::Heading, Text::Entities),
         (Role::Heading, Text::Properties),
-        (Role::Heading, Text::Agent),
+        (Role::Heading, Text::Problems),
         (Role::Button, Text::ToggleLeftPanel),
         (Role::Button, Text::ToggleRightPanel),
         (Role::Button, Text::ToggleBottomPanel),
@@ -896,12 +901,13 @@ fn every_area_and_control_has_a_name() {
         (Role::Button, Text::Editor),
         (Role::Button, Text::Game),
         (Role::Button, Text::Map),
-        (Role::Button, Text::Problems),
-        (Role::Button, Text::Console),
-        (Role::Button, Text::Debugger),
-        (Role::Button, Text::Terminal),
     ] {
         harness.get_by_role_and_label(role, text.get());
+    }
+    // P7-15: every panel's status-bar button, named for its panel.
+    for panel in DockPanel::ALL {
+        let (title, _) = panel_topic(panel);
+        harness.get_by_role_and_label(Role::Button, &panel_button(title.get()));
     }
     // The palette lists the play loop's commands too, so the toolbar's are the buttons whose
     // names end with the control's text.
@@ -971,7 +977,7 @@ fn focus_commands_reach_every_panel() {
             Role::Heading,
             Text::Properties,
         ),
-        (qs_layout::FOCUS_BOTTOM_PANEL, Role::Button, Text::Problems),
+        (qs_layout::FOCUS_BOTTOM_PANEL, Role::Heading, Text::Problems),
         (qs_layout::FOCUS_EDITOR, Role::Button, Text::Editor),
     ] {
         run_command(&mut harness, id);
@@ -1167,7 +1173,7 @@ fn an_extra_alt_runs_the_bindings_own_command() {
 fn the_debugger_tab_lists_breakpoints_and_steps_only_when_stopped() {
     let mut harness = accessible();
     harness
-        .get_by_role_and_label(Role::Button, Text::Debugger.get())
+        .get_by_role_and_label(Role::Button, &panel_button(Text::Debugger.get()))
         .click();
     harness.run();
     assert!(
@@ -1517,7 +1523,7 @@ fn a_task_runs_from_the_palette_and_its_exit_status_is_shown() {
     }
     harness.run();
     harness.get_by_label(&exit_status(3));
-    harness.get_by_role_and_label(Role::Button, Text::Terminal.get());
+    harness.get_by_role_and_label(Role::Heading, Text::Terminal.get());
     let shell = &harness.state().as_ref().unwrap().shell;
     let tab = shell
         .session()
@@ -1646,6 +1652,7 @@ fn go_to_symbol_the_outline_and_soft_wrap() {
     assert_eq!(caret_line(&harness), 10, "W_FireEmber's line");
     run_command(&mut harness, qs_layout::TOGGLE_OUTLINE);
     harness.run();
+    show_panel(&mut harness, DockPanel::Symbols);
     harness.get_by_role_and_label(Role::Pane, Text::Outline.get());
     // QA-16: the outline has its help.
     assert!(has_help(&harness, Topic::Outline));
@@ -1810,7 +1817,7 @@ fn the_git_tab_stages_and_commits_and_the_gutter_marks_changes() {
         .unwrap();
     harness.run();
     harness
-        .get_by_role_and_label(Role::Button, Text::Git.get())
+        .get_by_role_and_label(Role::Button, &panel_button(Text::Git.get()))
         .click();
     harness.run();
     harness.run();
@@ -2760,6 +2767,7 @@ fn the_outline_selects_frames_and_moves() {
     let shell = &mut harness.state_mut().as_mut().unwrap().shell;
     shell.execute("map.open", json!({ "path": path })).unwrap();
     harness.run();
+    show_panel(&mut harness, DockPanel::Map);
     harness.run();
     harness
         .get_by_role_and_label(Role::Button, "monster_ogre")
@@ -4659,21 +4667,34 @@ fn every_panel_tab_and_tool_has_help() {
     for topic in [
         Topic::Toolbar,
         Topic::Project,
-        Topic::Symbols,
-        Topic::Entities,
         Topic::Properties,
-        Topic::Agent,
         Topic::Problems,
         Topic::Editor,
     ] {
         assert!(has_help(&harness, topic), "{topic:?}");
     }
+    // P7-15: each panel has its help when its dock shows it.
+    for (panel, topic) in [
+        (DockPanel::Symbols, Topic::Symbols),
+        (DockPanel::Entities, Topic::Entities),
+        (DockPanel::Agent, Topic::Agent),
+    ] {
+        show_panel(&mut harness, panel);
+        assert!(has_help(&harness, topic), "{topic:?}");
+    }
+    show_panel(&mut harness, DockPanel::Project);
+    show_panel(&mut harness, DockPanel::Properties);
     assert_eq!(wordless_buttons(&harness), Vec::<String>::new());
+    for (panel, topic) in [
+        (DockPanel::Console, Topic::Console),
+        (DockPanel::Debugger, Topic::Debugger),
+        (DockPanel::Terminal, Topic::Terminal),
+        (DockPanel::Git, Topic::Git),
+    ] {
+        show_panel(&mut harness, panel);
+        assert!(has_help(&harness, topic), "{topic:?}");
+    }
     for (tab, topic) in [
-        (Text::Console, Topic::Console),
-        (Text::Debugger, Topic::Debugger),
-        (Text::Terminal, Topic::Terminal),
-        (Text::Git, Topic::Git),
         (Text::ProjectSearch, Topic::Search),
         (Text::Game, Topic::Game),
     ] {
@@ -4710,6 +4731,7 @@ fn every_panel_tab_and_tool_has_help() {
         .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
         .unwrap();
     harness.run();
+    show_panel(&mut harness, DockPanel::Map);
     for topic in [
         Topic::MapOutline,
         Topic::MapProperties,
@@ -4743,9 +4765,9 @@ fn every_panel_tab_and_tool_has_help() {
         .get_by_role_and_label(Role::Button, Text::MapToolBrush.get())
         .hover();
     harness.run();
+    let hint = icon_hint(Text::MapToolBrush.get(), Text::MapBrushHint.get());
     assert!(
-        harness.query_by_value(Text::MapBrushHint.get()).is_some()
-            || harness.query_all_by_label(Text::MapBrushHint.get()).count() > 0
+        harness.query_by_value(&hint).is_some() || harness.query_all_by_label(&hint).count() > 0
     );
 }
 
@@ -4939,7 +4961,7 @@ fn every_map_editor_control_has_a_name() {
     }
     for tab in [Text::Console, Text::Debugger, Text::Terminal, Text::Git] {
         harness
-            .get_by_role_and_label(Role::Button, tab.get())
+            .get_by_role_and_label(Role::Button, &panel_button(tab.get()))
             .click();
         harness.run();
         found.extend(
@@ -5045,6 +5067,49 @@ fn outside_the_keep(harness: &mut Harness<'static, Option<App>>) {
         .shell
         .set_map_camera(camera);
     harness.run();
+}
+
+// No spec statement: P7-15: as Zed's status-bar panel buttons, a click shows that panel in its
+// dock, a second click hides the dock, and the button's menu moves the panel to another dock,
+// where it then shows; the layout file keeps where each panel is
+#[test]
+fn the_status_bar_switches_hides_and_moves_panels() {
+    let mut harness = accessible();
+    let button = |panel: DockPanel| panel_button(panel_topic(panel).0.get());
+    let layout = |harness: &Harness<'static, Option<App>>| {
+        *harness.state().as_ref().unwrap().shell().layout()
+    };
+    harness
+        .get_by_role_and_label(Role::Button, &button(DockPanel::Symbols))
+        .click();
+    harness.run();
+    harness.get_by_role_and_label(Role::Heading, Text::Symbols.get());
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Heading, Text::Project.get())
+            .is_none(),
+        "one panel a dock"
+    );
+    harness
+        .get_by_role_and_label(Role::Button, &button(DockPanel::Symbols))
+        .click();
+    harness.run();
+    assert!(!layout(&harness).left.visible, "the dock hidden");
+    harness
+        .get_by_role_and_label(Role::Button, &button(DockPanel::Agent))
+        .click_secondary();
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::Button, Text::MoveToLeftDock.get())
+        .click();
+    harness.run();
+    let moved = layout(&harness);
+    assert_eq!(moved.docks.place(DockPanel::Agent), Panel::Left);
+    assert!(moved.left.visible, "shown where it went");
+    harness.get_by_role_and_label(Role::Heading, Text::Agent.get());
+    let written = toml::to_string(&moved.as_written()).unwrap();
+    let read: Layout = toml::from_str(&written).unwrap();
+    assert_eq!(read.docks, moved.docks);
 }
 
 // No spec statement: P7-12: a panel's contents wider than it never widen it: it keeps the size

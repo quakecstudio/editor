@@ -9,17 +9,19 @@
 
 use std::path::{Path, PathBuf};
 
+use eframe::egui::accesskit::Role;
 use eframe::egui::{self, Key};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
 use qs_editor_view::Position;
+use qs_layout::DockPanel;
 use qs_workbench::Location;
 
 use super::{counts, problem_text};
 use crate::App;
 use crate::icons::Icon;
 use crate::shell::EDITOR_AREA;
-use crate::strings::Text;
+use crate::strings::{Text, panel_button};
 
 /// The test project: two problems in `src/weapons.qc`, an error each, and a warning in
 /// `src/world.qc`.
@@ -28,6 +30,18 @@ fn fixture() -> PathBuf {
 }
 
 /// A headless window with the test project open.
+/// Shows `panel` in its dock (P7-15), then a frame.
+fn show(harness: &mut Harness<'static, Option<App>>, panel: DockPanel) {
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute(
+            qs_layout::SHOW_PANEL,
+            serde_json::json!({ "panel": panel, "when_shown": "keep" }),
+        )
+        .unwrap();
+    harness.run();
+}
+
 fn harness() -> Harness<'static, Option<App>> {
     let mut harness = Harness::builder()
         .with_size([1440.0, 900.0])
@@ -116,9 +130,9 @@ fn choosing_a_file_in_the_tree_opens_it() {
 #[test]
 fn choosing_a_symbol_opens_its_definition() {
     let mut harness = harness();
-    harness.get_by_label(Text::NoSymbols.get());
     harness.get_by_label("defs.qc").click();
     harness.run();
+    show(&mut harness, DockPanel::Symbols);
     for name in ["self", "time", "health", "BOUNCE_SPEED", "remove"] {
         harness.get_by_label(name);
     }
@@ -141,11 +155,10 @@ fn choosing_a_symbol_opens_its_definition() {
     assert_eq!(caret, Position::new(10, 7));
 }
 
-// P2-19: the Problems tab and the status bar count the problems.
+// P2-19: the status bar counts the problems, errors and warnings apart.
 #[test]
 fn the_problems_are_counted() {
     let harness = harness();
-    harness.get_by_label(&format!("{} 3", Text::Problems.get()));
     harness.get_by_label(&format!("{} 2", Icon::Error.char()));
     harness.get_by_label(&format!("{} 1", Icon::Warning.char()));
     let problems = app(&harness).shell().workbench().problems();
@@ -226,10 +239,10 @@ fn opening_the_shown_file_again_keeps_its_edits() {
     assert!(shell.editor_text().unwrap().starts_with("zz"));
 }
 
-// P2-19: a long tree and a long symbol list each scroll in their share of the left panel, so
-// the sections below them stay in the window.
+// P2-19, P7-15: a long symbol list scrolls in the Symbols panel, which keeps the whole dock,
+// so the status bar below it stays in the window.
 #[test]
-fn long_lists_leave_room_for_the_sections_below() {
+fn a_long_list_scrolls_in_its_panel() {
     let dir = std::env::temp_dir().join(format!("quakec-studio-long-{}", std::process::id()));
     let _ignored = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -255,13 +268,19 @@ fn long_lists_leave_room_for_the_sections_below() {
     app.shell_mut().open_project(&dir).unwrap();
     *harness.state_mut() = Some(app);
     harness.run();
+    show(&mut harness, DockPanel::Symbols);
     harness.get_by_label(Text::SymbolsAll.get()).click();
     harness.run();
-    let symbols = harness.get_by_label(Text::Symbols.get()).rect();
-    let entities = harness.get_by_label(Text::Entities.get()).rect();
+    let first = harness
+        .query_all_by_label_contains("g0a")
+        .map(|node| node.rect())
+        .min_by(|a, b| a.top().total_cmp(&b.top()))
+        .unwrap();
+    let status = harness
+        .get_by_role_and_label(Role::Button, &panel_button(Text::Symbols.get()))
+        .rect();
     let _ignored = std::fs::remove_dir_all(&dir);
-    assert!(symbols.bottom() < 900.0 * 0.6, "{symbols:?}");
-    // The Entities heading and its two lines of note, about 50 points, fit above the status
-    // bar at 866.
-    assert!(entities.bottom() + 50.0 < 866.0, "{entities:?}");
+    assert!(first.bottom() < status.top(), "{first:?} {status:?}");
+    // The status bar stays at the window's foot, 900 less its 34 points.
+    assert!(status.top() >= 866.0 - 1.0, "{status:?}");
 }

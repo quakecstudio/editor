@@ -541,12 +541,8 @@ pub enum Text {
     MapPlaceHint,
     /// Why a brush class in the entity browser cannot be dragged.
     MapBrushClass,
-    /// The map view's choice of the links it draws.
-    MapLinks,
     /// Every light's preview drawn, not only the selected ones' (P7-09).
     MapLightsAll,
-    /// Draw the links of the selection.
-    MapLinksSelected,
     /// Draw every link.
     MapLinksAll,
     /// The Select tool: pick, move and link entities.
@@ -961,11 +957,23 @@ pub enum Text {
     MapCurrentLayer,
     /// The view menu's entry extracting the selection into new linked groups (P7-08).
     MapExtractLinked,
+    /// What the links toggle of the map editor's toolbar does (P7-15).
+    MapLinksHint,
+    /// The Map panel with no map open in the centre (P7-15).
+    MapOutlineIdle,
+    /// A status-bar button's tooltip: what a click and a right-click do (P7-15).
+    PanelButtonHint,
+    /// The status-bar menu's entry moving a panel to the left dock (P7-15).
+    MoveToLeftDock,
+    /// The status-bar menu's entry moving a panel to the right dock (P7-15).
+    MoveToRightDock,
+    /// The status-bar menu's entry moving a panel to the bottom dock (P7-15).
+    MoveToBottomDock,
 }
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 474] = [
+    pub const ALL: [Self; 478] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1230,10 +1238,14 @@ impl Text {
         Self::MapNoPalette,
         Self::MapPlaceHint,
         Self::MapBrushClass,
-        Self::MapLinks,
         Self::MapLightsAll,
-        Self::MapLinksSelected,
         Self::MapLinksAll,
+        Self::MapLinksHint,
+        Self::MapOutlineIdle,
+        Self::PanelButtonHint,
+        Self::MoveToLeftDock,
+        Self::MoveToRightDock,
+        Self::MoveToBottomDock,
         Self::MapToolSelect,
         Self::MapToolBrush,
         Self::MapToolClip,
@@ -1731,10 +1743,18 @@ impl Text {
             Self::MapNoPalette => "No game palette",
             Self::MapPlaceHint => "Drag into the map to place",
             Self::MapBrushClass => "A brush entity: made from brushes",
-            Self::MapLinks => "Links",
             Self::MapLightsAll => "Every light",
-            Self::MapLinksSelected => "Selected",
             Self::MapLinksAll => "Every link",
+            Self::MapLinksHint => "draws every entity's links; off, only the selection's",
+            Self::PanelButtonHint => {
+                "shows it; click again to hide its dock; right-click to move it to another dock"
+            }
+            Self::MoveToLeftDock => "Move to the left dock",
+            Self::MoveToRightDock => "Move to the right dock",
+            Self::MoveToBottomDock => "Move to the bottom dock",
+            Self::MapOutlineIdle => {
+                "Open a map in the Map tab to see its layers, groups and entities."
+            }
             Self::MapToolSelect => "Select",
             Self::MapToolBrush => "Brush",
             Self::MapToolClip => "Clip",
@@ -2168,6 +2188,19 @@ pub fn issue_line(line: u32, message: &str) -> String {
     } else {
         format!("line {line}: {message}")
     }
+}
+
+/// The name of a panel's status-bar button: its title and "panel", as Zed's "Project Panel"
+/// (P7-15).
+#[must_use]
+pub fn panel_button(title: &str) -> String {
+    format!("{title} panel")
+}
+
+/// An icon button's tooltip: its name, then what it does (P7-15).
+#[must_use]
+pub fn icon_hint(name: &str, detail: &str) -> String {
+    format!("{name}: {detail}")
 }
 
 /// How many entities, brushes and faces a map search matched (P6-19, P7-08).

@@ -22,18 +22,19 @@ use crate::editors::EditorsFeature;
 use crate::entities::{self, EntityAction, Properties};
 use crate::git_panel::GitFeature;
 use crate::git_panel::{GitAction, GitView, git_ui};
-use crate::help::{self, Topic};
+use crate::help::Topic;
+use crate::icons::Icon;
 use crate::map_editor::{MapAction, MapEditor};
 use crate::map_feature::MapFeature;
 use crate::project::ProjectFeature;
 use crate::project::{self, Jump, SymbolScope};
-use crate::shell::{Area, FocusNow, SYMBOLS_SHARE, TREE_SHARE, heading_with_help, note, section};
-use crate::shell::{BottomTab, CentreTab, ShellError, Workspace};
+use crate::shell::{Area, FocusNow, heading_with_help, note, section};
+use crate::shell::{CentreTab, ShellError, Workspace};
 use crate::strings::Text;
 use crate::terminal::TerminalFeature;
 use crate::terminal::{TerminalAction, TerminalView, terminal_ui};
-use crate::theme::{SECTION_GAP, Theme, Token};
-use qs_layout::Panel;
+use crate::theme::{Theme, Token};
+use qs_layout::{DockPanel, Panel};
 
 /// The features, each with its state.
 pub(crate) struct Features {
@@ -83,8 +84,6 @@ pub(crate) enum MapShown {
 pub(crate) struct Dock<'a> {
     /// The workspace, read as the frame began.
     pub(crate) workspace: &'a Workspace,
-    /// The bottom panel's tab.
-    pub(crate) bottom_tab: &'a mut BottomTab,
     /// Which symbols the Symbols section lists.
     pub(crate) scope: &'a mut SymbolScope,
     /// Whether the centre shows the map.
@@ -108,8 +107,8 @@ pub(crate) enum FeatureAction {
 }
 
 impl Features {
-    /// Draws the panels of the dock region `panel` from the workspace as the frame began, and
-    /// returns what they asked for, in the order the shell carries it out.
+    /// Draws the panel the dock `panel` shows (P7-15), from the workspace as the frame began,
+    /// and returns what it asked for, in the order the shell carries it out.
     pub(crate) fn region_ui(
         &mut self,
         ui: &mut Ui,
@@ -118,74 +117,142 @@ impl Features {
         dock: Dock<'_>,
         focus: FocusNow,
     ) -> Vec<FeatureAction> {
+        match dock.workspace.layout.docks.shown(panel) {
+            Some(shown) => self.panel_ui(ui, theme, shown, dock, focus),
+            None => Vec::new(),
+        }
+    }
+
+    /// Draws the panel `shown`; its heading takes the keyboard when `focus` says so.
+    fn panel_ui(
+        &mut self,
+        ui: &mut Ui,
+        theme: &Theme,
+        shown: DockPanel,
+        dock: Dock<'_>,
+        focus: FocusNow,
+    ) -> Vec<FeatureAction> {
         let Dock {
             workspace,
-            bottom_tab,
             scope,
             map_shown,
         } = dock;
+        let take = focus == FocusNow::Take;
         let workbench = &workspace.workbench;
         let preview = &workspace.preview;
         let map_editor = (map_shown == MapShown::Shown && workbench.map().is_some())
             .then_some(&mut self.map.map_editor);
-        let mut jump = None;
-        let mut map_actions = Vec::new();
-        let mut entity_action = None;
-        let mut tab_action = None;
-        let mut agent_action = None;
-        let mut open: Option<LeftAction> = None;
-        match panel {
-            Panel::Left => {
+        let left = |asked: LeftAction| match asked {
+            LeftAction::Jump(to) => FeatureAction::Jump(to),
+            asked => FeatureAction::Left(asked),
+        };
+        match shown {
+            DockPanel::Project => {
                 let recent = (
                     self.project.recent_projects(),
                     self.project.error.as_deref(),
                 );
-                match left(ui, theme, (workbench, recent), scope, focus) {
-                    Some(LeftAction::Jump(to)) => jump = Some(to),
-                    asked => open = asked,
-                }
-                ui.add_space(theme.space(SECTION_GAP));
-                if preview.state() == PlayState::Stopped {
-                    section(ui, theme, Topic::Entities, Text::NotPlaying);
-                } else {
-                    heading_with_help(ui, theme, Text::Entities, Topic::Entities);
-                    entity_action =
-                        entities::outliner(ui, theme, preview.entities(), &mut self.map.outliner);
-                }
-                if let Some(editor) = map_editor {
-                    ui.add_space(theme.space(SECTION_GAP));
-                    heading_with_help(ui, theme, Text::Map, Topic::MapOutline);
-                    let selected = workbench.map().and_then(MapDocument::selected);
-                    map_actions = editor.outline_ui(ui, theme, selected);
-                }
+                project_panel(ui, theme, (workbench, recent), focus)
+                    .map(left)
+                    .into_iter()
+                    .collect()
             }
-            Panel::Right => {
-                let panels = (&mut self.map.properties, &mut self.agent.panel, map_editor);
-                let asked = right(ui, theme, (workbench, preview), panels, focus);
-                (entity_action, agent_action, map_actions) = asked;
-            }
-            Panel::Bottom => {
-                match bottom(
+            DockPanel::Symbols => {
+                let heading = heading_with_help(ui, theme, Text::Symbols, Topic::Symbols);
+                if take {
+                    heading.request_focus();
+                }
+                let height = ui.available_height();
+                project::symbols_ui(
                     ui,
                     theme,
-                    bottom_tab,
+                    scope,
+                    workbench.open(),
+                    workbench.project_symbols(),
+                    height,
+                )
+                .map(FeatureAction::Jump)
+                .into_iter()
+                .collect()
+            }
+            DockPanel::Entities => {
+                let heading = if preview.state() == PlayState::Stopped {
+                    section(ui, theme, Topic::Entities, Text::NotPlaying)
+                } else {
+                    let heading = heading_with_help(ui, theme, Text::Entities, Topic::Entities);
+                    let asked =
+                        entities::outliner(ui, theme, preview.entities(), &mut self.map.outliner);
+                    if take {
+                        heading.request_focus();
+                    }
+                    return asked.map(FeatureAction::Entity).into_iter().collect();
+                };
+                if take {
+                    heading.request_focus();
+                }
+                Vec::new()
+            }
+            DockPanel::Map => match map_editor {
+                Some(editor) => {
+                    let heading = heading_with_help(ui, theme, Text::Map, Topic::MapOutline);
+                    if take {
+                        heading.request_focus();
+                    }
+                    let selected = workbench.map().and_then(MapDocument::selected);
+                    vec![FeatureAction::Map(editor.outline_ui(ui, theme, selected))]
+                }
+                None => {
+                    let heading = section(ui, theme, Topic::MapOutline, Text::MapOutlineIdle);
+                    if take {
+                        heading.request_focus();
+                    }
+                    Vec::new()
+                }
+            },
+            DockPanel::Properties => {
+                let (entity, map) = properties_panel(
+                    ui,
+                    theme,
+                    (workbench, preview),
+                    (&mut self.map.properties, map_editor),
+                    focus,
+                );
+                let mut actions = vec![FeatureAction::Map(map)];
+                actions.extend(entity.map(FeatureAction::Entity));
+                actions
+            }
+            DockPanel::Agent => {
+                let heading = heading_with_help(ui, theme, Text::Agent, Topic::Agent);
+                if take {
+                    heading.request_focus();
+                }
+                self.agent
+                    .panel
+                    .ui(ui, theme, &workbench.staged_hunks())
+                    .map(FeatureAction::Agent)
+                    .into_iter()
+                    .collect()
+            }
+            DockPanel::Problems
+            | DockPanel::Console
+            | DockPanel::Debugger
+            | DockPanel::Terminal
+            | DockPanel::Git => {
+                let asked = bottom_panel(
+                    ui,
+                    theme,
+                    shown,
                     (workbench, preview, &mut self.debugger.input),
                     (&mut self.terminal.view, &mut self.git.view),
                     focus,
-                ) {
-                    Some(BottomAction::Jump(to)) => jump = Some(to),
-                    Some(asked) => tab_action = Some(asked),
-                    None => {}
+                );
+                match asked {
+                    Some(BottomAction::Jump(to)) => vec![FeatureAction::Jump(to)],
+                    Some(asked) => vec![FeatureAction::Bottom(asked)],
+                    None => Vec::new(),
                 }
             }
         }
-        let mut actions: Vec<FeatureAction> = jump.map(FeatureAction::Jump).into_iter().collect();
-        actions.push(FeatureAction::Map(map_actions));
-        actions.extend(entity_action.map(FeatureAction::Entity));
-        actions.extend(tab_action.map(FeatureAction::Bottom));
-        actions.extend(agent_action.map(FeatureAction::Agent));
-        actions.extend(open.map(FeatureAction::Left));
-        actions
     }
 }
 
@@ -211,8 +278,8 @@ pub(crate) enum ShellRequest {
     /// Bring the editor up to date with the open file, its change marks included, after an
     /// action that may have changed it on disk.
     RefreshEditor,
-    /// Show the bottom panel's `tab`, opening the panel.
-    ShowBottom(BottomTab),
+    /// Show `panel` in its dock, opening the dock (P7-15).
+    ShowPanel(DockPanel),
     /// Show the centre's `tab`.
     ShowCentre(CentreTab),
     /// Open the guide to the game's files when some are missing (P3-21).
@@ -292,68 +359,82 @@ impl<'a> Commands<'a> {
     }
 }
 
-/// The left panel's Project and Symbols sections; the row chosen, if any.
-pub(crate) fn left(
+/// A dock panel's status-bar icon (P7-15).
+pub(crate) const fn panel_icon(panel: DockPanel) -> Icon {
+    match panel {
+        DockPanel::Project => Icon::Project,
+        DockPanel::Symbols => Icon::Symbols,
+        DockPanel::Entities => Icon::Entities,
+        DockPanel::Map => Icon::MapOutline,
+        DockPanel::Properties => Icon::Properties,
+        DockPanel::Agent => Icon::Agent,
+        DockPanel::Problems => Icon::Problems,
+        DockPanel::Console => Icon::Console,
+        DockPanel::Debugger => Icon::Debugger,
+        DockPanel::Terminal => Icon::Terminal,
+        DockPanel::Git => Icon::Git,
+    }
+}
+
+/// What a dock panel is: its title and its help.
+pub(crate) const fn panel_topic(panel: DockPanel) -> (Text, Topic) {
+    match panel {
+        DockPanel::Project => (Text::Project, Topic::Project),
+        DockPanel::Symbols => (Text::Symbols, Topic::Symbols),
+        DockPanel::Entities => (Text::Entities, Topic::Entities),
+        DockPanel::Map => (Text::Map, Topic::MapOutline),
+        DockPanel::Properties => (Text::Properties, Topic::Properties),
+        DockPanel::Agent => (Text::Agent, Topic::Agent),
+        DockPanel::Problems => (Text::Problems, Topic::Problems),
+        DockPanel::Console => (Text::Console, Topic::Console),
+        DockPanel::Debugger => (Text::Debugger, Topic::Debugger),
+        DockPanel::Terminal => (Text::Terminal, Topic::Terminal),
+        DockPanel::Git => (Text::Git, Topic::Git),
+    }
+}
+
+/// The Project panel: the open project's files, or how to open one; the row chosen, if any.
+/// Its heading takes the keyboard when `focus` says so.
+pub(crate) fn project_panel(
     ui: &mut Ui,
     theme: &Theme,
     (workbench, (recent, error)): (&Workbench<FsLoader>, (&[PathBuf], Option<&str>)),
-    scope: &mut SymbolScope,
     focus: FocusNow,
 ) -> Option<LeftAction> {
-    let focus = focus == FocusNow::Take;
-    let height = ui.available_height();
-    let mut jump = None;
     let project = heading_with_help(ui, theme, Text::Project, Topic::Project);
-    if focus {
+    if focus == FocusNow::Take {
         project.request_focus();
     }
-    match workbench.root() {
-        None => {
-            if let Some(action) = no_project(ui, theme, recent, error) {
-                return Some(action);
-            }
-        }
-        Some(root) => {
-            ui.label(RichText::new(project::root_name(root)).strong());
-            let open = workbench.open().map(OpenFile::path);
-            egui::ScrollArea::vertical()
-                .id_salt(Area::Section(Text::Project))
-                .max_height(height * TREE_SHARE)
-                .auto_shrink([false, true])
-                .show(ui, |ui| {
-                    let rows = project::Rows {
-                        open,
-                        unsaved: &|path| workbench.is_unsaved(path),
-                        mark: theme.color(Token::StatusWarn),
-                    };
-                    jump = project::tree_ui(ui, workbench.tree(), &rows);
-                });
-        }
-    }
-    ui.add_space(theme.space(SECTION_GAP));
-    heading_with_help(ui, theme, Text::Symbols, Topic::Symbols);
-    let symbols = project::symbols_ui(
-        ui,
-        theme,
-        scope,
-        workbench.open(),
-        workbench.project_symbols(),
-        height * SYMBOLS_SHARE,
-    );
-    jump.or(symbols).map(LeftAction::Jump)
+    let Some(root) = workbench.root() else {
+        return no_project(ui, theme, recent, error);
+    };
+    ui.label(RichText::new(project::root_name(root)).strong());
+    let open = workbench.open().map(OpenFile::path);
+    egui::ScrollArea::vertical()
+        .id_salt(Area::Section(Text::Project))
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            let rows = project::Rows {
+                open,
+                unsaved: &|path| workbench.is_unsaved(path),
+                mark: theme.color(Token::StatusWarn),
+            };
+            project::tree_ui(ui, workbench.tree(), &rows)
+        })
+        .inner
+        .map(LeftAction::Jump)
 }
 
-/// The right panel: the Properties of the selected entity while the game runs, or the key
-/// editor of the open map's while the Map tab shows it (P5-06), then the agent panel (P4-09);
-/// what each asked for. Its first heading takes the keyboard when `focus`.
-pub(crate) fn right(
+/// The Properties panel: the selected entity's while the game runs, or the key editor of the
+/// open map's while the Map tab shows it (P5-06); what it asked for. Its heading takes the
+/// keyboard when `take`.
+pub(crate) fn properties_panel(
     ui: &mut Ui,
     theme: &Theme,
     (workbench, preview): (&Workbench<FsLoader>, &Preview),
-    (properties, agent, map_editor): (&mut Properties, &mut AgentPanel, Option<&mut MapEditor>),
+    (properties, map_editor): (&mut Properties, Option<&mut MapEditor>),
     focus: FocusNow,
-) -> (Option<EntityAction>, Option<AgentAction>, Vec<MapAction>) {
-    let focus = focus == FocusNow::Take;
+) -> (Option<EntityAction>, Vec<MapAction>) {
     let mut entity_action = None;
     let mut map_actions = Vec::new();
     let first = if let Some(map_editor) = map_editor {
@@ -368,79 +449,58 @@ pub(crate) fn right(
         entity_action = entities::properties(ui, theme, preview, properties);
         first
     };
-    if focus {
+    if focus == FocusNow::Take {
         first.request_focus();
     }
-    ui.add_space(theme.space(SECTION_GAP));
-    heading_with_help(ui, theme, Text::Agent, Topic::Agent);
-    let agent_action = agent.ui(ui, theme, &workbench.staged_hunks());
-    (entity_action, agent_action, map_actions)
+    (entity_action, map_actions)
 }
 
-/// The bottom panel: its tabs, and the Problems list, the console or the Debugger tab; what a
-/// click in it asked for, if anything.
-pub(crate) fn bottom(
+/// A bottom panel, `shown`: the Problems list, the console, the Debugger, the terminals or Git,
+/// under its heading and help; what a click in it asked for, if anything.
+pub(crate) fn bottom_panel(
     ui: &mut Ui,
     theme: &Theme,
-    tab: &mut BottomTab,
+    shown: DockPanel,
     (workbench, preview, input): (&Workbench<FsLoader>, &Preview, &mut DebugInput),
     (terminal_view, git_view): (&mut TerminalView, &mut GitView),
     focus: FocusNow,
 ) -> Option<BottomAction> {
-    let focus = focus == FocusNow::Take;
     let problems = workbench.problems();
-    // Wrapping, so with large text (P7-12) a tab never runs past the panel's edge.
-    ui.horizontal_wrapped(|ui| {
-        for (value, text) in [
-            (BottomTab::Problems, Text::Problems),
-            (BottomTab::Console, Text::Console),
-            (BottomTab::Debugger, Text::Debugger),
-            (BottomTab::Terminal, Text::Terminal),
-            (BottomTab::Git, Text::Git),
-        ] {
-            let label = match (value, problems.len()) {
-                (BottomTab::Problems, shown @ 1..) => format!("{} {shown}", text.get()),
-                _ => text.get().to_owned(),
-            };
-            let response = ui.selectable_value(tab, value, label);
-            if focus && *tab == value {
-                response.request_focus();
-            }
-        }
-        let topic = match tab {
-            BottomTab::Problems => Topic::Problems,
-            BottomTab::Console => Topic::Console,
-            BottomTab::Debugger => Topic::Debugger,
-            BottomTab::Terminal => Topic::Terminal,
-            BottomTab::Git => Topic::Git,
-        };
-        help::button(ui, theme, topic);
-    });
-    ui.separator();
-    match tab {
-        BottomTab::Problems => {
+    let (title, topic) = panel_topic(shown);
+    let heading = heading_with_help(ui, theme, title, topic);
+    if focus == FocusNow::Take {
+        heading.request_focus();
+    }
+    match shown {
+        DockPanel::Problems => {
             if !problems.is_empty() && ui.small_button(Text::OpenAsMultibuffer.get()).clicked() {
                 return Some(BottomAction::ProblemsAsExcerpts);
             }
             project::problems_ui(ui, theme, problems, workbench.root()).map(BottomAction::Jump)
         }
-        BottomTab::Console if preview.state() != PlayState::Stopped => {
+        DockPanel::Console if preview.state() != PlayState::Stopped => {
             debugger::console(ui, theme, preview, input).map(BottomAction::Debug)
         }
-        BottomTab::Console => {
+        DockPanel::Console => {
             note(ui, theme, Text::ConsoleIdle);
             None
         }
-        BottomTab::Debugger => {
+        DockPanel::Debugger => {
             debugger::debugger_ui(ui, theme, preview, input).map(BottomAction::Debug)
         }
-        BottomTab::Terminal => {
+        DockPanel::Terminal => {
             terminal_ui(ui, theme, workbench.terminals(), terminal_view).map(BottomAction::Terminal)
         }
-        BottomTab::Git => {
+        DockPanel::Git => {
             let open = workbench.open().map(|open| open.path().to_path_buf());
             git_ui(ui, theme, git_view, open.as_ref()).map(BottomAction::Git)
         }
+        DockPanel::Project
+        | DockPanel::Symbols
+        | DockPanel::Entities
+        | DockPanel::Map
+        | DockPanel::Properties
+        | DockPanel::Agent => None,
     }
 }
 

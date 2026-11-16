@@ -627,6 +627,18 @@ fn the_editors_colours_are_the_themes() {
 #[test]
 fn the_breadcrumb_follows_the_caret() {
     let mut harness = harness("src/weapons.qc");
+    // P7-15: the left dock shows the Symbols panel.
+    harness
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .shell_mut()
+        .execute(
+            qs_layout::SHOW_PANEL,
+            json!({ "panel": "symbols", "when_shown": "keep" }),
+        )
+        .unwrap();
+    harness.run();
     let count = |harness: &H, name: &str| harness.query_all_by_label(name).count();
     caret_at(&mut harness, "ember.bounces", 0, 0);
     harness.run();
@@ -636,7 +648,11 @@ fn the_breadcrumb_follows_the_caret() {
         "the list and the breadcrumb"
     );
     assert_eq!(count(&harness, "Ember_Touch"), 1, "the list only");
-    assert_eq!(count(&harness, "src"), 2, "the tree and the breadcrumb");
+    assert_eq!(
+        count(&harness, "src"),
+        1,
+        "the breadcrumb; the tree is in the Project panel, not shown"
+    );
     caret_at(&mut harness, "Ember_Touch", 0, 0);
     harness.run();
     assert_eq!(count(&harness, "W_FireEmber"), 1);

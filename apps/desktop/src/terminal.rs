@@ -13,10 +13,11 @@ use qs_workbench::{TERMINAL_CLOSE, TERMINAL_NEW, TERMINAL_POLL, TERMINAL_SEND};
 
 use crate::features::{Commands, ShellRequest};
 use crate::icons::Icon;
+use crate::shell::PREVIEW_POLL;
 use crate::shell::name_field;
-use crate::shell::{BottomTab, PREVIEW_POLL};
 use crate::strings::{Text, exit_status};
 use crate::theme::{Theme, Token};
+use qs_layout::DockPanel;
 
 /// The most lines of a tab's output drawn; older ones are kept but not shown.
 const SHOWN_LINES: usize = 2000;
@@ -190,7 +191,7 @@ impl TerminalFeature {
         }
         self.view
             .opened(terminals.tabs().len())
-            .then_some(ShellRequest::ShowBottom(BottomTab::Terminal))
+            .then_some(ShellRequest::ShowPanel(DockPanel::Terminal))
     }
 }
 

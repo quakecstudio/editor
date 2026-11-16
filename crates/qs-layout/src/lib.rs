@@ -21,6 +21,7 @@ use qs_commands::{Command, NoParams, Outcome, RegisterError, Registry};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+mod docks;
 mod editor;
 mod map_camera;
 mod map_grid;
@@ -29,6 +30,9 @@ mod map_view;
 mod tests;
 mod zoom;
 
+pub use docks::{
+    DockPanel, Docks, MOVE_PANEL, MovePanelParams, SHOW_PANEL, ShowPanelParams, WhenShown,
+};
 pub use editor::{
     CLOSE_SPLIT, EditorRequest, FOLD, FOLD_ALL, GO_TO_LINE, GO_TO_SYMBOL, GoToLineParams, Outline,
     PROJECT_SEARCH_VIEW, SPLIT_DOWN, SPLIT_RIGHT, SoftWrap, Split, TAB_SWITCHER, TOGGLE_OUTLINE,
@@ -128,6 +132,8 @@ pub struct Layout {
     pub map_camera: MapCamera,
     /// How large the interface is drawn (P7-12).
     pub zoom: Zoom,
+    /// Which panel each dock shows and which dock each panel is in (P7-15).
+    pub docks: Docks,
     /// The last one-off editor action a command asked for, which the window carries out once.
     /// Not written to the file.
     #[serde(skip)]
@@ -165,6 +171,7 @@ impl Default for Layout {
             map_grid: MapGrid::DEFAULT,
             map_camera: MapCamera::default(),
             zoom: Zoom::ACTUAL,
+            docks: Docks::default(),
             editor_request: None,
             editor_requests: 0,
         }
@@ -347,6 +354,7 @@ pub fn register<C: HasLayout + 'static>(registry: &mut Registry<C>) -> Result<()
     map_grid::register(registry)?;
     map_camera::register(registry)?;
     zoom::register(registry)?;
+    docks::register(registry)?;
     editor::register(registry)
 }
 
