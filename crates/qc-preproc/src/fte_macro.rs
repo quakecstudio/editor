@@ -31,6 +31,9 @@ use crate::{
     moved_frames, quote_bytes,
 };
 
+/// A block comment's `/*` and `*/`, past which its end is.
+const COMMENT_MARKS: usize = 4;
+
 /// The most parameters an FTEQCC macro has: `MAXCONSTANTPARAMS` in FTEQCC's `qcc.h`,
 /// `#define MAXCONSTANTPARAMS 32` (FTEF-14.23).
 const FTE_MAX_PARAMS: usize = 32;
@@ -963,9 +966,18 @@ struct Writer<'a> {
     strays: std::cell::RefCell<Vec<(Vec<u8>, FileSpan)>>,
     /// What `#__VA_ARGS__` writes.
     variadics: Variadics,
+    /// GMQ-21.6: each argument macro-expanded alone, as C replaces a parameter by, where the
+    /// C preprocessor runs; empty under FTEQCC, which writes an argument as it is.
+    expanded: &'a [Text],
 }
 
 impl Writer<'_> {
+    /// GMQ-21.6: the argument `index` as it expands alone, when the C preprocessor's rule
+    /// holds.
+    fn expanded(&self, index: usize) -> Option<&Text> {
+        self.expanded.get(index)
+    }
+
     /// The variadic argument, when one was given: `if (param-1 == c->numparams)`.
     fn rest(&self) -> Option<&Text> {
         let named = self.params.len();
@@ -1081,19 +1093,24 @@ impl Writer<'_> {
                 break;
             };
             at = word.next;
+            let mut after = at;
+            while byte_at(bytes, after).is_some_and(is_fteqcc_whitespace) {
+                after = after.saturating_add(1);
+            }
+            let pasted = noargexpand || bytes.get(after..after.saturating_add(2)) == Some(b"##");
+            let index = self.params.iter().position(|p| p.as_slice() == word.token);
             if let Some(arg) = self.argument_of(&word.token) {
-                let mut after = at;
-                while byte_at(bytes, after).is_some_and(is_fteqcc_whitespace) {
-                    after = after.saturating_add(1);
-                }
-                let before_paste = bytes.get(after..after.saturating_add(2)) == Some(b"##");
-                if noargexpand || before_paste {
-                    out.push_from(arg, 0..arg.bytes.len());
-                } else {
-                    self.argument(arg, &mut out);
+                match index.and_then(|i| self.expanded(i)).filter(|_| !pasted) {
+                    Some(expanded) => out.push_from(expanded, 0..expanded.bytes.len()),
+                    None if pasted => out.push_from(arg, 0..arg.bytes.len()),
+                    None => self.argument(arg, &mut out),
                 }
             } else if self.variadic == Variadic::Yes && word.token == b"__VA_ARGS__" {
                 if let Some(arg) = self.rest() {
+                    let arg = self
+                        .expanded(self.params.len())
+                        .filter(|_| !pasted)
+                        .unwrap_or(arg);
                     out.push_from(arg, 0..arg.bytes.len());
                 } else if noargexpand && out.bytes.last() == Some(&b',') {
                     out.truncate(out.bytes.len().saturating_sub(1));
@@ -1177,6 +1194,29 @@ impl Writer<'_> {
     }
 }
 
+/// What follows a use's end in the text it stands in, for a rescan (GMQ-21.3).
+enum Group {
+    /// Nothing but white space: the text ends.
+    Ended,
+    /// A parenthesised group, which ends before this offset.
+    At(usize),
+}
+
+impl Group {
+    /// What follows `from` in `bytes`: `None` for something other than a group.
+    fn after(bytes: &[u8], from: usize) -> Option<Self> {
+        let Some(open) =
+            (from..bytes.len()).find(|&at| !bytes.get(at).is_some_and(u8::is_ascii_whitespace))
+        else {
+            return Some(Self::Ended);
+        };
+        if bytes.get(open) != Some(&b'(') {
+            return None;
+        }
+        matching_paren(bytes, open).map(|close| Self::At(close.saturating_add(1)))
+    }
+}
+
 /// The offset of the `)` that closes the `(` at `open` in `bytes`, past the strings and
 /// comments between.
 fn matching_paren(bytes: &[u8], open: usize) -> Option<usize> {
@@ -1232,8 +1272,6 @@ fn markup(bytes: &[u8]) -> Vec<u8> {
 /// before the first or after the last; `\` before each `"` and `\` of a string literal or a
 /// character constant, and every other byte as it is spelled.
 fn c_stringize(bytes: &[u8]) -> Vec<u8> {
-    // A block comment's `/*` and `*/`, past which its end is.
-    const COMMENT_MARKS: usize = 4;
     let mut out = Vec::with_capacity(bytes.len().saturating_add(2));
     out.push(b'"');
     let mut space = false;
@@ -1481,6 +1519,16 @@ impl<L: Loader> Preprocessor<L> {
                 let file = Self::fte_file_name(run).to_vec();
                 let line = use_.argument_line;
                 let builtin = move |word: &[u8]| builtin_text(word, line, &file);
+                // GMQ-21.6: under GMQCC each argument is expanded alone first.
+                let expanded: Vec<Text> = if self.dialect == Dialect::Gmqcc {
+                    let parent = (mac.as_ref(), item.tok.expansion);
+                    call.args
+                        .iter()
+                        .map(|arg| self.pre_expand(run, arg, (&name, use_.span), parent))
+                        .collect()
+                } else {
+                    Vec::new()
+                };
                 let writer = Writer {
                     body,
                     params,
@@ -1495,6 +1543,7 @@ impl<L: Loader> Preprocessor<L> {
                     } else {
                         Variadics::Fteqcc
                     },
+                    expanded: &expanded,
                 };
                 let written = writer.write().map(Rc::new);
                 // FTEF-14.78: `if (!c->evil) QCC_PR_ParseWarning(0, "'#%s' is not a macro
@@ -1561,6 +1610,86 @@ impl<L: Loader> Preprocessor<L> {
         None
     }
 
+    /// GMQ-21.6: the argument `arg` of the use `use_span` of the macro `name` as C replaces a
+    /// parameter by: "each argument's preprocessing tokens are completely macro replaced as if
+    /// they formed the rest of the preprocessing file" (C11 6.10.3.1). It is read as a chunk of
+    /// its own with nothing after it, the text it stands in set aside, and each macro in it
+    /// expanded; the tokens left are its text, a space between two that do not touch.
+    fn pre_expand(
+        &mut self,
+        run: &mut Run,
+        arg: &Text,
+        (name, use_span): (&str, FileSpan),
+        (mac, parent): (&Macro, Option<ExpansionId>),
+    ) -> Text {
+        if arg.bytes.trim_ascii().is_empty() {
+            return arg.clone();
+        }
+        let outer = run.set_aside_chunks();
+        let cursors = std::mem::take(&mut run.cursors);
+        let pending = std::mem::take(&mut run.pending);
+        let id = ExpansionId::new(self.expansions.len());
+        self.expansions.push(Expansion {
+            name: name.to_owned(),
+            use_span,
+            definition: FileSpan {
+                file: mac.file,
+                span: mac.name_span,
+            },
+            parent,
+        });
+        let stream = TokenStream::lex(arg.bytes(), self.lexing());
+        let breaks = (0..arg.bytes.len())
+            .filter(|&at| arg.bytes.get(at) == Some(&b'\n'))
+            .collect();
+        run.open_chunk(ChunkReader {
+            text: Rc::new(arg.clone()),
+            line: 0,
+            file_name: None,
+            line_base: None,
+            id,
+            at: use_span,
+            name: String::new(),
+            stream,
+            consumed: Vec::new(),
+            breaks,
+            detached: false,
+        });
+        let mut tokens: Vec<PpToken> = Vec::new();
+        while let Some(item) = self.next_item(run) {
+            if let Some(item) = self.fte_try_expand(run, item) {
+                tokens.push(item.tok);
+            }
+        }
+        run.restore_chunks(outer);
+        run.cursors = cursors;
+        run.pending = pending;
+        let mut out = Text::default();
+        let mut last: Option<&PpToken> = None;
+        for tok in &tokens {
+            if last.is_some_and(|last| !tok.touches(last)) {
+                out.push(b" ", Origin::Made(tok.span));
+            }
+            match &tok.spelling {
+                Some(spelling) => out.push(spelling.as_bytes(), Origin::Made(tok.span)),
+                None => {
+                    let bytes = self
+                        .sources
+                        .file(tok.span.file)
+                        .and_then(|file| file.text.get(tok.span.span.range()))
+                        .unwrap_or_default();
+                    let origin = Origin::Copied {
+                        file: tok.span.file,
+                        at: tok.span.span.start,
+                    };
+                    out.push(bytes, origin);
+                }
+            }
+            last = Some(tok);
+        }
+        out
+    }
+
     /// The built-in constant the name `item` is, when no macro has its name (FTEF-14.7): the text
     /// `QCC_PR_CheckBuiltinCompConst` writes for it ([`builtin_text`]), read as a chunk of its
     /// own (`QCC_PR_IncludeChunkEx(tok, true, NULL, NULL);`) before the text after the name, so
@@ -1621,7 +1750,7 @@ impl<L: Loader> Preprocessor<L> {
     /// `resume` is moved past the group taken.
     fn cpp_rescan(
         &self,
-        run: &Run,
+        run: &mut Run,
         item: &Item,
         text: Rc<Text>,
         resume: &mut Option<usize>,
@@ -1645,23 +1774,68 @@ impl<L: Loader> Preprocessor<L> {
         };
         let from = resume.unwrap_or(name_end);
         let outer = bytes.bytes();
-        let Some(open) =
-            (from..outer.len()).find(|&at| !outer.get(at).is_some_and(u8::is_ascii_whitespace))
-        else {
+        let Some(group) = Group::after(outer, from) else {
             return text;
         };
-        if outer.get(open) != Some(&b'(') {
-            return text;
-        }
-        let Some(close) = matching_paren(outer, open) else {
-            return text;
+        let taken = match group {
+            Group::At(after) => {
+                *resume = Some(after);
+                bytes.reading().copy(from..after)
+            }
+            // The text ends after the use: the group is looked for in the text around it.
+            Group::Ended if matches!(item.place, Place::Chunk(_)) => match self.group_below(run) {
+                Some(taken) => taken,
+                None => return text,
+            },
+            Group::Ended => return text,
         };
-        let after = close.saturating_add(1);
-        let taken = bytes.reading().copy(from..after);
         let mut joined = (*text).clone();
         joined.push_from(&taken, 0..taken.bytes.len());
-        *resume = Some(after);
         Rc::new(joined)
+    }
+
+    /// GMQ-21.3: the parenthesised group that follows the end of the chunk being read, in the
+    /// first text below it that goes on, a chunk's or the file's, read on past it; `None` when
+    /// what follows is no group.
+    fn group_below(&self, run: &mut Run) -> Option<Text> {
+        let lexing = self.lexing();
+        let below = run.chunks().len().saturating_sub(1);
+        for k in (0..below).rev() {
+            let chunk = run.chunks().get(k)?;
+            let text = chunk.text.bytes();
+            let from = chunk
+                .stream
+                .tokens
+                .get(chunk.stream.pos)
+                .map_or(text.len(), |t| t.span.start);
+            match Group::after(text, from)? {
+                Group::Ended => {}
+                Group::At(after) => {
+                    let taken = chunk.bytes().reading().copy(from..after);
+                    let chunk = run.chunk_at_mut(k)?;
+                    chunk.stream.resume_at(&chunk.text.bytes, after, lexing);
+                    chunk.consumed.push(Span::new(from, after));
+                    return Some(taken);
+                }
+            }
+        }
+        let cursor = run.cursors.last()?;
+        let file = self.sources.file(cursor.file)?;
+        let from = cursor
+            .stream
+            .tokens
+            .get(cursor.stream.pos)
+            .map_or(file.text.len(), |t| t.span.start);
+        let Group::At(after) = Group::after(&file.text, from)? else {
+            return None;
+        };
+        let taken = Bytes::File(cursor.file, Rc::clone(&file.text))
+            .reading()
+            .copy(from..after);
+        let cursor = run.cursors.last_mut()?;
+        cursor.stream.resume_at(&file.text, after, lexing);
+        cursor.skipped.push(Span::new(from, after));
+        Some(taken)
     }
 
     /// The text the name `item` stands in and the offset after the name: the innermost chunk
@@ -1803,6 +1977,25 @@ impl<L: Loader> Preprocessor<L> {
             if byte == b'"' {
                 at = string_end(text, at);
                 byte = byte_at(text, at).ok_or(ScanEnd::Eof)?;
+            }
+            // GMQ-21.7: under GMQCC a comment inside an argument is white space, as the C
+            // preprocessor takes comments out first, so a `,` or `)` in it ends nothing.
+            if self.dialect == Dialect::Gmqcc
+                && byte == b'/'
+                && matches!(byte_at(text, at.saturating_add(1)), Some(b'/' | b'*'))
+            {
+                // A line comment to its line break, which a directive after it may follow.
+                at = if byte_at(text, at.saturating_add(1)) == Some(b'/') {
+                    (at..text.len())
+                        .find(|&i| byte_at(text, i) == Some(b'\n'))
+                        .unwrap_or(text.len())
+                } else {
+                    text.get(at.saturating_add(2)..)
+                        .and_then(|rest| rest.windows(2).position(|w| w == b"*/"))
+                        .map(|end| at.saturating_add(end).saturating_add(COMMENT_MARKS))
+                        .ok_or(ScanEnd::Unclosed)?
+                };
+                continue;
             }
             // GMQ-21.4: under GMQCC a directive at the start of a line inside an argument is
             // run, as the C preprocessor Xonotic runs first runs it; the argument is its text

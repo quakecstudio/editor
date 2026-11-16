@@ -1030,7 +1030,7 @@ fn a_directive_inside_a_macro_argument_is_run_under_gmqcc() {
     loader.insert("a.qc", text.as_bytes());
     let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Gmqcc);
     let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
-    assert_eq!(touching(&out), r#"f(m, "b") ; f(k, x y 1 ) ;"#);
+    assert_eq!(touching(&out), r#"f(m, "b") ; f(k, x y 1) ;"#);
     assert!(codes(&out).is_empty(), "{:?}", codes(&out));
     // Through a variadic macro, after a line comment, as Xonotic's `ATTRIB` reads it.
     let mut loader = MemoryLoader::new();
@@ -1058,4 +1058,37 @@ fn a_parameter_list_continued_across_lines_is_joined_under_gmqcc() {
     assert_eq!(touching(&out), "c");
     let (fteqcc, _) = fte(text);
     assert!(fteqcc.contains('z'), "{fteqcc}");
+}
+
+// spec GMQ-21.6: under GMQCC each argument is macro-expanded alone before it replaces its
+// parameter, as C's do, so a nested paste is of the expanded text: `P2(P2(x,y),z)` is `xyz`;
+// P99's emptiness test, which Xonotic's `MUTATOR_CALLHOOK` uses, then works
+// spec GMQ-21.3: a function-like macro's name at the end of a chunk takes the group after the
+// chunk in the text below it
+#[test]
+fn an_argument_is_expanded_before_it_replaces_its_parameter_under_gmqcc() {
+    let text = "#define C2(a,b) a##b\n#define P2(a,b) C2(a,b)\nP2(P2(x,y),z)\n\
+                #define ARG(_1, _2, _3, ...) _3\n#define HAS_COMMA(...) ARG(__VA_ARGS__, 1, 0, 0)\n\
+                #define EQ_(...) ,\n#define IS_EMPTY(...) HAS_COMMA(EQ_ __VA_ARGS__ ())\n\
+                IS_EMPTY() IS_EMPTY(x)\n#define ID(f) f\n#define G(x) [x]\nID(G)(1)\n";
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", text.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Gmqcc);
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    assert_eq!(touching(&out), "xyz 1 0 [1]");
+    let (fteqcc, _) = fte("#define C2(a,b) a##b\n#define P2(a,b) C2(a,b)\nP2(P2(x,y),z)\n");
+    assert_eq!(fteqcc, "xy z");
+}
+
+// spec GMQ-21.7: under GMQCC a comment inside a macro call's arguments is white space, so a
+// `,` in it separates nothing
+#[test]
+fn a_comment_inside_a_macro_argument_is_white_space_under_gmqcc() {
+    let text = "#define F(a, b) [b]\nF(1, x // y, z\n w /* p, q */)\n";
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", text.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Gmqcc);
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    assert_eq!(touching(&out), "[x w]");
+    assert!(codes(&out).is_empty(), "{:?}", codes(&out));
 }

@@ -362,10 +362,10 @@ this should already be stringized").
   ORDERED(FOREACH_ENTITY_CLASS)(class, cond, body)`. GMQCC's own preprocessor reads an
   expansion's output as a string of its own (`lex_open_string(ftepp->output_string, ...)`), so
   this is a deliberate divergence from it as in GMQ-21.1. The group is the one in the text the use
-  stands in, past the strings and comments in it; one beyond that text's end, as after a chain of
-  object-like macros (`#define W ORDERED(F)` and `W(1, 2)`), is not taken, where the C
-  preprocessor would take it. FTEQCC finds a function-like macro's `(` only in the text it stands
-  in (FTEF-14.22).
+  stands in, past the strings and comments in it; when that text ends after the use, as an
+  expansion's does, the group is the one that follows in the text below it, another expansion's or
+  the file's, so `#define W ORDERED(F)` and `W(1, 2)` call `F_U(1, 2)` too. FTEQCC finds a
+  function-like macro's `(` only in the text it stands in (FTEF-14.22).
 - **GMQ-21.4** Under this dialect a directive at the start of a line inside a macro call's
   arguments is run as it would be outside the call, and the argument is its text around the
   directive and what the directive skips, the line break before the directive kept. Xonotic's
@@ -388,6 +388,21 @@ this should already be stringized").
   FTEQCC keeps the `\`, the line break and the white space after them in the name
   (`QCC_PR_PreProcessor_Define` passes over only `qcc_iswhitesameline` bytes before a
   parameter), so its `z` is never replaced.
+- **GMQ-21.6** Under this dialect each argument of a function-like macro's use is macro-expanded
+  alone before it replaces its parameter, unless the parameter is beside `##` or after `#`:
+  "Before being substituted, each argument's preprocessing tokens are completely macro replaced
+  as if they formed the rest of the preprocessing file; no other preprocessing tokens are
+  available." (C11, N1570 6.10.3.1). So `P2(P2(x,y),z)` of `#define C2(a,b) a##b` and `#define
+  P2(a,b) C2(a,b)` is `xyz`, where FTEQCC, which writes an argument as it is (FTEF-14.20), gives
+  `xy z`. Xonotic's `lib/p99.qh` `P99_IS_EMPTY` and `P99_PASTE5`, which `MUTATOR_CALLHOOK` and
+  `OVERLOAD` use, depend on it. The expanded argument's tokens are its text, a space between two
+  that do not touch.
+- **GMQ-21.7** Under this dialect a comment inside a macro call's arguments is white space, so a
+  `,` or `)` in it separates or ends nothing: `F(1, x // y, z` then ` w)` passes `x w` as `F`'s
+  second argument. The C preprocessor replaces "Each comment ... by one space character" before
+  it reads a macro's arguments (C11, N1570 5.1.1.2, phase 3), and Xonotic's `IL_EACH` bodies hold
+  comments with commas. FTEQCC's scan takes a comment's bytes as the argument's (FTEF-14.22).
+
 
 ## GMQ-22 Arrays of fields
 
