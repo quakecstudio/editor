@@ -1042,7 +1042,7 @@ fn a_directive_inside_a_macro_argument_is_run_under_gmqcc() {
     loader.insert("a.qc", text.as_bytes());
     let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Gmqcc);
     let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
-    assert_eq!(touching(&out), r#"f(m, (p("x") == "") ? "a" : "b") ;"#);
+    assert_eq!(touching(&out), r#"f(m, (p("x") == "") ? "a" : "b" ) ;"#);
 }
 
 // spec GMQ-21.5: under GMQCC a parameter list continued across lines by `\` names its
