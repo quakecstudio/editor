@@ -567,9 +567,9 @@ pub(crate) struct MemberArray {
     pub(crate) length: Option<u32>,
     /// The word of the struct it starts at.
     pub(crate) word: u32,
-    /// Whether the struct is reached through a pointer, the value's name, whose elements are
-    /// read and stored through it.
-    pub(crate) pointer: bool,
+    /// The pointer the struct is reached through, when it is, whose elements are read and
+    /// stored through it (FTEF-31.21).
+    pub(crate) through: Option<ir::Name>,
 }
 
 /// A bitfield a value is (`ev_bitfld`, FTEF-6.15): its width and whether its base is signed.

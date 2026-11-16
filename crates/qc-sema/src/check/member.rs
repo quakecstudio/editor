@@ -520,7 +520,7 @@ impl Checker<'_> {
             Reference::ArrayHead(Some(MemberArray {
                 length: member.length,
                 word: member.position.map_or(0, |position| position >> 5),
-                pointer: false,
+                through: None,
             }))
         } else {
             Reference::Global
@@ -701,17 +701,14 @@ impl Checker<'_> {
                 // A member array through the pointer is indexed through it (FTEF-6.24).
                 if let Reference::ArrayHead(Some(array)) = member.reference {
                     // The array keeps what names the pointer, which its elements are read and
-                    // stored through (FTEF-31.21).
+                    // stored through (FTEF-31.21); the array itself is no definition.
+                    let through = self.name_of(base);
+                    if through.is_none() && !self.global {
+                        self.followed = false;
+                    }
                     return Ok(Value {
                         name: Some(base.label()),
-                        sym: base.sym,
-                        made: base.made,
-                        word: base.word,
-                        call: base.call,
-                        reference: Reference::ArrayHead(Some(MemberArray {
-                            pointer: true,
-                            ..array
-                        })),
+                        reference: Reference::ArrayHead(Some(MemberArray { through, ..array })),
                         ..member
                     });
                 }

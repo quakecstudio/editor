@@ -4122,20 +4122,29 @@ fn a_string_character_is_loaded_from_the_string() {
     }
 }
 
-// spec FTEF-27.9: `~` of a float on a target without `OP_BITNOT_F` is a subtraction from -1, of a
-// constant the model holds no value of (an enum item that redefines a constant) included
+// spec FTE-15.5: a `typedef enum`'s items are constant globals with their values, as an `enum`'s
+// are
+// spec FTEF-19.10: an item's value that is an expression is folded, `(1<<4)` 16, so `~` of it
+// folds too: `b &= ~EF_NODRAW` is `BITAND b, -17f, b`, as the pinned FTEQCC's `-Fwasm` writes it
 #[test]
-fn the_complement_of_an_opaque_float_is_a_subtraction_from_minus_one() {
+fn a_typedef_enum_item_is_its_folded_value() {
     use qc_preproc::Op;
     let compiled = compile_fteqcc(
         "#pragma target fte_5768\nconst float EF_NODRAW = 16;\n\
-         typedef enum { EF_NODRAW = (1<<4) } effects_t;\nfloat b;\n\
-         void t(void) { b &= ~EF_NODRAW; };\n",
+         typedef enum { EF_NODRAW = (1<<4) } effects_t;\ntypedef enum { C = 5 } e_t;\nfloat b;\n\
+         void t(void) { b &= ~EF_NODRAW; };\nvoid u(void) { b = C; };\n",
     )
     .unwrap();
-    let sub = body(&compiled.progs, "t")[0];
-    assert_eq!(sub.op, u32::try_from(Op::SubF.number()).unwrap());
-    assert_eq!(sub.a, immediate(&compiled.progs, -1.0));
+    let p = &compiled.progs;
+    let and = body(p, "t")[0];
+    assert_eq!(and.op, u32::try_from(Op::BitandF.number()).unwrap());
+    assert_eq!(
+        (and.a, and.b, and.c),
+        (global(p, "b"), immediate(p, -17.0), global(p, "b"))
+    );
+    let store = body(p, "u")[0];
+    let word = p.globals[usize::try_from(store.a).unwrap()].bits();
+    assert_eq!(word, 5.0_f32.to_bits());
 }
 
 // spec FTEF-31.21: a member array's element through a pointer, `p->a[i]`, is stored and loaded

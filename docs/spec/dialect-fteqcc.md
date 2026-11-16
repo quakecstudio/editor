@@ -4424,8 +4424,13 @@ opcodes.rs`, the rows of `pr_opcodes[]` in order) and picks as FTEQCC picks
   read that type: a null constant, which converts to any type (FTEF-23.3), compared with a
   string, an entity or a field is no "'==' type mismatch" (FTEF-28.2): `s == __NULL__`, `e ==
   0i` and `fld == 0` warn of nothing. An operand of the row's basic type keeps its own type, a
-  class's among them. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
-  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_RefExpression`, `QCC_EvaluateCast`.
+  class's among them. A signed and an unsigned integer of one width are cast with no statement,
+  the operand's own word of the row's type (`QCC_TryEvaluateCast`: `else if ((totype ==
+  ev_integer || totype == ev_uint) && (src.cast->type == ev_integer || src.cast->type ==
+  ev_uint)) src.cast = cast; //fine, just treat it as-is`, and so for `ev_int64` and
+  `ev_uint64`). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_RefExpression`, `QCC_EvaluateCast`,
+  `QCC_TryEvaluateCast`.
 - **FTEF-23.10** A value made a boolean, cast to one or stored to one (`QCC_StoreSRefToRef`'s
   `dest->cast->type == ev_boolean`), is always `QCC_PR_GenerateLogicalTruth`'s comparison, a
   boolean value too, which it reads as its parent type: on the id target `b = b;` of a `_Bool b`
