@@ -3947,3 +3947,30 @@ fn a_converted_field_argument_is_loaded_then_converted() {
     );
     assert_eq!((conv.a, conv.c), (load.c, 4));
 }
+
+// spec FTEF-31.22: a compound assignment through a pointer at an index is the member loaded
+// through the pointer, the operation, and the store back through it at the same index
+#[test]
+fn a_compound_assignment_through_a_pointer_loads_operates_and_stores() {
+    use qc_preproc::Op;
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\ntypedef struct { float a; string b; } s_t;\ns_t *g_s;\n\
+         void t() { g_s->a += 2; };\n",
+    )
+    .unwrap();
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let ops: Vec<_> = body(&compiled.progs, "t")
+        .iter()
+        .map(|s| (s.op, s.a, s.b, s.c))
+        .collect();
+    let pointer = global(&compiled.progs, "g_s");
+    let [load, add, store, _] = ops[..] else {
+        panic!("{ops:?}");
+    };
+    assert_eq!((load.0, load.1), (number(Op::LoadpF), pointer));
+    assert_eq!((add.0, add.1), (number(Op::AddF), load.3));
+    assert_eq!(
+        (store.0, store.1, store.2, store.3),
+        (number(Op::StorepF), add.3, pointer, load.2)
+    );
+}

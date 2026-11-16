@@ -354,7 +354,7 @@ impl Checker<'_> {
             self.array_set(&lhs, &stored, &target, span)?;
         }
         self.field_store(&lhs, &stored, &target);
-        if matches!(kind, Assign::Store) {
+        if matches!(kind, Assign::Store | Assign::Compound(..)) {
             self.pointer_store(&lhs, &stored, &target, span)?;
         }
         // Any other store of a struct or a union is word groups the body does not follow
@@ -362,13 +362,8 @@ impl Checker<'_> {
         if structured && !copied {
             self.followed = false;
         }
-        // An accessor's store, and a compound one through a pointer, are not followed.
-        if matches!(lhs.reference, Reference::Accessor(_))
-            || matches!(
-                (&lhs.reference, kind),
-                (Reference::Pointer(_), Assign::Compound(..))
-            )
-        {
+        // An accessor's store is not followed.
+        if matches!(lhs.reference, Reference::Accessor(_)) {
             self.followed = false;
         }
         // FTEF-29.3: `QCC_StoreSRefToRef`.
