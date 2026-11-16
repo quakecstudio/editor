@@ -1122,23 +1122,19 @@ impl Checker<'_> {
                     } else {
                         self.converted(index, Etype::Integer, span)?
                     };
-                    match address {
-                        Some(made) => {
-                            let storep = self.storep_op(&lhs.ty);
-                            self.generated.push(ir::BodyStatement {
-                                a: self.name_of(stored),
-                                b: Some(ir::Name::Made(made)),
-                                c: self.name_of(&index),
-                                ..ir::BodyStatement::bare(storep)
-                            });
-                            if stored.returned {
-                                self.live_return = None;
-                                self.live_call = None;
-                            }
-                            self.last_temp = None;
+                    if let Some(made) = address {
+                        let storep = self.storep_op(&lhs.ty);
+                        self.generated.push(ir::BodyStatement {
+                            a: self.name_of(stored),
+                            b: Some(ir::Name::Made(made)),
+                            c: self.name_of(&index),
+                            ..ir::BodyStatement::bare(storep)
+                        });
+                        if stored.returned {
+                            self.live_return = None;
+                            self.live_call = None;
                         }
-                        None if !self.global => self.followed = false,
-                        None => {}
+                        self.last_temp = None;
                     }
                     return Ok(());
                 }

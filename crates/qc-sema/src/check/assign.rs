@@ -1130,10 +1130,10 @@ impl Checker<'_> {
         if element.index.known().is_some() || self.global {
             return Ok(());
         }
-        // FTEF-31.5: a target with an address to store through stores by it, not by
-        // `ArraySet*`, as [`Checker::store_reference`] writes (FTEF-31.20).
+        // FTEF-31.20: a target whose stores take an offset stores through the array's address,
+        // not by `ArraySet*`, as [`Checker::store_reference`] writes.
         let opcodes = self.env.target_at(span.start);
-        if opcodes.valid(Op::Globaladdress) || opcodes.valid(Op::GstorepF) {
+        if opcodes.valid(Op::Globaladdress) && opcodes.stores_at_offset() {
             return Ok(());
         }
         if element.vector {
