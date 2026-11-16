@@ -650,6 +650,30 @@ impl ParamError {
     }
 }
 
+/// GMQ-21.5: a parameter's name as C reads it, each `\` before a line break taken out with the
+/// line break, then its white space at either end.
+fn spliced_name(param: &[u8]) -> Vec<u8> {
+    // A `\` and the line break after it, `\n` or `\r\n`.
+    const SPLICE: usize = 2;
+    const CRLF_SPLICE: usize = 3;
+    let mut out = Vec::with_capacity(param.len());
+    let mut at = 0_usize;
+    while let Some(&byte) = param.get(at) {
+        let next = param.get(at.saturating_add(1)).copied();
+        match (byte, next) {
+            (b'\\', Some(b'\n')) => at = at.saturating_add(SPLICE),
+            (b'\\', Some(b'\r')) if param.get(at.saturating_add(SPLICE)) == Some(&b'\n') => {
+                at = at.saturating_add(CRLF_SPLICE);
+            }
+            _ => {
+                out.push(byte);
+                at = at.saturating_add(1);
+            }
+        }
+    }
+    out.trim_ascii().to_vec()
+}
+
 /// The parameter list of a `#define` whose `(` is at `open`, as `QCC_PR_PreProcessor_Define`
 /// reads it (FTEF-14.23): each parameter runs from after the spaces and tabs that follow the
 /// `(` or a `,` to the next `,` or `)`, its trailing spaces and tabs dropped; the first byte of
@@ -1329,7 +1353,14 @@ impl<L: Loader> Preprocessor<L> {
                 reading.place(open..open.saturating_add(2)),
             );
         }
-        let params = definition.params;
+        let mut params = definition.params;
+        // GMQ-21.5: the C preprocessor joins a line its `\` continues before it reads a
+        // parameter's name, so the name is the one written across the lines.
+        if self.dialect == Dialect::Gmqcc {
+            for param in params.iter_mut().flatten() {
+                *param = spliced_name(param);
+            }
+        }
         let variadic = definition.variadic;
         let mut value = definition.value;
         let old = self.macros.get(&name).cloned();

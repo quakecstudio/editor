@@ -1044,3 +1044,18 @@ fn a_directive_inside_a_macro_argument_is_run_under_gmqcc() {
     let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
     assert_eq!(touching(&out), r#"f(m, (p("x") == "") ? "a" : "b") ;"#);
 }
+
+// spec GMQ-21.5: under GMQCC a parameter list continued across lines by `\` names its
+// parameters as written across them, as the C preprocessor joins the lines first; FTEQCC keeps
+// the `\` and the line break in the name
+#[test]
+fn a_parameter_list_continued_across_lines_is_joined_under_gmqcc() {
+    let text = "#define R(x, y, \\\n z, ...) z\nR(a, b, c, d)\n";
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", text.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Gmqcc);
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    assert_eq!(touching(&out), "c");
+    let (fteqcc, _) = fte(text);
+    assert!(fteqcc.contains('z'), "{fteqcc}");
+}

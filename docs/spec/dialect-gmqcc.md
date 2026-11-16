@@ -378,6 +378,16 @@ this should already be stringized").
   function-like macro invocation not present" (the GCC manual, Directives Within Macro
   Arguments, fetched 2026-11-16). FTEQCC runs a directive only in the white space after the `(`
   or a `,` (FTEF-14.45).
+- **GMQ-21.5** Under this dialect a `#define`'s parameter list continued across lines by a `\`
+  before each line break names its parameters as written across the lines: `#define R(x, y, \`
+  then ` z, ...) z` has the parameters `x`, `y` and `z`. The C preprocessor Xonotic runs first
+  joins the lines before it reads any token: "Each instance of a backslash character (\)
+  immediately followed by a new-line character is deleted, splicing physical source lines to
+  form logical source lines." (C11, N1570 5.1.1.2, phase 2). Xonotic's `lib/p99.qh` writes
+  `P00_ARG` so.
+  FTEQCC keeps the `\`, the line break and the white space after them in the name
+  (`QCC_PR_PreProcessor_Define` passes over only `qcc_iswhitesameline` bytes before a
+  parameter), so its `z` is never replaced.
 
 ## GMQ-22 Arrays of fields
 
