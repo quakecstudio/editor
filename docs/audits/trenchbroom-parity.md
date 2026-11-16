@@ -182,5 +182,22 @@ rules out without a provider.
 TrenchBroom's side, measured on the reference Mac on 2026-11-15, is on #823: 2.9 s from launch to
 `lq-e2m5.map` loaded, 611 MiB resident, 119.9 FPS while orbiting (display-capped at 120 Hz).
 
-Ours is measured the same way once the reference Mac's screen is unlocked: with it locked, the app
-gets no window to draw in, so neither its load time nor its frame time is real.
+Ours, measured the same way on the same Mac on 2026-11-15, from `main` at a5a42aae (the Textured
+view, with entity models) with a frame-time log added to a local build:
+
+| Measure | TrenchBroom | QuakeC Studio | How ours was taken |
+| --- | --- | --- | --- |
+| Launch to map loaded | 2.9 s | 6.22 s | `open -n -a` on the LibreQuake game folder and `lq_e2m5.map`, Textured, until the CPU settles under 5% (`ps`, every 0.25 s) |
+| Resident memory once open | 611 MiB | 272 MiB (278 MiB after orbiting) | `ps -o rss` once loaded |
+| Frame time while orbiting | 119.9 FPS, longest gap 14 ms | 60.0 FPS, median 16.7 ms, longest gap 22.6 ms | each frame's time logged during the same 6 s right-drag orbit, driven by CGEvents |
+
+Memory is better. Two measures are worse, and stay open on #823 as gaps:
+
+| Gap | What |
+| --- | --- |
+| B1 | The window is drawn at 60 Hz on the 120 Hz display, where TrenchBroom draws at 120 |
+| B2 | Opening the map with the game folder's 2,592 textures takes twice TrenchBroom's time; without a project, so with no textures, it takes 1.41 s |
+
+The run also found the 3D view jumping from side to side as the pointer moved: the Map outline's
+long names were wider than the left panel, which grew to them on one frame and was set back on the
+next. Each panel now keeps its contents to its own room.
