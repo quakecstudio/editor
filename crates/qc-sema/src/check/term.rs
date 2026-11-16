@@ -485,11 +485,13 @@ impl Checker<'_> {
             if word == 0 && folds.is_some() {
                 continue;
             }
+            let to = ir::Name::MadeWord(first, u32::from(word));
             if self.etype_of(&value.ty) == Some(Etype::Integer) {
+                let from = self.name_of(value);
                 self.emit(Op::StoreIf, value, &Value::unknown(), span)?;
+                self.name_last(Op::StoreIf, from, Some(to));
             } else {
                 self.generate(Op::StoreF, span);
-                let to = ir::Name::MadeWord(first, u32::from(word));
                 self.name_last(Op::StoreF, self.name_of(value), Some(to));
             }
         }
