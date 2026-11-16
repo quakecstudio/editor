@@ -1066,3 +1066,23 @@ fn lexer_flags_hold_from_the_right_token() {
     let analysis = db.analyze_module(&input);
     assert!(analysis.syntax.is_empty(), "{:?}", analysis.syntax);
 }
+
+// spec GMQ-13.1, FTEF-32.7: `...(index, TYPE)` reads a variadic argument as TYPE in a function with
+// `...`; outside one it is E0346
+#[test]
+fn gmqcc_reads_variadic_arguments() {
+    let analyse = |text: &str| {
+        let (mut db, mut input) = module(&[("a.qc", text)], &["a.qc"], Dialect::Gmqcc);
+        input.command_line = CommandLine::new(&["-std=gmqcc"]);
+        let analysis = db.analyze_module(&input);
+        analysis
+            .diagnostics()
+            .filter(|d| d.diagnostic.code.severity() == qc_diag::Severity::Error)
+            .map(|d| d.diagnostic.code)
+            .collect::<Vec<_>>()
+    };
+    let read = "entity first(float a, ...) { entity e = ...(0, entity); return e; };\n";
+    assert_eq!(analyse(read), []);
+    let outside = "entity first(float a) { return ...(0, entity); };\n";
+    assert_eq!(analyse(outside), [Code::E0346]);
+}

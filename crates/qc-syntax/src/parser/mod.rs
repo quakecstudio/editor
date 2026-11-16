@@ -3357,6 +3357,13 @@ impl<'a> Parser<'a> {
                 self.bump();
                 (K::NameRef, true)
             }
+            // FTEF-32.7, GMQ-13.1: `...(index, TYPE)`, the variadic argument `index` read as
+            // TYPE, a call of the name `...`.
+            K::Ellipsis if self.fteqcc() && self.nth(1).is_some_and(|t| t.kind == K::LParen) => {
+                self.start_node(K::NameRef);
+                self.bump_as(K::Name);
+                (K::NameRef, false)
+            }
             // FTEF-18.12: `sizeof` and a type or an expression.
             K::Name if self.fteqcc() && self.checks(0, Enabled::Always, "sizeof") => {
                 self.sizeof_expr();
