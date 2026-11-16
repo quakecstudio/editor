@@ -4015,3 +4015,42 @@ fn a_vector_of_integer_components_stores_each_by_store_if() {
     assert_eq!(stores[1].b, stores[0].b + 1);
     assert_eq!(stores[0].a, global(&compiled.progs, "a"));
 }
+
+// spec FTEF-29.17: a field's compound assignment on a target with the in-place opcode is the
+// field's address, then that opcode through it
+#[test]
+fn a_field_compound_assignment_updates_in_place() {
+    use qc_preproc::Op;
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\nentity self;\n.float health;\nvoid t(void) { self.health += 1; };\n",
+    )
+    .unwrap();
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let statements = body(&compiled.progs, "t");
+    let address = &statements[0];
+    let update = &statements[1];
+    assert_eq!(
+        (address.op, address.a, address.b),
+        (
+            number(Op::Address),
+            global(&compiled.progs, "self"),
+            global(&compiled.progs, "health")
+        )
+    );
+    assert_eq!((update.op, update.b), (number(Op::AddstorepF), address.c));
+}
+
+// spec FTEF-27.9: a pointer's comparison is the entity one of the same operands
+#[test]
+fn a_pointer_comparison_names_its_operands() {
+    use qc_preproc::Op;
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\nint *p;\nfloat r;\nvoid t(void) { r = p == __NULL__; };\n",
+    )
+    .unwrap();
+    let eq = body(&compiled.progs, "t")
+        .into_iter()
+        .find(|s| s.op == u32::try_from(Op::EqE.number()).unwrap())
+        .unwrap();
+    assert_eq!(eq.a, global(&compiled.progs, "p"));
+}

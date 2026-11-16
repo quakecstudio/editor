@@ -5034,6 +5034,11 @@ whether it is the result of a postfix `++` or `--`. The semantic model checks as
   operand must be an l-value (did you mean NAME[0]?)" (`E0325`): on the FTE target `--varr;` of a
   `vector varr[2]` is "Constant int operand 4294967293 will be truncated to -3" then the l-value
   error, and the value of `farr++` is a `float*`.
+- **FTEF-29.17** A compound assignment to an entity's field on a target with the in-place
+  opcode for its types (`OP_ADDSTOREP_F` and the rest) is the field's address and that opcode
+  through it: `self.health += 1` is `FLDADDRESS self, health, temp_0` then `ADDSTOREP_F 1f,
+  temp_0, temp_0`, whose result is the assignment's value. Source: the pinned FTEQCC's `-Fwasm`
+  output, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e.
 
 ## FTEF-30 Terms
 

@@ -73,6 +73,8 @@ pub(super) struct Checker<'e> {
     pub(super) newself: Option<ir::Name>,
     /// FTEF-9.24: the temporary that kept `self` across the call just written, restored after it.
     pub(super) kept_self: Option<u32>,
+    /// FTEF-29.17: the value of the field's in-place update just written.
+    pub(super) in_place_result: Option<Value>,
     /// The words of a call's value a statement read word by word and freed not, which the
     /// next statement's clobber copies out of the return global (FTE-18.13).
     pub(super) unfreed: Option<u32>,
@@ -152,6 +154,7 @@ impl<'e> Checker<'e> {
             array_loaded: None,
             newself: None,
             kept_self: None,
+            in_place_result: None,
             unfreed: None,
             keeps_condition: false,
             live_call: None,

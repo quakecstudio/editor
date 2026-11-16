@@ -596,7 +596,29 @@ impl Checker<'_> {
                 ..self.emit(other, rhs, lhs, span)?
             }),
             Emulation::Replaced(other) => {
+                let made = self.next_made();
+                let (a, b) = (self.name_of(lhs), self.name_of(rhs));
                 self.generate(other, span);
+                // FTEF-27.9: a pointer's comparison is the integer or entity one of the same
+                // operands, whose value is its own temporary.
+                let compares = matches!(
+                    op,
+                    Op::EqP | Op::NeP | Op::GtP | Op::GeP | Op::LeP | Op::LtP
+                );
+                if compares && !self.global {
+                    if let Some(statement) = self.generated.last_mut() {
+                        statement.a = a;
+                        statement.b = b;
+                        statement.c = Some(ir::Name::Made(made));
+                    }
+                    let temp = Some(self.env.temps().take(1));
+                    self.last_temp = temp;
+                    return Ok(Value {
+                        made: Some(made),
+                        temp,
+                        ..replaced(other)
+                    });
+                }
                 Ok(replaced(other))
             }
             Emulation::Clear { and, sub, store } => self.clear([and, sub], store, (lhs, rhs), span),
