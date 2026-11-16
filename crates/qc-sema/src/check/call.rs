@@ -228,7 +228,15 @@ impl Checker<'_> {
                             (Some(from), Some(to)) => converts(from, to),
                             _ => true,
                         };
-                        if converted && matches!(reference.reference, Reference::Field(_)) {
+                        // A converted field is read where it is written, as any value is,
+                        // and its value converted (`QCC_SupplyConversion` of the loaded
+                        // field): its held load goes back where it was.
+                        if converted
+                            && held
+                            && let Some(field) = field_loads.pop()
+                        {
+                            self.generated.extend(field.load);
+                        } else if converted && matches!(reference.reference, Reference::Field(_)) {
                             self.followed = false;
                         }
                     }

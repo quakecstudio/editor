@@ -3926,3 +3926,24 @@ fn a_class_field_argument_is_loaded_into_its_entity_slot() {
         .unwrap();
     assert_eq!(load.c, 4);
 }
+
+// spec FTE-18.11: a field argument a parameter of another type converts is loaded where it is
+// written, and its value converted into the slot: `takei(self.fl)` is `LOAD_F` to a temporary,
+// then `CONV_FTOI` of it to the parameter
+#[test]
+fn a_converted_field_argument_is_loaded_then_converted() {
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\nentity self;\nvoid(int i) takei = #2;\n.float fl;\n\
+         void t(void) { takei(self.fl); };\n",
+    )
+    .unwrap();
+    let statements = body(&compiled.progs, "t");
+    let load = statements.first().unwrap();
+    let conv = &statements[1];
+    assert_eq!(load.op, u32::from(Opcode::LoadF.number()));
+    assert_eq!(
+        conv.op,
+        u32::try_from(qc_preproc::Op::ConvFtoi.number()).unwrap()
+    );
+    assert_eq!((conv.a, conv.c), (load.c, 4));
+}
