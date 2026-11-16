@@ -385,6 +385,10 @@ impl<'e> Checker<'e> {
             {
                 return self.this(class);
             }
+            // FTEF-19.80: `nil` that names no definition is `QCC_MakeIntConst(0)`.
+            if !scoped && token.text() == b"nil" && self.env.fteqcc() {
+                return Value::constant(Constant::int(0));
+            }
             return Value::unknown();
         };
         self.def_value(def, &token, scoped)

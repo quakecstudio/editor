@@ -1138,6 +1138,20 @@ fn an_unknown_initialiser_is_no_constant() {
     );
 }
 
+// spec FTEF-19.80: `nil` with no definition is the integer constant 0, so a global or `static`
+// initialised with it is no unknown value
+#[test]
+fn nil_initialises_a_global_as_zero() {
+    assert_eq!(
+        errors(
+            "string s = nil; var void(float) fp = nil; const float k = nil;",
+            &[]
+        ),
+        []
+    );
+    assert_eq!(errors("void() g = { static float x = nil; };", &[]), []);
+}
+
 // spec FTEF-6.11: an anonymous member's members are searched, in any case under `-Fcaseinsens`
 #[test]
 fn an_anonymous_members_members_are_matched() {

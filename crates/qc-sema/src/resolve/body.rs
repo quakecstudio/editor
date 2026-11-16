@@ -440,6 +440,10 @@ impl<'a> Resolver<'a> {
             return;
         };
         let checked = match &value.kind {
+            // FTEF-19.80: `nil` with no definition is the integer 0, folded as a constant is.
+            ValueKind::Name(source) if source == "nil" && self.lookup_global(source).is_none() => {
+                true
+            }
             ValueKind::Name(source) => {
                 self.converted_variable(source, &decl.ty)
                     || self.converted_constant(source, &decl.ty)
