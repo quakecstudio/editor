@@ -3876,3 +3876,35 @@ fn a_global_named_after_a_string_or_vector_constant_holds_its_words() {
         assert_eq!(word("w", i), word("v", i));
     }
 }
+
+// spec FTEF-31.21: through a pointer at an index, a member is loaded by `OP_LOADP_*` of the
+// pointer and the integer index and stored by the value's `OP_STOREP_*` with the index as its
+// offset: `g_s[i].b = "x"` is `MUL_I`, `ADD_I` of the member's word, `STOREP_S`
+#[test]
+fn a_member_through_a_pointer_at_an_index_is_loaded_and_stored_at_it() {
+    use qc_preproc::Op;
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\ntypedef struct { float a; string b; vector v; } s_t;\n\
+         s_t *g_s;\nfloat r;\nvoid t1() { int i = 1; g_s[i].b = \"x\"; };\n\
+         void t2() { int i = 1; r = g_s[i].a; };\n",
+    )
+    .unwrap();
+    let p = &compiled.progs;
+    let pointer = global(p, "g_s");
+    let ops = |name: &str| -> Vec<(u32, i32, i32, i32)> {
+        body(p, name)
+            .iter()
+            .map(|s| (s.op, s.a, s.b, s.c))
+            .collect()
+    };
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let t1 = ops("t1");
+    let store = t1.iter().find(|s| s.0 == number(Op::StorepS)).unwrap();
+    let add = t1.iter().find(|s| s.0 == number(Op::AddI)).unwrap();
+    assert_eq!(store.2, pointer);
+    assert_eq!(store.3, add.3);
+    let t2 = ops("t2");
+    let load = t2.iter().find(|s| s.0 == number(Op::LoadpF)).unwrap();
+    let mul = t2.iter().find(|s| s.0 == number(Op::MulI)).unwrap();
+    assert_eq!((load.1, load.2, load.3), (pointer, mul.3, global(p, "r")));
+}

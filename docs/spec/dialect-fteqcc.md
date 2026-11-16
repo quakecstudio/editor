@@ -5343,6 +5343,21 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   source, t)`: `OP_STOREP_*` of the value, the address and the index. No `ArraySet` call is made.
   Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_StoreToArray`, `QCC_OPCode_StorePOffset`.
+- **FTEF-31.21** Through a pointer, an element or a member, `p[i]`, `p->m` and `p[i].m`, is read
+  by `OP_LOADP_*` of the pointer and the integer index, `QCC_PR_StatementFlags(&pr_opcodes[op],
+  source, idx, NULL, ...)` in `QCC_LoadFromPointer`. It is stored by `QCC_StoreToPointer`. On a
+  target whose stores take an offset, that is the store of the value's type with the index as
+  its offset, `QCC_PR_SimpleStatement(&pr_opcodes[OP_STOREP_V], source, dest, newidx, false)`.
+  On any other, the index is first added to the pointer, `dest =
+  QCC_PR_StatementFlags(&pr_opcodes[OP_ADD_PIW], dest, idx, NULL, STFL_PRESERVEA)`. The index
+  counts words: an element's index times its words (`OP_MUL_I`), plus the member's word
+  (`OP_ADD_I`), made an integer (`OP_CONV_FI`) when it is a float, and `0i` for `p->m` of the
+  first member. FTEQCC stores every word of a value with `OP_STOREP_I` where the target has it;
+  our compiler uses the store of the value's type, which writes the same words. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_LoadFromPointer`, `QCC_StoreToPointer`. Checked against the pinned FTEQCC's `-Fwasm`
+  output for `g_s[i].b = "x"`, `r = g_s[i].a`, `g_s->a = 2`, `r = g_s->a` and
+  `g_s[f].v = '1 2 3'`.
 
 ## FTEF-32 Calls
 

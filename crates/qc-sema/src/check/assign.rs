@@ -355,7 +355,7 @@ impl Checker<'_> {
         }
         self.field_store(&lhs, &stored, &target);
         if matches!(kind, Assign::Store) {
-            self.pointer_store(&lhs, &stored, &target);
+            self.pointer_store(&lhs, &stored, &target, span)?;
         }
         // Any other store of a struct or a union is word groups the body does not follow
         // (FTE-14.5).
@@ -990,26 +990,78 @@ impl Checker<'_> {
     }
 
     /// FTEF-31.3: the store of `stored` through the pointer `lhs`, `*p = v`, of type `target`:
-    /// `STOREP_*` of the value through the pointer.
-    fn pointer_store(&mut self, lhs: &Value, stored: &Value, target: &Type) {
+    /// `STOREP_*` of the value through the pointer. FTEF-31.21: at an index, `p[i] = v` and
+    /// `p->m = v`, the index made an integer and given to the store on a target whose stores
+    /// take an offset, else added to the pointer first by `OP_ADD_PIW`
+    /// (`QCC_StoreToPointer`).
+    fn pointer_store(
+        &mut self,
+        lhs: &Value,
+        stored: &Value,
+        target: &Type,
+        span: Span,
+    ) -> Result<(), Fatal> {
         let Reference::Pointer(pointer) = &lhs.reference else {
-            return;
+            return Ok(());
         };
         if self.global {
-            return;
+            return Ok(());
         }
-        if pointer.index.is_some() || pointer.named.is_none() {
+        // A value one `STOREP_*` stores: no struct, union, 64-bit value or narrow integer.
+        let word = matches!(
+            self.etype(target),
+            Some(
+                Etype::Float
+                    | Etype::Vector
+                    | Etype::String
+                    | Etype::Entity
+                    | Etype::Field
+                    | Etype::Function
+                    | Etype::Integer
+                    | Etype::Uint
+                    | Etype::Pointer
+            )
+        ) && !matches!(
+            target.fteqcc_scalar(),
+            Some(CScalar::Int8 | CScalar::Uint8 | CScalar::Int16 | CScalar::Uint16)
+        ) && lhs.bitfield.is_none();
+        if pointer.named.is_none() || (pointer.index.is_some() && !word) {
             self.followed = false;
-            return;
+            return Ok(());
+        }
+        // An index converted by emulation, which [`Checker::store_reference`] reports, is not
+        // followed: such a target has no store at an offset to write.
+        let index = match &pointer.index {
+            Some(index) if self.etype_of(&index.ty) != Some(Etype::Integer) => {
+                if !self.env.target_at(span.start).valid(Op::ConvFtoi) {
+                    self.followed = false;
+                    return Ok(());
+                }
+                Some(self.supplied(index, &Type::Named("__int32".into()), span)?)
+            }
+            index => index.clone(),
+        };
+        let mut through = pointer.named;
+        let mut at = None;
+        if let Some(index) = &index {
+            if self.env.target_at(span.start).stores_at_offset() {
+                at = self.name_of(index);
+            } else {
+                through = self
+                    .push_made(Op::AddPiw, pointer.named, self.name_of(index))
+                    .map(ir::Name::Made);
+            }
         }
         let storep = self.storep_op(target);
         self.generated.push(ir::BodyStatement {
             a: self.name_of(stored),
-            b: pointer.named,
+            b: through,
+            c: at,
             ..ir::BodyStatement::bare(storep)
         });
         self.read_returned(stored);
         self.last_temp = None;
+        Ok(())
     }
 
     /// FTE-14.6: the struct `stored` of type `target` copied to the definition `to` by `STORE_V`

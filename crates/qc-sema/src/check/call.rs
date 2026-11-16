@@ -577,7 +577,12 @@ impl Checker<'_> {
     }
 
     /// Generates `op` of `a` and `b` into a value of its own; the statement's index.
-    fn push_made(&mut self, op: Op, a: Option<ir::Name>, b: Option<ir::Name>) -> Option<u32> {
+    pub(super) fn push_made(
+        &mut self,
+        op: Op,
+        a: Option<ir::Name>,
+        b: Option<ir::Name>,
+    ) -> Option<u32> {
         let made = u32::try_from(self.generated.len()).ok();
         self.generated.push(ir::BodyStatement {
             a,
