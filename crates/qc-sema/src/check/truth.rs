@@ -447,11 +447,42 @@ impl Checker<'_> {
         (before, result): (usize, Option<u32>),
         span: Span,
     ) -> Checked {
-        let stored = other.clone();
-        // Arms of two basic types are reconciled in ways the body does not follow.
-        if self.etype_of(&kept.ty) != self.etype_of(&other.ty) {
-            self.followed = false;
+        // FTEF-30.18: mixed arms, as `QCC_PR_ParseTernary` reconciles them: a float first arm
+        // and an integer last, the last converted before its store (`val =
+        // QCC_SupplyConversion(val, ev_float, true)`); an integer first arm and a float last,
+        // the first arm's store made `OP_STORE_IF` (`truthstore->op = OP_STORE_IF`); a signed
+        // and an unsigned integer, the same words.
+        let (kept_etype, other_etype) = (self.etype_of(&kept.ty), self.etype_of(&other.ty));
+        let (other, op) = match (kept_etype, other_etype) {
+            (Some(Etype::Float), Some(Etype::Integer | Etype::Uint)) if !is_truth(&other.ty) => (
+                self.converted(&other, Etype::Float, span)?,
+                Some(Op::StoreF),
+            ),
+            _ => (other, op),
+        };
+        let first_store = result
+            .and_then(|at| usize::try_from(at).ok())
+            .filter(|&at| {
+                self.generated
+                    .get(at)
+                    .is_some_and(|s| matches!(s.op, Op::StoreF | Op::StoreI))
+            });
+        match (kept_etype, self.etype_of(&other.ty)) {
+            (a, b) if a == b => {}
+            (Some(Etype::Integer), Some(Etype::Float)) if !is_truth(&kept.ty) => {
+                match first_store.and_then(|at| self.generated.get_mut(at)) {
+                    Some(store) => store.op = Op::StoreIf,
+                    None => self.followed = false,
+                }
+            }
+            (
+                Some(Etype::Integer | Etype::Uint | Etype::Int64 | Etype::Uint64),
+                Some(Etype::Integer | Etype::Uint | Etype::Int64 | Etype::Uint64),
+            ) if kept_etype.map(Etype::words) == self.etype_of(&other.ty).map(Etype::words) => {}
+            // Arms of two other basic types are reconciled in ways the body does not follow.
+            _ => self.followed = false,
         }
+        let stored = other.clone();
         let value = self.arms(kept, kept_null, other, span)?;
         self.arm_store(op, &stored, before, result, span)?;
         Ok(value)
