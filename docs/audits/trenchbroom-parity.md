@@ -195,8 +195,8 @@ Memory is better. Two measures are worse, and stay open on #823 as gaps:
 
 | Gap | What |
 | --- | --- |
-| B1 | The window is drawn at 60 Hz on the 120 Hz display, where TrenchBroom draws at 120 |
-| B2 | Opening the map with the game folder's 2,592 textures takes twice TrenchBroom's time; without a project, so with no textures, it takes 1.41 s |
+| B1 | Frame rate: not yet comparable. The reference Mac's primary display, where both editors' windows were, is an external 5K panel at 60 Hz (`system_profiler SPDisplaysDataType`: "2560 x 1440 @ 60.00Hz", "Main Display: Yes"); the built-in 120 Hz panel is the second display. Ours, repainting every frame with the camera turning by itself and no input (2026-11-15), shows 59.9 FPS, median 16.7 ms, longest gap 26.8 ms: the panel's rate. TrenchBroom's overlay counted 119.9 on the same panel, so it counts frames rendered, not shown. The comparison left is the time to render a frame with vsync off, or both windows on the 120 Hz panel |
+| B2 | Opening the map with the game folder's 2,592 textures takes twice TrenchBroom's time; without a project, so with no textures, it takes 1.41 s. A `sample` of the window's first 7 s (2026-11-15) finds the app mostly waiting, under a thousand samples in its own code, and the load drawn at 53 FPS with one frame of 107 ms: the time is not one long computation, and is still to be traced |
 
 The run also found the 3D view jumping from side to side as the pointer moved: the Map outline's
 long names were wider than the left panel, which grew to them on one frame and was set back on the
