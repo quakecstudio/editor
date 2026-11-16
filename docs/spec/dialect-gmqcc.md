@@ -323,3 +323,22 @@ constructs above that the FTEQCC grammar lacks. The recorded run is
   `return` then `=` (GMQ-9), `nil` (GMQ-12), `...` then a name or `(` (GMQ-13), `[[` then a
   name (GMQ-16), `noref` (GMQ-17), two touching `*` (GMQ-18), and `goto` or a `:` touching a
   name (GMQ-19).
+
+## GMQ-21 Stringizing the variadic arguments
+
+**Source:** `ftepp.cpp`, `ftepp_macro_expand`, at the commit above. Xonotic: `qcsrc/Makefile`
+(`CPP := cc -xc -E`), `lib/deglobalization.qh` (`#define DEGLOB_LOG(kind, name, ...)
+deglob_log(kind, name, __FILE__, __LINE__, __FUNC__, #__VA_ARGS__)`, with the comment "Varargs to
+this should already be stringized").
+
+### Behaviour
+
+- **GMQ-21.1** Under this dialect, `#__VA_ARGS__` in a variadic macro's body is the variadic
+  arguments' text, trimmed, as one string, `""` when none is given, as the C preprocessor that
+  Xonotic runs before GMQCC writes it: `L(1, "o", x + 2)` of `#define L(a, ...) f(a,
+  #__VA_ARGS__)` is `f(1, "\"o\", x + 2")`. This is a deliberate divergence from GMQCC's own
+  preprocessor. There, `case '#':` stringizes only a parameter's name (`nextok == TOKEN_IDENT ...
+  && macro_params_find(...)`), `__VA_ARGS__` is a token of its own (`TOKEN_VA_ARGS`), and so `#`
+  is written as it is. Xonotic is never built that way, and `lib/deglobalization.qh` relies on the
+  C behaviour in 165 places.
+

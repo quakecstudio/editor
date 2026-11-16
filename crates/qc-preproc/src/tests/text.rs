@@ -950,3 +950,23 @@ proptest::proptest! {
         proptest::prop_assert_eq!(reading_on_differs(&text, offset, second), None);
     }
 }
+
+// spec GMQ-21.1: under GMQCC, `#__VA_ARGS__` is the variadic arguments' text as one string, as
+// the C preprocessor Xonotic builds with writes it; under FTEQCC it is `#` and the name, with
+// W0117
+#[test]
+fn hash_va_args_is_the_variadic_arguments_as_a_string_under_gmqcc() {
+    let gmqcc = |text: &str| {
+        let mut loader = MemoryLoader::new();
+        loader.insert("a.qc", text.as_bytes());
+        let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Gmqcc);
+        let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+        (touching(&out), codes(&out))
+    };
+    let source = "#define L(a, ...) f(a, #__VA_ARGS__)\nL(1, \"o\", x + 2)\nL(1)\n";
+    let (text, codes) = gmqcc(source);
+    assert_eq!(text, r#"f(1, "\"o\", x + 2") f(1, "")"#);
+    assert!(codes.is_empty(), "{codes:?}");
+    let (_, codes) = fte(source);
+    assert!(codes.contains(&Code::W0117));
+}
