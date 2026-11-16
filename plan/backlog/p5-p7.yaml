@@ -1824,6 +1824,25 @@ groups:
     verify:
     - Differential suite
   - key: L-06
+    title: Run the preview host's game loop from a library both apps use
+    labels:
+    - L7-ui
+    - area:preview
+    - type:feature
+    size: M
+    reqs:
+    - ENG-10
+    - MVP-3
+    depends:
+    - P3-11
+    deliverable:
+    - 'The preview host''s game loop (`Game` in `apps/quakec-engine/src/game.rs` and what it needs) moved into a new L7 library crate that `apps/quakec-engine` and `apps/desktop` both depend on, with the crate added to `layers.toml` and `docs/layers.md` (ADR-0028)'
+    acceptance:
+    - The preview host's tests pass unchanged on the moved code
+    - '`cargo xtask layers` passes with the new crate in L7'
+    verify:
+    - cargo nextest run -p quakec-engine; cargo xtask layers
+  - key: L-26
     title: Embedded game view
     labels:
     - L7-ui
@@ -1834,13 +1853,13 @@ groups:
     - ENG-10
     - MVP-3
     depends:
-    - P3-11
+    - L-06
     deliverable:
-    - Game frames shown inside the IDE via shared texture or frame streaming
+    - 'A panel in `apps/desktop` that runs the game in the IDE''s process from the L-06 library and draws `qs_render::Play::frame`''s paint callback, as the map view draws `qs-render` (ADR-0028); the docked window and the CLI keep the bridge socket'
     acceptance:
     - Within one frame of latency of the docked window
     verify:
-    - Benchmark
+    - Benchmark against the docked window
   - key: L-07
     title: Web build
     labels:

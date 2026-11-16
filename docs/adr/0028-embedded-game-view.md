@@ -1,8 +1,8 @@
 # ADR-0028: Show the game inside the IDE by running the preview host's game in the IDE's process
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-16
-- **Decided by:** pending
+- **Decided by:** Justin Plock, 2026-11-16
 - **Issue:** [#190](https://github.com/quakecstudio/editor/issues/190)
 - **Requirements:** ENG-10, ENG-9
 
@@ -54,7 +54,7 @@ What exists on 2026-11-16, read from the code:
 
 ## Decision
 
-Recommended: A. It is the road ADR-0003 and ADR-0004 chose the renderer and the host's language
+A, as Justin chose on 2026-11-16. It is the road ADR-0003 and ADR-0004 chose the renderer and the host's language
 for: the renderer already draws inside egui through paint callbacks, and the IDE already does so
 for the map editor, so the embedded view is the same frame with no copy and no added latency,
 which is the only option that meets #190's "within one frame of latency" with certainty. B pays a
@@ -66,7 +66,6 @@ available, out of process, for a mod a modder does not trust.
 
 ## Consequences
 
-If A is accepted:
 
 - `plan/`: two post-MVP issues in place of #190's single deliverable: extract the host's game loop
   (`Game` and what it needs) from `apps/quakec-engine` into a library crate used by both apps,
