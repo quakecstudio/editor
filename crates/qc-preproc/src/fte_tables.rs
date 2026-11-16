@@ -957,6 +957,14 @@ impl TargetFormat {
     pub const fn supports_extern(self) -> bool {
         matches!(self, Self::Fte | Self::FteDebug | Self::Fteh2)
     }
+
+    /// Whether `QCC_WriteData` writes version 7 for it in the 16-bit layout:
+    /// `progs.version = PROG_EXTENDEDVERSION;` under `QCF_FTE`, `QCF_FTEH2`, `QCF_FTEDEBUG` and
+    /// `QCF_QSS` (FTE-24.3); DarkPlaces' stays version 6.
+    #[must_use]
+    pub const fn writes_version_7(self) -> bool {
+        matches!(self, Self::Fte | Self::Fteh2 | Self::FteDebug | Self::Qss)
+    }
 }
 
 /// `targets[]`: each name `#pragma TARGET` matches in any case, its format and its default

@@ -1422,3 +1422,10 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   (unsigned short)PRLittleShort((unsigned short)a);`, so a global from 32768 to 65530 is
   written where id's `short` reads it as that global less 65536 (FTEQCC prints "Globals exceeds
   32k - an enhanced QCVM will be required" and writes the file).
+- **FTE-24.3** On the FTE targets (`QCF_FTE`, `QCF_FTEH2`, `QCF_FTEDEBUG`) and QSS's (`QCF_QSS`)
+  a program is written in version 7 (PROGS-19): `progs.version = PROG_EXTENDEDVERSION;`, in the
+  32-bit layout when FTE-24.1's reasons hold, `PROG_SECONDARYVERSION32`, else in the 16-bit one,
+  `progs.secondaryversion = PROG_SECONDARYVERSION16;`, whose operands are unsigned (PROGS-19.2).
+  On DarkPlaces' target (`QCF_DARKPLACES`) the 16-bit layout stays version 6, `if
+  (qcc_targetformat == QCF_DARKPLACES) progs.version = PROG_VERSION;`. A statement of an
+  opcode beyond id's (FTEF-25) is written by its number in either.

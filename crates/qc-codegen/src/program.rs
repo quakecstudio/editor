@@ -954,14 +954,11 @@ impl Program {
 
     /// `QCC_PR_SimpleStatement`: `op` of `a` and `b` into the global `c` the caller chose.
     /// Emits `op` with the operands as written, a jump's offset among them, at the origin.
-    pub(crate) fn emit_operands(&mut self, op: Opcode, [a, b, c]: [i32; 3]) {
+    /// `PR_Statement` of the opcode numbered `op`, one of FTE's beyond id's among them
+    /// (FTEF-25), with operands already given.
+    pub(crate) fn emit_number(&mut self, op: u32, [a, b, c]: [i32; 3]) {
         self.origins.push(self.origin);
-        self.statements.push(Statement {
-            op: u32::from(op.number()),
-            a,
-            b,
-            c,
-        });
+        self.statements.push(Statement { op, a, b, c });
     }
 
     pub(crate) fn emit_into(&mut self, op: Opcode, a: u32, b: u32, c: u32) -> Result<(), Internal> {

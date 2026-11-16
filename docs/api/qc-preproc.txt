@@ -128,6 +128,7 @@ fn qc_preproc::fte_pragma::FlagSettings::keywords
 fn qc_preproc::fte_pragma::FlagSettings::lex_flags
 fn qc_preproc::fte_pragma::FlagSettings::priorities
 fn qc_preproc::fte_tables::TargetFormat::supports_extern
+fn qc_preproc::fte_tables::TargetFormat::writes_version_7
 fn qc_preproc::fte_tables::is_opcode_name
 fn qc_preproc::fte_warning::FteWarning::default_action
 fn qc_preproc::fte_warning::FteWarning::of_code

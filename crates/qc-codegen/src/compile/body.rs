@@ -93,10 +93,10 @@ impl Compiler<'_> {
             slots
                 .statement(&mut self.program, statement, StatementIndex::new(index))
                 .at(named)?;
-            let op = u32::try_from(statement.op.number())
-                .ok()
-                .and_then(Opcode::from_number)
-                .at(named)?;
+            // FTEF-25: an opcode beyond id's (`OP_NUMREALOPS` and below) is written by its FTE
+            // number, as the checker chose it for the target; id's are also known as `Opcode`.
+            let number = u32::try_from(statement.op.number()).ok().at(named)?;
+            let op = Opcode::from_number(number);
             let mut operands = [0_i32; STATEMENT_OPERANDS];
             for (word, name) in operands
                 .iter_mut()
@@ -106,7 +106,7 @@ impl Compiler<'_> {
                     *word = self.resolve(name, index, (body, &slots), named)?;
                 }
             }
-            self.program.emit_operands(op, operands);
+            self.program.emit_number(number, operands);
             // FTE-21.8: an operand in a shared temporary takes its real offset at the end.
             for (operand, name) in (0_u8..).zip([statement.a, statement.b, statement.c]) {
                 if let Some(Name::Made(made) | Name::MadeWord(made, _)) = name
@@ -123,7 +123,7 @@ impl Compiler<'_> {
                 _ => {}
             }
             if let Some(Name::Def(callee, _)) = statement.a
-                && is_call(op)
+                && op.is_some_and(is_call)
             {
                 if let (Some(def), Some(ofs)) = (self.index.def(callee), first_argument) {
                     self.precaches.record(&def.name, &self.program, ofs);
