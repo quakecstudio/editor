@@ -29,7 +29,7 @@ use criterion::measurement::WallTime;
 use criterion::{BenchmarkGroup, Criterion, criterion_group, criterion_main};
 use qc_codegen::compile_module;
 use qc_sema::{Db, FileId, ModuleInput};
-use qs_map_light::{Finish, Light, Sampling};
+use qs_map_light::{Finish, Light, Sampling, Sidecars};
 
 /// The criterion group every budget benchmark belongs to.
 const GROUP: &str = "budgets";
@@ -225,6 +225,19 @@ fn e1m1_map() -> Vec<u8> {
     fs::read(path).expect("lq-e1m1.map reads")
 }
 
+/// The variable naming a WAD with a texture of each name lq-e1m1 has, which
+/// `cargo xtask bench` writes and sets: the map is compiled with it as the workbench compiles
+/// a map with its WADs, since a BSP with no textures has no sky and no surface lights to light.
+const WAD_FILE: &str = "QS_BENCH_WAD";
+
+/// lq-e1m1's textures, from the file [`WAD_FILE`] names.
+fn e1m1_wad() -> Vec<u8> {
+    let path = std::env::var_os(WAD_FILE).unwrap_or_else(|| {
+        panic!("{WAD_FILE} is not set: run the benchmarks through cargo xtask bench")
+    });
+    fs::read(path).expect("lq-e1m1's WAD reads")
+}
+
 /// The map editor's textured view after an edit (P7-13): lq-e1m1's scene built again and its
 /// every brush face laid out as the mesh the renderer draws.
 fn textured_view_e1m1(group: &mut BenchmarkGroup<'_, WallTime>) {
@@ -242,18 +255,23 @@ fn textured_view_e1m1(group: &mut BenchmarkGroup<'_, WallTime>) {
 }
 
 /// Play from here's compile of an id1-sized map (P6-12, P6-37): LibreQuake's lq-e1m1 through
-/// the extended qbsp with no WAD, as the workbench compiles it, then the quick light
+/// the extended qbsp with its textures, as the workbench compiles it, then the quick light
 /// (MAP-13, LIGHT-8.8).
 fn play_from_here_e1m1(group: &mut BenchmarkGroup<'_, WallTime>) {
-    let map = e1m1_map();
+    let (map, wad) = (e1m1_map(), e1m1_wad());
     let compiler = qs_map_bsp::Compiler::default().with_dialect(qs_map_bsp::Dialect::Extended);
     group.bench_function("play_from_here_e1m1", |bencher| {
         bencher.iter(|| {
-            let compiled = compiler.compile(&map, None).expect("lq-e1m1 compiles");
+            let compiled = compiler
+                .compile(&map, Some(&wad))
+                .expect("lq-e1m1 compiles");
             black_box(
                 Light::new(Sampling::Fast)
                     .with_finish(Finish::Quick)
-                    .run(&compiled.bsp)
+                    .run_with(
+                        &compiled.bsp,
+                        Sidecars::new(compiled.surfaces.clone(), compiled.leaves.clone()).extras(),
+                    )
                     .expect("lq-e1m1 lights"),
             )
         });
@@ -271,13 +289,16 @@ fn light_alone_e1m1(group: &mut BenchmarkGroup<'_, WallTime>, name: &str, withou
     let map = String::from_utf8_lossy(&e1m1_map()).replace(without, "\"_unset\"");
     let compiled = qs_map_bsp::Compiler::default()
         .with_dialect(qs_map_bsp::Dialect::Extended)
-        .compile(map.as_bytes(), None)
+        .compile(map.as_bytes(), Some(&e1m1_wad()))
         .expect("lq-e1m1 compiles");
     group.bench_function(name, |bencher| {
         bencher.iter(|| {
             black_box(
                 Light::new(Sampling::Fast)
-                    .run(&compiled.bsp)
+                    .run_with(
+                        &compiled.bsp,
+                        Sidecars::new(compiled.surfaces.clone(), compiled.leaves.clone()).extras(),
+                    )
                     .expect("lq-e1m1 lights"),
             )
         });
@@ -317,6 +338,7 @@ fn region_compile_e1m1(group: &mut BenchmarkGroup<'_, WallTime>) {
             scale: [1.0; 2],
         },
     };
+    let wad = e1m1_wad();
     let compiler = qs_map_bsp::Compiler::default().with_dialect(qs_map_bsp::Dialect::Extended);
     group.bench_function("region_compile_e1m1", |bencher| {
         bencher.iter(|| {
@@ -324,11 +346,16 @@ fn region_compile_e1m1(group: &mut BenchmarkGroup<'_, WallTime>) {
                 .cut(&file, &skip)
                 .expect("the room is sealed")
                 .to_bytes();
-            let compiled = compiler.compile(&cut, None).expect("the room compiles");
+            let compiled = compiler
+                .compile(&cut, Some(&wad))
+                .expect("the room compiles");
             black_box(
                 Light::new(Sampling::Fast)
                     .with_finish(Finish::Quick)
-                    .run(&compiled.bsp)
+                    .run_with(
+                        &compiled.bsp,
+                        Sidecars::new(compiled.surfaces.clone(), compiled.leaves.clone()).extras(),
+                    )
                     .expect("the room lights"),
             )
         });
@@ -336,20 +363,25 @@ fn region_compile_e1m1(group: &mut BenchmarkGroup<'_, WallTime>) {
 }
 
 /// A full compile of an id1-sized map (P7-04, MAP-18): LibreQuake's lq-e1m1 through the extended
-/// qbsp with no WAD, then full vis and full light, as the background full compile runs them.
+/// qbsp with its textures, then full vis and full light, as the background full compile runs them.
 fn full_compile_e1m1(group: &mut BenchmarkGroup<'_, WallTime>) {
-    let map = e1m1_map();
+    let (map, wad) = (e1m1_map(), e1m1_wad());
     let compiler = qs_map_bsp::Compiler::default().with_dialect(qs_map_bsp::Dialect::Extended);
     group.bench_function("full_compile_e1m1", |bencher| {
         bencher.iter(|| {
-            let compiled = compiler.compile(&map, None).expect("lq-e1m1 compiles");
+            let compiled = compiler
+                .compile(&map, Some(&wad))
+                .expect("lq-e1m1 compiles");
             let portals = compiled.portal_file.expect("lq-e1m1 is sealed");
             let seen = qs_map_vis::Vis::new(qs_map_vis::Mode::default())
                 .run(&compiled.bsp, &String::from_utf8_lossy(&portals))
                 .expect("lq-e1m1 vises");
             black_box(
                 Light::new(Sampling::Extra)
-                    .run(&seen)
+                    .run_with(
+                        &seen,
+                        Sidecars::new(compiled.surfaces, compiled.leaves).extras(),
+                    )
                     .expect("lq-e1m1 lights"),
             )
         });

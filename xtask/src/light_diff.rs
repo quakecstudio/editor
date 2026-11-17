@@ -61,6 +61,60 @@ const STUB_NAME: usize = 16;
 const STUB_SIDE: u32 = 16;
 const STUB_MIPS: u32 = 4;
 const STUB_HEADER: u32 = 40;
+
+/// A WAD holding a blank texture of each name the faces of `file` have: light tells sky,
+/// liquid, fence and the textures of surface lights by their names (LIGHT-11.2, LIGHT-16.1),
+/// which a BSP compiled with no WAD does not have.
+pub(crate) fn stub_wad(file: &MapFile) -> Result<Vec<u8>, String> {
+    let mut names: Vec<Vec<u8>> = file
+        .entities
+        .iter()
+        .flat_map(Entity::brushes)
+        .flat_map(|brush| &brush.faces)
+        .map(|face| face.texture().to_ascii_lowercase())
+        .collect();
+    // An animation's frames are a run from its first: the game refuses a BSP that has a
+    // later frame without those before it (BSP-4.8), and a map may name only one.
+    let earlier: Vec<Vec<u8>> = names
+        .iter()
+        .filter_map(|texture| match texture.as_slice() {
+            [b'+', frame, rest @ ..] => Some((*frame, rest)),
+            _ => None,
+        })
+        .flat_map(|(frame, rest)| {
+            let first = if frame.is_ascii_digit() { b'0' } else { b'a' };
+            (first..frame).map(move |before| {
+                let mut name = vec![b'+', before];
+                name.extend_from_slice(rest);
+                name
+            })
+        })
+        .collect();
+    names.extend(earlier);
+    names.sort_unstable();
+    names.dedup();
+    let mut wad = WadBuilder::new();
+    for texture in &names {
+        // A name longer than a WAD holds is no texture of a WAD: qbsp finds none.
+        if texture.len() >= STUB_NAME {
+            continue;
+        }
+        let mut lump = texture.clone();
+        lump.resize(STUB_NAME, 0);
+        let mut at = STUB_HEADER;
+        for size in [STUB_SIDE, STUB_SIDE] {
+            lump.extend_from_slice(&size.to_le_bytes());
+        }
+        for level in 0..STUB_MIPS {
+            lump.extend_from_slice(&at.to_le_bytes());
+            at = at.saturating_add((STUB_SIDE >> level).saturating_mul(STUB_SIDE >> level));
+        }
+        lump.resize(usize::try_from(at).unwrap_or(0), 0);
+        wad.add(texture, WAD_TYP_MIPTEX, lump)
+            .map_err(|e| e.to_string())?;
+    }
+    wad.to_bytes().map_err(|e| e.to_string())
+}
 /// The classname of an instance of an external map (MAP-14).
 const EXTERNAL_MAP: &str = "misc_external_map";
 /// The channels of a `.lit` sample.
@@ -514,63 +568,14 @@ impl Oracles<'_> {
         Ok(agrees)
     }
 
-    /// The map `text` with its world's `wad` a WAD written for it, holding a texture of each
-    /// name the map's faces have: light tells sky, liquid, fence and the textures of surface
-    /// lights by their names (LIGHT-11.2, LIGHT-16.1), which a BSP compiled with no WAD does
-    /// not have. The corpus's maps come without their WADs, so the textures are blank.
+    /// The map `text` with its world's `wad` a WAD written for it ([`stub_wad`]). The
+    /// corpus's maps come without their WADs, so the textures are blank.
     fn with_textures(&self, text: &[u8], name: &str) -> Result<Vec<u8>, String> {
         let mut file = MapFile::parse(text).map_err(|e| format!("{name}: {e}"))?;
-        let mut names: Vec<Vec<u8>> = file
-            .entities
-            .iter()
-            .flat_map(Entity::brushes)
-            .flat_map(|brush| &brush.faces)
-            .map(|face| face.texture().to_ascii_lowercase())
-            .collect();
-        // An animation's frames are a run from its first: the game refuses a BSP that has a
-        // later frame without those before it (BSP-4.8), and a map may name only one.
-        let earlier: Vec<Vec<u8>> = names
-            .iter()
-            .filter_map(|texture| match texture.as_slice() {
-                [b'+', frame, rest @ ..] => Some((*frame, rest)),
-                _ => None,
-            })
-            .flat_map(|(frame, rest)| {
-                let first = if frame.is_ascii_digit() { b'0' } else { b'a' };
-                (first..frame).map(move |before| {
-                    let mut name = vec![b'+', before];
-                    name.extend_from_slice(rest);
-                    name
-                })
-            })
-            .collect();
-        names.extend(earlier);
-        names.sort_unstable();
-        names.dedup();
-        let mut wad = WadBuilder::new();
-        for texture in &names {
-            // A name longer than a WAD holds is no texture of a WAD: qbsp finds none.
-            if texture.len() >= STUB_NAME {
-                continue;
-            }
-            let mut lump = texture.clone();
-            lump.resize(STUB_NAME, 0);
-            let mut at = STUB_HEADER;
-            for size in [STUB_SIDE, STUB_SIDE] {
-                lump.extend_from_slice(&size.to_le_bytes());
-            }
-            for level in 0..STUB_MIPS {
-                lump.extend_from_slice(&at.to_le_bytes());
-                at = at.saturating_add((STUB_SIDE >> level).saturating_mul(STUB_SIDE >> level));
-            }
-            lump.resize(usize::try_from(at).unwrap_or(0), 0);
-            wad.add(texture, WAD_TYP_MIPTEX, lump)
-                .map_err(|e| format!("{name}: {e}"))?;
-        }
+        let bytes = stub_wad(&file).map_err(|e| format!("{name}: {e}"))?;
         let dir = self.work.join("textures");
         fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
         let path = dir.join(format!("{name}.wad"));
-        let bytes = wad.to_bytes().map_err(|e| format!("{name}: {e}"))?;
         fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
         if let Some(world) = file.entities.first_mut() {
             world

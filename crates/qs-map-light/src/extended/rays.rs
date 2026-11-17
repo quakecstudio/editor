@@ -80,7 +80,7 @@ impl Asker {
 
 /// The boxes of a tree a ray has yet to look in, each with how far along the ray it is
 /// entered: kept between rays so that each does not make its own.
-pub(crate) type Stack = Vec<(usize, f32)>;
+pub(crate) type Stack = Vec<(Child, f32)>;
 
 /// A texel: its red, green and blue, and its alpha.
 pub(crate) type Texel = [u8; 4];
@@ -147,6 +147,7 @@ struct Triangle {
 impl Triangle {
     /// Where along the ray from `origin` along `dir` it is hit, past 0 and at most `far`: the
     /// Moller-Trumbore test, a hit on an edge counting (LIGHT-11.9).
+    #[inline(always)]
     fn hit(&self, origin: Vec3, dir: Vec3, far: f32) -> Option<f32> {
         let (cross, dot) = (fused_cross, fused_dot);
         let to_corner = sub(self.v0, origin);
@@ -363,48 +364,142 @@ impl Bounds {
             ],
         }
     }
+}
 
-    /// How far along the ray from `origin`, `inverse` one over its direction, the box is
-    /// entered; none when the ray misses it or enters it past `far`.
-    fn entered(self, origin: Vec3, inverse: Vec3, far: f32) -> Option<f32> {
-        let mut near = 0.0_f32;
-        let mut end = far;
-        for axis in 0..AXES {
-            let (Some(o), Some(i), Some(low), Some(high)) = (
-                origin.get(axis),
-                inverse.get(axis),
-                self.min.get(axis),
-                self.max.get(axis),
-            ) else {
-                continue;
-            };
+/// The boxes a node of the tree holds.
+const WIDTH: usize = 4;
+
+/// What is under one of a node's boxes.
+#[derive(Clone, Copy, Default)]
+pub(crate) enum Child {
+    /// Nothing: the node has fewer than [`WIDTH`] boxes.
+    #[default]
+    Empty,
+    /// The triangles from `first`, `count` of them.
+    Leaf { first: usize, count: usize },
+    /// The node at this place in the tree.
+    Node(usize),
+}
+
+/// A node of the tree: [`WIDTH`] boxes and what is under each. The boxes are kept a
+/// coordinate at a time, the same coordinate of every box side by side, so that a ray is
+/// tried against all of them in one pass the processor can do at once.
+struct Node {
+    low: [[f32; WIDTH]; AXES],
+    high: [[f32; WIDTH]; AXES],
+    children: [Child; WIDTH],
+}
+
+impl Node {
+    /// No boxes: one at infinity is entered by no ray.
+    const EMPTY: Self = Self {
+        low: [[f32::INFINITY; WIDTH]; AXES],
+        high: [[f32::INFINITY; WIDTH]; AXES],
+        children: [Child::Empty; WIDTH],
+    };
+
+    /// The box `bounds`, with `child` under it, as the node's box `slot`.
+    fn put(&mut self, slot: usize, bounds: Bounds, child: Child) {
+        let sides = self.low.iter_mut().zip(&mut self.high);
+        for ((low, high), (min, max)) in sides.zip(bounds.min.into_iter().zip(bounds.max)) {
+            if let (Some(low), Some(high)) = (low.get_mut(slot), high.get_mut(slot)) {
+                *low = min;
+                *high = max;
+            }
+        }
+        if let Some(under) = self.children.get_mut(slot) {
+            *under = child;
+        }
+    }
+
+    /// How far along the ray from `origin`, `inverse` one over its direction, each box is
+    /// entered; infinity for one the ray misses or enters past `far`.
+    #[inline(always)]
+    fn entered(&self, origin: Vec3, inverse: Vec3, far: f32) -> [f32; WIDTH] {
+        let mut near = [0.0_f32; WIDTH];
+        let mut end = [far; WIDTH];
+        let axes = self
+            .low
+            .iter()
+            .zip(&self.high)
+            .zip(origin.into_iter().zip(inverse));
+        for ((low, high), (o, i)) in axes {
             if i.is_infinite() {
-                // A ray along this axis crosses the box only from between its two sides.
-                if o < low || o > high {
-                    return None;
+                // A ray along this axis crosses a box only from between its two sides.
+                for (near, (low, high)) in near.iter_mut().zip(low.iter().zip(high)) {
+                    if o < *low || o > *high {
+                        *near = f32::INFINITY;
+                    }
                 }
                 continue;
             }
-            let (a, b) = ((low - o) * i, (high - o) * i);
-            near = near.max(a.min(b));
-            end = end.min(a.max(b));
+            // The side the ray comes to first, then the one it leaves by.
+            let (first, last) = if i < 0.0 { (high, low) } else { (low, high) };
+            for ((near, end), (first, last)) in
+                near.iter_mut().zip(&mut end).zip(first.iter().zip(last))
+            {
+                *near = near.max((first - o) * i);
+                *end = end.min((last - o) * i);
+            }
         }
-        (near <= end).then_some(near)
+        for (near, end) in near.iter_mut().zip(end) {
+            *near = if *near <= end { *near } else { f32::INFINITY };
+        }
+        near
     }
 }
 
-enum Node {
-    /// The triangles from `first`, `count` of them.
-    Leaf { first: usize, count: usize },
-    /// Two boxes: the left is the next node, the right at `right`.
-    Split { right: usize },
+/// Triangles yet to be put in the tree, each with its middle, and the box that holds them.
+struct Group {
+    bounds: Bounds,
+    pending: Vec<(Vec3, Triangle)>,
+}
+
+impl Group {
+    fn of(pending: Vec<(Vec3, Triangle)>) -> Self {
+        let bounds = pending.iter().fold(Bounds::EMPTY, |bounds, (_, triangle)| {
+            bounds.with_triangle(triangle)
+        });
+        Self { bounds, pending }
+    }
+
+    /// The group in two, parted where the halves' boxes, each weighed by its triangles, have
+    /// the least surface: a ray meets a box about as often as it has surface. The group
+    /// itself when it is no more than a leaf holds, or no cut parts it.
+    fn parted(self) -> Result<[Self; 2], Self> {
+        if self.pending.len() <= LEAF_TRIANGLES {
+            return Err(self);
+        }
+        let middles = self
+            .pending
+            .iter()
+            .fold(Bounds::EMPTY, |bounds, (middle, _)| bounds.with(*middle));
+        let Some((axis, at_coordinate)) = middles.best_split(&self.pending) else {
+            return Err(self);
+        };
+        let coordinate = |middle: &Vec3| middle.get(axis).copied().unwrap_or_default();
+        let (lower, mut upper): (Vec<_>, Vec<_>) = self
+            .pending
+            .into_iter()
+            .partition(|(middle, _)| coordinate(middle) < at_coordinate);
+        // Middles a rounding apart can all fall on one side of a cut between them: parting
+        // them again would never end, so they stay together.
+        if lower.is_empty() || upper.is_empty() {
+            upper.extend(lower);
+            return Err(Self {
+                bounds: self.bounds,
+                pending: upper,
+            });
+        }
+        Ok([Self::of(lower), Self::of(upper)])
+    }
 }
 
 /// Triangles and the tree of boxes over them.
 #[derive(Default)]
 struct Tree {
     triangles: Vec<Triangle>,
-    nodes: Vec<(Bounds, Node)>,
+    nodes: Vec<Node>,
 }
 
 /// The triangles that cast shadow, in a tree; and those of them that are sky, in another, so
@@ -461,52 +556,57 @@ impl Rays {
 
 impl Tree {
     /// The node over `pending`, and those under it, after the nodes there are; its triangles
-    /// go after those there are, in the order of the leaves. A node is split where the two
-    /// halves' boxes, each weighed by its triangles, have the least surface: a ray meets a
-    /// box about as often as it has surface.
+    /// go after those there are, in the order of the leaves. The triangles are parted, the
+    /// part with the largest box first, until the node has its [`WIDTH`] boxes or no part can
+    /// be parted further; a part larger than a leaf then gets a node of its own.
     fn build(&mut self, pending: Vec<(Vec3, Triangle)>) {
-        let mut bounds = Bounds::EMPTY;
-        let mut middles = Bounds::EMPTY;
-        for (middle, triangle) in &pending {
-            bounds = bounds.with_triangle(triangle);
-            middles = middles.with(*middle);
-        }
-        let split = if pending.len() <= LEAF_TRIANGLES {
-            None
-        } else {
-            middles.best_split(&pending)
-        };
-        let Some((axis, at_coordinate)) = split else {
-            self.leaf(bounds, pending);
-            return;
-        };
-        let coordinate = |middle: &Vec3| middle.get(axis).copied().unwrap_or_default();
-        let (lower, mut upper): (Vec<_>, Vec<_>) = pending
-            .into_iter()
-            .partition(|(middle, _)| coordinate(middle) < at_coordinate);
-        // Middles a rounding apart can all fall on one side of a cut between them: splitting
-        // again would never end, so they are a leaf.
-        if lower.is_empty() || upper.is_empty() {
-            upper.extend(lower);
-            self.leaf(bounds, upper);
-            return;
-        }
         let at = self.nodes.len();
-        self.nodes.push((bounds, Node::Split { right: 0 }));
-        self.build(lower);
-        let right = self.nodes.len();
-        if let Some((_, Node::Split { right: slot })) = self.nodes.get_mut(at) {
-            *slot = right;
+        self.nodes.push(Node::EMPTY);
+        let mut open = vec![Group::of(pending)];
+        let mut leaves: Vec<Group> = Vec::new();
+        while open.len().saturating_add(leaves.len()) < WIDTH {
+            let largest = open
+                .iter()
+                .enumerate()
+                .max_by(|a, b| {
+                    let (a, b) = (a.1.bounds.half_surface(), b.1.bounds.half_surface());
+                    a.total_cmp(&b)
+                })
+                .map(|(index, _)| index);
+            let Some(largest) = largest else {
+                break;
+            };
+            match open.swap_remove(largest).parted() {
+                Ok(halves) => open.extend(halves),
+                Err(whole) => leaves.push(whole),
+            }
         }
-        self.build(upper);
-    }
-
-    /// A leaf of `pending`'s triangles in the box `bounds`.
-    fn leaf(&mut self, bounds: Bounds, pending: Vec<(Vec3, Triangle)>) {
-        let first = self.triangles.len();
-        let count = pending.len();
-        self.triangles.extend(pending.into_iter().map(|(_, t)| t));
-        self.nodes.push((bounds, Node::Leaf { first, count }));
+        let mut node = Node::EMPTY;
+        for (slot, group) in leaves
+            .into_iter()
+            .map(Err)
+            .chain(open.into_iter().map(Ok))
+            .enumerate()
+        {
+            let (bounds, child) = match group {
+                Ok(group) if group.pending.len() > LEAF_TRIANGLES => {
+                    let under = self.nodes.len();
+                    self.build(group.pending);
+                    (group.bounds, Child::Node(under))
+                }
+                Ok(group) | Err(group) => {
+                    let first = self.triangles.len();
+                    let count = group.pending.len();
+                    self.triangles
+                        .extend(group.pending.into_iter().map(|(_, triangle)| triangle));
+                    (group.bounds, Child::Leaf { first, count })
+                }
+            };
+            node.put(slot, bounds, child);
+        }
+        if let Some(slot) = self.nodes.get_mut(at) {
+            *slot = node;
+        }
     }
 
     /// The triangles the ray from `origin` along `dir` hits before `far`, nearest box first
@@ -521,49 +621,43 @@ impl Tree {
     ) {
         let inverse = dir.map(|c| 1.0 / c);
         stack.clear();
-        if let Some(entry) = self
-            .nodes
-            .first()
-            .and_then(|(bounds, _)| bounds.entered(origin, inverse, far))
-        {
-            stack.push((0, entry));
+        if !self.nodes.is_empty() {
+            stack.push((Child::Node(0), 0.0));
         }
-        while let Some((at, entry)) = stack.pop() {
+        while let Some((child, entry)) = stack.pop() {
             // A hit since the box was put by may be nearer than the box.
             if entry > far {
                 continue;
             }
-            let Some((_, node)) = self.nodes.get(at) else {
-                continue;
-            };
-            match node {
-                Node::Split { right } => {
-                    // The nearer of the two boxes first: what stops the ray is likelier there,
-                    // and a nearer hit lets the farther box be passed over.
-                    let left = at.saturating_add(1);
-                    let entry = |index: usize| {
-                        self.nodes
-                            .get(index)
-                            .and_then(|(bounds, _)| bounds.entered(origin, inverse, far))
-                            .map(|entry| (index, entry))
+            match child {
+                Child::Empty => {}
+                Child::Node(at) => {
+                    let Some(node) = self.nodes.get(at) else {
+                        continue;
                     };
-                    match (entry(left), entry(*right)) {
-                        (Some(a), Some(b)) if a.1 <= b.1 => {
-                            stack.push(b);
-                            stack.push(a);
+                    // The nearest of the boxes first: what stops the ray is likelier there,
+                    // and a nearer hit lets the farther boxes be passed over.
+                    let mut nearest = (f32::INFINITY, stack.len());
+                    for (under, entry) in
+                        node.children.iter().zip(node.entered(origin, inverse, far))
+                    {
+                        if entry.is_finite() {
+                            if entry < nearest.0 {
+                                nearest = (entry, stack.len());
+                            }
+                            stack.push((*under, entry));
                         }
-                        (Some(a), Some(b)) => {
-                            stack.push(a);
-                            stack.push(b);
-                        }
-                        (Some(only), None) | (None, Some(only)) => stack.push(only),
-                        (None, None) => {}
+                    }
+                    if let Some(top) = stack.len().checked_sub(1)
+                        && nearest.1 < top
+                    {
+                        stack.swap(nearest.1, top);
                     }
                 }
-                Node::Leaf { first, count } => {
+                Child::Leaf { first, count } => {
                     let triangles = self
                         .triangles
-                        .get(*first..first.saturating_add(*count))
+                        .get(first..first.saturating_add(count))
                         .unwrap_or_default();
                     for triangle in triangles {
                         if let Some(t) = triangle.hit(origin, dir, far) {
