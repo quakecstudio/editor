@@ -174,7 +174,8 @@ struct Contribution {
 impl Lamp {
     /// `GetLightContrib` and `GetLightValueWithAngle`: what `lamp` gives a sample at `point`
     /// (LIGHT-10.3, LIGHT-10.5, LIGHT-10.9).
-    fn contribution(&self, world: &World, point: Vec3, facing: Facing) -> Contribution {
+    fn contribution(&self, map: &Map<'_>, point: Vec3, facing: Facing) -> Contribution {
+        let world = &map.world;
         let lamp = self;
         let (mut dir, mut dist) = normalize_with_length(sub(lamp.origin(), point));
         if dist < NEAREST {
@@ -191,8 +192,21 @@ impl Lamp {
             let angle = to_f32((1.0 - anglescale) + anglescale * f64::from(angle));
             value = lamp.value_at(world, dist) * angle * spot_scale(lamp.spot, dir);
         }
+        // A projector's colour is the texture's where the sample falls in its picture, by
+        // the light's own over 255; nothing outside the picture (LIGHT-10.11).
+        let colour = match &lamp.projection {
+            Some(projection) => {
+                let own = lamp.keys.color.get();
+                let mut colour = map.projected(projection, point).unwrap_or([0.0; AXES]);
+                for (channel, own) in colour.iter_mut().zip(own) {
+                    *channel *= own * (1.0 / FULL);
+                }
+                colour
+            }
+            None => lamp.keys.color.get(),
+        };
         Contribution {
-            colour: scale(scale(lamp.keys.color.get(), value), 1.0 / FULL),
+            colour: scale(scale(colour, value), 1.0 / FULL),
             dir,
             dist,
         }
@@ -363,7 +377,7 @@ impl Shader<'_> {
                 normal: Some(sample.normal),
                 twosided: patch.twosided,
             };
-            let given = lamp.contribution(self.world(), sample.point, facing);
+            let given = lamp.contribution(self.map, sample.point, facing);
             let dirt = self.dirt_scale(
                 sample.occlusion,
                 DirtFor::Lamp(lamp, given.dist),
@@ -791,7 +805,7 @@ impl Shader<'_> {
                     normal: None,
                     twosided: false,
                 };
-                let given = lamp.contribution(self.world(), point, facing);
+                let given = lamp.contribution(self.map, point, facing);
                 if brightness(given.colour).abs() <= GATE {
                     continue;
                 }

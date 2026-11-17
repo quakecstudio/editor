@@ -292,9 +292,8 @@ lights the map, read by the same reader (LIGHT-2), so what the modder sees is wh
   then a NUL. In each value a `\b` is taken out and the bytes from it to the next `\b` have
   their high bit set.
 - **LIGHT-8.7** Not ported, each a divergence from ericw-tools: `_lightmap_scale` and
-  `_world_units_per_luxel` (a lightmap is 16 texels to the luxel); projected textures
-  (`_project_texture`); radiosity surface lights (`_surface_radiosity`, `_surflight_radiosity`);
-  and the command line's options.
+  `_world_units_per_luxel` (a lightmap is 16 texels to the luxel); radiosity surface lights
+  (`_surface_radiosity`, `_surflight_radiosity`); and the command line's options.
   Each is being ported; none is left out by decision.
 - **LIGHT-8.8** `qs-map-light` offers a quick light for playing a map at once (MAP-13): the
   extended dialect's lighting without dirt (LIGHT-19) and bounce (LIGHT-20), the two that
@@ -443,6 +442,31 @@ The world's settings, each with its default; a second name is another key for th
   nearer than 0.1 is taken as 0.1 away, the light straight above. A contribution whose mean
   channel is at most 0.001 is not traced. The rest reach the sample when nothing stops the
   ray from it to the light (LIGHT-11).
+- **LIGHT-10.11** A light with `_project_texture` projects that texture of the map, named in
+  any case: a sample it lights takes, in place of the light's colour, the texture's colour
+  where the sample falls in the projector's picture, each channel times the light's own over
+  255, and nothing outside the picture (`GetLightContrib`: `if
+  (LightFace_SampleMipTex(entity->projectedmip, entity->projectionmatrix, surfpoint, col)) {
+  ... col[i] *= entcol[i] * (1.0f / 255.0f); } color_out = col * add * (1.0f / 255.0f);`). The
+  projector is at the light's origin as the map gives it, turned by `_project_mangle`, yaw,
+  pitch and roll (20 0 0 by default); with no such key it is the light's `mangle`, and with
+  neither the light's `angles` as yaw, minus pitch and roll, the light then a spotlight with
+  no direction of its own. Its field of view is `_project_fov` degrees (90 by default)
+  across the texture's longer side and `CalcFov`'s across the other, `atan(shorter / (longer /
+  tan(fov / 2)))` doubled; a `_project_fov` under 1 or over 179 stops the run (`Unsupported
+  fov`). The picture is `Matrix4x4_CM_MakeModelViewProj`'s: the view turned from Quake's axes
+  (`modelview[2] = -1; modelview[4] = -1; modelview[9] = 1; modelview[15] = 1`), then by minus
+  the roll about x, the pitch about y and minus the yaw about z, then moved by minus the
+  origin, under `Matrix4x4_CM_Projection_Inf` with a near plane of 4 and no far plane. A
+  point is in the picture when it is not behind the near plane and falls strictly between 0
+  and 1 each way (`Matrix4x4_CM_Project`). The colour there is of the four texels about
+  `s * (width - 1)`, `(1 - t) * (height - 1)`, the texture repeating, each by how near it is,
+  the sum doubled (`LightFace_SampleMipTex`, `result *= 2`); a texel's colour is the
+  palette's, white with none (LIGHT-11.6). A texture the map has not, or one with no texels,
+  is the warning `light has "_project_texture" "NAME", but this texture was not found`, and
+  the light is a plain one. Source: `light/entities.cc`, `LoadEntities`,
+  `Matrix4x4_CM_MakeModelViewProj`, `CalcFov`; `light/ltface.cc`, `GetLightContrib`,
+  `LightFace_SampleMipTex`, `Matrix4x4_CM_Project`.
 
 ## LIGHT-11 Shadows
 

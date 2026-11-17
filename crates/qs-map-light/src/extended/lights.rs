@@ -15,6 +15,7 @@ use crate::extended::keys::{
 use crate::extended::math::{
     Aabb, add, length, normalize_with_length, polygon_centroid, scale, sub, vec_from_mangle,
 };
+use crate::extended::project::Projection;
 use crate::extended::rays::{Asker, Rays, Stack, Texels};
 use crate::extended::scene::{Map, Skin};
 use crate::extended::sun::{Random, Sun, SunLight, Suns};
@@ -66,6 +67,8 @@ pub(crate) struct Lamp {
     /// The entity it targets.
     target: Option<usize>,
     pub(crate) spot: Option<Spot>,
+    /// With `_project_texture`, its projector (LIGHT-10.11).
+    pub(crate) projection: Option<Projection>,
     /// What it can see, when lights are culled by it (LIGHT-10.8).
     pub(crate) bounds: Option<Aabb>,
     /// The leaf it is in, when lights are culled by the BSP's visibility (LIGHT-10.10).
@@ -170,11 +173,25 @@ impl Lights {
                 continue;
             }
             let mut keys = LightKeys::read(dict);
-            let spot = keys.mangle.is_changed().then(|| Spot {
+            let mut spot = keys.mangle.is_changed().then(|| Spot {
                 vec: vec_from_mangle(keys.mangle.get()),
                 falloff: 0.0,
                 falloff2: 0.0,
             });
+            // LIGHT-10.11: a projector looks along `_project_mangle`, else the light's
+            // `mangle`, else its `angles`, and a light that takes them is a spotlight.
+            if keys.mangle.is_changed() && !keys.project_mangle.is_changed() {
+                keys.project_mangle.set(keys.mangle.get(), Source::Map);
+            }
+            if !keys.project_texture.get().is_empty() && !keys.project_mangle.is_changed() {
+                let [pitch, yaw, roll] = dict.vector(b"angles");
+                keys.project_mangle.set([yaw, -pitch, roll], Source::Map);
+                spot.get_or_insert(Spot {
+                    vec: [0.0; AXES],
+                    falloff: 0.0,
+                    falloff2: 0.0,
+                });
+            }
             if !keys.switchableshadow_target.get().is_empty() {
                 keys.nostaticlight.set(true, Source::Default);
             }
@@ -184,6 +201,7 @@ impl Lights {
                 entity: EntityId(entity),
                 target: None,
                 spot,
+                projection: None,
                 bounds: None,
                 leaf: None,
             });
@@ -227,6 +245,37 @@ impl Lights {
         }
         out.push(0);
         out
+    }
+
+    /// The projector of each light with `_project_texture`, made before any light is copied
+    /// or moved (LIGHT-10.11): the names of the textures the map does not have.
+    ///
+    /// # Errors
+    ///
+    /// [`LightError::ProjectFov`] for a `_project_fov` outside 1 to 179.
+    pub(crate) fn project(&mut self, map: &Map<'_>) -> Result<Vec<Vec<u8>>, LightError> {
+        let mut missing = Vec::new();
+        for lamp in &mut self.lamps {
+            let name = lamp.keys.project_texture.get();
+            if name.is_empty() {
+                continue;
+            }
+            let texture = map
+                .texture_named(&name)
+                .and_then(|texture| Some((texture, map.texture_size(texture)?)));
+            let Some(texture) = texture else {
+                missing.push(name);
+                continue;
+            };
+            let fov = lamp.keys.project_fov.get();
+            let projection =
+                Projection::new(lamp.keys.project_mangle.get(), lamp.origin(), fov, texture)
+                    .ok_or(LightError::ProjectFov {
+                        entity: lamp.entity,
+                    })?;
+            lamp.projection = Some(projection);
+        }
+        Ok(missing)
     }
 
     /// `SetupLights`: the surface lights and the scattered copies added, targets matched,

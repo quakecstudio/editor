@@ -1170,3 +1170,69 @@ fn a_model_with_no_faces_casts_its_brushes_shadow() {
         floor_at(&lit_open, beside.0, beside.1)
     );
 }
+
+// spec LIGHT-10.11: a light with _project_texture lights only what falls in its picture, in
+// the texture's colour by its own; a texture the map has not is a warning and the light is a
+// plain one; a field of view outside 1 to 179 stops the run.
+#[test]
+fn a_light_projects_a_texture() {
+    let projector = |keys: &str| {
+        light_at(
+            "128 128 120",
+            &format!("\"light\" \"300\"\n\"mangle\" \"0 -90 0\"\n\"angle\" \"120\"\n{keys}"),
+        )
+    };
+    // The room's textures are all of index 1: a palette whose colour 1 is orange.
+    let mut palette = vec![0_u8; 768];
+    palette[3..6].copy_from_slice(&[255, 128, 0]);
+    let run = |keys: &str| {
+        let bsp = room("", "wall", "", &projector(keys));
+        Light::default().run_with(
+            &bsp,
+            Extras {
+                palette: Some(&palette),
+                ..Extras::default()
+            },
+        )
+    };
+    let plain = run("").unwrap();
+    let projected = run("\"_project_texture\" \"WALL\"\n\"_project_fov\" \"60\"\n").unwrap();
+    // Straight under the light both light the floor; out by the corner, inside the
+    // spotlight's cone and outside the picture's 60 degrees, only the plain light does.
+    let (under, corner) = ((128.0, 128.0), (16.0, 16.0));
+    assert!(floor_at(&plain.bsp, under.0, under.1).unwrap() > 0);
+    assert!(floor_at(&plain.bsp, corner.0, corner.1).unwrap() > 0);
+    assert!(floor_at(&projected.bsp, under.0, under.1).unwrap() > 0);
+    assert_eq!(floor_at(&projected.bsp, corner.0, corner.1).unwrap_or(0), 0);
+    assert!(plain.lit.is_none(), "a white light");
+    // Orange: every lit luxel has red twice its green and no blue.
+    let colours = projected.lit.unwrap();
+    let lit: Vec<&[u8]> = colours[8..]
+        .chunks(3)
+        .filter(|rgb| rgb.iter().any(|&c| c > 0))
+        .collect();
+    assert!(!lit.is_empty());
+    for rgb in lit {
+        assert_eq!(rgb[2], 0, "{rgb:?}");
+        assert!(
+            rgb[0] > rgb[1] && rgb[0].abs_diff(rgb[1].saturating_mul(2)) <= 2,
+            "{rgb:?}"
+        );
+    }
+    assert!(projected.warnings.is_empty());
+    let missing = run("\"_project_texture\" \"nosuch\"\n").unwrap();
+    assert_eq!(
+        missing.warnings,
+        [LightWarning::ProjectTextureMissing {
+            texture: "nosuch".to_owned()
+        }]
+    );
+    assert_eq!(
+        missing.warnings[0].to_string(),
+        "WARNING: light has \"_project_texture\" \"nosuch\", but this texture was not found"
+    );
+    assert_eq!(floor(&missing.bsp), floor(&plain.bsp));
+    let error = run("\"_project_texture\" \"wall\"\n\"_project_fov\" \"180\"\n").unwrap_err();
+    assert!(matches!(error, LightError::ProjectFov { .. }), "{error}");
+    assert!(error.to_string().starts_with("Unsupported fov"));
+}

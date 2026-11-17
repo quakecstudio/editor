@@ -175,6 +175,12 @@ pub enum LightError {
     /// A file beside the BSP, `<map>.texinfo.json` or `<map>.content.json`, is not what
     /// ericw-tools' qbsp writes (LIGHT-9.8, LIGHT-9.9).
     Sidecar(SidecarFile),
+    /// `Unsupported fov: <n>. Expected a value in [1..179] range.`: a light's `_project_fov`,
+    /// in the extended dialect (LIGHT-10.11).
+    ProjectFov {
+        /// The light's entity.
+        entity: EntityId,
+    },
     /// The BSP cannot be read or is a format `light` does not write.
     Format,
     /// A thread could not be run.
@@ -223,6 +229,12 @@ impl fmt::Display for LightError {
             Self::Sidecar(SidecarFile::Content) => {
                 f.write_str("the .content.json beside the BSP cannot be read")
             }
+            Self::ProjectFov { entity } => write!(
+                f,
+                "Unsupported fov of the light that is entity {}. Expected a value in [1..179] \
+                 range.",
+                entity.index()
+            ),
             Self::Format => f.write_str("the BSP cannot be lit"),
             Self::Thread => f.write_str("a light thread could not be run"),
         }
@@ -249,6 +261,12 @@ pub enum LightWarning {
         /// The key.
         key: String,
     },
+    /// `WARNING: light has "_project_texture" "<name>", but this texture was not found`, in
+    /// the extended dialect (LIGHT-10.11).
+    ProjectTextureMissing {
+        /// The texture's name.
+        texture: String,
+    },
 }
 
 impl fmt::Display for LightWarning {
@@ -265,6 +283,11 @@ impl fmt::Display for LightWarning {
             Self::InvalidWorldKey { key } => {
                 write!(f, "WARNING: worldspawn key {key} has invalid value")
             }
+            Self::ProjectTextureMissing { texture } => write!(
+                f,
+                "WARNING: light has \"_project_texture\" \"{texture}\", but this texture was not \
+                 found"
+            ),
         }
     }
 }

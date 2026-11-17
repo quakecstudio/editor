@@ -584,6 +584,9 @@ pub(crate) struct LightKeys {
     pub(crate) sun: Setting<bool>,
     pub(crate) sunlight2: Setting<bool>,
     pub(crate) suntexture: Setting<Vec<u8>>,
+    pub(crate) project_texture: Setting<Vec<u8>>,
+    pub(crate) project_fov: Setting<f32>,
+    pub(crate) project_mangle: Setting<Vec3>,
     pub(crate) sunlight3: Setting<bool>,
     pub(crate) falloff: Setting<f32>,
     pub(crate) bleed: Setting<bool>,
@@ -625,6 +628,9 @@ impl Default for LightKeys {
             sun: Setting::new(false),
             sunlight2: Setting::new(false),
             suntexture: Setting::new(Vec::new()),
+            project_texture: Setting::new(Vec::new()),
+            project_fov: Setting::new(DEFAULT_PROJECT_FOV),
+            project_mangle: Setting::new(DEFAULT_PROJECT_MANGLE),
             sunlight3: Setting::new(false),
             falloff: Setting::new(0.0),
             bleed: Setting::new(false),
@@ -698,6 +704,9 @@ impl LightKeys {
             b"sun" => _ = self.sun.read(Some(value.flag())),
             b"sunlight2" => _ = self.sunlight2.read(Some(value.flag())),
             b"suntexture" => _ = self.suntexture.read(value.word()),
+            b"project_texture" => _ = self.project_texture.read(value.word()),
+            b"project_fov" => _ = self.project_fov.read_scalar(value),
+            b"project_mangle" => _ = self.project_mangle.read(value.vec3()),
             b"sunlight3" => _ = self.sunlight3.read(Some(value.flag())),
             b"falloff" => _ = self.falloff.read_within(value, 0.0, f32::MAX),
             b"bleed" => _ = self.bleed.read(Some(value.flag())),
@@ -719,6 +728,10 @@ impl LightKeys {
         Dirt::of(self.dirt.get())
     }
 }
+
+/// `projfov{this, "project_fov", 90.0f}` and `projangle{this, "project_mangle", 20, 0, 0}`.
+const DEFAULT_PROJECT_FOV: f32 = 90.0;
+const DEFAULT_PROJECT_MANGLE: Vec3 = [20.0, 0.0, 0.0];
 
 /// A brush model's settings, `modelinfo_t` (LIGHT-9.7).
 #[derive(Clone, Debug, PartialEq)]

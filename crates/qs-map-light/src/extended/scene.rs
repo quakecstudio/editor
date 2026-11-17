@@ -679,6 +679,29 @@ impl Map<'_> {
         })
     }
 
+    /// The colour of texel `x`, `y` of texture `texture`: the palette's, and white with no
+    /// palette or no such texel (LIGHT-11.6).
+    pub(crate) fn texel_colour(&self, texture: usize, x: u32, y: u32) -> [u8; AXES] {
+        let colour = || {
+            let texture = self.bsp.textures.get(texture)?.as_ref()?;
+            let at = usize::try_from(texture.width.checked_mul(y)?.checked_add(x)?).ok()?;
+            let index = usize::from(*texture.pixels.get(at)?);
+            let start = index.saturating_mul(PALETTE_ENTRY);
+            let entry = self
+                .palette?
+                .get(start..start.saturating_add(PALETTE_ENTRY))?;
+            <[u8; AXES]>::try_from(entry).ok()
+        };
+        colour().unwrap_or([OPAQUE; AXES])
+    }
+
+    /// The width and height of texture `texture`, when it has its texels.
+    pub(crate) fn texture_size(&self, texture: usize) -> Option<(u32, u32)> {
+        let texture = self.bsp.textures.get(texture)?.as_ref()?;
+        (texture.width > 0 && texture.height > 0 && !texture.pixels.is_empty())
+            .then_some((texture.width, texture.height))
+    }
+
     /// The number of the texture of face `face`.
     pub(crate) fn texture_of(&self, face: usize) -> Option<usize> {
         let face = self.face(FaceId::new(face))?;

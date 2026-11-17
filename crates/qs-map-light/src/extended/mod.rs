@@ -21,6 +21,7 @@ mod mottle;
 mod output;
 mod phong;
 mod points;
+mod project;
 mod rays;
 mod scene;
 mod shade;
@@ -92,6 +93,7 @@ impl Light {
         )
         .map_err(|MapFault::NoEntityForModel(model)| LightError::NoEntityForModel { model })?;
         let rays = Rays::new(map.casters());
+        let unprojected = lights.project(&map)?;
         lights.set_up(&map, &rays, light.jitter);
         let smoothing = Smoothing::new(&map);
         // The quick light does neither dirt nor bounce (LIGHT-8.8).
@@ -204,6 +206,13 @@ impl Light {
                 .invalid
                 .iter()
                 .map(|key| LightWarning::InvalidWorldKey { key: key.clone() })
+                .chain(
+                    unprojected
+                        .iter()
+                        .map(|texture| LightWarning::ProjectTextureMissing {
+                            texture: String::from_utf8_lossy(texture).into_owned(),
+                        }),
+                )
                 .collect(),
             switchable: lights.switchable(),
         })
