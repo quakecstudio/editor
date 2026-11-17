@@ -1467,3 +1467,105 @@ proptest! {
         }
     }
 }
+
+// No spec statement: UI-21, #971: a command is named on the command line by its id, by its
+// name after the last dot, or by what either starts with; several are a choice to narrow
+#[test]
+fn the_command_line_names_a_command_by_its_id_its_name_or_a_start() {
+    use crate::line::resolve;
+    let session = session(SessionSpec::default());
+    let registry = session.registry();
+    let ids = |typed: &str| -> Vec<String> {
+        resolve(registry, typed)
+            .into_iter()
+            .map(|info| info.id().as_str().to_owned())
+            .collect()
+    };
+    assert_eq!(ids("doc.len"), ["doc.len"]);
+    assert_eq!(ids(" len "), ["doc.len"]);
+    assert_eq!(ids("undo"), ["edit.undo"]);
+    assert_eq!(ids("app"), ["doc.append"]);
+    assert!(ids("doc.").len() > 1, "a start many share names them all");
+    assert!(ids("nosuch").is_empty());
+    assert!(ids("").is_empty());
+}
+
+// No spec statement: UI-21, #971: the command line asks for each parameter in turn from the
+// command's schema, asks again for a value that is none, and makes the command and its
+// parameter object; a command with no parameter runs at once, and what was typed is kept
+#[test]
+fn the_command_line_asks_for_each_parameter_in_turn() {
+    use crate::line::{CommandLine, Entered};
+    use crate::params::ParamError;
+    let session = session(SessionSpec::default());
+    let registry = session.registry();
+    let mut line = CommandLine::new();
+    assert_eq!(line.enter(registry, ""), Entered::Nothing);
+    assert_eq!(
+        line.enter(registry, "nosuch"),
+        Entered::Unknown("nosuch".to_owned())
+    );
+    assert!(matches!(line.enter(registry, "doc."), Entered::Ambiguous(ids) if ids.len() > 1));
+    assert_eq!(
+        line.enter(registry, "len"),
+        Entered::Run {
+            id: "doc.len".to_owned(),
+            params: json!({}),
+        }
+    );
+    let Entered::Ask(prompt) = line.enter(registry, "append") else {
+        panic!("append asks for its text");
+    };
+    assert_eq!(
+        (
+            prompt.command.as_str(),
+            prompt.field.name.as_str(),
+            prompt.place
+        ),
+        ("doc.append", "text", (1, 1))
+    );
+    assert_eq!(line.prompt(), Some(prompt));
+    assert_eq!(
+        line.enter(registry, ""),
+        Entered::Refused(ParamError::Missing("text".to_owned()))
+    );
+    assert_eq!(
+        line.enter(registry, "hi there"),
+        Entered::Run {
+            id: "doc.append".to_owned(),
+            params: json!({ "text": "hi there" }),
+        }
+    );
+    assert_eq!(line.prompt(), None);
+    assert!(matches!(line.enter(registry, "doc.flaky"), Entered::Ask(_)));
+    assert_eq!(
+        line.enter(registry, "twice"),
+        Entered::Refused(ParamError::NotInteger("fails".to_owned()))
+    );
+    assert_eq!(
+        line.enter(registry, "2"),
+        Entered::Run {
+            id: "doc.flaky".to_owned(),
+            params: json!({ "fails": 2 }),
+        }
+    );
+    // A command given up asks for nothing more, and the next line names a command again.
+    assert!(matches!(line.enter(registry, "append"), Entered::Ask(_)));
+    line.cancel();
+    assert_eq!(line.prompt(), None);
+    assert_eq!(
+        line.history(),
+        [
+            "nosuch",
+            "doc.",
+            "len",
+            "append",
+            "hi there",
+            "doc.flaky",
+            "twice",
+            "2",
+            "append"
+        ]
+    );
+    assert_eq!(line.completions(registry, "app"), ["doc.append"]);
+}

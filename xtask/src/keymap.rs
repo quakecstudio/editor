@@ -181,6 +181,56 @@ mod tests {
         assert!(!problems(&bare).is_empty());
     }
 
+    // No spec statement: UI-21, #971: every command of the registry runs from the command line:
+    // named by its id it asks for each of its parameters in turn, and with a value for each it
+    // makes the command with every parameter its schema requires
+    #[test]
+    fn every_command_runs_from_the_command_line() {
+        use qs_commands::line::{CommandLine, Entered};
+        use qs_commands::params::FieldKind;
+        let registry = registry().unwrap();
+        for info in registry.commands() {
+            let id = info.id().as_str();
+            let mut line = CommandLine::new();
+            let mut entered = line.enter(&registry, id);
+            let mut asked = 0_usize;
+            while let Entered::Ask(prompt) = &entered {
+                asked += 1;
+                assert_eq!(prompt.command, id);
+                assert_eq!(prompt.place.0, asked, "{id} asks in turn");
+                // A value of the kind asked for; an optional one is left to its default.
+                let typed = match &prompt.field.kind {
+                    _ if !prompt.field.required => String::new(),
+                    FieldKind::Choice(choices) => match choices.first().map(|c| &c.value) {
+                        Some(serde_json::Value::String(text)) => text.clone(),
+                        Some(other) => other.to_string(),
+                        None => String::new(),
+                    },
+                    FieldKind::Text => "x".to_owned(),
+                    FieldKind::Number | FieldKind::Integer => "1".to_owned(),
+                    FieldKind::Boolean => "yes".to_owned(),
+                    FieldKind::Json => "[]".to_owned(),
+                };
+                entered = line.enter(&registry, &typed);
+            }
+            let ran = matches!(&entered, Entered::Run { id: made, .. } if made == id);
+            assert!(ran, "{id} did not run: {entered:?}");
+            let Entered::Run { params, .. } = entered else {
+                continue;
+            };
+            let required = info
+                .params()
+                .get("required")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            for name in required {
+                let name = name.as_str().unwrap();
+                assert!(params.get(name).is_some(), "{id} lacks {name}");
+            }
+        }
+    }
+
     #[test]
     fn writing_then_checking_passes_and_an_edit_fails_the_check() {
         let root = test_dirs::fresh("keymap");
