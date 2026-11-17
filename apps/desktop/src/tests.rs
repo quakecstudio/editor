@@ -672,7 +672,7 @@ fn every_binding_names_a_registered_command_without_parameters() {
     let ctx = egui::Context::default();
     let app = App::checked_on_the_frame(&ctx, None).unwrap();
     let registry = app.shell().session().registry();
-    for binding in keymap::BINDINGS {
+    for binding in keymap::bindings() {
         let info = registry
             .commands()
             .find(|c| c.id().as_str() == binding.command)
@@ -1112,8 +1112,8 @@ fn each_shortcut_runs_only_its_own_command() {
 #[test]
 fn bindings_are_matched_most_specific_first() {
     let order = keymap::in_match_order();
-    assert_eq!(order.len(), keymap::BINDINGS.len());
-    for binding in keymap::BINDINGS {
+    assert_eq!(order.len(), keymap::bindings().len());
+    for binding in keymap::bindings() {
         assert!(order.contains(&binding));
     }
     let at = |command: &str| order.iter().position(|b| b.command == command).unwrap();

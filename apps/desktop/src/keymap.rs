@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use eframe::egui::{Key, KeyboardShortcut, Modifiers};
-use qs_workbench::map_profile::MAP_RUN_PROFILE;
+use qs_layout::{DEFAULT_KEYS, KeyContext};
 use serde::Deserialize;
 
 /// Where a binding's keys are taken.
@@ -18,6 +18,8 @@ pub enum Scope {
     Shell,
     /// Wherever the keyboard is, as a focus command must reach out of the editor (QA-9).
     Everywhere,
+    /// Only while the map view is the centre's and a map is open.
+    Map,
 }
 
 /// A shortcut and the command, which takes no parameters, it runs.
@@ -49,96 +51,32 @@ pub const RUN_PROFILE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMA
 /// `KeySequence{"Ctrl+R"}` (`ActionManager.cpp` at TrenchBroom@8f329f11), Cmd on macOS.
 pub const REPEAT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::R);
 
-/// Every binding. The focus keys put the editor on Cmd+1 as VS Code does, then the left,
-/// right and bottom panels on Cmd+2 to Cmd+4; Cmd+0 stays egui's zoom reset. The editor's
-/// layout and navigation keys (P4-32) are Zed's default keymap's at zed-industries/zed@415d310
-/// where it has one chord: Cmd+Alt+[ and ] fold and unfold, Ctrl+G goes to a line, Cmd+Shift+O
-/// to a symbol, Ctrl+Tab opens the tab switcher and Cmd+Shift+B the outline panel; soft wrap
-/// has no key, as in Zed (VS Code's Alt+Z types a character on macOS, and Cmd+Alt+Z is Cmd+Z
-/// with an extra Alt, which undoes); Cmd+\ splits right as VS Code does, Zed's being a
-/// sequence.
-pub const BINDINGS: [Binding; 16] = [
-    Binding {
-        command: "edit.undo",
-        shortcut: KeyboardShortcut::new(Modifiers::COMMAND, Key::Z),
-        scope: Scope::Shell,
-    },
-    Binding {
-        command: "edit.redo",
-        shortcut: KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::Z),
-        scope: Scope::Shell,
-    },
-    Binding {
-        command: "edit.repeat",
-        shortcut: REPEAT,
-        scope: Scope::Shell,
-    },
-    Binding {
-        command: MAP_RUN_PROFILE,
-        shortcut: RUN_PROFILE,
-        scope: Scope::Shell,
-    },
-    Binding {
-        command: qs_layout::FOCUS_EDITOR,
-        shortcut: KeyboardShortcut::new(Modifiers::COMMAND, Key::Num1),
-        scope: Scope::Everywhere,
-    },
-    Binding {
-        command: qs_layout::FOCUS_LEFT_PANEL,
-        shortcut: KeyboardShortcut::new(Modifiers::COMMAND, Key::Num2),
-        scope: Scope::Everywhere,
-    },
-    Binding {
-        command: qs_layout::FOCUS_RIGHT_PANEL,
-        shortcut: KeyboardShortcut::new(Modifiers::COMMAND, Key::Num3),
-        scope: Scope::Everywhere,
-    },
-    Binding {
-        command: qs_layout::FOCUS_BOTTOM_PANEL,
-        shortcut: KeyboardShortcut::new(Modifiers::COMMAND, Key::Num4),
-        scope: Scope::Everywhere,
-    },
-    Binding {
-        command: qs_layout::FOLD,
-        shortcut: KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::OpenBracket),
-        scope: Scope::Everywhere,
-    },
-    Binding {
-        command: qs_layout::UNFOLD,
-        shortcut: KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::CloseBracket),
-        scope: Scope::Everywhere,
-    },
-    Binding {
-        command: qs_layout::GO_TO_LINE,
-        shortcut: KeyboardShortcut::new(Modifiers::CTRL, Key::G),
-        scope: Scope::Everywhere,
-    },
-    Binding {
-        command: qs_layout::GO_TO_SYMBOL,
-        shortcut: KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::O),
-        scope: Scope::Everywhere,
-    },
-    Binding {
-        command: qs_layout::PROJECT_SEARCH_VIEW,
-        shortcut: KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::F),
-        scope: Scope::Everywhere,
-    },
-    Binding {
-        command: qs_layout::TAB_SWITCHER,
-        shortcut: KeyboardShortcut::new(Modifiers::CTRL, Key::Tab),
-        scope: Scope::Everywhere,
-    },
-    Binding {
-        command: qs_layout::TOGGLE_OUTLINE,
-        shortcut: KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::B),
-        scope: Scope::Everywhere,
-    },
-    Binding {
-        command: qs_layout::SPLIT_RIGHT,
-        shortcut: KeyboardShortcut::new(Modifiers::COMMAND, Key::Backslash),
-        scope: Scope::Everywhere,
-    },
-];
+/// Every default binding: `qs-layout`'s default keys (P7-17), which `docs/keymap.md` lists
+/// with what each follows, less the map view's keys the map editor takes itself
+/// ([`MAP_EDITOR_KEYS`]). The keys' spelling is the keymap file's ([`parse_keys`]).
+#[must_use]
+pub fn bindings() -> Vec<Binding> {
+    DEFAULT_KEYS
+        .iter()
+        .filter(|key| !MAP_EDITOR_KEYS.contains(&key.command))
+        .filter_map(|key| {
+            Some(Binding {
+                command: key.command,
+                shortcut: parse_keys(key.keys)?,
+                scope: match key.context {
+                    KeyContext::Window => Scope::Everywhere,
+                    KeyContext::Shell => Scope::Shell,
+                    KeyContext::Map => Scope::Map,
+                },
+            })
+        })
+        .collect()
+}
+
+/// The map view's default keys the map editor takes itself, since each needs what the editor
+/// holds: the clipboard for a copy, the notice a save clears, the selection it draws, the view
+/// Show All redraws.
+pub const MAP_EDITOR_KEYS: [&str; 4] = ["map.save", "map.copy", "map.select", "map.show_all"];
 
 /// Every binding in the order its keys are matched, the most modifiers first: egui's
 /// `consume_shortcut` takes a shortcut whatever extra Shift is held ("you should match most
@@ -146,7 +84,7 @@ pub const BINDINGS: [Binding; 16] = [
 /// undo.
 #[must_use]
 pub fn in_match_order() -> Vec<Binding> {
-    let mut bindings = BINDINGS.to_vec();
+    let mut bindings = bindings();
     bindings.sort_by_key(|binding| std::cmp::Reverse(held(binding.shortcut.modifiers)));
     bindings
 }
@@ -167,7 +105,7 @@ fn held(modifiers: Modifiers) -> usize {
 /// The shortcut bound to `command`, if any.
 #[must_use]
 pub fn shortcut(command: &str) -> Option<KeyboardShortcut> {
-    BINDINGS
+    bindings()
         .iter()
         .find(|binding| binding.command == command)
         .map(|binding| binding.shortcut)
@@ -203,7 +141,7 @@ struct FileBinding {
     command: String,
 }
 
-/// The bindings in force (P4-37, UI-21): [`BINDINGS`], with the user's keymap file's over
+/// The bindings in force (P4-37, UI-21): [`bindings`], with the user's keymap file's over
 /// them, a user binding taking a default's keys from it, and what is wrong in the file.
 #[derive(Clone, Debug, Default)]
 pub struct Keymap {
@@ -218,7 +156,7 @@ impl Keymap {
     #[must_use]
     pub fn defaults() -> Self {
         Self {
-            bindings: BINDINGS
+            bindings: bindings()
                 .iter()
                 .map(|b| Bound {
                     command: b.command.to_owned(),
@@ -462,7 +400,11 @@ command = "project.build"
             keymap.shortcut("project.check"),
             parse_keys("secondary-shift-b")
         );
-        assert_eq!(keymap.shortcut("project.test"), None);
+        // A binding the file got wrong leaves the command its default.
+        assert_eq!(
+            keymap.shortcut("project.test"),
+            parse_keys("secondary-shift-t")
+        );
         let problems = keymap.problems();
         assert_eq!(problems.len(), 3, "{problems:?}");
         assert!(problems[0].contains("bound twice, to project.check and to project.test"));

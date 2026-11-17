@@ -1345,8 +1345,15 @@ impl Shell {
         let registry = self.session.registry();
         let bindable = |id: &str| keymap::bindable(registry, id);
         self.keymap.reload_if_changed(&bindable);
+        let map_shown =
+            self.centre_tab == CentreTab::Map && self.session.context().workbench.map().is_some();
         for binding in self.keymap.in_match_order() {
-            if editing && binding.scope == Scope::Shell {
+            let taken = match binding.scope {
+                Scope::Everywhere => true,
+                Scope::Shell => !editing,
+                Scope::Map => !editing && map_shown,
+            };
+            if !taken {
                 continue;
             }
             if !ui.input_mut(|i| i.consume_shortcut(&binding.shortcut)) {

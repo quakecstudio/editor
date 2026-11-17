@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 
 mod docks;
 mod editor;
+mod keys;
 mod map_camera;
 mod map_grid;
 mod map_view;
@@ -38,6 +39,7 @@ pub use editor::{
     GoToLineParams, Outline, PROJECT_SEARCH_VIEW, SPLIT_DOWN, SPLIT_RIGHT, SoftWrap, Split,
     TAB_SWITCHER, TOGGLE_EMBEDDED_GAME, TOGGLE_OUTLINE, TOGGLE_SOFT_WRAP, UNFOLD, UNFOLD_ALL,
 };
+pub use keys::{DEFAULT_KEYS, DefaultKey, Follows, KeyContext, UNKEYED, Unkeyed};
 pub use map_camera::{
     CameraSpeed, Direction, MAP_CAMERA, MapCamera, MapCameraError, MapCameraParams, MapFov,
 };

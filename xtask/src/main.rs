@@ -100,6 +100,7 @@ mod format_corpus;
 mod fteqcc_profile;
 mod fuzz;
 mod host;
+mod keymap;
 mod layers;
 mod lex_corpus;
 mod licenses;
@@ -155,6 +156,8 @@ enum Task {
     FormatCorpus(format_corpus::Args),
     /// Write or check docs/commands.md.
     Commands(commands::Args),
+    /// Write or check docs/keymap.md.
+    Keymap(keymap::Args),
     /// The compiler differential.
     CompilerDiff(compiler_diff::Args),
     /// The theme's colours meet their contrast.
@@ -245,6 +248,7 @@ fn run(root: &Path, task: &Task, ci_steps: &[ci::Step]) -> bool {
         Task::CodegenCorpus(args) => ("codegen-corpus", codegen_corpus::main(root, args)),
         Task::FormatCorpus(args) => ("format-corpus", format_corpus::main(root, args)),
         Task::Commands(args) => ("commands", commands::main(root, args)),
+        Task::Keymap(args) => ("keymap", keymap::main(root, args)),
         Task::Layers(args) => ("layers", layers::main(root, args)),
         Task::CompilerDiff(args) => ("compiler-diff", compiler_diff::main(root, args)),
         Task::Corpus(args) => ("corpus", corpus::main(root, args)),
@@ -319,6 +323,7 @@ pub(crate) fn in_process_check(command: &str) -> Option<Check> {
         "notices" => Some(notices::check),
         "contrast" => Some(contrast::check),
         "commands" => Some(commands::check),
+        "keymap" => Some(keymap::check),
         _ => None,
     }
 }

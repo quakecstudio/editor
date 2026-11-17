@@ -29,7 +29,7 @@ pub(crate) enum Step {
 }
 
 /// The steps, cheapest first.
-pub(crate) const STEPS: [Step; 18] = [
+pub(crate) const STEPS: [Step; 19] = [
     Step::Cargo(&["fmt", "--all", "--check"]),
     Step::Program("plan", "python3", &["plan/check.py"]),
     Step::Program(
@@ -88,6 +88,9 @@ pub(crate) const STEPS: [Step; 18] = [
     ]),
     // P2-12: docs/commands.md is the registry's reference, regenerated, not edited.
     Step::Xtask("commands"),
+    // P7-17: docs/keymap.md is the key tables' reference, and every command is keyed or says
+    // why not.
+    Step::Xtask("keymap"),
     Step::Cargo(&[
         "deny",
         "--locked",
@@ -416,6 +419,7 @@ mod tests {
                 "contrast",
                 "run",
                 "commands",
+                "keymap",
                 "fuzz-build",
                 "differential",
             ]
