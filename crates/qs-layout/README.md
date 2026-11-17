@@ -27,6 +27,16 @@ hidden panel in the edit history, so both commands here run outside it
 - `HasLayout` and `register`: the commands for any context with a `Layout`.
 - `TOGGLE_PANEL`, `RESIZE_PANEL` and their parameter types, so the app runs them without
   spelling their ids.
+- The default keys (`keys.rs`, UI-23, MAP-20): `DEFAULT_KEYS`, a key for every command that
+  takes no value, with where it is taken and what it follows, TrenchBroom's action or our own
+  reason; `UNKEYED`, every other command and why it has no key; and `VIEW_KEYS`, the keys the
+  map view takes itself (`ViewKey`). The window's keymap, `docs/keymap.md` and the tests that
+  no command is left out and no key is taken twice all read these tables.
+- The 3D view from the keyboard (`map_look.rs`, UI-23): `view.map_top` to `view.map_isometric`
+  (`StandardView`), `view.map_orbit_*`, `view.map_pan_*`, `view.map_zoom_in` and `_out`, and
+  the four saved views (`view.map_save_view_1` to `_4`, `view.map_view_1` to `_4`), each a
+  `MapLook` the map editor carries out once (`Layout::map_look`, counted by `map_looks`); the
+  saved views (`MapViews`) are written to the layout file.
 - The editor's layout and navigation commands (`editor.rs`, P4-32, UI-16), named as Zed's
   are: `view.split_right`, `view.split_down` and `view.close_split` (`Split`),
   `editor.toggle_soft_wrap` (`SoftWrap`) and `view.toggle_outline` (`Outline`), which the
