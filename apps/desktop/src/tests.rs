@@ -2704,7 +2704,7 @@ const LINKED_MAP: &str = "{\n\"classname\" \"worldspawn\"\n}\n\
 
 // No spec statement: P5-14, MAP-26: TrenchBroom's Isolate (Ctrl+I, Cmd on macOS) hides all but
 // the selection and Show All (Ctrl+Shift+I) shows it again; the Hide button hides the
-// selection; a layer's Locked checkbox writes the layer's setting, through commands with undo
+// selection; a layer's Locked icon writes the layer's setting, through commands with undo
 #[test]
 fn the_overview_keys_and_layer_settings_work() {
     let dir = std::env::temp_dir().join(format!("qs-desktop-linked-{}", std::process::id()));
@@ -2741,7 +2741,9 @@ fn the_overview_keys_and_layer_settings_work() {
     harness.get_by_label(Text::MapHide.get()).click();
     harness.run();
     assert_eq!(hidden(&harness), [4]);
-    harness.get_by_label(Text::MapLayerLocked.get()).click();
+    // The layer's Locked icon, named for its layer.
+    let locked = format!("Lights: {}", Text::MapLayerLocked.get());
+    harness.get_by_label(&locked).click();
     harness.run();
     harness.run();
     assert!(!map_text(&harness).contains("_tb_layer_locked"));

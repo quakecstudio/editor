@@ -8,6 +8,7 @@
 use eframe::egui::{self, RichText, Sense, Ui};
 use qs_map_edit::{EntityIndex, MapRevision, OutlineRow, RowKind};
 
+use crate::icons::{self, Icon};
 use crate::shell::name_field;
 use crate::strings::{Text, brush_count};
 use crate::theme::{Theme, Token};
@@ -102,7 +103,14 @@ impl OutlineView {
             (RowKind::Layer, true) => Text::MapDefaultLayer.get().to_owned(),
             _ => row.label.clone(),
         };
-        let mut text = RichText::new(label).monospace();
+        // The row's kind is its icon: a layer, a group, a linked group, or the entity's class.
+        let icon = match row.kind {
+            RowKind::Layer => Icon::Layers,
+            RowKind::Group => Icon::Group,
+            RowKind::LinkedGroup => Icon::Link,
+            RowKind::Entity => Icon::of_class(&row.label),
+        };
+        let mut text = RichText::new(icon.before(&label)).monospace();
         if row.kind == RowKind::LinkedGroup {
             text = text.italics();
         }
@@ -135,6 +143,8 @@ impl OutlineView {
                 });
             header.header_response
         };
+        // The row is named by its words alone, the icon left out.
+        icons::mark(ui, &response, &label, icons::ROW);
         if chosen && reveal == Some(row.entity) {
             response.scroll_to_me(Some(egui::Align::Center));
         }

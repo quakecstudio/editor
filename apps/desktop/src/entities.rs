@@ -10,6 +10,7 @@ use eframe::egui::{self, RichText, Ui};
 use qs_workbench::entities::Entities;
 use qs_workbench::{PlayState, Preview};
 
+use crate::icons::{Icon, Selected};
 use crate::strings::Text;
 use crate::theme::{Theme, Token};
 use qs_workbench::ids::Edict;
@@ -85,27 +86,24 @@ pub(crate) fn outliner(
                 } else {
                     group.classname.clone()
                 };
+                let icon = Icon::of_class(&group.classname);
                 match group.edicts.as_slice() {
                     [edict] => {
                         let row = format!("{name}  #{edict}");
-                        let response =
-                            ui.selectable_label(selected == Some(Edict::new(*edict)), row);
+                        let response = icon.row(ui, chosen(selected, *edict), &row);
                         if response.clicked() {
                             action = Some(EntityAction::Select(Edict::new(*edict)));
                         }
                         ask_menu(&response, *edict, &mut action);
                     }
                     edicts => {
-                        let header = format!("{name}  {}", edicts.len());
+                        let header = icon.before(&format!("{name}  {}", edicts.len()));
                         egui::CollapsingHeader::new(header)
                             .id_salt(&group.classname)
                             .show(ui, |ui| {
                                 for edict in edicts {
                                     let row = format!("#{edict}");
-                                    let response = ui.selectable_label(
-                                        selected == Some(Edict::new(*edict)),
-                                        row,
-                                    );
+                                    let response = icon.row(ui, chosen(selected, *edict), &row);
                                     if response.clicked() {
                                         action = Some(EntityAction::Select(Edict::new(*edict)));
                                     }
@@ -117,6 +115,15 @@ pub(crate) fn outliner(
             }
         });
     action
+}
+
+/// Whether `edict` is the selected one.
+fn chosen(selected: Option<Edict>, edict: u32) -> Selected {
+    if selected == Some(Edict::new(edict)) {
+        Selected::Yes
+    } else {
+        Selected::No
+    }
 }
 
 /// A row's right-click menu: Ask about this (UI-9).
@@ -158,22 +165,24 @@ pub(crate) fn properties(
         RichText::new(format!("{}  #{}", selected.classname, selected.edict))
             .color(theme.color(Token::Accent)),
     );
-    if !paused {
-        ui.label(
-            RichText::new(Text::ReadOnlyWhilePlaying.get())
-                .small()
-                .color(theme.color(Token::TextMuted)),
-        );
-    }
     let mut action = None;
-    if let Some(spawn) = Some(selected.classname.clone()).filter(|c| !c.is_empty())
-        && ui.link(Text::OpenSpawnFunction.get()).clicked()
-    {
-        action = Some(EntityAction::Open(spawn));
-    }
-    if ui.button(Text::AskAboutThis.get()).clicked() {
-        action = Some(EntityAction::Ask(selected.edict));
-    }
+    // The entity's actions as icons, and a lock while its fields cannot be edited.
+    ui.horizontal(|ui| {
+        if let Some(spawn) = Some(selected.classname.clone()).filter(|c| !c.is_empty())
+            && Icon::OpenCode.tool(ui, Text::OpenSpawnFunction).clicked()
+        {
+            action = Some(EntityAction::Open(spawn));
+        }
+        if Icon::Agent.tool(ui, Text::AskAboutThis).clicked() {
+            action = Some(EntityAction::Ask(selected.edict));
+        }
+        if !paused {
+            ui.label(
+                RichText::new(Icon::Lock.char().to_string()).color(theme.color(Token::TextMuted)),
+            )
+            .on_hover_text(Text::ReadOnlyWhilePlaying.get());
+        }
+    });
     egui::ScrollArea::vertical()
         .id_salt(Text::Properties.get())
         .show(ui, |ui| {

@@ -28,6 +28,12 @@ pub enum Text {
     PreviewDocked,
     /// Where the game's window is when its host cannot place it (Wayland).
     PreviewOwnWindow,
+    /// What the Symbols panel's file switch does.
+    SymbolsOfFileHelp,
+    /// What the Symbols panel's project switch does.
+    SymbolsOfProjectHelp,
+    /// What a layer's setting icon does.
+    MapLayerSettingHelp,
     /// The game runs in this window's Game tab.
     PreviewInTab,
     /// The command search box's hint.
@@ -975,7 +981,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 479] = [
+    pub const ALL: [Self; 482] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -984,6 +990,9 @@ impl Text {
         Self::PreviewHost,
         Self::PreviewDocked,
         Self::PreviewOwnWindow,
+        Self::SymbolsOfFileHelp,
+        Self::SymbolsOfProjectHelp,
+        Self::MapLayerSettingHelp,
         Self::PreviewInTab,
         Self::SearchCommands,
         Self::Project,
@@ -1473,6 +1482,9 @@ impl Text {
             Self::PreviewHost => "Preview host",
             Self::PreviewDocked => "docked right",
             Self::PreviewOwnWindow => "in its own window",
+            Self::SymbolsOfFileHelp => "List the open file's symbols",
+            Self::SymbolsOfProjectHelp => "List every symbol of the project",
+            Self::MapLayerSettingHelp => "Click to switch it for this layer",
             Self::PreviewInTab => "in the Game tab",
             Self::SearchCommands => "Search commands",
             Self::Project => "Project",
