@@ -46,7 +46,7 @@ each site once; "shipped" leaves out tests, benchmarks, examples, `qs-differenti
 | `format_collect` | 25 | 2 | 23 sites are tests building their input. The two shipped write an id as hex, in `qs-checkpoint` and `qs-templates`. |
 | `string_add` | 19 | 0 | Every site is a test building its input. |
 | `naive_bytecount` | 10 | 6 | It asks for the `bytecount` crate, which this audit will not add for counting lines. |
-| `needless_collect` | 6 | 2 | Four of the six start threads and collect their handles before joining the first, which the lint cannot see is needed; one reverses an iterator that cannot be walked backwards. Held, it would be mostly `#[expect]`. |
+| `needless_collect` | 7 | 2 | Four of the seven start threads and collect their handles before joining the first, which the lint cannot see is needed; one reverses an iterator that cannot be walked backwards; and one collects into a set to drop duplicates, which the lint's own fix removed until a test caught it. Held, it would be mostly `#[expect]`. |
 
 No baseline file is kept for these: a lint is held at zero or it is off, so there is nothing
 for a check to ratchet (the plan's `perf-baseline.tsv` is dropped for that reason).
