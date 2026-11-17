@@ -480,7 +480,8 @@ The world's settings, each with its default; a second name is another key for th
   model's `_alpha`), stops no ray. A ray that leaves it, meeting its back, takes its colour:
   the light is turned toward the light times the texel's colour over 255, by the glass's
   alpha. The texel is the nearest of the face's texture at the point, the texture repeating;
-  its colour is the palette's. A missing texture, or no palette, gives no colour.
+  its colour is the palette's. A missing texture gives no colour, and with no palette a texel
+  is white, which changes no light.
 - **LIGHT-11.7** A fence stops a ray only where its texel is not see-through: index 255 of a
   fence's texture is. A missing texture is see-through everywhere.
 - **LIGHT-11.8** A face is on the channels of the flag `object_channel_mask`, else of its
@@ -534,6 +535,11 @@ The world's settings, each with its default; a second name is another key for th
   (LIGHT-9.9) of hull 0 of its own model, of the world when its model is on the default
   channel, or of a model of its channel that has `_shadow` and an alpha of 1; at a node
   whose plane it is within 0.1 of, both sides are tried.
+- **LIGHT-12.8** A face whose lightmap would be 4096 luxels or more on an axis, or whose
+  texture coordinates are not numbers, is given no lightmap. This is ours: ericw-tools warns
+  of `Bad surface extents` from 256 luxels, sixteen at the default scale to `MAXDIMENSION`,
+  and goes on to light the face whatever its size; 4096 is sixteen times that, past any face
+  of a map, and keeps a BSP that is not a map's from asking for memory without end.
 
 ## LIGHT-13 Phong shading
 

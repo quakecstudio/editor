@@ -9,6 +9,7 @@
 use qs_bsp::{Bsp, BspLoader};
 use qs_map::{Brush, Item, MapFile, Surface, TexDef};
 use qs_map_bsp::{Compiled, Compiler, Dialect};
+use qs_map_light::Sidecars;
 
 use super::{FullBuild, FullBuildError, Start, brush_models};
 
@@ -78,6 +79,7 @@ pub(crate) fn start(map: &str, target: std::path::PathBuf) -> Start {
         target,
         portals: compiled.portal_file.unwrap(),
         bsp: compiled.bsp,
+        sidecars: Sidecars::new(compiled.surfaces, compiled.leaves),
         edits: 0,
     }
 }
@@ -102,6 +104,29 @@ fn a_full_build_sees_and_lights_the_map() {
     assert_eq!(std::fs::read(&target).unwrap(), b"the fast compile");
     std::fs::write(&target, b"another compile").unwrap();
     assert!(!build.current(), "another compile written over it");
+}
+
+// spec LIGHT-9.8: the flags the compile gives each texinfo reach the full compile's light: a
+// minimum light on every face leaves few luxels dark
+#[test]
+fn a_full_build_lights_with_the_compiles_flags() {
+    let dark = |name: &str, minlight: Option<f32>| {
+        let dir = Scratch::new(name);
+        let mut start = start("room", dir.0.join("room.bsp"));
+        for flags in &mut start.sidecars.surfaces {
+            flags.minlight = minlight;
+        }
+        let ready = FullBuild::start(start).wait().unwrap();
+        let bytes = std::fs::read(&ready.bsp).unwrap();
+        let bsp = Bsp::read(&bytes, BspLoader::default()).unwrap();
+        let dark = bsp.lighting.iter().filter(|&&b| b < 100).count();
+        (dark, bsp.lighting.len())
+    };
+    let plain = dark("full-plain", None);
+    let raised = dark("full-minlight", Some(200.0));
+    // Luxels under 100, of all: nearly every one of the plain room, few of the raised.
+    assert!(plain.0 * 2 > plain.1, "{plain:?}");
+    assert!(raised.0 * 10 < raised.1, "{raised:?}");
 }
 
 // No spec statement: P7-02: a full compile of a map with no portals to see through stops with

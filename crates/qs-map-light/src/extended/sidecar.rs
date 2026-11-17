@@ -119,15 +119,11 @@ impl Sidecars {
 fn surfaces(text: &[u8]) -> Result<Vec<SurfaceFlags>, SidecarFile> {
     let json: serde_json::Map<String, Value> =
         serde_json::from_slice(text).map_err(|_| SidecarFile::Texinfo)?;
-    let mut out = Vec::new();
+    // qbsp writes every texinfo, so a number past how many there are is not its file.
+    let mut out = vec![SurfaceFlags::default(); json.len()];
     for (key, value) in &json {
         let index: usize = key.parse().map_err(|_| SidecarFile::Texinfo)?;
-        if out.len() <= index {
-            out.resize(index.saturating_add(1), SurfaceFlags::default());
-        }
-        if let Some(slot) = out.get_mut(index) {
-            *slot = Sidecars::surface(value);
-        }
+        *out.get_mut(index).ok_or(SidecarFile::Texinfo)? = Sidecars::surface(value);
     }
     Ok(out)
 }
@@ -301,6 +297,14 @@ mod tests {
             Sidecars::read(Some(br#"{"x": {}}"#), None),
             Err(SidecarFile::Texinfo)
         );
+        // A number past the texinfos the file has is not one qbsp wrote.
+        for text in [
+            &br#"{"0": {}, "2": {}}"#[..],
+            br#"{"4000000000": {}}"#,
+            br#"{"18446744073709551615": {}}"#,
+        ] {
+            assert_eq!(Sidecars::read(Some(text), None), Err(SidecarFile::Texinfo));
+        }
         assert_eq!(Sidecars::read(None, None), Ok(Sidecars::default()));
     }
 

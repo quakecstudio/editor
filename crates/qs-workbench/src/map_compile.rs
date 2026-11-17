@@ -15,7 +15,7 @@ use qs_bsp::{Bsp, BspLoader};
 use qs_commands::{Command, NoParams, Outcome};
 use qs_map::qbsp::QbspWarning;
 use qs_map_bsp::{Compiled, Compiler, Warning};
-use qs_map_light::{Light, Sampling};
+use qs_map_light::{Finish, Light, Sampling, Sidecars};
 use qs_sim::DEFAULT_VIEWHEIGHT;
 use qs_sim::collision::{CONTENTS_SOLID, HullSet};
 use qs_wad::Wad;
@@ -452,8 +452,12 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
         let (compiled, report, path) = workbench
             .compile_map(game.as_deref(), params.region.as_ref())
             .map_err(PreviewError::Build)?;
+        // The quick light, without dirt and bounce (MAP-13, LIGHT-8.8), with what the compile
+        // tells light of each face and leaf (QBSP-15.54, QBSP-15.55).
+        let sidecars = Sidecars::new(compiled.surfaces, compiled.leaves);
         let lit = Light::new(Sampling::Fast)
-            .run(&compiled.bsp)
+            .with_finish(Finish::Quick)
+            .run_with(&compiled.bsp, sidecars.extras())
             .map_err(|error| PreviewError::Build(WorkbenchError::MapLight { error }))?;
         let bsp = Bsp::read(&lit.bsp, BspLoader::default()).map_err(|error| {
             PreviewError::Build(WorkbenchError::MapEdit(MapEditError::Bsp {
@@ -497,7 +501,7 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
             Some(portals) => preview.start_full_build(
                 name.clone(),
                 maps.join(format!("{name}.bsp")),
-                (compiled.bsp, portals),
+                (compiled.bsp, portals, sidecars),
             ),
             None => preview.note(
                 "The map leaks: it plays with the fast compile, and its full compile waits for \

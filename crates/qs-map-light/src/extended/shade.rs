@@ -8,6 +8,7 @@
 //! Lighting a face (LIGHT-10, LIGHT-14, LIGHT-17): what each light, each sun and the
 //! minimum light give each of its samples, into one lightmap for each style.
 
+use super::math::brightness;
 use crate::extended::bounce::{BOUNCE_GATE, Emitter};
 use crate::extended::dirt::Dirt;
 use crate::extended::keys::{CHANNEL_DEFAULT, Dirt as DirtKey, FULL, Formula, World};
@@ -35,8 +36,6 @@ const ANGLE_EPSILON: f32 = 0.01;
 const SKY_DIST: f32 = 1_000_000.0;
 /// What a box of what a light sees may miss a face's box by (LIGHT-10.8).
 const BOUNDS_EPSILON: f32 = 0.001;
-/// The channels of a colour, as a divisor of their sum.
-const CHANNELS: f32 = 3.0;
 /// The styles a point's light is kept for (`lightgrid_samples_t`).
 const POINT_STYLES: usize = 4;
 /// Half, of a box's two corners.
@@ -102,11 +101,6 @@ impl Lightmaps {
             *total = add(*total, colour);
         }
     }
-}
-
-/// `LightSample_Brightness`: the mean of a colour's channels.
-fn brightness(colour: Vec3) -> f32 {
-    to_f32(f64::from(colour[0] + colour[1] + colour[2]) / f64::from(CHANNELS))
 }
 
 /// `Light_ClampMin`: each channel of `sample` raised to `colour`'s at `light`; whether any

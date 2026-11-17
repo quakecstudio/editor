@@ -352,6 +352,23 @@ pub(crate) fn interpolated_normal(points: &[Vec3], normals: &[Vec3], point: Vec3
     None
 }
 
+/// The channels of a colour, as a divisor of their sum.
+const CHANNELS: f64 = 3.0;
+
+/// `LightSample_Brightness`: the mean of a colour's channels.
+pub(crate) fn brightness(colour: Vec3) -> f32 {
+    to_f32(f64::from(colour[0] + colour[1] + colour[2]) / CHANNELS)
+}
+
+/// A count as a float.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "spec LIGHT-12.2: a count of samples is far within a float's whole numbers"
+)]
+pub(crate) const fn count_of(value: usize) -> f32 {
+    value as f32
+}
+
 #[cfg(test)]
 mod tests {
 

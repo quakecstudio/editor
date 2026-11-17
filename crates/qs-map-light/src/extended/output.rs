@@ -10,12 +10,13 @@
 
 use qs_bsp::BSP_MAXLIGHTMAPS;
 
+use super::math::{brightness, count_of};
 use crate::extended::keys::World;
 use crate::extended::math::{add, scale};
 use crate::extended::points::Patch;
 use crate::extended::shade::{Lightmap, Lightmaps};
 use crate::face::Lit;
-use crate::{AXES, Rgb, Sampling, Vec3, to_f32};
+use crate::{AXES, Rgb, Sampling, Vec3};
 
 /// `LIGHT_EQUAL_EPSILON`: how far apart two channels are for a sample to have a colour
 /// (LIGHT-18.6).
@@ -26,8 +27,6 @@ const DIMMEST_KEPT: f32 = 1.0;
 const MAX_STYLE: i32 = 254;
 /// The brightest a channel is written.
 const BRIGHTEST: f32 = 255.0;
-/// The channels of a colour, as a divisor of their sum.
-const CHANNELS: f64 = 3.0;
 
 /// A sample's colour and whether it was seen: a hidden one takes no part in an average
 /// until it is filled.
@@ -35,20 +34,6 @@ const CHANNELS: f64 = 3.0;
 struct Texel {
     colour: Vec3,
     seen: bool,
-}
-
-/// `LightSample_Brightness`.
-fn brightness(colour: Vec3) -> f32 {
-    to_f32(f64::from(colour[0] + colour[1] + colour[2]) / CHANNELS)
-}
-
-/// A count as a float.
-#[expect(
-    clippy::cast_precision_loss,
-    reason = "spec LIGHT-18.2: a count of samples is far within a float's whole numbers"
-)]
-const fn count_of(value: usize) -> f32 {
-    value as f32
 }
 
 /// A channel as the byte C's conversion makes of it: cut to a whole number.

@@ -17,8 +17,7 @@ use qs_map::cnum::c_strtod;
 use crate::extended::math::vec_from_mangle;
 use crate::{AXES, Vec3, to_f32};
 
-/// Full colour on a channel.
-pub(crate) const FULL: f32 = 255.0;
+pub(crate) use crate::entities::FULL;
 /// A colour whose channels are all at most this is a fraction of full (LIGHT-9.6).
 const FRACTION_MAX: f32 = 1.0;
 /// White.

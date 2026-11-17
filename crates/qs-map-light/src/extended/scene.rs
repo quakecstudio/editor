@@ -410,10 +410,6 @@ impl<'a> Map<'a> {
 impl Map<'_> {
     /// `Embree_TraceInit`: the triangles of every face that casts shadow, each with what it
     /// is to light (LIGHT-11.1, LIGHT-11.2).
-    #[expect(
-        clippy::float_cmp,
-        reason = "spec LIGHT-11.6: only an alpha of exactly 1 is not glass"
-    )]
     pub(crate) fn casters(&self) -> Vec<Corners> {
         let mut out = Vec::new();
         for (index, (model, about)) in self.bsp.models.iter().zip(&self.models).enumerate() {
@@ -478,7 +474,7 @@ impl Map<'_> {
                     channels,
                     alpha,
                     fence,
-                    glass: alpha != 1.0 && alpha < 1.0,
+                    glass: alpha < 1.0,
                 };
                 let points: Vec<Vec3> = self
                     .points(face)
@@ -640,7 +636,7 @@ fn texel(coordinate: f32, size: u32) -> u32 {
 impl Texels for Map<'_> {
     /// `SampleTexture`: the texel of the face's texture at `point`, nearest and repeating.
     /// A missing texture is all 0. A texel is opaque, but index 255 of a `{` texture; its
-    /// colour is the palette's, black without one (LIGHT-11.6, LIGHT-11.7).
+    /// colour is the palette's, white without one (LIGHT-11.6, LIGHT-11.7).
     fn sample(&self, face: usize, point: Vec3) -> Texel {
         let Some(face) = self.face(FaceId::new(face)) else {
             return Texel::default();
@@ -678,7 +674,8 @@ impl Texels for Map<'_> {
             .and_then(|palette| palette.get(start..start.saturating_add(PALETTE_ENTRY)));
         match colour {
             Some(&[r, g, b]) => [r, g, b, alpha],
-            _ => [0, 0, 0, alpha],
+            // With no palette a texel is white, which tints no light (LIGHT-11.6).
+            _ => [OPAQUE, OPAQUE, OPAQUE, alpha],
         }
     }
 }

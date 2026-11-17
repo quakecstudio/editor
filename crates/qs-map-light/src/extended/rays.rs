@@ -469,16 +469,20 @@ impl Tree {
             middles.best_split(&pending)
         };
         let Some((axis, at_coordinate)) = split else {
-            let first = self.triangles.len();
-            let count = pending.len();
-            self.triangles.extend(pending.into_iter().map(|(_, t)| t));
-            self.nodes.push((bounds, Node::Leaf { first, count }));
+            self.leaf(bounds, pending);
             return;
         };
         let coordinate = |middle: &Vec3| middle.get(axis).copied().unwrap_or_default();
-        let (lower, upper): (Vec<_>, Vec<_>) = pending
+        let (lower, mut upper): (Vec<_>, Vec<_>) = pending
             .into_iter()
             .partition(|(middle, _)| coordinate(middle) < at_coordinate);
+        // Middles a rounding apart can all fall on one side of a cut between them: splitting
+        // again would never end, so they are a leaf.
+        if lower.is_empty() || upper.is_empty() {
+            upper.extend(lower);
+            self.leaf(bounds, upper);
+            return;
+        }
         let at = self.nodes.len();
         self.nodes.push((bounds, Node::Split { right: 0 }));
         self.build(lower);
@@ -487,6 +491,14 @@ impl Tree {
             *slot = right;
         }
         self.build(upper);
+    }
+
+    /// A leaf of `pending`'s triangles in the box `bounds`.
+    fn leaf(&mut self, bounds: Bounds, pending: Vec<(Vec3, Triangle)>) {
+        let first = self.triangles.len();
+        let count = pending.len();
+        self.triangles.extend(pending.into_iter().map(|(_, t)| t));
+        self.nodes.push((bounds, Node::Leaf { first, count }));
     }
 
     /// The triangles the ray from `origin` along `dir` hits before `far`, nearest box first
@@ -893,6 +905,21 @@ mod tests {
     fn clear(rays: &Rays, from: Vec3, far: f32, asker: &Asker, texels: &dyn Texels) -> bool {
         rays.occluded((from, UP, far), asker, texels, &mut Vec::new())
             .is_some()
+    }
+
+    // spec LIGHT-11.3: triangles whose middles are a rounding apart, which no cut parts, are
+    // kept together, and still stop a ray.
+    #[test]
+    fn triangles_a_rounding_apart_are_one_leaf() {
+        let low = 1000.0_f32;
+        let high = low.next_up();
+        let triangle = |z: f32| Corners {
+            points: [[0.0, 0.0, z], [8.0, 0.0, z], [8.0, 8.0, z]],
+            caster: caster(Surface::Solid),
+        };
+        let rays = Rays::new([low, low, low, high, high, high].map(triangle).into());
+        assert!(!clear(&rays, [6.0, 2.0, 0.0], 2000.0, &WORLD, &NoTexels));
+        assert!(clear(&rays, [6.0, 2.0, 0.0], 900.0, &WORLD, &NoTexels));
     }
 
     // spec LIGHT-11.3: a solid triangle between a sample and a light stops the light; one

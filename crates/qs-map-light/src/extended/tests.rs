@@ -24,9 +24,10 @@ use super::bounce::Emitter;
 use super::dirt::Dirt;
 use super::keys::{Dict, World};
 use super::lights::Lights;
+use super::math::Plane;
 use super::phong::Smoothing;
-use super::points::Patch;
-use super::rays::Rays;
+use super::points::{Extents, Patch};
+use super::rays::{Rays, Texels as _};
 use super::scene::{Given, Map, MapFault};
 use super::shade::Shader;
 use crate::face::FaceId;
@@ -960,6 +961,16 @@ fn a_textures_colour_tints_what_it_bounces() {
     );
     let colour = paletted.map.bounce_colours()[floor_face];
     assert_eq!(colour, [1.0, 128.0 / 255.0, 0.0]);
+    // spec LIGHT-11.6: a texel's colour is the palette's, and white with no palette.
+    let on_floor = [128.0, 128.0, 0.0];
+    assert_eq!(
+        paletted.map.sample(floor_face, on_floor),
+        [255, 128, 0, 255]
+    );
+    assert_eq!(
+        unpaletted.map.sample(floor_face, on_floor),
+        [255, 255, 255, 255]
+    );
     let grey = room("", "wall", "", "");
     let read = Bsp::read(&grey, BspLoader::FitzQuake).unwrap();
     let made = parts(&read, Extras::default());
@@ -1013,4 +1024,30 @@ fn a_light_is_culled_by_what_a_faces_leaves_see() {
     let made = parts(&read, Extras::default());
     assert!(made.map.visibility.is_none());
     assert!(made.lights.lamps.iter().all(|lamp| lamp.leaf.is_none()));
+}
+
+// spec LIGHT-12.8: a face whose lightmap would be 4096 luxels or more on an axis, or whose
+// texture coordinates are not numbers, has no lightmap; one just under has.
+#[test]
+fn a_lightmap_past_any_a_map_has_is_not_made() {
+    let plane = Plane {
+        normal: UP,
+        dist: 0.0,
+    };
+    let vecs = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]];
+    let square = |side: f32| {
+        vec![
+            [0.0, 0.0, 0.0],
+            [side, 0.0, 0.0],
+            [side, side, 0.0],
+            [0.0, side, 0.0],
+        ]
+    };
+    let just_under = Extents::new(&square(4095.0 * 16.0), plane, vecs).unwrap();
+    assert_eq!((just_under.width(), just_under.height()), (4096, 4096));
+    assert!(Extents::new(&square(4096.0 * 16.0), plane, vecs).is_none());
+    assert!(Extents::new(&square(f32::INFINITY), plane, vecs).is_none());
+    assert!(Extents::new(&square(f32::NAN), plane, vecs).is_none());
+    let huge = [[1e30, 0.0, 0.0, 0.0], [0.0, 1e30, 0.0, 0.0]];
+    assert!(Extents::new(&square(64.0), plane, huge).is_none());
 }

@@ -8,6 +8,9 @@
 //! A face's sample points (LIGHT-12): its lightmap's extents, where each sample lies, which
 //! face it is really on, its normal, and whether it is hidden in solid.
 
+use std::cmp::Ordering;
+
+use super::math::count_of;
 use crate::extended::keys::{CHANNEL_DEFAULT, Dirt};
 use crate::extended::math::{
     Aabb, POINT_EQUAL_EPSILON, Plane, add, closest_on_boundary, distance, dot, edge_plane,
@@ -16,7 +19,7 @@ use crate::extended::math::{
 use crate::extended::phong::Smoothing;
 use crate::extended::scene::{LUXEL, Map, Skin};
 use crate::extended::vis::leaf_at;
-use crate::face::FaceId;
+use crate::face::{FaceId, float_of};
 use crate::{AXES, Sampling, Vec3, to_f32};
 
 /// `sampleOffPlaneDist`: how far in front of its face a sample lies (LIGHT-12.3).
@@ -81,10 +84,15 @@ pub(crate) struct Extents {
     pub(crate) bounds: Aabb,
 }
 
+/// The most luxels a lightmap has on an axis (LIGHT-12.8): sixteen times what id's engine
+/// loads, `MAXDIMENSION` in ericw-tools' `bsputils.hh`.
+const MAX_LIGHTMAP: u16 = 4096;
+
 impl Extents {
     /// The extents of a face with `points` on `plane`, textured by `vecs`; none when the
-    /// texture's axes do not span the face (`Bad texture axes`).
-    fn new(points: &[Vec3], plane: Plane, vecs: [[f32; 4]; 2]) -> Option<Self> {
+    /// texture's axes do not span the face (`Bad texture axes`) or its lightmap would be past
+    /// [`MAX_LIGHTMAP`] luxels on an axis (LIGHT-12.8).
+    pub(crate) fn new(points: &[Vec3], plane: Plane, vecs: [[f32; 4]; 2]) -> Option<Self> {
         let [s, t] = vecs;
         let n = plane.normal;
         let to_texture = [s, t, [n[0], n[1], n[2], -plane.dist]];
@@ -103,6 +111,9 @@ impl Extents {
                         + f64::from(axis[2]) * f64::from(point[2])
                         + f64::from(axis[OFFSET]),
                 ));
+                if !coordinate.is_finite() {
+                    return None;
+                }
                 *low = low.min(coordinate);
                 *high = high.max(coordinate);
             }
@@ -110,6 +121,13 @@ impl Extents {
         let luxel = f64::from(LUXEL);
         let floor = low.map(|c| (c / luxel).floor());
         let ceil = high.map(|c| (c / luxel).ceil());
+        // LIGHT-12.8: a lightmap that is not a number of luxels, or is past any a map has, is
+        // not made.
+        if floor.iter().zip(&ceil).any(|(floor, ceil)| {
+            (ceil - floor).partial_cmp(&f64::from(MAX_LIGHTMAP)) != Some(Ordering::Less)
+        }) {
+            return None;
+        }
         let half = scale(sub(bounds.maxs, bounds.mins), HALF);
         Some(Self {
             mins: floor.map(whole),
@@ -160,15 +178,6 @@ impl Extents {
 )]
 const fn whole(value: f64) -> i32 {
     value as i32
-}
-
-/// A luxel number as a float.
-#[expect(
-    clippy::cast_precision_loss,
-    reason = "spec LIGHT-12.1: a luxel number is far within a float's whole numbers"
-)]
-const fn float_of(value: i32) -> f32 {
-    value as f32
 }
 
 /// The inverse of the map whose rows are `rows`, each three numbers and an offset, worked in
@@ -246,15 +255,6 @@ impl Sampling {
             Self::Extra => 2,
         }
     }
-}
-
-/// A count as a float.
-#[expect(
-    clippy::cast_precision_loss,
-    reason = "spec LIGHT-12.2: a count of samples is far within a float's whole numbers"
-)]
-const fn count_of(value: usize) -> f32 {
-    value as f32
 }
 
 impl Patch {

@@ -22,6 +22,7 @@ use qs_bridge::{
 };
 use qs_commands::{Registry, Session};
 use qs_engine::{Client, Running};
+use qs_map_light::Sidecars;
 use serde_json::{Value, json};
 
 use crate::full_build::tests::{Scratch, compiled_room};
@@ -284,9 +285,13 @@ fn playing_test() -> (Preview, Seen) {
 }
 
 /// The fast compile's BSP and portals of the room the full compile builds.
-fn room_inputs() -> (Vec<u8>, Vec<u8>) {
+fn room_inputs() -> (Vec<u8>, Vec<u8>, Sidecars) {
     let compiled = compiled_room();
-    (compiled.bsp, compiled.portal_file.unwrap())
+    (
+        compiled.bsp,
+        compiled.portal_file.unwrap(),
+        Sidecars::new(compiled.surfaces, compiled.leaves),
+    )
 }
 
 // spec BRIDGE-4.18: a full compile, once done, is swapped into the game on its map from the file

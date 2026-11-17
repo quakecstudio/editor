@@ -10,6 +10,7 @@
 //! Bounce lighting (LIGHT-20): each face that casts shadow gives back the light that fell on
 //! it, as a light of its own a unit above its middle, once for each bounce.
 
+use super::math::count_of;
 use crate::extended::keys::World;
 use crate::extended::math::{Aabb, add, cross, dot, is_zero, length, normalize, scale, sub};
 use crate::extended::points::Patch;
@@ -200,15 +201,6 @@ impl Bouncer<'_> {
         }
         true
     }
-}
-
-/// A count as a float.
-#[expect(
-    clippy::cast_precision_loss,
-    reason = "spec LIGHT-20.2: a count of samples is far within a float's whole numbers"
-)]
-const fn count_of(value: usize) -> f32 {
-    value as f32
 }
 
 impl Emission {
