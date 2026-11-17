@@ -1418,4 +1418,182 @@ mod tests {
             .filter(|row| row.when == ViewKeyWhen::FacesPicked);
         assert!(faces.clone().count() == 6 && faces.clone().all(|row| row.keys.len() == 3));
     }
+    /// TrenchBroom's default key for each action a key here follows, as `ActionManager.cpp`
+    /// writes it at the pinned commit: its `KeySequence`, or the `StandardShortcut` it asks
+    /// the platform for.
+    const TRENCHBROOM: [(&str, &str); 64] = [
+        ("Controls/Map view/Cancel", "Esc"),
+        ("Controls/Map view/Create brush", "Return"),
+        ("Controls/Map view/Flip objects horizontally", "Ctrl+F"),
+        ("Controls/Map view/Flip objects vertically", "Ctrl+Alt+F"),
+        (
+            "Controls/Map view/Move objects backward; Move objects up",
+            "PgUp",
+        ),
+        (
+            "Controls/Map view/Move objects down; Move objects backward",
+            "Down",
+        ),
+        (
+            "Controls/Map view/Move objects forward; Move objects down",
+            "PgDown",
+        ),
+        ("Controls/Map view/Move objects left", "Left"),
+        ("Controls/Map view/Move objects right", "Right"),
+        (
+            "Controls/Map view/Move objects up; Move objects forward",
+            "Up",
+        ),
+        ("Controls/Map view/Move textures down", "Down"),
+        (
+            "Controls/Map view/Move textures down (coarse)",
+            "Shift+Down",
+        ),
+        ("Controls/Map view/Move textures down (fine)", "Ctrl+Down"),
+        ("Controls/Map view/Move textures left", "Left"),
+        (
+            "Controls/Map view/Move textures left (coarse)",
+            "Shift+Left",
+        ),
+        ("Controls/Map view/Move textures left (fine)", "Ctrl+Left"),
+        ("Controls/Map view/Move textures right", "Right"),
+        (
+            "Controls/Map view/Move textures right (coarse)",
+            "Shift+Right",
+        ),
+        ("Controls/Map view/Move textures right (fine)", "Ctrl+Right"),
+        ("Controls/Map view/Move textures up", "Up"),
+        ("Controls/Map view/Move textures up (coarse)", "Shift+Up"),
+        ("Controls/Map view/Move textures up (fine)", "Ctrl+Up"),
+        ("Controls/Map view/Rotate textures clockwise", "PgUp"),
+        (
+            "Controls/Map view/Rotate textures clockwise (coarse)",
+            "Shift+PgUp",
+        ),
+        (
+            "Controls/Map view/Rotate textures clockwise (fine)",
+            "Ctrl+PgUp",
+        ),
+        (
+            "Controls/Map view/Rotate textures counter-clockwise",
+            "PgDown",
+        ),
+        (
+            "Controls/Map view/Rotate textures counter-clockwise (coarse)",
+            "Shift+PgDown",
+        ),
+        (
+            "Controls/Map view/Rotate textures counter-clockwise (fine)",
+            "Ctrl+PgDown",
+        ),
+        ("Controls/Map view/Yaw objects clockwise", "Alt+Left"),
+        (
+            "Controls/Map view/Yaw objects counter-clockwise",
+            "Alt+Right",
+        ),
+        ("Menu/Edit/Copy", "StandardShortcut::Copy"),
+        ("Menu/Edit/Create Linked Duplicate", "Ctrl+Shift+D"),
+        ("Menu/Edit/Delete", "StandardShortcut::Delete"),
+        ("Menu/Edit/Deselect All", "Ctrl+Shift+A"),
+        ("Menu/Edit/Duplicate", "Ctrl+D"),
+        ("Menu/Edit/Group", "Ctrl+G"),
+        ("Menu/Edit/Invert Selection", "Ctrl+Alt+A"),
+        ("Menu/Edit/Redo", "StandardShortcut::Redo"),
+        ("Menu/Edit/Repeat", "Ctrl+R"),
+        ("Menu/Edit/Select All", "StandardShortcut::SelectAll"),
+        ("Menu/Edit/Select Inside", "Ctrl+E"),
+        ("Menu/Edit/Select Tall", "Ctrl+Shift+E"),
+        ("Menu/Edit/Select Touching", "Ctrl+T"),
+        ("Menu/Edit/Tools/Brush Tool", "B"),
+        ("Menu/Edit/Tools/Clip Tool", "C"),
+        ("Menu/Edit/Tools/Vertex Tool", "V"),
+        ("Menu/Edit/Undo", "StandardShortcut::Undo"),
+        ("Menu/Edit/Ungroup", "Ctrl+Shift+G"),
+        ("Menu/File/Save", "StandardShortcut::Save"),
+        ("Menu/View/Camera/Focus on Selection", "Ctrl+U"),
+        ("Menu/View/Grid/Decrease Grid Size", "-"),
+        ("Menu/View/Grid/Increase Grid Size", "+"),
+        ("Menu/View/Grid/Set Grid Size 1", "1"),
+        ("Menu/View/Grid/Set Grid Size 128", "8"),
+        ("Menu/View/Grid/Set Grid Size 16", "5"),
+        ("Menu/View/Grid/Set Grid Size 2", "2"),
+        ("Menu/View/Grid/Set Grid Size 256", "9"),
+        ("Menu/View/Grid/Set Grid Size 32", "6"),
+        ("Menu/View/Grid/Set Grid Size 4", "3"),
+        ("Menu/View/Grid/Set Grid Size 64", "7"),
+        ("Menu/View/Grid/Set Grid Size 8", "4"),
+        ("Menu/View/Hide", "Ctrl+Alt+I"),
+        ("Menu/View/Isolate", "Ctrl+I"),
+        ("Menu/View/Show All", "Ctrl+Shift+I"),
+    ];
+
+    /// TrenchBroom's `keys` in this table's spelling: Qt's names for ours, `Ctrl` the
+    /// platform's modifier, and a standard shortcut as the platform's key for it.
+    fn ours(keys: &str) -> String {
+        let standard = match keys {
+            "StandardShortcut::Undo" => Some("secondary-z"),
+            "StandardShortcut::Redo" => Some("secondary-shift-z"),
+            "StandardShortcut::Save" => Some("secondary-s"),
+            "StandardShortcut::Copy" => Some("secondary-c"),
+            "StandardShortcut::SelectAll" => Some("secondary-a"),
+            "StandardShortcut::Delete" => Some("delete"),
+            _ => None,
+        };
+        if let Some(standard) = standard {
+            return standard.to_owned();
+        }
+        let parts: Vec<String> = keys
+            .split('+')
+            .map(|part| match part {
+                "Ctrl" => "secondary".to_owned(),
+                "Return" => "enter".to_owned(),
+                "Esc" => "escape".to_owned(),
+                "PgUp" => "pageup".to_owned(),
+                "PgDown" => "pagedown".to_owned(),
+                // `+` itself, which the split took as a separator.
+                "" => "+".to_owned(),
+                other => other.to_lowercase(),
+            })
+            .collect();
+        let mut parts = parts;
+        parts.dedup_by(|a, b| a == "+" && b == "+");
+        parts.join("-")
+    }
+
+    // No spec statement: MAP-20, #971: every key that follows TrenchBroom is TrenchBroom's
+    // default for the action it names, at the pinned commit; a texture key's coarse and fine
+    // keys are those of TrenchBroom's coarse and fine actions
+    #[test]
+    fn every_key_that_follows_trenchbroom_is_trenchbrooms() {
+        let default = |action: &str| {
+            TRENCHBROOM
+                .iter()
+                .find(|(named, _)| *named == action)
+                .map(|(_, keys)| ours(keys))
+        };
+        assert_eq!(ours("Ctrl+Alt+F"), "secondary-alt-f");
+        assert_eq!(ours("+"), "+");
+        assert_eq!(ours("PgUp"), "pageup");
+        for key in &DEFAULT_KEYS {
+            if let Follows::TrenchBroom(action) = key.follows {
+                assert_eq!(default(action).as_deref(), Some(key.keys), "{action}");
+            }
+        }
+        for row in &VIEW_KEYS {
+            let Follows::TrenchBroom(action) = row.follows else {
+                continue;
+            };
+            assert_eq!(
+                default(action).as_deref(),
+                row.keys.first().copied(),
+                "{action}"
+            );
+            if row.when == ViewKeyWhen::FacesPicked {
+                let coarse = default(&format!("{action} (coarse)"));
+                let fine = default(&format!("{action} (fine)"));
+                assert_eq!(coarse.as_deref(), row.key.keys_for(TextureStep::Coarse));
+                assert_eq!(fine.as_deref(), row.key.keys_for(TextureStep::Fine));
+            }
+        }
+    }
 }
