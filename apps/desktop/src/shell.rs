@@ -1366,12 +1366,14 @@ impl Shell {
         self.keymap.reload_if_changed(&bindable);
         let map_shown =
             self.centre_tab == CentreTab::Map && self.session.context().workbench.map().is_some();
+        let in_view = map_shown && self.features.map.map_editor.has_keyboard();
         for binding in self.keymap.in_match_order() {
             let taken = match binding.scope {
-                Scope::Everywhere => true,
+                // A key the map view takes itself is the view's while it has the keyboard.
+                Scope::Everywhere => !(in_view && keymap::is_view_key(&binding.shortcut)),
                 Scope::Shell => !editing,
                 Scope::Map => !editing && map_shown,
-                Scope::MapView => map_shown && self.features.map.map_editor.has_keyboard(),
+                Scope::MapView => in_view,
             };
             if !taken {
                 continue;

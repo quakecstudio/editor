@@ -40,7 +40,10 @@ pub use editor::{
     GoToLineParams, Outline, PROJECT_SEARCH_VIEW, SPLIT_DOWN, SPLIT_RIGHT, SoftWrap, Split,
     TAB_SWITCHER, TOGGLE_EMBEDDED_GAME, TOGGLE_OUTLINE, TOGGLE_SOFT_WRAP, UNFOLD, UNFOLD_ALL,
 };
-pub use keys::{DEFAULT_KEYS, DefaultKey, Follows, KeyContext, UNKEYED, Unkeyed};
+pub use keys::{
+    DEFAULT_KEYS, DefaultKey, Follows, KeyContext, TextureStep, UNKEYED, Unkeyed, VIEW_KEYS,
+    ViewKey, ViewKeyRow, ViewKeyWhen,
+};
 pub use map_camera::{
     CameraSpeed, Direction, MAP_CAMERA, MapCamera, MapCameraError, MapCameraParams, MapFov,
 };

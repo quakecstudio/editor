@@ -17,7 +17,7 @@ use eframe::egui::{
 use eframe::egui_wgpu::RenderState;
 use qs_layout::{
     CameraSpeed, Direction, KeepViewParams, Layout, MapCamera, MapCameraParams, MapFov, MapGrid,
-    MapLook, MapPanes, MapShading,
+    MapLook, MapPanes, MapShading, ViewKey,
 };
 use qs_map_edit::MapReport;
 use qs_map_edit::texture_import::DitherChoice;
@@ -33,6 +33,7 @@ use qs_workbench::map_filter::{GameMode, Skill};
 
 use crate::help::{self, Topic};
 use crate::icons::{Icon, Toggled};
+use crate::keymap;
 use crate::map_browser::{ClassDrag, EntityBrowser};
 use crate::map_fields::{Field, spawnflags};
 use crate::map_groups::{GroupAction, Grouping, layers_ui, overview_keys, selection_ui};
@@ -1199,7 +1200,8 @@ impl MapEditor {
             .collect();
         if response.has_focus() {
             self.keyboard = Keyboard::Here;
-            if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape))
+            self.tools.tool_keys(ui);
+            if ui.input_mut(|i| keymap::pressed(i, ViewKey::Cancel))
                 && self.picking.take().is_none()
                 && !self.tools.cancel()
             {
@@ -1207,7 +1209,7 @@ impl MapEditor {
                 actions.push(MapAction::Select(None));
             }
             // TrenchBroom's Focus on Selection, Ctrl+U (Cmd+U on macOS, as Qt maps Ctrl).
-            if ui.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::U)) {
+            if ui.input_mut(|i| keymap::pressed(i, ViewKey::FocusSelection)) {
                 self.frame = Some(Framing::Selection);
                 ui.ctx().request_repaint();
             }
@@ -1793,10 +1795,10 @@ impl MapEditor {
 /// Moves the camera while a fly key is held (TrenchBroom's `CameraFly*`).
 fn fly(ui: &Ui, camera: &mut Camera, speed: f32) {
     let (dt, keys) = ui.input(|i| {
-        let held = |key| if i.key_down(key) { 1.0 } else { 0.0 };
-        let forward = held(Key::W) - held(Key::S);
-        let right = held(Key::D) - held(Key::A);
-        let up = held(Key::Q) - held(Key::X);
+        let held = |key| if keymap::down(i, key) { 1.0 } else { 0.0 };
+        let forward = held(ViewKey::FlyForward) - held(ViewKey::FlyBackward);
+        let right = held(ViewKey::FlyRight) - held(ViewKey::FlyLeft);
+        let up = held(ViewKey::FlyUp) - held(ViewKey::FlyDown);
         (i.stable_dt, [forward, right, up])
     });
     if keys.iter().any(|k: &f32| *k != 0.0) {
@@ -2018,6 +2020,12 @@ impl MapEditor {
     /// are its to take (UI-23).
     pub(crate) fn has_keyboard(&self) -> bool {
         self.keyboard == Keyboard::Here
+    }
+
+    /// The tool in hand.
+    #[cfg(test)]
+    pub(crate) const fn tool(&self) -> MapTool {
+        self.tools.tool()
     }
 
     /// The box around the map's first `entities` entities, as the standard views frame it.
@@ -2277,18 +2285,17 @@ impl MapEditor {
             Pane::Perspective => Z_AXIS,
         };
         let asked = ui.input_mut(|i| {
-            let mut key = |modifiers, key| i.consume_key(modifiers, key);
-            if key(Modifiers::COMMAND | Modifiers::ALT, Key::A) {
+            if keymap::pressed(i, ViewKey::InvertSelection) {
                 Some(SelectKey::Invert)
-            } else if key(Modifiers::COMMAND | Modifiers::SHIFT, Key::A) {
+            } else if i.consume_key(Modifiers::COMMAND | Modifiers::SHIFT, Key::A) {
                 Some(SelectKey::Clear)
-            } else if key(Modifiers::COMMAND, Key::A) {
+            } else if keymap::pressed(i, ViewKey::SelectAll) {
                 Some(SelectKey::All)
-            } else if key(Modifiers::COMMAND | Modifiers::SHIFT, Key::E) {
+            } else if keymap::pressed(i, ViewKey::SelectTall) {
                 Some(SelectKey::By(Region::Tall(tall)))
-            } else if key(Modifiers::COMMAND, Key::E) {
+            } else if keymap::pressed(i, ViewKey::SelectInside) {
                 Some(SelectKey::By(Region::Inside))
-            } else if key(Modifiers::COMMAND, Key::T) {
+            } else if keymap::pressed(i, ViewKey::SelectTouching) {
                 Some(SelectKey::By(Region::Touching))
             } else {
                 None
@@ -2381,16 +2388,16 @@ fn arrange_keys(
     });
     let mut asked = Vec::new();
     ui.input_mut(|i| {
-        if i.consume_key(Modifiers::COMMAND | Modifiers::ALT, Key::F) {
+        if keymap::pressed(i, ViewKey::FlipVertical) {
             asked.push(Arrange::Flip(Vec::new(), Vec::new(), Axis::Z));
         }
-        if i.consume_key(Modifiers::COMMAND, Key::F) {
+        if keymap::pressed(i, ViewKey::FlipHorizontal) {
             asked.push(Arrange::Flip(Vec::new(), Vec::new(), across));
         }
-        if i.consume_key(Modifiers::ALT, Key::ArrowLeft) {
+        if keymap::pressed(i, ViewKey::YawClockwise) {
             asked.push(Arrange::Turn(Vec::new(), Vec::new(), -QUARTER_TURN));
         }
-        if i.consume_key(Modifiers::ALT, Key::ArrowRight) {
+        if keymap::pressed(i, ViewKey::YawCounterClockwise) {
             asked.push(Arrange::Turn(Vec::new(), Vec::new(), QUARTER_TURN));
         }
     });
@@ -2411,28 +2418,25 @@ fn arrange_keys(
 /// TrenchBroom's grid keys (its "Increase Grid Size", "Decrease Grid Size" and "Set Grid Size"
 /// actions): + doubles `grid` and - halves it; 1 to 9 set 1 to 256 units.
 fn grid_key(ui: &Ui, grid: MapGrid) -> Option<MapGrid> {
-    const DIGITS: [Key; 9] = [
-        Key::Num1,
-        Key::Num2,
-        Key::Num3,
-        Key::Num4,
-        Key::Num5,
-        Key::Num6,
-        Key::Num7,
-        Key::Num8,
-        Key::Num9,
+    const DIGITS: [ViewKey; 9] = [
+        ViewKey::Grid1,
+        ViewKey::Grid2,
+        ViewKey::Grid4,
+        ViewKey::Grid8,
+        ViewKey::Grid16,
+        ViewKey::Grid32,
+        ViewKey::Grid64,
+        ViewKey::Grid128,
+        ViewKey::Grid256,
     ];
     ui.input_mut(|i| {
-        if i.consume_key(Modifiers::NONE, Key::Plus) || i.consume_key(Modifiers::NONE, Key::Equals)
-        {
+        if keymap::pressed(i, ViewKey::GridCoarser) {
             return Some(grid.coarser());
         }
-        if i.consume_key(Modifiers::NONE, Key::Minus) {
+        if keymap::pressed(i, ViewKey::GridFiner) {
             return Some(grid.finer());
         }
-        let digit = DIGITS
-            .iter()
-            .position(|&key| i.consume_key(Modifiers::NONE, key))?;
+        let digit = DIGITS.iter().position(|&key| keymap::pressed(i, key))?;
         let power = u8::try_from(digit).ok()?;
         MapGrid::try_from(f64::from(power).exp2()).ok()
     })
@@ -2455,24 +2459,22 @@ fn selection_keys(ui: &Ui, camera: &Camera, entity: EntityIndex, grid: MapGrid) 
     let mut actions = Vec::new();
     ui.input_mut(|i| {
         let moves = [
-            (Key::ArrowUp, snap(forward)),
-            (Key::ArrowDown, negate(snap(forward))),
-            (Key::ArrowRight, snap(right)),
-            (Key::ArrowLeft, negate(snap(right))),
-            (Key::PageUp, [0.0, 0.0, step]),
-            (Key::PageDown, [0.0, 0.0, -step]),
+            (ViewKey::MoveForward, snap(forward)),
+            (ViewKey::MoveBackward, negate(snap(forward))),
+            (ViewKey::MoveRight, snap(right)),
+            (ViewKey::MoveLeft, negate(snap(right))),
+            (ViewKey::MoveUp, [0.0, 0.0, step]),
+            (ViewKey::MoveDown, [0.0, 0.0, -step]),
         ];
         for (key, by) in moves {
-            if i.consume_key(Modifiers::NONE, key) {
+            if keymap::pressed(i, key) {
                 actions.push(MapAction::Move(entity, by));
             }
         }
-        if i.consume_key(Modifiers::NONE, Key::Delete)
-            || i.consume_key(Modifiers::NONE, Key::Backspace)
-        {
+        if keymap::pressed(i, ViewKey::Delete) {
             actions.push(MapAction::Delete(entity));
         }
-        if i.consume_key(Modifiers::COMMAND, Key::D) {
+        if keymap::pressed(i, ViewKey::Duplicate) {
             actions.push(MapAction::Duplicate(entity));
         }
     });

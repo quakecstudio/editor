@@ -6,8 +6,8 @@
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use eframe::egui::{Key, KeyboardShortcut, Modifiers};
-use qs_layout::{DEFAULT_KEYS, KeyContext};
+use eframe::egui::{InputState, Key, KeyboardShortcut, Modifiers};
+use qs_layout::{DEFAULT_KEYS, KeyContext, TextureStep, VIEW_KEYS, ViewKey};
 use serde::Deserialize;
 
 /// Where a binding's keys are taken.
@@ -74,6 +74,40 @@ pub fn bindings() -> Vec<Binding> {
             })
         })
         .collect()
+}
+
+/// Whether `key` of the map view's own was pressed, taking it.
+pub(crate) fn pressed(input: &mut InputState, key: ViewKey) -> bool {
+    key.keys()
+        .iter()
+        .filter_map(|keys| parse_keys(keys))
+        .any(|shortcut| input.consume_shortcut(&shortcut))
+}
+
+/// Whether the texture key `key` was pressed for `step`, taking it.
+pub(crate) fn pressed_for(input: &mut InputState, key: ViewKey, step: TextureStep) -> bool {
+    key.keys_for(step)
+        .and_then(parse_keys)
+        .is_some_and(|shortcut| input.consume_shortcut(&shortcut))
+}
+
+/// Whether `key` of the map view's own is held down, whatever else is.
+pub(crate) fn down(input: &InputState, key: ViewKey) -> bool {
+    key.keys()
+        .iter()
+        .filter_map(|keys| parse_keys(keys))
+        .any(|shortcut| input.key_down(shortcut.logical_key))
+}
+
+/// Whether `shortcut` is a key the map view takes itself, which a key taken anywhere gives
+/// way to while the view has the keyboard.
+#[must_use]
+pub fn is_view_key(shortcut: &KeyboardShortcut) -> bool {
+    VIEW_KEYS
+        .iter()
+        .flat_map(|row| row.keys)
+        .filter_map(|keys| parse_keys(keys))
+        .any(|own| own == *shortcut)
 }
 
 /// The map view's default keys the map editor takes itself, since each needs what the editor
@@ -283,6 +317,9 @@ fn modified(path: &Path) -> Option<SystemTime> {
 pub fn parse_keys(keys: &str) -> Option<KeyboardShortcut> {
     if keys.contains(' ') {
         return None;
+    }
+    if keys == "-" {
+        return Some(KeyboardShortcut::new(Modifiers::NONE, Key::Minus));
     }
     let mut parts: Vec<&str> = keys.split('-').collect();
     // `-` itself as the key, as in `secondary--`.

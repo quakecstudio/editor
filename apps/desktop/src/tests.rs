@@ -40,7 +40,7 @@ use crate::icons::Icon;
 use crate::keymap;
 use crate::launch::{Launch, forward_paths};
 use crate::map_editor::MIN_VIEW_HEIGHT;
-use crate::map_tools::Readout;
+use crate::map_tools::{MapTool, Readout};
 use crate::palette::highlighted;
 use crate::shell::{CentreTab, EDITOR_AREA, PointerHeld, ZoomStep, commanded_size, dragged_size};
 use crate::strings::{
@@ -5434,4 +5434,66 @@ fn the_map_view_is_turned_orbited_panned_and_zoomed_from_the_keyboard() {
     press(&mut harness, egui::Key::Enter);
     harness.run();
     assert_eq!(camera(&harness).pitch.get(), 89.0);
+}
+
+// UI-23, MAP-20, #971: a tool is taken by its key while the map view has the keyboard,
+// TrenchBroom's B, C and V and our own for the rest, and Escape gives the select tool back;
+// a key the view takes itself is one a key taken anywhere gives way to there
+#[test]
+fn the_map_views_tools_are_taken_by_their_keys() {
+    let dir = keep_copy("toolkeys");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    harness.get_by_label(Text::MapEditorView.get()).click();
+    harness.run();
+    let tool = |harness: &Harness<'static, Option<App>>| {
+        harness
+            .state()
+            .as_ref()
+            .unwrap()
+            .shell()
+            .map_editor()
+            .tool()
+    };
+    assert_eq!(tool(&harness), MapTool::Select);
+    for (key, taken) in [
+        (egui::Key::B, MapTool::Brush),
+        (egui::Key::C, MapTool::Clip),
+        (egui::Key::V, MapTool::Vertex),
+        (egui::Key::M, MapTool::Move),
+        (egui::Key::L, MapTool::Measure),
+        (egui::Key::P, MapTool::Shape),
+        (egui::Key::H, MapTool::Hull),
+    ] {
+        press(&mut harness, key);
+        assert_eq!(tool(&harness), taken, "{key:?}");
+    }
+    press(&mut harness, egui::Key::Escape);
+    assert_eq!(tool(&harness), MapTool::Select);
+    // In the command line the letters are text, not tools.
+    run_command(&mut harness, FOCUS_COMMAND_LINE);
+    harness.run();
+    type_text(&mut harness, "b");
+    press(&mut harness, egui::Key::B);
+    assert_eq!(tool(&harness), MapTool::Select);
+    // Group's key is the view's; the command line's is not.
+    let group = keymap::parse_keys("secondary-g").unwrap();
+    let line = keymap::parse_keys("secondary-;").unwrap();
+    assert!(keymap::is_view_key(&group));
+    assert!(!keymap::is_view_key(&line));
+    assert_eq!(
+        keymap::parse_keys("-").map(|keys| keys.logical_key),
+        Some(egui::Key::Minus)
+    );
+    assert_eq!(
+        keymap::parse_keys("shift-alt-pageup").map(|keys| keys.logical_key),
+        Some(egui::Key::PageUp)
+    );
 }

@@ -12,7 +12,9 @@
 /// Where a default key is taken.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KeyContext {
-    /// Wherever the keyboard is.
+    /// Wherever the keyboard is; but while a pane of the map view has it, a key the view
+    /// takes itself ([`VIEW_KEYS`]) is the view's: Ctrl+G groups there and goes to a line
+    /// elsewhere, where Ctrl is the platform's modifier.
     Window,
     /// While the code editor does not have the keyboard: it takes these keys itself, with
     /// its own undo history.
@@ -543,6 +545,584 @@ pub const DEFAULT_KEYS: [DefaultKey; 74] = [
     },
 ];
 
+/// When a key of the map view's own is taken.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ViewKeyWhen {
+    /// Whenever a pane of the map view has the keyboard.
+    Always,
+    /// While faces are picked for the UV editor: the arrows then move their textures, not
+    /// the selection, as TrenchBroom's do.
+    FacesPicked,
+}
+
+/// A key the map view takes itself rather than through a command: it acts on what the view
+/// holds, the selection it draws, its tool, its camera, where a command would have to be
+/// given each as a value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ViewKey {
+    /// Gives up the tool's work in hand, then the selection.
+    Cancel,
+    /// Frames the selection in the 3D view.
+    FocusSelection,
+    /// Selects everything shown.
+    SelectAll,
+    /// Selects what is not selected, and not what is.
+    InvertSelection,
+    /// Selects what the selected brush covers in a 2D view, however deep.
+    SelectTall,
+    /// Selects what is inside the selected brush.
+    SelectInside,
+    /// Selects what touches the selected brush.
+    SelectTouching,
+    /// Groups the selection.
+    Group,
+    /// Ungroups the selected group.
+    Ungroup,
+    /// Duplicates the selected group as a linked group.
+    LinkedDuplicate,
+    /// Hides the selection.
+    Hide,
+    /// Hides everything but the selection.
+    Isolate,
+    /// Duplicates the selection.
+    Duplicate,
+    /// Deletes the selection.
+    Delete,
+    /// Flips the selection across the view.
+    FlipHorizontal,
+    /// Flips the selection top to bottom.
+    FlipVertical,
+    /// Turns the selection a quarter turn clockwise, seen from above.
+    YawClockwise,
+    /// Turns the selection a quarter turn counter-clockwise, seen from above.
+    YawCounterClockwise,
+    /// Moves the selection a grid step forward, or up in a 2D view.
+    MoveForward,
+    /// Moves the selection a grid step backward, or down in a 2D view.
+    MoveBackward,
+    /// Moves the selection a grid step left.
+    MoveLeft,
+    /// Moves the selection a grid step right.
+    MoveRight,
+    /// Moves the selection a grid step up.
+    MoveUp,
+    /// Moves the selection a grid step down.
+    MoveDown,
+    /// Doubles the grid.
+    GridCoarser,
+    /// Halves the grid.
+    GridFiner,
+    /// Sets the grid to 1 unit.
+    Grid1,
+    /// Sets the grid to 2 units.
+    Grid2,
+    /// Sets the grid to 4 units.
+    Grid4,
+    /// Sets the grid to 8 units.
+    Grid8,
+    /// Sets the grid to 16 units.
+    Grid16,
+    /// Sets the grid to 32 units.
+    Grid32,
+    /// Sets the grid to 64 units.
+    Grid64,
+    /// Sets the grid to 128 units.
+    Grid128,
+    /// Sets the grid to 256 units.
+    Grid256,
+    /// Flies the 3D view's camera forward while held.
+    FlyForward,
+    /// Flies the 3D view's camera backward while held.
+    FlyBackward,
+    /// Flies the 3D view's camera left while held.
+    FlyLeft,
+    /// Flies the 3D view's camera right while held.
+    FlyRight,
+    /// Flies the 3D view's camera up while held.
+    FlyUp,
+    /// Flies the 3D view's camera down while held.
+    FlyDown,
+    /// Takes the brush tool.
+    BrushTool,
+    /// Takes the clip tool.
+    ClipTool,
+    /// Takes the vertex tool.
+    VertexTool,
+    /// Takes the move tool.
+    MoveTool,
+    /// Takes the measure tool.
+    MeasureTool,
+    /// Takes the shape tool.
+    ShapeTool,
+    /// Takes the hull tool.
+    HullTool,
+    /// Makes the brush drawn, or cuts with the clip plane placed.
+    Confirm,
+    /// Moves the picked faces' textures up: by the grid, coarsely with Shift, finely with the platform's modifier.
+    TextureUp,
+    /// Moves the picked faces' textures down: by the grid, coarsely with Shift, finely with the platform's modifier.
+    TextureDown,
+    /// Moves the picked faces' textures left: by the grid, coarsely with Shift, finely with the platform's modifier.
+    TextureLeft,
+    /// Moves the picked faces' textures right: by the grid, coarsely with Shift, finely with the platform's modifier.
+    TextureRight,
+    /// Turns the picked faces' textures clockwise: by the grid, coarsely with Shift, finely with the platform's modifier.
+    TextureClockwise,
+    /// Turns the picked faces' textures counter-clockwise: by the grid, coarsely with Shift, finely with the platform's modifier.
+    TextureCounterClockwise,
+}
+
+/// How far a texture key moves or turns the picked faces' textures.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextureStep {
+    /// By the grid, or the grid's angle.
+    Plain,
+    /// Coarsely, with Shift.
+    Coarse,
+    /// Finely, with the platform's modifier.
+    Fine,
+}
+
+/// A [`ViewKey`]'s keys and what they follow.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ViewKeyRow {
+    /// The key.
+    pub key: ViewKey,
+    /// Its keys, in the default keys' spelling: any one of them, or for a texture key the
+    /// plain, the coarse and the fine one in that order.
+    pub keys: &'static [&'static str],
+    /// What it does.
+    pub does: &'static str,
+    /// When it is taken.
+    pub when: ViewKeyWhen,
+    /// What it follows.
+    pub follows: Follows,
+}
+
+impl ViewKey {
+    /// The key's keys: any one of them, or for a texture key the plain, the coarse and the
+    /// fine one in that order.
+    #[must_use]
+    pub fn keys(self) -> &'static [&'static str] {
+        VIEW_KEYS
+            .iter()
+            .find(|row| row.key == self)
+            .map_or(&[], |row| row.keys)
+    }
+
+    /// A texture key's keys for `step`; `None` for a key that is not a texture's.
+    #[must_use]
+    pub fn keys_for(self, step: TextureStep) -> Option<&'static str> {
+        match (self.keys(), step) {
+            ([plain, _, _], TextureStep::Plain) => Some(plain),
+            ([_, coarse, _], TextureStep::Coarse) => Some(coarse),
+            ([_, _, fine], TextureStep::Fine) => Some(fine),
+            _ => None,
+        }
+    }
+}
+
+/// Every key the map view takes itself.
+pub const VIEW_KEYS: [ViewKeyRow; 55] = [
+    ViewKeyRow {
+        key: ViewKey::Cancel,
+        keys: &["escape"],
+        does: "Gives up the tool's work in hand, then the selection",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Controls/Map view/Cancel"),
+    },
+    ViewKeyRow {
+        key: ViewKey::FocusSelection,
+        keys: &["secondary-u"],
+        does: "Frames the selection in the 3D view",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/View/Camera/Focus on Selection"),
+    },
+    ViewKeyRow {
+        key: ViewKey::SelectAll,
+        keys: &["secondary-a"],
+        does: "Selects everything shown",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/Edit/Select All"),
+    },
+    ViewKeyRow {
+        key: ViewKey::InvertSelection,
+        keys: &["secondary-alt-a"],
+        does: "Selects what is not selected, and not what is",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/Edit/Invert Selection"),
+    },
+    ViewKeyRow {
+        key: ViewKey::SelectTall,
+        keys: &["secondary-shift-e"],
+        does: "Selects what the selected brush covers in a 2D view, however deep",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/Edit/Select Tall"),
+    },
+    ViewKeyRow {
+        key: ViewKey::SelectInside,
+        keys: &["secondary-e"],
+        does: "Selects what is inside the selected brush",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/Edit/Select Inside"),
+    },
+    ViewKeyRow {
+        key: ViewKey::SelectTouching,
+        keys: &["secondary-t"],
+        does: "Selects what touches the selected brush",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/Edit/Select Touching"),
+    },
+    ViewKeyRow {
+        key: ViewKey::Group,
+        keys: &["secondary-g"],
+        does: "Groups the selection",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/Edit/Group"),
+    },
+    ViewKeyRow {
+        key: ViewKey::Ungroup,
+        keys: &["secondary-shift-g"],
+        does: "Ungroups the selected group",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/Edit/Ungroup"),
+    },
+    ViewKeyRow {
+        key: ViewKey::LinkedDuplicate,
+        keys: &["secondary-shift-d"],
+        does: "Duplicates the selected group as a linked group",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/Edit/Create Linked Duplicate"),
+    },
+    ViewKeyRow {
+        key: ViewKey::Hide,
+        keys: &["secondary-alt-i"],
+        does: "Hides the selection",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/View/Hide"),
+    },
+    ViewKeyRow {
+        key: ViewKey::Isolate,
+        keys: &["secondary-i"],
+        does: "Hides everything but the selection",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/View/Isolate"),
+    },
+    ViewKeyRow {
+        key: ViewKey::Duplicate,
+        keys: &["secondary-d"],
+        does: "Duplicates the selection",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/Edit/Duplicate"),
+    },
+    ViewKeyRow {
+        key: ViewKey::Delete,
+        keys: &["delete", "backspace"],
+        does: "Deletes the selection",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/Edit/Delete"),
+    },
+    ViewKeyRow {
+        key: ViewKey::FlipHorizontal,
+        keys: &["secondary-f"],
+        does: "Flips the selection across the view",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Controls/Map view/Flip objects horizontally"),
+    },
+    ViewKeyRow {
+        key: ViewKey::FlipVertical,
+        keys: &["secondary-alt-f"],
+        does: "Flips the selection top to bottom",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Controls/Map view/Flip objects vertically"),
+    },
+    ViewKeyRow {
+        key: ViewKey::YawClockwise,
+        keys: &["alt-left"],
+        does: "Turns the selection a quarter turn clockwise, seen from above",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Controls/Map view/Yaw objects clockwise"),
+    },
+    ViewKeyRow {
+        key: ViewKey::YawCounterClockwise,
+        keys: &["alt-right"],
+        does: "Turns the selection a quarter turn counter-clockwise, seen from above",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Controls/Map view/Yaw objects counter-clockwise"),
+    },
+    ViewKeyRow {
+        key: ViewKey::MoveForward,
+        keys: &["up"],
+        does: "Moves the selection a grid step forward, or up in a 2D view",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Controls/Map view/Move objects up; Move objects forward"),
+    },
+    ViewKeyRow {
+        key: ViewKey::MoveBackward,
+        keys: &["down"],
+        does: "Moves the selection a grid step backward, or down in a 2D view",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Controls/Map view/Move objects down; Move objects backward"),
+    },
+    ViewKeyRow {
+        key: ViewKey::MoveLeft,
+        keys: &["left"],
+        does: "Moves the selection a grid step left",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Controls/Map view/Move objects left"),
+    },
+    ViewKeyRow {
+        key: ViewKey::MoveRight,
+        keys: &["right"],
+        does: "Moves the selection a grid step right",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Controls/Map view/Move objects right"),
+    },
+    ViewKeyRow {
+        key: ViewKey::MoveUp,
+        keys: &["pageup"],
+        does: "Moves the selection a grid step up",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Controls/Map view/Move objects backward; Move objects up"),
+    },
+    ViewKeyRow {
+        key: ViewKey::MoveDown,
+        keys: &["pagedown"],
+        does: "Moves the selection a grid step down",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Controls/Map view/Move objects forward; Move objects down"),
+    },
+    ViewKeyRow {
+        key: ViewKey::GridCoarser,
+        keys: &["+", "="],
+        does: "Doubles the grid",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/View/Grid/Increase Grid Size"),
+    },
+    ViewKeyRow {
+        key: ViewKey::GridFiner,
+        keys: &["-"],
+        does: "Halves the grid",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/View/Grid/Decrease Grid Size"),
+    },
+    ViewKeyRow {
+        key: ViewKey::Grid1,
+        keys: &["1"],
+        does: "Sets the grid to 1 unit",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/View/Grid/Set Grid Size 1"),
+    },
+    ViewKeyRow {
+        key: ViewKey::Grid2,
+        keys: &["2"],
+        does: "Sets the grid to 2 units",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/View/Grid/Set Grid Size 2"),
+    },
+    ViewKeyRow {
+        key: ViewKey::Grid4,
+        keys: &["3"],
+        does: "Sets the grid to 4 units",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/View/Grid/Set Grid Size 4"),
+    },
+    ViewKeyRow {
+        key: ViewKey::Grid8,
+        keys: &["4"],
+        does: "Sets the grid to 8 units",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/View/Grid/Set Grid Size 8"),
+    },
+    ViewKeyRow {
+        key: ViewKey::Grid16,
+        keys: &["5"],
+        does: "Sets the grid to 16 units",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/View/Grid/Set Grid Size 16"),
+    },
+    ViewKeyRow {
+        key: ViewKey::Grid32,
+        keys: &["6"],
+        does: "Sets the grid to 32 units",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/View/Grid/Set Grid Size 32"),
+    },
+    ViewKeyRow {
+        key: ViewKey::Grid64,
+        keys: &["7"],
+        does: "Sets the grid to 64 units",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/View/Grid/Set Grid Size 64"),
+    },
+    ViewKeyRow {
+        key: ViewKey::Grid128,
+        keys: &["8"],
+        does: "Sets the grid to 128 units",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/View/Grid/Set Grid Size 128"),
+    },
+    ViewKeyRow {
+        key: ViewKey::Grid256,
+        keys: &["9"],
+        does: "Sets the grid to 256 units",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/View/Grid/Set Grid Size 256"),
+    },
+    ViewKeyRow {
+        key: ViewKey::FlyForward,
+        keys: &["w"],
+        does: "Flies the 3D view's camera forward while held",
+        when: ViewKeyWhen::Always,
+        follows: Follows::Own(
+            "TrenchBroom's fly keys, which its preferences hold, not its actions",
+        ),
+    },
+    ViewKeyRow {
+        key: ViewKey::FlyBackward,
+        keys: &["s"],
+        does: "Flies the 3D view's camera backward while held",
+        when: ViewKeyWhen::Always,
+        follows: Follows::Own(
+            "TrenchBroom's fly keys, which its preferences hold, not its actions",
+        ),
+    },
+    ViewKeyRow {
+        key: ViewKey::FlyLeft,
+        keys: &["a"],
+        does: "Flies the 3D view's camera left while held",
+        when: ViewKeyWhen::Always,
+        follows: Follows::Own(
+            "TrenchBroom's fly keys, which its preferences hold, not its actions",
+        ),
+    },
+    ViewKeyRow {
+        key: ViewKey::FlyRight,
+        keys: &["d"],
+        does: "Flies the 3D view's camera right while held",
+        when: ViewKeyWhen::Always,
+        follows: Follows::Own(
+            "TrenchBroom's fly keys, which its preferences hold, not its actions",
+        ),
+    },
+    ViewKeyRow {
+        key: ViewKey::FlyUp,
+        keys: &["q"],
+        does: "Flies the 3D view's camera up while held",
+        when: ViewKeyWhen::Always,
+        follows: Follows::Own(
+            "TrenchBroom's fly keys, which its preferences hold, not its actions",
+        ),
+    },
+    ViewKeyRow {
+        key: ViewKey::FlyDown,
+        keys: &["x"],
+        does: "Flies the 3D view's camera down while held",
+        when: ViewKeyWhen::Always,
+        follows: Follows::Own(
+            "TrenchBroom's fly keys, which its preferences hold, not its actions",
+        ),
+    },
+    ViewKeyRow {
+        key: ViewKey::BrushTool,
+        keys: &["b"],
+        does: "Takes the brush tool",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/Edit/Tools/Brush Tool"),
+    },
+    ViewKeyRow {
+        key: ViewKey::ClipTool,
+        keys: &["c"],
+        does: "Takes the clip tool",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/Edit/Tools/Clip Tool"),
+    },
+    ViewKeyRow {
+        key: ViewKey::VertexTool,
+        keys: &["v"],
+        does: "Takes the vertex tool",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Menu/Edit/Tools/Vertex Tool"),
+    },
+    ViewKeyRow {
+        key: ViewKey::MoveTool,
+        keys: &["m"],
+        does: "Takes the move tool",
+        when: ViewKeyWhen::Always,
+        follows: Follows::Own("TrenchBroom moves with the select tool; M for move"),
+    },
+    ViewKeyRow {
+        key: ViewKey::MeasureTool,
+        keys: &["l"],
+        does: "Takes the measure tool",
+        when: ViewKeyWhen::Always,
+        follows: Follows::Own("TrenchBroom has no measure tool; L for length"),
+    },
+    ViewKeyRow {
+        key: ViewKey::ShapeTool,
+        keys: &["p"],
+        does: "Takes the shape tool",
+        when: ViewKeyWhen::Always,
+        follows: Follows::Own("TrenchBroom picks a shape in its brush tool; P for primitive"),
+    },
+    ViewKeyRow {
+        key: ViewKey::HullTool,
+        keys: &["h"],
+        does: "Takes the hull tool",
+        when: ViewKeyWhen::Always,
+        follows: Follows::Own("TrenchBroom makes a hull in its brush tool; H for hull"),
+    },
+    ViewKeyRow {
+        key: ViewKey::Confirm,
+        keys: &["enter"],
+        does: "Makes the brush drawn, or cuts with the clip plane placed",
+        when: ViewKeyWhen::Always,
+        follows: Follows::TrenchBroom("Controls/Map view/Create brush"),
+    },
+    ViewKeyRow {
+        key: ViewKey::TextureUp,
+        keys: &["up", "shift-up", "secondary-up"],
+        does: "Moves the picked faces' textures up: by the grid, coarsely with Shift, finely with the platform's modifier",
+        when: ViewKeyWhen::FacesPicked,
+        follows: Follows::TrenchBroom("Controls/Map view/Move textures up"),
+    },
+    ViewKeyRow {
+        key: ViewKey::TextureDown,
+        keys: &["down", "shift-down", "secondary-down"],
+        does: "Moves the picked faces' textures down: by the grid, coarsely with Shift, finely with the platform's modifier",
+        when: ViewKeyWhen::FacesPicked,
+        follows: Follows::TrenchBroom("Controls/Map view/Move textures down"),
+    },
+    ViewKeyRow {
+        key: ViewKey::TextureLeft,
+        keys: &["left", "shift-left", "secondary-left"],
+        does: "Moves the picked faces' textures left: by the grid, coarsely with Shift, finely with the platform's modifier",
+        when: ViewKeyWhen::FacesPicked,
+        follows: Follows::TrenchBroom("Controls/Map view/Move textures left"),
+    },
+    ViewKeyRow {
+        key: ViewKey::TextureRight,
+        keys: &["right", "shift-right", "secondary-right"],
+        does: "Moves the picked faces' textures right: by the grid, coarsely with Shift, finely with the platform's modifier",
+        when: ViewKeyWhen::FacesPicked,
+        follows: Follows::TrenchBroom("Controls/Map view/Move textures right"),
+    },
+    ViewKeyRow {
+        key: ViewKey::TextureClockwise,
+        keys: &["pageup", "shift-pageup", "secondary-pageup"],
+        does: "Turns the picked faces' textures clockwise: by the grid, coarsely with Shift, finely with the platform's modifier",
+        when: ViewKeyWhen::FacesPicked,
+        follows: Follows::TrenchBroom("Controls/Map view/Rotate textures clockwise"),
+    },
+    ViewKeyRow {
+        key: ViewKey::TextureCounterClockwise,
+        keys: &["pagedown", "shift-pagedown", "secondary-pagedown"],
+        does: "Turns the picked faces' textures counter-clockwise: by the grid, coarsely with Shift, finely with the platform's modifier",
+        when: ViewKeyWhen::FacesPicked,
+        follows: Follows::TrenchBroom("Controls/Map view/Rotate textures counter-clockwise"),
+    },
+];
+
 /// Every command with no key of its own, and why.
 pub const UNKEYED: [(&str, Unkeyed); 160] = [
     ("checkpoint.list", Unkeyed::Query),
@@ -719,7 +1299,10 @@ impl DefaultKey {
 mod tests {
     use std::collections::BTreeSet;
 
-    use super::{DEFAULT_KEYS, DefaultKey, Follows, UNKEYED};
+    use super::{
+        DEFAULT_KEYS, DefaultKey, Follows, KeyContext, TextureStep, UNKEYED, VIEW_KEYS, ViewKey,
+        ViewKeyWhen,
+    };
 
     // No spec statement: UI-21, #971: no two default keys are the same, since a key held in one
     // context is held in the window's too; and no command is in both tables or twice in one
@@ -754,5 +1337,85 @@ mod tests {
             Some("secondary-r")
         );
         assert_eq!(DefaultKey::of("file.open"), None);
+    }
+
+    /// `keys` as one platform holds them: `secondary` as `platform`'s modifier, the modifiers
+    /// in one order.
+    fn held(keys: &str, platform: &str) -> String {
+        // `-` itself is the key when the keys end with it.
+        let (key, modifiers) = match keys.strip_suffix('-') {
+            Some(modifiers) => ("-", modifiers),
+            None => keys.rsplit_once('-').map_or((keys, ""), |(m, k)| (k, m)),
+        };
+        let mut modifiers: Vec<&str> = modifiers
+            .split('-')
+            .filter(|modifier| !modifier.is_empty())
+            .map(|modifier| {
+                if modifier == "secondary" {
+                    platform
+                } else {
+                    modifier
+                }
+            })
+            .collect();
+        modifiers.sort_unstable();
+        modifiers.push(key);
+        modifiers.join("-")
+    }
+
+    // No spec statement: MAP-20, #971: the keys the map view takes itself are each one key's
+    // while they are taken together, and none is a default key taken in the Map tab, on macOS
+    // (Cmd) or elsewhere (Ctrl), which the window would take first; a key taken anywhere
+    // gives way to the view's; each says what it follows
+    #[test]
+    fn the_map_views_own_keys_collide_with_nothing() {
+        assert_eq!(held("secondary-alt-shift-[", "cmd"), "alt-cmd-shift-[");
+        assert_eq!(held("secondary--", "ctrl"), "ctrl--");
+        assert_eq!(held("-", "ctrl"), "-");
+        for platform in ["cmd", "ctrl"] {
+            let mut taken: BTreeSet<String> = DEFAULT_KEYS
+                .iter()
+                .filter(|key| key.context != KeyContext::Window)
+                .map(|key| held(key.keys, platform))
+                .collect();
+            for row in VIEW_KEYS
+                .iter()
+                .filter(|row| row.when == ViewKeyWhen::Always)
+            {
+                for keys in row.keys {
+                    assert!(
+                        taken.insert(held(keys, platform)),
+                        "{keys} of {:?} is taken on {platform}",
+                        row.key
+                    );
+                }
+            }
+        }
+        for row in &VIEW_KEYS {
+            let said = match row.follows {
+                Follows::TrenchBroom(action) => {
+                    action.starts_with("Menu/") || action.starts_with("Controls/Map view/")
+                }
+                Follows::Own(why) => !why.is_empty(),
+            };
+            assert!(
+                said && !row.does.is_empty() && !row.keys.is_empty(),
+                "{:?}",
+                row.key
+            );
+            assert_eq!(row.key.keys(), row.keys);
+        }
+        assert_eq!(ViewKey::GridFiner.keys(), ["-"]);
+        assert_eq!(ViewKey::GridFiner.keys_for(TextureStep::Plain), None);
+        let up = |step| ViewKey::TextureUp.keys_for(step);
+        assert_eq!(
+            [TextureStep::Plain, TextureStep::Coarse, TextureStep::Fine].map(up),
+            [Some("up"), Some("shift-up"), Some("secondary-up")]
+        );
+        // A texture key has its plain, coarse and fine keys.
+        let faces = VIEW_KEYS
+            .iter()
+            .filter(|row| row.when == ViewKeyWhen::FacesPicked);
+        assert!(faces.clone().count() == 6 && faces.clone().all(|row| row.keys.len() == 3));
     }
 }

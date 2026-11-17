@@ -13,7 +13,7 @@ use std::fs;
 use std::path::Path;
 
 use qs_commands::Registry;
-use qs_layout::{DEFAULT_KEYS, Follows, KeyContext, UNKEYED, Unkeyed};
+use qs_layout::{DEFAULT_KEYS, Follows, KeyContext, UNKEYED, Unkeyed, VIEW_KEYS};
 
 use crate::commands::registry;
 use crate::{Report, print_outcome};
@@ -138,6 +138,21 @@ fn keymap<C: 'static>(registry: &Registry<C>) -> String {
             key.keys.replace('|', "\\|")
         )
         .ok();
+    }
+    out.push_str(
+        "\n## Keys the map view takes itself\n\nThese act on what the map view holds, the \
+         selection it draws, its tool and its camera, so the view takes them itself while one \
+         of its panes has the keyboard, before a key taken anywhere. A texture key is taken \
+         while faces are picked for the UV editor.\n\n\
+         | What it does | Keys | Follows |\n| --- | --- | --- |\n",
+    );
+    for row in &VIEW_KEYS {
+        let keys: Vec<String> = row.keys.iter().map(|keys| format!("`{keys}`")).collect();
+        let follows = match row.follows {
+            Follows::TrenchBroom(action) => format!("TrenchBroom's `{action}`"),
+            Follows::Own(why) => format!("ours: {why}"),
+        };
+        writeln!(out, "| {} | {} | {follows} |", row.does, keys.join(", ")).ok();
     }
     out.push_str(
         "\n## Commands with no key\n\nA command that answers a question is read by a panel, \

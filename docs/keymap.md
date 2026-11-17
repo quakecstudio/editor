@@ -83,6 +83,68 @@ Every command's default key (UI-21). A key follows TrenchBroom's default where T
 | `view.map_save_view_3` | `shift-f3` | in the map view | ours: the saved view's key with Shift |
 | `view.map_save_view_4` | `shift-f4` | in the map view | ours: the saved view's key with Shift |
 
+## Keys the map view takes itself
+
+These act on what the map view holds, the selection it draws, its tool and its camera, so the view takes them itself while one of its panes has the keyboard, before a key taken anywhere. A texture key is taken while faces are picked for the UV editor.
+
+| What it does | Keys | Follows |
+| --- | --- | --- |
+| Gives up the tool's work in hand, then the selection | `escape` | TrenchBroom's `Controls/Map view/Cancel` |
+| Frames the selection in the 3D view | `secondary-u` | TrenchBroom's `Menu/View/Camera/Focus on Selection` |
+| Selects everything shown | `secondary-a` | TrenchBroom's `Menu/Edit/Select All` |
+| Selects what is not selected, and not what is | `secondary-alt-a` | TrenchBroom's `Menu/Edit/Invert Selection` |
+| Selects what the selected brush covers in a 2D view, however deep | `secondary-shift-e` | TrenchBroom's `Menu/Edit/Select Tall` |
+| Selects what is inside the selected brush | `secondary-e` | TrenchBroom's `Menu/Edit/Select Inside` |
+| Selects what touches the selected brush | `secondary-t` | TrenchBroom's `Menu/Edit/Select Touching` |
+| Groups the selection | `secondary-g` | TrenchBroom's `Menu/Edit/Group` |
+| Ungroups the selected group | `secondary-shift-g` | TrenchBroom's `Menu/Edit/Ungroup` |
+| Duplicates the selected group as a linked group | `secondary-shift-d` | TrenchBroom's `Menu/Edit/Create Linked Duplicate` |
+| Hides the selection | `secondary-alt-i` | TrenchBroom's `Menu/View/Hide` |
+| Hides everything but the selection | `secondary-i` | TrenchBroom's `Menu/View/Isolate` |
+| Duplicates the selection | `secondary-d` | TrenchBroom's `Menu/Edit/Duplicate` |
+| Deletes the selection | `delete`, `backspace` | TrenchBroom's `Menu/Edit/Delete` |
+| Flips the selection across the view | `secondary-f` | TrenchBroom's `Controls/Map view/Flip objects horizontally` |
+| Flips the selection top to bottom | `secondary-alt-f` | TrenchBroom's `Controls/Map view/Flip objects vertically` |
+| Turns the selection a quarter turn clockwise, seen from above | `alt-left` | TrenchBroom's `Controls/Map view/Yaw objects clockwise` |
+| Turns the selection a quarter turn counter-clockwise, seen from above | `alt-right` | TrenchBroom's `Controls/Map view/Yaw objects counter-clockwise` |
+| Moves the selection a grid step forward, or up in a 2D view | `up` | TrenchBroom's `Controls/Map view/Move objects up; Move objects forward` |
+| Moves the selection a grid step backward, or down in a 2D view | `down` | TrenchBroom's `Controls/Map view/Move objects down; Move objects backward` |
+| Moves the selection a grid step left | `left` | TrenchBroom's `Controls/Map view/Move objects left` |
+| Moves the selection a grid step right | `right` | TrenchBroom's `Controls/Map view/Move objects right` |
+| Moves the selection a grid step up | `pageup` | TrenchBroom's `Controls/Map view/Move objects backward; Move objects up` |
+| Moves the selection a grid step down | `pagedown` | TrenchBroom's `Controls/Map view/Move objects forward; Move objects down` |
+| Doubles the grid | `+`, `=` | TrenchBroom's `Menu/View/Grid/Increase Grid Size` |
+| Halves the grid | `-` | TrenchBroom's `Menu/View/Grid/Decrease Grid Size` |
+| Sets the grid to 1 unit | `1` | TrenchBroom's `Menu/View/Grid/Set Grid Size 1` |
+| Sets the grid to 2 units | `2` | TrenchBroom's `Menu/View/Grid/Set Grid Size 2` |
+| Sets the grid to 4 units | `3` | TrenchBroom's `Menu/View/Grid/Set Grid Size 4` |
+| Sets the grid to 8 units | `4` | TrenchBroom's `Menu/View/Grid/Set Grid Size 8` |
+| Sets the grid to 16 units | `5` | TrenchBroom's `Menu/View/Grid/Set Grid Size 16` |
+| Sets the grid to 32 units | `6` | TrenchBroom's `Menu/View/Grid/Set Grid Size 32` |
+| Sets the grid to 64 units | `7` | TrenchBroom's `Menu/View/Grid/Set Grid Size 64` |
+| Sets the grid to 128 units | `8` | TrenchBroom's `Menu/View/Grid/Set Grid Size 128` |
+| Sets the grid to 256 units | `9` | TrenchBroom's `Menu/View/Grid/Set Grid Size 256` |
+| Flies the 3D view's camera forward while held | `w` | ours: TrenchBroom's fly keys, which its preferences hold, not its actions |
+| Flies the 3D view's camera backward while held | `s` | ours: TrenchBroom's fly keys, which its preferences hold, not its actions |
+| Flies the 3D view's camera left while held | `a` | ours: TrenchBroom's fly keys, which its preferences hold, not its actions |
+| Flies the 3D view's camera right while held | `d` | ours: TrenchBroom's fly keys, which its preferences hold, not its actions |
+| Flies the 3D view's camera up while held | `q` | ours: TrenchBroom's fly keys, which its preferences hold, not its actions |
+| Flies the 3D view's camera down while held | `x` | ours: TrenchBroom's fly keys, which its preferences hold, not its actions |
+| Takes the brush tool | `b` | TrenchBroom's `Menu/Edit/Tools/Brush Tool` |
+| Takes the clip tool | `c` | TrenchBroom's `Menu/Edit/Tools/Clip Tool` |
+| Takes the vertex tool | `v` | TrenchBroom's `Menu/Edit/Tools/Vertex Tool` |
+| Takes the move tool | `m` | ours: TrenchBroom moves with the select tool; M for move |
+| Takes the measure tool | `l` | ours: TrenchBroom has no measure tool; L for length |
+| Takes the shape tool | `p` | ours: TrenchBroom picks a shape in its brush tool; P for primitive |
+| Takes the hull tool | `h` | ours: TrenchBroom makes a hull in its brush tool; H for hull |
+| Makes the brush drawn, or cuts with the clip plane placed | `enter` | TrenchBroom's `Controls/Map view/Create brush` |
+| Moves the picked faces' textures up: by the grid, coarsely with Shift, finely with the platform's modifier | `up`, `shift-up`, `secondary-up` | TrenchBroom's `Controls/Map view/Move textures up` |
+| Moves the picked faces' textures down: by the grid, coarsely with Shift, finely with the platform's modifier | `down`, `shift-down`, `secondary-down` | TrenchBroom's `Controls/Map view/Move textures down` |
+| Moves the picked faces' textures left: by the grid, coarsely with Shift, finely with the platform's modifier | `left`, `shift-left`, `secondary-left` | TrenchBroom's `Controls/Map view/Move textures left` |
+| Moves the picked faces' textures right: by the grid, coarsely with Shift, finely with the platform's modifier | `right`, `shift-right`, `secondary-right` | TrenchBroom's `Controls/Map view/Move textures right` |
+| Turns the picked faces' textures clockwise: by the grid, coarsely with Shift, finely with the platform's modifier | `pageup`, `shift-pageup`, `secondary-pageup` | TrenchBroom's `Controls/Map view/Rotate textures clockwise` |
+| Turns the picked faces' textures counter-clockwise: by the grid, coarsely with Shift, finely with the platform's modifier | `pagedown`, `shift-pagedown`, `secondary-pagedown` | TrenchBroom's `Controls/Map view/Rotate textures counter-clockwise` |
+
 ## Commands with no key
 
 A command that answers a question is read by a panel, the agent or MCP. A command the window runs itself is a poll or a hand-over. A command that needs a value, a path, a name or a place, runs from the command line, which asks for each, or from the control in the window that has the value.
