@@ -2093,7 +2093,7 @@ groups:
     depends:
     - P4-37
     deliverable:
-    - 'apps/desktop keymap: a default shortcut for every command a person runs from the window, TrenchBroom''s where its app/TrenchBroom/src/ui/ActionManager.cpp at TrenchBroom/TrenchBroom@8f329f11e65e3d21b355a42bcae199cb3e4e0812 binds the same action, our own otherwise, each with the platform''s modifier (Cmd on macOS, Ctrl elsewhere)'
+    - 'apps/desktop keymap: a default shortcut for every command a person runs from the window, TrenchBroom''s where its lib/TbUiLib/src/ActionManager.cpp at TrenchBroom/TrenchBroom@8f329f11e65e3d21b355a42bcae199cb3e4e0812 binds the same action, our own otherwise, each with the platform''s modifier (Cmd on macOS, Ctrl elsewhere)'
     - 'docs/keymap.md, generated from the registry and the keymap by cargo xtask keymap as docs/commands.md is: every command, its shortcut and context, and the TrenchBroom action it matches'
     - 'A command line docked in the window, as AutoCAD''s command window: typing a command id or a short alias runs it, asking for each parameter in turn from the command''s schema with its default, with completion and history; a point, entity, brush or face asked for can be typed or picked in the map view'
     - 'Keyboard control of the map views: orbit, pan, zoom, the standard views (top, bottom, front, back, left, right, isometric) and saved views, from keys and from the command line'
