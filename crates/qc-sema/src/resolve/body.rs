@@ -1119,7 +1119,8 @@ impl<'a> Resolver<'a> {
             !replaced
         });
         // GMQ-23.1: GMQCC compares no parameter names, and a use finds the first parameter of
-        // its name, so another of the name is a parameter of its own that no use finds.
+        // its name, so another of the name is a parameter of its own that no use finds. Its
+        // components are locals, which a use finds first, the newest of a name (GMQ-23.2).
         let duplicate_param = kind == DefKind::Param
             && self.profile.repeated_parameter_names()
             && existing.is_some_and(|found| {
@@ -1222,7 +1223,7 @@ impl<'a> Resolver<'a> {
             // FTEF-21.12: a local is found from where it is made, so one made beside another of
             // its name hides it from there on, as `QCC_PR_GetDef` makes each as it reads it.
             f.scope_start = Some(scope.at);
-            if duplicate_param {
+            if duplicate_param && facts.origin == Origin::Source {
                 f.scope_end = Some(scope.at);
             }
         }

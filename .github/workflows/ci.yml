@@ -826,7 +826,7 @@ jobs:
           log="$RUNNER_TEMP/xonotic-check.txt"
           if ! cargo run --locked --release -p quakec-ide -- check \
             "$QS_TEST_ASSETS/codebase/xonotic" > "$log" 2>&1; then
-            grep ' error ' "$log"
+            grep ' error ' "$log" || tail -n 50 "$log"
             exit 1
           fi
           tail -n 1 "$log"

@@ -426,6 +426,10 @@ this should already be stringized").
   `\` and an empty line before `#define REGISTRY_DEFINE_GET`. FTEQCC copies the byte after a
   continued line without looking for the body's end (FTEF-14.24), so its `A` runs on into the
   next line, the `#define B` with it.
+  A continued line that starts with `#` is joined as any other, so `#define E x \`, then
+  ` #define D 1`, is `E` as `x #define D 1`; FTEQCC keeps the line break there, "#define hacks
+  however, require that it becomes foo\nbar\nmoo" (FTEF-14.24), and the line runs as a
+  directive when `E` expands.
 
 ## GMQ-22 Arrays of fields
 
@@ -452,8 +456,8 @@ _scores[MAX_SCORE];`, `#define scores(this) _scores[(this).m_id]`), used as
 
 ## GMQ-23 Parameter names
 
-**Source:** `parser.cpp`, `parse_parameter_list` and `parser_find_param`, at the
-commit above.
+**Source:** `parser.cpp`, `parse_parameter_list`, `parse_function_body`, `parser_find_param` and
+`parser_find_local`, at the commit above.
 
 ### Behaviour
 
@@ -465,3 +469,9 @@ commit above.
   FTEQCC reports "Duplicate definition of unused." (FTEF-19.1). Xonotic's
   `menu/xonotic/dialog_media_demo_timeconfirm.qc` declares `Handle_TimeDemo_Click(entity unused,
   entity unused)`.
+- **GMQ-23.2** A repeated parameter's vector components are found as any vector parameter's are:
+  `void f(vector v, vector v)` has a use of `v_y` the second parameter's component and a use of
+  `v` the first parameter. GMQCC's `parse_function_body` adds each vector parameter's components
+  as locals, `parser_addlocal(parser, me[e]->m_name, me[e])`, which `util_htset` writes over a
+  local of the same name, and `parser_find_local` looks among the locals before
+  `parser_find_param`.

@@ -1138,7 +1138,7 @@ fn an_unknown_initialiser_is_no_constant() {
     );
 }
 
-// spec FTEF-7.2: a value of a typedef'd function type is called as that function type, its
+// spec FTEF-7.6: a value of a typedef'd function type is called as that function type, its
 // value the function's return type, as the pinned FTEQCC compiles `cb_t h; if (!h(2))`
 #[test]
 fn a_typedefed_function_value_is_called_as_its_type() {

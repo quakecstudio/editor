@@ -1132,6 +1132,35 @@ fn a_repeated_parameter_name_is_the_first_parameter_under_gmqcc() {
     assert!(found(text, Dialect::Fteqcc).contains(&Code::E0215));
 }
 
+// spec GMQ-23.2: under GMQCC a repeated vector parameter's components are locals, which a use
+// finds before a parameter, the newest of a name; the parameter itself is still the first
+#[test]
+fn a_repeated_vector_parameters_components_are_the_last_under_gmqcc() {
+    let text = "float r;\nvoid f(vector v, vector v) { r = v_y; r = v * v; }\n";
+    let (mut db, mut input) = module(&[("a.qc", text)], &["a.qc"], Dialect::Gmqcc);
+    input.command_line = CommandLine::new(&["-std=gmqcc"]);
+    let analysis = db.analyze_module(&input);
+    let first = text.find("vector v").unwrap();
+    let second = text.rfind("vector v").unwrap();
+    let defined_at = |used: usize| {
+        let index = &analysis.index;
+        let found = index
+            .refs()
+            .iter()
+            .find(|r| r.location.span.start == used)
+            .unwrap();
+        index.defs()[found.def.index()].location.span.start
+    };
+    assert_eq!(
+        defined_at(text.find("v_y").unwrap()),
+        second.saturating_add(7)
+    );
+    assert_eq!(
+        defined_at(text.find("v * v").unwrap()),
+        first.saturating_add(7)
+    );
+}
+
 // spec GMQ-22.2: under GMQCC a constant index past an array of fields' end, picked inside
 // `e.( )`, is reported as any array's is; the element's type is the field's
 #[test]

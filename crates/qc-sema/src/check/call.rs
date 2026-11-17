@@ -142,7 +142,7 @@ impl Checker<'_> {
             return Ok(Value::unknown());
         }
         let function = match self.env.shape(&func.ty).map(|shape| shape.etype) {
-            // FTEF-7.2: a value of a typedef'd function type is called as that type.
+            // FTEF-7.6: a value of a typedef'd function type is called as that type.
             Some(Etype::Function | Etype::Variant) => match self.env.unaliased(&func.ty) {
                 Type::Function(function) => Some(function.as_ref().clone()),
                 _ => None,

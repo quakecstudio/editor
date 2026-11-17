@@ -884,7 +884,8 @@ fn read_body(
                 } else {
                     std::mem::take(&mut directive_lines)
                 };
-                if kept {
+                // FTEQCC's `#define` hack; C has joined the lines (GMQ-21.9).
+                if kept && splices == Splices::Kept {
                     value.push(b"\n", reading.origin(line_break));
                 }
                 // GMQ-21.9: C joins the lines first, so the next line's own line break ends
