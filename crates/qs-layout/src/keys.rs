@@ -415,74 +415,82 @@ pub const DEFAULT_KEYS: [DefaultKey; 74] = [
     },
     DefaultKey {
         command: "view.map_orbit_left",
-        keys: "shift-left",
+        keys: "shift-alt-left",
         context: KeyContext::MapView,
         follows: Follows::Own(
-            "TrenchBroom orbits with the mouse only; Shift and an arrow, which alone moves the selection",
+            "TrenchBroom orbits with the mouse only; Shift and Alt, which it leaves free, with an arrow",
         ),
     },
     DefaultKey {
         command: "view.map_orbit_right",
-        keys: "shift-right",
+        keys: "shift-alt-right",
         context: KeyContext::MapView,
         follows: Follows::Own(
-            "TrenchBroom orbits with the mouse only; Shift and an arrow, which alone moves the selection",
+            "TrenchBroom orbits with the mouse only; Shift and Alt, which it leaves free, with an arrow",
         ),
     },
     DefaultKey {
         command: "view.map_orbit_up",
-        keys: "shift-up",
+        keys: "shift-alt-up",
         context: KeyContext::MapView,
         follows: Follows::Own(
-            "TrenchBroom orbits with the mouse only; Shift and an arrow, which alone moves the selection",
+            "TrenchBroom orbits with the mouse only; Shift and Alt, which it leaves free, with an arrow",
         ),
     },
     DefaultKey {
         command: "view.map_orbit_down",
-        keys: "shift-down",
+        keys: "shift-alt-down",
         context: KeyContext::MapView,
         follows: Follows::Own(
-            "TrenchBroom orbits with the mouse only; Shift and an arrow, which alone moves the selection",
+            "TrenchBroom orbits with the mouse only; Shift and Alt, which it leaves free, with an arrow",
         ),
     },
     DefaultKey {
         command: "view.map_pan_left",
-        keys: "shift-alt-left",
+        keys: "secondary-shift-left",
         context: KeyContext::MapView,
-        follows: Follows::Own("TrenchBroom pans with the mouse only; the orbit key with Alt"),
+        follows: Follows::Own(
+            "TrenchBroom pans with the mouse only; the platform's modifier and Shift, which it leaves free, with an arrow",
+        ),
     },
     DefaultKey {
         command: "view.map_pan_right",
-        keys: "shift-alt-right",
+        keys: "secondary-shift-right",
         context: KeyContext::MapView,
-        follows: Follows::Own("TrenchBroom pans with the mouse only; the orbit key with Alt"),
+        follows: Follows::Own(
+            "TrenchBroom pans with the mouse only; the platform's modifier and Shift, which it leaves free, with an arrow",
+        ),
     },
     DefaultKey {
         command: "view.map_pan_up",
-        keys: "shift-alt-up",
+        keys: "secondary-shift-up",
         context: KeyContext::MapView,
-        follows: Follows::Own("TrenchBroom pans with the mouse only; the orbit key with Alt"),
+        follows: Follows::Own(
+            "TrenchBroom pans with the mouse only; the platform's modifier and Shift, which it leaves free, with an arrow",
+        ),
     },
     DefaultKey {
         command: "view.map_pan_down",
-        keys: "shift-alt-down",
+        keys: "secondary-shift-down",
         context: KeyContext::MapView,
-        follows: Follows::Own("TrenchBroom pans with the mouse only; the orbit key with Alt"),
+        follows: Follows::Own(
+            "TrenchBroom pans with the mouse only; the platform's modifier and Shift, which it leaves free, with an arrow",
+        ),
     },
     DefaultKey {
         command: "view.map_zoom_in",
-        keys: "shift-pageup",
+        keys: "shift-alt-pageup",
         context: KeyContext::MapView,
         follows: Follows::Own(
-            "TrenchBroom zooms with the wheel only; Shift and Page Up, which alone raises the selection",
+            "TrenchBroom zooms with the wheel only; the orbit keys' Shift and Alt with Page Up",
         ),
     },
     DefaultKey {
         command: "view.map_zoom_out",
-        keys: "shift-pagedown",
+        keys: "shift-alt-pagedown",
         context: KeyContext::MapView,
         follows: Follows::Own(
-            "TrenchBroom zooms with the wheel only; Shift and Page Down, which alone lowers the selection",
+            "TrenchBroom zooms with the wheel only; the orbit keys' Shift and Alt with Page Down",
         ),
     },
     DefaultKey {

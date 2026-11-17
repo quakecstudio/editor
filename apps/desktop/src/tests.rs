@@ -5316,6 +5316,7 @@ fn the_map_view_is_turned_orbited_panned_and_zoomed_from_the_keyboard() {
         camera(harness)
     };
     let (alt, shift) = (egui::Modifiers::ALT, egui::Modifiers::SHIFT);
+    let orbit = shift | alt;
     let digits = [
         egui::Key::Num1,
         egui::Key::Num2,
@@ -5365,17 +5366,17 @@ fn the_map_view_is_turned_orbited_panned_and_zoomed_from_the_keyboard() {
         squared.sqrt()
     };
     let before = camera(&harness);
-    let orbited = key(&mut harness, shift, egui::Key::ArrowLeft);
+    let orbited = key(&mut harness, orbit, egui::Key::ArrowLeft);
     assert!((orbited.yaw.get() - before.yaw.get() - ORBIT_STEP).abs() < 1e-3);
     assert!((away(&orbited) - away(&before)).abs() < 0.01);
     assert_ne!(orbited.origin, before.origin);
-    let back = key(&mut harness, shift, egui::Key::ArrowRight);
+    let back = key(&mut harness, orbit, egui::Key::ArrowRight);
     assert!((back.yaw.get() - before.yaw.get()).abs() < 1e-3);
-    let lower = key(&mut harness, shift, egui::Key::ArrowDown);
+    let lower = key(&mut harness, orbit, egui::Key::ArrowDown);
     assert!((lower.pitch.get() - back.pitch.get() - ORBIT_STEP).abs() < 1e-3);
-    let level = key(&mut harness, shift, egui::Key::ArrowUp);
+    let level = key(&mut harness, orbit, egui::Key::ArrowUp);
     assert!((level.pitch.get() - back.pitch.get()).abs() < 1e-3);
-    // The selection was not moved by the arrows under the Shift.
+    // The selection was not moved by the arrows under the modifiers.
     let ogre_at = |harness: &Harness<'static, Option<App>>| {
         let shell = harness.state().as_ref().unwrap().shell();
         let map = shell.session().context().workbench.map().unwrap();
@@ -5384,8 +5385,8 @@ fn the_map_view_is_turned_orbited_panned_and_zoomed_from_the_keyboard() {
     };
     assert_eq!(ogre_at(&harness).as_deref(), Some(b"96 64 24".as_slice()));
     // A pan moves it across and up by a step, keeping the heading; a zoom moves it along.
-    let both = shift | alt;
-    let panned = key(&mut harness, both, egui::Key::ArrowRight);
+    let pan = egui::Modifiers::COMMAND | shift;
+    let panned = key(&mut harness, pan, egui::Key::ArrowRight);
     let [forward, right, _] = level.axes();
     let moved = |from: &qs_render::Camera, to: &qs_render::Camera, way: [f32; 3]| -> f32 {
         let gone = to
@@ -5398,15 +5399,15 @@ fn the_map_view_is_turned_orbited_panned_and_zoomed_from_the_keyboard() {
 
     assert!((moved(&level, &panned, right) - PAN_STEP).abs() < 1e-3);
     assert_eq!((panned.yaw, panned.pitch), (level.yaw, level.pitch));
-    let raised = key(&mut harness, both, egui::Key::ArrowUp);
+    let raised = key(&mut harness, pan, egui::Key::ArrowUp);
     assert!((raised.origin[2] - panned.origin[2] - PAN_STEP).abs() < 1e-3);
-    let left = key(&mut harness, both, egui::Key::ArrowLeft);
-    let lowered = key(&mut harness, both, egui::Key::ArrowDown);
+    let left = key(&mut harness, pan, egui::Key::ArrowLeft);
+    let lowered = key(&mut harness, pan, egui::Key::ArrowDown);
     assert!((moved(&raised, &left, right) + PAN_STEP).abs() < 1e-3);
     assert!((lowered.origin[2] - level.origin[2]).abs() < 1e-3);
-    let nearer = key(&mut harness, shift, egui::Key::PageUp);
+    let nearer = key(&mut harness, orbit, egui::Key::PageUp);
     assert!((moved(&lowered, &nearer, forward) - ZOOM_STEP).abs() < 1e-3);
-    let farther = key(&mut harness, shift, egui::Key::PageDown);
+    let farther = key(&mut harness, orbit, egui::Key::PageDown);
     assert!(moved(&nearer, &farther, forward) < 0.0);
     assert_eq!(ogre_at(&harness).as_deref(), Some(b"96 64 24".as_slice()));
     // A view is saved, left and brought back.

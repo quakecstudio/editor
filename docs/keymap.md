@@ -64,16 +64,16 @@ Every command's default key (UI-21). A key follows TrenchBroom's default where T
 | `view.map_left` | `alt-5` | in the map view | ours: TrenchBroom has no standard views; Alt and a digit, in AutoCAD's order of its preset views |
 | `view.map_right` | `alt-6` | in the map view | ours: TrenchBroom has no standard views; Alt and a digit, in AutoCAD's order of its preset views |
 | `view.map_isometric` | `alt-7` | in the map view | ours: TrenchBroom has no standard views; Alt and a digit, in AutoCAD's order of its preset views |
-| `view.map_orbit_left` | `shift-left` | in the map view | ours: TrenchBroom orbits with the mouse only; Shift and an arrow, which alone moves the selection |
-| `view.map_orbit_right` | `shift-right` | in the map view | ours: TrenchBroom orbits with the mouse only; Shift and an arrow, which alone moves the selection |
-| `view.map_orbit_up` | `shift-up` | in the map view | ours: TrenchBroom orbits with the mouse only; Shift and an arrow, which alone moves the selection |
-| `view.map_orbit_down` | `shift-down` | in the map view | ours: TrenchBroom orbits with the mouse only; Shift and an arrow, which alone moves the selection |
-| `view.map_pan_left` | `shift-alt-left` | in the map view | ours: TrenchBroom pans with the mouse only; the orbit key with Alt |
-| `view.map_pan_right` | `shift-alt-right` | in the map view | ours: TrenchBroom pans with the mouse only; the orbit key with Alt |
-| `view.map_pan_up` | `shift-alt-up` | in the map view | ours: TrenchBroom pans with the mouse only; the orbit key with Alt |
-| `view.map_pan_down` | `shift-alt-down` | in the map view | ours: TrenchBroom pans with the mouse only; the orbit key with Alt |
-| `view.map_zoom_in` | `shift-pageup` | in the map view | ours: TrenchBroom zooms with the wheel only; Shift and Page Up, which alone raises the selection |
-| `view.map_zoom_out` | `shift-pagedown` | in the map view | ours: TrenchBroom zooms with the wheel only; Shift and Page Down, which alone lowers the selection |
+| `view.map_orbit_left` | `shift-alt-left` | in the map view | ours: TrenchBroom orbits with the mouse only; Shift and Alt, which it leaves free, with an arrow |
+| `view.map_orbit_right` | `shift-alt-right` | in the map view | ours: TrenchBroom orbits with the mouse only; Shift and Alt, which it leaves free, with an arrow |
+| `view.map_orbit_up` | `shift-alt-up` | in the map view | ours: TrenchBroom orbits with the mouse only; Shift and Alt, which it leaves free, with an arrow |
+| `view.map_orbit_down` | `shift-alt-down` | in the map view | ours: TrenchBroom orbits with the mouse only; Shift and Alt, which it leaves free, with an arrow |
+| `view.map_pan_left` | `secondary-shift-left` | in the map view | ours: TrenchBroom pans with the mouse only; the platform's modifier and Shift, which it leaves free, with an arrow |
+| `view.map_pan_right` | `secondary-shift-right` | in the map view | ours: TrenchBroom pans with the mouse only; the platform's modifier and Shift, which it leaves free, with an arrow |
+| `view.map_pan_up` | `secondary-shift-up` | in the map view | ours: TrenchBroom pans with the mouse only; the platform's modifier and Shift, which it leaves free, with an arrow |
+| `view.map_pan_down` | `secondary-shift-down` | in the map view | ours: TrenchBroom pans with the mouse only; the platform's modifier and Shift, which it leaves free, with an arrow |
+| `view.map_zoom_in` | `shift-alt-pageup` | in the map view | ours: TrenchBroom zooms with the wheel only; the orbit keys' Shift and Alt with Page Up |
+| `view.map_zoom_out` | `shift-alt-pagedown` | in the map view | ours: TrenchBroom zooms with the wheel only; the orbit keys' Shift and Alt with Page Down |
 | `view.map_view_1` | `f1` | in the map view | ours: TrenchBroom has no saved views; a function key each |
 | `view.map_view_2` | `f2` | in the map view | ours: TrenchBroom has no saved views; a function key each |
 | `view.map_view_3` | `f3` | in the map view | ours: TrenchBroom has no saved views; a function key each |
