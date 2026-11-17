@@ -76,6 +76,15 @@ turned on four more across every crate, 177 sites, most a default computed only 
 needed (`unwrap_or_else`), a clone of a value not used again, or a small `Copy` value taken by
 value. No output changes: the workspace's tests pass.
 
+After the second pass every budget holds on the reference Mac (`cargo xtask bench`, 2026-11-17,
+`570f726a`, all 19 met). Against the gate's run of 2026-11-16 (`docs/gates/perf-mvp.md`) each is
+within a tenth except `textured_view_e1m1`, 12.02 ms against 10.79 ms (11% more, a quarter of
+its 50 ms budget), which the pass's changes do not touch; the two runs are a day and a machine's
+other work apart, and the next scheduled run on the CI runner is the 10% rule's judge. The rest:
+`full_compile_e1m1` 6.167 s against 6.028 s, `id1_recompile` 51.43 ms against 50.87 ms,
+`open_project_and_type` 282.38 ms against 260.46 ms, `keystroke` 0.140 ms against 0.128 ms,
+`map_load_mg1` 338.60 ms against 715.74 ms.
+
 ### The compiler: `qc-preproc`, `qc-sema`, `qc-codegen`
 
 Measured with `id1_recompile`: one function of id 1.01 edited, then the module rebuilt through
