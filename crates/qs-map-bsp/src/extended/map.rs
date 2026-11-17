@@ -504,7 +504,7 @@ const fn channel(value: f32) -> u8 {
 /// `get_vector` returning 3: the three numbers of `text`, when it has three (`sscanf(value,
 /// "%f %f %f")`).
 fn whole_vector(text: &[u8]) -> Option<Vec3> {
-    let mut out = [0.0; 3];
+    let mut out = [0.0; AXES];
     let mut rest = text;
     for slot in &mut out {
         let (value, used) = c_strtod(rest);
