@@ -19,6 +19,7 @@
 //! [`replace_entities`] writes a BSP with a new entity lump: the two ways to edit the
 //! entities of a shipped map that has no `.map` source.
 
+pub mod bspx;
 pub mod ent;
 pub mod lit;
 pub mod wads;
@@ -37,6 +38,7 @@ use core::fmt;
 
 use qc_progs::bytes::read_array;
 
+pub use bspx::Bspx;
 pub use ent::{BSP_ENT_EXTENSION, ent_file_names};
 pub use lit::{
     BSP_LIT_HEADER_SIZE, BSP_LIT_MAGIC, BSP_LIT_VERSION, FoundLit, Lit, LitChoice, LitError,

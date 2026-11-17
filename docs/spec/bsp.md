@@ -1567,3 +1567,31 @@ layouts are BSP-1 to BSP-15's.
   node or clipnode child, plane number, side, edge count or texinfo; an unsigned face range,
   marksurface range, marksurface or edge vertex) refuses the file, naming its lump, where `BSP2`
   holds it in 32 bits.
+
+## BSP-24 BSPX lumps
+
+**Source:** ericwa/ericw-tools@`36eec1da2a194467e6baac2f444c2dd04b57d266`, `common/bspfile.cc`,
+`LoadBSPFile`, `write_bspx`; `include/common/bspxfile.hh`, `bspx_header_t`, `bspx_lump_t`. id's
+tools and engine know nothing of it: a BSP with BSPX lumps is one id's loader reads as it is.
+
+### Behaviour
+
+- **BSP-24.1** A BSP may carry named lumps after its own, a BSPX directory. It is looked for
+  after the end of the last of the BSP's lumps, whatever their order, at the next multiple of
+  four ("bspx header is positioned exactly+4align at the end of the last lump position
+  (regardless of order)", `bspxofs = (bspxofs + 3) & ~3`). It starts with the four bytes
+  `BSPX` and a 32-bit count of lumps (`bspx_header_t`).
+- **BSP-24.2** Each entry after the header is 32 bytes: a name of 24 bytes ending in NUL, a
+  32-bit offset from the start of the file and a 32-bit length (`bspx_lump_t`). A lump read
+  again under a name takes the place of the first (`transfer`).
+- **BSP-24.3** A file too short for the header, or whose bytes there are not `BSPX`, has no
+  BSPX lumps (`WARNING: invalid BSPX header`). An entry past the end of the file, or whose
+  offset or offset and length reach past it, ends the reading, the lumps before it kept
+  (`WARNING: invalid BSPX lump at index N`).
+- **BSP-24.4** Written, the directory follows the BSP's lumps at a multiple of four: the
+  header, an entry for each lump, then each lump's bytes followed by NUL bytes to a multiple
+  of four (`if (x.second.size() % 4) stream <= padding_n(4 - (x.second.size() % 4))`), each
+  entry given its lump's offset and length. A name is cut to 23 bytes
+  (`std::min(x.first.size(), lump.lumpname.size() - 1)`). With no lump nothing is written.
+  ericw-tools writes the lumps in its map's order; here they are written in the order they
+  were read or set.
