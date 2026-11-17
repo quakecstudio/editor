@@ -102,17 +102,17 @@ one row per budget, the benchmark name in backticks, the budget as a number and 
   at least five times faster than the whole map's.
 - **`full_compile_e1m1`:** a full compile of the same map (MAP-18, P7-04), as the background
   full compile runs it after Play from here (P7-02): the extended qbsp, full vis at level 2 from
-  its `PRT2` portal file (VIS-7), and full light with extra sampling. Median within 8 s. On
-  the reference Mac (Apple M5, 10 cores) on 2026-11-17 the BSP takes 3.4 s, vis 2.3 s and light
-  8.7 s, 14.4 s in all and over the budget; ericw-tools' qbsp, vis and light with `-extra` take
-  2.25 s, 1.16 s and 10.3 s on the same machine and map, 13.7 s in all. The budget was set
+  its `PRT2` portal file (VIS-7), and full light with extra sampling. Median within 8 s;
+  11.76 s on the reference Mac (Apple M5, 10 cores) on 2026-11-17, over the budget: the BSP
+  takes 2.05 s, vis 1.04 s and light 8.5 s. ericw-tools' qbsp, vis and light with `-extra` take
+  2.25 s, 1.18 s and 10.3 s on the same machine and map, 13.7 s in all. The budget was set
   while the extended dialect's light was id's and the benchmark compiled the map with no WAD;
   it is not raised: a port is to be at least as fast as what it ports (#979, #980).
 - **`light_dirt_e1m1`:** the fast light of the same map with dirt and no bounce (LIGHT-19,
-  L-23), on the BSP the extended qbsp gives. Median within 2 s; 1.18 s on ref-mac on
+  L-23), on the BSP the extended qbsp gives. Median within 2 s; 1.22 s on ref-mac on
   2026-11-17.
 - **`light_bounce_e1m1`:** the fast light of the same map with bounce and no dirt (LIGHT-20,
-  L-23). Median within 9 s; 6.30 s on ref-mac on 2026-11-17.
+  L-23). Median within 9 s; 4.53 s on ref-mac on 2026-11-17.
 - **`textured_view_e1m1`:** the map editor's textured view after an edit (P7-13): lq-e1m1's
   scene built again and every brush face laid out as the mesh the renderer draws, as each edit
   rebuilds it before the next frame. At most 50 ms at the median, a few frames, so an edit shows
