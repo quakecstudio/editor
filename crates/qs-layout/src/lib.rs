@@ -87,6 +87,8 @@ pub enum Focus {
     Editor,
     /// A panel around the centre.
     Panel(Panel),
+    /// The command line (P7-17).
+    CommandLine,
 }
 
 /// One panel's state.
@@ -340,6 +342,9 @@ pub const FOCUS_RIGHT_PANEL: &str = "view.focus_right_panel";
 /// The id of the command that gives the bottom panel the keyboard.
 pub const FOCUS_BOTTOM_PANEL: &str = "view.focus_bottom_panel";
 
+/// The id of the command that gives the command line the keyboard.
+pub const FOCUS_COMMAND_LINE: &str = "view.focus_command_line";
+
 /// The smallest a panel may be made, in points, so a panel is never dragged out of reach.
 pub const MIN_PANEL_SIZE: f32 = 120.0;
 
@@ -355,6 +360,7 @@ pub fn register<C: HasLayout + 'static>(registry: &mut Registry<C>) -> Result<()
     registry.register(FocusArea::<LeftPanel>::new())?;
     registry.register(FocusArea::<RightPanel>::new())?;
     registry.register(FocusArea::<BottomPanel>::new())?;
+    registry.register(FocusArea::<TheCommandLine>::new())?;
     map_view::register(registry)?;
     map_grid::register(registry)?;
     map_camera::register(registry)?;
@@ -414,6 +420,16 @@ impl FocusTarget for BottomPanel {
     const SUMMARY: &'static str = "Shows the bottom panel, Problems, Console and the debugger, \
         if it is hidden and gives it the keyboard.";
     const FOCUS: Focus = Focus::Panel(Panel::Bottom);
+}
+
+/// `view.focus_command_line`.
+struct TheCommandLine;
+
+impl FocusTarget for TheCommandLine {
+    const ID: &'static str = FOCUS_COMMAND_LINE;
+    const SUMMARY: &'static str = "Gives the command line the keyboard: a command is typed by \
+        its id or a short name, and each of its parameters is asked for in turn.";
+    const FOCUS: Focus = Focus::CommandLine;
 }
 
 /// A focus command: gives one area the keyboard, showing it first when it is a hidden panel,

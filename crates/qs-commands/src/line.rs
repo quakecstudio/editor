@@ -60,33 +60,31 @@ pub struct CommandLine {
     history: Vec<String>,
 }
 
-/// The commands `typed` names in `registry`: the one whose id it is; else those whose name
-/// after the last `.` it is (`undo` for `edit.undo`); else those whose id or name starts with
-/// it. One is the command; several are a choice to narrow.
-#[must_use]
-pub fn resolve<'a, C: 'static>(registry: &'a Registry<C>, typed: &str) -> Vec<&'a CommandInfo> {
-    let typed = typed.trim();
-    if typed.is_empty() {
-        return Vec::new();
+impl<C: 'static> Registry<C> {
+    /// The commands `typed` names: the one whose id it is; else those whose name after the
+    /// last `.` it is (`undo` for `edit.undo`); else those whose id or name starts with it.
+    /// One is the command; several are a choice to narrow.
+    #[must_use]
+    pub fn named(&self, typed: &str) -> Vec<&CommandInfo> {
+        let typed = typed.trim();
+        if typed.is_empty() {
+            return Vec::new();
+        }
+        if let Some(exact) = self.get(typed) {
+            return vec![exact];
+        }
+        let name = |info: &&CommandInfo| {
+            let id = info.id().as_str();
+            id.rsplit('.').next().unwrap_or(id).to_owned()
+        };
+        let named: Vec<&CommandInfo> = self.commands().filter(|info| name(info) == typed).collect();
+        if !named.is_empty() {
+            return named;
+        }
+        self.commands()
+            .filter(|info| info.id().as_str().starts_with(typed) || name(info).starts_with(typed))
+            .collect()
     }
-    if let Some(exact) = registry.get(typed) {
-        return vec![exact];
-    }
-    let name = |info: &&CommandInfo| {
-        let id = info.id().as_str();
-        id.rsplit('.').next().unwrap_or(id).to_owned()
-    };
-    let named: Vec<&CommandInfo> = registry
-        .commands()
-        .filter(|info| name(info) == typed)
-        .collect();
-    if !named.is_empty() {
-        return named;
-    }
-    registry
-        .commands()
-        .filter(|info| info.id().as_str().starts_with(typed) || name(info).starts_with(typed))
-        .collect()
 }
 
 impl CommandLine {
@@ -124,7 +122,8 @@ impl CommandLine {
     #[must_use]
     pub fn completions<C: 'static>(&self, registry: &Registry<C>, typed: &str) -> Vec<String> {
         match self.prompt() {
-            None => resolve(registry, typed)
+            None => registry
+                .named(typed)
                 .into_iter()
                 .map(|info| info.id().as_str().to_owned())
                 .collect(),
@@ -151,7 +150,7 @@ impl CommandLine {
             self.history.push(typed.to_owned());
         }
         if self.entering.is_none() {
-            let found = resolve(registry, typed);
+            let found = registry.named(typed);
             let info = match found.as_slice() {
                 [] if typed.is_empty() => return Entered::Nothing,
                 [] => return Entered::Unknown(typed.to_owned()),

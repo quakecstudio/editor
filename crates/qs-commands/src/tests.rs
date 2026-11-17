@@ -1472,11 +1472,11 @@ proptest! {
 // name after the last dot, or by what either starts with; several are a choice to narrow
 #[test]
 fn the_command_line_names_a_command_by_its_id_its_name_or_a_start() {
-    use crate::line::resolve;
     let session = session(SessionSpec::default());
     let registry = session.registry();
     let ids = |typed: &str| -> Vec<String> {
-        resolve(registry, typed)
+        registry
+            .named(typed)
             .into_iter()
             .map(|info| info.id().as_str().to_owned())
             .collect()

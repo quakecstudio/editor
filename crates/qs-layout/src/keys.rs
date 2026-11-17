@@ -57,7 +57,7 @@ pub enum Unkeyed {
 }
 
 /// Every default key, a command once.
-pub const DEFAULT_KEYS: [DefaultKey; 48] = [
+pub const DEFAULT_KEYS: [DefaultKey; 49] = [
     DefaultKey {
         command: "edit.undo",
         keys: "secondary-z",
@@ -107,6 +107,12 @@ pub const DEFAULT_KEYS: [DefaultKey; 48] = [
         keys: "secondary-4",
         context: KeyContext::Window,
         follows: Follows::Own("after the editor's, in the window's order"),
+    },
+    DefaultKey {
+        command: "view.focus_command_line",
+        keys: "secondary-;",
+        context: KeyContext::Window,
+        follows: Follows::Own("beside Vim's `:`, which the editor types"),
     },
     DefaultKey {
         command: "editor.fold",

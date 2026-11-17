@@ -419,4 +419,29 @@ command = "project.build"
             "the defaults stay"
         );
     }
+
+    // No spec statement: UI-21, #971: every default key of the shared table is spelled as the
+    // keymap file spells keys, so none is dropped, and the map editor's own keys are in the
+    // table too
+    #[test]
+    fn every_default_key_is_a_binding() {
+        for key in &DEFAULT_KEYS {
+            assert!(
+                parse_keys(key.keys).is_some(),
+                "{} {}",
+                key.command,
+                key.keys
+            );
+        }
+        assert_eq!(
+            bindings().len(),
+            DEFAULT_KEYS.len().saturating_sub(MAP_EDITOR_KEYS.len())
+        );
+        for command in MAP_EDITOR_KEYS {
+            assert!(
+                DEFAULT_KEYS.iter().any(|key| key.command == command),
+                "{command}"
+            );
+        }
+    }
 }

@@ -14,8 +14,9 @@ use qs_commands::{CommandError, Registry, Session};
 use serde_json::json;
 
 use crate::{
-    FOCUS_BOTTOM_PANEL, FOCUS_EDITOR, FOCUS_LEFT_PANEL, FOCUS_RIGHT_PANEL, Focus, LAYOUT_FILE,
-    Layout, LayoutError, MIN_PANEL_SIZE, Panel, RESIZE_PANEL, TOGGLE_PANEL, layout_path, register,
+    FOCUS_BOTTOM_PANEL, FOCUS_COMMAND_LINE, FOCUS_EDITOR, FOCUS_LEFT_PANEL, FOCUS_RIGHT_PANEL,
+    Focus, LAYOUT_FILE, Layout, LayoutError, MIN_PANEL_SIZE, Panel, RESIZE_PANEL, TOGGLE_PANEL,
+    layout_path, register,
 };
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
@@ -136,6 +137,7 @@ fn focusing_an_area_shows_it_and_gives_it_the_keyboard() {
         (FOCUS_BOTTOM_PANEL, Focus::Panel(Panel::Bottom)),
         (FOCUS_LEFT_PANEL, Focus::Panel(Panel::Left)),
         (FOCUS_RIGHT_PANEL, Focus::Panel(Panel::Right)),
+        (FOCUS_COMMAND_LINE, Focus::CommandLine),
         (FOCUS_EDITOR, Focus::Editor),
     ] {
         let before = session.context().focus_requests;

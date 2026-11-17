@@ -193,6 +193,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`texture.import`](#textureimport) | Imports a PNG image as a texture: quantized to the game's palette with its mip levels, written into the project's own WAD in textures/, in place of a texture of the same name, and that WAD named in the open map's world. |
 | [`view.close_split`](#viewclose_split) | Closes the editor's second pane. |
 | [`view.focus_bottom_panel`](#viewfocus_bottom_panel) | Shows the bottom panel, Problems, Console and the debugger, if it is hidden and gives it the keyboard. |
+| [`view.focus_command_line`](#viewfocus_command_line) | Gives the command line the keyboard: a command is typed by its id or a short name, and each of its parameters is asked for in turn. |
 | [`view.focus_editor`](#viewfocus_editor) | Gives the keyboard to the editor in the centre. |
 | [`view.focus_left_panel`](#viewfocus_left_panel) | Shows the left panel, Project and Entities, if it is hidden and gives it the keyboard. |
 | [`view.focus_right_panel`](#viewfocus_right_panel) | Shows the right panel, Properties and the agent, if it is hidden and gives it the keyboard. |
@@ -8128,6 +8129,22 @@ Parameters:
 ## `view.focus_bottom_panel`
 
 Shows the bottom panel, Problems, Console and the debugger, if it is hidden and gives it the keyboard.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.focus_command_line`
+
+Gives the command line the keyboard: a command is typed by its id or a short name, and each of its parameters is asked for in turn.
 
 Parameters:
 

@@ -16,6 +16,7 @@ Every command's default key (UI-21). A key follows TrenchBroom's default where T
 | `view.focus_left_panel` | `secondary-2` | anywhere | ours: after the editor's, in the window's order |
 | `view.focus_right_panel` | `secondary-3` | anywhere | ours: after the editor's, in the window's order |
 | `view.focus_bottom_panel` | `secondary-4` | anywhere | ours: after the editor's, in the window's order |
+| `view.focus_command_line` | `secondary-;` | anywhere | ours: beside Vim's `:`, which the editor types |
 | `editor.fold` | `secondary-alt-[` | anywhere | ours: Zed's editor::Fold |
 | `editor.unfold` | `secondary-alt-]` | anywhere | ours: Zed's editor::UnfoldLines |
 | `editor.fold_all` | `secondary-alt-shift-[` | anywhere | ours: the fold key with Shift, for every block |
