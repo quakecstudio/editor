@@ -33,9 +33,9 @@ pub use docks::{
     DockPanel, Docks, MOVE_PANEL, MovePanelParams, SHOW_PANEL, ShowPanelParams, WhenShown,
 };
 pub use editor::{
-    CLOSE_SPLIT, EditorRequest, FOLD, FOLD_ALL, GO_TO_LINE, GO_TO_SYMBOL, GoToLineParams, Outline,
-    PROJECT_SEARCH_VIEW, SPLIT_DOWN, SPLIT_RIGHT, SoftWrap, Split, TAB_SWITCHER, TOGGLE_OUTLINE,
-    TOGGLE_SOFT_WRAP, UNFOLD, UNFOLD_ALL,
+    CLOSE_SPLIT, EditorRequest, FOLD, FOLD_ALL, GO_TO_LINE, GO_TO_SYMBOL, GamePlace,
+    GoToLineParams, Outline, PROJECT_SEARCH_VIEW, SPLIT_DOWN, SPLIT_RIGHT, SoftWrap, Split,
+    TAB_SWITCHER, TOGGLE_EMBEDDED_GAME, TOGGLE_OUTLINE, TOGGLE_SOFT_WRAP, UNFOLD, UNFOLD_ALL,
 };
 pub use map_camera::{
     CameraSpeed, Direction, MAP_CAMERA, MapCamera, MapCameraError, MapCameraParams, MapFov,
@@ -121,6 +121,8 @@ pub struct Layout {
     pub soft_wrap: SoftWrap,
     /// Whether the outline panel is shown beside the editor.
     pub outline: Outline,
+    /// Where the running game is shown (ADR-0028).
+    pub game_place: GamePlace,
     /// How the map view is split into panes (P6-09).
     pub map_panes: MapPanes,
     /// How the map view's 3D pane draws the map (P7-13).
@@ -165,6 +167,7 @@ impl Default for Layout {
             split: Split::None,
             soft_wrap: SoftWrap::Off,
             outline: Outline::Hidden,
+            game_place: GamePlace::Window,
             map_panes: MapPanes::Single,
             map_shading: MapShading::Lines,
             map_grid: MapGrid::DEFAULT,

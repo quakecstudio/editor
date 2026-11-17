@@ -132,6 +132,9 @@ pub enum InspectWhat {
     Entities,
 }
 
+/// How long a pumped client waits for a message after each pump of its host (ADR-0028).
+const PUMP_WAIT: Duration = Duration::from_millis(1);
+
 /// How long [`Client::request`] waits for its response.
 const ANSWER_WITHIN: Duration = Duration::from_secs(30);
 
@@ -161,6 +164,8 @@ pub struct Client {
     next_id: i64,
     events: VecDeque<BridgeEvent>,
     capabilities: BTreeMap<String, bool>,
+    /// For a host in this process (ADR-0028): lets it answer while the client waits.
+    pump: Option<Box<dyn FnMut()>>,
 }
 
 impl Client {
@@ -200,7 +205,17 @@ impl Client {
             next_id: 0,
             events: VecDeque::new(),
             capabilities: BTreeMap::new(),
+            pump: None,
         }
+    }
+
+    /// The client of a host that runs in this process, on this thread (ADR-0028): while the
+    /// client waits for a message it calls `pump`, which lets the host answer its bridge, since
+    /// no other thread runs the host.
+    #[must_use]
+    pub fn pumped(mut self, pump: Box<dyn FnMut()>) -> Self {
+        self.pump = Some(pump);
+        self
     }
 
     /// `initialize` (BRIDGE-2.1, BRIDGE-2.2), naming this client `name`: the host's answer,
@@ -281,7 +296,24 @@ impl Client {
 
     /// The next message, waiting until `deadline`: the whole wait's limit, so a host that
     /// keeps sending other messages does not stretch it.
-    fn next_message(&self, deadline: Instant) -> Result<Message, ClientError> {
+    fn next_message(&mut self, deadline: Instant) -> Result<Message, ClientError> {
+        if let Some(pump) = &mut self.pump {
+            // The host answers only when pumped, and its answer crosses two reader threads, so
+            // each pump is followed by a short wait for it rather than a spin.
+            loop {
+                pump();
+                match self.incoming.recv_timeout(PUMP_WAIT) {
+                    Ok(Some(message)) => return Ok(message),
+                    Ok(None) | Err(RecvTimeoutError::Disconnected) => {
+                        return Err(ClientError::Closed);
+                    }
+                    Err(RecvTimeoutError::Timeout) => {}
+                }
+                if Instant::now() >= deadline {
+                    return Err(ClientError::Timeout);
+                }
+            }
+        }
         let left = deadline.saturating_duration_since(Instant::now());
         if left.is_zero() {
             return Err(ClientError::Timeout);

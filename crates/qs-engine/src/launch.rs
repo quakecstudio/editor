@@ -44,6 +44,27 @@ pub struct Running {
     pub client: Client,
 }
 
+/// A host the app runs in its own process, in its own window (ADR-0028), in place of the
+/// preview host's process: the embedded game view. The app's top layer implements it; the
+/// layers below start and stop the game through it and speak the same bridge to it.
+pub trait EmbeddedHost {
+    /// Whether the app shows the game in its own window now: it has a device to draw on, and
+    /// its layout puts the game there.
+    fn shows(&self) -> bool;
+
+    /// Starts the game `spec` describes, its host and socket aside, and gives the bridge's
+    /// client, initialized as `client_name`.
+    ///
+    /// # Errors
+    ///
+    /// [`LaunchError::Embedded`] when the game does not load, [`LaunchError::Bridge`] when its
+    /// bridge does not initialize.
+    fn start(&mut self, spec: &LaunchSpec, client_name: &str) -> Result<Client, LaunchError>;
+
+    /// Stops the game the last [`EmbeddedHost::start`] made, if it still runs.
+    fn stop(&mut self);
+}
+
 /// Why the host did not start or connect.
 #[derive(Debug)]
 pub enum LaunchError {
@@ -55,6 +76,8 @@ pub enum LaunchError {
     Exited(ExitStatus),
     /// The bridge did not connect or initialize.
     Bridge(ClientError),
+    /// The game did not start in the app's own process (ADR-0028), with why.
+    Embedded(String),
 }
 
 impl fmt::Display for LaunchError {
@@ -64,6 +87,7 @@ impl fmt::Display for LaunchError {
             Self::Spawn(error) => write!(f, "the preview host did not start: {error}"),
             Self::Exited(status) => write!(f, "the preview host stopped as it started: {status}"),
             Self::Bridge(error) => write!(f, "{error}"),
+            Self::Embedded(why) => write!(f, "the game did not start: {why}"),
         }
     }
 }
@@ -73,7 +97,7 @@ impl std::error::Error for LaunchError {
         match self {
             Self::Spawn(error) => Some(error),
             Self::Bridge(error) => Some(error),
-            Self::NotFound(_) | Self::Exited(_) => None,
+            Self::NotFound(_) | Self::Exited(_) | Self::Embedded(_) => None,
         }
     }
 }
@@ -108,19 +132,28 @@ impl LaunchSpec {
     #[must_use]
     pub fn command(&self) -> Command {
         let mut command = Command::new(&self.host);
-        command.arg("-basedir").arg(&self.run_root.path);
-        if let Some(game) = &self.run_root.game {
-            command.arg("-game").arg(game);
-        }
-        if let Some(kpf) = &self.run_root.kpf {
-            command.arg("-kpf").arg(kpf);
-        }
+        command.args(self.game_words());
         command.arg("-bridge").arg(&self.socket);
         command.args(&self.extra);
         if let Some(map) = &self.map {
             command.arg(map);
         }
         command
+    }
+
+    /// The words that name the game to play (ADR-0008): `-basedir`, `-game` when there is a
+    /// mod, and `-kpf` when the run root passes the file.
+    #[must_use]
+    pub fn game_words(&self) -> Vec<std::ffi::OsString> {
+        let mut words: Vec<std::ffi::OsString> =
+            vec!["-basedir".into(), self.run_root.path.clone().into()];
+        if let Some(game) = &self.run_root.game {
+            words.extend(["-game".into(), game.into()]);
+        }
+        if let Some(kpf) = &self.run_root.kpf {
+            words.extend(["-kpf".into(), kpf.clone().into()]);
+        }
+        words
     }
 
     /// Starts the host and connects to its bridge, initialized as `client_name`.

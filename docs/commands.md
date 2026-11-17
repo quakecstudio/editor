@@ -208,6 +208,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`view.split_down`](#viewsplit_down) | Splits the editor into two panes, one above the other, the second showing the open file. |
 | [`view.split_right`](#viewsplit_right) | Splits the editor into two panes side by side, the second showing the open file. |
 | [`view.tab_switcher`](#viewtab_switcher) | Opens the tab switcher: the open files, the one used most recently first. |
+| [`view.toggle_embedded_game`](#viewtoggle_embedded_game) | Shows the running game in the window's Game tab, run in the editor's own process, or in the preview host's window beside it; a game that runs is stopped, and the next Play starts it in the place chosen. |
 | [`view.toggle_outline`](#viewtoggle_outline) | Shows or hides the outline panel beside the editor: the open file's symbols, the one the caret is in marked. |
 | [`view.toggle_panel`](#viewtoggle_panel) | Shows or hides a panel: Project and Entities on the left, Properties and the agent on the right, or Problems, Console and the debugger at the bottom. |
 | [`view.zoom`](#viewzoom) | Draws the interface's text and icons larger or smaller, from 0.5 (50 percent) to 3 (300 percent); 1 is the actual size. |
@@ -8806,6 +8807,22 @@ Parameters:
 ## `view.tab_switcher`
 
 Opens the tab switcher: the open files, the one used most recently first.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.toggle_embedded_game`
+
+Shows the running game in the window's Game tab, run in the editor's own process, or in the preview host's window beside it; a game that runs is stopped, and the next Play starts it in the place chosen.
 
 Parameters:
 

@@ -12,6 +12,7 @@ use qs_sim::{MapPlace, SwapError};
 use serde_json::{Value, json};
 
 use super::Game;
+use crate::Error;
 use crate::map_bsp::MapBsp;
 
 /// A `map/swap` checked and waiting for the host to draw its BSP (BRIDGE-4.17).
@@ -69,11 +70,11 @@ impl Game {
     pub(crate) fn finish_swap(
         &mut self,
         swap: PendingSwap,
-        drawn: Result<(), String>,
+        drawn: Result<(), Error>,
     ) -> Option<MapBsp> {
         let PendingSwap { id, bsp, models } = swap;
         let outcome = drawn
-            .map_err(|why| RpcError::new(ErrorCode::InternalError, why))
+            .map_err(|why| RpcError::new(ErrorCode::InternalError, why.to_string()))
             .and_then(|()| {
                 self.with_progs(|game, progs| game.apply_swap(progs, &bsp, &models))
                     .and_then(|swapped| swapped)

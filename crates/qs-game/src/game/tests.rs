@@ -1695,8 +1695,11 @@ fn a_build_that_does_not_draw_is_refused() {
     let _later = session.handle(&mut game, request(7, "map/swap", &swap));
     let pending = game.take_swap().unwrap();
     assert!(
-        game.finish_swap(pending, Err("no room in the atlas".to_owned()))
-            .is_none()
+        game.finish_swap(
+            pending,
+            Err(crate::Error::Draw("no room in the atlas".to_owned()))
+        )
+        .is_none()
     );
     let responses = game.take_responses();
     let error = responses[0].1.clone().unwrap_err();

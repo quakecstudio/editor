@@ -33,6 +33,9 @@ pub const GO_TO_LINE: &str = "editor.go_to_line";
 pub const GO_TO_SYMBOL: &str = "editor.go_to_symbol";
 /// The id of the command that shows or hides the outline panel.
 pub const TOGGLE_OUTLINE: &str = "view.toggle_outline";
+
+/// The id of the command that shows the game in the window's Game tab or in a window of its own.
+pub const TOGGLE_EMBEDDED_GAME: &str = "view.toggle_embedded_game";
 /// The id of the command that opens the tab switcher.
 pub const TAB_SWITCHER: &str = "view.tab_switcher";
 /// The id of the command that opens the project search over the multibuffer (P4-33).
@@ -66,6 +69,17 @@ pub enum SoftWrap {
     Off,
     /// Long lines wrap at the editor's width.
     Width,
+}
+
+/// Where the running game is shown (ENG-9, ENG-10, ADR-0028).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum GamePlace {
+    /// In the preview host's own window, docked beside this one, in a process of its own.
+    #[default]
+    Window,
+    /// In this window's Game tab, run in this process.
+    Tab,
 }
 
 /// Whether the outline panel is shown.
@@ -265,6 +279,28 @@ impl<C: HasLayout + 'static> Command<C> for ToggleOutline {
     }
 }
 
+/// `view.toggle_embedded_game`.
+struct ToggleEmbeddedGame;
+
+impl<C: HasLayout + 'static> Command<C> for ToggleEmbeddedGame {
+    const ID: &'static str = TOGGLE_EMBEDDED_GAME;
+    const SUMMARY: &'static str = "Shows the running game in the window's Game tab, run in the \
+        editor's own process, or in the preview host's window beside it; a game that runs is \
+        stopped, and the next Play starts it in the place chosen.";
+    type Params = NoParams;
+    type Output = GamePlace;
+    type Error = Infallible;
+
+    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<GamePlace, C>, Infallible> {
+        let layout = context.layout_mut();
+        layout.game_place = match layout.game_place {
+            GamePlace::Window => GamePlace::Tab,
+            GamePlace::Tab => GamePlace::Window,
+        };
+        Ok(Outcome::outside_history(layout.game_place))
+    }
+}
+
 /// A command that sets how the editor area is split.
 trait SplitTo: Send + Sync + 'static {
     const ID: &'static str;
@@ -331,6 +367,7 @@ pub(crate) fn register<C: HasLayout + 'static>(
     registry.register(GoToLine)?;
     registry.register(ToggleSoftWrap)?;
     registry.register(ToggleOutline)?;
+    registry.register(ToggleEmbeddedGame)?;
     registry.register(Splitting::<Right>(std::marker::PhantomData))?;
     registry.register(Splitting::<Down>(std::marker::PhantomData))?;
     registry.register(Splitting::<Close>(std::marker::PhantomData))
@@ -414,5 +451,27 @@ mod tests {
         s.execute(super::TOGGLE_OUTLINE, json!({})).unwrap();
         assert_eq!(s.context().soft_wrap, SoftWrap::Off);
         assert_eq!(s.context().outline, Outline::Hidden);
+    }
+
+    // No spec statement: ENG-10, ADR-0028: where the game is shown is layout state, the
+    // preview host's own window at first, written to the layout file
+    #[test]
+    fn the_game_is_shown_in_its_window_until_the_tab_is_chosen() {
+        let mut s = session();
+        assert_eq!(s.context().game_place, super::GamePlace::Window);
+        assert_eq!(
+            s.execute(super::TOGGLE_EMBEDDED_GAME, json!({})).unwrap(),
+            json!("tab")
+        );
+        assert_eq!(s.context().game_place, super::GamePlace::Tab);
+        let text = toml::to_string(&s.context().as_written()).unwrap();
+        assert!(text.contains("game_place = \"tab\""), "{text}");
+        let back: Layout = toml::from_str(&text).unwrap();
+        assert_eq!(back.game_place, super::GamePlace::Tab);
+        assert_eq!(
+            s.execute(super::TOGGLE_EMBEDDED_GAME, json!({})).unwrap(),
+            json!("window")
+        );
+        assert_eq!(s.undo_depth(), 0, "none is an edit");
     }
 }

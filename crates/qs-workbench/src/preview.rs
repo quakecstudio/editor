@@ -13,8 +13,8 @@ use std::time::{Duration, Instant};
 
 use qc_project::Loader;
 use qs_engine::{
-    Client, ClientError, EntityTarget, ErrorCode, Flavour, InspectWhat, LaunchError, LaunchSpec,
-    RunRootError, Running, StepKind, WindowPlacement, locate_host, prepare_run_root,
+    Client, ClientError, EmbeddedHost, EntityTarget, ErrorCode, Flavour, InspectWhat, LaunchError,
+    LaunchSpec, RunRootError, StepKind, WindowPlacement, locate_host, prepare_run_root,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -194,9 +194,19 @@ impl From<ClientError> for PreviewError {
     }
 }
 
+/// Where the game runs.
+enum Host {
+    /// The preview host's process, which the preview stops and waits for.
+    Process(std::process::Child),
+    /// The app's own process, in its window (ADR-0028); the embedded host stops it.
+    Embedded,
+}
+
 /// A host that runs, and what it plays.
 struct Live {
-    running: Running,
+    /// The bridge to it.
+    client: Client,
+    host: Host,
     /// The program it loaded, which a reload reads again.
     progs: PathBuf,
     /// The map the game is on, from its last `map/loaded` (BRIDGE-3.1).
@@ -248,6 +258,8 @@ pub struct Preview {
     full_build: Option<FullBuild>,
     /// A full compile asked for while one runs, which starts when it is done: only one runs.
     queued: Option<Start>,
+    /// The app's own window as the game's host (ADR-0028), when the app can show the game.
+    embedded: Option<Box<dyn EmbeddedHost>>,
 }
 
 impl core::fmt::Debug for Preview {
@@ -278,7 +290,26 @@ impl Preview {
             dock: (None, None),
             full_build: None,
             queued: None,
+            embedded: None,
         }
+    }
+
+    /// A preview that can also show the game in the app's own window through `host`
+    /// (ADR-0028): each Play asks it whether it shows the game now, and starts the game
+    /// through it when it does, else in the preview host's process.
+    #[must_use]
+    pub fn with_embedded(config: PreviewConfig, host: Box<dyn EmbeddedHost>) -> Self {
+        let mut preview = Self::new(config);
+        preview.embedded = Some(host);
+        preview
+    }
+
+    /// Whether the game that runs is shown in the app's own window.
+    #[must_use]
+    pub fn is_embedded(&self) -> bool {
+        self.live
+            .as_ref()
+            .is_some_and(|live| matches!(live.host, Host::Embedded))
     }
 
     /// Docks the game's window beside the IDE's window `frame` (P3-11): the host is told
@@ -311,7 +342,7 @@ impl Preview {
     pub fn docks(&self) -> bool {
         self.live
             .as_ref()
-            .is_none_or(|live| live.running.client.offers("window/place"))
+            .is_none_or(|live| live.client.offers("window/place"))
     }
 
     /// The breakpoints, where the game stopped, its stack and the watches.
@@ -580,7 +611,7 @@ impl Preview {
 
     /// The bridge client of the running host.
     pub fn client(&mut self) -> Option<&mut Client> {
-        self.live.as_mut().map(|live| &mut live.running.client)
+        self.live.as_mut().map(|live| &mut live.client)
     }
 
     /// Builds the open project and starts the host on its first program, on `map` or the
@@ -610,11 +641,17 @@ impl Preview {
         let base = self.game_base()?;
         let run_root = prepare_run_root(&project, Flavour::Original, &base, &mod_name)
             .map_err(PreviewError::RunRoot)?;
-        let host = locate_host(self.config.host.as_deref(), &self.config.app)
-            .map_err(PreviewError::Launch)?;
+        // A game embedded in the app's window needs no host program.
+        let embeds = self.embedded.as_ref().is_some_and(|host| host.shows());
+        let host = if embeds {
+            PathBuf::new()
+        } else {
+            locate_host(self.config.host.as_deref(), &self.config.app)
+                .map_err(PreviewError::Launch)?
+        };
         let mut extra = self.config.extra.clone();
         // The window opens where it docks; `window/place` then sets its frame exactly.
-        if let Some(frame) = self.dock.0 {
+        if let Some(frame) = self.dock.0.filter(|_| !embeds) {
             let at = frame.placement();
             extra.extend(["--position", &at.x.to_string(), &at.y.to_string()].map(str::to_owned));
             extra.extend(
@@ -629,9 +666,21 @@ impl Preview {
             socket: socket_path(),
             extra,
         };
-        let running = spec.launch("QuakeC Studio").map_err(PreviewError::Launch)?;
+        let (client, host) = match self.embedded.as_mut().filter(|_| embeds) {
+            Some(embedded) => {
+                let client = embedded
+                    .start(&spec, "QuakeC Studio")
+                    .map_err(PreviewError::Launch)?;
+                (client, Host::Embedded)
+            }
+            None => {
+                let running = spec.launch("QuakeC Studio").map_err(PreviewError::Launch)?;
+                (running.client, Host::Process(running.child))
+            }
+        };
         self.live = Some(Live {
-            running,
+            client,
+            host,
             progs,
             map: None,
             classnames: Vec::new(),
@@ -755,24 +804,33 @@ impl Preview {
         let Some(mut live) = self.live.take() else {
             return;
         };
-        if let Err(error) = live.running.client.shutdown() {
+        if let Err(error) = live.client.shutdown() {
             tracing::debug!(%error, "the preview host did not answer shutdown");
         }
-        let started = Instant::now();
-        loop {
-            match live.running.child.try_wait() {
-                Ok(Some(_)) => break,
-                Ok(None) if started.elapsed() < SHUTDOWN_WAIT => {
-                    std::thread::sleep(SHUTDOWN_POLL);
+        match &mut live.host {
+            Host::Process(child) => {
+                let started = Instant::now();
+                loop {
+                    match child.try_wait() {
+                        Ok(Some(_)) => break,
+                        Ok(None) if started.elapsed() < SHUTDOWN_WAIT => {
+                            std::thread::sleep(SHUTDOWN_POLL);
+                        }
+                        Ok(None) | Err(_) => {
+                            if let Err(error) = child.kill() {
+                                tracing::warn!(%error, "the preview host could not be stopped");
+                            }
+                            if let Err(error) = child.wait() {
+                                tracing::warn!(%error, "the preview host was not waited for");
+                            }
+                            break;
+                        }
+                    }
                 }
-                Ok(None) | Err(_) => {
-                    if let Err(error) = live.running.child.kill() {
-                        tracing::warn!(%error, "the preview host could not be stopped");
-                    }
-                    if let Err(error) = live.running.child.wait() {
-                        tracing::warn!(%error, "the preview host was not waited for");
-                    }
-                    break;
+            }
+            Host::Embedded => {
+                if let Some(embedded) = &mut self.embedded {
+                    embedded.stop();
                 }
             }
         }
@@ -798,6 +856,12 @@ impl Preview {
                 }
             }
             Err(_) => {
+                // A game in the app's own window is the embedded host's to end.
+                if self.is_embedded()
+                    && let Some(embedded) = &mut self.embedded
+                {
+                    embedded.stop();
+                }
                 self.live = None;
                 self.full_build = None;
                 self.queued = None;
@@ -1116,7 +1180,7 @@ impl Preview {
                         .to_owned(),
                 ),
                 _ => change
-                    .send(&mut live.running.client)
+                    .send(&mut live.client)
                     .map(drop)
                     .map_err(|error| error.to_string()),
             };
@@ -1965,10 +2029,11 @@ pub fn register_preview<C: HasPreview + 'static>(
 #[cfg(test)]
 impl Preview {
     /// A preview playing `running` on the map `map`, for tests of what is sent to its game.
-    pub(crate) fn playing(running: Running, map: &str, classnames: &[&str]) -> Self {
+    pub(crate) fn playing(running: qs_engine::Running, map: &str, classnames: &[&str]) -> Self {
         let mut preview = Self::new(PreviewConfig::default());
         preview.live = Some(Live {
-            running,
+            client: running.client,
+            host: Host::Process(running.child),
             progs: PathBuf::new(),
             map: Some(map.to_owned()),
             classnames: classnames.iter().map(|&name| name.to_owned()).collect(),

@@ -15,6 +15,7 @@ use qs_sim::{
 use serde_json::{Map, Value, json};
 
 use crate::AXES;
+use crate::Error;
 use crate::screenshot::Frame;
 use crate::values::{from_json, named_json, to_json};
 
@@ -412,7 +413,7 @@ impl Game {
                 .map(|(png, width, height)| {
                     json!({ "png": png, "width": width, "height": height, "time": time })
                 })
-                .map_err(|why| RpcError::new(ErrorCode::InternalError, why));
+                .map_err(|why| RpcError::new(ErrorCode::InternalError, why.to_string()));
             self.responses.push((shot.id, outcome));
         }
     }
@@ -566,14 +567,10 @@ impl Game {
     /// # Errors
     ///
     /// Why the progs did not read or the player could not be moved.
-    pub(crate) fn place_player(
-        &mut self,
-        origin: [f32; 3],
-        angles: [f32; 3],
-    ) -> Result<(), String> {
+    pub(crate) fn place_player(&mut self, origin: [f32; 3], angles: [f32; 3]) -> Result<(), Error> {
         self.with_progs(|game, progs| game.world.move_player(progs, origin, angles))
-            .map_err(|error| error.message)?
-            .map_err(|error| error.to_string())
+            .map_err(|error| Error::Load(error.message))?
+            .map_err(|error| Error::Load(error.to_string()))
     }
 
     /// Runs `f` with the progs read from its bytes; the error says why they did not read.

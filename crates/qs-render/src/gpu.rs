@@ -1390,21 +1390,7 @@ impl CallbackTrait for MapCallback {
         resources: &mut CallbackResources,
     ) -> Vec<wgpu::CommandBuffer> {
         if let Some(renderer) = resources.get_mut::<MapRenderer>() {
-            renderer.set_view(queue, &self.view);
-            renderer.set_models(device, queue, &self.models);
-            renderer.set_weapon(device, queue, &self.weapon);
-            renderer.set_sprites(device, queue, &self.sprites);
-            renderer.set_particles(device, queue, &self.particles);
-            renderer.set_flat(device, queue, &self.flat);
-            if !self.placements.is_empty() {
-                renderer.set_placements(queue, &self.placements);
-            }
-            for patch in &self.lightmap {
-                renderer.set_lightmap(queue, patch);
-            }
-            for skin in &self.player_skins {
-                renderer.set_player_skin(device, queue, skin);
-            }
+            self.set(renderer, device, queue);
         }
         Vec::new()
     }
@@ -1417,6 +1403,65 @@ impl CallbackTrait for MapCallback {
     ) {
         if let Some(renderer) = resources.get::<MapRenderer>() {
             renderer.draw_in(&info, pass, self.view.time);
+        }
+    }
+}
+
+impl MapCallback {
+    /// Gives `renderer` this frame: its view, models, sprites, particles, 2D layer, placements,
+    /// lightmaps and player skins.
+    fn set(&self, renderer: &mut MapRenderer, device: &Device, queue: &Queue) {
+        renderer.set_view(queue, &self.view);
+        renderer.set_models(device, queue, &self.models);
+        renderer.set_weapon(device, queue, &self.weapon);
+        renderer.set_sprites(device, queue, &self.sprites);
+        renderer.set_particles(device, queue, &self.particles);
+        renderer.set_flat(device, queue, &self.flat);
+        if !self.placements.is_empty() {
+            renderer.set_placements(queue, &self.placements);
+        }
+        for patch in &self.lightmap {
+            renderer.set_lightmap(queue, patch);
+        }
+        for skin in &self.player_skins {
+            renderer.set_player_skin(device, queue, skin);
+        }
+    }
+}
+
+/// The running game's renderer when the game is drawn inside the IDE's window (ADR-0028), kept
+/// in egui's callback resources beside the map view's [`MapRenderer`] and the map editor's
+/// [`EditorRenderer`], so each keeps its own.
+pub struct GameRenderer(pub MapRenderer);
+
+/// One frame of the running game drawn inside the IDE's window: a [`MapCallback`] drawn from
+/// the [`GameRenderer`] in egui's callback resources.
+#[derive(Clone)]
+pub struct GameCallback(pub MapCallback);
+
+impl CallbackTrait for GameCallback {
+    fn prepare(
+        &self,
+        device: &Device,
+        queue: &Queue,
+        _screen: &ScreenDescriptor,
+        _encoder: &mut wgpu::CommandEncoder,
+        resources: &mut CallbackResources,
+    ) -> Vec<wgpu::CommandBuffer> {
+        if let Some(renderer) = resources.get_mut::<GameRenderer>() {
+            self.0.set(&mut renderer.0, device, queue);
+        }
+        Vec::new()
+    }
+
+    fn paint(
+        &self,
+        info: epaint::PaintCallbackInfo,
+        pass: &mut wgpu::RenderPass<'static>,
+        resources: &CallbackResources,
+    ) {
+        if let Some(renderer) = resources.get::<GameRenderer>() {
+            renderer.0.draw_in(&info, pass, self.0.view.time);
         }
     }
 }
