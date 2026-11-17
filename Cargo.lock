@@ -3769,6 +3769,7 @@ dependencies = [
  "qs-bsp",
  "qs-map",
  "qs-wad",
+ "rayon",
 ]
 
 [[package]]
@@ -3797,6 +3798,7 @@ dependencies = [
  "qs-map",
  "qs-map-bsp",
  "qs-wad",
+ "serde_json",
  "sha2",
 ]
 
@@ -6261,6 +6263,7 @@ dependencies = [
  "qs-sim",
  "qs-templates",
  "qs-vfs",
+ "qs-wad",
  "qs-workbench",
  "quakec-lsp",
  "serde",

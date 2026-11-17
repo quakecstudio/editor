@@ -1,24 +1,35 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! `cargo xtask light-diff [--maps <dir>] [--map <name>]...`: the light compiler differential
-//! (P7-01, MAP-10). Each map is compiled once, by id's qbsp when it reads the map and else by
-//! ericw-tools' qbsp, and that BSP lit by id's light and by qs-map-light in both modes, fast and
-//! `-extra` (LIGHT-1.3). Both light the same faces, so their lightmaps are compared luxel by
-//! luxel, as images, each style's block with the same style's. id's light has no colour, so a
-//! coloured map is compared lit white; its colour (LIGHT-6) is compared with ericw-tools' light,
-//! `.lit` channel by channel, on a map whose lights ericw-tools lights as ours does.
+//! (P7-01, MAP-10, MAP-21). Each map is compiled once, by id's qbsp when it reads the map and
+//! else by ericw-tools' qbsp, and that BSP lit by id's light and by qs-map-light's id dialect
+//! in both modes, fast and `-extra` (LIGHT-1.3). Both light the same faces, so their lightmaps
+//! are compared luxel by luxel, as images, each style's block with the same style's. id's light
+//! has no colour, so a coloured map is compared lit white.
+//!
+//! The extended dialect is compared with ericw-tools' light (LIGHT-8 to LIGHT-20): the map is
+//! compiled by ericw-tools' qbsp with a WAD of blank textures for the names its faces have,
+//! which light tells sky, liquids, fences and surface lights by, and lit by both with what that
+//! qbsp wrote beside the BSP; the grey lumps and the `.lit` files are compared, a lightmap only
+//! one has against darkness.
 //!
 //! The maps are `map-diff`'s: the fixtures and the corpus's (MAP-19), with the coloured room. The
 //! oracles are built as `cargo xtask oracles maps` builds them.
 
 use std::fs;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
 use qs_bsp::{Bsp, BspLoader, Face};
-use qs_map::qbsp;
-use qs_map_light::{Dialect, Light, LightError, Sampling};
+use qs_map::{Entity, MapFile, qbsp};
+use qs_map_light::{
+    CONTENT_EXTENSION, Dialect, Extras, Jitter, Light, LightError, Sampling, Sidecars,
+    TEXINFO_EXTENSION,
+};
+use qs_wad::WAD_TYP_MIPTEX;
+use qs_wad::write::WadBuilder;
 
 use crate::download::Net;
 use crate::exec::Exec;
@@ -42,28 +53,68 @@ const LIT_HEADER: usize = 8;
 /// The fixture whose colour is compared with ericw-tools': coloured lights of the keys id's
 /// light reads and `_color` only.
 const COLOURED_ROOM: &str = "oracles/maps/coloured.map";
-/// The keys, or the starts of keys, of ericw-tools' own lighting, which ours does not have yet
-/// (L-12): a map with any is lit otherwise by ericw-tools' light, so its colour is not compared.
-const ERICW_ONLY_KEYS: [&str; 18] = [
-    "_sun",
-    "_surface",
-    "delay",
-    "_deviance",
-    "_minlight",
-    "_bounce",
-    "_dirt",
-    "_anglescale",
-    "_softangle",
-    "_range",
-    "_dist",
-    "_gamma",
-    "_phong",
-    "_shadow",
-    "_falloff",
-    "_project_",
-    "_lightmap_scale",
-    "_world_units_per_luxel",
-];
+/// A palette whose every colour is black: all the blank textures' texels show of Quake's.
+const BLACK_PALETTE: [u8; 768] = [0; 768];
+/// A blank texture of the WAD written for a map: its name's bytes, its side, its mip levels
+/// and the bytes of its header (BSP-4).
+const STUB_NAME: usize = 16;
+const STUB_SIDE: u32 = 16;
+const STUB_MIPS: u32 = 4;
+const STUB_HEADER: u32 = 40;
+
+/// A WAD holding a blank texture of each name the faces of `file` have: light tells sky,
+/// liquid, fence and the textures of surface lights by their names (LIGHT-11.2, LIGHT-16.1),
+/// which a BSP compiled with no WAD does not have.
+pub(crate) fn stub_wad(file: &MapFile) -> Result<Vec<u8>, String> {
+    let mut names: Vec<Vec<u8>> = file
+        .entities
+        .iter()
+        .flat_map(Entity::brushes)
+        .flat_map(|brush| &brush.faces)
+        .map(|face| face.texture().to_ascii_lowercase())
+        .collect();
+    // An animation's frames are a run from its first: the game refuses a BSP that has a
+    // later frame without those before it (BSP-4.8), and a map may name only one.
+    let earlier: Vec<Vec<u8>> = names
+        .iter()
+        .filter_map(|texture| match texture.as_slice() {
+            [b'+', frame, rest @ ..] => Some((*frame, rest)),
+            _ => None,
+        })
+        .flat_map(|(frame, rest)| {
+            let first = if frame.is_ascii_digit() { b'0' } else { b'a' };
+            (first..frame).map(move |before| {
+                let mut name = vec![b'+', before];
+                name.extend_from_slice(rest);
+                name
+            })
+        })
+        .collect();
+    names.extend(earlier);
+    names.sort_unstable();
+    names.dedup();
+    let mut wad = WadBuilder::new();
+    for texture in &names {
+        // A name longer than a WAD holds is no texture of a WAD: qbsp finds none.
+        if texture.len() >= STUB_NAME {
+            continue;
+        }
+        let mut lump = texture.clone();
+        lump.resize(STUB_NAME, 0);
+        let mut at = STUB_HEADER;
+        for size in [STUB_SIDE, STUB_SIDE] {
+            lump.extend_from_slice(&size.to_le_bytes());
+        }
+        for level in 0..STUB_MIPS {
+            lump.extend_from_slice(&at.to_le_bytes());
+            at = at.saturating_add((STUB_SIDE >> level).saturating_mul(STUB_SIDE >> level));
+        }
+        lump.resize(usize::try_from(at).unwrap_or(0), 0);
+        wad.add(texture, WAD_TYP_MIPTEX, lump)
+            .map_err(|e| e.to_string())?;
+    }
+    wad.to_bytes().map_err(|e| e.to_string())
+}
 /// The classname of an instance of an external map (MAP-14).
 const EXTERNAL_MAP: &str = "misc_external_map";
 /// The channels of a `.lit` sample.
@@ -78,6 +129,27 @@ const LUXEL_TOLERANCE: u8 = 2;
 /// average within a twentieth of a level. Every corpus map measured 0 against id's light in both
 /// modes, and the coloured room 0.009 against ericw-tools' in the fast one (P7-01).
 const MEAN_BAR: f64 = 0.05;
+
+/// The bar against ericw-tools' light, which asks Embree what each ray meets: a ray that
+/// touches the edge of a triangle, or runs along a plane of the grid, is answered by Embree's
+/// own tree of boxes and arithmetic, which ours follows only by rule (LIGHT-11.9), and one
+/// such ray moves a luxel by a whole light's worth. So the lightmaps are held to it on average,
+/// within a level, and in the count of luxels past [`LUXEL_TOLERANCE`], [`ERICW_PAST_BAR`] in
+/// a hundred. Measured on the corpus on 2026-11-17: means of 0.01 to 0.60, and 0.03 to 2.0 in
+/// a hundred past.
+const ERICW_MEAN_BAR: f64 = 1.0;
+const ERICW_PAST_BAR: f64 = 3.0;
+/// A hundred, of a part in a hundred.
+const HUNDRED: f64 = 100.0;
+
+/// How near ericw-tools' light ours is held on a map.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Bar {
+    /// As id's light is: no luxel past the tolerance.
+    Exact,
+    /// To [`ERICW_MEAN_BAR`] and [`ERICW_PAST_BAR`].
+    Near,
+}
 
 /// A light mode, with the option that asks the oracles for it.
 #[derive(Clone, Copy, Debug)]
@@ -151,6 +223,19 @@ impl Images {
         }
     }
 
+    /// Adds the luxels `lit` of a face only one image has, against the darkness the other has
+    /// there.
+    fn add_against_dark(&mut self, lit: &[u8]) {
+        for &x in lit {
+            self.compared = self.compared.saturating_add(1);
+            self.total = self.total.saturating_add(u64::from(x));
+            self.largest = self.largest.max(x);
+            if x > LUXEL_TOLERANCE {
+                self.over = self.over.saturating_add(1);
+            }
+        }
+    }
+
     /// A face that is not the same in both.
     const fn differ(&mut self) {
         self.faces_differing = self.faces_differing.saturating_add(1);
@@ -160,6 +245,34 @@ impl Images {
     /// mean within [`MEAN_BAR`].
     fn agree(&self) -> bool {
         self.faces_differing == 0 && self.over == 0 && self.mean() <= MEAN_BAR
+    }
+
+    /// Whether the images are within `bar`.
+    fn within(&self, bar: Bar) -> bool {
+        match bar {
+            Bar::Exact => self.agree(),
+            Bar::Near => self.near(),
+        }
+    }
+
+    /// Whether the images are as near as ericw-tools' light is held to: every face alike, the
+    /// mean within [`ERICW_MEAN_BAR`], and no more than [`ERICW_PAST_BAR`] luxels in a hundred
+    /// past [`LUXEL_TOLERANCE`].
+    fn near(&self) -> bool {
+        self.faces_differing == 0
+            && self.mean() <= ERICW_MEAN_BAR
+            && self.past_in_a_hundred() <= ERICW_PAST_BAR
+    }
+
+    /// How many luxels in a hundred are past [`LUXEL_TOLERANCE`].
+    fn past_in_a_hundred(&self) -> f64 {
+        let compared = u32::try_from(self.compared).unwrap_or(u32::MAX);
+        let over = u32::try_from(self.over).unwrap_or(u32::MAX);
+        if compared == 0 {
+            0.0
+        } else {
+            f64::from(over) * HUNDRED / f64::from(compared)
+        }
     }
 
     /// The mean difference.
@@ -197,9 +310,24 @@ fn styles(face: &Face) -> Vec<u8> {
         .collect()
 }
 
+/// What a lightmap only one of two lit BSPs has counts as.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OnlyOne {
+    /// A difference of the face: id's light and ours light the same faces in the same styles.
+    Differs,
+    /// A lightmap against darkness: ericw-tools keeps a lightmap whose brightest sample is 1
+    /// or more (LIGHT-18.2), so a sample a hair either side of 1 gives or takes one.
+    Dark,
+}
+
 /// The lightmaps of the lit BSPs `ours` and `theirs`, made from one BSP, compared face by face
 /// and each style's block with the oracle's block of the same style, by `samples`.
-fn compare(ours: &[u8], theirs: &[u8], samples: Samples<'_>) -> Result<Images, String> {
+fn compare(
+    ours: &[u8],
+    theirs: &[u8],
+    samples: Samples<'_>,
+    only_one: OnlyOne,
+) -> Result<Images, String> {
     let a = Bsp::read(ours, BspLoader::FitzQuake).map_err(|e| format!("our BSP: {e}"))?;
     let b = Bsp::read(theirs, BspLoader::FitzQuake).map_err(|e| format!("the oracle's: {e}"))?;
     if a.faces.len() != b.faces.len() {
@@ -216,30 +344,35 @@ fn compare(ours: &[u8], theirs: &[u8], samples: Samples<'_>) -> Result<Images, S
     let mut images = Images::default();
     for (fa, fb) in a.faces.iter().zip(&b.faces) {
         let (lit_a, lit_b) = (usize::try_from(fa.lightofs), usize::try_from(fb.lightofs));
-        let (Ok(at_a), Ok(at_b)) = (lit_a, lit_b) else {
-            if lit_a.is_ok() != lit_b.is_ok() {
-                images.differ();
-            }
+        if lit_a.is_err() && lit_b.is_err() {
             continue;
-        };
+        }
         let (styles_a, styles_b) = (styles(fa), styles(fb));
         let mut sorted = (styles_a.clone(), styles_b.clone());
         sorted.0.sort_unstable();
         sorted.1.sort_unstable();
-        if fa.lightmap_size != fb.lightmap_size || sorted.0 != sorted.1 {
+        let alike = lit_a.is_ok() && lit_b.is_ok() && sorted.0 == sorted.1;
+        if fa.lightmap_size != fb.lightmap_size || (only_one == OnlyOne::Differs && !alike) {
             images.differ();
             continue;
         }
         let block = fa.lightmap_size[0]
             .saturating_mul(fa.lightmap_size[1])
             .saturating_mul(scale);
-        for (slot_a, style) in styles_a.iter().enumerate() {
-            let slot_b = styles_b.iter().position(|s| s == style).unwrap_or(slot_a);
-            let ours = lightmap(data_a, (at_a, slot_a), (scale, block));
-            let theirs = lightmap(data_b, (at_b, slot_b), (scale, block));
+        let of = |data: &'_ [u8], lit: Result<usize, _>, styles: &[u8], style: u8| {
+            let at = lit.ok()?;
+            let slot = styles.iter().position(|s| *s == style)?;
+            lightmap(data, (at, slot), (scale, block)).map(<[u8]>::to_vec)
+        };
+        let mut all = styles_a.clone();
+        all.extend(styles_b.iter().filter(|style| !styles_a.contains(style)));
+        for style in all {
+            let ours = of(data_a, lit_a, &styles_a, style);
+            let theirs = of(data_b, lit_b, &styles_b, style);
             match (ours, theirs) {
-                (Some(x), Some(y)) => images.add(x, y),
-                _ => images.differ(),
+                (Some(x), Some(y)) => images.add(&x, &y),
+                (Some(lit), None) | (None, Some(lit)) => images.add_against_dark(&lit),
+                (None, None) => images.differ(),
             }
         }
     }
@@ -401,46 +534,24 @@ impl Oracles<'_> {
             ericw_qbsp
         };
         let dir = self.work.join(&name);
-        let compiled = match oracle_compile(self.exec, qbsp, path, &text, &[], &dir)? {
-            Ok(compiled) => compiled,
-            Err(why) => {
-                println!("skip  {name}: {} stops: {why}", qbsp.display());
-                return Ok(true);
-            }
-        };
-        let past = past_id_tables(&compiled.bsp)?;
-        let colour = words.contains("\"_color\"");
-        let own: Vec<&str> = ERICW_ONLY_KEYS
-            .into_iter()
-            .filter(|key| words.contains(&format!("\"{key}")))
-            .collect();
-        let room = path.ends_with(COLOURED_ROOM);
         let mut passed = true;
-        for mode in Mode::ALL {
-            let label = format!("{name} {}", mode.name());
-            match past {
-                Some((table, count, size)) => println!(
-                    "skip  {label} light: {count} past {table}, {size}, which id's light overruns"
-                ),
-                None => passed &= self.white(&compiled.bsp, mode, (&dir, &label))?,
+        match oracle_compile(self.exec, qbsp, path, &text, &[], &dir)? {
+            Ok(compiled) => {
+                let past = past_id_tables(&compiled.bsp)?;
+                for mode in Mode::ALL {
+                    let label = format!("{name} {}", mode.name());
+                    match past {
+                        Some((table, count, size)) => println!(
+                            "skip  {label} light: {count} past {table}, {size}, which id's light \
+                             overruns"
+                        ),
+                        None => passed &= self.white(&compiled.bsp, mode, (&dir, &label))?,
+                    }
+                }
             }
-            if !colour {
-                continue;
-            }
-            // ericw-tools' `-extra` takes its samples elsewhere than id's, which ours follows
-            // (LIGHT-1.3): lit white, the coloured room's luxels differ from id's by 1.54 on
-            // average in that mode and by 0.018 in the fast one.
-            if let Mode::Extra = mode {
-                println!("skip  {label} colour: ericw-tools' -extra samples elsewhere than id's");
-            } else if own.is_empty() {
-                passed &= self.colour(&compiled.bsp, mode, (&dir, &label), room)?;
-            } else {
-                println!(
-                    "skip  {label} colour: it uses ericw-tools' own lighting, {}",
-                    own.join(", ")
-                );
-            }
+            Err(why) => println!("skip  {name}: {} stops: {why}", qbsp.display()),
         }
+        passed &= self.ericw(path, &text, (&dir, &name))?;
         Ok(passed)
     }
 
@@ -458,7 +569,7 @@ impl Oracles<'_> {
             (Ok(ours), Ok(OracleLit { bsp: theirs, .. })) => {
                 let file = dir.join(format!("ours-{}.bsp", mode.name()));
                 fs::write(&file, &ours.bsp).map_err(|e| format!("{}: {e}", file.display()))?;
-                match compare(&ours.bsp, &theirs, Samples::Grey) {
+                match compare(&ours.bsp, &theirs, Samples::Grey, OnlyOne::Differs) {
                     Ok(images) => (images.agree(), format!("light: {images}")),
                     Err(why) => (false, format!("light: {why}")),
                 }
@@ -474,59 +585,158 @@ impl Oracles<'_> {
         Ok(agrees)
     }
 
-    /// `bsp` lit by ours and by ericw-tools' light in `mode`, their `.lit` files compared; whether
-    /// they agree. On the coloured room, which is there to be compared, an oracle that writes no
-    /// `.lit` fails; elsewhere it is passed over.
-    fn colour(
+    /// The map `text` with its world's `wad` a WAD written for it ([`stub_wad`]). The
+    /// corpus's maps come without their WADs, so the textures are blank.
+    fn with_textures(&self, text: &[u8], name: &str) -> Result<Vec<u8>, String> {
+        let mut file = MapFile::parse(text).map_err(|e| format!("{name}: {e}"))?;
+        let bytes = stub_wad(&file).map_err(|e| format!("{name}: {e}"))?;
+        let dir = self.work.join("textures");
+        fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        let path = dir.join(format!("{name}.wad"));
+        fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+        if let Some(world) = file.entities.first_mut() {
+            world
+                .set(b"wad", path.to_string_lossy().as_bytes())
+                .map_err(|e| format!("{name}: {e}"))?;
+        }
+        Ok(file.to_bytes())
+    }
+
+    /// The map compiled by ericw-tools' qbsp and lit by ours, in the extended dialect, and by
+    /// ericw-tools' light, with one sample a luxel and with `-extra`: the grey lumps compared, and the `.lit`
+    /// files when both wrote one; whether they agree.
+    fn ericw(&self, path: &Path, text: &[u8], (dir, name): (&Path, &str)) -> Result<bool, String> {
+        let [ericw_qbsp, _, _] = &self.tools.ericw;
+        let dir = dir.join("ericw");
+        let label = format!("{name} ericw");
+        let text = &self.with_textures(text, name)?;
+        let compiled = match oracle_compile(self.exec, ericw_qbsp, path, text, &[], &dir)? {
+            Ok(compiled) => compiled,
+            Err(why) => {
+                println!("skip  {label}: ericw-tools' qbsp stops: {why}");
+                return Ok(true);
+            }
+        };
+        // What ericw-tools' qbsp wrote beside the BSP for its light (LIGHT-9.8, LIGHT-9.9).
+        let beside = |extension: &str| fs::read(dir.join(format!("{name}.{extension}"))).ok();
+        let (texinfo, content) = (beside(TEXINFO_EXTENSION), beside(CONTENT_EXTENSION));
+        let sidecars = Sidecars::read(texinfo.as_deref(), content.as_deref())
+            .map_err(|file| format!("{label}: {}", LightError::Sidecar(file)))?;
+        // ericw-tools scatters by its C library's rand (LIGHT-14.5).
+        let jitter = if cfg!(target_os = "macos") {
+            Jitter::Bsd
+        } else {
+            Jitter::Glibc
+        };
+        // The blank textures' texels are index 0, black in Quake's palette, which
+        // ericw-tools has built in (LIGHT-20.6).
+        let extras = Extras {
+            palette: Some(&BLACK_PALETTE),
+            ..sidecars.extras()
+        };
+        // Each mode: the four samples a luxel of `-extra` are where ours gathers the bounce
+        // and asks the suns by the luxel (LIGHT-14.9, LIGHT-20.7).
+        // The room made to be compared is held as id's light is; a corpus map to the bar.
+        let bar = if path.ends_with(COLOURED_ROOM) {
+            Bar::Exact
+        } else {
+            Bar::Near
+        };
+        let mut agrees = true;
+        for mode in Mode::ALL {
+            let label = match mode {
+                Mode::Fast => label.clone(),
+                Mode::Extra => format!("{label} extra"),
+            };
+            agrees &= self.ericw_lit(
+                (mode, bar),
+                &compiled.bsp,
+                (extras, jitter),
+                (&dir, name, &label),
+            )?;
+        }
+        Ok(agrees)
+    }
+
+    /// The BSP `bsp`, which ericw-tools' qbsp compiled in `dir`, lit in `mode` by ours and by
+    /// ericw-tools' light: whether the grey lumps, and the `.lit` files when both wrote one,
+    /// agree.
+    fn ericw_lit(
         &self,
+        (mode, bar): (Mode, Bar),
         bsp: &[u8],
-        mode: Mode,
-        (dir, label): (&Path, &str),
-        room: bool,
+        (extras, jitter): (Extras<'_>, Jitter),
+        (dir, name, label): (&Path, &str, &str),
     ) -> Result<bool, String> {
         let [_, _, ericw_light] = &self.tools.ericw;
-        let ours = match Light::new(mode.sampling()).run(bsp) {
+        let ours = match Light::new(mode.sampling())
+            .with_jitter(jitter)
+            .run_with(bsp, extras)
+        {
             Ok(ours) => ours,
             Err(error) => {
-                println!("FAIL  {label} colour: ours stops: {error}");
+                println!("FAIL  {label}: ours stops: {error}");
                 return Ok(false);
             }
         };
-        let Some(our_lit) = &ours.lit else {
-            println!("FAIL  {label} colour: ours wrote no .lit");
-            return Ok(false);
-        };
-        let name = format!("ericw-{}", mode.name());
-        let lit = oracle_light(self.exec, ericw_light, mode.options(), bsp, (dir, &name))?;
-        let (theirs, their_lit) = match lit {
-            Ok(OracleLit {
-                bsp: theirs,
-                lit: Some(their_lit),
-            }) => (theirs, their_lit),
-            Ok(OracleLit { lit: None, .. }) => {
-                println!(
-                    "{} {label} colour: ericw-tools wrote no .lit",
-                    verdict(!room)
-                );
-                return Ok(!room);
-            }
+        let file = dir.join(format!("ours-{}.bsp", mode.name()));
+        fs::write(&file, &ours.bsp).map_err(|e| format!("{}: {e}", file.display()))?;
+        // Lit where it was compiled, beside the `.texinfo.json` ericw-tools' qbsp wrote for it.
+        let theirs = match oracle_light(self.exec, ericw_light, mode.options(), bsp, (dir, name))? {
+            Ok(theirs) => theirs,
             Err(stop) => {
-                println!(
-                    "{} {label} colour: ericw-tools stops: {stop}",
-                    verdict(!room)
-                );
-                return Ok(!room);
+                println!("FAIL  {label}: ericw-tools' light stops: {stop}");
+                return Ok(false);
             }
         };
-        let (agrees, said) = match compare(&ours.bsp, &theirs, Samples::Colour(our_lit, &their_lit))
-        {
-            Ok(images) => (images.agree(), images.to_string()),
-            Err(why) => (false, why),
+        let mut agrees = match compare(&ours.bsp, &theirs.bsp, Samples::Grey, OnlyOne::Dark) {
+            Ok(images) => {
+                println!(
+                    "{} {label} light: {images}, {:.2} in a hundred",
+                    verdict(images.within(bar)),
+                    images.past_in_a_hundred()
+                );
+                images.within(bar)
+            }
+            Err(why) => {
+                println!("FAIL  {label} light: {why}");
+                false
+            }
         };
-        println!(
-            "{} {label} colour against ericw-tools: {said}",
-            verdict(agrees)
-        );
+        match (&ours.lit, &theirs.lit) {
+            (Some(our_lit), Some(their_lit)) => {
+                let samples = Samples::Colour(our_lit, their_lit);
+                match compare(&ours.bsp, &theirs.bsp, samples, OnlyOne::Dark) {
+                    Ok(images) => {
+                        println!(
+                            "{} {label} colour: {images}, {:.2} in a hundred",
+                            verdict(images.within(bar)),
+                            images.past_in_a_hundred()
+                        );
+                        agrees &= images.within(bar);
+                    }
+                    Err(why) => {
+                        println!("FAIL  {label} colour: {why}");
+                        agrees = false;
+                    }
+                }
+            }
+            // The room is there for its colour: with no `.lit` nothing was compared.
+            (None, None) if bar == Bar::Exact => {
+                println!("FAIL  {label} colour: neither wrote a .lit");
+                agrees = false;
+            }
+            (None, None) => {}
+            (ours, _) => {
+                let only = if ours.is_some() {
+                    "ours"
+                } else {
+                    "ericw-tools"
+                };
+                println!("FAIL  {label} colour: only {only} wrote a .lit");
+                agrees = false;
+            }
+        }
         Ok(agrees)
     }
 }
@@ -606,6 +816,31 @@ mod tests {
         close.differ();
         assert!(!close.agree(), "a face lit in only one disagrees");
         assert_eq!(Images::default().mean(), 0.0, "nothing compared");
+    }
+
+    #[test]
+    fn ericw_tools_light_is_held_on_average_and_in_the_count_past_tolerance() {
+        let mut images = Images::default();
+        // Two luxels in a hundred a whole light off: within the bar, though not alike.
+        images.add(&[10; 98], &[10; 98]);
+        images.add(&[10, 10], &[40, 40]);
+        assert!(!images.agree());
+        assert!(images.near());
+        assert_eq!(images.past_in_a_hundred(), 2.0);
+        // Four in a hundred are past it.
+        images.add(&[10, 10], &[40, 40]);
+        assert!(!images.near());
+        // A lightmap only one has is compared against darkness.
+        let mut dark = Images::default();
+        dark.add_against_dark(&[0, 1, 2, 9]);
+        assert_eq!((dark.compared, dark.over, dark.largest), (4, 1, 9));
+        let mut dim = Images::default();
+        dim.add(&[10; 100], &[12; 100]);
+        assert!(
+            !dim.near(),
+            "two levels off on average is past the mean's bar"
+        );
+        assert_eq!(Images::default().past_in_a_hundred(), 0.0);
     }
 
     #[test]

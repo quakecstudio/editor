@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! What the map view draws of each light (P7-09, LIGHT-7): where its light ends, its colour and,
-//! for a spotlight, its cone, read from its keys as [`Light::run`] reads them, so the preview is
-//! the light the compile gives.
+//! for a spotlight, its cone, read from its keys as id's light reads them: the light the id
+//! dialect's compile gives.
 
 use crate::entities::{Entities, EntityId, FULL};
 use crate::face::{DEFAULT_CONE, float_of};

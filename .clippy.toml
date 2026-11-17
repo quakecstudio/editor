@@ -35,6 +35,7 @@ absolute-paths-allowed-crates = [
     "pollster",
     "proptest",
     "raw_window_handle",
+    "rayon",
     "regex_lite",
     "rfd",
     "rmcp",

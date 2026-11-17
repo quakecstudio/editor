@@ -1,0 +1,833 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 1996-1997  Id Software, Inc.
+// Copyright (C) 2017 Eric Wasylishen
+// Copyright (C) 2026 QuakeC Studio contributors
+//
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: light/bounce.cc, Face_ShouldBounce, MakeBounceLight, MakeBounceLightsThread, MakeBounceLights
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: light/ltface.cc, SurfaceLight_ColorAtDist, GetSurfaceLighting, SurfaceLight_SphereCull, LightFace_SurfaceLight, LightPoint_SurfaceLight
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: include/common/polylib.hh, area, center, remove_colinear, plane
+
+//! Bounce lighting (LIGHT-20): each face that casts shadow gives back the light that fell on
+//! it, as a light of its own a unit above its middle, once for each bounce.
+
+use super::math::count_of;
+use crate::extended::keys::World;
+use crate::extended::math::{Aabb, add, cross, dot, is_zero, length, normalize, scale, sub};
+use crate::extended::points::Patch;
+use crate::extended::shade::Lightmaps;
+use crate::{AXES, Vec3, to_f32};
+
+/// The least a face's area for it to bounce light.
+const LEAST_AREA: f32 = 1.0;
+/// `DIST_EPSILON`: how near a straight line two edges are for the corner between them to be
+/// dropped.
+const DIST_EPSILON: f64 = 0.0001;
+/// A bounce's contribution at most this on every channel is not traced (LIGHT-20.5).
+pub(crate) const BOUNCE_GATE: f32 = 0.01;
+/// The nearest a sample is taken to be to a bounce light.
+const NEAREST: f32 = 0.01;
+/// `LIGHT_ANGLE_EPSILON`: how far behind a bounce light, or a sample's face, the other may
+/// be.
+const ANGLE_EPSILON: f32 = 0.01;
+/// The distance a bounce light's brightness is clamped at, and a Quake surface light's.
+pub(crate) const BOUNCE_CLAMP: f32 = 128.0;
+/// The distance a radiosity surface light's brightness is clamped at.
+const SURFACE_CLAMP: f32 = 16.0;
+/// What a box of what a bounce light sees may miss a face's box by (LIGHT-10.8).
+const BOUNDS_EPSILON: f32 = 0.001;
+/// How far past the angle's own allowance a face must be turned from an emitter for the
+/// pair to be passed over, in units: more than the rounding of a sample's own test.
+const TURNED_MARGIN: f32 = 0.05;
+/// How far over the most a face can be given the gate is held, for the rounding of a
+/// sample's own sum.
+const DIM_MARGIN: f32 = 1.01;
+/// Half, of a triangle's cross product and of `_bouncescale`.
+const HALF: f32 = 0.5;
+
+/// Whether a face's light is its own, a surface light's, or light it gives back
+/// (`per_style_t::bounce_level`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Stage {
+    /// A surface light's own (LIGHT-16.4).
+    Direct,
+    /// The bounce it is of, from 0 (LIGHT-20).
+    Bounce(usize),
+}
+
+impl Stage {
+    /// What its light is scaled by from a face and from sky, and the distance its
+    /// brightness is clamped at: `LightFace_SurfaceLight(..., cfg.surflightscale,
+    /// cfg.surflightskyscale, 16.0f)` and `(..., cfg.bouncescale * 0.5, cfg.bouncescale,
+    /// 128.0f)`.
+    fn scales(self, world: &World) -> (f32, f32, f32) {
+        match self {
+            Self::Direct => (
+                world.surflightscale.get(),
+                world.surflightskyscale.get(),
+                SURFACE_CLAMP,
+            ),
+            Self::Bounce(_) => (
+                world.bouncescale.get() * HALF,
+                world.bouncescale.get(),
+                BOUNCE_CLAMP,
+            ),
+        }
+    }
+}
+
+/// The light a face gives in one style (`surfacelight_t::per_style_t`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Emission {
+    pub(crate) stage: Stage,
+    pub(crate) style: i32,
+    /// Its brightness, the brightest channel of the light times the face's area.
+    pub(crate) intensity: f32,
+    /// Its colour, the brightest channel at most 1.
+    pub(crate) colour: Vec3,
+    /// Whether it shines every way, as a sky's does, and not by its face's normal.
+    pub(crate) omnidirectional: bool,
+    /// Whether faces nearly across from it are brightened.
+    pub(crate) rescale: bool,
+    /// How fast it falls off, 1 for a bounce.
+    pub(crate) atten: f32,
+}
+
+/// A face that gives light back (`surfacelight_t`).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Emitter {
+    /// A unit above the face's middle.
+    pub(crate) pos: Vec3,
+    pub(crate) normal: Vec3,
+    /// What can be seen from it, when lights are culled by it (LIGHT-10.8).
+    pub(crate) bounds: Option<Aabb>,
+    /// The leaves its face is in, when lights are culled by the BSP's visibility
+    /// (LIGHT-10.10).
+    pub(crate) leaves: Vec<usize>,
+    pub(crate) emissions: Vec<Emission>,
+}
+
+/// `winding_base_t::remove_colinear`: `points` without the corners its two edges run
+/// straight through.
+pub(crate) fn without_colinear(points: &[Vec3]) -> Vec<Vec3> {
+    let count = points.len();
+    let mut out = Vec::with_capacity(count);
+    for (index, &here) in points.iter().enumerate() {
+        let next = index.checked_add(1).and_then(|n| n.checked_rem(count));
+        let before = index
+            .checked_add(count)
+            .and_then(|n| n.checked_sub(1))
+            .and_then(|n| n.checked_rem(count));
+        let (Some(&next), Some(&before)) = (
+            next.and_then(|n| points.get(n)),
+            before.and_then(|n| points.get(n)),
+        ) else {
+            continue;
+        };
+        let (v1, v2) = (normalize(sub(next, here)), normalize(sub(here, before)));
+        if f64::from(dot(v1, v2)) < 1.0 - DIST_EPSILON {
+            out.push(here);
+        }
+    }
+    out
+}
+
+/// `winding_base_t::area`: the triangles fanned from the first point, summed in the order
+/// of the points.
+fn area(points: &[Vec3]) -> f32 {
+    let Some(&first) = points.first() else {
+        return 0.0;
+    };
+    let mut total = 0.0_f32;
+    for pair in points.windows(2).skip(1) {
+        if let [a, b] = *pair {
+            let triangle = f64::from(length(cross(sub(a, first), sub(b, first))));
+            total = to_f32(f64::from(total) + f64::from(HALF) * triangle);
+        }
+    }
+    total
+}
+
+/// What a face's bounce needs of the map.
+pub(crate) struct Bouncer<'a> {
+    pub(crate) world: &'a World,
+    /// Whether each face may bounce light: it always casts shadow, has a lightmap, is not
+    /// `skip` and has not `_bounce -1` (`Face_ShouldBounce`).
+    pub(crate) bounces: &'a [bool],
+    /// Each face's corners, moved with its model.
+    pub(crate) corners: &'a [Vec<Vec3>],
+    /// The colour each face's texture gives the light it bounces
+    /// (`Face_LookupTextureBounceColor`).
+    pub(crate) texture: &'a [Vec3],
+}
+
+impl Bouncer<'_> {
+    /// `MakeBounceLightsThread`: the light `face` gives back on bounce `depth`, from what its
+    /// lightmaps took since the last, added to its emitter `slot`; whether it gives any.
+    /// The light counted is taken off the lightmaps (LIGHT-20.2, LIGHT-20.3).
+    pub(crate) fn emit(
+        &self,
+        face: usize,
+        lightmaps: &mut Lightmaps,
+        slot: &mut Option<Emitter>,
+        depth: usize,
+    ) -> bool {
+        if !self.bounces.get(face).copied().unwrap_or(false) || lightmaps.all.is_empty() {
+            return false;
+        }
+        let Some(corners) = self.corners.get(face) else {
+            return false;
+        };
+        let face_area = area(corners);
+        if face_area < LEAST_AREA {
+            return false;
+        }
+        let corners = without_colinear(corners);
+        let samples = lightmaps
+            .all
+            .first()
+            .map_or(1.0, |lm| count_of(lm.samples.len()));
+        let styled = self.world.bouncestyled.get();
+        let mut sums: Vec<(i32, Vec3)> = Vec::new();
+        for lightmap in &mut lightmaps.all {
+            let Some(style) = lightmap.style else {
+                continue;
+            };
+            if style != 0 && !styled {
+                continue;
+            }
+            let taken = core::mem::take(&mut lightmap.bounce);
+            if !is_zero(taken) {
+                sums.push((style, scale(taken, 1.0 / samples)));
+            }
+        }
+        if sums.is_empty() {
+            return false;
+        }
+        let texture = self.texture.get(face).copied().unwrap_or_default();
+        // `winding_base_t::plane` and `center`.
+        let (Some(&p0), Some(&p1), Some(&p2)) = (corners.first(), corners.get(1), corners.get(2))
+        else {
+            return false;
+        };
+        let normal = normalize(cross(sub(p0, p1), sub(p2, p1)));
+        let mut middle = [0.0; AXES];
+        for &corner in &corners {
+            middle = add(middle, corner);
+        }
+        let pos = add(scale(middle, 1.0 / count_of(corners.len())), normal);
+        for (style, sum) in sums {
+            // `MakeBounceLight`.
+            let mut colour = [
+                sum[0] * texture[0],
+                sum[1] * texture[1],
+                sum[2] * texture[2],
+            ];
+            let intensity = colour[0].max(colour[1]).max(colour[2]);
+            if intensity <= 0.0 {
+                continue;
+            }
+            if intensity > 1.0 {
+                colour = scale(colour, 1.0 / intensity);
+            }
+            let emitter = slot.get_or_insert_with(|| Emitter {
+                pos,
+                normal,
+                bounds: None,
+                leaves: Vec::new(),
+                emissions: Vec::new(),
+            });
+            emitter.emissions.push(Emission {
+                stage: Stage::Bounce(depth),
+                style,
+                intensity: intensity * face_area,
+                colour,
+                omnidirectional: false,
+                rescale: false,
+                atten: 1.0,
+            });
+        }
+        true
+    }
+}
+
+impl Emission {
+    /// `SurfaceLight_ColorAtDist`: `colour` at `intensity` falling with the square of the
+    /// distance, by `_dist` and its falloff, which is taken as at least `clamp`, scaled by
+    /// `by` (LIGHT-20.4).
+    fn colour_at(&self, world: &World, by: f32, dist: f32, clamp: f32) -> Vec3 {
+        let emission = self;
+        let reach = (world.scaledist.get() * emission.atten * dist).max(clamp);
+        scale(emission.colour, emission.intensity / (reach * reach) * by)
+    }
+}
+
+/// Where a face's samples are, for passing over an emitter none of them can take light
+/// from.
+pub(crate) struct Reach {
+    /// The box around the samples that are not hidden.
+    bounds: Aabb,
+    /// When every one has the same normal and the face is not lit from both sides: the
+    /// normal, and the least any sample is along it.
+    facing: Option<(Vec3, f32)>,
+}
+
+impl Reach {
+    /// The box around the samples that are not hidden.
+    pub(crate) const fn bounds(&self) -> Aabb {
+        self.bounds
+    }
+
+    /// The reach of `patch`'s samples; none when every one is hidden.
+    pub(crate) fn of(patch: &Patch) -> Option<Self> {
+        let mut seen = patch.samples.iter().filter(|sample| !sample.occluded);
+        let first = seen.next()?;
+        let mut bounds = Aabb::at(first.point);
+        let mut uniform = true;
+        let mut least = dot(first.point, first.normal);
+        for sample in seen {
+            bounds = bounds.with(sample.point);
+            // The very same normal, bit for bit.
+            uniform &= sample.normal.map(f32::to_bits) == first.normal.map(f32::to_bits);
+            least = least.min(dot(sample.point, first.normal));
+        }
+        Some(Self {
+            bounds,
+            facing: (uniform && !patch.twosided).then_some((first.normal, least)),
+        })
+    }
+}
+
+impl Emitter {
+    /// Whether no sample within `reach` takes light of `emission`, by the two tests
+    /// [`Emitter::lighting`] makes of each sample: every sample is behind the emitter, or
+    /// the emitter is behind every sample's face. Only a pair that is so by a margin is
+    /// passed over, so no sample's light differs for it.
+    pub(crate) fn is_turned_from(&self, emission: &Emission, reach: &Reach) -> bool {
+        if emission.omnidirectional {
+            return false;
+        }
+        // The farthest a sample is from the emitter, and the farthest along the emitter's
+        // normal.
+        let mut farthest = [0.0; AXES];
+        let mut ahead = 0.0_f32;
+        for (((slot, &at), &low), (&high, &normal)) in farthest
+            .iter_mut()
+            .zip(&self.pos)
+            .zip(&reach.bounds.mins)
+            .zip(reach.bounds.maxs.iter().zip(&self.normal))
+        {
+            *slot = (at - low).abs().max((at - high).abs());
+            ahead += (normal * low).max(normal * high);
+        }
+        let limit = -(ANGLE_EPSILON * length(farthest)) - TURNED_MARGIN;
+        if ahead - dot(self.normal, self.pos) < limit {
+            return true;
+        }
+        reach
+            .facing
+            .is_some_and(|(normal, least)| dot(self.pos, normal) - least < limit)
+    }
+
+    /// Whether no sample within `reach` is given more of `emission` than the gate: the most
+    /// [`Emitter::lighting`] can give any of them, at the nearest the box of the samples is
+    /// to the emitter and turned to it as far as the box and the face's plane allow, is
+    /// under the gate by a margin, so no sample's light differs for it (LIGHT-20.8).
+    pub(crate) fn is_dim_within(&self, world: &World, emission: &Emission, reach: &Reach) -> bool {
+        let (standard, sky, clamp) = emission.stage.scales(world);
+        let by = if emission.omnidirectional {
+            sky
+        } else {
+            standard
+        };
+        if by < 0.0 || emission.colour.iter().any(|c| *c < 0.0) {
+            return false;
+        }
+        // The nearest the box is to the emitter, and the farthest it is along the
+        // emitter's normal.
+        let mut apart = [0.0; AXES];
+        let mut ahead = 0.0_f32;
+        for (((slot, &at), &low), (&high, &normal)) in apart
+            .iter_mut()
+            .zip(&self.pos)
+            .zip(&reach.bounds.mins)
+            .zip(reach.bounds.maxs.iter().zip(&self.normal))
+        {
+            *slot = (low - at).max(at - high).max(0.0);
+            ahead += (normal * low).max(normal * high);
+        }
+        let nearest = length(apart).max(NEAREST);
+        // The most of a cosine a height over a plane leaves at the nearest distance.
+        let most = |height: f32| (height.max(0.0) / nearest + ANGLE_EPSILON).min(1.0);
+        let (factor, dist) = if emission.omnidirectional {
+            (HALF, nearest + world.surflightskydist.get())
+        } else if emission.rescale {
+            (1.0, nearest)
+        } else {
+            let from_emitter = most(ahead - dot(self.normal, self.pos));
+            let to_emitter = reach
+                .facing
+                .map_or(1.0, |(normal, least)| most(dot(self.pos, normal) - least));
+            (from_emitter * to_emitter, nearest)
+        };
+        emission
+            .colour_at(world, by * factor * DIM_MARGIN, dist, clamp)
+            .iter()
+            .all(|c| *c <= BOUNCE_GATE)
+    }
+
+    /// `SurfaceLight_SphereCull`: whether `emission` cannot reach `patch`: what the emitter
+    /// sees misses the face's box, or the whole of its light is too dim at the far side of
+    /// the sphere around the face (LIGHT-20.5).
+    pub(crate) fn is_culled(&self, world: &World, emission: &Emission, patch: &Patch) -> bool {
+        if self
+            .bounds
+            .is_some_and(|bounds| bounds.is_apart_from(patch.extents.bounds, BOUNDS_EPSILON))
+        {
+            return true;
+        }
+        let dist = length(sub(patch.extents.origin, self.pos)) + patch.extents.radius;
+        let (_, _, clamp) = emission.stage.scales(world);
+        let by = if emission.omnidirectional {
+            world.surflightskyscale.get()
+        } else {
+            world.surflightscale.get()
+        };
+        emission
+            .colour_at(world, by, dist, clamp)
+            .iter()
+            .all(|c| *c <= BOUNCE_GATE)
+    }
+
+    /// `GetSurfaceLighting`: what `emission` gives a point `dist` from the emitter along the
+    /// unit `dir`, whose normal is `normal`; nothing for a point behind the emitter, or one
+    /// whose face is turned from it (LIGHT-20.4).
+    pub(crate) fn lighting(
+        &self,
+        world: &World,
+        emission: &Emission,
+        (dir, dist): (Vec3, f32),
+        normal: Option<Vec3>,
+    ) -> Vec3 {
+        let mut from_emitter = dot(self.normal, dir);
+        let mut to_emitter = normal.map_or(1.0, |normal| dot(scale(dir, -1.0), normal));
+        let (standard, sky, clamp) = emission.stage.scales(world);
+        let factor = if emission.omnidirectional {
+            // A sky's light, which no seam of the geometry under it turns away.
+            to_emitter * HALF
+        } else {
+            if from_emitter < -ANGLE_EPSILON || to_emitter < -ANGLE_EPSILON {
+                return [0.0; AXES];
+            }
+            if emission.rescale {
+                from_emitter = HALF + from_emitter * HALF;
+                to_emitter = HALF + to_emitter * HALF;
+            }
+            from_emitter * to_emitter
+        }
+        .max(0.0);
+        if factor <= 0.0 {
+            return [0.0; AXES];
+        }
+        let (by, dist) = if emission.omnidirectional {
+            (sky, dist + world.surflightskydist.get())
+        } else {
+            (standard, dist)
+        };
+        emission.colour_at(world, by * factor, dist, clamp)
+    }
+
+    /// The unit direction and the distance from the emitter to `point`, the distance at
+    /// least 0.01.
+    pub(crate) fn toward(&self, point: Vec3) -> (Vec3, f32) {
+        let away = sub(point, self.pos);
+        let dist = length(away).max(NEAREST);
+        (away.map(|c| c / dist), dist)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![expect(
+        clippy::unwrap_used,
+        reason = "test code: the values are exact in single precision, and a failed unwrap \
+                  is a failed test"
+    )]
+
+    use super::*;
+    use crate::extended::keys::Source;
+    use crate::extended::shade::Lightmap;
+
+    const SQUARE: [Vec3; 5] = [
+        [0.0, 0.0, 0.0],
+        [0.0, 32.0, 0.0],
+        [0.0, 64.0, 0.0],
+        [64.0, 64.0, 0.0],
+        [64.0, 0.0, 0.0],
+    ];
+
+    fn lightmaps(style: Option<i32>, bounce: Vec3) -> Lightmaps {
+        let mut lightmaps = Lightmaps::new(4);
+        lightmaps.all.push(Lightmap {
+            style,
+            samples: vec![[0.0; 3]; 4],
+            bounce,
+        });
+        lightmaps
+    }
+
+    // spec LIGHT-20.2: a face gives back the mean of the light its samples took, times its
+    // texture's colour, from a unit above its middle; its brightness is its brightest channel
+    // times its area, and the light counted is taken off.
+    #[test]
+    fn a_face_gives_back_the_mean_of_its_light_from_above_its_middle() {
+        let world = World::default();
+        let bouncer = Bouncer {
+            world: &world,
+            bounces: &[true, false],
+            corners: &[SQUARE.to_vec(), SQUARE.to_vec()],
+            texture: &[[0.5; 3], [0.5; 3]],
+        };
+        let mut lit = lightmaps(Some(0), [800.0, 400.0, 0.0]);
+        let mut slot = None;
+        assert!(bouncer.emit(0, &mut lit, &mut slot, 0));
+        let emitter = slot.clone().unwrap();
+        // The corner on the straight edge is dropped: the middle is that of the four.
+        assert_eq!(emitter.pos, [32.0, 32.0, 1.0]);
+        assert_eq!(emitter.normal, [0.0, 0.0, 1.0]);
+        let emission = emitter.emissions.first().copied().unwrap();
+        // 800 over 4 samples is 200, by the texture's half is 100: past 1, so the colour is
+        // scaled to it and the brightness keeps it, times the area of 4096.
+        assert_eq!(emission.colour, [1.0, 0.5, 0.0]);
+        assert_eq!(emission.intensity, 100.0 * 4096.0);
+        assert_eq!((emission.stage, emission.style), (Stage::Bounce(0), 0));
+        assert_eq!(lit.all.first().map(|lm| lm.bounce), Some([0.0; 3]));
+        assert!(
+            !bouncer.emit(0, &mut lit, &mut slot, 1),
+            "nothing new to give back"
+        );
+        assert!(!bouncer.emit(1, &mut lightmaps(Some(0), [8.0; 3]), &mut None, 0));
+        assert!(!bouncer.emit(0, &mut Lightmaps::new(4), &mut None, 0));
+    }
+
+    // spec LIGHT-20.3: only the lightmap of style 0 bounces, unless _bouncestyled is set.
+    #[test]
+    fn only_style_zero_bounces_unless_styled() {
+        let mut world = World::default();
+        let corners = [SQUARE.to_vec()];
+        let texture = [[0.5; 3]];
+        let bouncer = Bouncer {
+            world: &world,
+            bounces: &[true],
+            corners: &corners,
+            texture: &texture,
+        };
+        assert!(!bouncer.emit(0, &mut lightmaps(Some(5), [8.0; 3]), &mut None, 0));
+        assert!(!bouncer.emit(0, &mut lightmaps(None, [8.0; 3]), &mut None, 0));
+        world.bouncestyled.set(true, Source::Map);
+        let bouncer = Bouncer {
+            world: &world,
+            bounces: &[true],
+            corners: &corners,
+            texture: &texture,
+        };
+        let mut slot = None;
+        assert!(bouncer.emit(0, &mut lightmaps(Some(5), [8.0; 3]), &mut slot, 0));
+        assert_eq!(
+            slot.and_then(|e| e.emissions.first().map(|e| e.style)),
+            Some(5)
+        );
+    }
+
+    // spec LIGHT-20.4: a bounce light's light falls with the square of the distance, taken
+    // as at least 128, by the cosines at the emitter and at the sample and half of
+    // _bouncescale; nothing reaches behind the emitter.
+    #[test]
+    fn a_bounce_falls_with_the_square_of_the_distance_and_both_cosines() {
+        let world = World::default();
+        let emitter = Emitter {
+            pos: [0.0, 0.0, 1.0],
+            normal: [0.0, 0.0, 1.0],
+            bounds: None,
+            leaves: Vec::new(),
+            emissions: Vec::new(),
+        };
+        let emission = Emission {
+            stage: Stage::Bounce(0),
+            omnidirectional: false,
+            rescale: false,
+            atten: 1.0,
+            style: 0,
+            intensity: 128.0 * 128.0 * 100.0,
+            colour: [1.0, 0.5, 0.0],
+        };
+        let above = [0.0, 0.0, 257.0];
+        let (dir, dist) = emitter.toward(above);
+        assert_eq!((dir, dist), ([0.0, 0.0, 1.0], 256.0));
+        let facing = emitter.lighting(&world, &emission, (dir, dist), Some([0.0, 0.0, -1.0]));
+        // 100 at 128 units is 25 at 256, by a half.
+        assert_eq!(facing, [12.5, 6.25, 0.0]);
+        let near = emitter.lighting(&world, &emission, ([0.0, 0.0, 1.0], 8.0), None);
+        assert_eq!(near, [50.0, 25.0, 0.0], "nearer than 128 is as at 128");
+        let turned = emitter.lighting(&world, &emission, (dir, dist), Some([0.0, 0.0, 1.0]));
+        assert_eq!(turned, [0.0; 3]);
+        let below = emitter.lighting(&world, &emission, ([0.0, 0.0, -1.0], 64.0), None);
+        assert_eq!(below, [0.0; 3]);
+        assert_eq!(emitter.toward(emitter.pos).1, 0.01);
+    }
+
+    // spec LIGHT-20.4: a face no sample of which can take an emitter's light, every sample
+    // behind the emitter or the emitter behind the face, is passed over; one that could is
+    // not, nor is any for an emitter that shines every way.
+    #[test]
+    fn a_face_turned_from_an_emitter_is_passed_over() {
+        let emitter = Emitter {
+            pos: [0.0, 0.0, 1.0],
+            normal: [0.0, 0.0, 1.0],
+            bounds: None,
+            leaves: Vec::new(),
+            emissions: Vec::new(),
+        };
+        let emission = Emission {
+            stage: Stage::Bounce(0),
+            omnidirectional: false,
+            rescale: false,
+            atten: 1.0,
+            style: 0,
+            intensity: 1.0,
+            colour: [1.0; 3],
+        };
+        let reach = |low: Vec3, high: Vec3, facing: Option<(Vec3, f32)>| Reach {
+            bounds: Aabb {
+                mins: low,
+                maxs: high,
+            },
+            facing,
+        };
+        // A ceiling above, facing down: lit.
+        let above = reach(
+            [-8.0, -8.0, 64.0],
+            [8.0, 8.0, 64.0],
+            Some(([0.0, 0.0, -1.0], -64.0)),
+        );
+        assert!(!emitter.is_turned_from(&emission, &above));
+        // The same samples facing up: the emitter is behind their face.
+        let backs = reach(
+            [-8.0, -8.0, 64.0],
+            [8.0, 8.0, 64.0],
+            Some(([0.0, 0.0, 1.0], 64.0)),
+        );
+        assert!(emitter.is_turned_from(&emission, &backs));
+        // With no one normal, or lit from both sides, that test is not made.
+        let curved = reach([-8.0, -8.0, 64.0], [8.0, 8.0, 64.0], None);
+        assert!(!emitter.is_turned_from(&emission, &curved));
+        // Samples all below the emitter are behind it, whatever they face.
+        let below = reach([-8.0, -8.0, -64.0], [8.0, 8.0, -32.0], None);
+        assert!(emitter.is_turned_from(&emission, &below));
+        // Level with it, within the margin: not passed over.
+        let level = reach([32.0, -8.0, 0.9], [64.0, 8.0, 1.0], None);
+        assert!(!emitter.is_turned_from(&emission, &level));
+        let sky = Emission {
+            omnidirectional: true,
+            ..emission
+        };
+        assert!(!emitter.is_turned_from(&sky, &below));
+    }
+
+    // spec LIGHT-20.8: a face whose samples can none of them be given more than the gate,
+    // by how near its box is to the emitter and how far it can be turned to it, is passed
+    // over; one with a sample that could be is not.
+    #[test]
+    fn a_face_too_dim_at_its_nearest_is_passed_over() {
+        let world = World::default();
+        let emitter = Emitter {
+            pos: [0.0, 0.0, 1.0],
+            normal: [0.0, 0.0, 1.0],
+            bounds: None,
+            leaves: Vec::new(),
+            emissions: Vec::new(),
+        };
+        let emission = Emission {
+            stage: Stage::Bounce(0),
+            omnidirectional: false,
+            rescale: false,
+            atten: 1.0,
+            style: 0,
+            intensity: 128.0 * 128.0,
+            colour: [1.0; 3],
+        };
+        let reach = |low: Vec3, high: Vec3, facing: Option<(Vec3, f32)>| Reach {
+            bounds: Aabb {
+                mins: low,
+                maxs: high,
+            },
+            facing,
+        };
+        let most_at_corners = |reach: &Reach, normal: Option<Vec3>| {
+            let mut most = 0.0_f32;
+            for x in [reach.bounds.mins[0], reach.bounds.maxs[0]] {
+                for y in [reach.bounds.mins[1], reach.bounds.maxs[1]] {
+                    for z in [reach.bounds.mins[2], reach.bounds.maxs[2]] {
+                        let given =
+                            emitter.lighting(&world, &emission, emitter.toward([x, y, z]), normal);
+                        most = most.max(given[0]);
+                    }
+                }
+            }
+            most
+        };
+        // A ceiling close above, facing down, is given half of one.
+        let above = reach(
+            [-8.0, -8.0, 64.0],
+            [8.0, 8.0, 64.0],
+            Some(([0.0, 0.0, -1.0], -64.0)),
+        );
+        assert!(!emitter.is_dim_within(&world, &emission, &above));
+        assert!(most_at_corners(&above, Some([0.0, 0.0, -1.0])) > BOUNCE_GATE);
+        // A strip far to the side and barely ahead of the emitter: no face is turned from
+        // the other, but the emitter's cosine leaves it under the gate.
+        let aside = reach([300.0, -8.0, 1.0], [316.0, 8.0, 3.0], None);
+        assert!(!emitter.is_turned_from(&emission, &aside));
+        assert!(emitter.is_dim_within(&world, &emission, &aside));
+        assert!(most_at_corners(&aside, None) <= BOUNCE_GATE);
+        // The same strip reaching high over the emitter is not.
+        let tall = reach([300.0, -8.0, 1.0], [316.0, 8.0, 300.0], None);
+        assert!(!emitter.is_dim_within(&world, &emission, &tall));
+        assert!(most_at_corners(&tall, None) > BOUNCE_GATE);
+        // A floor far off, facing up, that the emitter is barely over: its own cosine
+        // leaves it under the gate; with no one normal that is not known.
+        let low = reach(
+            [400.0, -8.0, -4.0],
+            [416.0, 8.0, -4.0],
+            Some(([0.0, 0.0, 1.0], -4.0)),
+        );
+        let bright = Emission {
+            intensity: 128.0 * 128.0 * 8.0,
+            ..emission
+        };
+        let over = Emitter {
+            normal: [1.0, 0.0, 0.0],
+            ..emitter.clone()
+        };
+        assert!(over.is_dim_within(&world, &bright, &low));
+        let unknown = reach([400.0, -8.0, -4.0], [416.0, 8.0, -4.0], None);
+        assert!(!over.is_dim_within(&world, &bright, &unknown));
+        // A light that shines every way has no cosine of its own; one whose colour or
+        // scale could turn the sum is never passed over.
+        let sky = Emission {
+            omnidirectional: true,
+            ..emission
+        };
+        assert!(!emitter.is_dim_within(&world, &sky, &above));
+        let faint = Emission {
+            intensity: 1.0,
+            omnidirectional: true,
+            ..emission
+        };
+        assert!(emitter.is_dim_within(&world, &faint, &above));
+        let odd = Emission {
+            colour: [-1.0, 0.0, 0.0],
+            intensity: 1.0,
+            ..emission
+        };
+        assert!(!emitter.is_dim_within(&world, &odd, &aside));
+    }
+
+    // spec LIGHT-16.4: a surface light's own light is scaled by `_surflightscale`, clamped at
+    // 16 units and falls off by its own falloff; one that shines every way is by half the
+    // sample's facing alone, scaled by `_surflightskyscale` and `_surflightskydist` farther;
+    // a rescaled one brightens what is nearly across from it.
+    #[test]
+    fn a_surface_lights_own_light() {
+        let mut world = World::default();
+        let emitter = Emitter {
+            pos: [0.0, 0.0, 1.0],
+            normal: [0.0, 0.0, 1.0],
+            bounds: None,
+            leaves: Vec::new(),
+            emissions: Vec::new(),
+        };
+        let direct = Emission {
+            stage: Stage::Direct,
+            omnidirectional: false,
+            rescale: false,
+            atten: 1.0,
+            style: 0,
+            intensity: 64.0 * 64.0,
+            colour: [1.0, 0.5, 0.0],
+        };
+        let up = [0.0, 0.0, 1.0];
+        let facing = Some([0.0, 0.0, -1.0]);
+        // 4096 over 64 squared is 1, by a scale of 1.
+        assert_eq!(
+            emitter.lighting(&world, &direct, (up, 64.0), facing),
+            [1.0, 0.5, 0.0]
+        );
+        // Nearer than 16 is as at 16: 4096 over 256.
+        assert_eq!(
+            emitter.lighting(&world, &direct, (up, 4.0), facing),
+            [16.0, 8.0, 0.0]
+        );
+        let steep = Emission {
+            atten: 2.0,
+            ..direct
+        };
+        assert_eq!(
+            emitter.lighting(&world, &steep, (up, 64.0), facing),
+            [0.25, 0.125, 0.0]
+        );
+        world.surflightscale.set(0.5, Source::Map);
+        assert_eq!(
+            emitter.lighting(&world, &direct, (up, 64.0), facing),
+            [0.5, 0.25, 0.0]
+        );
+        // Across from it, side on: nothing plain, a quarter rescaled.
+        let side = [1.0, 0.0, 0.0];
+        let across = Some([-1.0, 0.0, 0.0]);
+        world.surflightscale.set(1.0, Source::Map);
+        assert_eq!(
+            emitter.lighting(&world, &direct, (side, 64.0), across),
+            [0.0; 3]
+        );
+        let rescaled = Emission {
+            rescale: true,
+            ..direct
+        };
+        assert_eq!(
+            emitter.lighting(&world, &rescaled, (side, 64.0), across),
+            [0.5, 0.25, 0.0]
+        );
+        // Every way: half the sample's facing, whatever the emitter's own.
+        let sky = Emission {
+            omnidirectional: true,
+            ..direct
+        };
+        assert_eq!(
+            emitter.lighting(&world, &sky, (side, 64.0), across),
+            [0.5, 0.25, 0.0]
+        );
+        let down = [0.0, 0.0, -1.0];
+        assert_eq!(
+            emitter.lighting(&world, &sky, (down, 64.0), Some([0.0, 0.0, 1.0])),
+            [0.5, 0.25, 0.0],
+            "behind the emitter"
+        );
+        world.surflightskyscale.set(2.0, Source::Map);
+        world.surflightskydist.set(64.0, Source::Map);
+        assert_eq!(
+            emitter.lighting(&world, &sky, (side, 64.0), across),
+            [0.25, 0.125, 0.0]
+        );
+        assert_eq!(Stage::Direct.scales(&World::default()), (1.0, 1.0, 16.0));
+        assert_eq!(
+            Stage::Bounce(1).scales(&World::default()),
+            (0.5, 1.0, 128.0)
+        );
+    }
+
+    #[test]
+    fn a_windings_area_and_corners() {
+        assert_eq!(area(&SQUARE), 4096.0);
+        assert_eq!(without_colinear(&SQUARE).len(), 4);
+        assert_eq!(area(&[]), 0.0);
+    }
+}

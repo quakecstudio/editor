@@ -8,10 +8,13 @@
 
 use qs_map::MapFile;
 
-use super::{ChopOrder, LoadedMap, MapBrush, Rotation, SideKind, SurfFlags, load};
+use super::{
+    ChopOrder, LoadedMap, MapBrush, Rotation, SideKind, SurfFlags, Texinfo, Texinfos, load,
+};
 use crate::extended::game::{Contents, Game};
 use crate::extended::vec::{BspPlane, Facing, Plane, normalize};
 use crate::fixtures::{BrushSpec, EntitySpec, MapSpec, Shape, map_text};
+use crate::light_flags::SurfaceFlags;
 
 fn loaded(spec: &MapSpec) -> LoadedMap {
     load(
@@ -209,6 +212,32 @@ fn textures_and_surface_flags() {
             .iter()
             .all(|f| !f.has(SurfFlags::SPECIAL))
     );
+}
+
+// spec QBSP-15.16: a texinfo is found when one is exactly it, the skip texinfo the table starts
+// with among them, and added when its axes, texture or flags are another's
+#[test]
+fn a_texinfo_is_found_or_added() {
+    let mut texinfos = Texinfos::with_skip();
+    let skip = texinfos.get(Texinfos::SKIP).cloned().unwrap();
+    assert_eq!(texinfos.find(skip.clone()), Texinfos::SKIP);
+    let mut shifted = skip;
+    shifted.vecs[0][3] = 8.0;
+    let added = texinfos.find(shifted.clone());
+    assert_ne!(added, Texinfos::SKIP);
+    assert_eq!(texinfos.find(shifted.clone()), added);
+    // The same axes and texture with other flags is another texinfo.
+    let drawn = Texinfo {
+        flags: SurfFlags::default(),
+        ..shifted.clone()
+    };
+    let other = texinfos.find(drawn.clone());
+    assert!(other != added && other != Texinfos::SKIP);
+    assert_eq!(texinfos.find(drawn), other);
+    // Zero and minus zero are not the same bits.
+    let mut minus = shifted;
+    minus.vecs[1][0] = -0.0;
+    assert_ne!(texinfos.find(minus), added);
 }
 
 // spec QBSP-15.17: in a brush with a hint face, every other face is a hintskip
@@ -439,4 +468,284 @@ fn a_bad_animating_texture_stops_the_compile() {
         None,
         "a `+` alone is frame 0"
     );
+}
+
+/// The lighting flags of the first face of the one brush of an entity of class `classname`
+/// with `pairs`, textured `texture`, in a world with `world_pairs`.
+fn light_of(
+    classname: &str,
+    texture: &str,
+    pairs: &[(&str, &str)],
+    world_pairs: &[(&str, &str)],
+) -> SurfaceFlags {
+    let owned = |pairs: &[(&str, &str)]| {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect::<Vec<_>>()
+    };
+    let mut entity = EntitySpec::brushes(
+        classname,
+        vec![BrushSpec::cube([0, 0, 0], [8, 8, 8], texture)],
+    );
+    entity.pairs = owned(pairs);
+    let map = loaded(&MapSpec {
+        entities: vec![entity],
+        world_pairs: owned(world_pairs),
+        ..MapSpec::default()
+    });
+    let face = &map.entities[1].brushes[0].faces[0];
+    map.texinfos.get(face.texinfo).unwrap().light.clone()
+}
+
+// spec QBSP-15.54: a face with none of the keys has the default flags, and so has the world's
+#[test]
+fn a_face_without_light_keys_has_the_default_flags() {
+    assert_eq!(
+        light_of("func_group", "wall", &[], &[]),
+        SurfaceFlags::default()
+    );
+    let map = world(vec![BrushSpec::cube([0, 0, 0], [8, 8, 8], "wall")]);
+    let face = &map.entities[0].brushes[0].faces[0];
+    assert_eq!(
+        map.texinfos.get(face.texinfo).unwrap().light,
+        SurfaceFlags::default()
+    );
+}
+
+// spec QBSP-15.54: -1 for `_dirt`, `_bounce`, `_minlight` or `_shadow` and 1 for `_lightignore`
+// set the flag; a texture named by a `_minlight_exclude` key takes no minimum light
+#[test]
+fn the_switches_of_an_entity_reach_its_faces() {
+    let on = light_of(
+        "func_group",
+        "wall",
+        &[
+            ("_dirt", "-1"),
+            ("_bounce", "-1"),
+            ("_minlight", "-1"),
+            ("_shadow", "-1"),
+            ("_lightignore", "1"),
+        ],
+        &[],
+    );
+    assert!(on.no_dirt && on.no_bounce && on.no_minlight && on.no_shadow && on.light_ignore);
+    // `_minlight` of -1 is also a minimum light of none.
+    assert_eq!(on.minlight, Some(0.0));
+    let off = light_of(
+        "func_group",
+        "wall",
+        &[("_dirt", "1"), ("_shadow", "1"), ("_lightignore", "-1")],
+        &[],
+    );
+    assert!(!off.no_dirt && !off.no_bounce && !off.no_minlight && !off.no_shadow);
+    assert!(!off.light_ignore);
+    for (key, texture, excluded) in [
+        ("_minlight_exclude", "WALL", true),
+        ("_minlight_exclude2", "wall", true),
+        ("_minlight_exclude9", "wall", true),
+        ("_minlight_exclude", "other", false),
+        ("_minlight_exclude1", "wall", true),
+        ("_minlight_exclude10", "wall", false),
+    ] {
+        let flags = light_of("func_group", "wall", &[(key, texture)], &[]);
+        assert_eq!(flags.no_minlight, excluded, "{key} {texture}");
+    }
+}
+
+// spec QBSP-15.54: a `func_detail_illusionary` and a liquid cast no shadow unless `_shadow` is 1
+#[test]
+fn illusionary_brushes_and_liquids_cast_no_shadow_unless_asked() {
+    assert!(light_of("func_detail_illusionary", "wall", &[], &[]).no_shadow);
+    assert!(light_of("FUNC_DETAIL_ILLUSIONARY", "wall", &[("_shadow", "0")], &[]).no_shadow);
+    assert!(!light_of("func_detail_illusionary", "wall", &[("_shadow", "1")], &[]).no_shadow);
+    assert!(light_of("func_wall", "*water1", &[], &[]).no_shadow);
+    assert!(!light_of("func_wall", "*water1", &[("_shadow", "1")], &[]).no_shadow);
+    assert!(!light_of("func_detail", "wall", &[], &[]).no_shadow);
+}
+
+// spec QBSP-15.54: `_phong` gives 89 degrees where `_phong_angle` gives none; either is the
+// worldspawn's when the entity has no such key; the angles are held to 0 to 360
+#[test]
+fn phong_keys_and_the_worldspawns() {
+    let phong = |pairs: &[(&str, &str)], world: &[(&str, &str)]| {
+        light_of("func_group", "wall", pairs, world).phong_angle
+    };
+    assert_eq!(phong(&[("_phong", "1")], &[]), 89.0);
+    assert_eq!(phong(&[("_phong", "1"), ("_phong_angle", "30")], &[]), 30.0);
+    assert_eq!(phong(&[("_phong_angle", "45")], &[]), 45.0);
+    assert_eq!(phong(&[("_phong_angle", "400")], &[]), 360.0);
+    assert_eq!(phong(&[("_phong_angle", "-5")], &[]), 0.0);
+    assert_eq!(phong(&[], &[("_phong", "1")]), 89.0);
+    assert_eq!(phong(&[], &[("_phong_angle", "60")]), 60.0);
+    // The entity's own key, even 0, is the one read.
+    assert_eq!(phong(&[("_phong", "0")], &[("_phong", "1")]), 0.0);
+    assert_eq!(
+        phong(&[("_phong_angle", "20")], &[("_phong_angle", "60")]),
+        20.0
+    );
+    assert_eq!(phong(&[("_phong", "1")], &[("_phong_angle", "60")]), 60.0);
+    let flags = light_of(
+        "func_group",
+        "wall",
+        &[("_phong_angle_concave", "500"), ("_phong_group", "3")],
+        &[("_phong_angle_concave", "10"), ("_phong_group", "9")],
+    );
+    assert_eq!((flags.phong_angle_concave, flags.phong_group), (360.0, 3));
+    // Only `_phong` and `_phong_angle` are the worldspawn's.
+    let flags = light_of("func_group", "wall", &[], &[("_phong_group", "9")]);
+    assert_eq!((flags.phong_angle_concave, flags.phong_group), (0.0, 0));
+}
+
+// spec QBSP-15.54: `_minlight` is at least 0, `_maxlight` above 0 is held to 510,
+// `_lightcolorscale` and `_light_alpha` to 0 to 1; `_surflight_group`, `_object_channel_mask`
+// and `_light_twosided` are whole numbers
+#[test]
+fn the_amounts_of_an_entity_reach_its_faces() {
+    let flags = light_of(
+        "func_group",
+        "wall",
+        &[
+            ("_minlight", "37.5"),
+            ("_maxlight", "600"),
+            ("_lightcolorscale", "0.5"),
+            ("_light_alpha", "2"),
+            ("_light_twosided", "1"),
+            ("_surflight_group", "4"),
+            ("_object_channel_mask", "2"),
+        ],
+        &[],
+    );
+    assert_eq!((flags.minlight, flags.maxlight), (Some(37.5), 510.0));
+    assert_eq!((flags.lightcolorscale, flags.light_alpha), (0.5, Some(1.0)));
+    assert_eq!(flags.light_twosided, Some(true));
+    assert_eq!(
+        (flags.surflight_group, flags.object_channel_mask),
+        (4, Some(2))
+    );
+    let flags = light_of(
+        "func_group",
+        "wall",
+        &[
+            ("_minlight", "-3"),
+            ("_maxlight", "-1"),
+            ("_lightcolorscale", "1"),
+            ("_light_alpha", "-1"),
+            ("_light_twosided", "0"),
+        ],
+        &[],
+    );
+    assert_eq!((flags.minlight, flags.maxlight), (Some(0.0), 0.0));
+    assert_eq!((flags.lightcolorscale, flags.light_alpha), (1.0, Some(0.0)));
+    assert_eq!(flags.light_twosided, Some(false));
+    assert_eq!(
+        light_of("func_group", "wall", &[("_lightcolorscale", "7")], &[]).lightcolorscale,
+        1.0
+    );
+    assert_eq!(
+        light_of("func_group", "wall", &[("_lightcolorscale", "-7")], &[]).lightcolorscale,
+        0.0
+    );
+}
+
+// spec QBSP-15.54: the minimum light's colour is `_mincolor`, or `_minlight_color` when that
+// is nothing; fractions of 1 are scaled to 255 and each channel held to 0 to 255
+#[test]
+fn the_minimum_lights_colour() {
+    let colour = |pairs: &[(&str, &str)]| light_of("func_group", "wall", pairs, &[]).minlight_color;
+    assert_eq!(colour(&[("_mincolor", "255 128 0")]), [255, 128, 0]);
+    assert_eq!(colour(&[("_mincolor", "1 0.5 0")]), [255, 127, 0]);
+    assert_eq!(colour(&[("_minlight_color", "10 20 30")]), [10, 20, 30]);
+    assert_eq!(
+        colour(&[("_mincolor", "0 0 0"), ("_minlight_color", "10 20 30")]),
+        [10, 20, 30]
+    );
+    assert_eq!(
+        colour(&[("_mincolor", "4 5 6"), ("_minlight_color", "10 20 30")]),
+        [4, 5, 6]
+    );
+    assert_eq!(colour(&[("_mincolor", "300 -20 2")]), [255, 0, 2]);
+    assert_eq!(colour(&[]), [0, 0, 0]);
+}
+
+// spec QBSP-15.54: faces alike but for their lighting flags have texinfos of their own
+#[test]
+fn faces_with_different_light_flags_do_not_share_a_texinfo() {
+    let group = |pairs: Vec<(String, String)>| EntitySpec {
+        pairs,
+        ..EntitySpec::brushes(
+            "func_group",
+            vec![BrushSpec::cube([0, 0, 0], [8, 8, 8], "wall")],
+        )
+    };
+    let map = loaded(&MapSpec {
+        entities: vec![
+            group(Vec::new()),
+            group(vec![("_dirt".into(), "-1".into())]),
+            group(vec![("_dirt".into(), "-1".into())]),
+        ],
+        ..MapSpec::default()
+    });
+    let texinfo = |entity: usize| map.entities[entity].brushes[0].faces[0].texinfo;
+    assert_ne!(texinfo(1), texinfo(2));
+    assert_eq!(texinfo(2), texinfo(3));
+}
+
+// spec QBSP-15.54: a surface light's keys reach the face: its rescale, colour, style, name,
+// the scale of its minimum light and its falloff, the last two the worldspawn's when the
+// entity has none; and the size of the face's luxels
+#[test]
+fn a_surface_lights_keys_reach_its_faces() {
+    let flags = light_of(
+        "func_group",
+        "wall",
+        &[
+            ("_surflight_rescale", "0"),
+            ("_surflight_color", "1 0.5 0"),
+            ("_surflight_style", "3"),
+            ("_surflight_targetname", "lamp"),
+            ("_surflight_minlight_scale", "0.25"),
+            ("_world_units_per_luxel", "8"),
+        ],
+        &[
+            ("_surflight_minlight_scale", "2"),
+            ("_surflight_atten", "4"),
+        ],
+    );
+    assert_eq!(flags.surflight_rescale, Some(false));
+    assert_eq!(flags.surflight_color, Some([255, 127, 0]));
+    assert_eq!(flags.surflight_style, Some(3));
+    assert_eq!(flags.surflight_targetname.as_deref(), Some(&b"lamp"[..]));
+    assert_eq!(flags.surflight_minlight_scale, Some(0.25));
+    assert_eq!(flags.surflight_atten, Some(4.0), "the worldspawn's");
+    assert_eq!(flags.world_units_per_luxel, Some(8.0));
+    let plain = light_of("func_group", "wall", &[], &[]);
+    assert_eq!(
+        (
+            plain.surflight_rescale,
+            plain.surflight_color,
+            plain.surflight_style,
+            plain.surflight_targetname.clone(),
+            plain.surflight_minlight_scale,
+            plain.surflight_atten,
+            plain.world_units_per_luxel
+        ),
+        (None, None, None, None, None, None, None)
+    );
+    let other = light_of(
+        "func_group",
+        "wall",
+        &[
+            ("_surflight_rescale", "1"),
+            ("_surflight_color", "200 100 50"),
+            ("_surflight_style", "0"),
+        ],
+        &[],
+    );
+    assert_eq!(other.surflight_rescale, Some(true));
+    assert_eq!(other.surflight_color, Some([200, 100, 50]));
+    assert_eq!(other.surflight_style, None, "a style of 0 is none");
+    // A colour of fewer than three numbers is none.
+    let short = light_of("func_group", "wall", &[("_surflight_color", "1 0.5")], &[]);
+    assert_eq!(short.surflight_color, None);
 }

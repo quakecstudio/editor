@@ -11,10 +11,14 @@
 //! divides the node or by how few sides it splits, each brush cut along it, and each leaf the
 //! contents of the brushes left in it.
 
+use std::collections::HashSet;
+
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
+
 use super::brush::{BspBrush, OriginalNum, Side, SideMarks, VisibleFaces};
 use super::faces::{Face, FaceId};
 use super::game::Contents;
-use super::map::{EntityNum, SIDESPACE, SideKind, SurfFlags, Texinfos};
+use super::map::{EntityNum, SIDESPACE, SideKind, SurfFlags, TexinfoNum, Texinfos};
 use super::portals::{Portal, PortalId};
 use super::vec::{AXES, Bounds, BspPlane, NORMAL_EPSILON, POINT_EPSILON, Plane, PlaneNum, Planes};
 use super::winding::{self, KeepOn, ON_EPSILON, Winding};
@@ -406,12 +410,15 @@ enum Cut {
     Parts(Box<[Option<BspBrush>; 2]>),
 }
 
-/// How a cut piece's bounds are checked: `SplitBrush`'s every axis, or `CheckSplitBrush`'s
-/// stack brush, whose `update_bounds` tests the first axis three times.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PieceCheck {
-    EveryAxis,
-    FirstAxis,
+impl Cut {
+    /// The parts of `brush`, which was cut, in front and behind: itself where it is whole.
+    fn parts(self, brush: BspBrush) -> [Option<BspBrush>; 2] {
+        match self {
+            Self::Whole(winding::Side::Back) => [None, Some(brush)],
+            Self::Whole(_) => [Some(brush), None],
+            Self::Parts(parts) => *parts,
+        }
+    }
 }
 
 /// What building and cutting brushes needs at hand.
@@ -469,23 +476,11 @@ impl Cutter<'_> {
 
     /// Whether a cut piece is sound (QBSP-15.25): three sides at least and bounds within the
     /// world's extent.
-    fn piece_is_sound(&self, piece: &mut BspBrush, check: PieceCheck) -> bool {
+    fn piece_is_sound(&self, piece: &mut BspBrush) -> bool {
         if piece.sides.len() < MIN_SIDES {
             return false;
         }
-        let bounded = match check {
-            PieceCheck::EveryAxis => piece.update_bounds(self.extent),
-            PieceCheck::FirstAxis => {
-                let mut bounds = Bounds::default();
-                for side in &piece.sides {
-                    bounds.union(&side.winding.bounds());
-                }
-                piece.bounds = bounds;
-                let (lo, hi) = (bounds.mins[0], bounds.maxs[0]);
-                lo > -self.extent && hi < self.extent && lo < self.extent && hi > -self.extent
-            }
-        };
-        bounded
+        piece.update_bounds(self.extent)
             && piece
                 .bounds
                 .mins
@@ -499,35 +494,13 @@ impl Cutter<'_> {
     /// polygon inside it is none or tiny, then on the side most of it is; otherwise each side's
     /// polygon cut, both parts given the plane's polygon as a skip side on the node, whole on
     /// one side when the other's part is unsound, and a part of too little volume dropped.
-    fn cut(&self, brush: &BspBrush, planenum: PlaneNum, check: PieceCheck) -> Cut {
+    fn cut(&self, brush: &BspBrush, planenum: PlaneNum) -> Cut {
         let Some(split) = self.plane(planenum) else {
             return Cut::Whole(winding::Side::Front);
         };
-        let (mut d_front, mut d_back) = (0.0_f64, 0.0_f64);
-        for p in brush.sides.iter().flat_map(|s| s.winding.points()) {
-            let d = split.distance_to(*p);
-            if d > 0.0 && d > d_front {
-                d_front = d;
-            }
-            if d < 0.0 && d < d_back {
-                d_back = d;
-            }
-        }
-        if d_front < SPLIT_EPSILON {
-            return Cut::Whole(winding::Side::Back);
-        }
-        if d_back > -SPLIT_EPSILON {
-            return Cut::Whole(winding::Side::Front);
-        }
-        let mut w = Winding::from_plane(split, self.extent);
-        for side in &brush.sides {
-            let (Some(current), Some(plane)) = (w.take(), self.plane(side.planenum)) else {
-                break;
-            };
-            w = current.clipped(plane, ON_EPSILON, KeepOn::No, winding::Part::Back);
-        }
-        let Some(mid) = w.filter(|w| !w.is_tiny(TINY_SPLIT)) else {
-            return Cut::Whole(Self::mostly_on_side(brush, split));
+        let mid = match self.mid(brush, split) {
+            Ok(mid) => mid,
+            Err(side) => return Cut::Whole(side),
         };
         let mut parts = [(); 2].map(|()| BspBrush {
             sides: Vec::with_capacity(brush.sides.len().saturating_add(1)),
@@ -547,12 +520,12 @@ impl Cutter<'_> {
                         kind: side.kind,
                         source: side.source,
                         winding: piece,
-                        marks: side.marks.without(SideMarks::TESTED),
+                        marks: side.marks,
                     });
                 }
             }
         }
-        let [front_ok, back_ok] = parts.each_mut().map(|p| self.piece_is_sound(p, check));
+        let [front_ok, back_ok] = parts.each_mut().map(|p| self.piece_is_sound(p));
         let [mut front, mut back] = parts;
         match (front_ok, back_ok) {
             (false, false) => return Cut::Parts(Box::new([None, None])),
@@ -579,20 +552,97 @@ impl Cutter<'_> {
 
     /// `brush` cut by plane `planenum` into its parts in front and behind, `SplitBrush`.
     pub(crate) fn split(&self, brush: BspBrush, planenum: PlaneNum) -> [Option<BspBrush>; 2] {
-        match self.cut(&brush, planenum, PieceCheck::EveryAxis) {
-            Cut::Whole(winding::Side::Back) => [None, Some(brush)],
-            Cut::Whole(_) => [Some(brush), None],
-            Cut::Parts(parts) => *parts,
+        self.cut(&brush, planenum).parts(brush)
+    }
+
+    /// The polygon of plane `split` inside `brush`, when `SplitBrush` would cut the brush by
+    /// it (QBSP-15.25): none when the brush reaches less than [`SPLIT_EPSILON`] past the plane
+    /// on a side, which is then the side it is whole on, or when the polygon is none or tiny,
+    /// and it is whole on the side most of it is.
+    fn mid(&self, brush: &BspBrush, split: Plane) -> Result<Winding, winding::Side> {
+        let (mut d_front, mut d_back) = (0.0_f64, 0.0_f64);
+        for p in brush.sides.iter().flat_map(|s| s.winding.points()) {
+            let d = split.distance_to(*p);
+            if d > 0.0 && d > d_front {
+                d_front = d;
+            }
+            if d < 0.0 && d < d_back {
+                d_back = d;
+            }
         }
+        if d_front < SPLIT_EPSILON {
+            return Err(winding::Side::Back);
+        }
+        if d_back > -SPLIT_EPSILON {
+            return Err(winding::Side::Front);
+        }
+        let mut w = Winding::from_plane(split, self.extent);
+        for side in &brush.sides {
+            let (Some(current), Some(plane)) = (w.take(), self.plane(side.planenum)) else {
+                break;
+            };
+            w = current.clipped(plane, ON_EPSILON, KeepOn::No, winding::Part::Back);
+        }
+        w.filter(|w| !w.is_tiny(TINY_SPLIT))
+            .ok_or_else(|| Self::mostly_on_side(brush, split))
     }
 
     /// Whether plane `planenum` cuts `brush` into two sound parts, `CheckSplitBrush`
-    /// (QBSP-15.27).
+    /// (QBSP-15.27): what [`Self::cut`] finds, without the parts made, and with a part's box
+    /// checked as `CheckSplitBrush`'s stack brush checks it, whose `update_bounds` tests the
+    /// first axis three times. Each part's sides are counted, its box widened and its volume summed as its
+    /// sides' polygons are cut, the plane's polygon last as the skip side it would be given.
     fn splits_in_two(&self, brush: &BspBrush, planenum: PlaneNum) -> bool {
-        match self.cut(brush, planenum, PieceCheck::FirstAxis) {
-            Cut::Parts(parts) => matches!(*parts, [Some(_), Some(_)]),
-            Cut::Whole(_) => false,
+        let Some(split) = self.plane(planenum) else {
+            return false;
+        };
+        let Ok(mid) = self.mid(brush, split) else {
+            return false;
+        };
+        let flipped = mid.flipped();
+        // The front part's skip side faces back along the plane, the back part's along it.
+        let skips = [(planenum.opposite(), &flipped), (planenum, &mid)];
+        let mut parts = [Measured::default(), Measured::default()];
+        let mut scratch = [Vec::new(), Vec::new()];
+        for side in &brush.sides {
+            let plane = self.plane(side.planenum);
+            let pieces = side.winding.parts(split, 0.0, KeepOn::No, &mut scratch);
+            for ((part, piece), (_, skip)) in parts.iter_mut().zip(pieces).zip(skips) {
+                let Some(points) = piece else {
+                    continue;
+                };
+                part.sides = part.sides.saturating_add(1);
+                for &point in points {
+                    part.bounds.add(point);
+                }
+                if let (Some(plane), Some(&corner), false) =
+                    (plane, skip.points().first(), points.is_empty())
+                {
+                    part.volume += -plane.distance_to(corner) * Winding::area_of(points);
+                }
+            }
         }
+        parts.iter().zip(skips).all(|(part, (planenum, skip))| {
+            let (lo, hi) = (part.bounds.mins[0], part.bounds.maxs[0]);
+            let sound = part.sides >= MIN_SIDES
+                && lo > -self.extent
+                && hi < self.extent
+                && lo < self.extent
+                && hi > -self.extent
+                && part
+                    .bounds
+                    .mins
+                    .iter()
+                    .zip(part.bounds.maxs)
+                    .all(|(lo, hi)| *lo >= -self.extent && hi <= self.extent);
+            let own = self
+                .plane(planenum)
+                .zip(skip.points().first())
+                .map_or(0.0, |(plane, &corner)| {
+                    -plane.distance_to(corner) * skip.area()
+                });
+            sound && (part.volume + own) / THIRD >= MICROVOLUME
+        })
     }
 
     /// The brush of `bounds`' six planes, `BrushFromBounds`: +x, +y, +z at the maximum, then
@@ -637,6 +687,46 @@ pub(crate) struct Builder<'a> {
     pub(crate) cutter: Cutter<'a>,
     pub(crate) texinfos: &'a Texinfos,
     pub(crate) visible: &'a VisibleFaces,
+    pub(crate) workers: Workers,
+}
+
+/// Whether a build spreads its work over the threads of the pool it runs in (`rayon`'s):
+/// a tree is seldom even, so its parts are handed to whichever thread is free.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Workers {
+    /// Every thread of the pool.
+    Pool,
+    /// This thread alone.
+    None,
+}
+
+impl Workers {
+    /// `work` done for each of `count` things, in their order: each thing's work is its own.
+    pub(crate) fn each<T: Send>(
+        self,
+        count: usize,
+        work: impl Fn(usize) -> T + Sync + Send,
+    ) -> Vec<T> {
+        match self {
+            Self::Pool => (0..count).into_par_iter().map(work).collect(),
+            Self::None => (0..count).map(work).collect(),
+        }
+    }
+
+    /// What `first` and `second` give, on a thread each when one is free.
+    pub(crate) fn both<A: Send, B: Send>(
+        self,
+        first: impl FnOnce() -> A + Send,
+        second: impl FnOnce() -> B + Send,
+    ) -> (A, B) {
+        match self {
+            Self::Pool => rayon::join(first, second),
+            Self::None => {
+                let first = first();
+                (first, second())
+            }
+        }
+    }
 }
 
 impl Builder<'_> {
@@ -726,6 +816,10 @@ impl Builder<'_> {
     /// pass, the least uneven of the planes that cut the node's volume, an axial one before any
     /// other.
     fn mid_plane(&self, brushes: &[BspBrush], node: &Node) -> Option<PlaneNum> {
+        // Many sides lie on one plane, and only the first of them that may split can be the
+        // least uneven: each plane is weighed once. A pass that weighs a plane that cuts the
+        // volume chooses one, so the planes left to a later pass are those that do not.
+        let mut weighed: HashSet<PlaneNum> = HashSet::new();
         for pass in 0..PASSES {
             let mut best_axial: Option<(f64, PlaneNum)> = None;
             let mut best_any: Option<(f64, PlaneNum)> = None;
@@ -734,13 +828,14 @@ impl Builder<'_> {
                     continue;
                 }
                 for side in &brush.sides {
-                    if !self.may_split(side, pass) {
+                    let positive = side.planenum.positive();
+                    if weighed.contains(&positive) || !self.may_split(side, pass) {
                         continue;
                     }
-                    let positive = side.planenum.positive();
                     let Some(plane) = self.cutter.planes.get(positive) else {
                         continue;
                     };
+                    weighed.insert(positive);
                     if !self.cuts_volume(node, positive) {
                         continue;
                     }
@@ -764,7 +859,7 @@ impl Builder<'_> {
     /// (QBSP-15.28); `None` makes the node a leaf.
     fn select(
         &self,
-        brushes: &mut [BspBrush],
+        brushes: &[BspBrush],
         node: &Node,
         split: TreeSplit,
     ) -> Option<(PlaneNum, Vec<PlaneSides>, Separator)> {
@@ -793,40 +888,45 @@ impl Builder<'_> {
                 .collect();
             return Some((planenum, sides, Separator::Structural));
         }
-        let mut best: Option<(PlaneNum, Vec<PlaneSides>)> = None;
+        // qbsp marks the sides on a plane it has scored as tested, so each plane is scored
+        // once for the node, at the first of its sides that may split; here the planes scored
+        // are kept in a set, and those that do not cut the node's volume in another.
+        let mut scored: HashSet<PlaneNum> = HashSet::new();
+        let mut uncutting: HashSet<PlaneNum> = HashSet::new();
+        let mut best: Option<PlaneNum> = None;
         let mut best_value = NO_SCORE;
         let mut separator = Separator::Structural;
         for pass in 0..PASSES {
-            for b in 0..brushes.len() {
-                let side_count = brushes.get(b).map_or(0, |brush| brush.sides.len());
-                if brushes
-                    .get(b)
-                    .is_some_and(|brush| (pass >= DETAIL_PASS) != brush.contents.is_any_detail())
-                {
+            let mut candidates = Vec::new();
+            for brush in brushes.iter() {
+                if (pass >= DETAIL_PASS) != brush.contents.is_any_detail() {
                     continue;
                 }
-                for s in 0..side_count {
-                    let Some(side) = brushes.get(b).and_then(|brush| brush.sides.get(s)) else {
-                        continue;
-                    };
-                    if side.marks.has(SideMarks::TESTED) || !self.may_split(side, pass) {
-                        continue;
-                    }
-                    let (planenum, texinfo) = (side.planenum, side.texinfo);
-                    let positive = planenum.positive();
-                    let Some(plane) = self.cutter.planes.get(positive) else {
-                        continue;
-                    };
-                    if !self.cuts_volume(node, positive) {
-                        continue;
-                    }
-                    let value = self.score(brushes, positive, plane, texinfo);
-                    if let Some((value, sides)) = value
-                        && value > best_value
+                for side in &brush.sides {
+                    let positive = side.planenum.positive();
+                    if scored.contains(&positive)
+                        || uncutting.contains(&positive)
+                        || !self.may_split(side, pass)
+                        || self.cutter.planes.get(positive).is_none()
                     {
-                        best_value = value;
-                        best = Some((planenum, sides));
+                        continue;
                     }
+                    if self.cuts_volume(node, positive) {
+                        scored.insert(positive);
+                        candidates.push(Candidate {
+                            planenum: side.planenum,
+                            texinfo: side.texinfo,
+                        });
+                    } else {
+                        uncutting.insert(positive);
+                    }
+                }
+            }
+            // The first of the highest value is chosen, as scoring them in turn chooses it.
+            for (candidate, value) in candidates.iter().zip(self.scores(brushes, &candidates)) {
+                if value > best_value {
+                    best_value = value;
+                    best = Some(candidate.planenum.positive());
                 }
             }
             if best.is_some() {
@@ -836,43 +936,45 @@ impl Builder<'_> {
                 break;
             }
         }
-        for brush in brushes.iter_mut() {
-            for side in &mut brush.sides {
-                side.marks = side.marks.without(SideMarks::TESTED);
-            }
-        }
-        best.map(|(planenum, sides)| (planenum.positive(), sides, separator))
+        let planenum = best?;
+        let sides = brushes
+            .iter()
+            .map(|b| self.test(b, planenum).sides)
+            .collect();
+        Some((planenum, sides, separator))
     }
 
-    /// A plane's score as a splitter and each brush's side of it (QBSP-15.28): five for each
-    /// brush on it, less five for each side split and the difference of the brushes in front
-    /// and behind, five more when axial, a thousand less for each epsilon brush, and never when
-    /// it splits a hint side, the last brush tested deciding, unless itself a hint. Each brush
-    /// on the plane has its sides on it marked tested.
-    fn score(
-        &self,
-        brushes: &mut [BspBrush],
-        positive: PlaneNum,
-        plane: &BspPlane,
-        texinfo: super::map::TexinfoNum,
-    ) -> Option<(i64, Vec<PlaneSides>)> {
+    /// Each of `candidates`' scores against `brushes` ([`Self::score`]), in their order; on
+    /// every thread that is free when there are [`PARALLEL_TESTS`] brushes to test, each
+    /// score being its own.
+    fn scores(&self, brushes: &[BspBrush], candidates: &[Candidate]) -> Vec<i64> {
+        let score = |at: usize| {
+            candidates
+                .get(at)
+                .map_or(NO_SCORE, |candidate| self.score(brushes, candidate))
+        };
+        if candidates.len().saturating_mul(brushes.len()) < PARALLEL_TESTS {
+            return (0..candidates.len()).map(score).collect();
+        }
+        self.workers.each(candidates.len(), score)
+    }
+
+    /// A plane's score as a splitter (QBSP-15.28): five for each brush on it, less five for
+    /// each side split and the difference of the brushes in front and behind, five more when
+    /// axial, a thousand less for each epsilon brush, and never when it splits a hint side,
+    /// the last brush tested deciding, unless itself a hint.
+    fn score(&self, brushes: &[BspBrush], candidate: &Candidate) -> i64 {
+        let positive = candidate.planenum.positive();
         let (mut front, mut back, mut facing, mut splits, mut epsilon) =
             (0_i64, 0_i64, 0_i64, 0_i64, 0_i64);
         let mut hint_split = false;
-        let mut sides = Vec::with_capacity(brushes.len());
-        for test in brushes.iter_mut() {
+        for test in brushes {
             let tested = self.test(test, positive);
             splits = splits.saturating_add(tested.splits);
             epsilon = epsilon.saturating_add(tested.epsilon_brushes);
             hint_split = tested.hint_splits > 0;
-            sides.push(tested.sides);
             if tested.sides.is_facing() {
                 facing = facing.saturating_add(1);
-                for s in &mut test.sides {
-                    if s.planenum.positive() == positive {
-                        s.marks = s.marks.with(SideMarks::TESTED);
-                    }
-                }
             }
             if tested.sides.has(PlaneSides::FRONT) {
                 front = front.saturating_add(1);
@@ -885,14 +987,19 @@ impl Builder<'_> {
             .saturating_mul(facing)
             .saturating_sub(SPLIT_SCORE.saturating_mul(splits))
             .saturating_sub(front.saturating_sub(back).saturating_abs());
-        if plane.kind().is_axial() {
+        if self
+            .cutter
+            .planes
+            .get(positive)
+            .is_some_and(|plane| plane.kind().is_axial())
+        {
             value = value.saturating_add(AXIAL_SCORE);
         }
         value = value.saturating_sub(epsilon.saturating_mul(EPSILON_BRUSH_SCORE));
-        if hint_split && !self.texinfos.flags(texinfo).has(SurfFlags::HINT) {
+        if hint_split && !self.texinfos.flags(candidate.texinfo).has(SurfFlags::HINT) {
             value = SPLITS_HINT_SCORE;
         }
-        Some((value, sides))
+        value
     }
 
     /// The brushes on each side of plane `planenum`, `SplitBrushList` (QBSP-15.29): those
@@ -903,10 +1010,28 @@ impl Builder<'_> {
         sides: &[PlaneSides],
         planenum: PlaneNum,
     ) -> [Vec<BspBrush>; 2] {
+        // The brushes across the plane are cut, each on its own, on every thread that is free
+        // when there are enough of them; the lists are then filled in the brushes' order.
+        let across: Vec<&BspBrush> = brushes
+            .iter()
+            .zip(sides)
+            .filter(|(_, side)| **side == PlaneSides::BOTH)
+            .map(|(brush, _)| brush)
+            .collect();
+        let cut = |at: usize| across.get(at).map(|brush| self.cutter.cut(brush, planenum));
+        let cuts = if across.len() < PARALLEL_CUTS {
+            (0..across.len()).map(cut).collect()
+        } else {
+            self.workers.each(across.len(), cut)
+        };
+        let mut cuts = cuts.into_iter().flatten();
         let mut out = [Vec::new(), Vec::new()];
         for (mut brush, &side) in brushes.into_iter().zip(sides) {
             if side == PlaneSides::BOTH {
-                let [front, back] = self.cutter.split(brush, planenum);
+                let Some(cut) = cuts.next() else {
+                    continue;
+                };
+                let [front, back] = cut.parts(brush);
                 for (list, part) in out.iter_mut().zip([front, back]) {
                     if let Some(part) = part {
                         list.push(part);
@@ -944,17 +1069,12 @@ impl Builder<'_> {
 
     /// The tree below `node` from `brushes`, `BuildTree_r` (QBSP-15.29): a leaf when no plane
     /// is chosen; else the node split by it, its children's bounds cut at an axial plane facing
-    /// along its axis, its volume cut between them. The two children are built at once down to
-    /// [`PARALLEL_DEPTH`] while they hold [`PARALLEL_BRUSHES`] between them: each reads only the planes and its own brushes, and
-    /// [`Grown::place`] numbers the nodes as building the front child first would.
-    fn grow(
-        &self,
-        mut node: Node,
-        mut brushes: Vec<BspBrush>,
-        split: TreeSplit,
-        depth: usize,
-    ) -> Grown {
-        let Some((planenum, sides, separator)) = self.select(&mut brushes, &node, split) else {
+    /// along its axis, its volume cut between them. The two children are built at once when
+    /// they hold [`PARALLEL_BRUSHES`] between them and a thread is free ([`Workers`]): each
+    /// reads only the planes and its own brushes, and [`Grown::place`] numbers the nodes as
+    /// building the front child first would.
+    fn grow(&self, mut node: Node, brushes: Vec<BspBrush>, split: TreeSplit) -> Grown {
+        let Some((planenum, sides, separator)) = self.select(&brushes, &node, split) else {
             node.kind = NodeKind::Leaf(Self::leaf(&brushes));
             node.volume = None;
             return Grown::Leaf(node);
@@ -990,23 +1110,17 @@ impl Builder<'_> {
             child(front_bounds, front_volume),
             child(back_bounds, back_volume),
         );
-        let next = depth.saturating_add(1);
         let brushes = front_brushes.len().saturating_add(back_brushes.len());
-        let children = if depth < PARALLEL_DEPTH && brushes >= PARALLEL_BRUSHES {
-            std::thread::scope(|scope| {
-                let front = scope.spawn(|| self.grow(front, front_brushes, split, next));
-                let back = self.grow(back, back_brushes, split, next);
-                // A panic on the front child's thread is raised here, as building it on this
-                // thread would have raised it.
-                let front = front
-                    .join()
-                    .unwrap_or_else(|payload| std::panic::resume_unwind(payload));
-                [front, back]
-            })
+        let children = if brushes >= PARALLEL_BRUSHES {
+            let (front, back) = self.workers.both(
+                || self.grow(front, front_brushes, split),
+                || self.grow(back, back_brushes, split),
+            );
+            [front, back]
         } else {
             [
-                self.grow(front, front_brushes, split, next),
-                self.grow(back, back_brushes, split, next),
+                self.grow(front, front_brushes, split),
+                self.grow(back, back_brushes, split),
             ]
         };
         node.kind = NodeKind::Split {
@@ -1021,12 +1135,30 @@ impl Builder<'_> {
     }
 }
 
-/// How deep the brush BSP and the portals build a node's two children at once: up to 2^4
-/// threads.
-pub(crate) const PARALLEL_DEPTH: usize = 4;
 /// The fewest brushes a node's children hold for the brush BSP to build them at once: fewer
 /// build faster than a thread starts.
-const PARALLEL_BRUSHES: usize = 64;
+const PARALLEL_BRUSHES: usize = 8;
+/// The fewest tests of a brush against a plane a node's choice of plane takes for the planes
+/// to be scored on several threads.
+const PARALLEL_TESTS: usize = 1 << 17;
+
+/// What a part of a cut brush comes to, measured without the part made: its sides, the box
+/// round them and the sum its volume is a third of, less its skip side's.
+#[derive(Default)]
+struct Measured {
+    sides: usize,
+    bounds: Bounds,
+    volume: f64,
+}
+
+/// The fewest brushes across a node's plane for them to be cut on several threads.
+const PARALLEL_CUTS: usize = 32;
+
+/// A side whose plane may split a node: its plane and its texinfo.
+struct Candidate {
+    planenum: PlaneNum,
+    texinfo: TexinfoNum,
+}
 
 /// A node built with its children, before it has a number.
 enum Grown {
@@ -1134,17 +1266,16 @@ impl BspInput<'_> {
     /// no brush a node on plane 0 with two empty leaves; else the head covering every brush and
     /// [`SIDESPACE`] around, its volume the brush of that box, each side's node mark cleared.
     pub(crate) fn brush_bsp(self, bounds: Bounds, brushes: &[BspBrush], split: TreeSplit) -> Tree {
-        self.brush_bsp_from(bounds, brushes, split, 0)
+        self.brush_bsp_with(bounds, brushes, split, Workers::Pool)
     }
 
-    /// [`BspInput::brush_bsp`] with the head built at `depth`: from [`PARALLEL_DEPTH`] on, on
-    /// this thread alone.
-    fn brush_bsp_from(
+    /// [`BspInput::brush_bsp`] on the threads `workers` has, with this one.
+    fn brush_bsp_with(
         self,
         bounds: Bounds,
         brushes: &[BspBrush],
         split: TreeSplit,
-        depth: usize,
+        workers: Workers,
     ) -> Tree {
         let mut tree = Tree {
             nodes: Vec::new(),
@@ -1188,13 +1319,14 @@ impl BspInput<'_> {
             },
             texinfos: self.texinfos,
             visible: self.visible,
+            workers,
         };
         let node = Node {
             volume: Some(volume),
             ..Tree::leaf(None, head_bounds, Leaf::default())
         };
         builder
-            .grow(node, brushes, split, depth)
+            .grow(node, brushes, split)
             .place(&mut tree, head, None);
         tree
     }

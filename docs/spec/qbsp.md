@@ -986,6 +986,41 @@ point on a plane (`mathlib.hh`).
   cluster's leaves in leaf order, each line ended by `-1` (`WritePTR2ClusterMapping`). A portal
   is written with its two numbers, swapped when the polygon's own plane faces away from the
   portal's by more than `ANGLEEPSILON`, and its points as `{fmt}` writes them.
+- **QBSP-15.54** Each texinfo carries lighting flags besides its surface flags
+  (`SurfFlagsForEntity`), from the keys of the entity its face's brush is in, and two faces
+  alike but for them have texinfos of their own (`FindTexinfo`). `no_dirt`, `no_bounce` and
+  `no_minlight` are set by -1 for `_dirt`, `_bounce` and `_minlight`, `light_ignore` by 1 for
+  `_lightignore`; `no_minlight` also when the texture's name is, in any case, the value of
+  `_minlight_exclude` or of that key with a digit from 1 to 9 after it. `no_shadow` is set by
+  -1 for `_shadow`, and, unless `_shadow` is 1, for a face of a `func_detail_illusionary` or
+  one whose contents are a liquid. `phong_angle` is `_phong_angle`, or 89 when that is 0 and
+  `_phong` is not, each key the worldspawn's when the entity has none, held to 0 to 360 and
+  left 0 when it is 0; `phong_angle_concave` is `_phong_angle_concave` held to 0 to 360 and
+  `phong_group` is `_phong_group`. `minlight` is `_minlight`, at least 0, when the key is
+  there; `maxlight` is `_maxlight` when above 0, held to 510; `lightcolorscale` is
+  `_lightcolorscale` held to 0 to 1 when the key is there and not 1; `light_alpha` is
+  `_light_alpha` held to 0 to 1 and `light_twosided` whether `_light_twosided` is not 0, each
+  when the key is there; `surflight_group` is `_surflight_group` and `object_channel_mask`
+  is `_object_channel_mask` when the key is there. `minlight_color` is `_mincolor`, or
+  `_minlight_color` when that is within 0.0001 of nothing, scaled by 255 when every channel
+  is from 0 to 1 (`normalize_color_format`), each channel held to 0 to 255 and cut to a byte,
+  and left black when the colour is nothing. The compile gives the flags of each texinfo
+  written, in the file's order, as ericw-tools' qbsp writes them to `<map>.texinfo.json`
+  (`WriteExtendedTexinfoFlags`), for light (LIGHT-9.8). A surface light on the face has
+  `surflight_rescale` whether `_surflight_rescale` is 1, when the key is there;
+  `surflight_color` from `_surflight_color` when it has three numbers, each times 255 when
+  all three are at most 1, cut to a byte; `surflight_style` from `_surflight_style` when it
+  is not 0; `surflight_targetname` from `_surflight_targetname`; and `surflight_minlight_scale`
+  and `surflight_atten` from `_surflight_minlight_scale` and `_surflight_atten`, each the
+  worldspawn's when the entity has none. `world_units_per_luxel` is `_world_units_per_luxel`
+  when the key is there. `_noambient` is not carried: it is for the BSP compiler's own
+  ambient sounds, and light does not read it.
+- **QBSP-15.55** The compile gives, for each leaf written and in the file's order, what the
+  leaf is to a light sample, from the leaf's contents before they are made the nearest the
+  format has (`ExportLeaf`, `map.exported_extended_contentflags`, which ericw-tools' qbsp
+  writes to `<map>.content.json`, `WriteExtendedContentFlags`): closed when they are solid, a
+  detail wall or sky, as is the shared solid leaf; open otherwise, so the inside of a fence
+  or a window, which the file calls solid, is open (LIGHT-9.9).
 - **QBSP-15.53** A `+` texture adds, after it, each lower frame of its sequence the map does not already have in any case (`AddAnimTex`, called from `FindMiptex`): its second character, a letter upper-cased, is the frame; for a digit, frames `0` up to it, and for a letter `A` to `J`, frames `A` up to it, each the name with that character replaced. ericw-tools' reason: "Always add the lower numbered animation frames first, otherwise many Quake engines will exit with an error loading the bsp." Any other second character stops the compile with `Bad animating texture <name>`; a `+` alone is frame 0 and adds nothing.
 - **QBSP-15.47** T-junctions are fixed (`TJunc`, `-tjunc mwt` by default) for each face written:
   each edge is broken at each vertex, as the file stores it, of a face that welds with this one

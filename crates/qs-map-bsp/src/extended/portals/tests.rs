@@ -11,7 +11,7 @@ use crate::Hull;
 use crate::extended::brush::{HullBrushes, VisibleFaces};
 use crate::extended::map::LoadedMap;
 use crate::extended::tree::tests::{cube, grid_brushes, world_brushes};
-use crate::extended::tree::{BspInput, NodeId, PARALLEL_DEPTH, Tree, TreeSplit};
+use crate::extended::tree::{BspInput, NodeId, Tree, TreeSplit, Workers};
 use crate::extended::vec::Plane;
 use crate::extended::winding::Winding;
 
@@ -176,10 +176,11 @@ fn portals_made_on_threads_are_those_made_on_one() {
         extent,
     };
     let around = portalizer.head_portals(&mut tree);
-    let make = |depth| {
-        portalizer.tree_portals(&tree, (Tree::HEAD, depth), PortalType::Tree, around.clone())
+    let make = |workers: Workers| {
+        let with = (PortalType::Tree, workers);
+        portalizer.tree_portals(&tree, (Tree::HEAD, 0), with, around.clone())
     };
-    let threaded = make(0);
+    let threaded = make(Workers::Pool);
     assert!(threaded.len() > 100, "{}", threaded.len());
-    assert_eq!(threaded, make(PARALLEL_DEPTH));
+    assert_eq!(threaded, make(Workers::None));
 }

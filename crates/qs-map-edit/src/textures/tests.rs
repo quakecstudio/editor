@@ -405,3 +405,33 @@ fn a_texture_that_cannot_be_shown_is_not_decoded() {
     assert!(palette.decode_pixels(b"a", 16, 16, &[0; 255]).is_err());
     assert!(palette.decode_pixels(b"a", 16, 16, &[0; 256]).is_ok());
 }
+
+// spec LIGHT-11.6: the palette light colours texels by is the project's own gfx/palette.lmp,
+// else the game's; a file that is no palette, or none, gives none
+#[test]
+fn the_lights_palette_is_the_projects_then_the_games() {
+    let dir = std::env::temp_dir().join(format!("qs-wb-tex-lightpal-{}", std::process::id()));
+    let (project, game) = (dir.join("mod"), dir.join("game"));
+    std::fs::create_dir_all(project.join("gfx")).unwrap();
+    std::fs::create_dir_all(game.join("id1/gfx")).unwrap();
+    assert_eq!(super::light_palette(Some(&project), Some(&game)), None);
+    std::fs::write(game.join("id1/gfx/palette.lmp"), vec![7_u8; 768]).unwrap();
+    assert_eq!(
+        super::light_palette(Some(&project), Some(&game)),
+        Some(vec![7_u8; 768])
+    );
+    assert_eq!(
+        super::light_palette(None, Some(&game)),
+        Some(vec![7_u8; 768])
+    );
+    std::fs::write(project.join("gfx/palette.lmp"), vec![9_u8; 768]).unwrap();
+    assert_eq!(
+        super::light_palette(Some(&project), Some(&game)),
+        Some(vec![9_u8; 768])
+    );
+    // A file of another size is no palette.
+    std::fs::write(project.join("gfx/palette.lmp"), vec![9_u8; 10]).unwrap();
+    assert_eq!(super::light_palette(Some(&project), Some(&game)), None);
+    assert_eq!(super::light_palette(None, None), None);
+    std::fs::remove_dir_all(&dir).unwrap();
+}

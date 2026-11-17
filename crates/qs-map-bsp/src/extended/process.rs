@@ -33,6 +33,8 @@ use crate::{CompileError, Compiled, Hull, Warning};
 const HULLS: [Hull; 3] = [Hull::Draw, Hull::Player, Hull::Large];
 /// The keys left out of the entity lump, TrenchBroom's.
 const TRENCHBROOM_PREFIX: &[u8] = b"_tb_";
+/// The stack of each thread of the pool a compile runs in.
+const POOL_STACK: usize = 64 << 20;
 
 /// What a compile keeps across entities and hulls.
 struct Compile<'a> {
@@ -442,6 +444,24 @@ pub(crate) fn compile(
     wad: Option<&[u8]>,
     subdivide: f32,
 ) -> Result<Compiled, CompileError> {
+    // The trees are built on a pool of the machine's threads (`Workers`), each with room for
+    // a deep tree: a build goes as deep as its tree, and a thread waiting for one part of it
+    // takes up another on top.
+    // In rayon's own pool the threads' stacks are too small for a deep tree, so with no pool
+    // of its own the compile stops.
+    rayon::ThreadPoolBuilder::new()
+        .stack_size(POOL_STACK)
+        .build()
+        .map_err(|_| CompileError::Threads)?
+        .install(|| compile_in_pool(file, wad, subdivide))
+}
+
+/// [`compile`], on the pool it is called in.
+fn compile_in_pool(
+    file: &MapFile,
+    wad: Option<&[u8]>,
+    subdivide: f32,
+) -> Result<Compiled, CompileError> {
     let map = load(file, Game::Quake);
     if let Some(name) = map.texinfos.bad_animation() {
         return Err(CompileError::BadAnimation(name.to_vec()));
@@ -517,6 +537,8 @@ pub(crate) fn compile(
         leak_file,
         leak_trail,
         warnings: run.warnings,
+        surfaces: run.writer.surfaces,
+        leaves: run.writer.leaves,
     })
 }
 

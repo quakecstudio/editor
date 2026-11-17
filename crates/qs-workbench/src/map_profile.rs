@@ -13,8 +13,11 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use qs_commands::{Command, NoParams, Outcome};
-use qs_map_light::{Light, LightError, Sampling};
-use qs_map_vis::{Mode, Vis, VisError};
+use qs_map_edit::textures::light_palette;
+use qs_map_light::{
+    CONTENT_EXTENSION, Extras, Finish, Light, LightError, Sampling, Sidecars, TEXINFO_EXTENSION,
+};
+use qs_map_vis::{Mode, Tool, Vis, VisError};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -587,6 +590,44 @@ impl<L: crate::Loader> Workbench<L> {
     }
 }
 
+/// The light task of the map whose BSP is at `bsp`, at `speed`: the BSP lit in place and its
+/// `.lit` written beside it, or taken away when the light has no colour.
+fn light<C: HasPreview>(context: &mut C, bsp: &Path, speed: LightSpeed) -> Result<(), TaskError> {
+    let read = |path: &Path| std::fs::read(path).map_err(io(path));
+    let write = |path: &Path, bytes: &[u8]| std::fs::write(path, bytes).map_err(io(path));
+    // The fast light is the quick one, without dirt and bounce (MAP-13, LIGHT-8.8); the full
+    // light is the final one (MAP-14).
+    let (sampling, finish) = match speed {
+        LightSpeed::Full => (Sampling::Extra, Finish::Final),
+        LightSpeed::Fast => (Sampling::Fast, Finish::Quick),
+    };
+    // What qbsp wrote beside the BSP for light: each texinfo's flags and each leaf's contents
+    // (LIGHT-9.8, LIGHT-9.9).
+    let beside = |extension: &str| std::fs::read(bsp.with_extension(extension)).ok();
+    let (texinfo, content) = (beside(TEXINFO_EXTENSION), beside(CONTENT_EXTENSION));
+    let sidecars = Sidecars::read(texinfo.as_deref(), content.as_deref())
+        .map_err(|file| TaskError::Light(LightError::Sidecar(file)))?;
+    // The game's palette colours what glass and a projected texture give (LIGHT-11.6).
+    let (workbench, preview) = context.workbench_and_preview();
+    let palette = light_palette(workbench.root(), preview.game_base_path().as_deref());
+    let extras = Extras {
+        palette: palette.as_deref(),
+        ..sidecars.extras()
+    };
+    let lit = Light::new(sampling)
+        .with_finish(finish)
+        .run_with(&read(bsp)?, extras)
+        .map_err(TaskError::Light)?;
+    write(bsp, &lit.bsp)?;
+    let colour = bsp.with_extension("lit");
+    match &lit.lit {
+        Some(bytes) => write(&colour, bytes)?,
+        // A `.lit` from an earlier compile would colour this one wrongly (BSP-18.2).
+        None => remove_stale(&colour)?,
+    }
+    Ok(())
+}
+
 /// Runs `task` for the map `expansions` describes; what compiling found, for a `bsp` task.
 fn run_task<C: HasPreview>(
     context: &mut C,
@@ -616,6 +657,16 @@ fn run_task<C: HasPreview>(
                     None => remove_stale(&file)?,
                 }
             }
+            // What light reads beside the BSP (QBSP-15.54, QBSP-15.55), as ericw-tools' qbsp
+            // writes it; the id dialect has none, and an earlier compile's would be read as
+            // this one's.
+            for (extension, bytes) in Sidecars::new(compiled.surfaces, compiled.leaves).files() {
+                let file = bsp.with_extension(extension);
+                match bytes {
+                    Some(bytes) => write(&file, &bytes)?,
+                    None => remove_stale(&file)?,
+                }
+            }
             Ok(Some(report))
         }
         Task::Vis { speed } => {
@@ -626,28 +677,13 @@ fn run_task<C: HasPreview>(
                 VisSpeed::Fast => Mode::Fast,
             };
             let seen = Vis::new(mode)
+                .flowing_as(Tool::EricwTools)
                 .run(&read(&bsp)?, &prt)
                 .map_err(TaskError::Vis)?;
             write(&bsp, &seen)?;
             Ok(None)
         }
-        Task::Light { speed } => {
-            let sampling = match speed {
-                LightSpeed::Full => Sampling::Extra,
-                LightSpeed::Fast => Sampling::Fast,
-            };
-            let lit = Light::new(sampling)
-                .run(&read(&bsp)?)
-                .map_err(TaskError::Light)?;
-            write(&bsp, &lit.bsp)?;
-            let colour = bsp.with_extension("lit");
-            match &lit.lit {
-                Some(bytes) => write(&colour, bytes)?,
-                // A `.lit` from an earlier compile would colour this one wrongly (BSP-18.2).
-                None => remove_stale(&colour)?,
-            }
-            Ok(None)
-        }
+        Task::Light { speed } => light(context, &bsp, *speed).map(|()| None),
         Task::Tool { program, args } => {
             let program = expand(program)?;
             let args = args

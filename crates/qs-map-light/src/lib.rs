@@ -1,18 +1,27 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The light compiler (P6-06, `docs/spec/light.md`): each face's lightmaps from the map's light
-//! entities, as id's `light` finds them, written into the BSP's lighting lump with each face's
-//! styles and offset, and coloured light in a `.lit` file beside it (LIGHT-6).
+//! The light compiler (P6-06, L-22, L-23, `docs/spec/light.md`): each face's lightmaps from
+//! the map's lights, written into the BSP's lighting lump with each face's styles and offset,
+//! and coloured light in a `.lit` file beside it.
 //!
-//! [`Light::run`] takes the BSP and gives the lit BSP, the `.lit` when a light is coloured, and
-//! the warnings `light` prints. The fast mode is `light`'s default, one sample per luxel; the
-//! full mode is its `-extra`, four (LIGHT-1.3). Faces are lit on every thread the machine has
-//! and written in face order, so the result is the one a single thread gives (LIGHT-1.5).
+//! [`Light::run`] takes the BSP and gives the lit BSP, the `.lit` when the light has a colour,
+//! and the warnings `light` prints. It has `qs-map-bsp`'s two dialects (LIGHT-1.11):
 //!
-//! Nothing is ported: id's `light` is not a portable upstream (`docs/porting.md`), so the code
-//! is written from the spec, which was written from its source, read and run as an oracle.
+//! - The id dialect is id's `light` (LIGHT-1 to LIGHT-6), its lightmaps held to it byte for
+//!   byte: this crate's `entities`, `face`, `trace` and `lump` modules, written from the spec,
+//!   which was written from id's source.
+//! - The extended dialect, the default, is ericw-tools' `light` (LIGHT-8 to LIGHT-20):
+//!   sunlight, the sky dome, surface lights, minimum light, phong shading, dirt and bounce,
+//!   with shadows cast by brush models, fences and glass. It is the `extended` module, ported
+//!   from ericw-tools' `light/` (ADR-0025, ADR-0027). [`Light::run_with`] gives it what a BSP
+//!   compiler writes beside the BSP for light ([`Sidecars`]) and the game's palette.
+//!
+//! The fast mode takes one sample per luxel; the full mode, `-extra`, four (LIGHT-1.3,
+//! LIGHT-8.2). Faces are lit on every thread the machine has and written in face order, so
+//! the result is the one a single thread gives (LIGHT-1.5).
 
 mod entities;
+mod extended;
 mod face;
 mod lump;
 mod preview;
@@ -21,7 +30,7 @@ mod trace;
 use core::fmt;
 
 use qs_bsp::{Bsp, BspLoader, BspVersion};
-pub use qs_map_bsp::Dialect;
+pub use qs_map_bsp::{Dialect, LeafKind, SurfaceFlags};
 
 use crate::entities::Entities;
 pub use crate::face::FaceId;
@@ -34,6 +43,7 @@ pub use crate::entities::{
     LIGHT_DEFAULT_LEVEL, LIGHT_FIRST_SWITCHED_STYLE, LIGHT_MAX_MAP_ENTITIES,
     LIGHT_MAX_MAP_ENTSTRING, LIGHT_MAX_SWITCHED,
 };
+pub use crate::extended::{CONTENT_EXTENSION, Extras, SidecarFile, Sidecars, TEXINFO_EXTENSION};
 pub use crate::lump::LIGHT_MAX_MAP_LIGHTING;
 pub use crate::preview::{Cone, LightPreview};
 
@@ -54,6 +64,28 @@ pub enum Sampling {
     Fast,
     /// Four, each two by two averaged: `light -extra`.
     Extra,
+}
+
+/// Which C library's `rand` scatters a sun's penumbra and a light's `_deviance`
+/// (LIGHT-14.5): ericw-tools draws from the library it is built with.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Jitter {
+    /// glibc's, as ericw-tools draws on Linux.
+    #[default]
+    Glibc,
+    /// The BSDs' and macOS's.
+    Bsd,
+}
+
+/// How much of the extended dialect's lighting is done (LIGHT-8.8, MAP-13, MAP-14).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Finish {
+    /// All of it: the final light.
+    #[default]
+    Final,
+    /// The quick light, for playing a map at once: everything but dirt and bounce, the two
+    /// that cost the most.
+    Quick,
 }
 
 /// `scaledist`, `scalecos` and `rangescale` (LIGHT-1.2).
@@ -92,7 +124,7 @@ pub enum LightError {
         /// The token found.
         found: Vec<u8>,
     },
-    /// `LoadEntities: MAX_MAP_ENTITIES`, in the id dialect (LIGHT-2.7, LIGHT-1.9).
+    /// `LoadEntities: MAX_MAP_ENTITIES`, in the id dialect (LIGHT-2.7, LIGHT-1.11).
     TooManyEntities,
     /// `LoadEntities: EOF without closing brace` (LIGHT-2.7).
     Unclosed,
@@ -118,14 +150,39 @@ pub enum LightError {
         face: FaceId,
     },
     /// `GetFileSpace: overrun` in the id dialect; in the extended one, a lightmap whose offset
-    /// does not fit `lightofs` (LIGHT-1.5, LIGHT-1.9).
+    /// does not fit `lightofs` (LIGHT-1.5, LIGHT-1.11).
     Overrun,
-    /// `Entity text too long`, in the id dialect (LIGHT-1.6, LIGHT-1.9).
+    /// `Entity text too long`, in the id dialect (LIGHT-1.6, LIGHT-1.11).
     EntityTextTooLong,
     /// A key and value too long for `light`'s 128-byte line, in the id dialect (LIGHT-2.8).
     PairTooLong {
         /// The key.
         key: String,
+    },
+    /// `WorldEnt() failed to get worldspawn`: the first entity is not the worldspawn, in the
+    /// extended dialect (LIGHT-8.5).
+    NoWorldspawn,
+    /// `Too many unique light targetnames (max=<n>)`, in the extended dialect (LIGHT-10.2).
+    TooManyStyles {
+        /// The first style that may not be given.
+        max: i32,
+    },
+    /// `Couldn't find entity for model *<n>`, in the extended dialect (LIGHT-9.7).
+    NoEntityForModel {
+        /// The model.
+        model: usize,
+    },
+    /// A file beside the BSP, `<map>.texinfo.json` or `<map>.content.json`, is not what
+    /// ericw-tools' qbsp writes (LIGHT-9.8, LIGHT-9.9).
+    Sidecar(SidecarFile),
+    /// `lightmap scale is 0 or negative`: the world's `_lightmap_scale`, in the extended
+    /// dialect (LIGHT-12.9).
+    LightmapScale,
+    /// `Unsupported fov: <n>. Expected a value in [1..179] range.`: a light's `_project_fov`,
+    /// in the extended dialect (LIGHT-10.11).
+    ProjectFov {
+        /// The light's entity.
+        entity: EntityId,
     },
     /// The BSP cannot be read or is a format `light` does not write.
     Format,
@@ -162,6 +219,26 @@ impl fmt::Display for LightError {
             Self::PairTooLong { key } => {
                 write!(f, "the pair of key {key} is too long for id's light")
             }
+            Self::NoWorldspawn => f.write_str("WorldEnt() failed to get worldspawn"),
+            Self::TooManyStyles { max } => {
+                write!(f, "Too many unique light targetnames (max={max})")
+            }
+            Self::NoEntityForModel { model } => {
+                write!(f, "Couldn't find entity for model *{model}.")
+            }
+            Self::Sidecar(SidecarFile::Texinfo) => {
+                f.write_str("the .texinfo.json beside the BSP cannot be read")
+            }
+            Self::Sidecar(SidecarFile::Content) => {
+                f.write_str("the .content.json beside the BSP cannot be read")
+            }
+            Self::LightmapScale => f.write_str("lightmap scale is 0 or negative"),
+            Self::ProjectFov { entity } => write!(
+                f,
+                "Unsupported fov of the light that is entity {}. Expected a value in [1..179] \
+                 range.",
+                entity.index()
+            ),
             Self::Format => f.write_str("the BSP cannot be lit"),
             Self::Thread => f.write_str("a light thread could not be run"),
         }
@@ -182,11 +259,61 @@ pub enum LightWarning {
     },
     /// `WARNING: Too many light styles on a face` (LIGHT-4.5).
     TooManyStyles,
-    /// In the extended dialect, a face `light` would stop on, left unlit (LIGHT-1.10).
-    Unlit {
-        /// What `light` would have stopped with.
-        error: LightError,
+    /// `WARNING: worldspawn key <key> has invalid value`, in the extended dialect
+    /// (LIGHT-9.4).
+    InvalidWorldKey {
+        /// The key.
+        key: String,
     },
+    /// `WARNING: light has "_project_texture" "<name>", but this texture was not found`, in
+    /// the extended dialect (LIGHT-10.11).
+    ProjectTextureMissing {
+        /// The texture's name.
+        texture: String,
+    },
+    /// `WARNING: <entity> has empty key/value "<key>" "<value>"`, in the extended dialect
+    /// (LIGHT-9.10).
+    EmptyKeyValue {
+        /// The entity's classname.
+        classname: String,
+        /// The key.
+        key: String,
+        /// Its value.
+        value: String,
+    },
+    /// `WARNING: lightmap_scale should be _lightmap_scale` (LIGHT-9.10).
+    LightmapScaleKey,
+    /// `WARNING: _falloff is currently only supported on linear (delay 0) lights`
+    /// (LIGHT-9.10).
+    FalloffNotLinear {
+        /// The light's classname.
+        classname: String,
+        /// Its origin.
+        at: String,
+    },
+    /// `WARNING: unknown delay <n> on <class> at [<origin>]` (LIGHT-9.10).
+    UnknownDelay {
+        /// The light's classname.
+        classname: String,
+        /// Its origin.
+        at: String,
+    },
+    /// `WARNING: sun missing target, entity origin used.` (LIGHT-9.10).
+    SunMissingTarget,
+    /// `WARNING: couldn't nudge light out of solid at <origin>` (LIGHT-9.10).
+    LightInSolid {
+        /// The light's origin.
+        at: String,
+    },
+    /// `WARNING: no faces found with texture <name> (qbsp may have been run with .wad's
+    /// missing?)` (LIGHT-9.10).
+    SurfaceTextureMissing {
+        /// The `_surface` texture's name.
+        texture: String,
+    },
+    /// `WARNING: Extended texinfo flags in <file> does not match bsp, ignoring`, or the leaf
+    /// contents' file (LIGHT-9.11).
+    SidecarMismatch(SidecarFile),
 }
 
 impl fmt::Display for LightWarning {
@@ -200,7 +327,51 @@ impl fmt::Display for LightWarning {
                 "WARNING: entity at ({x},{y},{z}) ({classname}) has unmatched target"
             ),
             Self::TooManyStyles => f.write_str("WARNING: Too many light styles on a face"),
-            Self::Unlit { error } => write!(f, "WARNING: {error}; the face is left unlit"),
+            Self::InvalidWorldKey { key } => {
+                write!(f, "WARNING: worldspawn key {key} has invalid value")
+            }
+            Self::ProjectTextureMissing { texture } => write!(
+                f,
+                "WARNING: light has \"_project_texture\" \"{texture}\", but this texture was not \
+                 found"
+            ),
+            Self::EmptyKeyValue {
+                classname,
+                key,
+                value,
+            } => write!(
+                f,
+                "WARNING: {classname} has empty key/value \"{key}\" \"{value}\""
+            ),
+            Self::LightmapScaleKey => {
+                f.write_str("WARNING: lightmap_scale should be _lightmap_scale")
+            }
+            Self::FalloffNotLinear { classname, at } => write!(
+                f,
+                "WARNING: _falloff is currently only supported on linear (delay 0) lights: \
+                 {classname} at [{at}]"
+            ),
+            Self::UnknownDelay { classname, at } => {
+                write!(f, "WARNING: unknown delay on {classname} at [{at}]")
+            }
+            Self::SunMissingTarget => {
+                f.write_str("WARNING: sun missing target, entity origin used.")
+            }
+            Self::LightInSolid { at } => {
+                write!(f, "WARNING: couldn't nudge light out of solid at {at}")
+            }
+            Self::SurfaceTextureMissing { texture } => write!(
+                f,
+                "WARNING: no faces found with texture {texture} (qbsp may have been run with \
+                 .wad's missing?)"
+            ),
+            Self::SidecarMismatch(SidecarFile::Texinfo) => f.write_str(
+                "WARNING: Extended texinfo flags in the .texinfo.json do not match the bsp, \
+                 ignoring",
+            ),
+            Self::SidecarMismatch(SidecarFile::Content) => {
+                f.write_str("WARNING: the .content.json does not match the bsp's leaves, ignoring")
+            }
         }
     }
 }
@@ -224,6 +395,8 @@ pub struct Light {
     sampling: Sampling,
     scale: Scale,
     dialect: Dialect,
+    jitter: Jitter,
+    finish: Finish,
 }
 
 impl Light {
@@ -234,7 +407,22 @@ impl Light {
             sampling,
             scale: Scale::default(),
             dialect: Dialect::default(),
+            jitter: Jitter::default(),
+            finish: Finish::default(),
         }
+    }
+
+    /// The compiler doing as much of the extended dialect's lighting as `finish` says
+    /// (LIGHT-8.8).
+    #[must_use]
+    pub const fn with_finish(self, finish: Finish) -> Self {
+        Self { finish, ..self }
+    }
+
+    /// The compiler scattering by `jitter`'s sequence (LIGHT-14.5).
+    #[must_use]
+    pub const fn with_jitter(self, jitter: Jitter) -> Self {
+        Self { jitter, ..self }
     }
 
     /// The compiler with `scale` instead of the defaults.
@@ -243,7 +431,7 @@ impl Light {
         Self { scale, ..self }
     }
 
-    /// The compiler in `dialect`: id's fixed tables, or only the format's limits (LIGHT-1.9).
+    /// The compiler in `dialect`: id's fixed tables, or only the format's limits (LIGHT-1.11).
     #[must_use]
     pub const fn with_dialect(self, dialect: Dialect) -> Self {
         Self { dialect, ..self }
@@ -256,11 +444,24 @@ impl Light {
     /// The [`LightError`] `light` stops with, or [`LightError::Format`] for a BSP that cannot
     /// be read.
     pub fn run(&self, bsp: &[u8]) -> Result<Lighted, LightError> {
+        self.run_with(bsp, Extras::default())
+    }
+
+    /// The BSP `bsp` lit, the extended dialect with what `extras` gives it besides: the
+    /// texinfos' lighting flags from the BSP compiler, and the palette (LIGHT-8, LIGHT-9.8).
+    ///
+    /// # Errors
+    ///
+    /// As [`Light::run`].
+    pub fn run_with(&self, bsp: &[u8], extras: Extras<'_>) -> Result<Lighted, LightError> {
         // The faces' old lighting is not read: `light` overwrites it (LIGHT-1.1).
         let unlit = lump::without_lighting(bsp)?;
         let read = Bsp::read(&unlit, BspLoader::FitzQuake).map_err(|_| LightError::Format)?;
         if read.version == BspVersion::Valve {
             return Err(LightError::Format);
+        }
+        if self.dialect == Dialect::Extended {
+            return self.run_extended(bsp, &read, extras);
         }
         let mut warnings = Vec::new();
         let entities = Entities::read(read.entity_lump, self.dialect, &mut warnings)?;
@@ -277,7 +478,6 @@ impl Light {
             sampling: self.sampling,
             scale: self.scale,
             colour,
-            dialect: self.dialect,
         };
         let faces = scene.lit_faces()?;
         let mut lit = Vec::with_capacity(faces.len());

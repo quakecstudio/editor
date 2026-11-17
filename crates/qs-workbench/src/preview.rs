@@ -29,6 +29,7 @@ use crate::map_profile::{MapChooseProfile, MapProfiles, MapRunProfile};
 use crate::{GameFolders, HasWorkbench, LiveMap, ModuleBuilt, Workbench, WorkbenchError};
 use qs_map::Entity;
 use qs_map_edit::{LiveChange, register_map_game};
+use qs_map_light::Sidecars;
 
 pub mod debug;
 pub mod dock;
@@ -879,13 +880,14 @@ impl Preview {
     }
 
     /// Starts the full compile of the map `map` the game plays from `target`, `bsp` the fast
-    /// compile's BSP before its light and `portals` its portal file, to be swapped in when it is
+    /// compile's BSP before its light, `portals` its portal file, `sidecars` what the compile
+    /// tells light and `palette` the game's, to be swapped in when it is
     /// done (P7-02); one asked for while another runs waits for it, the other's result dropped.
     pub(crate) fn start_full_build(
         &mut self,
         map: String,
         target: PathBuf,
-        (bsp, portals): (Vec<u8>, Vec<u8>),
+        (bsp, portals, sidecars, palette): (Vec<u8>, Vec<u8>, Sidecars, Option<Vec<u8>>),
     ) {
         let edits = self.live.as_ref().map_or(0, |live| live.edits);
         let start = Start {
@@ -893,6 +895,8 @@ impl Preview {
             target,
             bsp,
             portals,
+            sidecars,
+            palette,
             edits,
         };
         if self.full_build.is_some() {

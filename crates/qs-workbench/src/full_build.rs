@@ -15,8 +15,8 @@ use std::sync::mpsc::{self, Receiver, TryRecvError};
 
 use qs_bsp::{Bsp, BspError, BspLoader, Submodel};
 use qs_map::{MapError, MapFile};
-use qs_map_light::{Light, LightError, Sampling};
-use qs_map_vis::{Mode, Vis, VisError};
+use qs_map_light::{Extras, Light, LightError, Sampling, Sidecars};
+use qs_map_vis::{Mode, Tool, Vis, VisError};
 
 /// Why a full compile did not reach the game.
 #[derive(Debug)]
@@ -80,6 +80,10 @@ pub(crate) struct Start {
     pub(crate) bsp: Vec<u8>,
     /// Its portal file.
     pub(crate) portals: Vec<u8>,
+    /// What the compile tells light of each face and leaf (QBSP-15.54, QBSP-15.55).
+    pub(crate) sidecars: Sidecars,
+    /// The game's palette, for the colour of glass and projected textures (LIGHT-11.6).
+    pub(crate) palette: Option<Vec<u8>>,
     /// How many live edits the game had been sent when it started.
     pub(crate) edits: u64,
 }
@@ -110,13 +114,19 @@ impl FullBuild {
             target,
             bsp,
             portals,
+            sidecars,
+            palette,
             edits,
         } = start;
         let played = contents(&target);
         let (send, done) = mpsc::channel();
         let side = side_file(&target);
         std::thread::spawn(move || {
-            let built = full(&bsp, &portals, &side);
+            let extras = Extras {
+                palette: palette.as_deref(),
+                ..sidecars.extras()
+            };
+            let built = full(&bsp, &portals, extras, &side);
             // The preview may have dropped the build: nothing waits for it then.
             drop(send.send(built));
         });
@@ -169,13 +179,14 @@ fn contents(path: &Path) -> Option<u64> {
 }
 
 /// `bsp` with full vis, then full light, written to `side`, with its brush models.
-fn full(bsp: &[u8], portals: &[u8], side: &Path) -> Built {
+fn full(bsp: &[u8], portals: &[u8], extras: Extras<'_>, side: &Path) -> Built {
     let portals = String::from_utf8_lossy(portals);
     let seen = Vis::new(Mode::default())
+        .flowing_as(Tool::EricwTools)
         .run(bsp, &portals)
         .map_err(FullBuildError::Vis)?;
     let lit = Light::new(Sampling::Extra)
-        .run(&seen)
+        .run_with(&seen, extras)
         .map_err(FullBuildError::Light)?;
     let models = brush_models(&lit.bsp)?;
     std::fs::write(side, &lit.bsp).map_err(|error| FullBuildError::Write {

@@ -73,7 +73,12 @@ impl Winding {
     /// Its area, `area` (QBSP-15.5): half the length of each fan triangle's cross product from
     /// the first point, summed.
     pub(crate) fn area(&self) -> f64 {
-        let Some((&first, rest)) = self.0.split_first() else {
+        Self::area_of(&self.0)
+    }
+
+    /// [`Self::area`] of the polygon of `points`.
+    pub(crate) fn area_of(points: &[Vec3]) -> f64 {
+        let Some((&first, rest)) = points.split_first() else {
             return 0.0;
         };
         rest.windows(2)
@@ -277,6 +282,29 @@ impl Winding {
                 let (mut front, mut back) = (Vec::with_capacity(room), Vec::with_capacity(room));
                 self.cut_into(plane, on_epsilon, [Some(&mut front), Some(&mut back)]);
                 (Some(Self(front)), Some(Self(back)))
+            }
+        }
+    }
+
+    /// The points of the parts [`Winding::clip`] gives, in front and behind, without a
+    /// winding made of either: the winding's own when it lies wholly on a side, else in
+    /// `scratch`.
+    pub(crate) fn parts<'a>(
+        &'a self,
+        plane: Plane,
+        on_epsilon: f64,
+        keep_on: KeepOn,
+        scratch: &'a mut [Vec<Vec3>; 2],
+    ) -> [Option<&'a [Vec3]>; 2] {
+        match self.lie(plane, on_epsilon, keep_on) {
+            Lie::Whole(Side::Back) => [None, Some(&self.0)],
+            Lie::Whole(_) => [Some(&self.0), None],
+            Lie::Across => {
+                let [front, back] = scratch;
+                front.clear();
+                back.clear();
+                self.cut_into(plane, on_epsilon, [Some(&mut *front), Some(&mut *back)]);
+                [Some(front.as_slice()), Some(back.as_slice())]
             }
         }
     }

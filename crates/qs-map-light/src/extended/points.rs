@@ -1,0 +1,603 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 1996-1997  Id Software, Inc.
+// Copyright (C) 2026 QuakeC Studio contributors
+//
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: light/ltface.cc, CalcPoints, CalcPointNormal, PositionSamplePointOnFace, Lightsurf_Init
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: common/bsputils.cc, WorldToTexSpace, TexSpaceToWorld, faceextents_t, LMCoordToWorld, worldToLMCoord
+
+//! A face's sample points (LIGHT-12): its lightmap's extents, where each sample lies, which
+//! face it is really on, its normal, and whether it is hidden in solid.
+
+use std::cmp::Ordering;
+
+use super::math::count_of;
+use crate::extended::keys::{CHANNEL_DEFAULT, Dirt};
+use crate::extended::math::{
+    Aabb, POINT_EQUAL_EPSILON, Plane, add, closest_on_boundary, distance, dot, edge_plane,
+    fraction_of_line, inside_distance, interpolated_normal, is_inside, length, normalize, scale,
+    sub,
+};
+use crate::extended::phong::Smoothing;
+use crate::extended::scene::{Map, Skin};
+use crate::extended::vis::leaf_at;
+use crate::face::{FaceId, float_of};
+use crate::{AXES, Sampling, Vec3, to_f32};
+
+/// `sampleOffPlaneDist`: how far in front of its face a sample lies (LIGHT-12.3).
+const OFF_PLANE: f32 = 1.0;
+/// How far from [`OFF_PLANE`] a point may be and still be placed on a face.
+const OFF_PLANE_SLACK: f32 = 0.1;
+/// How many faces away from its own a sample may be placed (LIGHT-12.5).
+const MAX_HOPS: usize = 3;
+/// How far a sample in solid is moved on each axis to find open space (LIGHT-12.7).
+const NUDGE: f32 = 0.5;
+/// The numbers of a row of a map from one space to another: three and an offset.
+const ROW: usize = 4;
+/// Where a row keeps its offset.
+const OFFSET: usize = 3;
+/// The rows of a map from one space to another, each three numbers and an offset.
+type Rows = [[f32; ROW]; AXES];
+/// Half, of a box's size and of a luxel.
+const HALF: f32 = 0.5;
+
+/// One sample of a face (`sample_data_t`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Sample {
+    pub(crate) point: Vec3,
+    pub(crate) normal: Vec3,
+    /// Whether it is hidden: in solid, or off every face.
+    pub(crate) occluded: bool,
+    /// How much of the sky above it is closed off, 0 to 1 (LIGHT-19).
+    pub(crate) occlusion: f32,
+}
+
+impl Sample {
+    /// Where `samples` are, taken together: the mean of those that are not hidden, and of
+    /// their normals; hidden when each of them is (LIGHT-20.7).
+    fn together<'a>(samples: impl Iterator<Item = &'a Self>) -> Self {
+        let (mut point, mut normal, mut seen) = ([0.0; AXES], [0.0; AXES], 0.0_f32);
+        for sample in samples.filter(|sample| !sample.occluded) {
+            point = add(point, sample.point);
+            normal = add(normal, sample.normal);
+            seen += 1.0;
+        }
+        Self {
+            point: scale(point, 1.0 / seen.max(1.0)),
+            normal: normalize(normal),
+            occluded: seen == 0.0,
+            occlusion: 0.0,
+        }
+    }
+}
+
+/// The places, among samples `width` across, of the samples of luxel `luxel`, `per_luxel` of
+/// them each way.
+fn luxel_samples(
+    luxel: usize,
+    width: usize,
+    per_luxel: usize,
+) -> impl Iterator<Item = usize> + use<> {
+    let across = width.checked_div(per_luxel).unwrap_or(0);
+    let (i, j) = (
+        luxel.checked_rem(across).unwrap_or(0),
+        luxel.checked_div(across).unwrap_or(0),
+    );
+    let first = j
+        .saturating_mul(per_luxel)
+        .saturating_mul(width)
+        .saturating_add(i.saturating_mul(per_luxel));
+    (0..per_luxel).flat_map(move |dt| {
+        (0..per_luxel).map(move |ds| {
+            first
+                .saturating_add(dt.saturating_mul(width))
+                .saturating_add(ds)
+        })
+    })
+}
+
+/// Where a sample was placed (`position_t`).
+struct Placed {
+    point: Vec3,
+    /// Its normal; none for a sample that could not be placed.
+    normal: Option<Vec3>,
+}
+
+impl Placed {
+    const fn hidden(point: Vec3) -> Self {
+        Self {
+            point,
+            normal: None,
+        }
+    }
+}
+
+/// A face's lightmap in the world (`faceextents_t`, LIGHT-12.1).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Extents {
+    /// The luxel the lightmap starts at on each axis.
+    mins: [i32; 2],
+    /// Its size less one on each axis.
+    pub(crate) extents: [i32; 2],
+    /// The texture's axes over the plane's normal, each with its offset: world to texture
+    /// space.
+    to_texture: Rows,
+    /// Texture space to the world: each row a world axis.
+    to_world: Rows,
+    /// The middle and radius of the sphere around the face.
+    pub(crate) origin: Vec3,
+    pub(crate) radius: f32,
+    pub(crate) bounds: Aabb,
+    /// The size of a luxel in texels, 16 unless the world says (LIGHT-12.9).
+    luxel: f32,
+}
+
+/// The most luxels a lightmap has on an axis (LIGHT-12.8): sixteen times what id's engine
+/// loads, `MAXDIMENSION` in ericw-tools' `bsputils.hh`.
+const MAX_LIGHTMAP: u16 = 4096;
+
+impl Extents {
+    /// The extents of a face with `points` on `plane`, textured by `vecs`; none when the
+    /// texture's axes do not span the face (`Bad texture axes`) or its lightmap would be past
+    /// [`MAX_LIGHTMAP`] luxels on an axis (LIGHT-12.8).
+    pub(crate) fn new(
+        points: &[Vec3],
+        plane: Plane,
+        vecs: [[f32; 4]; 2],
+        luxel: f32,
+    ) -> Option<Self> {
+        let [s, t] = vecs;
+        let n = plane.normal;
+        let to_texture = [s, t, [n[0], n[1], n[2], -plane.dist]];
+        let to_world = inverse(to_texture)?;
+        let first = points.first().copied()?;
+        let mut bounds = Aabb::at(first);
+        let mut low = [f64::INFINITY; 2];
+        let mut high = [f64::NEG_INFINITY; 2];
+        for &point in points {
+            bounds = bounds.with(point);
+            for ((axis, low), high) in vecs.iter().zip(&mut low).zip(&mut high) {
+                // The texture coordinate is worked in `double` and kept as a float.
+                let coordinate = f64::from(to_f32(
+                    f64::from(axis[0]) * f64::from(point[0])
+                        + f64::from(axis[1]) * f64::from(point[1])
+                        + f64::from(axis[2]) * f64::from(point[2])
+                        + f64::from(axis[OFFSET]),
+                ));
+                if !coordinate.is_finite() {
+                    return None;
+                }
+                *low = low.min(coordinate);
+                *high = high.max(coordinate);
+            }
+        }
+        let texels = f64::from(luxel);
+        let floor = low.map(|c| (c / texels).floor());
+        let ceil = high.map(|c| (c / texels).ceil());
+        // LIGHT-12.8: a lightmap that is not a number of luxels, or is past any a map has, is
+        // not made.
+        if floor.iter().zip(&ceil).any(|(floor, ceil)| {
+            (ceil - floor).partial_cmp(&f64::from(MAX_LIGHTMAP)) != Some(Ordering::Less)
+        }) {
+            return None;
+        }
+        let half = scale(sub(bounds.maxs, bounds.mins), HALF);
+        Some(Self {
+            mins: floor.map(whole),
+            extents: [whole(ceil[0] - floor[0]), whole(ceil[1] - floor[1])],
+            to_texture,
+            to_world,
+            origin: add(bounds.mins, half),
+            radius: length(half),
+            bounds,
+            luxel,
+        })
+    }
+
+    /// The lightmap's width in luxels.
+    pub(crate) fn width(&self) -> usize {
+        usize::try_from(self.extents[0].saturating_add(1)).unwrap_or(0)
+    }
+
+    /// The lightmap's height in luxels.
+    pub(crate) fn height(&self) -> usize {
+        usize::try_from(self.extents[1].saturating_add(1)).unwrap_or(0)
+    }
+
+    /// `LMCoordToWorld`: the point of the face's plane at lightmap coordinates `s` and `t`.
+    fn world_at(&self, s: f32, t: f32) -> Vec3 {
+        let texel = [
+            self.luxel * (float_of(self.mins[0]) + s),
+            self.luxel * (float_of(self.mins[1]) + t),
+        ];
+        self.to_world
+            .map(|row| row[0] * texel[0] + row[1] * texel[1] + row[OFFSET])
+    }
+
+    /// `worldToLMCoord`: the lightmap coordinates of `point`.
+    fn luxel_at(&self, point: Vec3) -> [f32; 2] {
+        let texel =
+            |row: [f32; 4]| row[0] * point[0] + row[1] * point[1] + row[2] * point[2] + row[OFFSET];
+        [
+            texel(self.to_texture[0]) / self.luxel - float_of(self.mins[0]),
+            texel(self.to_texture[1]) / self.luxel - float_of(self.mins[1]),
+        ]
+    }
+}
+
+/// A whole number held in a `double`, as an `int`.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "spec LIGHT-12.1: ericw-tools casts the floor and ceiling of the extents to int"
+)]
+const fn whole(value: f64) -> i32 {
+    value as i32
+}
+
+/// The inverse of the map whose rows are `rows`, each three numbers and an offset, worked in
+/// `double`; none when the rows do not span space.
+fn inverse(rows: Rows) -> Option<Rows> {
+    let m = rows.map(|row| row.map(f64::from));
+    let [a, b, c] = m;
+    let cofactor = |p: [f64; ROW], q: [f64; ROW], i: usize, j: usize| -> Option<f64> {
+        Some(p.get(i)? * q.get(j)? - p.get(j)? * q.get(i)?)
+    };
+    // The columns of the inverse of the three by three part are the cross products of its
+    // rows, over the determinant.
+    let cross = |p: [f64; ROW], q: [f64; ROW]| -> Option<[f64; 3]> {
+        Some([
+            cofactor(p, q, 1, 2)?,
+            cofactor(p, q, 2, 0)?,
+            cofactor(p, q, 0, 1)?,
+        ])
+    };
+    let (bc, ca, ab) = (cross(b, c)?, cross(c, a)?, cross(a, b)?);
+    let det = a[0] * bc[0] + a[1] * bc[1] + a[2] * bc[2];
+    if det == 0.0 {
+        return None;
+    }
+    let mut out = [[0.0; ROW]; AXES];
+    for (axis, row) in out.iter_mut().enumerate() {
+        let (Some(x), Some(y), Some(z)) = (bc.get(axis), ca.get(axis), ab.get(axis)) else {
+            continue;
+        };
+        let (x, y, z) = (x / det, y / det, z / det);
+        *row = [
+            to_f32(x),
+            to_f32(y),
+            to_f32(z),
+            to_f32(-(x * a[OFFSET] + y * b[OFFSET] + z * c[OFFSET])),
+        ];
+    }
+    Some(out)
+}
+
+/// A face readied for lighting (`lightsurf_t`).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Patch {
+    pub(crate) face: FaceId,
+    pub(crate) model: usize,
+    /// The face's plane, moved with its model.
+    pub(crate) plane: Plane,
+    pub(crate) extents: Extents,
+    /// The samples across and down: the lightmap's size times the samples a luxel takes.
+    pub(crate) width: usize,
+    pub(crate) height: usize,
+    pub(crate) samples: Vec<Sample>,
+    /// With more than one sample a luxel each way: for each luxel, where its samples that are
+    /// not hidden are, taken together, where
+    /// the light that bounces is gathered for the luxel's samples (LIGHT-20.7).
+    pub(crate) middles: Vec<Sample>,
+    /// The samples a luxel takes each way.
+    pub(crate) per_luxel: usize,
+    pub(crate) minlight: f32,
+    /// Whether the minimum light is mottled (LIGHT-17.6).
+    pub(crate) mottle: bool,
+    /// What the face's minimum light as a surface light is scaled by (LIGHT-16.5).
+    pub(crate) surflight_minlight_scale: f32,
+    pub(crate) minlight_color: Vec3,
+    pub(crate) maxlight: f32,
+    pub(crate) lightcolorscale: f32,
+    /// Whether the face takes no dirt.
+    pub(crate) nodirt: bool,
+    /// Whether its normals are smoothed.
+    pub(crate) curved: bool,
+    /// Whether it is lit from both sides.
+    pub(crate) twosided: bool,
+    pub(crate) channels: i32,
+    /// The leaves the face is in and what they see between them, when the BSP has
+    /// visibility (LIGHT-10.10).
+    pub(crate) leaves: Vec<usize>,
+    pub(crate) seen: Vec<u8>,
+}
+
+impl Sampling {
+    /// The samples a luxel takes on each axis (LIGHT-8.2).
+    pub(crate) const fn per_luxel(self) -> usize {
+        match self {
+            Self::Fast => 1,
+            Self::Extra => 2,
+        }
+    }
+}
+
+impl Patch {
+    /// The samples of luxel `luxel`, by their places in [`Patch::samples`].
+    pub(crate) fn samples_of(&self, luxel: usize) -> impl Iterator<Item = usize> + use<> {
+        luxel_samples(luxel, self.width, self.per_luxel)
+    }
+
+    /// `Lightsurf_Init` and `CalcPoints`: the face numbered `face` readied, with its samples;
+    /// none for a face with no lightmap, fewer than three edges, no model or bad texture
+    /// axes (LIGHT-12).
+    pub(crate) fn new(
+        map: &Map<'_>,
+        smoothing: &Smoothing,
+        face_id: FaceId,
+        sampling: Sampling,
+    ) -> Option<Self> {
+        let face_index = face_id.index();
+        let face = map.face(face_id)?;
+        let model_index = map.model_of(face_index)?;
+        let model = map.models.get(model_index)?;
+        if face.numedges < AXES || !map.is_lightmapped(face) {
+            return None;
+        }
+        let flags = map.flags_of(face);
+        let liquid = map.skin(face) == Skin::Liquid;
+        let world = &map.world;
+        let keys = &model.keys;
+        let minlight = if keys.minlight.is_changed() {
+            keys.minlight.get()
+        } else {
+            flags.minlight.unwrap_or_else(|| world.minlight.get())
+        };
+        let minlight_color = if keys.minlight_color.is_changed() {
+            keys.minlight_color.get()
+        } else if flags.minlight_color == [0; AXES] {
+            world.minlight_color.get()
+        } else {
+            flags.minlight_color.map(f32::from)
+        };
+        let plane = map.plane(face);
+        let texinfo = map.bsp.texinfo.get(face.texinfo)?;
+        let shape = smoothing.shapes.get(face_index)?;
+        let mut extents = Extents::new(&shape.points, plane, texinfo.vecs, world.luxel)?;
+        let curved = flags.phong_angle != 0.0 || flags.phong_group != 0;
+        let extra = sampling.per_luxel();
+        let (width, height) = (
+            extents.width().saturating_mul(extra),
+            extents.height().saturating_mul(extra),
+        );
+        let step = 1.0 / count_of(extra);
+        let start = -HALF + HALF / count_of(extra);
+        let phong = curved && world.phong.get();
+        let placer = Placer {
+            map,
+            smoothing,
+            extents: &extents,
+            offset: model.offset,
+            phong,
+        };
+        let mut samples = Vec::with_capacity(width.saturating_mul(height));
+        for t in 0..height {
+            for s in 0..width {
+                let on_plane =
+                    extents.world_at(start + count_of(s) * step, start + count_of(t) * step);
+                let placed = placer.place(face_index, add(on_plane, plane.normal), 0);
+                samples.push(Sample {
+                    point: add(placed.point, model.offset),
+                    normal: placed.normal.unwrap_or_default(),
+                    occluded: placed.normal.is_none(),
+                    occlusion: 0.0,
+                });
+            }
+        }
+        // LIGHT-20.7: where each luxel's samples are, taken together.
+        let middles = if extra > 1 {
+            (0..extents.width().saturating_mul(extents.height()))
+                .map(|luxel| {
+                    Sample::together(
+                        luxel_samples(luxel, width, extra).filter_map(|at| samples.get(at)),
+                    )
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        // `CalcPvs`: a face of the world is in the leaves that list it, a brush model's in
+        // the leaves its samples are in.
+        let (mut leaves, mut seen) = (Vec::new(), Vec::new());
+        if let Some(visibility) = &map.visibility {
+            if model_index == 0 {
+                leaves = visibility.leaves_of(face_index).to_vec();
+            } else {
+                for sample in &samples {
+                    if let Some(leaf) = leaf_at(map.bsp, sample.point)
+                        && !leaves.contains(&leaf)
+                    {
+                        leaves.push(leaf);
+                    }
+                }
+            }
+            seen = visibility.seen_from(map.bsp, &leaves);
+        }
+        // The plane and the sphere follow the model only now: the points were found without.
+        let moved = add(scale(plane.normal, plane.dist), model.offset);
+        extents.origin = add(extents.origin, model.offset);
+        extents.bounds = extents.bounds.moved(model.offset);
+        Some(Self {
+            face: face_id,
+            model: model_index,
+            plane: Plane {
+                normal: plane.normal,
+                dist: dot(plane.normal, moved),
+            },
+            extents,
+            width,
+            height,
+            samples,
+            middles,
+            per_luxel: extra,
+            minlight,
+            surflight_minlight_scale: flags.surflight_minlight_scale.unwrap_or(1.0),
+            // The model's key, else the world's.
+            mottle: if keys.minlight_mottle.is_changed() {
+                keys.minlight_mottle.get()
+            } else {
+                world.minlight_mottle.get()
+            },
+            minlight_color,
+            maxlight: if keys.maxlight.is_changed() {
+                keys.maxlight.get()
+            } else {
+                flags.maxlight
+            },
+            lightcolorscale: if keys.lightcolorscale.is_changed() {
+                keys.lightcolorscale.get()
+            } else {
+                flags.lightcolorscale
+            },
+            // Lit liquids never take dirt.
+            nodirt: liquid
+                || if keys.dirt.is_changed() {
+                    Dirt::of(keys.dirt.get()) == Dirt::Off
+                } else {
+                    flags.no_dirt
+                },
+            curved,
+            // A liquid with a lightmap, or glass, is lit from both sides.
+            twosided: keys.alpha.get() < 1.0 || flags.light_twosided.unwrap_or(liquid),
+            channels: flags
+                .object_channel_mask
+                .unwrap_or_else(|| keys.object_channel_mask.get()),
+            leaves,
+            seen,
+        })
+    }
+
+    /// Whether the face is on the default channel only.
+    pub(crate) const fn is_on_default_channel(&self) -> bool {
+        self.channels & CHANNEL_DEFAULT != 0
+    }
+}
+
+/// What placing a face's samples needs.
+struct Placer<'a> {
+    map: &'a Map<'a>,
+    smoothing: &'a Smoothing,
+    /// The extents of the face the samples are for.
+    extents: &'a Extents,
+    /// Its model's offset.
+    offset: Vec3,
+    /// Whether normals are interpolated.
+    phong: bool,
+}
+
+impl Placer<'_> {
+    /// `CalcPointNormal`: where the sample wanted at `wanted` goes, starting from `face`,
+    /// `hops` faces from the one it is for (LIGHT-12.4 to LIGHT-12.6).
+    fn place(&self, face: usize, wanted: Vec3, hops: usize) -> Placed {
+        let Some(shape) = self.smoothing.shapes.get(face) else {
+            return Placed::hidden(wanted);
+        };
+        let Some(plane) = shape.plane else {
+            return Placed::hidden(wanted);
+        };
+        if shape.points.is_empty() || shape.edge_planes.is_empty() {
+            return Placed::hidden(wanted);
+        }
+        let lift = scale(plane.normal, OFF_PLANE);
+        let point = add(plane.projected(wanted), lift);
+        if is_inside(&shape.edge_planes, point) {
+            return self.put(face, point);
+        }
+        // Of the edges the point is behind, the one it is least past the ends of.
+        let mut best: Option<(usize, f32)> = None;
+        let corners = &shape.points;
+        for (edge, (&v0, &v1)) in corners
+            .iter()
+            .zip(corners.iter().cycle().skip(1))
+            .enumerate()
+        {
+            let Some(edge_plane) = edge_plane(v0, v1, plane.normal) else {
+                continue;
+            };
+            if edge_plane.distance_to(point) >= POINT_EQUAL_EPSILON {
+                continue;
+            }
+            let along = fraction_of_line(v0, v1, point);
+            let span = distance(v0, v1);
+            let past = if along < 0.0 {
+                along.abs() * span
+            } else if along > 1.0 {
+                along * span
+            } else {
+                0.0
+            };
+            if best.is_none_or(|(_, least)| past < least) {
+                best = Some((edge, past));
+            }
+        }
+        if let Some((edge, _)) = best
+            && hops < MAX_HOPS
+            && let Some(next) = self.smoothing.across(self.map, face, edge)
+        {
+            return self.place(next, point, hops.saturating_add(1));
+        }
+        // Within a luxel of the face, the sample snaps to its edge.
+        let closest = closest_on_boundary(corners, point);
+        let [s0, t0] = self.extents.luxel_at(point);
+        let [s1, t1] = self.extents.luxel_at(closest);
+        if (s0 - s1).hypot(t0 - t1) <= 1.0 {
+            return self.put(face, add(closest, lift));
+        }
+        Placed::hidden(point)
+    }
+
+    /// `PositionSamplePointOnFace`: the sample at `point` of `face`, with its normal; moved
+    /// half a unit out of solid when it is in it, hidden when it cannot be (LIGHT-12.7).
+    fn put(&self, face: usize, point: Vec3) -> Placed {
+        let hidden = Placed::hidden(point);
+        let (Some(shape), Some(model)) = (self.smoothing.shapes.get(face), self.map.model_of(face))
+        else {
+            return hidden;
+        };
+        let Some(plane) = shape.plane else {
+            return hidden;
+        };
+        if shape.edge_planes.is_empty()
+            || (plane.distance_to(point) - OFF_PLANE).abs() > OFF_PLANE_SLACK
+            || inside_distance(&shape.edge_planes, point) < -POINT_EQUAL_EPSILON
+        {
+            return hidden;
+        }
+        let normal = if self.phong {
+            match interpolated_normal(&shape.points, &shape.normals, point) {
+                Some(normal) => normal,
+                None => return hidden,
+            }
+        } else {
+            plane.normal
+        };
+        if !self.map.in_any_solid(model, add(point, self.offset)) {
+            return Placed {
+                point,
+                normal: Some(normal),
+            };
+        }
+        for x in [-NUDGE, NUDGE] {
+            for y in [-NUDGE, NUDGE] {
+                for z in [-NUDGE, NUDGE] {
+                    let nudged = add(point, [x, y, z]);
+                    if !self.map.in_any_solid(model, add(nudged, self.offset)) {
+                        return Placed {
+                            point: nudged,
+                            normal: Some(normal),
+                        };
+                    }
+                }
+            }
+        }
+        hidden
+    }
+}

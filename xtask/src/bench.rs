@@ -15,6 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use crate::light_diff::stub_wad;
 use crate::release_host;
 use crate::{corpus, repo};
 
@@ -34,6 +35,8 @@ const ID1: &str = "id-1.01";
 /// cache and named to the benchmark by `QS_BENCH_MAP`.
 const E1M1: &str = "lq-e1m1";
 const CRITERION_HOME: &str = "target/xtask/bench/criterion";
+/// Where the WAD written for the benchmarks' map goes, named to them by `QS_BENCH_WAD`.
+const WAD_DIR: &str = "target/xtask/bench/wad";
 /// A run more than this much slower than the baseline is a regression.
 const REGRESSION_RATIO: f64 = 1.10;
 const HISTORY_VERSION: u32 = 1;
@@ -185,7 +188,8 @@ pub(crate) fn main(root: &Path, options: &Args) -> Result<bool, String> {
     let criterion_home = root.join(CRITERION_HOME);
     let id1 = fetch_id1(root)?;
     let map = fetch_e1m1(root)?;
-    run_benchmarks(root, &criterion_home, &id1, &map)?;
+    let wad = write_e1m1_wad(root, &map)?;
+    run_benchmarks(root, &criterion_home, &id1, (&map, &wad))?;
     let set = |variable: &str| std::env::var_os(variable).is_some();
     let mut results = Vec::new();
     for budget in &budgets {
@@ -325,11 +329,25 @@ fn fetch_e1m1(root: &Path) -> Result<PathBuf, String> {
         .join(format!("{E1M1}.map")))
 }
 
+/// Writes a WAD of blank textures for the map at `map` beside the criterion data and returns
+/// its path: the corpus's maps come without their WADs, and a map compiled with none has no
+/// sky and no surface lights, so its light is not the work a modder's compile does.
+fn write_e1m1_wad(root: &Path, map: &Path) -> Result<PathBuf, String> {
+    let text = fs::read(map).map_err(|error| format!("{}: {error}", map.display()))?;
+    let file = qs_map::MapFile::parse(&text).map_err(|error| format!("{E1M1}: {error}"))?;
+    let wad = stub_wad(&file).map_err(|error| format!("{E1M1}: {error}"))?;
+    let dir = root.join(WAD_DIR);
+    fs::create_dir_all(&dir).map_err(|error| format!("{}: {error}", dir.display()))?;
+    let path = dir.join(format!("{E1M1}.wad"));
+    fs::write(&path, wad).map_err(|error| format!("{}: {error}", path.display()))?;
+    Ok(path)
+}
+
 fn run_benchmarks(
     root: &Path,
     criterion_home: &Path,
     id1: &Path,
-    map: &Path,
+    (map, wad): (&Path, &Path),
 ) -> Result<(), String> {
     if criterion_home.exists() {
         fs::remove_dir_all(criterion_home)
@@ -349,6 +367,7 @@ fn run_benchmarks(
         .env("CRITERION_HOME", criterion_home)
         .env("QS_BENCH_ID1", id1)
         .env("QS_BENCH_MAP", map)
+        .env("QS_BENCH_WAD", wad)
         .current_dir(root);
     // save_to_game and the routes play in the preview host when QS_BENCH_GAME or
     // QS_BENCH_RERELEASE names a game: the host is built as the app ships it and named to the

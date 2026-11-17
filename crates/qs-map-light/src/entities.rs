@@ -68,7 +68,7 @@ pub(crate) struct Entity {
 /// `COM_Parse`: the next token of `text` from `*at`, a quoted string's bytes without its quotes,
 /// a brace, parenthesis, quote mark or colon alone, or a word; none at the end. A `//` comment
 /// runs to the end of its line (LIGHT-2.7).
-fn token(text: &[u8], at: &mut usize) -> Option<Vec<u8>> {
+pub(crate) fn token(text: &[u8], at: &mut usize) -> Option<Vec<u8>> {
     const SINGLE: &[u8] = b"{}()':";
     loop {
         let rest = text.get(*at..)?;
@@ -314,7 +314,7 @@ impl Entities {
     }
 
     /// `WriteEntitiesToString`: each entity with keys, its keys last read first, and the NUL
-    /// that ends the text (LIGHT-1.6); only the id dialect has its length limit (LIGHT-1.9).
+    /// that ends the text (LIGHT-1.6); only the id dialect has its length limit (LIGHT-1.11).
     pub(crate) fn written(&self, dialect: Dialect) -> Result<Vec<u8>, LightError> {
         let mut out = Vec::new();
         for entity in &self.all {

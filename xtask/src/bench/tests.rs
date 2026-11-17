@@ -92,6 +92,8 @@ fn the_repository_budget_table_names_every_budget() {
             ("play_from_here_e1m1", 6e9, Statistic::Median),
             ("region_compile_e1m1", 1.2e9, Statistic::Median),
             ("full_compile_e1m1", 8e9, Statistic::Median),
+            ("light_dirt_e1m1", 2e9, Statistic::Median),
+            ("light_bounce_e1m1", 9e9, Statistic::Median),
             ("textured_view_e1m1", 5e7, Statistic::Median),
         ]
     );
@@ -464,9 +466,48 @@ fn problems_are_reported_with_annotations_in_github_actions() {
 #[test]
 fn a_failing_cargo_bench_is_an_error() {
     let missing = scratch("failing-cargo-bench").join("no-such-root");
+    let nowhere = (missing.as_path(), missing.as_path());
     let error =
-        run_benchmarks(&missing, &missing.join("criterion"), &missing, &missing).unwrap_err();
+        run_benchmarks(&missing, &missing.join("criterion"), &missing, nowhere).unwrap_err();
     assert!(error.contains("cannot run cargo bench"), "{error}");
+}
+
+#[test]
+fn the_benchmarks_wad_has_a_texture_of_each_name_of_the_map() {
+    let dir = scratch("bench-wad");
+    let map = dir.join("room.map");
+    let face = "( 0 0 0 ) ( 1 0 0 ) ( 0 1 0 ) {} 0 0 0 1 1";
+    let brush: String = ["sky1", "*water0", "+2button", "wall"]
+        .iter()
+        .map(|texture| format!("{}\n", face.replace("{}", texture)))
+        .collect();
+    fs::write(
+        &map,
+        format!("{{\n\"classname\" \"worldspawn\"\n{{\n{brush}}}\n}}\n"),
+    )
+    .unwrap();
+    let path = write_e1m1_wad(&dir, &map).unwrap();
+    assert_eq!(path, dir.join(WAD_DIR).join("lq-e1m1.wad"));
+    let bytes = fs::read(&path).unwrap();
+    let wad = qs_wad::Wad::read(&bytes).unwrap();
+    let mut names: Vec<String> = wad
+        .lumps()
+        .iter()
+        .map(|lump| String::from_utf8_lossy(lump.name.as_bytes()).into_owned())
+        .collect();
+    names.sort();
+    // An animation's earlier frames come with the frame the map names.
+    assert_eq!(
+        names,
+        [
+            "*water0", "+0button", "+1button", "+2button", "sky1", "wall"
+        ]
+    );
+    let missing = write_e1m1_wad(&dir, &dir.join("no-such.map")).unwrap_err();
+    assert!(missing.contains("no-such.map"), "{missing}");
+    fs::write(&map, "{ not a map").unwrap();
+    let unreadable = write_e1m1_wad(&dir, &map).unwrap_err();
+    assert!(unreadable.starts_with("lq-e1m1:"), "{unreadable}");
 }
 
 #[test]

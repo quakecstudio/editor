@@ -96,7 +96,7 @@ README says more.
 | L4 | `qs-client` | The preview host's client: the server's messages read into entities, lights, particles, the view and the status bar, as id's cl_*.c, r_part.c, view.c and sbar.c keep them |
 | L4 | `qs-engine` | The IDE's client for the preview host: run roots, launching the host and the bridge protocol |
 | L4 | `qs-map-bsp` | The map compiler: a .map to a BSP29 file, its portal file and its leak file, as id's qbsp builds them |
-| L4 | `qs-map-light` | The light compiler: each face's lightmaps from the map's lights, as id's light finds them, with coloured light in a .lit file |
+| L4 | `qs-map-light` | The light compiler: each face's lightmaps from the map's lights, as id's light finds them in the id dialect and as ericw-tools' light does in the extended one |
 | L4 | `qs-map-vis` | The visibility compiler: each leaf's potentially visible set and ambient sound levels, as id's vis finds them |
 | L4 | `qs-sim` | The preview host's server simulation: a map's entities spawned through the progs, and the world they live in |
 | L4 | `qs-sound` | The preview host's sound engine: channels, spatialization, ambient and static sounds, and the mixer, as id's snd_dma.c and snd_mix.c play them |

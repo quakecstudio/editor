@@ -36,6 +36,8 @@ qs-map-edit = { workspace = true }
 qs-map = { workspace = true }
 qs-map-bsp = { workspace = true }
 qs-map-light = { workspace = true }
+# A WAD of every texture a map names, for the light differential (LIGHT-11.2).
+qs-wad = { workspace = true }
 qs-pak = { workspace = true }
 qs-vfs = { workspace = true }
 qs-bsp = { workspace = true }

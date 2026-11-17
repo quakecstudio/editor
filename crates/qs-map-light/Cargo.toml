@@ -1,6 +1,6 @@
 [package]
 name = "qs-map-light"
-description = "The light compiler: each face's lightmaps from the map's lights, as id's light finds them, with coloured light in a .lit file"
+description = "The light compiler: each face's lightmaps from the map's lights, as id's light finds them in the id dialect and as ericw-tools' light does in the extended one"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,8 +11,11 @@ publish.workspace = true
 [dependencies]
 qs-bsp = { workspace = true }
 qs-map = { workspace = true }
-# Its Dialect: the same choice of id's fixed tables or the format's (LIGHT-1.9, QBSP-14).
+# Its Dialect: the same choice of id's fixed tables or the format's (LIGHT-1.11, QBSP-14).
 qs-map-bsp = { workspace = true }
+
+# The two files ericw-tools' qbsp writes beside a BSP for light are JSON (LIGHT-9.8).
+serde_json = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
 qs-wad = { workspace = true }
