@@ -8,6 +8,7 @@
 use eframe::egui::{self, RichText, Sense, Ui};
 use qs_map_edit::{EntityIndex, MapRevision, OutlineRow, RowKind};
 
+use crate::icons::{self, Icon};
 use crate::shell::name_field;
 use crate::strings::{Text, brush_count};
 use crate::theme::{Theme, Token};
@@ -25,6 +26,12 @@ pub(crate) enum OutlineAction {
     Choose(EntityIndex),
     /// Move the entity or group into the layer or group, the world for the default layer.
     MoveTo(EntityIndex, EntityIndex),
+    /// Hide the row's entities, a group with its members, from its menu.
+    Hide(Vec<EntityIndex>),
+    /// Show the row's entities alone, from its menu.
+    Isolate(Vec<EntityIndex>),
+    /// Lock the row's entities, from its menu.
+    Lock(Vec<EntityIndex>),
 }
 
 /// What a dragged row carries: its entity.
@@ -102,7 +109,14 @@ impl OutlineView {
             (RowKind::Layer, true) => Text::MapDefaultLayer.get().to_owned(),
             _ => row.label.clone(),
         };
-        let mut text = RichText::new(label).monospace();
+        // The row's kind is its icon: a layer, a group, a linked group, or the entity's class.
+        let icon = match row.kind {
+            RowKind::Layer => Icon::Layers,
+            RowKind::Group => Icon::Group,
+            RowKind::LinkedGroup => Icon::Link,
+            RowKind::Entity => Icon::of_class(&row.label),
+        };
+        let mut text = RichText::new(icon.before(&label)).monospace();
         if row.kind == RowKind::LinkedGroup {
             text = text.italics();
         }
@@ -135,11 +149,28 @@ impl OutlineView {
                 });
             header.header_response
         };
+        // The row is named by its words alone, the icon left out.
+        icons::mark(ui, &response, &label, icons::ROW);
         if chosen && reveal == Some(row.entity) {
             response.scroll_to_me(Some(egui::Align::Center));
         }
         if response.clicked() && row.kind == RowKind::Entity {
             actions.push(OutlineAction::Choose(row.entity));
+        }
+        // The row's actions are in its menu, as Zed's outline panel keeps them (P7-16).
+        if row.kind != RowKind::Layer {
+            response.context_menu(|ui| {
+                for (text, action) in [
+                    (Text::MapHide, OutlineAction::Hide(row.entities())),
+                    (Text::MapIsolate, OutlineAction::Isolate(row.entities())),
+                    (Text::MapLock, OutlineAction::Lock(row.entities())),
+                ] {
+                    if ui.button(text.get()).clicked() {
+                        actions.push(action);
+                        ui.close();
+                    }
+                }
+            });
         }
         let response = response.interact(Sense::drag());
         if row.kind != RowKind::Layer {

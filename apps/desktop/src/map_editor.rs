@@ -32,7 +32,7 @@ use qs_render::Camera;
 use qs_workbench::map_filter::{GameMode, Skill};
 
 use crate::help::{self, Topic};
-use crate::icons::{Icon, Toggled};
+use crate::icons::{self, Icon, Toggled};
 use crate::map_browser::{ClassDrag, EntityBrowser};
 use crate::map_fields::{Field, spawnflags};
 use crate::map_groups::{GroupAction, Grouping, layers_ui, overview_keys, selection_ui};
@@ -545,6 +545,15 @@ impl MapEditor {
                 }
                 OutlineAction::MoveTo(entity, into) => {
                     actions.push(MapAction::MoveTo(entity, into))
+                }
+                OutlineAction::Hide(entities) => {
+                    actions.push(MapAction::Group(GroupAction::Hide(entities)));
+                }
+                OutlineAction::Isolate(entities) => {
+                    actions.push(MapAction::Group(GroupAction::Isolate(entities)));
+                }
+                OutlineAction::Lock(entities) => {
+                    actions.push(MapAction::Group(GroupAction::Lock(entities)));
                 }
             }
         }
@@ -1551,18 +1560,14 @@ impl MapEditor {
             ui.label(RichText::new(refused).color(theme.color(Token::StatusError)));
         }
         ui.horizontal_wrapped(|ui| {
-            if ui.button(Text::MapCheckLeaks.get()).clicked() {
+            if Icon::Leak.tool(ui, Text::MapCheckLeaks).clicked() {
                 actions.push(MapAction::CheckLeaks);
             }
-            if ui
-                .add_enabled(
-                    self.camera.is_some(),
-                    egui::Button::new(Text::MapPlayFromHere.get()),
-                )
-                .clicked()
-            {
-                actions.push(MapAction::PlayFromHere);
-            }
+            ui.add_enabled_ui(self.camera.is_some(), |ui| {
+                if Icon::Play.tool(ui, Text::MapPlayFromHere).clicked() {
+                    actions.push(MapAction::PlayFromHere);
+                }
+            });
         });
         // P7-08: where the 3D camera stands, which a value typed moves it to, as TrenchBroom's
         // Move Camera to... but always shown.
@@ -1576,7 +1581,8 @@ impl MapEditor {
                 }
                 // TrenchBroom's Reset camera zoom is Ctrl+Alt+Z, which is undo here (Cmd+Z with
                 // an extra Alt), so the zoom is put back from here.
-                if self.zoom != ViewZoom::default() && ui.button(Text::MapResetZoom.get()).clicked()
+                if self.zoom != ViewZoom::default()
+                    && Icon::ResetZoom.tool(ui, Text::MapResetZoom).clicked()
                 {
                     self.zoom = ViewZoom::default();
                 }
@@ -1591,13 +1597,13 @@ impl MapEditor {
                 RichText::new(Text::MapChangedOnDisk.get()).color(theme.color(Token::StatusWarn)),
             );
             ui.horizontal_wrapped(|ui| {
-                if ui.button(Text::MapReloadFromDisk.get()).clicked() {
+                if Icon::FromDisk.tool(ui, Text::MapReloadFromDisk).clicked() {
                     actions.push(MapAction::Resolve(Keep::Disk));
                 }
-                if ui.button(Text::MapKeepMine.get()).clicked() {
+                if Icon::KeepMine.tool(ui, Text::MapKeepMine).clicked() {
                     actions.push(MapAction::Resolve(Keep::Mine));
                 }
-                if ui.button(Text::MapCompare.get()).clicked() {
+                if Icon::Compare.tool(ui, Text::MapCompare).clicked() {
                     actions.push(MapAction::Compare);
                 }
             });
@@ -1671,20 +1677,16 @@ impl MapEditor {
                         }
                         if field == Field::Target {
                             let picking = self.picking.as_ref() == Some(key);
-                            if ui
-                                .selectable_label(picking, Text::MapPick.get())
-                                .on_hover_text(Text::MapPickHint.get())
+                            let state = if picking { Toggled::On } else { Toggled::Off };
+                            if Icon::Pick
+                                .toggle(ui, state, Text::MapPick, Text::MapPickHint)
                                 .clicked()
                             {
                                 self.picking = (!picking).then(|| key.clone());
                             }
                         }
                     });
-                    if ui
-                        .small_button(Text::MapRemoveKey.get())
-                        .on_hover_text(Text::MapRemoveKey.get())
-                        .clicked()
-                    {
+                    if Icon::Delete.tool(ui, Text::MapRemoveKey).clicked() {
                         actions.push(MapAction::RemoveKey(entity, key.clone()));
                     }
                     ui.end_row();
@@ -1711,7 +1713,9 @@ impl MapEditor {
             ui.horizontal_wrapped(|ui| {
                 for key in unset {
                     let hint = format!("{} ({})", key.name, key.ty);
-                    let button = ui.small_button(hint);
+                    // A key its class reads is a row of the list, chosen to fill the fields below.
+                    let button = ui.small_button(&hint);
+                    icons::mark(ui, &button, &hint, icons::ROW);
                     let button = match &key.default {
                         Some(default) => button.on_hover_text(default),
                         None => button,
@@ -1749,10 +1753,10 @@ impl MapEditor {
                 name_field(ui, &picker.response, Text::MapTargets);
             }
             let ready = !self.adding.0.trim().is_empty();
-            if ui
-                .add_enabled(ready, egui::Button::new(Text::MapAddKey.get()))
-                .clicked()
-            {
+            let add = ui
+                .add_enabled_ui(ready, |ui| Icon::Add.tool(ui, Text::MapAddKey))
+                .inner;
+            if add.clicked() {
                 let (key, value) = core::mem::take(&mut self.adding);
                 actions.push(MapAction::SetKey(
                     entity,
@@ -1820,7 +1824,7 @@ impl MapEditor {
     fn camera_settings_ui(&self, ui: &mut Ui) -> Option<MapAction> {
         let now = self.camera_settings;
         let mut asked = None;
-        egui::CollapsingHeader::new(Text::MapCameraSettings.get())
+        let header = egui::CollapsingHeader::new(Text::MapCameraSettings.get())
             .id_salt(core::any::TypeId::of::<MapCamera>())
             .show(ui, |ui| {
                 let mut fov = now.fov.degrees();
@@ -1875,6 +1879,13 @@ impl MapEditor {
                     }
                 }
             });
+        // A header that opens and closes is a row of the panel, not an action.
+        icons::mark(
+            ui,
+            &header.header_response,
+            Text::MapCameraSettings.get(),
+            icons::ROW,
+        );
         asked.map(|params| MapAction::View(ViewSetting::Camera(params)))
     }
 }

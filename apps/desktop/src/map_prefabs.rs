@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use eframe::egui::{self, Pos2, RichText, Sense, Ui, WidgetInfo, WidgetType};
 use qs_map_edit::Prefab;
 
+use crate::icons::Icon;
 use crate::map_editor::MapAction;
 use crate::strings::{Text, prefab_count};
 use crate::theme::{Theme, Token};
@@ -37,7 +38,7 @@ impl PrefabBrowser {
     /// first time it is shown.
     pub(crate) fn header(&self, ui: &mut Ui, theme: &Theme) -> Vec<MapAction> {
         let mut actions = Vec::new();
-        if ui.button(Text::Refresh.get()).clicked() || self.prefabs.is_none() {
+        if Icon::Refresh.tool(ui, Text::Refresh).clicked() || self.prefabs.is_none() {
             actions.push(MapAction::ListPrefabs);
         }
         if let Some(prefabs) = &self.prefabs {
