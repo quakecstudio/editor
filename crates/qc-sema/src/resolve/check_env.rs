@@ -237,6 +237,10 @@ impl Env for BodyEnv<'_, '_> {
         self.resolver.index.virtual_function(member)
     }
 
+    fn unaliased(&self, ty: &Type) -> Type {
+        self.resolver.resolved_deep(ty, MAX_TYPEDEF_DEPTH)
+    }
+
     fn first_field(&self, def: DefId) -> bool {
         self.resolver
             .index

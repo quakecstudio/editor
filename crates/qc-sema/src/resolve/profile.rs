@@ -67,6 +67,13 @@ impl Profile {
         matches!(self.compiler, Compiler::Gmqcc)
     }
 
+    /// GMQ-23.1: GMQCC's `parse_parameter_list` compares no parameter names, and
+    /// `parser_find_param` finds the first parameter of a name; FTEQCC reports "Duplicate
+    /// definition" (FTEF-19.1).
+    pub(in crate::resolve) const fn repeated_parameter_names(self) -> bool {
+        matches!(self.compiler, Compiler::Gmqcc)
+    }
+
     /// FTEQCC's language, which GMQCC's dialect builds on.
     const fn fteqcc(self) -> bool {
         matches!(self.compiler, Compiler::Fteqcc | Compiler::Gmqcc)

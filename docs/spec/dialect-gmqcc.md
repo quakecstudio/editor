@@ -417,6 +417,19 @@ this should already be stringized").
   `__STDC__` (PRJ-4.13), writes `#define _TRANSMUTE(cname, this, ...) OVERLOAD(spawn##cname,
   this,##__VA_ARGS__)`, which `TRANSMUTE(Player, this)` calls with the variadic arguments empty.
   The arguments are judged as written, before they are expanded (GMQ-21.6).
+- **GMQ-21.9** Under this dialect a `#define` body continued by a `\` before a line break ends
+  at the line break of the line it continues onto, so an empty line after the `\` ends it:
+  `#define A x \`, an empty line, then `#define B y` defines `A` as `x` and `B` as `y`. The C
+  preprocessor joins the lines first (C11, N1570 5.1.1.2, phase 2, GMQ-21.5), and "The last
+  token in the sequence is the first new-line character that follows the first token in the
+  sequence." (C11, N1570 6.10, paragraph 2). Xonotic's `lib/registry.qh` ends `REGISTRY` with
+  `\` and an empty line before `#define REGISTRY_DEFINE_GET`. FTEQCC copies the byte after a
+  continued line without looking for the body's end (FTEF-14.24), so its `A` runs on into the
+  next line, the `#define B` with it.
+  A continued line that starts with `#` is joined as any other, so `#define E x \`, then
+  ` #define D 1`, is `E` as `x #define D 1`; FTEQCC keeps the line break there, "#define hacks
+  however, require that it becomes foo\nbar\nmoo" (FTEF-14.24), and the line runs as a
+  directive when `E` expands.
 
 ## GMQ-22 Arrays of fields
 
@@ -440,3 +453,25 @@ _scores[MAX_SCORE];`, `#define scores(this) _scores[(this).m_id]`), used as
   N)". GMQCC refuses it, `ast_array_index::codegen`'s `if (arridx >= m_array->m_count) {
   compile_error(m_context, "array index out of bounds: %i", arridx); return false; }` (`ast.cpp`
   at the commit above); the model's diagnostics under this dialect are FTEQCC's.
+
+## GMQ-23 Parameter names
+
+**Source:** `parser.cpp`, `parse_parameter_list`, `parse_function_body`, `parser_find_param` and
+`parser_find_local`, at the commit above.
+
+### Behaviour
+
+- **GMQ-23.1** A parameter that repeats the name of an earlier parameter of its function is no
+  error: `void f(entity unused, entity unused)` declares two parameters, each with its own
+  argument, and a use of `unused` in the body is the first. GMQCC's `parse_parameter_list`
+  pushes each parameter `params.emplace_back(param)` and compares no names, and
+  `parser_find_param` returns the first of `fun->m_type_params` whose `it->m_name == name`.
+  FTEQCC reports "Duplicate definition of unused." (FTEF-19.1). Xonotic's
+  `menu/xonotic/dialog_media_demo_timeconfirm.qc` declares `Handle_TimeDemo_Click(entity unused,
+  entity unused)`.
+- **GMQ-23.2** A repeated parameter's vector components are found as any vector parameter's are:
+  `void f(vector v, vector v)` has a use of `v_y` the second parameter's component and a use of
+  `v` the first parameter. GMQCC's `parse_function_body` adds each vector parameter's components
+  as locals, `parser_addlocal(parser, me[e]->m_name, me[e])`, which `util_htset` writes over a
+  local of the same name, and `parser_find_local` looks among the locals before
+  `parser_find_param`.

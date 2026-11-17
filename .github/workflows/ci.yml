@@ -818,6 +818,18 @@ jobs:
         run: |
           cargo xtask corpus fetch xonotic
           cargo xtask project-corpus "$QS_TEST_ASSETS/codebase/xonotic"
+      # L-02 (#186): Xonotic parses and resolves under the GMQCC profile with no error. A
+      # release build: the debug check of its three modules takes over ten minutes.
+      - name: Parse and resolve Xonotic under the GMQCC profile
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
+        run: |
+          log="$RUNNER_TEMP/xonotic-check.txt"
+          if ! cargo run --locked --release -p quakec-ide -- check \
+            "$QS_TEST_ASSETS/codebase/xonotic" > "$log" 2>&1; then
+            grep ' error ' "$log" || tail -n 50 "$log"
+            exit 1
+          fi
+          tail -n 1 "$log"
       - name: Open FreeCS as a project
         if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'macOS'
         run: |
