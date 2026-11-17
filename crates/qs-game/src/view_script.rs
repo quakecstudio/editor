@@ -4,6 +4,7 @@
 //! placed and the view shot, as `oracles/engine/view_host.c` reads the same file for id's
 //! engine, so the two frames and sounds can be compared (VIEWDIFF-1).
 
+use crate::Error;
 use std::path::PathBuf;
 
 /// One step of a view script after its map (VIEWDIFF-1.4).
@@ -44,7 +45,7 @@ impl ViewScript {
     /// # Errors
     ///
     /// The line that is not one of VIEWDIFF-1.4's, or a first line that is not `map`.
-    pub(crate) fn parse(text: &str) -> Result<Self, String> {
+    pub(crate) fn parse(text: &str) -> Result<Self, Error> {
         let mut lines = text
             .lines()
             .map(str::trim)
@@ -54,11 +55,16 @@ impl ViewScript {
             .and_then(|line| line.strip_prefix("map "))
             .map(str::trim)
             .filter(|map| !map.is_empty() && !map.contains(char::is_whitespace))
-            .ok_or("a view script starts with `map <name>`")?
+            .ok_or("a view script starts with `map <name>`")
+            .map_err(|reason| Error::Script(reason.to_owned()))?
             .to_owned();
         let mut steps = Vec::new();
         for line in lines {
-            steps.push(step(line).ok_or_else(|| format!("not a view script line: {line}"))?);
+            steps.push(
+                step(line)
+                    .ok_or_else(|| format!("not a view script line: {line}"))
+                    .map_err(Error::Script)?,
+            );
         }
         Ok(Self { map, steps })
     }

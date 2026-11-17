@@ -110,6 +110,7 @@ README says more.
 | L6 | `qs-mcp` | The MCP server: the agent's tools, the IDE's commands, offered to other agents over the Model Context Protocol on stdio, within read and write roots |
 | L6 | `qs-models` | The agent's model providers: Anthropic, OpenAI-compatible endpoints and Ollama, with API keys kept in the OS keychain |
 | L7 | `qs-editor-view` | The code editor widget: virtualised lines with a per-line layout cache, selections and multiple carets, IME composition and AccessKit text runs, on egui |
+| L7 | `qs-game` | The preview host's game: its loop on qs-sim, qs-client, qs-render and qs-sound, its window and its bridge server, as a library the host and the IDE both run |
 | L7 | `qs-render` | The wgpu renderer: a BSP's world surfaces with their textures and lightmaps, drawn through egui_wgpu paint callbacks |
 | apps | `quakec-engine` | The preview host: the game in its own window, our engine on qs-sim, qs-render and qs-sound, with the IDE bridge server |
 | apps | `quakec-ide` | QuakeC Studio's command line: build and check a QuakeC project, and run any command of the IDE by its id |

@@ -10,6 +10,7 @@ use std::io::{Read as _, Seek as _, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use crate::Error;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use qc_builtins::math::makevectors;
 use qs_bsp::Bsp;
@@ -211,7 +212,7 @@ impl Audio {
     ) -> Self {
         let opened = match output {
             Device::Default => device(),
-            Device::None => Err("-nosound".to_owned()),
+            Device::None => Err(Error::Sound("-nosound".to_owned())),
             Device::Capture => Ok((
                 qs_sound::SND_ORACLE_SPEED,
                 Sink::Capture(Captured::default()),
@@ -437,11 +438,14 @@ impl Audio {
 }
 
 /// The default output device's rate and a stream playing a queue on it.
-fn device() -> Result<(u32, Sink), String> {
+fn device() -> Result<(u32, Sink), Error> {
     let device = cpal::default_host()
         .default_output_device()
-        .ok_or("no output device")?;
-    let config = device.default_output_config().map_err(|e| e.to_string())?;
+        .ok_or("no output device")
+        .map_err(|reason| Error::Sound(reason.to_owned()))?;
+    let config = device
+        .default_output_config()
+        .map_err(|e| Error::Sound(e.to_string()))?;
     let speed = config.sample_rate();
     let channels = usize::from(config.channels());
     let most = seconds_of_samples(MOST_QUEUED, speed);
@@ -473,10 +477,10 @@ fn device() -> Result<(u32, Sink), String> {
                 None,
             )
         }
-        other => return Err(format!("the device takes {other} samples")),
+        other => return Err(Error::Sound(format!("the device takes {other} samples"))),
     }
-    .map_err(|e| e.to_string())?;
-    stream.play().map_err(|e| e.to_string())?;
+    .map_err(|e| Error::Sound(e.to_string()))?;
+    stream.play().map_err(|e| Error::Sound(e.to_string()))?;
     Ok((
         speed,
         Sink::Device {

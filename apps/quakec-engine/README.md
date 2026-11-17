@@ -1,6 +1,8 @@
 # quakec-engine
 
 The game in its own window, served to the IDE over the bridge (ADR-0004, P3-02). Layer: apps.
+The binary is the command line and the log; the game itself is the library
+[`qs-game`](../../crates/qs-game/README.md), which the IDE also runs in its own window (ADR-0028).
 The docs call it the preview host; its binary is `quakec-engine` (ADR-0006), shipped beside
 `quakec-studio`, which looks for it there.
 
@@ -55,4 +57,4 @@ the world taken before it (WORLD-9); `progs.lno` beside the progs gives it files
 `console` runs id's console (PHYS-13): its commands, aliases and settings, the commands it
 forwards to the server, and `map`, `changelevel`, `restart`, `save`, `load` and `quit`, which
 the host carries out, saving to `<basedir>/<game>/<name>.sav`. The commands' conformance tests
-are in `src/game/tests.rs`.
+are in `crates/qs-game/src/game/tests.rs`.

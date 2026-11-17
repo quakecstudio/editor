@@ -3,6 +3,7 @@
 //! `screenshot`'s image (BRIDGE-4.9): the frame drawn offscreen, by the window's device or the
 //! headless host's, scaled to the size asked, as a PNG in base64.
 
+use crate::Error;
 use eframe::egui;
 use eframe::egui_wgpu::{self, ScreenDescriptor};
 use image::codecs::png::PngEncoder;
@@ -36,12 +37,12 @@ impl Drawer {
     }
 
     /// `callback`, the view of one frame, drawn at `size` pixels and read back.
-    pub(crate) fn draw(&mut self, callback: MapCallback, size: [u32; 2]) -> Result<Frame, String> {
+    pub(crate) fn draw(&mut self, callback: MapCallback, size: [u32; 2]) -> Result<Frame, Error> {
         let (primitives, screen) = self.layout(callback, size);
         let pixels = self
             .offscreen
             .render(&primitives, &screen)
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| Error::Draw(error.to_string()))?;
         Ok(Frame {
             width: pixels.width,
             height: pixels.height,
@@ -57,8 +58,10 @@ impl Drawer {
     }
 
     /// Waits for the GPU to finish the frames submitted.
-    pub(crate) fn finish(&self) -> Result<(), String> {
-        self.offscreen.finish().map_err(|error| error.to_string())
+    pub(crate) fn finish(&self) -> Result<(), Error> {
+        self.offscreen
+            .finish()
+            .map_err(|error| Error::Draw(error.to_string()))
     }
 
     /// `callback` laid out over a screen of `size` pixels: egui's primitives and the screen.
@@ -108,9 +111,10 @@ impl Frame {
     /// # Errors
     ///
     /// Why the frame did not encode.
-    pub(crate) fn encode(self, size: Option<(u32, u32)>) -> Result<(String, u32, u32), String> {
+    pub(crate) fn encode(self, size: Option<(u32, u32)>) -> Result<(String, u32, u32), Error> {
         let image = RgbaImage::from_raw(self.width, self.height, self.rgba)
-            .ok_or("the frame is not its size")?;
+            .ok_or("the frame is not its size")
+            .map_err(|reason| Error::Draw(reason.to_owned()))?;
         let image = match size {
             Some((width, height)) if (width, height) != image.dimensions() => {
                 resize(&image, width, height, FilterType::Triangle)
@@ -121,7 +125,7 @@ impl Frame {
         let mut png = Vec::new();
         PngEncoder::new(&mut png)
             .write_image(image.as_raw(), width, height, ExtendedColorType::Rgba8)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| Error::Draw(e.to_string()))?;
         Ok((base64(&png), width, height))
     }
 }

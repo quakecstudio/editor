@@ -26,6 +26,7 @@ use qs_sim::input::{Button, Input, MoveSettings};
 use qs_sim::keys::{Bindings, K_ESCAPE, key_name};
 use raw_window_handle::{HasDisplayHandle as _, RawDisplayHandle};
 
+use crate::Error;
 use crate::args::Args;
 use crate::audio::Audio;
 use crate::bridge::Bridge;
@@ -82,11 +83,13 @@ const MIN_ASPECT: f32 = 0.1;
 impl Args {
     /// Opens the window on the map `loaded` holds and runs the game until it closes or the
     /// bridge's client stops it.
-    pub(crate) fn run_window(&self, loaded: Loaded, bridge: Option<Bridge>) -> Result<(), String> {
+    pub(crate) fn run_window(&self, loaded: Loaded, bridge: Option<Bridge>) -> Result<(), Error> {
         let args = self.clone();
         let benchmark = args.benchmark;
         if benchmark.is_some_and(|seconds| !seconds.is_finite() || seconds <= 0.0) {
-            return Err("--benchmark needs a positive number of seconds".to_owned());
+            return Err(Error::Usage(
+                "--benchmark needs a positive number of seconds".to_owned(),
+            ));
         }
         let fly = args.fly || benchmark.is_some();
         let position = args
@@ -216,7 +219,7 @@ impl Args {
                 }))
             }),
         )
-        .map_err(|e| e.to_string())
+        .map_err(|e| Error::Window(e.to_string()))
     }
 }
 
@@ -496,7 +499,7 @@ impl eframe::App for Viewer {
                 .map(|drawer| drawer.draw(callback.clone(), size))
             {
                 Some(Ok(frame)) => self.game.screenshot_taken(&frame),
-                Some(Err(why)) => self.game.screenshot_failed(&why),
+                Some(Err(why)) => self.game.screenshot_failed(&why.to_string()),
                 None => self.game.screenshot_failed("no GPU device"),
             }
         }
@@ -603,7 +606,7 @@ impl Viewer {
         let read = |name: &str| {
             describer
                 .read(name)
-                .ok_or_else(|| format!("{name} is not on the search path"))
+                .ok_or_else(|| Error::Load(format!("{name} is not on the search path")))
         };
         let mesh = map_mesh(
             (&self.map, swap.bsp().bsp()),

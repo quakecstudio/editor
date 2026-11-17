@@ -23,6 +23,7 @@ use qs_vfs::zip::Zip;
 use qs_vfs::{Element, LoadedFile, StdFs, Vfs};
 
 use crate::AXES;
+use crate::Error;
 use crate::args::{Args, Show};
 use crate::audio::{Audio, CdImage, Device};
 use crate::game::{Game, HeldSpawn, HostAction, NextLevel, Reporting};
@@ -255,22 +256,23 @@ fn start(entities: &[u8]) -> Option<Camera> {
 
 /// The rerelease's strings (RRE-1.6): with `-kpf`, from the search path, else that archive
 /// (ADR-0008); without it, wherever QuakeSpasm's `LOC_LoadFile` finds them (RRE-1.10).
-fn localization(vfs: &Vfs<StdFs>, args: &Args) -> Result<Option<Vec<u8>>, String> {
+fn localization(vfs: &Vfs<StdFs>, args: &Args) -> Result<Option<Vec<u8>>, Error> {
     let Some(kpf) = &args.kpf else {
         return vfs
             .load_rerelease(RRE_LOC_FILE)
-            .map_err(|e| format!("{RRE_LOC_FILE}: {e}"));
+            .map_err(|e| Error::Load(format!("{RRE_LOC_FILE}: {e}")));
     };
     if let Some(file) = vfs
         .load(RRE_LOC_FILE.as_bytes())
-        .map_err(|e| format!("{RRE_LOC_FILE}: {e}"))?
+        .map_err(|e| Error::Load(format!("{RRE_LOC_FILE}: {e}")))?
     {
         return Ok(Some(file.into_bytes()));
     }
-    let file = std::fs::File::open(kpf).map_err(|e| format!("{}: {e}", kpf.display()))?;
+    let file =
+        std::fs::File::open(kpf).map_err(|e| Error::Load(format!("{}: {e}", kpf.display())))?;
     Zip::open(file)
         .and_then(|mut archive| archive.read(RRE_LOC_FILE))
-        .map_err(|e| format!("{}: {e}", kpf.display()))
+        .map_err(|e| Error::Load(format!("{}: {e}", kpf.display())))
 }
 
 /// The mesh of the map `map`'s `bsp`, read through `palette` in `look`: the world, then every
@@ -283,9 +285,9 @@ fn localization(vfs: &Vfs<StdFs>, args: &Args) -> Result<Option<Vec<u8>>, String
 pub(crate) fn map_mesh(
     (map, bsp): (&str, &Bsp<'_>),
     world: &World,
-    read: &dyn Fn(&str) -> Result<Vec<u8>, String>,
+    read: &dyn Fn(&str) -> Result<Vec<u8>, Error>,
     (palette, look): (&Palette, Look),
-) -> Result<(MapMesh, Vec<(qs_client::EntitySlot, usize)>), String> {
+) -> Result<(MapMesh, Vec<(qs_client::EntitySlot, usize)>), Error> {
     let name = format!("maps/{map}.bsp");
     let placements: Vec<Placement> = (0..bsp.models.len())
         .map(|model| Placement {
@@ -321,13 +323,16 @@ pub(crate) fn map_mesh(
     };
     builder
         .add_with(bsp, &extras, &placements)
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| Error::Load(e.to_string()))?;
     let mut next = placements.len();
     for (name, list) in &others {
         let bytes = read(name)?;
-        let other = Bsp::read(&bytes, BspLoader::default()).map_err(|e| e.message(name))?;
+        let other =
+            Bsp::read(&bytes, BspLoader::default()).map_err(|e| Error::Load(e.message(name)))?;
         let list: Vec<Placement> = list.iter().map(|(p, _)| *p).collect();
-        builder.add(&other, &list).map_err(|e| e.to_string())?;
+        builder
+            .add(&other, &list)
+            .map_err(|e| Error::Load(e.to_string()))?;
     }
     let mut instances = Vec::new();
     for (_, list) in &others {
@@ -444,7 +449,7 @@ impl Args {
         host: Option<HostState>,
         save: Option<&SaveGame>,
         watched: Option<Watched>,
-    ) -> Result<Loaded, String> {
+    ) -> Result<Loaded, Error> {
         let map = map.to_owned();
         let engine = self.engine();
         let show = self.show.map(|show| match show {
@@ -458,30 +463,34 @@ impl Args {
         let zfix = !self.nozfix;
         let look = self.look.look();
         let gamma = self.gamma.unwrap_or(look.gamma());
-        let vfs = Vfs::new(StdFs, &engine, ".").map_err(|e| format!("{e:?}"))?;
-        let read = |name: &str| -> Result<Vec<u8>, String> {
+        let vfs = Vfs::new(StdFs, &engine, ".").map_err(|e| Error::Load(format!("{e:?}")))?;
+        let read = |name: &str| -> Result<Vec<u8>, Error> {
             vfs.load(name.as_bytes())
-                .map_err(|e| format!("{name}: {e:?}"))?
+                .map_err(|e| Error::Load(format!("{name}: {e:?}")))?
                 .map(LoadedFile::into_bytes)
                 .ok_or_else(|| {
-                    format!("{name} is not on the search path; is --basedir the game root?")
+                    Error::Load(format!(
+                        "{name} is not on the search path; is --basedir the game root?"
+                    ))
                 })
         };
         let palette = Palette::read(&read("gfx/palette.lmp")?)
-            .map_err(|e| e.to_string())?
+            .map_err(|e| Error::Load(e.to_string()))?
             .with_gamma(gamma);
         let name = format!("maps/{map}.bsp");
         let bytes = read(&name)?;
-        let bsp = Bsp::read(&bytes, BspLoader::default()).map_err(|e| e.message(&name))?;
+        let bsp =
+            Bsp::read(&bytes, BspLoader::default()).map_err(|e| Error::Load(e.message(&name)))?;
         let mut progs_bytes = read("progs.dat")?;
         // RRE-4.1: QuakeSpasm gives the rerelease's named functions their builtins as it loads the
         // progs, and RRE-4.2 its table then runs to 92.
         let builtins = patch_builtins(&mut progs_bytes);
-        let progs = Progs::read(&progs_bytes).map_err(|e| format!("progs.dat: {e}"))?;
+        let progs =
+            Progs::read(&progs_bytes).map_err(|e| Error::Load(format!("progs.dat: {e}")))?;
         // The world reads the other models the progs precaches, such as the health boxes, from the
         // same search path; so do the client and the renderer.
-        let reader = || -> Result<Reader, String> {
-            let files = Vfs::new(StdFs, &engine, ".").map_err(|e| format!("{e:?}"))?;
+        let reader = || -> Result<Reader, Error> {
+            let files = Vfs::new(StdFs, &engine, ".").map_err(|e| Error::Load(format!("{e:?}")))?;
             Ok(Rc::new(move |name: &str| {
                 files
                     .load(name.as_bytes())
@@ -491,7 +500,7 @@ impl Args {
             }))
         };
         // INPUT-3.5: in QuakeSpasm's look the host's own `default.cfg` covers id1's.
-        let files = || -> Result<Reader, String> {
+        let files = || -> Result<Reader, Error> {
             let config = config_path();
             Ok(host_files(reader()?, look, move || {
                 config.as_ref().and_then(|path| std::fs::read(path).ok())
@@ -499,8 +508,8 @@ impl Args {
         };
         // The search-path element a file is found in, which decides whether an MD5 model
         // replaces its `.mdl` (REND-12.1).
-        let ranker = || -> Result<Ranker, String> {
-            let files = Vfs::new(StdFs, &engine, ".").map_err(|e| format!("{e:?}"))?;
+        let ranker = || -> Result<Ranker, Error> {
+            let files = Vfs::new(StdFs, &engine, ".").map_err(|e| Error::Load(format!("{e:?}")))?;
             Ok(Box::new(move |name: &str| {
                 files.find(name.as_bytes()).map(|file| file.element())
             }))
@@ -530,26 +539,34 @@ impl Args {
             seed: None,
             settings: Vec::new(),
         };
-        let mut world =
-            World::prepare(&progs, &map, &bsp, files()?, options).map_err(|e| e.to_string())?;
+        let mut world = World::prepare(&progs, &map, &bsp, files()?, options)
+            .map_err(|e| Error::Load(e.to_string()))?;
         // WORLD-9.6, WORLD-9.7: a level started from a debugged one spawns watched by its
         // breakpoints; a stop holds the load, and the rest of it waits for the spawning to end.
         let held = match watched {
             Some(Watched { debugger, level }) => HeldSpawn::spawn(&mut world, &progs, debugger)
-                .map_err(|e| e.to_string())?
+                .map_err(|e| Error::Load(e.to_string()))?
                 .map(|spawn| (spawn, level)),
             None => {
-                world.spawn_map(&progs).map_err(|e| e.to_string())?;
+                world
+                    .spawn_map(&progs)
+                    .map_err(|e| Error::Load(e.to_string()))?;
                 None
             }
         };
         if held.is_none() {
-            world.settle(&progs).map_err(|e| e.to_string())?;
+            world
+                .settle(&progs)
+                .map_err(|e| Error::Load(e.to_string()))?;
             // PHYS-10.5: a saved game is read over the settled map before the client enters.
             if let Some(save) = save {
-                world.restore(&progs, save).map_err(|e| e.to_string())?;
+                world
+                    .restore(&progs, save)
+                    .map_err(|e| Error::Load(e.to_string()))?;
             }
-            world.connect(&progs).map_err(|e| e.to_string())?;
+            world
+                .connect(&progs)
+                .map_err(|e| Error::Load(e.to_string()))?;
         }
         let reporting = if self.bridge.is_some() {
             Reporting::Bridge
@@ -578,7 +595,7 @@ impl Args {
         let packets = game.world_mut().take_messages().packets;
         let events = client
             .frame(0.0, &packets, &mut describer, &mut rand)
-            .map_err(|e| format!("client: {e}"))?;
+            .map_err(|e| Error::Load(format!("client: {e}")))?;
         let sounds = reader()?;
         let output = if self.view_script.is_some() {
             Device::Capture
@@ -619,18 +636,18 @@ impl Args {
         audio.handle(&events, &mut rand);
         let mut pics = Pics::new();
         pics.add_wad(&read("gfx.wad")?, &palette)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| Error::Load(e.to_string()))?;
         for lmp in LMPS {
             if let Ok(bytes) = read(lmp) {
                 pics.add_lmp(lmp, &bytes, &palette)
-                    .map_err(|e| e.to_string())?;
+                    .map_err(|e| Error::Load(e.to_string()))?;
             }
         }
         let mut play = Play::new(palette.clone(), pics, bsp.entities());
         play.zfix = zfix;
         play.look = look;
         play.load_models(client.model_names(), &*reader()?, &ranker()?)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| Error::Load(e.to_string()))?;
         play.load_sky(&*reader()?);
         let (mesh, instances) = map_mesh((&map, &bsp), game.world(), &read, (&palette, look))?;
         play.set_instances(instances);
@@ -650,7 +667,7 @@ impl Args {
                     Degrees::new(0.0),
                 )
             });
-        let bsp = MapBsp::read(bytes.clone()).map_err(|e| e.message(&name))?;
+        let bsp = MapBsp::read(bytes.clone()).map_err(|e| Error::Load(e.message(&name)))?;
         Ok(Loaded {
             map,
             mesh,

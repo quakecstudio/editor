@@ -17,7 +17,7 @@ within tolerances recorded per map; it is not an exact match.
 
 ## VIEWDIFF-1 The script
 
-**Source:** ours: `oracles/engine/view_host.c`, `main`; `apps/quakec-engine/src/view_script.rs`.
+**Source:** ours: `oracles/engine/view_host.c`, `main`; `crates/qs-game/src/view_script.rs`.
 
 ### Behaviour
 
@@ -43,7 +43,7 @@ within tolerances recorded per map; it is not an exact match.
 
 ## VIEWDIFF-2 Drawing the view
 
-**Source:** ours: `oracles/engine/view_host.c`, `VID_Init`; `apps/quakec-engine/src/headless.rs`,
+**Source:** ours: `oracles/engine/view_host.c`, `VID_Init`; `crates/qs-game/src/headless.rs`,
 `view_script`.
 
 ### Behaviour
