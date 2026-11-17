@@ -1,6 +1,6 @@
 [package]
 name = "qs-map-light"
-description = "The light compiler: each face's lightmaps from the map's lights, as id's light finds them, with coloured light in a .lit file"
+description = "The light compiler: each face's lightmaps from the map's lights, as id's light finds them in the id dialect and as ericw-tools' light does in the extended one"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -21,6 +21,8 @@ const SUN_DISTANCE: f32 = -16384.0;
 const HALF_TURN: f64 = 180.0;
 const QUARTER_TURN: f32 = 90.0;
 const WHOLE_TURN: f32 = 360.0;
+/// Half, of a step: the first ring is half a step above the horizon.
+const HALF: f32 = 0.5;
 /// The suns of a ring of the dome for each step of elevation.
 const RING: u32 = 4;
 /// `RAND_MAX` of both generators.
@@ -239,7 +241,7 @@ impl Suns<'_> {
             .filter(|sun| sun.light > 0.0)
         };
         let (upper, lower) = (share(upper), share(lower));
-        let mut elevation = elevation_step * 0.5;
+        let mut elevation = elevation_step * HALF;
         let mut angle = 0.0_f32;
         for _ in 0..elevation_steps {
             for _ in 0..angle_steps {

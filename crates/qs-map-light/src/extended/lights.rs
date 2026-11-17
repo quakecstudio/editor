@@ -8,7 +8,7 @@
 //! lump read as ericw-tools reads it, each light entity's settings checked, the lights that
 //! surfaces and scatter add, the suns, and where each light can be seen from.
 
-use crate::entities::token;
+use crate::entities::{EntityId, token};
 use crate::extended::keys::{
     CHANNEL_DEFAULT, DEFAULT_LIGHT, Dict, Dirt, Formula, LightKeys, Source, World,
 };
@@ -18,17 +18,18 @@ use crate::extended::math::{
 use crate::extended::rays::{Asker, Rays, Texels};
 use crate::extended::scene::{Map, Skin};
 use crate::extended::sun::{Random, Sun, SunLight, Suns};
+use crate::face::FaceId;
 use crate::{AXES, Jitter, LightError, Vec3, to_f32};
 
 /// `light`: the start of a light entity's classname (LIGHT-10.1).
 const LIGHT_PREFIX: &[u8] = b"light";
 /// The bit a `\b` in a value turns on in the bytes after it (LIGHT-8.6).
 const BOLD: u8 = 0x80;
-/// How far a light in solid is moved along each axis to find open space (LIGHT-10.7).
-const OUT_OF_SOLID: f32 = 2.0;
 /// `surflight_subdivide`: the size of the squares a surface light's faces are cut to
 /// (LIGHT-16.2).
 const SUBDIVIDE: f32 = 128.0;
+/// Half: the middle of an extent, and what rounds a number to the nearest whole.
+const HALF: f64 = 0.5;
 /// The least a cut may leave on either side.
 const LEAST_CUT: f32 = 8.0;
 /// How far above its face a surface light is put with no `_surface_offset` (LIGHT-16.3).
@@ -59,8 +60,8 @@ pub(crate) struct Spot {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Lamp {
     pub(crate) keys: LightKeys,
-    /// Its entity's place among the entities.
-    pub(crate) entity: usize,
+    /// Its entity.
+    pub(crate) entity: EntityId,
     /// The entity it targets.
     target: Option<usize>,
     pub(crate) spot: Option<Spot>,
@@ -174,10 +175,10 @@ impl Lights {
             if !keys.switchableshadow_target.get().is_empty() {
                 keys.nostaticlight.set(true, Source::Default);
             }
-            check_fields(&mut keys, &world);
+            keys.check(&world);
             lamps.push(Lamp {
                 keys,
-                entity,
+                entity: EntityId(entity),
                 target: None,
                 spot,
                 bounds: None,
@@ -240,14 +241,16 @@ impl Lights {
                 && lamp.keys.light_channel_mask.get() == CHANNEL_DEFAULT
                 && lamp.keys.shadow_channel_mask.get() == CHANNEL_DEFAULT
             {
-                let moved = out_of_solid(map, lamp.origin());
+                let moved = map
+                    .out_of_solid(lamp.origin())
+                    .unwrap_or_else(|| lamp.origin());
                 lamp.keys.origin.set(moved, Source::Map);
             }
         }
         if map.bsp.visibility.is_empty() {
             let mut stack = Vec::new();
             for lamp in &mut self.lamps {
-                lamp.bounds = Some(visible_bounds(rays, map, lamp.origin(), &mut stack));
+                lamp.bounds = Some(rays.visible_bounds(map, lamp.origin(), &mut stack));
             }
         }
     }
@@ -256,7 +259,7 @@ impl Lights {
     /// `target` but for case.
     fn match_targets(&mut self) {
         for lamp in &mut self.lamps {
-            let Some(dict) = self.dicts.get(lamp.entity) else {
+            let Some(dict) = self.dicts.get(lamp.entity.index()) else {
                 continue;
             };
             let target = dict.get(b"target");
@@ -428,7 +431,7 @@ impl Lights {
         for lamp in &mut self.lamps {
             let texture = self
                 .dicts
-                .get(lamp.entity)
+                .get(lamp.entity.index())
                 .map_or(&[][..], |dict| dict.get(b"_surface"));
             if texture.is_empty() {
                 continue;
@@ -451,7 +454,8 @@ impl Lights {
                 )
                 .unwrap_or_default();
             for &face_index in marks {
-                let (Some(face), Some(model)) = (map.face(face_index), map.model_of(face_index))
+                let (Some(face), Some(model)) =
+                    (map.face(FaceId::new(face_index)), map.model_of(face_index))
                 else {
                     continue;
                 };
@@ -472,7 +476,7 @@ impl Lights {
                     .filter(|(lamp, texture)| {
                         let radiosity = self
                             .dicts
-                            .get(lamp.entity)
+                            .get(lamp.entity.index())
                             .map_or(0, |dict| dict.int(b"_surface_radiosity"));
                         radiosity == 0
                             && lamp.keys.surflight_group.get() == group
@@ -493,7 +497,7 @@ impl Lights {
                         continue;
                     }
                     for template in &matching {
-                        let dict = self.dicts.get(template.entity);
+                        let dict = self.dicts.get(template.entity.index());
                         let mut above = dict.map_or(0.0, |dict| dict.float(b"_surface_offset"));
                         if above == 0.0 {
                             above = SURFACE_OFFSET;
@@ -552,94 +556,79 @@ fn style_for(
     Ok(style)
 }
 
-/// `CheckEntityFields`: a light's settings put right (LIGHT-10.3).
-fn check_fields(keys: &mut LightKeys, world: &World) {
-    if !keys.light.is_changed() {
-        keys.light.set(DEFAULT_LIGHT, Source::Map);
-    }
-    if keys.atten.get() <= 0.0 {
-        keys.atten.set(1.0, Source::Map);
-    }
-    if !(0.0..=1.0).contains(&keys.anglescale.get()) {
-        keys.anglescale.set(world.anglescale.get(), Source::Map);
-    }
-    if keys.falloff.get() > 0.0 && keys.formula.get() != Formula::Linear {
-        keys.falloff.set(0.0, Source::Map);
-    }
-    if keys.formula.get() == Formula::Unknown {
-        keys.formula.set(Formula::Linear, Source::Map);
-        keys.light.set(0.0, Source::Map);
-    }
-    if keys.deviance.get() > 0.0 && keys.samples.get() == 0 {
-        keys.samples
-            .set(LightKeys::default().samples.get(), Source::Map);
-    }
-    if keys.deviance.get() <= 0.0 || keys.samples.get() <= 1 {
-        keys.deviance.set(0.0, Source::Map);
-        keys.samples.set(1, Source::Map);
-    }
-    // A light of several samples shares its brightness among them, but a linear one.
-    let shared = match keys.formula.get() {
-        Formula::Inverse | Formula::Inverse2 | Formula::Infinite | Formula::Inverse2A => true,
-        Formula::LocalMin => world.addminlight.get(),
-        Formula::Linear | Formula::Unknown => false,
-    };
-    if shared {
-        let samples = u16::try_from(keys.samples.get()).map_or(1.0, f32::from);
-        keys.light.set(keys.light.get() / samples, Source::Map);
-    }
-    if !keys.shadow_channel_mask.is_changed() {
-        keys.shadow_channel_mask
-            .set(keys.light_channel_mask.get(), Source::Default);
+impl LightKeys {
+    /// `CheckEntityFields`: a light's settings put right (LIGHT-10.3).
+    fn check(&mut self, world: &World) {
+        let keys = self;
+        if !keys.light.is_changed() {
+            keys.light.set(DEFAULT_LIGHT, Source::Map);
+        }
+        if keys.atten.get() <= 0.0 {
+            keys.atten.set(1.0, Source::Map);
+        }
+        if !(0.0..=1.0).contains(&keys.anglescale.get()) {
+            keys.anglescale.set(world.anglescale.get(), Source::Map);
+        }
+        if keys.falloff.get() > 0.0 && keys.formula.get() != Formula::Linear {
+            keys.falloff.set(0.0, Source::Map);
+        }
+        if keys.formula.get() == Formula::Unknown {
+            keys.formula.set(Formula::Linear, Source::Map);
+            keys.light.set(0.0, Source::Map);
+        }
+        if keys.deviance.get() > 0.0 && keys.samples.get() == 0 {
+            keys.samples
+                .set(LightKeys::default().samples.get(), Source::Map);
+        }
+        if keys.deviance.get() <= 0.0 || keys.samples.get() <= 1 {
+            keys.deviance.set(0.0, Source::Map);
+            keys.samples.set(1, Source::Map);
+        }
+        // A light of several samples shares its brightness among them, but a linear one.
+        let shared = match keys.formula.get() {
+            Formula::Inverse | Formula::Inverse2 | Formula::Infinite | Formula::Inverse2A => true,
+            Formula::LocalMin => world.addminlight.get(),
+            Formula::Linear | Formula::Unknown => false,
+        };
+        if shared {
+            let samples = u16::try_from(keys.samples.get()).map_or(1.0, f32::from);
+            keys.light.set(keys.light.get() / samples, Source::Map);
+        }
+        if !keys.shadow_channel_mask.is_changed() {
+            keys.shadow_channel_mask
+                .set(keys.light_channel_mask.get(), Source::Default);
+        }
     }
 }
 
-/// `FixLightOnFace`: `point`, or when it is in the world's solid the first of the six points
-/// 2 units from it along an axis, back before forward, that is not; `point` when none is
-/// (LIGHT-10.7).
-fn out_of_solid(map: &Map<'_>, point: Vec3) -> Vec3 {
-    if !map.in_solid(0, point) {
-        return point;
-    }
-    for axis in 0..AXES {
-        for by in [-OUT_OF_SOLID, OUT_OF_SOLID] {
-            let mut moved = point;
-            if let Some(coordinate) = moved.get_mut(axis) {
-                *coordinate += by;
-            }
-            if !map.in_solid(0, moved) {
-                return moved;
+impl Rays {
+    /// `EstimateVisibleBoundsAtPoint`: the box of where 32 by 32 rays spread over the sphere
+    /// about `point` end, each at what it hits or 65536 units out, grown by a quarter of its size
+    /// on every side (LIGHT-10.8).
+    pub(crate) fn visible_bounds(
+        &self,
+        texels: &dyn Texels,
+        point: Vec3,
+        stack: &mut Vec<usize>,
+    ) -> Aabb {
+        let rays = self;
+        let mut bounds = Aabb::at(point);
+        let last = f32::from(SIGHT_RAYS.saturating_sub(1));
+        for x in 0..SIGHT_RAYS {
+            for y in 0..SIGHT_RAYS {
+                // `UniformPointOnSphere`.
+                let (u1, u2) = (f32::from(x) / last, f32::from(y) / last);
+                let theta = to_f32(f64::from(u1) * 2.0 * core::f64::consts::PI);
+                let u = to_f32(2.0 * f64::from(u2) - 1.0);
+                let s = to_f32((1.0 - f64::from(u * u)).sqrt());
+                let dir = [s * theta.cos(), s * theta.sin(), u];
+                let struck = rays.struck((point, dir, SIGHT_REACH), &Asker::NOBODY, texels, stack);
+                let reach = struck.hit.map_or(SIGHT_REACH, |(_, dist)| dist);
+                bounds = bounds.with(add(point, scale(dir, reach)));
             }
         }
+        bounds.grown(SIGHT_GROWTH)
     }
-    point
-}
-
-/// `EstimateVisibleBoundsAtPoint`: the box of where 32 by 32 rays spread over the sphere
-/// about `point` end, each at what it hits or 65536 units out, grown by a quarter of its size
-/// on every side (LIGHT-10.8).
-pub(crate) fn visible_bounds(
-    rays: &Rays,
-    texels: &dyn Texels,
-    point: Vec3,
-    stack: &mut Vec<usize>,
-) -> Aabb {
-    let mut bounds = Aabb::at(point);
-    let last = f32::from(SIGHT_RAYS.saturating_sub(1));
-    for x in 0..SIGHT_RAYS {
-        for y in 0..SIGHT_RAYS {
-            // `UniformPointOnSphere`.
-            let (u1, u2) = (f32::from(x) / last, f32::from(y) / last);
-            let theta = to_f32(f64::from(u1) * 2.0 * core::f64::consts::PI);
-            let u = to_f32(2.0 * f64::from(u2) - 1.0);
-            let s = to_f32((1.0 - f64::from(u * u)).sqrt());
-            let dir = [s * theta.cos(), s * theta.sin(), u];
-            let struck = rays.struck((point, dir, SIGHT_REACH), &Asker::NOBODY, texels, stack);
-            let reach = struck.hit.map_or(SIGHT_REACH, |(_, dist)| dist);
-            bounds = bounds.with(add(point, scale(dir, reach)));
-        }
-    }
-    bounds.grown(SIGHT_GROWTH)
 }
 
 /// `SubdividePolygon`: `points` cut along each axis at the multiple of 128 nearest its
@@ -654,8 +643,8 @@ fn subdivide(points: Vec<Vec3>, out: &mut Vec<Vec<Vec3>>) {
         let (Some(&low), Some(&high)) = (bounds.mins.get(axis), bounds.maxs.get(axis)) else {
             continue;
         };
-        let middle = to_f32((f64::from(low) + f64::from(high)) * 0.5);
-        let cut = SUBDIVIDE * to_f32((f64::from(middle / SUBDIVIDE) + 0.5).floor());
+        let middle = to_f32((f64::from(low) + f64::from(high)) * HALF);
+        let cut = SUBDIVIDE * to_f32((f64::from(middle / SUBDIVIDE) + HALF).floor());
         if high - cut < LEAST_CUT || cut - low < LEAST_CUT {
             continue;
         }

@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! `cargo xtask light-diff [--maps <dir>] [--map <name>]...`: the light compiler differential
-//! (P7-01, MAP-10). Each map is compiled once, by id's qbsp when it reads the map and else by
-//! ericw-tools' qbsp, and that BSP lit by id's light and by qs-map-light in both modes, fast and
-//! `-extra` (LIGHT-1.3). Both light the same faces, so their lightmaps are compared luxel by
-//! luxel, as images, each style's block with the same style's. id's light has no colour, so a
-//! coloured map is compared lit white; its colour (LIGHT-6) is compared with ericw-tools' light,
-//! `.lit` channel by channel, on a map whose lights ericw-tools lights as ours does.
+//! (P7-01, MAP-10, MAP-21). Each map is compiled once, by id's qbsp when it reads the map and
+//! else by ericw-tools' qbsp, and that BSP lit by id's light and by qs-map-light's id dialect
+//! in both modes, fast and `-extra` (LIGHT-1.3). Both light the same faces, so their lightmaps
+//! are compared luxel by luxel, as images, each style's block with the same style's. id's light
+//! has no colour, so a coloured map is compared lit white.
+//!
+//! The extended dialect is compared with ericw-tools' light (LIGHT-8 to LIGHT-20): the map is
+//! compiled by ericw-tools' qbsp with a WAD of blank textures for the names its faces have,
+//! which light tells sky, liquids, fences and surface lights by, and lit by both with what that
+//! qbsp wrote beside the BSP; the grey lumps and the `.lit` files are compared, a lightmap only
+//! one has against darkness.
 //!
 //! The maps are `map-diff`'s: the fixtures and the corpus's (MAP-19), with the coloured room. The
 //! oracles are built as `cargo xtask oracles maps` builds them.
@@ -67,6 +72,18 @@ const LUXEL_TOLERANCE: u8 = 2;
 /// average within a twentieth of a level. Every corpus map measured 0 against id's light in both
 /// modes, and the coloured room 0.009 against ericw-tools' in the fast one (P7-01).
 const MEAN_BAR: f64 = 0.05;
+
+/// The bar against ericw-tools' light, which asks Embree what each ray meets: a ray that
+/// touches the edge of a triangle, or runs along a plane of the grid, is answered by Embree's
+/// own tree of boxes and arithmetic, which ours follows only by rule (LIGHT-11.9), and one
+/// such ray moves a luxel by a whole light's worth. So the lightmaps are held to it on average,
+/// within a level, and in the count of luxels past [`LUXEL_TOLERANCE`], [`ERICW_PAST_BAR`] in
+/// a hundred. Measured on the corpus on 2026-11-17: means of 0.01 to 0.60, and 0.03 to 2.0 in
+/// a hundred past.
+const ERICW_MEAN_BAR: f64 = 1.0;
+const ERICW_PAST_BAR: f64 = 3.0;
+/// A hundred, of a part in a hundred.
+const HUNDRED: f64 = 100.0;
 
 /// A light mode, with the option that asks the oracles for it.
 #[derive(Clone, Copy, Debug)]
@@ -162,6 +179,26 @@ impl Images {
     /// mean within [`MEAN_BAR`].
     fn agree(&self) -> bool {
         self.faces_differing == 0 && self.over == 0 && self.mean() <= MEAN_BAR
+    }
+
+    /// Whether the images are as near as ericw-tools' light is held to: every face alike, the
+    /// mean within [`ERICW_MEAN_BAR`], and no more than [`ERICW_PAST_BAR`] luxels in a hundred
+    /// past [`LUXEL_TOLERANCE`].
+    fn near(&self) -> bool {
+        self.faces_differing == 0
+            && self.mean() <= ERICW_MEAN_BAR
+            && self.past_in_a_hundred() <= ERICW_PAST_BAR
+    }
+
+    /// How many luxels in a hundred are past [`LUXEL_TOLERANCE`].
+    fn past_in_a_hundred(&self) -> f64 {
+        let compared = u32::try_from(self.compared).unwrap_or(u32::MAX);
+        let over = u32::try_from(self.over).unwrap_or(u32::MAX);
+        if compared == 0 {
+            0.0
+        } else {
+            f64::from(over) * HUNDRED / f64::from(compared)
+        }
     }
 
     /// The mean difference.
@@ -594,8 +631,12 @@ impl Oracles<'_> {
         };
         let mut agrees = match compare(&ours.bsp, &theirs.bsp, Samples::Grey, OnlyOne::Dark) {
             Ok(images) => {
-                println!("{} {label} light: {images}", verdict(images.agree()));
-                images.agree()
+                println!(
+                    "{} {label} light: {images}, {:.2} in a hundred",
+                    verdict(images.near()),
+                    images.past_in_a_hundred()
+                );
+                images.near()
             }
             Err(why) => {
                 println!("FAIL  {label} light: {why}");
@@ -607,8 +648,12 @@ impl Oracles<'_> {
                 let samples = Samples::Colour(our_lit, their_lit);
                 match compare(&ours.bsp, &theirs.bsp, samples, OnlyOne::Dark) {
                     Ok(images) => {
-                        println!("{} {label} colour: {images}", verdict(images.agree()));
-                        agrees &= images.agree();
+                        println!(
+                            "{} {label} colour: {images}, {:.2} in a hundred",
+                            verdict(images.near()),
+                            images.past_in_a_hundred()
+                        );
+                        agrees &= images.near();
                     }
                     Err(why) => {
                         println!("FAIL  {label} colour: {why}");
@@ -706,6 +751,31 @@ mod tests {
         close.differ();
         assert!(!close.agree(), "a face lit in only one disagrees");
         assert_eq!(Images::default().mean(), 0.0, "nothing compared");
+    }
+
+    #[test]
+    fn ericw_tools_light_is_held_on_average_and_in_the_count_past_tolerance() {
+        let mut images = Images::default();
+        // Two luxels in a hundred a whole light off: within the bar, though not alike.
+        images.add(&[10; 98], &[10; 98]);
+        images.add(&[10, 10], &[40, 40]);
+        assert!(!images.agree());
+        assert!(images.near());
+        assert_eq!(images.past_in_a_hundred(), 2.0);
+        // Four in a hundred are past it.
+        images.add(&[10, 10], &[40, 40]);
+        assert!(!images.near());
+        // A lightmap only one has is compared against darkness.
+        let mut dark = Images::default();
+        dark.add_against_dark(&[0, 1, 2, 9]);
+        assert_eq!((dark.compared, dark.over, dark.largest), (4, 1, 9));
+        let mut dim = Images::default();
+        dim.add(&[10; 100], &[12; 100]);
+        assert!(
+            !dim.near(),
+            "two levels off on average is past the mean's bar"
+        );
+        assert_eq!(Images::default().past_in_a_hundred(), 0.0);
     }
 
     #[test]

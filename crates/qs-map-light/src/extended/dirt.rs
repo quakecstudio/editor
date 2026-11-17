@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 1996-1997  Id Software, Inc.
+// Copyright (C) 2017 Eric Wasylishen
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: light/ltface.cc, SetupDirt, TransformToTangentSpace, GetDirtVector, LightFace_CalculateDirt
@@ -19,6 +20,8 @@ use crate::{AXES, Vec3, to_f32};
 /// each the rays from it outward (LIGHT-19.2).
 const ANGLE_STEPS: u8 = 16;
 const ELEVATION_STEPS: u8 = 3;
+/// Half, of a step: each ray is in the middle of its part of the angle.
+const HALF: f32 = 0.5;
 /// Degrees to a half turn and in a whole one.
 const HALF_TURN: f64 = 180.0;
 const WHOLE_TURN: f32 = 360.0;
@@ -75,7 +78,7 @@ impl Dirt {
         let mut vectors = Vec::new();
         let mut angle = 0.0_f32;
         for _ in 0..ANGLE_STEPS {
-            let mut elevation = elevation_step * 0.5;
+            let mut elevation = elevation_step * HALF;
             for _ in 0..ELEVATION_STEPS {
                 // In single precision, as C++ works a float's sine and cosine.
                 vectors.push([

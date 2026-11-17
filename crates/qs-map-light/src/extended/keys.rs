@@ -3,10 +3,10 @@
 // Copyright (C) 2016 Eric Wasylishen
 // Copyright (C) 2026 QuakeC Studio contributors
 //
-// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: common/settings.cc, setting_container::find_setting, setting_container::set_setting, setting_bool::parseInternal, setting_vec3::parse, setting_light::parse, setting_mangle::parse
-// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: common/entdata.cc, entdict_t::get, entdict_t::set, entdict_t::parse, EntData_Write
-// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: light/light.cc, worldspawn_keys::worldspawn_keys, modelinfo_t::modelinfo_t, FixupGlobalSettings
-// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: light/entities.cc, light_t::light_t
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: common/settings.cc, find_setting, set_setting, parseInternal, parse
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: common/entdata.cc, get, set, parse, EntData_Write
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: light/light.cc, worldspawn_keys, modelinfo_t, FixupGlobalSettings
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: light/entities.cc, light_t
 
 //! The keys the extended dialect reads (LIGHT-9): an entity's pairs as ericw-tools keeps them,
 //! each setting's value and whether the map set it, and the settings of the world, of a light

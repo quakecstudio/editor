@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 1996-1997  Id Software, Inc.
 // Copyright (C) 2017 Eric Wasylishen
-// Copyright (C) 2018 MaxED
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: light/bounce.cc, Face_ShouldBounce, MakeBounceLight, MakeBounceLightsThread, MakeBounceLights
 // Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: light/ltface.cc, SurfaceLight_ColorAtDist, GetSurfaceLighting, SurfaceLight_SphereCull, LightFace_SurfaceLight, LightPoint_SurfaceLight
-// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: include/common/polylib.hh, winding_base_t::area, winding_base_t::center, winding_base_t::remove_colinear, winding_base_t::plane
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: include/common/polylib.hh, area, center, remove_colinear, plane
 
 //! Bounce lighting (LIGHT-20): each face that casts shadow gives back the light that fell on
 //! it, as a light of its own a unit above its middle, once for each bounce.
@@ -31,6 +30,8 @@ const NEAREST: f32 = 0.01;
 const ANGLE_EPSILON: f32 = 0.01;
 /// The distance a bounce light's brightness is clamped at, and a surface light's.
 pub(crate) const BOUNCE_CLAMP: f32 = 128.0;
+/// What a box of what a bounce light sees may miss a face's box by (LIGHT-10.8).
+const BOUNDS_EPSILON: f32 = 0.001;
 /// Half, of a triangle's cross product and of `_bouncescale`.
 const HALF: f32 = 0.5;
 
@@ -206,11 +207,14 @@ const fn count_of(value: usize) -> f32 {
     value as f32
 }
 
-/// `SurfaceLight_ColorAtDist`: `colour` at `intensity` falling with the square of the
-/// distance, which is taken as at least [`BOUNCE_CLAMP`], scaled by `by` (LIGHT-20.4).
-fn colour_at(world: &World, by: f32, emission: &Emission, dist: f32) -> Vec3 {
-    let reach = (world.scaledist.get() * dist).max(BOUNCE_CLAMP);
-    scale(emission.colour, emission.intensity / (reach * reach) * by)
+impl Emission {
+    /// `SurfaceLight_ColorAtDist`: `colour` at `intensity` falling with the square of the
+    /// distance, which is taken as at least [`BOUNCE_CLAMP`], scaled by `by` (LIGHT-20.4).
+    fn colour_at(&self, world: &World, by: f32, dist: f32) -> Vec3 {
+        let emission = self;
+        let reach = (world.scaledist.get() * dist).max(BOUNCE_CLAMP);
+        scale(emission.colour, emission.intensity / (reach * reach) * by)
+    }
 }
 
 impl Emitter {
@@ -220,12 +224,13 @@ impl Emitter {
     pub(crate) fn is_culled(&self, world: &World, emission: &Emission, patch: &Patch) -> bool {
         if self
             .bounds
-            .is_some_and(|bounds| bounds.is_apart_from(patch.extents.bounds, 0.001))
+            .is_some_and(|bounds| bounds.is_apart_from(patch.extents.bounds, BOUNDS_EPSILON))
         {
             return true;
         }
         let dist = length(sub(patch.extents.origin, self.pos)) + patch.extents.radius;
-        colour_at(world, 1.0, emission, dist)
+        emission
+            .colour_at(world, 1.0, dist)
             .iter()
             .all(|c| *c <= BOUNCE_GATE)
     }
@@ -249,12 +254,7 @@ impl Emitter {
         if factor <= 0.0 {
             return [0.0; AXES];
         }
-        colour_at(
-            world,
-            world.bouncescale.get() * HALF * factor,
-            emission,
-            dist,
-        )
+        emission.colour_at(world, world.bouncescale.get() * HALF * factor, dist)
     }
 
     /// The unit direction and the distance from the emitter to `point`, the distance at

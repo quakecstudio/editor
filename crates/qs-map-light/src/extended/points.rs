@@ -3,7 +3,7 @@
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: light/ltface.cc, CalcPoints, CalcPointNormal, PositionSamplePointOnFace, Lightsurf_Init
-// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: common/bsputils.cc, WorldToTexSpace, TexSpaceToWorld, faceextents_t::faceextents_t, faceextents_t::LMCoordToWorld, faceextents_t::worldToLMCoord
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: common/bsputils.cc, WorldToTexSpace, TexSpaceToWorld, faceextents_t, LMCoordToWorld, worldToLMCoord
 
 //! A face's sample points (LIGHT-12): its lightmap's extents, where each sample lies, which
 //! face it is really on, its normal, and whether it is hidden in solid.
@@ -15,6 +15,7 @@ use crate::extended::math::{
 };
 use crate::extended::phong::Smoothing;
 use crate::extended::scene::{LUXEL, Map, Skin};
+use crate::face::FaceId;
 use crate::{AXES, Sampling, Vec3, to_f32};
 
 /// `sampleOffPlaneDist`: how far in front of its face a sample lies (LIGHT-12.3).
@@ -25,6 +26,12 @@ const OFF_PLANE_SLACK: f32 = 0.1;
 const MAX_HOPS: usize = 3;
 /// How far a sample in solid is moved on each axis to find open space (LIGHT-12.7).
 const NUDGE: f32 = 0.5;
+/// The numbers of a row of a map from one space to another: three and an offset.
+const ROW: usize = 4;
+/// Where a row keeps its offset.
+const OFFSET: usize = 3;
+/// The rows of a map from one space to another, each three numbers and an offset.
+type Rows = [[f32; ROW]; AXES];
 /// Half, of a box's size and of a luxel.
 const HALF: f32 = 0.5;
 
@@ -64,9 +71,9 @@ pub(crate) struct Extents {
     pub(crate) extents: [i32; 2],
     /// The texture's axes over the plane's normal, each with its offset: world to texture
     /// space.
-    to_texture: [[f32; 4]; 3],
+    to_texture: Rows,
     /// Texture space to the world: each row a world axis.
-    to_world: [[f32; 4]; 3],
+    to_world: Rows,
     /// The middle and radius of the sphere around the face.
     pub(crate) origin: Vec3,
     pub(crate) radius: f32,
@@ -93,7 +100,7 @@ impl Extents {
                     f64::from(axis[0]) * f64::from(point[0])
                         + f64::from(axis[1]) * f64::from(point[1])
                         + f64::from(axis[2]) * f64::from(point[2])
-                        + f64::from(axis[3]),
+                        + f64::from(axis[OFFSET]),
                 ));
                 *low = low.min(coordinate);
                 *high = high.max(coordinate);
@@ -131,13 +138,13 @@ impl Extents {
             LUXEL * (float_of(self.mins[1]) + t),
         ];
         self.to_world
-            .map(|row| row[0] * texel[0] + row[1] * texel[1] + row[3])
+            .map(|row| row[0] * texel[0] + row[1] * texel[1] + row[OFFSET])
     }
 
     /// `worldToLMCoord`: the lightmap coordinates of `point`.
     fn luxel_at(&self, point: Vec3) -> [f32; 2] {
         let texel =
-            |row: [f32; 4]| row[0] * point[0] + row[1] * point[1] + row[2] * point[2] + row[3];
+            |row: [f32; 4]| row[0] * point[0] + row[1] * point[1] + row[2] * point[2] + row[OFFSET];
         [
             texel(self.to_texture[0]) / LUXEL - float_of(self.mins[0]),
             texel(self.to_texture[1]) / LUXEL - float_of(self.mins[1]),
@@ -165,15 +172,15 @@ const fn float_of(value: i32) -> f32 {
 
 /// The inverse of the map whose rows are `rows`, each three numbers and an offset, worked in
 /// `double`; none when the rows do not span space.
-fn inverse(rows: [[f32; 4]; 3]) -> Option<[[f32; 4]; 3]> {
+fn inverse(rows: Rows) -> Option<Rows> {
     let m = rows.map(|row| row.map(f64::from));
     let [a, b, c] = m;
-    let cofactor = |p: [f64; 4], q: [f64; 4], i: usize, j: usize| -> Option<f64> {
+    let cofactor = |p: [f64; ROW], q: [f64; ROW], i: usize, j: usize| -> Option<f64> {
         Some(p.get(i)? * q.get(j)? - p.get(j)? * q.get(i)?)
     };
     // The columns of the inverse of the three by three part are the cross products of its
     // rows, over the determinant.
-    let cross = |p: [f64; 4], q: [f64; 4]| -> Option<[f64; 3]> {
+    let cross = |p: [f64; ROW], q: [f64; ROW]| -> Option<[f64; 3]> {
         Some([
             cofactor(p, q, 1, 2)?,
             cofactor(p, q, 2, 0)?,
@@ -185,7 +192,7 @@ fn inverse(rows: [[f32; 4]; 3]) -> Option<[[f32; 4]; 3]> {
     if det == 0.0 {
         return None;
     }
-    let mut out = [[0.0; 4]; 3];
+    let mut out = [[0.0; ROW]; AXES];
     for (axis, row) in out.iter_mut().enumerate() {
         let (Some(x), Some(y), Some(z)) = (bc.get(axis), ca.get(axis), ab.get(axis)) else {
             continue;
@@ -195,7 +202,7 @@ fn inverse(rows: [[f32; 4]; 3]) -> Option<[[f32; 4]; 3]> {
             to_f32(x),
             to_f32(y),
             to_f32(z),
-            to_f32(-(x * a[3] + y * b[3] + z * c[3])),
+            to_f32(-(x * a[OFFSET] + y * b[OFFSET] + z * c[OFFSET])),
         ];
     }
     Some(out)
@@ -204,7 +211,7 @@ fn inverse(rows: [[f32; 4]; 3]) -> Option<[[f32; 4]; 3]> {
 /// A face readied for lighting (`lightsurf_t`).
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Patch {
-    pub(crate) face: usize,
+    pub(crate) face: FaceId,
     pub(crate) model: usize,
     /// The face's plane, moved with its model.
     pub(crate) plane: Plane,
@@ -226,11 +233,13 @@ pub(crate) struct Patch {
     pub(crate) channels: i32,
 }
 
-/// The samples a luxel takes on each axis.
-const fn per_luxel(sampling: Sampling) -> usize {
-    match sampling {
-        Sampling::Fast => 1,
-        Sampling::Extra => 2,
+impl Sampling {
+    /// The samples a luxel takes on each axis (LIGHT-8.2).
+    pub(crate) const fn per_luxel(self) -> usize {
+        match self {
+            Self::Fast => 1,
+            Self::Extra => 2,
+        }
     }
 }
 
@@ -250,10 +259,11 @@ impl Patch {
     pub(crate) fn new(
         map: &Map<'_>,
         smoothing: &Smoothing,
-        face_index: usize,
+        face_id: FaceId,
         sampling: Sampling,
     ) -> Option<Self> {
-        let face = map.face(face_index)?;
+        let face_index = face_id.index();
+        let face = map.face(face_id)?;
         let model_index = map.model_of(face_index)?;
         let model = map.models.get(model_index)?;
         if face.numedges < AXES || !map.is_lightmapped(face) {
@@ -280,7 +290,7 @@ impl Patch {
         let shape = smoothing.shapes.get(face_index)?;
         let mut extents = Extents::new(&shape.points, plane, texinfo.vecs)?;
         let curved = flags.phong_angle != 0.0 || flags.phong_group != 0;
-        let extra = per_luxel(sampling);
+        let extra = sampling.per_luxel();
         let (width, height) = (
             extents.width().saturating_mul(extra),
             extents.height().saturating_mul(extra),
@@ -314,7 +324,7 @@ impl Patch {
         extents.origin = add(extents.origin, model.offset);
         extents.bounds = extents.bounds.moved(model.offset);
         Some(Self {
-            face: face_index,
+            face: face_id,
             model: model_index,
             plane: Plane {
                 normal: plane.normal,

@@ -23,12 +23,13 @@ use qs_wad::write::WadBuilder;
 use super::bounce::Emitter;
 use super::dirt::Dirt;
 use super::keys::{Dict, World};
-use super::lights::{Lights, visible_bounds};
+use super::lights::Lights;
 use super::phong::Smoothing;
 use super::points::Patch;
 use super::rays::Rays;
 use super::scene::{Given, Map, MapFault};
 use super::shade::Shader;
+use crate::face::FaceId;
 use crate::tests::{cuboid, light_at, miptex};
 use crate::{
     Extras, Jitter, LeafKind, Light, LightError, LightWarning, Lighted, Sampling, SurfaceFlags,
@@ -361,7 +362,13 @@ fn the_full_mode_averages_four_samples() {
     let made = parts(&read, Extras::default());
     let smoothing = Smoothing::new(&made.map);
     let floor_face = face_facing(&read, UP);
-    let patch = Patch::new(&made.map, &smoothing, floor_face, Sampling::Fast).unwrap();
+    let patch = Patch::new(
+        &made.map,
+        &smoothing,
+        FaceId::new(floor_face),
+        Sampling::Fast,
+    )
+    .unwrap();
     let face = &read.faces[floor_face];
     assert_eq!([patch.width, patch.height], face.lightmap_size);
     // A sample well inside the face lies on the 16 unit grid, a unit above the floor.
@@ -369,7 +376,13 @@ fn the_full_mode_averages_four_samples() {
     assert_eq!(inner.point[2], 1.0);
     assert!(inner.point[0] % 16.0 == 0.0 && inner.point[1] % 16.0 == 0.0);
     assert_eq!(inner.normal, UP);
-    let finer = Patch::new(&made.map, &smoothing, floor_face, Sampling::Extra).unwrap();
+    let finer = Patch::new(
+        &made.map,
+        &smoothing,
+        FaceId::new(floor_face),
+        Sampling::Extra,
+    )
+    .unwrap();
     assert_eq!(
         [finer.width, finer.height],
         face.lightmap_size.map(|n| n * 2)
@@ -393,7 +406,7 @@ fn samples_at_the_edges_are_moved_out_of_solid() {
     let patch = Patch::new(
         &made.map,
         &smoothing,
-        face_facing(&read, UP),
+        FaceId::new(face_facing(&read, UP)),
         Sampling::Fast,
     )
     .unwrap();
@@ -429,7 +442,7 @@ fn samples_at_the_edges_are_moved_out_of_solid() {
     assert!(!made.map.in_any_solid(0, [64.0, 64.0, 64.0]));
     // A wall's lightmap runs 16 units past its top and bottom: those rows snap to its edge.
     let wall = face_facing(&read, [1.0, 0.0, 0.0]);
-    let wall_patch = Patch::new(&made.map, &smoothing, wall, Sampling::Fast).unwrap();
+    let wall_patch = Patch::new(&made.map, &smoothing, FaceId::new(wall), Sampling::Fast).unwrap();
     assert!(wall_patch.samples.iter().all(|sample| !sample.occluded));
     assert!(
         wall_patch
@@ -650,7 +663,9 @@ fn lights_are_set_up_in_order() {
         [1.0, 128.0, 64.0],
         "moved 2 units out of the wall"
     );
-    let sees = visible_bounds(&made.rays, &made.map, [128.0, 128.0, 64.0], &mut Vec::new());
+    let sees = made
+        .rays
+        .visible_bounds(&made.map, [128.0, 128.0, 64.0], &mut Vec::new());
     // The room is 256 by 256 by 128: the box of it, grown by a quarter of its size.
     let near = |a: Vec3, b: Vec3| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 0.001);
     assert!(near(sees.mins, [-64.0, -64.0, -32.0]), "{:?}", sees.mins);
@@ -711,12 +726,12 @@ fn phong_smooths_the_corners_of_a_model() {
         assert!(normal[0] < -0.3 && normal[0] > -0.95, "{normal:?}");
         assert!(normal[1].abs() > 0.3);
     }
-    let patch = Patch::new(&made.map, &smoothing, side, Sampling::Fast).unwrap();
+    let patch = Patch::new(&made.map, &smoothing, FaceId::new(side), Sampling::Fast).unwrap();
     assert!(patch.curved);
     let world_floor = Patch::new(
         &made.map,
         &smoothing,
-        face_facing(&read, UP),
+        FaceId::new(face_facing(&read, UP)),
         Sampling::Fast,
     );
     assert!(!world_floor.unwrap().curved);
@@ -831,7 +846,7 @@ fn a_models_hidden_samples_take_the_light_at_its_middle() {
     let top = (model.firstface..model.firstface + model.numfaces)
         .find(|&face| normal_of(&read, &read.faces[face]) == UP)
         .unwrap();
-    let mut patch = Patch::new(&made.map, &smoothing, top, Sampling::Fast).unwrap();
+    let mut patch = Patch::new(&made.map, &smoothing, FaceId::new(top), Sampling::Fast).unwrap();
     assert!(patch.samples.iter().any(|sample| sample.occluded));
     let hidden: Vec<usize> = (0..patch.samples.len())
         .filter(|&i| patch.samples[i].occluded)

@@ -1,16 +1,24 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The light compiler (P6-06, `docs/spec/light.md`): each face's lightmaps from the map's light
-//! entities, as id's `light` finds them, written into the BSP's lighting lump with each face's
-//! styles and offset, and coloured light in a `.lit` file beside it (LIGHT-6).
+//! The light compiler (P6-06, L-22, L-23, `docs/spec/light.md`): each face's lightmaps from
+//! the map's lights, written into the BSP's lighting lump with each face's styles and offset,
+//! and coloured light in a `.lit` file beside it.
 //!
-//! [`Light::run`] takes the BSP and gives the lit BSP, the `.lit` when a light is coloured, and
-//! the warnings `light` prints. The fast mode is `light`'s default, one sample per luxel; the
-//! full mode is its `-extra`, four (LIGHT-1.3). Faces are lit on every thread the machine has
-//! and written in face order, so the result is the one a single thread gives (LIGHT-1.5).
+//! [`Light::run`] takes the BSP and gives the lit BSP, the `.lit` when the light has a colour,
+//! and the warnings `light` prints. It has `qs-map-bsp`'s two dialects (LIGHT-1.11):
 //!
-//! Nothing is ported: id's `light` is not a portable upstream (`docs/porting.md`), so the code
-//! is written from the spec, which was written from its source, read and run as an oracle.
+//! - The id dialect is id's `light` (LIGHT-1 to LIGHT-6), its lightmaps held to it byte for
+//!   byte: this crate's `entities`, `face`, `trace` and `lump` modules, written from the spec,
+//!   which was written from id's source.
+//! - The extended dialect, the default, is ericw-tools' `light` (LIGHT-8 to LIGHT-20):
+//!   sunlight, the sky dome, surface lights, minimum light, phong shading, dirt and bounce,
+//!   with shadows cast by brush models, fences and glass. It is the `extended` module, ported
+//!   from ericw-tools' `light/` (ADR-0025, ADR-0027). [`Light::run_with`] gives it what a BSP
+//!   compiler writes beside the BSP for light ([`Sidecars`]) and the game's palette.
+//!
+//! The fast mode takes one sample per luxel; the full mode, `-extra`, four (LIGHT-1.3,
+//! LIGHT-8.2). Faces are lit on every thread the machine has and written in face order, so
+//! the result is the one a single thread gives (LIGHT-1.5).
 
 mod entities;
 mod extended;
@@ -326,7 +334,7 @@ impl Light {
             return Err(LightError::Format);
         }
         if self.dialect == Dialect::Extended {
-            return extended::run(self, bsp, &read, extras);
+            return self.run_extended(bsp, &read, extras);
         }
         let mut warnings = Vec::new();
         let entities = Entities::read(read.entity_lump, self.dialect, &mut warnings)?;

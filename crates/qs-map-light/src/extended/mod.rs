@@ -43,7 +43,7 @@ use self::scene::{Given, Map, MapFault};
 pub use self::scene::{LeafKind, SurfaceFlags};
 use self::shade::{Lightmaps, Shader};
 pub use self::sidecar::{SidecarFile, Sidecars};
-use crate::face::Lit;
+use crate::face::{FaceId, Lit};
 use crate::lump::{self, Colour};
 use crate::{Light, LightError, LightWarning, Lighted};
 
@@ -66,134 +66,136 @@ pub struct Extras<'a> {
 /// One face lit: its lightmaps, and whether any of its samples has a colour.
 type FaceResult = (Option<Lit>, bool);
 
-/// `light_main` and `LightWorld`: the BSP `bytes`, read as `read`, lit in the extended
-/// dialect (LIGHT-8).
-pub(crate) fn run(
-    light: &Light,
-    bytes: &[u8],
-    read: &Bsp<'_>,
-    extras: Extras<'_>,
-) -> Result<Lighted, LightError> {
-    let mut lights = Lights::read(read.entity_lump)?;
-    let map = Map::new(
-        read,
-        lights.world.clone(),
-        &lights.dicts,
-        extras.surfaces.to_vec(),
-        &Given {
-            switches: lights.shadow_switches(),
-            leaves: extras.leaves,
-            palette: extras.palette,
-        },
-    )
-    .map_err(|MapFault::NoEntityForModel(model)| LightError::NoEntityForModel { model })?;
-    let rays = Rays::new(map.casters());
-    lights.set_up(&map, &rays, light.jitter);
-    let smoothing = Smoothing::new(&map);
-    let dirt = Dirt::new(&map.world, &lights.lamps);
-    let shader = Shader {
-        map: &map,
-        rays: &rays,
-        lights: &lights,
-        dirt: dirt.as_ref(),
-    };
-    let count = read.faces.len();
-    // Each face's samples and lightmaps, between the passes: every face is lit directly
-    // before any light bounces, and every bounce is over before the minimum light.
-    let slots: Vec<Mutex<Option<(Patch, Lightmaps)>>> = on_threads(count, |face, stack| {
-        Mutex::new(
-            Patch::new(&map, &smoothing, face, light.sampling).map(|mut patch| {
-                let lightmaps = shader.direct(&mut patch, stack);
-                (patch, lightmaps)
-            }),
+impl Light {
+    /// `light_main` and `LightWorld`: the BSP `bytes`, read as `read`, lit in the extended
+    /// dialect (LIGHT-8).
+    pub(crate) fn run_extended(
+        &self,
+        bytes: &[u8],
+        read: &Bsp<'_>,
+        extras: Extras<'_>,
+    ) -> Result<Lighted, LightError> {
+        let light = self;
+        let mut lights = Lights::read(read.entity_lump)?;
+        let map = Map::new(
+            read,
+            lights.world.clone(),
+            &lights.dicts,
+            extras.surfaces.to_vec(),
+            &Given {
+                switches: lights.shadow_switches(),
+                leaves: extras.leaves,
+                palette: extras.palette,
+            },
         )
-    })?;
-    let mut emitters: Vec<Option<Emitter>> = vec![None; count];
-    let bounces = usize::try_from(map.world.bounce.get()).unwrap_or(0);
-    if bounces > 0 {
-        let bouncing = map.bouncing_faces();
-        let corners = map.moved_corners();
-        let texture = map.bounce_colours();
-        let bouncer = Bouncer {
-            world: &map.world,
-            bounces: &bouncing,
-            corners: &corners,
-            texture: &texture,
+        .map_err(|MapFault::NoEntityForModel(model)| LightError::NoEntityForModel { model })?;
+        let rays = Rays::new(map.casters());
+        lights.set_up(&map, &rays, light.jitter);
+        let smoothing = Smoothing::new(&map);
+        let dirt = Dirt::new(&map.world, &lights.lamps);
+        let shader = Shader {
+            map: &map,
+            rays: &rays,
+            lights: &lights,
+            dirt: dirt.as_ref(),
         };
-        for depth in 0..bounces {
-            let mut any = false;
-            let mut stack = Vec::new();
-            for (face, (slot, emitter)) in slots.iter().zip(&mut emitters).enumerate() {
-                let Ok(mut slot) = slot.lock() else {
-                    continue;
-                };
-                let Some((_, lightmaps)) = slot.as_mut() else {
-                    continue;
-                };
-                let had = emitter.is_some();
-                any |= bouncer.emit(face, lightmaps, emitter, depth);
-                // What a new emitter can see, as a light's is found (LIGHT-10.8).
-                if !had
-                    && map.bsp.visibility.is_empty()
-                    && let Some(emitter) = emitter
-                {
-                    emitter.bounds =
-                        Some(lights::visible_bounds(&rays, &map, emitter.pos, &mut stack));
+        let count = read.faces.len();
+        // Each face's samples and lightmaps, between the passes: every face is lit directly
+        // before any light bounces, and every bounce is over before the minimum light.
+        let slots: Vec<Mutex<Option<(Patch, Lightmaps)>>> = on_threads(count, |face, stack| {
+            Mutex::new(
+                Patch::new(&map, &smoothing, FaceId::new(face), light.sampling).map(|mut patch| {
+                    let lightmaps = shader.direct(&mut patch, stack);
+                    (patch, lightmaps)
+                }),
+            )
+        })?;
+        let mut emitters: Vec<Option<Emitter>> = vec![None; count];
+        let bounces = usize::try_from(map.world.bounce.get()).unwrap_or(0);
+        if bounces > 0 {
+            let bouncing = map.bouncing_faces();
+            let corners = map.moved_corners();
+            let texture = map.bounce_colours();
+            let bouncer = Bouncer {
+                world: &map.world,
+                bounces: &bouncing,
+                corners: &corners,
+                texture: &texture,
+            };
+            for depth in 0..bounces {
+                let mut any = false;
+                let mut stack = Vec::new();
+                for (face, (slot, emitter)) in slots.iter().zip(&mut emitters).enumerate() {
+                    let Ok(mut slot) = slot.lock() else {
+                        continue;
+                    };
+                    let Some((_, lightmaps)) = slot.as_mut() else {
+                        continue;
+                    };
+                    let had = emitter.is_some();
+                    any |= bouncer.emit(face, lightmaps, emitter, depth);
+                    // What a new emitter can see, as a light's is found (LIGHT-10.8).
+                    if !had
+                        && map.bsp.visibility.is_empty()
+                        && let Some(emitter) = emitter
+                    {
+                        emitter.bounds = Some(rays.visible_bounds(&map, emitter.pos, &mut stack));
+                    }
                 }
-            }
-            if !any {
-                break;
-            }
-            let emitters = &emitters;
-            on_threads(count, |face, stack| {
-                if let Some(mut slot) = slots.get(face).and_then(|slot| slot.lock().ok())
-                    && let Some((patch, lightmaps)) = slot.as_mut()
-                {
-                    shader.indirect(patch, lightmaps, emitters, depth, stack);
+                if !any {
+                    break;
                 }
-            })?;
+                let emitters = &emitters;
+                on_threads(count, |face, stack| {
+                    if let Some(mut slot) = slots.get(face).and_then(|slot| slot.lock().ok())
+                        && let Some((patch, lightmaps)) = slot.as_mut()
+                    {
+                        shader.indirect(patch, lightmaps, emitters, depth, stack);
+                    }
+                })?;
+            }
         }
-    }
-    let emitters = &emitters;
-    let results: Vec<FaceResult> = on_threads(count, |face, stack| {
-        let taken = slots
-            .get(face)
-            .and_then(|slot| slot.lock().ok())
-            .and_then(|mut slot| slot.take());
-        taken.map_or((None, false), |(mut patch, mut lightmaps)| {
-            shader.post(&mut patch, &mut lightmaps, emitters, stack);
-            let done = output::finish(&map.world, &patch, lightmaps, light.sampling);
-            (done.lit, done.coloured)
+        let emitters = &emitters;
+        let results: Vec<FaceResult> = on_threads(count, |face, stack| {
+            let taken = slots
+                .get(face)
+                .and_then(|slot| slot.lock().ok())
+                .and_then(|mut slot| slot.take());
+            taken.map_or((None, false), |(mut patch, mut lightmaps)| {
+                shader.post(&mut patch, &mut lightmaps, emitters, stack);
+                let done = lightmaps.finish(&map.world, &patch, light.sampling);
+                (done.lit, done.coloured)
+            })
+        })?;
+        let mut faces = Vec::with_capacity(count);
+        let mut colour = Colour::White;
+        for (lit, coloured) in results {
+            if coloured {
+                colour = Colour::Coloured;
+            }
+            faces.push(lit);
+        }
+        // The grey byte is always the brightest channel (LIGHT-18.5), which is what a coloured
+        // lump's is; the `.lit` is written only when a sample has a colour (LIGHT-18.6).
+        let out = lump::written(
+            bytes,
+            read,
+            &faces,
+            &lights.written(),
+            Colour::Coloured,
+            Dialect::Extended,
+        )?;
+        Ok(Lighted {
+            bsp: out.bsp,
+            lit: out.lit.filter(|_| colour == Colour::Coloured),
+            warnings: lights
+                .invalid
+                .iter()
+                .map(|key| LightWarning::InvalidWorldKey { key: key.clone() })
+                .collect(),
+            switchable: lights.switchable(),
         })
-    })?;
-    let mut faces = Vec::with_capacity(count);
-    let mut colour = Colour::White;
-    for (lit, coloured) in results {
-        if coloured {
-            colour = Colour::Coloured;
-        }
-        faces.push(lit);
     }
-    // The grey byte is always the brightest channel (LIGHT-18.5), which is what a coloured
-    // lump's is; the `.lit` is written only when a sample has a colour (LIGHT-18.6).
-    let out = lump::written(
-        bytes,
-        read,
-        &faces,
-        &lights.written(),
-        Colour::Coloured,
-        Dialect::Extended,
-    )?;
-    Ok(Lighted {
-        bsp: out.bsp,
-        lit: out.lit.filter(|_| colour == Colour::Coloured),
-        warnings: lights
-            .invalid
-            .iter()
-            .map(|key| LightWarning::InvalidWorldKey { key: key.clone() })
-            .collect(),
-        switchable: lights.switchable(),
-    })
 }
 
 /// `work` done for each of `count` things on every thread the machine has, with a stack for

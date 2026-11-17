@@ -2,7 +2,7 @@
 // Copyright (C) 1996-1997  Id Software, Inc.
 // Copyright (C) 2026 QuakeC Studio contributors
 //
-// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: light/ltface.cc, Lightmap_ForStyle, Lightmap_Save, GetLightValue, GetLightValueWithAngle, GetLightContrib, Light_ClampMin, Dirt_GetScaleFactor, CullLight, LightFace_Entity, LightPoint_Entity, LightFace_Sky, LightPoint_Sky, LightFace_Min, LightFace_LocalMin, LightFace_AutoMin, DirectLightFace, PostProcessLightFace, CalcLightgridAtPoint, LightPoint_ScaleAndClamp, lightgrid_samples_t::add, lightgrid_sample_t::add, lightgrid_sample_t::brightness
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: light/ltface.cc, Lightmap_ForStyle, Lightmap_Save, GetLightValue, GetLightValueWithAngle, GetLightContrib, Light_ClampMin, Dirt_GetScaleFactor, CullLight, LightFace_Entity, LightPoint_Entity, LightFace_Sky, LightPoint_Sky, LightFace_Min, LightFace_LocalMin, LightFace_AutoMin, DirectLightFace, PostProcessLightFace, CalcLightgridAtPoint, LightPoint_ScaleAndClamp, add, brightness
 // Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: light/lightgrid.cc, FixPointAndCalcLightgrid
 
 //! Lighting a face (LIGHT-10, LIGHT-14, LIGHT-17): what each light, each sun and the
@@ -38,10 +38,12 @@ const BOUNDS_EPSILON: f32 = 0.001;
 const CHANNELS: f32 = 3.0;
 /// The styles a point's light is kept for (`lightgrid_samples_t`).
 const POINT_STYLES: usize = 4;
+/// Half, of a box's two corners.
+const HALF: f32 = 0.5;
+/// The channels of the six sides of the cube a point's light falls on.
+const SIDE_CHANNELS: f32 = 18.0;
 /// The sides of the cube a point's light falls on.
 const CUBE_SIDES: usize = 6;
-/// How far a point in solid is moved to find open space (LIGHT-17.5).
-const OUT_OF_SOLID: f32 = 2.0;
 
 /// The lightmap of one style (`lightmap_t`).
 #[derive(Clone, Debug, PartialEq)]
@@ -120,34 +122,37 @@ fn clamp_min(sample: &mut Vec3, light: f32, colour: Vec3) -> bool {
     changed
 }
 
-/// `GetLightValue`: a light of `light` at `dist`, by its formula (LIGHT-10.3).
-fn light_value(world: &World, lamp: &Lamp, dist: f32) -> f32 {
-    let keys = &lamp.keys;
-    let (light, falloff) = (keys.light.get(), keys.falloff.get());
-    let formula = keys.formula.get();
-    if matches!(formula, Formula::Infinite | Formula::LocalMin) {
-        return light;
-    }
-    if falloff > 0.0 && formula == Formula::Linear {
-        return if falloff > dist {
-            light * (1.0 - dist / falloff)
-        } else {
-            0.0
-        };
-    }
-    let value = world.scaledist.get() * keys.atten.get() * dist;
-    match formula {
-        Formula::Inverse => light / (value / LF_SCALE),
-        Formula::Inverse2 => light / ((value * value) / (LF_SCALE * LF_SCALE)),
-        Formula::Inverse2A => {
-            let value = value + LF_SCALE;
-            light / ((value * value) / (LF_SCALE * LF_SCALE))
+impl Lamp {
+    /// `GetLightValue`: a light of `light` at `dist`, by its formula (LIGHT-10.3).
+    fn value_at(&self, world: &World, dist: f32) -> f32 {
+        let lamp = self;
+        let keys = &lamp.keys;
+        let (light, falloff) = (keys.light.get(), keys.falloff.get());
+        let formula = keys.formula.get();
+        if matches!(formula, Formula::Infinite | Formula::LocalMin) {
+            return light;
         }
-        Formula::Linear | Formula::Unknown | Formula::Infinite | Formula::LocalMin => {
-            if light > 0.0 {
-                (light - value).max(0.0)
+        if falloff > 0.0 && formula == Formula::Linear {
+            return if falloff > dist {
+                light * (1.0 - dist / falloff)
             } else {
-                (light + value).min(0.0)
+                0.0
+            };
+        }
+        let value = world.scaledist.get() * keys.atten.get() * dist;
+        match formula {
+            Formula::Inverse => light / (value / LF_SCALE),
+            Formula::Inverse2 => light / ((value * value) / (LF_SCALE * LF_SCALE)),
+            Formula::Inverse2A => {
+                let value = value + LF_SCALE;
+                light / ((value * value) / (LF_SCALE * LF_SCALE))
+            }
+            Formula::Linear | Formula::Unknown | Formula::Infinite | Formula::LocalMin => {
+                if light > 0.0 {
+                    (light - value).max(0.0)
+                } else {
+                    (light + value).min(0.0)
+                }
             }
         }
     }
@@ -170,28 +175,31 @@ struct Contribution {
     dist: f32,
 }
 
-/// `GetLightContrib` and `GetLightValueWithAngle`: what `lamp` gives a sample at `point`
-/// (LIGHT-10.3, LIGHT-10.5, LIGHT-10.9).
-fn contribution(world: &World, lamp: &Lamp, point: Vec3, facing: Facing) -> Contribution {
-    let (mut dir, mut dist) = normalize_with_length(sub(lamp.origin(), point));
-    if dist < NEAREST {
-        dist = NEAREST;
-        dir = [0.0, 0.0, 1.0];
-    }
-    let mut angle = facing.normal.map_or(1.0, |normal| dot(dir, normal));
-    if (lamp.keys.bleed.get() || facing.twosided) && angle < 0.0 {
-        angle = -angle;
-    }
-    let mut value = 0.0;
-    if angle >= 0.0 {
-        let anglescale = f64::from(lamp.keys.anglescale.get());
-        let angle = to_f32((1.0 - anglescale) + anglescale * f64::from(angle));
-        value = light_value(world, lamp, dist) * angle * spot_scale(lamp.spot, dir);
-    }
-    Contribution {
-        colour: scale(scale(lamp.keys.color.get(), value), 1.0 / FULL),
-        dir,
-        dist,
+impl Lamp {
+    /// `GetLightContrib` and `GetLightValueWithAngle`: what `lamp` gives a sample at `point`
+    /// (LIGHT-10.3, LIGHT-10.5, LIGHT-10.9).
+    fn contribution(&self, world: &World, point: Vec3, facing: Facing) -> Contribution {
+        let lamp = self;
+        let (mut dir, mut dist) = normalize_with_length(sub(lamp.origin(), point));
+        if dist < NEAREST {
+            dist = NEAREST;
+            dir = [0.0, 0.0, 1.0];
+        }
+        let mut angle = facing.normal.map_or(1.0, |normal| dot(dir, normal));
+        if (lamp.keys.bleed.get() || facing.twosided) && angle < 0.0 {
+            angle = -angle;
+        }
+        let mut value = 0.0;
+        if angle >= 0.0 {
+            let anglescale = f64::from(lamp.keys.anglescale.get());
+            let angle = to_f32((1.0 - anglescale) + anglescale * f64::from(angle));
+            value = lamp.value_at(world, dist) * angle * spot_scale(lamp.spot, dir);
+        }
+        Contribution {
+            colour: scale(scale(lamp.keys.color.get(), value), 1.0 / FULL),
+            dir,
+            dist,
+        }
     }
 }
 
@@ -208,6 +216,24 @@ fn spot_scale(spot: Option<Spot>, dir: Vec3) -> f32 {
         to_f32(1.0 - f64::from((falloff - spot.falloff2) / (spot.falloff - spot.falloff2)))
     } else {
         1.0
+    }
+}
+
+/// Which lights a pass over them takes: those that add light go before the minimum light,
+/// those that take it away after (LIGHT-8.4).
+#[derive(Clone, Copy)]
+enum Pass {
+    Adding,
+    Taking,
+}
+
+impl Pass {
+    /// Whether a light of brightness `light` is this pass's.
+    fn takes(self, light: f32) -> bool {
+        match self {
+            Self::Adding => light > 0.0,
+            Self::Taking => light < 0.0,
+        }
     }
 }
 
@@ -288,7 +314,7 @@ impl Shader<'_> {
             return true;
         }
         let dist = distance(lamp.origin(), patch.extents.origin) - patch.extents.radius;
-        dist >= 0.0 && light_value(self.world(), lamp, dist).abs() <= GATE
+        dist >= 0.0 && lamp.value_at(self.world(), dist).abs() <= GATE
     }
 
     fn asker(&self, patch: &Patch, shadow_mask: i32) -> Asker {
@@ -334,7 +360,7 @@ impl Shader<'_> {
                 normal: Some(sample.normal),
                 twosided: patch.twosided,
             };
-            let given = contribution(self.world(), lamp, sample.point, facing);
+            let given = lamp.contribution(self.world(), sample.point, facing);
             let dirt = self.dirt_scale(
                 sample.occlusion,
                 DirtFor::Lamp(lamp, given.dist),
@@ -560,9 +586,9 @@ impl Shader<'_> {
         patch: &Patch,
         lightmaps: &mut Lightmaps,
         stack: &mut Vec<usize>,
-        positive: bool,
+        pass: Pass,
     ) {
-        let wanted = |light: f32| if positive { light > 0.0 } else { light < 0.0 };
+        let wanted = |light: f32| pass.takes(light);
         for lamp in &self.lights.lamps {
             if lamp.keys.formula.get() == Formula::LocalMin || lamp.keys.nostaticlight.get() {
                 continue;
@@ -588,7 +614,7 @@ impl Shader<'_> {
             dirt.occlude(patch, self.rays, &asker, self.map, stack);
         }
         if !self.ignores_light(patch) {
-            self.lights_on_face(patch, &mut lightmaps, stack, true);
+            self.lights_on_face(patch, &mut lightmaps, stack, Pass::Adding);
         }
         self.local_min_on_face(patch, &mut lightmaps, stack);
         lightmaps
@@ -667,7 +693,7 @@ impl Shader<'_> {
             self.auto_min_on_face(patch, lightmaps, emitters, stack);
         }
         if !self.ignores_light(patch) {
-            self.lights_on_face(patch, lightmaps, stack, false);
+            self.lights_on_face(patch, lightmaps, stack, Pass::Taking);
         }
     }
 
@@ -700,7 +726,7 @@ impl Shader<'_> {
             .bsp
             .models
             .get(patch.model)
-            .map_or([0.0; AXES], |m| scale(add(m.mins, m.maxs), 0.5));
+            .map_or([0.0; AXES], |m| scale(add(m.mins, m.maxs), HALF));
         let target = model.keys.autominlight_target.get();
         if !target.is_empty()
             && let Some(entity) = self
@@ -744,22 +770,10 @@ impl Shader<'_> {
         emitters: &[Option<Emitter>],
         stack: &mut Vec<usize>,
     ) -> Option<Vec<(i32, Vec3)>> {
-        let mut point = point;
-        if self.map.in_solid(0, point) {
-            point = (0..AXES)
-                .flat_map(|axis| [(axis, -OUT_OF_SOLID), (axis, OUT_OF_SOLID)])
-                .map(|(axis, by)| {
-                    let mut moved = point;
-                    if let Some(coordinate) = moved.get_mut(axis) {
-                        *coordinate += by;
-                    }
-                    moved
-                })
-                .find(|moved| !self.map.in_solid(0, *moved))?;
-        }
+        let point = self.map.out_of_solid(point)?;
         let mut cube = PointLight::default();
-        for positive in [true, false] {
-            let wanted = |light: f32| if positive { light > 0.0 } else { light < 0.0 };
+        for pass in [Pass::Adding, Pass::Taking] {
+            let wanted = |light: f32| pass.takes(light);
             for lamp in &self.lights.lamps {
                 let keys = &lamp.keys;
                 if keys.formula.get() == Formula::LocalMin
@@ -773,7 +787,7 @@ impl Shader<'_> {
                     normal: None,
                     twosided: false,
                 };
-                let given = contribution(self.world(), lamp, point, facing);
+                let given = lamp.contribution(self.world(), point, facing);
                 if brightness(given.colour).abs() <= GATE {
                     continue;
                 }
@@ -839,7 +853,7 @@ impl Shader<'_> {
         Some(
             cube.styles
                 .iter()
-                .map(|side| (side.style, scaled_and_clamped(world, side.flat, 0.0, 1.0)))
+                .map(|side| (side.style, world.scaled_and_clamped(side.flat, 0.0, 1.0)))
                 .collect(),
         )
     }
@@ -874,7 +888,7 @@ impl StyleAtPoint {
     /// `lightgrid_sample_t::brightness`.
     fn brightness(&self) -> f32 {
         let total: f32 = self.sides.iter().flatten().sum();
-        total / (CHANNELS * 6.0)
+        total / SIDE_CHANNELS
     }
 }
 
@@ -914,40 +928,43 @@ impl PointLight {
     }
 }
 
-/// `LightFace_ScaleAndClamp` for one sample: `colour` with nothing under 0, held to
-/// `maxlight` of the face or of the world, its colour faded toward grey by
-/// `lightcolorscale`, scaled by `_range` and bent by `_gamma` (LIGHT-18.1).
-#[expect(
-    clippy::float_cmp,
-    reason = "spec LIGHT-18.1: ericw-tools tests lightcolorscale and gamma against exactly 1"
-)]
-pub(crate) fn scaled_and_clamped(
-    world: &World,
-    colour: Vec3,
-    maxlight: f32,
-    lightcolorscale: f32,
-) -> Vec3 {
-    let mut colour = colour.map(|c| c.max(0.0));
-    let most = |c: Vec3| c[0].max(c[1]).max(c[2]);
-    let limit = if maxlight != 0.0 {
-        maxlight
-    } else {
-        world.maxlight.get()
-    };
-    if limit != 0.0 {
-        let (brightest, limit) = (most(colour), limit * 2.0);
-        if brightest > limit {
-            colour = scale(colour, limit / brightest);
+impl World {
+    /// `LightFace_ScaleAndClamp` for one sample: `colour` with nothing under 0, held to
+    /// `maxlight` of the face or of the world, its colour faded toward grey by
+    /// `lightcolorscale`, scaled by `_range` and bent by `_gamma` (LIGHT-18.1).
+    #[expect(
+        clippy::float_cmp,
+        reason = "spec LIGHT-18.1: ericw-tools tests lightcolorscale and gamma against exactly 1"
+    )]
+    pub(crate) fn scaled_and_clamped(
+        &self,
+        colour: Vec3,
+        maxlight: f32,
+        lightcolorscale: f32,
+    ) -> Vec3 {
+        let world = self;
+        let mut colour = colour.map(|c| c.max(0.0));
+        let most = |c: Vec3| c[0].max(c[1]).max(c[2]);
+        let limit = if maxlight != 0.0 {
+            maxlight
+        } else {
+            world.maxlight.get()
+        };
+        if limit != 0.0 {
+            let (brightest, limit) = (most(colour), limit * 2.0);
+            if brightest > limit {
+                colour = scale(colour, limit / brightest);
+            }
         }
+        if lightcolorscale != 1.0 {
+            let grey = most(colour);
+            colour = colour.map(|c| grey + (c - grey) * lightcolorscale);
+        }
+        colour = scale(colour, world.rangescale.get());
+        let gamma = world.gamma.get();
+        if gamma != 1.0 {
+            colour = colour.map(|c| (c / FULL).powf(1.0 / gamma) * FULL);
+        }
+        colour
     }
-    if lightcolorscale != 1.0 {
-        let grey = most(colour);
-        colour = colour.map(|c| grey + (c - grey) * lightcolorscale);
-    }
-    colour = scale(colour, world.rangescale.get());
-    let gamma = world.gamma.get();
-    if gamma != 1.0 {
-        colour = colour.map(|c| (c / FULL).powf(1.0 / gamma) * FULL);
-    }
-    colour
 }

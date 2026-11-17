@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 1996-1997  Id Software, Inc.
+// Copyright (C) 2016 Eric Wasylishen
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: common/bsputils.cc, Face_VertexAtIndex, Face_Plane, Face_TextureName, TextureName_Contents, ContentsOrSurfaceFlags_IsTranslucent, Light_PointInSolid_r, Light_PointInSolid
-// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: light/light.cc, FindModelInfo, ModelInfoForFace
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: light/light.cc, FindModelInfo, ModelInfoForFace, CacheTextures
 // Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: light/ltface.cc, Light_PointInAnySolid, Face_IsLightmapped
 // Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: light/trace.cc, Light_PointInLeaf, SampleTexture, clamp_texcoord
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: light/trace_embree.cc, Embree_TraceInit, CreateGeometry, Face_Alpha
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: common/imglib.cc, calculate_average
 
 //! The map as the extended dialect's lighting sees it (LIGHT-8, LIGHT-9): the BSP's faces with
 //! their points, planes and textures, the brush models with their settings, and the flags
@@ -16,7 +19,8 @@ use qs_bsp::{BSP_TEX_SPECIAL, Bsp, Face};
 use crate::extended::keys::CHANNEL_DEFAULT;
 use crate::extended::keys::{Dict, ModelKeys, Source, World};
 use crate::extended::math::{Plane, add, sub};
-use crate::extended::rays::{Caster, Corners, ModelId, Surface, Texels};
+use crate::extended::rays::{Caster, Corners, ModelId, Surface, Texel, Texels};
+use crate::face::FaceId;
 use crate::{AXES, Rgb, Vec3};
 
 /// The leaf contents light cares for (BSP-12).
@@ -24,6 +28,8 @@ const CONTENTS_SOLID: i32 = -2;
 const CONTENTS_SKY: i32 = -6;
 /// How near a node's plane a point is tried on both sides of it (LIGHT-12.7).
 const ON_PLANE: f64 = 0.1;
+/// How far a point in solid is moved along each axis to find open space (LIGHT-10.7).
+const OUT_OF_SOLID: f32 = 2.0;
 /// `LMSCALE_DEFAULT`: texels to a luxel.
 pub(crate) const LUXEL: f32 = 16.0;
 /// A texel index that is see-through in a texture whose name starts with `{`.
@@ -272,8 +278,8 @@ impl<'a> Map<'a> {
     }
 
     /// The face numbered `index`.
-    pub(crate) fn face(&self, index: usize) -> Option<&Face> {
-        self.bsp.faces.get(index)
+    pub(crate) fn face(&self, face: FaceId) -> Option<&Face> {
+        self.bsp.faces.get(face.index())
     }
 
     /// `ModelInfoForFace`: the number of the model the face is in.
@@ -421,6 +427,25 @@ impl<'a> Map<'a> {
         false
     }
 
+    /// `FixLightOnFace`: `point`, or when it is in the world's solid the first of the six
+    /// points 2 units from it along an axis, back before forward, that is not; none when
+    /// none is (LIGHT-10.7).
+    pub(crate) fn out_of_solid(&self, point: Vec3) -> Option<Vec3> {
+        if !self.in_solid(0, point) {
+            return Some(point);
+        }
+        (0..AXES)
+            .flat_map(|axis| [(axis, -OUT_OF_SOLID), (axis, OUT_OF_SOLID)])
+            .map(|(axis, by)| {
+                let mut moved = point;
+                if let Some(coordinate) = moved.get_mut(axis) {
+                    *coordinate += by;
+                }
+                moved
+            })
+            .find(|moved| !self.in_solid(0, *moved))
+    }
+
     /// The models that always cast shadow: the world, and each with `_shadow` that is not a
     /// switchable shadow (`tracelist`).
     pub(crate) fn shadow_models(&self) -> impl Iterator<Item = (usize, &Model)> {
@@ -479,7 +504,7 @@ impl Map<'_> {
                 continue;
             }
             for number in model.firstface..model.firstface.saturating_add(model.numfaces) {
-                let Some(face) = self.face(number) else {
+                let Some(face) = self.face(FaceId::new(number)) else {
                     continue;
                 };
                 let flags = self.flags_of(face);
@@ -566,7 +591,7 @@ impl Map<'_> {
             if corner.caster.surface != Surface::Solid {
                 continue;
             }
-            let Some(face) = self.face(corner.caster.face) else {
+            let Some(face) = self.face(FaceId::new(corner.caster.face)) else {
                 continue;
             };
             if self.is_lightmapped(face)
@@ -689,17 +714,17 @@ impl Texels for Map<'_> {
     /// `SampleTexture`: the texel of the face's texture at `point`, nearest and repeating.
     /// A missing texture is all 0. A texel is opaque, but index 255 of a `{` texture; its
     /// colour is the palette's, black without one (LIGHT-11.6, LIGHT-11.7).
-    fn sample(&self, face: usize, point: Vec3) -> [u8; 4] {
-        let Some(face) = self.face(face) else {
-            return [0; 4];
+    fn sample(&self, face: usize, point: Vec3) -> Texel {
+        let Some(face) = self.face(FaceId::new(face)) else {
+            return Texel::default();
         };
         let (Some(texture), Some(texinfo)) =
             (self.texture(face), self.bsp.texinfo.get(face.texinfo))
         else {
-            return [0; 4];
+            return Texel::default();
         };
         if texture.width == 0 || texture.pixels.is_empty() {
-            return [0; 4];
+            return Texel::default();
         }
         let [s, t] = texinfo.vecs.map(|axis| {
             let [x, y, z, offset] = axis.map(f64::from);
@@ -713,7 +738,7 @@ impl Texels for Map<'_> {
         let (x, y) = (texel(s, texture.width), texel(t, texture.height));
         let at = usize::try_from(texture.width.saturating_mul(y).saturating_add(x)).ok();
         let Some(index) = at.and_then(|at| texture.pixels.get(at)).copied() else {
-            return [0; 4];
+            return Texel::default();
         };
         let alpha = if texture.name.first() == Some(&b'{') && index == FENCE_HOLE {
             0

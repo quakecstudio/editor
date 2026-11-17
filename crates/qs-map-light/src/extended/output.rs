@@ -13,7 +13,7 @@ use qs_bsp::BSP_MAXLIGHTMAPS;
 use crate::extended::keys::World;
 use crate::extended::math::{add, scale};
 use crate::extended::points::Patch;
-use crate::extended::shade::{Lightmap, Lightmaps, scaled_and_clamped};
+use crate::extended::shade::{Lightmap, Lightmaps};
 use crate::face::Lit;
 use crate::{AXES, Rgb, Sampling, Vec3, to_f32};
 
@@ -153,84 +153,79 @@ pub(crate) struct Finished {
     pub(crate) coloured: bool,
 }
 
-/// `FinishLightmapSurface`, `CalculateLightmapStyles` and `WriteSingleLightmap`: the
-/// lightmaps of `patch` as bytes (LIGHT-18).
-pub(crate) fn finish(
-    world: &World,
-    patch: &Patch,
-    mut lightmaps: Lightmaps,
-    sampling: Sampling,
-) -> Finished {
-    let mut coloured = false;
-    for lightmap in &mut lightmaps.all {
-        for colour in &mut lightmap.samples {
-            *colour = scaled_and_clamped(world, *colour, patch.maxlight, patch.lightcolorscale);
-            coloured |= (colour[0] - colour[1]).abs() > EQUAL_EPSILON
-                || (colour[0] - colour[2]).abs() > EQUAL_EPSILON;
+impl Lightmaps {
+    /// `FinishLightmapSurface`, `CalculateLightmapStyles` and `WriteSingleLightmap`: the
+    /// lightmaps of `patch` as bytes (LIGHT-18).
+    pub(crate) fn finish(self, world: &World, patch: &Patch, sampling: Sampling) -> Finished {
+        let mut lightmaps = self;
+        let mut coloured = false;
+        for lightmap in &mut lightmaps.all {
+            for colour in &mut lightmap.samples {
+                *colour = world.scaled_and_clamped(*colour, patch.maxlight, patch.lightcolorscale);
+                coloured |= (colour[0] - colour[1]).abs() > EQUAL_EPSILON
+                    || (colour[0] - colour[2]).abs() > EQUAL_EPSILON;
+            }
         }
-    }
-    // The styles kept: those a light reached, with a sample of brightness 1 or more, the
-    // brightest on average first, the later of two as bright before the earlier.
-    let mut kept: Vec<(f32, usize, i32, &Lightmap)> = Vec::new();
-    for (index, lightmap) in lightmaps.all.iter().enumerate() {
-        let Some(style) = lightmap.style.filter(|style| *style <= MAX_STYLE) else {
-            continue;
+        // The styles kept: those a light reached, with a sample of brightness 1 or more, the
+        // brightest on average first, the later of two as bright before the earlier.
+        let mut kept: Vec<(f32, usize, i32, &Lightmap)> = Vec::new();
+        for (index, lightmap) in lightmaps.all.iter().enumerate() {
+            let Some(style) = lightmap.style.filter(|style| *style <= MAX_STYLE) else {
+                continue;
+            };
+            let mut most = 0.0_f32;
+            let mut total = 0.0_f32;
+            for &colour in &lightmap.samples {
+                let bright = brightness(colour);
+                most = most.max(bright);
+                total += bright;
+            }
+            if most < DIMMEST_KEPT {
+                continue;
+            }
+            kept.push((
+                total / count_of(lightmap.samples.len()),
+                index,
+                style,
+                lightmap,
+            ));
+        }
+        kept.sort_by(|a, b| b.0.total_cmp(&a.0).then(b.1.cmp(&a.1)));
+        kept.truncate(BSP_MAXLIGHTMAPS);
+        if kept.is_empty() {
+            return Finished {
+                lit: None,
+                coloured,
+            };
+        }
+        let factor = sampling.per_luxel();
+        let mut lit = Lit {
+            styles: Vec::with_capacity(kept.len()),
+            grey: Vec::new(),
+            rgb: Vec::new(),
         };
-        let mut most = 0.0_f32;
-        let mut total = 0.0_f32;
-        for &colour in &lightmap.samples {
-            let bright = brightness(colour);
-            most = most.max(bright);
-            total += bright;
+        for (_, _, style, lightmap) in kept {
+            lit.styles.push(u8::try_from(style).unwrap_or(u8::MAX));
+            let mut texels: Vec<Texel> = lightmap
+                .samples
+                .iter()
+                .zip(&patch.samples)
+                .map(|(&colour, sample)| Texel {
+                    colour,
+                    seen: !sample.occluded,
+                })
+                .collect();
+            flood_fill(&mut texels, patch.width, patch.height);
+            for colour in downsample(&texels, patch.width, patch.height, factor) {
+                let (rgb, grey) = bytes_of(colour);
+                lit.rgb.push(rgb);
+                lit.grey.push(grey);
+            }
         }
-        if most < DIMMEST_KEPT {
-            continue;
-        }
-        kept.push((
-            total / count_of(lightmap.samples.len()),
-            index,
-            style,
-            lightmap,
-        ));
-    }
-    kept.sort_by(|a, b| b.0.total_cmp(&a.0).then(b.1.cmp(&a.1)));
-    kept.truncate(BSP_MAXLIGHTMAPS);
-    if kept.is_empty() {
-        return Finished {
-            lit: None,
+        Finished {
+            lit: Some(lit),
             coloured,
-        };
-    }
-    let factor = match sampling {
-        Sampling::Fast => 1,
-        Sampling::Extra => 2,
-    };
-    let mut lit = Lit {
-        styles: Vec::with_capacity(kept.len()),
-        grey: Vec::new(),
-        rgb: Vec::new(),
-    };
-    for (_, _, style, lightmap) in kept {
-        lit.styles.push(u8::try_from(style).unwrap_or(u8::MAX));
-        let mut texels: Vec<Texel> = lightmap
-            .samples
-            .iter()
-            .zip(&patch.samples)
-            .map(|(&colour, sample)| Texel {
-                colour,
-                seen: !sample.occluded,
-            })
-            .collect();
-        flood_fill(&mut texels, patch.width, patch.height);
-        for colour in downsample(&texels, patch.width, patch.height, factor) {
-            let (rgb, grey) = bytes_of(colour);
-            lit.rgb.push(rgb);
-            lit.grey.push(grey);
         }
-    }
-    Finished {
-        lit: Some(lit),
-        coloured,
     }
 }
 

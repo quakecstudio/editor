@@ -18,6 +18,8 @@ use crate::{AXES, Vec3};
 
 /// The most triangles a leaf of the tree holds.
 const LEAF_TRIANGLES: usize = 4;
+/// The corners of a triangle, as what their sum is divided by for its middle.
+const CORNERS: f32 = 3.0;
 /// A texel that is not see-through.
 const OPAQUE: u8 = 255;
 
@@ -76,10 +78,13 @@ impl Asker {
     };
 }
 
+/// A texel: its red, green and blue, and its alpha.
+pub(crate) type Texel = [u8; 4];
+
 /// The texels of the faces: what a fence or glass triangle is at a point (`SampleTexture`).
 pub(crate) trait Texels: Sync {
     /// The colour and alpha of `face`'s texture at `point`; all 0 for a missing texture.
-    fn sample(&self, face: usize, point: Vec3) -> [u8; 4];
+    fn sample(&self, face: usize, point: Vec3) -> Texel;
 }
 
 /// What a ray passed through without being stopped (LIGHT-11.5, LIGHT-11.6).
@@ -315,7 +320,7 @@ impl Rays {
         for (index, corner) in corners.into_iter().enumerate() {
             let [v0, v1, v2] = corner.points;
             let (e1, e2) = (sub(v0, v1), sub(v2, v0));
-            let middle = scale(add(add(v0, v1), v2), 1.0 / 3.0);
+            let middle = scale(add(add(v0, v1), v2), 1.0 / CORNERS);
             pending.push((
                 middle,
                 Triangle {
@@ -648,7 +653,7 @@ mod tests {
     struct NoTexels;
 
     impl Texels for NoTexels {
-        fn sample(&self, _face: usize, _point: Vec3) -> [u8; 4] {
+        fn sample(&self, _face: usize, _point: Vec3) -> Texel {
             [0; 4]
         }
     }
@@ -656,7 +661,7 @@ mod tests {
     struct Grey;
 
     impl Texels for Grey {
-        fn sample(&self, _face: usize, _point: Vec3) -> [u8; 4] {
+        fn sample(&self, _face: usize, _point: Vec3) -> Texel {
             [255, 0, 0, 255]
         }
     }
