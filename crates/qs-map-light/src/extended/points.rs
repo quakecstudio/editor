@@ -233,6 +233,8 @@ pub(crate) struct Patch {
     pub(crate) minlight: f32,
     /// Whether the minimum light is mottled (LIGHT-17.6).
     pub(crate) mottle: bool,
+    /// What the face's minimum light as a surface light is scaled by (LIGHT-16.5).
+    pub(crate) surflight_minlight_scale: f32,
     pub(crate) minlight_color: Vec3,
     pub(crate) maxlight: f32,
     pub(crate) lightcolorscale: f32,
@@ -359,6 +361,7 @@ impl Patch {
             height,
             samples,
             minlight,
+            surflight_minlight_scale: flags.surflight_minlight_scale.unwrap_or(1.0),
             // The model's key, else the world's.
             mottle: if keys.minlight_mottle.is_changed() {
                 keys.minlight_mottle.get()

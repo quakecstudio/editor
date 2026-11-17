@@ -608,7 +608,7 @@ impl Map<'_> {
     /// `img::calculate_average`: the mean colour of the texels of `face`'s texture that are
     /// not see-through, each channel cut to a whole number; black for a texture with no
     /// texels, and grey with no palette to colour them (LIGHT-20.6).
-    fn average_colour(&self, face: &Face) -> Vec3 {
+    pub(crate) fn average_colour(&self, face: &Face) -> Vec3 {
         let Some(palette) = self.palette else {
             return [GREY; AXES];
         };

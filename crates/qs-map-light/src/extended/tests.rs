@@ -20,7 +20,7 @@ use qs_bsp::{Bsp, BspLoader, Face};
 use qs_map_bsp::Compiler;
 use qs_wad::write::WadBuilder;
 
-use super::bounce::Emitter;
+use super::bounce::{Emitter, Stage};
 use super::dirt::Dirt;
 use super::keys::{Dict, World};
 use super::lights::Lights;
@@ -842,6 +842,7 @@ fn a_models_hidden_samples_take_the_light_at_its_middle() {
         rays: &made.rays,
         lights: &made.lights,
         dirt: None,
+        surface_lit: &[],
     };
     let model = &read.models[1];
     let top = (model.firstface..model.firstface + model.numfaces)
@@ -853,7 +854,7 @@ fn a_models_hidden_samples_take_the_light_at_its_middle() {
         .filter(|&i| patch.samples[i].occluded)
         .collect();
     let mut stack = Vec::new();
-    let mut lightmaps = shader.direct(&mut patch, &mut stack);
+    let mut lightmaps = shader.direct(&mut patch, &[], &mut stack);
     let emitters: Vec<Option<Emitter>> = Vec::new();
     shader.post(&mut patch, &mut lightmaps, &emitters, &mut stack);
     assert!(patch.samples.iter().all(|sample| !sample.occluded));
@@ -1235,4 +1236,102 @@ fn a_light_projects_a_texture() {
     let error = run("\"_project_texture\" \"wall\"\n\"_project_fov\" \"180\"\n").unwrap_err();
     assert!(matches!(error, LightError::ProjectFov { .. }), "{error}");
     assert!(error.to_string().starts_with("Unsupported fov"));
+}
+
+// spec LIGHT-16.4: a _surface light with _surface_radiosity 1, or with the world's
+// _surflight_radiosity 1, puts no lights over its faces: each face gives light from a unit
+// above its middle, its brightness its colour's brightest channel times the light times its
+// area, its colour the light's or its texture's mean.
+// spec LIGHT-16.5: and the face itself is raised to the light's brightness.
+#[test]
+fn a_radiosity_surface_light_lights_from_its_faces() {
+    let panel = cuboid([96, 96, 0], [160, 160, 8], "glow");
+    let template = |keys: &str| {
+        light_at(
+            "0 0 0",
+            &format!("\"_surface\" \"GLOW\"\n\"light\" \"150\"\n{keys}"),
+        )
+    };
+    let bsp = room(
+        "",
+        "wall",
+        &panel,
+        &template("\"_surface_radiosity\" \"1\"\n"),
+    );
+    let read = Bsp::read(&bsp, BspLoader::FitzQuake).unwrap();
+    let mut made = parts(&read, Extras::default());
+    assert_eq!(
+        made.lights.lamps.len(),
+        1,
+        "no lights are put over the faces"
+    );
+    let (emitters, surface_lit) = made.lights.radiosity(&made.map, &made.rays).unwrap();
+    let top: Vec<usize> = (0..read.faces.len())
+        .filter(|&face| {
+            emitters[face]
+                .as_ref()
+                .is_some_and(|emitter| emitter.normal == UP)
+        })
+        .collect();
+    assert!(!top.is_empty());
+    let mut area = 0.0;
+    for &face in &top {
+        let emitter = emitters[face].as_ref().unwrap();
+        assert_eq!(emitter.pos[2], 9.0, "a unit above the panel's top");
+        assert_eq!(emitter.emissions.len(), 1);
+        let emission = emitter.emissions[0];
+        // No palette: the texture's mean is grey, 127 of 255, times 150, and the colour is
+        // made to have its brightest channel 1.
+        assert_eq!(emission.stage, Stage::Direct);
+        assert_eq!(emission.colour, [1.0; 3]);
+        assert!(!emission.omnidirectional && emission.rescale);
+        assert_eq!((emission.style, emission.atten), (0, 1.0));
+        area += emission.intensity / (127.0 / 255.0 * 150.0);
+        let lit = surface_lit[face].unwrap();
+        assert_eq!((lit.light, lit.style, lit.minlight_scale), (150.0, 0, 1.0));
+        assert_eq!(lit.colour, [127.0; 3]);
+    }
+    assert!((area - 64.0 * 64.0).abs() < 0.5, "{area}");
+    let lighted = lit(&bsp);
+    assert!(
+        lightmaps(&lighted.bsp, DOWN)
+            .iter()
+            .flatten()
+            .any(|&luxel| luxel > 0),
+        "the ceiling is lit from the panel"
+    );
+    // The panel's top is lit by its own emitter, a unit above its middle, as every face is.
+    assert!(floor_at(&lighted.bsp, 128.0, 128.0).unwrap() > 37);
+    // The world's key says the same of a light with none; a light's own 0 puts lights.
+    let by_world = room(
+        "\"_surflight_radiosity\" \"1\"\n",
+        "wall",
+        &panel,
+        &template(""),
+    );
+    assert_eq!(floor(&lit(&by_world).bsp), floor(&lighted.bsp));
+    let by_lights = room(
+        "\"_surflight_radiosity\" \"1\"\n",
+        "wall",
+        &panel,
+        &template("\"_surface_radiosity\" \"0\"\n"),
+    );
+    let read = Bsp::read(&by_lights, BspLoader::FitzQuake).unwrap();
+    let mut made = parts(&read, Extras::default());
+    assert!(made.lights.lamps.len() > 1);
+    let (emitters, surface_lit) = made.lights.radiosity(&made.map, &made.rays).unwrap();
+    assert!(emitters.iter().all(Option::is_none) && surface_lit.iter().all(Option::is_none));
+    // A dim light whose face is raised 64 times over: 10 * 64 by grey, 127 of 255, halved;
+    // with a scale of 0 the face has only what its emitter gives it.
+    let dim = |scale: &str| {
+        let keys =
+            format!("\"_surface_radiosity\" \"1\"\n\"_surflight_minlight_scale\" \"{scale}\"\n");
+        let template = light_at(
+            "0 0 0",
+            &format!("\"_surface\" \"GLOW\"\n\"light\" \"10\"\n{keys}"),
+        );
+        lit(&room("", "wall", &panel, &template)).bsp
+    };
+    assert_eq!(floor_at(&dim("64"), 128.0, 128.0), Some(159));
+    assert!(floor_at(&dim("0"), 128.0, 128.0).unwrap_or(0) < 40);
 }

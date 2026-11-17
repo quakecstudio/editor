@@ -29,23 +29,61 @@ const NEAREST: f32 = 0.01;
 /// `LIGHT_ANGLE_EPSILON`: how far behind a bounce light, or a sample's face, the other may
 /// be.
 const ANGLE_EPSILON: f32 = 0.01;
-/// The distance a bounce light's brightness is clamped at, and a surface light's.
+/// The distance a bounce light's brightness is clamped at, and a Quake surface light's.
 pub(crate) const BOUNCE_CLAMP: f32 = 128.0;
+/// The distance a radiosity surface light's brightness is clamped at.
+const SURFACE_CLAMP: f32 = 16.0;
 /// What a box of what a bounce light sees may miss a face's box by (LIGHT-10.8).
 const BOUNDS_EPSILON: f32 = 0.001;
 /// Half, of a triangle's cross product and of `_bouncescale`.
 const HALF: f32 = 0.5;
 
-/// The light a face gives back in one style on one bounce (`surfacelight_t::per_style_t`).
+/// Whether a face's light is its own, a surface light's, or light it gives back
+/// (`per_style_t::bounce_level`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Stage {
+    /// A surface light's own (LIGHT-16.4).
+    Direct,
+    /// The bounce it is of, from 0 (LIGHT-20).
+    Bounce(usize),
+}
+
+impl Stage {
+    /// What its light is scaled by from a face and from sky, and the distance its
+    /// brightness is clamped at: `LightFace_SurfaceLight(..., cfg.surflightscale,
+    /// cfg.surflightskyscale, 16.0f)` and `(..., cfg.bouncescale * 0.5, cfg.bouncescale,
+    /// 128.0f)`.
+    fn scales(self, world: &World) -> (f32, f32, f32) {
+        match self {
+            Self::Direct => (
+                world.surflightscale.get(),
+                world.surflightskyscale.get(),
+                SURFACE_CLAMP,
+            ),
+            Self::Bounce(_) => (
+                world.bouncescale.get() * HALF,
+                world.bouncescale.get(),
+                BOUNCE_CLAMP,
+            ),
+        }
+    }
+}
+
+/// The light a face gives in one style (`surfacelight_t::per_style_t`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Emission {
-    /// The bounce it is of, from 0.
-    pub(crate) depth: usize,
+    pub(crate) stage: Stage,
     pub(crate) style: i32,
-    /// Its brightness, the brightest channel of the light given back times the face's area.
+    /// Its brightness, the brightest channel of the light times the face's area.
     pub(crate) intensity: f32,
     /// Its colour, the brightest channel at most 1.
     pub(crate) colour: Vec3,
+    /// Whether it shines every way, as a sky's does, and not by its face's normal.
+    pub(crate) omnidirectional: bool,
+    /// Whether faces nearly across from it are brightened.
+    pub(crate) rescale: bool,
+    /// How fast it falls off, 1 for a bounce.
+    pub(crate) atten: f32,
 }
 
 /// A face that gives light back (`surfacelight_t`).
@@ -64,7 +102,7 @@ pub(crate) struct Emitter {
 
 /// `winding_base_t::remove_colinear`: `points` without the corners its two edges run
 /// straight through.
-fn without_colinear(points: &[Vec3]) -> Vec<Vec3> {
+pub(crate) fn without_colinear(points: &[Vec3]) -> Vec<Vec3> {
     let count = points.len();
     let mut out = Vec::with_capacity(count);
     for (index, &here) in points.iter().enumerate() {
@@ -193,10 +231,13 @@ impl Bouncer<'_> {
                 emissions: Vec::new(),
             });
             emitter.emissions.push(Emission {
-                depth,
+                stage: Stage::Bounce(depth),
                 style,
                 intensity: intensity * face_area,
                 colour,
+                omnidirectional: false,
+                rescale: false,
+                atten: 1.0,
             });
         }
         true
@@ -205,10 +246,11 @@ impl Bouncer<'_> {
 
 impl Emission {
     /// `SurfaceLight_ColorAtDist`: `colour` at `intensity` falling with the square of the
-    /// distance, which is taken as at least [`BOUNCE_CLAMP`], scaled by `by` (LIGHT-20.4).
-    fn colour_at(&self, world: &World, by: f32, dist: f32) -> Vec3 {
+    /// distance, by `_dist` and its falloff, which is taken as at least `clamp`, scaled by
+    /// `by` (LIGHT-20.4).
+    fn colour_at(&self, world: &World, by: f32, dist: f32, clamp: f32) -> Vec3 {
         let emission = self;
-        let reach = (world.scaledist.get() * dist).max(BOUNCE_CLAMP);
+        let reach = (world.scaledist.get() * emission.atten * dist).max(clamp);
         scale(emission.colour, emission.intensity / (reach * reach) * by)
     }
 }
@@ -225,8 +267,14 @@ impl Emitter {
             return true;
         }
         let dist = length(sub(patch.extents.origin, self.pos)) + patch.extents.radius;
+        let (_, _, clamp) = emission.stage.scales(world);
+        let by = if emission.omnidirectional {
+            world.surflightskyscale.get()
+        } else {
+            world.surflightscale.get()
+        };
         emission
-            .colour_at(world, 1.0, dist)
+            .colour_at(world, by, dist, clamp)
             .iter()
             .all(|c| *c <= BOUNCE_GATE)
     }
@@ -241,16 +289,32 @@ impl Emitter {
         (dir, dist): (Vec3, f32),
         normal: Option<Vec3>,
     ) -> Vec3 {
-        let from_emitter = dot(self.normal, dir);
-        let to_emitter = normal.map_or(1.0, |normal| dot(scale(dir, -1.0), normal));
-        if from_emitter < -ANGLE_EPSILON || to_emitter < -ANGLE_EPSILON {
-            return [0.0; AXES];
+        let mut from_emitter = dot(self.normal, dir);
+        let mut to_emitter = normal.map_or(1.0, |normal| dot(scale(dir, -1.0), normal));
+        let (standard, sky, clamp) = emission.stage.scales(world);
+        let factor = if emission.omnidirectional {
+            // A sky's light, which no seam of the geometry under it turns away.
+            to_emitter * HALF
+        } else {
+            if from_emitter < -ANGLE_EPSILON || to_emitter < -ANGLE_EPSILON {
+                return [0.0; AXES];
+            }
+            if emission.rescale {
+                from_emitter = HALF + from_emitter * HALF;
+                to_emitter = HALF + to_emitter * HALF;
+            }
+            from_emitter * to_emitter
         }
-        let factor = (from_emitter * to_emitter).max(0.0);
+        .max(0.0);
         if factor <= 0.0 {
             return [0.0; AXES];
         }
-        emission.colour_at(world, world.bouncescale.get() * HALF * factor, dist)
+        let (by, dist) = if emission.omnidirectional {
+            (sky, dist + world.surflightskydist.get())
+        } else {
+            (standard, dist)
+        };
+        emission.colour_at(world, by * factor, dist, clamp)
     }
 
     /// The unit direction and the distance from the emitter to `point`, the distance at
@@ -316,7 +380,7 @@ mod tests {
         // scaled to it and the brightness keeps it, times the area of 4096.
         assert_eq!(emission.colour, [1.0, 0.5, 0.0]);
         assert_eq!(emission.intensity, 100.0 * 4096.0);
-        assert_eq!((emission.depth, emission.style), (0, 0));
+        assert_eq!((emission.stage, emission.style), (Stage::Bounce(0), 0));
         assert_eq!(lit.all.first().map(|lm| lm.bounce), Some([0.0; 3]));
         assert!(
             !bouncer.emit(0, &mut lit, &mut slot, 1),
@@ -369,7 +433,10 @@ mod tests {
             emissions: Vec::new(),
         };
         let emission = Emission {
-            depth: 0,
+            stage: Stage::Bounce(0),
+            omnidirectional: false,
+            rescale: false,
+            atten: 1.0,
             style: 0,
             intensity: 128.0 * 128.0 * 100.0,
             colour: [1.0, 0.5, 0.0],
@@ -387,6 +454,98 @@ mod tests {
         let below = emitter.lighting(&world, &emission, ([0.0, 0.0, -1.0], 64.0), None);
         assert_eq!(below, [0.0; 3]);
         assert_eq!(emitter.toward(emitter.pos).1, 0.01);
+    }
+
+    // spec LIGHT-16.4: a surface light's own light is scaled by `_surflightscale`, clamped at
+    // 16 units and falls off by its own falloff; one that shines every way is by half the
+    // sample's facing alone, scaled by `_surflightskyscale` and `_surflightskydist` farther;
+    // a rescaled one brightens what is nearly across from it.
+    #[test]
+    fn a_surface_lights_own_light() {
+        let mut world = World::default();
+        let emitter = Emitter {
+            pos: [0.0, 0.0, 1.0],
+            normal: [0.0, 0.0, 1.0],
+            bounds: None,
+            leaves: Vec::new(),
+            emissions: Vec::new(),
+        };
+        let direct = Emission {
+            stage: Stage::Direct,
+            omnidirectional: false,
+            rescale: false,
+            atten: 1.0,
+            style: 0,
+            intensity: 64.0 * 64.0,
+            colour: [1.0, 0.5, 0.0],
+        };
+        let up = [0.0, 0.0, 1.0];
+        let facing = Some([0.0, 0.0, -1.0]);
+        // 4096 over 64 squared is 1, by a scale of 1.
+        assert_eq!(
+            emitter.lighting(&world, &direct, (up, 64.0), facing),
+            [1.0, 0.5, 0.0]
+        );
+        // Nearer than 16 is as at 16: 4096 over 256.
+        assert_eq!(
+            emitter.lighting(&world, &direct, (up, 4.0), facing),
+            [16.0, 8.0, 0.0]
+        );
+        let steep = Emission {
+            atten: 2.0,
+            ..direct
+        };
+        assert_eq!(
+            emitter.lighting(&world, &steep, (up, 64.0), facing),
+            [0.25, 0.125, 0.0]
+        );
+        world.surflightscale.set(0.5, Source::Map);
+        assert_eq!(
+            emitter.lighting(&world, &direct, (up, 64.0), facing),
+            [0.5, 0.25, 0.0]
+        );
+        // Across from it, side on: nothing plain, a quarter rescaled.
+        let side = [1.0, 0.0, 0.0];
+        let across = Some([-1.0, 0.0, 0.0]);
+        world.surflightscale.set(1.0, Source::Map);
+        assert_eq!(
+            emitter.lighting(&world, &direct, (side, 64.0), across),
+            [0.0; 3]
+        );
+        let rescaled = Emission {
+            rescale: true,
+            ..direct
+        };
+        assert_eq!(
+            emitter.lighting(&world, &rescaled, (side, 64.0), across),
+            [0.5, 0.25, 0.0]
+        );
+        // Every way: half the sample's facing, whatever the emitter's own.
+        let sky = Emission {
+            omnidirectional: true,
+            ..direct
+        };
+        assert_eq!(
+            emitter.lighting(&world, &sky, (side, 64.0), across),
+            [0.5, 0.25, 0.0]
+        );
+        let down = [0.0, 0.0, -1.0];
+        assert_eq!(
+            emitter.lighting(&world, &sky, (down, 64.0), Some([0.0, 0.0, 1.0])),
+            [0.5, 0.25, 0.0],
+            "behind the emitter"
+        );
+        world.surflightskyscale.set(2.0, Source::Map);
+        world.surflightskydist.set(64.0, Source::Map);
+        assert_eq!(
+            emitter.lighting(&world, &sky, (side, 64.0), across),
+            [0.25, 0.125, 0.0]
+        );
+        assert_eq!(Stage::Direct.scales(&World::default()), (1.0, 1.0, 16.0));
+        assert_eq!(
+            Stage::Bounce(1).scales(&World::default()),
+            (0.5, 1.0, 128.0)
+        );
     }
 
     #[test]

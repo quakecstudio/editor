@@ -27,6 +27,7 @@ mod scene;
 mod shade;
 mod sidecar;
 mod sun;
+mod surflight;
 #[cfg(test)]
 mod tests;
 mod vis;
@@ -37,7 +38,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use qs_bsp::Bsp;
 use qs_map_bsp::{Dialect, LeafKind, SurfaceFlags};
 
-use self::bounce::{Bouncer, Emitter};
+use self::bounce::{Bouncer, Stage};
 use self::dirt::Dirt;
 use self::lights::Lights;
 use self::phong::Smoothing;
@@ -95,6 +96,8 @@ impl Light {
         let rays = Rays::new(map.casters());
         let unprojected = lights.project(&map)?;
         lights.set_up(&map, &rays, light.jitter);
+        // The radiosity surface lights, before any face is lit (LIGHT-16.4).
+        let (mut emitters, surface_lit) = lights.radiosity(&map, &rays)?;
         let smoothing = Smoothing::new(&map);
         // The quick light does neither dirt nor bounce (LIGHT-8.8).
         let quick = light.finish == Finish::Quick;
@@ -104,26 +107,31 @@ impl Light {
             rays: &rays,
             lights: &lights,
             dirt: dirt.as_ref(),
+            surface_lit: &surface_lit,
         };
         let count = read.faces.len();
         // Each face's samples and lightmaps, between the passes: every face is lit directly
         // before any light bounces, and every bounce is over before the minimum light.
+        let direct_emitters = &emitters;
         let slots: Vec<Mutex<Option<(Patch, Lightmaps)>>> = on_threads(count, |face, stack| {
             Mutex::new(
                 Patch::new(&map, &smoothing, FaceId::new(face), light.sampling).map(|mut patch| {
-                    let lightmaps = shader.direct(&mut patch, stack);
+                    let lightmaps = shader.direct(&mut patch, direct_emitters, stack);
                     (patch, lightmaps)
                 }),
             )
         })?;
-        let mut emitters: Vec<Option<Emitter>> = vec![None; count];
         let bounces = if quick {
             0
         } else {
             usize::try_from(map.world.bounce.get()).unwrap_or(0)
         };
         if bounces > 0 {
-            let bouncing = map.bouncing_faces();
+            // `Face_ShouldBounce`: a face that is a surface light gives none back.
+            let mut bouncing = map.bouncing_faces();
+            for (bounces, lit) in bouncing.iter_mut().zip(&surface_lit) {
+                *bounces &= lit.is_none();
+            }
             let corners = map.moved_corners();
             let texture = map.bounce_colours();
             let bouncer = Bouncer {
@@ -164,7 +172,7 @@ impl Light {
                     if let Some(mut slot) = slots.get(face).and_then(|slot| slot.lock().ok())
                         && let Some((patch, lightmaps)) = slot.as_mut()
                     {
-                        shader.indirect(patch, lightmaps, emitters, depth, stack);
+                        shader.emitted(patch, lightmaps, emitters, Stage::Bounce(depth), stack);
                     }
                 })?;
             }

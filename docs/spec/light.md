@@ -292,8 +292,8 @@ lights the map, read by the same reader (LIGHT-2), so what the modder sees is wh
   then a NUL. In each value a `\b` is taken out and the bytes from it to the next `\b` have
   their high bit set.
 - **LIGHT-8.7** Not ported, each a divergence from ericw-tools: `_lightmap_scale` and
-  `_world_units_per_luxel` (a lightmap is 16 texels to the luxel); radiosity surface lights
-  (`_surface_radiosity`, `_surflight_radiosity`); and the command line's options.
+  `_world_units_per_luxel` (a lightmap is 16 texels to the luxel); and the command line's
+  options, `-emissivequality` among them.
   Each is being ported; none is left out by decision.
 - **LIGHT-8.8** `qs-map-light` offers a quick light for playing a map at once (MAP-13): the
   extended dialect's lighting without dirt (LIGHT-19) and bounce (LIGHT-20), the two that
@@ -684,6 +684,44 @@ The world's settings, each with its default; a second name is another key for th
   fanned triangles' middles by area, 2 units along the face's normal, or `_surface_offset`,
   and moved with the face's model. With `_surface_spotlight` the copy is a spotlight along
   the normal.
+- **LIGHT-16.4** A `_surface` light whose `_surface_radiosity` is 1, or with no such key the
+  world's `_surflight_radiosity`, puts no lights over its faces (LIGHT-16.1 is for 0): each
+  face of its texture and surface light group that can give light, any but one of `trigger`
+  with an area of at least 1 (`PolyArea`), is itself a light, as a face that gives light back
+  is (LIGHT-20.2), `MakeSurfaceLight`. Its colour is the face's flag `surflight_color`, else
+  the light's `_color` when it has one, else for a light with `_surface_is_sky` the world's
+  `_sky_surface` (or `_sun_surface`) times 255 when the world has it, else the mean colour of
+  its texture, grey with no palette; over 255 and times the light's brightness, its
+  brightest channel is the face's intensity and, when over 1, the colour is divided by it. It
+  shines from a unit above the middle of the face's corners, those on a straight edge left
+  out, moved with its model, with its brightness the intensity times the face's area. Its
+  style is the style of the name in the flag `surflight_targetname`, else the flag
+  `surflight_style`, else the light's `style`. With `_surface_spotlight` 0 on the light it
+  shines every way, as a sky does; else by its face's normal, and then faces nearly across
+  from it are brightened (`rescale`) unless the flag `surflight_rescale` says not, or the
+  light has `_surface_is_sky`. It lights each face in the direct pass after the suns
+  (`LightFace_SurfaceLight(..., std::nullopt, cfg.surflightscale.value(),
+  cfg.surflightskyscale.value(), 16.0f)`) as LIGHT-20.4 has a bounce's light, with these
+  differences (`GetSurfaceLighting`): its light is scaled by the world's `_surflightscale`,
+  its distance is clamped at 16 units and multiplied by the flag `surflight_atten` (1 with
+  none); one that shines every way is counted by half the cosine at the sample alone, scaled
+  by `_surflightskyscale`, with `_surflightskydist` added to its distance; a rescaled one
+  has each cosine halved and half added. It is culled as a bounce's is (LIGHT-20.5), its
+  whole light scaled by `_surflightscale`, or `_surflightskyscale` for one that shines every
+  way. A face lit this way gives no light back (`Face_ShouldBounce`). Of the qualities of
+  ericw-tools' `-emissivequality` only the default, `LOW`, is here: one point to a face.
+  Source: `light/surflight.cc`, `MakeSurfaceLight`, `MakeSurfaceLightsThread`;
+  `light/entities.cc`, `FaceMatchesSurfaceLightTemplate`; `light/ltface.cc`,
+  `GetSurfaceLighting`, `SurfaceLight_SphereCull`, `LightFace_SurfaceLight`.
+- **LIGHT-16.5** A face that is such a light is raised, after the world's and its own
+  minimum light, to the light's brightness times the light's `_surflight_minlight_scale` (the
+  world's when the light has none, 1 by default) times the face's flag
+  `surflight_minlight_scale` (1 with none), when that product is over 0, in the light's
+  colour, or its texture's mean, and the light's style (`if (lightsurf.vpl) { if (auto value
+  = IsSurfaceLitFace(bsp, face)) { ... minlight = std::get<0>(value.value()) *
+  surface_minlight_scale; ... LightFace_Min(..., std::get<1>(value.value())); } }`). The
+  light is the first of the lights the face matches. Source: `light/ltface.cc`,
+  `PostProcessLightFace`; `light/surflight.cc`, `IsSurfaceLitFace`.
 
 ## LIGHT-17 Minimum light
 

@@ -392,6 +392,13 @@ pub(crate) struct World {
     pub(crate) dirtangle: Setting<f32>,
     pub(crate) minlight_dirt: Setting<bool>,
     pub(crate) minlight_mottle: Setting<bool>,
+    pub(crate) surflightscale: Setting<f32>,
+    pub(crate) surflightskyscale: Setting<f32>,
+    pub(crate) surflightskydist: Setting<f32>,
+    pub(crate) surflight_minlight_scale: Setting<f32>,
+    pub(crate) surflight_atten: Setting<f32>,
+    pub(crate) surflight_radiosity: Setting<i32>,
+    pub(crate) sky_surface: Setting<Vec3>,
     pub(crate) phong: Setting<bool>,
     pub(crate) phong_angle: Setting<f32>,
     pub(crate) bounce: Setting<i32>,
@@ -418,6 +425,8 @@ pub(crate) struct World {
 const DOWN: Vec3 = [0.0, 0.0, -1.0];
 /// The widest a setting with a top of 100 goes.
 const HUNDRED: f32 = 100.0;
+/// The most `_surflight_minlight_scale` is held to.
+const MINLIGHT_SCALE_MAX: f32 = 510.0;
 /// The first style ericw-tools gives a named light, and the first it does not.
 const STYLE_START: i32 = 32;
 const STYLE_MAX: i32 = 64;
@@ -458,6 +467,13 @@ impl Default for World {
             dirtangle: Setting::new(DIRT_ANGLE),
             minlight_dirt: Setting::new(false),
             minlight_mottle: Setting::new(false),
+            surflightscale: Setting::new(1.0),
+            surflightskyscale: Setting::new(1.0),
+            surflightskydist: Setting::new(0.0),
+            surflight_minlight_scale: Setting::new(1.0),
+            surflight_atten: Setting::new(1.0),
+            surflight_radiosity: Setting::new(0),
+            sky_surface: Setting::new([0.0; AXES]),
             phong: Setting::new(true),
             phong_angle: Setting::new(0.0),
             bounce: Setting::new(0),
@@ -530,6 +546,16 @@ impl World {
             b"dirtangle" => self.dirtangle.read_within(value, 1.0, RIGHT_ANGLE),
             b"minlight_dirt" => self.minlight_dirt.read(Some(value.flag())),
             b"minlight_mottle" | b"minlightMottle" => self.minlight_mottle.read(Some(value.flag())),
+            b"surflightscale" => self.surflightscale.read_scalar(value),
+            b"surflightskyscale" => self.surflightskyscale.read_scalar(value),
+            b"surflightskydist" => self.surflightskydist.read_scalar(value),
+            b"surflight_minlight_scale" => {
+                self.surflight_minlight_scale
+                    .read_within(value, 0.0, MINLIGHT_SCALE_MAX)
+            }
+            b"surflight_atten" => self.surflight_atten.read_within(value, 0.0, f32::MAX),
+            b"surflight_radiosity" => self.surflight_radiosity.read(value.int()),
+            b"sky_surface" | b"sun_surface" => self.sky_surface.read(value.vec3()),
             b"phong" => self.phong.read(Some(value.flag())),
             b"phong_angle" => self.phong_angle.read_scalar(value),
             // `bounce` may be given with no number, which is 1.
@@ -583,6 +609,7 @@ pub(crate) struct LightKeys {
     pub(crate) dirt_on_radius: Setting<f32>,
     pub(crate) sun: Setting<bool>,
     pub(crate) sunlight2: Setting<bool>,
+    pub(crate) surflight_minlight_scale: Setting<f32>,
     pub(crate) suntexture: Setting<Vec<u8>>,
     pub(crate) project_texture: Setting<Vec<u8>>,
     pub(crate) project_fov: Setting<f32>,
@@ -627,6 +654,7 @@ impl Default for LightKeys {
             dirt_on_radius: Setting::new(0.0),
             sun: Setting::new(false),
             sunlight2: Setting::new(false),
+            surflight_minlight_scale: Setting::new(1.0),
             suntexture: Setting::new(Vec::new()),
             project_texture: Setting::new(Vec::new()),
             project_fov: Setting::new(DEFAULT_PROJECT_FOV),
@@ -704,6 +732,9 @@ impl LightKeys {
             b"sun" => _ = self.sun.read(Some(value.flag())),
             b"sunlight2" => _ = self.sunlight2.read(Some(value.flag())),
             b"suntexture" => _ = self.suntexture.read(value.word()),
+            b"surflight_minlight_scale" => {
+                _ = self.surflight_minlight_scale.read_scalar(value);
+            }
             b"project_texture" => _ = self.project_texture.read(value.word()),
             b"project_fov" => _ = self.project_fov.read_scalar(value),
             b"project_mangle" => _ = self.project_mangle.read(value.vec3()),

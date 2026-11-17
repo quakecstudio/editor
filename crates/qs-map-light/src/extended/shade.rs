@@ -10,7 +10,7 @@
 
 use super::math::brightness;
 use super::mottle::mottle;
-use crate::extended::bounce::{BOUNCE_GATE, Emitter};
+use crate::extended::bounce::{BOUNCE_GATE, Emitter, Stage};
 use crate::extended::dirt::Dirt;
 use crate::extended::keys::{CHANNEL_DEFAULT, Dirt as DirtKey, FULL, Formula, World};
 use crate::extended::lights::{Lamp, Lights, Spot};
@@ -21,6 +21,7 @@ use crate::extended::points::Patch;
 use crate::extended::rays::{Asker, ModelId, Passed, Rays, Stack, Surface};
 use crate::extended::scene::Map;
 use crate::extended::sun::Sun;
+use crate::extended::surflight::SurfaceLit;
 use crate::extended::vis::is_unseen;
 use crate::{AXES, Vec3, to_f32};
 
@@ -261,6 +262,8 @@ pub(crate) struct Shader<'a> {
     pub(crate) lights: &'a Lights,
     /// The dome dirt is measured over, when any is (`dirt_in_use`, LIGHT-19).
     pub(crate) dirt: Option<&'a Dirt>,
+    /// Each face that is a radiosity surface light (LIGHT-16.4).
+    pub(crate) surface_lit: &'a [Option<SurfaceLit>],
 }
 
 impl Shader<'_> {
@@ -618,7 +621,12 @@ impl Shader<'_> {
 
     /// `DirectLightFace`: the dirt of `patch`, then the lights and suns that add light and
     /// the local minimum lights (LIGHT-8.4).
-    pub(crate) fn direct(&self, patch: &mut Patch, stack: &mut Stack) -> Lightmaps {
+    pub(crate) fn direct(
+        &self,
+        patch: &mut Patch,
+        emitters: &[Option<Emitter>],
+        stack: &mut Stack,
+    ) -> Lightmaps {
         let mut lightmaps = Lightmaps::new(patch.samples.len());
         if let Some(dirt) = self.dirt {
             // A model's dirt rays are stopped only by what is on its own channels.
@@ -627,19 +635,22 @@ impl Shader<'_> {
         }
         if !self.ignores_light(patch) {
             self.lights_on_face(patch, &mut lightmaps, stack, Pass::Adding);
+            // The radiosity surface lights' own light (LIGHT-16.4).
+            self.emitted(patch, &mut lightmaps, emitters, Stage::Direct, stack);
         }
         self.local_min_on_face(patch, &mut lightmaps, stack);
         lightmaps
     }
 
-    /// `IndirectLightFace`: the light the faces of `emitters` give back on bounce `depth`
-    /// added to `patch` (LIGHT-20.5).
-    pub(crate) fn indirect(
+    /// `LightFace_SurfaceLight`: the light the faces of `emitters` give at `stage`, their
+    /// own as surface lights or what they give back on a bounce, added to `patch`
+    /// (LIGHT-16.4, LIGHT-20.5).
+    pub(crate) fn emitted(
         &self,
         patch: &Patch,
         lightmaps: &mut Lightmaps,
         emitters: &[Option<Emitter>],
-        depth: usize,
+        stage: Stage,
         stack: &mut Stack,
     ) {
         if self.ignores_light(patch) || !patch.is_on_default_channel() {
@@ -649,7 +660,7 @@ impl Shader<'_> {
         let asker = self.asker(patch, CHANNEL_DEFAULT);
         for emitter in emitters.iter().flatten() {
             for emission in &emitter.emissions {
-                if emission.depth != depth
+                if emission.stage != stage
                     || emitter.is_culled(world, emission, patch)
                     || emitter
                         .leaves
@@ -706,6 +717,17 @@ impl Shader<'_> {
         };
         if minlight != 0.0 {
             self.min_on_face((colour, minlight), patch, lightmaps, 0);
+        }
+        // LIGHT-16.5: a face that is a radiosity surface light is itself raised to the
+        // light's brightness, by the light's and the face's scales, in the light's style.
+        let face = patch.face.index();
+        if let Some(lit) = self.surface_lit.get(face).and_then(Option::as_ref)
+            && emitters.get(face).is_some_and(Option::is_some)
+        {
+            let by = lit.minlight_scale * patch.surflight_minlight_scale;
+            if by > 0.0 {
+                self.min_on_face((lit.colour, lit.light * by), patch, lightmaps, lit.style);
+            }
         }
         if patch.model != 0 {
             self.auto_min_on_face(patch, lightmaps, emitters, stack);

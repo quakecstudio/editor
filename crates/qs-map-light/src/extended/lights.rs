@@ -19,6 +19,7 @@ use crate::extended::project::Projection;
 use crate::extended::rays::{Asker, Rays, Stack, Texels};
 use crate::extended::scene::{Map, Skin};
 use crate::extended::sun::{Random, Sun, SunLight, Suns};
+use crate::extended::surflight::BY_LIGHTS;
 use crate::extended::vis::leaf_at;
 use crate::face::FaceId;
 use crate::{AXES, Jitter, LightError, Vec3, to_f32};
@@ -89,7 +90,10 @@ pub(crate) struct Lights {
     pub(crate) lamps: Vec<Lamp>,
     pub(crate) suns: Vec<Sun>,
     /// The names given styles, each with its style (`lightstyleForTargetname`).
-    styles: Vec<(Vec<u8>, i32)>,
+    pub(crate) styles: Vec<(Vec<u8>, i32)>,
+    /// The lights with `_surface`, each with its texture's name, as they were read
+    /// (`GetSurfaceLightTemplates`).
+    pub(crate) templates: Vec<(Lamp, Vec<u8>)>,
     /// The worldspawn keys whose values did not read (LIGHT-9.4).
     pub(crate) invalid: Vec<String>,
 }
@@ -196,6 +200,13 @@ impl Lights {
                 keys.nostaticlight.set(true, Source::Default);
             }
             keys.check(&world);
+            // A light's `_surflight_minlight_scale` is the world's when it has none.
+            if !keys.surflight_minlight_scale.is_changed()
+                && world.surflight_minlight_scale.is_changed()
+            {
+                keys.surflight_minlight_scale
+                    .set(world.surflight_minlight_scale.get(), Source::Default);
+            }
             lamps.push(Lamp {
                 keys,
                 entity: EntityId(entity),
@@ -212,6 +223,7 @@ impl Lights {
             lamps,
             suns: Vec::new(),
             styles,
+            templates: Vec::new(),
             invalid,
         })
     }
@@ -500,6 +512,7 @@ impl Lights {
             templates.push((lamp.clone(), texture.to_vec()));
             lamp.keys.light.set(0.0, Source::Map);
         }
+        self.templates.clone_from(&templates);
         if templates.is_empty() {
             return;
         }
@@ -535,11 +548,7 @@ impl Lights {
                 let matching: Vec<&Lamp> = templates
                     .iter()
                     .filter(|(lamp, texture)| {
-                        let radiosity = self
-                            .dicts
-                            .get(lamp.entity.index())
-                            .map_or(0, |dict| dict.int(b"_surface_radiosity"));
-                        radiosity == 0
+                        self.radiosity_of(lamp) == BY_LIGHTS
                             && lamp.keys.surflight_group.get() == group
                             && name.eq_ignore_ascii_case(texture)
                     })
@@ -597,7 +606,7 @@ fn dirt_of_int(value: f32) -> Dirt {
 
 /// `LightStyleForTargetname`: the style of `name`, the next from the world's first for a new
 /// one or for no name; past the world's last the run stops (LIGHT-10.2).
-fn style_for(
+pub(crate) fn style_for(
     styles: &mut Vec<(Vec<u8>, i32)>,
     world: &World,
     name: &[u8],
