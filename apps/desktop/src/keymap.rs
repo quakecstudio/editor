@@ -6,9 +6,10 @@
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use eframe::egui::{Key, KeyboardShortcut, Modifiers};
-use qs_workbench::map_profile::MAP_RUN_PROFILE;
+use eframe::egui::{InputState, Key, KeyboardShortcut, Modifiers};
+use qs_layout::{DEFAULT_KEYS, DefaultKey, KeyContext, TextureStep, VIEW_KEYS, ViewKey};
 use serde::Deserialize;
+use std::sync::LazyLock;
 
 /// Where a binding's keys are taken.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -18,6 +19,10 @@ pub enum Scope {
     Shell,
     /// Wherever the keyboard is, as a focus command must reach out of the editor (QA-9).
     Everywhere,
+    /// Only while the map view is the centre's and a map is open.
+    Map,
+    /// Only while a pane of the map view has the keyboard.
+    MapView,
 }
 
 /// A shortcut and the command, which takes no parameters, it runs.
@@ -49,96 +54,144 @@ pub const RUN_PROFILE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMA
 /// `KeySequence{"Ctrl+R"}` (`ActionManager.cpp` at TrenchBroom@8f329f11), Cmd on macOS.
 pub const REPEAT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::R);
 
-/// Every binding. The focus keys put the editor on Cmd+1 as VS Code does, then the left,
-/// right and bottom panels on Cmd+2 to Cmd+4; Cmd+0 stays egui's zoom reset. The editor's
-/// layout and navigation keys (P4-32) are Zed's default keymap's at zed-industries/zed@415d310
-/// where it has one chord: Cmd+Alt+[ and ] fold and unfold, Ctrl+G goes to a line, Cmd+Shift+O
-/// to a symbol, Ctrl+Tab opens the tab switcher and Cmd+Shift+B the outline panel; soft wrap
-/// has no key, as in Zed (VS Code's Alt+Z types a character on macOS, and Cmd+Alt+Z is Cmd+Z
-/// with an extra Alt, which undoes); Cmd+\ splits right as VS Code does, Zed's being a
-/// sequence.
-pub const BINDINGS: [Binding; 16] = [
-    Binding {
-        command: "edit.undo",
-        shortcut: KeyboardShortcut::new(Modifiers::COMMAND, Key::Z),
-        scope: Scope::Shell,
-    },
-    Binding {
-        command: "edit.redo",
-        shortcut: KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::Z),
-        scope: Scope::Shell,
-    },
-    Binding {
-        command: "edit.repeat",
-        shortcut: REPEAT,
-        scope: Scope::Shell,
-    },
-    Binding {
-        command: MAP_RUN_PROFILE,
-        shortcut: RUN_PROFILE,
-        scope: Scope::Shell,
-    },
-    Binding {
-        command: qs_layout::FOCUS_EDITOR,
-        shortcut: KeyboardShortcut::new(Modifiers::COMMAND, Key::Num1),
-        scope: Scope::Everywhere,
-    },
-    Binding {
-        command: qs_layout::FOCUS_LEFT_PANEL,
-        shortcut: KeyboardShortcut::new(Modifiers::COMMAND, Key::Num2),
-        scope: Scope::Everywhere,
-    },
-    Binding {
-        command: qs_layout::FOCUS_RIGHT_PANEL,
-        shortcut: KeyboardShortcut::new(Modifiers::COMMAND, Key::Num3),
-        scope: Scope::Everywhere,
-    },
-    Binding {
-        command: qs_layout::FOCUS_BOTTOM_PANEL,
-        shortcut: KeyboardShortcut::new(Modifiers::COMMAND, Key::Num4),
-        scope: Scope::Everywhere,
-    },
-    Binding {
-        command: qs_layout::FOLD,
-        shortcut: KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::OpenBracket),
-        scope: Scope::Everywhere,
-    },
-    Binding {
-        command: qs_layout::UNFOLD,
-        shortcut: KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::CloseBracket),
-        scope: Scope::Everywhere,
-    },
-    Binding {
-        command: qs_layout::GO_TO_LINE,
-        shortcut: KeyboardShortcut::new(Modifiers::CTRL, Key::G),
-        scope: Scope::Everywhere,
-    },
-    Binding {
-        command: qs_layout::GO_TO_SYMBOL,
-        shortcut: KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::O),
-        scope: Scope::Everywhere,
-    },
-    Binding {
-        command: qs_layout::PROJECT_SEARCH_VIEW,
-        shortcut: KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::F),
-        scope: Scope::Everywhere,
-    },
-    Binding {
-        command: qs_layout::TAB_SWITCHER,
-        shortcut: KeyboardShortcut::new(Modifiers::CTRL, Key::Tab),
-        scope: Scope::Everywhere,
-    },
-    Binding {
-        command: qs_layout::TOGGLE_OUTLINE,
-        shortcut: KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::B),
-        scope: Scope::Everywhere,
-    },
-    Binding {
-        command: qs_layout::SPLIT_RIGHT,
-        shortcut: KeyboardShortcut::new(Modifiers::COMMAND, Key::Backslash),
-        scope: Scope::Everywhere,
-    },
-];
+/// Every default binding: `qs-layout`'s default keys (P7-17), which `docs/keymap.md` lists
+/// with what each follows. The keys' spelling is the keymap file's ([`parse_keys`]).
+#[must_use]
+pub fn bindings() -> Vec<Binding> {
+    DEFAULT_KEYS
+        .iter()
+        .filter_map(|key| {
+            Some(Binding {
+                command: key.command,
+                shortcut: parse_keys(key.keys)?,
+                scope: match key.context {
+                    KeyContext::Window => Scope::Everywhere,
+                    KeyContext::Shell => Scope::Shell,
+                    KeyContext::Map => Scope::Map,
+                    KeyContext::MapView => Scope::MapView,
+                },
+            })
+        })
+        .collect()
+}
+
+/// The map view's own keys, read once: each [`ViewKey`] with its shortcuts.
+static VIEW_SHORTCUTS: LazyLock<Vec<(ViewKey, Vec<KeyboardShortcut>)>> = LazyLock::new(|| {
+    VIEW_KEYS
+        .iter()
+        .map(|row| {
+            (
+                row.key,
+                row.keys
+                    .iter()
+                    .filter_map(|keys| parse_keys(keys))
+                    .collect(),
+            )
+        })
+        .collect()
+});
+
+/// `key`'s shortcuts.
+fn shortcuts(key: ViewKey) -> &'static [KeyboardShortcut] {
+    VIEW_SHORTCUTS
+        .iter()
+        .find(|(own, _)| *own == key)
+        .map_or(&[], |(_, shortcuts)| shortcuts)
+}
+
+/// Whether `key` of the map view's own was pressed, taking it.
+pub(crate) fn pressed(input: &mut InputState, key: ViewKey) -> bool {
+    shortcuts(key)
+        .iter()
+        .any(|shortcut| input.consume_shortcut(shortcut))
+}
+
+/// Whether the texture key `key` was pressed for `step`, taking it.
+pub(crate) fn pressed_for(input: &mut InputState, key: ViewKey, step: TextureStep) -> bool {
+    let nth = match (shortcuts(key), step) {
+        ([plain, _, _], TextureStep::Plain) => Some(plain),
+        ([_, coarse, _], TextureStep::Coarse) => Some(coarse),
+        ([_, _, fine], TextureStep::Fine) => Some(fine),
+        _ => None,
+    };
+    nth.is_some_and(|shortcut| input.consume_shortcut(shortcut))
+}
+
+/// Whether `key` of the map view's own is held down, whatever else is.
+pub(crate) fn down(input: &InputState, key: ViewKey) -> bool {
+    shortcuts(key)
+        .iter()
+        .any(|shortcut| input.key_down(shortcut.logical_key))
+}
+
+/// Whether the default key of `command`, one of [`MAP_EDITOR_KEYS`], was pressed, taking it.
+pub(crate) fn command_pressed(input: &mut InputState, command: &str) -> bool {
+    static KEYS: LazyLock<Vec<(&'static str, KeyboardShortcut)>> = LazyLock::new(|| {
+        MAP_EDITOR_KEYS
+            .iter()
+            .filter_map(|command| {
+                let keys = DefaultKey::of(command)?.keys;
+                Some((*command, parse_keys(keys)?))
+            })
+            .collect()
+    });
+    KEYS.iter()
+        .find(|(own, _)| *own == command)
+        .is_some_and(|(_, shortcut)| input.consume_shortcut(shortcut))
+}
+
+/// Which keyboard a shortcut is read for: egui's `COMMAND` is Cmd on a Mac and Ctrl
+/// elsewhere, so `secondary-g` and `ctrl-g` are one key off a Mac and two on one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Platform {
+    /// macOS.
+    Mac,
+    /// Windows and Linux.
+    Other,
+}
+
+impl Platform {
+    /// The one the app is built for.
+    pub const HERE: Self = if cfg!(target_os = "macos") {
+        Self::Mac
+    } else {
+        Self::Other
+    };
+
+    /// The keys `modifiers` holds here: Alt, Shift, Ctrl and Cmd.
+    const fn held(self, modifiers: Modifiers) -> [bool; 4] {
+        let Modifiers {
+            alt,
+            ctrl,
+            shift,
+            mac_cmd,
+            command,
+        } = modifiers;
+        match self {
+            Self::Mac => [alt, shift, ctrl, mac_cmd || command],
+            Self::Other => [alt, shift, ctrl || command, mac_cmd],
+        }
+    }
+
+    /// Whether `shortcut` is a key the map view takes itself, which a key taken anywhere
+    /// gives way to while the view has the keyboard: the same key with the same keys held.
+    #[must_use]
+    pub fn is_view_key(self, shortcut: &KeyboardShortcut) -> bool {
+        VIEW_SHORTCUTS
+            .iter()
+            .flat_map(|(_, shortcuts)| shortcuts)
+            .any(|own| {
+                own.logical_key == shortcut.logical_key
+                    && self.held(own.modifiers) == self.held(shortcut.modifiers)
+            })
+    }
+}
+
+/// The map view's default keys the map editor takes itself, since each needs what the editor
+/// holds: the clipboard for a copy, the notice a save clears, the selection it draws, the view
+/// Show All redraws. They are bindings, so the palette shows their keys, and the window leaves
+/// them to the editor, which reads them from the same table ([`command_pressed`]).
+pub const MAP_EDITOR_KEYS: [&str; 4] = ["map.save", "map.copy", "map.select", "map.show_all"];
 
 /// Every binding in the order its keys are matched, the most modifiers first: egui's
 /// `consume_shortcut` takes a shortcut whatever extra Shift is held ("you should match most
@@ -146,7 +199,7 @@ pub const BINDINGS: [Binding; 16] = [
 /// undo.
 #[must_use]
 pub fn in_match_order() -> Vec<Binding> {
-    let mut bindings = BINDINGS.to_vec();
+    let mut bindings = bindings();
     bindings.sort_by_key(|binding| std::cmp::Reverse(held(binding.shortcut.modifiers)));
     bindings
 }
@@ -167,7 +220,7 @@ fn held(modifiers: Modifiers) -> usize {
 /// The shortcut bound to `command`, if any.
 #[must_use]
 pub fn shortcut(command: &str) -> Option<KeyboardShortcut> {
-    BINDINGS
+    bindings()
         .iter()
         .find(|binding| binding.command == command)
         .map(|binding| binding.shortcut)
@@ -203,7 +256,7 @@ struct FileBinding {
     command: String,
 }
 
-/// The bindings in force (P4-37, UI-21): [`BINDINGS`], with the user's keymap file's over
+/// The bindings in force (P4-37, UI-21): [`bindings`], with the user's keymap file's over
 /// them, a user binding taking a default's keys from it, and what is wrong in the file.
 #[derive(Clone, Debug, Default)]
 pub struct Keymap {
@@ -218,7 +271,7 @@ impl Keymap {
     #[must_use]
     pub fn defaults() -> Self {
         Self {
-            bindings: BINDINGS
+            bindings: bindings()
                 .iter()
                 .map(|b| Bound {
                     command: b.command.to_owned(),
@@ -343,6 +396,9 @@ pub fn parse_keys(keys: &str) -> Option<KeyboardShortcut> {
     if keys.contains(' ') {
         return None;
     }
+    if keys == "-" {
+        return Some(KeyboardShortcut::new(Modifiers::NONE, Key::Minus));
+    }
     let mut parts: Vec<&str> = keys.split('-').collect();
     // `-` itself as the key, as in `secondary--`.
     if keys.ends_with("--") {
@@ -366,7 +422,13 @@ pub fn parse_keys(keys: &str) -> Option<KeyboardShortcut> {
     if let Some(first) = name.get(..1).map(str::to_uppercase) {
         name.replace_range(..1, &first);
     }
-    Key::from_name(&name).map(|key| KeyboardShortcut::new(held, key))
+    // Zed's spelling of the two keys egui names in two words.
+    let key = match name.as_str() {
+        "Pageup" => Some(Key::PageUp),
+        "Pagedown" => Some(Key::PageDown),
+        name => Key::from_name(name),
+    };
+    key.map(|key| KeyboardShortcut::new(held, key))
 }
 
 /// The keymap file in the app's config directory `config`.
@@ -462,7 +524,11 @@ command = "project.build"
             keymap.shortcut("project.check"),
             parse_keys("secondary-shift-b")
         );
-        assert_eq!(keymap.shortcut("project.test"), None);
+        // A binding the file got wrong leaves the command its default.
+        assert_eq!(
+            keymap.shortcut("project.test"),
+            parse_keys("secondary-shift-t")
+        );
         let problems = keymap.problems();
         assert_eq!(problems.len(), 3, "{problems:?}");
         assert!(problems[0].contains("bound twice, to project.check and to project.test"));
@@ -476,5 +542,27 @@ command = "project.build"
             Some(undo),
             "the defaults stay"
         );
+    }
+
+    // No spec statement: UI-21, #971: every default key of the shared table is spelled as the
+    // keymap file spells keys, so none is dropped, and the map editor's own keys are in the
+    // table too
+    #[test]
+    fn every_default_key_is_a_binding() {
+        for key in &DEFAULT_KEYS {
+            assert!(
+                parse_keys(key.keys).is_some(),
+                "{} {}",
+                key.command,
+                key.keys
+            );
+        }
+        assert_eq!(bindings().len(), DEFAULT_KEYS.len());
+        for command in MAP_EDITOR_KEYS {
+            assert!(
+                DEFAULT_KEYS.iter().any(|key| key.command == command),
+                "{command}"
+            );
+        }
     }
 }

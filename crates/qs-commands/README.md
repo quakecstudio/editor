@@ -175,6 +175,15 @@ for commands:
   `$ref`s into `$defs`; `params::object` turns what was entered into the parameter object,
   leaving out empty optional fields and refusing empty required ones and malformed values.
 
+## The command line
+
+`line::CommandLine` is the docked command line's state (UI-23), as AutoCAD's command window:
+`Registry::named` finds the command a typed line names, by its id, by its name after the last
+dot, or by a start of either; `CommandLine::enter` then asks for each parameter in turn, the
+required ones first, an optional one left out when nothing is typed, and returns the command
+and its parameter object once the last is given. `completions` lists what a typed start may
+be completed to, and `history` the lines entered before.
+
 ## The reference
 
 `Registry::markdown` renders `docs/commands.md`. `cargo xtask commands` writes it from the

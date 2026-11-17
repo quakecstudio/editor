@@ -21,7 +21,10 @@ use egui_kittest::kittest::{NodeT as _, Queryable as _};
 use qs_commands::palette::search;
 use qs_commands::params::{self, Input};
 use qs_commands::remote::{Client, Host};
-use qs_layout::{DockPanel, Focus, Layout, Panel};
+use qs_layout::{
+    DockPanel, FOCUS_COMMAND_LINE, Focus, Layout, ORBIT_STEP, PAN_STEP, Panel, StandardView,
+    ViewSlot, ZOOM_STEP,
+};
 use qs_map_edit::EntityIndex;
 use qs_map_edit::texture_import::project_wad;
 use qs_wad::write::WadBuilder;
@@ -34,15 +37,17 @@ use crate::editor::Request;
 use crate::features::panel_topic;
 use crate::help::Topic;
 use crate::icons::{ICON_BUTTON, Icon, ROW};
-use crate::keymap;
+use crate::keymap::{self, Platform};
 use crate::launch::{Launch, forward_paths};
 use crate::map_editor::MIN_VIEW_HEIGHT;
-use crate::map_tools::Readout;
+use crate::map_tools::{MapTool, Readout};
 use crate::palette::highlighted;
-use crate::shell::{CentreTab, EDITOR_AREA, PointerHeld, ZoomStep, commanded_size, dragged_size};
+use crate::shell::{
+    CentreTab, EDITOR_AREA, PointerHeld, Shell, ZoomStep, commanded_size, dragged_size,
+};
 use crate::strings::{
-    Text, command_count, exit_status, help_for, icon_hint, match_count, missing_textures,
-    panel_button, replace_with, select_all_of,
+    Text, command_count, command_ran, command_unknown, exit_status, help_for, icon_hint,
+    match_count, missing_textures, panel_button, replace_with, select_all_of,
 };
 use crate::theme::{Contrast, Mode, Motion, Theme, ThemeError, Token, semibold};
 use crate::{App, AppError};
@@ -295,6 +300,7 @@ fn the_ui_code_has_no_string_literals() {
         ("finder.rs", include_str!("finder.rs")),
         ("game_guide.rs", include_str!("game_guide.rs")),
         ("palette.rs", include_str!("palette.rs")),
+        ("command_line.rs", include_str!("command_line.rs")),
         ("terminal.rs", include_str!("terminal.rs")),
         ("picker.rs", include_str!("picker.rs")),
         ("git_panel.rs", include_str!("git_panel.rs")),
@@ -672,7 +678,7 @@ fn every_binding_names_a_registered_command_without_parameters() {
     let ctx = egui::Context::default();
     let app = App::checked_on_the_frame(&ctx, None).unwrap();
     let registry = app.shell().session().registry();
-    for binding in keymap::BINDINGS {
+    for binding in keymap::bindings() {
         let info = registry
             .commands()
             .find(|c| c.id().as_str() == binding.command)
@@ -1112,8 +1118,8 @@ fn each_shortcut_runs_only_its_own_command() {
 #[test]
 fn bindings_are_matched_most_specific_first() {
     let order = keymap::in_match_order();
-    assert_eq!(order.len(), keymap::BINDINGS.len());
-    for binding in keymap::BINDINGS {
+    assert_eq!(order.len(), keymap::bindings().len());
+    for binding in keymap::bindings() {
         assert!(order.contains(&binding));
     }
     let at = |command: &str| order.iter().position(|b| b.command == command).unwrap();
@@ -5259,4 +5265,549 @@ fn an_outline_rows_menu_acts_on_the_row_and_what_it_holds() {
     group.click_secondary();
     choose_hide(&mut harness);
     assert_eq!(hidden(&harness), [1, 2]);
+}
+
+/// Types `text` in the focused field, then a frame.
+fn type_text(harness: &mut Harness<'static, Option<App>>, text: &str) {
+    harness.event(egui::Event::Text(text.to_owned()));
+    harness.run();
+}
+
+/// Presses `key` with no modifier, then a frame.
+fn press(harness: &mut Harness<'static, Option<App>>, key: egui::Key) {
+    harness.key_press(key);
+    harness.run();
+}
+
+// UI-23, #971: every command runs from the command line: its id typed and entered asks for its
+// first parameter, by name and place, or with none runs it, the line saying what happened
+#[test]
+fn every_command_is_entered_on_the_command_line() {
+    let mut harness = accessible();
+    run_command(&mut harness, FOCUS_COMMAND_LINE);
+    harness.run();
+    let commands: Vec<(String, usize)> = {
+        let shell = harness.state().as_ref().unwrap().shell();
+        shell
+            .session()
+            .registry()
+            .commands()
+            .map(|info| {
+                let fields = params::fields(info.params()).len();
+                (info.id().as_str().to_owned(), fields)
+            })
+            .collect()
+    };
+    assert!(commands.len() > 200, "{}", commands.len());
+    for (id, fields) in commands {
+        // Entering a focus command moves the keyboard, so it is brought back each time.
+        run_command(&mut harness, FOCUS_COMMAND_LINE);
+        harness.run();
+        type_text(&mut harness, &id);
+        press(&mut harness, egui::Key::Enter);
+        let line = &harness.state().as_ref().unwrap().shell().command_line;
+        let (prompt, typed, noted) = line.state();
+        assert_eq!(typed, "", "{id}");
+        match (fields, prompt) {
+            (0, None) => assert!(noted, "{id} neither ran nor failed"),
+            (count, Some(prompt)) => {
+                assert_eq!(
+                    (prompt.command.as_str(), prompt.place),
+                    (id.as_str(), (1, count))
+                );
+                press(&mut harness, egui::Key::Escape);
+                let line = &harness.state().as_ref().unwrap().shell().command_line;
+                assert_eq!(line.state().0, None, "{id}");
+            }
+            (count, None) => {
+                assert_eq!(count, 0, "{id}: no parameter was asked for");
+            }
+        }
+    }
+}
+
+// UI-23, #971: the command line's key brings the keyboard to it; Tab completes a name, Enter
+// runs the command, Up brings the line back, and a parameter is asked for and taken
+#[test]
+fn the_command_line_completes_runs_recalls_and_asks() {
+    let mut harness = accessible();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Semicolon);
+    harness.run();
+    harness.run();
+    let field = harness.get_by_role_and_label(Role::TextInput, Text::CommandLine.get());
+    assert!(field.is_focused());
+    let place = |harness: &Harness<'static, Option<App>>| {
+        harness
+            .state()
+            .as_ref()
+            .unwrap()
+            .shell()
+            .layout()
+            .game_place
+    };
+    let before = place(&harness);
+    type_text(&mut harness, "toggle_embedded");
+    press(&mut harness, egui::Key::Tab);
+    let typed = |harness: &Harness<'static, Option<App>>| {
+        let line = &harness.state().as_ref().unwrap().shell().command_line;
+        line.state().1.to_owned()
+    };
+    assert_eq!(typed(&harness), "view.toggle_embedded_game");
+    // Tab completed the name and left the keyboard in the field.
+    let field = harness.get_by_role_and_label(Role::TextInput, Text::CommandLine.get());
+    assert!(field.is_focused());
+    press(&mut harness, egui::Key::Enter);
+    assert_ne!(place(&harness), before);
+    harness.get_by_label(&command_ran("view.toggle_embedded_game"));
+    press(&mut harness, egui::Key::ArrowUp);
+    assert_eq!(typed(&harness), "view.toggle_embedded_game");
+    press(&mut harness, egui::Key::ArrowDown);
+    assert_eq!(typed(&harness), "");
+    // A name several commands start is not run: they are listed.
+    type_text(&mut harness, "view.toggle");
+    press(&mut harness, egui::Key::Enter);
+    assert_eq!(typed(&harness), "view.toggle");
+    press(&mut harness, egui::Key::Escape);
+    assert_eq!(typed(&harness), "");
+    // A parameter is asked for by name, and what is typed for it is taken.
+    type_text(&mut harness, "view.show_panel");
+    press(&mut harness, egui::Key::Enter);
+    let line = &harness.state().as_ref().unwrap().shell().command_line;
+    let prompt = line.state().0.unwrap();
+    assert_eq!((prompt.field.name.as_str(), prompt.place.0), ("panel", 1));
+    // A choice is named by a start of it.
+    type_text(&mut harness, "age");
+    press(&mut harness, egui::Key::Enter);
+    let line = &harness.state().as_ref().unwrap().shell().command_line;
+    assert_eq!(line.state().0.unwrap().place, (2, 2));
+    // The second parameter is optional: nothing typed leaves it out.
+    press(&mut harness, egui::Key::Enter);
+    let line = &harness.state().as_ref().unwrap().shell().command_line;
+    assert_eq!(line.state().0, None);
+    harness.get_by_label(&command_ran("view.show_panel"));
+    // No command is named so.
+    type_text(&mut harness, "no.such.command");
+    press(&mut harness, egui::Key::Enter);
+    harness.get_by_label(&command_unknown("no.such.command"));
+}
+
+// UI-23, #971: the 3D view is driven from the keyboard alone: Alt and a digit turns it to each
+// standard view with the map in it; Shift and an arrow orbits it about the selection, with Alt
+// pans it, and Shift with Page Up and Page Down zooms; Shift and a function key saves a view,
+// kept in the layout, and the function key brings it back; and none of it is taken while a
+// text field has the keyboard
+#[test]
+fn the_map_view_is_turned_orbited_panned_and_zoomed_from_the_keyboard() {
+    let dir = keep_copy("look");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    harness.get_by_label(Text::MapEditorView.get()).click();
+    harness.run();
+    let camera = |harness: &Harness<'static, Option<App>>| {
+        *harness
+            .state()
+            .as_ref()
+            .unwrap()
+            .shell()
+            .map_editor()
+            .camera()
+            .unwrap()
+    };
+    let key = |harness: &mut Harness<'static, Option<App>>, modifiers, key| {
+        harness.key_press_modifiers(modifiers, key);
+        // The key runs its command in one frame and the view carries it out in the next.
+        harness.run();
+        harness.run();
+        camera(harness)
+    };
+    let (alt, shift) = (egui::Modifiers::ALT, egui::Modifiers::SHIFT);
+    let orbit = shift | alt;
+    let digits = [
+        egui::Key::Num1,
+        egui::Key::Num2,
+        egui::Key::Num3,
+        egui::Key::Num4,
+        egui::Key::Num5,
+        egui::Key::Num6,
+        egui::Key::Num7,
+    ];
+    for (digit, view) in digits.into_iter().zip(StandardView::ALL) {
+        let turned = key(&mut harness, alt, digit);
+        let (yaw, pitch) = view.heading();
+        assert_eq!(
+            (turned.yaw.get(), turned.pitch.get()),
+            (yaw, pitch),
+            "{view:?}"
+        );
+        // The map's middle is straight ahead: nothing of it is off to a side.
+        let [forward, right, _] = turned.axes();
+        let shell = harness.state().as_ref().unwrap().shell();
+        let entities = shell.session().context().workbench.map().unwrap();
+        let entities = entities.file().entities.len();
+        let world = shell.map_editor().bounds(entities).unwrap();
+        let [low, high] = world;
+        let middle: Vec<f32> = low
+            .iter()
+            .zip(high)
+            .zip(turned.origin)
+            .map(|((low, high), at)| (low + high) / 2.0 - at)
+            .collect();
+        let along = |way: [f32; 3]| -> f32 { middle.iter().zip(way).map(|(a, b)| a * b).sum() };
+        assert!(along(forward) > 0.0, "{view:?}");
+        assert!(along(right).abs() < 0.01, "{view:?}: {}", along(right));
+    }
+    // An orbit about the selected ogre keeps it as far away and turns the heading a step.
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("map.select", json!({ "entity": 2 })).unwrap();
+    harness.run();
+    let ogre = [96.0_f32, 64.0, 44.0];
+    let away = |camera: &qs_render::Camera| -> f32 {
+        let squared: f32 = camera
+            .origin
+            .iter()
+            .zip(ogre)
+            .map(|(at, o)| (at - o) * (at - o))
+            .sum();
+        squared.sqrt()
+    };
+    let before = camera(&harness);
+    let orbited = key(&mut harness, orbit, egui::Key::ArrowLeft);
+    assert!((orbited.yaw.get() - before.yaw.get() - ORBIT_STEP).abs() < 1e-3);
+    assert!((away(&orbited) - away(&before)).abs() < 0.01);
+    assert_ne!(orbited.origin, before.origin);
+    let back = key(&mut harness, orbit, egui::Key::ArrowRight);
+    assert!((back.yaw.get() - before.yaw.get()).abs() < 1e-3);
+    let lower = key(&mut harness, orbit, egui::Key::ArrowDown);
+    assert!((lower.pitch.get() - back.pitch.get() - ORBIT_STEP).abs() < 1e-3);
+    let level = key(&mut harness, orbit, egui::Key::ArrowUp);
+    assert!((level.pitch.get() - back.pitch.get()).abs() < 1e-3);
+    // The selection was not moved by the arrows under the modifiers.
+    let ogre_at = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        let map = shell.session().context().workbench.map().unwrap();
+        let ogre = map.file().entities.get(2)?;
+        ogre.value(b"origin").map(<[u8]>::to_vec)
+    };
+    assert_eq!(ogre_at(&harness).as_deref(), Some(b"96 64 24".as_slice()));
+    // A pan moves it across and up by a step, keeping the heading; a zoom moves it along.
+    let pan = egui::Modifiers::COMMAND | shift;
+    let panned = key(&mut harness, pan, egui::Key::ArrowRight);
+    let [forward, right, _] = level.axes();
+    let moved = |from: &qs_render::Camera, to: &qs_render::Camera, way: [f32; 3]| -> f32 {
+        let gone = to
+            .origin
+            .iter()
+            .zip(from.origin)
+            .map(|(to, from)| to - from);
+        gone.zip(way).map(|(gone, way)| gone * way).sum()
+    };
+
+    assert!((moved(&level, &panned, right) - PAN_STEP).abs() < 1e-3);
+    assert_eq!((panned.yaw, panned.pitch), (level.yaw, level.pitch));
+    let raised = key(&mut harness, pan, egui::Key::ArrowUp);
+    assert!((raised.origin[2] - panned.origin[2] - PAN_STEP).abs() < 1e-3);
+    let left = key(&mut harness, pan, egui::Key::ArrowLeft);
+    let lowered = key(&mut harness, pan, egui::Key::ArrowDown);
+    assert!((moved(&raised, &left, right) + PAN_STEP).abs() < 1e-3);
+    assert!((lowered.origin[2] - level.origin[2]).abs() < 1e-3);
+    let nearer = key(&mut harness, orbit, egui::Key::PageUp);
+    assert!((moved(&lowered, &nearer, forward) - ZOOM_STEP).abs() < 1e-3);
+    let farther = key(&mut harness, orbit, egui::Key::PageDown);
+    assert!(moved(&nearer, &farther, forward) < 0.0);
+    assert_eq!(ogre_at(&harness).as_deref(), Some(b"96 64 24".as_slice()));
+    // A view is saved, left and brought back.
+    let saved = key(&mut harness, shift, egui::Key::F2);
+    let layout = *harness.state().as_ref().unwrap().shell().layout();
+    let kept = layout.map_views.get(ViewSlot::Two).unwrap();
+    assert_eq!(kept.origin, saved.origin);
+    let elsewhere = key(&mut harness, alt, egui::Key::Num1);
+    assert_ne!(elsewhere.origin, saved.origin);
+    let restored = key(&mut harness, egui::Modifiers::NONE, egui::Key::F2);
+    assert_eq!(restored.origin, saved.origin);
+    assert!((restored.yaw.get() - saved.yaw.get()).abs() < 1e-3);
+    assert!((restored.pitch.get() - saved.pitch.get()).abs() < 1e-3);
+    // An empty slot's key changes nothing.
+    let same = key(&mut harness, egui::Modifiers::NONE, egui::Key::F3);
+    assert_eq!(same.origin, restored.origin);
+    // With the keyboard in the command line, the view's keys are the field's.
+    run_command(&mut harness, FOCUS_COMMAND_LINE);
+    harness.run();
+    let typing = key(&mut harness, alt, egui::Key::Num1);
+    assert_eq!(typing.origin, restored.origin);
+    // The same motions run from the command line by name.
+    type_text(&mut harness, "map_top");
+    press(&mut harness, egui::Key::Enter);
+    harness.run();
+    assert_eq!(camera(&harness).pitch.get(), 89.0);
+}
+
+// UI-23, MAP-20, #971: a tool is taken by its key while the map view has the keyboard,
+// TrenchBroom's B, C and V and our own for the rest, and Escape gives the select tool back;
+// a key the view takes itself is one a key taken anywhere gives way to there
+#[test]
+fn the_map_views_tools_are_taken_by_their_keys() {
+    let dir = keep_copy("toolkeys");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    harness.get_by_label(Text::MapEditorView.get()).click();
+    harness.run();
+    let tool = |harness: &Harness<'static, Option<App>>| {
+        harness
+            .state()
+            .as_ref()
+            .unwrap()
+            .shell()
+            .map_editor()
+            .tools()
+            .tool()
+    };
+    assert_eq!(tool(&harness), MapTool::Select);
+    for (key, taken) in [
+        (egui::Key::B, MapTool::Brush),
+        (egui::Key::C, MapTool::Clip),
+        (egui::Key::V, MapTool::Vertex),
+        (egui::Key::M, MapTool::Move),
+        (egui::Key::L, MapTool::Measure),
+        (egui::Key::P, MapTool::Shape),
+        (egui::Key::H, MapTool::Hull),
+    ] {
+        press(&mut harness, key);
+        assert_eq!(tool(&harness), taken, "{key:?}");
+    }
+    press(&mut harness, egui::Key::Escape);
+    assert_eq!(tool(&harness), MapTool::Select);
+    // In the command line the letters are text, not tools.
+    run_command(&mut harness, FOCUS_COMMAND_LINE);
+    harness.run();
+    type_text(&mut harness, "b");
+    press(&mut harness, egui::Key::B);
+    assert_eq!(tool(&harness), MapTool::Select);
+    // Group's key is the view's; the command line's is not.
+    let group = keymap::parse_keys("secondary-g").unwrap();
+    let line = keymap::parse_keys("secondary-;").unwrap();
+    for platform in [Platform::Mac, Platform::Other] {
+        assert!(platform.is_view_key(&group), "{platform:?}");
+        assert!(!platform.is_view_key(&line), "{platform:?}");
+    }
+    // Where Ctrl is the platform's modifier, go to line's Ctrl+G is Group's key in the view;
+    // on a Mac, where Group is Cmd+G, it is not.
+    let go_to_line = keymap::parse_keys("ctrl-g").unwrap();
+    assert!(Platform::Other.is_view_key(&go_to_line));
+    assert!(!Platform::Mac.is_view_key(&go_to_line));
+    assert_eq!(
+        keymap::parse_keys("-").map(|keys| keys.logical_key),
+        Some(egui::Key::Minus)
+    );
+    assert_eq!(
+        keymap::parse_keys("shift-alt-pageup").map(|keys| keys.logical_key),
+        Some(egui::Key::PageUp)
+    );
+}
+
+// UI-23, #971: an entity or a point the command line asks for is picked in the map view: a
+// click there answers the prompt as typing the value would, and selects or draws nothing else
+#[test]
+fn the_command_line_takes_an_entity_and_a_point_picked_in_the_map_view() {
+    let dir = keep_copy("pick");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    let selected = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        shell
+            .session()
+            .context()
+            .workbench
+            .map()
+            .unwrap()
+            .selected()
+    };
+    let count = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        let map = shell.session().context().workbench.map().unwrap();
+        map.file().entities.len()
+    };
+    let asked = |harness: &Harness<'static, Option<App>>| {
+        let line = &harness.state().as_ref().unwrap().shell().command_line;
+        line.state().0.map(|prompt| prompt.field.name)
+    };
+    run_command(&mut harness, FOCUS_COMMAND_LINE);
+    harness.run();
+    type_text(&mut harness, "map.select");
+    press(&mut harness, egui::Key::Enter);
+    assert_eq!(asked(&harness).as_deref(), Some("entity"));
+    // The field says the value can be clicked.
+    harness.run();
+    assert_eq!(selected(&harness), None);
+    let ogre = drawn_at(&harness, 2);
+    click_at(&mut harness, ogre);
+    assert_eq!(selected(&harness), Some(EntityIndex::new(2)));
+    assert_eq!(asked(&harness), None);
+    harness.get_by_label(&command_ran("map.select"));
+    // A point: the classname is typed, the origin is clicked, and the keys are left out.
+    let before = count(&harness);
+    run_command(&mut harness, FOCUS_COMMAND_LINE);
+    harness.run();
+    type_text(&mut harness, "map.place");
+    press(&mut harness, egui::Key::Enter);
+    assert_eq!(asked(&harness).as_deref(), Some("classname"));
+    // A click while a typed value is asked for is the view's own: it is no answer.
+    type_text(&mut harness, "light");
+    press(&mut harness, egui::Key::Enter);
+    assert_eq!(asked(&harness).as_deref(), Some("origin"));
+    let view = harness.get_by_label(Text::MapEditorView.get()).rect();
+    click_at(&mut harness, view.center());
+    assert_eq!(asked(&harness).as_deref(), Some("keys"));
+    // The click answered the prompt and selected nothing else.
+    assert_eq!(selected(&harness), Some(EntityIndex::new(2)));
+    run_command(&mut harness, FOCUS_COMMAND_LINE);
+    harness.run();
+    press(&mut harness, egui::Key::Enter);
+    assert_eq!(count(&harness), before + 1);
+    let origin = map_value(&harness, before, "origin").unwrap();
+    let on_grid = origin
+        .split(' ')
+        .all(|c| c.parse::<f64>().is_ok_and(|c| c.rem_euclid(16.0) == 0.0));
+    assert!(on_grid, "{origin}");
+    assert_eq!(
+        map_value(&harness, before, "classname").as_deref(),
+        Some("light")
+    );
+}
+
+// UI-23, #971 (the review's findings): the command line keeps what was typed across Up and
+// Down, brings back only the lines that named a command, lets Tab and Shift+Tab leave it, and
+// keeps the window's undo off its field; a click that picks nothing leaves the view the
+// keyboard, where Escape gives the command up; and several view commands run between two
+// frames are each carried out
+#[test]
+fn the_command_line_keeps_a_draft_leaves_by_tab_and_gives_up_from_the_view() {
+    let dir = keep_copy("draft");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    let typed = |harness: &Harness<'static, Option<App>>| {
+        let line = &harness.state().as_ref().unwrap().shell().command_line;
+        line.state().1.to_owned()
+    };
+    let asked = |harness: &Harness<'static, Option<App>>| {
+        let line = &harness.state().as_ref().unwrap().shell().command_line;
+        line.state().0.map(|prompt| prompt.field.name)
+    };
+    let focused = |harness: &Harness<'static, Option<App>>| {
+        harness
+            .get_by_role_and_label(Role::TextInput, Text::CommandLine.get())
+            .is_focused()
+    };
+    let count = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        let map = shell.session().context().workbench.map().unwrap();
+        map.file().entities.len()
+    };
+    run_command(&mut harness, FOCUS_COMMAND_LINE);
+    harness.run();
+    // With no line entered yet, Up and Down leave what is typed.
+    type_text(&mut harness, "view.map_orb");
+    press(&mut harness, egui::Key::ArrowUp);
+    assert_eq!(typed(&harness), "view.map_orb");
+    press(&mut harness, egui::Key::ArrowDown);
+    assert_eq!(typed(&harness), "view.map_orb");
+    press(&mut harness, egui::Key::Escape);
+    // A command and its parameter's value are entered: only the command is brought back.
+    type_text(&mut harness, "view.show_panel");
+    press(&mut harness, egui::Key::Enter);
+    type_text(&mut harness, "agent");
+    press(&mut harness, egui::Key::Enter);
+    press(&mut harness, egui::Key::Enter);
+    assert_eq!(asked(&harness), None);
+    type_text(&mut harness, "view.map_orb");
+    press(&mut harness, egui::Key::ArrowUp);
+    assert_eq!(typed(&harness), "view.show_panel");
+    press(&mut harness, egui::Key::ArrowUp);
+    assert_eq!(typed(&harness), "view.show_panel");
+    // Down past the newest line gives the draft back.
+    press(&mut harness, egui::Key::ArrowDown);
+    assert_eq!(typed(&harness), "view.map_orb");
+    // The window's undo is not taken from the field: the entity placed stays.
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute(
+            "map.place",
+            json!({ "classname": "light", "origin": [0, 0, 64] }),
+        )
+        .unwrap();
+    harness.run();
+    let placed = count(&harness);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    harness.run();
+    assert_eq!(count(&harness), placed);
+    // Shift+Tab leaves the line though something is typed; Tab leaves it when nothing is.
+    assert!(focused(&harness));
+    harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::Tab);
+    harness.run();
+    harness.run();
+    assert!(!focused(&harness));
+    run_command(&mut harness, FOCUS_COMMAND_LINE);
+    harness.run();
+    press(&mut harness, egui::Key::Escape);
+    run_command(&mut harness, FOCUS_COMMAND_LINE);
+    harness.run();
+    assert!(focused(&harness));
+    press(&mut harness, egui::Key::Tab);
+    harness.run();
+    assert!(!focused(&harness));
+    // A click on nothing answers nothing and gives the view the keyboard; Escape there gives
+    // the command up.
+    run_command(&mut harness, FOCUS_COMMAND_LINE);
+    harness.run();
+    type_text(&mut harness, "map.select");
+    press(&mut harness, egui::Key::Enter);
+    assert_eq!(asked(&harness).as_deref(), Some("entity"));
+    let view = harness.get_by_label(Text::MapEditorView.get()).rect();
+    click_at(&mut harness, view.left_top() + egui::vec2(4.0, 4.0));
+    assert_eq!(asked(&harness).as_deref(), Some("entity"));
+    press(&mut harness, egui::Key::Escape);
+    harness.run();
+    assert_eq!(asked(&harness), None);
+    // Two view commands before the next frame: the view is saved, then turned.
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("view.map_save_view_1", json!({})).unwrap();
+    shell.execute("view.map_top", json!({})).unwrap();
+    harness.run();
+    harness.run();
+    let shell = harness.state().as_ref().unwrap().shell();
+    assert!(shell.layout().map_views.get(ViewSlot::One).is_some());
+    assert_eq!(shell.map_editor().camera().unwrap().pitch.get(), 89.0);
+    // The map editor's own command keys are bindings, so the palette shows them.
+    assert!(shell.keymap().shortcut("map.save").is_some());
+    // A focus key is taken from a running game only where the modifier is Cmd.
+    let leaves = Shell::leaves_the_game(FOCUS_COMMAND_LINE);
+    assert_eq!(leaves, Platform::HERE == Platform::Mac);
+    assert!(!Shell::leaves_the_game("edit.undo"));
 }

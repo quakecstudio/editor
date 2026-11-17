@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 
 use eframe::egui::{self};
 use qs_layout::{
-    MAP_CAMERA, MAP_GRID, MAP_PANES, MAP_SHADING, MapGridParams, MapPanesParams, MapShadingParams,
+    MAP_CAMERA, MAP_GRID, MAP_KEEP_VIEW, MAP_PANES, MAP_SHADING, MapGridParams, MapPanesParams,
+    MapShadingParams,
 };
 use qs_map_edit::EntityIndex;
 use qs_map_edit::LAYER_KEY;
@@ -773,6 +774,7 @@ impl MapFeature {
             }
             ViewSetting::Grid(size) => commands.attempt(MAP_GRID, &MapGridParams { size }),
             ViewSetting::Camera(params) => commands.attempt(MAP_CAMERA, &params),
+            ViewSetting::KeepView(params) => commands.attempt(MAP_KEEP_VIEW, &params),
         }
     }
 

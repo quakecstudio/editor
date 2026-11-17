@@ -16,6 +16,7 @@
 pub mod agent;
 pub mod bench;
 mod code_style;
+mod command_line;
 mod debugger;
 mod disk_watch;
 pub mod display;
@@ -56,6 +57,7 @@ mod multibuffer;
 #[cfg(target_os = "macos")]
 pub mod open_documents;
 pub mod palette;
+mod pick;
 mod picker;
 pub mod project;
 pub mod shell;

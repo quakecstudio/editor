@@ -25,9 +25,9 @@ use qs_editor_view::{
     Fixable, KeyMode, LineNote, NoteSeverity, Position, Selection, ViewStyle, Wrap,
 };
 use qs_layout::{
-    DockPanel, Docks, EditorRequest, Focus, GO_TO_LINE, HasLayout, Layout, MovePanelParams,
-    Outline, Panel, RESIZE_PANEL, ResizePanelParams, ShowPanelParams, SoftWrap, Split,
-    TOGGLE_PANEL, TogglePanelParams, WhenShown, Zoom, ZoomParams,
+    DockPanel, Docks, EditorRequest, FOCUS_COMMANDS, Focus, GO_TO_LINE, HasLayout, Layout,
+    MovePanelParams, Outline, Panel, RESIZE_PANEL, ResizePanelParams, ShowPanelParams, SoftWrap,
+    Split, TOGGLE_PANEL, TogglePanelParams, WhenShown, Zoom, ZoomParams,
 };
 use qs_map_edit::opens_in_map_editor;
 use qs_render::{Camera, MapMesh};
@@ -56,6 +56,7 @@ use qs_workbench::{
 use qs_workbench::{SELECT, SET_FIELD, SelectParams, SelectedEntity, SetFieldParams};
 
 use crate::agent::{self, AgentAction, AgentPanel, ThreadIndex};
+use crate::command_line::CommandLineView;
 use crate::debugger::DebugAction;
 use crate::editor::{Editor, Popup, Request};
 use crate::editors::EditorsFeature;
@@ -71,7 +72,7 @@ use crate::git_panel::TabShown;
 use crate::help::{self, Topic};
 use crate::icons::Icon;
 use crate::icons::Toggled;
-use crate::keymap::{self, Scope};
+use crate::keymap::{self, Platform, Scope};
 use crate::map_editor::MapAction;
 #[cfg(test)]
 use crate::map_editor::MapEditor;
@@ -82,6 +83,7 @@ use crate::map_view::{self, MapView};
 use crate::multibuffer::Multibuffer;
 use crate::multibuffer::{MultiAction, Source as MultiSource, multibuffer_ui};
 use crate::palette::Palette;
+use crate::pick::Answer;
 use crate::picker::{PickerKind, PickerRow};
 use crate::project::ProjectFeature;
 use crate::project::{self, Jump, SymbolScope};
@@ -147,6 +149,9 @@ pub(crate) enum Area {
     /// The notice below the toolbar while a reload waits (P3-10).
     ResetNotice,
     StatusBar,
+    /// The command line above the status bar, and its field (UI-23).
+    CommandLine,
+    CommandLineField,
     Panel(Panel),
     Palette,
     Finder,
@@ -255,6 +260,8 @@ pub struct Shell {
     pub(crate) drawn: [Option<f32>; 3],
     /// The command palette.
     pub(crate) palette: Palette,
+    /// The command line above the status bar (UI-23).
+    pub(crate) command_line: CommandLineView,
     /// The file finder.
     pub(crate) finder: FileFinder,
     symbol_scope: SymbolScope,
@@ -326,6 +333,7 @@ impl Shell {
             centre_tab: CentreTab::default(),
             drawn: [None; 3],
             palette: Palette::default(),
+            command_line: CommandLineView::default(),
             finder: FileFinder::default(),
             symbol_scope: SymbolScope::default(),
             system_fonts: SystemFonts::new(&Theme::bundled_fonts()),
@@ -1248,6 +1256,15 @@ impl Shell {
             }
             None => {}
         }
+        let entered = self.command_line.show(
+            ui,
+            &self.theme,
+            self.session.registry(),
+            FocusNow::of(pending, Focus::CommandLine),
+        );
+        self.run_entered(entered);
+        let asking = self.command_line.asking(self.session.registry());
+        self.features.map.map_editor.ask(asking);
         for panel in [Panel::Left, Panel::Right, Panel::Bottom] {
             self.panel(ui, panel, FocusNow::of(pending, Focus::Panel(panel)));
         }
@@ -1257,6 +1274,15 @@ impl Shell {
                 name_area(ui, accesskit::Role::Pane, Text::Centre);
                 self.centre(ui, FocusNow::of(pending, Focus::Editor));
             });
+        // What a click in the map view gave the command line (UI-23).
+        match self.features.map.map_editor.take_picked() {
+            Some(Answer::Value(value)) => {
+                let entered = self.command_line.picked(self.session.registry(), value);
+                self.run_entered(entered);
+            }
+            Some(Answer::GaveUp) => self.command_line.give_up(),
+            None => {}
+        }
         if let Some((id, params)) = self.palette.show(
             ui,
             Id::new(Area::Palette),
@@ -1320,16 +1346,20 @@ impl Shell {
     /// The shortcuts pressed this frame: the palette's, and while it is closed each binding's
     /// command (`keymap`), the editor's own keys left to it while it has the keyboard.
     fn keys(&mut self, ui: &Ui) {
-        if ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_PALETTE)) {
+        // While the game in the Game tab has the keyboard its keys are its own: Ctrl fires
+        // and W runs, which together are no shortcut of the window's. Only the keys that
+        // move the keyboard are taken, so it can always leave the game.
+        let playing = self.game.has_keyboard(ui.ctx());
+        if !playing && ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_PALETTE)) {
             self.finder.close();
             self.open_palette();
             return;
         }
-        if ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_FOLDER)) {
+        if !playing && ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_FOLDER)) {
             self.open_folder();
             return;
         }
-        if ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_FILE_FINDER)) {
+        if !playing && ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_FILE_FINDER)) {
             self.palette.close();
             self.features.editors.picker.0.close();
             self.finder.open();
@@ -1339,13 +1369,30 @@ impl Shell {
             return;
         }
         // The editor, with its own undo history, takes its keys itself.
-        let editing = ui.memory(|m| m.has_focus(Id::new(EDITOR_AREA)));
+        // The editor takes its keys itself, and so does a field being typed in: there Cmd+Z
+        // takes back the typing, not the project's last edit.
+        let editing =
+            ui.memory(|m| m.has_focus(Id::new(EDITOR_AREA))) || ui.ctx().text_edit_focused();
         // P4-37: an edit of the keymap file takes effect on the next frame.
         let registry = self.session.registry();
         let bindable = |id: &str| keymap::bindable(registry, id);
         self.keymap.reload_if_changed(&bindable);
+        let map_shown =
+            self.centre_tab == CentreTab::Map && self.session.context().workbench.map().is_some();
+        let in_view = map_shown && self.features.map.map_editor.has_keyboard();
         for binding in self.keymap.in_match_order() {
-            if editing && binding.scope == Scope::Shell {
+            let taken = match binding.scope {
+                // A key the map view takes itself is the view's while it has the keyboard.
+                Scope::Everywhere => !(in_view && Platform::HERE.is_view_key(&binding.shortcut)),
+                Scope::Shell => !editing,
+                Scope::Map => !editing && map_shown,
+                Scope::MapView => in_view,
+            };
+            // The map editor takes these itself, with what it holds.
+            if !taken || keymap::MAP_EDITOR_KEYS.contains(&binding.command.as_str()) {
+                continue;
+            }
+            if playing && !Self::leaves_the_game(&binding.command) {
                 continue;
             }
             if !ui.input_mut(|i| i.consume_shortcut(&binding.shortcut)) {
@@ -1688,6 +1735,25 @@ impl Shell {
             self.preview_error = Some(Text::ReloadFailed.get().to_owned());
         } else if restart {
             let _: Option<PreviewStatus> = self.run(RESTART, &serde_json::json!({}));
+        }
+    }
+
+    /// Whether the key of `command` is taken from a game that has the keyboard: a focus
+    /// key, which lets the keyboard leave it, and only where the platform's modifier is Cmd.
+    /// Where it is Ctrl the focus keys are Ctrl with 1 to 4, Quake's fire with a weapon's
+    /// number, so there the game keeps every key and a click outside it takes the keyboard.
+    pub(crate) fn leaves_the_game(command: &str) -> bool {
+        Platform::HERE == Platform::Mac && FOCUS_COMMANDS.contains(&command)
+    }
+
+    /// Runs the command the command line made, and tells the line how it went.
+    fn run_entered(&mut self, entered: Option<(String, serde_json::Value)>) {
+        let Some((id, params)) = entered else {
+            return;
+        };
+        match self.session.execute(id.as_str(), params) {
+            Ok(_) => self.command_line.ran(id),
+            Err(error) => self.command_line.failed(error.to_string()),
         }
     }
 

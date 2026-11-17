@@ -53,7 +53,7 @@ pub(crate) fn check(root: &Path) -> Result<Report, String> {
 }
 
 /// The context the reference's registry is built over: one with every part a command reads.
-struct Everything {
+pub(crate) struct Everything {
     settings: SettingsStore,
     layout: Layout,
     workbench: Workbench<qc_project::MemoryLoader>,
@@ -111,6 +111,12 @@ impl qs_workbench::HasPreview for Everything {
 /// The reference the registry renders: the built-in commands, the settings commands (P2-22),
 /// the layout commands (P2-17), the workbench commands (P2-19), the play loop's (P3-12) and `project.new` (P4-17).
 fn reference() -> Result<String, String> {
+    registry().map(|registry| registry.markdown())
+}
+
+/// The registry with every crate's commands registered, which the reference and the keymap
+/// (`cargo xtask keymap`) are written from.
+pub(crate) fn registry() -> Result<Registry<Everything>, String> {
     let mut registry = Registry::<Everything>::new();
     qs_settings::register(&mut registry).map_err(|e| e.to_string())?;
     qs_layout::register(&mut registry).map_err(|e| e.to_string())?;
@@ -121,7 +127,7 @@ fn reference() -> Result<String, String> {
         std::sync::Arc::new(qs_templates::GitHub::new()),
     )
     .map_err(|e| e.to_string())?;
-    Ok(registry.markdown())
+    Ok(registry)
 }
 
 #[cfg(test)]

@@ -163,6 +163,7 @@ there the `cargo xtask ci` job runs fmt and deny itself.
 | `nextest` | `cargo nextest run --locked --workspace --all-features` | `Unit Tests (linux)` (and macOS and Windows) | `Unit Tests (linux)` |
 | `run` | `cargo run --locked -p qs-commands --profile release --example release_guard` | `cargo xtask ci` | `cargo xtask ci` |
 | `commands` | `cargo xtask commands --check` | `cargo xtask ci` | `cargo xtask ci` |
+| `keymap` | `cargo xtask keymap --check` | `cargo xtask ci` | `cargo xtask ci` |
 | `deny` | `cargo deny --locked --all-features check advisories bans licenses sources` | `cargo-deny` | `cargo xtask ci` |
 | `fuzz-build` | `cargo check --manifest-path fuzz/Cargo.toml --locked` | `cargo xtask ci` | `cargo xtask ci` |
 | `differential` | `cargo xtask differential --fast` | `Test Assets (linux)` | `Test Assets (linux)` |
