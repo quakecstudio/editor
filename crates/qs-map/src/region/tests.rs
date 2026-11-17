@@ -89,7 +89,10 @@ fn names(file: &MapFile) -> Vec<String> {
     file.entities
         .iter()
         .map(|e| {
-            let name = e.value(b"targetname").or(e.value(b"origin")).unwrap_or(b"");
+            let name = e
+                .value(b"targetname")
+                .or_else(|| e.value(b"origin"))
+                .unwrap_or(b"");
             format!(
                 "{} {}",
                 String::from_utf8_lossy(e.classname().unwrap_or(b"")),

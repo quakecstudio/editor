@@ -117,7 +117,7 @@ impl Docks {
         self.places
             .get(panel.index())
             .copied()
-            .unwrap_or(panel.home())
+            .unwrap_or_else(|| panel.home())
     }
 
     /// The panels in `dock`, in the status bar's order.

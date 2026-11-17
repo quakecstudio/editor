@@ -270,7 +270,7 @@ fn reviewer_a_comment_before_an_if_value_leaves_no_value() {
 fn first_keywords(out: &crate::FileOutput) -> crate::Keywords {
     out.keywords
         .first()
-        .map_or(crate::Keywords::default(), |&(_, edit)| {
+        .map_or_else(crate::Keywords::default, |&(_, edit)| {
             edit.apply(crate::Keywords::NONE)
         })
 }

@@ -385,7 +385,12 @@ fn render(root: &Path, crates: &[Package], assets: &[Asset]) -> Result<String, S
             let text = fs::read(&file).map_err(|e| format!("{}: {e}", file.display()))?;
             let text = String::from_utf8_lossy(&text).into_owned();
             let name = file
-                .strip_prefix(package.manifest_path.parent().unwrap_or(Path::new("")))
+                .strip_prefix(
+                    package
+                        .manifest_path
+                        .parent()
+                        .unwrap_or_else(|| Path::new("")),
+                )
                 .unwrap_or(&file)
                 .display()
                 .to_string();

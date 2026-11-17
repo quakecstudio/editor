@@ -232,7 +232,9 @@ impl Checker<'_> {
 
     fn statement_parts(&mut self, stmt: &ast::Stmt) -> Result<(), Fatal> {
         let line = self.env.line(stmt.syntax().span());
-        self.line_starts.entry(line).or_insert(stmt.syntax().span());
+        self.line_starts
+            .entry(line)
+            .or_insert_with(|| stmt.syntax().span());
         match stmt {
             ast::Stmt::Block(block) => self.block(block),
             ast::Stmt::Case(label) => {
@@ -530,7 +532,7 @@ impl Checker<'_> {
         let until = s.until();
         let condition_span = s
             .condition()
-            .map_or(s.syntax().span(), |c| c.syntax().span());
+            .map_or_else(|| s.syntax().span(), |c| c.syntax().span());
         let value = self.condition(s.condition())?;
         let constant = match self.etype_of(&value.ty) {
             Some(Etype::Float) => self.constant_zero(&value),
@@ -565,7 +567,7 @@ impl Checker<'_> {
         let test = self.here();
         let condition_span = s
             .condition()
-            .map_or(s.syntax().span(), |c| c.syntax().span());
+            .map_or_else(|| s.syntax().span(), |c| c.syntax().span());
         let value = self.condition(s.condition())?;
         match value.known() {
             Some(constant) => {
@@ -950,7 +952,7 @@ impl Checker<'_> {
         let time_expr = operands.next();
         let time_span = time_expr
             .as_ref()
-            .map_or(s.syntax().span(), |e| e.syntax().span());
+            .map_or_else(|| s.syntax().span(), |e| e.syntax().span());
         let time = self.value(time_expr)?;
         if entity.ty == Type::Unknown || time.ty == Type::Unknown {
             return Ok(());

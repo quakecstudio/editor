@@ -320,7 +320,7 @@ pub(super) fn anonymous_tag(node: &SyntaxNode) -> String {
     let at = node
         .child_tokens()
         .next()
-        .map_or(node.span().start, |t| t.span().start);
+        .map_or_else(|| node.span().start, |t| t.span().start);
     format!("{{}}{at}")
 }
 
@@ -991,7 +991,7 @@ fn lower_member(
         let name_end = declarator
             .array_suffixes()
             .last()
-            .map_or(name_token.span().end, |n| n.span().end);
+            .map_or_else(|| name_token.span().end, |n| n.span().end);
         let scope = decl
             .syntax()
             .parent()

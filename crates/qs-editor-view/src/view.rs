@@ -1187,7 +1187,7 @@ fn digit_count(n: usize) -> usize {
 /// `n` as points: a count of visible rows or digits, small enough to be exact; a count past
 /// `u16::MAX` saturates.
 fn points(n: usize) -> f32 {
-    u16::try_from(n).map_or(f32::from(u16::MAX), f32::from)
+    u16::try_from(n).map_or_else(|_| f32::from(u16::MAX), f32::from)
 }
 
 /// `x`, a non-negative count of rows on screen, as a whole number, saturating at `u16::MAX`.

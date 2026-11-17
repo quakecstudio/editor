@@ -600,7 +600,7 @@ impl Checker<'_> {
             if other_null && same_size {
                 other.ty = kept.ty.clone();
             } else if kept_null && same_size {
-                kept.ty = other.ty.clone();
+                kept.ty = other.ty;
             } else if !self.env.typecmp_lax(&other.ty, &kept.ty) {
                 let message = format!(
                     "Type mismatch on ternary operator: {} vs {}",

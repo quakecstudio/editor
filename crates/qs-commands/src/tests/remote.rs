@@ -34,7 +34,7 @@ fn a_client_runs_commands_in_the_hosts_session() {
         counter.fetch_add(1, Ordering::SeqCst);
     })
     .unwrap();
-    let client_path = path.clone();
+    let client_path = path;
     let client = std::thread::spawn(move || {
         let mut client = Client::connect(&client_path).unwrap();
         let commands = client.commands().unwrap();
@@ -74,7 +74,7 @@ fn a_client_runs_commands_in_the_hosts_session() {
 fn a_bad_line_is_answered_with_an_error() {
     let path = socket("bad");
     let host = Host::listen(&path, || {}).unwrap();
-    let raw = path.clone();
+    let raw = path;
     let client = std::thread::spawn(move || {
         let name = raw.as_os_str().to_fs_name::<GenericFilePath>().unwrap();
         let mut reader = BufReader::new(Stream::connect(name).unwrap());

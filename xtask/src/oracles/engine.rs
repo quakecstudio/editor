@@ -222,11 +222,7 @@ fn describe(ours: Option<&Record>, recorded: Option<&Record>) -> String {
     let (a, b) = (slots(a), slots(b));
     let bits = |value: Option<&u32>| value.map_or_else(|| "-".to_owned(), |v| format!("{v:08x}"));
     let mut shown = Vec::new();
-    for key in a
-        .keys()
-        .chain(b.keys())
-        .collect::<std::collections::BTreeSet<_>>()
-    {
+    for key in a.keys().chain(b.keys()) {
         if a.get(key) != b.get(key) {
             shown.push(format!(
                 "{key}: {} recorded {}",

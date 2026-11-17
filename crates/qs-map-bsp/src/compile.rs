@@ -258,7 +258,7 @@ impl Compiler {
     /// # Errors
     ///
     /// [`CompileError::Map`] or [`CompileError::Document`] when the map cannot be read.
-    pub fn wad_paths(&self, map: &[u8]) -> Result<Vec<Vec<u8>>, CompileError> {
+    pub fn wad_paths(self, map: &[u8]) -> Result<Vec<Vec<u8>>, CompileError> {
         Ok(match self.dialect {
             Dialect::Id => load_map_file(map)?
                 .wad_path()
@@ -276,7 +276,7 @@ impl Compiler {
     /// # Errors
     ///
     /// The [`CompileError`] qbsp stops with.
-    pub fn compile(&self, map: &[u8], wad: Option<&[u8]>) -> Result<Compiled, CompileError> {
+    pub fn compile(self, map: &[u8], wad: Option<&[u8]>) -> Result<Compiled, CompileError> {
         match self.dialect {
             Dialect::Id => self.compile_read(load_map_file(map)?, wad),
             Dialect::Extended => extended::compile(&extended_file(map, None)?, wad, self.subdivide),
@@ -292,7 +292,7 @@ impl Compiler {
     /// [`CompileError::ExternalMap`] for an instance that cannot be expanded, else the
     /// [`CompileError`] qbsp stops with.
     pub fn compile_with_externals(
-        &self,
+        self,
         map: &[u8],
         wad: Option<&[u8]>,
         load: Load<'_>,
@@ -306,7 +306,7 @@ impl Compiler {
     }
 
     /// Compiles the map read, `qmap`, with the textures of `wad` (QBSP-1).
-    fn compile_read(&self, qmap: QbspMap, wad: Option<&[u8]>) -> Result<Compiled, CompileError> {
+    fn compile_read(self, qmap: QbspMap, wad: Option<&[u8]>) -> Result<Compiled, CompileError> {
         let mut qmap = qmap;
         qmap.number_models();
         let limits = QBSP_LIMITS;

@@ -217,10 +217,10 @@ impl<'a> Resolver<'a> {
     ) -> bool {
         let mut current = Some(parent_key.to_owned());
         for _ in 0..MAX_CLASS_DEPTH {
-            let Some(key) = current else {
+            let Some(key) = &current else {
                 return false;
             };
-            let Some(def) = self.struct_defs.get(&key) else {
+            let Some(def) = self.struct_defs.get(key) else {
                 return false;
             };
             if def.members.iter().any(|m| {
@@ -233,7 +233,7 @@ impl<'a> Resolver<'a> {
             }) {
                 return true;
             }
-            current = def.parent.clone();
+            current.clone_from(&def.parent);
         }
         false
     }
@@ -473,10 +473,10 @@ impl<'a> Resolver<'a> {
         let mut current = Some(self.type_key(bare));
         let mut anonymous = false;
         for _ in 0..MAX_CLASS_DEPTH {
-            let Some(key) = current else {
+            let Some(key) = &current else {
                 break;
             };
-            let Some(def) = self.struct_defs.get(&key) else {
+            let Some(def) = self.struct_defs.get(key) else {
                 return StructMatch::NotStruct;
             };
             anonymous |= def.members.iter().any(|m| m.name.is_empty());
@@ -489,7 +489,7 @@ impl<'a> Resolver<'a> {
                 1 => return StructMatch::One,
                 _ => return StructMatch::Several(bare.to_owned()),
             }
-            current = def.parent.clone();
+            current.clone_from(&def.parent);
         }
         if anonymous
             || !self

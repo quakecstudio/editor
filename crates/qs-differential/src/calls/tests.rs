@@ -1501,7 +1501,7 @@ fn accessors_are_called_for_every_index() {
             .map(|g| g.first_statement)
             .filter(|&s| s > f.first_statement)
             .min()
-            .unwrap_or(i32::try_from(progs.statements().len()).unwrap());
+            .unwrap_or_else(|| i32::try_from(progs.statements().len()).unwrap());
         f.first_statement..end
     };
     for name in [&b"ArrayGet*arr"[..], &b"ArraySet*arr"[..]] {
@@ -1660,7 +1660,7 @@ fn a_pair_passes_values_only_between_one_type() {
         assert!(passed, "a float pair passes its value");
         // A pair of a parameter and a field draws exactly what no pair does.
         let mut crossed = drawer.pools(f);
-        crossed.pairs = vec![(parm_pair.0.clone(), parm_pair.1.clone())];
+        crossed.pairs = vec![(parm_pair.0.clone(), parm_pair.1)];
         let mut none = drawer.pools(f);
         none.pairs = Vec::new();
         for round in 0..64 {

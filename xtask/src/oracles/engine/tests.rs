@@ -27,10 +27,7 @@ fn an_engine_trace_is_frames_and_strings() {
         value: 7,
         text: Text::new(b"e1m1".to_vec()).expect("no NUL"),
     };
-    assert_eq!(
-        summary(&[frame(0), frame(1), string.clone(), frame(2)]),
-        Ok(2)
-    );
+    assert_eq!(summary(&[frame(0), frame(1), string, frame(2)]), Ok(2));
     assert_eq!(summary(&[]), Ok(0));
     assert_eq!(summary(&[frame(0)]), Ok(0));
     assert!(summary(&[frame(1)]).is_err(), "frame 0 missing");

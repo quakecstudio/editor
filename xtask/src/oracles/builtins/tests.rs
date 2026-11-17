@@ -1190,7 +1190,7 @@ fn check_fails_on_a_stale_recording_and_records_anew() {
     let (suite, recorded) = sample_suite();
     let key = fte("void() f = #5;\n").key();
     let mut stale = recorded.clone();
-    stale.insert(key.clone(), bound_as(6, "f"));
+    stale.insert(key, bound_as(6, "f"));
     let repo = repository("builtins-stale", &stale);
     let fake = Fake::new(answering(recorded.clone()));
     let oracles = fake_oracles(&repo.join("work"), &fake);
@@ -1635,7 +1635,7 @@ fn an_unseen_overrun_host_records_the_stopping_build_s_outcome() {
         .key();
     assert_eq!(recorded[&overrun], Outcome::Rejected);
     let mut on_glibc = recorded.clone();
-    on_glibc.insert(overrun.clone(), bound_as(5, "f"));
+    on_glibc.insert(overrun, bound_as(5, "f"));
     let repo = repository("builtins-glibc", &recorded);
     let fake = Fake::new(answering(on_glibc));
     let oracles = fake_oracles(&repo.join("work"), &fake);

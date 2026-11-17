@@ -318,7 +318,7 @@ fn a_wad_texture_needs_no_good_bsp_copy() {
 
 /// A WAD file: `magic`, then each texture `(name, type, pixel, trailer)` 16 by 16, cut by
 /// `cut` bytes at the end.
-fn wad_file(magic: &[u8; 4], textures: &[(&[u8], u8, u8, &[u8])], cut: usize) -> Vec<u8> {
+fn wad_file(magic: [u8; 4], textures: &[(&[u8], u8, u8, &[u8])], cut: usize) -> Vec<u8> {
     let mut data = Vec::new();
     let mut directory = Vec::new();
     for (name, ty, pixel, trailer) in textures {
@@ -359,40 +359,47 @@ fn wad3_files() -> Vec<(&'static str, Vec<u8>)> {
     let full = Vec::leak(full);
     let p = WAD_TYP_PAL;
     vec![
-        ("brick.wad", wad_file(b"WAD3", &[(b"BRICK", p, 9, full)], 0)),
+        (
+            "brick.wad",
+            wad_file(*b"WAD3", &[(b"BRICK", p, 9, full)], 0),
+        ),
         (
             "few.wad",
             wad_file(
-                b"WAD3",
+                *b"WAD3",
                 &[(b"few", p, 3, &[2, 0, 1, 2, 3, 4, 5, 6, 7, 7])],
                 0,
             ),
         ),
         (
             "past.wad",
-            wad_file(b"WAD3", &[(b"past", p, 5, &[0, 1, 1, 2, 3, 4, 5, 6])], 0),
+            wad_file(*b"WAD3", &[(b"past", p, 5, &[0, 1, 1, 2, 3, 4, 5, 6])], 0),
         ),
         (
             "trunc.wad",
-            wad_file(b"WAD3", &[(b"a", p, 1, &[0, 0]), (b"b", p, 2, &[0, 0])], 20),
+            wad_file(
+                *b"WAD3",
+                &[(b"a", p, 1, &[0, 0]), (b"b", p, 2, &[0, 0])],
+                20,
+            ),
         ),
         (
             "badid.wad",
-            wad_file(b"WAD4", &[(b"wall", p, 4, &[1, 0, 1, 1, 1])], 0),
+            wad_file(*b"WAD4", &[(b"wall", p, 4, &[1, 0, 1, 1, 1])], 0),
         ),
         (
             "gfx/gfxonly.wad",
-            wad_file(b"WAD3", &[(b"wall", p, 6, &[1, 0, 6, 6, 6])], 0),
+            wad_file(*b"WAD3", &[(b"wall", p, 6, &[1, 0, 6, 6, 6])], 0),
         ),
         (
             "first.wad",
-            wad_file(b"WAD3", &[(b"wall", p, 1, &[1, 0, 1, 1, 1])], 0),
+            wad_file(*b"WAD3", &[(b"wall", p, 1, &[1, 0, 1, 1, 1])], 0),
         ),
         (
             "second.wad",
-            wad_file(b"WAD3", &[(b"wall", p, 2, &[1, 0, 2, 2, 2])], 0),
+            wad_file(*b"WAD3", &[(b"wall", p, 2, &[1, 0, 2, 2, 2])], 0),
         ),
-        ("plain.wad", wad_file(b"WAD2", &[(b"wall", 68, 8, &[])], 0)),
+        ("plain.wad", wad_file(*b"WAD2", &[(b"wall", 68, 8, &[])], 0)),
     ]
 }
 

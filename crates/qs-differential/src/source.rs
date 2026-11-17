@@ -504,7 +504,7 @@ impl Gen {
             .chain(self.locals.iter())
             .cloned()
             .collect();
-        self.pick_name(&pool).clone()
+        self.pick_name(&pool)
     }
 
     /// A float global, local, array element or struct member, as a target.
@@ -527,7 +527,7 @@ impl Gen {
                     .filter(|n| n.ty == Ty::Float)
                     .cloned()
                     .collect();
-                self.pick_name(&floats).text.clone()
+                self.pick_name(&floats).text
             }
         }
     }
@@ -562,7 +562,7 @@ impl Gen {
                 let field = self.fields.iter().find(|f| f.ty == ty).cloned();
                 match field {
                     Some(field) => format!("{entity}.{}", field.text),
-                    None => self.pick_name(&names).text.clone(),
+                    None => self.pick_name(&names).text,
                 }
             }
             1 => match ty {
@@ -589,7 +589,7 @@ impl Gen {
                 }
                 Ty::Entity => if self.chance(50) { "self" } else { "world" }.to_owned(),
             },
-            _ => self.pick_name(&names).text.clone(),
+            _ => self.pick_name(&names).text,
         }
     }
 

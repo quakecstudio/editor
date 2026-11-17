@@ -19,9 +19,9 @@ pub(crate) struct ChunkSpec {
 }
 
 /// A chunk named `id` holding `data`.
-pub(crate) fn chunk(id: &[u8; 4], data: &[u8]) -> ChunkSpec {
+pub(crate) fn chunk(id: [u8; 4], data: &[u8]) -> ChunkSpec {
     ChunkSpec {
-        id: *id,
+        id,
         data: data.to_vec(),
         len: None,
     }
@@ -37,7 +37,7 @@ pub(crate) fn fmt(format: i16, channels: i16, rate: i32, bits: i16) -> ChunkSpec
     data.extend_from_slice(&(rate * i32::from(block)).to_le_bytes());
     data.extend_from_slice(&block.to_le_bytes());
     data.extend_from_slice(&bits.to_le_bytes());
-    chunk(b"fmt ", &data)
+    chunk(*b"fmt ", &data)
 }
 
 /// A `cue ` chunk of one cue point whose sample offset is `offset`.
@@ -50,21 +50,21 @@ pub(crate) fn cue(offset: i32) -> ChunkSpec {
     data.extend_from_slice(&0_i32.to_le_bytes());
     data.extend_from_slice(&0_i32.to_le_bytes());
     data.extend_from_slice(&offset.to_le_bytes());
-    chunk(b"cue ", &data)
+    chunk(*b"cue ", &data)
 }
 
 /// A `LIST` chunk of type `adtl` holding one `ltxt` sub-chunk of `count` samples whose
 /// purpose is `purpose`, as Cool Edit writes a loop length.
-pub(crate) fn list(count: i32, purpose: &[u8; 4]) -> ChunkSpec {
+pub(crate) fn list(count: i32, purpose: [u8; 4]) -> ChunkSpec {
     let mut data = Vec::new();
     data.extend_from_slice(b"adtl");
     data.extend_from_slice(b"ltxt");
     data.extend_from_slice(&20_i32.to_le_bytes());
     data.extend_from_slice(&1_i32.to_le_bytes());
     data.extend_from_slice(&count.to_le_bytes());
-    data.extend_from_slice(purpose);
+    data.extend_from_slice(&purpose);
     data.extend_from_slice(&[0; 8]);
-    chunk(b"LIST", &data)
+    chunk(*b"LIST", &data)
 }
 
 /// A WAV file to build. The default is the first row of the WAV-3 vectors: PCM, one
@@ -79,7 +79,10 @@ impl Default for WavSpec {
     fn default() -> Self {
         Self {
             form: *b"WAVE",
-            chunks: vec![fmt(1, 1, 11025, 8), chunk(b"data", &[128, 160, 255, 0, 96])],
+            chunks: vec![
+                fmt(1, 1, 11025, 8),
+                chunk(*b"data", &[128, 160, 255, 0, 96]),
+            ],
         }
     }
 }

@@ -93,7 +93,7 @@ fn faces_merge_across_shared_edges() {
     let mut wet = b.clone();
     wet.contents[0] = Contents::new(Contents::WATER);
     assert!(maker.try_merge(&a, &wet).is_none());
-    let list = maker.merge_list(vec![a.clone(), apart, b]);
+    let list = maker.merge_list(vec![a, apart, b]);
     assert_eq!(list.len(), 2, "the two neighbours merged, the third kept");
 }
 

@@ -25,7 +25,7 @@ pub struct NullOutput {
 impl NullOutput {
     /// How many frames have been written.
     #[must_use]
-    pub const fn frames(&self) -> u64 {
+    pub const fn frames(self) -> u64 {
         self.frames
     }
 }

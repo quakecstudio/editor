@@ -64,7 +64,7 @@ impl Game {
         let cleared = self.rebind_breakpoints(&new);
         self.snapshot = None;
         self.progs = bytes;
-        self.progs_path = path.clone();
+        self.progs_path.clone_from(&path);
         self.progs_loaded(&path);
         if self.state == State::Paused {
             self.state_changed(Some(Reason::Reload), None);

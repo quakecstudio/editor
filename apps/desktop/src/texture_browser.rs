@@ -268,7 +268,7 @@ impl TextureBrowser {
                 })
         });
         let shown = self.shown();
-        let count = u16::try_from(shown.len()).map_or(f32::from(u16::MAX), f32::from);
+        let count = u16::try_from(shown.len()).map_or_else(|_| f32::from(u16::MAX), f32::from);
         let width = count * (CELL + GAP);
         egui::ScrollArea::horizontal().show_viewport(ui, |ui, viewport| {
             ui.set_min_size(Vec2::new(width, CELL_HEIGHT));
@@ -276,7 +276,7 @@ impl TextureBrowser {
             let first = (viewport.min.x / (CELL + GAP)).floor().max(0.0);
             let last = (viewport.max.x / (CELL + GAP)).ceil().max(0.0);
             for (slot, &index) in shown.iter().enumerate() {
-                let at = u16::try_from(slot).map_or(f32::from(u16::MAX), f32::from);
+                let at = u16::try_from(slot).map_or_else(|_| f32::from(u16::MAX), f32::from);
                 if at < first || at >= last {
                     continue;
                 }
@@ -307,7 +307,7 @@ impl TextureBrowser {
             // TrenchBroom's Replace Material: the current texture, the one chosen, put in this
             // one's place.
             let current = self.selected.clone();
-            let _menu = response.clone().context_menu(|ui| {
+            let _menu = response.context_menu(|ui| {
                 if let Some(current) = current.filter(|c| !c.eq_ignore_ascii_case(&texture.name))
                     && ui.button(replace_with(&current, &texture.name)).clicked()
                 {

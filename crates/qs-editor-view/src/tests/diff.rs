@@ -101,7 +101,7 @@ proptest! {
     ) {
         let (base, current) = (base.join("\n"), current.join("\n"));
         let diff = Diff::new(&base, &current);
-        prop_assert_eq!(base_of(&diff, &current), base.clone());
+        prop_assert_eq!(&base_of(&diff, &current), &base);
         let shared = lcs(&base, &current);
         let expected = base.split('\n').count() + current.split('\n').count() - 2 * shared;
         prop_assert_eq!(edits(&diff, &current), expected);

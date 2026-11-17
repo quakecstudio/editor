@@ -46,7 +46,7 @@ fn reads_the_default_vector() {
 #[test]
 fn skips_padded_chunks() {
     let mut spec = WavSpec::default();
-    spec.chunks.insert(0, chunk(b"junk", b"abc"));
+    spec.chunks.insert(0, chunk(*b"junk", b"abc"));
     assert_eq!(
         info(&spec),
         Ok(WavInfo {
@@ -93,7 +93,7 @@ fn negative_length_stops_the_search() {
         1,
         ChunkSpec {
             len: Some(-2),
-            ..chunk(b"junk", b"")
+            ..chunk(*b"junk", b"")
         },
     );
     assert_eq!(info(&spec), Err(WavError::MissingData));
@@ -110,7 +110,7 @@ fn long_chunk_hides_the_rest() {
         1,
         ChunkSpec {
             len: Some(1000),
-            ..chunk(b"junk", b"")
+            ..chunk(*b"junk", b"")
         },
     );
     assert_eq!(info(&spec), Err(WavError::MissingData));
@@ -139,7 +139,7 @@ fn maximal_length_stops_the_search() {
         1,
         ChunkSpec {
             len: Some(i32::MAX),
-            ..chunk(b"junk", b"")
+            ..chunk(*b"junk", b"")
         },
     );
     assert_eq!(info(&spec), Err(WavError::MissingData));
@@ -175,7 +175,7 @@ fn search_starts_after_the_form_type() {
     bytes.extend_from_slice(&16_i32.to_le_bytes());
     bytes.extend_from_slice(&format.data);
     let riff = WavSpec {
-        chunks: vec![chunk(b"data", b"ab")],
+        chunks: vec![chunk(*b"data", b"ab")],
         ..WavSpec::default()
     };
     bytes.extend_from_slice(&riff.build());
@@ -186,7 +186,7 @@ fn search_starts_after_the_form_type() {
 #[test]
 fn fmt_must_be_pcm() {
     let spec = WavSpec {
-        chunks: vec![chunk(b"data", b"abc")],
+        chunks: vec![chunk(*b"data", b"abc")],
         ..WavSpec::default()
     };
     assert_eq!(info(&spec), Err(WavError::MissingFmt));
@@ -224,12 +224,12 @@ fn short_fmt_reads_on() {
     let full = spec.chunks[0].data.clone();
     spec.chunks[0] = ChunkSpec {
         len: Some(2),
-        ..chunk(b"fmt ", &full[..2])
+        ..chunk(*b"fmt ", &full[..2])
     };
     // The bytes after the 2-byte chunk are the next chunk's: channels from its id, the
     // rate from its id and length, and the bits from its data.
     spec.chunks
-        .insert(1, chunk(b"pad ", &[0, 0, 0, 0, 16, 0, 0, 0]));
+        .insert(1, chunk(*b"pad ", &[0, 0, 0, 0, 16, 0, 0, 0]));
     let got = info(&spec).unwrap();
     assert_eq!(got.channels, i32::from(i16::from_le_bytes(*b"pa")));
     assert_eq!(got.rate, i32::from_le_bytes([b'd', b' ', 8, 0]));
@@ -293,21 +293,21 @@ fn truncated_cue_is_ignored() {
 #[test]
 fn list_mark_gives_loop_length() {
     assert_eq!((WAV_LIST_LENGTH_OFFSET, WAV_LIST_MARK_OFFSET), (24, 28));
-    let got = info(&WavSpec::before_data(vec![cue(3), list(2, b"mark")])).unwrap();
+    let got = info(&WavSpec::before_data(vec![cue(3), list(2, *b"mark")])).unwrap();
     assert_eq!((got.loopstart, got.samples), (3, 5));
-    let got = info(&WavSpec::before_data(vec![cue(1), list(2, b"mark")])).unwrap();
+    let got = info(&WavSpec::before_data(vec![cue(1), list(2, *b"mark")])).unwrap();
     assert_eq!((got.loopstart, got.samples), (1, 3));
     // Any other purpose is not a loop length.
-    let got = info(&WavSpec::before_data(vec![cue(1), list(2, b"Mark")])).unwrap();
+    let got = info(&WavSpec::before_data(vec![cue(1), list(2, *b"Mark")])).unwrap();
     assert_eq!(got.samples, 5);
     // A LIST before the cue chunk is not searched.
-    let got = info(&WavSpec::before_data(vec![list(2, b"mark"), cue(1)])).unwrap();
+    let got = info(&WavSpec::before_data(vec![list(2, *b"mark"), cue(1)])).unwrap();
     assert_eq!(got.samples, 5);
     // A LIST with no cue chunk is not read.
-    let got = info(&WavSpec::before_data(vec![list(2, b"mark")])).unwrap();
+    let got = info(&WavSpec::before_data(vec![list(2, *b"mark")])).unwrap();
     assert_eq!((got.loopstart, got.samples), (WAV_NO_LOOP, 5));
     // Chunks between the cue and the LIST are skipped.
-    let spec = WavSpec::before_data(vec![cue(1), chunk(b"junk", b"x"), list(1, b"mark")]);
+    let spec = WavSpec::before_data(vec![cue(1), chunk(*b"junk", b"x"), list(1, *b"mark")]);
     assert_eq!(info(&spec).unwrap().samples, 2);
 }
 
@@ -316,7 +316,7 @@ fn list_mark_gives_loop_length() {
 fn truncated_list_is_ignored() {
     let mut spec = WavSpec::default();
     spec.chunks.push(cue(1));
-    let mut short = list(2, b"mark");
+    let mut short = list(2, *b"mark");
     short.data.truncate(22);
     spec.chunks.push(short);
     let bytes = spec.build();
@@ -355,7 +355,7 @@ fn reviewer_list_mark_file_boundary() {
     // The LIST chunk after the data chunk, with the cue before it; the fixture's `mark` tag
     // ends eight bytes before the file end (eight NUL bytes follow it in the chunk).
     let mut spec = WavSpec::before_data(vec![cue(3)]);
-    spec.chunks.push(list(2, b"mark"));
+    spec.chunks.push(list(2, *b"mark"));
     let full = spec.build();
     let got = get_wavinfo(&full).unwrap();
     assert_eq!(
@@ -408,15 +408,15 @@ fn zero_width_fails() {
 // spec WAV-2.10: the loop may not be longer than the data; a zero loop length is ignored.
 #[test]
 fn loop_longer_than_data_fails() {
-    let spec = WavSpec::before_data(vec![cue(3), list(4, b"mark")]);
+    let spec = WavSpec::before_data(vec![cue(3), list(4, *b"mark")]);
     assert_eq!(info(&spec), Err(WavError::BadLoopLength));
     assert_eq!(
         format!("Sound t.wav {}", WavError::BadLoopLength),
         "Sound t.wav has a bad loop length"
     );
-    let spec = WavSpec::before_data(vec![cue(0), list(0, b"mark")]);
+    let spec = WavSpec::before_data(vec![cue(0), list(0, *b"mark")]);
     assert_eq!(info(&spec).unwrap().samples, 5);
-    let spec = WavSpec::before_data(vec![cue(3), list(-3, b"mark")]);
+    let spec = WavSpec::before_data(vec![cue(3), list(-3, *b"mark")]);
     assert_eq!(info(&spec).unwrap().samples, 5);
 }
 
@@ -424,7 +424,7 @@ fn loop_longer_than_data_fails() {
 #[test]
 fn bad_loop_arithmetic_fails() {
     for (start, count) in [(1, -3), (i32::MAX, 1), (i32::MIN, -1), (-5, 1)] {
-        let spec = WavSpec::before_data(vec![cue(start), list(count, b"mark")]);
+        let spec = WavSpec::before_data(vec![cue(start), list(count, *b"mark")]);
         assert_eq!(info(&spec), Err(WavError::BadLoopLength), "{start} {count}");
     }
 }
@@ -503,7 +503,7 @@ fn sample_formats() {
     assert_eq!(samples, [0, 32 << 8, 127 << 8, -32768, -32 << 8, 0]);
 
     let mut spec = with_fmt(1, 1, 22050, 16);
-    spec.chunks[1] = chunk(b"data", &[0x34, 0x12, 0x00, 0x80, 0xFF]);
+    spec.chunks[1] = chunk(*b"data", &[0x34, 0x12, 0x00, 0x80, 0xFF]);
     let bytes = spec.build();
     let sound = s_load_sound(&bytes).unwrap();
     assert_eq!(sound.info.samples, 2);

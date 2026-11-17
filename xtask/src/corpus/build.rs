@@ -118,7 +118,7 @@ pub(crate) fn round_trip(progs: &[u8]) -> Result<(), String> {
         .iter()
         .zip(&written)
         .position(|(a, b)| a != b)
-        .unwrap_or(progs.len().min(written.len()));
+        .unwrap_or_else(|| progs.len().min(written.len()));
     Err(format!(
         "written back it is {} bytes against {}, differing first at byte {first}",
         written.len(),
@@ -145,7 +145,7 @@ pub(crate) fn lno_round_trip(lno: &[u8], progs: &[u8]) -> Result<(), String> {
             .iter()
             .zip(&written)
             .position(|(a, b)| a != b)
-            .unwrap_or(lno.len().min(written.len()));
+            .unwrap_or_else(|| lno.len().min(written.len()));
         return Err(format!(
             "the .lno written back is {} bytes against {}, differing first at byte {first}",
             written.len(),

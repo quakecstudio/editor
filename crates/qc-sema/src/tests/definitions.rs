@@ -1543,7 +1543,7 @@ fn untyped_members_and_functions_returning_functions() {
     assert_eq!(
         messages("typedef float() fn(); fn h; float x = h;"),
         [
-            (Code::W0320, returning.1.clone()),
+            (Code::W0320, returning.1),
             (
                 Code::E0213,
                 "Cannot cast from __function() to float".to_owned()

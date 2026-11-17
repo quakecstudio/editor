@@ -259,7 +259,7 @@ impl Portalizer<'_> {
                     let back_part = BuildPortal {
                         winding: back,
                         nodes: place(b),
-                        ..p.clone()
+                        ..p
                     };
                     p.winding = front;
                     p.nodes = place(f);

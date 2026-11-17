@@ -167,10 +167,10 @@ impl<'a> Resolver<'a> {
             class,
             at: 0,
             // FTEF-18.40: a nested function is read where it stands in the function around it.
-            inline_member: self
-                .enclosing
-                .get(&owner)
-                .map_or(class.is_some() && decl.is_none(), |e| e.scope.inline_member),
+            inline_member: self.enclosing.get(&owner).map_or_else(
+                || class.is_some() && decl.is_none(),
+                |e| e.scope.inline_member,
+            ),
         };
         let reported = self.index.diagnostics.len();
         // `f->name`, a member function's `CLASS::NAME`.

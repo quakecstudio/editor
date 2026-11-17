@@ -264,7 +264,7 @@ fn run_and_compare_reports_a_divergence() {
     let entities = b"{\n\"classname\" \"worldspawn\"\n}\n";
     let ours = crate::run_scenario(&scn, &progs, entities).expect("runs");
     // The oracle's trace drops the last record, so it is shorter (DIFF-9.5).
-    let mut truncated = ours.trace.clone();
+    let mut truncated = ours.trace;
     truncated.records.pop();
     let oracle_bytes = encode(&truncated);
     let result =

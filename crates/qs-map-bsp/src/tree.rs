@@ -449,13 +449,7 @@ impl Builder<'_> {
         for face in surface.faces.drain(..) {
             let (front, back) = split_face(&face.points, split, self.face_points)?;
             if let Some(points) = front {
-                front_list.insert(
-                    0,
-                    Face {
-                        points,
-                        ..face.clone()
-                    },
-                );
+                front_list.insert(0, Face { points, ..face });
             }
             if let Some(points) = back {
                 back_list.insert(0, Face { points, ..face });

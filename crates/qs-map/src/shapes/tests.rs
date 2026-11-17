@@ -454,7 +454,7 @@ fn any_shape() -> impl Strategy<Value = Shape> {
             mode,
             wall
         }),
-        (sides.clone(), mode.clone()).prop_map(|(sides, mode)| Shape::Cone { sides, mode }),
+        (sides.clone(), mode).prop_map(|(sides, mode)| Shape::Cone { sides, mode }),
         (
             sides.clone(),
             length.clone(),

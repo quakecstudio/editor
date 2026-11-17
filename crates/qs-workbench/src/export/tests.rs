@@ -166,7 +166,7 @@ fn id_data_is_refused() {
         .push(("progs/player.mdl", b"IDPO id's player".to_vec()));
     let root = project("iddata", &spec);
     let params = ExportParams {
-        game: Some(game.clone()),
+        game: Some(game),
         ..ExportParams::default()
     };
     let error = export(&root, &params).unwrap_err();

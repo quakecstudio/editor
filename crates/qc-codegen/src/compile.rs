@@ -329,7 +329,7 @@ impl<'a> Compiler<'a> {
             None => self
                 .names
                 .global(&name.text_lossless())
-                .ok_or(Abort::Internal(Internal::Unresolved, name.span())),
+                .ok_or_else(|| Abort::Internal(Internal::Unresolved, name.span())),
         }
     }
 
@@ -337,7 +337,7 @@ impl<'a> Compiler<'a> {
     fn def_of(&self, token: &SyntaxToken) -> Lowered<DefId> {
         self.names
             .def(self.file, token.span(), self.scope)
-            .ok_or(Abort::Internal(Internal::Unresolved, token.span()))
+            .ok_or_else(|| Abort::Internal(Internal::Unresolved, token.span()))
     }
 
     /// FTEF-32.16: `QCC_UnmarshalLocals` finalises each `static` local and each initialised
@@ -389,7 +389,7 @@ impl<'a> Compiler<'a> {
             ValueKind::Def(place) => self
                 .program
                 .def(*place)
-                .map_or(ValueType::simple(Etype::Void), |d| d.ty.clone()),
+                .map_or_else(|| ValueType::simple(Etype::Void), |d| d.ty.clone()),
             ValueKind::Temp(ty) => ty.clone(),
         }
     }

@@ -303,11 +303,8 @@ impl Brush {
     /// The brush with only the faces that have a polygon on its solid.
     fn pruned(mut self) -> Self {
         if let Some(planes) = self.planes() {
-            let keep: Vec<bool> = polygons_on(&planes)
-                .iter()
-                .map(|polygon| polygon.len() >= MIN_CORNERS)
-                .collect();
-            let mut flags = keep.into_iter();
+            let polygons = polygons_on(&planes);
+            let mut flags = polygons.iter().map(|polygon| polygon.len() >= MIN_CORNERS);
             self.faces.retain(|_| flags.next().unwrap_or(false));
         }
         self

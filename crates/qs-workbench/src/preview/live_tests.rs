@@ -380,7 +380,7 @@ fn a_full_build_asked_for_while_one_runs_replaces_it() {
     std::fs::write(&target, b"the fast compile").unwrap();
     let (preview, seen) = &mut playing_test();
     preview.start_full_build("test".to_owned(), dir.0.join("first.bsp"), room_inputs());
-    preview.start_full_build("test".to_owned(), target.clone(), room_inputs());
+    preview.start_full_build("test".to_owned(), target, room_inputs());
     preview.wait_for_full_build();
     let sent = std::mem::take(&mut *seen.lock().unwrap());
     assert_eq!(sent.len(), 1, "only the last is swapped in: {sent:?}");

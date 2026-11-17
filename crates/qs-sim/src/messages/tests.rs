@@ -507,7 +507,7 @@ fn the_fat_pvs_reaches_the_leafs_near_the_eye() {
     assert_eq!(vis.fat_pvs([-8.0, 0.0, 0.0]), [0b11], "exactly 8 is both");
     let solid = Vis {
         nodes: vec![(0, [-1, -3])],
-        ..vis.clone()
+        ..vis
     };
     assert_eq!(
         solid.fat_pvs([20.0, 0.0, 0.0]),

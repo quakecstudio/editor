@@ -801,7 +801,7 @@ impl MapFeature {
                     entity: layer,
                     min,
                     max,
-                    texture: texture.clone(),
+                    texture,
                     grid,
                 },
             ),
@@ -947,7 +947,7 @@ impl MapFeature {
                 &BrushHullParams {
                     entity: layer,
                     points,
-                    texture: texture.clone(),
+                    texture,
                     grid,
                 },
             ),

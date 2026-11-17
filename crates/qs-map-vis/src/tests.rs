@@ -496,7 +496,7 @@ fn windings_clip_to_the_front() {
         normal: [0.0, 1.0, 0.0],
         dist: -10.0,
     };
-    assert_eq!(square.clipped(all), Some(square.clone()));
+    assert_eq!(square.clipped(all), Some(square));
 }
 
 // spec VIS-3.1, VIS-3.2, VIS-4.1: a portal might see the leaf it looks into and what a flood
@@ -678,17 +678,13 @@ fn clip_epsilon_is_a_double() {
     let back_on = flat(&[[-under, 0.0], [10.0, 0.0], [10.0, 64.0]]);
     assert_eq!(
         back_on.clipped(X0),
-        Some(back_on.clone()),
+        Some(back_on),
         "just under 0.1 behind is on"
     );
     let back = flat(&[[-0.1, 0.0], [10.0, 0.0], [10.0, 64.0]]);
-    assert_ne!(
-        back.clipped(X0),
-        Some(back.clone()),
-        "0.1f behind is behind"
-    );
+    assert_ne!(back.clipped(X0), Some(back), "0.1f behind is behind");
     let near = flat(&[[0.05, 0.0], [10.0, 0.0], [10.0, 64.0]]);
-    assert_eq!(near.clipped(X0), Some(near.clone()));
+    assert_eq!(near.clipped(X0), Some(near));
     let wide = flat(&[[0.0, 0.0], [64.0, 0.0], [64.0, 64.0], [0.0, 64.0]]);
     let below_32 = Plane {
         normal: [-1.0, 0.0, 0.0],

@@ -591,7 +591,7 @@ impl Directive {
 impl Flags {
     /// `head` and `body` padded to `width`: on the right with `-`, with zeros between them when
     /// the conversion and the `0` flag allow, else with spaces before.
-    fn pad(&self, width: i64, head: Vec<u8>, body: Vec<u8>, zeros: ZeroPad) -> Vec<u8> {
+    fn pad(self, width: i64, head: Vec<u8>, body: Vec<u8>, zeros: ZeroPad) -> Vec<u8> {
         let len = head.len().saturating_add(body.len());
         let width = usize::try_from(width).unwrap_or(0).min(STRINGTEMP_LENGTH);
         let fill = width.saturating_sub(len);
@@ -612,7 +612,7 @@ impl Flags {
         out
     }
     /// `%f`: the value rounded to `precision` places, a point kept with `#`.
-    fn fixed(&self, value: f64, precision: usize) -> String {
+    fn fixed(self, value: f64, precision: usize) -> String {
         let mut text = format!("{value:.precision$}");
         if precision == 0 && self.alternate {
             text.push('.');
@@ -620,7 +620,7 @@ impl Flags {
         text
     }
     /// `%e`: one digit, `precision` places and an exponent of at least two digits with its sign.
-    fn exponent(&self, value: f64, precision: usize) -> String {
+    fn exponent(self, value: f64, precision: usize) -> String {
         let (mantissa, exp) = split_exponent(value, precision);
         let mut text = mantissa;
         if precision == 0 && self.alternate {
@@ -634,7 +634,7 @@ impl Flags {
     }
     /// `%g`: `%e` or `%f` by the exponent `%e` would show, `P` significant digits, and trailing
     /// zeros and a trailing point removed unless `#`.
-    fn general(&self, value: f64, precision: usize) -> String {
+    fn general(self, value: f64, precision: usize) -> String {
         let p = precision.max(1);
         let (_, x) = split_exponent(value, p.saturating_sub(1));
         let p_i = i64::try_from(p).unwrap_or(i64::MAX);

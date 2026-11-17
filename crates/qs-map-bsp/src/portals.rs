@@ -249,7 +249,7 @@ impl Tree {
                     let kept = Portal {
                         nodes: joined(front),
                         winding: front_points,
-                        ..portal.clone()
+                        ..portal
                     };
                     portals.reattach(self, id, kept);
                     portals.add(

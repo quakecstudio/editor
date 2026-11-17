@@ -728,8 +728,8 @@ fn builtin(
     }
     Ok(Some(Item {
         key,
-        name: name.clone(),
-        signature: signature.clone(),
+        name,
+        signature,
         extensions,
     }))
 }

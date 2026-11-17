@@ -167,7 +167,7 @@ proptest! {
         let mut db = db_of(&files, dialect);
         let _ = db.module_index(&ids(&files));
         let _ = db.analyze_module(&input(&files));
-        let mut edited = files.clone();
+        let mut edited = files;
         edited[which] = edit.join(" ");
         db.set_file(
             FileId::new(which),

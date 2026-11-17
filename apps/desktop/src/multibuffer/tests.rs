@@ -49,7 +49,7 @@ fn excerpts_join_and_move_with_edits() {
     assert_eq!(buffer.excerpts.len(), 3, "{:?}", buffer.excerpts);
     assert_eq!(buffer.excerpts[0].text, "one\ntwo\nthree health");
     assert_eq!(buffer.excerpts[1].text, "five\nsix health\nseven");
-    assert_eq!(buffer.files(), [a.clone(), b]);
+    assert_eq!(buffer.files(), [a, b]);
     let second = buffer.excerpts[1].start;
     buffer.edited(super::ExcerptIndex::new(0), "1\n2\n3".to_owned());
     assert_eq!(buffer.excerpts[0].end, 5);

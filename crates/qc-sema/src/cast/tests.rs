@@ -298,7 +298,7 @@ fn types_are_the_same_part_by_part() {
     assert!(
         !f(float.clone(), vec![float.clone()], false).fteqcc_same(&f(float.clone(), vec![], false))
     );
-    assert!(!f(float.clone(), vec![], false).fteqcc_same(&f(named("int"), vec![], false)));
+    assert!(!f(float, vec![], false).fteqcc_same(&f(named("int"), vec![], false)));
 }
 
 // spec FTEF-19.31: the message spells a type as FTEQCC's `TypeName` does

@@ -302,7 +302,7 @@ pub(crate) fn oracle_compile(
         fs::remove_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
     fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    let from = path.parent().unwrap_or(Path::new("."));
+    let from = path.parent().unwrap_or_else(|| Path::new("."));
     for external in externals {
         let (file, to) = (from.join(external), dir.join(external));
         if let Some(parent) = to.parent() {
@@ -361,7 +361,10 @@ fn our_compile(
     dialect: Dialect,
     path: &Path,
 ) -> (Result<Compiled, String>, Vec<String>) {
-    let dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+    let dir = path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf();
     let mut read = Vec::new();
     let mut load = |name: &str| {
         let bytes = fs::read(dir.join(name)).ok()?;

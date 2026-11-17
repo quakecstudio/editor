@@ -764,7 +764,7 @@ fn table_bounds() {
     );
 
     // The last table ending one byte past the file.
-    let mut bytes = base.clone();
+    let mut bytes = base;
     bytes.pop();
     assert_eq!(
         read(&bytes).unwrap_err(),
@@ -902,7 +902,7 @@ fn check_order() {
         })],
         ..FixtureSpec::default()
     };
-    let mut bytes = bad_everything.clone().build();
+    let mut bytes = bad_everything.build();
     patch(&mut bytes, field::NUMGLOBALS, 1000);
     let mut expect = |expected: ReadError, fix: &mut dyn FnMut(&mut Vec<u8>)| {
         assert_eq!(read(&bytes).unwrap_err(), expected);

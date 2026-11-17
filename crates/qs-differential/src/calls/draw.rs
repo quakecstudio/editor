@@ -674,7 +674,7 @@ impl<'a, 'p> Drawer<'a, 'p> {
         let mut types = BTreeMap::new();
         let mut names = BTreeMap::new();
         for def in progs.global_defs().iter() {
-            types.entry(def.ofs).or_insert(def.def_type());
+            types.entry(def.ofs).or_insert_with(|| def.def_type());
             if let Some(name) = progs.string(def.s_name) {
                 names.entry(def.ofs).or_insert_with(|| name.to_vec());
             }

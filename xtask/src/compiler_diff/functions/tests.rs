@@ -90,11 +90,8 @@ fn a_cut_empties_every_body_not_kept() {
     let a = PathBuf::from("a.qc");
     let b = PathBuf::from("b.qc");
     let text = b"void() f = { f1(); };\nvoid() g = { g1(); };\nfloat h() { return 2; }\n";
-    let sources: BTreeMap<PathBuf, Vec<u8>> = [
-        (a.clone(), text.to_vec()),
-        (b.clone(), b"float x;\n".to_vec()),
-    ]
-    .into();
+    let sources: BTreeMap<PathBuf, Vec<u8>> =
+        [(a.clone(), text.to_vec()), (b, b"float x;\n".to_vec())].into();
     let body = |name: &str, block: &str| {
         let start = text
             .windows(block.len())

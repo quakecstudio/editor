@@ -951,12 +951,13 @@ impl Shell {
                 .editors
                 .parked
                 .get(path)
-                .or(self
-                    .features
-                    .editors
-                    .editor
-                    .as_ref()
-                    .filter(|e| e.path == *path))
+                .or_else(|| {
+                    self.features
+                        .editors
+                        .editor
+                        .as_ref()
+                        .filter(|e| e.path == *path)
+                })
                 .map_or(0, Editor::caret_offset);
             rows.push(PickerRow {
                 name: path
@@ -1755,7 +1756,7 @@ impl Shell {
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         for dock in [Panel::Right, Panel::Bottom] {
-                            asked = asked.or(self.panel_buttons(ui, dock));
+                            asked = asked.or_else(|| self.panel_buttons(ui, dock));
                         }
                     });
                 });
@@ -2448,12 +2449,13 @@ impl Shell {
                     .editors
                     .parked
                     .get(&path)
-                    .or(self
-                        .features
-                        .editors
-                        .editor
-                        .as_ref()
-                        .filter(|e| e.path == path))
+                    .or_else(|| {
+                        self.features
+                            .editors
+                            .editor
+                            .as_ref()
+                            .filter(|e| e.path == path)
+                    })
                     .map_or(0, Editor::caret_offset);
                 self.jump(Jump { path, offset });
             }

@@ -139,7 +139,7 @@ fn subtracting_leaves_what_is_outside_the_cutter() {
     assert_eq!(brush.subtract(&away).unwrap(), vec![brush.clone()]);
     let around = cuboid([-8.0; 3], [72.0; 3]);
     assert!(brush.subtract(&around).unwrap().is_empty());
-    let mut broken = cutter.clone();
+    let mut broken = cutter;
     broken.faces.pop();
     assert!(matches!(
         brush.subtract(&broken),

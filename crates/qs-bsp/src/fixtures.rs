@@ -398,7 +398,7 @@ impl BspSpec {
 
     /// The file's bytes: the header, then each lump in order at a multiple of 4.
     pub(crate) fn build(&self) -> Vec<u8> {
-        let version = self.raw_version.unwrap_or(match self.version {
+        let version = self.raw_version.unwrap_or_else(|| match self.version {
             BspVersion::Bsp29 => 29,
             BspVersion::Bsp2Psb => i32::from_le_bytes(*b"2PSB"),
             BspVersion::Bsp2 => i32::from_le_bytes(*b"BSP2"),

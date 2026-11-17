@@ -20,7 +20,10 @@ struct Canned(BTreeMap<String, Vec<u8>>);
 
 impl Net for Canned {
     fn get(&self, url: &str) -> Result<Vec<u8>, String> {
-        self.0.get(url).cloned().ok_or(format!("{url}: not found"))
+        self.0
+            .get(url)
+            .cloned()
+            .ok_or_else(|| format!("{url}: not found"))
     }
 
     fn download(&self, url: &str, _out: &Path) -> Result<(), String> {

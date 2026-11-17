@@ -262,7 +262,7 @@ fn the_host_state_goes_on_to_the_next_level() {
     let host = first.world.host_state();
     let next = running_from(
         &MapSpec::default(),
-        first.progs.clone(),
+        first.progs,
         &[entity("reader", "0 0 0", ""), entity("roll", "0 0 0", "")].concat(),
         Vec::new(),
         LoadOptions {

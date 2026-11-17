@@ -577,7 +577,7 @@ impl Resolver<'_> {
         match &ty {
             Type::Named(name) if self.named(&self.strict_enums, name).is_none() => self
                 .named(&self.enum_types, name)
-                .map_or(ty.clone(), |base| self.resolved(base)),
+                .map_or_else(|| ty.clone(), |base| self.resolved(base)),
             _ => ty,
         }
     }

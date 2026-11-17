@@ -78,7 +78,7 @@ fn violations_are_found_by_name_and_test_code_is_left_out() {
     assert_eq!(
         items(&root),
         [
-            (Rule::BoolArgument, app.clone(), "app_flag".to_owned()),
+            (Rule::BoolArgument, app, "app_flag".to_owned()),
             (Rule::BoolArgument, lib.clone(), "Act::act".to_owned()),
             (Rule::BoolArgument, lib.clone(), "Thing::set".to_owned()),
             (Rule::BoolArgument, lib.clone(), "flagged".to_owned()),

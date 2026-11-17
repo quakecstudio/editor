@@ -734,7 +734,7 @@ fn behaviours_real_programs_reach() {
     );
     assert_eq!(
         found("id", "entity *pe; entity e;\nvoid() f = { e = *pe; };"),
-        [memgetval.clone(), refused("LOADP_ENT")]
+        [memgetval, refused("LOADP_ENT")]
     );
     let past = "(constant) array index out of bounds (0 <= 3 < 2)";
     let vector = "const vector cv = '1 2 3'; float farr[2]; float y;\n";

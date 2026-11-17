@@ -250,7 +250,7 @@ impl<L: qc_project::Loader> Workbench<L> {
         pieces.push(Piece {
             name: "README.txt".to_owned(),
             data: readme.into_bytes(),
-            from: root.clone(),
+            from: root,
         });
         pieces.sort_by(|a, b| a.name.cmp(&b.name));
         let members: Vec<NewMember> = pieces

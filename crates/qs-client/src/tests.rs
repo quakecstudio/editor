@@ -644,7 +644,7 @@ fn the_rereleases_local_sound_and_achievement() {
                 &mut TestModels,
                 &mut Fixed(vec![])
             ),
-            Err(want.clone()),
+            Err(want),
             "{bytes:?}"
         );
     }

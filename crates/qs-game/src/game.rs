@@ -529,7 +529,7 @@ impl Game {
         let entities = (0..self.world.num_edicts())
             .filter(|&n| self.world.in_use(n))
             .count();
-        self.progs_path = path.to_owned();
+        path.clone_into(&mut self.progs_path);
         self.progs_loaded(path);
         self.events.push((
             "map/loaded",
@@ -1163,8 +1163,7 @@ fn map_entity_param(params: &Value) -> Result<Option<MapPlace>, RpcError> {
 
 /// The vector parameter `name`, zero when it is absent (BRIDGE-5.2).
 fn vector_param(params: &Value, name: &str) -> [f32; AXES] {
-    let value =
-        json!({ "type": "vector", "value": params.get(name).cloned().unwrap_or(json!([0, 0, 0])) });
+    let value = json!({ "type": "vector", "value": params.get(name).cloned().unwrap_or_else(|| json!([0, 0, 0])) });
     match from_json(&value) {
         Some(qs_sim::QcValue::Vector(v)) => v,
         _ => [0.0; AXES],

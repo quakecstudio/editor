@@ -147,7 +147,7 @@ fn shortest<T: PartialEq>(a: &[T], b: &[T]) -> Option<Vec<Op>> {
             k = k.checked_add(2)?;
         }
         trace.push(next);
-        v = trace.last()?.clone();
+        v.clone_from(trace.last()?);
     }
     None
 }

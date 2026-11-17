@@ -1173,7 +1173,9 @@ fn next(cursor: usize, items: usize) -> usize {
 
 /// `--cursor < 0` round to the last.
 fn previous(cursor: usize, items: usize) -> usize {
-    cursor.checked_sub(1).unwrap_or(items.saturating_sub(1))
+    cursor
+        .checked_sub(1)
+        .unwrap_or_else(|| items.saturating_sub(1))
 }
 
 /// `M_DrawPic` or `M_DrawTransPic` of the `.lmp` at `path`, `x` from the 320 wide menu's left,

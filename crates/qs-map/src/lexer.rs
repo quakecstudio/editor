@@ -193,11 +193,11 @@ impl<'a> Lexer<'a> {
         let mut gap_break = None;
         loop {
             let Some(byte) = self.byte(self.pos) else {
-                return Gap::End(gap_break.unwrap_or(self.here()));
+                return Gap::End(gap_break.unwrap_or_else(|| self.here()));
             };
             if is_map_space(byte) {
                 if byte == b'\n' {
-                    gap_break.get_or_insert(self.here());
+                    gap_break.get_or_insert_with(|| self.here());
                     self.line = self.line.saturating_add(1);
                     self.qbsp_line = self.qbsp_line.saturating_add(1);
                 }
@@ -205,7 +205,7 @@ impl<'a> Lexer<'a> {
                 continue;
             }
             if byte == b'/' && self.byte(self.pos.saturating_add(1)) == Some(b'/') {
-                gap_break.get_or_insert(self.here());
+                gap_break.get_or_insert_with(|| self.here());
                 // MAP-1.9: the LF that ends a comment is consumed with it, uncounted by qbsp.
                 while let Some(byte) = self.byte(self.pos) {
                     self.pos = self.pos.saturating_add(1);

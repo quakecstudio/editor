@@ -118,10 +118,7 @@ fn anthropic_speaks_the_messages_api() {
         "the command, not the wire name"
     );
     assert_eq!(calls[0].arguments, json!({ "files": [] }));
-    transcript.push(Message::Assistant {
-        text,
-        calls: calls.clone(),
-    });
+    transcript.push(Message::Assistant { text, calls });
     transcript.push(Message::Tool {
         call_id: "toolu_1".to_owned(),
         content: json!([{ "id": 0 }]),

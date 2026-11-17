@@ -251,7 +251,7 @@ fn drive(dir: &Path, autoproto: bool) -> Result<String, String> {
             label.clone(),
             Ask::PrepareRename,
             "textDocument/prepareRename",
-            params.clone(),
+            params,
         );
         let rename = json!({
             "textDocument": document, "position": position,

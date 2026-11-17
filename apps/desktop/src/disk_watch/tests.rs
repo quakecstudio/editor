@@ -71,5 +71,5 @@ fn a_made_file_is_a_change() {
         watch.changed(at(1), vec![file.clone()]),
         std::slice::from_ref(&file)
     );
-    assert!(watch.changed(at(2), vec![file.clone()]).is_empty(), "once");
+    assert!(watch.changed(at(2), vec![file]).is_empty(), "once");
 }

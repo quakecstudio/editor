@@ -734,7 +734,7 @@ impl MapRenderer {
             alias_pipeline,
             skins,
             light_scale: mesh.look.light_scale(),
-            skin_binding: (texture_layout.clone(), mipmapped.clone(), black.clone()),
+            skin_binding: (texture_layout.clone(), mipmapped, black),
             player_keys: [None; PLAYER_SKINS],
             alias: Grown::new("qs-render alias vertices", ALIAS_VERTEX_BYTES),
             alias_draws: Vec::new(),

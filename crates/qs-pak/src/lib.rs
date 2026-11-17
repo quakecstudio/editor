@@ -178,7 +178,7 @@ impl Header {
     /// Implements PAK-2.2 and PAK-2.5: the division is unsigned and 32 bits wide, as on
     /// id's reference build, so a negative `dirlen` gives a huge count.
     #[must_use]
-    pub const fn entry_count(&self) -> u32 {
+    pub const fn entry_count(self) -> u32 {
         self.dirlen.cast_unsigned().div_euclid(ENTRY_SIZE_U32)
     }
 
@@ -191,7 +191,7 @@ impl Header {
     ///
     /// [`PakError::TooManyFiles`], [`PakError::DirectoryTooLarge`] or
     /// [`PakError::DirectoryOutOfBounds`].
-    pub fn directory_range(&self, file_len: u64) -> Result<Range<u64>, PakError> {
+    pub fn directory_range(self, file_len: u64) -> Result<Range<u64>, PakError> {
         let count = self.entry_count();
         if count > PAK_MAX_FILES {
             return Err(PakError::TooManyFiles { count });

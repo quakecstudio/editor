@@ -4348,7 +4348,7 @@ fn a_dropped_png_is_imported_into_the_browser() {
     harness
         .input_mut()
         .dropped_files
-        .push(std::sync::Arc::new(Dropped(image.clone())));
+        .push(std::sync::Arc::new(Dropped(image)));
     harness.run();
     harness.get_by_label(Text::MapImportSave.get()).click();
     harness.run();

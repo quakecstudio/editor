@@ -612,7 +612,9 @@ fn raw_braces(agg: &ast::AggregateInit, cx: Cx<'_>) -> RawBraces {
             qc_syntax::SyntaxElement::Token(t) if !t.kind().is_trivia() => Some(t),
             qc_syntax::SyntaxElement::Token(_) | qc_syntax::SyntaxElement::Node(_) => None,
         });
-    let open = tokens.next().map_or(agg.syntax().span(), |t| t.span());
+    let open = tokens
+        .next()
+        .map_or_else(|| agg.syntax().span(), |t| t.span());
     let designated = tokens.next().is_some_and(|t| t.text_lossless() == ".");
     let elements = agg
         .syntax()
@@ -1203,9 +1205,10 @@ pub(super) fn lower_declarators(
         let mut raw = RawDecl::new(name, span, ty.clone());
         raw.pointer_var = pointer_var;
         // FTEF-21.11: `flag_assumevar` as `QCC_PR_ParseDefs` reads it, after the `=`.
-        let after_eq = init
-            .as_ref()
-            .map_or(declarator.syntax().span().end, |i| i.syntax().span().start);
+        let after_eq = init.as_ref().map_or_else(
+            || declarator.syntax().span().end,
+            |i| i.syntax().span().start,
+        );
         raw.assumevar = cx.flags_at(after_eq).has(FteFlag::Assumevar);
         // QCD-3.6: the vanilla profile compares no two values, so it keeps none.
         let literal = if fte {
