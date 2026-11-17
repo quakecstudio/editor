@@ -127,6 +127,12 @@ pub(crate) struct Struck {
     pub(crate) passed: Passed,
 }
 
+/// What stopped the last of a run of rays, to be tried first by the next
+/// ([`Rays::occluded_after`]).
+#[derive(Default)]
+pub(crate) struct LastBlocker(Option<Triangle>);
+
+#[derive(Clone, Copy)]
 struct Triangle {
     v0: Vec3,
     /// `v0 - v1`.
@@ -632,14 +638,42 @@ impl Rays {
     /// nothing does, what it passed through (`rtcOccluded1`, LIGHT-11.3).
     pub(crate) fn occluded(
         &self,
-        (origin, dir, far): (Vec3, Vec3, f32),
+        ray: (Vec3, Vec3, f32),
         asker: &Asker,
         texels: &dyn Texels,
         stack: &mut Stack,
     ) -> Option<Passed> {
+        self.occluded_after(ray, asker, texels, stack, &mut LastBlocker::default())
+    }
+
+    /// [`Rays::occluded`] for one of many rays of one asker that run near each other, as
+    /// those from a light to a face's samples: `last` is what stopped the ray before, which
+    /// is tried first, since what stops one ray mostly stops the next (LIGHT-11.11). A ray
+    /// the tree's boxes would lose at a triangle's very edge is stopped by it this way.
+    pub(crate) fn occluded_after(
+        &self,
+        (origin, dir, far): (Vec3, Vec3, f32),
+        asker: &Asker,
+        texels: &dyn Texels,
+        stack: &mut Stack,
+        last: &mut LastBlocker,
+    ) -> Option<Passed> {
         if dir.iter().any(|c| c.abs() < NEARLY_IN_PLANE) {
             let struck = self.along_axis_plane((origin, dir, far), asker, texels, stack);
             return struck.hit.is_none().then_some(struck.passed);
+        }
+        if let Some(triangle) = &last.0
+            && let Some(t) = triangle.hit(origin, dir, far)
+            && let Some(caster) = self.casters.get(triangle.caster)
+            && Self::stops(
+                caster,
+                asker,
+                texels,
+                (add(origin, scale(dir, t)), dir, triangle.normal),
+                &mut Passed::default(),
+            )
+        {
+            return None;
         }
         let mut passed = Passed::default();
         let mut blocked = false;
@@ -656,6 +690,7 @@ impl Rays {
                 &mut passed,
             ) {
                 blocked = true;
+                last.0 = Some(*triangle);
                 None
             } else {
                 Some(far)
@@ -937,6 +972,40 @@ mod tests {
         let rays = Rays::new([low, low, low, high, high, high].map(triangle).into());
         assert!(!clear(&rays, [6.0, 2.0, 0.0], 2000.0, &WORLD, &NoTexels));
         assert!(clear(&rays, [6.0, 2.0, 0.0], 900.0, &WORLD, &NoTexels));
+    }
+
+    // spec LIGHT-11.11: what stopped the last ray is tried first and stops the next ray it
+    // is in the way of; a ray it is not in the way of is asked of the tree as any other.
+    #[test]
+    fn the_last_blocker_is_tried_first() {
+        let rays = Rays::new(square(10.0, caster(Surface::Solid)));
+        // A ray in no plane of the grid, which is asked of the tree (LIGHT-11.9).
+        let slant = normalize([0.01, 0.02, 1.0]);
+        let mut stack = Vec::new();
+        let mut ask = |from: Vec3, last: &mut LastBlocker| {
+            rays.occluded_after((from, slant, 20.0), &WORLD, &NoTexels, &mut stack, last)
+                .is_some()
+        };
+        let mut last = LastBlocker::default();
+        assert!(ask([20.0, 4.0, 0.0], &mut last), "nothing in the way");
+        assert!(last.0.is_none());
+        assert!(!ask([6.0, 2.0, 0.0], &mut last));
+        assert!(last.0.is_some(), "the triangle that stopped it is kept");
+        assert!(
+            !ask([7.0, 1.0, 0.0], &mut last),
+            "stopped by the same triangle"
+        );
+        // The square's other triangle, and a ray past both: the kept one is not in the way.
+        assert!(!ask([2.0, 6.0, 0.0], &mut last));
+        assert!(ask([20.0, 4.0, 0.0], &mut last));
+        // The same answers with nothing kept.
+        for (from, clear) in [
+            ([6.0, 2.0, 0.0], false),
+            ([2.0, 6.0, 0.0], false),
+            ([20.0, 4.0, 0.0], true),
+        ] {
+            assert_eq!(ask(from, &mut LastBlocker::default()), clear);
+        }
     }
 
     // spec LIGHT-11.3: a solid triangle between a sample and a light stops the light; one

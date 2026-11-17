@@ -10,7 +10,7 @@
 
 use super::math::brightness;
 use super::mottle::mottle;
-use crate::extended::bounce::{BOUNCE_GATE, Emitter, Stage};
+use crate::extended::bounce::{BOUNCE_GATE, Emitter, Reach, Stage};
 use crate::extended::dirt::Dirt;
 use crate::extended::keys::{CHANNEL_DEFAULT, Dirt as DirtKey, FULL, Formula, World};
 use crate::extended::lights::{Lamp, Lights, Spot};
@@ -18,7 +18,7 @@ use crate::extended::math::{
     add, distance, dot, length, normalize, normalize_with_length, scale, sub,
 };
 use crate::extended::points::Patch;
-use crate::extended::rays::{Asker, ModelId, Passed, Rays, Stack, Surface};
+use crate::extended::rays::{Asker, LastBlocker, ModelId, Passed, Rays, Stack, Surface};
 use crate::extended::scene::Map;
 use crate::extended::sun::Sun;
 use crate::extended::surflight::SurfaceLit;
@@ -372,6 +372,7 @@ impl Shader<'_> {
         let asker = self.asker(patch, keys.shadow_channel_mask.get());
         let own_style = keys.style.get();
         let mut slot: Option<(i32, usize)> = None;
+        let mut last = LastBlocker::default();
         for (index, sample) in patch.samples.iter().enumerate() {
             if sample.occluded {
                 continue;
@@ -390,11 +391,12 @@ impl Shader<'_> {
             if brightness(colour).abs() <= GATE {
                 continue;
             }
-            let Some(passed) = self.rays.occluded(
+            let Some(passed) = self.rays.occluded_after(
                 (sample.point, given.dir, given.dist),
                 &asker,
                 self.map,
                 stack,
+                &mut last,
             ) else {
                 continue;
             };
@@ -658,10 +660,14 @@ impl Shader<'_> {
         }
         let world = self.world();
         let asker = self.asker(patch, CHANNEL_DEFAULT);
+        let Some(reach) = Reach::of(patch) else {
+            return;
+        };
         for emitter in emitters.iter().flatten() {
             for emission in &emitter.emissions {
                 if emission.stage != stage
                     || emitter.is_culled(world, emission, patch)
+                    || emitter.is_turned_from(emission, &reach)
                     || emitter
                         .leaves
                         .iter()
@@ -670,6 +676,7 @@ impl Shader<'_> {
                     continue;
                 }
                 let mut at: Option<usize> = None;
+                let mut last = LastBlocker::default();
                 for (index, sample) in patch.samples.iter().enumerate() {
                     if sample.occluded {
                         continue;
@@ -680,10 +687,13 @@ impl Shader<'_> {
                     if given.iter().all(|c| *c <= BOUNCE_GATE) {
                         continue;
                     }
-                    let Some(passed) =
-                        self.rays
-                            .occluded((emitter.pos, dir, dist), &asker, self.map, stack)
-                    else {
+                    let Some(passed) = self.rays.occluded_after(
+                        (emitter.pos, dir, dist),
+                        &asker,
+                        self.map,
+                        stack,
+                        &mut last,
+                    ) else {
                         continue;
                     };
                     let dirt = self.dirt_scale(sample.occlusion, DirtFor::Ambient, Some(patch));

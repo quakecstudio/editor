@@ -526,6 +526,13 @@ The world's settings, each with its default; a second name is another key for th
   crosses and passes the edge of one it only touches. A ray that moves less than a millionth
   of its length along an axis is stopped by a triangle that ends on its plane only on the
   side it moves toward.
+- **LIGHT-11.11** The rays between one light, or one face that gives light, and the samples
+  of a face are asked in turn, and the triangle that stopped one is tried first for the
+  next: when it is in that ray's way and stops it (LIGHT-11.4 to LIGHT-11.7), the ray is
+  stopped. This is ours, for speed: what stops a ray is the same triangle or another, so
+  the light a sample takes is the same, but for a ray that grazes a triangle's very edge,
+  which the tree's boxes may lose (LIGHT-11.9) and this does not. A ray in a plane of the
+  grid is asked as LIGHT-11.9 has it, with nothing tried first.
 - **LIGHT-11.10** A brush model with `_shadow`, not a switchable shadow, that has no faces,
   as one whose brushes are all of `skip`, casts the shadow of its brushes (`if
   (modelinfo->model->numfaces == 0) { MakeFaces(bsp, modelinfo, modelinfo->model, skipwindings);

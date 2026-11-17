@@ -35,6 +35,9 @@ pub(crate) const BOUNCE_CLAMP: f32 = 128.0;
 const SURFACE_CLAMP: f32 = 16.0;
 /// What a box of what a bounce light sees may miss a face's box by (LIGHT-10.8).
 const BOUNDS_EPSILON: f32 = 0.001;
+/// How far past the angle's own allowance a face must be turned from an emitter for the
+/// pair to be passed over, in units: more than the rounding of a sample's own test.
+const TURNED_MARGIN: f32 = 0.05;
 /// Half, of a triangle's cross product and of `_bouncescale`.
 const HALF: f32 = 0.5;
 
@@ -255,7 +258,68 @@ impl Emission {
     }
 }
 
+/// Where a face's samples are, for passing over an emitter none of them can take light
+/// from.
+pub(crate) struct Reach {
+    /// The box around the samples that are not hidden.
+    bounds: Aabb,
+    /// When every one has the same normal and the face is not lit from both sides: the
+    /// normal, and the least any sample is along it.
+    facing: Option<(Vec3, f32)>,
+}
+
+impl Reach {
+    /// The reach of `patch`'s samples; none when every one is hidden.
+    pub(crate) fn of(patch: &Patch) -> Option<Self> {
+        let mut seen = patch.samples.iter().filter(|sample| !sample.occluded);
+        let first = seen.next()?;
+        let mut bounds = Aabb::at(first.point);
+        let mut uniform = true;
+        let mut least = dot(first.point, first.normal);
+        for sample in seen {
+            bounds = bounds.with(sample.point);
+            // The very same normal, bit for bit.
+            uniform &= sample.normal.map(f32::to_bits) == first.normal.map(f32::to_bits);
+            least = least.min(dot(sample.point, first.normal));
+        }
+        Some(Self {
+            bounds,
+            facing: (uniform && !patch.twosided).then_some((first.normal, least)),
+        })
+    }
+}
+
 impl Emitter {
+    /// Whether no sample within `reach` takes light of `emission`, by the two tests
+    /// [`Emitter::lighting`] makes of each sample: every sample is behind the emitter, or
+    /// the emitter is behind every sample's face. Only a pair that is so by a margin is
+    /// passed over, so no sample's light differs for it.
+    pub(crate) fn is_turned_from(&self, emission: &Emission, reach: &Reach) -> bool {
+        if emission.omnidirectional {
+            return false;
+        }
+        // The farthest a sample is from the emitter, and the farthest along the emitter's
+        // normal.
+        let mut farthest = [0.0; AXES];
+        let mut ahead = 0.0_f32;
+        for (((slot, &at), &low), (&high, &normal)) in farthest
+            .iter_mut()
+            .zip(&self.pos)
+            .zip(&reach.bounds.mins)
+            .zip(reach.bounds.maxs.iter().zip(&self.normal))
+        {
+            *slot = (at - low).abs().max((at - high).abs());
+            ahead += (normal * low).max(normal * high);
+        }
+        let limit = -(ANGLE_EPSILON * length(farthest)) - TURNED_MARGIN;
+        if ahead - dot(self.normal, self.pos) < limit {
+            return true;
+        }
+        reach
+            .facing
+            .is_some_and(|(normal, least)| dot(self.pos, normal) - least < limit)
+    }
+
     /// `SurfaceLight_SphereCull`: whether `emission` cannot reach `patch`: what the emitter
     /// sees misses the face's box, or the whole of its light is too dim at the far side of
     /// the sphere around the face (LIGHT-20.5).
@@ -454,6 +518,64 @@ mod tests {
         let below = emitter.lighting(&world, &emission, ([0.0, 0.0, -1.0], 64.0), None);
         assert_eq!(below, [0.0; 3]);
         assert_eq!(emitter.toward(emitter.pos).1, 0.01);
+    }
+
+    // spec LIGHT-20.4: a face no sample of which can take an emitter's light, every sample
+    // behind the emitter or the emitter behind the face, is passed over; one that could is
+    // not, nor is any for an emitter that shines every way.
+    #[test]
+    fn a_face_turned_from_an_emitter_is_passed_over() {
+        let emitter = Emitter {
+            pos: [0.0, 0.0, 1.0],
+            normal: [0.0, 0.0, 1.0],
+            bounds: None,
+            leaves: Vec::new(),
+            emissions: Vec::new(),
+        };
+        let emission = Emission {
+            stage: Stage::Bounce(0),
+            omnidirectional: false,
+            rescale: false,
+            atten: 1.0,
+            style: 0,
+            intensity: 1.0,
+            colour: [1.0; 3],
+        };
+        let reach = |low: Vec3, high: Vec3, facing: Option<(Vec3, f32)>| Reach {
+            bounds: Aabb {
+                mins: low,
+                maxs: high,
+            },
+            facing,
+        };
+        // A ceiling above, facing down: lit.
+        let above = reach(
+            [-8.0, -8.0, 64.0],
+            [8.0, 8.0, 64.0],
+            Some(([0.0, 0.0, -1.0], -64.0)),
+        );
+        assert!(!emitter.is_turned_from(&emission, &above));
+        // The same samples facing up: the emitter is behind their face.
+        let backs = reach(
+            [-8.0, -8.0, 64.0],
+            [8.0, 8.0, 64.0],
+            Some(([0.0, 0.0, 1.0], 64.0)),
+        );
+        assert!(emitter.is_turned_from(&emission, &backs));
+        // With no one normal, or lit from both sides, that test is not made.
+        let curved = reach([-8.0, -8.0, 64.0], [8.0, 8.0, 64.0], None);
+        assert!(!emitter.is_turned_from(&emission, &curved));
+        // Samples all below the emitter are behind it, whatever they face.
+        let below = reach([-8.0, -8.0, -64.0], [8.0, 8.0, -32.0], None);
+        assert!(emitter.is_turned_from(&emission, &below));
+        // Level with it, within the margin: not passed over.
+        let level = reach([32.0, -8.0, 0.9], [64.0, 8.0, 1.0], None);
+        assert!(!emitter.is_turned_from(&emission, &level));
+        let sky = Emission {
+            omnidirectional: true,
+            ..emission
+        };
+        assert!(!emitter.is_turned_from(&sky, &below));
     }
 
     // spec LIGHT-16.4: a surface light's own light is scaled by `_surflightscale`, clamped at
