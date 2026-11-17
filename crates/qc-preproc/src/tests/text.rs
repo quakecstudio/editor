@@ -1060,6 +1060,21 @@ fn a_parameter_list_continued_across_lines_is_joined_under_gmqcc() {
     assert!(fteqcc.contains('z'), "{fteqcc}");
 }
 
+// spec GMQ-21.9: under GMQCC a `#define` continued by `\` ends at the line break of the line it
+// continues onto, so an empty line after the `\` ends it and the next `#define` is its own; FTEQCC
+// copies the byte after the continued line and runs on
+#[test]
+fn an_empty_line_after_a_continued_define_ends_it_under_gmqcc() {
+    let text = "#define A(i) x##i \\\n\n#define B(i) y##i\nA(1) B(2)\n";
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", text.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Gmqcc);
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    assert_eq!(touching(&out), "x1 y2");
+    let (fteqcc, _) = fte(text);
+    assert_ne!(fteqcc, "x1 y2");
+}
+
 // spec GMQ-21.6: under GMQCC each argument is macro-expanded alone before it replaces its
 // parameter, as C's do, so a nested paste is of the expanded text: `P2(P2(x,y),z)` is `xyz`;
 // P99's emptiness test, which Xonotic's `MUTATOR_CALLHOOK` uses, then works

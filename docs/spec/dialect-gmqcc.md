@@ -417,6 +417,15 @@ this should already be stringized").
   `__STDC__` (PRJ-4.13), writes `#define _TRANSMUTE(cname, this, ...) OVERLOAD(spawn##cname,
   this,##__VA_ARGS__)`, which `TRANSMUTE(Player, this)` calls with the variadic arguments empty.
   The arguments are judged as written, before they are expanded (GMQ-21.6).
+- **GMQ-21.9** Under this dialect a `#define` body continued by a `\` before a line break ends
+  at the line break of the line it continues onto, so an empty line after the `\` ends it:
+  `#define A x \`, an empty line, then `#define B y` defines `A` as `x` and `B` as `y`. The C
+  preprocessor joins the lines first (C11, N1570 5.1.1.2, phase 2, GMQ-21.5), and "The last
+  token in the sequence is the first new-line character that follows the first token in the
+  sequence." (C11, N1570 6.10, paragraph 2). Xonotic's `lib/registry.qh` ends `REGISTRY` with
+  `\` and an empty line before `#define REGISTRY_DEFINE_GET`. FTEQCC copies the byte after a
+  continued line without looking for the body's end (FTEF-14.24), so its `A` runs on into the
+  next line, the `#define B` with it.
 
 ## GMQ-22 Arrays of fields
 
