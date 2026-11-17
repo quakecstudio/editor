@@ -880,14 +880,14 @@ impl Preview {
     }
 
     /// Starts the full compile of the map `map` the game plays from `target`, `bsp` the fast
-    /// compile's BSP before its light, `portals` its portal file and `sidecars` what the compile
-    /// tells light, to be swapped in when it is
+    /// compile's BSP before its light, `portals` its portal file, `sidecars` what the compile
+    /// tells light and `palette` the game's, to be swapped in when it is
     /// done (P7-02); one asked for while another runs waits for it, the other's result dropped.
     pub(crate) fn start_full_build(
         &mut self,
         map: String,
         target: PathBuf,
-        (bsp, portals, sidecars): (Vec<u8>, Vec<u8>, Sidecars),
+        (bsp, portals, sidecars, palette): (Vec<u8>, Vec<u8>, Sidecars, Option<Vec<u8>>),
     ) {
         let edits = self.live.as_ref().map_or(0, |live| live.edits);
         let start = Start {
@@ -896,6 +896,7 @@ impl Preview {
             bsp,
             portals,
             sidecars,
+            palette,
             edits,
         };
         if self.full_build.is_some() {

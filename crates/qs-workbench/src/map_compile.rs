@@ -15,7 +15,7 @@ use qs_bsp::{Bsp, BspLoader};
 use qs_commands::{Command, NoParams, Outcome};
 use qs_map::qbsp::QbspWarning;
 use qs_map_bsp::{Compiled, Compiler, Warning};
-use qs_map_light::{Finish, Light, Sampling, Sidecars};
+use qs_map_light::{Extras, Finish, Light, Sampling, Sidecars};
 use qs_sim::DEFAULT_VIEWHEIGHT;
 use qs_sim::collision::{CONTENTS_SOLID, HullSet};
 use qs_wad::Wad;
@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use crate::preview::{HasPreview, PreviewError};
 use crate::{Workbench, WorkbenchError};
 use qs_map::{Region, Surface, TexDef};
-use qs_map_edit::textures::{Game, find_wad};
+use qs_map_edit::textures::{Game, find_wad, light_palette};
 use qs_map_edit::{EntityIndex, MapEditError, MapReport, MapSource};
 
 /// The id of `map.leaks`.
@@ -455,9 +455,15 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
         // The quick light, without dirt and bounce (MAP-13, LIGHT-8.8), with what the compile
         // tells light of each face and leaf (QBSP-15.54, QBSP-15.55).
         let sidecars = Sidecars::new(compiled.surfaces, compiled.leaves);
+        // The game's palette colours what glass and a projected texture give (LIGHT-11.6).
+        let palette = light_palette(workbench.root(), game.as_deref());
+        let extras = Extras {
+            palette: palette.as_deref(),
+            ..sidecars.extras()
+        };
         let lit = Light::new(Sampling::Fast)
             .with_finish(Finish::Quick)
-            .run_with(&compiled.bsp, sidecars.extras())
+            .run_with(&compiled.bsp, extras)
             .map_err(|error| PreviewError::Build(WorkbenchError::MapLight { error }))?;
         let bsp = Bsp::read(&lit.bsp, BspLoader::default()).map_err(|error| {
             PreviewError::Build(WorkbenchError::MapEdit(MapEditError::Bsp {
@@ -501,7 +507,7 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
             Some(portals) => preview.start_full_build(
                 name.clone(),
                 maps.join(format!("{name}.bsp")),
-                (compiled.bsp, portals, sidecars),
+                (compiled.bsp, portals, sidecars, palette),
             ),
             None => preview.note(
                 "The map leaks: it plays with the fast compile, and its full compile waits for \

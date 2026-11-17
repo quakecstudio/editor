@@ -80,6 +80,7 @@ pub(crate) fn start(map: &str, target: std::path::PathBuf) -> Start {
         portals: compiled.portal_file.unwrap(),
         bsp: compiled.bsp,
         sidecars: Sidecars::new(compiled.surfaces, compiled.leaves),
+        palette: None,
         edits: 0,
     }
 }

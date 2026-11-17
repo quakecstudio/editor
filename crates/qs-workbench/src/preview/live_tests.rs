@@ -285,12 +285,13 @@ fn playing_test() -> (Preview, Seen) {
 }
 
 /// The fast compile's BSP and portals of the room the full compile builds.
-fn room_inputs() -> (Vec<u8>, Vec<u8>, Sidecars) {
+fn room_inputs() -> (Vec<u8>, Vec<u8>, Sidecars, Option<Vec<u8>>) {
     let compiled = compiled_room();
     (
         compiled.bsp,
         compiled.portal_file.unwrap(),
         Sidecars::new(compiled.surfaces, compiled.leaves),
+        None,
     )
 }
 

@@ -135,6 +135,22 @@ pub(crate) fn game_palette(project: Option<&Path>, game: Option<&Game<'_>>) -> O
         .and_then(|bytes| Palette::from_lmp(&bytes).ok())
 }
 
+/// The bytes of the palette a map's light colours texels by (LIGHT-11.6): the project's own
+/// `gfx/palette.lmp`, else that of the game at the base directory `game`; none when neither
+/// reads as a palette.
+#[must_use]
+pub fn light_palette(project: Option<&Path>, game: Option<&Path>) -> Option<Vec<u8>> {
+    let game = game.map(Game::at);
+    let bytes = project
+        .and_then(|root| std::fs::read(root.join(PALETTE_LMP)).ok())
+        .or_else(|| {
+            game.as_ref()
+                .and_then(|game| game.file(PALETTE_LMP))
+                .map(|(_, bytes)| bytes)
+        })?;
+    Palette::from_lmp(&bytes).ok().map(|_| bytes)
+}
+
 /// The game at a base directory: its search path, when it can be built, and the directory a
 /// loose file is looked for in.
 pub struct Game<'a> {
