@@ -1707,7 +1707,7 @@ impl BrushTools {
         let mut asked = Vec::new();
         // TrenchBroom's Select Siblings (its Ctrl+B is Compile here): every brush of the
         // entities holding the brushes selected.
-        if ui.button(Text::MapSelectSiblings.get()).clicked() {
+        if Icon::Siblings.tool(ui, Text::MapSelectSiblings).clicked() {
             let siblings = scene.siblings(&self.chosen);
             self.choose(siblings, scene);
         }
@@ -1718,7 +1718,7 @@ impl BrushTools {
                     .suffix(Text::DegreesSuffix.get()),
             );
             name_field(ui, &turn, Text::MapTurnBy);
-            if ui.button(Text::MapTurn.get()).clicked() {
+            if Icon::Turn.tool(ui, Text::MapTurn).clicked() {
                 self.reshaped.clone_from(&self.chosen);
                 asked.push(BrushAction::Arrange(Arrange::Turn(
                     entities.to_vec(),
@@ -1726,12 +1726,12 @@ impl BrushTools {
                     self.turn_by.0,
                 )));
             }
-            for (axis, text) in [
-                (Axis::X, Text::MapFlipX),
-                (Axis::Y, Text::MapFlipY),
-                (Axis::Z, Text::MapFlipZ),
+            for (axis, icon, text) in [
+                (Axis::X, Icon::FlipX, Text::MapFlipX),
+                (Axis::Y, Icon::FlipY, Text::MapFlipY),
+                (Axis::Z, Icon::FlipZ, Text::MapFlipZ),
             ] {
-                if ui.button(text.get()).clicked() {
+                if icon.tool(ui, text).clicked() {
                     self.reshaped.clone_from(&self.chosen);
                     asked.push(BrushAction::Arrange(Arrange::Flip(
                         entities.to_vec(),
@@ -1820,15 +1820,15 @@ impl BrushTools {
         });
         ui.horizontal_wrapped(|ui| {
             let edited = !align.edited.is_empty();
-            if ui
-                .add_enabled(edited, egui::Button::new(Text::MapAlignTexture.get()))
-                .clicked()
-            {
+            let align_now = ui
+                .add_enabled_ui(edited, |ui| Icon::Align.tool(ui, Text::MapAlignTexture))
+                .inner;
+            if align_now.clicked() {
                 actions.extend(change(align.change()));
                 align.edited.clear();
             }
             if let Some(name) = texture
-                && ui.button(apply_texture(name)).clicked()
+                && Icon::Paint.tool_named(ui, &apply_texture(name)).clicked()
             {
                 actions.extend(change(TextureChange {
                     texture: Some(name.to_owned()),
@@ -1841,24 +1841,23 @@ impl BrushTools {
         }
         let one_entity = self.chosen.iter().all(|&(e, _)| e == entity);
         ui.horizontal_wrapped(|ui| {
-            if ui
-                .add_enabled(
-                    self.chosen.len() == 1,
-                    egui::Button::new(Text::MapSubtract.get()),
-                )
-                .clicked()
-            {
+            let subtract = ui
+                .add_enabled_ui(self.chosen.len() == 1, |ui| {
+                    Icon::Subtract.tool(ui, Text::MapSubtract)
+                })
+                .inner;
+            if subtract.clicked() {
                 actions.push(BrushAction::Subtract(entity, first));
             }
             let merge = self.chosen.len() >= 2 && one_entity;
-            if ui
-                .add_enabled(merge, egui::Button::new(Text::MapMerge.get()))
-                .clicked()
-            {
+            let merged = ui
+                .add_enabled_ui(merge, |ui| Icon::Merge.tool(ui, Text::MapMerge))
+                .inner;
+            if merged.clicked() {
                 let brushes = self.chosen.iter().map(|&(_, b)| b).collect();
                 actions.push(BrushAction::Merge(entity, brushes));
             }
-            if ui.button(Text::MapDeleteBrush.get()).clicked() {
+            if Icon::Delete.tool(ui, Text::MapDeleteBrush).clicked() {
                 let mut doomed = self.chosen.clone();
                 // Last first, so each index still names its brush when its turn comes.
                 doomed.sort_by(|a, b| b.cmp(a));
@@ -1887,10 +1886,10 @@ impl BrushTools {
             )
             .labelled_by(label.id);
             let named = !self.prefab_name.trim().is_empty();
-            if ui
-                .add_enabled(named, egui::Button::new(Text::MapSavePrefab.get()))
-                .clicked()
-            {
+            let save = ui
+                .add_enabled_ui(named, |ui| Icon::Save.tool(ui, Text::MapSavePrefab))
+                .inner;
+            if save.clicked() {
                 actions.push(BrushAction::SavePrefab(
                     self.prefab_name.trim().to_owned(),
                     self.chosen.clone(),

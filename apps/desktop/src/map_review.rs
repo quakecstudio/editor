@@ -7,6 +7,7 @@
 use eframe::egui::{RichText, Ui};
 use qs_map_edit::{MapHunk, MapHunkNumber, MapRevision};
 
+use crate::icons::Icon;
 use crate::map_editor::MapAction;
 use crate::strings::{Text, map_hunk};
 use crate::theme::{Theme, Token};
@@ -64,10 +65,10 @@ impl ReviewView {
             });
         }
         ui.horizontal_wrapped(|ui| {
-            if ui.button(Text::AgentAcceptAll.get()).clicked() {
+            if Icon::AcceptAll.tool(ui, Text::AgentAcceptAll).clicked() {
                 actions.push(MapAction::Review(ReviewAction::Accept(Vec::new())));
             }
-            if ui.button(Text::AgentRejectAll.get()).clicked() {
+            if Icon::Reject.tool(ui, Text::AgentRejectAll).clicked() {
                 actions.push(MapAction::Review(ReviewAction::Reject(Vec::new())));
             }
         });

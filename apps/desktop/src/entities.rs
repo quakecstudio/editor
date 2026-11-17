@@ -10,7 +10,7 @@ use eframe::egui::{self, RichText, Ui};
 use qs_workbench::entities::Entities;
 use qs_workbench::{PlayState, Preview};
 
-use crate::icons::{Icon, Selected};
+use crate::icons::{self, Icon, Selected};
 use crate::strings::Text;
 use crate::theme::{Theme, Token};
 use qs_workbench::ids::Edict;
@@ -97,8 +97,8 @@ pub(crate) fn outliner(
                         ask_menu(&response, *edict, &mut action);
                     }
                     edicts => {
-                        let header = icon.before(&format!("{name}  {}", edicts.len()));
-                        egui::CollapsingHeader::new(header)
+                        let title = format!("{name}  {}", edicts.len());
+                        let header = egui::CollapsingHeader::new(icon.before(&title))
                             .id_salt(&group.classname)
                             .show(ui, |ui| {
                                 for edict in edicts {
@@ -110,6 +110,7 @@ pub(crate) fn outliner(
                                     ask_menu(&response, *edict, &mut action);
                                 }
                             });
+                        icons::mark(ui, &header.header_response, &title, icons::ROW);
                     }
                 }
             }

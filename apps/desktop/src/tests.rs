@@ -33,7 +33,7 @@ use crate::display::Display;
 use crate::editor::Request;
 use crate::features::panel_topic;
 use crate::help::Topic;
-use crate::icons::Icon;
+use crate::icons::{ICON_BUTTON, Icon, ROW};
 use crate::keymap;
 use crate::launch::{Launch, forward_paths};
 use crate::map_editor::MIN_VIEW_HEIGHT;
@@ -5151,4 +5151,66 @@ fn a_panel_keeps_its_size_with_contents_wider_than_it() {
         lefts.first().unwrap() < &(240.0 + 24.0),
         "the centre starts after the panel's own size: {lefts:?}"
     );
+}
+
+// No spec statement: P7-16 (#981), UI-14: no side panel shows a text button. With a project and
+// a map open and an entity selected, every button in the Project, Symbols, Entities, Map and
+// Properties panels is an icon with its name, a row of a list, or the panel's `?` help
+#[test]
+fn no_side_panel_shows_a_text_button() {
+    let dir = std::env::temp_dir().join(format!("qs-desktop-icons-{}", std::process::id()));
+    let _gone = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("progs.src"), "progs.dat\nworld.qc\n").unwrap();
+    fs::write(
+        dir.join("world.qc"),
+        "float health;\n.float ammo;\nvoid() worldspawn = {};\n",
+    )
+    .unwrap();
+    // The linked map, with an angle and a target on its last entity, so the fields' own
+    // controls are shown too.
+    let path = dir.join("linked.map");
+    let map = LINKED_MAP.replace(
+        "\"origin\" \"0 0 64\"",
+        "\"origin\" \"0 0 64\"\n\"angle\" \"90\"\n\"target\" \"gate\"",
+    );
+    assert_ne!(map, LINKED_MAP);
+    fs::write(&path, map).unwrap();
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell.execute("map.open", json!({ "path": path })).unwrap();
+    harness.run();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("map.select", json!({ "entity": 6 })).unwrap();
+    harness.run();
+    for (panel, pane) in [
+        (DockPanel::Project, Text::LeftPanel),
+        (DockPanel::Symbols, Text::LeftPanel),
+        (DockPanel::Entities, Text::LeftPanel),
+        (DockPanel::Map, Text::LeftPanel),
+        (DockPanel::Properties, Text::RightPanel),
+    ] {
+        show_panel(&mut harness, panel);
+        harness.run();
+        let pane = harness.get_by_role_and_label(Role::Pane, pane.get());
+        let buttons: Vec<_> = pane
+            .children_recursive()
+            .filter(|node| node.accesskit_node().role() == Role::Button)
+            .collect();
+        assert!(!buttons.is_empty(), "{panel:?} shows no control");
+        let text: Vec<String> = buttons
+            .iter()
+            .filter(|node| !matches!(node.accesskit_node().class_name(), Some(ICON_BUTTON | ROW)))
+            .map(|node| node.accesskit_node().label().unwrap_or_default())
+            .collect();
+        assert!(text.is_empty(), "{panel:?} has text buttons: {text:?}");
+    }
+    // The selected entity's angle shows its controls as icons; a target's Pick, which needs
+    // the project's code to fire entities by the key, is in the map editor's snapshot.
+    for name in [Text::MapAngleUp, Text::MapAngleDown] {
+        harness.get_by_role_and_label(Role::Button, name.get());
+    }
 }

@@ -11,6 +11,7 @@ use eframe::egui::{self, Ui};
 use qs_map_edit::FlagChange;
 use qs_map_edit::FlagInfo;
 
+use crate::icons::Icon;
 use crate::map_scene::{ANGLE, COLOR_SUFFIX, FLOAT_TYPE, SPAWNFLAGS};
 use crate::shell::{name_field, name_widget};
 use crate::strings::Text;
@@ -113,10 +114,10 @@ impl<'a> Field<'a> {
             match self {
                 Self::Text | Self::Target => {}
                 Self::Angle => {
-                    if ui.small_button(Text::MapAngleUp.get()).clicked() {
+                    if Icon::Up.tool(ui, Text::MapAngleUp).clicked() {
                         set = Some(UP.to_owned());
                     }
-                    if ui.small_button(Text::MapAngleDown.get()).clicked() {
+                    if Icon::Down.tool(ui, Text::MapAngleDown).clicked() {
                         set = Some(DOWN.to_owned());
                     }
                 }

@@ -10,6 +10,7 @@
 
 use eframe::egui::{self, Button, Response, RichText, Ui, Vec2};
 
+use crate::icons::{ICON_BUTTON, mark};
 use crate::strings::{self, Text};
 use crate::theme::{Theme, Token};
 
@@ -212,9 +213,7 @@ pub(crate) fn button(ui: &mut Ui, theme: &Theme, topic: Topic) -> Response {
         .corner_radius(HELP_SIZE / 2.0);
         let response = ui.add(button).on_hover_text(&name);
         // A screen reader reads the button by what it helps with, not by its `?`.
-        ui.ctx().accesskit_node_builder(response.id, |node| {
-            node.set_label(name.as_str());
-        });
+        mark(ui, &response, &name, ICON_BUTTON);
         egui::Popup::from_toggle_button_response(&response).show(|ui| {
             ui.set_max_width(HELP_WIDTH);
             ui.label(topic.summary().get());

@@ -5,7 +5,6 @@
 
 use eframe::egui::{Button, Response, Ui};
 
-use crate::shell::name_widget;
 use crate::strings::{Text, icon_hint};
 
 /// Whether an icon button is the one chosen, as Zed's `IconButton::toggle_state`.
@@ -210,11 +209,45 @@ pub enum Icon {
     Omit,
     /// `code-xml`: opening the code behind it.
     OpenCode,
+    /// `flip-horizontal`: flipping along x.
+    FlipX,
+    /// `flip-vertical`: flipping along y.
+    FlipY,
+    /// `flip-vertical-2`: flipping along z.
+    FlipZ,
+    /// `paintbrush`: applying the chosen texture.
+    Paint,
+    /// `maximize`: fitting a texture to its face.
+    Fit,
+    /// `align-start-vertical`: a texture against its face's left edge.
+    ToLeft,
+    /// `align-end-vertical`: a texture against its face's right edge.
+    ToRight,
+    /// `align-start-horizontal`: a texture against its face's top edge.
+    ToTop,
+    /// `align-end-horizontal`: a texture against its face's bottom edge.
+    ToBottom,
+    /// `align-center-horizontal`: a texture centred on its face.
+    ToCentre,
+    /// `move-horizontal`: flipping a texture along s.
+    FlipS,
+    /// `move-vertical`: flipping a texture along t.
+    FlipT,
+    /// `undo-2`: putting a texture's alignment back.
+    Reset,
+    /// `magnet`: snapping to the grid.
+    Snap,
+    /// `arrow-up`: an angle straight up.
+    Up,
+    /// `arrow-down`: an angle straight down.
+    Down,
+    /// `pipette`: picking a target in the view.
+    Pick,
 }
 
 impl Icon {
     /// Every icon.
-    pub const ALL: [Self; 84] = [
+    pub const ALL: [Self; 101] = [
         Self::Play,
         Self::Pause,
         Self::Step,
@@ -299,6 +332,23 @@ impl Icon {
         Self::Extract,
         Self::Omit,
         Self::OpenCode,
+        Self::FlipX,
+        Self::FlipY,
+        Self::FlipZ,
+        Self::Paint,
+        Self::Fit,
+        Self::ToLeft,
+        Self::ToRight,
+        Self::ToTop,
+        Self::ToBottom,
+        Self::ToCentre,
+        Self::FlipS,
+        Self::FlipT,
+        Self::Reset,
+        Self::Snap,
+        Self::Up,
+        Self::Down,
+        Self::Pick,
     ];
 
     /// The icon's character in `lucide.ttf`.
@@ -389,6 +439,23 @@ impl Icon {
             Self::Extract => '\u{e440}',
             Self::Omit => '\u{e0cd}',
             Self::OpenCode => '\u{e206}',
+            Self::FlipX => '\u{e35d}',
+            Self::FlipY => '\u{e35f}',
+            Self::FlipZ => '\u{e360}',
+            Self::Paint => '\u{e2e7}',
+            Self::Fit => '\u{e112}',
+            Self::ToLeft => '\u{e271}',
+            Self::ToRight => '\u{e26f}',
+            Self::ToTop => '\u{e270}',
+            Self::ToBottom => '\u{e26e}',
+            Self::ToCentre => '\u{e26c}',
+            Self::FlipS => '\u{e1c6}',
+            Self::FlipT => '\u{e1c7}',
+            Self::Reset => '\u{e2a1}',
+            Self::Snap => '\u{e2b5}',
+            Self::Up => '\u{e04a}',
+            Self::Down => '\u{e042}',
+            Self::Pick => '\u{e13b}',
         }
     }
 
@@ -480,7 +547,7 @@ impl Icon {
         // egui's selectable button: framed when selected or hovered, bare otherwise.
         let button = Button::selectable(state == Toggled::On, self.char().to_string());
         let response = ui.add(button).on_hover_text(icon_hint(name, detail));
-        name_widget(ui, &response, name);
+        mark(ui, &response, name, ICON_BUTTON);
         response
     }
 }

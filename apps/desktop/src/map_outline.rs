@@ -26,6 +26,12 @@ pub(crate) enum OutlineAction {
     Choose(EntityIndex),
     /// Move the entity or group into the layer or group, the world for the default layer.
     MoveTo(EntityIndex, EntityIndex),
+    /// Hide the row's entity, from its menu.
+    Hide(EntityIndex),
+    /// Show the row's entity alone, from its menu.
+    Isolate(EntityIndex),
+    /// Lock the row's entity, from its menu.
+    Lock(EntityIndex),
 }
 
 /// What a dragged row carries: its entity.
@@ -150,6 +156,21 @@ impl OutlineView {
         }
         if response.clicked() && row.kind == RowKind::Entity {
             actions.push(OutlineAction::Choose(row.entity));
+        }
+        // The row's actions are in its menu, as Zed's outline panel keeps them (P7-16).
+        if row.kind != RowKind::Layer {
+            response.context_menu(|ui| {
+                for (text, action) in [
+                    (Text::MapHide, OutlineAction::Hide(row.entity)),
+                    (Text::MapIsolate, OutlineAction::Isolate(row.entity)),
+                    (Text::MapLock, OutlineAction::Lock(row.entity)),
+                ] {
+                    if ui.button(text.get()).clicked() {
+                        actions.push(action);
+                        ui.close();
+                    }
+                }
+            });
         }
         let response = response.interact(Sense::drag());
         if row.kind != RowKind::Layer {
