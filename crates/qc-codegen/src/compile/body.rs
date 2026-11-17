@@ -421,6 +421,11 @@ impl Compiler<'_> {
                 let place = self.program.immediate(&Literal::String(bytes)).at(span)?;
                 self.program.def(place).at(span)?.ofs
             }
+            Name::Translated(string) => {
+                let bytes = body.string(string).at(span)?.to_vec();
+                let place = self.program.translated(&bytes).at(span)?;
+                self.program.def(place).at(span)?.ofs
+            }
             Name::Made(made) => slots.slot(made).at(span)?,
             Name::MadeWord(made, word) => slots.slot(made).at(span)?.checked_add(word).at(span)?,
             Name::Return => OFS_RETURN,

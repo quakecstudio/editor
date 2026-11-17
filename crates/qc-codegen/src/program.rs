@@ -248,6 +248,11 @@ pub(crate) struct Program {
     /// The statement operands that name a shared temporary: the statement and the operand,
     /// 0 for `a`, 1 for `b`, 2 for `c`.
     shared_sites: Vec<(usize, u8)>,
+    /// The translated strings made so far, each with its definition's place
+    /// (`stringconstdefstable_trans`, FTEF-32.22).
+    translations: Vec<(Vec<u8>, usize)>,
+    /// How many `dotranslate_N` definitions there are (`dotranslate_count`).
+    translated: u32,
 }
 
 impl Program {
@@ -270,6 +275,8 @@ impl Program {
             pending_blocks: Vec::new(),
             shared: Vec::new(),
             shared_sites: Vec::new(),
+            translations: Vec::new(),
+            translated: 0,
         }
     }
 
@@ -1007,6 +1014,59 @@ impl Program {
         });
         let words = self.literal_words(literal)?;
         self.set_words(ofs, &words)?;
+        Ok(place)
+    }
+
+    /// The name of the next translated string's definition, `dotranslate_N`, the N counting
+    /// from 1 (`++dotranslate_count`).
+    fn next_translation(&mut self) -> Result<String, Internal> {
+        self.translated = self.translated.checked_add(1).ok_or(Internal::TooLarge)?;
+        Ok(format!("dotranslate_{}", self.translated))
+    }
+
+    /// FTEF-32.22: the `dotranslate_N` definition FTEQCC makes for a global at `place` that
+    /// `_("...")` initialises, a second record at its offset, a constant string.
+    pub(crate) fn alias_translation(&mut self, place: usize) -> Result<(), Internal> {
+        let def = self.defs.get(place).ok_or(Internal::NoDefinition)?;
+        let (ty, ofs) = (def.ty.clone(), def.ofs);
+        let name = self.next_translation()?;
+        self.defs.push(Def {
+            name,
+            ty,
+            ofs,
+            scope: None,
+            initialized: true,
+            constant: true,
+            count: None,
+            id: None,
+        });
+        Ok(())
+    }
+
+    /// `QCC_MakeTranslateStringConst`: the global of the translated string `text`, a string
+    /// named `dotranslate_N` that is no constant, the N counting from 1; a string translated
+    /// before names the global it made then (FTEF-32.22).
+    pub(crate) fn translated(&mut self, text: &[u8]) -> Result<usize, Internal> {
+        if let Some(&(_, place)) = self.translations.iter().find(|(made, _)| made == text) {
+            return Ok(place);
+        }
+        let literal = Literal::String(text.to_vec());
+        let ofs = self.allocate_global(literal.ty().words())?;
+        let place = self.defs.len();
+        let name = self.next_translation()?;
+        self.defs.push(Def {
+            name,
+            ty: literal.ty(),
+            ofs,
+            scope: None,
+            initialized: true,
+            constant: false,
+            count: None,
+            id: None,
+        });
+        let words = self.literal_words(&literal)?;
+        self.set_words(ofs, &words)?;
+        self.translations.push((text.to_vec(), place));
         Ok(place)
     }
 

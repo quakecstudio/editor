@@ -4349,3 +4349,43 @@ fn a_nil_initialiser_is_zero() {
     assert_eq!(p.globals[usize::try_from(store.a).unwrap()].bits(), 0);
     assert_eq!(store.b, global(p, "s"));
 }
+
+// spec FTEF-32.22: `_("text")` in an expression is the `dotranslate_N` global of the text, no
+// constant, one for each text; a global it initialises holds the text and has a second
+// record named by the same count.
+#[test]
+fn a_translated_string_is_a_dotranslate_global() {
+    let p = fte_progs(
+        "string g = _(\"hi\");\nvoid f(void) { string a; string b; a = _(\"one\"); b = _(\"two\"); \
+         a = _(\"one\"); }\n",
+    );
+    let (g, a, b) = (global(&p, "g"), global(&p, "a"), global(&p, "b"));
+    let (one, two) = (global(&p, "dotranslate_2"), global(&p, "dotranslate_3"));
+    // The global's own text, under both of its names.
+    assert_eq!(global(&p, "dotranslate_1"), g);
+    assert_eq!(words(&p, g, 1), [string_word(&p, "hi")]);
+    assert_eq!(words(&p, one, 1), [string_word(&p, "one")]);
+    assert_eq!(words(&p, two, 1), [string_word(&p, "two")]);
+    assert_eq!(
+        body(&p, "f"),
+        [
+            st(StoreS, one, a, 0),
+            st(StoreS, two, b, 0),
+            st(StoreS, one, a, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+    // FTEQCC writes each as a string with no save bit.
+    for def in &p.global_defs {
+        if string(&p, def.s_name).starts_with("dotranslate_") {
+            assert_eq!(def.type_bits, 1, "{}", string(&p, def.s_name));
+        }
+    }
+    assert_eq!(
+        p.global_defs
+            .iter()
+            .filter(|def| string(&p, def.s_name).starts_with("dotranslate_"))
+            .count(),
+        3
+    );
+}

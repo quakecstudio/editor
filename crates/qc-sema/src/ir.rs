@@ -110,6 +110,9 @@ pub enum Name {
     /// The string immediate of the body's string literal at this index
     /// (`TypedBody::string`).
     String(StringIndex),
+    /// The global of the translated string `_("...")` whose literal is the body's string at
+    /// this index, FTEQCC's `dotranslate_N` (FTEF-32.22).
+    Translated(StringIndex),
     /// The array definition's getter, `ArrayGet*NAME` (FTE-13.8).
     ArrayGet(DefId),
     /// The array definition's setter, `ArraySet*NAME` (FTE-13.11).
@@ -170,6 +173,7 @@ impl Name {
             | Self::Jump(_)
             | Self::Count(_)
             | Self::String(_)
+            | Self::Translated(_)
             | Self::ArrayGet(_)
             | Self::ArraySet(_)
             | Self::Nested(_) => return None,
@@ -185,6 +189,7 @@ impl Name {
             | Self::Immediate(_)
             | Self::ImmediateWord(..)
             | Self::String(_)
+            | Self::Translated(_)
             | Self::ArrayGet(_)
             | Self::ArraySet(_)
             | Self::Nested(_)

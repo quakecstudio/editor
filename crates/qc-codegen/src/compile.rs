@@ -441,6 +441,10 @@ impl<'a> Compiler<'a> {
                             .at(span)?;
                     } else if let Some(word) = self.integer_literal(place, &expr) {
                         self.program.initialise_words(place, &[word]).at(span)?;
+                    } else if let Some(literal) = self.translated_literal(&expr) {
+                        // FTEF-32.22: the string itself, and a `dotranslate_N` record of it.
+                        self.program.initialise(place, &literal).at(span)?;
+                        self.program.alias_translation(place).at(span)?;
                     } else if let Some(literal) = literal_of(&expr, self.dialect) {
                         self.program.initialise(place, &literal).at(span)?;
                         // FTE-15.9: the literal's `IMMEDIATE` record follows the constant's.
@@ -946,6 +950,25 @@ impl<'a> Compiler<'a> {
     // ---------------------------------------------------------------------------------------
     // Expressions
     // ---------------------------------------------------------------------------------------
+
+    /// FTEF-32.22: under FTEQCC, the string literal `expr` translates, when it is
+    /// `_("...")`.
+    fn translated_literal(&self, expr: &ast::Expr) -> Option<Literal> {
+        let ast::Expr::Call(call) = expr else {
+            return None;
+        };
+        let ast::Expr::Name(name) = call.callee()? else {
+            return None;
+        };
+        (self.dialect.has_fteqcc_extensions() && name.name()?.text_lossless() == "_")
+            .then_some(())?;
+        let list = call.args()?;
+        let mut args = list.args();
+        let (Some(only), None) = (args.next(), args.next()) else {
+            return None;
+        };
+        literal_of(&only, self.dialect).filter(|literal| matches!(literal, Literal::String(_)))
+    }
 
     /// FTE-15.8: a number literal initialising an `int` or `unsigned` global is the integer
     /// it converts to, C's conversion of the float the lexer reads (`QCC_SupplyConversion` of a
