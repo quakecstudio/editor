@@ -24,8 +24,9 @@ use crate::shape_stairs::system_defs;
 
 /// A parent and a child class, each with a data member, a constructor and a virtual function
 /// the child gives again; `t` spawns the child.
+// No `#pragma target`: the program is run by id's VM, which has the standard target's
+// opcodes; an FTE target calls by `OP_CALL1H` (FTEF-32.19).
 const CLASSES: &str = "\
-#pragma target fte_5768
 entity() spawn = #14;
 class Base { float m_a; vector m_v; float m_c; float m_z; float m_s; void Base(void); virtual void(void) Draw; nonvirtual void(float f) Set; };
 void Base::Set(float f) { m_s = f; };

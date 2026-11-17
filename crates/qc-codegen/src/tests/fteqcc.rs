@@ -3909,43 +3909,162 @@ fn a_member_through_a_pointer_at_an_index_is_loaded_and_stored_at_it() {
     assert_eq!((load.1, load.2, load.3), (pointer, mul.3, global(p, "r")));
 }
 
-// spec FTE-18.11: a field argument is loaded straight into its slot, by its size, a class-typed
-// field given to an `entity` parameter among them, whose cast keeps its words
+// spec FTEF-32.19: on a target with `OP_CALL1H` a call passes its first parameter as its own
+// operand, a field argument loaded by its own type's load into a temporary: `take(w.m_other)`
+// is `LOAD_ENT w, m_other, temp`, `CALL1H take, temp`
 #[test]
-fn a_class_field_argument_is_loaded_into_its_entity_slot() {
+fn a_class_field_argument_is_the_calls_own_operand() {
+    use qc_preproc::Op;
     let compiled = compile_fteqcc(
         "#pragma target fte_5768\nentity self;\nentity() spawn = #14;\nvoid(entity e) take = #1;\n\
          class W { W m_other; virtual void(void) Draw; };\nvoid W::Draw(void) {};\n\
          void t(void) { W w = spawn(W); take(w.m_other); };\n",
     )
     .unwrap();
-    let field = global(&compiled.progs, "W::__mm_other");
-    let load = body(&compiled.progs, "t")
-        .into_iter()
-        .find(|s| s.b == field)
+    let p = &compiled.progs;
+    let statements = body(p, "t");
+    let field = global(p, "W::__mm_other");
+    let load = statements.iter().find(|s| s.b == field).unwrap();
+    assert_eq!(load.op, u32::from(Opcode::LoadEnt.number()));
+    let call = statements
+        .iter()
+        .find(|s| s.a == global(p, "take"))
         .unwrap();
-    assert_eq!(load.c, 4);
+    assert_eq!(call.op, u32::try_from(Op::Call1h.number()).unwrap());
+    assert_eq!(call.b, load.c);
+    assert_ne!(load.c, 4, "not the parameter's slot");
 }
 
-// spec FTEF-32.18: a field argument a parameter of another type converts is loaded where it is
-// written, and its value converted into the slot: `takei(self.fl)` is `LOAD_F` to a temporary,
-// then `CONV_FTOI` of it to the parameter
+// spec FTEF-32.19: the first two parameters are the call's operands and each later one is
+// stored to its slot; a call with no parameter is `CALL0`
+#[test]
+fn a_calls_first_two_parameters_are_its_operands() {
+    use qc_preproc::Op;
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\nfloat a; float b; float c;\nvoid(float x, float y, float z) three = #1;\n\
+         void() none = #2;\nvoid t(void) { three(a, b, c); none(); };\n",
+    )
+    .unwrap();
+    let p = &compiled.progs;
+    let statements = body(p, "t");
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let call = statements
+        .iter()
+        .find(|s| s.a == global(p, "three"))
+        .unwrap();
+    assert_eq!(call.op, number(Op::Call3h));
+    assert_eq!((call.b, call.c), (global(p, "a"), global(p, "b")));
+    // The third parameter's slot is the third of the parameters', three words each from 4.
+    let stored = statements.iter().find(|s| s.a == global(p, "c")).unwrap();
+    assert_eq!(stored.b, 10);
+    let none = statements
+        .iter()
+        .find(|s| s.a == global(p, "none"))
+        .unwrap();
+    assert_eq!(none.op, u32::from(Opcode::Call0.number()));
+}
+
+// spec FTEF-32.20: a field argument a parameter of another type converts is loaded where it is
+// read, and the temporary converted: `takei(self.fl)` is `LOAD_F self, fl, temp`,
+// `CONV_FTOI temp, temp2`, `CALL1H takei, temp2`
 #[test]
 fn a_converted_field_argument_is_loaded_then_converted() {
+    use qc_preproc::Op;
     let compiled = compile_fteqcc(
         "#pragma target fte_5768\nentity self;\nvoid(int i) takei = #2;\n.float fl;\n\
          void t(void) { takei(self.fl); };\n",
     )
     .unwrap();
-    let statements = body(&compiled.progs, "t");
+    let p = &compiled.progs;
+    let statements = body(p, "t");
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
     let load = statements.first().unwrap();
     let conv = &statements[1];
+    let call = &statements[2];
     assert_eq!(load.op, u32::from(Opcode::LoadF.number()));
+    assert_eq!((conv.op, conv.a), (number(Op::ConvFtoi), load.c));
     assert_eq!(
-        conv.op,
-        u32::try_from(qc_preproc::Op::ConvFtoi.number()).unwrap()
+        (call.op, call.a, call.b),
+        (number(Op::Call1h), global(p, "takei"), conv.c)
     );
-    assert_eq!((conv.a, conv.c), (load.c, 4));
+}
+
+// spec FTEF-27.18: `~` of an int on a target with `OP_SUB_I` and no `OP_BITNOT_I` is the value
+// taken from the int constant -1; an int's remainder by a float, with `mod` defined, converts
+// the int by `OP_CONV_FTOI` and calls `mod` of the two
+#[test]
+fn an_ints_complement_and_mixed_remainder_are_emulated() {
+    use qc_preproc::Op;
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\nint gi; int out; float gf; float r;\n\
+         float(float a, float b) mod = { return a; };\n\
+         void t1(void) { out = ~gi; };\nvoid t2(void) { r = gi % gf; };\n",
+    )
+    .unwrap();
+    let p = &compiled.progs;
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let t1 = body(p, "t1");
+    let sub = t1.iter().find(|s| s.op == number(Op::SubI)).unwrap();
+    assert_eq!((sub.b, sub.c), (global(p, "gi"), global(p, "out")));
+    assert_eq!(p.globals[usize::try_from(sub.a).unwrap()].bits(), u32::MAX);
+    let t2 = body(p, "t2");
+    let conv = t2.iter().find(|s| s.op == number(Op::ConvFtoi)).unwrap();
+    assert_eq!(conv.a, global(p, "gi"));
+    let call = t2.iter().find(|s| s.a == global(p, "mod")).unwrap();
+    assert_eq!(
+        (call.op, call.b, call.c),
+        (number(Op::Call2h), conv.c, global(p, "gf"))
+    );
+}
+
+// spec FTEF-31.24: an index that is no constant is made an integer and checked against the
+// array's length by `OP_BOUNDCHECK` as it is read; with `boundchecks` off it is not
+#[test]
+fn a_variable_index_is_bound_checked() {
+    use qc_preproc::Op;
+    let source = "string tab[3]; float n; string out;\nvoid t(void) { out = tab[n]; };\n";
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let checked = compile_fteqcc(&format!("#pragma target fte_5768\n{source}")).unwrap();
+    let statements = body(&checked.progs, "t");
+    let conv = statements.first().unwrap();
+    let check = &statements[1];
+    assert_eq!(
+        (conv.op, conv.a),
+        (number(Op::ConvFtoi), global(&checked.progs, "n"))
+    );
+    assert_eq!(
+        (check.op, check.a, check.b),
+        (number(Op::Boundcheck), conv.c, 3)
+    );
+    let unchecked = compile_fteqcc(&format!(
+        "#pragma target fte_5768\n#pragma flag disable boundchecks\n{source}"
+    ))
+    .unwrap();
+    assert!(
+        body(&unchecked.progs, "t")
+            .iter()
+            .all(|s| s.op != number(Op::Boundcheck))
+    );
+}
+
+// spec FTEF-32.21: a `static` local given an aggregate has it as its initial value, in the
+// globals, and no statement stores it when the function runs
+#[test]
+fn a_static_locals_aggregate_is_its_initial_value() {
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\nvoid t(void) { static string tab[] = {\"aa\", \"bb\"}; };\n",
+    )
+    .unwrap();
+    let p = &compiled.progs;
+    let (first, second) = (string_word(p, "aa"), string_word(p, "bb"));
+    assert!(
+        p.globals
+            .windows(2)
+            .any(|pair| pair[0].bits() == first && pair[1].bits() == second),
+        "the two strings side by side in the globals"
+    );
+    // Nothing but the function's end.
+    assert!(body(p, "t").len() <= 1, "{:?}", body(p, "t").len());
 }
 
 // spec FTEF-31.22: a compound assignment through a pointer at an index is the member loaded

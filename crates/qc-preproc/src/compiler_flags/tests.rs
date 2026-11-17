@@ -10,6 +10,8 @@ use crate::{CommandLine, FlagSettings};
 // `attributes`, with the casts' (FTEF-22) and the truth tests' (FTEF-30); any other is read as
 // off and set to nothing
 // spec FTEF-21.20: a flag only the compiler's output reads is not kept
+// spec FTEF-21.25: `boundchecks`, which the lowering of an index reads, is kept, and on by
+// default
 #[test]
 fn the_kept_flags() {
     let all = [
@@ -30,6 +32,7 @@ fn the_kept_flags() {
         FteFlag::Undefwordsize,
         FteFlag::Ifvector,
         FteFlag::Vectorlogic,
+        FteFlag::Boundchecks,
     ];
     for flag in all {
         let on = CompilerFlags::default().with(flag, true);
@@ -40,17 +43,19 @@ fn the_kept_flags() {
                 !on.has(*other)
                     || matches!(
                         other,
-                        FteFlag::Qcfuncs | FteFlag::Ifvector | FteFlag::Vectorlogic
+                        FteFlag::Qcfuncs
+                            | FteFlag::Ifvector
+                            | FteFlag::Vectorlogic
+                            | FteFlag::Boundchecks
                     ),
                 "{flag:?} {other:?}"
             );
         }
     }
-    for flag in [FteFlag::Iffloat, FteFlag::Boundchecks] {
-        let on = CompilerFlags::default().with(flag, true);
-        assert_eq!(on, CompilerFlags::default());
-        assert!(!on.has(flag));
-    }
+    assert!(CompilerFlags::default().has(FteFlag::Boundchecks));
+    let on = CompilerFlags::default().with(FteFlag::Iffloat, true);
+    assert_eq!(on, CompilerFlags::default());
+    assert!(!on.has(FteFlag::Iffloat));
     // The casts' flags are none of the lexer's.
     let casts = CompilerFlags::default()
         .with(FteFlag::Laxcasts, true)

@@ -104,6 +104,9 @@ pub enum Name {
     Prior,
     /// The body's statement at this index, a jump's target; the body's length is its end.
     Jump(u32),
+    /// A number written as the operand itself, `QCC_MakeSRef(NULL, n, NULL)`: the length a
+    /// bounds check holds its index under (FTEF-31.24).
+    Count(u32),
     /// The string immediate of the body's string literal at this index
     /// (`TypedBody::string`).
     String(StringIndex),
@@ -165,6 +168,7 @@ impl Name {
             | Self::RetLocal
             | Self::Prior
             | Self::Jump(_)
+            | Self::Count(_)
             | Self::String(_)
             | Self::ArrayGet(_)
             | Self::ArraySet(_)
@@ -191,6 +195,7 @@ impl Name {
             | Self::Return
             | Self::ReturnWord(_)
             | Self::Jump(_)
+            | Self::Count(_)
             | Self::VaList(_)
             | Self::Default(_)
             | Self::Prior => false,

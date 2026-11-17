@@ -789,11 +789,13 @@ impl Checker<'_> {
         {
             let length = self.env.array_length(def);
             self.bounds(constant, length, span);
+            let at = self.bound_checked(at, constant, length, span)?;
             return self.field_array_element(base, def, at, span);
         }
         if base.is_array_head() {
             let length = self.head_length(&base);
             self.bounds(constant, length, span);
+            let at = self.bound_checked(at, constant, length, span)?;
             let at = self.scaled_index(&base.ty, at, span)?;
             let at = match base.reference {
                 Reference::ArrayHead(Some(member)) => self.member_array_index(member, at, span)?,
@@ -833,6 +835,7 @@ impl Checker<'_> {
             }
             // An entity's `.vector` field indexed is the field's component, `e.(fv[i])`.
             (Some(Etype::Vector), _) if matches!(base.reference, Reference::Field(_)) => {
+                let at = self.bound_checked(at, constant, Some(VECTOR_WORDS), span)?;
                 self.field_vector_index(&base, label, at, constant, span)
             }
             (Some(Etype::Vector), _) => {
@@ -854,6 +857,7 @@ impl Checker<'_> {
                         ..Value::constant(Constant::float(component))
                     });
                 }
+                let at = self.bound_checked(at, constant, Some(VECTOR_WORDS), span)?;
                 Ok(Value {
                     reference: Reference::element(label, at, true),
                     ..Value {
@@ -871,6 +875,7 @@ impl Checker<'_> {
                     let message = "(.vector) array index out of bounds".to_owned();
                     return self.fatal(Code::E0333, span, message);
                 }
+                let at = self.bound_checked(at, constant, Some(VECTOR_WORDS), span)?;
                 Ok(Value {
                     reference: Reference::element(label, at, false),
                     ..Value {
@@ -904,6 +909,36 @@ impl Checker<'_> {
             Reference::ArrayHead(Some(member)) => member.length,
             _ => head.sym.def().and_then(|def| self.env.array_length(def)),
         }
+    }
+
+    /// FTEF-31.24: an index that is no constant, on a target with `OP_BOUNDCHECK` and with the
+    /// `boundchecks` flag on, as it is by default, is made an integer and checked against `length`
+    /// by `OP_BOUNDCHECK` of the index and the length written as the operand itself; the
+    /// integer is the index from then on.
+    fn bound_checked(
+        &mut self,
+        at: Value,
+        constant: Option<i32>,
+        length: Option<u32>,
+        span: Span,
+    ) -> Checked {
+        let Some(length) = length else {
+            return Ok(at);
+        };
+        if constant.is_some()
+            || self.global
+            || !self.env.target_at(span.start).valid(Op::Boundcheck)
+            || !self.env.flags_at(span.start).has(FteFlag::Boundchecks)
+        {
+            return Ok(at);
+        }
+        let at = self.converted(&at, Etype::Integer, span)?;
+        self.generated.push(ir::BodyStatement {
+            a: self.name_of(&at),
+            b: Some(ir::Name::Count(length)),
+            ..ir::BodyStatement::bare(Op::Boundcheck)
+        });
+        Ok(at)
     }
 
     /// "(constant) array index out of bounds (0 <= I < N)" for a constant index past an array's

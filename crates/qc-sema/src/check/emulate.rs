@@ -22,7 +22,7 @@ use crate::check::fold::{Folded, fold};
 use crate::check::opcodes::row;
 use crate::check::{Constness, Sym, Value};
 use crate::ir;
-use crate::ty::Type;
+use crate::ty::{SimpleType, Type};
 
 /// `QCTARGVER_FTE_DEF` and `QCTARGVER_FTE_MAX`: the FTE revisions `badopcode` suggests.
 const FTE_DEFAULT: u32 = 5768;
@@ -416,8 +416,9 @@ impl Checker<'_> {
         function: DefId,
         (lhs, rhs): (&Value, &Value),
         result: Value,
+        span: Span,
     ) -> Value {
-        let call = self.helper_statements(function, &[lhs, rhs]);
+        let call = self.helper_statements(function, &[lhs, rhs], span);
         for offset in [lhs.temp, rhs.temp].into_iter().flatten() {
             self.env.temps().free(offset);
         }
@@ -434,10 +435,42 @@ impl Checker<'_> {
         }
     }
 
+    /// FTEF-27.18: a remainder of an `int` and a float, `op` saying which is which: the
+    /// integer operand converted by `OP_CONV_FTOI`, as FTEQCC writes it, and `mod`, the helper
+    /// `function`, called of the two, its value a float.
+    fn mixed_remainder(
+        &mut self,
+        op: Op,
+        function: DefId,
+        (lhs, rhs): (&Value, &Value),
+        result: Value,
+        span: Span,
+    ) -> Result<Value, Fatal> {
+        let integer = if op == Op::ModIf { lhs } else { rhs };
+        let converted = self.emit(Op::ConvFtoi, integer, &Value::unknown(), span)?;
+        let operands = if op == Op::ModIf {
+            (&converted, rhs)
+        } else {
+            (lhs, &converted)
+        };
+        // `var_c.cast = type_float`.
+        let result = Value {
+            ty: Type::Simple(SimpleType::Float),
+            ..result
+        };
+        Ok(self.helper_call(function, operands, result, span))
+    }
+
     /// The value of the call of the helper `function` of `operands`, `result` in the return
     /// global (FTE-19.11).
-    fn helper_value(&mut self, function: DefId, operands: &[&Value], result: &Value) -> Value {
-        let call = self.helper_statements(function, operands);
+    fn helper_value(
+        &mut self,
+        function: DefId,
+        operands: &[&Value],
+        result: &Value,
+        span: Span,
+    ) -> Value {
+        let call = self.helper_statements(function, operands, span);
         Value {
             returned: call.is_some(),
             call,
@@ -451,13 +484,22 @@ impl Checker<'_> {
     /// stored to its parameter, only the first folding into the statement that made it
     /// (FTE-18.12), then `CALL1` or `CALL2`; the call's index, its value then in the return
     /// global.
-    fn helper_statements(&mut self, function: DefId, operands: &[&Value]) -> Option<u32> {
+    fn helper_statements(
+        &mut self,
+        function: DefId,
+        operands: &[&Value],
+        span: Span,
+    ) -> Option<u32> {
         if self.global {
             return None;
         }
+        // FTEF-32.19: with `OP_CALL1H` the two operands are the call's own, with no store.
+        let registers = self.env.target_at(span.start).valid(Op::Call1h);
         for (slot, &operand) in (0_u8..).zip(operands) {
             let parameter = Some(ir::Name::Parameter(slot));
-            if slot == 0 && operand.temp.is_some() && operand.temp == self.last_temp {
+            if registers {
+                // Read where it is.
+            } else if slot == 0 && operand.temp.is_some() && operand.temp == self.last_temp {
                 self.fold_into(operand, parameter);
             } else {
                 self.generated.push(ir::BodyStatement {
@@ -471,14 +513,24 @@ impl Checker<'_> {
                 self.live_call = None;
             }
         }
+        let named = |at: usize| {
+            operands
+                .get(at)
+                .filter(|_| registers)
+                .and_then(|operand| self.name_of(operand))
+        };
+        let (b, c) = (named(0), named(1));
         self.clobber_return();
-        let op = if operands.len() == 1 {
-            Op::Call1
-        } else {
-            Op::Call2
+        let op = match (operands.len() == 1, registers) {
+            (true, false) => Op::Call1,
+            (false, false) => Op::Call2,
+            (true, true) => Op::Call1h,
+            (false, true) => Op::Call2h,
         };
         self.generated.push(ir::BodyStatement {
             a: Some(ir::Name::Def(function, 0)),
+            b,
+            c,
             ..ir::BodyStatement::bare(op)
         });
         let call = self.last_made();
@@ -545,7 +597,10 @@ impl Checker<'_> {
                     // The layer holds the float remainder's call, whose value is a float; the
                     // integer ones' calls the code generator does not lower from it yet.
                     if op == Op::ModF {
-                        return Ok(self.helper_call(function, (lhs, rhs), result));
+                        return Ok(self.helper_call(function, (lhs, rhs), result, span));
+                    }
+                    if matches!(op, Op::ModIf | Op::ModFi) {
+                        return self.mixed_remainder(op, function, (lhs, rhs), result, span);
                     }
                     self.followed = false;
                     return Ok(result);
@@ -777,7 +832,7 @@ impl Checker<'_> {
             // conversion is not followed yet.
             let helper = helpers.iter().find_map(|name| self.env.helper(name));
             if let (Some(function), Op::ConvItof | Op::ConvFtoi | Op::ConvUf) = (helper, op) {
-                let call = self.helper_statements(function, &[value]);
+                let call = self.helper_statements(function, &[value], span);
                 return Ok(Value {
                     returned: call.is_some(),
                     call,
@@ -789,7 +844,7 @@ impl Checker<'_> {
             // A store's conversion is the call, then the store of its value, which the
             // assignment names the target of.
             if let (Some(function), Op::StoreIf | Op::StoreFi) = (helper, op)
-                && self.helper_statements(function, &[value]).is_some()
+                && self.helper_statements(function, &[value], span).is_some()
             {
                 self.live_return = None;
                 self.live_call = None;
@@ -999,22 +1054,22 @@ impl Checker<'_> {
                 let pow = self.env.helper("powf").or_else(|| self.env.helper("pow"));
                 if let (Some(pow), Some(floor)) = (pow, self.env.helper("floor")) {
                     let two = Value::constant(Constant::float(2.0));
-                    let power = self.helper_value(pow, &[&two, rhs], &result);
+                    let power = self.helper_value(pow, &[&two, rhs], &result, span);
                     let scale = if op == Op::LshiftF {
                         Op::MulF
                     } else {
                         Op::DivF
                     };
                     let scaled = self.emit(scale, lhs, &power, span)?;
-                    return Ok(self.helper_value(floor, &[&scaled], &result));
+                    return Ok(self.helper_value(floor, &[&scaled], &result, span));
                 }
                 if let Some(bitshift) = self.env.helper("bitshift") {
                     if op == Op::LshiftF {
-                        return Ok(self.helper_value(bitshift, &[lhs, rhs], &result));
+                        return Ok(self.helper_value(bitshift, &[lhs, rhs], &result, span));
                     }
                     let zero = Value::constant(Constant::float(0.0));
                     let negated = self.emit(Op::SubF, &zero, rhs, span)?;
-                    return Ok(self.helper_value(bitshift, &[lhs, &negated], &result));
+                    return Ok(self.helper_value(bitshift, &[lhs, &negated], &result, span));
                 }
                 let message = format!("bitshift function not defined: cannot emulate {what}");
                 self.env.report(Code::W0235, span, message);
@@ -1132,7 +1187,9 @@ impl Checker<'_> {
             Op::BitnotI => {
                 // `-1 - a`, `op` already `OP_SUB_I` when it is refused.
                 if self.env.target_at(span.start).valid(Op::SubI) {
-                    return Ok(replaced(Op::SubI));
+                    let minus_one = Constant::int(-1);
+                    self.made(minus_one);
+                    return self.emit(Op::SubI, &Value::constant(minus_one), lhs, span);
                 }
                 if !self.env.defines("SubInt") {
                     let message = "SubInt function not defined: cannot emulate ~int";

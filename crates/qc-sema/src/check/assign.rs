@@ -883,8 +883,12 @@ impl Checker<'_> {
         if array && !vector && !nested && !self.env.local_static(start) {
             return self.array_aggregate(declarator, local, &elements);
         }
-        if !vector || self.env.local_static(start) || elements.len() != qc_types::PROGS_VECTOR_SLOTS
-        {
+        // FTEF-32.21: a `static` local's aggregate is its initial value, written with the
+        // globals, and generates no statement.
+        if self.env.local_static(start) {
+            return Ok(());
+        }
+        if !vector || elements.len() != qc_types::PROGS_VECTOR_SLOTS {
             self.followed = false;
             return Ok(());
         }
