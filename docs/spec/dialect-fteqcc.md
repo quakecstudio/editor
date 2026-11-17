@@ -581,6 +581,13 @@ dialect aliases any type.
   refused. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseDefs`; `engine/qclib/qcc_pr_lex.c`,
   `QCC_PR_ParseType`.
+- **FTEF-7.6** A value whose type is a typedef of a function type, a local, a parameter or a
+  global with no body, is a function value and is called as that type: the call takes the
+  function type's parameters and is of its return type. `QCC_PR_ParseType` gives the definition
+  the typedef's type (`QCC_TypeForName`, FTEF-7.5), not its name. Recorded: `typedef
+  float(float) cb_t; float r; void() g = { cb_t h; if (!h(2)) r = h(3) + 1; };` compiles with no
+  error under the pinned FTEQCC (2026-11-16). Xonotic calls a typedef'd function value in
+  `common/mutators/base.qh` and `lib/warpzone/common.qc`.
 
 ## FTEF-8 `enum`, `enumflags` and typed or scoped enums
 

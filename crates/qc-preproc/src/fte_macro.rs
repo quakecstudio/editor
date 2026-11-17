@@ -831,7 +831,7 @@ pub(crate) fn read_define(
             Err((error, stop)) => return (Err(DefineError::BadParams(error)), stop),
         }
     }
-    let (value, end, evil, unclosed) = read_body(reading, at);
+    let (value, end, evil, unclosed) = read_body(reading, at, splices);
     let definition = Definition {
         name,
         params,
@@ -847,8 +847,13 @@ pub(crate) fn read_define(
 /// stopped reading, and the first `#` that starts a continued line (FTEF-14.24, FTEF-14.46).
 /// After a `\` and a line break, a line that starts with `#` (after spaces and tabs) keeps the
 /// line break, and so does the next continued line: "#define hacks however, require that it
-/// becomes foo\nbar\nmoo".
-fn read_body(reading: &Reading<'_>, mut at: usize) -> (Text, usize, Option<usize>, Option<usize>) {
+/// becomes foo\nbar\nmoo". Under [`Splices::Joined`] the byte after a continued line ends the
+/// body as any other does, so an empty line after a `\` ends it (GMQ-21.9).
+fn read_body(
+    reading: &Reading<'_>,
+    mut at: usize,
+    splices: Splices,
+) -> (Text, usize, Option<usize>, Option<usize>) {
     let text = reading.bytes();
     while matches!(text.get(at), Some(b' ' | b'\t')) {
         at = at.saturating_add(1);
@@ -879,8 +884,14 @@ fn read_body(reading: &Reading<'_>, mut at: usize) -> (Text, usize, Option<usize
                 } else {
                     std::mem::take(&mut directive_lines)
                 };
-                if kept {
+                // FTEQCC's `#define` hack; C has joined the lines (GMQ-21.9).
+                if kept && splices == Splices::Kept {
                     value.push(b"\n", reading.origin(line_break));
+                }
+                // GMQ-21.9: C joins the lines first, so the next line's own line break ends
+                // the directive.
+                if splices == Splices::Joined {
+                    continue;
                 }
             }
             None | Some(b'\r' | b'\n') => break,
