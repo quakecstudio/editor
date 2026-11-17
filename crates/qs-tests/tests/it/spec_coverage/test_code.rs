@@ -215,7 +215,7 @@ fn scan(text: &str) -> Scan {
                     }
                 }
                 ';' if pending.as_ref().is_some_and(|p| p.nesting == 0) => {
-                    let words = pending.take().map(|p| p.words).unwrap_or_default();
+                    let words = pending.take().map_or_default(|p| p.words);
                     if let Some(at) = words.iter().position(|word| word == "mod")
                         && let Some(name) = words.get(at.saturating_add(1))
                         && cursor.test_depth.is_none()

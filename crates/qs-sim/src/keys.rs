@@ -262,7 +262,7 @@ impl Bindings {
         if argv.len() != 2 && argv.len() != BIND_WORDS {
             return Some("bind <key> [command] : attach a command to a key\n".to_owned());
         }
-        let name = argv.get(1).map(Vec::as_slice).unwrap_or_default();
+        let name = argv.get(1).map_or_default(Vec::as_slice);
         let shown = String::from_utf8_lossy(name);
         let Some(key) = key_from_name(name) else {
             return Some(format!("\"{shown}\" isn't a valid key\n"));

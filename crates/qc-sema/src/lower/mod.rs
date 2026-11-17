@@ -413,6 +413,5 @@ fn token_text(node: &SyntaxNode) -> String {
 fn first_word(node: &SyntaxNode) -> String {
     node.child_tokens()
         .find(|t| !t.kind().is_trivia())
-        .map(|t| t.text_lossless())
-        .unwrap_or_default()
+        .map_or_default(|t| t.text_lossless())
 }

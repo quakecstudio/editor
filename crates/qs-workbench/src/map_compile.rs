@@ -218,10 +218,7 @@ fn merged(wads: &[(PathBuf, Vec<u8>)]) -> Result<Vec<u8>, WorkbenchError> {
     builder
         .to_bytes()
         .map_err(|error| WorkbenchError::WadWrite {
-            path: wads
-                .first()
-                .map(|(path, _)| path.clone())
-                .unwrap_or_default(),
+            path: wads.first().map_or_default(|(path, _)| path.clone()),
             error,
         })
 }
@@ -278,8 +275,7 @@ impl<C: HasPreview + 'static> Command<C> for MapCompile {
         let path = if params.region.is_some() {
             let stem = path
                 .file_stem()
-                .map(|stem| stem.to_string_lossy().into_owned())
-                .unwrap_or_default();
+                .map_or_default(|stem| stem.to_string_lossy().into_owned());
             path.with_file_name(format!("{stem}{REGION_SUFFIX}.map"))
         } else {
             path
@@ -386,11 +382,7 @@ impl PlayFromHereParams {
         if ![x, y, z].iter().all(|c| c.is_finite()) {
             return Err(no_room());
         }
-        let [h0, h1, h2, _] = bsp
-            .models
-            .first()
-            .map(|model| model.headnode)
-            .unwrap_or_default();
+        let [h0, h1, h2, _] = bsp.models.first().map_or_default(|model| model.headnode);
         let hulls = HullSet::new(bsp);
         let hull = hulls.hull(PLAYER_HULL, [h0, h1, h2]);
         let fits = |p: [f32; 3]| {
@@ -473,8 +465,7 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
         let (project, _, mod_name) = &built;
         let name = path
             .file_stem()
-            .map(|stem| stem.to_string_lossy().into_owned())
-            .unwrap_or_default();
+            .map_or_default(|stem| stem.to_string_lossy().into_owned());
         let maps = project.join("build").join(mod_name).join("maps");
         std::fs::create_dir_all(&maps).map_err(|error| PreviewError::Write(maps.clone(), error))?;
         let files = [("bsp", Some(&lit.bsp)), ("lit", lit.lit.as_ref())];

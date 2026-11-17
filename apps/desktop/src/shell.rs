@@ -576,8 +576,7 @@ impl Shell {
             .editors
             .editor
             .as_ref()
-            .map(|editor| editor.view.state().buffer().text())
-            .unwrap_or_default();
+            .map_or_default(|editor| editor.view.state().buffer().text());
         let ctx = self.ctx.clone();
         self.features
             .agent
@@ -962,8 +961,7 @@ impl Shell {
             rows.push(PickerRow {
                 name: path
                     .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
+                    .map_or_default(|n| n.to_string_lossy().into_owned()),
                 detail: root
                     .and_then(|root| path.strip_prefix(root).ok())
                     .unwrap_or(path)

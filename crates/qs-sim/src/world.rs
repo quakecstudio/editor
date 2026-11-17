@@ -363,11 +363,7 @@ impl World {
         // MOVE-6.1: the random source starts at state 1, or at a scenario's seed (SCN-1.3).
         let seed = options.seed.unwrap_or(RANDOM_SEED);
         let mut engine = MockEngine::new(map, submodels, seed);
-        let aliases = options
-            .host
-            .as_ref()
-            .map(|h| h.aliases.clone())
-            .unwrap_or_default();
+        let aliases = options.host.as_ref().map_or_default(|h| h.aliases.clone());
         match options.host {
             // MOVE-6.3, PHYS-12.3: the last level's random state and settings go on.
             Some(host) => {

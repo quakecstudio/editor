@@ -374,8 +374,7 @@ fn check_allowed_crates(cargo: &Table, clippy_conf: &Table) -> Vec<String> {
     let allowed: BTreeSet<&str> = clippy_conf
         .get("absolute-paths-allowed-crates")
         .and_then(Value::as_array)
-        .map(|crates| crates.iter().filter_map(Value::as_str).collect())
-        .unwrap_or_default();
+        .map_or_default(|crates| crates.iter().filter_map(Value::as_str).collect());
     let Some(dependencies) = table(cargo, &["workspace", "dependencies"]) else {
         return Vec::new();
     };

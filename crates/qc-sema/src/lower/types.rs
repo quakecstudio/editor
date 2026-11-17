@@ -248,8 +248,7 @@ fn anonymous_members(field: &SyntaxNode, cx: Cx<'_>) -> Vec<StructMember> {
         .descendants()
         .find(|n| n.kind() == SyntaxKind::StructType)
         .and_then(|n| lower_struct(&n, cx))
-        .map(|st| st.members)
-        .unwrap_or_default()
+        .map_or_default(|st| st.members)
 }
 
 /// Each array suffix's size of the struct member `field` (FTEF-6.17).
@@ -432,10 +431,7 @@ pub(super) fn lower_struct(node: &SyntaxNode, cx: Cx<'_>) -> Option<RawStruct> {
             initialized,
             width_uses: std::mem::take(&mut width_uses),
             width_integer,
-            name: member_name
-                .as_ref()
-                .map(|t| t.text_lossless())
-                .unwrap_or_default(),
+            name: member_name.as_ref().map_or_default(|t| t.text_lossless()),
             span: member_name
                 .as_ref()
                 .map_or_else(|| field.span(), |t| t.span()),
@@ -1003,8 +999,7 @@ fn lower_member(
         let follow = scope
             .tokens()
             .find(|t| !t.kind().is_trivia() && t.span().start >= name_end)
-            .map(|t| t.text_lossless())
-            .unwrap_or_default();
+            .map_or_default(|t| t.text_lossless());
         let init = declarator.initializer();
         let body = match &init {
             Some(ast::Initializer::Body(fn_body)) => {

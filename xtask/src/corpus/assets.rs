@@ -448,8 +448,7 @@ fn covers(
         .codebase
         .iter()
         .find(|c| c.id == cid)
-        .map(base_dir)
-        .unwrap_or_default();
+        .map_or_default(base_dir);
     let files = codebase_files(m, cid, dest, net)?;
     let mut sources = 0_usize;
     let mut calls = Vec::new();

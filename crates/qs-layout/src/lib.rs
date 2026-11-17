@@ -9,7 +9,6 @@
 //! ([`qs_commands::Outcome::outside_history`]), as Zed and VS Code leave a hidden panel out of
 //! undo.
 
-use std::convert::Infallible;
 use std::error::Error;
 use std::fmt;
 use std::fs;
@@ -429,13 +428,9 @@ impl<C: HasLayout + 'static, T: FocusTarget> Command<C> for FocusArea<T> {
     const SUMMARY: &'static str = T::SUMMARY;
     type Params = NoParams;
     type Output = Focused;
-    type Error = Infallible;
+    type Error = !;
 
-    fn run(
-        &self,
-        context: &mut C,
-        NoParams {}: NoParams,
-    ) -> Result<Outcome<Focused, C>, Infallible> {
+    fn run(&self, context: &mut C, NoParams {}: NoParams) -> Result<Outcome<Focused, C>, !> {
         let layout = context.layout_mut();
         if let Focus::Panel(panel) = T::FOCUS {
             layout.panel_mut(panel).visible = true;
@@ -474,13 +469,9 @@ impl<C: HasLayout + 'static> Command<C> for TogglePanel {
         bottom.";
     type Params = TogglePanelParams;
     type Output = PanelShown;
-    type Error = Infallible;
+    type Error = !;
 
-    fn run(
-        &self,
-        context: &mut C,
-        params: TogglePanelParams,
-    ) -> Result<Outcome<PanelShown, C>, Infallible> {
+    fn run(&self, context: &mut C, params: TogglePanelParams) -> Result<Outcome<PanelShown, C>, !> {
         let state = context.layout_mut().panel_mut(params.panel);
         state.visible = !state.visible;
         Ok(Outcome::outside_history(PanelShown {

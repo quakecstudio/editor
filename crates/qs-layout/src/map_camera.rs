@@ -211,13 +211,9 @@ impl<C: HasLayout + 'static> Command<C> for SetMapCamera {
         a vertical look and the wheel go. Settings not given are kept.";
     type Params = MapCameraParams;
     type Output = MapCamera;
-    type Error = core::convert::Infallible;
+    type Error = !;
 
-    fn run(
-        &self,
-        context: &mut C,
-        params: MapCameraParams,
-    ) -> Result<Outcome<MapCamera, C>, core::convert::Infallible> {
+    fn run(&self, context: &mut C, params: MapCameraParams) -> Result<Outcome<MapCamera, C>, !> {
         let camera = &mut context.layout_mut().map_camera;
         let MapCameraParams {
             fov,

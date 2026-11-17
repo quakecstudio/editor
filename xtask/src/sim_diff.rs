@@ -243,10 +243,7 @@ impl RawState for Replayed<'_> {
         if let Some(text) = self.strings.get(&bits) {
             return text.clone();
         }
-        progs
-            .string(value.as_i32())
-            .map(<[u8]>::to_vec)
-            .unwrap_or_default()
+        progs.string(value.as_i32()).map_or_default(<[u8]>::to_vec)
     }
 }
 
@@ -369,17 +366,15 @@ fn differences(theirs: &State, mine: &State) -> Vec<String> {
 
 /// `fields` with every value zero, for an edict one side has not reached.
 fn zeroed(fields: Option<&Vec<NamedValue>>) -> Vec<NamedValue> {
-    fields
-        .map(|fields| {
-            fields
-                .iter()
-                .map(|f| NamedValue {
-                    name: f.name.clone(),
-                    value: zero_of(&f.value),
-                })
-                .collect()
-        })
-        .unwrap_or_default()
+    fields.map_or_default(|fields| {
+        fields
+            .iter()
+            .map(|f| NamedValue {
+                name: f.name.clone(),
+                value: zero_of(&f.value),
+            })
+            .collect()
+    })
 }
 
 fn zero_of(value: &QcValue) -> QcValue {

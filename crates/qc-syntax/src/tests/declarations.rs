@@ -33,7 +33,7 @@ fn show(ty: &ast::Type) -> String {
                         format!(
                             "{} {}",
                             p.ty().map_or("?".into(), |t| show(&t)),
-                            p.name().map(|n| n.text_lossless()).unwrap_or_default()
+                            p.name().map_or_default(|n| n.text_lossless())
                         )
                     })
                     .collect()

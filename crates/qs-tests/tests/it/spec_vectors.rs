@@ -314,7 +314,7 @@ fn every_vector_is_well_formed() {
                 "vector `{name}` uses unknown opcode `{op}`"
             );
         }
-        let end = vector.expect.last().map(String::as_str).unwrap_or_default();
+        let end = vector.expect.last().map_or_default(String::as_str);
         assert!(
             end == "done" || end == "error" || end.starts_with("error \""),
             "vector `{name}` must end its expect block with `done` or `error`, not `{end}`"

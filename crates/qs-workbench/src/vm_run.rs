@@ -276,7 +276,7 @@ impl VmChange {
             }
         }
         for (n, fields) in after.edicts.iter().enumerate() {
-            let old = before.edicts.get(n).map(|f| named(f)).unwrap_or_default();
+            let old = before.edicts.get(n).map_or_default(|f| named(f));
             for (name, value) in named(fields) {
                 if old.get(&name) != Some(&value) {
                     out.push(VmChange {
@@ -345,14 +345,13 @@ impl RawState for Raw<'_> {
     fn string(&self, progs: &Progs<'_>, value: Slot) -> Vec<u8> {
         let offset = value.as_i32();
         if offset >= 0 {
-            return progs.string(offset).map(<[u8]>::to_vec).unwrap_or_default();
+            return progs.string(offset).map_or_default(<[u8]>::to_vec);
         }
         self.builtins
             .engine()
             .strings
             .text(offset)
-            .map(<[u8]>::to_vec)
-            .unwrap_or_default()
+            .map_or_default(<[u8]>::to_vec)
     }
 }
 

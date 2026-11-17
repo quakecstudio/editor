@@ -91,8 +91,7 @@ impl FileFinder {
                 path: path.clone(),
                 name: path
                     .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
+                    .map_or_default(|n| n.to_string_lossy().into_owned()),
                 shown: root
                     .and_then(|root| path.strip_prefix(root).ok())
                     .unwrap_or(path)

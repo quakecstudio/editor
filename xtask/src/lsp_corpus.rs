@@ -497,7 +497,7 @@ fn summary(dir: &Path, ask: Ask, result: &Value) -> String {
     match ask {
         Ask::Definition => show_location(dir, result),
         Ask::References => {
-            let list = result.as_array().map(Vec::as_slice).unwrap_or_default();
+            let list = result.as_array().map_or_default(Vec::as_slice);
             let mut files: BTreeMap<String, usize> = BTreeMap::new();
             for location in list {
                 let path = location["uri"]
@@ -549,7 +549,7 @@ fn summary(dir: &Path, ask: Ask, result: &Value) -> String {
             )
         }
         Ask::Completion => {
-            let list = result.as_array().map(Vec::as_slice).unwrap_or_default();
+            let list = result.as_array().map_or_default(Vec::as_slice);
             let first: Vec<&str> = list
                 .iter()
                 .take(5)
@@ -569,7 +569,7 @@ fn summary(dir: &Path, ask: Ask, result: &Value) -> String {
             )
         }
         Ask::Hints => {
-            let list = result.as_array().map(Vec::as_slice).unwrap_or_default();
+            let list = result.as_array().map_or_default(Vec::as_slice);
             let first: Vec<String> = list
                 .iter()
                 .take(5)

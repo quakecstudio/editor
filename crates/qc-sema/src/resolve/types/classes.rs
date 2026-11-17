@@ -120,11 +120,7 @@ impl<'a> Resolver<'a> {
         def: DefId,
         class: &'a RawClass,
     ) -> Vec<Pending<'a>> {
-        let name = self
-            .index
-            .def(def)
-            .map(|d| d.name.clone())
-            .unwrap_or_default();
+        let name = self.index.def(def).map_or_default(|d| d.name.clone());
         // FTEF-9.12: a class given a body whose name is another kind of type with a size is
         // "Parent class changed on redeclaration".
         if self.named(&self.class_names, &name).is_none() && self.sized_type_named(&name) {
@@ -572,11 +568,7 @@ impl<'a> Resolver<'a> {
                 self.declare_global("self", &entity, kind, location, Init::Uninitialized)
             }
         };
-        let name = self
-            .index
-            .def(class)
-            .map(|d| d.name.clone())
-            .unwrap_or_default();
+        let name = self.index.def(class).map_or_default(|d| d.name.clone());
         let members = self.index.class_members(&Type::Named(name.as_str().into()));
         // The class, then each parent.
         let mut chain = vec![class];
@@ -706,8 +698,7 @@ impl<'a> Resolver<'a> {
             let def = self.declare_global(&name, &decl.ty, kind, location, init);
             return decl
                 .body()
-                .map(|body| vec![(file, def, None, body, Some(decl))])
-                .unwrap_or_default();
+                .map_or_default(|body| vec![(file, def, None, body, Some(decl))]);
         };
         let member = match self.member_in(class, &decl.name) {
             Some(existing) => {
@@ -770,8 +761,7 @@ impl<'a> Resolver<'a> {
             self.mark_initialized(function);
         }
         decl.body()
-            .map(|body| vec![(file, member, Some(class), body, Some(decl))])
-            .unwrap_or_default()
+            .map_or_default(|body| vec![(file, member, Some(class), body, Some(decl))])
     }
 
     /// FTEF-17.16: [`Self::member_in`] as a body at `scope` sees it: a member function written

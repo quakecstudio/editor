@@ -195,13 +195,9 @@ impl<C: HasLayout + 'static> Command<C> for ShowPanel {
         when_shown is keep.";
     type Params = ShowPanelParams;
     type Output = Docks;
-    type Error = core::convert::Infallible;
+    type Error = !;
 
-    fn run(
-        &self,
-        context: &mut C,
-        params: ShowPanelParams,
-    ) -> Result<Outcome<Docks, C>, core::convert::Infallible> {
+    fn run(&self, context: &mut C, params: ShowPanelParams) -> Result<Outcome<Docks, C>, !> {
         let layout = context.layout_mut();
         let dock = layout.docks.place(params.panel);
         let showing = layout.docks.shown(dock) == Some(params.panel);
@@ -225,13 +221,9 @@ impl<C: HasLayout + 'static> Command<C> for MovePanel {
         status-bar menu moves one.";
     type Params = MovePanelParams;
     type Output = Docks;
-    type Error = core::convert::Infallible;
+    type Error = !;
 
-    fn run(
-        &self,
-        context: &mut C,
-        params: MovePanelParams,
-    ) -> Result<Outcome<Docks, C>, core::convert::Infallible> {
+    fn run(&self, context: &mut C, params: MovePanelParams) -> Result<Outcome<Docks, C>, !> {
         let layout = context.layout_mut();
         if let Some(place) = layout.docks.places.get_mut(params.panel.index()) {
             *place = params.dock;

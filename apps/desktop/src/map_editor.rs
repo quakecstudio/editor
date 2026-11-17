@@ -1696,8 +1696,7 @@ impl MapEditor {
                 .iter()
                 .rev()
                 .find(|(k, _)| k == SPAWNFLAGS)
-                .map(|(_, v)| v.as_str())
-                .unwrap_or_default();
+                .map_or_default(|(_, v)| v.as_str());
             if let Some((flag, change)) = spawnflags(ui, &keys.spawnflags, value) {
                 actions.push(MapAction::SetFlag(entity, also.clone(), flag, change));
             }

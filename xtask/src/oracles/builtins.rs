@@ -1639,8 +1639,7 @@ fn graph_input(db: &mut Db, case: &Case) -> ModuleInput {
         texts
             .iter()
             .find(|(known, _)| known == path)
-            .map(|(_, text)| text.clone())
-            .unwrap_or_default()
+            .map_or_default(|(_, text)| text.clone())
     };
     for (index, file) in graph.files.iter().enumerate() {
         db.set_file(FileId::new(index), file.path.clone(), text_of(&file.path));

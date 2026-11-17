@@ -138,7 +138,7 @@ pub fn map_files_changed<C: HasMap>(
     paths: &[PathBuf],
 ) -> Result<MapOnDisk, MapEditError> {
     let store = context.map_store();
-    let watched = store.map().map(MapDocument::watched).unwrap_or_default();
+    let watched = store.map().map_or_default(MapDocument::watched);
     let same = |a: &Path, b: &Path| {
         a == b
             || std::fs::canonicalize(a)

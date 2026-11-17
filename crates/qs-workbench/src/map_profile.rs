@@ -299,7 +299,7 @@ impl Expansions {
 
     /// The folder the map is in.
     fn map_dir(&self) -> PathBuf {
-        self.map.parent().map(Path::to_path_buf).unwrap_or_default()
+        self.map.parent().map_or_default(Path::to_path_buf)
     }
 
     /// The BSP the map compiles to.
@@ -318,8 +318,7 @@ impl Expansions {
             Variable::MapName => Some(
                 self.map
                     .file_stem()
-                    .map(|stem| stem.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
+                    .map_or_default(|stem| stem.to_string_lossy().into_owned()),
             ),
             Variable::Bsp => Some(text(&self.bsp())),
             Variable::Project => self.project.as_deref().map(text),

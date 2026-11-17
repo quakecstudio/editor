@@ -629,8 +629,7 @@ impl Resolver<'_> {
     fn compared_members(&self, ty: &Type) -> Vec<Type> {
         self.class_of(ty)
             .and_then(|class| self.classes.get(&class)?.shape.as_ref())
-            .map(|shape| shape.iter().map(|(_, ty, _)| ty.clone()).collect())
-            .unwrap_or_default()
+            .map_or_default(|shape| shape.iter().map(|(_, ty, _)| ty.clone()).collect())
     }
 
     /// `typecmp_lax`'s test of a pair of parameters: one basic type, and an entity, struct or

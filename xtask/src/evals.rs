@@ -624,15 +624,12 @@ fn run(
         let passed = succeeds(&mut session, &dir, success, &inputs.game)?;
         let usage = model.model.usage();
         let cost = model.cost();
-        let turns = report
-            .as_ref()
-            .map(|r| {
-                r.transcript
-                    .iter()
-                    .filter(|m| matches!(m, Message::Assistant { .. }))
-                    .count()
-            })
-            .unwrap_or_default();
+        let turns = report.as_ref().map_or_default(|r| {
+            r.transcript
+                .iter()
+                .filter(|m| matches!(m, Message::Assistant { .. }))
+                .count()
+        });
         if passed {
             row.passed = row.passed.saturating_add(1);
         }

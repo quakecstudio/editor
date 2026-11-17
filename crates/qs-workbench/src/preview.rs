@@ -1046,13 +1046,12 @@ impl Preview {
                     live.classnames = params
                         .get("classnames")
                         .and_then(Value::as_array)
-                        .map(|names| {
+                        .map_or_default(|names| {
                             names
                                 .iter()
                                 .map(|name| name.as_str().unwrap_or_default().to_owned())
                                 .collect()
-                        })
-                        .unwrap_or_default();
+                        });
                     live.step = Step::Unchecked;
                 }
                 if self.entities.take_event(method, params)
@@ -1427,7 +1426,7 @@ fn would_reset(result: &Value) -> Vec<String> {
     result
         .get("lost")
         .and_then(Value::as_array)
-        .map(|lost| {
+        .map_or_default(|lost| {
             lost.iter()
                 .map(|c| {
                     format!(
@@ -1439,7 +1438,6 @@ fn would_reset(result: &Value) -> Vec<String> {
                 })
                 .collect()
         })
-        .unwrap_or_default()
 }
 
 /// What a `preview.*` command leaves: the play state and the last thing the loop did.

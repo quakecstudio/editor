@@ -136,8 +136,7 @@ fn statements(parsed: &Parse) -> Vec<ast::Stmt> {
 
 /// An expression as an s-expression, with operators and names as written.
 fn sexpr(expr: &ast::Expr) -> String {
-    let token_text =
-        |t: Option<crate::SyntaxToken>| t.map(|t| t.text_lossless()).unwrap_or_default();
+    let token_text = |t: Option<crate::SyntaxToken>| t.map_or_default(|t| t.text_lossless());
     let sub = |e: Option<ast::Expr>| e.map_or_else(|| "?".to_owned(), |e| sexpr(&e));
     match expr {
         ast::Expr::Literal(lit) => token_text(lit.token()),
@@ -193,7 +192,7 @@ fn sexpr(expr: &ast::Expr) -> String {
 fn first_expr(stmts: &str) -> String {
     let parsed = body(stmts);
     match statements(&parsed).first() {
-        Some(ast::Stmt::Expr(stmt)) => stmt.expr().map(|e| sexpr(&e)).unwrap_or_default(),
+        Some(ast::Stmt::Expr(stmt)) => stmt.expr().map_or_default(|e| sexpr(&e)),
         other => panic!("not an expression statement: {other:?}"),
     }
 }

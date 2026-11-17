@@ -635,7 +635,7 @@ impl Vanilla<'_> {
                 .report(Code::E0303, span, "not a function".to_owned());
             return Err(Fatal);
         };
-        let args: Vec<ast::Expr> = call.args().map(|a| a.args().collect()).unwrap_or_default();
+        let args: Vec<ast::Expr> = call.args().map_or_default(|a| a.args().collect());
         let fixed = !function.variadic;
         for (at, arg) in args.iter().enumerate() {
             if fixed && at >= function.params.len() {

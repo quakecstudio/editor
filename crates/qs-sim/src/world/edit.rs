@@ -310,8 +310,7 @@ impl Spawner<'_, '_> {
         let classname = pairs
             .iter()
             .find(|(key, _)| key == "classname")
-            .map(|(_, value)| value.as_str())
-            .unwrap_or_default();
+            .map_or_default(|(_, value)| value.as_str());
         let function = self
             .find_function(classname.as_bytes())
             .ok_or_else(|| EditError::Spawn(format!("no spawn function {classname:?}")))?;

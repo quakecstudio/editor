@@ -304,9 +304,7 @@ pub(crate) fn opcode_pragma(message: &[u8]) -> (Vec<(Op, bool)>, Vec<String>) {
 /// format after the first statement, which FTEQCC refuses, is the compiler's to see. Returns the
 /// format and revision it sets, if any, and the warnings, which have no name.
 pub(crate) fn target_warnings(message: &[u8]) -> (Option<(TargetFormat, u32)>, Vec<String>) {
-    let name = com_parse(message, 0)
-        .map(|(name, _)| name)
-        .unwrap_or_default();
+    let name = com_parse(message, 0).map_or_default(|(name, _)| name);
     match target_named(&name) {
         Some((format, revision, warning)) => {
             (Some((format, revision)), warning.into_iter().collect())

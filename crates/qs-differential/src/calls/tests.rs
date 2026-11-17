@@ -1939,8 +1939,7 @@ fn debug_replay() {
         p.functions()
             .get(usize::try_from(f).unwrap_or(usize::MAX))
             .and_then(|f| p.string(f.s_name))
-            .map(|n| String::from_utf8_lossy(n).into_owned())
-            .unwrap_or_default()
+            .map_or_default(|n| String::from_utf8_lossy(n).into_owned())
     };
     let show = |p: &Progs<'_>, v: &Values, i: usize| -> String {
         let Some(step) = v.steps.get(i) else {
@@ -2066,8 +2065,7 @@ fn debug_replay() {
         p.functions()
             .get(usize::try_from(f).unwrap_or(usize::MAX))
             .and_then(|f| p.string(f.s_name))
-            .map(|n| String::from_utf8_lossy(n).into_owned())
-            .unwrap_or_default()
+            .map_or_default(|n| String::from_utf8_lossy(n).into_owned())
     };
     let seq = |p: &Progs<'_>, ex: &[super::Executed]| -> Vec<String> {
         ex.iter()
@@ -2084,7 +2082,7 @@ fn debug_replay() {
                     st.a,
                     st.b,
                     st.c,
-                    e.builtin.map(|b| format!(" #{b}")).unwrap_or_default()
+                    e.builtin.map_or_default(|b| format!(" #{b}"))
                 )
             })
             .collect()

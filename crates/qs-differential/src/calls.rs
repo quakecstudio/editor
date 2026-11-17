@@ -177,10 +177,7 @@ fn bodies(bytes: &[u8]) -> Result<Vec<Body>, CallsError> {
         .iter()
         .filter(|f| f.first_statement > 0)
         .map(|f| {
-            let name = progs
-                .string(f.s_name)
-                .map(<[u8]>::to_vec)
-                .unwrap_or_default();
+            let name = progs.string(f.s_name).map_or_default(<[u8]>::to_vec);
             (f.first_statement, name)
         })
         .collect();

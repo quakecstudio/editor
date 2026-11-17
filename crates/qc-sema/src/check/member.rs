@@ -791,9 +791,7 @@ fn alignment(ty: &Type) -> u32 {
 
 /// The text of the token after `node` in its tree, empty at the end.
 fn token_after(node: &qc_syntax::SyntaxNode) -> String {
-    next_token(node)
-        .map(|token| token.text_lossless())
-        .unwrap_or_default()
+    next_token(node).map_or_default(|token| token.text_lossless())
 }
 
 /// The token after `node` in its tree, the one FTEQCC has read once it has read `node`.

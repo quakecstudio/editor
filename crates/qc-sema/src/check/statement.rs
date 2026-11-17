@@ -294,7 +294,7 @@ impl Checker<'_> {
             }
             ast::Stmt::Goto(s) => {
                 self.followed = false;
-                let name = s.label().map(|t| t.text_lossless()).unwrap_or_default();
+                let name = s.label().map_or_default(|t| t.text_lossless());
                 let made = self.goto_made(Op::Goto);
                 self.layout.goto(name, line, made);
             }

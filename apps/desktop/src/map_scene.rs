@@ -397,8 +397,7 @@ fn instance_brushes(
         .with_external_maps(load)
         .ok()
         .and_then(|file| file.entities.into_iter().next())
-        .map(|placed| placed.brushes().cloned().collect())
-        .unwrap_or_default()
+        .map_or_default(|placed| placed.brushes().cloned().collect())
 }
 
 impl Scene {

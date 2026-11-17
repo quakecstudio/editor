@@ -519,14 +519,12 @@ impl Entity {
 
     /// Its protected keys (MAP-9.8).
     fn protected(&self) -> Vec<Vec<u8>> {
-        self.value(PROTECTED_KEY)
-            .map(|list| {
-                list.split(|&b| b == PROTECTED_SEPARATOR)
-                    .filter(|key| !key.is_empty())
-                    .map(<[u8]>::to_vec)
-                    .collect()
-            })
-            .unwrap_or_default()
+        self.value(PROTECTED_KEY).map_or_default(|list| {
+            list.split(|&b| b == PROTECTED_SEPARATOR)
+                .filter(|key| !key.is_empty())
+                .map(<[u8]>::to_vec)
+                .collect()
+        })
     }
 
     /// Its settings, for a layer's own entity (MAP-9.9).
@@ -759,14 +757,13 @@ impl MapFile {
             .entities
             .iter()
             .find(|entity| entity.container() == Some((RoomKind::Group, id)))
-            .map(|entity| {
+            .map_or_default(|entity| {
                 entity
                     .items
                     .iter()
                     .filter(|item| matches!(item, Item::Brush(_)))
                     .collect()
-            })
-            .unwrap_or_default();
+            });
         let members = self
             .group_members(id)
             .into_iter()
@@ -829,18 +826,14 @@ impl MapFile {
                 return Err(LinkError::Nested(checked.entity));
             }
         }
-        let brushes: Vec<Item> = self
-            .entities
-            .get(source.get())
-            .map(|entity| {
-                entity
-                    .items
-                    .iter()
-                    .filter(|item| matches!(item, Item::Brush(_)))
-                    .cloned()
-                    .collect()
-            })
-            .unwrap_or_default();
+        let brushes: Vec<Item> = self.entities.get(source.get()).map_or_default(|entity| {
+            entity
+                .items
+                .iter()
+                .filter(|item| matches!(item, Item::Brush(_)))
+                .cloned()
+                .collect()
+        });
         let members: Vec<Entity> = self
             .group_members(group.id)
             .into_iter()

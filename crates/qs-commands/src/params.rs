@@ -108,8 +108,7 @@ pub fn fields(schema: &Value) -> Vec<Field> {
     let required: Vec<&str> = schema
         .get("required")
         .and_then(Value::as_array)
-        .map(|names| names.iter().filter_map(Value::as_str).collect())
-        .unwrap_or_default();
+        .map_or_default(|names| names.iter().filter_map(Value::as_str).collect());
     let Some(properties) = schema.get("properties").and_then(Value::as_object) else {
         return Vec::new();
     };

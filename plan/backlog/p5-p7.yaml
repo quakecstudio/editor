@@ -2023,8 +2023,8 @@ groups:
     - ARCH-3
     depends: []
     deliverable:
-    - 'rust-toolchain.toml, the workspace rust-version, CLAUDE.md and docs/conventions.md on Rust 1.100 (released 2026-11-12, https://blog.rust-lang.org/2026/11/12/Rust-1.100.0/), started no earlier than 2026-11-26 so the release is two weeks old; every new warning fixed, none allowed'
-    - 'The release''s additions adopted where they serve the project, each in the same PR or a linked plan issue: the `Allocator` trait for Vec and Box (per-flow arenas in qs-map-vis and the map compilers, measured against the full_compile_e1m1 budget); core::mem::DropGuard for rollback on error paths; naming the never type where Infallible is used; Cargo''s `cargo::unused_dependencies` lint in `[lints.cargo]`; registry `global-min-publish-age` in .cargo/config.toml alongside deny.toml''s supply-chain checks; and the new build-dir layout checked against the shared build directory the worktrees use'
+    - 'rust-toolchain.toml, the workspace rust-version, CLAUDE.md and docs/conventions.md on Rust 1.100 (released 2026-11-12, https://blog.rust-lang.org/2026/11/12/Rust-1.100.0/), started on 2026-11-16 by Justin''s choice, before the release is two weeks old; every new warning fixed, none allowed'
+    - 'The release''s additions adopted where they serve the project, each in the same PR or a linked plan issue: the `Allocator` trait for Vec and Box, evaluated in the performance audit (L-18) as Justin asked on 2026-11-16; core::mem::DropGuard for rollback on error paths; naming the never type where Infallible is used; Cargo''s `cargo::unused_dependencies` lint in `[lints.cargo]`; registry `global-min-publish-age` in .cargo/config.toml alongside deny.toml''s supply-chain checks; and the new build-dir layout checked against the shared build directory the worktrees use'
     acceptance:
     - 'make ci passes on Rust 1.100 with zero warnings, including Cargo''s unused-dependency lint'
     - 'Each adopted API is used in at least one crate with a test that exercises it; any change to a compiler stage''s speed is a recorded cargo xtask bench run'
@@ -2048,11 +2048,13 @@ groups:
     - 'The checklist each crate is held to, at the top of docs/audits/perf.md: needless clones and to_owned, collections grown without capacity, collect-then-iterate, format! and String building on per-frame or per-statement paths, Box and Arc churn in loops, repeated hashing or lookups, quadratic scans, work done each egui frame that could be cached, and the clippy perf lints'
     - 'Each change in its own PR per crate or small group of crates, with the measurement: a qs-bench budget, a criterion benchmark or a dhat allocation count, before and after'
     - 'docs/audits/perf-baseline.tsv: the clippy perf findings left, which only shrinks, checked by cargo xtask conventions as conv-17-baseline.tsv is; the lints already at zero turned on at once (vec_box, box_collection, useless_vec, inefficient_to_string, unnecessary_to_owned, iter_overeager_cloned, redundant_allocation, large_enum_variant, ptr_arg and the rest at zero on 2026-11-15), and redundant_clone (74), needless_collect (18), assigning_clones (16), implicit_clone (8), format_collect (30) and string_add (22) as their crates are done'
+    - 'The map tools'' section evaluates Rust 1.100''s `Allocator` trait for Vec and Box: per-flow arenas in qs-map-vis and the map compilers, measured against the full_compile_e1m1 budget, and adopted only with a measured win (moved from L-17 by Justin on 2026-11-16)'
     acceptance:
     - 'Every crate in layers.toml has its section in docs/audits/perf.md, its findings fixed or recorded with a reason'
     - 'No change alters output: each crate''s tests, differentials and snapshots pass unchanged'
     - 'No budget in docs/perf-budgets.md regresses, and every change claimed as a win has its before and after numbers in the audit'
     - 'The clippy perf lints the audit finds cheap to hold are turned on in the workspace lints, with zero violations'
+    - 'docs/audits/perf.md records the `Allocator` evaluation: the arena tried, full_compile_e1m1 before and after, and whether it was kept'
     verify:
     - The audit report merged; cargo xtask bench history before and after; make ci
   - key: L-19

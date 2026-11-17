@@ -264,10 +264,7 @@ impl EdictStore {
     /// What has happened to the edicts since the last call, oldest first; empty when
     /// tracking is off.
     pub fn take_events(&mut self) -> Vec<EdictEvent> {
-        self.events
-            .as_mut()
-            .map(core::mem::take)
-            .unwrap_or_default()
+        self.events.as_mut().map_or_default(core::mem::take)
     }
 
     fn record(&mut self, event: EdictEvent) {

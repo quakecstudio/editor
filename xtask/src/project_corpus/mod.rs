@@ -151,8 +151,7 @@ fn check_progs_order(module: &Module, progs_path: &Path) -> Result<bool, String>
     for function in progs.functions().iter() {
         let name = progs
             .string(function.s_file)
-            .map(|s| String::from_utf8_lossy(s).into_owned())
-            .unwrap_or_default();
+            .map_or_default(|s| String::from_utf8_lossy(s).into_owned());
         if !name.is_empty() && order.last() != Some(&name) {
             order.push(name);
         }

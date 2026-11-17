@@ -208,8 +208,7 @@ fn cased(word: &str) -> [String; 3] {
     let mut chars = word.chars();
     let capitalised = chars
         .next()
-        .map(|first| first.to_uppercase().chain(chars).collect::<String>())
-        .unwrap_or_default();
+        .map_or_default(|first| first.to_uppercase().chain(chars).collect::<String>());
     [word.to_owned(), capitalised, word.to_uppercase()]
 }
 

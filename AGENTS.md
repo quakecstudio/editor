@@ -10,7 +10,7 @@ whatever tool runs it.
 
 | Tool | Why | Where it comes from |
 | --- | --- | --- |
-| rustup | The exact toolchain in `rust-toolchain.toml` (1.99.0 with rustfmt and clippy) | [rustup.rs](https://rustup.rs/); cargo installs the pinned toolchain on first use |
+| rustup | The exact toolchain in `rust-toolchain.toml` (1.100.0 with rustfmt and clippy) | [rustup.rs](https://rustup.rs/); cargo installs the pinned toolchain on first use |
 | A C toolchain and `pkg-config` | Build scripts of dependencies, and the oracles (`cargo xtask oracles`) | The OS (`build-essential` on Debian and Ubuntu, Xcode command line tools on macOS) |
 | Python 3 with PyYAML | Everything in `plan/` | `python3-yaml`, or `pip install pyyaml` |
 | `gh`, signed in to the `quakecstudio` org | Issues and PRs | [cli.github.com](https://cli.github.com/) |

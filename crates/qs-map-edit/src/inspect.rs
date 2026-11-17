@@ -127,7 +127,7 @@ impl<C: HasMap + 'static> Command<C> for MapInspect {
             })
             .map(|(index, entity)| EntityInfo {
                 entity: EntityIndex::new(index),
-                classname: entity.classname().map(text).unwrap_or_default(),
+                classname: entity.classname().map_or_default(text),
                 origin: entity.value(b"origin").map(|_| entity.origin()),
                 targetname: entity.value(b"targetname").map(text),
                 room: rooms.of(entity).first().map(|room| room.name.clone()),

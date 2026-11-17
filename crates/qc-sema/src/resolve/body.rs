@@ -192,11 +192,7 @@ impl<'a> Resolver<'a> {
             self.report(d.code, location, message);
         }
         if self.profile.body_checks() {
-            let function = self
-                .index
-                .def(owner)
-                .map(|d| d.name.clone())
-                .unwrap_or_default();
+            let function = self.index.def(owner).map_or_default(|d| d.name.clone());
             for (number, span) in &body.unnamed_params {
                 self.settle(span.start);
                 let location = self.at(file, *span);

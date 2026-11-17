@@ -41,12 +41,8 @@ pub struct Backup {
 fn stem_and_folder(map: &Path) -> (String, PathBuf) {
     let stem = map
         .file_stem()
-        .map(|stem| stem.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let folder = map
-        .parent()
-        .map(|dir| dir.join(BACKUP_FOLDER))
-        .unwrap_or_default();
+        .map_or_default(|stem| stem.to_string_lossy().into_owned());
+    let folder = map.parent().map_or_default(|dir| dir.join(BACKUP_FOLDER));
     (stem, folder)
 }
 

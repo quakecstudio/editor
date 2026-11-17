@@ -410,10 +410,7 @@ impl<L: Loader> AnalysisHost<L> {
                 first_difference(&data.analysis, &after, &moved, renamed, old, new)
             {
                 return Err(RenameError::Conflict(FileRange {
-                    path: state
-                        .path(location.file)
-                        .map(Path::to_path_buf)
-                        .unwrap_or_default(),
+                    path: state.path(location.file).map_or_default(Path::to_path_buf),
                     span: location.span,
                 }));
             }

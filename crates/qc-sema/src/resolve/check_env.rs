@@ -501,8 +501,7 @@ impl Env for BodyEnv<'_, '_> {
         index
             .checked_sub(1)
             .and_then(|i| self.lex.get(i))
-            .map(|&(_, flags)| flags)
-            .unwrap_or_default()
+            .map_or_default(|&(_, flags)| flags)
     }
 
     fn target_at(&self, at: usize) -> OpcodeTarget {

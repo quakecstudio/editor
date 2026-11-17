@@ -149,11 +149,7 @@ impl Resolver<'_> {
             ),
             "super" => match class {
                 Some(class) if self.classes.get(&class).is_some_and(|c| c.parent.is_none()) => {
-                    let class_name = self
-                        .index
-                        .def(class)
-                        .map(|d| d.name.clone())
-                        .unwrap_or_default();
+                    let class_name = self.index.def(class).map_or_default(|d| d.name.clone());
                     Found::Error(Code::E0312, format!("class {class_name} has no super"))
                 }
                 Some(_) | None => Found::Nothing,

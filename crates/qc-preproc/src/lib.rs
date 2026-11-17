@@ -466,11 +466,7 @@ impl Lexing<'_> {
         let macros = self.macros;
         let lookup = move |name: &[u8]| {
             let mac = macros?.get(&String::from_utf8_lossy(name))?;
-            Some(
-                mac.text()
-                    .map(|text| text.bytes().to_vec())
-                    .unwrap_or_default(),
-            )
+            Some(mac.text().map_or_default(|text| text.bytes().to_vec()))
         };
         lex_flagged(text, self.dialect, self.flags, &lookup)
     }
@@ -2112,11 +2108,7 @@ impl<L: Loader> Preprocessor<L> {
             return;
         };
         let relative = PathBuf::from(String::from_utf8_lossy(bytes).into_owned());
-        let beside = current
-            .path
-            .parent()
-            .map(Path::to_path_buf)
-            .unwrap_or_default();
+        let beside = current.path.parent().map_or_default(Path::to_path_buf);
         // QC-9.20: beside the including file, then in each include directory in order.
         let mut candidates = vec![normalize(&beside.join(&relative))];
         if relative.is_relative() {
@@ -2139,7 +2131,7 @@ impl<L: Loader> Preprocessor<L> {
         }
         let Some((path, bytes)) = found else {
             let shown = candidates.first().cloned().unwrap_or_default();
-            let reason = first_error.map(|e| e.to_string()).unwrap_or_default();
+            let reason = first_error.map_or_default(|e| e.to_string());
             let message = format!("cannot include {}: {reason}", shown.display());
             run.report(Code::E0111, message, FileSpan { file, span: whole });
             return;
@@ -2316,7 +2308,7 @@ impl<L: Loader> Preprocessor<L> {
                     .is_some_and(|last| last.file == here.file && last.span.end == here.span.start);
             last_in_body = Some(here);
             if let Some(arg) = param_of(token) {
-                let items = args.get(arg).map(Vec::as_slice).unwrap_or_default();
+                let items = args.get(arg).map_or_default(Vec::as_slice);
                 result.extend(Self::argument_pieces(items, id, live));
                 after_argument = true;
                 continue;
@@ -2463,8 +2455,7 @@ impl<L: Loader> Preprocessor<L> {
             let defined = self
                 .sources
                 .file(frame.file.file)
-                .map(|f| f.path.display().to_string())
-                .unwrap_or_default();
+                .map_or_default(|f| f.path.display().to_string());
             run.report(
                 Code::W0105,
                 format!("Stale macro used ({name}, defined in {defined})"),
