@@ -203,7 +203,6 @@ const DECIMAL: u64 = 10;
 /// The low 32 bits of `value` as an `int`, as C's cast keeps them.
 #[expect(
     clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
     reason = "spec LIGHT-9.2: ericw-tools casts std::stoull's value to int32_t"
 )]
 const fn low_word(value: u64) -> i32 {
@@ -509,10 +508,6 @@ impl World {
     }
 
     /// One key: whether it is no setting of the world's, or read as one.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "one arm for each of ericw-tools' worldspawn keys, kept whole as its table is"
-    )]
     fn set(&mut self, name: &[u8], value: Value<'_>) -> bool {
         match name {
             b"dist" => self.scaledist.read_within(value, 0.0, HUNDRED),
@@ -803,10 +798,6 @@ impl ModelKeys {
     }
 
     /// `getResolvedPhongAngle`: `_phong_angle`, or 89 with `_phong` over 0, or 0 (LIGHT-13.1).
-    #[expect(
-        clippy::float_cmp,
-        reason = "spec LIGHT-13.1: ericw-tools tests the angle against exactly 0"
-    )]
     pub(crate) fn resolved_phong_angle(&self) -> f32 {
         let angle = self.phong_angle.get();
         if angle != 0.0 {
@@ -821,10 +812,6 @@ impl ModelKeys {
 
 #[cfg(test)]
 mod tests {
-    #![expect(
-        clippy::float_cmp,
-        reason = "test code: the values are exact in single precision"
-    )]
 
     use super::*;
 
@@ -839,7 +826,12 @@ mod tests {
     // spec LIGHT-9.1: a key names a setting with any leading underscores taken off.
     #[test]
     fn a_key_names_its_setting_with_or_without_underscores() {
-        let world = World::read(&dict(&[("_sunlight", "200"), ("__dist", "2"), ("range", "1")])).0;
+        let world = World::read(&dict(&[
+            ("_sunlight", "200"),
+            ("__dist", "2"),
+            ("range", "1"),
+        ]))
+        .0;
         assert_eq!(world.sunlight.get(), 200.0);
         assert_eq!(world.scaledist.get(), 2.0);
         assert_eq!(world.rangescale.get(), 1.0);
@@ -926,7 +918,11 @@ mod tests {
         assert_eq!(both.color.get(), [0.0, 0.0, 255.0]);
         let unread = LightKeys::read(&dict(&[("light", "1 x")]));
         assert!(!unread.light.is_changed());
-        assert!(!LightKeys::read(&dict(&[("light", "1 2")])).light.is_changed());
+        assert!(
+            !LightKeys::read(&dict(&[("light", "1 2")]))
+                .light
+                .is_changed()
+        );
     }
 
     // spec LIGHT-10.3: delay names a formula by number or by name; a number that names none

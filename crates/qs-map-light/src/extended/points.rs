@@ -8,11 +8,9 @@
 //! A face's sample points (LIGHT-12): its lightmap's extents, where each sample lies, which
 //! face it is really on, its normal, and whether it is hidden in solid.
 
-use qs_bsp::Face;
-
-use crate::extended::keys::{CHANNEL_DEFAULT, Dirt, FULL};
+use crate::extended::keys::{CHANNEL_DEFAULT, Dirt};
 use crate::extended::math::{
-    Aabb, POINT_EQUAL_EPSILON, Plane, add, closest_on_boundary, distance, edge_plane,
+    Aabb, POINT_EQUAL_EPSILON, Plane, add, closest_on_boundary, distance, dot, edge_plane,
     fraction_of_line, inside_distance, interpolated_normal, is_inside, length, scale, sub,
 };
 use crate::extended::phong::Smoothing;
@@ -138,9 +136,8 @@ impl Extents {
 
     /// `worldToLMCoord`: the lightmap coordinates of `point`.
     fn luxel_at(&self, point: Vec3) -> [f32; 2] {
-        let texel = |row: [f32; 4]| {
-            row[0] * point[0] + row[1] * point[1] + row[2] * point[2] + row[3]
-        };
+        let texel =
+            |row: [f32; 4]| row[0] * point[0] + row[1] * point[1] + row[2] * point[2] + row[3];
         [
             texel(self.to_texture[0]) / LUXEL - float_of(self.mins[0]),
             texel(self.to_texture[1]) / LUXEL - float_of(self.mins[1]),
@@ -168,10 +165,6 @@ const fn float_of(value: i32) -> f32 {
 
 /// The inverse of the map whose rows are `rows`, each three numbers and an offset, worked in
 /// `double`; none when the rows do not span space.
-#[expect(
-    clippy::float_cmp,
-    reason = "spec LIGHT-12.1: ericw-tools tests the determinant against exactly 0"
-)]
 fn inverse(rows: [[f32; 4]; 3]) -> Option<[[f32; 4]; 3]> {
     let m = rows.map(|row| row.map(f64::from));
     let [a, b, c] = m;
@@ -254,10 +247,6 @@ impl Patch {
     /// `Lightsurf_Init` and `CalcPoints`: the face numbered `face` readied, with its samples;
     /// none for a face with no lightmap, fewer than three edges, no model or bad texture
     /// axes (LIGHT-12).
-    #[expect(
-        clippy::float_cmp,
-        reason = "spec LIGHT-13.6: a face is curved when its phong angle is not exactly 0"
-    )]
     pub(crate) fn new(
         map: &Map<'_>,
         smoothing: &Smoothing,
@@ -309,10 +298,8 @@ impl Patch {
         let mut samples = Vec::with_capacity(width.saturating_mul(height));
         for t in 0..height {
             for s in 0..width {
-                let on_plane = extents.world_at(
-                    start + count_of(s) * step,
-                    start + count_of(t) * step,
-                );
+                let on_plane =
+                    extents.world_at(start + count_of(s) * step, start + count_of(t) * step);
                 let placed = placer.place(face_index, add(on_plane, plane.normal), 0);
                 samples.push(Sample {
                     point: add(placed.point, model.offset),
@@ -331,7 +318,7 @@ impl Patch {
             model: model_index,
             plane: Plane {
                 normal: plane.normal,
-                dist: crate::extended::math::dot(plane.normal, moved),
+                dist: dot(plane.normal, moved),
             },
             extents,
             width,
@@ -363,12 +350,6 @@ impl Patch {
                 .object_channel_mask
                 .unwrap_or_else(|| keys.object_channel_mask.get()),
         })
-    }
-
-    /// The minimum light's colour over 255, for a test of a face's settings.
-    #[cfg(test)]
-    pub(crate) fn minlight_fraction(&self) -> Vec3 {
-        scale(self.minlight_color, 1.0 / FULL)
     }
 
     /// Whether the face is on the default channel only.
@@ -454,8 +435,7 @@ impl Placer<'_> {
     /// half a unit out of solid when it is in it, hidden when it cannot be (LIGHT-12.7).
     fn put(&self, face: usize, point: Vec3) -> Placed {
         let hidden = Placed::hidden(point);
-        let (Some(shape), Some(model)) =
-            (self.smoothing.shapes.get(face), self.map.model_of(face))
+        let (Some(shape), Some(model)) = (self.smoothing.shapes.get(face), self.map.model_of(face))
         else {
             return hidden;
         };

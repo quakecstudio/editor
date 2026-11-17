@@ -9,7 +9,9 @@
 //! surfaces and scatter add, the suns, and where each light can be seen from.
 
 use crate::entities::token;
-use crate::extended::keys::{CHANNEL_DEFAULT, Dict, Formula, LightKeys, Source, World};
+use crate::extended::keys::{
+    CHANNEL_DEFAULT, DEFAULT_LIGHT, Dict, Dirt, Formula, LightKeys, Source, World,
+};
 use crate::extended::math::{
     Aabb, add, length, normalize_with_length, polygon_centroid, scale, sub, vec_from_mangle,
 };
@@ -81,7 +83,7 @@ pub(crate) struct Lights {
     pub(crate) suns: Vec<Sun>,
     /// The names given styles, each with its style (`lightstyleForTargetname`).
     styles: Vec<(Vec<u8>, i32)>,
-    /// The worldspawn keys whose values did not read.
+    /// The worldspawn keys whose values did not read (LIGHT-9.4).
     pub(crate) invalid: Vec<String>,
 }
 
@@ -202,7 +204,12 @@ impl Lights {
         self.lamps
             .iter()
             .filter(|lamp| !lamp.keys.switchableshadow_target.get().is_empty())
-            .map(|lamp| (lamp.keys.switchableshadow_target.get(), lamp.keys.style.get()))
+            .map(|lamp| {
+                (
+                    lamp.keys.switchableshadow_target.get(),
+                    lamp.keys.style.get(),
+                )
+            })
             .collect()
     }
 
@@ -289,8 +296,9 @@ impl Lights {
             if cone == 0.0 {
                 cone = LightKeys::default().spotangle.get();
             }
-            let half_cos =
-                |degrees: f32| to_f32(-(f64::from(degrees / 2.0) * core::f64::consts::PI / HALF_TURN).cos());
+            let half_cos = |degrees: f32| {
+                to_f32(-(f64::from(degrees / 2.0) * core::f64::consts::PI / HALF_TURN).cos())
+            };
             spot.falloff = half_cos(cone);
             let mut inner = lamp.keys.spotangle2.get();
             if inner <= 0.0 || inner > cone {
@@ -321,9 +329,9 @@ impl Lights {
             let deviance = f64::from(lamp.keys.deviance.get());
             for _ in 1..lamp.keys.samples.get() {
                 let mut copy = lamp.clone();
-                let origin = lamp.origin().map(|c| {
-                    to_f32(f64::from(c) + random.signed_unit() * deviance)
-                });
+                let origin = lamp
+                    .origin()
+                    .map(|c| to_f32(f64::from(c) + random.signed_unit() * deviance));
                 copy.keys.origin.set(origin, Source::Map);
                 copies.push(copy);
             }
@@ -437,7 +445,10 @@ impl Lights {
             let marks = map
                 .bsp
                 .marksurfaces
-                .get(leaf.firstmarksurface..leaf.firstmarksurface.saturating_add(leaf.nummarksurfaces))
+                .get(
+                    leaf.firstmarksurface
+                        ..leaf.firstmarksurface.saturating_add(leaf.nummarksurfaces),
+                )
                 .unwrap_or_default();
             for &face_index in marks {
                 let (Some(face), Some(model)) = (map.face(face_index), map.model_of(face_index))
@@ -488,10 +499,9 @@ impl Lights {
                             above = SURFACE_OFFSET;
                         }
                         let mut copy = (*template).clone();
-                        copy.keys.origin.set(
-                            add(add(middle, scale(normal, above)), offset),
-                            Source::Map,
-                        );
+                        copy.keys
+                            .origin
+                            .set(add(add(middle, scale(normal, above)), offset), Source::Map);
                         if dict.is_some_and(|dict| dict.int(b"_surface_spotlight") != 0) {
                             copy.spot = Some(Spot {
                                 vec: normal,
@@ -512,11 +522,11 @@ impl Lights {
     clippy::cast_possible_truncation,
     reason = "spec LIGHT-14.6: ericw-tools passes the dirt setting to AddSun as an int"
 )]
-fn dirt_of_int(value: f32) -> crate::extended::keys::Dirt {
+fn dirt_of_int(value: f32) -> Dirt {
     match value as i32 {
-        1 => crate::extended::keys::Dirt::On,
-        -1 => crate::extended::keys::Dirt::Off,
-        _ => crate::extended::keys::Dirt::World,
+        1 => Dirt::On,
+        -1 => Dirt::Off,
+        _ => Dirt::World,
     }
 }
 
@@ -545,8 +555,7 @@ fn style_for(
 /// `CheckEntityFields`: a light's settings put right (LIGHT-10.3).
 fn check_fields(keys: &mut LightKeys, world: &World) {
     if !keys.light.is_changed() {
-        keys.light
-            .set(crate::extended::keys::DEFAULT_LIGHT, Source::Map);
+        keys.light.set(DEFAULT_LIGHT, Source::Map);
     }
     if keys.atten.get() <= 0.0 {
         keys.atten.set(1.0, Source::Map);
@@ -562,7 +571,8 @@ fn check_fields(keys: &mut LightKeys, world: &World) {
         keys.light.set(0.0, Source::Map);
     }
     if keys.deviance.get() > 0.0 && keys.samples.get() == 0 {
-        keys.samples.set(LightKeys::default().samples.get(), Source::Map);
+        keys.samples
+            .set(LightKeys::default().samples.get(), Source::Map);
     }
     if keys.deviance.get() <= 0.0 || keys.samples.get() <= 1 {
         keys.deviance.set(0.0, Source::Map);
@@ -679,14 +689,15 @@ fn subdivide(points: Vec<Vec3>, out: &mut Vec<Vec<Vec3>>) {
 #[cfg(test)]
 mod tests {
     #![expect(
-        clippy::float_cmp,
-        reason = "test code: the values are exact in single precision"
+        clippy::unwrap_used,
+        reason = "test code: the values are exact in single precision, and a failed unwrap \
+                  is a failed test"
     )]
 
     use super::*;
 
     fn lights(text: &str) -> Lights {
-        Lights::read(text.as_bytes()).unwrap_or_else(|error| unreachable!("{error}"))
+        Lights::read(text.as_bytes()).unwrap()
     }
 
     const WORLD: &str = "{\n\"classname\" \"worldspawn\"\n}\n";
@@ -755,7 +766,12 @@ mod tests {
              {{\n\"classname\" \"light\"\n\"_switchableshadow_target\" \"door\"\n\"style\" \"7\"\n}}\n"
         );
         let lights = lights(&text);
-        let style = |at: usize| lights.dicts.get(at).map(|d| d.get(b"switchshadstyle").to_vec());
+        let style = |at: usize| {
+            lights
+                .dicts
+                .get(at)
+                .map(|d| d.get(b"switchshadstyle").to_vec())
+        };
         assert_eq!(style(1), Some(b"32".to_vec()));
         assert_eq!(style(2), Some(b"33".to_vec()));
         assert_eq!(lights.shadow_switches(), [(b"door".to_vec(), 7)]);
@@ -787,12 +803,7 @@ mod tests {
     fn a_lights_fields_are_checked() {
         let lamp = |keys: &str| {
             let text = format!("{WORLD}{{\n\"classname\" \"light\"\n{keys}}}\n");
-            lights(&text)
-                .lamps
-                .first()
-                .cloned()
-                .unwrap_or_else(|| unreachable!())
-                .keys
+            lights(&text).lamps.first().cloned().unwrap().keys
         };
         let plain = lamp("");
         assert_eq!(plain.light.get(), 300.0);
@@ -803,7 +814,10 @@ mod tests {
         assert_eq!(lamp("\"_anglescale\" \"0.25\"\n").anglescale.get(), 0.25);
         assert_eq!(lamp("\"_anglescale\" \"2\"\n").anglescale.get(), 0.5);
         assert_eq!(lamp("\"_falloff\" \"64\"\n").falloff.get(), 64.0);
-        assert_eq!(lamp("\"_falloff\" \"64\"\n\"delay\" \"2\"\n").falloff.get(), 0.0);
+        assert_eq!(
+            lamp("\"_falloff\" \"64\"\n\"delay\" \"2\"\n").falloff.get(),
+            0.0
+        );
         let unknown = lamp("\"delay\" \"9\"\n");
         assert_eq!(unknown.formula.get(), Formula::Linear);
         assert_eq!(unknown.light.get(), 0.0);
@@ -814,7 +828,12 @@ mod tests {
         assert_eq!(linear.light.get(), 160.0, "a linear light is not shared");
         let one = lamp("\"_deviance\" \"8\"\n\"_samples\" \"1\"\n");
         assert_eq!(one.deviance.get(), 0.0);
-        assert_eq!(lamp("\"_light_channel_mask\" \"2\"\n").shadow_channel_mask.get(), 2);
+        assert_eq!(
+            lamp("\"_light_channel_mask\" \"2\"\n")
+                .shadow_channel_mask
+                .get(),
+            2
+        );
     }
 
     // spec LIGHT-10.5: a light with a target is a spotlight shining at it, and one with
@@ -832,17 +851,20 @@ mod tests {
         lights.match_targets();
         lights.aim_spotlights();
         let spot = |at: usize| lights.lamps.get(at).and_then(|lamp| lamp.spot);
-        let aimed = spot(0).unwrap_or_else(|| unreachable!());
+        let aimed = spot(0).unwrap();
         assert_eq!(aimed.vec, [0.0, 0.0, -1.0]);
-        let default_cone = -(20.0_f64.to_radians().cos()) as f32;
+        let default_cone = to_f32(-(20.0_f64.to_radians().cos()));
         assert_eq!(aimed.falloff, default_cone);
         assert_eq!(aimed.falloff2, default_cone);
-        let mangled = spot(1).unwrap_or_else(|| unreachable!());
+        let mangled = spot(1).unwrap();
         assert!((mangled.vec[1] - 1.0).abs() < 1e-6);
-        assert_eq!(mangled.falloff, -(45.0_f64.to_radians().cos()) as f32);
-        assert_eq!(mangled.falloff2, -(30.0_f64.to_radians().cos()) as f32);
-        let wide = spot(2).unwrap_or_else(|| unreachable!());
-        assert_eq!(wide.falloff2, wide.falloff, "an inner cone wider than the cone");
+        assert_eq!(mangled.falloff, to_f32(-(45.0_f64.to_radians().cos())));
+        assert_eq!(mangled.falloff2, to_f32(-(30.0_f64.to_radians().cos())));
+        let wide = spot(2).unwrap();
+        assert_eq!(
+            wide.falloff2, wide.falloff,
+            "an inner cone wider than the cone"
+        );
         assert_eq!(spot(3), None);
     }
 
@@ -878,17 +900,21 @@ mod tests {
         lights.make_suns(&mut Random::new(Jitter::Bsd));
         // The light's sun, the world's two suns, its two domes and the lights' two domes.
         assert_eq!(lights.suns.len(), 1 + 2 + 130 + 65 + 65);
-        let first = lights.suns.first().copied().unwrap_or_else(|| unreachable!());
+        let first = lights.suns.first().copied().unwrap();
         assert!((first.vec[2] - 16384.0).abs() < 0.01);
         assert_eq!((first.light, first.style), (80.0, 3));
-        let world = lights.suns.get(1).copied().unwrap_or_else(|| unreachable!());
+        let world = lights.suns.get(1).copied().unwrap();
         assert_eq!(world.light, 200.0);
         assert!(world.dirt);
         assert!((world.vec[2] - 16384.0).abs() < 0.01);
-        let second = lights.suns.get(2).copied().unwrap_or_else(|| unreachable!());
+        let second = lights.suns.get(2).copied().unwrap();
         assert_eq!(second.light, 50.0);
-        assert_eq!(second.vec, [0.0, 0.0, 16384.0], "straight down with no mangle");
-        let dome = lights.suns.get(3).copied().unwrap_or_else(|| unreachable!());
+        assert_eq!(
+            second.vec,
+            [0.0, 0.0, 16384.0],
+            "straight down with no mangle"
+        );
+        let dome = lights.suns.get(3).copied().unwrap();
         assert_eq!(dome.light, 1.0);
         assert!(!dome.dirt, "the dome's dirt is _sunlight2_dirt");
         assert!(lights.lamps.iter().all(|lamp| lamp.keys.light.get() == 0.0));

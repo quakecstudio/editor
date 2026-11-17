@@ -31,11 +31,11 @@ use crate::lump::Colour;
 use crate::trace::Tree;
 
 pub use crate::entities::EntityId;
-pub use crate::extended::{Extras, LeafKind, SurfaceFlags};
 pub use crate::entities::{
     LIGHT_DEFAULT_LEVEL, LIGHT_FIRST_SWITCHED_STYLE, LIGHT_MAX_MAP_ENTITIES,
     LIGHT_MAX_MAP_ENTSTRING, LIGHT_MAX_SWITCHED,
 };
+pub use crate::extended::{Extras, LeafKind, SurfaceFlags};
 pub use crate::lump::LIGHT_MAX_MAP_LIGHTING;
 pub use crate::preview::{Cone, LightPreview};
 
@@ -215,10 +215,11 @@ pub enum LightWarning {
     },
     /// `WARNING: Too many light styles on a face` (LIGHT-4.5).
     TooManyStyles,
-    /// In the extended dialect, a face `light` would stop on, left unlit (LIGHT-1.10).
-    Unlit {
-        /// What `light` would have stopped with.
-        error: LightError,
+    /// `WARNING: worldspawn key <key> has invalid value`, in the extended dialect
+    /// (LIGHT-9.4).
+    InvalidWorldKey {
+        /// The key.
+        key: String,
     },
 }
 
@@ -233,7 +234,9 @@ impl fmt::Display for LightWarning {
                 "WARNING: entity at ({x},{y},{z}) ({classname}) has unmatched target"
             ),
             Self::TooManyStyles => f.write_str("WARNING: Too many light styles on a face"),
-            Self::Unlit { error } => write!(f, "WARNING: {error}; the face is left unlit"),
+            Self::InvalidWorldKey { key } => {
+                write!(f, "WARNING: worldspawn key {key} has invalid value")
+            }
         }
     }
 }
@@ -331,7 +334,6 @@ impl Light {
             sampling: self.sampling,
             scale: self.scale,
             colour,
-            dialect: self.dialect,
         };
         let faces = scene.lit_faces()?;
         let mut lit = Vec::with_capacity(faces.len());

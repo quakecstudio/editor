@@ -30,18 +30,18 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use qs_bsp::Bsp;
 use qs_map_bsp::Dialect;
 
-pub use self::scene::{LeafKind, SurfaceFlags};
 use self::bounce::{Bouncer, Emitter};
 use self::dirt::Dirt;
 use self::lights::Lights;
 use self::phong::Smoothing;
 use self::points::Patch;
 use self::rays::Rays;
-use self::scene::{Map, MapFault};
+use self::scene::{Given, Map, MapFault};
+pub use self::scene::{LeafKind, SurfaceFlags};
 use self::shade::{Lightmaps, Shader};
 use crate::face::Lit;
 use crate::lump::{self, Colour};
-use crate::{Light, LightError, Lighted};
+use crate::{Light, LightError, LightWarning, Lighted};
 
 /// How many faces a thread lights before taking more.
 const FACE_BATCH: usize = 16;
@@ -76,7 +76,11 @@ pub(crate) fn run(
         lights.world.clone(),
         &lights.dicts,
         extras.surfaces.to_vec(),
-        (&lights.shadow_switches(), extras.leaves, extras.palette),
+        &Given {
+            switches: lights.shadow_switches(),
+            leaves: extras.leaves,
+            palette: extras.palette,
+        },
     )
     .map_err(|MapFault::NoEntityForModel(model)| LightError::NoEntityForModel { model })?;
     let rays = Rays::new(map.casters());
@@ -129,9 +133,8 @@ pub(crate) fn run(
                     && map.bsp.visibility.is_empty()
                     && let Some(emitter) = emitter
                 {
-                    emitter.bounds = Some(lights::visible_bounds(
-                        &rays, &map, emitter.pos, &mut stack,
-                    ));
+                    emitter.bounds =
+                        Some(lights::visible_bounds(&rays, &map, emitter.pos, &mut stack));
                 }
             }
             if !any {
@@ -169,11 +172,22 @@ pub(crate) fn run(
     }
     // The grey byte is always the brightest channel (LIGHT-18.5), which is what a coloured
     // lump's is; the `.lit` is written only when a sample has a colour (LIGHT-18.6).
-    let out = lump::written(bytes, read, &faces, &lights.written(), Colour::Coloured, Dialect::Extended)?;
+    let out = lump::written(
+        bytes,
+        read,
+        &faces,
+        &lights.written(),
+        Colour::Coloured,
+        Dialect::Extended,
+    )?;
     Ok(Lighted {
         bsp: out.bsp,
         lit: out.lit.filter(|_| colour == Colour::Coloured),
-        warnings: Vec::new(),
+        warnings: lights
+            .invalid
+            .iter()
+            .map(|key| LightWarning::InvalidWorldKey { key: key.clone() })
+            .collect(),
         switchable: lights.switchable(),
     })
 }

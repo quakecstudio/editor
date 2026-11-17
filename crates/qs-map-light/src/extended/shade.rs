@@ -205,9 +205,7 @@ fn spot_scale(spot: Option<Spot>, dir: Vec3) -> f32 {
     if falloff > spot.falloff {
         0.0
     } else if falloff > spot.falloff2 {
-        to_f32(
-            1.0 - f64::from((falloff - spot.falloff2) / (spot.falloff - spot.falloff2)),
-        )
+        to_f32(1.0 - f64::from((falloff - spot.falloff2) / (spot.falloff - spot.falloff2)))
     } else {
         1.0
     }
@@ -337,8 +335,11 @@ impl Shader<'_> {
                 twosided: patch.twosided,
             };
             let given = contribution(self.world(), lamp, sample.point, facing);
-            let dirt =
-                self.dirt_scale(sample.occlusion, DirtFor::Lamp(lamp, given.dist), Some(patch));
+            let dirt = self.dirt_scale(
+                sample.occlusion,
+                DirtFor::Lamp(lamp, given.dist),
+                Some(patch),
+            );
             let colour = scale(given.colour, dirt);
             if brightness(colour).abs() <= GATE {
                 continue;
@@ -516,8 +517,8 @@ impl Shader<'_> {
                 {
                     continue;
                 }
-                let value =
-                    light * self.dirt_scale(sample.occlusion, DirtFor::Lamp(lamp, 0.0), Some(patch));
+                let value = light
+                    * self.dirt_scale(sample.occlusion, DirtFor::Lamp(lamp, 0.0), Some(patch));
                 let Some(total) = lightmaps
                     .all
                     .get_mut(at)
@@ -831,12 +832,7 @@ impl Shader<'_> {
                     self.rays
                         .occluded((emitter.pos, dir, dist), &Asker::NOBODY, self.map, stack)
                 {
-                    cube.add(
-                        passed.tinted(given),
-                        emission.style,
-                        scale(dir, -1.0),
-                        1.0,
-                    );
+                    cube.add(passed.tinted(given), emission.style, scale(dir, -1.0), 1.0);
                 }
             }
         }
@@ -862,10 +858,9 @@ impl StyleAtPoint {
     /// `lightgrid_sample_t::add`.
     fn add(&mut self, colour: Vec3, to_light: Vec3, anglescale: f32) {
         let mut most = 0.0_f32;
-        for (side, total) in self.sides.iter_mut().enumerate() {
-            // The sides face along x, y and z, each way.
-            let along = to_light.get(side / 2).copied().unwrap_or_default();
-            let facing = if side % 2 == 0 { along } else { -along };
+        // The sides face along x, y and z, each way.
+        let facings = to_light.into_iter().flat_map(|along| [along, -along]);
+        for (total, facing) in self.sides.iter_mut().zip(facings) {
             if facing < 0.0 {
                 continue;
             }
@@ -922,6 +917,10 @@ impl PointLight {
 /// `LightFace_ScaleAndClamp` for one sample: `colour` with nothing under 0, held to
 /// `maxlight` of the face or of the world, its colour faded toward grey by
 /// `lightcolorscale`, scaled by `_range` and bent by `_gamma` (LIGHT-18.1).
+#[expect(
+    clippy::float_cmp,
+    reason = "spec LIGHT-18.1: ericw-tools tests lightcolorscale and gamma against exactly 1"
+)]
 pub(crate) fn scaled_and_clamped(
     world: &World,
     colour: Vec3,
@@ -952,4 +951,3 @@ pub(crate) fn scaled_and_clamped(
     }
     colour
 }
-

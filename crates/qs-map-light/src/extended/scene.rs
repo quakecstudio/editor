@@ -13,9 +13,9 @@
 
 use qs_bsp::{BSP_TEX_SPECIAL, Bsp, Face};
 
-use crate::extended::keys::{Dict, ModelKeys, Source, World};
-use crate::extended::math::Plane;
 use crate::extended::keys::CHANNEL_DEFAULT;
+use crate::extended::keys::{Dict, ModelKeys, Source, World};
+use crate::extended::math::{Plane, add, sub};
 use crate::extended::rays::{Caster, Corners, ModelId, Surface, Texels};
 use crate::{AXES, Rgb, Vec3};
 
@@ -149,6 +149,17 @@ pub(crate) struct Map<'a> {
     palette: Option<&'a [u8]>,
 }
 
+/// What a map is given besides its BSP, entities and flags.
+pub(crate) struct Given<'a> {
+    /// The names of the models whose shadows a light switches, each with the light's style
+    /// (LIGHT-11.5).
+    pub(crate) switches: Vec<(Vec<u8>, i32)>,
+    /// What each leaf is to a sample (LIGHT-9.9).
+    pub(crate) leaves: &'a [LeafKind],
+    /// The game's palette (LIGHT-11.6).
+    pub(crate) palette: Option<&'a [u8]>,
+}
+
 /// What stops the run when the map cannot be lit as ericw-tools reads it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum MapFault {
@@ -181,7 +192,7 @@ impl<'a> Map<'a> {
         world: World,
         entities: &[Dict],
         mut flags: Vec<SurfaceFlags>,
-        (switches, leaves, palette): (&[(Vec<u8>, i32)], &'a [LeafKind], Option<&'a [u8]>),
+        given: &Given<'a>,
     ) -> Result<Self, MapFault> {
         flags.resize(bsp.texinfo.len(), SurfaceFlags::default());
         let mut models = Vec::with_capacity(bsp.models.len());
@@ -208,7 +219,7 @@ impl<'a> Map<'a> {
             let targetname = entity.get(b"targetname").to_vec();
             // A light with `_switchableshadow_target` switches the shadow of the model of
             // that name, by the light's style (LIGHT-11.5).
-            if let Some((_, style)) = switches.iter().find(|(name, _)| *name == targetname) {
+            if let Some((_, style)) = given.switches.iter().find(|(name, _)| *name == targetname) {
                 keys.switchableshadow.set(1.0, Source::Default);
                 keys.switchshadstyle.set(*style, Source::Default);
             }
@@ -255,8 +266,8 @@ impl<'a> Map<'a> {
             models,
             flags,
             face_model,
-            leaves,
-            palette,
+            leaves: given.leaves,
+            palette: given.palette,
         })
     }
 
@@ -439,7 +450,7 @@ impl<'a> Map<'a> {
         self.shadow_models().any(|(index, caster)| {
             caster.keys.object_channel_mask.get() == channels
                 && caster.keys.alpha.get() == 1.0
-                && self.in_solid(index, crate::extended::math::sub(point, caster.offset))
+                && self.in_solid(index, sub(point, caster.offset))
         })
     }
 }
@@ -520,7 +531,7 @@ impl Map<'_> {
                 let points: Vec<Vec3> = self
                     .points(face)
                     .into_iter()
-                    .map(|point| crate::extended::math::add(point, about.offset))
+                    .map(|point| add(point, about.offset))
                     .collect();
                 let Some(&first) = points.first() else {
                     continue;
@@ -581,7 +592,7 @@ impl Map<'_> {
                     .map_or([0.0; AXES], |model| model.offset);
                 self.points(face)
                     .into_iter()
-                    .map(|point| crate::extended::math::add(point, offset))
+                    .map(|point| add(point, offset))
                     .collect()
             })
             .collect()
@@ -626,7 +637,11 @@ impl Map<'_> {
         let mut sum = [0.0_f64; AXES];
         let mut count = 0_u32;
         for &index in texture.pixels.iter().take(texels) {
-            let alpha = if fence && index == FENCE_HOLE { 0 } else { OPAQUE };
+            let alpha = if fence && index == FENCE_HOLE {
+                0
+            } else {
+                OPAQUE
+            };
             if alpha < SEEN_ALPHA {
                 continue;
             }

@@ -13,7 +13,7 @@
 //! grazes the edge of a triangle may be answered differently (LIGHT-11.9).
 
 use crate::extended::keys::CHANNEL_DEFAULT;
-use crate::extended::math::{add, cross, dot, scale, sub};
+use crate::extended::math::{add, dot, scale, sub};
 use crate::{AXES, Vec3};
 
 /// The most triangles a leaf of the tree holds.
@@ -130,10 +130,6 @@ struct Triangle {
 impl Triangle {
     /// Where along the ray from `origin` along `dir` it is hit, past 0 and at most `far`: the
     /// Moller-Trumbore test, a hit on an edge counting (LIGHT-11.9).
-    #[expect(
-        clippy::float_cmp,
-        reason = "spec LIGHT-11.9: a ray in the triangle's plane, its denominator exactly 0, misses"
-    )]
     fn hit(&self, origin: Vec3, dir: Vec3, far: f32) -> Option<f32> {
         let (cross, dot) = (fused_cross, fused_dot);
         let to_corner = sub(self.v0, origin);
@@ -194,10 +190,6 @@ const SAME_DISTANCE: f32 = 0.01;
 impl Triangle {
     /// For each axis `dir` does not move along, the side of the plane through `origin`
     /// across that axis the triangle lies wholly on; none where it spans it.
-    #[expect(
-        clippy::float_cmp,
-        reason = "spec LIGHT-11.9: only a ray that moves exactly not at all along an axis lies in its plane"
-    )]
     fn sides_of(&self, origin: Vec3, dir: Vec3) -> [Option<Side>; AXES] {
         let (v1, v2) = (sub(self.v0, self.e1), add(self.v0, self.e2));
         let mut out = [None; AXES];
@@ -364,7 +356,7 @@ impl Rays {
             return;
         }
         let axis = middles.longest();
-        let half = pending.len() / 2;
+        let half = pending.len().checked_div(2).unwrap_or(0);
         pending.select_nth_unstable_by(half, |a, b| {
             let (x, y) = (
                 a.0.get(axis).copied().unwrap_or_default(),
@@ -649,12 +641,9 @@ fn passed_before(mut through: Vec<(f32, Passed)>, nearest: f32) -> Passed {
 
 #[cfg(test)]
 mod tests {
-    #![expect(
-        clippy::float_cmp,
-        reason = "test code: the values are exact in single precision"
-    )]
 
     use super::*;
+    use crate::extended::math::normalize;
 
     struct NoTexels;
 
@@ -735,20 +724,73 @@ mod tests {
         assert!(down.is_none(), "either side of a triangle stops a ray");
     }
 
-    // spec LIGHT-11.9: a ray through a triangle's edge or corner hits it.
+    // spec LIGHT-11.9: a ray that slants through a triangle's edge hits it; one that lies in
+    // a plane of the grid is stopped by a surface it crosses, and passes the edge of one that
+    // ends on the plane.
     #[test]
-    fn a_ray_through_an_edge_or_a_corner_hits() {
+    fn a_ray_in_a_grid_plane_passes_an_edge_and_is_stopped_by_a_surface() {
+        let slant = normalize([1.0, 0.0, 10.0]);
         let rays = Rays::new(square(10.0, caster(Surface::Solid)));
-        assert!(!clear(&rays, [0.0, 4.0, 0.0], 20.0, &WORLD, &NoTexels));
-        assert!(!clear(&rays, [8.0, 8.0, 0.0], 20.0, &WORLD, &NoTexels));
-        assert!(!clear(&rays, [4.0, 4.0, 0.0], 20.0, &WORLD, &NoTexels));
-        let along = rays.occluded(
-            ([-4.0, 4.0, 10.0], [1.0, 0.0, 0.0], 40.0),
+        let through_edge = rays.occluded(
+            ([-1.0, 4.0, 0.0], slant, 40.0),
             &WORLD,
             &NoTexels,
             &mut Vec::new(),
         );
-        assert!(along.is_some(), "a ray in the triangle's plane misses it");
+        assert!(through_edge.is_none(), "a slanting ray through the edge");
+        assert!(
+            clear(&rays, [0.0, 4.0, 0.0], 20.0, &WORLD, &NoTexels),
+            "a ray straight up the plane the square ends on only touches it"
+        );
+        assert!(clear(&rays, [8.0, 8.0, 0.0], 20.0, &WORLD, &NoTexels));
+        assert!(
+            !clear(&rays, [4.0, 4.0, 0.0], 20.0, &WORLD, &NoTexels),
+            "the seam of its two triangles is within it"
+        );
+        // A second square across the plane: the ray crosses a surface.
+        let mut both = square(10.0, caster(Surface::Solid));
+        let mut beyond = square(10.0, caster(Surface::Solid));
+        for corner in &mut beyond {
+            for point in &mut corner.points {
+                point[0] -= 8.0;
+            }
+        }
+        both.extend(beyond);
+        let rays = Rays::new(both);
+        assert!(!clear(&rays, [0.0, 4.0, 0.0], 20.0, &WORLD, &NoTexels));
+        let struck = rays.struck(
+            ([0.0, 4.0, 0.0], UP, 20.0),
+            &WORLD,
+            &NoTexels,
+            &mut Vec::new(),
+        );
+        assert_eq!(struck.hit, Some((Surface::Solid, 10.0)));
+        let along = rays.occluded(
+            ([-12.0, 4.0, 10.0], [1.0, 0.0, 0.0], 40.0),
+            &WORLD,
+            &NoTexels,
+            &mut Vec::new(),
+        );
+        assert!(along.is_some(), "a ray in the triangles' plane misses them");
+        // A ray that barely moves across the plane is stopped by what it moves toward only.
+        let toward = rays_of_one_square().occluded(
+            ([0.0, 4.0, 0.0], normalize([1e-8, 0.0, 1.0]), 20.0),
+            &WORLD,
+            &NoTexels,
+            &mut Vec::new(),
+        );
+        assert!(toward.is_none());
+        let away = rays_of_one_square().occluded(
+            ([0.0, 4.0, 0.0], normalize([-1e-8, 0.0, 1.0]), 20.0),
+            &WORLD,
+            &NoTexels,
+            &mut Vec::new(),
+        );
+        assert!(away.is_some());
+    }
+
+    fn rays_of_one_square() -> Rays {
+        Rays::new(square(10.0, caster(Surface::Solid)))
     }
 
     // spec LIGHT-11.3: the first thing a ray reaches is the nearest that stops it, sky or

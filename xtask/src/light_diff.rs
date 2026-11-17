@@ -12,15 +12,17 @@
 //! oracles are built as `cargo xtask oracles maps` builds them.
 
 use std::fs;
+
+use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
 use qs_bsp::{Bsp, BspLoader, Face};
-use qs_map::qbsp;
-use qs_map_light::{
-    Dialect, Extras, Jitter, LeafKind, Light, LightError, Sampling, SurfaceFlags,
-};
+use qs_map::{Entity, MapFile, qbsp};
+use qs_map_light::{Dialect, Extras, Jitter, LeafKind, Light, LightError, Sampling, SurfaceFlags};
+use qs_wad::WAD_TYP_MIPTEX;
+use qs_wad::write::WadBuilder;
 
 use crate::download::Net;
 use crate::exec::Exec;
@@ -398,7 +400,7 @@ fn surface_flags(file: &Path) -> Result<Vec<SurfaceFlags>, String> {
     let Ok(text) = fs::read(file) else {
         return Ok(Vec::new());
     };
-    let json: serde_json::Map<String, serde_json::Value> =
+    let json: serde_json::Map<String, Value> =
         serde_json::from_slice(&text).map_err(|e| format!("{}: {e}", file.display()))?;
     let mut out = Vec::new();
     for (key, value) in &json {
@@ -408,23 +410,23 @@ fn surface_flags(file: &Path) -> Result<Vec<SurfaceFlags>, String> {
         if out.len() <= index {
             out.resize(index.saturating_add(1), SurfaceFlags::default());
         }
-        let number = |name: &str| value.get(name).and_then(serde_json::Value::as_f64);
+        let number = |name: &str| value.get(name).and_then(Value::as_f64);
         let whole = |name: &str| {
             value
                 .get(name)
-                .and_then(serde_json::Value::as_i64)
+                .and_then(Value::as_i64)
                 .and_then(|n| i32::try_from(n).ok())
         };
-        let flag = |name: &str| value.get(name).and_then(serde_json::Value::as_bool);
+        let flag = |name: &str| value.get(name).and_then(Value::as_bool);
         let single = |n: f64| n.to_string().parse::<f32>().unwrap_or_default();
         let colour = value
             .get("minlight_color")
-            .and_then(serde_json::Value::as_array)
+            .and_then(Value::as_array)
             .map(|channels| {
                 let channel = |at: usize| {
                     channels
                         .get(at)
-                        .and_then(serde_json::Value::as_u64)
+                        .and_then(Value::as_u64)
                         .and_then(|c| u8::try_from(c).ok())
                         .unwrap_or_default()
                 };
@@ -439,8 +441,7 @@ fn surface_flags(file: &Path) -> Result<Vec<SurfaceFlags>, String> {
                 minlight: number("minlight").map(single),
                 minlight_color: colour.unwrap_or_default(),
                 maxlight: number("maxlight").map_or(0.0, single),
-                lightcolorscale: number("lightcolorscale")
-                    .map_or(defaults.lightcolorscale, single),
+                lightcolorscale: number("lightcolorscale").map_or(defaults.lightcolorscale, single),
                 light_alpha: number("light_alpha").map(single),
                 light_twosided: flag("light_twosided"),
                 no_dirt: flag("no_dirt").unwrap_or(false),
@@ -563,11 +564,11 @@ impl Oracles<'_> {
     /// lights by their names (LIGHT-11.2, LIGHT-16.1), which a BSP compiled with no WAD does
     /// not have. The corpus's maps come without their WADs, so the textures are blank.
     fn with_textures(&self, text: &[u8], name: &str) -> Result<Vec<u8>, String> {
-        let mut file = qs_map::MapFile::parse(text).map_err(|e| format!("{name}: {e}"))?;
+        let mut file = MapFile::parse(text).map_err(|e| format!("{name}: {e}"))?;
         let mut names: Vec<Vec<u8>> = file
             .entities
             .iter()
-            .flat_map(qs_map::Entity::brushes)
+            .flat_map(Entity::brushes)
             .flat_map(|brush| &brush.faces)
             .map(|face| face.texture().to_ascii_lowercase())
             .collect();
@@ -591,7 +592,7 @@ impl Oracles<'_> {
         names.extend(earlier);
         names.sort_unstable();
         names.dedup();
-        let mut wad = qs_wad::write::WadBuilder::new();
+        let mut wad = WadBuilder::new();
         for texture in &names {
             // A name longer than a WAD holds is no texture of a WAD: qbsp finds none.
             if texture.len() >= STUB_NAME {
@@ -608,7 +609,7 @@ impl Oracles<'_> {
                 at = at.saturating_add((STUB_SIDE >> level).saturating_mul(STUB_SIDE >> level));
             }
             lump.resize(usize::try_from(at).unwrap_or(0), 0);
-            wad.add(texture, qs_wad::WAD_TYP_MIPTEX, lump)
+            wad.add(texture, WAD_TYP_MIPTEX, lump)
                 .map_err(|e| format!("{name}: {e}"))?;
         }
         let dir = self.work.join("textures");
@@ -698,7 +699,11 @@ impl Oracles<'_> {
             }
             (None, None) => {}
             (ours, _) => {
-                let only = if ours.is_some() { "ours" } else { "ericw-tools" };
+                let only = if ours.is_some() {
+                    "ours"
+                } else {
+                    "ericw-tools"
+                };
                 println!("FAIL  {label} colour: only {only} wrote a .lit");
                 agrees = false;
             }

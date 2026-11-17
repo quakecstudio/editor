@@ -12,7 +12,7 @@
 //! it, as a light of its own a unit above its middle, once for each bounce.
 
 use crate::extended::keys::World;
-use crate::extended::math::{Aabb, add, cross, dot, length, normalize, scale, sub};
+use crate::extended::math::{Aabb, add, cross, dot, is_zero, length, normalize, scale, sub};
 use crate::extended::points::Patch;
 use crate::extended::shade::Lightmaps;
 use crate::{AXES, Vec3, to_f32};
@@ -147,7 +147,7 @@ impl Bouncer<'_> {
                 continue;
             }
             let taken = core::mem::take(&mut lightmap.bounce);
-            if taken != [0.0; AXES] {
+            if !is_zero(taken) {
                 sums.push((style, scale(taken, 1.0 / samples)));
             }
         }
@@ -168,7 +168,11 @@ impl Bouncer<'_> {
         let pos = add(scale(middle, 1.0 / count_of(corners.len())), normal);
         for (style, sum) in sums {
             // `MakeBounceLight`.
-            let mut colour = [sum[0] * texture[0], sum[1] * texture[1], sum[2] * texture[2]];
+            let mut colour = [
+                sum[0] * texture[0],
+                sum[1] * texture[1],
+                sum[2] * texture[2],
+            ];
             let intensity = colour[0].max(colour[1]).max(colour[2]);
             if intensity <= 0.0 {
                 continue;
@@ -265,11 +269,13 @@ impl Emitter {
 #[cfg(test)]
 mod tests {
     #![expect(
-        clippy::float_cmp,
-        reason = "test code: the values are exact in single precision"
+        clippy::unwrap_used,
+        reason = "test code: the values are exact in single precision, and a failed unwrap \
+                  is a failed test"
     )]
 
     use super::*;
+    use crate::extended::keys::Source;
     use crate::extended::shade::Lightmap;
 
     const SQUARE: [Vec3; 5] = [
@@ -305,18 +311,21 @@ mod tests {
         let mut lit = lightmaps(Some(0), [800.0, 400.0, 0.0]);
         let mut slot = None;
         assert!(bouncer.emit(0, &mut lit, &mut slot, 0));
-        let emitter = slot.clone().unwrap_or_else(|| unreachable!());
+        let emitter = slot.clone().unwrap();
         // The corner on the straight edge is dropped: the middle is that of the four.
         assert_eq!(emitter.pos, [32.0, 32.0, 1.0]);
         assert_eq!(emitter.normal, [0.0, 0.0, 1.0]);
-        let emission = emitter.emissions.first().copied().unwrap_or_else(|| unreachable!());
+        let emission = emitter.emissions.first().copied().unwrap();
         // 800 over 4 samples is 200, by the texture's half is 100: past 1, so the colour is
         // scaled to it and the brightness keeps it, times the area of 4096.
         assert_eq!(emission.colour, [1.0, 0.5, 0.0]);
         assert_eq!(emission.intensity, 100.0 * 4096.0);
         assert_eq!((emission.depth, emission.style), (0, 0));
         assert_eq!(lit.all.first().map(|lm| lm.bounce), Some([0.0; 3]));
-        assert!(!bouncer.emit(0, &mut lit, &mut slot, 1), "nothing new to give back");
+        assert!(
+            !bouncer.emit(0, &mut lit, &mut slot, 1),
+            "nothing new to give back"
+        );
         assert!(!bouncer.emit(1, &mut lightmaps(Some(0), [8.0; 3]), &mut None, 0));
         assert!(!bouncer.emit(0, &mut Lightmaps::new(4), &mut None, 0));
     }
@@ -335,9 +344,7 @@ mod tests {
         };
         assert!(!bouncer.emit(0, &mut lightmaps(Some(5), [8.0; 3]), &mut None, 0));
         assert!(!bouncer.emit(0, &mut lightmaps(None, [8.0; 3]), &mut None, 0));
-        world
-            .bouncestyled
-            .set(true, crate::extended::keys::Source::Map);
+        world.bouncestyled.set(true, Source::Map);
         let bouncer = Bouncer {
             world: &world,
             bounces: &[true],

@@ -129,11 +129,13 @@ impl Dirt {
 #[cfg(test)]
 mod tests {
     #![expect(
-        clippy::float_cmp,
-        reason = "test code: the values are exact in single precision"
+        clippy::unwrap_used,
+        reason = "test code: the values are exact in single precision, and a failed unwrap \
+                  is a failed test"
     )]
 
     use super::*;
+    use crate::extended::keys::Source;
     use crate::extended::math::length;
 
     // spec LIGHT-19.2: the dome is 16 directions about the normal at each of three
@@ -141,8 +143,8 @@ mod tests {
     #[test]
     fn the_dome_is_forty_eight_directions_within_the_dirt_angle() {
         let mut world = World::default();
-        world.dirt.set(true, crate::extended::keys::Source::Map);
-        let dirt = Dirt::new(&world, &[]).unwrap_or_else(|| unreachable!());
+        world.dirt.set(true, Source::Map);
+        let dirt = Dirt::new(&world, &[]).unwrap();
         assert_eq!(dirt.vectors.len(), 48);
         assert_eq!(dirt.depth, 128.0);
         for vector in &dirt.vectors {
@@ -154,7 +156,10 @@ mod tests {
         assert!((first[2] - from_normal.cos()).abs() < 1e-6);
         assert!((first[0] - from_normal.sin()).abs() < 1e-6);
         assert_eq!(first[1], 0.0);
-        let lowest = dirt.vectors.iter().fold(1.0_f32, |least, v| least.min(v[2]));
+        let lowest = dirt
+            .vectors
+            .iter()
+            .fold(1.0_f32, |least, v| least.min(v[2]));
         assert!((lowest - (88.0_f32 * 5.0 / 6.0).to_radians().cos()).abs() < 1e-6);
     }
 
@@ -162,7 +167,6 @@ mod tests {
     // light asks for it.
     #[test]
     fn dirt_is_in_use_only_when_something_asks() {
-        use crate::extended::keys::Source;
         assert!(Dirt::new(&World::default(), &[]).is_none());
         let mut sun = World::default();
         sun.sunlight2_dirt.set(1.0, Source::Map);

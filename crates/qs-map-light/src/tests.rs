@@ -20,6 +20,11 @@ use crate::lump::{Colour, written};
 use crate::trace::Tree;
 use crate::{Dialect, Light, LightError, LightWarning, Lighted, Sampling, Scale};
 
+/// The compiler in the id dialect, which the statements of id's light are pinned in.
+fn id() -> Light {
+    Light::default().with_dialect(Dialect::Id)
+}
+
 /// A brush, a box from `min` to `max`, faced with `texture`.
 fn cuboid(min: [i32; 3], max: [i32; 3], texture: &str) -> String {
     let [x0, y0, z0] = min;
@@ -137,7 +142,7 @@ fn every_vector_matches_id_light() {
             Sampling::Fast
         };
         let bsp = unxxd(&vector(&format!("{map}.bsp.txt")));
-        let lit = Light::new(sampling).run(&bsp).unwrap();
+        let lit = Light::new(sampling).with_dialect(Dialect::Id).run(&bsp).unwrap();
         assert_eq!(hex(&Sha256::digest(&lit.bsp)), file, "{map} {mode}");
         assert_eq!(lump(&lit.bsp, LumpId::Lighting).len().to_string(), size);
         assert_eq!(lit.warnings.len().to_string(), warnings, "{map} {mode}");
@@ -405,60 +410,40 @@ fn with_axes(bytes: &[u8], axes: impl Fn([[f32; 4]; 2]) -> [[f32; 4]; 2]) -> Vec
     out
 }
 
-// spec LIGHT-1.10, LIGHT-3.2, LIGHT-3.6:
-// a face over 17 luxels, and a texture axis at right angles to a face, stop the run in the id
-// dialect; the extended one leaves such a face unlit with a warning and lights the rest
+// spec LIGHT-3.2, LIGHT-3.6: a face over 17 luxels, and a texture axis at right angles to a
+// face, stop the run in the id dialect
+// spec LIGHT-8.3: the extended dialect leaves a face whose texture axes do not span it unlit,
+// and lights a face of any size
 #[test]
 fn bad_texture_axes_stop_the_run() {
     let bsp = room(&light_at("128 128 64", ""));
-    let id = Light::default().with_dialect(Dialect::Id);
     let wide = with_axes(&bsp, |v| v.map(|axis| axis.map(|c| c * 4.0)));
-    assert!(matches!(id.run(&wide), Err(LightError::Extents { .. })));
+    assert!(matches!(id().run(&wide), Err(LightError::Extents { .. })));
     let flat = with_axes(&bsp, |_| [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]]);
-    assert!(matches!(id.run(&flat), Err(LightError::TextureAxis { .. })));
+    assert!(matches!(
+        id().run(&flat),
+        Err(LightError::TextureAxis { .. })
+    ));
     let lit = Light::default().run(&flat).unwrap();
-    let unlit: Vec<&LightWarning> = lit
-        .warnings
-        .iter()
-        .filter(|w| {
-            matches!(
-                w,
-                LightWarning::Unlit {
-                    error: LightError::TextureAxis { .. }
-                }
-            )
-        })
-        .collect();
     let read = Bsp::read(&lit.bsp, BspLoader::FitzQuake).unwrap();
-    let dark = read.faces.iter().filter(|f| f.lightofs == -1).count();
     assert!(
-        !unlit.is_empty() && unlit.len() == dark,
-        "{} warned, {dark} dark",
-        unlit.len()
+        read.faces.iter().any(|f| f.lightofs == -1),
+        "the walls, whose axes lie in one plane, are unlit"
     );
     assert!(
         read.faces.iter().any(|f| f.lightofs >= 0),
         "the floor and ceiling are lit"
     );
-    assert!(
-        unlit[0]
-            .to_string()
-            .starts_with("WARNING: Texture axis perpendicular to face")
-    );
     let wide_lit = Light::default().run(&wide).unwrap();
-    assert!(wide_lit.warnings.iter().any(|w| matches!(
-        w,
-        LightWarning::Unlit {
-            error: LightError::Extents { .. }
-        }
-    )));
+    let read = Bsp::read(&wide_lit.bsp, BspLoader::FitzQuake).unwrap();
+    assert!(read.faces.iter().all(|f| f.lightofs >= 0));
 }
 
 // spec LIGHT-5.1: a face no light reaches has lightofs -1 and styles 255, and a map with no
 // light has an empty lighting lump; each lit face starts on four bytes
 #[test]
 fn unlit_faces_have_no_lightmap() {
-    let dark = Light::default().run(&room("")).unwrap();
+    let dark = id().run(&room("")).unwrap();
     let read = Bsp::read(&dark.bsp, BspLoader::FitzQuake).unwrap();
     assert!(read.lighting.is_empty());
     assert!(
@@ -466,7 +451,7 @@ fn unlit_faces_have_no_lightmap() {
             .iter()
             .all(|f| f.lightofs == -1 && f.styles == [255; 4])
     );
-    let lit = Light::default()
+    let lit = id()
         .run(&room(&light_at("128 128 64", "")))
         .unwrap();
     let read = Bsp::read(&lit.bsp, BspLoader::FitzQuake).unwrap();
@@ -482,7 +467,7 @@ fn unlit_faces_have_no_lightmap() {
 fn the_scales_change_the_bytes() {
     let bsp = room(&light_at("128 128 64", "\"light\" \"100\"\n"));
     let bytes = |scale: Scale| {
-        let lit = Light::default().with_scale(scale).run(&bsp).unwrap();
+        let lit = id().with_scale(scale).run(&bsp).unwrap();
         lump(&lit.bsp, LumpId::Lighting).to_vec()
     };
     let plain = bytes(Scale::default());
@@ -510,7 +495,7 @@ fn the_scales_change_the_bytes() {
 #[test]
 fn padding_keeps_the_input_lighting() {
     let lights = light_at("128 128 64", "\"style\" \"1\"\n") + &light_at("100 90 64", "");
-    let first = Light::new(Sampling::Fast).run(&room(&lights)).unwrap().bsp;
+    let first = Light::new(Sampling::Fast).with_dialect(Dialect::Id).run(&room(&lights)).unwrap().bsp;
     let entry = Bsp::read(&first, BspLoader::FitzQuake).unwrap().lumps[LumpId::Lighting.index()];
     let start = usize::try_from(entry.fileofs).unwrap();
     let old_len = usize::try_from(entry.filelen).unwrap();
@@ -524,7 +509,7 @@ fn padding_keeps_the_input_lighting() {
         .position(|w| w == b"\"style\" \"1\"")
         .unwrap();
     marked[style + 9] = b'0';
-    let again = Light::new(Sampling::Fast).run(&marked).unwrap().bsp;
+    let again = Light::new(Sampling::Fast).with_dialect(Dialect::Id).run(&marked).unwrap().bsp;
     let read = Bsp::read(&again, BspLoader::FitzQuake).unwrap();
     assert!(read.lighting.len() < old_len);
     let mut covered = vec![false; read.lighting.len()];
@@ -550,7 +535,7 @@ fn padding_keeps_the_input_lighting() {
             .iter()
             .all(|&b| b == 0xab)
     );
-    let fresh = Light::new(Sampling::Fast).run(&room(&lights)).unwrap().bsp;
+    let fresh = Light::new(Sampling::Fast).with_dialect(Dialect::Id).run(&room(&lights)).unwrap().bsp;
     let entry = Bsp::read(&fresh, BspLoader::FitzQuake).unwrap().lumps[LumpId::Lighting.index()];
     let end = usize::try_from(entry.fileofs).unwrap() + usize::try_from(entry.filelen).unwrap();
     assert!(
@@ -564,7 +549,7 @@ fn padding_keeps_the_input_lighting() {
 // white writes none and lights as id's light; a channel past 255 scales the sample down
 #[test]
 fn coloured_light_writes_a_lit_file() {
-    let red = Light::default()
+    let red = id()
         .run(&room(&light_at("128 128 64", "\"_color\" \"1 0 0\"\n")))
         .unwrap();
     let lit = red.lit.as_ref().unwrap();
@@ -576,10 +561,10 @@ fn coloured_light_writes_a_lit_file() {
         assert_eq!(*grey, rgb[0]);
     }
     assert!(lighting.iter().any(|&b| b > 0));
-    let plain = Light::default()
+    let plain = id()
         .run(&room(&light_at("128 128 64", "")))
         .unwrap();
-    let white = Light::default()
+    let white = id()
         .run(&room(&light_at(
             "128 128 64",
             "\"_color\" \"255 255 255\"\n",
@@ -590,7 +575,7 @@ fn coloured_light_writes_a_lit_file() {
         lump(&white.bsp, LumpId::Lighting),
         lump(&plain.bsp, LumpId::Lighting)
     );
-    let bright = Light::default()
+    let bright = id()
         .run(&room(&light_at(
             "128 128 64",
             "\"_color\" \"510 255 0\"\n\"light\" \"600\"\n",
@@ -613,7 +598,7 @@ fn a_fifth_style_warns() {
     let lights: String = (1..=5)
         .map(|style| light_at("128 128 64", &format!("\"style\" \"{style}\"\n")))
         .collect();
-    let lit = Light::default().run(&room(&lights)).unwrap();
+    let lit = id().run(&room(&lights)).unwrap();
     assert!(lit.warnings.contains(&LightWarning::TooManyStyles));
     let read = Bsp::read(&lit.bsp, BspLoader::FitzQuake).unwrap();
     assert!(read.faces.iter().all(|f| f.styles == [1, 2, 3, 4]));
@@ -690,7 +675,7 @@ fn errors_and_warnings_read_as_light_writes_them() {
         "WARNING: Too many light styles on a face"
     );
     assert_eq!(
-        Light::default().run(b"not a bsp"),
+        id().run(b"not a bsp"),
         Err::<Lighted, _>(LightError::Format)
     );
 }
@@ -700,7 +685,7 @@ fn errors_and_warnings_read_as_light_writes_them() {
 #[test]
 fn old_lighting_is_not_read() {
     let bsp = room(&light_at("128 128 64", ""));
-    let lit = Light::default().run(&bsp).unwrap();
+    let lit = id().run(&bsp).unwrap();
     let read = Bsp::read(&bsp, BspLoader::FitzQuake).unwrap();
     let entry = read.lumps[LumpId::Faces.index()];
     let start = usize::try_from(entry.fileofs).unwrap();
@@ -714,10 +699,10 @@ fn old_lighting_is_not_read() {
         Bsp::read(&stale, BspLoader::FitzQuake).is_err(),
         "the engine refuses it"
     );
-    assert_eq!(Light::default().run(&stale).unwrap().bsp, lit.bsp);
+    assert_eq!(id().run(&stale).unwrap().bsp, lit.bsp);
     let mut valve = bsp;
     valve[..4].copy_from_slice(&30_i32.to_le_bytes());
-    assert_eq!(Light::default().run(&valve), Err(LightError::Format));
+    assert_eq!(id().run(&valve), Err(LightError::Format));
 }
 
 // spec LIGHT-1.5, LIGHT-1.9: a lighting lump past MAX_MAP_LIGHTING stops the run in the id
@@ -858,8 +843,8 @@ fn bsp2_faces_are_lit() {
     let bsp = room(&light_at("128 128 64", "\"style\" \"3\"\n"));
     let wide = to_bsp2(&bsp);
     assert_eq!(&wide[..4], b"BSP2");
-    let narrow = Light::default().run(&bsp).unwrap();
-    let lit = Light::default().run(&wide).unwrap();
+    let narrow = id().run(&bsp).unwrap();
+    let lit = id().run(&wide).unwrap();
     let read = Bsp::read(&lit.bsp, BspLoader::FitzQuake).unwrap();
     let expected = Bsp::read(&narrow.bsp, BspLoader::FitzQuake).unwrap();
     assert_eq!(read.lighting, expected.lighting);
@@ -884,7 +869,7 @@ fn the_preview_radius_is_where_the_light_ends() {
         assert_eq!(previews.len(), 1, "{value}");
         let preview = &previews[0];
         assert_eq!(preview.radius, f32::from(value));
-        let lit = Light::default().run(&bsp).unwrap();
+        let lit = id().run(&bsp).unwrap();
         let read = Bsp::read(&lit.bsp, BspLoader::FitzQuake).unwrap();
         let (mut nearer, mut nearer_lit) = (false, false);
         for face in &read.faces {
@@ -961,7 +946,7 @@ fn every_vector_is_lit_only_within_its_previews() {
     for line in vector("results.tsv").lines().skip(1) {
         let map = line.split('\t').next().unwrap();
         let bsp = unxxd(&vector(&format!("{map}.bsp.txt")));
-        let lit = Light::new(Sampling::Fast).run(&bsp).unwrap();
+        let lit = Light::new(Sampling::Fast).with_dialect(Dialect::Id).run(&bsp).unwrap();
         let read = Bsp::read(&lit.bsp, BspLoader::FitzQuake).unwrap();
         let previews = Light::default().previews(read.entities()).unwrap();
         assert!(!previews.is_empty(), "{map}");

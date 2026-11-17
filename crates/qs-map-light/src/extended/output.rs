@@ -251,6 +251,11 @@ fn bytes_of(colour: Vec3) -> (Rgb, u8) {
 
 #[cfg(test)]
 mod tests {
+    #![expect(
+        clippy::float_cmp,
+        reason = "test code: the values are exact in single precision"
+    )]
+
     use super::*;
 
     const fn texel(value: f32, seen: bool) -> Texel {

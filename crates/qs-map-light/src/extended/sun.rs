@@ -149,10 +149,6 @@ pub(crate) struct Suns<'a> {
 
 impl Suns<'_> {
     /// `AddSun`: a sun shining along `direction`; none for a sun of no light.
-    #[expect(
-        clippy::float_cmp,
-        reason = "spec LIGHT-14.1: a sun of exactly no light is not made"
-    )]
     fn add(&mut self, direction: Vec3, sun: SunLight) {
         if sun.light == 0.0 {
             return;
@@ -174,10 +170,6 @@ impl Suns<'_> {
     /// `SetupSun`: a sun shining along `direction`; with a penumbra of `deviance` degrees,
     /// 64 suns sharing its light, the first along the direction and the rest scattered
     /// within the penumbra (LIGHT-14.3, LIGHT-14.4).
-    #[expect(
-        clippy::float_cmp,
-        reason = "spec LIGHT-14.3: a penumbra of exactly 0 makes one sun"
-    )]
     pub(crate) fn sun(&mut self, direction: Vec3, deviance: f32, mut sun: SunLight) {
         let count = if deviance == 0.0 { 1 } else { SUN_SAMPLES };
         let radians = to_f32(f64::from(deviance) * core::f64::consts::PI / HALF_TURN);
@@ -234,7 +226,11 @@ impl Suns<'_> {
         let radians = |degrees: f32| to_f32(f64::from(degrees) * core::f64::consts::PI / HALF_TURN);
         let elevation_step = radians(QUARTER_TURN / float_of(elevation_steps.saturating_add(1)));
         let angle_step = radians(WHOLE_TURN / float_of(angle_steps));
-        let suns = float_of(angle_steps.saturating_mul(elevation_steps).saturating_add(1));
+        let suns = float_of(
+            angle_steps
+                .saturating_mul(elevation_steps)
+                .saturating_add(1),
+        );
         let share = |sun: Option<SunLight>| {
             sun.map(|sun| SunLight {
                 light: sun.light / suns,
@@ -293,7 +289,9 @@ const fn whole(value: f64) -> u32 {
 mod tests {
     #![expect(
         clippy::float_cmp,
-        reason = "test code: the values are exact in single precision"
+        clippy::unwrap_used,
+        reason = "test code: the values are exact in single precision, and a failed unwrap \
+                  is a failed test"
     )]
 
     use super::*;
@@ -322,7 +320,13 @@ mod tests {
         let first: Vec<u32> = (0..5).map(|_| bsd.rand()).collect();
         assert_eq!(
             first,
-            [16807, 282_475_249, 1_622_650_073, 984_943_658, 1_144_108_930]
+            [
+                16807,
+                282_475_249,
+                1_622_650_073,
+                984_943_658,
+                1_144_108_930
+            ]
         );
         let mut glibc = Random::new(Jitter::Glibc);
         let first: Vec<u32> = (0..5).map(|_| glibc.rand()).collect();
@@ -348,11 +352,18 @@ mod tests {
         let mut suns = suns(&mut random);
         suns.sun([0.0, 0.0, -2.0], 0.0, WHITE);
         assert_eq!(suns.all.len(), 1);
-        let sun = suns.all.first().copied().unwrap_or_else(|| unreachable!());
+        let sun = suns.all.first().copied().unwrap();
         assert_eq!(sun.vec, [0.0, 0.0, 16384.0]);
         assert_eq!(sun.light, 130.0);
         assert!(!sun.dirt);
-        suns.sun([0.0, 0.0, -1.0], 0.0, SunLight { light: 0.0, ..WHITE });
+        suns.sun(
+            [0.0, 0.0, -1.0],
+            0.0,
+            SunLight {
+                light: 0.0,
+                ..WHITE
+            },
+        );
         assert_eq!(suns.all.len(), 1, "a sun of no light");
         suns.world_dirt = true;
         suns.sun([1.0, 0.0, 0.0], 0.0, WHITE);
@@ -402,7 +413,10 @@ mod tests {
             suns.all.iter().all(|sun| sun.vec[2] > 0.0),
             "every sun of the upper dome is above"
         );
-        assert_eq!(suns.all.last().map(|sun| sun.vec), Some([0.0, 0.0, 16384.0]));
+        assert_eq!(
+            suns.all.last().map(|sun| sun.vec),
+            Some([0.0, 0.0, 16384.0])
+        );
         // The first ring is 9 degrees up, its first sun along x.
         let first = suns.all.first().map_or([0.0; 3], |sun| sun.vec);
         assert!((first[2] / 16384.0 - 9.0_f32.to_radians().sin()).abs() < 1e-6);
@@ -413,7 +427,13 @@ mod tests {
         assert_eq!(suns.all.iter().filter(|sun| sun.vec[2] < 0.0).count(), 65);
         suns.all.clear();
         suns.dome(None, None);
-        suns.dome(Some(SunLight { light: 0.0, ..WHITE }), None);
+        suns.dome(
+            Some(SunLight {
+                light: 0.0,
+                ..WHITE
+            }),
+            None,
+        );
         assert!(suns.all.is_empty(), "a dome of no light");
     }
 }

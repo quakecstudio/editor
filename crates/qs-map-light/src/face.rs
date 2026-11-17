@@ -151,7 +151,6 @@ pub(crate) struct Scene<'a> {
     pub(crate) sampling: Sampling,
     pub(crate) scale: Scale,
     pub(crate) colour: Colour,
-    pub(crate) dialect: Dialect,
 }
 
 /// A face's place in the faces lump.
@@ -229,25 +228,9 @@ impl Scene<'_> {
     }
 
     /// `LightFace`: face `index`'s lightmaps, none when it is special or no light reaches it,
-    /// with the warnings it prints (LIGHT-3 to LIGHT-6).
+    /// with the warnings it prints (LIGHT-3 to LIGHT-6); a face `light` stops on stops the
+    /// run.
     pub(crate) fn light_face(
-        &self,
-        face: FaceId,
-        warnings: &mut Vec<LightWarning>,
-    ) -> Result<Option<Lit>, LightError> {
-        match self.light_face_exactly(face, warnings) {
-            Err(error @ (LightError::TextureAxis { .. } | LightError::Extents { .. }))
-                if self.dialect == Dialect::Extended =>
-            {
-                warnings.push(LightWarning::Unlit { error });
-                Ok(None)
-            }
-            lit => lit,
-        }
-    }
-
-    /// [`Scene::light_face`] in `light`'s own terms: a face it stops on stops the run.
-    fn light_face_exactly(
         &self,
         FaceId(index): FaceId,
         warnings: &mut Vec<LightWarning>,

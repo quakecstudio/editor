@@ -51,10 +51,6 @@ pub(crate) struct Smoothing {
 
 /// `AngleBetweenPoints`: the angle at `corner` between `before` and `after`, in radians; 0
 /// when either is at the corner.
-#[expect(
-    clippy::float_cmp,
-    reason = "spec LIGHT-13.4: ericw-tools tests the lengths' product against exactly 0"
-)]
 fn corner_angle(before: Vec3, corner: Vec3, after: Vec3) -> f32 {
     let (d1, d2) = (sub(before, corner), sub(after, corner));
     let product = length(d1) * length(d2);
@@ -66,10 +62,6 @@ fn corner_angle(before: Vec3, corner: Vec3, after: Vec3) -> f32 {
 
 /// The angles a face is smoothed within: where it bulges, and where it meets in a hollow;
 /// none when it is not smoothed (LIGHT-13.2).
-#[expect(
-    clippy::float_cmp,
-    reason = "spec LIGHT-13.2: ericw-tools tests each angle against exactly 0"
-)]
 fn phong_angles(map: &Map<'_>, face: &Face) -> Option<(f32, f32)> {
     let flags = map.flags_of(face);
     let mut convex = flags.phong_angle;
@@ -119,9 +111,11 @@ impl Smoothing {
             let Some((convex, concave)) = phong_angles(map, face) else {
                 continue;
             };
-            let (Some(plane), Some(corners), Some(set)) =
-                (planes.get(index), vertices.get(index), smooth.get_mut(index))
-            else {
+            let (Some(plane), Some(corners), Some(set)) = (
+                planes.get(index),
+                vertices.get(index),
+                smooth.get_mut(index),
+            ) else {
                 continue;
             };
             let group = map.flags_of(face).phong_group;

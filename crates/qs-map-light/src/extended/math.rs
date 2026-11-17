@@ -67,10 +67,6 @@ pub(crate) fn normalize(a: Vec3) -> Vec3 {
 }
 
 /// `qv::normalizeInPlace`: `a` over its length, and the length.
-#[expect(
-    clippy::float_cmp,
-    reason = "spec LIGHT-12.4: ericw-tools leaves a vector of exactly no length as it is"
-)]
 pub(crate) fn normalize_with_length(a: Vec3) -> (Vec3, f32) {
     let len = length(a);
     if len == 0.0 {
@@ -81,10 +77,6 @@ pub(crate) fn normalize_with_length(a: Vec3) -> (Vec3, f32) {
 }
 
 /// Whether every component is exactly zero (`qv::emptyExact`).
-#[expect(
-    clippy::float_cmp,
-    reason = "spec LIGHT-12.4: ericw-tools tests a missing normal against exactly 0"
-)]
 pub(crate) fn is_zero(a: Vec3) -> bool {
     a.iter().all(|&c| c == 0.0)
 }
@@ -297,10 +289,6 @@ pub(crate) fn is_inside(planes: &[Plane], point: Vec3) -> bool {
 }
 
 /// `FractionOfLine`: where along `v` to `w` the point nearest `p` is, 0 at `v` and 1 at `w`.
-#[expect(
-    clippy::float_cmp,
-    reason = "spec LIGHT-12.5: ericw-tools tests an edge of no length against exactly 0"
-)]
 pub(crate) fn fraction_of_line(v: Vec3, w: Vec3, p: Vec3) -> f32 {
     let along = sub(w, v);
     let squared = dot(along, along);
@@ -366,10 +354,6 @@ pub(crate) fn interpolated_normal(points: &[Vec3], normals: &[Vec3], point: Vec3
 
 #[cfg(test)]
 mod tests {
-    #![expect(
-        clippy::float_cmp,
-        reason = "test code: the values are exact in single precision"
-    )]
 
     use super::*;
 
