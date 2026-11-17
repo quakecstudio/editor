@@ -901,7 +901,7 @@ fn dirt_darkens_corners() {
     let bsp = room("\"light\" \"100\"\n\"_dirt\" \"1\"\n", "wall", "", "");
     let read = Bsp::read(&bsp, BspLoader::FitzQuake).unwrap();
     let made = parts(&read, Extras::default());
-    assert!(Dirt::new(&made.map.world, &made.lights.lamps).is_some());
+    assert!(Dirt::new(&made.map.world, &made.lights.lamps, Jitter::Bsd).is_some());
 }
 
 // spec LIGHT-20.1: light bounces off the faces that cast shadow, _bounce times.
@@ -1050,4 +1050,58 @@ fn a_lightmap_past_any_a_map_has_is_not_made() {
     assert!(Extents::new(&square(f32::NAN), plane, vecs).is_none());
     let huge = [[1e30, 0.0, 0.0, 0.0], [0.0, 1e30, 0.0, 0.0]];
     assert!(Extents::new(&square(64.0), plane, huge).is_none());
+}
+
+// spec LIGHT-17.6: a mottled minimum light raises each sample to the minimum light plus the
+// mottle at its point, from the model's key or else the world's.
+#[test]
+fn a_minimum_light_is_mottled() {
+    let plain = lit(&room("\"light\" \"100\"\n", "wall", "", ""));
+    let mottled = lit(&room(
+        "\"light\" \"100\"\n\"_minlight_mottle\" \"1\"\n",
+        "wall",
+        "",
+        "",
+    ));
+    let (plain, mottled) = (floor(&plain.bsp), floor(&mottled.bsp));
+    assert!(plain.iter().all(|&luxel| luxel == 50));
+    // 100 to under 148, halved as a lightmap holds it.
+    assert!(mottled.iter().all(|&luxel| (50..74).contains(&luxel)));
+    let (least, most) = (mottled.iter().min().unwrap(), mottled.iter().max().unwrap());
+    assert!(most > least, "the mottle is uneven: {least} {most}");
+    let other = lit(&room(
+        "\"light\" \"100\"\n\"_minlightMottle\" \"1\"\n",
+        "wall",
+        "",
+        "",
+    ));
+    assert_eq!(floor(&other.bsp), mottled);
+    // Added minimum light takes no mottle (LIGHT-17.2).
+    let added = lit(&room(
+        "\"light\" \"100\"\n\"_minlight_mottle\" \"1\"\n\"_addmin\" \"1\"\n",
+        "wall",
+        "",
+        "",
+    ));
+    assert!(floor(&added.bsp).iter().all(|&luxel| luxel == 50));
+}
+
+// spec LIGHT-19.4: with _dirtmode 1 the rays are drawn at random within the dirt angle, the
+// same each time, and a corner is still closed in more than the open floor.
+#[test]
+fn dirt_mode_one_draws_its_rays_at_random() {
+    let keys = "\"light\" \"100\"\n\"_dirt\" \"1\"\n\"_dirtmode\" \"1\"\n";
+    let bsp = room(keys, "wall", "", "");
+    let (first, again) = (lit(&bsp), lit(&bsp));
+    assert_eq!(first.bsp, again.bsp);
+    let dome = lit(&room(
+        "\"light\" \"100\"\n\"_dirt\" \"1\"\n",
+        "wall",
+        "",
+        "",
+    ));
+    assert_ne!(floor(&first.bsp), floor(&dome.bsp));
+    let at = |x: f32, y: f32| floor_at(&first.bsp, x, y).unwrap();
+    assert!(at(16.0, 16.0) < at(112.0, 112.0));
+    assert!(floor(&first.bsp).iter().all(|&luxel| luxel <= 50));
 }

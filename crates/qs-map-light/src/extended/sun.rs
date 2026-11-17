@@ -125,6 +125,11 @@ impl Random {
         }
     }
 
+    /// `Random()`: a number from 0 to 1.
+    pub(crate) fn unit(&mut self) -> f64 {
+        f64::from(self.rand()) / f64::from(RAND_MAX)
+    }
+
     /// `Random() * 2 - 1`: a number from -1 to 1.
     pub(crate) fn signed_unit(&mut self) -> f64 {
         f64::from(self.rand()) / f64::from(RAND_MAX) * 2.0 - 1.0

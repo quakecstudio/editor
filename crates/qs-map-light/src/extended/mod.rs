@@ -16,6 +16,7 @@ mod dirt;
 mod keys;
 mod lights;
 mod math;
+mod mottle;
 mod output;
 mod phong;
 mod points;
@@ -94,7 +95,7 @@ impl Light {
         let smoothing = Smoothing::new(&map);
         // The quick light does neither dirt nor bounce (LIGHT-8.8).
         let quick = light.finish == Finish::Quick;
-        let dirt = Dirt::new(&map.world, &lights.lamps).filter(|_| !quick);
+        let dirt = Dirt::new(&map.world, &lights.lamps, light.jitter).filter(|_| !quick);
         let shader = Shader {
             map: &map,
             rays: &rays,

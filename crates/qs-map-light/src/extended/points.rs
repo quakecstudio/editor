@@ -231,6 +231,8 @@ pub(crate) struct Patch {
     pub(crate) height: usize,
     pub(crate) samples: Vec<Sample>,
     pub(crate) minlight: f32,
+    /// Whether the minimum light is mottled (LIGHT-17.6).
+    pub(crate) mottle: bool,
     pub(crate) minlight_color: Vec3,
     pub(crate) maxlight: f32,
     pub(crate) lightcolorscale: f32,
@@ -357,6 +359,12 @@ impl Patch {
             height,
             samples,
             minlight,
+            // The model's key, else the world's.
+            mottle: if keys.minlight_mottle.is_changed() {
+                keys.minlight_mottle.get()
+            } else {
+                world.minlight_mottle.get()
+            },
             minlight_color,
             maxlight: if keys.maxlight.is_changed() {
                 keys.maxlight.get()

@@ -391,6 +391,7 @@ pub(crate) struct World {
     pub(crate) dirtgain: Setting<f32>,
     pub(crate) dirtangle: Setting<f32>,
     pub(crate) minlight_dirt: Setting<bool>,
+    pub(crate) minlight_mottle: Setting<bool>,
     pub(crate) phong: Setting<bool>,
     pub(crate) phong_angle: Setting<f32>,
     pub(crate) bounce: Setting<i32>,
@@ -456,6 +457,7 @@ impl Default for World {
             dirtgain: Setting::new(1.0),
             dirtangle: Setting::new(DIRT_ANGLE),
             minlight_dirt: Setting::new(false),
+            minlight_mottle: Setting::new(false),
             phong: Setting::new(true),
             phong_angle: Setting::new(0.0),
             bounce: Setting::new(0),
@@ -527,6 +529,7 @@ impl World {
             b"dirtgain" => self.dirtgain.read_within(value, 0.0, HUNDRED),
             b"dirtangle" => self.dirtangle.read_within(value, 1.0, RIGHT_ANGLE),
             b"minlight_dirt" => self.minlight_dirt.read(Some(value.flag())),
+            b"minlight_mottle" | b"minlightMottle" => self.minlight_mottle.read(Some(value.flag())),
             b"phong" => self.phong.read(Some(value.flag())),
             b"phong_angle" => self.phong_angle.read_scalar(value),
             // `bounce` may be given with no number, which is 1.
@@ -734,6 +737,7 @@ pub(crate) struct ModelKeys {
     pub(crate) object_channel_mask: Setting<i32>,
     pub(crate) autominlight: Setting<bool>,
     pub(crate) autominlight_target: Setting<Vec<u8>>,
+    pub(crate) minlight_mottle: Setting<bool>,
 }
 
 impl Default for ModelKeys {
@@ -756,6 +760,7 @@ impl Default for ModelKeys {
             object_channel_mask: Setting::new(CHANNEL_DEFAULT),
             autominlight: Setting::new(false),
             autominlight_target: Setting::new(Vec::new()),
+            minlight_mottle: Setting::new(false),
         }
     }
 }
@@ -792,6 +797,9 @@ impl ModelKeys {
             b"object_channel_mask" => _ = self.object_channel_mask.read(value.int()),
             b"autominlight" => _ = self.autominlight.read(Some(value.flag())),
             b"autominlight_target" => _ = self.autominlight_target.read(value.word()),
+            b"minlight_mottle" | b"minlightMottle" => {
+                _ = self.minlight_mottle.read(Some(value.flag()));
+            }
             _ => {}
         }
     }

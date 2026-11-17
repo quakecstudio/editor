@@ -294,8 +294,8 @@ lights the map, read by the same reader (LIGHT-2), so what the modder sees is wh
 - **LIGHT-8.7** Not ported, each a divergence from ericw-tools: `_lightmap_scale` and
   `_world_units_per_luxel` (a lightmap is 16 texels to the luxel); projected textures
   (`_project_texture`); radiosity surface lights (`_surface_radiosity`, `_surflight_radiosity`);
-  `_suntexture`; `_minlight_mottle`; `_dirtmode` 1, whose rays are drawn at random on each
-  thread; the shadows of brush models with no faces; and the command line's options.
+  `_suntexture`; the shadows of brush models with no faces; and the command line's options.
+  Each is being ported; none is left out by decision.
 - **LIGHT-8.8** `qs-map-light` offers a quick light for playing a map at once (MAP-13): the
   extended dialect's lighting without dirt (LIGHT-19) and bounce (LIGHT-20), the two that
   cost the most; everything else is as the final light's (MAP-14). ericw-tools has no such
@@ -663,6 +663,17 @@ The world's settings, each with its default; a second name is another key for th
   the light at the model's middle, the middle of its box or the origin of the entity
   `_autominlight_target` names; with `_autominlight` 1 every sample is, and with 0 none.
   All its samples then count as seen (LIGHT-18.3).
+- **LIGHT-17.6** With `_minlight_mottle` (or `_minlightMottle`) on a brush model, else on the
+  world, a face's minimum light that is not added (LIGHT-17.2) has a mottle added at each
+  sample before the sample is raised to it (`if (lightsurf->minlightMottle) { value +=
+  Mottle(surf_sample.point); }`). The mottle is a noise from 0 to under 48 that tiles in the
+  world: the sample's point over 16 (`world_to_tex = 1 / 16.0f`) names a cell and a place in
+  it; a cell's value is a table of 0 to 255 shuffled, `MottlePermutation256`, looked up three
+  times, by the cell's x, then that value plus its y, then that value plus its z, each taken
+  modulo 256 and never negative (`mod_round_to_neg_inf`); the values of the eight cells about
+  the point are mixed along x, then y, then z, by `a * (1 - f) + b * f`; the result over 255
+  times 48 is the mottle. Source: `light/ltface.cc`, `Mottle`, `LightFace_Min`,
+  `Lightsurf_Init`.
 - **LIGHT-17.5** The light at a point is, for each of up to four styles, what each light and
   sun and bounce gives it with nothing in the way, a light on the default channel only, each
   counted by `1 + (c - 1) * anglescale`, `c` the largest part of the direction to it along an
@@ -713,6 +724,15 @@ The world's settings, each with its default; a second name is another key for th
   given, by how far along from the first to the second the sample is, nothing nearer. A face
   with the flag `no_dirt`, a model with `_dirt` -1, and a liquid face take none. Sunlight
   takes it by LIGHT-14.6, the minimum light with `_minlight_dirt`, and bounced light always.
+- **LIGHT-19.4** With the world's `_dirtmode` 1 each of the 48 rays of each sample goes a way
+  drawn at random within `_dirtangle` of the normal, not the dome's (`GetDirtVector`: `float
+  angle = Random() * DEG2RAD(360.0f); float elevation = Random() * DEG2RAD(cfg.dirtangle.value());
+  return {cos(angle) * sin(elevation), sin(angle) * sin(elevation), cos(elevation)};`): the
+  turn about the normal is drawn first, then the tilt from it, each product worked in
+  `double` and kept as a float, for each ray in turn and within a ray for each sample that is
+  not hidden. `Random` is LIGHT-14.5's. ericw-tools draws from the one `rand` of the process
+  on every thread at once, so its draws differ from run to run; here the sequence starts
+  again for each face, which makes a compile the same each time, a divergence.
 
 ## LIGHT-20 Bounce
 

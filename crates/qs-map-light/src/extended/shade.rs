@@ -9,6 +9,7 @@
 //! minimum light give each of its samples, into one lightmap for each style.
 
 use super::math::brightness;
+use super::mottle::mottle;
 use crate::extended::bounce::{BOUNCE_GATE, Emitter};
 use crate::extended::dirt::Dirt;
 use crate::extended::keys::{CHANNEL_DEFAULT, Dirt as DirtKey, FULL, Formula, World};
@@ -477,6 +478,9 @@ impl Shader<'_> {
                     *total = add(*total, scale(colour, value / FULL));
                     hit = true;
                 } else {
+                    if patch.mottle {
+                        value += mottle(sample.point);
+                    }
                     hit |= clamp_min(total, value, colour);
                 }
             }
