@@ -1118,6 +1118,16 @@ impl<'a> Resolver<'a> {
                         .is_some_and(|d| !self.same_type(&d.ty, ty)));
             !replaced
         });
+        // GMQ-23.1: GMQCC compares no parameter names, and a use finds the first parameter of
+        // its name, so another of the name is a parameter of its own that no use finds.
+        let duplicate_param = kind == DefKind::Param
+            && self.profile.repeated_parameter_names()
+            && existing.is_some_and(|found| {
+                self.index
+                    .def(found)
+                    .is_some_and(|d| d.kind == DefKind::Param)
+            });
+        let existing = existing.filter(|_| !duplicate_param);
         if let Some(existing) = existing {
             let def = self.index.defs.get(existing.index())?;
             let global = def.kind.is_global();
@@ -1212,6 +1222,9 @@ impl<'a> Resolver<'a> {
             // FTEF-21.12: a local is found from where it is made, so one made beside another of
             // its name hides it from there on, as `QCC_PR_GetDef` makes each as it reads it.
             f.scope_start = Some(scope.at);
+            if duplicate_param {
+                f.scope_end = Some(scope.at);
+            }
         }
         // QC-11.7: a new vector local or parameter has its components too.
         if facts.array.is_none()

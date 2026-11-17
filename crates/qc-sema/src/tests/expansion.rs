@@ -1109,6 +1109,29 @@ fn a_gmqcc_field_array_element_is_picked_inside_e_parens() {
     assert!(found(bare, Dialect::Gmqcc).contains(&Code::E0331));
 }
 
+// spec GMQ-23.1: under GMQCC a parameter that repeats an earlier one's name is no error, and a
+// use of the name is the first parameter; FTEQCC reports "Duplicate definition"
+#[test]
+fn a_repeated_parameter_name_is_the_first_parameter_under_gmqcc() {
+    let found = |text: &str, dialect: Dialect| {
+        let (mut db, mut input) = module(&[("a.qc", text)], &["a.qc"], dialect);
+        if dialect == Dialect::Gmqcc {
+            input.command_line = CommandLine::new(&["-std=gmqcc"]);
+        }
+        codes(&db.analyze_module(&input))
+    };
+    let text = ".float nextthink;\nfloat r;\n\
+                void f(entity u, float u, vector v, vector v) { r = u.nextthink + v_x; }\n";
+    let gmqcc = found(text, Dialect::Gmqcc);
+    assert!(
+        gmqcc
+            .iter()
+            .all(|c| c.severity() != qc_diag::Severity::Error),
+        "{gmqcc:?}"
+    );
+    assert!(found(text, Dialect::Fteqcc).contains(&Code::E0215));
+}
+
 // spec GMQ-22.2: under GMQCC a constant index past an array of fields' end, picked inside
 // `e.( )`, is reported as any array's is; the element's type is the field's
 #[test]

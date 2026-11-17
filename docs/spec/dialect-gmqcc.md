@@ -449,3 +449,19 @@ _scores[MAX_SCORE];`, `#define scores(this) _scores[(this).m_id]`), used as
   N)". GMQCC refuses it, `ast_array_index::codegen`'s `if (arridx >= m_array->m_count) {
   compile_error(m_context, "array index out of bounds: %i", arridx); return false; }` (`ast.cpp`
   at the commit above); the model's diagnostics under this dialect are FTEQCC's.
+
+## GMQ-23 Parameter names
+
+**Source:** `parser.cpp`, `parse_parameter_list` and `parser_find_param`, at the
+commit above.
+
+### Behaviour
+
+- **GMQ-23.1** A parameter that repeats the name of an earlier parameter of its function is no
+  error: `void f(entity unused, entity unused)` declares two parameters, each with its own
+  argument, and a use of `unused` in the body is the first. GMQCC's `parse_parameter_list`
+  pushes each parameter `params.emplace_back(param)` and compares no names, and
+  `parser_find_param` returns the first of `fun->m_type_params` whose `it->m_name == name`.
+  FTEQCC reports "Duplicate definition of unused." (FTEF-19.1). Xonotic's
+  `menu/xonotic/dialog_media_demo_timeconfirm.qc` declares `Handle_TimeDemo_Click(entity unused,
+  entity unused)`.
