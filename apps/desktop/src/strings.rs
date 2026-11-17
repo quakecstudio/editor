@@ -395,6 +395,8 @@ pub enum Text {
     CommandLineHint,
     /// A parameter the command line asks for that may be left empty.
     CommandLineOptional,
+    /// The command line's field while it asks for what the map view can give.
+    CommandLinePick,
     /// The Escape key, in the palette's hints.
     KeyEscape,
     /// The up and down arrow keys, in the palette's hints.
@@ -989,7 +991,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 486] = [
+    pub const ALL: [Self; 487] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1181,6 +1183,7 @@ impl Text {
         Self::CommandLinePrompt,
         Self::CommandLineHint,
         Self::CommandLineOptional,
+        Self::CommandLinePick,
         Self::KeyEscape,
         Self::KeyArrows,
         Self::KeyEnter,
@@ -1688,6 +1691,7 @@ impl Text {
             Self::CommandLinePrompt => "Command:",
             Self::CommandLineHint => "Type a command; Tab completes, Enter runs",
             Self::CommandLineOptional => "Enter for none",
+            Self::CommandLinePick => "Type it, or click it in the map view",
             Self::KeyEscape => "esc",
             Self::KeyArrows => "\u{2191}\u{2193}",
             Self::KeyEnter => "enter",

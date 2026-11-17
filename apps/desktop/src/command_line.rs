@@ -15,6 +15,7 @@ use qs_commands::line::Prompt;
 use qs_commands::line::{CommandLine, Entered};
 use serde_json::Value;
 
+use crate::pick::Pick;
 use crate::shell::{Area, FocusNow, name_area, name_field};
 use crate::strings::{self, Text};
 use crate::theme::{Theme, Token};
@@ -49,6 +50,24 @@ pub(crate) struct CommandLineView {
 }
 
 impl CommandLineView {
+    /// What a click in the map view can give the parameter the line asks for now.
+    pub(crate) fn asking<C: 'static>(&self, registry: &Registry<C>) -> Option<Pick> {
+        let prompt = self.line.prompt()?;
+        let schema = registry.get(&prompt.command)?.params();
+        Pick::asked(schema, &prompt.field.name)
+    }
+
+    /// Takes `value`, picked in the map view, as the parameter asked for, as typing it and
+    /// Enter would; the command to run when that completes it.
+    pub(crate) fn picked<C: 'static>(
+        &mut self,
+        registry: &Registry<C>,
+        value: String,
+    ) -> Option<(String, Value)> {
+        self.typed = value;
+        self.enter(registry)
+    }
+
     /// The command `id` the line made ran.
     pub(crate) fn ran(&mut self, id: String) {
         self.note = Some(Note::Ran(id));
@@ -107,11 +126,15 @@ impl CommandLineView {
         }
         let muted = theme.color(Token::TextMuted);
         ui.label(RichText::new(self.asked()).monospace().color(muted));
+        let hint = match self.asking(registry) {
+            Some(_) => Text::CommandLinePick,
+            None => Text::CommandLineHint,
+        };
         let response = ui.add(
             TextEdit::singleline(&mut self.typed)
                 .id(field)
                 .font(egui::TextStyle::Monospace)
-                .hint_text(Text::CommandLineHint.get())
+                .hint_text(hint.get())
                 .frame(egui::Frame::NONE)
                 .lock_focus(true)
                 .desired_width(ui.available_width() * FIELD_SHARE),

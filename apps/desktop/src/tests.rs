@@ -5570,6 +5570,7 @@ fn the_map_views_tools_are_taken_by_their_keys() {
             .unwrap()
             .shell()
             .map_editor()
+            .tools()
             .tool()
     };
     assert_eq!(tool(&harness), MapTool::Select);
@@ -5605,5 +5606,82 @@ fn the_map_views_tools_are_taken_by_their_keys() {
     assert_eq!(
         keymap::parse_keys("shift-alt-pageup").map(|keys| keys.logical_key),
         Some(egui::Key::PageUp)
+    );
+}
+
+// UI-23, #971: an entity or a point the command line asks for is picked in the map view: a
+// click there answers the prompt as typing the value would, and selects or draws nothing else
+#[test]
+fn the_command_line_takes_an_entity_and_a_point_picked_in_the_map_view() {
+    let dir = keep_copy("pick");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    let selected = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        shell
+            .session()
+            .context()
+            .workbench
+            .map()
+            .unwrap()
+            .selected()
+    };
+    let count = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        let map = shell.session().context().workbench.map().unwrap();
+        map.file().entities.len()
+    };
+    let asked = |harness: &Harness<'static, Option<App>>| {
+        let line = &harness.state().as_ref().unwrap().shell().command_line;
+        line.state().0.map(|prompt| prompt.field.name)
+    };
+    run_command(&mut harness, FOCUS_COMMAND_LINE);
+    harness.run();
+    type_text(&mut harness, "map.select");
+    press(&mut harness, egui::Key::Enter);
+    assert_eq!(asked(&harness).as_deref(), Some("entity"));
+    // The field says the value can be clicked.
+    harness.run();
+    assert_eq!(selected(&harness), None);
+    let ogre = drawn_at(&harness, 2);
+    click_at(&mut harness, ogre);
+    assert_eq!(selected(&harness), Some(EntityIndex::new(2)));
+    assert_eq!(asked(&harness), None);
+    harness.get_by_label(&command_ran("map.select"));
+    // A point: the classname is typed, the origin is clicked, and the keys are left out.
+    let before = count(&harness);
+    run_command(&mut harness, FOCUS_COMMAND_LINE);
+    harness.run();
+    type_text(&mut harness, "map.place");
+    press(&mut harness, egui::Key::Enter);
+    assert_eq!(asked(&harness).as_deref(), Some("classname"));
+    // A click while a typed value is asked for is the view's own: it is no answer.
+    type_text(&mut harness, "light");
+    press(&mut harness, egui::Key::Enter);
+    assert_eq!(asked(&harness).as_deref(), Some("origin"));
+    let view = harness.get_by_label(Text::MapEditorView.get()).rect();
+    click_at(&mut harness, view.center());
+    assert_eq!(asked(&harness).as_deref(), Some("keys"));
+    // The click answered the prompt and selected nothing else.
+    assert_eq!(selected(&harness), Some(EntityIndex::new(2)));
+    run_command(&mut harness, FOCUS_COMMAND_LINE);
+    harness.run();
+    press(&mut harness, egui::Key::Enter);
+    assert_eq!(count(&harness), before + 1);
+    let origin = map_value(&harness, before, "origin").unwrap();
+    let on_grid = origin
+        .split(' ')
+        .all(|c| c.parse::<f64>().is_ok_and(|c| c.rem_euclid(16.0) == 0.0));
+    assert!(on_grid, "{origin}");
+    assert_eq!(
+        map_value(&harness, before, "classname").as_deref(),
+        Some("light")
     );
 }

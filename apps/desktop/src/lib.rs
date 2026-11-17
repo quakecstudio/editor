@@ -57,6 +57,7 @@ mod multibuffer;
 #[cfg(target_os = "macos")]
 pub mod open_documents;
 pub mod palette;
+mod pick;
 mod picker;
 pub mod project;
 pub mod shell;

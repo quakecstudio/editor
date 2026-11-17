@@ -1260,12 +1260,9 @@ impl Shell {
             self.session.registry(),
             FocusNow::of(pending, Focus::CommandLine),
         );
-        if let Some((id, params)) = entered {
-            match self.session.execute(id.as_str(), params) {
-                Ok(_) => self.command_line.ran(id),
-                Err(error) => self.command_line.failed(error.to_string()),
-            }
-        }
+        self.run_entered(entered);
+        let asking = self.command_line.asking(self.session.registry());
+        self.features.map.map_editor.ask(asking);
         for panel in [Panel::Left, Panel::Right, Panel::Bottom] {
             self.panel(ui, panel, FocusNow::of(pending, Focus::Panel(panel)));
         }
@@ -1275,6 +1272,11 @@ impl Shell {
                 name_area(ui, accesskit::Role::Pane, Text::Centre);
                 self.centre(ui, FocusNow::of(pending, Focus::Editor));
             });
+        // What a click in the map view gave the command line (UI-23).
+        if let Some(value) = self.features.map.map_editor.take_picked() {
+            let entered = self.command_line.picked(self.session.registry(), value);
+            self.run_entered(entered);
+        }
         if let Some((id, params)) = self.palette.show(
             ui,
             Id::new(Area::Palette),
@@ -1716,6 +1718,17 @@ impl Shell {
             self.preview_error = Some(Text::ReloadFailed.get().to_owned());
         } else if restart {
             let _: Option<PreviewStatus> = self.run(RESTART, &serde_json::json!({}));
+        }
+    }
+
+    /// Runs the command the command line made, and tells the line how it went.
+    fn run_entered(&mut self, entered: Option<(String, serde_json::Value)>) {
+        let Some((id, params)) = entered else {
+            return;
+        };
+        match self.session.execute(id.as_str(), params) {
+            Ok(_) => self.command_line.ran(id),
+            Err(error) => self.command_line.failed(error.to_string()),
         }
     }
 

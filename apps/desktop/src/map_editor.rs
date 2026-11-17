@@ -48,6 +48,7 @@ use crate::map_scene::{ClassLook, Line, LinkView, SPAWNFLAGS, Scene, load_models
 use crate::map_select::{Picked, Region};
 use crate::map_shading::{ShadedView, TRIGGER, TexturedFrom};
 use crate::map_tools::{BrushAction, BrushTools, MapTool, PickMode};
+use crate::pick::Pick;
 use crate::shell::name_field;
 use crate::strings::{Text, also_selected, panes_text, select_all_of};
 use crate::texture_browser::TextureBrowser;
@@ -350,6 +351,10 @@ pub struct MapEditor {
     orbit: Option<[f32; 3]>,
     /// Whether a pane of the view had the keyboard in the last frame (UI-23).
     keyboard: Keyboard,
+    /// What the command line asks for that a click in the view can give, and what a click
+    /// gave, as the line reads it (UI-23).
+    asked: Option<Pick>,
+    picked: Option<String>,
     /// The last camera motion a command asked for and how many have been, the layout's, and
     /// how many of them the view has carried out (UI-23).
     look_asked: (Option<MapLook>, u64),
@@ -1276,8 +1281,9 @@ impl MapEditor {
             let (start, direction) = ray(at);
             self.scene.pick(start, direction, hidden)
         };
-        let selecting = self.tools.tool() == MapTool::Select;
-        if !selecting {
+        // While the command line asks for what a click can give, a click is its answer.
+        let selecting = self.asked.is_none() && self.tools.tool() == MapTool::Select;
+        if self.asked.is_none() && !selecting {
             let found = self
                 .tools
                 .input(ui, &response, &self.scene, hidden, &projection, pane);
@@ -1354,6 +1360,28 @@ impl MapEditor {
                 snap(s + d * distance)
             })
         };
+        if let Some(asked) = self.asked
+            && response.clicked()
+            && let Some(at) = response.interact_pointer_pos()
+        {
+            let (start, direction) = ray(at);
+            self.picked = match asked {
+                Pick::Entity => pick(at).and_then(|entity| typed(&entity)),
+                Pick::Brush => self
+                    .scene
+                    .pick_brush(start, direction, hidden)
+                    .and_then(|(_, brush)| typed(&brush)),
+                Pick::FaceIndex => self
+                    .scene
+                    .pick_face(start, direction, hidden)
+                    .and_then(|face| typed(&face.face)),
+                Pick::Face => self
+                    .scene
+                    .pick_face(start, direction, hidden)
+                    .and_then(|face| typed(&face)),
+                Pick::Point => typed(&dropped_at(at)),
+            };
+        }
         // egui's release takes whatever is dragged before it checks its kind, so each kind is
         // looked for first.
         if response.dnd_hover_payload::<ClassDrag>().is_some()
@@ -1795,6 +1823,11 @@ impl MapEditor {
     }
 }
 
+/// `value` as it is typed on the command line: its JSON.
+fn typed<T: serde::Serialize>(value: &T) -> Option<String> {
+    serde_json::to_string(value).ok()
+}
+
 /// Moves the camera while a fly key is held (TrenchBroom's `CameraFly*`).
 fn fly(ui: &Ui, camera: &mut Camera, speed: f32) {
     let (dt, keys) = ui.input(|i| {
@@ -2026,16 +2059,20 @@ enum Framing {
 }
 
 impl MapEditor {
+    /// Tells the view what the command line asks for that a click in it can give (UI-23).
+    pub(crate) const fn ask(&mut self, asked: Option<Pick>) {
+        self.asked = asked;
+    }
+
+    /// What a click in the view gave the command line, once.
+    pub(crate) const fn take_picked(&mut self) -> Option<String> {
+        self.picked.take()
+    }
+
     /// Whether a pane of the view had the keyboard in the last frame, so the view's own keys
     /// are its to take (UI-23).
     pub(crate) fn has_keyboard(&self) -> bool {
         self.keyboard == Keyboard::Here
-    }
-
-    /// The tool in hand.
-    #[cfg(test)]
-    pub(crate) const fn tool(&self) -> MapTool {
-        self.tools.tool()
     }
 
     /// The box around the map's first `entities` entities, as the standard views frame it.
