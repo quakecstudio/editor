@@ -269,6 +269,11 @@ pub(crate) struct Reach {
 }
 
 impl Reach {
+    /// The box around the samples that are not hidden.
+    pub(crate) const fn bounds(&self) -> Aabb {
+        self.bounds
+    }
+
     /// The reach of `patch`'s samples; none when every one is hidden.
     pub(crate) fn of(patch: &Patch) -> Option<Self> {
         let mut seen = patch.samples.iter().filter(|sample| !sample.occluded);

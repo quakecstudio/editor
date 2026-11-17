@@ -13,11 +13,13 @@
 //! grazes the edge of a triangle may be answered differently (LIGHT-11.9).
 
 use crate::extended::keys::CHANNEL_DEFAULT;
-use crate::extended::math::{add, dot, scale, sub};
+use crate::extended::math::{Aabb, add, dot, scale, sub};
 use crate::{AXES, Vec3};
 
 /// The most triangles a leaf of the tree holds.
 const LEAF_TRIANGLES: usize = 4;
+/// Half, as what the sum of a box's two corners is scaled by for its middle.
+const HALF: f32 = 0.5;
 /// The corners of a triangle, as what their sum is divided by for its middle.
 const CORNERS: f32 = 3.0;
 /// A texel that is not see-through.
@@ -412,6 +414,22 @@ impl Node {
         }
     }
 
+    /// The node with each box wider by `half` each way; a box of none stays one.
+    fn widened(&self, half: Vec3) -> Self {
+        let mut wide = Self {
+            low: self.low,
+            high: self.high,
+            children: self.children,
+        };
+        for ((low, high), half) in wide.low.iter_mut().zip(&mut wide.high).zip(half) {
+            for (low, high) in low.iter_mut().zip(high) {
+                *low -= half;
+                *high += half;
+            }
+        }
+        wide
+    }
+
     /// How far along the ray from `origin`, `inverse` one over its direction, each box is
     /// entered; infinity for one the ray misses or enters past `far`.
     #[inline(always)]
@@ -670,6 +688,57 @@ impl Tree {
                 }
             }
         }
+    }
+}
+
+/// How much wider than a face's samples the space swept toward a sun is taken, so that sky a
+/// ray only touches is within it.
+const SWEPT_MARGIN: f32 = 0.05;
+
+impl Tree {
+    /// Whether a leaf's box is met by the box `bounds` moved along `dir` as far as `far`:
+    /// when none is, no ray along `dir` from a point of `bounds` meets a triangle of the
+    /// tree. The box of the samples is taken as a point at its middle, and each of the
+    /// tree's boxes as wider by half of it.
+    fn is_swept_into(&self, bounds: Aabb, dir: Vec3, far: f32, stack: &mut Stack) -> bool {
+        let middle = scale(add(bounds.mins, bounds.maxs), HALF);
+        let half = sub(bounds.maxs, middle).map(|c| c + SWEPT_MARGIN);
+        let inverse = dir.map(|c| 1.0 / c);
+        stack.clear();
+        if !self.nodes.is_empty() {
+            stack.push((Child::Node(0), 0.0));
+        }
+        while let Some((child, _)) = stack.pop() {
+            let Child::Node(at) = child else {
+                continue;
+            };
+            let Some(node) = self.nodes.get(at) else {
+                continue;
+            };
+            for (under, entry) in node
+                .children
+                .iter()
+                .zip(node.widened(half).entered(middle, inverse, far))
+            {
+                if !entry.is_finite() {
+                    continue;
+                }
+                match under {
+                    Child::Leaf { .. } => return true,
+                    Child::Node(_) => stack.push((*under, entry)),
+                    Child::Empty => {}
+                }
+            }
+        }
+        false
+    }
+}
+
+impl Rays {
+    /// Whether a ray along the unit `dir` from some point of `bounds` may reach sky within
+    /// `far`; when not, [`Rays::sees_sky`] finds none for any of them.
+    pub(crate) fn may_see_sky(&self, bounds: Aabb, dir: Vec3, far: f32, stack: &mut Stack) -> bool {
+        self.sky.is_swept_into(bounds, dir, far, stack)
     }
 }
 
@@ -1190,6 +1259,62 @@ mod tests {
 
     fn rays_of_one_square() -> Rays {
         Rays::new(square(10.0, caster(Surface::Solid)))
+    }
+
+    // spec LIGHT-11.3: a face none of whose rays toward a sun can reach sky is told so without
+    // a ray asked: sky above any part of it, or just beside it, may be reached; sky off to
+    // the side, behind it or past the rays' reach may not
+    #[test]
+    fn a_face_with_no_sky_toward_the_sun_is_known() {
+        let rays = Rays::new(square(100.0, caster(Surface::Sky)));
+        let mut stack = Vec::new();
+        let mut may = |mins: Vec3, maxs: Vec3, dir: Vec3, far: f32| {
+            let bounds = Aabb::at(mins).with(maxs);
+            rays.may_see_sky(bounds, normalize(dir), far, &mut stack)
+        };
+        assert!(may([2.0, 2.0, 0.0], [6.0, 6.0, 1.0], UP, 200.0));
+        // Only a corner of the face is under the sky.
+        assert!(may([-20.0, -20.0, 0.0], [1.0, 1.0, 0.0], UP, 200.0));
+        // Beside the sky by less than the margin: a ray may touch its edge.
+        assert!(may([8.01, 0.0, 0.0], [12.0, 8.0, 0.0], UP, 200.0));
+        assert!(!may([9.0, 0.0, 0.0], [12.0, 8.0, 0.0], UP, 200.0));
+        // Toward the sky aslant, and aslant past it.
+        assert!(may(
+            [-104.0, 0.0, 0.0],
+            [-100.0, 8.0, 0.0],
+            [1.0, 0.0, 1.0],
+            200.0
+        ));
+        assert!(!may(
+            [-104.0, 0.0, 0.0],
+            [-100.0, 8.0, 0.0],
+            [-1.0, 0.0, 1.0],
+            200.0
+        ));
+        // Away from it, and too far below it.
+        assert!(!may(
+            [2.0, 2.0, 0.0],
+            [6.0, 6.0, 1.0],
+            [0.0, 0.0, -1.0],
+            200.0
+        ));
+        assert!(!may([2.0, 2.0, 0.0], [6.0, 6.0, 1.0], UP, 50.0));
+        // Every ray sees_sky answers with sky is one the face was told it may have.
+        for x in -4_i8..12 {
+            let from = [f32::from(x) + 0.5, 4.0, 0.0];
+            let slant = normalize([0.01, 0.02, 1.0]);
+            let seen = rays
+                .sees_sky((from, slant, 200.0), &WORLD, &NoTexels, &mut stack)
+                .is_some();
+            let bounds = Aabb::at(from);
+            assert!(
+                !seen || rays.may_see_sky(bounds, slant, 200.0, &mut stack),
+                "{x}"
+            );
+        }
+        // With no sky at all there is none to reach.
+        let none = Rays::new(square(100.0, caster(Surface::Solid)));
+        assert!(!none.may_see_sky(Aabb::at([4.0, 4.0, 0.0]), UP, 200.0, &mut stack));
     }
 
     // spec LIGHT-11.3: the first thing a ray reaches is the nearest that stops it, sky or

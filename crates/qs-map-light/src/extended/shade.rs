@@ -432,12 +432,25 @@ impl Shader<'_> {
 
     /// `LightFace_Sky`: what `sun` gives each sample of `patch` that sees the sky along it
     /// (LIGHT-14.7).
-    fn sun_on_face(&self, sun: &Sun, patch: &Patch, lightmaps: &mut Lightmaps, stack: &mut Stack) {
+    fn sun_on_face(
+        &self,
+        sun: &Sun,
+        (patch, reach): (&Patch, &Reach),
+        lightmaps: &mut Lightmaps,
+        stack: &mut Stack,
+    ) {
         let incoming = normalize(sun.vec);
         if dot(incoming, patch.plane.normal) < -ANGLE_EPSILON && !patch.curved && !patch.twosided {
             return;
         }
         if !patch.is_on_default_channel() {
+            return;
+        }
+        // With no sky toward the sun from anywhere on the face, no sample's ray is asked.
+        if !self
+            .rays
+            .may_see_sky(reach.bounds(), incoming, SKY_DIST, stack)
+        {
             return;
         }
         let asker = self.asker(patch, CHANNEL_DEFAULT);
@@ -614,9 +627,12 @@ impl Shader<'_> {
                 self.lamp_on_face(lamp, patch, lightmaps, stack);
             }
         }
+        let Some(reach) = Reach::of(patch) else {
+            return;
+        };
         for sun in &self.lights.suns {
             if wanted(sun.light) {
-                self.sun_on_face(sun, patch, lightmaps, stack);
+                self.sun_on_face(sun, (patch, &reach), lightmaps, stack);
             }
         }
     }
