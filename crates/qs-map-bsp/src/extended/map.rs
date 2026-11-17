@@ -500,7 +500,7 @@ impl Reader<'_> {
             .texinfos
             .miptex
             .get(miptex)
-            .map_or(face.texture(), Vec::as_slice);
+            .map_or_else(|| face.texture(), Vec::as_slice);
         let flags = surf_flags(name, entity);
         let invisible = flags.has(SurfFlags::NODRAW | SurfFlags::HINTSKIP | SurfFlags::HINT);
         let vecs = match (invisible, self.plane(planenum)) {

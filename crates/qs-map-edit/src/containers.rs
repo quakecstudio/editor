@@ -533,9 +533,9 @@ impl<C: HasMap + 'static> Command<C> for ExtractLinked {
                     moved.map_err(|error| document.map_error(error))?;
                 }
                 document.file.push_entity(made);
-                first.get_or_insert(EntityIndex::new(
-                    document.file.entities.len().saturating_sub(1),
-                ));
+                first.get_or_insert_with(|| {
+                    EntityIndex::new(document.file.entities.len().saturating_sub(1))
+                });
             }
             first.ok_or(MapEditError::NoSelection)
         })?;

@@ -122,7 +122,10 @@ impl CdImage {
     pub(crate) fn open(cue: &Path) -> Option<Self> {
         let text = std::fs::read_to_string(cue).ok()?;
         let sheet = CueSheet::read(&text)?;
-        let file = cue.parent().unwrap_or(Path::new(".")).join(&sheet.file);
+        let file = cue
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join(&sheet.file);
         Some(Self { sheet, file })
     }
 

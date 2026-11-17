@@ -233,7 +233,7 @@ impl MapDocument {
             }
         }
         let now = parents.get(entity.get()).copied().flatten();
-        let there = now.map_or(into.is_world(), |now| now.get() == into.get());
+        let there = now.map_or_else(|| into.is_world(), |now| now.get() == into.get());
         Ok((target, there))
     }
 

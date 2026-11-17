@@ -959,12 +959,13 @@ impl Shell {
                 .editors
                 .parked
                 .get(path)
-                .or(self
-                    .features
-                    .editors
-                    .editor
-                    .as_ref()
-                    .filter(|e| e.path == *path))
+                .or_else(|| {
+                    self.features
+                        .editors
+                        .editor
+                        .as_ref()
+                        .filter(|e| e.path == *path)
+                })
                 .map_or(0, Editor::caret_offset);
             rows.push(PickerRow {
                 name: path
@@ -1382,7 +1383,7 @@ impl Shell {
         for binding in self.keymap.in_match_order() {
             let taken = match binding.scope {
                 // A key the map view takes itself is the view's while it has the keyboard.
-                Scope::Everywhere => !(in_view && Platform::HERE.is_view_key(&binding.shortcut)),
+                Scope::Everywhere => !(in_view && Platform::HERE.is_view_key(binding.shortcut)),
                 Scope::Shell => !editing,
                 Scope::Map => !editing && map_shown,
                 Scope::MapView => in_view,
@@ -1821,7 +1822,9 @@ impl Shell {
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         for dock in [Panel::Right, Panel::Bottom] {
-                            asked = asked.or(self.panel_buttons(ui, dock));
+                            // Drawn whatever was asked already: the call draws the buttons.
+                            let buttons = self.panel_buttons(ui, dock);
+                            asked = asked.or(buttons);
                         }
                     });
                 });
@@ -2514,12 +2517,13 @@ impl Shell {
                     .editors
                     .parked
                     .get(&path)
-                    .or(self
-                        .features
-                        .editors
-                        .editor
-                        .as_ref()
-                        .filter(|e| e.path == path))
+                    .or_else(|| {
+                        self.features
+                            .editors
+                            .editor
+                            .as_ref()
+                            .filter(|e| e.path == path)
+                    })
                     .map_or(0, Editor::caret_offset);
                 self.jump(Jump { path, offset });
             }

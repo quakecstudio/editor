@@ -514,7 +514,7 @@ fn padding_keeps_the_input_lighting() {
     let entry = Bsp::read(&first, BspLoader::FitzQuake).unwrap().lumps[LumpId::Lighting.index()];
     let start = usize::try_from(entry.fileofs).unwrap();
     let old_len = usize::try_from(entry.filelen).unwrap();
-    let mut marked = first.clone();
+    let mut marked = first;
     for byte in &mut marked[start..start + old_len] {
         *byte = 0xab;
     }

@@ -313,7 +313,7 @@ fn a_connected_server_runs_in_the_apps_session() {
     let settings = ServerSettings {
         project: root.clone(),
         read: vec![root.clone()],
-        write: vec![root.clone()],
+        write: vec![root],
         name: "quakec-ide".to_owned(),
         version: "0".to_owned(),
     };
@@ -611,7 +611,7 @@ fn a_map_outside_the_write_roots_is_not_written() {
         root.join("app.sock")
     };
     let host = Host::listen(&socket, || {}).unwrap();
-    let (open, opened) = (root.clone(), map.clone());
+    let (open, opened) = (root.clone(), map);
     // The app: its map open outside the server's roots; it answers the list and the inspect.
     let app = std::thread::spawn(move || {
         let mut registry = Registry::new();
@@ -631,7 +631,7 @@ fn a_map_outside_the_write_roots_is_not_written() {
     let settings = ServerSettings {
         project: root.clone(),
         read: vec![root.clone()],
-        write: vec![root.clone()],
+        write: vec![root],
         name: "quakec-ide".to_owned(),
         version: "0".to_owned(),
     };

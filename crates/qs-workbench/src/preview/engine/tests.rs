@@ -52,8 +52,8 @@ impl Host for Fake {
         Answer::Now(Ok(match method {
             "screenshot" => json!({
                 "png": PNG_BASE64,
-                "width": params.get("width").cloned().unwrap_or(json!(1280)),
-                "height": params.get("height").cloned().unwrap_or(json!(800)),
+                "width": params.get("width").cloned().unwrap_or_else(|| json!(1280)),
+                "height": params.get("height").cloned().unwrap_or_else(|| json!(800)),
             }),
             _ => params.clone(),
         }))

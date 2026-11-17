@@ -129,11 +129,7 @@ fn composition_text_is_spliced_in_underlined() {
     assert_eq!(at(0), [composed.clone(), red("abcd"), plain("ef")]);
     assert_eq!(at(4), [red("abcd"), composed.clone(), plain("ef")]);
     assert_eq!(at(6), [red("abcd"), plain("ef"), composed.clone()]);
-    assert_eq!(
-        at(60),
-        [red("abcd"), plain("ef"), composed.clone()],
-        "past the end"
-    );
+    assert_eq!(at(60), [red("abcd"), plain("ef"), composed], "past the end");
     let job = line_job("", &[], &font(), PLAIN, Some(Preedit { col: 0, text: "x" }));
     assert_eq!(sections(&job), [("x", PLAIN, false, true)]);
     let underline = job.sections.first().map(|s| s.format.underline);

@@ -115,7 +115,7 @@ fn directive(chars: &[char], mut at: usize) -> Result<(Tok, usize), String> {
                 line.push(' ');
             }
             '"' | '\'' => {
-                let end = literal_end(chars, at, c).unwrap_or(at.saturating_add(1));
+                let end = literal_end(chars, at, c).unwrap_or_else(|_| at.saturating_add(1));
                 line.extend(chars.get(at..end).unwrap_or_default());
                 at = end;
             }
@@ -169,11 +169,10 @@ fn token(chars: &[char], at: usize) -> Result<(Tok, usize), String> {
     } else if c == '\'' {
         // An apostrophe with no closing quote, as in the text of an `#if 0` block, is
         // punctuation; it is never inside an array this reads.
-        Ok(
-            literal_end(chars, at, '\'').map_or((Tok::Punct('\''), at.saturating_add(1)), |end| {
-                (Tok::Char, end)
-            }),
-        )
+        Ok(literal_end(chars, at, '\'').map_or_else(
+            |_| (Tok::Punct('\''), at.saturating_add(1)),
+            |end| (Tok::Char, end),
+        ))
     } else if c.is_ascii_digit() {
         let end = word(at);
         let text: String = chars.get(at..end).unwrap_or_default().iter().collect();

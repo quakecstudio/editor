@@ -175,14 +175,14 @@ fn pass(text: &str, needle: &[char], prefer: Prefer) -> Option<(i64, Vec<Range<u
     let mut score = 0_i64;
     let mut hits: Vec<Range<usize>> = Vec::new();
     for want in needle {
-        let rest = at..lower.len();
+        let mut rest = at..lower.len();
         let next_char = last
             .map(|l| l.saturating_add(1))
             .filter(|n| lower.get(*n) == Some(want));
         let word = rest
             .clone()
             .find(|&i| lower.get(i) == Some(want) && starts_word(i));
-        let any = rest.clone().find(|&i| lower.get(i) == Some(want));
+        let any = rest.find(|&i| lower.get(i) == Some(want));
         let i = match prefer {
             Prefer::WordStarts => next_char.or(word).or(any)?,
             Prefer::Earliest => any?,

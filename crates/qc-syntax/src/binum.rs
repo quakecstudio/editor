@@ -71,13 +71,14 @@ fn fteqcc_int(literal: &str) -> i32 {
     let (negative, rest) = literal
         .strip_prefix('-')
         .map_or((false, literal), |rest| (true, rest));
-    let (base, digits) = if let Some(hex) = rest.strip_prefix("0x").or(rest.strip_prefix("0X")) {
-        (16, hex)
-    } else if let Some(octal) = rest.strip_prefix('0') {
-        (8, octal)
-    } else {
-        (10, rest)
-    };
+    let (base, digits) =
+        if let Some(hex) = rest.strip_prefix("0x").or_else(|| rest.strip_prefix("0X")) {
+            (16, hex)
+        } else if let Some(octal) = rest.strip_prefix('0') {
+            (8, octal)
+        } else {
+            (10, rest)
+        };
     let mut num: u64 = 0;
     for digit in digits.chars().map_while(|c| c.to_digit(base)) {
         num = num

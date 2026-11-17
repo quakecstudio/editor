@@ -406,7 +406,7 @@ proptest! {
         let mut reread = progs.to_file();
         prop_assert!(reread.layout.is_some());
         reread.layout = None;
-        let mut expected = file.clone();
+        let mut expected = file;
         while !expected.strings.len().is_multiple_of(4) {
             expected.strings.push(0);
         }

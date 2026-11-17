@@ -428,7 +428,7 @@ impl Builder {
                     .ok_or_else(|| {
                         refuse(at, "map takes a name of 1 to 63 bytes from a-z, 0-9, _")
                     })?;
-                self.map = name.to_owned();
+                name.clone_into(&mut self.map);
             }
             "maxclients" => {
                 self.maxclients = one_integer(args, 1, DIFF_MAX_CLIENTS.into(), at, "maxclients")?;

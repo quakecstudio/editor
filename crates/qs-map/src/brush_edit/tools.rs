@@ -323,7 +323,10 @@ impl Face {
         let texdef = match lock {
             TextureLock::Locked => WorldTexture::of(self)
                 .and_then(|texture| texture.mapped(map))
-                .map_or(*self.texdef(), |texture| texture.on(&plane, self.texdef())),
+                .map_or_else(
+                    || *self.texdef(),
+                    |texture| texture.on(&plane, self.texdef()),
+                ),
             TextureLock::Free => *self.texdef(),
         };
         let mut moved = self.clone();

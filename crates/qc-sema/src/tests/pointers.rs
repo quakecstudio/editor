@@ -67,10 +67,7 @@ fn refused(spelling: &str, op: &str) -> (Code, String) {
 }
 
 fn memgetval() -> [(Code, String); 2] {
-    [
-        helper("memgetval", "OP_LOADP_*").clone(),
-        refused("=", "LOADP_I"),
-    ]
+    [helper("memgetval", "OP_LOADP_*"), refused("=", "LOADP_I")]
 }
 
 fn and() -> [(Code, String); 2] {

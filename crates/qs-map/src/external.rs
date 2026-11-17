@@ -279,14 +279,15 @@ impl MapFile {
                     let points = face.points().map(|p| placement.point(p));
                     // A face with no texture axes, one with no plane, keeps its definition:
                     // both compilers drop it (MAP-3.6).
-                    let texdef = face
-                        .texvecs()
-                        .map_or(*face.texdef(), |[s, t]| TexDef::Valve {
+                    let texdef = face.texvecs().map_or_else(
+                        || *face.texdef(),
+                        |[s, t]| TexDef::Valve {
                             s: placement.axis(s),
                             t: placement.axis(t),
                             rotate: 0.0,
                             scale: [1.0, 1.0],
-                        });
+                        },
+                    );
                     let texture = face.texture().to_vec();
                     face.set(points, &texture, texdef).map_err(map_error)?;
                 }

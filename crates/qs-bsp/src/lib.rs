@@ -1446,17 +1446,17 @@ impl<'a> Bsp<'a> {
             lump: LumpId::Faces,
             element,
         };
-        let surfedge = *self.surfedges.get(edge).ok_or(bad.clone())?;
+        let surfedge = *self.surfedges.get(edge).ok_or_else(|| bad.clone())?;
         let (edge, end) = if surfedge >= 0 {
             (surfedge, 0)
         } else {
-            (surfedge.checked_neg().ok_or(bad.clone())?, 1)
+            (surfedge.checked_neg().ok_or_else(|| bad.clone())?, 1)
         };
         let edge = self
             .edges
             .get(usize::try_from(edge).map_err(|_| bad.clone())?)
-            .ok_or(bad.clone())?;
-        let vertex = edge.get(end).copied().ok_or(bad.clone())?;
+            .ok_or_else(|| bad.clone())?;
+        let vertex = edge.get(end).copied().ok_or_else(|| bad.clone())?;
         self.vertexes
             .get(usize::try_from(vertex).map_err(|_| bad.clone())?)
             .copied()
@@ -1560,7 +1560,7 @@ impl<'a> Bsp<'a> {
             .checked_mul(height)
             .and_then(|size| size.checked_mul(face.style_count()))
             .and_then(|size| size.checked_mul(self.version.sample_bytes()))
-            .ok_or(bad.clone())?;
+            .ok_or_else(|| bad.clone())?;
         if start
             .checked_add(size)
             .is_none_or(|end| end > self.lighting.len())
@@ -1959,14 +1959,14 @@ impl<'a> Bsp<'a> {
         let mut input = self
             .visibility
             .get(start..)
-            .ok_or(truncated.clone())?
+            .ok_or_else(|| truncated.clone())?
             .iter();
         let mut out = Vec::new();
         // A do-while in id's code: at least one byte or run is read.
         loop {
-            let byte = *input.next().ok_or(truncated.clone())?;
+            let byte = *input.next().ok_or_else(|| truncated.clone())?;
             if byte == 0 {
-                let count = *input.next().ok_or(truncated.clone())?;
+                let count = *input.next().ok_or_else(|| truncated.clone())?;
                 out.extend(core::iter::repeat_n(0, usize::from(count)));
             } else {
                 out.push(byte);
@@ -2067,7 +2067,7 @@ fn load_texture<'a>(
     let header = lump
         .get(start..)
         .and_then(|texture| qs_wad::MipTexHeader::parse(texture).ok())
-        .ok_or(bad.clone())?;
+        .ok_or_else(|| bad.clone())?;
     // The name ends at its first NUL.
     let name_len = header
         .name
@@ -2088,12 +2088,12 @@ fn load_texture<'a>(
         .and_then(|area| usize::try_from(area).ok())
         .and_then(|area| area.checked_div(BSP_MIP_PIXELS))
         .and_then(|area| area.checked_mul(BSP_MIP_BYTES))
-        .ok_or(bad.clone())?;
+        .ok_or_else(|| bad.clone())?;
     let data_start = start.saturating_add(BSP_MIPTEX_HEADER_SIZE);
     let data = data_start
         .checked_add(pixels)
         .and_then(|end| lump.get(data_start..end))
-        .ok_or(bad.clone())?;
+        .ok_or_else(|| bad.clone())?;
     let texture = Texture {
         sky: name.starts_with(b"sky"),
         name,

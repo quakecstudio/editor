@@ -97,7 +97,7 @@ fn malformed_zips_are_errors() {
     let mut size = good.clone();
     size[cd + 24] = 4;
     assert!(matches!(read_err(&size), ZipError::Size));
-    let mut short = good.clone();
+    let mut short = good;
     short[cd + 20] = 200;
     assert!(matches!(read_err(&short), ZipError::Truncated));
 
@@ -107,7 +107,7 @@ fn malformed_zips_are_errors() {
     let mut small = deflated.clone();
     small[cd + 24..cd + 28].copy_from_slice(&10_u32.to_le_bytes());
     assert!(matches!(read_err(&small), ZipError::Larger));
-    let mut corrupt = deflated.clone();
+    let mut corrupt = deflated;
     corrupt[34] = 0xff;
     corrupt[35] = 0xff;
     assert!(matches!(read_err(&corrupt), ZipError::Corrupt));
@@ -171,7 +171,7 @@ fn miniz_refusals_are_errors() {
     let mut strong = good.clone();
     strong[cd + 8] = 1 << 6;
     assert!(matches!(read_err(&strong), ZipError::Encrypted));
-    let mut patch = good.clone();
+    let mut patch = good;
     patch[cd + 8] = 1 << 5;
     assert!(matches!(read_err(&patch), ZipError::Patch));
 }
@@ -245,9 +245,9 @@ mod properties {
             damage in any::<(usize, u8)>(),
         ) {
             let bytes = zip(&[("m", &data)], deflate);
-            prop_assert_eq!(open(&bytes).unwrap().read("m").unwrap().unwrap(), data.clone());
+            prop_assert_eq!(open(&bytes).unwrap().read("m").unwrap().unwrap(), data);
             // A damaged copy is read back, read as an error or not opened, never a panic.
-            let mut damaged = bytes.clone();
+            let mut damaged = bytes;
             let at = damage.0 % damaged.len();
             damaged[at] ^= damage.1;
             if let Ok(mut z) = open(&damaged) {

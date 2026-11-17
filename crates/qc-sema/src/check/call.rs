@@ -982,7 +982,9 @@ impl Checker<'_> {
                                 qc_syntax::SyntaxElement::Token(_)
                                 | qc_syntax::SyntaxElement::Node(_) => None,
                             });
-                        let span = token.as_ref().map_or(arg.syntax().span(), |t| t.span());
+                        let span = token
+                            .as_ref()
+                            .map_or_else(|| arg.syntax().span(), |t| t.span());
                         let shown = token.map_or_else(String::new, |t| t.text_lossless());
                         let message = format!("Spawn operator with undefined class: {shown}");
                         return self.fatal(Code::E0373, span, message).map(Some);
@@ -1007,7 +1009,7 @@ impl Checker<'_> {
         };
         let class_arg = args
             .get(at.saturating_sub(1))
-            .map_or(list.syntax().span(), |a| a.syntax().span());
+            .map_or_else(|| list.syntax().span(), |a| a.syntax().span());
         if self.env.shape(&class).map(|s| s.etype) != Some(Etype::Entity) {
             let found = if args.len() > at || !named.is_empty() {
                 ","

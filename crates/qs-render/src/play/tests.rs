@@ -190,10 +190,7 @@ fn bar_items_are_centred_at_the_bottom() {
         x: 24,
         y: -24,
     };
-    let bar = layer(
-        &mut play,
-        &hud(Anchor::Bar, vec![sbar.clone(), num.clone()]),
-    );
+    let bar = layer(&mut play, &hud(Anchor::Bar, vec![sbar.clone(), num]));
     assert_eq!(bar.len(), 2, "two pictures, two draws");
     assert_eq!(bar[0].1, [([160.0, 456.0], [320.0, 24.0])]);
     assert_eq!(bar[0].0.pic, Some(0));

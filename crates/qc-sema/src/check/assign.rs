@@ -791,7 +791,7 @@ impl Checker<'_> {
                 .generated
                 .last()
                 .filter(|statement| statement.op == store)
-                .and(self.last_made());
+                .and_then(|_| self.last_made());
             self.name_last(store, self.name_of(&old), copy.map(ir::Name::Made));
         }
         // The step adds to the copy.
@@ -1480,7 +1480,7 @@ impl Checker<'_> {
                 }
             }
             (Some(suffix), Some(bytes)) if self.narrow_local(&ty, 0).is_some() => {
-                let size = array_size(&suffix).unwrap_or(bytes.len().saturating_add(1));
+                let size = array_size(&suffix).unwrap_or_else(|| bytes.len().saturating_add(1));
                 let mut offset: u32 = 0;
                 for at in 0..size {
                     let byte = bytes.get(at).copied().unwrap_or(0);

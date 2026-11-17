@@ -502,7 +502,7 @@ impl<'a> Resolver<'a> {
             if nonvirtual {
                 return Some(parent_name);
             }
-            parent = info.parent.clone();
+            parent.clone_from(&info.parent);
         }
         None
     }

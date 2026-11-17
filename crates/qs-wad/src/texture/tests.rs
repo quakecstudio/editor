@@ -545,7 +545,7 @@ fn every_index(name: &[u8]) -> Vec<u8> {
     for value in [16_u32, 16, 40, 40 + 256, 40 + 256 + 64, 40 + 256 + 64 + 16] {
         lump.extend_from_slice(&value.to_le_bytes());
     }
-    lump.extend((0..=255_u8).collect::<Vec<_>>());
+    lump.extend(0..=255_u8);
     lump
 }
 
@@ -590,7 +590,7 @@ fn a_short_lump_is_refused() {
             len: 40 + 255
         })
     );
-    let mut far = lump.clone();
+    let mut far = lump;
     far[24..28].copy_from_slice(&u32::MAX.to_le_bytes());
     assert!(matches!(
         palette().decode_miptex(&far),

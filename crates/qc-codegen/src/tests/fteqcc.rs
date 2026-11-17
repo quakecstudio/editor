@@ -1175,7 +1175,7 @@ fn a_builtin_function_is_named_its_engine_name() {
             .iter()
             .skip(1)
             .filter(|f| f.first_statement == -number)
-            .map(|f| string(&p, f.s_name).clone())
+            .map(|f| string(&p, f.s_name))
             .collect();
         found
     };
@@ -1305,7 +1305,7 @@ fn a_field_defined_with_a_field_names_the_same_field() {
     let fields: Vec<(String, u32)> = p
         .field_defs
         .iter()
-        .map(|f| (string(&p, f.s_name).clone(), f.ofs))
+        .map(|f| (string(&p, f.s_name), f.ofs))
         .collect();
     assert!(
         fields.contains(&("t_length".to_owned(), word("length"))),

@@ -125,7 +125,9 @@ fn cell(
         };
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, CORNER, theme.color(Token::SurfaceViewport));
-        let color = look.color.map_or(theme.color(Token::TextMuted), rgb);
+        let color = look
+            .color
+            .map_or_else(|| theme.color(Token::TextMuted), rgb);
         let model = look.model.as_ref().and_then(|model| models.get(model));
         let stroke = Stroke::new(1.0, color);
         match model {

@@ -275,6 +275,6 @@ fn centroid(points: &[Vec3]) -> Vec3 {
             *total += c;
         }
     }
-    let count = u16::try_from(points.len()).map_or(f32::from(u16::MAX), f32::from);
+    let count = u16::try_from(points.len()).map_or_else(|_| f32::from(u16::MAX), f32::from);
     sum.map(|total| total / count.max(1.0))
 }

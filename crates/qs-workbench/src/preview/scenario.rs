@@ -126,7 +126,7 @@ impl Preview {
         let spec = LaunchSpec {
             host,
             run_root,
-            map: Some(scenario.map.clone()),
+            map: Some(scenario.map),
             socket: socket_path(),
             extra: vec!["--headless".to_owned()],
         };

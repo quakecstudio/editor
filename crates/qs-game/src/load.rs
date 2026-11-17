@@ -462,7 +462,7 @@ impl Args {
             .and_then(|values| <[f32; 4]>::try_from(values).ok());
         let zfix = !self.nozfix;
         let look = self.look.look();
-        let gamma = self.gamma.unwrap_or(look.gamma());
+        let gamma = self.gamma.unwrap_or_else(|| look.gamma());
         let vfs = Vfs::new(StdFs, &engine, ".").map_err(|e| Error::Load(format!("{e:?}")))?;
         let read = |name: &str| -> Result<Vec<u8>, Error> {
             vfs.load(name.as_bytes())

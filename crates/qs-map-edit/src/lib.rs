@@ -687,7 +687,7 @@ impl MapStore {
         let stamped = self
             .document
             .as_ref()
-            .map_or(MapRevision::default(), |old| old.stamped.next());
+            .map_or_else(MapRevision::default, |old| old.stamped.next());
         Ok(self.document.insert(MapDocument {
             path: path.to_path_buf(),
             source,
@@ -698,7 +698,7 @@ impl MapStore {
             revision: self
                 .document
                 .as_ref()
-                .map_or(MapRevision::default(), |old| old.revision.next()),
+                .map_or_else(MapRevision::default, |old| old.revision.next()),
             edits: stamped,
             stamped,
             origin,

@@ -122,7 +122,7 @@ proptest! {
         b in proptest::collection::vec(0_u8..4, 0..40),
     ) {
         let ops = script(&a, &b);
-        prop_assert_eq!(apply(&a, &b, &ops), b.clone());
+        prop_assert_eq!(&apply(&a, &b, &ops), &b);
         let equal = ops.iter().filter(|op| **op == Op::Equal).count();
         prop_assert_eq!(equal, lcs(&a, &b));
     }

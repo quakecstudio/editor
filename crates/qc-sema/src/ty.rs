@@ -473,14 +473,17 @@ fn default_text(value: &ast::Expr, ty: &Type) -> String {
         parsed
             .map(|v| if negative { v.wrapping_neg() } else { v })
             .and_then(|v| u64::try_from(v.rem_euclid(1_i128 << bits)).ok())
-            .map_or(written.clone(), |v| match v {
-                0 => format!("0{suffix}"),
-                v => format!("{v:#x}{suffix}"),
-            })
+            .map_or_else(
+                || written.clone(),
+                |v| match v {
+                    0 => format!("0{suffix}"),
+                    v => format!("{v:#x}{suffix}"),
+                },
+            )
     };
     match ty {
         Type::Simple(SimpleType::Float) => {
-            number(&written).map_or(written.clone(), |v| format!("{}f", c_g(v)))
+            number(&written).map_or_else(|| written.clone(), |v| format!("{}f", c_g(v)))
         }
         Type::Simple(SimpleType::Vector) => {
             let inner = written.trim_matches(['\'', '[', ']']);
@@ -500,7 +503,7 @@ fn default_text(value: &ast::Expr, ty: &Type) -> String {
             Some(CScalar::Int64) => hex(64, "ill"),
             Some(CScalar::Uint64) => hex(64, "ull"),
             Some(CScalar::Double) => {
-                number(&written).map_or(written.clone(), |v| format!("{}d", c_g(v)))
+                number(&written).map_or_else(|| written.clone(), |v| format!("{}d", c_g(v)))
             }
             _ => written,
         },

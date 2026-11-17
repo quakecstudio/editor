@@ -336,7 +336,7 @@ mod tests {
             &[player.clone(), missing.clone(), start.clone()],
         );
         assert_eq!(opened.project, Some(project.clone()));
-        assert_eq!(opened.file, Some(player.clone()));
+        assert_eq!(opened.file, Some(player));
         assert_eq!(opened.map, Some(start));
         assert_eq!(
             opened

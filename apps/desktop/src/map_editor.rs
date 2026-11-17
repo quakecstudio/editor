@@ -199,11 +199,11 @@ impl Externals {
                 self.files.push(path.clone());
             }
             if found.is_none() {
-                found = self
-                    .read
-                    .entry(path)
-                    .or_insert_with_key(|path| std::fs::read(path).ok())
-                    .clone();
+                found.clone_from(
+                    self.read
+                        .entry(path)
+                        .or_insert_with_key(|path| std::fs::read(path).ok()),
+                );
             }
         }
         found
@@ -1431,7 +1431,7 @@ impl MapEditor {
                 )));
             }
             if let Some(text) = pasted {
-                let at = (!original).then(|| dropped_at(pointer.unwrap_or(area.center())));
+                let at = (!original).then(|| dropped_at(pointer.unwrap_or_else(|| area.center())));
                 actions.push(MapAction::Clipboard(ClipboardAction::Paste(text, at)));
             }
         }
@@ -1505,7 +1505,9 @@ impl MapEditor {
             let color = if chosen {
                 theme.color(Token::Accent)
             } else {
-                shape.color.map_or(theme.color(Token::TextMuted), rgb)
+                shape
+                    .color
+                    .map_or_else(|| theme.color(Token::TextMuted), rgb)
             };
             let stroke = Stroke::new(if chosen { 2.0 } else { 1.0 }, color);
             if !shape.brush {
@@ -2394,7 +2396,7 @@ impl MapEditor {
                 let mut picked = self.scene.picked_by(&now.brushes, region, hidden);
                 // The selecting brushes go, the last of each entity first so the rest keep
                 // their places; the brushes picked after one in its entity move down a place.
-                let mut gone = now.brushes.clone();
+                let mut gone = now.brushes;
                 gone.sort();
                 for &(entity, brush) in gone.iter().rev() {
                     actions.push(MapAction::Brush(BrushAction::Delete(entity, brush)));

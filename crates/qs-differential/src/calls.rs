@@ -976,7 +976,7 @@ impl<'a, 'p> Program<'a, 'p> {
         let mut fields = BTreeMap::new();
         for def in progs.field_defs().iter() {
             if let Some((name, ofs)) = named(&def) {
-                fields.entry(name).or_insert((def.def_type(), ofs));
+                fields.entry(name).or_insert_with(|| (def.def_type(), ofs));
             }
         }
         let mut functions = BTreeMap::new();

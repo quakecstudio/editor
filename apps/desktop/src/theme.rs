@@ -418,7 +418,7 @@ impl Theme {
     pub fn space(&self, step: usize) -> f32 {
         self.space
             .get(step)
-            .or(self.space.last())
+            .or_else(|| self.space.last())
             .copied()
             .unwrap_or_default()
     }

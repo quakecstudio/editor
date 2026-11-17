@@ -156,7 +156,7 @@ impl ProviderConfig {
     pub fn base_url(&self) -> &str {
         self.base_url
             .as_deref()
-            .unwrap_or(self.kind.default_base_url())
+            .unwrap_or_else(|| self.kind.default_base_url())
             .trim_end_matches('/')
     }
 

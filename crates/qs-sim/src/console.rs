@@ -633,7 +633,7 @@ impl World {
             if slots.iter().all(|s| s.as_i32() == 0) {
                 continue;
             }
-            let mut line = name.clone();
+            let mut line = name;
             while line.len() < EDICT_NAME_COLUMN {
                 line.push(b' ');
             }

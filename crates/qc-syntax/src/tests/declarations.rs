@@ -17,9 +17,15 @@ fn type_of(source: &str) -> String {
 fn show(ty: &ast::Type) -> String {
     match ty {
         ast::Type::Simple(simple) => format!("{:?}", simple.kind().unwrap()).to_lowercase(),
-        ast::Type::Field(field) => format!(".{}", field.inner().map_or("?".into(), |t| show(&t))),
+        ast::Type::Field(field) => format!(
+            ".{}",
+            field.inner().map_or_else(|| "?".into(), |t| show(&t))
+        ),
         ast::Type::Pointer(pointer) => {
-            format!("{}*", pointer.inner().map_or("?".into(), |t| show(&t)))
+            format!(
+                "{}*",
+                pointer.inner().map_or_else(|| "?".into(), |t| show(&t))
+            )
         }
         ast::Type::Function(function) => {
             let ret = show(&function.return_type().unwrap());
@@ -32,7 +38,7 @@ fn show(ty: &ast::Type) -> String {
                     .map(|p| {
                         format!(
                             "{} {}",
-                            p.ty().map_or("?".into(), |t| show(&t)),
+                            p.ty().map_or_else(|| "?".into(), |t| show(&t)),
                             p.name().map_or_default(|n| n.text_lossless())
                         )
                     })

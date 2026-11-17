@@ -176,7 +176,7 @@ impl Platform {
     /// Whether `shortcut` is a key the map view takes itself, which a key taken anywhere
     /// gives way to while the view has the keyboard: the same key with the same keys held.
     #[must_use]
-    pub fn is_view_key(self, shortcut: &KeyboardShortcut) -> bool {
+    pub fn is_view_key(self, shortcut: KeyboardShortcut) -> bool {
         VIEW_SHORTCUTS
             .iter()
             .flat_map(|(_, shortcuts)| shortcuts)

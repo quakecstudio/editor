@@ -4354,7 +4354,7 @@ fn a_dropped_png_is_imported_into_the_browser() {
     harness
         .input_mut()
         .dropped_files
-        .push(std::sync::Arc::new(Dropped(image.clone())));
+        .push(std::sync::Arc::new(Dropped(image)));
     harness.run();
     harness.get_by_label(Text::MapImportSave.get()).click();
     harness.run();
@@ -5600,14 +5600,14 @@ fn the_map_views_tools_are_taken_by_their_keys() {
     let group = keymap::parse_keys("secondary-g").unwrap();
     let line = keymap::parse_keys("secondary-;").unwrap();
     for platform in [Platform::Mac, Platform::Other] {
-        assert!(platform.is_view_key(&group), "{platform:?}");
-        assert!(!platform.is_view_key(&line), "{platform:?}");
+        assert!(platform.is_view_key(group), "{platform:?}");
+        assert!(!platform.is_view_key(line), "{platform:?}");
     }
     // Where Ctrl is the platform's modifier, go to line's Ctrl+G is Group's key in the view;
     // on a Mac, where Group is Cmd+G, it is not.
     let go_to_line = keymap::parse_keys("ctrl-g").unwrap();
-    assert!(Platform::Other.is_view_key(&go_to_line));
-    assert!(!Platform::Mac.is_view_key(&go_to_line));
+    assert!(Platform::Other.is_view_key(go_to_line));
+    assert!(!Platform::Mac.is_view_key(go_to_line));
     assert_eq!(
         keymap::parse_keys("-").map(|keys| keys.logical_key),
         Some(egui::Key::Minus)

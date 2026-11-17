@@ -217,7 +217,7 @@ fn bsp29_refuses_values_past_16_bits() {
         file.to_bytes(BspFormat::Bsp29),
         Err(BspWriteError::TooWide(LumpId::Faces))
     );
-    let mut wide = file.clone();
+    let mut wide = file;
     wide.faces[0].planenum = 0;
     wide.faces[0].texinfo = 32_768;
     assert_eq!(
