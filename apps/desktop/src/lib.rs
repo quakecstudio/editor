@@ -26,6 +26,7 @@ mod fallback;
 mod features;
 mod finder;
 mod game_guide;
+mod game_view;
 mod git_panel;
 mod help;
 pub mod icons;

@@ -5,6 +5,7 @@
 
 use std::path::PathBuf;
 
+use crate::Error;
 use qs_render::Look;
 
 /// The engine-style options, each written with one dash as the engines and ADR-0008 write
@@ -17,96 +18,96 @@ const ENGINE_OPTIONS: [&str; 4] = ["-basedir", "-game", "-kpf", "-bridge"];
     name = "quakec-engine",
     about = "The QuakeC Studio engine: the game the IDE previews in"
 )]
-pub(crate) struct Args {
+pub struct Args {
     /// The game root holding `id1`.
     #[arg(long)]
-    pub(crate) basedir: Option<PathBuf>,
+    pub basedir: Option<PathBuf>,
     /// A mod: a single directory name under the game root.
     #[arg(long, value_parser = single_name)]
-    pub(crate) game: Option<String>,
+    pub game: Option<String>,
     /// The rerelease's `QuakeEX.kpf`, read from this path instead of the game root.
     #[arg(long)]
-    pub(crate) kpf: Option<PathBuf>,
+    pub kpf: Option<PathBuf>,
     /// The bridge's socket, where the IDE connects (BRIDGE-1.1).
     #[arg(long)]
-    pub(crate) bridge: Option<PathBuf>,
+    pub bridge: Option<PathBuf>,
     /// The mission pack `rogue`, the engine's `-rogue`.
     #[arg(long)]
-    pub(crate) rogue: bool,
+    pub rogue: bool,
     /// The mission pack `hipnotic`, the engine's `-hipnotic`.
     #[arg(long)]
-    pub(crate) hipnotic: bool,
+    pub hipnotic: bool,
     /// How frames look: QuakeSpasm's (gamma 1, trilinear filtering, glowing fullbrights,
     /// overbright light, the view widened to the window's shape) or GLQuake's (REND-13).
     #[arg(long = "look", value_enum, default_value_t = LookArg::Quakespasm)]
-    pub(crate) look: LookArg,
+    pub look: LookArg,
     /// GLQuake's `-gamma` (REND-3.1); without it, the look's (REND-13.2).
     #[arg(long)]
-    pub(crate) gamma: Option<f32>,
+    pub gamma: Option<f32>,
     /// Brush models without QuakeSpasm's `gl_zfix` (REND-1.12).
     #[arg(long)]
-    pub(crate) nozfix: bool,
+    pub nozfix: bool,
     /// Where a free camera starts: x, y, z and yaw.
     #[arg(long, num_args = 4, value_names = ["x", "y", "z", "yaw"], allow_negative_numbers = true)]
-    pub(crate) at: Option<Vec<f32>>,
+    pub at: Option<Vec<f32>>,
     /// Start a free camera at the map's first water or sky.
     #[arg(long, value_enum)]
-    pub(crate) show: Option<Show>,
+    pub show: Option<Show>,
     /// No sound device, the engine's `-nosound`.
     #[arg(long)]
-    pub(crate) nosound: bool,
+    pub nosound: bool,
     /// A CD image's cue sheet whose audio tracks are the music (SND-6.4); without it,
     /// `game.cue` in the game root when there is one, as GOG's release keeps its CD, or a
     /// mission pack's `gamea.cue` or `gamed.cue` (SND-6.5).
     #[arg(long)]
-    pub(crate) cd_image: Option<PathBuf>,
+    pub cd_image: Option<PathBuf>,
     /// No CD music, QuakeSpasm's `-nocdaudio`.
     #[arg(long)]
-    pub(crate) nocdaudio: bool,
+    pub nocdaudio: bool,
     /// No window and no sound: frames of 1/72 of a second, the bridge served between them,
     /// and `screenshot` drawn offscreen; for scenario runs, CI and a client's tests; needs
     /// `-bridge`.
     #[arg(long, requires = "bridge")]
-    pub(crate) headless: bool,
+    pub headless: bool,
     /// A free camera instead of the player.
     #[arg(long)]
-    pub(crate) fly: bool,
+    pub fly: bool,
     /// No vsync, a free camera turning slowly, and after this many seconds the frame rate on
     /// stdout and exit (P2-152).
     #[arg(long, value_name = "seconds")]
-    pub(crate) benchmark: Option<f32>,
+    pub benchmark: Option<f32>,
     /// id's `timerefresh` (`R_TimeRefresh_f`) with no window, for `cargo xtask bench`: the
     /// map loaded and a second of server frames timed, then 128 frames drawn offscreen from this
     /// eye, the yaw at i/128 of a turn, pitch 0, with no server frame between them, 16 times;
     /// then id's line and a JSON line of the times on stdout (P3-29, ENG-17).
     #[arg(long, num_args = 3, value_names = ["x", "y", "z"], allow_negative_numbers = true)]
-    pub(crate) timerefresh: Option<Vec<f32>>,
+    pub timerefresh: Option<Vec<f32>>,
     /// Plays a view script with no window (P3-28): its map, frames, places and shots at 320 by
     /// 240 with no status bar or weapon, and the sound mixed meanwhile written to the second
     /// file, as the view oracle plays the same script in id's engine (VIEWDIFF-1).
     #[arg(long, num_args = 2, value_names = ["script", "audio"])]
-    pub(crate) view_script: Option<Vec<std::path::PathBuf>>,
+    pub view_script: Option<Vec<std::path::PathBuf>>,
     /// The size `--view-script` draws its shots at, 320 by 240 without it (VIEWDIFF-2.1).
     #[arg(long, num_args = 2, value_names = ["width", "height"])]
-    pub(crate) view_size: Option<Vec<u32>>,
+    pub view_size: Option<Vec<u32>>,
     /// Where the window opens, to put it on a chosen display.
     #[arg(long, num_args = 2, value_names = ["x", "y"], allow_negative_numbers = true)]
-    pub(crate) position: Option<Vec<f32>>,
+    pub position: Option<Vec<f32>>,
     /// The window's size when it opens, in points; 1280 by 800 without it.
     #[arg(long, num_args = 2, value_names = ["width", "height"])]
-    pub(crate) size: Option<Vec<f32>>,
+    pub size: Option<Vec<f32>>,
     /// The map to start on.
     #[arg(default_value = "start")]
-    pub(crate) map: String,
+    pub map: String,
     /// Any other engine options for the game filesystem, after `--`: `-path`, `-proghack`
     /// and the like, as the engine reads them.
     #[arg(last = true)]
-    pub(crate) engine: Vec<String>,
+    pub engine: Vec<String>,
 }
 
 /// What `--look` names (REND-13).
 #[derive(clap::ValueEnum, Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum LookArg {
+pub enum LookArg {
     /// QuakeSpasm's look.
     #[default]
     Quakespasm,
@@ -116,7 +117,7 @@ pub(crate) enum LookArg {
 
 impl LookArg {
     /// The renderer's look.
-    pub(crate) const fn look(self) -> Look {
+    pub const fn look(self) -> Look {
         match self {
             Self::Quakespasm => Look::QuakeSpasm,
             Self::Glquake => Look::GlQuake,
@@ -126,7 +127,7 @@ impl LookArg {
 
 /// What `--show` starts at.
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Show {
+pub enum Show {
     /// The map's first water.
     Water,
     /// The map's first sky.
@@ -135,13 +136,24 @@ pub(crate) enum Show {
 
 impl Args {
     /// The process's command line.
-    pub(crate) fn from_env() -> Self {
+    pub fn from_env() -> Self {
         <Self as clap::Parser>::parse_from(engine_style(std::env::args()))
+    }
+
+    /// The command line `words`, the host's name left out, as the host reads its own.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Usage`] with clap's message when the words do not parse.
+    pub fn parse_words(words: impl IntoIterator<Item = String>) -> Result<Self, Error> {
+        let line = core::iter::once("quakec-engine".to_owned()).chain(words);
+        <Self as clap::Parser>::try_parse_from(engine_style(line))
+            .map_err(|error| Error::Usage(error.to_string()))
     }
 
     /// The engine's command line for the game filesystem: `-basedir`, `-game`, `-rogue`,
     /// `-hipnotic` and the options after `--`.
-    pub(crate) fn engine(&self) -> Vec<String> {
+    pub fn engine(&self) -> Vec<String> {
         let mut engine = Vec::new();
         if let Some(basedir) = &self.basedir {
             engine.extend(["-basedir".to_owned(), basedir.display().to_string()]);
@@ -162,7 +174,7 @@ impl Args {
     /// The cue sheet in the game root whose CD the game's music plays from (SND-6.4, SND-6.5):
     /// GOG's `gamea.cue` for Scourge of Armagon (`-hipnotic`), `gamed.cue` for Dissolution of
     /// Eternity (`-rogue`), else `game.cue`, Quake's own.
-    pub(crate) fn cd_sheet(&self) -> &'static str {
+    pub fn cd_sheet(&self) -> &'static str {
         let game = self.game.as_deref().map(str::to_ascii_lowercase);
         if self.hipnotic || game.as_deref() == Some("hipnotic") {
             "gamea.cue"
@@ -176,12 +188,14 @@ impl Args {
 
 /// `-game`'s value, a single directory name: "gamedir should be a single directory name, not
 /// a path", as QuakeSpasm says (ADR-0008).
-fn single_name(text: &str) -> Result<String, String> {
+fn single_name(text: &str) -> Result<String, Error> {
     let plain = !text.is_empty() && text != "." && text != ".." && !text.contains(['/', '\\', ':']);
     if plain {
         Ok(text.to_owned())
     } else {
-        Err("gamedir should be a single directory name, not a path".to_owned())
+        Err(Error::Usage(
+            "gamedir should be a single directory name, not a path".to_owned(),
+        ))
     }
 }
 

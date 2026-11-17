@@ -393,3 +393,86 @@ fn a_full_build_asked_for_while_one_runs_replaces_it() {
         "the first's file taken away"
     );
 }
+
+/// An embedded host that hands out a [`Recording`] host's client, and counts.
+struct Window {
+    shows: bool,
+    counts: std::rc::Rc<std::cell::RefCell<(Vec<qs_engine::LaunchSpec>, u32)>>,
+}
+
+impl qs_engine::EmbeddedHost for Window {
+    fn shows(&self) -> bool {
+        self.shows
+    }
+
+    fn start(
+        &mut self,
+        spec: &qs_engine::LaunchSpec,
+        _client_name: &str,
+    ) -> Result<Client, qs_engine::LaunchError> {
+        self.counts.borrow_mut().0.push(spec.clone());
+        Ok(recording_client().0)
+    }
+
+    fn stop(&mut self) {
+        let mut counts = self.counts.borrow_mut();
+        counts.1 = counts.1.saturating_add(1);
+    }
+}
+
+// No spec statement: ENG-10, ADR-0028: a Play starts the game through the app's embedded host
+// when it shows the game, with no host program and no window to place, and Stop stops it there;
+// when it does not, the preview host's process is asked for as before
+#[test]
+fn a_play_starts_the_game_in_the_apps_own_window_when_it_shows_it() {
+    use crate::preview::{PlayState, PreviewConfig, PreviewError};
+    let dir = std::env::temp_dir().join(format!("qs-wb-embedded-{}", std::process::id()));
+    let _gone = std::fs::remove_dir_all(&dir);
+    let project = dir.join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(project.join("progs.src"), "progs.dat\nworld.qc\n").unwrap();
+    std::fs::write(project.join("world.qc"), "void() worldspawn = {};\n").unwrap();
+    // A folder holding id1/pak0.pak is a game (FS-6.1).
+    let game = dir.join("game");
+    std::fs::create_dir_all(game.join("id1")).unwrap();
+    std::fs::write(game.join("id1/pak0.pak"), b"PACK").unwrap();
+    let config = || PreviewConfig {
+        host: Some(dir.join("no-host")),
+        app: PathBuf::from("/nowhere/app"),
+        game: Some(game.clone()),
+        extra: vec!["--nosound".to_owned()],
+    };
+    let mut workbench = Workbench::new(FsLoader, Config::default());
+    workbench.open_project(&project).unwrap();
+
+    let counts = std::rc::Rc::default();
+    let window = |shows| {
+        Box::new(Window {
+            shows,
+            counts: std::rc::Rc::clone(&counts),
+        })
+    };
+    let mut hidden = Preview::with_embedded(config(), window(false));
+    let error = hidden.play(&mut workbench, None).unwrap_err();
+    assert!(matches!(error, PreviewError::Launch(_)), "{error}");
+    assert!(counts.borrow().0.is_empty(), "the window was not asked");
+
+    let mut shown = Preview::with_embedded(config(), window(true));
+    shown
+        .play(&mut workbench, Some("start".to_owned()))
+        .unwrap();
+    assert_eq!(shown.state(), PlayState::Playing);
+    assert!(shown.is_embedded());
+    {
+        let counts = counts.borrow();
+        let spec = &counts.0[0];
+        assert_eq!(spec.map.as_deref(), Some("start"));
+        assert_eq!(spec.extra, ["--nosound"]);
+        assert_eq!(spec.host, PathBuf::new(), "no host program is looked for");
+    }
+    shown.stop();
+    assert_eq!(shown.state(), PlayState::Stopped);
+    assert!(!shown.is_embedded());
+    assert_eq!(counts.borrow().1, 1, "the window stopped its game");
+    let _gone = std::fs::remove_dir_all(&dir);
+}

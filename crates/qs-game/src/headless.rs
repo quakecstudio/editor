@@ -19,6 +19,7 @@ use qs_client::{
 };
 use qs_render::{Look, MapMesh, MapRenderer, Offscreen, Play};
 
+use crate::Error;
 use crate::args::Args;
 use crate::audio::Audio;
 use crate::bridge::Bridge;
@@ -45,7 +46,7 @@ const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
 impl Args {
     /// Runs the game of `loaded` until the bridge's client stops the host or goes away.
-    pub(crate) fn run_headless(&self, loaded: Loaded, mut bridge: Bridge) -> Result<(), String> {
+    pub(crate) fn run_headless(&self, loaded: Loaded, mut bridge: Bridge) -> Result<(), Error> {
         let mut offscreen = match Offscreen::new(DEPTH) {
             Ok(offscreen) => Some(Drawer::new(offscreen)),
             Err(error) => {
@@ -81,7 +82,7 @@ impl Args {
             if world.game.wants_screenshot() {
                 match offscreen.as_mut().map(|drawer| world.draw(drawer)) {
                     Some(Ok(frame)) => world.game.screenshot_taken(&frame),
-                    Some(Err(why)) => world.game.screenshot_failed(&why),
+                    Some(Err(why)) => world.game.screenshot_failed(&why.to_string()),
                     None => world.game.screenshot_failed("no GPU device"),
                 }
             }
@@ -122,8 +123,8 @@ impl Loaded {
         self,
         load: std::time::Duration,
         eye: [f32; 3],
-    ) -> Result<String, String> {
-        let offscreen = Offscreen::new(DEPTH).map_err(|error| error.to_string())?;
+    ) -> Result<String, Error> {
+        let offscreen = Offscreen::new(DEPTH).map_err(|error| Error::Draw(error.to_string()))?;
         let mut drawer = Drawer::new(offscreen);
         let mut world = Headless::new(self, Some(&drawer));
         let mut server = Vec::with_capacity(usize::from(SETTLE_FRAMES));
@@ -142,9 +143,9 @@ impl Loaded {
                     .as_secs_f64(),
             );
             if world.game.host_action().is_some() {
-                return Err(
-                    "the map changed level, started a game or quit in its first second".into(),
-                );
+                return Err(Error::Load(
+                    "the map changed level, started a game or quit in its first second".to_owned(),
+                ));
             }
             world.read_messages(if ran { FRAME } else { 0.0 });
         }
@@ -190,8 +191,8 @@ impl Loaded {
         script: &ViewScript,
         audio: &Path,
         size: [u32; 2],
-    ) -> Result<(), String> {
-        let offscreen = Offscreen::new(DEPTH).map_err(|error| error.to_string())?;
+    ) -> Result<(), Error> {
+        let offscreen = Offscreen::new(DEPTH).map_err(|error| Error::Draw(error.to_string()))?;
         let mut drawer = Drawer::new(offscreen);
         let mut world = Headless::new(self, Some(&drawer));
         let mut sound = world.audio.take_captured();
@@ -219,7 +220,9 @@ impl Loaded {
                         world.game.world_mut().set_focus(focus(overlay.dest));
                         let ran = world.game.frame(FRAME);
                         if world.game.host_action().is_some() {
-                            return Err("the map changed level, started a game or quit".into());
+                            return Err(Error::Script(
+                                "the map changed level, started a game or quit".to_owned(),
+                            ));
                         }
                         world.read_messages(if ran { FRAME } else { 0.0 });
                         overlay.frame(screen);
@@ -253,13 +256,14 @@ impl Loaded {
                     let callback = world.view_callback(aspect, hud);
                     let frame = drawer.draw(callback, size)?;
                     std::fs::write(path, frame.ppm())
-                        .map_err(|error| format!("{}: {error}", path.display()))?;
+                        .map_err(|error| Error::Script(format!("{}: {error}", path.display())))?;
                 }
             }
             sound.extend(world.audio.take_captured());
         }
         let bytes: Vec<u8> = sound.iter().flat_map(|s| s.to_le_bytes()).collect();
-        std::fs::write(audio, bytes).map_err(|error| format!("{}: {error}", audio.display()))
+        std::fs::write(audio, bytes)
+            .map_err(|error| Error::Script(format!("{}: {error}", audio.display())))
     }
 }
 
@@ -417,7 +421,7 @@ impl Headless {
         let read = |name: &str| {
             describer
                 .read(name)
-                .ok_or_else(|| format!("{name} is not on the search path"))
+                .ok_or_else(|| Error::Load(format!("{name} is not on the search path")))
         };
         let palette = self.play.palette().clone();
         let mesh = map_mesh(
@@ -452,7 +456,7 @@ impl Headless {
         self.bsp = bsp;
     }
 
-    fn draw(&mut self, drawer: &mut Drawer) -> Result<Frame, String> {
+    fn draw(&mut self, drawer: &mut Drawer) -> Result<Frame, Error> {
         let callback = self.callback(None);
         drawer.draw(callback, SIZE)
     }

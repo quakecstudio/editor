@@ -502,3 +502,55 @@ fn polling_takes_the_events_without_waiting() {
     }
     assert!(matches!(result, Err(ClientError::Closed)), "{result:?}");
 }
+
+// No spec statement: ADR-0028: a host in the client's own process, on its thread, answers only
+// when the client pumps it, so a pumped client's requests are answered and an unpumped host's
+// are not
+#[test]
+fn a_pumped_client_lets_a_host_on_its_own_thread_answer() {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use std::sync::mpsc::{TryRecvError, channel};
+
+    let (host_reads, client_writes) = std::io::pipe().unwrap();
+    let (client_reads, host_writes) = std::io::pipe().unwrap();
+    // The host's reader thread hands it frames, as the preview host's does; the host itself
+    // runs only inside the pump.
+    let (sender, frames) = channel();
+    std::thread::spawn(move || {
+        let mut reader = BufReader::new(host_reads);
+        while let Ok(Some(content)) = read_frame(&mut reader) {
+            if sender.send(content).is_err() {
+                return;
+            }
+        }
+    });
+    let pumps = Rc::new(RefCell::new(0_u32));
+    let counted = Rc::clone(&pumps);
+    let mut host = Fake;
+    let mut session = Session::new();
+    let mut out = host_writes;
+    let pump = move || {
+        *counted.borrow_mut() += 1;
+        loop {
+            match frames.try_recv() {
+                Ok(content) => {
+                    let message = Message::parse(&content).unwrap();
+                    if let Some(response) = session.handle(&mut host, message).response {
+                        write_frame(&mut out, &response.to_bytes()).unwrap();
+                        out.flush().unwrap();
+                    }
+                }
+                Err(TryRecvError::Empty | TryRecvError::Disconnected) => return,
+            }
+        }
+    };
+    let mut client = Client::over(client_reads, client_writes).pumped(Box::new(pump));
+    let info = client.initialize("tests").unwrap();
+    assert_eq!(info["host"]["name"], "fake");
+    let answer = client
+        .request("evaluate", json!({ "expression": "1" }))
+        .unwrap();
+    assert_eq!(answer["method"], "evaluate");
+    assert!(*pumps.borrow() >= 2, "each wait pumped the host");
+}

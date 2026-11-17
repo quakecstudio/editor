@@ -3682,6 +3682,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "qs-game"
+version = "2026.11.1"
+dependencies = [
+ "clap",
+ "cpal",
+ "eframe",
+ "image",
+ "interprocess",
+ "qc-builtins",
+ "qc-codegen",
+ "qc-edict",
+ "qc-lno",
+ "qc-progs",
+ "qc-sema",
+ "qc-types",
+ "qc-vm",
+ "qs-bridge",
+ "qs-bsp",
+ "qs-client",
+ "qs-mdl",
+ "qs-paths",
+ "qs-render",
+ "qs-sim",
+ "qs-sound",
+ "qs-vfs",
+ "raw-window-handle",
+ "self_cell",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "qs-git"
 version = "2026.11.1"
 dependencies = [
@@ -4013,32 +4045,9 @@ dependencies = [
 name = "quakec-engine"
 version = "2026.11.1"
 dependencies = [
- "clap",
- "cpal",
- "eframe",
- "image",
- "interprocess",
- "qc-builtins",
- "qc-codegen",
- "qc-edict",
- "qc-lno",
- "qc-progs",
- "qc-sema",
- "qc-types",
- "qc-vm",
- "qs-bridge",
- "qs-bsp",
- "qs-client",
+ "qs-game",
  "qs-log",
- "qs-mdl",
  "qs-paths",
- "qs-render",
- "qs-sim",
- "qs-sound",
- "qs-vfs",
- "raw-window-handle",
- "self_cell",
- "serde_json",
  "tracing",
 ]
 
@@ -4093,6 +4102,8 @@ dependencies = [
  "qs-bsp",
  "qs-commands",
  "qs-editor-view",
+ "qs-engine",
+ "qs-game",
  "qs-layout",
  "qs-log",
  "qs-map",
