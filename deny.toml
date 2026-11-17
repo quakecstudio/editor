@@ -29,6 +29,10 @@ ignore = [
     { id = "RUSTSEC-2026-0370", reason = "zvariant moved into zbus 6; AccessKit's Linux backend has not moved yet (#79)" },
     { id = "RUSTSEC-2026-0371", reason = "zbus_names moved into zbus 6; AccessKit's Linux backend has not moved yet (#79)" },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive moved into zbus 6; AccessKit's Linux backend has not moved yet (#79)" },
+    # chrono is "unmaintained", a notice and not a vulnerability. It is not ours: rmcp (the MCP
+    # server) and schemars (the commands' JSON schemas) depend on it at the versions we pin.
+    # Decided 2026-11-17 (Justin); the ignore comes out when they drop it.
+    { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained; rmcp and schemars still depend on it" },
 ]
 
 [licenses]
