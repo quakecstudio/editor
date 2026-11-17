@@ -122,6 +122,8 @@ impl Passed {
 pub(crate) struct Struck {
     /// What it hit and how far along; none when it hit nothing.
     pub(crate) hit: Option<(Surface, f32)>,
+    /// The face it hit.
+    pub(crate) face: Option<usize>,
     pub(crate) passed: Passed,
 }
 
@@ -675,6 +677,7 @@ impl Rays {
             return self.along_axis_plane((origin, dir, far), asker, texels, stack);
         }
         let mut hit: Option<(Surface, f32)> = None;
+        let mut face = None;
         // What each triangle that did not stop the ray would add, with how far along it is:
         // only those before the hit count.
         let mut through: Vec<(f32, Passed)> = Vec::new();
@@ -693,6 +696,7 @@ impl Rays {
                 &mut passed,
             ) {
                 hit = Some((caster.surface, t));
+                face = Some(caster.face);
                 Some(t)
             } else {
                 through.push((t, passed));
@@ -701,12 +705,14 @@ impl Rays {
         });
         Struck {
             hit,
+            face,
             passed: passed_before(through, hit.map_or(far, |(_, at)| at)),
         }
     }
 
     /// Whether the ray from `origin` along the unit `dir` reaches sky before anything else
-    /// stops it, within `far`, and what it passed through on the way (LIGHT-11.3). The sky
+    /// stops it, within `far`: what it passed through on the way and the sky's face it
+    /// reached (LIGHT-11.3). The sky
     /// is asked first, since most rays reach none: only one that does is asked of the rest.
     pub(crate) fn sees_sky(
         &self,
@@ -714,21 +720,28 @@ impl Rays {
         asker: &Asker,
         texels: &dyn Texels,
         stack: &mut Stack,
-    ) -> Option<Passed> {
+    ) -> Option<(Passed, usize)> {
         if self.sky.nodes.is_empty() {
             return None;
         }
         // A ray along a plane of the grid, or one that sky may not stop, is asked whole.
         if asker.shadow_mask != CHANNEL_DEFAULT || dir.iter().any(|c| c.abs() < NEARLY_IN_PLANE) {
             let struck = self.struck((origin, dir, far), asker, texels, stack);
-            return matches!(struck.hit, Some((Surface::Sky, _))).then_some(struck.passed);
+            return match (struck.hit, struck.face) {
+                (Some((Surface::Sky, _)), Some(face)) => Some((struck.passed, face)),
+                _ => None,
+            };
         }
-        let mut nearest: Option<f32> = None;
-        self.sky.walk((origin, dir), far, stack, |_, t| {
-            nearest = Some(t);
+        let mut nearest: Option<(f32, usize)> = None;
+        self.sky.walk((origin, dir), far, stack, |triangle, t| {
+            let face = self
+                .casters
+                .get(triangle.caster)
+                .map_or(0, |caster| caster.face);
+            nearest = Some((t, face));
             Some(t)
         });
-        let to_sky = nearest?;
+        let (to_sky, sky_face) = nearest?;
         let mut passed = Passed::default();
         let mut blocked = false;
         self.tree.walk((origin, dir), to_sky, stack, |triangle, t| {
@@ -752,7 +765,7 @@ impl Rays {
                 Some(to_sky)
             }
         });
-        (!blocked).then_some(passed)
+        (!blocked).then_some((passed, sky_face))
     }
 
     /// What a ray with no movement along one axis or two reaches first (LIGHT-11.9). Such a
@@ -772,6 +785,7 @@ impl Rays {
         struct Met {
             t: f32,
             surface: Surface,
+            face: usize,
             /// For each axis the ray does not move along, the side of the ray's plane the
             /// triangle lies wholly on; none where it spans the plane.
             sides: [Option<Side>; AXES],
@@ -794,6 +808,7 @@ impl Rays {
                 stopping.push(Met {
                     t,
                     surface: caster.surface,
+                    face: caster.face,
                     sides: triangle.sides_of(origin, dir),
                 });
             } else {
@@ -817,10 +832,12 @@ impl Rays {
         let hit = stopping
             .iter()
             .filter(|met| crossed(met))
-            .min_by(|a, b| a.t.total_cmp(&b.t))
-            .map(|met| (met.surface, met.t));
+            .min_by(|a, b| a.t.total_cmp(&b.t));
+        let face = hit.map(|met| met.face);
+        let hit = hit.map(|met| (met.surface, met.t));
         Struck {
             hit,
+            face,
             passed: passed_before(through, hit.map_or(far, |(_, at)| at)),
         }
     }

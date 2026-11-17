@@ -238,7 +238,7 @@ impl Lights {
         self.scatter(&mut random);
         self.match_targets();
         self.aim_spotlights();
-        self.make_suns(&mut random);
+        self.make_suns(&|name| map.texture_named(name), &mut random);
         for lamp in &mut self.lamps {
             if lamp.keys.light.get() != 0.0
                 && !lamp.keys.nonudge.get()
@@ -350,10 +350,11 @@ impl Lights {
         self.lamps.extend(copies);
     }
 
-    /// `SetupSuns` and `SetupSkyDomes`: a sun for each light with `_sun`, the world's sun and
+    /// `SetupSuns` and `SetupSkyDomes`, `texture_named` the number of a texture by its name:
+    /// a sun for each light with `_sun`, the world's sun and
     /// second sun, the world's domes, and a dome for each light with `_sunlight2` or
     /// `_sunlight3`; such a light then gives no light of its own (LIGHT-14, LIGHT-15).
-    fn make_suns(&mut self, random: &mut Random) {
+    fn make_suns(&mut self, texture_named: &dyn Fn(&[u8]) -> Option<usize>, random: &mut Random) {
         let world = &self.world;
         let mut suns = Suns {
             all: Vec::new(),
@@ -366,6 +367,8 @@ impl Lights {
             dirt: lamp.keys.dirt(),
             anglescale: lamp.keys.anglescale.get(),
             style: lamp.keys.style.get(),
+            // `img::find(suntexture)`: a name no texture has leaves the sun to every sky.
+            sky_texture: texture_named(&lamp.keys.suntexture.get()),
         };
         for lamp in &mut self.lamps {
             if !(lamp.keys.sun.get() && lamp.keys.light.get() > 0.0) {
@@ -388,6 +391,7 @@ impl Lights {
             dirt: dirt_of_int(dirt),
             anglescale: world.anglescale.get(),
             style: 0,
+            sky_texture: None,
         };
         let deviance = world.sun_deviance.get();
         let sun_dirt = world.sunlight_dirt.get();
@@ -894,7 +898,7 @@ mod tests {
                     {\n\"classname\" \"light\"\n\"_sunlight3\" \"1\"\n\"light\" \"65\"\n}\n";
         let mut lights = lights(text);
         lights.match_targets();
-        lights.make_suns(&mut Random::new(Jitter::Bsd));
+        lights.make_suns(&|_| None, &mut Random::new(Jitter::Bsd));
         // The light's sun, the world's two suns, its two domes and the lights' two domes.
         assert_eq!(lights.suns.len(), 1 + 2 + 130 + 65 + 65);
         let first = lights.suns.first().copied().unwrap();

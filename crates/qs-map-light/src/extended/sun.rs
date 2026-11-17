@@ -51,6 +51,8 @@ pub(crate) struct Sun {
     pub(crate) dirt: bool,
     pub(crate) anglescale: f32,
     pub(crate) style: i32,
+    /// With `_suntexture`, the texture of the only sky that lets it through (LIGHT-14.8).
+    pub(crate) sky_texture: Option<usize>,
 }
 
 /// `Random`: the C library's `rand` over `RAND_MAX`, which is another sequence on each
@@ -144,6 +146,7 @@ pub(crate) struct SunLight {
     pub(crate) dirt: Dirt,
     pub(crate) anglescale: f32,
     pub(crate) style: i32,
+    pub(crate) sky_texture: Option<usize>,
 }
 
 /// The suns of a map, as they are added.
@@ -171,6 +174,7 @@ impl Suns<'_> {
             },
             anglescale: sun.anglescale,
             style: sun.style,
+            sky_texture: sun.sky_texture,
         });
     }
 
@@ -310,6 +314,7 @@ mod tests {
         dirt: Dirt::World,
         anglescale: 0.5,
         style: 0,
+        sky_texture: None,
     };
 
     fn suns(random: &mut Random) -> Suns<'_> {

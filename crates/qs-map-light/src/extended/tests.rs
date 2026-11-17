@@ -38,7 +38,7 @@ use crate::{
 };
 
 /// The textures the rooms are built of.
-const TEXTURES: [&str; 6] = ["wall", "sky1", "*water", "{fence", "glow", "trim"];
+const TEXTURES: [&str; 7] = ["wall", "sky1", "sky4", "*water", "{fence", "glow", "trim"];
 
 /// A room 256 by 256 by 128 inside, its ceiling of `ceiling`, with these keys on the world,
 /// these other brushes in it and these other entities.
@@ -1104,4 +1104,39 @@ fn dirt_mode_one_draws_its_rays_at_random() {
     let at = |x: f32, y: f32| floor_at(&first.bsp, x, y).unwrap();
     assert!(at(16.0, 16.0) < at(112.0, 112.0));
     assert!(floor(&first.bsp).iter().all(|&luxel| luxel <= 50));
+}
+
+// spec LIGHT-14.8: a sun light with _suntexture comes only through sky of that texture, named
+// in any case; a name no texture has leaves it to every sky.
+#[test]
+fn a_sun_with_a_texture_comes_through_that_sky_alone() {
+    // The ceiling is sky1; a block of sky4 hangs in one corner, so the map has both.
+    let other_sky = cuboid([192, 192, 96], [256, 256, 128], "sky4");
+    let sun = |texture: &str| {
+        format!(
+            "{{\n\"classname\" \"light\"\n\"_sun\" \"1\"\n\"mangle\" \"0 -90 0\"\n\
+             \"light\" \"200\"\n{texture}}}\n"
+        )
+    };
+    let at = |texture: &str, x: f32, y: f32| {
+        floor_at(&lit(&room("", "sky1", &other_sky, &sun(texture))).bsp, x, y)
+    };
+    // Under the ceiling's sky, and under the block's.
+    let (open, under_block) = ((64.0, 64.0), (224.0, 224.0));
+    assert_eq!(at("", open.0, open.1), Some(100));
+    assert_eq!(at("", under_block.0, under_block.1), Some(100));
+    assert_eq!(at("\"_suntexture\" \"SKY1\"\n", open.0, open.1), Some(100));
+    assert_eq!(
+        at("\"_suntexture\" \"sky1\"\n", under_block.0, under_block.1),
+        Some(0)
+    );
+    assert_eq!(at("\"_suntexture\" \"sky4\"\n", open.0, open.1), Some(0));
+    assert_eq!(
+        at("\"_suntexture\" \"sky4\"\n", under_block.0, under_block.1),
+        Some(100)
+    );
+    assert_eq!(
+        at("\"_suntexture\" \"nosuch\"\n", open.0, open.1),
+        Some(100)
+    );
 }

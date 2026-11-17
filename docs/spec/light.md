@@ -294,7 +294,7 @@ lights the map, read by the same reader (LIGHT-2), so what the modder sees is wh
 - **LIGHT-8.7** Not ported, each a divergence from ericw-tools: `_lightmap_scale` and
   `_world_units_per_luxel` (a lightmap is 16 texels to the luxel); projected textures
   (`_project_texture`); radiosity surface lights (`_surface_radiosity`, `_surflight_radiosity`);
-  `_suntexture`; the shadows of brush models with no faces; and the command line's options.
+  the shadows of brush models with no faces; and the command line's options.
   Each is being ported; none is left out by decision.
 - **LIGHT-8.8** `qs-map-light` offers a quick light for playing a map at once (MAP-13): the
   extended dialect's lighting without dirt (LIGHT-19) and bounce (LIGHT-20), the two that
@@ -603,6 +603,13 @@ The world's settings, each with its default; a second name is another key for th
   over 255 times its brightness times `(1 - anglescale) + anglescale * cos`, `cos` at least
   0, with the world's `_anglescale` for the world's suns; it reaches the sample when the ray
   along the sun's direction reaches sky first (LIGHT-11.3), within 1000000 units.
+- **LIGHT-14.8** A sun or a dome of a light with `_suntexture` reaches a sample only through
+  sky of the texture of that name, in any case (`if (sun->suntexture_value) { const triinfo
+  *face = rs.getPushedRayHitFaceInfo(j); if (sun->suntexture_value != face->texture) {
+  continue; } }` in `LightFace_Sky`); a name no texture of the map has leaves the sun to every
+  sky (`sun.suntexture_value = img::find(suntexture)`, null when it is not found). The world's
+  own suns and domes have none. The light at a point (LIGHT-17.5) does not ask the texture.
+  Source: `light/ltface.cc`, `LightFace_Sky`; `light/entities.cc`, `AddSun`.
 
 ## LIGHT-15 The sky dome
 

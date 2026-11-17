@@ -440,12 +440,16 @@ impl Shader<'_> {
             if brightness(colour).abs() <= GATE {
                 continue;
             }
-            let Some(passed) =
+            let Some((passed, sky)) =
                 self.rays
                     .sees_sky((sample.point, incoming, SKY_DIST), &asker, self.map, stack)
             else {
                 continue;
             };
+            // LIGHT-14.8: a sun with a texture comes only through sky of that texture.
+            if sun.sky_texture.is_some() && self.map.texture_of(sky) != sun.sky_texture {
+                continue;
+            }
             self.add(lightmaps, &mut slot, (sun.style, passed), index, colour);
         }
     }

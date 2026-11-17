@@ -633,6 +633,28 @@ fn texel(coordinate: f32, size: u32) -> u32 {
     }
 }
 
+impl Map<'_> {
+    /// `img::find`: the number of the texture named `name`, in any case; none for no name
+    /// and for a name no texture has.
+    pub(crate) fn texture_named(&self, name: &[u8]) -> Option<usize> {
+        if name.is_empty() {
+            return None;
+        }
+        self.bsp.textures.iter().position(|texture| {
+            texture
+                .as_ref()
+                .is_some_and(|texture| texture.name.eq_ignore_ascii_case(name))
+        })
+    }
+
+    /// The number of the texture of face `face`.
+    pub(crate) fn texture_of(&self, face: usize) -> Option<usize> {
+        let face = self.face(FaceId::new(face))?;
+        let texinfo = self.bsp.texinfo.get(face.texinfo)?;
+        usize::try_from(texinfo.miptex).ok()
+    }
+}
+
 impl Texels for Map<'_> {
     /// `SampleTexture`: the texel of the face's texture at `point`, nearest and repeating.
     /// A missing texture is all 0. A texel is opaque, but index 255 of a `{` texture; its
