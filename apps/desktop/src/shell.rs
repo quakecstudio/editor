@@ -72,7 +72,7 @@ use crate::git_panel::TabShown;
 use crate::help::{self, Topic};
 use crate::icons::Icon;
 use crate::icons::Toggled;
-use crate::keymap::{self, Scope};
+use crate::keymap::{self, Platform, Scope};
 use crate::map_editor::MapAction;
 #[cfg(test)]
 use crate::map_editor::MapEditor;
@@ -83,6 +83,7 @@ use crate::map_view::{self, MapView};
 use crate::multibuffer::Multibuffer;
 use crate::multibuffer::{MultiAction, Source as MultiSource, multibuffer_ui};
 use crate::palette::Palette;
+use crate::pick::Answer;
 use crate::picker::{PickerKind, PickerRow};
 use crate::project::ProjectFeature;
 use crate::project::{self, Jump, SymbolScope};
@@ -1273,9 +1274,13 @@ impl Shell {
                 self.centre(ui, FocusNow::of(pending, Focus::Editor));
             });
         // What a click in the map view gave the command line (UI-23).
-        if let Some(value) = self.features.map.map_editor.take_picked() {
-            let entered = self.command_line.picked(self.session.registry(), value);
-            self.run_entered(entered);
+        match self.features.map.map_editor.take_picked() {
+            Some(Answer::Value(value)) => {
+                let entered = self.command_line.picked(self.session.registry(), value);
+                self.run_entered(entered);
+            }
+            Some(Answer::GaveUp) => self.command_line.give_up(),
+            None => {}
         }
         if let Some((id, params)) = self.palette.show(
             ui,
@@ -1363,7 +1368,10 @@ impl Shell {
             return;
         }
         // The editor, with its own undo history, takes its keys itself.
-        let editing = ui.memory(|m| m.has_focus(Id::new(EDITOR_AREA)));
+        // The editor takes its keys itself, and so does a field being typed in: there Cmd+Z
+        // takes back the typing, not the project's last edit.
+        let editing =
+            ui.memory(|m| m.has_focus(Id::new(EDITOR_AREA))) || ui.ctx().text_edit_focused();
         // P4-37: an edit of the keymap file takes effect on the next frame.
         let registry = self.session.registry();
         let bindable = |id: &str| keymap::bindable(registry, id);
@@ -1374,12 +1382,16 @@ impl Shell {
         for binding in self.keymap.in_match_order() {
             let taken = match binding.scope {
                 // A key the map view takes itself is the view's while it has the keyboard.
-                Scope::Everywhere => !(in_view && keymap::is_view_key(&binding.shortcut)),
+                Scope::Everywhere => !(in_view && Platform::HERE.is_view_key(&binding.shortcut)),
                 Scope::Shell => !editing,
                 Scope::Map => !editing && map_shown,
                 Scope::MapView => in_view,
             };
-            if !taken || (playing && !FOCUS_COMMANDS.contains(&binding.command.as_str())) {
+            // The map editor takes these itself, with what it holds.
+            if !taken || keymap::MAP_EDITOR_KEYS.contains(&binding.command.as_str()) {
+                continue;
+            }
+            if playing && !Self::leaves_the_game(&binding.command) {
                 continue;
             }
             if !ui.input_mut(|i| i.consume_shortcut(&binding.shortcut)) {
@@ -1723,6 +1735,14 @@ impl Shell {
         } else if restart {
             let _: Option<PreviewStatus> = self.run(RESTART, &serde_json::json!({}));
         }
+    }
+
+    /// Whether the key of `command` is taken from a game that has the keyboard: a focus
+    /// key, which lets the keyboard leave it, and only where the platform's modifier is Cmd.
+    /// Where it is Ctrl the focus keys are Ctrl with 1 to 4, Quake's fire with a weapon's
+    /// number, so there the game keeps every key and a click outside it takes the keyboard.
+    pub(crate) fn leaves_the_game(command: &str) -> bool {
+        Platform::HERE == Platform::Mac && FOCUS_COMMANDS.contains(&command)
     }
 
     /// Runs the command the command line made, and tells the line how it went.

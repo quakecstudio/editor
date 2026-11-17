@@ -106,7 +106,7 @@ impl CommandLine {
         })
     }
 
-    /// The lines entered so far, oldest first, for the Up and Down keys.
+    /// The lines that named a command, oldest first, for the Up and Down keys.
     #[must_use]
     pub fn history(&self) -> &[String] {
         &self.history
@@ -146,15 +146,17 @@ impl CommandLine {
     /// value of the parameter asked for, nothing typed taking an optional one's default.
     pub fn enter<C: 'static>(&mut self, registry: &Registry<C>, typed: &str) -> Entered {
         let typed = typed.trim();
-        if !typed.is_empty() {
-            self.history.push(typed.to_owned());
-        }
         if self.entering.is_none() {
             let found = registry.named(typed);
             let info = match found.as_slice() {
                 [] if typed.is_empty() => return Entered::Nothing,
                 [] => return Entered::Unknown(typed.to_owned()),
-                [info] => *info,
+                [info] => {
+                    // Only a line that named a command is brought back: a parameter's value
+                    // is no command.
+                    self.history.push(typed.to_owned());
+                    *info
+                }
                 several => {
                     return Entered::Ambiguous(
                         several

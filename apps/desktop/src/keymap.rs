@@ -7,8 +7,9 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use eframe::egui::{InputState, Key, KeyboardShortcut, Modifiers};
-use qs_layout::{DEFAULT_KEYS, KeyContext, TextureStep, VIEW_KEYS, ViewKey};
+use qs_layout::{DEFAULT_KEYS, DefaultKey, KeyContext, TextureStep, VIEW_KEYS, ViewKey};
 use serde::Deserialize;
+use std::sync::LazyLock;
 
 /// Where a binding's keys are taken.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -54,13 +55,11 @@ pub const RUN_PROFILE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMA
 pub const REPEAT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::R);
 
 /// Every default binding: `qs-layout`'s default keys (P7-17), which `docs/keymap.md` lists
-/// with what each follows, less the map view's keys the map editor takes itself
-/// ([`MAP_EDITOR_KEYS`]). The keys' spelling is the keymap file's ([`parse_keys`]).
+/// with what each follows. The keys' spelling is the keymap file's ([`parse_keys`]).
 #[must_use]
 pub fn bindings() -> Vec<Binding> {
     DEFAULT_KEYS
         .iter()
-        .filter(|key| !MAP_EDITOR_KEYS.contains(&key.command))
         .filter_map(|key| {
             Some(Binding {
                 command: key.command,
@@ -76,43 +75,122 @@ pub fn bindings() -> Vec<Binding> {
         .collect()
 }
 
+/// The map view's own keys, read once: each [`ViewKey`] with its shortcuts.
+static VIEW_SHORTCUTS: LazyLock<Vec<(ViewKey, Vec<KeyboardShortcut>)>> = LazyLock::new(|| {
+    VIEW_KEYS
+        .iter()
+        .map(|row| {
+            (
+                row.key,
+                row.keys
+                    .iter()
+                    .filter_map(|keys| parse_keys(keys))
+                    .collect(),
+            )
+        })
+        .collect()
+});
+
+/// `key`'s shortcuts.
+fn shortcuts(key: ViewKey) -> &'static [KeyboardShortcut] {
+    VIEW_SHORTCUTS
+        .iter()
+        .find(|(own, _)| *own == key)
+        .map_or(&[], |(_, shortcuts)| shortcuts)
+}
+
 /// Whether `key` of the map view's own was pressed, taking it.
 pub(crate) fn pressed(input: &mut InputState, key: ViewKey) -> bool {
-    key.keys()
+    shortcuts(key)
         .iter()
-        .filter_map(|keys| parse_keys(keys))
-        .any(|shortcut| input.consume_shortcut(&shortcut))
+        .any(|shortcut| input.consume_shortcut(shortcut))
 }
 
 /// Whether the texture key `key` was pressed for `step`, taking it.
 pub(crate) fn pressed_for(input: &mut InputState, key: ViewKey, step: TextureStep) -> bool {
-    key.keys_for(step)
-        .and_then(parse_keys)
-        .is_some_and(|shortcut| input.consume_shortcut(&shortcut))
+    let nth = match (shortcuts(key), step) {
+        ([plain, _, _], TextureStep::Plain) => Some(plain),
+        ([_, coarse, _], TextureStep::Coarse) => Some(coarse),
+        ([_, _, fine], TextureStep::Fine) => Some(fine),
+        _ => None,
+    };
+    nth.is_some_and(|shortcut| input.consume_shortcut(shortcut))
 }
 
 /// Whether `key` of the map view's own is held down, whatever else is.
 pub(crate) fn down(input: &InputState, key: ViewKey) -> bool {
-    key.keys()
+    shortcuts(key)
         .iter()
-        .filter_map(|keys| parse_keys(keys))
         .any(|shortcut| input.key_down(shortcut.logical_key))
 }
 
-/// Whether `shortcut` is a key the map view takes itself, which a key taken anywhere gives
-/// way to while the view has the keyboard.
-#[must_use]
-pub fn is_view_key(shortcut: &KeyboardShortcut) -> bool {
-    VIEW_KEYS
-        .iter()
-        .flat_map(|row| row.keys)
-        .filter_map(|keys| parse_keys(keys))
-        .any(|own| own == *shortcut)
+/// Whether the default key of `command`, one of [`MAP_EDITOR_KEYS`], was pressed, taking it.
+pub(crate) fn command_pressed(input: &mut InputState, command: &str) -> bool {
+    static KEYS: LazyLock<Vec<(&'static str, KeyboardShortcut)>> = LazyLock::new(|| {
+        MAP_EDITOR_KEYS
+            .iter()
+            .filter_map(|command| {
+                let keys = DefaultKey::of(command)?.keys;
+                Some((*command, parse_keys(keys)?))
+            })
+            .collect()
+    });
+    KEYS.iter()
+        .find(|(own, _)| *own == command)
+        .is_some_and(|(_, shortcut)| input.consume_shortcut(shortcut))
+}
+
+/// Which keyboard a shortcut is read for: egui's `COMMAND` is Cmd on a Mac and Ctrl
+/// elsewhere, so `secondary-g` and `ctrl-g` are one key off a Mac and two on one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Platform {
+    /// macOS.
+    Mac,
+    /// Windows and Linux.
+    Other,
+}
+
+impl Platform {
+    /// The one the app is built for.
+    pub const HERE: Self = if cfg!(target_os = "macos") {
+        Self::Mac
+    } else {
+        Self::Other
+    };
+
+    /// The keys `modifiers` holds here: Alt, Shift, Ctrl and Cmd.
+    const fn held(self, modifiers: Modifiers) -> [bool; 4] {
+        let Modifiers {
+            alt,
+            ctrl,
+            shift,
+            mac_cmd,
+            command,
+        } = modifiers;
+        match self {
+            Self::Mac => [alt, shift, ctrl, mac_cmd || command],
+            Self::Other => [alt, shift, ctrl || command, mac_cmd],
+        }
+    }
+
+    /// Whether `shortcut` is a key the map view takes itself, which a key taken anywhere
+    /// gives way to while the view has the keyboard: the same key with the same keys held.
+    #[must_use]
+    pub fn is_view_key(self, shortcut: &KeyboardShortcut) -> bool {
+        VIEW_SHORTCUTS
+            .iter()
+            .flat_map(|(_, shortcuts)| shortcuts)
+            .any(|own| {
+                own.logical_key == shortcut.logical_key
+                    && self.held(own.modifiers) == self.held(shortcut.modifiers)
+            })
+    }
 }
 
 /// The map view's default keys the map editor takes itself, since each needs what the editor
 /// holds: the clipboard for a copy, the notice a save clears, the selection it draws, the view
-/// Show All redraws.
+/// Show All redraws. They are bindings, so the palette shows their keys, and the window leaves
+/// them to the editor, which reads them from the same table ([`command_pressed`]).
 pub const MAP_EDITOR_KEYS: [&str; 4] = ["map.save", "map.copy", "map.select", "map.show_all"];
 
 /// Every binding in the order its keys are matched, the most modifiers first: egui's
@@ -479,10 +557,7 @@ command = "project.build"
                 key.keys
             );
         }
-        assert_eq!(
-            bindings().len(),
-            DEFAULT_KEYS.len().saturating_sub(MAP_EDITOR_KEYS.len())
-        );
+        assert_eq!(bindings().len(), DEFAULT_KEYS.len());
         for command in MAP_EDITOR_KEYS {
             assert!(
                 DEFAULT_KEYS.iter().any(|key| key.command == command),

@@ -6,6 +6,15 @@
 
 use serde_json::Value;
 
+/// What the map view answers the command line with while it asks for what a click can give.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Answer {
+    /// The value clicked, as it is typed.
+    Value(String),
+    /// Escape in the view: the command being entered is given up.
+    GaveUp,
+}
+
 /// What a click in the map view can give the parameter the line asks for (UI-23).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Pick {
@@ -25,7 +34,9 @@ impl Pick {
     /// What the parameter `name` of a command whose parameters `schema` describes can be
     /// picked as.
     pub(crate) fn asked(schema: &Value, name: &str) -> Option<Self> {
-        Self::of(schema.get(PROPERTIES)?.get(name)?)
+        let pick = Self::of(schema.get(PROPERTIES)?.get(name)?)?;
+        // Three numbers are a place only by name: a distance or a scale is not clicked.
+        (pick != Self::Point || PLACES.contains(&name)).then_some(pick)
     }
 
     /// What the property `schema` of a command's parameters can be picked as: an index by
@@ -70,5 +81,8 @@ const ENTITY_INDEX: &str = "EntityIndex";
 const BRUSH_INDEX: &str = "BrushIndex";
 const FACE_INDEX: &str = "FaceIndex";
 const FACE_REF: &str = "FaceRef";
+/// The parameters that are places in the map: a point entity's origin, a box's corners, a
+/// vertex and where it goes, the player's eye.
+const PLACES: [&str; 6] = ["origin", "min", "max", "from", "to", "eye"];
 /// How many coordinates a point has.
 const POINT: u64 = 3;

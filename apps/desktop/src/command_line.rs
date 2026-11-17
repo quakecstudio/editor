@@ -45,8 +45,10 @@ pub(crate) struct CommandLineView {
     line: CommandLine,
     typed: String,
     note: Option<Note>,
-    /// The entered line shown by Up and Down, counted back from the newest.
+    /// The entered line shown by Up and Down, counted back from the newest, and what was
+    /// typed before the first Up, which Down comes back to.
     recalled: Option<usize>,
+    draft: String,
 }
 
 impl CommandLineView {
@@ -66,6 +68,14 @@ impl CommandLineView {
     ) -> Option<(String, Value)> {
         self.typed = value;
         self.enter(registry)
+    }
+
+    /// Gives up the command being entered and what is typed, as Escape in the field does.
+    pub(crate) fn give_up(&mut self) {
+        self.line.cancel();
+        self.typed.clear();
+        self.note = None;
+        self.recalled = None;
     }
 
     /// The command `id` the line made ran.
@@ -201,10 +211,12 @@ impl CommandLineView {
         registry: &Registry<C>,
         field: Id,
     ) -> Option<(String, Value)> {
-        let (enter, escape, tab, up, down) = ui.input_mut(|i| {
+        let (enter, escape, back, tab, up, down) = ui.input_mut(|i| {
             (
                 i.consume_key(Modifiers::NONE, Key::Enter),
                 i.consume_key(Modifiers::NONE, Key::Escape),
+                // Before Tab, which egui takes whatever Shift is held.
+                i.consume_key(Modifiers::SHIFT, Key::Tab),
                 i.consume_key(Modifiers::NONE, Key::Tab),
                 i.consume_key(Modifiers::NONE, Key::ArrowUp),
                 i.consume_key(Modifiers::NONE, Key::ArrowDown),
@@ -214,12 +226,15 @@ impl CommandLineView {
             if self.line.prompt().is_none() && self.typed.is_empty() {
                 ui.memory_mut(|memory| memory.surrender_focus(field));
             }
-            self.line.cancel();
-            self.typed.clear();
-            self.note = None;
-            self.recalled = None;
+            self.give_up();
         }
-        if tab {
+        // Tab completes what is typed; with nothing typed, and with Shift, it moves the
+        // keyboard on or back as it does anywhere, so the line is no trap.
+        if back {
+            ui.memory_mut(|memory| memory.move_focus(egui::FocusDirection::Previous));
+        } else if tab && self.typed.trim().is_empty() && self.line.prompt().is_none() {
+            ui.memory_mut(|memory| memory.move_focus(egui::FocusDirection::Next));
+        } else if tab {
             self.complete(registry);
         }
         if up {
@@ -287,27 +302,30 @@ impl CommandLineView {
         };
     }
 
-    /// Shows an entered line: the one before the line shown, or the one after it.
+    /// Shows an entered line: the one before the line shown, or the one after it; after the
+    /// newest, what was typed before the first Up. With no line to show, nothing changes.
     fn recall(&mut self, recall: Recall) {
         let history = self.line.history();
         let back = match (recall, self.recalled) {
-            (Recall::Older, None) => Some(0),
-            (Recall::Older, Some(back)) => Some(back.saturating_add(1)),
-            (Recall::Newer, None | Some(0)) => None,
-            (Recall::Newer, Some(back)) => Some(back.saturating_sub(1)),
-        };
-        let back = back.map(|back| back.min(history.len().saturating_sub(1)));
-        let line = back.and_then(|back| history.iter().rev().nth(back));
-        match line {
-            Some(line) => {
-                line.clone_into(&mut self.typed);
-                self.recalled = back;
-            }
-            None => {
-                self.typed.clear();
+            (Recall::Older, None) => 0,
+            (Recall::Older, Some(back)) => back.saturating_add(1),
+            (Recall::Newer, None) => return,
+            (Recall::Newer, Some(0)) => {
+                self.typed = core::mem::take(&mut self.draft);
                 self.recalled = None;
+                return;
             }
+            (Recall::Newer, Some(back)) => back.saturating_sub(1),
+        };
+        let back = back.min(history.len().saturating_sub(1));
+        let Some(line) = history.iter().rev().nth(back) else {
+            return;
+        };
+        if self.recalled.is_none() {
+            self.draft = core::mem::take(&mut self.typed);
         }
+        line.clone_into(&mut self.typed);
+        self.recalled = Some(back);
     }
 }
 

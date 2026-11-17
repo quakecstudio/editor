@@ -198,6 +198,11 @@ asks for its parameters one at a time, Up and Down bring back earlier lines and 
 up. While it asks for an entity, a brush, a face or a point (`pick.rs` reads which from the
 parameter's schema), a click in the map view answers it.
 
+While the game in the Game tab has the keyboard its keys are its own. On macOS the window
+still takes the focus keys (Cmd+1 to Cmd+4 and Cmd+;), so the keyboard can leave the game;
+where the platform's modifier is Ctrl those would be Quake's fire with a weapon's number, so
+the window takes none and a click outside the game takes the keyboard.
+
 **Custom keybindings (P4-37, UI-21).** As Zed's `keymap.json` does, `keymap.toml` in the app's
 config directory rebinds any command that takes no parameters, in Zed's key spelling:
 `secondary` is Cmd on macOS and Ctrl elsewhere, then `cmd`, `ctrl`, `alt` and `shift`, then one

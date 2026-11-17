@@ -3,8 +3,8 @@
 //! The map editor's 3D view from the keyboard (UI-23, #971): commands that turn the camera to
 //! a standard view, orbit, pan and zoom it by a step, and save and bring back up to four
 //! views. Each takes no parameter, so each has a key and runs from the command line by its
-//! name. A command asks; the window's map editor, which has the camera, carries the last ask
-//! out once, as it does an editor action. The saved views are kept in the layout file.
+//! name. A command asks; the window's map editor, which has the camera, carries each ask out
+//! once, in order. The saved views are kept in the layout file.
 
 use core::fmt;
 
@@ -162,31 +162,95 @@ impl MapViews {
     }
 }
 
+/// A way the camera turns or moves by a step.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Way {
+    /// To the left.
+    Left,
+    /// To the right.
+    Right,
+    /// Up.
+    Up,
+    /// Down.
+    Down,
+}
+
+/// A way the camera moves along its view.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Along {
+    /// Forwards, which zooms in.
+    Nearer,
+    /// Back, which zooms out.
+    Farther,
+}
+
 /// What a command asked of the 3D view's camera, carried out by the map editor.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MapLook {
     /// Turn to a standard view, with the whole map in it.
     Standard(StandardView),
-    /// Turn by these degrees of yaw and pitch about the selection, or the point ahead.
-    Orbit {
-        /// Degrees to the left.
-        yaw: f32,
-        /// Degrees down.
-        pitch: f32,
-    },
-    /// Move by these map units across and up, keeping the heading.
-    Pan {
-        /// Units to the camera's right.
-        right: f32,
-        /// Units up.
-        up: f32,
-    },
-    /// Move this many map units along the view: forwards zooms in.
-    Zoom(f32),
+    /// Turn [`ORBIT_STEP`] degrees this way about the selection, or the point ahead.
+    Orbit(Way),
+    /// Move [`PAN_STEP`] map units this way, keeping the heading.
+    Pan(Way),
+    /// Move [`ZOOM_STEP`] map units along the view.
+    Zoom(Along),
     /// Save where the camera is in this slot: the editor answers with `view.map_keep_view`.
     Save(ViewSlot),
-    /// Go to this place and heading: a saved view.
-    Pose(MapPose),
+    /// Go to the view saved in this slot, which the layout's [`MapViews`] holds.
+    Restore(ViewSlot),
+}
+
+/// How many motions asked for between two of the editor's frames are kept: a script or the
+/// agent may run several view commands before the window draws again.
+pub const LOOKS_KEPT: u64 = 8;
+/// [`LOOKS_KEPT`], as the count of places they are kept in.
+const SLOTS: usize = 8;
+
+/// The motions commands have asked of the 3D view's camera: the last [`LOOKS_KEPT`], and how
+/// many there have been, so the map editor carries out each once.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MapLooks {
+    asked: [Option<MapLook>; SLOTS],
+    count: u64,
+}
+
+impl MapLooks {
+    /// No motion asked for.
+    pub const NONE: Self = Self {
+        asked: [None; SLOTS],
+        count: 0,
+    };
+
+    /// How many motions have been asked for.
+    #[must_use]
+    pub const fn count(&self) -> u64 {
+        self.count
+    }
+
+    /// Asks for `look`, after those asked for before.
+    fn ask(&mut self, look: MapLook) {
+        if let Some(slot) = self.slot(self.count) {
+            *slot = Some(look);
+        }
+        self.count = self.count.wrapping_add(1);
+    }
+
+    /// Where the `nth` motion asked for is kept.
+    fn slot(&mut self, nth: u64) -> Option<&mut Option<MapLook>> {
+        let place = usize::try_from(nth.checked_rem(LOOKS_KEPT)?).ok()?;
+        self.asked.get_mut(place)
+    }
+
+    /// The motions asked for after the first `applied`, oldest first: at most the last
+    /// [`LOOKS_KEPT`], the ones before them lost.
+    #[must_use]
+    pub fn since(mut self, applied: u64) -> Vec<MapLook> {
+        let first = applied.max(self.count.saturating_sub(LOOKS_KEPT));
+        (first..self.count)
+            .filter_map(|nth| self.slot(nth).and_then(|slot| *slot))
+            .collect()
+    }
 }
 
 /// Why a view command was refused.
@@ -207,7 +271,7 @@ impl fmt::Display for MapLookError {
 impl core::error::Error for MapLookError {}
 
 /// What a view command does with the layout.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Asked {
     /// Ask the editor for this.
     Look(MapLook),
@@ -239,11 +303,10 @@ impl<L: Look, C: HasLayout + 'static> Command<C> for Looking<L> {
             Asked::Recall(slot) => layout
                 .map_views
                 .get(slot)
-                .map(MapLook::Pose)
+                .map(|_| MapLook::Restore(slot))
                 .ok_or(MapLookError::Empty(slot))?,
         };
-        layout.map_look = Some(look);
-        layout.map_looks = layout.map_looks.wrapping_add(1);
+        layout.map_looks.ask(look);
         Ok(Outcome::outside_history(()))
     }
 }
@@ -298,32 +361,32 @@ looking!(25;
         Asked::Look(MapLook::Standard(StandardView::Isometric)),
         "Turns the map editor's 3D view to look at the whole map from the south-west and above."),
     (OrbitLeft, "view.map_orbit_left",
-        Asked::Look(MapLook::Orbit { yaw: ORBIT_STEP, pitch: 0.0 }),
+        Asked::Look(MapLook::Orbit(Way::Left)),
         "Turns the map editor's 3D view 15 degrees to the left about the selection, or about \
          the point ahead when nothing is selected."),
     (OrbitRight, "view.map_orbit_right",
-        Asked::Look(MapLook::Orbit { yaw: -ORBIT_STEP, pitch: 0.0 }),
+        Asked::Look(MapLook::Orbit(Way::Right)),
         "Turns the map editor's 3D view 15 degrees to the right about the selection, or about \
          the point ahead when nothing is selected."),
     (OrbitUp, "view.map_orbit_up",
-        Asked::Look(MapLook::Orbit { yaw: 0.0, pitch: -ORBIT_STEP }),
+        Asked::Look(MapLook::Orbit(Way::Up)),
         "Turns the map editor's 3D view 15 degrees up about the selection, or about the point \
          ahead when nothing is selected."),
     (OrbitDown, "view.map_orbit_down",
-        Asked::Look(MapLook::Orbit { yaw: 0.0, pitch: ORBIT_STEP }),
+        Asked::Look(MapLook::Orbit(Way::Down)),
         "Turns the map editor's 3D view 15 degrees down about the selection, or about the \
          point ahead when nothing is selected."),
-    (PanLeft, "view.map_pan_left", Asked::Look(MapLook::Pan { right: -PAN_STEP, up: 0.0 }),
+    (PanLeft, "view.map_pan_left", Asked::Look(MapLook::Pan(Way::Left)),
         "Moves the map editor's 3D view 32 units to its left, keeping its heading."),
-    (PanRight, "view.map_pan_right", Asked::Look(MapLook::Pan { right: PAN_STEP, up: 0.0 }),
+    (PanRight, "view.map_pan_right", Asked::Look(MapLook::Pan(Way::Right)),
         "Moves the map editor's 3D view 32 units to its right, keeping its heading."),
-    (PanUp, "view.map_pan_up", Asked::Look(MapLook::Pan { right: 0.0, up: PAN_STEP }),
+    (PanUp, "view.map_pan_up", Asked::Look(MapLook::Pan(Way::Up)),
         "Moves the map editor's 3D view 32 units up, keeping its heading."),
-    (PanDown, "view.map_pan_down", Asked::Look(MapLook::Pan { right: 0.0, up: -PAN_STEP }),
+    (PanDown, "view.map_pan_down", Asked::Look(MapLook::Pan(Way::Down)),
         "Moves the map editor's 3D view 32 units down, keeping its heading."),
-    (ZoomIn, "view.map_zoom_in", Asked::Look(MapLook::Zoom(ZOOM_STEP)),
+    (ZoomIn, "view.map_zoom_in", Asked::Look(MapLook::Zoom(Along::Nearer)),
         "Moves the map editor's 3D view 64 units forwards along its view."),
-    (ZoomOut, "view.map_zoom_out", Asked::Look(MapLook::Zoom(-ZOOM_STEP)),
+    (ZoomOut, "view.map_zoom_out", Asked::Look(MapLook::Zoom(Along::Farther)),
         "Moves the map editor's 3D view 64 units back along its view."),
     (SaveView1, "view.map_save_view_1", Asked::Look(MapLook::Save(ViewSlot::One)),
         "Saves where the map editor's 3D view is as view 1, kept in the layout file."),
@@ -399,7 +462,7 @@ mod tests {
     use qs_commands::{Registry, Session};
     use serde_json::json;
 
-    use super::{MAP_KEEP_VIEW, MAP_LOOKS, MapLook, MapPose, StandardView, ViewSlot};
+    use super::{LOOKS_KEPT, MAP_KEEP_VIEW, MAP_LOOKS, MapLook, MapPose, StandardView, ViewSlot};
     use crate::Layout;
 
     fn session() -> Session<Layout> {
@@ -418,14 +481,19 @@ mod tests {
             let Some(look) = look else { continue };
             session.execute(id, json!({})).unwrap();
             asked += 1;
-            let layout = session.context();
-            assert_eq!(
-                (layout.map_look, layout.map_looks),
-                (Some(look), asked),
-                "{id}"
-            );
+            let looks = session.context().map_looks;
+            assert_eq!(looks.count(), asked, "{id}");
+            assert_eq!(looks.since(asked - 1), [look], "{id}");
         }
         assert_eq!(asked, 21);
+        // Several asked for between two frames are each kept, in order, up to the last eight.
+        let looks = session.context().map_looks;
+        let all: Vec<MapLook> = MAP_LOOKS.iter().filter_map(|(_, look)| *look).collect();
+        assert_eq!(looks.since(asked - 3), all.last_chunk::<3>().unwrap());
+        assert_eq!(looks.since(asked), []);
+        let kept = usize::try_from(LOOKS_KEPT).unwrap();
+        assert_eq!(kept, super::SLOTS);
+        assert_eq!(Some(looks.since(0).as_slice()), all.get(all.len() - kept..));
         assert!(session.undo().is_err());
         assert!(session.execute("view.map_top", json!({ "by": 1 })).is_err());
     }
@@ -462,11 +530,11 @@ mod tests {
             refused.to_string().contains("no view is saved in 2"),
             "{refused}"
         );
-        assert_eq!(session.context().map_looks, 0);
+        assert_eq!(session.context().map_looks.count(), 0);
         session.execute("view.map_save_view_2", json!({})).unwrap();
         assert_eq!(
-            session.context().map_look,
-            Some(MapLook::Save(ViewSlot::Two))
+            session.context().map_looks.since(0),
+            [MapLook::Save(ViewSlot::Two)]
         );
         session
             .execute(
@@ -482,12 +550,15 @@ mod tests {
         assert_eq!(session.context().map_views.get(ViewSlot::Two), Some(pose));
         assert_eq!(session.context().map_views.get(ViewSlot::One), None);
         session.execute("view.map_view_2", json!({})).unwrap();
-        assert_eq!(session.context().map_look, Some(MapLook::Pose(pose)));
+        assert_eq!(
+            session.context().map_looks.since(1),
+            [MapLook::Restore(ViewSlot::Two)]
+        );
         let written = toml::to_string(&session.context().as_written()).unwrap();
         let read: Layout = toml::from_str(&written).unwrap();
         assert_eq!(read.map_views, session.context().map_views);
         // The ask itself is not written.
-        assert_eq!((read.map_look, read.map_looks), (None, 0));
+        assert_eq!(read.map_looks.count(), 0);
         let older: Layout = toml::from_str("[left]\nvisible = true\nsize = 240.0\n").unwrap();
         assert_eq!(older.map_views.get(ViewSlot::Two), None);
         for bad in [

@@ -12,18 +12,19 @@ use qs_render::Degrees;
 use std::collections::{BTreeSet, HashMap};
 
 use eframe::egui::{
-    self, Color32, Key, Modifiers, Pos2, Rect, RichText, Sense, Stroke, Ui, WidgetInfo, WidgetType,
+    self, Color32, Pos2, Rect, RichText, Sense, Stroke, Ui, WidgetInfo, WidgetType,
 };
 use eframe::egui_wgpu::RenderState;
 use qs_layout::{
-    CameraSpeed, Direction, KeepViewParams, Layout, MapCamera, MapCameraParams, MapFov, MapGrid,
-    MapLook, MapPanes, MapShading, ViewKey,
+    Along, CameraSpeed, Direction, KeepViewParams, Layout, MapCamera, MapCameraParams, MapFov,
+    MapGrid, MapLook, MapLooks, MapPanes, MapShading, MapViews, ORBIT_STEP, PAN_STEP, ViewKey, Way,
+    ZOOM_STEP,
 };
 use qs_map_edit::MapReport;
 use qs_map_edit::texture_import::DitherChoice;
 use qs_map_edit::textures::TextureSources;
 use qs_map_edit::uv::FaceRef;
-use qs_map_edit::{Axis, BrushIndex, ClassInfo, LayerId};
+use qs_map_edit::{Axis, BrushIndex, ClassInfo, LayerId, MAP_SAVE, MAP_SELECT};
 use qs_map_edit::{
     EntityIndex, EntityKeys, FlagChange, Keep, LayerInfo, MapDocument, MapFound, MapIssue,
     MapRevision, MapSearchParams, OutlineRow, Prefab, QuickFix,
@@ -48,7 +49,7 @@ use crate::map_scene::{ClassLook, Line, LinkView, SPAWNFLAGS, Scene, load_models
 use crate::map_select::{Picked, Region};
 use crate::map_shading::{ShadedView, TRIGGER, TexturedFrom};
 use crate::map_tools::{BrushAction, BrushTools, MapTool, PickMode};
-use crate::pick::Pick;
+use crate::pick::{Answer, Pick};
 use crate::shell::name_field;
 use crate::strings::{Text, also_selected, panes_text, select_all_of};
 use crate::texture_browser::TextureBrowser;
@@ -354,10 +355,12 @@ pub struct MapEditor {
     /// What the command line asks for that a click in the view can give, and what a click
     /// gave, as the line reads it (UI-23).
     asked: Option<Pick>,
-    picked: Option<String>,
-    /// The last camera motion a command asked for and how many have been, the layout's, and
-    /// how many of them the view has carried out (UI-23).
-    look_asked: (Option<MapLook>, u64),
+    picked: Option<Answer>,
+    /// The camera motions commands asked for, the layout's, and how many of them the view
+    /// has carried out (UI-23).
+    look_asked: MapLooks,
+    /// The saved views, the layout's (UI-23).
+    views: MapViews,
     looks_applied: u64,
     /// Where the view's context menu last opened (P7-08).
     menu_at: Option<Pos2>,
@@ -745,7 +748,8 @@ impl MapEditor {
         let (layout, shading) = (settings.map_panes, settings.map_shading);
         self.tools.grid = settings.map_grid;
         self.camera_settings = settings.map_camera;
-        self.look_asked = (settings.map_look, settings.map_looks);
+        self.look_asked = settings.map_looks;
+        self.views = settings.map_views;
         // The tab's own width, which the toolbar wraps within and the view keeps to, so a long
         // toolbar never widens the view under the Properties panel.
         let bounds = ui.available_rect_before_wrap();
@@ -1013,7 +1017,7 @@ impl MapEditor {
         );
         if self.camera.is_none() {
             // A motion asked for before the map opened is not this view's.
-            self.looks_applied = self.look_asked.1;
+            self.looks_applied = self.look_asked.count();
         }
         self.keyboard = Keyboard::Elsewhere;
         let camera = self
@@ -1043,14 +1047,13 @@ impl MapEditor {
             self.also.clear();
         }
         let mut actions = Vec::new();
-        if self.looks_applied != self.look_asked.1 {
-            self.looks_applied = self.look_asked.1;
+        if self.looks_applied != self.look_asked.count() {
             let aspect = rect.width() / rect.height().max(1.0);
-            let kept = self
-                .look_asked
-                .0
-                .and_then(|look| self.look(look, document, aspect));
-            actions.extend(kept.map(|kept| MapAction::View(ViewSetting::KeepView(kept))));
+            for look in self.look_asked.since(self.looks_applied) {
+                let kept = self.look(look, document, aspect);
+                actions.extend(kept.map(|kept| MapAction::View(ViewSetting::KeepView(kept))));
+            }
+            self.looks_applied = self.look_asked.count();
             ui.ctx().request_repaint();
         }
         for (pane, area) in panes(layout, rect) {
@@ -1214,6 +1217,10 @@ impl MapEditor {
             .collect();
         if response.has_focus() {
             self.keyboard = Keyboard::Here;
+            // Escape while the command line waits for a click gives its command up.
+            if self.asked.is_some() && ui.input_mut(|i| keymap::pressed(i, ViewKey::Cancel)) {
+                self.picked = Some(Answer::GaveUp);
+            }
             self.tools.tool_keys(ui);
             if ui.input_mut(|i| keymap::pressed(i, ViewKey::Cancel))
                 && self.picking.take().is_none()
@@ -1272,7 +1279,7 @@ impl MapEditor {
                     actions.extend(selection_keys(ui, camera, entity, self.tools.grid));
                 }
             }
-            if ui.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::S)) {
+            if ui.input_mut(|i| keymap::command_pressed(i, MAP_SAVE)) {
                 actions.push(MapAction::Save);
             }
         }
@@ -1360,12 +1367,16 @@ impl MapEditor {
                 snap(s + d * distance)
             })
         };
+        if self.asked.is_some() && response.hovered() {
+            // The view shows that a click is the command line's answer.
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+        }
         if let Some(asked) = self.asked
             && response.clicked()
             && let Some(at) = response.interact_pointer_pos()
         {
             let (start, direction) = ray(at);
-            self.picked = match asked {
+            let value = match asked {
                 Pick::Entity => pick(at).and_then(|entity| typed(&entity)),
                 Pick::Brush => self
                     .scene
@@ -1381,6 +1392,7 @@ impl MapEditor {
                     .and_then(|face| typed(&face)),
                 Pick::Point => typed(&dropped_at(at)),
             };
+            self.picked = value.map(Answer::Value);
         }
         // egui's release takes whatever is dragged before it checks its kind, so each kind is
         // looked for first.
@@ -2065,7 +2077,7 @@ impl MapEditor {
     }
 
     /// What a click in the view gave the command line, once.
-    pub(crate) const fn take_picked(&mut self) -> Option<String> {
+    pub(crate) const fn take_picked(&mut self) -> Option<Answer> {
         self.picked.take()
     }
 
@@ -2101,7 +2113,14 @@ impl MapEditor {
                     camera.frame(bounds, aspect, FRAME_MARGIN);
                 }
             }
-            MapLook::Orbit { yaw, pitch } => {
+            MapLook::Orbit(way) => {
+                let (yaw, pitch) = match way {
+                    Way::Left => (ORBIT_STEP, 0.0),
+                    Way::Right => (-ORBIT_STEP, 0.0),
+                    // A positive pitch looks down.
+                    Way::Up => (0.0, -ORBIT_STEP),
+                    Way::Down => (0.0, ORBIT_STEP),
+                };
                 // About the selection's middle, else TrenchBroom's point ahead.
                 let chosen = document
                     .selected()
@@ -2129,8 +2148,17 @@ impl MapEditor {
                     );
                 camera.orbit(centre, Degrees::new(yaw), Degrees::new(pitch));
             }
-            MapLook::Pan { right, up } => camera.travel(0.0, right, up),
-            MapLook::Zoom(by) => camera.travel(by, 0.0, 0.0),
+            MapLook::Pan(way) => {
+                let (right, up) = match way {
+                    Way::Left => (-PAN_STEP, 0.0),
+                    Way::Right => (PAN_STEP, 0.0),
+                    Way::Up => (0.0, PAN_STEP),
+                    Way::Down => (0.0, -PAN_STEP),
+                };
+                camera.travel(0.0, right, up);
+            }
+            MapLook::Zoom(Along::Nearer) => camera.travel(ZOOM_STEP, 0.0, 0.0),
+            MapLook::Zoom(Along::Farther) => camera.travel(-ZOOM_STEP, 0.0, 0.0),
             MapLook::Save(slot) => {
                 return Some(KeepViewParams {
                     slot,
@@ -2139,12 +2167,14 @@ impl MapEditor {
                     pitch: camera.pitch.get(),
                 });
             }
-            MapLook::Pose(pose) => {
-                camera.origin = pose.origin;
-                camera.yaw = Degrees::new(0.0);
-                camera.pitch = Degrees::new(0.0);
-                // The camera's own turn holds a pose from the file to its limits.
-                camera.turn(Degrees::new(pose.yaw), Degrees::new(pose.pitch));
+            MapLook::Restore(slot) => {
+                if let Some(pose) = self.views.get(slot) {
+                    camera.origin = pose.origin;
+                    camera.yaw = Degrees::new(0.0);
+                    camera.pitch = Degrees::new(0.0);
+                    // The camera's own turn holds a pose from the file to its limits.
+                    camera.turn(Degrees::new(pose.yaw), Degrees::new(pose.pitch));
+                }
             }
         }
         None
@@ -2334,7 +2364,7 @@ impl MapEditor {
         let asked = ui.input_mut(|i| {
             if keymap::pressed(i, ViewKey::InvertSelection) {
                 Some(SelectKey::Invert)
-            } else if i.consume_key(Modifiers::COMMAND | Modifiers::SHIFT, Key::A) {
+            } else if keymap::command_pressed(i, MAP_SELECT) {
                 Some(SelectKey::Clear)
             } else if keymap::pressed(i, ViewKey::SelectAll) {
                 Some(SelectKey::All)

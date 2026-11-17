@@ -1553,19 +1553,7 @@ fn the_command_line_asks_for_each_parameter_in_turn() {
     assert!(matches!(line.enter(registry, "append"), Entered::Ask(_)));
     line.cancel();
     assert_eq!(line.prompt(), None);
-    assert_eq!(
-        line.history(),
-        [
-            "nosuch",
-            "doc.",
-            "len",
-            "append",
-            "hi there",
-            "doc.flaky",
-            "twice",
-            "2",
-            "append"
-        ]
-    );
+    // Only the lines that named a command are kept, not a value or a name that was none.
+    assert_eq!(line.history(), ["len", "append", "doc.flaky", "append"]);
     assert_eq!(line.completions(registry, "app"), ["doc.append"]);
 }
