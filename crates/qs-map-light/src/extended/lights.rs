@@ -15,7 +15,7 @@ use crate::extended::keys::{
 use crate::extended::math::{
     Aabb, add, length, normalize_with_length, polygon_centroid, scale, sub, vec_from_mangle,
 };
-use crate::extended::rays::{Asker, Rays, Texels};
+use crate::extended::rays::{Asker, Rays, Stack, Texels};
 use crate::extended::scene::{Map, Skin};
 use crate::extended::sun::{Random, Sun, SunLight, Suns};
 use crate::extended::vis::leaf_at;
@@ -617,7 +617,7 @@ impl Rays {
         &self,
         texels: &dyn Texels,
         point: Vec3,
-        stack: &mut Vec<usize>,
+        stack: &mut Stack,
     ) -> Aabb {
         let rays = self;
         let mut bounds = Aabb::at(point);

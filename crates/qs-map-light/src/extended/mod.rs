@@ -39,14 +39,14 @@ use self::dirt::Dirt;
 use self::lights::Lights;
 use self::phong::Smoothing;
 use self::points::Patch;
-use self::rays::Rays;
+use self::rays::{Rays, Stack};
 use self::scene::{Given, Map, MapFault};
 pub use self::scene::{LeafKind, SurfaceFlags};
 use self::shade::{Lightmaps, Shader};
 pub use self::sidecar::{SidecarFile, Sidecars};
 use crate::face::{FaceId, Lit};
 use crate::lump::{self, Colour};
-use crate::{Light, LightError, LightWarning, Lighted};
+use crate::{Finish, Light, LightError, LightWarning, Lighted};
 
 /// How many faces a thread lights before taking more.
 const FACE_BATCH: usize = 16;
@@ -93,7 +93,9 @@ impl Light {
         let rays = Rays::new(map.casters());
         lights.set_up(&map, &rays, light.jitter);
         let smoothing = Smoothing::new(&map);
-        let dirt = Dirt::new(&map.world, &lights.lamps);
+        // The quick light does neither dirt nor bounce (LIGHT-8.8).
+        let quick = light.finish == Finish::Quick;
+        let dirt = Dirt::new(&map.world, &lights.lamps).filter(|_| !quick);
         let shader = Shader {
             map: &map,
             rays: &rays,
@@ -112,7 +114,11 @@ impl Light {
             )
         })?;
         let mut emitters: Vec<Option<Emitter>> = vec![None; count];
-        let bounces = usize::try_from(map.world.bounce.get()).unwrap_or(0);
+        let bounces = if quick {
+            0
+        } else {
+            usize::try_from(map.world.bounce.get()).unwrap_or(0)
+        };
         if bounces > 0 {
             let bouncing = map.bouncing_faces();
             let corners = map.moved_corners();
@@ -207,7 +213,7 @@ impl Light {
 /// its rays; the results in order.
 fn on_threads<T: Send>(
     count: usize,
-    work: impl Fn(usize, &mut Vec<usize>) -> T + Sync,
+    work: impl Fn(usize, &mut Stack) -> T + Sync,
 ) -> Result<Vec<T>, LightError> {
     let threads = std::thread::available_parallelism().map_or(1, usize::from);
     let batches = count.div_ceil(FACE_BATCH);

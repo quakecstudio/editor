@@ -29,7 +29,7 @@ use criterion::measurement::WallTime;
 use criterion::{BenchmarkGroup, Criterion, criterion_group, criterion_main};
 use qc_codegen::compile_module;
 use qc_sema::{Db, FileId, ModuleInput};
-use qs_map_light::{Light, Sampling};
+use qs_map_light::{Finish, Light, Sampling};
 
 /// The criterion group every budget benchmark belongs to.
 const GROUP: &str = "budgets";
@@ -242,13 +242,39 @@ fn textured_view_e1m1(group: &mut BenchmarkGroup<'_, WallTime>) {
 }
 
 /// Play from here's compile of an id1-sized map (P6-12, P6-37): LibreQuake's lq-e1m1 through
-/// the extended qbsp with no WAD, as the workbench compiles it, then the fast light.
+/// the extended qbsp with no WAD, as the workbench compiles it, then the quick light
+/// (MAP-13, LIGHT-8.8).
 fn play_from_here_e1m1(group: &mut BenchmarkGroup<'_, WallTime>) {
     let map = e1m1_map();
     let compiler = qs_map_bsp::Compiler::default().with_dialect(qs_map_bsp::Dialect::Extended);
     group.bench_function("play_from_here_e1m1", |bencher| {
         bencher.iter(|| {
             let compiled = compiler.compile(&map, None).expect("lq-e1m1 compiles");
+            black_box(
+                Light::new(Sampling::Fast)
+                    .with_finish(Finish::Quick)
+                    .run(&compiled.bsp)
+                    .expect("lq-e1m1 lights"),
+            )
+        });
+    });
+}
+
+/// The worldspawn keys of lq-e1m1 that turn on the two costliest parts of the final light.
+const DIRT_KEY: &str = "\"_dirt\"";
+const BOUNCE_KEY: &str = "\"_bounce\"";
+
+/// One of the final light's two costliest parts alone on an id1-sized map (L-23, MAP-21):
+/// lq-e1m1 with the key `without` renamed so that it sets nothing, compiled once, then lit
+/// with one sample a luxel.
+fn light_alone_e1m1(group: &mut BenchmarkGroup<'_, WallTime>, name: &str, without: &str) {
+    let map = String::from_utf8_lossy(&e1m1_map()).replace(without, "\"_unset\"");
+    let compiled = qs_map_bsp::Compiler::default()
+        .with_dialect(qs_map_bsp::Dialect::Extended)
+        .compile(map.as_bytes(), None)
+        .expect("lq-e1m1 compiles");
+    group.bench_function(name, |bencher| {
+        bencher.iter(|| {
             black_box(
                 Light::new(Sampling::Fast)
                     .run(&compiled.bsp)
@@ -301,6 +327,7 @@ fn region_compile_e1m1(group: &mut BenchmarkGroup<'_, WallTime>) {
             let compiled = compiler.compile(&cut, None).expect("the room compiles");
             black_box(
                 Light::new(Sampling::Fast)
+                    .with_finish(Finish::Quick)
                     .run(&compiled.bsp)
                     .expect("the room lights"),
             )
@@ -640,6 +667,8 @@ fn budgets(criterion: &mut Criterion) {
     play_from_here_e1m1(&mut group);
     region_compile_e1m1(&mut group);
     full_compile_e1m1(&mut group);
+    light_alone_e1m1(&mut group, "light_dirt_e1m1", BOUNCE_KEY);
+    light_alone_e1m1(&mut group, "light_bounce_e1m1", DIRT_KEY);
     textured_view_e1m1(&mut group);
     group.finish();
 }

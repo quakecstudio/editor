@@ -16,7 +16,7 @@ use crate::extended::math::{
     add, distance, dot, length, normalize, normalize_with_length, scale, sub,
 };
 use crate::extended::points::Patch;
-use crate::extended::rays::{Asker, ModelId, Passed, Rays, Surface};
+use crate::extended::rays::{Asker, ModelId, Passed, Rays, Stack, Surface};
 use crate::extended::scene::Map;
 use crate::extended::sun::Sun;
 use crate::extended::vis::is_unseen;
@@ -337,7 +337,7 @@ impl Shader<'_> {
         lamp: &Lamp,
         patch: &Patch,
         lightmaps: &mut Lightmaps,
-        stack: &mut Vec<usize>,
+        stack: &mut Stack,
     ) {
         let keys = &lamp.keys;
         if patch.plane.distance_to(lamp.origin()) < 0.0
@@ -418,13 +418,7 @@ impl Shader<'_> {
 
     /// `LightFace_Sky`: what `sun` gives each sample of `patch` that sees the sky along it
     /// (LIGHT-14.7).
-    fn sun_on_face(
-        &self,
-        sun: &Sun,
-        patch: &Patch,
-        lightmaps: &mut Lightmaps,
-        stack: &mut Vec<usize>,
-    ) {
+    fn sun_on_face(&self, sun: &Sun, patch: &Patch, lightmaps: &mut Lightmaps, stack: &mut Stack) {
         let incoming = normalize(sun.vec);
         if dot(incoming, patch.plane.normal) < -ANGLE_EPSILON && !patch.curved && !patch.twosided {
             return;
@@ -500,7 +494,7 @@ impl Shader<'_> {
 
     /// `LightFace_LocalMin`: each light whose `delay` is 4 raises the samples of `patch` it
     /// can see to its light (LIGHT-17.3).
-    fn local_min_on_face(&self, patch: &Patch, lightmaps: &mut Lightmaps, stack: &mut Vec<usize>) {
+    fn local_min_on_face(&self, patch: &Patch, lightmaps: &mut Lightmaps, stack: &mut Stack) {
         let world = self.world();
         let Some(face) = self.map.face(patch.face) else {
             return;
@@ -587,7 +581,7 @@ impl Shader<'_> {
         &self,
         patch: &Patch,
         lightmaps: &mut Lightmaps,
-        stack: &mut Vec<usize>,
+        stack: &mut Stack,
         pass: Pass,
     ) {
         let wanted = |light: f32| pass.takes(light);
@@ -608,7 +602,7 @@ impl Shader<'_> {
 
     /// `DirectLightFace`: the dirt of `patch`, then the lights and suns that add light and
     /// the local minimum lights (LIGHT-8.4).
-    pub(crate) fn direct(&self, patch: &mut Patch, stack: &mut Vec<usize>) -> Lightmaps {
+    pub(crate) fn direct(&self, patch: &mut Patch, stack: &mut Stack) -> Lightmaps {
         let mut lightmaps = Lightmaps::new(patch.samples.len());
         if let Some(dirt) = self.dirt {
             // A model's dirt rays are stopped only by what is on its own channels.
@@ -630,7 +624,7 @@ impl Shader<'_> {
         lightmaps: &mut Lightmaps,
         emitters: &[Option<Emitter>],
         depth: usize,
-        stack: &mut Vec<usize>,
+        stack: &mut Stack,
     ) {
         if self.ignores_light(patch) || !patch.is_on_default_channel() {
             return;
@@ -686,7 +680,7 @@ impl Shader<'_> {
         patch: &mut Patch,
         lightmaps: &mut Lightmaps,
         emitters: &[Option<Emitter>],
-        stack: &mut Vec<usize>,
+        stack: &mut Stack,
     ) {
         let world = self.world();
         let (minlight, colour) = if patch.minlight > world.minlight.get() {
@@ -713,7 +707,7 @@ impl Shader<'_> {
         patch: &mut Patch,
         lightmaps: &mut Lightmaps,
         emitters: &[Option<Emitter>],
-        stack: &mut Vec<usize>,
+        stack: &mut Stack,
     ) {
         let Some(model) = self.map.models.get(patch.model) else {
             return;
@@ -776,7 +770,7 @@ impl Shader<'_> {
         &self,
         point: Vec3,
         emitters: &[Option<Emitter>],
-        stack: &mut Vec<usize>,
+        stack: &mut Stack,
     ) -> Option<Vec<(i32, Vec3)>> {
         let point = self.map.out_of_solid(point)?;
         let mut cube = PointLight::default();

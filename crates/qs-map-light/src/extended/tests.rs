@@ -965,3 +965,52 @@ fn a_textures_colour_tints_what_it_bounces() {
     let made = parts(&read, Extras::default());
     assert_eq!(made.map.bounce_colours()[floor_face], [127.0 / 255.0; 3]);
 }
+
+// spec LIGHT-8.8: the quick light does everything but dirt and bounce.
+#[test]
+fn the_quick_light_skips_dirt_and_bounce() {
+    let spot = "{\n\"classname\" \"light\"\n\"origin\" \"128 128 120\"\n\"mangle\" \"0 -90 0\"\n\
+                \"angle\" \"60\"\n\"light\" \"400\"\n}\n";
+    let keys = "\"_bounce\" \"1\"\n\"_dirt\" \"1\"\n\"light\" \"40\"\n";
+    let bsp = room(keys, "wall", "", spot);
+    let quick = Light::default()
+        .with_finish(crate::Finish::Quick)
+        .run(&bsp)
+        .unwrap();
+    let plain = lit(&room("\"light\" \"40\"\n", "wall", "", spot));
+    assert_eq!(floor(&quick.bsp), floor(&plain.bsp));
+    assert_eq!(
+        lightmaps(&quick.bsp, DOWN),
+        lightmaps(&plain.bsp, DOWN),
+        "the ceiling has only the minimum light, with no dirt in its corners"
+    );
+    let full = lit(&bsp);
+    assert_ne!(lightmaps(&full.bsp, DOWN), lightmaps(&plain.bsp, DOWN));
+}
+
+// spec LIGHT-10.10: with visibility in the BSP a light lights only the faces whose leaves
+// see its leaf; a light in solid is never culled.
+#[test]
+fn a_light_is_culled_by_what_a_faces_leaves_see() {
+    use super::vis::{is_unseen, leaf_at};
+    let bsp = room("", "wall", "", &light_at("128 128 64", ""));
+    let read = Bsp::read(&bsp, BspLoader::FitzQuake).unwrap();
+    let inside = leaf_at(&read, [128.0, 128.0, 64.0]);
+    let in_wall = leaf_at(&read, [-8.0, 128.0, 64.0]);
+    assert!(inside.is_some_and(|leaf| leaf > 0));
+    assert_eq!(in_wall, Some(0), "the solid leaf");
+    let nothing = vec![0_u8; 8];
+    let everything = vec![0xff_u8; 8];
+    assert!(is_unseen(&read, &nothing, inside));
+    assert!(!is_unseen(&read, &everything, inside));
+    assert!(!is_unseen(&read, &nothing, in_wall));
+    assert!(
+        !is_unseen(&read, &[], inside),
+        "a BSP with no visibility culls nothing"
+    );
+    assert!(!is_unseen(&read, &nothing, None));
+    // The room has not been through vis: no face has leaves or anything seen.
+    let made = parts(&read, Extras::default());
+    assert!(made.map.visibility.is_none());
+    assert!(made.lights.lamps.iter().all(|lamp| lamp.leaf.is_none()));
+}

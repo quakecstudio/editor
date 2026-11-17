@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use qs_commands::{Command, NoParams, Outcome};
-use qs_map_light::{Light, LightError, Sampling, Sidecars};
+use qs_map_light::{Finish, Light, LightError, Sampling, Sidecars};
 use qs_map_vis::{Mode, Vis, VisError};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -632,9 +632,11 @@ fn run_task<C: HasPreview>(
             Ok(None)
         }
         Task::Light { speed } => {
-            let sampling = match speed {
-                LightSpeed::Full => Sampling::Extra,
-                LightSpeed::Fast => Sampling::Fast,
+            // The fast light is the quick one, without dirt and bounce (MAP-13, LIGHT-8.8); the
+            // full light is the final one (MAP-14).
+            let (sampling, finish) = match speed {
+                LightSpeed::Full => (Sampling::Extra, Finish::Final),
+                LightSpeed::Fast => (Sampling::Fast, Finish::Quick),
             };
             // What qbsp wrote beside the BSP for light: each texinfo's flags and each leaf's
             // contents (LIGHT-9.8, LIGHT-9.9).
@@ -643,6 +645,7 @@ fn run_task<C: HasPreview>(
             let sidecars = Sidecars::read(texinfo.as_deref(), content.as_deref())
                 .map_err(|file| TaskError::Light(LightError::Sidecar(file)))?;
             let lit = Light::new(sampling)
+                .with_finish(finish)
                 .run_with(&read(&bsp)?, sidecars.extras())
                 .map_err(TaskError::Light)?;
             write(&bsp, &lit.bsp)?;

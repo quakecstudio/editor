@@ -77,6 +77,17 @@ pub enum Jitter {
     Bsd,
 }
 
+/// How much of the extended dialect's lighting is done (LIGHT-8.8, MAP-13, MAP-14).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Finish {
+    /// All of it: the final light.
+    #[default]
+    Final,
+    /// The quick light, for playing a map at once: everything but dirt and bounce, the two
+    /// that cost the most.
+    Quick,
+}
+
 /// `scaledist`, `scalecos` and `rangescale` (LIGHT-1.2).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Scale {
@@ -278,6 +289,7 @@ pub struct Light {
     scale: Scale,
     dialect: Dialect,
     jitter: Jitter,
+    finish: Finish,
 }
 
 impl Light {
@@ -289,7 +301,15 @@ impl Light {
             scale: Scale::default(),
             dialect: Dialect::default(),
             jitter: Jitter::default(),
+            finish: Finish::default(),
         }
+    }
+
+    /// The compiler doing as much of the extended dialect's lighting as `finish` says
+    /// (LIGHT-8.8).
+    #[must_use]
+    pub const fn with_finish(self, finish: Finish) -> Self {
+        Self { finish, ..self }
     }
 
     /// The compiler scattering by `jitter`'s sequence (LIGHT-14.5).

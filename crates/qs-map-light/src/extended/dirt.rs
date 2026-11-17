@@ -13,7 +13,7 @@ use crate::extended::keys::World;
 use crate::extended::lights::Lamp;
 use crate::extended::math::{add, cross, dot, normalize, scale};
 use crate::extended::points::Patch;
-use crate::extended::rays::{Asker, Rays, Surface, Texels};
+use crate::extended::rays::{Asker, Rays, Stack, Surface, Texels};
 use crate::{AXES, Vec3, to_f32};
 
 /// `DIRT_NUM_ANGLE_STEPS` and `DIRT_NUM_ELEVATION_STEPS`: the rays about the normal, and at
@@ -105,7 +105,7 @@ impl Dirt {
         rays: &Rays,
         asker: &Asker,
         texels: &dyn Texels,
-        stack: &mut Vec<usize>,
+        stack: &mut Stack,
     ) {
         let count = u16::try_from(self.vectors.len()).map_or(1.0, f32::from);
         for sample in &mut patch.samples {

@@ -78,6 +78,10 @@ impl Asker {
     };
 }
 
+/// The boxes of a tree a ray has yet to look in, each with how far along the ray it is
+/// entered: kept between rays so that each does not make its own.
+pub(crate) type Stack = Vec<(usize, f32)>;
+
 /// A texel: its red, green and blue, and its alpha.
 pub(crate) type Texel = [u8; 4];
 
@@ -452,7 +456,7 @@ impl Tree {
     /// go after those there are, in the order of the leaves. A node is split where the two
     /// halves' boxes, each weighed by its triangles, have the least surface: a ray meets a
     /// box about as often as it has surface.
-    fn build(&mut self, mut pending: Vec<(Vec3, Triangle)>) {
+    fn build(&mut self, pending: Vec<(Vec3, Triangle)>) {
         let mut bounds = Bounds::EMPTY;
         let mut middles = Bounds::EMPTY;
         for (middle, triangle) in &pending {
@@ -473,7 +477,7 @@ impl Tree {
         };
         let coordinate = |middle: &Vec3| middle.get(axis).copied().unwrap_or_default();
         let (lower, upper): (Vec<_>, Vec<_>) = pending
-            .drain(..)
+            .into_iter()
             .partition(|(middle, _)| coordinate(middle) < at_coordinate);
         let at = self.nodes.len();
         self.nodes.push((bounds, Node::Split { right: 0 }));
@@ -492,19 +496,23 @@ impl Tree {
         &self,
         (origin, dir): (Vec3, Vec3),
         mut far: f32,
-        stack: &mut Vec<usize>,
+        stack: &mut Stack,
         mut visit: impl FnMut(&Triangle, f32) -> Option<f32>,
     ) {
         let inverse = dir.map(|c| 1.0 / c);
         stack.clear();
-        if self
+        if let Some(entry) = self
             .nodes
             .first()
-            .is_some_and(|(bounds, _)| bounds.entered(origin, inverse, far).is_some())
+            .and_then(|(bounds, _)| bounds.entered(origin, inverse, far))
         {
-            stack.push(0);
+            stack.push((0, entry));
         }
-        while let Some(at) = stack.pop() {
+        while let Some((at, entry)) = stack.pop() {
+            // A hit since the box was put by may be nearer than the box.
+            if entry > far {
+                continue;
+            }
             let Some((_, node)) = self.nodes.get(at) else {
                 continue;
             };
@@ -517,18 +525,18 @@ impl Tree {
                         self.nodes
                             .get(index)
                             .and_then(|(bounds, _)| bounds.entered(origin, inverse, far))
+                            .map(|entry| (index, entry))
                     };
                     match (entry(left), entry(*right)) {
-                        (Some(a), Some(b)) if a <= b => {
-                            stack.push(*right);
-                            stack.push(left);
+                        (Some(a), Some(b)) if a.1 <= b.1 => {
+                            stack.push(b);
+                            stack.push(a);
                         }
-                        (Some(_), Some(_)) => {
-                            stack.push(left);
-                            stack.push(*right);
+                        (Some(a), Some(b)) => {
+                            stack.push(a);
+                            stack.push(b);
                         }
-                        (Some(_), None) => stack.push(left),
-                        (None, Some(_)) => stack.push(*right),
+                        (Some(only), None) | (None, Some(only)) => stack.push(only),
                         (None, None) => {}
                     }
                 }
@@ -613,7 +621,7 @@ impl Rays {
         (origin, dir, far): (Vec3, Vec3, f32),
         asker: &Asker,
         texels: &dyn Texels,
-        stack: &mut Vec<usize>,
+        stack: &mut Stack,
     ) -> Option<Passed> {
         if dir.iter().any(|c| c.abs() < NEARLY_IN_PLANE) {
             let struck = self.along_axis_plane((origin, dir, far), asker, texels, stack);
@@ -649,7 +657,7 @@ impl Rays {
         (origin, dir, far): (Vec3, Vec3, f32),
         asker: &Asker,
         texels: &dyn Texels,
-        stack: &mut Vec<usize>,
+        stack: &mut Stack,
     ) -> Struck {
         if dir.iter().any(|c| c.abs() < NEARLY_IN_PLANE) {
             return self.along_axis_plane((origin, dir, far), asker, texels, stack);
@@ -693,7 +701,7 @@ impl Rays {
         (origin, dir, far): (Vec3, Vec3, f32),
         asker: &Asker,
         texels: &dyn Texels,
-        stack: &mut Vec<usize>,
+        stack: &mut Stack,
     ) -> Option<Passed> {
         if self.sky.nodes.is_empty() {
             return None;
@@ -747,7 +755,7 @@ impl Rays {
         (origin, dir, far): (Vec3, Vec3, f32),
         asker: &Asker,
         texels: &dyn Texels,
-        stack: &mut Vec<usize>,
+        stack: &mut Stack,
     ) -> Struck {
         struct Met {
             t: f32,

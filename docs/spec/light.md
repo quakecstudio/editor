@@ -295,9 +295,11 @@ lights the map, read by the same reader (LIGHT-2), so what the modder sees is wh
   `_world_units_per_luxel` (a lightmap is 16 texels to the luxel); projected textures
   (`_project_texture`); radiosity surface lights (`_surface_radiosity`, `_surflight_radiosity`);
   `_suntexture`; `_minlight_mottle`; `_dirtmode` 1, whose rays are drawn at random on each
-  thread; the shadows of brush models with no faces; and the command line's options. Lights
-  are culled by the BSP's visibility in ericw-tools when it has any, which changes no sample;
-  here they are not.
+  thread; the shadows of brush models with no faces; and the command line's options.
+- **LIGHT-8.8** `qs-map-light` offers a quick light for playing a map at once (MAP-13): the
+  extended dialect's lighting without dirt (LIGHT-19) and bounce (LIGHT-20), the two that
+  cost the most; everything else is as the final light's (MAP-14). ericw-tools has no such
+  mode.
 
 ## LIGHT-9 Settings
 
@@ -425,6 +427,13 @@ The world's settings, each with its default; a second name is another key for th
   1024 rays spread over the sphere about it end, each at what it reaches or 65536 units out,
   grown on every side by a quarter of its size. A light whose box is more than 0.001 from a
   face's box lights nothing on it. With visibility in the BSP no light is culled this way.
+- **LIGHT-10.10** When the BSP has visibility, each face has what its leaves see between
+  them: the rows, unpacked from their runs, a 0 and a count standing for that many bytes of
+  0, of the leaves that list a face of the world, or of the leaves a brush model's samples
+  are in; everything when one of them is a liquid or has no row. A light on the default
+  channel whose leaf is not among them lights nothing on the face, unless its leaf is solid,
+  sky or a liquid. A bounce light (LIGHT-20) is passed over for a face that cannot see every
+  leaf its own face is in.
 - **LIGHT-10.9** A light lights a face when it is in front of the face's plane, or the face
   is curved (LIGHT-13.6) or lit from both sides, or the light has `_bleed`; and when its
   brightness at the nearest point of the sphere around the face is over 0.001. Each sample
