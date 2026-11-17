@@ -726,7 +726,7 @@ impl Shell {
     fn follow_game_place(&mut self, ctx: &egui::Context) {
         let place = self.layout().game_place;
         self.game.set_place(place);
-        self.game.follow(ctx, self.centre_tab == CentreTab::Game);
+        self.game.follow(ctx, self.centre_tab);
         let preview = &self.session.context().preview;
         if preview.state() == PlayState::Stopped {
             self.game_shown = false;

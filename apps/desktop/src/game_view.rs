@@ -15,6 +15,8 @@ use qs_engine::{Client, EmbeddedHost, LaunchError, LaunchSpec};
 use qs_game::{Args, GameView, Running};
 use qs_layout::GamePlace;
 
+use crate::shell::CentreTab;
+
 /// The game that runs in this window, where it is drawn and what it is drawn with: shared by
 /// the shell, which draws it and says where the layout puts the game, and the preview's
 /// [`EmbeddedHost`], which starts and stops it.
@@ -67,13 +69,13 @@ impl GameSlot {
         true
     }
 
-    /// Follows the window: its context is kept, and while the Game tab is not `shown` a game
-    /// that holds the mouse gives it back, since nothing there would free it.
-    pub(crate) fn follow(&self, ctx: &Context, shown: bool) {
+    /// Follows the window: its context is kept, and while `tab`, the centre's, is not the Game
+    /// tab a game that holds the mouse gives it back, since nothing there would free it.
+    pub(crate) fn follow(&self, ctx: &Context, tab: CentreTab) {
         if self.ctx.borrow().is_none() {
             *self.ctx.borrow_mut() = Some(ctx.clone());
         }
-        if !shown
+        if tab != CentreTab::Game
             && let Ok(mut slot) = self.game.try_borrow_mut()
             && let Some(game) = slot.as_mut()
         {
