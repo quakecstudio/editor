@@ -249,6 +249,9 @@ pub(crate) struct Value {
     pub(crate) made: Option<u32>,
     /// The index of a string literal's bytes among the body's strings.
     pub(crate) string: Option<u32>,
+    /// The index, among the body's strings, of the literal a `_("...")` translates
+    /// (FTEF-32.22).
+    pub(crate) translated: Option<u32>,
     /// The index of the generated `CALL` whose value in the return global this is.
     pub(crate) call: Option<u32>,
     /// The word of the value [`Value::made`] names that this is, a vector's component.
@@ -370,6 +373,7 @@ impl Value {
             returned: false,
             made: None,
             string: None,
+            translated: None,
             call: None,
             word: 0,
             literal: None,
@@ -399,6 +403,9 @@ impl Value {
                 0 => ir::Name::Return,
                 word => ir::Name::ReturnWord(word),
             });
+        }
+        if let Some(string) = self.translated {
+            return Some(ir::Name::Translated(ir::StringIndex::new(string)));
         }
         if let Some(string) = self.string {
             return Some(ir::Name::String(ir::StringIndex::new(string)));

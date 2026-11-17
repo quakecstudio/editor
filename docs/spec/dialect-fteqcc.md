@@ -5644,6 +5644,23 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   (FTEF-32.16, `if (d->isstatic || (d->constant && d->initialized)) QCC_FinaliseDef(d);`).
   Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qccmain.c`,
   `QCC_UnmarshalLocals`.
+- **FTEF-32.22** `_("text")` in an expression is the global of the translated string: a
+  string definition named `dotranslate_N` that is no constant, initialised with the text, the
+  N counting each one made from 1 (`QC_snprintfz(buf, sizeof(buf), "dotranslate_%i",
+  ++dotranslate_count); ... cn->constant = !translate; cn->initialized = 1;` in
+  `QCC_MakeStringConstInternal`), and a text translated before names the global it made then
+  (`cn = pHash_Get(translate?&stringconstdefstable_trans:&stringconstdefstable, value); if
+  (cn) return QCC_MakeSRefForce(cn, 0, type_string);`): `a = _("one"); b = _("two"); a =
+  _("one");` is `STORE_S dotranslate_1, a`, `STORE_S dotranslate_2, b`, `STORE_S
+  dotranslate_1, a`. A global that `_("text")` initialises holds the text itself and has a
+  second definition at its offset, a constant string named `dotranslate_N` by the same count
+  (`QCC_SRef_Data(def)->_int = QCC_CopyString (pr_immediate_string); if (!pr_scope ||
+  def.sym->constant) { ... QC_snprintfz(trname, sizeof(trname), "dotranslate_%i",
+  ++dotranslate_count); dt = QCC_PR_DummyDef(type_string, trname, pr_scope, 0, def.sym,
+  def.ofs, true, GDF_CONST);` in `QCC_PR_ParseInitializerType`), with no `IMMEDIATE` of its
+  own. Run on the pinned FTEQCC with `-Tfte`: `string g = _("hi");` and the three stores
+  above write `dotranslate_2` and `dotranslate_3` before the function's locals.
+
 ## FTEF-33 Builtin argument checks
 
 **Source:** `qcc_pr_comp.c`, `QCC_VerifyFormatString`, `QCC_VerifyArgs_sendevent`,

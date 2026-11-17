@@ -872,7 +872,16 @@ impl Checker<'_> {
                     let message = "_() intrinsic accepts only a string immediate".to_owned();
                     return self.fatal(Code::E0340, span, message).map(Some);
                 }
-                Ok(Some(string()))
+                // FTEF-32.22: the value is the `dotranslate_N` global of the literal, no
+                // constant.
+                let translated = match args.first() {
+                    Some(ast::Expr::Literal(literal)) => self.literal(literal).string,
+                    _ => None,
+                };
+                Ok(Some(Value {
+                    translated,
+                    ..string()
+                }))
             }
             "randomv" => {
                 // Each argument is a vector as it is, with no conversion.
