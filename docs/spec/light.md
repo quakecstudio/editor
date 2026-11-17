@@ -352,6 +352,30 @@ lights the map, read by the same reader (LIGHT-2), so what the modder sees is wh
   call the inside of a fence or a window solid. A leaf whose contents there have `SOLID`,
   `DETAIL_WALL` or `SKY` holds no sample (LIGHT-12.7); any other may. Without the file a
   solid or sky leaf of the BSP holds none.
+- **LIGHT-9.10** Besides LIGHT-9.4's and LIGHT-10.11's, the light warns, and goes on, of: an
+  entity with an empty key or value (`WARNING: {} has empty key/value "{}" "{}"`,
+  `EntDict_CheckNoEmptyValues`); a `lightmap_scale` key, which it reads as `_lightmap_scale`
+  (`WARNING: lightmap_scale should be _lightmap_scale`); a `_falloff` on a light that is not
+  linear, which it takes as none (`WARNING: _falloff is currently only supported on linear
+  (delay 0) lights`); a `delay` it does not know, which puts the light out (`WARNING: unknown
+  delay {} on {} at [{}]`); a sun light with no target and no `mangle`, which shines toward
+  the map's origin (`WARNING: sun missing target, entity origin used.`); a light that stays in
+  solid when moved 2 units each way (`WARNING: couldn't nudge light out of solid at {}`); a
+  `_surface` light whose texture no face has (`WARNING: no faces found with texture {} (qbsp
+  may have been run with .wad's missing?)`); and a face lit in more styles than it holds, the dimmest left out (`WARNING: a face has
+  exceeded max light styles ({})`), once for a lighting. Its warning of a style past 254 is
+  not ours: a light's `style` is held to 0 to 254 as it is read, so no face has one. Source:
+  `light/entities.cc`, `CheckEntityFields`,
+  `LoadEntities`, `FixLightOnFace`, `MakeSurfaceLights`; `light/write.cc`,
+  `CalculateLightmapStyles`.
+- **LIGHT-9.11** Texinfo flags (LIGHT-9.8) that name a texinfo the BSP does not have are
+  another BSP's: none of them is taken (`if (index >= bsp->texinfo.size()) {
+  logging::print("WARNING: Extended texinfo flags in {} does not match bsp, ignoring\n",
+  filename); memset(result.data(), 0, ...); return result; }`). Leaf contents (LIGHT-9.9) in
+  another number than the BSP's leaves are not taken either, and the BSP's own are used (`if
+  (!j.isArray() || j.size() != bsp->dleafs.size()) { logging::print("ERROR: malformed
+  extended content flags file\n"); return result; }`). Each is warned of. Source:
+  `common/bspfile_common.cc`, `LoadExtendedTexinfoFlags`, `LoadExtendedContentFlags`.
 
 ### Constants
 
@@ -823,10 +847,13 @@ The world's settings, each with its default; a second name is another key for th
 - **LIGHT-18.6** A `.lit` is written when any sample of any lightmap, kept or not, has two
   channels more than 0.001 apart once scaled.
 - **LIGHT-18.7** The BSP's BSPX lumps (BSP-24) are written back after its own lumps, in
-  their order, but `LMSTYLE16`, `LMSTYLE`, `LMOFFSET` and `DECOUPLED_LM`, which held an
-  earlier lighting (`bspdata->bspx.entries.erase("LMSTYLE16"); ... erase("LMSTYLE"); ...
-  erase("LMOFFSET"); ... erase("DECOUPLED_LM");` in `SaveLightmapSurfaces`). Source:
-  `light/light.cc`.
+  their order, but those that held an earlier lighting: `LMSTYLE16`, `LMSTYLE`, `LMOFFSET`
+  and `DECOUPLED_LM` (`bspdata->bspx.entries.erase("LMSTYLE16"); ... erase("LMSTYLE"); ...
+  erase("LMOFFSET"); ... erase("DECOUPLED_LM");` in `SaveLightmapSurfaces`), `RGBLIGHTING`,
+  `LIGHTINGDIR` and `LIGHTING_E5BGR9` (`bspdata->bspx.entries.erase("RGBLIGHTING"); ...
+  erase("LIGHTINGDIR"); ... erase("LIGHTING_E5BGR9");` in `light/write.cc`), and
+  `FACENORMALS` (`// invalidate normals` `bspdata.bspx.entries.erase("FACENORMALS");`).
+  Source: `light/light.cc`, `light/write.cc`.
 
 ## LIGHT-19 Dirt
 

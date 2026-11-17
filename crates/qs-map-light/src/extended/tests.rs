@@ -33,8 +33,8 @@ use super::shade::{Answers, Shader};
 use crate::face::FaceId;
 use crate::tests::{cuboid, light_at, miptex};
 use crate::{
-    Extras, Jitter, LeafKind, Light, LightError, LightWarning, Lighted, Sampling, SurfaceFlags,
-    Vec3,
+    Extras, Jitter, LeafKind, Light, LightError, LightWarning, Lighted, Sampling, SidecarFile,
+    SurfaceFlags, Vec3,
 };
 
 /// The textures the rooms are built of.
@@ -1476,6 +1476,110 @@ fn the_worlds_lightmap_scale_sizes_the_luxels() {
     assert_eq!(error.to_string(), "lightmap scale is 0 or negative");
 }
 
+// spec LIGHT-9.10: the light warns of an empty value, lightmap_scale, a falloff on a light
+// that is not linear, an unknown delay, a sun with no target, a light left in solid and a
+// _surface texture no face has, and lights the map all the same.
+#[test]
+fn the_light_warns_of_what_it_puts_right() {
+    let entities = [
+        light_at("128 128 64", "\"note\" \"\"\n\"lightmap_scale\" \"16\"\n"),
+        light_at("64 64 64", "\"_falloff\" \"64\"\n\"delay\" \"2\"\n"),
+        light_at("64 128 64", "\"delay\" \"9\"\n"),
+        light_at("192 64 64", "\"_sun\" \"1\"\n"),
+        light_at("128 128 -8", ""),
+        light_at("192 192 64", "\"_surface\" \"nosuch\"\n"),
+    ]
+    .concat();
+    let lighted = lit(&room("", "wall", "", &entities));
+    let has = |wanted: &dyn Fn(&LightWarning) -> bool| lighted.warnings.iter().any(wanted);
+    assert!(has(&|w| matches!(
+        w,
+        LightWarning::EmptyKeyValue { classname, key, value }
+            if classname == "light" && key == "note" && value.is_empty()
+    )));
+    assert!(has(&|w| *w == LightWarning::LightmapScaleKey));
+    assert!(has(&|w| matches!(
+        w,
+        LightWarning::FalloffNotLinear { classname, at } if classname == "light" && at == "64 64 64"
+    )));
+    assert!(has(&|w| matches!(
+        w,
+        LightWarning::UnknownDelay { at, .. } if at == "64 128 64"
+    )));
+    assert!(has(&|w| *w == LightWarning::SunMissingTarget));
+    assert!(has(&|w| matches!(
+        w,
+        LightWarning::LightInSolid { at } if at == "128 128 -8"
+    )));
+    assert!(has(&|w| matches!(
+        w,
+        LightWarning::SurfaceTextureMissing { texture } if texture == "nosuch"
+    )));
+    for warning in &lighted.warnings {
+        assert!(warning.to_string().starts_with("WARNING: "), "{warning}");
+    }
+    // A map with none of these has no warning.
+    let plain = lit(&room("", "wall", "", &light_at("128 128 64", "")));
+    assert_eq!(plain.warnings, []);
+}
+
+// spec LIGHT-9.10: a face lit in more styles than it holds is warned of once, however many
+// faces it is true of.
+#[test]
+fn the_light_warns_once_of_styles_a_face_cannot_hold() {
+    let mut entities = String::new();
+    for (name, x) in [("a", 48), ("b", 88), ("c", 128), ("d", 168), ("e", 208)] {
+        entities.push_str(&light_at(
+            &format!("{x} 128 64"),
+            &format!("\"targetname\" \"{name}\"\n"),
+        ));
+    }
+    let many = lit(&room("", "wall", "", &entities));
+    let count = |lighted: &Lighted, wanted: &LightWarning| {
+        lighted.warnings.iter().filter(|w| *w == wanted).count()
+    };
+    assert_eq!(count(&many, &LightWarning::TooManyStyles), 1);
+}
+
+// spec LIGHT-9.11: texinfo flags for more texinfos than the BSP has, or leaf contents in
+// another number than its leaves, are another BSP's: neither is taken, and each is warned of.
+#[test]
+fn files_beside_another_bsp_are_not_taken() {
+    let bsp = room("", "wall", "", &light_at("128 128 64", ""));
+    let read = Bsp::read(&bsp, BspLoader::FitzQuake).unwrap();
+    let alone = lit(&bsp);
+    // Flags that would put every face out, and leaves that would hide every sample.
+    let dark = SurfaceFlags {
+        light_ignore: true,
+        ..SurfaceFlags::default()
+    };
+    let surfaces = vec![dark; read.texinfo.len() + 1];
+    let leaves = vec![LeafKind::Closed; read.leafs.len() + 1];
+    let extras = Extras {
+        surfaces: &surfaces,
+        leaves: &leaves,
+        palette: None,
+    };
+    let lighted = Light::default().run_with(&bsp, extras).unwrap();
+    assert_eq!(lighted.bsp, alone.bsp);
+    assert_eq!(
+        lighted.warnings,
+        [
+            LightWarning::SidecarMismatch(SidecarFile::Texinfo),
+            LightWarning::SidecarMismatch(SidecarFile::Content),
+        ]
+    );
+    // The BSP's own number of each is taken.
+    let own = Extras {
+        surfaces: &surfaces[..read.texinfo.len()],
+        leaves: &[],
+        palette: None,
+    };
+    let ignored = Light::default().run_with(&bsp, own).unwrap();
+    assert_eq!(ignored.warnings, []);
+    assert_ne!(ignored.bsp, alone.bsp);
+}
+
 // spec LIGHT-18.7: the BSP's BSPX lumps are written back after its own, but the lumps of an
 // earlier lighting.
 #[test]
@@ -1483,7 +1587,16 @@ fn bspx_lumps_are_kept_but_an_earlier_lightings() {
     let mut bsp = room("\"light\" \"100\"\n", "wall", "", "");
     let mut lumps = qs_bsp::Bspx::default();
     lumps.set(b"BRUSHLIST", vec![1, 2, 3, 4, 5]);
-    for stale in [&b"LMOFFSET"[..], b"LMSTYLE", b"LMSTYLE16", b"DECOUPLED_LM"] {
+    for stale in [
+        &b"LMOFFSET"[..],
+        b"LMSTYLE",
+        b"LMSTYLE16",
+        b"DECOUPLED_LM",
+        b"RGBLIGHTING",
+        b"LIGHTINGDIR",
+        b"LIGHTING_E5BGR9",
+        b"FACENORMALS",
+    ] {
         lumps.set(stale, vec![9; 8]);
     }
     lumps.append_to(&mut bsp).unwrap();

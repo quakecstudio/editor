@@ -22,7 +22,7 @@ use crate::extended::sun::{Random, Sun, SunLight, Suns};
 use crate::extended::surflight::BY_LIGHTS;
 use crate::extended::vis::leaf_at;
 use crate::face::FaceId;
-use crate::{AXES, Jitter, LightError, Vec3, to_f32};
+use crate::{AXES, Jitter, LightError, LightWarning, Vec3, to_f32};
 
 /// `light`: the start of a light entity's classname (LIGHT-10.1).
 const LIGHT_PREFIX: &[u8] = b"light";
@@ -96,6 +96,14 @@ pub(crate) struct Lights {
     pub(crate) templates: Vec<(Lamp, Vec<u8>)>,
     /// The worldspawn keys whose values did not read (LIGHT-9.4).
     pub(crate) invalid: Vec<String>,
+    /// What reading and placing the lights warned of, in order (LIGHT-9.10).
+    pub(crate) warnings: Vec<LightWarning>,
+}
+
+/// A point as a warning names it.
+fn place_of(point: Vec3) -> String {
+    let [x, y, z] = point;
+    format!("{x} {y} {z}")
 }
 
 /// `ParseEscapeSequences`: `value` with each `\b` taken out, the bytes between one and the
@@ -151,9 +159,22 @@ impl Lights {
             .ok_or(LightError::NoWorldspawn)?;
         let (mut world, invalid) = World::read(world_dict);
         let mut styles: Vec<(Vec<u8>, i32)> = Vec::new();
+        let mut warnings = Vec::new();
+        let text_of = |bytes: &[u8]| String::from_utf8_lossy(bytes).into_owned();
         for dict in &mut dicts {
+            // `EntDict_CheckNoEmptyValues`.
+            for (key, value) in dict.pairs() {
+                if key.is_empty() || value.is_empty() {
+                    warnings.push(LightWarning::EmptyKeyValue {
+                        classname: text_of(dict.get(b"classname")),
+                        key: text_of(key),
+                        value: text_of(value),
+                    });
+                }
+            }
             let scale = dict.get(b"lightmap_scale").to_vec();
             if !scale.is_empty() {
+                warnings.push(LightWarning::LightmapScaleKey);
                 dict.remove(b"lightmap_scale");
                 dict.set(b"_lightmap_scale", scale);
             }
@@ -209,7 +230,7 @@ impl Lights {
             if !keys.switchableshadow_target.get().is_empty() {
                 keys.nostaticlight.set(true, Source::Default);
             }
-            keys.check(&world);
+            keys.check(&world, dict.get(b"classname"), &mut warnings);
             // A light's `_surflight_minlight_scale` is the world's when it has none.
             if !keys.surflight_minlight_scale.is_changed()
                 && world.surflight_minlight_scale.is_changed()
@@ -235,7 +256,34 @@ impl Lights {
             styles,
             templates: Vec::new(),
             invalid,
+            warnings,
         })
+    }
+
+    /// Every warning of a lighting, in ericw-tools' order: the world's keys that did not
+    /// read, the projectors with no texture, the files beside the BSP that are not its own
+    /// (`mismatched`), what reading and placing the lights warned of, and what the
+    /// faces warned of (`written`) once.
+    pub(crate) fn warned(
+        &self,
+        unprojected: &[Vec<u8>],
+        mismatched: Vec<LightWarning>,
+        written: &[LightWarning],
+    ) -> Vec<LightWarning> {
+        self.invalid
+            .iter()
+            .map(|key| LightWarning::InvalidWorldKey { key: key.clone() })
+            .chain(
+                unprojected
+                    .iter()
+                    .map(|texture| LightWarning::ProjectTextureMissing {
+                        texture: String::from_utf8_lossy(texture).into_owned(),
+                    }),
+            )
+            .chain(mismatched)
+            .chain(self.warnings.iter().cloned())
+            .chain(written.first().cloned())
+            .collect()
     }
 
     /// How many names were given styles.
@@ -316,9 +364,12 @@ impl Lights {
                 && lamp.keys.light_channel_mask.get() == CHANNEL_DEFAULT
                 && lamp.keys.shadow_channel_mask.get() == CHANNEL_DEFAULT
             {
-                let moved = map
-                    .out_of_solid(lamp.origin())
-                    .unwrap_or_else(|| lamp.origin());
+                let moved = map.out_of_solid(lamp.origin()).unwrap_or_else(|| {
+                    self.warnings.push(LightWarning::LightInSolid {
+                        at: place_of(lamp.origin()),
+                    });
+                    lamp.origin()
+                });
                 lamp.keys.origin.set(moved, Source::Map);
             }
         }
@@ -451,6 +502,7 @@ impl Lights {
             } else if length(mangle) > 0.0 {
                 vec_from_mangle(mangle)
             } else {
+                self.warnings.push(LightWarning::SunMissingTarget);
                 scale(lamp.origin(), -1.0)
             };
             suns.sun(direction, lamp.keys.deviance.get(), of(lamp));
@@ -521,6 +573,16 @@ impl Lights {
             }
             templates.push((lamp.clone(), texture.to_vec()));
             lamp.keys.light.set(0.0, Source::Map);
+            if !map
+                .bsp
+                .faces
+                .iter()
+                .any(|face| map.texture_name(face).eq_ignore_ascii_case(texture))
+            {
+                self.warnings.push(LightWarning::SurfaceTextureMissing {
+                    texture: String::from_utf8_lossy(texture).into_owned(),
+                });
+            }
         }
         self.templates.clone_from(&templates);
         if templates.is_empty() {
@@ -638,8 +700,9 @@ pub(crate) fn style_for(
 
 impl LightKeys {
     /// `CheckEntityFields`: a light's settings put right (LIGHT-10.3).
-    fn check(&mut self, world: &World) {
+    fn check(&mut self, world: &World, classname: &[u8], warnings: &mut Vec<LightWarning>) {
         let keys = self;
+        let classname = || String::from_utf8_lossy(classname).into_owned();
         if !keys.light.is_changed() {
             keys.light.set(DEFAULT_LIGHT, Source::Map);
         }
@@ -650,9 +713,17 @@ impl LightKeys {
             keys.anglescale.set(world.anglescale.get(), Source::Map);
         }
         if keys.falloff.get() > 0.0 && keys.formula.get() != Formula::Linear {
+            warnings.push(LightWarning::FalloffNotLinear {
+                classname: classname(),
+                at: place_of(keys.origin.get()),
+            });
             keys.falloff.set(0.0, Source::Map);
         }
         if keys.formula.get() == Formula::Unknown {
+            warnings.push(LightWarning::UnknownDelay {
+                classname: classname(),
+                at: place_of(keys.origin.get()),
+            });
             keys.formula.set(Formula::Linear, Source::Map);
             keys.light.set(0.0, Source::Map);
         }

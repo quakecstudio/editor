@@ -53,7 +53,16 @@ use crate::{Finish, Light, LightError, LightWarning, Lighted};
 
 /// The BSPX lumps of a lighting, which `light` takes out before it writes its own
 /// (`bspdata->bspx.entries.erase`).
-const STALE_LUMPS: [&[u8]; 4] = [b"LMSTYLE16", b"LMSTYLE", b"LMOFFSET", b"DECOUPLED_LM"];
+const STALE_LUMPS: [&[u8]; 8] = [
+    b"LMSTYLE16",
+    b"LMSTYLE",
+    b"LMOFFSET",
+    b"DECOUPLED_LM",
+    b"RGBLIGHTING",
+    b"LIGHTINGDIR",
+    b"LIGHTING_E5BGR9",
+    b"FACENORMALS",
+];
 
 /// How many faces a thread lights before taking more.
 const FACE_BATCH: usize = 16;
@@ -72,7 +81,26 @@ pub struct Extras<'a> {
 }
 
 /// One face lit: its lightmaps, and whether any of its samples has a colour.
-type FaceResult = (Option<Lit>, bool);
+type FaceResult = (Option<Lit>, bool, Vec<LightWarning>);
+
+impl Extras<'_> {
+    /// `LoadExtendedTexinfoFlags`, `LoadExtendedContentFlags`: these with what is not
+    /// `read`'s taken out, and a warning for each: flags for more texinfos than the BSP has,
+    /// or leaves in another number than its own, are another BSP's (LIGHT-9.11).
+    fn matched_to(self, read: &Bsp<'_>) -> (Self, Vec<LightWarning>) {
+        let mut extras = self;
+        let mut mismatched = Vec::new();
+        if extras.surfaces.len() > read.texinfo.len() {
+            mismatched.push(LightWarning::SidecarMismatch(SidecarFile::Texinfo));
+            extras.surfaces = &[];
+        }
+        if !extras.leaves.is_empty() && extras.leaves.len() != read.leafs.len() {
+            mismatched.push(LightWarning::SidecarMismatch(SidecarFile::Content));
+            extras.leaves = &[];
+        }
+        (extras, mismatched)
+    }
+}
 
 impl Light {
     /// `light_main` and `LightWorld`: the BSP `bytes`, read as `read`, lit in the extended
@@ -85,6 +113,7 @@ impl Light {
     ) -> Result<Lighted, LightError> {
         let light = self;
         let mut lights = Lights::read(read.entity_lump)?;
+        let (extras, mismatched) = extras.matched_to(read);
         let map = Map::new(
             read,
             lights.world.clone(),
@@ -187,18 +216,21 @@ impl Light {
                 .get(face)
                 .and_then(|slot| slot.lock().ok())
                 .and_then(|mut slot| slot.take());
-            taken.map_or((None, false), |(mut patch, mut lightmaps)| {
+            taken.map_or((None, false, Vec::new()), |(mut patch, mut lightmaps)| {
                 shader.post(&mut patch, &mut lightmaps, emitters, stack);
                 let done = lightmaps.finish(&map.world, &patch, light.sampling);
-                (done.lit, done.coloured)
+                (done.lit, done.coloured, done.warnings)
             })
         })?;
         let mut faces = Vec::with_capacity(count);
         let mut colour = Colour::White;
-        for (lit, coloured) in results {
+        // ericw-tools warns of each kind once, however many faces it is true of.
+        let mut written: Vec<LightWarning> = Vec::new();
+        for (lit, coloured, warned) in results {
             if coloured {
                 colour = Colour::Coloured;
             }
+            written.extend(warned);
             faces.push(lit);
         }
         // The grey byte is always the brightest channel (LIGHT-18.5), which is what a coloured
@@ -222,18 +254,7 @@ impl Light {
         Ok(Lighted {
             bsp: out.bsp,
             lit: out.lit.filter(|_| colour == Colour::Coloured),
-            warnings: lights
-                .invalid
-                .iter()
-                .map(|key| LightWarning::InvalidWorldKey { key: key.clone() })
-                .chain(
-                    unprojected
-                        .iter()
-                        .map(|texture| LightWarning::ProjectTextureMissing {
-                            texture: String::from_utf8_lossy(texture).into_owned(),
-                        }),
-                )
-                .collect(),
+            warnings: lights.warned(&unprojected, mismatched, &written),
             switchable: lights.switchable(),
         })
     }

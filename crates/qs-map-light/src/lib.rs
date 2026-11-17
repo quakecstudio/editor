@@ -271,6 +271,49 @@ pub enum LightWarning {
         /// The texture's name.
         texture: String,
     },
+    /// `WARNING: <entity> has empty key/value "<key>" "<value>"`, in the extended dialect
+    /// (LIGHT-9.10).
+    EmptyKeyValue {
+        /// The entity's classname.
+        classname: String,
+        /// The key.
+        key: String,
+        /// Its value.
+        value: String,
+    },
+    /// `WARNING: lightmap_scale should be _lightmap_scale` (LIGHT-9.10).
+    LightmapScaleKey,
+    /// `WARNING: _falloff is currently only supported on linear (delay 0) lights`
+    /// (LIGHT-9.10).
+    FalloffNotLinear {
+        /// The light's classname.
+        classname: String,
+        /// Its origin.
+        at: String,
+    },
+    /// `WARNING: unknown delay <n> on <class> at [<origin>]` (LIGHT-9.10).
+    UnknownDelay {
+        /// The light's classname.
+        classname: String,
+        /// Its origin.
+        at: String,
+    },
+    /// `WARNING: sun missing target, entity origin used.` (LIGHT-9.10).
+    SunMissingTarget,
+    /// `WARNING: couldn't nudge light out of solid at <origin>` (LIGHT-9.10).
+    LightInSolid {
+        /// The light's origin.
+        at: String,
+    },
+    /// `WARNING: no faces found with texture <name> (qbsp may have been run with .wad's
+    /// missing?)` (LIGHT-9.10).
+    SurfaceTextureMissing {
+        /// The `_surface` texture's name.
+        texture: String,
+    },
+    /// `WARNING: Extended texinfo flags in <file> does not match bsp, ignoring`, or the leaf
+    /// contents' file (LIGHT-9.11).
+    SidecarMismatch(SidecarFile),
 }
 
 impl fmt::Display for LightWarning {
@@ -292,6 +335,43 @@ impl fmt::Display for LightWarning {
                 "WARNING: light has \"_project_texture\" \"{texture}\", but this texture was not \
                  found"
             ),
+            Self::EmptyKeyValue {
+                classname,
+                key,
+                value,
+            } => write!(
+                f,
+                "WARNING: {classname} has empty key/value \"{key}\" \"{value}\""
+            ),
+            Self::LightmapScaleKey => {
+                f.write_str("WARNING: lightmap_scale should be _lightmap_scale")
+            }
+            Self::FalloffNotLinear { classname, at } => write!(
+                f,
+                "WARNING: _falloff is currently only supported on linear (delay 0) lights: \
+                 {classname} at [{at}]"
+            ),
+            Self::UnknownDelay { classname, at } => {
+                write!(f, "WARNING: unknown delay on {classname} at [{at}]")
+            }
+            Self::SunMissingTarget => {
+                f.write_str("WARNING: sun missing target, entity origin used.")
+            }
+            Self::LightInSolid { at } => {
+                write!(f, "WARNING: couldn't nudge light out of solid at {at}")
+            }
+            Self::SurfaceTextureMissing { texture } => write!(
+                f,
+                "WARNING: no faces found with texture {texture} (qbsp may have been run with \
+                 .wad's missing?)"
+            ),
+            Self::SidecarMismatch(SidecarFile::Texinfo) => f.write_str(
+                "WARNING: Extended texinfo flags in the .texinfo.json do not match the bsp, \
+                 ignoring",
+            ),
+            Self::SidecarMismatch(SidecarFile::Content) => {
+                f.write_str("WARNING: the .content.json does not match the bsp's leaves, ignoring")
+            }
         }
     }
 }

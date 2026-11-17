@@ -447,14 +447,13 @@ pub(crate) fn compile(
     // The trees are built on a pool of the machine's threads (`Workers`), each with room for
     // a deep tree: a build goes as deep as its tree, and a thread waiting for one part of it
     // takes up another on top.
-    match rayon::ThreadPoolBuilder::new()
+    // In rayon's own pool the threads' stacks are too small for a deep tree, so with no pool
+    // of its own the compile stops.
+    rayon::ThreadPoolBuilder::new()
         .stack_size(POOL_STACK)
         .build()
-    {
-        Ok(pool) => pool.install(|| compile_in_pool(file, wad, subdivide)),
-        // With no pool of its own the compile runs in rayon's.
-        Err(_) => compile_in_pool(file, wad, subdivide),
-    }
+        .map_err(|_| CompileError::Threads)?
+        .install(|| compile_in_pool(file, wad, subdivide))
 }
 
 /// [`compile`], on the pool it is called in.

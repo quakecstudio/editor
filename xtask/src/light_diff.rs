@@ -142,6 +142,15 @@ const ERICW_PAST_BAR: f64 = 3.0;
 /// A hundred, of a part in a hundred.
 const HUNDRED: f64 = 100.0;
 
+/// How near ericw-tools' light ours is held on a map.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Bar {
+    /// As id's light is: no luxel past the tolerance.
+    Exact,
+    /// To [`ERICW_MEAN_BAR`] and [`ERICW_PAST_BAR`].
+    Near,
+}
+
 /// A light mode, with the option that asks the oracles for it.
 #[derive(Clone, Copy, Debug)]
 enum Mode {
@@ -236,6 +245,14 @@ impl Images {
     /// mean within [`MEAN_BAR`].
     fn agree(&self) -> bool {
         self.faces_differing == 0 && self.over == 0 && self.mean() <= MEAN_BAR
+    }
+
+    /// Whether the images are within `bar`.
+    fn within(&self, bar: Bar) -> bool {
+        match bar {
+            Bar::Exact => self.agree(),
+            Bar::Near => self.near(),
+        }
     }
 
     /// Whether the images are as near as ericw-tools' light is held to: every face alike, the
@@ -619,14 +636,24 @@ impl Oracles<'_> {
         };
         // Each mode: the four samples a luxel of `-extra` are where ours gathers the bounce
         // and asks the suns by the luxel (LIGHT-14.9, LIGHT-20.7).
+        // The room made to be compared is held as id's light is; a corpus map to the bar.
+        let bar = if path.ends_with(COLOURED_ROOM) {
+            Bar::Exact
+        } else {
+            Bar::Near
+        };
         let mut agrees = true;
         for mode in Mode::ALL {
             let label = match mode {
                 Mode::Fast => label.clone(),
                 Mode::Extra => format!("{label} extra"),
             };
-            agrees &=
-                self.ericw_lit(mode, &compiled.bsp, (extras, jitter), (&dir, name, &label))?;
+            agrees &= self.ericw_lit(
+                (mode, bar),
+                &compiled.bsp,
+                (extras, jitter),
+                (&dir, name, &label),
+            )?;
         }
         Ok(agrees)
     }
@@ -636,7 +663,7 @@ impl Oracles<'_> {
     /// agree.
     fn ericw_lit(
         &self,
-        mode: Mode,
+        (mode, bar): (Mode, Bar),
         bsp: &[u8],
         (extras, jitter): (Extras<'_>, Jitter),
         (dir, name, label): (&Path, &str, &str),
@@ -666,10 +693,10 @@ impl Oracles<'_> {
             Ok(images) => {
                 println!(
                     "{} {label} light: {images}, {:.2} in a hundred",
-                    verdict(images.near()),
+                    verdict(images.within(bar)),
                     images.past_in_a_hundred()
                 );
-                images.near()
+                images.within(bar)
             }
             Err(why) => {
                 println!("FAIL  {label} light: {why}");
@@ -683,16 +710,21 @@ impl Oracles<'_> {
                     Ok(images) => {
                         println!(
                             "{} {label} colour: {images}, {:.2} in a hundred",
-                            verdict(images.near()),
+                            verdict(images.within(bar)),
                             images.past_in_a_hundred()
                         );
-                        agrees &= images.near();
+                        agrees &= images.within(bar);
                     }
                     Err(why) => {
                         println!("FAIL  {label} colour: {why}");
                         agrees = false;
                     }
                 }
+            }
+            // The room is there for its colour: with no `.lit` nothing was compared.
+            (None, None) if bar == Bar::Exact => {
+                println!("FAIL  {label} colour: neither wrote a .lit");
+                agrees = false;
             }
             (None, None) => {}
             (ours, _) => {

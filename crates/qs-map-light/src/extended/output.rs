@@ -16,7 +16,7 @@ use crate::extended::math::{add, scale};
 use crate::extended::points::Patch;
 use crate::extended::shade::{Lightmap, Lightmaps};
 use crate::face::Lit;
-use crate::{AXES, Rgb, Sampling, Vec3};
+use crate::{AXES, LightWarning, Rgb, Sampling, Vec3};
 
 /// `LIGHT_EQUAL_EPSILON`: how far apart two channels are for a sample to have a colour
 /// (LIGHT-18.6).
@@ -136,6 +136,8 @@ pub(crate) struct Finished {
     /// The lightmaps; none when no style is kept.
     pub(crate) lit: Option<Lit>,
     pub(crate) coloured: bool,
+    /// What writing the face warned of: more styles than a face holds (LIGHT-9.10).
+    pub(crate) warnings: Vec<LightWarning>,
 }
 
 impl Lightmaps {
@@ -154,6 +156,7 @@ impl Lightmaps {
         // The styles kept: those a light reached, with a sample of brightness 1 or more, the
         // brightest on average first, the later of two as bright before the earlier.
         let mut kept: Vec<(f32, usize, i32, &Lightmap)> = Vec::new();
+        let mut warnings = Vec::new();
         for (index, lightmap) in lightmaps.all.iter().enumerate() {
             let Some(style) = lightmap.style.filter(|style| *style <= MAX_STYLE) else {
                 continue;
@@ -176,11 +179,15 @@ impl Lightmaps {
             ));
         }
         kept.sort_by(|a, b| b.0.total_cmp(&a.0).then(b.1.cmp(&a.1)));
+        if kept.len() > BSP_MAXLIGHTMAPS {
+            warnings.push(LightWarning::TooManyStyles);
+        }
         kept.truncate(BSP_MAXLIGHTMAPS);
         if kept.is_empty() {
             return Finished {
                 lit: None,
                 coloured,
+                warnings,
             };
         }
         let factor = sampling.per_luxel();
@@ -210,6 +217,7 @@ impl Lightmaps {
         Finished {
             lit: Some(lit),
             coloured,
+            warnings,
         }
     }
 }

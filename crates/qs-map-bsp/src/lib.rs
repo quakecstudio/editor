@@ -270,6 +270,8 @@ pub enum CompileError {
     SplitFacePoints,
     /// `TEX_InitFromWad: <path> isn't a wadfile` (MAP-6.8).
     Wad(qs_wad::WadError),
+    /// The threads the extended dialect builds its trees on could not be started.
+    Threads,
     /// A `MAX_MAP_` limit passed while writing, named (QBSP-13.10).
     Limit(&'static str),
     /// The BSP could not be written (BSP-23.3).
@@ -321,6 +323,7 @@ impl fmt::Display for CompileError {
             Self::SubdivideFailed => f.write_str("SubdivideFace: didn't split the polygon"),
             Self::SplitFacePoints => f.write_str("SplitFace: numpoints > MAXEDGES"),
             Self::Wad(error) => write!(f, "TEX_InitFromWad: isn't a wadfile: {error}"),
+            Self::Threads => f.write_str("the compile's threads could not be started"),
             Self::Limit(name) => write!(f, "{name}"),
             Self::Write(error) => write!(f, "{error}"),
         }

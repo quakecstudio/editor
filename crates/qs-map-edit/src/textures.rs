@@ -126,13 +126,19 @@ pub struct TextureSources {
 /// The palette textures are shown and made in: the project's own `gfx/palette.lmp`, first on
 /// the engine's search path as a mod's is, else the game's; none when neither reads.
 pub(crate) fn game_palette(project: Option<&Path>, game: Option<&Game<'_>>) -> Option<Palette> {
-    project
+    palette_read(project, game).map(|(palette, _)| palette)
+}
+
+/// The palette of a project or its game, with the bytes it was read from.
+fn palette_read(project: Option<&Path>, game: Option<&Game<'_>>) -> Option<(Palette, Vec<u8>)> {
+    let bytes = project
         .and_then(|root| std::fs::read(root.join(PALETTE_LMP)).ok())
         .or_else(|| {
             game.and_then(|game| game.file(PALETTE_LMP))
                 .map(|(_, bytes)| bytes)
-        })
-        .and_then(|bytes| Palette::from_lmp(&bytes).ok())
+        })?;
+    let palette = Palette::from_lmp(&bytes).ok()?;
+    Some((palette, bytes))
 }
 
 /// The bytes of the palette a map's light colours texels by (LIGHT-11.6): the project's own
@@ -141,14 +147,7 @@ pub(crate) fn game_palette(project: Option<&Path>, game: Option<&Game<'_>>) -> O
 #[must_use]
 pub fn light_palette(project: Option<&Path>, game: Option<&Path>) -> Option<Vec<u8>> {
     let game = game.map(Game::at);
-    let bytes = project
-        .and_then(|root| std::fs::read(root.join(PALETTE_LMP)).ok())
-        .or_else(|| {
-            game.as_ref()
-                .and_then(|game| game.file(PALETTE_LMP))
-                .map(|(_, bytes)| bytes)
-        })?;
-    Palette::from_lmp(&bytes).ok().map(|_| bytes)
+    palette_read(project, game.as_ref()).map(|(_, bytes)| bytes)
 }
 
 /// The game at a base directory: its search path, when it can be built, and the directory a
