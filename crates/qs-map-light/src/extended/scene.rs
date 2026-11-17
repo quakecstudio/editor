@@ -407,6 +407,9 @@ impl<'a> Map<'a> {
     }
 }
 
+/// The face of a shadow triangle that is of no face (LIGHT-11.10).
+const NO_FACE: usize = usize::MAX;
+
 impl Map<'_> {
     /// `Embree_TraceInit`: the triangles of every face that casts shadow, each with what it
     /// is to light (LIGHT-11.1, LIGHT-11.2).
@@ -425,6 +428,35 @@ impl Map<'_> {
                 || own_channels != CHANNEL_DEFAULT;
             if !casts {
                 continue;
+            }
+            // LIGHT-11.10: a model with `_shadow` and no faces casts the shadow of its brushes,
+            // which stops every ray.
+            if model.numfaces == 0 && keys.shadow.is_on() && !switchable {
+                let caster = Caster {
+                    model: ModelId(index),
+                    face: NO_FACE,
+                    surface: Surface::Solid,
+                    world_only: false,
+                    self_only: false,
+                    switch_style: None,
+                    channels: CHANNEL_DEFAULT,
+                    alpha: 1.0,
+                    fence: false,
+                    glass: false,
+                };
+                for side in self.brush_faces(index) {
+                    let Some(&first) = side.0.first() else {
+                        continue;
+                    };
+                    for pair in side.0.windows(2).skip(1) {
+                        if let [before, here] = *pair {
+                            out.push(Corners {
+                                points: [before, here, first],
+                                caster,
+                            });
+                        }
+                    }
+                }
             }
             for number in model.firstface..model.firstface.saturating_add(model.numfaces) {
                 let Some(face) = self.face(FaceId::new(number)) else {

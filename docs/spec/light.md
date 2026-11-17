@@ -294,7 +294,7 @@ lights the map, read by the same reader (LIGHT-2), so what the modder sees is wh
 - **LIGHT-8.7** Not ported, each a divergence from ericw-tools: `_lightmap_scale` and
   `_world_units_per_luxel` (a lightmap is 16 texels to the luxel); projected textures
   (`_project_texture`); radiosity surface lights (`_surface_radiosity`, `_surflight_radiosity`);
-  the shadows of brush models with no faces; and the command line's options.
+  and the command line's options.
   Each is being ported; none is left out by decision.
 - **LIGHT-8.8** `qs-map-light` offers a quick light for playing a map at once (MAP-13): the
   extended dialect's lighting without dirt (LIGHT-19) and bounce (LIGHT-20), the two that
@@ -500,6 +500,20 @@ The world's settings, each with its default; a second name is another key for th
   crosses and passes the edge of one it only touches. A ray that moves less than a millionth
   of its length along an axis is stopped by a triangle that ends on its plane only on the
   side it moves toward.
+- **LIGHT-11.10** A brush model with `_shadow`, not a switchable shadow, that has no faces,
+  as one whose brushes are all of `skip`, casts the shadow of its brushes (`if
+  (modelinfo->model->numfaces == 0) { MakeFaces(bsp, modelinfo, modelinfo->model, skipwindings);
+  }` over the models that always cast shadow). Each solid leaf of its hull 0 (`leaf->contents
+  == CONTENTS_SOLID`) gives a side for each plane of the nodes above it, the plane turned to
+  face out of the leaf (`MakeFaces_r`, `Leaf_MakeFaces`): a square on the plane ten million
+  units each way (`from_plane(faceplane, 10e6)`), cut to what is in front of every other of
+  those planes (`clip_front`, a corner within 0.1 of a plane on it, a cut on an axial plane
+  at the plane's own distance), a side with nothing left given up; each side is moved with
+  the model and is a fan of triangles from its first corner. These triangles stop every ray,
+  whatever its model or channel, as the world's solid faces do, and are no face: they have no
+  texture and bounce no light. Source: `light/trace_embree.cc`, `MakeFaces`, `MakeFaces_r`,
+  `Leaf_MakeFaces`, `Embree_TraceInit`; `include/common/polylib.hh`, `from_plane`,
+  `clip_front`.
 
 ## LIGHT-12 Sample points in the extended dialect
 

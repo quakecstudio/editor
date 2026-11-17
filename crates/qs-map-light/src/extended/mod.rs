@@ -12,6 +12,7 @@
 //! the lightmaps (`output`).
 
 mod bounce;
+mod brush_faces;
 mod dirt;
 mod keys;
 mod lights;

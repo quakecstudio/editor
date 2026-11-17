@@ -1140,3 +1140,33 @@ fn a_sun_with_a_texture_comes_through_that_sky_alone() {
         Some(100)
     );
 }
+
+// spec LIGHT-11.10: a brush model with _shadow and no faces, all its brushes of a texture
+// that is not drawn, casts the shadow of its brushes; without _shadow it casts none.
+#[test]
+fn a_model_with_no_faces_casts_its_brushes_shadow() {
+    let light = light_at("128 128 120", "\"light\" \"300\"\n");
+    let slab = |keys: &str| brush_entity("func_wall", keys, [112, 112, 64], [144, 144, 72], "skip");
+    let shadowed = room(
+        "",
+        "wall",
+        "",
+        &format!("{light}{}", slab("\"_shadow\" \"1\"\n")),
+    );
+    let read = Bsp::read(&shadowed, BspLoader::FitzQuake).unwrap();
+    assert_eq!(read.models[1].numfaces, 0, "a skip brush has no faces");
+    let open = room("", "wall", "", &format!("{light}{}", slab("")));
+    let (under_slab, beside) = ((128.0, 128.0), (16.0, 16.0));
+    let lit_open = lit(&open).bsp;
+    let lit_shadowed = lit(&shadowed).bsp;
+    assert!(floor_at(&lit_open, under_slab.0, under_slab.1).unwrap() > 0);
+    // Dark, or with no lightmap at all where no light reaches its face.
+    assert_eq!(
+        floor_at(&lit_shadowed, under_slab.0, under_slab.1).unwrap_or(0),
+        0
+    );
+    assert_eq!(
+        floor_at(&lit_shadowed, beside.0, beside.1),
+        floor_at(&lit_open, beside.0, beside.1)
+    );
+}
