@@ -182,11 +182,26 @@ runs it; a command with parameters first shows a form made from its schema
 (`qs_commands::params`): a choice, a text, number or JSON field, or a checkbox per parameter.
 Escape goes back from the form and closes the palette. A command's error stays on the palette.
 
-`keymap.rs` binds shortcuts to commands that take no parameters: Cmd+Z runs `edit.undo` and
-Shift+Cmd+Z `edit.redo`, which the editor takes itself while it has the keyboard; Cmd+1,
-Cmd+2, Cmd+3 and Cmd+4 run `view.focus_editor`, `view.focus_left_panel`,
-`view.focus_right_panel` and `view.focus_bottom_panel` from anywhere (Cmd+0 stays egui's zoom
-reset). The palette shows each command's shortcut from it.
+`keymap.rs` binds shortcuts to commands that take no parameters, from `qs-layout`'s default
+keys (`docs/keymap.md` lists them all): Cmd+Z runs `edit.undo` and Shift+Cmd+Z `edit.redo`,
+which the editor takes itself while it has the keyboard; Cmd+1, Cmd+2, Cmd+3 and Cmd+4 run
+`view.focus_editor`, `view.focus_left_panel`, `view.focus_right_panel` and
+`view.focus_bottom_panel` from anywhere (Cmd+0 stays egui's zoom reset). The palette shows
+each command's shortcut from it. The keys the map view takes itself (`qs_layout::VIEW_KEYS`:
+the selection's, the grid's, the tools', the fly keys) are read from the same crate, and
+while a pane of the view has the keyboard they come before a key taken anywhere.
+
+**The command line (UI-23).** `command_line.rs` draws `qs_commands::line::CommandLine` in a
+strip above the status bar, as AutoCAD's command window: Cmd+; brings the keyboard to it, a
+command is typed by its id, its name or a start of either, Tab completes it, Enter runs it or
+asks for its parameters one at a time, Up and Down bring back earlier lines and Escape gives
+up. While it asks for an entity, a brush, a face or a point (`pick.rs` reads which from the
+parameter's schema), a click in the map view answers it.
+
+While the game in the Game tab has the keyboard its keys are its own. On macOS the window
+still takes the focus keys (Cmd+1 to Cmd+4 and Cmd+;), so the keyboard can leave the game;
+where the platform's modifier is Ctrl those would be Quake's fire with a weapon's number, so
+the window takes none and a click outside the game takes the keyboard.
 
 **Custom keybindings (P4-37, UI-21).** As Zed's `keymap.json` does, `keymap.toml` in the app's
 config directory rebinds any command that takes no parameters, in Zed's key spelling:

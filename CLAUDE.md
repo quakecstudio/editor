@@ -128,6 +128,7 @@ cargo xtask offline <id 1.01 codebase> [--game <dir>]  # the app makes no networ
 cargo xtask sim-diff <route> [--map <name>]... [-- <engine words>]  # qs-sim against id's server, frame by frame (DIFF-16)
 cargo xtask view-diff [--map <name>]... [-- <engine words>]  # the preview host's frames and sound against id's whole engine, every id1 map's start (VIEWDIFF)
 cargo xtask commands [--check]            # regenerate (or check) docs/commands.md from the command registry
+cargo xtask keymap [--check]              # regenerate (or check) docs/keymap.md from the registry and qs-layout's default keys
 cargo xtask compatibility [--out <file>]  # write docs/compatibility.md from the fetched conformance corpus (P4-21; every release)
 
 scripts/refresh-specs.sh --verify         # cached specs match specs/manifest.tsv (offline)

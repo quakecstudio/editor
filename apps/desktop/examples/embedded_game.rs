@@ -127,6 +127,47 @@ fn command(
         .map_err(|error| format!("{id}: {error}"))
 }
 
+/// Checks whose the keys are while the game has the keyboard (UI-23): a click in the game
+/// gives it the keyboard, a shortcut of the window's then runs nothing, and a focus key still
+/// takes the keyboard away, after which the shortcut runs.
+fn keys_are_the_games(harness: &mut Harness<'static, Option<App>>) -> Result<(), String> {
+    let outline = |harness: &mut Harness<'static, Option<App>>| {
+        shell(harness).map(|shell| shell.layout().outline)
+    };
+    let toggle_outline = egui::Modifiers::COMMAND | egui::Modifiers::SHIFT;
+    let before = outline(harness)?;
+    let middle = harness.ctx.content_rect().center();
+    harness.hover_at(middle);
+    for pressed in [true, false] {
+        harness.event(egui::Event::PointerButton {
+            pos: middle,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        });
+    }
+    harness.step();
+    harness.step();
+    harness.key_press_modifiers(toggle_outline, egui::Key::B);
+    harness.step();
+    if outline(harness)? != before {
+        return Err("a shortcut ran while the game had the keyboard".to_owned());
+    }
+    let asked = shell(harness)?.layout().focus_requests;
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Num1);
+    harness.step();
+    harness.step();
+    if shell(harness)?.layout().focus_requests == asked {
+        return Err("the focus key did not take the keyboard from the game".to_owned());
+    }
+    harness.key_press_modifiers(toggle_outline, egui::Key::B);
+    harness.step();
+    if outline(harness)? == before {
+        return Err("the shortcut did not run once the game gave up the keyboard".to_owned());
+    }
+    Ok(())
+}
+
 /// Plays `args.project` in the Game tab and reports the frames' work.
 fn run(args: &Args) -> Result<String, String> {
     let state = egui_kittest::wgpu::create_render_state(
@@ -194,6 +235,7 @@ fn run(args: &Args) -> Result<String, String> {
     }
     let total = started.elapsed().as_secs_f64();
     image.save(&args.out).map_err(|e| e.to_string())?;
+    keys_are_the_games(&mut harness)?;
     command(&mut harness, STOP, json!({}))?;
     harness.step();
     if shell(&mut harness)?.session().context().preview.state() != PlayState::Stopped {

@@ -21,6 +21,7 @@ mod builtin;
 mod command;
 mod error;
 mod id;
+pub mod line;
 pub mod palette;
 pub mod params;
 mod registry;

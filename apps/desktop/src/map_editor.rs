@@ -12,18 +12,19 @@ use qs_render::Degrees;
 use std::collections::{BTreeSet, HashMap};
 
 use eframe::egui::{
-    self, Color32, Key, Modifiers, Pos2, Rect, RichText, Sense, Stroke, Ui, WidgetInfo, WidgetType,
+    self, Color32, Pos2, Rect, RichText, Sense, Stroke, Ui, WidgetInfo, WidgetType,
 };
 use eframe::egui_wgpu::RenderState;
 use qs_layout::{
-    CameraSpeed, Direction, Layout, MapCamera, MapCameraParams, MapFov, MapGrid, MapPanes,
-    MapShading,
+    Along, CameraSpeed, Direction, KeepViewParams, Layout, MapCamera, MapCameraParams, MapFov,
+    MapGrid, MapLook, MapLooks, MapPanes, MapShading, MapViews, ORBIT_STEP, PAN_STEP, ViewKey, Way,
+    ZOOM_STEP,
 };
 use qs_map_edit::MapReport;
 use qs_map_edit::texture_import::DitherChoice;
 use qs_map_edit::textures::TextureSources;
 use qs_map_edit::uv::FaceRef;
-use qs_map_edit::{Axis, BrushIndex, ClassInfo, LayerId};
+use qs_map_edit::{Axis, BrushIndex, ClassInfo, LayerId, MAP_SAVE, MAP_SELECT};
 use qs_map_edit::{
     EntityIndex, EntityKeys, FlagChange, Keep, LayerInfo, MapDocument, MapFound, MapIssue,
     MapRevision, MapSearchParams, OutlineRow, Prefab, QuickFix,
@@ -33,6 +34,7 @@ use qs_workbench::map_filter::{GameMode, Skill};
 
 use crate::help::{self, Topic};
 use crate::icons::{self, Icon, Toggled};
+use crate::keymap;
 use crate::map_browser::{ClassDrag, EntityBrowser};
 use crate::map_fields::{Field, spawnflags};
 use crate::map_groups::{GroupAction, Grouping, layers_ui, overview_keys, selection_ui};
@@ -47,6 +49,7 @@ use crate::map_scene::{ClassLook, Line, LinkView, SPAWNFLAGS, Scene, load_models
 use crate::map_select::{Picked, Region};
 use crate::map_shading::{ShadedView, TRIGGER, TexturedFrom};
 use crate::map_tools::{BrushAction, BrushTools, MapTool, PickMode};
+use crate::pick::{Answer, Pick};
 use crate::shell::name_field;
 use crate::strings::{Text, also_selected, panes_text, select_all_of};
 use crate::texture_browser::TextureBrowser;
@@ -347,6 +350,18 @@ pub struct MapEditor {
     frame: Option<Framing>,
     /// The point an Alt+right-drag orbits the camera about, while it lasts (P7-08).
     orbit: Option<[f32; 3]>,
+    /// Whether a pane of the view had the keyboard in the last frame (UI-23).
+    keyboard: Keyboard,
+    /// What the command line asks for that a click in the view can give, and what a click
+    /// gave, as the line reads it (UI-23).
+    asked: Option<Pick>,
+    picked: Option<Answer>,
+    /// The camera motions commands asked for, the layout's, and how many of them the view
+    /// has carried out (UI-23).
+    look_asked: MapLooks,
+    /// The saved views, the layout's (UI-23).
+    views: MapViews,
+    looks_applied: u64,
     /// Where the view's context menu last opened (P7-08).
     menu_at: Option<Pos2>,
     /// The layer new brushes and entities go into, or the default layer (P7-08).
@@ -733,6 +748,8 @@ impl MapEditor {
         let (layout, shading) = (settings.map_panes, settings.map_shading);
         self.tools.grid = settings.map_grid;
         self.camera_settings = settings.map_camera;
+        self.look_asked = settings.map_looks;
+        self.views = settings.map_views;
         // The tab's own width, which the toolbar wraps within and the view keeps to, so a long
         // toolbar never widens the view under the Properties panel.
         let bounds = ui.available_rect_before_wrap();
@@ -998,6 +1015,11 @@ impl MapEditor {
             (&self.scene, from, &unseen),
             (self.textures.sources(), &self.model_files),
         );
+        if self.camera.is_none() {
+            // A motion asked for before the map opened is not this view's.
+            self.looks_applied = self.look_asked.count();
+        }
+        self.keyboard = Keyboard::Elsewhere;
         let camera = self
             .camera
             .get_or_insert_with(|| start_camera(document, &self.scene));
@@ -1025,6 +1047,15 @@ impl MapEditor {
             self.also.clear();
         }
         let mut actions = Vec::new();
+        if self.looks_applied != self.look_asked.count() {
+            let aspect = rect.width() / rect.height().max(1.0);
+            for look in self.look_asked.since(self.looks_applied) {
+                let kept = self.look(look, document, aspect);
+                actions.extend(kept.map(|kept| MapAction::View(ViewSetting::KeepView(kept))));
+            }
+            self.looks_applied = self.look_asked.count();
+            ui.ctx().request_repaint();
+        }
         for (pane, area) in panes(layout, rect) {
             let frame = Frame {
                 hidden: &hidden,
@@ -1185,7 +1216,13 @@ impl MapEditor {
             .chain(self.also.iter().copied())
             .collect();
         if response.has_focus() {
-            if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape))
+            self.keyboard = Keyboard::Here;
+            // Escape while the command line waits for a click gives its command up.
+            if self.asked.is_some() && ui.input_mut(|i| keymap::pressed(i, ViewKey::Cancel)) {
+                self.picked = Some(Answer::GaveUp);
+            }
+            self.tools.tool_keys(ui);
+            if ui.input_mut(|i| keymap::pressed(i, ViewKey::Cancel))
                 && self.picking.take().is_none()
                 && !self.tools.cancel()
             {
@@ -1193,7 +1230,7 @@ impl MapEditor {
                 actions.push(MapAction::Select(None));
             }
             // TrenchBroom's Focus on Selection, Ctrl+U (Cmd+U on macOS, as Qt maps Ctrl).
-            if ui.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::U)) {
+            if ui.input_mut(|i| keymap::pressed(i, ViewKey::FocusSelection)) {
                 self.frame = Some(Framing::Selection);
                 ui.ctx().request_repaint();
             }
@@ -1242,7 +1279,7 @@ impl MapEditor {
                     actions.extend(selection_keys(ui, camera, entity, self.tools.grid));
                 }
             }
-            if ui.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::S)) {
+            if ui.input_mut(|i| keymap::command_pressed(i, MAP_SAVE)) {
                 actions.push(MapAction::Save);
             }
         }
@@ -1251,8 +1288,9 @@ impl MapEditor {
             let (start, direction) = ray(at);
             self.scene.pick(start, direction, hidden)
         };
-        let selecting = self.tools.tool() == MapTool::Select;
-        if !selecting {
+        // While the command line asks for what a click can give, a click is its answer.
+        let selecting = self.asked.is_none() && self.tools.tool() == MapTool::Select;
+        if self.asked.is_none() && !selecting {
             let found = self
                 .tools
                 .input(ui, &response, &self.scene, hidden, &projection, pane);
@@ -1329,6 +1367,33 @@ impl MapEditor {
                 snap(s + d * distance)
             })
         };
+        if self.asked.is_some() && response.hovered() {
+            // The view shows that a click is the command line's answer.
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+        }
+        if let Some(asked) = self.asked
+            && response.clicked()
+            && let Some(at) = response.interact_pointer_pos()
+        {
+            let (start, direction) = ray(at);
+            let value = match asked {
+                Pick::Entity => pick(at).and_then(|entity| typed(&entity)),
+                Pick::Brush => self
+                    .scene
+                    .pick_brush(start, direction, hidden)
+                    .and_then(|(_, brush)| typed(&brush)),
+                Pick::FaceIndex => self
+                    .scene
+                    .pick_face(start, direction, hidden)
+                    .and_then(|face| typed(&face.face)),
+                Pick::Face => self
+                    .scene
+                    .pick_face(start, direction, hidden)
+                    .and_then(|face| typed(&face)),
+                Pick::Point => typed(&dropped_at(at)),
+            };
+            self.picked = value.map(Answer::Value);
+        }
         // egui's release takes whatever is dragged before it checks its kind, so each kind is
         // looked for first.
         if response.dnd_hover_payload::<ClassDrag>().is_some()
@@ -1770,13 +1835,18 @@ impl MapEditor {
     }
 }
 
+/// `value` as it is typed on the command line: its JSON.
+fn typed<T: serde::Serialize>(value: &T) -> Option<String> {
+    serde_json::to_string(value).ok()
+}
+
 /// Moves the camera while a fly key is held (TrenchBroom's `CameraFly*`).
 fn fly(ui: &Ui, camera: &mut Camera, speed: f32) {
     let (dt, keys) = ui.input(|i| {
-        let held = |key| if i.key_down(key) { 1.0 } else { 0.0 };
-        let forward = held(Key::W) - held(Key::S);
-        let right = held(Key::D) - held(Key::A);
-        let up = held(Key::Q) - held(Key::X);
+        let held = |key| if keymap::down(i, key) { 1.0 } else { 0.0 };
+        let forward = held(ViewKey::FlyForward) - held(ViewKey::FlyBackward);
+        let right = held(ViewKey::FlyRight) - held(ViewKey::FlyLeft);
+        let up = held(ViewKey::FlyUp) - held(ViewKey::FlyDown);
         (i.stable_dt, [forward, right, up])
     });
     if keys.iter().any(|k: &f32| *k != 0.0) {
@@ -1923,6 +1993,8 @@ pub enum ViewSetting {
     Grid(MapGrid),
     /// Change the camera settings (P7-08).
     Camera(MapCameraParams),
+    /// Keep the 3D view's camera as a saved view (UI-23).
+    KeepView(KeepViewParams),
 }
 
 /// Which of the camera's speeds a slider sets.
@@ -1979,6 +2051,16 @@ impl Default for ViewZoom {
     }
 }
 
+/// Whether a pane of the map view has the keyboard.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Keyboard {
+    /// A pane has it.
+    Here,
+    /// Another part of the window has it, or none.
+    #[default]
+    Elsewhere,
+}
+
 /// What the view frames on its next frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Framing {
@@ -1989,6 +2071,115 @@ enum Framing {
 }
 
 impl MapEditor {
+    /// Tells the view what the command line asks for that a click in it can give (UI-23).
+    pub(crate) const fn ask(&mut self, asked: Option<Pick>) {
+        self.asked = asked;
+    }
+
+    /// What a click in the view gave the command line, once.
+    pub(crate) const fn take_picked(&mut self) -> Option<Answer> {
+        self.picked.take()
+    }
+
+    /// Whether a pane of the view had the keyboard in the last frame, so the view's own keys
+    /// are its to take (UI-23).
+    pub(crate) fn has_keyboard(&self) -> bool {
+        self.keyboard == Keyboard::Here
+    }
+
+    /// The box around the map's first `entities` entities, as the standard views frame it.
+    #[cfg(test)]
+    pub(crate) fn bounds(&self, entities: usize) -> Option<[[f32; 3]; 2]> {
+        self.scene
+            .bounds_of((0..entities).map(EntityIndex::new), None)
+    }
+
+    /// Carries out a motion a command asked of the 3D view's camera (UI-23), in a view
+    /// `aspect` times as wide as it is high; the view to keep, when the motion saves one.
+    fn look(
+        &mut self,
+        look: MapLook,
+        document: &MapDocument,
+        aspect: f32,
+    ) -> Option<KeepViewParams> {
+        let camera = self.camera.as_mut()?;
+        match look {
+            MapLook::Standard(view) => {
+                let (yaw, pitch) = view.heading();
+                camera.yaw = Degrees::new(yaw);
+                camera.pitch = Degrees::new(pitch);
+                let all = (0..document.file().entities.len()).map(EntityIndex::new);
+                if let Some(bounds) = self.scene.bounds_of(all, None) {
+                    camera.frame(bounds, aspect, FRAME_MARGIN);
+                }
+            }
+            MapLook::Orbit(way) => {
+                let (yaw, pitch) = match way {
+                    Way::Left => (ORBIT_STEP, 0.0),
+                    Way::Right => (-ORBIT_STEP, 0.0),
+                    // A positive pitch looks down.
+                    Way::Up => (0.0, -ORBIT_STEP),
+                    Way::Down => (0.0, ORBIT_STEP),
+                };
+                // About the selection's middle, else TrenchBroom's point ahead.
+                let chosen = document
+                    .selected()
+                    .into_iter()
+                    .chain(self.also.iter().copied());
+                let centre = self
+                    .scene
+                    .bounds_of(chosen, self.tools.bounds(&self.scene))
+                    .map_or_else(
+                        || {
+                            let [forward, _, _] = camera.axes();
+                            let mut ahead = camera.origin;
+                            for (at, way) in ahead.iter_mut().zip(forward) {
+                                *at += way * ORBIT_DISTANCE;
+                            }
+                            ahead
+                        },
+                        |[min, max]| {
+                            let mut middle = min;
+                            for (at, far) in middle.iter_mut().zip(max) {
+                                *at = (*at + far) / 2.0;
+                            }
+                            middle
+                        },
+                    );
+                camera.orbit(centre, Degrees::new(yaw), Degrees::new(pitch));
+            }
+            MapLook::Pan(way) => {
+                let (right, up) = match way {
+                    Way::Left => (-PAN_STEP, 0.0),
+                    Way::Right => (PAN_STEP, 0.0),
+                    Way::Up => (0.0, PAN_STEP),
+                    Way::Down => (0.0, -PAN_STEP),
+                };
+                camera.travel(0.0, right, up);
+            }
+            MapLook::Zoom(Along::Nearer) => camera.travel(ZOOM_STEP, 0.0, 0.0),
+            MapLook::Zoom(Along::Farther) => camera.travel(-ZOOM_STEP, 0.0, 0.0),
+            MapLook::Save(slot) => {
+                return Some(KeepViewParams {
+                    slot,
+                    origin: camera.origin,
+                    yaw: camera.yaw.get(),
+                    pitch: camera.pitch.get(),
+                });
+            }
+            MapLook::Restore(slot) => {
+                if let Some(pose) = self.views.get(slot) {
+                    camera.origin = pose.origin;
+                    camera.yaw = Degrees::new(0.0);
+                    camera.pitch = Degrees::new(0.0);
+                    // The camera's own turn holds a pose from the file to its limits.
+                    camera.turn(Degrees::new(pose.yaw), Degrees::new(pose.pitch));
+                }
+            }
+        }
+        None
+    }
+
     /// The texture chosen in the browser, which new brushes take (P7-08).
     pub(crate) fn current_texture(&self) -> Option<String> {
         self.textures.selected().map(str::to_owned)
@@ -2171,18 +2362,17 @@ impl MapEditor {
             Pane::Perspective => Z_AXIS,
         };
         let asked = ui.input_mut(|i| {
-            let mut key = |modifiers, key| i.consume_key(modifiers, key);
-            if key(Modifiers::COMMAND | Modifiers::ALT, Key::A) {
+            if keymap::pressed(i, ViewKey::InvertSelection) {
                 Some(SelectKey::Invert)
-            } else if key(Modifiers::COMMAND | Modifiers::SHIFT, Key::A) {
+            } else if keymap::command_pressed(i, MAP_SELECT) {
                 Some(SelectKey::Clear)
-            } else if key(Modifiers::COMMAND, Key::A) {
+            } else if keymap::pressed(i, ViewKey::SelectAll) {
                 Some(SelectKey::All)
-            } else if key(Modifiers::COMMAND | Modifiers::SHIFT, Key::E) {
+            } else if keymap::pressed(i, ViewKey::SelectTall) {
                 Some(SelectKey::By(Region::Tall(tall)))
-            } else if key(Modifiers::COMMAND, Key::E) {
+            } else if keymap::pressed(i, ViewKey::SelectInside) {
                 Some(SelectKey::By(Region::Inside))
-            } else if key(Modifiers::COMMAND, Key::T) {
+            } else if keymap::pressed(i, ViewKey::SelectTouching) {
                 Some(SelectKey::By(Region::Touching))
             } else {
                 None
@@ -2275,16 +2465,16 @@ fn arrange_keys(
     });
     let mut asked = Vec::new();
     ui.input_mut(|i| {
-        if i.consume_key(Modifiers::COMMAND | Modifiers::ALT, Key::F) {
+        if keymap::pressed(i, ViewKey::FlipVertical) {
             asked.push(Arrange::Flip(Vec::new(), Vec::new(), Axis::Z));
         }
-        if i.consume_key(Modifiers::COMMAND, Key::F) {
+        if keymap::pressed(i, ViewKey::FlipHorizontal) {
             asked.push(Arrange::Flip(Vec::new(), Vec::new(), across));
         }
-        if i.consume_key(Modifiers::ALT, Key::ArrowLeft) {
+        if keymap::pressed(i, ViewKey::YawClockwise) {
             asked.push(Arrange::Turn(Vec::new(), Vec::new(), -QUARTER_TURN));
         }
-        if i.consume_key(Modifiers::ALT, Key::ArrowRight) {
+        if keymap::pressed(i, ViewKey::YawCounterClockwise) {
             asked.push(Arrange::Turn(Vec::new(), Vec::new(), QUARTER_TURN));
         }
     });
@@ -2305,28 +2495,25 @@ fn arrange_keys(
 /// TrenchBroom's grid keys (its "Increase Grid Size", "Decrease Grid Size" and "Set Grid Size"
 /// actions): + doubles `grid` and - halves it; 1 to 9 set 1 to 256 units.
 fn grid_key(ui: &Ui, grid: MapGrid) -> Option<MapGrid> {
-    const DIGITS: [Key; 9] = [
-        Key::Num1,
-        Key::Num2,
-        Key::Num3,
-        Key::Num4,
-        Key::Num5,
-        Key::Num6,
-        Key::Num7,
-        Key::Num8,
-        Key::Num9,
+    const DIGITS: [ViewKey; 9] = [
+        ViewKey::Grid1,
+        ViewKey::Grid2,
+        ViewKey::Grid4,
+        ViewKey::Grid8,
+        ViewKey::Grid16,
+        ViewKey::Grid32,
+        ViewKey::Grid64,
+        ViewKey::Grid128,
+        ViewKey::Grid256,
     ];
     ui.input_mut(|i| {
-        if i.consume_key(Modifiers::NONE, Key::Plus) || i.consume_key(Modifiers::NONE, Key::Equals)
-        {
+        if keymap::pressed(i, ViewKey::GridCoarser) {
             return Some(grid.coarser());
         }
-        if i.consume_key(Modifiers::NONE, Key::Minus) {
+        if keymap::pressed(i, ViewKey::GridFiner) {
             return Some(grid.finer());
         }
-        let digit = DIGITS
-            .iter()
-            .position(|&key| i.consume_key(Modifiers::NONE, key))?;
+        let digit = DIGITS.iter().position(|&key| keymap::pressed(i, key))?;
         let power = u8::try_from(digit).ok()?;
         MapGrid::try_from(f64::from(power).exp2()).ok()
     })
@@ -2349,24 +2536,22 @@ fn selection_keys(ui: &Ui, camera: &Camera, entity: EntityIndex, grid: MapGrid) 
     let mut actions = Vec::new();
     ui.input_mut(|i| {
         let moves = [
-            (Key::ArrowUp, snap(forward)),
-            (Key::ArrowDown, negate(snap(forward))),
-            (Key::ArrowRight, snap(right)),
-            (Key::ArrowLeft, negate(snap(right))),
-            (Key::PageUp, [0.0, 0.0, step]),
-            (Key::PageDown, [0.0, 0.0, -step]),
+            (ViewKey::MoveForward, snap(forward)),
+            (ViewKey::MoveBackward, negate(snap(forward))),
+            (ViewKey::MoveRight, snap(right)),
+            (ViewKey::MoveLeft, negate(snap(right))),
+            (ViewKey::MoveUp, [0.0, 0.0, step]),
+            (ViewKey::MoveDown, [0.0, 0.0, -step]),
         ];
         for (key, by) in moves {
-            if i.consume_key(Modifiers::NONE, key) {
+            if keymap::pressed(i, key) {
                 actions.push(MapAction::Move(entity, by));
             }
         }
-        if i.consume_key(Modifiers::NONE, Key::Delete)
-            || i.consume_key(Modifiers::NONE, Key::Backspace)
-        {
+        if keymap::pressed(i, ViewKey::Delete) {
             actions.push(MapAction::Delete(entity));
         }
-        if i.consume_key(Modifiers::COMMAND, Key::D) {
+        if keymap::pressed(i, ViewKey::Duplicate) {
             actions.push(MapAction::Duplicate(entity));
         }
     });

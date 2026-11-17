@@ -193,14 +193,41 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`texture.import`](#textureimport) | Imports a PNG image as a texture: quantized to the game's palette with its mip levels, written into the project's own WAD in textures/, in place of a texture of the same name, and that WAD named in the open map's world. |
 | [`view.close_split`](#viewclose_split) | Closes the editor's second pane. |
 | [`view.focus_bottom_panel`](#viewfocus_bottom_panel) | Shows the bottom panel, Problems, Console and the debugger, if it is hidden and gives it the keyboard. |
+| [`view.focus_command_line`](#viewfocus_command_line) | Gives the command line the keyboard: a command is typed by its id or a short name, and each of its parameters is asked for in turn. |
 | [`view.focus_editor`](#viewfocus_editor) | Gives the keyboard to the editor in the centre. |
 | [`view.focus_left_panel`](#viewfocus_left_panel) | Shows the left panel, Project and Entities, if it is hidden and gives it the keyboard. |
 | [`view.focus_right_panel`](#viewfocus_right_panel) | Shows the right panel, Properties and the agent, if it is hidden and gives it the keyboard. |
+| [`view.map_back`](#viewmap_back) | Turns the map editor's 3D view to look south at the whole map, from the north. |
+| [`view.map_bottom`](#viewmap_bottom) | Turns the map editor's 3D view to look up at the whole map from below, north up. |
 | [`view.map_camera`](#viewmap_camera) | Sets the map editor's camera: the 3D view's field of view, 50 to 150 degrees, how fast the mouse and keys move it, 0.1 to 10 times, and which way a vertical look and the wheel go. Settings not given are kept. |
+| [`view.map_front`](#viewmap_front) | Turns the map editor's 3D view to look north at the whole map, from the south. |
 | [`view.map_grid`](#viewmap_grid) | Sets the map editor's grid in units, a power of two from 0.125 to 256. |
 | [`view.map_grid_step`](#viewmap_grid_step) | Halves or doubles the map editor's grid, held to 0.125 to 256 units. |
+| [`view.map_isometric`](#viewmap_isometric) | Turns the map editor's 3D view to look at the whole map from the south-west and above. |
+| [`view.map_keep_view`](#viewmap_keep_view) | Keeps a place and heading of the map editor's 3D view as a saved view. The window runs it for `view.map_save_view_1` to `_4`, with its camera. |
+| [`view.map_left`](#viewmap_left) | Turns the map editor's 3D view to look east at the whole map, from the west. |
+| [`view.map_orbit_down`](#viewmap_orbit_down) | Turns the map editor's 3D view 15 degrees down about the selection, or about the point ahead when nothing is selected. |
+| [`view.map_orbit_left`](#viewmap_orbit_left) | Turns the map editor's 3D view 15 degrees to the left about the selection, or about the point ahead when nothing is selected. |
+| [`view.map_orbit_right`](#viewmap_orbit_right) | Turns the map editor's 3D view 15 degrees to the right about the selection, or about the point ahead when nothing is selected. |
+| [`view.map_orbit_up`](#viewmap_orbit_up) | Turns the map editor's 3D view 15 degrees up about the selection, or about the point ahead when nothing is selected. |
+| [`view.map_pan_down`](#viewmap_pan_down) | Moves the map editor's 3D view 32 units down, keeping its heading. |
+| [`view.map_pan_left`](#viewmap_pan_left) | Moves the map editor's 3D view 32 units to its left, keeping its heading. |
+| [`view.map_pan_right`](#viewmap_pan_right) | Moves the map editor's 3D view 32 units to its right, keeping its heading. |
+| [`view.map_pan_up`](#viewmap_pan_up) | Moves the map editor's 3D view 32 units up, keeping its heading. |
 | [`view.map_panes`](#viewmap_panes) | Splits the map view: the 3D view alone, with a top view in its corner, or beside top, front and side views. |
+| [`view.map_right`](#viewmap_right) | Turns the map editor's 3D view to look west at the whole map, from the east. |
+| [`view.map_save_view_1`](#viewmap_save_view_1) | Saves where the map editor's 3D view is as view 1, kept in the layout file. |
+| [`view.map_save_view_2`](#viewmap_save_view_2) | Saves where the map editor's 3D view is as view 2, kept in the layout file. |
+| [`view.map_save_view_3`](#viewmap_save_view_3) | Saves where the map editor's 3D view is as view 3, kept in the layout file. |
+| [`view.map_save_view_4`](#viewmap_save_view_4) | Saves where the map editor's 3D view is as view 4, kept in the layout file. |
 | [`view.map_shading`](#viewmap_shading) | Draws the map view's 3D pane as the brushes' edges, as their textured faces, or lit by the last compile's lightmaps. |
+| [`view.map_top`](#viewmap_top) | Turns the map editor's 3D view to look down on the whole map from above, north up. |
+| [`view.map_view_1`](#viewmap_view_1) | Brings the map editor's 3D view back to saved view 1. |
+| [`view.map_view_2`](#viewmap_view_2) | Brings the map editor's 3D view back to saved view 2. |
+| [`view.map_view_3`](#viewmap_view_3) | Brings the map editor's 3D view back to saved view 3. |
+| [`view.map_view_4`](#viewmap_view_4) | Brings the map editor's 3D view back to saved view 4. |
+| [`view.map_zoom_in`](#viewmap_zoom_in) | Moves the map editor's 3D view 64 units forwards along its view. |
+| [`view.map_zoom_out`](#viewmap_zoom_out) | Moves the map editor's 3D view 64 units back along its view. |
 | [`view.move_panel`](#viewmove_panel) | Moves a panel to another dock, where it shows, as Zed's status-bar menu moves one. |
 | [`view.project_search`](#viewproject_search) | Opens the project search: every match in the project's files as a multibuffer of editable excerpts, to edit or replace in place. |
 | [`view.resize_panel`](#viewresize_panel) | Sets the width of the left or right panel, or the height of the bottom panel, in points. |
@@ -8141,6 +8168,22 @@ Parameters:
 }
 ```
 
+## `view.focus_command_line`
+
+Gives the command line the keyboard: a command is typed by its id or a short name, and each of its parameters is asked for in turn.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
 ## `view.focus_editor`
 
 Gives the keyboard to the editor in the centre.
@@ -8176,6 +8219,38 @@ Parameters:
 ## `view.focus_right_panel`
 
 Shows the right panel, Properties and the agent, if it is hidden and gives it the keyboard.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.map_back`
+
+Turns the map editor's 3D view to look south at the whole map, from the north.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.map_bottom`
+
+Turns the map editor's 3D view to look up at the whole map from below, north up.
 
 Parameters:
 
@@ -8306,6 +8381,22 @@ Parameters:
 }
 ```
 
+## `view.map_front`
+
+Turns the map editor's 3D view to look north at the whole map, from the south.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
 ## `view.map_grid`
 
 Sets the map editor's grid in units, a power of two from 0.125 to 256.
@@ -8380,6 +8471,241 @@ Parameters:
 }
 ```
 
+## `view.map_isometric`
+
+Turns the map editor's 3D view to look at the whole map from the south-west and above.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.map_keep_view`
+
+Keeps a place and heading of the map editor's 3D view as a saved view. The window runs it for `view.map_save_view_1` to `_4`, with its camera.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "ViewSlot": {
+      "description": "One of the four places a view is saved in.",
+      "oneOf": [
+        {
+          "const": "1",
+          "description": "The first.",
+          "type": "string"
+        },
+        {
+          "const": "2",
+          "description": "The second.",
+          "type": "string"
+        },
+        {
+          "const": "3",
+          "description": "The third.",
+          "type": "string"
+        },
+        {
+          "const": "4",
+          "description": "The fourth.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `view.map_keep_view`.",
+  "properties": {
+    "origin": {
+      "description": "The camera's place, in map units.",
+      "items": {
+        "format": "float",
+        "type": "number"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    },
+    "pitch": {
+      "description": "Its pitch in degrees, positive looking down.",
+      "format": "float",
+      "type": "number"
+    },
+    "slot": {
+      "$ref": "#/$defs/ViewSlot",
+      "description": "The slot to save the view in."
+    },
+    "yaw": {
+      "description": "Its yaw in degrees: 0 looks down +x, growing towards +y.",
+      "format": "float",
+      "type": "number"
+    }
+  },
+  "required": [
+    "slot",
+    "origin",
+    "yaw",
+    "pitch"
+  ],
+  "title": "KeepViewParams",
+  "type": "object"
+}
+```
+
+## `view.map_left`
+
+Turns the map editor's 3D view to look east at the whole map, from the west.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.map_orbit_down`
+
+Turns the map editor's 3D view 15 degrees down about the selection, or about the point ahead when nothing is selected.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.map_orbit_left`
+
+Turns the map editor's 3D view 15 degrees to the left about the selection, or about the point ahead when nothing is selected.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.map_orbit_right`
+
+Turns the map editor's 3D view 15 degrees to the right about the selection, or about the point ahead when nothing is selected.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.map_orbit_up`
+
+Turns the map editor's 3D view 15 degrees up about the selection, or about the point ahead when nothing is selected.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.map_pan_down`
+
+Moves the map editor's 3D view 32 units down, keeping its heading.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.map_pan_left`
+
+Moves the map editor's 3D view 32 units to its left, keeping its heading.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.map_pan_right`
+
+Moves the map editor's 3D view 32 units to its right, keeping its heading.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.map_pan_up`
+
+Moves the map editor's 3D view 32 units up, keeping its heading.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
 ## `view.map_panes`
 
 Splits the map view: the 3D view alone, with a top view in its corner, or beside top, front and side views.
@@ -8437,6 +8763,86 @@ Parameters:
 }
 ```
 
+## `view.map_right`
+
+Turns the map editor's 3D view to look west at the whole map, from the east.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.map_save_view_1`
+
+Saves where the map editor's 3D view is as view 1, kept in the layout file.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.map_save_view_2`
+
+Saves where the map editor's 3D view is as view 2, kept in the layout file.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.map_save_view_3`
+
+Saves where the map editor's 3D view is as view 3, kept in the layout file.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.map_save_view_4`
+
+Saves where the map editor's 3D view is as view 4, kept in the layout file.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
 ## `view.map_shading`
 
 Draws the map view's 3D pane as the brushes' edges, as their textured faces, or lit by the last compile's lightmaps.
@@ -8480,6 +8886,118 @@ Parameters:
     "shading"
   ],
   "title": "MapShadingParams",
+  "type": "object"
+}
+```
+
+## `view.map_top`
+
+Turns the map editor's 3D view to look down on the whole map from above, north up.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.map_view_1`
+
+Brings the map editor's 3D view back to saved view 1.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.map_view_2`
+
+Brings the map editor's 3D view back to saved view 2.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.map_view_3`
+
+Brings the map editor's 3D view back to saved view 3.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.map_view_4`
+
+Brings the map editor's 3D view back to saved view 4.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.map_zoom_in`
+
+Moves the map editor's 3D view 64 units forwards along its view.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.map_zoom_out`
+
+Moves the map editor's 3D view 64 units back along its view.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
   "type": "object"
 }
 ```

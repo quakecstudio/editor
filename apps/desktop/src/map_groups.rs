@@ -4,10 +4,13 @@
 //! locked or left out of exports with a checkbox, and TrenchBroom's keys to isolate, hide and
 //! show the selection again. Each is a [`GroupAction`] the shell runs as a `map.*` command.
 
-use eframe::egui::{Key, Modifiers, RichText, Ui};
-use qs_map_edit::{BrushIndex, EntityIndex, LayerInfo, LayerOption, Switch};
+use eframe::egui::{RichText, Ui};
+use qs_map_edit::{BrushIndex, EntityIndex, LayerInfo, LayerOption, MAP_SHOW_ALL, Switch};
+
+use qs_layout::ViewKey;
 
 use crate::icons::{Icon, Toggled};
+use crate::keymap;
 use crate::strings::{Text, layer_count};
 use crate::theme::{Theme, Token};
 
@@ -210,21 +213,21 @@ pub(crate) fn overview_keys(
 ) -> Vec<GroupAction> {
     let mut actions = Vec::new();
     ui.input_mut(|i| {
-        if i.consume_key(Modifiers::COMMAND | Modifiers::SHIFT, Key::G) {
+        if keymap::pressed(i, ViewKey::Ungroup) {
             actions.extend(grouping.group.map(GroupAction::Ungroup));
-        } else if i.consume_key(Modifiers::COMMAND, Key::G) && grouping.any() {
+        } else if keymap::pressed(i, ViewKey::Group) && grouping.any() {
             actions.push(grouping.grouped());
         }
-        if i.consume_key(Modifiers::COMMAND | Modifiers::SHIFT, Key::D) {
+        if keymap::pressed(i, ViewKey::LinkedDuplicate) {
             actions.extend(grouping.group.map(GroupAction::LinkDuplicate));
         }
-        if i.consume_key(Modifiers::COMMAND | Modifiers::ALT, Key::I) {
+        if keymap::pressed(i, ViewKey::Hide) {
             if !selection.is_empty() {
                 actions.push(GroupAction::Hide(selection.to_vec()));
             }
-        } else if i.consume_key(Modifiers::COMMAND | Modifiers::SHIFT, Key::I) {
+        } else if keymap::command_pressed(i, MAP_SHOW_ALL) {
             actions.push(GroupAction::ShowAll);
-        } else if i.consume_key(Modifiers::COMMAND, Key::I) && !selection.is_empty() {
+        } else if keymap::pressed(i, ViewKey::Isolate) && !selection.is_empty() {
             actions.push(GroupAction::Isolate(selection.to_vec()));
         }
     });

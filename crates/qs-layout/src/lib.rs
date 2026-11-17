@@ -22,8 +22,10 @@ use serde::{Deserialize, Serialize};
 
 mod docks;
 mod editor;
+mod keys;
 mod map_camera;
 mod map_grid;
+mod map_look;
 mod map_view;
 #[cfg(test)]
 mod tests;
@@ -37,11 +39,19 @@ pub use editor::{
     GoToLineParams, Outline, PROJECT_SEARCH_VIEW, SPLIT_DOWN, SPLIT_RIGHT, SoftWrap, Split,
     TAB_SWITCHER, TOGGLE_EMBEDDED_GAME, TOGGLE_OUTLINE, TOGGLE_SOFT_WRAP, UNFOLD, UNFOLD_ALL,
 };
+pub use keys::{
+    DEFAULT_KEYS, DefaultKey, Follows, KeyContext, TextureStep, UNKEYED, Unkeyed, VIEW_KEYS,
+    ViewKey, ViewKeyRow, ViewKeyWhen,
+};
 pub use map_camera::{
     CameraSpeed, Direction, MAP_CAMERA, MapCamera, MapCameraError, MapCameraParams, MapFov,
 };
 pub use map_grid::{
     GridStep, MAP_GRID, MAP_GRID_STEP, MapGrid, MapGridError, MapGridParams, MapGridStepParams,
+};
+pub use map_look::{
+    Along, KeepViewParams, LOOKS_KEPT, MAP_KEEP_VIEW, MAP_LOOKS, MapLook, MapLookError, MapLooks,
+    MapPose, MapViews, ORBIT_STEP, PAN_STEP, StandardView, ViewSlot, Way, ZOOM_STEP,
 };
 pub use map_view::{
     MAP_PANES, MAP_SHADING, MapPanes, MapPanesParams, MapShading, MapShadingParams,
@@ -84,6 +94,8 @@ pub enum Focus {
     Editor,
     /// A panel around the centre.
     Panel(Panel),
+    /// The command line (P7-17).
+    CommandLine,
 }
 
 /// One panel's state.
@@ -131,6 +143,12 @@ pub struct Layout {
     pub map_grid: MapGrid,
     /// The map editor's camera settings (P7-08).
     pub map_camera: MapCamera,
+    /// The 3D view's saved views (UI-23).
+    pub map_views: MapViews,
+    /// The motions commands asked of the 3D view's camera, which the map editor carries out
+    /// once each. Not written to the file.
+    #[serde(skip)]
+    pub map_looks: MapLooks,
     /// How large the interface is drawn (P7-12).
     pub zoom: Zoom,
     /// Which panel each dock shows and which dock each panel is in (P7-15).
@@ -172,6 +190,8 @@ impl Default for Layout {
             map_shading: MapShading::Lines,
             map_grid: MapGrid::DEFAULT,
             map_camera: MapCamera::default(),
+            map_views: MapViews::default(),
+            map_looks: MapLooks::default(),
             zoom: Zoom::ACTUAL,
             docks: Docks::default(),
             editor_request: None,
@@ -199,6 +219,7 @@ impl Layout {
             focus_requests: 0,
             editor_request: None,
             editor_requests: 0,
+            map_looks: MapLooks::NONE,
             ..self
         }
     }
@@ -337,6 +358,18 @@ pub const FOCUS_RIGHT_PANEL: &str = "view.focus_right_panel";
 /// The id of the command that gives the bottom panel the keyboard.
 pub const FOCUS_BOTTOM_PANEL: &str = "view.focus_bottom_panel";
 
+/// The id of the command that gives the command line the keyboard.
+pub const FOCUS_COMMAND_LINE: &str = "view.focus_command_line";
+/// The focus commands: the keys that move the keyboard, which a window takes even while
+/// something in it, a running game, has every other key.
+pub const FOCUS_COMMANDS: [&str; 5] = [
+    FOCUS_EDITOR,
+    FOCUS_LEFT_PANEL,
+    FOCUS_RIGHT_PANEL,
+    FOCUS_BOTTOM_PANEL,
+    FOCUS_COMMAND_LINE,
+];
+
 /// The smallest a panel may be made, in points, so a panel is never dragged out of reach.
 pub const MIN_PANEL_SIZE: f32 = 120.0;
 
@@ -352,9 +385,11 @@ pub fn register<C: HasLayout + 'static>(registry: &mut Registry<C>) -> Result<()
     registry.register(FocusArea::<LeftPanel>::new())?;
     registry.register(FocusArea::<RightPanel>::new())?;
     registry.register(FocusArea::<BottomPanel>::new())?;
+    registry.register(FocusArea::<TheCommandLine>::new())?;
     map_view::register(registry)?;
     map_grid::register(registry)?;
     map_camera::register(registry)?;
+    map_look::register(registry)?;
     zoom::register(registry)?;
     docks::register(registry)?;
     editor::register(registry)
@@ -411,6 +446,16 @@ impl FocusTarget for BottomPanel {
     const SUMMARY: &'static str = "Shows the bottom panel, Problems, Console and the debugger, \
         if it is hidden and gives it the keyboard.";
     const FOCUS: Focus = Focus::Panel(Panel::Bottom);
+}
+
+/// `view.focus_command_line`.
+struct TheCommandLine;
+
+impl FocusTarget for TheCommandLine {
+    const ID: &'static str = FOCUS_COMMAND_LINE;
+    const SUMMARY: &'static str = "Gives the command line the keyboard: a command is typed by \
+        its id or a short name, and each of its parameters is asked for in turn.";
+    const FOCUS: Focus = Focus::CommandLine;
 }
 
 /// A focus command: gives one area the keyboard, showing it first when it is a hidden panel,

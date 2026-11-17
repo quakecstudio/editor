@@ -16,7 +16,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use eframe::egui::{self, Key, Modifiers, Painter, Pos2, Response, Stroke, Ui};
+use eframe::egui::{self, Painter, Pos2, Response, Stroke, Ui};
 use qs_map::shapes::{
     SHAPE_MAX_RINGS, SHAPE_MAX_ROCK_POINTS, SHAPE_MAX_SIDES, SHAPE_MAX_SPHEROID_FACES,
     SHAPE_MIN_RINGS, SHAPE_MIN_ROCK_POINTS, SHAPE_MIN_SIDES, SHAPE_STEP_DEPTH, SHAPE_STEP_HEIGHT,
@@ -28,6 +28,7 @@ use qs_map_edit::{
 };
 
 use crate::icons::{Icon, Toggled};
+use crate::keymap;
 use crate::map_editor::{Arrange, box_lines};
 use crate::map_panes::{Pane, Projection};
 use crate::map_scene::{Scene, single};
@@ -36,7 +37,7 @@ use crate::map_uv::UvEditor;
 use crate::shell::name_field;
 use crate::strings::{Text, apply_texture, measure_readout, move_readout, selection_size};
 use crate::theme::{Theme, Token};
-use qs_layout::MapGrid;
+use qs_layout::{MapGrid, TextureStep, ViewKey};
 use tool_fields::ToolFields;
 
 mod tool_fields;
@@ -840,6 +841,27 @@ impl BrushTools {
         self.uv.keep_found(scene);
     }
 
+    /// Takes the tool whose key was pressed (UI-23): TrenchBroom's B, C and V, and our own
+    /// for the tools it has no key for.
+    pub(crate) fn tool_keys(&mut self, ui: &Ui) {
+        const KEYS: [(ViewKey, MapTool); 7] = [
+            (ViewKey::BrushTool, MapTool::Brush),
+            (ViewKey::ClipTool, MapTool::Clip),
+            (ViewKey::VertexTool, MapTool::Vertex),
+            (ViewKey::MoveTool, MapTool::Move),
+            (ViewKey::MeasureTool, MapTool::Measure),
+            (ViewKey::ShapeTool, MapTool::Shape),
+            (ViewKey::HullTool, MapTool::Hull),
+        ];
+        ui.input_mut(|i| {
+            for (key, tool) in KEYS {
+                if keymap::pressed(i, key) {
+                    self.tool = tool;
+                }
+            }
+        });
+    }
+
     /// The tool selector, and the clip's side when clipping.
     pub(crate) fn toolbar(&mut self, ui: &mut Ui) {
         for tool in MapTool::ALL {
@@ -1153,20 +1175,22 @@ impl BrushTools {
         }
         let grid = self.grid.units();
         ui.input_mut(|i| {
-            for (modifiers, step, angle) in [
-                (Modifiers::SHIFT, grid * 2.0, ALIGN_TURN_MOST),
-                (Modifiers::COMMAND, 1.0, 1.0),
-                (Modifiers::NONE, grid, ALIGN_TURN),
+            // The coarse and fine keys before the plain one, which egui takes whatever Shift
+            // is held.
+            for (strength, step, angle) in [
+                (TextureStep::Coarse, grid * 2.0, ALIGN_TURN_MOST),
+                (TextureStep::Fine, 1.0, 1.0),
+                (TextureStep::Plain, grid, ALIGN_TURN),
             ] {
                 for (key, shift, rotate) in [
-                    (Key::ArrowLeft, [-step, 0.0], 0.0),
-                    (Key::ArrowRight, [step, 0.0], 0.0),
-                    (Key::ArrowUp, [0.0, step], 0.0),
-                    (Key::ArrowDown, [0.0, -step], 0.0),
-                    (Key::PageUp, [0.0, 0.0], angle),
-                    (Key::PageDown, [0.0, 0.0], -angle),
+                    (ViewKey::TextureLeft, [-step, 0.0], 0.0),
+                    (ViewKey::TextureRight, [step, 0.0], 0.0),
+                    (ViewKey::TextureUp, [0.0, step], 0.0),
+                    (ViewKey::TextureDown, [0.0, -step], 0.0),
+                    (ViewKey::TextureClockwise, [0.0, 0.0], angle),
+                    (ViewKey::TextureCounterClockwise, [0.0, 0.0], -angle),
                 ] {
-                    if i.consume_key(modifiers, key) {
+                    if keymap::pressed_for(i, key, strength) {
                         return Some(BrushAction::Uv(
                             faces,
                             UvChoice::Adjust {
@@ -1297,9 +1321,7 @@ impl BrushTools {
             }
             return Vec::new();
         }
-        if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter))
-            && self.hull.len() >= HULL_LEAST
-        {
+        if ui.input_mut(|i| keymap::pressed(i, ViewKey::Confirm)) && self.hull.len() >= HULL_LEAST {
             return vec![BrushAction::Hull(core::mem::take(&mut self.hull))];
         }
         Vec::new()
@@ -1378,9 +1400,7 @@ impl BrushTools {
         (ray, pane): (&dyn Fn(Pos2) -> Ray, Pane),
     ) -> Option<Vec<BrushAction>> {
         let &(entity, brush) = self.chosen.first()?;
-        if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter))
-            && self.clip_points.len() >= 2
-        {
+        if ui.input_mut(|i| keymap::pressed(i, ViewKey::Confirm)) && self.clip_points.len() >= 2 {
             let points = core::mem::take(&mut self.clip_points);
             let [a, b] = [points.first()?, points.get(1)?].map(|p| *p);
             let first = match pane {

@@ -69,6 +69,14 @@ impl GameSlot {
         true
     }
 
+    /// Whether the game has the keyboard: its keys are then its own, not the window's
+    /// shortcuts.
+    pub(crate) fn has_keyboard(&self, ctx: &Context) -> bool {
+        self.game
+            .try_borrow()
+            .is_ok_and(|slot| slot.as_ref().is_some_and(|game| game.has_keyboard(ctx)))
+    }
+
     /// Follows the window: its context is kept, and while `tab`, the centre's, is not the Game
     /// tab a game that holds the mouse gives it back, since nothing there would free it.
     pub(crate) fn follow(&self, ctx: &Context, tab: CentreTab) {
