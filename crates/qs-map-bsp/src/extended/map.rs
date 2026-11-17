@@ -12,6 +12,8 @@
 //! face's plane in double precision, its texinfo and surface flags, each brush's contents,
 //! bounds and bevels, origin brushes and the world's extent.
 
+use std::collections::HashMap;
+
 use qs_map::cnum::{c_atof, c_atoi, c_strtod, scan_vector};
 use qs_map::geometry::{TexVecs, texvecs};
 use qs_map::{Entity, Face, MapFile};
@@ -51,6 +53,8 @@ const HINT_NAMES: [&[u8]; 2] = [b"hint", b"hintskip"];
 const SKIP_TEXTURE: &[u8] = b"skip";
 /// The texture axes of a face that has none.
 const NO_TEXVECS: TexVecs<f32> = [[0.0; 4]; 2];
+/// The values of a texinfo's two axes, each three coordinates and an offset.
+const VEC_VALUES: usize = 8;
 /// The prefix of a liquid's texture, special unless lit water is asked for.
 const LIQUID_PREFIX: u8 = b'*';
 /// The prefix of a sky's texture, in any case.
@@ -106,6 +110,15 @@ pub(crate) struct Texinfo {
 impl Texinfo {
     /// Whether it is exactly `other`, every axis value's bits the same, as the texinfo
     /// lookup's ordering compares them.
+    /// Its texture and the bits of its axes: two texinfos that are one have these the same.
+    fn alike(&self) -> (usize, [u32; VEC_VALUES]) {
+        let mut bits = [0; VEC_VALUES];
+        for (slot, value) in bits.iter_mut().zip(self.vecs.iter().flatten()) {
+            *slot = value.to_bits();
+        }
+        (self.miptex, bits)
+    }
+
     fn is(&self, other: &Self) -> bool {
         self.miptex == other.miptex
             && self.flags == other.flags
@@ -128,6 +141,8 @@ pub(crate) struct TexinfoNum(usize);
 pub(crate) struct Texinfos {
     miptex: Vec<Vec<u8>>,
     texinfo: Vec<Texinfo>,
+    /// The texinfos of each texture and set of axes, to find one without trying them all.
+    alike: HashMap<(usize, [u32; VEC_VALUES]), Vec<TexinfoNum>>,
     /// The first `+` texture whose frame is not a digit or a letter `A` to `J`, which stops the
     /// compile (QBSP-15.53).
     bad_animation: Option<Vec<u8>>,
@@ -140,14 +155,16 @@ impl Texinfos {
     /// The table ericw-tools' qbsp starts with, `MakeSkipTexinfo`: the texture `skip` and
     /// [`Texinfos::SKIP`], not drawn, with no axes (QBSP-15.16).
     pub(crate) fn with_skip() -> Self {
+        let skip = Texinfo {
+            vecs: NO_TEXVECS,
+            miptex: 0,
+            flags: SurfFlags::default().with(SurfFlags::NODRAW),
+            light: SurfaceFlags::default(),
+        };
         Self {
             miptex: vec![SKIP_TEXTURE.to_vec()],
-            texinfo: vec![Texinfo {
-                vecs: NO_TEXVECS,
-                miptex: 0,
-                flags: SurfFlags::default().with(SurfFlags::NODRAW),
-                light: SurfaceFlags::default(),
-            }],
+            alike: HashMap::from([(skip.alike(), vec![Self::SKIP])]),
+            texinfo: vec![skip],
             bad_animation: None,
         }
     }
@@ -230,11 +247,17 @@ impl Texinfos {
 
     /// `texinfo`'s number, added when no texinfo is exactly it, `FindTexinfo` (QBSP-15.16).
     fn find(&mut self, texinfo: Texinfo) -> TexinfoNum {
-        if let Some(found) = self.texinfo.iter().position(|t| t.is(&texinfo)) {
-            return TexinfoNum(found);
+        let alike = self.alike.entry(texinfo.alike()).or_default();
+        let found = alike
+            .iter()
+            .find(|num| self.texinfo.get(num.0).is_some_and(|t| t.is(&texinfo)));
+        if let Some(found) = found {
+            return *found;
         }
+        let num = TexinfoNum(self.texinfo.len());
+        alike.push(num);
         self.texinfo.push(texinfo);
-        TexinfoNum(self.texinfo.len().saturating_sub(1))
+        num
     }
 
     /// `num` with its flags changed by `change`.
@@ -517,16 +540,62 @@ fn whole_vector(text: &[u8]) -> Option<Vec3> {
     Some(out)
 }
 
-/// The lighting flags of a face with texture `name` and contents `contents` in `entity`, the
-/// rest of `SurfFlagsForEntity` (QBSP-15.54): the entity's keys as ericw-tools' `light` is to
-/// read them from the face, `_phong` and `_phong_angle` the worldspawn's when the entity has
-/// none.
-fn light_flags(
-    name: &[u8],
-    entity: &Entity,
-    world: Option<&Entity>,
-    contents: Contents,
-) -> SurfaceFlags {
+/// What an entity's keys make the lighting flags of its faces, the rest of
+/// `SurfFlagsForEntity` (QBSP-15.54), read once for the entity: the flags every face of it
+/// has, and what a face's texture and contents change.
+struct EntityLight<'a> {
+    /// The flags of a face no key names and that is not a liquid.
+    flags: SurfaceFlags,
+    /// The textures `_minlight_exclude` and its numbered keys leave out of minimum light.
+    excludes: Vec<&'a [u8]>,
+    /// `_shadow`.
+    shadow: i32,
+    /// Whether the entity's brushes are only seen.
+    illusionary: bool,
+}
+
+impl<'a> EntityLight<'a> {
+    /// The lighting flags of a face with texture `name` and contents `contents`.
+    fn of_face(&self, name: &[u8], contents: Contents) -> SurfaceFlags {
+        let mut flags = self.flags.clone();
+        if self
+            .excludes
+            .iter()
+            .any(|excluded| name.eq_ignore_ascii_case(excluded))
+        {
+            flags.no_minlight = true;
+        }
+        // A brush that is only seen, and a liquid, cast no shadow unless `_shadow` is 1.
+        flags.no_shadow =
+            self.shadow == -1 || ((self.illusionary || contents.is_liquid()) && self.shadow != 1);
+        flags
+    }
+
+    /// `entity`'s keys as ericw-tools' `light` is to read them from a face, `_phong` and
+    /// `_phong_angle` the worldspawn's when the entity has none.
+    fn of(entity: &'a Entity, world: Option<&Entity>) -> Self {
+        let mut excludes = Vec::new();
+        for index in 0..MINLIGHT_EXCLUDES {
+            let mut key = b"_minlight_exclude".to_vec();
+            if index > 0 {
+                key.extend_from_slice(index.to_string().as_bytes());
+            }
+            excludes.extend(entity.value(&key).filter(|excluded| !excluded.is_empty()));
+        }
+        Self {
+            flags: entity_light_flags(entity, world),
+            excludes,
+            shadow: int_value(entity, b"_shadow"),
+            illusionary: entity
+                .classname()
+                .is_some_and(|class| class.eq_ignore_ascii_case(DETAIL_ILLUSIONARY)),
+        }
+    }
+}
+
+/// The lighting flags `entity`'s keys give each of its faces, before what the face's texture
+/// and contents change (QBSP-15.54).
+fn entity_light_flags(entity: &Entity, world: Option<&Entity>) -> SurfaceFlags {
     let int = |key: &[u8]| int_value(entity, key);
     let float = |key: &[u8]| entity.value(key).map_or(0.0, c_atof);
     let inherited = |key: &[u8]| {
@@ -534,7 +603,6 @@ fn light_flags(
             .value(key)
             .or_else(|| world.and_then(|world| world.value(key)))
     };
-    let shadow = int(b"_shadow");
     let mut flags = SurfaceFlags {
         no_dirt: int(b"_dirt") == -1,
         no_bounce: int(b"_bounce") == -1,
@@ -542,23 +610,6 @@ fn light_flags(
         light_ignore: int(b"_lightignore") == 1,
         ..SurfaceFlags::default()
     };
-    for index in 0..MINLIGHT_EXCLUDES {
-        let mut key = b"_minlight_exclude".to_vec();
-        if index > 0 {
-            key.extend_from_slice(index.to_string().as_bytes());
-        }
-        if entity
-            .value(&key)
-            .is_some_and(|excluded| !excluded.is_empty() && name.eq_ignore_ascii_case(excluded))
-        {
-            flags.no_minlight = true;
-        }
-    }
-    // A brush that is only seen, and a liquid, cast no shadow unless `_shadow` is 1.
-    let illusionary = entity
-        .classname()
-        .is_some_and(|class| class.eq_ignore_ascii_case(DETAIL_ILLUSIONARY));
-    flags.no_shadow = shadow == -1 || ((illusionary || contents.is_liquid()) && shadow != 1);
     let phong = inherited(b"_phong").map_or(0, c_atoi);
     let mut angle = inherited(b"_phong_angle").map_or(0.0, c_atof);
     if phong != 0 && angle == 0.0 {
@@ -655,7 +706,7 @@ impl Reader<'_> {
     /// A face of `entity`, `ParseBrushFace` (QBSP-15.14, QBSP-15.16): its plane from its points
     /// in double precision, added to the table even with no normal, and then `None`; its texture
     /// found first; a side not drawn given the standard axes of its plane.
-    fn face(&mut self, face: &Face, entity: &Entity) -> Option<MapFace> {
+    fn face(&mut self, face: &Face, (entity, lit): (&Entity, &EntityLight<'_>)) -> Option<MapFace> {
         let [p0, p1, p2] = *face.points();
         let (normal, len) = normalize_with_length(cross(sub(p0, p1), sub(p2, p1)));
         let planenum = self.planes.add_or_find(Plane {
@@ -672,7 +723,7 @@ impl Reader<'_> {
             .get(miptex)
             .map_or_else(|| face.texture(), Vec::as_slice);
         let flags = surf_flags(name, entity);
-        let light = light_flags(name, entity, self.world, self.game.face_contents(name));
+        let light = lit.of_face(name, self.game.face_contents(name));
         let invisible = flags.has(SurfFlags::NODRAW | SurfFlags::HINTSKIP | SurfFlags::HINT);
         let vecs = match (invisible, self.plane(planenum)) {
             (true, Some(plane)) => Some(texvecs(plane.normal, [0.0; 2], 0.0, [1.0; 2])),
@@ -702,11 +753,15 @@ impl Reader<'_> {
     /// A brush of `entity`, `ParseBrush` (QBSP-15.14, QBSP-15.17): its faces, a face on the
     /// plane of one before it dropped; in a brush with a hint face every other face a hintskip,
     /// unless every face would be; its contents.
-    fn brush(&mut self, brush: &qs_map::Brush, entity: &Entity) -> MapBrush {
+    fn brush(
+        &mut self,
+        brush: &qs_map::Brush,
+        (entity, lit): (&Entity, &EntityLight<'_>),
+    ) -> MapBrush {
         let mut faces: Vec<MapFace> = Vec::new();
         let mut is_hint = false;
         for source in &brush.faces {
-            let Some(face) = self.face(source, entity) else {
+            let Some(face) = self.face(source, (entity, lit)) else {
                 continue;
             };
             let plane = self.planes.get(face.planenum);
@@ -1073,9 +1128,10 @@ pub(crate) fn load(file: &MapFile, game: Game) -> LoadedMap {
         .iter()
         .map(|source| {
             let brushes = if int_value(source, b"_omitbrushes") == 0 {
+                let lit = EntityLight::of(source, reader.world);
                 source
                     .brushes()
-                    .map(|b| reader.brush(b, source))
+                    .map(|b| reader.brush(b, (source, &lit)))
                     .filter(|b| !b.faces.is_empty())
                     .collect()
             } else {

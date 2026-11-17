@@ -12,6 +12,8 @@
 
 use std::collections::{BTreeSet, HashMap, VecDeque};
 
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+
 use super::faces::FaceId;
 use super::game::Contents;
 use super::output::Fragment;
@@ -463,9 +465,10 @@ impl TJuncs<'_> {
 
     /// Every written face's fragments, `TJunc` (QBSP-15.47).
     pub(crate) fn fix_all(&self, originals: &Originals) -> HashMap<FaceId, Vec<Fragment>> {
+        // Each face's fragments are its own: the faces are fixed on every thread of the pool.
         originals
-            .keys()
-            .map(|&id| (id, self.fix(id, originals)))
+            .par_iter()
+            .map(|(&id, _)| (id, self.fix(id, originals)))
             .collect()
     }
 }

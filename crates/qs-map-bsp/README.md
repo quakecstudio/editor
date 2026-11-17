@@ -24,6 +24,11 @@ upstream until the license review rules on it (P4-22), so it is described from i
 
 - **Layer:** L4 bridges. It depends on `qs-map` to read the map, `qs-bsp` to write the BSP and
   `qs-wad` for the textures.
+- **Threads:** the extended dialect builds its trees, their portals and its T-junction fix on
+  a `rayon` pool of the machine's threads, as ericw-tools builds them on TBB's: a brush BSP
+  forks at every node, which only a work-stealing pool keeps every thread busy with. The
+  output is the same on any number of threads. On LibreQuake's `lq-e1m1` the compile takes
+  2.05 s on the reference Mac, ericw-tools' qbsp 2.25 s (`docs/perf-budgets.md`).
 - **Spec sections:** QBSP-1 to QBSP-15 in [`qbsp.md`](../../docs/spec/qbsp.md); BSP-23 in
   [`bsp.md`](../../docs/spec/bsp.md) for the file it writes; MAP-1 to MAP-7 in
   [`map.md`](../../docs/spec/map.md) for what it reads.

@@ -14,7 +14,7 @@
 use super::brush::{BspBrush, OriginalNum, VisibleFaces};
 use super::game::Contents;
 use super::map::{SIDESPACE, SideKind, SurfFlags, Texinfos};
-use super::tree::{Leaf, NodeId, PARALLEL_DEPTH, Separator, Tree};
+use super::tree::{Leaf, NodeId, Separator, Tree, Workers};
 use super::vec::{AXES, Bounds, BspPlane, Facing, POINT_EPSILON, Plane, Planes};
 use super::winding::{self, KeepOn, Winding};
 
@@ -70,6 +70,11 @@ pub(crate) struct Portal {
     pub(crate) sides: Option<[Option<SideRef>; 2]>,
 }
 
+/// How deep the portals of a node's two children are made at once: deeper, a child's are made
+/// faster than a thread starts.
+const PARALLEL_DEPTH: usize = 24;
+/// The fewest portals each child of a node takes for them to be pushed down the two at once.
+const PARALLEL_PORTALS: usize = 16;
 /// The fewest nodes a tree has for its portals to be made on several threads.
 const PARALLEL_NODES: usize = 256;
 
@@ -284,7 +289,7 @@ impl Portalizer<'_> {
         &self,
         tree: &Tree,
         id: NodeId,
-        kind: PortalType,
+        (kind, workers): (PortalType, Workers),
         portals: Vec<BuildPortal>,
     ) -> Vec<BuildPortal> {
         if portals.is_empty() || Self::stops(tree, id, kind) {
@@ -293,22 +298,36 @@ impl Portalizer<'_> {
         let Some((_, [f, b], _)) = tree.split_of(id) else {
             return portals;
         };
+        let with = (kind, workers);
         let [front, back] = self.split_node_portals(tree, id, portals);
-        let mut out = self.clip_to_tree(tree, f, kind, front);
-        out.extend(self.clip_to_tree(tree, b, kind, back));
+        // Many portals at once are pushed down the two children on a thread each: each child
+        // reads only the tree, and the front child's are put first.
+        let (mut out, back) = if front.len().min(back.len()) >= PARALLEL_PORTALS {
+            workers.both(
+                || self.clip_to_tree(tree, f, with, front),
+                || self.clip_to_tree(tree, b, with, back),
+            )
+        } else {
+            (
+                self.clip_to_tree(tree, f, with, front),
+                self.clip_to_tree(tree, b, with, back),
+            )
+        };
+        out.extend(back);
         out
     }
 
     /// The portals of node `id` and below from those around it, `MakeTreePortals_r`
     /// (QBSP-15.32): the node's own portal made first, those around split onto its children,
     /// each child portalized, the front first, then the node's portal pushed down the front
-    /// child and then the back. Down to [`PARALLEL_DEPTH`] the front child is portalized on a
-    /// thread of its own: each child reads only the tree, and its portals are put first.
+    /// child and then the back. Down to [`PARALLEL_DEPTH`] the two children are portalized and
+    /// the node's portal pushed down each on a thread of its own when one is free: each reads
+    /// only the tree, and the portals are put in that order.
     fn tree_portals(
         &self,
         tree: &Tree,
         (id, depth): (NodeId, usize),
-        kind: PortalType,
+        (kind, workers): (PortalType, Workers),
         around: Vec<BuildPortal>,
     ) -> Vec<BuildPortal> {
         if Self::stops(tree, id, kind) {
@@ -320,28 +339,28 @@ impl Portalizer<'_> {
         let node_portal = self.node_portal(tree, id, &around);
         let [front, back] = self.split_node_portals(tree, id, around);
         let next = depth.saturating_add(1);
-        let (mut out, back) = if depth < PARALLEL_DEPTH {
-            std::thread::scope(|scope| {
-                let front = scope.spawn(|| self.tree_portals(tree, (f, next), kind, front));
-                let back = self.tree_portals(tree, (b, next), kind, back);
-                // A panic on the front child's thread is raised here, as portalizing it on
-                // this thread would have raised it.
-                let front = front
-                    .join()
-                    .unwrap_or_else(|payload| std::panic::resume_unwind(payload));
-                (front, back)
-            })
+        let with = (kind, workers);
+        let pushed = || {
+            let half = self.clip_to_tree(tree, f, with, node_portal.into_iter().collect());
+            self.clip_to_tree(tree, b, with, half)
+        };
+        let (mut out, back, pushed) = if depth < PARALLEL_DEPTH {
+            let (front, (back, pushed)) = workers.both(
+                || self.tree_portals(tree, (f, next), with, front),
+                || {
+                    let (pushed, back) =
+                        workers.both(pushed, || self.tree_portals(tree, (b, next), with, back));
+                    (back, pushed)
+                },
+            );
+            (front, back, pushed)
         } else {
-            (
-                self.tree_portals(tree, (f, next), kind, front),
-                self.tree_portals(tree, (b, next), kind, back),
-            )
+            let front = self.tree_portals(tree, (f, next), with, front);
+            let back = self.tree_portals(tree, (b, next), with, back);
+            (front, back, pushed())
         };
         out.extend(back);
-        if let Some(p) = node_portal {
-            let half = self.clip_to_tree(tree, f, kind, vec![p]);
-            out.extend(self.clip_to_tree(tree, b, kind, half));
-        }
+        out.extend(pushed);
         out
     }
 
@@ -413,12 +432,12 @@ impl Portalizer<'_> {
             around.clear();
         }
         // A small tree is portalized faster than a thread starts.
-        let depth = if tree.nodes.len() < PARALLEL_NODES {
-            PARALLEL_DEPTH
+        let workers = if tree.nodes.len() < PARALLEL_NODES {
+            Workers::None
         } else {
-            0
+            Workers::Pool
         };
-        let built = self.tree_portals(tree, (Tree::HEAD, depth), kind, around);
+        let built = self.tree_portals(tree, (Tree::HEAD, 0), (kind, workers), around);
         for p in built {
             let id = PortalId(tree.portals.len());
             for node in p.nodes {

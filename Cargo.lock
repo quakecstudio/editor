@@ -3769,6 +3769,7 @@ dependencies = [
  "qs-bsp",
  "qs-map",
  "qs-wad",
+ "rayon",
 ]
 
 [[package]]

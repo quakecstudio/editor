@@ -8,7 +8,9 @@
 
 use qs_map::MapFile;
 
-use super::{ChopOrder, LoadedMap, MapBrush, Rotation, SideKind, SurfFlags, load};
+use super::{
+    ChopOrder, LoadedMap, MapBrush, Rotation, SideKind, SurfFlags, Texinfo, Texinfos, load,
+};
 use crate::extended::game::{Contents, Game};
 use crate::extended::vec::{BspPlane, Facing, Plane, normalize};
 use crate::fixtures::{BrushSpec, EntitySpec, MapSpec, Shape, map_text};
@@ -210,6 +212,32 @@ fn textures_and_surface_flags() {
             .iter()
             .all(|f| !f.has(SurfFlags::SPECIAL))
     );
+}
+
+// spec QBSP-15.16: a texinfo is found when one is exactly it, the skip texinfo the table starts
+// with among them, and added when its axes, texture or flags are another's
+#[test]
+fn a_texinfo_is_found_or_added() {
+    let mut texinfos = Texinfos::with_skip();
+    let skip = texinfos.get(Texinfos::SKIP).cloned().unwrap();
+    assert_eq!(texinfos.find(skip.clone()), Texinfos::SKIP);
+    let mut shifted = skip;
+    shifted.vecs[0][3] = 8.0;
+    let added = texinfos.find(shifted.clone());
+    assert_ne!(added, Texinfos::SKIP);
+    assert_eq!(texinfos.find(shifted.clone()), added);
+    // The same axes and texture with other flags is another texinfo.
+    let drawn = Texinfo {
+        flags: SurfFlags::default(),
+        ..shifted.clone()
+    };
+    let other = texinfos.find(drawn.clone());
+    assert!(other != added && other != Texinfos::SKIP);
+    assert_eq!(texinfos.find(drawn), other);
+    // Zero and minus zero are not the same bits.
+    let mut minus = shifted;
+    minus.vecs[1][0] = -0.0;
+    assert_ne!(texinfos.find(minus), added);
 }
 
 // spec QBSP-15.17: in a brush with a hint face, every other face is a hintskip

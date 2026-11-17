@@ -94,15 +94,14 @@ pub(crate) struct Side {
     pub(crate) marks: SideMarks,
 }
 
-/// What the tree build notes of a side, `side_t::onnode` and `side_t::tested`.
+/// What the tree build notes of a side, `side_t::onnode`; qbsp's `side_t::tested` is a set of
+/// the planes scored, kept while a node's plane is chosen.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct SideMarks(u8);
 
 impl SideMarks {
     /// Its plane is a node's: it never splits again.
     pub(crate) const ON_NODE: u8 = 0b01;
-    /// Its plane has been scored as a splitter for this node.
-    pub(crate) const TESTED: u8 = 0b10;
 
     /// Whether any of `bits` is set.
     pub(crate) const fn has(self, bits: u8) -> bool {

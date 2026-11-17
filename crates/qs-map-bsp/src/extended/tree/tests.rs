@@ -11,7 +11,7 @@
 use qs_map::MapFile;
 
 use super::{
-    BspInput, Builder, Cutter, NodeId, NodeKind, PARALLEL_DEPTH, PlaneSides, Tree, TreeSplit,
+    BspInput, Builder, Cut, Cutter, NodeId, NodeKind, PlaneSides, Tree, TreeSplit, Workers,
 };
 use crate::Hull;
 use crate::extended::brush::{HullBrushes, Loader, SideMarks, VisibleFaces};
@@ -168,6 +168,7 @@ fn boxes_and_brushes_against_planes() {
         },
         texinfos: &map.texinfos,
         visible: &visible,
+        workers: Workers::None,
     };
     let brush = &loaded.brushes[0];
     let on = builder.test(brush, top);
@@ -288,7 +289,7 @@ fn children_bounds_follow_the_plane() {
 }
 
 /// A world of `side` by `side` cubes in two layers, each a little larger than the last, apart
-/// enough that its tree is deeper than [`PARALLEL_DEPTH`].
+/// enough that its tree is many nodes deep.
 pub(crate) fn grid_brushes(side: i32) -> (LoadedMap, HullBrushes, VisibleFaces) {
     let mut cubes = Vec::new();
     for x in 0..side {
@@ -302,23 +303,81 @@ pub(crate) fn grid_brushes(side: i32) -> (LoadedMap, HullBrushes, VisibleFaces) 
     world_brushes(cubes, Hull::Draw)
 }
 
+// spec QBSP-15.29: work shared out over the pool's threads is given back in its order, as one
+// thread gives it
+#[test]
+fn the_pool_gives_what_one_thread_gives() {
+    let squares = |workers: Workers| workers.each(1000, |at| at * at);
+    assert_eq!(squares(Workers::Pool), squares(Workers::None));
+    assert_eq!(squares(Workers::Pool)[999], 999 * 999);
+    assert!(Workers::Pool.each(0, |at| at).is_empty());
+    for workers in [Workers::Pool, Workers::None] {
+        assert_eq!(workers.both(|| "first", || 2), ("first", 2));
+    }
+}
+
+// spec QBSP-15.27: whether a plane cuts a brush into two sound parts is found without the parts
+// made, and is what cutting it finds: across a brush, at and just inside its sides, beyond it
+// and aslant through it
+#[test]
+fn a_plane_that_cuts_a_brush_in_two_is_found_without_the_parts() {
+    let (mut map, loaded, _) = grid_brushes(3);
+    let mut planes = Vec::new();
+    for axis in 0..3 {
+        for dist in [
+            -8.0, 0.0, 0.05, 0.5, 1.0, 8.0, 15.5, 16.0, 17.0, 48.0, 56.0, 64.5, 200.0,
+        ] {
+            planes.push(axial(&mut map.planes, axis, dist));
+        }
+    }
+    for (normal, dist) in [
+        ([1.0, 1.0, 0.0], 12.0),
+        ([1.0, 0.0, 1.0], 40.0),
+        ([1.0, 1.0, 1.0], 70.0),
+    ] {
+        let normal = normalize(normal);
+        planes.push(map.planes.add_or_find(Plane { normal, dist }));
+    }
+    let cutter = Cutter {
+        planes: &map.planes,
+        extent: map.world_extent,
+    };
+    let (mut two, mut not) = (0, 0);
+    for brush in &loaded.brushes {
+        for planenum in planes.iter().flat_map(|p| [*p, p.opposite()]) {
+            let cut = matches!(
+                cutter.cut(brush, planenum),
+                Cut::Parts(parts) if parts.iter().all(Option::is_some)
+            );
+            assert_eq!(cutter.splits_in_two(brush, planenum), cut, "{planenum:?}");
+            if cut {
+                two += 1;
+            } else {
+                not += 1;
+            }
+        }
+    }
+    assert!(two > 50 && not > 50, "{two} {not}");
+}
+
 // spec QBSP-15.29: the children built on threads of their own give the tree built front first
-// on one thread, node for node and in the same order
+// on one thread, node for node and in the same order; so do a node's planes scored, and its
+// brushes cut, on the pool's threads
 #[test]
 fn a_tree_built_on_threads_is_the_tree_built_on_one() {
-    let (mut map, loaded, visible) = grid_brushes(8);
+    let (mut map, loaded, visible) = grid_brushes(20);
     let extent = map.world_extent;
-    let mut build = |depth| {
+    let mut build = |workers: Workers| {
         BspInput {
             planes: &mut map.planes,
             texinfos: &map.texinfos,
             visible: &visible,
             extent,
         }
-        .brush_bsp_from(loaded.bounds, &loaded.brushes, TreeSplit::Auto, depth)
+        .brush_bsp_with(loaded.bounds, &loaded.brushes, TreeSplit::Auto, workers)
     };
-    let threaded = build(0);
-    let alone = build(PARALLEL_DEPTH);
+    let threaded = build(Workers::Pool);
+    let alone = build(Workers::None);
     let deepest = threaded
         .leaves_below(Tree::HEAD)
         .into_iter()
@@ -327,7 +386,9 @@ fn a_tree_built_on_threads_is_the_tree_built_on_one() {
         })
         .max()
         .unwrap();
-    assert!(deepest > PARALLEL_DEPTH + 2, "{deepest}");
+    assert!(deepest > 6, "{deepest}");
     assert!(loaded.brushes.len() >= 2 * super::PARALLEL_BRUSHES);
+    // The head's planes are scored, and its brushes cut, on the pool.
+    assert!(loaded.brushes.len() * loaded.brushes.len() >= super::PARALLEL_TESTS);
     assert_eq!(threaded, alone);
 }

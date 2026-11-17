@@ -12,6 +12,7 @@ publish.workspace = true
 qs-bsp = { workspace = true }
 qs-map = { workspace = true }
 qs-wad = { workspace = true }
+rayon = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true, features = ["std"] }
