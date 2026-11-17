@@ -723,9 +723,10 @@ impl Shell {
     /// Follows where the layout puts the game (ADR-0028): the next Play starts it there, a
     /// game that runs in the other place is stopped, and a game started in the Game tab is
     /// shown.
-    fn follow_game_place(&mut self) {
+    fn follow_game_place(&mut self, ctx: &egui::Context) {
         let place = self.layout().game_place;
         self.game.set_place(place);
+        self.game.follow(ctx, self.centre_tab == CentreTab::Game);
         let preview = &self.session.context().preview;
         if preview.state() == PlayState::Stopped {
             self.game_shown = false;
@@ -1211,7 +1212,7 @@ impl Shell {
             }
         }
         self.follow_stop();
-        self.follow_game_place();
+        self.follow_game_place(ui.ctx());
         // P3-35: the background check's results for the latest edit, once it has finished.
         if self.run::<_, bool>(TAKE_CHECKED, &serde_json::json!({})) == Some(true) {
             ui.ctx().request_repaint();

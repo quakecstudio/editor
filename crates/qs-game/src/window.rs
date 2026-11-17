@@ -802,15 +802,7 @@ impl Viewer {
             same => same,
         };
         if next != self.pointer {
-            let (grab, visible) = match next {
-                Pointer::Captured => (egui::CursorGrab::Locked, false),
-                Pointer::Free => (egui::CursorGrab::None, true),
-            };
-            ui.ctx()
-                .send_viewport_cmd(egui::ViewportCommand::CursorGrab(grab));
-            ui.ctx()
-                .send_viewport_cmd(egui::ViewportCommand::CursorVisible(visible));
-            self.pointer = next;
+            self.set_pointer(ui.ctx(), next);
         } else if self.pointer == Pointer::Captured && self.fly {
             // The free camera turns as the mouse look of INPUT-2.4 would.
             let world = self.game.world();
@@ -823,6 +815,17 @@ impl Viewer {
             self.motion[0] += motion[0];
             self.motion[1] += motion[1];
         }
+    }
+
+    /// Captures the mouse for the game or gives it back to the system.
+    fn set_pointer(&mut self, ctx: &egui::Context, pointer: Pointer) {
+        let (grab, visible) = match pointer {
+            Pointer::Captured => (egui::CursorGrab::Locked, false),
+            Pointer::Free => (egui::CursorGrab::None, true),
+        };
+        ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(grab));
+        ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(visible));
+        self.pointer = pointer;
     }
 
     /// `Key_Event` for the bindings (INPUT-3.2): each key going down that runs its binding
@@ -1366,8 +1369,18 @@ impl GameView {
         self.running()
     }
 
-    /// Writes the host's configuration, as the host does when its window closes (INPUT-4.1).
-    pub fn close(&self) {
+    /// Gives the mouse back to the system when the game holds it: the app calls it when the
+    /// panel is not shown, since the window is the app's and its pointer must not stay hidden.
+    pub fn release_pointer(&mut self, ctx: &egui::Context) {
+        if self.viewer.pointer == Pointer::Captured {
+            self.viewer.set_pointer(ctx, Pointer::Free);
+        }
+    }
+
+    /// Ends the game as the host does when its window closes: the mouse given back, and the
+    /// host's configuration written (INPUT-4.1).
+    pub fn close(&mut self, ctx: &egui::Context) {
+        self.release_pointer(ctx);
         self.viewer.write_configuration();
     }
 

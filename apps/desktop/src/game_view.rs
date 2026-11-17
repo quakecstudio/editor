@@ -9,7 +9,7 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use eframe::egui::Ui;
+use eframe::egui::{Context, Ui};
 use eframe::egui_wgpu::RenderState;
 use qs_engine::{Client, EmbeddedHost, LaunchError, LaunchSpec};
 use qs_game::{Args, GameView, Running};
@@ -22,6 +22,8 @@ use qs_layout::GamePlace;
 pub(crate) struct GameSlot {
     game: Rc<RefCell<Option<GameView>>>,
     state: Rc<RefCell<Option<RenderState>>>,
+    /// The window's context, from the first frame, through which the mouse is given back.
+    ctx: Rc<RefCell<Option<Context>>>,
     place: Rc<Cell<GamePlace>>,
 }
 
@@ -59,10 +61,24 @@ impl GameSlot {
             return false;
         };
         if game.ui(ui) == Running::Stopped {
-            game.close();
+            game.close(ui.ctx());
             *slot = None;
         }
         true
+    }
+
+    /// Follows the window: its context is kept, and while the Game tab is not `shown` a game
+    /// that holds the mouse gives it back, since nothing there would free it.
+    pub(crate) fn follow(&self, ctx: &Context, shown: bool) {
+        if self.ctx.borrow().is_none() {
+            *self.ctx.borrow_mut() = Some(ctx.clone());
+        }
+        if !shown
+            && let Ok(mut slot) = self.game.try_borrow_mut()
+            && let Some(game) = slot.as_mut()
+        {
+            game.release_pointer(ctx);
+        }
     }
 
     /// Lets the game answer its bridge between two frames.
@@ -77,9 +93,13 @@ impl GameSlot {
     /// Stops the game that runs here.
     fn stop(&self) {
         if let Ok(mut slot) = self.game.try_borrow_mut()
-            && let Some(game) = slot.take()
+            && let Some(mut game) = slot.take()
         {
-            game.close();
+            match &*self.ctx.borrow() {
+                Some(ctx) => game.close(ctx),
+                // No frame was drawn, so the game never held the mouse.
+                None => game.close(&Context::default()),
+            }
         }
     }
 }
