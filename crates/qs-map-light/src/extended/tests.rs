@@ -27,9 +27,9 @@ use super::lights::Lights;
 use super::math::Plane;
 use super::phong::Smoothing;
 use super::points::{Extents, Patch, Sample};
-use super::rays::{Rays, Texels as _};
+use super::rays::{Passed, Rays, Texels as _};
 use super::scene::{Given, Map, MapFault};
-use super::shade::Shader;
+use super::shade::{Answers, Shader};
 use crate::face::FaceId;
 use crate::tests::{cuboid, light_at, miptex};
 use crate::{
@@ -1229,6 +1229,27 @@ fn a_bounces_ray_is_asked_once_for_a_luxel() {
         .count();
     // But for the luxels along the walls, whose samples are not all on the ceiling.
     assert!(apart * 4 <= fast.len(), "{apart} of {}", fast.len());
+}
+
+// spec LIGHT-20.7: a luxel, or a block of them, is on the edge of a bounce's shadow when one
+// of the eight around it was answered otherwise; one that asked nothing is on no edge and
+// makes none.
+#[test]
+fn an_answer_is_on_an_edge_beside_another_answer() {
+    let (lit, dark, unasked) = (Some(Some(Passed::default())), Some(None), None);
+    // Three rows of three: lit but for the last of the top row, and one that asked nothing.
+    let all = [lit, lit, dark, lit, lit, lit, lit, unasked, lit];
+    let grid = Answers {
+        all: &all,
+        across: 3,
+    };
+    let on_edge: Vec<bool> = (0..all.len()).map(|at| grid.is_on_edge(at)).collect();
+    assert_eq!(
+        on_edge,
+        [false, true, true, false, true, true, false, false, false]
+    );
+    // Past the end there is nothing to be on the edge of.
+    assert!(!grid.is_on_edge(all.len()));
 }
 
 // spec LIGHT-11.10: a brush model with _shadow and no faces, all its brushes of a texture

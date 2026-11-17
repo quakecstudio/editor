@@ -25,6 +25,10 @@ use crate::extended::surflight::SurfaceLit;
 use crate::extended::vis::is_unseen;
 use crate::{AXES, Vec3, to_f32};
 
+/// How many luxels a side a block is that asks one ray of a bounce before its luxels do,
+/// and how many luxels a side a face has before it asks by blocks (LIGHT-20.7).
+const BLOCK: usize = 2;
+const BLOCKED_FROM: usize = 4;
 /// `LF_SCALE`: the distance an inverse light's brightness is given at (LIGHT-10.3).
 const LF_SCALE: f32 = 128.0;
 /// `gate`: a contribution at most this bright is not traced (LIGHT-10.9).
@@ -55,6 +59,39 @@ pub(crate) struct Lightmap {
     pub(crate) samples: Vec<Vec3>,
     /// The light its samples took since the last bounce counted it (`bounce_color`).
     pub(crate) bounce: Vec3,
+}
+
+/// What each of a grid of luxels, or of blocks of them, was answered by its ray, row by row:
+/// none for one that asked nothing.
+pub(crate) struct Answers<'a> {
+    /// Each one's answer: what its ray passed, none when it was stopped.
+    pub(crate) all: &'a [Option<Option<Passed>>],
+    /// How many there are in a row.
+    pub(crate) across: usize,
+}
+
+impl Answers<'_> {
+    /// Whether the one at place `at` has one of the eight around it answered otherwise: stopped
+    /// where it passed, or passed where it was stopped.
+    pub(crate) fn is_on_edge(&self, at: usize) -> bool {
+        let Some(Some(own)) = self.all.get(at) else {
+            return false;
+        };
+        let i = at.checked_rem(self.across).unwrap_or(0);
+        let j = at.checked_div(self.across).unwrap_or(0);
+        let around = [i.checked_sub(1), Some(i), i.checked_add(1)];
+        [j.checked_sub(1), Some(j), j.checked_add(1)]
+            .into_iter()
+            .flat_map(|nj| around.map(|ni| (ni, nj)))
+            .filter_map(|(ni, nj)| {
+                let (ni, nj) = (ni?, nj?);
+                (ni < self.across)
+                    .then(|| self.all.get(nj.checked_mul(self.across)?.checked_add(ni)?))
+                    .flatten()?
+                    .as_ref()
+            })
+            .any(|other| other.is_some() != own.is_some())
+    }
 }
 
 /// A face's lightmaps (`lightmapdict_t`).
@@ -730,6 +767,11 @@ impl Shader<'_> {
     /// `LightFace_SurfaceLight`: the light the faces of `emitters` give at `stage`, their
     /// own as surface lights or what they give back on a bounce, added to `patch`
     /// (LIGHT-16.4, LIGHT-20.5).
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one emission's light on one face, read top to bottom: its culls, each \
+                  sample's sum, then the rays by block, luxel and sample (LIGHT-20.7)"
+    )]
     pub(crate) fn emitted(
         &self,
         patch: &Patch,
@@ -749,6 +791,7 @@ impl Shader<'_> {
         // What each sample is given and each luxel's ray passed, for one emission at a time.
         let mut givens: Vec<Option<Vec3>> = Vec::new();
         let mut answers: Vec<Option<Option<Passed>>> = Vec::new();
+        let mut blocks: Vec<Option<Option<Passed>>> = Vec::new();
         for emitter in emitters.iter().flatten() {
             for emission in &emitter.emissions {
                 if emission.stage != stage
@@ -818,35 +861,74 @@ impl Shader<'_> {
                         .samples_of(luxel)
                         .any(|index| givens.get(index).is_some_and(Option::is_some))
                 };
-                // Each luxel that takes light: what its one ray passed.
-                answers.clear();
-                for (luxel, middle) in patch.middles.iter().enumerate() {
-                    answers.push(lit(luxel).then(|| passed_to(middle.point, stack)));
-                }
                 let across = patch.width.checked_div(patch.per_luxel).unwrap_or(0);
                 let down = patch.height.checked_div(patch.per_luxel).unwrap_or(0);
-                let reached = |i: Option<usize>, j: Option<usize>| {
-                    let (i, j) = (i?, j?);
-                    (i < across && j < down)
-                        .then(|| answers.get(j.saturating_mul(across).saturating_add(i)))
-                        .flatten()?
-                        .as_ref()
-                        .map(Option::is_some)
+                answers.clear();
+                answers.resize(patch.middles.len(), None);
+                if across >= BLOCKED_FROM && down >= BLOCKED_FROM {
+                    // A wide face first asks one ray for each block of luxels, at the first
+                    // of them that takes light; a block answered as each block around it
+                    // gives its answer to its luxels, and the rest ask luxel by luxel.
+                    let wide = across.div_ceil(BLOCK);
+                    let luxels_of = |block: usize| {
+                        let i = block.checked_rem(wide).unwrap_or(0).saturating_mul(BLOCK);
+                        let j = block.checked_div(wide).unwrap_or(0).saturating_mul(BLOCK);
+                        (j..j.saturating_add(BLOCK).min(down)).flat_map(move |j| {
+                            (i..i.saturating_add(BLOCK).min(across))
+                                .map(move |i| j.saturating_mul(across).saturating_add(i))
+                        })
+                    };
+                    blocks.clear();
+                    for block in 0..wide.saturating_mul(down.div_ceil(BLOCK)) {
+                        let first = luxels_of(block).find(|luxel| lit(*luxel));
+                        blocks.push(first.and_then(|luxel| {
+                            let answer = passed_to(patch.middles.get(luxel)?.point, stack);
+                            *answers.get_mut(luxel)? = Some(answer);
+                            Some(answer)
+                        }));
+                    }
+                    let grid = Answers {
+                        all: &blocks,
+                        across: wide,
+                    };
+                    for (block, own) in blocks.iter().enumerate() {
+                        let Some(own) = own else {
+                            continue;
+                        };
+                        let on_edge = grid.is_on_edge(block);
+                        for luxel in luxels_of(block) {
+                            if !lit(luxel) || answers.get(luxel).is_none_or(Option::is_some) {
+                                continue;
+                            }
+                            let answer = if on_edge {
+                                patch
+                                    .middles
+                                    .get(luxel)
+                                    .map(|middle| passed_to(middle.point, stack))
+                            } else {
+                                Some(*own)
+                            };
+                            if let Some(slot) = answers.get_mut(luxel) {
+                                *slot = answer;
+                            }
+                        }
+                    }
+                } else {
+                    for ((luxel, middle), answer) in
+                        patch.middles.iter().enumerate().zip(&mut answers)
+                    {
+                        *answer = lit(luxel).then(|| passed_to(middle.point, stack));
+                    }
+                }
+                let grid = Answers {
+                    all: &answers,
+                    across,
                 };
                 for (luxel, answer) in answers.iter().enumerate() {
                     let Some(passed) = answer else {
                         continue;
                     };
-                    let (i, j) = (
-                        luxel.checked_rem(across).unwrap_or(0),
-                        luxel.checked_div(across).unwrap_or(0),
-                    );
-                    let around = [i.checked_sub(1), Some(i), i.checked_add(1)];
-                    let on_edge = [j.checked_sub(1), Some(j), j.checked_add(1)]
-                        .into_iter()
-                        .flat_map(|nj| around.map(|ni| reached(ni, nj)))
-                        .flatten()
-                        .any(|other| other != passed.is_some());
+                    let on_edge = grid.is_on_edge(luxel);
                     for index in patch.samples_of(luxel) {
                         let Some(given) = givens.get(index).copied().flatten() else {
                             continue;

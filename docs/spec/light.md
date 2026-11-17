@@ -902,8 +902,11 @@ The world's settings, each with its default; a second name is another key for th
   hidden are taken together, the mean of their points; a luxel whose answer is that of each
   of the eight luxels around it lies well inside the bounce's light or its shadow, and the
   answer is each of its samples'; a luxel with a neighbour answered otherwise lies on the
-  shadow's edge and asks at each sample, as ericw-tools does. The surface lights' own light
-  (LIGHT-16.4) is still asked at every sample. With one sample a luxel every sample asks.
+  shadow's edge and asks at each sample, as ericw-tools does. A face at least four luxels
+  each way asks first by blocks of two luxels a side, one ray to the first luxel of a block
+  that is given light: a block answered as each of the eight blocks around it gives that
+  answer to its luxels, and the luxels of the rest ask their own. The surface lights' own
+  light (LIGHT-16.4) is still asked at every sample. With one sample a luxel every sample asks.
   `cargo xtask light-diff` holds the result to ericw-tools' `-extra` on every corpus map.
 - **LIGHT-20.8** A bounce or surface light is also passed over for a face, ours alone, when
   no sample of the face could be given more than the gate (LIGHT-20.5): the most LIGHT-20.4
