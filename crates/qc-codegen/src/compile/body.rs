@@ -157,7 +157,13 @@ impl Compiler<'_> {
             }
             ast::Expr::Name(name) => {
                 let token = name.name().at(span)?;
-                let id = self.names.def(file, token.span(), None).at(span)?;
+                // The semantic model records no reference at a name inside a struct's
+                // aggregate: it is the global of that name.
+                let id = self
+                    .names
+                    .def(file, token.span(), None)
+                    .or_else(|| self.names.global(&token.text_lossless()))
+                    .at(span)?;
                 self.program.get_def(self.index, id).at(span)
             }
             _ => Err(Internal::Unlowered).at(span),

@@ -4389,3 +4389,28 @@ fn a_translated_string_is_a_dotranslate_global() {
         3
     );
 }
+
+// spec FTEF-32.23: a function named by an initialiser before its body, alone or in an
+// aggregate, gives the global its number once it has one; one defined before gives it at once.
+#[test]
+fn an_initialiser_names_a_function_before_its_body() {
+    let p = fte_progs(
+        "typedef struct { void(void) init; void(void) draw; } page_t;\nvoid a(void);\n\
+         void b(void);\npage_t pages[] = { { b, a } };\nvoid(void) fp = b;\nvoid a(void) { }\n\
+         void b(void) { }\nvoid(void) late = b;\n\
+         void use(void) { pages[0].init(); fp(); late(); }\n",
+    );
+    let number = |name: &str| {
+        let at = p
+            .functions
+            .iter()
+            .position(|f| f.first_statement != 0 && string(&p, f.s_name) == name)
+            .unwrap();
+        u32::try_from(at).unwrap()
+    };
+    // The pinned FTEQCC numbers them 1 and 2, and writes 2, 1, 2 and 2.
+    assert_eq!((number("a"), number("b")), (1, 2));
+    assert_eq!(global_words(&p, "pages", 2), [2, 1]);
+    assert_eq!(global_words(&p, "fp", 1), [2]);
+    assert_eq!(global_words(&p, "late", 1), [2]);
+}

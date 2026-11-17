@@ -563,7 +563,9 @@ impl Compiler<'_> {
             return Ok(());
         }
         let expr = ast::Expr::cast(item.clone()).at(span)?;
+        let named = self.program.named_functions();
         let value = self.value_words(ty, &expr)?;
+        self.program.named_functions_at(named, at);
         let start = usize::try_from(at).map_err(|_| Abort::Internal(Internal::TooLarge, span))?;
         let end = start.checked_add(value.len()).at(span)?;
         words.get_mut(start..end).at(span)?.copy_from_slice(&value);
@@ -604,6 +606,15 @@ impl Compiler<'_> {
         let span = expr.syntax().span();
         let place = self.constant_place(self.file, expr, span)?;
         let value = self.def_value(place, span)?;
+        // FTEF-32.23: a function named before its body is 0 for now, its number filled in
+        // once it has one.
+        if ty.etype() == Etype::Function
+            && self.type_of(&value).etype() == Etype::Function
+            && self.program.def(place).is_some_and(|def| !def.initialized)
+        {
+            self.program.name_function(place);
+            return Ok(vec![0]);
+        }
         if !self.constant(place) || self.type_of(&value).etype() != ty.etype() {
             return Err(Abort::Internal(Internal::Unsupported, span));
         }
