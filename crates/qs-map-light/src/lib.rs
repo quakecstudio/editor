@@ -105,7 +105,7 @@ pub enum LightError {
         /// The token found.
         found: Vec<u8>,
     },
-    /// `LoadEntities: MAX_MAP_ENTITIES`, in the id dialect (LIGHT-2.7, LIGHT-1.9).
+    /// `LoadEntities: MAX_MAP_ENTITIES`, in the id dialect (LIGHT-2.7, LIGHT-1.11).
     TooManyEntities,
     /// `LoadEntities: EOF without closing brace` (LIGHT-2.7).
     Unclosed,
@@ -131,9 +131,9 @@ pub enum LightError {
         face: FaceId,
     },
     /// `GetFileSpace: overrun` in the id dialect; in the extended one, a lightmap whose offset
-    /// does not fit `lightofs` (LIGHT-1.5, LIGHT-1.9).
+    /// does not fit `lightofs` (LIGHT-1.5, LIGHT-1.11).
     Overrun,
-    /// `Entity text too long`, in the id dialect (LIGHT-1.6, LIGHT-1.9).
+    /// `Entity text too long`, in the id dialect (LIGHT-1.6, LIGHT-1.11).
     EntityTextTooLong,
     /// A key and value too long for `light`'s 128-byte line, in the id dialect (LIGHT-2.8).
     PairTooLong {
@@ -287,7 +287,7 @@ impl Light {
         Self { scale, ..self }
     }
 
-    /// The compiler in `dialect`: id's fixed tables, or only the format's limits (LIGHT-1.9).
+    /// The compiler in `dialect`: id's fixed tables, or only the format's limits (LIGHT-1.11).
     #[must_use]
     pub const fn with_dialect(self, dialect: Dialect) -> Self {
         Self { dialect, ..self }

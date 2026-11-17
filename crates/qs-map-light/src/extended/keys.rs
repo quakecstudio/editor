@@ -900,8 +900,9 @@ mod tests {
         assert_eq!(colour_of([-0.1, 0.5, 0.0]), [-0.1, 0.5, 0.0]);
     }
 
-    // spec LIGHT-10.1: light is a brightness, or a colour and a brightness, or a colour alone;
-    // _color outweighs the colour a light value implies whichever comes first.
+    // spec LIGHT-10.1: light is a brightness, or a colour and a brightness, or a colour alone.
+    // spec LIGHT-9.3: _color, a key of the map, outweighs the colour a light value implies,
+    // whichever comes first.
     #[test]
     fn a_light_value_may_carry_its_colour() {
         let plain = LightKeys::read(&dict(&[("light", "150")]));

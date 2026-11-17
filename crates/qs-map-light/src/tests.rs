@@ -26,7 +26,7 @@ fn id() -> Light {
 }
 
 /// A brush, a box from `min` to `max`, faced with `texture`.
-fn cuboid(min: [i32; 3], max: [i32; 3], texture: &str) -> String {
+pub(crate) fn cuboid(min: [i32; 3], max: [i32; 3], texture: &str) -> String {
     let [x0, y0, z0] = min;
     let [x1, y1, z1] = max;
     format!(
@@ -40,7 +40,7 @@ fn cuboid(min: [i32; 3], max: [i32; 3], texture: &str) -> String {
 }
 
 /// A texture lump `name`, 16 by 16.
-fn miptex(name: &str) -> Vec<u8> {
+pub(crate) fn miptex(name: &str) -> Vec<u8> {
     let mut lump = name.as_bytes().to_vec();
     lump.resize(16, 0);
     for value in [16_u32, 16, 40, 40 + 256, 40 + 256 + 64, 40 + 256 + 64 + 16] {
@@ -75,7 +75,7 @@ fn room(entities: &str) -> Vec<u8> {
 }
 
 /// A light at `origin`, with these other keys.
-fn light_at(origin: &str, keys: &str) -> String {
+pub(crate) fn light_at(origin: &str, keys: &str) -> String {
     format!("{{\n\"classname\" \"light\"\n\"origin\" \"{origin}\"\n{keys}}}\n")
 }
 
@@ -142,7 +142,10 @@ fn every_vector_matches_id_light() {
             Sampling::Fast
         };
         let bsp = unxxd(&vector(&format!("{map}.bsp.txt")));
-        let lit = Light::new(sampling).with_dialect(Dialect::Id).run(&bsp).unwrap();
+        let lit = Light::new(sampling)
+            .with_dialect(Dialect::Id)
+            .run(&bsp)
+            .unwrap();
         assert_eq!(hex(&Sha256::digest(&lit.bsp)), file, "{map} {mode}");
         assert_eq!(lump(&lit.bsp, LumpId::Lighting).len().to_string(), size);
         assert_eq!(lit.warnings.len().to_string(), warnings, "{map} {mode}");
@@ -229,7 +232,7 @@ fn bad_entity_text_stops_the_run() {
     assert!(entities("{ }\n".repeat(1024).as_bytes()).is_ok());
 }
 
-// spec LIGHT-1.9: the extended dialect has none of light's fixed tables
+// spec LIGHT-1.11: the extended dialect has none of light's fixed tables
 #[test]
 fn the_extended_dialect_has_no_fixed_tables() {
     let many = "{ \"classname\" \"info_null\" }\n".repeat(1100);
@@ -451,9 +454,7 @@ fn unlit_faces_have_no_lightmap() {
             .iter()
             .all(|f| f.lightofs == -1 && f.styles == [255; 4])
     );
-    let lit = id()
-        .run(&room(&light_at("128 128 64", "")))
-        .unwrap();
+    let lit = id().run(&room(&light_at("128 128 64", ""))).unwrap();
     let read = Bsp::read(&lit.bsp, BspLoader::FitzQuake).unwrap();
     assert!(
         read.faces
@@ -495,7 +496,11 @@ fn the_scales_change_the_bytes() {
 #[test]
 fn padding_keeps_the_input_lighting() {
     let lights = light_at("128 128 64", "\"style\" \"1\"\n") + &light_at("100 90 64", "");
-    let first = Light::new(Sampling::Fast).with_dialect(Dialect::Id).run(&room(&lights)).unwrap().bsp;
+    let first = Light::new(Sampling::Fast)
+        .with_dialect(Dialect::Id)
+        .run(&room(&lights))
+        .unwrap()
+        .bsp;
     let entry = Bsp::read(&first, BspLoader::FitzQuake).unwrap().lumps[LumpId::Lighting.index()];
     let start = usize::try_from(entry.fileofs).unwrap();
     let old_len = usize::try_from(entry.filelen).unwrap();
@@ -509,7 +514,11 @@ fn padding_keeps_the_input_lighting() {
         .position(|w| w == b"\"style\" \"1\"")
         .unwrap();
     marked[style + 9] = b'0';
-    let again = Light::new(Sampling::Fast).with_dialect(Dialect::Id).run(&marked).unwrap().bsp;
+    let again = Light::new(Sampling::Fast)
+        .with_dialect(Dialect::Id)
+        .run(&marked)
+        .unwrap()
+        .bsp;
     let read = Bsp::read(&again, BspLoader::FitzQuake).unwrap();
     assert!(read.lighting.len() < old_len);
     let mut covered = vec![false; read.lighting.len()];
@@ -535,7 +544,11 @@ fn padding_keeps_the_input_lighting() {
             .iter()
             .all(|&b| b == 0xab)
     );
-    let fresh = Light::new(Sampling::Fast).with_dialect(Dialect::Id).run(&room(&lights)).unwrap().bsp;
+    let fresh = Light::new(Sampling::Fast)
+        .with_dialect(Dialect::Id)
+        .run(&room(&lights))
+        .unwrap()
+        .bsp;
     let entry = Bsp::read(&fresh, BspLoader::FitzQuake).unwrap().lumps[LumpId::Lighting.index()];
     let end = usize::try_from(entry.fileofs).unwrap() + usize::try_from(entry.filelen).unwrap();
     assert!(
@@ -561,9 +574,7 @@ fn coloured_light_writes_a_lit_file() {
         assert_eq!(*grey, rgb[0]);
     }
     assert!(lighting.iter().any(|&b| b > 0));
-    let plain = id()
-        .run(&room(&light_at("128 128 64", "")))
-        .unwrap();
+    let plain = id().run(&room(&light_at("128 128 64", ""))).unwrap();
     let white = id()
         .run(&room(&light_at(
             "128 128 64",
@@ -705,7 +716,7 @@ fn old_lighting_is_not_read() {
     assert_eq!(id().run(&valve), Err(LightError::Format));
 }
 
-// spec LIGHT-1.5, LIGHT-1.9: a lighting lump past MAX_MAP_LIGHTING stops the run in the id
+// spec LIGHT-1.5, LIGHT-1.11: a lighting lump past MAX_MAP_LIGHTING stops the run in the id
 // dialect only; a lump of exactly it does not
 #[test]
 fn lighting_has_light_s_limit_in_the_id_dialect() {
@@ -946,7 +957,10 @@ fn every_vector_is_lit_only_within_its_previews() {
     for line in vector("results.tsv").lines().skip(1) {
         let map = line.split('\t').next().unwrap();
         let bsp = unxxd(&vector(&format!("{map}.bsp.txt")));
-        let lit = Light::new(Sampling::Fast).with_dialect(Dialect::Id).run(&bsp).unwrap();
+        let lit = Light::new(Sampling::Fast)
+            .with_dialect(Dialect::Id)
+            .run(&bsp)
+            .unwrap();
         let read = Bsp::read(&lit.bsp, BspLoader::FitzQuake).unwrap();
         let previews = Light::default().previews(read.entities()).unwrap();
         assert!(!previews.is_empty(), "{map}");

@@ -23,6 +23,8 @@ mod rays;
 mod scene;
 mod shade;
 mod sun;
+#[cfg(test)]
+mod tests;
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};

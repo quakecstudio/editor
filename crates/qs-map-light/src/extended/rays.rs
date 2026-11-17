@@ -900,8 +900,8 @@ mod tests {
     }
 
     // spec LIGHT-11.6: glass never stops a ray; it tints the ray that leaves it, by its
-    // texel's colour and its alpha. spec LIGHT-11.7: a fence stops a ray only at an opaque
-    // texel.
+    // texel's colour and its alpha.
+    // spec LIGHT-11.7: a fence stops a ray only at an opaque texel.
     #[test]
     fn glass_tints_and_a_fence_stops_at_opaque_texels() {
         let mut glass = caster(Surface::Filtered);

@@ -345,7 +345,8 @@ mod tests {
     }
 
     // spec LIGHT-14.1: a sun is put 16384 units against the way its light goes; one of no
-    // light is not made. spec LIGHT-14.3: with no penumbra a sun is one sun.
+    // light is not made.
+    // spec LIGHT-14.3: with no penumbra a sun is one sun.
     #[test]
     fn a_sun_with_no_penumbra_is_one_sun_far_against_its_light() {
         let mut random = Random::new(Jitter::Bsd);
@@ -401,7 +402,8 @@ mod tests {
     }
 
     // spec LIGHT-15.1: a dome is 65 suns sharing the light: four rings of sixteen and one
-    // straight down. spec LIGHT-15.2: the lower dome mirrors it.
+    // straight down.
+    // spec LIGHT-15.2: the lower dome mirrors it.
     #[test]
     fn a_dome_is_sixty_five_suns_over_a_hemisphere() {
         let mut random = Random::new(Jitter::Bsd);
