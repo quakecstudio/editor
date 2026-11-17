@@ -289,9 +289,9 @@ impl<C: HasLayout + 'static> Command<C> for ToggleEmbeddedGame {
         stopped, and the next Play starts it in the place chosen.";
     type Params = NoParams;
     type Output = GamePlace;
-    type Error = Infallible;
+    type Error = !;
 
-    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<GamePlace, C>, Infallible> {
+    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<GamePlace, C>, !> {
         let layout = context.layout_mut();
         layout.game_place = match layout.game_place {
             GamePlace::Window => GamePlace::Tab,
