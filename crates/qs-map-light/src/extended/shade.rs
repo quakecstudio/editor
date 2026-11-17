@@ -19,6 +19,7 @@ use crate::extended::points::Patch;
 use crate::extended::rays::{Asker, ModelId, Passed, Rays, Surface};
 use crate::extended::scene::Map;
 use crate::extended::sun::Sun;
+use crate::extended::vis::is_unseen;
 use crate::{AXES, Vec3, to_f32};
 
 /// `LF_SCALE`: the distance an inverse light's brightness is given at (LIGHT-10.3).
@@ -346,6 +347,13 @@ impl Shader<'_> {
         {
             return;
         }
+        // With visibility in the BSP, a light whose leaf the face's leaves cannot see.
+        if keys.light_channel_mask.get() == CHANNEL_DEFAULT
+            && keys.shadow_channel_mask.get() == CHANNEL_DEFAULT
+            && is_unseen(self.map.bsp, &patch.seen, lamp.leaf)
+        {
+            return;
+        }
         if self.culled(lamp, patch) || keys.light_channel_mask.get() & patch.channels == 0 {
             return;
         }
@@ -443,19 +451,13 @@ impl Shader<'_> {
             if brightness(colour).abs() <= GATE {
                 continue;
             }
-            let struck =
+            let Some(passed) =
                 self.rays
-                    .struck((sample.point, incoming, SKY_DIST), &asker, self.map, stack);
-            if !matches!(struck.hit, Some((Surface::Sky, _))) {
+                    .sees_sky((sample.point, incoming, SKY_DIST), &asker, self.map, stack)
+            else {
                 continue;
-            }
-            self.add(
-                lightmaps,
-                &mut slot,
-                (sun.style, struck.passed),
-                index,
-                colour,
-            );
+            };
+            self.add(lightmaps, &mut slot, (sun.style, passed), index, colour);
         }
     }
 
@@ -637,7 +639,13 @@ impl Shader<'_> {
         let asker = self.asker(patch, CHANNEL_DEFAULT);
         for emitter in emitters.iter().flatten() {
             for emission in &emitter.emissions {
-                if emission.depth != depth || emitter.is_culled(world, emission, patch) {
+                if emission.depth != depth
+                    || emitter.is_culled(world, emission, patch)
+                    || emitter
+                        .leaves
+                        .iter()
+                        .any(|leaf| is_unseen(self.map.bsp, &patch.seen, Some(*leaf)))
+                {
                     continue;
                 }
                 let mut at: Option<usize> = None;

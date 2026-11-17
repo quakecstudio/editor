@@ -26,6 +26,7 @@ mod sidecar;
 mod sun;
 #[cfg(test)]
 mod tests;
+mod vis;
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -129,17 +130,21 @@ impl Light {
                     let Ok(mut slot) = slot.lock() else {
                         continue;
                     };
-                    let Some((_, lightmaps)) = slot.as_mut() else {
+                    let Some((patch, lightmaps)) = slot.as_mut() else {
                         continue;
                     };
                     let had = emitter.is_some();
                     any |= bouncer.emit(face, lightmaps, emitter, depth);
-                    // What a new emitter can see, as a light's is found (LIGHT-10.8).
-                    if !had
-                        && map.bsp.visibility.is_empty()
-                        && let Some(emitter) = emitter
-                    {
-                        emitter.bounds = Some(rays.visible_bounds(&map, emitter.pos, &mut stack));
+                    // A new emitter is culled as a light is: by the leaves its face is in
+                    // when the BSP has visibility (LIGHT-10.10), else by what it can see
+                    // (LIGHT-10.8).
+                    if !had && let Some(emitter) = emitter {
+                        if map.visibility.is_some() {
+                            emitter.leaves.clone_from(&patch.leaves);
+                        } else {
+                            emitter.bounds =
+                                Some(rays.visible_bounds(&map, emitter.pos, &mut stack));
+                        }
                     }
                 }
                 if !any {

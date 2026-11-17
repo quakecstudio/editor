@@ -18,6 +18,7 @@ use crate::extended::math::{
 use crate::extended::rays::{Asker, Rays, Texels};
 use crate::extended::scene::{Map, Skin};
 use crate::extended::sun::{Random, Sun, SunLight, Suns};
+use crate::extended::vis::leaf_at;
 use crate::face::FaceId;
 use crate::{AXES, Jitter, LightError, Vec3, to_f32};
 
@@ -67,6 +68,8 @@ pub(crate) struct Lamp {
     pub(crate) spot: Option<Spot>,
     /// What it can see, when lights are culled by it (LIGHT-10.8).
     pub(crate) bounds: Option<Aabb>,
+    /// The leaf it is in, when lights are culled by the BSP's visibility (LIGHT-10.10).
+    pub(crate) leaf: Option<usize>,
 }
 
 impl Lamp {
@@ -182,6 +185,7 @@ impl Lights {
                 target: None,
                 spot,
                 bounds: None,
+                leaf: None,
             });
         }
         Ok(Self {
@@ -247,7 +251,11 @@ impl Lights {
                 lamp.keys.origin.set(moved, Source::Map);
             }
         }
-        if map.bsp.visibility.is_empty() {
+        if map.visibility.is_some() {
+            for lamp in &mut self.lamps {
+                lamp.leaf = leaf_at(map.bsp, lamp.origin());
+            }
+        } else {
             let mut stack = Vec::new();
             for lamp in &mut self.lamps {
                 lamp.bounds = Some(rays.visible_bounds(map, lamp.origin(), &mut stack));

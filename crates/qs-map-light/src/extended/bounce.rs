@@ -55,6 +55,9 @@ pub(crate) struct Emitter {
     pub(crate) normal: Vec3,
     /// What can be seen from it, when lights are culled by it (LIGHT-10.8).
     pub(crate) bounds: Option<Aabb>,
+    /// The leaves its face is in, when lights are culled by the BSP's visibility
+    /// (LIGHT-10.10).
+    pub(crate) leaves: Vec<usize>,
     pub(crate) emissions: Vec<Emission>,
 }
 
@@ -185,6 +188,7 @@ impl Bouncer<'_> {
                 pos,
                 normal,
                 bounds: None,
+                leaves: Vec::new(),
                 emissions: Vec::new(),
             });
             emitter.emissions.push(Emission {
@@ -369,6 +373,7 @@ mod tests {
             pos: [0.0, 0.0, 1.0],
             normal: [0.0, 0.0, 1.0],
             bounds: None,
+            leaves: Vec::new(),
             emissions: Vec::new(),
         };
         let emission = Emission {

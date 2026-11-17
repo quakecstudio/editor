@@ -157,6 +157,28 @@ impl Triangle {
     }
 }
 
+/// The even cuts of an axis a node's split is chosen from.
+const SPLIT_BINS: u8 = 16;
+
+/// The bin a triangle's middle falls in, `along` its place in bin widths from the first.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "a place from 0 to the number of bins, cut to a whole bin"
+)]
+fn bin_of(along: f32) -> usize {
+    (along.max(0.0) as usize).min(usize::from(SPLIT_BINS).saturating_sub(1))
+}
+
+/// A count of triangles as a float.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "a count of triangles weighs a box's surface: its last digits do not matter"
+)]
+const fn count_of(count: u32) -> f32 {
+    count as f32
+}
+
 /// A dot product with each product but the last fused into the sum, as Embree works it
 /// where the processor fuses a multiply and an add (LIGHT-11.9).
 fn fused_dot(a: Vec3, b: Vec3) -> f32 {
@@ -251,21 +273,88 @@ impl Bounds {
         }
     }
 
-    /// The axis it is longest on.
-    fn longest(self) -> usize {
+    /// The box widened to hold `triangle`.
+    fn with_triangle(self, triangle: &Triangle) -> Self {
+        self.with(triangle.v0)
+            .with(sub(triangle.v0, triangle.e1))
+            .with(add(triangle.v0, triangle.e2))
+    }
+
+    /// The box's surface, halved; nothing for a box that holds nothing.
+    fn half_surface(self) -> f32 {
         let size = sub(self.max, self.min);
-        if size[0] >= size[1] && size[0] >= size[2] {
-            0
-        } else if size[1] >= size[2] {
-            1
-        } else {
-            2
+        if size.iter().any(|c| *c < 0.0) {
+            return 0.0;
+        }
+        size[0] * size[1] + size[1] * size[2] + size[2] * size[0]
+    }
+
+    /// Where to part `pending`, whose middles this box holds: the axis and the coordinate
+    /// that leave the least surface, each side's box weighed by its triangles, of the
+    /// [`SPLIT_BINS`] even cuts of each axis; none when no cut parts them.
+    fn best_split(self, pending: &[(Vec3, Triangle)]) -> Option<(usize, f32)> {
+        let mut best: Option<(f32, usize, f32)> = None;
+        for axis in 0..AXES {
+            let (Some(&low), Some(&high)) = (self.min.get(axis), self.max.get(axis)) else {
+                continue;
+            };
+            let width = (high - low) / f32::from(SPLIT_BINS);
+            if width <= 0.0 {
+                continue;
+            }
+            let mut bins = [(Self::EMPTY, 0_u32); SPLIT_BINS as usize];
+            for (middle, triangle) in pending {
+                let along = middle.get(axis).copied().unwrap_or_default();
+                let bin = bin_of((along - low) / width);
+                if let Some((bounds, count)) = bins.get_mut(bin) {
+                    *bounds = bounds.with_triangle(triangle);
+                    *count = count.saturating_add(1);
+                }
+            }
+            // The boxes and counts of the bins after each cut, then those before it.
+            let mut after = [(Self::EMPTY, 0_u32); SPLIT_BINS as usize];
+            let mut running = (Self::EMPTY, 0_u32);
+            for (slot, (bounds, count)) in after.iter_mut().zip(&bins).rev() {
+                running = (running.0.union(*bounds), running.1.saturating_add(*count));
+                *slot = running;
+            }
+            let mut before = (Self::EMPTY, 0_u32);
+            for (cut, ((bounds, count), rest)) in bins.iter().zip(after.iter().skip(1)).enumerate()
+            {
+                before = (before.0.union(*bounds), before.1.saturating_add(*count));
+                if before.1 == 0 || rest.1 == 0 {
+                    continue;
+                }
+                let cost = before.0.half_surface() * count_of(before.1)
+                    + rest.0.half_surface() * count_of(rest.1);
+                if best.is_none_or(|(least, ..)| cost < least) {
+                    let cuts = u8::try_from(cut.saturating_add(1)).unwrap_or(SPLIT_BINS);
+                    best = Some((cost, axis, low + width * f32::from(cuts)));
+                }
+            }
+        }
+        best.map(|(_, axis, coordinate)| (axis, coordinate))
+    }
+
+    /// The box that holds both.
+    fn union(self, other: Self) -> Self {
+        Self {
+            min: [
+                self.min[0].min(other.min[0]),
+                self.min[1].min(other.min[1]),
+                self.min[2].min(other.min[2]),
+            ],
+            max: [
+                self.max[0].max(other.max[0]),
+                self.max[1].max(other.max[1]),
+                self.max[2].max(other.max[2]),
+            ],
         }
     }
 
-    /// Whether the ray from `origin`, `inverse` one over its direction, crosses the box
-    /// before `far`.
-    fn crossed(self, origin: Vec3, inverse: Vec3, far: f32) -> bool {
+    /// How far along the ray from `origin`, `inverse` one over its direction, the box is
+    /// entered; none when the ray misses it or enters it past `far`.
+    fn entered(self, origin: Vec3, inverse: Vec3, far: f32) -> Option<f32> {
         let mut near = 0.0_f32;
         let mut end = far;
         for axis in 0..AXES {
@@ -280,7 +369,7 @@ impl Bounds {
             if i.is_infinite() {
                 // A ray along this axis crosses the box only from between its two sides.
                 if o < low || o > high {
-                    return false;
+                    return None;
                 }
                 continue;
             }
@@ -288,7 +377,7 @@ impl Bounds {
             near = near.max(a.min(b));
             end = end.min(a.max(b));
         }
-        near <= end
+        (near <= end).then_some(near)
     }
 }
 
@@ -299,10 +388,18 @@ enum Node {
     Split { right: usize },
 }
 
-/// The triangles that cast shadow and the tree over them.
-pub(crate) struct Rays {
+/// Triangles and the tree of boxes over them.
+#[derive(Default)]
+struct Tree {
     triangles: Vec<Triangle>,
     nodes: Vec<(Bounds, Node)>,
+}
+
+/// The triangles that cast shadow, in a tree; and those of them that are sky, in another, so
+/// that what a ray toward a sun meets is asked of the sky first.
+pub(crate) struct Rays {
+    tree: Tree,
+    sky: Tree,
     casters: Vec<Caster>,
 }
 
@@ -317,62 +414,70 @@ impl Rays {
     pub(crate) fn new(corners: Vec<Corners>) -> Self {
         let mut casters = Vec::with_capacity(corners.len());
         let mut pending: Vec<(Vec3, Triangle)> = Vec::with_capacity(corners.len());
+        let mut sky: Vec<(Vec3, Triangle)> = Vec::new();
         for (index, corner) in corners.into_iter().enumerate() {
             let [v0, v1, v2] = corner.points;
             let (e1, e2) = (sub(v0, v1), sub(v2, v0));
             let middle = scale(add(add(v0, v1), v2), 1.0 / CORNERS);
-            pending.push((
-                middle,
-                Triangle {
-                    v0,
-                    e1,
-                    e2,
-                    normal: fused_cross(e2, e1),
-                    caster: index,
-                },
-            ));
+            let triangle = || Triangle {
+                v0,
+                e1,
+                e2,
+                normal: fused_cross(e2, e1),
+                caster: index,
+            };
+            if corner.caster.surface == Surface::Sky {
+                sky.push((middle, triangle()));
+            }
+            pending.push((middle, triangle()));
             casters.push(corner.caster);
         }
         let mut rays = Self {
-            triangles: Vec::with_capacity(pending.len()),
-            nodes: Vec::new(),
+            tree: Tree::default(),
+            sky: Tree::default(),
             casters,
         };
-        rays.build(pending);
+        if !pending.is_empty() {
+            rays.tree.build(pending);
+        }
+        if !sky.is_empty() {
+            rays.sky.build(sky);
+        }
         rays
     }
+}
 
+impl Tree {
     /// The node over `pending`, and those under it, after the nodes there are; its triangles
-    /// go after those there are, in the order of the leaves.
+    /// go after those there are, in the order of the leaves. A node is split where the two
+    /// halves' boxes, each weighed by its triangles, have the least surface: a ray meets a
+    /// box about as often as it has surface.
     fn build(&mut self, mut pending: Vec<(Vec3, Triangle)>) {
         let mut bounds = Bounds::EMPTY;
         let mut middles = Bounds::EMPTY;
         for (middle, triangle) in &pending {
-            let v1 = sub(triangle.v0, triangle.e1);
-            let v2 = add(triangle.v0, triangle.e2);
-            bounds = bounds.with(triangle.v0).with(v1).with(v2);
+            bounds = bounds.with_triangle(triangle);
             middles = middles.with(*middle);
         }
-        if pending.len() <= LEAF_TRIANGLES {
+        let split = if pending.len() <= LEAF_TRIANGLES {
+            None
+        } else {
+            middles.best_split(&pending)
+        };
+        let Some((axis, at_coordinate)) = split else {
             let first = self.triangles.len();
             let count = pending.len();
             self.triangles.extend(pending.into_iter().map(|(_, t)| t));
             self.nodes.push((bounds, Node::Leaf { first, count }));
             return;
-        }
-        let axis = middles.longest();
-        let half = pending.len().checked_div(2).unwrap_or(0);
-        pending.select_nth_unstable_by(half, |a, b| {
-            let (x, y) = (
-                a.0.get(axis).copied().unwrap_or_default(),
-                b.0.get(axis).copied().unwrap_or_default(),
-            );
-            x.total_cmp(&y)
-        });
-        let upper = pending.split_off(half);
+        };
+        let coordinate = |middle: &Vec3| middle.get(axis).copied().unwrap_or_default();
+        let (lower, upper): (Vec<_>, Vec<_>) = pending
+            .drain(..)
+            .partition(|(middle, _)| coordinate(middle) < at_coordinate);
         let at = self.nodes.len();
         self.nodes.push((bounds, Node::Split { right: 0 }));
-        self.build(pending);
+        self.build(lower);
         let right = self.nodes.len();
         if let Some((_, Node::Split { right: slot })) = self.nodes.get_mut(at) {
             *slot = right;
@@ -380,6 +485,73 @@ impl Rays {
         self.build(upper);
     }
 
+    /// The triangles the ray from `origin` along `dir` hits before `far`, nearest box first
+    /// where it can tell, each given to `visit` with how far along; `visit` gives the new
+    /// `far`, and stops the walk with none.
+    fn walk(
+        &self,
+        (origin, dir): (Vec3, Vec3),
+        mut far: f32,
+        stack: &mut Vec<usize>,
+        mut visit: impl FnMut(&Triangle, f32) -> Option<f32>,
+    ) {
+        let inverse = dir.map(|c| 1.0 / c);
+        stack.clear();
+        if self
+            .nodes
+            .first()
+            .is_some_and(|(bounds, _)| bounds.entered(origin, inverse, far).is_some())
+        {
+            stack.push(0);
+        }
+        while let Some(at) = stack.pop() {
+            let Some((_, node)) = self.nodes.get(at) else {
+                continue;
+            };
+            match node {
+                Node::Split { right } => {
+                    // The nearer of the two boxes first: what stops the ray is likelier there,
+                    // and a nearer hit lets the farther box be passed over.
+                    let left = at.saturating_add(1);
+                    let entry = |index: usize| {
+                        self.nodes
+                            .get(index)
+                            .and_then(|(bounds, _)| bounds.entered(origin, inverse, far))
+                    };
+                    match (entry(left), entry(*right)) {
+                        (Some(a), Some(b)) if a <= b => {
+                            stack.push(*right);
+                            stack.push(left);
+                        }
+                        (Some(_), Some(_)) => {
+                            stack.push(left);
+                            stack.push(*right);
+                        }
+                        (Some(_), None) => stack.push(left),
+                        (None, Some(_)) => stack.push(*right),
+                        (None, None) => {}
+                    }
+                }
+                Node::Leaf { first, count } => {
+                    let triangles = self
+                        .triangles
+                        .get(*first..first.saturating_add(*count))
+                        .unwrap_or_default();
+                    for triangle in triangles {
+                        if let Some(t) = triangle.hit(origin, dir, far) {
+                            match visit(triangle, t) {
+                                Some(nearer) => far = nearer,
+                                None => return,
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl Rays {
     /// Whether `caster` stops the ray `asker` sent, hit at `point`; what the ray passes
     /// through instead is added to `passed` (`Embree_FilterFuncN`, LIGHT-11.4 to LIGHT-11.7).
     fn stops(
@@ -434,49 +606,6 @@ impl Rays {
         true
     }
 
-    /// The triangles the ray from `origin` along `dir` hits before `far`, nearest box first
-    /// where it can tell, each given to `visit` with how far along; `visit` gives the new
-    /// `far`, and stops the walk with none.
-    fn walk(
-        &self,
-        (origin, dir): (Vec3, Vec3),
-        mut far: f32,
-        stack: &mut Vec<usize>,
-        mut visit: impl FnMut(&Triangle, f32) -> Option<f32>,
-    ) {
-        let inverse = dir.map(|c| 1.0 / c);
-        stack.clear();
-        stack.push(0);
-        while let Some(at) = stack.pop() {
-            let Some((bounds, node)) = self.nodes.get(at) else {
-                continue;
-            };
-            if !bounds.crossed(origin, inverse, far) {
-                continue;
-            }
-            match node {
-                Node::Split { right } => {
-                    stack.push(*right);
-                    stack.push(at.saturating_add(1));
-                }
-                Node::Leaf { first, count } => {
-                    let triangles = self
-                        .triangles
-                        .get(*first..first.saturating_add(*count))
-                        .unwrap_or_default();
-                    for triangle in triangles {
-                        if let Some(t) = triangle.hit(origin, dir, far) {
-                            match visit(triangle, t) {
-                                Some(nearer) => far = nearer,
-                                None => return,
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     /// Whether anything stops the ray from `origin` along the unit `dir` within `far`; when
     /// nothing does, what it passed through (`rtcOccluded1`, LIGHT-11.3).
     pub(crate) fn occluded(
@@ -492,7 +621,7 @@ impl Rays {
         }
         let mut passed = Passed::default();
         let mut blocked = false;
-        self.walk((origin, dir), far, stack, |triangle, t| {
+        self.tree.walk((origin, dir), far, stack, |triangle, t| {
             let Some(caster) = self.casters.get(triangle.caster) else {
                 return Some(far);
             };
@@ -529,7 +658,7 @@ impl Rays {
         // What each triangle that did not stop the ray would add, with how far along it is:
         // only those before the hit count.
         let mut through: Vec<(f32, Passed)> = Vec::new();
-        self.walk((origin, dir), far, stack, |triangle, t| {
+        self.tree.walk((origin, dir), far, stack, |triangle, t| {
             let nearest = hit.map_or(far, |(_, at)| at);
             let Some(caster) = self.casters.get(triangle.caster) else {
                 return Some(nearest);
@@ -556,6 +685,56 @@ impl Rays {
         }
     }
 
+    /// Whether the ray from `origin` along the unit `dir` reaches sky before anything else
+    /// stops it, within `far`, and what it passed through on the way (LIGHT-11.3). The sky
+    /// is asked first, since most rays reach none: only one that does is asked of the rest.
+    pub(crate) fn sees_sky(
+        &self,
+        (origin, dir, far): (Vec3, Vec3, f32),
+        asker: &Asker,
+        texels: &dyn Texels,
+        stack: &mut Vec<usize>,
+    ) -> Option<Passed> {
+        if self.sky.nodes.is_empty() {
+            return None;
+        }
+        // A ray along a plane of the grid, or one that sky may not stop, is asked whole.
+        if asker.shadow_mask != CHANNEL_DEFAULT || dir.iter().any(|c| c.abs() < NEARLY_IN_PLANE) {
+            let struck = self.struck((origin, dir, far), asker, texels, stack);
+            return matches!(struck.hit, Some((Surface::Sky, _))).then_some(struck.passed);
+        }
+        let mut nearest: Option<f32> = None;
+        self.sky.walk((origin, dir), far, stack, |_, t| {
+            nearest = Some(t);
+            Some(t)
+        });
+        let to_sky = nearest?;
+        let mut passed = Passed::default();
+        let mut blocked = false;
+        self.tree.walk((origin, dir), to_sky, stack, |triangle, t| {
+            let Some(caster) = self.casters.get(triangle.caster) else {
+                return Some(to_sky);
+            };
+            if caster.surface == Surface::Sky {
+                return Some(to_sky);
+            }
+            let point = add(origin, scale(dir, t));
+            if Self::stops(
+                caster,
+                asker,
+                texels,
+                (point, dir, triangle.normal),
+                &mut passed,
+            ) {
+                blocked = true;
+                None
+            } else {
+                Some(to_sky)
+            }
+        });
+        (!blocked).then_some(passed)
+    }
+
     /// What a ray with no movement along one axis or two reaches first (LIGHT-11.9). Such a
     /// ray lies in a plane of the grid maps are built on, and so runs along the edges of
     /// triangles that end on that plane. Embree's boxes lose it where the box of a leaf
@@ -579,7 +758,7 @@ impl Rays {
         }
         let mut stopping: Vec<Met> = Vec::new();
         let mut through: Vec<(f32, Passed)> = Vec::new();
-        self.walk((origin, dir), far, stack, |triangle, t| {
+        self.tree.walk((origin, dir), far, stack, |triangle, t| {
             let Some(caster) = self.casters.get(triangle.caster) else {
                 return Some(far);
             };

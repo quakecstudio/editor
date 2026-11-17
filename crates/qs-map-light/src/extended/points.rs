@@ -15,6 +15,7 @@ use crate::extended::math::{
 };
 use crate::extended::phong::Smoothing;
 use crate::extended::scene::{LUXEL, Map, Skin};
+use crate::extended::vis::leaf_at;
 use crate::face::FaceId;
 use crate::{AXES, Sampling, Vec3, to_f32};
 
@@ -231,6 +232,10 @@ pub(crate) struct Patch {
     /// Whether it is lit from both sides.
     pub(crate) twosided: bool,
     pub(crate) channels: i32,
+    /// The leaves the face is in and what they see between them, when the BSP has
+    /// visibility (LIGHT-10.10).
+    pub(crate) leaves: Vec<usize>,
+    pub(crate) seen: Vec<u8>,
 }
 
 impl Sampling {
@@ -319,6 +324,23 @@ impl Patch {
                 });
             }
         }
+        // `CalcPvs`: a face of the world is in the leaves that list it, a brush model's in
+        // the leaves its samples are in.
+        let (mut leaves, mut seen) = (Vec::new(), Vec::new());
+        if let Some(visibility) = &map.visibility {
+            if model_index == 0 {
+                leaves = visibility.leaves_of(face_index).to_vec();
+            } else {
+                for sample in &samples {
+                    if let Some(leaf) = leaf_at(map.bsp, sample.point)
+                        && !leaves.contains(&leaf)
+                    {
+                        leaves.push(leaf);
+                    }
+                }
+            }
+            seen = visibility.seen_from(map.bsp, &leaves);
+        }
         // The plane and the sphere follow the model only now: the points were found without.
         let moved = add(scale(plane.normal, plane.dist), model.offset);
         extents.origin = add(extents.origin, model.offset);
@@ -359,6 +381,8 @@ impl Patch {
             channels: flags
                 .object_channel_mask
                 .unwrap_or_else(|| keys.object_channel_mask.get()),
+            leaves,
+            seen,
         })
     }
 

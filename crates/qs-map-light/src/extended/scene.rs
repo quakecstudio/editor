@@ -20,6 +20,7 @@ use crate::extended::keys::CHANNEL_DEFAULT;
 use crate::extended::keys::{Dict, ModelKeys, Source, World};
 use crate::extended::math::{Plane, add, sub};
 use crate::extended::rays::{Caster, Corners, ModelId, Surface, Texel, Texels};
+use crate::extended::vis::Visibility;
 use crate::face::FaceId;
 use crate::{AXES, Rgb, Vec3};
 
@@ -153,6 +154,8 @@ pub(crate) struct Map<'a> {
     leaves: &'a [LeafKind],
     /// The game's palette, for the colour of glass (LIGHT-11.6).
     palette: Option<&'a [u8]>,
+    /// The BSP's visibility, when it has been through vis (LIGHT-10.10).
+    pub(crate) visibility: Option<Visibility>,
 }
 
 /// What a map is given besides its BSP, entities and flags.
@@ -274,6 +277,7 @@ impl<'a> Map<'a> {
             face_model,
             leaves: given.leaves,
             palette: given.palette,
+            visibility: Visibility::new(bsp),
         })
     }
 
