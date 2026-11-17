@@ -187,7 +187,9 @@ semantics require exact IEEE comparison. There the lint is expected per site wit
 
 `.cargo/config.toml` sets `registry.global-min-publish-age = "7 days"` (Cargo 1.100): a version
 of a registry package is resolved only once it has been published for a week, beside
-`deny.toml`'s checks of what is resolved.
+`deny.toml`'s checks of what is resolved. Versions already in `Cargo.lock` are not affected. A
+security fix published within the week is taken by setting the age to nothing for that one
+update: `cargo update -p <crate> --config 'registry.global-min-publish-age="0 days"'`.
 
 ## cargo-deny (CONV-5)
 
