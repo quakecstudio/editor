@@ -51,7 +51,7 @@ impl args::Args {
             let line = loaded.timerefresh(start.elapsed(), eye)?;
             let mut out = std::io::stdout().lock();
             std::io::Write::write_all(&mut out, format!("{line}\n").as_bytes())
-                .map_err(|e| Error::Load(e.to_string()))?;
+                .map_err(|e| Error::Script(e.to_string()))?;
             return Ok(());
         }
         if let Some([script, audio]) = args
@@ -81,8 +81,7 @@ impl args::Args {
             let path = args
                 .bridge
                 .as_deref()
-                .ok_or("--headless needs -bridge")
-                .map_err(|reason| Error::Load(reason.to_owned()))?;
+                .ok_or_else(|| Error::Usage("--headless needs -bridge".to_owned()))?;
             return args.run_headless(loaded, listen(path)?);
         }
         let loaded = args.load_map(&args.map, None, None, None, None)?;

@@ -3701,7 +3701,6 @@ dependencies = [
  "qs-bridge",
  "qs-bsp",
  "qs-client",
- "qs-log",
  "qs-mdl",
  "qs-paths",
  "qs-render",

@@ -28,7 +28,6 @@ qc-vm = { workspace = true }
 qs-bridge = { workspace = true }
 qs-bsp = { workspace = true }
 qs-client = { workspace = true }
-qs-log = { workspace = true }
 qs-paths = { workspace = true }
 qs-mdl = { workspace = true }
 qs-render = { workspace = true }

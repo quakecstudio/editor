@@ -856,6 +856,12 @@ impl Preview {
                 }
             }
             Err(_) => {
+                // A game in the app's own window is the embedded host's to end.
+                if self.is_embedded()
+                    && let Some(embedded) = &mut self.embedded
+                {
+                    embedded.stop();
+                }
                 self.live = None;
                 self.full_build = None;
                 self.queued = None;

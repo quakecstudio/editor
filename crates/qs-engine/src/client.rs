@@ -132,6 +132,9 @@ pub enum InspectWhat {
     Entities,
 }
 
+/// How long a pumped client waits for a message after each pump of its host (ADR-0028).
+const PUMP_WAIT: Duration = Duration::from_millis(1);
+
 /// How long [`Client::request`] waits for its response.
 const ANSWER_WITHIN: Duration = Duration::from_secs(30);
 
@@ -295,18 +298,20 @@ impl Client {
     /// keeps sending other messages does not stretch it.
     fn next_message(&mut self, deadline: Instant) -> Result<Message, ClientError> {
         if let Some(pump) = &mut self.pump {
-            // The host answers only when pumped, and its answer crosses two reader threads.
+            // The host answers only when pumped, and its answer crosses two reader threads, so
+            // each pump is followed by a short wait for it rather than a spin.
             loop {
                 pump();
-                match self.incoming.try_recv() {
+                match self.incoming.recv_timeout(PUMP_WAIT) {
                     Ok(Some(message)) => return Ok(message),
-                    Ok(None) | Err(TryRecvError::Disconnected) => return Err(ClientError::Closed),
-                    Err(TryRecvError::Empty) => {}
+                    Ok(None) | Err(RecvTimeoutError::Disconnected) => {
+                        return Err(ClientError::Closed);
+                    }
+                    Err(RecvTimeoutError::Timeout) => {}
                 }
                 if Instant::now() >= deadline {
                     return Err(ClientError::Timeout);
                 }
-                std::thread::yield_now();
             }
         }
         let left = deadline.saturating_duration_since(Instant::now());

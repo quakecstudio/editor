@@ -256,8 +256,7 @@ impl Loaded {
                     let callback = world.view_callback(aspect, hud);
                     let frame = drawer.draw(callback, size)?;
                     std::fs::write(path, frame.ppm())
-                        .map_err(|error| format!("{}: {error}", path.display()))
-                        .map_err(Error::Draw)?;
+                        .map_err(|error| Error::Script(format!("{}: {error}", path.display())))?;
                 }
             }
             sound.extend(world.audio.take_captured());

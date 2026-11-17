@@ -402,13 +402,35 @@ impl Viewer {
         self.last = now;
         let rect = ui.max_rect();
         let response = ui.allocate_rect(rect, egui::Sense::click());
+        if self.shell == Shell::Panel {
+            // The game's keys are its own while it has the keyboard, the arrows, Tab and Escape
+            // among them, which egui would otherwise move its focus with.
+            ui.memory_mut(|memory| {
+                memory.set_focus_lock_filter(
+                    response.id,
+                    egui::EventFilter {
+                        tab: true,
+                        horizontal_arrows: true,
+                        vertical_arrows: true,
+                        escape: true,
+                    },
+                );
+            });
+        }
         // INPUT-3.3: `Host_Init`'s "`Cbuf_InsertText ("exec quake.rc\n");`", once.
         if !self.configured {
             self.configured = true;
             self.run_line(STARTUP);
         }
-        self.type_keys(ui);
-        self.bind_keys(ui);
+        // In a panel the window's keys are the game's only while the panel has the keyboard: a
+        // click in it takes it, and a click elsewhere, or another widget's focus, gives it up.
+        if self.shell == Shell::Panel && response.clicked() {
+            response.request_focus();
+        }
+        if self.shell == Shell::Window || response.has_focus() {
+            self.type_keys(ui);
+            self.bind_keys(ui);
+        }
         let clicked = response.clicked() && self.dest == KeyDest::Game;
         // BRIDGE-3.5: a click in the paused game picks the edict under it for the IDE.
         let picked = clicked && self.game.paused();
@@ -1315,6 +1337,9 @@ pub(crate) fn frametime_f32(frametime: f64) -> f32 {
     frametime as f32
 }
 
+/// What `-bridge` names for a game whose bridge is two pipes inside one process.
+const PIPES: &str = "pipes";
+
 /// Whether a game goes on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Running {
@@ -1347,10 +1372,16 @@ impl GameView {
             Box<dyn std::io::Write + Send>,
         )>,
     ) -> Result<Self, Error> {
+        let mut args = args.clone();
+        if link.is_some() {
+            // A bridge is attached, over pipes: the game reports its edicts' changes as one
+            // started with `-bridge` does (BRIDGE-3.1), on this level and each later one.
+            args.bridge = Some(std::path::PathBuf::from(PIPES));
+        }
         let loaded = args.load_map(&args.map, None, None, None, None)?;
         let bridge = link.map(|(read, write)| Bridge::over(read, write));
         Ok(Self {
-            viewer: Viewer::new(args.clone(), loaded, bridge, state, Shell::Panel),
+            viewer: Viewer::new(args, loaded, bridge, state, Shell::Panel),
         })
     }
 
@@ -1382,6 +1413,15 @@ impl GameView {
     pub fn close(&mut self, ctx: &egui::Context) {
         self.release_pointer(ctx);
         self.viewer.write_configuration();
+        // The level's buffers and textures on the app's device go with the game.
+        drop(
+            self.viewer
+                .state
+                .renderer
+                .write()
+                .callback_resources
+                .remove::<GameRenderer>(),
+        );
     }
 
     fn running(&self) -> Running {

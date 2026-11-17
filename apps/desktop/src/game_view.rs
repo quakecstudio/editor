@@ -83,6 +83,25 @@ impl GameSlot {
         }
     }
 
+    /// Whether the window shows the game now: the layout puts it in the Game tab, and the
+    /// window has a device to draw it on.
+    pub(crate) fn shows(&self) -> bool {
+        self.place.get() == GamePlace::Tab && self.state.borrow().is_some()
+    }
+
+    /// Runs a frame of the game while its tab is not the one shown, drawn nowhere and given no
+    /// keys or clicks, over the centre's area so a `screenshot` is the size it is seen at: the
+    /// game goes on as it does in the preview host's window when that is covered.
+    pub(crate) fn run_hidden(&self, ui: &mut Ui) {
+        let mut hidden = ui.new_child(
+            eframe::egui::UiBuilder::new()
+                .max_rect(ui.max_rect())
+                .invisible()
+                .disabled(),
+        );
+        self.ui(&mut hidden);
+    }
+
     /// Lets the game answer its bridge between two frames.
     fn serve(&self) {
         if let Ok(mut slot) = self.game.try_borrow_mut()
@@ -111,7 +130,7 @@ struct Embedded(GameSlot);
 
 impl EmbeddedHost for Embedded {
     fn shows(&self) -> bool {
-        self.0.place.get() == GamePlace::Tab && self.0.state.borrow().is_some()
+        self.0.shows()
     }
 
     fn start(&mut self, spec: &LaunchSpec, client_name: &str) -> Result<Client, LaunchError> {

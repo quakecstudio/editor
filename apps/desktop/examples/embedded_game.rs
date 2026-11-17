@@ -177,6 +177,9 @@ fn run(args: &Args) -> Result<String, String> {
         if shell.centre_tab() != CentreTab::Game {
             return Err("the Game tab is not shown".to_owned());
         }
+        if preview.entities().is_empty() {
+            return Err("the game's entities did not reach the window".to_owned());
+        }
     }
     // Each frame is the whole window's: the app's interface, a frame of the game, and the
     // picture drawn on the device and read back, which a window on a display does not pay for.

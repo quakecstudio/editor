@@ -24,7 +24,6 @@ use qs_commands::{CommandError, RegisterError, Registry, Session};
 use qs_editor_view::{
     Fixable, KeyMode, LineNote, NoteSeverity, Position, Selection, ViewStyle, Wrap,
 };
-use qs_layout::GamePlace;
 use qs_layout::{
     DockPanel, Docks, EditorRequest, Focus, GO_TO_LINE, HasLayout, Layout, MovePanelParams,
     Outline, Panel, RESIZE_PANEL, ResizePanelParams, ShowPanelParams, SoftWrap, Split,
@@ -724,8 +723,7 @@ impl Shell {
     /// game that runs in the other place is stopped, and a game started in the Game tab is
     /// shown.
     fn follow_game_place(&mut self, ctx: &egui::Context) {
-        let place = self.layout().game_place;
-        self.game.set_place(place);
+        self.game.set_place(self.layout().game_place);
         self.game.follow(ctx, self.centre_tab);
         let preview = &self.session.context().preview;
         if preview.state() == PlayState::Stopped {
@@ -733,7 +731,8 @@ impl Shell {
             return;
         }
         let embedded = preview.is_embedded();
-        if embedded != (place == GamePlace::Tab) {
+        // The place a Play would start it in now: the tab only with a device to draw on.
+        if embedded != self.game.shows() {
             let _stopped: Option<serde_json::Value> = self.run(STOP, &serde_json::json!({}));
             return;
         }
@@ -2381,6 +2380,10 @@ impl Shell {
     )]
     fn centre(&mut self, ui: &mut Ui, focus: FocusNow) {
         self.sync_editor();
+        if self.centre_tab != CentreTab::Game {
+            // ADR-0028: the game goes on while another tab is shown.
+            self.game.run_hidden(ui);
+        }
         self.with_map(MapFeature::sync_map);
         let ctx = ui.ctx().clone();
         self.with_map(|map, commands| map.back_up_map(commands, &ctx));
