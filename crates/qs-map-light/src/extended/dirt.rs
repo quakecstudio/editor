@@ -64,14 +64,16 @@ fn frame(normal: Vec3) -> (Vec3, Vec3) {
     }
 }
 
-/// `GetDirtVector` with `_dirtmode` 1: a direction drawn at random within `angle` degrees of
-/// the normal, the turn about it drawn first and then the tilt from it.
-fn drawn(random: &mut Random, angle: f32) -> Vec3 {
-    // `Random() * DEG2RAD(...)`: worked in `double` and kept as a float.
-    let radians = |degrees: f32| f64::from(degrees) * core::f64::consts::PI / HALF_TURN;
-    let turn = to_f32(random.unit() * radians(WHOLE_TURN));
-    let tilt = to_f32(random.unit() * radians(angle));
-    [turn.cos() * tilt.sin(), turn.sin() * tilt.sin(), tilt.cos()]
+impl Random {
+    /// `GetDirtVector` with `_dirtmode` 1: a direction drawn at random within `angle` degrees
+    /// of the normal, the turn about it drawn first and then the tilt from it.
+    fn direction_within(&mut self, angle: f32) -> Vec3 {
+        // `Random() * DEG2RAD(...)`: worked in `double` and kept as a float.
+        let radians = |degrees: f32| f64::from(degrees) * core::f64::consts::PI / HALF_TURN;
+        let turn = to_f32(self.unit() * radians(WHOLE_TURN));
+        let tilt = to_f32(self.unit() * radians(angle));
+        [turn.cos() * tilt.sin(), turn.sin() * tilt.sin(), tilt.cos()]
+    }
 }
 
 impl Dirt {
@@ -146,7 +148,7 @@ impl Dirt {
                     continue;
                 }
                 let vector = match &mut random {
-                    Some((random, angle)) => drawn(random, *angle),
+                    Some((random, angle)) => random.direction_within(*angle),
                     None => *vector,
                 };
                 let dir = add(
@@ -210,7 +212,7 @@ mod tests {
         let mut random = Random::new(Jitter::Bsd);
         let mut same = Random::new(Jitter::Bsd);
         let (turn, tilt) = (same.unit(), same.unit());
-        let direction = drawn(&mut random, 60.0);
+        let direction = random.direction_within(60.0);
         let turn = to_f32(turn * core::f64::consts::TAU);
         let tilt = to_f32(tilt * 60.0_f64.to_radians());
         assert_eq!(
@@ -218,7 +220,7 @@ mod tests {
             [turn.cos() * tilt.sin(), turn.sin() * tilt.sin(), tilt.cos()]
         );
         for _ in 0..200 {
-            let [x, y, z] = drawn(&mut random, 60.0);
+            let [x, y, z] = random.direction_within(60.0);
             assert!(z >= 0.5 - 1e-6, "{z}");
             assert!(((x * x + y * y + z * z) - 1.0).abs() < 1e-5);
         }
