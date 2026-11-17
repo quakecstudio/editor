@@ -374,6 +374,7 @@ fn full_compile_e1m1(group: &mut BenchmarkGroup<'_, WallTime>) {
                 .expect("lq-e1m1 compiles");
             let portals = compiled.portal_file.expect("lq-e1m1 is sealed");
             let seen = qs_map_vis::Vis::new(qs_map_vis::Mode::default())
+                .flowing_as(qs_map_vis::Tool::EricwTools)
                 .run(&compiled.bsp, &String::from_utf8_lossy(&portals))
                 .expect("lq-e1m1 vises");
             black_box(

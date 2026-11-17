@@ -16,7 +16,7 @@ use std::sync::mpsc::{self, Receiver, TryRecvError};
 use qs_bsp::{Bsp, BspError, BspLoader, Submodel};
 use qs_map::{MapError, MapFile};
 use qs_map_light::{Extras, Light, LightError, Sampling, Sidecars};
-use qs_map_vis::{Mode, Vis, VisError};
+use qs_map_vis::{Mode, Tool, Vis, VisError};
 
 /// Why a full compile did not reach the game.
 #[derive(Debug)]
@@ -182,6 +182,7 @@ fn contents(path: &Path) -> Option<u64> {
 fn full(bsp: &[u8], portals: &[u8], extras: Extras<'_>, side: &Path) -> Built {
     let portals = String::from_utf8_lossy(portals);
     let seen = Vis::new(Mode::default())
+        .flowing_as(Tool::EricwTools)
         .run(bsp, &portals)
         .map_err(FullBuildError::Vis)?;
     let lit = Light::new(Sampling::Extra)

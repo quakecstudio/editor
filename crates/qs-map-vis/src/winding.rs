@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 1996-1997  Id Software, Inc.
+// Copyright (C) 2026 QuakeC Studio contributors
+//
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: vis/flow.cc, ClipToSeparators
 
 //! Windings and planes in single precision, as vis keeps them (`vec_t` is `float`): a portal's
 //! plane from its points (VIS-2.3), a winding clipped to a plane's front, and the separating
@@ -276,6 +280,104 @@ impl Winding {
                 if !visit(plane) {
                     return;
                 }
+            }
+        }
+    }
+}
+
+impl Winding {
+    /// Whether the winding's points go round `plane`'s normal the other way from the way a
+    /// plane through an edge and a point in front of `plane` has the winding behind it: the
+    /// sum of the crosses of its edges from its first point lies against the normal.
+    fn turns_against(&self, plane: Plane) -> bool {
+        let Some((&first, rest)) = self.0.split_first() else {
+            return false;
+        };
+        let round = rest
+            .windows(2)
+            .filter_map(|pair| match pair {
+                [a, b] => Some(cross(sub(*a, first), sub(*b, first))),
+                _ => None,
+            })
+            .fold(ORIGIN, |sum, c| {
+                [sum[0] + c[0], sum[1] + c[1], sum[2] + c[2]]
+            });
+        dot(round, plane.normal) < 0.0
+    }
+
+    /// ericw-tools' `ClipToSeparators`, which a `PRT2` flow clips by (VIS-7.6): for each edge
+    /// of `self`, the source, which lies in `plane`, the first point of `pass` off that plane
+    /// whose plane through the edge has the rest of the pass in front of it, the back kept
+    /// when `flip`; each passed to `visit` until it returns false.
+    pub(crate) fn separators_from(
+        &self,
+        plane: Plane,
+        pass: &Self,
+        flip: Flip,
+        mut visit: impl FnMut(Plane) -> bool,
+    ) {
+        let source = &self.0;
+        let count = source.len();
+        // ericw-tools turns a portal's winding with its plane, so the plane faces the way the
+        // points go round; here a portal and the one looking back through it share their
+        // points (VIS-2.2), so which way they go round the plane is found.
+        let turned = self.turns_against(plane);
+        for (i, &si) in source.iter().enumerate() {
+            let l = i.saturating_add(1).checked_rem(count).unwrap_or_default();
+            let Some(&sl) = source.get(l) else {
+                continue;
+            };
+            let v1 = sub(sl, si);
+            for (j, &pj) in pass.0.iter().enumerate() {
+                // Which side of the source's plane the point is on is the side of the
+                // separating plane the source is on.
+                let d = if turned {
+                    -plane.side(pj)
+                } else {
+                    plane.side(pj)
+                };
+                if d.abs() <= VIS_ON_EPSILON {
+                    continue;
+                }
+                let normal = cross(v1, sub(pj, si));
+                let length = dot(normal, normal);
+                if f64::from(length) < VIS_ON_EPSILON {
+                    continue;
+                }
+                let scale = crate::to_f32(1.0 / f64::from(length).sqrt());
+                let normal = normal.map(|c| c * scale);
+                let mut separator = Plane {
+                    normal,
+                    dist: dot(pj, normal),
+                };
+                if d < -VIS_ON_EPSILON {
+                    separator = separator.flipped();
+                }
+                let mut ahead = 0_usize;
+                let mut behind = false;
+                for (k, &p) in pass.0.iter().enumerate() {
+                    if k == j {
+                        continue;
+                    }
+                    let d = separator.side(p);
+                    if d < -VIS_ON_EPSILON {
+                        behind = true;
+                        break;
+                    }
+                    if d > VIS_ON_EPSILON {
+                        ahead = ahead.saturating_add(1);
+                    }
+                }
+                if behind || ahead == 0 {
+                    continue;
+                }
+                if flip == Flip::Back {
+                    separator = separator.flipped();
+                }
+                if !visit(separator) {
+                    return;
+                }
+                break;
             }
         }
     }

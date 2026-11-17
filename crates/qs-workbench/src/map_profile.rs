@@ -17,7 +17,7 @@ use qs_map_edit::textures::light_palette;
 use qs_map_light::{
     CONTENT_EXTENSION, Extras, Finish, Light, LightError, Sampling, Sidecars, TEXINFO_EXTENSION,
 };
-use qs_map_vis::{Mode, Vis, VisError};
+use qs_map_vis::{Mode, Tool, Vis, VisError};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -677,6 +677,7 @@ fn run_task<C: HasPreview>(
                 VisSpeed::Fast => Mode::Fast,
             };
             let seen = Vis::new(mode)
+                .flowing_as(Tool::EricwTools)
                 .run(&read(&bsp)?, &prt)
                 .map_err(TaskError::Vis)?;
             write(&bsp, &seen)?;

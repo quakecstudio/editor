@@ -217,7 +217,9 @@ lava sounds.
 ## VIS-7 Clusters of leaves
 
 **Source:** ericw-tools `common/prtfile.cc`, `LoadPrtFile`; `vis/vis.cc`, `LoadPortals`,
-`ClusterFlow`, `CalcVis`.
+`ClusterFlow`, `CalcVis`, `GetNextPortal`, `PortalCompleted`, `UpdateMightsee`; `vis/flow.cc`,
+`RecursiveLeafFlow`, `VisTests`, `TargetChecks`, `IterativeTargetChecks`, `ClipToSeparators`;
+`include/vis/vis.hh`, `targetratio`.
 
 A map with detail has its leaves grouped into clusters: the leaves below a detail separator are
 one cluster, and each other leaf is one of its own (QBSP-15.52). Vis flows the clusters, which
@@ -239,11 +241,62 @@ are far fewer, and each leaf sees what its cluster sees.
   only warned of (`Leaf portals saw into cluster`). A vis leaf sees each vis leaf whose cluster
   its cluster's row holds; the leaves of a cluster share the cluster's compressed row and its
   `visofs`, and each leaf's ambient levels (VIS-6) are found from that row.
-- **VIS-7.4** A `PRT2` file is flowed in VIS-4.7's batches, but each flow of a batch that did not
-  fail is kept: no portal is flowed again with the exact set of a portal before it in its batch,
-  and one that failed is flowed again alone, as VIS-4.7 flows it. The result is the
-  same on any number of threads; it is not always a single thread's. ericw-tools' vis gives its
-  threads the next portal as each comes free (`GetNextPortal`), so its own result depends on
-  their timing, and there is no single-thread result to match; flowing again made the flow of
-  LibreQuake's `lq-e1m1` mostly serial (15.1 s against 5.3 s on ten threads, the same average
-  of visible leaves).
+- **VIS-7.4** **Withdrawn** 2026-11-17: a `PRT2` file is no longer flowed in batches; replaced
+  by VIS-7.7.
+- **VIS-7.5** A `PRT2` file's flow makes ericw-tools' target checks (`vis/flow.cc`,
+  `RecursiveLeafFlow`, `IterativeTargetChecks`, `TargetChecks`), which `-targetchecks` sets and
+  which are on unless it is 0: `setting_scalar targetratio{this, "targetchecks", 0.5, 0.0,
+  9999.0, ...}`. Each step of a flow's path but the base portal's is expected to take as many
+  target checks as the leaves its might-see set holds, added to those the step before it
+  expects. On walking into a leaf, when the step expects any and the portals the flow has
+  checked so far (`c_portalcheck`) are at least twice the target checks made so far and those
+  the step expects, the checks are made for each step of the path that has not had them, the
+  base portal's first. A step's checks go over every portal of the file: one that looks into a
+  leaf the step might see, that the step checked before it in this pass could see (every
+  portal, when none was), and
+  whose plane is not the reverse of the step's, is clipped as a flow through it would clip it
+  (VIS-4.3, VIS-7.6); a portal that is not clipped away is one the step can see, with each
+  later portal into the same leaf that the step before could see, and its leaf stays in the
+  step's might-see set, which loses every other leaf. The base portal's step has no pass and
+  keeps its set. Each step's set then narrows the next step's, and the step expects no more.
+- **VIS-7.6** A `PRT2` file's flow finds its separating planes as ericw-tools' `ClipToSeparators`
+  does (`vis/flow.cc`), not as VIS-4.4: for each edge of the source, the first point of the
+  pass more than `ON_EPSILON` off the source's plane whose plane through the edge has no point
+  of the pass behind it and one in front; the side of the source's plane the point is on says
+  which side of the separating plane the source is on. For the first two tests the planes are
+  those of the step's source before this portal cuts it (`/* Using prevstack source for
+  separator cache correctness */`), found once for all the portals of a leaf. ericw-tools
+  reverses the winding of a portal looking back, so a winding goes round its plane one way;
+  ours share their points (VIS-2.2), and which way a winding goes round its plane is found
+  from the points.
+- **VIS-7.7** ericw-tools' vis gives its threads the next portal as each comes free
+  (`GetNextPortal`) and a flow sees whatever has finished, so its result depends on their
+  timing: two runs on LibreQuake's `lq-e1m1` wrote 132321 and 132325 bytes of visibility. Ours
+  is the same on any number of threads. Each thread takes the next portal in VIS-4.1's order as
+  it comes free; its flow sees as flowed the portals 64 places and more before it in the order,
+  and waits for them. A flow that walks into 8192 leaves is a long one: the flows after it do
+  not wait for it, and see it as flowed only from 1024 places after it. A flow that fails is
+  made again once every portal before it is flowed, seeing them all.
+- **VIS-7.8** When a portal's flow ends, ericw-tools narrows the might-see sets of portals
+  not yet flowed (`vis/vis.cc`, `PortalCompleted`, `UpdateMightsee`): for the leaf the portal
+  looks into, each leaf that a flowed portal of it might have seen and did not, and that no
+  other portal of it sees, or might see when not flowed, cannot see that leaf either
+  (`Visibility is symetrical, so the reverse must also be true`), so that leaf is taken out of
+  the might-see set of each portal leaving it that has not started. Ours notes the same
+  leaves at the end of each `PRT2` flow, a portal counting as flowed as that flow saw it and
+  a might-see set being VIS-3's, and a flow takes them out of its own portal's might-see set
+  when it sees the flow that noted them as flowed (VIS-7.7), so the result does not depend on
+  timing. The might-see set a flow reads of a portal not yet flowed is VIS-3's.
+- **VIS-7.9** ericw-tools' vis flows a `PRT1` file as it flows a `PRT2` one. `qs-map-vis` flows
+  a `PRT1` file as id's vis does (VIS-4), with no target check, unless it is asked for
+  ericw-tools' flow, as the extended dialect's compile asks; VIS-7.5 to VIS-7.8 then hold for
+  it too. A `PRT2` file's flow is always ericw-tools'.
+
+### Constants
+
+| Constant | Value | Source |
+| --- | --- | --- |
+| `VIS_STEPS_PER_TARGET_CHECK` | 2 | `vis/vis.hh`, `targetratio`, 0.5 target checks to a regular check |
+| `VIS_FLOW_WINDOW` | 64 | ours (VIS-7.7) |
+| `VIS_LONG_FLOW_CHAINS` | 8192 | ours (VIS-7.7) |
+| `VIS_LONG_FLOW_WINDOW` | 1024 | ours (VIS-7.7) |

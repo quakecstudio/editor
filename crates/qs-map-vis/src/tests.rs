@@ -18,8 +18,8 @@ use sha2::{Digest, Sha256};
 use crate::flow::{Flow, Leaves};
 use crate::lump::{compress, written};
 use crate::portals::PortalFile;
-use crate::winding::{Plane, Winding};
-use crate::{Level, Mode, VIS_MAX_MAP_VISIBILITY, Vis, VisError, portal_windings};
+use crate::winding::{Flip, Plane, Winding};
+use crate::{Level, Mode, Tool, VIS_MAX_MAP_VISIBILITY, Vis, VisError, portal_windings};
 
 /// The side of one cell of the snake, in map units.
 const CELL: i32 = 128;
@@ -914,10 +914,10 @@ fn clusters_vis_as_ericw_tools_does() {
     }
 }
 
-// spec VIS-7.4: for PRT2 each flow of a batch is kept, none flowed again, so the counts are not
-// a single thread's; the result is still the same on any number of threads
+// spec VIS-7.7: a PRT2 file's flows are not flowed again in a single thread's order, so their
+// counts are not a single thread's; the result is still the same on any number of threads
 #[test]
-fn a_prt2_batch_keeps_its_flows() {
+fn a_prt2_flow_is_the_same_on_any_number_of_threads() {
     const CELLS: usize = 40;
     let leaves = tube(CELLS);
     let each: Vec<usize> = (0..CELLS).collect();
@@ -933,7 +933,151 @@ fn a_prt2_batch_keeps_its_flows() {
     let many = Flow::new(&by_cluster, Level::Two).full(8).unwrap();
     assert_eq!(one, many);
     assert_eq!(one.0, single.0, "a tube is seen end to end either way");
-    // The tube's flows read their batch-mates' might-see sets, so a single thread's would be
-    // flowed again; equal counts would mean PRT2 flowed them again too.
-    assert_ne!(one.1, single.1, "flows read later portals' might-see sets");
+    assert_ne!(
+        one.1, single.1,
+        "the flows saw later portals' might-see sets"
+    );
+}
+
+/// A hall of `side` by `side` open cells, each a leaf joined to its neighbours along x and y,
+/// as a `PRT1` file.
+fn hall(side: usize) -> String {
+    let at = |i: usize| 64.0 * i as f32;
+    let mut squares: Vec<(Vec<[f32; 3]>, usize, usize)> = Vec::new();
+    for j in 0..side {
+        for i in 0..side {
+            let leaf = j * side + i;
+            if i + 1 < side {
+                let points = SQUARE.iter().map(|p| [at(i + 1), at(j) + p[1], p[2]]);
+                squares.push((points.collect(), leaf, leaf + 1));
+            }
+            if j + 1 < side {
+                // The same square turned a quarter round z, to face along y.
+                let points = SQUARE.iter().map(|p| [at(i + 1) - p[1], at(j + 1), p[2]]);
+                squares.push((points.collect(), leaf, leaf + side));
+            }
+        }
+    }
+    let portals: Vec<(&[[f32; 3]], i64, i64)> = squares
+        .iter()
+        .map(|(points, a, b)| {
+            (
+                points.as_slice(),
+                i64::try_from(*a).unwrap(),
+                i64::try_from(*b).unwrap(),
+            )
+        })
+        .collect();
+    prt(side * side, &portals)
+}
+
+// spec VIS-7.5, VIS-7.6, VIS-7.7, VIS-7.8: in an open hall every leaf sees every other, with a
+// PRT2 file's target checks made and its separating planes ericw-tools', on one thread as on
+// several; a PRT1 file's flow makes no target check
+#[test]
+fn a_prt2_flow_of_an_open_hall_sees_it_all() {
+    const SIDE: usize = 6;
+    let leaves = hall(SIDE);
+    let mut clusters = format!(
+        "PRT2\n{}\n{}",
+        SIDE * SIDE,
+        leaves.strip_prefix("PRT1\n").unwrap()
+    );
+    for leaf in 0..SIDE * SIDE {
+        clusters.push_str(&format!("{leaf} -1\n"));
+    }
+    let by_leaf = PortalFile::read(&leaves).unwrap();
+    let by_cluster = PortalFile::read(&clusters).unwrap();
+    let id = Flow::new(&by_leaf, Level::Two).full(8).unwrap();
+    let one = Flow::new(&by_cluster, Level::Two).full(1).unwrap();
+    let many = Flow::new(&by_cluster, Level::Two).full(8).unwrap();
+    assert_eq!(one, many);
+    assert_eq!(id.1.target_checks, 0);
+    assert!(one.1.target_checks > 0, "{:?}", one.1);
+    let rows = Flow::rows(&by_cluster, &one.0).unwrap();
+    for (leaf, row) in rows.iter().enumerate() {
+        assert_eq!(row.count(), SIDE * SIDE, "leaf {leaf}");
+    }
+    assert_eq!(rows, Flow::rows(&by_leaf, &id.0).unwrap());
+    // spec VIS-7.9: asked for, ericw-tools' flow is made of the PRT1 file too
+    let asked = Flow::new(&by_leaf, Level::Two)
+        .of(Tool::EricwTools)
+        .full(8)
+        .unwrap();
+    assert_eq!(asked, one);
+    let through = Vis::new(Mode::Full(Level::Two)).flowing_as(Tool::EricwTools);
+    assert_eq!(through.visible(&leaves).unwrap().counts(), one.1);
+    assert_eq!(
+        Vis::new(Mode::Full(Level::Two))
+            .visible(&leaves)
+            .unwrap()
+            .counts(),
+        id.1
+    );
+}
+
+// spec VIS-7.6: ericw-tools' separating planes are one for each edge of the source, each with
+// the source behind it and the pass in front, whichever way the source's points go round its
+// plane; id's are those and more
+#[test]
+fn ericw_separating_planes_are_one_an_edge() {
+    let source = Winding::new(SQUARE.to_vec());
+    let pass = Winding::new(
+        SQUARE
+            .iter()
+            .map(|p| [64.0, p[1] + 16.0, p[2] + 16.0])
+            .collect(),
+    );
+    let toward = Plane {
+        normal: [1.0, 0.0, 0.0],
+        dist: 0.0,
+    };
+    let planes_of = |source: &Winding| {
+        let mut planes = Vec::new();
+        source.separators_from(toward, &pass, Flip::Front, |plane| {
+            planes.push(plane);
+            true
+        });
+        planes
+    };
+    let planes = planes_of(&source);
+    assert_eq!(planes.len(), 4);
+    let side = |plane: &Plane, p: &[f32; 3]| {
+        p[0] * plane.normal[0] + p[1] * plane.normal[1] + p[2] * plane.normal[2] - plane.dist
+    };
+    for plane in &planes {
+        assert!(
+            source.points().iter().all(|p| side(plane, p) < 0.2),
+            "{plane:?}"
+        );
+        assert!(
+            pass.points().iter().all(|p| side(plane, p) > -0.2),
+            "{plane:?}"
+        );
+        assert!(
+            pass.points().iter().any(|p| side(plane, p) > 1.0),
+            "{plane:?}"
+        );
+    }
+    let mut reversed = SQUARE.to_vec();
+    reversed.reverse();
+    let turned = planes_of(&Winding::new(reversed));
+    assert_eq!(turned.len(), 4);
+    for plane in &turned {
+        assert!(
+            source.points().iter().all(|p| side(plane, p) < 0.2),
+            "{plane:?}"
+        );
+        assert!(
+            pass.points().iter().all(|p| side(plane, p) > -0.2),
+            "{plane:?}"
+        );
+    }
+    let mut ids = Vec::new();
+    source.separators(&pass, Flip::Front, |plane| {
+        ids.push(plane);
+        true
+    });
+    assert!(ids.len() >= planes.len());
+    assert!(planes.iter().all(|plane| ids.contains(plane)));
 }

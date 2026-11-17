@@ -33,7 +33,7 @@ use qs_bsp::{Bsp, BspLoader};
 use crate::flow::{BYTE_BITS, Flow, Leaves};
 use crate::portals::{Format, PortalFile};
 
-pub use crate::flow::{VIS_FLOW_BATCH, VisCounts};
+pub use crate::flow::{Tool, VIS_FLOW_BATCH, VisCounts};
 pub use crate::lump::VIS_MAX_MAP_VISIBILITY;
 
 /// The full mode's test level: how many separating-plane clips each step of the flow makes
@@ -167,6 +167,7 @@ pub fn portal_windings(prt: &str) -> Result<Vec<Vec<[f32; 3]>>, VisError> {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Vis {
     mode: Mode,
+    tool: Tool,
 }
 
 /// A visibility row, each vis leaf's set of leaves it may see, before compression.
@@ -206,7 +207,18 @@ impl Vis {
     /// A compiler of `mode`.
     #[must_use]
     pub const fn new(mode: Mode) -> Self {
-        Self { mode }
+        Self {
+            mode,
+            tool: Tool::OfFile,
+        }
+    }
+
+    /// The compiler flowing as `tool` does: with [`Tool::EricwTools`] a `PRT1` file is flowed
+    /// as ericw-tools' vis flows it, as a `PRT2` file always is (VIS-7.9).
+    #[must_use]
+    pub const fn flowing_as(mut self, tool: Tool) -> Self {
+        self.tool = tool;
+        self
     }
 
     /// Each vis leaf's visible leaves from the portal file `prt` (VIS-2 to VIS-4).
@@ -233,7 +245,7 @@ impl Vis {
         let threads = std::thread::available_parallelism().map_or(1, usize::from);
         let (seen, counts) = match self.mode {
             Mode::Fast => (Flow::new(file, Level::Zero).fast(), VisCounts::default()),
-            Mode::Full(level) => Flow::new(file, level).full(threads)?,
+            Mode::Full(level) => Flow::new(file, level).of(self.tool).full(threads)?,
         };
         let rows = Flow::rows(file, &seen)?;
         if file.format == Format::Leaves {

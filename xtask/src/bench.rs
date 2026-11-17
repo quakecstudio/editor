@@ -188,7 +188,8 @@ pub(crate) fn main(root: &Path, options: &Args) -> Result<bool, String> {
     let criterion_home = root.join(CRITERION_HOME);
     let id1 = fetch_id1(root)?;
     let map = fetch_e1m1(root)?;
-    run_benchmarks(root, &criterion_home, &id1, &map)?;
+    let wad = write_e1m1_wad(root, &map)?;
+    run_benchmarks(root, &criterion_home, &id1, (&map, &wad))?;
     let set = |variable: &str| std::env::var_os(variable).is_some();
     let mut results = Vec::new();
     for budget in &budgets {
@@ -346,7 +347,7 @@ fn run_benchmarks(
     root: &Path,
     criterion_home: &Path,
     id1: &Path,
-    map: &Path,
+    (map, wad): (&Path, &Path),
 ) -> Result<(), String> {
     if criterion_home.exists() {
         fs::remove_dir_all(criterion_home)
@@ -366,7 +367,7 @@ fn run_benchmarks(
         .env("CRITERION_HOME", criterion_home)
         .env("QS_BENCH_ID1", id1)
         .env("QS_BENCH_MAP", map)
-        .env("QS_BENCH_WAD", write_e1m1_wad(root, map)?)
+        .env("QS_BENCH_WAD", wad)
         .current_dir(root);
     // save_to_game and the routes play in the preview host when QS_BENCH_GAME or
     // QS_BENCH_RERELEASE names a game: the host is built as the app ships it and named to the
