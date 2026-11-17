@@ -1472,7 +1472,7 @@ pub fn mip_levels(image: &Image) -> Vec<Image> {
         levels.push(Image {
             width,
             height,
-            rgba: scaled.get(..bytes).map(<[u8]>::to_vec).unwrap_or_default(),
+            rgba: scaled.get(..bytes).map_or_default(<[u8]>::to_vec),
         });
     }
     levels

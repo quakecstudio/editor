@@ -7,6 +7,7 @@
 use eframe::egui::{RichText, Ui};
 use qs_map_edit::{MapHunk, MapHunkNumber, MapRevision};
 
+use crate::icons::Icon;
 use crate::map_editor::MapAction;
 use crate::strings::{Text, map_hunk};
 use crate::theme::{Theme, Token};
@@ -55,19 +56,19 @@ impl ReviewView {
         for hunk in &self.hunks {
             ui.horizontal_wrapped(|ui| {
                 ui.label(RichText::new(map_hunk(hunk)).color(theme.color(Token::StatusWarn)));
-                if ui.small_button(Text::AgentAccept.get()).clicked() {
+                if Icon::Accept.tool(ui, Text::AgentAccept).clicked() {
                     actions.push(MapAction::Review(ReviewAction::Accept(vec![hunk.index])));
                 }
-                if ui.small_button(Text::AgentReject.get()).clicked() {
+                if Icon::Reject.tool(ui, Text::AgentReject).clicked() {
                     actions.push(MapAction::Review(ReviewAction::Reject(vec![hunk.index])));
                 }
             });
         }
         ui.horizontal_wrapped(|ui| {
-            if ui.button(Text::AgentAcceptAll.get()).clicked() {
+            if Icon::AcceptAll.tool(ui, Text::AgentAcceptAll).clicked() {
                 actions.push(MapAction::Review(ReviewAction::Accept(Vec::new())));
             }
-            if ui.button(Text::AgentRejectAll.get()).clicked() {
+            if Icon::Reject.tool(ui, Text::AgentRejectAll).clicked() {
                 actions.push(MapAction::Review(ReviewAction::Reject(Vec::new())));
             }
         });

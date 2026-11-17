@@ -228,12 +228,7 @@ impl MapFeature {
         }
         let workbench = &commands.session().context().workbench;
         let mut paths = workbench.project_files();
-        paths.extend(
-            workbench
-                .map()
-                .map(MapDocument::watched)
-                .unwrap_or_default(),
-        );
+        paths.extend(workbench.map().map_or_default(MapDocument::watched));
         paths.extend(self.map_editor.texture_watched());
         paths.extend(self.map_editor.external_watched());
         let changed = self.disk_watch.changed(now, paths);
@@ -249,8 +244,7 @@ impl MapFeature {
             .context()
             .workbench
             .map()
-            .map(MapDocument::watched)
-            .unwrap_or_default();
+            .map_or_default(MapDocument::watched);
         if !watched.is_empty() {
             self.files_changed(commands, watched);
         }
@@ -538,8 +532,7 @@ impl MapFeature {
         let listed: Result<Vec<Profile>, ShellError> =
             commands.attempt(MAP_PROFILES, &serde_json::json!({}));
         let names = listed
-            .map(|profiles| profiles.into_iter().map(|profile| profile.name).collect())
-            .unwrap_or_default();
+            .map_or_default(|profiles| profiles.into_iter().map(|profile| profile.name).collect());
         let chosen = commands
             .session()
             .context()
@@ -614,10 +607,7 @@ impl MapFeature {
     ) -> Result<serde_json::Value, ShellError> {
         let found: Result<Prefabs, ShellError> =
             commands.attempt(MAP_PREFABS, &serde_json::json!({}));
-        let prefabs = found
-            .as_ref()
-            .map(|found| found.prefabs.clone())
-            .unwrap_or_default();
+        let prefabs = found.as_ref().map_or_default(|found| found.prefabs.clone());
         self.map_editor.set_prefabs(prefabs);
         found.map(|_| serde_json::Value::Null)
     }
@@ -1159,9 +1149,6 @@ impl MapFeature {
 impl Workspace {
     /// The open map's edits, which a list of its issues or matches is good for.
     pub(crate) fn map_edits(&self) -> MapRevision {
-        self.workbench
-            .map()
-            .map(MapDocument::edits)
-            .unwrap_or_default()
+        self.workbench.map().map_or_default(MapDocument::edits)
     }
 }

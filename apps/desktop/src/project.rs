@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use eframe::egui::{self, Button, CollapsingHeader, RichText, ScrollArea, Ui};
 use qs_workbench::{EntryKind, OpenFile, Problem, Severity, Symbol, SymbolKind, TreeEntry};
 
-use crate::icons::Icon;
+use crate::icons::{self, Icon, Toggled};
 use crate::strings::Text;
 use crate::theme::{Theme, Token};
 
@@ -67,19 +67,31 @@ fn level(ui: &mut Ui, entries: &[TreeEntry], rows: &Rows<'_>, jump: &mut Option<
         let (inside, next) = after.split_at(children);
         match &entry.kind {
             EntryKind::Directory => {
-                CollapsingHeader::new(entry.name.as_str())
+                let header = CollapsingHeader::new(Icon::Project.before(&entry.name))
                     .id_salt((entry.depth, entry.name.as_str(), inside.len()))
                     .default_open(true)
                     .show(ui, |ui| level(ui, inside, rows, jump));
+                icons::mark(ui, &header.header_response, &entry.name, icons::ROW);
             }
             EntryKind::File(path) => {
-                let selected = rows.open == Some(path.as_path());
-                let mut row =
-                    Button::selectable(selected, entry.name.as_str()).frame_when_inactive(false);
-                if (rows.unsaved)(path) {
-                    row = row.right_text(RichText::new(Text::ModifiedMark.get()).color(rows.mark));
-                }
-                if ui.add(row).clicked() {
+                let selected = if rows.open == Some(path.as_path()) {
+                    Toggled::On
+                } else {
+                    Toggled::Off
+                };
+                let row = ui
+                    .horizontal(|ui| {
+                        let row = Icon::of_file(path).row(ui, selected, &entry.name);
+                        if (rows.unsaved)(path) {
+                            ui.label(RichText::new(Text::ModifiedMark.get()).color(rows.mark));
+                            // A screen reader hears the mark with the name.
+                            let name = format!("{} {}", entry.name, Text::ModifiedMark.get());
+                            icons::mark(ui, &row, &name, icons::ROW);
+                        }
+                        row
+                    })
+                    .inner;
+                if row.clicked() {
                     *jump = Some(Jump {
                         path: path.clone(),
                         offset: 0,
@@ -102,11 +114,28 @@ pub(crate) fn symbols_ui(
     max_height: f32,
 ) -> Option<Jump> {
     ui.horizontal(|ui| {
-        for (value, text) in [
-            (SymbolScope::File, Text::File),
-            (SymbolScope::Project, Text::SymbolsAll),
+        for (value, icon, name, detail) in [
+            (
+                SymbolScope::File,
+                Icon::File,
+                Text::File,
+                Text::SymbolsOfFileHelp,
+            ),
+            (
+                SymbolScope::Project,
+                Icon::Project,
+                Text::SymbolsAll,
+                Text::SymbolsOfProjectHelp,
+            ),
         ] {
-            ui.selectable_value(scope, value, text.get());
+            let state = if *scope == value {
+                Toggled::On
+            } else {
+                Toggled::Off
+            };
+            if icon.toggle(ui, state, name, detail).clicked() {
+                *scope = value;
+            }
         }
     });
     let symbols = match scope {
@@ -125,18 +154,10 @@ pub(crate) fn symbols_ui(
         .auto_shrink([false, true])
         .show_rows(ui, row_height, symbols.len(), |ui, rows| {
             for symbol in symbols.get(rows).unwrap_or_default() {
-                let label = RichText::new(symbol.name.as_str()).monospace();
-                let response = ui
-                    .horizontal(|ui| {
-                        let row = ui.add(Button::new(label).frame(false));
-                        ui.label(
-                            RichText::new(kind(symbol.kind).get())
-                                .small()
-                                .color(theme.color(Token::TextFaint)),
-                        );
-                        row
-                    })
-                    .inner;
+                // The kind is the row's icon, and its word the row's hover.
+                let response = kind_icon(symbol.kind)
+                    .row(ui, Toggled::Off, &symbol.name)
+                    .on_hover_text(kind(symbol.kind).get());
                 if response.clicked() {
                     jump = Some(Jump {
                         path: symbol.range.path.clone(),
@@ -146,6 +167,16 @@ pub(crate) fn symbols_ui(
             }
         });
     jump
+}
+
+/// The icon of a symbol's kind.
+const fn kind_icon(kind: SymbolKind) -> Icon {
+    match kind {
+        SymbolKind::Function => Icon::Function,
+        SymbolKind::Field => Icon::Field,
+        SymbolKind::Constant => Icon::Constant,
+        SymbolKind::Global => Icon::Variable,
+    }
 }
 
 /// The word for a symbol's kind.

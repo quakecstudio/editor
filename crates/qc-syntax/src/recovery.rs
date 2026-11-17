@@ -100,8 +100,7 @@ impl fmt::Display for RecoveryFault {
 /// run of tokens that is not one.
 pub(crate) fn items(root: &SyntaxNode) -> Vec<SyntaxNode> {
     SourceFile::cast(root.clone())
-        .map(|file| file.items())
-        .unwrap_or_default()
+        .map_or_default(|file| file.items())
         .into_iter()
         .filter(|n| {
             matches!(

@@ -68,8 +68,7 @@ impl ImportPreview {
         let png = std::fs::read(&path).ok()?;
         let name = path
             .file_stem()
-            .map(|stem| stem.to_string_lossy().to_lowercase())
-            .unwrap_or_default();
+            .map_or_default(|stem| stem.to_string_lossy().to_lowercase());
         Some(Self {
             path,
             png,

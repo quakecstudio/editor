@@ -309,8 +309,7 @@ pub(crate) fn ours(case: &Case) -> Ours {
     let result = compile_module(&mut db, &input, |id| {
         files
             .get(id.index())
-            .map(|(n, _)| (*n).to_owned())
-            .unwrap_or_default()
+            .map_or_default(|(n, _)| (*n).to_owned())
     });
     let refused = |message: String| Ours {
         outcome: Outcome::Error(message.clone()),

@@ -39,9 +39,7 @@ pub trait HasMap {
 
     /// Where the game's files are read from; nowhere for a context with no game.
     fn game_folders(&mut self) -> GameFolders {
-        self.live_map()
-            .map(|live| live.game_folders())
-            .unwrap_or_default()
+        self.live_map().map_or_default(|live| live.game_folders())
     }
 }
 

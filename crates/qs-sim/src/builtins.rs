@@ -890,8 +890,7 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
         self.sim.checkpvs = vis
             .point_in_leaf(org)
             .and_then(|leaf| vis.leaf_row(leaf))
-            .map(<[u8]>::to_vec)
-            .unwrap_or_default();
+            .map_or_default(<[u8]>::to_vec);
         i
     }
 

@@ -318,15 +318,12 @@ impl FaceMaker<'_> {
         if let Some((_, [front, back], _)) = tree.split_of(id) {
             self.make_faces_below(tree, front);
             self.make_faces_below(tree, back);
-            let faces: Vec<Face> = tree
-                .node(id)
-                .map(|n| {
-                    n.faces
-                        .iter()
-                        .filter_map(|&f| tree.face(f).cloned())
-                        .collect()
-                })
-                .unwrap_or_default();
+            let faces: Vec<Face> = tree.node(id).map_or_default(|n| {
+                n.faces
+                    .iter()
+                    .filter_map(|&f| tree.face(f).cloned())
+                    .collect()
+            });
             let merged = self.merge_list(faces);
             let subdivided: Vec<Face> =
                 merged.into_iter().flat_map(|f| self.subdivide(f)).collect();
@@ -501,7 +498,7 @@ impl FaceMaker<'_> {
             let Some((_, children, _)) = tree.split_of(id) else {
                 continue;
             };
-            let faces = tree.node(id).map(|n| n.faces.clone()).unwrap_or_default();
+            let faces = tree.node(id).map_or_default(|n| n.faces.clone());
             for face_id in faces {
                 let Some(face) = tree.face(face_id).cloned() else {
                     continue;

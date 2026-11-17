@@ -281,8 +281,7 @@ impl<R: Read + Seek> Zip<R> {
         }
         let skip = u16_at(&local, LOCAL_NAME_LEN)
             .zip(u16_at(&local, LOCAL_EXTRA_LEN))
-            .map(|(n, e)| u64::from(n).saturating_add(u64::from(e)))
-            .unwrap_or_default();
+            .map_or_default(|(n, e)| u64::from(n).saturating_add(u64::from(e)));
         self.source
             .seek(SeekFrom::Current(i64::try_from(skip).unwrap_or_default()))?;
         let mut data = Vec::new();

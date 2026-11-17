@@ -315,7 +315,7 @@ pub fn enclosing<L: Loader>(loader: &mut L, file: &Path) -> Option<PathBuf> {
 /// [`ProjectError`] when `file` is a `quakec.toml` that cannot be read or is invalid. Any
 /// other file opens, and a source that cannot be read is a diagnostic (PRJ-4.5).
 pub fn open_file<L: Loader>(loader: &mut L, file: &Path) -> Result<Project, ProjectError> {
-    let dir = file.parent().map(Path::to_path_buf).unwrap_or_default();
+    let dir = file.parent().map_or_default(Path::to_path_buf);
     if file.file_name().is_some_and(|n| n == PRJ_MANIFEST) {
         let bytes = loader.load(file).map_err(|source| ProjectError::Read {
             path: file.to_path_buf(),

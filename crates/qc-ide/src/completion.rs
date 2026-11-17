@@ -91,20 +91,17 @@ impl<L: Loader> AnalysisHost<L> {
             }
             // A struct's or union's members (FTEF-6.13), and nothing else.
             Some(ty) if index.struct_shape(ty).is_some() => {
-                return index
-                    .struct_shape(ty)
-                    .map(|shape| {
-                        shape
-                            .members
-                            .iter()
-                            .map(|member| Completion {
-                                label: member.name.clone(),
-                                kind: DefKind::Field,
-                                detail: member.ty.fteqcc_name(),
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default();
+                return index.struct_shape(ty).map_or_default(|shape| {
+                    shape
+                        .members
+                        .iter()
+                        .map(|member| Completion {
+                            label: member.name.clone(),
+                            kind: DefKind::Field,
+                            detail: member.ty.fteqcc_name(),
+                        })
+                        .collect()
+                });
             }
             // A value of another simple type has no members.
             Some(Type::Simple(simple)) if *simple != SimpleType::Entity => return Vec::new(),

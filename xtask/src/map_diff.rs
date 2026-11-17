@@ -265,8 +265,7 @@ pub(crate) fn corpus_maps(
 /// A map's name, its file's without `.map`.
 pub(crate) fn map_name(path: &Path) -> String {
     path.file_stem()
-        .map(|stem| stem.to_string_lossy().into_owned())
-        .unwrap_or_default()
+        .map_or_default(|stem| stem.to_string_lossy().into_owned())
 }
 
 /// The word a differential's line starts with: `ok` or `FAIL`, padded to one width.

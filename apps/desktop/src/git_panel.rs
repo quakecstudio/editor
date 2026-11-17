@@ -268,8 +268,7 @@ fn file_ui(ui: &mut Ui, theme: &Theme, data: &GitData, file: &GitFile) -> Option
     }
     let conflicts = data.conflicts.iter().find(|(p, _)| p == path);
     for (index, conflict) in conflicts
-        .map(|(_, c)| c.as_slice())
-        .unwrap_or_default()
+        .map_or_default(|(_, c)| c.as_slice())
         .iter()
         .enumerate()
     {

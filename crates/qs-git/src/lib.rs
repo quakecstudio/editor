@@ -541,8 +541,7 @@ fn parse_blame(text: &str) -> Result<Vec<BlameLine>, GitError> {
         let (author, summary) = known
             .iter()
             .find(|(id, _, _)| id == commit)
-            .map(|(_, author, summary)| (author.clone(), summary.clone()))
-            .unwrap_or_default();
+            .map_or_default(|(_, author, summary)| (author.clone(), summary.clone()));
         out.push(BlameLine {
             line,
             commit: commit.to_owned(),

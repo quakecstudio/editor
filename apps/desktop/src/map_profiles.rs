@@ -7,6 +7,7 @@
 use eframe::egui::{self, Painter, RichText, Stroke, Ui};
 use qs_workbench::map_profile::{ProfileRun, TaskResult};
 
+use crate::icons::Icon;
 use crate::keymap::RUN_PROFILE;
 use crate::map_editor::MapAction;
 use crate::map_panes::Projection;
@@ -109,8 +110,8 @@ impl ProfileView {
                 actions.push(MapAction::Profile(ProfileAction::Choose(chosen)));
             }
             let shortcut = ui.ctx().format_shortcut(&RUN_PROFILE);
-            if ui
-                .button(Text::MapCompileProfile.get())
+            if Icon::Compile
+                .tool(ui, Text::MapCompileProfile)
                 .on_hover_text(shortcut)
                 .clicked()
             {
@@ -127,7 +128,7 @@ impl ProfileView {
                     ProfileAction::HidePortals
                 }));
             }
-            if ui.button(Text::MapRestoreBackup.get()).clicked() {
+            if Icon::Restore.tool(ui, Text::MapRestoreBackup).clicked() {
                 actions.push(MapAction::Profile(ProfileAction::RestoreBackup));
             }
         });

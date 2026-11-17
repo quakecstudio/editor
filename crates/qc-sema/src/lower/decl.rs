@@ -475,7 +475,7 @@ pub(super) fn raw_value(expr: &ast::Expr, cx: Cx<'_>) -> RawValue {
             (_, None) => ValueKind::Other,
         },
         ast::Expr::Call(call) if fte && is_translate(call) => {
-            let args: Vec<ast::Expr> = call.args().map(|a| a.args().collect()).unwrap_or_default();
+            let args: Vec<ast::Expr> = call.args().map_or_default(|a| a.args().collect());
             let string = matches!(
                 args.as_slice(),
                 [ast::Expr::Literal(l)] if l.kind() == Some(ast::LiteralKind::String)
@@ -738,10 +738,7 @@ pub(super) fn array_dim(
     let ast::Expr::Literal(literal) = size else {
         return Some(ArrayDim::Unknown);
     };
-    let text = literal
-        .token()
-        .map(|t| t.text_lossless())
-        .unwrap_or_default();
+    let text = literal.token().map_or_default(|t| t.text_lossless());
     Some(
         text.parse::<u32>()
             .map_or(ArrayDim::Unknown, ArrayDim::Sized),

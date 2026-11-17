@@ -1260,9 +1260,7 @@ impl Pragma {
     /// (FTEF-14.70): the text's first token read with `QCC_COM_Parse`, with a `/` after it unless
     /// it ends in `/` or `\`, joined to `compiling`.
     pub(crate) fn include_dir(&self, compiling: &[u8]) -> Vec<u8> {
-        let token = com_parse(&self.message, 0)
-            .map(|(token, _)| token)
-            .unwrap_or_default();
+        let token = com_parse(&self.message, 0).map_or_default(|(token, _)| token);
         pragma_include_dir(&token, compiling)
     }
 
@@ -1915,8 +1913,8 @@ impl<L: Loader> Preprocessor<L> {
             }
         }
         let Some((full, path, text)) = found else {
-            let shown = lossy(names.first().map(Vec::as_slice).unwrap_or_default());
-            let reason = first_error.map(|e| e.to_string()).unwrap_or_default();
+            let shown = lossy(names.first().map_or_default(Vec::as_slice));
+            let reason = first_error.map_or_default(|e| e.to_string());
             run.report(Code::E0111, format!("cannot include {shown}: {reason}"), at);
             return;
         };

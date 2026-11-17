@@ -333,7 +333,7 @@ fn spawn_named_fields() {
     let named: Vec<_> = list
         .named()
         .map(|n| {
-            let value = n.value().map(|v| sexpr(&v)).unwrap_or_default();
+            let value = n.value().map_or_default(|v| sexpr(&v));
             (n.name().unwrap().text_lossless(), n.equals(), value)
         })
         .collect();

@@ -507,13 +507,9 @@ impl SimCall<'_, '_, '_> {
             self.context
                 .progs()
                 .string(value)
-                .map(<[u8]>::to_vec)
-                .unwrap_or_default()
+                .map_or_default(<[u8]>::to_vec)
         } else {
-            self.sim
-                .engine_string(value)
-                .map(<[u8]>::to_vec)
-                .unwrap_or_default()
+            self.sim.engine_string(value).map_or_default(<[u8]>::to_vec)
         }
     }
 
@@ -997,8 +993,7 @@ impl SimCall<'_, '_, '_> {
                     .lightstyles
                     .get(i)
                     .and_then(|s| s.as_ref())
-                    .map(|s| s.as_bytes().to_vec())
-                    .unwrap_or_default()
+                    .map_or_default(|s| s.as_bytes().to_vec())
             })
             .collect();
         let stats = [

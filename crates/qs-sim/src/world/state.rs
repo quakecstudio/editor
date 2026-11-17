@@ -103,8 +103,7 @@ pub(super) fn typed_value(
     let name = |offset: i32| {
         progs
             .string(offset)
-            .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
-            .unwrap_or_default()
+            .map_or_default(|bytes| String::from_utf8_lossy(bytes).into_owned())
     };
     match etype {
         Etype::Float => QcValue::Float(first.as_f32()),
@@ -121,15 +120,13 @@ pub(super) fn typed_value(
             u32::try_from(first.as_i32())
                 .ok()
                 .and_then(|ofs| progs.ed_field_at_ofs(ofs))
-                .map(|def| name(def.s_name))
-                .unwrap_or_default(),
+                .map_or_default(|def| name(def.s_name)),
         ),
         Etype::Function => QcValue::Function(
             usize::try_from(first.as_i32())
                 .ok()
                 .and_then(|index| progs.functions().get(index))
-                .map(|function| name(function.s_name))
-                .unwrap_or_default(),
+                .map_or_default(|function| name(function.s_name)),
         ),
         Etype::Void | Etype::Pointer => QcValue::Void,
     }

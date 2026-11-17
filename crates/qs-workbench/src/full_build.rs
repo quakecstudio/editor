@@ -156,8 +156,7 @@ impl FullBuild {
 fn side_file(target: &Path) -> PathBuf {
     let stem = target
         .file_stem()
-        .map(|stem| stem.to_string_lossy().into_owned())
-        .unwrap_or_default();
+        .map_or_default(|stem| stem.to_string_lossy().into_owned());
     target.with_file_name(format!("{stem}.full.bsp"))
 }
 

@@ -138,8 +138,7 @@ impl Package {
         let licensed = |path: &Path| {
             let name = path
                 .file_name()
-                .map(|n| n.to_string_lossy().to_ascii_uppercase())
-                .unwrap_or_default();
+                .map_or_default(|n| n.to_string_lossy().to_ascii_uppercase());
             LICENSE_FILES.iter().any(|p| name.starts_with(p))
         };
         let mut files: BTreeSet<PathBuf> = BTreeSet::new();
@@ -160,9 +159,7 @@ impl Package {
 
 /// The entries of the directory `dir`, none when it cannot be read.
 fn read_dir(dir: &Path) -> Vec<PathBuf> {
-    fs::read_dir(dir)
-        .map(|entries| entries.flatten().map(|e| e.path()).collect())
-        .unwrap_or_default()
+    fs::read_dir(dir).map_or_default(|entries| entries.flatten().map(|e| e.path()).collect())
 }
 
 /// One of a package's targets.

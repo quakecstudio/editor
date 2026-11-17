@@ -42,8 +42,6 @@ same registry also serves MCP.
 ## Writing a command
 
 ```rust
-use std::convert::Infallible;
-
 use qs_commands::{BoxError, Command, Outcome, UndoStep};
 
 /// The context: whatever state the session owns.
@@ -84,9 +82,9 @@ impl Command<Doc> for Append {
     const SUMMARY: &'static str = "Appends text to the document.";
     type Params = AppendParams;
     type Output = usize;
-    type Error = Infallible;
+    type Error = !;
 
-    fn run(&self, doc: &mut Doc, params: AppendParams) -> Result<Outcome<usize, Doc>, Infallible> {
+    fn run(&self, doc: &mut Doc, params: AppendParams) -> Result<Outcome<usize, Doc>, !> {
         doc.text.push_str(&params.text);
         let len = doc.text.len();
         Ok(Outcome::undoable(len, Truncate { text: params.text }))

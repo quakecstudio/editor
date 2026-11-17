@@ -59,8 +59,7 @@ impl Game {
             .ok()
             .and_then(|lno| LnoFile::read(&lno).ok())
             .filter(|lno| lno.matches_header(new.header()).is_ok())
-            .map(|lno| lno.lines)
-            .unwrap_or_default();
+            .map_or_default(|lno| lno.lines);
         self.lines = lines;
         let cleared = self.rebind_breakpoints(&new);
         self.snapshot = None;
@@ -88,8 +87,7 @@ impl Game {
             .ok()
             .and_then(|lno| LnoFile::read(&lno).ok())
             .filter(|lno| lno.matches_header(new.header()).is_ok())
-            .map(|lno| lno.lines)
-            .unwrap_or_default();
+            .map_or_default(|lno| lno.lines);
         let cleared: Vec<u64> = self
             .breakpoints
             .iter()

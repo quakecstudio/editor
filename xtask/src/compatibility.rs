@@ -173,7 +173,7 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
             license: entry.license.clone(),
             build,
             behaviour,
-            issues: gap.map(|g| g.issues.clone()).unwrap_or_default(),
+            issues: gap.map_or_default(|g| g.issues.clone()),
         });
     }
     let out = args.out.clone().unwrap_or_else(|| root.join(LIST));

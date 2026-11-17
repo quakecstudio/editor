@@ -169,8 +169,7 @@ fn keymap<C: 'static>(registry: &Registry<C>) -> String {
         };
         let summary = registry
             .get(command)
-            .map(|info| info.summary().replace('|', "\\|"))
-            .unwrap_or_default();
+            .map_or_default(|info| info.summary().replace('|', "\\|"));
         writeln!(out, "| `{command}` | {why} | {summary} |").ok();
     }
     out

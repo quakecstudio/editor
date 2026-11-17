@@ -93,8 +93,7 @@ impl TextureBrowser {
     pub(crate) fn watched(&self) -> Vec<PathBuf> {
         self.sources
             .as_ref()
-            .map(TextureSources::watched)
-            .unwrap_or_default()
+            .map_or_default(TextureSources::watched)
     }
 
     /// The width and height of the texture `name`, in texels, when a source holds it.

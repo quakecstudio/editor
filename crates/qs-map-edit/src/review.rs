@@ -309,9 +309,7 @@ impl MapStore {
     /// [`MapEditError::NoMap`] with no map open.
     pub fn map_hunks(&self) -> Result<Vec<MapHunk>, MapEditError> {
         let document = self.map().ok_or(MapEditError::NoMap)?;
-        Ok(Review::of(document)
-            .map(|review| review.listed())
-            .unwrap_or_default())
+        Ok(Review::of(document).map_or_default(|review| review.listed()))
     }
 }
 

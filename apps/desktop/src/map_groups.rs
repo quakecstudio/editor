@@ -9,6 +9,7 @@ use qs_map_edit::{BrushIndex, EntityIndex, LayerInfo, LayerOption, Switch};
 
 use qs_layout::ViewKey;
 
+use crate::icons::{Icon, Toggled};
 use crate::keymap;
 use crate::strings::{Text, layer_count};
 use crate::theme::{Theme, Token};
@@ -73,7 +74,7 @@ pub(crate) fn layers_ui(
     let mut actions = Vec::new();
     ui.horizontal_wrapped(|ui| {
         ui.label(RichText::new(Text::MapLayers.get()).strong());
-        if ui.button(Text::MapAddLayer.get()).clicked() {
+        if Icon::Add.tool(ui, Text::MapAddLayer).clicked() {
             actions.push(GroupAction::AddLayer);
         }
     });
@@ -92,23 +93,39 @@ pub(crate) fn layers_ui(
     }
     for layer in layers {
         ui.horizontal_wrapped(|ui| {
-            ui.label(&layer.name);
+            ui.label(Icon::Layers.before(&layer.name));
             ui.label(
                 RichText::new(layer_count(layer.entities)).color(theme.color(Token::TextMuted)),
             );
+            // Each setting an icon, framed while it is on, as Zed's panel toggles.
             let settings = [
-                (LayerOption::Hidden, layer.hidden, Text::MapLayerHidden),
-                (LayerOption::Locked, layer.locked, Text::MapLayerLocked),
+                (
+                    LayerOption::Hidden,
+                    layer.hidden,
+                    Icon::Hide,
+                    Text::MapLayerHidden,
+                ),
+                (
+                    LayerOption::Locked,
+                    layer.locked,
+                    Icon::Lock,
+                    Text::MapLayerLocked,
+                ),
                 (
                     LayerOption::OmitFromExport,
                     layer.omit_from_export,
+                    Icon::Omit,
                     Text::MapLayerOmit,
                 ),
             ];
-            for (option, set, text) in settings {
-                let mut on = set;
-                if ui.checkbox(&mut on, text.get()).changed() {
-                    let switch = if on { Switch::On } else { Switch::Off };
+            for (option, set, icon, text) in settings {
+                let state = if set { Toggled::On } else { Toggled::Off };
+                let name = format!("{}: {}", layer.name, text.get());
+                if icon
+                    .toggle_named(ui, state, &name, Text::MapLayerSettingHelp.get())
+                    .clicked()
+                {
+                    let switch = if set { Switch::Off } else { Switch::On };
                     actions.push(GroupAction::SetLayer(layer.entity, option, switch));
                 }
             }
@@ -125,52 +142,60 @@ pub(crate) fn selection_ui(
     grouping: Grouping<'_>,
 ) -> Vec<GroupAction> {
     let mut actions = Vec::new();
+    // The selection's actions as one row of icons; one that does not apply is greyed.
     ui.horizontal_wrapped(|ui| {
-        if ui
-            .add_enabled(
-                grouping.any(),
-                eframe::egui::Button::new(Text::MapGroup.get()),
-            )
-            .clicked()
-        {
-            actions.push(grouping.grouped());
-        }
+        ui.add_enabled_ui(grouping.any(), |ui| {
+            if Icon::Group.tool(ui, Text::MapGroup).clicked() {
+                actions.push(grouping.grouped());
+            }
+        });
         if let Some(group) = grouping.group {
-            for (text, action) in [
-                (Text::MapUngroup, GroupAction::Ungroup(group)),
-                (Text::MapLinkDuplicate, GroupAction::LinkDuplicate(group)),
-                (Text::MapSeparate, GroupAction::Separate(group)),
+            for (icon, text, action) in [
+                (Icon::Ungroup, Text::MapUngroup, GroupAction::Ungroup(group)),
+                (
+                    Icon::LinkDuplicate,
+                    Text::MapLinkDuplicate,
+                    GroupAction::LinkDuplicate(group),
+                ),
+                (
+                    Icon::Separate,
+                    Text::MapSeparate,
+                    GroupAction::Separate(group),
+                ),
             ] {
-                if ui.button(text.get()).clicked() {
+                if icon.tool(ui, text).clicked() {
                     actions.push(action);
                 }
             }
         }
-    });
-    ui.horizontal_wrapped(|ui| {
-        let chosen = !selection.is_empty();
-        if ui
-            .add_enabled(chosen, eframe::egui::Button::new(Text::MapHide.get()))
-            .clicked()
-        {
-            actions.push(GroupAction::Hide(selection.to_vec()));
-        }
-        if ui
-            .add_enabled(chosen, eframe::egui::Button::new(Text::MapIsolate.get()))
-            .clicked()
-        {
-            actions.push(GroupAction::Isolate(selection.to_vec()));
-        }
-        if ui
-            .add_enabled(chosen, eframe::egui::Button::new(Text::MapLock.get()))
-            .clicked()
-        {
-            actions.push(GroupAction::Lock(selection.to_vec()));
-        }
-        if ui.button(Text::MapShowAll.get()).clicked() {
+        ui.separator();
+        ui.add_enabled_ui(!selection.is_empty(), |ui| {
+            for (icon, text, action) in [
+                (
+                    Icon::Hide,
+                    Text::MapHide,
+                    GroupAction::Hide(selection.to_vec()),
+                ),
+                (
+                    Icon::Isolate,
+                    Text::MapIsolate,
+                    GroupAction::Isolate(selection.to_vec()),
+                ),
+                (
+                    Icon::Lock,
+                    Text::MapLock,
+                    GroupAction::Lock(selection.to_vec()),
+                ),
+            ] {
+                if icon.tool(ui, text).clicked() {
+                    actions.push(action);
+                }
+            }
+        });
+        if Icon::Show.tool(ui, Text::MapShowAll).clicked() {
             actions.push(GroupAction::ShowAll);
         }
-        if ui.button(Text::MapUnlockAll.get()).clicked() {
+        if Icon::Unlock.tool(ui, Text::MapUnlockAll).clicked() {
             actions.push(GroupAction::UnlockAll);
         }
     });

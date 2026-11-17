@@ -129,7 +129,7 @@ impl Manifest {
     pub(crate) fn load(path: &Path) -> Result<Self, String> {
         let text = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
         let mut m: Self = toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
-        m.dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
+        m.dir = path.parent().map_or_default(Path::to_path_buf);
         Ok(m)
     }
 

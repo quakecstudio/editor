@@ -45,8 +45,7 @@ fn main() -> Result<(), String> {
     let root = std::path::Path::new(bsp_path)
         .parent()
         .and_then(std::path::Path::parent)
-        .map(std::path::Path::to_path_buf)
-        .unwrap_or_default();
+        .map_or_default(std::path::Path::to_path_buf);
     let files = Rc::new(move |name: &str| std::fs::read(root.join(name)).ok());
     let mut world =
         World::load(&progs, map, &bsp, files, LoadOptions::default()).map_err(|e| e.to_string())?;

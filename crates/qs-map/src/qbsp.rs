@@ -418,11 +418,7 @@ impl QbspMap {
     /// qbsp's `FindTexinfo`: sets `TEX_SPECIAL` and finds or adds the texinfo, comparing
     /// every axis value exactly (MAP-4.5, MAP-4.7).
     fn find_texinfo(&mut self, vecs: TexVecs<f32>, miptex: usize) -> Result<usize, QbspError> {
-        let name = self
-            .miptex
-            .get(miptex)
-            .map(Vec::as_slice)
-            .unwrap_or_default();
+        let name = self.miptex.get(miptex).map_or_default(Vec::as_slice);
         let flags = if is_special(name) { MAP_TEX_SPECIAL } else { 0 };
         let same = |known: &QbspTexinfo| {
             known.miptex == miptex

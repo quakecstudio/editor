@@ -13,6 +13,7 @@ use eframe::egui::{Painter, RichText, Stroke, Ui};
 use qs_map_edit::{MapReport, Seal};
 use qs_render::{Camera, Degrees};
 
+use crate::icons::Icon;
 use crate::map_panes::Projection;
 use crate::map_scene::{BrushShape, Scene};
 use crate::strings::{Text, leak_found, missing_textures, missing_wad};
@@ -105,7 +106,7 @@ impl LeakView {
                 if let Some(origin) = report.leak.first() {
                     ui.label(RichText::new(leak_found(*origin)).color(error));
                 }
-                if ui.button(Text::MapFlyLeak.get()).clicked() {
+                if Icon::Fly.tool(ui, Text::MapFlyLeak).clicked() {
                     self.flight = Some(Flight {
                         trail: report.leak.clone(),
                         travelled: 0.0,

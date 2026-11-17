@@ -291,11 +291,10 @@ impl Entities {
                 let name = self.classname(Edict::new(edict)).unwrap_or("entity");
                 format!("{name} #{edict}")
             }
-            Some("float") => inner.map(number).unwrap_or_default(),
-            _ => inner.and_then(Value::as_str).map_or_else(
-                || inner.map(Value::to_string).unwrap_or_default(),
-                str::to_owned,
-            ),
+            Some("float") => inner.map_or_default(number),
+            _ => inner
+                .and_then(Value::as_str)
+                .map_or_else(|| inner.map_or_default(Value::to_string), str::to_owned),
         }
     }
 }

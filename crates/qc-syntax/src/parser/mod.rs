@@ -759,7 +759,7 @@ impl<'a> Parser<'a> {
 
     /// The current token as `qcc` prints it in "found X"; nothing at the end of the file.
     fn found(&self) -> String {
-        self.current().map(|t| t.text.clone()).unwrap_or_default()
+        self.current().map_or_default(|t| t.text.clone())
     }
 
     /// Whether the token `n` ahead starts a declaration: a `.`, or a type word followed by a

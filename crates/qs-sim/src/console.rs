@@ -304,8 +304,7 @@ impl World {
             words
                 .argv
                 .get(n)
-                .map(|w| String::from_utf8_lossy(w).into_owned())
-                .unwrap_or_default()
+                .map_or_default(|w| String::from_utf8_lossy(w).into_owned())
         };
         if let Some(command) = client_command(&name, &words) {
             self.client_commands.push(command);
@@ -647,7 +646,7 @@ impl World {
     /// `PR_ValueString` (PHYS-13.7).
     fn value_string(&self, progs: &Progs<'_>, def_type: DefType, slots: &[Slot]) -> Vec<u8> {
         let first = slots.first().copied().unwrap_or(Slot::ZERO);
-        let name_of = |offset: i32| progs.string(offset).map(<[u8]>::to_vec).unwrap_or_default();
+        let name_of = |offset: i32| progs.string(offset).map_or_default(<[u8]>::to_vec);
         match def_type {
             DefType::Known(Etype::String) => self.string_value(progs, first).unwrap_or_default(),
             DefType::Known(Etype::Entity) => format!("entity {}", self.entity(first)).into_bytes(),
@@ -655,8 +654,7 @@ impl World {
                 let mut text = usize::try_from(first.as_i32())
                     .ok()
                     .and_then(|i| progs.functions().get(i))
-                    .map(|f| name_of(f.s_name))
-                    .unwrap_or_default();
+                    .map_or_default(|f| name_of(f.s_name));
                 text.extend_from_slice(b"()");
                 text
             }
@@ -666,8 +664,7 @@ impl World {
                     u32::try_from(first.as_i32())
                         .ok()
                         .and_then(|ofs| progs.ed_field_at_ofs(ofs))
-                        .map(|d| name_of(d.s_name))
-                        .unwrap_or_default(),
+                        .map_or_default(|d| name_of(d.s_name)),
                 );
                 text
             }
@@ -731,8 +728,7 @@ impl World {
                 .functions()
                 .get(index)
                 .and_then(|f| progs.string(f.s_name))
-                .map(|n| String::from_utf8_lossy(n).into_owned())
-                .unwrap_or_default();
+                .map_or_default(|n| String::from_utf8_lossy(n).into_owned());
             self.print(format!("{count:7} {name}\n"));
         }
         self.builtins.profile.iter_mut().for_each(|c| *c = 0);

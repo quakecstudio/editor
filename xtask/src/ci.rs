@@ -501,7 +501,7 @@ mod tests {
         for list in lists {
             for name in skips(&["--skip", list]).unwrap_or_default() {
                 let step = STEPS.iter().find(|step| step.name() == name);
-                let label = step.map(Step::label).unwrap_or_default();
+                let label = step.map_or_default(Step::label);
                 assert!(workflow.contains(&format!("run: {label}\n")), "{label}");
             }
         }

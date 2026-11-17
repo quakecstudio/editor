@@ -47,7 +47,7 @@ impl Compiler<'_> {
         if !self.defaults_kept(body) {
             return Err(Internal::DefaultUnknown).at(named);
         }
-        let syntax = Rc::new(syntax.map(BodySyntax::of).unwrap_or_default());
+        let syntax = Rc::new(syntax.map_or_default(BodySyntax::of));
         self.writing = Some(Rc::clone(&syntax));
         let written = self.write_statements(body, &syntax, named);
         self.writing = None;
@@ -592,7 +592,7 @@ impl BodySyntax {
             };
             let is_autocvar = matches!(call.callee(), Some(ast::Expr::Name(callee))
                 if callee.name().is_some_and(|t| t.text_lossless() == "autocvar"));
-            let args: Vec<ast::Expr> = call.args().map(|a| a.args().collect()).unwrap_or_default();
+            let args: Vec<ast::Expr> = call.args().map_or_default(|a| a.args().collect());
             if let (true, Some(ast::Expr::Name(first)), Some(default)) =
                 (is_autocvar, args.first(), args.get(1))
                 && let Some(token) = first.name()

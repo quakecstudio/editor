@@ -10,6 +10,7 @@
 use eframe::egui::{self, Color32, Painter, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use qs_map_edit::uv::{Axis, FaceRef, JustifyTo, UvChoice};
 
+use crate::icons::Icon;
 use crate::map_panes::Projection;
 use crate::map_scene::{FaceShape, Scene, single};
 use crate::map_tools::BrushAction;
@@ -163,34 +164,50 @@ impl UvEditor {
             }
         }
         let buttons = [
-            (Text::MapUvFit, UvChoice::Fit),
-            (Text::MapUvLeft, justify(JustifyTo::Left)),
-            (Text::MapUvRight, justify(JustifyTo::Right)),
-            (Text::MapUvTop, justify(JustifyTo::Top)),
-            (Text::MapUvBottom, justify(JustifyTo::Bottom)),
-            (Text::MapUvCentre, justify(JustifyTo::Centre)),
-            (Text::MapUvFlipS, UvChoice::Flip { axis: Axis::S }),
-            (Text::MapUvFlipT, UvChoice::Flip { axis: Axis::T }),
-            (Text::MapUvReset, UvChoice::Reset),
-            (Text::MapUvSnap, UvChoice::Snap),
+            (Icon::Fit, Text::MapUvFit, UvChoice::Fit),
+            (Icon::ToLeft, Text::MapUvLeft, justify(JustifyTo::Left)),
+            (Icon::ToRight, Text::MapUvRight, justify(JustifyTo::Right)),
+            (Icon::ToTop, Text::MapUvTop, justify(JustifyTo::Top)),
+            (
+                Icon::ToBottom,
+                Text::MapUvBottom,
+                justify(JustifyTo::Bottom),
+            ),
+            (
+                Icon::ToCentre,
+                Text::MapUvCentre,
+                justify(JustifyTo::Centre),
+            ),
+            (
+                Icon::FlipS,
+                Text::MapUvFlipS,
+                UvChoice::Flip { axis: Axis::S },
+            ),
+            (
+                Icon::FlipT,
+                Text::MapUvFlipT,
+                UvChoice::Flip { axis: Axis::T },
+            ),
+            (Icon::Reset, Text::MapUvReset, UvChoice::Reset),
+            (Icon::Snap, Text::MapUvSnap, UvChoice::Snap),
         ];
         ui.horizontal_wrapped(|ui| {
-            for (text, choice) in buttons {
-                if ui.button(text.get()).clicked() {
+            for (icon, text, choice) in buttons {
+                if icon.tool(ui, text).clicked() {
                     actions.push(BrushAction::Uv(faces.clone(), choice));
                 }
             }
         });
         ui.horizontal_wrapped(|ui| {
-            if ui.button(Text::MapCopyAlignment.get()).clicked() {
+            if Icon::Copy.tool(ui, Text::MapCopyAlignment).clicked() {
                 self.copied = self.faces.first().copied();
             }
             if let Some((from, _)) = self.copied
                 && ui
-                    .add_enabled(
-                        faces.iter().any(|&at| at != from),
-                        egui::Button::new(Text::MapPasteAlignment.get()),
-                    )
+                    .add_enabled_ui(faces.iter().any(|&at| at != from), |ui| {
+                        Icon::Paste.tool(ui, Text::MapPasteAlignment)
+                    })
+                    .inner
                     .clicked()
             {
                 let onto = faces.iter().copied().filter(|&at| at != from).collect();

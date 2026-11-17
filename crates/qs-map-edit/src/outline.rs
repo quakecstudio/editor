@@ -71,6 +71,17 @@ impl OutlineRow {
         self.entity == entity || self.rows.iter().any(|row| row.holds(entity))
     }
 
+    /// The row's entity and every entity under it, the row's own first: what an action on
+    /// the row acts on, a group with its members.
+    #[must_use]
+    pub fn entities(&self) -> Vec<EntityIndex> {
+        let mut entities = vec![self.entity];
+        for row in &self.rows {
+            entities.extend(row.entities());
+        }
+        entities
+    }
+
     /// How many rows this row and those under it hold.
     #[must_use]
     pub fn count(&self) -> usize {

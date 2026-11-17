@@ -891,33 +891,23 @@ impl<'a> Bsp<'a> {
 // These read 0 past the end of `bytes`, as the reader always has; `read_array` gives `None`
 // where a caller has to know.
 fn i32_at(bytes: &[u8], offset: usize) -> i32 {
-    read_array(bytes, offset)
-        .map(i32::from_le_bytes)
-        .unwrap_or_default()
+    read_array(bytes, offset).map_or_default(i32::from_le_bytes)
 }
 
 fn u32_at(bytes: &[u8], offset: usize) -> u32 {
-    read_array(bytes, offset)
-        .map(u32::from_le_bytes)
-        .unwrap_or_default()
+    read_array(bytes, offset).map_or_default(u32::from_le_bytes)
 }
 
 fn i16_at(bytes: &[u8], offset: usize) -> i16 {
-    read_array(bytes, offset)
-        .map(i16::from_le_bytes)
-        .unwrap_or_default()
+    read_array(bytes, offset).map_or_default(i16::from_le_bytes)
 }
 
 fn u16_at(bytes: &[u8], offset: usize) -> u16 {
-    read_array(bytes, offset)
-        .map(u16::from_le_bytes)
-        .unwrap_or_default()
+    read_array(bytes, offset).map_or_default(u16::from_le_bytes)
 }
 
 fn f32_at(bytes: &[u8], offset: usize) -> f32 {
-    read_array(bytes, offset)
-        .map(f32::from_le_bytes)
-        .unwrap_or_default()
+    read_array(bytes, offset).map_or_default(f32::from_le_bytes)
 }
 
 fn vec3_at(bytes: &[u8], offset: usize) -> [f32; 3] {
@@ -1433,8 +1423,7 @@ impl<'a> Bsp<'a> {
                 .and_then(|info| info.texture)
                 .and_then(|slot| self.textures.get(slot))
                 .and_then(Option::as_ref)
-                .map(|texture| texture.name.as_slice())
-                .unwrap_or_default();
+                .map_or_default(|texture| texture.name.as_slice());
             if loader.fitz() {
                 face.flags |= fitz_face_flags(name, info.map_or(0, |info| info.flags), lightofs);
             } else if name.starts_with(b"sky") {

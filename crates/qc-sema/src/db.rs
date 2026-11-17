@@ -597,11 +597,9 @@ impl Db {
                     .filter_map(|&span| rendered.origins.locate(span)),
             );
             // FTEF-12.19: what the first pass skips over, FTEQCC's parser does not read.
-            let skipped = preprocessed
-                .plan
-                .as_ref()
-                .map(|plan| prototyped_initialisers(&file.parse, plan, read.decls.len()))
-                .unwrap_or_default();
+            let skipped = preprocessed.plan.as_ref().map_or_default(|plan| {
+                prototyped_initialisers(&file.parse, plan, read.decls.len())
+            });
             read.syntax
                 .extend(parse_diagnostics(&file.parse, rendered, id, &skipped));
             read.decls.push(file.decls);
