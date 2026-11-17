@@ -56,6 +56,7 @@ use qs_workbench::{
 use qs_workbench::{SELECT, SET_FIELD, SelectParams, SelectedEntity, SetFieldParams};
 
 use crate::agent::{self, AgentAction, AgentPanel, ThreadIndex};
+use crate::command_line::CommandLineView;
 use crate::debugger::DebugAction;
 use crate::editor::{Editor, Popup, Request};
 use crate::editors::EditorsFeature;
@@ -147,6 +148,9 @@ pub(crate) enum Area {
     /// The notice below the toolbar while a reload waits (P3-10).
     ResetNotice,
     StatusBar,
+    /// The command line above the status bar, and its field (UI-23).
+    CommandLine,
+    CommandLineField,
     Panel(Panel),
     Palette,
     Finder,
@@ -255,6 +259,8 @@ pub struct Shell {
     pub(crate) drawn: [Option<f32>; 3],
     /// The command palette.
     pub(crate) palette: Palette,
+    /// The command line above the status bar (UI-23).
+    pub(crate) command_line: CommandLineView,
     /// The file finder.
     pub(crate) finder: FileFinder,
     symbol_scope: SymbolScope,
@@ -326,6 +332,7 @@ impl Shell {
             centre_tab: CentreTab::default(),
             drawn: [None; 3],
             palette: Palette::default(),
+            command_line: CommandLineView::default(),
             finder: FileFinder::default(),
             symbol_scope: SymbolScope::default(),
             system_fonts: SystemFonts::new(&Theme::bundled_fonts()),
@@ -1248,6 +1255,18 @@ impl Shell {
                 let _: Option<Docks> = self.run(qs_layout::MOVE_PANEL, &params);
             }
             None => {}
+        }
+        let entered = self.command_line.show(
+            ui,
+            &self.theme,
+            self.session.registry(),
+            FocusNow::of(pending, Focus::CommandLine),
+        );
+        if let Some((id, params)) = entered {
+            match self.session.execute(id.as_str(), params) {
+                Ok(_) => self.command_line.ran(id),
+                Err(error) => self.command_line.failed(error.to_string()),
+            }
         }
         for panel in [Panel::Left, Panel::Right, Panel::Bottom] {
             self.panel(ui, panel, FocusNow::of(pending, Focus::Panel(panel)));

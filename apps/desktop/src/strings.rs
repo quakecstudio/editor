@@ -381,6 +381,14 @@ pub enum Text {
     PaletteRequired,
     /// A choice parameter with nothing picked.
     PaletteChoose,
+    /// The command line: its area and its field (UI-23).
+    CommandLine,
+    /// The command line's prompt while no command is being entered.
+    CommandLinePrompt,
+    /// The command line's field while it is empty.
+    CommandLineHint,
+    /// A parameter the command line asks for that may be left empty.
+    CommandLineOptional,
     /// The Escape key, in the palette's hints.
     KeyEscape,
     /// The up and down arrow keys, in the palette's hints.
@@ -975,7 +983,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 479] = [
+    pub const ALL: [Self; 483] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1160,6 +1168,10 @@ impl Text {
         Self::RunTask,
         Self::PaletteRequired,
         Self::PaletteChoose,
+        Self::CommandLine,
+        Self::CommandLinePrompt,
+        Self::CommandLineHint,
+        Self::CommandLineOptional,
         Self::KeyEscape,
         Self::KeyArrows,
         Self::KeyEnter,
@@ -1660,6 +1672,10 @@ impl Text {
             Self::RunTask => "Run task",
             Self::PaletteRequired => "required",
             Self::PaletteChoose => "Choose…",
+            Self::CommandLine => "Command line",
+            Self::CommandLinePrompt => "Command:",
+            Self::CommandLineHint => "Type a command; Tab completes, Enter runs",
+            Self::CommandLineOptional => "Enter for none",
             Self::KeyEscape => "esc",
             Self::KeyArrows => "\u{2191}\u{2193}",
             Self::KeyEnter => "enter",
@@ -2043,6 +2059,30 @@ impl Text {
 #[must_use]
 pub fn command_count(shown: usize, total: usize) -> String {
     format!("{shown} of {total} commands")
+}
+
+/// The command line's note that the command `id` ran.
+#[must_use]
+pub fn command_ran(id: &str) -> String {
+    format!("Ran {id}")
+}
+
+/// The command line's note that no command is named `name`.
+#[must_use]
+pub fn command_unknown(name: &str) -> String {
+    format!("No command is named {name}")
+}
+
+/// The command line's list of the commands what is typed may name: `names`, and how many
+/// `more` there are.
+#[must_use]
+pub fn command_choices(names: &[&str], more: usize) -> String {
+    let listed = names.join("  ");
+    if more == 0 {
+        listed
+    } else {
+        format!("{listed}  and {more} more")
+    }
 }
 
 /// A thread's estimated token use (P4-31).

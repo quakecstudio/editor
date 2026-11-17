@@ -16,6 +16,7 @@
 pub mod agent;
 pub mod bench;
 mod code_style;
+mod command_line;
 mod debugger;
 mod disk_watch;
 pub mod display;

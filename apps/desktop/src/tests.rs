@@ -41,8 +41,8 @@ use crate::map_tools::Readout;
 use crate::palette::highlighted;
 use crate::shell::{CentreTab, EDITOR_AREA, PointerHeld, ZoomStep, commanded_size, dragged_size};
 use crate::strings::{
-    Text, command_count, exit_status, help_for, icon_hint, match_count, missing_textures,
-    panel_button, replace_with, select_all_of,
+    Text, command_count, command_ran, command_unknown, exit_status, help_for, icon_hint,
+    match_count, missing_textures, panel_button, replace_with, select_all_of,
 };
 use crate::theme::{Contrast, Mode, Motion, Theme, ThemeError, Token, semibold};
 use crate::{App, AppError};
@@ -295,6 +295,7 @@ fn the_ui_code_has_no_string_literals() {
         ("finder.rs", include_str!("finder.rs")),
         ("game_guide.rs", include_str!("game_guide.rs")),
         ("palette.rs", include_str!("palette.rs")),
+        ("command_line.rs", include_str!("command_line.rs")),
         ("terminal.rs", include_str!("terminal.rs")),
         ("picker.rs", include_str!("picker.rs")),
         ("git_panel.rs", include_str!("git_panel.rs")),
@@ -5149,4 +5150,128 @@ fn a_panel_keeps_its_size_with_contents_wider_than_it() {
         lefts.first().unwrap() < &(240.0 + 24.0),
         "the centre starts after the panel's own size: {lefts:?}"
     );
+}
+
+/// Types `text` in the focused field, then a frame.
+fn type_text(harness: &mut Harness<'static, Option<App>>, text: &str) {
+    harness.event(egui::Event::Text(text.to_owned()));
+    harness.run();
+}
+
+/// Presses `key` with no modifier, then a frame.
+fn press(harness: &mut Harness<'static, Option<App>>, key: egui::Key) {
+    harness.key_press(key);
+    harness.run();
+}
+
+// UI-23, #971: every command runs from the command line: its id typed and entered asks for its
+// first parameter, by name and place, or with none runs it, the line saying what happened
+#[test]
+fn every_command_is_entered_on_the_command_line() {
+    let mut harness = accessible();
+    run_command(&mut harness, qs_layout::FOCUS_COMMAND_LINE);
+    harness.run();
+    let commands: Vec<(String, usize)> = {
+        let shell = harness.state().as_ref().unwrap().shell();
+        shell
+            .session()
+            .registry()
+            .commands()
+            .map(|info| {
+                let fields = params::fields(info.params()).len();
+                (info.id().as_str().to_owned(), fields)
+            })
+            .collect()
+    };
+    assert!(commands.len() > 200, "{}", commands.len());
+    for (id, fields) in commands {
+        // Entering a focus command moves the keyboard, so it is brought back each time.
+        run_command(&mut harness, qs_layout::FOCUS_COMMAND_LINE);
+        harness.run();
+        type_text(&mut harness, &id);
+        press(&mut harness, egui::Key::Enter);
+        let line = &harness.state().as_ref().unwrap().shell().command_line;
+        let (prompt, typed, noted) = line.state();
+        assert_eq!(typed, "", "{id}");
+        match (fields, prompt) {
+            (0, None) => assert!(noted, "{id} neither ran nor failed"),
+            (count, Some(prompt)) => {
+                assert_eq!(
+                    (prompt.command.as_str(), prompt.place),
+                    (id.as_str(), (1, count))
+                );
+                press(&mut harness, egui::Key::Escape);
+                let line = &harness.state().as_ref().unwrap().shell().command_line;
+                assert_eq!(line.state().0, None, "{id}");
+            }
+            (count, None) => {
+                assert_eq!(count, 0, "{id}: no parameter was asked for");
+            }
+        }
+    }
+}
+
+// UI-23, #971: the command line's key brings the keyboard to it; Tab completes a name, Enter
+// runs the command, Up brings the line back, and a parameter is asked for and taken
+#[test]
+fn the_command_line_completes_runs_recalls_and_asks() {
+    let mut harness = accessible();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Semicolon);
+    harness.run();
+    harness.run();
+    let field = harness.get_by_role_and_label(Role::TextInput, Text::CommandLine.get());
+    assert!(field.is_focused());
+    let place = |harness: &Harness<'static, Option<App>>| {
+        harness
+            .state()
+            .as_ref()
+            .unwrap()
+            .shell()
+            .layout()
+            .game_place
+    };
+    let before = place(&harness);
+    type_text(&mut harness, "toggle_embedded");
+    press(&mut harness, egui::Key::Tab);
+    let typed = |harness: &Harness<'static, Option<App>>| {
+        let line = &harness.state().as_ref().unwrap().shell().command_line;
+        line.state().1.to_owned()
+    };
+    assert_eq!(typed(&harness), "view.toggle_embedded_game");
+    // Tab completed the name and left the keyboard in the field.
+    let field = harness.get_by_role_and_label(Role::TextInput, Text::CommandLine.get());
+    assert!(field.is_focused());
+    press(&mut harness, egui::Key::Enter);
+    assert_ne!(place(&harness), before);
+    harness.get_by_label(&command_ran("view.toggle_embedded_game"));
+    press(&mut harness, egui::Key::ArrowUp);
+    assert_eq!(typed(&harness), "view.toggle_embedded_game");
+    press(&mut harness, egui::Key::ArrowDown);
+    assert_eq!(typed(&harness), "");
+    // A name several commands start is not run: they are listed.
+    type_text(&mut harness, "view.toggle");
+    press(&mut harness, egui::Key::Enter);
+    assert_eq!(typed(&harness), "view.toggle");
+    press(&mut harness, egui::Key::Escape);
+    assert_eq!(typed(&harness), "");
+    // A parameter is asked for by name, and what is typed for it is taken.
+    type_text(&mut harness, "view.show_panel");
+    press(&mut harness, egui::Key::Enter);
+    let line = &harness.state().as_ref().unwrap().shell().command_line;
+    let prompt = line.state().0.unwrap();
+    assert_eq!((prompt.field.name.as_str(), prompt.place.0), ("panel", 1));
+    // A choice is named by a start of it.
+    type_text(&mut harness, "age");
+    press(&mut harness, egui::Key::Enter);
+    let line = &harness.state().as_ref().unwrap().shell().command_line;
+    assert_eq!(line.state().0.unwrap().place, (2, 2));
+    // The second parameter is optional: nothing typed leaves it out.
+    press(&mut harness, egui::Key::Enter);
+    let line = &harness.state().as_ref().unwrap().shell().command_line;
+    assert_eq!(line.state().0, None);
+    harness.get_by_label(&command_ran("view.show_panel"));
+    // No command is named so.
+    type_text(&mut harness, "no.such.command");
+    press(&mut harness, egui::Key::Enter);
+    harness.get_by_label(&command_unknown("no.such.command"));
 }
