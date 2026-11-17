@@ -18,7 +18,9 @@ use std::time::Duration;
 
 use qs_bsp::{Bsp, BspLoader, Face};
 use qs_map::qbsp;
-use qs_map_light::{Dialect, Light, LightError, Sampling};
+use qs_map_light::{
+    Dialect, Extras, Jitter, LeafKind, Light, LightError, Sampling, SurfaceFlags,
+};
 
 use crate::download::Net;
 use crate::exec::Exec;
@@ -42,28 +44,12 @@ const LIT_HEADER: usize = 8;
 /// The fixture whose colour is compared with ericw-tools': coloured lights of the keys id's
 /// light reads and `_color` only.
 const COLOURED_ROOM: &str = "oracles/maps/coloured.map";
-/// The keys, or the starts of keys, of ericw-tools' own lighting, which ours does not have yet
-/// (L-12): a map with any is lit otherwise by ericw-tools' light, so its colour is not compared.
-const ERICW_ONLY_KEYS: [&str; 18] = [
-    "_sun",
-    "_surface",
-    "delay",
-    "_deviance",
-    "_minlight",
-    "_bounce",
-    "_dirt",
-    "_anglescale",
-    "_softangle",
-    "_range",
-    "_dist",
-    "_gamma",
-    "_phong",
-    "_shadow",
-    "_falloff",
-    "_project_",
-    "_lightmap_scale",
-    "_world_units_per_luxel",
-];
+/// A blank texture of the WAD written for a map: its name's bytes, its side, its mip levels
+/// and the bytes of its header (BSP-4).
+const STUB_NAME: usize = 16;
+const STUB_SIDE: u32 = 16;
+const STUB_MIPS: u32 = 4;
+const STUB_HEADER: u32 = 40;
 /// The classname of an instance of an external map (MAP-14).
 const EXTERNAL_MAP: &str = "misc_external_map";
 /// The channels of a `.lit` sample.
@@ -151,6 +137,19 @@ impl Images {
         }
     }
 
+    /// Adds the luxels `lit` of a face only one image has, against the darkness the other has
+    /// there.
+    fn add_against_dark(&mut self, lit: &[u8]) {
+        for &x in lit {
+            self.compared = self.compared.saturating_add(1);
+            self.total = self.total.saturating_add(u64::from(x));
+            self.largest = self.largest.max(x);
+            if x > LUXEL_TOLERANCE {
+                self.over = self.over.saturating_add(1);
+            }
+        }
+    }
+
     /// A face that is not the same in both.
     const fn differ(&mut self) {
         self.faces_differing = self.faces_differing.saturating_add(1);
@@ -197,9 +196,24 @@ fn styles(face: &Face) -> Vec<u8> {
         .collect()
 }
 
+/// What a lightmap only one of two lit BSPs has counts as.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OnlyOne {
+    /// A difference of the face: id's light and ours light the same faces in the same styles.
+    Differs,
+    /// A lightmap against darkness: ericw-tools keeps a lightmap whose brightest sample is 1
+    /// or more (LIGHT-18.2), so a sample a hair either side of 1 gives or takes one.
+    Dark,
+}
+
 /// The lightmaps of the lit BSPs `ours` and `theirs`, made from one BSP, compared face by face
 /// and each style's block with the oracle's block of the same style, by `samples`.
-fn compare(ours: &[u8], theirs: &[u8], samples: Samples<'_>) -> Result<Images, String> {
+fn compare(
+    ours: &[u8],
+    theirs: &[u8],
+    samples: Samples<'_>,
+    only_one: OnlyOne,
+) -> Result<Images, String> {
     let a = Bsp::read(ours, BspLoader::FitzQuake).map_err(|e| format!("our BSP: {e}"))?;
     let b = Bsp::read(theirs, BspLoader::FitzQuake).map_err(|e| format!("the oracle's: {e}"))?;
     if a.faces.len() != b.faces.len() {
@@ -216,30 +230,35 @@ fn compare(ours: &[u8], theirs: &[u8], samples: Samples<'_>) -> Result<Images, S
     let mut images = Images::default();
     for (fa, fb) in a.faces.iter().zip(&b.faces) {
         let (lit_a, lit_b) = (usize::try_from(fa.lightofs), usize::try_from(fb.lightofs));
-        let (Ok(at_a), Ok(at_b)) = (lit_a, lit_b) else {
-            if lit_a.is_ok() != lit_b.is_ok() {
-                images.differ();
-            }
+        if lit_a.is_err() && lit_b.is_err() {
             continue;
-        };
+        }
         let (styles_a, styles_b) = (styles(fa), styles(fb));
         let mut sorted = (styles_a.clone(), styles_b.clone());
         sorted.0.sort_unstable();
         sorted.1.sort_unstable();
-        if fa.lightmap_size != fb.lightmap_size || sorted.0 != sorted.1 {
+        let alike = lit_a.is_ok() && lit_b.is_ok() && sorted.0 == sorted.1;
+        if fa.lightmap_size != fb.lightmap_size || (only_one == OnlyOne::Differs && !alike) {
             images.differ();
             continue;
         }
         let block = fa.lightmap_size[0]
             .saturating_mul(fa.lightmap_size[1])
             .saturating_mul(scale);
-        for (slot_a, style) in styles_a.iter().enumerate() {
-            let slot_b = styles_b.iter().position(|s| s == style).unwrap_or(slot_a);
-            let ours = lightmap(data_a, (at_a, slot_a), (scale, block));
-            let theirs = lightmap(data_b, (at_b, slot_b), (scale, block));
+        let of = |data: &'_ [u8], lit: Result<usize, _>, styles: &[u8], style: u8| {
+            let at = lit.ok()?;
+            let slot = styles.iter().position(|s| *s == style)?;
+            lightmap(data, (at, slot), (scale, block)).map(<[u8]>::to_vec)
+        };
+        let mut all = styles_a.clone();
+        all.extend(styles_b.iter().filter(|style| !styles_a.contains(style)));
+        for style in all {
+            let ours = of(data_a, lit_a, &styles_a, style);
+            let theirs = of(data_b, lit_b, &styles_b, style);
             match (ours, theirs) {
-                (Some(x), Some(y)) => images.add(x, y),
-                _ => images.differ(),
+                (Some(x), Some(y)) => images.add(&x, &y),
+                (Some(lit), None) | (None, Some(lit)) => images.add_against_dark(&lit),
+                (None, None) => images.differ(),
             }
         }
     }
@@ -373,6 +392,93 @@ fn oracle_light(
     }))
 }
 
+/// The flags of each texinfo in `file`, the `.texinfo.json` ericw-tools' qbsp writes beside a
+/// BSP (LIGHT-9.8); none when it wrote no file.
+fn surface_flags(file: &Path) -> Result<Vec<SurfaceFlags>, String> {
+    let Ok(text) = fs::read(file) else {
+        return Ok(Vec::new());
+    };
+    let json: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_slice(&text).map_err(|e| format!("{}: {e}", file.display()))?;
+    let mut out = Vec::new();
+    for (key, value) in &json {
+        let index: usize = key
+            .parse()
+            .map_err(|e| format!("{}: texinfo {key}: {e}", file.display()))?;
+        if out.len() <= index {
+            out.resize(index.saturating_add(1), SurfaceFlags::default());
+        }
+        let number = |name: &str| value.get(name).and_then(serde_json::Value::as_f64);
+        let whole = |name: &str| {
+            value
+                .get(name)
+                .and_then(serde_json::Value::as_i64)
+                .and_then(|n| i32::try_from(n).ok())
+        };
+        let flag = |name: &str| value.get(name).and_then(serde_json::Value::as_bool);
+        let single = |n: f64| n.to_string().parse::<f32>().unwrap_or_default();
+        let colour = value
+            .get("minlight_color")
+            .and_then(serde_json::Value::as_array)
+            .map(|channels| {
+                let channel = |at: usize| {
+                    channels
+                        .get(at)
+                        .and_then(serde_json::Value::as_u64)
+                        .and_then(|c| u8::try_from(c).ok())
+                        .unwrap_or_default()
+                };
+                [channel(0), channel(1), channel(2)]
+            });
+        let defaults = SurfaceFlags::default();
+        if let Some(slot) = out.get_mut(index) {
+            *slot = SurfaceFlags {
+                phong_angle: number("phong_angle").map_or(0.0, single),
+                phong_angle_concave: number("phong_angle_concave").map_or(0.0, single),
+                phong_group: whole("phong_group").unwrap_or(0),
+                minlight: number("minlight").map(single),
+                minlight_color: colour.unwrap_or_default(),
+                maxlight: number("maxlight").map_or(0.0, single),
+                lightcolorscale: number("lightcolorscale")
+                    .map_or(defaults.lightcolorscale, single),
+                light_alpha: number("light_alpha").map(single),
+                light_twosided: flag("light_twosided"),
+                no_dirt: flag("no_dirt").unwrap_or(false),
+                no_shadow: flag("no_shadow").unwrap_or(false),
+                no_bounce: flag("no_bounce").unwrap_or(false),
+                no_minlight: flag("no_minlight").unwrap_or(false),
+                light_ignore: flag("light_ignore").unwrap_or(false),
+                object_channel_mask: whole("object_channel_mask"),
+                surflight_group: whole("surflight_group").unwrap_or(0),
+            };
+        }
+    }
+    Ok(out)
+}
+
+/// What each leaf is to a sample in `file`, the `.content.json` ericw-tools' qbsp writes beside
+/// a BSP (LIGHT-9.9); none when it wrote no file.
+fn leaf_kinds(file: &Path) -> Result<Vec<LeafKind>, String> {
+    let Ok(text) = fs::read(file) else {
+        return Ok(Vec::new());
+    };
+    let json: Vec<Vec<String>> =
+        serde_json::from_slice(&text).map_err(|e| format!("{}: {e}", file.display()))?;
+    Ok(json
+        .iter()
+        .map(|contents| {
+            let closed = contents
+                .iter()
+                .any(|name| matches!(name.as_str(), "SOLID" | "DETAIL_WALL" | "SKY"));
+            if closed {
+                LeafKind::Closed
+            } else {
+                LeafKind::Open
+            }
+        })
+        .collect())
+}
+
 /// The oracles and where they light.
 struct Oracles<'a> {
     exec: &'a dyn Exec,
@@ -401,46 +507,24 @@ impl Oracles<'_> {
             ericw_qbsp
         };
         let dir = self.work.join(&name);
-        let compiled = match oracle_compile(self.exec, qbsp, path, &text, &[], &dir)? {
-            Ok(compiled) => compiled,
-            Err(why) => {
-                println!("skip  {name}: {} stops: {why}", qbsp.display());
-                return Ok(true);
-            }
-        };
-        let past = past_id_tables(&compiled.bsp)?;
-        let colour = words.contains("\"_color\"");
-        let own: Vec<&str> = ERICW_ONLY_KEYS
-            .into_iter()
-            .filter(|key| words.contains(&format!("\"{key}")))
-            .collect();
-        let room = path.ends_with(COLOURED_ROOM);
         let mut passed = true;
-        for mode in Mode::ALL {
-            let label = format!("{name} {}", mode.name());
-            match past {
-                Some((table, count, size)) => println!(
-                    "skip  {label} light: {count} past {table}, {size}, which id's light overruns"
-                ),
-                None => passed &= self.white(&compiled.bsp, mode, (&dir, &label))?,
+        match oracle_compile(self.exec, qbsp, path, &text, &[], &dir)? {
+            Ok(compiled) => {
+                let past = past_id_tables(&compiled.bsp)?;
+                for mode in Mode::ALL {
+                    let label = format!("{name} {}", mode.name());
+                    match past {
+                        Some((table, count, size)) => println!(
+                            "skip  {label} light: {count} past {table}, {size}, which id's light \
+                             overruns"
+                        ),
+                        None => passed &= self.white(&compiled.bsp, mode, (&dir, &label))?,
+                    }
+                }
             }
-            if !colour {
-                continue;
-            }
-            // ericw-tools' `-extra` takes its samples elsewhere than id's, which ours follows
-            // (LIGHT-1.3): lit white, the coloured room's luxels differ from id's by 1.54 on
-            // average in that mode and by 0.018 in the fast one.
-            if let Mode::Extra = mode {
-                println!("skip  {label} colour: ericw-tools' -extra samples elsewhere than id's");
-            } else if own.is_empty() {
-                passed &= self.colour(&compiled.bsp, mode, (&dir, &label), room)?;
-            } else {
-                println!(
-                    "skip  {label} colour: it uses ericw-tools' own lighting, {}",
-                    own.join(", ")
-                );
-            }
+            Err(why) => println!("skip  {name}: {} stops: {why}", qbsp.display()),
         }
+        passed &= self.ericw(path, &text, (&dir, &name))?;
         Ok(passed)
     }
 
@@ -458,7 +542,7 @@ impl Oracles<'_> {
             (Ok(ours), Ok(OracleLit { bsp: theirs, .. })) => {
                 let file = dir.join(format!("ours-{}.bsp", mode.name()));
                 fs::write(&file, &ours.bsp).map_err(|e| format!("{}: {e}", file.display()))?;
-                match compare(&ours.bsp, &theirs, Samples::Grey) {
+                match compare(&ours.bsp, &theirs, Samples::Grey, OnlyOne::Differs) {
                     Ok(images) => (images.agree(), format!("light: {images}")),
                     Err(why) => (false, format!("light: {why}")),
                 }
@@ -474,59 +558,151 @@ impl Oracles<'_> {
         Ok(agrees)
     }
 
-    /// `bsp` lit by ours and by ericw-tools' light in `mode`, their `.lit` files compared; whether
-    /// they agree. On the coloured room, which is there to be compared, an oracle that writes no
-    /// `.lit` fails; elsewhere it is passed over.
-    fn colour(
-        &self,
-        bsp: &[u8],
-        mode: Mode,
-        (dir, label): (&Path, &str),
-        room: bool,
-    ) -> Result<bool, String> {
-        let [_, _, ericw_light] = &self.tools.ericw;
-        let ours = match Light::new(mode.sampling()).run(bsp) {
+    /// The map `text` with its world's `wad` a WAD written for it, holding a texture of each
+    /// name the map's faces have: light tells sky, liquid, fence and the textures of surface
+    /// lights by their names (LIGHT-11.2, LIGHT-16.1), which a BSP compiled with no WAD does
+    /// not have. The corpus's maps come without their WADs, so the textures are blank.
+    fn with_textures(&self, text: &[u8], name: &str) -> Result<Vec<u8>, String> {
+        let mut file = qs_map::MapFile::parse(text).map_err(|e| format!("{name}: {e}"))?;
+        let mut names: Vec<Vec<u8>> = file
+            .entities
+            .iter()
+            .flat_map(qs_map::Entity::brushes)
+            .flat_map(|brush| &brush.faces)
+            .map(|face| face.texture().to_ascii_lowercase())
+            .collect();
+        // An animation's frames are a run from its first: the game refuses a BSP that has a
+        // later frame without those before it (BSP-4.8), and a map may name only one.
+        let earlier: Vec<Vec<u8>> = names
+            .iter()
+            .filter_map(|texture| match texture.as_slice() {
+                [b'+', frame, rest @ ..] => Some((*frame, rest)),
+                _ => None,
+            })
+            .flat_map(|(frame, rest)| {
+                let first = if frame.is_ascii_digit() { b'0' } else { b'a' };
+                (first..frame).map(move |before| {
+                    let mut name = vec![b'+', before];
+                    name.extend_from_slice(rest);
+                    name
+                })
+            })
+            .collect();
+        names.extend(earlier);
+        names.sort_unstable();
+        names.dedup();
+        let mut wad = qs_wad::write::WadBuilder::new();
+        for texture in &names {
+            // A name longer than a WAD holds is no texture of a WAD: qbsp finds none.
+            if texture.len() >= STUB_NAME {
+                continue;
+            }
+            let mut lump = texture.clone();
+            lump.resize(STUB_NAME, 0);
+            let mut at = STUB_HEADER;
+            for size in [STUB_SIDE, STUB_SIDE] {
+                lump.extend_from_slice(&size.to_le_bytes());
+            }
+            for level in 0..STUB_MIPS {
+                lump.extend_from_slice(&at.to_le_bytes());
+                at = at.saturating_add((STUB_SIDE >> level).saturating_mul(STUB_SIDE >> level));
+            }
+            lump.resize(usize::try_from(at).unwrap_or(0), 0);
+            wad.add(texture, qs_wad::WAD_TYP_MIPTEX, lump)
+                .map_err(|e| format!("{name}: {e}"))?;
+        }
+        let dir = self.work.join("textures");
+        fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        let path = dir.join(format!("{name}.wad"));
+        let bytes = wad.to_bytes().map_err(|e| format!("{name}: {e}"))?;
+        fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+        if let Some(world) = file.entities.first_mut() {
+            world
+                .set(b"wad", path.to_string_lossy().as_bytes())
+                .map_err(|e| format!("{name}: {e}"))?;
+        }
+        Ok(file.to_bytes())
+    }
+
+    /// The map compiled by ericw-tools' qbsp and lit by ours, in the extended dialect, and by
+    /// ericw-tools' light, both with one sample a luxel: the grey lumps compared, and the `.lit`
+    /// files when both wrote one; whether they agree.
+    fn ericw(&self, path: &Path, text: &[u8], (dir, name): (&Path, &str)) -> Result<bool, String> {
+        let [ericw_qbsp, _, ericw_light] = &self.tools.ericw;
+        let dir = dir.join("ericw");
+        let label = format!("{name} ericw");
+        let text = &self.with_textures(text, name)?;
+        let compiled = match oracle_compile(self.exec, ericw_qbsp, path, text, &[], &dir)? {
+            Ok(compiled) => compiled,
+            Err(why) => {
+                println!("skip  {label}: ericw-tools' qbsp stops: {why}");
+                return Ok(true);
+            }
+        };
+        let surfaces = surface_flags(&dir.join(format!("{name}.texinfo.json")))?;
+        // ericw-tools scatters by its C library's rand (LIGHT-14.5).
+        let jitter = if cfg!(target_os = "macos") {
+            Jitter::Bsd
+        } else {
+            Jitter::Glibc
+        };
+        let leaves = leaf_kinds(&dir.join(format!("{name}.content.json")))?;
+        let extras = Extras {
+            surfaces: &surfaces,
+            leaves: &leaves,
+            palette: None,
+        };
+        let ours = match Light::new(Sampling::Fast)
+            .with_jitter(jitter)
+            .run_with(&compiled.bsp, extras)
+        {
             Ok(ours) => ours,
             Err(error) => {
-                println!("FAIL  {label} colour: ours stops: {error}");
+                println!("FAIL  {label}: ours stops: {error}");
                 return Ok(false);
             }
         };
-        let Some(our_lit) = &ours.lit else {
-            println!("FAIL  {label} colour: ours wrote no .lit");
-            return Ok(false);
-        };
-        let name = format!("ericw-{}", mode.name());
-        let lit = oracle_light(self.exec, ericw_light, mode.options(), bsp, (dir, &name))?;
-        let (theirs, their_lit) = match lit {
-            Ok(OracleLit {
-                bsp: theirs,
-                lit: Some(their_lit),
-            }) => (theirs, their_lit),
-            Ok(OracleLit { lit: None, .. }) => {
-                println!(
-                    "{} {label} colour: ericw-tools wrote no .lit",
-                    verdict(!room)
-                );
-                return Ok(!room);
-            }
+        let file = dir.join("ours.bsp");
+        fs::write(&file, &ours.bsp).map_err(|e| format!("{}: {e}", file.display()))?;
+        // Lit where it was compiled, beside the `.texinfo.json` ericw-tools' qbsp wrote for it.
+        let theirs = match oracle_light(self.exec, ericw_light, &[], &compiled.bsp, (&dir, name))? {
+            Ok(theirs) => theirs,
             Err(stop) => {
-                println!(
-                    "{} {label} colour: ericw-tools stops: {stop}",
-                    verdict(!room)
-                );
-                return Ok(!room);
+                println!("FAIL  {label}: ericw-tools' light stops: {stop}");
+                return Ok(false);
             }
         };
-        let (agrees, said) = match compare(&ours.bsp, &theirs, Samples::Colour(our_lit, &their_lit))
-        {
-            Ok(images) => (images.agree(), images.to_string()),
-            Err(why) => (false, why),
+        let mut agrees = match compare(&ours.bsp, &theirs.bsp, Samples::Grey, OnlyOne::Dark) {
+            Ok(images) => {
+                println!("{} {label} light: {images}", verdict(images.agree()));
+                images.agree()
+            }
+            Err(why) => {
+                println!("FAIL  {label} light: {why}");
+                false
+            }
         };
-        println!(
-            "{} {label} colour against ericw-tools: {said}",
-            verdict(agrees)
-        );
+        match (&ours.lit, &theirs.lit) {
+            (Some(our_lit), Some(their_lit)) => {
+                let samples = Samples::Colour(our_lit, their_lit);
+                match compare(&ours.bsp, &theirs.bsp, samples, OnlyOne::Dark) {
+                    Ok(images) => {
+                        println!("{} {label} colour: {images}", verdict(images.agree()));
+                        agrees &= images.agree();
+                    }
+                    Err(why) => {
+                        println!("FAIL  {label} colour: {why}");
+                        agrees = false;
+                    }
+                }
+            }
+            (None, None) => {}
+            (ours, _) => {
+                let only = if ours.is_some() { "ours" } else { "ericw-tools" };
+                println!("FAIL  {label} colour: only {only} wrote a .lit");
+                agrees = false;
+            }
+        }
         Ok(agrees)
     }
 }

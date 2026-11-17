@@ -13,6 +13,7 @@
 //! is written from the spec, which was written from its source, read and run as an oracle.
 
 mod entities;
+mod extended;
 mod face;
 mod lump;
 mod preview;
@@ -30,6 +31,7 @@ use crate::lump::Colour;
 use crate::trace::Tree;
 
 pub use crate::entities::EntityId;
+pub use crate::extended::{Extras, LeafKind, SurfaceFlags};
 pub use crate::entities::{
     LIGHT_DEFAULT_LEVEL, LIGHT_FIRST_SWITCHED_STYLE, LIGHT_MAX_MAP_ENTITIES,
     LIGHT_MAX_MAP_ENTSTRING, LIGHT_MAX_SWITCHED,
@@ -54,6 +56,17 @@ pub enum Sampling {
     Fast,
     /// Four, each two by two averaged: `light -extra`.
     Extra,
+}
+
+/// Which C library's `rand` scatters a sun's penumbra and a light's `_deviance`
+/// (LIGHT-14.5): ericw-tools draws from the library it is built with.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Jitter {
+    /// glibc's, as ericw-tools draws on Linux.
+    #[default]
+    Glibc,
+    /// The BSDs' and macOS's.
+    Bsd,
 }
 
 /// `scaledist`, `scalecos` and `rangescale` (LIGHT-1.2).
@@ -127,6 +140,19 @@ pub enum LightError {
         /// The key.
         key: String,
     },
+    /// `WorldEnt() failed to get worldspawn`: the first entity is not the worldspawn, in the
+    /// extended dialect (LIGHT-8.5).
+    NoWorldspawn,
+    /// `Too many unique light targetnames (max=<n>)`, in the extended dialect (LIGHT-10.2).
+    TooManyStyles {
+        /// The first style that may not be given.
+        max: i32,
+    },
+    /// `Couldn't find entity for model *<n>`, in the extended dialect (LIGHT-9.7).
+    NoEntityForModel {
+        /// The model.
+        model: usize,
+    },
     /// The BSP cannot be read or is a format `light` does not write.
     Format,
     /// A thread could not be run.
@@ -161,6 +187,13 @@ impl fmt::Display for LightError {
             Self::EntityTextTooLong => f.write_str("Entity text too long"),
             Self::PairTooLong { key } => {
                 write!(f, "the pair of key {key} is too long for id's light")
+            }
+            Self::NoWorldspawn => f.write_str("WorldEnt() failed to get worldspawn"),
+            Self::TooManyStyles { max } => {
+                write!(f, "Too many unique light targetnames (max={max})")
+            }
+            Self::NoEntityForModel { model } => {
+                write!(f, "Couldn't find entity for model *{model}.")
             }
             Self::Format => f.write_str("the BSP cannot be lit"),
             Self::Thread => f.write_str("a light thread could not be run"),
@@ -224,6 +257,7 @@ pub struct Light {
     sampling: Sampling,
     scale: Scale,
     dialect: Dialect,
+    jitter: Jitter,
 }
 
 impl Light {
@@ -234,7 +268,14 @@ impl Light {
             sampling,
             scale: Scale::default(),
             dialect: Dialect::default(),
+            jitter: Jitter::default(),
         }
+    }
+
+    /// The compiler scattering by `jitter`'s sequence (LIGHT-14.5).
+    #[must_use]
+    pub const fn with_jitter(self, jitter: Jitter) -> Self {
+        Self { jitter, ..self }
     }
 
     /// The compiler with `scale` instead of the defaults.
@@ -256,11 +297,24 @@ impl Light {
     /// The [`LightError`] `light` stops with, or [`LightError::Format`] for a BSP that cannot
     /// be read.
     pub fn run(&self, bsp: &[u8]) -> Result<Lighted, LightError> {
+        self.run_with(bsp, Extras::default())
+    }
+
+    /// The BSP `bsp` lit, the extended dialect with what `extras` gives it besides: the
+    /// texinfos' lighting flags from the BSP compiler, and the palette (LIGHT-8, LIGHT-9.8).
+    ///
+    /// # Errors
+    ///
+    /// As [`Light::run`].
+    pub fn run_with(&self, bsp: &[u8], extras: Extras<'_>) -> Result<Lighted, LightError> {
         // The faces' old lighting is not read: `light` overwrites it (LIGHT-1.1).
         let unlit = lump::without_lighting(bsp)?;
         let read = Bsp::read(&unlit, BspLoader::FitzQuake).map_err(|_| LightError::Format)?;
         if read.version == BspVersion::Valve {
             return Err(LightError::Format);
+        }
+        if self.dialect == Dialect::Extended {
+            return extended::run(self, bsp, &read, extras);
         }
         let mut warnings = Vec::new();
         let entities = Entities::read(read.entity_lump, self.dialect, &mut warnings)?;

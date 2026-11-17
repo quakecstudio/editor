@@ -6261,6 +6261,7 @@ dependencies = [
  "qs-sim",
  "qs-templates",
  "qs-vfs",
+ "qs-wad",
  "qs-workbench",
  "quakec-lsp",
  "serde",
