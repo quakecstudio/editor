@@ -33,7 +33,7 @@ take minutes to build; install them when a task needs them.
 
 ### Network
 
-- `cargo xtask deny-fixtures` and `cargo deny` need the crates.io index.
+- `cargo deny` needs the crates.io index.
 - `scripts/refresh-specs.sh` fetches from `raw.githubusercontent.com`; `--verify` is offline.
 - `cargo xtask oracles` fetches id's sources from `raw.githubusercontent.com` once, into
   `target/oracles/src/`, and checks their SHA-256 on every run.

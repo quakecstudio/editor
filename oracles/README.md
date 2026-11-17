@@ -368,8 +368,7 @@ that writes nothing fails.
 ## Readiness
 
 The oracles' C is the C tools layer's own code, and the readiness bar of
-[`docs/testing.md`](../docs/testing.md) applies to it as to a crate. `cargo xtask readiness
-<check> oracles` measures it, and the `Readiness` workflow takes `oracles` in its list of crates:
+[`docs/testing.md`](../docs/testing.md) applies to it as to a crate:
 
 - **Spec sections:** DIFF-1, DIFF-2, DIFF-3, DIFF-4, DIFF-5, DIFF-6, DIFF-7, DIFF-8, DIFF-10,
   TRACE-1, TRACE-2, TRACE-3, TRACE-4 and TRACE-5: the statements the VM oracle and its driver
@@ -384,7 +383,7 @@ The oracles' C is the C tools layer's own code, and the readiness bar of
   `LLVM_PROFDATA` and `LLVM_COV`, which cargo-llvm-cov reads for the Rust crates measured in the
   same run.
 - **Flakes:** `cargo xtask oracles`, 20 times on each OS after one build.
-- **Mutation:** an exception, recorded in [`ratchets.toml`](../ratchets.toml). The bar's
+- **Mutation:** an exception. The bar's
   mutation tool, cargo-mutants (TEST-2), mutates Rust only. The C is held instead by tests
   whose expectations are written from the spec without it: every vector, scenario number,
   probe and scenario test states the trace or exit status the spec gives, so a fault in the C

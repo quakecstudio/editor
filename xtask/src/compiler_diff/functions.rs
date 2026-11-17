@@ -29,7 +29,7 @@ use super::{FTEQCC_LIMIT, engine, run_binary, write, write_progs};
 use crate::differential::asset_root;
 use crate::oracles::codegen::{self, Profile};
 use crate::oracles::{self, Oracles, rerelease};
-use crate::readiness::Shard;
+use crate::shard::Shard;
 
 /// How many functions one cut program holds and calls (DIFF-15.7, DIFF-15.9).
 const GROUP: usize = 64;

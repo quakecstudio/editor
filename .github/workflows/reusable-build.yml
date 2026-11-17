@@ -104,7 +104,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       # The packages carry the workspace's version; a tag must name it, with a pre-release
@@ -140,7 +140,7 @@ jobs:
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - name: Set up the Rust toolchain
@@ -275,10 +275,10 @@ jobs:
           xcrun stapler staple "$pkg"
           xcrun stapler validate "$pkg"
       - name: Attest the installer package
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        uses: actions/attest@v4.2.2
         with:
           subject-path: dist/*.pkg
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: release-macos
           path: dist/*.pkg
@@ -312,7 +312,7 @@ jobs:
       ARCH: ${{ matrix.arch }}
       TARGET: ${{ matrix.target }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - name: Set up the Rust toolchain
@@ -332,7 +332,7 @@ jobs:
       # in Azure's error goes to Justin, not worked around.
       - name: Code sign the executables
         if: ${{ github.ref_type == 'tag' }}
-        uses: skeeto/aas-sign@058700fb89886acfce8d1cc511d69a11eb8f9862 # v1.1.1
+        uses: skeeto/aas-sign@v1.1.1
         with:
           version: v1.1.0
           endpoint: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
@@ -365,10 +365,10 @@ jobs:
           packaging/windows/package.sh zip "$ARCH" "target/$TARGET/release" "$VERSION" dist
           packaging/windows/package.sh msi "$ARCH" "target/$TARGET/release" "$VERSION" dist
       - name: Attest the zip and the MSI
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        uses: actions/attest@v4.2.2
         with:
           subject-path: dist/*
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: release-windows-${{ matrix.arch }}
           path: dist/*
@@ -395,7 +395,7 @@ jobs:
       VERSION: ${{ needs.version.outputs.version }}
       ARCH: ${{ matrix.arch }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       # ALSA's headers for the preview host's sound; musl-gcc for the static command line; rpm, flatpak-builder and the
@@ -446,10 +446,10 @@ jobs:
           rm -r dist/bin
           ls -l dist
       - name: Attest the Linux packages
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        uses: actions/attest@v4.2.2
         with:
           subject-path: dist/*
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: release-linux-${{ matrix.arch }}
           path: dist/*

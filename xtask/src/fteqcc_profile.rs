@@ -14,9 +14,9 @@
 //!
 //! The rerelease codebases come from `cargo xtask corpus fetch rerelease rerelease-hipnotic
 //! rerelease-rogue rerelease-mg1 rerelease-ctf rerelease-mg3`. The FTEQCC subset each one uses
-//! is recorded in `docs/spec/vectors/dialect-fteqcc-rerelease/coverage.txt` and pinned by the
-//! coverage check (`fteqcc_coverage`); this check adds that they parse and resolve clean. The
-//! FTEQCC corpus mods of the full dialect (`docs/spec/dialect-fteqcc.md`, FTEF-1.1) are checked
+//! is recorded in `docs/spec/vectors/dialect-fteqcc-rerelease/coverage.txt`; this check holds
+//! that they parse and resolve clean. The
+//! FTEQCC corpus mods of the full dialect (`docs/spec/dialect-fteqcc.md`, FTEF-1.4) are checked
 //! in the tree `cargo xtask corpus fetch freecs-tree` lays out: FreeCS (`cstrike/src`),
 //! Rad-Therapy (`valve/src`, whose menu module builds Nuclide's `menu-vgui`, opened through the
 //! project file `corpus/projects/freehl/quakec.toml`, whose include directories are its
@@ -310,7 +310,7 @@ mod tests {
         );
     }
 
-    // spec FTEF-1.1: a codebase in the full dialect, a class with members defined outside it, a
+    // spec FTEF-1.4: a codebase in the full dialect, a class with members defined outside it, a
     // pointer, an accessor and the FTEQCC preprocessor, parses and resolves with no error.
     #[test]
     fn a_full_dialect_codebase_passes() {

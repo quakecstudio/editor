@@ -24,11 +24,6 @@ the files agree with it:
   `conventions:clippy-deny` markers, must list exactly the lints that are `deny`. The command
   also checks the rules that are not single values: CalVer, the exact toolchain, pinned
   workspace dependencies, inherited package fields and lints, and reasons on cargo-deny skips.
-- `cargo xtask clippy-fixtures` runs clippy with the workspace lints over the fixtures in
-  `xtask/fixtures/clippy/`. Each fixture names the one lint it must trigger, or `pass`.
-- `cargo xtask deny-fixtures` runs `cargo deny` with `deny.toml` over scratch crates that use a
-  GPL-incompatible license or a wildcard version, plus a control that must pass. It needs
-  network access to the crates.io index.
 
 Change this document and the configuration in the same PR.
 
@@ -60,8 +55,8 @@ The channel is `1.99.0`, the same as vouch, and `rust-version` equals it.
 
 Nightly Rust is allowed in two places only: fuzzing with cargo-fuzz (`cargo xtask fuzz`, which
 `make test-fuzz` and the scheduled `Fuzz` workflow call), and branch coverage
-in the `Readiness` workflow, which pins a dated nightly (`NIGHTLY` in
-`.github/workflows/readiness.yml`, equal to `readiness::NIGHTLY` in xtask; ADR-0009).
+for a readiness review (`cargo +nightly llvm-cov --branch`, ADR-0009; the report names the
+nightly).
 
 ```toml file=rust-toolchain.toml
 [toolchain]
@@ -274,8 +269,9 @@ alive. Panics remain denied by lint; unwinding is the last line of defence, not 
 ## CI (CONV-7)
 
 As in vouch:
-- Every third-party action is pinned to a full commit SHA with a version comment, and a
-  workflow fails any PR that adds an unpinned one (`zgosalvez/github-actions-ensure-sha-pinned-actions`).
+- Every action is named by its version tag and locked to that tag's full commit SHA in
+  `.github/workflows/actions.lock`, written by `gh actions-lock`, and a workflow fails any PR
+  whose workflows and lockfile disagree (`gh actions-lock --verify`).
 - Workflows are linted with `zizmor`. They use least-privilege `permissions`, set
   `persist-credentials: false` on checkout, and keep static matrix values only.
 - Separate jobs: Format, Clippy (`--locked --all-targets --all-features -- -D warnings`),

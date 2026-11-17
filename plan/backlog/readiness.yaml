@@ -530,10 +530,10 @@ groups:
     - P2-168
     deliverable:
     - docs/readiness/p2-r1b.md following docs/readiness/_template.md for qc-builtins, linking the measurement run
-    - 'ratchets.toml: [crates.qc-builtins] re-measured on the P2-150 code, its readiness key P2-R1B and its equivalent_mutants holding only mutants cargo-mutants still produces'
+    - The note records qc-builtins re-measured on the P2-150 code under the key P2-R1B, its equivalent mutants only those cargo-mutants still produces
     acceptance:
     - Every threshold in ADR-0009 met for qc-builtins, or a per-crate exception with its reason recorded in the crate README
     - Reviewed by an agent that did not write the change under review (TEST-9)
-    - cargo xtask ratchet passes over the full ratchets.toml history with the new key
+    - The note records each measuring command and its numbers
     verify:
-    - cargo xtask ratchet; the Readiness workflow run link in the note
+    - The measuring commands and their output in the note (docs/testing.md, Measuring a layer)

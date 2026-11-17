@@ -55,7 +55,7 @@ and a failed `Classify the change` job are all full. Renames count both paths.
 | Light | Why only `cargo xtask ci` and xtask's tests read it |
 | --- | --- |
 | `docs/**`, except `docs/spec/**` | read by `cargo xtask` `adr`, `conventions`, `licenses` (and `docs/porting.md` through it), `attribution`, `contrast` (`docs/design/tokens.toml`) and `commands` (`docs/commands.md`), and by xtask's tests: the same checks on the repository, the porting-header rules and the benchmark budgets (`docs/perf-budgets.md`) |
-| `plan/**` | read by the `plan` and `plan-tests` steps of `cargo xtask ci`, and by xtask's ratchet tests (`plan/backlog/readiness.yaml`) |
+| `plan/**` | read by the `plan` and `plan-tests` steps of `cargo xtask ci` |
 | `.claude/**`, `.kiro/**` | read only by `cargo xtask licenses` and its test, and by xtask's tests of `.claude/skills/work-issue/scripts/check-pr-body.sh` |
 | `*.md` at the root (`README.md`, `CLAUDE.md`, `AGENTS.md`, `ATTRIBUTION.md`, ...) | read only by `cargo xtask licenses` and `attribution` and their tests |
 
@@ -123,11 +123,10 @@ A run stops as soon as one test fails, at two levels (P2-146):
   after the first failure, so the job ends at that test instead of running every binary
   to the end. The light path's xtask-only step uses the same command. nextest runs no doc
   tests, and the workspace has none: every rustdoc code block is `text`.
-- Across a matrix, `Unit Tests`, `Build` and the Readiness `flakes` matrices set
+- Across a matrix, `Unit Tests` and `Build` set
   `fail-fast: true`, so the first OS or target that fails cancels its siblings and frees
   their runners. A cancelled job shows as cancelled, not failed: the failure to read is the
-  one that was not cancelled. The Readiness `mutation` shards keep `fail-fast: false`, since
-  each shard is an independent measurement the ratchet judges on its own.
+  one that was not cancelled.
 
 ## Workflows
 
@@ -141,7 +140,7 @@ A run stops as soon as one test fails, at two levels (P2-146):
 | `Build (linux-x86_64)`, `Build (linux-aarch64)` | x86_64 and arm64 Linux runners | after installing ALSA's headers, `cargo build --profile ci --locked --workspace` for `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu` |
 | `Build (windows-x86_64)`, `Build (windows-aarch64)` | Windows | the same for `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc` (cross-compiled) |
 | `Build (macos-universal)` | macOS | builds `aarch64-apple-darwin`, the one macOS target (Apple silicon), and keeps the preview host with its SHA-256 as the `quakec-engine-macos-arm64` artifact; every build job keeps the preview host and its SHA-256 as the `quakec-engine-<target>` artifact for seven days (P3-02). The job keeps the name the default-branch ruleset requires |
-| `cargo xtask ci` | Linux | the command `make ci` runs, less the steps another job runs with the same command (`cargo xtask ci --skip`, [below](#which-job-runs-each-step-of-cargo-xtask-ci)): the plan checks (`plan/check.py` and its tests, with PyYAML installed), the cached specifications (`scripts/refresh-specs.sh --verify`, offline: fails naming any file under `specs/` whose SHA-256 differs from `specs/manifest.tsv`, that is listed but missing, or that has no row), conventions, ADRs, layers, licenses, attribution, contrast, the `qs-commands` `release_guard` example built and run under `--profile release` (the command guard catches a panic in a release build, P2-12; a test target would not show it, since Cargo builds tests with unwind whatever the profile says), the `commands` check (`docs/commands.md` matches the command registry), clippy fixtures and deny fixtures; on a cache run on `main`, fmt and cargo-deny too |
+| `cargo xtask ci` | Linux | the command `make ci` runs, less the steps another job runs with the same command (`cargo xtask ci --skip`, [below](#which-job-runs-each-step-of-cargo-xtask-ci)): the plan checks (`plan/check.py` and its tests, with PyYAML installed), the cached specifications (`scripts/refresh-specs.sh --verify`, offline: fails naming any file under `specs/` whose SHA-256 differs from `specs/manifest.tsv`, that is listed but missing, or that has no row), conventions, ADRs, layers, licenses, attribution, contrast, the `qs-commands` `release_guard` example built and run under `--profile release` (the command guard catches a panic in a release build, P2-12; a test target would not show it, since Cargo builds tests with unwind whatever the profile says), the `commands` check (`docs/commands.md` matches the command registry); on a cache run on `main`, fmt and cargo-deny too |
 | `cargo-deny` | Linux | `cargo deny --locked --all-features check advisories bans licenses sources` with cargo-deny 0.20.2, the version the `cargo xtask ci` job installs |
 | `Dependency Review` | Linux | `dependency-review-action` on pull requests; skipped on merge groups and cache runs, which a required check accepts |
 | `Test Assets (linux)`, `Test Assets (macos)`, `Test Assets (windows)` | each OS | the `language_coverage.py` tests, `cargo xtask corpus verify`, then `cargo xtask assets fetch` and `precache` ([test-assets.md](test-assets.md)), `cargo xtask oracles engine` on `oracles/engine/routes/start.route`, which builds the oracles and plays the route through id's server on LibreQuake's start map twice, checking the two traces agree and match `start.expected.jsonl` in canonical form, so the run is the same on every OS (P3-23, [`oracles/README.md`](../oracles/README.md#the-engine-oracle)), then `cargo xtask sim-diff` on the same route, which plays it through `qs-sim` too and fails on the first frame whose globals or edict fields differ from id's server's (P3-25, [DIFF-16](spec/differential.md)); on Linux only, `cargo xtask engines --check`, which fetches the engine-target database's fact sources by checksum and fails when `crates/qc-engines/src/tables.rs` differs from what they give ([engine-targets.md](spec/engine-targets.md), ENGT-1.2), `cargo xtask corpus fetch id-1.01`, which writes id 1.01 to the cache by checksum, `corpus/language_coverage.py`, which checks that [`docs/spec/language.md`](spec/language.md) covers every construct id's QuakeC 1.01 uses, `cargo xtask lex-corpus`, which lexes every `.qc` file and preprocesses the files `progs.src` lists with no errors, `cargo xtask oracles id101` on the same files, which compiles them with id's qcc, checks the progs.dat's SHA-256 and traces two scenarios with the VM oracle, `cargo xtask parse-corpus`, which parses id 1.01 with no errors and checks that every file of the rerelease, Copper and Arcane Dimensions round-trips through the syntax tree, then, when the parser chain changed ([above](#when-each-run-happens)), `cargo xtask parse-corpus --deletions`, which deletes each token of id 1.01 in turn to check that recovery stays local, and the same with `--fteqcc` on the rerelease under the FTEQCC profile, `cargo xtask oracles rerelease` on the six rerelease codebases, which compiles each with FTEQCC to a version 6 progs.dat with vanilla opcodes only and a `.lno`, checks both against recorded SHA-256 digests and keeps them in `target/oracles/rerelease` (cached on `oracles/`, the xtask oracle code and `corpus/manifest.toml`), `cargo xtask corpus build`, which checks that every progs.dat those oracles build round-trips through `qc-progs` byte for byte, `cargo xtask differential --fast`, which runs id 1.01 end to end in the VM oracle and QuakeC Studio's runner and fails on any divergence DIFF-10.1 does not list (the differential VM suite QA-1 names; the full corpus runs nightly, [below](#differential)), `cargo xtask compiler-diff --fast`, which compiles id 1.01 with id's qcc and with `qc-codegen`, calls every function of each progs in `qc-vm` 32 times and fails on any divergence or on less than 90% of qcc's statements executed (the compiler differential, [DIFF-12](spec/differential.md); 128 rounds run nightly), `cargo xtask corpus fetch` of every map in the manifest and `cargo xtask map-corpus`, which checks that each reads and writes back through `qs-map` byte for byte, the `qs-vfs` `walk` example on the LibreQuake lite asset, which loads every BSP, `.lit`, alias model, sprite and sound in it, and, on every OS, `cargo xtask bridge-client` on the same asset, which builds the preview host and runs `qs-engine`'s client against it headless, launched through a run root whose `id1` is a link (P3-06), then `cargo xtask scenario` on `xtask/fixtures/scenarios/start.scenario`, which plays the scenario in `qs-sim` on LibreQuake's start map ten times and fails unless every run passes with the same result (P3-19, SCN-2.5); the download cache, which holds the asset archives and the repository archives `corpus fetch` reads, is keyed on the SHA-256 of `corpus/manifest.toml` and saved after the last fetch |
@@ -164,10 +163,7 @@ there the `cargo xtask ci` job runs fmt and deny itself.
 | `nextest` | `cargo nextest run --locked --workspace --all-features` | `Unit Tests (linux)` (and macOS and Windows) | `Unit Tests (linux)` |
 | `run` | `cargo run --locked -p qs-commands --profile release --example release_guard` | `cargo xtask ci` | `cargo xtask ci` |
 | `commands` | `cargo xtask commands --check` | `cargo xtask ci` | `cargo xtask ci` |
-| `api` | `cargo xtask api --check` | `cargo xtask ci` | `cargo xtask ci` |
-| `clippy-fixtures` | `cargo xtask clippy-fixtures` | `cargo xtask ci` | `cargo xtask ci` |
 | `deny` | `cargo deny --locked --all-features check advisories bans licenses sources` | `cargo-deny` | `cargo xtask ci` |
-| `deny-fixtures` | `cargo xtask deny-fixtures` | `cargo xtask ci` | `cargo xtask ci` |
 | `fuzz-build` | `cargo check --manifest-path fuzz/Cargo.toml --locked` | `cargo xtask ci` | `cargo xtask ci` |
 | `differential` | `cargo xtask differential --fast` | `Test Assets (linux)` | `Test Assets (linux)` |
 
@@ -190,7 +186,7 @@ on a pull request that changes `.github/`, and its checks are not required:
 
 | Check | What it does |
 | --- | --- |
-| `Pinned Actions` | fails if any workflow uses an action not pinned to a full commit SHA (`zgosalvez/github-actions-ensure-sha-pinned-actions`) |
+| `Locked Actions` | `gh actions-lock --verify`: fails when `.github/workflows/actions.lock`, which records the commit of every action's version tag, is out of step with the workflows or a locked commit no longer verifies upstream |
 | `zizmor` | audits every workflow with zizmor and fails on any finding |
 
 [`.github/workflows/bench.yml`](../.github/workflows/bench.yml) runs weekly and on demand
@@ -280,19 +276,10 @@ divergences) runs on every change in the `Test Assets (linux)` job above.
 | `Map tool oracles` | Linux | `cargo xtask oracles maps`: id's qbsp, vis and light from qutils and a pinned ericw-tools, fetched by checksum, built (ericw-tools with CMake, TBB and Embree 4, which the job installs) and each compiling `oracles/maps/room.map` to BSP29 (P6-03); 30 minutes at most |
 | `Simulation differential (<os>)` | Linux, macOS, Windows | `cargo xtask assets fetch`, then `cargo xtask sim-diff` on `oracles/engine/routes/start.route` with `--map` for each of LibreQuake lite's ten maps: `qs-sim` and id's server must have the same state after the map loads and after every frame (P3-25, DIFF-16.5) |
 
-[`.github/workflows/readiness.yml`](../.github/workflows/readiness.yml) runs only on demand
-(`workflow_dispatch`, with the crates to measure as its `crates` input), never on pull requests,
-in the merge queue or on a schedule, and is **not** a required check (ADR-0009). A readiness
-reviewer runs it and links the run in the report ([testing.md](testing.md#measuring-a-layer)):
-
-| Check | Runs on | What it does |
-| --- | --- | --- |
-| `Readiness coverage` | Linux | `cargo xtask readiness lines` (cargo-llvm-cov, stable) and `branches` (cargo-llvm-cov `--branch`, date-pinned nightly) |
-| `Readiness mutation (<crate> <k/n>)` | Linux | `cargo xtask readiness mutation --shard k/n` (one shard of a cargo-mutants run of one crate, one job per shard, the shard count per crate from the table in the `crates` job; xtask limits each test binary to 3 GiB of data memory on Linux) |
-| `Readiness flakes (linux)`, `(macos)`, `(windows)` | each OS | `cargo xtask readiness flakes`: each crate's tests 20 times |
-| `Readiness ratchet` | Linux | `cargo xtask readiness spec`, then `cargo xtask ratchet` over every measurement (a crate's mutation shards added into one score), `ratchets.toml` and its history; uploads the `readiness` artifact |
-
-Every action is pinned to a commit SHA with its version in a comment, every job has
+Every action is named by its version tag and locked to that tag's commit in
+`.github/workflows/actions.lock` (`gh actions-lock` rewrites it after a workflow changes; "The locked commit is what runs when
+the workflow executes", GitHub's Workflow dependency lockfiles, https://gh.io/actions-lockfile,
+fetched 2026-11-16, so a tag moved upstream does not change what runs), every job has
 least-privilege `permissions`, and every checkout sets `persist-credentials: false`.
 
 **Differs from vouch:** vouch skips its build matrix in merge groups and reports a stand-in

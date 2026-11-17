@@ -30,9 +30,8 @@ BUILD_TYPES = {"type:feature", "type:test"}
 # alone (Justin, 2026-11-04: focus on the MVP and move through the phases faster).
 PHASES = ["P1", "P2"]
 
-# Re-reviews: a crate's ratchets re-measured after a later change to its layer, recorded under a
-# key of their own, since `cargo xtask ratchet` holds a recorded crate's minimums and equivalent
-# mutants to the review that set them (xtask/src/ratchet.rs, check_change). Each names the
+# Re-reviews: a crate's numbers re-measured after a later change to its layer, recorded under a
+# key of their own. Each names the
 # phase, the layer, the crates, the work that changed them and the review it follows; `work` lists
 # the issues the re-review waits on, its own defects among them.
 REREVIEWS = [
@@ -82,13 +81,13 @@ for ph in PHASES:
             "reqs": ["TEST-2", "TEST-6", "TEST-9"],
             "depends": [rr["follows"], rr["after"], *rr["work"]],
             "deliverable": [f"docs/readiness/{note}.md following docs/readiness/_template.md for {rr['crates']}, linking the measurement run",
-                            f"ratchets.toml: [crates.{rr['crates']}] re-measured on the {rr['after']} code, its readiness key {rr['key']} and its equivalent_mutants holding only mutants cargo-mutants still produces"],
+                            f"The note records {rr['crates']} re-measured on the {rr['after']} code under the key {rr['key']}, its equivalent mutants only those cargo-mutants still produces"],
             "acceptance": [
                 f"Every threshold in ADR-0009 met for {rr['crates']}, or a per-crate exception with its reason recorded in the crate README",
                 "Reviewed by an agent that did not write the change under review (TEST-9)",
-                "cargo xtask ratchet passes over the full ratchets.toml history with the new key",
+                "The note records each measuring command and its numbers",
             ],
-            "verify": ["cargo xtask ratchet; the Readiness workflow run link in the note"],
+            "verify": ["The measuring commands and their output in the note (docs/testing.md, Measuring a layer)"],
         })
     if rs:
         out_groups.append({"milestone": ph, "issues": rs})

@@ -39,7 +39,7 @@ jobs:
           else
             echo "set=true" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         if: steps.key.outputs.set == 'true'
         with:
           persist-credentials: false
@@ -56,7 +56,7 @@ jobs:
         run: |
           cargo xtask assets fetch
           cargo xtask corpus fetch id-1.01 rerelease
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/cache/restore@v6.1.0
         if: steps.key.outputs.set == 'true'
         with:
           path: target/evals/history.jsonl
@@ -77,12 +77,12 @@ jobs:
           fi
           cat target/evals/report.md >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
-      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/cache/save@v6.1.0
         if: always() && steps.key.outputs.set == 'true'
         with:
           path: target/evals/history.jsonl
           key: evals-history-${{ github.run_id }}
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@v7.0.1
         if: always() && steps.key.outputs.set == 'true'
         with:
           name: evals

@@ -423,6 +423,8 @@ fn a_vanilla_body_keeps_qcc_quirks_it_follows() {
 // `GOTO` to the tests past the body, the body, a `GOTO` past the tests, then each case tested
 // in order, a value by `EQ_F` and `IF`, a 0 by `IFNOT` of the value, a range by `GE_F`, `LE_F`
 // and `AND_F`, and a `GOTO` to `default:`
+// spec FTE-3.2: control enters at the first case that matches, the tests in order, or at
+// `default` when none does
 #[test]
 fn a_generated_body_holds_a_switch() {
     use crate::ir::Name;

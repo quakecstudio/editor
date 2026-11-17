@@ -14,10 +14,6 @@
 //!   directory, such as a crate's `fixtures.rs` or `vectors.rs`;
 //! - xtask's oracle scenarios ([`DIFFERENTIAL_TESTS`]), which are differential tests run
 //!   against id's code through the built oracle.
-//!
-//! The spec-citation ratchet in `qs-tests` includes this file with `#[path]` so that it and
-//! `cargo xtask readiness` read citations the same way: nothing may depend on xtask
-//! (`docs/layers.md`), and two copies would drift.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -27,14 +23,13 @@ use std::path::{Path, PathBuf};
 pub(crate) const DIFFERENTIAL_TESTS: [&str; 1] = ["xtask/src/oracles/scenarios"];
 
 /// xtask's fixture repositories, relative to the repository root. Their files cite the
-/// statements of their own small `docs/spec/`, not the repository's, so neither the
-/// spec-citation ratchet nor `cargo xtask readiness` reads them as the repository's citations.
+/// statements of their own small `docs/spec/`, not the repository's, so the spec-citation
+/// ratchet does not read them as the repository's citations.
 pub(crate) const FIXTURES: &str = "xtask/fixtures";
 
 /// The error for a `// spec` line outside test code: line `line` of `file`, whose text after
 /// `// spec ` is `rest`. Such a line cites nothing (TEST-3 asks for a test), so the
-/// spec-citation ratchet and `cargo xtask readiness` both report it rather than drop it, and
-/// it cannot pass for coverage.
+/// spec-citation ratchet reports it rather than drops it, and it cannot pass for coverage.
 pub(crate) fn shipped_citation(file: &str, line: u32, rest: &str) -> String {
     format!(
         "{file}:{line}: a `// spec` line outside test code cites nothing; name the statement in \

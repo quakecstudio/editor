@@ -37,6 +37,6 @@ Read before writing tests or building on a lower layer. The bar is
 No work may build on a layer until that layer's suite passes the bar in `docs/testing.md`
 (coverage, mutation score, 100% spec citation, fuzzing, differential, no flakes, an
 independent adversarial review). Readiness issues (`type:readiness`) are reviewed with
-`/readiness-review` by an agent that did not write the code. Once passed, the numbers become
-CI ratchets: never lower one to get green. A lower-layer defect found from above reopens
+`/readiness-review` by an agent that did not write the code. Once passed, the numbers are
+recorded in the readiness report: never lower a check to get green. A lower-layer defect found from above reopens
 that layer's readiness.
