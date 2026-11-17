@@ -15,7 +15,7 @@ const CHANNELS: usize = 3;
 /// The lighting flags of a texinfo, the part of ericw-tools' `surfflags_t` its `light`
 /// reads (QBSP-15.54). A brush's keys, such as `_phong` and `_minlight` on a `func_group` or
 /// `func_detail`, reach light through these.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SurfaceFlags {
     /// `phong_angle`: faces whose normals are within this many degrees are smoothed; 0 for
     /// none.
@@ -50,6 +50,22 @@ pub struct SurfaceFlags {
     pub object_channel_mask: Option<i32>,
     /// `surflight_group`: the group of surface lights the face takes.
     pub surflight_group: i32,
+    /// `surflight_rescale`: whether a surface light on the face is brightened toward faces
+    /// nearly across from it; none for the light's own way.
+    pub surflight_rescale: Option<bool>,
+    /// `surflight_style`: the style of a surface light on the face.
+    pub surflight_style: Option<i32>,
+    /// `surflight_targetname`: the name whose style a surface light on the face takes.
+    pub surflight_targetname: Option<Vec<u8>>,
+    /// `surflight_color`: the colour of a surface light on the face.
+    pub surflight_color: Option<[u8; CHANNELS]>,
+    /// `surflight_minlight_scale`: what the face's own minimum light as a surface light is
+    /// scaled by.
+    pub surflight_minlight_scale: Option<f32>,
+    /// `surflight_atten`: how fast a surface light on the face falls off.
+    pub surflight_atten: Option<f32>,
+    /// `world_units_per_luxel`: the size of the face's luxels in world units.
+    pub world_units_per_luxel: Option<f32>,
 }
 
 impl Default for SurfaceFlags {
@@ -71,6 +87,13 @@ impl Default for SurfaceFlags {
             light_ignore: false,
             object_channel_mask: None,
             surflight_group: 0,
+            surflight_rescale: None,
+            surflight_style: None,
+            surflight_targetname: None,
+            surflight_color: None,
+            surflight_minlight_scale: None,
+            surflight_atten: None,
+            world_units_per_luxel: None,
         }
     }
 }

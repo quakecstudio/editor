@@ -139,15 +139,21 @@ impl Sidecars {
                 .and_then(|n| i32::try_from(n).ok())
         };
         let flag = |name: &str| value.get(name).and_then(Value::as_bool);
-        let mut colour = [0; AXES];
-        if let Some(channels) = value.get("minlight_color").and_then(Value::as_array) {
+        // `to_qvec3b`: three channels, each a byte.
+        let bytes = |channels: &Vec<Value>| {
+            let mut colour = [0; AXES];
             for (slot, channel) in colour.iter_mut().zip(channels) {
                 *slot = channel
                     .as_u64()
                     .and_then(|c| u8::try_from(c).ok())
                     .unwrap_or_default();
             }
-        }
+            colour
+        };
+        let colour = value
+            .get("minlight_color")
+            .and_then(Value::as_array)
+            .map_or([0; AXES], &bytes);
         let defaults = SurfaceFlags::default();
         SurfaceFlags {
             phong_angle: number("phong_angle").unwrap_or(defaults.phong_angle),
@@ -166,6 +172,19 @@ impl Sidecars {
             light_ignore: flag("light_ignore").unwrap_or(false),
             object_channel_mask: whole("object_channel_mask"),
             surflight_group: whole("surflight_group").unwrap_or(0),
+            surflight_rescale: flag("surflight_rescale"),
+            surflight_style: whole("surflight_style"),
+            surflight_targetname: value
+                .get("surflight_targetname")
+                .and_then(Value::as_str)
+                .map(|name| name.as_bytes().to_vec()),
+            surflight_color: value
+                .get("surflight_color")
+                .and_then(Value::as_array)
+                .map(bytes),
+            surflight_minlight_scale: number("surflight_minlight_scale"),
+            surflight_atten: number("surflight_atten"),
+            world_units_per_luxel: number("world_units_per_luxel"),
         }
     }
 }
@@ -231,6 +250,27 @@ fn surface_to_json(flags: &SurfaceFlags) -> Value {
     if let Some(mask) = flags.object_channel_mask {
         put("object_channel_mask", json!(mask));
     }
+    if let Some(rescale) = flags.surflight_rescale {
+        put("surflight_rescale", json!(rescale));
+    }
+    if let Some(style) = flags.surflight_style {
+        put("surflight_style", json!(style));
+    }
+    if let Some(name) = &flags.surflight_targetname {
+        put("surflight_targetname", json!(String::from_utf8_lossy(name)));
+    }
+    if let Some(colour) = flags.surflight_color {
+        put("surflight_color", json!(colour));
+    }
+    for (name, value) in [
+        ("surflight_minlight_scale", flags.surflight_minlight_scale),
+        ("surflight_atten", flags.surflight_atten),
+        ("world_units_per_luxel", flags.world_units_per_luxel),
+    ] {
+        if let Some(value) = value {
+            put(name, json!(value));
+        }
+    }
     Value::Object(out)
 }
 
@@ -273,14 +313,14 @@ mod tests {
         let read = Sidecars::read(Some(text), None).unwrap();
         assert_eq!(read.surfaces.len(), 3);
         assert_eq!(read.surfaces[0], SurfaceFlags::default());
-        let second = read.surfaces[2];
+        let second = &read.surfaces[2];
         assert_eq!(
             (second.phong_angle, second.minlight, second.minlight_color),
             (89.0, Some(30.5), [255, 128, 0])
         );
         assert!(second.no_shadow && !second.no_dirt);
         assert_eq!(second.object_channel_mask, Some(2));
-        let first = read.surfaces[1];
+        let first = &read.surfaces[1];
         assert!(first.no_dirt);
         assert_eq!(
             (first.light_alpha, first.light_twosided),
@@ -329,6 +369,13 @@ mod tests {
             light_ignore: true,
             object_channel_mask: Some(4),
             surflight_group: 7,
+            surflight_rescale: Some(false),
+            surflight_style: Some(5),
+            surflight_targetname: Some(b"lamp".to_vec()),
+            surflight_color: Some([9, 8, 7]),
+            surflight_minlight_scale: Some(0.5),
+            surflight_atten: Some(2.0),
+            world_units_per_luxel: Some(8.0),
         };
         let written = Sidecars {
             surfaces: vec![SurfaceFlags::default(), flags],

@@ -467,7 +467,7 @@ fn light_of(
         ..MapSpec::default()
     });
     let face = &map.entities[1].brushes[0].faces[0];
-    map.texinfos.get(face.texinfo).unwrap().light
+    map.texinfos.get(face.texinfo).unwrap().light.clone()
 }
 
 // spec QBSP-15.54: a face with none of the keys has the default flags, and so has the world's
@@ -661,4 +661,63 @@ fn faces_with_different_light_flags_do_not_share_a_texinfo() {
     let texinfo = |entity: usize| map.entities[entity].brushes[0].faces[0].texinfo;
     assert_ne!(texinfo(1), texinfo(2));
     assert_eq!(texinfo(2), texinfo(3));
+}
+
+// spec QBSP-15.54: a surface light's keys reach the face: its rescale, colour, style, name,
+// the scale of its minimum light and its falloff, the last two the worldspawn's when the
+// entity has none; and the size of the face's luxels
+#[test]
+fn a_surface_lights_keys_reach_its_faces() {
+    let flags = light_of(
+        "func_group",
+        "wall",
+        &[
+            ("_surflight_rescale", "0"),
+            ("_surflight_color", "1 0.5 0"),
+            ("_surflight_style", "3"),
+            ("_surflight_targetname", "lamp"),
+            ("_surflight_minlight_scale", "0.25"),
+            ("_world_units_per_luxel", "8"),
+        ],
+        &[
+            ("_surflight_minlight_scale", "2"),
+            ("_surflight_atten", "4"),
+        ],
+    );
+    assert_eq!(flags.surflight_rescale, Some(false));
+    assert_eq!(flags.surflight_color, Some([255, 127, 0]));
+    assert_eq!(flags.surflight_style, Some(3));
+    assert_eq!(flags.surflight_targetname.as_deref(), Some(&b"lamp"[..]));
+    assert_eq!(flags.surflight_minlight_scale, Some(0.25));
+    assert_eq!(flags.surflight_atten, Some(4.0), "the worldspawn's");
+    assert_eq!(flags.world_units_per_luxel, Some(8.0));
+    let plain = light_of("func_group", "wall", &[], &[]);
+    assert_eq!(
+        (
+            plain.surflight_rescale,
+            plain.surflight_color,
+            plain.surflight_style,
+            plain.surflight_targetname.clone(),
+            plain.surflight_minlight_scale,
+            plain.surflight_atten,
+            plain.world_units_per_luxel
+        ),
+        (None, None, None, None, None, None, None)
+    );
+    let other = light_of(
+        "func_group",
+        "wall",
+        &[
+            ("_surflight_rescale", "1"),
+            ("_surflight_color", "200 100 50"),
+            ("_surflight_style", "0"),
+        ],
+        &[],
+    );
+    assert_eq!(other.surflight_rescale, Some(true));
+    assert_eq!(other.surflight_color, Some([200, 100, 50]));
+    assert_eq!(other.surflight_style, None, "a style of 0 is none");
+    // A colour of fewer than three numbers is none.
+    let short = light_of("func_group", "wall", &[("_surflight_color", "1 0.5")], &[]);
+    assert_eq!(short.surflight_color, None);
 }

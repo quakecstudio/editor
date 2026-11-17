@@ -216,7 +216,7 @@ impl<'a> Map<'a> {
 
     /// The flags of a face's texinfo.
     pub(crate) fn flags_of(&self, face: &Face) -> SurfaceFlags {
-        self.flags.get(face.texinfo).copied().unwrap_or_default()
+        self.flags.get(face.texinfo).cloned().unwrap_or_default()
     }
 
     /// `Face_VertexAtIndex`: the number of the face's vertex `at`.

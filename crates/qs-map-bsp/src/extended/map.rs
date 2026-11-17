@@ -12,7 +12,7 @@
 //! face's plane in double precision, its texinfo and surface flags, each brush's contents,
 //! bounds and bevels, origin brushes and the world's extent.
 
-use qs_map::cnum::{c_atof, c_atoi, scan_vector};
+use qs_map::cnum::{c_atof, c_atoi, c_strtod, scan_vector};
 use qs_map::geometry::{TexVecs, texvecs};
 use qs_map::{Entity, Face, MapFile};
 
@@ -91,7 +91,7 @@ impl SurfFlags {
 }
 
 /// A texinfo: texture axes, texture and surface flags, `maptexinfo_t`.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Texinfo {
     /// The s and t axes and offsets, in single precision as the BSP stores them.
     pub(crate) vecs: TexVecs<f32>,
@@ -243,7 +243,7 @@ impl Texinfos {
         num: TexinfoNum,
         change: impl Fn(SurfFlags) -> SurfFlags,
     ) -> TexinfoNum {
-        match self.get(num).copied() {
+        match self.get(num).cloned() {
             Some(texinfo) => self.find(Texinfo {
                 flags: change(texinfo.flags),
                 ..texinfo
@@ -501,6 +501,22 @@ const fn channel(value: f32) -> u8 {
     value as u8
 }
 
+/// `get_vector` returning 3: the three numbers of `text`, when it has three (`sscanf(value,
+/// "%f %f %f")`).
+fn whole_vector(text: &[u8]) -> Option<Vec3> {
+    let mut out = [0.0; 3];
+    let mut rest = text;
+    for slot in &mut out {
+        let (value, used) = c_strtod(rest);
+        if used == 0 {
+            return None;
+        }
+        *slot = value;
+        rest = rest.get(used..)?;
+    }
+    Some(out)
+}
+
 /// The lighting flags of a face with texture `name` and contents `contents` in `entity`, the
 /// rest of `SurfFlagsForEntity` (QBSP-15.54): the entity's keys as ericw-tools' `light` is to
 /// read them from the face, `_phong` and `_phong_angle` the worldspawn's when the entity has
@@ -590,6 +606,28 @@ fn light_flags(
     if entity.value(b"_light_twosided").is_some() {
         flags.light_twosided = Some(int(b"_light_twosided") != 0);
     }
+    // A surface light on the face: its own keys, the scale of its minimum light and its
+    // falloff the worldspawn's when the entity has none.
+    if entity.value(b"_surflight_rescale").is_some() {
+        flags.surflight_rescale = Some(int(b"_surflight_rescale") == 1);
+    }
+    if let Some(text) = entity.value(b"_surflight_color")
+        && let Some(colour) = whole_vector(text)
+    {
+        let colour = colour.map(single);
+        let fraction = colour.iter().all(|c| *c <= 1.0);
+        flags.surflight_color = Some(colour.map(|c| channel(if fraction { c * FULL } else { c })));
+    }
+    if entity.value(b"_surflight_style").is_some() && int(b"_surflight_style") != 0 {
+        flags.surflight_style = Some(int(b"_surflight_style"));
+    }
+    flags.surflight_targetname = entity.value(b"_surflight_targetname").map(<[u8]>::to_vec);
+    flags.surflight_minlight_scale =
+        inherited(b"_surflight_minlight_scale").map(|v| single(c_atof(v)));
+    flags.surflight_atten = inherited(b"_surflight_atten").map(|v| single(c_atof(v)));
+    flags.world_units_per_luxel = entity
+        .value(b"_world_units_per_luxel")
+        .map(|v| single(c_atof(v)));
     flags
 }
 
@@ -972,7 +1010,7 @@ impl Reader<'_> {
         let mut brushes = core::mem::take(&mut entity.brushes);
         for brush in &mut brushes {
             for face in &mut brush.faces {
-                if let Some(mut texinfo) = self.texinfos.get(face.texinfo).copied() {
+                if let Some(mut texinfo) = self.texinfos.get(face.texinfo).cloned() {
                     for axis in &mut texinfo.vecs {
                         let [x, y, z, offset] = *axis;
                         #[expect(

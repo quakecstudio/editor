@@ -111,7 +111,7 @@ fn faces_are_subdivided() {
     let long = face(&map, floor, 0, square(0.0, 1000.0));
     let pieces = maker.subdivide(long);
     assert!(pieces.len() >= 5, "{}", pieces.len());
-    let texinfo = *map.texinfos.get(texinfo_of(&map, 0)).unwrap();
+    let texinfo = map.texinfos.get(texinfo_of(&map, 0)).unwrap().clone();
     for piece in &pieces {
         let s: Vec<f64> = piece
             .winding

@@ -448,7 +448,7 @@ impl FaceMaker<'_> {
         {
             return vec![face];
         }
-        let Some(texinfo) = self.map.texinfos.get(face.texinfo).copied() else {
+        let Some(texinfo) = self.map.texinfos.get(face.texinfo).cloned() else {
             return vec![face];
         };
         let lmshift = self.lmshift(face.original_side).min(MAX_LMSHIFT);

@@ -1006,10 +1006,15 @@ point on a plane (`mathlib.hh`).
   is from 0 to 1 (`normalize_color_format`), each channel held to 0 to 255 and cut to a byte,
   and left black when the colour is nothing. The compile gives the flags of each texinfo
   written, in the file's order, as ericw-tools' qbsp writes them to `<map>.texinfo.json`
-  (`WriteExtendedTexinfoFlags`), for light (LIGHT-9.8). Not carried: `_surflight_rescale`,
-  `_surflight_color`, `_surflight_style`, `_surflight_targetname`,
-  `_surflight_minlight_scale`, `_surflight_atten`, `_world_units_per_luxel` and `_noambient`,
-  which our light does not read (LIGHT-8.7).
+  (`WriteExtendedTexinfoFlags`), for light (LIGHT-9.8). A surface light on the face has
+  `surflight_rescale` whether `_surflight_rescale` is 1, when the key is there;
+  `surflight_color` from `_surflight_color` when it has three numbers, each times 255 when
+  all three are at most 1, cut to a byte; `surflight_style` from `_surflight_style` when it
+  is not 0; `surflight_targetname` from `_surflight_targetname`; and `surflight_minlight_scale`
+  and `surflight_atten` from `_surflight_minlight_scale` and `_surflight_atten`, each the
+  worldspawn's when the entity has none. `world_units_per_luxel` is `_world_units_per_luxel`
+  when the key is there. `_noambient` is not carried: it is for the BSP compiler's own
+  ambient sounds, and light does not read it.
 - **QBSP-15.55** The compile gives, for each leaf written and in the file's order, what the
   leaf is to a light sample, from the leaf's contents before they are made the nearest the
   format has (`ExportLeaf`, `map.exported_extended_contentflags`, which ericw-tools' qbsp

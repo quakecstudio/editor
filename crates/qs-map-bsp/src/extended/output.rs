@@ -173,7 +173,7 @@ impl Writer {
                 0
             },
         });
-        self.surfaces.push(texinfo.light);
+        self.surfaces.push(texinfo.light.clone());
         self.texinfo_out.insert(num, out);
         Ok(out)
     }
