@@ -214,7 +214,7 @@ impl Vis {
     /// # Errors
     ///
     /// The [`VisError`] vis stops with.
-    pub fn visible(self, prt: &str) -> Result<Visible, VisError> {
+    pub fn visible(&self, prt: &str) -> Result<Visible, VisError> {
         let file = PortalFile::read(prt)?;
         let (rows, counts) = self.rows(&file)?;
         let real = file.clusters.len();
@@ -229,7 +229,7 @@ impl Vis {
 
     /// Each cluster's row over the BSP's vis leaves, a leaf seen when its cluster is
     /// (`ClusterFlow`, VIS-7.3), and the flow's counts.
-    fn rows(self, file: &PortalFile) -> Result<(Vec<Leaves>, VisCounts), VisError> {
+    fn rows(&self, file: &PortalFile) -> Result<(Vec<Leaves>, VisCounts), VisError> {
         let threads = std::thread::available_parallelism().map_or(1, usize::from);
         let (seen, counts) = match self.mode {
             Mode::Fast => (Flow::new(file, Level::Zero).fast(), VisCounts::default()),
@@ -262,7 +262,7 @@ impl Vis {
     ///
     /// The [`VisError`] vis stops with, or [`VisError::Format`] for a BSP that cannot be read
     /// or has fewer leaves than the portal file.
-    pub fn run(self, bsp: &[u8], prt: &str) -> Result<Vec<u8>, VisError> {
+    pub fn run(&self, bsp: &[u8], prt: &str) -> Result<Vec<u8>, VisError> {
         let read = Bsp::read(bsp, BspLoader::FitzQuake).map_err(|_| VisError::Format)?;
         let file = PortalFile::read(prt)?;
         if read.leafs.len() <= file.clusters.len() {

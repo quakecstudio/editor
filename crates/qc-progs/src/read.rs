@@ -317,10 +317,6 @@ impl<'a> Progs<'a> {
     /// # Errors
     ///
     /// The first check the file fails, as a [`ReadError`].
-    #[expect(
-        clippy::trivially_copy_pass_by_ref,
-        reason = "an options struct, borrowed so that it can grow without its callers changing"
-    )]
     pub fn read_with(bytes: &'a [u8], options: &ReadOptions) -> Result<Self, ReadError> {
         let too_short = |needed| ReadError::TooShort {
             len: bytes.len(),

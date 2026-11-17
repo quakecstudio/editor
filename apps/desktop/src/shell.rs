@@ -1822,7 +1822,9 @@ impl Shell {
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         for dock in [Panel::Right, Panel::Bottom] {
-                            asked = asked.or_else(|| self.panel_buttons(ui, dock));
+                            // Drawn whatever was asked already: the call draws the buttons.
+                            let buttons = self.panel_buttons(ui, dock);
+                            asked = asked.or(buttons);
                         }
                     });
                 });

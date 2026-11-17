@@ -1163,7 +1163,11 @@ fn map_entity_param(params: &Value) -> Result<Option<MapPlace>, RpcError> {
 
 /// The vector parameter `name`, zero when it is absent (BRIDGE-5.2).
 fn vector_param(params: &Value, name: &str) -> [f32; AXES] {
-    let value = json!({ "type": "vector", "value": params.get(name).cloned().unwrap_or_else(|| json!([0, 0, 0])) });
+    let given = params
+        .get(name)
+        .cloned()
+        .unwrap_or_else(|| json!([0, 0, 0]));
+    let value = json!({ "type": "vector", "value": given });
     match from_json(&value) {
         Some(qs_sim::QcValue::Vector(v)) => v,
         _ => [0.0; AXES],

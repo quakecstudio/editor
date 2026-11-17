@@ -26,15 +26,15 @@ the workspace holding none: `assigning_clones`, `implicit_clone`, `inefficient_t
 `iter_on_empty_collections`, `iter_on_single_items`, `iter_with_drain`,
 `large_types_passed_by_value`, `manual_string_new`, `needless_for_each`, `or_fun_call`,
 `redundant_clone`, `set_contains_or_insert`, `stable_sort_primitive`,
-`trivially_copy_pass_by_ref`, `unnecessary_box_returns` and `unnecessary_join`. The ones clippy
+`unnecessary_box_returns` and `unnecessary_join`. The ones clippy
 enables by default (`vec_box`, `box_collection`, `useless_vec`, `unnecessary_to_owned`,
 `iter_overeager_cloned`, `redundant_allocation`, `large_enum_variant`, `ptr_arg`,
 `manual_memcpy` and the rest of `clippy::perf`) were already held at zero by `-D warnings`.
 
-The second pass (2026-11-17) turned on `or_fun_call` (78 sites), `redundant_clone` (73),
-`trivially_copy_pass_by_ref` (18) and `assigning_clones` (8), fixing every site. One site keeps
-its borrow with a reasoned `#[expect]`: `Progs::read_with` takes its options by reference, so
-the options can grow without its callers changing.
+The second pass (2026-11-17) turned on `or_fun_call` (78 sites), `redundant_clone` (73) and
+`assigning_clones` (8), fixing every site. One `or_fun_call` site is not made lazy: the status
+bar's `panel_buttons` draws the buttons it reports on, so it is called whatever was asked
+already (the code review of the pass found it; no test did).
 
 Left off, each with the reason. Counted on 2026-11-17 at `17a063a0`, every target and feature,
 each site once; "shipped" leaves out tests, benchmarks, examples, `qs-differential` and `xtask`:
@@ -46,10 +46,12 @@ each site once; "shipped" leaves out tests, benchmarks, examples, `qs-differenti
 | `format_collect` | 25 | 2 | 23 sites are tests building their input. The two shipped write an id as hex, in `qs-checkpoint` and `qs-templates`. |
 | `string_add` | 19 | 0 | Every site is a test building its input. |
 | `naive_bytecount` | 10 | 6 | It asks for the `bytecount` crate, which this audit will not add for counting lines. |
+| `trivially_copy_pass_by_ref` | 8 | 8 | The eight left are option structs borrowed by their public methods (`qs-map-bsp`'s `Compiler`, `qs-map-vis`'s `Vis`, `qc-progs`' `ReadOptions`), so that an option added later changes no caller. The pass took the ten others by value. |
 | `needless_collect` | 7 | 2 | Four of the seven start threads and collect their handles before joining the first, which the lint cannot see is needed; one reverses an iterator that cannot be walked backwards; and one collects into a set to drop duplicates, which the lint's own fix removed until a test caught it. Held, it would be mostly `#[expect]`. |
 
-No baseline file is kept for these: a lint is held at zero or it is off, so there is nothing
-for a check to ratchet (the plan's `perf-baseline.tsv` is dropped for that reason).
+The plan's `docs/audits/perf-baseline.tsv`, a count of these that only shrinks, is not added
+here: whether to keep that ratchet, or to hold a lint at zero or leave it off, is Justin's to
+decide, and #966 stays open for it.
 
 The count is taken with:
 
@@ -72,15 +74,19 @@ its before and after numbers, and what was left with the reason.
 The first pass turned on twelve lints and fixed the few sites they found: two in shipped code
 (`qs-map-bsp`'s T-junction fan consumes its triangles instead of draining them; the preview host
 clones its progs without the slice copy) and the rest in tests and `xtask`. The second pass
-turned on four more across every crate, 177 sites, most a default computed only when it is
-needed (`unwrap_or_else`), a clone of a value not used again, or a small `Copy` value taken by
-value. No output changes: the workspace's tests pass.
+turned on three more across every crate, 159 sites, most a default computed only when it is
+needed (`unwrap_or_else`) or a clone of a value not used again. The workspace's tests pass,
+and each rewrite to a lazy default was read for an argument with an effect of its own; the one
+found is kept eager, above.
 
 After the second pass every budget holds on the reference Mac (`cargo xtask bench`, 2026-11-17,
-`570f726a`, all 19 met). Against the gate's run of 2026-11-16 (`docs/gates/perf-mvp.md`) each is
-within a tenth except `textured_view_e1m1`, 12.02 ms against 10.79 ms (11% more, a quarter of
-its 50 ms budget), which the pass's changes do not touch; the two runs are a day and a machine's
-other work apart, and the next scheduled run on the CI runner is the 10% rule's judge. The rest:
+`570f726a`, all 19 met). Against the gate's run of 2026-11-16 (`docs/gates/perf-mvp.md`) none is
+slower by more than a tenth except `textured_view_e1m1`, 12.02 ms against 10.79 ms (11% more, a
+quarter of its 50 ms budget). `open_project_and_type` and `keystroke` are 8% and 9% slower. The
+pass does not touch those paths beyond lazy defaults, and the two runs are a day and a machine's
+other work apart, so the difference is not attributed; the next scheduled run on the CI runner
+is the 10% rule's judge. `map_load_mg1` is half the gate's figure, which three direct runs of
+the host confirm (below); the gate's run is the outlier there. The numbers:
 `full_compile_e1m1` 6.167 s against 6.028 s, `id1_recompile` 51.43 ms against 50.87 ms,
 `open_project_and_type` 282.38 ms against 260.46 ms, `keystroke` 0.140 ms against 0.128 ms,
 `map_load_mg1` 338.60 ms against 715.74 ms.
@@ -307,8 +313,7 @@ collect in `qc-syntax`'s tree walk, which reverses an iterator that runs one way
 line count in `qc-ide` (`naive_bytecount`).
 
 **The bridge and the sound (L4): `qs-bridge`, `qs-engine`, `qs-sound`.** `save_to_game`, an edit
-seen in the running game over the bridge, is 80.59 ms against 1 s. Fixed: `qs-sound`'s output
-format by value. Left: one `needless_pass_by_value` in `qs-engine`.
+seen in the running game over the bridge, is 80.59 ms against 1 s. Fixed: `qs-sound`'s null output's frame count by value. Left: one `needless_pass_by_value` in `qs-engine`.
 
 **The commands (L5): `qs-commands`, `qs-layout`, `qs-settings`, `qs-templates`, `qs-map-edit`,
 `qs-workbench`.** Every command a key, the palette or the agent runs goes through these:

@@ -120,7 +120,6 @@ or_fun_call = "deny"
 redundant_clone = "deny"
 set_contains_or_insert = "deny"
 stable_sort_primitive = "deny"
-trivially_copy_pass_by_ref = "deny"
 unnecessary_box_returns = "deny"
 unnecessary_join = "deny"
 
