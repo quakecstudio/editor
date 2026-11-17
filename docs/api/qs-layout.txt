@@ -18,6 +18,7 @@ const qs_layout::editor::PROJECT_SEARCH_VIEW
 const qs_layout::editor::SPLIT_DOWN
 const qs_layout::editor::SPLIT_RIGHT
 const qs_layout::editor::TAB_SWITCHER
+const qs_layout::editor::TOGGLE_EMBEDDED_GAME
 const qs_layout::editor::TOGGLE_OUTLINE
 const qs_layout::editor::TOGGLE_SOFT_WRAP
 const qs_layout::editor::UNFOLD
@@ -49,6 +50,7 @@ enum qs_layout::Panel
 enum qs_layout::docks::DockPanel
 enum qs_layout::docks::WhenShown
 enum qs_layout::editor::EditorRequest
+enum qs_layout::editor::GamePlace
 enum qs_layout::editor::Outline
 enum qs_layout::editor::SoftWrap
 enum qs_layout::editor::Split
@@ -63,6 +65,7 @@ field qs_layout::Layout.editor_request
 field qs_layout::Layout.editor_requests
 field qs_layout::Layout.focus
 field qs_layout::Layout.focus_requests
+field qs_layout::Layout.game_place
 field qs_layout::Layout.left
 field qs_layout::Layout.map_camera
 field qs_layout::Layout.map_grid
@@ -176,6 +179,7 @@ use qs_layout::FOLD = editor::FOLD
 use qs_layout::FOLD_ALL = editor::FOLD_ALL
 use qs_layout::GO_TO_LINE = editor::GO_TO_LINE
 use qs_layout::GO_TO_SYMBOL = editor::GO_TO_SYMBOL
+use qs_layout::GamePlace = editor::GamePlace
 use qs_layout::GoToLineParams = editor::GoToLineParams
 use qs_layout::GridStep = map_grid::GridStep
 use qs_layout::MAP_CAMERA = map_camera::MAP_CAMERA
@@ -206,6 +210,7 @@ use qs_layout::ShowPanelParams = docks::ShowPanelParams
 use qs_layout::SoftWrap = editor::SoftWrap
 use qs_layout::Split = editor::Split
 use qs_layout::TAB_SWITCHER = editor::TAB_SWITCHER
+use qs_layout::TOGGLE_EMBEDDED_GAME = editor::TOGGLE_EMBEDDED_GAME
 use qs_layout::TOGGLE_OUTLINE = editor::TOGGLE_OUTLINE
 use qs_layout::TOGGLE_SOFT_WRAP = editor::TOGGLE_SOFT_WRAP
 use qs_layout::UNFOLD = editor::UNFOLD
@@ -246,6 +251,8 @@ variant qs_layout::editor::EditorRequest::ProjectSearch
 variant qs_layout::editor::EditorRequest::TabSwitcher
 variant qs_layout::editor::EditorRequest::Unfold
 variant qs_layout::editor::EditorRequest::UnfoldAll
+variant qs_layout::editor::GamePlace::Tab
+variant qs_layout::editor::GamePlace::Window
 variant qs_layout::editor::Outline::Hidden
 variant qs_layout::editor::Outline::Shown
 variant qs_layout::editor::SoftWrap::Off

@@ -1379,7 +1379,9 @@ impl Shell {
         let mut control = None;
         let preview = &self.session.context().preview;
         let state = preview.state();
-        let docked = if preview.docks() {
+        let docked = if preview.is_embedded() {
+            Text::PreviewInTab
+        } else if preview.docks() {
             Text::PreviewDocked
         } else {
             Text::PreviewOwnWindow

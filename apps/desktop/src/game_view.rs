@@ -131,3 +131,50 @@ impl EmbeddedHost for Embedded {
         self.0.stop();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![expect(
+        clippy::unwrap_used,
+        reason = "test code: a failed unwrap is a failed test"
+    )]
+
+    use std::path::PathBuf;
+
+    use qs_engine::{LaunchError, LaunchSpec, RunRoot};
+    use qs_layout::GamePlace;
+
+    use super::GameSlot;
+
+    // No spec statement: ENG-10, ADR-0028: the window shows the game only when the layout puts
+    // it in the Game tab and the window has a device to draw on; without one a start is
+    // refused, and the preview host's own window is used
+    #[test]
+    fn the_window_shows_the_game_only_in_the_tab_and_on_a_device() {
+        let slot = GameSlot::default();
+        let mut host = slot.host();
+        assert!(!host.shows(), "the preview host's window at first");
+        slot.set_place(GamePlace::Tab);
+        assert!(!host.shows(), "no device to draw on");
+        let spec = LaunchSpec {
+            host: PathBuf::new(),
+            run_root: RunRoot {
+                path: PathBuf::from("/nowhere"),
+                game: None,
+                kpf: None,
+            },
+            map: None,
+            socket: PathBuf::new(),
+            extra: Vec::new(),
+        };
+        let error = host.start(&spec, "tests").err().unwrap();
+        assert!(
+            matches!(&error, LaunchError::Embedded(why) if why.contains("no device")),
+            "{error}"
+        );
+        // Nothing runs, so there is nothing to draw and nothing to stop.
+        host.stop();
+        slot.set_place(GamePlace::Window);
+        assert!(!host.shows());
+    }
+}

@@ -415,7 +415,8 @@ impl qs_engine::EmbeddedHost for Window {
     }
 
     fn stop(&mut self) {
-        self.counts.borrow_mut().1 += 1;
+        let mut counts = self.counts.borrow_mut();
+        counts.1 = counts.1.saturating_add(1);
     }
 }
 

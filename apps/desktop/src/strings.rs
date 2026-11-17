@@ -28,6 +28,8 @@ pub enum Text {
     PreviewDocked,
     /// Where the game's window is when its host cannot place it (Wayland).
     PreviewOwnWindow,
+    /// The game runs in this window's Game tab.
+    PreviewInTab,
     /// The command search box's hint.
     SearchCommands,
     /// Why a thread could not be run again: it is gone.
@@ -973,7 +975,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 478] = [
+    pub const ALL: [Self; 479] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -982,6 +984,7 @@ impl Text {
         Self::PreviewHost,
         Self::PreviewDocked,
         Self::PreviewOwnWindow,
+        Self::PreviewInTab,
         Self::SearchCommands,
         Self::Project,
         Self::Entities,
@@ -1470,6 +1473,7 @@ impl Text {
             Self::PreviewHost => "Preview host",
             Self::PreviewDocked => "docked right",
             Self::PreviewOwnWindow => "in its own window",
+            Self::PreviewInTab => "in the Game tab",
             Self::SearchCommands => "Search commands",
             Self::Project => "Project",
             Self::Entities => "Entities",

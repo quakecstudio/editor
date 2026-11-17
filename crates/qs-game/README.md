@@ -13,8 +13,19 @@ view.
   [`bridge-protocol.md`](../../docs/spec/bridge-protocol.md); WORLD-9 and WORLD-10's debugger
   and reload as the host drives them; INPUT-4's host files; VIEWDIFF-1 and VIEWDIFF-2's view
   scripts. Its tests cite the statements they pin.
-- **Entry points:** [`Args`], the host's command line, whose `run` does what it says (the
-  window, `--headless`, `--timerefresh` or a view script); [`Error`], why a stage failed.
+- **Entry points:** `Args`, the host's command line, whose `run` does what it says (the
+  window, `--headless`, `--timerefresh` or a view script); `GameView`, the same game drawn in a
+  panel of another app's window, which the app draws each frame and lets answer its bridge
+  between frames; `Error`, why a stage failed.
+
+**The embedded view against the docked window (ENG-10, #1001).** On an Apple M-series Mac,
+2026-11-16, LibreQuake's `lq_e0m1`: the IDE's whole window with the game in its Game tab, each
+frame drawn on the device and read back, took 3.68 ms a frame on average and 8.02 ms at the
+longest over 300 frames (`cargo run --release -p quakec-studio --example embedded_game`); the
+docked window's own work was 0.02 ms a frame on average and 1.27 ms at the longest
+(`quakec-engine --benchmark 5`, which does not count the GPU). Both run the same frame code
+(`Viewer::frame`), which draws the server frame it just ran, and both are well inside one
+72 Hz frame of 13.9 ms, so the embedded view is never a frame behind the docked window.
 
 What the host does, its options and the bridge's commands are described in
 [`apps/quakec-engine/README.md`](../../apps/quakec-engine/README.md).

@@ -38,6 +38,7 @@ fn qs_engine::client::Client::pick
 fn qs_engine::client::Client::place_window
 fn qs_engine::client::Client::poll_events
 fn qs_engine::client::Client::predict_reload
+fn qs_engine::client::Client::pumped
 fn qs_engine::client::Client::reload
 fn qs_engine::client::Client::remove
 fn qs_engine::client::Client::request
@@ -53,7 +54,11 @@ fn qs_engine::client::Client::step
 fn qs_engine::client::Client::swap_map
 fn qs_engine::client::Client::take_events
 fn qs_engine::client::Client::wait_event
+fn qs_engine::launch::EmbeddedHost::shows
+fn qs_engine::launch::EmbeddedHost::start
+fn qs_engine::launch::EmbeddedHost::stop
 fn qs_engine::launch::LaunchSpec::command
+fn qs_engine::launch::LaunchSpec::game_words
 fn qs_engine::launch::LaunchSpec::launch
 fn qs_engine::launch::locate_host
 fn qs_engine::run_root::Flavour::dir_name
@@ -73,10 +78,12 @@ struct qs_engine::client::WindowPlacement
 struct qs_engine::launch::LaunchSpec
 struct qs_engine::launch::Running
 struct qs_engine::run_root::RunRoot
+trait qs_engine::launch::EmbeddedHost
 use qs_engine::BreakpointId = client::BreakpointId
 use qs_engine::BridgeEvent = client::BridgeEvent
 use qs_engine::Client = client::Client
 use qs_engine::ClientError = client::ClientError
+use qs_engine::EmbeddedHost = launch::EmbeddedHost
 use qs_engine::EntityTarget = client::EntityTarget
 use qs_engine::ErrorCode = qs_bridge::ErrorCode
 use qs_engine::Flavour = run_root::Flavour
@@ -108,6 +115,7 @@ variant qs_engine::client::StepKind::Out
 variant qs_engine::client::StepKind::Over
 variant qs_engine::client::StepKind::Statement
 variant qs_engine::launch::LaunchError::Bridge
+variant qs_engine::launch::LaunchError::Embedded
 variant qs_engine::launch::LaunchError::Exited
 variant qs_engine::launch::LaunchError::NotFound
 variant qs_engine::launch::LaunchError::Spawn

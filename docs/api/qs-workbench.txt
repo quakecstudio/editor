@@ -549,6 +549,7 @@ fn qs_workbench::preview::Preview::docks
 fn qs_workbench::preview::Preview::entities
 fn qs_workbench::preview::Preview::game_base_path
 fn qs_workbench::preview::Preview::game_folder
+fn qs_workbench::preview::Preview::is_embedded
 fn qs_workbench::preview::Preview::map_read_again
 fn qs_workbench::preview::Preview::new
 fn qs_workbench::preview::Preview::pause
@@ -572,6 +573,7 @@ fn qs_workbench::preview::Preview::stop
 fn qs_workbench::preview::Preview::toggle_breakpoint
 fn qs_workbench::preview::Preview::unwatch
 fn qs_workbench::preview::Preview::watch
+fn qs_workbench::preview::Preview::with_embedded
 fn qs_workbench::preview::Preview::would_reset
 fn qs_workbench::preview::PreviewConfig::from_env
 fn qs_workbench::preview::SendLive::send
