@@ -1138,6 +1138,19 @@ fn an_unknown_initialiser_is_no_constant() {
     );
 }
 
+// spec FTEF-7.2: a value of a typedef'd function type is called as that function type, its
+// value the function's return type, as the pinned FTEQCC compiles `cb_t h; if (!h(2))`
+#[test]
+fn a_typedefed_function_value_is_called_as_its_type() {
+    assert_eq!(
+        errors(
+            "typedef float(float) cb_t; float r;\nvoid() g = { cb_t h; if (!h(2)) r = h(3) + 1; };",
+            &[]
+        ),
+        []
+    );
+}
+
 // spec FTEF-19.80: `nil` with no definition is the integer constant 0, so a global or `static`
 // initialised with it is no unknown value
 #[test]
