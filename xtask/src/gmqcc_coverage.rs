@@ -11,7 +11,7 @@
 //! preprocessor macros (`#define ACCUMULATE [[accumulate]]`, `#define LABEL(id) :id`); the
 //! lexer reads a directive's body as tokens, so a construct a macro holds is found where the
 //! macro is defined. This is an inventory of which classes occur, by a signature of tokens for
-//! each, not a parse: the GMQCC profile (L-02) does not exist yet.
+//! each, not a parse; the GMQCC profile (L-02) is checked by `quakec-ide check` in CI.
 
 use std::collections::BTreeMap;
 use std::fs;
