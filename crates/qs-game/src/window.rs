@@ -243,6 +243,7 @@ impl Viewer {
             state: state.clone(),
             shell,
             closed: false,
+            shown: None,
             drawer,
             args,
             map,
@@ -290,6 +291,9 @@ struct Viewer {
     shell: Shell,
     /// Whether the game stopped: it quit, or the bridge's client stopped it or went away.
     closed: bool,
+    /// In a panel, the frame drawn last and its size in pixels, which a `screenshot` asked for
+    /// between two frames is drawn from (BRIDGE-4.9).
+    shown: Option<(MapCallback, [u32; 2])>,
     /// The command line, for the next level's load.
     args: Args,
     map: String,
@@ -582,6 +586,16 @@ impl Viewer {
                 Some(Err(why)) => self.game.screenshot_failed(&why.to_string()),
                 None => self.game.screenshot_failed("no GPU device"),
             }
+        }
+        if self.shell == Shell::Panel {
+            let pixels = ui.ctx().pixels_per_point();
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "a panel's size in pixels, rounded, a few thousand at most"
+            )]
+            let size = [rect.width(), rect.height()].map(|n| (n * pixels).round().max(1.0) as u32);
+            self.shown = Some((callback.clone(), size));
         }
         ui.painter().add(self.shell.paint(rect, callback));
         // egui's fonts are not bundled (their licenses are outside deny.toml's), so the stats
@@ -1296,4 +1310,104 @@ pub(crate) fn screen_height(aspect: f32) -> i32 {
 )]
 pub(crate) fn frametime_f32(frametime: f64) -> f32 {
     frametime as f32
+}
+
+/// Whether a game goes on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Running {
+    /// It runs.
+    Yes,
+    /// It quit, or the bridge's client stopped it or went away.
+    Stopped,
+}
+
+/// The game drawn in a panel of another app's window, in that app's process (ADR-0028): the
+/// IDE's embedded game view. The app draws it each frame with [`GameView::ui`], and lets it
+/// answer its bridge between frames with [`GameView::serve`] while the app's own bridge client
+/// waits for an answer, since both run on one thread.
+pub struct GameView {
+    viewer: Viewer,
+}
+
+impl GameView {
+    /// Loads the map `args` names and readies its game to draw on `state`'s device, serving
+    /// the bridge to a client connected over `read` and `write` when they are given.
+    ///
+    /// # Errors
+    ///
+    /// Why the map did not load.
+    pub fn open(
+        args: &Args,
+        state: &egui_wgpu::RenderState,
+        link: Option<(
+            Box<dyn std::io::Read + Send>,
+            Box<dyn std::io::Write + Send>,
+        )>,
+    ) -> Result<Self, Error> {
+        let loaded = args.load_map(&args.map, None, None, None, None)?;
+        let bridge = link.map(|(read, write)| Bridge::over(read, write));
+        Ok(Self {
+            viewer: Viewer::new(args.clone(), loaded, bridge, state, Shell::Panel),
+        })
+    }
+
+    /// Runs one host frame and draws it over the whole of `ui`: the keys and mouse while the
+    /// panel has them, the server, the client, the sound and the picture.
+    pub fn ui(&mut self, ui: &mut egui::Ui) -> Running {
+        self.viewer.frame(ui);
+        self.running()
+    }
+
+    /// Answers the bridge's messages between two frames (BRIDGE-4.3), with what an answer
+    /// waits on: a swapped map's mesh (BRIDGE-4.17) and a `screenshot`, drawn offscreen from
+    /// the frame shown last (BRIDGE-4.9).
+    pub fn serve(&mut self) -> Running {
+        self.viewer.serve_between_frames();
+        self.running()
+    }
+
+    /// Writes the host's configuration, as the host does when its window closes (INPUT-4.1).
+    pub fn close(&self) {
+        self.viewer.write_configuration();
+    }
+
+    fn running(&self) -> Running {
+        if self.viewer.closed {
+            Running::Stopped
+        } else {
+            Running::Yes
+        }
+    }
+}
+
+impl Viewer {
+    /// [`GameView::serve`].
+    fn serve_between_frames(&mut self) {
+        let Some(bridge) = &mut self.bridge else {
+            return;
+        };
+        if !bridge.serve(&mut self.game) {
+            self.closed = true;
+        }
+        if let Some(swap) = self.game.take_swap() {
+            self.draw_swap(swap);
+        }
+        if self.game.wants_screenshot() {
+            let drawn = self
+                .shown
+                .clone()
+                .zip(self.drawer.as_mut())
+                .map(|((callback, size), drawer)| drawer.draw(GameCallback(callback), size));
+            match drawn {
+                Some(Ok(frame)) => self.game.screenshot_taken(&frame),
+                Some(Err(why)) => self.game.screenshot_failed(&why.to_string()),
+                None => self.game.screenshot_failed("no frame drawn yet"),
+            }
+        }
+        if let Some(bridge) = &mut self.bridge
+            && !bridge.serve(&mut self.game)
+        {
+            self.closed = true;
+        }
+    }
 }

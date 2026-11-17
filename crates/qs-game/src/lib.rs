@@ -23,6 +23,7 @@ mod window;
 
 pub use args::{Args, LookArg, Show};
 pub use error::Error;
+pub use window::{GameView, Running};
 
 /// A position's or a direction's axes.
 pub(crate) const AXES: usize = 3;
