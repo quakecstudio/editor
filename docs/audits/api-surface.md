@@ -2478,4 +2478,3 @@ Items that left the root (5): `const qs_settings::DEFAULT_LOG_FILTER`, `fn qs_se
 | `use qs_workbench::Target = qc_project::Target` | `qc-ide`, `qc-preproc`, `qc-codegen`, `qc-sema`, `qc-edict`, `qc-lexer`, `qc-engines`, `qc-project`, `desktop`, `lsp`, `xtask` | kept public: used by `qc-ide`, `qc-preproc`, `qc-codegen`, `qc-sema`, `qc-edict`, `qc-lexer`, `qc-engines`, `qc-project`, `desktop`, `lsp`, `xtask` |
 
 Items that left the root (3): `struct qs_workbench::commands::FileOpened`, `struct qs_workbench::commands::ProjectOpened`, `struct qs_workbench::commands::RenameDone`. Each is `pub(crate)` now, under `#[cfg(test)]` where only the crate's tests read it; `qc_sema::nav::ModuleIndex::references_at` is removed.
-

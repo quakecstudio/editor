@@ -186,7 +186,7 @@ on a pull request that changes `.github/`, and its checks are not required:
 
 | Check | What it does |
 | --- | --- |
-| `Pinned Actions` | fails if any workflow uses an action not pinned to a full commit SHA (`zgosalvez/github-actions-ensure-sha-pinned-actions`) |
+| `Locked Actions` | `gh actions-lock --verify`: fails when `.github/workflows/actions.lock`, which records the commit of every action's version tag, is out of step with the workflows or a locked commit no longer verifies upstream |
 | `zizmor` | audits every workflow with zizmor and fails on any finding |
 
 [`.github/workflows/bench.yml`](../.github/workflows/bench.yml) runs weekly and on demand
@@ -276,7 +276,8 @@ divergences) runs on every change in the `Test Assets (linux)` job above.
 | `Map tool oracles` | Linux | `cargo xtask oracles maps`: id's qbsp, vis and light from qutils and a pinned ericw-tools, fetched by checksum, built (ericw-tools with CMake, TBB and Embree 4, which the job installs) and each compiling `oracles/maps/room.map` to BSP29 (P6-03); 30 minutes at most |
 | `Simulation differential (<os>)` | Linux, macOS, Windows | `cargo xtask assets fetch`, then `cargo xtask sim-diff` on `oracles/engine/routes/start.route` with `--map` for each of LibreQuake lite's ten maps: `qs-sim` and id's server must have the same state after the map loads and after every frame (P3-25, DIFF-16.5) |
 
-Every action is pinned to a commit SHA with its version in a comment, every job has
+Every action is named by its version tag and locked to that tag's commit in
+`.github/workflows/actions.lock` (`gh actions-lock` rewrites it after a workflow changes), every job has
 least-privilege `permissions`, and every checkout sets `persist-credentials: false`.
 
 **Differs from vouch:** vouch skips its build matrix in merge groups and reports a stand-in

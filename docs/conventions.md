@@ -268,8 +268,9 @@ alive. Panics remain denied by lint; unwinding is the last line of defence, not 
 ## CI (CONV-7)
 
 As in vouch:
-- Every third-party action is pinned to a full commit SHA with a version comment, and a
-  workflow fails any PR that adds an unpinned one (`zgosalvez/github-actions-ensure-sha-pinned-actions`).
+- Every action is named by its version tag and locked to that tag's full commit SHA in
+  `.github/workflows/actions.lock`, written by `gh actions-lock`, and a workflow fails any PR
+  whose workflows and lockfile disagree (`gh actions-lock --verify`).
 - Workflows are linted with `zizmor`. They use least-privilege `permissions`, set
   `persist-credentials: false` on checkout, and keep static matrix values only.
 - Separate jobs: Format, Clippy (`--locked --all-targets --all-features -- -D warnings`),

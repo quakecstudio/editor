@@ -753,4 +753,3 @@ part of the map being worked on, sealed. Implemented by `qs_map::Region`.
   and leak files beside the map, so the whole map's are kept, and its report is not kept as the
   map's (P6-20). `map.play_from_here` with a region the camera is outside is refused before
   anything compiles, since the player would be in the seal.
-

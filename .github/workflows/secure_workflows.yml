@@ -1,5 +1,6 @@
-# Fails any workflow that uses a third-party action not pinned to a full commit
-# SHA, and audits every workflow with zizmor (docs/conventions.md, CONV-7).
+# Fails when the workflows' actions are not the ones locked in
+# .github/workflows/actions.lock, and audits every workflow with zizmor
+# (docs/conventions.md, CONV-7).
 # They audit .github/ only, so they run only when it changes. Neither is a
 # required status check: a required check that never reports would block the
 # merge.
@@ -22,17 +23,21 @@ concurrency:
 permissions: {}
 
 jobs:
-  pinned-actions:
-    name: Pinned Actions
+  # Fails when .github/workflows/actions.lock is out of step with the workflows or a locked
+  # pin no longer verifies upstream; `gh actions-lock` rewrites it.
+  lockfile:
+    name: Locked Actions
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - name: Ensure every action is pinned to a commit SHA
-        uses: zgosalvez/github-actions-ensure-sha-pinned-actions@c4e71056006d29f90204b2d063be337109507d62 # v5.0.10
+      - run: gh extension install github/gh-actions-lock --pin v0.4.1
+      - run: gh actions-lock --verify
 
   zizmor:
     name: zizmor
@@ -40,11 +45,11 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+      - uses: zizmorcore/zizmor-action@v0.6.4
         with:
-          version: 1.30.1
+          version: 1.32.0
           advanced-security: false
           annotations: true
