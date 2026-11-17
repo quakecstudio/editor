@@ -55,7 +55,8 @@ The channel is `1.99.0`, the same as vouch, and `rust-version` equals it.
 
 Nightly Rust is allowed in two places only: fuzzing with cargo-fuzz (`cargo xtask fuzz`, which
 `make test-fuzz` and the scheduled `Fuzz` workflow call), and branch coverage
-for a readiness review (`cargo llvm-cov --branch`, ADR-0009).
+for a readiness review (`cargo +nightly llvm-cov --branch`, ADR-0009; the report names the
+nightly).
 
 ```toml file=rust-toolchain.toml
 [toolchain]

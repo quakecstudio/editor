@@ -6,8 +6,11 @@ default_stages: [pre-commit]
 
 # specs/ holds public specifications cached verbatim and checked by SHA-256, and
 # qs-templates holds the GPLv2 text its starters carry, byte for byte (its tests check
-# the SHA-256), so the hygiene hooks must not rewrite them.
-exclude: ^(specs/|crates/qs-templates/src/COPYING-GPL-2\.0\.txt$)
+# the SHA-256), so the hygiene hooks must not rewrite them. Nor the other texts kept byte for
+# byte: the SPDX license texts (packaging/licenses/README.md lists their SHA-256), the fonts'
+# licenses, the oracles' recorded outputs under docs/spec/vectors/, and the portal files a
+# test compares with ericw-tools' (their lines end in a space).
+exclude: ^(specs/|crates/qs-templates/src/COPYING-GPL-2\.0\.txt$|packaging/licenses/|apps/desktop/assets/fonts/|docs/spec/vectors/|crates/qs-map-bsp/src/extended/prt/tests\.rs$)
 
 repos:
   # File hygiene and private-key detection, SHA-pinned like the workflow actions.

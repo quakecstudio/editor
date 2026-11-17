@@ -471,9 +471,8 @@ mod tests {
     #[test]
     fn a_command_with_arguments_reports_its_outcome() {
         let root = workspace_root();
-        assert!(task(&["commands", "--no-such-flag"]).is_err());
-        let commands = task(&["commands", "--check"]).unwrap_or(Task::Adr);
-        assert!(run(&root, &commands, &FAILING));
+        assert!(task(&["corpus", "verify", "--no-such-flag"]).is_err());
+        assert!(task(&["corpus", "verify"]).is_ok_and(|verify| run(&root, &verify, &FAILING)));
     }
 
     #[test]

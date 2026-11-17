@@ -28,8 +28,8 @@ make help                      # every target: fmt, lint, test, audit, test-cove
 matches `docs/conventions.md`), `adr`, `layers` (crates depend only on their own layer or lower,
 `docs/layers.md`), `licenses` (SPDX and ported-file headers), `attribution` (every asset is in
 `ATTRIBUTION.md`), `contrast` (the theme tokens meet WCAG AA), clippy with `-D warnings`, the
-tests, `clippy-fixtures`, `cargo deny check`, `deny-fixtures` and `cargo xtask differential
---fast` (the differential VM suite on id 1.01). `cargo deny check` and `deny-fixtures` need
+tests, `cargo deny check` and `cargo xtask differential
+--fast` (the differential VM suite on id 1.01). `cargo deny check` needs
 network access, and the differential step needs the oracles and the corpus progs
 (`cargo xtask corpus build`). CI runs the same
 steps, but its `cargo xtask ci` job skips the ones another job runs with the same command

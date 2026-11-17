@@ -49,12 +49,14 @@ a layer's readiness review runs, not on every pull request. Exceptions are liste
 ## Measuring a layer
 
 The reviewer measures the layer's crates with the tools themselves and records the commands and
-numbers in the readiness report (`docs/readiness/_template.md`): `make test-coverage`
-(`cargo llvm-cov`, lines on the pinned stable toolchain and `--branch` on the date-pinned
-nightly, [`conventions.md`](conventions.md)), `make test-mutants` (`cargo mutants` with nextest
-and the `mutants` profile; a mutant that times out counts as caught, one that does not build
-does not count), the crate's tests 20 times on each OS, and the spec-citation ratchet in
-`qs-tests`. Each crate's numbers come from its own tests (CONV-11), so tests in `qs-tests` do
+numbers in the readiness report (`docs/readiness/_template.md`): lines with `cargo llvm-cov
+--locked -p <crate>` on the pinned stable toolchain (`make test-coverage` measures the whole
+workspace), branches with `cargo +nightly llvm-cov --branch -p <crate>` on a nightly the report
+names, mutants with `cargo mutants -p <crate> --profile mutants --test-tool nextest` (`make
+test-mutants` runs the workspace; a mutant that times out counts as caught, one that does not
+build does not count), the crate's tests 20 times on each OS, and the spec-citation ratchet in
+`qs-tests`. Property tests are run on a fixed seed (`PROPTEST_RNG_SEED`) so two measurements of
+one commit agree. Each crate's numbers come from its own tests (CONV-11), so tests in `qs-tests` do
 not count towards another crate's coverage or mutation score.
 
 The `Readiness` workflow, `cargo xtask readiness` and `cargo xtask ratchet`, which automated

@@ -277,7 +277,9 @@ divergences) runs on every change in the `Test Assets (linux)` job above.
 | `Simulation differential (<os>)` | Linux, macOS, Windows | `cargo xtask assets fetch`, then `cargo xtask sim-diff` on `oracles/engine/routes/start.route` with `--map` for each of LibreQuake lite's ten maps: `qs-sim` and id's server must have the same state after the map loads and after every frame (P3-25, DIFF-16.5) |
 
 Every action is named by its version tag and locked to that tag's commit in
-`.github/workflows/actions.lock` (`gh actions-lock` rewrites it after a workflow changes), every job has
+`.github/workflows/actions.lock` (`gh actions-lock` rewrites it after a workflow changes; "The locked commit is what runs when
+the workflow executes", GitHub's Workflow dependency lockfiles, https://gh.io/actions-lockfile,
+fetched 2026-11-16, so a tag moved upstream does not change what runs), every job has
 least-privilege `permissions`, and every checkout sets `persist-credentials: false`.
 
 **Differs from vouch:** vouch skips its build matrix in merge groups and reports a stand-in
