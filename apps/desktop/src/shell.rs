@@ -24,6 +24,7 @@ use qs_commands::{CommandError, RegisterError, Registry, Session};
 use qs_editor_view::{
     Fixable, KeyMode, LineNote, NoteSeverity, Position, Selection, ViewStyle, Wrap,
 };
+use qs_layout::GamePlace;
 use qs_layout::{
     DockPanel, Docks, EditorRequest, Focus, GO_TO_LINE, HasLayout, Layout, MovePanelParams,
     Outline, Panel, RESIZE_PANEL, ResizePanelParams, ShowPanelParams, SoftWrap, Split,
@@ -66,6 +67,7 @@ use crate::features::{
 };
 use crate::features::{panel_icon, panel_topic};
 use crate::finder::FileFinder;
+use crate::game_view::GameSlot;
 use crate::git_panel::TabShown;
 use crate::help::{self, Topic};
 use crate::icons::Icon;
@@ -260,6 +262,10 @@ pub struct Shell {
     system_fonts: SystemFonts,
     /// The window's wgpu device and formats, which the map view draws with.
     render_state: Option<RenderState>,
+    /// The game run in this window, drawn in the Game tab (ENG-10, ADR-0028).
+    game: GameSlot,
+    /// Whether the Game tab was shown for the game that runs in it, once for each Play.
+    game_shown: bool,
     /// The count of focus commands the shell has applied (`Layout::focus_requests`): the
     /// layout's when the window opens, so the keyboard moves only when a focus command runs.
     focus_applied: u64,
@@ -303,11 +309,14 @@ impl Shell {
         qs_workbench::register(&mut registry)?;
         qs_workbench::register_preview(&mut registry)?;
         qs_templates::register(&mut registry, std::sync::Arc::new(GitHub::new()))?;
+        let game = GameSlot::default();
+        game.set_place(layout.game_place);
         let workspace = Workspace {
             layout,
             // P3-35: the check after typing, off the frame in the app.
             workbench: Workbench::with_check(FsLoader, config, check),
-            preview: Preview::new(preview_config()),
+            // ADR-0028: the game runs in this window when the layout puts it in the Game tab.
+            preview: Preview::with_embedded(preview_config(), game.host()),
         };
         Ok(Self {
             session: Session::new(workspace, registry),
@@ -322,6 +331,8 @@ impl Shell {
             symbol_scope: SymbolScope::default(),
             system_fonts: SystemFonts::new(&Theme::bundled_fonts()),
             render_state: None,
+            game,
+            game_shown: false,
             focus_applied: layout.focus_requests,
             preview_error: None,
             menu: MenuPlace::default(),
@@ -705,7 +716,30 @@ impl Shell {
 
     /// Gives the shell the window's wgpu device and formats, which the map view draws with.
     pub fn set_render_state(&mut self, state: Option<RenderState>) {
+        self.game.set_render_state(state.clone());
         self.render_state = state;
+    }
+
+    /// Follows where the layout puts the game (ADR-0028): the next Play starts it there, a
+    /// game that runs in the other place is stopped, and a game started in the Game tab is
+    /// shown.
+    fn follow_game_place(&mut self) {
+        let place = self.layout().game_place;
+        self.game.set_place(place);
+        let preview = &self.session.context().preview;
+        if preview.state() == PlayState::Stopped {
+            self.game_shown = false;
+            return;
+        }
+        let embedded = preview.is_embedded();
+        if embedded != (place == GamePlace::Tab) {
+            let _stopped: Option<serde_json::Value> = self.run(STOP, &serde_json::json!({}));
+            return;
+        }
+        if embedded && !self.game_shown {
+            self.game_shown = true;
+            self.centre_tab = CentreTab::Game;
+        }
     }
 
     /// Shows `mesh` in the map view from `camera`, and the view; false when the window has no
@@ -1177,6 +1211,7 @@ impl Shell {
             }
         }
         self.follow_stop();
+        self.follow_game_place();
         // P3-35: the background check's results for the latest edit, once it has finished.
         if self.run::<_, bool>(TAKE_CHECKED, &serde_json::json!({})) == Some(true) {
             ui.ctx().request_repaint();
@@ -2505,6 +2540,9 @@ impl Shell {
         }
         if self.centre_tab == CentreTab::Search {
             self.search_tab(ui);
+            return;
+        }
+        if self.centre_tab == CentreTab::Game && self.game.ui(ui) {
             return;
         }
         let (fill, message) = match self.centre_tab {

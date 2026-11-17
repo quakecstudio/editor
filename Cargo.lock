@@ -4103,6 +4103,8 @@ dependencies = [
  "qs-bsp",
  "qs-commands",
  "qs-editor-view",
+ "qs-engine",
+ "qs-game",
  "qs-layout",
  "qs-log",
  "qs-map",

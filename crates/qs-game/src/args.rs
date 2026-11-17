@@ -140,6 +140,17 @@ impl Args {
         <Self as clap::Parser>::parse_from(engine_style(std::env::args()))
     }
 
+    /// The command line `words`, the host's name left out, as the host reads its own.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Usage`] with clap's message when the words do not parse.
+    pub fn parse_words(words: impl IntoIterator<Item = String>) -> Result<Self, Error> {
+        let line = core::iter::once("quakec-engine".to_owned()).chain(words);
+        <Self as clap::Parser>::try_parse_from(engine_style(line))
+            .map_err(|error| Error::Usage(error.to_string()))
+    }
+
     /// The engine's command line for the game filesystem: `-basedir`, `-game`, `-rogue`,
     /// `-hipnotic` and the options after `--`.
     pub fn engine(&self) -> Vec<String> {

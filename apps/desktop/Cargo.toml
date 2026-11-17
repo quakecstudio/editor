@@ -34,6 +34,9 @@ qs-bridge = { workspace = true }
 qs-bsp = { workspace = true }
 qs-commands = { workspace = true }
 qs-editor-view = { workspace = true }
+# The game run in this window for the embedded game view (ADR-0028).
+qs-engine = { workspace = true }
+qs-game = { workspace = true }
 qs-layout = { workspace = true }
 qs-map = { workspace = true }
 qs-mdl = { workspace = true }

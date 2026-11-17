@@ -48,6 +48,10 @@ pub struct Running {
 /// preview host's process: the embedded game view. The app's top layer implements it; the
 /// layers below start and stop the game through it and speak the same bridge to it.
 pub trait EmbeddedHost {
+    /// Whether the app shows the game in its own window now: it has a device to draw on, and
+    /// its layout puts the game there.
+    fn shows(&self) -> bool;
+
     /// Starts the game `spec` describes, its host and socket aside, and gives the bridge's
     /// client, initialized as `client_name`.
     ///

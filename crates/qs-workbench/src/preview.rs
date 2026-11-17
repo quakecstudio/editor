@@ -258,7 +258,7 @@ pub struct Preview {
     full_build: Option<FullBuild>,
     /// A full compile asked for while one runs, which starts when it is done: only one runs.
     queued: Option<Start>,
-    /// The app's own window as the game's host (ADR-0028), when the game is shown embedded.
+    /// The app's own window as the game's host (ADR-0028), when the app can show the game.
     embedded: Option<Box<dyn EmbeddedHost>>,
 }
 
@@ -294,17 +294,22 @@ impl Preview {
         }
     }
 
-    /// Shows the game in the app's own window through `host` (ADR-0028), or in the preview
-    /// host's window again with `None`; a game that runs is stopped first.
-    pub fn embed(&mut self, host: Option<Box<dyn EmbeddedHost>>) {
-        self.stop();
-        self.embedded = host;
+    /// A preview that can also show the game in the app's own window through `host`
+    /// (ADR-0028): each Play asks it whether it shows the game now, and starts the game
+    /// through it when it does, else in the preview host's process.
+    #[must_use]
+    pub fn with_embedded(config: PreviewConfig, host: Box<dyn EmbeddedHost>) -> Self {
+        let mut preview = Self::new(config);
+        preview.embedded = Some(host);
+        preview
     }
 
-    /// Whether the game is shown in the app's own window.
+    /// Whether the game that runs is shown in the app's own window.
     #[must_use]
-    pub const fn is_embedded(&self) -> bool {
-        self.embedded.is_some()
+    pub fn is_embedded(&self) -> bool {
+        self.live
+            .as_ref()
+            .is_some_and(|live| matches!(live.host, Host::Embedded))
     }
 
     /// Docks the game's window beside the IDE's window `frame` (P3-11): the host is told
@@ -637,7 +642,8 @@ impl Preview {
         let run_root = prepare_run_root(&project, Flavour::Original, &base, &mod_name)
             .map_err(PreviewError::RunRoot)?;
         // A game embedded in the app's window needs no host program.
-        let host = if self.embedded.is_some() {
+        let embeds = self.embedded.as_ref().is_some_and(|host| host.shows());
+        let host = if embeds {
             PathBuf::new()
         } else {
             locate_host(self.config.host.as_deref(), &self.config.app)
@@ -645,7 +651,7 @@ impl Preview {
         };
         let mut extra = self.config.extra.clone();
         // The window opens where it docks; `window/place` then sets its frame exactly.
-        if let Some(frame) = self.dock.0.filter(|_| self.embedded.is_none()) {
+        if let Some(frame) = self.dock.0.filter(|_| !embeds) {
             let at = frame.placement();
             extra.extend(["--position", &at.x.to_string(), &at.y.to_string()].map(str::to_owned));
             extra.extend(
@@ -660,7 +666,7 @@ impl Preview {
             socket: socket_path(),
             extra,
         };
-        let (client, host) = match &mut self.embedded {
+        let (client, host) = match self.embedded.as_mut().filter(|_| embeds) {
             Some(embedded) => {
                 let client = embedded
                     .start(&spec, "QuakeC Studio")
