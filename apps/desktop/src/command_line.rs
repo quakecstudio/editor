@@ -287,7 +287,7 @@ impl CommandLineView {
                 .char_indices()
                 .zip(name.chars())
                 .find(|((_, a), b)| a != b)
-                .map_or(shared.len().min(name.len()), |((at, _), _)| at);
+                .map_or_else(|| shared.len().min(name.len()), |((at, _), _)| at);
             shared.get(..same).unwrap_or(shared)
         });
         // A name after the dot is typed, so what the ids share may not start with it.

@@ -1383,7 +1383,7 @@ impl Shell {
         for binding in self.keymap.in_match_order() {
             let taken = match binding.scope {
                 // A key the map view takes itself is the view's while it has the keyboard.
-                Scope::Everywhere => !(in_view && Platform::HERE.is_view_key(&binding.shortcut)),
+                Scope::Everywhere => !(in_view && Platform::HERE.is_view_key(binding.shortcut)),
                 Scope::Shell => !editing,
                 Scope::Map => !editing && map_shown,
                 Scope::MapView => in_view,

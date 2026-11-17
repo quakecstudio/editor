@@ -119,7 +119,7 @@ unused_dependencies = "deny"
 | UB belt-and-braces | `mem_replace_with_uninit`, `uninit_assumed_init`, `uninit_vec` |
 | Hygiene | `dbg_macro`, `print_stdout`, `print_stderr`, `let_underscore_must_use`, `map_unwrap_or`, `allow_attributes_without_reason` |
 | Concurrency | `await_holding_lock`, `large_futures`, `mem_forget`, `mutex_atomic`, `rc_buffer` |
-| Performance | `implicit_clone`, `inefficient_to_string`, `iter_on_empty_collections`, `iter_on_single_items`, `iter_with_drain`, `large_types_passed_by_value`, `manual_string_new`, `needless_for_each`, `set_contains_or_insert`, `stable_sort_primitive`, `unnecessary_box_returns`, `unnecessary_join` ([`docs/audits/perf.md`](audits/perf.md)) |
+| Performance | `assigning_clones`, `implicit_clone`, `inefficient_to_string`, `iter_on_empty_collections`, `iter_on_single_items`, `iter_with_drain`, `large_types_passed_by_value`, `manual_string_new`, `needless_for_each`, `or_fun_call`, `redundant_clone`, `set_contains_or_insert`, `stable_sort_primitive`, `trivially_copy_pass_by_ref`, `unnecessary_box_returns`, `unnecessary_join` ([`docs/audits/perf.md`](audits/perf.md)) |
 | Paths | `absolute_paths` (configured in `.clippy.toml`) |
 <!-- /conventions:clippy-deny -->
 
