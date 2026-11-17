@@ -265,6 +265,11 @@ fn compile_lowered(
                 internal,
             })?;
     }
+    // FTEF-32.23: every function has its number now.
+    compiler
+        .program
+        .resolve_function_relocs()
+        .map_err(CompileError::unlocated)?;
     // FTE-21.9: every function's block of private locals is laid out after the globals,
     // statics and immediates of the module, before the array functions' own; under id's layout
     // there is none.

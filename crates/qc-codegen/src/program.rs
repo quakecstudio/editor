@@ -253,6 +253,12 @@ pub(crate) struct Program {
     translations: Vec<(Vec<u8>, usize)>,
     /// How many `dotranslate_N` definitions there are (`dotranslate_count`).
     translated: u32,
+    /// The functions an initialiser being gathered names before they are defined, each with
+    /// the word of the initialiser that is to hold its number (FTEF-32.23).
+    named_functions: Vec<(u32, usize)>,
+    /// The globals that are to hold a function's number once every function is defined, each
+    /// with the function's definition (`$relocf`, FTEF-32.23).
+    function_relocs: Vec<(u32, usize)>,
 }
 
 impl Program {
@@ -277,6 +283,8 @@ impl Program {
             shared_sites: Vec::new(),
             translations: Vec::new(),
             translated: 0,
+            named_functions: Vec::new(),
+            function_relocs: Vec::new(),
         }
     }
 
@@ -966,7 +974,43 @@ impl Program {
         let def = self.defs.get_mut(place).ok_or(Internal::NoDefinition)?;
         def.initialized = true;
         let ofs = def.ofs;
+        // FTEF-32.23: a word that names a function not yet defined is filled in at the end.
+        for (word, function) in std::mem::take(&mut self.named_functions) {
+            let at = ofs.checked_add(word).ok_or(Internal::TooLarge)?;
+            self.function_relocs.push((at, function));
+        }
         self.set_words(ofs, words)
+    }
+
+    /// FTEF-32.23: the function defined at `function` is named by the initialiser being
+    /// gathered, before its body; the word it is named at is given by
+    /// [`Program::named_functions_at`].
+    pub(crate) fn name_function(&mut self, function: usize) {
+        self.named_functions.push((0, function));
+    }
+
+    /// How many functions the initialiser being gathered has named so far.
+    pub(crate) const fn named_functions(&self) -> usize {
+        self.named_functions.len()
+    }
+
+    /// Puts the functions named since there were `before` of them at word `word` of the
+    /// initialiser.
+    pub(crate) fn named_functions_at(&mut self, before: usize, word: u32) {
+        for (at, _) in self.named_functions.iter_mut().skip(before) {
+            *at = word;
+        }
+    }
+
+    /// FTEF-32.23: every global an initialiser gave a function not yet defined takes the
+    /// function's number, now that each has one.
+    pub(crate) fn resolve_function_relocs(&mut self) -> Result<(), Internal> {
+        for (at, function) in std::mem::take(&mut self.function_relocs) {
+            let ofs = self.defs.get(function).ok_or(Internal::NoDefinition)?.ofs;
+            let number = self.word(ofs);
+            self.set_words(at, &[number])?;
+        }
+        Ok(())
     }
 
     /// The words `literal` is stored as; a string's text is copied to the string table.

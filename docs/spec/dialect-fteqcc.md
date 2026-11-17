@@ -5661,6 +5661,19 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   own. Run on the pinned FTEQCC with `-Tfte`: `string g = _("hi");` and the three stores
   above write `dotranslate_2` and `dotranslate_3` before the function's locals.
 
+- **FTEF-32.23** A global of a function type, or a member or element of one in a global's
+  aggregate, initialised with the name of a function that has no body yet, holds 0 as it is
+  read and is given the function's number once the function has one (`if
+  ((!basedef->scope||basedef->isstatic) && def.cast->type == ev_function &&
+  def.sym->symboldata==basedef->symboldata) { //set to a function which is not yet
+  initialised. insert a function reloc at this location, so we can update it once it is
+  actually known. ... dt = QCC_PR_DummyDef(type_function, "$relocf", basedef->scope, 0,
+  def.sym, def.ofs, false, GDF_CONST); dt->reloc = tmp.sym; ... dt->strip = true; ...
+  QCC_SRef_DataWord(def, i)->_int = 0;` in `QCC_PR_ParseInitializerType`); the `$relocf`
+  definition is stripped and not written. One with a body already gives its number at once.
+  Run on the pinned FTEQCC with `-Tfte`: with `a` numbered 1 and `b` 2, `page_t pages[] = { {
+  b, a } };` before either body holds 2 and 1, and `void(void) fp = b;` holds 2.
+
 ## FTEF-33 Builtin argument checks
 
 **Source:** `qcc_pr_comp.c`, `QCC_VerifyFormatString`, `QCC_VerifyArgs_sendevent`,
