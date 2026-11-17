@@ -517,6 +517,8 @@ pub(crate) fn compile(
         leak_file,
         leak_trail,
         warnings: run.warnings,
+        surfaces: run.writer.surfaces,
+        leaves: run.writer.leaves,
     })
 }
 

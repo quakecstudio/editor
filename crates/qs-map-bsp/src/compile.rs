@@ -3,6 +3,7 @@
 //! The run: each hull's entities processed in order, the clipping hulls passed to the drawing
 //! hull, and the BSP, portal file and leak file written (QBSP-1).
 
+use crate::light_flags::{LeafKind, SurfaceFlags};
 use qs_bsp::write::{BspFormat, DiskTexinfo};
 use qs_map::MapFile;
 use qs_map::qbsp::{QbspMap, load_map_file};
@@ -40,6 +41,12 @@ pub struct Compiled {
     pub leak_trail: Vec<[f32; 3]>,
     /// What qbsp would have printed and gone on after.
     pub warnings: Vec<Warning>,
+    /// In the extended dialect, each texinfo's lighting flags, in the BSP's order
+    /// (QBSP-15.54); none in the id dialect.
+    pub surfaces: Vec<SurfaceFlags>,
+    /// In the extended dialect, what each leaf is to a light sample, in the BSP's order
+    /// (QBSP-15.55); none in the id dialect.
+    pub leaves: Vec<LeafKind>,
 }
 
 /// What the world's fill wrote: the portal and leak files, and the leak's trail.
@@ -353,6 +360,8 @@ impl Compiler {
             leak_file,
             leak_trail,
             warnings,
+            surfaces: Vec::new(),
+            leaves: Vec::new(),
         })
     }
 }

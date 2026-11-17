@@ -32,7 +32,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use qs_bsp::Bsp;
-use qs_map_bsp::Dialect;
+use qs_map_bsp::{Dialect, LeafKind, SurfaceFlags};
 
 use self::bounce::{Bouncer, Emitter};
 use self::dirt::Dirt;
@@ -41,9 +41,8 @@ use self::phong::Smoothing;
 use self::points::Patch;
 use self::rays::{Rays, Stack};
 use self::scene::{Given, Map, MapFault};
-pub use self::scene::{LeafKind, SurfaceFlags};
 use self::shade::{Lightmaps, Shader};
-pub use self::sidecar::{SidecarFile, Sidecars};
+pub use self::sidecar::{CONTENT_EXTENSION, SidecarFile, Sidecars, TEXINFO_EXTENSION};
 use crate::face::{FaceId, Lit};
 use crate::lump::{self, Colour};
 use crate::{Finish, Light, LightError, LightWarning, Lighted};

@@ -13,7 +13,9 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use qs_commands::{Command, NoParams, Outcome};
-use qs_map_light::{Finish, Light, LightError, Sampling, Sidecars};
+use qs_map_light::{
+    CONTENT_EXTENSION, Finish, Light, LightError, Sampling, Sidecars, TEXINFO_EXTENSION,
+};
 use qs_map_vis::{Mode, Vis, VisError};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -616,6 +618,16 @@ fn run_task<C: HasPreview>(
                     None => remove_stale(&file)?,
                 }
             }
+            // What light reads beside the BSP (QBSP-15.54, QBSP-15.55), as ericw-tools' qbsp
+            // writes it; the id dialect has none, and an earlier compile's would be read as
+            // this one's.
+            for (extension, bytes) in Sidecars::new(compiled.surfaces, compiled.leaves).files() {
+                let file = bsp.with_extension(extension);
+                match bytes {
+                    Some(bytes) => write(&file, &bytes)?,
+                    None => remove_stale(&file)?,
+                }
+            }
             Ok(Some(report))
         }
         Task::Vis { speed } => {
@@ -641,7 +653,7 @@ fn run_task<C: HasPreview>(
             // What qbsp wrote beside the BSP for light: each texinfo's flags and each leaf's
             // contents (LIGHT-9.8, LIGHT-9.9).
             let beside = |extension: &str| std::fs::read(bsp.with_extension(extension)).ok();
-            let (texinfo, content) = (beside("texinfo.json"), beside("content.json"));
+            let (texinfo, content) = (beside(TEXINFO_EXTENSION), beside(CONTENT_EXTENSION));
             let sidecars = Sidecars::read(texinfo.as_deref(), content.as_deref())
                 .map_err(|file| TaskError::Light(LightError::Sidecar(file)))?;
             let lit = Light::new(sampling)

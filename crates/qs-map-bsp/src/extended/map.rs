@@ -22,6 +22,7 @@ use super::vec::{
     cross, dot, normalize_with_length, sub,
 };
 use super::winding::{self, KeepOn, Winding};
+use crate::light_flags::SurfaceFlags;
 
 /// `SIDESPACE`: the room the world's extent leaves beyond the brushes and hulls (`qbsp.hh`).
 pub(crate) const SIDESPACE: f64 = 24.0;
@@ -98,6 +99,8 @@ pub(crate) struct Texinfo {
     pub(crate) miptex: usize,
     /// Its surface flags.
     pub(crate) flags: SurfFlags,
+    /// Its lighting flags, which the light compiler reads (QBSP-15.54).
+    pub(crate) light: SurfaceFlags,
 }
 
 impl Texinfo {
@@ -106,6 +109,7 @@ impl Texinfo {
     fn is(&self, other: &Self) -> bool {
         self.miptex == other.miptex
             && self.flags == other.flags
+            && self.light == other.light
             && self
                 .vecs
                 .iter()
@@ -142,6 +146,7 @@ impl Texinfos {
                 vecs: NO_TEXVECS,
                 miptex: 0,
                 flags: SurfFlags::default().with(SurfFlags::NODRAW),
+                light: SurfaceFlags::default(),
             }],
             bad_animation: None,
         }
@@ -395,6 +400,8 @@ struct Reader<'a> {
     planes: &'a mut Planes,
     texinfos: &'a mut Texinfos,
     game: Game,
+    /// The worldspawn, whose `_phong` and `_phong_angle` an entity without them takes.
+    world: Option<&'a Entity>,
 }
 
 /// The integer value of `key`, `get_int`: 0 when it is missing.
@@ -461,6 +468,131 @@ fn surf_flags(name: &[u8], entity: &Entity) -> SurfFlags {
     flags
 }
 
+/// The widest phong angle and the most a face's `_maxlight`, as `SurfFlagsForEntity` holds
+/// them, and the default angle of `_phong`.
+const PHONG_ANGLE_MAX: f64 = 360.0;
+const DEFAULT_PHONG_ANGLE: f64 = 89.0;
+const MAXLIGHT_MAX: f64 = 510.0;
+/// The brightest a channel of a colour.
+const FULL: f32 = 255.0;
+/// How near nothing a colour is for it to be none (`QBSP_EQUAL_EPSILON`).
+const COLOUR_EPSILON: f64 = 0.0001;
+/// The `_minlight_exclude` keys: the name alone, then with each digit from 2 to 9.
+const MINLIGHT_EXCLUDES: usize = 10;
+/// The classname of a brush entity that casts no shadow unless told to.
+const DETAIL_ILLUSIONARY: &[u8] = b"func_detail_illusionary";
+
+/// A number kept as a `float`.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "spec QBSP-15.54: the lighting flags are kept in single precision"
+)]
+const fn single(value: f64) -> f32 {
+    value as f32
+}
+
+/// A colour's channel as a byte, cut to a whole number.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "spec QBSP-15.54: a channel held to 0 to 255 is kept as a byte"
+)]
+const fn channel(value: f32) -> u8 {
+    value as u8
+}
+
+/// The lighting flags of a face with texture `name` and contents `contents` in `entity`, the
+/// rest of `SurfFlagsForEntity` (QBSP-15.54): the entity's keys as ericw-tools' `light` is to
+/// read them from the face, `_phong` and `_phong_angle` the worldspawn's when the entity has
+/// none.
+fn light_flags(
+    name: &[u8],
+    entity: &Entity,
+    world: Option<&Entity>,
+    contents: Contents,
+) -> SurfaceFlags {
+    let int = |key: &[u8]| int_value(entity, key);
+    let float = |key: &[u8]| entity.value(key).map_or(0.0, c_atof);
+    let inherited = |key: &[u8]| {
+        entity
+            .value(key)
+            .or_else(|| world.and_then(|world| world.value(key)))
+    };
+    let shadow = int(b"_shadow");
+    let mut flags = SurfaceFlags {
+        no_dirt: int(b"_dirt") == -1,
+        no_bounce: int(b"_bounce") == -1,
+        no_minlight: int(b"_minlight") == -1,
+        light_ignore: int(b"_lightignore") == 1,
+        ..SurfaceFlags::default()
+    };
+    for index in 0..MINLIGHT_EXCLUDES {
+        let mut key = b"_minlight_exclude".to_vec();
+        if index > 0 {
+            key.extend_from_slice(index.to_string().as_bytes());
+        }
+        if entity
+            .value(&key)
+            .is_some_and(|excluded| !excluded.is_empty() && name.eq_ignore_ascii_case(excluded))
+        {
+            flags.no_minlight = true;
+        }
+    }
+    // A brush that is only seen, and a liquid, cast no shadow unless `_shadow` is 1.
+    let illusionary = entity
+        .classname()
+        .is_some_and(|class| class.eq_ignore_ascii_case(DETAIL_ILLUSIONARY));
+    flags.no_shadow = shadow == -1 || ((illusionary || contents.is_liquid()) && shadow != 1);
+    let phong = inherited(b"_phong").map_or(0, c_atoi);
+    let mut angle = inherited(b"_phong_angle").map_or(0.0, c_atof);
+    if phong != 0 && angle == 0.0 {
+        angle = DEFAULT_PHONG_ANGLE;
+    }
+    if angle != 0.0 {
+        flags.phong_angle = single(angle.clamp(0.0, PHONG_ANGLE_MAX));
+    }
+    flags.phong_angle_concave = single(float(b"_phong_angle_concave").clamp(0.0, PHONG_ANGLE_MAX));
+    flags.phong_group = int(b"_phong_group");
+    if entity.value(b"_minlight").is_some() {
+        flags.minlight = Some(single(float(b"_minlight").max(0.0)));
+    }
+    let maxlight = float(b"_maxlight");
+    if maxlight > 0.0 {
+        flags.maxlight = single(maxlight.clamp(0.0, MAXLIGHT_MAX));
+    }
+    if entity.value(b"_lightcolorscale").is_some() {
+        let scale = float(b"_lightcolorscale");
+        if (scale - 1.0).abs() > 0.0 {
+            flags.lightcolorscale = single(scale.clamp(0.0, 1.0));
+        }
+    }
+    flags.surflight_group = int(b"_surflight_group");
+    if entity.value(b"_object_channel_mask").is_some() {
+        flags.object_channel_mask = Some(int(b"_object_channel_mask"));
+    }
+    // `_mincolor`, or `_minlight_color` when that is nothing; fractions are scaled to bytes.
+    let colour_of = |key: &[u8]| scan_vector(entity.value(key).unwrap_or_default());
+    let nothing = |colour: Vec3| colour.iter().all(|c| c.abs() <= COLOUR_EPSILON);
+    let mut colour = colour_of(b"_mincolor");
+    if nothing(colour) {
+        colour = colour_of(b"_minlight_color");
+    }
+    let mut colour = colour.map(single);
+    if colour.iter().all(|c| (0.0..=1.0).contains(c)) {
+        colour = colour.map(|c| c * FULL);
+    }
+    if !nothing(colour.map(f64::from)) {
+        flags.minlight_color = colour.map(|c| channel(c.clamp(0.0, FULL)));
+    }
+    if entity.value(b"_light_alpha").is_some() {
+        flags.light_alpha = Some(single(float(b"_light_alpha").clamp(0.0, 1.0)));
+    }
+    if entity.value(b"_light_twosided").is_some() {
+        flags.light_twosided = Some(int(b"_light_twosided") != 0);
+    }
+    flags
+}
+
 /// `v` with a component within [`NORMAL_EPSILON`] of 1 or -1 made that axis alone, `qv::Snap`.
 fn snap(v: Vec3) -> Vec3 {
     for (axis, c) in v.iter().enumerate() {
@@ -502,6 +634,7 @@ impl Reader<'_> {
             .get(miptex)
             .map_or_else(|| face.texture(), Vec::as_slice);
         let flags = surf_flags(name, entity);
+        let light = light_flags(name, entity, self.world, self.game.face_contents(name));
         let invisible = flags.has(SurfFlags::NODRAW | SurfFlags::HINTSKIP | SurfFlags::HINT);
         let vecs = match (invisible, self.plane(planenum)) {
             (true, Some(plane)) => Some(texvecs(plane.normal, [0.0; 2], 0.0, [1.0; 2])),
@@ -516,6 +649,7 @@ impl Reader<'_> {
             vecs,
             miptex,
             flags,
+            light,
         });
         Some(MapFace {
             planenum,
@@ -894,6 +1028,7 @@ pub(crate) fn load(file: &MapFile, game: Game) -> LoadedMap {
         planes: &mut planes,
         texinfos: &mut texinfos,
         game,
+        world: file.entities.first(),
     };
     let mut entities: Vec<MapEntity> = file
         .entities

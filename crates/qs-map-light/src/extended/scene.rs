@@ -15,6 +15,7 @@
 //! each texinfo carries from the BSP compiler.
 
 use qs_bsp::{BSP_TEX_SPECIAL, Bsp, Face};
+use qs_map_bsp::{LeafKind, SurfaceFlags};
 
 use crate::extended::keys::CHANNEL_DEFAULT;
 use crate::extended::keys::{Dict, ModelKeys, Source, World};
@@ -22,7 +23,7 @@ use crate::extended::math::{Plane, add, sub};
 use crate::extended::rays::{Caster, Corners, ModelId, Surface, Texel, Texels};
 use crate::extended::vis::Visibility;
 use crate::face::FaceId;
-use crate::{AXES, Rgb, Vec3};
+use crate::{AXES, Vec3};
 
 /// The leaf contents light cares for (BSP-12).
 const CONTENTS_SOLID: i32 = -2;
@@ -41,84 +42,6 @@ const OPAQUE: u8 = 255;
 const PHONG_ANGLE_MAX: f32 = 255.0;
 /// The bytes of a palette's colour.
 const PALETTE_ENTRY: usize = 3;
-
-/// The lighting flags of a texinfo, as ericw-tools' qbsp writes them beside the BSP in
-/// `<map>.texinfo.json` and its `light` reads them (LIGHT-9.8). A brush's keys, such as
-/// `_phong` and `_minlight` on a `func_group` or `func_detail`, reach light through these.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct SurfaceFlags {
-    /// `phong_angle`: faces whose normals are within this many degrees are smoothed; 0 for
-    /// none.
-    pub phong_angle: f32,
-    /// `phong_angle_concave`: the same for faces that meet in a hollow; 0 for `phong_angle`.
-    pub phong_angle_concave: f32,
-    /// `phong_group`: faces of different groups are never smoothed together.
-    pub phong_group: i32,
-    /// `minlight`: the face's minimum light.
-    pub minlight: Option<f32>,
-    /// `minlight_color`: its colour; black for none.
-    pub minlight_color: Rgb,
-    /// `maxlight`: the most light the face takes; 0 for no limit.
-    pub maxlight: f32,
-    /// `lightcolorscale`: how much of the light's colour the face keeps, 1 for all.
-    pub lightcolorscale: f32,
-    /// `light_alpha`: how much light the face stops, under 1 for glass.
-    pub light_alpha: Option<f32>,
-    /// `light_twosided`: whether the face is lit from both sides.
-    pub light_twosided: Option<bool>,
-    /// `no_dirt`: the face takes no dirt.
-    pub no_dirt: bool,
-    /// `no_shadow`: the face casts no shadow.
-    pub no_shadow: bool,
-    /// `no_bounce`: the face bounces no light.
-    pub no_bounce: bool,
-    /// `no_minlight`: the face takes no minimum light.
-    pub no_minlight: bool,
-    /// `light_ignore`: no light reaches the face but minimum light.
-    pub light_ignore: bool,
-    /// `object_channel_mask`: the channels the face is lit and casts shadow on.
-    pub object_channel_mask: Option<i32>,
-    /// `surflight_group`: the group of surface lights the face takes.
-    pub surflight_group: i32,
-}
-
-/// What a leaf is to a sample, as ericw-tools' qbsp writes it beside the BSP in
-/// `<map>.content.json` (LIGHT-9.9): its own contents, of which the BSP's are only the
-/// nearest the format has.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum LeafKind {
-    /// As the BSP says: a solid or sky leaf holds no sample.
-    #[default]
-    Native,
-    /// A leaf a sample may lie in whatever the BSP says: the inside of a fence or a window,
-    /// which the BSP calls solid.
-    Open,
-    /// A leaf no sample may lie in: solid, a detail wall or sky.
-    Closed,
-}
-
-impl Default for SurfaceFlags {
-    fn default() -> Self {
-        Self {
-            phong_angle: 0.0,
-            phong_angle_concave: 0.0,
-            phong_group: 0,
-            minlight: None,
-            minlight_color: [0; AXES],
-            maxlight: 0.0,
-            lightcolorscale: 1.0,
-            light_alpha: None,
-            light_twosided: None,
-            no_dirt: false,
-            no_shadow: false,
-            no_bounce: false,
-            no_minlight: false,
-            light_ignore: false,
-            object_channel_mask: None,
-            surflight_group: 0,
-        }
-    }
-}
 
 /// What a face's texture name makes of it (`TextureName_Contents`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

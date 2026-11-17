@@ -25,6 +25,7 @@ use super::tjunc::Originals;
 use super::tree::{NodeId, Tree};
 use super::vec::{AXES, PlaneNum, PlaneType, Planes, Vec3};
 use crate::CompileError;
+use crate::light_flags::{LeafKind, SurfaceFlags};
 
 /// `POINT_EQUAL_EPSILON`: vertices this near are one.
 const POINT_EQUAL_EPSILON: f64 = 0.05;
@@ -78,6 +79,11 @@ pub(crate) struct Writer {
     pub(crate) file: BspFile,
     planes_out: HashMap<PlaneNum, i32>,
     texinfo_out: HashMap<TexinfoNum, i32>,
+    /// Each texinfo written's lighting flags, `WriteExtendedTexinfoFlags` (QBSP-15.54).
+    pub(crate) surfaces: Vec<SurfaceFlags>,
+    /// What each leaf written is to a light sample, `WriteExtendedContentFlags`
+    /// (QBSP-15.55).
+    pub(crate) leaves: Vec<LeafKind>,
     vertex_cells: HashMap<[i64; 3], Vec<u32>>,
     vertex_points: Vec<Vec3>,
 }
@@ -105,6 +111,9 @@ impl Writer {
             file,
             planes_out: HashMap::new(),
             texinfo_out: HashMap::new(),
+            surfaces: Vec::new(),
+            // The shared solid leaf.
+            leaves: vec![LeafKind::Closed],
             vertex_cells: HashMap::new(),
             vertex_points: Vec::new(),
         }
@@ -164,6 +173,7 @@ impl Writer {
                 0
             },
         });
+        self.surfaces.push(texinfo.light);
         self.texinfo_out.insert(num, out);
         Ok(out)
     }
@@ -366,6 +376,14 @@ impl Writer {
         let (Some(node), Some(leaf)) = (tree.node(id), tree.leaf_data(id)) else {
             return Ok(());
         };
+        // The leaf's own contents, before they are made the nearest the format has.
+        let own = leaf.contents;
+        self.leaves
+            .push(if own.is_solid() || own.is_sky() || own.is_detail_wall() {
+                LeafKind::Closed
+            } else {
+                LeafKind::Open
+            });
         let remapped = Game::Quake.remap_for_export(leaf.contents);
         let contents = Game::Quake.to_native(remapped).map_or(-1, |n| n.value());
         let firstmarksurface = index(self.file.marksurfaces.len(), "MAX_MAP_MARKSURFACES")?;

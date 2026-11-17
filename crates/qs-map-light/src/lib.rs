@@ -30,7 +30,7 @@ mod trace;
 use core::fmt;
 
 use qs_bsp::{Bsp, BspLoader, BspVersion};
-pub use qs_map_bsp::Dialect;
+pub use qs_map_bsp::{Dialect, LeafKind, SurfaceFlags};
 
 use crate::entities::Entities;
 pub use crate::face::FaceId;
@@ -43,7 +43,7 @@ pub use crate::entities::{
     LIGHT_DEFAULT_LEVEL, LIGHT_FIRST_SWITCHED_STYLE, LIGHT_MAX_MAP_ENTITIES,
     LIGHT_MAX_MAP_ENTSTRING, LIGHT_MAX_SWITCHED,
 };
-pub use crate::extended::{Extras, LeafKind, SidecarFile, Sidecars, SurfaceFlags};
+pub use crate::extended::{CONTENT_EXTENSION, Extras, SidecarFile, Sidecars, TEXINFO_EXTENSION};
 pub use crate::lump::LIGHT_MAX_MAP_LIGHTING;
 pub use crate::preview::{Cone, LightPreview};
 

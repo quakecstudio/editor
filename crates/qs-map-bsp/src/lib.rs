@@ -11,6 +11,7 @@ mod csg;
 mod extended;
 #[cfg(test)]
 mod fixtures;
+mod light_flags;
 mod math;
 mod merge;
 mod output;
@@ -32,6 +33,7 @@ use qs_bsp::{
 use qs_map::qbsp::{QbspError, QbspWarning};
 
 pub use compile::{Compiled, Compiler, Load};
+pub use light_flags::{LeafKind, SurfaceFlags};
 
 use crate::math::Vec3;
 use crate::planes::{PlaneId, Side};

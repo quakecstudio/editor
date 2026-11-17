@@ -2,19 +2,25 @@
 // Copyright (C) 1996-1997  Id Software, Inc.
 // Copyright (C) 2026 QuakeC Studio contributors
 //
-// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: common/bspfile_common.cc, from_json, LoadExtendedTexinfoFlags, LoadExtendedContentFlags
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: common/bspfile_common.cc, from_json, to_json, LoadExtendedTexinfoFlags, LoadExtendedContentFlags
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: qbsp/writebsp.cc, WriteExtendedTexinfoFlags, WriteExtendedContentFlags
 
 //! The two files ericw-tools' qbsp writes beside a BSP for its `light` (LIGHT-9.8,
 //! LIGHT-9.9): `<map>.texinfo.json`, each texinfo's lighting flags, and `<map>.content.json`,
 //! each leaf's own contents.
 
-use serde_json::Value;
+use qs_map_bsp::{LeafKind, SurfaceFlags};
+use serde_json::{Map, Value, json};
 
-use crate::extended::scene::{LeafKind, SurfaceFlags};
 use crate::{AXES, Extras, to_f32};
 
+/// What `<map>.texinfo.json` and `<map>.content.json` have in the place of `bsp`.
+pub const TEXINFO_EXTENSION: &str = "texinfo.json";
+pub const CONTENT_EXTENSION: &str = "content.json";
+/// The name of solid contents in a `.content.json`.
+const SOLID: &str = "SOLID";
 /// The contents no sample may lie in (LIGHT-9.9).
-const CLOSED: [&str; 3] = ["SOLID", "DETAIL_WALL", "SKY"];
+const CLOSED: [&str; 3] = [SOLID, "DETAIL_WALL", "SKY"];
 
 /// Which of the two files could not be read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,6 +41,12 @@ pub struct Sidecars {
 }
 
 impl Sidecars {
+    /// What a compile gave for light: each texinfo's flags and each leaf's kind.
+    #[must_use]
+    pub const fn new(surfaces: Vec<SurfaceFlags>, leaves: Vec<LeafKind>) -> Self {
+        Self { surfaces, leaves }
+    }
+
     /// The flags of `texinfo`, the text of a `.texinfo.json`, and the leaves of `content`,
     /// the text of a `.content.json`; a file that is not there gives nothing.
     ///
@@ -46,6 +58,50 @@ impl Sidecars {
             surfaces: texinfo.map(surfaces).transpose()?.unwrap_or_default(),
             leaves: content.map(leaves).transpose()?.unwrap_or_default(),
         })
+    }
+
+    /// The text of a `.texinfo.json` holding these flags, `WriteExtendedTexinfoFlags`
+    /// (LIGHT-9.8): each texinfo by its number, with the flags that are not the default.
+    #[must_use]
+    pub fn texinfo_json(&self) -> Vec<u8> {
+        let all: Map<String, Value> = self
+            .surfaces
+            .iter()
+            .enumerate()
+            .map(|(index, flags)| (index.to_string(), surface_to_json(flags)))
+            .collect();
+        Value::Object(all).to_string().into_bytes()
+    }
+
+    /// The text of a `.content.json` holding these leaves, `WriteExtendedContentFlags`
+    /// (LIGHT-9.9): a leaf no sample may lie in is written solid, any other with no contents.
+    #[must_use]
+    pub fn content_json(&self) -> Vec<u8> {
+        let all: Vec<Value> = self
+            .leaves
+            .iter()
+            .map(|leaf| match leaf {
+                LeafKind::Closed => json!([SOLID]),
+                LeafKind::Open | LeafKind::Native => json!([]),
+            })
+            .collect();
+        Value::Array(all).to_string().into_bytes()
+    }
+
+    /// The two files to write beside a BSP, each by the extension it takes the place of the
+    /// BSP's with; no text for one with nothing in it, which an id dialect compile gives.
+    #[must_use]
+    pub fn files(&self) -> [(&'static str, Option<Vec<u8>>); 2] {
+        [
+            (
+                TEXINFO_EXTENSION,
+                (!self.surfaces.is_empty()).then(|| self.texinfo_json()),
+            ),
+            (
+                CONTENT_EXTENSION,
+                (!self.leaves.is_empty()).then(|| self.content_json()),
+            ),
+        ]
     }
 
     /// What light takes besides the BSP, with no palette.
@@ -70,15 +126,15 @@ fn surfaces(text: &[u8]) -> Result<Vec<SurfaceFlags>, SidecarFile> {
             out.resize(index.saturating_add(1), SurfaceFlags::default());
         }
         if let Some(slot) = out.get_mut(index) {
-            *slot = SurfaceFlags::from_json(value);
+            *slot = Sidecars::surface(value);
         }
     }
     Ok(out)
 }
 
-impl SurfaceFlags {
+impl Sidecars {
     /// `surfflags_t::from_json`: the lighting flags of one texinfo.
-    fn from_json(value: &Value) -> Self {
+    fn surface(value: &Value) -> SurfaceFlags {
         let number = |name: &str| value.get(name).and_then(Value::as_f64).map(to_f32);
         let whole = |name: &str| {
             value
@@ -96,8 +152,8 @@ impl SurfaceFlags {
                     .unwrap_or_default();
             }
         }
-        let defaults = Self::default();
-        Self {
+        let defaults = SurfaceFlags::default();
+        SurfaceFlags {
             phong_angle: number("phong_angle").unwrap_or(defaults.phong_angle),
             phong_angle_concave: number("phong_angle_concave").unwrap_or(0.0),
             phong_group: whole("phong_group").unwrap_or(0),
@@ -116,6 +172,70 @@ impl SurfaceFlags {
             surflight_group: whole("surflight_group").unwrap_or(0),
         }
     }
+}
+
+/// `surfflags_t::to_json`: the lighting flags of one texinfo that are not the default.
+fn surface_to_json(flags: &SurfaceFlags) -> Value {
+    let defaults = SurfaceFlags::default();
+    let mut out = Map::new();
+    let mut put = |name: &str, value: Value| {
+        out.insert(name.to_owned(), value);
+    };
+    for (name, value, default) in [
+        ("phong_angle", flags.phong_angle, defaults.phong_angle),
+        (
+            "phong_angle_concave",
+            flags.phong_angle_concave,
+            defaults.phong_angle_concave,
+        ),
+        ("maxlight", flags.maxlight, defaults.maxlight),
+        (
+            "lightcolorscale",
+            flags.lightcolorscale,
+            defaults.lightcolorscale,
+        ),
+    ] {
+        if value.to_bits() != default.to_bits() {
+            put(name, json!(value));
+        }
+    }
+    for (name, value) in [
+        ("minlight", flags.minlight),
+        ("light_alpha", flags.light_alpha),
+    ] {
+        if let Some(value) = value {
+            put(name, json!(value));
+        }
+    }
+    for (name, value) in [
+        ("phong_group", flags.phong_group),
+        ("surflight_group", flags.surflight_group),
+    ] {
+        if value != 0 {
+            put(name, json!(value));
+        }
+    }
+    for (name, value) in [
+        ("no_dirt", flags.no_dirt),
+        ("no_shadow", flags.no_shadow),
+        ("no_bounce", flags.no_bounce),
+        ("no_minlight", flags.no_minlight),
+        ("light_ignore", flags.light_ignore),
+    ] {
+        if value {
+            put(name, json!(true));
+        }
+    }
+    if flags.minlight_color != defaults.minlight_color {
+        put("minlight_color", json!(flags.minlight_color));
+    }
+    if let Some(twosided) = flags.light_twosided {
+        put("light_twosided", json!(twosided));
+    }
+    if let Some(mask) = flags.object_channel_mask {
+        put("object_channel_mask", json!(mask));
+    }
+    Value::Object(out)
 }
 
 /// `LoadExtendedContentFlags`: an array of each leaf's contents, each an array of names.
@@ -182,6 +302,52 @@ mod tests {
             Err(SidecarFile::Texinfo)
         );
         assert_eq!(Sidecars::read(None, None), Ok(Sidecars::default()));
+    }
+
+    // spec LIGHT-9.8: the flags written are the flags read back.
+    // spec LIGHT-9.9: so are the leaves, a leaf the BSP speaks for read back as open.
+    #[test]
+    fn what_is_written_is_read_back() {
+        let flags = SurfaceFlags {
+            phong_angle: 89.0,
+            phong_angle_concave: 45.0,
+            phong_group: 2,
+            minlight: Some(0.0),
+            minlight_color: [1, 2, 3],
+            maxlight: 300.0,
+            lightcolorscale: 0.5,
+            light_alpha: Some(0.25),
+            light_twosided: Some(true),
+            no_dirt: true,
+            no_shadow: true,
+            no_bounce: true,
+            no_minlight: true,
+            light_ignore: true,
+            object_channel_mask: Some(4),
+            surflight_group: 7,
+        };
+        let written = Sidecars {
+            surfaces: vec![SurfaceFlags::default(), flags],
+            leaves: vec![LeafKind::Closed, LeafKind::Open, LeafKind::Native],
+        };
+        assert!(written.texinfo_json().starts_with(br#"{"0":{},"1":{"#));
+        assert!(written.files().iter().all(|(_, text)| text.is_some()));
+        assert_eq!(
+            Sidecars::default().files(),
+            [(TEXINFO_EXTENSION, None), (CONTENT_EXTENSION, None)]
+        );
+        let read =
+            Sidecars::read(Some(&written.texinfo_json()), Some(&written.content_json())).unwrap();
+        assert_eq!(read.surfaces, written.surfaces);
+        assert_eq!(
+            read.leaves,
+            [LeafKind::Closed, LeafKind::Open, LeafKind::Open]
+        );
+        let none = Sidecars::default();
+        assert_eq!(
+            (none.texinfo_json(), none.content_json()),
+            (b"{}".to_vec(), b"[]".to_vec())
+        );
     }
 
     // spec LIGHT-9.9: a leaf whose contents have SOLID, DETAIL_WALL or SKY holds no sample;

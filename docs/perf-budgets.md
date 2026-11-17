@@ -33,6 +33,8 @@ one row per budget, the benchmark name in backticks, the budget as a number and 
 | `play_from_here_e1m1` | MAP-13 | 6 s | median | [#928](https://github.com/quakecstudio/editor/issues/928) P6-37 | active |
 | `region_compile_e1m1` | MAP-15 | 1.2 s | median | [#178](https://github.com/quakecstudio/editor/issues/178) P7-03 | active |
 | `full_compile_e1m1` | MAP-18 | 8 s | median | [#179](https://github.com/quakecstudio/editor/issues/179) P7-04 | active |
+| `light_dirt_e1m1` | MAP-21 | 2 s | median | [#980](https://github.com/quakecstudio/editor/issues/980) L-23 | active |
+| `light_bounce_e1m1` | MAP-21 | 9 s | median | [#980](https://github.com/quakecstudio/editor/issues/980) L-23 | active |
 | `textured_view_e1m1` | MAP-17 | 50 ms | median | [#964](https://github.com/quakecstudio/editor/issues/964) P7-13 | active |
 <!-- /perf-budgets -->
 
@@ -89,8 +91,8 @@ one row per budget, the benchmark name in backticks, the budget as a number and 
 - **`play_from_here_e1m1`:** Play from here's compile of an id1-sized map (MAP-13, P6-12):
   LibreQuake's `lq-e1m1.map`, which `cargo xtask bench` fetches from the corpus and names in
   `QS_BENCH_MAP`, through the extended qbsp with no WAD, as the workbench compiles it, then the
-  fast light. Median within 6 s, which leaves 4 s of P6-12's 10 s from click to playing for
-  the preview host to start and load it.
+  quick light, which leaves out dirt and bounce (LIGHT-8.8). Median within 6 s, which leaves 4 s
+  of P6-12's 10 s from click to playing for the preview host to start and load it.
 - **`region_compile_e1m1`:** a region compile of one room of the same map (MAP-15, P7-03): the
   map cut to the box 320 units across each way, 128 down and 256 up from its player start, and
   sealed with `skip` (MAP-16), then compiled and lit as `play_from_here_e1m1`. Median within
@@ -99,8 +101,17 @@ one row per budget, the benchmark name in backticks, the budget as a number and 
 - **`full_compile_e1m1`:** a full compile of the same map (MAP-18, P7-04), as the background
   full compile runs it after Play from here (P7-02): the extended qbsp, full vis at level 2 from
   its `PRT2` portal file (VIS-7), and full light with extra sampling. Median within 8 s; 6.16 s
-  on the reference Mac (Apple M5, 10 cores), of which the BSP is 3.1 s, vis 2.3 s and light
-  0.7 s. ericw-tools' qbsp, vis and light take 2.2 s, 1.3 s and 8.0 s on the same machine.
+  on the reference Mac (Apple M5, 10 cores) while the extended dialect's light was id's, of
+  which the BSP was 3.1 s, vis 2.3 s and light 0.7 s. ericw-tools' qbsp, vis and light take
+  2.2 s, 1.3 s and 8.0 s on the same machine. With the extended dialect's light ericw-tools'
+  (LIGHT-8, its dirt and bounce in the final light) the median is 22.9 s there on 2026-11-17,
+  over the budget: the budget was set before that light, and whether it rises is Justin's
+  decision (#979, #980).
+- **`light_dirt_e1m1`:** the fast light of the same map with dirt and no bounce (LIGHT-19,
+  L-23), on the BSP the extended qbsp gives. Median within 2 s; 1.18 s on ref-mac on
+  2026-11-17.
+- **`light_bounce_e1m1`:** the fast light of the same map with bounce and no dirt (LIGHT-20,
+  L-23). Median within 9 s; 6.30 s on ref-mac on 2026-11-17.
 - **`textured_view_e1m1`:** the map editor's textured view after an edit (P7-13): lq-e1m1's
   scene built again and every brush face laid out as the mesh the renderer draws, as each edit
   rebuilds it before the next frame. At most 50 ms at the median, a few frames, so an edit shows

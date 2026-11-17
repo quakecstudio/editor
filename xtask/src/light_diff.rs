@@ -24,7 +24,10 @@ use std::time::Duration;
 
 use qs_bsp::{Bsp, BspLoader, Face};
 use qs_map::{Entity, MapFile, qbsp};
-use qs_map_light::{Dialect, Extras, Jitter, Light, LightError, Sampling, Sidecars};
+use qs_map_light::{
+    CONTENT_EXTENSION, Dialect, Extras, Jitter, Light, LightError, Sampling, Sidecars,
+    TEXINFO_EXTENSION,
+};
 use qs_wad::WAD_TYP_MIPTEX;
 use qs_wad::write::WadBuilder;
 
@@ -594,7 +597,7 @@ impl Oracles<'_> {
         };
         // What ericw-tools' qbsp wrote beside the BSP for its light (LIGHT-9.8, LIGHT-9.9).
         let beside = |extension: &str| fs::read(dir.join(format!("{name}.{extension}"))).ok();
-        let (texinfo, content) = (beside("texinfo.json"), beside("content.json"));
+        let (texinfo, content) = (beside(TEXINFO_EXTENSION), beside(CONTENT_EXTENSION));
         let sidecars = Sidecars::read(texinfo.as_deref(), content.as_deref())
             .map_err(|file| format!("{label}: {}", LightError::Sidecar(file)))?;
         // ericw-tools scatters by its C library's rand (LIGHT-14.5).

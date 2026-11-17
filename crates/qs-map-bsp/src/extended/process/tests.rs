@@ -14,7 +14,7 @@ use qs_wad::write::WadBuilder;
 
 use super::{compile, generates_clip_nodes, textures};
 use crate::fixtures::{BrushSpec, EntitySpec, MapSpec, map_text, room};
-use crate::{Compiled, Hull, Warning};
+use crate::{Compiled, Hull, LeafKind, SurfaceFlags, Warning};
 
 fn compiled(spec: &MapSpec) -> Compiled {
     compile(
@@ -298,4 +298,69 @@ fn detail_fences_are_seen_from_outside() {
         bsp.faces.len(),
         "every face is listed in a leaf"
     );
+}
+
+// spec QBSP-15.54: the compile gives each texinfo written its lighting flags, in the file's
+// order
+// spec QBSP-15.55: and what each leaf written is to a light sample: the shared solid leaf and
+// a sky leaf closed, the inside of a fence open though the file calls it solid
+#[test]
+fn the_compile_tells_light_each_texinfos_flags_and_each_leafs_kind() {
+    let mut spec = MapSpec::default();
+    spec.world
+        .push(BrushSpec::cube([-128, -128, 96], [128, 128, 128], "sky1"));
+    let mut smooth = EntitySpec::brushes(
+        "func_group",
+        vec![BrushSpec::cube([-96, -96, -64], [-64, -64, -32], "smooth")],
+    );
+    smooth.pairs = vec![("_phong".into(), "1".into())];
+    let fence = EntitySpec::brushes(
+        "func_detail_fence",
+        vec![BrushSpec::cube([32, 32, -64], [64, 64, 0], "{fence")],
+    );
+    spec.entities.extend([smooth, fence]);
+    let c = compiled(&spec);
+    let bsp = read(&c);
+    assert_eq!(c.surfaces.len(), bsp.texinfo.len());
+    assert_eq!(c.leaves.len(), bsp.leafs.len());
+    assert_eq!(c.leaves[0], LeafKind::Closed);
+    // The cube's six faces are the only smoothed ones, on a texinfo, or a few, of their own.
+    let smooth = SurfaceFlags {
+        phong_angle: 89.0,
+        ..SurfaceFlags::default()
+    };
+    assert!(c.surfaces.contains(&smooth));
+    assert!(c.surfaces.contains(&SurfaceFlags::default()));
+    assert!(
+        c.surfaces
+            .iter()
+            .all(|flags| *flags == smooth || *flags == SurfaceFlags::default())
+    );
+    let smoothed = bsp
+        .faces
+        .iter()
+        .filter(|face| c.surfaces[face.texinfo] == smooth)
+        .count();
+    assert_eq!(smoothed, 5);
+    let leaf_at = |p: [f32; 3]| {
+        let mut node = bsp.models[0].headnode[0];
+        while node >= 0 {
+            let n = &bsp.nodes[usize::try_from(node).unwrap()];
+            let plane = &bsp.planes[n.planenum];
+            node = n.children[side(plane.normal, plane.dist, p)];
+        }
+        usize::try_from(-1 - node).unwrap()
+    };
+    let (air, in_fence, in_sky) = (
+        leaf_at([0.0, 0.0, 24.0]),
+        leaf_at([48.0, 48.0, -32.0]),
+        leaf_at([0.0, 0.0, 112.0]),
+    );
+    assert_eq!(bsp.leafs[air].contents, EMPTY);
+    assert_eq!(c.leaves[air], LeafKind::Open);
+    assert_eq!(bsp.leafs[in_fence].contents, SOLID);
+    assert_ne!(in_fence, 0);
+    assert_eq!(c.leaves[in_fence], LeafKind::Open);
+    assert_eq!(c.leaves[in_sky], LeafKind::Closed);
+    assert!(!c.leaves.contains(&LeafKind::Native));
 }
