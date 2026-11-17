@@ -734,4 +734,5 @@ The world's settings, each with its default; a second name is another key for th
 - **LIGHT-20.6** A texture's colour is grey, 127 over 255, turned toward its own mean colour
   by `_bouncecolorscale`: the mean over its texels that are not see-through of their
   palette colours, each channel cut to a whole number, and black for a texture with no
-  texels or with no palette. A face with no texture name bounces a half.
+  texels. With no palette given a texture's own colour is not known and it bounces grey. A
+  face with no texture name bounces a half.

@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use qs_commands::{Command, NoParams, Outcome};
-use qs_map_light::{Light, LightError, Sampling};
+use qs_map_light::{Light, LightError, Sampling, Sidecars};
 use qs_map_vis::{Mode, Vis, VisError};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -636,8 +636,14 @@ fn run_task<C: HasPreview>(
                 LightSpeed::Full => Sampling::Extra,
                 LightSpeed::Fast => Sampling::Fast,
             };
+            // What qbsp wrote beside the BSP for light: each texinfo's flags and each leaf's
+            // contents (LIGHT-9.8, LIGHT-9.9).
+            let beside = |extension: &str| std::fs::read(bsp.with_extension(extension)).ok();
+            let (texinfo, content) = (beside("texinfo.json"), beside("content.json"));
+            let sidecars = Sidecars::read(texinfo.as_deref(), content.as_deref())
+                .map_err(|file| TaskError::Light(LightError::Sidecar(file)))?;
             let lit = Light::new(sampling)
-                .run(&read(&bsp)?)
+                .run_with(&read(&bsp)?, sidecars.extras())
                 .map_err(TaskError::Light)?;
             write(&bsp, &lit.bsp)?;
             let colour = bsp.with_extension("lit");

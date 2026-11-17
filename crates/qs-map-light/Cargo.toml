@@ -14,6 +14,9 @@ qs-map = { workspace = true }
 # Its Dialect: the same choice of id's fixed tables or the format's (LIGHT-1.11, QBSP-14).
 qs-map-bsp = { workspace = true }
 
+# The two files ericw-tools' qbsp writes beside a BSP for light are JSON (LIGHT-9.8).
+serde_json = { workspace = true, features = ["std"] }
+
 [dev-dependencies]
 qs-wad = { workspace = true }
 sha2 = { workspace = true }

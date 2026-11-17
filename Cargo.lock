@@ -3797,6 +3797,7 @@ dependencies = [
  "qs-map",
  "qs-map-bsp",
  "qs-wad",
+ "serde_json",
  "sha2",
 ]
 

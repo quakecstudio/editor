@@ -7,6 +7,9 @@
     clippy::unwrap_used,
     clippy::indexing_slicing,
     clippy::float_cmp,
+    clippy::float_cmp_const,
+    clippy::arithmetic_side_effects,
+    clippy::modulo_arithmetic,
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "test code: a failed unwrap or index is a failed test, and the numbers are small \
@@ -919,14 +922,17 @@ fn light_bounces_off_the_floor() {
 }
 
 // spec LIGHT-20.6: a texture's colour is grey turned toward its own mean colour by
-// _bouncecolorscale; black with no palette.
+// _bouncecolorscale; grey with no palette.
 #[test]
 fn a_textures_colour_tints_what_it_bounces() {
     let bsp = room("\"_bouncecolorscale\" \"1\"\n", "wall", "", "");
     let read = Bsp::read(&bsp, BspLoader::FitzQuake).unwrap();
     let floor_face = face_facing(&read, UP);
     let unpaletted = parts(&read, Extras::default());
-    assert_eq!(unpaletted.map.bounce_colours()[floor_face], [0.0; 3]);
+    assert_eq!(
+        unpaletted.map.bounce_colours()[floor_face],
+        [127.0 / 255.0; 3]
+    );
     // The room's textures are all of index 1: a palette whose colour 1 is orange.
     let mut palette = vec![0_u8; 768];
     palette[3..6].copy_from_slice(&[255, 128, 0]);

@@ -13,14 +13,13 @@
 
 use std::fs;
 
-use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
 use qs_bsp::{Bsp, BspLoader, Face};
 use qs_map::{Entity, MapFile, qbsp};
-use qs_map_light::{Dialect, Extras, Jitter, LeafKind, Light, LightError, Sampling, SurfaceFlags};
+use qs_map_light::{Dialect, Extras, Jitter, Light, LightError, Sampling, Sidecars};
 use qs_wad::WAD_TYP_MIPTEX;
 use qs_wad::write::WadBuilder;
 
@@ -46,6 +45,8 @@ const LIT_HEADER: usize = 8;
 /// The fixture whose colour is compared with ericw-tools': coloured lights of the keys id's
 /// light reads and `_color` only.
 const COLOURED_ROOM: &str = "oracles/maps/coloured.map";
+/// A palette whose every colour is black: all the blank textures' texels show of Quake's.
+const BLACK_PALETTE: [u8; 768] = [0; 768];
 /// A blank texture of the WAD written for a map: its name's bytes, its side, its mip levels
 /// and the bytes of its header (BSP-4).
 const STUB_NAME: usize = 16;
@@ -394,92 +395,6 @@ fn oracle_light(
     }))
 }
 
-/// The flags of each texinfo in `file`, the `.texinfo.json` ericw-tools' qbsp writes beside a
-/// BSP (LIGHT-9.8); none when it wrote no file.
-fn surface_flags(file: &Path) -> Result<Vec<SurfaceFlags>, String> {
-    let Ok(text) = fs::read(file) else {
-        return Ok(Vec::new());
-    };
-    let json: serde_json::Map<String, Value> =
-        serde_json::from_slice(&text).map_err(|e| format!("{}: {e}", file.display()))?;
-    let mut out = Vec::new();
-    for (key, value) in &json {
-        let index: usize = key
-            .parse()
-            .map_err(|e| format!("{}: texinfo {key}: {e}", file.display()))?;
-        if out.len() <= index {
-            out.resize(index.saturating_add(1), SurfaceFlags::default());
-        }
-        let number = |name: &str| value.get(name).and_then(Value::as_f64);
-        let whole = |name: &str| {
-            value
-                .get(name)
-                .and_then(Value::as_i64)
-                .and_then(|n| i32::try_from(n).ok())
-        };
-        let flag = |name: &str| value.get(name).and_then(Value::as_bool);
-        let single = |n: f64| n.to_string().parse::<f32>().unwrap_or_default();
-        let colour = value
-            .get("minlight_color")
-            .and_then(Value::as_array)
-            .map(|channels| {
-                let channel = |at: usize| {
-                    channels
-                        .get(at)
-                        .and_then(Value::as_u64)
-                        .and_then(|c| u8::try_from(c).ok())
-                        .unwrap_or_default()
-                };
-                [channel(0), channel(1), channel(2)]
-            });
-        let defaults = SurfaceFlags::default();
-        if let Some(slot) = out.get_mut(index) {
-            *slot = SurfaceFlags {
-                phong_angle: number("phong_angle").map_or(0.0, single),
-                phong_angle_concave: number("phong_angle_concave").map_or(0.0, single),
-                phong_group: whole("phong_group").unwrap_or(0),
-                minlight: number("minlight").map(single),
-                minlight_color: colour.unwrap_or_default(),
-                maxlight: number("maxlight").map_or(0.0, single),
-                lightcolorscale: number("lightcolorscale").map_or(defaults.lightcolorscale, single),
-                light_alpha: number("light_alpha").map(single),
-                light_twosided: flag("light_twosided"),
-                no_dirt: flag("no_dirt").unwrap_or(false),
-                no_shadow: flag("no_shadow").unwrap_or(false),
-                no_bounce: flag("no_bounce").unwrap_or(false),
-                no_minlight: flag("no_minlight").unwrap_or(false),
-                light_ignore: flag("light_ignore").unwrap_or(false),
-                object_channel_mask: whole("object_channel_mask"),
-                surflight_group: whole("surflight_group").unwrap_or(0),
-            };
-        }
-    }
-    Ok(out)
-}
-
-/// What each leaf is to a sample in `file`, the `.content.json` ericw-tools' qbsp writes beside
-/// a BSP (LIGHT-9.9); none when it wrote no file.
-fn leaf_kinds(file: &Path) -> Result<Vec<LeafKind>, String> {
-    let Ok(text) = fs::read(file) else {
-        return Ok(Vec::new());
-    };
-    let json: Vec<Vec<String>> =
-        serde_json::from_slice(&text).map_err(|e| format!("{}: {e}", file.display()))?;
-    Ok(json
-        .iter()
-        .map(|contents| {
-            let closed = contents
-                .iter()
-                .any(|name| matches!(name.as_str(), "SOLID" | "DETAIL_WALL" | "SKY"));
-            if closed {
-                LeafKind::Closed
-            } else {
-                LeafKind::Open
-            }
-        })
-        .collect())
-}
-
 /// The oracles and where they light.
 struct Oracles<'a> {
     exec: &'a dyn Exec,
@@ -640,18 +555,22 @@ impl Oracles<'_> {
                 return Ok(true);
             }
         };
-        let surfaces = surface_flags(&dir.join(format!("{name}.texinfo.json")))?;
+        // What ericw-tools' qbsp wrote beside the BSP for its light (LIGHT-9.8, LIGHT-9.9).
+        let beside = |extension: &str| fs::read(dir.join(format!("{name}.{extension}"))).ok();
+        let (texinfo, content) = (beside("texinfo.json"), beside("content.json"));
+        let sidecars = Sidecars::read(texinfo.as_deref(), content.as_deref())
+            .map_err(|file| format!("{label}: {}", LightError::Sidecar(file)))?;
         // ericw-tools scatters by its C library's rand (LIGHT-14.5).
         let jitter = if cfg!(target_os = "macos") {
             Jitter::Bsd
         } else {
             Jitter::Glibc
         };
-        let leaves = leaf_kinds(&dir.join(format!("{name}.content.json")))?;
+        // The blank textures' texels are index 0, black in Quake's palette, which
+        // ericw-tools has built in (LIGHT-20.6).
         let extras = Extras {
-            surfaces: &surfaces,
-            leaves: &leaves,
-            palette: None,
+            palette: Some(&BLACK_PALETTE),
+            ..sidecars.extras()
         };
         let ours = match Light::new(Sampling::Fast)
             .with_jitter(jitter)

@@ -8,8 +8,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use qs_bsp::{BSP_MAXLIGHTMAPS, BSP_TEX_SPECIAL, Bsp};
 
-use qs_map_bsp::Dialect;
-
 use crate::entities::{Entities, Entity, FULL};
 use crate::lump::Colour;
 use crate::trace::Tree;

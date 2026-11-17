@@ -35,7 +35,7 @@ pub use crate::entities::{
     LIGHT_DEFAULT_LEVEL, LIGHT_FIRST_SWITCHED_STYLE, LIGHT_MAX_MAP_ENTITIES,
     LIGHT_MAX_MAP_ENTSTRING, LIGHT_MAX_SWITCHED,
 };
-pub use crate::extended::{Extras, LeafKind, SurfaceFlags};
+pub use crate::extended::{Extras, LeafKind, SidecarFile, Sidecars, SurfaceFlags};
 pub use crate::lump::LIGHT_MAX_MAP_LIGHTING;
 pub use crate::preview::{Cone, LightPreview};
 
@@ -153,6 +153,9 @@ pub enum LightError {
         /// The model.
         model: usize,
     },
+    /// A file beside the BSP, `<map>.texinfo.json` or `<map>.content.json`, is not what
+    /// ericw-tools' qbsp writes (LIGHT-9.8, LIGHT-9.9).
+    Sidecar(SidecarFile),
     /// The BSP cannot be read or is a format `light` does not write.
     Format,
     /// A thread could not be run.
@@ -194,6 +197,12 @@ impl fmt::Display for LightError {
             }
             Self::NoEntityForModel { model } => {
                 write!(f, "Couldn't find entity for model *{model}.")
+            }
+            Self::Sidecar(SidecarFile::Texinfo) => {
+                f.write_str("the .texinfo.json beside the BSP cannot be read")
+            }
+            Self::Sidecar(SidecarFile::Content) => {
+                f.write_str("the .content.json beside the BSP cannot be read")
             }
             Self::Format => f.write_str("the BSP cannot be lit"),
             Self::Thread => f.write_str("a light thread could not be run"),

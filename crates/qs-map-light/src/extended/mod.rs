@@ -22,6 +22,7 @@ mod points;
 mod rays;
 mod scene;
 mod shade;
+mod sidecar;
 mod sun;
 #[cfg(test)]
 mod tests;
@@ -41,6 +42,7 @@ use self::rays::Rays;
 use self::scene::{Given, Map, MapFault};
 pub use self::scene::{LeafKind, SurfaceFlags};
 use self::shade::{Lightmaps, Shader};
+pub use self::sidecar::{SidecarFile, Sidecars};
 use crate::face::Lit;
 use crate::lump::{self, Colour};
 use crate::{Light, LightError, LightWarning, Lighted};
