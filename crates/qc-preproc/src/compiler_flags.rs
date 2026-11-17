@@ -13,7 +13,7 @@ use crate::fte_tables::FteFlag;
 
 /// The flags [`CompilerFlags`] keeps, each with the bit it is, and the lexer's flag it is, if
 /// the lexer reads it.
-const KEPT: [(FteFlag, u32, Option<LexFlag>); 17] = [
+const KEPT: [(FteFlag, u32, Option<LexFlag>); 18] = [
     (FteFlag::Qcfuncs, 1, Some(LexFlag::QcFuncs)),
     (FteFlag::Qccx, 1 << 1, Some(LexFlag::Qccx)),
     (FteFlag::Utf8strings, 1 << 2, Some(LexFlag::Utf8Strings)),
@@ -35,6 +35,7 @@ const KEPT: [(FteFlag, u32, Option<LexFlag>); 17] = [
     (FteFlag::Undefwordsize, 1 << 18, None),
     (FteFlag::Ifvector, 1 << 19, None),
     (FteFlag::Vectorlogic, 1 << 20, None),
+    (FteFlag::Boundchecks, 1 << 21, None),
 ];
 
 /// The bit of [`CompilerFlags`] that holds the operator priorities, C's when set.
@@ -111,7 +112,7 @@ pub enum Priorities {
 
 /// Which of the flags the lexer, the parser and the semantic model read are on where a token
 /// stands, and the operator priorities there (FTEF-12.12, FTEF-21). [`Default`] is FTEQCC's
-/// default: `qcfuncs`, `ifvector` and `vectorlogic` on, QuakeC's priorities.
+/// default: `qcfuncs`, `ifvector`, `vectorlogic` and `boundchecks` on, QuakeC's priorities.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct CompilerFlags {
     bits: u32,
@@ -123,6 +124,7 @@ impl Default for CompilerFlags {
             .with(FteFlag::Qcfuncs, true)
             .with(FteFlag::Ifvector, true)
             .with(FteFlag::Vectorlogic, true)
+            .with(FteFlag::Boundchecks, true)
     }
 }
 

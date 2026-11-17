@@ -4228,6 +4228,12 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   arithmetic read them (`QCC_PR_Statement`'s "type mismatch for OP",
   `QCC_SupplyConversionForAssignment`, `QCC_PR_GenerateLogicalTruth`, `sizeof`), the expression
   typing's (P2-06).
+- **FTEF-21.25** `boundchecks` is kept with FTEF-21.1's flags and is no longer one of
+  FTEF-21.20's: the lowering of an index that is no constant reads it (FTEF-31.24). It is on
+  unless the command line or a pragma turns it off (`{&flag_boundchecks, defaultflag,
+  "boundchecks", "Enforce Bound Checks", ...}`), as `-std=c` and `-std=gmqcc` do
+  (`flag_boundchecks = false;`). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qccmain.c`, `compiler_flag`, `QCC_PR_CommandLinePrecompilerOptions`.
 - **FTEF-21.21** With `qcfuncs` off a C function a body declares (FTEF-21.10) is defined by a
   body written with it, `void x() {}`, and needs none elsewhere; C's `(*name)(params)` there is
   a variable (`isvar |= isptr>0`), no function, so `float (*x)(float); x(1);` and `entity
@@ -4876,6 +4882,16 @@ as far as they report.
   Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_GenerateLogicalNot`, `QCC_PR_StatementFlags` (the `OP_NOT_I` fold and the vanilla
   emulation of `OP_NOT_I`, `OP_MUL_VI` and `OP_MUL_IV`), `pr_opcodes`.
+- **FTEF-27.18** `~` of an `int` on a target without `OP_BITNOT_I` but with `OP_SUB_I` is the
+  subtraction of the value from the int constant -1 (`case OP_BITNOT_I: op =
+  &pr_opcodes[OP_SUB_I]; if (QCC_OPCodeValid(op)) { ... var_b = var_a; var_a =
+  QCC_MakeIntConst(~0); ...`): `out = ~gi` on `fte_5768` is `SUB_I -1, gi, out`. A remainder of
+  an `int` and a float, with `mod` defined, converts its integer operand by `OP_CONV_FTOI`, as
+  FTEQCC writes it, and calls `mod` of the two, the value a float: for `OP_MOD_IF` `var_a =
+  QCC_PR_StatementFlags(&pr_opcodes[OP_CONV_FTOI], var_a, nullsref, NULL, flags&STFL_PRESERVEA);
+  var_c = QCC_PR_GenerateFunctionCall2(nullsref, fnc, var_a, type_float, var_b, type_float);
+  var_c.cast = type_float;`, and for `OP_MOD_FI` the same of `var_b`. An `int` remainder's
+  call of `ModInt` is not followed. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_StatementFlags`.
 
 ## FTEF-28 The warnings of an emitted comparison
 
@@ -5430,6 +5446,18 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   `TCP_Send(&tcp_irc, "x")` is `GLOBALADDRESS tcp_irc, offset_0, temp_0` (the pinned FTEQCC's
   `-Fwasm` output). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_GenerateAddressOf`.
+- **FTEF-31.24** An index that is no constant is checked as it is read, on a target with
+  `OP_BOUNDCHECK` and with the `boundchecks` flag on, as it is by default: the index is made an
+  integer and `OP_BOUNDCHECK` written of it and the length, the length the operand itself and
+  no global (`if (QCC_OPCodeValid(&pr_opcodes[OP_BOUNDCHECK]) && flag_boundchecks) { tmp =
+  QCC_SupplyConversion(tmp, ev_integer, true); QCC_PR_SimpleStatement
+  (&pr_opcodes[OP_BOUNDCHECK], tmp, QCC_MakeSRef(NULL, arraysize, NULL), nullsref, false);
+  }`), and the integer is the index from then on. The length is the array's elements, and 3
+  for a vector's or a `.vector` field's component (`QCC_MakeSRef(NULL, 3, NULL)`). It is
+  written whether the element is then read or stored, before the index is scaled, so
+  `out = tab[n]` of a `string tab[3]` and a float `n` on `fte_5768` is `CONV_FTOI n, temp`,
+  `BOUNDCHECK temp, 3`, `LOADA_S tab, temp, out`. A constant index has the warning or error of
+  FTEF-31.2 and no check. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`.
 
 ## FTEF-32 Calls
 
@@ -5582,14 +5610,40 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   REF_ARRAY, base, idx, ...)` in `QCC_PR_ParseRefArrayPointer`), so `floor(('4 0 0').x)` is
   called, though an operator of it folds (FTEF-26.13). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`.
-- **FTEF-32.18** A field argument that its parameter's type converts, other than FTEF-26.3's
+- **FTEF-32.18** **Withdrawn** 2026-11-17: it said a converted field argument is converted into
+  the parameter's slot and called by `CALL1` on `fte_5768`, a divergence from FTEQCC's `CALL1H`
+  of the temporary; calls now pass their first two parameters as FTEQCC does. Replaced by
+  FTEF-32.19 and FTEF-32.20.
+- **FTEF-32.19** On a target with `OP_CALL1H` (`if (QCC_OPCodeValid(&pr_opcodes[OP_CALL1H]))
+  callconvention = OP_CALL1H; //FTE extended`), a call in a function passes its first two
+  parameters of at most three words as the call's own operands, read where they are with no
+  store (`else if (callconvention == OP_CALL1H && parm < 2 && arglist[i]->cast->size <= 3) { ...
+  args[parm++].ref = QCC_RefToDef(arglist[i], ...); }`, then `st->b = args[0].ref; if (parm>1)
+  st->c = args[1].ref;`), and the call is `OP_CALL1H` to `OP_CALL8H` by its parameters
+  (`&pr_opcodes[callconvention-1+parm]`), `OP_CALL0` with none. Each later parameter is stored
+  to its slot as FTE-18.9 has it (`for (i = ((callconvention==OP_CALL1H)?2:0); i < parm;
+  i++)`). A field argument among the first two is loaded by its own type's load into a
+  temporary, which is the operand (`QCC_RefToDef`), not by its size into the slot (FTE-18.11):
+  `take(w.m_other)` is `LOAD_ENT w, m_other, temp`, `CALL1H take, temp`. A parameter that
+  takes its default is the default's constant. The call of an emulation's helper (FTEF-27.2,
+  `QCC_PR_GenerateFunctionCall2`) is passed the same way: `gi % gf` with `mod` defined is
+  `CONV_FTOI gi, temp`, `CALL2H mod, temp, gf`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GenerateFunctionCallRef`.
+- **FTEF-32.20** A field argument that its parameter's type converts, other than FTEF-26.3's
   float field of an `int` parameter, is loaded where it is read, into a temporary, and the
-  temporary converted into the parameter's slot: `takei(self.fl)` of `void(int i) takei` on
-  `fte_5768` is `LOAD_F self, fl, temp`, `CONV_FTOI temp, OFS_PARM0`, `CALL1 takei`. FTEQCC
-  converts the temporary in place and passes it in a register, `LOADF_F self, fl, temp_0`,
-  `CONV_FI temp_0, temp_0`, `CALL1H takei, temp_0` (the pinned FTEQCC's `-Fwasm` output,
-  2026-11-16): the same value is passed, with different opcodes, a divergence from FTEQCC's
-  output. At global scope such an argument is not followed.
+  temporary converted: `takei(self.fl)` of `void(int i) takei` on `fte_5768` is `LOAD_F self,
+  fl, temp`, `CONV_FTOI temp, temp2`, `CALL1H takei, temp2`. FTEQCC converts the temporary in
+  place, `CONV_FI temp_0, temp_0`, `CALL1H takei, temp_0` (the pinned FTEQCC's `-Fwasm` output,
+  2026-11-16): the same statements, the converted value in a temporary of its own, a
+  divergence in the slot alone. On a target without `OP_CALL1H` the temporary is converted
+  into the parameter's slot and the call is `CALL1`. At global scope such an argument is not
+  followed.
+- **FTEF-32.21** A `static` local given an aggregate, `static string tab[] = {"a", "b"};`, has
+  the aggregate as its initial value, written with its storage as a global's is (FTE-13.10),
+  and no statement stores it when the function runs: it is finalised with the globals
+  (FTEF-32.16, `if (d->isstatic || (d->constant && d->initialized)) QCC_FinaliseDef(d);`).
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qccmain.c`,
+  `QCC_UnmarshalLocals`.
 ## FTEF-33 Builtin argument checks
 
 **Source:** `qcc_pr_comp.c`, `QCC_VerifyFormatString`, `QCC_VerifyArgs_sendevent`,

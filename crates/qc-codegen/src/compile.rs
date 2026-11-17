@@ -369,7 +369,16 @@ impl<'a> Compiler<'a> {
                 }
                 let id = self.def_of(&name)?;
                 if is_static || (init.is_some() && self.index.is_constant(id)) {
-                    self.program.get_def(self.index, id).at(name.span())?;
+                    let place = self.program.get_def(self.index, id).at(name.span())?;
+                    // A `static` local's aggregate is its initial value, as a global's is.
+                    if let (true, Some(ast::Initializer::Aggregate(aggregate))) = (is_static, &init)
+                    {
+                        let span = aggregate.syntax().span();
+                        let def = self.program.def(place).at(span)?;
+                        let (ty, count) = (def.ty.clone(), def.count);
+                        let words = self.aggregate_words(&ty, count, aggregate)?;
+                        self.program.initialise_words(place, &words).at(span)?;
+                    }
                 }
             }
         }

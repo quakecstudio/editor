@@ -28,6 +28,33 @@ use crate::{MAX_PARMS, VECTOR_WORDS, VECTOR_WORDS_FLOAT, VECTOR_WORDS_INT};
 
 /// `MAX_PARMS + MAX_EXTRA_PARMS`: the most arguments a call may pass.
 const MAX_ARGUMENTS: usize = 136;
+/// The call of each count of parameters, `OP_CALL0` to `OP_CALL8` (QC-18.3).
+const CALLS: [Op; 9] = [
+    Op::Call0,
+    Op::Call1,
+    Op::Call2,
+    Op::Call3,
+    Op::Call4,
+    Op::Call5,
+    Op::Call6,
+    Op::Call7,
+    Op::Call8,
+];
+/// The call of each count of parameters on a target with `OP_CALL1H`, `OP_CALL0` with none
+/// (FTEF-32.19).
+const CALLS_BY_OPERANDS: [Op; 9] = [
+    Op::Call0,
+    Op::Call1h,
+    Op::Call2h,
+    Op::Call3h,
+    Op::Call4h,
+    Op::Call5h,
+    Op::Call6h,
+    Op::Call7h,
+    Op::Call8h,
+];
+/// The parameters `OP_CALL1H` to `OP_CALL8H` take as their own operands (FTEF-32.19).
+const REGISTER_PARMS: usize = 2;
 
 impl Checker<'_> {
     /// FTEF-32: the call `call`.
@@ -245,7 +272,7 @@ impl Checker<'_> {
                 && !self.env.typecmp(&value.ty, param)
             {
                 // FTEF-26.3: a float field of an `int` parameter is loaded straight into the
-                // slot of `ftoi`, whose value is the argument; FTEF-32.21: any other converted
+                // slot of `ftoi`, whose value is the argument; FTEF-32.20: any other converted
                 // field argument is loaded where it is read and its value converted.
                 let ftoi = (self.etype_of(&value.ty) == Some(Etype::Float)
                     && self.etype_of(param) == Some(Etype::Integer))
@@ -361,6 +388,7 @@ impl Checker<'_> {
             passed_count,
             (callee, &values, &defaulted),
             (newself, &field_loads),
+            span,
         );
         let call = self.last_made();
         // `self` restored from where it was kept.
@@ -454,6 +482,7 @@ impl Checker<'_> {
         count: usize,
         (callee, values, defaulted): (Option<ir::Name>, &[Value], &[bool]),
         (newself, field_loads): (Option<ir::Name>, &[FieldLoad]),
+        span: Span,
     ) -> Option<u32> {
         // The arguments written and each parameter after them that takes its default
         // (FTE-18.7), of which a parameter takes its own.
@@ -494,15 +523,37 @@ impl Checker<'_> {
             }
             _ => name,
         };
+        // FTEF-32.19: on a target with `OP_CALL1H` the first two parameters of at most three
+        // words are the call's own operands, read where they are, with no store.
+        let registers = self.env.target_at(span.start).valid(Op::Call1h);
+        let mut operands: [Option<ir::Name>; REGISTER_PARMS] = [None; REGISTER_PARMS];
         // `copyop[2] = OP_LOAD_V; copyop[0] = OP_LOAD_F;`: by the field's size, not its type.
         for field in field_loads.iter().filter(|field| field.slot < passed) {
-            let slot = u8::try_from(field.slot).ok().map(ir::Name::Parameter);
+            let register = registers.then(|| operands.get_mut(field.slot)).flatten();
+            let slot = match &register {
+                // The field is loaded to a value of its own, which the call reads.
+                Some(_) => {
+                    let last = field.load.len().saturating_sub(1);
+                    u32::try_from(self.generated.len().saturating_add(last))
+                        .ok()
+                        .map(ir::Name::Made)
+                }
+                None => u8::try_from(field.slot).ok().map(ir::Name::Parameter),
+            };
+            if let Some(register) = register {
+                *register = slot;
+            }
             // The entity read, a copy of a call's value when a later call copied it.
             let by_size: Vec<ir::BodyStatement> = field
                 .load
                 .iter()
                 .map(|&s| ir::BodyStatement {
-                    op: if s.op == Op::LoadV { s.op } else { Op::LoadF },
+                    // A register's is the field's own load, `QCC_RefToDef` (FTEF-32.19).
+                    op: if registers || s.op == Op::LoadV {
+                        s.op
+                    } else {
+                        Op::LoadF
+                    },
                     a: renamed(self.copied(s.a, field.entity_call)),
                     c: slot,
                     ..s
@@ -526,6 +577,14 @@ impl Checker<'_> {
                 continue;
             }
             let words = self.env.layout(&value.ty).map_or(1, |l| l.words);
+            if let Some(register) = registers.then(|| operands.get_mut(slot)).flatten() {
+                *register = if defaulted.get(slot).copied().unwrap_or(false) {
+                    u8::try_from(slot).ok().map(ir::Name::Default)
+                } else {
+                    renamed(self.name_of(value))
+                };
+                continue;
+            }
             let vector = words == VECTOR_WORDS || function.is_variant_parameter(slot);
             let folded = first && value.temp.is_some() && value.temp == self.last_temp;
             first = false;
@@ -558,6 +617,10 @@ impl Checker<'_> {
                 .and_then(|param| self.env.layout(param))
                 .map_or(1, |l| l.words);
             let vector = words == VECTOR_WORDS || function.is_variant_parameter(slot);
+            if let Some(register) = registers.then(|| operands.get_mut(slot)).flatten() {
+                *register = u8::try_from(slot).ok().map(ir::Name::Default);
+                continue;
+            }
             let slot = u8::try_from(slot).ok();
             self.generated.push(ir::BodyStatement {
                 a: slot.map(ir::Name::Default),
@@ -565,21 +628,14 @@ impl Checker<'_> {
                 ..ir::BodyStatement::bare(if vector { Op::StoreV } else { Op::StoreF })
             });
         }
-        let call = [
-            Op::Call0,
-            Op::Call1,
-            Op::Call2,
-            Op::Call3,
-            Op::Call4,
-            Op::Call5,
-            Op::Call6,
-            Op::Call7,
-            Op::Call8,
-        ];
+        let call = if registers { CALLS_BY_OPERANDS } else { CALLS };
         if let Some(&call) = call.get(passed) {
             self.clobber_return();
+            let [b, c] = operands;
             self.generated.push(ir::BodyStatement {
                 a: callee,
+                b,
+                c,
                 ..ir::BodyStatement::bare(call)
             });
             self.last_temp = None;

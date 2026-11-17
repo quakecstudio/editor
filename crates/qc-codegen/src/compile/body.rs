@@ -456,6 +456,11 @@ impl Compiler<'_> {
                     .map_err(|_| Internal::TooLarge)
                     .at(span);
             }
+            Name::Count(count) => {
+                return i32::try_from(count)
+                    .map_err(|_| Internal::TooLarge)
+                    .at(span);
+            }
             // FTEF-18.2: the nested function's number, its immediate made as it is stored.
             Name::Nested(local) => {
                 let syntax = self.writing.clone().at(span)?;
