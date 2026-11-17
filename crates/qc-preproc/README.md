@@ -116,8 +116,7 @@ FTEF-14.51).
   redefined" warning). QCD-7 is otherwise the semantic model's resolution warnings, so it is
   not declared above.
 - **Mutation:** two survivors on the case-fold comparison are equivalent to the original on
-  every realisable input and recorded under `[crates.qc-preproc].equivalent_mutants` in
-  `ratchets.toml`: the trait's default `stored_name` (its body already returns `None`), and the
+  every realisable input: the trait's default `stored_name` (its body already returns `None`), and the
   `<` guard that suppresses a lexical diagnostic inside a skipped conditional block, whose end
   is always a `#` directive or end of file where no diagnostic can start.
 - **Shipped:** yes.

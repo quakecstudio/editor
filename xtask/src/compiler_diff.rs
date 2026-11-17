@@ -32,7 +32,7 @@ use std::process::Command;
 use crate::differential::asset_root;
 use crate::oracles::codegen::Profile;
 use crate::oracles::{self, Oracles, codegen, id101, rerelease};
-use crate::readiness::Shard;
+use crate::shard::Shard;
 
 mod functions;
 

@@ -7,9 +7,6 @@
 //!   another CI job runs.
 //! - `adr`: checks the decision records in `docs/adr/` and their index.
 //! - `conventions`: checks every config value against `docs/conventions.md`.
-//! - `clippy-fixtures`: proves the workspace lints reject the code they target.
-//! - `deny-fixtures`: proves `deny.toml` rejects incompatible licenses and
-//!   wildcard versions (needs network access to the crates.io index).
 //! - `layers`: checks every crate's layer in `layers.toml` and that it depends
 //!   only on its own layer or lower (`docs/layers.md`), and that the document's
 //!   crate table is the one `layers.toml` renders; `layers --write` writes it.
@@ -23,10 +20,6 @@
 //! - `bench`: runs the performance-budget benchmarks, checks them against
 //!   `docs/perf-budgets.md` and the last run, and records them in the JSON
 //!   history; `bench history` prints the history.
-//! - `readiness`: measures one readiness check (coverage, mutation score, spec
-//!   citations or flakes) for a list of crates and writes the numbers as JSON.
-//! - `ratchet`: judges those numbers against the bar in ADR-0009 and the
-//!   minimums in `ratchets.toml`, and checks how `ratchets.toml` has changed.
 //! - `fuzz`: runs the cargo-fuzz targets in `fuzz/` on nightly for a fixed time
 //!   each; `make test-fuzz` and the nightly `Fuzz` workflow call it.
 //! - `corpus`: `corpus verify [--online]` checks `corpus/manifest.toml` and the repository
@@ -63,20 +56,6 @@
 //! - `lsp-corpus`: drives the language server against the rerelease over the
 //!   protocol, every request at a set of probes, and compares the answers with
 //!   their golden file (P2-14).
-//! - `fteqcc-coverage`: parses every `.qc` and `.qh` file under the rerelease
-//!   codebase directories with the vanilla parser and lists every construct it
-//!   rejects, grouped into the classes of
-//!   `docs/spec/dialect-fteqcc-rerelease.md` (P2-01); it fails on a rejected
-//!   construct no class names.
-//! - `fteqcc-full-coverage`: scans every `.qc`, `.qh` and `.h` file under the
-//!   FTEQCC corpus mod directories (nuclide, freecs, freehl) for the full
-//!   FTEQCC dialect constructs beyond the rerelease subset, grouped into the
-//!   classes of `docs/spec/dialect-fteqcc.md` (P2-25); it fails on a class no
-//!   section names.
-//! - `gmqcc-coverage`: scans every `.qc`, `.qh`, `.inc` and `.h` file under the
-//!   GMQCC corpus (Xonotic) for the GMQCC constructs, grouped into the classes of
-//!   `docs/spec/dialect-gmqcc.md` (L-10); it fails on a class no section names,
-//!   or a section the corpus does not use.
 //! - `fteqcc-profile`: preprocesses, parses and resolves every module of each
 //!   rerelease codebase under the FTEQCC profile (P2-03) and fails on any error,
 //!   then checks the vanilla profile rejects each extension; `--warnings` prints
@@ -91,9 +70,6 @@
 //!   from them (P2-04); `engines --check` fails when the checked-in tables differ.
 //! - `commands`: writes the command reference, `docs/commands.md`, from the
 //!   `qs-commands` registry (P2-12); `commands --check` fails when it differs.
-//!
-//! `readiness` and `ratchet` run in the on-demand `Readiness` workflow, not in
-//! `ci` (ADR-0009).
 
 #![expect(
     clippy::print_stdout,
@@ -102,7 +78,6 @@
 )]
 
 mod adr;
-mod api;
 mod attribution;
 mod bench;
 mod bridge_client;
@@ -121,13 +96,9 @@ mod engines;
 mod entity_corpus;
 mod evals;
 mod exec;
-mod fixtures;
 mod format_corpus;
-mod fteqcc_coverage;
-mod fteqcc_full_coverage;
 mod fteqcc_profile;
 mod fuzz;
-mod gmqcc_coverage;
 mod host;
 mod layers;
 mod lex_corpus;
@@ -142,14 +113,12 @@ mod oracles;
 mod parse_corpus;
 mod ported;
 mod project_corpus;
-mod ratchet;
-mod readiness;
 mod release_host;
 mod repo;
 mod scenario;
 mod sema_corpus;
+mod shard;
 mod sim_diff;
-mod test_code;
 #[cfg(test)]
 mod test_dirs;
 mod view_diff;
@@ -172,8 +141,6 @@ enum Task {
     Ci(ci::Args),
     /// ADRs follow the template and are indexed.
     Adr,
-    /// Write or check each library crate's public items.
-    Api(api::Args),
     /// Every asset is listed in ATTRIBUTION.md.
     Attribution,
     /// Fetch or precache the test assets.
@@ -182,8 +149,6 @@ enum Task {
     Bench(bench::Args),
     /// The bridge client against the real preview host, headless.
     BridgeClient(bridge_client::Args),
-    /// The lints reject what they target.
-    ClippyFixtures,
     /// Every corpus codebase compiles with our compiler.
     CodegenCorpus(codegen_corpus::Args),
     /// Formatting each codebase is stable and changes no progs.dat.
@@ -200,18 +165,10 @@ enum Task {
     Conv17Baseline,
     /// The corpus manifest and cache.
     Corpus(corpus::Args),
-    /// deny.toml rejects bad licenses and wildcards.
-    DenyFixtures,
     /// The VM differential suite.
     Differential(differential::Args),
     /// Write or check the engine-target tables.
     Engines(engines::Args),
-    /// The rerelease codebases' FTEQCC constructs.
-    FteqccCoverage(fteqcc_coverage::Args),
-    /// The FTEQCC corpus mods' full-dialect classes.
-    FteqccFullCoverage(fteqcc_full_coverage::Args),
-    /// The GMQCC corpus's dialect classes.
-    GmqccCoverage(gmqcc_coverage::Args),
     /// A scenario played in qs-sim on a game, repeated, each result the same (SCN-2.5).
     Scenario(scenario::Args),
     /// The agent's evals: check each task's scenario, or run the tasks on a model (P4-15).
@@ -254,10 +211,6 @@ enum Task {
     ParseCorpus(parse_corpus::Args),
     /// Every corpus project's file graph.
     ProjectCorpus(project_corpus::Args),
-    /// The readiness ratchets.
-    Ratchet(ratchet::Args),
-    /// Measure one readiness check.
-    Readiness(readiness::Args),
     /// Every corpus module's index, against its golden file.
     SemaCorpus(sema_corpus::Args),
 }
@@ -286,7 +239,6 @@ fn main() -> ExitCode {
 fn run(root: &Path, task: &Task, ci_steps: &[ci::Step]) -> bool {
     let (name, result) = match task {
         Task::Ci(args) => ("ci", ci::main(root, args, ci_steps)),
-        Task::Api(args) => ("api", api::main(root, args)),
         Task::Assets(args) => ("assets", corpus::assets_main(root, args)),
         Task::Bench(args) => ("bench", bench::main(root, args)),
         Task::BridgeClient(args) => ("bridge-client", bridge_client::main(root, args)),
@@ -298,13 +250,7 @@ fn run(root: &Path, task: &Task, ci_steps: &[ci::Step]) -> bool {
         Task::Corpus(args) => ("corpus", corpus::main(root, args)),
         Task::Differential(args) => ("differential", differential::main(root, args)),
         Task::Engines(args) => ("engines", engines::main(root, args)),
-        Task::FteqccCoverage(args) => ("fteqcc-coverage", fteqcc_coverage::main(root, args)),
-        Task::FteqccFullCoverage(args) => (
-            "fteqcc-full-coverage",
-            fteqcc_full_coverage::main(root, args),
-        ),
         Task::FteqccProfile(args) => ("fteqcc-profile", fteqcc_profile::main(root, args)),
-        Task::GmqccCoverage(args) => ("gmqcc-coverage", gmqcc_coverage::main(root, args)),
         Task::Fuzz(args) => ("fuzz", fuzz::main(root, args)),
         Task::LexCorpus(args) => ("lex-corpus", lex_corpus::main(root, args)),
         Task::LspCorpus(args) => ("lsp-corpus", lsp_corpus::main(root, args)),
@@ -321,8 +267,6 @@ fn run(root: &Path, task: &Task, ci_steps: &[ci::Step]) -> bool {
         Task::Oracles(args) => ("oracles", oracles::main(root, args)),
         Task::ParseCorpus(args) => ("parse-corpus", parse_corpus::main(root, args)),
         Task::ProjectCorpus(args) => ("project-corpus", project_corpus::main(root, args)),
-        Task::Ratchet(args) => ("ratchet", ratchet::main(root, args)),
-        Task::Readiness(args) => ("readiness", readiness::main(root, args)),
         Task::SemaCorpus(args) => ("sema-corpus", sema_corpus::main(root, args)),
         Task::Notices(args) => ("notices", notices::main(root, args)),
         Task::Scenario(args) => ("scenario", scenario::main(root, args)),
@@ -333,9 +277,6 @@ fn run(root: &Path, task: &Task, ci_steps: &[ci::Step]) -> bool {
         Task::ViewDiff(args) => ("view-diff", view_diff::main(root, args)),
         Task::Adr => return print_outcome("adr", adr::check(root)),
         Task::Attribution => return print_outcome("attribution", attribution::run(root)),
-        Task::ClippyFixtures => {
-            return print_outcome("clippy-fixtures", fixtures::clippy(root, &exec::System));
-        }
         Task::Contrast => return print_outcome("contrast", contrast::check(root)),
         Task::Conventions => return print_outcome("conventions", conventions::check(root)),
         Task::Conv17Baseline => {
@@ -352,9 +293,6 @@ fn run(root: &Path, task: &Task, ci_steps: &[ci::Step]) -> bool {
                     false
                 }
             };
-        }
-        Task::DenyFixtures => {
-            return print_outcome("deny-fixtures", fixtures::deny(root, &exec::System));
         }
         Task::Licenses => return print_outcome("licenses", licenses::run(root)),
     };
@@ -374,10 +312,7 @@ pub(crate) type Check = fn(&Path) -> Result<Report, String>;
 pub(crate) fn in_process_check(command: &str) -> Option<Check> {
     match command {
         "adr" => Some(adr::check),
-        "api" => Some(api::check),
         "conventions" => Some(conventions::check),
-        "clippy-fixtures" => Some(|root| fixtures::clippy(root, &exec::System)),
-        "deny-fixtures" => Some(|root| fixtures::deny(root, &exec::System)),
         "layers" => Some(layers::check),
         "licenses" => Some(licenses::run),
         "attribution" => Some(attribution::run),
@@ -474,18 +409,14 @@ mod tests {
         for name in [
             "adr",
             "attribution",
-            "clippy-fixtures",
             "contrast",
             "conventions",
-            "deny-fixtures",
             "layers",
             "licenses",
-            "api",
             "commands",
             "engines",
             "bench",
             "fuzz",
-            "ratchet",
             "differential",
             "ci",
         ] {
@@ -497,10 +428,7 @@ mod tests {
             "format-corpus",
             "compiler-diff",
             "corpus",
-            "fteqcc-coverage",
-            "fteqcc-full-coverage",
             "fteqcc-profile",
-            "gmqcc-coverage",
             "lex-corpus",
             "lsp-corpus",
             "map-corpus",
@@ -508,7 +436,6 @@ mod tests {
             "oracles",
             "parse-corpus",
             "project-corpus",
-            "readiness",
             "sema-corpus",
         ] {
             assert!(Cli::command().find_subcommand(name).is_some(), "{name}");
@@ -544,9 +471,8 @@ mod tests {
     #[test]
     fn a_command_with_arguments_reports_its_outcome() {
         let root = workspace_root();
-        assert!(task(&["ratchet", "--no-such-flag"]).is_err());
-        let ratchet = task(&["ratchet"]).unwrap_or(Task::Adr);
-        assert!(run(&root, &ratchet, &FAILING));
+        assert!(task(&["corpus", "verify", "--no-such-flag"]).is_err());
+        assert!(task(&["corpus", "verify"]).is_ok_and(|verify| run(&root, &verify, &FAILING)));
     }
 
     #[test]

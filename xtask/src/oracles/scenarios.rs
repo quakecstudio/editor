@@ -7,7 +7,7 @@
 //! statements it pins; `cargo xtask oracles` runs every case after the vectors and probes.
 //!
 //! The expectations are written from the spec, not from the C, so a fault in the C fails a
-//! case (the reason the oracles take no mutation score, `ratchets.toml`). Every trace is also
+//! case (the reason the oracles take no mutation score, `oracles/README.md`). Every trace is also
 //! decoded by `qc-trace`'s strict decoder and must re-encode to the same bytes.
 
 mod cases;

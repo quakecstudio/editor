@@ -307,22 +307,17 @@ operator. Xonotic: `lib/compiler.qh` defines `QCC_SUPPORT_POW`.
 
 ## GMQ-20 The corpus inventory
 
-**Source:** `xtask/src/gmqcc_coverage.rs`.
-
-`cargo xtask gmqcc-coverage <dir>...` scans every `.qc`, `.qh`, `.inc` and `.h` file under the
-GMQCC corpus (Xonotic's `qcsrc`, fetched with `cargo xtask corpus fetch xonotic`) for the
-constructs above that the FTEQCC grammar lacks. The recorded run is
+The classes above were found by a scan of the GMQCC corpus (Xonotic's `qcsrc`, fetched with
+`cargo xtask corpus fetch xonotic`), `cargo xtask gmqcc-coverage`, which was removed on
+2026-11-16 once the profile read the corpus with no error (L-02). Its recorded run is
 [`vectors/dialect-gmqcc/coverage.txt`](vectors/dialect-gmqcc/coverage.txt).
 
 ### Behaviour
 
-- **GMQ-20.1** Every construct class the scan finds is named by a section of this file, and every
-  class it looks for is found in the corpus; the scan fails otherwise.
-- **GMQ-20.2** Each class is found by its tokens, a directive's body included, since Xonotic
-  writes several of them through C preprocessor macros: `_` then `(` then a string (GMQ-6),
-  `return` then `=` (GMQ-9), `nil` (GMQ-12), `...` then a name or `(` (GMQ-13), `[[` then a
-  name (GMQ-16), `noref` (GMQ-17), two touching `*` (GMQ-18), and `goto` or a `:` touching a
-  name (GMQ-19).
+- **GMQ-20.1** **Withdrawn** 2026-11-16: it described the removed scan, which failed on a class
+  no section named; nothing replaces it.
+- **GMQ-20.2** **Withdrawn** 2026-11-16: it described how the removed scan found each class by
+  its tokens; nothing replaces it.
 
 ## GMQ-21 Macro expansion as Xonotic is preprocessed
 

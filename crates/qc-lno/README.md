@@ -41,6 +41,5 @@ compiler, CI only).
 
 Every mutant is caught. The statement limit of LNO-6.3 is checked by `statement_count_fits` on
 a length alone, so a test reaches `LNO_MAX_STATEMENTS` (`i32::MAX`) and one more without
-allocating the line table, and a test holds `size_hint` to the length `write` produces. Until a
-readiness review measures the crate again, `ratchets.toml` keeps the P1-R0 minimums, with the
-exception and the four equivalent entries that review recorded for these mutants.
+allocating the line table, and a test holds `size_hint` to the length `write` produces. The P1-R0
+readiness review recorded the exception and four equivalent mutants (`docs/readiness/`).

@@ -131,7 +131,6 @@ fn code_workflows_specs_and_configuration_are_full() {
         "Cargo.lock",
         "deny.toml",
         "layers.toml",
-        "ratchets.toml",
         "Makefile",
         "LICENSE",
         ".gitattributes",

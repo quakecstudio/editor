@@ -744,6 +744,7 @@ fn typedefs() {
 }
 
 // spec FTEF-19.10: an enum's values, under enumflags doubling, and their checks
+// spec FTEF-8.1: `enumflags { A, B, C }` doubles its unvalued members, so `C` is 4
 // spec QCD-3.27: E0227 "Implicit type mismatch. Needed TYPE, got TYPE."
 // spec QCD-3.28: E0228 "enum - NAME is not a compile-time constant"
 // spec QCD-3.29: E0229 "values for enums of this type must be initialised"

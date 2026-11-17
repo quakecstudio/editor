@@ -75,8 +75,8 @@ pub(crate) const OUT: &str = "target/oracles";
 
 /// When this environment variable is set and not empty, our harness files are built with
 /// clang's source-based coverage (`compile::COVERAGE_FLAGS`), and every run of the VM oracle
-/// writes a profile where `LLVM_PROFILE_FILE` says. `cargo xtask readiness` sets both to
-/// measure the coverage of our C (`docs/testing.md`, TEST-1).
+/// writes a profile where `LLVM_PROFILE_FILE` says, to measure the coverage of our C
+/// (`docs/testing.md`, TEST-1).
 pub(crate) const COVERAGE_ENV: &str = "QS_ORACLE_COVERAGE";
 
 fn coverage_requested() -> bool {
@@ -642,11 +642,6 @@ fn locate<'a>(root: &Path, exec: &'a dyn Exec) -> Oracles<'a> {
         rerelease: out.join("rerelease"),
         exec,
     }
-}
-
-/// The VM oracle's executable, once built.
-pub(crate) fn vm_oracle(root: &Path) -> PathBuf {
-    locate(root, &System).vm
 }
 
 /// Runs `script` once through the engine oracle, writing its trace to `trace` (DIFF-16.1);
