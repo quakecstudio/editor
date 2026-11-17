@@ -11,8 +11,6 @@
 //! `go_to_line::Toggle`, `outline::Toggle`, `outline_panel::ToggleFocus` and
 //! `tab_switcher::Toggle`, each a command the palette lists and a key runs.
 
-use std::convert::Infallible;
-
 use qs_commands::{Command, NoParams, Outcome, RegisterError, Registry};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -127,9 +125,9 @@ impl<A: Ask, C: HasLayout + 'static> Command<C> for Asking<A> {
     const SUMMARY: &'static str = A::SUMMARY;
     type Params = NoParams;
     type Output = ();
-    type Error = Infallible;
+    type Error = !;
 
-    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<(), C>, Infallible> {
+    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<(), C>, !> {
         ask(context, A::REQUEST);
         Ok(Outcome::outside_history(()))
     }
@@ -214,9 +212,9 @@ impl<C: HasLayout + 'static> Command<C> for GoToLine {
         without a line it asks for one.";
     type Params = GoToLineParams;
     type Output = ();
-    type Error = Infallible;
+    type Error = !;
 
-    fn run(&self, context: &mut C, params: GoToLineParams) -> Result<Outcome<(), C>, Infallible> {
+    fn run(&self, context: &mut C, params: GoToLineParams) -> Result<Outcome<(), C>, !> {
         let request = params
             .line
             .map_or(EditorRequest::AskLine, EditorRequest::GoToLine);
@@ -234,9 +232,9 @@ impl<C: HasLayout + 'static> Command<C> for ToggleSoftWrap {
         "Turns soft wrap on or off: long lines wrap at the editor's width.";
     type Params = NoParams;
     type Output = SoftWrap;
-    type Error = Infallible;
+    type Error = !;
 
-    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<SoftWrap, C>, Infallible> {
+    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<SoftWrap, C>, !> {
         let layout = context.layout_mut();
         layout.soft_wrap = match layout.soft_wrap {
             SoftWrap::Off => SoftWrap::Width,
@@ -255,9 +253,9 @@ impl<C: HasLayout + 'static> Command<C> for ToggleOutline {
         open file's symbols, the one the caret is in marked.";
     type Params = NoParams;
     type Output = Outline;
-    type Error = Infallible;
+    type Error = !;
 
-    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<Outline, C>, Infallible> {
+    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<Outline, C>, !> {
         let layout = context.layout_mut();
         layout.outline = match layout.outline {
             Outline::Hidden => Outline::Shown,
@@ -282,9 +280,9 @@ impl<S: SplitTo, C: HasLayout + 'static> Command<C> for Splitting<S> {
     const SUMMARY: &'static str = S::SUMMARY;
     type Params = NoParams;
     type Output = Split;
-    type Error = Infallible;
+    type Error = !;
 
-    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<Split, C>, Infallible> {
+    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<Split, C>, !> {
         context.layout_mut().split = S::SPLIT;
         Ok(Outcome::outside_history(S::SPLIT))
     }

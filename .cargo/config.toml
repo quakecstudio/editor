@@ -1,2 +1,8 @@
 [alias]
 xtask = "run --quiet --locked --package xtask --"
+
+# A version of a registry package is resolved only once it has been published for a week
+# (docs/conventions.md, CONV-5): time for a bad release to be yanked before it reaches the
+# lock file.
+[registry]
+global-min-publish-age = "7 days"

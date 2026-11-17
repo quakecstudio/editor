@@ -124,13 +124,9 @@ impl<C: HasLayout + 'static> Command<C> for SetZoom {
         from 0.5 (50 percent) to 3 (300 percent); 1 is the actual size.";
     type Params = ZoomParams;
     type Output = Zoom;
-    type Error = core::convert::Infallible;
+    type Error = !;
 
-    fn run(
-        &self,
-        context: &mut C,
-        params: ZoomParams,
-    ) -> Result<Outcome<Zoom, C>, core::convert::Infallible> {
+    fn run(&self, context: &mut C, params: ZoomParams) -> Result<Outcome<Zoom, C>, !> {
         let layout = context.layout_mut();
         layout.zoom = params.zoom;
         Ok(Outcome::outside_history(layout.zoom))

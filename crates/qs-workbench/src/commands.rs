@@ -654,7 +654,7 @@ impl<C: HasWorkbench + 'static> Command<C> for Definition {
     const SUMMARY: &'static str = "Finds where the name at a place is defined.";
     type Params = AtParams;
     type Output = Option<Place>;
-    type Error = std::convert::Infallible;
+    type Error = !;
 
     fn run(
         &self,
@@ -678,7 +678,7 @@ impl<C: HasWorkbench + 'static> Command<C> for References {
         every file.";
     type Params = AtParams;
     type Output = Vec<Place>;
-    type Error = std::convert::Infallible;
+    type Error = !;
 
     fn run(
         &self,
@@ -715,7 +715,7 @@ impl<C: HasWorkbench + 'static> Command<C> for HoverCommand {
         comment.";
     type Params = AtParams;
     type Output = Option<HoverInfo>;
-    type Error = std::convert::Infallible;
+    type Error = !;
 
     fn run(
         &self,
@@ -781,7 +781,7 @@ impl<C: HasWorkbench + 'static> Command<C> for Complete {
     const SUMMARY: &'static str = "Lists the names that may be written at a place.";
     type Params = AtParams;
     type Output = Vec<Candidate>;
-    type Error = std::convert::Infallible;
+    type Error = !;
 
     fn run(
         &self,

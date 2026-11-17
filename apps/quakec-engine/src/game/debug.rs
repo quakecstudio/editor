@@ -366,8 +366,7 @@ impl Game {
     pub(super) fn stack_now(&self, progs: &Progs<'_>) -> Vec<Value> {
         self.halted
             .as_ref()
-            .map(|s| self.stack_json(progs, &s.stack))
-            .unwrap_or_default()
+            .map_or_default(|s| self.stack_json(progs, &s.stack))
     }
 
     /// `evaluate` (BRIDGE-4.9, WORLD-9.5) in stack frame `frame`, 0 the innermost.

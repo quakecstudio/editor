@@ -263,13 +263,12 @@ pub fn locate(progs: &Progs<'_>, lines: &[i32], function: i32, statement: i32) -
     let text = |offset: i32| {
         progs
             .string(offset)
-            .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
-            .unwrap_or_default()
+            .map_or_default(|bytes| String::from_utf8_lossy(bytes).into_owned())
     };
     let record = usize::try_from(function)
         .ok()
         .and_then(|index| progs.functions().get(index));
-    let name = record.map(|f| text(f.s_name)).unwrap_or_default();
+    let name = record.map_or_default(|f| text(f.s_name));
     let line = usize::try_from(statement)
         .ok()
         .and_then(|s| lines.get(s))

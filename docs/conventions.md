@@ -29,7 +29,7 @@ Change this document and the configuration in the same PR.
 
 ## Toolchain and workspace (CONV-1)
 
-- `rust-toolchain.toml` pins an exact stable channel (vouch: `1.99.0`) with `rustfmt` and `clippy` components.
+- `rust-toolchain.toml` pins an exact stable channel (`1.100.0`; vouch: `1.99.0`) with `rustfmt` and `clippy` components.
 - Root `Cargo.toml`: `resolver = "3"`, `members = ["crates/*", "apps/*", "xtask"]`.
 - `[workspace.package]` holds `version`, `edition = "2024"`, `license`, `rust-version`,
   `repository`, `publish = false`; every crate inherits them with `*.workspace = true`.
@@ -51,7 +51,7 @@ repository = "https://github.com/quakecstudio/editor"
 publish = false
 ```
 
-The channel is `1.99.0`, the same as vouch, and `rust-version` equals it.
+The channel is `1.100.0` (vouch is on `1.99.0`), and `rust-version` equals it.
 
 Nightly Rust is allowed in two places only: fuzzing with cargo-fuzz (`cargo xtask fuzz`, which
 `make test-fuzz` and the scheduled `Fuzz` workflow call), and branch coverage
@@ -92,6 +92,14 @@ trivial_casts = "warn"
 trivial_numeric_casts = "warn"
 unused_lifetimes = "warn"
 single_use_lifetimes = "warn"
+```
+
+`[workspace.lints.cargo]`, Cargo's own lints since Rust 1.100: a dependency no target of its
+package uses is an error.
+
+```toml file=Cargo.toml
+[workspace.lints.cargo]
+unused_dependencies = "deny"
 ```
 
 `[workspace.lints.clippy]`, the vouch no-panic set, all `deny` (vouch's
@@ -176,6 +184,10 @@ semantics require exact IEEE comparison. There the lint is expected per site wit
   `rustls` over OpenSSL, `jiff` over `chrono`, `clap` for CLIs, `thiserror` for library
   errors, `anyhow` only in binaries, `tracing` for diagnostics, `secrecy` and `zeroize`
   for model-provider API keys, the `keyring` crates for OS keychains.
+
+`.cargo/config.toml` sets `registry.global-min-publish-age = "7 days"` (Cargo 1.100): a version
+of a registry package is resolved only once it has been published for a week, beside
+`deny.toml`'s checks of what is resolved.
 
 ## cargo-deny (CONV-5)
 

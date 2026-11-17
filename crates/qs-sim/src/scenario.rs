@@ -578,7 +578,7 @@ impl Scenario {
                     screenshots.push(Shot::taken(&world.state(progs), name, frame));
                 }
             }
-            Ok::<bool, std::convert::Infallible>(true)
+            Ok::<bool, !>(true)
         });
         let (frames, error) = match played {
             Ok(frames) => (frames, None),

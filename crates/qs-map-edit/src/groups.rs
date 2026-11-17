@@ -367,8 +367,7 @@ impl MapDocument {
                         id: LayerId(id.get()),
                         name: entity
                             .value(NAME_KEY)
-                            .map(|name| String::from_utf8_lossy(name).into_owned())
-                            .unwrap_or_default(),
+                            .map_or_default(|name| String::from_utf8_lossy(name).into_owned()),
                         hidden: settings.hidden,
                         locked: settings.locked,
                         omit_from_export: settings.omit_from_export,

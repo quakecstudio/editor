@@ -107,8 +107,7 @@ impl LiveChange {
             after
                 .get(place.get())
                 .and_then(Entity::classname)
-                .map(text)
-                .unwrap_or_default()
+                .map_or_default(text)
         };
         let pairs = |pairs: &[(String, String)]| {
             pairs
@@ -137,7 +136,7 @@ impl LiveChange {
         if entity.has_brushes() {
             return Self::NeedsCompile { place };
         }
-        let classname = entity.classname().map(text).unwrap_or_default();
+        let classname = entity.classname().map_or_default(text);
         let pairs = pairs(entity)
             .into_iter()
             .filter(|(key, _)| key != "classname")

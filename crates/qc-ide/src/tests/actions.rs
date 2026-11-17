@@ -60,8 +60,7 @@ fn fix(host: &mut AnalysisHost<MemoryLoader>, name: &str, code: Code) -> (String
 fn name_of(target: &Path) -> String {
     target
         .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default()
+        .map_or_default(|n| n.to_string_lossy().into_owned())
 }
 
 // spec QCD-7.115: a local no expression names is W0321; its quick fix removes its declaration,

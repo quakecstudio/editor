@@ -316,7 +316,7 @@ impl TextureSources {
             };
             sources.wads.push(WadFound { name, path, state });
         }
-        for texture in bsp.map(bsp_textures).unwrap_or_default() {
+        for texture in bsp.map_or_default(bsp_textures) {
             sources.hold(texture);
         }
         sources

@@ -2146,8 +2146,7 @@ impl Client {
         let viewentity_origin = self
             .entities
             .get(self.viewentity)
-            .map(|e| e.origin)
-            .unwrap_or_default();
+            .map_or_default(|e| e.origin);
         let viewentity = i32::try_from(self.viewentity).unwrap_or(-1);
         let beam_models: Vec<usize> = (1..=CLIENT_BEAM_MODELS.len())
             .map(|m| self.beam_model_index(m))

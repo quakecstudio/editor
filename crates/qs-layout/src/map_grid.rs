@@ -146,13 +146,9 @@ impl<C: HasLayout + 'static> Command<C> for SetMapGrid {
         0.125 to 256.";
     type Params = MapGridParams;
     type Output = MapGrid;
-    type Error = core::convert::Infallible;
+    type Error = !;
 
-    fn run(
-        &self,
-        context: &mut C,
-        params: MapGridParams,
-    ) -> Result<Outcome<MapGrid, C>, core::convert::Infallible> {
+    fn run(&self, context: &mut C, params: MapGridParams) -> Result<Outcome<MapGrid, C>, !> {
         let layout = context.layout_mut();
         layout.map_grid = params.size;
         Ok(Outcome::outside_history(layout.map_grid))
@@ -168,13 +164,9 @@ impl<C: HasLayout + 'static> Command<C> for StepMapGrid {
         256 units.";
     type Params = MapGridStepParams;
     type Output = MapGrid;
-    type Error = core::convert::Infallible;
+    type Error = !;
 
-    fn run(
-        &self,
-        context: &mut C,
-        params: MapGridStepParams,
-    ) -> Result<Outcome<MapGrid, C>, core::convert::Infallible> {
+    fn run(&self, context: &mut C, params: MapGridStepParams) -> Result<Outcome<MapGrid, C>, !> {
         let layout = context.layout_mut();
         layout.map_grid = match params.step {
             GridStep::Finer => layout.map_grid.finer(),

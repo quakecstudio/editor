@@ -37,7 +37,7 @@ impl Checker<'_> {
     )]
     pub(super) fn call(&mut self, call: &ast::CallExpr) -> Checked {
         let span = call.syntax().span();
-        let args: Vec<ast::Expr> = call.args().map(|a| a.args().collect()).unwrap_or_default();
+        let args: Vec<ast::Expr> = call.args().map_or_default(|a| a.args().collect());
         // `va_arg`'s type, written in its argument list (FTEF-32.7).
         let written = call
             .args()
@@ -165,7 +165,7 @@ impl Checker<'_> {
             });
         let Some(function) = function else {
             // A `variant` takes any arguments, and no argument left empty (FTEF-32.9).
-            let slots = call.args().map(|list| list.slots()).unwrap_or_default();
+            let slots = call.args().map_or_default(|list| list.slots());
             let mut values = Vec::new();
             for (at, slot) in slots.iter().enumerate() {
                 let Some(arg) = slot else {
@@ -189,7 +189,7 @@ impl Checker<'_> {
                 return Ok(value);
             }
         }
-        let slots = call.args().map(|list| list.slots()).unwrap_or_default();
+        let slots = call.args().map_or_default(|list| list.slots());
         let mut passed = Vec::new();
         // FTE-18.11: a field argument is loaded straight into its slot after every argument is
         // read, so its load is held back from the generated statements until then.

@@ -437,8 +437,7 @@ impl EditorView {
             .filter(|line| *line == line_count || !folds.is_hidden(*line))
             .flat_map(|line| {
                 let removed = diff
-                    .map(|d| d.removed_before(line))
-                    .unwrap_or_default()
+                    .map_or_default(|d| d.removed_before(line))
                     .iter()
                     .map(|text| Row::Removed(text.clone()));
                 let this = (line < line_count).then(|| Row::Line {

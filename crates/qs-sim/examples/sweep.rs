@@ -59,8 +59,7 @@ fn main() -> Result<(), String> {
         .load_rerelease(RRE_LOC_FILE)
         .ok()
         .flatten()
-        .map(|text| Localization::loc_load_file(&text))
-        .unwrap_or_default();
+        .map_or_default(|text| Localization::loc_load_file(&text));
     let mut maps: Vec<String> = vfs
         .files()
         .iter()

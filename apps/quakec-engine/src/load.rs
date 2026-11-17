@@ -509,9 +509,7 @@ impl Args {
         // `LOC_Init` reads them, from the search path, the base directory or `QuakeEX.kpf`.
         let text = localization(&vfs, self)?;
         let options = LoadOptions {
-            localization: text
-                .map(|text| Localization::loc_load_file(&text))
-                .unwrap_or_default(),
+            localization: text.map_or_default(|text| Localization::loc_load_file(&text)),
             builtins,
             carried,
             registration: vfs.registration(),
@@ -563,8 +561,7 @@ impl Args {
             .ok()
             .and_then(|bytes| LnoFile::read(&bytes).ok())
             .filter(|lno| lno.matches_header(progs.header()).is_ok())
-            .map(|lno| lno.lines)
-            .unwrap_or_default();
+            .map_or_default(|lno| lno.lines);
         game.set_lines(lines);
         game.set_files(files()?);
         match held {

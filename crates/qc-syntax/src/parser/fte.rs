@@ -1140,7 +1140,7 @@ impl Parser<'_> {
         let accessor_based =
             self.kw(0, Keyword::Accessor) && self.nth(2).is_some_and(|t| t.kind == K::Colon);
         let head = self.found();
-        let accessor = self.nth(1).map(|t| t.text.clone()).unwrap_or_default();
+        let accessor = self.nth(1).map_or_default(|t| t.text.clone());
         let ty = self.fte_type();
         if accessor_based {
             let class = self.class_name.clone().unwrap_or_default();
@@ -1725,7 +1725,7 @@ impl Parser<'_> {
             .filter(|t| t.kind == K::Name)
             .map(|t| (t.text.clone(), t.span))
         else {
-            let token = self.current().map(|t| t.text.clone()).unwrap_or_default();
+            let token = self.current().map_or_default(|t| t.text.clone());
             self.error(Code::E0201, format!("invalid label name \"{token}\""));
             self.recover(Scope::Block);
             self.finish_node();

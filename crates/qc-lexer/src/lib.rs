@@ -1708,8 +1708,7 @@ impl Lexer<'_> {
     /// `QCC_PR_LexMacroName`; empty when there is none.
     fn frame_operand(&mut self) -> String {
         self.macro_name()
-            .map(|span| self.word_text(span))
-            .unwrap_or_default()
+            .map_or_default(|span| self.word_text(span))
     }
 
     /// The next name of a `$frame` line: `PR_SimpleGetToken`'s word (QC-8.1), or in an FTEQCC

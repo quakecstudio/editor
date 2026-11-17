@@ -1179,7 +1179,7 @@ fn keyvalues(params: &Value) -> Vec<(String, String)> {
     params
         .get("keyvalues")
         .and_then(Value::as_array)
-        .map(|pairs| {
+        .map_or_default(|pairs| {
             pairs
                 .iter()
                 .filter_map(|pair| {
@@ -1190,7 +1190,6 @@ fn keyvalues(params: &Value) -> Vec<(String, String)> {
                 })
                 .collect()
         })
-        .unwrap_or_default()
 }
 
 #[cfg(test)]

@@ -171,12 +171,10 @@ fn classify(path: &str) -> Kind {
     let path = Path::new(path);
     let name = path
         .file_name()
-        .map(|name| name.to_string_lossy())
-        .unwrap_or_default();
+        .map_or_default(|name| name.to_string_lossy());
     let extension = path
         .extension()
-        .map(|extension| extension.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
+        .map_or_default(|extension| extension.to_string_lossy().to_lowercase());
     if SOURCE_NAMES.contains(&name.as_ref()) || SOURCE_EXTENSIONS.contains(&extension.as_str()) {
         Kind::Source
     } else if TEXT_NAMES.contains(&name.as_ref()) || TEXT_EXTENSIONS.contains(&extension.as_str()) {

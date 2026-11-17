@@ -182,8 +182,7 @@ impl<L: crate::Loader> Workbench<L> {
         };
         let name = path
             .file_stem()
-            .map(|stem| stem.to_string_lossy().into_owned())
-            .unwrap_or_default();
+            .map_or_default(|stem| stem.to_string_lossy().into_owned());
         let world = World::load(&progs, &name, &bsp, files, options)
             .map_err(|error| WorkbenchError::Spawn { path, error })?;
         let kept: BTreeSet<usize> = places

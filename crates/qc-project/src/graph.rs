@@ -159,7 +159,7 @@ impl Define {
 }
 
 fn dir_of(path: &Path) -> PathBuf {
-    path.parent().map(Path::to_path_buf).unwrap_or_default()
+    path.parent().map_or_default(Path::to_path_buf)
 }
 
 /// Whether `byte` is one of the bytes `COM_Parse` makes a token of its own, which ends a word
@@ -1019,10 +1019,7 @@ impl<L: Loader> Builder<'_, L> {
             }
         }
         let Some((name, path, bytes)) = found else {
-            let shown = candidates
-                .first()
-                .map(|(_, path)| path.clone())
-                .unwrap_or_default();
+            let shown = candidates.first().map_or_default(|(_, path)| path.clone());
             let reason = first_error.map_or_else(String::new, |e| e.to_string());
             let (code, message) = if via == Via::Include {
                 (

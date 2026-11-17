@@ -130,8 +130,7 @@ pub(crate) fn reply(answer: &Value, tools: &[ToolSpec]) -> Result<(Reply, Value)
     let calls: Vec<ToolCall> = message
         .get("tool_calls")
         .and_then(Value::as_array)
-        .map(|calls| calls.iter().map(|call| tool_call(call, tools)).collect())
-        .unwrap_or_default();
+        .map_or_default(|calls| calls.iter().map(|call| tool_call(call, tools)).collect());
     let raw = message.clone();
     if !calls.is_empty() {
         return Ok((Reply::Calls { text, calls }, raw));

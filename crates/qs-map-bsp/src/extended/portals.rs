@@ -353,7 +353,7 @@ impl Portalizer<'_> {
             Some((_, [f, b], _)) => {
                 Self::tree_bounds(tree, f);
                 Self::tree_bounds(tree, b);
-                let mut bounds = tree.node(f).map(|n| n.bounds).unwrap_or_default();
+                let mut bounds = tree.node(f).map_or_default(|n| n.bounds);
                 if let Some(back) = tree.node(b) {
                     bounds.union(&back.bounds);
                 }
@@ -361,11 +361,7 @@ impl Portalizer<'_> {
             }
             None => {
                 let mut bounds = Bounds::default();
-                for &portal in tree
-                    .node(id)
-                    .map(|n| n.portals.as_slice())
-                    .unwrap_or_default()
-                {
+                for &portal in tree.node(id).map_or_default(|n| n.portals.as_slice()) {
                     if let Some(p) = tree.portals.get(portal.0) {
                         for &point in p.winding.points() {
                             bounds.add(point);
@@ -450,8 +446,7 @@ impl Tree {
     /// Node `id`'s portals in `node_t::portals` order, the last added first.
     pub(crate) fn portals_of(&self, id: NodeId) -> Vec<PortalId> {
         self.node(id)
-            .map(|n| n.portals.iter().rev().copied().collect())
-            .unwrap_or_default()
+            .map_or_default(|n| n.portals.iter().rev().copied().collect())
     }
 
     /// The node across portal `portal` from `id`.

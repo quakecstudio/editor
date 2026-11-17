@@ -428,7 +428,7 @@ impl<C: HasWorkbench + 'static> Command<C> for StagedEdits {
     const SUMMARY: &'static str = "Lists the staged hunks waiting to be accepted or rejected.";
     type Params = NoParams;
     type Output = Vec<StagedHunk>;
-    type Error = std::convert::Infallible;
+    type Error = !;
 
     fn run(
         &self,

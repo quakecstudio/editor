@@ -262,12 +262,11 @@ fn members(root: &Path) -> Result<BTreeMap<String, Member>, String> {
     let renames = workspace
         .get("dependencies")
         .and_then(Value::as_table)
-        .map(|deps| {
+        .map_or_default(|deps| {
             deps.iter()
                 .map(|(key, value)| (key.clone(), package_name(key, value)))
                 .collect::<BTreeMap<_, _>>()
-        })
-        .unwrap_or_default();
+        });
 
     let mut manifests = BTreeMap::new();
     for dir in dirs.iter().filter(|dir| !excluded.contains(dir.as_str())) {

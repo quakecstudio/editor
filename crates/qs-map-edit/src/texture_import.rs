@@ -88,8 +88,7 @@ impl TextureImportParams {
         let name = self.name.clone().unwrap_or_else(|| {
             self.path
                 .file_stem()
-                .map(|stem| stem.to_string_lossy().into_owned())
-                .unwrap_or_default()
+                .map_or_default(|stem| stem.to_string_lossy().into_owned())
         });
         TextureName::parse(name.as_bytes()).map_err(|error| MapEditError::Texture { error })
     }
@@ -101,8 +100,7 @@ impl TextureImportParams {
 pub fn project_wad(root: &Path) -> PathBuf {
     let folder: String = root
         .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default()
+        .map_or_default(|name| name.to_string_lossy().into_owned())
         .chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() || c == '-' {
@@ -341,7 +339,7 @@ impl<C: HasMap + 'static> Command<C> for AddWad {
     ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let document = context.map_store().map().ok_or(MapEditError::NoMap)?;
         let map = document.path().to_path_buf();
-        let folder = map.parent().map(Path::to_path_buf).unwrap_or_default();
+        let folder = map.parent().map_or_default(Path::to_path_buf);
         let named = params.path.strip_prefix(&folder).unwrap_or(&params.path);
         let named = named.to_string_lossy().replace('\\', "/");
         let world = document

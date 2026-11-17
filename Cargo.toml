@@ -10,7 +10,7 @@ exclude = ["fuzz"]
 version = "2026.11.1"
 edition = "2024"
 license = "GPL-3.0-or-later"
-rust-version = "1.99.0"
+rust-version = "1.100.0"
 repository = "https://github.com/quakecstudio/editor"
 publish = false
 
@@ -22,6 +22,10 @@ trivial_casts = "warn"
 trivial_numeric_casts = "warn"
 unused_lifetimes = "warn"
 single_use_lifetimes = "warn"
+
+# Cargo's own lints (Rust 1.100): a dependency no target of its package uses is an error.
+[workspace.lints.cargo]
+unused_dependencies = "deny"
 
 [workspace.lints.clippy]
 # Own-crate items are imported with `use`, not spelled inline as deep paths.
@@ -220,7 +224,6 @@ qs-vfs = { path = "crates/qs-vfs" }
 qs-workbench = { path = "crates/qs-workbench" }
 qs-wad = { path = "crates/qs-wad" }
 qs-wav = { path = "crates/qs-wav" }
-quakec-ide = { path = "apps/cli" }
 quakec-studio = { path = "apps/desktop" }
 quakec-lsp = { path = "apps/lsp" }
 # qs-mcp: the Model Context Protocol, both eras (2026-07-28 and the initialize-based ones),

@@ -43,8 +43,7 @@ impl Args for Generated {
         Ok(self
             .0
             .get(arg.wrapping_sub(1))
-            .map(|(_, text)| text.clone())
-            .unwrap_or_default())
+            .map_or_default(|(_, text)| text.clone()))
     }
 }
 

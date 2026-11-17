@@ -164,7 +164,7 @@ impl Texinfos {
 
     /// The flags of texinfo `num`, none when there is no such texinfo.
     pub(crate) fn flags(&self, num: TexinfoNum) -> SurfFlags {
-        self.get(num).map(|t| t.flags).unwrap_or_default()
+        self.get(num).map_or_default(|t| t.flags)
     }
 
     /// `name`'s texture, `FindMiptex` for Quake (QBSP-15.16): the part after the last `/`,

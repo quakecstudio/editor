@@ -56,8 +56,7 @@ impl Resolver<'_> {
             .checked_sub(1)
             .and_then(|i| marks.get(i))
             .or_else(|| marks.first())
-            .map(|&(_, target)| target)
-            .unwrap_or_default()
+            .map_or_default(|&(_, target)| target)
     }
 
     /// FTEF-19.47: the aggregate `aggregate` initialising `def`, of type `ty`, at `site`.

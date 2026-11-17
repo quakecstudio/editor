@@ -93,8 +93,7 @@ impl PrefabBrowser {
             ));
             let name = path
                 .file_stem()
-                .map(|stem| stem.to_string_lossy().into_owned())
-                .unwrap_or_default();
+                .map_or_default(|stem| stem.to_string_lossy().into_owned());
             painter.text(
                 Pos2::new(at.x + DRAG_GAP, at.y + DRAG_GAP),
                 egui::Align2::LEFT_TOP,

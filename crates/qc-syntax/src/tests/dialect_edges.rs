@@ -76,7 +76,7 @@ fn token_kinds(node: &crate::SyntaxNode) -> Vec<SyntaxKind> {
 }
 
 fn text(token: Option<SyntaxToken>) -> String {
-    token.map(|t| t.text_lossless()).unwrap_or_default()
+    token.map_or_default(|t| t.text_lossless())
 }
 
 // spec FTEF-15.1: `const`, `var` and `nosave` before a declaration are qualifiers of their own

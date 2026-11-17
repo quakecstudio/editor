@@ -4,8 +4,6 @@
 //! front and side views, after TrenchBroom's one-, two- and four-pane layouts, chosen by a
 //! command so a menu, the CLI and the agent set it the same way.
 
-use std::convert::Infallible;
-
 use qs_commands::{Command, Outcome, RegisterError, Registry};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -60,13 +58,9 @@ impl<C: HasLayout + 'static> Command<C> for SetMapPanes {
         its corner, or beside top, front and side views.";
     type Params = MapPanesParams;
     type Output = MapPanes;
-    type Error = Infallible;
+    type Error = !;
 
-    fn run(
-        &self,
-        context: &mut C,
-        params: MapPanesParams,
-    ) -> Result<Outcome<MapPanes, C>, Infallible> {
+    fn run(&self, context: &mut C, params: MapPanesParams) -> Result<Outcome<MapPanes, C>, !> {
         let layout = context.layout_mut();
         layout.map_panes = params.panes;
         Ok(Outcome::outside_history(layout.map_panes))
@@ -111,13 +105,9 @@ impl<C: HasLayout + 'static> Command<C> for SetMapShading {
         textured faces, or lit by the last compile's lightmaps.";
     type Params = MapShadingParams;
     type Output = MapShading;
-    type Error = Infallible;
+    type Error = !;
 
-    fn run(
-        &self,
-        context: &mut C,
-        params: MapShadingParams,
-    ) -> Result<Outcome<MapShading, C>, Infallible> {
+    fn run(&self, context: &mut C, params: MapShadingParams) -> Result<Outcome<MapShading, C>, !> {
         let layout = context.layout_mut();
         layout.map_shading = params.shading;
         Ok(Outcome::outside_history(layout.map_shading))

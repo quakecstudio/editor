@@ -10,7 +10,6 @@
 //! another command. Under `panic = "abort"` the crate does not compile, so the step fails
 //! either way.
 
-use std::convert::Infallible;
 use std::process::ExitCode;
 
 use qs_commands::{Command, CommandError, NoParams, Outcome, Registry, Session};
@@ -24,14 +23,14 @@ impl Command<u32> for Boom {
     const SUMMARY: &'static str = "Panics.";
     type Params = NoParams;
     type Output = ();
-    type Error = Infallible;
+    type Error = !;
 
     #[expect(
         clippy::panic,
         clippy::panic_in_result_fn,
         reason = "the example proves the guard catches this panic"
     )]
-    fn run(&self, _: &mut u32, _: NoParams) -> Result<Outcome<(), u32>, Infallible> {
+    fn run(&self, _: &mut u32, _: NoParams) -> Result<Outcome<(), u32>, !> {
         panic!("a command with a bug")
     }
 }
@@ -44,9 +43,9 @@ impl Command<u32> for Bump {
     const SUMMARY: &'static str = "Adds one.";
     type Params = NoParams;
     type Output = u32;
-    type Error = Infallible;
+    type Error = !;
 
-    fn run(&self, count: &mut u32, _: NoParams) -> Result<Outcome<u32, u32>, Infallible> {
+    fn run(&self, count: &mut u32, _: NoParams) -> Result<Outcome<u32, u32>, !> {
         *count = count.saturating_add(1);
         Ok(Outcome::unchanged(*count))
     }

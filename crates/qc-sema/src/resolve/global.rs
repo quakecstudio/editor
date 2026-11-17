@@ -795,8 +795,7 @@ impl<'a> Resolver<'a> {
         };
         let pending = |def: DefId| {
             decl.body()
-                .map(|body| vec![(file, def, None, body, Some(decl))])
-                .unwrap_or_default()
+                .map_or_default(|body| vec![(file, def, None, body, Some(decl))])
         };
         // FTEF-19.6: the default values are read with the type, before the name, so a fatal
         // error in one ends the declaration before it defines or checks the name.

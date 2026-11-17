@@ -287,9 +287,7 @@ impl Checker<'_> {
                 self.fatal(Code::E0256, start, "not a function".to_owned())
             }
             Some(other @ (ast::Expr::Vector(_) | ast::Expr::Literal(_) | ast::Expr::Name(_))) => {
-                let found = first_token(other.syntax())
-                    .map(|t| t.text_lossless())
-                    .unwrap_or_default();
+                let found = first_token(other.syntax()).map_or_default(|t| t.text_lossless());
                 if !matches!(other, ast::Expr::Vector(_)) {
                     self.env
                         .report(Code::W0205, start, "Expected punctuation".to_owned());

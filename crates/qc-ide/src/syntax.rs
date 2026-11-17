@@ -217,12 +217,11 @@ pub(crate) fn parameter_names(decl: &SyntaxNode, name: &SyntaxToken) -> Vec<Opti
                 }
             })
     });
-    list.map(|l| {
+    list.map_or_default(|l| {
         l.params()
             .map(|p| p.name().map(|n| n.text_lossless()))
             .collect()
     })
-    .unwrap_or_default()
 }
 
 /// The name token of the function whose body holds byte `offset`, if any.
