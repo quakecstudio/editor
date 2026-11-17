@@ -27,19 +27,17 @@ what the rerelease relies on and says so.
 To be implemented by the dialect profiles (P2-03) and `qc-codegen` (P2-06); until code cites
 them the semantic and encoding statements are in
 [`coverage-baseline.tsv`](coverage-baseline.tsv). The construct-detection statements (the
-`.1` of each section) are cited by the coverage check in
-[`xtask/src/fteqcc_coverage.rs`](../../xtask/src/fteqcc_coverage.rs), which parses every
-rerelease codebase with the vanilla parser and lists the constructs it rejects (FTE-1).
+`.1` of each section) are cited by the parser's and the semantic model's tests of each
+construct (FTE-1).
 
 ## How the inventory was taken
 
-`cargo xtask fteqcc-coverage <dir>...` fetches the six rerelease codebases
-(`cargo xtask corpus fetch rerelease rerelease-hipnotic rerelease-rogue rerelease-mg1
-rerelease-ctf rerelease-mg3`), parses every `.qc` and `.qh` file with the vanilla parser
-(`qc-syntax`, [`language.md`](language.md)), and groups each construct the vanilla grammar
-rejects into one of the classes below by its signature token. It fails if a class is found in
-the source that no section here names, so the spec and the source cannot drift apart. The
-recorded run is in [`vectors/dialect-fteqcc-rerelease/coverage.txt`](vectors/), and covers
+A scan, `cargo xtask fteqcc-coverage`, parsed every `.qc` and `.qh` file of the six rerelease
+codebases (`cargo xtask corpus fetch rerelease rerelease-hipnotic rerelease-rogue rerelease-mg1
+rerelease-ctf rerelease-mg3`) with the vanilla parser (`qc-syntax`,
+[`language.md`](language.md)) and grouped each construct the vanilla grammar rejects into one
+of the classes below by its signature token. It was removed on 2026-11-16; `cargo xtask
+fteqcc-profile` holds the codebases to zero errors under the profile. Its recorded run is in [`vectors/dialect-fteqcc-rerelease/coverage.txt`](vectors/), and covers
 FTE-2 to FTE-21. FTE-17 to FTE-22 and FTE-15.4 were found later, when the dialect profile
 (P2-03) parsed and resolved every module of the six codebases with zero errors
 (`cargo xtask fteqcc-profile`), and their classes were added to the check after (P2-33).

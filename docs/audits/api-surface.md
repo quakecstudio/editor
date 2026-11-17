@@ -3,8 +3,9 @@
 - **Issue:** #655 (`P2-154`)
 - **Date:** 2026-11-02
 - **Rules:** ARCH-1 (`docs/layers.md`) and [`docs/conventions.md`, "Type design (CONV-17)"](../conventions.md#type-design-conv-17)
-- **Tool:** `cargo xtask api` lists every public item of each crate in `docs/api/<crate>.txt`;
-  `cargo xtask api --check` in `cargo xtask ci` fails when a list differs from the source
+- **Tool:** `cargo xtask api` listed every public item of each crate in `docs/api/<crate>.txt`.
+  The tool and the lists were removed on 2026-11-16, after the audit; `git log -- docs/api`
+  has them
 
 Every library crate in layers `L0` to `L5` of `layers.toml` (32 crates; the `tests` and
 `tooling` layers and `apps` excluded) had its public items listed by `cargo xtask api` and each

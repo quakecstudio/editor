@@ -20,14 +20,14 @@ layer" there. Delete these comments.
 
 ## 2. Coverage, mutation score and spec citations
 
-Readiness workflow run: <link to the `Readiness` workflow run>.
+Commands run and their output: <each measuring command, `docs/testing.md` "Measuring a layer">.
 
 | Crate | Lines (bar 90%) | Branches (bar 80%) | Mutation (bar 90%) | Spec citations (bar 100%) |
 | --- | --- | --- | --- | --- |
 | `qs-...` | <n>% (<covered> of <total>) | | | |
 
-Surviving mutants, each killed by a new test or recorded in `ratchets.toml` under
-`equivalent_mutants` with the reason it cannot be killed:
+Surviving mutants, each killed by a new test or recorded here as equivalent with the reason
+it cannot be killed:
 
 | Crate | Mutant | Outcome |
 | --- | --- | --- |
@@ -57,8 +57,7 @@ No test waits on the wall clock: <how this was checked>.
 
 ## 6. Ratchets
 
-The minimums committed to `ratchets.toml` in this review's pull request (`cargo xtask ratchet`
-prints them for a passing run), with `readiness = "<plan key>"`:
+The numbers a later review of these crates measures against, with the plan key:
 
 ```toml
 [crates.qs-...]
@@ -75,5 +74,4 @@ spec = 100
 | --- | --- | --- |
 | <none> | | |
 
-Exceptions to the bar are listed in the crate README with a reason and under `exceptions` in
-`ratchets.toml`; list each one here too.
+Exceptions to the bar are listed in the crate README with a reason; list each one here too.

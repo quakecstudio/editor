@@ -183,7 +183,7 @@ jobs:
       contents: read
     env:
       # xtask's own tests read the light files (its repository checks, the
-      # ratchet's readiness plan, the porting and perf-budget docs), so the
+      # porting and perf-budget docs), so the
       # light path runs them on every OS and leaves out the other crates'.
       CI_PATH: ${{ needs.changes.outputs.full == 'false' && 'light' || 'full' }}
     strategy:

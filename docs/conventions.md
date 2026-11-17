@@ -24,11 +24,6 @@ the files agree with it:
   `conventions:clippy-deny` markers, must list exactly the lints that are `deny`. The command
   also checks the rules that are not single values: CalVer, the exact toolchain, pinned
   workspace dependencies, inherited package fields and lints, and reasons on cargo-deny skips.
-- `cargo xtask clippy-fixtures` runs clippy with the workspace lints over the fixtures in
-  `xtask/fixtures/clippy/`. Each fixture names the one lint it must trigger, or `pass`.
-- `cargo xtask deny-fixtures` runs `cargo deny` with `deny.toml` over scratch crates that use a
-  GPL-incompatible license or a wildcard version, plus a control that must pass. It needs
-  network access to the crates.io index.
 
 Change this document and the configuration in the same PR.
 
@@ -60,8 +55,7 @@ The channel is `1.99.0`, the same as vouch, and `rust-version` equals it.
 
 Nightly Rust is allowed in two places only: fuzzing with cargo-fuzz (`cargo xtask fuzz`, which
 `make test-fuzz` and the scheduled `Fuzz` workflow call), and branch coverage
-in the `Readiness` workflow, which pins a dated nightly (`NIGHTLY` in
-`.github/workflows/readiness.yml`, equal to `readiness::NIGHTLY` in xtask; ADR-0009).
+for a readiness review (`cargo llvm-cov --branch`, ADR-0009).
 
 ```toml file=rust-toolchain.toml
 [toolchain]

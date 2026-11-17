@@ -33,17 +33,16 @@ unlike the rerelease subset, which fits version 6 (`dialect-fteqcc-rerelease.md`
 
 Implemented by the dialect profiles and `qc-sema` (P2-26); a statement no test cites yet is
 listed in [`coverage-baseline.tsv`](coverage-baseline.tsv) ([`README.md`](README.md)). The
-construct-detection statements (the `.1` of each section) are cited by the coverage check in
-[`xtask/src/fteqcc_full_coverage.rs`](../../xtask/src/fteqcc_full_coverage.rs), which scans
-the FTEQCC corpus mods for each construct class and fails if the source holds a class no
-section here names (FTEF-1).
+construct-detection statements (the `.1` of each section) are cited by the parser's and the
+semantic model's tests of each construct (FTEF-1).
 
 ## How the inventory was taken
 
-`cargo xtask fteqcc-full-coverage <dir>...` scans every `.qc`, `.qh` and `.h` file under each
-FTEQCC corpus mod directory and groups each full-dialect construct the vanilla grammar lacks
-into one of the classes below by its signature token. It fails if a class is found that no
-section here names, so the spec and the corpus cannot drift apart. The recorded run is in
+A scan, `cargo xtask fteqcc-full-coverage`, read every `.qc`, `.qh` and `.h` file under each
+FTEQCC corpus mod directory and grouped each full-dialect construct the vanilla grammar lacks
+into one of the classes below by its signature token. It was removed on 2026-11-16, once the
+corpus mods parsed and resolved under the profile (`cargo xtask fteqcc-profile`). Its recorded
+run is in
 [`vectors/dialect-fteqcc/coverage.txt`](vectors/dialect-fteqcc/coverage.txt).
 
 The FTEQCC corpus mods are the `mod` codebases that use the full FTEQCC dialect rather than
@@ -71,10 +70,8 @@ subset does not.
 
 ### Behaviour
 
-- **FTEF-1.1** A FTEQCC corpus mod (`nuclide`, `freecs`, `freehl`) is accepted under the
-  FTEQCC profile. Every full-dialect construct it contains is covered by a section of this
-  file; the coverage check (`xtask/src/fteqcc_full_coverage.rs`) fails on a class no section
-  names. This statement is what that check pins.
+- **FTEF-1.1** **Withdrawn** 2026-11-16: it named the coverage scan (`cargo xtask
+  fteqcc-full-coverage`), which was removed; replaced by FTEF-1.4.
 - **FTEF-1.2** Unlike the rerelease subset, which fits version 6 (`dialect-fteqcc-rerelease.md`
   FTE-1.1), the full dialect's aggregate and pointer types (FTEF-6, FTEF-9) in general need
   FTE's version 7 progs format ([`progs.md`](progs.md) PROGS-19). Which construct needs
@@ -82,6 +79,9 @@ subset does not.
   this parse-and-resolve spec.
 - **FTEF-1.3** Codegen (later): the progs format and opcode set each construct emits are fixed
   by L-01 and recorded there, against FTEQCC's output. This spec does not state them.
+- **FTEF-1.4** A FTEQCC corpus mod (`nuclide`, `freecs`, `freehl`) is accepted under the FTEQCC
+  profile: every module parses and resolves with no error (`cargo xtask fteqcc-profile`). Every
+  full-dialect construct it contains is covered by a section of this file.
 
 ## FTEF-2 Integer and the other C scalar types
 

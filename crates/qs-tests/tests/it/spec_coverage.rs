@@ -22,9 +22,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-// `cargo xtask readiness` reads citations with the same module; qs-tests may not depend on
-// xtask (`docs/layers.md`), so it is included by path rather than copied.
-#[path = "../../../../xtask/src/test_code.rs"]
 mod test_code;
 
 use test_code::{FIXTURES, TestCode, shipped_citation, test_code};

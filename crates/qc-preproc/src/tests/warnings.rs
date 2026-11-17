@@ -68,6 +68,8 @@ fn flag_pragmas_warn_as_fteqcc_does() {
 // spec FTEF-12.11: `optimise`, `opcode` and `TARGET` warn for what FTEQCC's tables do not hold,
 // and an unknown pragma is "Unknown pragma 'NAME'"
 // spec QCD-7.60: W0117 is a warning FTEQCC gives no name, a target's among them
+// spec FTEF-12.1: an unknown `#pragma TARGET` warns "Unknown target ... Ignored." and lists the
+// valid ones
 #[test]
 fn build_pragmas_warn_against_fteqcc_s_tables() {
     assert_eq!(

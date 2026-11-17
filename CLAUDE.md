@@ -106,8 +106,6 @@ cargo deny check advisories bans licenses sources
 cargo xtask conventions                   # config files match docs/conventions.md; no CONV-17 violation beyond docs/audits/conv-17-baseline.tsv
 cargo xtask conv17-baseline               # remove fixed entries from that baseline; it never adds one
 cargo xtask adr                           # ADRs follow the template and are indexed
-cargo xtask clippy-fixtures               # the lints reject what they target
-cargo xtask deny-fixtures                 # deny.toml rejects bad licenses and wildcards (needs network)
 cargo xtask layers [--write]              # no crate depends on a higher layer (layers.toml); check (or write) the crate table of docs/layers.md
 cargo xtask licenses                      # SPDX lines and ported-file headers; skips cached specs
 cargo xtask attribution                   # every asset is listed in ATTRIBUTION.md
@@ -131,7 +129,6 @@ cargo xtask sim-diff <route> [--map <name>]... [-- <engine words>]  # qs-sim aga
 cargo xtask view-diff [--map <name>]... [-- <engine words>]  # the preview host's frames and sound against id's whole engine, every id1 map's start (VIEWDIFF)
 cargo xtask commands [--check]            # regenerate (or check) docs/commands.md from the command registry
 cargo xtask compatibility [--out <file>]  # write docs/compatibility.md from the fetched conformance corpus (P4-21; every release)
-cargo xtask api [--check]                 # regenerate (or check) docs/api/<crate>.txt, each L0 to L5 crate's public items; the audit is docs/audits/api-surface.md
 
 scripts/refresh-specs.sh --verify         # cached specs match specs/manifest.tsv (offline)
 scripts/refresh-specs.sh                  # refresh specs/ from the origins
@@ -270,7 +267,6 @@ separate worktrees. See
 | Testing bar and readiness reports | `docs/testing.md`, `docs/readiness/` |
 | Gate reports | `docs/gates/` |
 | Code audits (CONV-17, the public API boundary) | `docs/audits/` |
-| Public items per library crate (generated) | `docs/api/`, from `cargo xtask api` |
 | Cross-crate tests | `crates/qs-tests/tests/it/` (one module per area) |
 | App directories | `crates/qs-paths/` |
 | Agent rules, skills, subagents, hooks | `.claude/rules/`, `.claude/skills/`, `.claude/agents/`, `.claude/hooks/` |
