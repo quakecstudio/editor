@@ -366,6 +366,15 @@ pub const FOCUS_BOTTOM_PANEL: &str = "view.focus_bottom_panel";
 
 /// The id of the command that gives the command line the keyboard.
 pub const FOCUS_COMMAND_LINE: &str = "view.focus_command_line";
+/// The focus commands: the keys that move the keyboard, which a window takes even while
+/// something in it, a running game, has every other key.
+pub const FOCUS_COMMANDS: [&str; 5] = [
+    FOCUS_EDITOR,
+    FOCUS_LEFT_PANEL,
+    FOCUS_RIGHT_PANEL,
+    FOCUS_BOTTOM_PANEL,
+    FOCUS_COMMAND_LINE,
+];
 
 /// The smallest a panel may be made, in points, so a panel is never dragged out of reach.
 pub const MIN_PANEL_SIZE: f32 = 120.0;

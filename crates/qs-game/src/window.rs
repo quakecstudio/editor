@@ -242,6 +242,7 @@ impl Viewer {
         Self {
             state: state.clone(),
             shell,
+            panel: None,
             closed: false,
             shown: None,
             drawer,
@@ -289,6 +290,9 @@ struct Viewer {
     state: egui_wgpu::RenderState,
     /// Where the game is drawn.
     shell: Shell,
+    /// The panel the game is drawn in, once a frame has drawn it there: the widget whose
+    /// keyboard focus gives the game the keys.
+    panel: Option<egui::Id>,
     /// Whether the game stopped: it quit, or the bridge's client stopped it or went away.
     closed: bool,
     /// In a panel, the frame drawn last and its size in pixels, which a `screenshot` asked for
@@ -403,6 +407,7 @@ impl Viewer {
         let rect = ui.max_rect();
         let response = ui.allocate_rect(rect, egui::Sense::click());
         if self.shell == Shell::Panel {
+            self.panel = Some(response.id);
             // The game's keys are its own while it has the keyboard, the arrows, Tab and Escape
             // among them, which egui would otherwise move its focus with.
             ui.memory_mut(|memory| {
@@ -1398,6 +1403,15 @@ impl GameView {
     pub fn serve(&mut self) -> Running {
         self.viewer.serve_between_frames();
         self.running()
+    }
+
+    /// Whether the game's panel has the keyboard, so the keys pressed are the game's and the
+    /// app leaves its own shortcuts be.
+    #[must_use]
+    pub fn has_keyboard(&self, ctx: &egui::Context) -> bool {
+        self.viewer
+            .panel
+            .is_some_and(|panel| ctx.memory(|memory| memory.has_focus(panel)))
     }
 
     /// Gives the mouse back to the system when the game holds it: the app calls it when the

@@ -25,9 +25,9 @@ use qs_editor_view::{
     Fixable, KeyMode, LineNote, NoteSeverity, Position, Selection, ViewStyle, Wrap,
 };
 use qs_layout::{
-    DockPanel, Docks, EditorRequest, Focus, GO_TO_LINE, HasLayout, Layout, MovePanelParams,
-    Outline, Panel, RESIZE_PANEL, ResizePanelParams, ShowPanelParams, SoftWrap, Split,
-    TOGGLE_PANEL, TogglePanelParams, WhenShown, Zoom, ZoomParams,
+    DockPanel, Docks, EditorRequest, FOCUS_COMMANDS, Focus, GO_TO_LINE, HasLayout, Layout,
+    MovePanelParams, Outline, Panel, RESIZE_PANEL, ResizePanelParams, ShowPanelParams, SoftWrap,
+    Split, TOGGLE_PANEL, TogglePanelParams, WhenShown, Zoom, ZoomParams,
 };
 use qs_map_edit::opens_in_map_editor;
 use qs_render::{Camera, MapMesh};
@@ -1340,16 +1340,20 @@ impl Shell {
     /// The shortcuts pressed this frame: the palette's, and while it is closed each binding's
     /// command (`keymap`), the editor's own keys left to it while it has the keyboard.
     fn keys(&mut self, ui: &Ui) {
-        if ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_PALETTE)) {
+        // While the game in the Game tab has the keyboard its keys are its own: Ctrl fires
+        // and W runs, which together are no shortcut of the window's. Only the keys that
+        // move the keyboard are taken, so it can always leave the game.
+        let playing = self.game.has_keyboard(ui.ctx());
+        if !playing && ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_PALETTE)) {
             self.finder.close();
             self.open_palette();
             return;
         }
-        if ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_FOLDER)) {
+        if !playing && ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_FOLDER)) {
             self.open_folder();
             return;
         }
-        if ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_FILE_FINDER)) {
+        if !playing && ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_FILE_FINDER)) {
             self.palette.close();
             self.features.editors.picker.0.close();
             self.finder.open();
@@ -1375,7 +1379,7 @@ impl Shell {
                 Scope::Map => !editing && map_shown,
                 Scope::MapView => in_view,
             };
-            if !taken {
+            if !taken || (playing && !FOCUS_COMMANDS.contains(&binding.command.as_str())) {
                 continue;
             }
             if !ui.input_mut(|i| i.consume_shortcut(&binding.shortcut)) {
