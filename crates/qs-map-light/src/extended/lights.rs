@@ -149,7 +149,7 @@ impl Lights {
             .first()
             .filter(|dict| dict.get(b"classname") == b"worldspawn")
             .ok_or(LightError::NoWorldspawn)?;
-        let (world, invalid) = World::read(world_dict);
+        let (mut world, invalid) = World::read(world_dict);
         let mut styles: Vec<(Vec<u8>, i32)> = Vec::new();
         for dict in &mut dicts {
             let scale = dict.get(b"lightmap_scale").to_vec();
@@ -170,6 +170,16 @@ impl Lights {
             for (key, value) in pairs {
                 dict.set(&key, escaped(&value));
             }
+        }
+        // `LightWorld`: the world's `_lightmap_scale`, read after `lightmap_scale` is renamed.
+        let scale = dicts.first().map_or(0, |dict| dict.int(b"_lightmap_scale"));
+        if scale < 0 {
+            return Err(LightError::LightmapScale);
+        }
+        if let Ok(scale) = u16::try_from(scale)
+            && scale > 0
+        {
+            world.luxel = f32::from(scale);
         }
         let mut lamps = Vec::new();
         for (entity, dict) in dicts.iter().enumerate() {

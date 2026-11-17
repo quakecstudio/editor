@@ -35,7 +35,7 @@ mod vis;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use qs_bsp::Bsp;
+use qs_bsp::{Bsp, Bspx};
 use qs_map_bsp::{Dialect, LeafKind, SurfaceFlags};
 
 use self::bounce::{Bouncer, Stage};
@@ -50,6 +50,10 @@ pub use self::sidecar::{CONTENT_EXTENSION, SidecarFile, Sidecars, TEXINFO_EXTENS
 use crate::face::{FaceId, Lit};
 use crate::lump::{self, Colour};
 use crate::{Finish, Light, LightError, LightWarning, Lighted};
+
+/// The BSPX lumps of a lighting, which `light` takes out before it writes its own
+/// (`bspdata->bspx.entries.erase`).
+const STALE_LUMPS: [&[u8]; 4] = [b"LMSTYLE16", b"LMSTYLE", b"LMOFFSET", b"DECOUPLED_LM"];
 
 /// How many faces a thread lights before taking more.
 const FACE_BATCH: usize = 16;
@@ -199,7 +203,7 @@ impl Light {
         }
         // The grey byte is always the brightest channel (LIGHT-18.5), which is what a coloured
         // lump's is; the `.lit` is written only when a sample has a colour (LIGHT-18.6).
-        let out = lump::written(
+        let mut out = lump::written(
             bytes,
             read,
             &faces,
@@ -207,6 +211,14 @@ impl Light {
             Colour::Coloured,
             Dialect::Extended,
         )?;
+        // LIGHT-18.7: the BSP's BSPX lumps are kept, but those that held a lighting this one
+        // takes the place of.
+        let mut bspx = Bspx::read(bytes);
+        for stale in STALE_LUMPS {
+            bspx.remove(stale);
+        }
+        bspx.append_to(&mut out.bsp)
+            .map_err(|_| LightError::Overrun)?;
         Ok(Lighted {
             bsp: out.bsp,
             lit: out.lit.filter(|_| colour == Colour::Coloured),

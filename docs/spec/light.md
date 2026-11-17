@@ -291,10 +291,12 @@ lights the map, read by the same reader (LIGHT-2), so what the modder sees is wh
   its keys in the order read, a key that was set keeping its place and a new one going last,
   then a NUL. In each value a `\b` is taken out and the bytes from it to the next `\b` have
   their high bit set.
-- **LIGHT-8.7** Not ported, each a divergence from ericw-tools: `_lightmap_scale` and
-  `_world_units_per_luxel` (a lightmap is 16 texels to the luxel); and the command line's
-  options, `-emissivequality` among them.
-  Each is being ported; none is left out by decision.
+- **LIGHT-8.7** Not ported yet, each a divergence from ericw-tools and none left out by
+  decision: a scale for each face from an `LMSHIFT` BSPX lump, with its `LMOFFSET` and
+  `LMSTYLE` lumps (ericw-tools' own qbsp at this commit writes no `LMSHIFT`:
+  `map.needslmshifts` is never set, so such a BSP comes from another tool); and what only the
+  command line's options turn on, `-world_units_per_luxel`'s `DECOUPLED_LM` and
+  `-emissivequality` among them, `qs-map-light` having no command line.
 - **LIGHT-8.8** `qs-map-light` offers a quick light for playing a map at once (MAP-13): the
   extended dialect's lighting without dirt (LIGHT-19) and bounce (LIGHT-20), the two that
   cost the most; everything else is as the final light's (MAP-14). ericw-tools has no such
@@ -573,6 +575,20 @@ The world's settings, each with its default; a second name is another key for th
   (LIGHT-9.9) of hull 0 of its own model, of the world when its model is on the default
   channel, or of a model of its channel that has `_shadow` and an alpha of 1; at a node
   whose plane it is within 0.1 of, both sides are tried.
+- **LIGHT-12.9** A luxel is 16 texels unless the worldspawn has `_lightmap_scale` (a
+  `lightmap_scale` is renamed to it, LIGHT-8.5): its whole number, when over 0, is the size
+  of a luxel for every face of every model (`float lightmapscale =
+  WorldEnt().get_int("_lightmap_scale"); if (!lightmapscale) lightmapscale = LMSCALE_DEFAULT;`,
+  given to each `modelinfo_t`), in LIGHT-12.1's floor and ceiling and in the world point of a
+  lightmap coordinate; a scale under 0 stops the run (`lightmap scale is 0 or negative`). The
+  lightmaps are written to the BSP's own lighting at that scale, with nothing in the file
+  but the worldspawn's key to say so (`SaveLightmapSurface(bsp, f, nullptr, nullptr, &surf,
+  surf.extents, surf.extents, ...)` when the BSP has no `LMSHIFT` lump): id's engine,
+  QuakeSpasm, Ironwail and vkQuake read every lightmap at 16 texels to the luxel, so a map
+  lit at another scale is for an engine that reads the key. A BSP that carries an `LMSHIFT`
+  BSPX lump, a scale for each face, is not yet lit by it: see LIGHT-8.7. Source:
+  `light/light.cc`, `LightWorld`; `common/bsputils.cc`, `faceextents_t::faceextents_t`;
+  `light/write.cc`, `SaveLightmapSurfaces`.
 - **LIGHT-12.8** A face whose lightmap would be 4096 luxels or more on an axis, or whose
   texture coordinates are not numbers, is given no lightmap. This is ours: ericw-tools warns
   of `Bad surface extents` from 256 luxels, sixteen at the default scale to `MAXDIMENSION`,
@@ -787,6 +803,11 @@ The world's settings, each with its default; a second name is another key for th
   channel is cut to a byte; the grey byte is the brightest channel (LIGHT-6.4).
 - **LIGHT-18.6** A `.lit` is written when any sample of any lightmap, kept or not, has two
   channels more than 0.001 apart once scaled.
+- **LIGHT-18.7** The BSP's BSPX lumps (BSP-24) are written back after its own lumps, in
+  their order, but `LMSTYLE16`, `LMSTYLE`, `LMOFFSET` and `DECOUPLED_LM`, which held an
+  earlier lighting (`bspdata->bspx.entries.erase("LMSTYLE16"); ... erase("LMSTYLE"); ...
+  erase("LMOFFSET"); ... erase("DECOUPLED_LM");` in `SaveLightmapSurfaces`). Source:
+  `light/light.cc`.
 
 ## LIGHT-19 Dirt
 

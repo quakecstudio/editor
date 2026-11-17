@@ -33,7 +33,6 @@ const ON_PLANE: f64 = 0.1;
 /// How far a point in solid is moved along each axis to find open space (LIGHT-10.7).
 const OUT_OF_SOLID: f32 = 2.0;
 /// `LMSCALE_DEFAULT`: texels to a luxel.
-pub(crate) const LUXEL: f32 = 16.0;
 /// A texel index that is see-through in a texture whose name starts with `{`.
 const FENCE_HOLE: u8 = 255;
 /// A texel that is not see-through.

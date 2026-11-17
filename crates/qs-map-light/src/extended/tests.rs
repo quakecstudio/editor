@@ -481,17 +481,22 @@ fn the_brightest_four_styles_are_kept() {
     assert!(floor(&dim.bsp).is_empty(), "nothing as bright as 1");
 }
 
-// spec LIGHT-8.7: _lightmap_scale is not ported: a lightmap is 16 texels to the luxel.
+// spec LIGHT-8.7: an LMSHIFT lump's scale for each face is not read yet: a BSP that carries
+// one is lit at the world's scale, and the lump is kept.
 #[test]
-fn the_lightmap_scale_is_sixteen() {
-    let scaled = lit(&room(
-        "\"_lightmap_scale\" \"8\"\n",
-        "wall",
-        "",
-        &light_at("128 128 64", ""),
-    ));
-    let plain = lit(&room("", "wall", "", &light_at("128 128 64", "")));
-    assert_eq!(floor(&scaled.bsp), floor(&plain.bsp));
+fn a_face_scale_lump_is_not_read_yet() {
+    let plain = room("", "wall", "", &light_at("128 128 64", ""));
+    let faces = Bsp::read(&plain, BspLoader::FitzQuake).unwrap().faces.len();
+    let mut shifted = plain.clone();
+    let mut lumps = qs_bsp::Bspx::default();
+    lumps.set(b"LMSHIFT", vec![3; faces]);
+    lumps.append_to(&mut shifted).unwrap();
+    let (plain, shifted) = (lit(&plain), lit(&shifted));
+    assert_eq!(floor(&shifted.bsp), floor(&plain.bsp));
+    assert_eq!(
+        qs_bsp::Bspx::read(&shifted.bsp).get(b"LMSHIFT"),
+        Some(&vec![3; faces][..])
+    );
 }
 
 // spec LIGHT-9.7: a brush model takes its entity's settings; a model with no entity stops
@@ -1044,13 +1049,13 @@ fn a_lightmap_past_any_a_map_has_is_not_made() {
             [0.0, side, 0.0],
         ]
     };
-    let just_under = Extents::new(&square(4095.0 * 16.0), plane, vecs).unwrap();
+    let just_under = Extents::new(&square(4095.0 * 16.0), plane, vecs, 16.0).unwrap();
     assert_eq!((just_under.width(), just_under.height()), (4096, 4096));
-    assert!(Extents::new(&square(4096.0 * 16.0), plane, vecs).is_none());
-    assert!(Extents::new(&square(f32::INFINITY), plane, vecs).is_none());
-    assert!(Extents::new(&square(f32::NAN), plane, vecs).is_none());
+    assert!(Extents::new(&square(4096.0 * 16.0), plane, vecs, 16.0).is_none());
+    assert!(Extents::new(&square(f32::INFINITY), plane, vecs, 16.0).is_none());
+    assert!(Extents::new(&square(f32::NAN), plane, vecs, 16.0).is_none());
     let huge = [[1e30, 0.0, 0.0, 0.0], [0.0, 1e30, 0.0, 0.0]];
-    assert!(Extents::new(&square(64.0), plane, huge).is_none());
+    assert!(Extents::new(&square(64.0), plane, huge, 16.0).is_none());
 }
 
 // spec LIGHT-17.6: a mottled minimum light raises each sample to the minimum light plus the
@@ -1334,4 +1339,53 @@ fn a_radiosity_surface_light_lights_from_its_faces() {
     };
     assert_eq!(floor_at(&dim("64"), 128.0, 128.0), Some(159));
     assert!(floor_at(&dim("0"), 128.0, 128.0).unwrap_or(0) < 40);
+}
+
+// spec LIGHT-12.9: the world's _lightmap_scale, or lightmap_scale, is the size of a luxel in
+// texels for every face: half of 16 makes each lightmap about four times as large; 16 and
+// none are the same, and a negative scale stops the run.
+#[test]
+fn the_worlds_lightmap_scale_sizes_the_luxels() {
+    let lighting = |keys: &str| {
+        let bsp = room(&format!("\"light\" \"100\"\n{keys}"), "wall", "", "");
+        let lit = lit(&bsp).bsp;
+        // The lighting lump's length, from the directory: a loader that takes every
+        // lightmap for 16 texels to the luxel does not read a BSP lit at another scale.
+        let entry = 4 + 8 * 8 + 4;
+        usize::try_from(u32::from_le_bytes(
+            lit[entry..entry + 4].try_into().unwrap(),
+        ))
+        .unwrap()
+    };
+    let plain = lighting("");
+    assert_eq!(lighting("\"_lightmap_scale\" \"16\"\n"), plain);
+    assert_eq!(lighting("\"_lightmap_scale\" \"0\"\n"), plain);
+    let fine = lighting("\"_lightmap_scale\" \"8\"\n");
+    assert!(fine > plain * 3 && fine < plain * 4, "{fine} of {plain}");
+    assert_eq!(lighting("\"lightmap_scale\" \"8\"\n"), fine);
+    let coarse = lighting("\"_lightmap_scale\" \"32\"\n");
+    assert!(coarse < plain, "{coarse} of {plain}");
+    let bsp = room("\"_lightmap_scale\" \"-8\"\n", "wall", "", "");
+    let error = Light::default().run(&bsp).unwrap_err();
+    assert_eq!(error, LightError::LightmapScale);
+    assert_eq!(error.to_string(), "lightmap scale is 0 or negative");
+}
+
+// spec LIGHT-18.7: the BSP's BSPX lumps are written back after its own, but the lumps of an
+// earlier lighting.
+#[test]
+fn bspx_lumps_are_kept_but_an_earlier_lightings() {
+    let mut bsp = room("\"light\" \"100\"\n", "wall", "", "");
+    let mut lumps = qs_bsp::Bspx::default();
+    lumps.set(b"BRUSHLIST", vec![1, 2, 3, 4, 5]);
+    for stale in [&b"LMOFFSET"[..], b"LMSTYLE", b"LMSTYLE16", b"DECOUPLED_LM"] {
+        lumps.set(stale, vec![9; 8]);
+    }
+    lumps.append_to(&mut bsp).unwrap();
+    let kept = qs_bsp::Bspx::read(&lit(&bsp).bsp);
+    assert_eq!(kept.names().collect::<Vec<_>>(), [&b"BRUSHLIST"[..]]);
+    assert_eq!(kept.get(b"BRUSHLIST"), Some(&[1, 2, 3, 4, 5][..]));
+    // A BSP with none has none written.
+    let plain = lit(&room("\"light\" \"100\"\n", "wall", "", "")).bsp;
+    assert!(qs_bsp::Bspx::read(&plain).is_empty());
 }

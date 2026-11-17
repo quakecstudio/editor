@@ -175,6 +175,9 @@ pub enum LightError {
     /// A file beside the BSP, `<map>.texinfo.json` or `<map>.content.json`, is not what
     /// ericw-tools' qbsp writes (LIGHT-9.8, LIGHT-9.9).
     Sidecar(SidecarFile),
+    /// `lightmap scale is 0 or negative`: the world's `_lightmap_scale`, in the extended
+    /// dialect (LIGHT-12.9).
+    LightmapScale,
     /// `Unsupported fov: <n>. Expected a value in [1..179] range.`: a light's `_project_fov`,
     /// in the extended dialect (LIGHT-10.11).
     ProjectFov {
@@ -229,6 +232,7 @@ impl fmt::Display for LightError {
             Self::Sidecar(SidecarFile::Content) => {
                 f.write_str("the .content.json beside the BSP cannot be read")
             }
+            Self::LightmapScale => f.write_str("lightmap scale is 0 or negative"),
             Self::ProjectFov { entity } => write!(
                 f,
                 "Unsupported fov of the light that is entity {}. Expected a value in [1..179] \

@@ -373,6 +373,8 @@ impl Dirt {
 /// The world's settings, `worldspawn_keys` (LIGHT-9.4).
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct World {
+    /// The size of a luxel in texels, `_lightmap_scale`, 16 with none (LIGHT-12.9).
+    pub(crate) luxel: f32,
     pub(crate) scaledist: Setting<f32>,
     pub(crate) rangescale: Setting<f32>,
     pub(crate) anglescale: Setting<f32>,
@@ -425,6 +427,8 @@ pub(crate) struct World {
 const DOWN: Vec3 = [0.0, 0.0, -1.0];
 /// The widest a setting with a top of 100 goes.
 const HUNDRED: f32 = 100.0;
+/// `LMSCALE_DEFAULT`: the size of a luxel in texels.
+pub(crate) const DEFAULT_LUXEL: f32 = 16.0;
 /// The most `_surflight_minlight_scale` is held to.
 const MINLIGHT_SCALE_MAX: f32 = 510.0;
 /// The first style ericw-tools gives a named light, and the first it does not.
@@ -448,6 +452,7 @@ const BOUNCE_MAX: i32 = 100;
 impl Default for World {
     fn default() -> Self {
         Self {
+            luxel: DEFAULT_LUXEL,
             scaledist: Setting::new(1.0),
             rangescale: Setting::new(RANGESCALE),
             anglescale: Setting::new(ANGLESCALE),

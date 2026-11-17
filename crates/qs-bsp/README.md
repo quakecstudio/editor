@@ -33,7 +33,7 @@ coloured light; and writes a BSP's entities back, for shipped maps with no `.map
 - **`write`**: `BspFile::to_bytes` writes a BSP from its records, as BSP29 in id's
   `WriteBSPFile` lump order, or as `BSP2` when a value outgrows BSP29's 16-bit fields
   (BSP-23); the map compiler `qs-map-bsp` writes through it.
-- `bspx`: the named lumps tools keep after a BSP's own, read and written (BSP-24).
+- **`bspx`**: the named lumps tools keep after a BSP's own, read and written (BSP-24).
 
 - **Layer:** L0 formats. It depends on `qc-progs` for id's CRC. `qs-vfs`'s `walk` example loads
   every BSP and `.lit` of an install with it.

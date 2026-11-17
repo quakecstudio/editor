@@ -17,7 +17,7 @@ use crate::extended::math::{
     fraction_of_line, inside_distance, interpolated_normal, is_inside, length, scale, sub,
 };
 use crate::extended::phong::Smoothing;
-use crate::extended::scene::{LUXEL, Map, Skin};
+use crate::extended::scene::{Map, Skin};
 use crate::extended::vis::leaf_at;
 use crate::face::{FaceId, float_of};
 use crate::{AXES, Sampling, Vec3, to_f32};
@@ -82,6 +82,8 @@ pub(crate) struct Extents {
     pub(crate) origin: Vec3,
     pub(crate) radius: f32,
     pub(crate) bounds: Aabb,
+    /// The size of a luxel in texels, 16 unless the world says (LIGHT-12.9).
+    luxel: f32,
 }
 
 /// The most luxels a lightmap has on an axis (LIGHT-12.8): sixteen times what id's engine
@@ -92,7 +94,12 @@ impl Extents {
     /// The extents of a face with `points` on `plane`, textured by `vecs`; none when the
     /// texture's axes do not span the face (`Bad texture axes`) or its lightmap would be past
     /// [`MAX_LIGHTMAP`] luxels on an axis (LIGHT-12.8).
-    pub(crate) fn new(points: &[Vec3], plane: Plane, vecs: [[f32; 4]; 2]) -> Option<Self> {
+    pub(crate) fn new(
+        points: &[Vec3],
+        plane: Plane,
+        vecs: [[f32; 4]; 2],
+        luxel: f32,
+    ) -> Option<Self> {
         let [s, t] = vecs;
         let n = plane.normal;
         let to_texture = [s, t, [n[0], n[1], n[2], -plane.dist]];
@@ -118,9 +125,9 @@ impl Extents {
                 *high = high.max(coordinate);
             }
         }
-        let luxel = f64::from(LUXEL);
-        let floor = low.map(|c| (c / luxel).floor());
-        let ceil = high.map(|c| (c / luxel).ceil());
+        let texels = f64::from(luxel);
+        let floor = low.map(|c| (c / texels).floor());
+        let ceil = high.map(|c| (c / texels).ceil());
         // LIGHT-12.8: a lightmap that is not a number of luxels, or is past any a map has, is
         // not made.
         if floor.iter().zip(&ceil).any(|(floor, ceil)| {
@@ -137,6 +144,7 @@ impl Extents {
             origin: add(bounds.mins, half),
             radius: length(half),
             bounds,
+            luxel,
         })
     }
 
@@ -153,8 +161,8 @@ impl Extents {
     /// `LMCoordToWorld`: the point of the face's plane at lightmap coordinates `s` and `t`.
     fn world_at(&self, s: f32, t: f32) -> Vec3 {
         let texel = [
-            LUXEL * (float_of(self.mins[0]) + s),
-            LUXEL * (float_of(self.mins[1]) + t),
+            self.luxel * (float_of(self.mins[0]) + s),
+            self.luxel * (float_of(self.mins[1]) + t),
         ];
         self.to_world
             .map(|row| row[0] * texel[0] + row[1] * texel[1] + row[OFFSET])
@@ -165,8 +173,8 @@ impl Extents {
         let texel =
             |row: [f32; 4]| row[0] * point[0] + row[1] * point[1] + row[2] * point[2] + row[OFFSET];
         [
-            texel(self.to_texture[0]) / LUXEL - float_of(self.mins[0]),
-            texel(self.to_texture[1]) / LUXEL - float_of(self.mins[1]),
+            texel(self.to_texture[0]) / self.luxel - float_of(self.mins[0]),
+            texel(self.to_texture[1]) / self.luxel - float_of(self.mins[1]),
         ]
     }
 }
@@ -297,7 +305,7 @@ impl Patch {
         let plane = map.plane(face);
         let texinfo = map.bsp.texinfo.get(face.texinfo)?;
         let shape = smoothing.shapes.get(face_index)?;
-        let mut extents = Extents::new(&shape.points, plane, texinfo.vecs)?;
+        let mut extents = Extents::new(&shape.points, plane, texinfo.vecs, world.luxel)?;
         let curved = flags.phong_angle != 0.0 || flags.phong_group != 0;
         let extra = sampling.per_luxel();
         let (width, height) = (
