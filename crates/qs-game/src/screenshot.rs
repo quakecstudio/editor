@@ -10,7 +10,7 @@ use image::codecs::png::PngEncoder;
 use image::imageops::{FilterType, resize};
 use image::{ExtendedColorType, ImageEncoder, RgbaImage};
 use qs_bridge::base64;
-use qs_render::{MapCallback, Offscreen};
+use qs_render::Offscreen;
 
 /// Draws a frame's paint callback offscreen for `screenshot`: on a device with no window in
 /// the headless host, and on the window's own in the windowed one, whose renderer is in that
@@ -37,7 +37,11 @@ impl Drawer {
     }
 
     /// `callback`, the view of one frame, drawn at `size` pixels and read back.
-    pub(crate) fn draw(&mut self, callback: MapCallback, size: [u32; 2]) -> Result<Frame, Error> {
+    pub(crate) fn draw(
+        &mut self,
+        callback: impl egui_wgpu::CallbackTrait + 'static,
+        size: [u32; 2],
+    ) -> Result<Frame, Error> {
         let (primitives, screen) = self.layout(callback, size);
         let pixels = self
             .offscreen
@@ -52,7 +56,11 @@ impl Drawer {
 
     /// `callback`, the view of one frame, laid out, drawn at `size` pixels and submitted, not
     /// waited for; [`Drawer::finish`] waits for every frame submitted.
-    pub(crate) fn submit(&mut self, callback: MapCallback, size: [u32; 2]) {
+    pub(crate) fn submit(
+        &mut self,
+        callback: impl egui_wgpu::CallbackTrait + 'static,
+        size: [u32; 2],
+    ) {
         let (primitives, screen) = self.layout(callback, size);
         self.offscreen.submit(&primitives, &screen);
     }
@@ -67,7 +75,7 @@ impl Drawer {
     /// `callback` laid out over a screen of `size` pixels: egui's primitives and the screen.
     fn layout(
         &mut self,
-        callback: MapCallback,
+        callback: impl egui_wgpu::CallbackTrait + 'static,
         size: [u32; 2],
     ) -> (Vec<egui::ClippedPrimitive>, ScreenDescriptor) {
         let [width, height] = size.map(|n| n.max(1));

@@ -20,7 +20,10 @@ use qs_client::{
     Event, Grabbed, KeyDest, MENU_BINDINGS, Menu, MenuEvent, MenuFrame, MenuGame, MenuKey,
     MenuSettings, Random as _, Typed,
 };
-use qs_render::{Camera, Degrees, MapMesh, MapRenderer, Offscreen, Play, View};
+use qs_render::{
+    Camera, Degrees, GameCallback, GameRenderer, MapCallback, MapMesh, MapRenderer, Offscreen,
+    Play, View,
+};
 use qs_sim::ClientCommand;
 use qs_sim::input::{Button, Input, MoveSettings};
 use qs_sim::keys::{Bindings, K_ESCAPE, key_name};
@@ -80,6 +83,39 @@ const BENCHMARK_TURN: f32 = 30.0;
 /// The narrowest aspect the 2D layer's height is reckoned for.
 const MIN_ASPECT: f32 = 0.1;
 
+/// Where the game is drawn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Shell {
+    /// In the host's own window, which it titles, places and closes.
+    Window,
+    /// In a panel of the IDE's window (ADR-0028), beside the map view's and the map editor's
+    /// renderers: the window is the IDE's, so the game neither titles, places nor closes it.
+    Panel,
+}
+
+impl Shell {
+    /// Puts `renderer` in `state`'s callback resources as this shell's, replacing the one there.
+    fn install(self, state: &egui_wgpu::RenderState, renderer: MapRenderer) {
+        let mut egui_renderer = state.renderer.write();
+        match self {
+            Self::Window => drop(egui_renderer.callback_resources.insert(renderer)),
+            Self::Panel => drop(
+                egui_renderer
+                    .callback_resources
+                    .insert(GameRenderer(renderer)),
+            ),
+        }
+    }
+
+    /// `callback` as egui paints it in `rect` from this shell's renderer.
+    fn paint(self, rect: egui::Rect, callback: MapCallback) -> egui::epaint::PaintCallback {
+        match self {
+            Self::Window => egui_wgpu::Callback::new_paint_callback(rect, callback),
+            Self::Panel => egui_wgpu::Callback::new_paint_callback(rect, GameCallback(callback)),
+        }
+    }
+}
+
 impl Args {
     /// Opens the window on the map `loaded` holds and runs the game until it closes or the
     /// bridge's client stops it.
@@ -91,11 +127,66 @@ impl Args {
                 "--benchmark needs a positive number of seconds".to_owned(),
             ));
         }
-        let fly = args.fly || benchmark.is_some();
         let position = args
             .position
             .as_deref()
             .and_then(|values| <[f32; 2]>::try_from(values).ok());
+        let size = args
+            .size
+            .as_deref()
+            .and_then(|values| <[f32; 2]>::try_from(values).ok())
+            .unwrap_or(DEFAULT_SIZE);
+        let mut viewport = egui::ViewportBuilder::default()
+            .with_title(format!("QuakeC Studio preview: {}", loaded.map))
+            .with_inner_size(size);
+        if let Some(at) = position {
+            viewport = viewport.with_position(at);
+        }
+        let mut wgpu_options = egui_wgpu::WgpuConfiguration::default();
+        if benchmark.is_some() {
+            wgpu_options.surface.present_mode = wgpu::PresentMode::AutoNoVsync;
+        }
+        let options = eframe::NativeOptions {
+            viewport,
+            renderer: eframe::Renderer::Wgpu,
+            depth_buffer: DEPTH_BITS,
+            wgpu_options,
+            ..eframe::NativeOptions::default()
+        };
+        eframe::run_native(
+            "quakec-engine",
+            options,
+            Box::new(move |cc| {
+                let state = cc
+                    .wgpu_render_state
+                    .as_ref()
+                    .ok_or("eframe started without wgpu")?;
+                let mut viewer = Viewer::new(args, loaded, bridge, state, Shell::Window);
+                // BRIDGE-4.10: Wayland lets a client neither move nor raise its window.
+                let wayland = cc
+                    .display_handle()
+                    .is_ok_and(|handle| matches!(handle.as_raw(), RawDisplayHandle::Wayland(_)));
+                if wayland {
+                    viewer.game.set_screen(Screen::FixedWindow);
+                }
+                Ok(Box::new(viewer))
+            }),
+        )
+        .map_err(|e| Error::Window(e.to_string()))
+    }
+}
+
+impl Viewer {
+    /// The game of `loaded` drawn on `state`'s device in `shell`, served to `bridge`'s client.
+    fn new(
+        args: Args,
+        loaded: Loaded,
+        bridge: Option<Bridge>,
+        state: &egui_wgpu::RenderState,
+        shell: Shell,
+    ) -> Self {
+        let benchmark = args.benchmark;
+        let fly = args.fly || benchmark.is_some();
         let Loaded {
             map,
             mesh,
@@ -122,108 +213,83 @@ impl Args {
         for text in &printed {
             console.print(text, 0.0);
         }
-        let size = args
-            .size
-            .as_deref()
-            .and_then(|values| <[f32; 2]>::try_from(values).ok())
-            .unwrap_or(DEFAULT_SIZE);
-        let mut viewport = egui::ViewportBuilder::default()
-            .with_title(format!("QuakeC Studio preview: {map}"))
-            .with_inner_size(size);
-        if let Some(at) = position {
-            viewport = viewport.with_position(at);
-        }
-        let mut wgpu_options = egui_wgpu::WgpuConfiguration::default();
-        if benchmark.is_some() {
-            wgpu_options.surface.present_mode = wgpu::PresentMode::AutoNoVsync;
-        }
-        let options = eframe::NativeOptions {
-            viewport,
-            renderer: eframe::Renderer::Wgpu,
-            depth_buffer: DEPTH_BITS,
-            wgpu_options,
-            ..eframe::NativeOptions::default()
-        };
         let triangles = mesh
             .indices
             .len()
             .checked_div(TRIANGLE_CORNERS)
             .unwrap_or(0);
         let camera_origin = camera.origin;
-        eframe::run_native(
-            "quakec-engine",
-            options,
-            Box::new(move |cc| {
-                let state = cc
-                    .wgpu_render_state
-                    .as_ref()
-                    .ok_or("eframe started without wgpu")?;
-                let renderer = MapRenderer::new(
-                    &state.device,
-                    &state.queue,
-                    (state.target_format, wgpu::TextureFormat::Depth32Float),
-                    &mesh,
-                    &play.assets(),
-                );
-                state.renderer.write().callback_resources.insert(renderer);
-                let mut game = game;
-                // BRIDGE-4.10: Wayland lets a client neither move nor raise its window.
-                let wayland = cc
-                    .display_handle()
-                    .is_ok_and(|handle| matches!(handle.as_raw(), RawDisplayHandle::Wayland(_)));
-                if wayland {
-                    game.set_screen(Screen::FixedWindow);
-                }
-                // Screenshots are drawn offscreen on the window's own device (BRIDGE-4.9).
-                let drawer = Some(Drawer::new(Offscreen::from_state(
-                    state.clone(),
-                    wgpu::TextureFormat::Depth32Float,
-                )));
-                Ok(Box::new(Viewer {
-                    drawer,
-                    args,
-                    map,
-                    mesh,
-                    camera,
-                    triangles,
-                    play,
-                    game,
-                    audio,
-                    bridge,
-                    client,
-                    bsp,
-                    describer,
-                    rand,
-                    fly,
-                    pointer: Pointer::Free,
-                    placed: None,
-                    eye: camera_origin,
-                    last_set: [f32::NAN; 2],
-                    behind: 0.0,
-                    started: Instant::now(),
-                    last: Instant::now(),
-                    benchmark,
-                    frames: 0,
-                    slowest: 0.0,
-                    worked: 0.0,
-                    longest_work: 0.0,
-                    console,
-                    dest: KeyDest::Game,
-                    menu: Menu::new(),
-                    bindings: Bindings::new(),
-                    input: Input::new(),
-                    motion: [0.0; 2],
-                    modifiers: egui::Modifiers::NONE,
-                    configured: false,
-                    config_file: config_path(),
-                }))
-            }),
-        )
-        .map_err(|e| Error::Window(e.to_string()))
+        shell.install(
+            state,
+            MapRenderer::new(
+                &state.device,
+                &state.queue,
+                (state.target_format, wgpu::TextureFormat::Depth32Float),
+                &mesh,
+                &play.assets(),
+            ),
+        );
+        let mut game = game;
+        if shell == Shell::Panel {
+            // The IDE's window is not the game's to place (BRIDGE-4.10).
+            game.set_screen(Screen::FixedWindow);
+        }
+        // Screenshots are drawn offscreen on the window's own device (BRIDGE-4.9).
+        let drawer = Some(Drawer::new(Offscreen::from_state(
+            state.clone(),
+            wgpu::TextureFormat::Depth32Float,
+        )));
+        Self {
+            state: state.clone(),
+            shell,
+            closed: false,
+            drawer,
+            args,
+            map,
+            mesh,
+            camera,
+            triangles,
+            play,
+            game,
+            audio,
+            bridge,
+            client,
+            bsp,
+            describer,
+            rand,
+            fly,
+            pointer: Pointer::Free,
+            placed: None,
+            eye: camera_origin,
+            last_set: [f32::NAN; 2],
+            behind: 0.0,
+            started: Instant::now(),
+            last: Instant::now(),
+            benchmark,
+            frames: 0,
+            slowest: 0.0,
+            worked: 0.0,
+            longest_work: 0.0,
+            console,
+            dest: KeyDest::Game,
+            menu: Menu::new(),
+            bindings: Bindings::new(),
+            input: Input::new(),
+            motion: [0.0; 2],
+            modifiers: egui::Modifiers::NONE,
+            configured: false,
+            config_file: config_path(),
+        }
     }
 }
 
 struct Viewer {
+    /// The device the game is drawn on, for the next level's renderer.
+    state: egui_wgpu::RenderState,
+    /// Where the game is drawn.
+    shell: Shell,
+    /// Whether the game stopped: it quit, or the bridge's client stopped it or went away.
+    closed: bool,
     /// The command line, for the next level's load.
     args: Args,
     map: String,
@@ -283,9 +349,22 @@ struct Viewer {
 }
 
 impl eframe::App for Viewer {
+    fn on_exit(&mut self) {
+        self.write_configuration();
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui, _window: &mut eframe::Frame) {
+        self.frame(ui);
+        if self.closed {
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
+}
+
+impl Viewer {
     /// `Host_WriteConfiguration` at `Host_Shutdown` (INPUT-4.1): the configuration written to
     /// the host's own file, never to the game's directory.
-    fn on_exit(&mut self) {
+    fn write_configuration(&self) {
         let Some(path) = &self.config_file else {
             return;
         };
@@ -312,7 +391,7 @@ impl eframe::App for Viewer {
         clippy::too_many_lines,
         reason = "one host frame in Host_Frame's order: input, the server, the client, the sound and the draw, read as one"
     )]
-    fn ui(&mut self, ui: &mut egui::Ui, window: &mut eframe::Frame) {
+    fn frame(&mut self, ui: &mut egui::Ui) {
         let now = Instant::now();
         let frame = now.duration_since(self.last).as_secs_f32();
         let seconds = frame.min(LONGEST_VIEW_FRAME);
@@ -348,7 +427,7 @@ impl eframe::App for Viewer {
         // The bridge's commands run between two server frames (BRIDGE-4.3).
         self.serve_bridge(ui);
         if let Some(swap) = self.game.take_swap() {
-            self.draw_swap(window, swap);
+            self.draw_swap(swap);
         }
         if self.fly {
             self.fly_around(ui, seconds);
@@ -363,10 +442,10 @@ impl eframe::App for Viewer {
         if let Some(action) = self.game.host_action() {
             match self.args.act(&mut self.game, action) {
                 Acted::Load(loaded) => {
-                    self.change_level(window, *loaded);
+                    self.change_level(*loaded);
                     return;
                 }
-                Acted::Quit => ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close),
+                Acted::Quit => self.closed = true,
                 Acted::Stay => {}
             }
         }
@@ -493,29 +572,31 @@ impl eframe::App for Viewer {
                 reason = "a window's size in pixels, rounded, a few thousand at most"
             )]
             let size = [rect.width(), rect.height()].map(|n| (n * pixels).round().max(1.0) as u32);
-            match self
-                .drawer
-                .as_mut()
-                .map(|drawer| drawer.draw(callback.clone(), size))
-            {
+            let shell = self.shell;
+            let drawn = self.drawer.as_mut().map(|drawer| match shell {
+                Shell::Window => drawer.draw(callback.clone(), size),
+                Shell::Panel => drawer.draw(GameCallback(callback.clone()), size),
+            });
+            match drawn {
                 Some(Ok(frame)) => self.game.screenshot_taken(&frame),
                 Some(Err(why)) => self.game.screenshot_failed(&why.to_string()),
                 None => self.game.screenshot_failed("no GPU device"),
             }
         }
-        ui.painter()
-            .add(egui_wgpu::Callback::new_paint_callback(rect, callback));
+        ui.painter().add(self.shell.paint(rect, callback));
         // egui's fonts are not bundled (their licenses are outside deny.toml's), so the stats
         // go in the title bar.
         // The eye: the client's in play, the free camera's with `--fly`.
         let [x, y, z] = self.eye;
-        ui.ctx()
-            .send_viewport_cmd(egui::ViewportCommand::Title(format!(
-                "QuakeC Studio preview: {}  {} triangles  {entities} entities  ({x:.0} {y:.0} {z:.0})  {:.0} fps",
-                self.map,
-                self.triangles,
-                1.0 / seconds.max(1e-3)
-            )));
+        if self.shell == Shell::Window {
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::Title(format!(
+                    "QuakeC Studio preview: {}  {} triangles  {entities} entities  ({x:.0} {y:.0} {z:.0})  {:.0} fps",
+                    self.map,
+                    self.triangles,
+                    1.0 / seconds.max(1e-3)
+                )));
+        }
         ui.ctx().request_repaint();
         if let Some(limit) = self.benchmark {
             let work = now.elapsed().as_secs_f32();
@@ -537,7 +618,7 @@ impl eframe::App for Viewer {
                     self.longest_work * 1000.0
                 )
                 .ok();
-                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                self.closed = true;
                 self.benchmark = None;
             }
         }
@@ -547,7 +628,7 @@ impl eframe::App for Viewer {
 impl Viewer {
     /// Loads `map` in place of this one, the player carrying `carried`, and gives the
     /// renderer its world (PHYS-10.4); a map that does not load leaves this one running.
-    fn change_level(&mut self, window: &eframe::Frame, loaded: Loaded) {
+    fn change_level(&mut self, loaded: Loaded) {
         let Loaded {
             map,
             mesh,
@@ -565,16 +646,16 @@ impl Viewer {
         for text in &printed {
             self.console.print(text, realtime);
         }
-        if let Some(state) = window.wgpu_render_state() {
-            let renderer = MapRenderer::new(
-                &state.device,
-                &state.queue,
-                (state.target_format, wgpu::TextureFormat::Depth32Float),
+        self.shell.install(
+            &self.state,
+            MapRenderer::new(
+                &self.state.device,
+                &self.state.queue,
+                (self.state.target_format, wgpu::TextureFormat::Depth32Float),
                 &mesh,
                 &play.assets(),
-            );
-            state.renderer.write().callback_resources.insert(renderer);
-        }
+            ),
+        );
         self.triangles = mesh
             .indices
             .len()
@@ -600,7 +681,7 @@ impl Viewer {
     /// the brush entities placed by their new models, then the swap put in place and the mesh,
     /// its renderer and the BSP the view reads with it; a build that does not draw is refused,
     /// and the old one stays drawn.
-    fn draw_swap(&mut self, window: &eframe::Frame, swap: PendingSwap) {
+    fn draw_swap(&mut self, swap: PendingSwap) {
         let palette = self.play.palette().clone();
         let describer = &self.describer;
         let read = |name: &str| {
@@ -625,16 +706,16 @@ impl Viewer {
             return;
         };
         self.play.set_instances(instances);
-        if let Some(state) = window.wgpu_render_state() {
-            let renderer = MapRenderer::new(
-                &state.device,
-                &state.queue,
-                (state.target_format, wgpu::TextureFormat::Depth32Float),
+        self.shell.install(
+            &self.state,
+            MapRenderer::new(
+                &self.state.device,
+                &self.state.queue,
+                (self.state.target_format, wgpu::TextureFormat::Depth32Float),
                 &mesh,
                 &self.play.assets(),
-            );
-            state.renderer.write().callback_resources.insert(renderer);
-        }
+            ),
+        );
         self.triangles = mesh
             .indices
             .len()
@@ -681,7 +762,7 @@ impl Viewer {
             self.placed = Some(placement);
         }
         if !running {
-            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+            self.closed = true;
         }
     }
 
