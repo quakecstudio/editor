@@ -42,7 +42,7 @@ workflows:
         - 'skeeto/aas-sign@v1.1.1'
     '.github/workflows/secure_workflows.yml':
         - 'actions/checkout@v7.0.1'
-        - 'zizmorcore/zizmor-action@v0.6.4'
+        - 'zizmorcore/zizmor-action@v0.8.1'
 dependencies:
     'actions/attest@v4.2.2':
         ref: 'v4.2.2'
@@ -79,9 +79,9 @@ dependencies:
         commit: 'sha1-043fb46d1a93c77aae656e7c1c64a875d1fc6a0a'
         owner_id: 44036562
         repo_id: 192625955
-    'github/codeql-action@cdf488f595d80d6e07e03d4674febd5ab45fa938':
-        ref: 'v4.37.9'
-        commit: 'sha1-cdf488f595d80d6e07e03d4674febd5ab45fa938'
+    'github/codeql-action@9b3254085494b55a0f7c4c2b3d2d52cc712ce370':
+        ref: 'v4.39.1'
+        commit: 'sha1-9b3254085494b55a0f7c4c2b3d2d52cc712ce370'
         owner_id: 9919
         repo_id: 259445878
     'skeeto/aas-sign@v1.1.1':
@@ -104,10 +104,10 @@ dependencies:
         commit: 'sha1-f7e5d7c961414b23f5b25b2da9294395d08513ad'
         owner_id: 43724913
         repo_id: 442947557
-    'zizmorcore/zizmor-action@v0.6.4':
-        ref: 'v0.6.4'
-        commit: 'sha1-cc914d7f3750a2d13d75c7f184a1060aa0e9d482'
+    'zizmorcore/zizmor-action@v0.8.1':
+        ref: 'v0.8.1'
+        commit: 'sha1-45d7276c9ca790aabd705e31ca99c6185c3e76dd'
         owner_id: 210636713
         repo_id: 985558803
         uses:
-            - 'github/codeql-action@cdf488f595d80d6e07e03d4674febd5ab45fa938'
+            - 'github/codeql-action@9b3254085494b55a0f7c4c2b3d2d52cc712ce370'
