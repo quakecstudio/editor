@@ -26,6 +26,7 @@ mod editor;
 mod keys;
 mod map_camera;
 mod map_grid;
+mod map_look;
 mod map_view;
 #[cfg(test)]
 mod tests;
@@ -45,6 +46,10 @@ pub use map_camera::{
 };
 pub use map_grid::{
     GridStep, MAP_GRID, MAP_GRID_STEP, MapGrid, MapGridError, MapGridParams, MapGridStepParams,
+};
+pub use map_look::{
+    KeepViewParams, MAP_KEEP_VIEW, MAP_LOOKS, MapLook, MapLookError, MapPose, MapViews, ORBIT_STEP,
+    PAN_STEP, StandardView, ViewSlot, ZOOM_STEP,
 };
 pub use map_view::{
     MAP_PANES, MAP_SHADING, MapPanes, MapPanesParams, MapShading, MapShadingParams,
@@ -136,6 +141,16 @@ pub struct Layout {
     pub map_grid: MapGrid,
     /// The map editor's camera settings (P7-08).
     pub map_camera: MapCamera,
+    /// The 3D view's saved views (UI-23).
+    pub map_views: MapViews,
+    /// The last motion a command asked of the 3D view's camera, which the map editor carries
+    /// out once. Not written to the file.
+    #[serde(skip)]
+    pub map_look: Option<MapLook>,
+    /// How many such motions have been asked for, so the editor carries out each once. Not
+    /// written to the file.
+    #[serde(skip)]
+    pub map_looks: u64,
     /// How large the interface is drawn (P7-12).
     pub zoom: Zoom,
     /// Which panel each dock shows and which dock each panel is in (P7-15).
@@ -177,6 +192,9 @@ impl Default for Layout {
             map_shading: MapShading::Lines,
             map_grid: MapGrid::DEFAULT,
             map_camera: MapCamera::default(),
+            map_views: MapViews::default(),
+            map_look: None,
+            map_looks: 0,
             zoom: Zoom::ACTUAL,
             docks: Docks::default(),
             editor_request: None,
@@ -204,6 +222,8 @@ impl Layout {
             focus_requests: 0,
             editor_request: None,
             editor_requests: 0,
+            map_look: None,
+            map_looks: 0,
             ..self
         }
     }
@@ -364,6 +384,7 @@ pub fn register<C: HasLayout + 'static>(registry: &mut Registry<C>) -> Result<()
     map_view::register(registry)?;
     map_grid::register(registry)?;
     map_camera::register(registry)?;
+    map_look::register(registry)?;
     zoom::register(registry)?;
     docks::register(registry)?;
     editor::register(registry)

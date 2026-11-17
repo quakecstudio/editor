@@ -17,8 +17,11 @@ pub enum KeyContext {
     /// While the code editor does not have the keyboard: it takes these keys itself, with
     /// its own undo history.
     Shell,
-    /// While the map view has the keyboard.
+    /// While the Map tab is shown and the code editor does not have the keyboard.
     Map,
+    /// While a pane of the map view has the keyboard: keys with no platform modifier, which
+    /// a text field elsewhere in the tab would otherwise lose.
+    MapView,
 }
 
 /// What a default key follows.
@@ -57,7 +60,7 @@ pub enum Unkeyed {
 }
 
 /// Every default key, a command once.
-pub const DEFAULT_KEYS: [DefaultKey; 49] = [
+pub const DEFAULT_KEYS: [DefaultKey; 74] = [
     DefaultKey {
         command: "edit.undo",
         keys: "secondary-z",
@@ -354,10 +357,186 @@ pub const DEFAULT_KEYS: [DefaultKey; 49] = [
         context: KeyContext::Map,
         follows: Follows::Own("back to the Full profile"),
     },
+    DefaultKey {
+        command: "view.map_top",
+        keys: "alt-1",
+        context: KeyContext::MapView,
+        follows: Follows::Own(
+            "TrenchBroom has no standard views; Alt and a digit, in AutoCAD's order of its preset views",
+        ),
+    },
+    DefaultKey {
+        command: "view.map_bottom",
+        keys: "alt-2",
+        context: KeyContext::MapView,
+        follows: Follows::Own(
+            "TrenchBroom has no standard views; Alt and a digit, in AutoCAD's order of its preset views",
+        ),
+    },
+    DefaultKey {
+        command: "view.map_front",
+        keys: "alt-3",
+        context: KeyContext::MapView,
+        follows: Follows::Own(
+            "TrenchBroom has no standard views; Alt and a digit, in AutoCAD's order of its preset views",
+        ),
+    },
+    DefaultKey {
+        command: "view.map_back",
+        keys: "alt-4",
+        context: KeyContext::MapView,
+        follows: Follows::Own(
+            "TrenchBroom has no standard views; Alt and a digit, in AutoCAD's order of its preset views",
+        ),
+    },
+    DefaultKey {
+        command: "view.map_left",
+        keys: "alt-5",
+        context: KeyContext::MapView,
+        follows: Follows::Own(
+            "TrenchBroom has no standard views; Alt and a digit, in AutoCAD's order of its preset views",
+        ),
+    },
+    DefaultKey {
+        command: "view.map_right",
+        keys: "alt-6",
+        context: KeyContext::MapView,
+        follows: Follows::Own(
+            "TrenchBroom has no standard views; Alt and a digit, in AutoCAD's order of its preset views",
+        ),
+    },
+    DefaultKey {
+        command: "view.map_isometric",
+        keys: "alt-7",
+        context: KeyContext::MapView,
+        follows: Follows::Own(
+            "TrenchBroom has no standard views; Alt and a digit, in AutoCAD's order of its preset views",
+        ),
+    },
+    DefaultKey {
+        command: "view.map_orbit_left",
+        keys: "shift-left",
+        context: KeyContext::MapView,
+        follows: Follows::Own(
+            "TrenchBroom orbits with the mouse only; Shift and an arrow, which alone moves the selection",
+        ),
+    },
+    DefaultKey {
+        command: "view.map_orbit_right",
+        keys: "shift-right",
+        context: KeyContext::MapView,
+        follows: Follows::Own(
+            "TrenchBroom orbits with the mouse only; Shift and an arrow, which alone moves the selection",
+        ),
+    },
+    DefaultKey {
+        command: "view.map_orbit_up",
+        keys: "shift-up",
+        context: KeyContext::MapView,
+        follows: Follows::Own(
+            "TrenchBroom orbits with the mouse only; Shift and an arrow, which alone moves the selection",
+        ),
+    },
+    DefaultKey {
+        command: "view.map_orbit_down",
+        keys: "shift-down",
+        context: KeyContext::MapView,
+        follows: Follows::Own(
+            "TrenchBroom orbits with the mouse only; Shift and an arrow, which alone moves the selection",
+        ),
+    },
+    DefaultKey {
+        command: "view.map_pan_left",
+        keys: "shift-alt-left",
+        context: KeyContext::MapView,
+        follows: Follows::Own("TrenchBroom pans with the mouse only; the orbit key with Alt"),
+    },
+    DefaultKey {
+        command: "view.map_pan_right",
+        keys: "shift-alt-right",
+        context: KeyContext::MapView,
+        follows: Follows::Own("TrenchBroom pans with the mouse only; the orbit key with Alt"),
+    },
+    DefaultKey {
+        command: "view.map_pan_up",
+        keys: "shift-alt-up",
+        context: KeyContext::MapView,
+        follows: Follows::Own("TrenchBroom pans with the mouse only; the orbit key with Alt"),
+    },
+    DefaultKey {
+        command: "view.map_pan_down",
+        keys: "shift-alt-down",
+        context: KeyContext::MapView,
+        follows: Follows::Own("TrenchBroom pans with the mouse only; the orbit key with Alt"),
+    },
+    DefaultKey {
+        command: "view.map_zoom_in",
+        keys: "shift-pageup",
+        context: KeyContext::MapView,
+        follows: Follows::Own(
+            "TrenchBroom zooms with the wheel only; Shift and Page Up, which alone raises the selection",
+        ),
+    },
+    DefaultKey {
+        command: "view.map_zoom_out",
+        keys: "shift-pagedown",
+        context: KeyContext::MapView,
+        follows: Follows::Own(
+            "TrenchBroom zooms with the wheel only; Shift and Page Down, which alone lowers the selection",
+        ),
+    },
+    DefaultKey {
+        command: "view.map_view_1",
+        keys: "f1",
+        context: KeyContext::MapView,
+        follows: Follows::Own("TrenchBroom has no saved views; a function key each"),
+    },
+    DefaultKey {
+        command: "view.map_view_2",
+        keys: "f2",
+        context: KeyContext::MapView,
+        follows: Follows::Own("TrenchBroom has no saved views; a function key each"),
+    },
+    DefaultKey {
+        command: "view.map_view_3",
+        keys: "f3",
+        context: KeyContext::MapView,
+        follows: Follows::Own("TrenchBroom has no saved views; a function key each"),
+    },
+    DefaultKey {
+        command: "view.map_view_4",
+        keys: "f4",
+        context: KeyContext::MapView,
+        follows: Follows::Own("TrenchBroom has no saved views; a function key each"),
+    },
+    DefaultKey {
+        command: "view.map_save_view_1",
+        keys: "shift-f1",
+        context: KeyContext::MapView,
+        follows: Follows::Own("the saved view's key with Shift"),
+    },
+    DefaultKey {
+        command: "view.map_save_view_2",
+        keys: "shift-f2",
+        context: KeyContext::MapView,
+        follows: Follows::Own("the saved view's key with Shift"),
+    },
+    DefaultKey {
+        command: "view.map_save_view_3",
+        keys: "shift-f3",
+        context: KeyContext::MapView,
+        follows: Follows::Own("the saved view's key with Shift"),
+    },
+    DefaultKey {
+        command: "view.map_save_view_4",
+        keys: "shift-f4",
+        context: KeyContext::MapView,
+        follows: Follows::Own("the saved view's key with Shift"),
+    },
 ];
 
 /// Every command with no key of its own, and why.
-pub const UNKEYED: [(&str, Unkeyed); 159] = [
+pub const UNKEYED: [(&str, Unkeyed); 160] = [
     ("checkpoint.list", Unkeyed::Query),
     ("checkpoint.restore", Unkeyed::Typed),
     ("code.actions", Unkeyed::Typed),
@@ -509,6 +688,7 @@ pub const UNKEYED: [(&str, Unkeyed); 159] = [
     ("view.map_camera", Unkeyed::Query),
     ("view.map_grid", Unkeyed::Typed),
     ("view.map_grid_step", Unkeyed::Typed),
+    ("view.map_keep_view", Unkeyed::Window),
     ("view.map_panes", Unkeyed::Typed),
     ("view.map_shading", Unkeyed::Typed),
     ("view.move_panel", Unkeyed::Typed),

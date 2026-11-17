@@ -16,8 +16,8 @@ use eframe::egui::{
 };
 use eframe::egui_wgpu::RenderState;
 use qs_layout::{
-    CameraSpeed, Direction, Layout, MapCamera, MapCameraParams, MapFov, MapGrid, MapPanes,
-    MapShading,
+    CameraSpeed, Direction, KeepViewParams, Layout, MapCamera, MapCameraParams, MapFov, MapGrid,
+    MapLook, MapPanes, MapShading,
 };
 use qs_map_edit::MapReport;
 use qs_map_edit::texture_import::DitherChoice;
@@ -347,6 +347,12 @@ pub struct MapEditor {
     frame: Option<Framing>,
     /// The point an Alt+right-drag orbits the camera about, while it lasts (P7-08).
     orbit: Option<[f32; 3]>,
+    /// Whether a pane of the view had the keyboard in the last frame (UI-23).
+    keyboard: Keyboard,
+    /// The last camera motion a command asked for and how many have been, the layout's, and
+    /// how many of them the view has carried out (UI-23).
+    look_asked: (Option<MapLook>, u64),
+    looks_applied: u64,
     /// Where the view's context menu last opened (P7-08).
     menu_at: Option<Pos2>,
     /// The layer new brushes and entities go into, or the default layer (P7-08).
@@ -724,6 +730,7 @@ impl MapEditor {
         let (layout, shading) = (settings.map_panes, settings.map_shading);
         self.tools.grid = settings.map_grid;
         self.camera_settings = settings.map_camera;
+        self.look_asked = (settings.map_look, settings.map_looks);
         // The tab's own width, which the toolbar wraps within and the view keeps to, so a long
         // toolbar never widens the view under the Properties panel.
         let bounds = ui.available_rect_before_wrap();
@@ -989,6 +996,11 @@ impl MapEditor {
             (&self.scene, from, &unseen),
             (self.textures.sources(), &self.model_files),
         );
+        if self.camera.is_none() {
+            // A motion asked for before the map opened is not this view's.
+            self.looks_applied = self.look_asked.1;
+        }
+        self.keyboard = Keyboard::Elsewhere;
         let camera = self
             .camera
             .get_or_insert_with(|| start_camera(document, &self.scene));
@@ -1016,6 +1028,16 @@ impl MapEditor {
             self.also.clear();
         }
         let mut actions = Vec::new();
+        if self.looks_applied != self.look_asked.1 {
+            self.looks_applied = self.look_asked.1;
+            let aspect = rect.width() / rect.height().max(1.0);
+            let kept = self
+                .look_asked
+                .0
+                .and_then(|look| self.look(look, document, aspect));
+            actions.extend(kept.map(|kept| MapAction::View(ViewSetting::KeepView(kept))));
+            ui.ctx().request_repaint();
+        }
         for (pane, area) in panes(layout, rect) {
             let frame = Frame {
                 hidden: &hidden,
@@ -1176,6 +1198,7 @@ impl MapEditor {
             .chain(self.also.iter().copied())
             .collect();
         if response.has_focus() {
+            self.keyboard = Keyboard::Here;
             if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape))
                 && self.picking.take().is_none()
                 && !self.tools.cancel()
@@ -1913,6 +1936,8 @@ pub enum ViewSetting {
     Grid(MapGrid),
     /// Change the camera settings (P7-08).
     Camera(MapCameraParams),
+    /// Keep the 3D view's camera as a saved view (UI-23).
+    KeepView(KeepViewParams),
 }
 
 /// Which of the camera's speeds a slider sets.
@@ -1969,6 +1994,16 @@ impl Default for ViewZoom {
     }
 }
 
+/// Whether a pane of the map view has the keyboard.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Keyboard {
+    /// A pane has it.
+    Here,
+    /// Another part of the window has it, or none.
+    #[default]
+    Elsewhere,
+}
+
 /// What the view frames on its next frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Framing {
@@ -1979,6 +2014,87 @@ enum Framing {
 }
 
 impl MapEditor {
+    /// Whether a pane of the view had the keyboard in the last frame, so the view's own keys
+    /// are its to take (UI-23).
+    pub(crate) fn has_keyboard(&self) -> bool {
+        self.keyboard == Keyboard::Here
+    }
+
+    /// The box around the map's first `entities` entities, as the standard views frame it.
+    #[cfg(test)]
+    pub(crate) fn bounds(&self, entities: usize) -> Option<[[f32; 3]; 2]> {
+        self.scene
+            .bounds_of((0..entities).map(EntityIndex::new), None)
+    }
+
+    /// Carries out a motion a command asked of the 3D view's camera (UI-23), in a view
+    /// `aspect` times as wide as it is high; the view to keep, when the motion saves one.
+    fn look(
+        &mut self,
+        look: MapLook,
+        document: &MapDocument,
+        aspect: f32,
+    ) -> Option<KeepViewParams> {
+        let camera = self.camera.as_mut()?;
+        match look {
+            MapLook::Standard(view) => {
+                let (yaw, pitch) = view.heading();
+                camera.yaw = Degrees::new(yaw);
+                camera.pitch = Degrees::new(pitch);
+                let all = (0..document.file().entities.len()).map(EntityIndex::new);
+                if let Some(bounds) = self.scene.bounds_of(all, None) {
+                    camera.frame(bounds, aspect, FRAME_MARGIN);
+                }
+            }
+            MapLook::Orbit { yaw, pitch } => {
+                // About the selection's middle, else TrenchBroom's point ahead.
+                let chosen = document
+                    .selected()
+                    .into_iter()
+                    .chain(self.also.iter().copied());
+                let centre = self
+                    .scene
+                    .bounds_of(chosen, self.tools.bounds(&self.scene))
+                    .map_or_else(
+                        || {
+                            let [forward, _, _] = camera.axes();
+                            let mut ahead = camera.origin;
+                            for (at, way) in ahead.iter_mut().zip(forward) {
+                                *at += way * ORBIT_DISTANCE;
+                            }
+                            ahead
+                        },
+                        |[min, max]| {
+                            let mut middle = min;
+                            for (at, far) in middle.iter_mut().zip(max) {
+                                *at = (*at + far) / 2.0;
+                            }
+                            middle
+                        },
+                    );
+                camera.orbit(centre, Degrees::new(yaw), Degrees::new(pitch));
+            }
+            MapLook::Pan { right, up } => camera.travel(0.0, right, up),
+            MapLook::Zoom(by) => camera.travel(by, 0.0, 0.0),
+            MapLook::Save(slot) => {
+                return Some(KeepViewParams {
+                    slot,
+                    origin: camera.origin,
+                    yaw: camera.yaw.get(),
+                    pitch: camera.pitch.get(),
+                });
+            }
+            MapLook::Pose(pose) => {
+                camera.origin = pose.origin;
+                camera.yaw = Degrees::new(0.0);
+                camera.pitch = Degrees::new(0.0);
+                // The camera's own turn holds a pose from the file to its limits.
+                camera.turn(Degrees::new(pose.yaw), Degrees::new(pose.pitch));
+            }
+        }
+        None
+    }
+
     /// The texture chosen in the browser, which new brushes take (P7-08).
     pub(crate) fn current_texture(&self) -> Option<String> {
         self.textures.selected().map(str::to_owned)

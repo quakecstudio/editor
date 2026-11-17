@@ -124,7 +124,8 @@ fn keymap<C: 'static>(registry: &Registry<C>) -> String {
         let context = match key.context {
             KeyContext::Window => "anywhere",
             KeyContext::Shell => "outside the code editor",
-            KeyContext::Map => "in the map view",
+            KeyContext::Map => "in the Map tab",
+            KeyContext::MapView => "in the map view",
         };
         let follows = match key.follows {
             Follows::TrenchBroom(action) => format!("TrenchBroom's `{action}`"),

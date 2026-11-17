@@ -1371,6 +1371,7 @@ impl Shell {
                 Scope::Everywhere => true,
                 Scope::Shell => !editing,
                 Scope::Map => !editing && map_shown,
+                Scope::MapView => map_shown && self.features.map.map_editor.has_keyboard(),
             };
             if !taken {
                 continue;

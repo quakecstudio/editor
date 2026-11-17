@@ -20,6 +20,8 @@ pub enum Scope {
     Everywhere,
     /// Only while the map view is the centre's and a map is open.
     Map,
+    /// Only while a pane of the map view has the keyboard.
+    MapView,
 }
 
 /// A shortcut and the command, which takes no parameters, it runs.
@@ -67,6 +69,7 @@ pub fn bindings() -> Vec<Binding> {
                     KeyContext::Window => Scope::Everywhere,
                     KeyContext::Shell => Scope::Shell,
                     KeyContext::Map => Scope::Map,
+                    KeyContext::MapView => Scope::MapView,
                 },
             })
         })
@@ -304,7 +307,13 @@ pub fn parse_keys(keys: &str) -> Option<KeyboardShortcut> {
     if let Some(first) = name.get(..1).map(str::to_uppercase) {
         name.replace_range(..1, &first);
     }
-    Key::from_name(&name).map(|key| KeyboardShortcut::new(held, key))
+    // Zed's spelling of the two keys egui names in two words.
+    let key = match name.as_str() {
+        "Pageup" => Some(Key::PageUp),
+        "Pagedown" => Some(Key::PageDown),
+        name => Key::from_name(name),
+    };
+    key.map(|key| KeyboardShortcut::new(held, key))
 }
 
 /// The keymap file in the app's config directory `config`.

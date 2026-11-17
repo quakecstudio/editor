@@ -45,18 +45,43 @@ Every command's default key (UI-21). A key follows TrenchBroom's default where T
 | `project.export` | `secondary-alt-e` | anywhere | ours: E for export |
 | `checkpoint.create` | `secondary-alt-s` | anywhere | ours: a save beside the file's |
 | `terminal.new` | `ctrl-shift-`` | anywhere | ours: VS Code's Create New Terminal |
-| `map.save` | `secondary-s` | in the map view | TrenchBroom's `Menu/File/Save` |
-| `map.copy` | `secondary-c` | in the map view | TrenchBroom's `Menu/Edit/Copy` |
-| `map.select` | `secondary-shift-a` | in the map view | TrenchBroom's `Menu/Edit/Deselect All` |
-| `map.show_all` | `secondary-shift-i` | in the map view | TrenchBroom's `Menu/View/Show All` |
-| `map.unlock_all` | `secondary-shift-l` | in the map view | ours: TrenchBroom has no key; L for lock, as Show All is I |
-| `map.leaks` | `secondary-shift-k` | in the map view | ours: TrenchBroom loads a point file from a menu with no key |
-| `map.accept` | `secondary-alt-y` | in the map view | ours: Y for yes, to every change in review |
-| `map.reject` | `secondary-alt-n` | in the map view | ours: N for no, to every change in review |
-| `map.stage` | `secondary-alt-r` | in the map view | ours: R for review |
-| `map.unstage` | `secondary-alt-shift-r` | in the map view | ours: the review key with Shift |
-| `map.backup` | `secondary-alt-b` | in the map view | ours: B for backup |
-| `map.choose_profile` | `secondary-alt-m` | in the map view | ours: back to the Full profile |
+| `map.save` | `secondary-s` | in the Map tab | TrenchBroom's `Menu/File/Save` |
+| `map.copy` | `secondary-c` | in the Map tab | TrenchBroom's `Menu/Edit/Copy` |
+| `map.select` | `secondary-shift-a` | in the Map tab | TrenchBroom's `Menu/Edit/Deselect All` |
+| `map.show_all` | `secondary-shift-i` | in the Map tab | TrenchBroom's `Menu/View/Show All` |
+| `map.unlock_all` | `secondary-shift-l` | in the Map tab | ours: TrenchBroom has no key; L for lock, as Show All is I |
+| `map.leaks` | `secondary-shift-k` | in the Map tab | ours: TrenchBroom loads a point file from a menu with no key |
+| `map.accept` | `secondary-alt-y` | in the Map tab | ours: Y for yes, to every change in review |
+| `map.reject` | `secondary-alt-n` | in the Map tab | ours: N for no, to every change in review |
+| `map.stage` | `secondary-alt-r` | in the Map tab | ours: R for review |
+| `map.unstage` | `secondary-alt-shift-r` | in the Map tab | ours: the review key with Shift |
+| `map.backup` | `secondary-alt-b` | in the Map tab | ours: B for backup |
+| `map.choose_profile` | `secondary-alt-m` | in the Map tab | ours: back to the Full profile |
+| `view.map_top` | `alt-1` | in the map view | ours: TrenchBroom has no standard views; Alt and a digit, in AutoCAD's order of its preset views |
+| `view.map_bottom` | `alt-2` | in the map view | ours: TrenchBroom has no standard views; Alt and a digit, in AutoCAD's order of its preset views |
+| `view.map_front` | `alt-3` | in the map view | ours: TrenchBroom has no standard views; Alt and a digit, in AutoCAD's order of its preset views |
+| `view.map_back` | `alt-4` | in the map view | ours: TrenchBroom has no standard views; Alt and a digit, in AutoCAD's order of its preset views |
+| `view.map_left` | `alt-5` | in the map view | ours: TrenchBroom has no standard views; Alt and a digit, in AutoCAD's order of its preset views |
+| `view.map_right` | `alt-6` | in the map view | ours: TrenchBroom has no standard views; Alt and a digit, in AutoCAD's order of its preset views |
+| `view.map_isometric` | `alt-7` | in the map view | ours: TrenchBroom has no standard views; Alt and a digit, in AutoCAD's order of its preset views |
+| `view.map_orbit_left` | `shift-left` | in the map view | ours: TrenchBroom orbits with the mouse only; Shift and an arrow, which alone moves the selection |
+| `view.map_orbit_right` | `shift-right` | in the map view | ours: TrenchBroom orbits with the mouse only; Shift and an arrow, which alone moves the selection |
+| `view.map_orbit_up` | `shift-up` | in the map view | ours: TrenchBroom orbits with the mouse only; Shift and an arrow, which alone moves the selection |
+| `view.map_orbit_down` | `shift-down` | in the map view | ours: TrenchBroom orbits with the mouse only; Shift and an arrow, which alone moves the selection |
+| `view.map_pan_left` | `shift-alt-left` | in the map view | ours: TrenchBroom pans with the mouse only; the orbit key with Alt |
+| `view.map_pan_right` | `shift-alt-right` | in the map view | ours: TrenchBroom pans with the mouse only; the orbit key with Alt |
+| `view.map_pan_up` | `shift-alt-up` | in the map view | ours: TrenchBroom pans with the mouse only; the orbit key with Alt |
+| `view.map_pan_down` | `shift-alt-down` | in the map view | ours: TrenchBroom pans with the mouse only; the orbit key with Alt |
+| `view.map_zoom_in` | `shift-pageup` | in the map view | ours: TrenchBroom zooms with the wheel only; Shift and Page Up, which alone raises the selection |
+| `view.map_zoom_out` | `shift-pagedown` | in the map view | ours: TrenchBroom zooms with the wheel only; Shift and Page Down, which alone lowers the selection |
+| `view.map_view_1` | `f1` | in the map view | ours: TrenchBroom has no saved views; a function key each |
+| `view.map_view_2` | `f2` | in the map view | ours: TrenchBroom has no saved views; a function key each |
+| `view.map_view_3` | `f3` | in the map view | ours: TrenchBroom has no saved views; a function key each |
+| `view.map_view_4` | `f4` | in the map view | ours: TrenchBroom has no saved views; a function key each |
+| `view.map_save_view_1` | `shift-f1` | in the map view | ours: the saved view's key with Shift |
+| `view.map_save_view_2` | `shift-f2` | in the map view | ours: the saved view's key with Shift |
+| `view.map_save_view_3` | `shift-f3` | in the map view | ours: the saved view's key with Shift |
+| `view.map_save_view_4` | `shift-f4` | in the map view | ours: the saved view's key with Shift |
 
 ## Commands with no key
 
@@ -215,6 +240,7 @@ A command that answers a question is read by a panel, the agent or MCP. A comman
 | `view.map_camera` | answers a question | Sets the map editor's camera: the 3D view's field of view, 50 to 150 degrees, how fast the mouse and keys move it, 0.1 to 10 times, and which way a vertical look and the wheel go. Settings not given are kept. |
 | `view.map_grid` | needs a value | Sets the map editor's grid in units, a power of two from 0.125 to 256. |
 | `view.map_grid_step` | needs a value | Halves or doubles the map editor's grid, held to 0.125 to 256 units. |
+| `view.map_keep_view` | run by the window | Keeps a place and heading of the map editor's 3D view as a saved view. The window runs it for `view.map_save_view_1` to `_4`, with its camera. |
 | `view.map_panes` | needs a value | Splits the map view: the 3D view alone, with a top view in its corner, or beside top, front and side views. |
 | `view.map_shading` | needs a value | Draws the map view's 3D pane as the brushes' edges, as their textured faces, or lit by the last compile's lightmaps. |
 | `view.move_panel` | needs a value | Moves a panel to another dock, where it shows, as Zed's status-bar menu moves one. |

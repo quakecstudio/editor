@@ -21,7 +21,10 @@ use egui_kittest::kittest::{NodeT as _, Queryable as _};
 use qs_commands::palette::search;
 use qs_commands::params::{self, Input};
 use qs_commands::remote::{Client, Host};
-use qs_layout::{DockPanel, Focus, Layout, Panel};
+use qs_layout::{
+    DockPanel, FOCUS_COMMAND_LINE, Focus, Layout, ORBIT_STEP, PAN_STEP, Panel, StandardView,
+    ViewSlot, ZOOM_STEP,
+};
 use qs_map_edit::EntityIndex;
 use qs_map_edit::texture_import::project_wad;
 use qs_wad::write::WadBuilder;
@@ -5169,7 +5172,7 @@ fn press(harness: &mut Harness<'static, Option<App>>, key: egui::Key) {
 #[test]
 fn every_command_is_entered_on_the_command_line() {
     let mut harness = accessible();
-    run_command(&mut harness, qs_layout::FOCUS_COMMAND_LINE);
+    run_command(&mut harness, FOCUS_COMMAND_LINE);
     harness.run();
     let commands: Vec<(String, usize)> = {
         let shell = harness.state().as_ref().unwrap().shell();
@@ -5186,7 +5189,7 @@ fn every_command_is_entered_on_the_command_line() {
     assert!(commands.len() > 200, "{}", commands.len());
     for (id, fields) in commands {
         // Entering a focus command moves the keyboard, so it is brought back each time.
-        run_command(&mut harness, qs_layout::FOCUS_COMMAND_LINE);
+        run_command(&mut harness, FOCUS_COMMAND_LINE);
         harness.run();
         type_text(&mut harness, &id);
         press(&mut harness, egui::Key::Enter);
@@ -5274,4 +5277,160 @@ fn the_command_line_completes_runs_recalls_and_asks() {
     type_text(&mut harness, "no.such.command");
     press(&mut harness, egui::Key::Enter);
     harness.get_by_label(&command_unknown("no.such.command"));
+}
+
+// UI-23, #971: the 3D view is driven from the keyboard alone: Alt and a digit turns it to each
+// standard view with the map in it; Shift and an arrow orbits it about the selection, with Alt
+// pans it, and Shift with Page Up and Page Down zooms; Shift and a function key saves a view,
+// kept in the layout, and the function key brings it back; and none of it is taken while a
+// text field has the keyboard
+#[test]
+fn the_map_view_is_turned_orbited_panned_and_zoomed_from_the_keyboard() {
+    let dir = keep_copy("look");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    harness.get_by_label(Text::MapEditorView.get()).click();
+    harness.run();
+    let camera = |harness: &Harness<'static, Option<App>>| {
+        *harness
+            .state()
+            .as_ref()
+            .unwrap()
+            .shell()
+            .map_editor()
+            .camera()
+            .unwrap()
+    };
+    let key = |harness: &mut Harness<'static, Option<App>>, modifiers, key| {
+        harness.key_press_modifiers(modifiers, key);
+        // The key runs its command in one frame and the view carries it out in the next.
+        harness.run();
+        harness.run();
+        camera(harness)
+    };
+    let (alt, shift) = (egui::Modifiers::ALT, egui::Modifiers::SHIFT);
+    let digits = [
+        egui::Key::Num1,
+        egui::Key::Num2,
+        egui::Key::Num3,
+        egui::Key::Num4,
+        egui::Key::Num5,
+        egui::Key::Num6,
+        egui::Key::Num7,
+    ];
+    for (digit, view) in digits.into_iter().zip(StandardView::ALL) {
+        let turned = key(&mut harness, alt, digit);
+        let (yaw, pitch) = view.heading();
+        assert_eq!(
+            (turned.yaw.get(), turned.pitch.get()),
+            (yaw, pitch),
+            "{view:?}"
+        );
+        // The map's middle is straight ahead: nothing of it is off to a side.
+        let [forward, right, _] = turned.axes();
+        let shell = harness.state().as_ref().unwrap().shell();
+        let entities = shell.session().context().workbench.map().unwrap();
+        let entities = entities.file().entities.len();
+        let world = shell.map_editor().bounds(entities).unwrap();
+        let [low, high] = world;
+        let middle: Vec<f32> = low
+            .iter()
+            .zip(high)
+            .zip(turned.origin)
+            .map(|((low, high), at)| (low + high) / 2.0 - at)
+            .collect();
+        let along = |way: [f32; 3]| -> f32 { middle.iter().zip(way).map(|(a, b)| a * b).sum() };
+        assert!(along(forward) > 0.0, "{view:?}");
+        assert!(along(right).abs() < 0.01, "{view:?}: {}", along(right));
+    }
+    // An orbit about the selected ogre keeps it as far away and turns the heading a step.
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("map.select", json!({ "entity": 2 })).unwrap();
+    harness.run();
+    let ogre = [96.0_f32, 64.0, 44.0];
+    let away = |camera: &qs_render::Camera| -> f32 {
+        let squared: f32 = camera
+            .origin
+            .iter()
+            .zip(ogre)
+            .map(|(at, o)| (at - o) * (at - o))
+            .sum();
+        squared.sqrt()
+    };
+    let before = camera(&harness);
+    let orbited = key(&mut harness, shift, egui::Key::ArrowLeft);
+    assert!((orbited.yaw.get() - before.yaw.get() - ORBIT_STEP).abs() < 1e-3);
+    assert!((away(&orbited) - away(&before)).abs() < 0.01);
+    assert_ne!(orbited.origin, before.origin);
+    let back = key(&mut harness, shift, egui::Key::ArrowRight);
+    assert!((back.yaw.get() - before.yaw.get()).abs() < 1e-3);
+    let lower = key(&mut harness, shift, egui::Key::ArrowDown);
+    assert!((lower.pitch.get() - back.pitch.get() - ORBIT_STEP).abs() < 1e-3);
+    let level = key(&mut harness, shift, egui::Key::ArrowUp);
+    assert!((level.pitch.get() - back.pitch.get()).abs() < 1e-3);
+    // The selection was not moved by the arrows under the Shift.
+    let ogre_at = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        let map = shell.session().context().workbench.map().unwrap();
+        let ogre = map.file().entities.get(2)?;
+        ogre.value(b"origin").map(<[u8]>::to_vec)
+    };
+    assert_eq!(ogre_at(&harness).as_deref(), Some(b"96 64 24".as_slice()));
+    // A pan moves it across and up by a step, keeping the heading; a zoom moves it along.
+    let both = shift | alt;
+    let panned = key(&mut harness, both, egui::Key::ArrowRight);
+    let [forward, right, _] = level.axes();
+    let moved = |from: &qs_render::Camera, to: &qs_render::Camera, way: [f32; 3]| -> f32 {
+        let gone = to
+            .origin
+            .iter()
+            .zip(from.origin)
+            .map(|(to, from)| to - from);
+        gone.zip(way).map(|(gone, way)| gone * way).sum()
+    };
+
+    assert!((moved(&level, &panned, right) - PAN_STEP).abs() < 1e-3);
+    assert_eq!((panned.yaw, panned.pitch), (level.yaw, level.pitch));
+    let raised = key(&mut harness, both, egui::Key::ArrowUp);
+    assert!((raised.origin[2] - panned.origin[2] - PAN_STEP).abs() < 1e-3);
+    let left = key(&mut harness, both, egui::Key::ArrowLeft);
+    let lowered = key(&mut harness, both, egui::Key::ArrowDown);
+    assert!((moved(&raised, &left, right) + PAN_STEP).abs() < 1e-3);
+    assert!((lowered.origin[2] - level.origin[2]).abs() < 1e-3);
+    let nearer = key(&mut harness, shift, egui::Key::PageUp);
+    assert!((moved(&lowered, &nearer, forward) - ZOOM_STEP).abs() < 1e-3);
+    let farther = key(&mut harness, shift, egui::Key::PageDown);
+    assert!(moved(&nearer, &farther, forward) < 0.0);
+    assert_eq!(ogre_at(&harness).as_deref(), Some(b"96 64 24".as_slice()));
+    // A view is saved, left and brought back.
+    let saved = key(&mut harness, shift, egui::Key::F2);
+    let layout = *harness.state().as_ref().unwrap().shell().layout();
+    let kept = layout.map_views.get(ViewSlot::Two).unwrap();
+    assert_eq!(kept.origin, saved.origin);
+    let elsewhere = key(&mut harness, alt, egui::Key::Num1);
+    assert_ne!(elsewhere.origin, saved.origin);
+    let restored = key(&mut harness, egui::Modifiers::NONE, egui::Key::F2);
+    assert_eq!(restored.origin, saved.origin);
+    assert!((restored.yaw.get() - saved.yaw.get()).abs() < 1e-3);
+    assert!((restored.pitch.get() - saved.pitch.get()).abs() < 1e-3);
+    // An empty slot's key changes nothing.
+    let same = key(&mut harness, egui::Modifiers::NONE, egui::Key::F3);
+    assert_eq!(same.origin, restored.origin);
+    // With the keyboard in the command line, the view's keys are the field's.
+    run_command(&mut harness, FOCUS_COMMAND_LINE);
+    harness.run();
+    let typing = key(&mut harness, alt, egui::Key::Num1);
+    assert_eq!(typing.origin, restored.origin);
+    // The same motions run from the command line by name.
+    type_text(&mut harness, "map_top");
+    press(&mut harness, egui::Key::Enter);
+    harness.run();
+    assert_eq!(camera(&harness).pitch.get(), 89.0);
 }
