@@ -26,7 +26,7 @@ use super::keys::{Dict, World};
 use super::lights::Lights;
 use super::math::Plane;
 use super::phong::Smoothing;
-use super::points::{Extents, Patch};
+use super::points::{Extents, Patch, Sample};
 use super::rays::{Rays, Texels as _};
 use super::scene::{Given, Map, MapFault};
 use super::shade::Shader;
@@ -1145,6 +1145,90 @@ fn a_sun_with_a_texture_comes_through_that_sky_alone() {
         at("\"_suntexture\" \"nosuch\"\n", open.0, open.1),
         Some(100)
     );
+}
+
+// spec LIGHT-14.9: with four samples a luxel, a luxel well inside a sun's light or its shadow
+// is answered once, and one on the shadow's edge at each sample, so the edge is a step
+// between the two and not one or the other
+#[test]
+fn a_suns_shadow_has_a_soft_edge() {
+    // A slab hangs under the sky ceiling over the middle of the floor; the sun is overhead.
+    let slab = cuboid([96, 96, 96], [160, 160, 128], "wall");
+    let sun = "{\n\"classname\" \"light\"\n\"_sun\" \"1\"\n\"mangle\" \"0 -90 0\"\n\
+               \"light\" \"200\"\n}\n";
+    let bsp = room("", "sky1", &slab, sun);
+    let full = Light::new(Sampling::Extra).run(&bsp).unwrap().bsp;
+    let at = |x: f32, y: f32| floor_at(&full, x, y).unwrap();
+    let (open, under) = (at(32.0, 32.0), at(128.0, 128.0));
+    assert_eq!((open, under), (100, 0));
+    // Luxels well inside either are all of one value.
+    for (x, y) in [(48.0, 48.0), (64.0, 128.0), (208.0, 208.0)] {
+        assert_eq!(at(x, y), open, "{x} {y}");
+    }
+    for (x, y) in [(112.0, 128.0), (128.0, 144.0)] {
+        assert_eq!(at(x, y), under, "{x} {y}");
+    }
+    // The luxel at the slab's side has samples on both sides of the shadow's edge.
+    let edge = at(96.0, 128.0);
+    assert!(edge > under && edge < open, "{edge}");
+    // One sample a luxel has no such step: the luxel is lit or it is not.
+    let fast = Light::new(Sampling::Fast).run(&bsp).unwrap().bsp;
+    let hard = floor_at(&fast, 96.0, 128.0).unwrap();
+    assert!(hard == open || hard == under, "{hard}");
+}
+
+// spec LIGHT-20.7: with four samples a luxel, the ray from a bouncing face is asked once for
+// a luxel, to where its samples that are not hidden are taken together
+#[test]
+fn a_bounces_ray_is_asked_once_for_a_luxel() {
+    let spot = "{\n\"classname\" \"light\"\n\"origin\" \"128 128 120\"\n\"mangle\" \"0 -90 0\"\n\
+                \"angle\" \"60\"\n\"light\" \"400\"\n}\n";
+    let bsp = room("\"_bounce\" \"1\"\n", "wall", "", spot);
+    let read = Bsp::read(&bsp, BspLoader::FitzQuake).unwrap();
+    let made = parts(&read, Extras::default());
+    let smoothing = Smoothing::new(&made.map);
+    let ceiling = FaceId::new(face_facing(&read, DOWN));
+    let one = Patch::new(&made.map, &smoothing, ceiling, Sampling::Fast).unwrap();
+    assert!(one.middles.is_empty(), "one sample a luxel is its own");
+    let four = Patch::new(&made.map, &smoothing, ceiling, Sampling::Extra).unwrap();
+    assert_eq!(four.per_luxel, 2);
+    assert_eq!(four.middles.len() * 4, four.samples.len());
+    for (luxel, middle) in four.middles.iter().enumerate() {
+        let own: Vec<&Sample> = four
+            .samples_of(luxel)
+            .map(|index| &four.samples[index])
+            .filter(|sample| !sample.occluded)
+            .collect();
+        assert_eq!(middle.occluded, own.is_empty(), "luxel {luxel}");
+        if own.is_empty() {
+            continue;
+        }
+        for axis in 0..3 {
+            let seen = f32::from(u8::try_from(own.len()).unwrap());
+            let mean = own.iter().map(|s| s.point[axis]).sum::<f32>() / seen;
+            assert!((middle.point[axis] - mean).abs() < 1e-3, "luxel {luxel}");
+        }
+        assert_eq!(middle.normal, DOWN);
+    }
+    // The ceiling is lit by the bounce alone, the spotlight shining down: gathered where a
+    // luxel's four samples meet, it is what one sample at the luxel's own place gathers.
+    let ceiling_of = |sampling: Sampling| -> Vec<u8> {
+        let lighted = Light::new(sampling).run(&bsp).unwrap();
+        lightmaps(&lighted.bsp, DOWN)
+            .into_iter()
+            .flatten()
+            .collect()
+    };
+    let (fast, full) = (ceiling_of(Sampling::Fast), ceiling_of(Sampling::Extra));
+    assert_eq!(fast.len(), full.len());
+    assert!(full.iter().any(|&luxel| luxel > 0));
+    let apart = fast
+        .iter()
+        .zip(&full)
+        .filter(|(a, b)| a.abs_diff(**b) > 1)
+        .count();
+    // But for the luxels along the walls, whose samples are not all on the ceiling.
+    assert!(apart * 4 <= fast.len(), "{apart} of {}", fast.len());
 }
 
 // spec LIGHT-11.10: a brush model with _shadow and no faces, all its brushes of a texture

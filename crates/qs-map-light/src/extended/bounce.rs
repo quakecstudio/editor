@@ -38,6 +38,9 @@ const BOUNDS_EPSILON: f32 = 0.001;
 /// How far past the angle's own allowance a face must be turned from an emitter for the
 /// pair to be passed over, in units: more than the rounding of a sample's own test.
 const TURNED_MARGIN: f32 = 0.05;
+/// How far over the most a face can be given the gate is held, for the rounding of a
+/// sample's own sum.
+const DIM_MARGIN: f32 = 1.01;
 /// Half, of a triangle's cross product and of `_bouncescale`.
 const HALF: f32 = 0.5;
 
@@ -325,6 +328,53 @@ impl Emitter {
             .is_some_and(|(normal, least)| dot(self.pos, normal) - least < limit)
     }
 
+    /// Whether no sample within `reach` is given more of `emission` than the gate: the most
+    /// [`Emitter::lighting`] can give any of them, at the nearest the box of the samples is
+    /// to the emitter and turned to it as far as the box and the face's plane allow, is
+    /// under the gate by a margin, so no sample's light differs for it (LIGHT-20.8).
+    pub(crate) fn is_dim_within(&self, world: &World, emission: &Emission, reach: &Reach) -> bool {
+        let (standard, sky, clamp) = emission.stage.scales(world);
+        let by = if emission.omnidirectional {
+            sky
+        } else {
+            standard
+        };
+        if by < 0.0 || emission.colour.iter().any(|c| *c < 0.0) {
+            return false;
+        }
+        // The nearest the box is to the emitter, and the farthest it is along the
+        // emitter's normal.
+        let mut apart = [0.0; AXES];
+        let mut ahead = 0.0_f32;
+        for (((slot, &at), &low), (&high, &normal)) in apart
+            .iter_mut()
+            .zip(&self.pos)
+            .zip(&reach.bounds.mins)
+            .zip(reach.bounds.maxs.iter().zip(&self.normal))
+        {
+            *slot = (low - at).max(at - high).max(0.0);
+            ahead += (normal * low).max(normal * high);
+        }
+        let nearest = length(apart).max(NEAREST);
+        // The most of a cosine a height over a plane leaves at the nearest distance.
+        let most = |height: f32| (height.max(0.0) / nearest + ANGLE_EPSILON).min(1.0);
+        let (factor, dist) = if emission.omnidirectional {
+            (HALF, nearest + world.surflightskydist.get())
+        } else if emission.rescale {
+            (1.0, nearest)
+        } else {
+            let from_emitter = most(ahead - dot(self.normal, self.pos));
+            let to_emitter = reach
+                .facing
+                .map_or(1.0, |(normal, least)| most(dot(self.pos, normal) - least));
+            (from_emitter * to_emitter, nearest)
+        };
+        emission
+            .colour_at(world, by * factor * DIM_MARGIN, dist, clamp)
+            .iter()
+            .all(|c| *c <= BOUNCE_GATE)
+    }
+
     /// `SurfaceLight_SphereCull`: whether `emission` cannot reach `patch`: what the emitter
     /// sees misses the face's box, or the whole of its light is too dim at the far side of
     /// the sphere around the face (LIGHT-20.5).
@@ -581,6 +631,105 @@ mod tests {
             ..emission
         };
         assert!(!emitter.is_turned_from(&sky, &below));
+    }
+
+    // spec LIGHT-20.8: a face whose samples can none of them be given more than the gate,
+    // by how near its box is to the emitter and how far it can be turned to it, is passed
+    // over; one with a sample that could be is not.
+    #[test]
+    fn a_face_too_dim_at_its_nearest_is_passed_over() {
+        let world = World::default();
+        let emitter = Emitter {
+            pos: [0.0, 0.0, 1.0],
+            normal: [0.0, 0.0, 1.0],
+            bounds: None,
+            leaves: Vec::new(),
+            emissions: Vec::new(),
+        };
+        let emission = Emission {
+            stage: Stage::Bounce(0),
+            omnidirectional: false,
+            rescale: false,
+            atten: 1.0,
+            style: 0,
+            intensity: 128.0 * 128.0,
+            colour: [1.0; 3],
+        };
+        let reach = |low: Vec3, high: Vec3, facing: Option<(Vec3, f32)>| Reach {
+            bounds: Aabb {
+                mins: low,
+                maxs: high,
+            },
+            facing,
+        };
+        let most_at_corners = |reach: &Reach, normal: Option<Vec3>| {
+            let mut most = 0.0_f32;
+            for x in [reach.bounds.mins[0], reach.bounds.maxs[0]] {
+                for y in [reach.bounds.mins[1], reach.bounds.maxs[1]] {
+                    for z in [reach.bounds.mins[2], reach.bounds.maxs[2]] {
+                        let given =
+                            emitter.lighting(&world, &emission, emitter.toward([x, y, z]), normal);
+                        most = most.max(given[0]);
+                    }
+                }
+            }
+            most
+        };
+        // A ceiling close above, facing down, is given half of one.
+        let above = reach(
+            [-8.0, -8.0, 64.0],
+            [8.0, 8.0, 64.0],
+            Some(([0.0, 0.0, -1.0], -64.0)),
+        );
+        assert!(!emitter.is_dim_within(&world, &emission, &above));
+        assert!(most_at_corners(&above, Some([0.0, 0.0, -1.0])) > BOUNCE_GATE);
+        // A strip far to the side and barely ahead of the emitter: no face is turned from
+        // the other, but the emitter's cosine leaves it under the gate.
+        let aside = reach([300.0, -8.0, 1.0], [316.0, 8.0, 3.0], None);
+        assert!(!emitter.is_turned_from(&emission, &aside));
+        assert!(emitter.is_dim_within(&world, &emission, &aside));
+        assert!(most_at_corners(&aside, None) <= BOUNCE_GATE);
+        // The same strip reaching high over the emitter is not.
+        let tall = reach([300.0, -8.0, 1.0], [316.0, 8.0, 300.0], None);
+        assert!(!emitter.is_dim_within(&world, &emission, &tall));
+        assert!(most_at_corners(&tall, None) > BOUNCE_GATE);
+        // A floor far off, facing up, that the emitter is barely over: its own cosine
+        // leaves it under the gate; with no one normal that is not known.
+        let low = reach(
+            [400.0, -8.0, -4.0],
+            [416.0, 8.0, -4.0],
+            Some(([0.0, 0.0, 1.0], -4.0)),
+        );
+        let bright = Emission {
+            intensity: 128.0 * 128.0 * 8.0,
+            ..emission
+        };
+        let over = Emitter {
+            normal: [1.0, 0.0, 0.0],
+            ..emitter.clone()
+        };
+        assert!(over.is_dim_within(&world, &bright, &low));
+        let unknown = reach([400.0, -8.0, -4.0], [416.0, 8.0, -4.0], None);
+        assert!(!over.is_dim_within(&world, &bright, &unknown));
+        // A light that shines every way has no cosine of its own; one whose colour or
+        // scale could turn the sum is never passed over.
+        let sky = Emission {
+            omnidirectional: true,
+            ..emission
+        };
+        assert!(!emitter.is_dim_within(&world, &sky, &above));
+        let faint = Emission {
+            intensity: 1.0,
+            omnidirectional: true,
+            ..emission
+        };
+        assert!(emitter.is_dim_within(&world, &faint, &above));
+        let odd = Emission {
+            colour: [-1.0, 0.0, 0.0],
+            intensity: 1.0,
+            ..emission
+        };
+        assert!(!emitter.is_dim_within(&world, &odd, &aside));
     }
 
     // spec LIGHT-16.4: a surface light's own light is scaled by `_surflightscale`, clamped at

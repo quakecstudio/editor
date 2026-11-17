@@ -586,10 +586,10 @@ impl Oracles<'_> {
     }
 
     /// The map compiled by ericw-tools' qbsp and lit by ours, in the extended dialect, and by
-    /// ericw-tools' light, both with one sample a luxel: the grey lumps compared, and the `.lit`
+    /// ericw-tools' light, with one sample a luxel and with `-extra`: the grey lumps compared, and the `.lit`
     /// files when both wrote one; whether they agree.
     fn ericw(&self, path: &Path, text: &[u8], (dir, name): (&Path, &str)) -> Result<bool, String> {
-        let [ericw_qbsp, _, ericw_light] = &self.tools.ericw;
+        let [ericw_qbsp, _, _] = &self.tools.ericw;
         let dir = dir.join("ericw");
         let label = format!("{name} ericw");
         let text = &self.with_textures(text, name)?;
@@ -617,9 +617,34 @@ impl Oracles<'_> {
             palette: Some(&BLACK_PALETTE),
             ..sidecars.extras()
         };
-        let ours = match Light::new(Sampling::Fast)
+        // Each mode: the four samples a luxel of `-extra` are where ours gathers the bounce
+        // and asks the suns by the luxel (LIGHT-14.9, LIGHT-20.7).
+        let mut agrees = true;
+        for mode in Mode::ALL {
+            let label = match mode {
+                Mode::Fast => label.clone(),
+                Mode::Extra => format!("{label} extra"),
+            };
+            agrees &=
+                self.ericw_lit(mode, &compiled.bsp, (extras, jitter), (&dir, name, &label))?;
+        }
+        Ok(agrees)
+    }
+
+    /// The BSP `bsp`, which ericw-tools' qbsp compiled in `dir`, lit in `mode` by ours and by
+    /// ericw-tools' light: whether the grey lumps, and the `.lit` files when both wrote one,
+    /// agree.
+    fn ericw_lit(
+        &self,
+        mode: Mode,
+        bsp: &[u8],
+        (extras, jitter): (Extras<'_>, Jitter),
+        (dir, name, label): (&Path, &str, &str),
+    ) -> Result<bool, String> {
+        let [_, _, ericw_light] = &self.tools.ericw;
+        let ours = match Light::new(mode.sampling())
             .with_jitter(jitter)
-            .run_with(&compiled.bsp, extras)
+            .run_with(bsp, extras)
         {
             Ok(ours) => ours,
             Err(error) => {
@@ -627,10 +652,10 @@ impl Oracles<'_> {
                 return Ok(false);
             }
         };
-        let file = dir.join("ours.bsp");
+        let file = dir.join(format!("ours-{}.bsp", mode.name()));
         fs::write(&file, &ours.bsp).map_err(|e| format!("{}: {e}", file.display()))?;
         // Lit where it was compiled, beside the `.texinfo.json` ericw-tools' qbsp wrote for it.
-        let theirs = match oracle_light(self.exec, ericw_light, &[], &compiled.bsp, (&dir, name))? {
+        let theirs = match oracle_light(self.exec, ericw_light, mode.options(), bsp, (dir, name))? {
             Ok(theirs) => theirs,
             Err(stop) => {
                 println!("FAIL  {label}: ericw-tools' light stops: {stop}");

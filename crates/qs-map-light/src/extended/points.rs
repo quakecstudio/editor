@@ -14,7 +14,8 @@ use super::math::count_of;
 use crate::extended::keys::{CHANNEL_DEFAULT, Dirt};
 use crate::extended::math::{
     Aabb, POINT_EQUAL_EPSILON, Plane, add, closest_on_boundary, distance, dot, edge_plane,
-    fraction_of_line, inside_distance, interpolated_normal, is_inside, length, scale, sub,
+    fraction_of_line, inside_distance, interpolated_normal, is_inside, length, normalize, scale,
+    sub,
 };
 use crate::extended::phong::Smoothing;
 use crate::extended::scene::{Map, Skin};
@@ -48,6 +49,50 @@ pub(crate) struct Sample {
     pub(crate) occluded: bool,
     /// How much of the sky above it is closed off, 0 to 1 (LIGHT-19).
     pub(crate) occlusion: f32,
+}
+
+impl Sample {
+    /// Where `samples` are, taken together: the mean of those that are not hidden, and of
+    /// their normals; hidden when each of them is (LIGHT-20.7).
+    fn together<'a>(samples: impl Iterator<Item = &'a Self>) -> Self {
+        let (mut point, mut normal, mut seen) = ([0.0; AXES], [0.0; AXES], 0.0_f32);
+        for sample in samples.filter(|sample| !sample.occluded) {
+            point = add(point, sample.point);
+            normal = add(normal, sample.normal);
+            seen += 1.0;
+        }
+        Self {
+            point: scale(point, 1.0 / seen.max(1.0)),
+            normal: normalize(normal),
+            occluded: seen == 0.0,
+            occlusion: 0.0,
+        }
+    }
+}
+
+/// The places, among samples `width` across, of the samples of luxel `luxel`, `per_luxel` of
+/// them each way.
+fn luxel_samples(
+    luxel: usize,
+    width: usize,
+    per_luxel: usize,
+) -> impl Iterator<Item = usize> + use<> {
+    let across = width.checked_div(per_luxel).unwrap_or(0);
+    let (i, j) = (
+        luxel.checked_rem(across).unwrap_or(0),
+        luxel.checked_div(across).unwrap_or(0),
+    );
+    let first = j
+        .saturating_mul(per_luxel)
+        .saturating_mul(width)
+        .saturating_add(i.saturating_mul(per_luxel));
+    (0..per_luxel).flat_map(move |dt| {
+        (0..per_luxel).map(move |ds| {
+            first
+                .saturating_add(dt.saturating_mul(width))
+                .saturating_add(ds)
+        })
+    })
 }
 
 /// Where a sample was placed (`position_t`).
@@ -238,6 +283,12 @@ pub(crate) struct Patch {
     pub(crate) width: usize,
     pub(crate) height: usize,
     pub(crate) samples: Vec<Sample>,
+    /// With more than one sample a luxel each way: for each luxel, where its samples that are
+    /// not hidden are, taken together, where
+    /// the light that bounces is gathered for the luxel's samples (LIGHT-20.7).
+    pub(crate) middles: Vec<Sample>,
+    /// The samples a luxel takes each way.
+    pub(crate) per_luxel: usize,
     pub(crate) minlight: f32,
     /// Whether the minimum light is mottled (LIGHT-17.6).
     pub(crate) mottle: bool,
@@ -270,6 +321,11 @@ impl Sampling {
 }
 
 impl Patch {
+    /// The samples of luxel `luxel`, by their places in [`Patch::samples`].
+    pub(crate) fn samples_of(&self, luxel: usize) -> impl Iterator<Item = usize> + use<> {
+        luxel_samples(luxel, self.width, self.per_luxel)
+    }
+
     /// `Lightsurf_Init` and `CalcPoints`: the face numbered `face` readied, with its samples;
     /// none for a face with no lightmap, fewer than three edges, no model or bad texture
     /// axes (LIGHT-12).
@@ -336,6 +392,18 @@ impl Patch {
                 });
             }
         }
+        // LIGHT-20.7: where each luxel's samples are, taken together.
+        let middles = if extra > 1 {
+            (0..extents.width().saturating_mul(extents.height()))
+                .map(|luxel| {
+                    Sample::together(
+                        luxel_samples(luxel, width, extra).filter_map(|at| samples.get(at)),
+                    )
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         // `CalcPvs`: a face of the world is in the leaves that list it, a brush model's in
         // the leaves its samples are in.
         let (mut leaves, mut seen) = (Vec::new(), Vec::new());
@@ -368,6 +436,8 @@ impl Patch {
             width,
             height,
             samples,
+            middles,
+            per_luxel: extra,
             minlight,
             surflight_minlight_scale: flags.surflight_minlight_scale.unwrap_or(1.0),
             // The model's key, else the world's.

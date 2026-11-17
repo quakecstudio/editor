@@ -17,7 +17,7 @@ use crate::extended::lights::{Lamp, Lights, Spot};
 use crate::extended::math::{
     add, distance, dot, length, normalize, normalize_with_length, scale, sub,
 };
-use crate::extended::points::Patch;
+use crate::extended::points::{Patch, Sample};
 use crate::extended::rays::{Asker, LastBlocker, ModelId, Passed, Rays, Stack, Surface};
 use crate::extended::scene::Map;
 use crate::extended::sun::Sun;
@@ -455,10 +455,8 @@ impl Shader<'_> {
         }
         let asker = self.asker(patch, CHANNEL_DEFAULT);
         let mut slot: Option<(i32, usize)> = None;
-        for (index, sample) in patch.samples.iter().enumerate() {
-            if sample.occluded {
-                continue;
-            }
+        // What the sun gives a sample before any shadow; none within the gate.
+        let colour_of = |sample: &Sample| {
             let mut angle = dot(incoming, sample.normal);
             if patch.twosided && angle < 0.0 {
                 angle = -angle;
@@ -469,20 +467,89 @@ impl Shader<'_> {
                 value *= self.dirt_scale(sample.occlusion, DirtFor::Ambient, Some(patch));
             }
             let colour = scale(sun.color, value / FULL);
-            if brightness(colour).abs() <= GATE {
-                continue;
-            }
-            let Some((passed, sky)) =
+            (brightness(colour).abs() > GATE).then_some(colour)
+        };
+        // What a ray from `point` toward the sun passes on its way to sky; none when it
+        // reaches none, or sky of another texture than the sun's (LIGHT-14.8).
+        let to_sky = |point: Vec3, stack: &mut Stack| {
+            let (passed, sky) =
                 self.rays
-                    .sees_sky((sample.point, incoming, SKY_DIST), &asker, self.map, stack)
-            else {
-                continue;
-            };
-            // LIGHT-14.8: a sun with a texture comes only through sky of that texture.
-            if sun.sky_texture.is_some() && self.map.texture_of(sky) != sun.sky_texture {
+                    .sees_sky((point, incoming, SKY_DIST), &asker, self.map, stack)?;
+            (sun.sky_texture.is_none() || self.map.texture_of(sky) == sun.sky_texture)
+                .then_some(passed)
+        };
+        if patch.middles.is_empty() {
+            for (index, sample) in patch.samples.iter().enumerate() {
+                if !sample.occluded
+                    && let Some(colour) = colour_of(sample)
+                    && let Some(passed) = to_sky(sample.point, stack)
+                {
+                    self.add(lightmaps, &mut slot, (sun.style, passed), index, colour);
+                }
+            }
+            return;
+        }
+        // LIGHT-14.9: whether a luxel is in the sun's shadow is asked once, at its middle,
+        // for a luxel well inside the light or the shadow; one whose middle is hidden, or
+        // that has a luxel beside it answered otherwise, on the shadow's edge, asks at each
+        // sample.
+        let across = patch.width.checked_div(patch.per_luxel).unwrap_or(0);
+        let down = patch.height.checked_div(patch.per_luxel).unwrap_or(0);
+        let lit_of = |luxel: usize| -> Vec<(usize, Vec3)> {
+            patch
+                .samples_of(luxel)
+                .filter_map(|index| {
+                    let sample = patch.samples.get(index)?;
+                    (!sample.occluded).then_some(())?;
+                    Some((index, colour_of(sample)?))
+                })
+                .collect()
+        };
+        // Each luxel's answer at its middle; none for a hidden middle.
+        let answers: Vec<Option<Option<Passed>>> = patch
+            .middles
+            .iter()
+            .map(|middle| (!middle.occluded).then(|| to_sky(middle.point, stack)))
+            .collect();
+        let reached = |i: Option<usize>, j: Option<usize>| {
+            let (i, j) = (i?, j?);
+            if i >= across || j >= down {
+                return None;
+            }
+            answers
+                .get(j.saturating_mul(across).saturating_add(i))
+                .map(|answer| answer.as_ref().map(Option::is_some))
+        };
+        for (luxel, answer) in answers.iter().enumerate() {
+            let lit = lit_of(luxel);
+            if lit.is_empty() {
                 continue;
             }
-            self.add(lightmaps, &mut slot, (sun.style, passed), index, colour);
+            let (i, j) = (
+                luxel.checked_rem(across).unwrap_or(0),
+                luxel.checked_div(across).unwrap_or(0),
+            );
+            let own = answer.as_ref().map(Option::is_some);
+            let around = [i.checked_sub(1), Some(i), i.checked_add(1)];
+            let on_edge = own.is_none()
+                || [j.checked_sub(1), Some(j), j.checked_add(1)]
+                    .into_iter()
+                    .flat_map(|nj| around.map(|ni| reached(ni, nj)))
+                    .flatten()
+                    .any(|other| other != own);
+            if on_edge {
+                for (index, colour) in lit {
+                    if let Some(sample) = patch.samples.get(index)
+                        && let Some(passed) = to_sky(sample.point, stack)
+                    {
+                        self.add(lightmaps, &mut slot, (sun.style, passed), index, colour);
+                    }
+                }
+            } else if let Some(Some(passed)) = answer {
+                for (index, colour) in lit {
+                    self.add(lightmaps, &mut slot, (sun.style, *passed), index, colour);
+                }
+            }
         }
     }
 
@@ -679,11 +746,15 @@ impl Shader<'_> {
         let Some(reach) = Reach::of(patch) else {
             return;
         };
+        // What each sample is given and each luxel's ray passed, for one emission at a time.
+        let mut givens: Vec<Option<Vec3>> = Vec::new();
+        let mut answers: Vec<Option<Option<Passed>>> = Vec::new();
         for emitter in emitters.iter().flatten() {
             for emission in &emitter.emissions {
                 if emission.stage != stage
                     || emitter.is_culled(world, emission, patch)
                     || emitter.is_turned_from(emission, &reach)
+                    || emitter.is_dim_within(world, emission, &reach)
                     || emitter
                         .leaves
                         .iter()
@@ -693,33 +764,105 @@ impl Shader<'_> {
                 }
                 let mut at: Option<usize> = None;
                 let mut last = LastBlocker::default();
-                for (index, sample) in patch.samples.iter().enumerate() {
-                    if sample.occluded {
-                        continue;
-                    }
+                // What the emission gives a sample before anything is in the way; none
+                // within the gate.
+                let given_to = |sample: &Sample| {
                     let (dir, dist) = emitter.toward(sample.point);
                     let normal = (!patch.twosided).then_some(sample.normal);
                     let given = emitter.lighting(world, emission, (dir, dist), normal);
-                    if given.iter().all(|c| *c <= BOUNCE_GATE) {
-                        continue;
-                    }
-                    let Some(passed) = self.rays.occluded_after(
-                        (emitter.pos, dir, dist),
-                        &asker,
-                        self.map,
-                        stack,
-                        &mut last,
-                    ) else {
-                        continue;
+                    (!given.iter().all(|c| *c <= BOUNCE_GATE)).then_some(given)
+                };
+                // What a ray from the emitter to `point` passes; none when it is stopped.
+                let mut passed_to = |point: Vec3, stack: &mut Stack| {
+                    let (dir, dist) = emitter.toward(point);
+                    let ray = (emitter.pos, dir, dist);
+                    self.rays
+                        .occluded_after(ray, &asker, self.map, stack, &mut last)
+                };
+                let mut add_to = |lightmaps: &mut Lightmaps, index: usize, given: Vec3| {
+                    let Some(sample) = patch.samples.get(index) else {
+                        return;
                     };
                     let dirt = self.dirt_scale(sample.occlusion, DirtFor::Ambient, Some(patch));
                     let slot = *at.get_or_insert_with(|| lightmaps.for_style(emission.style));
-                    lightmaps.reach(
-                        slot,
-                        emission.style,
-                        index,
-                        scale(passed.tinted(given), dirt),
+                    lightmaps.reach(slot, emission.style, index, scale(given, dirt));
+                };
+                let by_luxel = matches!(stage, Stage::Bounce(_)) && !patch.middles.is_empty();
+                if !by_luxel {
+                    for (index, sample) in patch.samples.iter().enumerate() {
+                        if !sample.occluded
+                            && let Some(given) = given_to(sample)
+                            && let Some(passed) = passed_to(sample.point, stack)
+                        {
+                            add_to(lightmaps, index, passed.tinted(given));
+                        }
+                    }
+                    continue;
+                }
+                // LIGHT-20.7: what a bounce gives is worked out for each sample, but whether
+                // anything is in its way is asked once for a luxel, from where its samples
+                // are taken together; a luxel with a neighbour answered otherwise is on the
+                // edge of the bounce's shadow and asks at each sample.
+                givens.clear();
+                givens.extend(
+                    patch
+                        .samples
+                        .iter()
+                        .map(|sample| (!sample.occluded).then(|| given_to(sample)).flatten()),
+                );
+                if givens.iter().all(Option::is_none) {
+                    continue;
+                }
+                let lit = |luxel: usize| {
+                    patch
+                        .samples_of(luxel)
+                        .any(|index| givens.get(index).is_some_and(Option::is_some))
+                };
+                // Each luxel that takes light: what its one ray passed.
+                answers.clear();
+                for (luxel, middle) in patch.middles.iter().enumerate() {
+                    answers.push(lit(luxel).then(|| passed_to(middle.point, stack)));
+                }
+                let across = patch.width.checked_div(patch.per_luxel).unwrap_or(0);
+                let down = patch.height.checked_div(patch.per_luxel).unwrap_or(0);
+                let reached = |i: Option<usize>, j: Option<usize>| {
+                    let (i, j) = (i?, j?);
+                    (i < across && j < down)
+                        .then(|| answers.get(j.saturating_mul(across).saturating_add(i)))
+                        .flatten()?
+                        .as_ref()
+                        .map(Option::is_some)
+                };
+                for (luxel, answer) in answers.iter().enumerate() {
+                    let Some(passed) = answer else {
+                        continue;
+                    };
+                    let (i, j) = (
+                        luxel.checked_rem(across).unwrap_or(0),
+                        luxel.checked_div(across).unwrap_or(0),
                     );
+                    let around = [i.checked_sub(1), Some(i), i.checked_add(1)];
+                    let on_edge = [j.checked_sub(1), Some(j), j.checked_add(1)]
+                        .into_iter()
+                        .flat_map(|nj| around.map(|ni| reached(ni, nj)))
+                        .flatten()
+                        .any(|other| other != passed.is_some());
+                    for index in patch.samples_of(luxel) {
+                        let Some(given) = givens.get(index).copied().flatten() else {
+                            continue;
+                        };
+                        let passed = if on_edge {
+                            patch
+                                .samples
+                                .get(index)
+                                .and_then(|sample| passed_to(sample.point, stack))
+                        } else {
+                            *passed
+                        };
+                        if let Some(passed) = passed {
+                            add_to(lightmaps, index, passed.tinted(given));
+                        }
+                    }
                 }
             }
         }

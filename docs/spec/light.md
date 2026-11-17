@@ -671,6 +671,18 @@ The world's settings, each with its default; a second name is another key for th
   sky (`sun.suntexture_value = img::find(suntexture)`, null when it is not found). The world's
   own suns and domes have none. The light at a point (LIGHT-17.5) does not ask the texture.
   Source: `light/ltface.cc`, `LightFace_Sky`; `light/entities.cc`, `AddSun`.
+- **LIGHT-14.9** ericw-tools asks, for every sample, whether a ray toward each sun reaches
+  sky (`LightFace_Sky`: `rs.pushRay(i, surfpoint, incoming, MAX_SKY_DIST, &color,
+  &normalcontrib);` for each sample not hidden). Ours, for speed, with more than one sample a
+  luxel each way: the ray is first asked once for each luxel, from where its samples that are
+  not hidden are taken together (LIGHT-20.7); a luxel whose answer is that of each of the
+  eight luxels around it lies well inside the sun's light or its shadow, and the answer is
+  each of its samples'; a luxel with a neighbour answered otherwise, or with none of its
+  samples seen, lies on the shadow's edge and asks at each sample, as ericw-tools does. Each
+  sample's light is still its own: its angle to the sun and its dirt (LIGHT-14.7). With one
+  sample a luxel every sample asks. A face none of whose rays can reach sky toward a sun asks
+  none (the box round its samples, moved toward the sun, meets no sky), which changes no
+  sample's light.
 
 ## LIGHT-15 The sky dome
 
@@ -882,3 +894,21 @@ The world's settings, each with its default; a second name is another key for th
   palette colours, each channel cut to a whole number, and black for a texture with no
   texels. With no palette given a texture's own colour is not known and it bounces grey. A
   face with no texture name bounces a half.
+- **LIGHT-20.7** ericw-tools asks, for every sample and every bouncing face that gives it
+  more than the gate, whether anything stops the ray from the face to the sample
+  (`LightFace_SurfaceLight`). Ours, for speed, with more than one sample a luxel each way:
+  what a bounce gives is still worked out for each sample (LIGHT-20.4), but the ray is first
+  asked once for each luxel that has a sample given light, to where its samples that are not
+  hidden are taken together, the mean of their points; a luxel whose answer is that of each
+  of the eight luxels around it lies well inside the bounce's light or its shadow, and the
+  answer is each of its samples'; a luxel with a neighbour answered otherwise lies on the
+  shadow's edge and asks at each sample, as ericw-tools does. The surface lights' own light
+  (LIGHT-16.4) is still asked at every sample. With one sample a luxel every sample asks.
+  `cargo xtask light-diff` holds the result to ericw-tools' `-extra` on every corpus map.
+- **LIGHT-20.8** A bounce or surface light is also passed over for a face, ours alone, when
+  no sample of the face could be given more than the gate (LIGHT-20.5): the most LIGHT-20.4
+  gives at the nearest the box round the face's samples is to the light, with the cosine at
+  the light no more than the box's height over the light's plane leaves at that distance,
+  and the cosine at the samples, when they share a normal, no more than the light's height
+  over their plane leaves, is at most 0.01 on every channel, by a hundredth to spare. No
+  sample's light differs for it.
