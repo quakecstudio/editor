@@ -4025,7 +4025,7 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   string), then the pragmas in the white space before the token, which `QCC_PR_Lex` runs as it
   lexes it. The flags kept are those the lexer reads (FTEF-12.12), `cpriority`, `assumevar`,
   `subscope`, `attributes`, `ifvector` and `vectorlogic` (FTEF-30.2), with the operator
-  priorities (FTEF-21.4) and the defaults of FTEF-21.14; a pragma that names none of them marks nothing, and the others are FTEF-21.20's.
+  priorities (FTEF-21.4) and the defaults of FTEF-21.14; a pragma that names none of them marks nothing, and the others are FTEF-21.26's.
   A flag read while the parser looks at a token, as FTEQCC reads one after it has lexed the token
   after what it read, is the flag at that token: `subscope` at a block's end is read at the token
   after its `}`. The token after an `extern` block is lexed with the block's flags and read with
@@ -4198,7 +4198,7 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   preprocessor's.
 - **FTEF-21.18** **Withdrawn** (P2-06, #587): it listed `ifvector` and `vectorlogic` among the
   flags the semantic model does not read, but a condition's test reads them (FTEF-30.2).
-  Replaced by FTEF-21.20.
+  Replaced by FTEF-21.20, itself replaced by FTEF-21.26.
 - **FTEF-21.19** A `break` that no loop or `switch` holds, a `continue` that no loop holds, and a
   `case` or `default` label that no `switch` holds, are counted (`num_breaks`, `num_continues`,
   `num_cases`) and left over at the function's end: "%s: function contains illegal breaks", "%s:
@@ -4209,9 +4209,18 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   are errors, a `break` in a `switch`, `loop` or `until`, a `continue` in a loop and a label in a
   `switch` are not. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseImmediateStatements`, `QCC_PR_ParseStatement`.
-- **FTEF-21.20** The flags a pragma may set mid-compile that no token, tree, definition or cast
+- **FTEF-21.20** **Withdrawn** 2026-11-17: it listed `boundchecks` among the flags not
+  modelled, which the lowering of an index now reads (FTEF-21.25, FTEF-31.24). Replaced by
+  FTEF-21.26.
+- **FTEF-21.25** `boundchecks` is kept with FTEF-21.1's flags and is not one of
+  FTEF-21.26's: the lowering of an index that is no constant reads it (FTEF-31.24). It is on
+  unless the command line or a pragma turns it off (`{&flag_boundchecks, defaultflag,
+  "boundchecks", "Enforce Bound Checks", ...}`), as `-std=c` and `-std=gmqcc` do
+  (`flag_boundchecks = false;`). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qccmain.c`, `compiler_flag`, `QCC_PR_CommandLinePrecompilerOptions`.
+- **FTEF-21.26** The flags a pragma may set mid-compile that no token, tree, definition or cast
   of the semantic model reads are not modelled, each for its reason: `nosave`'s default but for
-  a typedef, and `optimise`, `opcode`, `iffloat`, `ifstring`, `nullemptystr`, `boundchecks`,
+  a typedef, and `optimise`, `opcode`, `iffloat`, `ifstring`, `nullemptystr`,
   `fastarrays`, `lo`, `reciprocal-math`, `allowuninit`, `omitinternals`, `embedsrc`, `dumpfilenames`, `annotate`, `brokenarray`, `rootconstructor`
   and `pythonlogic`, which the compiler's output reads (P2-06 onward); `msvcstyle`,
   `debugmacros` and `verbose`, which change only what FTEQCC prints; the target's
@@ -4228,12 +4237,6 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   arithmetic read them (`QCC_PR_Statement`'s "type mismatch for OP",
   `QCC_SupplyConversionForAssignment`, `QCC_PR_GenerateLogicalTruth`, `sizeof`), the expression
   typing's (P2-06).
-- **FTEF-21.25** `boundchecks` is kept with FTEF-21.1's flags and is no longer one of
-  FTEF-21.20's: the lowering of an index that is no constant reads it (FTEF-31.24). It is on
-  unless the command line or a pragma turns it off (`{&flag_boundchecks, defaultflag,
-  "boundchecks", "Enforce Bound Checks", ...}`), as `-std=c` and `-std=gmqcc` do
-  (`flag_boundchecks = false;`). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
-  `engine/qclib/qccmain.c`, `compiler_flag`, `QCC_PR_CommandLinePrecompilerOptions`.
 - **FTEF-21.21** With `qcfuncs` off a C function a body declares (FTEF-21.10) is defined by a
   body written with it, `void x() {}`, and needs none elsewhere; C's `(*name)(params)` there is
   a variable (`isvar |= isptr>0`), no function, so `float (*x)(float); x(1);` and `entity

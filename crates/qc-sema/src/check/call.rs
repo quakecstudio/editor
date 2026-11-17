@@ -28,31 +28,6 @@ use crate::{MAX_PARMS, VECTOR_WORDS, VECTOR_WORDS_FLOAT, VECTOR_WORDS_INT};
 
 /// `MAX_PARMS + MAX_EXTRA_PARMS`: the most arguments a call may pass.
 const MAX_ARGUMENTS: usize = 136;
-/// The call of each count of parameters, `OP_CALL0` to `OP_CALL8` (QC-18.3).
-const CALLS: [Op; 9] = [
-    Op::Call0,
-    Op::Call1,
-    Op::Call2,
-    Op::Call3,
-    Op::Call4,
-    Op::Call5,
-    Op::Call6,
-    Op::Call7,
-    Op::Call8,
-];
-/// The call of each count of parameters on a target with `OP_CALL1H`, `OP_CALL0` with none
-/// (FTEF-32.19).
-const CALLS_BY_OPERANDS: [Op; 9] = [
-    Op::Call0,
-    Op::Call1h,
-    Op::Call2h,
-    Op::Call3h,
-    Op::Call4h,
-    Op::Call5h,
-    Op::Call6h,
-    Op::Call7h,
-    Op::Call8h,
-];
 /// The parameters `OP_CALL1H` to `OP_CALL8H` take as their own operands (FTEF-32.19).
 const REGISTER_PARMS: usize = 2;
 
@@ -540,6 +515,7 @@ impl Checker<'_> {
                 }
                 None => u8::try_from(field.slot).ok().map(ir::Name::Parameter),
             };
+            let in_register = register.is_some();
             if let Some(register) = register {
                 *register = slot;
             }
@@ -548,8 +524,9 @@ impl Checker<'_> {
                 .load
                 .iter()
                 .map(|&s| ir::BodyStatement {
-                    // A register's is the field's own load, `QCC_RefToDef` (FTEF-32.19).
-                    op: if registers || s.op == Op::LoadV {
+                    // A register's is the field's own load, `QCC_RefToDef` (FTEF-32.19); a
+                    // slot's is by its size, on any target (FTE-18.11).
+                    op: if in_register || s.op == Op::LoadV {
                         s.op
                     } else {
                         Op::LoadF
@@ -628,7 +605,11 @@ impl Checker<'_> {
                 ..ir::BodyStatement::bare(if vector { Op::StoreV } else { Op::StoreF })
             });
         }
-        let call = if registers { CALLS_BY_OPERANDS } else { CALLS };
+        let call = if registers {
+            Op::CALLS_BY_OPERANDS
+        } else {
+            Op::CALLS
+        };
         if let Some(&call) = call.get(passed) {
             self.clobber_return();
             let [b, c] = operands;
@@ -794,33 +775,15 @@ impl Checker<'_> {
             };
             self.generate(store, span);
         }
-        let calls: [Op; 8] = if registers {
-            [
-                Op::Call1h,
-                Op::Call2h,
-                Op::Call3h,
-                Op::Call4h,
-                Op::Call5h,
-                Op::Call6h,
-                Op::Call7h,
-                Op::Call8h,
-            ]
+        let calls = if registers {
+            Op::CALLS_BY_OPERANDS
         } else {
-            [
-                Op::Call1,
-                Op::Call2,
-                Op::Call3,
-                Op::Call4,
-                Op::Call5,
-                Op::Call6,
-                Op::Call7,
-                Op::Call8,
-            ]
+            Op::CALLS
         };
-        let call = match parms.checked_sub(1) {
-            None => Op::Call0,
-            Some(last) => calls.get(last.min(7)).copied().unwrap_or(Op::Call8),
-        };
+        let call = calls
+            .get(parms.min(usize::from(MAX_PARMS)))
+            .copied()
+            .unwrap_or(Op::Call8);
         self.generate(call, span);
     }
 
@@ -1285,19 +1248,8 @@ impl FunctionType {
 }
 
 /// `CALL0` to `CALL8`, the call of `passed` arguments, the opcode of the count (QC-18.3).
-pub(super) const fn call_opcode(passed: usize) -> Option<Op> {
-    Some(match passed {
-        0 => Op::Call0,
-        1 => Op::Call1,
-        2 => Op::Call2,
-        3 => Op::Call3,
-        4 => Op::Call4,
-        5 => Op::Call5,
-        6 => Op::Call6,
-        7 => Op::Call7,
-        8 => Op::Call8,
-        _ => return None,
-    })
+pub(super) fn call_opcode(passed: usize) -> Option<Op> {
+    Op::CALLS.get(passed).copied()
 }
 
 impl Checker<'_> {

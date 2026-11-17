@@ -9,7 +9,7 @@ use crate::{CommandLine, FlagSettings};
 // spec FTEF-21.1: the flags kept are the lexer's eight, `cpriority`, `assumevar`, `subscope` and
 // `attributes`, with the casts' (FTEF-22) and the truth tests' (FTEF-30); any other is read as
 // off and set to nothing
-// spec FTEF-21.20: a flag only the compiler's output reads is not kept
+// spec FTEF-21.26: a flag only the compiler's output reads is not kept
 // spec FTEF-21.25: `boundchecks`, which the lowering of an index reads, is kept, and on by
 // default
 #[test]

@@ -553,7 +553,6 @@ magic-number	crates/qc-sema/src/cast.rs	assumed_int:9223372036854775807
 magic-number	crates/qc-sema/src/check/assign.rs	Checker::convert_to:3
 magic-number	crates/qc-sema/src/check/assign.rs	Checker::local_declarator:8
 magic-number	crates/qc-sema/src/check/call.rs	Checker::generate_call:3
-magic-number	crates/qc-sema/src/check/call.rs	Checker::generate_call:7
 magic-number	crates/qc-sema/src/check/call.rs	Checker::intrinsic_value:3
 magic-number	crates/qc-sema/src/check/call.rs	Checker::intrinsic_value:4
 magic-number	crates/qc-sema/src/check/constant.rs	Constant::of_number:10

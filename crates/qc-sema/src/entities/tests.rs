@@ -205,6 +205,24 @@ fn setmodel_and_setsize_give_the_model_and_size() {
     assert_eq!(wall.size, None);
 }
 
+// spec FTEF-32.19: on a target whose calls pass their first two arguments as their own
+// operands, the model and the size are read from the call
+#[test]
+fn a_call_by_operands_gives_the_model_and_size() {
+    let source = "#pragma target fte_5768\n\
+        void() item_thing = { setmodel(self, \"progs/thing.mdl\"); \
+        setsize(self, '-16 -16 0', '16 16 56'); if (self.mins) self.wait = 1; };\n\
+        void() func_wall2 = { setmodel(self, self.model); };\n";
+    let found = classes(&ModuleSpec {
+        files: &[source],
+        dialect: qc_syntax::Dialect::Fteqcc,
+    });
+    let item = class(&found, "item_thing");
+    assert_eq!(item.model.as_deref(), Some("progs/thing.mdl"));
+    assert_eq!(item.size, Some([[-16.0, -16.0, 0.0], [16.0, 16.0, 56.0]]));
+    assert_eq!(class(&found, "func_wall2").shape, Shape::Brush);
+}
+
 // No spec statement: P5-03: a comment's colour, box, brush mark, flags and text; the rerelease
 // writes /* and QUAKED on separate lines; a comment that is not QUAKED is skipped
 #[test]

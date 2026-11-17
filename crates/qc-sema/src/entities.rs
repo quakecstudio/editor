@@ -226,6 +226,11 @@ impl Db {
                     continue;
                 }
                 if is_call(statement.op) {
+                    for (slot, name) in statement.operand_arguments() {
+                        if let Some(param) = params.get_mut(slot) {
+                            *param = name;
+                        }
+                    }
                     let callee = match statement.a {
                         Some(Name::Def(id, 0)) => index.def(id).map(|d| d.name.as_str()),
                         _ => None,
@@ -629,6 +634,15 @@ impl Classes<'_> {
                 continue;
             }
             if is_call(statement.op) {
+                for (slot, name) in statement.operand_arguments() {
+                    if args.len() <= slot {
+                        args.resize(slot.saturating_add(1), None);
+                    }
+                    let value = self.value(name, body);
+                    if let Some(arg) = args.get_mut(slot) {
+                        *arg = value;
+                    }
+                }
                 if let Some(Name::Def(id, 0)) = statement.a
                     && let Some(def) = self.index.def(id)
                 {
@@ -648,6 +662,10 @@ impl Classes<'_> {
                 model = matches!(statement.a, Some(Name::Made(index))
                     if self.field_at(code, index).as_deref() == Some(MODEL));
             } else if is_call(statement.op) {
+                // `CALL2H setmodel, self, self.model`: the model is the call's own operand.
+                if let Some((_, Some(Name::Made(index)))) = statement.operand_arguments().nth(1) {
+                    model = self.field_at(code, index).as_deref() == Some(MODEL);
+                }
                 let callee = match statement.a {
                     Some(Name::Def(id, 0)) => self.index.def(id).map(|d| d.name.as_str()),
                     _ => None,
@@ -769,19 +787,8 @@ const fn is_store(op: Op) -> bool {
 }
 
 /// Whether `op` calls a function.
-const fn is_call(op: Op) -> bool {
-    matches!(
-        op,
-        Op::Call0
-            | Op::Call1
-            | Op::Call2
-            | Op::Call3
-            | Op::Call4
-            | Op::Call5
-            | Op::Call6
-            | Op::Call7
-            | Op::Call8
-    )
+fn is_call(op: Op) -> bool {
+    op.call().is_some()
 }
 
 /// The flag a float holds, when it is one power of two.

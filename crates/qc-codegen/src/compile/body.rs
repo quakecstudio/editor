@@ -9,7 +9,6 @@
 //! it.
 
 use qc_diag::Span;
-use qc_progs::opcode::Opcode;
 use qc_sema::ir::{BodyStatement, Effect, Name, StatementIndex};
 use qc_sema::lower::{Qualifier, declares};
 use qc_sema::{DefId, FileId, TypedBody};
@@ -97,7 +96,6 @@ impl Compiler<'_> {
             // FTEF-25: an opcode beyond id's (`OP_NUMREALOPS` and below) is written by its FTE
             // number, as the checker chose it for the target; id's are also known as `Opcode`.
             let number = u32::try_from(statement.op.number()).ok().at(named)?;
-            let op = Opcode::from_number(number);
             let mut operands = [0_i32; STATEMENT_OPERANDS];
             for (word, name) in operands
                 .iter_mut()
@@ -116,15 +114,23 @@ impl Compiler<'_> {
                     self.program.mark_shared(operand);
                 }
             }
-            // FTE-18.4: a precache builtin's first argument is recorded.
-            let [a, _, _] = operands;
+            // FTE-18.4: a precache builtin's first argument is recorded: what a statement
+            // stored to the first slot, or the call's own second operand (FTEF-32.19).
+            let [a, b, _] = operands;
             match (statement.b, statement.c) {
                 (Some(Name::Parameter(0)), _) => first_argument = u32::try_from(a).ok(),
                 (_, Some(Name::Parameter(0))) => first_argument = None,
                 _ => {}
             }
+            let call = statement.op.call();
+            if let Some((count, passing)) = call
+                && count > 0
+                && passing.operands() > 0
+            {
+                first_argument = u32::try_from(b).ok();
+            }
             if let Some(Name::Def(callee, _)) = statement.a
-                && op.is_some_and(is_call)
+                && call.is_some()
             {
                 if let (Some(def), Some(ofs)) = (self.index.def(callee), first_argument) {
                     self.precaches.record(&def.name, &self.program, ofs);
@@ -547,39 +553,10 @@ fn writable(body: &TypedBody, bare: BareReturn) -> bool {
     })
 }
 
-/// The arguments a call the semantic model generates passes, `CALL0` to `CALL8`; `None` for
-/// any other opcode.
+/// The arguments a call the semantic model generates passes, `CALL0` to `CALL8` and `CALL1H`
+/// to `CALL8H`; `None` for any other opcode.
 pub(super) fn call_count(op: qc_preproc::Op) -> Option<usize> {
-    use qc_preproc::Op;
-    /// The calls by the arguments they pass: `CALL0` passes none.
-    const CALLS: [Op; 9] = [
-        Op::Call0,
-        Op::Call1,
-        Op::Call2,
-        Op::Call3,
-        Op::Call4,
-        Op::Call5,
-        Op::Call6,
-        Op::Call7,
-        Op::Call8,
-    ];
-    CALLS.iter().position(|&call| call == op)
-}
-
-/// Whether `op` is a call, `CALL0` to `CALL8`.
-fn is_call(op: Opcode) -> bool {
-    matches!(
-        op,
-        Opcode::Call0
-            | Opcode::Call1
-            | Opcode::Call2
-            | Opcode::Call3
-            | Opcode::Call4
-            | Opcode::Call5
-            | Opcode::Call6
-            | Opcode::Call7
-            | Opcode::Call8
-    )
+    op.call().map(|(count, _)| count)
 }
 
 /// What the writer looks up in a body's syntax, read in one pass over it: each declarator by

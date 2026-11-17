@@ -19,7 +19,7 @@ use crate::check::{
     Constness, CvarValue, Env, FunctionFacts, ParamFacts, PathList, Shape, StructMemberFacts, Temps,
 };
 use crate::lower::ValueKind;
-use crate::lower::{ArrayDim, LiteralValue, RawLocal};
+use crate::lower::{ArrayDim, LiteralValue, Qualifier, RawLocal};
 use crate::resolve::{AccessorFacts, Layout, MAX_TYPEDEF_DEPTH, Resolver};
 use crate::symbol::{DefId, DefKind, Definition, FileId};
 use crate::ty::{SimpleType, Type};
@@ -208,6 +208,12 @@ impl Env for BodyEnv<'_, '_> {
         self.locals
             .iter()
             .any(|local| local.span.start == at && local.is_static())
+    }
+
+    fn local_written_static(&self, at: usize) -> bool {
+        self.locals
+            .iter()
+            .any(|local| local.span.start == at && local.has(&Qualifier::Static))
     }
 
     fn size_local(&mut self, at: usize, size: u32) {

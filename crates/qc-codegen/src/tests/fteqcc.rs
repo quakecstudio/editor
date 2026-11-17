@@ -4414,3 +4414,106 @@ fn an_initialiser_names_a_function_before_its_body() {
     assert_eq!(global_words(&p, "fp", 1), [2]);
     assert_eq!(global_words(&p, "late", 1), [2]);
 }
+
+// spec FTEF-32.19: a call by operands is a call to everything that reads a body: a value live
+// across it is kept in the function's own block, a parameter's kept default is the call's
+// operand, and a precache's file is recorded
+#[test]
+fn a_call_by_operands_is_a_call_to_what_reads_a_body() {
+    use qc_preproc::Op;
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let source = |target: &str| {
+        format!(
+            "{target}float a; float b; float c; float r;\nvoid(string s) precache_model = #20;\n\
+             float sq(float x) {{ return x * x; }}\nvoid two(float x, float y = 5) {{ }}\n\
+             void t(void) {{ r = (a + b) * sq(c); two(1); precache_model(\"progs/a.mdl\"); }}\n"
+        )
+    };
+    let compiled = compile_fteqcc(&source("#pragma target fte_5768\n")).unwrap();
+    let p = &compiled.progs;
+    let statements = body(p, "t");
+    let call = statements.iter().find(|s| s.a == global(p, "sq")).unwrap();
+    assert_eq!(call.op, number(Op::Call1h));
+    // The sum is not where the callee's own product goes.
+    let sum = statements
+        .iter()
+        .find(|s| s.op == u32::from(Opcode::AddF.number()))
+        .unwrap();
+    let product = body(p, "sq")
+        .iter()
+        .find(|s| s.op == u32::from(MulF.number()))
+        .map(|s| s.c)
+        .unwrap();
+    assert_ne!(sum.c, product);
+    // As with a call by slots, the sum is held where the call cannot reach it.
+    let by_slots = compile_fteqcc(&source("")).unwrap();
+    let held = |compiled: &crate::Compiled| {
+        let p = &compiled.progs;
+        let sum = body(p, "t")
+            .iter()
+            .find(|s| s.op == u32::from(Opcode::AddF.number()))
+            .map(|s| s.c)
+            .unwrap();
+        let product = body(p, "sq")
+            .iter()
+            .find(|s| s.op == u32::from(MulF.number()))
+            .map(|s| s.c)
+            .unwrap();
+        sum != product
+    };
+    assert!(held(&by_slots) && held(&compiled));
+    // The default is the call's third operand.
+    let two = statements.iter().find(|s| s.a == global(p, "two")).unwrap();
+    assert_eq!(two.op, number(Op::Call2h));
+    assert_eq!(words(p, two.c, 1), [5.0_f32.to_bits()]);
+    assert_eq!(compiled.precaches.models.len(), 1);
+}
+
+// spec FTEF-32.19: only an argument that is the call's own operand is loaded by its field's
+// own load; one stored to a slot is loaded by its size, `LOAD_F` (FTE-18.11)
+#[test]
+fn a_field_argument_past_the_operands_is_loaded_by_its_size() {
+    use qc_preproc::Op;
+    let compiled = compile_fteqcc(
+        "#pragma target fte_5768\nentity self;\n.string target;\nfloat a; float b;\n\
+         void(float x, float y, string s) three = #1;\n\
+         void t(void) { three(a, b, self.target); };\n",
+    )
+    .unwrap();
+    let p = &compiled.progs;
+    let statements = body(p, "t");
+    let load = statements
+        .iter()
+        .find(|s| s.b == global(p, "target"))
+        .unwrap();
+    assert_eq!(load.op, u32::from(Opcode::LoadF.number()));
+    // The third parameter's slot.
+    assert_eq!(load.c, 10);
+    let call = statements
+        .iter()
+        .find(|s| s.a == global(p, "three"))
+        .unwrap();
+    assert_eq!(call.op, u32::try_from(Op::Call3h.number()).unwrap());
+}
+
+// spec FTEF-32.21: a local that only `#pragma defaultstatic` makes static has its aggregate
+// refused, not left out: the writer hoists the aggregate of a local written `static`
+#[test]
+fn a_defaultstatic_locals_aggregate_is_not_left_out() {
+    let written = compile_fteqcc("void t(void) { static string tab[] = {\"aa\", \"bb\"}; };\n");
+    assert!(written.is_ok());
+    let defaulted = compile_fteqcc(
+        "#pragma defaultstatic 1\nvoid t(void) { string tab[] = {\"aa\", \"bb\"}; };\n",
+    );
+    assert!(
+        matches!(
+            defaulted,
+            Err(CompileError::Internal {
+                internal: Internal::Unfollowed,
+                ..
+            })
+        ),
+        "{:?}",
+        defaulted.map(|compiled| compiled.progs.statements.len())
+    );
+}

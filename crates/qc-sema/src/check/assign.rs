@@ -886,6 +886,10 @@ impl Checker<'_> {
         // FTEF-32.21: a `static` local's aggregate is its initial value, written with the
         // globals, and generates no statement.
         if self.env.local_static(start) {
+            // One made static by `#pragma defaultstatic` alone is not written so yet.
+            if !self.env.local_written_static(start) {
+                self.followed = false;
+            }
             return Ok(());
         }
         if !vector || elements.len() != qc_types::PROGS_VECTOR_SLOTS {

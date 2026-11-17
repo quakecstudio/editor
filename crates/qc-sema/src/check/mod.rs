@@ -79,6 +79,9 @@ pub(crate) trait Env {
     fn record_path(&mut self, list: PathList, path: &str, span: Span);
     /// Whether the local whose name starts at offset `at` is `static` (FTEF-21.14).
     fn local_static(&self, at: usize) -> bool;
+    /// Whether the local whose name starts at offset `at` is written `static`, not made so
+    /// by `#pragma defaultstatic` alone.
+    fn local_written_static(&self, at: usize) -> bool;
     /// FTEF-19.62: the local whose name starts at offset `at` is an array of `size` elements.
     fn size_local(&mut self, at: usize, size: u32);
     /// The type a cast or `sizeof` writes starting at offset `at`, through typedefs.
