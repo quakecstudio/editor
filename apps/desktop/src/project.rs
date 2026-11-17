@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use eframe::egui::{self, Button, CollapsingHeader, RichText, ScrollArea, Ui};
 use qs_workbench::{EntryKind, OpenFile, Problem, Severity, Symbol, SymbolKind, TreeEntry};
 
-use crate::icons::{self, Icon, Selected, Toggled};
+use crate::icons::{self, Icon, Toggled};
 use crate::strings::Text;
 use crate::theme::{Theme, Token};
 
@@ -75,9 +75,9 @@ fn level(ui: &mut Ui, entries: &[TreeEntry], rows: &Rows<'_>, jump: &mut Option<
             }
             EntryKind::File(path) => {
                 let selected = if rows.open == Some(path.as_path()) {
-                    Selected::Yes
+                    Toggled::On
                 } else {
-                    Selected::No
+                    Toggled::Off
                 };
                 let row = ui
                     .horizontal(|ui| {
@@ -156,7 +156,7 @@ pub(crate) fn symbols_ui(
             for symbol in symbols.get(rows).unwrap_or_default() {
                 // The kind is the row's icon, and its word the row's hover.
                 let response = kind_icon(symbol.kind)
-                    .row(ui, Selected::No, &symbol.name)
+                    .row(ui, Toggled::Off, &symbol.name)
                     .on_hover_text(kind(symbol.kind).get());
                 if response.clicked() {
                     jump = Some(Jump {

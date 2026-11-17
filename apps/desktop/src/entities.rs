@@ -10,7 +10,7 @@ use eframe::egui::{self, RichText, Ui};
 use qs_workbench::entities::Entities;
 use qs_workbench::{PlayState, Preview};
 
-use crate::icons::{self, Icon, Selected};
+use crate::icons::{self, Icon, Toggled};
 use crate::strings::Text;
 use crate::theme::{Theme, Token};
 use qs_workbench::ids::Edict;
@@ -119,11 +119,11 @@ pub(crate) fn outliner(
 }
 
 /// Whether `edict` is the selected one.
-fn chosen(selected: Option<Edict>, edict: u32) -> Selected {
+fn chosen(selected: Option<Edict>, edict: u32) -> Toggled {
     if selected == Some(Edict::new(edict)) {
-        Selected::Yes
+        Toggled::On
     } else {
-        Selected::No
+        Toggled::Off
     }
 }
 
@@ -178,10 +178,14 @@ pub(crate) fn properties(
             action = Some(EntityAction::Ask(selected.edict));
         }
         if !paused {
-            ui.label(
-                RichText::new(Icon::Lock.char().to_string()).color(theme.color(Token::TextMuted)),
-            )
-            .on_hover_text(Text::ReadOnlyWhilePlaying.get());
+            // A lock, read as the sentence it stands for.
+            let lock = ui
+                .label(
+                    RichText::new(Icon::Lock.char().to_string())
+                        .color(theme.color(Token::TextMuted)),
+                )
+                .on_hover_text(Text::ReadOnlyWhilePlaying.get());
+            icons::mark(ui, &lock, Text::ReadOnlyWhilePlaying.get(), icons::ROW);
         }
     });
     egui::ScrollArea::vertical()

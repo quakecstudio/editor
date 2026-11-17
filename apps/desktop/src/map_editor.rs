@@ -546,14 +546,14 @@ impl MapEditor {
                 OutlineAction::MoveTo(entity, into) => {
                     actions.push(MapAction::MoveTo(entity, into))
                 }
-                OutlineAction::Hide(entity) => {
-                    actions.push(MapAction::Group(GroupAction::Hide(vec![entity])));
+                OutlineAction::Hide(entities) => {
+                    actions.push(MapAction::Group(GroupAction::Hide(entities)));
                 }
-                OutlineAction::Isolate(entity) => {
-                    actions.push(MapAction::Group(GroupAction::Isolate(vec![entity])));
+                OutlineAction::Isolate(entities) => {
+                    actions.push(MapAction::Group(GroupAction::Isolate(entities)));
                 }
-                OutlineAction::Lock(entity) => {
-                    actions.push(MapAction::Group(GroupAction::Lock(vec![entity])));
+                OutlineAction::Lock(entities) => {
+                    actions.push(MapAction::Group(GroupAction::Lock(entities)));
                 }
             }
         }

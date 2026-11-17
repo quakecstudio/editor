@@ -16,15 +16,6 @@ pub(crate) enum Toggled {
     Off,
 }
 
-/// Whether a row is the one chosen.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Selected {
-    /// Chosen: drawn framed.
-    Yes,
-    /// Not chosen.
-    No,
-}
-
 /// The class an icon button's node carries for a screen reader's tree and the panels' test.
 pub(crate) const ICON_BUTTON: &str = "icon-button";
 /// The class a list row's node carries.
@@ -111,8 +102,6 @@ pub enum Icon {
     Terminal,
     /// `git-branch`: the Git panel.
     Git,
-    /// `folder-open`: an open folder of the project tree.
-    FolderOpen,
     /// `file`: a file of no kind the tree knows.
     File,
     /// `file-code`: a QuakeC file.
@@ -201,10 +190,6 @@ pub enum Icon {
     Separate,
     /// `copy-plus`: duplicating as a linked group.
     LinkDuplicate,
-    /// `brick-wall`: making brushes structural.
-    Structural,
-    /// `split`: extracting from a linked group.
-    Extract,
     /// `file-x`: leaving out of an export.
     Omit,
     /// `code-xml`: opening the code behind it.
@@ -237,6 +222,8 @@ pub enum Icon {
     Reset,
     /// `magnet`: snapping to the grid.
     Snap,
+    /// `check`: accepting one proposed change.
+    Accept,
     /// `arrow-up`: an angle straight up.
     Up,
     /// `arrow-down`: an angle straight down.
@@ -247,7 +234,7 @@ pub enum Icon {
 
 impl Icon {
     /// Every icon.
-    pub const ALL: [Self; 101] = [
+    pub const ALL: [Self; 99] = [
         Self::Play,
         Self::Pause,
         Self::Step,
@@ -283,7 +270,6 @@ impl Icon {
         Self::Debugger,
         Self::Terminal,
         Self::Git,
-        Self::FolderOpen,
         Self::File,
         Self::FileCode,
         Self::FileText,
@@ -328,8 +314,6 @@ impl Icon {
         Self::Restore,
         Self::Separate,
         Self::LinkDuplicate,
-        Self::Structural,
-        Self::Extract,
         Self::Omit,
         Self::OpenCode,
         Self::FlipX,
@@ -346,6 +330,7 @@ impl Icon {
         Self::FlipT,
         Self::Reset,
         Self::Snap,
+        Self::Accept,
         Self::Up,
         Self::Down,
         Self::Pick,
@@ -390,7 +375,6 @@ impl Icon {
             Self::Debugger => '\u{e20c}',
             Self::Terminal => '\u{e181}',
             Self::Git => '\u{e0e2}',
-            Self::FolderOpen => '\u{e247}',
             Self::File => '\u{e0c0}',
             Self::FileCode => '\u{e0c3}',
             Self::FileText => '\u{e0cc}',
@@ -435,8 +419,6 @@ impl Icon {
             Self::Restore => '\u{e2cd}',
             Self::Separate => '\u{e19c}',
             Self::LinkDuplicate => '\u{e3fd}',
-            Self::Structural => '\u{e581}',
-            Self::Extract => '\u{e440}',
             Self::Omit => '\u{e0cd}',
             Self::OpenCode => '\u{e206}',
             Self::FlipX => '\u{e35d}',
@@ -453,6 +435,7 @@ impl Icon {
             Self::FlipT => '\u{e1c7}',
             Self::Reset => '\u{e2a1}',
             Self::Snap => '\u{e2b5}',
+            Self::Accept => '\u{e06c}',
             Self::Up => '\u{e04a}',
             Self::Down => '\u{e042}',
             Self::Pick => '\u{e13b}',
@@ -461,7 +444,7 @@ impl Icon {
 
     /// The icon of an entity class's group, by the classname's first word as id's QuakeC names
     /// them: `monster_`, `item_` and `weapon_`, `light`, `trigger_`, `func_`, the player and its
-    /// starts, the world; a box for any other.
+    /// starts, the world; a point for any other.
     #[must_use]
     pub(crate) fn of_class(classname: &str) -> Self {
         match classname.split('_').next().unwrap_or_default() {
@@ -470,9 +453,11 @@ impl Icon {
             "light" => Self::Light,
             "trigger" => Self::Trigger,
             "func" | "door" | "plat" | "train" => Self::Door,
-            "player" | "info" => Self::Player,
+            "player" => Self::Player,
+            "info" if classname.starts_with("info_player") => Self::Player,
             "worldspawn" => Self::MapOutline,
-            _ => Self::Brush,
+            // A point entity of no group above: a place in the map.
+            _ => Self::Vertex,
         }
     }
 
@@ -508,16 +493,20 @@ impl Icon {
     /// As [`Icon::tool`], for a name made of others.
     pub(crate) fn tool_named(self, ui: &mut Ui, name: &str) -> Response {
         let button = Button::new(self.char().to_string()).frame_when_inactive(false);
-        let response = ui.add(button).on_hover_text(name);
+        // Named on hover while greyed too, as a text button's label stays readable.
+        let response = ui
+            .add(button)
+            .on_hover_text(name)
+            .on_disabled_hover_text(name);
         mark(ui, &response, name, ICON_BUTTON);
         response
     }
 
     /// A row of a panel's list: this icon, then `label`, selected or not; named `label`
     /// alone for VoiceOver, and marked a row.
-    pub(crate) fn row(self, ui: &mut Ui, selected: Selected, label: &str) -> Response {
-        let text = format!("{}  {label}", self.char());
-        let button = Button::selectable(selected == Selected::Yes, text).frame_when_inactive(false);
+    pub(crate) fn row(self, ui: &mut Ui, selected: Toggled, label: &str) -> Response {
+        let button = Button::selectable(selected == Toggled::On, self.before(label))
+            .frame_when_inactive(false);
         let response = ui.add(button);
         mark(ui, &response, label, ROW);
         response

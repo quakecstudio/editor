@@ -5214,3 +5214,49 @@ fn no_side_panel_shows_a_text_button() {
         harness.get_by_role_and_label(Role::Button, name.get());
     }
 }
+
+// No spec statement: P7-16 (#981): an outline row's actions are in its menu, and a group's act
+// on the group with its members: Hide from a group row's menu hides the group and the monster
+// in it, and from an entity's row that entity alone
+#[test]
+fn an_outline_rows_menu_acts_on_the_row_and_what_it_holds() {
+    let dir = std::env::temp_dir().join(format!("qs-desktop-rowmenu-{}", std::process::id()));
+    let _gone = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("linked.map");
+    fs::write(&path, LINKED_MAP).unwrap();
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("map.open", json!({ "path": path })).unwrap();
+    harness.run();
+    show_panel(&mut harness, DockPanel::Map);
+    harness.run();
+    let hidden = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        let map = shell.session().context().workbench.map().unwrap();
+        (1..7)
+            .filter(|&e| map.is_hidden(EntityIndex::new(e)))
+            .collect::<Vec<_>>()
+    };
+    // The menu's item is the Hide that is no icon: the Properties panel has one of the name.
+    let choose_hide = |harness: &mut Harness<'static, Option<App>>| {
+        harness.run();
+        let item = harness
+            .query_all_by_label(Text::MapHide.get())
+            .find(|node| node.accesskit_node().class_name() != Some(ICON_BUTTON))
+            .unwrap();
+        item.click();
+        harness.run();
+        harness.run();
+    };
+    harness.get_by_label("light").click_secondary();
+    choose_hide(&mut harness);
+    assert_eq!(hidden(&harness), [6]);
+    harness.get_by_label(Text::MapShowAll.get()).click();
+    harness.run();
+    assert!(hidden(&harness).is_empty());
+    let group = harness.query_all_by_label("group").next().unwrap();
+    group.click_secondary();
+    choose_hide(&mut harness);
+    assert_eq!(hidden(&harness), [1, 2]);
+}
