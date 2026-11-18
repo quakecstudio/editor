@@ -173,6 +173,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libasound2-dev
       - run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+      # L-18: the performance lints the audit left off, counted against the baseline, on the
+      # build the step above made.
+      - run: cargo xtask perf-baseline
 
   test:
     name: Unit Tests (${{ matrix.name }})
@@ -439,7 +442,7 @@ jobs:
       # itself. make ci runs every step.
       - name: cargo xtask ci, less the steps other jobs run
         env:
-          SKIP: ${{ github.ref == 'refs/heads/main' && 'clippy,nextest,differential' || 'fmt,clippy,nextest,deny,differential' }}
+          SKIP: ${{ github.ref == 'refs/heads/main' && 'clippy,perf-baseline,nextest,differential' || 'fmt,clippy,perf-baseline,nextest,deny,differential' }}
         run: cargo xtask ci --skip "$SKIP"
 
   deny:

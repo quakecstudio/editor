@@ -54,7 +54,7 @@ and a failed `Classify the change` job are all full. Renames count both paths.
 
 | Light | Why only `cargo xtask ci` and xtask's tests read it |
 | --- | --- |
-| `docs/**`, except `docs/spec/**` | read by `cargo xtask` `adr`, `conventions`, `licenses` (and `docs/porting.md` through it), `attribution`, `contrast` (`docs/design/tokens.toml`) and `commands` (`docs/commands.md`), and by xtask's tests: the same checks on the repository, the porting-header rules and the benchmark budgets (`docs/perf-budgets.md`) |
+| `docs/**`, except `docs/spec/**` | read by `cargo xtask` `adr`, `conventions`, `licenses` (and `docs/porting.md` through it), `attribution`, `contrast` (`docs/design/tokens.toml`), `perf-baseline` (`docs/audits/perf-baseline.tsv`) and `commands` (`docs/commands.md`), and by xtask's tests: the same checks on the repository, the porting-header rules and the benchmark budgets (`docs/perf-budgets.md`) |
 | `plan/**` | read by the `plan` and `plan-tests` steps of `cargo xtask ci` |
 | `.claude/**`, `.kiro/**` | read only by `cargo xtask licenses` and its test, and by xtask's tests of `.claude/skills/work-issue/scripts/check-pr-body.sh` |
 | `*.md` at the root (`README.md`, `CLAUDE.md`, `AGENTS.md`, `ATTRIBUTION.md`, ...) | read only by `cargo xtask licenses` and `attribution` and their tests |
@@ -159,6 +159,7 @@ there the `cargo xtask ci` job runs fmt and deny itself.
 | `plan-tests` | `python3 -m unittest discover -s plan -p test_*.py` | `cargo xtask ci` | `cargo xtask ci` |
 | `specs` | `bash scripts/refresh-specs.sh --verify` | `cargo xtask ci` | `cargo xtask ci` |
 | `conventions`, `adr`, `layers`, `licenses`, `attribution`, `contrast` | `cargo xtask <name>` | `cargo xtask ci` | `cargo xtask ci` |
+| `perf-baseline` | `cargo xtask perf-baseline`: clippy again with the performance lints the audit left off as warnings, their sites counted against `docs/audits/perf-baseline.tsv`, which only shrinks (L-18) | `Clippy` | `Clippy` |
 | `clippy` | `cargo clippy --locked --workspace --all-targets --all-features -- -D warnings` | `Clippy` | `Clippy` |
 | `nextest` | `cargo nextest run --locked --workspace --all-features` | `Unit Tests (linux)` (and macOS and Windows) | `Unit Tests (linux)` |
 | `run` | `cargo run --locked -p qs-commands --profile release --example release_guard` | `cargo xtask ci` | `cargo xtask ci` |

@@ -49,16 +49,15 @@ each site once; "shipped" leaves out tests, benchmarks, examples, `qs-differenti
 | `trivially_copy_pass_by_ref` | 8 | 8 | The eight left are option structs borrowed by their public methods (`qs-map-bsp`'s `Compiler`, `qs-map-vis`'s `Vis`, `qc-progs`' `ReadOptions`), so that an option added later changes no caller. The pass took the ten others by value. |
 | `needless_collect` | 7 | 2 | Four of the seven start threads and collect their handles before joining the first, which the lint cannot see is needed; one reverses an iterator that cannot be walked backwards; and one collects into a set to drop duplicates, which the lint's own fix removed until a test caught it. Held, it would be mostly `#[expect]`. |
 
-The plan's `docs/audits/perf-baseline.tsv`, a count of these that only shrinks, is not added
-here: whether to keep that ratchet, or to hold a lint at zero or leave it off, is Justin's to
-decide, and #966 stays open for it.
-
-The count is taken with:
-
-```bash
-cargo clippy --locked --workspace --all-targets --all-features --message-format=json -- \
-  -W clippy::format_push_string -W clippy::needless_pass_by_value -W clippy::format_collect ...
-```
+[`perf-baseline.tsv`](perf-baseline.tsv) holds the count of each of these, and it only
+shrinks: `cargo xtask perf-baseline` runs clippy with the seven as warnings, counts each site
+once, and fails when a lint has more sites than the file says; with fewer it passes and names
+`cargo xtask perf-baseline --write`, which lowers a line and never raises one (a platform
+compiles less of the workspace than the Mac the file was counted on). `cargo xtask ci` runs it
+after its own clippy step, whose build it reuses (12 s on the reference Mac), and on GitHub it
+runs in the Clippy job. It is a command of its own and not a part of
+`cargo xtask conventions`, which the plan named, because that check reads the sources alone
+and this one needs clippy to have built the workspace.
 
 ## The crates
 

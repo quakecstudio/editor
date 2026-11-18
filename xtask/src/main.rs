@@ -112,6 +112,7 @@ mod notices;
 mod offline;
 mod oracles;
 mod parse_corpus;
+mod perf_baseline;
 mod ported;
 mod project_corpus;
 mod release_host;
@@ -197,6 +198,9 @@ enum Task {
     /// Write the third-party notices a release package carries, or check every linked crate
     /// states a license.
     Notices(notices::Args),
+    /// The clippy performance lints left off are held to docs/audits/perf-baseline.tsv, which
+    /// only shrinks (L-18).
+    PerfBaseline(perf_baseline::Args),
     /// The language server over a codebase, against its golden file.
     LspCorpus(lsp_corpus::Args),
     /// Every .map round-trips.
@@ -273,6 +277,7 @@ fn run(root: &Path, task: &Task, ci_steps: &[ci::Step]) -> bool {
         Task::ProjectCorpus(args) => ("project-corpus", project_corpus::main(root, args)),
         Task::SemaCorpus(args) => ("sema-corpus", sema_corpus::main(root, args)),
         Task::Notices(args) => ("notices", notices::main(root, args)),
+        Task::PerfBaseline(args) => ("perf-baseline", perf_baseline::main(root, args)),
         Task::Scenario(args) => ("scenario", scenario::main(root, args)),
         Task::Evals(args) => ("evals", evals::main(root, args)),
         Task::Compatibility(args) => ("compatibility", compatibility::main(root, args)),
@@ -321,6 +326,7 @@ pub(crate) fn in_process_check(command: &str) -> Option<Check> {
         "licenses" => Some(licenses::run),
         "attribution" => Some(attribution::run),
         "notices" => Some(notices::check),
+        "perf-baseline" => Some(perf_baseline::check),
         "contrast" => Some(contrast::check),
         "commands" => Some(commands::check),
         "keymap" => Some(keymap::check),
