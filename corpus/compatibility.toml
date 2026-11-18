@@ -33,8 +33,8 @@ issues = []
 
 [[gap]]
 codebase = "nuclide"
-behaviour = "Not compared: mostly CSQC and MenuQC, which are not compiled yet."
-issues = [193]
+behaviour = "Not compared on its own: the SDK has no program of its own, and is compiled as the tree FreeHL and FreeCS build on."
+issues = []
 
 [[gap]]
 codebase = "freecs"
@@ -48,8 +48,8 @@ issues = []
 
 [[gap]]
 codebase = "nzp"
-behaviour = "Not compared: written for FTEQCC's CSQC and its own engine."
-issues = [193]
+behaviour = "Not compared: its build first generates `source/server/hash_table.qc` with a script of its own, so the repository as fetched has no program to compile; it is written for FTEQCC's CSQC and its own engine."
+issues = []
 
 [[gap]]
 codebase = "xonotic"
