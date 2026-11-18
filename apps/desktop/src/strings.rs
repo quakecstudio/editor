@@ -1564,7 +1564,7 @@ impl Text {
                 "Only the shareware episode is here. Play works on its maps; the rest of the game needs id1/pak1.pak."
             }
             Self::GameRereleaseOnly => {
-                "Only the 2021 rerelease is here. Play needs the original game's id1 folder."
+                "Only the 2021 rerelease is here. A project for the original game needs the original's id1 folder."
             }
             Self::GameMissing => "No Quake files were found.",
             Self::GameLacks => "Missing:",

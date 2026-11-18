@@ -267,7 +267,7 @@ A command that answers a question is read by a panel, the agent or MCP. A comman
 | `preview.choose_game` | needs a value | Chooses the folder the preview reads the game from, in place, and says what it holds; a folder that cannot be played is not kept. |
 | `preview.console` | needs a value | Runs a command in the running game's console. |
 | `preview.dock` | needs a value | Docks the game's window beside the IDE's window, given where the IDE's window is and whether it has the focus. |
-| `preview.game` | answers a question | Says what game data the preview plays from: the chosen folder, or the first install found, as found, shareware only, rerelease only or missing, with the files it lacks. |
+| `preview.game` | answers a question | Says what game data the preview plays from: the chosen folder, or the first install found, as found, shareware only, rerelease only or missing for the game the project is for, with the files it lacks. |
 | `preview.pick` | needs a value | Selects the edict under a point of the game's window. |
 | `preview.poll` | run by the window | Reads the running game's events: its state changes and console lines. |
 | `preview.select` | needs a value | Selects an edict of the running game and reads its fields for the Properties panel. |

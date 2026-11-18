@@ -147,7 +147,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`preview.choose_game`](#previewchoose_game) | Chooses the folder the preview reads the game from, in place, and says what it holds; a folder that cannot be played is not kept. |
 | [`preview.console`](#previewconsole) | Runs a command in the running game's console. |
 | [`preview.dock`](#previewdock) | Docks the game's window beside the IDE's window, given where the IDE's window is and whether it has the focus. |
-| [`preview.game`](#previewgame) | Says what game data the preview plays from: the chosen folder, or the first install found, as found, shareware only, rerelease only or missing, with the files it lacks. |
+| [`preview.game`](#previewgame) | Says what game data the preview plays from: the chosen folder, or the first install found, as found, shareware only, rerelease only or missing for the game the project is for, with the files it lacks. |
 | [`preview.pause`](#previewpause) | Pauses the running game between frames. |
 | [`preview.pick`](#previewpick) | Selects the edict under a point of the game's window. |
 | [`preview.play`](#previewplay) | Builds the open project and starts the preview host on its program, stopping a game already running. |
@@ -6803,7 +6803,7 @@ Parameters:
 
 ## `preview.game`
 
-Says what game data the preview plays from: the chosen folder, or the first install found, as found, shareware only, rerelease only or missing, with the files it lacks.
+Says what game data the preview plays from: the chosen folder, or the first install found, as found, shareware only, rerelease only or missing for the game the project is for, with the files it lacks.
 
 Parameters:
 
