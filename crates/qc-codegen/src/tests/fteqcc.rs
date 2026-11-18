@@ -5054,3 +5054,76 @@ fn a_vector_field_at_a_variable_index_loads_its_component_s_field() {
         ]
     );
 }
+
+// spec FTEF-29.20: on a target with `OP_STOREF_*` a store to an entity's field is one
+// statement of the entity, the field and the value, as the pinned FTEQCC writes it
+#[test]
+fn a_field_store_is_one_statement_where_the_target_has_it() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\nentity self;\n.float health;\n.vector origin;\n\
+         .string classname;\n.entity enemy;\n.int n;\nvoid end_sys_fields;\n\
+         vector gv;\nint r;\n\
+         void t(entity e, entity o) {\n\te.health = 5;\n\te.origin = gv;\n\
+         \te.classname = \"x\";\n\te.enemy = o;\n\tr = e.n++;\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let statements = body(&p, "t");
+    let (e, o) = (statements[0].a, statements[3].c);
+    let stored: Vec<(u32, i32, i32)> = statements.iter().map(|s| (s.op, s.a, s.b)).collect();
+    assert_eq!(
+        stored.get(..4),
+        Some(
+            &[
+                (number(Op::StorefF), e, global(&p, "health")),
+                (number(Op::StorefV), e, global(&p, "origin")),
+                (number(Op::StorefS), e, global(&p, "classname")),
+                (number(Op::StorefI), e, global(&p, "enemy")),
+            ][..]
+        )
+    );
+    assert_eq!(statements[1].c, global(&p, "gv"));
+    assert_ne!(e, o);
+    // The postfix: the load's temporary is the value, and the sum is stored to the field.
+    let (old, sum) = (statements[4].c, statements[5].c);
+    assert_eq!(
+        (statements[4].op, statements[4].a, statements[4].b),
+        (number(Op::LoadI), e, global(&p, "n"))
+    );
+    assert_eq!((statements[5].op, statements[5].a), (number(Op::AddI), old));
+    assert_eq!(
+        statements[6],
+        Statement {
+            op: number(Op::StorefI),
+            a: e,
+            b: global(&p, "n"),
+            c: sum
+        }
+    );
+    assert_eq!(
+        statements[7],
+        Statement {
+            op: number(Op::StoreI),
+            a: old,
+            b: global(&p, "r"),
+            c: 0
+        }
+    );
+}
+
+// spec FTE-6.4: on id's opcodes, which have no `OP_STOREF_*`, a field is stored through its
+// address
+#[test]
+fn a_field_store_is_through_its_address_on_id_s_opcodes() {
+    let p = fte_progs(
+        "entity self;\n.float health;\nvoid end_sys_fields;\n\
+         void t(entity e) {\n\te.health = 5;\n}\n",
+    );
+    let statements = body(&p, "t");
+    assert_eq!(
+        statements[0].op,
+        u32::from(Opcode::Address.number()),
+        "{statements:?}"
+    );
+    assert_eq!(statements[1].op, u32::from(Opcode::StorepF.number()));
+}

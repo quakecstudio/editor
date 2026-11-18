@@ -5150,6 +5150,18 @@ whether it is the result of a postfix `++` or `--`. The semantic model checks as
   `STOREP_I temp_0, p, 5` and `STORE_I temp_1, idx`. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_RefToDef`.
+- **FTEF-29.20** On a target with `OP_STOREF_*` (FTE's formats from revision 5698) a store to
+  an entity's field is one statement of the entity, the field and the value, with no address
+  (`case REF_FIELD: ... if (storef_opcode!=OP_DONE && dest->index.cast->size == dest->cast->size
+  && QCC_OPCodeValid(&pr_opcodes[storef_opcode])) { //doesn't generate any temps.`):
+  `OP_STOREF_F` of a float, `OP_STOREF_V` of a vector, `OP_STOREF_S` of a string and
+  `OP_STOREF_I` of an entity, field, function, pointer or integer. An assignment, a postfix's
+  update and a class's member in a method are stored so: `e.health = 5` is `STOREF_F e, health,
+  5`, and `r = e.n ++` of an `int` field is `LOAD_I e, n, temp_1`, `ADD_I temp_1, 1, temp_0`,
+  `STOREF_I e, n, temp_0` and `STORE_I temp_1, r`, the load's temporary the value (FTEF-29.19).
+  A target without the opcode stores through the field's address (FTE-6.4). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_StoreSRefToRef`.
 
 ## FTEF-30 Terms
 

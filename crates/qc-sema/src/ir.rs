@@ -282,6 +282,9 @@ impl BodyStatement {
             | Op::LoadpI
             | Op::LoadpP
             | Op::LoadpI64 => [a, false, c],
+            // FTEF-29.20: a store to an entity's field reads the entity, the field and the
+            // value.
+            Op::StorefF | Op::StorefV | Op::StorefS | Op::StorefI => [true; OPERANDS],
             _ => [a, b, c],
         }
     }

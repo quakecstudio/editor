@@ -354,7 +354,7 @@ impl Checker<'_> {
         if matches!(kind, Assign::Store | Assign::Compound(..)) {
             self.array_set(&lhs, &stored, &target, span)?;
         }
-        self.field_store(&lhs, &stored, &target);
+        self.field_store(&lhs, &stored, &target, span);
         if matches!(kind, Assign::Store | Assign::Compound(..)) {
             self.pointer_store(&lhs, &stored, &target, span)?;
         }
@@ -807,9 +807,10 @@ impl Checker<'_> {
             made: copy.or(old.made),
             ..old
         };
-        // FTEF-29.19: what a pointer points at is loaded to a temporary, which is the old value.
+        // FTEF-29.19: what a pointer points at, or an entity's field, is loaded to a temporary,
+        // which is the old value.
         let loaded = match operand.reference {
-            Reference::Pointer(_) => old.made,
+            Reference::Pointer(_) | Reference::Field(_) => old.made,
             _ => None,
         };
         // `switch(ref->cast->type)`: a bitfield, or an 8- or 16-bit integer, is `ev_bitfld`,
@@ -925,12 +926,38 @@ impl Checker<'_> {
 
     /// FTE-6.4: the store of `stored` to the field `lhs` of type `target`, a compound one's
     /// and a postfix's too: its `ADDRESS`, made after the value, and `STOREP_*` of the field's
-    /// type through it.
-    fn field_store(&mut self, lhs: &Value, stored: &Value, target: &Type) {
+    /// type through it. FTEF-29.20: on a target with `OP_STOREF_*` it is that one statement, of
+    /// the entity, the field and the value.
+    fn field_store(&mut self, lhs: &Value, stored: &Value, target: &Type, span: Span) {
         let Reference::Field(field) = &lhs.reference else {
             return;
         };
         if self.global {
+            return;
+        }
+        let storef = match self.etype(target) {
+            Some(Etype::Float) => Some(Op::StorefF),
+            Some(Etype::Vector) => Some(Op::StorefV),
+            Some(Etype::String) => Some(Op::StorefS),
+            Some(
+                Etype::Entity
+                | Etype::Field
+                | Etype::Function
+                | Etype::Pointer
+                | Etype::Integer
+                | Etype::Uint,
+            ) => Some(Op::StorefI),
+            _ => None,
+        };
+        if let Some(storef) = storef.filter(|&op| self.env.target_at(span.start).valid(op)) {
+            self.generated.push(ir::BodyStatement {
+                a: self.copied(field.entity, field.entity_call),
+                b: field.operand(),
+                c: self.name_of(stored),
+                ..ir::BodyStatement::bare(storef)
+            });
+            self.read_returned(stored);
+            self.last_temp = None;
             return;
         }
         let storep = self.storep_op(target);
@@ -961,7 +988,7 @@ impl Checker<'_> {
         span: Span,
     ) -> Result<(), Fatal> {
         self.array_set(operand, updated, target, span)?;
-        self.field_store(operand, updated, target);
+        self.field_store(operand, updated, target, span);
         self.pointer_store(operand, updated, target, span)?;
         let folded = updated.temp.is_some() && updated.temp == self.last_temp;
         self.definition_store(operand, updated, target, span)?;
