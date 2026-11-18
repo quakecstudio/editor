@@ -278,9 +278,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-latest
-    # 10,000 programs, each compiled by both FTEQCCs and qc-codegen and called, ran past two
-    # hours on a hosted runner (run 41877684070).
-    timeout-minutes: 300
+    # 10,000 programs, each compiled by both FTEQCCs and qc-codegen and called, took 32 minutes
+    # on a hosted runner (run 44402847936).
+    timeout-minutes: 120
     permissions:
       contents: read
     defaults:
@@ -314,9 +314,8 @@ jobs:
     if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-latest
     # Arcane Dimensions' 128 rounds, with the accessor and extra rounds (DIFF-12.16,
-    # DIFF-12.24), ran past five hours on a hosted runner (run 41830900852); six is the
-    # hosted runners' limit.
-    timeout-minutes: 360
+    # DIFF-12.24), the longest, took 34 minutes on a hosted runner (run 44402847936).
+    timeout-minutes: 120
     permissions:
       contents: read
     strategy:
@@ -393,7 +392,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    # CRMod 7, the longest, took 58 minutes on a hosted runner (run 44402847936).
+    timeout-minutes: 180
     permissions:
       contents: read
     strategy:
@@ -457,15 +457,15 @@ jobs:
           path: target/compiler-diff/functions/${{ matrix.codebase }}/failed/
           if-no-files-found: ignore
 
-  # DIFF-15.10: Arcane Dimensions' per-function run takes more than one job's six hours, so it
-  # runs as four shards, each holding every fourth group of functions, and a last job holds
+  # DIFF-15.10: Arcane Dimensions' per-function run is the longest, so it runs as four shards, each holding every fourth group of functions, and a last job holds
   # the statements they reached together to DIFF-15.6's bar.
   functions-shards:
     name: Per-function differential (arcane-dimensions, shard ${{ matrix.shard }}/4)
     needs: changes
     if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    # A shard took 16 to 28 minutes on a hosted runner (run 44402847936).
+    timeout-minutes: 90
     permissions:
       contents: read
     strategy:
