@@ -3795,6 +3795,18 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   zero, with no diagnostic, as the pinned FTEQCC compiles it (2026-11-16); read in a body it is
   that constant too. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`.
+- **FTEF-19.81** A global or a local of one of C's scalars is written with that type's own
+  number in its definition's record, FTEQCC's `etype_t`: `ev_integer` 8, `ev_uint` 9,
+  `ev_int64` 10, `ev_uint64` 11 and `ev_double` 12, through a typedef and an enum's base; and
+  a 64-bit integer or a double takes two words (`type->size`), a 64-bit constant's low word
+  first. Run on the pinned FTEQCC with `-Tfte`: `typedef enum : __uint64 { XA, XB, XC = 5 }
+  x_t; x_t g; void f(void) { x_t l; l = XC; g = l; g = XB; }` writes `g` as type `0x800b` and
+  `l` as `0xb`, each two words, the constants 1 and 5 as the words 1, 0 and 5, 0, and three
+  `STORE_I64`; with `: int` in its place the types are `0x8008` and `8`, one word each, and
+  the stores `STORE_I`; and `int i; unsigned u; __int64 a; __uint64 b; __double d; float
+  after;` writes the types `0x8008`, `0x8009`, `0x800a`, `0x800b`, `0x800c` and `0x8002` at
+  the offsets 28, 29, 30, 32, 34 and 36 (2026-11-17). Source: the output of
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, as built for the oracles.
 
 ## FTEF-20 Keywords
 

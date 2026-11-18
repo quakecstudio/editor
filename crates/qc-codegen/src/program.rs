@@ -1216,9 +1216,11 @@ impl Program {
 /// The words a value of `ty` takes: a struct's layout's (FTE-14.5), else `type_size`.
 pub(crate) fn type_words(index: &ModuleIndex, ty: &ValueType) -> u32 {
     match ty {
-        ValueType::Of(t) => index
-            .struct_shape(t)
-            .map_or_else(|| ty.words(), |s| s.words),
+        // A struct's layout and a C scalar's size are the model's (FTEF-19.81).
+        ValueType::Of(t) => index.struct_shape(t).map_or_else(
+            || index.kind(t).words().unwrap_or_else(|| ty.words()),
+            |s| s.words,
+        ),
         ValueType::FloatField => ty.words(),
     }
 }

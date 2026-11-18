@@ -10,6 +10,7 @@
 use qc_progs::crc::crc_block;
 use qc_progs::opcode::Opcode;
 use qc_progs::{Def as DefRecord, PROGS_DEF_SAVEGLOBAL, ProgsFile};
+use qc_sema::cast::Kind;
 use qc_sema::{ModuleIndex, StructShape};
 use qc_types::{Etype, Slot};
 
@@ -242,7 +243,14 @@ pub(crate) fn progs(
             member_records(&mut global_defs, &mut program, &def.name, shape, def.ofs)?;
             continue;
         }
-        let mut type_bits = u32::from(etype.number());
+        // FTEF-19.81: a C scalar's record names its own type, `ev_integer` to `ev_double`.
+        let scalar = match &def.ty {
+            ValueType::Of(t) if records == Records::Fteqcc => Some(index.kind(t))
+                .filter(|kind| kind.is_c_scalar())
+                .and_then(Kind::number),
+            ValueType::Of(_) | ValueType::FloatField => None,
+        };
+        let mut type_bits = u32::from(scalar.unwrap_or_else(|| etype.number()));
         if saved {
             type_bits |= PROGS_DEF_SAVEGLOBAL;
         }

@@ -33,6 +33,7 @@ use qc_diag::{Code, Diagnostic, Span};
 use qc_preproc::{OpcodeTarget, TargetFormat, WarningSettings};
 use qc_syntax::{Dialect, Keywords};
 
+use crate::cast::Kind;
 use crate::check::PathList;
 use crate::check::Temps;
 use crate::check::TypedBody;
@@ -313,6 +314,21 @@ impl ModuleIndex {
     #[must_use]
     pub fn alias(&self, ty: &Type) -> Option<&Type> {
         self.aliases.get(ty)
+    }
+
+    /// The kind of `ty` through what it stands for, a typedef's type or an enum's base
+    /// (FTEF-7.2, FTEF-19.10): what a definition's record and its size are read from.
+    #[must_use]
+    pub fn kind(&self, ty: &Type) -> Kind {
+        let mut ty = ty;
+        // A chain of typedefs ends; the bound is for one the model let through that does not.
+        for _ in 0..ALIAS_DEPTH {
+            match self.alias(ty) {
+                Some(next) => ty = next,
+                None => break,
+            }
+        }
+        Kind::of(ty)
     }
 
     /// Whether FTEQCC holds `def` constant, `def->constant` (FTEF-19.3).
@@ -819,6 +835,8 @@ const COMPONENTS: [&str; 3] = ["_x", "_y", "_z"];
 
 /// The deepest chain of parent classes followed; a deeper or circular one stops there.
 const MAX_CLASS_DEPTH: usize = 64;
+/// How many typedefs deep a type's kind is looked for.
+const ALIAS_DEPTH: usize = 64;
 
 /// The deepest chain of typedefs followed (FTEF-19.9).
 pub(in crate::resolve) const MAX_TYPEDEF_DEPTH: usize = 64;
