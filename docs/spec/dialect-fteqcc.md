@@ -5511,6 +5511,13 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   `out = tab[n]` of a `string tab[3]` and a float `n` on `fte_5768` is `CONV_FTOI n, temp`,
   `BOUNDCHECK temp, 3`, `LOADA_S tab, temp, out`. A constant index has the warning or error of
   FTEF-31.2 and no check. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`.
+- **FTEF-31.25** A vector read through a pointer and indexed, `p->v[i]` or `p[n].v[i]`, is the
+  float at the vector's word plus the index through the same pointer (`/*array notation on
+  vector*/ ... t = type_float;`, the index then added to the reference's own): with `v` at word
+  1 of a struct of 5 words, `p->v[2]` is `LOADP_F p, 3`, `p->v[1] = f` is `STOREP_F f, p, 2` and
+  `p[3].v[0]` is `LOADP_F p, 16`. A constant index of 3 or more is "(vector) array index out of
+  bounds" (FTEF-31.2). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`.
 
 ## FTEF-32 Calls
 

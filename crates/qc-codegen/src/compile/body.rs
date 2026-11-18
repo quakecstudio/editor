@@ -559,6 +559,16 @@ fn writable(body: &TypedBody, bare: BareReturn) -> bool {
             Name::Made(made) | Name::MadeWord(made, _) => makes(made),
             _ => true,
         });
+        if !(used && reads && !bare.misses_local(statement)) {
+            eprintln!("UNWRITABLE used={used} reads={reads} {statement:?}");
+            for (at, s) in generated.iter().enumerate() {
+                eprintln!(
+                    "   {at}: {s:?} made={:?}",
+                    s.made_words(StatementIndex::new(u32::try_from(at).unwrap_or(0)))
+                );
+            }
+            eprintln!("   effects {:?}", body.effects());
+        }
         used && reads && !bare.misses_local(statement)
     })
 }

@@ -23,6 +23,9 @@ use crate::check::{Bitfield, Constness, ElementRef, FieldRef, MemberArray, Refer
 use crate::ir;
 use crate::ty::{SimpleType, Type};
 
+/// The alignment of a member that takes whole words, in bits.
+pub(super) const WORD_ALIGNMENT: u32 = 32;
+
 /// A word's 32 bits as a shift: a member's offset in bits, `>> 5`, is its word.
 const WORD_BITS_SHIFT: u32 = 5;
 
@@ -624,7 +627,7 @@ impl Checker<'_> {
     /// index; else the offset, `OP_ADD_I` of the index made an integer and it when the target
     /// has `OP_ADD_I`, else `OP_ADD_F` of the index made a float and the offset as a float times
     /// `32 / align`. An offset the model does not know is an integer constant no check reads.
-    fn member_index(
+    pub(super) fn member_index(
         &mut self,
         index: Option<&Value>,
         offset: Option<(u32, u32)>,

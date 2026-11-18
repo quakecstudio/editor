@@ -4864,3 +4864,48 @@ fn an_accessor_s_definition_has_its_own_type_and_store() {
         (store, global(&p, "n"), global(&p, "keep"))
     );
 }
+
+// spec FTEF-31.25: a component of a vector through a pointer is the float at the vector's word
+// plus the index, loaded and stored through the pointer, as the pinned FTEQCC writes them
+#[test]
+fn a_vector_s_component_through_a_pointer_is_its_word() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\n\
+         typedef struct { float m_x; vector m_v; float m_y; } seat_t;\n\
+         seat_t *pSeat;\nseat_t *seats;\nfloat gf;\n\
+         void t(void) {\n\tgf = pSeat->m_v[2] + 16;\n\tpSeat->m_v[1] = gf;\n\
+         \tgf = seats[3].m_v[0];\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let (seat, seats, gf) = (global(&p, "pSeat"), global(&p, "seats"), global(&p, "gf"));
+    let statements = body(&p, "t");
+    let word = |ofs: i32| words(&p, ofs, 1)[0];
+    assert_eq!(
+        (statements[0].op, statements[0].a, word(statements[0].b)),
+        (number(Op::LoadpF), seat, 3)
+    );
+    assert_eq!(
+        (statements[1].op, statements[1].a, statements[1].c),
+        (number(Op::AddF), statements[0].c, gf)
+    );
+    assert_eq!(
+        (
+            statements[2].op,
+            statements[2].a,
+            statements[2].b,
+            word(statements[2].c)
+        ),
+        (number(Op::StorepF), gf, seat, 2)
+    );
+    assert_eq!(
+        (
+            statements[3].op,
+            statements[3].a,
+            word(statements[3].b),
+            statements[3].c
+        ),
+        (number(Op::LoadpF), seats, 16, gf)
+    );
+    assert_eq!(statements.len(), 5);
+}

@@ -21,6 +21,7 @@ use qc_syntax::c_scalar::CScalar;
 use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
+use crate::check::member::WORD_ALIGNMENT;
 use crate::check::pointer::{Pointee, int};
 use crate::check::{Bitfield, ElementRef, FieldRef, MemberArray, Reference, Sym, Value};
 use crate::ir;
@@ -842,6 +843,25 @@ impl Checker<'_> {
                 if constant.is_some_and(|i| u32::from_le_bytes(i.to_le_bytes()) >= VECTOR_WORDS) {
                     let message = "(vector) array index out of bounds".to_owned();
                     return self.fatal(Code::E0333, span, message);
+                }
+                // FTEF-31.25: a vector through a pointer at a constant index is the float at
+                // the vector's word plus the index, through the same pointer.
+                if let (Reference::Pointer(pointer), Some(word)) = (
+                    &base.reference,
+                    constant.and_then(|i| u32::try_from(i).ok()),
+                ) {
+                    let component = Some((word, WORD_ALIGNMENT));
+                    let index = self.member_index(pointer.index.as_ref(), component, span)?;
+                    return Ok(Value {
+                        readonly: base.readonly,
+                        name: base.name,
+                        reference: Reference::pointer(
+                            pointer.base.clone(),
+                            Some(index),
+                            pointer.named,
+                        ),
+                        ..Value::of(Type::Simple(SimpleType::Float))
+                    });
                 }
                 // FTEF-31.9: a constant vector's component at a constant index is a constant,
                 // read through the vector at the index (`REF_ARRAY`), which a call does not fold
