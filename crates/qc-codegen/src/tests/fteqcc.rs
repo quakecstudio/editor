@@ -4980,3 +4980,33 @@ fn a_postfix_through_a_pointer_stores_through_it() {
         (number(Op::StorepI), global(&p, "gi"), pointer, 4)
     );
 }
+
+// spec FTEF-31.4: the address of a pointer's element is `OP_ADD_PIW` of the pointer and the
+// index in words, which a call then passes, as the pinned FTEQCC writes it
+#[test]
+fn the_address_of_a_pointer_s_element_adds_to_the_pointer() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\ntypedef struct { vector o; float r; int a; int b; } node_t;\n\
+         node_t *graph;\nint i;\nvoid link(node_t *a, node_t *b) = #1;\n\
+         void t(node_t *new) {\n\tlink(new, &graph[i]);\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let statements = body(&p, "t");
+    assert_eq!(
+        (
+            statements[0].op,
+            statements[0].a,
+            words(&p, statements[0].b, 1)[0]
+        ),
+        (number(Op::MulI), global(&p, "i"), 6)
+    );
+    assert_eq!(
+        (statements[1].op, statements[1].a, statements[1].b),
+        (number(Op::AddPiw), global(&p, "graph"), statements[0].c)
+    );
+    assert_eq!(
+        (statements[2].op, statements[2].a, statements[2].c),
+        (number(Op::Call2h), global(&p, "link"), statements[1].c)
+    );
+}

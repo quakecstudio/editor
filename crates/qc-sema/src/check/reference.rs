@@ -1178,8 +1178,14 @@ impl Checker<'_> {
                     && index.known().is_none_or(|c| c.i() != 0)
                 {
                     let index = self.converted(index, Etype::Integer, span)?;
-                    let pointer = pointer_to(&value.ty);
-                    self.emit(Op::AddPiw, &pointer, &index, span)?;
+                    let address = pointer_to(&value.ty);
+                    let sum = self.emit(Op::AddPiw, &address, &index, span)?;
+                    // The pointer the element is reached through is the statement's own.
+                    self.name_last(Op::AddPiw, pointer.named, None);
+                    return Ok(Value {
+                        ty: address.ty,
+                        ..sum
+                    });
                 }
                 Ok(pointer_to(&value.ty))
             }
