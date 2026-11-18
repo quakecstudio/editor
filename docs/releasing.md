@@ -118,7 +118,7 @@ doing everything but the push.
 | --- | --- | --- |
 | The APT and YUM/DNF repository at [packages.quakecstudio.com](https://packages.quakecstudio.com), kept in [`quakecstudio/packages`](https://github.com/quakecstudio/packages) | `apt-get install quakec-studio` or `dnf install quakec-studio`, after the setup that page gives | **Add to packages.quakecstudio.com** |
 | The Homebrew tap [`quakecstudio/homebrew-tap`](https://github.com/quakecstudio/homebrew-tap) | `brew install --cask quakecstudio/tap/quakec-studio` | **Update the Homebrew tap** |
-| winget, through [`microsoft/winget-pkgs`](https://github.com/microsoft/winget-pkgs) | `winget install QuakeCStudio.QuakeCStudio` | **Submit to winget** |
+| winget, through [`microsoft/winget-pkgs`](https://github.com/microsoft/winget-pkgs) | `winget install SmokeTurner.QuakeCStudio` | **Submit to winget** |
 
 **The package repository.** `packaging/linux/repository.sh` copies the release's debs and rpms
 into a checkout of `quakecstudio/packages`, the debs under the names Debian gives them
@@ -139,17 +139,26 @@ writes it to `Casks/quakec-studio.rb` in the tap. The cask installs the same sig
 notarized `.pkg` the release publishes, so a change to what the package installs
 (`packaging/macos/`) is followed by a change to the cask's `uninstall` and `zap`.
 
-**winget.** [komac](https://github.com/russellbanks/Komac), fetched by release and checked by
+**winget.** The package is `SmokeTurner.QuakeCStudio`, as vouch is `SmokeTurner.Vouch`: its
+publisher is Smoke Turner, LLC, which signs the executables, is the MSI's `Manufacturer`
+(`packaging/windows/quakec-studio.wxs`), the publisher Windows lists the app under, and agrees
+to Microsoft's contributor license agreement. [komac](https://github.com/russellbanks/Komac),
+fetched by release and checked by
 SHA-256, brings the fork `quakecstudio/winget-pkgs` up to date, writes the manifests from the
 release's two MSIs, pushes them to the fork and opens a pull request against
-`microsoft/winget-pkgs`. Microsoft reviews and merges it in its own time, so the job's failure
+`microsoft/winget-pkgs`. The steps are those of vouch-sh/vouch's release workflow, which reached
+them over many releases: the manifests
+are written first, `ReleaseNotes` is taken out of them, since winget expects a field published
+once in every version after and komac cannot always fill it, every line is made to end with
+CRLF, which winget-pkgs requires, and only then are they submitted. Microsoft reviews and merges it in its own time, so the job's failure
 does not fail the release, and it has no dry run: nothing of it can run before the release's
 files are public. komac updates a package winget already lists. The first version is submitted
-by hand, once, by the account that owns `WINGET_TOKEN`, and until Microsoft merges it the job
+by hand, once, by the account that owns `WINGET_TOKEN`, which agrees to Microsoft's contributor
+license agreement in a comment on that pull request, and until Microsoft merges it the job
 fails:
 
 ```bash
-komac new QuakeCStudio.QuakeCStudio --version 2026.11.1 \
+komac new SmokeTurner.QuakeCStudio --version 2026.11.1 \
   --urls https://github.com/quakecstudio/editor/releases/download/v2026.11.1/quakec-studio-2026.11.1-windows-x64.msi \
   https://github.com/quakecstudio/editor/releases/download/v2026.11.1/quakec-studio-2026.11.1-windows-arm64.msi
 ```
@@ -165,7 +174,7 @@ makes and sets each one (`environments/github/`); agents never handle their valu
 | `GPG_PASSPHRASE` | Its passphrase | the same |
 | `PACKAGES_DEPLOY_KEY` | An SSH deploy key with write access to `quakecstudio/packages` alone | the checkout that pushes the repository |
 | `HOMEBREW_TAP_DEPLOY_KEY` | An SSH deploy key with write access to `quakecstudio/homebrew-tap` alone | the checkout that pushes the cask |
-| `WINGET_TOKEN` | A classic personal access token with the `public_repo` scope, owned by `smoketurnerbot`, which has write access to the fork and must have signed Microsoft's contributor license agreement before its first pull request. komac cannot open the pull request with a fine-grained token | `komac` |
+| `WINGET_TOKEN` | A classic personal access token with the `public_repo` and `workflow` scopes, owned by `smoketurnerbot`, which has write access to the fork. It agrees to Microsoft's contributor license agreement on its first pull request, with the comment `@microsoft-github-policy-service agree company="Smoke Turner, LLC"`, as `vouch-bot` did on microsoft/winget-pkgs#366735. komac cannot open the pull request with a fine-grained token, and without `workflow` its `sync-fork` cannot move the fork past upstream commits that change a workflow, as vouch-sh/vouch's release found | `komac` |
 
 Replacing the GPG key means every user has to trust the new public key before their next
 install or update. The deploy keys and the GPG key do not expire; the token does when its

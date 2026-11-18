@@ -441,7 +441,12 @@ jobs:
   # and merges that pull request in its own time, so a failure here does not fail the
   # release, and nothing of it can run before the release's files are public: there is no
   # dry run. komac updates a package winget already lists; the first version is submitted by
-  # hand (docs/releasing.md).
+  # hand (docs/releasing.md). The package is SmokeTurner.QuakeCStudio, as vouch is
+  # SmokeTurner.Vouch: the publisher is Smoke Turner, LLC, which signs the executables, is
+  # the MSI's manufacturer and agrees to Microsoft's contributor license agreement. The
+  # steps are those of vouch-sh/vouch's release workflow, which reached them over many
+  # releases: the manifests written first, ReleaseNotes taken out, every line ended with
+  # CRLF, and only then the submission.
   winget:
     name: Submit to winget
     if: ${{ github.ref_type == 'tag' && !contains(github.ref_name, '-') }}
@@ -470,18 +475,46 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
         run: komac sync-fork
-      - name: Submit the release
+      # --exit writes the manifests to --output and stops before komac's question, which a
+      # runner cannot answer, and --skip-pr-check leaves out its other question, about a pull
+      # request already open. vouch does both with komac 2.16.0's --dry-run; from 2.17 on,
+      # --dry-run stops before the manifests are written.
+      - name: Write the manifests
         env:
           GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
           TAG: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
         run: |
           files="https://github.com/$REPO/releases/download/$TAG"
-          komac update QuakeCStudio.QuakeCStudio --version "$VERSION" \
+          komac update SmokeTurner.QuakeCStudio --version "$VERSION" \
             --urls "$files/quakec-studio-$VERSION-windows-x64.msi" \
             "$files/quakec-studio-$VERSION-windows-arm64.msi" \
             --release-notes-url "https://github.com/$REPO/releases/tag/$TAG" \
-            --submit
+            --output winget-manifests --exit --skip-pr-check
+          find winget-manifests -name '*.yaml' | grep -q .
+      # winget compares a submission with the manifest it last merged, so a field published
+      # once is expected in every version after, and komac fills ReleaseNotes from the
+      # GitHub release only when it can read it. ReleaseNotesUrl alone is published.
+      - name: Leave the release notes out
+        run: |
+          find winget-manifests -name '*.locale.*.yaml' -print0 \
+            | xargs -0 -r yq -i 'del(.ReleaseNotes)'
+      # winget-pkgs accepts only CRLF line endings. komac 2.16.0 wrote the release notes
+      # URL with LF, and yq can drop the last newline, which perl working line by line would
+      # not put back, so each file is read whole.
+      - name: End every line with CRLF
+        run: |
+          # shellcheck disable=SC2016 # $1 is perl's, not the shell's
+          find winget-manifests -name '*.yaml' -print0 \
+            | xargs -0 -r perl -i -0pe 's/\r\n|\r|\n/\r\n/g; s/([^\n])\z/$1\r\n/'
+          if grep -RPlz '(?<!\r)\n' winget-manifests; then
+            echo "::error::a manifest has a line that ends with LF alone"
+            exit 1
+          fi
+      - name: Submit the release
+        env:
+          GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: komac submit winget-manifests --yes
 
   # P4-21 (COMP-9): every release regenerates the compatibility list from the conformance
   # corpus, attaches it, and fails when the list on the tagged commit is out of date, so the

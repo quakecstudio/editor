@@ -5,10 +5,12 @@
   The MSI of QuakeC Studio (P4-18), built with WiX 5 by packaging/windows/package.sh, which
   fills in @MSI_VERSION@. The upgrade code is the same for every version, so a new MSI
   replaces the old. The file types it registers are those the macOS Info.plist and the Linux
-  MIME types declare: .qc, .qh, .map and .bsp.
+  MIME types declare: .qc, .qh, .map and .bsp. The manufacturer is the publisher Windows
+  lists the app under, the name winget's manifest gives and the one that signs the
+  executables (docs/releasing.md).
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="QuakeC Studio" Manufacturer="QuakeC Studio contributors"
+  <Package Name="QuakeC Studio" Manufacturer="Smoke Turner, LLC"
       Version="@MSI_VERSION@" UpgradeCode="8C1F5E2A-6B3D-4E7F-9A0C-2D4B6F8E1A3C" Scope="perMachine">
     <MajorUpgrade DowngradeErrorMessage="A newer QuakeC Studio is already installed." />
     <MediaTemplate EmbedCab="yes" />
