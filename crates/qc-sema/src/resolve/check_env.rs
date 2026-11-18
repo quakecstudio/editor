@@ -20,7 +20,7 @@ use crate::check::{
 };
 use crate::lower::ValueKind;
 use crate::lower::{ArrayDim, LiteralValue, Qualifier, RawLocal};
-use crate::resolve::{AccessorFacts, Layout, MAX_TYPEDEF_DEPTH, Resolver};
+use crate::resolve::{AccessorFacts, InitialValue, Layout, MAX_TYPEDEF_DEPTH, Resolver};
 use crate::symbol::{DefId, DefKind, Definition, FileId};
 use crate::ty::{SimpleType, Type};
 
@@ -175,6 +175,11 @@ impl Env for BodyEnv<'_, '_> {
         if !facts.initialized {
             facts.initialized = true;
             if let Some(literal) = value.literal() {
+                // FTEF-32.12: a vector the default folds to, `[0, 0, 0]`, is the global's value.
+                if let LiteralValue::Vector(words) = &literal {
+                    let folded = InitialValue::new(words.to_vec());
+                    self.resolver.index.initial_values.insert(def, folded);
+                }
                 self.resolver.literals.insert(def, literal);
             }
             return false;

@@ -5166,3 +5166,17 @@ fn a_wide_field_store_is_one_statement() {
         }
     );
 }
+
+// spec FTEF-32.12: an `autocvar` whose default is a vector written in brackets holds the
+// vector the default folds to
+#[test]
+fn an_autocvar_s_bracketed_default_is_its_value() {
+    let p = fte_progs(
+        "#pragma target fte\nvector out;\n\
+         void t(void) {\n\tout = autocvar(pm_angle, [1, 2, 3]);\n}\n",
+    );
+    assert_eq!(
+        global_words(&p, "autocvar_pm_angle", 3),
+        [1.0_f32, 2.0, 3.0].map(f32::to_bits)
+    );
+}
