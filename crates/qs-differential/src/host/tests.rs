@@ -19,6 +19,7 @@ use std::path::PathBuf;
 use qc_edict::system::global_by_name;
 use qc_trace::{Record, StringValue, Text};
 use qc_types::Etype;
+use qc_vm::trace::Detail;
 
 use crate::scenario::{Command, Cvar, DIFF_DEFAULT_FRAMETIME, DIFF_DEFAULT_SEED, Scenario};
 
@@ -474,7 +475,7 @@ fn cvar_lines_make_and_replace_settings() {
         .collect();
     let bytes = progs_with_spawn("worldspawn");
     let progs = qc_progs::Progs::read(&bytes).expect("a progs");
-    let host = super::Host::new(&scn, &progs).expect("a host");
+    let host = super::Host::new(&scn, &progs, Detail::Changes).expect("a host");
     let cvars = &host.builtins.engine().cvars;
     assert_eq!(cvars.text("skill"), Some("3"));
     assert_eq!(cvars.text("scratch3"), Some("4"));

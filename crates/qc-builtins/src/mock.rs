@@ -376,15 +376,24 @@ pub const LIMIT_MAX_MSGLEN: usize = 8000;
 pub struct EngineStrings {
     /// The `ftos`/`vtos` buffer value, once allocated (BUILTIN-7.4).
     temp_value: Option<i32>,
-    /// Every engine string's text, by value; the temp buffer's is updated in place.
-    entries: Vec<(i32, Vec<u8>)>,
+    /// Every engine string's text and whether it may be or was freed, in the order made: the
+    /// string -1 first, so a value finds its entry without a search. The temp buffer's text is
+    /// updated in place.
+    entries: Vec<(Zone, Vec<u8>)>,
     /// Whether the buffer was allocated or given a different text since the last
     /// `take_temp_change` (DIFF-3.9).
     temp_changed: bool,
-    /// The strings `strzone` made that `strunzone` has not freed (BUILTIN-18.9).
-    zoned: Vec<i32>,
-    /// The strings `strunzone` freed, which are no strings any more (BUILTIN-18.9).
-    freed: Vec<i32>,
+}
+
+/// Whether `strunzone` may free an engine string (BUILTIN-18.9).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Zone {
+    /// The engine's own: never freed.
+    Kept,
+    /// `strzone` made it and `strunzone` has not freed it.
+    Zoned,
+    /// `strunzone` freed it, so it is no string any more.
+    Freed,
 }
 
 impl EngineStrings {
@@ -398,12 +407,12 @@ impl EngineStrings {
             None => {
                 let value = self.next_value();
                 self.temp_value = Some(value);
-                self.entries.push((value, Vec::new()));
+                self.entries.push((Zone::Kept, Vec::new()));
                 self.temp_changed = true;
                 value
             }
         };
-        if let Some(entry) = self.entries.iter_mut().find(|(key, _)| *key == value)
+        if let Some(entry) = self.entry_mut(value)
             && entry.1 != text
         {
             entry.1 = text;
@@ -417,7 +426,7 @@ impl EngineStrings {
     /// Used for `mapname`, `netname` and the world's `model`; its value never changes.
     pub fn make(&mut self, text: Vec<u8>) -> i32 {
         let value = self.next_value();
-        self.entries.push((value, text));
+        self.entries.push((Zone::Kept, text));
         value
     }
 
@@ -425,20 +434,21 @@ impl EngineStrings {
     /// (BUILTIN-18.9).
     pub fn zone(&mut self, text: Vec<u8>) -> i32 {
         let value = self.make(text);
-        self.zoned.push(value);
+        if let Some(entry) = self.entry_mut(value) {
+            entry.0 = Zone::Zoned;
+        }
         value
     }
 
     /// Frees the string `value` when [`Self::zone`] made it and it is not freed yet; returns
     /// whether it did (BUILTIN-18.9).
     pub fn unzone(&mut self, value: i32) -> bool {
-        match self.zoned.iter().position(|&v| v == value) {
-            Some(at) => {
-                self.zoned.swap_remove(at);
-                self.freed.push(value);
+        match self.entry_mut(value) {
+            Some(entry) if entry.0 == Zone::Zoned => {
+                entry.0 = Zone::Freed;
                 true
             }
-            None => false,
+            Some(_) | None => false,
         }
     }
 
@@ -455,13 +465,21 @@ impl EngineStrings {
     /// The text of the engine string `value`, or `None` when no engine string has it.
     #[must_use]
     pub fn text(&self, value: i32) -> Option<&[u8]> {
-        if self.freed.contains(&value) {
-            return None;
+        let (zone, text) = self.entries.get(Self::index(value)?)?;
+        match zone {
+            Zone::Kept | Zone::Zoned => Some(text.as_slice()),
+            Zone::Freed => None,
         }
-        self.entries
-            .iter()
-            .find(|(key, _)| *key == value)
-            .map(|(_, text)| text.as_slice())
+    }
+
+    /// Where the entry of the engine string `value` is: -1's first (EDICT-13.3).
+    fn index(value: i32) -> Option<usize> {
+        usize::try_from(value.checked_neg()?.checked_sub(1)?).ok()
+    }
+
+    /// The entry of the engine string `value`, freed or not.
+    fn entry_mut(&mut self, value: i32) -> Option<&mut (Zone, Vec<u8>)> {
+        self.entries.get_mut(Self::index(value)?)
     }
 
     /// The next free engine-string value: -1, then -2, and so on (EDICT-13.3).

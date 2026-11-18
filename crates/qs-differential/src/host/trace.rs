@@ -17,7 +17,7 @@ use std::cell::Cell;
 use qc_builtins::MockBuiltins;
 use qc_progs::Progs;
 use qc_trace::{Header, Record, Text, Trace, TraceError};
-use qc_vm::trace::Trace as VmTrace;
+use qc_vm::trace::{Detail, Trace as VmTrace};
 use qc_vm::{Builtins, Context, Machine, Observer, RunError};
 
 /// Builds a [`qc_trace::Trace`] from a whole scenario (TRACE-1.1).
@@ -122,16 +122,20 @@ impl Observer for StringObserver<'_> {
 }
 
 impl TraceBuilder {
-    /// A trace hook for `progs`, with the header written after loading and before the first
-    /// run (TRACE-1.3, TRACE-2).
+    /// A trace hook for `progs` recording `detail` of each statement, with the header written
+    /// after loading and before the first run (TRACE-1.3, TRACE-2).
     ///
     /// # Errors
     ///
     /// A [`TraceError`] when the header numbers break TRACE-2.3 (they cannot for a progs the VM
     /// loaded).
-    pub fn new(machine: &Machine, progs: &Progs<'_>) -> Result<Self, TraceError> {
+    pub(crate) fn new(
+        machine: &Machine,
+        progs: &Progs<'_>,
+        detail: Detail,
+    ) -> Result<Self, TraceError> {
         Ok(Self {
-            trace: VmTrace::new(machine, progs)?,
+            trace: VmTrace::with_detail(machine, progs, detail)?,
             pending_strings: Vec::new(),
         })
     }

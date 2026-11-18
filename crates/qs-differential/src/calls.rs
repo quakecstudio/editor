@@ -24,6 +24,7 @@ use std::path::Path;
 use qc_builtins::{EngineProfile, MockBuiltins, Unimplemented};
 use qc_progs::{Def, Progs};
 use qc_types::{DefType, Etype, Slot};
+use qc_vm::trace::Detail;
 use qc_vm::{ErrorKind, Machine, Observer, RunError};
 
 use crate::host::{Host, RunRefused};
@@ -1094,7 +1095,9 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
         entities: &[u8],
         profile: EngineProfile,
     ) -> Result<Self, CallsError> {
-        let mut host = Host::new(scenario, progs).map_err(CallsError::Refused)?;
+        // The setup's records are read for the statements that ran alone, and a call's are
+        // never read, so no change set is found.
+        let mut host = Host::new(scenario, progs, Detail::Steps).map_err(CallsError::Refused)?;
         host.builtins.engine_mut().profile = profile;
         // LIMIT-4.3: the engine's runaway count while the world is set up, so a mod's long loop
         // runs as it does there.

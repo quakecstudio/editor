@@ -181,9 +181,9 @@ fn error_resets_depth_but_not_localstack() {
     assert_eq!(machine.localstack_used(), 2);
 }
 
-use crate::trace::Trace;
+use crate::trace::{Detail, Trace};
 use harness::StubBuiltins;
-use qc_trace::Record;
+use qc_trace::{Changes, Record};
 use qc_types::Slot;
 
 /// A dispatch that has every builtin number, as vkQuake's sends a number past its table to
@@ -339,6 +339,58 @@ fn nested_run_continues_outer_after_return() {
         .filter(|r| matches!(r, Record::Exit { .. }))
         .count();
     assert_eq!(exits, 2, "both runs return");
+}
+
+// A trace of the steps alone has the records of a trace with change sets, each change set
+// empty: what a reader of the statements that ran needs, with no memory read to find it.
+#[test]
+fn a_trace_of_steps_has_the_same_records_with_no_changes() {
+    let bytes = nested_run_progs();
+    let options = qc_progs::ReadOptions {
+        check_header_crc: false,
+    };
+    let progs = Progs::read_with(&bytes, options).unwrap();
+    let records = |detail| {
+        let mut machine = Machine::new(&progs, 0).unwrap();
+        machine.set_global_test(100, Slot::from_i32(3));
+        machine.set_global_test(101, Slot::from_i32(2));
+        machine.set_global_test(102, Slot::from_f32(8.0));
+        let mut trace = Trace::with_detail(&machine, &progs, detail).unwrap();
+        machine
+            .execute_program(
+                &progs,
+                ServerState::Active,
+                &mut StubBuiltins,
+                &mut trace,
+                1,
+            )
+            .unwrap();
+        trace.finish().records
+    };
+    let full = records(Detail::Changes);
+    let steps = records(Detail::Steps);
+    let empty = Changes::default();
+    assert!(
+        full.iter()
+            .any(|r| r.changes().is_some_and(|c| *c != empty))
+    );
+    assert!(
+        steps
+            .iter()
+            .all(|r| r.changes().is_none_or(|c| *c == empty))
+    );
+    let place = |r: &Record| match r {
+        Record::Step(step) => Some((step.function, step.statement)),
+        Record::Run { .. }
+        | Record::Exit { .. }
+        | Record::Error { .. }
+        | Record::Frame { .. }
+        | Record::String { .. } => None,
+    };
+    assert_eq!(
+        full.iter().map(place).collect::<Vec<_>>(),
+        steps.iter().map(place).collect::<Vec<_>>()
+    );
 }
 
 // spec VM-2.3: a run clears the statement trace flag when it starts

@@ -29,6 +29,7 @@ use qc_edict::EdictNumber;
 use qc_edict::system::{SysField, SysGlobal};
 use qc_progs::Progs;
 use qc_types::Slot;
+use qc_vm::trace::Detail;
 use qc_vm::{Machine, RunError, ServerState};
 
 use crate::scenario::Scenario;
@@ -139,7 +140,7 @@ pub fn run_scenario(
 ) -> Result<RunOutput, RunRefused> {
     // DIFF-3.1: load the progs with the header CRC checked (PROGS-3).
     let progs = Progs::read(progs_bytes).map_err(|e| RunRefused::Progs(e.to_string()))?;
-    let mut host = Host::new(scenario, &progs)?;
+    let mut host = Host::new(scenario, &progs, Detail::Changes)?;
     let ended = host.run(&progs, entities);
     Ok(RunOutput {
         trace: host.trace.finish(),
@@ -154,13 +155,17 @@ impl<'s> Host<'s> {
     /// # Errors
     ///
     /// [`RunRefused`] when the progs cannot back an edict store or a trace header.
-    pub(crate) fn new(scenario: &'s Scenario, progs: &Progs<'_>) -> Result<Self, RunRefused> {
+    pub(crate) fn new(
+        scenario: &'s Scenario,
+        progs: &Progs<'_>,
+        detail: Detail,
+    ) -> Result<Self, RunRefused> {
         let maxclients = usize::try_from(scenario.maxclients).unwrap_or(0);
         let machine =
             Machine::new(progs, maxclients).map_err(|e| RunRefused::Edict(e.to_string()))?;
         // DIFF-3.2: the trace header, written after loading and before the first run (TRACE-1.3).
-        let trace =
-            TraceBuilder::new(&machine, progs).map_err(|e| RunRefused::Trace(e.to_string()))?;
+        let trace = TraceBuilder::new(&machine, progs, detail)
+            .map_err(|e| RunRefused::Trace(e.to_string()))?;
 
         let submodels = usize::try_from(scenario.submodels).unwrap_or(0);
         let mut engine = MockEngine::new(&scenario.map, submodels, scenario.seed);
