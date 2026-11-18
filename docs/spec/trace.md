@@ -99,8 +99,9 @@ what the vectors in [`vectors/vm/`](vectors/vm/README.md) list after each statem
 - **TRACE-3.6** A recorder may be asked for the steps alone: it writes the records of TRACE-4
   in their order, every change set empty, and reads no global and no field to do so. What it
   writes says which statements ran and is not a trace to compare with another (TRACE-3.1 does
-  not hold of it); the compiler differential's calls, which compare the globals and fields
-  themselves after each call (DIFF-12.3), record this way.
+  not hold of it); the compiler differential's calls record their world's setup this way,
+  for the statements it ran (DIFF-12.5), and compare the globals and fields themselves after
+  each call (DIFF-12.3).
 
 ## TRACE-4 Records
 

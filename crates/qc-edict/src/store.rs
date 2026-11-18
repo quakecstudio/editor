@@ -82,7 +82,8 @@ impl Clone for Edict {
             free: self.free,
             freetime: self.freetime,
             fields: self.fields.clone(),
-            changed: false,
+            // A new edict is no store's copy yet, so the first restore copies it.
+            changed: true,
         }
     }
 
@@ -223,9 +224,10 @@ impl EdictStore {
     /// the compiler differential restores a store before every call (DIFF-12.2), and a call
     /// writes a few of the [`LIMIT_MAX_EDICTS`] edicts.
     ///
-    /// The store must have been `snapshot` when it was last cloned from it, when `snapshot`
-    /// was cloned from it, or when it was last restored from it; a store of another layout is
-    /// copied whole.
+    /// The first restore copies every edict. After it the store must be restored from the same
+    /// `snapshot`, unwritten since, each time: an edict this store has not written since its
+    /// last restore is taken to hold what `snapshot` holds. A store of another layout is copied
+    /// whole.
     pub fn restore_from(&mut self, snapshot: &Self) {
         if self.layout != snapshot.layout || self.edicts.len() != snapshot.edicts.len() {
             self.clone_from(snapshot);

@@ -32,7 +32,8 @@ use crate::oracles::codegen::{self, Profile};
 use crate::oracles::{self, Oracles, rerelease};
 use crate::shard::Shard;
 
-/// How many functions one cut program holds and calls (DIFF-15.7, DIFF-15.9).
+/// How many functions of the source one cut program holds and calls (DIFF-15.7, DIFF-15.9);
+/// the accessors they call are named beside them (DIFF-15.11).
 const GROUP: usize = 64;
 
 /// How many cut programs one run of the binary compares: as many as are compiled at once.
@@ -41,7 +42,8 @@ fn batch() -> usize {
 }
 
 /// What the names of FTEQCC's getter and setter of an array start with (FTEF-19.78): no body
-/// of the source is theirs, so each is named beside the bodies that call it (DIFF-15.11).
+/// of the source is theirs, so each is named beside the bodies that call it (DIFF-15.11). The
+/// `compiler-diff` binary knows them by the same two (`calls::draw::is_accessor`, DIFF-12.24).
 const ACCESSORS: [&[u8]; 2] = [b"ArrayGet*", b"ArraySet*"];
 
 /// What an emptied body becomes (DIFF-15.7).
@@ -262,9 +264,9 @@ fn codebase(
 }
 
 /// The groups of functions each cut is for (DIFF-15.7, DIFF-15.11): `functions` in groups of
-/// [`GROUP`], each followed by the array accessors of `graph` its functions call, so the cut
-/// keeps a body that makes the compilers write each one; then the accessors no function of
-/// `functions` calls, in groups of their own.
+/// [`GROUP`], each followed by the array accessors of `graph` its functions call that no
+/// group before named, so the cut keeps a body that makes the compilers write each one; then
+/// the accessors no function of `functions` calls, in groups of their own.
 fn groups<'a>(
     functions: &[&'a [u8]],
     graph: &'a BTreeMap<Vec<u8>, BTreeSet<Vec<u8>>>,
@@ -275,7 +277,12 @@ fn groups<'a>(
     for bodies in functions.chunks(GROUP) {
         let mut theirs: BTreeSet<&[u8]> = BTreeSet::new();
         for callees in bodies.iter().filter_map(|name| graph.get(*name)) {
-            theirs.extend(callees.iter().map(Vec::as_slice).filter(|c| is_accessor(c)));
+            theirs.extend(
+                callees
+                    .iter()
+                    .map(Vec::as_slice)
+                    .filter(|c| is_accessor(c) && !called.contains(c)),
+            );
         }
         let mut group = bodies.to_vec();
         group.extend(theirs.iter().copied());

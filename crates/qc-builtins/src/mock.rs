@@ -392,8 +392,9 @@ enum Zone {
     Kept,
     /// `strzone` made it and `strunzone` has not freed it.
     Zoned,
-    /// `strunzone` freed it, so it is no string any more.
-    Freed,
+    /// `strunzone` freed it, so it is no string any more: how many it had freed before, so two
+    /// engines that freed the same strings in another order are not equal (DIFF-12.3).
+    Freed(usize),
 }
 
 impl EngineStrings {
@@ -433,19 +434,22 @@ impl EngineStrings {
     /// Makes a new engine string holding `text` that [`Self::unzone`] may free, `strzone`'s
     /// (BUILTIN-18.9).
     pub fn zone(&mut self, text: Vec<u8>) -> i32 {
-        let value = self.make(text);
-        if let Some(entry) = self.entry_mut(value) {
-            entry.0 = Zone::Zoned;
-        }
+        let value = self.next_value();
+        self.entries.push((Zone::Zoned, text));
         value
     }
 
     /// Frees the string `value` when [`Self::zone`] made it and it is not freed yet; returns
     /// whether it did (BUILTIN-18.9).
     pub fn unzone(&mut self, value: i32) -> bool {
+        let freed = self
+            .entries
+            .iter()
+            .filter(|(zone, _)| matches!(zone, Zone::Freed(_)))
+            .count();
         match self.entry_mut(value) {
             Some(entry) if entry.0 == Zone::Zoned => {
-                entry.0 = Zone::Freed;
+                entry.0 = Zone::Freed(freed);
                 true
             }
             Some(_) | None => false,
@@ -468,7 +472,7 @@ impl EngineStrings {
         let (zone, text) = self.entries.get(Self::index(value)?)?;
         match zone {
             Zone::Kept | Zone::Zoned => Some(text.as_slice()),
-            Zone::Freed => None,
+            Zone::Freed(_) => None,
         }
     }
 

@@ -93,9 +93,25 @@ impl Clone for Machine {
     }
 
     fn clone_from(&mut self, source: &Self) {
+        self.edicts.clone_from(&source.edicts);
+        self.copy_rest(source);
+    }
+}
+
+impl Machine {
+    /// Makes this machine `snapshot` again, copying only the edicts written since it last
+    /// was ([`EdictStore::restore_from`], whose condition holds of the two machines): the
+    /// compiler differential restores a machine before every call (DIFF-12.2).
+    pub fn restore_from(&mut self, snapshot: &Self) {
+        self.edicts.restore_from(&snapshot.edicts);
+        self.copy_rest(snapshot);
+    }
+
+    /// Copies everything of `source` but its edicts into this machine's own allocations.
+    fn copy_rest(&mut self, source: &Self) {
         let Self {
             globals,
-            edicts,
+            edicts: _,
             stack,
             localstack,
             localstack_used,
@@ -106,37 +122,6 @@ impl Clone for Machine {
             runaway,
         } = source;
         self.globals.clone_from(globals);
-        self.edicts.clone_from(edicts);
-        self.stack.clone_from(stack);
-        self.localstack.clone_from(localstack);
-        self.localstack_used = *localstack_used;
-        self.xfunction = *xfunction;
-        self.xstatement = *xstatement;
-        self.argc = *argc;
-        self.trace_flag = *trace_flag;
-        self.runaway = *runaway;
-    }
-}
-
-impl Machine {
-    /// Makes this machine `snapshot` again, copying only the edicts written since it last
-    /// was ([`EdictStore::restore_from`], whose condition holds of the two machines): the
-    /// compiler differential restores a machine before every call (DIFF-12.2).
-    pub fn restore_from(&mut self, snapshot: &Self) {
-        let Self {
-            globals,
-            edicts,
-            stack,
-            localstack,
-            localstack_used,
-            xfunction,
-            xstatement,
-            argc,
-            trace_flag,
-            runaway,
-        } = snapshot;
-        self.globals.clone_from(globals);
-        self.edicts.restore_from(edicts);
         self.stack.clone_from(stack);
         self.localstack.clone_from(localstack);
         self.localstack_used = *localstack_used;

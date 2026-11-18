@@ -289,10 +289,10 @@ fn what_agreed_is_compared_again_once_it_is_written() {
     a.host.machine.restore_from(&a.machine);
     assert_eq!(super::state_difference(&a, &b, globals, &mut known), None);
 
-    a.host
-        .set_global_slot(i32::try_from(s).unwrap(), qc_types::Slot::from_i32(-1));
-    a.machine.restore_from(&a.host.machine);
-    assert!(!a.global_is_restored(string, s));
+    // `mapname` is the engine's string in the world as it is restored.
+    let mapname = slot(b"mapname");
+    assert!(a.host.machine.globals()[mapname].as_i32() < 0);
+    assert!(!a.global_is_restored(string, mapname));
 
     assert!(a.edict_is_restored(2));
     a.host
@@ -307,7 +307,7 @@ fn what_agreed_is_compared_again_once_it_is_written() {
     assert!(!a.edict_is_restored(2));
     assert!(matches!(
         super::state_difference(&a, &b, globals, &mut known),
-        Some(Difference::Global(..) | Difference::Field(2, ..))
+        Some(Difference::Field(2, ..))
     ));
 }
 

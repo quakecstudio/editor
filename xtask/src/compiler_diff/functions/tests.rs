@@ -122,8 +122,9 @@ fn a_cut_empties_every_body_not_kept() {
     assert!(cut(&bodies, &sources, &names(&["f", "g", "h"])).is_empty());
 }
 
-// spec DIFF-15.11: an accessor is named in each group with a function that calls it, after the
-// group's functions, and the accessors no function calls are in groups of their own at the end
+// spec DIFF-15.11: an accessor is named in the first group with a function that calls it, after
+// the group's functions, and the accessors no function calls are in groups of their own at the
+// end
 #[test]
 fn an_accessor_is_named_beside_the_functions_that_call_it() {
     let mut graph: BTreeMap<Vec<u8>, BTreeSet<Vec<u8>>> = [
@@ -149,7 +150,7 @@ fn an_accessor_is_named_beside_the_functions_that_call_it() {
         first[GROUP..],
         [b"ArrayGet*tab".as_slice(), b"ArraySet*tab"]
     );
-    assert_eq!(second, &[b"last".as_slice(), b"ArrayGet*tab"]);
+    assert_eq!(second, &[b"last".as_slice()]);
     assert_eq!(uncalled, &[b"ArrayGet*lone".as_slice()]);
 }
 

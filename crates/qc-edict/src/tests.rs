@@ -986,6 +986,25 @@ fn restore_from_undoes_every_kind_of_write() {
     }
 }
 
+// No spec statement: the first `restore_from` copies every edict, whatever the two stores were
+// before, a new store and a clone included.
+#[test]
+fn the_first_restore_copies_every_edict() {
+    let mut written = store(1);
+    written
+        .set_field(EdictNumber::new(3), 0, Slot::from_i32(8))
+        .unwrap();
+    let mut fresh = store(1);
+    fresh.restore_from(&written);
+    assert!(same_store(&fresh, &written));
+
+    let other = store(1);
+    let mut cloned = other.clone();
+    cloned.restore_from(&written);
+    assert!(!same_store(&other, &written));
+    assert!(same_store(&cloned, &written));
+}
+
 // No spec statement: `restore_from` a store of another layout copies it whole.
 #[test]
 fn restore_from_takes_another_layout() {

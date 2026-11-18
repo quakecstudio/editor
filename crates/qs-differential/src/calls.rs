@@ -755,6 +755,9 @@ struct Pair {
 /// value that is not an engine string is read from its bits and from tables no call changes:
 /// so where both worlds still hold those bits, what agreed before agrees now and is not read
 /// again. An engine string's text is the engine's to change, and is read every time.
+///
+/// It is of the two worlds its [`Pair`] was made from, as they are restored: a world's
+/// restored state is set once, when the world is made ([`World::new`]), and never again.
 #[derive(Default)]
 struct Known {
     /// By place in [`Pair::globals`].
