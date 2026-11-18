@@ -17,7 +17,7 @@
 //! Implements `docs/spec/differential.md` DIFF-12.2 to DIFF-12.5 and DIFF-12.20.
 
 use qc_edict::EdictNumber;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write as _;
 use std::path::Path;
 
@@ -1020,7 +1020,8 @@ struct Program<'a, 'p> {
     globals: Vec<Global>,
     /// The slot of each name a context writes by name: its first float, string or entity
     /// global outside every function's locals, else its first (DIFF-12.11, DIFF-12.27).
-    global_slots: BTreeMap<Vec<u8>, usize>,
+    /// Hashed: every call looks up each variable it writes, and nothing reads the order.
+    global_slots: HashMap<Vec<u8>, usize>,
     /// The named fields, by name: the type and slot of the first definition of each.
     fields: BTreeMap<Vec<u8>, (DefType, usize)>,
     /// The name a field's slot is shown by: the first, in the order of the names, of the
@@ -1086,7 +1087,7 @@ impl<'a, 'p> Program<'a, 'p> {
         let mut program = Self {
             progs,
             globals,
-            global_slots: BTreeMap::new(),
+            global_slots: HashMap::new(),
             fields,
             field_names,
             functions,
@@ -1101,7 +1102,7 @@ impl<'a, 'p> Program<'a, 'p> {
                 DefType::Known(Etype::Float | Etype::String | Etype::Entity)
             )
         };
-        let mut global_slots = BTreeMap::new();
+        let mut global_slots = HashMap::new();
         for global in program
             .globals
             .iter()
