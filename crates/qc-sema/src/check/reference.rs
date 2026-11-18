@@ -328,6 +328,7 @@ impl Checker<'_> {
         if let Reference::Field(field) = &base.reference
             && field.selected.is_none()
             && constant.is_none()
+            && self.env.target_at(span.start).valid(Op::LoadaFld)
             && let Some(def) = field.def
         {
             let components = Value {
