@@ -122,6 +122,24 @@ fn a_cut_empties_every_body_not_kept() {
     assert!(cut(&bodies, &sources, &names(&["f", "g", "h"])).is_empty());
 }
 
+// spec DIFF-15.7: FTEQCC's getters and setters of arrays, which no body of the source is, are
+// named after the bodies so each is called for every index of its array
+#[test]
+fn the_accessors_of_arrays_are_named_for_groups_of_their_own() {
+    let graph: BTreeMap<Vec<u8>, BTreeSet<Vec<u8>>> = [
+        "ArrayGet*tab",
+        "ArraySet*tab",
+        "ArrayGetter",
+        "main",
+        "Set*tab",
+    ]
+    .into_iter()
+    .map(|name| (name.as_bytes().to_vec(), names(&[])))
+    .collect();
+    let found: Vec<&[u8]> = accessors(&graph).collect();
+    assert_eq!(found, [b"ArrayGet*tab".as_slice(), b"ArraySet*tab"]);
+}
+
 // spec DIFF-15.8: a function's calls by name are the functions the globals its CALLs read
 // hold; a call through a variable, whose global holds no function, adds none, and the kept
 // functions are the closure of the calls, through any depth and any cycle

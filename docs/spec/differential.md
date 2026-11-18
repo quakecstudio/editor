@@ -1106,6 +1106,11 @@ The oracle is the pinned FTEQCC (`docs/porting.md`); the comparison is DIFF-12's
   not call `prior` ("Wrapper function ... does not refer to its prior function"). An emptied
   function that returns a value returns nothing, which FTEQCC warns of (Q206) and both compilers
   compile.
+  FTEQCC's getters and setters of arrays (`ArrayGet*NAME`, `ArraySet*NAME`, FTEF-19.78) are
+  the body of no function of the source, so after the bodies they are listed by name, in the
+  order of their names, in groups of 64 of their own whose programs keep the bodies DIFF-15.8
+  keeps for no function: a call of one runs DIFF-12.24's call for every index of its array,
+  which the calls of the functions that happen to index the array do not reach.
 - **DIFF-15.8** The functions kept for a group are the group's functions, the functions the
   setup of each scenario of DIFF-12.20 runs in the codebase's whole progs (the spawn functions
   of the map's entities, `worldspawn` among them, the client functions and the frames'

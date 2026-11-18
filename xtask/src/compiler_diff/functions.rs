@@ -40,6 +40,10 @@ fn batch() -> usize {
     std::thread::available_parallelism().map_or(1, std::num::NonZero::get)
 }
 
+/// What the names of FTEQCC's getter and setter of an array start with (FTEF-19.78): no body
+/// of the source is theirs, so no group of bodies names them (DIFF-15.7).
+const ACCESSORS: [&[u8]; 2] = [b"ArrayGet*", b"ArraySet*"];
+
 /// What an emptied body becomes (DIFF-15.7).
 const STUB: &[u8] = b"{}";
 
@@ -166,6 +170,9 @@ fn codebase(
             functions.push(&body.name);
         }
     }
+    // DIFF-15.7: the accessors follow the bodies, in groups of their own, so each is called for
+    // every index of its array (DIFF-12.24) though no function of a cut happens to index it.
+    functions.extend(accessors(&graph));
     let executed = work.join("executed.tsv");
     let mut failures = Vec::new();
     let all = functions.chunks(GROUP).count();
@@ -254,6 +261,14 @@ fn codebase(
         share * 100.0,
     );
     Ok(passed)
+}
+
+/// The names of FTEQCC's array accessors among the functions of `graph`, in its order.
+fn accessors(graph: &BTreeMap<Vec<u8>, BTreeSet<Vec<u8>>>) -> impl Iterator<Item = &[u8]> {
+    graph
+        .keys()
+        .map(Vec::as_slice)
+        .filter(|name| ACCESSORS.iter().any(|start| name.starts_with(start)))
 }
 
 /// The codebase's bodies, the source of each of its files, and its call graph.
