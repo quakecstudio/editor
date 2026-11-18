@@ -727,9 +727,14 @@ impl<'a> Compiler<'a> {
                 .map_err(|_| Abort::Internal(Internal::TooLarge, span))?
         };
         let (mut parm_size, taken) = self.parameter_sizes(&function_type, span)?;
-        // `funcs[i].numparms = p;`: the slots, where a parameter took more than one.
+        // `funcs[i].numparms = p;`: the slots the record sizes, more than the parameters where
+        // one took several and at most eight under FTEQCC, whose record has no more.
         let params = i32::try_from(function_type.params.len()).unwrap_or(i32::MAX);
-        let numparms = if taken > params { taken } else { numparms };
+        let numparms = if self.dialect.has_fteqcc_extensions() && taken != params {
+            taken
+        } else {
+            numparms
+        };
         let mut locals = self
             .locals_end
             .checked_sub(locals_start)
@@ -787,8 +792,7 @@ impl<'a> Compiler<'a> {
     /// The global of parameter slot `u`: `OFS_PARM0 + 3 * u` for the first eight, after them
     /// FTEQCC's `$parmN` global, made the first time it is needed (FTE-18.6).
     pub(super) fn parameter_slot(&mut self, u: usize, span: Span) -> Lowered<u32> {
-        const MAX_PARMS: usize = 8;
-        if u < MAX_PARMS {
+        if u < RECORD_PARMS {
             return parm_slot(u).at(span);
         }
         if let Some(&slot) = self.extra_parms.get(&u) {

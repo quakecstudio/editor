@@ -5497,3 +5497,113 @@ fn designated_braces_place_each_member_s_value() {
     let (_, kv) = record("k.v");
     assert_eq!(words(&p, kv, 3), [4.0_f32, 5.0, 6.0].map(f32::to_bits));
 }
+
+// spec FTEF-19.82: a global is saved when FTEQCC was asked to save it and does not hold it
+// constant, each record but a field's and a struct's header, as the pinned FTEQCC writes them
+#[test]
+fn a_global_is_saved_by_how_it_is_declared() {
+    let p = fte_progs(
+        "#pragma target fte\nentity self;\n.float health;\nvoid end_sys_fields;\n\
+         typedef struct { float x; .float fld; } mix_t;\n\
+         typedef struct { string s; float y; } tt_t;\n\
+         nosave var float nsv = 3;\nnosave float nsu;\nvar float vf = 4;\nfloat cf = 5;\n\
+         const float cu;\nfloat plain;\nvoid fa(void) {}\nvar void(void) fp = fa;\n\
+         float arru[3];\nmix_t g;\nvar tt_t ga[2] = { {\"a\", 1}, {\"b\", 2} };\n\
+         float out;\n\
+         void t(void) {\n\tout = autocvar(baz, 3) + nsv + nsu + vf + cf + cu + plain + arru[1] \
+         + g.x + ga[1].y;\n\tfp();\n\tself.(g.fld) = 1;\n}\n",
+    );
+    let bits = |name: &str| {
+        p.global_defs
+            .iter()
+            .find(|def| string(&p, def.s_name) == name)
+            .map_or_else(|| panic!("no {name}"), |def| def.type_bits)
+    };
+    for (name, expected) in [
+        ("plain", 0x8002),
+        ("vf", 0x8002),
+        ("fp", 0x8006),
+        ("arru[1]", 0x8002),
+        ("end_sys_fields", 0x8000),
+        ("cf", 0x2),
+        ("cu", 0x2),
+        ("nsu", 0x2),
+        ("nsv", 0x2),
+        ("autocvar_baz", 0x2),
+        ("g.x", 0x8002),
+        ("g.fld", 0x5),
+        ("ga[1]", 0xe),
+        ("ga[1].s", 0x8001),
+        ("ga[1].y", 0x8002),
+    ] {
+        assert_eq!(bits(name), expected, "{name}");
+    }
+}
+
+// spec FTEF-32.26: a slot past the eighth is a `$parmN` global, which the function copies its
+// parameter from first, the call is `CALL8H`, and the record sizes eight parameters
+#[test]
+fn slots_past_the_eighth_are_copied_from_their_globals() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\n\
+         typedef struct { int a; int b; int c; vector v; float f; int g; string s; } font_s;\n\
+         font_s g1;\nfloat gf;\n\
+         float nine(float a, float b, float c, float d, float e, float f, float g, float h, \
+         float i, vector j) {\n\treturn a + i + j_y;\n}\n\
+         float take7(float a, float b, float c, float d, float e, float f, float g, \
+         font_s fnt) {\n\treturn fnt.f + a;\n}\n\
+         void t(void) {\n\tgf = nine(1, 2, 3, 4, 5, 6, 7, 8, 9, \'1 2 3\');\n\
+         \tgf = take7(1, 2, 3, 4, 5, 6, 7, g1);\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let (store_f, store_v) = (number(Op::StoreF), number(Op::StoreV));
+    assert_eq!(function(&p, "nine").numparms, 8);
+    assert_eq!(function(&p, "take7").parm_size, [1, 1, 1, 1, 1, 1, 1, 3]);
+    let nine = body(&p, "nine");
+    let (eighth, ninth) = (nine[0].a, nine[1].a);
+    assert_eq!((nine[0].op, nine[1].op), (store_f, store_v));
+    // The struct's second and third pieces come from the same two globals.
+    let take7 = body(&p, "take7");
+    assert_eq!(
+        [(take7[0].op, take7[0].a), (take7[1].op, take7[1].a)],
+        [(store_v, eighth), (store_v, ninth)]
+    );
+    let t = body(&p, "t");
+    let calls: Vec<usize> = (0..t.len())
+        .filter(|&at| t[at].op == number(Op::Call8h))
+        .collect();
+    assert_eq!(calls.len(), 2, "{t:?}");
+    // The ninth and tenth arguments are stored to the globals, last before the call.
+    let first = calls[0];
+    assert_eq!(
+        [
+            (t[first - 2].op, t[first - 2].b),
+            (t[first - 1].op, t[first - 1].b)
+        ],
+        [(store_f, eighth), (store_v, ninth)]
+    );
+    // The struct's pieces are copied first, to the eighth slot and the two globals.
+    let font = global(&p, "g1");
+    let pieces: Vec<(i32, i32)> = t[first + 2..first + 5].iter().map(|s| (s.a, s.b)).collect();
+    assert_eq!(pieces, [(font, 25), (font + 3, eighth), (font + 6, ninth)]);
+}
+
+// spec FTEF-19.83: a member named again in designated braces is already initialised
+#[test]
+fn a_member_named_twice_is_already_initialised() {
+    let compiled = compile_fteqcc(
+        "#pragma target fte\ntypedef struct { float x; float y; } pair_t;\n\
+         var pair_t g = { .y = 1, .y = 2 };\n",
+    );
+    let Err(CompileError::Diagnostics(diagnostics)) = compiled else {
+        panic!("it compiled");
+    };
+    assert!(
+        diagnostics.iter().any(|d| d
+            .diagnostic
+            .message
+            .ends_with(".y was already ininitialised")),
+        "{diagnostics:?}"
+    );
+}

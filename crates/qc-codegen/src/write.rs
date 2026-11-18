@@ -114,15 +114,17 @@ fn element_records(
     program: &mut Program,
     index: &ModuleIndex,
     (name, ty, ofs): (&str, &ValueType, u32),
+    saving: Saving,
 ) -> Result<(), Internal> {
     let shape = match ty {
         ValueType::Of(t) => index.struct_shape(t),
         ValueType::FloatField => None,
     };
+    // `def->saved = false; //struct headers don't get saved.`
     let type_bits = if shape.is_some() {
         EV_STRUCT
     } else {
-        u32::from(type_number(index, ty))
+        saving.bits(type_number(index, ty))
     };
     out.push(DefRecord {
         type_bits,
@@ -130,9 +132,31 @@ fn element_records(
         s_name: program.copy_string(&latin1_encode(name))?,
     });
     if let Some(shape) = shape {
-        member_records(out, program, name, (index, shape), ofs)?;
+        member_records(out, program, name, (index, shape), (ofs, saving))?;
     }
     Ok(())
+}
+
+/// Whether a global's records are written saved, `DEF_SAVEGLOBAL` (QC-25.3, FTEF-19.82).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Saving {
+    /// The engine saves and restores the global.
+    Saved,
+    /// It does not.
+    Unsaved,
+}
+
+impl Saving {
+    /// The type of a record whose type number is `number`: saved unless it is a field's
+    /// (`def->type->type != ev_field`).
+    fn bits(self, number: u16) -> u32 {
+        match self {
+            Self::Saved if number != Etype::Field.number() => {
+                u32::from(number) | PROGS_DEF_SAVEGLOBAL
+            }
+            Self::Saved | Self::Unsaved => u32::from(number),
+        }
+    }
 }
 
 /// FTE-13.13: the records of the members of the struct value `name` at `ofs`, `name.member`,
@@ -142,12 +166,17 @@ fn member_records(
     program: &mut Program,
     name: &str,
     (index, shape): (&ModuleIndex, &StructShape),
-    ofs: u32,
+    (ofs, saving): (u32, Saving),
 ) -> Result<(), Internal> {
     for member in &shape.members {
         let at = ofs.checked_add(member.word).ok_or(Internal::TooLarge)?;
+        // A member that is itself a struct is its header, which is never saved.
+        let saving = match index.struct_shape(&member.ty) {
+            Some(_) => Saving::Unsaved,
+            None => saving,
+        };
         out.push(DefRecord {
-            type_bits: u32::from(type_number(index, &ValueType::Of(member.ty.clone()))),
+            type_bits: saving.bits(type_number(index, &ValueType::Of(member.ty.clone()))),
             ofs: at,
             s_name: program.copy_string(&latin1_encode(&format!("{name}.{}", member.name)))?,
         });
@@ -220,17 +249,17 @@ pub(crate) fn progs(
             });
         }
         // QC-25.3: id's `qcc` saves a global with no initial value. FTEF-19.82: FTEQCC saves a
-        // definition the program declares that it does not hold constant, `def->saved &&
-        // !def->constant`, so a `var` with a value too; one it makes itself, a translated
-        // string's, only with no value.
-        let saved = match records {
+        // global it is asked to save, `def->saved`, that it does not hold constant; each record
+        // of it but a field's.
+        let asked = match records {
             Records::Qcc => !def.initialized && etype != Etype::Function,
-            Records::Fteqcc => {
-                etype != Etype::Function
-                    && (!def.initialized || (def.id.is_some() && !def.constant))
-            }
-        } && etype != Etype::Field
-            && def.scope.is_none();
+            Records::Fteqcc => def.id.is_some_and(|id| index.is_saved(id)) && !def.constant,
+        } && def.scope.is_none();
+        let saving = if asked {
+            Saving::Saved
+        } else {
+            Saving::Unsaved
+        };
         if records == Records::Fteqcc
             && let Some(count) = def.count
         {
@@ -241,7 +270,8 @@ pub(crate) fn progs(
                     .and_then(|w| w.checked_add(def.ofs))
                     .ok_or(Internal::TooLarge)?;
                 let name = format!("{}[{i}]", def.name);
-                element_records(&mut global_defs, &mut program, index, (&name, &def.ty, ofs))?;
+                let element = (name.as_str(), &def.ty, ofs);
+                element_records(&mut global_defs, &mut program, index, element, saving)?;
             }
             continue;
         }
@@ -249,28 +279,17 @@ pub(crate) fn progs(
             && let ValueType::Of(t) = &def.ty
             && let Some(shape) = index.struct_shape(t)
         {
-            let first = global_defs.len();
             member_records(
                 &mut global_defs,
                 &mut program,
                 &def.name,
                 (index, shape),
-                def.ofs,
+                (def.ofs, saving),
             )?;
-            // FTEF-19.82: each member's record is saved as the struct's own would be.
-            if saved {
-                for record in global_defs.iter_mut().skip(first) {
-                    record.type_bits |= PROGS_DEF_SAVEGLOBAL;
-                }
-            }
             continue;
         }
-        let mut type_bits = u32::from(type_number(index, &def.ty));
-        if saved {
-            type_bits |= PROGS_DEF_SAVEGLOBAL;
-        }
         global_defs.push(DefRecord {
-            type_bits,
+            type_bits: saving.bits(type_number(index, &def.ty)),
             ofs: def.ofs,
             s_name: program.copy_string(&latin1_encode(&def.name))?,
         });

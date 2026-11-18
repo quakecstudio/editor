@@ -952,8 +952,12 @@ impl Checker<'_> {
             call: base.call,
             made: base.made,
             word,
-            temp: base.temp.map(|temp| temp.saturating_add(word)),
+            // No temporary of its own: a store of it is a statement of its own, never folded
+            // into the one that made the vector, whose result is three words (DIFF-14.11).
+            temp: None,
             readonly: base.readonly,
+            // A message names it by the vector's type, as the vector is named.
+            name: Some(base.label()),
             ..Value::of(Type::Simple(SimpleType::Float))
         })
     }

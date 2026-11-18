@@ -954,6 +954,8 @@ pub(crate) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
         .ancestors()
         .skip(1)
         .any(|node| node.kind() == qc_syntax::SyntaxKind::FunctionBody);
+    // FTEF-32.26: the parameters past the eighth slot are copied from their `$parmN` globals.
+    checker.extra_parameters(body.syntax().span());
     // FTE-18.6: a variadic function first stores, before its `STATE`, each parameter slot after its named ones to
     // its `__va_list`.
     if checker.function.variadic {

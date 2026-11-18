@@ -550,7 +550,7 @@ impl Compiler<'_> {
             && let Some(shape) = self.index.struct_shape(t).cloned()
         {
             let aggregate = ast::AggregateInit::cast(item.clone()).at(span)?;
-            // FTEF-19.64: designated braces give each member they name its value, where it
+            // FTEF-19.83: designated braces give each member they name its value, where it
             // is in the struct; a member they do not name holds 0.
             let names = aggregate.designated_names();
             if !names.is_empty() {
@@ -615,12 +615,7 @@ impl Compiler<'_> {
                 ]
             }
             Some(_) => return Err(Abort::Internal(Internal::Unsupported, span)),
-            // FTEF-34.9: an item of a global's aggregate that is an expression, as the semantic
-            // model folded it.
-            None => match self.index.item_value(self.file, span.start) {
-                Some(folded) => folded.words().to_vec(),
-                None => self.constant_words(ty, expr)?,
-            },
+            None => self.constant_words(ty, expr)?,
         })
     }
 

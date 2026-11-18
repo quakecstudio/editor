@@ -248,6 +248,9 @@ impl Resolver<'_> {
             if self.facts.get(i).is_some_and(|f| f.constant) {
                 self.index.constants.insert(DefId::new(i));
             }
+            if self.facts.get(i).is_some_and(|f| f.saved) {
+                self.index.saved.insert(DefId::new(i));
+            }
             pending.push(def.ty.clone());
             // A pointer's target, which `->` reads members of (FTEF-4.1).
             if let Type::Pointer(target) = &def.ty {
@@ -338,7 +341,7 @@ impl Resolver<'_> {
 
     /// What a definition of `ty` is in a progs when `ty` is one of C's scalars of a word or
     /// more, through a typedef and an enum's base: its words and its record's type number.
-    pub(in crate::resolve) fn scalar_of(&self, ty: &Type) -> Option<Scalar> {
+    fn scalar_of(&self, ty: &Type) -> Option<Scalar> {
         let resolved = self.resolved(ty);
         // An integer narrower than a word is a bitfield's type, which no record numbers so.
         let narrow = matches!(
