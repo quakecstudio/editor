@@ -323,6 +323,30 @@ impl Checker<'_> {
                 ..Value::of(Type::Simple(SimpleType::Float))
             });
         }
+        // FTEF-31.26: at an index that is no constant the component's field is loaded from the
+        // vector field's own, as an array of fields' is (FTEF-31.19).
+        if let Reference::Field(field) = &base.reference
+            && field.selected.is_none()
+            && constant.is_none()
+            && let Some(def) = field.def
+        {
+            let components = Value {
+                sym: Sym::Def(def, false, 0),
+                ..Value::of(Type::Field(Type::Simple(SimpleType::Float).into()))
+            };
+            let read = self.load_from_array(&components, &at, ElementKind::Element, span)?;
+            if let ArrayRead::Loaded(loaded) = read {
+                let selected = self.name_of(&loaded);
+                return Ok(Value {
+                    reference: Reference::Field(Box::new(FieldRef {
+                        selected,
+                        ..field.as_ref().clone()
+                    })),
+                    readonly: base.readonly,
+                    ..Value::of(Type::Simple(SimpleType::Float))
+                });
+            }
+        }
         Ok(Value {
             reference: Reference::element(label, at, false),
             readonly: base.readonly,

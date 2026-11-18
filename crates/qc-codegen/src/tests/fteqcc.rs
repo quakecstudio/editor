@@ -5010,3 +5010,47 @@ fn the_address_of_a_pointer_s_element_adds_to_the_pointer() {
         (number(Op::Call2h), global(&p, "link"), statements[1].c)
     );
 }
+
+// spec FTEF-31.26: a vector field at an index that is no constant is the float field loaded
+// from the vector field at the index, read through the entity, as the pinned FTEQCC writes it
+#[test]
+fn a_vector_field_at_a_variable_index_loads_its_component_s_field() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\nentity self;\n.vector fv;\nvoid end_sys_fields;\n\
+         int i;\nfloat f;\nvoid t(void) {\n\tf = self.fv[i];\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let (this, fv, i, f) = (
+        global(&p, "self"),
+        global(&p, "fv"),
+        global(&p, "i"),
+        global(&p, "f"),
+    );
+    let statements = body(&p, "t");
+    let field = statements[1].c;
+    assert_eq!(
+        statements,
+        [
+            Statement {
+                op: number(Op::Boundcheck),
+                a: i,
+                b: 3,
+                c: 0
+            },
+            Statement {
+                op: number(Op::LoadaFld),
+                a: fv,
+                b: i,
+                c: field
+            },
+            Statement {
+                op: number(Op::LoadF),
+                a: this,
+                b: field,
+                c: f
+            },
+            st(Done, 0, 0, 0),
+        ]
+    );
+}

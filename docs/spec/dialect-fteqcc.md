@@ -5533,6 +5533,13 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   `p[3].v[0]` is `LOADP_F p, 16`. A constant index of 3 or more is "(vector) array index out of
   bounds" (FTEF-31.2). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`.
+- **FTEF-31.26** An entity's `.vector` field indexed by an index that is no constant, `e.fv[i]`
+  or a class's member `m_v[i]`, is the float field at that index of the vector field (`/*array
+  notation on vector field*/ ... t = type_floatfield;`), loaded from the field's definition as an
+  array's element is (FTEF-31.19) after the index's check (FTEF-31.24), and the entity's field
+  read or stored at it: `f = m_v[i]` in a method is `BOUNDCHECK i, 3`, `LOADA_FLD m_v, i, temp`
+  and `LOAD_F self, temp, f`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`.
 
 ## FTEF-32 Calls
 
