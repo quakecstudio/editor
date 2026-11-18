@@ -14,7 +14,9 @@ use qc_syntax::c_scalar::CScalar;
 use crate::check::etype::Etype;
 use crate::lower::LiteralValue;
 use crate::lower::{ArrayDim, StructMember};
-use crate::resolve::{InitialValue, MAX_CLASS_DEPTH, MemberShape, Resolver, Scalar, StructShape};
+use crate::resolve::{
+    AccessorShape, InitialValue, MAX_CLASS_DEPTH, MemberShape, Resolver, Scalar, StructShape,
+};
 use crate::symbol::DefId;
 use crate::ty::Type;
 
@@ -309,7 +311,19 @@ impl Resolver<'_> {
                         // Under the type it stands for too, which a typedef's or an enum's
                         // definitions may be asked by.
                         self.index.scalars.insert(self.resolved(&ty), scalar);
-                        self.index.scalars.insert(ty, scalar);
+                        self.index.scalars.insert(ty.clone(), scalar);
+                    }
+                    // FTEF-10.15: an accessor type is `ev_accessor`, of its base's words.
+                    if !self.index.accessor_shapes.contains_key(&ty)
+                        && self.is_accessor_type(&ty)
+                        && let Some(layout) = self.layout(&ty)
+                    {
+                        let shape = AccessorShape {
+                            words: layout.words,
+                            number: Etype::ACCESSOR_NUMBER,
+                        };
+                        self.index.accessor_shapes.insert(self.resolved(&ty), shape);
+                        self.index.accessor_shapes.insert(ty, shape);
                     }
                 }
                 Type::Simple(_) | Type::Unknown => {}

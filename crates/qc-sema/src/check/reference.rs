@@ -778,7 +778,7 @@ impl Checker<'_> {
         };
         let label = base.label();
         // FTEF-10.7: an accessor member's index, or an accessor's indexer, `get T[index]`.
-        if let Some(element) = self.accessor_index(&base, &at) {
+        if let Some(element) = self.accessor_index(&base, &at, index.syntax().span())? {
             return Ok(element);
         }
         // An array of fields, `this.arr[i]`: the field the index selects, an entity's field to

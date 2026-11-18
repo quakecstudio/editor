@@ -57,7 +57,7 @@ impl Checker<'_> {
         }
         // FTEF-10.3: an accessor's member, read or stored through its functions.
         if let Some((name, _)) = selector_name(&selector)
-            && let Some(accessor) = self.accessor_member(&base, &name)
+            && let Some(accessor) = self.accessor_member(&base, &name, field.syntax().span())?
         {
             // FTEF-10.7: a member that takes an index is followed by its `[`
             // (`QCC_PR_Expect("[")`).
@@ -229,7 +229,7 @@ impl Checker<'_> {
                 {
                     return Ok(Value::field_of(base, name, def.ty.clone(), Some(member)));
                 }
-                if let Some(accessor) = self.accessor_member(base, &name) {
+                if let Some(accessor) = self.accessor_member(base, &name, token.span())? {
                     return Ok(accessor);
                 }
                 let found = self.env.reference(token.span().start).and_then(|id| {

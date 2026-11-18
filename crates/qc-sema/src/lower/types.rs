@@ -1208,15 +1208,27 @@ fn enum_type(en: &ast::EnumDecl, cx: Cx<'_>) -> Type {
 
 /// An accessor member of `owner`, as a read or a store through it sees it (FTEF-10.3).
 fn raw_accessor(member: &ast::AccessorMember, owner: &str, cx: Cx<'_>) -> RawAccessor {
+    let name = member
+        .name()
+        .map_or_else(String::new, |t| t.text_lossless());
+    let function = match (member.body(), member.value()) {
+        (Some(_), _) => Some(accessor_function(owner, member.is_set(), &name)),
+        (None, Some(ast::Expr::Name(function))) => function.name().map(|t| t.text_lossless()),
+        (None, _) => None,
+    };
     RawAccessor {
         owner: owner.to_owned(),
-        name: member
-            .name()
-            .map_or_else(String::new, |t| t.text_lossless()),
+        name,
         ty: member.ty().map_or(Type::Unknown, |t| cx.ty(&t)),
         set: member.is_set(),
         indexer: member.index_ty().map(|t| cx.ty(&t)),
+        function,
     }
+}
+
+/// The name of the function the body of `owner`'s `get` or `set` member `field` defines.
+fn accessor_function(owner: &str, set: bool, field: &str) -> String {
+    format!("{owner}::{}_{field}", if set { "set" } else { "get" })
 }
 
 /// The body of an accessor member, as a function whose parameters are `this`, `value` and the
@@ -1235,7 +1247,7 @@ fn lower_accessor_body(
     let span = member
         .name()
         .map_or_else(|| member.syntax().span(), |t| t.span());
-    let name = format!("{owner}::{}_{field}", if set { "set" } else { "get" });
+    let name = accessor_function(owner, set, &field);
     let mut decl = RawDecl::new(name, span, Type::Unknown);
     decl.accessor_body = true;
     if let Some(fn_body) = member.body() {

@@ -62,6 +62,10 @@ impl Etype {
         Self::Double,
     ];
 
+    /// `ev_accessor` in FTEQCC's `etype_t`, after `ev_variant`, `ev_struct` and `ev_union`
+    /// (FTEF-10.15).
+    pub(crate) const ACCESSOR_NUMBER: u16 = 16;
+
     /// Its number in a definition's record when it is one of C's scalars: an integer of 32
     /// or 64 bits or a double, `ev_integer` to `ev_double` (FTEF-19.81).
     pub(crate) fn scalar_number(self) -> Option<u16> {

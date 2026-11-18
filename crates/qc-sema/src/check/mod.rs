@@ -629,6 +629,8 @@ pub(crate) struct AccessorRef {
     pub(crate) name: String,
     /// Its index, when it takes one and one was given.
     pub(crate) index: Option<Value>,
+    /// The accessor's value, `ref->base`, the first argument of its functions.
+    pub(crate) base: Value,
 }
 
 /// An entity's field: the labels of the entity and of the field.
@@ -696,8 +698,18 @@ impl Reference {
     }
 
     /// The accessor member `name`, described by `facts`, at `index`.
-    pub(crate) fn accessor(facts: AccessorFacts, name: String, index: Option<Value>) -> Self {
-        Self::Accessor(Box::new(AccessorRef { facts, name, index }))
+    pub(crate) fn accessor(
+        facts: AccessorFacts,
+        name: String,
+        index: Option<Value>,
+        base: Value,
+    ) -> Self {
+        Self::Accessor(Box::new(AccessorRef {
+            facts,
+            name,
+            index,
+            base,
+        }))
     }
 
     /// What the pointer labelled `base` points at, at `index`.

@@ -319,7 +319,7 @@ impl Checker<'_> {
             && lhs.reference == Reference::Global
             && self.copy_struct(&stored, lhs.name(), &target);
         if matches!(kind, Assign::Store) && !copied {
-            let store = Checker::store_op(self.etype(&target));
+            let store = self.store_of(&target);
             // The store chosen for the `=`, which the code generator reads.
             self.opcodes.insert((span.start, span.end), store);
             if lhs.reference == Reference::Global && !folded {
@@ -797,7 +797,7 @@ impl Checker<'_> {
         // The old value is copied first: a definition's, and an element's the getter left in
         // the return global.
         if !discarded && (operand.reference == Reference::Global || old.returned) {
-            let store = Checker::store_op(self.etype(&operand.ty));
+            let store = self.store_of(&operand.ty);
             self.emit(store, &old, &Value::unknown(), span)?;
             copy = self
                 .generated
@@ -985,7 +985,7 @@ impl Checker<'_> {
             self.fold_into(stored, lhs.name());
             return Ok(());
         }
-        let store = Checker::store_op(self.etype(target));
+        let store = self.store_of(target);
         self.emit(store, stored, &Value::unknown(), span)?;
         self.name_last(store, self.name_of(stored), lhs.name());
         Ok(())
@@ -1020,7 +1020,7 @@ impl Checker<'_> {
             self.generated.push(ir::BodyStatement {
                 a: self.name_of(stored),
                 b: to,
-                ..ir::BodyStatement::bare(Checker::store_op(self.etype(target)))
+                ..ir::BodyStatement::bare(self.store_of(target))
             });
             self.read_returned(stored);
             self.last_temp = None;
@@ -1180,7 +1180,7 @@ impl Checker<'_> {
             return Ok(());
         };
         let width = self.env.layout(&ty).map_or(1, |l| l.words);
-        let store = Checker::store_op(self.etype(&ty));
+        let store = self.store_of(&ty);
         for (at, element) in (0_u32..).zip(elements) {
             let value = self.value(Some(element.clone()))?;
             // An element of another type is converted as it is stored, which the body does not
@@ -1305,6 +1305,16 @@ impl Checker<'_> {
     /// The basic type of `ty`, if the model follows it.
     fn etype(&self, ty: &Type) -> Option<Etype> {
         self.env.shape(ty).map(|s| s.etype)
+    }
+
+    /// The store of a value of type `ty` to a definition, `QCC_StoreToSRef`: its basic type's,
+    /// but an accessor's by its words, `STORE_F` for one (FTEF-10.15).
+    fn store_of(&self, ty: &Type) -> Op {
+        let words = self.env.layout(ty).map_or(1, |layout| layout.words);
+        if self.env.is_accessor(ty) && words == 1 {
+            return Op::StoreF;
+        }
+        Checker::store_op(self.etype(ty))
     }
 }
 
@@ -1484,7 +1494,7 @@ impl Checker<'_> {
                 self.generated.push(ir::BodyStatement {
                     a: self.name_of(&value),
                     b: local,
-                    ..ir::BodyStatement::bare(Checker::store_op(self.etype(&ty)))
+                    ..ir::BodyStatement::bare(self.store_of(&ty))
                 });
                 self.last_temp = None;
             }

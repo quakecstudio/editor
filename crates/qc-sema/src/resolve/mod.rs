@@ -123,6 +123,9 @@ pub struct ModuleIndex {
     /// Each C scalar type a definition is written with, with its words and record number
     /// (FTEF-19.81).
     pub(crate) scalars: HashMap<Type, Scalar>,
+    /// Each accessor type a definition is written with, with its words and record number
+    /// (FTEF-10.15).
+    pub(crate) accessor_shapes: HashMap<Type, AccessorShape>,
     /// The type each named type a definition is written with stands for, when it is another:
     /// a typedef's, or an enum's base type (FTEF-7.2, FTEF-19.10).
     pub(crate) aliases: HashMap<Type, Type>,
@@ -150,6 +153,15 @@ pub struct Scalar {
     pub number: u16,
     /// Which scalar it is: an integer of 32 or 64 bits, signed or not, or a double.
     pub kind: CScalar,
+}
+
+/// An accessor type as a progs holds a definition of it (FTEF-10.15).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AccessorShape {
+    /// The words a value takes, its base type's.
+    pub words: u32,
+    /// Its number in a definition's record, `ev_accessor`.
+    pub number: u16,
 }
 
 /// A struct's or union's layout as FTEQCC places it (FTEF-6.13): the words it takes and where
@@ -341,6 +353,15 @@ impl ModuleIndex {
             .flatten()
     }
 
+    /// What a definition of the accessor type `ty` is in a progs: its base's words and
+    /// `ev_accessor`'s number (FTEF-10.15). None for any other type.
+    #[must_use]
+    pub fn accessor_shape(&self, ty: &Type) -> Option<AccessorShape> {
+        matches!(ty, Type::Named(_))
+            .then(|| self.accessor_shapes.get(ty).copied())
+            .flatten()
+    }
+
     /// Whether FTEQCC holds `def` constant, `def->constant` (FTEF-19.3).
     #[must_use]
     pub fn is_constant(&self, def: DefId) -> bool {
@@ -432,6 +453,11 @@ pub(crate) struct AccessorFacts {
     pub(crate) set: bool,
     /// The type of its index, `indexertype`, when it takes one.
     pub(crate) indexer: Option<Type>,
+    /// The name of the function a read calls, `getset_func[0]`, when its `get` member gives
+    /// one.
+    pub(crate) getter: Option<String>,
+    /// The name of the function a store calls, `getset_func[1]`.
+    pub(crate) setter: Option<String>,
 }
 
 /// A source file's name as a message prints it, `s_filen`, and the offsets its lines start at.
@@ -985,6 +1011,8 @@ impl<'a> Resolver<'a> {
                         get: false,
                         set: false,
                         indexer: accessor.indexer.clone(),
+                        getter: None,
+                        setter: None,
                     });
                 if facts.indexer.is_none() {
                     facts.indexer.clone_from(&accessor.indexer);
@@ -992,8 +1020,10 @@ impl<'a> Resolver<'a> {
                 if accessor.set {
                     facts.set = true;
                     facts.set_ty = accessor.ty.clone();
+                    facts.setter.clone_from(&accessor.function);
                 } else {
                     facts.get = true;
+                    facts.getter.clone_from(&accessor.function);
                 }
             }
             let protos = prototyped.get(index);

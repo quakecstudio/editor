@@ -451,7 +451,7 @@ impl Checker<'_> {
     /// FTEF-9.24: called with `newself`, the object a method is called through when it is not
     /// `self`, `self` is kept and set to it first; the temporary that kept it is returned, for
     /// `self` to be restored from after the call.
-    fn call_statements(
+    pub(super) fn call_statements(
         &mut self,
         function: &FunctionType,
         count: usize,

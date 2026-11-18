@@ -1239,9 +1239,9 @@ pub(crate) fn type_words(index: &ModuleIndex, ty: &ValueType) -> u32 {
         // A struct's layout and a C scalar's size are the model's (FTEF-19.81).
         ValueType::Of(t) => index.struct_shape(t).map_or_else(
             || {
-                index
-                    .scalar(t)
-                    .map_or_else(|| ty.words(), |scalar| scalar.words)
+                let accessor = index.accessor_shape(t).map(|shape| shape.words);
+                let scalar = index.scalar(t).map(|scalar| scalar.words);
+                accessor.or(scalar).unwrap_or_else(|| ty.words())
             },
             |s| s.words,
         ),
@@ -1250,13 +1250,17 @@ pub(crate) fn type_words(index: &ModuleIndex, ty: &ValueType) -> u32 {
 }
 
 /// The type number of a definition's record of type `ty`: a C scalar's own, `ev_integer` to
-/// `ev_double`, which the model gives (FTEF-19.81), else its basic type's.
+/// `ev_double` (FTEF-19.81), or an accessor's (FTEF-10.15), which the model gives, else its
+/// basic type's.
 pub(crate) fn type_number(index: &ModuleIndex, ty: &ValueType) -> u16 {
-    let scalar = match ty {
-        ValueType::Of(t) => index.scalar(t),
+    let numbered = match ty {
+        ValueType::Of(t) => index
+            .scalar(t)
+            .map(|scalar| scalar.number)
+            .or_else(|| index.accessor_shape(t).map(|shape| shape.number)),
         ValueType::FloatField => None,
     };
-    scalar.map_or_else(|| ty.etype().number(), |scalar| scalar.number)
+    numbered.unwrap_or_else(|| ty.etype().number())
 }
 
 /// A global offset as a statement operand.

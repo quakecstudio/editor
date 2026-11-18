@@ -91,8 +91,8 @@ pub use lower::{Binum, FileDecls, LiteralValue};
 pub use map_check::{EntitySchema, FieldValue, MapDiagnostic, MapDiagnosticKind};
 pub use resolve::InitialValue;
 pub use resolve::{
-    FileDiagnostic, MemberShape, ModuleIndex, ResolveOptions, Scalar, StructShape, resolve_module,
-    resolve_module_at_targets,
+    AccessorShape, FileDiagnostic, MemberShape, ModuleIndex, ResolveOptions, Scalar, StructShape,
+    resolve_module, resolve_module_at_targets,
 };
 pub use symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
 pub use ty::{FunctionType, SimpleType, Type};

@@ -14,26 +14,49 @@ use qc_diag::Span;
 use crate::check::constant::Constant;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::{AccessorRef, Reference, Sym, Value};
-use crate::ty::Type;
+use crate::ir;
+use crate::ty::{SimpleType, Type};
 
 impl Checker<'_> {
     /// The member `name` of the accessor value `base` (`QCC_PR_BuildAccessorRef`), of the type
     /// of the member the accessor declared first, read-only as `base` is; `None` when the
-    /// accessor has no such member.
-    pub(super) fn accessor_member(&self, base: &Value, name: &str) -> Option<Value> {
-        let facts = self.env.accessor(&base.ty, name)?;
+    /// accessor has no such member. The accessor is read first, `QCC_RefToDef(lhs, true)`: one
+    /// that is itself an accessor's member is the value its `get` function returned.
+    pub(super) fn accessor_member(
+        &mut self,
+        base: &Value,
+        name: &str,
+        span: Span,
+    ) -> Result<Option<Value>, Fatal> {
+        let Some(facts) = self.env.accessor(&base.ty, name) else {
+            return Ok(None);
+        };
         let ty = facts.ty.clone();
-        Some(Value {
+        let read = self.accessor_base(base, span)?;
+        Ok(Some(Value {
             readonly: base.readonly,
             name: base.name.clone(),
-            reference: Reference::accessor(facts, name.to_owned(), None),
+            reference: Reference::accessor(facts, name.to_owned(), None, read),
             ..Value::of(ty)
-        })
+        }))
+    }
+
+    /// The accessor `base` as its functions take it: read, when it is an accessor's member.
+    fn accessor_base(&mut self, base: &Value, span: Span) -> Checked {
+        match base.reference {
+            Reference::Accessor(_) => self.read(base.clone(), span),
+            _ => Ok(base.clone()),
+        }
     }
 
     /// `base[index]` of an accessor member that takes an index, or of an accessor's indexer;
     /// `None` when `base` is no such reference.
-    pub(super) fn accessor_index(&self, base: &Value, index: &Value) -> Option<Value> {
+    pub(super) fn accessor_index(
+        &mut self,
+        base: &Value,
+        index: &Value,
+        span: Span,
+    ) -> Result<Option<Value>, Fatal> {
         let reference = match &base.reference {
             Reference::Accessor(accessor)
                 if accessor.facts.indexer.is_some() && accessor.index.is_none() =>
@@ -42,23 +65,27 @@ impl Checker<'_> {
                     accessor.facts.clone(),
                     accessor.name.clone(),
                     Some(index.clone()),
+                    accessor.base.clone(),
                 )
             }
             _ => {
-                let indexer = self.env.accessor(&base.ty, "")?;
-                Reference::accessor(indexer, String::new(), Some(index.clone()))
+                let Some(indexer) = self.env.accessor(&base.ty, "") else {
+                    return Ok(None);
+                };
+                let read = self.accessor_base(base, span)?;
+                Reference::accessor(indexer, String::new(), Some(index.clone()), read)
             }
         };
         let ty = match &reference {
             Reference::Accessor(accessor) => accessor.facts.ty.clone(),
             _ => Type::Unknown,
         };
-        Some(Value {
+        Ok(Some(Value {
             readonly: base.readonly,
             name: base.name.clone(),
             reference,
             ..Value::of(ty)
-        })
+        }))
     }
 
     /// FTEF-10.7: a read of an accessor member calls its `get` function with the accessor and
@@ -76,10 +103,46 @@ impl Checker<'_> {
         }
         let args = self.accessor_args(value, accessor, span)?;
         self.generate_call(&args, span);
+        let call = self.accessor_call(accessor.facts.getter.as_deref(), &args, span);
         Ok(Value {
             sym: Sym::Temp,
+            returned: call.is_some(),
+            call,
             ..Value::of(accessor.facts.ty.clone())
         })
+    }
+
+    /// FTEF-10.14: in a function, the statements of the call a read or a store of an accessor
+    /// member makes, `QCC_PR_GenerateFunctionCallSref` of the member's function `function` with
+    /// `args`, as a call the program writes is (FTE-18.12); the call's index. A member with no
+    /// function the model knows leaves the body unfollowed.
+    fn accessor_call(&mut self, function: Option<&str>, args: &[Value], span: Span) -> Option<u32> {
+        if self.global {
+            return None;
+        }
+        let callee = function.and_then(|name| self.env.helper(name));
+        let ty = callee
+            .and_then(|def| self.env.definition(def))
+            .map(|definition| definition.ty.clone());
+        let (Some(callee), Some(Type::Function(function))) = (callee, ty) else {
+            self.followed = false;
+            return None;
+        };
+        let defaulted = vec![false; args.len()];
+        self.call_statements(
+            &function,
+            args.len(),
+            (Some(ir::Name::Def(callee, 0)), args, &defaulted),
+            (None, &[]),
+            span,
+        );
+        let call = self.last_made();
+        let words = self.env.layout(&function.ret).map_or(1, |l| l.words);
+        if words > 0 && function.ret != Type::Simple(SimpleType::Void) {
+            self.live_return = Some(words);
+            self.live_call = call;
+        }
+        call
     }
 
     /// FTEF-10.7: a store to an accessor member calls its `set` function with the accessor,
@@ -105,6 +168,7 @@ impl Checker<'_> {
         };
         args.push(value);
         self.generate_call(&args, span);
+        self.accessor_call(accessor.facts.setter.as_deref(), &args, span);
         Ok(())
     }
 
@@ -117,7 +181,9 @@ impl Checker<'_> {
     ) -> Result<Vec<Value>, Fatal> {
         let mut args = vec![Value {
             reference: Reference::Global,
-            ..base.clone()
+            name: base.name.clone(),
+            readonly: base.readonly,
+            ..accessor.base.clone()
         }];
         if let Some(indexer) = &accessor.facts.indexer {
             let index = match &accessor.index {
