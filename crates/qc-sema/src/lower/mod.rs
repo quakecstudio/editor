@@ -75,9 +75,8 @@ pub(crate) struct RawAccessor {
     pub set: bool,
     /// The type of its index, `[Type name]`, when it has one.
     pub indexer: Option<Type>,
-    /// The name of the function a read or a store calls: `Owner::get_name` or `Owner::set_name`
-    /// of a member with a body, the function a member's value names (FTEF-10.11); `None` for
-    /// any other value.
+    /// The name of the function a read or a store calls, which the member's value names
+    /// (FTEF-10.11); `None` for a member with a body or any other value.
     pub function: Option<String>,
 }
 

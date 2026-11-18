@@ -103,7 +103,7 @@ impl Checker<'_> {
         }
         let args = self.accessor_args(value, accessor, span)?;
         self.generate_call(&args, span);
-        let call = self.accessor_call(accessor.facts.getter.as_deref(), &args, span);
+        let call = self.accessor_call(accessor.facts.getter.as_deref(), &args, None, span);
         Ok(Value {
             sym: Sym::Temp,
             returned: call.is_some(),
@@ -116,7 +116,13 @@ impl Checker<'_> {
     /// member makes, `QCC_PR_GenerateFunctionCallSref` of the member's function `function` with
     /// `args`, as a call the program writes is (FTE-18.12); the call's index. A member with no
     /// function the model knows leaves the body unfollowed.
-    fn accessor_call(&mut self, function: Option<&str>, args: &[Value], span: Span) -> Option<u32> {
+    fn accessor_call(
+        &mut self,
+        function: Option<&str>,
+        args: &[Value],
+        kept_value: Option<usize>,
+        span: Span,
+    ) -> Option<u32> {
         if self.global {
             return None;
         }
@@ -133,7 +139,7 @@ impl Checker<'_> {
             &function,
             args.len(),
             (Some(ir::Name::Def(callee, 0)), args, &defaulted),
-            (None, &[]),
+            (None, &[], kept_value),
             span,
         );
         let call = self.last_made();
@@ -168,7 +174,9 @@ impl Checker<'_> {
         };
         args.push(value);
         self.generate_call(&args, span);
-        self.accessor_call(accessor.facts.setter.as_deref(), &args, span);
+        // `if (readable) QCC_UnFreeTemp(source);`: the value stored is the assignment's.
+        let kept = args.len().checked_sub(1);
+        self.accessor_call(accessor.facts.setter.as_deref(), &args, kept, span);
         Ok(())
     }
 

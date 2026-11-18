@@ -4743,3 +4743,124 @@ fn a_bit_update_in_place_has_no_result() {
         ]
     );
 }
+
+// spec FTEF-10.14: an accessor member's read is a call of its `get` function with the accessor
+// and the index, a chained read passing the return global, as the pinned FTEQCC writes them
+#[test]
+fn an_accessor_read_calls_its_get_function() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\ntypedef struct json_s *json_t;\naccessor jsonnode : json_t;\n\
+         string(jsonnode node) json_get_string = #1;\n\
+         jsonnode(jsonnode node, string) json_find_object_child = #2;\n\
+         jsonnode(jsonnode node, int childindex) json_get_child_at_index = #3;\n\
+         accessor jsonnode : json_t\n{\n\
+         \tinline get string s = json_get_string;\n\
+         \tinline get jsonnode a[__int key] = json_get_child_at_index;\n\
+         \tinline get jsonnode[string key] = json_find_object_child;\n};\n\
+         jsonnode n;\nstring g;\n\
+         void t(void) {\n\tg = n.s;\n\tg = n[\"k\"].s;\n\tg = n.a[7].s;\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let (get, find, child) = (
+        global(&p, "json_get_string"),
+        global(&p, "json_find_object_child"),
+        global(&p, "json_get_child_at_index"),
+    );
+    let (n, g) = (global(&p, "n"), global(&p, "g"));
+    let statements = body(&p, "t");
+    let (key, seven) = (statements[2].c, statements[5].c);
+    let read = |a: i32, b: i32, c: i32, op: Op| Statement {
+        op: number(op),
+        a,
+        b,
+        c,
+    };
+    assert_eq!(
+        statements,
+        [
+            read(get, n, 0, Op::Call1h),
+            read(1, g, 0, Op::StoreS),
+            read(find, n, key, Op::Call2h),
+            read(get, 1, 0, Op::Call1h),
+            read(1, g, 0, Op::StoreS),
+            read(child, n, seven, Op::Call2h),
+            read(get, 1, 0, Op::Call1h),
+            read(1, g, 0, Op::StoreS),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
+// spec FTEF-10.14: an accessor member's store is a call of its `set` function with the value
+// last, and a call's value stored is copied out of the return global before it
+#[test]
+fn an_accessor_store_calls_its_set_function() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\naccessor strbuf : float;\n\
+         string(strbuf bufhandle, float string_index) bufstr_get = #1;\n\
+         void(strbuf bufhandle, float string_index, string str) bufstr_set = #2;\n\
+         accessor strbuf : float\n{\n\
+         \tget string[float] = bufstr_get;\n\tset string[float] = bufstr_set;\n};\n\
+         strbuf sb;\nstring g;\nfloat h;\n\
+         void t(void) {\n\tsb[6] = g;\n\tsb[h] = sb[h + 1];\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let (get, set) = (global(&p, "bufstr_get"), global(&p, "bufstr_set"));
+    let (sb, g, h) = (global(&p, "sb"), global(&p, "g"), global(&p, "h"));
+    let statements = body(&p, "t");
+    let (six, one, sum) = (statements[1].c, statements[2].b, statements[2].c);
+    // The third parameter's slot: `OFS_PARM0` is 4 and each parameter takes three words.
+    let third = 10;
+    let made = |op: Op, a: i32, b: i32, c: i32| Statement {
+        op: number(op),
+        a,
+        b,
+        c,
+    };
+    assert_eq!(
+        statements,
+        [
+            made(Op::StoreF, g, third, 0),
+            made(Op::Call3h, set, sb, six),
+            made(Op::AddF, h, one, sum),
+            made(Op::Call2h, get, sb, sum),
+            made(Op::StoreF, 1, third, 0),
+            made(Op::StoreF, 1, sum, 0),
+            made(Op::Call3h, set, sb, h),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
+// spec FTEF-10.15: a definition of an accessor type is `ev_accessor`, and a store to it is
+// `STORE_F` whatever its base, as the pinned FTEQCC writes them
+#[test]
+fn an_accessor_s_definition_has_its_own_type_and_store() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\ntypedef struct json_s *json_t;\naccessor jsonnode : json_t;\n\
+         jsonnode(string) json_parse = #1;\njsonnode keep;\n\
+         void t(string d) {\n\tjsonnode n = json_parse(d);\n\tkeep = n;\n}\n",
+    );
+    let type_of = |name: &str| {
+        p.global_defs
+            .iter()
+            .find(|def| string(&p, def.s_name) == name)
+            .map(|def| def.type_bits)
+            .unwrap()
+    };
+    assert_eq!(type_of("keep"), 0x8010);
+    assert_eq!(type_of("n"), 0x10);
+    let store = u32::try_from(Op::StoreF.number()).unwrap();
+    let statements = body(&p, "t");
+    assert_eq!(
+        (statements[1].op, statements[1].a, statements[1].b),
+        (store, 1, global(&p, "n"))
+    );
+    assert_eq!(
+        (statements[2].op, statements[2].a, statements[2].b),
+        (store, global(&p, "n"), global(&p, "keep"))
+    );
+}

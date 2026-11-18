@@ -363,10 +363,6 @@ impl Checker<'_> {
         if structured && !copied {
             self.followed = false;
         }
-        // An accessor's store is not followed.
-        if matches!(lhs.reference, Reference::Accessor(_)) {
-            self.followed = false;
-        }
         // FTEF-29.3: `QCC_StoreSRefToRef`.
         if lhs.readonly {
             let message = format!("Assignment to constant {}", lhs.label());

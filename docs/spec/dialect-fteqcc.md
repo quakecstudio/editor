@@ -999,6 +999,28 @@ others).
   function body". A function defined twice outside an accessor still is. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
   `QCC_PR_ParseAccessorMember`.
+- **FTEF-10.14** In a function, a read of an accessor member whose `get` names a function is a
+  call of that function with the accessor and the index (`case REF_ACCESSOR: ... return
+  QCC_PR_GenerateFunctionCallSref(nullsref, ref->accessor->getset_func[0], arg, args);`), written
+  as a call the program writes is (FTE-18.12, FTEF-32.19), its value the return global; a store
+  is a call of the `set` member's function with the value after them. The accessor is read
+  where its reference is made (`QCC_PR_BuildAccessorRef(refbuf, QCC_RefToDef(lhs, true), index,
+  acc, lhs->readonly)`), so in `n["k"].s` the indexer's call comes first and its value, the
+  return global, is the argument of `s`'s: `CALL2H find, n, "k"` then `CALL1H get_string,
+  OFS_RETURN`. The value stored stays readable after a store's call (`rhsd =
+  QCC_StoreSRefToRef(lhsr, rhsd, true, false)`, `if (readable) QCC_UnFreeTemp(source);`), so a
+  call's value stored is copied out of the return global before it (FTE-18.13): `sb[h] = sb[h +
+  1]` is the `get` call, `STORE_F OFS_RETURN, OFS_PARM2`, `STORE_F OFS_RETURN, temp` and `CALL3H
+  set, sb, h`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_RefToDef`, `QCC_StoreSRefToRef`, `QCC_PR_ParseField`,
+  `QCC_PR_ParseRefArrayPointer`.
+- **FTEF-10.15** A definition of an accessor type is recorded with `ev_accessor`'s number, 16
+  in `etype_t` (`ev_variant, ev_struct, ev_union, ev_accessor`), and takes its base type's
+  words. A store to one is by its words, not its base type's opcode: `QCC_StoreToSRef` switches
+  on the type's own `type`, and `ev_accessor` is its `default`, `OP_STORE_F` for a word, so a
+  `jsonnode` whose base is a pointer is stored by `STORE_F` where the pointer is by `STORE_P`.
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_StoreToSRef`; `engine/qclib/progslib.h`, `etype_t`.
 
 ## FTEF-11 The `__variant` type
 

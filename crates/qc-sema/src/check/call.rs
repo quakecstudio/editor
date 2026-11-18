@@ -362,7 +362,7 @@ impl Checker<'_> {
             &function,
             passed_count,
             (callee, &values, &defaulted),
-            (newself, &field_loads),
+            (newself, &field_loads, None),
             span,
         );
         let call = self.last_made();
@@ -450,13 +450,14 @@ impl Checker<'_> {
     /// default a parameter takes, then `CALLn` of the callee; its value the return global.
     /// FTEF-9.24: called with `newself`, the object a method is called through when it is not
     /// `self`, `self` is kept and set to it first; the temporary that kept it is returned, for
-    /// `self` to be restored from after the call.
+    /// `self` to be restored from after the call. `kept_value` is the argument whose value is
+    /// read again after the call, an accessor's store's (FTEF-10.14).
     pub(super) fn call_statements(
         &mut self,
         function: &FunctionType,
         count: usize,
         (callee, values, defaulted): (Option<ir::Name>, &[Value], &[bool]),
-        (newself, field_loads): (Option<ir::Name>, &[FieldLoad]),
+        (newself, field_loads, kept_value): (Option<ir::Name>, &[FieldLoad], Option<usize>),
         span: Span,
     ) -> Option<u32> {
         // The arguments written and each parameter after them that takes its default
@@ -547,7 +548,9 @@ impl Checker<'_> {
         // value; every later one follows a store or a load.
         let mut first = field_loads.iter().all(|field| field.slot >= passed);
         for (slot, value) in values.iter().take(passed).enumerate() {
-            if value.returned {
+            // FTEF-10.14: the value an accessor's store was given stays readable after the
+            // call, so a call's value is copied out of the return global before it.
+            if value.returned && kept_value != Some(slot) {
                 self.live_return = None;
             }
             if field_loads.iter().any(|field| field.slot == slot) {
