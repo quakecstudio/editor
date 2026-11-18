@@ -3795,18 +3795,26 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   zero, with no diagnostic, as the pinned FTEQCC compiles it (2026-11-16); read in a body it is
   that constant too. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`.
-- **FTEF-19.81** A global or a local of one of C's scalars is written with that type's own
-  number in its definition's record, FTEQCC's `etype_t`: `ev_integer` 8, `ev_uint` 9,
-  `ev_int64` 10, `ev_uint64` 11 and `ev_double` 12, through a typedef and an enum's base; and
-  a 64-bit integer or a double takes two words (`type->size`), a 64-bit constant's low word
-  first. Run on the pinned FTEQCC with `-Tfte`: `typedef enum : __uint64 { XA, XB, XC = 5 }
-  x_t; x_t g; void f(void) { x_t l; l = XC; g = l; g = XB; }` writes `g` as type `0x800b` and
-  `l` as `0xb`, each two words, the constants 1 and 5 as the words 1, 0 and 5, 0, and three
-  `STORE_I64`; with `: int` in its place the types are `0x8008` and `8`, one word each, and
-  the stores `STORE_I`; and `int i; unsigned u; __int64 a; __uint64 b; __double d; float
-  after;` writes the types `0x8008`, `0x8009`, `0x800a`, `0x800b`, `0x800c` and `0x8002` at
-  the offsets 28, 29, 30, 32, 34 and 36 (2026-11-17). Source: the output of
-  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, as built for the oracles.
+- **FTEF-19.81** A definition of one of C's scalars of a word or more is written with that
+  type's own number in its record, FTEQCC's `etype_t`: `ev_integer` 8, `ev_uint` 9,
+  `ev_int64` 10, `ev_uint64` 11 and `ev_double` 12 (`dd->type = def->type->type;` for a
+  global's record and each element's and member's, `dd->type = type->type;` for the field
+  table's), through a typedef and an enum's base. A 64-bit integer or a double takes two
+  words (`type->size`), a constant's low word first: as a global, a local, a struct's member,
+  an entity's field, whose global holds the offset of each of its words, and a parameter,
+  whose size the function's record gives (`size = local->type->size; ...
+  funcs[i].parm_size[p++] = size;`). A number literal that initialises one is the value the
+  literal names, not the bits of a float: `__int64 a = 5;` is the words 5, 0 and `__double d
+  = 1.5;` the double's own. An integer narrower than a word is not so numbered here. Run on
+  the pinned FTEQCC with `-Tfte` (2026-11-17): `int i; unsigned u; __int64 a; __uint64 b;
+  __double d; float after;` writes the types `0x8008`, `0x8009`, `0x800a`, `0x800b`, `0x800c`
+  and `0x8002` at the offsets 28, 29, 30, 32, 34 and 36; `.__int64 big; .float next; .int
+  count;` the field table's types `0xa`, `2` and `8` at the offsets 0, 2 and 3, four entity
+  fields in all, and `big`'s global the words 0, 1; `__int64 f(__int64 x, float y)` the
+  parameter sizes 2 and 1; and a `__uint64` enum's `x_t g; x_t l; l = XC; g = l; g = XB;`
+  three `STORE_I64` of two-word constants. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qccmain.c`,
+  `QCC_WriteData`, and its output as built for the oracles.
 
 ## FTEF-20 Keywords
 

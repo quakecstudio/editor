@@ -31,9 +31,9 @@ use std::collections::{HashMap, HashSet};
 
 use qc_diag::{Code, Diagnostic, Span};
 use qc_preproc::{OpcodeTarget, TargetFormat, WarningSettings};
+use qc_syntax::c_scalar::CScalar;
 use qc_syntax::{Dialect, Keywords};
 
-use crate::cast::Kind;
 use crate::check::PathList;
 use crate::check::Temps;
 use crate::check::TypedBody;
@@ -120,6 +120,9 @@ pub struct ModuleIndex {
     /// with, or a member of another, is written with, by the type as written (FTEF-6.13), when
     /// the model lays it out.
     pub(crate) structs: HashMap<Type, StructShape>,
+    /// Each C scalar type a definition is written with, with its words and record number
+    /// (FTEF-19.81).
+    pub(crate) scalars: HashMap<Type, Scalar>,
     /// The type each named type a definition is written with stands for, when it is another:
     /// a typedef's, or an enum's base type (FTEF-7.2, FTEF-19.10).
     pub(crate) aliases: HashMap<Type, Type>,
@@ -136,6 +139,17 @@ pub struct ModuleIndex {
     /// FTEF-9.22: each class's spawn function the program gives no body, whose body the model
     /// writes, in declaration order.
     pub(crate) spawn_functions: Vec<DefId>,
+}
+
+/// A C scalar as a progs holds it (FTEF-19.81).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Scalar {
+    /// The words a value takes, `type->size`.
+    pub words: u32,
+    /// Its number in a definition's record, FTEQCC's `etype_t`.
+    pub number: u16,
+    /// Which scalar it is: an integer of 32 or 64 bits, signed or not, or a double.
+    pub kind: CScalar,
 }
 
 /// A struct's or union's layout as FTEQCC places it (FTEF-6.13): the words it takes and where
@@ -316,19 +330,15 @@ impl ModuleIndex {
         self.aliases.get(ty)
     }
 
-    /// The kind of `ty` through what it stands for, a typedef's type or an enum's base
-    /// (FTEF-7.2, FTEF-19.10): what a definition's record and its size are read from.
+    /// What a definition of the C scalar type `ty` is in a progs, through a typedef and an
+    /// enum's base: its words and its record's type number (FTEF-19.81). None for any other
+    /// type, and for an integer narrower than a word.
     #[must_use]
-    pub fn kind(&self, ty: &Type) -> Kind {
-        let mut ty = ty;
-        // A chain of typedefs ends; the bound is for one the model let through that does not.
-        for _ in 0..ALIAS_DEPTH {
-            match self.alias(ty) {
-                Some(next) => ty = next,
-                None => break,
-            }
-        }
-        Kind::of(ty)
+    pub fn scalar(&self, ty: &Type) -> Option<Scalar> {
+        // Only a named type can be one, which spares hashing a function's whole type.
+        matches!(ty, Type::Named(_))
+            .then(|| self.scalars.get(ty).copied())
+            .flatten()
     }
 
     /// Whether FTEQCC holds `def` constant, `def->constant` (FTEF-19.3).
@@ -835,8 +845,6 @@ const COMPONENTS: [&str; 3] = ["_x", "_y", "_z"];
 
 /// The deepest chain of parent classes followed; a deeper or circular one stops there.
 const MAX_CLASS_DEPTH: usize = 64;
-/// How many typedefs deep a type's kind is looked for.
-const ALIAS_DEPTH: usize = 64;
 
 /// The deepest chain of typedefs followed (FTEF-19.9).
 pub(in crate::resolve) const MAX_TYPEDEF_DEPTH: usize = 64;

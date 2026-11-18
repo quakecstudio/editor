@@ -10,12 +10,11 @@
 use qc_progs::crc::crc_block;
 use qc_progs::opcode::Opcode;
 use qc_progs::{Def as DefRecord, PROGS_DEF_SAVEGLOBAL, ProgsFile};
-use qc_sema::cast::Kind;
 use qc_sema::{ModuleIndex, StructShape};
 use qc_types::{Etype, Slot};
 
 use crate::Internal;
-use crate::program::{Def, Program, RESERVED_OFS, ValueType, type_words};
+use crate::program::{Def, Program, RESERVED_OFS, ValueType, type_number, type_words};
 use qc_lexer::latin1_encode;
 
 /// `PR_WriteProgdefs` (QC-25.5, QC-25.6): the text of `progdefs.h` and the CRC of it up to the
@@ -121,7 +120,7 @@ fn element_records(
     let type_bits = if shape.is_some() {
         EV_STRUCT
     } else {
-        u32::from(ty.etype().number())
+        u32::from(type_number(index, ty))
     };
     out.push(DefRecord {
         type_bits,
@@ -129,7 +128,7 @@ fn element_records(
         s_name: program.copy_string(&latin1_encode(name))?,
     });
     if let Some(shape) = shape {
-        member_records(out, program, name, shape, ofs)?;
+        member_records(out, program, name, (index, shape), ofs)?;
     }
     Ok(())
 }
@@ -140,13 +139,13 @@ fn member_records(
     out: &mut Vec<DefRecord>,
     program: &mut Program,
     name: &str,
-    shape: &StructShape,
+    (index, shape): (&ModuleIndex, &StructShape),
     ofs: u32,
 ) -> Result<(), Internal> {
     for member in &shape.members {
         let at = ofs.checked_add(member.word).ok_or(Internal::TooLarge)?;
         out.push(DefRecord {
-            type_bits: u32::from(ValueType::Of(member.ty.clone()).etype().number()),
+            type_bits: u32::from(type_number(index, &ValueType::Of(member.ty.clone()))),
             ofs: at,
             s_name: program.copy_string(&latin1_encode(&format!("{name}.{}", member.name)))?,
         });
@@ -213,7 +212,7 @@ pub(crate) fn progs(
             records == Records::Qcc || (def.constant && (def.scope.is_none() || def.initialized));
         if let Some(inner) = def.ty.field_inner().filter(|_| field_record) {
             field_defs.push(DefRecord {
-                type_bits: u32::from(inner.etype().number()),
+                type_bits: u32::from(type_number(index, &inner)),
                 ofs: program.word(def.ofs),
                 s_name: program.copy_string(&latin1_encode(&def.name))?,
             });
@@ -240,17 +239,16 @@ pub(crate) fn progs(
             && let ValueType::Of(t) = &def.ty
             && let Some(shape) = index.struct_shape(t)
         {
-            member_records(&mut global_defs, &mut program, &def.name, shape, def.ofs)?;
+            member_records(
+                &mut global_defs,
+                &mut program,
+                &def.name,
+                (index, shape),
+                def.ofs,
+            )?;
             continue;
         }
-        // FTEF-19.81: a C scalar's record names its own type, `ev_integer` to `ev_double`.
-        let scalar = match &def.ty {
-            ValueType::Of(t) if records == Records::Fteqcc => Some(index.kind(t))
-                .filter(|kind| kind.is_c_scalar())
-                .and_then(Kind::number),
-            ValueType::Of(_) | ValueType::FloatField => None,
-        };
-        let mut type_bits = u32::from(scalar.unwrap_or_else(|| etype.number()));
+        let mut type_bits = u32::from(type_number(index, &def.ty));
         if saved {
             type_bits |= PROGS_DEF_SAVEGLOBAL;
         }

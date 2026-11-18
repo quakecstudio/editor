@@ -19,7 +19,6 @@ use qc_lexer::{LexFlag, LexFlags};
 use qc_preproc::{CompilerFlags, FteFlag};
 use qc_syntax::c_scalar::CScalar;
 
-use crate::VECTOR_WORDS;
 use crate::ty::{FunctionType, SimpleType, Type};
 
 /// The type FTEQCC gives a literal (FTEF-3.1, FTEF-3.3, QC-4, QC-5, QC-6).
@@ -199,66 +198,7 @@ fn c_scalar(name: &str) -> Option<CScalar> {
     CScalar::named(name)
 }
 
-/// The words of a 64-bit integer or a double.
-const WIDE_WORDS: u32 = 2;
-
 impl Kind {
-    /// The kinds a definition's record numbers, in the order of FTEQCC's `etype_t`: `ev_void`
-    /// is 0 and `ev_double` 12.
-    const NUMBERED: [Self; 13] = [
-        Self::Void,
-        Self::String,
-        Self::Float,
-        Self::Vector,
-        Self::Entity,
-        Self::Field,
-        Self::Function,
-        Self::Pointer,
-        Self::Integer,
-        Self::Uint,
-        Self::Int64,
-        Self::Uint64,
-        Self::Double,
-    ];
-
-    /// Its number in a definition's record, FTEQCC's `etype_t`; none for a type the model
-    /// does not follow.
-    #[must_use]
-    pub fn number(self) -> Option<u16> {
-        let place = Self::NUMBERED.iter().position(|kind| *kind == self)?;
-        u16::try_from(place).ok()
-    }
-
-    /// The words a value of it takes, `type->size`: three for a vector, two for a 64-bit
-    /// integer or a double, else one; none for a type the model does not follow.
-    #[must_use]
-    pub const fn words(self) -> Option<u32> {
-        Some(match self {
-            Self::Vector => VECTOR_WORDS,
-            Self::Int64 | Self::Uint64 | Self::Double => WIDE_WORDS,
-            Self::Void
-            | Self::String
-            | Self::Float
-            | Self::Entity
-            | Self::Field
-            | Self::Function
-            | Self::Pointer
-            | Self::Integer
-            | Self::Uint => 1,
-            Self::Opaque => return None,
-        })
-    }
-
-    /// Whether it is one of C's scalars, which a definition's record names by its own number
-    /// and not a float's: an integer of 32 or 64 bits, or a double.
-    #[must_use]
-    pub const fn is_c_scalar(self) -> bool {
-        matches!(
-            self,
-            Self::Integer | Self::Uint | Self::Int64 | Self::Uint64 | Self::Double
-        )
-    }
-
     /// The kind of a type the model holds. C type words, and the type names FTEQCC registers,
     /// are the type `QCC_PR_ParseType` makes of them (FTEF-2.8), an 8- or 16-bit integer its
     /// parent's (FTEF-2.12); `__bint` and a type a program names are opaque.

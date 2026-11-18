@@ -698,13 +698,31 @@ impl Program {
                 let component = component(index, id, suffix).ok_or(Internal::NoDefinition)?;
                 self.get_def_typed(index, component, None)?;
             }
-        } else if in_block {
-            self.allocate(type_words(index, &ty))?;
         } else {
-            self.allocate_global(type_words(index, &ty))?;
+            // FTEF-19.81: a field of a C scalar of two words has a word for each, as FTEQCC
+            // sizes a field's global by what it holds.
+            let held = ty
+                .field_inner()
+                .filter(|inner| inner.etype() != Etype::Vector)
+                .map(|inner| type_words(index, &inner));
+            let words = held.unwrap_or_else(|| type_words(index, &ty));
+            if in_block {
+                self.allocate(words)?;
+            } else {
+                self.allocate_global(words)?;
+            }
         }
         if let Some(inner) = ty.field_inner() {
-            self.set_words(ofs, &[self.size_fields])?;
+            // Each word of the global is the offset of the field's word.
+            let held = if inner.etype() == Etype::Vector {
+                1
+            } else {
+                type_words(index, &inner)
+            };
+            let offsets: Vec<u32> = (0..held)
+                .map(|word| self.size_fields.saturating_add(word))
+                .collect();
+            self.set_words(ofs, &offsets)?;
             if inner.etype() == Etype::Vector {
                 for suffix in COMPONENTS {
                     let component = component(index, id, suffix).ok_or(Internal::NoDefinition)?;
@@ -713,7 +731,7 @@ impl Program {
             } else {
                 self.size_fields = self
                     .size_fields
-                    .checked_add(inner.words())
+                    .checked_add(type_words(index, &inner))
                     .ok_or(Internal::TooLarge)?;
             }
         }
@@ -825,7 +843,9 @@ impl Program {
                 let field = self.size_fields;
                 let inner = ty.field_inner().ok_or(Internal::Unsupported)?;
                 let count = index.array_len(id).unwrap_or(1);
-                let taken = inner.words().checked_mul(count).ok_or(Internal::TooLarge)?;
+                let taken = type_words(index, &inner)
+                    .checked_mul(count)
+                    .ok_or(Internal::TooLarge)?;
                 self.size_fields = self
                     .size_fields
                     .checked_add(taken)
@@ -865,7 +885,7 @@ impl Program {
                 self.initialise_words(mine, &[word])?;
             }
         }
-        if own.checked_add(inner.words()) == Some(self.size_fields) {
+        if own.checked_add(type_words(index, &inner)) == Some(self.size_fields) {
             self.size_fields = own;
         }
         self.initialise_words(place, &[target])
@@ -1218,11 +1238,25 @@ pub(crate) fn type_words(index: &ModuleIndex, ty: &ValueType) -> u32 {
     match ty {
         // A struct's layout and a C scalar's size are the model's (FTEF-19.81).
         ValueType::Of(t) => index.struct_shape(t).map_or_else(
-            || index.kind(t).words().unwrap_or_else(|| ty.words()),
+            || {
+                index
+                    .scalar(t)
+                    .map_or_else(|| ty.words(), |scalar| scalar.words)
+            },
             |s| s.words,
         ),
         ValueType::FloatField => ty.words(),
     }
+}
+
+/// The type number of a definition's record of type `ty`: a C scalar's own, `ev_integer` to
+/// `ev_double`, which the model gives (FTEF-19.81), else its basic type's.
+pub(crate) fn type_number(index: &ModuleIndex, ty: &ValueType) -> u16 {
+    let scalar = match ty {
+        ValueType::Of(t) => index.scalar(t),
+        ValueType::FloatField => None,
+    };
+    scalar.map_or_else(|| ty.etype().number(), |scalar| scalar.number)
 }
 
 /// A global offset as a statement operand.

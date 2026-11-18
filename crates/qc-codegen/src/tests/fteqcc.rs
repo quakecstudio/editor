@@ -4609,3 +4609,62 @@ fn a_c_scalar_is_written_with_its_own_type_and_size() {
     let store = u32::try_from(Op::StoreI.number()).unwrap();
     assert!(body(&narrow, "f").iter().take(3).all(|s| s.op == store));
 }
+
+// spec FTEF-19.81: a 64-bit integer or a double is two words as a field, a parameter, a
+// struct's member and an initialised global, each numbered by its own type, through a
+// typedef and an enum's base, as the pinned FTEQCC writes them
+#[test]
+fn a_wide_scalar_is_two_words_wherever_it_is_held() {
+    let p = fte_progs(
+        "#pragma target fte\ntypedef __uint64 u64_t;\nenum e_t : u64_t { EA, EB };\ne_t ge;\n\
+         __int64 a = 5;\n__double d = 1.5;\nint arr[2];\n\
+         typedef struct { int m; __int64 w; float f; } s_t;\ns_t st;\n.__int64 big;\n\
+         .float next;\n.int count;\nfloat after;\n\
+         __int64 f(__int64 x, float y) { if (y) return; return x; }\n",
+    );
+    let record = |name: &str| {
+        p.global_defs
+            .iter()
+            .find(|def| string(&p, def.s_name) == name)
+            .unwrap()
+    };
+    let number = |name: &str| record(name).type_bits & !qc_progs::PROGS_DEF_SAVEGLOBAL;
+    // An enum whose base is a typedef of a 64-bit integer.
+    assert_eq!(number("ge"), 0xb);
+    assert_eq!(global(&p, "a") - global(&p, "ge"), 2);
+    // A literal is the value it names.
+    assert_eq!(global_words(&p, "a", 2), [5, 0]);
+    assert_eq!(global_words(&p, "d", 2), [0, 0x3ff8_0000]);
+    assert_eq!((number("a"), number("d")), (0xa, 0xc));
+    // An array's elements and a struct's members are numbered by their own types.
+    assert_eq!((number("arr[0]"), number("arr[1]")), (8, 8));
+    assert_eq!(
+        (number("st.m"), number("st.w"), number("st.f")),
+        (8, 0xa, 2)
+    );
+    assert_eq!(record("st.f").ofs - record("st.w").ofs, 2);
+    // A field: its global holds each word's offset, and the table its own type.
+    assert_eq!(global_words(&p, "big", 2), [0, 1]);
+    assert_eq!(global_words(&p, "next", 1), [2]);
+    assert_eq!(global_words(&p, "count", 1), [3]);
+    let fields: Vec<(String, u32, u32)> = p
+        .field_defs
+        .iter()
+        .skip(1)
+        .map(|def| (string(&p, def.s_name), def.ofs, def.type_bits))
+        .collect();
+    assert_eq!(
+        fields,
+        [
+            ("big".to_owned(), 0, 0xa),
+            ("next".to_owned(), 2, 2),
+            ("count".to_owned(), 3, 8),
+        ]
+    );
+    assert_eq!(p.entityfields, 4);
+    // A parameter's size is its own words, and a bare return's `ret*` is two.
+    let f = function(&p, "f");
+    assert_eq!(f.parm_size.get(..2), Some(&[2, 1][..]));
+    assert_eq!(global(&p, "y") - global(&p, "x"), 2);
+    assert_eq!(number("ret*"), 0xa);
+}

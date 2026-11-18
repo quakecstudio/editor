@@ -45,6 +45,34 @@ pub(crate) enum Etype {
 }
 
 impl Etype {
+    /// FTEQCC's `etype_t` from `ev_void`, 0, to `ev_double`, in order.
+    const NUMBERED: [Self; 13] = [
+        Self::Void,
+        Self::String,
+        Self::Float,
+        Self::Vector,
+        Self::Entity,
+        Self::Field,
+        Self::Function,
+        Self::Pointer,
+        Self::Integer,
+        Self::Uint,
+        Self::Int64,
+        Self::Uint64,
+        Self::Double,
+    ];
+
+    /// Its number in a definition's record when it is one of C's scalars: an integer of 32
+    /// or 64 bits or a double, `ev_integer` to `ev_double` (FTEF-19.81).
+    pub(crate) fn scalar_number(self) -> Option<u16> {
+        let scalar = matches!(
+            self,
+            Self::Integer | Self::Uint | Self::Int64 | Self::Uint64 | Self::Double
+        );
+        let place = Self::NUMBERED.iter().position(|etype| *etype == self)?;
+        scalar.then(|| u16::try_from(place).ok()).flatten()
+    }
+
     /// Its name in `basictypenames[]`, which some messages print.
     pub(crate) const fn basic_name(self) -> &'static str {
         match self {

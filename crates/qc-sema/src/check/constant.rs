@@ -17,15 +17,17 @@ use crate::ir;
 impl Constant {
     /// The words a global this constant initialises holds (FTEF-34.9): a float, an integer or
     /// an unsigned integer is one word and a vector three. `None` for a string, whose text the
-    /// semantic model does not keep, and a double; a 64-bit integer is two words, the low one
+    /// semantic model does not keep; a 64-bit integer or a double is two words, the low one
     /// first (FTEF-19.81).
     pub(crate) fn initial_value(self) -> Option<crate::InitialValue> {
         let words = match self.ty {
             ConstType::Float | ConstType::Integer | ConstType::Uint => vec![self.words[0]],
             ConstType::Vector => self.words.to_vec(),
             // FTEF-19.81: a 64-bit value is two words, the low one first.
-            ConstType::Int64 | ConstType::Uint64 => vec![self.words[0], self.words[1]],
-            ConstType::String | ConstType::Double => return None,
+            ConstType::Int64 | ConstType::Uint64 | ConstType::Double => {
+                vec![self.words[0], self.words[1]]
+            }
+            ConstType::String => return None,
         };
         Some(crate::InitialValue::new(words))
     }
