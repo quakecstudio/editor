@@ -5795,6 +5795,24 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   `STORE_V OFS_PARM2, lv` and `STORE_F OFS_RETURN, gf`. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_GenerateFunctionCallRef`, `PR_GenerateReturnOuts`, `QCC_PR_FinaliseFunction`.
+- **FTEF-32.25** A struct or union of more than a vector's words takes a parameter's slot for
+  each three words. A function's record counts those slots and gives each three words but the
+  last, which has what is left (`for (; size > 3 && p < MAX_PARMS; size -= 3)
+  funcs[i].parm_size[p++] = 3; ... funcs[i].parm_size[p++] = size; ... funcs[i].numparms = p;`):
+  a parameter of 9 words is `numparms` 3 with sizes 3, 3 and 3. A call copies the argument a
+  piece at a time, `OP_STORE_V` for three words and `OP_STORE_I64` or `OP_STORE_F` for what is
+  left (`asz = 3-(ofs%3)`), each piece to its slot, or on a target with `OP_CALL1H` to a
+  temporary that is the call's operand where the slot is one of the first two, and the call's
+  opcode counts the slots. An out parameter of such a type is stored to its slots where the
+  function returns and back from them after the call the same way (FTEF-32.24). Run on the
+  pinned FTEQCC with `-Tfte`, a `font_s` of 9 words: `id(g_font)` is `STORE_V g_font, temp_0`,
+  `STORE_V g_font+3, temp_3`, `STORE_V g_font+6, OFS_PARM2` and `CALL3H id, temp_0, temp_3`;
+  `load("a", g_font)` of `void load(string f, font_s &fnt)` is `STORE_V g_font, temp_0`,
+  `STORE_V g_font+3, OFS_PARM2`, `STORE_V g_font+6, OFS_PARM3`, `CALL4H load, "a", temp_0`,
+  then `STORE_V OFS_PARM1, g_font`, `STORE_V OFS_PARM2, g_font+3` and `STORE_V OFS_PARM3,
+  g_font+6`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_GenerateFunctionCallRef`; `engine/qclib/qccmain.c`,
+  `QCC_WriteData`.
 
 ## FTEF-33 Builtin argument checks
 

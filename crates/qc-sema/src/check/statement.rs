@@ -301,8 +301,8 @@ impl Checker<'_> {
                 self.layout.goto(name, line, made);
             }
             ast::Stmt::Thinktime(s) => self.thinktime(s, line)?,
-            ast::Stmt::Exit(_) => {
-                self.return_outs();
+            ast::Stmt::Exit(s) => {
+                self.return_outs(s.syntax().span());
                 self.jump(Step::Done, Op::Done, None, line);
             }
             ast::Stmt::State(_) | ast::Stmt::Asm(_) => {
@@ -317,7 +317,7 @@ impl Checker<'_> {
     /// FTEF-32.24: `PR_GenerateReturnOuts`: where the function returns, each of its out
     /// parameters is stored to its parameter's slot, by its type; one of more than a vector's
     /// words is not followed.
-    pub(super) fn return_outs(&mut self) {
+    pub(super) fn return_outs(&mut self, span: Span) {
         let Some(own) = self.function.own.clone().filter(|_| !self.global) else {
             return;
         };
@@ -339,11 +339,25 @@ impl Checker<'_> {
                 .name
                 .as_deref()
                 .and_then(|name| self.env.parameter(name));
-            let (Some(local), Ok(held), true) = (local, u8::try_from(held), words <= VECTOR_WORDS)
-            else {
+            let (Some(local), Ok(held)) = (local, u8::try_from(held)) else {
                 self.followed = false;
                 continue;
             };
+            // FTEF-32.25: one of more than a vector's words in pieces, a slot each.
+            if let Some(wide) = self.wide_words(param) {
+                let Some(pieces) = self.pieces(wide, span) else {
+                    self.followed = false;
+                    continue;
+                };
+                for (piece, (op, word)) in (0_u8..).zip(pieces) {
+                    self.generated.push(ir::BodyStatement {
+                        a: Some(ir::Name::Def(local, word)),
+                        b: Some(ir::Name::Parameter(held.saturating_add(piece))),
+                        ..ir::BodyStatement::bare(op)
+                    });
+                }
+                continue;
+            }
             self.generated.push(ir::BodyStatement {
                 a: Some(ir::Name::Def(local, 0)),
                 b: Some(ir::Name::Parameter(held)),
@@ -382,7 +396,7 @@ impl Checker<'_> {
                 }
                 self.returned = true;
             }
-            self.return_outs();
+            self.return_outs(span);
             self.jump(Step::Return, Op::Return, None, line);
             // FTE-18.10: in a function that returns a value it returns the `ret*` local.
             if !void && ret != Type::Unknown {
@@ -396,7 +410,7 @@ impl Checker<'_> {
         self.generated(&expr, &value, line, before);
         // The value is made the return type first (`QCC_EvaluateCast`), then returned.
         let returned = self.returned_as(value, &ret, (void, &name, &ret_name), &expr)?;
-        self.return_outs();
+        self.return_outs(span);
         self.jump(Step::Return, Op::Return, None, line);
         self.name_last(Op::Return, self.name_of(&returned), None);
         Ok(())

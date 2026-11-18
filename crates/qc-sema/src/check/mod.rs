@@ -994,7 +994,7 @@ pub(crate) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
         .last()
         .is_some_and(|last| matches!(last.op, qc_preproc::Op::Return | qc_preproc::Op::Done));
     if checker.ret_local || !ended {
-        checker.return_outs();
+        checker.return_outs(body.syntax().span());
     }
     // FTE-18.10: a body that made the `ret*` local returns it once more before its `DONE`.
     if checker.ret_local {

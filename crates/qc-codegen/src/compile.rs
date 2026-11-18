@@ -727,11 +727,30 @@ impl<'a> Compiler<'a> {
                 .map_err(|_| Abort::Internal(Internal::TooLarge, span))?
         };
         let mut parm_size = [0_u8; 8];
-        for (size, param) in parm_size.iter_mut().zip(&function_type.params) {
-            // `funcs[i].parm_size[p++] = size;`, each parameter's own words (FTEF-19.81).
-            let words = type_words(self.index, &ValueType::Of(param.clone()));
-            *size = u8::try_from(words).map_err(|_| Abort::Internal(Internal::TooLarge, span))?;
+        // `funcs[i].parm_size[p++] = size;`, each parameter's own words (FTEF-19.81); one of
+        // more than a vector's takes a slot for each three, `for (; size > 3 && p < MAX_PARMS;
+        // size -= 3) funcs[i].parm_size[p++] = 3;` (FTEF-32.25).
+        let mut slots = parm_size.iter_mut();
+        let mut taken: i32 = 0;
+        for param in &function_type.params {
+            let mut words = type_words(self.index, &ValueType::Of(param.clone()));
+            while words > VECTOR_WORDS {
+                let Some(size) = slots.next() else {
+                    break;
+                };
+                *size = VECTOR_SLOT;
+                words = words.saturating_sub(VECTOR_WORDS);
+                taken = taken.saturating_add(1);
+            }
+            if let Some(size) = slots.next() {
+                *size =
+                    u8::try_from(words).map_err(|_| Abort::Internal(Internal::TooLarge, span))?;
+                taken = taken.saturating_add(1);
+            }
         }
+        // `funcs[i].numparms = p;`: the slots, where a parameter took more than one.
+        let params = i32::try_from(function_type.params.len()).unwrap_or(i32::MAX);
+        let numparms = if taken > params { taken } else { numparms };
         let mut locals = self
             .locals_end
             .checked_sub(locals_start)
@@ -1164,6 +1183,9 @@ enum FunctionInit<'t> {
 const VA_COUNT: u32 = 24;
 /// A vector's words, `qc-types`' `PROGS_VECTOR_SLOTS`, as a definition's size.
 const VECTOR_WORDS: u32 = 3;
+
+/// The words of one parameter slot, as a function's record holds a parameter's size.
+const VECTOR_SLOT: u8 = 3;
 /// The radix of a literal written `0x`.
 const HEX_RADIX: u32 = 16;
 

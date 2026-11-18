@@ -5393,3 +5393,67 @@ fn a_vector_value_at_a_constant_index_is_its_word() {
         ]
     );
 }
+
+// spec FTEF-32.25: a struct of more than a vector's words takes a slot for each three words:
+// in the function's record, in the call's pieces and count, and where an out parameter of its
+// type is stored and stored back, as the pinned FTEQCC writes them
+#[test]
+fn a_wide_struct_is_passed_a_slot_for_each_three_words() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\n\
+         typedef struct { int a; int b; int c; vector v; float f; int g; string s; } font_s;\n\
+         font_s g_font;\nfloat gf;\n\
+         void load(string f, font_s &fnt) {\n\tfnt.a = 0;\n}\n\
+         float id(font_s fnt) {\n\treturn (float)fnt.a;\n}\n\
+         void t(void) {\n\tload(\"a\", g_font);\n\tgf = id(g_font);\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let made = |op: Op, a: i32, b: i32, c: i32| Statement {
+        op: number(op),
+        a,
+        b,
+        c,
+    };
+    let record = |name: &str| {
+        let f = function(&p, name);
+        (f.numparms, f.parm_size)
+    };
+    assert_eq!(record("load"), (4, [1, 3, 3, 3, 0, 0, 0, 0]));
+    assert_eq!(record("id"), (3, [3, 3, 3, 0, 0, 0, 0, 0]));
+    // The out parameter's nine words to the second, third and fourth slots before `DONE`.
+    let load: Vec<(u32, i32)> = body(&p, "load").iter().map(|s| (s.op, s.b)).collect();
+    let store_v = number(Op::StoreV);
+    assert_eq!(
+        load.get(1..),
+        Some(
+            &[
+                (store_v, 7),
+                (store_v, 10),
+                (store_v, 13),
+                (number(Op::Done), 0)
+            ][..]
+        )
+    );
+    let font = global(&p, "g_font");
+    let statements = body(&p, "t");
+    let (text, first, second) = (statements[3].b, statements[0].b, statements[8].b);
+    assert_eq!(
+        statements,
+        [
+            made(Op::StoreV, font, first, 0),
+            made(Op::StoreV, font + 3, 10, 0),
+            made(Op::StoreV, font + 6, 13, 0),
+            made(Op::Call4h, global(&p, "load"), text, first),
+            made(Op::StoreV, 7, font, 0),
+            made(Op::StoreV, 10, font + 3, 0),
+            made(Op::StoreV, 13, font + 6, 0),
+            made(Op::StoreV, font, statements[7].b, 0),
+            made(Op::StoreV, font + 3, second, 0),
+            made(Op::StoreV, font + 6, 10, 0),
+            made(Op::Call3h, global(&p, "id"), statements[7].b, second),
+            made(Op::StoreF, 1, global(&p, "gf"), 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
