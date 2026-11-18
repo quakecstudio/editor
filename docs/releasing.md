@@ -146,7 +146,9 @@ to Microsoft's contributor license agreement. [komac](https://github.com/russell
 fetched by release and checked by
 SHA-256, brings the fork `quakecstudio/winget-pkgs` up to date, writes the manifests from the
 release's two MSIs, pushes them to the fork and opens a pull request against
-`microsoft/winget-pkgs`. The steps are those of vouch-sh/vouch's release workflow: the manifests
+`microsoft/winget-pkgs`. The steps, their commands and the komac release (2.16.0) are those of
+vouch-sh/vouch's release workflow, which reached them over many releases, so one is changed
+only with vouch's: the manifests
 are written first, `ReleaseNotes` is taken out of them, since winget expects a field published
 once in every version after and komac cannot always fill it, every line is made to end with
 CRLF, which winget-pkgs requires, and only then are they submitted. Microsoft reviews and merges it in its own time, so the job's failure
