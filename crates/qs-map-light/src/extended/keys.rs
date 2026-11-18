@@ -287,7 +287,7 @@ impl Setting<f32> {
     }
 
     /// Whether the value is over 0 (`boolValue`).
-    pub(crate) fn is_on(&self) -> bool {
+    pub(crate) fn is_on(self) -> bool {
         self.value > 0.0
     }
 }

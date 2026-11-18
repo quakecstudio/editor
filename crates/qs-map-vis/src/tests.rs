@@ -984,7 +984,8 @@ fn a_prt2_flow_of_an_open_hall_sees_it_all() {
         leaves.strip_prefix("PRT1\n").unwrap()
     );
     for leaf in 0..SIDE * SIDE {
-        clusters.push_str(&format!("{leaf} -1\n"));
+        clusters.push_str(&leaf.to_string());
+        clusters.push_str(" -1\n");
     }
     let by_leaf = PortalFile::read(&leaves).unwrap();
     let by_cluster = PortalFile::read(&clusters).unwrap();

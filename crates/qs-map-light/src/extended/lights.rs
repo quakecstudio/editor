@@ -886,9 +886,9 @@ mod tests {
 
         let mut many = String::from(WORLD);
         for name in 0..33 {
-            many.push_str(&format!(
-                "{{\n\"classname\" \"light\"\n\"targetname\" \"t{name}\"\n}}\n"
-            ));
+            many.push_str("{\n\"classname\" \"light\"\n\"targetname\" \"t");
+            many.push_str(&name.to_string());
+            many.push_str("\"\n}\n");
         }
         assert_eq!(
             Lights::read(many.as_bytes()).err(),
