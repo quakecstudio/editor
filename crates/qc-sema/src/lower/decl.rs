@@ -1283,12 +1283,20 @@ pub(super) fn lower_initializer_uses(
 ) {
     match init {
         Some(ast::Initializer::Value(expr)) => lower_expr(expr, cx, uses),
-        Some(ast::Initializer::Aggregate(agg)) => {
-            for element in agg.elements() {
-                lower_expr(&element, cx, uses);
-            }
-        }
+        Some(ast::Initializer::Aggregate(agg)) => lower_aggregate(agg, cx, uses),
         Some(ast::Initializer::Body(_) | ast::Initializer::Builtin(_)) | None => {}
+    }
+}
+
+/// The names the items of an aggregate use, those of the aggregates inside it too: a
+/// struct's members in an array's element, `{ { a, b }, { c, d } }`.
+fn lower_aggregate(aggregate: &ast::AggregateInit, cx: Cx<'_>, uses: &mut Vec<RawUse>) {
+    for item in aggregate.syntax().children() {
+        if let Some(inner) = ast::AggregateInit::cast(item.clone()) {
+            lower_aggregate(&inner, cx, uses);
+        } else if let Some(element) = ast::Expr::cast(item) {
+            lower_expr(&element, cx, uses);
+        }
     }
 }
 
