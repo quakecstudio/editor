@@ -11,15 +11,15 @@ use std::rc::Rc;
 use qc_progs::Progs;
 use qs_bsp::{Bsp, BspLoader};
 use qs_engine::{
-    Client, ClientError, Flavour, LaunchError, LaunchSpec, RunRoot, RunRootError, StepKind,
-    locate_host, prepare_run_root,
+    Client, ClientError, LaunchError, LaunchSpec, RunRoot, RunRootError, StepKind, locate_host,
+    prepare_run_root,
 };
 use qs_sim::scenario::{Report, Scenario, ScenarioError, Shot};
 use qs_sim::{LoadOptions, World};
 use qs_vfs::{LoadedFile, StdFs, Vfs};
 use serde::Serialize;
 
-use super::{Preview, PreviewError, socket_path};
+use super::{Preview, PreviewError, game_base, socket_path};
 use crate::Workbench;
 use qc_project::Loader;
 
@@ -111,9 +111,9 @@ impl Preview {
             .map_err(|error| ScenarioRunError::Read(path.to_path_buf(), error))?;
         let scenario = Scenario::parse(&text)
             .map_err(|error| ScenarioRunError::Parse(path.to_path_buf(), error))?;
-        let (project, _, mod_name) = workbench.built_program()?;
-        let base = self.game_base()?;
-        let run_root = prepare_run_root(&project, Flavour::Original, &base, &mod_name)
+        let built = workbench.built_program()?;
+        let (base, flavour) = game_base(self.config.game.as_deref(), built.flavour)?;
+        let run_root = prepare_run_root(&built.project, flavour, &base, &built.mod_name)
             .map_err(ScenarioRunError::RunRoot)?;
         let report = play_on_game(&engine_words(&run_root, &scenario), &scenario)?;
         let mut images = Vec::new();

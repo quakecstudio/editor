@@ -30,6 +30,7 @@ use qs_vfs::zip::{NewMember, ZipWriteError, write_zip};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::preview::RERELEASE_ENGINE;
 use crate::{HasWorkbench, Workbench, WorkbenchError};
 
 /// The id of `project.export`.
@@ -211,7 +212,7 @@ impl<L: qc_project::Loader> Workbench<L> {
         let game = if info
             .modules
             .iter()
-            .any(|module| module.engine.contains("rerelease"))
+            .any(|module| module.engine == RERELEASE_ENGINE)
         {
             GameNeeded::Rerelease
         } else {

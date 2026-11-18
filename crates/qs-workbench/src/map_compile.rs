@@ -472,7 +472,7 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
             }))
         })?;
         let built = workbench.built_program()?;
-        let (project, _, mod_name) = &built;
+        let (project, mod_name) = (&built.project, &built.mod_name);
         let name = path
             .file_stem()
             .map_or_default(|stem| stem.to_string_lossy().into_owned());

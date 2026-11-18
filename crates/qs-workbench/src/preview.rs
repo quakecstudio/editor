@@ -236,6 +236,9 @@ enum Step {
 pub struct Preview {
     config: PreviewConfig,
     live: Option<Live>,
+    /// The game the project last played is for, which the game's files are read from
+    /// (ADR-0008).
+    flavour: Flavour,
     state: PlayState,
     console: VecDeque<ConsoleLine>,
     /// The last thing the loop did, for the toolbar: `Reloaded 0.9 s after save`.
@@ -280,6 +283,7 @@ impl Preview {
         Self {
             config,
             live: None,
+            flavour: Flavour::Original,
             state: PlayState::Stopped,
             console: VecDeque::new(),
             status: None,
@@ -635,13 +639,21 @@ impl Preview {
     /// folder, on `map` or the host's own first map; a host already running is stopped first.
     pub(crate) fn play_built(
         &mut self,
-        (project, progs, mod_name): (PathBuf, PathBuf, String),
+        built: BuiltProgram,
         map: Option<String>,
     ) -> Result<(), PreviewError> {
+        let BuiltProgram {
+            project,
+            progs,
+            mod_name,
+            flavour,
+        } = built;
         self.stop();
-        let base = self.game_base()?;
-        let run_root = prepare_run_root(&project, Flavour::Original, &base, &mod_name)
-            .map_err(PreviewError::RunRoot)?;
+        // ADR-0008: the project's own game, the rerelease's files for a rerelease project.
+        let (base, flavour) = game_base(self.config.game.as_deref(), flavour)?;
+        self.flavour = flavour;
+        let run_root =
+            prepare_run_root(&project, flavour, &base, &mod_name).map_err(PreviewError::RunRoot)?;
         // A game embedded in the app's window needs no host program.
         let embeds = self.embedded.as_ref().is_some_and(|host| host.shows());
         let host = if embeds {
@@ -698,7 +710,7 @@ impl Preview {
     /// The original game's base directory: the configured folder's, else the first install
     /// found with one.
     pub(crate) fn game_base(&self) -> Result<qs_install::GameBase, PreviewError> {
-        game_base(self.config.game.as_deref())
+        game_base(self.config.game.as_deref(), self.flavour).map(|(base, _)| base)
     }
 
     /// The running host's client, or [`PreviewError::NotRunning`].
@@ -773,7 +785,7 @@ impl Preview {
             return Ok(None);
         }
         let started = Instant::now();
-        let (_, progs, _) = workbench.built_program()?;
+        let progs = workbench.built_program()?.progs;
         let path = progs.to_string_lossy().into_owned();
         if on_loss == OnLoss::Ask {
             // P3-10: the host's own migration, run over a copy of the world, says what the
@@ -1253,7 +1265,7 @@ impl Drop for Preview {
 impl<L: Loader> Workbench<L> {
     /// Builds the project; its root, its first program and the mod folder it is in, or why there
     /// is none.
-    pub(super) fn built_program(&mut self) -> Result<(PathBuf, PathBuf, String), PreviewError> {
+    pub(super) fn built_program(&mut self) -> Result<BuiltProgram, PreviewError> {
         let project = self
             .root()
             .map(Path::to_path_buf)
@@ -1265,19 +1277,65 @@ impl<L: Loader> Workbench<L> {
         let progs = built.output.clone();
         let mod_name = mod_folder(&project, &progs)
             .ok_or_else(|| PreviewError::OutsideBuild(progs.clone()))?;
-        Ok((project, progs, mod_name))
+        Ok(BuiltProgram {
+            project,
+            progs,
+            mod_name,
+            flavour: self.flavour(),
+        })
+    }
+
+    /// Which game the open project is for (ADR-0008): the rerelease when one of its modules
+    /// is compiled for the rerelease's engine, else the original.
+    pub(crate) fn flavour(&mut self) -> Flavour {
+        let rerelease = self.project_info().is_some_and(|info| {
+            info.modules
+                .iter()
+                .any(|module| module.engine == RERELEASE_ENGINE)
+        });
+        if rerelease {
+            Flavour::Rerelease
+        } else {
+            Flavour::Original
+        }
     }
 }
 
-/// The original game's base directory: `folder`'s, else the first install found with one.
-pub(crate) fn game_base(folder: Option<&Path>) -> Result<qs_install::GameBase, PreviewError> {
+/// A project built to play: its root, its first program, the mod folder the program is in and
+/// the game it is for.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct BuiltProgram {
+    pub(crate) project: PathBuf,
+    pub(crate) progs: PathBuf,
+    pub(crate) mod_name: String,
+    pub(crate) flavour: Flavour,
+}
+
+/// The id of the rerelease's engine, which a project whose target is the rerelease is
+/// compiled for (ENGT-3.5).
+pub(crate) const RERELEASE_ENGINE: &str = qc_engines::Engine::Kex.id();
+
+/// The base directory of the game of `flavour`, with the flavour it is: `folder`'s, else the
+/// first install found with one. Where an install has no rerelease a rerelease project plays
+/// on the original game's files, as the original.
+pub(crate) fn game_base(
+    folder: Option<&Path>,
+    flavour: Flavour,
+) -> Result<(qs_install::GameBase, Flavour), PreviewError> {
+    let of = |install: qs_install::Install| {
+        let rerelease = install
+            .rerelease
+            .filter(|_| flavour == Flavour::Rerelease)
+            .map(|base| (base, Flavour::Rerelease));
+        rerelease.or_else(|| install.original.map(|base| (base, Flavour::Original)))
+    };
     match folder {
         Some(folder) => qs_install::examine_folder(folder)
-            .and_then(|install| install.original)
+            .and_then(of)
             .ok_or_else(|| PreviewError::NoGame(Some(folder.to_path_buf()))),
         None => qs_install::find_installs()
             .into_iter()
-            .find_map(|install| install.original)
+            .find_map(of)
             .ok_or(PreviewError::NoGame(None)),
     }
 }

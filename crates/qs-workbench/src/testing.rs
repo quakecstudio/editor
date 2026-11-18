@@ -291,8 +291,8 @@ fn play_scenarios(
             .collect()
     };
     // QCT-3.3: the game, and a program where a run root can take it.
-    let base = match game_base(game) {
-        Ok(base) => base,
+    let base = match game_base(game, Flavour::Original) {
+        Ok((base, _)) => base,
         Err(error) => return skip_all(error.to_string()),
     };
     let Some(mod_name) = mod_folder(root, progs) else {

@@ -62,6 +62,26 @@ fn project(name: &str, spec: &ProjectSpec) -> PathBuf {
     root
 }
 
+// No spec statement: P4-28, QA-15: the export says which game the mod needs: the rerelease
+// for a project whose target is the rerelease, by its engine's id
+#[test]
+fn a_rerelease_project_needs_the_rerelease() {
+    let root = project(
+        "rerelease",
+        &ProjectSpec {
+            files: vec![(
+                "quakec.toml",
+                b"[project]\nname = \"m\"\ndialect = \"fteqcc\"\ntarget = \"rerelease\"\n\n\
+                  [[module]]\nkind = \"ssqc\"\nsrc = \"progs.src\"\n"
+                    .to_vec(),
+            )],
+            ..ProjectSpec::default()
+        },
+    );
+    let exported = export(&root, &ExportParams::default()).unwrap();
+    assert_eq!(exported.game, GameNeeded::Rerelease);
+}
+
 fn export(root: &Path, params: &ExportParams) -> Result<Exported, ExportError> {
     let mut workbench = Workbench::new(FsLoader, Config::default());
     workbench
