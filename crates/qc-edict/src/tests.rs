@@ -955,6 +955,48 @@ fn clone_from_restores_a_changed_copy() {
     assert!(same_store(&copy, &snapshot));
 }
 
+// No spec statement: `restore_from` leaves a copy equal to its snapshot after each way an
+// edict is written (a field set, the slots taken for writing, a clear, an allocation, a
+// free), again on a second restore, and when the copy was the one cloned from.
+#[test]
+fn restore_from_undoes_every_kind_of_write() {
+    let mut copy = store(1);
+    let kept = copy.alloc(1.0).unwrap();
+    copy.set_field(kept, 7, Slot::from_f32(3.5)).unwrap();
+    let snapshot = copy.clone();
+    for round in 0..2 {
+        copy.set_field(EdictNumber::new(0), 1, Slot::from_i32(11))
+            .unwrap();
+        copy.set_field(EdictNumber::new(500), 2, Slot::from_i32(round))
+            .unwrap();
+        if let Some(slot) = copy
+            .fields_mut(EdictNumber::new(400))
+            .and_then(|f| f.first_mut())
+        {
+            *slot = Slot::from_i32(9);
+        }
+        copy.clear_edict(EdictNumber::new(300));
+        let spawned = copy.alloc(2.0).unwrap();
+        copy.set_field(spawned, 9, Slot::from_i32(-4)).unwrap();
+        copy.free(kept, 2.5);
+        copy.free(EdictNumber::new(200), 3.5);
+        assert!(!same_store(&copy, &snapshot));
+        copy.restore_from(&snapshot);
+        assert!(same_store(&copy, &snapshot));
+    }
+}
+
+// No spec statement: `restore_from` a store of another layout copies it whole.
+#[test]
+fn restore_from_takes_another_layout() {
+    let mut wide = EdictStore::new(EdictLayout::new(200, GLOBALS_128).unwrap(), 4).unwrap();
+    wide.set_field(EdictNumber::new(3), 150, Slot::from_i32(8))
+        .unwrap();
+    let mut narrow = store(1);
+    narrow.restore_from(&wide);
+    assert!(same_store(&narrow, &wide));
+}
+
 // No spec statement: `clone_from` from a store of another layout and client count takes that
 // layout, its field count included.
 #[test]

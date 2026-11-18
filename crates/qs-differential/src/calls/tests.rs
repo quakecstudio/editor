@@ -244,6 +244,73 @@ fn a_global_that_differs_is_a_divergence() {
     );
 }
 
+// spec DIFF-12.3: a value found to agree is not read again while both worlds hold the bits
+// they are restored to, and is read again once either does not: a global or a field written
+// after it agreed is a divergence, and so is the next one written after that. An engine
+// string is never held to be as it was, its text being the engine's.
+#[test]
+fn what_agreed_is_compared_again_once_it_is_written() {
+    let progs = compile("float x;\nstring s;\n");
+    let progs = Progs::read(&progs).unwrap();
+    let scenario = scenario();
+    let world = || World::new(&progs, &scenario, WORLD, EngineProfile::Id).unwrap();
+    let (mut a, b) = (world(), world());
+    let pair = super::Pair::new(Oracle::Qcc, &a, &b);
+    let globals = pair.globals.as_deref().unwrap();
+    let mut known = super::Known::default();
+    assert_eq!(super::state_difference(&a, &b, globals, &mut known), None);
+    let unknown: Vec<_> = globals
+        .iter()
+        .zip(&known.globals)
+        .filter(|(_, agreed)| !**agreed)
+        .map(|((theirs, _), _)| String::from_utf8_lossy(&a.program.globals[*theirs].0).into_owned())
+        .collect();
+    assert_eq!(unknown, ["mapname"]);
+    // Edict 0 is free in this world, and a free edict's fields are not compared.
+    assert_eq!(known.edicts, [false, true, true]);
+    assert_eq!(super::state_difference(&a, &b, globals, &mut known), None);
+
+    let slot = |name: &[u8]| {
+        let (_, _, ofs) = a.program.globals.iter().find(|g| g.0 == name).unwrap();
+        *ofs
+    };
+    let (x, s) = (slot(b"x"), slot(b"s"));
+    let float = qc_types::DefType::Known(Etype::Float);
+    let string = qc_types::DefType::Known(Etype::String);
+    assert!(a.global_is_restored(float, x));
+    assert!(a.global_is_restored(string, s));
+    a.host
+        .set_global_slot(i32::try_from(x).unwrap(), qc_types::Slot::from_f32(4.0));
+    assert!(!a.global_is_restored(float, x));
+    assert!(matches!(
+        super::state_difference(&a, &b, globals, &mut known),
+        Some(Difference::Global(name, ..)) if name == b"x"
+    ));
+    a.host.machine.restore_from(&a.machine);
+    assert_eq!(super::state_difference(&a, &b, globals, &mut known), None);
+
+    a.host
+        .set_global_slot(i32::try_from(s).unwrap(), qc_types::Slot::from_i32(-1));
+    a.machine.restore_from(&a.host.machine);
+    assert!(!a.global_is_restored(string, s));
+
+    assert!(a.edict_is_restored(2));
+    a.host
+        .machine
+        .edicts_mut()
+        .set_field(
+            qc_edict::EdictNumber::new(2),
+            0,
+            qc_types::Slot::from_f32(9.0),
+        )
+        .unwrap();
+    assert!(!a.edict_is_restored(2));
+    assert!(matches!(
+        super::state_difference(&a, &b, globals, &mut known),
+        Some(Difference::Global(..) | Difference::Field(2, ..))
+    ));
+}
+
 // spec DIFF-12.3: a field of an edict that ends with another value is a divergence, named by
 // the edict and the field.
 #[test]
@@ -1078,8 +1145,11 @@ fn entities_and_fields_read_by_edict_and_name() {
     let scenario = scenario();
     let mut world = World::new(&progs, &scenario, WORLD, EngineProfile::Id).unwrap();
     let size = world.host.machine.edicts().layout().edict_size();
-    let entity =
-        |world: &World<'_, '_, '_>| world.global(qc_types::DefType::Known(Etype::Entity), 28);
+    let entity = |world: &World<'_, '_, '_>| {
+        world
+            .global(qc_types::DefType::Known(Etype::Entity), 28)
+            .value()
+    };
     world
         .host
         .set_global_slot(28, qc_types::Slot::from_i32(2 * size));
@@ -1102,12 +1172,16 @@ fn entities_and_fields_read_by_edict_and_name() {
         .host
         .set_global_slot(28, qc_types::Slot::from_i32(slot));
     assert_eq!(
-        world.global(qc_types::DefType::Known(Etype::Field), 28),
+        world
+            .global(qc_types::DefType::Known(Etype::Field), 28)
+            .value(),
         Value::FieldName(b"f".to_vec())
     );
     world.host.set_global_slot(28, qc_types::Slot::from_i32(-7));
     assert!(matches!(
-        world.global(qc_types::DefType::Known(Etype::Field), 28),
+        world
+            .global(qc_types::DefType::Known(Etype::Field), 28)
+            .value(),
         Value::Bits(_)
     ));
 }
@@ -1855,7 +1929,7 @@ fn debug_replay() {
     };
     let mut tw = World::new(&tp, &scenario, &entities, profile).unwrap();
     let mut ow = World::new(&op, &scenario, &entities, profile).unwrap();
-    let pair = super::Pair::new(Oracle::Fteqcc, &tw, &ow);
+    let mut pair = super::Pair::new(Oracle::Fteqcc, &tw, &ow);
     let drawer = Drawer::new(&tw);
     let function = tp.ed_find_function(fn_name.as_bytes()).unwrap();
     let their_index = tp

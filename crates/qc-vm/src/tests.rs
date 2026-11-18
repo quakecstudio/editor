@@ -60,9 +60,9 @@ fn machine_with_globals(numglobals: usize) -> Machine {
     Machine::new(&progs, 1).unwrap()
 }
 
-// No spec statement: the differential restores a machine from a snapshot with `clone_from`
-// (DIFF-12.2), which must leave every part of it equal to the snapshot's, the globals, the
-// edicts, the stacks and the run state, whatever was done to it since.
+// No spec statement: the differential restores a machine from a snapshot with `clone_from` or
+// `restore_from` (DIFF-12.2), which must leave every part of it equal to the snapshot's, the
+// globals, the edicts, the stacks and the run state, whatever was done to it since.
 #[test]
 fn clone_from_restores_a_changed_machine() {
     let mut snapshot = machine_with_globals(128);
@@ -70,24 +70,33 @@ fn clone_from_restores_a_changed_machine() {
     let mut copy = snapshot.clone();
     assert_eq!(format!("{copy:?}"), format!("{snapshot:?}"));
 
-    copy.set_global(101, Slot::from_i32(6)).unwrap();
-    let spawned = copy.edicts_mut().alloc(1.0).unwrap();
-    copy.edicts_mut()
-        .set_field(spawned, 2, Slot::from_i32(7))
-        .unwrap();
-    copy.stack.push(Frame {
-        statement: 9,
-        function: 1,
-    });
-    copy.localstack[3] = Slot::from_i32(8);
-    copy.localstack_used = 4;
-    copy.xfunction = 1;
-    copy.xstatement = 2;
-    copy.argc = 3;
-    copy.trace_flag = true;
+    let change = |copy: &mut Machine| {
+        copy.set_global(101, Slot::from_i32(6)).unwrap();
+        let spawned = copy.edicts_mut().alloc(1.0).unwrap();
+        copy.edicts_mut()
+            .set_field(spawned, 2, Slot::from_i32(7))
+            .unwrap();
+        copy.stack.push(Frame {
+            statement: 9,
+            function: 1,
+        });
+        copy.localstack[3] = Slot::from_i32(8);
+        copy.localstack_used = 4;
+        copy.xfunction = 1;
+        copy.xstatement = 2;
+        copy.argc = 3;
+        copy.trace_flag = true;
+    };
+    change(&mut copy);
     assert_ne!(format!("{copy:?}"), format!("{snapshot:?}"));
 
     copy.clone_from(&snapshot);
+    assert_eq!(format!("{copy:?}"), format!("{snapshot:?}"));
+
+    // `restore_from` does the same, copying only the edicts written since.
+    change(&mut copy);
+    assert_ne!(format!("{copy:?}"), format!("{snapshot:?}"));
+    copy.restore_from(&snapshot);
     assert_eq!(format!("{copy:?}"), format!("{snapshot:?}"));
 
     let mut other = machine_with_globals(300);

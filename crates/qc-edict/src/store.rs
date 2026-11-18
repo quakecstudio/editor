@@ -48,7 +48,6 @@ const FREE_NEXTTHINK_SLOT: usize = SysField::Nextthink.slot();
 /// EDICT-1.2: the free flag and `freetime` are the only header fields QuakeC reads, through
 /// allocation (EDICT-6) and `nextent` (EDICT-5.4); the rest of the header is engine state the
 /// store does not model. The `fields` are the `entityfields` 4-byte slots (EDICT-1.1).
-#[derive(Debug, PartialEq)]
 struct Edict {
     /// id's `edict_t.free`: whether the edict is free to be reused (EDICT-6.1).
     free: bool,
@@ -57,6 +56,21 @@ struct Edict {
     freetime: f32,
     /// The `entityfields` field slots, id's `edict_t.v` (EDICT-1.1).
     fields: Box<[Slot]>,
+    /// Whether the edict may have been written since it was last made a copy of another, which
+    /// [`EdictStore::restore_from`] reads to copy only what changed.
+    changed: bool,
+}
+
+// Written out to leave `changed` out: it says how the edict came to hold what it holds, and
+// two stores that hold the same print the same.
+impl core::fmt::Debug for Edict {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Edict")
+            .field("free", &self.free)
+            .field("freetime", &self.freetime)
+            .field("fields", &self.fields)
+            .finish()
+    }
 }
 
 // Written out so that `clone_from` copies the field slots into the edict's own allocation: a
@@ -68,6 +82,7 @@ impl Clone for Edict {
             free: self.free,
             freetime: self.freetime,
             fields: self.fields.clone(),
+            changed: false,
         }
     }
 
@@ -75,6 +90,7 @@ impl Clone for Edict {
         self.free = source.free;
         self.freetime = source.freetime;
         self.fields.clone_from(&source.fields);
+        self.changed = false;
     }
 }
 
@@ -85,6 +101,7 @@ impl Edict {
             free: false,
             freetime: 0.0,
             fields: vec![Slot::ZERO; entityfields].into_boxed_slice(),
+            changed: true,
         }
     }
 }
@@ -202,6 +219,30 @@ impl Clone for EdictStore {
 }
 
 impl EdictStore {
+    /// Makes this store `snapshot` again, copying only the edicts written since it last was:
+    /// the compiler differential restores a store before every call (DIFF-12.2), and a call
+    /// writes a few of the [`LIMIT_MAX_EDICTS`] edicts.
+    ///
+    /// The store must have been `snapshot` when it was last cloned from it, when `snapshot`
+    /// was cloned from it, or when it was last restored from it; a store of another layout is
+    /// copied whole.
+    pub fn restore_from(&mut self, snapshot: &Self) {
+        if self.layout != snapshot.layout || self.edicts.len() != snapshot.edicts.len() {
+            self.clone_from(snapshot);
+            return;
+        }
+        for (edict, kept) in self.edicts.iter_mut().zip(&snapshot.edicts) {
+            if edict.changed {
+                edict.clone_from(kept);
+            }
+        }
+        self.num_edicts = snapshot.num_edicts;
+        self.maxclients = snapshot.maxclients;
+        self.events.clone_from(&snapshot.events);
+    }
+}
+
+impl EdictStore {
     /// A fresh store for a map, id's `SV_SpawnServer` after `PR_LoadProgs` (EDICT-1.8).
     ///
     /// Allocates all [`LIMIT_MAX_EDICTS`] edicts zero-filled and in use, and sets `num_edicts`
@@ -244,6 +285,7 @@ impl EdictStore {
                 free: edict.free,
                 freetime: edict.freetime,
                 fields: vec![Slot::ZERO; entityfields].into_boxed_slice(),
+                changed: true,
             })
             .collect();
         Self {
@@ -340,9 +382,10 @@ impl EdictStore {
     /// Returns `None` for a number the array does not hold.
     #[must_use]
     pub fn fields_mut(&mut self, number: EdictNumber) -> Option<&mut [Slot]> {
-        self.edicts
-            .get_mut(number.index())
-            .map(|edict| &mut *edict.fields)
+        self.edicts.get_mut(number.index()).map(|edict| {
+            edict.changed = true;
+            &mut *edict.fields
+        })
     }
 
     /// Field slot `field` of edict `number`, read by offset.
@@ -369,10 +412,12 @@ impl EdictStore {
         field: usize,
         value: Slot,
     ) -> Result<(), EdictError> {
-        let slot = self
-            .edicts
-            .get_mut(number.index())
-            .and_then(|edict| edict.fields.get_mut(field))
+        let edict = self.edicts.get_mut(number.index());
+        let slot = edict
+            .and_then(|edict| {
+                edict.changed = true;
+                edict.fields.get_mut(field)
+            })
             .ok_or(EdictError::NoField { number, field })?;
         *slot = value;
         self.record(EdictEvent::Written(number, field));
@@ -426,6 +471,7 @@ impl EdictStore {
         if let Some(edict) = self.edicts.get_mut(number.index()) {
             edict.fields.fill(Slot::ZERO);
             edict.free = false;
+            edict.changed = true;
         }
     }
 
@@ -489,6 +535,7 @@ impl EdictStore {
             return;
         };
         edict.free = true;
+        edict.changed = true;
         // EDICT-7.1: ed->v.model = 0, takedamage = 0, modelindex = 0, colormap = 0, skin = 0,
         // frame = 0, solid = 0, origin = 0 0 0, angles = 0 0 0, nextthink = -1.
         for field in FREE_ZEROED {
