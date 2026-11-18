@@ -145,7 +145,10 @@ impl<'a> Resolver<'a> {
             .iter()
             .zip(&b.params)
             .all(|(x, y)| self.same_param(x, y, MAX_TYPEDEF_DEPTH));
-        let outs_agree = old_params.iter().zip(params).all(|(x, y)| x.out == y.out);
+        let outs_agree = old_params
+            .iter()
+            .zip(params)
+            .all(|(x, y)| x.passing.comes_back() == y.passing.comes_back());
         let optional_beyond = |list: &[Type], info: &[RawParamInfo]| {
             (shared..list.len()).all(|i| info.get(i).is_some_and(|p| p.optional))
         };

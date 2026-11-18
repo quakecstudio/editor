@@ -331,21 +331,23 @@ impl Checker<'_> {
                     .checked_div(VECTOR_WORDS)
                     .unwrap_or(1),
             );
-            if !own.labels.0.get(at).is_some_and(|label| label.out) {
+            let Some(label) = own.labels.0.get(at).filter(|l| l.passing.comes_back()) else {
                 continue;
-            }
-            let (Some(local), Ok(held), true) = (
-                self.env.parameter(at),
-                u8::try_from(held),
-                words <= VECTOR_WORDS,
-            ) else {
+            };
+            // By its name: a parameter with no name has no local to be found by its place.
+            let local = label
+                .name
+                .as_deref()
+                .and_then(|name| self.env.parameter(name));
+            let (Some(local), Ok(held), true) = (local, u8::try_from(held), words <= VECTOR_WORDS)
+            else {
                 self.followed = false;
                 continue;
             };
             self.generated.push(ir::BodyStatement {
                 a: Some(ir::Name::Def(local, 0)),
                 b: Some(ir::Name::Parameter(held)),
-                ..ir::BodyStatement::bare(Checker::store_op(self.etype_of(param)))
+                ..ir::BodyStatement::bare(self.store_of(param))
             });
         }
     }

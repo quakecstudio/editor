@@ -5255,3 +5255,104 @@ fn a_call_stores_its_out_arguments_back() {
         ]
     );
 }
+
+// spec FTEF-29.18: the value of a float bit update in place is the value given, stored by a
+// statement of its own, not folded into the one that made it
+// spec FTEF-29.20: a field of an accessor type is stored through its address, and an
+// `enum class` field by `OP_STOREF_I`
+// spec FTEF-10.15: a definition of an accessor over an `int` is `ev_accessor`
+#[test]
+fn field_stores_follow_the_type_s_own_kind() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\nentity self;\n.float flags;\nvoid end_sys_fields;\n\
+         accessor handle : int { };\nhandle gh;\n.handle hf;\n\
+         enum class kind : int { KA, KB };\n.kind ke;\nfloat a;\nfloat b;\nfloat x;\n\
+         void t(entity e) {\n\tx = (self.flags |= a + b);\n\te.hf = gh;\n\
+         \te.ke = kind::KB;\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let made = |op: Op, a: i32, b: i32, c: i32| Statement {
+        op: number(op),
+        a,
+        b,
+        c,
+    };
+    let statements = body(&p, "t");
+    let (sum, address) = (statements[0].c, statements[1].c);
+    let (e, through, item) = (statements[4].a, statements[4].c, statements[6].c);
+    assert_eq!(
+        statements,
+        [
+            made(Op::AddF, global(&p, "a"), global(&p, "b"), sum),
+            made(
+                Op::Address,
+                global(&p, "self"),
+                global(&p, "flags"),
+                address
+            ),
+            made(Op::BitsetstorepF, sum, address, 0),
+            made(Op::StoreF, sum, global(&p, "x"), 0),
+            made(Op::Address, e, global(&p, "hf"), through),
+            made(Op::StorepI, global(&p, "gh"), through, 0),
+            made(Op::StorefI, e, global(&p, "ke"), item),
+            st(Done, 0, 0, 0),
+        ]
+    );
+    let gh = p
+        .global_defs
+        .iter()
+        .find(|def| string(&p, def.s_name) == "gh")
+        .unwrap();
+    assert_eq!(gh.type_bits, 0x8010);
+}
+
+// spec FTEF-32.24: an out parameter is found by its name, so one with no name before it does
+// not shift it
+#[test]
+fn an_out_parameter_after_one_with_no_name_is_stored_from_its_own_local() {
+    let p = fte_progs("#pragma target fte\nvoid f(float, __out float o) = { o = 1; };\n");
+    let statements = body(&p, "f");
+    let o = statements[0].b;
+    assert_eq!((statements[1].a, statements[1].b), (o, 7), "{statements:?}");
+}
+
+// spec FTE-6.4: on id's opcodes an `int` field is stored through its address by
+// `OP_STOREP_FLD`, `QCC_StoreToPointer`'s opcode with no `OP_STOREP_I` (FTEF-6.18)
+#[test]
+fn an_int_field_is_stored_by_storep_fld_on_id_s_opcodes() {
+    let p = fte_progs(
+        "entity self;\n.int count;\nvoid end_sys_fields;\n\
+         void t(entity e) {\n\te.count = 5i;\n}\n",
+    );
+    let statements = body(&p, "t");
+    assert_eq!(statements[0].op, u32::from(Opcode::Address.number()));
+    assert_eq!(
+        statements[1].op,
+        u32::from(Opcode::StorepFld.number()),
+        "{statements:?}"
+    );
+}
+
+// spec FTEF-10.14: a member marked `&` passes the accessor back, which is not followed: the
+// body is refused, not compiled as a plain call
+#[test]
+fn a_reference_accessor_member_is_not_compiled_as_a_plain_call() {
+    let compiled = compile_fteqcc(
+        "#pragma target fte\naccessor info : string;\n\
+         void(info &this, string key, string value) info_set = #1;\n\
+         accessor info : string\n{\n\tset& string[string] = info_set;\n};\n\
+         info s;\nvoid t(void) {\n\ts[\"k\"] = \"v\";\n}\n",
+    );
+    assert!(
+        matches!(
+            compiled,
+            Err(CompileError::Internal {
+                internal: Internal::Unfollowed,
+                ..
+            })
+        ),
+        "{:?}",
+        compiled.err()
+    );
+}

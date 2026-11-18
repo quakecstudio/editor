@@ -23,7 +23,7 @@ use crate::check::reference::expected_after;
 use crate::check::term::string_immediate;
 use crate::check::{Constness, CvarValue, ParamFacts, PathList, Reference, Sym, Value, converts};
 use crate::ir;
-use crate::ty::{FunctionType, SimpleType, Type};
+use crate::ty::{FunctionType, Passing, SimpleType, Type};
 use crate::{MAX_PARMS, VECTOR_WORDS, VECTOR_WORDS_FLOAT, VECTOR_WORDS_INT};
 
 /// `MAX_PARMS + MAX_EXTRA_PARMS`: the most arguments a call may pass.
@@ -226,7 +226,7 @@ impl Checker<'_> {
                 self.env.report(Code::W0252, arg_span, message);
             }
             // FTEF-32.24: `__out args do not actually need to pass anything`: not read.
-            if params.get(at).is_some_and(|p| p.write_only) {
+            if params.get(at).is_some_and(|p| p.passing == Passing::Out) {
                 values.push(Value::of(reference.ty.clone()));
                 passed.push(Some(reference));
                 self.end_of_construct()?;
@@ -365,7 +365,7 @@ impl Checker<'_> {
         }
         // FTE-18.7: an empty slot is given its parameter's default.
         let defaulted: Vec<bool> = passed.iter().map(Option::is_none).collect();
-        let unpassed: Vec<bool> = params.iter().map(|p| p.write_only).collect();
+        let unpassed: Vec<bool> = params.iter().map(|p| p.passing == Passing::Out).collect();
         let kept = self.call_statements(
             &function,
             passed_count,
@@ -381,6 +381,13 @@ impl Checker<'_> {
                 b: Some(ir::Name::Def(this, 0)),
                 ..ir::BodyStatement::bare(Op::StoreEnt)
             });
+        }
+        // The call's value is live from here (`retval = QCC_GetAliasTemp(def_ret)` before the
+        // outs), so a store back that calls copies it out of the return global first.
+        let words = self.env.layout(&function.ret).map_or(1, |l| l.words);
+        if !self.global && words > 0 && function.ret != Type::Simple(SimpleType::Void) {
+            self.live_return = Some(words);
+            self.live_call = call;
         }
         // FTEF-32.24: `out` arguments are stored back after the call, each from its parameter's
         // slot (`QCC_StoreSRefToRef(arglist[i], d, false, false)`), a slot for each three words
@@ -399,7 +406,8 @@ impl Checker<'_> {
                     .checked_div(VECTOR_WORDS)
                     .unwrap_or(1),
             );
-            let Some(reference) = reference.as_ref().filter(|_| param.out) else {
+            let comes_back = param.passing.comes_back();
+            let Some(reference) = reference.as_ref().filter(|_| comes_back) else {
                 continue;
             };
             if reference.readonly {
@@ -415,11 +423,6 @@ impl Checker<'_> {
                 self.update_stores(reference, &returned, &reference.ty, span)?;
             }
             self.store_reference(reference, &returned, span)?;
-        }
-        let words = self.env.layout(&function.ret).map_or(1, |l| l.words);
-        if !self.global && words > 0 && function.ret != Type::Simple(SimpleType::Void) {
-            self.live_return = Some(words);
-            self.live_call = call;
         }
         // FTEF-29.15: the value is an alias of `def_ret`, which may be assigned to, unless a
         // return larger than a vector is read back into a temporary.
@@ -1268,8 +1271,7 @@ impl FunctionType {
                         // The code generator passes defaults only to a function it calls by name.
                         kept_default: false,
                         optional: label.optional,
-                        out: label.out,
-                        write_only: label.write_only,
+                        passing: label.passing,
                     })
             })
             .collect()

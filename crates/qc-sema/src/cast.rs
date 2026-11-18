@@ -720,7 +720,7 @@ impl Type {
                             return ty;
                         };
                         let mut text = String::new();
-                        if label.out {
+                        if label.passing.comes_back() {
                             text.push_str("inout ");
                         }
                         if label.optional {

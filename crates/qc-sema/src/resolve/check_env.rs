@@ -57,8 +57,8 @@ pub(in crate::resolve) struct BodyEnv<'r, 'a> {
     pub(in crate::resolve) written: &'r [(usize, Type)],
     /// The body's locals.
     pub(in crate::resolve) locals: &'r [RawLocal],
-    /// The local each of the function's parameters is, in order.
-    pub(in crate::resolve) params: &'r [Option<DefId>],
+    /// The local each of the function's named parameters is, by its name.
+    pub(in crate::resolve) params: &'r [(String, Option<DefId>)],
     /// Whether its function's name is its own, or empty as a nested function's that is not
     /// static (FTEF-18.39).
     pub(in crate::resolve) naming: FunctionName,
@@ -417,8 +417,9 @@ impl Env for BodyEnv<'_, '_> {
             .map_or_else(String::new, |(name, line)| format!("{name}:{line}"))
     }
 
-    fn parameter(&self, at: usize) -> Option<DefId> {
-        self.params.get(at).copied().flatten()
+    fn parameter(&self, name: &str) -> Option<DefId> {
+        let (_, def) = self.params.iter().find(|(named, _)| named == name)?;
+        *def
     }
 
     fn params(&self, def: DefId) -> Option<Vec<ParamFacts>> {
@@ -448,8 +449,7 @@ impl Env for BodyEnv<'_, '_> {
                             }
                     }),
                     optional: p.optional,
-                    out: p.out,
-                    write_only: p.write_only,
+                    passing: p.passing,
                 })
                 .collect(),
         )

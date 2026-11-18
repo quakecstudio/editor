@@ -41,11 +41,12 @@ impl Checker<'_> {
         }))
     }
 
-    /// The accessor `base` as its functions take it: read, when it is an accessor's member.
+    /// The accessor `base` as its functions take it: read where it is reached through a
+    /// reference, an accessor's member, a field, an element or a pointer.
     fn accessor_base(&mut self, base: &Value, span: Span) -> Checked {
         match base.reference {
-            Reference::Accessor(_) => self.read(base.clone(), span),
-            _ => Ok(base.clone()),
+            Reference::Global => Ok(base.clone()),
+            _ => self.read(base.clone(), span),
         }
     }
 

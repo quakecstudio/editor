@@ -1290,9 +1290,9 @@ pub(crate) fn type_words(index: &ModuleIndex, ty: &ValueType) -> u32 {
 pub(crate) fn type_number(index: &ModuleIndex, ty: &ValueType) -> u16 {
     let numbered = match ty {
         ValueType::Of(t) => index
-            .scalar(t)
-            .map(|scalar| scalar.number)
-            .or_else(|| index.accessor_shape(t).map(|shape| shape.number)),
+            .accessor_shape(t)
+            .map(|shape| shape.number)
+            .or_else(|| index.scalar(t).map(|scalar| scalar.number)),
         ValueType::FloatField => None,
     };
     numbered.unwrap_or_else(|| ty.etype().number())

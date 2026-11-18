@@ -1211,10 +1211,18 @@ fn raw_accessor(member: &ast::AccessorMember, owner: &str, cx: Cx<'_>) -> RawAcc
     let name = member
         .name()
         .map_or_else(String::new, |t| t.text_lossless());
+    // `get &T` passes the accessor back as an out argument and `get *T` its address
+    // (`isref`), which the model does not follow.
+    let by_reference = member
+        .syntax()
+        .child_tokens()
+        .any(|t| matches!(t.kind(), SyntaxKind::Amp | SyntaxKind::Star));
     // A member with a body is its own function, called or, when `inline`, written in place;
     // the model follows neither yet.
     let function = match (member.body(), member.value()) {
-        (None, Some(ast::Expr::Name(function))) => function.name().map(|t| t.text_lossless()),
+        (None, Some(ast::Expr::Name(function))) if !by_reference => {
+            function.name().map(|t| t.text_lossless())
+        }
         (Some(_) | None, _) => None,
     };
     RawAccessor {

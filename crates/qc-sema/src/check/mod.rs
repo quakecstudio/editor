@@ -46,7 +46,7 @@ use crate::cast::{ConstType, Literal, Source};
 use crate::lower::LiteralValue;
 use crate::resolve::{AccessorFacts, Layout};
 use crate::symbol::{DefId, Definition};
-use crate::ty::{FunctionType, Type};
+use crate::ty::{FunctionType, Passing, Type};
 use constant::{Constant, unquoted};
 
 use crate::ir;
@@ -109,8 +109,8 @@ pub(crate) trait Env {
     /// The parameters of a function definition as a call reads them (FTEF-32), `None` for a
     /// definition with none recorded.
     fn params(&self, def: DefId) -> Option<Vec<ParamFacts>>;
-    /// The local that parameter `at` of the function whose body is checked is.
-    fn parameter(&self, at: usize) -> Option<DefId>;
+    /// The local that the parameter `name` of the function whose body is checked is.
+    fn parameter(&self, name: &str) -> Option<DefId>;
     /// The length of an array definition, when the model reads it (`def->arraysize`).
     fn array_length(&self, def: DefId) -> Option<u32>;
     /// Whether a definition is a function's local or parameter (`sym->scope`).
@@ -561,10 +561,8 @@ pub(crate) struct ParamFacts {
     pub(crate) kept_default: bool,
     /// Whether `optional` marks it.
     pub(crate) optional: bool,
-    /// Whether it is an `out` parameter, stored back after the call.
-    pub(crate) out: bool,
-    /// Whether it is `__out`, which a call passes nothing for.
-    pub(crate) write_only: bool,
+    /// Which way its value passes: an out parameter's is stored back after the call.
+    pub(crate) passing: Passing,
 }
 
 /// A struct or union member as the checks read it (FTEF-6.11, FTEF-6.15).
