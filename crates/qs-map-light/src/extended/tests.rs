@@ -528,12 +528,9 @@ fn brush_models_take_their_entitys_keys() {
         &cuboid([120, 96, 0], [136, 160, 128], "trim"),
         &light_at("32 128 32", ""),
     ));
-    let behind_world: Vec<u8> = lightmaps(&world_pillar.bsp, UP)
-        .into_iter()
-        .flatten()
-        .collect();
+    let mut behind_world = lightmaps(&world_pillar.bsp, UP).into_iter().flatten();
     assert!(
-        behind_world.contains(&0),
+        behind_world.any(|luxel| luxel == 0),
         "a brush of the world shadows the floor"
     );
 

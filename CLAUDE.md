@@ -105,6 +105,7 @@ cargo deny check advisories bans licenses sources
 
 cargo xtask conventions                   # config files match docs/conventions.md; no CONV-17 violation beyond docs/audits/conv-17-baseline.tsv
 cargo xtask conv17-baseline               # remove fixed entries from that baseline; it never adds one
+cargo xtask perf-baseline [--write]       # by hand, not in ci: the clippy performance lints left off stay within docs/audits/perf-baseline.tsv; --write lowers a count
 cargo xtask adr                           # ADRs follow the template and are indexed
 cargo xtask layers [--write]              # no crate depends on a higher layer (layers.toml); check (or write) the crate table of docs/layers.md
 cargo xtask licenses                      # SPDX lines and ported-file headers; skips cached specs

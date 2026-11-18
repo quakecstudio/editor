@@ -49,16 +49,19 @@ each site once; "shipped" leaves out tests, benchmarks, examples, `qs-differenti
 | `trivially_copy_pass_by_ref` | 8 | 8 | The eight left are option structs borrowed by their public methods (`qs-map-bsp`'s `Compiler`, `qs-map-vis`'s `Vis`, `qc-progs`' `ReadOptions`), so that an option added later changes no caller. The pass took the ten others by value. |
 | `needless_collect` | 7 | 2 | Four of the seven start threads and collect their handles before joining the first, which the lint cannot see is needed; one reverses an iterator that cannot be walked backwards; and one collects into a set to drop duplicates, which the lint's own fix removed until a test caught it. Held, it would be mostly `#[expect]`. |
 
-The plan's `docs/audits/perf-baseline.tsv`, a count of these that only shrinks, is not added
-here: whether to keep that ratchet, or to hold a lint at zero or leave it off, is Justin's to
-decide, and #966 stays open for it.
+[`perf-baseline.tsv`](perf-baseline.tsv) holds the count of each of these, and it only
+shrinks: `cargo xtask perf-baseline` runs clippy with the seven as warnings, counts each site
+once however many targets compile it, and fails when a lint has more sites than the file says,
+or fewer until `cargo xtask perf-baseline --write` lowers its line; `--write` never raises a
+count or adds a line. It is run by hand on the reference Mac when this audit is revisited. It
+is not a step of `cargo xtask ci` or a part of `cargo xtask conventions`: it lints the whole
+workspace a second time (clippy's arguments are part of what it caches by), and its counts are
+those of the platform it runs on, where the other checks read the sources alone.
 
-The count is taken with:
-
-```bash
-cargo clippy --locked --workspace --all-targets --all-features --message-format=json -- \
-  -W clippy::format_push_string -W clippy::needless_pass_by_value -W clippy::format_collect ...
-```
+The file was first counted on 2026-11-17 at `91eaeb9f`, after the five sites added since the
+table above was counted were fixed. It holds 159 `format_push_string` sites and 8
+`needless_collect` sites, one more of each than the table: both are in code older than the
+table's commit, which its count missed.
 
 ## The crates
 
