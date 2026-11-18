@@ -19,6 +19,18 @@ use crate::error::RunError;
 use crate::exec::Observer;
 use crate::machine::Machine;
 
+/// What a [`Trace`] records of each statement.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Detail {
+    /// Every record with its change set (TRACE-3): the trace two VMs are compared by.
+    Changes,
+    /// The records with empty change sets (TRACE-3.6), for a reader of which statements ran
+    /// alone. Finding a change set reads every global and every field of every edict after
+    /// each statement, most of a long run's time, so a run that never reads one does not find
+    /// it.
+    Steps,
+}
+
 /// Builds a [`qc_trace::Trace`] from a run (TRACE-1.1).
 ///
 /// Set up with [`Trace::new`] before the first run (TRACE-1.3), then passed to
@@ -34,6 +46,7 @@ pub struct Trace {
     /// TRACE-3.4).
     last_fields: Vec<Vec<Slot>>,
     entityfields: usize,
+    detail: Detail,
 }
 
 impl Trace {
@@ -44,7 +57,11 @@ impl Trace {
     ///
     /// A [`qc_trace::TraceError`] when the header numbers break TRACE-2.3 (they cannot for a
     /// progs the VM loaded, since the edict layout already fits).
-    pub fn new(machine: &Machine, progs: &Progs<'_>) -> Result<Self, qc_trace::TraceError> {
+    pub fn new(
+        machine: &Machine,
+        progs: &Progs<'_>,
+        detail: Detail,
+    ) -> Result<Self, qc_trace::TraceError> {
         let edict_size = u32::try_from(machine.edicts().layout().edict_size()).unwrap_or(0);
         let field_offset = u32::try_from(EDICT_HEADER_SIZE).unwrap_or(0);
         let entityfields_i = machine.edicts().layout().entityfields();
@@ -60,9 +77,16 @@ impl Trace {
         Ok(Self {
             header,
             records: Vec::new(),
-            last_globals: machine.globals().to_vec(),
-            last_fields: snapshot_fields(machine),
+            last_globals: match detail {
+                Detail::Changes => machine.globals().to_vec(),
+                Detail::Steps => Vec::new(),
+            },
+            last_fields: match detail {
+                Detail::Changes => snapshot_fields(machine),
+                Detail::Steps => Vec::new(),
+            },
             entityfields: entityfields_i,
+            detail,
         })
     }
 
@@ -122,6 +146,10 @@ impl Trace {
     /// Computes the change set since the last change-carrying record and resets the baseline
     /// (TRACE-3.1, TRACE-3.2).
     fn changes(&mut self, machine: &Machine) -> Changes {
+        match self.detail {
+            Detail::Changes => {}
+            Detail::Steps => return Changes::default(),
+        }
         let mut globals = Vec::new();
         for (slot, (now, before)) in machine
             .globals()

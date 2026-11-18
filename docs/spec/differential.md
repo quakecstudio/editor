@@ -1133,6 +1133,19 @@ The oracle is the pinned FTEQCC (`docs/porting.md`); the comparison is DIFF-12's
   DIFF-15.6's bar, as the coverage of one run over every group (DIFF-15.5): a statement two
   shards reached counts once. The nightly runs a codebase whose run does not finish within one
   CI job's six hours as shards whose lists are merged.
+- **DIFF-15.11** FTEQCC's getters and setters of arrays (`ArrayGet*NAME`, `ArraySet*NAME`,
+  FTEF-19.78) are the body of no function of the source, so a group of DIFF-15.7 also names,
+  after its functions, each accessor one of them calls by name (DIFF-15.8) that no group
+  before it names, and the accessors no function of any group calls are named in groups of 64
+  of their own after the others, in the order of their names. A group's program keeps the
+  bodies that subscript the array, so both compilers write the accessor, and DIFF-15.9's call
+  of it runs DIFF-12.24's call for every index of its array, which the functions that happen
+  to index it do not reach; an accessor is the same in every program that has it, so it is
+  called in one. An accessor named in a group whose program has none of that name is not
+  called. The statements DIFF-15.5 counts are named by function and offset, so of several
+  accessors of one name, those of arrays local to different functions, the first group's is
+  the one called and the statements it executed count for each.
+
 ## Test vectors
 
 ### Scenario numbers

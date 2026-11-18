@@ -60,9 +60,9 @@ fn machine_with_globals(numglobals: usize) -> Machine {
     Machine::new(&progs, 1).unwrap()
 }
 
-// No spec statement: the differential restores a machine from a snapshot with `clone_from`
-// (DIFF-12.2), which must leave every part of it equal to the snapshot's, the globals, the
-// edicts, the stacks and the run state, whatever was done to it since.
+// No spec statement: the differential restores a machine from a snapshot with `clone_from` or
+// `restore_from` (DIFF-12.2), which must leave every part of it equal to the snapshot's, the
+// globals, the edicts, the stacks and the run state, whatever was done to it since.
 #[test]
 fn clone_from_restores_a_changed_machine() {
     let mut snapshot = machine_with_globals(128);
@@ -70,24 +70,33 @@ fn clone_from_restores_a_changed_machine() {
     let mut copy = snapshot.clone();
     assert_eq!(format!("{copy:?}"), format!("{snapshot:?}"));
 
-    copy.set_global(101, Slot::from_i32(6)).unwrap();
-    let spawned = copy.edicts_mut().alloc(1.0).unwrap();
-    copy.edicts_mut()
-        .set_field(spawned, 2, Slot::from_i32(7))
-        .unwrap();
-    copy.stack.push(Frame {
-        statement: 9,
-        function: 1,
-    });
-    copy.localstack[3] = Slot::from_i32(8);
-    copy.localstack_used = 4;
-    copy.xfunction = 1;
-    copy.xstatement = 2;
-    copy.argc = 3;
-    copy.trace_flag = true;
+    let change = |copy: &mut Machine| {
+        copy.set_global(101, Slot::from_i32(6)).unwrap();
+        let spawned = copy.edicts_mut().alloc(1.0).unwrap();
+        copy.edicts_mut()
+            .set_field(spawned, 2, Slot::from_i32(7))
+            .unwrap();
+        copy.stack.push(Frame {
+            statement: 9,
+            function: 1,
+        });
+        copy.localstack[3] = Slot::from_i32(8);
+        copy.localstack_used = 4;
+        copy.xfunction = 1;
+        copy.xstatement = 2;
+        copy.argc = 3;
+        copy.trace_flag = true;
+    };
+    change(&mut copy);
     assert_ne!(format!("{copy:?}"), format!("{snapshot:?}"));
 
     copy.clone_from(&snapshot);
+    assert_eq!(format!("{copy:?}"), format!("{snapshot:?}"));
+
+    // `restore_from` does the same, copying only the edicts written since.
+    change(&mut copy);
+    assert_ne!(format!("{copy:?}"), format!("{snapshot:?}"));
+    copy.restore_from(&snapshot);
     assert_eq!(format!("{copy:?}"), format!("{snapshot:?}"));
 
     let mut other = machine_with_globals(300);
@@ -181,9 +190,9 @@ fn error_resets_depth_but_not_localstack() {
     assert_eq!(machine.localstack_used(), 2);
 }
 
-use crate::trace::Trace;
+use crate::trace::{Detail, Trace};
 use harness::StubBuiltins;
-use qc_trace::Record;
+use qc_trace::{Changes, Record};
 use qc_types::Slot;
 
 /// A dispatch that has every builtin number, as vkQuake's sends a number past its table to
@@ -311,7 +320,7 @@ fn nested_run_continues_outer_after_return() {
     machine.set_global_test(100, Slot::from_i32(3));
     machine.set_global_test(101, Slot::from_i32(2));
     machine.set_global_test(102, Slot::from_f32(8.0));
-    let mut trace = Trace::new(&machine, &progs).unwrap();
+    let mut trace = Trace::new(&machine, &progs, Detail::Changes).unwrap();
     machine
         .execute_program(
             &progs,
@@ -339,6 +348,58 @@ fn nested_run_continues_outer_after_return() {
         .filter(|r| matches!(r, Record::Exit { .. }))
         .count();
     assert_eq!(exits, 2, "both runs return");
+}
+
+// spec TRACE-3.6: a recorder asked for the steps alone writes the records of a trace with
+// change sets, in their order, each change set empty
+#[test]
+fn a_trace_of_steps_has_the_same_records_with_no_changes() {
+    let bytes = nested_run_progs();
+    let options = qc_progs::ReadOptions {
+        check_header_crc: false,
+    };
+    let progs = Progs::read_with(&bytes, options).unwrap();
+    let records = |detail| {
+        let mut machine = Machine::new(&progs, 0).unwrap();
+        machine.set_global_test(100, Slot::from_i32(3));
+        machine.set_global_test(101, Slot::from_i32(2));
+        machine.set_global_test(102, Slot::from_f32(8.0));
+        let mut trace = Trace::new(&machine, &progs, detail).unwrap();
+        machine
+            .execute_program(
+                &progs,
+                ServerState::Active,
+                &mut StubBuiltins,
+                &mut trace,
+                1,
+            )
+            .unwrap();
+        trace.finish().records
+    };
+    let full = records(Detail::Changes);
+    let steps = records(Detail::Steps);
+    let empty = Changes::default();
+    assert!(
+        full.iter()
+            .any(|r| r.changes().is_some_and(|c| *c != empty))
+    );
+    assert!(
+        steps
+            .iter()
+            .all(|r| r.changes().is_none_or(|c| *c == empty))
+    );
+    let place = |r: &Record| match r {
+        Record::Step(step) => Some((step.function, step.statement)),
+        Record::Run { .. }
+        | Record::Exit { .. }
+        | Record::Error { .. }
+        | Record::Frame { .. }
+        | Record::String { .. } => None,
+    };
+    assert_eq!(
+        full.iter().map(place).collect::<Vec<_>>(),
+        steps.iter().map(place).collect::<Vec<_>>()
+    );
 }
 
 // spec VM-2.3: a run clears the statement trace flag when it starts
@@ -474,7 +535,7 @@ mod coverage {
 
     use super::harness::{self, Func, Stmt};
     use crate::exec::{NoBuiltins, NoObserver, Observer, ServerState};
-    use crate::trace::Trace;
+    use crate::trace::{Detail, Trace};
     use crate::{ErrorKind, GlobalAccessError, Machine, MachineError, RunError};
 
     fn read(bytes: &[u8]) -> Progs<'_> {
@@ -772,7 +833,7 @@ mod coverage {
             .build();
         let progs = read(&bytes);
         let mut machine = Machine::new(&progs, 0).unwrap();
-        let mut trace = Trace::new(&machine, &progs).unwrap();
+        let mut trace = Trace::new(&machine, &progs, Detail::Changes).unwrap();
         machine
             .execute_program(&progs, ServerState::Active, &mut NoBuiltins, &mut trace, 1)
             .unwrap();
@@ -793,7 +854,7 @@ mod coverage {
             .build();
         let progs = read(&bytes);
         let mut machine = Machine::new(&progs, 0).unwrap();
-        let mut trace = Trace::new(&machine, &progs).unwrap();
+        let mut trace = Trace::new(&machine, &progs, Detail::Changes).unwrap();
         let header = trace.header();
         let text = qc_trace::Text::new(b"hi".to_vec()).unwrap();
         trace.push_string(7, text.clone());

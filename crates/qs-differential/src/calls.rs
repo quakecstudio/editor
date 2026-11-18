@@ -17,13 +17,14 @@
 //! Implements `docs/spec/differential.md` DIFF-12.2 to DIFF-12.5 and DIFF-12.20.
 
 use qc_edict::EdictNumber;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write as _;
 use std::path::Path;
 
 use qc_builtins::{EngineProfile, MockBuiltins, Unimplemented};
 use qc_progs::{Def, Progs};
 use qc_types::{DefType, Etype, Slot};
+use qc_vm::trace::Detail;
 use qc_vm::{ErrorKind, Machine, Observer, RunError};
 
 use crate::host::{Host, RunRefused};
@@ -60,6 +61,33 @@ pub enum Value {
     Text(Option<Vec<u8>>),
     /// A function, by its name; `None` for function 0 or an index outside the table.
     Function(Option<Vec<u8>>),
+}
+
+/// A [`Value`] as it is read, its bytes borrowed from the world: every named global and every
+/// field of every edict is read after every call and almost always agrees, so a value is
+/// copied only into the difference that reports it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Read<'a> {
+    Bits(u32),
+    Entity(usize),
+    FieldName(&'a [u8]),
+    Vector([u32; 3]),
+    Text(Option<&'a [u8]>),
+    Function(Option<&'a [u8]>),
+}
+
+impl Read<'_> {
+    /// The value to report.
+    fn value(self) -> Value {
+        match self {
+            Self::Bits(bits) => Value::Bits(bits),
+            Self::Entity(edict) => Value::Entity(edict),
+            Self::FieldName(name) => Value::FieldName(name.to_vec()),
+            Self::Vector(slots) => Value::Vector(slots),
+            Self::Text(text) => Value::Text(text.map(<[u8]>::to_vec)),
+            Self::Function(name) => Value::Function(name.map(<[u8]>::to_vec)),
+        }
+    }
 }
 
 /// Where two progs' calls first differ (DIFF-12.3, DIFF-12.4).
@@ -575,7 +603,7 @@ fn run_calls_reporting(
         }
         (Err(error), _) | (_, Err(error)) => return Err(error),
     };
-    let pair = Pair::new(oracle, &their_world, &our_world);
+    let mut pair = Pair::new(oracle, &their_world, &our_world);
     let mut report = Report {
         calls: 0,
         divergences: Vec::new(),
@@ -717,6 +745,25 @@ struct Pair {
     globals: Option<Vec<(usize, usize)>>,
     /// The compiler of the first progs.
     oracle: Oracle,
+    /// What the calls before found to agree.
+    known: Known,
+}
+
+/// The values found to agree while both worlds held, where the values are, the bits of the
+/// worlds the calls are restored to (DIFF-12.2). Every named global and every field of every
+/// edict in use is compared after every call (DIFF-12.3), a call writes few of them, and a
+/// value that is not an engine string is read from its bits and from tables no call changes:
+/// so where both worlds still hold those bits, what agreed before agrees now and is not read
+/// again. An engine string's text is the engine's to change, and is read every time.
+///
+/// It is of the two worlds its [`Pair`] was made from, as they are restored: a world's
+/// restored state is set once, when the world is made ([`World::new`]), and never again.
+#[derive(Default)]
+struct Known {
+    /// By place in [`Pair::globals`].
+    globals: Vec<bool>,
+    /// By edict number: every field of the edict that is not a string.
+    edicts: Vec<bool>,
 }
 
 impl Pair {
@@ -733,6 +780,7 @@ impl Pair {
         Self {
             oracle,
             globals,
+            known: Known::default(),
             same_statements: theirs.statements().iter().eq(ours.statements().iter()),
             same_tables: theirs.global_defs().iter().eq(ours.global_defs().iter())
                 && theirs.field_defs().iter().eq(ours.field_defs().iter())
@@ -743,7 +791,7 @@ impl Pair {
 
     /// The first difference between the two calls just made, or `None` (DIFF-12.3, DIFF-12.4).
     fn differ(
-        &self,
+        &mut self,
         their_world: &World<'_, '_, '_>,
         theirs: &Outcome,
         our_world: &World<'_, '_, '_>,
@@ -778,7 +826,7 @@ impl Pair {
             return Some(Difference::Definitions);
         };
         return_difference(their_world, our_world)
-            .or_else(|| state_difference(their_world, our_world, globals))
+            .or_else(|| state_difference(their_world, our_world, globals, &mut self.known))
     }
 }
 
@@ -789,8 +837,8 @@ impl Pair {
 fn return_difference(a: &World<'_, '_, '_>, b: &World<'_, '_, '_>) -> Option<Difference> {
     (!first_word_agrees(a, OFS_RETURN, b, OFS_RETURN)).then(|| {
         Difference::Return(
-            a.global(DefType::Known(Etype::Float), OFS_RETURN),
-            b.global(DefType::Known(Etype::Float), OFS_RETURN),
+            a.global(DefType::Known(Etype::Float), OFS_RETURN).value(),
+            b.global(DefType::Known(Etype::Float), OFS_RETURN).value(),
         )
     })
 }
@@ -806,18 +854,10 @@ fn first_word_agrees(
     b: &World<'_, '_, '_>,
     our_ofs: usize,
 ) -> bool {
-    let readings = |world: &World<'_, '_, '_>, ofs: usize| {
-        [
-            world.global(DefType::Known(Etype::Float), ofs),
-            world.global(DefType::Known(Etype::String), ofs),
-            world.global(DefType::Known(Etype::Entity), ofs),
-            world.global(DefType::Known(Etype::Function), ofs),
-        ]
-    };
-    readings(a, their_ofs)
+    a.readings(their_ofs)
         .iter()
-        .zip(&readings(b, our_ofs))
-        .any(|(t, o)| t == o && !matches!(t, Value::Text(None) | Value::Function(None)))
+        .zip(&b.readings(our_ofs))
+        .any(|(t, o)| t == o && !matches!(t, Read::Text(None) | Read::Function(None)))
 }
 
 /// DIFF-12.23: FTEQCC's variadic buffer, the globals `__va_list[N]` (FTE-18.6), holds an
@@ -836,7 +876,11 @@ fn variant_agrees(
     }
     let first_agrees = first_word_agrees(a, their_ofs, b, our_ofs);
     let rest = |world: &World<'_, '_, '_>, ofs: usize| {
-        [1_usize, 2].map(|i| world.global(DefType::Known(Etype::Float), ofs.saturating_add(i)))
+        [1_usize, 2].map(|i| {
+            world
+                .global(DefType::Known(Etype::Float), ofs.saturating_add(i))
+                .value()
+        })
     };
     first_agrees && rest(a, their_ofs) == rest(b, our_ofs)
 }
@@ -854,26 +898,41 @@ fn same_slots(a: &Machine, b: &Machine) -> bool {
 }
 
 /// The first named global or field whose value differs between the two worlds, the globals
-/// compared in the pairs `globals` gives (DIFF-12.3, DIFF-12.11).
+/// compared in the pairs `globals` gives (DIFF-12.3, DIFF-12.11). `known` is what the calls
+/// before found to agree, and takes what this one finds.
 fn state_difference(
     a: &World<'_, '_, '_>,
     b: &World<'_, '_, '_>,
     globals: &[(usize, usize)],
+    known: &mut Known,
 ) -> Option<Difference> {
     let (pa, pb) = (&a.program, &b.program);
-    for (theirs, ours) in globals {
+    known.globals.resize(globals.len(), false);
+    for ((theirs, ours), agreed) in globals.iter().zip(&mut known.globals) {
         let (Some((name, their_type, their_ofs)), Some((_, our_type, our_ofs))) =
             (pa.globals.get(*theirs), pb.globals.get(*ours))
         else {
             return Some(Difference::Definitions);
         };
+        let restored = a.global_is_restored(*their_type, *their_ofs)
+            && b.global_is_restored(*our_type, *our_ofs);
+        if restored && *agreed {
+            continue;
+        }
         let theirs = a.global(*their_type, *their_ofs);
         let ours = b.global(*our_type, *our_ofs);
-        if theirs != ours && !variant_agrees(name, a, b, *their_ofs, *our_ofs) {
-            return Some(Difference::Global(name.clone(), theirs, ours));
+        if theirs == ours {
+            *agreed = restored;
+        } else if !variant_agrees(name, a, b, *their_ofs, *our_ofs) {
+            return Some(Difference::Global(
+                name.clone(),
+                theirs.value(),
+                ours.value(),
+            ));
         }
     }
     let (ea, eb) = (a.host.machine.edicts(), b.host.machine.edicts());
+    let string = DefType::Known(Etype::String);
     for n in 0..ea.num_edicts().max(eb.num_edicts()) {
         let free = ea.is_free(EdictNumber::new(n));
         if free != eb.is_free(EdictNumber::new(n)) {
@@ -882,13 +941,31 @@ fn state_difference(
         if free != Some(false) {
             continue;
         }
+        let restored = a.edict_is_restored(n) && b.edict_is_restored(n);
+        let agreed = restored && known.edicts.get(n) == Some(&true);
         for ((name, (their_type, their_ofs)), (our_type, our_ofs)) in
             pa.fields.iter().zip(pb.fields.values())
         {
+            if agreed && *their_type != string && *our_type != string {
+                continue;
+            }
             let theirs = a.field(n, *their_type, *their_ofs);
             let ours = b.field(n, *our_type, *our_ofs);
             if theirs != ours {
-                return Some(Difference::Field(n, name.clone(), theirs, ours));
+                return Some(Difference::Field(
+                    n,
+                    name.clone(),
+                    theirs.value(),
+                    ours.value(),
+                ));
+            }
+        }
+        if restored && !agreed {
+            if known.edicts.len() <= n {
+                known.edicts.resize(n.saturating_add(1), false);
+            }
+            if let Some(edict) = known.edicts.get_mut(n) {
+                *edict = true;
             }
         }
     }
@@ -946,9 +1023,13 @@ struct Program<'a, 'p> {
     globals: Vec<Global>,
     /// The slot of each name a context writes by name: its first float, string or entity
     /// global outside every function's locals, else its first (DIFF-12.11, DIFF-12.27).
-    global_slots: BTreeMap<Vec<u8>, usize>,
+    /// Hashed: every call looks up each variable it writes, and nothing reads the order.
+    global_slots: HashMap<Vec<u8>, usize>,
     /// The named fields, by name: the type and slot of the first definition of each.
     fields: BTreeMap<Vec<u8>, (DefType, usize)>,
+    /// The name a field's slot is shown by: the first, in the order of the names, of the
+    /// fields at it. Every global that holds a field is read through it after every call.
+    field_names: BTreeMap<usize, Vec<u8>>,
     /// The QuakeC functions, by name: the index of the first of each name.
     functions: BTreeMap<Vec<u8>, Vec<i32>>,
     /// The slots of the QuakeC functions' parameters and locals, from `parm_start` for
@@ -981,6 +1062,10 @@ impl<'a, 'p> Program<'a, 'p> {
                 fields.entry(name).or_insert_with(|| (def.def_type(), ofs));
             }
         }
+        let mut field_names = BTreeMap::new();
+        for (name, (_, slot)) in &fields {
+            field_names.entry(*slot).or_insert_with(|| name.clone());
+        }
         let mut functions = BTreeMap::new();
         let mut locals = Vec::new();
         for function in progs.functions().iter() {
@@ -1005,8 +1090,9 @@ impl<'a, 'p> Program<'a, 'p> {
         let mut program = Self {
             progs,
             globals,
-            global_slots: BTreeMap::new(),
+            global_slots: HashMap::new(),
             fields,
+            field_names,
             functions,
             locals,
         };
@@ -1019,7 +1105,7 @@ impl<'a, 'p> Program<'a, 'p> {
                 DefType::Known(Etype::Float | Etype::String | Etype::Entity)
             )
         };
-        let mut global_slots = BTreeMap::new();
+        let mut global_slots = HashMap::new();
         for global in program
             .globals
             .iter()
@@ -1094,7 +1180,9 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
         entities: &[u8],
         profile: EngineProfile,
     ) -> Result<Self, CallsError> {
-        let mut host = Host::new(scenario, progs).map_err(CallsError::Refused)?;
+        // The setup's records are read for the statements that ran alone, and a call's are
+        // never read, so no change set is found.
+        let mut host = Host::new(scenario, progs, Detail::Steps).map_err(CallsError::Refused)?;
         host.builtins.engine_mut().profile = profile;
         // LIMIT-4.3: the engine's runaway count while the world is set up, so a mod's long loop
         // runs as it does there.
@@ -1173,7 +1261,7 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
         context: &Context,
         mut observer: O,
     ) -> (Outcome, O) {
-        self.host.machine.clone_from(&self.machine);
+        self.host.machine.restore_from(&self.machine);
         self.host.builtins.clone_from(&self.builtins);
         // A call's trace records are never read; dropping them keeps a run's memory flat.
         self.host.trace.clear();
@@ -1194,7 +1282,7 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
     }
 
     /// The value of the global of type `def_type` at slot `ofs` (DIFF-12.3).
-    fn global(&self, def_type: DefType, ofs: usize) -> Value {
+    fn global(&self, def_type: DefType, ofs: usize) -> Read<'_> {
         let machine = &self.host.machine;
         self.value(def_type, ofs, |n| {
             i32::try_from(n)
@@ -1204,8 +1292,39 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
         })
     }
 
+    /// Whether the global of type `def_type` at slot `ofs` holds the bits the world is
+    /// restored to, and reads from them as it did then: an engine string, a negative value
+    /// (EDICT-13.3), reads the text the engine now has for it, so it never does.
+    fn global_is_restored(&self, def_type: DefType, ofs: usize) -> bool {
+        let count = match def_type {
+            DefType::Known(etype) => etype.slot_count(),
+            DefType::Unknown(_) => 1,
+        };
+        let Some(end) = ofs.checked_add(count) else {
+            return false;
+        };
+        let now = self.host.machine.globals().get(ofs..end);
+        let progs_string = def_type != DefType::Known(Etype::String)
+            || now
+                .and_then(<[Slot]>::first)
+                .is_some_and(|slot| slot.as_i32() >= 0);
+        progs_string && now.is_some() && now == self.machine.globals().get(ofs..end)
+    }
+
+    /// Whether edict `edict`'s fields hold the bits the world is restored to.
+    fn edict_is_restored(&self, edict: usize) -> bool {
+        let number = EdictNumber::new(edict);
+        self.host.machine.edicts().fields(number) == self.machine.edicts().fields(number)
+    }
+
+    /// The word at slot `ofs` read as each type a function returns in one word (DIFF-12.7).
+    fn readings(&self, ofs: usize) -> [Read<'_>; 4] {
+        [Etype::Float, Etype::String, Etype::Entity, Etype::Function]
+            .map(|etype| self.global(DefType::Known(etype), ofs))
+    }
+
     /// The value of edict `edict`'s field of type `def_type` at slot `ofs` (DIFF-12.3).
-    fn field(&self, edict: usize, def_type: DefType, ofs: usize) -> Value {
+    fn field(&self, edict: usize, def_type: DefType, ofs: usize) -> Read<'_> {
         let edicts = self.host.machine.edicts();
         self.value(def_type, ofs, |n| {
             edicts
@@ -1217,7 +1336,7 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
     /// The value of type `def_type` starting at slot `ofs` of `slot` (DIFF-12.3): a string by
     /// its text, an engine string's or the progs', a function by its name, a vector by its
     /// three slots, anything else by its bits.
-    fn value(&self, def_type: DefType, ofs: usize, slot: impl Fn(usize) -> Slot) -> Value {
+    fn value(&self, def_type: DefType, ofs: usize, slot: impl Fn(usize) -> Slot) -> Read<'_> {
         let progs = self.program.progs;
         match def_type {
             DefType::Known(Etype::String) => {
@@ -1229,17 +1348,16 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
                     .strings
                     .text(value)
                     .or_else(|| progs.string(value));
-                Value::Text(text.map(<[u8]>::to_vec))
+                Read::Text(text)
             }
-            DefType::Known(Etype::Function) => Value::Function(
+            DefType::Known(Etype::Function) => Read::Function(
                 usize::try_from(slot(ofs).as_i32())
                     .ok()
                     .filter(|&n| n != 0)
                     .and_then(|n| progs.functions().get(n))
-                    .and_then(|f| progs.string(f.s_name))
-                    .map(<[u8]>::to_vec),
+                    .and_then(|f| progs.string(f.s_name)),
             ),
-            DefType::Known(Etype::Vector) => Value::Vector([
+            DefType::Known(Etype::Vector) => Read::Vector([
                 slot(ofs).bits(),
                 slot(ofs.saturating_add(1)).bits(),
                 slot(ofs.saturating_add(2)).bits(),
@@ -1252,23 +1370,17 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
                     .zip(usize::try_from(size).ok().filter(|&size| size > 0))
                     .filter(|(value, size)| value.checked_rem(*size) == Some(0))
                     .and_then(|(value, size)| value.checked_div(size))
-                    .map_or(Value::Bits(bits), Value::Entity)
+                    .map_or(Read::Bits(bits), Read::Entity)
             }
             DefType::Known(Etype::Field) => {
                 let bits = slot(ofs).bits();
                 usize::try_from(bits)
                     .ok()
-                    .and_then(|slot| {
-                        self.program
-                            .fields
-                            .iter()
-                            .find(|(_, (_, field))| *field == slot)
-                            .map(|(name, _)| name.clone())
-                    })
-                    .map_or(Value::Bits(bits), Value::FieldName)
+                    .and_then(|slot| self.program.field_names.get(&slot))
+                    .map_or(Read::Bits(bits), |name| Read::FieldName(name))
             }
             DefType::Known(Etype::Void | Etype::Float | Etype::Pointer) | DefType::Unknown(_) => {
-                Value::Bits(slot(ofs).bits())
+                Read::Bits(slot(ofs).bits())
             }
         }
     }

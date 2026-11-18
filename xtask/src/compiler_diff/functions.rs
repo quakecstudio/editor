@@ -32,13 +32,19 @@ use crate::oracles::codegen::{self, Profile};
 use crate::oracles::{self, Oracles, rerelease};
 use crate::shard::Shard;
 
-/// How many functions one cut program holds and calls (DIFF-15.7, DIFF-15.9).
+/// How many functions of the source one cut program holds and calls (DIFF-15.7, DIFF-15.9);
+/// the accessors they call are named beside them (DIFF-15.11).
 const GROUP: usize = 64;
 
 /// How many cut programs one run of the binary compares: as many as are compiled at once.
 fn batch() -> usize {
     std::thread::available_parallelism().map_or(1, std::num::NonZero::get)
 }
+
+/// What the names of FTEQCC's getter and setter of an array start with (FTEF-19.78): no body
+/// of the source is theirs, so each is named beside the bodies that call it (DIFF-15.11). The
+/// `compiler-diff` binary knows them by the same two (`calls::draw::is_accessor`, DIFF-12.24).
+const ACCESSORS: [&[u8]; 2] = [b"ArrayGet*", b"ArraySet*"];
 
 /// What an emptied body becomes (DIFF-15.7).
 const STUB: &[u8] = b"{}";
@@ -168,12 +174,13 @@ fn codebase(
     }
     let executed = work.join("executed.tsv");
     let mut failures = Vec::new();
-    let all = functions.chunks(GROUP).count();
-    let groups: Vec<&[&[u8]]> = functions
-        .chunks(GROUP)
+    let every = groups(&functions, &graph);
+    let all = every.len();
+    let groups: Vec<&[&[u8]]> = every
+        .iter()
         .enumerate()
         .filter(|(n, _)| shard.is_none_or(|shard| shard.holds(*n)))
-        .map(|(_, group)| group)
+        .map(|(_, group)| group.as_slice())
         .collect();
     for (batch, names) in groups.chunks(batch()).enumerate() {
         let dir = work.join(format!("batch-{batch}"));
@@ -256,6 +263,41 @@ fn codebase(
     Ok(passed)
 }
 
+/// The groups of functions each cut is for (DIFF-15.7, DIFF-15.11): `functions` in groups of
+/// [`GROUP`], each followed by the array accessors of `graph` its functions call that no
+/// group before named, so the cut keeps a body that makes the compilers write each one; then
+/// the accessors no function of `functions` calls, in groups of their own.
+fn groups<'a>(
+    functions: &[&'a [u8]],
+    graph: &'a BTreeMap<Vec<u8>, BTreeSet<Vec<u8>>>,
+) -> Vec<Vec<&'a [u8]>> {
+    let is_accessor = |name: &[u8]| ACCESSORS.iter().any(|start| name.starts_with(start));
+    let mut called: BTreeSet<&[u8]> = BTreeSet::new();
+    let mut groups = Vec::new();
+    for bodies in functions.chunks(GROUP) {
+        let mut theirs: BTreeSet<&[u8]> = BTreeSet::new();
+        for callees in bodies.iter().filter_map(|name| graph.get(*name)) {
+            theirs.extend(
+                callees
+                    .iter()
+                    .map(Vec::as_slice)
+                    .filter(|c| is_accessor(c) && !called.contains(c)),
+            );
+        }
+        let mut group = bodies.to_vec();
+        group.extend(theirs.iter().copied());
+        called.extend(theirs);
+        groups.push(group);
+    }
+    let uncalled: Vec<&[u8]> = graph
+        .keys()
+        .map(Vec::as_slice)
+        .filter(|name| is_accessor(name) && !called.contains(name))
+        .collect();
+    groups.extend(uncalled.chunks(GROUP).map(<[&[u8]]>::to_vec));
+    groups
+}
+
 /// The codebase's bodies, the source of each of its files, and its call graph.
 type Codebase<'a> = (
     &'a [Body],
@@ -292,10 +334,12 @@ fn compile_batch<'g, 'n>(
                         keep.extend(closure(graph, name));
                     }
                     let files = cut(bodies, sources, &keep);
+                    // An accessor's `*` is no character of a file name everywhere.
                     let first = group.first().map(|name| String::from_utf8_lossy(name));
-                    let log = work
-                        .join("failed")
-                        .join(format!("{}.log", first.unwrap_or_default()));
+                    let log = work.join("failed").join(format!(
+                        "{}.log",
+                        first.unwrap_or_default().replace('*', "_")
+                    ));
                     let program = dir.join(n.to_string());
                     let outcome = compile_cut(oracles, id, source, &program, &files, &log)?;
                     done.push((n, *group, outcome));
