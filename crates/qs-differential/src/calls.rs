@@ -370,6 +370,7 @@ fn run_scenarios(
     // The scenarios share nothing, so each runs on its own thread; their reports are taken in
     // the scenarios' order, so the result is the same as one after another.
     let reports: Vec<(&'static str, Result<Report, CallsError>)> = std::thread::scope(|scope| {
+        // Every scenario's thread is started before the first is joined.
         let mut handles = Vec::new();
         handles.extend(worlds.iter().map(|(name, scenario, entities)| {
             let handle = scope.spawn(move || {

@@ -2,10 +2,10 @@
 
 //! Test fixtures: factories that write MD5 mesh and animation files as the spec's vectors do.
 
-/// A mesh file to write. The default is the first row of the MD5-3 vectors: one joint, one
-/// mesh of 3 vertices, 1 triangle and 1 weight.
 use std::fmt::Write as _;
 
+/// A mesh file to write. The default is the first row of the MD5-3 vectors: one joint, one
+/// mesh of 3 vertices, 1 triangle and 1 weight.
 #[derive(Clone, Debug)]
 pub(crate) struct MeshSpec {
     pub(crate) num_joints: &'static str,

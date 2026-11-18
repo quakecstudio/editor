@@ -1926,6 +1926,7 @@ pub(super) fn across_cores<T: Sync, R: Send>(
     let stop = &AtomicBool::new(false);
     let work = &work;
     let joined = thread::scope(|scope| {
+        // Every thread is started before the first is joined.
         let mut handles = Vec::new();
         handles.extend((0..threads.get().min(items.len())).map(|thread| {
             scope.spawn(move || {

@@ -1103,7 +1103,7 @@ pub(super) fn lower_declaration(decl: &ast::Declaration, cx: Cx<'_>, out: &mut V
         None => omitted_type(),
     };
     let first = out.len();
-    lower_declarators(decl.declarators(), &base, &decl.ty(), cx, out);
+    lower_declarators(decl.declarators(), &base, decl.ty().as_ref(), cx, out);
     let inline_function = matches!(decl.ty(), Some(ast::Type::Function(_)));
     let named = decl.declarators().filter(|d| d.name().is_some());
     for (raw, declarator) in out.iter_mut().skip(first).zip(named) {
@@ -1185,7 +1185,7 @@ pub(super) fn declarator_type(base: &Type, declarator: &ast::Declarator, cx: Cx<
 pub(super) fn lower_declarators(
     declarators: impl Iterator<Item = ast::Declarator>,
     base: &Type,
-    ty_node: &Option<ast::Type>,
+    ty_node: Option<&ast::Type>,
     cx: Cx<'_>,
     out: &mut Vec<RawDecl>,
 ) {
@@ -1245,7 +1245,7 @@ pub(super) fn lower_declarators(
         // own list or the type's.
         if let Some(list) = declarator
             .params()
-            .or_else(|| ty_node.as_ref().and_then(ast::Type::params))
+            .or_else(|| ty_node.and_then(ast::Type::params))
         {
             raw.params = param_infos(&list, cx);
         }
@@ -1258,7 +1258,6 @@ pub(super) fn lower_declarators(
         }
         // FTE-18.2: a parameter's default value may name definitions too.
         for list in ty_node
-            .as_ref()
             .and_then(ast::Type::params)
             .into_iter()
             .chain(declarator.params())

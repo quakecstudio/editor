@@ -378,7 +378,7 @@ fn requests_outside_any_file() {
     let s = started(
         project(&[("a.qc", "float a;\n")]),
         &[
-            request(1, "textDocument/definition", &at_start.clone()),
+            request(1, "textDocument/definition", &at_start),
             request(
                 2,
                 "textDocument/references",
@@ -390,14 +390,14 @@ fn requests_outside_any_file() {
                 "textDocument/semanticTokens/full",
                 &json!({ "textDocument": nowhere }),
             ),
-            request(5, "textDocument/completion", &at_start.clone()),
+            request(5, "textDocument/completion", &at_start),
             request(
                 6,
                 "textDocument/inlayHint",
                 &json!({ "textDocument": nowhere, "range": empty }),
             ),
             request(7, "textDocument/rename", &with("newName", json!("x"))),
-            request(8, "textDocument/prepareRename", &at_start.clone()),
+            request(8, "textDocument/prepareRename", &at_start),
         ],
     );
     assert_eq!(s.result(1), &json!(null));

@@ -436,7 +436,7 @@ fn the_gradient_matches_its_golden_encoding() {
         }
         std::fs::write(
             concat!(env!("CARGO_MANIFEST_DIR"), "/src/texture/gradient.hex"),
-            format!("{}{}", header, rows),
+            format!("{header}{rows}"),
         )
         .unwrap();
     }

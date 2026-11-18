@@ -7,9 +7,9 @@
 //! The keys' bindings (`docs/spec/engine/input.md` INPUT-1): a key's name and number, the
 //! command each key runs, and what a key going down or up adds to the console's buffer.
 
-/// `K_TAB`.
 use std::fmt::Write as _;
 
+/// `K_TAB`.
 pub const K_TAB: u8 = 9;
 /// `K_ENTER`.
 pub const K_ENTER: u8 = 13;

@@ -361,6 +361,7 @@ impl<C: HasWorkbench + 'static> Command<C> for ProjectSymbols {
             return Err(WorkbenchError::NoProject);
         }
         let query = params.query.map(|q| q.to_lowercase());
+        // The symbols are copied out: reading each one's text borrows the workbench again.
         let mut symbols = Vec::new();
         symbols.extend(
             workbench

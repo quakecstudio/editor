@@ -337,7 +337,7 @@ pub fn lower_file(parse: &Parse, dialect: Dialect) -> FileDecls {
                     // FTEF-8.5: `enum E { A } x;` declares `x` of the enum's type, an anonymous
                     // enum's of its base.
                     let first = out.decls.len();
-                    lower_declarators(en.declarators(), &base, &None, cx, &mut out.decls);
+                    lower_declarators(en.declarators(), &base, None, cx, &mut out.decls);
                     let flags = cx.flags_at(en.syntax().span().start);
                     for raw in out.decls.iter_mut().skip(first) {
                         raw.flags = flags;
@@ -379,7 +379,7 @@ pub fn lower_file(parse: &Parse, dialect: Dialect) -> FileDecls {
                     let base = decl_base(st.syntax(), base, cx, &mut out.decls);
                     // FTEF-6.1: `struct { ... } a[4], *p;` declares variables too.
                     let first = out.decls.len();
-                    lower_declarators(st.declarators(), &base, &None, cx, &mut out.decls);
+                    lower_declarators(st.declarators(), &base, None, cx, &mut out.decls);
                     let flags = cx.flags_at(st.syntax().span().start);
                     for raw in out.decls.iter_mut().skip(first) {
                         raw.flags = flags;

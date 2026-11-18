@@ -376,7 +376,12 @@ proptest! {
         theirs in proptest::collection::vec("[a-z]{0,5}", 0..4),
         after in proptest::collection::vec("[a-z]{0,5}", 0..4),
     ) {
-        let lines = |l: &[String]| l.iter().fold(String::new(), |mut joined, x| { _ = writeln!(joined, "{x}"); joined });
+        let lines = |l: &[String]| {
+            l.iter().fold(String::new(), |mut joined, x| {
+                _ = writeln!(joined, "{x}");
+                joined
+            })
+        };
         let text = format!(
             "{}<<<<<<< HEAD\n{}=======\n{}>>>>>>> b\n{}",
             lines(&before), lines(&ours), lines(&theirs), lines(&after)

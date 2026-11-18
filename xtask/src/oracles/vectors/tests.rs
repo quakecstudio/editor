@@ -541,7 +541,7 @@ fn simple_records() -> Vec<Record> {
 fn outcome(
     name: &str,
     vector: &Vector,
-    trace: &Option<Vec<u8>>,
+    trace: Option<&[u8]>,
     stdout: &str,
     code: i32,
 ) -> Result<(), String> {
@@ -551,7 +551,7 @@ fn outcome(
         stdout: stdout.to_owned(),
         files: trace
             .iter()
-            .map(|bytes| (last_arg(command), bytes.clone()))
+            .map(|bytes| (last_arg(command), bytes.to_vec()))
             .collect(),
         ..Reply::default()
     });
@@ -574,7 +574,7 @@ fn a_run_passes_when_the_trace_and_report_match() {
     outcome(
         "vectors-pass",
         &v,
-        &encoded(&v, simple_records()),
+        encoded(&v, simple_records()).as_deref(),
         GOOD_STDOUT,
         0,
     )
@@ -585,16 +585,10 @@ fn a_run_passes_when_the_trace_and_report_match() {
 fn a_run_fails_when_the_oracle_fails_or_writes_no_trace_it_can_read() {
     let v = simple();
     let good = encoded(&v, simple_records());
-    let failed = outcome("vectors-exit", &v, &good, GOOD_STDOUT, 2).unwrap_err();
+    let failed = outcome("vectors-exit", &v, good.as_deref(), GOOD_STDOUT, 2).unwrap_err();
     assert!(failed.contains("the VM oracle failed"), "{failed}");
-    assert!(outcome("vectors-no-trace", &v, &None, GOOD_STDOUT, 0).is_err());
-    let garbage = outcome(
-        "vectors-garbage",
-        &v,
-        &Some(b"QCTX".to_vec()),
-        GOOD_STDOUT,
-        0,
-    );
+    assert!(outcome("vectors-no-trace", &v, None, GOOD_STDOUT, 0).is_err());
+    let garbage = outcome("vectors-garbage", &v, Some(b"QCTX"), GOOD_STDOUT, 0);
     assert!(garbage.unwrap_err().contains("does not decode"));
     let work = fresh_dir("vectors-cannot-run");
     let fake = Fake::new(|_: &Command| Reply {
@@ -613,13 +607,13 @@ fn a_run_fails_on_a_header_that_does_not_describe_the_progs() {
         header: Header::new(right.progs_crc() ^ 1, 548, 108, 110, right.numstrings()).unwrap(),
         records: simple_records(),
     }));
-    let error = outcome("vectors-crc", &v, &crc, GOOD_STDOUT, 0).unwrap_err();
+    let error = outcome("vectors-crc", &v, crc.as_deref(), GOOD_STDOUT, 0).unwrap_err();
     assert!(error.contains("not the file's CRC"), "{error}");
     let fields = Some(encode(&Trace {
         header: Header::new(right.progs_crc(), 548, 108, 105, right.numstrings()).unwrap(),
         records: simple_records(),
     }));
-    let error = outcome("vectors-fields", &v, &fields, GOOD_STDOUT, 0).unwrap_err();
+    let error = outcome("vectors-fields", &v, fields.as_deref(), GOOD_STDOUT, 0).unwrap_err();
     assert!(error.contains("does not describe the progs"), "{error}");
 }
 
@@ -628,10 +622,10 @@ fn a_run_fails_on_the_wrong_depth_or_datagram() {
     let v = simple();
     let good = encoded(&v, simple_records());
     let deeper = "depth=1 localstack=0\ndatagram=07\n";
-    let depth = outcome("vectors-depth", &v, &good, deeper, 0);
+    let depth = outcome("vectors-depth", &v, good.as_deref(), deeper, 0);
     assert!(depth.unwrap_err().contains("after the run"));
     let empty = "depth=0 localstack=0\ndatagram=\n";
-    let datagram = outcome("vectors-datagram", &v, &good, empty, 0);
+    let datagram = outcome("vectors-datagram", &v, good.as_deref(), empty, 0);
     assert!(datagram.unwrap_err().contains("the datagram holds"));
 }
 
@@ -686,7 +680,7 @@ fn a_run_fails_on_records_out_of_order_or_unlike_the_vector() {
         ),
     ];
     for (name, records, message) in cases {
-        let error = outcome(name, &v, &encoded(&v, records), GOOD_STDOUT, 0).unwrap_err();
+        let error = outcome(name, &v, encoded(&v, records).as_deref(), GOOD_STDOUT, 0).unwrap_err();
         assert!(error.contains(message), "{name}: {error}");
     }
 }
@@ -702,11 +696,18 @@ fn a_run_reads_an_error_and_its_message() {
         changes: Changes::default(),
     };
     let traced = |message: &str| encoded(&v, vec![run_record(1), error_record(message)]);
-    outcome("vectors-error", &v, &traced("NULL function"), "", 0).unwrap();
-    let other = outcome("vectors-other-error", &v, &traced("other"), "", 0);
+    outcome(
+        "vectors-error",
+        &v,
+        traced("NULL function").as_deref(),
+        "",
+        0,
+    )
+    .unwrap();
+    let other = outcome("vectors-other-error", &v, traced("other").as_deref(), "", 0);
     assert!(other.unwrap_err().contains("ended with"));
     let finished = encoded(&v, vec![run_record(1), step(1, 51, &[]), exit()]);
-    assert!(outcome("vectors-done-not-error", &v, &finished, "", 0).is_err());
+    assert!(outcome("vectors-done-not-error", &v, finished.as_deref(), "", 0).is_err());
 }
 
 #[test]
@@ -714,7 +715,14 @@ fn a_partial_vector_counts_its_statements() {
     let text = "== partial\ncode:\n  STORE_F 100 101\n  DONE\nsteps: 2\nexpect:\n  ...\n  \
                 2 DONE\n  done\n";
     let v = parse("t.txt", text).unwrap().pop().unwrap();
-    outcome("vectors-partial", &v, &encoded(&v, simple_records()), "", 0).unwrap();
+    outcome(
+        "vectors-partial",
+        &v,
+        encoded(&v, simple_records()).as_deref(),
+        "",
+        0,
+    )
+    .unwrap();
     let three = parse("t.txt", &text.replace("steps: 2", "steps: 3"))
         .unwrap()
         .pop()
@@ -722,7 +730,7 @@ fn a_partial_vector_counts_its_statements() {
     let error = outcome(
         "vectors-partial-count",
         &three,
-        &encoded(&three, simple_records()),
+        encoded(&three, simple_records()).as_deref(),
         "",
         0,
     );
@@ -735,7 +743,14 @@ fn a_step_must_name_the_builtin_its_call_calls() {
                 DONE\nexpect:\n  1 CALL0\n  2 DONE\n  done\n";
     let v = parse("t.txt", text).unwrap().pop().unwrap();
     let records = vec![run_record(1), step(1, 51, &[]), step(2, 0, &[]), exit()];
-    let error = outcome("vectors-builtin", &v, &encoded(&v, records), "", 0).unwrap_err();
+    let error = outcome(
+        "vectors-builtin",
+        &v,
+        encoded(&v, records).as_deref(),
+        "",
+        0,
+    )
+    .unwrap_err();
     assert!(error.contains("TRACE-4.3"), "{error}");
 }
 

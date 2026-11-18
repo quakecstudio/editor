@@ -14,11 +14,11 @@
 //! function in a codebase is freed, not spawned (EDICT-8.5), so one shared superset is safe
 //! across codebases: each spawns only the classes it knows.
 
+use std::fmt::Write as _;
+
 /// One scenario to run: a name, the directives after the `progs` line (DIFF-2.2), and the
 /// entity lump the scenario's `entities` line names, or `None` for the one `worldspawn`
 /// default (DIFF-2.2).
-use std::fmt::Write as _;
-
 #[derive(Clone, Debug)]
 pub struct ScenarioSpec {
     /// A short name, used for the scratch directory and the report.

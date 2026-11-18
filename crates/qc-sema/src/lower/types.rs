@@ -898,7 +898,7 @@ pub(super) fn lower_class(class: &ast::ClassDecl, cx: Cx<'_>, out: &mut FileDecl
         &mut out.decls,
     );
     let first = out.decls.len();
-    lower_declarators(class.declarators(), &base, &None, cx, &mut out.decls);
+    lower_declarators(class.declarators(), &base, None, cx, &mut out.decls);
     let flags = cx.flags_at(class.syntax().span().start);
     for raw in out.decls.iter_mut().skip(first) {
         raw.flags = flags;
@@ -1140,7 +1140,7 @@ pub(super) fn lower_accessor(acc: &ast::AccessorDecl, cx: Cx<'_>, out: &mut File
         &mut out.decls,
     );
     let first = out.decls.len();
-    lower_declarators(acc.declarators(), &base, &None, cx, &mut out.decls);
+    lower_declarators(acc.declarators(), &base, None, cx, &mut out.decls);
     let flags = cx.flags_at(acc.syntax().span().start);
     for raw in out.decls.iter_mut().skip(first) {
         raw.flags = flags;

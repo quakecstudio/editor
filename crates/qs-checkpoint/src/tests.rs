@@ -204,7 +204,7 @@ fn checkpoints_are_listed_and_errors_reported() {
 fn tree() -> impl Strategy<Value = BTreeMap<String, Vec<u8>>> {
     proptest::collection::btree_map(
         proptest::collection::vec("[a-c]{1,2}", 1..4)
-            .prop_map(|parts| format!("{}{}", parts.join("/"), ".qc")),
+            .prop_map(|parts| format!("{}.qc", parts.join("/"))),
         proptest::collection::vec(any::<u8>(), 0..40),
         0..8,
     )

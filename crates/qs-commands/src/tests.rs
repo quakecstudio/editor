@@ -1401,6 +1401,7 @@ fn a_session_runs_on_another_thread_and_a_registry_is_shared() {
     assert_eq!(session.context().text, "abc");
     let registry = session.registry();
     let ids: Vec<Vec<String>> = std::thread::scope(|scope| {
+        // Every reader is started before the first is joined.
         let mut readers = Vec::new();
         readers.extend((0..4).map(|_| {
             scope.spawn(|| {

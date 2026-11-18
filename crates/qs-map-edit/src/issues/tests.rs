@@ -177,7 +177,7 @@ fn an_empty_brush_is_removed() {
 #[test]
 fn a_misspelled_key_is_renamed() {
     let ogre = "{\n\"classname\" \"monster_ogre\"\n\"origin\" \"0 0 24\"\n\"sped\" \"200\"\n}\n";
-    let text = map(&room(), &format!("{}{}", START, ogre));
+    let text = map(&room(), &format!("{START}{ogre}"));
     let mut session = session_with("key", &text, Some(ogre_check));
     let fix = fixes_and_undoes(&mut session, "sped");
     assert_eq!(
@@ -195,7 +195,7 @@ fn a_misspelled_key_is_renamed() {
 #[test]
 fn a_misspelled_class_is_set() {
     let ogre = "{\n\"classname\" \"monster_orge\"\n\"origin\" \"0 0 24\"\n}\n";
-    let text = map(&room(), &format!("{}{}", START, ogre));
+    let text = map(&room(), &format!("{START}{ogre}"));
     let mut session = session_with("class", &text, Some(ogre_check));
     let fix = fixes_and_undoes(&mut session, "monster_orge");
     assert_eq!(
@@ -477,7 +477,7 @@ fn pairs_after_brushes_and_empty_brushes() {
         "{{\n\"classname\" \"func_door\"\n{}\"sped\" \"100\"\n}}\n",
         cuboid([96, -16, 0], [112, 16, 96])
     );
-    let text = map(&room(), &format!("{}{}", START, door));
+    let text = map(&room(), &format!("{START}{door}"));
     let mut doors = session_with("pairs", &text, Some(ogre_check));
     let found = issues(&mut doors);
     let sped = found

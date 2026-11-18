@@ -281,6 +281,7 @@ fn compile_batch<'g, 'n>(
 ) -> Result<Vec<Compiled<'g, 'n>>, String> {
     let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     let results: Vec<Result<Vec<Compiled<'g, 'n>>, String>> = std::thread::scope(|scope| {
+        // Every thread is started before the first is joined.
         let mut handles = Vec::new();
         handles.extend((0..threads).map(|thread| {
             scope.spawn(move || {

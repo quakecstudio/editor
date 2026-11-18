@@ -230,7 +230,7 @@ fn drive(dir: &Path, autoproto: bool) -> Result<String, String> {
             label.clone(),
             Ask::Definition,
             "textDocument/definition",
-            &params.clone(),
+            &params,
         );
         let references = json!({
             "textDocument": document, "position": position,
@@ -242,12 +242,7 @@ fn drive(dir: &Path, autoproto: bool) -> Result<String, String> {
             "textDocument/references",
             &references,
         );
-        script.request(
-            label.clone(),
-            Ask::Hover,
-            "textDocument/hover",
-            &params.clone(),
-        );
+        script.request(label.clone(), Ask::Hover, "textDocument/hover", &params);
         script.request(
             label.clone(),
             Ask::PrepareRename,

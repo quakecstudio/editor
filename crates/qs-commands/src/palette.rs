@@ -402,7 +402,7 @@ mod tests {
         );
         assert_eq!(fuzzy("a", &needle("")).map(|m| m.0), Some(0));
         assert_eq!(fuzzy("a", &needle("b")), None);
-        let late = format!("{}{}", "x".repeat(20), "b");
+        let late = format!("{}b", "x".repeat(20));
         assert_eq!(
             fuzzy(&late, &needle("b")).map(|m| m.0),
             Some(-9),

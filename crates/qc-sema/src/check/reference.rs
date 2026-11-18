@@ -206,7 +206,7 @@ impl Checker<'_> {
             let offset = at.wrapping_mul(bits) & 31;
             return self.extend_bits(&value, offset, bits, span);
         }
-        let address = self.address_of(&value.clone(), span)?;
+        let address = self.address_of(&value, span)?;
         let named = self.name_of(&address);
         let narrow = Value {
             reference: Reference::Global,
