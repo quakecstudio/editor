@@ -269,6 +269,11 @@ impl Resolver<'_> {
         }
         let named: Vec<Type> = self.index.defs.iter().map(|d| d.ty.clone()).collect();
         let mut written = named.clone();
+        // The scalars of two words, which an immediate a statement names may be of.
+        written.extend(
+            [CScalar::Int64, CScalar::Uint64, CScalar::Double]
+                .map(|scalar| Type::Named(scalar.name().into())),
+        );
         for ty in &named {
             let Type::Named(name) = ty else {
                 continue;

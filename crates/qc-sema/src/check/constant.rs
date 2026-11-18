@@ -113,17 +113,18 @@ impl Constant {
         }
     }
 
-    /// The immediate a fragment names for this constant: a float, a vector or an integer;
-    /// `None` for the kinds the layer does not hold yet.
+    /// The immediate a fragment names for this constant: a float, a vector, an integer of 32 or
+    /// 64 bits or a double; `None` for a string, which the layer names by its text.
     pub(crate) const fn immediate(self) -> Option<ir::Immediate> {
         let kind = match self.ty {
             ConstType::Float => ir::ImmediateKind::Float,
             ConstType::Vector => ir::ImmediateKind::Vector,
             // An unsigned word is an integer's bits, `0x4i` for `sizeof(string)` (FTEF-30.11).
             ConstType::Integer | ConstType::Uint => ir::ImmediateKind::Integer,
-            ConstType::String | ConstType::Int64 | ConstType::Uint64 | ConstType::Double => {
-                return None;
-            }
+            ConstType::Int64 => ir::ImmediateKind::Int64,
+            ConstType::Uint64 => ir::ImmediateKind::Uint64,
+            ConstType::Double => ir::ImmediateKind::Double,
+            ConstType::String => return None,
         };
         Some(ir::Immediate {
             kind,

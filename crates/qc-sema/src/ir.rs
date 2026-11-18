@@ -22,7 +22,8 @@ const OPERANDS: usize = 3;
 pub struct Immediate {
     /// The kind of immediate.
     pub kind: ImmediateKind,
-    /// Its words: one, or three for a vector.
+    /// Its words: one, two for a 64-bit integer or a double, the low word first, or three for
+    /// a vector.
     pub words: [u32; 3],
 }
 
@@ -35,6 +36,12 @@ pub enum ImmediateKind {
     Vector,
     /// An integer (FTEF-26.3).
     Integer,
+    /// A signed integer of 64 bits, `QCC_MakeInt64Const`.
+    Int64,
+    /// An unsigned integer of 64 bits, `QCC_MakeUInt64Const`.
+    Uint64,
+    /// A double, `QCC_MakeDoubleConst`.
+    Double,
 }
 
 /// A generated statement's index in its body, from 0.
@@ -284,7 +291,9 @@ impl BodyStatement {
             | Op::LoadpI64 => [a, false, c],
             // FTEF-29.20: a store to an entity's field reads the entity, the field and the
             // value.
-            Op::StorefF | Op::StorefV | Op::StorefS | Op::StorefI => [true; OPERANDS],
+            Op::StorefF | Op::StorefV | Op::StorefS | Op::StorefI | Op::StorefI64 => {
+                [true; OPERANDS]
+            }
             _ => [a, b, c],
         }
     }

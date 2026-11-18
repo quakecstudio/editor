@@ -5127,3 +5127,42 @@ fn a_field_store_is_through_its_address_on_id_s_opcodes() {
     );
     assert_eq!(statements[1].op, u32::from(Opcode::StorepF.number()));
 }
+
+// spec FTEF-29.20: a 64-bit field is stored by `OP_STOREF_I64`, a constant from an immediate
+// of two words, as the pinned FTEQCC writes it
+#[test]
+fn a_wide_field_store_is_one_statement() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\nentity self;\n.__uint64 big;\n.__double d;\n\
+         void end_sys_fields;\n__uint64 g;\n\
+         void t(entity e) {\n\te.big = g;\n\te.d = 2;\n\tg = e.big;\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let statements = body(&p, "t");
+    let e = statements[0].a;
+    assert_eq!(
+        statements[0],
+        Statement {
+            op: number(Op::StorefI64),
+            a: e,
+            b: global(&p, "big"),
+            c: global(&p, "g")
+        }
+    );
+    assert_eq!(
+        (statements[1].op, statements[1].a, statements[1].b),
+        (number(Op::StorefI64), e, global(&p, "d"))
+    );
+    // 2.0 as a double, the low word first.
+    assert_eq!(words(&p, statements[1].c, 2), [0, 0x4000_0000]);
+    assert_eq!(
+        statements[2],
+        Statement {
+            op: number(Op::LoadI64),
+            a: e,
+            b: global(&p, "big"),
+            c: global(&p, "g")
+        }
+    );
+}

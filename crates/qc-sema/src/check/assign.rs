@@ -947,6 +947,7 @@ impl Checker<'_> {
                 | Etype::Integer
                 | Etype::Uint,
             ) => Some(Op::StorefI),
+            Some(Etype::Int64 | Etype::Uint64 | Etype::Double) => Some(Op::StorefI64),
             _ => None,
         };
         if let Some(storef) = storef.filter(|&op| self.env.target_at(span.start).valid(op)) {
