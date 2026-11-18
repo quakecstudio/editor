@@ -7,6 +7,8 @@
 
 use std::path::{Path, PathBuf};
 
+use qs_engine::Flavour;
+
 use super::{GameFiles, GameState};
 
 /// A folder of empty files at `files`, relative to a fresh directory named for `name`.
@@ -24,7 +26,7 @@ fn folder(name: &str, files: &[&str]) -> PathBuf {
 }
 
 fn check(dir: &Path) -> GameFiles {
-    GameFiles::check(Some(dir))
+    GameFiles::check(Some(dir), Flavour::Original)
 }
 
 // spec FS-6.5: an original base with both paks lacks nothing, and plays
@@ -57,6 +59,11 @@ fn the_rerelease_alone_is_partial() {
     assert_eq!(files.state, GameState::RereleaseOnly);
     assert_eq!(files.missing, ["id1/pak0.pak", "id1/pak1.pak"]);
     assert!(!files.state.plays());
+    // No spec statement: ADR-0008, a project for the rerelease plays on it
+    let files = GameFiles::check(Some(&dir), Flavour::Rerelease);
+    assert_eq!(files.state, GameState::Found);
+    assert!(files.missing.is_empty());
+    assert!(files.state.plays());
 }
 
 // spec FS-6.6: a rerelease with the original game in its dos folder is found

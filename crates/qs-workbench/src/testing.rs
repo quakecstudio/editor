@@ -259,23 +259,19 @@ impl<L: Loader> Workbench<L> {
             .filter(|(name, _)| kept(name))
             .collect();
         if !scenarios.is_empty() {
-            tests.extend(play_scenarios(
-                &root,
-                &progs,
-                params.game.as_deref(),
-                scenarios,
-            ));
+            let game = (params.game.as_deref(), self.flavour());
+            tests.extend(play_scenarios(&root, &progs, game, scenarios));
         }
         Ok(TestRun::of(tests))
     }
 }
 
 /// Each of `scenarios` played on the program `progs` of the project at `root`, over the game
-/// `game` names (QCT-3).
+/// `game` names, a folder or the first install found, and the game the project is for (QCT-3).
 fn play_scenarios(
     root: &Path,
     progs: &Path,
-    game: Option<&Path>,
+    (game, flavour): (Option<&Path>, Flavour),
     scenarios: Vec<(String, PathBuf)>,
 ) -> Vec<TestResult> {
     let result = |name: String, (verdict, message): (Verdict, Option<String>)| TestResult {
@@ -291,8 +287,8 @@ fn play_scenarios(
             .collect()
     };
     // QCT-3.3: the game, and a program where a run root can take it.
-    let base = match game_base(game, Flavour::Original) {
-        Ok((base, _)) => base,
+    let (base, flavour) = match game_base(game, flavour) {
+        Ok(found) => found,
         Err(error) => return skip_all(error.to_string()),
     };
     let Some(mod_name) = mod_folder(root, progs) else {
@@ -301,7 +297,7 @@ fn play_scenarios(
             progs.display()
         ));
     };
-    let run_root = match prepare_run_root(root, Flavour::Original, &base, &mod_name) {
+    let run_root = match prepare_run_root(root, flavour, &base, &mod_name) {
         Ok(run_root) => run_root,
         Err(error) => return skip_all(error.to_string()),
     };

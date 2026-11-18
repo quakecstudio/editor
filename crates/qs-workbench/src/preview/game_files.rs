@@ -6,6 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
+use qs_engine::Flavour;
 use qs_install::{Install, MissingReason};
 use qs_vfs::StdFs;
 use schemars::JsonSchema;
@@ -15,12 +16,13 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum GameState {
-    /// The original registered game: Play works.
+    /// The original registered game, or for a project for the rerelease the rerelease: Play
+    /// works.
     Found,
     /// The original game's first episode alone, with no `id1/pak1.pak`: Play works on its maps.
     SharewareOnly,
     /// The 2021 rerelease alone, as the Epic Games Store and Game Pass sell it: no original
-    /// `id1`, so Play does not work.
+    /// `id1`, so Play does not work on a project for the original game.
     RereleaseOnly,
     /// No game data.
     Missing,
@@ -46,15 +48,16 @@ pub struct GameFiles {
 }
 
 impl GameFiles {
-    /// What `folder` holds, or with `None` the first install found on this machine.
+    /// What `folder` holds, or with `None` the first install found on this machine, for a
+    /// project for the game of `flavour` (ADR-0008).
     #[must_use]
-    pub fn check(folder: Option<&Path>) -> Self {
+    pub fn check(folder: Option<&Path>, flavour: Flavour) -> Self {
         let install = match folder {
             Some(folder) => qs_install::examine_folder(folder),
             None => qs_install::find_installs().into_iter().next(),
         };
         match install {
-            Some(install) => Self::of(&install),
+            Some(install) => Self::of(&install, flavour),
             None => Self {
                 state: GameState::Missing,
                 folder: folder.map(Path::to_path_buf),
@@ -63,8 +66,16 @@ impl GameFiles {
         }
     }
 
-    /// What `install` holds: its missing files (FS-6.5) say whether it is partial.
-    fn of(install: &Install) -> Self {
+    /// What `install` holds: its missing files (FS-6.5) say whether it is partial. A project
+    /// for the rerelease lacks nothing of an install with the rerelease.
+    fn of(install: &Install, flavour: Flavour) -> Self {
+        if flavour == Flavour::Rerelease && install.rerelease.is_some() {
+            return Self {
+                state: GameState::Found,
+                folder: Some(install.root.clone()),
+                missing: Vec::new(),
+            };
+        }
         let validation = install.validate(&StdFs);
         let reason = |wanted: MissingReason| validation.missing.iter().any(|m| m.reason == wanted);
         let state = if reason(MissingReason::RereleaseOnly) {

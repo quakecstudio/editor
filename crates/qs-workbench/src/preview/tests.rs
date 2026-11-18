@@ -130,7 +130,11 @@ fn play_uses_the_game_the_project_is_for() {
         linked(dir.join("build/run/rerelease/id1")),
         linked(game.join("rerelease/id1"))
     );
-    assert!(dir.join("build/run/rerelease/QuakeEX.kpf").exists());
+    // On Windows the kpf is given to the host with `-kpf`, so the root has no link.
+    assert_eq!(
+        dir.join("build/run/rerelease/QuakeEX.kpf").exists(),
+        !cfg!(windows)
+    );
     assert!(!dir.join("build/run/original").exists());
     // The game's files are the rerelease's from then on.
     assert_eq!(
@@ -160,6 +164,21 @@ fn play_uses_the_game_the_project_is_for() {
         linked(only.join("id1"))
     );
     assert!(!dir.join("build/run/rerelease").exists());
+    // With the rerelease alone, the game's files are read from it before the first Play, and
+    // a project for the original game has nothing to play on.
+    let alone = root("rerelease-alone");
+    std::fs::create_dir_all(alone.join("id1")).unwrap();
+    std::fs::write(alone.join("id1/pak0.pak"), b"PACK").unwrap();
+    std::fs::write(alone.join("QuakeEX.kpf"), b"kpf").unwrap();
+    let mut preview_of = preview(Some(alone.clone()), Some(dir.join("no-host")));
+    assert_eq!(
+        preview_of.game_base_path().map(linked),
+        Some(linked(alone.clone()))
+    );
+    let dir = root("original-on-rerelease");
+    let mut workbench = opened(&dir, "void() worldspawn = {};\n");
+    let error = preview_of.play(&mut workbench, None).unwrap_err();
+    assert!(matches!(error, PreviewError::NoGame(Some(_))), "{error}");
 }
 
 // No spec statement: the controls need a running game; a reload without one does nothing
