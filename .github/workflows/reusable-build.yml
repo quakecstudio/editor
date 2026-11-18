@@ -12,6 +12,8 @@ name: Reusable build
 # the Windows executables are signed with Azure Artifact Signing (formerly Trusted Signing)
 # through skeeto/aas-sign, which signs PE files only, so the MSI around them is not; Azure
 # trusts only tag runs of the `release` workflow, so a run by hand leaves them unsigned.
+# Each rpm is signed with the key of packages.quakecstudio.com before it is attested (P4-40),
+# so the file a release publishes, the file dnf checks and the attested file are one.
 on:
   workflow_call:
     outputs:
@@ -49,6 +51,10 @@ on:
         required: true
       CERTIFICATE_PROFILE:
         required: true
+      GPG_PRIVATE_KEY:
+        required: true
+      GPG_PASSPHRASE:
+        required: true
 
 permissions: {}
 
@@ -79,13 +85,15 @@ jobs:
           TRUSTED_SIGNING_ENDPOINT: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
           TRUSTED_SIGNING_ACCOUNT: ${{ secrets.TRUSTED_SIGNING_ACCOUNT }}
           CERTIFICATE_PROFILE: ${{ secrets.CERTIFICATE_PROFILE }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
           missing=0
           for name in APPLE_APPLICATION_CERTIFICATE_PEM APPLE_APPLICATION_KEY_PEM \
             APPLE_APPLICATION_IDENTITY APPLE_INSTALLER_CERTIFICATE_PEM APPLE_INSTALLER_KEY_PEM \
             APPLE_INSTALLER_IDENTITY APPLE_KEYCHAIN_PASSWORD APPLE_NOTARY_KEY_ID \
             APPLE_NOTARY_ISSUER_ID APPLE_NOTARY_KEY AZURE_CLIENT_ID AZURE_TENANT_ID TRUSTED_SIGNING_ENDPOINT \
-            TRUSTED_SIGNING_ACCOUNT CERTIFICATE_PROFILE; do
+            TRUSTED_SIGNING_ACCOUNT CERTIFICATE_PROFILE GPG_PRIVATE_KEY GPG_PASSPHRASE; do
             if [ -z "${!name}" ]; then
               echo "::error::the secret $name is not set"
               missing=1
@@ -376,7 +384,7 @@ jobs:
 
   linux:
     name: Package on Linux (${{ matrix.arch }})
-    needs: version
+    needs: [secrets, version]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     permissions:
@@ -445,6 +453,14 @@ jobs:
           done
           rm -r dist/bin
           ls -l dist
+      # dnf checks an rpm's own signature (`gpgcheck=1`), so the rpm is signed with the key
+      # packages.quakecstudio.com publishes, and before the attestation, which then names the
+      # signed file. APT checks the repository's signed metadata, so the deb needs none.
+      - name: Sign the rpm
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: packaging/linux/sign-rpm.sh dist/*.rpm
       - name: Attest the Linux packages
         uses: actions/attest@v4.2.2
         with:

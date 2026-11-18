@@ -31,7 +31,8 @@ const LICENSE_FILE: &str = "LICENSE";
 const LICENSE_MARKERS: [&str; 2] = ["GNU GENERAL PUBLIC LICENSE", "Version 3, 29 June 2007"];
 const SPECS_MANIFEST: &str = "specs/manifest.tsv";
 
-const SOURCE_EXTENSIONS: [&str; 7] = ["rs", "py", "sh", "c", "h", "qc", "wgsl"];
+// `rb` is the Homebrew cask (packaging/homebrew/).
+const SOURCE_EXTENSIONS: [&str; 8] = ["rs", "py", "sh", "c", "h", "qc", "wgsl", "rb"];
 // `postinstall` is the macOS installer package's script (packaging/macos/scripts/).
 const SOURCE_NAMES: [&str; 2] = ["Makefile", "postinstall"];
 // `src` is a QuakeC project's file list, `progs.src`, which carries no license line; `route`

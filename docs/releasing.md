@@ -16,12 +16,14 @@ whatever calls it. On a tag, the Windows executables are signed with Azure Artif
 2. Push a tag naming it: `v2026.11.1`, or `v2026.11.1-rc1` for a pre-release. The workflow
    fails a tag that does not name the workspace's version.
 3. The **release** workflow builds, signs, checks and publishes. A tag with a `-` is published as
-   a pre-release; any other tag too, as a release.
+   a pre-release; any other tag too, as a release, which then goes to
+   [the package managers](#the-package-managers). A pre-release reaches none of them.
 
 A pull request that changes `packaging/` or either release workflow runs a dry run, and so does
 running **release** from the Actions tab (or `gh workflow run release.yml --ref <branch>`):
 it does everything but publish, and keeps the packages and `SHA256SUMS` as the run's `release`
-artifact.
+artifact. It also writes the package repository's metadata and the Homebrew cask, each into a
+checkout of its repository, and commits them there without pushing.
 
 ## The packages
 
@@ -29,7 +31,7 @@ artifact.
 | --- | --- | --- |
 | macOS, Apple silicon (arm64) | `quakec-studio-<version>-macos-arm64.pkg`: an installer package, signed with the Developer ID Installer identity, notarized and stapled, that puts `QuakeC Studio.app` in `/Applications`, replacing whatever version is there, and whose `postinstall` script links to its `quakec-ide` and `quakec-lsp` in `/usr/local/bin`; each executable and the app inside signed with the hardened runtime, the app notarized and stapled | `packaging/macos/package.sh`, with `packaging/macos/Info.plist`, `components.plist` and `scripts/postinstall` (for `pkgbuild`) and `distribution.xml` (for `productbuild`) |
 | Windows x64 and arm64 | `quakec-studio-<version>-windows-<arch>.msi`, installing for every user under Program Files with a Start menu shortcut and the folder on `PATH`; and a portable `.zip`; on a tag, the executables in both are signed | `packaging/windows/package.sh`, with WiX 5 and `packaging/windows/quakec-studio.wxs` |
-| Linux x86_64 and aarch64 | `.deb`, `.rpm`, `.AppImage` and `.flatpak` | `packaging/linux/package.sh`, with the desktop entry and icon, `deb/control`, `quakec-studio.spec`, `AppRun.sh` and the Flatpak manifest `com.quakecstudio.QuakeCStudio.yml` beside it |
+| Linux x86_64 and aarch64 | `.deb`, `.rpm`, `.AppImage` and `.flatpak`; the `.rpm` signed with the key of packages.quakecstudio.com | `packaging/linux/package.sh`, with the desktop entry and icon, `deb/control`, `quakec-studio.spec`, `AppRun.sh` and the Flatpak manifest `com.quakecstudio.QuakeCStudio.yml` beside it; `packaging/linux/sign-rpm.sh` signs the rpm |
 | All | `SHA256SUMS`, every package's SHA-256 | the workflow's last job |
 
 Each file a package needs is its own file under `packaging/`, never written out by a script,
@@ -97,19 +99,85 @@ deletes a keychain entry:
   machine `PATH`, the host check runs, the app's window opens, and the portable zip's host
   check runs too.
 - **Linux x86_64 and aarch64:** the deb installs with `apt` on Ubuntu 24.04 (host check, and the
-  window under Xvfb), the rpm with `dnf` in a Fedora 41 container (host check), and the
+  window under Xvfb), the rpm with `dnf` in a Fedora 41 container (host check) once `rpm
+  --checksig` has checked its signature against the key packages.quakecstudio.com serves, and the
   AppImage runs its host check. The Flatpak runs every check from inside its sandbox: a Steam
   folder holding LibreQuake as Quake (`packaging/linux/steam`) is found, the host starts on it, and the keychain is
   reached through gnome-keyring.
 
 The game is LibreQuake (`cargo xtask assets fetch`); Quake's data is never used in CI.
 
+## The package managers
+
+A release, a tag with no `-`, is also published where a package manager finds it (P4-40). Three
+jobs of the release workflow do it, each after the GitHub release is made, so none names a file
+that cannot be downloaded yet. The first two also run in the dry run and for a pre-release,
+doing everything but the push.
+
+| Where | Install | Job |
+| --- | --- | --- |
+| The APT and YUM/DNF repository at [packages.quakecstudio.com](https://packages.quakecstudio.com), kept in [`quakecstudio/packages`](https://github.com/quakecstudio/packages) | `apt-get install quakec-studio` or `dnf install quakec-studio`, after the setup that page gives | **Add to packages.quakecstudio.com** |
+| The Homebrew tap [`quakecstudio/homebrew-tap`](https://github.com/quakecstudio/homebrew-tap) | `brew install --cask quakecstudio/tap/quakec-studio` | **Update the Homebrew tap** |
+| winget, through [`microsoft/winget-pkgs`](https://github.com/microsoft/winget-pkgs) | `winget install QuakeCStudio.QuakeCStudio` | **Submit to winget** |
+
+**The package repository.** `packaging/linux/repository.sh` copies the release's debs and rpms
+into a checkout of `quakecstudio/packages`, the debs under the names Debian gives them
+(`quakec-studio_<version>_<architecture>.deb`), and writes the metadata again over every
+package the repository holds: `Packages` with `dpkg-scanpackages --multiversion`, `Release` with
+`apt-ftparchive`, signed as `InRelease` and `Release.gpg`, and each architecture's `repodata`
+with `createrepo_c`, its `repomd.xml` signed. It then checks every signature against
+`gpg/quakecstudio.asc`, the public key that repository publishes, so a key that is not the
+published one fails in the job and not on a user's machine. The job commits and pushes with a
+deploy key. A push made with a deploy key, unlike one made with `GITHUB_TOKEN`, starts that
+repository's own workflow, which copies it to the S3 bucket behind packages.quakecstudio.com.
+APT checks the signed metadata, so a deb carries no signature of its own; dnf checks both the
+metadata and each rpm (`gpgcheck=1`, `repo_gpgcheck=1`), which is why the build signs the rpm.
+
+**The Homebrew tap.** The cask is `packaging/homebrew/quakec-studio.rb`; the job fills in the
+version and the macOS package's SHA-256 from `SHA256SUMS`, checks the result with `ruby -c` and
+writes it to `Casks/quakec-studio.rb` in the tap. The cask installs the same signed and
+notarized `.pkg` the release publishes, so a change to what the package installs
+(`packaging/macos/`) is followed by a change to the cask's `uninstall` and `zap`.
+
+**winget.** [komac](https://github.com/russellbanks/Komac), fetched by release and checked by
+SHA-256, brings the fork `quakecstudio/winget-pkgs` up to date, writes the manifests from the
+release's two MSIs, pushes them to the fork and opens a pull request against
+`microsoft/winget-pkgs`. Microsoft reviews and merges it in its own time, so the job's failure
+does not fail the release, and it has no dry run: nothing of it can run before the release's
+files are public. komac updates a package winget already lists. The first version is submitted
+by hand, once, by the account that owns `WINGET_TOKEN`, and until Microsoft merges it the job
+fails:
+
+```bash
+komac new QuakeCStudio.QuakeCStudio --version 2026.11.1 \
+  --urls https://github.com/quakecstudio/editor/releases/download/v2026.11.1/quakec-studio-2026.11.1-windows-x64.msi \
+  https://github.com/quakecstudio/editor/releases/download/v2026.11.1/quakec-studio-2026.11.1-windows-arm64.msi
+```
+
+### The publishing secrets
+
+Repository-level, like the signing secrets. [`quakecstudio/infra`](https://github.com/quakecstudio/infra)
+makes and sets each one (`environments/github/`); agents never handle their values.
+
+| Secret | What it is | Used by |
+| --- | --- | --- |
+| `GPG_PRIVATE_KEY` | The private key of packages.quakecstudio.com, armored; an Ed25519 key that infra's Terraform generates. Its public half is `gpg/quakecstudio.asc` in `quakecstudio/packages` | `sign-rpm.sh` in the reusable build, `repository.sh` |
+| `GPG_PASSPHRASE` | Its passphrase | the same |
+| `PACKAGES_DEPLOY_KEY` | An SSH deploy key with write access to `quakecstudio/packages` alone | the checkout that pushes the repository |
+| `HOMEBREW_TAP_DEPLOY_KEY` | An SSH deploy key with write access to `quakecstudio/homebrew-tap` alone | the checkout that pushes the cask |
+| `WINGET_TOKEN` | A classic personal access token with the `public_repo` scope, owned by `smoketurnerbot`, which has write access to the fork and must have signed Microsoft's contributor license agreement before its first pull request. komac cannot open the pull request with a fine-grained token | `komac` |
+
+Replacing the GPG key means every user has to trust the new public key before their next
+install or update. The deploy keys and the GPG key do not expire; the token does when its
+owner sets it to.
+
 ## The signing secrets
 
 The five Azure secrets and the ten `APPLE_*` ones are **repository-level**, by Justin's choice, so only a workflow that signs may reference them:
 `.github/workflows/release.yml` passes each, by name, to the reusable
 `.github/workflows/reusable-build.yml`, the one workflow that reads them. Agents never handle
-their values; the reusable workflow's first job checks each is set and prints no value.
+their values; the reusable workflow's first job checks each is set, and the two `GPG_*`
+[publishing secrets](#the-publishing-secrets) with them, and prints no value.
 
 | Secret | What it is | Used by |
 | --- | --- | --- |
