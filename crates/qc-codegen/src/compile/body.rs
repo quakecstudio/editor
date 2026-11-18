@@ -331,12 +331,24 @@ impl Compiler<'_> {
                     Name::Default(slot) => self.default_of(generated, at, slot).is_some(),
                     _ => true,
                 });
+            // FTE-18.7: the call stops before an `optional` parameter, whatever its default.
+            let optional =
+                |callee: DefId, slot: usize| match self.index.def(callee).map(|def| &def.ty) {
+                    Some(qc_sema::Type::Function(function)) => function
+                        .labels
+                        .0
+                        .get(slot)
+                        .is_some_and(|label| label.optional),
+                    _ => false,
+                };
             let stops = match (call_count(statement.op), statement.a) {
-                (Some(count), Some(Name::Def(callee, _))) => self
-                    .defaults
-                    .get(&callee)
-                    .and_then(|defaults| defaults.get(count))
-                    .is_some_and(Option::is_some),
+                (Some(count), Some(Name::Def(callee, _))) => {
+                    self.defaults
+                        .get(&callee)
+                        .and_then(|defaults| defaults.get(count))
+                        .is_some_and(Option::is_some)
+                        && !optional(callee, count)
+                }
                 _ => false,
             };
             passed && !stops

@@ -4668,3 +4668,24 @@ fn a_wide_scalar_is_two_words_wherever_it_is_held() {
     assert_eq!(global(&p, "y") - global(&p, "x"), 2);
     assert_eq!(number("ret*"), 0xa);
 }
+
+// spec FTE-18.7: a call stops before an `optional` parameter though it has a default, and
+// passes the defaults before it, as the pinned FTEQCC's program does
+#[test]
+fn an_optional_parameter_s_default_is_not_passed() {
+    let p = fte_progs(
+        "#pragma target fte\n\
+         float(vector position, string pic, vector size, vector rgb='1 1 1', float alpha=1, \
+         optional float drawflag=7) drawpic = #322;\n\
+         void() f = {\n\
+         \tdrawpic('1 2 3', \"a\", '4 5 6', '7 8 9', 2);\n\
+         \tdrawpic('1 2 3', \"a\", '4 5 6');\n\
+         };\n",
+    );
+    let ops: Vec<u32> = body(&p, "f").iter().map(|s| s.op).collect();
+    // STORE_V, STORE_V, STORE_F and the call by operands, twice: nothing stored for drawflag.
+    assert_eq!(ops, [32, 32, 31, 109, 32, 32, 31, 109, 0]);
+    let stored: Vec<i32> = body(&p, "f").iter().map(|s| s.b).collect();
+    assert_eq!(stored.get(..3), Some(&[10, 13, 16][..]));
+    assert_eq!(stored.get(4..7), Some(&[10, 13, 16][..]));
+}
