@@ -5356,3 +5356,40 @@ fn a_reference_accessor_member_is_not_compiled_as_a_plain_call() {
         compiled.err()
     );
 }
+
+// spec FTEF-31.27: a call's vector or a statement's result at a constant index is that word of
+// the return global or of the temporary, as the pinned FTEQCC writes it
+#[test]
+fn a_vector_value_at_a_constant_index_is_its_word() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\nvector size(void) = #1;\nvector gv;\nfloat w;\nfloat h;\n\
+         void t(void) {\n\tw = size()[1] - 120;\n\tw = (gv * 2)[2];\n\
+         \th = size()[0] + size()[1];\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let made = |op: Op, a: i32, b: i32, c: i32| Statement {
+        op: number(op),
+        a,
+        b,
+        c,
+    };
+    let (size, w, h) = (global(&p, "size"), global(&p, "w"), global(&p, "h"));
+    let statements = body(&p, "t");
+    let (many, two, product) = (statements[1].b, statements[2].b, statements[2].c);
+    let copy = statements[5].b;
+    assert_eq!(
+        statements,
+        [
+            made(Op::Call0, size, 0, 0),
+            made(Op::SubF, 2, many, w),
+            made(Op::MulVf, global(&p, "gv"), two, product),
+            made(Op::StoreF, product + 2, w, 0),
+            made(Op::Call0, size, 0, 0),
+            made(Op::StoreV, 1, copy, 0),
+            made(Op::Call0, size, 0, 0),
+            made(Op::AddF, copy, 2, h),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}

@@ -5555,6 +5555,15 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   read or stored at it: `f = m_v[i]` in a method is `BOUNDCHECK i, 3`, `LOADA_FLD m_v, i, temp`
   and `LOAD_F self, temp, f`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`.
+- **FTEF-31.27** A vector that is a call's value or a statement's result, indexed by a
+  constant, is that word of the return global or of the temporary (`/*array notation on
+  vector*/ ... t = type_float;`, the index added to the reference's offset), with no statement
+  of its own. Run on the pinned FTEQCC with `-Tfte`: `w = size()[1] - 120` is `CALL0 size` and
+  `SUB_F OFS_RETURN+1, 120, w`; `w = (gv * 2)[2]` is `MUL_VF gv, 2, temp` and `STORE_F temp+2,
+  w`; and in `h = size()[0] + size()[1]` the first call's vector is copied out of the return
+  global before the second call (FTE-18.13), `STORE_V OFS_RETURN, temp`, then `ADD_F temp,
+  OFS_RETURN+1, h`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`.
 
 ## FTEF-32 Calls
 
