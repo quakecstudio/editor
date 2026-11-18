@@ -1926,6 +1926,27 @@ impl AggregateInit {
     pub fn elements(&self) -> impl Iterator<Item = Expr> {
         children(&self.0)
     }
+
+    /// The member each element of designated braces names, `{ .a = 1, .b = 2 }`, in the
+    /// elements' order (FTEF-19.64): the name after each `.` that is the braces' own token.
+    /// Empty for braces that name none.
+    #[must_use]
+    pub fn designated_names(&self) -> Vec<String> {
+        let mut names = Vec::new();
+        let mut after_dot = false;
+        for token in self.0.child_tokens() {
+            match token.kind() {
+                kind if kind.is_trivia() => {}
+                crate::SyntaxKind::Dot => after_dot = true,
+                crate::SyntaxKind::Name if after_dot => {
+                    names.push(token.text_lossless());
+                    after_dot = false;
+                }
+                _ => after_dot = false,
+            }
+        }
+        names
+    }
 }
 
 impl TypedefDecl {

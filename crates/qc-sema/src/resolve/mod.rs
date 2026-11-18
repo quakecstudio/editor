@@ -132,6 +132,9 @@ pub struct ModuleIndex {
     /// The definitions FTEQCC holds constant, `def->constant` (FTEF-19.3): an initialised
     /// global that is no `var`, an enum's item, a function.
     pub(crate) constants: HashSet<DefId>,
+    /// The definitions FTEQCC is asked to save, `def->saved` (FTEF-19.82): each the program
+    /// declares with no `nosave`.
+    pub(crate) saved: HashSet<DefId>,
     /// Each FTEQCC class's type-name definition by its name (FTEF-17.1).
     pub(crate) class_names: HashMap<String, DefId>,
     /// Each FTEQCC class's parent, by the classes' type-name definitions.
@@ -366,6 +369,13 @@ impl ModuleIndex {
     #[must_use]
     pub fn is_constant(&self, def: DefId) -> bool {
         self.constants.contains(&def)
+    }
+
+    /// Whether FTEQCC is asked to save `def`, `def->saved` (FTEF-19.82): the program declares
+    /// it with no `nosave`.
+    #[must_use]
+    pub fn is_saved(&self, def: DefId) -> bool {
+        self.saved.contains(&def)
     }
 }
 
@@ -732,6 +742,8 @@ struct StructDef {
 struct Facts {
     /// FTEQCC's `def->constant`, which the first declaration fixes (FTEF-19.3).
     constant: bool,
+    /// FTEQCC's `def->saved`, which the declaration that makes it fixes (FTEF-19.82).
+    saved: bool,
     /// FTEQCC's `def->arraysize`: `None` for no array (FTEF-19.8).
     array: Option<ArrayDim>,
     /// The parameters of its function type (FTEF-19.6).
@@ -1141,6 +1153,8 @@ struct DeclFacts<'d> {
     checked: bool,
     /// `GDF_CONST` (FTEF-19.3).
     constant: bool,
+    /// `GDF_SAVED` (FTEF-19.82): a declaration of the program's with no `nosave`.
+    saved: bool,
     /// The first array dimension (FTEF-19.8).
     array: Option<ArrayDim>,
     /// The function type's parameters (FTEF-19.6).

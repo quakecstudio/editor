@@ -5356,3 +5356,254 @@ fn a_reference_accessor_member_is_not_compiled_as_a_plain_call() {
         compiled.err()
     );
 }
+
+// spec FTEF-31.27: a call's vector or a statement's result at a constant index is that word of
+// the return global or of the temporary, as the pinned FTEQCC writes it
+#[test]
+fn a_vector_value_at_a_constant_index_is_its_word() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\nvector size(void) = #1;\nvector gv;\nfloat w;\nfloat h;\n\
+         void t(void) {\n\tw = size()[1] - 120;\n\tw = (gv * 2)[2];\n\
+         \th = size()[0] + size()[1];\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let made = |op: Op, a: i32, b: i32, c: i32| Statement {
+        op: number(op),
+        a,
+        b,
+        c,
+    };
+    let (size, w, h) = (global(&p, "size"), global(&p, "w"), global(&p, "h"));
+    let statements = body(&p, "t");
+    let (many, two, product) = (statements[1].b, statements[2].b, statements[2].c);
+    let copy = statements[5].b;
+    assert_eq!(
+        statements,
+        [
+            made(Op::Call0, size, 0, 0),
+            made(Op::SubF, 2, many, w),
+            made(Op::MulVf, global(&p, "gv"), two, product),
+            made(Op::StoreF, product + 2, w, 0),
+            made(Op::Call0, size, 0, 0),
+            made(Op::StoreV, 1, copy, 0),
+            made(Op::Call0, size, 0, 0),
+            made(Op::AddF, copy, 2, h),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
+// spec FTEF-32.25: a struct of more than a vector's words takes a slot for each three words:
+// in the function's record, in the call's pieces and count, and where an out parameter of its
+// type is stored and stored back, as the pinned FTEQCC writes them
+#[test]
+fn a_wide_struct_is_passed_a_slot_for_each_three_words() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\n\
+         typedef struct { int a; int b; int c; vector v; float f; int g; string s; } font_s;\n\
+         font_s g_font;\nfloat gf;\n\
+         void load(string f, font_s &fnt) {\n\tfnt.a = 0;\n}\n\
+         float id(font_s fnt) {\n\treturn (float)fnt.a;\n}\n\
+         void t(void) {\n\tload(\"a\", g_font);\n\tgf = id(g_font);\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let made = |op: Op, a: i32, b: i32, c: i32| Statement {
+        op: number(op),
+        a,
+        b,
+        c,
+    };
+    let record = |name: &str| {
+        let f = function(&p, name);
+        (f.numparms, f.parm_size)
+    };
+    assert_eq!(record("load"), (4, [1, 3, 3, 3, 0, 0, 0, 0]));
+    assert_eq!(record("id"), (3, [3, 3, 3, 0, 0, 0, 0, 0]));
+    // The out parameter's nine words to the second, third and fourth slots before `DONE`.
+    let load: Vec<(u32, i32)> = body(&p, "load").iter().map(|s| (s.op, s.b)).collect();
+    let store_v = number(Op::StoreV);
+    assert_eq!(
+        load.get(1..),
+        Some(
+            &[
+                (store_v, 7),
+                (store_v, 10),
+                (store_v, 13),
+                (number(Op::Done), 0)
+            ][..]
+        )
+    );
+    let font = global(&p, "g_font");
+    let statements = body(&p, "t");
+    let (text, first, second) = (statements[3].b, statements[0].b, statements[8].b);
+    assert_eq!(
+        statements,
+        [
+            made(Op::StoreV, font, first, 0),
+            made(Op::StoreV, font + 3, 10, 0),
+            made(Op::StoreV, font + 6, 13, 0),
+            made(Op::Call4h, global(&p, "load"), text, first),
+            made(Op::StoreV, 7, font, 0),
+            made(Op::StoreV, 10, font + 3, 0),
+            made(Op::StoreV, 13, font + 6, 0),
+            made(Op::StoreV, font, statements[7].b, 0),
+            made(Op::StoreV, font + 3, second, 0),
+            made(Op::StoreV, font + 6, 10, 0),
+            made(Op::Call3h, global(&p, "id"), statements[7].b, second),
+            made(Op::StoreF, 1, global(&p, "gf"), 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
+// spec FTEF-19.83: designated braces give each member they name its value where the member is,
+// a number in an `int`'s place the integer and a bracketed vector the vector
+// spec FTEF-19.82: a `var` struct with a value has each member's record saved
+#[test]
+fn designated_braces_place_each_member_s_value() {
+    let p = fte_progs(
+        "#pragma target fte\n\
+         typedef struct { string s; float y; int n; vector v; float f; } titles_t;\n\
+         var titles_t g = { .f = 0.5f, .v = [1, 2, 3], .n = 3, .y = -1.0f };\n\
+         titles_t k = { \"a\", 2, 3, [4, 5, 6], 7 };\n\
+         vector gv;\nvoid t(void) { gv = g.v; }\n",
+    );
+    let record = |name: &str| {
+        let def = p
+            .global_defs
+            .iter()
+            .find(|def| string(&p, def.s_name) == name)
+            .unwrap_or_else(|| panic!("no {name}"));
+        (def.type_bits, i32::try_from(def.ofs).unwrap())
+    };
+    let (y_bits, y) = record("g.y");
+    let (n_bits, n) = record("g.n");
+    let (v_bits, v) = record("g.v");
+    let (f_bits, f) = record("g.f");
+    assert_eq!(
+        (y_bits, n_bits, v_bits, f_bits),
+        (0x8002, 0x8008, 0x8003, 0x8002)
+    );
+    assert_eq!(words(&p, y, 1), [(-1.0_f32).to_bits()]);
+    assert_eq!(words(&p, n, 1), [3]);
+    assert_eq!(words(&p, v, 3), [1.0_f32, 2.0, 3.0].map(f32::to_bits));
+    assert_eq!(words(&p, f, 1), [0.5_f32.to_bits()]);
+    // A constant struct's members are not saved; its `int` holds the integer too.
+    let (kn_bits, kn) = record("k.n");
+    assert_eq!(kn_bits, 0x8);
+    assert_eq!(words(&p, kn, 1), [3]);
+    let (_, kv) = record("k.v");
+    assert_eq!(words(&p, kv, 3), [4.0_f32, 5.0, 6.0].map(f32::to_bits));
+}
+
+// spec FTEF-19.82: a global is saved when FTEQCC was asked to save it and does not hold it
+// constant, each record but a field's and a struct's header, as the pinned FTEQCC writes them
+#[test]
+fn a_global_is_saved_by_how_it_is_declared() {
+    let p = fte_progs(
+        "#pragma target fte\nentity self;\n.float health;\nvoid end_sys_fields;\n\
+         typedef struct { float x; .float fld; } mix_t;\n\
+         typedef struct { string s; float y; } tt_t;\n\
+         nosave var float nsv = 3;\nnosave float nsu;\nvar float vf = 4;\nfloat cf = 5;\n\
+         const float cu;\nfloat plain;\nvoid fa(void) {}\nvar void(void) fp = fa;\n\
+         float arru[3];\nmix_t g;\nvar tt_t ga[2] = { {\"a\", 1}, {\"b\", 2} };\n\
+         float out;\n\
+         void t(void) {\n\tout = autocvar(baz, 3) + nsv + nsu + vf + cf + cu + plain + arru[1] \
+         + g.x + ga[1].y;\n\tfp();\n\tself.(g.fld) = 1;\n}\n",
+    );
+    let bits = |name: &str| {
+        p.global_defs
+            .iter()
+            .find(|def| string(&p, def.s_name) == name)
+            .map_or_else(|| panic!("no {name}"), |def| def.type_bits)
+    };
+    for (name, expected) in [
+        ("plain", 0x8002),
+        ("vf", 0x8002),
+        ("fp", 0x8006),
+        ("arru[1]", 0x8002),
+        ("end_sys_fields", 0x8000),
+        ("cf", 0x2),
+        ("cu", 0x2),
+        ("nsu", 0x2),
+        ("nsv", 0x2),
+        ("autocvar_baz", 0x2),
+        ("g.x", 0x8002),
+        ("g.fld", 0x5),
+        ("ga[1]", 0xe),
+        ("ga[1].s", 0x8001),
+        ("ga[1].y", 0x8002),
+    ] {
+        assert_eq!(bits(name), expected, "{name}");
+    }
+}
+
+// spec FTEF-32.26: a slot past the eighth is a `$parmN` global, which the function copies its
+// parameter from first, the call is `CALL8H`, and the record sizes eight parameters
+#[test]
+fn slots_past_the_eighth_are_copied_from_their_globals() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\n\
+         typedef struct { int a; int b; int c; vector v; float f; int g; string s; } font_s;\n\
+         font_s g1;\nfloat gf;\n\
+         float nine(float a, float b, float c, float d, float e, float f, float g, float h, \
+         float i, vector j) {\n\treturn a + i + j_y;\n}\n\
+         float take7(float a, float b, float c, float d, float e, float f, float g, \
+         font_s fnt) {\n\treturn fnt.f + a;\n}\n\
+         void t(void) {\n\tgf = nine(1, 2, 3, 4, 5, 6, 7, 8, 9, \'1 2 3\');\n\
+         \tgf = take7(1, 2, 3, 4, 5, 6, 7, g1);\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let (store_f, store_v) = (number(Op::StoreF), number(Op::StoreV));
+    assert_eq!(function(&p, "nine").numparms, 8);
+    assert_eq!(function(&p, "take7").parm_size, [1, 1, 1, 1, 1, 1, 1, 3]);
+    let nine = body(&p, "nine");
+    let (eighth, ninth) = (nine[0].a, nine[1].a);
+    assert_eq!((nine[0].op, nine[1].op), (store_f, store_v));
+    // The struct's second and third pieces come from the same two globals.
+    let take7 = body(&p, "take7");
+    assert_eq!(
+        [(take7[0].op, take7[0].a), (take7[1].op, take7[1].a)],
+        [(store_v, eighth), (store_v, ninth)]
+    );
+    let t = body(&p, "t");
+    let calls: Vec<usize> = (0..t.len())
+        .filter(|&at| t[at].op == number(Op::Call8h))
+        .collect();
+    assert_eq!(calls.len(), 2, "{t:?}");
+    // The ninth and tenth arguments are stored to the globals, last before the call.
+    let first = calls[0];
+    assert_eq!(
+        [
+            (t[first - 2].op, t[first - 2].b),
+            (t[first - 1].op, t[first - 1].b)
+        ],
+        [(store_f, eighth), (store_v, ninth)]
+    );
+    // The struct's pieces are copied first, to the eighth slot and the two globals.
+    let font = global(&p, "g1");
+    let pieces: Vec<(i32, i32)> = t[first + 2..first + 5].iter().map(|s| (s.a, s.b)).collect();
+    assert_eq!(pieces, [(font, 25), (font + 3, eighth), (font + 6, ninth)]);
+}
+
+// spec FTEF-19.83: a member named again in designated braces is already initialised
+#[test]
+fn a_member_named_twice_is_already_initialised() {
+    let compiled = compile_fteqcc(
+        "#pragma target fte\ntypedef struct { float x; float y; } pair_t;\n\
+         var pair_t g = { .y = 1, .y = 2 };\n",
+    );
+    let Err(CompileError::Diagnostics(diagnostics)) = compiled else {
+        panic!("it compiled");
+    };
+    assert!(
+        diagnostics.iter().any(|d| d
+            .diagnostic
+            .message
+            .ends_with(".y was already ininitialised")),
+        "{diagnostics:?}"
+    );
+}

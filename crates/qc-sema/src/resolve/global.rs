@@ -242,6 +242,7 @@ impl<'a> Resolver<'a> {
             && kind == DefKind::Field;
         if let Some(facts) = self.fact_mut(id) {
             facts.constant = constant;
+            facts.saved = decl.saved;
             facts.array = decl.array;
             facts.params = decl.params.to_vec();
             facts.field_component = field_component;
@@ -897,6 +898,8 @@ impl<'a> Resolver<'a> {
             origin: Origin::Source,
             checked: true,
             constant: Self::constant_at_file_level(decl),
+            // `if (!nosave) gd_flags |= GDF_SAVED;`
+            saved: !decl.has(&Qualifier::Nosave),
             array: self.array_of(decl),
             params: &decl.params,
             statics,

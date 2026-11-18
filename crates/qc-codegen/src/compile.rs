@@ -726,12 +726,15 @@ impl<'a> Compiler<'a> {
             i32::try_from(function_type.params.len())
                 .map_err(|_| Abort::Internal(Internal::TooLarge, span))?
         };
-        let mut parm_size = [0_u8; 8];
-        for (size, param) in parm_size.iter_mut().zip(&function_type.params) {
-            // `funcs[i].parm_size[p++] = size;`, each parameter's own words (FTEF-19.81).
-            let words = type_words(self.index, &ValueType::Of(param.clone()));
-            *size = u8::try_from(words).map_err(|_| Abort::Internal(Internal::TooLarge, span))?;
-        }
+        let (mut parm_size, taken) = self.parameter_sizes(&function_type, span)?;
+        // `funcs[i].numparms = p;`: the slots the record sizes, more than the parameters where
+        // one took several and at most eight under FTEQCC, whose record has no more.
+        let params = i32::try_from(function_type.params.len()).unwrap_or(i32::MAX);
+        let numparms = if self.dialect.has_fteqcc_extensions() && taken != params {
+            taken
+        } else {
+            numparms
+        };
         let mut locals = self
             .locals_end
             .checked_sub(locals_start)
@@ -789,8 +792,7 @@ impl<'a> Compiler<'a> {
     /// The global of parameter slot `u`: `OFS_PARM0 + 3 * u` for the first eight, after them
     /// FTEQCC's `$parmN` global, made the first time it is needed (FTE-18.6).
     pub(super) fn parameter_slot(&mut self, u: usize, span: Span) -> Lowered<u32> {
-        const MAX_PARMS: usize = 8;
-        if u < MAX_PARMS {
+        if u < RECORD_PARMS {
             return parm_slot(u).at(span);
         }
         if let Some(&slot) = self.extra_parms.get(&u) {
@@ -972,6 +974,37 @@ impl<'a> Compiler<'a> {
         literal_of(&only, self.dialect).filter(|literal| matches!(literal, Literal::String(_)))
     }
 
+    /// The sizes a function's record gives its parameters and the slots they take:
+    /// `funcs[i].parm_size[p++] = size;`, each parameter's own words (FTEF-19.81), and for one
+    /// of more than a vector's a slot for each three, `for (; size > 3 && p < MAX_PARMS; size
+    /// -= 3) funcs[i].parm_size[p++] = 3;` (FTEF-32.25).
+    fn parameter_sizes(
+        &self,
+        function_type: &qc_sema::FunctionType,
+        span: Span,
+    ) -> Lowered<([u8; RECORD_PARMS], i32)> {
+        let mut parm_size = [0_u8; RECORD_PARMS];
+        let mut slots = parm_size.iter_mut();
+        let mut taken: i32 = 0;
+        for param in &function_type.params {
+            let mut words = type_words(self.index, &ValueType::Of(param.clone()));
+            while words > VECTOR_WORDS {
+                let Some(size) = slots.next() else {
+                    break;
+                };
+                *size = VECTOR_SLOT;
+                words = words.saturating_sub(VECTOR_WORDS);
+                taken = taken.saturating_add(1);
+            }
+            if let Some(size) = slots.next() {
+                *size =
+                    u8::try_from(words).map_err(|_| Abort::Internal(Internal::TooLarge, span))?;
+                taken = taken.saturating_add(1);
+            }
+        }
+        Ok((parm_size, taken))
+    }
+
     /// FTEF-19.81: the two words the model folded the initialiser of the definition `id`, at
     /// `place`, to, when its type is a C scalar of two words.
     fn wide_value(&self, place: usize, id: DefId) -> Option<Vec<u32>> {
@@ -993,6 +1026,13 @@ impl<'a> Compiler<'a> {
         let ValueType::Of(ty) = &self.program.def(place)?.ty else {
             return None;
         };
+        self.scalar_literal_of(ty, expr)
+    }
+
+    /// FTE-15.8, FTEF-19.81: the words the number literal `expr` converts to as a value of
+    /// the C scalar type `ty`, a global's or an aggregate's item's; `None` for any other type
+    /// or expression.
+    pub(super) fn scalar_literal_of(&self, ty: &Type, expr: &ast::Expr) -> Option<Vec<u32>> {
         let Some(Literal::Float(value)) = literal_of(expr, self.dialect) else {
             return None;
         };
@@ -1164,6 +1204,12 @@ enum FunctionInit<'t> {
 const VA_COUNT: u32 = 24;
 /// A vector's words, `qc-types`' `PROGS_VECTOR_SLOTS`, as a definition's size.
 const VECTOR_WORDS: u32 = 3;
+
+/// The parameters a function's record holds a size for, `MAX_PARMS`.
+const RECORD_PARMS: usize = 8;
+
+/// The words of one parameter slot, as a function's record holds a parameter's size.
+const VECTOR_SLOT: u8 = 3;
 /// The radix of a literal written `0x`.
 const HEX_RADIX: u32 = 16;
 

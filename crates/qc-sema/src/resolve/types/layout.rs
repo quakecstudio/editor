@@ -248,6 +248,9 @@ impl Resolver<'_> {
             if self.facts.get(i).is_some_and(|f| f.constant) {
                 self.index.constants.insert(DefId::new(i));
             }
+            if self.facts.get(i).is_some_and(|f| f.saved) {
+                self.index.saved.insert(DefId::new(i));
+            }
             pending.push(def.ty.clone());
             // A pointer's target, which `->` reads members of (FTEF-4.1).
             if let Type::Pointer(target) = &def.ty {

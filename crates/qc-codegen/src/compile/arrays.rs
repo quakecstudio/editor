@@ -550,6 +550,20 @@ impl Compiler<'_> {
             && let Some(shape) = self.index.struct_shape(t).cloned()
         {
             let aggregate = ast::AggregateInit::cast(item.clone()).at(span)?;
+            // FTEF-19.83: designated braces give each member they name its value, where it
+            // is in the struct; a member they do not name holds 0.
+            let names = aggregate.designated_names();
+            if !names.is_empty() {
+                for (name, value) in names.iter().zip(aggregate.syntax().children()) {
+                    let member = shape.members.iter().find(|m| m.name == *name).at(span)?;
+                    if member.count != 1 {
+                        return Err(Abort::Internal(Internal::Unsupported, span));
+                    }
+                    let to = at.checked_add(member.word).at(span)?;
+                    self.item_words(&ValueType::Of(member.ty.clone()), &value, words, to)?;
+                }
+                return Ok(());
+            }
             if aggregate.syntax().children().count() > shape.members.len() {
                 return Err(Abort::Internal(Internal::Unsupported, span));
             }
@@ -576,6 +590,17 @@ impl Compiler<'_> {
     /// literal's, a null's (zeros), or a constant's (FTE-13.10).
     pub(super) fn value_words(&mut self, ty: &ValueType, expr: &ast::Expr) -> Lowered<Vec<u32>> {
         let span = expr.syntax().span();
+        // FTEF-34.9: what the semantic model folded the item to, converted to its type, is the
+        // value, whatever it is written as.
+        if let Some(folded) = self.index.item_value(self.file, span.start) {
+            return Ok(folded.words().to_vec());
+        }
+        // FTE-15.8: a number in a C scalar's place is the words it converts to.
+        if let ValueType::Of(scalar) = ty
+            && let Some(words) = self.scalar_literal_of(scalar, expr)
+        {
+            return Ok(words);
+        }
         Ok(match literal_of(expr, self.dialect) {
             Some(literal) if literal.ty().etype() == ty.etype() => {
                 self.program.literal_words(&literal).at(span)?
@@ -590,12 +615,7 @@ impl Compiler<'_> {
                 ]
             }
             Some(_) => return Err(Abort::Internal(Internal::Unsupported, span)),
-            // FTEF-34.9: an item of a global's aggregate that is an expression, as the semantic
-            // model folded it.
-            None => match self.index.item_value(self.file, span.start) {
-                Some(folded) => folded.words().to_vec(),
-                None => self.constant_words(ty, expr)?,
-            },
+            None => self.constant_words(ty, expr)?,
         })
     }
 

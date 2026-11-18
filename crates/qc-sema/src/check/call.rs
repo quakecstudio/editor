@@ -410,6 +410,12 @@ impl Checker<'_> {
             let Some(reference) = reference.as_ref().filter(|_| comes_back) else {
                 continue;
             };
+            // An out parameter in a slot from the ninth on is not followed: FTEQCC reads it
+            // past the eight slots (`d.sym = &def_parms[parm]` with no `$parmN`).
+            if slot > u32::from(MAX_PARMS) && !self.global {
+                self.followed = false;
+                continue;
+            }
             if reference.readonly {
                 let message = "Unable to write to read-only out argument".to_owned();
                 self.env.report(Code::E0339, span, message);
@@ -419,6 +425,28 @@ impl Checker<'_> {
                 parameter: u8::try_from(held).ok(),
                 ..Value::of(reference.ty.clone())
             };
+            // FTEF-32.25: one of more than a vector's words comes back a piece from each slot,
+            // to a definition's words.
+            if let Some(wide) = self.wide_words(&reference.ty).filter(|_| !self.global) {
+                let to = reference
+                    .name()
+                    .filter(|name| matches!(name, ir::Name::Def(..)))
+                    .filter(|_| reference.reference == Reference::Global);
+                match (to, self.slot_pieces(wide, span)) {
+                    (Some(to), Some(pieces)) => {
+                        for (piece, (op, word)) in (0_u32..).zip(pieces) {
+                            let from = u8::try_from(held.saturating_add(piece)).ok();
+                            self.generated.push(ir::BodyStatement {
+                                a: from.map(ir::Name::Parameter),
+                                b: to.word(word),
+                                ..ir::BodyStatement::bare(op)
+                            });
+                        }
+                    }
+                    _ => self.followed = false,
+                }
+                continue;
+            }
             if !self.global {
                 self.update_stores(reference, &returned, &reference.ty, span)?;
             }
@@ -506,26 +534,10 @@ impl Checker<'_> {
         if self.global {
             return None;
         }
-        // FTEF-9.24: `oself = self; self = object;`, and an argument that names `self`
-        // names the kept one (`arglist[i]->base = oself`).
-        let this = self.env.helper("self");
-        let kept = match (newself, this) {
-            (Some(object), Some(this)) => {
-                let kept = self.next_made();
-                self.generated.push(ir::BodyStatement {
-                    a: Some(ir::Name::Def(this, 0)),
-                    b: Some(ir::Name::Made(kept)),
-                    ..ir::BodyStatement::bare(Op::StoreEnt)
-                });
-                self.generated.push(ir::BodyStatement {
-                    a: Some(object),
-                    b: Some(ir::Name::Def(this, 0)),
-                    ..ir::BodyStatement::bare(Op::StoreEnt)
-                });
-                Some((this, kept))
-            }
-            _ => None,
-        };
+        let (wide, slot_of, slots) = self.argument_slots(values, passed);
+        let slot_at = |at: usize| slot_of.get(at).copied().unwrap_or(at);
+        // FTEF-9.24: an argument that names `self` names the kept one.
+        let kept = self.keep_self(newself);
         let renamed = |name: Option<ir::Name>| match (name, kept) {
             (Some(ir::Name::Def(def, 0)), Some((this, kept))) if def == this => {
                 Some(ir::Name::Made(kept))
@@ -538,7 +550,9 @@ impl Checker<'_> {
         let mut operands: [Option<ir::Name>; REGISTER_PARMS] = [None; REGISTER_PARMS];
         // `copyop[2] = OP_LOAD_V; copyop[0] = OP_LOAD_F;`: by the field's size, not its type.
         for field in field_loads.iter().filter(|field| field.slot < passed) {
-            let register = registers.then(|| operands.get_mut(field.slot)).flatten();
+            let register = registers
+                .then(|| operands.get_mut(slot_at(field.slot)))
+                .flatten();
             let slot = match &register {
                 // The field is loaded to a value of its own, which the call reads.
                 Some(_) => {
@@ -547,7 +561,9 @@ impl Checker<'_> {
                         .ok()
                         .map(ir::Name::Made)
                 }
-                None => u8::try_from(field.slot).ok().map(ir::Name::Parameter),
+                None => u8::try_from(slot_at(field.slot))
+                    .ok()
+                    .map(ir::Name::Parameter),
             };
             let in_register = register.is_some();
             if let Some(register) = register {
@@ -580,8 +596,20 @@ impl Checker<'_> {
         // FTE-18.12: only the first store can fold, into the statement that made its
         // value; every later one follows a store or a load.
         let mut first = field_loads.iter().all(|field| field.slot >= passed);
-        for (slot, value) in values.iter().take(passed).enumerate() {
-            if unpassed.get(slot).copied().unwrap_or(false) {
+        // FTEF-32.25: an argument in pieces is copied as it is read, before the others are
+        // stored.
+        for (at, value) in values.iter().take(passed).enumerate() {
+            let pieces = wide.get(at).copied().flatten();
+            if let Some(words) = pieces.filter(|_| !unpassed.get(at).copied().unwrap_or(false)) {
+                let from = renamed(self.name_of(value));
+                let registers = registers.then_some(&mut operands);
+                self.wide_argument(from, words, slot_at(at), registers, span);
+                first = false;
+            }
+        }
+        for (at, value) in values.iter().take(passed).enumerate() {
+            let slot = slot_at(at);
+            if unpassed.get(at).copied().unwrap_or(false) {
                 // `args[parm++].ref = nullsref;`: an operand of the call's is written as none.
                 if let Some(register) = registers.then(|| operands.get_mut(slot)).flatten() {
                     *register = Some(ir::Name::Count(0));
@@ -590,22 +618,25 @@ impl Checker<'_> {
             }
             // FTEF-10.14: the value an accessor's store was given stays readable after the
             // call, so a call's value is copied out of the return global before it.
-            if value.returned && kept_value != Some(slot) {
+            if value.returned && kept_value != Some(at) {
                 self.live_return = None;
             }
-            if field_loads.iter().any(|field| field.slot == slot) {
+            if field_loads.iter().any(|field| field.slot == at) {
+                continue;
+            }
+            if wide.get(at).copied().flatten().is_some() {
                 continue;
             }
             let words = self.env.layout(&value.ty).map_or(1, |l| l.words);
             if let Some(register) = registers.then(|| operands.get_mut(slot)).flatten() {
-                *register = if defaulted.get(slot).copied().unwrap_or(false) {
-                    u8::try_from(slot).ok().map(ir::Name::Default)
+                *register = if defaulted.get(at).copied().unwrap_or(false) {
+                    u8::try_from(at).ok().map(ir::Name::Default)
                 } else {
                     renamed(self.name_of(value))
                 };
                 continue;
             }
-            let vector = words == VECTOR_WORDS || function.is_variant_parameter(slot);
+            let vector = words == VECTOR_WORDS || function.is_variant_parameter(at);
             let folded = first && value.temp.is_some() && value.temp == self.last_temp;
             first = false;
             if folded {
@@ -615,8 +646,8 @@ impl Checker<'_> {
             if !folded {
                 // An empty slot's value is its parameter's default, which the code generator
                 // reads (FTE-18.7).
-                let from = if defaulted.get(slot).copied().unwrap_or(false) {
-                    u8::try_from(slot).ok().map(ir::Name::Default)
+                let from = if defaulted.get(at).copied().unwrap_or(false) {
+                    u8::try_from(at).ok().map(ir::Name::Default)
                 } else {
                     renamed(self.name_of(value))
                 };
@@ -627,33 +658,17 @@ impl Checker<'_> {
                 });
             }
         }
-        // FTE-18.7: each parameter after the arguments that takes its default is stored it,
-        // named as the default, which the code generator reads; which defaults it keeps under
-        // autoprototyping (FTE-18.8) the model does not know.
-        for slot in values.len()..passed {
-            let words = function
-                .params
-                .get(slot)
-                .and_then(|param| self.env.layout(param))
-                .map_or(1, |l| l.words);
-            let vector = words == VECTOR_WORDS || function.is_variant_parameter(slot);
-            if let Some(register) = registers.then(|| operands.get_mut(slot)).flatten() {
-                *register = u8::try_from(slot).ok().map(ir::Name::Default);
-                continue;
-            }
-            let slot = u8::try_from(slot).ok();
-            self.generated.push(ir::BodyStatement {
-                a: slot.map(ir::Name::Default),
-                b: slot.map(ir::Name::Parameter),
-                ..ir::BodyStatement::bare(if vector { Op::StoreV } else { Op::StoreF })
-            });
-        }
+        let after = (values.len()..passed).map(|at| (at, slot_at(at)));
+        self.default_arguments(function, after, registers.then_some(&mut operands));
         let call = if registers {
             Op::CALLS_BY_OPERANDS
         } else {
             Op::CALLS
         };
-        if let Some(&call) = call.get(passed) {
+        // The call's count is its slots, more than its arguments where one took several, and
+        // at most eight: the slots after them are `$parmN` globals (FTE-18.6).
+        let count = slots.min(usize::from(MAX_PARMS));
+        if let Some(&call) = call.get(count) {
             self.clobber_return();
             let [b, c] = operands;
             self.generated.push(ir::BodyStatement {
@@ -665,6 +680,163 @@ impl Checker<'_> {
             self.last_temp = None;
         }
         kept.map(|(_, kept)| kept)
+    }
+
+    /// FTE-18.7: each parameter of `function` after the arguments that takes its default,
+    /// `after` its place and its slot, is stored it, named as the default, which the code
+    /// generator reads; which defaults it keeps under autoprototyping (FTE-18.8) the model
+    /// does not know. One whose slot is one of the call's operands, `registers`, is read
+    /// where it is.
+    fn default_arguments(
+        &mut self,
+        function: &FunctionType,
+        after: impl Iterator<Item = (usize, usize)>,
+        mut registers: Option<&mut [Option<ir::Name>; REGISTER_PARMS]>,
+    ) {
+        for (at, slot) in after {
+            let words = function
+                .params
+                .get(at)
+                .and_then(|param| self.env.layout(param))
+                .map_or(1, |l| l.words);
+            let vector = words == VECTOR_WORDS || function.is_variant_parameter(at);
+            let default = u8::try_from(at).ok().map(ir::Name::Default);
+            let register = registers
+                .as_mut()
+                .and_then(|operands| operands.get_mut(slot));
+            if let Some(register) = register {
+                *register = default;
+                continue;
+            }
+            self.generated.push(ir::BodyStatement {
+                a: default,
+                b: u8::try_from(slot).ok().map(ir::Name::Parameter),
+                ..ir::BodyStatement::bare(if vector { Op::StoreV } else { Op::StoreF })
+            });
+        }
+    }
+
+    /// FTEF-9.24: `oself = self; self = object;` before a call through `object`, an object
+    /// that is not `self`: `self`'s definition and the statement that kept it, from which it
+    /// is restored after the call (`arglist[i]->base = oself`).
+    fn keep_self(&mut self, object: Option<ir::Name>) -> Option<(crate::DefId, u32)> {
+        let (object, this) = (object?, self.env.helper("self")?);
+        let kept = self.next_made();
+        self.generated.push(ir::BodyStatement {
+            a: Some(ir::Name::Def(this, 0)),
+            b: Some(ir::Name::Made(kept)),
+            ..ir::BodyStatement::bare(Op::StoreEnt)
+        });
+        self.generated.push(ir::BodyStatement {
+            a: Some(object),
+            b: Some(ir::Name::Def(this, 0)),
+            ..ir::BodyStatement::bare(Op::StoreEnt)
+        });
+        Some((this, kept))
+    }
+
+    /// FTEF-32.25: for the first `passed` of the arguments `values`, the words of each that
+    /// is passed in pieces, the parameter slot each starts at, one for an argument and one
+    /// for each three words of one in pieces, and the slots they take together.
+    fn argument_slots(
+        &self,
+        values: &[Value],
+        passed: usize,
+    ) -> (Vec<Option<u32>>, Vec<usize>, usize) {
+        let wide: Vec<Option<u32>> = (0..passed)
+            .map(|at| values.get(at).and_then(|value| self.wide_words(&value.ty)))
+            .collect();
+        let mut slot_of: Vec<usize> = Vec::with_capacity(passed);
+        let mut slots: usize = 0;
+        for words in &wide {
+            slot_of.push(slots);
+            let taken = words.map_or(1, |words| {
+                usize::try_from(words.div_ceil(VECTOR_WORDS)).unwrap_or(1)
+            });
+            slots = slots.saturating_add(taken);
+        }
+        (wide, slot_of, slots)
+    }
+
+    /// FTEF-32.25: the argument `from` of `words` words copied a piece to a slot from `slot`
+    /// on: to a value of its own where the slot is one of the call's operands, `registers`.
+    /// One that is no definition's or statement's words, or whose pieces do not each start a
+    /// slot, is not followed.
+    fn wide_argument(
+        &mut self,
+        from: Option<ir::Name>,
+        words: u32,
+        slot: usize,
+        mut registers: Option<&mut [Option<ir::Name>; REGISTER_PARMS]>,
+        span: Span,
+    ) {
+        let from = from.filter(|name| matches!(name, ir::Name::Def(..) | ir::Name::Made(_)));
+        let (Some(from), Some(pieces)) = (from, self.slot_pieces(words, span)) else {
+            self.followed = false;
+            return;
+        };
+        for (piece, (op, word)) in pieces.into_iter().enumerate() {
+            let slot = slot.saturating_add(piece);
+            let register = registers
+                .as_mut()
+                .and_then(|operands| operands.get_mut(slot));
+            let to = match register {
+                Some(register) => {
+                    let copy = u32::try_from(self.generated.len()).ok();
+                    *register = copy.map(ir::Name::Made);
+                    *register
+                }
+                None => u8::try_from(slot).ok().map(ir::Name::Parameter),
+            };
+            self.generated.push(ir::BodyStatement {
+                a: from.word(word),
+                b: to,
+                ..ir::BodyStatement::bare(op)
+            });
+        }
+        self.last_temp = None;
+    }
+
+    /// FTEF-32.25: the words of `ty` when it is a struct or union of more than a vector's,
+    /// which is passed and stored back in pieces, a parameter's slot for each three words.
+    pub(super) fn wide_words(&self, ty: &Type) -> Option<u32> {
+        let aggregate = matches!(self.etype_of(ty), Some(Etype::Struct | Etype::Union));
+        self.env
+            .layout(ty)
+            .map(|layout| layout.words)
+            .filter(|&words| aggregate && words > VECTOR_WORDS)
+    }
+
+    /// FTEF-32.25: the pieces a value of `words` words is copied in, each its opcode and the
+    /// word it starts at: three words by `OP_STORE_V`, and what is left by `OP_STORE_I64` for
+    /// two on a target with it, else a word at a time by `OP_STORE_F` (`asz = 3-(ofs%3)`,
+    /// lowered while the target has no opcode of the size).
+    pub(super) fn pieces(&self, words: u32, span: Span) -> Vec<(Op, u32)> {
+        let wide = self.env.target_at(span.start).valid(Op::StoreI64);
+        let mut pieces = Vec::new();
+        let mut at = 0;
+        while at < words {
+            let in_slot = VECTOR_WORDS.saturating_sub(at.checked_rem(VECTOR_WORDS).unwrap_or(0));
+            let (op, size) = match in_slot.min(words.saturating_sub(at)) {
+                VECTOR_WORDS => (Op::StoreV, VECTOR_WORDS),
+                2 if wide => (Op::StoreI64, 2),
+                _ => (Op::StoreF, 1),
+            };
+            pieces.push((op, at));
+            at = at.saturating_add(size);
+        }
+        pieces
+    }
+
+    /// FTEF-32.25: [`Checker::pieces`] when each starts a parameter's slot, which is all the
+    /// body's statements name: `None` where a word is left in the middle of one, two words
+    /// with no `OP_STORE_I64`.
+    pub(super) fn slot_pieces(&self, words: u32, span: Span) -> Option<Vec<(Op, u32)>> {
+        let pieces = self.pieces(words, span);
+        pieces
+            .iter()
+            .all(|(_, word)| word.is_multiple_of(VECTOR_WORDS))
+            .then_some(pieces)
     }
 
     /// `random()`, `random(scale)` and `random(low, high)`: each argument made a float, of
@@ -788,24 +960,11 @@ impl Checker<'_> {
             }
             // Copied as it is read, three words at a time, by the widest store the target has
             // for what is left of them, each three a parameter of its own.
-            let mut at: u32 = 0;
-            while at < words {
-                let left_in_parm =
-                    VECTOR_WORDS.saturating_sub(at.checked_rem(VECTOR_WORDS).unwrap_or(0));
-                let mut size = left_in_parm.min(words.saturating_sub(at));
-                if size == 2 && !target.valid(Op::StoreI64) {
-                    size = 1;
-                }
-                let store = match size {
-                    3 => Op::StoreV,
-                    2 => Op::StoreI64,
-                    _ => Op::StoreF,
-                };
+            for (store, at) in self.pieces(words, span) {
                 if at.is_multiple_of(VECTOR_WORDS) {
                     parms = parms.saturating_add(1);
                 }
                 self.generate(store, span);
-                at = at.saturating_add(size);
             }
         }
         let first = if registers { 2 } else { 0 };

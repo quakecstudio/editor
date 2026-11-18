@@ -3837,6 +3837,36 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   three `STORE_I64` of two-word constants. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qccmain.c`,
   `QCC_WriteData`, and its output as built for the oracles.
+- **FTEF-19.82** A global is saved, `DEF_SAVEGLOBAL` in its record's type, when FTEQCC was
+  asked to save it and does not hold it constant, and the record is no field's (`if (
+  def->saved && !def->constant && def->type->type != ev_field && def->scope == NULL) dd->type |=
+  DEF_SAVEGLOBAL;`). It is asked to save what the program declares with no `nosave` (`if
+  (!nosave) gd_flags |= GDF_SAVED;` in `QCC_PR_ParseDefs`), each element of an array but not its
+  head (`def->saved = (!arraysize || a>=0) && !!(flags & GDF_SAVED);`) and each member of a
+  struct but not its header (`def->saved = false; //struct headers don't get saved.`); not a
+  vector's components (`(flags&~GDF_SAVED) | GDF_STRIP`), nor a definition it makes itself, an
+  immediate, a translated string's global or the global an `autocvar` call makes
+  (`QCC_PR_GetSRef(e.cast, autocvarname, NULL, true, 0, GDF_USED)`). Run on the pinned FTEQCC
+  with `-Tfte`: `float plain;`, `var float vf = 4;`, `var void(void) fp = fa;`, `float arru[3];`
+  and `void end_sys_fields;` are saved (`0x8002`, `0x8002`, `0x8006`, each `arru[i]` `0x8002`,
+  `0x8000`); `float cf = 5;`, `const float cu;`, `nosave float nsu;`, `nosave var float nsv =
+  3;` and `autocvar_baz` are not; of `mix_t g;` with a float, a field and a function member,
+  `g.x` is `0x8002` and `g.fld` `0x5`; and each `g_arr[i]` of a struct array is the header
+  `0xe` with its members saved. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qccmain.c`,
+  `QCC_WriteData`; `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseDefs`, `QCC_PR_GetDef`.
+- **FTEF-19.83** In a global's designated braces each element is the value of the member it
+  names, wherever the member is in the struct, read as that member's type (`tp =
+  QCC_PR_FindStructMember(type, mname, &def.ofs, &reloffset); ... def.cast = tp->type; ret &=
+  QCC_PR_ParseInitializerType(tp->arraysize, basedef, def, bitofs+reloffset, flags);`), and a
+  member no element names holds 0. A number in the place of a C scalar is the words it converts
+  to (FTE-15.8), and a vector written in brackets the vector it folds to (FTEF-34.9): `var S g =
+  { .n = 3, .v = [1, 2, 3] };` of `struct { string s; int n; vector v; }` holds an empty string,
+  the integer 3 and the vector. A member named again, or a second member of a union, is the
+  fatal error `E0355` "TYPE.NAME was already ininitialised" (`if (isinited[def.ofs] &
+  (1u<<reloffset)) QCC_PR_ParseError (ERR_EXPECTED, "%s.%s was already ininitialised",
+  type->name, mname);`). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseInitializerType_Internal`.
 
 ## FTEF-20 Keywords
 
@@ -5555,6 +5585,15 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   read or stored at it: `f = m_v[i]` in a method is `BOUNDCHECK i, 3`, `LOADA_FLD m_v, i, temp`
   and `LOAD_F self, temp, f`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`.
+- **FTEF-31.27** A vector that is a call's value or a statement's result, indexed by a
+  constant, is that word of the return global or of the temporary (`/*array notation on
+  vector*/ ... t = type_float;`, the index added to the reference's offset), with no statement
+  of its own. Run on the pinned FTEQCC with `-Tfte`: `w = size()[1] - 120` is `CALL0 size` and
+  `SUB_F OFS_RETURN+1, 120, w`; `w = (gv * 2)[2]` is `MUL_VF gv, 2, temp` and `STORE_F temp+2,
+  w`; and in `h = size()[0] + size()[1]` the first call's vector is copied out of the return
+  global before the second call (FTE-18.13), `STORE_V OFS_RETURN, temp`, then `ADD_F temp,
+  OFS_RETURN+1, h`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`.
 
 ## FTEF-32 Calls
 
@@ -5786,6 +5825,38 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   `STORE_V OFS_PARM2, lv` and `STORE_F OFS_RETURN, gf`. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_GenerateFunctionCallRef`, `PR_GenerateReturnOuts`, `QCC_PR_FinaliseFunction`.
+- **FTEF-32.25** A struct or union of more than a vector's words takes a parameter's slot for
+  each three words. A function's record counts those slots and gives each three words but the
+  last, which has what is left (`for (; size > 3 && p < MAX_PARMS; size -= 3)
+  funcs[i].parm_size[p++] = 3; ... funcs[i].parm_size[p++] = size; ... funcs[i].numparms = p;`):
+  a parameter of 9 words is `numparms` 3 with sizes 3, 3 and 3. A call copies the argument a
+  piece at a time, `OP_STORE_V` for three words and `OP_STORE_I64` or `OP_STORE_F` for what is
+  left (`asz = 3-(ofs%3)`), each piece to its slot, or on a target with `OP_CALL1H` to a
+  temporary that is the call's operand where the slot is one of the first two, and the call's
+  opcode counts the slots. An out parameter of such a type is stored to its slots where the
+  function returns and back from them after the call the same way (FTEF-32.24). Run on the
+  pinned FTEQCC with `-Tfte`, a `font_s` of 9 words: `id(g_font)` is `STORE_V g_font, temp_0`,
+  `STORE_V g_font+3, temp_3`, `STORE_V g_font+6, OFS_PARM2` and `CALL3H id, temp_0, temp_3`;
+  `load("a", g_font)` of `void load(string f, font_s &fnt)` is `STORE_V g_font, temp_0`,
+  `STORE_V g_font+3, OFS_PARM2`, `STORE_V g_font+6, OFS_PARM3`, `CALL4H load, "a", temp_0`,
+  then `STORE_V OFS_PARM1, g_font`, `STORE_V OFS_PARM2, g_font+3` and `STORE_V OFS_PARM3,
+  g_font+6`. The pieces are copied as the argument is read, before the other arguments are
+  stored to their slots. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_GenerateFunctionCallRef`; `engine/qclib/qccmain.c`,
+  `QCC_WriteData`.
+- **FTEF-32.26** A call's slots past the eighth are `$parmN` globals (FTE-18.6), its opcode
+  `OP_CALL8` or `OP_CALL8H`, and the function's record sizes eight parameters at most
+  (`funcs[i].numparms = p;` with `p < MAX_PARMS`). A function copies each word of a parameter
+  that is in such a slot from the slot's global as its first statements, a piece for each slot
+  by its size, which the engine does for the first eight (`//extra parms need to be explicitly
+  copied.` ... `QCC_PR_Statement (&pr_opcodes[OP_STORE_V], extra_parms[p - MAX_PARMS], parm,
+  NULL)`). Run on the pinned FTEQCC with `-Tfte`: `float nine(float a, ..., float i, vector j)`
+  starts with `STORE_F $parm8, i` and `STORE_V $parm9, j` and its record has `numparms` 8; a
+  call of it stores its ninth and tenth arguments to `$parm8` and `$parm9` and is `CALL8H`; and
+  `take7(1, ..., 7, g1)` of a 9-word struct in the eighth parameter stores `g1`'s pieces to
+  `OFS_PARM7`, `$parm8` and `$parm9`, where the function copies the last two from. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseImmediateStatements`, `QCC_PR_GenerateFunctionCallRef`.
 
 ## FTEF-33 Builtin argument checks
 
