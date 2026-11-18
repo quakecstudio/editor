@@ -299,6 +299,17 @@ impl Checker<'_> {
             }
             // A field argument of a call's entity stays referenced across later calls, which
             // the body does not follow (FTE-18.13).
+            // A struct or union of more than a vector's words is passed in pieces, a
+            // parameter's slot for each three words (`arglist[i]->cast->size > 3`), which is
+            // not followed.
+            let wide = matches!(self.etype_of(&value.ty), Some(Etype::Struct | Etype::Union))
+                && self
+                    .env
+                    .layout(&value.ty)
+                    .is_some_and(|layout| layout.words > VECTOR_WORDS);
+            if wide && !self.global {
+                self.followed = false;
+            }
             passed.push(Some(reference));
             self.record_call_path(&name, at, arg);
             values.push(value);
