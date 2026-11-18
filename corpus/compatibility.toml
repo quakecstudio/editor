@@ -38,13 +38,13 @@ issues = [193]
 
 [[gap]]
 codebase = "freecs"
-behaviour = "Not compared: mostly CSQC and MenuQC, which are not compiled yet."
-issues = [193]
+behaviour = "Not compared: written for FTE's engine under `#pragma target fte`, whose opcodes and builtins the differential's VM and mock engine do not run."
+issues = []
 
 [[gap]]
 codebase = "freehl"
-behaviour = "Not compared: mostly CSQC and MenuQC, which are not compiled yet."
-issues = [193]
+behaviour = "Not compared: written for FTE's engine under `#pragma target fte`, whose opcodes and builtins the differential's VM and mock engine do not run."
+issues = []
 
 [[gap]]
 codebase = "nzp"
