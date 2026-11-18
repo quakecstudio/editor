@@ -311,7 +311,7 @@ fn nested_run_continues_outer_after_return() {
     machine.set_global_test(100, Slot::from_i32(3));
     machine.set_global_test(101, Slot::from_i32(2));
     machine.set_global_test(102, Slot::from_f32(8.0));
-    let mut trace = Trace::new(&machine, &progs).unwrap();
+    let mut trace = Trace::new(&machine, &progs, Detail::Changes).unwrap();
     machine
         .execute_program(
             &progs,
@@ -341,8 +341,8 @@ fn nested_run_continues_outer_after_return() {
     assert_eq!(exits, 2, "both runs return");
 }
 
-// A trace of the steps alone has the records of a trace with change sets, each change set
-// empty: what a reader of the statements that ran needs, with no memory read to find it.
+// spec TRACE-3.6: a recorder asked for the steps alone writes the records of a trace with
+// change sets, in their order, each change set empty
 #[test]
 fn a_trace_of_steps_has_the_same_records_with_no_changes() {
     let bytes = nested_run_progs();
@@ -355,7 +355,7 @@ fn a_trace_of_steps_has_the_same_records_with_no_changes() {
         machine.set_global_test(100, Slot::from_i32(3));
         machine.set_global_test(101, Slot::from_i32(2));
         machine.set_global_test(102, Slot::from_f32(8.0));
-        let mut trace = Trace::with_detail(&machine, &progs, detail).unwrap();
+        let mut trace = Trace::new(&machine, &progs, detail).unwrap();
         machine
             .execute_program(
                 &progs,
@@ -526,7 +526,7 @@ mod coverage {
 
     use super::harness::{self, Func, Stmt};
     use crate::exec::{NoBuiltins, NoObserver, Observer, ServerState};
-    use crate::trace::Trace;
+    use crate::trace::{Detail, Trace};
     use crate::{ErrorKind, GlobalAccessError, Machine, MachineError, RunError};
 
     fn read(bytes: &[u8]) -> Progs<'_> {
@@ -824,7 +824,7 @@ mod coverage {
             .build();
         let progs = read(&bytes);
         let mut machine = Machine::new(&progs, 0).unwrap();
-        let mut trace = Trace::new(&machine, &progs).unwrap();
+        let mut trace = Trace::new(&machine, &progs, Detail::Changes).unwrap();
         machine
             .execute_program(&progs, ServerState::Active, &mut NoBuiltins, &mut trace, 1)
             .unwrap();
@@ -845,7 +845,7 @@ mod coverage {
             .build();
         let progs = read(&bytes);
         let mut machine = Machine::new(&progs, 0).unwrap();
-        let mut trace = Trace::new(&machine, &progs).unwrap();
+        let mut trace = Trace::new(&machine, &progs, Detail::Changes).unwrap();
         let header = trace.header();
         let text = qc_trace::Text::new(b"hi".to_vec()).unwrap();
         trace.push_string(7, text.clone());

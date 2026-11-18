@@ -122,22 +122,35 @@ fn a_cut_empties_every_body_not_kept() {
     assert!(cut(&bodies, &sources, &names(&["f", "g", "h"])).is_empty());
 }
 
-// spec DIFF-15.7: FTEQCC's getters and setters of arrays, which no body of the source is, are
-// named after the bodies so each is called for every index of its array
+// spec DIFF-15.11: an accessor is named in each group with a function that calls it, after the
+// group's functions, and the accessors no function calls are in groups of their own at the end
 #[test]
-fn the_accessors_of_arrays_are_named_for_groups_of_their_own() {
-    let graph: BTreeMap<Vec<u8>, BTreeSet<Vec<u8>>> = [
-        "ArrayGet*tab",
-        "ArraySet*tab",
-        "ArrayGetter",
-        "main",
-        "Set*tab",
+fn an_accessor_is_named_beside_the_functions_that_call_it() {
+    let mut graph: BTreeMap<Vec<u8>, BTreeSet<Vec<u8>>> = [
+        ("ArrayGet*tab", vec![]),
+        ("ArraySet*tab", vec![]),
+        ("ArrayGet*lone", vec![]),
+        ("ArrayGetter", vec![]),
+        ("last", vec!["ArrayGet*tab", "ArrayGetter"]),
     ]
     .into_iter()
-    .map(|name| (name.as_bytes().to_vec(), names(&[])))
+    .map(|(name, callees)| (name.as_bytes().to_vec(), names(&callees)))
     .collect();
-    let found: Vec<&[u8]> = accessors(&graph).collect();
-    assert_eq!(found, [b"ArrayGet*tab".as_slice(), b"ArraySet*tab"]);
+    let bodies: Vec<Vec<u8>> = (0..GROUP).map(|n| format!("f{n}").into_bytes()).collect();
+    graph.insert(bodies[0].clone(), names(&["ArraySet*tab", "ArrayGet*tab"]));
+    let mut functions: Vec<&[u8]> = bodies.iter().map(Vec::as_slice).collect();
+    functions.push(b"last");
+    let made = groups(&functions, &graph);
+    let [first, second, uncalled] = made.as_slice() else {
+        panic!("three groups, not {}", made.len());
+    };
+    assert_eq!(first.len(), GROUP + 2);
+    assert_eq!(
+        first[GROUP..],
+        [b"ArrayGet*tab".as_slice(), b"ArraySet*tab"]
+    );
+    assert_eq!(second, &[b"last".as_slice(), b"ArrayGet*tab"]);
+    assert_eq!(uncalled, &[b"ArrayGet*lone".as_slice()]);
 }
 
 // spec DIFF-15.8: a function's calls by name are the functions the globals its CALLs read

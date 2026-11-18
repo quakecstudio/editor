@@ -24,9 +24,10 @@ use crate::machine::Machine;
 pub enum Detail {
     /// Every record with its change set (TRACE-3): the trace two VMs are compared by.
     Changes,
-    /// The records with empty change sets, for a reader of which statements ran alone. Finding
-    /// a change set reads every global and every field of every edict after each statement,
-    /// most of a long run's time, so a run that never reads one does not find it.
+    /// The records with empty change sets (TRACE-3.6), for a reader of which statements ran
+    /// alone. Finding a change set reads every global and every field of every edict after
+    /// each statement, most of a long run's time, so a run that never reads one does not find
+    /// it.
     Steps,
 }
 
@@ -56,16 +57,7 @@ impl Trace {
     ///
     /// A [`qc_trace::TraceError`] when the header numbers break TRACE-2.3 (they cannot for a
     /// progs the VM loaded, since the edict layout already fits).
-    pub fn new(machine: &Machine, progs: &Progs<'_>) -> Result<Self, qc_trace::TraceError> {
-        Self::with_detail(machine, progs, Detail::Changes)
-    }
-
-    /// [`Self::new`], recording `detail` of each statement.
-    ///
-    /// # Errors
-    ///
-    /// As [`Self::new`].
-    pub fn with_detail(
+    pub fn new(
         machine: &Machine,
         progs: &Progs<'_>,
         detail: Detail,

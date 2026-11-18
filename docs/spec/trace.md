@@ -96,6 +96,11 @@ what the vectors in [`vectors/vm/`](vectors/vm/README.md) list after each statem
 - **TRACE-3.5** Only the globals and the fields are compared. The call stack, the local stack,
   the runaway counter, `pr_argc` and whether an edict is free are not in a change set; the
   differences they make show up in later globals and fields, or in the records' order.
+- **TRACE-3.6** A recorder may be asked for the steps alone: it writes the records of TRACE-4
+  in their order, every change set empty, and reads no global and no field to do so. What it
+  writes says which statements ran and is not a trace to compare with another (TRACE-3.1 does
+  not hold of it); the compiler differential's calls, which compare the globals and fields
+  themselves after each call (DIFF-12.3), record this way.
 
 ## TRACE-4 Records
 

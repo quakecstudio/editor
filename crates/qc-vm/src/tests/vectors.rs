@@ -27,7 +27,7 @@ use qc_types::Slot;
 
 use crate::Machine;
 use crate::exec::ServerState;
-use crate::trace::Trace;
+use crate::trace::{Detail, Trace};
 
 use super::harness::{Func, ProgsBuilder, Stmt, StubBuiltins, opcode_number};
 
@@ -445,7 +445,7 @@ fn run_vector(v: &Vector) -> (qc_trace::Trace, Option<crate::RunError>, Machine)
     } else {
         ServerState::Active
     };
-    let mut trace = Trace::new(&machine, &progs).unwrap();
+    let mut trace = Trace::new(&machine, &progs, Detail::Changes).unwrap();
     let result = machine.execute_program(&progs, server, &mut StubBuiltins, &mut trace, v.entry);
     let error = result.err();
     (trace.finish(), error, machine)

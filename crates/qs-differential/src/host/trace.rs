@@ -129,13 +129,9 @@ impl TraceBuilder {
     ///
     /// A [`TraceError`] when the header numbers break TRACE-2.3 (they cannot for a progs the VM
     /// loaded).
-    pub(crate) fn new(
-        machine: &Machine,
-        progs: &Progs<'_>,
-        detail: Detail,
-    ) -> Result<Self, TraceError> {
+    pub fn new(machine: &Machine, progs: &Progs<'_>, detail: Detail) -> Result<Self, TraceError> {
         Ok(Self {
-            trace: VmTrace::with_detail(machine, progs, detail)?,
+            trace: VmTrace::new(machine, progs, detail)?,
             pending_strings: Vec::new(),
         })
     }
