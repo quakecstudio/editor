@@ -202,8 +202,8 @@ check:
 (`workflow_dispatch`, a dry run), on a pushed `v*` tag, and as a dry run on a pull request that
 changes `packaging/` or either release workflow; it is **not** a required check ([releasing.md](releasing.md)). It calls the reusable
 [`.github/workflows/reusable-build.yml`](../.github/workflows/reusable-build.yml), the only
-workflow that reads the signing secrets, which builds, signs and attests every package, so each
-attestation names the reusable workflow as its signer:
+workflow that reads the Apple and Azure signing secrets, which builds, signs and attests every
+package, so each attestation names the reusable workflow as its signer:
 
 | Check | Runs on | What it does |
 | --- | --- | --- |
@@ -211,9 +211,12 @@ attestation names the reusable workflow as its signer:
 | `Build / Version` | Linux | reads the workspace version and fails a tag that does not name it |
 | `Build / Package, sign and notarize on macOS` | macOS | builds for Apple silicon, makes the app, signs it with the hardened runtime from `build.keychain`, notarizes and staples it, makes the installer package, signs it as the Developer ID Installer identity, notarizes and staples it, and attests it |
 | `Build / Package on Windows (x64, arm64)` | Windows | on a tag, signs the four executables with aas-sign (Azure Artifact Signing over OIDC) and checks each signature; makes the zip and the MSI and attests them |
-| `Build / Package on Linux (x86_64, aarch64)` | Linux | makes the deb, rpm, AppImage and Flatpak and attests them |
+| `Build / Package on Linux (x86_64, aarch64)` | Linux | makes the deb, rpm, AppImage and Flatpak, signs the rpm with the key of packages.quakecstudio.com and attests them |
 | `Install on macOS`, `Install on Windows (x64, arm64)`, `Install on Linux (x86_64, aarch64)` | each | installs each package on a clean runner and checks it with `quakec-ide doctor` |
 | `Checksums and publish` | Linux | writes `SHA256SUMS`; on a tag, publishes the GitHub release |
+| `Add to packages.quakecstudio.com` | Linux | adds the debs and rpms to a checkout of `quakecstudio/packages` and writes and signs its metadata; on a tag with no `-`, pushes it |
+| `Update the Homebrew tap` | Linux | writes the cask into a checkout of `quakecstudio/homebrew-tap`; on a tag with no `-`, pushes it |
+| `Submit to winget` | Linux | only on a tag with no `-`: opens a pull request against `microsoft/winget-pkgs` with komac; its failure does not fail the run |
 | `Regenerate the compatibility list` | Linux | writes `docs/compatibility.md` from the corpus and fails a tag whose list is out of date |
 
 [`.github/workflows/evals.yml`](../.github/workflows/evals.yml) runs the agent's evals on a real

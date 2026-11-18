@@ -7,7 +7,9 @@ name: release
 # builds and signs every package in the reusable workflow .github/workflows/reusable-build.yml,
 # which attests each one; installs each package on a clean runner and checks it there with `quakec-ide doctor`;
 # and writes SHA256SUMS. A tag also publishes the packages as a GitHub release, a pre-release
-# when the tag has a `-` (v2026.11.1-rc1), and regenerates the compatibility list. A run by
+# when the tag has a `-` (v2026.11.1-rc1), and regenerates the compatibility list. A tag
+# with no `-` then reaches the package managers too (P4-40): the debs and rpms go to
+# packages.quakecstudio.com, the cask to the Homebrew tap and the MSIs to winget. A run by
 # hand, or by a pull request that changes the packaging, is the dry run: everything but
 # publishing, the packages kept as its `release` artifact.
 on:
@@ -59,6 +61,8 @@ jobs:
       TRUSTED_SIGNING_ENDPOINT: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
       TRUSTED_SIGNING_ACCOUNT: ${{ secrets.TRUSTED_SIGNING_ACCOUNT }}
       CERTIFICATE_PROFILE: ${{ secrets.CERTIFICATE_PROFILE }}
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
   # LibreQuake's game data, which the install tests start the preview host on.
   game:
@@ -230,9 +234,13 @@ jobs:
           sleep 15
           pgrep -x quakec-studio
           pkill -x quakec-studio
+      # The rpm's signature is checked against the key packages.quakecstudio.com serves, the
+      # one a person's dnf fetches, before the rpm is installed.
       - name: Install the rpm on Fedora and check it
         run: |
           docker run --rm -v "$PWD:/work" -w /work fedora:41 bash -euc '
+            rpmkeys --import https://packages.quakecstudio.com/gpg/quakecstudio.asc
+            rpm --checksig ./dist/*.rpm
             dnf install -y ./dist/*.rpm
             quakec-ide --version
             quakec-ide doctor --check host --game librequake-lite
@@ -273,6 +281,8 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: write
+    outputs:
+      macos_sha256: ${{ steps.sums.outputs.macos_sha256 }}
     env:
       VERSION: ${{ needs.build.outputs.version }}
     steps:
@@ -281,11 +291,14 @@ jobs:
           pattern: release-*
           path: dist
           merge-multiple: true
+      # The macOS package's sum is also the Homebrew cask's.
       - name: Write SHA256SUMS
+        id: sums
         run: |
           cd dist
           sha256sum -- * > SHA256SUMS
           cat SHA256SUMS
+          echo "macos_sha256=$(awk '$2 ~ /-macos-arm64\.pkg$/ { print $1 }' SHA256SUMS)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: release
@@ -304,6 +317,171 @@ jobs:
             --title "QuakeC Studio $TAG" \
             --notes "QuakeC Studio $VERSION, built from $TAG. The source is the tag's commit; every package holds LICENSE, NOTICE and THIRD-PARTY. Check a file with \`gh attestation verify <file> --repo $REPO --signer-workflow $REPO/.github/workflows/reusable-build.yml\`. The Windows executables are signed; the MSI around them is not." \
             dist/*
+
+  # The package managers (P4-40, docs/releasing.md). Each of the three jobs below runs after
+  # the GitHub release is made, so none names a file that cannot be downloaded yet, and only
+  # a tag with no `-` publishes: a pre-release reaches none of them. The first two also run in
+  # the dry run and for a pre-release, doing everything but the push.
+
+  # The debs and rpms added to the APT and YUM/DNF repository in quakecstudio/packages, its
+  # metadata written and signed again, and the commit pushed with PACKAGES_DEPLOY_KEY, a
+  # deploy key with write access to that one repository. A push made with a deploy key,
+  # unlike one made with GITHUB_TOKEN, starts that repository's workflow, which copies it to
+  # packages.quakecstudio.com.
+  packages:
+    name: Add to packages.quakecstudio.com
+    needs: [build, release]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # One tag's push at a time; a dry run never waits on, or replaces, a tag's.
+    concurrency:
+      group: ${{ github.ref_type == 'tag' && 'release-packages' || format('release-packages-{0}', github.ref) }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      PUBLISH: ${{ github.ref_type == 'tag' && !contains(github.ref_name, '-') }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: release-linux-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/checkout@v7.0.1
+        with: # zizmor: ignore[artipacked] the deploy key pushes the commit below
+          repository: quakecstudio/packages
+          ssh-key: ${{ secrets.PACKAGES_DEPLOY_KEY }}
+          path: packages-repository
+      - name: Install the repository tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends dpkg-dev apt-utils createrepo-c
+      - name: Add the packages and sign the metadata
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: packaging/linux/repository.sh dist packages-repository
+      - name: Commit, and push on a release
+        working-directory: packages-repository
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "quakec-studio $VERSION"
+          git show --stat --format=%s HEAD
+          if [ "$PUBLISH" = true ]; then
+            git push
+          else
+            echo "not a release: the commit is not pushed"
+          fi
+
+  # packaging/homebrew/quakec-studio.rb with this release's version and the macOS package's
+  # SHA-256, written to Casks/quakec-studio.rb in quakecstudio/homebrew-tap and pushed with
+  # HOMEBREW_TAP_DEPLOY_KEY, a deploy key with write access to that one repository.
+  homebrew:
+    name: Update the Homebrew tap
+    needs: [build, release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: ${{ github.ref_type == 'tag' && 'release-homebrew' || format('release-homebrew-{0}', github.ref) }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      SHA256: ${{ needs.release.outputs.macos_sha256 }}
+      PUBLISH: ${{ github.ref_type == 'tag' && !contains(github.ref_name, '-') }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v7.0.1
+        with: # zizmor: ignore[artipacked] the deploy key pushes the commit below
+          repository: quakecstudio/homebrew-tap
+          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+          path: homebrew-tap
+      - name: Write the cask
+        run: |
+          if ! [[ "$SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::SHA256SUMS has no sum for the macOS package"
+            exit 1
+          fi
+          cask=homebrew-tap/Casks/quakec-studio.rb
+          mkdir -p homebrew-tap/Casks
+          sed -e "s/@VERSION@/$VERSION/" -e "s/@SHA256@/$SHA256/" \
+            packaging/homebrew/quakec-studio.rb > "$cask"
+          if grep -n '@[A-Z0-9]*@' "$cask"; then
+            echo "::error::the cask still has a placeholder"
+            exit 1
+          fi
+          ruby -c "$cask"
+          cat "$cask"
+      - name: Commit, and push on a release
+        working-directory: homebrew-tap
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/quakec-studio.rb
+          git commit -m "quakec-studio $VERSION"
+          git show --stat --format=%s HEAD
+          if [ "$PUBLISH" = true ]; then
+            git push
+          else
+            echo "not a release: the commit is not pushed"
+          fi
+
+  # The two MSIs submitted to winget with komac, which writes the manifests from the
+  # release's files, pushes them to the fork quakecstudio/winget-pkgs and opens a pull
+  # request against microsoft/winget-pkgs as the owner of WINGET_TOKEN. Microsoft reviews
+  # and merges that pull request in its own time, so a failure here does not fail the
+  # release, and nothing of it can run before the release's files are public: there is no
+  # dry run. komac updates a package winget already lists; the first version is submitted by
+  # hand (docs/releasing.md).
+  winget:
+    name: Submit to winget
+    if: ${{ github.ref_type == 'tag' && !contains(github.ref_name, '-') }}
+    needs: [build, release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    permissions: {}
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      KOMAC_VERSION: 2.17.2
+      KOMAC_SHA256: b03b020eec98acfb0b53e284a6e21815b884be33de6785b97e7a120f0e748966
+      KOMAC_FORK_OWNER: quakecstudio
+      KOMAC_CREATED_WITH: quakecstudio/editor release workflow
+    steps:
+      - name: Install komac
+        run: |
+          archive="komac-$KOMAC_VERSION-x86_64-unknown-linux-gnu.tar.gz"
+          curl --fail --location --silent --show-error --output "$archive" \
+            "https://github.com/russellbanks/Komac/releases/download/v$KOMAC_VERSION/$archive"
+          echo "$KOMAC_SHA256  $archive" | sha256sum --check --strict
+          tar -xzf "$archive"
+          sudo install -m755 komac /usr/local/bin/komac
+          komac --version
+      - name: Bring the fork up to date
+        env:
+          GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: komac sync-fork
+      - name: Submit the release
+        env:
+          GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          files="https://github.com/$REPO/releases/download/$TAG"
+          komac update QuakeCStudio.QuakeCStudio --version "$VERSION" \
+            --urls "$files/quakec-studio-$VERSION-windows-x64.msi" \
+            "$files/quakec-studio-$VERSION-windows-arm64.msi" \
+            --release-notes-url "https://github.com/$REPO/releases/tag/$TAG" \
+            --submit
 
   # P4-21 (COMP-9): every release regenerates the compatibility list from the conformance
   # corpus, attaches it, and fails when the list on the tagged commit is out of date, so the
