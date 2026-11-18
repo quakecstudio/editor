@@ -844,24 +844,12 @@ impl Checker<'_> {
                     let message = "(vector) array index out of bounds".to_owned();
                     return self.fatal(Code::E0333, span, message);
                 }
-                // FTEF-31.25: a vector through a pointer at a constant index is the float at
-                // the vector's word plus the index, through the same pointer.
-                if let (Reference::Pointer(pointer), Some(word)) = (
+                // FTEF-31.25: through a pointer, the float at the vector's word plus the index.
+                if let (Reference::Pointer(_), Some(word)) = (
                     &base.reference,
                     constant.and_then(|i| u32::try_from(i).ok()),
                 ) {
-                    let component = Some((word, WORD_ALIGNMENT));
-                    let index = self.member_index(pointer.index.as_ref(), component, span)?;
-                    return Ok(Value {
-                        readonly: base.readonly,
-                        name: base.name,
-                        reference: Reference::pointer(
-                            pointer.base.clone(),
-                            Some(index),
-                            pointer.named,
-                        ),
-                        ..Value::of(Type::Simple(SimpleType::Float))
-                    });
+                    return self.pointer_component(base, word, span);
                 }
                 // FTEF-31.9: a constant vector's component at a constant index is a constant,
                 // read through the vector at the index (`REF_ARRAY`), which a call does not fold
@@ -920,6 +908,22 @@ impl Checker<'_> {
                 self.fatal(Code::E0204, span, message)
             }
         }
+    }
+
+    /// FTEF-31.25: component `word` of the vector `base` reads through a pointer: the float at
+    /// the vector's word plus `word`, through the same pointer.
+    fn pointer_component(&mut self, base: Value, word: u32, span: Span) -> Checked {
+        let Reference::Pointer(pointer) = &base.reference else {
+            return Ok(base);
+        };
+        let component = Some((word, WORD_ALIGNMENT));
+        let index = self.member_index(pointer.index.as_ref(), component, span)?;
+        Ok(Value {
+            readonly: base.readonly,
+            reference: Reference::pointer(pointer.base.clone(), Some(index), pointer.named),
+            name: base.name,
+            ..Value::of(Type::Simple(SimpleType::Float))
+        })
     }
 
     /// The length of the array `head` names bare: a member array's as its struct declares it,
