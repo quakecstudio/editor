@@ -8,6 +8,7 @@
 //! it is over budget or more than 10% slower than the last passing run on the
 //! same host. Pending budgets run but are not checked.
 
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -472,13 +473,13 @@ impl Outcome {
             .chain(self.regressions.iter().map(|line| (line, !accept)))
         {
             if !fails {
-                out.push_str(&format!("ACCEPTED  {line}\n"));
+                _ = writeln!(out, "ACCEPTED  {line}");
                 continue;
             }
             if github {
-                out.push_str(&format!("::error title=Performance budget::{line}\n"));
+                _ = writeln!(out, "::error title=Performance budget::{line}");
             }
-            out.push_str(&format!("FAIL  {line}\n"));
+            _ = writeln!(out, "FAIL  {line}");
         }
         out
     }
@@ -600,15 +601,16 @@ fn format_results(host: &Host, results: &[BenchResult], baseline: Option<&Run>) 
             Status::Pending => "pending",
             Status::Active => "active",
         };
-        out.push_str(&format!(
-            "{:<24} {status:<8} {:<6} {:>10}  budget {:>10}  last {:>10}  ({} samples)\n",
+        _ = writeln!(
+            out,
+            "{:<24} {status:<8} {:<6} {:>10}  budget {:>10}  last {:>10}  ({} samples)",
             result.benchmark,
             statistic.name(),
             format_ns(statistic.of(result)),
             format_ns(result.budget_ns),
             previous,
             result.samples
-        ));
+        );
     }
     out
 }
@@ -628,14 +630,16 @@ fn format_history(history: &History) -> String {
             (true, false) => "passed",
             (false, _) => "FAILED",
         };
-        out.push_str(&format!(
-            "{} {commit} {} {verdict}\n",
+        _ = writeln!(
+            out,
+            "{} {commit} {} {verdict}",
             utc_date(run.unix_time),
             run.host.key
-        ));
+        );
         for result in &run.results {
-            out.push_str(&format!(
-                "    {:<24} {:<7} median {:>10}  p95 {:>10}  p99 {:>10}\n",
+            _ = writeln!(
+                out,
+                "    {:<24} {:<7} median {:>10}  p95 {:>10}  p99 {:>10}",
                 result.benchmark,
                 match result.status {
                     Status::Pending => "pending",
@@ -644,7 +648,7 @@ fn format_history(history: &History) -> String {
                 format_ns(result.median_ns),
                 format_ns(result.p95_ns),
                 format_ns(result.p99_ns)
-            ));
+            );
         }
     }
     out

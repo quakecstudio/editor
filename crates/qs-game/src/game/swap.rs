@@ -95,7 +95,9 @@ impl Game {
             .ok_or_else(|| invalid("map/swap takes bsp".to_owned()))?;
         let models = models_param(params)?;
         let bsp = MapBsp::read(self.read_file(path)?).map_err(|e| invalid(e.message(path)))?;
-        self.world.check_swap(bsp.bsp(), &models).map_err(refusal)?;
+        self.world
+            .check_swap(bsp.bsp(), &models)
+            .map_err(|error| refusal(&error))?;
         Ok((bsp, models))
     }
 
@@ -109,7 +111,7 @@ impl Game {
         let swapped = self
             .world
             .swap_bsp(progs, bsp.bsp(), models)
-            .map_err(refusal)?;
+            .map_err(|error| refusal(&error))?;
         self.report_changes(progs);
         Ok(json!({ "swapped": swapped }))
     }
@@ -117,7 +119,7 @@ impl Game {
 
 /// The answer to a swap the world refused: its params for a model or an edict it cannot place
 /// (BRIDGE-4.14), the host's for a link that failed.
-fn refusal(error: SwapError) -> RpcError {
+fn refusal(error: &SwapError) -> RpcError {
     let code = match error {
         SwapError::NoSuchModel(_) | SwapError::NotPrecached(_) | SwapError::Unplaced { .. } => {
             ErrorCode::InvalidParams

@@ -209,11 +209,11 @@ impl EditorsFeature {
         &mut self,
         commands: &mut Commands<'_>,
         source: MultiSource,
-        places: Vec<(PathBuf, usize, usize)>,
+        places: &[(PathBuf, usize, usize)],
         truncation: Truncation,
     ) {
         let mut texts: Vec<(PathBuf, Vec<u8>)> = Vec::new();
-        for (path, _, _) in &places {
+        for (path, _, _) in places {
             if texts.iter().any(|(p, _)| p == path) {
                 continue;
             }
@@ -223,7 +223,7 @@ impl EditorsFeature {
                 texts.push((path.clone(), read.text.into_bytes()));
             }
         }
-        self.multibuffer.show(source, &places, truncation, |path| {
+        self.multibuffer.show(source, places, truncation, |path| {
             texts
                 .iter()
                 .find(|(p, _)| p == path)
@@ -250,7 +250,8 @@ impl EditorsFeature {
                 } else {
                     Truncation::All
                 };
-                self.show_places(commands, MultiSource::Search, places.collect(), truncation);
+                let places: Vec<_> = places.collect();
+                self.show_places(commands, MultiSource::Search, &places, truncation);
             }
             Err(error) => self.multibuffer.error = Some(error.to_string()),
         }
@@ -258,7 +259,7 @@ impl EditorsFeature {
 
     /// Shows every problem as the multibuffer's excerpts (P4-33).
     pub(crate) fn problems_as_excerpts(&mut self, commands: &mut Commands<'_>) {
-        let places = commands
+        let places: Vec<_> = commands
             .session()
             .context()
             .workbench
@@ -272,7 +273,7 @@ impl EditorsFeature {
                 )
             })
             .collect();
-        self.show_places(commands, MultiSource::Problems, places, Truncation::All);
+        self.show_places(commands, MultiSource::Problems, &places, Truncation::All);
     }
 
     /// Opens `file`, relative to the project's root, at `line`, from 1.

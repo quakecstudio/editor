@@ -109,8 +109,8 @@ struct Fields {
 }
 
 impl Fields {
-    fn push(&mut self, field: &Field, value: String) {
-        let value = escape(&value);
+    fn push(&mut self, field: &Field, value: &str) {
+        let value = escape(value);
         if field.name() == "message" {
             self.message = Some(value);
         } else {
@@ -129,7 +129,7 @@ impl Visit for Fields {
         } else {
             format!("{value:?}")
         };
-        self.push(field, value);
+        self.push(field, &value);
     }
 
     fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
@@ -139,7 +139,7 @@ impl Visit for Fields {
         } else {
             formatted
         };
-        self.push(field, value);
+        self.push(field, &value);
     }
 }
 

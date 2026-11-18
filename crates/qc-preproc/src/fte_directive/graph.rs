@@ -170,7 +170,10 @@ impl Lines {
     /// `offset` is never before the one asked for last.
     fn line(&mut self, text: &[u8], offset: usize) -> u32 {
         let between = text.get(self.at..offset).unwrap_or_default();
-        let feeds = between.iter().filter(|&&b| b == b'\n').count();
+        let feeds = between
+            .iter()
+            .map(|&b| usize::from(b == b'\n'))
+            .sum::<usize>();
         self.line = self
             .line
             .saturating_add(u32::try_from(feeds).unwrap_or(u32::MAX));

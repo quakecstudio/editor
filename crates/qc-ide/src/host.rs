@@ -459,20 +459,20 @@ impl<L: Loader> AnalysisHost<L> {
     ///
     /// As [`AnalysisHost::reload`], when `path` is a project file whose new text does not
     /// open.
-    pub fn set_overlay(&mut self, path: &Path, text: Vec<u8>) -> Result<(), ProjectError> {
+    pub fn set_overlay(&mut self, path: &Path, text: &[u8]) -> Result<(), ProjectError> {
         let path = normalize(path);
-        let before = self.overlays.insert(path.clone(), text.clone());
+        let before = self.overlays.insert(path.clone(), text.to_vec());
         if is_project_file(&path) {
             return self.reload();
         }
         let before = before.or_else(|| self.loader.load(&path).ok());
-        if before.is_some_and(|before| directive_lines(&before) != directive_lines(&text)) {
+        if before.is_some_and(|before| directive_lines(&before) != directive_lines(text)) {
             return self.read_again(Keep::OnError);
         }
         let mut found = false;
         for module in &mut self.modules {
             if let Some(file) = module.file_id(&path) {
-                module.set_text(file, text.clone());
+                module.set_text(file, text.to_vec());
                 found = true;
             }
         }

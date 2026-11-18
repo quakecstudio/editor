@@ -49,7 +49,7 @@ impl Default for HeaderSpec {
     }
 }
 
-fn header(spec: HeaderSpec) -> Header {
+fn header(spec: &HeaderSpec) -> Header {
     Header::new(
         spec.progs_crc,
         spec.edict_size,
@@ -101,7 +101,7 @@ fn step(
 /// The trace in `docs/spec/vectors/trace/`, built from its values.
 fn sample() -> Trace {
     Trace {
-        header: header(HeaderSpec::default()),
+        header: header(&HeaderSpec::default()),
         records: vec![
             Record::Run {
                 function: 1,
@@ -144,7 +144,7 @@ fn sample() -> Trace {
 
 fn header_bytes() -> Vec<u8> {
     let mut out = Vec::new();
-    encode_header(&header(HeaderSpec::default()), &mut out);
+    encode_header(&header(&HeaderSpec::default()), &mut out);
     out
 }
 
@@ -163,7 +163,7 @@ fn record_bytes(record: &Record) -> Vec<u8> {
 
 /// The JSON form with the default header and the given record lines after it.
 fn json_with(lines: &[&str]) -> String {
-    let mut out = header_to_json(&header(HeaderSpec::default()));
+    let mut out = header_to_json(&header(&HeaderSpec::default()));
     for line in lines {
         out.push_str(line);
         out.push('\n');
@@ -225,7 +225,7 @@ fn vector_values_interpret() {
 #[test]
 fn header_only_trace() {
     let trace = Trace {
-        header: header(HeaderSpec::default()),
+        header: header(&HeaderSpec::default()),
         records: Vec::new(),
     };
     let bytes = encode(&trace);
@@ -264,7 +264,7 @@ fn values_keep_every_bit() {
         .map(|(&bits, slot)| (slot, bits))
         .collect();
     let trace = Trace {
-        header: header(HeaderSpec::default()),
+        header: header(&HeaderSpec::default()),
         records: vec![Record::Exit {
             changes: globals(&pairs),
         }],
@@ -287,7 +287,7 @@ fn changes_name_slots_by_number() {
 // spec TRACE-2.1: the header keeps each of its five numbers
 #[test]
 fn header_keeps_its_numbers() {
-    let h = header(HeaderSpec {
+    let h = header(&HeaderSpec {
         progs_crc: 0xffff,
         edict_size: 1000,
         field_offset: 4,
@@ -321,7 +321,7 @@ fn other_versions_are_rejected() {
     bytes[4] = 0;
     assert_eq!(decode(&bytes), Err(TraceError::UnsupportedVersion(0)));
     let json =
-        header_to_json(&header(HeaderSpec::default())).replace("\"version\":1", "\"version\":2");
+        header_to_json(&header(&HeaderSpec::default())).replace("\"version\":1", "\"version\":2");
     assert_eq!(from_json(&json), Err(TraceError::UnsupportedVersion(2)));
     assert_eq!(TRACE_VERSION, 1);
 }
@@ -354,7 +354,7 @@ fn readers_reject_bad_headers() {
     let mut bytes = header_bytes();
     bytes[8..12].copy_from_slice(&0x1_0000u32.to_le_bytes());
     assert_eq!(decode(&bytes), Err(TraceError::BadHeader));
-    let line = header_to_json(&header(HeaderSpec::default()));
+    let line = header_to_json(&header(&HeaderSpec::default()));
     let json = line.replace("\"edict_size\":516", "\"edict_size\":515");
     assert_eq!(from_json(&json), Err(TraceError::BadHeader));
     let json = line.replace("\"progs_crc\":12345", "\"progs_crc\":65536");
@@ -882,7 +882,7 @@ fn json_record_faults() {
             "{line}"
         );
     }
-    let other = header_to_json(&header(HeaderSpec::default())).replace("qc-trace", "qc-trick");
+    let other = header_to_json(&header(&HeaderSpec::default())).replace("qc-trace", "qc-trick");
     assert_eq!(
         fault_at(from_json(&other).unwrap_err(), 1),
         Some(JsonFault::NotQcTrace)
@@ -975,10 +975,10 @@ fn json_fault_messages() {
 #[test]
 fn json_header_line() {
     assert_eq!(
-        header_to_json(&header(HeaderSpec::default())),
+        header_to_json(&header(&HeaderSpec::default())),
         "{\"trace\":\"qc-trace\",\"version\":1,\"progs_crc\":12345,\"edict_size\":516,\"field_offset\":96,\"entityfields\":105,\"numstrings\":16}\n"
     );
-    let other = header_to_json(&header(HeaderSpec::default())).replace("qc-trace", "qc-trick");
+    let other = header_to_json(&header(&HeaderSpec::default())).replace("qc-trace", "qc-trick");
     assert!(is_json_error(&from_json(&other).unwrap_err(), 1));
 }
 
@@ -1118,7 +1118,7 @@ fn json_reader_rejects_bad_records() {
         "{\"t\":\"step\",\"function\":1,\"statement\":1,\"opcode\":65536,\"globals\":[],\"fields\":[]}",
     ]);
     assert_eq!(opcode, TraceError::OpcodeOutOfRange(65536));
-    let line = header_to_json(&header(HeaderSpec::default()));
+    let line = header_to_json(&header(&HeaderSpec::default()));
     let missing = line.replace(",\"numstrings\":16", "");
     assert!(is_json_error(&from_json(&missing).unwrap_err(), 1));
     let unknown = line.replace("\"numstrings\":16", "\"numstrings\":16,\"x\":0");
@@ -1131,7 +1131,7 @@ fn json_reader_rejects_bad_records() {
 // spec TRACE-7.1: an entity value is n * edict_size exactly, n 0 or more
 #[test]
 fn entity_numbers() {
-    let h = header(HeaderSpec::default());
+    let h = header(&HeaderSpec::default());
     assert_eq!(h.entity_number(0), Some(0));
     assert_eq!(h.entity_number(516), Some(1));
     assert_eq!(h.entity_number(516 * 599), Some(599));
@@ -1140,7 +1140,7 @@ fn entity_numbers() {
     assert_eq!((-516i32).cast_unsigned(), 0xffff_fdfc);
     assert_eq!(h.entity_number(0xffff_fdfc), None);
     assert_eq!(h.entity_number(0x3f80_0000), None);
-    let one = header(HeaderSpec {
+    let one = header(&HeaderSpec {
         edict_size: 1,
         field_offset: 0,
         entityfields: 0,
@@ -1153,7 +1153,7 @@ fn entity_numbers() {
 // spec TRACE-7.2: a pointer is n * edict_size + field_offset + 4 * f, f below entityfields
 #[test]
 fn pointer_targets() {
-    let h = header(HeaderSpec::default());
+    let h = header(&HeaderSpec::default());
     assert_eq!(h.pointer_target(96), Some((0, 0)));
     assert_eq!(h.pointer_target(516 + 96 + 4 * 30), Some((1, 30)));
     assert_eq!(h.pointer_target(516 * 2 + 96 + 4 * 104), Some((2, 104)));
@@ -1161,7 +1161,7 @@ fn pointer_targets() {
     assert_eq!(h.pointer_target(516 + 95), None);
     assert_eq!(h.pointer_target(0), None);
     assert_eq!(h.pointer_target((-420i32).cast_unsigned()), None);
-    let packed = header(HeaderSpec {
+    let packed = header(&HeaderSpec {
         edict_size: 8,
         field_offset: 0,
         entityfields: 2,
@@ -1169,7 +1169,7 @@ fn pointer_targets() {
     });
     assert_eq!(packed.pointer_target(0), Some((0, 0)));
     assert_eq!(packed.pointer_target(12), Some((1, 1)));
-    let gap = header(HeaderSpec {
+    let gap = header(&HeaderSpec {
         edict_size: 600,
         ..HeaderSpec::default()
     });
@@ -1181,7 +1181,7 @@ fn pointer_targets() {
 #[test]
 fn string_values() {
     let trace = Trace {
-        header: header(HeaderSpec::default()),
+        header: header(&HeaderSpec::default()),
         records: vec![
             Record::String {
                 value: 100,
@@ -1376,7 +1376,7 @@ proptest! {
 fn reviewer_negative_engine_string_values_resolve() {
     let bits = |value: i32| value.cast_unsigned();
     let trace = Trace {
-        header: header(HeaderSpec::default()),
+        header: header(&HeaderSpec::default()),
         records: vec![
             Record::String {
                 value: bits(-1),

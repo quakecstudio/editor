@@ -212,7 +212,7 @@ mod tests {
 
     #[test]
     fn nesting_is_limited() {
-        let deep = |levels: usize| "\"k\" {".repeat(levels) + &"}".repeat(levels);
+        let deep = |levels: usize| format!("{}{}", "\"k\" {".repeat(levels), "}".repeat(levels));
         assert!(parse(&deep(MAX_DEPTH)).is_some());
         assert_eq!(parse(&deep(MAX_DEPTH + 1)), None);
     }

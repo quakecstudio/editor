@@ -3,6 +3,7 @@
 //! What touches what in an expansion (`docs/spec/language.md` QC-9.16), and the word FTEQCC
 //! reads as a macro's name (`docs/spec/dialect-fteqcc.md` FTEF-14.13).
 
+use std::fmt::Write as _;
 use std::path::Path;
 
 use super::tokens;
@@ -363,7 +364,7 @@ fn an_expansion_past_the_bound_is_reported_once() {
     let _one = super::one_bound_test_at_a_time();
     let mut text = String::from("#define A0 x\n");
     for i in 1..24 {
-        text.push_str(&format!("#define A{i} A{p} A{p}\n", p = i - 1));
+        _ = writeln!(text, "#define A{i} A{p} A{p}", p = i - 1);
     }
     text.push_str("A23 A23\n");
     let out = run(text.as_bytes(), Dialect::Fteqcc);
@@ -480,7 +481,7 @@ fn an_expansion_writing_too_many_tokens_is_reported() {
     let _one = super::one_bound_test_at_a_time();
     let mut text = format!("#define A0 {}\n", "x ".repeat(100));
     for i in 1..17 {
-        text.push_str(&format!("#define A{i} A{p} A{p}\n", p = i - 1));
+        _ = writeln!(text, "#define A{i} A{p} A{p}", p = i - 1);
     }
     text.push_str("A16\n");
     let out = run(text.as_bytes(), Dialect::Fteqcc);

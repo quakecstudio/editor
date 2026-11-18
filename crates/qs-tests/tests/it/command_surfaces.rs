@@ -14,6 +14,7 @@
 use qc_project::MemoryLoader;
 use qs_commands::Registry;
 use qs_workbench::{HasPreview, HasWorkbench, Preview, Workbench, register, register_preview};
+use std::fmt::Write as _;
 
 /// A workbench and a preview: what the MCP server and the window run commands on.
 struct Context {
@@ -54,10 +55,10 @@ impl HasPreview for Context {
 
 /// The ids of `registry`'s commands, one to a line, in id order.
 fn ids<C: 'static>(registry: &Registry<C>) -> String {
-    registry
-        .commands()
-        .map(|info| format!("{}\n", info.id().as_str()))
-        .collect()
+    registry.commands().fold(String::new(), |mut joined, info| {
+        _ = writeln!(joined, "{}", info.id().as_str());
+        joined
+    })
 }
 
 // No spec statement: P6-40: register offers the same commands as before, to the command line

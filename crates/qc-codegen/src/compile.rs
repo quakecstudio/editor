@@ -439,8 +439,12 @@ impl<'a> Compiler<'a> {
                         self.program
                             .alias_field(self.index, place, other)
                             .at(span)?;
-                    } else if let Some(word) = self.integer_literal(place, &expr) {
-                        self.program.initialise_words(place, &[word]).at(span)?;
+                    } else if let Some(words) = self.wide_value(place, id) {
+                        // FTEF-19.81: a 64-bit integer's or a double's two words, as the
+                        // model folded them.
+                        self.program.initialise_words(place, &words).at(span)?;
+                    } else if let Some(words) = self.scalar_literal(place, &expr) {
+                        self.program.initialise_words(place, &words).at(span)?;
                     } else if let Some(literal) = self.translated_literal(&expr) {
                         // FTEF-32.22: the string itself, and a `dotranslate_N` record of it.
                         self.program.initialise(place, &literal).at(span)?;
@@ -724,11 +728,9 @@ impl<'a> Compiler<'a> {
         };
         let mut parm_size = [0_u8; 8];
         for (size, param) in parm_size.iter_mut().zip(&function_type.params) {
-            *size = if ValueType::Of(param.clone()).etype() == Etype::Vector {
-                3
-            } else {
-                1
-            };
+            // `funcs[i].parm_size[p++] = size;`, each parameter's own words (FTEF-19.81).
+            let words = type_words(self.index, &ValueType::Of(param.clone()));
+            *size = u8::try_from(words).map_err(|_| Abort::Internal(Internal::TooLarge, span))?;
         }
         let mut locals = self
             .locals_end
@@ -821,7 +823,7 @@ impl<'a> Compiler<'a> {
         }
         let place = self
             .program
-            .generated("ret*", ty.clone(), ty.words())
+            .generated("ret*", ty.clone(), type_words(self.index, &ty))
             .at(span)?;
         self.ret_local = Some(place);
         self.locals_end = self.program.next_global().at(span)?;
@@ -970,24 +972,70 @@ impl<'a> Compiler<'a> {
         literal_of(&only, self.dialect).filter(|literal| matches!(literal, Literal::String(_)))
     }
 
-    /// FTE-15.8: a number literal initialising an `int` or `unsigned` global is the integer
-    /// it converts to, C's conversion of the float the lexer reads (`QCC_SupplyConversion` of a
-    /// constant), not the float's bits.
-    fn integer_literal(&self, place: usize, expr: &ast::Expr) -> Option<u32> {
+    /// FTEF-19.81: the two words the model folded the initialiser of the definition `id`, at
+    /// `place`, to, when its type is a C scalar of two words.
+    fn wide_value(&self, place: usize, id: DefId) -> Option<Vec<u32>> {
+        let ValueType::Of(ty) = &self.program.def(place)?.ty else {
+            return None;
+        };
+        let scalar = self.index.scalar(ty)?;
+        let words = self.index.initial_value(id)?.words();
+        (scalar.words > 1 && u32::try_from(words.len()).ok() == Some(scalar.words))
+            .then(|| words.to_vec())
+    }
+
+    /// FTE-15.8, FTEF-19.81: a number literal initialising a global of a C scalar is the
+    /// words of the value it converts to, not the bits of the float the lexer reads: an
+    /// integer of 32 bits by C's conversion of that float (`QCC_SupplyConversion` of a
+    /// constant), one of 64 bits and a double from the literal's own text, two words, the low
+    /// one first.
+    fn scalar_literal(&self, place: usize, expr: &ast::Expr) -> Option<Vec<u32>> {
         let ValueType::Of(ty) = &self.program.def(place)?.ty else {
             return None;
         };
         let Some(Literal::Float(value)) = literal_of(expr, self.dialect) else {
             return None;
         };
+        let text = match expr {
+            ast::Expr::Literal(literal) => literal.syntax().text(),
+            _ => return None,
+        };
+        let text = String::from_utf8_lossy(&text);
+        let text = text.trim();
+        // The literal as a whole number, decimal or hexadecimal, when it is written as one.
+        let whole = text
+            .strip_prefix("0x")
+            .or_else(|| text.strip_prefix("0X"))
+            .map_or_else(
+                || text.parse::<u64>().ok(),
+                |hex| u64::from_str_radix(hex, HEX_RADIX).ok(),
+            );
+        let halves = |bits: u64| {
+            let [a, b, c, d, e, f, g, h] = bits.to_le_bytes();
+            vec![
+                u32::from_le_bytes([a, b, c, d]),
+                u32::from_le_bytes([e, f, g, h]),
+            ]
+        };
         #[expect(
             clippy::cast_possible_truncation,
             clippy::cast_sign_loss,
-            reason = "spec FTE-15.8: the conversion is C's (int) or (unsigned) of the float"
+            reason = "spec FTE-15.8: the conversion is C's (int), (unsigned) or (long long) of \
+                      the float"
         )]
-        match ty.fteqcc_scalar()? {
-            CScalar::Integer => Some(u32::from_ne_bytes((value as i32).to_ne_bytes())),
-            CScalar::Uint => Some(value as u32),
+        match self.index.scalar(ty)?.kind {
+            CScalar::Integer => Some(vec![u32::from_ne_bytes((value as i32).to_ne_bytes())]),
+            CScalar::Uint => Some(vec![value as u32]),
+            CScalar::Int64 | CScalar::Uint64 => {
+                Some(halves(whole.unwrap_or_else(|| {
+                    u64::from_ne_bytes((value as i64).to_ne_bytes())
+                })))
+            }
+            CScalar::Double => Some(halves(
+                text.parse::<f64>()
+                    .unwrap_or_else(|_| f64::from(value))
+                    .to_bits(),
+            )),
             _ => None,
         }
     }
@@ -1105,6 +1153,8 @@ enum FunctionInit<'t> {
 const VA_COUNT: u32 = 24;
 /// A vector's words, `qc-types`' `PROGS_VECTOR_SLOTS`, as a definition's size.
 const VECTOR_WORDS: u32 = 3;
+/// The radix of a literal written `0x`.
+const HEX_RADIX: u32 = 16;
 
 /// Parameter slot `i`'s global offset, `OFS_PARM0 + 3 * i` (QC-18.3). A ninth argument's slot
 /// is past the eight, as id's `qcc` writes `def_parms[8]`; its call is refused (QC-18.2).

@@ -25,6 +25,7 @@
 //! statements executed (DIFF-12.5). The codebases come from the asset cache
 //! (`$QS_TEST_ASSETS/codebase/<id>`, written by `cargo xtask corpus fetch`).
 
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -234,12 +235,13 @@ fn generated(root: &Path, count: u64, seed: u64) -> Result<bool, String> {
         };
         let ours = program.join("ours.dat");
         write(&ours, &codegen::bytes(&compiled)?)?;
-        pairs.push_str(&format!(
-            "generated-{seed}-{n}\t{}\t{}\t{}\n",
+        _ = writeln!(
+            pairs,
+            "generated-{seed}-{n}\t{}\t{}\t{}",
             theirs.display(),
             ours.display(),
             fixed.display()
-        ));
+        );
     }
     let pairs_path = dir.join("pairs.tsv");
     write(&pairs_path, pairs.as_bytes())?;

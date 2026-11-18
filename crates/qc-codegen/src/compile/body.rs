@@ -22,7 +22,7 @@ use super::arrays::Access;
 use super::{At, Compiler, Lowered, Written, literal_of};
 use crate::Internal;
 use crate::back_end::Allocation;
-use crate::program::{Literal, OFS_RETURN, operand, type_words};
+use crate::program::{Literal, OFS_RETURN, ValueType, operand, type_words};
 
 impl Compiler<'_> {
     /// Writes `body`'s statements as the code of the function being compiled, `named` the span
@@ -374,10 +374,14 @@ impl Compiler<'_> {
     /// What a bare `return` of the function being compiled is (FTE-18.10, QC-13.8): the
     /// `ret*` local under FTEQCC in a function that returns a value, else `RETURN` of nothing.
     pub(super) fn bare_return_kind(&self) -> BareReturn {
-        let returns_value = self
-            .body_return
-            .as_ref()
-            .is_some_and(|ty| ty.etype() != qc_types::Etype::Void);
+        let returns_value = self.body_return.as_ref().is_some_and(|ty| {
+            // A C scalar's basic type is the model's (FTEF-19.81).
+            let scalar = match ty {
+                ValueType::Of(t) => self.index.scalar(t).is_some(),
+                ValueType::FloatField => false,
+            };
+            scalar || ty.etype() != qc_types::Etype::Void
+        });
         if returns_value && self.dialect.has_fteqcc_extensions() {
             BareReturn::RetLocal
         } else {

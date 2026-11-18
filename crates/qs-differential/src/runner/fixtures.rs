@@ -14,6 +14,8 @@
 //! function in a codebase is freed, not spawned (EDICT-8.5), so one shared superset is safe
 //! across codebases: each spawns only the classes it knows.
 
+use std::fmt::Write as _;
+
 /// One scenario to run: a name, the directives after the `progs` line (DIFF-2.2), and the
 /// entity lump the scenario's `entities` line names, or `None` for the one `worldspawn`
 /// default (DIFF-2.2).
@@ -178,7 +180,7 @@ fn crmod_scenarios() -> Vec<ScenarioSpec> {
     let mut commands =
         String::from("map dm3\nmaxclients 4\nclients 2\ncvar deathmatch 1\nframes 400\n");
     for (n, command) in (10_u32..).step_by(5).zip(CRMOD_COMMANDS) {
-        commands.push_str(&format!("command {n} 1 {command}\n"));
+        _ = writeln!(commands, "command {n} 1 {command}");
     }
     let crmod_match = |frames: u32| {
         let mut text = format!(
@@ -188,10 +190,10 @@ fn crmod_scenarios() -> Vec<ScenarioSpec> {
              input 50 1 impulse 120\ninput 50 2 impulse 120\n"
         );
         for n in (100..frames).step_by(150) {
-            text.push_str(&format!("input {n} 1 impulse 1\ninput {n} 2 impulse 1\n"));
+            _ = writeln!(text, "input {n} 1 impulse 1\ninput {n} 2 impulse 1");
         }
         for (n, command) in (200_u32..).zip(CRMOD_COMMANDS) {
-            text.push_str(&format!("command {n} 2 {command}\n"));
+            _ = writeln!(text, "command {n} 2 {command}");
         }
         text
     };

@@ -2,6 +2,7 @@
 
 //! The FTEQCC preprocessor's directives and macros (`docs/spec/dialect-fteqcc.md`, FTEF-14).
 
+use std::fmt::Write as _;
 use std::path::Path;
 
 use super::{codes, one, one_fte, tokens};
@@ -1190,9 +1191,9 @@ fn reviewer_a_chain_of_macros_expands_to_its_end() {
     let n = 1000;
     let mut text = "#define M0 1\n".to_owned();
     for i in 1..n {
-        text.push_str(&format!("#define M{i} M{}\n", i - 1));
+        _ = writeln!(text, "#define M{i} M{}", i - 1);
     }
-    text.push_str(&format!("M{}\n", n - 1));
+    _ = writeln!(text, "M{}", n - 1);
     for dialect in [qc_lexer::Dialect::Vanilla, qc_lexer::Dialect::Fteqcc] {
         let mut loader = MemoryLoader::new();
         loader.insert("a.qc", text.as_bytes());

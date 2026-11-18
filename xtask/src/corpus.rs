@@ -86,7 +86,9 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
 fn run(root: &Path, args: &Args, net: &dyn Net) -> Result<bool, String> {
     let m = Manifest::load(&root.join(MANIFEST))?;
     match &args.command {
-        CorpusCommand::Verify { online } => Ok(report(cmd_verify(root, &m, online.then_some(net)))),
+        CorpusCommand::Verify { online } => {
+            Ok(report(&cmd_verify(root, &m, online.then_some(net))))
+        }
         CorpusCommand::Fetch(selection) | CorpusCommand::Build(selection) => {
             let dest = cache_dest(root, selection.dest.as_deref())?;
             let mut errs = verify::check(&m);
@@ -97,7 +99,7 @@ fn run(root: &Path, args: &Args, net: &dyn Net) -> Result<bool, String> {
                     build::cmd_build(root, &m, &dest, &selection.ids, net)
                 };
             }
-            Ok(report(errs))
+            Ok(report(&errs))
         }
     }
 }
@@ -142,12 +144,12 @@ fn assets_run(root: &Path, args: &AssetsArgs, net: &dyn Net) -> Result<bool, Str
             AssetsCommand::Precache { .. } => assets::cmd_precache(&m, &dest, net),
         };
     }
-    Ok(report(errs))
+    Ok(report(&errs))
 }
 
 /// Prints every error and returns whether there were none.
-fn report(errs: Vec<String>) -> bool {
-    for e in &errs {
+fn report(errs: &[String]) -> bool {
+    for e in errs {
         eprintln!("error: {e}");
     }
     errs.is_empty()

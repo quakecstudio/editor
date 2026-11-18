@@ -15,6 +15,7 @@ use super::{
     TextureSlot, is_special, load_map_file,
 };
 use core::f32::consts::FRAC_1_SQRT_2;
+use std::fmt::Write as _;
 
 use crate::lexer::LexError;
 
@@ -205,14 +206,14 @@ fn entity_lump_past_the_limit_fails() {
     let value = "v".repeat(120);
     let mut text = String::new();
     for _ in 0..600 {
-        text.push_str(&format!("{{\n\"k\" \"{value}\"\n}}\n"));
+        _ = writeln!(text, "{{\n\"k\" \"{value}\"\n}}");
     }
     let map = load_map_file(text.as_bytes()).unwrap();
     assert_eq!(map.entity_lump(), Err(QbspError::EntityTextTooLong));
     // A handful of the same entities stays well under the limit and succeeds.
     let mut small = String::new();
     for _ in 0..3 {
-        small.push_str(&format!("{{\n\"k\" \"{value}\"\n}}\n"));
+        _ = writeln!(small, "{{\n\"k\" \"{value}\"\n}}");
     }
     assert!(
         load_map_file(small.as_bytes())
@@ -231,9 +232,9 @@ fn entity_lump_exactly_at_the_limit_is_accepted() {
     let v25 = "v".repeat(25);
     let mut text = String::new();
     for _ in 0..500 {
-        text.push_str(&format!("{{\n\"k\" \"{v120}\"\n}}\n"));
+        _ = writeln!(text, "{{\n\"k\" \"{v120}\"\n}}");
     }
-    text.push_str(&format!("{{\n\"k\" \"{v25}\"\n}}\n"));
+    _ = writeln!(text, "{{\n\"k\" \"{v25}\"\n}}");
     let lump = load_map_file(text.as_bytes())
         .unwrap()
         .entity_lump()

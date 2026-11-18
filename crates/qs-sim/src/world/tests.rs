@@ -108,8 +108,10 @@ pub(crate) fn compile_with_lines(source: &str) -> (Vec<u8>, Vec<i32>) {
     let entry: String = ENTRY_POINTS
         .lines()
         .filter(|line| !source.contains(line.split('=').next().unwrap_or_default().trim_end()))
-        .map(|line| format!("{line}\n"))
-        .collect();
+        .fold(String::new(), |mut joined, line| {
+            _ = writeln!(joined, "{line}");
+            joined
+        });
     let files = [
         ("defs.qc", defs),
         ("entry.qc", entry),

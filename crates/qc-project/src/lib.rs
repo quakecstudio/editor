@@ -287,7 +287,7 @@ pub fn open_dir<L: Loader>(loader: &mut L, dir: &Path) -> Result<Project, Projec
             if loader.load(&csprogs).is_ok() {
                 sources.push(csprogs);
             }
-            Ok(bare(loader, dir, sources))
+            Ok(bare(loader, dir, &sources))
         }
         Err(source) => Err(ProjectError::Read {
             path: manifest,
@@ -323,7 +323,7 @@ pub fn open_file<L: Loader>(loader: &mut L, file: &Path) -> Result<Project, Proj
         })?;
         return from_manifest(loader, &dir, file, &bytes);
     }
-    Ok(bare(loader, &dir, vec![file.to_path_buf()]))
+    Ok(bare(loader, &dir, &[file.to_path_buf()]))
 }
 
 /// The directory's own name, if it has one.
@@ -429,7 +429,7 @@ fn bare_module_name(root: &Path, src: &Path) -> String {
 }
 
 /// A bare project of `sources` and every source file they register (PRJ-1.2 to PRJ-1.5).
-fn bare<L: Loader>(loader: &mut L, root: &Path, sources: Vec<PathBuf>) -> Project {
+fn bare<L: Loader>(loader: &mut L, root: &Path, sources: &[PathBuf]) -> Project {
     let mod_name = default_mod_name(root);
     let mut queue: VecDeque<PathBuf> = sources.iter().map(|s| normalize(s)).collect();
     let mut seen: Vec<PathBuf> = queue.iter().cloned().collect();

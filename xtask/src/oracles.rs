@@ -59,6 +59,7 @@ mod tests;
 mod vectors;
 
 use serde::Deserialize;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -567,10 +568,11 @@ fn generate(
         for name in &entry.functions {
             let function =
                 extract::function(&text, name).map_err(|e| format!("{}: {e}", entry.file))?;
-            c.push_str(&format!(
+            _ = write!(
+                c,
                 "#line {} \"{}\"\n{}",
                 function.line, entry.file, function.text
-            ));
+            );
         }
         let prefix = if target == Target::Engine {
             "engine_id"

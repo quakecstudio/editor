@@ -15,6 +15,7 @@ use qs_map::cnum::c_atoi;
 use qs_map::qbsp::QbspWarning;
 use qs_map::{Entity, MapFile};
 use qs_wad::Wad;
+use std::fmt::Write as _;
 
 use super::brush::{HullBrushes, Loader, VisibleFaces, is_world_brush_entity};
 use super::faces::FaceMaker;
@@ -515,7 +516,7 @@ fn compile_in_pool(
             let mut text = String::new();
             for p in points {
                 let [x, y, z] = p.map(fmt_number);
-                text.push_str(&format!("{x} {y} {z}\n"));
+                _ = writeln!(text, "{x} {y} {z}");
             }
             #[expect(
                 clippy::cast_possible_truncation,

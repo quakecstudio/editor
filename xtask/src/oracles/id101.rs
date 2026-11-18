@@ -433,7 +433,7 @@ mod tests {
         assert!(
             qc_progs::Progs::read_with(
                 &ours,
-                &qc_progs::ReadOptions {
+                qc_progs::ReadOptions {
                     check_header_crc: false
                 }
             )

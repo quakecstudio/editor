@@ -15,6 +15,7 @@
 //!
 //! Both write a Markdown report (`--report`).
 
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -306,11 +307,7 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
             let (fails, passes) = check(&work, name, &dir, &task, &success, &inputs)?;
             all &= fails && passes;
             let mark = |ok: bool| if ok { "yes" } else { "**no**" };
-            report.push_str(&format!(
-                "| {name} | {} | {} |\n",
-                mark(fails),
-                mark(passes)
-            ));
+            _ = writeln!(report, "| {name} | {} | {} |", mark(fails), mark(passes));
             println!(
                 "{}  {name}: fails at its start {fails}, passes with its solution {passes}",
                 if fails && passes { "ok  " } else { "FAIL" }
@@ -318,8 +315,9 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
         } else {
             let row = run(&work, (name, &dir), &task, &success, &inputs, args)?;
             all &= row.met;
-            report.push_str(&format!(
-                "| {name} | {}/{} | {} | {} | {} | {} | {} | {:.2} |\n",
+            _ = writeln!(
+                report,
+                "| {name} | {}/{} | {} | {} | {} | {} | {} | {:.2} |",
                 row.passed,
                 task.runs,
                 task.threshold,
@@ -328,7 +326,7 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
                 row.usage.input_tokens,
                 row.usage.output_tokens,
                 row.cost
-            ));
+            );
             println!(
                 "{}  {name}: {}/{} runs passed, {:.2} USD",
                 if row.met { "ok  " } else { "FAIL" },

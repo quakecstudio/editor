@@ -6,6 +6,7 @@
 )]
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -25,7 +26,7 @@ pub(crate) fn system_defs() -> String {
         .iter()
         .filter(|var| var.etype == Etype::Function)
     {
-        text.push_str(&format!("void() {} = {{}};\n", var.name));
+        _ = writeln!(text, "void() {} = {{}};", var.name);
     }
     text
 }
@@ -54,7 +55,10 @@ fn built(name: &str) -> (PathBuf, Vec<u8>) {
     std::fs::create_dir_all(&root).unwrap();
     let mut loader = MemoryLoader::new();
     loader.insert(root.join("progs.src"), b"progs.dat\nweapons.qc\n".to_vec());
-    loader.insert(root.join("weapons.qc"), (system_defs() + CODE).into_bytes());
+    loader.insert(
+        root.join("weapons.qc"),
+        format!("{}{}", system_defs(), CODE).into_bytes(),
+    );
     let mut workbench = Workbench::new(loader, Config::default());
     workbench.open_project(Path::new(&root)).unwrap();
     let modules = workbench.build().unwrap();

@@ -3,6 +3,7 @@
 //! The JSON debug form of a trace (TRACE-6).
 
 use serde_json::{Map, Value};
+use std::fmt::Write as _;
 
 use crate::{
     Changes, FieldChange, GlobalChange, Header, JsonFault, Record, Step, TRACE_VERSION, Text,
@@ -45,7 +46,7 @@ impl Record {
         let mut out = String::new();
         match self {
             Record::Run { function, changes } => {
-                out.push_str(&format!("{{\"t\":\"run\",\"function\":{function}"));
+                _ = write!(out, "{{\"t\":\"run\",\"function\":{function}");
                 push_changes(&mut out, changes);
             }
             Record::Step(Step {
@@ -55,12 +56,13 @@ impl Record {
                 builtin,
                 changes,
             }) => {
-                out.push_str(&format!(
+                _ = write!(
+                    out,
                     "{{\"t\":\"step\",\"function\":{function},\"statement\":{statement},\
                      \"opcode\":{opcode}"
-                ));
+                );
                 if let Some(number) = builtin {
-                    out.push_str(&format!(",\"builtin\":{number}"));
+                    _ = write!(out, ",\"builtin\":{number}");
                 }
                 push_changes(&mut out, changes);
             }
@@ -74,22 +76,24 @@ impl Record {
                 message,
                 changes,
             } => {
-                out.push_str(&format!(
+                _ = write!(
+                    out,
                     "{{\"t\":\"error\",\"function\":{function},\"statement\":{statement},\
                      \"message\":{}",
                     json_text(message)
-                ));
+                );
                 push_changes(&mut out, changes);
             }
             Record::Frame { frame, changes } => {
-                out.push_str(&format!("{{\"t\":\"frame\",\"frame\":{frame}"));
+                _ = write!(out, "{{\"t\":\"frame\",\"frame\":{frame}");
                 push_changes(&mut out, changes);
             }
             Record::String { value, text } => {
-                out.push_str(&format!(
+                _ = write!(
+                    out,
                     "{{\"t\":\"string\",\"value\":\"{value:08x}\",\"text\":{}",
                     json_text(text)
-                ));
+                );
             }
         }
         out.push_str("}\n");
@@ -103,17 +107,18 @@ fn push_changes(out: &mut String, changes: &Changes) {
         if i > 0 {
             out.push(',');
         }
-        out.push_str(&format!("[{},\"{:08x}\"]", change.slot, change.bits));
+        _ = write!(out, "[{},\"{:08x}\"]", change.slot, change.bits);
     }
     out.push_str("],\"fields\":[");
     for (i, change) in changes.fields.iter().enumerate() {
         if i > 0 {
             out.push(',');
         }
-        out.push_str(&format!(
+        _ = write!(
+            out,
             "[{},{},\"{:08x}\"]",
             change.edict, change.field, change.bits
-        ));
+        );
     }
     out.push(']');
 }
@@ -126,7 +131,7 @@ fn json_text(text: &Text) -> String {
         if (0x20..=0x7E).contains(&b) && b != b'\\' {
             escaped.push(char::from(b));
         } else {
-            escaped.push_str(&format!("\\x{b:02x}"));
+            _ = write!(escaped, "\\x{b:02x}");
         }
     }
     Value::String(escaped).to_string()

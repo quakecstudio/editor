@@ -18,9 +18,9 @@ fn before_initialize() {
     let s = session(
         MemoryLoader::new(),
         &[
-            request(1, "textDocument/hover", json!({})),
-            notification("textDocument/didOpen", json!({})),
-            notification("exit", json!(null)),
+            request(1, "textDocument/hover", &json!({})),
+            notification("textDocument/didOpen", &json!({})),
+            notification("exit", &json!(null)),
         ],
     );
     assert_eq!(s.error_code(1), -32002);
@@ -38,11 +38,11 @@ fn shutdown_then_exit() {
         project(&[("a.qc", "")]),
         &[
             initialize(),
-            request(1, "initialize", json!({ "capabilities": {} })),
-            request(2, "shutdown", json!(null)),
-            request(3, "textDocument/hover", json!({})),
-            notification("textDocument/didOpen", json!({})),
-            notification("exit", json!(null)),
+            request(1, "initialize", &json!({ "capabilities": {} })),
+            request(2, "shutdown", &json!(null)),
+            request(3, "textDocument/hover", &json!({})),
+            notification("textDocument/didOpen", &json!({})),
+            notification("exit", &json!(null)),
         ],
     );
     // "The `initialize` request may only be sent once."
@@ -58,7 +58,7 @@ fn shutdown_then_exit() {
 fn exit_without_shutdown_and_end_of_input() {
     let s = session(
         project(&[("a.qc", "")]),
-        &[initialize(), notification("exit", json!(null))],
+        &[initialize(), notification("exit", &json!(null))],
     );
     assert_eq!(s.exit, Exit::Failure);
     let s = session(project(&[("a.qc", "")]), &[initialize()]);
@@ -76,8 +76,8 @@ fn the_position_encoding() {
     let offered = session(
         project(&[("a.qc", "")]),
         &[initialize_with(
-            json!(null),
-            json!({ "general": { "positionEncodings": ["utf-16", "utf-8"] } }),
+            &json!(null),
+            &json!({ "general": { "positionEncodings": ["utf-16", "utf-8"] } }),
         )],
     );
     assert_eq!(
@@ -109,7 +109,7 @@ fn the_capabilities() {
     assert_eq!(s.result(0)["serverInfo"]["name"], json!("quakec-lsp"));
     let plain = session(
         project(&[("a.qc", "")]),
-        &[initialize_with(json!(null), json!({}))],
+        &[initialize_with(&json!(null), &json!({}))],
     );
     assert_eq!(
         plain.result(0)["capabilities"]["renameProvider"],
@@ -125,10 +125,10 @@ fn unknown_methods() {
     let s = started(
         project(&[("a.qc", "")]),
         &[
-            notification("$/cancelRequest", json!({ "id": 5 })),
-            notification("workspace/didChangeConfiguration", json!({})),
-            request(1, "$/custom", json!({})),
-            request(2, "textDocument/codeLens", json!({})),
+            notification("$/cancelRequest", &json!({ "id": 5 })),
+            notification("workspace/didChangeConfiguration", &json!({})),
+            request(1, "$/custom", &json!({})),
+            request(2, "textDocument/codeLens", &json!({})),
         ],
     );
     assert_eq!(s.error_code(1), -32601);
@@ -144,7 +144,7 @@ fn malformed_messages() {
     input.extend_from_slice(&framed(&[
         json!({ "jsonrpc": "2.0", "id": 7 }),
         json!({ "jsonrpc": "2.0", "id": 8, "result": null }),
-        request(9, "textDocument/hover", json!({ "position": 3 })),
+        request(9, "textDocument/hover", &json!({ "position": 3 })),
     ]));
     let mut output = Vec::new();
     let exit = crate::run(project(&[("a.qc", "")]), input.as_slice(), &mut output).unwrap();
@@ -191,7 +191,10 @@ fn a_project_that_does_not_open() {
 fn bad_initialization_options() {
     let s = session(
         project(&[("a.qc", "")]),
-        &[initialize_with(json!({ "dialect": "klingon" }), json!({}))],
+        &[initialize_with(
+            &json!({ "dialect": "klingon" }),
+            &json!({}),
+        )],
     );
     assert_eq!(s.error_code(0), -32602);
 }

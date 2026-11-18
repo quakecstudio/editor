@@ -1314,10 +1314,10 @@ fn the_chosen_game_folder_is_kept_for_the_next_start() {
     app.shell_mut().set_settings_file(settings.clone());
     let empty = dir.0.join("empty");
     fs::create_dir_all(&empty).unwrap();
-    let refused = app.shell_mut().choose_game_folder(empty).unwrap();
+    let refused = app.shell_mut().choose_game_folder(&empty).unwrap();
     assert!(!refused.state.plays());
     assert!(!settings.exists(), "an unplayable folder is not kept");
-    let chosen = app.shell_mut().choose_game_folder(game.clone()).unwrap();
+    let chosen = app.shell_mut().choose_game_folder(&game).unwrap();
     assert!(chosen.state.plays());
 
     let mut next = App::checked_on_the_frame(&ctx, None).unwrap();

@@ -165,7 +165,7 @@ fn header_follows_the_tables() {
     let options = crate::ReadOptions {
         check_header_crc: false,
     };
-    let reread = Progs::read_with(&written, &options).unwrap();
+    let reread = Progs::read_with(&written, options).unwrap();
     assert_eq!(reread.globals().get(44), Some(Slot::from_bits(0xDEAD_BEEF)));
     assert_eq!(reread.layout(), file.layout);
 }
@@ -402,7 +402,7 @@ proptest! {
     fn records_read_back_as_written(file in valid_records()) {
         let bytes = write(&file).unwrap();
         let options = crate::ReadOptions { check_header_crc: false };
-        let progs = Progs::read_with(&bytes, &options).unwrap();
+        let progs = Progs::read_with(&bytes, options).unwrap();
         let mut reread = progs.to_file();
         prop_assert!(reread.layout.is_some());
         reread.layout = None;
@@ -445,13 +445,13 @@ proptest! {
             bytes[at] = value;
         }
         let options = crate::ReadOptions { check_header_crc: false };
-        if let Ok(progs) = Progs::read_with(&bytes, &options) {
+        if let Ok(progs) = Progs::read_with(&bytes, options) {
             let file = progs.to_file();
             let written = write(&file).unwrap();
             if file.layout.is_some() {
                 prop_assert_eq!(written, bytes);
             } else {
-                let reread = Progs::read_with(&written, &options).unwrap().to_file();
+                let reread = Progs::read_with(&written, options).unwrap().to_file();
                 prop_assert_eq!(reread.statements, file.statements);
                 prop_assert_eq!(reread.globals, file.globals);
             }

@@ -28,6 +28,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;
+use std::fmt::Write as _;
 use std::fs;
 use std::num::NonZero;
 use std::path::{Path, PathBuf};
@@ -244,18 +245,18 @@ impl Case {
         }
         key.push_str(&self.source);
         for (name, text) in self.project.iter().flat_map(|p| &p.files) {
-            key.push_str(&format!("|{name}={text}"));
+            _ = write!(key, "|{name}={text}");
         }
         for dir in self.include_dirs() {
-            key.push_str(&format!("|-I{dir}"));
+            _ = write!(key, "|-I{dir}");
         }
         if let Some(name) = self.encoding.name() {
-            key.push_str(&format!("|{name}"));
+            _ = write!(key, "|{name}");
         }
         if let Some(progs) = self.project.as_ref().and_then(|p| p.progs.as_ref()) {
-            key.push_str(&format!("|progs.src={}", progs.text));
+            _ = write!(key, "|progs.src={}", progs.text);
             if let Some(name) = progs.encoding.name() {
-                key.push_str(&format!("|progs.src {name}"));
+                _ = write!(key, "|progs.src {name}");
             }
         }
         if !self.options.is_empty() {
@@ -1147,9 +1148,9 @@ pub(crate) fn cases() -> Vec<Case> {
                 for other in [false, true] {
                     let mut source = String::new();
                     if other {
-                        source.push_str(&format!("void() g = {first};\n"));
+                        _ = writeln!(source, "void() g = {first};");
                     }
-                    source.push_str(&format!("void() f = {first};\nvoid() f = {second};\n"));
+                    _ = writeln!(source, "void() f = {first};\nvoid() f = {second};");
                     cases.push(Case::new(dialect, source));
                 }
             }
@@ -1833,7 +1834,7 @@ fn oracle(oracles: &Oracles, dir: &Path, case: &Case) -> Result<Outcome, String>
     let options = ReadOptions {
         check_header_crc: false,
     };
-    match Progs::read_with(&bytes, &options) {
+    match Progs::read_with(&bytes, options) {
         Ok(read) => bound(&read, case)
             .ok_or_else(|| format!("{}: no function f in {}", show(case), progs.display())),
         // QC-13.4: id's qcc leaves `#0`'s `first_statement` uninitialised, which qc-progs may
@@ -1925,27 +1926,27 @@ pub(super) fn across_cores<T: Sync, R: Send>(
     let stop = &AtomicBool::new(false);
     let work = &work;
     let joined = thread::scope(|scope| {
-        let handles: Vec<_> = (0..threads.get().min(items.len()))
-            .map(|thread| {
-                scope.spawn(move || {
-                    let mut done = Vec::new();
-                    while !stop.load(Ordering::SeqCst) {
-                        let index = next.fetch_add(1, Ordering::SeqCst);
-                        let Some(item) = items.get(index) else {
-                            break;
-                        };
-                        match work(thread, item) {
-                            Ok(result) => done.push((index, result)),
-                            Err(problem) => {
-                                stop.store(true, Ordering::SeqCst);
-                                return Err(problem);
-                            }
+        // Every thread is started before the first is joined.
+        let mut handles = Vec::new();
+        handles.extend((0..threads.get().min(items.len())).map(|thread| {
+            scope.spawn(move || {
+                let mut done = Vec::new();
+                while !stop.load(Ordering::SeqCst) {
+                    let index = next.fetch_add(1, Ordering::SeqCst);
+                    let Some(item) = items.get(index) else {
+                        break;
+                    };
+                    match work(thread, item) {
+                        Ok(result) => done.push((index, result)),
+                        Err(problem) => {
+                            stop.store(true, Ordering::SeqCst);
+                            return Err(problem);
                         }
                     }
-                    Ok(done)
-                })
+                }
+                Ok(done)
             })
-            .collect();
+        }));
         // Every handle is joined here, so that no panic is left for the scope to raise again.
         handles
             .into_iter()

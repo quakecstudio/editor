@@ -3,6 +3,7 @@
 //! Adversarial tests from the P2-R3 readiness review (TEST-9), written by a reviewer who did
 //! not write the semantic model.
 
+use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -170,10 +171,10 @@ fn reviewer_many_locals_each_resolve_to_their_own() {
     let n = 2000;
     let mut body = String::new();
     for i in 0..n {
-        body.push_str(&format!("local float l{i};\n"));
+        _ = writeln!(body, "local float l{i};");
     }
     for i in 0..n {
-        body.push_str(&format!("l{i} = {i};\n"));
+        _ = writeln!(body, "l{i} = {i};");
     }
     let source = format!("void() f = {{\n{body}}};\n");
     for index in [index_of(&source), fte_index_of(&source)] {

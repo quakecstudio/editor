@@ -38,9 +38,9 @@ fn definition() {
             request(
                 1,
                 "textDocument/definition",
-                at("code.qc", CODE, "health", 0),
+                &at("code.qc", CODE, "health", 0),
             ),
-            request(2, "textDocument/definition", at("code.qc", CODE, "{", 0)),
+            request(2, "textDocument/definition", &at("code.qc", CODE, "{", 0)),
         ],
     );
     assert_eq!(
@@ -63,8 +63,8 @@ fn references() {
     let s = started(
         project(&[("defs.qc", DEFS), ("code.qc", CODE)]),
         &[
-            request(1, "textDocument/references", with(true)),
-            request(2, "textDocument/references", with(false)),
+            request(1, "textDocument/references", &with(true)),
+            request(2, "textDocument/references", &with(false)),
         ],
     );
     let uris = |id: i64| -> Vec<String> {
@@ -98,12 +98,16 @@ fn rename() {
             request(
                 1,
                 "textDocument/prepareRename",
-                at("code.qc", CODE, "health", 1),
+                &at("code.qc", CODE, "health", 1),
             ),
-            request(2, "textDocument/prepareRename", at("code.qc", CODE, "{", 0)),
-            request(3, "textDocument/rename", renamed),
-            request(4, "textDocument/rename", invalid),
-            request(5, "textDocument/rename", function),
+            request(
+                2,
+                "textDocument/prepareRename",
+                &at("code.qc", CODE, "{", 0),
+            ),
+            request(3, "textDocument/rename", &renamed),
+            request(4, "textDocument/rename", &invalid),
+            request(5, "textDocument/rename", &function),
         ],
     );
     assert_eq!(s.result(1), &range(CODE, "health", 1));
@@ -158,15 +162,15 @@ fn rename_asks_before_editing_a_name_a_map_may_use() {
     let s = session(
         project(&[("defs.qc", DEFS), ("code.qc", CODE)]),
         &[
-            initialize_with(json!(null), confirming()),
-            notification("initialized", json!({})),
+            initialize_with(&json!(null), &confirming()),
+            notification("initialized", &json!({})),
             notification(
                 "textDocument/didOpen",
-                json!({ "textDocument": { "uri": uri("code.qc"), "languageId": "quakec",
+                &json!({ "textDocument": { "uri": uri("code.qc"), "languageId": "quakec",
                                           "version": 7, "text": CODE } }),
             ),
-            request(1, "textDocument/rename", rename("heal", "mend")),
-            request(2, "textDocument/rename", rename("health", "hp")),
+            request(1, "textDocument/rename", &rename("heal", "mend")),
+            request(2, "textDocument/rename", &rename("health", "hp")),
         ],
     );
     let edit = s.result(1);
@@ -218,8 +222,8 @@ fn rename_is_refused_to_a_client_that_cannot_confirm() {
         let s = session(
             project(&[("defs.qc", DEFS), ("code.qc", CODE)]),
             &[
-                initialize_with(json!(null), capabilities.clone()),
-                request(1, "textDocument/rename", params),
+                initialize_with(&json!(null), &capabilities),
+                request(1, "textDocument/rename", &params),
             ],
         );
         assert_eq!(s.error_code(1), -32803, "{capabilities}");
@@ -233,9 +237,13 @@ fn hover() {
     let s = started(
         project(&[("defs.qc", DEFS), ("code.qc", CODE)]),
         &[
-            request(1, "textDocument/hover", at("code.qc", CODE, "health", 0)),
-            request(2, "textDocument/hover", at("code.qc", CODE, "setorigin", 0)),
-            request(3, "textDocument/hover", at("code.qc", CODE, "'0 0 0'", 0)),
+            request(1, "textDocument/hover", &at("code.qc", CODE, "health", 0)),
+            request(
+                2,
+                "textDocument/hover",
+                &at("code.qc", CODE, "setorigin", 0),
+            ),
+            request(3, "textDocument/hover", &at("code.qc", CODE, "'0 0 0'", 0)),
         ],
     );
     let health = s.result(1);
@@ -256,9 +264,13 @@ fn hover() {
     let plain = session(
         project(&[("defs.qc", DEFS), ("code.qc", CODE)]),
         &[
-            initialize_with(json!(null), json!({})),
-            notification("initialized", json!({})),
-            request(1, "textDocument/hover", at("code.qc", CODE, "setorigin", 0)),
+            initialize_with(&json!(null), &json!({})),
+            notification("initialized", &json!({})),
+            request(
+                1,
+                "textDocument/hover",
+                &at("code.qc", CODE, "setorigin", 0),
+            ),
         ],
     );
     let contents = &plain.result(1)["contents"];
@@ -280,7 +292,7 @@ fn completion() {
         &[request(
             1,
             "textDocument/completion",
-            at("code.qc", CODE, "health =", 0),
+            &at("code.qc", CODE, "health =", 0),
         )],
     );
     let items = s.result(1).as_array().unwrap();
@@ -304,7 +316,7 @@ fn semantic_tokens() {
         &[request(
             1,
             "textDocument/semanticTokens/full",
-            json!({ "textDocument": { "uri": uri("a.qc") } }),
+            &json!({ "textDocument": { "uri": uri("a.qc") } }),
         )],
     );
     // g (variable, declaration), p (parameter, declaration), f (function, declaration), g, p.
@@ -326,7 +338,7 @@ fn inlay_hints() {
         &[request(
             1,
             "textDocument/inlayHint",
-            json!({ "textDocument": { "uri": uri("code.qc") }, "range": whole }),
+            &json!({ "textDocument": { "uri": uri("code.qc") }, "range": whole }),
         )],
     );
     let hint = |at: Value, label: &str| {
@@ -366,26 +378,26 @@ fn requests_outside_any_file() {
     let s = started(
         project(&[("a.qc", "float a;\n")]),
         &[
-            request(1, "textDocument/definition", at_start.clone()),
+            request(1, "textDocument/definition", &at_start),
             request(
                 2,
                 "textDocument/references",
-                with("context", json!({ "includeDeclaration": true })),
+                &with("context", json!({ "includeDeclaration": true })),
             ),
-            request(3, "textDocument/hover", past_the_line),
+            request(3, "textDocument/hover", &past_the_line),
             request(
                 4,
                 "textDocument/semanticTokens/full",
-                json!({ "textDocument": nowhere }),
+                &json!({ "textDocument": nowhere }),
             ),
-            request(5, "textDocument/completion", at_start.clone()),
+            request(5, "textDocument/completion", &at_start),
             request(
                 6,
                 "textDocument/inlayHint",
-                json!({ "textDocument": nowhere, "range": empty }),
+                &json!({ "textDocument": nowhere, "range": empty }),
             ),
-            request(7, "textDocument/rename", with("newName", json!("x"))),
-            request(8, "textDocument/prepareRename", at_start.clone()),
+            request(7, "textDocument/rename", &with("newName", json!("x"))),
+            request(8, "textDocument/prepareRename", &at_start),
         ],
     );
     assert_eq!(s.result(1), &json!(null));
@@ -410,7 +422,7 @@ fn code_actions_are_quick_fixes() {
         &[request(
             1,
             "textDocument/codeAction",
-            json!({
+            &json!({
                 "textDocument": { "uri": uri("code.qc") },
                 "range": at,
                 "context": { "diagnostics": [] },
@@ -444,7 +456,7 @@ fn formatting_replaces_the_document_once() {
             request(
                 1,
                 "textDocument/formatting",
-                json!({
+                &json!({
                     "textDocument": { "uri": uri("code.qc") },
                     "options": { "tabSize": 4, "insertSpaces": false },
                 }),
@@ -452,12 +464,12 @@ fn formatting_replaces_the_document_once() {
             request(
                 2,
                 "textDocument/formatting",
-                json!({ "textDocument": { "uri": uri("defs.qc") }, "options": {} }),
+                &json!({ "textDocument": { "uri": uri("defs.qc") }, "options": {} }),
             ),
             request(
                 3,
                 "textDocument/formatting",
-                json!({ "textDocument": { "uri": "untitled:1" }, "options": {} }),
+                &json!({ "textDocument": { "uri": "untitled:1" }, "options": {} }),
             ),
         ],
     );

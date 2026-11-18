@@ -146,7 +146,7 @@ fn run<L: Loader>(mut host: AnalysisHost<L>, inbox: &Receiver<Job>, outbox: &Sen
                     generation: at,
                     open: editor,
                 } => {
-                    if let Err(error) = host.set_overlay(&path, text) {
+                    if let Err(error) = host.set_overlay(&path, &text) {
                         tracing::debug!(%error, "the background check kept the project as it was");
                     }
                     generation = at;

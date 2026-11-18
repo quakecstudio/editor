@@ -75,7 +75,7 @@ fn run_with_engine(
         .build();
     let progs = Progs::read_with(
         &bytes,
-        &qc_progs::ReadOptions {
+        qc_progs::ReadOptions {
             check_header_crc: false,
         },
     )

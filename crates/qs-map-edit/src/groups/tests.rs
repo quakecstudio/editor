@@ -315,11 +315,15 @@ fn locks_follow_the_entities_they_are_on() {
 // transformation too, so the group linked to it stays; a group with no brushes gets no origin
 #[test]
 fn moving_an_outer_group_leaves_the_linked_copy() {
-    let nested = MAP.replace(
-        "\"_tb_id\" \"2\"\n",
-        "\"_tb_id\" \"2\"\n\"_tb_group\" \"7\"\n",
-    ) + "{\n\"classname\" \"func_group\"\n\"_tb_type\" \"_tb_group\"\n\"_tb_name\" \"outer\"\n\
-         \"_tb_id\" \"7\"\n}\n";
+    let nested = format!(
+        "{}{}",
+        MAP.replace(
+            "\"_tb_id\" \"2\"\n",
+            "\"_tb_id\" \"2\"\n\"_tb_group\" \"7\"\n",
+        ),
+        "{\n\"classname\" \"func_group\"\n\"_tb_type\" \"_tb_group\"\n\"_tb_name\" \"outer\"\n\
+         \"_tb_id\" \"7\"\n}\n"
+    );
     let dir = std::env::temp_dir().join(format!("qs-wb-groups-outer-{}", std::process::id()));
     let _gone = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();

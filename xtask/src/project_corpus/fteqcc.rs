@@ -224,6 +224,7 @@ mod tests {
         reason = "test code: a failed unwrap or index is a failed test"
     )]
 
+    use std::fmt::Write as _;
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::process::Command;
@@ -256,10 +257,10 @@ mod tests {
     /// The lines FTEQCC prints for the files named, as `compiling`, with the given prefix the
     /// directory of each name resolved against.
     fn compiling(names: &[&str]) -> String {
-        names
-            .iter()
-            .map(|n| format!("compiling {n}\n"))
-            .collect::<String>()
+        names.iter().fold(String::new(), |mut joined, n| {
+            _ = writeln!(joined, "compiling {n}");
+            joined
+        })
     }
 
     /// A fake FTEQCC that prints `progress` to stderr (where the real build sends it) and

@@ -361,16 +361,19 @@ impl<C: HasWorkbench + 'static> Command<C> for ProjectSymbols {
             return Err(WorkbenchError::NoProject);
         }
         let query = params.query.map(|q| q.to_lowercase());
-        let symbols: Vec<_> = workbench
-            .project_symbols()
-            .iter()
-            .filter(|s| {
-                query
-                    .as_ref()
-                    .is_none_or(|q| s.name.to_lowercase().contains(q.as_str()))
-            })
-            .cloned()
-            .collect();
+        // The symbols are copied out: reading each one's text borrows the workbench again.
+        let mut symbols = Vec::new();
+        symbols.extend(
+            workbench
+                .project_symbols()
+                .iter()
+                .filter(|s| {
+                    query
+                        .as_ref()
+                        .is_none_or(|q| s.name.to_lowercase().contains(q.as_str()))
+                })
+                .cloned(),
+        );
         let found = symbols
             .into_iter()
             .map(|symbol| {

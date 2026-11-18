@@ -376,7 +376,7 @@ fn the_client_speaks_the_bridge() {
         .set_field(
             qc_edict::EdictNumber::new(5),
             "health",
-            json!({ "type": "float", "value": 50.0 }),
+            &json!({ "type": "float", "value": 50.0 }),
         )
         .unwrap();
     assert_eq!(

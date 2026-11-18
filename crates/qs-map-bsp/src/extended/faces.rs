@@ -325,9 +325,12 @@ impl FaceMaker<'_> {
                     .collect()
             });
             let merged = self.merge_list(faces);
-            let subdivided: Vec<Face> =
-                merged.into_iter().flat_map(|f| self.subdivide(f)).collect();
-            let ids: Vec<FaceId> = subdivided.into_iter().map(|f| tree.add_face(f)).collect();
+            let mut ids: Vec<FaceId> = Vec::new();
+            for face in merged {
+                for part in self.subdivide(face) {
+                    ids.push(tree.add_face(part));
+                }
+            }
             if let Some(node) = tree.node_mut(id) {
                 node.faces = ids;
             }

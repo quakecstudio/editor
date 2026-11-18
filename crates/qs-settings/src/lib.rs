@@ -17,6 +17,7 @@ mod error;
 #[cfg(test)]
 mod tests;
 
+use std::fmt::Write as _;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -472,7 +473,7 @@ fn basic_string(text: &str) -> String {
             '"' => out.push_str("\\\""),
             '\\' => out.push_str("\\\\"),
             c if c.is_control() && u32::from(c) <= 0x7f => {
-                out.push_str(&format!("\\u{:04X}", u32::from(c)));
+                _ = write!(out, "\\u{:04X}", u32::from(c));
             }
             c => out.push(c),
         }
@@ -608,12 +609,13 @@ pub fn reference() -> String {
          | Key | Default | What it does |\n| --- | --- | --- |\n",
     );
     for setting in Setting::ALL {
-        text.push_str(&format!(
-            "| `{}` | `{}` | {} |\n",
+        _ = writeln!(
+            text,
+            "| `{}` | `{}` | {} |",
             setting.key(),
             setting.default_value(),
             setting.summary()
-        ));
+        );
     }
     text
 }

@@ -2,6 +2,8 @@
 
 //! Test fixtures: factories that write MD5 mesh and animation files as the spec's vectors do.
 
+use std::fmt::Write as _;
+
 /// A mesh file to write. The default is the first row of the MD5-3 vectors: one joint, one
 /// mesh of 3 vertices, 1 triangle and 1 weight.
 #[derive(Clone, Debug)]
@@ -42,11 +44,11 @@ impl MeshSpec {
             self.num_joints, self.num_meshes
         );
         for joint in &self.joints {
-            text.push_str(&format!("\t{joint}\n"));
+            _ = writeln!(text, "\t{joint}");
         }
         text.push_str("}\n");
         for mesh in &self.meshes {
-            text.push_str(&format!("\nmesh {{\n{mesh}}}\n"));
+            _ = writeln!(text, "\nmesh {{\n{mesh}}}");
         }
         text.push_str(self.trailer);
         text.into_bytes()
@@ -88,14 +90,14 @@ impl AnimSpec {
             self.num_frames, self.num_joints, self.num_components
         );
         for entry in &self.hierarchy {
-            text.push_str(&format!("\t{entry}\n"));
+            _ = writeln!(text, "\t{entry}");
         }
         text.push_str(
             "}\n\nbounds {\n\t( -1 -1 -1 ) ( 1 1 1 )\n\t( -2 -2 -2 ) ( 2 2 2 )\n}\n\n\
              baseframe {\n\t( 0 0 0 ) ( 0 0 0 )\n}\n",
         );
         for (index, components) in &self.frames {
-            text.push_str(&format!("\nframe {index} {{\n\t{components}\n}}\n"));
+            _ = writeln!(text, "\nframe {index} {{\n\t{components}\n}}");
         }
         text.push_str(self.trailer);
         text.into_bytes()
