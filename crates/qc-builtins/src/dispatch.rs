@@ -2287,7 +2287,7 @@ impl MockBuiltins {
             .filter(|&n| n < LIMIT_MAX_LIGHTSTYLES)
             .ok_or_else(|| BuiltinError::from(RuntimeError::InvalidLightstyle))?;
         // BUILTIN-12.7: when active, also send svc_lightstyle to clients, not kept (DIFF-6.5).
-        self.engine.set_lightstyle(index, value);
+        self.engine.set_lightstyle(index, &value);
         Ok(())
     }
 

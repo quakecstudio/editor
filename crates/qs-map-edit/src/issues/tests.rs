@@ -40,7 +40,11 @@ fn cuboid(min: [i32; 3], max: [i32; 3]) -> String {
 
 /// A room: a floor and a ceiling, from -128 to 128 across.
 fn room() -> String {
-    cuboid([-128, -128, -16], [128, 128, 0]) + &cuboid([-128, -128, 128], [128, 128, 144])
+    format!(
+        "{}{}",
+        cuboid([-128, -128, -16], [128, 128, 0]),
+        cuboid([-128, -128, 128], [128, 128, 144])
+    )
 }
 
 /// A map of `world_brushes` in the world, which names the keep's WAD, then `rest`.
@@ -149,7 +153,7 @@ fn an_empty_brush_is_removed() {
     let sliver = "{\n( 0 0 0 ) ( 0 1 0 ) ( 0 0 1 ) wall 0 0 0 1 1\n\
                   ( 0 0 0 ) ( 0 0 1 ) ( 0 1 0 ) wall 0 0 0 1 1\n\
                   ( 0 0 0 ) ( 1 0 0 ) ( 0 1 0 ) wall 0 0 0 1 1\n}\n";
-    let mut session = session("empty", &map(&(room() + sliver), START));
+    let mut session = session("empty", &map(&format!("{}{}", room(), sliver), START));
     let fix = fixes_and_undoes(&mut session, NO_VOLUME);
     assert_eq!(
         fix,
@@ -173,7 +177,7 @@ fn an_empty_brush_is_removed() {
 #[test]
 fn a_misspelled_key_is_renamed() {
     let ogre = "{\n\"classname\" \"monster_ogre\"\n\"origin\" \"0 0 24\"\n\"sped\" \"200\"\n}\n";
-    let text = map(&room(), &(START.to_owned() + ogre));
+    let text = map(&room(), &format!("{START}{ogre}"));
     let mut session = session_with("key", &text, Some(ogre_check));
     let fix = fixes_and_undoes(&mut session, "sped");
     assert_eq!(
@@ -191,7 +195,7 @@ fn a_misspelled_key_is_renamed() {
 #[test]
 fn a_misspelled_class_is_set() {
     let ogre = "{\n\"classname\" \"monster_orge\"\n\"origin\" \"0 0 24\"\n}\n";
-    let text = map(&room(), &(START.to_owned() + ogre));
+    let text = map(&room(), &format!("{START}{ogre}"));
     let mut session = session_with("class", &text, Some(ogre_check));
     let fix = fixes_and_undoes(&mut session, "monster_orge");
     assert_eq!(
@@ -312,7 +316,7 @@ fn search_by_text_and_query() {
         {\n\"classname\" \"func_group\"\n\"_tb_type\" \"_tb_group\"\n\"_tb_name\" \"Hallway\"\n\
         \"_tb_id\" \"2\"\n\"_tb_layer\" \"1\"\n}\n\
         {\n\"classname\" \"info_null\"\n\"origin\" \"500 0 0\"\n\"_tb_group\" \"2\"\n}\n";
-    let rest = START.to_owned() + ogre + &door + lights + layer;
+    let rest = format!("{}{}{}{}{}", START, ogre, door, lights, layer);
     let mut session = search_session(&map(&room(), &rest));
     let e = EntityIndex::new;
     let b = BrushIndex::new;
@@ -473,7 +477,7 @@ fn pairs_after_brushes_and_empty_brushes() {
         "{{\n\"classname\" \"func_door\"\n{}\"sped\" \"100\"\n}}\n",
         cuboid([96, -16, 0], [112, 16, 96])
     );
-    let text = map(&room(), &(START.to_owned() + &door));
+    let text = map(&room(), &format!("{START}{door}"));
     let mut doors = session_with("pairs", &text, Some(ogre_check));
     let found = issues(&mut doors);
     let sped = found
@@ -482,7 +486,7 @@ fn pairs_after_brushes_and_empty_brushes() {
         .unwrap_or_else(|| panic!("{found:?}"));
     assert_eq!((sped.entity, sped.brush), (Some(EntityIndex::new(2)), None));
     let sliver = "{\n( 0 0 0 ) ( 0 1 0 ) ( 0 0 1 ) wall 0 0 0 1 1\n}\n";
-    let mut open = session("sliver", &map(&(room() + sliver), ""));
+    let mut open = session("sliver", &map(&format!("{}{}", room(), sliver), ""));
     let start = issues(&mut open)
         .into_iter()
         .find(|issue| issue.message == NO_START)

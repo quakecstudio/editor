@@ -476,7 +476,7 @@ impl Client {
         &mut self,
         edict: EdictNumber,
         field: &str,
-        value: Value,
+        value: &Value,
     ) -> Result<Value, ClientError> {
         self.request(
             "field/set",

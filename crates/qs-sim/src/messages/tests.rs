@@ -789,7 +789,12 @@ fn the_builtins_bytes_match_the_mocks_counts() {
     let e = run.world.engine();
     // The signon holds the baselines too (NET-2.1), 16 bytes each, which the mock has no
     // count for.
-    let baselines = m.signon.bytes().iter().filter(|&&b| b == 22).count();
+    let baselines = m
+        .signon
+        .bytes()
+        .iter()
+        .map(|&b| usize::from(b == 22))
+        .sum::<usize>();
     assert_eq!(baselines, 2, "the world and the client");
     assert_eq!(m.signon.len(), e.buffers.signon + 16 * baselines);
     assert_eq!(m.datagram.len(), e.buffers.unreliable);

@@ -89,7 +89,7 @@ fn opening(version: &str) -> [Value; 2] {
 }
 
 /// A tools/call request with id `id`.
-fn call(id: u32, name: &str, arguments: Value) -> Value {
+fn call(id: u32, name: &str, arguments: &Value) -> Value {
     json!({ "jsonrpc": "2.0", "id": id, "method": "tools/call",
             "params": { "name": name, "arguments": arguments } })
 }
@@ -119,8 +119,8 @@ fn a_legacy_client_initializes_and_calls() {
             init,
             initialized,
             json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }),
-            call(2, "compile", json!({})),
-            call(3, "file.read", json!({ "path": "./world.qc" })),
+            call(2, "compile", &json!({})),
+            call(3, "file.read", &json!({ "path": "./world.qc" })),
         ],
     );
     let init = &answers["0"]["result"];
@@ -205,18 +205,18 @@ fn errors_are_reported_as_mcp_says() {
         &[
             init,
             initialized,
-            call(1, "project.open", json!({})),
+            call(1, "project.open", &json!({})),
             call(
                 2,
                 "symbol.hover",
-                json!({ "path": "world.qc", "offset": "x" }),
+                &json!({ "path": "world.qc", "offset": "x" }),
             ),
             call(
                 3,
                 "edit.apply",
-                json!({ "files": [{ "path": "../elsewhere/x.qc", "text": "" }] }),
+                &json!({ "files": [{ "path": "../elsewhere/x.qc", "text": "" }] }),
             ),
-            call(4, "compile", json!({})),
+            call(4, "compile", &json!({})),
         ],
     );
     assert_eq!(answers["1"]["error"]["code"], -32602, "{}", answers["1"]);
@@ -251,8 +251,8 @@ fn a_read_only_project_refuses_writing_tools() {
         &[
             init,
             initialized,
-            call(1, "compile", json!({})),
-            call(2, "project.check", json!({})),
+            call(1, "compile", &json!({})),
+            call(2, "project.check", &json!({})),
         ],
     );
     assert_eq!(answers["1"]["result"]["isError"], true);
@@ -330,13 +330,13 @@ fn a_connected_server_runs_in_the_apps_session() {
         &[
             init,
             initialized,
-            call(1, "compile", json!({})),
+            call(1, "compile", &json!({})),
             call(
                 2,
                 "edit.apply",
-                json!({ "files": [{ "path": "world.qc", "text": "void() worldspawn = { };\n" }] }),
+                &json!({ "files": [{ "path": "world.qc", "text": "void() worldspawn = { };\n" }] }),
             ),
-            call(3, "vm.run", json!({ "function": "nowhere" })),
+            call(3, "vm.run", &json!({ "function": "nowhere" })),
         ],
     );
     assert_eq!(answers["1"]["result"]["structuredContent"]["clean"], true);
@@ -510,25 +510,25 @@ fn a_room_built_over_mcp_compiles_sealed() {
     let mut messages = vec![
         init,
         initialized,
-        call(1, "map.open", json!({ "path": map })),
-        call(30, "map.inspect", json!({})),
-        call(31, "map.staged", json!({})),
+        call(1, "map.open", &json!({ "path": map })),
+        call(30, "map.inspect", &json!({})),
+        call(31, "map.staged", &json!({})),
         call(
             2,
             "map.place",
-            json!({ "classname": "info_player_start", "origin": [0.0, 0.0, 24.0] }),
+            &json!({ "classname": "info_player_start", "origin": [0.0, 0.0, 24.0] }),
         ),
     ];
     for (n, (min, max)) in (3..).zip(WALLS) {
         messages.push(call(
             n,
             "map.brush_create",
-            json!({ "min": min, "max": max, "texture": "wall" }),
+            &json!({ "min": min, "max": max, "texture": "wall" }),
         ));
     }
-    messages.push(call(20, "map.leaks", json!({})));
-    messages.push(call(21, "map.compile", json!({})));
-    messages.push(call(22, "map.staged", json!({})));
+    messages.push(call(20, "map.leaks", &json!({})));
+    messages.push(call(21, "map.compile", &json!({})));
+    messages.push(call(22, "map.staged", &json!({})));
     let answers = exchange(server, &messages);
     for id in 1..=8 {
         let answer = &answers[&id.to_string()]["result"];
@@ -573,14 +573,14 @@ fn a_read_only_server_refuses_the_map_tools_that_write() {
     for id in ["map.open", "map.place", "map.compile"] {
         assert!(writes.contains(&id), "{id}");
     }
-    let mut messages = vec![init, initialized, call(1, "map.staged", json!({}))];
+    let mut messages = vec![init, initialized, call(1, "map.staged", &json!({}))];
     for (n, id) in (3..).zip(&writes) {
         let arguments = if *id == "map.open" {
             json!({ "path": map })
         } else {
             json!({})
         };
-        messages.push(call(n, id, arguments));
+        messages.push(call(n, id, &arguments));
     }
     let answers = exchange(server, &messages);
     let read = answers["1"]["result"].to_string();
@@ -650,7 +650,7 @@ fn a_map_outside_the_write_roots_is_not_written() {
             call(
                 1,
                 "map.place",
-                json!({ "classname": "light", "origin": [0.0, 0.0, 64.0] }),
+                &json!({ "classname": "light", "origin": [0.0, 0.0, 64.0] }),
             ),
         ],
     );

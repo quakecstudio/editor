@@ -253,7 +253,7 @@ impl Loaded {
                     let game = world.game.world();
                     let settings = MenuSettings::read(&|name| game.setting(name).unwrap_or(0.0));
                     let hud = overlay.hud(screen, world.mesh.look, settings);
-                    let callback = world.view_callback(aspect, hud);
+                    let callback = world.view_callback(aspect, &hud);
                     let frame = drawer.draw(callback, size)?;
                     std::fs::write(path, frame.ppm())
                         .map_err(|error| Error::Script(format!("{}: {error}", path.display())))?;
@@ -483,7 +483,7 @@ impl Headless {
     /// The client's view alone, on an image `aspect` wide per unit of height: no status bar,
     /// centre print or weapon, as the view oracle draws it with `viewsize 120` and
     /// `r_drawviewmodel 0` (P3-28).
-    fn view_callback(&mut self, aspect: f32, hud: Hud) -> qs_render::MapCallback {
+    fn view_callback(&mut self, aspect: f32, hud: &Hud) -> qs_render::MapCallback {
         // `V_SetContentsColor`: the leaf the eye is in tints the view (VIEW-4.3), before the
         // scene that carries the tint is taken.
         let origin = self.client.scene().view.origin;
@@ -492,7 +492,7 @@ impl Headless {
         let mut scene = self.client.scene();
         scene.view.weapon.model = qs_client::ModelIndex::NONE;
         self.play
-            .frame(&scene, &hud, self.bsp.bsp(), &mut self.mesh, aspect)
+            .frame(&scene, hud, self.bsp.bsp(), &mut self.mesh, aspect)
     }
 
     /// The client's frame: it reads what the server wrote, and the eye `pick` looks from is

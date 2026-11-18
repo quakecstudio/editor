@@ -45,7 +45,7 @@ fn a_client_runs_commands_in_the_hosts_session() {
         let unknown = client.execute("doc.nothing", json!({})).unwrap();
         (commands, appended, failed, unknown)
     });
-    let mut session = session(SessionSpec { text: "abc" });
+    let mut session = session(&SessionSpec { text: "abc" });
     for _ in 0..4 {
         assert!(host.answer_next(&mut session));
     }
@@ -86,7 +86,7 @@ fn a_bad_line_is_answered_with_an_error() {
         reader.read_line(&mut listed).unwrap();
         (bad, listed)
     });
-    let mut session = session(SessionSpec::default());
+    let mut session = session(&SessionSpec::default());
     assert!(host.answer_next(&mut session));
     let (bad, listed) = client.join().unwrap();
     assert!(
@@ -115,7 +115,7 @@ fn one_host_answers_on_a_socket() {
         std::fs::write(&stale, b"").unwrap();
         let host = Host::listen(&stale, || {}).unwrap();
         let client = std::thread::spawn(move || Client::connect(&stale).unwrap().commands());
-        let mut session = session(SessionSpec::default());
+        let mut session = session(&SessionSpec::default());
         assert!(host.answer_next(&mut session));
         assert!(!client.join().unwrap().unwrap().is_empty());
     }

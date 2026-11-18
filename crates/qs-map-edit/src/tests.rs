@@ -156,10 +156,8 @@ fn every_entity_edit_undoes_and_the_map_saves() {
         session.execute(command, params.clone()).unwrap();
         let after = text(&session);
         if command == MAP_PLACE {
-            assert_eq!(
-                after,
-                format!("{}{new}", before.trim_end_matches('\n')) + "\n"
-            );
+            let placed = format!("{}{new}\n", before.trim_end_matches('\n'));
+            assert_eq!(after, placed);
             assert!(after.contains(old));
         } else {
             assert_eq!(after, before.replacen(old, new, 1), "{command} {params}");

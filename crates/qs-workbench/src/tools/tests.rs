@@ -6,6 +6,7 @@
     reason = "test code: a failed unwrap or index is a failed test"
 )]
 
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use qc_engines::Engine;
@@ -213,9 +214,10 @@ fn files_and_search_read_the_project() {
 #[test]
 fn search_stops_at_its_limit() {
     let mut loader = MemoryLoader::new();
-    let many: String = (0..=SEARCH_LIMIT)
-        .map(|n| format!("float hit{n};\n"))
-        .collect();
+    let many: String = (0..=SEARCH_LIMIT).fold(String::new(), |mut joined, n| {
+        _ = writeln!(joined, "float hit{n};");
+        joined
+    });
     loader.insert(
         Path::new(ROOT).join("progs.src"),
         b"progs.dat\nmany.qc\n".to_vec(),

@@ -15,6 +15,7 @@
 //! give back the same bytes.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -594,10 +595,10 @@ pub(super) fn build_progs(vector: &Vector) -> Result<Vec<u8>, String> {
 pub(super) fn init_text(vector: &Vector) -> String {
     let mut text = format!("edicts {}\n", vector.edicts.unwrap_or(DEFAULT_EDICTS));
     if let Some(maxclients) = vector.maxclients {
-        text.push_str(&format!("maxclients {maxclients}\n"));
+        _ = writeln!(text, "maxclients {maxclients}");
     }
     if let Some(seed) = vector.seed {
-        text.push_str(&format!("seed {seed}\n"));
+        _ = writeln!(text, "seed {seed}");
     }
     if vector.loading {
         text.push_str("loading\n");
@@ -605,18 +606,18 @@ pub(super) fn init_text(vector: &Vector) -> String {
     if vector.engine_builtins {
         text.push_str("builtins engine\n");
     }
-    text.push_str(&format!("entry {}\n", vector.entry.unwrap_or(1)));
+    _ = writeln!(text, "entry {}", vector.entry.unwrap_or(1));
     // f64's Display is the shortest text that reads back as the same double, as strtod reads it.
     for action in &vector.host {
-        text.push_str(&match action {
-            HostAction::Clock(t) => format!("host clock {t}\n"),
-            HostAction::Run(f) => format!("host run {f}\n"),
-            HostAction::Think(e, t) => format!("host think {e} {t}\n"),
-            HostAction::Push(e, t) => format!("host push {e} {t}\n"),
-            HostAction::Physics(t, n) => format!("host physics {t} {n}\n"),
-            HostAction::Frame(t, n) => format!("host frame {t} {n}\n"),
-            HostAction::Edict(n, slot) => format!("host edict {n} {slot}\n"),
-        });
+        _ = match action {
+            HostAction::Clock(t) => writeln!(text, "host clock {t}"),
+            HostAction::Run(f) => writeln!(text, "host run {f}"),
+            HostAction::Think(e, t) => writeln!(text, "host think {e} {t}"),
+            HostAction::Push(e, t) => writeln!(text, "host push {e} {t}"),
+            HostAction::Physics(t, n) => writeln!(text, "host physics {t} {n}"),
+            HostAction::Frame(t, n) => writeln!(text, "host frame {t} {n}"),
+            HostAction::Edict(n, slot) => writeln!(text, "host edict {n} {slot}"),
+        };
     }
     for (target, value) in &vector.initial {
         let place = match target {
@@ -631,7 +632,7 @@ pub(super) fn init_text(vector: &Vector) -> String {
             Value::Entity(edict) => format!("entity {edict}"),
             Value::Pointer(edict, field) => format!("pointer {edict} {field}"),
         };
-        text.push_str(&format!("{place} {value}\n"));
+        _ = writeln!(text, "{place} {value}");
     }
     text
 }
@@ -706,7 +707,10 @@ fn run(oracles: &Oracles, work: &Path, vector: &Vector) -> Result<(), String> {
         }
     }
     if let Some(bytes) = &vector.datagram {
-        let want: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+        let want: String = bytes.iter().fold(String::new(), |mut joined, b| {
+            _ = write!(joined, "{b:02x}");
+            joined
+        });
         let got = report
             .next()
             .and_then(|l| l.strip_prefix("datagram="))
@@ -986,10 +990,10 @@ fn describe_head(head: Head) -> String {
 fn describe(line: &Line) -> String {
     let mut text = describe_head(line.head);
     for (target, bits) in &line.changes {
-        text.push_str(&match target {
-            Target::Global(slot) => format!(" {slot}={bits:#010x}"),
-            Target::Field(edict, field) => format!(" e{edict}.{field}={bits:#010x}"),
-        });
+        _ = match target {
+            Target::Global(slot) => write!(text, " {slot}={bits:#010x}"),
+            Target::Field(edict, field) => write!(text, " e{edict}.{field}={bits:#010x}"),
+        };
     }
     text
 }

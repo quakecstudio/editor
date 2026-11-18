@@ -555,7 +555,7 @@ fn map_entities(client: &mut Client, monster: u32) -> Result<(), String> {
 fn paused_health(client: &mut Client, monster: u32) -> Result<(), String> {
     let health = json!({ "type": "float", "value": 50.0 });
     let held = client
-        .set_field(Edict::new(monster).into(), "health", health.clone())
+        .set_field(Edict::new(monster).into(), "health", &health)
         .map_err(|e| format!("field/set: {e}"))?;
     expect(
         held == json!({ "applied": "on_resume" }),

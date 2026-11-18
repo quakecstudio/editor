@@ -20,16 +20,16 @@ const BUILTINS: &str = "float(string s) strlen = #114;\n\
 
 /// The hover text of `needle` in [`BUILTINS`], for a client initialized with `options` and
 /// `capabilities`.
-fn hover(options: Value, capabilities: Value, needle: &str) -> String {
+fn hover(options: &Value, capabilities: &Value, needle: &str) -> String {
     let s = session(
         project(&[("a.qc", BUILTINS)]),
         &[
             initialize_with(options, capabilities),
-            notification("initialized", json!({})),
+            notification("initialized", &json!({})),
             request(
                 1,
                 "textDocument/hover",
-                json!({
+                &json!({
                     "textDocument": { "uri": super::uri("a.qc") },
                     "position": position(BUILTINS, needle, 0),
                 }),
@@ -48,20 +48,20 @@ fn hover(options: Value, capabilities: Value, needle: &str) -> String {
 fn a_builtins_hover_lists_the_engines_with_and_without_it() {
     let markdown = json!({ "textDocument": { "hover": { "contentFormat": ["markdown"] } } });
     assert_eq!(
-        hover(json!(null), markdown.clone(), "strlen("),
+        hover(&json!(null), &markdown, "strlen("),
         "```quakec\nfloat(string s) strlen\n```\n\n---\n\nBuiltin `#114`.  \n\
          Vanilla, the target engine, does not have it.  \n\
          Engines with it: Ironwail, vkQuake, FTEQW, DarkPlaces.  \n\
          Engines without it: Vanilla, QuakeSpasm, KEX."
     );
     assert_eq!(
-        hover(json!(null), markdown, "setorigin("),
+        hover(&json!(null), &markdown, "setorigin("),
         "```quakec\nvoid(entity e, vector o) setorigin\n```\n\n---\n\nBuiltin `#2`.  \n\
          Vanilla has it as `void(entity e, vector o) setorigin`.  \n\
          Engines with it: Vanilla, QuakeSpasm, Ironwail, vkQuake, FTEQW, DarkPlaces, KEX."
     );
     assert_eq!(
-        hover(json!({ "target": "fte" }), json!({}), "strlen("),
+        hover(&json!({ "target": "fte" }), &json!({}), "strlen("),
         "float(string s) strlen\n\nBuiltin #114.\n\
          FTEQW has it as float(string s) strlen (extensions FRIK_FILE, FTE_STRINGS, \
          ZQ_QC_STRINGS).\n\
@@ -79,8 +79,8 @@ fn the_position_encoding_is_the_one_offered() {
         let s = session(
             project(&[("a.qc", "")]),
             &[initialize_with(
-                json!(null),
-                json!({ "general": { "positionEncodings": offered } }),
+                &json!(null),
+                &json!({ "general": { "positionEncodings": offered } }),
             )],
         );
         assert_eq!(
@@ -111,13 +111,13 @@ fn a_save_reads_the_project_again() {
     send(request(
         0,
         "initialize",
-        json!({ "processId": null, "rootUri": from_path(&dir), "capabilities": {} }),
+        &json!({ "processId": null, "rootUri": from_path(&dir), "capabilities": {} }),
     ));
-    send(notification("initialized", json!({})));
+    send(notification("initialized", &json!({})));
     std::fs::write(dir.join("progs.src"), "progs.dat\ndefs.qc\na.qc\n").unwrap();
     send(notification(
         "textDocument/didSave",
-        json!({ "textDocument": { "uri": from_path(&dir.join("progs.src")) } }),
+        &json!({ "textDocument": { "uri": from_path(&dir.join("progs.src")) } }),
     ));
     let _ignored = std::fs::remove_dir_all(&dir);
     let a = json!(from_path(&dir.join("a.qc")));

@@ -167,14 +167,18 @@ impl ProjectFeature {
     pub(crate) fn choose_game_folder(
         commands: &mut Commands<'_>,
         settings_file: Option<&Path>,
-        path: PathBuf,
+        path: &Path,
     ) -> Option<GameFiles> {
-        let chosen: Option<GameFiles> =
-            commands.run(CHOOSE_GAME, &ChooseGameParams { path: path.clone() });
+        let chosen: Option<GameFiles> = commands.run(
+            CHOOSE_GAME,
+            &ChooseGameParams {
+                path: path.to_path_buf(),
+            },
+        );
         if chosen.as_ref().is_some_and(|files| files.state.plays()) {
             commands.set_notice(None);
             if let Some(file) = settings_file {
-                let value = serde_json::to_value(&path).ok();
+                let value = serde_json::to_value(path).ok();
                 let saved = SettingsStore::open(file.to_path_buf(), None).and_then(|mut store| {
                     store.put(SettingsScope::User, Setting::GameFolder, value)
                 });
@@ -221,7 +225,7 @@ impl ProjectFeature {
                     .set_title(Text::ChooseGameTitle.get())
                     .pick_folder();
                 if let Some(path) = picked {
-                    let chosen = Self::choose_game_folder(commands, settings_file, path);
+                    let chosen = Self::choose_game_folder(commands, settings_file, &path);
                     if chosen.is_some() {
                         self.guide_files = chosen;
                     }

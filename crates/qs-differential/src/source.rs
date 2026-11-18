@@ -170,7 +170,7 @@ struct Gen {
 /// The system part of a `defs.qc`: the globals of EDICT-2.1 and the fields of EDICT-3.1, in
 /// slot order, each section closed as id's `defs.qc` closes it, then the builtins.
 fn system_defs() -> String {
-    defs_source() + BUILTINS
+    format!("{}{}", defs_source(), BUILTINS)
 }
 
 /// The program number `n` of the seed `seed` (DIFF-14.1): the same text for the same pair.

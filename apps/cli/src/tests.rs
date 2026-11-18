@@ -8,6 +8,7 @@
 )]
 
 use std::ffi::OsString;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use qc_edict::system::{SYSTEM_GLOBALS, defs_source};
@@ -321,7 +322,7 @@ fn engine_defs(dir: &Path) {
         .iter()
         .filter(|var| var.etype == Etype::Function)
     {
-        defs.push_str(&format!("void() {} = {{}};\n", var.name));
+        _ = writeln!(defs, "void() {} = {{}};", var.name);
     }
     defs.push_str("float speed = 300;\n");
     std::fs::write(dir.join("defs.qc"), defs).unwrap();

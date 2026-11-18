@@ -18,6 +18,7 @@
 //! when the table is not what they render, so the document cannot fall behind.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
 
@@ -126,7 +127,7 @@ fn table(root: &Path) -> Result<String, String> {
                 .collect::<Vec<_>>()
                 .join(" ")
                 .replace('|', "\\|");
-            table.push_str(&format!("| {layer} | `{name}` | {cell} |\n"));
+            _ = writeln!(table, "| {layer} | `{name}` | {cell} |");
         }
     }
     Ok(table)
@@ -472,7 +473,7 @@ mod tests {
             )
             .unwrap();
             if let Some(layer) = spec.layer {
-                layers.push_str(&format!("{} = \"{layer}\"\n", spec.name));
+                _ = writeln!(layers, "{} = \"{layer}\"", spec.name);
             }
         }
         layers.push_str(extra_layers);

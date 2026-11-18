@@ -135,10 +135,10 @@ pub(crate) fn differences(ours: &[u8], theirs: &[u8]) -> Result<Vec<String>, Str
     let options = ReadOptions {
         check_header_crc: false,
     };
-    let ours = Progs::read_with(ours, &options)
+    let ours = Progs::read_with(ours, options)
         .map_err(|e| format!("our progs does not load: {e:?}"))?
         .to_file();
-    let theirs = Progs::read_with(theirs, &options)
+    let theirs = Progs::read_with(theirs, options)
         .map_err(|e| format!("qcc's progs does not load: {e:?}"))?
         .to_file();
     let mut out = Vec::new();

@@ -25,6 +25,7 @@ mod files;
 #[cfg(test)]
 mod tests;
 
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -426,7 +427,10 @@ fn write(
 
 /// `bytes` as lowercase hexadecimal.
 fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    bytes.iter().fold(String::new(), |mut joined, byte| {
+        _ = write!(joined, "{byte:02x}");
+        joined
+    })
 }
 
 /// The parameters of `project.new`.

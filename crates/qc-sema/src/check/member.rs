@@ -127,7 +127,7 @@ impl Checker<'_> {
                         reference: Reference::ArrayHead(None),
                         ..value.clone()
                     };
-                    self.address_of(head, field.syntax().span())?;
+                    self.address_of(&head, field.syntax().span())?;
                 }
                 value
             }

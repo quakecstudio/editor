@@ -290,8 +290,8 @@ fn precache_calls(file: &str, text: &str) -> Vec<Precache> {
             .get(at..end)
             .unwrap_or_default()
             .iter()
-            .filter(|&&c| c == b'\n')
-            .count();
+            .map(|&c| usize::from(c == b'\n'))
+            .sum::<usize>();
         line = line.saturating_add(newlines);
         at = end;
     }

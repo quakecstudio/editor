@@ -132,8 +132,8 @@ fn message() -> impl Strategy<Value = Value> {
         1 => Just(json!({ "textDocument": 7 })),
     ];
     (method, params, prop::option::of(1_i64..1000)).prop_map(|(method, params, id)| match id {
-        Some(id) => request(id, method, params),
-        None => notification(method, params),
+        Some(id) => request(id, method, &params),
+        None => notification(method, &params),
     })
 }
 
@@ -249,10 +249,10 @@ proptest! {
             ("a.qc", "float x;\nvoid() f = { x = 1; };\n"),
             ("b.qc", "void() g = { f(); };\n"),
         ]);
-        let mut all = vec![initialize(), notification("initialized", json!({}))];
+        let mut all = vec![initialize(), notification("initialized", &json!({}))];
         all.extend(messages.iter().cloned());
-        all.push(request(0x7fff, "shutdown", Value::Null));
-        all.push(notification("exit", Value::Null));
+        all.push(request(0x7fff, "shutdown", &Value::Null));
+        all.push(notification("exit", &Value::Null));
         let mut output = Vec::new();
         let exit = run(loader, framed(&all).as_slice(), &mut output).unwrap();
         prop_assert_eq!(exit, Exit::Success);

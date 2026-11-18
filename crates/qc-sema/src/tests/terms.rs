@@ -5,6 +5,7 @@
 //! case's diagnostics are the pinned FTEQCC's on the standard target (2026-10-27); a warning its
 //! settings make an error is `E0125` (F313).
 
+use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use qc_diag::Code;
@@ -1094,11 +1095,14 @@ fn ternaries_are_typed_as_fteqcc_types_them() {
     const DEFS: &str = "float q, x, y; vector v, v2; entity e1; string s; int ii; __uint u; __int64 l; __uint64 ul; __bfloat bf; _Bool bb; void() vf = {}; float() ff = { return 1; };";
     let cases = TERNARIES_ARE_TYPED_AS_FTEQCC_TYPES_THEM_CASES;
     for (pragmas, statement, expected) in cases {
-        let head: String = pragmas
-            .split(";;")
-            .filter(|p| !p.is_empty())
-            .map(|p| format!("#pragma {p}\n"))
-            .collect();
+        let head: String =
+            pragmas
+                .split(";;")
+                .filter(|p| !p.is_empty())
+                .fold(String::new(), |mut joined, p| {
+                    _ = writeln!(joined, "#pragma {p}");
+                    joined
+                });
         let source = format!("{head}{DEFS}\nvoid() g = {{ {statement} }};\n");
         let found: Vec<String> = diags(&source).into_iter().map(|(_, m)| m).collect();
         assert_eq!(found, *expected, "{source}");

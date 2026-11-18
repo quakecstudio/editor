@@ -53,6 +53,7 @@ use fte_macro::{ChunkReader, Text, ends_word};
 use std::borrow::Cow;
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write as _;
 use std::io;
 use std::ops::Range;
 use std::path::{Component, Path, PathBuf};
@@ -1719,7 +1720,7 @@ impl<L: Loader> Preprocessor<L> {
                 run.push_chunk(chunk);
                 return Some(item);
             }
-            Self::close_chunk(run, chunk);
+            Self::close_chunk(run, &chunk);
         }
         loop {
             let cursor = run.cursors.last_mut()?;
@@ -2656,7 +2657,7 @@ fn quote_bytes(bytes: &[u8]) -> String {
             b'\\' => out.push_str("\\\\"),
             b'\n' => out.push_str("\\n"),
             b'\r' => out.push_str("\\r"),
-            0x80..=0xff => out.push_str(&format!("\\x{b:02x}")),
+            0x80..=0xff => _ = write!(out, "\\x{b:02x}"),
             _ => out.push(char::from(b)),
         }
     }

@@ -13,6 +13,7 @@
 //! access is by slot (EDICT-2.3, EDICT-3.2).
 
 use qc_types::Etype;
+use std::fmt::Write as _;
 
 /// One system global or field: its name, its first slot and its type.
 ///
@@ -302,11 +303,11 @@ pub fn defs_source() -> String {
     };
     let mut text = String::new();
     for var in SYSTEM_GLOBALS {
-        text.push_str(&format!("{} {};\n", type_name(var.etype), var.name));
+        _ = writeln!(text, "{} {};", type_name(var.etype), var.name);
     }
     text.push_str("void end_sys_globals;\n");
     for var in SYSTEM_FIELDS {
-        text.push_str(&format!(".{} {};\n", type_name(var.etype), var.name));
+        _ = writeln!(text, ".{} {};", type_name(var.etype), var.name);
     }
     text.push_str("void end_sys_fields;\n");
     text

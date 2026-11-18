@@ -39,7 +39,7 @@ struct SessionSpec {
 }
 
 /// A session over a `Doc` holding `spec.text`, with every test command registered.
-fn session(spec: SessionSpec) -> Session<Doc> {
+fn session(spec: &SessionSpec) -> Session<Doc> {
     let mut registry = Registry::new();
     registry.register(Append).unwrap();
     registry.register(Len).unwrap();
@@ -284,7 +284,7 @@ fn text(session: &Session<Doc>) -> &str {
 
 #[test]
 fn a_panicking_command_is_an_error_and_the_session_continues() {
-    let mut session = session(SessionSpec::default());
+    let mut session = session(&SessionSpec::default());
     append(&mut session, "ab");
 
     let error = session.execute("doc.boom", json!({})).unwrap_err();
@@ -312,7 +312,7 @@ fn a_panicking_command_is_an_error_and_the_session_continues() {
 
 #[test]
 fn a_panic_with_a_string_payload_keeps_its_message() {
-    let mut session = session(SessionSpec::default());
+    let mut session = session(&SessionSpec::default());
     session.execute("doc.boom_on_undo", json!({})).unwrap();
 
     let error = session.undo().unwrap_err();
@@ -351,7 +351,7 @@ fn a_panic_with_another_payload_still_has_a_message() {
 
 #[test]
 fn a_panicking_undo_step_clears_both_histories_and_the_session_continues() {
-    let mut session = session(SessionSpec::default());
+    let mut session = session(&SessionSpec::default());
     append(&mut session, "a");
     append(&mut session, "b");
     session.undo().unwrap();
@@ -409,7 +409,7 @@ fn a_panicking_redo_step_clears_the_history() {
 
 #[test]
 fn a_command_runs_with_typed_params_and_returns_json() {
-    let mut session = session(SessionSpec { text: "ab" });
+    let mut session = session(&SessionSpec { text: "ab" });
     assert_eq!(append(&mut session, "cd"), json!(4));
     assert_eq!(text(&session), "abcd");
     assert_eq!(session.execute("doc.len", json!({})).unwrap(), json!(4));
@@ -417,7 +417,7 @@ fn a_command_runs_with_typed_params_and_returns_json() {
 
 #[test]
 fn an_unknown_id_is_an_error() {
-    let mut session = session(SessionSpec::default());
+    let mut session = session(&SessionSpec::default());
     for id in ["doc.nope", "", "DOC.APPEND", "doc.append "] {
         let error = session.execute(id, json!({})).unwrap_err();
         assert!(
@@ -436,7 +436,7 @@ fn an_unknown_id_is_an_error() {
 
 #[test]
 fn arguments_that_do_not_match_the_schema_are_an_error_and_change_nothing() {
-    let mut session = session(SessionSpec { text: "ab" });
+    let mut session = session(&SessionSpec { text: "ab" });
     for params in [
         json!({}),
         json!({ "text": 3 }),
@@ -488,7 +488,7 @@ fn arguments_that_do_not_match_the_schema_are_an_error_and_change_nothing() {
 
 #[test]
 fn a_failing_command_is_an_error_and_keeps_the_history() {
-    let mut session = session(SessionSpec::default());
+    let mut session = session(&SessionSpec::default());
     append(&mut session, "a");
     session.undo().unwrap();
 
@@ -508,7 +508,7 @@ fn a_failing_command_is_an_error_and_keeps_the_history() {
 
 #[test]
 fn output_that_is_not_json_is_an_error_but_the_change_can_be_undone() {
-    let mut session = session(SessionSpec::default());
+    let mut session = session(&SessionSpec::default());
 
     let error = session.execute("doc.bad_output", json!({})).unwrap_err();
 
@@ -552,7 +552,7 @@ fn a_change_outside_the_history_is_passed_by() {
 
 #[test]
 fn undo_and_redo_walk_the_history() {
-    let mut session = session(SessionSpec { text: ">" });
+    let mut session = session(&SessionSpec { text: ">" });
     append(&mut session, "a");
     append(&mut session, "b");
     session.execute("doc.len", json!({})).unwrap();
@@ -596,7 +596,7 @@ fn undo_and_redo_walk_the_history() {
 
 #[test]
 fn a_new_change_empties_the_redo_history_and_a_read_does_not() {
-    let mut session = session(SessionSpec::default());
+    let mut session = session(&SessionSpec::default());
     append(&mut session, "a");
     append(&mut session, "b");
     session.undo().unwrap();
@@ -615,7 +615,7 @@ fn a_new_change_empties_the_redo_history_and_a_read_does_not() {
 
 #[test]
 fn a_failing_step_stays_in_line_and_can_be_retried() {
-    let mut session = session(SessionSpec::default());
+    let mut session = session(&SessionSpec::default());
     session.execute("doc.flaky", json!({ "fails": 1 })).unwrap();
 
     let error = session.undo().unwrap_err();
@@ -687,7 +687,7 @@ fn a_failing_redo_step_stays_in_line() {
 
 #[test]
 fn every_command_is_listed_with_its_schema() {
-    let mut session = session(SessionSpec::default());
+    let mut session = session(&SessionSpec::default());
     let listed = session.execute("commands.list", json!({})).unwrap();
     let listed = listed.as_array().unwrap();
 
@@ -884,7 +884,7 @@ fn parameters_that_are_not_an_object_cannot_be_registered() {
 
 #[test]
 fn the_reference_lists_every_command_with_its_schema() {
-    let session = session(SessionSpec::default());
+    let session = session(&SessionSpec::default());
     let markdown = session.registry().markdown();
 
     assert!(markdown.starts_with("<!-- Generated by `cargo xtask commands`"));
@@ -1387,7 +1387,7 @@ fn a_registry_is_send_and_sync_and_a_session_over_a_send_context_is_send() {
 // and one registry is read from several threads at once.
 #[test]
 fn a_session_runs_on_another_thread_and_a_registry_is_shared() {
-    let mut session = session(SessionSpec { text: "a" });
+    let mut session = session(&SessionSpec { text: "a" });
     let session = std::thread::spawn(move || {
         session
             .execute("doc.append", json!({ "text": "bc" }))
@@ -1401,16 +1401,16 @@ fn a_session_runs_on_another_thread_and_a_registry_is_shared() {
     assert_eq!(session.context().text, "abc");
     let registry = session.registry();
     let ids: Vec<Vec<String>> = std::thread::scope(|scope| {
-        let readers: Vec<_> = (0..4)
-            .map(|_| {
-                scope.spawn(|| {
-                    registry
-                        .commands()
-                        .map(|c| c.id().as_str().to_owned())
-                        .collect::<Vec<_>>()
-                })
+        // Every reader is started before the first is joined.
+        let mut readers = Vec::new();
+        readers.extend((0..4).map(|_| {
+            scope.spawn(|| {
+                registry
+                    .commands()
+                    .map(|c| c.id().as_str().to_owned())
+                    .collect::<Vec<_>>()
             })
-            .collect();
+        }));
         readers.into_iter().map(|r| r.join().unwrap()).collect()
     });
     assert!(ids.iter().all(|list| list == &ids[0]));
@@ -1432,7 +1432,7 @@ proptest! {
     // and an undo or redo with an empty stack is an error that changes nothing.
     #[test]
     fn the_history_matches_a_two_stack_model(ops in proptest::collection::vec(op(), 0..40)) {
-        let mut s = session(SessionSpec::default());
+        let mut s = session(&SessionSpec::default());
         let mut done: Vec<String> = Vec::new();
         let mut undone: Vec<String> = Vec::new();
         for op in ops {
@@ -1472,7 +1472,7 @@ proptest! {
 // name after the last dot, or by what either starts with; several are a choice to narrow
 #[test]
 fn the_command_line_names_a_command_by_its_id_its_name_or_a_start() {
-    let session = session(SessionSpec::default());
+    let session = session(&SessionSpec::default());
     let registry = session.registry();
     let ids = |typed: &str| -> Vec<String> {
         registry
@@ -1497,7 +1497,7 @@ fn the_command_line_names_a_command_by_its_id_its_name_or_a_start() {
 fn the_command_line_asks_for_each_parameter_in_turn() {
     use crate::line::{CommandLine, Entered};
     use crate::params::ParamError;
-    let session = session(SessionSpec::default());
+    let session = session(&SessionSpec::default());
     let registry = session.registry();
     let mut line = CommandLine::new();
     assert_eq!(line.enter(registry, ""), Entered::Nothing);

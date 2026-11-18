@@ -18,6 +18,7 @@
 //! runs. The extraction rules are `docs/spec/engine-targets.md`, ENGT-2 to ENGT-4.
 
 use std::collections::BTreeSet;
+use std::fmt::Write as _;
 use std::fs;
 use std::io::Write as _;
 use std::path::Path;
@@ -846,9 +847,10 @@ pub(crate) fn render(all: &[(Pin, Vec<(String, Facts)>)]) -> String {
     out.push_str("/// The pinned sources, with the SHA-256 of each file (ENGT-1).\n");
     out.push_str("pub const SOURCES: &[Source] = &[\n");
     for (pin, _) in all {
-        out.push_str(&format!(
+        _ = writeln!(
+            out,
             "Source {{ id: {:?}, repo: {:?}, commit: {:?}, path: {:?}, sha256: {:?}, \
-             license: {:?}, license_file: {:?}, license_sha256: {:?} }},\n",
+             license: {:?}, license_file: {:?}, license_sha256: {:?} }},",
             pin.id,
             pin.repo,
             pin.commit,
@@ -857,7 +859,7 @@ pub(crate) fn render(all: &[(Pin, Vec<(String, Facts)>)]) -> String {
             pin.license,
             pin.license_file,
             pin.license_sha256
-        ));
+        );
     }
     out.push_str("];\n\n");
     for (pin, tables) in all {
@@ -871,20 +873,22 @@ pub(crate) fn render(all: &[(Pin, Vec<(String, Facts)>)]) -> String {
 /// Writes one table of [`render`].
 fn render_table(out: &mut String, pin: &Pin, kind: &str, facts: &Facts) {
     let name = format!("{}_{}", const_name(&pin.id), const_name(kind));
-    out.push_str(&format!(
+    _ = writeln!(
+        out,
         "/// The {kind} builtins of `{}`, `{}` (ENGT-2), in file order.\n\
-         pub(crate) const {name}_BUILTINS: &[Builtin] = &[\n",
+         pub(crate) const {name}_BUILTINS: &[Builtin] = &[",
         pin.id, pin.path
-    ));
+    );
     for item in &facts.builtins {
         let key = match &item.key {
             Key::Number(n) => format!("BuiltinKey::Number({n})"),
             Key::Name(alias) => format!("BuiltinKey::Name({alias:?})"),
         };
-        out.push_str(&format!(
-            "Builtin {{ key: {key}, name: {:?}, signature: {:?}, extensions: &{:?} }},\n",
+        _ = writeln!(
+            out,
+            "Builtin {{ key: {key}, name: {:?}, signature: {:?}, extensions: &{:?} }},",
             item.name, item.signature, item.extensions
-        ));
+        );
     }
     out.push_str("];\n\n");
     // A C reading lists extension names only from its `extension_array` (ENGT-2.17).
@@ -894,11 +898,12 @@ fn render_table(out: &mut String, pin: &Pin, kind: &str, facts: &Facts) {
         .find(|t| t.kind == kind)
         .is_none_or(|t| t.defines.is_some() || t.extension_array.is_some());
     if lists_extensions {
-        out.push_str(&format!(
+        _ = writeln!(
+            out,
             "/// The {kind} extension names of `{}` (ENGT-2.6, ENGT-2.17), in file order.\n\
-             pub(crate) const {name}_EXTENSIONS: &[&str] = &{:?};\n\n",
+             pub(crate) const {name}_EXTENSIONS: &[&str] = &{:?};\n",
             pin.id, facts.extensions
-        ));
+        );
     }
 }
 

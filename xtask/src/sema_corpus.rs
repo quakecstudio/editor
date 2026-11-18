@@ -22,6 +22,7 @@
 //! The codebases come from `cargo xtask corpus fetch id-1.01 rerelease`.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -190,30 +191,33 @@ fn render(text: &mut String, dir: &Path, module: &Module, db: &Db, analysis: &Mo
         *count = count.saturating_add(1);
     }
     let diagnostics: Vec<_> = analysis.diagnostics().collect();
-    text.push_str(&format!(
-        "module {}: {} definitions, {} references, {} diagnostics\n",
+    _ = writeln!(
+        text,
+        "module {}: {} definitions, {} references, {} diagnostics",
         module.name,
         index.defs().len(),
         index.refs().len(),
         diagnostics.len()
-    ));
+    );
     for (id, def) in index.defs().iter().enumerate() {
-        text.push_str(&format!(
-            "def {} {} {} {} refs {}\n",
+        _ = writeln!(
+            text,
+            "def {} {} {} {} refs {}",
             place(db, dir, def.location.file, def.location.span.start),
             kind_name(def.kind),
             def.name,
             type_name(&def.ty),
             refs.get(&id).copied().unwrap_or(0)
-        ));
+        );
     }
     for d in diagnostics {
-        text.push_str(&format!(
-            "diag {} {} {}\n",
+        _ = writeln!(
+            text,
+            "diag {} {} {}",
             place(db, dir, d.file, d.diagnostic.span.start),
             d.diagnostic.code.as_str(),
             d.diagnostic.message
-        ));
+        );
     }
 }
 

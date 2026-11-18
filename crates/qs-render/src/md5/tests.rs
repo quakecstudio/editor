@@ -7,6 +7,7 @@
 )]
 
 use qs_client::PoseBlend;
+use std::fmt::Write as _;
 
 use super::{Md5Model, normal_dot, shade_vector};
 use crate::alias::{AliasEntity, AliasError, AliasVertex, Shading};
@@ -68,12 +69,12 @@ pub(crate) fn md5anim(spec: &Md5Spec) -> Option<Vec<u8>> {
         spec.anim_joints,
     );
     if spec.anim_joints > 1 {
-        text.push_str(&format!("\"arm\" 0 1 {arm_start}\n"));
+        _ = writeln!(text, "\"arm\" 0 1 {arm_start}");
     }
     text.push_str("}\nbounds {\n}\nbaseframe {\n}\n");
     for (i, values) in frames.iter().enumerate() {
         let values: Vec<String> = values.iter().map(f32::to_string).collect();
-        text.push_str(&format!("frame {i} {{ {} }}\n", values.join(" ")));
+        _ = writeln!(text, "frame {i} {{ {} }}", values.join(" "));
     }
     Some(text.into_bytes())
 }

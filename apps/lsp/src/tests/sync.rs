@@ -10,7 +10,7 @@ use super::{notification, position, project, request, started, uri};
 fn open(name: &str, text: &str, version: i32) -> Value {
     notification(
         "textDocument/didOpen",
-        json!({
+        &json!({
             "textDocument": {
                 "uri": uri(name),
                 "languageId": "quakec",
@@ -33,7 +33,7 @@ fn diagnostics_are_published_and_cleared() {
             open("a.qc", broken, 1),
             notification(
                 "textDocument/didChange",
-                json!({
+                &json!({
                     "textDocument": { "uri": uri("a.qc"), "version": 2 },
                     "contentChanges": [{ "text": "float health;\nvoid() f = { health = 1; };\n" }],
                 }),
@@ -67,7 +67,7 @@ fn incremental_changes_apply_in_order() {
             open("a.qc", text, 1),
             notification(
                 "textDocument/didChange",
-                json!({
+                &json!({
                     "textDocument": { "uri": uri("a.qc"), "version": 2 },
                     "contentChanges": [
                         // `a` becomes `bb`, then the first `b` of it is deleted.
@@ -81,7 +81,7 @@ fn incremental_changes_apply_in_order() {
             request(
                 1,
                 "textDocument/definition",
-                json!({
+                &json!({
                     "textDocument": { "uri": uri("a.qc") },
                     "position": { "line": 1, "character": 13 },
                 }),
@@ -107,16 +107,16 @@ fn closing_returns_to_the_text_on_disk() {
             open("a.qc", "float a = b;\n", 1),
             notification(
                 "textDocument/didClose",
-                json!({ "textDocument": { "uri": uri("a.qc") } }),
+                &json!({ "textDocument": { "uri": uri("a.qc") } }),
             ),
             notification(
                 "textDocument/didSave",
-                json!({ "textDocument": { "uri": uri("a.qc") } }),
+                &json!({ "textDocument": { "uri": uri("a.qc") } }),
             ),
             // A document whose URI is not a file is not the server's.
             notification(
                 "textDocument/didOpen",
-                json!({ "textDocument": { "uri": "untitled:1", "languageId": "quakec",
+                &json!({ "textDocument": { "uri": "untitled:1", "languageId": "quakec",
                                           "version": 1, "text": "x" } }),
             ),
         ],
@@ -148,7 +148,7 @@ fn a_broken_project_file_is_reported_once() {
     let change = |version: i32, text: &str| {
         notification(
             "textDocument/didChange",
-            json!({
+            &json!({
                 "textDocument": { "uri": uri("quakec.toml"), "version": version },
                 "contentChanges": [{ "text": text }],
             }),

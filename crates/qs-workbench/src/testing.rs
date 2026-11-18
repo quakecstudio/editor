@@ -5,6 +5,7 @@
 //! mock engine as `vm.run` calls one (QCT-2); scenario tests are the `.scenario` files under
 //! `tests/`, played in `qs-sim` as `scenario.run` plays one (QCT-3). Implements QCT-1 to QCT-4.
 
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use qc_progs::Progs;
@@ -215,14 +216,14 @@ pub(crate) fn scenario_verdict(report: &Report) -> (Verdict, Option<String>) {
     }
     let mut message = String::new();
     for check in report.checks.iter().filter(|check| !check.passed) {
-        message.push_str(&format!(
-            "line {}: expect {}: found {}
-",
+        _ = writeln!(
+            message,
+            "line {}: expect {}: found {}",
             check.line, check.text, check.found
-        ));
+        );
     }
     if let Some(error) = &report.error {
-        message.push_str(&format!("frame {}: {error}\n", report.frames));
+        _ = writeln!(message, "frame {}: {error}", report.frames);
     }
     (Verdict::Failed, Some(message.trim_end().to_owned()))
 }
@@ -263,7 +264,7 @@ impl<L: Loader> Workbench<L> {
                 &root,
                 &progs,
                 params.game.as_deref(),
-                scenarios,
+                &scenarios,
             ));
         }
         Ok(TestRun::of(tests))
@@ -276,7 +277,7 @@ fn play_scenarios(
     root: &Path,
     progs: &Path,
     game: Option<&Path>,
-    scenarios: Vec<(String, PathBuf)>,
+    scenarios: &[(String, PathBuf)],
 ) -> Vec<TestResult> {
     let result = |name: String, (verdict, message): (Verdict, Option<String>)| TestResult {
         kind: TestKind::Scenario,
@@ -306,7 +307,7 @@ fn play_scenarios(
         Err(error) => return skip_all(error.to_string()),
     };
     let mut out = Vec::new();
-    for (name, path) in &scenarios {
+    for (name, path) in scenarios {
         let played = std::fs::read_to_string(path)
             .map_err(|e| e.to_string())
             .and_then(|text| Scenario::parse(&text).map_err(|e| e.to_string()))

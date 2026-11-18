@@ -418,7 +418,7 @@ fn run_vector(v: &Vector) -> (qc_trace::Trace, Option<crate::RunError>, Machine)
         .build();
     let progs = Progs::read_with(
         &bytes,
-        &ReadOptions {
+        ReadOptions {
             check_header_crc: false,
         },
     )

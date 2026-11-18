@@ -7,6 +7,7 @@ use crate::math::{ORIGIN, Vec3, cross, dot, normalize, rint, sub, within};
 use crate::planes::Planes;
 use crate::portals::{PortalId, Portals};
 use crate::tree::{NodeKind, Tree};
+use std::fmt::Write as _;
 
 /// The portal file's first line (QBSP-12.2).
 const PORTAL_FILE: &str = "PRT1";
@@ -31,9 +32,9 @@ fn winding_normal(w: &[Vec3]) -> Vec3 {
 fn write_float(out: &mut String, v: f32) {
     let whole = rint(v);
     if within(v, whole, WHOLE_EPSILON) {
-        out.push_str(&format!("{} ", whole as i32));
+        _ = write!(out, "{} ", whole as i32);
     } else {
-        out.push_str(&format!("{:.6} ", f64::from(v)));
+        _ = write!(out, "{:.6} ", f64::from(v));
     }
 }
 
@@ -117,12 +118,13 @@ impl Tree {
                     } else {
                         portal.nodes
                     };
-                out.push_str(&format!(
+                _ = write!(
+                    out,
                     "{} {} {} ",
                     portal.winding.len(),
                     number(first),
                     number(second)
-                ));
+                );
                 for point in &portal.winding {
                     out.push('(');
                     for &c in point {

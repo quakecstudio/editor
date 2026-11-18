@@ -13,6 +13,7 @@ use qs_bsp::{BSP_CONTENTS_EMPTY, BSP_CONTENTS_SOLID, Bsp, BspLoader, LumpId};
 use qs_map_bsp::Compiler;
 use qs_wad::write::WadBuilder;
 use sha2::{Digest as _, Sha256};
+use std::fmt::Write as _;
 
 use crate::entities::Entities;
 use crate::face::{FaceId, Lit};
@@ -121,7 +122,10 @@ fn vector(name: &str) -> String {
 }
 
 fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
+    bytes.iter().fold(String::new(), |mut joined, b| {
+        _ = write!(joined, "{b:02x}");
+        joined
+    })
 }
 
 // spec LIGHT-1.1, LIGHT-1.3, LIGHT-1.4, LIGHT-1.5, LIGHT-1.6, LIGHT-1.8, LIGHT-2.1, LIGHT-2.2, LIGHT-2.3, LIGHT-2.4, LIGHT-2.5, LIGHT-2.6, LIGHT-3.1, LIGHT-3.2, LIGHT-3.3, LIGHT-3.4, LIGHT-3.5, LIGHT-3.6, LIGHT-4.1, LIGHT-4.2, LIGHT-4.3, LIGHT-4.4, LIGHT-4.5, LIGHT-4.6, LIGHT-4.7, LIGHT-5.1, LIGHT-5.2, LIGHT-5.3:
@@ -337,9 +341,13 @@ fn switchable_styles_and_targets() {
         text.contains("{\n\"style\" \"33\"\n\"target\" \"b\"\n\"classname\" \"trigger_once\"\n}\n")
     );
     let names = |count: usize| -> String {
-        (0..count)
-            .map(|i| format!("{{ \"classname\" \"light\" \"targetname\" \"n{i}\" }}\n"))
-            .collect()
+        (0..count).fold(String::new(), |mut joined, i| {
+            _ = writeln!(
+                joined,
+                "{{ \"classname\" \"light\" \"targetname\" \"n{i}\" }}"
+            );
+            joined
+        })
     };
     assert_eq!(
         entities(names(33).as_bytes()),
@@ -495,7 +503,11 @@ fn the_scales_change_the_bytes() {
 // input's lighting bytes, here a longer lump of two styles a face
 #[test]
 fn padding_keeps_the_input_lighting() {
-    let lights = light_at("128 128 64", "\"style\" \"1\"\n") + &light_at("100 90 64", "");
+    let lights = format!(
+        "{}{}",
+        light_at("128 128 64", "\"style\" \"1\"\n"),
+        light_at("100 90 64", "")
+    );
     let first = Light::new(Sampling::Fast)
         .with_dialect(Dialect::Id)
         .run(&room(&lights))

@@ -114,22 +114,22 @@ fn run_raw(input: &[u8]) -> Exit {
 }
 
 /// A request.
-fn request(id: i64, method: &str, params: Value) -> Value {
+fn request(id: i64, method: &str, params: &Value) -> Value {
     json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params })
 }
 
 /// A notification.
-fn notification(method: &str, params: Value) -> Value {
+fn notification(method: &str, params: &Value) -> Value {
     json!({ "jsonrpc": "2.0", "method": method, "params": params })
 }
 
 /// The `initialize` request for the project in `/p`, with `options` as its
 /// `initializationOptions` and `capabilities` as the client's.
-fn initialize_with(options: Value, capabilities: Value) -> Value {
+fn initialize_with(options: &Value, capabilities: &Value) -> Value {
     request(
         0,
         "initialize",
-        json!({
+        &json!({
             "processId": null,
             "rootUri": "file:///p",
             "capabilities": capabilities,
@@ -142,8 +142,8 @@ fn initialize_with(options: Value, capabilities: Value) -> Value {
 /// and prepare-rename.
 fn initialize() -> Value {
     initialize_with(
-        json!(null),
-        json!({
+        &json!(null),
+        &json!({
             "textDocument": {
                 "hover": { "contentFormat": ["markdown", "plaintext"] },
                 "rename": { "prepareSupport": true },
@@ -154,10 +154,10 @@ fn initialize() -> Value {
 
 /// `initialize`, then `initialized`, then `messages`, then `shutdown` and `exit`.
 fn started(loader: MemoryLoader, messages: &[Value]) -> Session {
-    let mut all = vec![initialize(), notification("initialized", json!({}))];
+    let mut all = vec![initialize(), notification("initialized", &json!({}))];
     all.extend_from_slice(messages);
-    all.push(request(9999, "shutdown", json!(null)));
-    all.push(notification("exit", json!(null)));
+    all.push(request(9999, "shutdown", &json!(null)));
+    all.push(notification("exit", &json!(null)));
     session(loader, &all)
 }
 

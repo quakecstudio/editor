@@ -129,7 +129,7 @@ impl<L: Loader> Workbench<L> {
             self.staged.forget(&path);
         }
         self.host
-            .set_overlay(&path, text.clone())
+            .set_overlay(&path, &text)
             .map_err(WorkbenchError::Project)?;
         self.unsaved.insert(path.clone());
         if let Some(root) = &self.root {

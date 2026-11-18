@@ -247,7 +247,7 @@ impl Checker<'_> {
             Ok(rhs) => rhs,
             Err(fatal) => return Err(fatal),
         };
-        self.store_assigned(binary, (kind, span, in_condition), lhs, rhs)
+        self.store_assigned(binary, (kind, span, in_condition), lhs, &rhs)
     }
 
     /// FTEF-29.1: `lhsr->postinc` and `lhsr->readonly`, before the value is read.
@@ -271,7 +271,7 @@ impl Checker<'_> {
         binary: &ast::BinaryExpr,
         (kind, span, in_condition): (Assign, Span, bool),
         lhs: Value,
-        rhs: Value,
+        rhs: &Value,
     ) -> Checked {
         if in_condition {
             let message = "suggest parenthesis for assignment used as truth value".to_owned();
@@ -287,14 +287,14 @@ impl Checker<'_> {
             lhs.ty.clone()
         };
         let stored = match kind {
-            Assign::Store => self.cast_to(&rhs, &target, span)?,
+            Assign::Store => self.cast_to(rhs, &target, span)?,
             Assign::Compound(spelling, ops, in_place) => {
                 // `lhsd = QCC_RefToDef(lhsr, false)`: an array named bare is read as its address.
                 let place = Value {
                     ty: target.clone(),
                     ..lhs.clone()
                 };
-                match self.compound(&place, &rhs, spelling, ops, in_place, span)? {
+                match self.compound(&place, rhs, spelling, ops, in_place, span)? {
                     Compounded::Store(value) => value,
                     Compounded::InPlace(value) => return Ok(value),
                     Compounded::Unchecked => return Ok(Value::of(lhs.ty)),

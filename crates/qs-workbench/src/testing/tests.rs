@@ -64,7 +64,7 @@ fn project(name: &str, spec: &ProjectSpec) -> (PathBuf, Workbench<MemoryLoader>)
     loader.insert(root.join("progs.src"), b"progs.dat\ncode.qc\n".to_vec());
     loader.insert(
         root.join("code.qc"),
-        (system_defs() + &spec.code).into_bytes(),
+        format!("{}{}", system_defs(), spec.code).into_bytes(),
     );
     let mut workbench = Workbench::new(loader, Config::default());
     workbench.open_project(&root).unwrap();

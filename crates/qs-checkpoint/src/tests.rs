@@ -203,7 +203,8 @@ fn checkpoints_are_listed_and_errors_reported() {
 /// A file tree: up to eight paths of up to three short parts, each with up to 40 bytes.
 fn tree() -> impl Strategy<Value = BTreeMap<String, Vec<u8>>> {
     proptest::collection::btree_map(
-        proptest::collection::vec("[a-c]{1,2}", 1..4).prop_map(|parts| parts.join("/") + ".qc"),
+        proptest::collection::vec("[a-c]{1,2}", 1..4)
+            .prop_map(|parts| format!("{}.qc", parts.join("/"))),
         proptest::collection::vec(any::<u8>(), 0..40),
         0..8,
     )

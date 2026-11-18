@@ -8,6 +8,7 @@
 
 use super::Region;
 use crate::{Entity, MapFile, Surface, TexDef};
+use std::fmt::Write as _;
 
 /// A brush filling the box `min` to `max`, its faces as qbsp reads them.
 fn cube(min: [i32; 3], max: [i32; 3]) -> String {
@@ -27,7 +28,7 @@ fn cube(min: [i32; 3], max: [i32; 3]) -> String {
 fn entity(classname: &str, keys: &[(&str, &str)], body: &str) -> String {
     let mut out = format!("{{\n\"classname\" \"{classname}\"\n");
     for (key, value) in keys {
-        out.push_str(&format!("\"{key}\" \"{value}\"\n"));
+        _ = writeln!(out, "\"{key}\" \"{value}\"");
     }
     out.push_str(body);
     out.push_str("}\n");

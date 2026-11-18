@@ -163,7 +163,11 @@ fn is_trivia(kind: SyntaxKind) -> bool {
 
 /// How many line breaks a token's text holds.
 fn line_breaks(token: &SyntaxToken) -> usize {
-    token.text().iter().filter(|&&b| b == b'\n').count()
+    token
+        .text()
+        .iter()
+        .map(|&b| usize::from(b == b'\n'))
+        .sum::<usize>()
 }
 
 /// Whether the token at `index` starts its line: it is the first token, or white space with a

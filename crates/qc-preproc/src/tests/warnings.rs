@@ -4,6 +4,7 @@
 //! to FTEF-14.70): each case was compiled with the pinned FTEQCC (`fteqcc -Tid`), which gave the
 //! same warnings with the same texts.
 
+use std::fmt::Write as _;
 use std::path::Path;
 
 use super::{codes, one_fte, tokens};
@@ -219,7 +220,7 @@ fn definitions_warn_and_refuse_as_fteqcc_does() {
 fn include_directories_past_fteqcc_s_table_warn() {
     let mut text = String::new();
     for i in 0..9 {
-        text.push_str(&format!("#pragma includedir d{i}\n"));
+        _ = writeln!(text, "#pragma includedir d{i}");
     }
     let (pp, out) = one_fte(&text);
     assert_eq!(

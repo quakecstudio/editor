@@ -851,10 +851,10 @@ mod mock_engine {
     #[test]
     fn set_lightstyle_stores() {
         let mut engine = MockEngine::new("start", 0, 1);
-        engine.set_lightstyle(5, b"abc".to_vec());
+        engine.set_lightstyle(5, b"abc");
         assert_eq!(engine.lightstyles[5].as_deref(), Some("abc"));
         // An index past the array does nothing (no panic).
-        engine.set_lightstyle(1000, b"z".to_vec());
+        engine.set_lightstyle(1000, b"z");
     }
 
     // spec DIFF-6.1: the mock engine's random source is the DIFF-6.2 one, seeded as given
