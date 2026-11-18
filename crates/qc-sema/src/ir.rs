@@ -110,6 +110,9 @@ pub enum Name {
     /// The string immediate of the body's string literal at this index
     /// (`TypedBody::string`).
     String(StringIndex),
+    /// The global of the translated string `_("...")` whose literal is the body's string at
+    /// this index, FTEQCC's `dotranslate_N` (FTEF-32.22).
+    Translated(StringIndex),
     /// The array definition's getter, `ArrayGet*NAME` (FTE-13.8).
     ArrayGet(DefId),
     /// The array definition's setter, `ArraySet*NAME` (FTE-13.11).
@@ -170,6 +173,7 @@ impl Name {
             | Self::Jump(_)
             | Self::Count(_)
             | Self::String(_)
+            | Self::Translated(_)
             | Self::ArrayGet(_)
             | Self::ArraySet(_)
             | Self::Nested(_) => return None,
@@ -185,6 +189,7 @@ impl Name {
             | Self::Immediate(_)
             | Self::ImmediateWord(..)
             | Self::String(_)
+            | Self::Translated(_)
             | Self::ArrayGet(_)
             | Self::ArraySet(_)
             | Self::Nested(_)
@@ -230,6 +235,19 @@ impl BodyStatement {
         }
     }
 
+    /// The arguments a call passes as its own operands, each with its slot: the first two of
+    /// `CALL1H` to `CALL8H` (FTEF-32.19); none of any other statement's.
+    pub fn operand_arguments(&self) -> impl Iterator<Item = (usize, Option<Name>)> + use<> {
+        let (count, passing) = self
+            .op
+            .call()
+            .unwrap_or((0, qc_preproc::CallPassing::Slots));
+        [self.b, self.c]
+            .into_iter()
+            .enumerate()
+            .take(count.min(passing.operands()))
+    }
+
     /// Whether the opcode reads or writes each operand, which a writer needs named: `a` and `b`
     /// where its row in `pr_opcodes` types them, `c` where the row makes a value of its own, a
     /// jump's offset (`b` of a conditional jump, `a` of `GOTO`), and none of `RETURN`, whose
@@ -245,6 +263,11 @@ impl BodyStatement {
             Op::Goto => [true, false, false],
             Op::IfI | Op::IfnotI | Op::IfS | Op::IfnotS | Op::IfF | Op::IfnotF => [a, true, c],
             Op::Return | Op::Done => [false; OPERANDS],
+            // FTEF-32.19: `CALL1H` to `CALL8H` read their first two arguments as operands.
+            op if op.call().is_some_and(|(_, passing)| passing.operands() > 0) => {
+                let count = op.call().map_or(0, |(count, _)| count);
+                [true, count >= 1, count >= 2]
+            }
             // FTEF-31.20: on a target whose stores take an offset the address is the array's
             // alone, `QCC_PR_Statement(&pr_opcodes[OP_GLOBALADDRESS], base, nullsref, NULL)`.
             Op::Globaladdress => [a, false, c],
@@ -339,6 +362,22 @@ mod tests {
 
     use super::{BodyStatement, Immediate, ImmediateKind, Name, StatementIndex};
     use crate::DefId;
+
+    // spec FTEF-32.19: a call by operands reads its function and as many of its first two
+    // arguments as it passes, each of which a writer needs named; a call by slots only its
+    // function
+    #[test]
+    fn a_call_by_operands_uses_its_arguments() {
+        let uses = |op: Op| BodyStatement::bare(op).uses();
+        assert_eq!(uses(Op::Call1h), [true, true, false]);
+        assert_eq!(uses(Op::Call2h), [true, true, true]);
+        assert_eq!(uses(Op::Call8h), [true, true, true]);
+        assert_eq!(uses(Op::Call0), [true, false, false]);
+        assert_eq!(uses(Op::Call2), [true, false, false]);
+        assert_eq!(Op::Call3h.call().map(|(count, _)| count), Some(3));
+        assert_eq!(Op::Call3.call().map(|(count, _)| count), Some(3));
+        assert_eq!(Op::AddF.call(), None);
+    }
 
     // spec FTE-18.11, QC-21.5: a field argument loaded straight into its parameter slot takes no
     // temporary; the same load into a value of its own takes its result's words, and so does a

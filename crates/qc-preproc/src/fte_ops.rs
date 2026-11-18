@@ -841,7 +841,67 @@ pub enum Op {
     Wstate,
 }
 
+/// Where a call opcode's arguments are.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CallPassing {
+    /// Every argument in its parameter slot, `OP_CALL0` to `OP_CALL8`.
+    Slots,
+    /// The first two as the call's own second and third operands, the rest in their
+    /// parameter slots, `OP_CALL1H` to `OP_CALL8H`.
+    Operands,
+}
+
+impl CallPassing {
+    /// How many of a call's first arguments are its own operands.
+    #[must_use]
+    pub const fn operands(self) -> usize {
+        match self {
+            Self::Slots => 0,
+            Self::Operands => 2,
+        }
+    }
+}
+
 impl Op {
+    /// The calls that pass every argument in a slot, by the arguments they pass.
+    pub const CALLS: [Self; 9] = [
+        Self::Call0,
+        Self::Call1,
+        Self::Call2,
+        Self::Call3,
+        Self::Call4,
+        Self::Call5,
+        Self::Call6,
+        Self::Call7,
+        Self::Call8,
+    ];
+    /// The calls of a target with `OP_CALL1H`, by the arguments they pass: `OP_CALL0` with
+    /// none.
+    pub const CALLS_BY_OPERANDS: [Self; 9] = [
+        Self::Call0,
+        Self::Call1h,
+        Self::Call2h,
+        Self::Call3h,
+        Self::Call4h,
+        Self::Call5h,
+        Self::Call6h,
+        Self::Call7h,
+        Self::Call8h,
+    ];
+
+    /// For a call, how many arguments it passes and where they are; `None` for any other
+    /// opcode.
+    #[must_use]
+    pub fn call(self) -> Option<(usize, CallPassing)> {
+        let slots = Self::CALLS.iter().position(|&call| call == self);
+        let operands = Self::CALLS_BY_OPERANDS
+            .iter()
+            .position(|&call| call == self);
+        slots
+            .map(|count| (count, CallPassing::Slots))
+            .or_else(|| operands.map(|count| (count, CallPassing::Operands)))
+    }
+
     /// Every opcode, in `pr_opcodes[]` order.
     pub const ALL: [Self; 413] = [
         Self::Done,

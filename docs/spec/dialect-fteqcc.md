@@ -4025,7 +4025,7 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   string), then the pragmas in the white space before the token, which `QCC_PR_Lex` runs as it
   lexes it. The flags kept are those the lexer reads (FTEF-12.12), `cpriority`, `assumevar`,
   `subscope`, `attributes`, `ifvector` and `vectorlogic` (FTEF-30.2), with the operator
-  priorities (FTEF-21.4) and the defaults of FTEF-21.14; a pragma that names none of them marks nothing, and the others are FTEF-21.20's.
+  priorities (FTEF-21.4) and the defaults of FTEF-21.14; a pragma that names none of them marks nothing, and the others are FTEF-21.26's.
   A flag read while the parser looks at a token, as FTEQCC reads one after it has lexed the token
   after what it read, is the flag at that token: `subscope` at a block's end is read at the token
   after its `}`. The token after an `extern` block is lexed with the block's flags and read with
@@ -4198,7 +4198,7 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   preprocessor's.
 - **FTEF-21.18** **Withdrawn** (P2-06, #587): it listed `ifvector` and `vectorlogic` among the
   flags the semantic model does not read, but a condition's test reads them (FTEF-30.2).
-  Replaced by FTEF-21.20.
+  Replaced by FTEF-21.20, itself replaced by FTEF-21.26.
 - **FTEF-21.19** A `break` that no loop or `switch` holds, a `continue` that no loop holds, and a
   `case` or `default` label that no `switch` holds, are counted (`num_breaks`, `num_continues`,
   `num_cases`) and left over at the function's end: "%s: function contains illegal breaks", "%s:
@@ -4209,9 +4209,18 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   are errors, a `break` in a `switch`, `loop` or `until`, a `continue` in a loop and a label in a
   `switch` are not. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseImmediateStatements`, `QCC_PR_ParseStatement`.
-- **FTEF-21.20** The flags a pragma may set mid-compile that no token, tree, definition or cast
+- **FTEF-21.20** **Withdrawn** 2026-11-17: it listed `boundchecks` among the flags not
+  modelled, which the lowering of an index now reads (FTEF-21.25, FTEF-31.24). Replaced by
+  FTEF-21.26.
+- **FTEF-21.25** `boundchecks` is kept with FTEF-21.1's flags and is not one of
+  FTEF-21.26's: the lowering of an index that is no constant reads it (FTEF-31.24). It is on
+  unless the command line or a pragma turns it off (`{&flag_boundchecks, defaultflag,
+  "boundchecks", "Enforce Bound Checks", ...}`), as `-std=c` and `-std=gmqcc` do
+  (`flag_boundchecks = false;`). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qccmain.c`, `compiler_flag`, `QCC_PR_CommandLinePrecompilerOptions`.
+- **FTEF-21.26** The flags a pragma may set mid-compile that no token, tree, definition or cast
   of the semantic model reads are not modelled, each for its reason: `nosave`'s default but for
-  a typedef, and `optimise`, `opcode`, `iffloat`, `ifstring`, `nullemptystr`, `boundchecks`,
+  a typedef, and `optimise`, `opcode`, `iffloat`, `ifstring`, `nullemptystr`,
   `fastarrays`, `lo`, `reciprocal-math`, `allowuninit`, `omitinternals`, `embedsrc`, `dumpfilenames`, `annotate`, `brokenarray`, `rootconstructor`
   and `pythonlogic`, which the compiler's output reads (P2-06 onward); `msvcstyle`,
   `debugmacros` and `verbose`, which change only what FTEQCC prints; the target's
@@ -4228,12 +4237,6 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   arithmetic read them (`QCC_PR_Statement`'s "type mismatch for OP",
   `QCC_SupplyConversionForAssignment`, `QCC_PR_GenerateLogicalTruth`, `sizeof`), the expression
   typing's (P2-06).
-- **FTEF-21.25** `boundchecks` is kept with FTEF-21.1's flags and is no longer one of
-  FTEF-21.20's: the lowering of an index that is no constant reads it (FTEF-31.24). It is on
-  unless the command line or a pragma turns it off (`{&flag_boundchecks, defaultflag,
-  "boundchecks", "Enforce Bound Checks", ...}`), as `-std=c` and `-std=gmqcc` do
-  (`flag_boundchecks = false;`). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
-  `engine/qclib/qccmain.c`, `compiler_flag`, `QCC_PR_CommandLinePrecompilerOptions`.
 - **FTEF-21.21** With `qcfuncs` off a C function a body declares (FTEF-21.10) is defined by a
   body written with it, `void x() {}`, and needs none elsewhere; C's `(*name)(params)` there is
   a variable (`isvar |= isptr>0`), no function, so `float (*x)(float); x(1);` and `entity
@@ -5644,6 +5647,36 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   (FTEF-32.16, `if (d->isstatic || (d->constant && d->initialized)) QCC_FinaliseDef(d);`).
   Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qccmain.c`,
   `QCC_UnmarshalLocals`.
+- **FTEF-32.22** `_("text")` in an expression is the global of the translated string: a
+  string definition named `dotranslate_N` that is no constant, initialised with the text, the
+  N counting each one made from 1 (`QC_snprintfz(buf, sizeof(buf), "dotranslate_%i",
+  ++dotranslate_count); ... cn->constant = !translate; cn->initialized = 1;` in
+  `QCC_MakeStringConstInternal`), and a text translated before names the global it made then
+  (`cn = pHash_Get(translate?&stringconstdefstable_trans:&stringconstdefstable, value); if
+  (cn) return QCC_MakeSRefForce(cn, 0, type_string);`): `a = _("one"); b = _("two"); a =
+  _("one");` is `STORE_S dotranslate_1, a`, `STORE_S dotranslate_2, b`, `STORE_S
+  dotranslate_1, a`. A global that `_("text")` initialises holds the text itself and has a
+  second definition at its offset, a constant string named `dotranslate_N` by the same count
+  (`QCC_SRef_Data(def)->_int = QCC_CopyString (pr_immediate_string); if (!pr_scope ||
+  def.sym->constant) { ... QC_snprintfz(trname, sizeof(trname), "dotranslate_%i",
+  ++dotranslate_count); dt = QCC_PR_DummyDef(type_string, trname, pr_scope, 0, def.sym,
+  def.ofs, true, GDF_CONST);` in `QCC_PR_ParseInitializerType`), with no `IMMEDIATE` of its
+  own. Run on the pinned FTEQCC with `-Tfte`: `string g = _("hi");` and the three stores
+  above write `dotranslate_2` and `dotranslate_3` before the function's locals.
+
+- **FTEF-32.23** A global of a function type, or a member or element of one in a global's
+  aggregate, initialised with the name of a function that has no body yet, holds 0 as it is
+  read and is given the function's number once the function has one (`if
+  ((!basedef->scope||basedef->isstatic) && def.cast->type == ev_function &&
+  def.sym->symboldata==basedef->symboldata) { //set to a function which is not yet
+  initialised. insert a function reloc at this location, so we can update it once it is
+  actually known. ... dt = QCC_PR_DummyDef(type_function, "$relocf", basedef->scope, 0,
+  def.sym, def.ofs, false, GDF_CONST); dt->reloc = tmp.sym; ... dt->strip = true; ...
+  QCC_SRef_DataWord(def, i)->_int = 0;` in `QCC_PR_ParseInitializerType`); the `$relocf`
+  definition is stripped and not written. One with a body already gives its number at once.
+  Run on the pinned FTEQCC with `-Tfte`: with `a` numbered 1 and `b` 2, `page_t pages[] = { {
+  b, a } };` before either body holds 2 and 1, and `void(void) fp = b;` holds 2.
+
 ## FTEF-33 Builtin argument checks
 
 **Source:** `qcc_pr_comp.c`, `QCC_VerifyFormatString`, `QCC_VerifyArgs_sendevent`,

@@ -248,6 +248,17 @@ pub(crate) struct Program {
     /// The statement operands that name a shared temporary: the statement and the operand,
     /// 0 for `a`, 1 for `b`, 2 for `c`.
     shared_sites: Vec<(usize, u8)>,
+    /// The translated strings made so far, each with its definition's place
+    /// (`stringconstdefstable_trans`, FTEF-32.22).
+    translations: Vec<(Vec<u8>, usize)>,
+    /// How many `dotranslate_N` definitions there are (`dotranslate_count`).
+    translated: u32,
+    /// The functions an initialiser being gathered names before they are defined, each with
+    /// the word of the initialiser that is to hold its number (FTEF-32.23).
+    named_functions: Vec<(u32, usize)>,
+    /// The globals that are to hold a function's number once every function is defined, each
+    /// with the function's definition (`$relocf`, FTEF-32.23).
+    function_relocs: Vec<(u32, usize)>,
 }
 
 impl Program {
@@ -270,6 +281,10 @@ impl Program {
             pending_blocks: Vec::new(),
             shared: Vec::new(),
             shared_sites: Vec::new(),
+            translations: Vec::new(),
+            translated: 0,
+            named_functions: Vec::new(),
+            function_relocs: Vec::new(),
         }
     }
 
@@ -959,7 +974,43 @@ impl Program {
         let def = self.defs.get_mut(place).ok_or(Internal::NoDefinition)?;
         def.initialized = true;
         let ofs = def.ofs;
+        // FTEF-32.23: a word that names a function not yet defined is filled in at the end.
+        for (word, function) in std::mem::take(&mut self.named_functions) {
+            let at = ofs.checked_add(word).ok_or(Internal::TooLarge)?;
+            self.function_relocs.push((at, function));
+        }
         self.set_words(ofs, words)
+    }
+
+    /// FTEF-32.23: the function defined at `function` is named by the initialiser being
+    /// gathered, before its body; the word it is named at is given by
+    /// [`Program::named_functions_at`].
+    pub(crate) fn name_function(&mut self, function: usize) {
+        self.named_functions.push((0, function));
+    }
+
+    /// How many functions the initialiser being gathered has named so far.
+    pub(crate) const fn named_functions(&self) -> usize {
+        self.named_functions.len()
+    }
+
+    /// Puts the functions named since there were `before` of them at word `word` of the
+    /// initialiser.
+    pub(crate) fn named_functions_at(&mut self, before: usize, word: u32) {
+        for (at, _) in self.named_functions.iter_mut().skip(before) {
+            *at = word;
+        }
+    }
+
+    /// FTEF-32.23: every global an initialiser gave a function not yet defined takes the
+    /// function's number, now that each has one.
+    pub(crate) fn resolve_function_relocs(&mut self) -> Result<(), Internal> {
+        for (at, function) in std::mem::take(&mut self.function_relocs) {
+            let ofs = self.defs.get(function).ok_or(Internal::NoDefinition)?.ofs;
+            let number = self.word(ofs);
+            self.set_words(at, &[number])?;
+        }
+        Ok(())
     }
 
     /// The words `literal` is stored as; a string's text is copied to the string table.
@@ -1007,6 +1058,59 @@ impl Program {
         });
         let words = self.literal_words(literal)?;
         self.set_words(ofs, &words)?;
+        Ok(place)
+    }
+
+    /// The name of the next translated string's definition, `dotranslate_N`, the N counting
+    /// from 1 (`++dotranslate_count`).
+    fn next_translation(&mut self) -> Result<String, Internal> {
+        self.translated = self.translated.checked_add(1).ok_or(Internal::TooLarge)?;
+        Ok(format!("dotranslate_{}", self.translated))
+    }
+
+    /// FTEF-32.22: the `dotranslate_N` definition FTEQCC makes for a global at `place` that
+    /// `_("...")` initialises, a second record at its offset, a constant string.
+    pub(crate) fn alias_translation(&mut self, place: usize) -> Result<(), Internal> {
+        let def = self.defs.get(place).ok_or(Internal::NoDefinition)?;
+        let (ty, ofs) = (def.ty.clone(), def.ofs);
+        let name = self.next_translation()?;
+        self.defs.push(Def {
+            name,
+            ty,
+            ofs,
+            scope: None,
+            initialized: true,
+            constant: true,
+            count: None,
+            id: None,
+        });
+        Ok(())
+    }
+
+    /// `QCC_MakeTranslateStringConst`: the global of the translated string `text`, a string
+    /// named `dotranslate_N` that is no constant, the N counting from 1; a string translated
+    /// before names the global it made then (FTEF-32.22).
+    pub(crate) fn translated(&mut self, text: &[u8]) -> Result<usize, Internal> {
+        if let Some(&(_, place)) = self.translations.iter().find(|(made, _)| made == text) {
+            return Ok(place);
+        }
+        let literal = Literal::String(text.to_vec());
+        let ofs = self.allocate_global(literal.ty().words())?;
+        let place = self.defs.len();
+        let name = self.next_translation()?;
+        self.defs.push(Def {
+            name,
+            ty: literal.ty(),
+            ofs,
+            scope: None,
+            initialized: true,
+            constant: false,
+            count: None,
+            id: None,
+        });
+        let words = self.literal_words(&literal)?;
+        self.set_words(ofs, &words)?;
+        self.translations.push((text.to_vec(), place));
         Ok(place)
     }
 
