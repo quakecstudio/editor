@@ -480,6 +480,18 @@ impl Checker<'_> {
                     c: Some(ir::Name::Made(address)),
                     ..ir::BodyStatement::bare(Op::Address)
                 });
+                // FTEF-29.18: an `ASSOC_RIGHT` opcode, `|=` and `&~=` of floats, has no result:
+                // the assignment's value is the value it was given.
+                if row(op).is_some_and(|r| r.assoc == opcodes::Assoc::Right) {
+                    self.generated.push(ir::BodyStatement {
+                        a: self.name_of(rhs),
+                        b: Some(ir::Name::Made(address)),
+                        ..ir::BodyStatement::bare(op)
+                    });
+                    self.read_returned(rhs);
+                    self.env.temps().take(1);
+                    return Ok(Compounded::InPlace(rhs.clone()));
+                }
                 let result = self.next_made();
                 self.generated.push(ir::BodyStatement {
                     a: self.name_of(rhs),

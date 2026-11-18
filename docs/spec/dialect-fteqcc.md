@@ -5105,6 +5105,14 @@ whether it is the result of a postfix `++` or `--`. The semantic model checks as
   through it: `self.health += 1` is `FLDADDRESS self, health, temp_0` then `ADDSTOREP_F 1f,
   temp_0, temp_0`, whose result is the assignment's value. Source: the pinned FTEQCC's `-Fwasm`
   output, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e.
+- **FTEF-29.18** The in-place opcodes of `|=` and `&~=` on floats, `OP_BITSETSTOREP_F` and
+  `OP_BITCLRSTOREP_F`, are `ASSOC_RIGHT` in the opcode table, not `ASSOC_RIGHT_RESULT` as the
+  arithmetic ones are, so the statement has no result and the assignment's value is the value it
+  was given (`else if (op->type_c == &type_void || op->associative==ASSOC_RIGHT || op->type_c ==
+  NULL) { var_c = nullsref; statement->c = nullsref; ... return var_a; }`): `x = (self.flags |=
+  g)` is `FLDADDRESS self, flags, temp_0`, `BITSETSTOREP_F g, temp_0` and `STORE_F g, x`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `pr_opcodes`, `QCC_PR_StatementFlags`.
 
 ## FTEF-30 Terms
 

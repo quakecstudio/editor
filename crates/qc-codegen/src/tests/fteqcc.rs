@@ -4689,3 +4689,57 @@ fn an_optional_parameter_s_default_is_not_passed() {
     assert_eq!(stored.get(..3), Some(&[10, 13, 16][..]));
     assert_eq!(stored.get(4..7), Some(&[10, 13, 16][..]));
 }
+
+// spec FTEF-29.18: `|=` and `&~=` of a float field in place have no result, and the
+// assignment's value is the value given, as the pinned FTEQCC's program has it
+#[test]
+fn a_bit_update_in_place_has_no_result() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\nentity self;\n.float flags;\nfloat g;\nfloat x;\n\
+         void end_sys_fields;\n\
+         void t(void) {\n\tx = (self.flags |= g);\n\tself.flags &~= 2;\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let (this, flags) = (global(&p, "self"), global(&p, "flags"));
+    let (g, x) = (global(&p, "g"), global(&p, "x"));
+    let statements = body(&p, "t");
+    let temp = statements[0].c;
+    let two = statements[4].a;
+    assert_eq!(
+        statements,
+        [
+            Statement {
+                op: number(Op::Address),
+                a: this,
+                b: flags,
+                c: temp
+            },
+            Statement {
+                op: number(Op::BitsetstorepF),
+                a: g,
+                b: temp,
+                c: 0
+            },
+            Statement {
+                op: number(Op::StoreF),
+                a: g,
+                b: x,
+                c: 0
+            },
+            Statement {
+                op: number(Op::Address),
+                a: this,
+                b: flags,
+                c: temp
+            },
+            Statement {
+                op: number(Op::BitclrstorepF),
+                a: two,
+                b: temp,
+                c: 0
+            },
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
