@@ -1116,7 +1116,7 @@ proptest! {
     fn line_numbers_count_lfs(source in proptest::collection::vec(any::<u8>(), 0..128), at in 0usize..128) {
         let at = at.min(source.len());
         let index = LineIndex::new(&source);
-        let lfs = source[..at].iter().filter(|&&b| b == b'\n').count();
+        let lfs = source[..at].iter().map(|&b| usize::from(b == b'\n')).sum::<usize>();
         prop_assert_eq!(index.line(at), u32::try_from(lfs + 1).unwrap_or(u32::MAX));
     }
 }

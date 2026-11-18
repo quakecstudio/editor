@@ -18,6 +18,7 @@
 
 use qc_edict::EdictNumber;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 use std::path::Path;
 
 use qc_builtins::{EngineProfile, MockBuiltins, Unimplemented};
@@ -140,8 +141,10 @@ pub fn uncovered(bytes: &[u8], executed: &BTreeSet<i32>) -> Result<String, Calls
     rows.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.2.cmp(&b.2)));
     Ok(rows
         .iter()
-        .map(|(missed, of, name)| format!("{missed}\t{of}\t{name}\n"))
-        .collect())
+        .fold(String::new(), |mut joined, (missed, of, name)| {
+            _ = writeln!(joined, "{missed}\t{of}\t{name}");
+            joined
+        }))
 }
 
 /// The statements of `executed` in the progs `bytes`, each as `<name>\t<offset>` with the
@@ -158,7 +161,7 @@ pub fn executed_by_function(bytes: &[u8], executed: &BTreeSet<i32>) -> Result<St
         let start = body.start;
         for statement in body.filter(|s| executed.contains(s)) {
             let name = String::from_utf8_lossy(&name);
-            text.push_str(&format!("{name}\t{}\n", statement.saturating_sub(start)));
+            _ = writeln!(text, "{name}\t{}", statement.saturating_sub(start));
         }
     }
     Ok(text)
@@ -367,24 +370,22 @@ fn run_scenarios(
     // The scenarios share nothing, so each runs on its own thread; their reports are taken in
     // the scenarios' order, so the result is the same as one after another.
     let reports: Vec<(&'static str, Result<Report, CallsError>)> = std::thread::scope(|scope| {
-        let handles: Vec<_> = worlds
-            .iter()
-            .map(|(name, scenario, entities)| {
-                let handle = scope.spawn(move || {
-                    let report = |done, of| progress(name, done, of);
-                    run_calls_reporting(
-                        oracle,
-                        theirs,
-                        ours,
-                        (scenario, entities),
-                        (rounds, profile),
-                        called,
-                        &report,
-                    )
-                });
-                (*name, handle)
-            })
-            .collect();
+        let mut handles = Vec::new();
+        handles.extend(worlds.iter().map(|(name, scenario, entities)| {
+            let handle = scope.spawn(move || {
+                let report = |done, of| progress(name, done, of);
+                run_calls_reporting(
+                    oracle,
+                    theirs,
+                    ours,
+                    (scenario, entities),
+                    (rounds, profile),
+                    called,
+                    &report,
+                )
+            });
+            (*name, handle)
+        }));
         handles
             .into_iter()
             .map(|(name, handle)| {

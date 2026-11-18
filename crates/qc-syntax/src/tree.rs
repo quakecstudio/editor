@@ -363,8 +363,12 @@ impl SyntaxNode {
         std::iter::from_fn(move || {
             let element = stack.pop()?;
             if let SyntaxElement::Node(node) = &element {
-                let children: Vec<SyntaxElement> = node.children_with_tokens().collect();
-                stack.extend(children.into_iter().rev());
+                // The children go on in order, then are turned so the first comes off first.
+                let from = stack.len();
+                stack.extend(node.children_with_tokens());
+                if let Some(children) = stack.get_mut(from..) {
+                    children.reverse();
+                }
             }
             Some(element)
         })

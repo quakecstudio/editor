@@ -10,6 +10,7 @@
 //! the pruned tree, numbered by leaf as `PRT1`, or by cluster as `PRT2` when the map has detail.
 
 use std::collections::HashMap;
+use std::fmt::Write as _;
 
 use super::portals::{HeadPortals, PortalType, Portalizer};
 use super::tree::{NodeId, Separator, Tree};
@@ -100,7 +101,7 @@ impl Numbers {
         let mut out = String::new();
         for list in by_cluster {
             for leaf in list {
-                out.push_str(&format!("{leaf} "));
+                _ = write!(out, "{leaf} ");
             }
             out.push_str("-1\n");
         }
@@ -192,7 +193,7 @@ impl Tree {
                 let mut line = format!("{} {a} {b} ", p.winding.len());
                 for point in p.winding.points() {
                     let [x, y, z] = point.map(fmt_number);
-                    line.push_str(&format!("({x} {y} {z}) "));
+                    _ = write!(line, "({x} {y} {z}) ");
                 }
                 out.push(line);
             }

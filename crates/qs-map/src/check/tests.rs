@@ -7,6 +7,7 @@
 )]
 
 use crate::{DiagnosticKind, MAP_MAX_SOUNDS, MapFile};
+use std::fmt::Write as _;
 
 const STANDARD: &[u8] = include_bytes!("../../../../docs/spec/vectors/map/standard.txt");
 const VALVE220: &[u8] = include_bytes!("../../../../docs/spec/vectors/map/valve220.txt");
@@ -214,9 +215,10 @@ fn faces() {
 fn texture_count() {
     let mut body = "{\n".to_owned();
     for index in 0..4097 {
-        body.push_str(&format!(
-            "( 0 0 {index} ) ( 0 1 {index} ) ( 1 0 {index} ) t{index} 0 0 0 1 1\n"
-        ));
+        _ = writeln!(
+            body,
+            "( 0 0 {index} ) ( 0 1 {index} ) ( 1 0 {index} ) t{index} 0 0 0 1 1"
+        );
     }
     body.push_str("}\n}\n");
     assert_eq!(check(&body), [(0, DiagnosticKind::TooManyTextures)]);
@@ -231,9 +233,10 @@ fn too_many_textures_by_texinfo_not_names() {
     for z in 1..=4097 {
         // Parallel planes at distinct z are distinct, not duplicates; a distinct shift makes
         // each face its own texinfo while all share the name "shared".
-        body.push_str(&format!(
-            "( 0 0 {z} ) ( 1 0 {z} ) ( 0 1 {z} ) shared {z} 0 0 1 1\n"
-        ));
+        _ = writeln!(
+            body,
+            "( 0 0 {z} ) ( 1 0 {z} ) ( 0 1 {z} ) shared {z} 0 0 1 1"
+        );
     }
     body.push_str("}\n}\n");
     assert!(check(&body).contains(&(0, DiagnosticKind::TooManyTextures)));
@@ -246,7 +249,7 @@ fn too_many_textures_by_texinfo_not_names() {
 fn many_duplicate_faces_do_not_overflow() {
     let mut body = "{\n".to_owned();
     for _ in 0..4097 {
-        body.push_str(&format!("{FACE} shared 0 0 0 1 1\n"));
+        _ = writeln!(body, "{FACE} shared 0 0 0 1 1");
     }
     body.push_str("}\n}\n");
     assert!(

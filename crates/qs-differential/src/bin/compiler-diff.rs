@@ -46,6 +46,7 @@
     reason = "compiler-diff is a command-line tool; this is its binary"
 )]
 
+use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -313,7 +314,7 @@ fn generate(generate: &Generate) -> Result<bool, String> {
     let mut text = String::new();
     for form in FORMS {
         let uses = forms.get(form).copied().unwrap_or(0);
-        text.push_str(&format!("{form}\t{uses}\n"));
+        _ = writeln!(text, "{form}\t{uses}");
     }
     let path = generate.dir.join("forms.tsv");
     std::fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;

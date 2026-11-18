@@ -120,7 +120,7 @@ fn error_then_run(raise: Raise, kind: &ErrorKind) -> (Machine, usize, Result<(),
     let bytes = chain_progs();
     let progs = Progs::read_with(
         &bytes,
-        &ReadOptions {
+        ReadOptions {
             check_header_crc: false,
         },
     )

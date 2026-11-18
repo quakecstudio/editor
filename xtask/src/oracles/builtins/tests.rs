@@ -901,7 +901,7 @@ fn read(bytes: &[u8]) -> qc_progs::Progs<'_> {
     let options = qc_progs::ReadOptions {
         check_header_crc: false,
     };
-    qc_progs::Progs::read_with(bytes, &options).unwrap()
+    qc_progs::Progs::read_with(bytes, options).unwrap()
 }
 
 // spec FTE-23.15: `f`'s function is the first, or the second after `g`'s; FTEQCC writes every

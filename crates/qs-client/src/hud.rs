@@ -922,8 +922,8 @@ impl CenterPrint {
         self.lines = self
             .text
             .iter()
-            .filter(|&&b| b == b'\n')
-            .count()
+            .map(|&b| usize::from(b == b'\n'))
+            .sum::<usize>()
             .saturating_add(1);
     }
 

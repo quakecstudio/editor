@@ -6,6 +6,7 @@
 //! outcomes of the programs these cases come from were compared with the pinned FTEQCC in the
 //! builtins differential's macro-text family (`cargo xtask oracles builtins`).
 
+use std::fmt::Write as _;
 use std::path::Path;
 
 use super::{codes, one, one_fte, tokens};
@@ -437,7 +438,7 @@ fn vanilla_expansions_are_bounded() {
     let _one = super::one_bound_test_at_a_time();
     let mut text = String::from("#define A0 x\n");
     for i in 1..24 {
-        text.push_str(&format!("#define A{i} A{p} A{p}\n", p = i - 1));
+        _ = writeln!(text, "#define A{i} A{p} A{p}", p = i - 1);
     }
     text.push_str("A23 A23\n");
     let (_, out) = one(&text);
@@ -446,7 +447,7 @@ fn vanilla_expansions_are_bounded() {
     assert!(out.tokens.iter().any(|t| t.kind == a23));
     let mut wide = format!("#define A0 {}\n", "x ".repeat(100));
     for i in 1..17 {
-        wide.push_str(&format!("#define A{i} A{p} A{p}\n", p = i - 1));
+        _ = writeln!(wide, "#define A{i} A{p} A{p}", p = i - 1);
     }
     wide.push_str("A16\n");
     let (_, out) = one(&wide);
@@ -669,7 +670,7 @@ fn the_expansions_of_a_file_are_bounded() {
     let _one = super::one_bound_test_at_a_time();
     let mut text = String::from("#define A0\n");
     for i in 1..=20 {
-        text.push_str(&format!("#define A{i} A{p} A{p}\n", p = i - 1));
+        _ = writeln!(text, "#define A{i} A{p} A{p}", p = i - 1);
     }
     text.push_str("A20 A0\n");
     for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {

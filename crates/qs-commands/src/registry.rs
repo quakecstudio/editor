@@ -3,6 +3,7 @@
 //! The registry: every command by id, with its parameter schema.
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 
 use serde::Serialize;
 use serde_json::Value;
@@ -203,19 +204,21 @@ impl<C: 'static> Registry<C> {
         let mut anchors = Anchors::new(["commands"]);
         for info in self.commands() {
             let cell = info.summary.replace('|', "\\|").replace('\n', " ");
-            out.push_str(&format!(
-                "| [`{}`](#{}) | {cell} |\n",
+            _ = writeln!(
+                out,
+                "| [`{}`](#{}) | {cell} |",
                 info.id,
                 anchors.next(info.id.as_str())
-            ));
+            );
         }
         for info in self.commands() {
             // Serialising a `Value` cannot fail.
             let schema = serde_json::to_string_pretty(&info.params).unwrap_or_default();
-            out.push_str(&format!(
-                "\n## `{}`\n\n{}\n\nParameters:\n\n```json\n{schema}\n```\n",
+            _ = writeln!(
+                out,
+                "\n## `{}`\n\n{}\n\nParameters:\n\n```json\n{schema}\n```",
                 info.id, info.summary
-            ));
+            );
         }
         out
     }

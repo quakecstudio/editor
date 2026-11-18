@@ -111,7 +111,10 @@ impl Location {
             .iter()
             .rposition(|&b| b == b'\n')
             .map_or(0, |newline| newline.saturating_add(1));
-        let breaks = before.iter().filter(|&&b| b == b'\n').count();
+        let breaks = before
+            .iter()
+            .map(|&b| usize::from(b == b'\n'))
+            .sum::<usize>();
         let chars = String::from_utf8_lossy(before.get(start..).unwrap_or_default())
             .chars()
             .count();

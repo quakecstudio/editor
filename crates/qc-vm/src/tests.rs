@@ -34,7 +34,7 @@ fn new_machine_has_empty_stacks() {
         .build();
     let progs = Progs::read_with(
         &bytes,
-        &qc_progs::ReadOptions {
+        qc_progs::ReadOptions {
             check_header_crc: false,
         },
     )
@@ -52,7 +52,7 @@ fn machine_with_globals(numglobals: usize) -> Machine {
         .build();
     let progs = Progs::read_with(
         &bytes,
-        &qc_progs::ReadOptions {
+        qc_progs::ReadOptions {
             check_header_crc: false,
         },
     )
@@ -108,7 +108,7 @@ fn run_does_not_mutate_progs() {
         .build();
     let progs = Progs::read_with(
         &bytes,
-        &qc_progs::ReadOptions {
+        qc_progs::ReadOptions {
             check_header_crc: false,
         },
     )
@@ -160,7 +160,7 @@ fn error_resets_depth_but_not_localstack() {
         .build();
     let progs = Progs::read_with(
         &bytes,
-        &qc_progs::ReadOptions {
+        qc_progs::ReadOptions {
             check_header_crc: false,
         },
     )
@@ -235,7 +235,7 @@ fn call_builtin(number: i32, builtins: &mut impl Builtins) -> Result<Machine, Ru
         .build();
     let progs = Progs::read_with(
         &bytes,
-        &qc_progs::ReadOptions {
+        qc_progs::ReadOptions {
             check_header_crc: false,
         },
     )
@@ -301,7 +301,7 @@ fn nested_run_continues_outer_after_return() {
     let bytes = nested_run_progs();
     let progs = Progs::read_with(
         &bytes,
-        &qc_progs::ReadOptions {
+        qc_progs::ReadOptions {
             check_header_crc: false,
         },
     )
@@ -370,7 +370,7 @@ fn nested_run_clears_trace_flag() {
     let bytes = nested_run_progs();
     let progs = Progs::read_with(
         &bytes,
-        &qc_progs::ReadOptions {
+        qc_progs::ReadOptions {
             check_header_crc: false,
         },
     )
@@ -436,7 +436,7 @@ fn nested_error_aborts_all_runs() {
         .build();
     let progs = Progs::read_with(
         &bytes,
-        &qc_progs::ReadOptions {
+        qc_progs::ReadOptions {
             check_header_crc: false,
         },
     )
@@ -480,7 +480,7 @@ mod coverage {
     fn read(bytes: &[u8]) -> Progs<'_> {
         Progs::read_with(
             bytes,
-            &ReadOptions {
+            ReadOptions {
                 check_header_crc: false,
             },
         )

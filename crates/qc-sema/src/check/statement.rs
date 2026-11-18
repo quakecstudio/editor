@@ -391,7 +391,7 @@ impl Checker<'_> {
 
     /// A condition of `if`, `while`, `do` or `switch`: an assignment at its top, outside
     /// parentheses, is "suggest parenthesis" (FTEF-29.6).
-    fn condition(&mut self, expr: Option<ast::Expr>) -> Result<Value, Fatal> {
+    fn condition(&mut self, expr: &Option<ast::Expr>) -> Result<Value, Fatal> {
         self.in_condition = true;
         let before = self.emitted;
         let checked = self.value(expr.clone());
@@ -465,7 +465,7 @@ impl Checker<'_> {
         }
         let mut negate = negation.is_some();
         let condition_span = s.condition().map_or(span, |c| c.syntax().span());
-        let mut value = self.condition(s.condition())?;
+        let mut value = self.condition(&s.condition())?;
         if negation == Some(Negation::Bang)
             && matches!(self.etype_of(&value.ty), Some(Etype::String | Etype::Float))
         {
@@ -533,7 +533,7 @@ impl Checker<'_> {
         let condition_span = s
             .condition()
             .map_or_else(|| s.syntax().span(), |c| c.syntax().span());
-        let value = self.condition(s.condition())?;
+        let value = self.condition(&s.condition())?;
         let constant = match self.etype_of(&value.ty) {
             Some(Etype::Float) => self.constant_zero(&value),
             _ => None,
@@ -568,7 +568,7 @@ impl Checker<'_> {
         let condition_span = s
             .condition()
             .map_or_else(|| s.syntax().span(), |c| c.syntax().span());
-        let value = self.condition(s.condition())?;
+        let value = self.condition(&s.condition())?;
         match value.known() {
             Some(constant) => {
                 if (constant.i() == 0) == until {
@@ -610,7 +610,7 @@ impl Checker<'_> {
             Some(condition) => {
                 let mut last = None;
                 for expr in condition.children().filter_map(ast::Expr::cast) {
-                    last = Some(self.condition(Some(expr))?);
+                    last = Some(self.condition(&Some(expr))?);
                 }
                 // The test is the last condition's `IFNOT`, short as FTEF-34.16 makes it.
                 let (op, condition) = match last {
@@ -677,7 +677,7 @@ impl Checker<'_> {
     fn switch(&mut self, s: &ast::SwitchStmt, line: u32) -> Result<(), Fatal> {
         let span = s.syntax().span();
         let breaks = self.layout.marks().0;
-        let value = self.condition(s.scrutinee())?;
+        let value = self.condition(&s.scrutinee())?;
         let etype = self.etype_of(&value.ty);
         // The opcode and the comparisons read an enum as its base type, a range does not.
         let compared = match self.env.shape(&value.ty) {

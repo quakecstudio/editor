@@ -7,6 +7,7 @@
 )]
 
 use proptest::prelude::*;
+use std::fmt::Write as _;
 
 use super::fixtures::{AnimSpec, MeshSpec, mesh_with_tri};
 use crate::md5::{
@@ -800,7 +801,7 @@ proptest! {
         if !given.is_empty() {
             text.push_str(" frame 0 {");
             for value in &given {
-                text.push_str(&format!(" {value}"));
+                _ = write!(text, " {value}");
             }
             text.push_str(" }");
         }

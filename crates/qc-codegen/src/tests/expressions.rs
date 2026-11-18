@@ -10,6 +10,7 @@ use qc_progs::opcode::Opcode::{
     LoadFnc, Lt, MulF, MulFv, MulV, MulVf, NeE, NeF, NeFnc, NeS, NeV, NotEnt, NotF, NotFnc, NotS,
     NotV, Or, Return, StoreF, StoreFld, StoreV, StorepF, StorepV, SubF, SubV,
 };
+use std::fmt::Write as _;
 
 use super::{
     body, compile_source, errors, global, immediate, immediate_string, immediate_vector, progs, st,
@@ -363,7 +364,7 @@ fn each_argument_count_has_its_call() {
     let mut source = String::from("void(...) g = #1;\nvoid() f = {\n");
     for n in 0..=8 {
         let args: Vec<String> = (0..n).map(|i| i.to_string()).collect();
-        source.push_str(&format!("g({});\n", args.join(", ")));
+        _ = writeln!(source, "g({});", args.join(", "));
     }
     source.push_str("};\n");
     let calls: Vec<Opcode> = opcodes(&source)

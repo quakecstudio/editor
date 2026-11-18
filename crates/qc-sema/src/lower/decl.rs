@@ -1103,7 +1103,7 @@ pub(super) fn lower_declaration(decl: &ast::Declaration, cx: Cx<'_>, out: &mut V
         None => omitted_type(),
     };
     let first = out.len();
-    lower_declarators(decl.declarators(), &base, decl.ty(), cx, out);
+    lower_declarators(decl.declarators(), &base, &decl.ty(), cx, out);
     let inline_function = matches!(decl.ty(), Some(ast::Type::Function(_)));
     let named = decl.declarators().filter(|d| d.name().is_some());
     for (raw, declarator) in out.iter_mut().skip(first).zip(named) {
@@ -1185,7 +1185,7 @@ pub(super) fn declarator_type(base: &Type, declarator: &ast::Declarator, cx: Cx<
 pub(super) fn lower_declarators(
     declarators: impl Iterator<Item = ast::Declarator>,
     base: &Type,
-    ty_node: Option<ast::Type>,
+    ty_node: &Option<ast::Type>,
     cx: Cx<'_>,
     out: &mut Vec<RawDecl>,
 ) {

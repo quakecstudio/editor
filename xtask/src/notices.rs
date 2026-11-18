@@ -12,6 +12,7 @@
 //! attribute. `cargo xtask ci` runs the check in-process ([`check`]).
 
 use std::collections::{BTreeSet, HashMap};
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -370,14 +371,14 @@ fn render(root: &Path, crates: &[Package], assets: &[Asset]) -> Result<String, S
     for package in crates {
         let label = format!("{} {}", package.name, package.version);
         let license = package.license.as_deref().unwrap_or("see its license file");
-        out.push_str(&format!("\n==== {label}\nLicense: {license}\n"));
+        _ = writeln!(out, "\n==== {label}\nLicense: {license}");
         if !package.authors.is_empty() {
-            out.push_str(&format!("Authors: {}\n", package.authors.join(", ")));
+            _ = writeln!(out, "Authors: {}", package.authors.join(", "));
         }
         let files = package.license_files();
         if files.is_empty() {
             for id in chosen_ids(license, &|id| root.join(standard_path(id)).is_file()) {
-                out.push_str(&format!("License text: the standard text of {id}, below\n"));
+                _ = writeln!(out, "License text: the standard text of {id}, below");
                 standard.insert(id);
             }
         }
@@ -396,10 +397,10 @@ fn render(root: &Path, crates: &[Package], assets: &[Asset]) -> Result<String, S
                 .to_string();
             match first.get(&text) {
                 Some(earlier) => {
-                    out.push_str(&format!("{name}: the same text as {earlier}'s\n"));
+                    _ = writeln!(out, "{name}: the same text as {earlier}'s");
                 }
                 None => {
-                    out.push_str(&format!("\n---- {name}\n{}\n", text.trim_end()));
+                    _ = writeln!(out, "\n---- {name}\n{}", text.trim_end());
                     first.insert(text, label.clone());
                 }
             }
@@ -407,12 +408,13 @@ fn render(root: &Path, crates: &[Package], assets: &[Asset]) -> Result<String, S
     }
     let mut texts: BTreeSet<String> = BTreeSet::new();
     for asset in assets {
-        out.push_str(&format!(
-            "\n==== {}\nAuthor: {}\nLicense: {}\n",
+        _ = writeln!(
+            out,
+            "\n==== {}\nAuthor: {}\nLicense: {}",
             asset.path, asset.author, asset.license
-        ));
+        );
         for text in &asset.texts {
-            out.push_str(&format!("License text: {text}\n"));
+            _ = writeln!(out, "License text: {text}");
             texts.insert(text.clone());
         }
     }
@@ -420,14 +422,11 @@ fn render(root: &Path, crates: &[Package], assets: &[Asset]) -> Result<String, S
         let path = standard_path(&id);
         let text = fs::read_to_string(root.join(&path))
             .map_err(|e| format!("{path}: no standard text of {id}: {e}"))?;
-        out.push_str(&format!(
-            "\n---- the standard text of {id}\n{}\n",
-            text.trim_end()
-        ));
+        _ = writeln!(out, "\n---- the standard text of {id}\n{}", text.trim_end());
     }
     for path in texts {
         let text = fs::read_to_string(root.join(&path)).map_err(|e| format!("{path}: {e}"))?;
-        out.push_str(&format!("\n---- {path}\n{}\n", text.trim_end()));
+        _ = writeln!(out, "\n---- {path}\n{}", text.trim_end());
     }
     Ok(out)
 }

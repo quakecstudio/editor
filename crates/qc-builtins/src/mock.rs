@@ -589,9 +589,9 @@ impl MockEngine {
 
     /// Sets lightstyle `style` to `value` (BUILTIN-12.6); `style` is already range-checked by
     /// the caller to 0 to [`LIMIT_MAX_LIGHTSTYLES`] - 1.
-    pub fn set_lightstyle(&mut self, style: usize, value: Vec<u8>) {
+    pub fn set_lightstyle(&mut self, style: usize, value: &[u8]) {
         if let Some(cell) = self.lightstyles.get_mut(style) {
-            *cell = Some(String::from_utf8_lossy(&value).into_owned());
+            *cell = Some(String::from_utf8_lossy(value).into_owned());
         }
     }
 

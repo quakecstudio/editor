@@ -1,8 +1,0 @@
-lint	sites
-clippy::format_collect	25
-clippy::format_push_string	159
-clippy::naive_bytecount	10
-clippy::needless_collect	8
-clippy::needless_pass_by_value	39
-clippy::string_add	19
-clippy::trivially_copy_pass_by_ref	8

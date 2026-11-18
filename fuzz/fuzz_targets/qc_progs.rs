@@ -12,7 +12,7 @@ use qc_progs::{Progs, ReadOptions, WriteError, write};
 fuzz_target!(|data: &[u8]| {
     for check_header_crc in [true, false] {
         let options = ReadOptions { check_header_crc };
-        let Ok(progs) = Progs::read_with(data, &options) else {
+        let Ok(progs) = Progs::read_with(data, options) else {
             continue;
         };
         let file = progs.to_file();
@@ -25,7 +25,7 @@ fuzz_target!(|data: &[u8]| {
         if file.layout.is_some() {
             assert_eq!(written, data, "a file with a layout must write back unchanged");
         }
-        let reread = match Progs::read_with(&written, &options) {
+        let reread = match Progs::read_with(&written, options) {
             Ok(reread) => reread.to_file(),
             Err(error) => panic!("a written file was rejected: {error}"),
         };

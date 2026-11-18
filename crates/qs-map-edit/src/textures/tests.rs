@@ -7,6 +7,7 @@
     reason = "test code: a failed unwrap or index is a failed test, and the sizes are small"
 )]
 
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use qs_commands::Session;
@@ -69,7 +70,7 @@ fn brush(textures: &[&str]) -> String {
     let mut out = String::from("{\n");
     for (i, plane) in planes.iter().enumerate() {
         let texture = textures.get(i).unwrap_or(&textures[0]);
-        out.push_str(&format!("{plane} {texture} 0 0 0 1 1\n"));
+        _ = writeln!(out, "{plane} {texture} 0 0 0 1 1");
     }
     out.push_str("}\n");
     out

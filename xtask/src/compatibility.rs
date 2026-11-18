@@ -18,6 +18,7 @@
 //! The release workflow (`release.yml`) runs it on every release tag and attaches the list.
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -217,15 +218,16 @@ fn render(rows: &[Row]) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         };
-        text.push_str(&format!(
-            "| {} (`{}`) | {} | {} | {} | {} |\n",
+        _ = writeln!(
+            text,
+            "| {} (`{}`) | {} | {} | {} | {} |",
             escape(&row.name),
             row.id,
             row.license,
             row.build.cell(),
             escape(&row.behaviour),
             issues
-        ));
+        );
     }
     text
 }

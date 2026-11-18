@@ -8,6 +8,8 @@
 //! command each key runs, and what a key going down or up adds to the console's buffer.
 
 /// `K_TAB`.
+use std::fmt::Write as _;
+
 pub const K_TAB: u8 = 9;
 /// `K_ENTER`.
 pub const K_ENTER: u8 = 13;
@@ -240,11 +242,12 @@ impl Bindings {
             if binding.is_empty() {
                 continue;
             }
-            text.push_str(&format!(
-                "bind \"{}\" \"{}\"\n",
+            _ = writeln!(
+                text,
+                "bind \"{}\" \"{}\"",
                 key_name(key),
                 String::from_utf8_lossy(binding)
-            ));
+            );
         }
         text
     }

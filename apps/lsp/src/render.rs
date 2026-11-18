@@ -3,6 +3,7 @@
 //! Hover text, as Markdown or plain text (LSP 3.18, `MarkupContent`).
 
 use qc_ide::{BuiltinInfo, BuiltinRef, Hover};
+use std::fmt::Write as _;
 
 /// A `MarkupKind`: how a hover's text is written.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -85,7 +86,7 @@ fn engines(info: &BuiltinInfo, markup: Markup) -> String {
             };
             let mut line = format!("{target} has it as {}", markup.code(&shown));
             if !entry.extensions.is_empty() {
-                line.push_str(&format!(" (extensions {})", entry.extensions.join(", ")));
+                _ = write!(line, " (extensions {})", entry.extensions.join(", "));
             }
             line.push('.');
             lines.push(line);

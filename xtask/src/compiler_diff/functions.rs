@@ -15,6 +15,7 @@
 //! to the bar (DIFF-15.10).
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 use std::fs;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -193,12 +194,15 @@ fn codebase(
                 .collect::<Vec<_>>()
                 .join(",");
             match cut {
-                Cut::Compiled => pairs.push_str(&format!(
-                    "{label}\t{}\t{}\t{}\n",
-                    program.join("theirs.dat").display(),
-                    program.join("ours.dat").display(),
-                    program.join("fixed.dat").display()
-                )),
+                Cut::Compiled => {
+                    _ = writeln!(
+                        pairs,
+                        "{label}\t{}\t{}\t{}",
+                        program.join("theirs.dat").display(),
+                        program.join("ours.dat").display(),
+                        program.join("fixed.dat").display()
+                    )
+                }
                 Cut::Failed(why) => {
                     let first = group.first().map(|name| String::from_utf8_lossy(name));
                     let first = first.unwrap_or_default();
@@ -277,28 +281,27 @@ fn compile_batch<'g, 'n>(
 ) -> Result<Vec<Compiled<'g, 'n>>, String> {
     let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     let results: Vec<Result<Vec<Compiled<'g, 'n>>, String>> = std::thread::scope(|scope| {
-        let handles: Vec<_> = (0..threads)
-            .map(|thread| {
-                scope.spawn(move || {
-                    let mut done = Vec::new();
-                    for (n, group) in groups.iter().enumerate().skip(thread).step_by(threads) {
-                        let mut keep = setup.clone();
-                        for name in *group {
-                            keep.extend(closure(graph, name));
-                        }
-                        let files = cut(bodies, sources, &keep);
-                        let first = group.first().map(|name| String::from_utf8_lossy(name));
-                        let log = work
-                            .join("failed")
-                            .join(format!("{}.log", first.unwrap_or_default()));
-                        let program = dir.join(n.to_string());
-                        let outcome = compile_cut(oracles, id, source, &program, &files, &log)?;
-                        done.push((n, *group, outcome));
+        let mut handles = Vec::new();
+        handles.extend((0..threads).map(|thread| {
+            scope.spawn(move || {
+                let mut done = Vec::new();
+                for (n, group) in groups.iter().enumerate().skip(thread).step_by(threads) {
+                    let mut keep = setup.clone();
+                    for name in *group {
+                        keep.extend(closure(graph, name));
                     }
-                    Ok(done)
-                })
+                    let files = cut(bodies, sources, &keep);
+                    let first = group.first().map(|name| String::from_utf8_lossy(name));
+                    let log = work
+                        .join("failed")
+                        .join(format!("{}.log", first.unwrap_or_default()));
+                    let program = dir.join(n.to_string());
+                    let outcome = compile_cut(oracles, id, source, &program, &files, &log)?;
+                    done.push((n, *group, outcome));
+                }
+                Ok(done)
             })
-            .collect();
+        }));
         handles
             .into_iter()
             .map(|h| {

@@ -19,6 +19,7 @@
 )]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -197,10 +198,11 @@ fn render_requirements(statements: &[Statement]) -> String {
         } else {
             "active"
         };
-        out.push_str(&format!(
-            "{}\t{}\t{}\t{status}\t{}\n",
+        _ = writeln!(
+            out,
+            "{}\t{}\t{}\t{status}\t{}",
             statement.id, statement.spec, statement.section, statement.text
-        ));
+        );
     }
     out
 }

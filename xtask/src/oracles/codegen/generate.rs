@@ -15,6 +15,7 @@
 pub(crate) const PROGRAMS: usize = 300;
 
 use crate::oracles::rng::Rng;
+use std::fmt::Write as _;
 
 /// The value types expressions have.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -220,7 +221,7 @@ impl Gen {
             0 | 1 => {
                 let target = self.target(body, ty);
                 let value = self.expr(body, ty);
-                self.out.push_str(&format!("{target} = {value};\n"));
+                _ = writeln!(self.out, "{target} = {value};");
             }
             2 => {
                 let mut args = Vec::new();
@@ -228,13 +229,13 @@ impl Gen {
                     let t = TYPES.get(self.rng.below(4)).copied().unwrap_or(Ty::Float);
                     args.push(self.expr(body, t));
                 }
-                self.out.push_str(&format!("pr({});\n", args.join(", ")));
+                _ = writeln!(self.out, "pr({});", args.join(", "));
             }
             3 => {
                 let a = self.target(body, Ty::Float);
                 let b = self.target(body, Ty::Float);
                 let value = self.expr(body, Ty::Float);
-                self.out.push_str(&format!("{a} = {b} = {value};\n"));
+                _ = writeln!(self.out, "{a} = {b} = {value};");
             }
             4 => {
                 let name = format!("l{}", self.next_local);
@@ -247,16 +248,15 @@ impl Gen {
                     Ty::Entity => ("entity", ""),
                 };
                 if literal.is_empty() || self.rng.chance(50) {
-                    self.out.push_str(&format!("local {word} {name};\n"));
+                    _ = writeln!(self.out, "local {word} {name};");
                 } else {
-                    self.out
-                        .push_str(&format!("local {word} {name} = {literal};\n"));
+                    _ = writeln!(self.out, "local {word} {name} = {literal};");
                 }
                 body.locals.push((ty, name));
             }
             5 => {
                 let cond = self.expr(body, ty);
-                self.out.push_str(&format!("if ({cond})\n"));
+                _ = writeln!(self.out, "if ({cond})");
                 self.nested(body);
                 if self.rng.chance(40) {
                     self.indent();
@@ -266,7 +266,7 @@ impl Gen {
             }
             6 => {
                 let cond = self.expr(body, ty);
-                self.out.push_str(&format!("while ({cond})\n"));
+                _ = writeln!(self.out, "while ({cond})");
                 self.nested(body);
             }
             7 => {
@@ -274,7 +274,7 @@ impl Gen {
                 self.nested(body);
                 self.indent();
                 let cond = self.expr(body, ty);
-                self.out.push_str(&format!("while ({cond});\n"));
+                _ = writeln!(self.out, "while ({cond});");
             }
             8 => {
                 self.out.push_str("{\n");
@@ -288,11 +288,11 @@ impl Gen {
             }
             9 => {
                 let entity = self.rng.pick(&["e1", "e2"]);
-                self.out.push_str(&format!("{entity}.fth();\n"));
+                _ = writeln!(self.out, "{entity}.fth();");
             }
             _ => {
                 let value = self.expr(body, ty);
-                self.out.push_str(&format!("return {value};\n"));
+                _ = writeln!(self.out, "return {value};");
             }
         }
     }
@@ -327,10 +327,11 @@ impl Gen {
         } else {
             String::new()
         };
-        self.out.push_str(&format!(
-            "void({}) fn{index} = {state}{{\n",
+        _ = writeln!(
+            self.out,
+            "void({}) fn{index} = {state}{{",
             params.join(", ")
-        ));
+        );
         self.depth = 1;
         for _ in 0..=self.rng.below(8) {
             self.statement(&mut body);

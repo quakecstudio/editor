@@ -11,6 +11,7 @@
 //! compares SHA-256, which checks the URLs, the commits and the checksums.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 
 use super::manifest::{Entry, Manifest, Source, Tree};
 use super::{MANIFEST, safe_member};
@@ -531,7 +532,7 @@ fn quote(text: &str, keep_slash: bool) -> String {
         if keep {
             out.push(char::from(byte));
         } else {
-            out.push_str(&format!("%{byte:02X}"));
+            _ = write!(out, "%{byte:02X}");
         }
     }
     out

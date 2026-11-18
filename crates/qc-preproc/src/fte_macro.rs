@@ -2265,7 +2265,7 @@ impl<L: Loader> Preprocessor<L> {
     /// at one place one report there: a use whose chunk gives an error already reported at its
     /// place adds nothing. The same holds for an argument's bytes written twice into one
     /// expansion.
-    pub(crate) fn close_chunk(run: &mut Run, chunk: ChunkReader) {
+    pub(crate) fn close_chunk(run: &mut Run, chunk: &ChunkReader) {
         run.closed_chunk(&chunk.name);
         for d in &chunk.stream.diagnostics {
             let consumed = chunk

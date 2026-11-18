@@ -15,6 +15,7 @@
 
 use qc_types::PROGS_VECTOR_SLOTS;
 use qc_types::c_int;
+use std::fmt::Write as _;
 
 use crate::BuiltinError;
 use crate::{DECIMAL, STRINGTEMP_LENGTH, STRINGTEMP_TEXT};
@@ -629,7 +630,7 @@ impl Flags {
         let sign = if exp < 0 { '-' } else { '+' };
         text.push('e');
         text.push(sign);
-        text.push_str(&format!("{:02}", exp.unsigned_abs()));
+        _ = write!(text, "{:02}", exp.unsigned_abs());
         text
     }
     /// `%g`: `%e` or `%f` by the exponent `%e` would show, `P` significant digits, and trailing

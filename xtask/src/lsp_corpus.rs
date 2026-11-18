@@ -16,6 +16,7 @@
 //! The codebase comes from `cargo xtask corpus fetch rerelease`.
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -187,7 +188,7 @@ enum Ask {
 }
 
 impl Script {
-    fn request(&mut self, label: String, ask: Ask, method: &str, params: Value) {
+    fn request(&mut self, label: String, ask: Ask, method: &str, params: &Value) {
         let id = self.next;
         self.next = self.next.saturating_add(1);
         self.messages
@@ -195,7 +196,7 @@ impl Script {
         self.labels.insert(id, (label, ask));
     }
 
-    fn notify(&mut self, method: &str, params: Value) {
+    fn notify(&mut self, method: &str, params: &Value) {
         self.messages
             .push(json!({ "jsonrpc": "2.0", "method": method, "params": params }));
     }
@@ -217,7 +218,7 @@ fn drive(dir: &Path, autoproto: bool) -> Result<String, String> {
     script
         .messages
         .push(initialize(dir, "rerelease", autoproto));
-    script.notify("initialized", json!({}));
+    script.notify("initialized", &json!({}));
     for probe in &PROBES {
         let path = dir.join(probe.file);
         let at = place(&path, probe.at, probe.occurrence)?;
@@ -229,7 +230,7 @@ fn drive(dir: &Path, autoproto: bool) -> Result<String, String> {
             label.clone(),
             Ask::Definition,
             "textDocument/definition",
-            params.clone(),
+            &params.clone(),
         );
         let references = json!({
             "textDocument": document, "position": position,
@@ -239,25 +240,25 @@ fn drive(dir: &Path, autoproto: bool) -> Result<String, String> {
             label.clone(),
             Ask::References,
             "textDocument/references",
-            references,
+            &references,
         );
         script.request(
             label.clone(),
             Ask::Hover,
             "textDocument/hover",
-            params.clone(),
+            &params.clone(),
         );
         script.request(
             label.clone(),
             Ask::PrepareRename,
             "textDocument/prepareRename",
-            params,
+            &params,
         );
         let rename = json!({
             "textDocument": document, "position": position,
             "newName": format!("{}Renamed", probe.name),
         });
-        script.request(label, Ask::Rename, "textDocument/rename", rename);
+        script.request(label, Ask::Rename, "textDocument/rename", &rename);
     }
     for (file, at) in COMPLETIONS {
         let path = dir.join(file);
@@ -266,7 +267,7 @@ fn drive(dir: &Path, autoproto: bool) -> Result<String, String> {
             format!("at {}", show(dir, &path, position)),
             Ask::Completion,
             "textDocument/completion",
-            json!({ "textDocument": { "uri": uri::from_path(&path) },
+            &json!({ "textDocument": { "uri": uri::from_path(&path) },
                     "position": { "line": position.line, "character": position.character } }),
         );
     }
@@ -275,7 +276,7 @@ fn drive(dir: &Path, autoproto: bool) -> Result<String, String> {
         HINTS.to_owned(),
         Ask::Hints,
         "textDocument/inlayHint",
-        json!({ "textDocument": { "uri": uri::from_path(&hints) },
+        &json!({ "textDocument": { "uri": uri::from_path(&hints) },
                 "range": { "start": { "line": 0, "character": 0 },
                            "end": { "line": u32::MAX, "character": 0 } } }),
     );
@@ -284,7 +285,7 @@ fn drive(dir: &Path, autoproto: bool) -> Result<String, String> {
             relative(dir, path),
             Ask::Tokens,
             "textDocument/semanticTokens/full",
-            json!({ "textDocument": { "uri": uri::from_path(path) } }),
+            &json!({ "textDocument": { "uri": uri::from_path(path) } }),
         );
     }
     let answers = serve(std::mem::take(&mut script.messages))?;
@@ -417,27 +418,30 @@ fn render(dir: &Path, script: &Script, messages: &[Value]) -> Result<String, Str
             .get(id)
             .ok_or_else(|| format!("no answer to {label}"))?;
         if let Some(error) = answer.get("error") {
-            out.push_str(&format!(
-                "{} {label}: error {}\n",
+            _ = writeln!(
+                out,
+                "{} {label}: error {}",
                 ask_name(*ask),
                 error["message"].as_str().unwrap_or_default()
-            ));
+            );
             continue;
         }
         let result = &answer["result"];
-        out.push_str(&format!(
-            "{} {label}: {}\n",
+        _ = writeln!(
+            out,
+            "{} {label}: {}",
             ask_name(*ask),
             summary(dir, *ask, result)
-        ));
+        );
     }
     for message in messages {
         if message.get("method") == Some(&json!("window/showMessage")) {
-            out.push_str(&format!(
-                "message type {}: {}\n",
+            _ = writeln!(
+                out,
+                "message type {}: {}",
                 at(message, "/params/type"),
                 at(message, "/params/message").as_str().unwrap_or_default()
-            ));
+            );
         }
     }
     out.push_str(&diagnostics(dir, messages));
@@ -471,7 +475,7 @@ fn diagnostics(dir: &Path, messages: &[Value]) -> String {
     let mut out = String::new();
     for (file, codes) in files {
         let list: Vec<String> = codes.iter().map(|(c, n)| format!("{c} x{n}")).collect();
-        out.push_str(&format!("diagnostics {file}: {}\n", list.join(", ")));
+        _ = writeln!(out, "diagnostics {file}: {}", list.join(", "));
     }
     out
 }

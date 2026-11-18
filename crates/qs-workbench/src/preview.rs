@@ -578,7 +578,7 @@ impl Preview {
             field: field.to_owned(),
             kind,
         })?;
-        let answer = self.live_client()?.set_field(edict.into(), field, value)?;
+        let answer = self.live_client()?.set_field(edict.into(), field, &value)?;
         // BRIDGE-4.4: while paused between frames the host holds the edit until it resumes.
         if answer.get("applied").and_then(Value::as_str) == Some("on_resume") {
             self.pending

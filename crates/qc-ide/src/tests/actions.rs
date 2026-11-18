@@ -51,7 +51,7 @@ fn fix(host: &mut AnalysisHost<MemoryLoader>, name: &str, code: Code) -> (String
     let target = action.edit.path.clone();
     let before = String::from_utf8(host.text(&target).unwrap_or_default()).unwrap_or_default();
     let after = applied(&before, &action.edit.edits);
-    host.set_overlay(&target, after.clone().into_bytes())
+    host.set_overlay(&target, &after.clone().into_bytes())
         .expect("the overlay is set");
     (action.title, after)
 }

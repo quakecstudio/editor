@@ -10,6 +10,7 @@
 )]
 
 use super::{Localization, com_hash_string, hash_slot};
+use std::fmt::Write as _;
 
 fn value(loc: &Localization, key: &str) -> Option<Vec<u8>> {
     loc.loc_get_raw_string(key.as_bytes()).map(<[u8]>::to_vec)
@@ -98,7 +99,10 @@ fn the_first_of_a_repeated_key_wins() {
 // spec RRE-1.2: many keys, each found again through the open-addressed table
 #[test]
 fn every_key_is_found_through_the_table() {
-    let text: String = (0..300).map(|i| format!("key{i} = v{i}\n")).collect();
+    let text: String = (0..300).fold(String::new(), |mut joined, i| {
+        _ = writeln!(joined, "key{i} = v{i}");
+        joined
+    });
     let loc = Localization::loc_load_file(text.as_bytes());
     for i in 0..300 {
         assert_eq!(

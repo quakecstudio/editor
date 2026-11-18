@@ -87,8 +87,10 @@ fn entry_points(source: &str) -> String {
             let head = line.split('=').next().unwrap_or_default();
             !source.contains(head.trim_end())
         })
-        .map(|line| format!("{line}\n"))
-        .collect()
+        .fold(String::new(), |mut joined, line| {
+            _ = writeln!(joined, "{line}");
+            joined
+        })
 }
 
 /// The progs `qc-codegen` writes for `source` after the system defs and the entry points.

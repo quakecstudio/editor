@@ -92,7 +92,7 @@ fn a_module_is_written_to_its_output_with_its_line_map() {
     let options = ReadOptions {
         check_header_crc: false,
     };
-    let read = Progs::read_with(&progs, &options).unwrap();
+    let read = Progs::read_with(&progs, options).unwrap();
     assert!(
         read.functions()
             .iter()
@@ -212,7 +212,7 @@ fn a_kex_program_keeps_its_localized_keys() {
     let progs = std::fs::read(&built[0].output).unwrap();
     let read = Progs::read_with(
         &progs,
-        &ReadOptions {
+        ReadOptions {
             check_header_crc: false,
         },
     )

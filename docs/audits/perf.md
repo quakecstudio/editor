@@ -22,10 +22,12 @@ sets and a `thread_local` stack took `lq-e1m1`'s full compile from 287 s to 6.16
 ## The clippy lints
 
 Turned on, `deny` in `[workspace.lints.clippy]` (`docs/conventions.md`, Performance), with
-the workspace holding none: `assigning_clones`, `implicit_clone`, `inefficient_to_string`,
-`iter_on_empty_collections`, `iter_on_single_items`, `iter_with_drain`,
-`large_types_passed_by_value`, `manual_string_new`, `needless_for_each`, `or_fun_call`,
-`redundant_clone`, `set_contains_or_insert`, `stable_sort_primitive`,
+the workspace holding none: `assigning_clones`, `format_collect`, `format_push_string`,
+`implicit_clone`, `inefficient_to_string`, `iter_on_empty_collections`,
+`iter_on_single_items`, `iter_with_drain`, `large_types_passed_by_value`,
+`manual_string_new`, `naive_bytecount`, `needless_collect`, `needless_for_each`,
+`needless_pass_by_value`, `or_fun_call`, `redundant_clone`, `set_contains_or_insert`,
+`stable_sort_primitive`, `string_add`, `trivially_copy_pass_by_ref`,
 `unnecessary_box_returns` and `unnecessary_join`. The ones clippy
 enables by default (`vec_box`, `box_collection`, `useless_vec`, `unnecessary_to_owned`,
 `iter_overeager_cloned`, `redundant_allocation`, `large_enum_variant`, `ptr_arg`,
@@ -36,32 +38,20 @@ The second pass (2026-11-17) turned on `or_fun_call` (78 sites), `redundant_clon
 bar's `panel_buttons` draws the buttons it reports on, so it is called whatever was asked
 already (the code review of the pass found it; no test did).
 
-Left off, each with the reason. Counted on 2026-11-17 at `17a063a0`, every target and feature,
-each site once; "shipped" leaves out tests, benchmarks, examples, `qs-differential` and `xtask`:
+The third pass (2026-11-17) turned on the seven lints the second had left off, fixing every
+site, 271 in all:
 
-| Lint | Sites | Shipped | Why it stays off |
-| --- | --- | --- | --- |
-| `format_push_string` | 158 | 49 | Its fix, `write!` into the `String`, returns a `Result` each site must discard. The shipped sites build a report, a trace or a file once (the agent's context, `qc-trace`'s JSON, `progdefs.h`, the portal file, an export's manifest), none per frame or per statement. |
-| `needless_pass_by_value` | 39 | 28 | Its fix changes signatures, 10 of them the LSP server's request handlers, which take each request's parameters by value, as they are deserialised. No site is in a profile. |
-| `format_collect` | 25 | 2 | 23 sites are tests building their input. The two shipped write an id as hex, in `qs-checkpoint` and `qs-templates`. |
-| `string_add` | 19 | 0 | Every site is a test building its input. |
-| `naive_bytecount` | 10 | 6 | It asks for the `bytecount` crate, which this audit will not add for counting lines. |
-| `trivially_copy_pass_by_ref` | 8 | 8 | The eight left are option structs borrowed by their public methods (`qs-map-bsp`'s `Compiler`, `qs-map-vis`'s `Vis`, `qc-progs`' `ReadOptions`), so that an option added later changes no caller. The pass took the ten others by value. |
-| `needless_collect` | 7 | 2 | Four of the seven start threads and collect their handles before joining the first, which the lint cannot see is needed; one reverses an iterator that cannot be walked backwards; and one collects into a set to drop duplicates, which the lint's own fix removed until a test caught it. Held, it would be mostly `#[expect]`. |
+| Lint | Sites | How they were fixed |
+| --- | --- | --- |
+| `format_push_string` | 159 | `write!` or `writeln!` into the `String`, its result dropped: a write to a `String` does not fail. |
+| `needless_pass_by_value` | 44 | The parameter is borrowed (`&T`, `&[T]`, `&str`, `&Path`) and its callers borrow. The LSP server's request handlers take the parameters the dispatcher parsed by reference. |
+| `format_collect` | 25 | A fold that writes each item into one `String`. |
+| `string_add` | 22 | One `format!` of the parts. |
+| `naive_bytecount` | 10 | A sum over the bytes, with no crate added. |
+| `needless_collect` | 8 | The four that start threads fill their list of handles by `extend` before the first join; `SyntaxNode::descendants_with_tokens` reverses its children in place on its stack, with no list made for each node; the others are loops. |
+| `trivially_copy_pass_by_ref` | 8 | The option structs (`qs-map-bsp`'s `Compiler`, `qs-map-vis`'s `Vis`, `qc-progs`' `ReadOptions`) are taken by value. |
 
-[`perf-baseline.tsv`](perf-baseline.tsv) holds the count of each of these, and it only
-shrinks: `cargo xtask perf-baseline` runs clippy with the seven as warnings, counts each site
-once however many targets compile it, and fails when a lint has more sites than the file says,
-or fewer until `cargo xtask perf-baseline --write` lowers its line; `--write` never raises a
-count or adds a line. It is run by hand on the reference Mac when this audit is revisited. It
-is not a step of `cargo xtask ci` or a part of `cargo xtask conventions`: it lints the whole
-workspace a second time (clippy's arguments are part of what it caches by), and its counts are
-those of the platform it runs on, where the other checks read the sources alone.
-
-The file was first counted on 2026-11-17 at `91eaeb9f`, after the five sites added since the
-table above was counted were fixed. It holds 159 `format_push_string` sites and 8
-`needless_collect` sites, one more of each than the table: both are in code older than the
-table's commit, which its count missed.
+No lint of the audit is left off, so there is no baseline of leftover sites to hold.
 
 ## The crates
 

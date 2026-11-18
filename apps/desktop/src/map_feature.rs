@@ -337,7 +337,7 @@ impl MapFeature {
                 MapAction::MoveTo(entity, into) => {
                     commands.attempt(MAP_MOVE_TO, &MoveToParams { entity, into })
                 }
-                MapAction::View(setting) => Self::view_setting(commands, setting),
+                MapAction::View(setting) => Self::view_setting(commands, &setting),
                 MapAction::ImportTexture(path, name, dither) => {
                     let imported = commands.attempt(
                         TEXTURE_IMPORT,
@@ -765,16 +765,18 @@ impl MapFeature {
     /// Runs a change of how the map view looks, a `view.*` command of the layout.
     fn view_setting(
         commands: &mut Commands<'_>,
-        setting: ViewSetting,
+        setting: &ViewSetting,
     ) -> Result<serde_json::Value, ShellError> {
         match setting {
-            ViewSetting::Panes(panes) => commands.attempt(MAP_PANES, &MapPanesParams { panes }),
-            ViewSetting::Shading(shading) => {
-                commands.attempt(MAP_SHADING, &MapShadingParams { shading })
+            ViewSetting::Panes(panes) => {
+                commands.attempt(MAP_PANES, &MapPanesParams { panes: *panes })
             }
-            ViewSetting::Grid(size) => commands.attempt(MAP_GRID, &MapGridParams { size }),
-            ViewSetting::Camera(params) => commands.attempt(MAP_CAMERA, &params),
-            ViewSetting::KeepView(params) => commands.attempt(MAP_KEEP_VIEW, &params),
+            ViewSetting::Shading(shading) => {
+                commands.attempt(MAP_SHADING, &MapShadingParams { shading: *shading })
+            }
+            ViewSetting::Grid(size) => commands.attempt(MAP_GRID, &MapGridParams { size: *size }),
+            ViewSetting::Camera(params) => commands.attempt(MAP_CAMERA, params),
+            ViewSetting::KeepView(params) => commands.attempt(MAP_KEEP_VIEW, params),
         }
     }
 

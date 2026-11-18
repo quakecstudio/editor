@@ -533,7 +533,7 @@ impl Shell {
 
     /// Chooses `path` as the game folder, read in place (`preview.choose_game`), and keeps it
     /// in the settings file when it plays, so the next start finds it (P3-44).
-    pub fn choose_game_folder(&mut self, path: PathBuf) -> Option<GameFiles> {
+    pub fn choose_game_folder(&mut self, path: &Path) -> Option<GameFiles> {
         let settings = self.settings_file.clone();
         ProjectFeature::choose_game_folder(&mut self.commands(), settings.as_deref(), path)
     }
@@ -2168,7 +2168,7 @@ impl Shell {
     fn show_places(
         &mut self,
         source: MultiSource,
-        places: Vec<(PathBuf, usize, usize)>,
+        places: &[(PathBuf, usize, usize)],
         truncation: Truncation,
     ) {
         self.with_editors(|editors, commands| {
@@ -2300,12 +2300,11 @@ impl Shell {
                     if places.is_empty() {
                         Some(Popup::Note(Text::NoReferences))
                     } else {
-                        let places = places.into_iter().map(|p| (p.path, p.start, p.end));
-                        self.show_places(
-                            MultiSource::References,
-                            places.collect(),
-                            Truncation::All,
-                        );
+                        let places: Vec<_> = places
+                            .into_iter()
+                            .map(|p| (p.path, p.start, p.end))
+                            .collect();
+                        self.show_places(MultiSource::References, &places, Truncation::All);
                         None
                     }
                 }

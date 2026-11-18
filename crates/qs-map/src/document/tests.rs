@@ -8,6 +8,7 @@
 )]
 
 use proptest::prelude::*;
+use std::fmt::Write as _;
 
 use super::{
     Brush, BrushModel, Compiler, Entity, Face, Item, MapError, MapFile, Pair, TexDef, is_tool_key,
@@ -605,14 +606,15 @@ fn face_text() -> impl Strategy<Value = String> {
             let mut text = String::new();
             for _ in 0..3 {
                 let point: Vec<&str> = points.by_ref().take(3).collect();
-                text.push_str(&format!("( {} ) ", point.join(" ")));
+                _ = write!(text, "( {} ) ", point.join(" "));
             }
             text.push_str(&texture);
             if valve {
-                text.push_str(&format!(
+                _ = write!(
+                    text,
                     " [ 1 0 0 {} ] [ 0 1 0 {} ] {} 1 1",
                     numbers[0], numbers[1], numbers[2]
-                ));
+                );
             } else {
                 text.push(' ');
                 text.push_str(&numbers.join(" "));

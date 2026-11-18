@@ -155,8 +155,8 @@ impl Excerpt {
             .get(..first)
             .unwrap_or_default()
             .iter()
-            .filter(|b| **b == b'\n')
-            .count()
+            .map(|&b| usize::from(b == b'\n'))
+            .sum::<usize>()
             .saturating_add(1);
         Self {
             path: path.to_path_buf(),

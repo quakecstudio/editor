@@ -128,7 +128,10 @@ fn check(dir: &Path, target: Target) -> Result<usize, String> {
 /// as the editor holds it, with a CR before an LF dropped.
 fn caret(text: &[u8], offset: usize) -> Position {
     let before = text.get(..offset).unwrap_or(text);
-    let line = before.iter().filter(|&&b| b == b'\n').count();
+    let line = before
+        .iter()
+        .map(|&b| usize::from(b == b'\n'))
+        .sum::<usize>();
     let start = before
         .iter()
         .rposition(|&b| b == b'\n')

@@ -232,7 +232,7 @@ impl World {
         let rest = self.console_out.split_off(last.saturating_add(1));
         let done = core::mem::replace(&mut self.console_out, rest);
         done.split(|&c| c == b'\n')
-            .take(done.iter().filter(|&&c| c == b'\n').count())
+            .take(done.iter().map(|&c| usize::from(c == b'\n')).sum::<usize>())
             .map(<[u8]>::to_vec)
             .collect()
     }

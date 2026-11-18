@@ -229,16 +229,16 @@ impl<L: Loader, W: Write> Server<L, W> {
     /// Answers a language-feature request.
     fn feature(&mut self, method: &str, params: Value) -> Result<Value, ResponseError> {
         match method {
-            "textDocument/definition" => self.definition(parse(params)?),
-            "textDocument/references" => self.references(parse(params)?),
-            "textDocument/prepareRename" => self.prepare_rename(parse(params)?),
-            "textDocument/rename" => self.rename(parse(params)?),
-            "textDocument/hover" => self.hover(parse(params)?),
-            "textDocument/completion" => self.completion(parse(params)?),
-            "textDocument/semanticTokens/full" => self.semantic_tokens(parse(params)?),
-            "textDocument/inlayHint" => self.inlay_hints(parse(params)?),
-            "textDocument/codeAction" => self.code_actions(parse(params)?),
-            "textDocument/formatting" => self.formatting(parse(params)?),
+            "textDocument/definition" => self.definition(&parse(params)?),
+            "textDocument/references" => self.references(&parse(params)?),
+            "textDocument/prepareRename" => self.prepare_rename(&parse(params)?),
+            "textDocument/rename" => self.rename(&parse(params)?),
+            "textDocument/hover" => self.hover(&parse(params)?),
+            "textDocument/completion" => self.completion(&parse(params)?),
+            "textDocument/semanticTokens/full" => self.semantic_tokens(&parse(params)?),
+            "textDocument/inlayHint" => self.inlay_hints(&parse(params)?),
+            "textDocument/codeAction" => self.code_actions(&parse(params)?),
+            "textDocument/formatting" => self.formatting(&parse(params)?),
             // LSP 3.18, "$ Notifications and Requests": "If a server or client receives a
             // request starting with '$/' it must error the request with error code
             // `MethodNotFound`."
@@ -426,7 +426,7 @@ impl<L: Loader, W: Write> Server<L, W> {
             .insert(path.clone(), params.text_document.version);
         let opened = self
             .host
-            .set_overlay(&path, params.text_document.text.into_bytes());
+            .set_overlay(&path, &params.text_document.text.into_bytes());
         self.report_project(opened)?;
         Ok(true)
     }
@@ -456,7 +456,7 @@ impl<L: Loader, W: Write> Server<L, W> {
         }
         self.versions
             .insert(path.clone(), params.text_document.version);
-        let changed = self.host.set_overlay(&path, text);
+        let changed = self.host.set_overlay(&path, &text);
         self.report_project(changed)?;
         Ok(true)
     }
@@ -588,7 +588,7 @@ impl<L: Loader, W: Write> Server<L, W> {
     }
 
     /// `textDocument/definition`: a `Location`, or `null`.
-    fn definition(&mut self, params: proto::PositionParams) -> Result<Value, ResponseError> {
+    fn definition(&mut self, params: &proto::PositionParams) -> Result<Value, ResponseError> {
         let Some((path, offset)) = self.locate(&params.text_document, params.position) else {
             return Ok(Value::Null);
         };
@@ -599,7 +599,7 @@ impl<L: Loader, W: Write> Server<L, W> {
     }
 
     /// `textDocument/references`: `Location[]`.
-    fn references(&mut self, params: proto::ReferenceParams) -> Result<Value, ResponseError> {
+    fn references(&mut self, params: &proto::ReferenceParams) -> Result<Value, ResponseError> {
         let Some((path, offset)) = self.locate(&params.text_document, params.position) else {
             return Ok(json!([]));
         };
@@ -612,7 +612,7 @@ impl<L: Loader, W: Write> Server<L, W> {
     /// `textDocument/prepareRename`: the `Range` to rename, `null` where no name is, and an
     /// error where the name cannot be renamed, which "Clients should show ... in their user
     /// interface".
-    fn prepare_rename(&mut self, params: proto::PositionParams) -> Result<Value, ResponseError> {
+    fn prepare_rename(&mut self, params: &proto::PositionParams) -> Result<Value, ResponseError> {
         let Some((path, offset)) = self.locate(&params.text_document, params.position) else {
             return Ok(Value::Null);
         };
@@ -625,7 +625,7 @@ impl<L: Loader, W: Write> Server<L, W> {
 
     /// `textDocument/rename`: a `WorkspaceEdit`. LSP 3.18: "If the given name is not valid, the
     /// request must return a ResponseError with an appropriate message set."
-    fn rename(&mut self, params: proto::RenameParams) -> Result<Value, ResponseError> {
+    fn rename(&mut self, params: &proto::RenameParams) -> Result<Value, ResponseError> {
         let Some((path, offset)) = self.locate(&params.text_document, params.position) else {
             return Err(rename_error(&RenameError::NoName));
         };
@@ -702,7 +702,7 @@ impl<L: Loader, W: Write> Server<L, W> {
     }
 
     /// `textDocument/hover`: a `Hover`, or `null`.
-    fn hover(&mut self, params: proto::PositionParams) -> Result<Value, ResponseError> {
+    fn hover(&mut self, params: &proto::PositionParams) -> Result<Value, ResponseError> {
         let Some((path, offset)) = self.locate(&params.text_document, params.position) else {
             return Ok(Value::Null);
         };
@@ -718,7 +718,7 @@ impl<L: Loader, W: Write> Server<L, W> {
     }
 
     /// `textDocument/completion`: `CompletionItem[]`, which the client filters.
-    fn completion(&mut self, params: proto::PositionParams) -> Result<Value, ResponseError> {
+    fn completion(&mut self, params: &proto::PositionParams) -> Result<Value, ResponseError> {
         let Some((path, offset)) = self.locate(&params.text_document, params.position) else {
             return Ok(json!([]));
         };
@@ -737,7 +737,7 @@ impl<L: Loader, W: Write> Server<L, W> {
 
     /// `textDocument/semanticTokens/full`: the tokens, each relative to the one before (LSP
     /// 3.18, "Integer Encoding for Tokens").
-    fn semantic_tokens(&mut self, params: proto::DocumentParams) -> Result<Value, ResponseError> {
+    fn semantic_tokens(&mut self, params: &proto::DocumentParams) -> Result<Value, ResponseError> {
         let Some(path) = uri::to_path(&params.text_document.uri) else {
             return to_value(&proto::SemanticTokens { data: Vec::new() });
         };
@@ -781,7 +781,7 @@ impl<L: Loader, W: Write> Server<L, W> {
     }
 
     /// `textDocument/inlayHint`: the parameter names in the range, `InlayHint[]`.
-    fn inlay_hints(&mut self, params: proto::InlayHintParams) -> Result<Value, ResponseError> {
+    fn inlay_hints(&mut self, params: &proto::InlayHintParams) -> Result<Value, ResponseError> {
         let Some(path) = uri::to_path(&params.text_document.uri) else {
             return Ok(json!([]));
         };
@@ -809,7 +809,7 @@ impl<L: Loader, W: Write> Server<L, W> {
     /// `textDocument/codeAction`: the quick fixes for the diagnostics in the range (P4-34), each
     /// of `CodeActionKind` `quickfix` ("Base kind for quickfix actions: 'quickfix'.") with its
     /// edit; none outside any file.
-    fn code_actions(&mut self, params: proto::CodeActionParams) -> Result<Value, ResponseError> {
+    fn code_actions(&mut self, params: &proto::CodeActionParams) -> Result<Value, ResponseError> {
         let Some(path) = uri::to_path(&params.text_document.uri) else {
             return Ok(json!([]));
         };
@@ -845,7 +845,7 @@ impl<L: Loader, W: Write> Server<L, W> {
     /// be formatted".
     fn formatting(
         &mut self,
-        params: proto::DocumentFormattingParams,
+        params: &proto::DocumentFormattingParams,
     ) -> Result<Value, ResponseError> {
         let Some(path) = uri::to_path(&params.text_document.uri) else {
             return Ok(Value::Null);
