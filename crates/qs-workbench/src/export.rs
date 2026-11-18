@@ -25,6 +25,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use qs_commands::{Command, Outcome};
+use qs_engine::Flavour;
 use qs_pak::{Pak, PakWriteError, write_pak};
 use qs_vfs::StdFs;
 use qs_vfs::zip::{NewMember, ZipWriteError, write_zip};
@@ -209,14 +210,9 @@ impl<L: qc_project::Loader> Workbench<L> {
             });
         }
         let mod_name = mod_name.ok_or(ExportError::NotBuilt(Vec::new()))?;
-        let game = if info
-            .modules
-            .iter()
-            .any(|module| module.engine.contains("rerelease"))
-        {
-            GameNeeded::Rerelease
-        } else {
-            GameNeeded::Original
+        let game = match self.flavour() {
+            Flavour::Rerelease => GameNeeded::Rerelease,
+            Flavour::Original => GameNeeded::Original,
         };
         let assets = collect_assets(&root)?;
         let notices = collect_notices(&root)?;

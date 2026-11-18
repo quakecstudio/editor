@@ -751,7 +751,7 @@ fn run_task<C: HasPreview>(
             let name = expansions.value(Variable::MapName).unwrap_or_default();
             let (workbench, preview) = context.workbench_and_preview();
             let built = workbench.built_program().map_err(TaskError::Preview)?;
-            let (project, _, mod_name) = &built;
+            let (project, mod_name) = (&built.project, &built.mod_name);
             let maps = project.join("build").join(mod_name).join("maps");
             std::fs::create_dir_all(&maps).map_err(io(&maps))?;
             // A name with a dot of its own keeps it: `e1m1.v2` is `e1m1.v2.bsp`.
