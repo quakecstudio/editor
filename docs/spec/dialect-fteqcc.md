@@ -999,6 +999,28 @@ others).
   function body". A function defined twice outside an accessor still is. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
   `QCC_PR_ParseAccessorMember`.
+- **FTEF-10.14** In a function, a read of an accessor member whose `get` names a function is a
+  call of that function with the accessor and the index (`case REF_ACCESSOR: ... return
+  QCC_PR_GenerateFunctionCallSref(nullsref, ref->accessor->getset_func[0], arg, args);`), written
+  as a call the program writes is (FTE-18.12, FTEF-32.19), its value the return global; a store
+  is a call of the `set` member's function with the value after them. The accessor is read
+  where its reference is made (`QCC_PR_BuildAccessorRef(refbuf, QCC_RefToDef(lhs, true), index,
+  acc, lhs->readonly)`), so in `n["k"].s` the indexer's call comes first and its value, the
+  return global, is the argument of `s`'s: `CALL2H find, n, "k"` then `CALL1H get_string,
+  OFS_RETURN`. The value stored stays readable after a store's call (`rhsd =
+  QCC_StoreSRefToRef(lhsr, rhsd, true, false)`, `if (readable) QCC_UnFreeTemp(source);`), so a
+  call's value stored is copied out of the return global before it (FTE-18.13): `sb[h] = sb[h +
+  1]` is the `get` call, `STORE_F OFS_RETURN, OFS_PARM2`, `STORE_F OFS_RETURN, temp` and `CALL3H
+  set, sb, h`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_RefToDef`, `QCC_StoreSRefToRef`, `QCC_PR_ParseField`,
+  `QCC_PR_ParseRefArrayPointer`.
+- **FTEF-10.15** A definition of an accessor type is recorded with `ev_accessor`'s number, 16
+  in `etype_t` (`ev_variant, ev_struct, ev_union, ev_accessor`), and takes its base type's
+  words. A store to one is by its words, not its base type's opcode: `QCC_StoreToSRef` switches
+  on the type's own `type`, and `ev_accessor` is its `default`, `OP_STORE_F` for a word, so a
+  `jsonnode` whose base is a pointer is stored by `STORE_F` where the pointer is by `STORE_P`.
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_StoreToSRef`; `engine/qclib/progslib.h`, `etype_t`.
 
 ## FTEF-11 The `__variant` type
 
@@ -4915,6 +4937,13 @@ as far as they report.
   var_c = QCC_PR_GenerateFunctionCall2(nullsref, fnc, var_a, type_float, var_b, type_float);
   var_c.cast = type_float;`, and for `OP_MOD_FI` the same of `var_b`. An `int` remainder's
   call of `ModInt` is not followed. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_StatementFlags`.
+- **FTEF-27.19** `OP_ADD_PIW` of two constants is folded to an integer constant, the first plus
+  the second's bytes (`case OP_ADD_PIW: if (flag_undefwordsize) break; ... return
+  QCC_MakeIntConst(eval_a->_int + eval_b->_int*VMWORDSIZE);`), unless `undefwordsize` is set. So
+  the divisor of a pointer difference (FTEF-27.10) is a constant, the bytes of what the pointers
+  point at: with a struct of 6 words, `n2 - base` is `SUB_I n2, base, temp` and `DIV_I temp,
+  24`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_StatementFlags`.
 
 ## FTEF-28 The warnings of an emitted comparison
 
@@ -5105,6 +5134,37 @@ whether it is the result of a postfix `++` or `--`. The semantic model checks as
   through it: `self.health += 1` is `FLDADDRESS self, health, temp_0` then `ADDSTOREP_F 1f,
   temp_0, temp_0`, whose result is the assignment's value. Source: the pinned FTEQCC's `-Fwasm`
   output, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e.
+- **FTEF-29.18** The in-place opcodes of `|=` and `&~=` on floats, `OP_BITSETSTOREP_F` and
+  `OP_BITCLRSTOREP_F`, are `ASSOC_RIGHT` in the opcode table, not `ASSOC_RIGHT_RESULT` as the
+  arithmetic ones are, so the statement has no result and the assignment's value is the value it
+  was given (`else if (op->type_c == &type_void || op->associative==ASSOC_RIGHT || op->type_c ==
+  NULL) { var_c = nullsref; statement->c = nullsref; ... return var_a; }`): `x = (self.flags |=
+  g)` is `FLDADDRESS self, flags, temp_0`, `BITSETSTOREP_F g, temp_0` and `STORE_F g, x`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `pr_opcodes`, `QCC_PR_StatementFlags`.
+- **FTEF-29.19** A postfix of what a pointer points at, `p->n ++`, whose value is read, loads
+  it to a temporary, which is the value (`ret = QCC_RefToDef(ref, false); tmp =
+  QCC_GetTemp(ret.cast); QCC_StoreToSRef(tmp, ret, ret.cast, false, true); ret = tmp;`), adds the
+  step to it and stores the sum through the pointer (`QCC_StoreSRefToRef(ref, ...)`, FTEF-6.18):
+  `idx = p->n ++` of an `int` at word 5 is `LOADP_I p, 5, temp_1`, `ADD_I temp_1, 1, temp_0`,
+  `STOREP_I temp_0, p, 5` and `STORE_I temp_1, idx`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_RefToDef`.
+- **FTEF-29.20** On a target with `OP_STOREF_*` (FTE's formats from revision 5698) a store to
+  an entity's field is one statement of the entity, the field and the value, with no address
+  (`case REF_FIELD: ... if (storef_opcode!=OP_DONE && dest->index.cast->size == dest->cast->size
+  && QCC_OPCodeValid(&pr_opcodes[storef_opcode])) { //doesn't generate any temps.`):
+  `OP_STOREF_F` of a float, `OP_STOREF_V` of a vector, `OP_STOREF_S` of a string,
+  `OP_STOREF_I` of an entity, field, function, pointer or integer, and `OP_STOREF_I64` of a
+  64-bit integer or a double (`if (QCC_OPCodeValid(&pr_opcodes[OP_STOREF_I64])) for (; i+1 < sz;
+  i+=2, ...) QCC_PR_SimpleStatement(&pr_opcodes[OP_STOREF_I64], dest->base, dest->index, source,
+  true);`), whose constant is an immediate of two words (FTEF-19.81). An assignment, a postfix's
+  update and a class's member in a method are stored so: `e.health = 5` is `STOREF_F e, health,
+  5`, and `r = e.n ++` of an `int` field is `LOAD_I e, n, temp_1`, `ADD_I temp_1, 1, temp_0`,
+  `STOREF_I e, n, temp_0` and `STORE_I temp_1, r`, the load's temporary the value (FTEF-29.19).
+  A target without the opcode stores through the field's address (FTE-6.4). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_StoreSRefToRef`.
 
 ## FTEF-30 Terms
 
@@ -5481,6 +5541,20 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   `out = tab[n]` of a `string tab[3]` and a float `n` on `fte_5768` is `CONV_FTOI n, temp`,
   `BOUNDCHECK temp, 3`, `LOADA_S tab, temp, out`. A constant index has the warning or error of
   FTEF-31.2 and no check. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`.
+- **FTEF-31.25** A vector read through a pointer and indexed, `p->v[i]` or `p[n].v[i]`, is the
+  float at the vector's word plus the index through the same pointer (`/*array notation on
+  vector*/ ... t = type_float;`, the index then added to the reference's own): with `v` at word
+  1 of a struct of 5 words, `p->v[2]` is `LOADP_F p, 3`, `p->v[1] = f` is `STOREP_F f, p, 2` and
+  `p[3].v[0]` is `LOADP_F p, 16`. A constant index of 3 or more is "(vector) array index out of
+  bounds" (FTEF-31.2). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`.
+- **FTEF-31.26** An entity's `.vector` field indexed by an index that is no constant, `e.fv[i]`
+  or a class's member `m_v[i]`, is the float field at that index of the vector field (`/*array
+  notation on vector field*/ ... t = type_floatfield;`), loaded from the field's definition as an
+  array's element is (FTEF-31.19) after the index's check (FTEF-31.24), and the entity's field
+  read or stored at it: `f = m_v[i]` in a method is `BOUNDCHECK i, 3`, `LOADA_FLD m_v, i, temp`
+  and `LOAD_F self, temp, f`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`.
 
 ## FTEF-32 Calls
 
@@ -5696,6 +5770,22 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   definition is stripped and not written. One with a body already gives its number at once.
   Run on the pinned FTEQCC with `-Tfte`: with `a` numbered 1 and `b` 2, `page_t pages[] = { {
   b, a } };` before either body holds 2 and 1, and `void(void) fp = b;` holds 2.
+- **FTEF-32.24** An out parameter, `__out`, `__inout` or `&`, is passed back through its
+  parameter's slot. In the function, each is stored to its slot by its type where the function
+  returns (`PR_GenerateReturnOuts`: `QCC_StoreToSRef(p, QCC_MakeSRefForce(local, 0, local->type),
+  local->type, false, false)`): before every `return`, before `exit`, before the `ret*` local's
+  `RETURN`, and before the final `DONE` of a body whose last statement is neither a `RETURN` nor
+  a `DONE` (`if (needsdone) PR_GenerateReturnOuts();`). At a call, an `__out` argument is neither
+  read nor passed (`args[parm++].ref = nullsref; //__out args do not actually need to pass
+  anything.`), an operand of `OP_CALL1H` to `OP_CALL8H` written as none, and after the call, and
+  after `self` is restored, each out argument is stored from its slot as an assignment to it is
+  (`QCC_StoreSRefToRef(arglist[i], d, false, false)`), in the arguments' order, a slot for each
+  three words of the parameters before it (`parm += (func.cast->params[i].type->size+2)/3`); the
+  call's own value is read after them. So with `float f(float a, __out float b, __inout vector
+  c)`, `gf = f(1, lf, lv)` is `STORE_V lv, OFS_PARM2`, `CALL3H f, 1, 0`, `STORE_F OFS_PARM1, lf`,
+  `STORE_V OFS_PARM2, lv` and `STORE_F OFS_RETURN, gf`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GenerateFunctionCallRef`, `PR_GenerateReturnOuts`, `QCC_PR_FinaliseFunction`.
 
 ## FTEF-33 Builtin argument checks
 

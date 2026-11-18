@@ -23,6 +23,9 @@ use crate::check::{Bitfield, Constness, ElementRef, FieldRef, MemberArray, Refer
 use crate::ir;
 use crate::ty::{SimpleType, Type};
 
+/// The alignment of a member that takes whole words, in bits.
+pub(super) const WORD_ALIGNMENT: u32 = 32;
+
 /// A word's 32 bits as a shift: a member's offset in bits, `>> 5`, is its word.
 const WORD_BITS_SHIFT: u32 = 5;
 
@@ -57,7 +60,7 @@ impl Checker<'_> {
         }
         // FTEF-10.3: an accessor's member, read or stored through its functions.
         if let Some((name, _)) = selector_name(&selector)
-            && let Some(accessor) = self.accessor_member(&base, &name)
+            && let Some(accessor) = self.accessor_member(&base, &name, field.syntax().span())?
         {
             // FTEF-10.7: a member that takes an index is followed by its `[`
             // (`QCC_PR_Expect("[")`).
@@ -229,7 +232,7 @@ impl Checker<'_> {
                 {
                     return Ok(Value::field_of(base, name, def.ty.clone(), Some(member)));
                 }
-                if let Some(accessor) = self.accessor_member(base, &name) {
+                if let Some(accessor) = self.accessor_member(base, &name, token.span())? {
                     return Ok(accessor);
                 }
                 let found = self.env.reference(token.span().start).and_then(|id| {
@@ -624,7 +627,7 @@ impl Checker<'_> {
     /// index; else the offset, `OP_ADD_I` of the index made an integer and it when the target
     /// has `OP_ADD_I`, else `OP_ADD_F` of the index made a float and the offset as a float times
     /// `32 / align`. An offset the model does not know is an integer constant no check reads.
-    fn member_index(
+    pub(super) fn member_index(
         &mut self,
         index: Option<&Value>,
         offset: Option<(u32, u32)>,

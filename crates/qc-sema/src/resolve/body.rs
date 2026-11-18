@@ -204,6 +204,7 @@ impl<'a> Resolver<'a> {
             }
         }
         let mut previous: Option<DefId> = None;
+        let mut param_defs: Vec<(String, Option<DefId>)> = Vec::new();
         // FTEF-7.5: a definition of a typedef'd function type has the typedef's parameters.
         let typedef_params = decl
             .filter(|_| body.params.is_empty())
@@ -214,6 +215,7 @@ impl<'a> Resolver<'a> {
             self.settle(param.span.start);
             let location = self.at(file, param.span);
             let def = self.declare_scoped(scope, &param.name, &param.ty, DefKind::Param, location);
+            param_defs.push((param.name.clone(), def));
             // QC-13.5: `PR_ParseImmediateStatements` stops at a parameter whose global lies
             // below the one before it, "bad parm order".
             if self.profile.checks_parameter_order()
@@ -346,6 +348,7 @@ impl<'a> Resolver<'a> {
                 lex: &body.lex_flags,
                 written: &body.written_types,
                 locals: &body.locals,
+                params: &param_defs,
                 naming,
             };
             let typed = check_body(&mut env, syntax);
@@ -424,6 +427,7 @@ impl<'a> Resolver<'a> {
             lex: &[],
             written: &[],
             locals: &[],
+            params: &[],
             naming: FunctionName::Named,
         };
         (array_length(&mut env, &expr), rest)
@@ -515,6 +519,7 @@ impl<'a> Resolver<'a> {
             lex: &[],
             written: &written,
             locals: &[],
+            params: &[],
             naming: FunctionName::Named,
         };
         check_initialiser(&mut env, expr, ty, "")
@@ -545,6 +550,7 @@ impl<'a> Resolver<'a> {
             lex: &[],
             written: &written,
             locals: &[],
+            params: &[],
             naming: FunctionName::Named,
         };
         check_initialiser(&mut env, expr, ty, &name)

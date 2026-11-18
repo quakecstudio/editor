@@ -101,6 +101,43 @@ pub struct FunctionType {
     pub labels: ParamLabels,
 }
 
+/// Which way a parameter's value passes between a call and the function, FTEQCC's
+/// `params[i].out` (FTEF-32.24).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Passing {
+    /// Into the function only: no mark, or `__in`.
+    #[default]
+    In,
+    /// In and back out: `__inout`, or `&` after the type.
+    InOut,
+    /// Out only, `__out`: a call passes nothing for it.
+    Out,
+}
+
+impl Passing {
+    /// The passing the parameter `param` is written with, `words` its qualifiers' words with
+    /// their leading underscores off, in lower case.
+    pub(crate) fn of(words: &[String], param: &ast::Param) -> Self {
+        let by_reference = param
+            .syntax()
+            .child_tokens()
+            .any(|t| t.kind() == qc_syntax::SyntaxKind::Amp);
+        if words.iter().any(|w| w == "out") {
+            Self::Out
+        } else if by_reference || words.iter().any(|w| w == "inout") {
+            Self::InOut
+        } else {
+            Self::In
+        }
+    }
+
+    /// Whether the function's value of it is stored back after a call.
+    #[must_use]
+    pub const fn comes_back(self) -> bool {
+        matches!(self, Self::InOut | Self::Out)
+    }
+}
+
 /// How a parameter is written: its name, its `optional` and out marks and its default value as
 /// FTEQCC's `TypeName` prints them (FTEF-24.7).
 #[derive(Clone, Debug, Default)]
@@ -109,8 +146,8 @@ pub struct ParamLabel {
     pub name: Option<String>,
     /// Whether `optional` marks it.
     pub optional: bool,
-    /// Whether an out mark (`__out`, `__inout`, `&`) marks it.
-    pub out: bool,
+    /// Which way its value passes, by its `__out`, `__inout` or `&` mark.
+    pub passing: Passing,
     /// Its default value as `QCC_VarAtOffset` prints it.
     pub default: Option<String>,
 }
@@ -353,11 +390,7 @@ impl Type {
                 ParamLabel {
                     name: param.name().map(|t| t.text_lossless()),
                     optional: words.iter().any(|w| w == "optional"),
-                    out: words.iter().any(|w| w == "out" || w == "inout")
-                        || param
-                            .syntax()
-                            .child_tokens()
-                            .any(|t| t.kind() == qc_syntax::SyntaxKind::Amp),
+                    passing: Passing::of(&words, &param),
                     default: param.default_value().map(|value| default_text(&value, ty)),
                 }
             })

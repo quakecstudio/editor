@@ -20,7 +20,7 @@ use crate::check::{Constness, Value, ValueUse};
 use crate::ty::{SimpleType, Type};
 
 /// `VMWORDSIZE`: the bytes of a word, by which `OP_ADD_PIW` scales its offset.
-const WORD_BYTES: i32 = 4;
+pub(super) const WORD_BYTES: i32 = 4;
 
 /// What a pointer points at, as FTEQCC's pointer arithmetic sizes it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

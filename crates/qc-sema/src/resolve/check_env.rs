@@ -20,7 +20,7 @@ use crate::check::{
 };
 use crate::lower::ValueKind;
 use crate::lower::{ArrayDim, LiteralValue, Qualifier, RawLocal};
-use crate::resolve::{AccessorFacts, Layout, MAX_TYPEDEF_DEPTH, Resolver};
+use crate::resolve::{AccessorFacts, InitialValue, Layout, MAX_TYPEDEF_DEPTH, Resolver};
 use crate::symbol::{DefId, DefKind, Definition, FileId};
 use crate::ty::{SimpleType, Type};
 
@@ -57,6 +57,8 @@ pub(in crate::resolve) struct BodyEnv<'r, 'a> {
     pub(in crate::resolve) written: &'r [(usize, Type)],
     /// The body's locals.
     pub(in crate::resolve) locals: &'r [RawLocal],
+    /// The local each of the function's named parameters is, by its name.
+    pub(in crate::resolve) params: &'r [(String, Option<DefId>)],
     /// Whether its function's name is its own, or empty as a nested function's that is not
     /// static (FTEF-18.39).
     pub(in crate::resolve) naming: FunctionName,
@@ -175,6 +177,11 @@ impl Env for BodyEnv<'_, '_> {
         if !facts.initialized {
             facts.initialized = true;
             if let Some(literal) = value.literal() {
+                // FTEF-32.12: a vector the default folds to, `[0, 0, 0]`, is the global's value.
+                if let LiteralValue::Vector(words) = &literal {
+                    let folded = InitialValue::new(words.to_vec());
+                    self.resolver.index.initial_values.insert(def, folded);
+                }
                 self.resolver.literals.insert(def, literal);
             }
             return false;
@@ -410,6 +417,11 @@ impl Env for BodyEnv<'_, '_> {
             .map_or_else(String::new, |(name, line)| format!("{name}:{line}"))
     }
 
+    fn parameter(&self, name: &str) -> Option<DefId> {
+        let (_, def) = self.params.iter().find(|(named, _)| named == name)?;
+        *def
+    }
+
     fn params(&self, def: DefId) -> Option<Vec<ParamFacts>> {
         let facts = self.resolver.facts.get(def.index())?;
         if facts.params.is_empty() {
@@ -437,7 +449,7 @@ impl Env for BodyEnv<'_, '_> {
                             }
                     }),
                     optional: p.optional,
-                    out: p.out,
+                    passing: p.passing,
                 })
                 .collect(),
         )

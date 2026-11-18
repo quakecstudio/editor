@@ -1163,6 +1163,41 @@ impl Program {
         Ok(place)
     }
 
+    /// `QCC_MakeInt64Const` and `QCC_MakeDoubleConst`: the global of a constant of two words of
+    /// type `ty`, the low word first; an `IMMEDIATE` of that type holding them is reused.
+    pub(crate) fn wide_immediate(
+        &mut self,
+        words: [u32; 2],
+        ty: ValueType,
+    ) -> Result<usize, Internal> {
+        let [low, high] = words;
+        let found = self.defs.iter().position(|d| {
+            d.initialized
+                && d.constant
+                && d.count.is_none()
+                && d.ty == ty
+                && self.word(d.ofs) == low
+                && self.word(d.ofs.saturating_add(1)) == high
+        });
+        if let Some(place) = found {
+            return Ok(place);
+        }
+        let ofs = self.allocate_global(2)?;
+        let place = self.defs.len();
+        self.defs.push(Def {
+            name: "IMMEDIATE".to_owned(),
+            ty,
+            ofs,
+            scope: None,
+            initialized: true,
+            constant: true,
+            count: None,
+            id: None,
+        });
+        self.set_words(ofs, &words)?;
+        Ok(place)
+    }
+
     /// Whether the words from `ofs` hold `literal`'s value, compared as `PR_ParseImmediate`
     /// compares: floats and each vector component with `==`, strings by their text at the
     /// stored offset (QC-20.2). FTEQCC shares a number's immediate by its bits
@@ -1239,9 +1274,9 @@ pub(crate) fn type_words(index: &ModuleIndex, ty: &ValueType) -> u32 {
         // A struct's layout and a C scalar's size are the model's (FTEF-19.81).
         ValueType::Of(t) => index.struct_shape(t).map_or_else(
             || {
-                index
-                    .scalar(t)
-                    .map_or_else(|| ty.words(), |scalar| scalar.words)
+                let accessor = index.accessor_shape(t).map(|shape| shape.words);
+                let scalar = index.scalar(t).map(|scalar| scalar.words);
+                accessor.or(scalar).unwrap_or_else(|| ty.words())
             },
             |s| s.words,
         ),
@@ -1250,13 +1285,17 @@ pub(crate) fn type_words(index: &ModuleIndex, ty: &ValueType) -> u32 {
 }
 
 /// The type number of a definition's record of type `ty`: a C scalar's own, `ev_integer` to
-/// `ev_double`, which the model gives (FTEF-19.81), else its basic type's.
+/// `ev_double` (FTEF-19.81), or an accessor's (FTEF-10.15), which the model gives, else its
+/// basic type's.
 pub(crate) fn type_number(index: &ModuleIndex, ty: &ValueType) -> u16 {
-    let scalar = match ty {
-        ValueType::Of(t) => index.scalar(t),
+    let numbered = match ty {
+        ValueType::Of(t) => index
+            .accessor_shape(t)
+            .map(|shape| shape.number)
+            .or_else(|| index.scalar(t).map(|scalar| scalar.number)),
         ValueType::FloatField => None,
     };
-    scalar.map_or_else(|| ty.etype().number(), |scalar| scalar.number)
+    numbered.unwrap_or_else(|| ty.etype().number())
 }
 
 /// A global offset as a statement operand.

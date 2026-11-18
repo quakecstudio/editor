@@ -23,7 +23,7 @@ use crate::check::reference::expected_after;
 use crate::check::term::string_immediate;
 use crate::check::{Constness, CvarValue, ParamFacts, PathList, Reference, Sym, Value, converts};
 use crate::ir;
-use crate::ty::{FunctionType, SimpleType, Type};
+use crate::ty::{FunctionType, Passing, SimpleType, Type};
 use crate::{MAX_PARMS, VECTOR_WORDS, VECTOR_WORDS_FLOAT, VECTOR_WORDS_INT};
 
 /// `MAX_PARMS + MAX_EXTRA_PARMS`: the most arguments a call may pass.
@@ -225,6 +225,13 @@ impl Checker<'_> {
                 );
                 self.env.report(Code::W0252, arg_span, message);
             }
+            // FTEF-32.24: `__out args do not actually need to pass anything`: not read.
+            if params.get(at).is_some_and(|p| p.passing == Passing::Out) {
+                values.push(Value::of(reference.ty.clone()));
+                passed.push(Some(reference));
+                self.end_of_construct()?;
+                continue;
+            }
             let mark = self.generated.len();
             let mut value = self.read(reference.clone(), arg_span)?;
             let mut continue_after_conversion = false;
@@ -358,11 +365,12 @@ impl Checker<'_> {
         }
         // FTE-18.7: an empty slot is given its parameter's default.
         let defaulted: Vec<bool> = passed.iter().map(Option::is_none).collect();
+        let unpassed: Vec<bool> = params.iter().map(|p| p.passing == Passing::Out).collect();
         let kept = self.call_statements(
             &function,
             passed_count,
-            (callee, &values, &defaulted),
-            (newself, &field_loads),
+            (callee, &values, &defaulted, &unpassed),
+            (newself, &field_loads, None),
             span,
         );
         let call = self.last_made();
@@ -374,9 +382,32 @@ impl Checker<'_> {
                 ..ir::BodyStatement::bare(Op::StoreEnt)
             });
         }
-        // `out` arguments are stored back after the call (`QCC_PR_GenerateFunctionCallRef`).
-        for (reference, param) in passed.iter().zip(&params) {
-            let Some(reference) = reference.as_ref().filter(|_| param.out) else {
+        // The call's value is live from here (`retval = QCC_GetAliasTemp(def_ret)` before the
+        // outs), so a store back that calls copies it out of the return global first.
+        let words = self.env.layout(&function.ret).map_or(1, |l| l.words);
+        if !self.global && words > 0 && function.ret != Type::Simple(SimpleType::Void) {
+            self.live_return = Some(words);
+            self.live_call = call;
+        }
+        // FTEF-32.24: `out` arguments are stored back after the call, each from its parameter's
+        // slot (`QCC_StoreSRefToRef(arglist[i], d, false, false)`), a slot for each three words
+        // of the parameters before it (`parm += (func.cast->params[i].type->size+2)/3`).
+        let mut slot: u32 = 0;
+        for (at, (reference, param)) in passed.iter().zip(&params).enumerate() {
+            let held = slot;
+            let words = function
+                .params
+                .get(at)
+                .and_then(|ty| self.env.layout(ty))
+                .map_or(1, |layout| layout.words);
+            slot = slot.saturating_add(
+                words
+                    .saturating_add(2)
+                    .checked_div(VECTOR_WORDS)
+                    .unwrap_or(1),
+            );
+            let comes_back = param.passing.comes_back();
+            let Some(reference) = reference.as_ref().filter(|_| comes_back) else {
                 continue;
             };
             if reference.readonly {
@@ -384,13 +415,14 @@ impl Checker<'_> {
                 self.env.report(Code::E0339, span, message);
                 continue;
             }
-            let returned = Value::of(reference.ty.clone());
+            let returned = Value {
+                parameter: u8::try_from(held).ok(),
+                ..Value::of(reference.ty.clone())
+            };
+            if !self.global {
+                self.update_stores(reference, &returned, &reference.ty, span)?;
+            }
             self.store_reference(reference, &returned, span)?;
-        }
-        let words = self.env.layout(&function.ret).map_or(1, |l| l.words);
-        if !self.global && words > 0 && function.ret != Type::Simple(SimpleType::Void) {
-            self.live_return = Some(words);
-            self.live_call = call;
         }
         // FTEF-29.15: the value is an alias of `def_ret`, which may be assigned to, unless a
         // return larger than a vector is read back into a temporary.
@@ -450,13 +482,15 @@ impl Checker<'_> {
     /// default a parameter takes, then `CALLn` of the callee; its value the return global.
     /// FTEF-9.24: called with `newself`, the object a method is called through when it is not
     /// `self`, `self` is kept and set to it first; the temporary that kept it is returned, for
-    /// `self` to be restored from after the call.
-    fn call_statements(
+    /// `self` to be restored from after the call. `kept_value` is the argument whose value is
+    /// read again after the call, an accessor's store's (FTEF-10.14); an argument of `unpassed`
+    /// is an `__out` parameter's, which nothing is passed for (FTEF-32.24).
+    pub(super) fn call_statements(
         &mut self,
         function: &FunctionType,
         count: usize,
-        (callee, values, defaulted): (Option<ir::Name>, &[Value], &[bool]),
-        (newself, field_loads): (Option<ir::Name>, &[FieldLoad]),
+        (callee, values, defaulted, unpassed): (Option<ir::Name>, &[Value], &[bool], &[bool]),
+        (newself, field_loads, kept_value): (Option<ir::Name>, &[FieldLoad], Option<usize>),
         span: Span,
     ) -> Option<u32> {
         // The arguments written and each parameter after them that takes its default
@@ -547,7 +581,16 @@ impl Checker<'_> {
         // value; every later one follows a store or a load.
         let mut first = field_loads.iter().all(|field| field.slot >= passed);
         for (slot, value) in values.iter().take(passed).enumerate() {
-            if value.returned {
+            if unpassed.get(slot).copied().unwrap_or(false) {
+                // `args[parm++].ref = nullsref;`: an operand of the call's is written as none.
+                if let Some(register) = registers.then(|| operands.get_mut(slot)).flatten() {
+                    *register = Some(ir::Name::Count(0));
+                }
+                continue;
+            }
+            // FTEF-10.14: the value an accessor's store was given stays readable after the
+            // call, so a call's value is copied out of the return global before it.
+            if value.returned && kept_value != Some(slot) {
                 self.live_return = None;
             }
             if field_loads.iter().any(|field| field.slot == slot) {
@@ -1228,7 +1271,7 @@ impl FunctionType {
                         // The code generator passes defaults only to a function it calls by name.
                         kept_default: false,
                         optional: label.optional,
-                        out: label.out,
+                        passing: label.passing,
                     })
             })
             .collect()

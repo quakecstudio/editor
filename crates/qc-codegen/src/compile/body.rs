@@ -311,8 +311,14 @@ impl Compiler<'_> {
         }
         let ty = def.ty.clone();
         let name = def.name.strip_prefix("autocvar_").at(span)?.to_owned();
-        let default = syntax.autocvars.get(&name).cloned().at(span)?;
-        let words = self.value_words(&ty, &default)?;
+        // A vector the model folded the default to is the value; else the default as written.
+        let words = match self.index.initial_value(id) {
+            Some(folded) => folded.words().to_vec(),
+            None => {
+                let default = syntax.autocvars.get(&name).cloned().at(span)?;
+                self.value_words(&ty, &default)?
+            }
+        };
         self.program.initialise_words(place, &words).at(span)?;
         Ok(())
     }
@@ -331,12 +337,24 @@ impl Compiler<'_> {
                     Name::Default(slot) => self.default_of(generated, at, slot).is_some(),
                     _ => true,
                 });
+            // FTE-18.7: the call stops before an `optional` parameter, whatever its default.
+            let optional =
+                |callee: DefId, slot: usize| match self.index.def(callee).map(|def| &def.ty) {
+                    Some(qc_sema::Type::Function(function)) => function
+                        .labels
+                        .0
+                        .get(slot)
+                        .is_some_and(|label| label.optional),
+                    _ => false,
+                };
             let stops = match (call_count(statement.op), statement.a) {
-                (Some(count), Some(Name::Def(callee, _))) => self
-                    .defaults
-                    .get(&callee)
-                    .and_then(|defaults| defaults.get(count))
-                    .is_some_and(Option::is_some),
+                (Some(count), Some(Name::Def(callee, _))) => {
+                    self.defaults
+                        .get(&callee)
+                        .and_then(|defaults| defaults.get(count))
+                        .is_some_and(Option::is_some)
+                        && !optional(callee, count)
+                }
                 _ => false,
             };
             passed && !stops

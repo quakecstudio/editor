@@ -21,6 +21,7 @@ use qc_syntax::c_scalar::CScalar;
 use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
+use crate::check::member::WORD_ALIGNMENT;
 use crate::check::pointer::{Pointee, int};
 use crate::check::{Bitfield, ElementRef, FieldRef, MemberArray, Reference, Sym, Value};
 use crate::ir;
@@ -321,6 +322,31 @@ impl Checker<'_> {
                 readonly: base.readonly,
                 ..Value::of(Type::Simple(SimpleType::Float))
             });
+        }
+        // FTEF-31.26: at an index that is no constant the component's field is loaded from the
+        // vector field's own, as an array of fields' is (FTEF-31.19).
+        if let Reference::Field(field) = &base.reference
+            && field.selected.is_none()
+            && constant.is_none()
+            && self.env.target_at(span.start).valid(Op::LoadaFld)
+            && let Some(def) = field.def
+        {
+            let components = Value {
+                sym: Sym::Def(def, false, 0),
+                ..Value::of(Type::Field(Type::Simple(SimpleType::Float).into()))
+            };
+            let read = self.load_from_array(&components, &at, ElementKind::Element, span)?;
+            if let ArrayRead::Loaded(loaded) = read {
+                let selected = self.name_of(&loaded);
+                return Ok(Value {
+                    reference: Reference::Field(Box::new(FieldRef {
+                        selected,
+                        ..field.as_ref().clone()
+                    })),
+                    readonly: base.readonly,
+                    ..Value::of(Type::Simple(SimpleType::Float))
+                });
+            }
         }
         Ok(Value {
             reference: Reference::element(label, at, false),
@@ -778,7 +804,7 @@ impl Checker<'_> {
         };
         let label = base.label();
         // FTEF-10.7: an accessor member's index, or an accessor's indexer, `get T[index]`.
-        if let Some(element) = self.accessor_index(&base, &at) {
+        if let Some(element) = self.accessor_index(&base, &at, index.syntax().span())? {
             return Ok(element);
         }
         // An array of fields, `this.arr[i]`: the field the index selects, an entity's field to
@@ -843,6 +869,13 @@ impl Checker<'_> {
                     let message = "(vector) array index out of bounds".to_owned();
                     return self.fatal(Code::E0333, span, message);
                 }
+                // FTEF-31.25: through a pointer, the float at the vector's word plus the index.
+                if let (Reference::Pointer(_), Some(word)) = (
+                    &base.reference,
+                    constant.and_then(|i| u32::try_from(i).ok()),
+                ) {
+                    return self.pointer_component(base, word, span);
+                }
                 // FTEF-31.9: a constant vector's component at a constant index is a constant,
                 // read through the vector at the index (`REF_ARRAY`), which a call does not fold
                 // (FTEF-32.17).
@@ -900,6 +933,22 @@ impl Checker<'_> {
                 self.fatal(Code::E0204, span, message)
             }
         }
+    }
+
+    /// FTEF-31.25: component `word` of the vector `base` reads through a pointer: the float at
+    /// the vector's word plus `word`, through the same pointer.
+    fn pointer_component(&mut self, base: Value, word: u32, span: Span) -> Checked {
+        let Reference::Pointer(pointer) = &base.reference else {
+            return Ok(base);
+        };
+        let component = Some((word, WORD_ALIGNMENT));
+        let index = self.member_index(pointer.index.as_ref(), component, span)?;
+        Ok(Value {
+            readonly: base.readonly,
+            reference: Reference::pointer(pointer.base.clone(), Some(index), pointer.named),
+            name: base.name,
+            ..Value::of(Type::Simple(SimpleType::Float))
+        })
     }
 
     /// The length of the array `head` names bare: a member array's as its struct declares it,
@@ -1154,8 +1203,14 @@ impl Checker<'_> {
                     && index.known().is_none_or(|c| c.i() != 0)
                 {
                     let index = self.converted(index, Etype::Integer, span)?;
-                    let pointer = pointer_to(&value.ty);
-                    self.emit(Op::AddPiw, &pointer, &index, span)?;
+                    let address = pointer_to(&value.ty);
+                    let sum = self.emit(Op::AddPiw, &address, &index, span)?;
+                    // The pointer the element is reached through is the statement's own.
+                    self.name_last(Op::AddPiw, pointer.named, None);
+                    return Ok(Value {
+                        ty: address.ty,
+                        ..sum
+                    });
                 }
                 Ok(pointer_to(&value.ty))
             }

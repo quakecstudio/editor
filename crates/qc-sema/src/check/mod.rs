@@ -46,7 +46,7 @@ use crate::cast::{ConstType, Literal, Source};
 use crate::lower::LiteralValue;
 use crate::resolve::{AccessorFacts, Layout};
 use crate::symbol::{DefId, Definition};
-use crate::ty::{FunctionType, Type};
+use crate::ty::{FunctionType, Passing, Type};
 use constant::{Constant, unquoted};
 
 use crate::ir;
@@ -109,6 +109,8 @@ pub(crate) trait Env {
     /// The parameters of a function definition as a call reads them (FTEF-32), `None` for a
     /// definition with none recorded.
     fn params(&self, def: DefId) -> Option<Vec<ParamFacts>>;
+    /// The local that the parameter `name` of the function whose body is checked is.
+    fn parameter(&self, name: &str) -> Option<DefId>;
     /// The length of an array definition, when the model reads it (`def->arraysize`).
     fn array_length(&self, def: DefId) -> Option<u32>;
     /// Whether a definition is a function's local or parameter (`sym->scope`).
@@ -262,6 +264,8 @@ pub(crate) struct Value {
     /// A number literal's constant and the immediate the code generator places it in, the
     /// lexer's float of its text: the value's name while it is still that constant.
     pub(crate) literal: Option<Box<(Constant, ir::Name)>>,
+    /// The parameter slot that holds it: an out argument's value after its call (FTEF-32.24).
+    pub(crate) parameter: Option<u8>,
 }
 
 /// FTEQCC's temporaries (`tempsinfo`), kept across the module's functions: each one's word
@@ -380,6 +384,7 @@ impl Value {
             call: None,
             word: 0,
             literal: None,
+            parameter: None,
         }
     }
 
@@ -395,6 +400,9 @@ impl Value {
     /// What the value names as an operand of a generated body's statement: the statement that
     /// made it, the return global for a call's value, a definition's word, or an immediate.
     pub(crate) fn name(&self) -> Option<ir::Name> {
+        if let Some(slot) = self.parameter {
+            return Some(ir::Name::Parameter(slot));
+        }
         if let Some(made) = self.made {
             return Some(match self.word {
                 0 => ir::Name::Made(made),
@@ -553,8 +561,8 @@ pub(crate) struct ParamFacts {
     pub(crate) kept_default: bool,
     /// Whether `optional` marks it.
     pub(crate) optional: bool,
-    /// Whether it is an `out` parameter, stored back after the call.
-    pub(crate) out: bool,
+    /// Which way its value passes: an out parameter's is stored back after the call.
+    pub(crate) passing: Passing,
 }
 
 /// A struct or union member as the checks read it (FTEF-6.11, FTEF-6.15).
@@ -629,6 +637,8 @@ pub(crate) struct AccessorRef {
     pub(crate) name: String,
     /// Its index, when it takes one and one was given.
     pub(crate) index: Option<Value>,
+    /// The accessor's value, `ref->base`, the first argument of its functions.
+    pub(crate) base: Value,
 }
 
 /// An entity's field: the labels of the entity and of the field.
@@ -696,8 +706,18 @@ impl Reference {
     }
 
     /// The accessor member `name`, described by `facts`, at `index`.
-    pub(crate) fn accessor(facts: AccessorFacts, name: String, index: Option<Value>) -> Self {
-        Self::Accessor(Box::new(AccessorRef { facts, name, index }))
+    pub(crate) fn accessor(
+        facts: AccessorFacts,
+        name: String,
+        index: Option<Value>,
+        base: Value,
+    ) -> Self {
+        Self::Accessor(Box::new(AccessorRef {
+            facts,
+            name,
+            index,
+            base,
+        }))
     }
 
     /// What the pointer labelled `base` points at, at `index`.
@@ -965,6 +985,16 @@ pub(crate) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
             .token_of(qc_syntax::SyntaxKind::RBrace)
             .map_or_else(|| block.syntax().span(), |brace| brace.span());
         checker.finish_function(end);
+    }
+    // FTEF-32.24: `QCC_PR_FinaliseFunction` writes the out parameters back before the `ret*`
+    // local's `RETURN`, or else before the `DONE` of a body whose last statement is neither a
+    // `RETURN` nor a `DONE` (`needsdone`).
+    let ended = checker
+        .generated
+        .last()
+        .is_some_and(|last| matches!(last.op, qc_preproc::Op::Return | qc_preproc::Op::Done));
+    if checker.ret_local || !ended {
+        checker.return_outs();
     }
     // FTE-18.10: a body that made the `ret*` local returns it once more before its `DONE`.
     if checker.ret_local {

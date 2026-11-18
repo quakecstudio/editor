@@ -4668,3 +4668,691 @@ fn a_wide_scalar_is_two_words_wherever_it_is_held() {
     assert_eq!(global(&p, "y") - global(&p, "x"), 2);
     assert_eq!(number("ret*"), 0xa);
 }
+
+// spec FTE-18.7: a call stops before an `optional` parameter though it has a default, and
+// passes the defaults before it, as the pinned FTEQCC's program does
+#[test]
+fn an_optional_parameter_s_default_is_not_passed() {
+    let p = fte_progs(
+        "#pragma target fte\n\
+         float(vector position, string pic, vector size, vector rgb='1 1 1', float alpha=1, \
+         optional float drawflag=7) drawpic = #322;\n\
+         void() f = {\n\
+         \tdrawpic('1 2 3', \"a\", '4 5 6', '7 8 9', 2);\n\
+         \tdrawpic('1 2 3', \"a\", '4 5 6');\n\
+         };\n",
+    );
+    let ops: Vec<u32> = body(&p, "f").iter().map(|s| s.op).collect();
+    // STORE_V, STORE_V, STORE_F and the call by operands, twice: nothing stored for drawflag.
+    assert_eq!(ops, [32, 32, 31, 109, 32, 32, 31, 109, 0]);
+    let stored: Vec<i32> = body(&p, "f").iter().map(|s| s.b).collect();
+    assert_eq!(stored.get(..3), Some(&[10, 13, 16][..]));
+    assert_eq!(stored.get(4..7), Some(&[10, 13, 16][..]));
+}
+
+// spec FTEF-29.18: `|=` and `&~=` of a float field in place have no result, and the
+// assignment's value is the value given, as the pinned FTEQCC's program has it
+#[test]
+fn a_bit_update_in_place_has_no_result() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\nentity self;\n.float flags;\nfloat g;\nfloat x;\n\
+         void end_sys_fields;\n\
+         void t(void) {\n\tx = (self.flags |= g);\n\tself.flags &~= 2;\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let (this, flags) = (global(&p, "self"), global(&p, "flags"));
+    let (g, x) = (global(&p, "g"), global(&p, "x"));
+    let statements = body(&p, "t");
+    let temp = statements[0].c;
+    let two = statements[4].a;
+    assert_eq!(
+        statements,
+        [
+            Statement {
+                op: number(Op::Address),
+                a: this,
+                b: flags,
+                c: temp
+            },
+            Statement {
+                op: number(Op::BitsetstorepF),
+                a: g,
+                b: temp,
+                c: 0
+            },
+            Statement {
+                op: number(Op::StoreF),
+                a: g,
+                b: x,
+                c: 0
+            },
+            Statement {
+                op: number(Op::Address),
+                a: this,
+                b: flags,
+                c: temp
+            },
+            Statement {
+                op: number(Op::BitclrstorepF),
+                a: two,
+                b: temp,
+                c: 0
+            },
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
+// spec FTEF-10.14: an accessor member's read is a call of its `get` function with the accessor
+// and the index, a chained read passing the return global, as the pinned FTEQCC writes them
+#[test]
+fn an_accessor_read_calls_its_get_function() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\ntypedef struct json_s *json_t;\naccessor jsonnode : json_t;\n\
+         string(jsonnode node) json_get_string = #1;\n\
+         jsonnode(jsonnode node, string) json_find_object_child = #2;\n\
+         jsonnode(jsonnode node, int childindex) json_get_child_at_index = #3;\n\
+         accessor jsonnode : json_t\n{\n\
+         \tinline get string s = json_get_string;\n\
+         \tinline get jsonnode a[__int key] = json_get_child_at_index;\n\
+         \tinline get jsonnode[string key] = json_find_object_child;\n};\n\
+         jsonnode n;\nstring g;\n\
+         void t(void) {\n\tg = n.s;\n\tg = n[\"k\"].s;\n\tg = n.a[7].s;\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let (get, find, child) = (
+        global(&p, "json_get_string"),
+        global(&p, "json_find_object_child"),
+        global(&p, "json_get_child_at_index"),
+    );
+    let (n, g) = (global(&p, "n"), global(&p, "g"));
+    let statements = body(&p, "t");
+    let (key, seven) = (statements[2].c, statements[5].c);
+    let read = |a: i32, b: i32, c: i32, op: Op| Statement {
+        op: number(op),
+        a,
+        b,
+        c,
+    };
+    assert_eq!(
+        statements,
+        [
+            read(get, n, 0, Op::Call1h),
+            read(1, g, 0, Op::StoreS),
+            read(find, n, key, Op::Call2h),
+            read(get, 1, 0, Op::Call1h),
+            read(1, g, 0, Op::StoreS),
+            read(child, n, seven, Op::Call2h),
+            read(get, 1, 0, Op::Call1h),
+            read(1, g, 0, Op::StoreS),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
+// spec FTEF-10.14: an accessor member's store is a call of its `set` function with the value
+// last, and a call's value stored is copied out of the return global before it
+#[test]
+fn an_accessor_store_calls_its_set_function() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\naccessor strbuf : float;\n\
+         string(strbuf bufhandle, float string_index) bufstr_get = #1;\n\
+         void(strbuf bufhandle, float string_index, string str) bufstr_set = #2;\n\
+         accessor strbuf : float\n{\n\
+         \tget string[float] = bufstr_get;\n\tset string[float] = bufstr_set;\n};\n\
+         strbuf sb;\nstring g;\nfloat h;\n\
+         void t(void) {\n\tsb[6] = g;\n\tsb[h] = sb[h + 1];\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let (get, set) = (global(&p, "bufstr_get"), global(&p, "bufstr_set"));
+    let (sb, g, h) = (global(&p, "sb"), global(&p, "g"), global(&p, "h"));
+    let statements = body(&p, "t");
+    let (six, one, sum) = (statements[1].c, statements[2].b, statements[2].c);
+    // The third parameter's slot: `OFS_PARM0` is 4 and each parameter takes three words.
+    let third = 10;
+    let made = |op: Op, a: i32, b: i32, c: i32| Statement {
+        op: number(op),
+        a,
+        b,
+        c,
+    };
+    assert_eq!(
+        statements,
+        [
+            made(Op::StoreF, g, third, 0),
+            made(Op::Call3h, set, sb, six),
+            made(Op::AddF, h, one, sum),
+            made(Op::Call2h, get, sb, sum),
+            made(Op::StoreF, 1, third, 0),
+            made(Op::StoreF, 1, sum, 0),
+            made(Op::Call3h, set, sb, h),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
+// spec FTEF-10.15: a definition of an accessor type is `ev_accessor`, and a store to it is
+// `STORE_F` whatever its base, as the pinned FTEQCC writes them
+#[test]
+fn an_accessor_s_definition_has_its_own_type_and_store() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\ntypedef struct json_s *json_t;\naccessor jsonnode : json_t;\n\
+         jsonnode(string) json_parse = #1;\njsonnode keep;\n\
+         void t(string d) {\n\tjsonnode n = json_parse(d);\n\tkeep = n;\n}\n",
+    );
+    let type_of = |name: &str| {
+        p.global_defs
+            .iter()
+            .find(|def| string(&p, def.s_name) == name)
+            .map(|def| def.type_bits)
+            .unwrap()
+    };
+    assert_eq!(type_of("keep"), 0x8010);
+    assert_eq!(type_of("n"), 0x10);
+    let store = u32::try_from(Op::StoreF.number()).unwrap();
+    let statements = body(&p, "t");
+    assert_eq!(
+        (statements[1].op, statements[1].a, statements[1].b),
+        (store, 1, global(&p, "n"))
+    );
+    assert_eq!(
+        (statements[2].op, statements[2].a, statements[2].b),
+        (store, global(&p, "n"), global(&p, "keep"))
+    );
+}
+
+// spec FTEF-31.25: a component of a vector through a pointer is the float at the vector's word
+// plus the index, loaded and stored through the pointer, as the pinned FTEQCC writes them
+#[test]
+fn a_vector_s_component_through_a_pointer_is_its_word() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\n\
+         typedef struct { float m_x; vector m_v; float m_y; } seat_t;\n\
+         seat_t *pSeat;\nseat_t *seats;\nfloat gf;\n\
+         void t(void) {\n\tgf = pSeat->m_v[2] + 16;\n\tpSeat->m_v[1] = gf;\n\
+         \tgf = seats[3].m_v[0];\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let (seat, seats, gf) = (global(&p, "pSeat"), global(&p, "seats"), global(&p, "gf"));
+    let statements = body(&p, "t");
+    let word = |ofs: i32| words(&p, ofs, 1)[0];
+    assert_eq!(
+        (statements[0].op, statements[0].a, word(statements[0].b)),
+        (number(Op::LoadpF), seat, 3)
+    );
+    assert_eq!(
+        (statements[1].op, statements[1].a, statements[1].c),
+        (number(Op::AddF), statements[0].c, gf)
+    );
+    assert_eq!(
+        (
+            statements[2].op,
+            statements[2].a,
+            statements[2].b,
+            word(statements[2].c)
+        ),
+        (number(Op::StorepF), gf, seat, 2)
+    );
+    assert_eq!(
+        (
+            statements[3].op,
+            statements[3].a,
+            word(statements[3].b),
+            statements[3].c
+        ),
+        (number(Op::LoadpF), seats, 16, gf)
+    );
+    assert_eq!(statements.len(), 5);
+}
+
+// spec FTEF-27.19: the divisor of a pointer difference is a constant, the bytes of what the
+// pointers point at, as the pinned FTEQCC folds `OP_ADD_PIW` of two constants
+#[test]
+fn a_pointer_difference_divides_by_a_constant() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\ntypedef struct { vector o; float r; int a; int b; } node_t;\n\
+         node_t *base;\nint gi;\nvoid t(node_t *n) {\n\tgi = n - base;\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let statements = body(&p, "t");
+    assert_eq!(
+        (statements[0].op, statements[0].b),
+        (number(Op::SubI), global(&p, "base"))
+    );
+    assert_eq!(
+        (
+            statements[1].op,
+            statements[1].a,
+            words(&p, statements[1].b, 1)[0]
+        ),
+        (number(Op::DivI), statements[0].c, 24)
+    );
+    // The store folds into the division.
+    assert_eq!(statements[1].c, global(&p, "gi"));
+    assert_eq!(statements.len(), 3);
+}
+
+// spec FTEF-6.18: an integer is stored through a pointer by `OP_STOREP_I`
+// spec FTEF-29.19: a postfix through a pointer loads the old value, which is its value, and
+// stores the sum through the pointer, as the pinned FTEQCC writes them
+#[test]
+fn a_postfix_through_a_pointer_stores_through_it() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\ntypedef struct { vector o; float r; int a; int n; } node_t;\n\
+         int gi;\nvoid t(node_t *p) {\n\tint idx = p->n ++;\n\tgi = idx;\n\tp->a = gi;\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let statements = body(&p, "t");
+    let pointer = statements[0].a;
+    let word = |ofs: i32| words(&p, ofs, 1)[0];
+    let (old, sum) = (statements[0].c, statements[1].c);
+    assert_eq!(
+        (statements[0].op, word(statements[0].b)),
+        (number(Op::LoadpI), 5)
+    );
+    assert_eq!(
+        (statements[1].op, statements[1].a, word(statements[1].b)),
+        (number(Op::AddI), old, 1)
+    );
+    assert_eq!(
+        (
+            statements[2].op,
+            statements[2].a,
+            statements[2].b,
+            word(statements[2].c)
+        ),
+        (number(Op::StorepI), sum, pointer, 5)
+    );
+    assert_eq!(
+        (statements[3].op, statements[3].a),
+        (number(Op::StoreI), old)
+    );
+    let last = statements[statements.len() - 2];
+    assert_eq!(
+        (last.op, last.a, last.b, word(last.c)),
+        (number(Op::StorepI), global(&p, "gi"), pointer, 4)
+    );
+}
+
+// spec FTEF-31.4: the address of a pointer's element is `OP_ADD_PIW` of the pointer and the
+// index in words, which a call then passes, as the pinned FTEQCC writes it
+#[test]
+fn the_address_of_a_pointer_s_element_adds_to_the_pointer() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\ntypedef struct { vector o; float r; int a; int b; } node_t;\n\
+         node_t *graph;\nint i;\nvoid link(node_t *a, node_t *b) = #1;\n\
+         void t(node_t *new) {\n\tlink(new, &graph[i]);\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let statements = body(&p, "t");
+    assert_eq!(
+        (
+            statements[0].op,
+            statements[0].a,
+            words(&p, statements[0].b, 1)[0]
+        ),
+        (number(Op::MulI), global(&p, "i"), 6)
+    );
+    assert_eq!(
+        (statements[1].op, statements[1].a, statements[1].b),
+        (number(Op::AddPiw), global(&p, "graph"), statements[0].c)
+    );
+    assert_eq!(
+        (statements[2].op, statements[2].a, statements[2].c),
+        (number(Op::Call2h), global(&p, "link"), statements[1].c)
+    );
+}
+
+// spec FTEF-31.26: a vector field at an index that is no constant is the float field loaded
+// from the vector field at the index, read through the entity, as the pinned FTEQCC writes it
+#[test]
+fn a_vector_field_at_a_variable_index_loads_its_component_s_field() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\nentity self;\n.vector fv;\nvoid end_sys_fields;\n\
+         int i;\nfloat f;\nvoid t(void) {\n\tf = self.fv[i];\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let (this, fv, i, f) = (
+        global(&p, "self"),
+        global(&p, "fv"),
+        global(&p, "i"),
+        global(&p, "f"),
+    );
+    let statements = body(&p, "t");
+    let field = statements[1].c;
+    assert_eq!(
+        statements,
+        [
+            Statement {
+                op: number(Op::Boundcheck),
+                a: i,
+                b: 3,
+                c: 0
+            },
+            Statement {
+                op: number(Op::LoadaFld),
+                a: fv,
+                b: i,
+                c: field
+            },
+            Statement {
+                op: number(Op::LoadF),
+                a: this,
+                b: field,
+                c: f
+            },
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
+// spec FTEF-29.20: on a target with `OP_STOREF_*` a store to an entity's field is one
+// statement of the entity, the field and the value, as the pinned FTEQCC writes it
+#[test]
+fn a_field_store_is_one_statement_where_the_target_has_it() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\nentity self;\n.float health;\n.vector origin;\n\
+         .string classname;\n.entity enemy;\n.int n;\nvoid end_sys_fields;\n\
+         vector gv;\nint r;\n\
+         void t(entity e, entity o) {\n\te.health = 5;\n\te.origin = gv;\n\
+         \te.classname = \"x\";\n\te.enemy = o;\n\tr = e.n++;\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let statements = body(&p, "t");
+    let (e, o) = (statements[0].a, statements[3].c);
+    let stored: Vec<(u32, i32, i32)> = statements.iter().map(|s| (s.op, s.a, s.b)).collect();
+    assert_eq!(
+        stored.get(..4),
+        Some(
+            &[
+                (number(Op::StorefF), e, global(&p, "health")),
+                (number(Op::StorefV), e, global(&p, "origin")),
+                (number(Op::StorefS), e, global(&p, "classname")),
+                (number(Op::StorefI), e, global(&p, "enemy")),
+            ][..]
+        )
+    );
+    assert_eq!(statements[1].c, global(&p, "gv"));
+    assert_ne!(e, o);
+    // The postfix: the load's temporary is the value, and the sum is stored to the field.
+    let (old, sum) = (statements[4].c, statements[5].c);
+    assert_eq!(
+        (statements[4].op, statements[4].a, statements[4].b),
+        (number(Op::LoadI), e, global(&p, "n"))
+    );
+    assert_eq!((statements[5].op, statements[5].a), (number(Op::AddI), old));
+    assert_eq!(
+        statements[6],
+        Statement {
+            op: number(Op::StorefI),
+            a: e,
+            b: global(&p, "n"),
+            c: sum
+        }
+    );
+    assert_eq!(
+        statements[7],
+        Statement {
+            op: number(Op::StoreI),
+            a: old,
+            b: global(&p, "r"),
+            c: 0
+        }
+    );
+}
+
+// spec FTE-6.4: on id's opcodes, which have no `OP_STOREF_*`, a field is stored through its
+// address
+#[test]
+fn a_field_store_is_through_its_address_on_id_s_opcodes() {
+    let p = fte_progs(
+        "entity self;\n.float health;\nvoid end_sys_fields;\n\
+         void t(entity e) {\n\te.health = 5;\n}\n",
+    );
+    let statements = body(&p, "t");
+    assert_eq!(
+        statements[0].op,
+        u32::from(Opcode::Address.number()),
+        "{statements:?}"
+    );
+    assert_eq!(statements[1].op, u32::from(Opcode::StorepF.number()));
+}
+
+// spec FTEF-29.20: a 64-bit field is stored by `OP_STOREF_I64`, a constant from an immediate
+// of two words, as the pinned FTEQCC writes it
+#[test]
+fn a_wide_field_store_is_one_statement() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\nentity self;\n.__uint64 big;\n.__double d;\n\
+         void end_sys_fields;\n__uint64 g;\n\
+         void t(entity e) {\n\te.big = g;\n\te.d = 2;\n\tg = e.big;\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let statements = body(&p, "t");
+    let e = statements[0].a;
+    assert_eq!(
+        statements[0],
+        Statement {
+            op: number(Op::StorefI64),
+            a: e,
+            b: global(&p, "big"),
+            c: global(&p, "g")
+        }
+    );
+    assert_eq!(
+        (statements[1].op, statements[1].a, statements[1].b),
+        (number(Op::StorefI64), e, global(&p, "d"))
+    );
+    // 2.0 as a double, the low word first.
+    assert_eq!(words(&p, statements[1].c, 2), [0, 0x4000_0000]);
+    assert_eq!(
+        statements[2],
+        Statement {
+            op: number(Op::LoadI64),
+            a: e,
+            b: global(&p, "big"),
+            c: global(&p, "g")
+        }
+    );
+}
+
+// spec FTEF-32.12: an `autocvar` whose default is a vector written in brackets holds the
+// vector the default folds to
+#[test]
+fn an_autocvar_s_bracketed_default_is_its_value() {
+    let p = fte_progs(
+        "#pragma target fte\nvector out;\n\
+         void t(void) {\n\tout = autocvar(pm_angle, [1, 2, 3]);\n}\n",
+    );
+    assert_eq!(
+        global_words(&p, "autocvar_pm_angle", 3),
+        [1.0_f32, 2.0, 3.0].map(f32::to_bits)
+    );
+}
+
+// spec FTEF-32.24: a function stores its out parameters to their slots where it returns, and
+// before its last `DONE` only when its last statement is no `RETURN`, as the pinned FTEQCC does
+#[test]
+fn a_function_stores_its_out_parameters_where_it_returns() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\n\
+         float f(float a, __out float b, __inout vector c) {\n\tb = a;\n\tif (a)\n\
+         \t\treturn 1;\n\tc = c * 2;\n\treturn 2;\n}\n\
+         void g(float a, __inout float b) {\n\tif (a)\n\t\treturn;\n\tb = b + 1;\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let ops =
+        |name: &str| -> Vec<(u32, i32)> { body(&p, name).iter().map(|s| (s.op, s.b)).collect() };
+    let (store_f, store_v) = (number(Op::StoreF), number(Op::StoreV));
+    let f = ops("f");
+    // `b` to the second parameter's slot and `c` to the third's, before each `RETURN`.
+    assert_eq!(
+        f.get(2..5),
+        Some(&[(store_f, 7), (store_v, 10), (number(Op::Return), 0)][..])
+    );
+    assert_eq!(
+        f.get(6..9),
+        Some(&[(store_f, 7), (store_v, 10), (number(Op::Return), 0)][..])
+    );
+    assert_eq!(f.len(), 10, "no store before the last DONE: {f:?}");
+    let g = ops("g");
+    assert_eq!(
+        g.get(1..3),
+        Some(&[(store_f, 7), (number(Op::Return), 0)][..])
+    );
+    assert_eq!(g.get(4..), Some(&[(store_f, 7), (number(Op::Done), 0)][..]));
+}
+
+// spec FTEF-32.24: a call passes nothing for an `__out` argument and stores each out argument
+// from its slot after the call, before the call's own value is read, as the pinned FTEQCC does
+#[test]
+fn a_call_stores_its_out_arguments_back() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\nentity self;\n.float health;\n.vector origin;\n\
+         void end_sys_fields;\nfloat gf;\n\
+         float f(float a, __out float b, __inout vector c) = #1;\n\
+         void t(entity e) {\n\tfloat lf;\n\tvector lv;\n\tgf = f(1, lf, lv);\n\
+         \tf(3, e.health, e.origin);\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let statements = body(&p, "t");
+    let (lf, lv) = (statements[2].b, statements[0].a);
+    let e = statements[5].a;
+    let made = |op: Op, a: i32, b: i32, c: i32| Statement {
+        op: number(op),
+        a,
+        b,
+        c,
+    };
+    let one = statements[1].b;
+    let three = statements[6].b;
+    assert_eq!(
+        statements,
+        [
+            made(Op::StoreV, lv, 10, 0),
+            made(Op::Call3h, global(&p, "f"), one, 0),
+            made(Op::StoreF, 7, lf, 0),
+            made(Op::StoreV, 10, lv, 0),
+            made(Op::StoreF, 1, global(&p, "gf"), 0),
+            made(Op::LoadV, e, global(&p, "origin"), 10),
+            made(Op::Call3h, global(&p, "f"), three, 0),
+            made(Op::StorefF, e, global(&p, "health"), 7),
+            made(Op::StorefV, e, global(&p, "origin"), 10),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
+// spec FTEF-29.18: the value of a float bit update in place is the value given, stored by a
+// statement of its own, not folded into the one that made it
+// spec FTEF-29.20: a field of an accessor type is stored through its address, and an
+// `enum class` field by `OP_STOREF_I`
+// spec FTEF-10.15: a definition of an accessor over an `int` is `ev_accessor`
+#[test]
+fn field_stores_follow_the_type_s_own_kind() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\nentity self;\n.float flags;\nvoid end_sys_fields;\n\
+         accessor handle : int { };\nhandle gh;\n.handle hf;\n\
+         enum class kind : int { KA, KB };\n.kind ke;\nfloat a;\nfloat b;\nfloat x;\n\
+         void t(entity e) {\n\tx = (self.flags |= a + b);\n\te.hf = gh;\n\
+         \te.ke = kind::KB;\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let made = |op: Op, a: i32, b: i32, c: i32| Statement {
+        op: number(op),
+        a,
+        b,
+        c,
+    };
+    let statements = body(&p, "t");
+    let (sum, address) = (statements[0].c, statements[1].c);
+    let (e, through, item) = (statements[4].a, statements[4].c, statements[6].c);
+    assert_eq!(
+        statements,
+        [
+            made(Op::AddF, global(&p, "a"), global(&p, "b"), sum),
+            made(
+                Op::Address,
+                global(&p, "self"),
+                global(&p, "flags"),
+                address
+            ),
+            made(Op::BitsetstorepF, sum, address, 0),
+            made(Op::StoreF, sum, global(&p, "x"), 0),
+            made(Op::Address, e, global(&p, "hf"), through),
+            made(Op::StorepI, global(&p, "gh"), through, 0),
+            made(Op::StorefI, e, global(&p, "ke"), item),
+            st(Done, 0, 0, 0),
+        ]
+    );
+    let gh = p
+        .global_defs
+        .iter()
+        .find(|def| string(&p, def.s_name) == "gh")
+        .unwrap();
+    assert_eq!(gh.type_bits, 0x8010);
+}
+
+// spec FTEF-32.24: an out parameter is found by its name, so one with no name before it does
+// not shift it
+#[test]
+fn an_out_parameter_after_one_with_no_name_is_stored_from_its_own_local() {
+    let p = fte_progs("#pragma target fte\nvoid f(float, __out float o) = { o = 1; };\n");
+    let statements = body(&p, "f");
+    let o = statements[0].b;
+    assert_eq!((statements[1].a, statements[1].b), (o, 7), "{statements:?}");
+}
+
+// spec FTE-6.4: on id's opcodes an `int` field is stored through its address by
+// `OP_STOREP_FLD`, `QCC_StoreToPointer`'s opcode with no `OP_STOREP_I` (FTEF-6.18)
+#[test]
+fn an_int_field_is_stored_by_storep_fld_on_id_s_opcodes() {
+    let p = fte_progs(
+        "entity self;\n.int count;\nvoid end_sys_fields;\n\
+         void t(entity e) {\n\te.count = 5i;\n}\n",
+    );
+    let statements = body(&p, "t");
+    assert_eq!(statements[0].op, u32::from(Opcode::Address.number()));
+    assert_eq!(
+        statements[1].op,
+        u32::from(Opcode::StorepFld.number()),
+        "{statements:?}"
+    );
+}
+
+// spec FTEF-10.14: a member marked `&` passes the accessor back, which is not followed: the
+// body is refused, not compiled as a plain call
+#[test]
+fn a_reference_accessor_member_is_not_compiled_as_a_plain_call() {
+    let compiled = compile_fteqcc(
+        "#pragma target fte\naccessor info : string;\n\
+         void(info &this, string key, string value) info_set = #1;\n\
+         accessor info : string\n{\n\tset& string[string] = info_set;\n};\n\
+         info s;\nvoid t(void) {\n\ts[\"k\"] = \"v\";\n}\n",
+    );
+    assert!(
+        matches!(
+            compiled,
+            Err(CompileError::Internal {
+                internal: Internal::Unfollowed,
+                ..
+            })
+        ),
+        "{:?}",
+        compiled.err()
+    );
+}

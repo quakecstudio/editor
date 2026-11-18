@@ -319,7 +319,7 @@ impl Checker<'_> {
             && lhs.reference == Reference::Global
             && self.copy_struct(&stored, lhs.name(), &target);
         if matches!(kind, Assign::Store) && !copied {
-            let store = Checker::store_op(self.etype(&target));
+            let store = self.store_of(&target);
             // The store chosen for the `=`, which the code generator reads.
             self.opcodes.insert((span.start, span.end), store);
             if lhs.reference == Reference::Global && !folded {
@@ -354,17 +354,13 @@ impl Checker<'_> {
         if matches!(kind, Assign::Store | Assign::Compound(..)) {
             self.array_set(&lhs, &stored, &target, span)?;
         }
-        self.field_store(&lhs, &stored, &target);
+        self.field_store(&lhs, &stored, &target, span);
         if matches!(kind, Assign::Store | Assign::Compound(..)) {
             self.pointer_store(&lhs, &stored, &target, span)?;
         }
         // Any other store of a struct or a union is word groups the body does not follow
         // (FTE-14.5).
         if structured && !copied {
-            self.followed = false;
-        }
-        // An accessor's store is not followed.
-        if matches!(lhs.reference, Reference::Accessor(_)) {
             self.followed = false;
         }
         // FTEF-29.3: `QCC_StoreSRefToRef`.
@@ -480,6 +476,20 @@ impl Checker<'_> {
                     c: Some(ir::Name::Made(address)),
                     ..ir::BodyStatement::bare(Op::Address)
                 });
+                // FTEF-29.18: an `ASSOC_RIGHT` opcode, `|=` and `&~=` of floats, has no result:
+                // the assignment's value is the value it was given.
+                if row(op).is_some_and(|r| r.assoc == opcodes::Assoc::Right) {
+                    self.generated.push(ir::BodyStatement {
+                        a: self.name_of(rhs),
+                        b: Some(ir::Name::Made(address)),
+                        ..ir::BodyStatement::bare(op)
+                    });
+                    self.read_returned(rhs);
+                    self.env.temps().take(1);
+                    // `OpAssignsToC` is false of it, so no store folds into what came before.
+                    self.last_temp = None;
+                    return Ok(Compounded::InPlace(rhs.clone()));
+                }
                 let result = self.next_made();
                 self.generated.push(ir::BodyStatement {
                     a: self.name_of(rhs),
@@ -785,7 +795,7 @@ impl Checker<'_> {
         // The old value is copied first: a definition's, and an element's the getter left in
         // the return global.
         if !discarded && (operand.reference == Reference::Global || old.returned) {
-            let store = Checker::store_op(self.etype(&operand.ty));
+            let store = self.store_of(&operand.ty);
             self.emit(store, &old, &Value::unknown(), span)?;
             copy = self
                 .generated
@@ -798,6 +808,12 @@ impl Checker<'_> {
         let old = Value {
             made: copy.or(old.made),
             ..old
+        };
+        // FTEF-29.19: what a pointer points at, or an entity's field, is loaded to a temporary,
+        // which is the old value.
+        let loaded = match operand.reference {
+            Reference::Pointer(_) | Reference::Field(_) => old.made,
+            _ => None,
         };
         // `switch(ref->cast->type)`: a bitfield, or an 8- or 16-bit integer, is `ev_bitfld`,
         // which only a discarded value steps, by the type it is read as.
@@ -854,7 +870,7 @@ impl Checker<'_> {
         self.store_reference(operand, &updated, span)?;
         self.not_an_lvalue(operand, span);
         self.freed_again(operand, span);
-        Ok(copy)
+        Ok(copy.or(loaded))
     }
 
     /// FTE-13.1: `vector v = {x, y, z};` of a local not `static`, each element read and
@@ -912,15 +928,59 @@ impl Checker<'_> {
 
     /// FTE-6.4: the store of `stored` to the field `lhs` of type `target`, a compound one's
     /// and a postfix's too: its `ADDRESS`, made after the value, and `STOREP_*` of the field's
-    /// type through it.
-    fn field_store(&mut self, lhs: &Value, stored: &Value, target: &Type) {
+    /// type through it. FTEF-29.20: on a target with `OP_STOREF_*` it is that one statement, of
+    /// the entity, the field and the value.
+    fn field_store(&mut self, lhs: &Value, stored: &Value, target: &Type, span: Span) {
         let Reference::Field(field) = &lhs.reference else {
             return;
         };
         if self.global {
             return;
         }
-        let storep = self.storep_op(target);
+        let valid = |op: Op| self.env.target_at(span.start).valid(op);
+        let words = self.env.layout(target).map_or(1, |layout| layout.words);
+        // `storef_opcode`: by the type's own kind, so an accessor's is none; `OP_STOREF_I` for
+        // every kind held as integers, two words by `OP_STOREF_I64`.
+        let storef = match self.etype(target) {
+            _ if self.env.is_accessor(target) => None,
+            Some(Etype::Float) => Some(Op::StorefF),
+            Some(Etype::Vector) => Some(Op::StorefV),
+            Some(Etype::String) => Some(Op::StorefS),
+            Some(
+                Etype::Entity
+                | Etype::Field
+                | Etype::Function
+                | Etype::Pointer
+                | Etype::Integer
+                | Etype::Uint,
+            ) => Some(Op::StorefI),
+            Some(Etype::Enum) if words == 1 => Some(Op::StorefI),
+            Some(Etype::Int64 | Etype::Uint64 | Etype::Double | Etype::Enum) if words == 2 => {
+                Some(Op::StorefI64)
+            }
+            _ => None,
+        };
+        // `dest->index.cast->size == dest->cast->size`: not an array of fields named whole.
+        let whole_array =
+            field.selected.is_none() && field.def.is_some_and(|def| self.env.is_array(def));
+        // Two words with no `OP_STOREF_I64` are two `OP_STOREF_I`, which is not followed, as
+        // is no store of two words through the field's address.
+        if words == 2 && !valid(Op::StorefI64) {
+            self.followed = false;
+        }
+        if let Some(storef) = storef.filter(|&op| valid(op) && !whole_array) {
+            self.generated.push(ir::BodyStatement {
+                a: self.copied(field.entity, field.entity_call),
+                b: field.operand(),
+                c: self.name_of(stored),
+                ..ir::BodyStatement::bare(storef)
+            });
+            self.read_returned(stored);
+            self.last_temp = None;
+            return;
+        }
+        // FTEF-6.18: through the field's address, `QCC_StoreToPointer`'s opcode for the type.
+        let storep = self.storep_through(target, span);
         let address = u32::try_from(self.generated.len()).ok().map(ir::Name::Made);
         self.generated.push(ir::BodyStatement {
             a: self.copied(field.entity, field.entity_call),
@@ -948,7 +1008,8 @@ impl Checker<'_> {
         span: Span,
     ) -> Result<(), Fatal> {
         self.array_set(operand, updated, target, span)?;
-        self.field_store(operand, updated, target);
+        self.field_store(operand, updated, target, span);
+        self.pointer_store(operand, updated, target, span)?;
         let folded = updated.temp.is_some() && updated.temp == self.last_temp;
         self.definition_store(operand, updated, target, span)?;
         let fold = if folded { Fold::Folded } else { Fold::Stored };
@@ -973,7 +1034,7 @@ impl Checker<'_> {
             self.fold_into(stored, lhs.name());
             return Ok(());
         }
-        let store = Checker::store_op(self.etype(target));
+        let store = self.store_of(target);
         self.emit(store, stored, &Value::unknown(), span)?;
         self.name_last(store, self.name_of(stored), lhs.name());
         Ok(())
@@ -1008,10 +1069,24 @@ impl Checker<'_> {
             self.generated.push(ir::BodyStatement {
                 a: self.name_of(stored),
                 b: to,
-                ..ir::BodyStatement::bare(Checker::store_op(self.etype(target)))
+                ..ir::BodyStatement::bare(self.store_of(target))
             });
             self.read_returned(stored);
             self.last_temp = None;
+        }
+    }
+
+    /// FTEF-6.18: `QCC_StoreToPointer`'s opcode for a value of type `target`: an integer by
+    /// `OP_STOREP_I` and a pointer by `OP_STOREP_P` or `OP_STOREP_I`, or else `OP_STOREP_FLD`;
+    /// any other by its basic type's.
+    fn storep_through(&self, target: &Type, span: Span) -> Op {
+        let valid = |op: Op| self.env.target_at(span.start).valid(op);
+        match self.etype(target) {
+            Some(Etype::Integer | Etype::Uint) if valid(Op::StorepI) => Op::StorepI,
+            Some(Etype::Pointer) if valid(Op::StorepP) => Op::StorepP,
+            Some(Etype::Pointer) if valid(Op::StorepI) => Op::StorepI,
+            Some(Etype::Integer | Etype::Uint | Etype::Pointer) => Op::StorepFld,
+            _ => self.storep_op(target),
         }
     }
 
@@ -1090,7 +1165,7 @@ impl Checker<'_> {
                     .map(ir::Name::Made);
             }
         }
-        let storep = self.storep_op(target);
+        let storep = self.storep_through(target, span);
         self.generated.push(ir::BodyStatement {
             a: self.name_of(stored),
             b: through,
@@ -1168,7 +1243,7 @@ impl Checker<'_> {
             return Ok(());
         };
         let width = self.env.layout(&ty).map_or(1, |l| l.words);
-        let store = Checker::store_op(self.etype(&ty));
+        let store = self.store_of(&ty);
         for (at, element) in (0_u32..).zip(elements) {
             let value = self.value(Some(element.clone()))?;
             // An element of another type is converted as it is stored, which the body does not
@@ -1293,6 +1368,16 @@ impl Checker<'_> {
     /// The basic type of `ty`, if the model follows it.
     fn etype(&self, ty: &Type) -> Option<Etype> {
         self.env.shape(ty).map(|s| s.etype)
+    }
+
+    /// The store of a value of type `ty` to a definition, `QCC_StoreToSRef`: its basic type's,
+    /// but an accessor's by its words, `STORE_F` for one (FTEF-10.15).
+    pub(super) fn store_of(&self, ty: &Type) -> Op {
+        let words = self.env.layout(ty).map_or(1, |layout| layout.words);
+        if self.env.is_accessor(ty) && words == 1 {
+            return Op::StoreF;
+        }
+        Checker::store_op(self.etype(ty))
     }
 }
 
@@ -1472,7 +1557,7 @@ impl Checker<'_> {
                 self.generated.push(ir::BodyStatement {
                     a: self.name_of(&value),
                     b: local,
-                    ..ir::BodyStatement::bare(Checker::store_op(self.etype(&ty)))
+                    ..ir::BodyStatement::bare(self.store_of(&ty))
                 });
                 self.last_temp = None;
             }

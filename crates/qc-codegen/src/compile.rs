@@ -1077,6 +1077,17 @@ impl<'a> Compiler<'a> {
                 let int = ValueType::Of(Type::Named(CScalar::Integer.name().into()));
                 return self.program.int_immediate(bits, int).at(span);
             }
+            // FTEF-19.81: a constant of two words, of its own scalar type.
+            ir::ImmediateKind::Int64 | ir::ImmediateKind::Uint64 | ir::ImmediateKind::Double => {
+                let scalar = match immediate.kind {
+                    ir::ImmediateKind::Int64 => CScalar::Int64,
+                    ir::ImmediateKind::Uint64 => CScalar::Uint64,
+                    _ => CScalar::Double,
+                };
+                let [low, high, _] = immediate.words;
+                let ty = ValueType::Of(Type::Named(scalar.name().into()));
+                return self.program.wide_immediate([low, high], ty).at(span);
+            }
         };
         self.program.immediate(&literal).at(span)
     }

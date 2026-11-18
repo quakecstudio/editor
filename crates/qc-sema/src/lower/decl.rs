@@ -14,7 +14,7 @@ use qc_syntax::{CompilerFlags, Dialect, SyntaxKind, SyntaxNode};
 
 use crate::cast::{ConstType, Literal};
 use crate::check::constant::unquoted;
-use crate::ty::{SimpleType, Type};
+use crate::ty::{Passing, SimpleType, Type};
 
 use super::body::{RawBody, RawParam, lower_body, next_think_of, omitted_type};
 use super::expr::{RawUse, lower_expr};
@@ -251,8 +251,8 @@ pub(crate) struct RawParamInfo {
     pub ty: Type,
     /// Whether `optional` marks it.
     pub optional: bool,
-    /// Whether `__out`, `__inout` or `&` marks it.
-    pub out: bool,
+    /// Which way its value passes, by its `__out`, `__inout` or `&` mark.
+    pub passing: Passing,
     /// Its default value (FTE-18.2), if it has one.
     pub default: Option<RawValue>,
     /// The default value when it is a literal, compared as the "dupe initialisation"
@@ -853,11 +853,7 @@ fn param_infos(list: &ast::ParamList, cx: Cx<'_>) -> Vec<RawParamInfo> {
             name: param.name().map(|t| t.text_lossless()),
             ty,
             optional: words.iter().any(|w| w == "optional"),
-            out: words.iter().any(|w| w == "out" || w == "inout")
-                || param
-                    .syntax()
-                    .child_tokens()
-                    .any(|t| t.kind() == SyntaxKind::Amp),
+            passing: Passing::of(&words, param),
             default: default.as_ref().map(|e| raw_value(e, cx)),
             default_literal,
         });
