@@ -146,7 +146,7 @@ impl Checker<'_> {
                 })
             }
             Reference::ArrayHead(_) => {
-                let address = self.address_of(value, span)?;
+                let address = self.address_of(&value, span)?;
                 Ok(address)
             }
             Reference::Element(element) => self.read_element(value, &element, span),
@@ -187,7 +187,7 @@ impl Checker<'_> {
     /// 0 is ([`Self::extend_bits`]).
     fn extend_narrow(&mut self, value: Value, span: Span) -> Checked {
         match narrow_bits(&value.ty) {
-            Some(bits) if value.sym.def().is_some() => self.extend_bits(value, 0, bits, span),
+            Some(bits) if value.sym.def().is_some() => self.extend_bits(&value, 0, bits, span),
             Some(_) | None => Ok(value),
         }
     }
@@ -204,9 +204,9 @@ impl Checker<'_> {
             };
             let at = u32::from_le_bytes(at.to_le_bytes());
             let offset = at.wrapping_mul(bits) & 31;
-            return self.extend_bits(value, offset, bits, span);
+            return self.extend_bits(&value, offset, bits, span);
         }
-        let address = self.address_of(value.clone(), span)?;
+        let address = self.address_of(&value, span)?;
         let named = self.name_of(&address);
         let narrow = Value {
             reference: Reference::Global,
@@ -272,7 +272,7 @@ impl Checker<'_> {
     /// `QCC_BitfieldToDef`: a value of an 8- or 16-bit integer type `offset` bits into its word,
     /// extended by `OP_BITEXTEND_I`, or `OP_BITEXTEND_U` for an unsigned one, with
     /// `(offset<<8)|bits`, to its `parentclass`, `int` or `uint`.
-    fn extend_bits(&mut self, value: Value, offset: u32, bits: u32, span: Span) -> Checked {
+    fn extend_bits(&mut self, value: &Value, offset: u32, bits: u32, span: Span) -> Checked {
         let signed = matches!(
             value.ty.fteqcc_scalar(),
             Some(CScalar::Int8 | CScalar::Int16)
@@ -283,7 +283,7 @@ impl Checker<'_> {
             (Op::BitextendU, "__uint32")
         };
         let mask = offset.checked_shl(8).map_or(bits, |high| high | bits);
-        let extended = self.emit(op, &value, &Value::constant(Constant::uint(mask)), span)?;
+        let extended = self.emit(op, value, &Value::constant(Constant::uint(mask)), span)?;
         Ok(Value {
             ty: Type::Named(parent.into()),
             sym: Sym::Temp,
@@ -798,7 +798,7 @@ impl Checker<'_> {
             let at = self.bound_checked(at, constant, length, span)?;
             let at = self.scaled_index(&base.ty, at, span)?;
             let at = match base.reference {
-                Reference::ArrayHead(Some(member)) => self.member_array_index(member, at, span)?,
+                Reference::ArrayHead(Some(member)) => self.member_array_index(member, &at, span)?,
                 _ => at,
             };
             if let Reference::ArrayHead(Some(MemberArray {
@@ -955,7 +955,7 @@ impl Checker<'_> {
     /// FTEF-6.24: a member array's index added to the member's word, `idx` an `int` on a target
     /// with `OP_ADD_I` and else a float: `OP_ADD_F` of two floats, else `OP_ADD_I` of both made
     /// integers.
-    fn member_array_index(&mut self, member: MemberArray, at: Value, span: Span) -> Checked {
+    fn member_array_index(&mut self, member: MemberArray, at: &Value, span: Span) -> Checked {
         let word = i32::try_from(member.word).unwrap_or(i32::MAX);
         let int_target = self.env.target_at(span.start).valid(Op::AddI);
         let offset = if int_target {
@@ -964,10 +964,10 @@ impl Checker<'_> {
             Value::constant(Constant::float(int_f32(word)))
         };
         if !int_target && self.etype_of(&at.ty) == Some(Etype::Float) {
-            return self.emit(Op::AddF, &offset, &at, span);
+            return self.emit(Op::AddF, &offset, at, span);
         }
         let offset = self.converted(&offset, Etype::Integer, span)?;
-        let at = self.converted(&at, Etype::Integer, span)?;
+        let at = self.converted(at, Etype::Integer, span)?;
         self.emit(Op::AddI, &offset, &at, span)
     }
 
@@ -1028,7 +1028,7 @@ impl Checker<'_> {
     /// refuses, the fatal error "Address-of operator is not supported in this form without
     /// extensions", with the warning for a local not `static` "Address-of operator on local TYPE
     /// NAME is unsafe if recursing" once per definition; a pointer's element by `OP_ADD_PIW`.
-    pub(super) fn address_of(&mut self, value: Value, span: Span) -> Checked {
+    pub(super) fn address_of(&mut self, value: &Value, span: Span) -> Checked {
         let pointer_to = |ty: &Type| Value::of(Type::Pointer(ty.clone().into()));
         match value.reference.clone() {
             // `OP_ADDRESS` of the entity and the field, into a temporary a store may fold.
@@ -1109,7 +1109,7 @@ impl Checker<'_> {
                         .map(|def| ir::Name::Def(def, 0))
                         .filter(|_| !element.vector),
                     Reference::Element(_) | Reference::Global | Reference::ArrayHead(None) => {
-                        self.name_of(&value)
+                        self.name_of(value)
                     }
                     _ => None,
                 };
@@ -1211,7 +1211,7 @@ impl Checker<'_> {
             self.env.report(Code::E0335, span, message);
             return Ok(operand);
         }
-        self.address_of(operand, span)
+        self.address_of(&operand, span)
     }
 
     /// FTEF-31.5: the store to an element at an index that is no constant (`QCC_StoreToArray`):

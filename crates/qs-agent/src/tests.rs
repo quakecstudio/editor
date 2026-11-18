@@ -9,6 +9,7 @@
 )]
 
 use std::collections::VecDeque;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use qc_edict::system::{SYSTEM_GLOBALS, defs_source};
@@ -82,7 +83,7 @@ fn defs() -> String {
         .iter()
         .filter(|var| var.etype == Etype::Function)
     {
-        text.push_str(&format!("void() {} = {{}};\n", var.name));
+        _ = writeln!(text, "void() {} = {{}};", var.name);
     }
     text
 }

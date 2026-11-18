@@ -127,7 +127,7 @@ fn polling_takes_the_output_and_the_exit_and_the_output_is_bounded() {
     assert_eq!(tab.exit(), Some(Exit::Code(0)));
     assert!(tab.text().len() > before.len());
     assert!(!tab.poll(), "nothing more after the exit");
-    let line = "x".repeat(99) + "\n";
+    let line = format!("{}\n", "x".repeat(99));
     for _ in 0..(KEPT_OUTPUT / 100).saturating_add(20) {
         tab.push(line.as_bytes());
     }

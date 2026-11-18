@@ -308,7 +308,7 @@ impl<'a> Progs<'a> {
     ///
     /// The first check of PROGS-15.5 the file fails, as a [`ReadError`].
     pub fn read(bytes: &'a [u8]) -> Result<Self, ReadError> {
-        Self::read_with(bytes, &ReadOptions::default())
+        Self::read_with(bytes, ReadOptions::default())
     }
 
     /// Loads a progs.dat, id's `PR_LoadProgs`, with the checks of PROGS-15 in the order of
@@ -317,7 +317,7 @@ impl<'a> Progs<'a> {
     /// # Errors
     ///
     /// The first check the file fails, as a [`ReadError`].
-    pub fn read_with(bytes: &'a [u8], options: &ReadOptions) -> Result<Self, ReadError> {
+    pub fn read_with(bytes: &'a [u8], options: ReadOptions) -> Result<Self, ReadError> {
         let too_short = |needed| ReadError::TooShort {
             len: bytes.len(),
             needed,

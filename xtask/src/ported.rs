@@ -328,6 +328,8 @@ mod tests {
 
     use std::path::Path;
 
+    use std::fmt::Write as _;
+
     use super::*;
 
     const COMMIT: &str = "bf4ac424ce754894ac8f1dae6a3981954bc9852d";
@@ -593,13 +595,11 @@ mod tests {
     fn lineage(copyrights: &[&str], cites: &[&str]) -> String {
         let mut text = "// SPDX-License-Identifier: GPL-3.0-or-later\n".to_owned();
         for line in copyrights {
-            text.push_str(&format!("// {line}\n"));
+            _ = writeln!(text, "// {line}");
         }
         text.push_str("//\n");
         for cite in cites {
-            text.push_str(&format!(
-                "// Ported from {cite}: Quake/sv_phys.c, SV_Physics\n"
-            ));
+            _ = writeln!(text, "// Ported from {cite}: Quake/sv_phys.c, SV_Physics");
         }
         text
     }

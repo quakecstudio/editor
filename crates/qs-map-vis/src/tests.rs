@@ -14,6 +14,7 @@ use qs_bsp::{Bsp, BspLoader};
 use qs_map_bsp::Compiler;
 use qs_wad::write::WadBuilder;
 use sha2::{Digest, Sha256};
+use std::fmt::Write as _;
 
 use crate::flow::{Flow, Leaves};
 use crate::lump::{compress, written};
@@ -286,9 +287,9 @@ fn rows_compress_as_vis_does() {
 fn prt(leafs: usize, portals: &[(&[[f32; 3]], i64, i64)]) -> String {
     let mut text = format!("PRT1\n{leafs}\n{}\n", portals.len());
     for (points, a, b) in portals {
-        text.push_str(&format!("{} {a} {b} ", points.len()));
+        _ = write!(text, "{} {a} {b} ", points.len());
         for p in *points {
-            text.push_str(&format!("({} {} {} ) ", p[0], p[1], p[2]));
+            _ = write!(text, "({} {} {} ) ", p[0], p[1], p[2]);
         }
         text.push('\n');
     }
@@ -358,7 +359,7 @@ fn prt2(real: usize, clusters: &[&[usize]], portals: &[(&[[f32; 3]], i64, i64)])
     let mut text = format!("PRT2\n{real}\n{}", leaves.strip_prefix("PRT1\n").unwrap());
     for leaves in clusters {
         for leaf in *leaves {
-            text.push_str(&format!("{leaf} "));
+            _ = write!(text, "{leaf} ");
         }
         text.push_str("-1\n");
     }
@@ -584,7 +585,12 @@ fn every_vector_matches_id_vis() {
         };
         let written = Vis::new(mode).run(&bsp, &prt).unwrap();
         let read = Bsp::read(&written, BspLoader::FitzQuake).unwrap();
-        let hex = |bytes: &[u8]| bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
+        let hex = |bytes: &[u8]| {
+            bytes.iter().fold(String::new(), |mut joined, b| {
+                _ = write!(joined, "{b:02x}");
+                joined
+            })
+        };
         assert_eq!(hex(read.visibility), visibility, "{map} {mode:?}");
         let leafs = read.models[0].visleafs;
         let leaves = &read.leafs[1..=usize::try_from(leafs).unwrap()];
@@ -923,7 +929,7 @@ fn a_prt2_flow_is_the_same_on_any_number_of_threads() {
     let each: Vec<usize> = (0..CELLS).collect();
     let mut clusters = format!("PRT2\n{CELLS}\n{}", leaves.strip_prefix("PRT1\n").unwrap());
     for leaf in &each {
-        clusters.push_str(&format!("{leaf} -1\n"));
+        _ = writeln!(clusters, "{leaf} -1");
     }
     let by_leaf = PortalFile::read(&leaves).unwrap();
     let by_cluster = PortalFile::read(&clusters).unwrap();

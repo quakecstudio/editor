@@ -117,7 +117,7 @@ fn the_progs_keeps_the_header_crc_the_program_gives() {
         check_header_crc: false,
     };
     assert_eq!(
-        Progs::read_with(&bytes, &options).unwrap().header().crc,
+        Progs::read_with(&bytes, options).unwrap().header().crc,
         1234
     );
 }
@@ -182,7 +182,7 @@ fn every_case_builds_a_progs_qc_progs_reads_and_has_a_unique_name() {
         let bytes = case.program.bytes().unwrap();
         Progs::read_with(
             &bytes,
-            &ReadOptions {
+            ReadOptions {
                 check_header_crc: false,
             },
         )

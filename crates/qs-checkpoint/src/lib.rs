@@ -18,6 +18,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::fmt::Write as _;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -208,10 +209,10 @@ impl Store {
         let number = parent.map_or(CheckpointNumber::FIRST, |p| p.number.next());
         let mut commit = format!("tree {}\n", hex(&tree_id));
         if let Some(parent) = parent {
-            commit.push_str(&format!("parent {}\n", parent.commit));
+            _ = writeln!(commit, "parent {}", parent.commit);
         }
         for role in ["author", "committer"] {
-            commit.push_str(&format!("{role} {SIGNATURE} {time} +0000\n"));
+            _ = writeln!(commit, "{role} {SIGNATURE} {time} +0000");
         }
         commit.push('\n');
         commit.push_str(label);
@@ -509,7 +510,10 @@ fn remove_emptied(root: &Path, path: &Path) -> Result<(), CheckpointError> {
 
 /// `id` in lowercase hex.
 fn hex(id: &ObjectId) -> String {
-    id.iter().map(|b| format!("{b:02x}")).collect()
+    id.iter().fold(String::new(), |mut joined, b| {
+        _ = write!(joined, "{b:02x}");
+        joined
+    })
 }
 
 /// The 20 bytes 40 hex digits spell.

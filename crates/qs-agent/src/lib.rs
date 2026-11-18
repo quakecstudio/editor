@@ -30,6 +30,7 @@
 
 pub use qc_edict::EdictNumber;
 pub use qs_checkpoint::CheckpointNumber;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use qs_paths::arguments::{absolute_paths, collect_paths};
@@ -113,18 +114,17 @@ impl EntityState {
         );
         match (self.field("think"), self.field("nextthink")) {
             (Some(think), Some(next)) => {
-                text.push_str(&format!(
-                    "Its current think function is {think}, due at time {next}.\n"
-                ));
+                _ = writeln!(
+                    text,
+                    "Its current think function is {think}, due at time {next}."
+                );
             }
-            (Some(think), None) => {
-                text.push_str(&format!("Its current think function is {think}.\n"))
-            }
+            (Some(think), None) => _ = writeln!(text, "Its current think function is {think}."),
             _ => text.push_str("It has no think function.\n"),
         }
         text.push_str("Its fields:\n");
         for (name, value) in &self.fields {
-            text.push_str(&format!("- {name} = {value}\n"));
+            _ = writeln!(text, "- {name} = {value}");
         }
         text
     }
@@ -1055,10 +1055,11 @@ fn brief<C: 'static>(session: &mut Session<C>, task: &str, config: &RunConfig) -
         json!({ "path": config.project.join("AGENTS.md") }),
     ) && let Some(guide) = read.get("text").and_then(Value::as_str)
     {
-        text.push_str(&format!(
-            "\nThe project's AGENTS.md, its author's notes for you:\n\n{}\n",
+        _ = writeln!(
+            text,
+            "\nThe project's AGENTS.md, its author's notes for you:\n\n{}",
             guide.trim_end()
-        ));
+        );
     }
     if let Ok(info) = session.execute("project.info", json!({})) {
         for module in info
@@ -1073,20 +1074,21 @@ fn brief<C: 'static>(session: &mut Session<C>, task: &str, config: &RunConfig) -
     if let Ok(files) = session.execute("project.files", json!({}))
         && let Some(files) = files.as_array()
     {
-        text.push_str(&format!("\nIts {} source files:\n", files.len()));
+        _ = writeln!(text, "\nIts {} source files:", files.len());
         for file in files.iter().filter_map(Value::as_str) {
             let shown = Path::new(file)
                 .strip_prefix(&config.project)
                 .map_or_else(|_| file.to_owned(), |p| p.display().to_string());
-            text.push_str(&format!("- {shown}\n"));
+            _ = writeln!(text, "- {shown}");
         }
     }
     if let Some(map) = &config.map {
         text.push_str(&map_brief(session, map, &config.project));
     }
     let checked = verify(session, &config.test_params);
-    text.push_str(&format!(
-        "\nAs it is now, the compile is {} and the tests {}.\n",
+    _ = writeln!(
+        text,
+        "\nAs it is now, the compile is {} and the tests {}.",
         if checked.compile_clean {
             "clean"
         } else {
@@ -1097,9 +1099,9 @@ fn brief<C: 'static>(session: &mut Session<C>, task: &str, config: &RunConfig) -
         } else {
             "do not pass"
         }
-    ));
+    );
     for reason in &checked.reasons {
-        text.push_str(&format!("- {reason}\n"));
+        _ = writeln!(text, "- {reason}");
     }
     text
 }
@@ -1119,7 +1121,7 @@ fn map_brief<C: 'static>(session: &mut Session<C>, map: &Path, project: &Path) -
     let file = match parsed {
         Some(Ok(file)) => file,
         Some(Err(error)) => {
-            text.push_str(&format!("It does not parse: {error}.\n"));
+            _ = writeln!(text, "It does not parse: {error}.");
             return text;
         }
         None => {
@@ -1135,7 +1137,7 @@ fn map_brief<C: 'static>(session: &mut Session<C>, map: &Path, project: &Path) -
             .iter()
             .map(|wad| String::from_utf8_lossy(wad).into_owned())
             .collect();
-        text.push_str(&format!("Its WADs: {}.\n", names.join(", ")));
+        _ = writeln!(text, "Its WADs: {}.", names.join(", "));
     }
     let mut classes: Vec<(String, usize)> = Vec::new();
     for entity in &file.entities {
@@ -1145,12 +1147,9 @@ fn map_brief<C: 'static>(session: &mut Session<C>, map: &Path, project: &Path) -
             None => classes.push((class, 1)),
         }
     }
-    text.push_str(&format!(
-        "Its {} entities, by class:\n",
-        file.entities.len()
-    ));
+    _ = writeln!(text, "Its {} entities, by class:", file.entities.len());
     for (class, count) in classes {
-        text.push_str(&format!("- {class}: {count}\n"));
+        _ = writeln!(text, "- {class}: {count}");
     }
     text
 }
@@ -1172,10 +1171,11 @@ fn module_brief<C: 'static>(session: &mut Session<C>, module: &Value) -> String 
         return text;
     };
     let builtins = table.get("builtins").and_then(Value::as_array);
-    text.push_str(&format!(
-        "Its engine's builtins ({}), as a program declares them, the only ones it may call:\n",
+    _ = writeln!(
+        text,
+        "Its engine's builtins ({}), as a program declares them, the only ones it may call:",
         builtins.map_or(0, Vec::len)
-    ));
+    );
     for builtin in builtins.into_iter().flatten() {
         let name = builtin
             .get("name")
@@ -1193,7 +1193,7 @@ fn module_brief<C: 'static>(session: &mut Session<C>, module: &Value) -> String 
             (None, Some(engine_name)) => format!("#0:{engine_name}"),
             (None, None) => "#0".to_owned(),
         };
-        text.push_str(&format!("- {signature} {name} = {key};\n"));
+        _ = writeln!(text, "- {signature} {name} = {key};");
     }
     text
 }

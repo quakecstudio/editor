@@ -13,7 +13,7 @@ use crate::uri::{Host, from_path_on, to_path_on};
 /// The codes of the diagnostics first published for `a.qc` of a project holding `text`, and
 /// `toml` as its `quakec.toml` when given, for a client whose `initializationOptions` are
 /// `options`.
-fn codes(text: &str, toml: Option<&str>, options: Value) -> Vec<String> {
+fn codes(text: &str, toml: Option<&str>, options: &Value) -> Vec<String> {
     let mut loader = project(&[("a.qc", text)]);
     if let Some(toml) = toml {
         loader.insert(Path::new("/p/quakec.toml"), toml.as_bytes().to_vec());
@@ -21,10 +21,10 @@ fn codes(text: &str, toml: Option<&str>, options: Value) -> Vec<String> {
     let s = session(
         loader,
         &[
-            initialize_with(options, json!({})),
-            notification("initialized", json!({})),
-            request(1, "shutdown", json!(null)),
-            notification("exit", json!(null)),
+            initialize_with(options, &json!({})),
+            notification("initialized", &json!({})),
+            request(1, "shutdown", &json!(null)),
+            notification("exit", &json!(null)),
         ],
     );
     // A file with no problems is not published until it has had one to clear.
@@ -51,11 +51,11 @@ fn toml(project: &str) -> String {
 fn the_options_dialect_yields_to_the_project_file() {
     let text = "void() f = { float x = 1; x += 2; };\n";
     let options = json!({ "dialect": "fteqcc" });
-    assert!(codes(text, None, options.clone()).is_empty());
-    let vanilla = codes(text, Some(&toml("")), options);
+    assert!(codes(text, None, &options).is_empty());
+    let vanilla = codes(text, Some(&toml("")), &options);
     assert!(vanilla.iter().any(|c| c.starts_with('E')), "{vanilla:?}");
     let fte = toml("[project]\ndialect = \"fteqcc\"\n\n");
-    assert!(codes(text, Some(&fte), json!({ "dialect": "vanilla" })).is_empty());
+    assert!(codes(text, Some(&fte), &json!({ "dialect": "vanilla" })).is_empty());
 }
 
 // P2-164: `initializationOptions`' target is a bare project's; a project file's target, id's
@@ -64,9 +64,9 @@ fn the_options_dialect_yields_to_the_project_file() {
 fn the_options_target_yields_to_the_project_file() {
     let text = "void() print_it = #0:ex_bprint;\nvoid() f = { print_it(); };\n";
     let options = json!({ "dialect": "fteqcc", "target": "rerelease" });
-    assert!(codes(text, None, options.clone()).is_empty());
+    assert!(codes(text, None, &options).is_empty());
     let fte = toml("[project]\ndialect = \"fteqcc\"\n\n");
-    assert_eq!(codes(text, Some(&fte), options), ["W0311"]);
+    assert_eq!(codes(text, Some(&fte), &options), ["W0311"]);
 }
 
 // P2-165: a header line of exactly `MAX_HEADER_LINE` bytes, its `\r\n` included, is read; one

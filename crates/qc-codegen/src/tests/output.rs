@@ -2,6 +2,7 @@
 
 //! Program output and precache lists: QC-22.3, QC-25, QC-26 and QC-27.13.
 
+use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use qc_progs::crc::crc_block;
@@ -244,7 +245,7 @@ fn a_variable_precache_adds_its_compile_time_value() {
 fn many_models_are_listed() {
     let mut source = String::from("void(string s) precache_model = #20;\nvoid() f = {\n");
     for i in 0..1100 {
-        source.push_str(&format!("precache_model(\"m{i}\");\n"));
+        _ = writeln!(source, "precache_model(\"m{i}\");");
     }
     source.push_str("};\n");
     assert_eq!(
@@ -344,7 +345,7 @@ fn every_statement_maps_to_its_source_line() {
     let unchecked = qc_progs::ReadOptions {
         check_header_crc: false,
     };
-    let header = *qc_progs::Progs::read_with(&bytes, &unchecked)
+    let header = *qc_progs::Progs::read_with(&bytes, unchecked)
         .unwrap()
         .header();
     assert_eq!(lno.matches_header(&header), Ok(()));
@@ -414,9 +415,9 @@ fn a_vanilla_operand_past_32767_is_refused() {
     let program = |count: i32| {
         let mut source = String::new();
         for n in 1..=count {
-            source.push_str(&format!("float g{n};\n"));
+            _ = writeln!(source, "float g{n};");
         }
-        source.push_str(&format!("void() f = {{ g{count} = g{count}; }};\n"));
+        _ = writeln!(source, "void() f = {{ g{count} = g{count}; }};");
         compile_source(&source)
     };
     let last = 32_767 - 27;

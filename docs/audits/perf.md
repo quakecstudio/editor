@@ -22,10 +22,12 @@ sets and a `thread_local` stack took `lq-e1m1`'s full compile from 287 s to 6.16
 ## The clippy lints
 
 Turned on, `deny` in `[workspace.lints.clippy]` (`docs/conventions.md`, Performance), with
-the workspace holding none: `assigning_clones`, `implicit_clone`, `inefficient_to_string`,
-`iter_on_empty_collections`, `iter_on_single_items`, `iter_with_drain`,
-`large_types_passed_by_value`, `manual_string_new`, `needless_for_each`, `or_fun_call`,
-`redundant_clone`, `set_contains_or_insert`, `stable_sort_primitive`,
+the workspace holding none: `assigning_clones`, `format_collect`, `format_push_string`,
+`implicit_clone`, `inefficient_to_string`, `iter_on_empty_collections`,
+`iter_on_single_items`, `iter_with_drain`, `large_types_passed_by_value`,
+`manual_string_new`, `naive_bytecount`, `needless_collect`, `needless_for_each`,
+`needless_pass_by_value`, `or_fun_call`, `redundant_clone`, `set_contains_or_insert`,
+`stable_sort_primitive`, `string_add`, `trivially_copy_pass_by_ref`,
 `unnecessary_box_returns` and `unnecessary_join`. The ones clippy
 enables by default (`vec_box`, `box_collection`, `useless_vec`, `unnecessary_to_owned`,
 `iter_overeager_cloned`, `redundant_allocation`, `large_enum_variant`, `ptr_arg`,
@@ -36,32 +38,20 @@ The second pass (2026-11-17) turned on `or_fun_call` (78 sites), `redundant_clon
 bar's `panel_buttons` draws the buttons it reports on, so it is called whatever was asked
 already (the code review of the pass found it; no test did).
 
-Left off, each with the reason. Counted on 2026-11-17 at `17a063a0`, every target and feature,
-each site once; "shipped" leaves out tests, benchmarks, examples, `qs-differential` and `xtask`:
+The third pass (2026-11-17) turned on the seven lints the second had left off, fixing every
+site, 276 in all:
 
-| Lint | Sites | Shipped | Why it stays off |
-| --- | --- | --- | --- |
-| `format_push_string` | 158 | 49 | Its fix, `write!` into the `String`, returns a `Result` each site must discard. The shipped sites build a report, a trace or a file once (the agent's context, `qc-trace`'s JSON, `progdefs.h`, the portal file, an export's manifest), none per frame or per statement. |
-| `needless_pass_by_value` | 39 | 28 | Its fix changes signatures, 10 of them the LSP server's request handlers, which take each request's parameters by value, as they are deserialised. No site is in a profile. |
-| `format_collect` | 25 | 2 | 23 sites are tests building their input. The two shipped write an id as hex, in `qs-checkpoint` and `qs-templates`. |
-| `string_add` | 19 | 0 | Every site is a test building its input. |
-| `naive_bytecount` | 10 | 6 | It asks for the `bytecount` crate, which this audit will not add for counting lines. |
-| `trivially_copy_pass_by_ref` | 8 | 8 | The eight left are option structs borrowed by their public methods (`qs-map-bsp`'s `Compiler`, `qs-map-vis`'s `Vis`, `qc-progs`' `ReadOptions`), so that an option added later changes no caller. The pass took the ten others by value. |
-| `needless_collect` | 7 | 2 | Four of the seven start threads and collect their handles before joining the first, which the lint cannot see is needed; one reverses an iterator that cannot be walked backwards; and one collects into a set to drop duplicates, which the lint's own fix removed until a test caught it. Held, it would be mostly `#[expect]`. |
+| Lint | Sites | How they were fixed |
+| --- | --- | --- |
+| `format_push_string` | 159 | `write!` or `writeln!` into the `String`, its result dropped: a write to a `String` does not fail. |
+| `needless_pass_by_value` | 44 | The parameter is borrowed (`&T`, `&[T]`, `&str`, `&Path`) and its callers borrow. The LSP server's request handlers take the parameters the dispatcher parsed by reference. |
+| `format_collect` | 25 | A fold that writes each item into one `String`. |
+| `string_add` | 22 | One `format!` of the parts. |
+| `naive_bytecount` | 10 | A sum over the bytes, with no crate added. |
+| `needless_collect` | 8 | The four that start threads fill their list of handles by `extend` before the first join; `SyntaxNode::descendants_with_tokens` reverses its children in place on its stack, with no list made for each node; the others are loops. |
+| `trivially_copy_pass_by_ref` | 8 | The option structs (`qs-map-bsp`'s `Compiler`, `qs-map-vis`'s `Vis`, `qc-progs`' `ReadOptions`) are taken by value. |
 
-[`perf-baseline.tsv`](perf-baseline.tsv) holds the count of each of these, and it only
-shrinks: `cargo xtask perf-baseline` runs clippy with the seven as warnings, counts each site
-once however many targets compile it, and fails when a lint has more sites than the file says,
-or fewer until `cargo xtask perf-baseline --write` lowers its line; `--write` never raises a
-count or adds a line. It is run by hand on the reference Mac when this audit is revisited. It
-is not a step of `cargo xtask ci` or a part of `cargo xtask conventions`: it lints the whole
-workspace a second time (clippy's arguments are part of what it caches by), and its counts are
-those of the platform it runs on, where the other checks read the sources alone.
-
-The file was first counted on 2026-11-17 at `91eaeb9f`, after the five sites added since the
-table above was counted were fixed. It holds 159 `format_push_string` sites and 8
-`needless_collect` sites, one more of each than the table: both are in code older than the
-table's commit, which its count missed.
+No lint of the audit is left off, so there is no baseline of leftover sites to hold.
 
 ## The crates
 
@@ -125,12 +115,12 @@ Left, with the reason:
 - **Each file's lowered declarations are cloned** for the code generator (`compile_module`,
   `decls.push(lowered.clone())`), about 3% of a recompile. Avoiding the clone means changing
   `qc_sema::resolve_module`'s public signature for that 3%.
-- **The clippy lints still off** find 38 sites in the shipped code of `qc-preproc`, `qc-syntax`,
+- **The clippy lints off at the time** found 38 sites in the shipped code of `qc-preproc`, `qc-syntax`,
   `qc-sema` and `qc-codegen` (2026-11-15): 21 `or_fun_call` (most a span computed for a default,
   a few nanoseconds), 7 `needless_pass_by_value`, 5 `format_push_string` (`qc-codegen`'s
   `progdefs.h` writer and one in `qc-preproc`, once per compile), 3 `assigning_clones` and one
-  each of `redundant_clone` and `needless_collect`. None is in the profile above; they are fixed
-  when the lints are turned on for the whole workspace.
+  each of `redundant_clone` and `needless_collect`. None is in the profile above; all were fixed
+  when the lints were turned on for the whole workspace (the second and third passes).
 
 ### The VM: `qc-progs`, `qc-vm`, `qc-edict`, `qc-builtins`, `qc-trace`
 
@@ -156,12 +146,12 @@ Left, with the reason:
   `Table::get` in `Machine::run_inner`), where id's VM reads a loaded array. It is the obvious
   candidate when a heavier route (the rerelease's mg1, `QS_BENCH_RERELEASE`) or a profile of a
   mod shows the VM; on e1m1 it does not register.
-- **The clippy lints still off** find 18 sites in the shipped code of these crates (2026-11-15):
+- **The clippy lints off at the time** found 18 sites in the shipped code of these crates (2026-11-15):
   12 `format_push_string`, 9 in `qc-trace`'s JSON writer (a trace, not a frame), 2 in `qc-edict`'s
   system definitions text (once per load) and 1 in `qc-builtins`' `printf`; 5
   `trivially_copy_pass_by_ref`, 4 in `printf`'s format spec and 1 in `qc-progs`' read options; and
-  1 `needless_pass_by_value` in the mock engine. None is on a per-statement path; they are fixed
-  when the lints are turned on for the whole workspace.
+  1 `needless_pass_by_value` in the mock engine. None is on a per-statement path; all were fixed
+  when the lints were turned on for the whole workspace (the third pass).
 
 ### The map editor's view: `apps/desktop` (`quakec-studio`)
 
@@ -304,38 +294,41 @@ looked for where a budget or a profile pointed, which in these crates was nowher
 host on the rerelease's hub on 2026-11-17 loaded it in 332, 352 and 372 ms. The load was not
 profiled: `sample` attaches after a third of a second has passed. Fixed: 11 `or_fun_call` in
 `qs-bsp`, 5 in `qs-map` and its brush pruning's collected flags, `qs-pak`'s entry accessors by value, one
-`clone_from` in `qs-diff`. Left: the lints off above (`qs-checkpoint` 3 sites, `qs-log` 1).
+`clone_from` in `qs-diff`. The third pass fixed the sites of the lints then off
+(`qs-checkpoint` 3, `qs-log` 1).
 
 **The language's front end and services (L2, L3, `apps/lsp`, `apps/cli`): `qc-lexer`,
 `qc-syntax`, `qc-project`, `qc-engines`, `qc-ide`, `quakec-lsp`, `quakec-ide`.** The compiler's
 section covers `qc-preproc` and `qc-sema`. The budgets through these: `open_project_and_type`
 260.46 ms against 1 s, `check_after_typing` 0.356 ms and `keystroke` 0.128 ms against 8.33 ms.
-Fixed: one `or_fun_call` in `qc-syntax`. Left: `quakec-lsp`'s 10 handlers that take their
-request by value (`needless_pass_by_value`), one each in `qc-ide` and `qc-project`, the
-collect in `qc-syntax`'s tree walk, which reverses an iterator that runs one way, and one
-line count in `qc-ide` (`naive_bytecount`).
+Fixed: one `or_fun_call` in `qc-syntax`; and in the third pass `quakec-lsp`'s 10 handlers,
+which take their request by reference, one parameter each in `qc-ide` and `qc-project`, the
+collect in `qc-syntax`'s tree walk, which now reverses its children in place, and one line
+count in `qc-ide`.
 
 **The bridge and the sound (L4): `qs-bridge`, `qs-engine`, `qs-sound`.** `save_to_game`, an edit
-seen in the running game over the bridge, is 80.59 ms against 1 s. Fixed: `qs-sound`'s null output's frame count by value. Left: one `needless_pass_by_value` in `qs-engine`.
+seen in the running game over the bridge, is 80.59 ms against 1 s. Fixed: `qs-sound`'s null output's frame count by value, and in the third pass one parameter
+in `qs-engine`.
 
 **The commands (L5): `qs-commands`, `qs-layout`, `qs-settings`, `qs-templates`, `qs-map-edit`,
 `qs-workbench`.** Every command a key, the palette or the agent runs goes through these:
 `entities_outliner` 0.138 ms against 8.33 ms, `region_compile_e1m1` 168.32 ms against 1.2 s,
 `textured_view_e1m1` 10.79 ms against 50 ms. Fixed: 4 `or_fun_call` in `qs-map-edit`, one in
-`qs-layout`, a clone in `qs-commands`' palette search, 3 clones in `qs-workbench`. Left: the
-lints off above (`qs-workbench` 7 sites, `qs-commands` 2, `qs-settings` 2, `qs-templates` 1).
+`qs-layout`, a clone in `qs-commands`' palette search, 3 clones in `qs-workbench`. The third pass
+fixed the sites of the lints then off (`qs-workbench` 7, `qs-commands` 2, `qs-settings` 2,
+`qs-templates` 1).
 
 **The agent (L6): `qs-agent`, `qs-mcp`, `qs-models`.** No budget: a turn waits on the model, not
-on these. Fixed: one `or_fun_call` in `qs-models`. Left: `qs-agent`'s 14
-`format_push_string`, the context it builds once a turn.
+on these. Fixed: one `or_fun_call` in `qs-models`, and in the third pass `qs-agent`'s 14
+`format_push_string`, in the context it builds once a turn.
 
 **The editor view (L7): `qs-editor-view`.** `keystroke` 0.128 ms and
 `keystroke_split_fold_wrap` 0.192 ms against 8.33 ms, a sixtieth of a frame. Fixed: one
 `or_fun_call`.
 
 **The desktop app beyond the map view: `quakec-studio`.** The same keystroke budgets are the
-whole window's frame. Fixed: 9 `or_fun_call`, 4 clones, one `clone_from`. Left: 3
-`needless_pass_by_value` and one line count.
+whole window's frame. Fixed: 9 `or_fun_call`, 4 clones, one `clone_from`, and in the
+third pass 3 `needless_pass_by_value` and one line count.
 
 **Not shipped: `qs-bench`, `qs-differential`, `qs-tests`, `qs-porting-example`, `xtask`.** Held
 to the same lints, since they are one workspace; their time is the CI's, measured by its own

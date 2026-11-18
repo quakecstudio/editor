@@ -20,6 +20,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -418,7 +419,7 @@ fn readme(mod_name: &str, game: GameNeeded, pieces: &[Piece]) -> String {
         game.described()
     );
     for piece in pieces {
-        text.push_str(&format!("{mod_name}/{}\n", piece.name));
+        _ = writeln!(text, "{mod_name}/{}", piece.name);
     }
     let notices: Vec<&str> = pieces
         .iter()
@@ -432,10 +433,11 @@ fn readme(mod_name: &str, game: GameNeeded, pieces: &[Piece]) -> String {
     if notices.is_empty() {
         text.push_str("The project has no license file.\n");
     } else {
-        text.push_str(&format!(
-            "The mod's license and notices are in {}, in this folder.\n",
+        _ = writeln!(
+            text,
+            "The mod's license and notices are in {}, in this folder.",
             notices.join(", ")
-        ));
+        );
     }
     text
 }

@@ -5,6 +5,8 @@
 //! Written here because the workspace has no hashing crate and this is its only use: a
 //! checksum of downloaded files, not a security boundary of the shipped app.
 
+use std::fmt::Write as _;
+
 const K: [u32; 64] = [
     0x428a_2f98,
     0x7137_4491,
@@ -98,7 +100,10 @@ pub(crate) fn hex_digest(data: &[u8]) -> String {
     for block in message.as_chunks::<64>().0 {
         compress(&mut h, block);
     }
-    h.iter().map(|word| format!("{word:08x}")).collect()
+    h.iter().fold(String::new(), |mut joined, word| {
+        _ = write!(joined, "{word:08x}");
+        joined
+    })
 }
 
 fn compress(h: &mut [u32; 8], block: &[u8; 64]) {

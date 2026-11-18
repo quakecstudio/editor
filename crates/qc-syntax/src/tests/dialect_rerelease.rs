@@ -7,6 +7,7 @@
 use super::sexpr;
 use crate::ast::{self, AstNode as _, BinaryOp, UnaryOp};
 use crate::{Code, Dialect, Parse, SyntaxKind, parse, parse_with};
+use std::fmt::Write as _;
 
 /// Parses `source` under the FTEQCC dialect.
 fn fte(source: &str) -> Parse {
@@ -44,7 +45,10 @@ fn fte_ok(source: &str) -> Parse {
 /// `body` as the statements of a function, indented, with globals for it to use. A line in
 /// column 0 that looks like a declaration would end the body (the parser's recovery rule).
 fn in_body(body: &str) -> String {
-    let indented: String = body.lines().map(|line| format!("\t{line}\n")).collect();
+    let indented: String = body.lines().fold(String::new(), |mut joined, line| {
+        _ = writeln!(joined, "\t{line}");
+        joined
+    });
     format!("float a, b, c;\nentity e;\n.float fl;\nvoid() f =\n{{\n{indented}}};\n")
 }
 

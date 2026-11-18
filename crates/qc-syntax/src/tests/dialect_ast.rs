@@ -6,6 +6,7 @@
 use super::sexpr;
 use crate::ast::{self, AstNode as _, BinaryOp};
 use crate::{Code, Dialect, Keyword, Keywords, Parse, SyntaxKind, parse_with};
+use std::fmt::Write as _;
 
 /// Parses `source` under the FTEQCC dialect.
 fn fte(source: &str) -> Parse {
@@ -19,7 +20,10 @@ fn fte_errors(source: &str) -> Vec<Code> {
 
 /// `body`, indented, as the statements of a function, with globals for it to use.
 fn in_body(body: &str) -> String {
-    let indented: String = body.lines().map(|line| format!("\t{line}\n")).collect();
+    let indented: String = body.lines().fold(String::new(), |mut joined, line| {
+        _ = writeln!(joined, "\t{line}");
+        joined
+    });
     format!("float a, b, c, i, n;\nvoid() f =\n{{\n{indented}}};\n")
 }
 

@@ -15,8 +15,7 @@ use crate::{AnalysisHost, Config};
 fn an_overlay_replaces_the_text_on_disk() {
     let mut host = one("float a;\n");
     let edited = "float b;\nvoid() f = { b = 1; };\n";
-    host.set_overlay(&path("a.qc"), edited.as_bytes().to_vec())
-        .unwrap();
+    host.set_overlay(&path("a.qc"), edited.as_bytes()).unwrap();
     assert_eq!(host.text(&path("a.qc")), Some(edited.as_bytes().to_vec()));
     assert!(
         host.definition(&path("a.qc"), nth(edited, "b", 1))
@@ -34,7 +33,7 @@ fn an_overlay_replaces_the_text_on_disk() {
 fn an_open_file_no_module_compiles() {
     let mut host = one("");
     let text = "float x;\nvoid() f = { x = 1; };\n";
-    host.set_overlay(&path("scratch.qc"), text.as_bytes().to_vec())
+    host.set_overlay(&path("scratch.qc"), text.as_bytes())
         .unwrap();
     assert!(host.files().contains(&path("scratch.qc")));
     assert!(
@@ -54,7 +53,7 @@ fn editing_the_progs_src_reads_the_project_again() {
         ..ProjectSpec::default()
     });
     assert!(!host.files().contains(&path("b.qc")));
-    host.set_overlay(&path("progs.src"), b"../progs.dat\na.qc\nb.qc\n".to_vec())
+    host.set_overlay(&path("progs.src"), b"../progs.dat\na.qc\nb.qc\n".as_ref())
         .unwrap();
     assert!(host.files().contains(&path("b.qc")));
     assert_eq!(host.text(&path("missing.qc")), None);
@@ -76,21 +75,19 @@ fn typing_an_include_reads_the_modules_files_again() {
     let at = |text: &str| nth(text, "x", 0);
     assert_eq!(host.definition(&path("a.qc"), at(plain)), None);
     let included = "#include \"b.qh\"\nvoid() f = { x = 1; };\n";
-    host.set_overlay(&path("a.qc"), included.as_bytes().to_vec())
+    host.set_overlay(&path("a.qc"), included.as_bytes())
         .unwrap();
     assert!(host.files().contains(&path("b.qh")));
     assert!(host.definition(&path("a.qc"), at(included)).is_some());
     // An edit that leaves the directive lines alone keeps the graph.
     let renamed = "#include \"b.qh\"\nvoid() g = { x = 1; };\n";
-    host.set_overlay(&path("a.qc"), renamed.as_bytes().to_vec())
-        .unwrap();
+    host.set_overlay(&path("a.qc"), renamed.as_bytes()).unwrap();
     assert!(host.definition(&path("a.qc"), at(renamed)).is_some());
-    host.set_overlay(&path("a.qc"), plain.as_bytes().to_vec())
-        .unwrap();
+    host.set_overlay(&path("a.qc"), plain.as_bytes()).unwrap();
     assert!(!host.files().contains(&path("b.qh")));
     assert_eq!(host.definition(&path("a.qc"), at(plain)), None);
     // Closing the file goes back to its text on disk, and the graph with it.
-    host.set_overlay(&path("a.qc"), included.as_bytes().to_vec())
+    host.set_overlay(&path("a.qc"), included.as_bytes())
         .unwrap();
     host.remove_overlay(&path("a.qc")).unwrap();
     assert!(!host.files().contains(&path("b.qh")));
@@ -108,7 +105,7 @@ fn opening_a_directory() {
     assert!(bad.open(Path::new("/p")).is_err());
     assert!(bad.files().is_empty());
     assert!(
-        bad.set_overlay(&path("quakec.toml"), b"also bad [".to_vec())
+        bad.set_overlay(&path("quakec.toml"), b"also bad [".as_ref())
             .is_err()
     );
 }
@@ -135,7 +132,7 @@ fn the_build_gets_each_project_module() {
         files: &[("a.qc", "float a;\n"), ("sub/b.qc", "float b;\n")],
         ..ProjectSpec::default()
     });
-    host.set_overlay(&path("loose.qc"), b"float c;\n".to_vec())
+    host.set_overlay(&path("loose.qc"), b"float c;\n".as_ref())
         .unwrap();
     let modules = host.project_modules();
     assert_eq!(modules.len(), 1, "the loose file is not a module to build");
@@ -232,7 +229,7 @@ fn typing_an_includelist_entry_reads_the_modules_files_again() {
         ..ProjectSpec::default()
     });
     assert!(!host.files().contains(&path("b.qc")));
-    host.set_overlay(&path("a.qc"), b"#includelist\nb.qc\n#endlist\n".to_vec())
+    host.set_overlay(&path("a.qc"), b"#includelist\nb.qc\n#endlist\n".as_ref())
         .unwrap();
     assert!(host.files().contains(&path("b.qc")));
 }
@@ -247,12 +244,9 @@ fn a_directive_edit_while_the_project_does_not_open_keeps_the_analysis() {
         ..ProjectSpec::default()
     });
     assert!(
-        host.set_overlay(&path("quakec.toml"), b"bad [".to_vec())
+        host.set_overlay(&path("quakec.toml"), b"bad [".as_ref())
             .is_err()
     );
     let text = "#include \"b.qh\"\nfloat x;\nvoid() f = { x = 1; };\n";
-    assert!(
-        host.set_overlay(&path("a.qc"), text.as_bytes().to_vec())
-            .is_ok()
-    );
+    assert!(host.set_overlay(&path("a.qc"), text.as_bytes()).is_ok());
 }

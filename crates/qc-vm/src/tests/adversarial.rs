@@ -26,7 +26,7 @@ use qc_edict::EdictNumber;
 fn read(bytes: &[u8]) -> Progs<'_> {
     Progs::read_with(
         bytes,
-        &ReadOptions {
+        ReadOptions {
             check_header_crc: false,
         },
     )

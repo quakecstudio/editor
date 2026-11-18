@@ -4,6 +4,7 @@
 
 use super::cases::{done, f, first_edict, spawn, start_frame, worldspawn};
 use super::{Arg, Case, Check, Input, Program, RETURN, Val, Want, field, global, scenario};
+use std::fmt::Write as _;
 
 pub(super) fn all() -> Vec<Case> {
     vec![
@@ -534,11 +535,12 @@ fn checkclient() -> Case {
     );
     for (clock, function) in [(0.1, 0), (0.15, 1), (0.2, 2)] {
         let index = functions.get(function).copied().unwrap_or_default();
-        init.push_str(&format!("host clock {clock}\nhost run {index}\n"));
+        _ = writeln!(init, "host clock {clock}\nhost run {index}");
     }
-    init.push_str(&format!(
-        "host clock 0.4\nhost run {last}\nhost clock 0.6\nhost run {revived}\n"
-    ));
+    _ = writeln!(
+        init,
+        "host clock 0.4\nhost run {last}\nhost clock 0.6\nhost run {revived}"
+    );
     let [a, b, c] = [0, 1, 2].map(|i| outs.get(i).copied().unwrap_or_default());
     Case::new("checkclient", p, Input::Vector { init })
         // From the last choice 0, clamped to 1: 2 is FL_NOTARGET (128), so 3.

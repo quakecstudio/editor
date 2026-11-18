@@ -8,6 +8,7 @@
 )]
 
 use qc_progs::Progs;
+use std::fmt::Write as _;
 
 use qc_types::Slot;
 
@@ -145,7 +146,7 @@ fn the_header_is_read_as_fscanf_reads_it() {
     let header = |version: &str, skill: &str| {
         let mut text = format!("{version}\ncomment\n");
         text.push_str(&"0.000000\n".repeat(16));
-        text.push_str(&format!("{skill}\ne1m1\n12.5\n"));
+        _ = writeln!(text, "{skill}\ne1m1\n12.5");
         text.push_str(&"m\n".repeat(64));
         text.push_str("{\n}\n");
         SaveGame::read(text.as_bytes())

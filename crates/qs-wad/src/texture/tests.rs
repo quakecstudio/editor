@@ -17,6 +17,7 @@ use super::{
 };
 use crate::write::{WadBuilder, WadWriteError};
 use crate::{MapWad, WAD_TYP_MIPTEX};
+use std::fmt::Write as _;
 
 /// A palette of our own, never id's: a 6 by 6 by 6 colour cube at 0 to 215, greys at 216 to
 /// 223, and bright colours at 224 to 255, 255 itself magenta.
@@ -424,18 +425,18 @@ fn the_gradient_matches_its_golden_encoding() {
         let header: String = GOLDEN
             .lines()
             .take_while(|line| line.starts_with('#'))
-            .map(|line| format!("{line}\n"))
-            .collect();
-        let rows: String = encoded
-            .chunks(40)
-            .map(|row| {
-                let bytes: Vec<String> = row.iter().map(|byte| format!("{byte:02x}")).collect();
-                format!("{}\n", bytes.join(" "))
-            })
-            .collect();
+            .fold(String::new(), |mut joined, line| {
+                _ = writeln!(joined, "{line}");
+                joined
+            });
+        let mut rows = String::new();
+        for row in encoded.chunks(40) {
+            let bytes: Vec<String> = row.iter().map(|byte| format!("{byte:02x}")).collect();
+            _ = writeln!(rows, "{}", bytes.join(" "));
+        }
         std::fs::write(
             concat!(env!("CARGO_MANIFEST_DIR"), "/src/texture/gradient.hex"),
-            header + &rows,
+            format!("{header}{rows}"),
         )
         .unwrap();
     }

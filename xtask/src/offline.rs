@@ -104,7 +104,7 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
         cli_step("check", vec!["check".into(), text(&made)]),
         cli_step("test", test),
         Step {
-            input: Some(MCP_SESSION.join("\n") + "\n"),
+            input: Some(format!("{}\n", MCP_SESSION.join("\n"))),
             ..cli_step("mcp", vec!["mcp".into(), text(&made)])
         },
         Step {

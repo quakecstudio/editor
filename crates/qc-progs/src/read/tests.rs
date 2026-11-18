@@ -1043,11 +1043,11 @@ fn skip_header_crc() {
     let options = ReadOptions {
         check_header_crc: false,
     };
-    let progs = Progs::read_with(&bytes, &options).unwrap();
+    let progs = Progs::read_with(&bytes, options).unwrap();
     assert_eq!(progs.header().crc, 1234);
     patch(&mut bytes, field::VERSION, 5);
     assert_eq!(
-        Progs::read_with(&bytes, &options).unwrap_err(),
+        Progs::read_with(&bytes, options).unwrap_err(),
         ReadError::WrongVersion { version: 5 }
     );
 }
@@ -1155,7 +1155,7 @@ proptest! {
     #[test]
     fn arbitrary_bytes_never_panic(bytes in proptest::collection::vec(any::<u8>(), 0..400)) {
         let options = ReadOptions { check_header_crc: false };
-        if let Ok(progs) = Progs::read_with(&bytes, &options) {
+        if let Ok(progs) = Progs::read_with(&bytes, options) {
             prop_assert!(progs.statements().len() * 8 <= bytes.len());
             prop_assert_eq!(progs.to_file().layout, progs.layout());
         }

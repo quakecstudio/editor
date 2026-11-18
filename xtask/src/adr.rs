@@ -323,6 +323,7 @@ mod tests {
     )]
 
     use super::*;
+    use std::fmt::Write as _;
 
     const GOOD: &str = "# ADR-0001: Record decisions\n\n\
         - **Status:** Accepted\n\
@@ -420,8 +421,10 @@ mod tests {
             let adr: String = GOOD
                 .lines()
                 .filter(|line| !line.starts_with(&format!("- **{field}:**")))
-                .map(|line| format!("{line}\n"))
-                .collect();
+                .fold(String::new(), |mut joined, line| {
+                    _ = writeln!(joined, "{line}");
+                    joined
+                });
             assert_flags(
                 &files(&adr, INDEX_GOOD),
                 &format!("\"- **{field}:**\" is missing or empty"),
