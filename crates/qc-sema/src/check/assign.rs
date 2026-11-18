@@ -807,6 +807,11 @@ impl Checker<'_> {
             made: copy.or(old.made),
             ..old
         };
+        // FTEF-29.19: what a pointer points at is loaded to a temporary, which is the old value.
+        let loaded = match operand.reference {
+            Reference::Pointer(_) => old.made,
+            _ => None,
+        };
         // `switch(ref->cast->type)`: a bitfield, or an 8- or 16-bit integer, is `ev_bitfld`,
         // which only a discarded value steps, by the type it is read as.
         let narrow = matches!(
@@ -862,7 +867,7 @@ impl Checker<'_> {
         self.store_reference(operand, &updated, span)?;
         self.not_an_lvalue(operand, span);
         self.freed_again(operand, span);
-        Ok(copy)
+        Ok(copy.or(loaded))
     }
 
     /// FTE-13.1: `vector v = {x, y, z};` of a local not `static`, each element read and
@@ -957,6 +962,7 @@ impl Checker<'_> {
     ) -> Result<(), Fatal> {
         self.array_set(operand, updated, target, span)?;
         self.field_store(operand, updated, target);
+        self.pointer_store(operand, updated, target, span)?;
         let folded = updated.temp.is_some() && updated.temp == self.last_temp;
         self.definition_store(operand, updated, target, span)?;
         let fold = if folded { Fold::Folded } else { Fold::Stored };
@@ -1098,7 +1104,16 @@ impl Checker<'_> {
                     .map(ir::Name::Made);
             }
         }
-        let storep = self.storep_op(target);
+        // FTEF-6.18: an integer by `OP_STOREP_I` and a pointer by `OP_STOREP_P` or
+        // `OP_STOREP_I`, or else `OP_STOREP_FLD`.
+        let valid = |op: Op| self.env.target_at(span.start).valid(op);
+        let storep = match self.etype(target) {
+            Some(Etype::Integer | Etype::Uint) if valid(Op::StorepI) => Op::StorepI,
+            Some(Etype::Pointer) if valid(Op::StorepP) => Op::StorepP,
+            Some(Etype::Pointer) if valid(Op::StorepI) => Op::StorepI,
+            Some(Etype::Integer | Etype::Uint | Etype::Pointer) => Op::StorepFld,
+            _ => self.storep_op(target),
+        };
         self.generated.push(ir::BodyStatement {
             a: self.name_of(stored),
             b: through,

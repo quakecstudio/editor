@@ -20,6 +20,7 @@ use crate::check::etype::Etype;
 use crate::check::expr::{Checker, Fatal};
 use crate::check::fold::{Folded, fold};
 use crate::check::opcodes::row;
+use crate::check::pointer::WORD_BYTES;
 use crate::check::{Constness, Sym, Value};
 use crate::ir;
 use crate::ty::{SimpleType, Type};
@@ -164,6 +165,16 @@ impl Checker<'_> {
                 constness: Constness::Opaque,
                 ..result
             });
+        }
+        // FTEF-27.19: `OP_ADD_PIW` of two constants is one, unless the word's size is undefined.
+        if op == Op::AddPiw
+            && let (Some(base), Some(words)) = (lhs.known(), rhs.known())
+            && !self.env.flags_at(span.start).has(FteFlag::Undefwordsize)
+        {
+            let bytes = words.i().wrapping_mul(WORD_BYTES);
+            let constant = Constant::int(base.i().wrapping_add(bytes));
+            self.made(constant);
+            return Ok(Value::constant(constant));
         }
         let mut notices = Vec::new();
         let folded = fold(op, lhs.known(), rhs.known(), &mut notices);

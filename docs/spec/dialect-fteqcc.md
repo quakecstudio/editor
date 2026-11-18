@@ -4937,6 +4937,13 @@ as far as they report.
   var_c = QCC_PR_GenerateFunctionCall2(nullsref, fnc, var_a, type_float, var_b, type_float);
   var_c.cast = type_float;`, and for `OP_MOD_FI` the same of `var_b`. An `int` remainder's
   call of `ModInt` is not followed. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_StatementFlags`.
+- **FTEF-27.19** `OP_ADD_PIW` of two constants is folded to an integer constant, the first plus
+  the second's bytes (`case OP_ADD_PIW: if (flag_undefwordsize) break; ... return
+  QCC_MakeIntConst(eval_a->_int + eval_b->_int*VMWORDSIZE);`), unless `undefwordsize` is set. So
+  the divisor of a pointer difference (FTEF-27.10) is a constant, the bytes of what the pointers
+  point at: with a struct of 6 words, `n2 - base` is `SUB_I n2, base, temp` and `DIV_I temp,
+  24`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_StatementFlags`.
 
 ## FTEF-28 The warnings of an emitted comparison
 
@@ -5135,6 +5142,14 @@ whether it is the result of a postfix `++` or `--`. The semantic model checks as
   g)` is `FLDADDRESS self, flags, temp_0`, `BITSETSTOREP_F g, temp_0` and `STORE_F g, x`. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `pr_opcodes`, `QCC_PR_StatementFlags`.
+- **FTEF-29.19** A postfix of what a pointer points at, `p->n ++`, whose value is read, loads
+  it to a temporary, which is the value (`ret = QCC_RefToDef(ref, false); tmp =
+  QCC_GetTemp(ret.cast); QCC_StoreToSRef(tmp, ret, ret.cast, false, true); ret = tmp;`), adds the
+  step to it and stores the sum through the pointer (`QCC_StoreSRefToRef(ref, ...)`, FTEF-6.18):
+  `idx = p->n ++` of an `int` at word 5 is `LOADP_I p, 5, temp_1`, `ADD_I temp_1, 1, temp_0`,
+  `STOREP_I temp_0, p, 5` and `STORE_I temp_1, idx`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_RefToDef`.
 
 ## FTEF-30 Terms
 

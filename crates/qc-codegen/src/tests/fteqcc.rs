@@ -4909,3 +4909,75 @@ fn a_vector_s_component_through_a_pointer_is_its_word() {
     );
     assert_eq!(statements.len(), 5);
 }
+
+// spec FTEF-27.19: the divisor of a pointer difference is a constant, the bytes of what the
+// pointers point at, as the pinned FTEQCC folds `OP_ADD_PIW` of two constants
+#[test]
+fn a_pointer_difference_divides_by_a_constant() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\ntypedef struct { vector o; float r; int a; int b; } node_t;\n\
+         node_t *base;\nint gi;\nvoid t(node_t *n) {\n\tgi = n - base;\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let statements = body(&p, "t");
+    assert_eq!(
+        (statements[0].op, statements[0].b),
+        (number(Op::SubI), global(&p, "base"))
+    );
+    assert_eq!(
+        (
+            statements[1].op,
+            statements[1].a,
+            words(&p, statements[1].b, 1)[0]
+        ),
+        (number(Op::DivI), statements[0].c, 24)
+    );
+    assert_eq!(
+        statements.len(),
+        3 + usize::from(statements[1].c != global(&p, "gi"))
+    );
+}
+
+// spec FTEF-6.18: an integer is stored through a pointer by `OP_STOREP_I`
+// spec FTEF-29.19: a postfix through a pointer loads the old value, which is its value, and
+// stores the sum through the pointer, as the pinned FTEQCC writes them
+#[test]
+fn a_postfix_through_a_pointer_stores_through_it() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\ntypedef struct { vector o; float r; int a; int n; } node_t;\n\
+         int gi;\nvoid t(node_t *p) {\n\tint idx = p->n ++;\n\tgi = idx;\n\tp->a = gi;\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let statements = body(&p, "t");
+    let pointer = statements[0].a;
+    let word = |ofs: i32| words(&p, ofs, 1)[0];
+    let (old, sum) = (statements[0].c, statements[1].c);
+    assert_eq!(
+        (statements[0].op, word(statements[0].b)),
+        (number(Op::LoadpI), 5)
+    );
+    assert_eq!(
+        (statements[1].op, statements[1].a, word(statements[1].b)),
+        (number(Op::AddI), old, 1)
+    );
+    assert_eq!(
+        (
+            statements[2].op,
+            statements[2].a,
+            statements[2].b,
+            word(statements[2].c)
+        ),
+        (number(Op::StorepI), sum, pointer, 5)
+    );
+    assert_eq!(
+        (statements[3].op, statements[3].a),
+        (number(Op::StoreI), old)
+    );
+    let last = statements[statements.len() - 2];
+    assert_eq!(
+        (last.op, last.a, last.b, word(last.c)),
+        (number(Op::StorepI), global(&p, "gi"), pointer, 4)
+    );
+}
