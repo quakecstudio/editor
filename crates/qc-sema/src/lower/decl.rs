@@ -253,6 +253,8 @@ pub(crate) struct RawParamInfo {
     pub optional: bool,
     /// Whether `__out`, `__inout` or `&` marks it.
     pub out: bool,
+    /// Whether the mark is `__out`, which a call passes nothing for.
+    pub write_only: bool,
     /// Its default value (FTE-18.2), if it has one.
     pub default: Option<RawValue>,
     /// The default value when it is a literal, compared as the "dupe initialisation"
@@ -858,6 +860,7 @@ fn param_infos(list: &ast::ParamList, cx: Cx<'_>) -> Vec<RawParamInfo> {
                     .syntax()
                     .child_tokens()
                     .any(|t| t.kind() == SyntaxKind::Amp),
+            write_only: words.iter().any(|w| w == "out"),
             default: default.as_ref().map(|e| raw_value(e, cx)),
             default_literal,
         });

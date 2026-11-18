@@ -225,6 +225,13 @@ impl Checker<'_> {
                 );
                 self.env.report(Code::W0252, arg_span, message);
             }
+            // FTEF-32.24: `__out args do not actually need to pass anything`: not read.
+            if params.get(at).is_some_and(|p| p.write_only) {
+                values.push(Value::of(reference.ty.clone()));
+                passed.push(Some(reference));
+                self.end_of_construct()?;
+                continue;
+            }
             let mark = self.generated.len();
             let mut value = self.read(reference.clone(), arg_span)?;
             let mut continue_after_conversion = false;
@@ -358,10 +365,11 @@ impl Checker<'_> {
         }
         // FTE-18.7: an empty slot is given its parameter's default.
         let defaulted: Vec<bool> = passed.iter().map(Option::is_none).collect();
+        let unpassed: Vec<bool> = params.iter().map(|p| p.write_only).collect();
         let kept = self.call_statements(
             &function,
             passed_count,
-            (callee, &values, &defaulted),
+            (callee, &values, &defaulted, &unpassed),
             (newself, &field_loads, None),
             span,
         );
@@ -374,8 +382,23 @@ impl Checker<'_> {
                 ..ir::BodyStatement::bare(Op::StoreEnt)
             });
         }
-        // `out` arguments are stored back after the call (`QCC_PR_GenerateFunctionCallRef`).
-        for (reference, param) in passed.iter().zip(&params) {
+        // FTEF-32.24: `out` arguments are stored back after the call, each from its parameter's
+        // slot (`QCC_StoreSRefToRef(arglist[i], d, false, false)`), a slot for each three words
+        // of the parameters before it (`parm += (func.cast->params[i].type->size+2)/3`).
+        let mut slot: u32 = 0;
+        for (at, (reference, param)) in passed.iter().zip(&params).enumerate() {
+            let held = slot;
+            let words = function
+                .params
+                .get(at)
+                .and_then(|ty| self.env.layout(ty))
+                .map_or(1, |layout| layout.words);
+            slot = slot.saturating_add(
+                words
+                    .saturating_add(2)
+                    .checked_div(VECTOR_WORDS)
+                    .unwrap_or(1),
+            );
             let Some(reference) = reference.as_ref().filter(|_| param.out) else {
                 continue;
             };
@@ -384,7 +407,13 @@ impl Checker<'_> {
                 self.env.report(Code::E0339, span, message);
                 continue;
             }
-            let returned = Value::of(reference.ty.clone());
+            let returned = Value {
+                parameter: u8::try_from(held).ok(),
+                ..Value::of(reference.ty.clone())
+            };
+            if !self.global {
+                self.update_stores(reference, &returned, &reference.ty, span)?;
+            }
             self.store_reference(reference, &returned, span)?;
         }
         let words = self.env.layout(&function.ret).map_or(1, |l| l.words);
@@ -451,12 +480,13 @@ impl Checker<'_> {
     /// FTEF-9.24: called with `newself`, the object a method is called through when it is not
     /// `self`, `self` is kept and set to it first; the temporary that kept it is returned, for
     /// `self` to be restored from after the call. `kept_value` is the argument whose value is
-    /// read again after the call, an accessor's store's (FTEF-10.14).
+    /// read again after the call, an accessor's store's (FTEF-10.14); an argument of `unpassed`
+    /// is an `__out` parameter's, which nothing is passed for (FTEF-32.24).
     pub(super) fn call_statements(
         &mut self,
         function: &FunctionType,
         count: usize,
-        (callee, values, defaulted): (Option<ir::Name>, &[Value], &[bool]),
+        (callee, values, defaulted, unpassed): (Option<ir::Name>, &[Value], &[bool], &[bool]),
         (newself, field_loads, kept_value): (Option<ir::Name>, &[FieldLoad], Option<usize>),
         span: Span,
     ) -> Option<u32> {
@@ -548,6 +578,13 @@ impl Checker<'_> {
         // value; every later one follows a store or a load.
         let mut first = field_loads.iter().all(|field| field.slot >= passed);
         for (slot, value) in values.iter().take(passed).enumerate() {
+            if unpassed.get(slot).copied().unwrap_or(false) {
+                // `args[parm++].ref = nullsref;`: an operand of the call's is written as none.
+                if let Some(register) = registers.then(|| operands.get_mut(slot)).flatten() {
+                    *register = Some(ir::Name::Count(0));
+                }
+                continue;
+            }
             // FTEF-10.14: the value an accessor's store was given stays readable after the
             // call, so a call's value is copied out of the return global before it.
             if value.returned && kept_value != Some(slot) {
@@ -1232,6 +1269,7 @@ impl FunctionType {
                         kept_default: false,
                         optional: label.optional,
                         out: label.out,
+                        write_only: label.write_only,
                     })
             })
             .collect()

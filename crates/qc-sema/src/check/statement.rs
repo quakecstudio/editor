@@ -302,6 +302,7 @@ impl Checker<'_> {
             }
             ast::Stmt::Thinktime(s) => self.thinktime(s, line)?,
             ast::Stmt::Exit(_) => {
+                self.return_outs();
                 self.jump(Step::Done, Op::Done, None, line);
             }
             ast::Stmt::State(_) | ast::Stmt::Asm(_) => {
@@ -313,6 +314,42 @@ impl Checker<'_> {
     }
 
     /// FTEF-34.1: `return;`, `return e;` and `return = e;`.
+    /// FTEF-32.24: `PR_GenerateReturnOuts`: where the function returns, each of its out
+    /// parameters is stored to its parameter's slot, by its type; one of more than a vector's
+    /// words is not followed.
+    pub(super) fn return_outs(&mut self) {
+        let Some(own) = self.function.own.clone().filter(|_| !self.global) else {
+            return;
+        };
+        let mut slot: u32 = 0;
+        for (at, param) in own.params.iter().enumerate() {
+            let held = slot;
+            let words = self.env.layout(param).map_or(1, |layout| layout.words);
+            slot = slot.saturating_add(
+                words
+                    .saturating_add(2)
+                    .checked_div(VECTOR_WORDS)
+                    .unwrap_or(1),
+            );
+            if !own.labels.0.get(at).is_some_and(|label| label.out) {
+                continue;
+            }
+            let (Some(local), Ok(held), true) = (
+                self.env.parameter(at),
+                u8::try_from(held),
+                words <= VECTOR_WORDS,
+            ) else {
+                self.followed = false;
+                continue;
+            };
+            self.generated.push(ir::BodyStatement {
+                a: Some(ir::Name::Def(local, 0)),
+                b: Some(ir::Name::Parameter(held)),
+                ..ir::BodyStatement::bare(Checker::store_op(self.etype_of(param)))
+            });
+        }
+    }
+
     fn return_stmt(&mut self, s: &ast::ReturnStmt, line: u32) -> Result<(), Fatal> {
         let span = s.syntax().span();
         let ret = self.function.ret.clone();
@@ -343,6 +380,7 @@ impl Checker<'_> {
                 }
                 self.returned = true;
             }
+            self.return_outs();
             self.jump(Step::Return, Op::Return, None, line);
             // FTE-18.10: in a function that returns a value it returns the `ret*` local.
             if !void && ret != Type::Unknown {
@@ -356,6 +394,7 @@ impl Checker<'_> {
         self.generated(&expr, &value, line, before);
         // The value is made the return type first (`QCC_EvaluateCast`), then returned.
         let returned = self.returned_as(value, &ret, (void, &name, &ret_name), &expr)?;
+        self.return_outs();
         self.jump(Step::Return, Op::Return, None, line);
         self.name_last(Op::Return, self.name_of(&returned), None);
         Ok(())

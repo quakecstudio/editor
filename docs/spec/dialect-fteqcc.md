@@ -5770,6 +5770,22 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   definition is stripped and not written. One with a body already gives its number at once.
   Run on the pinned FTEQCC with `-Tfte`: with `a` numbered 1 and `b` 2, `page_t pages[] = { {
   b, a } };` before either body holds 2 and 1, and `void(void) fp = b;` holds 2.
+- **FTEF-32.24** An out parameter, `__out`, `__inout` or `&`, is passed back through its
+  parameter's slot. In the function, each is stored to its slot by its type where the function
+  returns (`PR_GenerateReturnOuts`: `QCC_StoreToSRef(p, QCC_MakeSRefForce(local, 0, local->type),
+  local->type, false, false)`): before every `return`, before `exit`, before the `ret*` local's
+  `RETURN`, and before the final `DONE` of a body whose last statement is neither a `RETURN` nor
+  a `DONE` (`if (needsdone) PR_GenerateReturnOuts();`). At a call, an `__out` argument is neither
+  read nor passed (`args[parm++].ref = nullsref; //__out args do not actually need to pass
+  anything.`), an operand of `OP_CALL1H` to `OP_CALL8H` written as none, and after the call, and
+  after `self` is restored, each out argument is stored from its slot as an assignment to it is
+  (`QCC_StoreSRefToRef(arglist[i], d, false, false)`), in the arguments' order, a slot for each
+  three words of the parameters before it (`parm += (func.cast->params[i].type->size+2)/3`); the
+  call's own value is read after them. So with `float f(float a, __out float b, __inout vector
+  c)`, `gf = f(1, lf, lv)` is `STORE_V lv, OFS_PARM2`, `CALL3H f, 1, 0`, `STORE_F OFS_PARM1, lf`,
+  `STORE_V OFS_PARM2, lv` and `STORE_F OFS_RETURN, gf`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GenerateFunctionCallRef`, `PR_GenerateReturnOuts`, `QCC_PR_FinaliseFunction`.
 
 ## FTEF-33 Builtin argument checks
 

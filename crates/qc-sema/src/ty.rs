@@ -111,6 +111,8 @@ pub struct ParamLabel {
     pub optional: bool,
     /// Whether an out mark (`__out`, `__inout`, `&`) marks it.
     pub out: bool,
+    /// Whether the mark is `__out`, `params[i].out == 2`: a call passes nothing for it.
+    pub write_only: bool,
     /// Its default value as `QCC_VarAtOffset` prints it.
     pub default: Option<String>,
 }
@@ -358,6 +360,7 @@ impl Type {
                             .syntax()
                             .child_tokens()
                             .any(|t| t.kind() == qc_syntax::SyntaxKind::Amp),
+                    write_only: words.iter().any(|w| w == "out"),
                     default: param.default_value().map(|value| default_text(&value, ty)),
                 }
             })

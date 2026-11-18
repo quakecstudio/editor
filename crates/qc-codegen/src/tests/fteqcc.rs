@@ -5180,3 +5180,78 @@ fn an_autocvar_s_bracketed_default_is_its_value() {
         [1.0_f32, 2.0, 3.0].map(f32::to_bits)
     );
 }
+
+// spec FTEF-32.24: a function stores its out parameters to their slots where it returns, and
+// before its last `DONE` only when its last statement is no `RETURN`, as the pinned FTEQCC does
+#[test]
+fn a_function_stores_its_out_parameters_where_it_returns() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\n\
+         float f(float a, __out float b, __inout vector c) {\n\tb = a;\n\tif (a)\n\
+         \t\treturn 1;\n\tc = c * 2;\n\treturn 2;\n}\n\
+         void g(float a, __inout float b) {\n\tif (a)\n\t\treturn;\n\tb = b + 1;\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let ops =
+        |name: &str| -> Vec<(u32, i32)> { body(&p, name).iter().map(|s| (s.op, s.b)).collect() };
+    let (store_f, store_v) = (number(Op::StoreF), number(Op::StoreV));
+    let f = ops("f");
+    // `b` to the second parameter's slot and `c` to the third's, before each `RETURN`.
+    assert_eq!(
+        f.get(2..5),
+        Some(&[(store_f, 7), (store_v, 10), (number(Op::Return), 0)][..])
+    );
+    assert_eq!(
+        f.get(6..9),
+        Some(&[(store_f, 7), (store_v, 10), (number(Op::Return), 0)][..])
+    );
+    assert_eq!(f.len(), 10, "no store before the last DONE: {f:?}");
+    let g = ops("g");
+    assert_eq!(
+        g.get(1..3),
+        Some(&[(store_f, 7), (number(Op::Return), 0)][..])
+    );
+    assert_eq!(g.get(4..), Some(&[(store_f, 7), (number(Op::Done), 0)][..]));
+}
+
+// spec FTEF-32.24: a call passes nothing for an `__out` argument and stores each out argument
+// from its slot after the call, before the call's own value is read, as the pinned FTEQCC does
+#[test]
+fn a_call_stores_its_out_arguments_back() {
+    use qc_preproc::Op;
+    let p = fte_progs(
+        "#pragma target fte\nentity self;\n.float health;\n.vector origin;\n\
+         void end_sys_fields;\nfloat gf;\n\
+         float f(float a, __out float b, __inout vector c) = #1;\n\
+         void t(entity e) {\n\tfloat lf;\n\tvector lv;\n\tgf = f(1, lf, lv);\n\
+         \tf(3, e.health, e.origin);\n}\n",
+    );
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let statements = body(&p, "t");
+    let (lf, lv) = (statements[2].b, statements[0].a);
+    let e = statements[5].a;
+    let made = |op: Op, a: i32, b: i32, c: i32| Statement {
+        op: number(op),
+        a,
+        b,
+        c,
+    };
+    let one = statements[1].b;
+    let three = statements[6].b;
+    assert_eq!(
+        statements,
+        [
+            made(Op::StoreV, lv, 10, 0),
+            made(Op::Call3h, global(&p, "f"), one, 0),
+            made(Op::StoreF, 7, lf, 0),
+            made(Op::StoreV, 10, lv, 0),
+            made(Op::StoreF, 1, global(&p, "gf"), 0),
+            made(Op::LoadV, e, global(&p, "origin"), 10),
+            made(Op::Call3h, global(&p, "f"), three, 0),
+            made(Op::StorefF, e, global(&p, "health"), 7),
+            made(Op::StorefV, e, global(&p, "origin"), 10),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}

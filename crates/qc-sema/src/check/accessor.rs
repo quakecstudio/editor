@@ -138,7 +138,7 @@ impl Checker<'_> {
         self.call_statements(
             &function,
             args.len(),
-            (Some(ir::Name::Def(callee, 0)), args, &defaulted),
+            (Some(ir::Name::Def(callee, 0)), args, &defaulted, &[]),
             (None, &[], kept_value),
             span,
         );
