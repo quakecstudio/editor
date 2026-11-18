@@ -4933,10 +4933,9 @@ fn a_pointer_difference_divides_by_a_constant() {
         ),
         (number(Op::DivI), statements[0].c, 24)
     );
-    assert_eq!(
-        statements.len(),
-        3 + usize::from(statements[1].c != global(&p, "gi"))
-    );
+    // The store folds into the division.
+    assert_eq!(statements[1].c, global(&p, "gi"));
+    assert_eq!(statements.len(), 3);
 }
 
 // spec FTEF-6.18: an integer is stored through a pointer by `OP_STOREP_I`
