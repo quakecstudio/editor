@@ -31,6 +31,7 @@ use std::collections::{HashMap, HashSet};
 
 use qc_diag::{Code, Diagnostic, Span};
 use qc_preproc::{OpcodeTarget, TargetFormat, WarningSettings};
+use qc_syntax::c_scalar::CScalar;
 use qc_syntax::{Dialect, Keywords};
 
 use crate::check::PathList;
@@ -119,6 +120,9 @@ pub struct ModuleIndex {
     /// with, or a member of another, is written with, by the type as written (FTEF-6.13), when
     /// the model lays it out.
     pub(crate) structs: HashMap<Type, StructShape>,
+    /// Each C scalar type a definition is written with, with its words and record number
+    /// (FTEF-19.81).
+    pub(crate) scalars: HashMap<Type, Scalar>,
     /// The type each named type a definition is written with stands for, when it is another:
     /// a typedef's, or an enum's base type (FTEF-7.2, FTEF-19.10).
     pub(crate) aliases: HashMap<Type, Type>,
@@ -135,6 +139,17 @@ pub struct ModuleIndex {
     /// FTEF-9.22: each class's spawn function the program gives no body, whose body the model
     /// writes, in declaration order.
     pub(crate) spawn_functions: Vec<DefId>,
+}
+
+/// A C scalar as a progs holds it (FTEF-19.81).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Scalar {
+    /// The words a value takes, `type->size`.
+    pub words: u32,
+    /// Its number in a definition's record, FTEQCC's `etype_t`.
+    pub number: u16,
+    /// Which scalar it is: an integer of 32 or 64 bits, signed or not, or a double.
+    pub kind: CScalar,
 }
 
 /// A struct's or union's layout as FTEQCC places it (FTEF-6.13): the words it takes and where
@@ -313,6 +328,17 @@ impl ModuleIndex {
     #[must_use]
     pub fn alias(&self, ty: &Type) -> Option<&Type> {
         self.aliases.get(ty)
+    }
+
+    /// What a definition of the C scalar type `ty` is in a progs, through a typedef and an
+    /// enum's base: its words and its record's type number (FTEF-19.81). None for any other
+    /// type, and for an integer narrower than a word.
+    #[must_use]
+    pub fn scalar(&self, ty: &Type) -> Option<Scalar> {
+        // Only a named type can be one, which spares hashing a function's whole type.
+        matches!(ty, Type::Named(_))
+            .then(|| self.scalars.get(ty).copied())
+            .flatten()
     }
 
     /// Whether FTEQCC holds `def` constant, `def->constant` (FTEF-19.3).

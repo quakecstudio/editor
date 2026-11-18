@@ -585,7 +585,7 @@ impl Compiler<'_> {
             Some(Literal::Float(zero)) if zero.to_bits() == 0 => {
                 vec![
                     0;
-                    usize::try_from(ty.words())
+                    usize::try_from(type_words(self.index, ty))
                         .map_err(|_| Abort::Internal(Internal::TooLarge, span))?
                 ]
             }
@@ -619,7 +619,7 @@ impl Compiler<'_> {
             return Err(Abort::Internal(Internal::Unsupported, span));
         }
         let ofs = self.program.def(place).at(span)?.ofs;
-        Ok((0..ty.words())
+        Ok((0..type_words(self.index, ty))
             .map(|i| self.program.word(ofs.saturating_add(i)))
             .collect())
     }

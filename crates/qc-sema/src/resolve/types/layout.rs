@@ -14,7 +14,7 @@ use qc_syntax::c_scalar::CScalar;
 use crate::check::etype::Etype;
 use crate::lower::LiteralValue;
 use crate::lower::{ArrayDim, StructMember};
-use crate::resolve::{InitialValue, MAX_CLASS_DEPTH, MemberShape, Resolver, StructShape};
+use crate::resolve::{InitialValue, MAX_CLASS_DEPTH, MemberShape, Resolver, Scalar, StructShape};
 use crate::symbol::DefId;
 use crate::ty::Type;
 
@@ -266,6 +266,7 @@ impl Resolver<'_> {
             }
         }
         let named: Vec<Type> = self.index.defs.iter().map(|d| d.ty.clone()).collect();
+        let mut written = named.clone();
         for ty in &named {
             let Type::Named(name) = ty else {
                 continue;
@@ -289,8 +290,63 @@ impl Resolver<'_> {
                 continue;
             };
             pending.extend(shape.members.iter().map(|m| m.ty.clone()));
+            written.extend(shape.members.iter().map(|m| m.ty.clone()));
             self.index.structs.insert(ty, shape);
         }
+        // FTEF-19.81: each C scalar a definition, a field, a pointer's target, a function's
+        // return and parameters or a struct's member is written with.
+        while let Some(ty) = written.pop() {
+            match &ty {
+                Type::Field(inner) | Type::Pointer(inner) => written.push(inner.as_ref().clone()),
+                Type::Function(function) => {
+                    written.push(function.ret.clone());
+                    written.extend(function.params.iter().cloned());
+                }
+                Type::Named(_) => {
+                    if !self.index.scalars.contains_key(&ty)
+                        && let Some(scalar) = self.scalar_of(&ty)
+                    {
+                        // Under the type it stands for too, which a typedef's or an enum's
+                        // definitions may be asked by.
+                        self.index.scalars.insert(self.resolved(&ty), scalar);
+                        self.index.scalars.insert(ty, scalar);
+                    }
+                }
+                Type::Simple(_) | Type::Unknown => {}
+            }
+        }
+    }
+
+    /// What a definition of `ty` is in a progs when `ty` is one of C's scalars of a word or
+    /// more, through a typedef and an enum's base: its words and its record's type number.
+    fn scalar_of(&self, ty: &Type) -> Option<Scalar> {
+        let resolved = self.resolved(ty);
+        // An integer narrower than a word is a bitfield's type, which no record numbers so.
+        let narrow = matches!(
+            resolved.fteqcc_scalar(),
+            Some(CScalar::Int8 | CScalar::Uint8 | CScalar::Int16 | CScalar::Uint16)
+        );
+        if narrow {
+            return None;
+        }
+        let shape = self.shape(&resolved)?;
+        let etype = match shape.etype {
+            Etype::Enum => shape.holds?,
+            other => other,
+        };
+        let kind = match etype {
+            Etype::Integer => CScalar::Integer,
+            Etype::Uint => CScalar::Uint,
+            Etype::Int64 => CScalar::Int64,
+            Etype::Uint64 => CScalar::Uint64,
+            Etype::Double => CScalar::Double,
+            _ => return None,
+        };
+        Some(Scalar {
+            words: self.layout(ty)?.words,
+            number: etype.scalar_number()?,
+            kind,
+        })
     }
 
     /// The layout of the struct or union `ty` names, when the model lays it out.

@@ -307,7 +307,6 @@ magic-number	crates/qc-builtins/src/mock.rs	MockEngine::model_bounds_for:16.0
 magic-number	crates/qc-builtins/src/mock.rs	MockEngine::model_bounds_for:3
 magic-number	crates/qc-builtins/src/mock.rs	Rng::next_rand:16
 magic-number	crates/qc-builtins/src/mock.rs	Rng::next_rand:32767
-magic-number	crates/qc-codegen/src/compile.rs	Compiler::function:3
 magic-number	crates/qc-codegen/src/compile.rs	Compiler::function:8
 magic-number	crates/qc-codegen/src/compile/arrays.rs	Compiler::bounds_error:3
 magic-number	crates/qc-codegen/src/compile/arrays.rs	Compiler::emit_getter:3
