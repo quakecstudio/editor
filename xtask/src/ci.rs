@@ -29,7 +29,7 @@ pub(crate) enum Step {
 }
 
 /// The steps, cheapest first.
-pub(crate) const STEPS: [Step; 20] = [
+pub(crate) const STEPS: [Step; 19] = [
     Step::Cargo(&["fmt", "--all", "--check"]),
     Step::Program("plan", "python3", &["plan/check.py"]),
     Step::Program(
@@ -63,8 +63,6 @@ pub(crate) const STEPS: [Step; 20] = [
         "-D",
         "warnings",
     ]),
-    // L-18: the performance lints left off only shrink; it reuses the clippy step's build.
-    Step::Xtask("perf-baseline"),
     // cargo-nextest, so the run stops scheduling tests after the first failure
     // (its fail-fast default). The workspace has no doc tests, which nextest
     // does not run: every rustdoc code block is `text`.
@@ -285,7 +283,6 @@ mod tests {
         for expected in [
             "cargo fmt --all --check",
             "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
-            "cargo xtask perf-baseline",
             "cargo nextest run --locked --workspace --all-features",
             "cargo run --locked -p qs-commands --profile release --example release_guard",
             "cargo xtask commands",
@@ -420,7 +417,6 @@ mod tests {
                 "attribution",
                 "notices",
                 "contrast",
-                "perf-baseline",
                 "run",
                 "commands",
                 "keymap",
@@ -497,8 +493,8 @@ mod tests {
             quoted,
             [
                 "refs/heads/main",
-                "clippy,perf-baseline,nextest,differential",
-                "fmt,clippy,perf-baseline,nextest,deny,differential"
+                "clippy,nextest,differential",
+                "fmt,clippy,nextest,deny,differential"
             ]
         );
         let lists = quoted.get(1..).unwrap_or_default();

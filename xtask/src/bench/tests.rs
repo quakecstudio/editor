@@ -477,10 +477,11 @@ fn the_benchmarks_wad_has_a_texture_of_each_name_of_the_map() {
     let dir = scratch("bench-wad");
     let map = dir.join("room.map");
     let face = "( 0 0 0 ) ( 1 0 0 ) ( 0 1 0 ) {} 0 0 0 1 1";
-    let brush: String = ["sky1", "*water0", "+2button", "wall"]
+    let faces: Vec<String> = ["sky1", "*water0", "+2button", "wall"]
         .iter()
-        .map(|texture| format!("{}\n", face.replace("{}", texture)))
+        .map(|texture| face.replace("{}", texture))
         .collect();
+    let brush = format!("{}\n", faces.join("\n"));
     fs::write(
         &map,
         format!("{{\n\"classname\" \"worldspawn\"\n{{\n{brush}}}\n}}\n"),

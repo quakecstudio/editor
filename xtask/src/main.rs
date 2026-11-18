@@ -326,7 +326,6 @@ pub(crate) fn in_process_check(command: &str) -> Option<Check> {
         "licenses" => Some(licenses::run),
         "attribution" => Some(attribution::run),
         "notices" => Some(notices::check),
-        "perf-baseline" => Some(perf_baseline::check),
         "contrast" => Some(contrast::check),
         "commands" => Some(commands::check),
         "keymap" => Some(keymap::check),

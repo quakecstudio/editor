@@ -3,11 +3,10 @@
 //! `cargo xtask perf-baseline [--write]`: the clippy performance lints the audit left off
 //! (`docs/audits/perf.md`, L-18) are held to `docs/audits/perf-baseline.tsv`, a count of each
 //! lint's sites that only shrinks. The check runs clippy over the workspace with those lints
-//! as warnings and fails when a lint has more sites than the file says. With fewer it passes
-//! and says so: a platform compiles less of the workspace than the one the file was counted
-//! on, and a lint whose sites were fixed has its line lowered with `--write`, which never
-//! raises a count. `cargo xtask ci` runs the check after its own clippy step, whose build it
-//! reuses.
+//! as warnings and fails when a lint has more sites than the file says, or fewer: a lint whose
+//! sites were fixed has its line lowered with `--write`, which never raises a count. It is
+//! run by hand on the reference Mac when the audit is revisited, not in `cargo xtask ci`: it
+//! lints the whole workspace a second time, and its counts are one platform's.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -134,7 +133,7 @@ fn written(counts: &BTreeMap<String, usize>) -> String {
 }
 
 /// What the check says of the code's `found` counts against the `held` ones: a problem for a
-/// lint with more sites than held or with no line.
+/// lint with more sites than held, with fewer, or with no line.
 fn compared(found: &BTreeMap<String, usize>, held: &BTreeMap<String, usize>) -> Report {
     let mut report = Report::default();
     for (lint, &sites) in found {
@@ -144,13 +143,11 @@ fn compared(found: &BTreeMap<String, usize>, held: &BTreeMap<String, usize>) -> 
                 false,
                 format!("{lint}: {sites} sites, {most} in {BASELINE}; fix the new ones"),
             ),
-            // Fewer passes: a platform compiles less of the workspace than the one the
-            // baseline was counted on.
             Some(&most) if sites < most => report.record(
-                true,
+                false,
                 format!(
-                    "{lint}: {sites} sites, {most} in {BASELINE}; when they were fixed, lower \
-                     it with `cargo xtask perf-baseline --write`"
+                    "{lint}: {sites} sites, {most} in {BASELINE}; lower it with `cargo xtask \
+                     perf-baseline --write`"
                 ),
             ),
             Some(_) => report.record(true, format!("{lint}: {sites} sites, as {BASELINE} holds")),
@@ -160,6 +157,34 @@ fn compared(found: &BTreeMap<String, usize>, held: &BTreeMap<String, usize>) -> 
         report.record(false, format!("{BASELINE}: {lint} is not a lint held"));
     }
     report
+}
+
+/// The baseline `--write` leaves: each of the code's `found` counts when it is no more than
+/// the `held` one, with no file the code's own; an error for a lint with more sites than
+/// held or with no line, which `--write` never adds.
+fn lowered(
+    found: &BTreeMap<String, usize>,
+    held: Option<&BTreeMap<String, usize>>,
+) -> Result<BTreeMap<String, usize>, String> {
+    let Some(held) = held else {
+        return Ok(found.clone());
+    };
+    let mut lowered = BTreeMap::new();
+    for (lint, &sites) in found {
+        match held.get(lint) {
+            Some(&most) if sites <= most => {
+                lowered.insert(lint.clone(), sites);
+            }
+            Some(&most) => {
+                return Err(format!(
+                    "{lint}: {sites} sites, {most} in {BASELINE}; fix the new ones, the \
+                     baseline is not raised"
+                ));
+            }
+            None => return Err(format!("{BASELINE}: no line for {lint}")),
+        }
+    }
+    Ok(lowered)
 }
 
 /// The counts of the workspace at `root`, by clippy with each of [`LINTS`] a warning.
@@ -204,18 +229,14 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
     }
     let path = root.join(BASELINE);
     let found = clippy_counts(root)?;
-    // A count is lowered to the code's, never raised: with no file yet, the code's is taken.
+    // With no file yet the code's counts are the first baseline; a file that cannot be read
+    // is an error, not a new start.
     let held = match std::fs::read_to_string(&path) {
-        Ok(text) => read(&text)?,
-        Err(_) => found.clone(),
+        Ok(text) => Some(read(&text)?),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(format!("{}: {error}", path.display())),
     };
-    let lowered: BTreeMap<String, usize> = found
-        .iter()
-        .map(|(lint, &sites)| {
-            let most = held.get(lint).copied().unwrap_or(sites);
-            (lint.clone(), sites.min(most))
-        })
-        .collect();
+    let lowered = lowered(&found, held.as_ref())?;
     std::fs::write(&path, written(&lowered)).map_err(|e| format!("{}: {e}", path.display()))?;
     println!("perf-baseline: wrote {BASELINE}");
     Ok(true)
@@ -273,9 +294,8 @@ mod tests {
         assert!(read("lint\tsites\nclippy::string_add\n").is_err());
     }
 
-    // No spec statement: L-18: the count only shrinks: more sites than held fail, fewer pass
-    // and name the command that lowers the line; a lint with no line, or a line for no lint,
-    // fails
+    // No spec statement: L-18: the count only shrinks: more sites than held fail, and so do
+    // fewer until the line is lowered; a lint with no line, or a line for no lint, fails
     #[test]
     fn the_baseline_only_shrinks() {
         let held = counted(&diagnostic("clippy::string_add", "a.rs", 3));
@@ -291,12 +311,17 @@ mod tests {
         let grown = compared(&more, &held).problems;
         assert_eq!(grown.len(), 1);
         assert!(grown[0].contains("fix the new ones"), "{grown:?}");
-        let shrunk = compared(&held, &more);
-        assert!(shrunk.problems.is_empty());
-        assert!(shrunk.passed.iter().any(|line| line.contains("--write")));
+        let shrunk = compared(&held, &more).problems;
+        assert_eq!(shrunk.len(), 1);
+        assert!(shrunk[0].contains("--write"), "{shrunk:?}");
+        // `--write` lowers a count, takes the code's with no file, and never raises or adds.
+        assert_eq!(lowered(&held, Some(&more)).unwrap(), held);
+        assert_eq!(lowered(&held, None).unwrap(), held);
+        assert!(lowered(&more, Some(&held)).is_err());
         let mut missing = held.clone();
         missing.remove("clippy::string_add");
         assert_eq!(compared(&held, &missing).problems.len(), 1);
+        assert!(lowered(&held, Some(&missing)).is_err());
         let mut extra = held.clone();
         extra.insert("clippy::other".to_owned(), 1);
         assert_eq!(compared(&held, &extra).problems.len(), 1);

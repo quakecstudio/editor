@@ -1,8 +1,8 @@
 lint	sites
-clippy::format_collect	26
-clippy::format_push_string	161
+clippy::format_collect	25
+clippy::format_push_string	159
 clippy::naive_bytecount	10
-clippy::needless_collect	9
+clippy::needless_collect	8
 clippy::needless_pass_by_value	39
 clippy::string_add	19
-clippy::trivially_copy_pass_by_ref	9
+clippy::trivially_copy_pass_by_ref	8

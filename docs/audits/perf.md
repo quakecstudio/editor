@@ -51,13 +51,17 @@ each site once; "shipped" leaves out tests, benchmarks, examples, `qs-differenti
 
 [`perf-baseline.tsv`](perf-baseline.tsv) holds the count of each of these, and it only
 shrinks: `cargo xtask perf-baseline` runs clippy with the seven as warnings, counts each site
-once, and fails when a lint has more sites than the file says; with fewer it passes and names
-`cargo xtask perf-baseline --write`, which lowers a line and never raises one (a platform
-compiles less of the workspace than the Mac the file was counted on). `cargo xtask ci` runs it
-after its own clippy step, whose build it reuses (12 s on the reference Mac), and on GitHub it
-runs in the Clippy job. It is a command of its own and not a part of
-`cargo xtask conventions`, which the plan named, because that check reads the sources alone
-and this one needs clippy to have built the workspace.
+once however many targets compile it, and fails when a lint has more sites than the file says,
+or fewer until `cargo xtask perf-baseline --write` lowers its line; `--write` never raises a
+count or adds a line. It is run by hand on the reference Mac when this audit is revisited. It
+is not a step of `cargo xtask ci` or a part of `cargo xtask conventions`: it lints the whole
+workspace a second time (clippy's arguments are part of what it caches by), and its counts are
+those of the platform it runs on, where the other checks read the sources alone.
+
+The file was first counted on 2026-11-17 at `91eaeb9f`, after the five sites added since the
+table above was counted were fixed. It holds 159 `format_push_string` sites and 8
+`needless_collect` sites, one more of each than the table: both are in code older than the
+table's commit, which its count missed.
 
 ## The crates
 
