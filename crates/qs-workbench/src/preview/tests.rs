@@ -171,10 +171,7 @@ fn play_uses_the_game_the_project_is_for() {
     std::fs::write(alone.join("id1/pak0.pak"), b"PACK").unwrap();
     std::fs::write(alone.join("QuakeEX.kpf"), b"kpf").unwrap();
     let mut preview_of = preview(Some(alone.clone()), Some(dir.join("no-host")));
-    assert_eq!(
-        preview_of.game_base_path().map(linked),
-        Some(linked(alone.clone()))
-    );
+    assert_eq!(preview_of.game_base_path().map(linked), Some(linked(alone)));
     let dir = root("original-on-rerelease");
     let mut workbench = opened(&dir, "void() worldspawn = {};\n");
     let error = preview_of.play(&mut workbench, None).unwrap_err();
