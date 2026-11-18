@@ -152,7 +152,8 @@ once in every version after and komac cannot always fill it, every line is made 
 CRLF, which winget-pkgs requires, and only then are they submitted. Microsoft reviews and merges it in its own time, so the job's failure
 does not fail the release, and it has no dry run: nothing of it can run before the release's
 files are public. komac updates a package winget already lists. The first version is submitted
-by hand, once, by the account that owns `WINGET_TOKEN`, and until Microsoft merges it the job
+by hand, once, by the account that owns `WINGET_TOKEN`, which agrees to Microsoft's contributor
+license agreement in a comment on that pull request, and until Microsoft merges it the job
 fails:
 
 ```bash
@@ -172,7 +173,7 @@ makes and sets each one (`environments/github/`); agents never handle their valu
 | `GPG_PASSPHRASE` | Its passphrase | the same |
 | `PACKAGES_DEPLOY_KEY` | An SSH deploy key with write access to `quakecstudio/packages` alone | the checkout that pushes the repository |
 | `HOMEBREW_TAP_DEPLOY_KEY` | An SSH deploy key with write access to `quakecstudio/homebrew-tap` alone | the checkout that pushes the cask |
-| `WINGET_TOKEN` | A classic personal access token with the `public_repo` and `workflow` scopes, owned by `smoketurnerbot`, which has write access to the fork and must have signed Microsoft's contributor license agreement before its first pull request. komac cannot open the pull request with a fine-grained token, and without `workflow` its `sync-fork` cannot move the fork past upstream commits that change a workflow, as vouch-sh/vouch's release found | `komac` |
+| `WINGET_TOKEN` | A classic personal access token with the `public_repo` and `workflow` scopes, owned by `smoketurnerbot`, which has write access to the fork. It agrees to Microsoft's contributor license agreement on its first pull request, with the comment `@microsoft-github-policy-service agree company="Smoke Turner, LLC"`, as `vouch-bot` did on microsoft/winget-pkgs#366735. komac cannot open the pull request with a fine-grained token, and without `workflow` its `sync-fork` cannot move the fork past upstream commits that change a workflow, as vouch-sh/vouch's release found | `komac` |
 
 Replacing the GPG key means every user has to trust the new public key before their next
 install or update. The deploy keys and the GPG key do not expire; the token does when its
