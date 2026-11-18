@@ -338,7 +338,7 @@ impl Resolver<'_> {
 
     /// What a definition of `ty` is in a progs when `ty` is one of C's scalars of a word or
     /// more, through a typedef and an enum's base: its words and its record's type number.
-    fn scalar_of(&self, ty: &Type) -> Option<Scalar> {
+    pub(in crate::resolve) fn scalar_of(&self, ty: &Type) -> Option<Scalar> {
         let resolved = self.resolved(ty);
         // An integer narrower than a word is a bitfield's type, which no record numbers so.
         let narrow = matches!(

@@ -3837,6 +3837,26 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   three `STORE_I64` of two-word constants. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qccmain.c`,
   `QCC_WriteData`, and its output as built for the oracles.
+- **FTEF-19.82** A global the program declares is saved, `DEF_SAVEGLOBAL` in its record's type,
+  when FTEQCC does not hold it constant (`if (!nosave) gd_flags |= GDF_SAVED;` in
+  `QCC_PR_ParseDefs`, then `if ( def->saved && !def->constant && def->type->type != ev_field &&
+  def->scope == NULL) dd->type |= DEF_SAVEGLOBAL;`): one with no value, and a `var` with one. The
+  members of a struct so declared are each saved, the struct's own header never (`def->saved =
+  false; //struct headers don't get saved.`). A definition FTEQCC makes itself, an immediate or
+  a translated string's global, is not asked to be saved. Run on the pinned FTEQCC with `-Tfte`:
+  `var titles_t g = { ... };` writes `g.m_strName` with type `0x8001` and `g.m_iEffect` with
+  `0x8008`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qccmain.c`, `QCC_WriteData`; `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseDefs`,
+  `QCC_PR_GetDef`.
+- **FTEF-19.83** In a global's designated braces each element is the value of the member it
+  names, wherever the member is in the struct, read as that member's type (`tp =
+  QCC_PR_FindStructMember(type, mname, &def.ofs, &reloffset); ... def.cast = tp->type; ret &=
+  QCC_PR_ParseInitializerType(tp->arraysize, basedef, def, bitofs+reloffset, flags);`), and a
+  member no element names holds 0. A number in the place of a C scalar is the words it converts
+  to (FTE-15.8), and a vector written in brackets the vector it folds to (FTEF-34.9): `var S g =
+  { .n = 3, .v = [1, 2, 3] };` of `struct { string s; int n; vector v; }` holds an empty string,
+  the integer 3 and the vector. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseInitializerType_Internal`.
 
 ## FTEF-20 Keywords
 

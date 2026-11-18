@@ -219,9 +219,17 @@ pub(crate) fn progs(
                 s_name: program.copy_string(&latin1_encode(&def.name))?,
             });
         }
-        let saved = !def.initialized
-            && etype != Etype::Function
-            && etype != Etype::Field
+        // QC-25.3: id's `qcc` saves a global with no initial value. FTEF-19.82: FTEQCC saves a
+        // definition the program declares that it does not hold constant, `def->saved &&
+        // !def->constant`, so a `var` with a value too; one it makes itself, a translated
+        // string's, only with no value.
+        let saved = match records {
+            Records::Qcc => !def.initialized && etype != Etype::Function,
+            Records::Fteqcc => {
+                etype != Etype::Function
+                    && (!def.initialized || (def.id.is_some() && !def.constant))
+            }
+        } && etype != Etype::Field
             && def.scope.is_none();
         if records == Records::Fteqcc
             && let Some(count) = def.count
@@ -241,6 +249,7 @@ pub(crate) fn progs(
             && let ValueType::Of(t) = &def.ty
             && let Some(shape) = index.struct_shape(t)
         {
+            let first = global_defs.len();
             member_records(
                 &mut global_defs,
                 &mut program,
@@ -248,6 +257,12 @@ pub(crate) fn progs(
                 (index, shape),
                 def.ofs,
             )?;
+            // FTEF-19.82: each member's record is saved as the struct's own would be.
+            if saved {
+                for record in global_defs.iter_mut().skip(first) {
+                    record.type_bits |= PROGS_DEF_SAVEGLOBAL;
+                }
+            }
             continue;
         }
         let mut type_bits = u32::from(type_number(index, &def.ty));

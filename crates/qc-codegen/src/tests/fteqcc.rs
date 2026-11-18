@@ -5457,3 +5457,43 @@ fn a_wide_struct_is_passed_a_slot_for_each_three_words() {
         ]
     );
 }
+
+// spec FTEF-19.83: designated braces give each member they name its value where the member is,
+// a number in an `int`'s place the integer and a bracketed vector the vector
+// spec FTEF-19.82: a `var` struct with a value has each member's record saved
+#[test]
+fn designated_braces_place_each_member_s_value() {
+    let p = fte_progs(
+        "#pragma target fte\n\
+         typedef struct { string s; float y; int n; vector v; float f; } titles_t;\n\
+         var titles_t g = { .f = 0.5f, .v = [1, 2, 3], .n = 3, .y = -1.0f };\n\
+         titles_t k = { \"a\", 2, 3, [4, 5, 6], 7 };\n\
+         vector gv;\nvoid t(void) { gv = g.v; }\n",
+    );
+    let record = |name: &str| {
+        let def = p
+            .global_defs
+            .iter()
+            .find(|def| string(&p, def.s_name) == name)
+            .unwrap_or_else(|| panic!("no {name}"));
+        (def.type_bits, i32::try_from(def.ofs).unwrap())
+    };
+    let (y_bits, y) = record("g.y");
+    let (n_bits, n) = record("g.n");
+    let (v_bits, v) = record("g.v");
+    let (f_bits, f) = record("g.f");
+    assert_eq!(
+        (y_bits, n_bits, v_bits, f_bits),
+        (0x8002, 0x8008, 0x8003, 0x8002)
+    );
+    assert_eq!(words(&p, y, 1), [(-1.0_f32).to_bits()]);
+    assert_eq!(words(&p, n, 1), [3]);
+    assert_eq!(words(&p, v, 3), [1.0_f32, 2.0, 3.0].map(f32::to_bits));
+    assert_eq!(words(&p, f, 1), [0.5_f32.to_bits()]);
+    // A constant struct's members are not saved; its `int` holds the integer too.
+    let (kn_bits, kn) = record("k.n");
+    assert_eq!(kn_bits, 0x8);
+    assert_eq!(words(&p, kn, 1), [3]);
+    let (_, kv) = record("k.v");
+    assert_eq!(words(&p, kv, 3), [4.0_f32, 5.0, 6.0].map(f32::to_bits));
+}

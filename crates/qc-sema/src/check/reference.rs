@@ -876,22 +876,9 @@ impl Checker<'_> {
                 ) {
                     return self.pointer_component(base, word, span);
                 }
-                // FTEF-31.27: a call's vector, or one a statement made, at a constant index is
-                // that word of the return global or of the temporary.
-                if let Some(word) = constant.and_then(|i| u32::try_from(i).ok())
-                    && base.reference == Reference::Global
-                    && !self.global
-                    && (base.returned || base.made.is_some())
-                {
-                    return Ok(Value {
-                        returned: base.returned,
-                        call: base.call,
-                        made: base.made,
-                        word,
-                        temp: base.temp.map(|temp| temp.saturating_add(word)),
-                        readonly: base.readonly,
-                        ..Value::of(Type::Simple(SimpleType::Float))
-                    });
+                // FTEF-31.27: a call's vector, or one a statement made, is that word of it.
+                if let Some(component) = self.value_component(&base, constant) {
+                    return Ok(component);
                 }
                 // FTEF-31.9: a constant vector's component at a constant index is a constant,
                 // read through the vector at the index (`REF_ARRAY`), which a call does not fold
@@ -950,6 +937,25 @@ impl Checker<'_> {
                 self.fatal(Code::E0204, span, message)
             }
         }
+    }
+
+    /// FTEF-31.27: the vector `base` that is a call's value or a statement's result, at the
+    /// constant index `constant`: that word of the return global or of the temporary; `None`
+    /// for any other vector or index.
+    fn value_component(&self, base: &Value, constant: Option<i32>) -> Option<Value> {
+        let word = constant.and_then(|i| u32::try_from(i).ok())?;
+        let value = base.reference == Reference::Global
+            && !self.global
+            && (base.returned || base.made.is_some());
+        value.then(|| Value {
+            returned: base.returned,
+            call: base.call,
+            made: base.made,
+            word,
+            temp: base.temp.map(|temp| temp.saturating_add(word)),
+            readonly: base.readonly,
+            ..Value::of(Type::Simple(SimpleType::Float))
+        })
     }
 
     /// FTEF-31.25: component `word` of the vector `base` reads through a pointer: the float at

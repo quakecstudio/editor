@@ -581,6 +581,8 @@ pub(crate) struct RawBraces {
     pub trailing: Option<Span>,
     /// Its elements, in order.
     pub elements: Vec<RawElement>,
+    /// In designated braces, the member each element names, in the elements' order.
+    pub names: Vec<String>,
 }
 
 /// One element of a braced initialiser.
@@ -662,6 +664,7 @@ fn raw_braces(agg: &ast::AggregateInit, cx: Cx<'_>) -> RawBraces {
         open,
         trailing,
         elements,
+        names: agg.designated_names(),
     }
 }
 

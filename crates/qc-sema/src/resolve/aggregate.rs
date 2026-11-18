@@ -141,6 +141,26 @@ impl Resolver<'_> {
                 self.report(Code::E0372, location, message);
                 return Err(Fatal);
             }
+            // Each element is read as the member it names is (`QCC_PR_FindStructMember`,
+            // then `QCC_PR_ParseInitializerType` of the member's type).
+            let named: Vec<(Type, Vec<Option<u32>>)> = braces
+                .names
+                .iter()
+                .map(|name| {
+                    struct_def.members.iter().find(|m| m.name == *name).map_or(
+                        (Type::Unknown, Vec::new()),
+                        |m| {
+                            let sizes = m.array.iter().map(|s| s.trim().parse().ok()).collect();
+                            (m.ty.clone(), sizes)
+                        },
+                    )
+                })
+                .collect();
+            for (element, (member_ty, sizes)) in braces.elements.iter().zip(&named) {
+                if *member_ty != Type::Unknown {
+                    self.read_element(file, sizes, member_ty, element, def, AggregateSite::Nested)?;
+                }
+            }
             return Ok(());
         }
         if struct_def.parent.is_some() {

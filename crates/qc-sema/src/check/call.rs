@@ -528,43 +528,10 @@ impl Checker<'_> {
         if self.global {
             return None;
         }
-        // FTEF-32.25: the parameter slot each argument starts at: one for an argument, and one
-        // for each three words of a struct or union of more than a vector's.
-        let wide: Vec<Option<u32>> = values
-            .iter()
-            .take(passed)
-            .map(|value| self.wide_words(&value.ty))
-            .collect();
-        let mut slot_of: Vec<usize> = Vec::with_capacity(passed);
-        let mut slots: usize = 0;
-        for at in 0..passed {
-            slot_of.push(slots);
-            let taken = wide.get(at).copied().flatten().map_or(1, |words| {
-                usize::try_from(words.div_ceil(VECTOR_WORDS)).unwrap_or(1)
-            });
-            slots = slots.saturating_add(taken);
-        }
+        let (wide, slot_of, slots) = self.argument_slots(values, passed);
         let slot_at = |at: usize| slot_of.get(at).copied().unwrap_or(at);
-        // FTEF-9.24: `oself = self; self = object;`, and an argument that names `self`
-        // names the kept one (`arglist[i]->base = oself`).
-        let this = self.env.helper("self");
-        let kept = match (newself, this) {
-            (Some(object), Some(this)) => {
-                let kept = self.next_made();
-                self.generated.push(ir::BodyStatement {
-                    a: Some(ir::Name::Def(this, 0)),
-                    b: Some(ir::Name::Made(kept)),
-                    ..ir::BodyStatement::bare(Op::StoreEnt)
-                });
-                self.generated.push(ir::BodyStatement {
-                    a: Some(object),
-                    b: Some(ir::Name::Def(this, 0)),
-                    ..ir::BodyStatement::bare(Op::StoreEnt)
-                });
-                Some((this, kept))
-            }
-            _ => None,
-        };
+        // FTEF-9.24: an argument that names `self` names the kept one.
+        let kept = self.keep_self(newself);
         let renamed = |name: Option<ir::Name>| match (name, kept) {
             (Some(ir::Name::Def(def, 0)), Some((this, kept))) if def == this => {
                 Some(ir::Name::Made(kept))
@@ -640,34 +607,12 @@ impl Checker<'_> {
             if field_loads.iter().any(|field| field.slot == at) {
                 continue;
             }
-            // FTEF-32.25: a struct of more than a vector's words, copied a piece to a slot:
-            // to a value of its own where the slot is one of the call's operands.
+            // FTEF-32.25: a struct of more than a vector's words, copied a piece to a slot.
             if let Some(words) = wide.get(at).copied().flatten() {
-                let from = renamed(self.name_of(value))
-                    .filter(|name| matches!(name, ir::Name::Def(..) | ir::Name::Made(_)));
-                let (Some(from), Some(pieces)) = (from, self.pieces(words, span)) else {
-                    self.followed = false;
-                    continue;
-                };
-                for (piece, (op, word)) in pieces.into_iter().enumerate() {
-                    let slot = slot.saturating_add(piece);
-                    let register = registers.then(|| operands.get_mut(slot)).flatten();
-                    let to = match register {
-                        Some(register) => {
-                            let copy = u32::try_from(self.generated.len()).ok();
-                            *register = copy.map(ir::Name::Made);
-                            *register
-                        }
-                        None => u8::try_from(slot).ok().map(ir::Name::Parameter),
-                    };
-                    self.generated.push(ir::BodyStatement {
-                        a: from.word(word),
-                        b: to,
-                        ..ir::BodyStatement::bare(op)
-                    });
-                }
+                let from = renamed(self.name_of(value));
+                let registers = registers.then_some(&mut operands);
+                self.wide_argument(from, words, slot, registers, span);
                 first = false;
-                self.last_temp = None;
                 continue;
             }
             let words = self.env.layout(&value.ty).map_or(1, |l| l.words);
@@ -742,6 +687,87 @@ impl Checker<'_> {
             self.last_temp = None;
         }
         kept.map(|(_, kept)| kept)
+    }
+
+    /// FTEF-9.24: `oself = self; self = object;` before a call through `object`, an object
+    /// that is not `self`: `self`'s definition and the statement that kept it, from which it
+    /// is restored after the call (`arglist[i]->base = oself`).
+    fn keep_self(&mut self, object: Option<ir::Name>) -> Option<(crate::DefId, u32)> {
+        let (object, this) = (object?, self.env.helper("self")?);
+        let kept = self.next_made();
+        self.generated.push(ir::BodyStatement {
+            a: Some(ir::Name::Def(this, 0)),
+            b: Some(ir::Name::Made(kept)),
+            ..ir::BodyStatement::bare(Op::StoreEnt)
+        });
+        self.generated.push(ir::BodyStatement {
+            a: Some(object),
+            b: Some(ir::Name::Def(this, 0)),
+            ..ir::BodyStatement::bare(Op::StoreEnt)
+        });
+        Some((this, kept))
+    }
+
+    /// FTEF-32.25: for the first `passed` of the arguments `values`, the words of each that
+    /// is passed in pieces, the parameter slot each starts at, one for an argument and one
+    /// for each three words of one in pieces, and the slots they take together.
+    fn argument_slots(
+        &self,
+        values: &[Value],
+        passed: usize,
+    ) -> (Vec<Option<u32>>, Vec<usize>, usize) {
+        let wide: Vec<Option<u32>> = (0..passed)
+            .map(|at| values.get(at).and_then(|value| self.wide_words(&value.ty)))
+            .collect();
+        let mut slot_of: Vec<usize> = Vec::with_capacity(passed);
+        let mut slots: usize = 0;
+        for words in &wide {
+            slot_of.push(slots);
+            let taken = words.map_or(1, |words| {
+                usize::try_from(words.div_ceil(VECTOR_WORDS)).unwrap_or(1)
+            });
+            slots = slots.saturating_add(taken);
+        }
+        (wide, slot_of, slots)
+    }
+
+    /// FTEF-32.25: the argument `from` of `words` words copied a piece to a slot from `slot`
+    /// on: to a value of its own where the slot is one of the call's operands, `registers`.
+    /// One that is no definition's or statement's words, or whose pieces do not each start a
+    /// slot, is not followed.
+    fn wide_argument(
+        &mut self,
+        from: Option<ir::Name>,
+        words: u32,
+        slot: usize,
+        mut registers: Option<&mut [Option<ir::Name>; REGISTER_PARMS]>,
+        span: Span,
+    ) {
+        let from = from.filter(|name| matches!(name, ir::Name::Def(..) | ir::Name::Made(_)));
+        let (Some(from), Some(pieces)) = (from, self.pieces(words, span)) else {
+            self.followed = false;
+            return;
+        };
+        for (piece, (op, word)) in pieces.into_iter().enumerate() {
+            let slot = slot.saturating_add(piece);
+            let register = registers
+                .as_mut()
+                .and_then(|operands| operands.get_mut(slot));
+            let to = match register {
+                Some(register) => {
+                    let copy = u32::try_from(self.generated.len()).ok();
+                    *register = copy.map(ir::Name::Made);
+                    *register
+                }
+                None => u8::try_from(slot).ok().map(ir::Name::Parameter),
+            };
+            self.generated.push(ir::BodyStatement {
+                a: from.word(word),
+                b: to,
+                ..ir::BodyStatement::bare(op)
+            });
+        }
+        self.last_temp = None;
     }
 
     /// FTEF-32.25: the words of `ty` when it is a struct or union of more than a vector's,
