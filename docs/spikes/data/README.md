@@ -33,3 +33,9 @@ replays the spike's script without its inline-diff phase, which is P2-18's, as e
 into a 50,000-line file, and records eframe's `cpu_usage` for each frame, as `frame_ns` above.
 Columns: `phase`, `frame` (the measured frame's index) and `cpu_ns`. The bar is ADR-0003's: a
 p99 of at most 8.33 ms in every phase but the warm-up.
+
+## Budget rows
+
+`<host>/bench-<commit>.md` holds rows of `cargo xtask bench` measured on a reference machine
+at a commit on `main`, with the command and what it was run against, for a report that needs
+them (P4-24, P4-23).
