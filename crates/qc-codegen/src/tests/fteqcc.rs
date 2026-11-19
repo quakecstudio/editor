@@ -6124,7 +6124,7 @@ fn a_variant_is_stored_whole_and_read_by_the_targets_type() {
     let progs = compile_fteqcc(
         "#pragma target fte\nfloat x;\nvector w;\nstring s;\nentity e;\nint i;\n\
          __variant v;\n__variant u;\n\
-         void() f = { v = x; v = w; v = s; v = i; u = v; x = v; w = v; e = v; };\n\
+         void() f = { v = x; v = w; v = s; v = i; u = v; x = v; w = v; e = v; v = 0; };\n\
          void(__variant p, float q) g = { local __variant l; l = p; x = q; };\n",
     )
     .unwrap()
@@ -6134,26 +6134,31 @@ fn a_variant_is_stored_whole_and_read_by_the_targets_type() {
         StoreV, StoreV, StoreV, StoreV, StoreV, StoreF, StoreV, StoreEnt,
     ]);
     assert_eq!(stores.get(..8), Some(&expected[..]));
+    // A constant 0 is stored from the zero vector's three words.
+    let zero = body(&progs, "f")[8];
+    assert_eq!(zero.op, numbers([StoreV])[0]);
+    assert_eq!(zero.a, immediate_vector(&progs, [0.0; 3]));
     let g = function(&progs, "g");
     assert_eq!(g.parm_size[..2], [3, 1]);
     assert_eq!(g.locals, 7, "p, q and l");
 }
 
 // spec FTEF-2.13: a store to an 8- or 16-bit integer definition that folds into no statement is
-// `OP_STORE_F`, a 32-bit one's `OP_STORE_I` and a 64-bit one's or a double's `OP_STORE_I64`
+// `OP_STORE_F`, through a typedef too, a 32-bit one's `OP_STORE_I` and, on a target with it, a
+// 64-bit one's or a double's `OP_STORE_I64`
 #[test]
 fn each_width_is_stored_by_its_size() {
     use qc_progs::Op::{StoreF, StoreI, StoreI64};
     let progs = compile_fteqcc(
         "#pragma target fte\nint a;\n__int8 c;\n__uint16 h;\n__uint u;\n__int64 l;\n\
-         __int64 m;\n__double d;\n__double k;\n\
-         void() f = { c = a; h = a; u = a; l = m; d = k; };\n",
+         __int64 m;\n__double d;\n__double k;\ntypedef __int8 small;\nsmall t;\n\
+         void() f = { c = a; h = a; u = a; l = m; d = k; t = a; };\n",
     )
     .unwrap()
     .progs;
     let stores: Vec<u32> = body(&progs, "f").iter().map(|s| s.op).collect();
-    let expected = numbers([StoreF, StoreF, StoreI, StoreI64, StoreI64]);
-    assert_eq!(stores.get(..5), Some(&expected[..]));
+    let expected = numbers([StoreF, StoreF, StoreI, StoreI64, StoreI64, StoreF]);
+    assert_eq!(stores.get(..6), Some(&expected[..]));
 }
 
 // spec FTEF-9.25: a class's data member and virtual member function are entity fields the
@@ -6163,9 +6168,11 @@ fn each_width_is_stored_by_its_size() {
 fn a_classes_fields_are_listed_and_its_objects_are_entities() {
     let progs = compile_fteqcc(
         "#pragma target fte\nentity self;\nentity() spawn = #14;\n\
-         class base { float m; float z = 0; vector w; virtual void() think; };\n\
-         void() base::think = { m = m + z; w_x = m; };\n\
-         void() f = { local base b; b = spawn(base); b.think(); };\n",
+         class base { float m; float z = 0; vector w; vector n = 0; virtual void() think;\n\
+         virtual void() pure = 0; };\n\
+         void() base::think = { m = m + z; w_x = m; n_x = m; };\n\
+         base *bp;\n\
+         void() f = { local base b; b = spawn(base); b.think(); bp = &b; };\n",
     )
     .unwrap()
     .progs;
@@ -6180,8 +6187,15 @@ fn a_classes_fields_are_listed_and_its_objects_are_entities() {
     assert_eq!(listed("base::__mw"), Some(3));
     assert_eq!(listed("base::__mw_x"), Some(2));
     assert_eq!(listed("base::__mthink"), Some(6));
-    assert_eq!(listed("base::__mz"), None, "given 0: {fields:?}");
+    for given_0 in ["base::__mz", "base::__mn", "base::__mn_x", "base::__mpure"] {
+        assert_eq!(listed(given_0), None, "{given_0}: {fields:?}");
+    }
     assert_eq!(record_type(&progs, "b"), 4);
+    assert_eq!(
+        record_type(&progs, "bp"),
+        7,
+        "a pointer to a class is a pointer"
+    );
 }
 
 // spec FTEF-6.31: a struct stored to a definition is `OP_STORE_V` for each three words, then

@@ -2,7 +2,7 @@
 // Copyright (c) 2004-2025 FTE's team and its contributors
 // Copyright (C) 2026 QuakeC Studio contributors
 //
-// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_comp.c, QCC_PR_RefExpression, QCC_StoreSRefToRef, QCC_SupplyConversionForAssignment, opcodes_addstore
+// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_comp.c, QCC_PR_RefExpression, QCC_StoreSRefToRef, QCC_StoreToSRef, QCC_SupplyConversionForAssignment, opcodes_addstore
 
 //! Assignments, `=` and the compound ones, and postfix `++` and `--`, as FTEQCC checks them
 //! (FTEF-29).
@@ -19,6 +19,7 @@ use crate::check::constant::Constant;
 use crate::check::emulate::conversion_opcodes;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
+use crate::check::member::WORD_ALIGNMENT;
 use crate::check::opcodes;
 use crate::check::opcodes::row;
 use crate::check::reference::word_type;
@@ -328,7 +329,16 @@ impl Checker<'_> {
             self.opcodes.insert((span.start, span.end), store);
             if lhs.reference == Reference::Global && !folded {
                 self.emit(store, &stored, &Value::unknown(), span)?;
-                self.name_last(store, self.name_of(&stored), lhs.name());
+                // FTEF-11.5: a constant 0 stored to a `__variant` is the zero vector's words
+                // (`if (QCC_SRef_IsNull(source)) ... QCC_MakeVectorConst(0,0,0)`).
+                let zeroes = (store == Op::StoreV
+                    && self.etype(&target) == Some(Etype::Variant)
+                    && stored.null())
+                .then_some(ir::Name::Immediate(ir::Immediate {
+                    kind: ir::ImmediateKind::Vector,
+                    words: [0, 0, 0],
+                }));
+                self.name_last(store, zeroes.or_else(|| self.name_of(&stored)), lhs.name());
                 // A converting store a helper emulates ends with a plain store of its value.
                 match store {
                     Op::StoreIf => self.name_last(Op::StoreF, None, lhs.name()),
@@ -1246,27 +1256,13 @@ impl Checker<'_> {
             return false;
         }
         let size = self.env.layout(target).map_or(0, |l| l.words);
-        // FTEF-6.31: where the target has `OP_STORE_I64`, two words left after the threes
-        // are one of it.
-        let pairs = self.env.target_at(span.start).valid(Op::StoreI64);
-        let mut word = 0;
-        let mut threes = true;
-        while word < size {
-            let left = size.saturating_sub(word);
-            threes = threes && left >= VECTOR_WORDS;
-            let (op, step) = if threes {
-                (Op::StoreV, VECTOR_WORDS)
-            } else if pairs && left >= 2 {
-                (Op::StoreI64, 2)
-            } else {
-                (Op::StoreF, 1)
-            };
+        // FTEF-6.31: threes, then a pair where the target has `OP_STORE_I64`, then words.
+        for (op, word) in self.pieces(size, span) {
             self.generated.push(ir::BodyStatement {
                 a: from.word(word),
                 b: to.word(word),
                 ..ir::BodyStatement::bare(op)
             });
-            word = word.saturating_add(step);
         }
         self.last_temp = None;
         true
@@ -1441,11 +1437,12 @@ impl Checker<'_> {
             return Op::StoreF;
         }
         // FTEF-2.13: an integer narrower than a word is `ev_bitfld`, copied by its size, a
-        // word, with `OP_STORE_F`.
-        if matches!(
-            ty.fteqcc_scalar(),
-            Some(CScalar::Int8 | CScalar::Uint8 | CScalar::Int16 | CScalar::Uint16)
-        ) {
+        // word, with `OP_STORE_F`; its layout says so through a typedef too.
+        let narrow = self
+            .env
+            .layout(ty)
+            .is_some_and(|layout| layout.bits != 0 && layout.bits < WORD_ALIGNMENT);
+        if narrow && matches!(self.etype(ty), Some(Etype::Integer | Etype::Uint)) {
             return Op::StoreF;
         }
         Checker::store_op(self.etype(ty))

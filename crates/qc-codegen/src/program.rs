@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 1996-1997 Id Software, Inc.
+// Copyright (c) 2004-2025 FTE's team and its contributors
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73: qcc/pr_comp.c, PR_GetDef, PR_ParseImmediate, PR_Statement
 // Ported from id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73: qcc/qcc.c, InitData, PR_BeginCompilation, CopyString
+// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_lex.c, QCC_PR_ParseEntClass
+// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qccmain.c, QCC_WriteData
 
 //! The program being built: `qcc`'s definition list, global area, string table, statements
 //! and functions, as an explicit value rather than id's globals.
@@ -785,7 +788,8 @@ impl Program {
                 ofs,
                 scope: None,
                 initialized: false,
-                constant: true,
+                // FTEF-9.25: as its vector, which a member given 0 is no constant.
+                constant: !index.def(vector).is_some_and(|d| d.initialized),
                 count: None,
                 id: Some(id),
             });
@@ -823,8 +827,13 @@ impl Program {
             None => None,
         };
         // FTEF-9.25: the field is a constant, which the field table lists, unless the member
-        // is given 0 (`(isnull?0:GDF_CONST)`), which only one that is no function can be.
-        let null = definition.initialized && !matches!(held, Type::Function(_));
+        // is given 0 (`(isnull?0:GDF_CONST)`): a member with a value that is no function's
+        // body.
+        let bodied = index
+            .virtual_function(id)
+            .and_then(|function| index.def(function))
+            .is_some_and(|function| function.initialized);
+        let null = definition.initialized && !bodied;
         let ty = ValueType::Of(Type::Field(held.into()));
         let words = type_words(index, &ty);
         let ofs = self.allocate_global(words)?;
@@ -1303,10 +1312,9 @@ pub(crate) fn type_number(index: &ModuleIndex, ty: &ValueType) -> u16 {
             .or_else(|| index.scalar(t).map(|scalar| scalar.number)),
         ValueType::FloatField => None,
     };
-    // FTEF-9.25: a class is an entity type, and its definitions are written as entities.
-    let class = matches!(ty, ValueType::Of(t) if index.is_class(t));
     numbered.unwrap_or_else(|| {
-        if class {
+        // FTEF-9.25: a class is an entity type, and its definitions are written as entities.
+        if matches!(ty, ValueType::Of(t) if index.is_class(t)) {
             Etype::Entity.number()
         } else {
             ty.etype().number()
