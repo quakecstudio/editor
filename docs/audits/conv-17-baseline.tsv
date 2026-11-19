@@ -612,7 +612,6 @@ magic-number	crates/qc-sema/src/check/pointer.rs	Checker::store_words_to_pointer
 magic-number	crates/qc-sema/src/check/pointer.rs	Checker::store_words_to_pointer:64
 magic-number	crates/qc-sema/src/check/pointer.rs	bytes:8
 magic-number	crates/qc-sema/src/check/reference.rs	Checker::address_of:4
-magic-number	crates/qc-sema/src/check/reference.rs	Checker::address_of:8
 magic-number	crates/qc-sema/src/check/reference.rs	Checker::extend_bits:8
 magic-number	crates/qc-sema/src/check/reference.rs	Checker::load_from_array:3
 magic-number	crates/qc-sema/src/check/reference.rs	Checker::load_from_pointer:16

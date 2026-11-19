@@ -1125,12 +1125,8 @@ impl Checker<'_> {
                     && let Some(bits) = narrow_bits(&value.ty)
                 {
                     let pointer = pointer_to(&value.ty);
-                    let width = bits
-                        .checked_div(8)
-                        .and_then(|w| i32::try_from(w).ok())
-                        .unwrap_or(1);
                     let index = self.converted(index, Etype::Integer, span)?;
-                    let offset = self.emit(Op::MulI, &int(width), &index, span)?;
+                    let offset = self.emit(Op::MulI, &element_bytes(bits), &index, span)?;
                     self.emit(Op::AddI, &pointer, &offset, span)?;
                     return Ok(pointer_to(&value.ty));
                 }
@@ -1340,11 +1336,7 @@ impl Checker<'_> {
                 made: Some(made),
                 ..pointer_to(&value.ty)
             };
-            let width = bits
-                .checked_div(8)
-                .and_then(|w| i32::try_from(w).ok())
-                .unwrap_or(1);
-            let offset = self.emit(Op::MulI, index, &int(width), span)?;
+            let offset = self.emit(Op::MulI, index, &element_bytes(bits), span)?;
             let address = self.emit(Op::AddI, &array, &offset, span)?;
             return Ok(Value {
                 ty: Type::Pointer(value.ty.clone().into()),
@@ -1702,6 +1694,17 @@ const fn int_f32(value: i32) -> f32 {
 }
 
 /// The bits of an 8- or 16-bit integer type, `ev_bitfld`'s `bits` (FTEF-2.12).
+/// The bits of a byte, which the address of an 8- or 16-bit element counts in.
+const BYTE_BITS: u32 = 8;
+
+/// The bytes of an element `bits` wide, as an integer constant (`QCC_MakeIntConst(align/8)`).
+fn element_bytes(bits: u32) -> Value {
+    let bytes = bits
+        .checked_div(BYTE_BITS)
+        .and_then(|b| i32::try_from(b).ok());
+    int(bytes.unwrap_or(1))
+}
+
 fn narrow_bits(ty: &Type) -> Option<u32> {
     match ty.fteqcc_scalar() {
         Some(CScalar::Int8 | CScalar::Uint8) => Some(8),
