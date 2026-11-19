@@ -459,6 +459,10 @@ impl Compiler<'_> {
             Name::Return => OFS_RETURN,
             Name::ReturnWord(word) => OFS_RETURN.checked_add(word).at(span)?,
             Name::Parameter(slot) => self.parameter_slot(usize::from(slot), span)?,
+            Name::ParameterWord(slot, word) => self
+                .parameter_slot(usize::from(slot), span)?
+                .checked_add(word)
+                .at(span)?,
             Name::VaList(word) => {
                 let list = self.va_list.at(span)?;
                 self.program

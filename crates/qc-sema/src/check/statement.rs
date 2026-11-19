@@ -387,16 +387,13 @@ impl Checker<'_> {
                 self.followed = false;
                 continue;
             };
-            // FTEF-32.25: one of more than a vector's words in pieces, a slot each.
-            if let Some(wide) = self.wide_words(param) {
-                let Some(pieces) = self.slot_pieces(wide, span) else {
-                    self.followed = false;
-                    continue;
-                };
-                for (piece, (op, word)) in (0_u8..).zip(pieces) {
+            // FTEF-32.25: one of more statements than one in pieces, each to its word of its
+            // slot.
+            if let Some(pieces) = self.passed_in_pieces(param, span) {
+                for (op, word) in pieces {
                     self.generated.push(ir::BodyStatement {
                         a: Some(ir::Name::Def(local, word)),
-                        b: Some(ir::Name::Parameter(held.saturating_add(piece))),
+                        b: Checker::slot_word(usize::from(held), word),
                         ..ir::BodyStatement::bare(op)
                     });
                 }

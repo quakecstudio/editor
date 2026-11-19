@@ -104,6 +104,9 @@ pub enum Name {
     /// A call's parameter slot by its number, `OFS_PARM0 + 3 * n` (QC-18.3), and past the
     /// eighth FTEQCC's `$parmN` global (FTE-18.6).
     Parameter(u8),
+    /// A word after the first of a call's parameter slot: the slot and the word, 1 or 2, as a
+    /// value of two words, or the second of a struct's, is passed (FTEF-32.25).
+    ParameterWord(u8, u32),
     /// A word of the variadic function's `__va_list` (FTE-18.6).
     VaList(u32),
     /// The default value of this parameter of the function the next `CALL` calls (FTE-18.7).
@@ -175,7 +178,13 @@ impl Name {
             }
             Self::Return => Self::ReturnWord(word),
             Self::ReturnWord(at) => Self::ReturnWord(at.saturating_add(word)),
+            Self::Parameter(slot) if word == 0 => Self::Parameter(slot),
+            Self::Parameter(slot) if word < VECTOR_WORDS => Self::ParameterWord(slot, word),
+            Self::ParameterWord(slot, at) if at.saturating_add(word) < VECTOR_WORDS => {
+                Self::ParameterWord(slot, at.saturating_add(word))
+            }
             Self::Parameter(_)
+            | Self::ParameterWord(..)
             | Self::VaList(_)
             | Self::Default(_)
             | Self::RetLocal
@@ -204,7 +213,7 @@ impl Name {
             | Self::ArraySet(_)
             | Self::Nested(_)
             | Self::RetLocal => true,
-            Self::Parameter(slot) => *slot >= MAX_PARMS,
+            Self::Parameter(slot) | Self::ParameterWord(slot, _) => *slot >= MAX_PARMS,
             Self::Made(_)
             | Self::MadeWord(..)
             | Self::Return
@@ -491,7 +500,17 @@ mod tests {
             Some(Name::ImmediateWord(immediate, 1))
         );
         assert_eq!(Name::Return.word(2), Some(Name::ReturnWord(2)));
-        assert_eq!(Name::Parameter(0).word(1), None);
+        assert_eq!(Name::Parameter(0).word(0), Some(Name::Parameter(0)));
+        assert_eq!(Name::Parameter(0).word(1), Some(Name::ParameterWord(0, 1)));
+        assert_eq!(
+            Name::ParameterWord(1, 1).word(1),
+            Some(Name::ParameterWord(1, 2))
+        );
+        assert_eq!(
+            Name::Parameter(0).word(3),
+            None,
+            "the next slot is another name"
+        );
         assert_eq!(Name::Jump(3).word(1), None);
     }
 }

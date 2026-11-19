@@ -388,16 +388,11 @@ impl Checker<'_> {
         // no constant, is written word by word or refused where it is stored (FTEF-6.18,
         // FTEF-31.20). Any other store of a struct or a union is word groups the body does
         // not follow (FTE-14.5).
-        let opcodes = self.env.target_at(span.start);
-        // One of more than a vector's words stored by an array's setter is its argument in
-        // pieces (FTEF-32.25).
+        // At such an index on a target with no address to store through, the struct is the
+        // array's setter's argument (FTEF-32.27, FTEF-32.25).
         let by_address = match &lhs.reference {
             Reference::Pointer(_) => true,
-            Reference::Element(at) => {
-                at.index.known().is_none()
-                    && ((opcodes.valid(Op::Globaladdress) && opcodes.stores_at_offset())
-                        || self.wide_words(&target).is_some())
-            }
+            Reference::Element(at) => at.index.known().is_none(),
             _ => false,
         };
         if structured && !copied && element == ElementStore::NotOne && !by_address {
@@ -1573,15 +1568,12 @@ impl Checker<'_> {
             });
             self.read_returned(&index);
         }
+        // The value is the setter's second argument, stored by its size (FTEF-32.27).
         let words = self.env.layout(target).map_or(1, |l| l.words);
         self.generated.push(ir::BodyStatement {
             a: self.name_of(stored),
             b: parameter(1),
-            ..ir::BodyStatement::bare(if words == VECTOR_WORDS {
-                Op::StoreV
-            } else {
-                Op::StoreF
-            })
+            ..ir::BodyStatement::bare(self.argument_store(words, span))
         });
         self.clobber_return();
         self.generated.push(ir::BodyStatement {

@@ -6100,6 +6100,21 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   `OFS_PARM7`, `$parm8` and `$parm9`, where the function copies the last two from. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseImmediateStatements`, `QCC_PR_GenerateFunctionCallRef`.
+- **FTEF-32.27** An argument that is no reference to a field is stored to its slot by its
+  size (`QCC_PR_GenerateFunctionCallRef`): `OP_STORE_V` for three words, for two
+  `OP_STORE_I64` where the target has it and else `OP_STORE_V`, and `OP_STORE_F` for one (`if
+  (args[i].ref.cast->size == 3) ... OP_STORE_V ... else if (args[i].ref.cast->size == 2) ...
+  QCC_OPCodeValid(&pr_opcodes[OP_STORE_I64])?OP_STORE_I64:OP_STORE_V ... else if
+  (args[i].ref.cast->size == 1) ... OP_STORE_F`). So a double or a struct of two words passed
+  on the standard target is one `STORE_V`, which reads the word after it. A struct of more
+  than a vector's words is stored before the other arguments, in pieces (FTEF-32.25), each
+  to its word of its slot: one of five words on the standard target is `STORE_V` to its
+  first slot and `STORE_F` to the first and the second word of its second. An `__out`
+  parameter of two words there is stored by `STORE_F` to its slot's two words where the
+  function returns, and back from them after the call (FTEF-32.24). An array's setter takes
+  the value it stores as its second argument by the same rule (FTEF-19.78). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GenerateFunctionCallRef`.
 
 ## FTEF-33 Builtin argument checks
 

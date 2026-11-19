@@ -427,17 +427,19 @@ impl Checker<'_> {
             };
             // FTEF-32.25: one of more than a vector's words comes back a piece from each slot,
             // to a definition's words.
-            if let Some(wide) = self.wide_words(&reference.ty).filter(|_| !self.global) {
+            let pieces = self
+                .passed_in_pieces(&reference.ty, span)
+                .filter(|_| !self.global);
+            if let Some(pieces) = pieces {
                 let to = reference
                     .name()
                     .filter(|name| matches!(name, ir::Name::Def(..)))
                     .filter(|_| reference.reference == Reference::Global);
-                match (to, self.slot_pieces(wide, span)) {
-                    (Some(to), Some(pieces)) => {
-                        for (piece, (op, word)) in (0_u32..).zip(pieces) {
-                            let from = u8::try_from(held.saturating_add(piece)).ok();
+                match (to, usize::try_from(held)) {
+                    (Some(to), Ok(held)) => {
+                        for (op, word) in pieces {
                             self.generated.push(ir::BodyStatement {
-                                a: from.map(ir::Name::Parameter),
+                                a: Checker::slot_word(held, word),
                                 b: to.word(word),
                                 ..ir::BodyStatement::bare(op)
                             });
@@ -636,7 +638,11 @@ impl Checker<'_> {
                 };
                 continue;
             }
-            let vector = words == VECTOR_WORDS || function.is_variant_parameter(at);
+            let store = if function.is_variant_parameter(at) {
+                Op::StoreV
+            } else {
+                self.argument_store(words, span)
+            };
             let folded = first && value.temp.is_some() && value.temp == self.last_temp;
             first = false;
             if folded {
@@ -654,7 +660,7 @@ impl Checker<'_> {
                 self.generated.push(ir::BodyStatement {
                     a: from,
                     b: u8::try_from(slot).ok().map(ir::Name::Parameter),
-                    ..ir::BodyStatement::bare(if vector { Op::StoreV } else { Op::StoreF })
+                    ..ir::BodyStatement::bare(store)
                 });
             }
         }
@@ -771,22 +777,28 @@ impl Checker<'_> {
         span: Span,
     ) {
         let from = from.filter(|name| matches!(name, ir::Name::Def(..) | ir::Name::Made(_)));
-        let (Some(from), Some(pieces)) = (from, self.slot_pieces(words, span)) else {
+        // A piece that is a call's operand is a slot whole; any other is stored to its word
+        // of its slot, a pair's two words on a target with no `OP_STORE_I64` among them.
+        let pieces = if registers.is_some() {
+            self.slot_pieces(words, span)
+        } else {
+            Some(self.pieces(words, span))
+        };
+        let (Some(from), Some(pieces)) = (from, pieces) else {
             self.followed = false;
             return;
         };
-        for (piece, (op, word)) in pieces.into_iter().enumerate() {
-            let slot = slot.saturating_add(piece);
+        for (op, word) in pieces {
             let register = registers
                 .as_mut()
-                .and_then(|operands| operands.get_mut(slot));
+                .and_then(|operands| operands.get_mut(Checker::slot_of_word(slot, word)));
             let to = match register {
                 Some(register) => {
                     let copy = u32::try_from(self.generated.len()).ok();
                     *register = copy.map(ir::Name::Made);
                     *register
                 }
-                None => u8::try_from(slot).ok().map(ir::Name::Parameter),
+                None => Checker::slot_word(slot, word),
             };
             self.generated.push(ir::BodyStatement {
                 a: from.word(word),
@@ -795,6 +807,47 @@ impl Checker<'_> {
             });
         }
         self.last_temp = None;
+    }
+
+    /// FTEF-32.27: `QCC_PR_GenerateFunctionCallRef`'s store of an argument of `words` words to
+    /// its slot, by its size: `OP_STORE_V` for three, for two `OP_STORE_I64` or else
+    /// `OP_STORE_V` (`else if (args[i].ref.cast->size == 2) ...
+    /// QCC_OPCodeValid(&pr_opcodes[OP_STORE_I64])?OP_STORE_I64:OP_STORE_V`), and `OP_STORE_F`
+    /// for one.
+    pub(super) fn argument_store(&self, words: u32, span: Span) -> Op {
+        match words {
+            VECTOR_WORDS => Op::StoreV,
+            2 if self.env.target_at(span.start).valid(Op::StoreI64) => Op::StoreI64,
+            2 => Op::StoreV,
+            _ => Op::StoreF,
+        }
+    }
+
+    /// The slot the word `word` of a value passed from the slot `first` on falls in, three
+    /// words to a slot.
+    fn slot_of_word(first: usize, word: u32) -> usize {
+        let slots = word.checked_div(VECTOR_WORDS).unwrap_or(0);
+        usize::try_from(slots).map_or(first, |slots| first.saturating_add(slots))
+    }
+
+    /// The word `word` of a value passed from the slot `first` on: its slot's first word, or
+    /// the word of the slot it falls in (FTEF-32.25).
+    pub(super) fn slot_word(first: usize, word: u32) -> Option<ir::Name> {
+        let within = word.checked_rem(VECTOR_WORDS).unwrap_or(0);
+        u8::try_from(Checker::slot_of_word(first, word))
+            .ok()
+            .map(ir::Name::Parameter)
+            .and_then(|name| name.word(within))
+    }
+
+    /// The pieces a value of type `ty` is passed and stored back in when it is more
+    /// statements than one, with its words: a struct or union of more than a vector's words
+    /// (FTEF-32.25), or a type copied by its size whose copy is more pieces than one on this
+    /// target, two words with no `OP_STORE_I64` (FTEF-2.13).
+    pub(super) fn passed_in_pieces(&self, ty: &Type, span: Span) -> Option<Vec<(Op, u32)>> {
+        let words = self.copied_by_size(ty)?;
+        let pieces = self.pieces(words, span);
+        (pieces.len() > 1).then_some(pieces)
     }
 
     /// FTEF-32.25, FTEF-19.78: the value an array's setter stores, a struct `from` of `words`

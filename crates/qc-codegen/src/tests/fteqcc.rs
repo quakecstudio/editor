@@ -6658,3 +6658,84 @@ fn an_array_initialisers_elements_are_stored_as_initialisers() {
         numbers([StoreI64, StoreI64, StoreF, StoreF])
     );
 }
+
+// spec FTEF-32.27: an argument is stored to its slot by its size: `OP_STORE_V` for three words,
+// for two `OP_STORE_I64` or else `OP_STORE_V`, `OP_STORE_F` for one; one of more than a
+// vector's words is stored first, in pieces, each to its word of its slot
+#[test]
+fn an_argument_is_stored_by_its_size() {
+    let source = "typedef struct { float a; vector b; float c; } five;\n\
+                  typedef struct { float a; float b; } two;\n\
+                  __double k;\nfive g5;\ntwo g2;\nfloat x;\n\
+                  void(__double p, five q, two r, float s) take = { x = s; };\n\
+                  void() f = { take(k, g5, g2, x); };\n";
+    let progs = compile_fteqcc(source).unwrap().progs;
+    let (k, g5, g2, x) = (
+        global(&progs, "k"),
+        global(&progs, "g5"),
+        global(&progs, "g2"),
+        global(&progs, "x"),
+    );
+    let t = body(&progs, "f");
+    assert_eq!(
+        t[..6],
+        [
+            st(StoreV, g5, 7, 0),
+            st(StoreF, g5 + 3, 10, 0),
+            st(StoreF, g5 + 4, 11, 0),
+            st(StoreV, k, 4, 0),
+            st(StoreV, g2, 13, 0),
+            st(StoreF, x, 16, 0),
+        ]
+    );
+    assert_eq!(
+        t[6].op,
+        u32::from(Opcode::Call5.number()),
+        "the call counts the slots"
+    );
+    let fte = compile_fteqcc(&format!("#pragma target fte\n{source}"))
+        .unwrap()
+        .progs;
+    // Where the target has `OP_STORE_I64`, the struct of two words is stored by it.
+    let store_i64 = numbers([qc_progs::Op::StoreI64])[0];
+    let g2 = global(&fte, "g2");
+    let pair = body(&fte, "f").into_iter().find(|s| s.a == g2).unwrap();
+    assert_eq!(pair.op, store_i64);
+}
+
+// spec FTEF-32.27, FTEF-32.24: an `__out` parameter of two words is stored to its slot's two
+// words where the function returns, and back from them after the call
+#[test]
+fn an_out_parameter_of_two_words_uses_its_slots_words() {
+    let progs = compile_fteqcc(
+        "__double k;\n__double d;\nvoid(__out __double p) o = { p = k; };\n\
+         void() f = { o(d); };\n",
+    )
+    .unwrap()
+    .progs;
+    let o = body(&progs, "o");
+    assert_eq!((o[2].op, o[2].b), (u32::from(StoreF.number()), 4));
+    assert_eq!((o[3].op, o[3].b), (u32::from(StoreF.number()), 5));
+    assert_eq!(o[3].a, o[2].a + 1);
+    let d = global(&progs, "d");
+    let f = body(&progs, "f");
+    assert_eq!(f[1], st(StoreF, 4, d, 0));
+    assert_eq!(f[2], st(StoreF, 5, d + 1, 0));
+}
+
+// spec FTEF-32.27, FTEF-19.78: a struct of two words stored to an element at an index that is
+// no constant on the standard target is the setter's second argument, one `OP_STORE_V`
+#[test]
+fn a_struct_of_two_words_is_the_setters_argument() {
+    let progs = compile_fteqcc(
+        "void(string s) error = #10;\ntypedef struct { float a; float b; } two;\n\
+         two g;\ntwo arr[3];\nfloat i;\nvoid() f = { arr[i] = g; };\n",
+    )
+    .unwrap()
+    .progs;
+    let t = body(&progs, "f");
+    let stores: Vec<&Statement> = t.iter().filter(|s| s.b == 7).collect();
+    assert_eq!(stores.len(), 1);
+    assert_eq!(*stores[0], st(StoreV, global(&progs, "g"), 7, 0));
+    assert!(t.iter().any(|s| s.op == u32::from(Call2.number())));
+}
