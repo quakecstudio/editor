@@ -403,7 +403,8 @@ path = "src"
 license = "ISC"
 use = "vendor"
 evidence = ["COPYING"]
-notes = "Builds against the nuclide and freehl entries, laid out by the freecs-tree tree; game data is fetched by the user's own install scripts and is not part of the corpus."
+project = "projects/freecs/quakec.toml"
+notes = "Builds against the nuclide and freehl entries, laid out by the freecs-tree tree; game data is fetched by the user's own install scripts and is not part of the corpus. Its Makefiles give FTEQCC include directories, so its modules are opened through the quakec.toml in project, whose ../../src and ../../valve/src directories are the Nuclide tree's and Rad-Therapy's in freecs-tree."
 
 [[codebase]]
 id = "freehl"
@@ -487,7 +488,7 @@ reason = "No QuakeC source is published, only compiled progs in pak files. quoth
 [[tree]]
 id = "freecs-tree"
 name = "FreeCS in a Nuclide SDK tree"
-notes = "FreeCS's README builds it in a clone of the Nuclide SDK, with Rad-Therapy cloned as valve/ and FreeCS as cstrike/; its progs.src files list ../../../src/, ../../../valve/src/ and ../../../cstrike/src/. Open cstrike/src, on a case-insensitive file system: shared/defs.h includes animations.h and the file is Animations.h."
+notes = "FreeCS's README builds it in a clone of the Nuclide SDK, with Rad-Therapy cloned as valve/ and FreeCS as cstrike/; its progs.src files list ../../../src/, ../../../valve/src/ and ../../../cstrike/src/. Open cstrike/src. shared/defs.h includes animations.h and FreeCS's file is Animations.h: a case-insensitive file system opens that one, and elsewhere the include directory its Makefiles give opens Rad-Therapy's valve/src/shared/animations.h."
 [tree.dirs]
 "src" = "nuclide"
 "valve/src" = "freehl"

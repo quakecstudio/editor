@@ -217,7 +217,7 @@ package, so each attestation names the reusable workflow as its signer:
 | `Add to packages.quakecstudio.com` | Linux | adds the debs and rpms to a checkout of `quakecstudio/packages` and writes and signs its metadata; on a tag with no `-`, pushes it |
 | `Update the Homebrew tap` | Linux | writes the cask into a checkout of `quakecstudio/homebrew-tap`; on a tag with no `-`, pushes it |
 | `Submit to winget` | Linux | only on a tag with no `-`: opens a pull request against `microsoft/winget-pkgs` with komac; its failure does not fail the run |
-| `Regenerate the compatibility list` | macOS | writes `docs/compatibility.md` from the corpus and fails a tag whose list is out of date |
+| `Regenerate the compatibility list` | Linux | writes `docs/compatibility.md` from the corpus and fails a tag whose list is out of date |
 
 [`.github/workflows/evals.yml`](../.github/workflows/evals.yml) runs the agent's evals on a real
 model (`cargo xtask evals --run`, [`evals/README.md`](../evals/README.md)). It runs weekly and on

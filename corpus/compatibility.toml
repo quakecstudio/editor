@@ -38,7 +38,7 @@ issues = []
 
 [[gap]]
 codebase = "freecs"
-behaviour = "Not compared: written for FTE's engine under `#pragma target fte`, whose opcodes and builtins the differential's VM and mock engine do not run. It compiles where file names match in any case (macOS, Windows): `shared/defs.h` includes `animations.h` and the file is `Animations.h`, which FTEQCC does not open on Linux either."
+behaviour = "Not compared: written for FTE's engine under `#pragma target fte`, whose opcodes and builtins the differential's VM and mock engine do not run."
 issues = []
 
 [[gap]]

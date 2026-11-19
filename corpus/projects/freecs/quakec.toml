@@ -1,0 +1,65 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# The project file `cargo xtask corpus fetch freecs` (and `freecs-tree`) writes into FreeCS's
+# src/ (the freecs codebase's `project` in corpus/manifest.toml), which the freecs-tree tree
+# lays out as cstrike/src. Each module is one FTEQCC command of FreeCS's Makefiles, run from
+# the module's directory, with its `-I` directories: client/Makefile passes
+# `-I../../../src/platform/ -I../../../valve/src/shared/`, server/Makefile
+# `-I../../../valve/src/shared/`, hud/Makefile `-I../../../src/client/`, and rules/Makefile
+# none for each of counterstrike.src, deathmatch.src, zombie.src and gungame.src. Here the
+# directories are relative to cstrike/src; they are the Nuclide tree's and Rad-Therapy's, so
+# they exist only in freecs-tree. shared/defs.h includes "animations.h" where FreeCS's own file
+# is Animations.h: FTEQCC opens the name beside the including file and then in the include
+# directories (FTEF-14.40), so where file names match only in their own case it is
+# Rad-Therapy's valve/src/shared/animations.h that opens.
+
+[project]
+name = "FreeCS"
+mod = "cstrike"
+dialect = "fteqcc"
+target = "fte"
+
+[[module]]
+kind = "csqc"
+name = "client"
+src = "client/progs.src"
+output = "build/csprogs.dat"
+include_dirs = ["../../src/platform", "../../valve/src/shared"]
+
+[[module]]
+kind = "ssqc"
+name = "server"
+src = "server/progs.src"
+output = "build/progs.dat"
+include_dirs = ["../../valve/src/shared"]
+
+[[module]]
+kind = "csqc"
+name = "hud"
+src = "hud/progs.src"
+output = "build/hud.dat"
+include_dirs = ["../../src/client"]
+
+[[module]]
+kind = "ssqc"
+name = "counterstrike"
+src = "rules/counterstrike.src"
+output = "build/progs/counterstrike.dat"
+
+[[module]]
+kind = "ssqc"
+name = "deathmatch"
+src = "rules/deathmatch.src"
+output = "build/progs/deathmatch.dat"
+
+[[module]]
+kind = "ssqc"
+name = "zombie"
+src = "rules/zombie.src"
+output = "build/progs/zombie.dat"
+
+[[module]]
+kind = "ssqc"
+name = "gungame"
+src = "rules/gungame.src"
+output = "build/progs/gungame.dat"
