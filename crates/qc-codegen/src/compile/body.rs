@@ -249,6 +249,11 @@ impl Compiler<'_> {
                 return Ok(());
             }
             Effect::Constant(local) => return self.constant_local(syntax, local, span),
+            Effect::Value(Name::Def(local, _), value) => {
+                let place = self.program.get_def(self.index, local).at(span)?;
+                return self.program.initialise_words(place, value.value()).at(span);
+            }
+            Effect::Value(..) => return Err(Internal::Unlowered).at(span),
             Effect::Autocvar(cvar) => return self.autocvar_default(syntax, cvar, span),
             Effect::Nested(Name::Def(local, _)) => {
                 return self.nested_local(syntax, local, span).map(|_| ());

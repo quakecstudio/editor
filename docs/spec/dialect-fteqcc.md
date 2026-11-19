@@ -6479,3 +6479,14 @@ name, a literal or a constant. The layout is FTEQCC's at its default optimisatio
   of `const int E = D | 16i;` folds, and `i = D | A` in a function is one store of a
   constant. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_SRef_EvalConst`; checked against the pinned FTEQCC's output
   (2026-11-19).
+- **FTEF-34.20** A local declared `const` whose initialiser is a constant holds that value
+  as its initial data, as a global does, and no statement stores it:
+  `QCC_PR_GenerateInitializerType` copies a constant into a definition that is global,
+  `constant` or `static` (`if (basedef && (!basedef->scope || basedef->constant ||
+  basedef->isstatic))`), and stores as the function runs only a value that is no constant
+  (`if (basedef->scope && !basedef->isstatic && !basedef->initialized) ... goto
+  finalnotconst;`). So `const float f = 2; x = f;` in a function is one `STORE_F f, x`, `f`
+  holding 2 in the progs, as is `const float g = 2 * 3;` holding 6 and a `const string` its
+  literal, where `const float f = x;` of a global `x` is `STORE_F x, f` first. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GenerateInitializerType`; checked against the pinned FTEQCC's output
+  (2026-11-19).

@@ -1822,6 +1822,45 @@ impl Checker<'_> {
         }
     }
 
+    /// FTEF-34.20: a constant local's constant value is its initial value too, copied when
+    /// the program is written (`if (basedef && (!basedef->scope || basedef->constant ||
+    /// basedef->isstatic))`, with a value that is `constant`); one whose value is no constant
+    /// is stored as the function runs (`goto finalnotconst;`). Whether `value`, the
+    /// initialiser `init` of `declarator`'s local, was such a value.
+    fn constant_local_value(
+        &mut self,
+        declarator: &ast::Declarator,
+        value: &Value,
+        init: &ast::Expr,
+    ) -> bool {
+        let local = declarator
+            .name()
+            .and_then(|name| self.env.reference(name.span().start));
+        let constant = !self.global
+            && value.known().is_some()
+            && declarator.array_suffixes().next().is_none()
+            && local.is_some_and(|def| self.env.constant(def));
+        if !constant {
+            return false;
+        }
+        let at = self.next_made();
+        let name = local.map(|def| ir::Name::Def(def, 0));
+        let words = value.known().and_then(Constant::immediate);
+        match (name, words, init) {
+            // A number's words are the value it folded to.
+            (Some(name), Some(words), _) => {
+                self.effects.push((at, ir::Effect::Value(name, words)));
+            }
+            // A string is its literal's text, which the code generator copies.
+            (Some(name), None, ast::Expr::Literal(_)) => {
+                self.effects.push((at, ir::Effect::Constant(name)));
+            }
+            _ => self.followed = false,
+        }
+        self.last_temp = None;
+        true
+    }
+
     /// [`Checker::local`] of one declarator: its size, then its value cast to its type.
     fn local_declarator(&mut self, declarator: &ast::Declarator) -> Result<(), Fatal> {
         // The local is declared before its value is read, where the next statement goes.
@@ -1924,6 +1963,9 @@ impl Checker<'_> {
         let is_static = declarator
             .name()
             .is_some_and(|name| self.env.local_static(name.span().start));
+        if !is_static && self.constant_local_value(declarator, &value, &init) {
+            return Ok(());
+        }
         if !self.global && !is_static && declarator.array_suffixes().next().is_none() {
             if value.returned {
                 self.live_return = None;

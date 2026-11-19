@@ -27,6 +27,24 @@ pub struct Immediate {
     pub words: [u32; 3],
 }
 
+impl Immediate {
+    /// The words of a 64-bit integer or a double.
+    const WIDE_WORDS: usize = 2;
+
+    /// The words of its value: one, two for a 64-bit integer or a double, three for a vector.
+    #[must_use]
+    pub fn value(&self) -> &[u32] {
+        let count = match self.kind {
+            ImmediateKind::Float | ImmediateKind::Integer | ImmediateKind::Uint => 1,
+            ImmediateKind::Int64 | ImmediateKind::Uint64 | ImmediateKind::Double => {
+                Self::WIDE_WORDS
+            }
+            ImmediateKind::Vector => self.words.len(),
+        };
+        self.words.get(..count).unwrap_or(&self.words)
+    }
+}
+
 /// The kinds of immediate a statement names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ImmediateKind {
@@ -150,6 +168,9 @@ pub enum Effect {
     /// The constant local the name names is given its aggregate initialiser's words at compile
     /// time, as a global is (FTEF-32.13).
     Constant(Name),
+    /// The constant local the name names is given the words of the value its initialiser
+    /// folded to, at compile time (FTEF-34.20).
+    Value(Name, Immediate),
     /// The `static` local the name names is given the number of the nested function its
     /// declaration defines (FTEF-18.2).
     Nested(Name),

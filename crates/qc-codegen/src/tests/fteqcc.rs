@@ -7254,3 +7254,30 @@ fn a_folded_integer_constant_is_its_value() {
     assert_eq!(words(&progs, t[0].a, 1), [0x0200_0001]);
     assert_eq!(words(&progs, t[1].a, 1), [0x0200_0015]);
 }
+
+// spec FTEF-34.20: a `const` local's constant value is its initial data, with no statement to
+// store it; a value that is no constant is stored as the function runs
+#[test]
+fn a_constant_locals_constant_value_is_its_initial_data() {
+    let head = "float x;\nvector v;\nstring s;\n";
+    let progs = fte_progs(&format!(
+        "{head}void() f = {{ const float a = 2; const float b = 2 * 3; \
+         const vector c = [1, 2, 3]; const string d = \"abc\"; x = a; x = b; v = c; s = d; }};\n"
+    ));
+    let t = body(&progs, "f");
+    assert_eq!(opcodes(&t), ops(&[StoreF, StoreF, StoreV, StoreS, Done]));
+    assert_eq!(words(&progs, t[0].a, 1), [2.0_f32.to_bits()]);
+    assert_eq!(words(&progs, t[1].a, 1), [6.0_f32.to_bits()]);
+    assert_eq!(
+        words(&progs, t[2].a, 3),
+        [1.0_f32, 2.0, 3.0].map(f32::to_bits)
+    );
+    assert_eq!(
+        string(&progs, i32::try_from(words(&progs, t[3].a, 1)[0]).unwrap()),
+        "abc"
+    );
+    let stored = fte_progs(&format!(
+        "{head}void() f = {{ const float a = x; x = a; }};\n"
+    ));
+    assert_eq!(opcodes(&body(&stored, "f")), ops(&[StoreF, StoreF, Done]));
+}
