@@ -495,8 +495,8 @@ fn the_map_tools_are_listed_with_their_schemas() {
 
 // No spec statement: PRIN-3, P6-44: every command of the session is a tool, none chosen by
 // hand, each told to the client as reading only or not (MCP 2026-07-28,
-// `ToolAnnotations.readOnlyHint`: "If true, the tool does not modify its environment.") and as
-// working on nothing outside the project and its game (`openWorldHint`)
+// `ToolAnnotations.readOnlyHint`: "If true, the tool does not modify its environment."), and
+// nothing claimed of `openWorldHint`, which the terminal and the tasks could not keep
 #[test]
 fn every_command_is_a_tool_with_its_access() {
     let (server, _) = map_server("every-tool", false);
@@ -525,7 +525,7 @@ fn every_command_is_a_tool_with_its_access() {
         let annotations = &tool.unwrap()["annotations"];
         let reads = command["access"] == "read";
         assert_eq!(annotations["readOnlyHint"], reads, "{id}");
-        assert_eq!(annotations["openWorldHint"], false, "{id}");
+        assert!(annotations.get("openWorldHint").is_none(), "{id}");
     }
     let access = |id: &str| offered.iter().find(|tool| &*tool.id == id).unwrap().access;
     for id in [
@@ -661,6 +661,40 @@ fn a_map_is_made_and_saved_over_mcp() {
         answers["5"]["result"]["isError"], true,
         "a map there is not made again"
     );
+}
+
+// No spec statement: P6-21: edit.repeat makes a map edit again, so its edit waits for review
+// as the edit's own tool's does
+#[test]
+fn a_repeated_map_edit_waits_for_review() {
+    let (server, map) = map_server("map-repeat", false);
+    let [init, initialized] = opening("2025-11-25");
+    let answers = exchange(
+        server,
+        &[
+            init,
+            initialized,
+            call(0, "map.open", &json!({ "path": map })),
+            call(
+                1,
+                "map.place",
+                &json!({ "classname": "info_player_start", "origin": [0.0, 0.0, 24.0] }),
+            ),
+            call(2, "map.accept", &json!({})),
+            call(3, "map.staged", &json!({})),
+            call(4, "edit.repeat", &json!({})),
+            call(5, "map.staged", &json!({})),
+        ],
+    );
+    let text = |id: &str| {
+        let answer = &answers[id]["result"];
+        assert_eq!(answer["isError"], false, "{id}: {answer}");
+        let text = answer["content"][0]["text"].as_str().unwrap();
+        serde_json::from_str::<Value>(text).unwrap()
+    };
+    assert_eq!(text("3"), json!([]), "the first edit was accepted");
+    text("4");
+    assert_eq!(text("5").as_array().unwrap().len(), 1, "the repeat waits");
 }
 
 // No spec statement: P6-36, P4-13: a read-only server refuses every map tool that writes,

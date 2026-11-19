@@ -86,8 +86,9 @@ command is a tool with no list to add it to. [`commands.md`](commands.md) is the
 generated from the registry, and `commands.list` answers it. Each tool tells the client
 whether it only reads (MCP 2026-07-28, `ToolAnnotations.readOnlyHint`: "If true, the tool does
 not modify its environment."), as its command declares (`Command::ACCESS`; a command that does
-not say may write), and that it works on nothing outside the project and its game
-(`openWorldHint: false`). A client can so run the reading tools without asking.
+not say may write). A client can so run the reading tools without asking. Nothing is said of
+`openWorldHint`, whose default the client then takes ("Default: true"): the terminal and the
+tasks run whatever they are given.
 
 The tools an agent's loop most often uses:
 

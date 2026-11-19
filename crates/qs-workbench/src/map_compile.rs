@@ -479,14 +479,19 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
             .map_or_default(|stem| stem.to_string_lossy().into_owned());
         let maps = project.join("build").join(mod_name).join("maps");
         std::fs::create_dir_all(&maps).map_err(|error| PreviewError::Write(maps.clone(), error))?;
-        let files = [("bsp", Some(&lit.bsp)), ("lit", lit.lit.as_ref())];
+        let files = [
+            ("bsp", Some(&lit.bsp)),
+            ("lit", lit.lit.as_ref()),
+            ("ent", None),
+        ];
         for (extension, bytes) in files {
             // A name with a dot of its own keeps it: `e1m1.v2` is `e1m1.v2.bsp`.
             let file = maps.join(format!("{name}.{extension}"));
             match bytes {
                 Some(bytes) => std::fs::write(&file, bytes)
                     .map_err(|error| PreviewError::Write(file.clone(), error))?,
-                // A `.lit` from an earlier play would colour this one wrongly (BSP-18.2).
+                // A `.lit` from an earlier play would colour this one wrongly (BSP-18.2), and
+                // an `.ent` would people it with another compile's entities.
                 None => {
                     if file.exists() {
                         std::fs::remove_file(&file)

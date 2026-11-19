@@ -1052,13 +1052,26 @@ impl<C: HasMap + 'static> Command<C> for MapNew {
         context: &mut C,
         MapNewParams { path, keys }: MapNewParams,
     ) -> Result<Outcome<MapOpened, C>, MapEditError> {
-        // A `.map` in the open project: any other file would not open as the map made.
+        // A `.map` in the open project, a relative path taken from it: any other file would
+        // not open as the map made. With no project open the path is the caller's to choose,
+        // as `map.open`'s is.
         let root = context.map_project().project_root();
+        let path = root
+            .as_ref()
+            .map_or_else(|| path.clone(), |root| root.join(&path));
         let is_map = path
             .extension()
             .is_some_and(|extension| extension.eq_ignore_ascii_case(MAP_EXTENSION));
-        if !is_map || root.is_some_and(|root| !path.starts_with(root)) {
+        // A `..` could leave the project again after the path began in it.
+        let leaves = path
+            .components()
+            .any(|part| part == std::path::Component::ParentDir);
+        if !is_map || leaves || root.is_some_and(|root| !path.starts_with(root)) {
             return Err(MapEditError::NotNewMap { path });
+        }
+        // Before its folders are made, so a refused map leaves nothing behind.
+        if path.exists() {
+            return Err(MapEditError::Exists { path });
         }
         let mut world = Entity::new();
         let classname = (CLASSNAME.to_owned(), WORLD_CLASSNAME.to_owned());

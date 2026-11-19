@@ -150,7 +150,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`preview.dock`](#previewdock) | Docks the game's window beside the IDE's window, given where the IDE's window is and whether it has the focus. |
 | [`preview.game`](#previewgame) | Says what game data the preview plays from: the chosen folder, or the first install found, as found, shareware only, rerelease only or missing for the game the project is for, with the files it lacks. |
 | [`preview.pause`](#previewpause) | Pauses the running game between frames. |
-| [`preview.pick`](#previewpick) | Selects the edict under a point of the game's window. |
+| [`preview.pick`](#previewpick) | Selects the edict under a point of the game's window. A point with no edict under it answers none and leaves the selection as it was. |
 | [`preview.play`](#previewplay) | Builds the open project and starts the preview host on its program, stopping a game already running. |
 | [`preview.poll`](#previewpoll) | Reads the running game's events: its state changes and console lines. |
 | [`preview.reload`](#previewreload) | Builds the open project and reloads its program in the running game, the map going on; nothing when no game runs. |
@@ -6879,7 +6879,7 @@ Parameters:
 
 ## `preview.pick`
 
-Selects the edict under a point of the game's window.
+Selects the edict under a point of the game's window. A point with no edict under it answers none and leaves the selection as it was.
 
 Parameters:
 

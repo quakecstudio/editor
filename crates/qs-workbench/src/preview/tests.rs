@@ -496,6 +496,20 @@ fn a_compiled_map_is_put_where_the_game_reads_it() {
     place_project_map(&project, "mod", "arena", Some(&elsewhere)).unwrap();
     assert_eq!(std::fs::read(played.join("arena.bsp")).unwrap(), b"arena");
 
+    // A map open where the game reads maps is there already: copied onto itself it would be
+    // emptied, as a newer `.ent` beside it once asked.
+    std::fs::write(played.join("home.bsp"), b"home").unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(played.join("home.bsp"))
+        .unwrap()
+        .set_modified(long_ago)
+        .unwrap();
+    std::fs::write(played.join("home.ent"), b"ent").unwrap();
+    place_project_map(&project, "mod", "home", Some(&played)).unwrap();
+    assert_eq!(std::fs::read(played.join("home.bsp")).unwrap(), b"home");
+    assert_eq!(std::fs::read(played.join("home.ent")).unwrap(), b"ent");
+
     // A name that is a path is the host's to refuse: nothing is read or written for it.
     let outside = project.join("outside.bsp");
     std::fs::write(&outside, b"outside").unwrap();
@@ -510,7 +524,7 @@ fn a_compiled_map_is_put_where_the_game_reads_it() {
     );
     assert_eq!(
         std::fs::read_dir(&played).unwrap().count(),
-        3,
-        "room's two and arena"
+        5,
+        "room's two, arena and home's two"
     );
 }

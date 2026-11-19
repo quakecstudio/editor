@@ -3,7 +3,10 @@
 //! The MCP server (P4-13, AGT-7, PRIN-6): the agent's tools, which are the IDE's commands,
 //! offered to other agents over the Model Context Protocol, one JSON-RPC message per line on
 //! stdio. Each tool is a command of the registry the window, the palette and the command line
-//! run, so an outside agent does what the built-in one does and nothing else.
+//! run, and every command is a tool: an outside agent can do whatever a person at the window
+//! can, the terminal and tasks included, where the built-in agent is held to its own list
+//! (`qs-agent`). What holds an outside agent is the roots below, the review its map edits wait
+//! in, and its client's own permissions, which read each tool's annotations.
 //!
 //! The protocol is `rmcp`'s, the Rust SDK of the protocol's own project: it answers both eras,
 //! modern requests carrying their version in `_meta` (MCP 2026-07-28) with `server/discover`,
@@ -67,6 +70,8 @@ const INSPECT_MAP: &str = "map.inspect";
 const OPEN_MAP: &str = "map.open";
 /// The workbench's command that makes a map and opens it in place of the open one.
 const NEW_MAP: &str = "map.new";
+/// The workbench's command that makes the last map edit again: a map edit under another name.
+const REPEAT_EDIT: &str = "edit.repeat";
 /// The workbench's commands that write the open map's files but change no edit of it: its BSP
 /// beside it, the map itself, and its BSP where the game plays it.
 const WRITES_MAP_FILES: [&str; 3] = ["map.compile", "map.save", "map.play_from_here"];
@@ -74,7 +79,8 @@ const WRITES_MAP_FILES: [&str; 3] = ["map.compile", "map.save", "map.play_from_h
 impl Tool {
     /// Whether it changes the open map, whose edits wait for review (P6-21).
     fn edits_map(&self) -> bool {
-        self.access == Access::Write && self.id.starts_with(MAP_COMMANDS)
+        self.access == Access::Write
+            && (self.id.starts_with(MAP_COMMANDS) || &*self.id == REPEAT_EDIT)
     }
 }
 
@@ -268,8 +274,7 @@ pub struct Server {
 impl Server {
     /// Starts the commands `make` builds (a session, or a connection to the app's) on a
     /// thread of its own and serves every one of them as a tool (PRIN-3), each told to the
-    /// client as reading only or not (MCP 2026-07-28, `ToolAnnotations.readOnlyHint`) and as
-    /// working on the project and its game alone (`openWorldHint`).
+    /// client as reading only or not (MCP 2026-07-28, `ToolAnnotations.readOnlyHint`).
     ///
     /// # Errors
     ///
@@ -300,9 +305,9 @@ impl Server {
                         id: command.id().into(),
                         access: command.access(),
                     };
-                    let annotations = ToolAnnotations::new()
-                        .read_only(tool.access == Access::Read)
-                        .open_world(false);
+                    // Nothing is said of the open world: the terminal and tasks run whatever
+                    // they are given, which no command declares.
+                    let annotations = ToolAnnotations::new().read_only(tool.access == Access::Read);
                     let listed = McpTool::new(
                         command.id().to_owned(),
                         command.summary().to_owned(),

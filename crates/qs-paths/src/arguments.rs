@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The paths a command's JSON arguments name: every string under a key named `path` or ending in
-//! `_path`, at any depth, which the agent's permissions and the MCP server's roots check and
-//! make absolute before a command runs.
+//! The paths a command's JSON arguments name: every string under a key that names a path
+//! ([`is_path_key`]), alone or in an array, at any depth, which the agent's permissions and the
+//! MCP server's roots check and make absolute before a command runs. Every command is an agent's
+//! tool, so a parameter naming a file a command reads or writes is under such a key. Two are
+//! not, on purpose: a `game` folder, which is the Quake install outside every project and is
+//! only read, and a breakpoint's `file`, which names a source file and opens nothing.
 
 use std::path::Path;
 
@@ -10,15 +13,19 @@ use serde_json::Value;
 
 use crate::lexical;
 
-/// Every string under a key named `path`, or ending in `_path`, anywhere in `value`.
+/// Every string under a key that names a path, alone or in an array, anywhere in `value`.
 pub fn collect_paths(value: &Value, out: &mut Vec<String>) {
     match value {
         Value::Object(object) => {
             for (key, inner) in object {
-                if is_path_key(key)
-                    && let Some(path) = inner.as_str()
-                {
-                    out.push(path.to_owned());
+                if is_path_key(key) {
+                    let listed = inner.as_array().into_iter().flatten();
+                    out.extend(
+                        std::iter::once(inner)
+                            .chain(listed)
+                            .filter_map(Value::as_str)
+                            .map(str::to_owned),
+                    );
                 }
                 collect_paths(inner, out);
             }
@@ -28,9 +35,19 @@ pub fn collect_paths(value: &Value, out: &mut Vec<String>) {
     }
 }
 
-/// Whether a parameter named `key` holds a path.
-fn is_path_key(key: &str) -> bool {
-    key == "path" || key.ends_with("_path")
+/// The parameters that hold a path under a name of their own: an FGD file to write and an
+/// export's output.
+const NAMED_PATH_KEYS: [&str; 2] = ["fgd", "out"];
+
+/// Whether a parameter named `key` holds a path, or paths: `path`, `paths`, a name ending in
+/// `_path` or `_paths`, or one of the few with a name of its own.
+#[must_use]
+pub fn is_path_key(key: &str) -> bool {
+    key == "path"
+        || key == "paths"
+        || key.ends_with("_path")
+        || key.ends_with("_paths")
+        || NAMED_PATH_KEYS.contains(&key)
 }
 
 /// Makes every path `arguments` names absolute, a relative one taken from `project`, with `.`
@@ -38,14 +55,21 @@ fn is_path_key(key: &str) -> bool {
 pub fn absolute_paths(arguments: &mut Value, project: &Path) {
     match arguments {
         Value::Object(object) => {
+            let full = |path: &str| {
+                Value::String(lexical(&project.join(path)).to_string_lossy().into_owned())
+            };
             for (key, inner) in object.iter_mut() {
-                if is_path_key(key)
-                    && let Some(path) = inner.as_str()
-                {
-                    let full = lexical(&project.join(path));
-                    *inner = Value::String(full.to_string_lossy().into_owned());
-                } else {
-                    absolute_paths(inner, project);
+                match (is_path_key(key), &mut *inner) {
+                    (true, Value::String(path)) => *inner = full(path),
+                    (true, Value::Array(items)) => {
+                        for item in items {
+                            match item {
+                                Value::String(path) => *item = full(path),
+                                other => absolute_paths(other, project),
+                            }
+                        }
+                    }
+                    _ => absolute_paths(inner, project),
                 }
             }
         }
@@ -118,5 +142,44 @@ mod tests {
         assert_eq!(arguments["files"][0]["path"], native("/abs/b.qc"));
         assert_eq!(arguments["files"][1]["path"], native("/p/c.qc"));
         assert_eq!(arguments["path_count"], json!(3));
+    }
+
+    // No spec statement: a list of paths under `paths` or a key ending in `_paths`, and the
+    // paths named `fgd` and `out`, are found and made absolute; a game folder and a breakpoint's
+    // file are not paths a command opens under the project
+    #[test]
+    fn listed_and_named_paths_are_found_and_made_absolute() {
+        let mut arguments = json!({
+            "paths": ["a.qc", "/abs/b.qc", 7],
+            "open_paths": ["../c.qc"],
+            "fgd": "defs/mod.fgd",
+            "out": "/tmp/mod.zip",
+            "game": "quake",
+            "file": "doors.qc",
+        });
+        let mut found = Vec::new();
+        collect_paths(&arguments, &mut found);
+        found.sort();
+        assert_eq!(
+            found,
+            [
+                "../c.qc",
+                "/abs/b.qc",
+                "/tmp/mod.zip",
+                "a.qc",
+                "defs/mod.fgd"
+            ]
+        );
+        absolute_paths(&mut arguments, Path::new("/p/q"));
+        let native = |path: &str| json!(lexical(Path::new(path)).to_string_lossy());
+        assert_eq!(
+            arguments["paths"],
+            json!([native("/p/q/a.qc"), native("/abs/b.qc"), 7])
+        );
+        assert_eq!(arguments["open_paths"], json!([native("/p/c.qc")]));
+        assert_eq!(arguments["fgd"], native("/p/q/defs/mod.fgd"));
+        assert_eq!(arguments["out"], native("/tmp/mod.zip"));
+        assert_eq!(arguments["game"], json!("quake"));
+        assert_eq!(arguments["file"], json!("doors.qc"));
     }
 }

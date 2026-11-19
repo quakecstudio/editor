@@ -522,11 +522,23 @@ fn a_new_map_holds_a_world_and_is_open() {
         );
         assert!(!refused.exists(), "{}", refused.display());
     }
+    // Nor is one whose path leaves the project by a `..`, and no folder is made for it.
     let outside = dir.parent().unwrap().join("outside-new-map.map");
-    assert!(
-        session
-            .execute(MAP_NEW, json!({ "path": outside }))
-            .is_err()
-    );
+    let leaving = dir.join("deep/../../outside-new-map.map");
+    for refused in [&outside, &leaving] {
+        assert!(
+            session
+                .execute(MAP_NEW, json!({ "path": refused }))
+                .is_err()
+        );
+    }
     assert!(!outside.exists());
+    assert!(!dir.join("deep").exists());
+
+    // A relative path is taken from the project, and a map that is there already is refused
+    // before a folder is made for it.
+    session
+        .execute(MAP_NEW, json!({ "path": "maps/relative.map" }))
+        .unwrap();
+    assert!(dir.join("maps/relative.map").is_file());
 }

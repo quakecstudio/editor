@@ -763,6 +763,8 @@ fn run_task<C: HasPreview>(
             } else {
                 remove_stale(&target)?;
             }
+            // An `.ent` of an earlier compile would people this one with its entities.
+            remove_stale(&maps.join(format!("{name}.ent")))?;
             preview
                 .play_built(built, Some(name))
                 .map_err(TaskError::Preview)?;

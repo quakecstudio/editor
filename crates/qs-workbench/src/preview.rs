@@ -1349,8 +1349,9 @@ const MAP_FILES: [&str; 3] = ["bsp", "lit", "ent"];
 /// `build`, when none is there or an older one. The BSP is the one beside the open map, in
 /// `beside`, when that map is `name`, else the one in the project's `maps`; its `.lit` and
 /// `.ent` go with it, and those of an older compile do not stay, which would colour it or
-/// people it wrongly. A map the project did not compile is the game's own, and a name that is
-/// no file's name is the host's to refuse: nothing is done for either.
+/// people it wrongly. A map the project did not compile is the game's own, a name that is no
+/// file's name is the host's to refuse, and a map open where the game reads maps is already
+/// there: nothing is done for any of them.
 fn place_project_map(
     project: &Path,
     mod_name: &str,
@@ -1375,6 +1376,15 @@ fn place_project_map(
         return Ok(());
     };
     let to = project.join("build").join(mod_name).join(MAPS_DIR);
+    // A copy of a file onto itself empties it.
+    if from
+        .canonicalize()
+        .ok()
+        .zip(to.canonicalize().ok())
+        .is_some_and(|(from, to)| from == to)
+    {
+        return Ok(());
+    }
     // The newest of what the compile and a save of the entities wrote.
     let compiled = MAP_FILES
         .iter()
@@ -1715,7 +1725,8 @@ struct PickCommand;
 
 impl<C: HasPreview + 'static> Command<C> for PickCommand {
     const ID: &'static str = PICK;
-    const SUMMARY: &'static str = "Selects the edict under a point of the game's window.";
+    const SUMMARY: &'static str = "Selects the edict under a point of the game's window. A \
+        point with no edict under it answers none and leaves the selection as it was.";
     type Params = PickParams;
     type Output = SelectedEntity;
     type Error = PreviewError;
