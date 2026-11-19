@@ -12,7 +12,7 @@
 //! (`crate::check::convert`), so this table is the type rules of FTEQCC's operators. The rows
 //! are `pr_opcodes[]` in its order, each keyed by its [`Op`], whose number is its row.
 
-use qc_preproc::Op;
+use qc_progs::Op;
 
 use crate::check::etype::Etype;
 

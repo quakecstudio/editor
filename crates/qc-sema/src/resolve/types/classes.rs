@@ -23,7 +23,7 @@ use crate::resolve::{
 };
 use crate::symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
 use crate::ty::{SimpleType, Type};
-use qc_preproc::Op;
+use qc_progs::Op;
 
 impl<'a> Resolver<'a> {
     /// `accessor Name : Base` (FTEF-10.6): the base is a type and no struct or union, and the

@@ -4,7 +4,7 @@
 //! they made, in statement order, and the `case` labels at or before the point dropped to;
 //! and the values an emulation gives back unchanged (FTEF-27.12).
 
-use qc_preproc::Op;
+use qc_progs::Op;
 
 use super::fte_index_of;
 use crate::ir::{Effect, Name};

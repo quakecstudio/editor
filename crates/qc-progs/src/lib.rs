@@ -14,6 +14,8 @@
 
 pub mod bytes;
 pub mod crc;
+pub mod fte_ops;
+pub mod fte_target;
 pub mod limits;
 pub mod opcode;
 mod read;
@@ -23,6 +25,8 @@ mod write;
 #[cfg(test)]
 mod fixtures;
 
+pub use fte_ops::{CallPassing, Op};
+pub use fte_target::{OpcodeTarget, Revision, TargetFormat};
 pub use read::{Progs, ReadError, ReadOptions, StringSite, Table, TableIter};
 pub use records::{
     Def, Format, Function, Header, PROGS_DEF_SAVEGLOBAL, PROGS_DEF_SIZE, PROGS_FUNCTION_SIZE,

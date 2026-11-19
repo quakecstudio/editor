@@ -9,7 +9,8 @@
 //! reference; and the stores to an array's element and a string's character.
 
 use qc_diag::{Code, Span};
-use qc_preproc::{FteFlag, Op};
+use qc_preproc::FteFlag;
+use qc_progs::Op;
 use qc_syntax::SyntaxKind;
 use qc_syntax::ast::{self, AstNode as _, BinaryOp, UnaryOp};
 use qc_types::c_int;

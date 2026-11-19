@@ -10,7 +10,7 @@
 //! has no counterpart of (`type_declarations`). Settings that change in the middle of a file
 //! (`#pragma flag`, `#pragma warning`) are not here; the resolver reads them where it reads.
 
-use qc_preproc::TargetFormat;
+use qc_progs::TargetFormat;
 
 use crate::resolve::ResolveOptions;
 

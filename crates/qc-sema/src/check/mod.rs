@@ -39,7 +39,7 @@ use std::rc::Rc;
 
 use qc_diag::{Code, Span};
 use qc_lexer::LexFlags;
-use qc_preproc::OpcodeTarget;
+use qc_progs::OpcodeTarget;
 use qc_syntax::CompilerFlags;
 use qc_syntax::ast::{self, AstNode as _};
 
@@ -856,7 +856,7 @@ impl CvarValue {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TypedBody {
     types: HashMap<(usize, usize), Type>,
-    opcodes: HashMap<(usize, usize), qc_preproc::Op>,
+    opcodes: HashMap<(usize, usize), qc_progs::Op>,
     generated: Vec<ir::BodyStatement>,
     strings: Vec<Vec<u8>>,
     origins: Vec<(u32, usize)>,
@@ -887,7 +887,7 @@ impl TypedBody {
     /// The opcode `QCC_PR_ChooseOpcode` chose for the binary operator whose token is at
     /// `span`, if the check chose one (FTEF-23.4).
     #[must_use]
-    pub fn opcode_at(&self, span: Span) -> Option<qc_preproc::Op> {
+    pub fn opcode_at(&self, span: Span) -> Option<qc_progs::Op> {
         self.opcodes.get(&(span.start, span.end)).copied()
     }
 
@@ -1008,7 +1008,7 @@ pub(crate) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
         checker.generated.push(ir::BodyStatement {
             a: frame,
             b: think,
-            ..ir::BodyStatement::bare(qc_preproc::Op::State)
+            ..ir::BodyStatement::bare(qc_progs::Op::State)
         });
     }
     if let Some(block) = body.block()
@@ -1028,7 +1028,7 @@ pub(crate) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
     let ended = checker
         .generated
         .last()
-        .is_some_and(|last| matches!(last.op, qc_preproc::Op::Return | qc_preproc::Op::Done));
+        .is_some_and(|last| matches!(last.op, qc_progs::Op::Return | qc_progs::Op::Done));
     if checker.ret_local || !ended {
         checker.return_outs(body.syntax().span());
     }
@@ -1036,13 +1036,13 @@ pub(crate) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
     if checker.ret_local {
         checker.generated.push(ir::BodyStatement {
             a: Some(ir::Name::RetLocal),
-            ..ir::BodyStatement::bare(qc_preproc::Op::Return)
+            ..ir::BodyStatement::bare(qc_progs::Op::Return)
         });
     }
     // QC-13.7: the body ends with `DONE`.
     checker
         .generated
-        .push(ir::BodyStatement::bare(qc_preproc::Op::Done));
+        .push(ir::BodyStatement::bare(qc_progs::Op::Done));
     TypedBody {
         start: body.syntax().span().start,
         ..checker.finish()

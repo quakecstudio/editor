@@ -8,7 +8,8 @@
 //! (FTEF-29).
 
 use qc_diag::{Code, Span};
-use qc_preproc::{FteFlag, Op};
+use qc_preproc::FteFlag;
+use qc_progs::Op;
 use qc_syntax::ast::{self, AstNode as _, BinaryOp};
 use qc_syntax::c_scalar::CScalar;
 use qc_syntax::{SyntaxKind, SyntaxNode};

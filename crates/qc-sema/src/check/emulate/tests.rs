@@ -6,7 +6,7 @@
 
 use super::{Emulation, conversion_opcodes, emulation};
 use crate::check::etype::Etype;
-use qc_preproc::Op;
+use qc_progs::Op;
 
 /// Each opcode that is emulated, not refused, and its emulation.
 const EMULATED: &[(Op, &str)] = &[

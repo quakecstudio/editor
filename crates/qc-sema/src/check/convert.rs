@@ -8,7 +8,7 @@
 //! need, and the one needing fewest (FTEF-23.2 to FTEF-23.4).
 
 use crate::check::etype::Etype;
-use qc_preproc::Op;
+use qc_progs::Op;
 
 use crate::check::opcodes::{Assoc, OpType, Opcode, row};
 

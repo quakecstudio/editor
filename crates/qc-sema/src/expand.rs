@@ -180,7 +180,7 @@ pub(crate) struct Rendered {
     pub(crate) warnings: Vec<(usize, WarningSettings)>,
     /// Under FTEQCC, the output target and the opcodes it has: the rendered offset from which
     /// each holds, and the target (FTEF-25); empty under the vanilla dialect.
-    pub(crate) targets: Vec<(usize, qc_preproc::OpcodeTarget)>,
+    pub(crate) targets: Vec<(usize, qc_progs::OpcodeTarget)>,
     /// Under FTEQCC, the changes to the keywords the pragmas make: the rendered offset from
     /// which each holds, and the change (FTEF-20.1); empty under the vanilla dialect.
     pub(crate) keywords: Vec<(usize, qc_preproc::KeywordEdit)>,
@@ -278,7 +278,7 @@ pub(crate) struct Preprocessed {
     /// pass follows it; `None` for a single pass that prototypes nothing.
     pub(crate) plan: Option<ProtoPlan>,
     /// The output format once the last file is read (FTEF-22.5).
-    pub(crate) target: qc_preproc::TargetFormat,
+    pub(crate) target: qc_progs::TargetFormat,
 }
 
 /// Reads files out of the database by path, so the preprocessor sees the editor's buffers

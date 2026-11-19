@@ -28,7 +28,7 @@ use std::fmt;
 
 use crate::ir::{BodyStatement, ImmediateKind, Name};
 use crate::{Db, DefId, DefKind, ModuleIndex, ModuleInput, SimpleType, Type, TypedBody};
-use qc_preproc::Op;
+use qc_progs::Op;
 
 /// The functions the engine calls by name that are not spawn functions (EDICT-9.1).
 const ENTRY_POINTS: [&str; 9] = [

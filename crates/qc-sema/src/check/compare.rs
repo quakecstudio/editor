@@ -9,7 +9,7 @@
 //! match.
 
 use qc_diag::{Code, Span};
-use qc_preproc::Op;
+use qc_progs::Op;
 
 use crate::check::expr::Checker;
 use crate::check::{Sym, Value};

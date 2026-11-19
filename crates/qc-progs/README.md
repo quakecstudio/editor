@@ -5,15 +5,18 @@ Reads, validates and writes `progs.dat`, the compiled QuakeC file. The reader is
 zero-copy view whose tables decode from the file's bytes on access, and rejects malformed
 input with a typed `ReadError`, never a panic. The writer turns an owned `ProgsFile` back into
 bytes; a file read and written back is the same byte for byte. Also here: the 16-bit CRC
-(`crc`), the opcode numbers (`opcode`), the `ED_Find*` lookups, and every limit in
+(`crc`), id's opcode numbers (`opcode`), FTEQCC's opcodes (`fte_ops`: `Op`, one for each row
+of `pr_opcodes[]`) and the opcodes each output target has (`fte_target`: `TargetFormat`,
+`Revision`, `OpcodeTarget`), the `ED_Find*` lookups, and every limit in
 `docs/spec/limits.md` as a named constant (`limits`). Ported from `WinQuake/pr_edict.c`,
 `pr_comp.h` and `crc.c` at the commit pinned in [`docs/porting.md`](../../docs/porting.md).
 
 - **Layer:** L0 formats. It depends on `qc-types`; the VM, the edict store and the compiler
   build on it.
 - **Spec sections:** PROGS-1 to PROGS-15 and PROGS-22 in [`progs.md`](../../docs/spec/progs.md),
-  PROGS-19 to PROGS-21 (FTEQCC's version 7), and LIMIT-1 in
-  [`limits.md`](../../docs/spec/limits.md).
+  PROGS-19 to PROGS-21 (FTEQCC's version 7), LIMIT-1 in
+  [`limits.md`](../../docs/spec/limits.md), and FTEF-23.1 and FTEF-25.1 to FTEF-25.2 (FTEQCC's
+  opcodes and which a target has) in [`dialect-fteqcc.md`](../../docs/spec/dialect-fteqcc.md).
 - **Not this crate's:** PROGS-16 to PROGS-18, which are in `qc-types`, and PROGS-5 (generating
   the `progdefs.h` CRC), PROGS-6.2 and PROGS-10.3, which belong to the compiler, the server and
   the VM.

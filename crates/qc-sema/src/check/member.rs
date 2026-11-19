@@ -9,7 +9,7 @@
 //! union's member.
 
 use qc_diag::{Code, Span};
-use qc_preproc::Op;
+use qc_progs::Op;
 use qc_syntax::ast::{self, AstNode as _};
 use qc_syntax::c_scalar::CScalar;
 

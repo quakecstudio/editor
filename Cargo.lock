@@ -3468,6 +3468,7 @@ version = "2026.11.1"
 dependencies = [
  "proptest",
  "qc-lexer",
+ "qc-progs",
 ]
 
 [[package]]
@@ -3497,6 +3498,7 @@ dependencies = [
  "qc-diag",
  "qc-lexer",
  "qc-preproc",
+ "qc-progs",
  "qc-project",
  "qc-syntax",
  "qc-types",

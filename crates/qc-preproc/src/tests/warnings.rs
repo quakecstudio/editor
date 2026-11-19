@@ -8,12 +8,13 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 use super::{codes, one_fte, tokens};
-use crate::Op;
 use crate::fte_directive::FteState;
 use crate::{
-    Code, FileOutput, FteFlag, FteWarning, MemoryLoader, OpcodeTarget, Preprocessor, TargetFormat,
-    WarningAction, WarningSettings,
+    Code, FileOutput, FteFlag, FteWarning, MemoryLoader, Preprocessor, WarningAction,
+    WarningSettings,
 };
+use qc_progs::Op;
+use qc_progs::{OpcodeTarget, Revision, TargetFormat};
 
 /// The codes and messages `text` gives under FTEQCC.
 fn warned(text: &str) -> Vec<(Code, String)> {
@@ -551,7 +552,9 @@ fn every_warning_code_maps_to_its_fteqcc_warning() {
 // formats' up to `OP_MULSTORE_F` and QuakeSpasm's and DarkPlaces' beyond it only as listed
 #[test]
 fn opcode_revisions_start_at_their_bound() {
-    let fte = |revision: u32, op: Op| OpcodeTarget::new(TargetFormat::Fte, revision).valid(op);
+    let fte = |revision: u32, op: Op| {
+        OpcodeTarget::new(TargetFormat::Fte, Revision::new(revision)).valid(op)
+    };
     for (op, from) in [
         (Op::StorepI8, 5744),
         (Op::StorefV, 5698),
@@ -568,11 +571,13 @@ fn opcode_revisions_start_at_their_bound() {
         TargetFormat::Qss,
         TargetFormat::Darkplaces,
     ] {
-        let target = OpcodeTarget::new(format, 0);
+        let target = OpcodeTarget::new(format, Revision::NONE);
         assert!(target.valid(before), "{format:?}");
         assert!(!target.valid(Op::MulstoreF), "{format:?}");
     }
-    let dp = |revision: u32| OpcodeTarget::new(TargetFormat::Darkplaces, revision).valid(Op::AddIf);
+    let dp = |revision: u32| {
+        OpcodeTarget::new(TargetFormat::Darkplaces, Revision::new(revision)).valid(Op::AddIf)
+    };
     assert!(dp(12_901));
     assert!(!dp(12_900));
 }

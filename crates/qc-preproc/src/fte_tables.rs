@@ -9,7 +9,7 @@
 //! the names of its compiler flags and keywords, its optimisations, its opcodes and its targets,
 //! as data, written out of `qccmain.c` and `qcc_pr_comp.c` at the pinned commit.
 
-use crate::fte_ops::Op;
+use qc_progs::Op;
 
 /// One of FTEQCC's compiler flags or keywords (`compiler_flag[]` in `qccmain.c`), named after the
 /// variable it sets.
@@ -903,100 +903,3 @@ pub(crate) const OPTIMISATIONS: [(&str, &str); 20] = [
 pub fn is_opcode_name(name: &str) -> bool {
     Op::named(name).is_some()
 }
-
-/// An output format of `targets[]` (`qcc_targetformat_t`).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum TargetFormat {
-    /// `QCF_STANDARD`, the default.
-    #[default]
-    Standard,
-    /// `QCF_QSS`.
-    Qss,
-    /// `QCF_HEXEN2`.
-    Hexen2,
-    /// `QCF_UHEXEN2`.
-    Uhexen2,
-    /// `QCF_KK7`.
-    Kk7,
-    /// `QCF_FTE`.
-    Fte,
-    /// `QCF_FTEH2`.
-    Fteh2,
-    /// `QCF_FTEDEBUG`.
-    FteDebug,
-    /// `QCF_DARKPLACES`.
-    Darkplaces,
-    /// `QCF_QTEST`.
-    Qtest,
-}
-
-impl TargetFormat {
-    /// Whether `QCC_PR_DummyDef` takes it for Hexen II's, under which a definition named `float`
-    /// leaves the keyword on: `QCF_HEXEN2` or `QCF_UHEXEN2` (FTEF-20.4).
-    pub(crate) const fn keeps_float(self) -> bool {
-        matches!(self, Self::Hexen2 | Self::Uhexen2)
-    }
-
-    /// Whether `QCC_SetDefaultProperties` turns on `thinktime`, `until` and `loop` for it:
-    /// `QCF_HEXEN2`, `QCF_UHEXEN2` or `QCF_FTEH2` (FTEF-20.3).
-    pub(crate) const fn is_hexen2(self) -> bool {
-        matches!(self, Self::Hexen2 | Self::Uhexen2 | Self::Fteh2)
-    }
-
-    /// The `flag_undefwordsize` `QCC_OPCodeSetTarget` sets for it, `true` only for
-    /// `QCF_DARKPLACES`: `flag_undefwordsize = false; ... case QCF_DARKPLACES: flag_undefwordsize
-    /// = true;` (FTEF-22.4).
-    pub(crate) const fn undefined_word_size(self) -> bool {
-        matches!(self, Self::Darkplaces)
-    }
-
-    /// Whether `QCC_PR_FinishCompilation` lets a function be `extern` under it: `QCF_FTE`,
-    /// `QCF_FTEDEBUG` or `QCF_FTEH2` (`if (qcc_targetformat == QCF_FTE || qcc_targetformat ==
-    /// QCF_FTEDEBUG || qcc_targetformat == QCF_FTEH2) externokay = true;`, FTEF-22.5).
-    #[must_use]
-    pub const fn supports_extern(self) -> bool {
-        matches!(self, Self::Fte | Self::FteDebug | Self::Fteh2)
-    }
-
-    /// Whether `QCC_WriteData` writes version 7 for it in the 16-bit layout:
-    /// `progs.version = PROG_EXTENDEDVERSION;` under `QCF_FTE`, `QCF_FTEH2`, `QCF_FTEDEBUG` and
-    /// `QCF_QSS` (FTE-24.3); DarkPlaces' stays version 6.
-    #[must_use]
-    pub const fn writes_version_7(self) -> bool {
-        matches!(self, Self::Fte | Self::Fteh2 | Self::FteDebug | Self::Qss)
-    }
-}
-
-/// `targets[]`: each name `#pragma TARGET` matches in any case, its format and its default
-/// revision.
-pub(crate) const TARGETS: [(&str, TargetFormat, u32); 21] = [
-    ("standard", TargetFormat::Standard, 0),
-    ("vanilla", TargetFormat::Standard, 0),
-    ("q1", TargetFormat::Standard, 0),
-    ("id", TargetFormat::Standard, 0),
-    ("quakec", TargetFormat::Standard, 0),
-    ("qs", TargetFormat::Standard, 0),
-    ("qss", TargetFormat::Qss, 0),
-    ("hexen2", TargetFormat::Hexen2, 0),
-    ("h2", TargetFormat::Hexen2, 0),
-    ("uhexen2", TargetFormat::Uhexen2, 0),
-    ("kkqwsv", TargetFormat::Kk7, 0),
-    ("kk7", TargetFormat::Kk7, 0),
-    ("version7", TargetFormat::Kk7, 0),
-    ("fte", TargetFormat::Fte, 5768),
-    ("fteh2", TargetFormat::Fteh2, 5768),
-    ("ftedebug", TargetFormat::FteDebug, 5768),
-    ("debug", TargetFormat::FteDebug, 5768),
-    ("quake2c", TargetFormat::Fte, 5744),
-    ("darkplaces", TargetFormat::Darkplaces, 12901),
-    ("dp", TargetFormat::Darkplaces, 12901),
-    ("qtest", TargetFormat::Qtest, 0),
-];
-
-/// `QCTARGVER_FTE_MAX` (`QCTARGVER_FTE_PRELOCS`), `QCTARGVER_DP_MAX` and `QCTARGVER_QSS_MAX`: the
-/// highest revision of each format; any other format has only revision 0.
-pub(crate) const FTE_MAX_REVISION: u32 = 6614;
-/// See [`FTE_MAX_REVISION`].
-pub(crate) const DP_MAX_REVISION: u32 = 20_250_104;
-/// See [`FTE_MAX_REVISION`].
-pub(crate) const QSS_MAX_REVISION: u32 = 0;

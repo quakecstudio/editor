@@ -9,7 +9,7 @@
 //! arguments, default values, and `out` arguments.
 
 use qc_diag::{Code, Span};
-use qc_preproc::Op;
+use qc_progs::Op;
 use qc_syntax::ast::{self, AstNode as _};
 
 use crate::DefKind;
@@ -1063,15 +1063,15 @@ impl Checker<'_> {
                 // `(e / 1i) / (nextent(world) / 1i)`, by the `nextent` builtin.
                 let entity = self.value(args.first().cloned())?;
                 let one = Value::constant(Constant::int(1));
-                let index = self.emit(qc_preproc::Op::DivI, &entity, &one, span)?;
+                let index = self.emit(qc_progs::Op::DivI, &entity, &one, span)?;
                 if !self.env.defines("nextent") {
                     let message = "the nextent builtin is not defined".to_owned();
                     return self.fatal(Code::E0347, span, message).map(Some);
                 }
                 self.generate_call(std::slice::from_ref(&entity), span);
                 let first = Value::of(Type::Simple(SimpleType::Entity));
-                let first = self.emit(qc_preproc::Op::DivI, &first, &one, span)?;
-                let number = self.emit(qc_preproc::Op::DivI, &index, &first, span)?;
+                let first = self.emit(qc_progs::Op::DivI, &first, &one, span)?;
+                let number = self.emit(qc_progs::Op::DivI, &index, &first, span)?;
                 Ok(Some(number))
             }
             "random" => self.random(args, call).map(Some),
@@ -1081,11 +1081,11 @@ impl Checker<'_> {
                     let size = self.supplied(&size, &Type::Named("__int32".into()), span)?;
                     let three = Value::constant(Constant::int(VECTOR_WORDS_INT));
                     let four = Value::constant(Constant::int(4));
-                    let rounded = self.emit(qc_preproc::Op::AddI, &size, &three, span)?;
-                    self.emit(qc_preproc::Op::DivI, &rounded, &four, span)?;
+                    let rounded = self.emit(qc_progs::Op::AddI, &size, &three, span)?;
+                    self.emit(qc_progs::Op::DivI, &rounded, &four, span)?;
                 }
                 // `push_words((sz+3)/4)`, a plain statement.
-                self.simple_statement(qc_preproc::Op::Push, span)?;
+                self.simple_statement(qc_progs::Op::Push, span)?;
                 Ok(Some(Value::of(Type::Pointer(
                     Type::Simple(SimpleType::Void).into(),
                 ))))
@@ -1096,12 +1096,12 @@ impl Checker<'_> {
                 if index.ty != Type::Unknown {
                     if self.etype_of(&index.ty) == Some(Etype::Float) {
                         let three = Value::constant(Constant::float(VECTOR_WORDS_FLOAT));
-                        self.emit(qc_preproc::Op::MulF, &index, &three, arg_span)?;
+                        self.emit(qc_progs::Op::MulF, &index, &three, arg_span)?;
                     } else {
                         let int = Type::Named("__int32".into());
                         let index = self.supplied(&index, &int, arg_span)?;
                         let three = Value::constant(Constant::int(VECTOR_WORDS_INT));
-                        self.emit(qc_preproc::Op::MulI, &index, &three, arg_span)?;
+                        self.emit(qc_progs::Op::MulI, &index, &three, arg_span)?;
                     }
                 }
                 let ty = written.unwrap_or(Type::Unknown);

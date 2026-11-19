@@ -11,7 +11,8 @@
 //! emulated in turn.
 
 use qc_diag::{Code, Span};
-use qc_preproc::{FteFlag, Op, OpcodeTarget, TargetFormat};
+use qc_preproc::FteFlag;
+use qc_progs::{Op, OpcodeTarget, Revision, TargetFormat};
 
 use crate::DefId;
 use crate::VECTOR_WORDS;
@@ -24,11 +25,6 @@ use crate::check::pointer::WORD_BYTES;
 use crate::check::{Constness, Sym, Value};
 use crate::ir;
 use crate::ty::{SimpleType, Type};
-
-/// `QCTARGVER_FTE_DEF` and `QCTARGVER_FTE_MAX`: the FTE revisions `badopcode` suggests.
-const FTE_DEFAULT: u32 = 5768;
-/// See [`FTE_DEFAULT`].
-const FTE_MAX: u32 = 6614;
 
 /// How an opcode the target lacks is emulated (FTEF-27.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1282,15 +1278,16 @@ impl Checker<'_> {
     pub(super) fn refuse(&mut self, op: Op, span: Span) {
         let name = row(op).map_or("", |r| r.name);
         let opname = op.name();
-        let message = if OpcodeTarget::new(TargetFormat::Fte, FTE_DEFAULT).valid(op) {
+        let message = if OpcodeTarget::new(TargetFormat::Fte, Revision::FTE_DEFAULT).valid(op) {
             format!(
                 "Opcode \"{name}|{opname}\" not valid for target. Consider the use of: #pragma \
                  target fte"
             )
-        } else if OpcodeTarget::new(TargetFormat::Fte, FTE_MAX).valid(op) {
+        } else if OpcodeTarget::new(TargetFormat::Fte, Revision::FTE_MAX).valid(op) {
             format!(
                 "Opcode \"{name}|{opname}\" not valid for target. Consider the use of: #pragma \
-                 target fte_{FTE_MAX}"
+                 target fte_{}",
+                Revision::FTE_MAX.number()
             )
         } else {
             format!("Opcode \"{name}|{opname}\" is not supported.")

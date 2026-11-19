@@ -9,7 +9,8 @@
 use std::collections::{HashMap, HashSet};
 
 use qc_diag::{Code, Span};
-use qc_preproc::{FteFlag, Op};
+use qc_preproc::FteFlag;
+use qc_progs::Op;
 use qc_syntax::ast::{self, AstNode as _, BinaryOp};
 
 use crate::cast::{ConstType, Source};

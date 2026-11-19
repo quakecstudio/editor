@@ -8,7 +8,7 @@
 
 use qc_diag::Code;
 
-use qc_preproc::Op;
+use qc_progs::Op;
 
 use crate::cast::{ConstType, Kind, Source, Supply};
 use crate::check::constant::Constant;

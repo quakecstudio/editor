@@ -3,7 +3,7 @@
 //! The folding arms and guards the program tests in `tests/folding.rs` reach only through
 //! values no program writes, or with no message to tell them apart.
 
-use qc_preproc::Op;
+use qc_progs::Op;
 
 use super::{Folded, Notice, fold};
 use crate::check::constant::Constant;

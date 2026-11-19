@@ -9,7 +9,8 @@
 //! pointer points at, and a load or store of fewer than 32 bits made on the word that holds it.
 
 use qc_diag::{Code, Span};
-use qc_preproc::{FteFlag, Op};
+use qc_preproc::FteFlag;
+use qc_progs::Op;
 use qc_syntax::c_scalar::CScalar;
 
 use crate::check::constant::Constant;

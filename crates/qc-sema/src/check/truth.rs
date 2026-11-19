@@ -8,7 +8,8 @@
 //! condition, and the conditional operator `?:` built on it.
 
 use qc_diag::{Code, Span};
-use qc_preproc::{FteFlag, Op};
+use qc_preproc::FteFlag;
+use qc_progs::Op;
 use qc_syntax::ast::{self, AstNode as _};
 use qc_syntax::c_scalar::CScalar;
 

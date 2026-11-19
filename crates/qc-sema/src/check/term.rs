@@ -8,7 +8,8 @@
 //! constructor, `sizeof` and `_length`.
 
 use qc_diag::{Code, Span};
-use qc_preproc::{FteFlag, Op};
+use qc_preproc::FteFlag;
+use qc_progs::Op;
 use qc_syntax::ast::{self, AstNode as _, UnaryOp};
 use qc_syntax::c_scalar::CScalar;
 

@@ -248,7 +248,7 @@ fn a_virtual_member_body_defines_its_function() {
         .unwrap()
         .generated()
         .iter()
-        .filter(|s| s.op == qc_preproc::Op::Call0)
+        .filter(|s| s.op == qc_progs::Op::Call0)
         .map(|s| s.a)
         .collect();
     assert_eq!(calls, [Some(ir::Name::Def(function, 0))]);
@@ -282,7 +282,7 @@ fn a_virtual_member_body_defines_its_function() {
         .unwrap()
         .generated()
         .iter()
-        .find(|s| s.op == qc_preproc::Op::Call0)
+        .find(|s| s.op == qc_progs::Op::Call0)
         .map(|s| s.a);
     assert_eq!(
         call,
@@ -296,7 +296,7 @@ fn a_virtual_member_body_defines_its_function() {
 // below declares again, and each constructor called, the class's own first
 #[test]
 fn a_spawn_function_is_written_by_the_model() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let index = fte_index_of(SPAWNED);
     let spawnfunc = |name: &str| defs_named(&index, name)[0];
     assert_eq!(
