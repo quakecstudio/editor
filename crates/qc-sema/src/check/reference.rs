@@ -1688,11 +1688,10 @@ impl Checker<'_> {
                     if let Some(made) = address
                         && matches!(self.etype_of(&lhs.ty), Some(Etype::Struct | Etype::Union))
                     {
-                        let words = self.env.layout(&lhs.ty).map_or(0, |layout| layout.words);
                         let pointer = Some(ir::Name::Made(made));
                         let at = self.name_of(&index);
                         if !(at.is_some()
-                            && self.store_words_through(stored, pointer, at, words, span))
+                            && self.store_words_through(stored, pointer, at, &lhs.ty, span))
                         {
                             self.followed = false;
                         }

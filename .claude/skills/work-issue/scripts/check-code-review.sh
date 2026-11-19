@@ -6,7 +6,8 @@
 # with the review skipped. It also refuses a section that leaves a finding unfixed: an item or
 # paragraph that says a finding was not changed, not fixed, left as it is, left for later,
 # deferred, skipped, out of scope or kept for a change of its own, unless the item says Justin
-# decided it. A finding is fixed on the branch, in its proper place, or it is his call
+# decided it, in those words and with nothing before them that hedges or negates it ("Justin has
+# not decided", "until Justin decides"). A finding is fixed on the branch, in its proper place, or it is his call
 # (development-discipline.md, rule 6). The words are matched as they are written, so an item
 # about a fixed finding that happens to use one ("no longer deferred") is reworded.
 # Usage: check-code-review.sh < body
@@ -41,10 +42,27 @@ perl -e '
     | \bdefer\w*\b | \bskipped\b | \bout\s+of\s+scope\b
     | \b(?:its|their|a)\s+(?:own|later|separate)\s+(?:change|PR|pull\s+request)\b
   }xi;
+  # Whether an item says Justin decided it: "Justin decided" or "Justin has decided", or
+  # "decided by Justin", in a sentence that does not hedge or negate it before those words
+  # ("Justin has not decided", "until Justin decides", "if Justin decided", "Justin may decide").
+  sub decided {
+    my ($item) = @_;
+    my $said = qr{\bJustin(?:\s+has)?\s+decided\b | \bdecided\s+by\s+Justin\b}xi;
+    my $hedge = qr{
+      \b(?:not|never|yet|until|unless|if|whether|may|might|will|would|should|could|can
+         |pending|awaiting|waiting|\w+n(?:\x27|\xE2\x80\x99)t)\b
+    }xi;
+    for my $sentence (split /(?<=[.!?;])\s+/, $item) {
+      next unless $sentence =~ $said;
+      my $before = substr($sentence, 0, $-[0]);
+      return 1 unless $before =~ $hedge;
+    }
+    return 0;
+  }
   my $bad = 0;
   for my $item (split /\n[ \t]*\n|\n(?=[ \t]*(?:[-*+]|\d+[.)])[ \t])/, $section) {
     next unless $item =~ $deferred;
-    next if $item =~ /\bJustin\b[^.]*\bdecid/i || $item =~ /\bdecid\w*\b[^.]*\bJustin\b/i;
+    next if decided($item);
     my $flat = $item =~ s/\s+/ /gr;
     print "The \"## Code review\" section leaves a finding unfixed: $flat\n";
     $bad = 1;

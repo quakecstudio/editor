@@ -7942,3 +7942,28 @@ fn a_returned_null_is_a_zero_of_the_return_type() {
         assert_eq!(returns("rs"), [float], "{target}");
     }
 }
+
+// spec FTEF-6.18: a struct that is not whole words, stored through a pointer, is not written
+// as words, which would store past it; one of whole words is
+#[test]
+fn a_struct_of_narrow_members_through_a_pointer_is_refused() {
+    let source = |members: &str| {
+        format!(
+            "#pragma target fte\ntypedef struct {{ {members} }} s_t;\ns_t g;\n\
+             void(s_t *p) f = {{ *p = g; }};\n"
+        )
+    };
+    assert!(compile_fteqcc(&source("int a; int b;")).is_ok());
+    let refused = compile_fteqcc(&source("__int8 a; __int8 b;"));
+    assert!(
+        matches!(
+            refused,
+            Err(CompileError::Internal {
+                internal: Internal::Unfollowed,
+                ..
+            })
+        ),
+        "{:?}",
+        refused.map(drop)
+    );
+}

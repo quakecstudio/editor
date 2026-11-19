@@ -263,6 +263,8 @@ fn a_body_with_a_finding_left_unfixed_does_not_land() {
         "- Fixed: statement counts are unchanged, checked on four mods.",
         "- Fixed in the follow-up commit.",
         "- Stays as it is: Justin decided on 2026-11-19 that the bare binary's title is not changed.",
+        "- Not changed: the title. It was decided by Justin on 2026-11-19.",
+        "- Left as it is. Justin has decided the palette waits.",
         "Nothing found.",
     ] {
         assert!(reviewed(&review(items)), "{items:?}");
@@ -277,6 +279,11 @@ fn a_body_with_a_finding_left_unfixed_does_not_land() {
         "- Skipped: the second table.",
         "- Out of scope here.",
         "- Kept as is; Justin may want it.",
+        "- Not changed: Justin has not decided yet.",
+        "- Deferred until Justin decides.",
+        "- Left as it is; Justin will decide.",
+        "- Not fixed, pending what Justin decided to look at next.",
+        "- Skipped unless Justin decided otherwise.",
         "1. Fixed.\n2. Left for later: the palette.",
     ] {
         let body = review(items);

@@ -1290,6 +1290,17 @@ impl Program {
         let one_word = [CScalar::Integer, CScalar::Uint];
         let two_words = [CScalar::Int64, CScalar::Uint64, CScalar::Double];
         self.defs.iter().position(|d| {
+            // The cheap tests first: most definitions are no constant, and of those that are
+            // few hold the words.
+            if !(d.initialized && d.constant && d.count.is_none()) {
+                return false;
+            }
+            let holds = (0_u32..)
+                .zip(words)
+                .all(|(at, word)| self.word(d.ofs.saturating_add(at)) == *word);
+            if !holds {
+                return false;
+            }
             let sized = match &d.ty {
                 ValueType::Of(Type::Simple(SimpleType::Float)) => words.len() == 1,
                 ValueType::Of(Type::Named(name)) => {
@@ -1301,14 +1312,7 @@ impl Program {
                 }
                 ValueType::Of(_) | ValueType::FloatField => false,
             };
-            sized
-                && d.name == "IMMEDIATE"
-                && d.initialized
-                && d.constant
-                && d.count.is_none()
-                && (0_u32..)
-                    .zip(words)
-                    .all(|(at, word)| self.word(d.ofs.saturating_add(at)) == *word)
+            sized && d.name == "IMMEDIATE"
         })
     }
 

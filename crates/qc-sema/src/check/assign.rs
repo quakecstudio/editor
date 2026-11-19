@@ -1345,10 +1345,9 @@ impl Checker<'_> {
             index => index.clone(),
         };
         if structured {
-            let words = self.env.layout(target).map_or(0, |layout| layout.words);
             let at = index.as_ref().and_then(|index| self.name_of(index));
             let named = index.is_none() || at.is_some();
-            if !(named && self.store_words_through(stored, pointer.named, at, words, span)) {
+            if !(named && self.store_words_through(stored, pointer.named, at, target, span)) {
                 self.followed = false;
             }
             return Ok(());
@@ -1383,15 +1382,24 @@ impl Checker<'_> {
     /// or else `OP_STOREP_F`, for each word left. Each is stored at its word's index: the
     /// word itself with no `index`, else `OP_ADD_I` of `index` and the word, which the first
     /// word folds away. Whether it was written: not on a target whose stores take no offset,
-    /// nor from a value whose words the body cannot name.
+    /// nor from a value whose words the body cannot name, nor a struct `ty` that is not whole
+    /// words, whose last 16 or 8 bits FTEQCC stores by `OP_STOREP_I16` or `OP_STOREP_I8` (`if
+    /// (i+16 <= bits) ... else if (i+8 <= bits)`) and whose index it scales by its alignment.
     pub(super) fn store_words_through(
         &mut self,
         stored: &Value,
         pointer: Option<ir::Name>,
         index: Option<ir::Name>,
-        words: u32,
+        ty: &Type,
         span: Span,
     ) -> bool {
+        let Some(layout) = self.env.layout(ty) else {
+            return false;
+        };
+        if layout.bits != 0 || layout.align != WORD_ALIGNMENT {
+            return false;
+        }
+        let words = layout.words;
         let target = self.env.target_at(span.start);
         let from = self.name_of(stored).filter(|name| {
             matches!(
@@ -1402,23 +1410,7 @@ impl Checker<'_> {
         let (Some(from), Some(pointer), true) = (from, pointer, target.stores_at_offset()) else {
             return false;
         };
-        let single = if target.valid(Op::StorepI) {
-            Op::StorepI
-        } else {
-            Op::StorepF
-        };
-        let mut at: u32 = 0;
-        while at < words {
-            let left = words.saturating_sub(at);
-            let (op, size) = if left >= VECTOR_WORDS && target.valid(Op::StorepV) {
-                (Op::StorepV, VECTOR_WORDS)
-            } else if target.valid(Op::StorepI64)
-                && at.saturating_mul(WORD_ALIGNMENT).saturating_add(INT64_BITS) <= words
-            {
-                (Op::StorepI64, 2)
-            } else {
-                (single, 1)
-            };
+        for (at, op) in self.offset_store_steps(words, span) {
             let word = ir::Name::Immediate(ir::Immediate {
                 kind: ir::ImmediateKind::Integer,
                 words: [at, 0, 0],
@@ -1436,7 +1428,6 @@ impl Checker<'_> {
                 c: place,
                 ..ir::BodyStatement::bare(op)
             });
-            at = at.saturating_add(size);
         }
         self.read_returned(stored);
         self.last_temp = None;
@@ -2169,10 +2160,6 @@ enum Compounded {
     /// Nothing more is checked.
     Unchecked,
 }
-
-/// The bits of a 64-bit value, which `QCC_StoreToPointer` tests a struct's words against
-/// (`for (; i+(32*2) <= type->size; i+=32*2)`, FTEF-6.18).
-const INT64_BITS: u32 = 64;
 
 /// Whether an assignment's target was an element at a constant index, which
 /// [`Checker::element_store`] stores.
