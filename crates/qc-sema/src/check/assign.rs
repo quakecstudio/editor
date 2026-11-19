@@ -23,7 +23,7 @@ use crate::check::member::WORD_ALIGNMENT;
 use crate::check::opcodes;
 use crate::check::opcodes::row;
 use crate::check::reference::word_type;
-use crate::check::truth::Test;
+use crate::check::truth::{Test, is_truth};
 use crate::check::{Constness, Fold, Reference, Value, ValueUse};
 use crate::ir;
 use crate::lower::{Qualifier, declares};
@@ -303,6 +303,12 @@ impl Checker<'_> {
                 }
             }
         };
+        // FTEF-29.21: `QCC_StoreSRefToRef` converts a number that is not of the target's type
+        // before it stores it, a truth value's by its comparison with zero.
+        let stored = match kind {
+            Assign::Store => self.store_converted(stored, &target, span)?,
+            Assign::Compound(..) => stored,
+        };
         // FTEF-29.13: a store to a definition is its `OP_STORE_*`, unless it folds into the
         // statement that made the value's temporary (`opt_assignments`).
         // DIFF-14.11: not into a statement whose result is wider than the value, a vector whose
@@ -323,11 +329,13 @@ impl Checker<'_> {
         // definition's or a block's words, and so is any other type copied by its size whose
         // store folds into no statement.
         // A store that packs its value into a word is no store of the member's own type.
+        let steps = self.store_steps(by_size, &target, span);
         let copied = matches!(kind, Assign::Store)
             && !packs
             && lhs.reference == Reference::Global
             && (structured || !folded)
-            && by_size.is_some_and(|words| self.copy_by_size(&stored, lhs.name(), words, span));
+            && (by_size.is_some() || steps.len() > 1)
+            && self.copy_steps(&stored, lhs.name(), &steps);
         if matches!(kind, Assign::Store) && !copied && !packs {
             let store = self.store_or_refuse(by_size, &target, span);
             // The store chosen for the `=`, which the code generator reads.
@@ -681,7 +689,14 @@ impl Checker<'_> {
                 ..zero.map_or_else(Value::unknown, Value::constant)
             };
             let truth = self.emit(op, value, &zero, span)?;
-            return self.convert_to(&truth, &parent, span);
+            // `QCC_TryEvaluateCast(src, tmp->parentclass, implicit)`: the comparison's truth
+            // value is read as its parent (`while (src.cast->type == ev_boolean) src.cast =
+            // src.cast->parentclass;`), so the value is of the parent's type.
+            let converted = self.convert_to(&truth, &parent, span)?;
+            return Ok(Value {
+                ty: parent,
+                ..converted
+            });
         }
         // `t == ev_void && flag_laxcasts`: "cast to boolean", then `OP_NE_F` (FTEF-23.11).
         if let Some(parent) = parent
@@ -736,20 +751,8 @@ impl Checker<'_> {
         if untyped_pointer || from.etype == Etype::Variant || to.etype == Etype::Variant {
             return Ok(());
         }
-        let number = |etype: Etype| {
-            matches!(
-                etype,
-                Etype::Float
-                    | Etype::Integer
-                    | Etype::Uint
-                    | Etype::Int64
-                    | Etype::Uint64
-                    | Etype::Double
-                    | Etype::Boolean
-            )
-        };
-        if number(from.etype) && number(to.etype) {
-            self.convert_to(value, target, span)?;
+        // A number is converted before it is stored ([`Checker::store_converted`]).
+        if is_number(from.etype) && is_number(to.etype) {
             return Ok(());
         }
         let message = format!(
@@ -761,6 +764,32 @@ impl Checker<'_> {
         );
         self.env.report(Code::W0240, span, message);
         Ok(())
+    }
+
+    /// FTEF-29.21: `QCC_StoreSRefToRef`'s conversion of the value it stores: a number whose
+    /// type, or a parent's, is not the target's by `typecmp_lax` is converted to the target's
+    /// type (`QCC_SupplyConversion(source, dest->cast->type, true)`), and to a truth value by
+    /// its comparison with zero and then to the truth value's parent
+    /// (`QCC_SupplyConversion(QCC_PR_GenerateLogicalTruth(source, "cannot convert to
+    /// boolean"), dest->cast->parentclass->type, true)`). A value the cast already made a
+    /// number of the truth value's parent is compared again here, as FTEQCC compares it.
+    fn store_converted(&mut self, value: Value, target: &Type, span: Span) -> Checked {
+        if value.known().is_some_and(Constant::null) {
+            return Ok(value);
+        }
+        let (Some(from), Some(to)) = (self.env.shape(&value.ty), self.env.shape(target)) else {
+            return Ok(value);
+        };
+        // `typecmp_lax`'s `if (a->type != b->type) ... return 1;`: a number the cast left of
+        // a truth value's parent type is no truth value.
+        let to_truth = is_truth(target) && !is_truth(&value.ty);
+        if !to_truth && self.env.typecmp_lax(&value.ty, target) {
+            return Ok(value);
+        }
+        if is_number(from.etype) && is_number(to.etype) {
+            return self.convert_to(&value, target, span);
+        }
+        Ok(value)
     }
 
     /// FTEF-29.5: a postfix `++` or `--`: an operand that is read-only is a fatal error, and the
@@ -1239,19 +1268,16 @@ impl Checker<'_> {
         Ok(())
     }
 
-    /// `QCC_StoreToSRef`'s `default:` (FTE-14.6, FTEF-2.13, FTEF-6.31, FTEF-11.5): `stored`, of
-    /// `words` words, copied to the definition `to` piece by piece ([`Checker::pieces`]), from
-    /// a definition's or a block's words, or, when it is a constant 0, from the zero of each
-    /// piece's size (`if (QCC_SRef_IsNull(source))`: `QCC_MakeVectorConst(0,0,0)`,
-    /// `QCC_MakeInt64Const(0)`, `QCC_MakeIntConst(0)`). Whether it was: a value that is
-    /// neither is left to its one statement.
-    fn copy_by_size(
-        &mut self,
-        stored: &Value,
-        to: Option<ir::Name>,
-        words: u32,
-        span: Span,
-    ) -> bool {
+    /// A store of more statements than one, or of a type copied by its size, to the
+    /// definition `to`: each of `steps` ([`Checker::store_steps`]) stores the word it starts
+    /// at, from a definition's, a block's, an immediate's or a call's words. A constant 0 is
+    /// stored from the zero of each step's size instead, as both of FTEQCC's functions store
+    /// it: `QCC_StoreToSRef`'s `default:` (`if (QCC_SRef_IsNull(source))`:
+    /// `QCC_MakeVectorConst(0,0,0)`, `QCC_MakeInt64Const(0)`, `QCC_MakeIntConst(0)`; FTE-14.6,
+    /// FTEF-2.13, FTEF-6.31, FTEF-11.5) and `QCC_PR_StatementFlags` of `OP_STORE_I64` (`var_a =
+    /// QCC_MakeInt64Const(0);`, FTEF-27.20). Whether it was: any other value is left to its
+    /// one statement.
+    fn copy_steps(&mut self, stored: &Value, to: Option<ir::Name>, steps: &[(Op, u32)]) -> bool {
         let Some(to) = to else {
             return false;
         };
@@ -1259,7 +1285,6 @@ impl Checker<'_> {
             return false;
         }
         let null = stored.null();
-        // The words of a definition, a block a statement made, an immediate or a call's value.
         let from = self.name_of(stored).filter(|name| {
             matches!(
                 name,
@@ -1269,17 +1294,21 @@ impl Checker<'_> {
         if !null && from.is_none() {
             return false;
         }
-        for (op, word) in self.pieces(words, span) {
+        let zero = |kind| {
+            ir::Name::Immediate(ir::Immediate {
+                kind,
+                words: [0, 0, 0],
+            })
+        };
+        for &(op, word) in steps {
             let a = if null {
-                let kind = match op {
-                    Op::StoreV => ir::ImmediateKind::Vector,
-                    Op::StoreI64 => ir::ImmediateKind::Int64,
-                    _ => ir::ImmediateKind::Integer,
-                };
-                Some(ir::Name::Immediate(ir::Immediate {
-                    kind,
-                    words: [0, 0, 0],
-                }))
+                match op {
+                    Op::StoreV => Some(zero(ir::ImmediateKind::Vector)),
+                    Op::StoreI64 => Some(zero(ir::ImmediateKind::Int64)),
+                    // A word of the 64-bit zero an emulated `OP_STORE_I64` copies.
+                    Op::StoreFld => zero(ir::ImmediateKind::Int64).word(word),
+                    _ => Some(zero(ir::ImmediateKind::Integer)),
+                }
             } else {
                 from.and_then(|from| from.word(word))
             };
@@ -1474,27 +1503,76 @@ impl Checker<'_> {
         no_case.then_some(layout.words)
     }
 
-    /// The one statement that stores a value to a definition, `QCC_StoreToSRef`: its type's
-    /// case, or for a type copied by its size, `by_size` its words, the piece that is the
-    /// whole of it on this target ([`Checker::pieces`]). `None` when the copy is of more
-    /// pieces than one, which is [`Checker::copy_by_size`]'s.
-    fn whole_store(&self, by_size: Option<u32>, ty: &Type, span: Span) -> Option<Op> {
-        match by_size {
-            Some(words) => match self.pieces(words, span).as_slice() {
-                [(op, _)] => Some(*op),
-                _ => None,
-            },
-            None => Some(Checker::store_op(self.etype(ty))),
+    /// The statements that store a value to a definition on this target, each its opcode and
+    /// the word it starts at. A type copied by its size, `by_size` its words, is its pieces
+    /// ([`Checker::pieces`]); any other is its type's case of `QCC_StoreToSRef`, one
+    /// statement, but `OP_STORE_I64` on a target without it, which `QCC_PR_StatementFlags`
+    /// writes as `OP_STORE_FLD` of each of its two words (FTEF-27.20).
+    fn store_steps(&self, by_size: Option<u32>, ty: &Type, span: Span) -> Vec<(Op, u32)> {
+        if let Some(words) = by_size {
+            return self.pieces(words, span);
+        }
+        match Checker::store_op(self.etype(ty)) {
+            Op::StoreI64 if !self.env.target_at(span.start).valid(Op::StoreI64) => {
+                vec![(Op::StoreFld, 0), (Op::StoreFld, 1)]
+            }
+            op => vec![(op, 0)],
         }
     }
 
-    /// [`Checker::whole_store`], or, where the copy is of more pieces than one statement, a
-    /// body that is not followed: only an assignment to a definition copies piece by piece.
+    /// The statements that store a local's initialiser, `QCC_PR_GenerateInitializerType`'s
+    /// loop over the local's words, each its opcode and the word it starts at (FTE-14.9):
+    /// `OP_STORE_V` while three words or more are left, `OP_STORE_I64` for two, which a
+    /// target without it writes as `OP_STORE_FLD` of each (FTEF-27.20), and the last word by
+    /// the local's basic type, `OP_STORE_F` for any but a function, a string, an entity, a
+    /// field or an integer.
+    fn initialiser_steps(&self, ty: &Type, span: Span) -> Vec<(Op, u32)> {
+        let words = self.env.layout(ty).map_or(1, |layout| layout.words);
+        let wide = self.env.target_at(span.start).valid(Op::StoreI64);
+        let mut steps = Vec::new();
+        let mut at = 0;
+        while at < words {
+            let left = words.saturating_sub(at);
+            let size = if left >= VECTOR_WORDS {
+                steps.push((Op::StoreV, at));
+                VECTOR_WORDS
+            } else if left == 2 {
+                if wide {
+                    steps.push((Op::StoreI64, at));
+                } else {
+                    steps.push((Op::StoreFld, at));
+                    steps.push((Op::StoreFld, at.saturating_add(1)));
+                }
+                2
+            } else {
+                steps.push((
+                    match self.etype(ty) {
+                        Some(Etype::Function) => Op::StoreFnc,
+                        Some(Etype::String) => Op::StoreS,
+                        Some(Etype::Entity) => Op::StoreEnt,
+                        Some(Etype::Field) => Op::StoreFld,
+                        Some(Etype::Integer | Etype::Uint) => Op::StoreI,
+                        _ => Op::StoreF,
+                    },
+                    at,
+                ));
+                1
+            };
+            at = at.saturating_add(size);
+        }
+        steps
+    }
+
+    /// The one statement of [`Checker::store_steps`], or, where there are more, a body that
+    /// is not followed: a site that writes one statement does not make the others.
     fn store_or_refuse(&mut self, by_size: Option<u32>, ty: &Type, span: Span) -> Op {
-        self.whole_store(by_size, ty, span).unwrap_or_else(|| {
-            self.followed = false;
-            Op::StoreF
-        })
+        match self.store_steps(by_size, ty, span).as_slice() {
+            [(op, _)] => *op,
+            _ => {
+                self.followed = false;
+                Op::StoreF
+            }
+        }
     }
 
     /// The one statement that stores a value of type `ty` to a definition
@@ -1594,9 +1672,9 @@ impl Checker<'_> {
         if value.ty == Type::Unknown {
             return Ok(());
         }
-        // A struct's or a union's initialiser of its own type is copied a word at a time by
-        // `STORE_FLD`, the words being fields of the struct to `QCC_PR_ParseInitializerType`;
-        // any other is not followed.
+        // FTE-14.9: a struct's or a union's initialiser of its own type is copied by
+        // `QCC_PR_GenerateInitializerType`'s statements ([`Checker::initialiser_steps`]); any
+        // other is not followed.
         if matches!(self.etype(&ty), Some(Etype::Struct | Etype::Union)) {
             let local = declarator
                 .name()
@@ -1611,12 +1689,11 @@ impl Checker<'_> {
                 && from.is_some()
                 && declarator.array_suffixes().next().is_none()
             {
-                let words = self.env.layout(&ty).map_or(0, |l| l.words);
-                for word in 0..words {
+                for (op, word) in self.initialiser_steps(&ty, init.syntax().span()) {
                     self.generated.push(ir::BodyStatement {
                         a: from.and_then(|name| name.word(word)),
                         b: Some(ir::Name::Def(local, word)),
-                        ..ir::BodyStatement::bare(Op::StoreFld)
+                        ..ir::BodyStatement::bare(op)
                     });
                 }
                 if value.returned {
@@ -1678,12 +1755,26 @@ impl Checker<'_> {
                     .name()
                     .and_then(|name| self.env.reference(name.span().start))
                     .map(|def| ir::Name::Def(def, 0));
-                let store = self.store_of(&ty, declarator.syntax().span());
-                self.generated.push(ir::BodyStatement {
-                    a: self.name_of(&value),
-                    b: local,
-                    ..ir::BodyStatement::bare(store)
-                });
+                let from = self.name_of(&value);
+                let steps = self.initialiser_steps(&ty, span);
+                // A value whose words the body cannot name is stored by one statement only.
+                let named = from.is_some_and(|name| name.word(0).is_some());
+                if steps.len() > 1 && !named {
+                    self.followed = false;
+                }
+                for (op, word) in steps {
+                    self.generated.push(ir::BodyStatement {
+                        a: from.and_then(|name| {
+                            if word == 0 {
+                                Some(name)
+                            } else {
+                                name.word(word)
+                            }
+                        }),
+                        b: local.and_then(|name| name.word(word)),
+                        ..ir::BodyStatement::bare(op)
+                    });
+                }
                 self.last_temp = None;
             }
         }
@@ -1793,4 +1884,19 @@ enum Compounded {
     InPlace(Value),
     /// Nothing more is checked.
     Unchecked,
+}
+
+/// Whether `etype` is one of the numbers `QCC_StoreSRefToRef` converts between: a float, an
+/// integer of 32 or 64 bits, a double or a truth value.
+const fn is_number(etype: Etype) -> bool {
+    matches!(
+        etype,
+        Etype::Float
+            | Etype::Integer
+            | Etype::Uint
+            | Etype::Int64
+            | Etype::Uint64
+            | Etype::Double
+            | Etype::Boolean
+    )
 }
