@@ -204,8 +204,15 @@ corpus uses `int` heavily (3392 occurrences across the three mods) and `bool` (1
   `__int8 c; int a; c = a;` is `STORE_F a, c`, through a typedef of the type too, and a double
   stored to a double is one `OP_STORE_I64` on an FTE target and two `OP_STORE_F` on the
   standard one, where a 64-bit integer's own `OP_STORE_I64` is emulated instead (FTEF-27).
-  A constant 0 is copied from the zero of each piece's size (`if (QCC_SRef_IsNull(source))`:
-  `QCC_MakeVectorConst(0,0,0)`, `QCC_MakeInt64Const(0)`, `QCC_MakeIntConst(0)`). No width
+  The words copied are the value's, a definition's, an immediate's or a call's in the return
+  global: `d = g()` on the standard target is `STORE_F` of the return global's first word and
+  of its second. A store that packs its value into a word, as one to an 8- or 16-bit member
+  does (FTEF-6.15), is no copy by size. The `default:` copies a constant 0 from zeroes (`if
+  (QCC_SRef_IsNull(source))`), which only a source typed an integer, a float or a pointer is
+  (`QCC_SRef_IsNull`), so a `__variant` takes it (FTEF-11.5) and a double does not: `d = 0`
+  of a double is cast first, to a one-word constant typed a double (`src =
+  QCC_MakeIntConst(0); src.cast = cast;`), whose word and the word after it FTEQCC then
+  copies. Our compiler copies the two words of the double 0 instead. No width
   chooses the progs format, which is the target's (FTE-24.1, FTE-24.3). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_StoreToSRef`.

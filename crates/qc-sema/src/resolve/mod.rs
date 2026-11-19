@@ -155,8 +155,6 @@ pub struct ModuleIndex {
 pub struct Scalar {
     /// The words a value takes, `type->size`.
     pub words: u32,
-    /// Its number in a definition's record, FTEQCC's `etype_t`.
-    pub number: u16,
     /// Which scalar it is: an integer of 32 or 64 bits, signed or not, or a double.
     pub kind: CScalar,
 }

@@ -62,9 +62,6 @@ impl Etype {
         Self::Double,
     ];
 
-    /// `ev_entity` in FTEQCC's `etype_t`, which a class is (FTEF-9.25).
-    pub(crate) const ENTITY_NUMBER: u16 = 4;
-
     /// `ev_variant` in FTEQCC's `etype_t`, after `ev_double` (FTEF-19.84).
     pub(crate) const VARIANT_NUMBER: u16 = 13;
 
@@ -86,8 +83,14 @@ impl Etype {
             self,
             Self::Integer | Self::Uint | Self::Int64 | Self::Uint64 | Self::Double
         );
+        scalar.then(|| self.number()).flatten()
+    }
+
+    /// Its number in FTEQCC's `etype_t` when it is one of the engine's types, `ev_void` to
+    /// `ev_double`.
+    pub(crate) fn number(self) -> Option<u16> {
         let place = Self::NUMBERED.iter().position(|etype| *etype == self)?;
-        scalar.then(|| u16::try_from(place).ok()).flatten()
+        u16::try_from(place).ok()
     }
 
     /// Its name in `basictypenames[]`, which some messages print.

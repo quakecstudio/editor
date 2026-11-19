@@ -322,12 +322,14 @@ impl Checker<'_> {
         // FTE-14.6, FTEF-6.31: a struct stored to a definition is copied piece by piece from a
         // definition's or a block's words, and so is any other type copied by its size whose
         // store folds into no statement.
+        // A store that packs its value into a word is no store of the member's own type.
         let copied = matches!(kind, Assign::Store)
+            && !packs
             && lhs.reference == Reference::Global
             && (structured || !folded)
             && by_size.is_some_and(|words| self.copy_by_size(&stored, lhs.name(), words, span));
         if matches!(kind, Assign::Store) && !copied && !packs {
-            let store = self.store_of(&target);
+            let store = self.store_or_refuse(by_size, &target, span);
             // The store chosen for the `=`, which the code generator reads.
             self.opcodes.insert((span.start, span.end), store);
             if lhs.reference == Reference::Global && !folded {
@@ -355,7 +357,7 @@ impl Checker<'_> {
         }
         if matches!(kind, Assign::Store | Assign::Compound(..)) && !packs {
             let fold = if folded { Fold::Folded } else { Fold::Stored };
-            self.element_store(&lhs, &stored, &target, fold);
+            self.element_store(&lhs, &stored, (&target, span), fold);
         }
         // FTEF-19.78: an element at an index that is no constant is stored by the array's
         // `ArraySet*` function: the index and the value stored to its parameters, then `CALL2`.
@@ -844,7 +846,7 @@ impl Checker<'_> {
             _ => false,
         };
         if !discarded && (placed || old.returned) {
-            let store = self.store_of(&operand.ty);
+            let store = self.store_of(&operand.ty, span);
             self.emit(store, &old, &Value::unknown(), span)?;
             copy = self
                 .generated
@@ -1071,7 +1073,7 @@ impl Checker<'_> {
         let folded = updated.temp.is_some() && updated.temp == self.last_temp;
         self.definition_store(operand, updated, target, span)?;
         let fold = if folded { Fold::Folded } else { Fold::Stored };
-        self.element_store(operand, updated, target, fold);
+        self.element_store(operand, updated, (target, span), fold);
         Ok(())
     }
 
@@ -1092,7 +1094,7 @@ impl Checker<'_> {
             self.fold_into(stored, lhs.name());
             return Ok(());
         }
-        let store = self.store_of(target);
+        let store = self.store_of(target, span);
         self.emit(store, stored, &Value::unknown(), span)?;
         self.name_last(store, self.name_of(stored), lhs.name());
         Ok(())
@@ -1101,7 +1103,13 @@ impl Checker<'_> {
     /// FTEF-31.10: the store of `stored` to the element `lhs` at a constant index, a word of
     /// the array's definition, stored as a definition is unless the value folds into the
     /// statement that made it (`folded`).
-    fn element_store(&mut self, lhs: &Value, stored: &Value, target: &Type, fold: Fold) {
+    fn element_store(
+        &mut self,
+        lhs: &Value,
+        stored: &Value,
+        (target, span): (&Type, Span),
+        fold: Fold,
+    ) {
         let folded = fold == Fold::Folded;
         let Reference::Element(element) = &lhs.reference else {
             return;
@@ -1114,10 +1122,11 @@ impl Checker<'_> {
         if folded {
             self.fold_into(stored, to);
         } else {
+            let store = self.store_of(target, span);
             self.generated.push(ir::BodyStatement {
                 a: self.name_of(stored),
                 b: to,
-                ..ir::BodyStatement::bare(self.store_of(target))
+                ..ir::BodyStatement::bare(store)
             });
             self.read_returned(stored);
             self.last_temp = None;
@@ -1250,9 +1259,13 @@ impl Checker<'_> {
             return false;
         }
         let null = stored.null();
-        let from = self
-            .name_of(stored)
-            .filter(|name| matches!(name, ir::Name::Def(..) | ir::Name::Made(_)));
+        // The words of a definition, a block a statement made, an immediate or a call's value.
+        let from = self.name_of(stored).filter(|name| {
+            matches!(
+                name,
+                ir::Name::Def(..) | ir::Name::Made(_) | ir::Name::Immediate(_) | ir::Name::Return
+            )
+        });
         if !null && from.is_none() {
             return false;
         }
@@ -1317,7 +1330,7 @@ impl Checker<'_> {
             return Ok(());
         };
         let width = self.env.layout(&ty).map_or(1, |l| l.words);
-        let store = self.store_of(&ty);
+        let store = self.store_of(&ty, declarator.syntax().span());
         for (at, element) in (0_u32..).zip(elements) {
             let value = self.value(Some(element.clone()))?;
             // An element of another type is converted as it is stored, which the body does not
@@ -1461,17 +1474,34 @@ impl Checker<'_> {
         no_case.then_some(layout.words)
     }
 
-    /// The one statement that stores a value of type `ty` to a definition, `QCC_StoreToSRef`:
-    /// its type's case, or for a type copied by its size the piece that is the whole of
-    /// three words, two or one ([`Checker::pieces`]). A copy of more pieces is
-    /// [`Checker::copy_by_size`]'s.
-    pub(super) fn store_of(&self, ty: &Type) -> Op {
-        match self.copied_by_size(ty) {
-            Some(VECTOR_WORDS) => Op::StoreV,
-            Some(2) => Op::StoreI64,
-            Some(_) => Op::StoreF,
-            None => Checker::store_op(self.etype(ty)),
+    /// The one statement that stores a value to a definition, `QCC_StoreToSRef`: its type's
+    /// case, or for a type copied by its size, `by_size` its words, the piece that is the
+    /// whole of it on this target ([`Checker::pieces`]). `None` when the copy is of more
+    /// pieces than one, which is [`Checker::copy_by_size`]'s.
+    fn whole_store(&self, by_size: Option<u32>, ty: &Type, span: Span) -> Option<Op> {
+        match by_size {
+            Some(words) => match self.pieces(words, span).as_slice() {
+                [(op, _)] => Some(*op),
+                _ => None,
+            },
+            None => Some(Checker::store_op(self.etype(ty))),
         }
+    }
+
+    /// [`Checker::whole_store`], or, where the copy is of more pieces than one statement, a
+    /// body that is not followed: only an assignment to a definition copies piece by piece.
+    fn store_or_refuse(&mut self, by_size: Option<u32>, ty: &Type, span: Span) -> Op {
+        self.whole_store(by_size, ty, span).unwrap_or_else(|| {
+            self.followed = false;
+            Op::StoreF
+        })
+    }
+
+    /// The one statement that stores a value of type `ty` to a definition
+    /// ([`Checker::store_or_refuse`]).
+    pub(super) fn store_of(&mut self, ty: &Type, span: Span) -> Op {
+        let by_size = self.copied_by_size(ty);
+        self.store_or_refuse(by_size, ty, span)
     }
 }
 
@@ -1648,10 +1678,11 @@ impl Checker<'_> {
                     .name()
                     .and_then(|name| self.env.reference(name.span().start))
                     .map(|def| ir::Name::Def(def, 0));
+                let store = self.store_of(&ty, declarator.syntax().span());
                 self.generated.push(ir::BodyStatement {
                     a: self.name_of(&value),
                     b: local,
-                    ..ir::BodyStatement::bare(self.store_of(&ty))
+                    ..ir::BodyStatement::bare(store)
                 });
                 self.last_temp = None;
             }

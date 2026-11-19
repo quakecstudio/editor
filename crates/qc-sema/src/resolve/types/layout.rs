@@ -333,16 +333,12 @@ impl Resolver<'_> {
         }
     }
 
-    /// What a definition of `ty` is in a progs when `ty` is one of C's scalars of a word or
-    /// more, through a typedef and an enum's base: its words and its record's type number.
-    fn scalar_of(&self, ty: &Type) -> Option<Scalar> {
+    /// The basic type of `ty` when it is one of C's scalars of a word or more, through a
+    /// typedef and an enum's base.
+    fn scalar_etype(&self, ty: &Type) -> Option<Etype> {
         let resolved = self.resolved(ty);
         // An integer narrower than a word is a bitfield's type, which no record numbers so.
-        let narrow = matches!(
-            resolved.fteqcc_scalar(),
-            Some(CScalar::Int8 | CScalar::Uint8 | CScalar::Int16 | CScalar::Uint16)
-        );
-        if narrow {
+        if resolved.is_narrow_integer() {
             return None;
         }
         let shape = self.shape(&resolved)?;
@@ -350,7 +346,13 @@ impl Resolver<'_> {
             Etype::Enum => shape.holds?,
             other => other,
         };
-        let kind = match etype {
+        etype.scalar_number().map(|_| etype)
+    }
+
+    /// What a definition of `ty` is in a progs when `ty` is one of C's scalars of a word or
+    /// more: its words and which scalar it is.
+    fn scalar_of(&self, ty: &Type) -> Option<Scalar> {
+        let kind = match self.scalar_etype(ty)? {
             Etype::Integer => CScalar::Integer,
             Etype::Uint => CScalar::Uint,
             Etype::Int64 => CScalar::Int64,
@@ -360,7 +362,6 @@ impl Resolver<'_> {
         };
         Some(Scalar {
             words: self.layout(ty)?.words,
-            number: etype.scalar_number()?,
             kind,
         })
     }
@@ -373,13 +374,10 @@ impl Resolver<'_> {
     fn record_of(&self, ty: &Type) -> Option<RecordShape> {
         let resolved = self.resolved(ty);
         let scalar = resolved.fteqcc_scalar();
-        let narrow = matches!(
-            scalar,
-            Some(CScalar::Int8 | CScalar::Uint8 | CScalar::Int16 | CScalar::Uint16)
-        );
-        let class = resolved
-            .type_name()
-            .is_some_and(|name| self.named(&self.class_names, name).is_some());
+        let narrow = resolved.is_narrow_integer();
+        // A class itself, not a pointer to one, which `type_name` would look through.
+        let class = matches!(&resolved, Type::Named(name)
+            if self.named(&self.class_names, name).is_some());
         let number = if self.is_accessor_type(ty) {
             Etype::ACCESSOR_NUMBER
         } else if narrow {
@@ -387,11 +385,12 @@ impl Resolver<'_> {
         } else if matches!(scalar, Some(CScalar::Bool | CScalar::BFloat)) {
             Etype::BOOLEAN_NUMBER
         } else if class {
-            Etype::ENTITY_NUMBER
+            // A class is an entity type (FTEF-9.14).
+            Etype::Entity.number()?
         } else if self.shape(&resolved)?.etype == Etype::Variant {
             Etype::VARIANT_NUMBER
         } else {
-            self.scalar_of(ty)?.number
+            self.scalar_etype(ty)?.scalar_number()?
         };
         Some(RecordShape {
             words: self.layout(ty)?.words,

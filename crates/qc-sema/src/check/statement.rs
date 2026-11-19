@@ -402,10 +402,11 @@ impl Checker<'_> {
                 }
                 continue;
             }
+            let store = self.store_of(param, span);
             self.generated.push(ir::BodyStatement {
                 a: Some(ir::Name::Def(local, 0)),
                 b: Some(ir::Name::Parameter(held)),
-                ..ir::BodyStatement::bare(self.store_of(param))
+                ..ir::BodyStatement::bare(store)
             });
         }
     }

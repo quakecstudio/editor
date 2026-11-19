@@ -259,7 +259,9 @@ fn a_body_with_a_finding_left_unfixed_does_not_land() {
     let review = |items: &str| format!("## Code review\n\n`/code-review high` ran.\n\n{items}\n");
     for items in [
         "- Fixed: the store reads the type's layout.\n- Fixed: one table.",
-        "- Fixed: the comment no longer says the menu is unchanging.",
+        "- Fixed in abc123: the temporary is no longer left to leak.",
+        "- Fixed: statement counts are unchanged, checked on four mods.",
+        "- Fixed in the follow-up commit.",
         "- Stays as it is: Justin decided on 2026-11-19 that the bare binary's title is not changed.",
         "Nothing found.",
     ] {
@@ -271,6 +273,10 @@ fn a_body_with_a_finding_left_unfixed_does_not_land() {
         "- Not fixed: the links' layout.",
         "- The second table is left as it is.",
         "- Deferred to a follow-up.",
+        "- I defer the refactor to a later PR.",
+        "- Skipped: the second table.",
+        "- Out of scope here.",
+        "- Kept as is; Justin may want it.",
         "1. Fixed.\n2. Left for later: the palette.",
     ] {
         let body = review(items);

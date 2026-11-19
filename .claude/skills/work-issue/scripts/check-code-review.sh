@@ -4,9 +4,11 @@
 # "## Code review" heading whose section names the level the code-review skill ran at, as
 # "/code-review high" or "effort: high" (low, medium, high, xhigh or max), so a PR cannot land
 # with the review skipped. It also refuses a section that leaves a finding unfixed: an item or
-# paragraph that says a finding was not changed, not fixed, left as it is, deferred or kept for
-# a change of its own, unless it names Justin as having decided so. A finding is fixed on the
-# branch, in its proper place, or it is his call (development-discipline.md, rule 6).
+# paragraph that says a finding was not changed, not fixed, left as it is, left for later,
+# deferred, skipped, out of scope or kept for a change of its own, unless the item says Justin
+# decided it. A finding is fixed on the branch, in its proper place, or it is his call
+# (development-discipline.md, rule 6). The words are matched as they are written, so an item
+# about a fixed finding that happens to use one ("no longer deferred") is reworded.
 # Usage: check-code-review.sh < body
 # Exits 0 when the section is there; 1, saying what is missing, when it is not.
 set -euo pipefail
@@ -32,13 +34,17 @@ perl -e '
   }
   # A finding left unfixed: each list item or paragraph is read on its own.
   my $deferred = qr{
-    \bnot\s+(?:changed|fixed|addressed|done)\b | \bunchanged\b | \bleft\s+(?:as|for|to|alone)\b
-    | \bdeferred?\b | \b(?:its|their)\s+own\s+(?:change|PR|pull\s+request)\b | \bfollow-?up\b
+    \b(?:not|never)\s+(?:changed|fixed|addressed|done)\b
+    | \bwon(?:\x27|\xE2\x80\x99)?t\s+fix\b
+    | \b(?:left|kept|stays?)\s+as\s+(?:it\s+is|they\s+are|is)\b
+    | \bleft\s+(?:for\s+later|alone|out)\b
+    | \bdefer\w*\b | \bskipped\b | \bout\s+of\s+scope\b
+    | \b(?:its|their|a)\s+(?:own|later|separate)\s+(?:change|PR|pull\s+request)\b
   }xi;
   my $bad = 0;
   for my $item (split /\n[ \t]*\n|\n(?=[ \t]*(?:[-*+]|\d+[.)])[ \t])/, $section) {
     next unless $item =~ $deferred;
-    next if $item =~ /\bJustin\b/;
+    next if $item =~ /\bJustin\b[^.]*\bdecid/i || $item =~ /\bdecid\w*\b[^.]*\bJustin\b/i;
     my $flat = $item =~ s/\s+/ /gr;
     print "The \"## Code review\" section leaves a finding unfixed: $flat\n";
     $bad = 1;

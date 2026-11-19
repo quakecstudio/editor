@@ -6149,26 +6149,56 @@ fn a_variant_is_stored_whole_and_read_by_the_targets_type() {
 // from the 64-bit zero for a constant 0, and two `OP_STORE_F` where it has not
 #[test]
 fn each_width_is_stored_by_its_size() {
-    use qc_progs::Op::{StoreF, StoreI, StoreI64};
+    use qc_progs::Op::{Call0, StoreF, StoreI, StoreI64};
     let progs = compile_fteqcc(
         "#pragma target fte\nint a;\n__int8 c;\n__uint16 h;\n__uint u;\n__int64 l;\n\
          __int64 m;\n__double d;\n__double k;\ntypedef __int8 small;\nsmall t;\n\
-         void() f = { c = a; h = a; u = a; l = m; d = k; t = a; d = 0; };\n",
+         void() f = { c = a; h = a; u = a; l = m; d = k; t = a; };\n",
     )
     .unwrap()
     .progs;
-    let statements = body(&progs, "f");
-    let stores: Vec<u32> = statements.iter().map(|s| s.op).collect();
-    let expected = numbers([StoreF, StoreF, StoreI, StoreI64, StoreI64, StoreF, StoreI64]);
-    assert_eq!(stores.get(..7), Some(&expected[..]));
-    assert_eq!(words(&progs, statements[6].a, 2), [0, 0], "the 64-bit zero");
-    let standard = compile_fteqcc("__double d;\n__double k;\nvoid() f = { d = k; };\n")
-        .unwrap()
-        .progs;
+    let stores: Vec<u32> = body(&progs, "f").iter().map(|s| s.op).collect();
+    let expected = numbers([StoreF, StoreF, StoreI, StoreI64, StoreI64, StoreF]);
+    assert_eq!(stores.get(..6), Some(&expected[..]));
+    // The standard target has no `OP_STORE_I64`: a double is two words, from a definition,
+    // an immediate and a call's value alike.
+    let standard = compile_fteqcc(
+        "__double d;\n__double k;\n__double() g = { return k; };\n\
+         void() f = { d = k; d = 2.5d; d = g(); };\n",
+    )
+    .unwrap()
+    .progs;
     let copy = body(&standard, "f");
+    let ops: Vec<u32> = copy.iter().map(|s| s.op).collect();
+    let expected = numbers([StoreF, StoreF, StoreF, StoreF, Call0, StoreF, StoreF]);
+    assert_eq!(ops.get(..7), Some(&expected[..]));
     let (d, k) = (global(&standard, "d"), global(&standard, "k"));
-    assert_eq!(copy[0], st(Opcode::StoreF, k, d, 0));
-    assert_eq!(copy[1], st(Opcode::StoreF, k + 1, d + 1, 0));
+    assert_eq!((copy[0].a, copy[0].b), (k, d));
+    assert_eq!((copy[1].a, copy[1].b), (k + 1, d + 1));
+    assert_eq!(copy[3].a, copy[2].a + 1, "the immediate's second word");
+    assert_eq!(
+        (copy[5].a, copy[6].a),
+        (1, 2),
+        "the return global's two words"
+    );
+}
+
+// spec FTEF-6.15, FTEF-2.13: a store to an 8- or 16-bit member packs its value into the
+// member's word and is no copy by size: the word's other members keep their bits
+#[test]
+fn a_narrow_member_is_packed_not_copied() {
+    let progs = compile_fteqcc(
+        "#pragma target fte\ntypedef struct { __int8 c; __int8 d; float f; } nar_t;\n\
+         nar_t ns;\nint ri;\nvoid() f = { ns.c = ri; };\n",
+    )
+    .unwrap()
+    .progs;
+    let store_f = numbers([qc_progs::Op::StoreF])[0];
+    let statements = body(&progs, "f");
+    assert!(
+        statements.iter().all(|s| s.op != store_f),
+        "no whole-word store: {statements:?}"
+    );
 }
 
 // spec FTEF-9.25: a class's data member and virtual member function are entity fields the
@@ -6181,7 +6211,7 @@ fn a_classes_fields_are_listed_and_its_objects_are_entities() {
          class base { float m; float z = 0; vector w; vector n = 0; virtual void() think;\n\
          virtual void() pure = 0; };\n\
          void() base::think = { m = m + z; w_x = m; n_x = m; };\n\
-         base *bp;\n\
+         base *bp;\ntypedef base *bptr;\nbptr tp;\n\
          void() f = { local base b; b = spawn(base); b.think(); bp = &b; };\n",
     )
     .unwrap()
@@ -6206,6 +6236,7 @@ fn a_classes_fields_are_listed_and_its_objects_are_entities() {
         7,
         "a pointer to a class is a pointer"
     );
+    assert_eq!(record_type(&progs, "tp"), 7, "through a typedef too");
 }
 
 // spec FTEF-6.31: a struct stored to a definition is `OP_STORE_V` for each three words, then
