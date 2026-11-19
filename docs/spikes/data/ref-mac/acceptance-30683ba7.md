@@ -19,3 +19,29 @@ on the issue on 2026-11-17.
 The frames read were the engine's own, written by `engine.screenshot`. The checks of the app's
 windows read each window's bounds and layer from the window server; no window was looked at
 by a person.
+
+## A map built through the MCP tools
+
+The same day, in the same app session and project, the MCP client agent built a map: `map.open`
+of an empty `maps/arena.map`, nine `map.brush_create` (a floor, a ceiling, four walls, a crate, a
+pillar and a ceiling light panel, each with its own texture) and eight `map.place` (a player
+start, three lights, two `monster_army`, a `monster_dog` and `item_shells`). `map.leaks` and
+`map.compile` answered `sealed` with no missing texture and no warning. The hunk was accepted
+and the map saved with the app's own `map.accept` and `map.save`, and `map.play_from_here`
+played it: the console's `status` answered `map: arena` and the frame showed the textured,
+lit room with a monster in front of the player. With the game paused, `preview.pick` at the
+middle of the window answered `monster_dog`, edict 8.
+
+The textures were e1m1's, copied out of the install's `pak0.pak` into a WAD in the project by
+hand, since the game ships none. What the run could not do through the tools, or showed
+missing, is filed:
+
+- [#1039](https://github.com/quakecstudio/editor/issues/1039): texture a new map from the
+  game's own levels.
+- [#1040](https://github.com/quakecstudio/editor/issues/1040): an MCP agent can make, save and
+  play a map.
+- [#1043](https://github.com/quakecstudio/editor/issues/1043): show that an agent's edits are
+  waiting for review.
+- [#1041](https://github.com/quakecstudio/editor/issues/1041) and
+  [#1042](https://github.com/quakecstudio/editor/issues/1042), reported by Justin during the
+  run: a scroll bar in the code editor, and a full macOS menu bar and About window.
