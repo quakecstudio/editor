@@ -109,6 +109,8 @@ pub(super) struct Checker<'e> {
     /// The cases of each `switch` being read, the innermost last, which a `case` statement
     /// anywhere in its body joins (FTEF-16.16).
     pub(super) switches: Vec<Vec<Case>>,
+    /// Whether the function has made its `this` alias ([`super::Object::ThisAlias`]).
+    pub(super) this_aliased: bool,
 }
 
 /// A fatal error reported: FTEQCC's `QCC_PR_ParseError`, after which nothing more of the
@@ -154,6 +156,7 @@ impl<'e> Checker<'e> {
             stray: None,
             last_temp: None,
             switches: Vec::new(),
+            this_aliased: false,
         }
     }
 
@@ -373,7 +376,7 @@ impl<'e> Checker<'e> {
         {
             let message = "'self' used inside OO function, use 'this'.".to_owned();
             self.env.report(Code::W0316, token.span(), message);
-            return self.this(class);
+            return self.this(class, super::Object::ThisAlias);
         }
         let Some(def) = self.env.reference(token.span().start) else {
             // FTEF-17.14: `this` is the entity `self` as the function's class.
@@ -381,7 +384,7 @@ impl<'e> Checker<'e> {
                 && token.text() == b"this"
                 && let Some(class) = self.env.this_type()
             {
-                return self.this(class);
+                return self.this(class, super::Object::Named);
             }
             // FTEF-19.80: `nil` that names no definition is `QCC_MakeIntConst(0)`.
             if !scoped && token.text() == b"nil" && self.env.fteqcc() {
@@ -395,7 +398,17 @@ impl<'e> Checker<'e> {
     /// FTEF-17.14: `this` in a member function, of type `class`: the global `self` as the
     /// class, `d = QCC_PR_GetSRef(type_entity, "self", NULL, true, 0, false); d.cast =
     /// pr_classtype;`, which a statement names as `self`.
-    fn this(&self, class: Type) -> Value {
+    ///
+    /// FTEF-9.26: a member named bare, or `self`, makes the function's `this` alias, and the
+    /// keyword `this` after it finds that definition by its name before the keyword is tried,
+    /// so it is the alias from then on.
+    fn this(&mut self, class: Type, object: super::Object) -> Value {
+        self.this_aliased |= object == super::Object::ThisAlias;
+        let object = if self.this_aliased {
+            super::Object::ThisAlias
+        } else {
+            object
+        };
         let sym = self
             .env
             .helper("self")
@@ -403,6 +416,7 @@ impl<'e> Checker<'e> {
         Value {
             name: Some("this".to_owned()),
             sym,
+            object,
             ..Value::of(class)
         }
     }
@@ -444,7 +458,7 @@ impl<'e> Checker<'e> {
             && self.env.in_class()
             && !scoped
         {
-            let this = self.this(Type::Unknown);
+            let this = self.this(Type::Unknown, super::Object::ThisAlias);
             return Value::field_of(&this, name, held, Some(def));
         }
         Value {

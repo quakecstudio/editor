@@ -6910,3 +6910,103 @@ fn a_typedef_of_a_truth_type_is_stored_as_the_truth_type() {
         "NE_I"
     );
 }
+
+/// The opcodes of the function `name` in `progs`, its `DONE` left out, by their FTEQCC names.
+fn names_in(progs: &ProgsFile, name: &str) -> Vec<&'static str> {
+    let mut ops: Vec<u32> = body(progs, name).iter().map(|s| s.op).collect();
+    ops.pop();
+    ops.into_iter()
+        .map(|op| {
+            qc_progs::Op::ALL
+                .iter()
+                .find(|known| u32::try_from(known.number()).unwrap() == op)
+                .map_or("?", |known| known.name())
+        })
+        .collect()
+}
+
+const CLASS_HEADER: &str = "#pragma target fte\nentity self;\nvoid end_sys_globals;\n\
+    .float modelindex;\nvoid end_sys_fields;\nfloat x;\n";
+
+// spec FTEF-9.26: in a class's function a virtual method named bare, or through `self`, is
+// called with `self` kept, stored to itself and restored; through the keyword `this` with
+// nothing kept, until the function has read a member; a nonvirtual one is a plain call
+#[test]
+fn a_method_named_bare_keeps_and_restores_self() {
+    let class = "class base { float m; virtual void() Init; nonvirtual void() Plain; \
+                 virtual void() Run; };\nvoid base::Init(void) { m = 1; }\n\
+                 void base::Plain(void) { m = 2; }\n";
+    let of = |run: &str| {
+        let progs = fte_progs(&format!(
+            "{CLASS_HEADER}{class}void base::Run(void) {{ {run} }}\n"
+        ));
+        (names_in(&progs, "base::Run"), progs)
+    };
+    let kept = ["LOADF_FNC", "STORE_ENT", "STORE_ENT", "CALL0", "STORE_ENT"];
+    let (bare, progs) = of("Init();");
+    assert_eq!(bare, kept);
+    let t = body(&progs, "base::Run");
+    let this = global(&progs, "self");
+    // `oself = self; self = self; ...; self = oself`.
+    assert_eq!((t[1].a, t[2].a, t[2].b), (this, this, this));
+    assert_eq!((t[4].a, t[4].b), (t[1].b, this));
+    assert_eq!(of("self.Init();").0, kept);
+    assert_eq!(of("this.Init();").0, ["LOADF_FNC", "CALL0"]);
+    assert_eq!(of("Plain(); this.Plain();").0, ["CALL0", "CALL0"]);
+    // After a member is read the name `this` is the alias it was read through.
+    let after = of("x = m; this.Init();").0;
+    assert_eq!(after[..1], ["LOADF_F"]);
+    assert_eq!(after[1..], kept);
+}
+
+// spec FTEF-9.27: the function table stores each class's function fields from the root down
+// in declaration order: a member a class below declares again by each class in turn, one
+// declared twice twice; then each constructor is called, a virtual one too
+#[test]
+fn a_spawn_function_stores_each_classs_fields_in_turn() {
+    let progs = fte_progs(&format!(
+        "{CLASS_HEADER}class base {{ float m; virtual void() Init; virtual void() Respawn; \
+         void() base; virtual void() Init; }};\nvoid base::Init(void) {{ m = 1; }}\n\
+         void base::Respawn(void) {{ m = 2; }}\nvoid base::base(void) {{ m = 3; }}\n\
+         class kid : base {{ float k; virtual void() Init; virtual void() Extra; \
+         virtual void() kid; }};\nvoid kid::Init(void) {{ k = 1; }}\n\
+         void kid::Extra(void) {{ k = 2; }}\nvoid kid::kid(void) {{ k = 3; }}\n"
+    ));
+    let stored = |name: &str| -> Vec<String> {
+        body(&progs, name)
+            .iter()
+            .filter(|s| {
+                s.op == u32::from(Opcode::StorepFnc.number())
+                    || s.op == u32::from(Opcode::Call0.number())
+            })
+            .map(|s| {
+                progs
+                    .global_defs
+                    .iter()
+                    .find(|d| i64::from(d.ofs) == i64::from(s.a))
+                    .map(|d| string(&progs, d.s_name))
+                    .unwrap()
+            })
+            .collect()
+    };
+    assert_eq!(
+        stored("spawnfunc_base"),
+        ["base::Init", "base::Respawn", "base::Init", "base::base"]
+    );
+    assert_eq!(
+        stored("spawnfunc_kid"),
+        [
+            "base::Init",
+            "base::Respawn",
+            "base::Init",
+            "kid::Init",
+            "kid::Extra",
+            "kid::kid",
+            "kid::kid",
+            "base::base"
+        ]
+    );
+    // Each override is stored to the field its parent's function was.
+    let t = body(&progs, "spawnfunc_kid");
+    assert_eq!(t[0].b, t[6].b);
+}

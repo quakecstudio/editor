@@ -27,7 +27,7 @@ use crate::program::{Literal, OFS_RETURN, ValueType, operand, type_words};
 impl Compiler<'_> {
     /// Writes `body`'s statements as the code of the function being compiled, `named` the span
     /// of its name, the origin of the statements before its first source statement. `syntax` is
-    /// the body's text, none for a body the semantic model wrote itself (FTEF-9.22).
+    /// the body's text, none for a body the semantic model wrote itself (FTEF-9.27).
     ///
     /// [`Internal::Unfollowed`] for a body [`writable`] refuses, and
     /// [`Internal::DefaultUnknown`] for one whose calls pass a default the semantic model did

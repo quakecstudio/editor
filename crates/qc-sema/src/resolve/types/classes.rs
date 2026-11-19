@@ -195,6 +195,7 @@ impl<'a> Resolver<'a> {
             let location = self.at(file, *span);
             self.check_type_names(ty, &[], span.start, location);
         }
+        let mut params = Vec::new();
         for member in &class.members {
             let location = self.at(file, member.span);
             // FTEF-9.9: `basetype = QCC_PR_ParseType(false, false, false)`: a member's type
@@ -263,6 +264,9 @@ impl<'a> Resolver<'a> {
                 }
                 id
             };
+            if kind == DefKind::Field {
+                params.push(id);
+            }
             let function = self.declare_virtual_function(id);
             if let Some(body) = &member.body {
                 if let Some(function) = function {
@@ -270,6 +274,11 @@ impl<'a> Resolver<'a> {
                 }
                 pending.push((file, id, Some(def), body, None));
             }
+        }
+        // A redeclaration keeps the class's first `params` (`if (redeclaration) ... else {
+        // newt->num_parms = numparms; ... }`).
+        if class.body {
+            self.index.class_params.entry(def).or_insert(params);
         }
         pending
     }
@@ -534,7 +543,7 @@ impl<'a> Resolver<'a> {
         self.spawnfuncs.push((id, class));
     }
 
-    /// FTEF-9.22: the body of each class's spawn function the program gives none, as
+    /// FTEF-9.27: the body of each class's spawn function the program gives none, as
     /// `QCC_PR_EmitClassFromFunction` writes it after every file.
     pub(in crate::resolve) fn write_spawn_functions(&mut self) {
         for (spawnfunc, class) in std::mem::take(&mut self.spawnfuncs) {
@@ -552,10 +561,11 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    /// FTEF-9.22: `QCC_PR_EmitClassFromFunction`'s body for the class `class`:
+    /// FTEF-9.27: `QCC_PR_EmitClassFromFunction`'s body for the class `class`:
     /// `self.classname = "CLASS"` when `classname` is a field; then for each class from the root
-    /// down, each virtual member with a body that no class below it declares again stored its
-    /// function, `self.__mNAME = CLASS::NAME` (`QCC_PR_EmitClassFunctionTable`); then each
+    /// down, each virtual member with a body stored its function, `self.__mNAME =
+    /// CLASS::NAME`, one a class below declares again by each of them in turn
+    /// (`QCC_PR_EmitClassFunctionTable`, FTEF-9.27); then each
     /// constructor `CLASS::CLASS` called, the class's own first and its parents' after; then
     /// `DONE`. A program with no `self` has one made, an entity declared at the class,
     /// `location` (`QCC_PR_GetSRef(type_entity, "self", NULL, true, 0, false)`).
@@ -586,15 +596,9 @@ impl<'a> Resolver<'a> {
             body.store_through(this, classname, string);
         }
         // `QCC_PR_EmitClassFunctionTable` recurses to the root before it reads a class.
-        for (depth, owner) in chain.iter().enumerate().rev() {
-            let below = chain.get(..depth).unwrap_or_default();
-            for &member in &members {
-                let Some(def) = self.index.def(member) else {
-                    continue;
-                };
-                if def.member_of != Some(*owner) {
-                    continue;
-                }
+        for owner in chain.iter().rev() {
+            let params = self.index.class_params.get(owner).cloned();
+            for member in params.unwrap_or_default() {
                 // "Member function %s was not defined": a member with no body is left empty.
                 let Some(function) = self
                     .index
@@ -603,27 +607,28 @@ impl<'a> Resolver<'a> {
                 else {
                     continue;
                 };
-                // A class below that declares the member again fills the field itself.
-                let overridden = members.iter().any(|&other| {
-                    self.index.def(other).is_some_and(|o| {
-                        o.name == def.name && o.member_of.is_some_and(|c| below.contains(&c))
-                    })
-                });
-                if !overridden {
-                    body.store_through(this, member, ir::Name::Def(function, 0));
-                }
+                // A member a class below declares again is stored here too, and again by that
+                // class with its own function: the skip of an overridden member looks for a
+                // field of the lower class's own, `LOWER::__mNAME`, which a member found in
+                // a parent is never given (`QCC_PR_ParseEntClass`: `if (found) continue;`).
+                body.store_through(this, member, ir::Name::Def(function, 0));
             }
         }
         for &owner in &chain {
             let Some(owner_name) = self.index.def(owner).map(|d| d.name.as_str()) else {
                 continue;
             };
-            let constructor = members.iter().copied().find(|&member| {
-                self.index.def(member).is_some_and(|d| {
-                    d.member_of == Some(owner)
-                        && d.kind == DefKind::Function
-                        && d.name == owner_name
-                })
+            // The definition named `CLASS::CLASS` (`QCC_PR_GetSRef(NULL, membername, NULL,
+            // false, 0, false)`), a virtual constructor's function as a nonvirtual one's.
+            let constructor = members.iter().copied().find_map(|member| {
+                let def = self
+                    .index
+                    .def(member)
+                    .filter(|d| d.member_of == Some(owner) && d.name == owner_name)?;
+                match def.kind {
+                    DefKind::Function => Some(member),
+                    _ => self.index.virtual_function(member),
+                }
             });
             if let Some(constructor) = constructor {
                 body.statements.push(ir::BodyStatement {
@@ -982,7 +987,7 @@ impl Resolver<'_> {
     }
 }
 
-/// The statements and strings of a spawn function's body as it is written (FTEF-9.22).
+/// The statements and strings of a spawn function's body as it is written (FTEF-9.27).
 #[derive(Default)]
 struct SpawnBody {
     statements: Vec<ir::BodyStatement>,

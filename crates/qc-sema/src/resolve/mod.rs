@@ -145,9 +145,13 @@ pub struct ModuleIndex {
     /// FTEF-9.21: the function `CLASS::NAME` a body of each virtual member defines, by the
     /// member.
     pub(crate) virtual_functions: HashMap<DefId, DefId>,
-    /// FTEF-9.22: each class's spawn function the program gives no body, whose body the model
+    /// FTEF-9.27: each class's spawn function the program gives no body, whose body the model
     /// writes, in declaration order.
     pub(crate) spawn_functions: Vec<DefId>,
+    /// FTEF-9.27: each class's fields as its first body declares them, FTEQCC's `params` of
+    /// the class: a member declared twice is there twice, a static or nonvirtual one not at
+    /// all (`if (isnonvirt || isstatic) continue;`).
+    pub(crate) class_params: HashMap<DefId, Vec<DefId>>,
 }
 
 /// A C scalar as a progs holds it (FTEF-19.81).
@@ -284,7 +288,7 @@ impl ModuleIndex {
         self.virtual_functions.get(&member).copied()
     }
 
-    /// FTEF-9.22: each class's spawn function `spawnfunc_CLASS` the program gives no body, in
+    /// FTEF-9.27: each class's spawn function `spawnfunc_CLASS` the program gives no body, in
     /// declaration order: its body, [`ModuleIndex::body`], is the model's, written after every
     /// file.
     #[must_use]

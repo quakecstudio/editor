@@ -78,7 +78,7 @@ fn function(progs: &ProgsFile, name: &str) -> u32 {
     u32::try_from(at).unwrap()
 }
 
-// spec FTEF-9.22: the spawn function names the class, fills each virtual member's field with
+// spec FTEF-9.27: the spawn function names the class, fills each virtual member's field with
 // the most derived class's function and calls the child's constructor before its parent's
 // spec FTEF-9.23: `spawn(CLASS)` calls `spawn`, then the class's spawn function with the new
 // entity as `self`, and is the new entity
@@ -144,7 +144,7 @@ fn a_spawned_class_runs_its_spawn_function() {
         assert_eq!(slot.as_f32().to_bits(), expected.to_bits());
     }
     assert_eq!(field("Base::__mm_c").as_f32().to_bits(), 5.0_f32.to_bits());
-    // spec FTEF-9.24: a method called through an object runs with the object as `self`, the
+    // spec FTEF-9.26: a method called through an object runs with the object as `self`, the
     // virtual one the object's own function, and `self` is restored after it.
     assert_eq!(field("Child::__mm_b").as_f32().to_bits(), 9.0_f32.to_bits());
     assert_eq!(field("Base::__mm_s").as_f32().to_bits(), 7.0_f32.to_bits());

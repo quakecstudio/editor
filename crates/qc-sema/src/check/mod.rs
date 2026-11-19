@@ -271,6 +271,23 @@ pub(crate) struct Value {
     pub(crate) literal: Option<Box<(Constant, ir::Name)>>,
     /// The parameter slot that holds it: an out argument's value after its call (FTEF-32.24).
     pub(crate) parameter: Option<u8>,
+    /// Which symbol of FTEQCC's an entity it names is.
+    pub(crate) object: Object,
+}
+
+/// Which of FTEQCC's symbols names an entity. In a class's function a member named bare, and
+/// `self`, are read through a definition of their own, `this`, that shares `self`'s storage
+/// (`QCC_PR_DummyDef(pr_classtype, "this", pr_scope, 0, ..."self"..., GDF_CONST|GDF_STRIP|
+/// GDF_ALIAS)`), where the keyword `this` is `self` itself as the class (`d =
+/// QCC_PR_GetSRef(type_entity, "self", NULL, true, 0, false); d.cast = pr_classtype;`). A
+/// method's call compares symbols, so only the first keeps and sets `self` (FTEF-9.26).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Object {
+    /// The definition its name is.
+    #[default]
+    Named,
+    /// `this`, the alias of `self` a class's function reads its members through.
+    ThisAlias,
 }
 
 /// FTEQCC's temporaries (`tempsinfo`), kept across the module's functions: each one's word
@@ -398,6 +415,7 @@ impl Value {
             word: 0,
             literal: None,
             parameter: None,
+            object: Object::Named,
         }
     }
 
@@ -569,6 +587,7 @@ impl Value {
                 dot: None,
                 entity: base.name(),
                 entity_call: base.call,
+                object: base.object,
                 selected: None,
             })),
             ..Self::of(ty)
@@ -695,6 +714,8 @@ pub(crate) struct FieldRef {
     pub(crate) entity: Option<ir::Name>,
     /// The generated `CALL` whose value the entity is, when it is one.
     pub(crate) entity_call: Option<u32>,
+    /// Which symbol the entity is ([`Object`]).
+    pub(crate) object: Object,
     /// FTEF-31.19: the field an array of fields' index that is no constant selected, the value
     /// of the statement that loaded it; the field is then that, not the definition.
     pub(crate) selected: Option<ir::Name>,
@@ -872,7 +893,7 @@ pub struct TypedBody {
 
 impl TypedBody {
     /// A body the model writes itself, with no text of its own: its statements and the strings
-    /// they name (FTEF-9.22).
+    /// they name (FTEF-9.27).
     pub(crate) fn written(generated: Vec<ir::BodyStatement>, strings: Vec<Vec<u8>>) -> Self {
         Self {
             generated,

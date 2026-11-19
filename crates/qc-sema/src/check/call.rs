@@ -94,13 +94,18 @@ impl Checker<'_> {
             }),
             _ => false,
         };
-        // FTEF-9.24: a method called through an object is called with the object as `self`; a
+        // FTEF-9.26: a method called through an object is called with the object as `self`; a
         // nonvirtual one is its function `CLASS::NAME`, no field read.
         let self_def = self.env.helper("self");
         let newself = match (&callee.reference, member) {
+            // `if (newself.ofs != self.ofs || newself.sym != self.sym)`: `this`'s alias is
+            // another symbol than `self`.
             (Reference::Field(field), Some(_)) => self
                 .copied(field.entity, field.entity_call)
-                .filter(|&object| self_def.is_none_or(|def| object != ir::Name::Def(def, 0))),
+                .filter(|&object| {
+                    field.object == super::Object::ThisAlias
+                        || self_def.is_none_or(|def| object != ir::Name::Def(def, 0))
+                }),
             _ => None,
         };
         let nonvirtual = member
@@ -510,7 +515,7 @@ impl Checker<'_> {
     /// parameter takes stored to its slot by its size, `STORE_V` for three words or a variant's
     /// and `STORE_F` for one, the first folded into the statement that made it, then each
     /// default a parameter takes, then `CALLn` of the callee; its value the return global.
-    /// FTEF-9.24: called with `newself`, the object a method is called through when it is not
+    /// FTEF-9.26: called with `newself`, the object a method is called through when it is not
     /// `self`, `self` is kept and set to it first; the temporary that kept it is returned, for
     /// `self` to be restored from after the call. `kept_value` is the argument whose value is
     /// read again after the call, an accessor's store's (FTEF-10.14); an argument of `unpassed`
@@ -538,7 +543,7 @@ impl Checker<'_> {
         }
         let (wide, slot_of, slots) = self.argument_slots(values, passed);
         let slot_at = |at: usize| slot_of.get(at).copied().unwrap_or(at);
-        // FTEF-9.24: an argument that names `self` names the kept one.
+        // FTEF-9.26: an argument that names `self` names the kept one.
         let kept = self.keep_self(newself);
         let renamed = |name: Option<ir::Name>| match (name, kept) {
             (Some(ir::Name::Def(def, 0)), Some((this, kept))) if def == this => {
@@ -722,7 +727,7 @@ impl Checker<'_> {
         }
     }
 
-    /// FTEF-9.24: `oself = self; self = object;` before a call through `object`, an object
+    /// FTEF-9.26: `oself = self; self = object;` before a call through `object`, an object
     /// that is not `self`: `self`'s definition and the statement that kept it, from which it
     /// is restored after the call (`arglist[i]->base = oself`).
     fn keep_self(&mut self, object: Option<ir::Name>) -> Option<(crate::DefId, u32)> {

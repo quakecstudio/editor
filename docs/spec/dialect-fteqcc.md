@@ -941,24 +941,9 @@ heavily class-based (547 `class` declarations across the three mods).
   from FTEQCC's and it takes more entity fields; a program reads and writes the same values. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
   `QCC_PR_ParseEntClass`; `engine/qclib/qcc_pr_comp.c`, `MEMBERFIELDNAME`.
-- **FTEF-9.22** A class's `spawnfunc_CLASS` that the program gives no body is written after
-  every file (`if (!strncmp(d->name, "spawnfunc_", 10)) { t = QCC_TypeForName(d->name+10); if
-  (t && t->type == ev_entity) QCC_PR_EmitClassFromFunction(d, t); }`). Its body is:
-  1. `self.classname` set to the class's name when `classname` is a field, through `OP_ADDRESS`
-     and `OP_STOREP_FNC`.
-  2. The function table (`QCC_PR_EmitClassFunctionTable`). For each class from the root down,
-     each virtual member function that no class below it declares again, and that has a body, is
-     stored to its field: `OP_ADDRESS` of `self` and the field, then `OP_STOREP_FNC` of
-     `CLASS::NAME`. One with no body is skipped ("Member function %s was not defined").
-  3. A `CALL0` of each constructor `CLASS::CLASS` that is defined, the class's own first and then
-     each parent's (`for (parenttype = basetype; parenttype; parenttype =
-     parenttype->parentclass)`). With `flag_rootconstructor`, which is off by default, the calls
-     are reversed.
-  4. `DONE`.
-
-  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qccmain.c`,
-  `QCC_WriteData`'s function loop; `engine/qclib/qcc_pr_comp.c`, `QCC_PR_EmitClassFromFunction`,
-  `QCC_PR_EmitClassFunctionTable`.
+- **FTEF-9.22** **Withdrawn** 2026-11-19: its function table left out a member a class below
+  declares again and a member declared twice, and its constructors a virtual one; replaced by
+  FTEF-9.27.
 - **FTEF-9.23** `spawn(CLASS)` in a function calls `spawn` and then `spawnfunc_CLASS` with the
   new entity as `self` (`result = QCC_PR_GenerateFunctionCallRef(nullsref, func, NULL, 0); ...
   QCC_PR_GenerateFunctionCallRef(result, func, NULL, 0)`): `self` is kept in a temporary
@@ -969,17 +954,9 @@ heavily class-based (547 `class` declarations across the three mods).
   a function that uses one. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall` (`"spawn"`),
   `QCC_PR_GenerateFunctionCallRef` (`newself`).
-- **FTEF-9.24** A method called through an object, `obj.M(args)`, is called with the object as
-  `self` (`QCC_PR_GenerateFunctionCallRef(newself, ...)`). `self` is kept in a temporary
-  (`OP_STORE_ENT self, oself`), the object is stored to `self`, the arguments go to their slots
-  with any argument naming `self` reading the kept one (`arglist[i]->base = oself`), the call is
-  made, and `self` is restored. A virtual method is the function its field holds, loaded from the
-  object before `self` changes (`LOADF_FNC w, W::__mDraw`). A nonvirtual one is the global
-  `CLASS::NAME`, `CALL1H W::Set, 2f`, with no field read. A call through `self` or `this`
-  changes nothing (`if (newself.ofs != self.ofs || newself.sym != self.sym)`). Source:
-  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
-  `QCC_PR_GenerateFunctionCallRef`; checked against the pinned FTEQCC's `-Fwasm` output for a
-  virtual and a nonvirtual call.
+- **FTEF-9.24** **Withdrawn** 2026-11-19: it said a call through `this` changes nothing,
+  which holds only of the keyword before the function has read a member; replaced by
+  FTEF-9.26.
 
 - **FTEF-9.25** A class is written as its members and its functions, with no table of its
   own. A data member and a virtual member function are entity fields (FTEF-9.21), each a
@@ -988,13 +965,61 @@ heavily class-based (547 `class` declarations across the three mods).
   membername, pr_scope, arraysize, d, basicindex, true, (isnull?0:GDF_CONST)|...)`), so the
   field table lists `CLASS::__mNAME` with the member's type for each but one given 0, whose
   vector's components it leaves out too. A pointer to a class is a pointer, not an entity. A virtual function
-  is called through its field, which the class's spawn function sets (FTEF-9.22, FTEF-9.23),
-  and a method is called with its object as `self` (FTEF-9.24). A class is an entity type
+  is called through its field, which the class's spawn function sets (FTEF-9.27, FTEF-9.23),
+  and a method is called with its object as `self` (FTEF-9.26). A class is an entity type
   (FTEF-9.14), so a definition of one is one word written `ev_entity` (`dd->type =
   def->type->type;`, FTEF-19.81). No class chooses the progs format, which is the target's
   (FTE-24.1, FTE-24.3). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_lex.c`, `QCC_PR_ParseEntClass`; `engine/qclib/qccmain.c`,
   `QCC_WriteData`.
+
+- **FTEF-9.26** A method called through an object, `obj.M(args)`, is called with the object as
+  `self` (`QCC_PR_GenerateFunctionCallRef(newself, ...)`). `self` is kept in a temporary
+  (`OP_STORE_ENT self, oself`), the object is stored to `self`, the arguments go to their slots
+  with any argument naming `self` reading the kept one (`arglist[i]->base = oself`), the call is
+  made, and `self` is restored. A virtual method is the function its field holds, loaded from the
+  object before `self` changes (`LOADF_FNC w, W::__mDraw`). A nonvirtual one is the global
+  `CLASS::NAME`, `CALL1H W::Set, 2f`, with no field read and `self` left as it is. The object
+  is compared with `self` by its symbol as well as its place (`if (newself.ofs != self.ofs ||
+  newself.sym != self.sym)`), and in a class's function there are two symbols at `self`'s
+  place. The keyword `this` is `self` itself (`d = QCC_PR_GetSRef(type_entity, "self", NULL,
+  true, 0, false); d.cast = pr_classtype;`), so `this.M()` changes nothing. A member named
+  bare, and `self`, are read through a definition of their own named `this` that shares
+  `self`'s storage (`QCC_PR_DummyDef(pr_classtype, "this", pr_scope, 0, ..., GDF_CONST|
+  GDF_STRIP|GDF_ALIAS)`), so `M()` and `self.M()` there keep `self`, store `self` to `self`
+  and restore it: `LOADF_FNC self, C::__mM; STORE_ENT self, oself; STORE_ENT self, self; CALL0;
+  STORE_ENT oself, self`. Once a function has made that definition the name `this` finds it
+  before the keyword is tried, so every later `this.M()` in the function keeps and restores
+  `self` too. Outside a class's function `self.M()` changes nothing. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_GenerateFunctionCallRef`, `QCC_PR_ParseFunctionCall`,
+  `QCC_PR_ParseValue`; checked against the pinned FTEQCC's output for each form (2026-11-19).
+- **FTEF-9.27** A class's `spawnfunc_CLASS` that the program gives no body is written after
+  every file (`if (!strncmp(d->name, "spawnfunc_", 10)) { t = QCC_TypeForName(d->name+10); if
+  (t && t->type == ev_entity) QCC_PR_EmitClassFromFunction(d, t); }`). Its body is:
+  1. `self.classname` set to the class's name when `classname` is a field, through `OP_ADDRESS`
+     and `OP_STOREP_FNC`.
+  2. The function table (`QCC_PR_EmitClassFunctionTable`). For each class from the root down,
+     each of the class's fields in the order its body declares them (`for (p = 0; p <
+     clas->num_parms; p++)`) that holds a function with a body is stored: `OP_ADDRESS` of
+     `self` and the field, then `OP_STOREP_FNC` of `CLASS::NAME`. One with no body is skipped
+     ("Member function %s was not defined"). A member declared twice in a class's body is
+     twice among its fields and is stored twice. A member a class below declares again is
+     stored by its own class and again, to the same field, by each class below with that
+     class's function: the table skips a member only when a lower class has a field of its
+     own for it, `LOWER::__mNAME`, and a member found in a parent is given none
+     (`QCC_PR_ParseEntClass`: `if (found) continue;`). A static or nonvirtual member is no
+     field (`if (isnonvirt || isstatic) continue;`).
+  3. A `CALL0` of each constructor, the definition named `CLASS::CLASS`, a virtual member's
+     function as a nonvirtual one's, the class's own first and then each parent's (`for
+     (parenttype = basetype; parenttype; parenttype = parenttype->parentclass)`). With
+     `flag_rootconstructor`, which is off by default, the calls are reversed.
+  4. `DONE`.
+
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qccmain.c`, `QCC_WriteData`'s function loop;
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_EmitClassFromFunction`, `QCC_PR_EmitClassFunctionTable`;
+  `engine/qclib/qcc_pr_lex.c`, `QCC_PR_ParseEntClass`; every spawn function of FreeCS's
+  client and server compared with the pinned FTEQCC's by opcode (2026-11-19).
+
 ## FTEF-10 Accessors
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseAccessorMember` and the `accessor` branch of

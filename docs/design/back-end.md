@@ -58,7 +58,7 @@ What FTEQCC makes of a class is the model's too. A virtual member's body defines
 `CLASS::NAME`, a definition the resolver declares (`ModuleIndex::virtual_function`), which the
 body is written to and a scoped call (`super::m()`) names (FTEF-9.21). A class's spawn function
 that the program gives no body has a `TypedBody` the model writes itself, with no text: the
-class's name, its function table and its constructors' calls (FTEF-9.22,
+class's name, its function table and its constructors' calls (FTEF-9.27,
 `ModuleIndex::spawn_functions`). The code generator writes that body as any other, after the
 array functions.
 
