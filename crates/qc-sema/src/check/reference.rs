@@ -823,7 +823,7 @@ impl Checker<'_> {
             self.bounds(constant, length, span);
             let at = self.bound_checked(at, constant, length, span)?;
             let at = self.scaled_index(&base.ty, at, span)?;
-            let at = match base.reference {
+            let at = match &base.reference {
                 Reference::ArrayHead(Some(member)) => self.member_array_index(member, &at, span)?,
                 _ => at,
             };
@@ -865,45 +865,14 @@ impl Checker<'_> {
                 self.field_vector_index(&base, label, at, constant, span)
             }
             (Some(Etype::Vector), _) => {
-                if constant.is_some_and(|i| u32::from_le_bytes(i.to_le_bytes()) >= VECTOR_WORDS) {
-                    let message = "(vector) array index out of bounds".to_owned();
-                    return self.fatal(Code::E0333, span, message);
-                }
-                // FTEF-31.25: through a pointer, the float at the vector's word plus the index.
-                if let (Reference::Pointer(_), Some(word)) = (
-                    &base.reference,
-                    constant.and_then(|i| u32::try_from(i).ok()),
-                ) {
-                    return self.pointer_component(base, word, span);
-                }
-                // FTEF-31.27: a call's vector, or one a statement made, is that word of it.
-                if let Some(component) = self.value_component(&base, constant) {
-                    return Ok(component);
-                }
-                // FTEF-31.9: a constant vector's component at a constant index is a constant,
-                // read through the vector at the index (`REF_ARRAY`), which a call does not fold
-                // (FTEF-32.17).
-                let component = base.known().zip(constant).and_then(|(vector, i)| {
-                    usize::try_from(i)
-                        .ok()
-                        .and_then(|i| vector.v().get(i).copied())
-                });
-                if let Some(component) = component {
-                    return Ok(Value {
-                        reference: Reference::element(label, at, true),
-                        ..Value::constant(Constant::float(component))
-                    });
-                }
-                let at = self.bound_checked(at, constant, Some(VECTOR_WORDS), span)?;
-                Ok(Value {
-                    reference: Reference::element(label, at, true),
-                    ..Value {
-                        name: base.name,
-                        sym: base.sym,
-                        readonly: base.readonly,
-                        ..Value::of(Type::Simple(SimpleType::Float))
-                    }
-                })
+                // A vector in parentheses is read before it is indexed (FTEF-31.27).
+                let element = matches!(&base.reference, Reference::Element(e) if !e.vector);
+                let base = if element && matches!(index.base(), Some(ast::Expr::Paren(_))) {
+                    self.read(base, span)?
+                } else {
+                    base
+                };
+                self.vector_index(base, label, at, constant, span)
             }
             (Some(Etype::Field), Type::Field(held))
                 if self.etype_of(held) == Some(Etype::Vector) =>
@@ -981,7 +950,7 @@ impl Checker<'_> {
     /// The length of the array `head` names bare: a member array's as its struct declares it,
     /// else its definition's.
     pub(super) fn head_length(&self, head: &Value) -> Option<u32> {
-        match head.reference {
+        match &head.reference {
             Reference::ArrayHead(Some(member)) => member.length,
             _ => head.sym.def().and_then(|def| self.env.array_length(def)),
         }
@@ -1031,7 +1000,11 @@ impl Checker<'_> {
     /// FTEF-6.24: a member array's index added to the member's word, `idx` an `int` on a target
     /// with `OP_ADD_I` and else a float: `OP_ADD_F` of two floats, else `OP_ADD_I` of both made
     /// integers.
-    fn member_array_index(&mut self, member: MemberArray, at: &Value, span: Span) -> Checked {
+    fn member_array_index(&mut self, member: &MemberArray, at: &Value, span: Span) -> Checked {
+        // The struct an element at an index that is no constant: that index plus this one.
+        if let Some(outer) = &member.outer {
+            return self.joined_index(outer, at, span);
+        }
         let word = i32::try_from(member.word).unwrap_or(i32::MAX);
         let int_target = self.env.target_at(span.start).valid(Op::AddI);
         let offset = if int_target {
@@ -1045,6 +1018,17 @@ impl Checker<'_> {
         let offset = self.converted(&offset, Etype::Integer, span)?;
         let at = self.converted(at, Etype::Integer, span)?;
         self.emit(Op::AddI, &offset, &at, span)
+    }
+
+    /// An index `by` further on than `index`: `OP_ADD_I` when `index` is an integer, `by` made
+    /// one, and else `OP_ADD_F` of both as floats.
+    pub(super) fn joined_index(&mut self, index: &Value, by: &Value, span: Span) -> Checked {
+        if self.etype_of(&index.ty) == Some(Etype::Integer) {
+            let by = self.converted(by, Etype::Integer, span)?;
+            return self.emit(Op::AddI, index, &by, span);
+        }
+        let by = self.converted(by, Etype::Float, span)?;
+        self.emit(Op::AddF, index, &by, span)
     }
 
     /// FTEF-31.7: an array's or a pointer's index scaled to words by the size of what it
@@ -1140,73 +1124,7 @@ impl Checker<'_> {
                 Ok(pointer)
             }
             Reference::Global | Reference::ArrayHead(_) | Reference::Element(_) => {
-                if !self.env.target_at(span.start).valid(Op::Globaladdress) {
-                    let suggestion = if value.is_array_head() {
-                        "either '#pragma target fte' or '#pragma flag enable brokenarray'"
-                    } else {
-                        ": #pragma target fte"
-                    };
-                    let message = format!(
-                        "Address-of operator is not supported in this form without extensions. \
-                         Consider the use of{}{suggestion}",
-                        if value.is_array_head() { " " } else { "" }
-                    );
-                    return self.fatal(Code::E0331, span, message);
-                }
-                if let Some(def) = value.sym.def()
-                    && self.env.is_local(def)
-                    && self.addressed.insert(def)
-                {
-                    let message = format!(
-                        "Address-of operator on local {} {} is unsafe if recursing (and still \
-                         bloated when not). Consider use of 'static' or 'auto'.",
-                        self.env.type_name(&value.ty),
-                        value.label()
-                    );
-                    self.env.report(Code::W0250, span, message);
-                }
-                let index = match &value.reference {
-                    Reference::Element(element) if element.index.known().is_none() => {
-                        Some(self.converted(&element.index, Etype::Integer, span)?)
-                    }
-                    _ => None,
-                };
-                if self.global {
-                    return Ok(pointer_to(&value.ty));
-                }
-                // FTEF-31.23: `OP_GLOBALADDRESS` of the definition, and of an element the integer
-                // index (`QCC_PR_Statement(&pr_opcodes[OP_GLOBALADDRESS], operand->base,
-                // operand->index.cast?QCC_SupplyConversion(operand->index, ev_integer,
-                // true):nullsref, NULL)`).
-                let base = match &value.reference {
-                    Reference::Element(element) if index.is_some() => value
-                        .sym
-                        .def()
-                        .map(|def| ir::Name::Def(def, 0))
-                        .filter(|_| !element.vector),
-                    Reference::Element(_) | Reference::Global | Reference::ArrayHead(None) => {
-                        self.name_of(value)
-                    }
-                    _ => None,
-                };
-                let Some(base) = base else {
-                    self.followed = false;
-                    return Ok(pointer_to(&value.ty));
-                };
-                let made = self.next_made();
-                self.generated.push(ir::BodyStatement {
-                    a: Some(base),
-                    b: index.as_ref().and_then(|index| self.name_of(index)),
-                    c: Some(ir::Name::Made(made)),
-                    ..ir::BodyStatement::bare(Op::Globaladdress)
-                });
-                let temp = Some(self.env.temps().take(1));
-                self.last_temp = temp;
-                Ok(Value {
-                    temp,
-                    made: Some(made),
-                    ..pointer_to(&value.ty)
-                })
+                self.definition_address(value, span)
             }
             Reference::Pointer(pointer) => {
                 // FTEF-31.12: `&p[i]` of an 8- or 16-bit pointee is `p + i` in bytes, by
@@ -1216,12 +1134,8 @@ impl Checker<'_> {
                     && let Some(bits) = narrow_bits(&value.ty)
                 {
                     let pointer = pointer_to(&value.ty);
-                    let width = bits
-                        .checked_div(8)
-                        .and_then(|w| i32::try_from(w).ok())
-                        .unwrap_or(1);
                     let index = self.converted(index, Etype::Integer, span)?;
-                    let offset = self.emit(Op::MulI, &int(width), &index, span)?;
+                    let offset = self.emit(Op::MulI, &element_bytes(bits), &index, span)?;
                     self.emit(Op::AddI, &pointer, &offset, span)?;
                     return Ok(pointer_to(&value.ty));
                 }
@@ -1246,6 +1160,234 @@ impl Checker<'_> {
                     "Cannot use addressof operator ('&') on a global. Please use the FTE target.";
                 self.fatal(Code::E0361, span, message.to_owned())
             }
+        }
+    }
+
+    /// A vector that is no entity's field at the index `at`, `constant` when it is one: its
+    /// component, a float (FTEF-31.9, FTEF-31.25, FTEF-31.27, FTEF-31.29).
+    fn vector_index(
+        &mut self,
+        base: Value,
+        label: String,
+        at: Value,
+        constant: Option<i32>,
+        span: Span,
+    ) -> Checked {
+        if constant.is_some_and(|i| u32::from_le_bytes(i.to_le_bytes()) >= VECTOR_WORDS) {
+            let message = "(vector) array index out of bounds".to_owned();
+            return self.fatal(Code::E0333, span, message);
+        }
+        // FTEF-31.29: a vector that is an array's element is indexed from the element.
+        if let Some(component) = self.element_component(&base, &label, &at, constant, span)? {
+            return Ok(component);
+        }
+        let base = base.placed();
+        // FTEF-31.25: through a pointer, the float at the vector's word plus the index.
+        if let (Reference::Pointer(_), Some(word)) = (
+            &base.reference,
+            constant.and_then(|i| u32::try_from(i).ok()),
+        ) {
+            return self.pointer_component(base, word, span);
+        }
+        // FTEF-31.27: a call's vector, or one a statement made, is that word of it.
+        if let Some(component) = self.value_component(&base, constant) {
+            return Ok(component);
+        }
+        // FTEF-31.9: a constant vector's component at a constant index is a constant,
+        // read through the vector at the index (`REF_ARRAY`), which a call does not fold
+        // (FTEF-32.17).
+        let component = base.known().zip(constant).and_then(|(vector, i)| {
+            usize::try_from(i)
+                .ok()
+                .and_then(|i| vector.v().get(i).copied())
+        });
+        if let Some(component) = component {
+            return Ok(Value {
+                reference: Reference::element(label, at, true),
+                ..Value::constant(Constant::float(component))
+            });
+        }
+        let at = self.bound_checked(at, constant, Some(VECTOR_WORDS), span)?;
+        Ok(Value {
+            reference: Reference::element(label, at, true),
+            ..Value {
+                name: base.name,
+                sym: base.sym,
+                readonly: base.readonly,
+                ..Value::of(Type::Simple(SimpleType::Float))
+            }
+        })
+    }
+
+    /// Whether the target at `span` reads and stores an array's words at an index, by
+    /// `OP_LOADA_*` and through `OP_GLOBALADDRESS` (FTEF-31.19, FTEF-31.20). Any other reads
+    /// and stores whole elements by the array's functions, which a component's index is not for.
+    pub(super) fn indexes_words(&self, span: Span) -> bool {
+        let target = self.env.target_at(span.start);
+        target.valid(Op::LoadaF) && target.valid(Op::Globaladdress) && target.stores_at_offset()
+    }
+
+    /// FTEF-31.29: the component at `at` of the vector `base` that is an array's element at an
+    /// index that is no constant: the float at that index plus this one. `None` for any other
+    /// vector.
+    fn element_component(
+        &mut self,
+        base: &Value,
+        label: &str,
+        at: &Value,
+        constant: Option<i32>,
+        span: Span,
+    ) -> Result<Option<Value>, Fatal> {
+        let index = match &base.reference {
+            Reference::Element(element) if !element.vector && element.index.known().is_none() => {
+                &element.index
+            }
+            _ => return Ok(None),
+        };
+        if self.global {
+            return Ok(None);
+        }
+        // A target that reads elements by the array's functions divides the index by the
+        // element's words for them (`OP_DIV_F`), which is not followed.
+        if !self.indexes_words(span) {
+            self.followed = false;
+            return Ok(None);
+        }
+        let at = self.bound_checked(at.clone(), constant, Some(VECTOR_WORDS), span)?;
+        let index = self.joined_index(index, &at, span)?;
+        Ok(Some(Value {
+            reference: Reference::element(label.to_owned(), index, false),
+            name: base.name.clone(),
+            sym: base.sym,
+            readonly: base.readonly,
+            ..Value::of(Type::Simple(SimpleType::Float))
+        }))
+    }
+
+    /// FTEF-31.28: the address of a definition, an array, an element or a member, by
+    /// `OP_GLOBALADDRESS`, which a target without it refuses.
+    fn definition_address(&mut self, value: &Value, span: Span) -> Checked {
+        let pointer_to = |ty: &Type| Value::of(Type::Pointer(ty.clone().into()));
+        if !self.env.target_at(span.start).valid(Op::Globaladdress) {
+            let suggestion = if value.is_array_head() {
+                "either '#pragma target fte' or '#pragma flag enable brokenarray'"
+            } else {
+                ": #pragma target fte"
+            };
+            let message = format!(
+                "Address-of operator is not supported in this form without extensions. \
+                 Consider the use of{}{suggestion}",
+                if value.is_array_head() { " " } else { "" }
+            );
+            return self.fatal(Code::E0331, span, message);
+        }
+        if let Some(def) = value.sym.def()
+            && self.env.is_local(def)
+            && self.addressed.insert(def)
+        {
+            let message = format!(
+                "Address-of operator on local {} {} is unsafe if recursing (and still \
+                 bloated when not). Consider use of 'static' or 'auto'.",
+                self.env.type_name(&value.ty),
+                value.label()
+            );
+            self.env.report(Code::W0250, span, message);
+        }
+        // FTEF-31.28: the index is the reference's own, in words from the definition's
+        // start. A constant one is added to the word of a member read before it and
+        // the definition named whole; one that is no constant is of the definition at
+        // that word. A member of a definition that is no element is its word.
+        let (def, word) = match value.sym {
+            Sym::Def(def, _, word) => (Some(def), i32::try_from(word).ok()),
+            Sym::Temp | Sym::Immediate(_) => (None, None),
+        };
+        let whole = def.map(|def| ir::Name::Def(def, 0));
+        let constant = |words: i32| Some(Value::constant(Constant::int(words)));
+        let (base, index) = match &value.reference {
+            // A constant vector's component folded to its immediate has no word of the
+            // vector to address: not followed.
+            Reference::Element(_) if def.is_none() => (None, None),
+            Reference::Element(element) => {
+                match element.index.known().and_then(eval_int).zip(word) {
+                    Some((index, word)) => (whole, constant(index.wrapping_add(word))),
+                    None => (
+                        self.name_of(value),
+                        Some(self.converted(&element.index, Etype::Integer, span)?),
+                    ),
+                }
+            }
+            // FTEF-31.32: a struct's member array named bare is its address, the
+            // definition's at the member's index.
+            Reference::ArrayHead(Some(member)) => {
+                let index = match &member.outer {
+                    Some(outer) => Some(self.converted(outer, Etype::Integer, span)?),
+                    None => i32::try_from(member.word).ok().and_then(constant),
+                };
+                (whole, index)
+            }
+            // A member of a definition named as that definition's word; a parameter's or
+            // a temporary's is named as it is.
+            Reference::Global => match self.name_of(value) {
+                Some(ir::Name::Def(_, at)) if at != 0 => (whole, word.and_then(constant)),
+                named => (named, None),
+            },
+            Reference::ArrayHead(None) => (self.name_of(value), None),
+            _ => (None, None),
+        };
+        if self.global {
+            return Ok(pointer_to(&value.ty));
+        }
+        let Some(base) = base else {
+            self.followed = false;
+            return Ok(pointer_to(&value.ty));
+        };
+        // FTEF-31.30: an element of 8 or 16 bits is addressed in bytes, which
+        // `OP_GLOBALADDRESS`'s index of words does not count: the array's address,
+        // then `OP_ADD_I` of the index times the element's bytes.
+        if let Some(bits) = narrow_bits(&value.ty) {
+            // A narrow member of a struct is at a bit of its word (`operand->bitofs`), and a
+            // narrow member array's index is in words: not followed.
+            let own = matches!(&value.reference, Reference::Element(element) if !element.vector)
+                && value.bitfield.is_none()
+                && word == Some(0);
+            let whole = matches!(value.reference, Reference::Global);
+            let Some(index) = index.as_ref().filter(|_| own) else {
+                if !whole || value.bitfield.is_some() || word != Some(0) {
+                    self.followed = false;
+                }
+                return Ok(self.global_address(base, None, &value.ty));
+            };
+            let array = self.global_address(base, None, &value.ty);
+            let offset = self.emit(Op::MulI, index, &element_bytes(bits), span)?;
+            let address = self.emit(Op::AddI, &array, &offset, span)?;
+            return Ok(Value {
+                ty: Type::Pointer(value.ty.clone().into()),
+                ..address
+            });
+        }
+        // `OP_GLOBALADDRESS` of the definition and the index
+        // (`QCC_PR_Statement(&pr_opcodes[OP_GLOBALADDRESS], operand->base,
+        // operand->index.cast?QCC_SupplyConversion(operand->index, ev_integer,
+        // true):nullsref, NULL)`).
+        let index = index.as_ref().and_then(|index| self.name_of(index));
+        Ok(self.global_address(base, index, &value.ty))
+    }
+
+    /// `OP_GLOBALADDRESS` of `base` and `index` into a temporary: a pointer to a `pointee`.
+    fn global_address(&mut self, base: ir::Name, index: Option<ir::Name>, pointee: &Type) -> Value {
+        let made = self.next_made();
+        self.generated.push(ir::BodyStatement {
+            a: Some(base),
+            b: index,
+            c: Some(ir::Name::Made(made)),
+            ..ir::BodyStatement::bare(Op::Globaladdress)
+        });
+        let temp = Some(self.env.temps().take(1));
+        self.last_temp = temp;
+        Value {
+            temp,
+            made: Some(made),
+            ..Value::of(Type::Pointer(pointee.clone().into()))
         }
     }
 
@@ -1323,24 +1465,27 @@ impl Checker<'_> {
                     let through = target.valid(Op::Globaladdress)
                         && target.stores_at_offset()
                         && !self.global;
-                    let address = through.then(|| {
-                        let made = self.next_made();
-                        self.generated.push(ir::BodyStatement {
-                            a: self.name_of(lhs),
-                            c: Some(ir::Name::Made(made)),
-                            ..ir::BodyStatement::bare(Op::Globaladdress)
-                        });
-                        let temp = Some(self.env.temps().take(1));
-                        self.last_temp = temp;
-                        made
-                    });
+                    let address = match self.name_of(lhs).filter(|_| through) {
+                        Some(array) => self.global_address(array, None, &lhs.ty).made,
+                        None => {
+                            if through {
+                                self.followed = false;
+                            }
+                            None
+                        }
+                    };
                     let index = if self.etype_of(&index.ty) == Some(Etype::Integer) {
                         index.clone()
                     } else {
                         self.converted(index, Etype::Integer, span)?
                     };
+                    // FTEF-31.30, FTEF-31.31: an element one `OP_STOREP_*` does not store, of 8,
+                    // 16 or 64 bits or a struct, is not followed.
+                    if address.is_some() && !self.one_store(&lhs.ty) {
+                        self.followed = false;
+                    }
                     if let Some(made) = address {
-                        let storep = self.storep_op(&lhs.ty);
+                        let storep = self.storep_through(&lhs.ty, span);
                         self.generated.push(ir::BodyStatement {
                             a: self.name_of(stored),
                             b: Some(ir::Name::Made(made)),
@@ -1572,6 +1717,17 @@ const fn f32_index(value: f32) -> i32 {
 )]
 const fn int_f32(value: i32) -> f32 {
     value as f32
+}
+
+/// The bits of a byte, which the address of an 8- or 16-bit element counts in.
+const BYTE_BITS: u32 = 8;
+
+/// The bytes of an element `bits` wide, as an integer constant (`QCC_MakeIntConst(align/8)`).
+fn element_bytes(bits: u32) -> Value {
+    let bytes = bits
+        .checked_div(BYTE_BITS)
+        .and_then(|b| i32::try_from(b).ok());
+    int(bytes.unwrap_or(1))
 }
 
 /// The bits of an 8- or 16-bit integer type, `ev_bitfld`'s `bits` (FTEF-2.12).

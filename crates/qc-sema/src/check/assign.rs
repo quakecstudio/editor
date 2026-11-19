@@ -794,7 +794,13 @@ impl Checker<'_> {
         let mut copy = None;
         // The old value is copied first: a definition's, and an element's the getter left in
         // the return global.
-        if !discarded && (operand.reference == Reference::Global || old.returned) {
+        // FTEF-31.31: an element at a constant index is a word of its definition.
+        let placed = match &operand.reference {
+            Reference::Global => true,
+            Reference::Element(element) => element.index.known().is_some(),
+            _ => false,
+        };
+        if !discarded && (placed || old.returned) {
             let store = self.store_of(&operand.ty);
             self.emit(store, &old, &Value::unknown(), span)?;
             copy = self
@@ -811,8 +817,13 @@ impl Checker<'_> {
         };
         // FTEF-29.19: what a pointer points at, or an entity's field, is loaded to a temporary,
         // which is the old value.
-        let loaded = match operand.reference {
+        // FTEF-31.31: an element at an index that is no constant is loaded too, unless its
+        // getter left it in the return global, which is copied above.
+        let loaded = match &operand.reference {
             Reference::Pointer(_) | Reference::Field(_) => old.made,
+            Reference::Element(element) if element.index.known().is_none() && !old.returned => {
+                old.made
+            }
             _ => None,
         };
         // `switch(ref->cast->type)`: a bitfield, or an 8- or 16-bit integer, is `ev_bitfld`,
@@ -1079,7 +1090,7 @@ impl Checker<'_> {
     /// FTEF-6.18: `QCC_StoreToPointer`'s opcode for a value of type `target`: an integer by
     /// `OP_STOREP_I` and a pointer by `OP_STOREP_P` or `OP_STOREP_I`, or else `OP_STOREP_FLD`;
     /// any other by its basic type's.
-    fn storep_through(&self, target: &Type, span: Span) -> Op {
+    pub(super) fn storep_through(&self, target: &Type, span: Span) -> Op {
         let valid = |op: Op| self.env.target_at(span.start).valid(op);
         match self.etype(target) {
             Some(Etype::Integer | Etype::Uint) if valid(Op::StorepI) => Op::StorepI,
@@ -1090,8 +1101,30 @@ impl Checker<'_> {
         }
     }
 
+    /// Whether one `STOREP_*` stores a value of type `target`: no struct, union, 64-bit value
+    /// or narrow integer.
+    pub(super) fn one_store(&self, target: &Type) -> bool {
+        matches!(
+            self.etype(target),
+            Some(
+                Etype::Float
+                    | Etype::Vector
+                    | Etype::String
+                    | Etype::Entity
+                    | Etype::Field
+                    | Etype::Function
+                    | Etype::Integer
+                    | Etype::Uint
+                    | Etype::Pointer
+            )
+        ) && !matches!(
+            target.fteqcc_scalar(),
+            Some(CScalar::Int8 | CScalar::Uint8 | CScalar::Int16 | CScalar::Uint16)
+        )
+    }
+
     /// `STOREP_*` of a value of type `target`, by its basic type.
-    pub(super) fn storep_op(&self, target: &Type) -> Op {
+    fn storep_op(&self, target: &Type) -> Op {
         match self.etype(target) {
             Some(Etype::Vector) => Op::StorepV,
             Some(Etype::String) => Op::StorepS,
@@ -1120,24 +1153,7 @@ impl Checker<'_> {
         if self.global {
             return Ok(());
         }
-        // A value one `STOREP_*` stores: no struct, union, 64-bit value or narrow integer.
-        let word = matches!(
-            self.etype(target),
-            Some(
-                Etype::Float
-                    | Etype::Vector
-                    | Etype::String
-                    | Etype::Entity
-                    | Etype::Field
-                    | Etype::Function
-                    | Etype::Integer
-                    | Etype::Uint
-                    | Etype::Pointer
-            )
-        ) && !matches!(
-            target.fteqcc_scalar(),
-            Some(CScalar::Int8 | CScalar::Uint8 | CScalar::Int16 | CScalar::Uint16)
-        ) && lhs.bitfield.is_none();
+        let word = self.one_store(target) && lhs.bitfield.is_none();
         if pointer.named.is_none() || !word {
             self.followed = false;
             return Ok(());
