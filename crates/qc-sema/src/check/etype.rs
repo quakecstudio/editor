@@ -86,6 +86,21 @@ impl Etype {
         scalar.then(|| self.number()).flatten()
     }
 
+    /// Whether it is one of the numbers `QCC_StoreSRefToRef` converts between (FTEF-29.21): a
+    /// float, an integer of 32 or 64 bits, a double or a truth value.
+    pub(crate) const fn is_number(self) -> bool {
+        matches!(
+            self,
+            Self::Float
+                | Self::Integer
+                | Self::Uint
+                | Self::Int64
+                | Self::Uint64
+                | Self::Double
+                | Self::Boolean
+        )
+    }
+
     /// Its number in FTEQCC's `etype_t` when it is one of the engine's types, `ev_void` to
     /// `ev_double`.
     pub(crate) fn number(self) -> Option<u16> {

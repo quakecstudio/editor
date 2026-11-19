@@ -566,12 +566,23 @@ Vanilla `qcc` has `void`, `float`, `vector`, `string` and `entity` only (QC-10.1
   word in order, an array of structs one brace group per element (FTE-13.10). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseInitializerType`.
 
-- **FTE-14.8** A struct local initialised with a struct value, `poseInfo pose = poses[i];`, is
-  copied a word at a time by `STORE_FLD`, each word a field of the struct to
-  `QCC_PR_ParseInitializerType`; an assignment `a = b;` of struct values copies three words at
-  a time by `STORE_V` and the rest by `STORE_F` (FTE-14.6). Dimension of the Past's
-  `misc_corpse` initialises its `pose` so. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseInitializerType`,
-  `QCC_StoreToSRef`.
+- **FTE-14.8** **Withdrawn** 2026-11-19: it said a struct local's initialiser is copied a
+  word at a time by `STORE_FLD`, which is so only of a struct of two words on a target
+  without `OP_STORE_I64`; replaced by FTE-14.9.
+- **FTE-14.9** A local's initialiser that is no constant is stored by
+  `QCC_PR_GenerateInitializerType`'s loop over the local's words: while three or more are
+  left, `OP_STORE_V` (`if (type->size - i >= 3) { rhs.cast = def.cast = type_vector; ...
+  OP_STORE_V`); for two left, `OP_STORE_I64` (`else if (type->size - i >= 2) ...
+  OP_STORE_I64`), which a target without it writes as `OP_STORE_FLD` of each word
+  (FTEF-27.20); and one left by the local's basic type, `OP_STORE_FNC`, `OP_STORE_S`,
+  `OP_STORE_ENT`, `OP_STORE_FLD`, `OP_STORE_I` for an integer, or else `OP_STORE_F`, a
+  pointer's too. So `poseInfo pose = poses[i];` of a struct of two words is two `STORE_FLD`
+  on the standard target, as Dimension of the Past's `misc_corpse` initialises its `pose`; a
+  struct of five words is `STORE_V` and two `STORE_FLD` there and `STORE_V`, `STORE_I64` on
+  an FTE target; one of four `STORE_V`, `STORE_F`; and a double is the pair's store, where an
+  assignment of one copies it by its size (FTEF-2.13). An assignment `a = b;` of struct
+  values is FTE-14.6's. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_GenerateInitializerType`.
 
 ## FTE-15 `enum`
 

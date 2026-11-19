@@ -337,10 +337,15 @@ impl Checker<'_> {
             && (by_size.is_some() || steps.len() > 1)
             && self.copy_steps(&stored, lhs.name(), &steps);
         if matches!(kind, Assign::Store) && !copied && !packs {
-            let store = self.store_or_refuse(by_size, &target, span);
-            // The store chosen for the `=`, which the code generator reads.
+            // The store chosen for the `=`, which the code generator reads: its first
+            // statement's.
+            let store = steps.first().map_or(Op::StoreF, |&(op, _)| op);
             self.opcodes.insert((span.start, span.end), store);
             if lhs.reference == Reference::Global && !folded {
+                // More statements than one whose words the body could not name.
+                if steps.len() > 1 {
+                    self.followed = false;
+                }
                 self.emit(store, &stored, &Value::unknown(), span)?;
                 self.name_last(store, self.name_of(&stored), lhs.name());
                 // A converting store a helper emulates ends with a plain store of its value.
@@ -363,10 +368,12 @@ impl Checker<'_> {
         if matches!(kind, Assign::Compound(..)) {
             self.definition_store(&lhs, &stored, &target, span)?;
         }
-        if matches!(kind, Assign::Store | Assign::Compound(..)) && !packs {
+        let element = if matches!(kind, Assign::Store | Assign::Compound(..)) && !packs {
             let fold = if folded { Fold::Folded } else { Fold::Stored };
-            self.element_store(&lhs, &stored, (&target, span), fold);
-        }
+            self.element_store(&lhs, &stored, (&target, span), fold)
+        } else {
+            ElementStore::NotOne
+        };
         // FTEF-19.78: an element at an index that is no constant is stored by the array's
         // `ArraySet*` function: the index and the value stored to its parameters, then `CALL2`.
         if matches!(kind, Assign::Store | Assign::Compound(..)) {
@@ -378,7 +385,7 @@ impl Checker<'_> {
         }
         // Any other store of a struct or a union is word groups the body does not follow
         // (FTE-14.5).
-        if structured && !copied {
+        if structured && !copied && element == ElementStore::NotOne {
             self.followed = false;
         }
         // FTEF-29.3: `QCC_StoreSRefToRef`.
@@ -752,7 +759,7 @@ impl Checker<'_> {
             return Ok(());
         }
         // A number is converted before it is stored ([`Checker::store_converted`]).
-        if is_number(from.etype) && is_number(to.etype) {
+        if from.etype.is_number() && to.etype.is_number() {
             return Ok(());
         }
         let message = format!(
@@ -786,7 +793,7 @@ impl Checker<'_> {
         if !to_truth && self.env.typecmp_lax(&value.ty, target) {
             return Ok(value);
         }
-        if is_number(from.etype) && is_number(to.etype) {
+        if from.etype.is_number() && to.etype.is_number() {
             return self.convert_to(&value, target, span);
         }
         Ok(value)
@@ -1102,7 +1109,7 @@ impl Checker<'_> {
         let folded = updated.temp.is_some() && updated.temp == self.last_temp;
         self.definition_store(operand, updated, target, span)?;
         let fold = if folded { Fold::Folded } else { Fold::Stored };
-        self.element_store(operand, updated, (target, span), fold);
+        let _stored = self.element_store(operand, updated, (target, span), fold);
         Ok(())
     }
 
@@ -1138,28 +1145,41 @@ impl Checker<'_> {
         stored: &Value,
         (target, span): (&Type, Span),
         fold: Fold,
-    ) {
+    ) -> ElementStore {
         let folded = fold == Fold::Folded;
         let Reference::Element(element) = &lhs.reference else {
-            return;
+            return ElementStore::NotOne;
         };
         if element.index.known().is_none() || self.global {
-            return;
+            return ElementStore::NotOne;
         }
         // The element's word, as a read of it at a constant index names it.
         let to = lhs.definition_place().and_then(|place| place.word());
         if folded {
             self.fold_into(stored, to);
-        } else {
-            let store = self.store_of(target, span);
-            self.generated.push(ir::BodyStatement {
-                a: self.name_of(stored),
-                b: to,
-                ..ir::BodyStatement::bare(store)
-            });
-            self.read_returned(stored);
-            self.last_temp = None;
+            return ElementStore::Stored;
         }
+        // The element is its definition's words, stored as a definition is
+        // ([`Checker::store_steps`]): a struct, or a 64-bit value where the target has no
+        // `OP_STORE_I64`, by more statements than one.
+        let by_size = self.copied_by_size(target);
+        match self.store_steps(by_size, target, span).as_slice() {
+            [(store, _)] => {
+                self.generated.push(ir::BodyStatement {
+                    a: self.name_of(stored),
+                    b: to,
+                    ..ir::BodyStatement::bare(*store)
+                });
+                self.read_returned(stored);
+                self.last_temp = None;
+            }
+            steps => {
+                if !self.copy_steps(stored, to, steps) {
+                    self.followed = false;
+                }
+            }
+        }
+        ElementStore::Stored
     }
 
     /// FTEF-6.18: `QCC_StoreToPointer`'s opcode for a value of type `target`: an integer by
@@ -1563,6 +1583,37 @@ impl Checker<'_> {
         steps
     }
 
+    /// A local's initialiser `from` stored to `local` by [`Checker::initialiser_steps`], each
+    /// statement a word of the two; a value of more statements than one whose words the body
+    /// cannot name is not followed.
+    fn store_initialiser(
+        &mut self,
+        from: Option<ir::Name>,
+        local: Option<ir::Name>,
+        ty: &Type,
+        span: Span,
+    ) {
+        let steps = self.initialiser_steps(ty, span);
+        let named = from.is_some_and(|name| name.word(0).is_some());
+        if steps.len() > 1 && !named {
+            self.followed = false;
+        }
+        for (op, word) in steps {
+            let word_of = |name: ir::Name| {
+                if word == 0 {
+                    Some(name)
+                } else {
+                    name.word(word)
+                }
+            };
+            self.generated.push(ir::BodyStatement {
+                a: from.and_then(word_of),
+                b: local.and_then(word_of),
+                ..ir::BodyStatement::bare(op)
+            });
+        }
+    }
+
     /// The one statement of [`Checker::store_steps`], or, where there are more, a body that
     /// is not followed: a site that writes one statement does not make the others.
     fn store_or_refuse(&mut self, by_size: Option<u32>, ty: &Type, span: Span) -> Op {
@@ -1689,13 +1740,8 @@ impl Checker<'_> {
                 && from.is_some()
                 && declarator.array_suffixes().next().is_none()
             {
-                for (op, word) in self.initialiser_steps(&ty, init.syntax().span()) {
-                    self.generated.push(ir::BodyStatement {
-                        a: from.and_then(|name| name.word(word)),
-                        b: Some(ir::Name::Def(local, word)),
-                        ..ir::BodyStatement::bare(op)
-                    });
-                }
+                let local = Some(ir::Name::Def(local, 0));
+                self.store_initialiser(from, local, &ty, init.syntax().span());
                 if value.returned {
                     self.live_return = None;
                 }
@@ -1756,25 +1802,7 @@ impl Checker<'_> {
                     .and_then(|name| self.env.reference(name.span().start))
                     .map(|def| ir::Name::Def(def, 0));
                 let from = self.name_of(&value);
-                let steps = self.initialiser_steps(&ty, span);
-                // A value whose words the body cannot name is stored by one statement only.
-                let named = from.is_some_and(|name| name.word(0).is_some());
-                if steps.len() > 1 && !named {
-                    self.followed = false;
-                }
-                for (op, word) in steps {
-                    self.generated.push(ir::BodyStatement {
-                        a: from.and_then(|name| {
-                            if word == 0 {
-                                Some(name)
-                            } else {
-                                name.word(word)
-                            }
-                        }),
-                        b: local.and_then(|name| name.word(word)),
-                        ..ir::BodyStatement::bare(op)
-                    });
-                }
+                self.store_initialiser(from, local, &ty, span);
                 self.last_temp = None;
             }
         }
@@ -1886,17 +1914,12 @@ enum Compounded {
     Unchecked,
 }
 
-/// Whether `etype` is one of the numbers `QCC_StoreSRefToRef` converts between: a float, an
-/// integer of 32 or 64 bits, a double or a truth value.
-const fn is_number(etype: Etype) -> bool {
-    matches!(
-        etype,
-        Etype::Float
-            | Etype::Integer
-            | Etype::Uint
-            | Etype::Int64
-            | Etype::Uint64
-            | Etype::Double
-            | Etype::Boolean
-    )
+/// Whether an assignment's target was an element at a constant index, which
+/// [`Checker::element_store`] stores.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ElementStore {
+    /// It was, and its store is written.
+    Stored,
+    /// The target is no such element.
+    NotOne,
 }

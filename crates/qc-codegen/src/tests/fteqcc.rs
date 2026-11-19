@@ -2737,8 +2737,8 @@ fn a_setter_stores_its_value_by_size() {
     );
 }
 
-// spec FTE-14.8: a struct local initialised with a struct value is copied a word at a time
-// by STORE_FLD
+// spec FTE-14.9: a struct local of two words initialised with a struct value is copied, on
+// the standard target, by STORE_FLD of each word
 #[test]
 fn a_struct_locals_initialiser_is_copied_by_store_fld() {
     let p = fte_progs(
@@ -3546,8 +3546,8 @@ fn a_comma_discards_its_left_call() {
     );
 }
 
-// spec FTE-14.8: a struct local initialised with a struct definition of its type is copied a
-// word at a time by STORE_FLD, written from the semantic model
+// spec FTE-14.9: a struct local of two words initialised with a struct definition of its type
+// is copied, on the standard target, by STORE_FLD of each word, written from the semantic model
 #[test]
 fn a_struct_local_copies_a_definition_word_by_word() {
     let p = fte_progs(
@@ -6420,4 +6420,115 @@ fn an_enums_name_is_the_immediate_of_its_value() {
     assert_eq!(words(&progs, stores[0].a, 1), [4.0_f32.to_bits()]);
     assert_eq!(stores[0].a, immediate(&progs, 4.0));
     assert_eq!(words(&progs, stores[1].a, 1), [4]);
+}
+
+/// The opcodes of `f`'s statements but its last, the `DONE`.
+fn ops_of(source: &str) -> Vec<u32> {
+    let progs = compile_fteqcc(source).unwrap().progs;
+    let mut ops: Vec<u32> = body(&progs, "f").iter().map(|s| s.op).collect();
+    ops.pop();
+    ops
+}
+
+// spec FTE-14.9: a local's initialiser is stored three words at a time by `OP_STORE_V`, two
+// left by `OP_STORE_I64`, which the standard target writes as `OP_STORE_FLD` of each, and one
+// left by the local's own type
+#[test]
+fn a_locals_initialiser_is_stored_by_threes_a_pair_and_a_word() {
+    use qc_progs::Op::{StoreF, StoreFld, StoreI64, StoreS, StoreV};
+    let source = "typedef struct { float a; vector b; float c; } five;\n\
+                  typedef struct { vector a; float b; } four;\n\
+                  five g5;\nfour g4;\n__double k;\nstring s;\nfloat *gp;\n\
+                  void() f = { local five l5 = g5; local four l4 = g4; local __double d = k;\n\
+                  local string ls = s; local float *lp = gp; };\n";
+    assert_eq!(
+        ops_of(source),
+        numbers([
+            StoreV, StoreFld, StoreFld, StoreV, StoreF, StoreFld, StoreFld, StoreS, StoreF
+        ])
+    );
+    assert_eq!(
+        ops_of(&format!("#pragma target fte\n{source}")),
+        numbers([StoreV, StoreI64, StoreV, StoreF, StoreI64, StoreS, StoreF])
+    );
+}
+
+// spec FTEF-27.20: on a target without `OP_STORE_I64` a 64-bit integer is stored by
+// `OP_STORE_FLD` of each of its two words, a constant 0 from the 64-bit zero's, to a definition
+// and to an element at a constant index alike
+#[test]
+fn a_64_bit_store_without_its_opcode_is_two_field_stores() {
+    let progs = compile_fteqcc(
+        "__int64 l;\n__int64 m;\n__int64 la[2];\nvoid() f = { l = m; la[1] = m; l = 0; };\n",
+    )
+    .unwrap()
+    .progs;
+    let (l, m, la) = (
+        global(&progs, "l"),
+        global(&progs, "m"),
+        global(&progs, "la"),
+    );
+    let statements = body(&progs, "f");
+    assert_eq!(statements[0], st(Opcode::StoreFld, m, l, 0));
+    assert_eq!(statements[1], st(Opcode::StoreFld, m + 1, l + 1, 0));
+    assert_eq!(statements[2], st(Opcode::StoreFld, m, la + 2, 0));
+    assert_eq!(statements[3], st(Opcode::StoreFld, m + 1, la + 3, 0));
+    let field = numbers([qc_progs::Op::StoreFld])[0];
+    assert_eq!((statements[4].op, statements[5].op), (field, field));
+    assert_eq!(
+        statements[5].a,
+        statements[4].a + 1,
+        "the zero's second word"
+    );
+    assert_eq!(words(&progs, statements[4].a, 2), [0, 0]);
+}
+
+// spec FTEF-29.21: a number stored to a truth value is compared with zero by the cast and
+// again by the store, a truth value among them; a constant is folded, and a truth value read
+// is stored as its parent
+#[test]
+fn a_store_to_a_truth_value_compares_twice() {
+    use qc_progs::Op::{ConvFtoi, NeF, NeI, StoreI};
+    assert_eq!(
+        ops_of(
+            "#pragma target fte\nint a;\nfloat x;\n_Bool b;\n_Bool c;\n\
+             void() f = { b = a; b = x; b = c; b = 1i; b = 0; a = b; };\n"
+        ),
+        numbers([
+            NeI, NeI, NeF, ConvFtoi, NeI, NeI, NeI, StoreI, StoreI, StoreI
+        ])
+    );
+    let standard =
+        compile_fteqcc("float x;\n__bfloat t;\n__bfloat u;\nvoid() f = { t = x; t = u; };\n")
+            .unwrap()
+            .progs;
+    let statements = body(&standard, "f");
+    let ne = numbers([NeF])[0];
+    assert!(statements[..4].iter().all(|s| s.op == ne), "{statements:?}");
+    let t = global(&standard, "t");
+    assert_eq!((statements[1].a, statements[1].c), (statements[0].c, t));
+    assert_eq!((statements[3].a, statements[3].c), (statements[2].c, t));
+}
+
+// spec FTEF-6.31: a struct stored to an element at a constant index, and one read from it, is
+// the copy to a definition's words
+#[test]
+fn a_struct_is_copied_to_and_from_an_element_at_a_constant_index() {
+    use qc_progs::Op::{StoreF, StoreI64, StoreV};
+    let source = "typedef struct { float a; vector b; float c; } five;\n\
+                  five g;\nfive arr[3];\nvoid() f = { arr[1] = g; g = arr[2]; };\n";
+    assert_eq!(
+        ops_of(&format!("#pragma target fte\n{source}")),
+        numbers([StoreV, StoreI64, StoreV, StoreI64])
+    );
+    assert_eq!(
+        ops_of(source),
+        numbers([StoreV, StoreF, StoreF, StoreV, StoreF, StoreF])
+    );
+    let progs = compile_fteqcc(source).unwrap().progs;
+    let (g, arr) = (global(&progs, "g"), global(&progs, "arr"));
+    let statements = body(&progs, "f");
+    assert_eq!((statements[0].a, statements[0].b), (g, arr + 5));
+    assert_eq!((statements[2].a, statements[2].b), (g + 4, arr + 9));
+    assert_eq!((statements[3].a, statements[3].b), (arr + 10, g));
 }

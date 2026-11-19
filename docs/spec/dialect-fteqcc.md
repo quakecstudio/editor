@@ -203,7 +203,7 @@ corpus uses `int` heavily (3392 occurrences across the three mods) and `bool` (1
   QCC_PR_SimpleStatement(&pr_opcodes[OP_STORE_F], source, dest, nullsref, false);`). So
   `__int8 c; int a; c = a;` is `STORE_F a, c`, through a typedef of the type too, and a double
   stored to a double is one `OP_STORE_I64` on an FTE target and two `OP_STORE_F` on the
-  standard one, where a 64-bit integer's own `OP_STORE_I64` is emulated instead (FTEF-27).
+  standard one, where a 64-bit integer's own `OP_STORE_I64` is emulated instead (FTEF-27.20).
   The words copied are the value's, a definition's, an immediate's or a call's in the return
   global: `d = g()` on the standard target is `STORE_F` of the return global's first word and
   of its second. A store that packs its value into a word, as one to an 8- or 16-bit member
@@ -603,7 +603,10 @@ inheritance, bitfields and nested members.
   i+=2, dest.ofs+=2, source.ofs+=2) QCC_PR_SimpleStatement(&pr_opcodes[OP_STORE_I64], source,
   dest, nullsref, false);`), then `OP_STORE_F` for each word left. So a struct of five words is
   `STORE_V`, `STORE_I64` on an FTE target and `STORE_V`, `STORE_F`, `STORE_F` on the standard
-  one (FTE-14.6), and one of seven `STORE_V`, `STORE_V`, `STORE_F` on both. No struct chooses
+  one (FTE-14.6), and one of seven `STORE_V`, `STORE_V`, `STORE_F` on both. An element at a
+  constant index is its array's definition at the element's words, so a struct stored to one
+  or read from one is the same copy. A struct local's initialiser is stored by another
+  function (FTE-14.9). No struct chooses
   the progs format, which is the target's (FTE-24.1, FTE-24.3). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_StoreToSRef`.
@@ -5098,6 +5101,17 @@ as far as they report.
   point at: with a struct of 6 words, `n2 - base` is `SUB_I n2, base, temp` and `DIV_I temp,
   24`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_StatementFlags`.
+- **FTEF-27.20** `OP_STORE_I64` on a target without it is two statements: `OP_STORE_FLD` of
+  the value's first word to the target's, then of the second to the second (`case
+  OP_STORE_I64: var_c = var_b; var_c.cast = type_integer;
+  QCC_FreeTemp(QCC_PR_StatementFlags(&pr_opcodes[OP_STORE_FLD], var_a, var_c, NULL,
+  STFL_PRESERVEA|STFL_PRESERVEB)); var_a.ofs++; var_c.ofs++; ...`). A constant 0 stored by
+  it is the 64-bit zero first (`if (op - pr_opcodes == OP_STORE_I64) { QCC_FreeTemp(var_a);
+  var_a = QCC_MakeInt64Const(0); }`), so its two words are what the field stores copy. So on
+  the standard target `__int64 l, m; l = m;` is `STORE_FLD m, l` and `STORE_FLD m+1, l+1`,
+  to a definition and to an element at a constant index alike. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_StatementFlags`.
 
 ## FTEF-28 The warnings of an emitted comparison
 
@@ -5319,6 +5333,22 @@ whether it is the result of a postfix `++` or `--`. The semantic model checks as
   A target without the opcode stores through the field's address (FTE-6.4). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_StoreSRefToRef`.
+- **FTEF-29.21** `QCC_StoreSRefToRef` converts a number it stores whose type, or a parent's,
+  is not the target's by `typecmp_lax`: to the target's type
+  (`QCC_SupplyConversion(source, dest->cast->type, true)`), and to a truth value by its
+  comparison with zero and then to the truth value's parent (`if (dest->cast->type ==
+  ev_boolean) source = QCC_SupplyConversion(QCC_PR_GenerateLogicalTruth(source, "cannot
+  convert to boolean"), dest->cast->parentclass->type, true);`). The assignment's cast has
+  already compared the value with zero and left it of the parent's type (FTEF-23.8;
+  `QCC_TryEvaluateCast`: `while (src.cast->type == ev_boolean) src.cast =
+  src.cast->parentclass;`), which is no truth value to `typecmp_lax` (`if (a->type !=
+  b->type) ... return 1;`), so the store compares it again: `_Bool b; int a; b = a;` is
+  `NE_I a, 0, temp` and `NE_I temp, 0, b`, `b = x` of a float `NE_F`, `CONV_FTOI` and `NE_I`,
+  and a truth value stored to another is compared twice too. A constant folds, `b = 1i`
+  being `STORE_I 1, b`, and a constant 0 is stored as it is. A local's initialiser is stored
+  by another function and compared once (FTE-14.9). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_StoreSRefToRef`, `QCC_TryEvaluateCast`; `engine/qclib/qcc_pr_lex.c`, `typecmp_lax`.
 
 ## FTEF-30 Terms
 
