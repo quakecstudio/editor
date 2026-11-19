@@ -69,6 +69,10 @@ pub(crate) trait Env {
     fn has_accessors(&self, ty: &Type) -> bool;
     /// Whether `ty` is an accessor type (`ev_accessor`, FTEF-10.8), which opcodes never take.
     fn is_accessor(&self, ty: &Type) -> bool;
+    /// `ty` as `QCC_TypeForName` gives it: the type a typedef's name stands for (`if (t &&
+    /// t->type == ev_typedef) return t->aux_type;`, FTEF-7.2), which is the type a definition
+    /// of it has.
+    fn typedef_free(&self, ty: &Type) -> Type;
     /// The type of the local whose name starts at offset `at`, through typedefs.
     fn local_type(&self, at: usize) -> Option<Type>;
     /// FTEF-17.17: the global `autocvar_name` of type `ty`, which an `autocvar` call makes and

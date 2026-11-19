@@ -13,7 +13,7 @@ use crate::fte_tables::FteFlag;
 
 /// The flags [`CompilerFlags`] keeps, each with the bit it is, and the lexer's flag it is, if
 /// the lexer reads it.
-const KEPT: [(FteFlag, u32, Option<LexFlag>); 18] = [
+const KEPT: [(FteFlag, u32, Option<LexFlag>); 20] = [
     (FteFlag::Qcfuncs, 1, Some(LexFlag::QcFuncs)),
     (FteFlag::Qccx, 1 << 1, Some(LexFlag::Qccx)),
     (FteFlag::Utf8strings, 1 << 2, Some(LexFlag::Utf8Strings)),
@@ -36,6 +36,8 @@ const KEPT: [(FteFlag, u32, Option<LexFlag>); 18] = [
     (FteFlag::Ifvector, 1 << 19, None),
     (FteFlag::Vectorlogic, 1 << 20, None),
     (FteFlag::Boundchecks, 1 << 21, None),
+    (FteFlag::Iffloat, 1 << 22, None),
+    (FteFlag::Ifstring, 1 << 23, None),
 ];
 
 /// The bit of [`CompilerFlags`] that holds the operator priorities, C's when set.

@@ -33,6 +33,8 @@ fn the_kept_flags() {
         FteFlag::Ifvector,
         FteFlag::Vectorlogic,
         FteFlag::Boundchecks,
+        FteFlag::Iffloat,
+        FteFlag::Ifstring,
     ];
     for flag in all {
         let on = CompilerFlags::default().with(flag, true);
@@ -53,9 +55,9 @@ fn the_kept_flags() {
         }
     }
     assert!(CompilerFlags::default().has(FteFlag::Boundchecks));
-    let on = CompilerFlags::default().with(FteFlag::Iffloat, true);
+    let on = CompilerFlags::default().with(FteFlag::Nullemptystr, true);
     assert_eq!(on, CompilerFlags::default());
-    assert!(!on.has(FteFlag::Iffloat));
+    assert!(!on.has(FteFlag::Nullemptystr));
     // The casts' flags are none of the lexer's.
     let casts = CompilerFlags::default()
         .with(FteFlag::Laxcasts, true)
@@ -82,7 +84,7 @@ fn edits_set_what_they_name() {
     assert!(after.has(FteFlag::Qccx));
     assert!(!after.has(FteFlag::Utf8strings));
     assert!(!after.has(FteFlag::Qcfuncs));
-    assert!(FlagEdit::of_flags(&[FteFlag::Iffloat], now).is_empty());
+    assert!(FlagEdit::of_flags(&[FteFlag::Nullemptystr], now).is_empty());
     assert!(!edit.is_empty());
     assert_eq!(FlagEdit::whole(now).apply(before), now);
     // An edit turns off a named flag that is on, and keeps one it does not name.

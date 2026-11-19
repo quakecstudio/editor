@@ -273,16 +273,12 @@ impl Checker<'_> {
             Some(CScalar::Int16 | CScalar::Uint16) => return Pointee::Bits(16),
             _ => {}
         }
-        Pointee::Words(match self.env.shape(inner).map(|shape| shape.etype) {
-            Some(Etype::Vector) => Some(3),
-            Some(Etype::Int64 | Etype::Uint64 | Etype::Double) => Some(2),
-            Some(Etype::Struct | Etype::Union) => self
-                .env
+        // `aux_type->size`, which the type's layout holds for every type the model follows.
+        Pointee::Words(
+            self.env
                 .layout(inner)
                 .and_then(|layout| i32::try_from(layout.words).ok()),
-            None => None,
-            Some(_) => Some(1),
-        })
+        )
     }
 
     /// `QCC_MakeIntConst(-aux_type->size)`: the size is unsigned, so its negation is

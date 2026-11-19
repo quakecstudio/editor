@@ -277,7 +277,7 @@ impl BodyStatement {
         let c = row.makes_value();
         match self.op {
             Op::Goto => [true, false, false],
-            Op::IfI | Op::IfnotI | Op::IfS | Op::IfnotS | Op::IfF | Op::IfnotF => [a, true, c],
+            op if op.is_conditional_jump() => [a, true, c],
             Op::Return | Op::Done => [false; OPERANDS],
             // FTEF-32.19: `CALL1H` to `CALL8H` read their first two arguments as operands.
             op if op.call().is_some_and(|(_, passing)| passing.operands() > 0) => {

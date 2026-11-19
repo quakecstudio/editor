@@ -6757,3 +6757,156 @@ fn an_array_of_vectors_is_initialised_an_element_at_a_time() {
     assert!(t[..5].iter().all(|s| s.op == u32::from(StoreV.number())));
     assert_eq!(t[1].b, t[0].b + 3);
 }
+
+/// The opcodes of `f`'s body in `source`, its `DONE` left out, each by its FTEQCC name.
+fn names_of(source: &str) -> Vec<&'static str> {
+    ops_of(source)
+        .into_iter()
+        .map(|op| {
+            qc_progs::Op::ALL
+                .iter()
+                .find(|known| u32::try_from(known.number()).unwrap() == op)
+                .map_or("?", |known| known.name())
+        })
+        .collect()
+}
+
+// spec FTEF-30.19: where the target has `OP_IFNOT_F` a float's condition jumps by it and by
+// `OP_IF_F`, a `NOT_F` it shortens an `OP_IF_F`; a truth value's, a string's and an entity's
+// jump as integers
+#[test]
+fn a_float_condition_jumps_by_the_float_jumps_where_the_target_has_them() {
+    let fte = "#pragma target fte\nfloat c, x;\nstring s;\nentity e;\n";
+    let of = |body: &str| names_of(&format!("{fte}void() f = {{ {body} }};\n"));
+    assert_eq!(of("if (c) x = 1;"), ["IFNOT_F", "STORE_F"]);
+    assert_eq!(of("if (!c) x = 1;"), ["IF_F", "STORE_F"]);
+    assert_eq!(of("do { x = 1; } while (c);"), ["STORE_F", "IF_F"]);
+    assert_eq!(of("do { x = 1; } while (!c);"), ["STORE_F", "NOT_F", "IF"]);
+    assert_eq!(of("if (c == 2) x = 1;"), ["EQ_F", "IFNOT", "STORE_F"]);
+    assert_eq!(of("if (c && x) x = 1;"), ["AND_F", "IFNOT", "STORE_F"]);
+    assert_eq!(of("if (s) x = 1;"), ["IFNOT", "STORE_F"]);
+    assert_eq!(of("if (!e) x = 1;"), ["IF", "STORE_F"]);
+    assert_eq!(of("if (c & 1) x = 1;"), ["BITAND", "IFNOT_F", "STORE_F"]);
+    // The standard target has neither jump.
+    let id = names_of("float c, x;\nvoid() f = { if (c) x = 1; if (!c) x = 2; };\n");
+    assert_eq!(id, ["IFNOT", "STORE_F", "IF", "STORE_F"]);
+}
+
+// spec FTEF-30.19, FTEF-21.27: under `iffloat` and `ifstring` a target without the float's and
+// the string's jumps compares the value with 0 by `OP_NE_F` or `OP_NE_S` and jumps on that as an
+// integer; a `NOT_F` the float's jump shortened is compared too, a `NOT_S` kept
+#[test]
+fn a_jump_the_target_lacks_is_a_comparison_with_zero() {
+    let flags =
+        "#pragma flag enable iffloat\n#pragma flag enable ifstring\nfloat c, x;\nstring s;\n";
+    let of = |body: &str| names_of(&format!("{flags}void() f = {{ {body} }};\n"));
+    assert_eq!(of("if (c) x = 1;"), ["NE_F", "IFNOT", "STORE_F"]);
+    assert_eq!(of("if (!c) x = 1;"), ["IF", "STORE_F"]);
+    assert_eq!(of("do { x = 1; } while (c);"), ["STORE_F", "NE_F", "IF"]);
+    assert_eq!(of("if (s) x = 1;"), ["NE_S", "IFNOT", "STORE_F"]);
+    assert_eq!(of("if (!s) x = 1;"), ["NOT_S", "IFNOT", "STORE_F"]);
+    // The comparison is with the float 0, the string's too.
+    let progs = fte_progs(&format!(
+        "{flags}void() f = {{ if (s) x = 1; if (c) x = 2; }};\n"
+    ));
+    let t = body(&progs, "f");
+    assert_eq!(t[0].b, t[3].b);
+    // With the target's jumps a string's is `OP_IFNOT_S` and its `NOT_S` is kept.
+    let fte = "#pragma target fte\n#pragma flag enable ifstring\nfloat x;\nstring s;\n";
+    let of = |body: &str| names_of(&format!("{fte}void() f = {{ {body} }};\n"));
+    assert_eq!(of("if (s) x = 1;"), ["IFNOTS", "STORE_F"]);
+    assert_eq!(of("if (!s) x = 1;"), ["NOT_S", "IFNOT", "STORE_F"]);
+}
+
+// spec FTEF-30.20: the last arm of `?:` is stored by its type as an assignment is, a type
+// copied by its size by its pieces: a `__variant`'s by `OP_STORE_V`, a struct's of two words by
+// `OP_STORE_I64` where the target has it
+#[test]
+fn the_last_arm_of_a_ternary_is_stored_as_an_assignment_is() {
+    let variant = names_of("__variant v1, v2, r;\nfloat c;\nvoid() f = { r = c ? v1 : v2; };\n");
+    assert_eq!(variant, ["IFNOT", "STORE_V", "GOTO", "STORE_V", "STORE_V"]);
+    let two = names_of(
+        "#pragma target fte\ntypedef struct { float a; float b; } two;\ntwo v1, v2, r;\n\
+         float c;\nvoid() f = { r = c ? v1 : v2; };\n",
+    );
+    assert_eq!(
+        two,
+        ["IFNOT_F", "STORE_I64", "GOTO", "STORE_I64", "STORE_I64"]
+    );
+    let progs = fte_progs(
+        "#pragma target fte\ntypedef struct { float a; float b; } two;\ntwo v1, v2, r;\n\
+         float c;\nvoid() f = { r = c ? v1 : v2; };\n",
+    );
+    let t = body(&progs, "f");
+    assert_eq!(
+        (t[1].a, t[3].a),
+        (global(&progs, "v1"), global(&progs, "v2"))
+    );
+    assert_eq!(t[1].b, t[3].b);
+    assert_eq!((t[4].a, t[4].b), (t[1].b, global(&progs, "r")));
+}
+
+// spec FTEF-6.32: arithmetic on a pointer to a `__variant` is in its three words, as for any
+// type by the words of its layout: an integer added is multiplied by 3 and a difference divided
+#[test]
+fn a_pointer_to_a_variant_steps_three_words() {
+    let source = "#pragma target fte\n__variant *p, *q;\nint n;\n";
+    let of = |body: &str| names_of(&format!("{source}void() f = {{ {body} }};\n"));
+    assert_eq!(of("p += n;"), ["MUL_I", "ADD_PIW"]);
+    assert_eq!(of("n = p - q;"), ["SUB_I", "DIV_I"]);
+    let progs = fte_progs(&format!("{source}void() f = {{ p += n; }};\n"));
+    let t = body(&progs, "f");
+    assert_eq!(words(&progs, t[0].b, 1), [3]);
+}
+
+// spec FTEF-27.21: a constant 0 stored by `OP_STORE_V` is read from the zero vector
+// and one stored by `OP_STORE_I64` from a zero of two words, in an assignment, an element's
+// store and a local's initialiser alike
+#[test]
+fn a_zero_is_stored_from_a_zero_of_the_stores_size() {
+    let progs = fte_progs(
+        "#pragma target fte\n__int64 g;\n__variant v;\nvoid() f = { local __variant l = 0; \
+         local __int64 q = 0; v = 0; g = 0; v = l; g = q; };\n",
+    );
+    let t = body(&progs, "f");
+    let number = |op: qc_progs::Op| u32::try_from(op.number()).unwrap();
+    let zero = |at: i32, n: usize| words(&progs, at, n).iter().all(|&w| w == 0);
+    for s in &t[..4] {
+        let words = if s.op == number(qc_progs::Op::StoreV) {
+            3
+        } else {
+            2
+        };
+        assert!(s.op == number(qc_progs::Op::StoreV) || s.op == number(qc_progs::Op::StoreI64));
+        assert!(zero(s.a, words), "{s:?}");
+        let def = progs
+            .global_defs
+            .iter()
+            .find(|d| i64::from(d.ofs) == i64::from(s.a));
+        assert!(
+            def.is_some_and(|d| string(&progs, d.s_name) == "IMMEDIATE"),
+            "{s:?}"
+        );
+    }
+    assert_eq!((t[0].a, t[1].a), (t[2].a, t[3].a));
+}
+
+// spec FTEF-29.21: a truth type named by a typedef is the truth type, so a store to it compares
+// as a store to `_Bool` does
+#[test]
+fn a_typedef_of_a_truth_type_is_stored_as_the_truth_type() {
+    let body = "void() f = { b = a; b = x; if (b) x = 1; };\n";
+    let named = ops_of(&format!(
+        "#pragma target fte\ntypedef _Bool flag;\nflag b;\nint a;\nfloat x;\n{body}"
+    ));
+    let plain = ops_of(&format!(
+        "#pragma target fte\n_Bool b;\nint a;\nfloat x;\n{body}"
+    ));
+    assert_eq!(named, plain);
+    assert_eq!(
+        names_of(&format!(
+            "#pragma target fte\n_Bool b;\nint a;\nfloat x;\n{body}"
+        ))[0],
+        "NE_I"
+    );
+}

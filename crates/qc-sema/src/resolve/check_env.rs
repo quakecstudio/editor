@@ -559,6 +559,10 @@ impl Env for BodyEnv<'_, '_> {
         self.resolver.is_accessor_type(ty)
     }
 
+    fn typedef_free(&self, ty: &Type) -> Type {
+        self.resolver.resolved(ty)
+    }
+
     fn has_accessors(&self, ty: &Type) -> bool {
         let mut current = self.resolver.resolved(ty);
         for _ in 0..MAX_TYPEDEF_DEPTH {

@@ -618,6 +618,15 @@ inheritance, bitfields and nested members.
   the progs format, which is the target's (FTE-24.1, FTE-24.3). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_StoreToSRef`.
+- **FTEF-6.32** The words pointer arithmetic steps by are those of the pointed-to type's
+  layout, `aux_type->size`, for every type: a pointer to a `__variant` steps three words, so
+  `p += n` multiplies `n` by 3 (`MUL_I n, 3; ADD_PIW`) and `p - q` divides the difference by
+  3, as a pointer to a struct steps its struct's words (FTEF-6.14): `var_b =
+  QCC_PR_StatementFlags(&pr_opcodes[OP_MUL_I], var_b, QCC_MakeIntConst(t->aux_type->size),
+  NULL, 0);`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_StatementFlags`; checked against the pinned FTEQCC's
+  output (2026-11-19).
+
 ## FTEF-7 `typedef` of any type
 
 **Source:** `qcc_pr_lex.c`, `QCC_TypeForName` and the typedef path (`ev_typedef`,
@@ -4444,6 +4453,8 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   arithmetic read them (`QCC_PR_Statement`'s "type mismatch for OP",
   `QCC_SupplyConversionForAssignment`, `QCC_PR_GenerateLogicalTruth`, `sizeof`), the expression
   typing's (P2-06).
+- **FTEF-21.27** `iffloat` and `ifstring` are kept with FTEF-21.1's flags and are not on
+  FTEF-21.26's: the jump of a condition reads them (FTEF-30.19).
 - **FTEF-21.21** With `qcfuncs` off a C function a body declares (FTEF-21.10) is defined by a
   body written with it, `void x() {}`, and needs none elsewhere; C's `(*name)(params)` there is
   a variable (`isvar |= isptr>0`), no function, so `float (*x)(float); x(1);` and `entity
@@ -5120,6 +5131,19 @@ as far as they report.
   to a definition and to an element at a constant index alike. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_StatementFlags`.
+- **FTEF-27.21** A store of the constant 0 reads a zero of the store's size, whichever
+  statement stores it. `QCC_PR_StatementFlags` replaces an integer or float constant 0 stored
+  by `OP_STORE_V` with the zero vector and one stored by `OP_STORE_I64` with a 64-bit zero
+  (`if (op - pr_opcodes == OP_STORE_V) { ... var_a = QCC_MakeVectorConst(0, 0, 0); } if (op -
+  pr_opcodes == OP_STORE_I64) { ... var_a = QCC_MakeInt64Const(0); }`); `QCC_StoreToSRef`'s
+  `default:` stores a null by pieces from the zero vector, the 64-bit zero and the integer 0
+  (FTEF-6.31); and `QCC_PR_GenerateInitializerType` stores a null initialiser from the zero
+  vector for `OP_STORE_V` and for `OP_STORE_I64` alike (`nullsource?QCC_MakeVectorConst(0,0,0)
+  :rhs`) and from the integer 0 for a word (`if (nullsource) rhs = QCC_MakeIntConst(0);`). An
+  assignment, an array element's store and a local's initialiser all read their zero by this
+  rule. Where FTEQCC itself stores a one-word constant 0 by `OP_STORE_I64` unreplaced, reading
+  the word after the constant, this compiler stores the 64-bit zero (FTEF-2.13). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_StatementFlags`, `QCC_StoreToSRef`, `QCC_PR_GenerateInitializerType`.
 
 ## FTEF-28 The warnings of an emitted comparison
 
@@ -5509,6 +5533,32 @@ reference are FTEF-31's.
   Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   the ternary in `QCC_PR_RefExpression`; checked against the pinned FTEQCC's `-Fwasm` output for
   each form (2026-11-16 for the truth arms).
+- **FTEF-30.19** The jump of a condition is chosen by its type before it is emitted. A float's
+  is `OP_IFNOT_F`, or `OP_IF_F`, under `iffloat` or where the target has the opcode (`case
+  ev_float: if (flag_iffloat || QCC_OPCodeValid(&pr_opcodes[OP_IFNOT_F])) op = OP_IFNOT_F; else
+  op = OP_IFNOT_I;`), so on an FTE target `if (c)` is `IFNOT_F c` and on the standard one
+  `IFNOT c`. A string's is `OP_IFNOT_S`, or `OP_IF_S`, under `ifstring` (`if (flag_ifstring) op
+  = OP_IFNOT_S;`). A truth value is `ev_boolean`, an integer's jump: `if (a == b)`, `if (a &&
+  b)` and `if (!s)` jump by `OP_IFNOT_I` on every target. `QCC_PR_StatementFlags` then shortens
+  the jump (FTEF-34.16): `OP_IFNOT_F` of a `NOT_F`'s temporary is `OP_IF_F` of its operand,
+  `OP_IFNOT_S` of a `NOT_S`'s `OP_IF_S`, and `OP_IFNOT_I` of a `NOT_F`'s `OP_IF_F` where the
+  target has it. A jump the target lacks is then the integer jump of a comparison with 0
+  (FTEF-27.9): `tmp = QCC_MakeFloatConst(0); var_a = QCC_PR_Statement(&pr_opcodes[OP_NE_F],
+  var_a, tmp, NULL); op = &pr_opcodes[OP_IFNOT_I];`, and for a string the same float 0 read as
+  a string by `OP_NE_S` (`tmp.cast = type_string;`). So under `iffloat` on the standard target
+  `if (c)` is `NE_F c, 0; IFNOT`, and `if (!c)`, shortened first, `NE_F c, 0; IF`. The test of
+  a `for` is `OP_IFNOT_I` whatever its type (FTEF-34.4). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_Generate_OP_IFNOT`, `QCC_Generate_OP_IF`, `QCC_PR_StatementFlags`; checked against the
+  pinned FTEQCC's output on the standard and FTE targets, with and without the two flags
+  (2026-11-19).
+- **FTEF-30.20** The last arm of `?:` is stored to the result as an assignment stores it,
+  `QCC_StoreToSRef(r, val, val.cast, false, true);`: a type with a case of its own by its
+  opcode, which may fold into the statement that made the arm, and a type copied by its size
+  (FTEF-6.31, FTEF-11.5) by its pieces with plain statements that fold into nothing. The first
+  arm is stored by its size (FTEF-30.3). So `r = c ? v1 : v2` of `__variant`s is `STORE_V` for
+  each arm and for the assignment, and of structs of two words on an FTE target `STORE_I64`
+  for each. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, the ternary in `QCC_PR_RefExpression`, `QCC_StoreToSRef`; checked
+  against the pinned FTEQCC's output (2026-11-19).
 
 ## FTEF-31 References
 

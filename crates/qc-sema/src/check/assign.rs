@@ -2,7 +2,7 @@
 // Copyright (c) 2004-2025 FTE's team and its contributors
 // Copyright (C) 2026 QuakeC Studio contributors
 //
-// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_comp.c, QCC_PR_RefExpression, QCC_StoreSRefToRef, QCC_StoreToSRef, QCC_SupplyConversionForAssignment, opcodes_addstore
+// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_comp.c, QCC_PR_RefExpression, QCC_StoreSRefToRef, QCC_StoreToSRef, QCC_StoreToPointer, QCC_PR_GenerateInitializerType, QCC_PR_StatementFlags, QCC_SupplyConversionForAssignment, opcodes_addstore
 
 //! Assignments, `=` and the compound ones, and postfix `++` and `--`, as FTEQCC checks them
 //! (FTEF-29).
@@ -348,7 +348,8 @@ impl Checker<'_> {
                     self.followed = false;
                 }
                 self.emit(store, &stored, &Value::unknown(), span)?;
-                self.name_last(store, self.name_of(&stored), lhs.name());
+                let source = self.store_source(store, &stored);
+                self.name_last(store, source, lhs.name());
                 // A converting store a helper emulates ends with a plain store of its value.
                 match store {
                     Op::StoreIf => self.name_last(Op::StoreF, None, lhs.name()),
@@ -1178,7 +1179,7 @@ impl Checker<'_> {
         match self.store_steps(by_size, target, span).as_slice() {
             [(store, _)] => {
                 self.generated.push(ir::BodyStatement {
-                    a: self.name_of(stored),
+                    a: self.store_source(*store, stored),
                     b: to,
                     ..ir::BodyStatement::bare(*store)
                 });
@@ -1388,7 +1389,12 @@ impl Checker<'_> {
     /// FTEF-2.13, FTEF-6.31, FTEF-11.5) and `QCC_PR_StatementFlags` of `OP_STORE_I64` (`var_a =
     /// QCC_MakeInt64Const(0);`, FTEF-27.20). Whether it was: any other value is left to its
     /// one statement.
-    fn copy_steps(&mut self, stored: &Value, to: Option<ir::Name>, steps: &[(Op, u32)]) -> bool {
+    pub(super) fn copy_steps(
+        &mut self,
+        stored: &Value,
+        to: Option<ir::Name>,
+        steps: &[(Op, u32)],
+    ) -> bool {
         let Some(to) = to else {
             return false;
         };
@@ -1405,21 +1411,11 @@ impl Checker<'_> {
         if !null && from.is_none() {
             return false;
         }
-        let zero = |kind| {
-            ir::Name::Immediate(ir::Immediate {
-                kind,
-                words: [0, 0, 0],
-            })
-        };
         for &(op, word) in steps {
             let a = if null {
-                match op {
-                    Op::StoreV => Some(zero(ir::ImmediateKind::Vector)),
-                    Op::StoreI64 => Some(zero(ir::ImmediateKind::Int64)),
-                    // A word of the 64-bit zero an emulated `OP_STORE_I64` copies.
-                    Op::StoreFld => zero(ir::ImmediateKind::Int64).word(word),
-                    _ => Some(zero(ir::ImmediateKind::Integer)),
-                }
+                Zeroes::OfAStore
+                    .source(op, word)
+                    .or(Some(Zeroes::integer()))
             } else {
                 from.and_then(|from| from.word(word))
             };
@@ -1487,7 +1483,7 @@ impl Checker<'_> {
                 self.fold_into(&value, to);
             } else {
                 // FTE-14.9: each element is stored as a local's initialiser is.
-                self.store_initialiser(self.name_of(&value), to, &ty, span);
+                self.store_initialiser((&value, self.name_of(&value)), to, &ty, span);
             }
             self.read_returned(&value);
             self.last_temp = None;
@@ -1624,7 +1620,9 @@ impl Checker<'_> {
         let narrow = layout.bits != 0 && layout.bits < WORD_ALIGNMENT;
         let no_case = self.env.is_accessor(ty)
             || match self.etype(ty) {
-                Some(Etype::Struct | Etype::Union | Etype::Variant | Etype::Double) => true,
+                Some(
+                    Etype::Struct | Etype::Union | Etype::Enum | Etype::Variant | Etype::Double,
+                ) => true,
                 Some(Etype::Integer | Etype::Uint) => narrow,
                 _ => false,
             };
@@ -1636,7 +1634,12 @@ impl Checker<'_> {
     /// ([`Checker::pieces`]); any other is its type's case of `QCC_StoreToSRef`, one
     /// statement, but `OP_STORE_I64` on a target without it, which `QCC_PR_StatementFlags`
     /// writes as `OP_STORE_FLD` of each of its two words (FTEF-27.20).
-    fn store_steps(&self, by_size: Option<u32>, ty: &Type, span: Span) -> Vec<(Op, u32)> {
+    pub(super) fn store_steps(
+        &self,
+        by_size: Option<u32>,
+        ty: &Type,
+        span: Span,
+    ) -> Vec<(Op, u32)> {
         if let Some(words) = by_size {
             return self.pieces(words, span);
         }
@@ -1653,8 +1656,9 @@ impl Checker<'_> {
     /// `OP_STORE_V` while three words or more are left, `OP_STORE_I64` for two, which a
     /// target without it writes as `OP_STORE_FLD` of each (FTEF-27.20), and the last word by
     /// the local's basic type, `OP_STORE_F` for any but a function, a string, an entity, a
-    /// field or an integer.
-    fn initialiser_steps(&self, ty: &Type, span: Span) -> Vec<(Op, u32)> {
+    /// field or an integer. The third of each is the half of an emulated `OP_STORE_I64` the
+    /// statement is, for the zero it reads.
+    fn initialiser_steps(&self, ty: &Type, span: Span) -> Vec<(Op, u32, Option<u32>)> {
         let words = self.env.layout(ty).map_or(1, |layout| layout.words);
         let wide = self.env.target_at(span.start).valid(Op::StoreI64);
         let mut steps = Vec::new();
@@ -1662,14 +1666,14 @@ impl Checker<'_> {
         while at < words {
             let left = words.saturating_sub(at);
             let size = if left >= VECTOR_WORDS {
-                steps.push((Op::StoreV, at));
+                steps.push((Op::StoreV, at, None));
                 VECTOR_WORDS
             } else if left == 2 {
                 if wide {
-                    steps.push((Op::StoreI64, at));
+                    steps.push((Op::StoreI64, at, None));
                 } else {
-                    steps.push((Op::StoreFld, at));
-                    steps.push((Op::StoreFld, at.saturating_add(1)));
+                    steps.push((Op::StoreFld, at, Some(0)));
+                    steps.push((Op::StoreFld, at.saturating_add(1), Some(1)));
                 }
                 2
             } else {
@@ -1683,6 +1687,7 @@ impl Checker<'_> {
                         _ => Op::StoreF,
                     },
                     at,
+                    None,
                 ));
                 1
             };
@@ -1691,22 +1696,25 @@ impl Checker<'_> {
         steps
     }
 
-    /// A local's initialiser `from` stored to `local` by [`Checker::initialiser_steps`], each
-    /// statement a word of the two; a value of more statements than one whose words the body
+    /// A local's initialiser `value`, named `from`, stored to `local` by
+    /// [`Checker::initialiser_steps`], each statement a word of the two. A constant 0 is
+    /// stored from zeroes, as `QCC_PR_GenerateInitializerType` stores it
+    /// ([`Zeroes::OfAnInitialiser`]). A value of more statements than one whose words the body
     /// cannot name is not followed.
     fn store_initialiser(
         &mut self,
-        from: Option<ir::Name>,
+        (value, from): (&Value, Option<ir::Name>),
         local: Option<ir::Name>,
         ty: &Type,
         span: Span,
     ) {
         let steps = self.initialiser_steps(ty, span);
+        let null = value.null();
         let named = from.is_some_and(|name| name.word(0).is_some());
-        if steps.len() > 1 && !named {
+        if steps.len() > 1 && !named && !null {
             self.followed = false;
         }
-        for (op, word) in steps {
+        for (op, word, half) in steps {
             let word_of = |name: ir::Name| {
                 if word == 0 {
                     Some(name)
@@ -1714,12 +1722,35 @@ impl Checker<'_> {
                     name.word(word)
                 }
             };
+            let a = if null {
+                // A word stored alone reads the integer 0, an emulated pair's halves the
+                // words of the pair's zero.
+                let zero = match (op, half) {
+                    (Op::StoreFld, None) => None,
+                    _ => Zeroes::OfAnInitialiser.source(op, half.unwrap_or(0)),
+                };
+                zero.or(Some(Zeroes::integer()))
+            } else {
+                from.and_then(word_of)
+            };
             self.generated.push(ir::BodyStatement {
-                a: from.and_then(word_of),
+                a,
                 b: local.and_then(word_of),
                 ..ir::BodyStatement::bare(op)
             });
         }
+    }
+
+    /// What a store of `op` reads `stored` from: its name, or for a constant 0 stored by
+    /// `OP_STORE_V` or `OP_STORE_I64` the zero of that size (`QCC_PR_StatementFlags`: `if (op
+    /// - pr_opcodes == OP_STORE_V) { ... var_a = QCC_MakeVectorConst(0, 0, 0); }`, and
+    /// `QCC_MakeInt64Const(0)` for `OP_STORE_I64`).
+    pub(super) fn store_source(&self, op: Op, stored: &Value) -> Option<ir::Name> {
+        stored
+            .null()
+            .then(|| Zeroes::OfAStore.source(op, 0))
+            .flatten()
+            .or_else(|| self.name_of(stored))
     }
 
     /// The one statement of [`Checker::store_steps`], or, where there are more, a body that
@@ -1849,7 +1880,7 @@ impl Checker<'_> {
                 && declarator.array_suffixes().next().is_none()
             {
                 let local = Some(ir::Name::Def(local, 0));
-                self.store_initialiser(from, local, &ty, init.syntax().span());
+                self.store_initialiser((&value, from), local, &ty, init.syntax().span());
                 if value.returned {
                     self.live_return = None;
                 }
@@ -1910,7 +1941,7 @@ impl Checker<'_> {
                     .and_then(|name| self.env.reference(name.span().start))
                     .map(|def| ir::Name::Def(def, 0));
                 let from = self.name_of(&value);
-                self.store_initialiser(from, local, &ty, span);
+                self.store_initialiser((&value, from), local, &ty, span);
                 self.last_temp = None;
             }
         }
@@ -2034,4 +2065,47 @@ enum ElementStore {
     Stored,
     /// The target is no such element.
     NotOne,
+}
+
+/// Which of FTEQCC's functions stores a constant 0, each from zeroes of its own choosing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Zeroes {
+    /// `QCC_StoreToSRef`'s `default:` and `QCC_PR_StatementFlags`: the zero vector for
+    /// `OP_STORE_V` and the 64-bit zero for `OP_STORE_I64`, whose words an emulated one's two
+    /// `OP_STORE_FLD` read.
+    OfAStore,
+    /// `QCC_PR_GenerateInitializerType`: the zero vector for `OP_STORE_V` and for
+    /// `OP_STORE_I64` alike (`nullsource?QCC_MakeVectorConst(0,0,0):rhs`).
+    OfAnInitialiser,
+}
+
+impl Zeroes {
+    /// The zero a store of `op` reads, its word `word` for an emulated pair's `OP_STORE_FLD`;
+    /// `None` for a store of one word, which reads [`Zeroes::integer`] or the constant itself.
+    fn source(self, op: Op, word: u32) -> Option<ir::Name> {
+        let zero = |kind| {
+            ir::Name::Immediate(ir::Immediate {
+                kind,
+                words: [0, 0, 0],
+            })
+        };
+        let pair = match self {
+            Self::OfAStore => ir::ImmediateKind::Int64,
+            Self::OfAnInitialiser => ir::ImmediateKind::Vector,
+        };
+        match op {
+            Op::StoreV => Some(zero(ir::ImmediateKind::Vector)),
+            Op::StoreI64 => Some(zero(pair)),
+            Op::StoreFld => zero(pair).word(word),
+            _ => None,
+        }
+    }
+
+    /// The integer 0, `QCC_MakeIntConst(0)`, a word's zero.
+    const fn integer() -> ir::Name {
+        ir::Name::Immediate(ir::Immediate {
+            kind: ir::ImmediateKind::Integer,
+            words: [0, 0, 0],
+        })
+    }
 }

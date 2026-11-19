@@ -417,7 +417,12 @@ impl<'e> Checker<'e> {
     ) -> Value {
         let array = self.env.is_array(def);
         let constness = self.env.constness(def);
-        let Some(ty) = self.env.definition(def).map(|def| def.ty.clone()) else {
+        // A definition written with a typedef's name is of the type the name stands for.
+        let Some(ty) = self
+            .env
+            .definition(def)
+            .map(|def| self.env.typedef_free(&def.ty))
+        else {
             return Value::unknown();
         };
         let name = token.text_lossless();

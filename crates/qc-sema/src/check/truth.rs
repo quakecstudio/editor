@@ -2,7 +2,7 @@
 // Copyright (c) 2004-2025 FTE's team and its contributors
 // Copyright (C) 2026 QuakeC Studio contributors
 //
-// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_comp.c, QCC_PR_GenerateLogicalTruth, QCC_PR_GenerateLogicalNot, QCC_PR_GenerateBitwiseNot, QCC_Generate_OP_IFNOT, QCC_PR_RefExpression
+// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_comp.c, QCC_PR_GenerateLogicalTruth, QCC_PR_GenerateLogicalNot, QCC_PR_GenerateBitwiseNot, QCC_Generate_OP_IFNOT, QCC_Generate_OP_IF, QCC_PR_StatementFlags, QCC_PR_RefExpression
 
 //! A value's truth as FTEQCC tests it (FTEF-30): `!`, `~`, a value made a boolean, the test of a
 //! condition, and the conditional operator `?:` built on it.
@@ -43,6 +43,16 @@ pub(super) enum Jump {
     If,
 }
 
+impl Jump {
+    /// The jump taken on the other outcome, which tests a value `OP_NOT_V` made (FTEF-30.2).
+    const fn other(self) -> Self {
+        match self {
+            Self::IfNot => Self::If,
+            Self::If => Self::IfNot,
+        }
+    }
+}
+
 impl Test {
     /// The opcode the test is for a value of basic type `etype`, and the zero it is compared
     /// with; `None` for a type the test refuses.
@@ -81,6 +91,41 @@ impl Test {
     }
 }
 
+/// The jump `QCC_Generate_OP_IFNOT` and `QCC_Generate_OP_IF` choose for a condition's type.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Tests {
+    /// `OP_IF_I`, `OP_IFNOT_I`.
+    Integer,
+    /// `OP_IF_F`, `OP_IFNOT_F`: a float under `iffloat` or where the target has the jumps.
+    Float,
+    /// `OP_IF_S`, `OP_IFNOT_S`: a string under `ifstring`.
+    String,
+}
+
+impl Tests {
+    /// The opcode of `jump` for this type.
+    const fn jump(self, jump: Jump) -> Op {
+        match (self, jump) {
+            (Self::Integer, Jump::If) => Op::IfI,
+            (Self::Integer, Jump::IfNot) => Op::IfnotI,
+            (Self::Float, Jump::If) => Op::IfF,
+            (Self::Float, Jump::IfNot) => Op::IfnotF,
+            (Self::String, Jump::If) => Op::IfS,
+            (Self::String, Jump::IfNot) => Op::IfnotS,
+        }
+    }
+
+    /// The comparison with 0 a target without the jump tests instead, and its 0, the float's
+    /// for both.
+    fn compared(self) -> Option<(Op, Constant)> {
+        match self {
+            Self::Integer => None,
+            Self::Float => Some((Op::NeF, Constant::float(0.0))),
+            Self::String => Some((Op::NeS, Constant::float(0.0))),
+        }
+    }
+}
+
 impl Checker<'_> {
     /// FTEF-30.1: the test `test` of `value`: its opcode emitted (FTEF-27); a `void` value under
     /// `lax` the warning `message` and `OP_NE_F` or `OP_NOT_F`; any other type the fatal error
@@ -112,18 +157,28 @@ impl Checker<'_> {
     /// warns "if (string) tests for null, not empty" (with a full stop for `jump` `If`); a vector
     /// is `!v` under `ifvector`, else warns that only its first element is tested; a double or
     /// 64-bit value is compared with 0; anything else warns "conditional type mismatch".
-    /// FTEF-34.16: an `IFNOT` of `value`, the temporary the statement before made by `NOT_F`,
-    /// `NOT_FNC` or `NOT_ENT`, drops that statement and is an `IF` of its operand, a call's
-    /// value it read then live again; the dropped statement's operand when it dropped one.
-    pub(super) fn drops_not(&mut self, value: &Value) -> Option<Option<ir::Name>> {
+    /// FTEF-34.16: the `IFNOT` `jump` of `value`, the temporary the statement before made by
+    /// a `NOT` the jump shortens, drops that statement and is an `IF` of its operand, a call's
+    /// value it read then live again; the `IF` and the dropped statement's operand when it
+    /// dropped one. `QCC_PR_StatementFlags`: `OP_IFNOT_I` shortens `NOT_F`, `NOT_FNC` and
+    /// `NOT_ENT`, to `OP_IF_F` for a `NOT_F` where the target has it and `OP_IF_I` otherwise;
+    /// `OP_IFNOT_F` shortens `NOT_F` to `OP_IF_F`, and `OP_IFNOT_S` `NOT_S` to `OP_IF_S`.
+    pub(super) fn drops_not(
+        &mut self,
+        value: &Value,
+        jump: Op,
+        span: Span,
+    ) -> Option<(Op, Option<ir::Name>)> {
+        let not = self.generated.last().map(|statement| statement.op)?;
+        let short = match (jump, not) {
+            (Op::IfnotI, Op::NotF) if self.env.target_at(span.start).valid(Op::IfF) => Op::IfF,
+            (Op::IfnotI, Op::NotF | Op::NotFnc | Op::NotEnt) => Op::IfI,
+            (Op::IfnotF, Op::NotF) => Op::IfF,
+            (Op::IfnotS, Op::NotS) => Op::IfS,
+            _ => return None,
+        };
         // At global scope no statement is generated, so there is none to drop.
-        let drops = !self.global
-            && value.temp.is_some()
-            && value.temp == self.last_temp
-            && self
-                .generated
-                .last()
-                .is_some_and(|s| matches!(s.op, Op::NotF | Op::NotFnc | Op::NotEnt));
+        let drops = !self.global && value.temp.is_some() && value.temp == self.last_temp;
         if !drops {
             return None;
         }
@@ -138,7 +193,7 @@ impl Checker<'_> {
             self.live_return = Some(words);
             self.live_call = call;
         }
-        Some(dropped.and_then(|statement| statement.a))
+        Some((short, dropped.and_then(|statement| statement.a)))
     }
 
     pub(super) fn branch(&mut self, value: &Value, jump: Jump, span: Span) -> Result<(), Fatal> {
@@ -147,11 +202,25 @@ impl Checker<'_> {
         };
         let mut condition = self.name_of(value);
         let mut flipped = false;
+        let mut tested = Tests::Integer;
         match etype {
             Etype::String => {
                 let stop = if jump == Jump::If { "." } else { "" };
                 let message = format!("if (string) tests for null, not empty{stop}");
                 self.env.report(Code::W0245, span, message);
+                // `if (flag_ifstring) op = OP_IFNOT_S;`
+                if self.env.flags_at(span.start).has(FteFlag::Ifstring) {
+                    tested = Tests::String;
+                }
+            }
+            // `if (flag_iffloat || QCC_OPCodeValid(&pr_opcodes[OP_IFNOT_F])) op = OP_IFNOT_F;`
+            // A truth value is `ev_boolean`, an integer's jump.
+            Etype::Float
+                if !is_truth(&value.ty)
+                    && (self.env.flags_at(span.start).has(FteFlag::Iffloat)
+                        || self.env.target_at(span.start).valid(Op::IfnotF)) =>
+            {
+                tested = Tests::Float;
             }
             // `OP_NOT_V`, then the other jump: `OP_IF_I` for `IFNOT`, `OP_IFNOT_I` for `IF`.
             Etype::Vector if self.env.flags_at(span.start).has(FteFlag::Ifvector) => {
@@ -194,11 +263,7 @@ impl Checker<'_> {
         // FTEF-34.16: an `IFNOT` of the temporary the statement before made by `NOT_F`,
         // `NOT_FNC` or `NOT_ENT` drops that statement and is an `IF` of its operand, a call's
         // value it read then live again.
-        self.branch_op = Some(if (jump == Jump::If) != flipped {
-            Op::IfI
-        } else {
-            Op::IfnotI
-        });
+        let mut op = tested.jump(if flipped { jump.other() } else { jump });
         // FTE-18.13: a call's value still live is copied before the jump looks for a `NOT` to
         // drop, which the copy then follows; a `NOT` it drops makes its own call's value live
         // again, copied below.
@@ -210,11 +275,35 @@ impl Checker<'_> {
         }
         if jump == Jump::IfNot
             && !self.keeps_condition
-            && let Some(operand) = self.drops_not(value)
+            && let Some((short, operand)) = self.drops_not(value, op, span)
         {
-            self.branch_op = Some(Op::IfI);
+            op = short;
             condition = operand;
         }
+        // A float's or a string's jump the target lacks is the integer one of a comparison
+        // with 0 (`QCC_PR_StatementFlags`: `var_a = QCC_PR_Statement(&pr_opcodes[OP_NE_F],
+        // var_a, tmp, NULL); op = &pr_opcodes[OP_IFNOT_I];`, FTEF-27.9).
+        if let Some((compare, zero)) = tested.compared()
+            && !self.env.target_at(span.start).valid(op)
+        {
+            // `tmp = QCC_MakeFloatConst(0); tmp.cast = type_string;` for a string's.
+            let zero = Value {
+                ty: value.ty.clone(),
+                ..Value::constant(zero)
+            };
+            let compared = self.emit(compare, value, &zero, span)?;
+            // The operand of a `NOT` the jump dropped, not the temporary it made.
+            if let Some(statement) = self.generated.last_mut() {
+                statement.a = condition;
+            }
+            condition = compared.name();
+            op = Tests::Integer.jump(if matches!(op, Op::IfF | Op::IfS) {
+                Jump::If
+            } else {
+                Jump::IfNot
+            });
+        }
+        self.branch_op = Some(op);
         // FTE-18.13: the jump copies a call's value still to be read, its own condition's too.
         let copies = self.live_return.is_some();
         let call = self.live_call;
@@ -399,13 +488,25 @@ impl Checker<'_> {
         span: Span,
     ) -> Checked {
         let other = self.stored_arm(other, span)?;
-        // `QCC_StoreToSRef` by the last arm's type, a double's, struct's or enum's word by word
-        // with plain statements.
-        let op = match self.etype_of(&other.ty) {
-            Some(Etype::Double | Etype::Struct | Etype::Union | Etype::Enum) => None,
-            etype => Some(Self::store_op(etype)),
-        };
-        self.compare_then_store((kept, kept_null), other, op, (before, result), span)
+        // `QCC_StoreToSRef(r, val, val.cast, false, true)`: by the last arm's type, one copied
+        // by its size word by word with plain statements, which fold into nothing.
+        let by_size = self.copied_by_size(&other.ty);
+        let steps = self.store_steps(by_size, &other.ty, span);
+        // A type with a case of its own is one `QCC_PR_StatementFlags`, which emulates an
+        // opcode the target lacks.
+        let op = by_size
+            .is_none()
+            .then(|| Self::store_op(self.etype_of(&other.ty)));
+        let stored = other.clone();
+        let value =
+            self.compare_then_store((kept, kept_null), other, op, (before, result), span)?;
+        if op.is_none() && stored.ty != Type::Unknown {
+            let into = result.map(ir::Name::Made);
+            if !self.copy_steps(&stored, into, &steps) {
+                self.followed = false;
+            }
+        }
+        Ok(value)
     }
 
     /// FTEF-30.15: at global scope a constant condition picks its arm, the other read and

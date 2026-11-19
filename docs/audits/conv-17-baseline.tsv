@@ -582,7 +582,6 @@ magic-number	crates/qc-sema/src/check/pointer.rs	Checker::narrow_load:32
 magic-number	crates/qc-sema/src/check/pointer.rs	Checker::narrow_load:8
 magic-number	crates/qc-sema/src/check/pointer.rs	Checker::negated_size:32
 magic-number	crates/qc-sema/src/check/pointer.rs	Checker::pointee:16
-magic-number	crates/qc-sema/src/check/pointer.rs	Checker::pointee:3
 magic-number	crates/qc-sema/src/check/pointer.rs	Checker::pointee:8
 magic-number	crates/qc-sema/src/check/pointer.rs	Checker::pointer_offset:8
 magic-number	crates/qc-sema/src/check/pointer.rs	Checker::pointer_step:8

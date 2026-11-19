@@ -40,7 +40,7 @@ impl Checker<'_> {
     /// statements the body generates.
     fn jump(&mut self, step: Step, op: Op, target: Option<Mark>, line: u32) -> usize {
         let made = self.goto_made(op);
-        if matches!(op, Op::IfI | Op::IfnotI)
+        if op.is_conditional_jump()
             && let Some(statement) = self.generated.last_mut()
         {
             statement.a = self.branch_condition.take();
@@ -213,6 +213,10 @@ impl Checker<'_> {
                 Op::Goto => statement.a = target,
                 Op::IfI
                 | Op::IfnotI
+                | Op::IfF
+                | Op::IfnotF
+                | Op::IfS
+                | Op::IfnotS
                 | Op::SwitchF
                 | Op::SwitchE
                 | Op::SwitchV
@@ -711,8 +715,8 @@ impl Checker<'_> {
                 }
                 // The test is the last condition's `IFNOT`, short as FTEF-34.16 makes it.
                 let (op, condition) = match last {
-                    Some(value) => match self.drops_not(&value) {
-                        Some(operand) => (Op::IfI, operand),
+                    Some(value) => match self.drops_not(&value, Op::IfnotI, s.syntax().span()) {
+                        Some(short) => short,
                         None => (Op::IfnotI, self.name_of(&value)),
                     },
                     None => (Op::IfnotI, None),
