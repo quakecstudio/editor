@@ -1520,7 +1520,9 @@ fn a_cast_within_a_basic_type_is_the_value() {
 fn a_null_compared_with_a_function_takes_its_type() {
     let p = fte_progs("var void() g;\nfloat x;\nvoid() t = { x = g != __NULL__; x = 0 == g; };\n");
     let t = body(&p, "t");
-    let null = immediate(&p, 0.0);
+    // FTEF-3.6: `__NULL__` is `0i`, whose immediate the float `0` shares.
+    let null = t[0].b;
+    assert_eq!(words(&p, null, 1), [0]);
     assert_eq!(
         t[0],
         st(Opcode::NeFnc, global(&p, "g"), null, global(&p, "x"))
@@ -1539,7 +1541,8 @@ fn a_null_is_stored_by_the_targets_type() {
         "entity self;\n.void() touch;\nvar void() g;\nvoid() t = { g = __NULL__; self.touch = __NULL__; };\n",
     );
     let t = body(&p, "t");
-    let null = immediate(&p, 0.0);
+    let null = t[0].a;
+    assert_eq!(words(&p, null, 1), [0]);
     assert_eq!(t[0], st(Opcode::StoreFnc, null, global(&p, "g"), 0));
     assert_eq!(t[1].op, u32::from(Opcode::Address.number()));
     assert_eq!(t[2], st(Opcode::StorepFnc, null, t[1].c, 0));
@@ -3341,7 +3344,8 @@ fn not_of_an_int_and_a_vector_times_an_int_follow_the_vanilla_emulation() {
     );
     assert_eq!(t[0], st(Opcode::MulVf, gv0, immediate(&p, 1.0), gv1));
     assert_eq!(t[1], st(Opcode::MulFv, immediate(&p, 1.0), gv0, gv1));
-    assert_eq!(t[2], st(StoreF, immediate(&p, 0.0), f, 0));
+    // FTEF-3.6: the float 0 stored is the integer 0's immediate, which has its bits.
+    assert_eq!(t[2], st(StoreF, t[3].b, f, 0));
     assert_eq!((t[3].a, t[3].c), (i, f));
     assert_eq!(
         p.globals[usize::try_from(t[3].b).unwrap()].bits(),
@@ -6531,4 +6535,33 @@ fn a_struct_is_copied_to_and_from_an_element_at_a_constant_index() {
     assert_eq!((statements[0].a, statements[0].b), (g, arr + 5));
     assert_eq!((statements[2].a, statements[2].b), (g + 4, arr + 9));
     assert_eq!((statements[3].a, statements[3].b), (arr + 10, g));
+}
+
+// spec FTEF-3.6: immediates of one size share one table by their bits whatever their types, and
+// one is written with the type that first made it: `7u` then `7i` are one immediate written
+// unsigned, a 64-bit literal of either sign one, and the float 0 the integer 0's
+#[test]
+fn immediates_are_shared_by_size_and_bits() {
+    let progs = compile_fteqcc(
+        "#pragma target fte\nint a;\n__uint u;\n__int64 l;\n__uint64 ul;\nfloat x;\n\
+         void() f = { u = 7u; a = 7i; a = 6i; u = 6u; l = 6l; ul = 6ul; a = 0i; x = 0; };\n",
+    )
+    .unwrap()
+    .progs;
+    let stores = body(&progs, "f");
+    let source = |at: usize| stores[at].a;
+    assert_eq!(source(0), source(1), "7u and 7i");
+    assert_eq!(source(2), source(3), "6i and 6u");
+    assert_eq!(source(4), source(5), "6l and 6ul");
+    assert_eq!(source(6), source(7), "0i and 0");
+    let type_at = |ofs: i32| {
+        let def = progs
+            .global_defs
+            .iter()
+            .find(|d| i32::try_from(d.ofs).ok() == Some(ofs))
+            .unwrap();
+        def.type_bits & 0x7fff
+    };
+    let types = [source(0), source(2), source(4), source(6)].map(type_at);
+    assert_eq!(types, [9, 8, 10, 8], "each written as its first use");
 }

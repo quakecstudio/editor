@@ -322,19 +322,16 @@ impl<'e> Checker<'e> {
                     };
                 }
                 let constant = Constant::of_number(&text, flags);
-                // The code generator places a number as the lexer reads it, a float, when that
-                // float's word is the constant's: an integer such as `1i` is its own words, never
-                // the float `1.0`'s, which `0i` shares (FTE-20.5).
+                // The code generator places a float as the lexer reads it. An integer is its own
+                // constant, which shares a float's immediate of its bits, as `0i` does `0`'s, in
+                // the one table of constants (FTE-20.5, FTEF-3.6).
                 let lexed = qc_lexer::lex_with(token.text(), qc_syntax::Dialect::Fteqcc);
                 let literal = match lexed.tokens.as_slice() {
                     [lexed] => match lexed.kind {
                         // A one-word constant only: a 64-bit one's words are not the float's.
                         qc_lexer::TokenKind::Float(value)
                             if value.to_bits() == constant.u()
-                                && matches!(
-                                    constant.ty,
-                                    ConstType::Float | ConstType::Integer | ConstType::Uint
-                                ) =>
+                                && constant.ty == ConstType::Float =>
                         {
                             Some((
                                 constant,

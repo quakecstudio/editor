@@ -21,6 +21,7 @@ use std::collections::HashMap;
 use qc_progs::opcode::Opcode;
 use qc_progs::{Function, Statement};
 use qc_sema::{DefId, DefKind, FileId, FunctionType, ModuleIndex, SimpleType, Type};
+use qc_syntax::c_scalar::CScalar;
 use qc_types::Etype;
 
 use crate::Internal;
@@ -1076,6 +1077,13 @@ impl Program {
         if let Some(place) = found {
             return Ok(place);
         }
+        // FTEF-3.6: FTEQCC's float constants are made by `QCC_Make32bitConst` too, so one
+        // shares an integer's immediate of its bits.
+        if let (Literal::Float(value), LiteralSharing::Constants) = (literal, self.literal_sharing)
+            && let Some(place) = self.shared_immediate(&[value.to_bits()])
+        {
+            return Ok(place);
+        }
         let ofs = self.allocate_global(ty.words())?;
         let place = self.defs.len();
         self.defs.push(Def {
@@ -1146,17 +1154,40 @@ impl Program {
         Ok(place)
     }
 
+    /// `QCC_Make32bitConst` and `QCC_Make64bitConst`'s search of the constants they made
+    /// (FTEF-3.6): the `IMMEDIATE` of a float, an integer of either sign, or of 64 bits, or a
+    /// double, that has as many words as `words` and holds them, whatever its type (`if
+    /// (cn->type->size == type->size) if (((QCC_eval_t*)cn->symboldata)->_uint == value)`).
+    fn shared_immediate(&self, words: &[u32]) -> Option<usize> {
+        let one_word = [CScalar::Integer, CScalar::Uint];
+        let two_words = [CScalar::Int64, CScalar::Uint64, CScalar::Double];
+        self.defs.iter().position(|d| {
+            let sized = match &d.ty {
+                ValueType::Of(Type::Simple(SimpleType::Float)) => words.len() == 1,
+                ValueType::Of(Type::Named(name)) => {
+                    let named = |scalars: &[CScalar]| {
+                        scalars.iter().any(|scalar| scalar.name() == name.as_ref())
+                    };
+                    (words.len() == 1 && named(&one_word))
+                        || (words.len() == 2 && named(&two_words))
+                }
+                ValueType::Of(_) | ValueType::FloatField => false,
+            };
+            sized
+                && d.name == "IMMEDIATE"
+                && d.initialized
+                && d.constant
+                && d.count.is_none()
+                && (0_u32..)
+                    .zip(words)
+                    .all(|(at, word)| self.word(d.ofs.saturating_add(at)) == *word)
+        })
+    }
+
     /// `QCC_MakeIntConst`: the global of an integer constant of type `ty`, whose one word is
     /// `bits`; an `IMMEDIATE` of that type holding the word is reused.
     pub(crate) fn int_immediate(&mut self, bits: u32, ty: ValueType) -> Result<usize, Internal> {
-        let found = self.defs.iter().position(|d| {
-            d.initialized
-                && d.constant
-                && d.count.is_none()
-                && d.ty == ty
-                && self.word(d.ofs) == bits
-        });
-        if let Some(place) = found {
+        if let Some(place) = self.shared_immediate(&[bits]) {
             return Ok(place);
         }
         let ofs = self.allocate_global(1)?;
@@ -1182,16 +1213,7 @@ impl Program {
         words: [u32; 2],
         ty: ValueType,
     ) -> Result<usize, Internal> {
-        let [low, high] = words;
-        let found = self.defs.iter().position(|d| {
-            d.initialized
-                && d.constant
-                && d.count.is_none()
-                && d.ty == ty
-                && self.word(d.ofs) == low
-                && self.word(d.ofs.saturating_add(1)) == high
-        });
-        if let Some(place) = found {
+        if let Some(place) = self.shared_immediate(&words) {
             return Ok(place);
         }
         let ofs = self.allocate_global(2)?;

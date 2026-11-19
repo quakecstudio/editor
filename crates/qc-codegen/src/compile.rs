@@ -1112,10 +1112,15 @@ impl<'a> Compiler<'a> {
             ir::ImmediateKind::Float => Literal::Float(x),
             // FTEF-26.14: an integer constant, such as the truth `&&` and `||` of two
             // constants fold to (`QCC_MakeIntConst`).
-            ir::ImmediateKind::Integer => {
+            ir::ImmediateKind::Integer | ir::ImmediateKind::Uint => {
                 let [bits, _, _] = immediate.words;
-                let int = ValueType::Of(Type::Named(CScalar::Integer.name().into()));
-                return self.program.int_immediate(bits, int).at(span);
+                let scalar = if immediate.kind == ir::ImmediateKind::Uint {
+                    CScalar::Uint
+                } else {
+                    CScalar::Integer
+                };
+                let ty = ValueType::Of(Type::Named(scalar.name().into()));
+                return self.program.int_immediate(bits, ty).at(span);
             }
             // FTEF-19.81: a constant of two words, of its own scalar type.
             ir::ImmediateKind::Int64 | ir::ImmediateKind::Uint64 | ir::ImmediateKind::Double => {

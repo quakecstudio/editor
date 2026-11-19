@@ -250,10 +250,15 @@ null.
   QCC_Make32bitConst(type_integer, value);` or `type_uint`), an integer of 64 bits two words,
   the low one first (`QCC_MakeInt64Const`, `QCC_Make64bitConst`), a double the two words of
   its value and a float one. The digits' base changes nothing but the value: `0x10i` is the
-  integer 16, and `0x10` with no suffix the float 16 (FTEF-3.3). Integer immediates of one word
-  are shared by their bits, signed or not (`QCC_Make32bitConst`: `if (cn->type->size ==
-  type->size) if (((QCC_eval_t*)cn->symboldata)->_uint == value) return QCC_MakeSRefForce(cn,
-  0, type);`), so `6i` and `6u` are one immediate, and `6` and `6.0f` are one float's. A store of one is the store of the
+  integer 16, and `0x10` with no suffix the float 16 (FTEF-3.3). Every constant of one word is
+  made by `QCC_Make32bitConst`, a float's too (`QCC_MakeFloatConst`: `return
+  QCC_Make32bitConst(type_float, u.i);`), which searches one table for a constant of the
+  same size and bits whatever its type (`if (cn->type->size == type->size) if
+  (((QCC_eval_t*)cn->symboldata)->_uint == value) return QCC_MakeSRefForce(cn, 0, type);`)
+  and makes a new one of the asking type when there is none; `QCC_Make64bitConst` does the
+  same for the constants of two words, a double's among them. So `7u` and then `7i` are one
+  immediate written `ev_uint`, `6l` and `6ul` one written `ev_int64`, and the float 0 and
+  the integer 0 one, written as whichever came first. A store of one is the store of the
   target's type (FTEF-2.13). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_MakeIntConst`, `QCC_MakeUIntConst`, `QCC_MakeInt64Const`,
   `QCC_Make32bitConst`.

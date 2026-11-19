@@ -36,6 +36,9 @@ pub enum ImmediateKind {
     Vector,
     /// An integer (FTEF-26.3).
     Integer,
+    /// An unsigned integer, `QCC_MakeUIntConst`, which shares an integer's immediate of the
+    /// same bits (FTEF-3.6).
+    Uint,
     /// A signed integer of 64 bits, `QCC_MakeInt64Const`.
     Int64,
     /// An unsigned integer of 64 bits, `QCC_MakeUInt64Const`.

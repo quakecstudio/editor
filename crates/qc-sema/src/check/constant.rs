@@ -119,8 +119,10 @@ impl Constant {
         let kind = match self.ty {
             ConstType::Float => ir::ImmediateKind::Float,
             ConstType::Vector => ir::ImmediateKind::Vector,
-            // An unsigned word is an integer's bits, `0x4i` for `sizeof(string)` (FTEF-30.11).
-            ConstType::Integer | ConstType::Uint => ir::ImmediateKind::Integer,
+            ConstType::Integer => ir::ImmediateKind::Integer,
+            // An unsigned word is an integer's bits, `0x4i` for `sizeof(string)` (FTEF-30.11),
+            // in an immediate written unsigned when it is the first of its bits (FTEF-3.6).
+            ConstType::Uint => ir::ImmediateKind::Uint,
             ConstType::Int64 => ir::ImmediateKind::Int64,
             ConstType::Uint64 => ir::ImmediateKind::Uint64,
             ConstType::Double => ir::ImmediateKind::Double,
