@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! FTEQCC classes compiled by `qc-codegen` and run in `qc-vm` (FTEF-9.21 to FTEF-9.23): a
+//! FTEQCC classes compiled by `qc-codegen` and run in `qc-vm` (FTEF-9.29 to FTEF-9.23): a
 //! spawned class's entity holds its members, its class's name and its virtual functions, set by
 //! the spawn function the compiler writes.
 
@@ -82,7 +82,7 @@ fn function(progs: &ProgsFile, name: &str) -> u32 {
 // the most derived class's function and calls the child's constructor before its parent's
 // spec FTEF-9.23: `spawn(CLASS)` calls `spawn`, then the class's spawn function with the new
 // entity as `self`, and is the new entity
-// spec FTEF-9.21: each data member and virtual member is an entity field of its own, a vector's
+// spec FTEF-9.29: each data member and virtual member is an entity field, a vector's
 // components at its words
 #[test]
 fn a_spawned_class_runs_its_spawn_function() {

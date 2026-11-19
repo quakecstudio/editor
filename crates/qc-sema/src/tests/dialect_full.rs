@@ -214,7 +214,7 @@ void B::V(void) { super::V(); };
 void B::B(void) { };
 ";
 
-// spec FTEF-9.21: a virtual member's body defines the function `CLASS::NAME`, a member of its
+// spec FTEF-9.29: a virtual member's body defines the function `CLASS::NAME`, a member of its
 // class the model makes, which a scoped call, `super::m()`, calls.
 #[test]
 fn a_virtual_member_body_defines_its_function() {

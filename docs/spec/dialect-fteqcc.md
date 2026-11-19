@@ -925,22 +925,8 @@ heavily class-based (547 `class` declarations across the three mods).
   `pr_token`), not its value: `0x0`, `00`, `0.0` and `-0` are "Can only initialise member
   functions". A vector immediate is lexed component by component into `pr_token`, which keeps
   the last component's text, so `'1 0 0'` and `'0 0 0'` are taken and `'0 0 1'` is refused.
-- **FTEF-9.21** A class's data member, and a virtual member function, is an entity field
-  named `CLASS::__mNAME` (`#define MEMBERFIELDNAME "__m%s"`;
-  `QC_snprintfz(membername, sizeof(membername), "%s::"MEMBERFIELDNAME, classname, parmname);
-  d = QCC_PR_DummyDef(fieldtype, membername, ...)`) of the member's type. A member a parent
-  class has, a virtual function given again among them, is the parent's field
-  (`basicindex = pp[i].ofs; found = true; ... if (found) continue;`), with no definition of its
-  own. A new member names the entity field `NAME` when one is defined (`d = QCC_PR_GetDef(NULL, parmname, NULL, 0, 0, GDF_CONST);
-  if (d) basicindex = 0;`). A nonvirtual or static member, and a member function's body, is the
-  global `CLASS::NAME` (`QC_snprintfz(membername, sizeof(membername), "%s::%s", classname,
-  parmname); ... QCC_PR_GetDef(newparm, membername, NULL, true, 0, gdf_flags)`), so a virtual
-  member's body is a function apart from its field. Without such an entity field, FTEQCC lays
-  each member into a pool shared by every class's members of the same basic type (`::*float`,
-  `::float[N]`). Our compiler gives each member an entity field of its own, so its offsets differ
-  from FTEQCC's and it takes more entity fields; a program reads and writes the same values. Source:
-  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
-  `QCC_PR_ParseEntClass`; `engine/qclib/qcc_pr_comp.c`, `MEMBERFIELDNAME`.
+- **FTEF-9.21** **Withdrawn** 2026-11-19: it gave each member an entity field of its own,
+  where FTEQCC lays the members into pools their classes share; replaced by FTEF-9.29.
 - **FTEF-9.22** **Withdrawn** 2026-11-19: its function table left out a member a class below
   declares again and a member declared twice, and its constructors a virtual one; replaced by
   FTEF-9.27.
@@ -1029,6 +1015,55 @@ heavily class-based (547 `class` declarations across the three mods).
   constant, where a virtual member is loaded from the object by `OP_LOAD_FNC`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseField`, `QCC_RefToDef`; checked against the pinned FTEQCC's output on an FTE
   target (2026-11-19).
+- **FTEF-9.29** A class's data member, and a virtual member function, is an entity field
+  named `CLASS::__mNAME` (`#define MEMBERFIELDNAME "__m%s"`;
+  `QC_snprintfz(membername, sizeof(membername), "%s::"MEMBERFIELDNAME, classname, parmname);
+  d = QCC_PR_DummyDef(fieldtype, membername, ...)`) of the member's type. A nonvirtual or static
+  member, and a member function's body, is the global `CLASS::NAME` (`QC_snprintfz(membername,
+  sizeof(membername), "%s::%s", classname, parmname); ... QCC_PR_GetDef(newparm, membername,
+  NULL, true, 0, gdf_flags)`), so a virtual member's body is a function apart from its field.
+  Where the field is held is found member by member as the class is read
+  (`QCC_PR_ParseEntClass`):
+  1. Each member has a word, `basicindex`, among the members of its basic type (`newparm->type`:
+     a class is an entity, a pointer to one a pointer, an enum its base type): the first word
+     past every member of that type that the class has so far and that each class above it has
+     (`if ((unsigned int)basicindex < pp[i].ofs+pp[i].type->size*(pp[i].arraysize?pp[i].arraysize:1))
+     basicindex = ...;`), an array member taking its elements' words in turn.
+  2. A member of the name and basic type of one a class above has, a virtual function given
+     again among them, or of one its own class declared before it, is that member's field
+     (`basicindex = pp[i].ofs; found = true; ... if (found) continue;`), with no definition of
+     its own.
+  3. Else, where an entity field of the name is defined before the class, the member is that
+     field (`d = QCC_PR_GetDef(NULL, parmname, NULL, 0, 0, GDF_CONST); if (d) basicindex = 0;`):
+     its definition is at the field's own global, a vector's components at the field's
+     components'. It still counts for the words of the members after it.
+  4. Else the member is held in the pool of its basic type, `::*TYPE` after `basictypenames`
+     (`::*float`, `::*vector`, `::*string`, `::*entity`, `::*field` for a member that is
+     itself a field, `::*function`, `::*pointer`,
+     `::*integer`, `::*uint`, `::*long`, `::*ulong`, `::*double`, `::*variant`), which every
+     class shares, at its word: its definition is the pool's global at that word. The pool
+     grows an element at a time, each a definition `::TYPE[N]`, until its length reaches the
+     member's word plus its count of elements, 1 for no array (`int newsize =
+     basicindex+(arraysize?arraysize:1); ... while(d->arraysize < newsize) { ...
+     QCC_PR_DummyDef(d->type, membername, d->scope, 0, d, d->arraysize, true, GDF_CONST);
+     d->arraysize+=d->type->size; }`).
+  So classes on different branches hold their members in the same fields: with `class A {
+  float a1; vector av; float a2; float arr[3]; }`, `class B : A { float b1; vector bv[2]; }`
+  and `class C { float c1; float c2; float c3; }`, `a1` and `c1` are the pool's first float,
+  `a2` and `c2` its second, `c3` and `arr[0]` to `arr[2]` share words 2 to 5 as their indexes
+  fall, and `b1` is word 6, after every float of `A`. A pool's fields are given their offsets
+  when the compile ends, after every field the program declares, pool by pool in the order the
+  pools were made, each taking its length times its element's words (`QCC_PR_FinishFieldDef`:
+  `d->symbolsize = (d->arraysize?d->arraysize:1) * d->type->size; ... for (i = 0; i <
+  d->symbolsize; i++) d->symboldata[i]._int = pr.size_fields++;`), which counts the words of an
+  element of more than one twice: the vector pool of `av` and `bv[2]`, six words long, takes
+  eighteen fields. A member is a field where its class is declared, named in a body or not.
+  FTEQCC lists a pool's definitions together where the pool was first made; this compiler
+  lists each where it makes it, at the same offsets. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`, `QCC_PR_ParseEntClass`;
+  `engine/qclib/qccmain.c`, `QCC_PR_FinishFieldDef`; `engine/qclib/qcc_pr_comp.c`,
+  `MEMBERFIELDNAME`; `engine/qclib/qcc_cmdlib.c`, `basictypenames`; checked against the pinned
+  FTEQCC's output on an FTE target, and against every field definition of FreeCS's and
+  Rad-Therapy's fourteen modules (2026-11-19).
 ## FTEF-10 Accessors
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseAccessorMember` and the `accessor` branch of

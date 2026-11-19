@@ -211,6 +211,11 @@ impl<'a> Compiler<'a> {
         };
         for item in tree.items() {
             self.scope = None;
+            // FTEF-9.29: a class's members are fields where it is declared.
+            let span = item.span();
+            self.program
+                .make_class_fields(self.index, file, span.end)
+                .map_err(|internal| (internal, file, span))?;
             let result = if let Some(declaration) = ast::Declaration::cast(item.clone()) {
                 self.declaration(&declaration)
             } else if let Some(enumeration) = ast::EnumDecl::cast(item.clone()) {
@@ -246,6 +251,11 @@ impl<'a> Compiler<'a> {
         };
         for item in tree.items() {
             self.scope = None;
+            // FTEF-9.29: a class's members are fields where it is declared.
+            let span = item.span();
+            self.program
+                .make_class_fields(self.index, file, span.end)
+                .map_err(|internal| (internal, file, span))?;
             let result = if let Some(declaration) = ast::Declaration::cast(item.clone()) {
                 declaration.declarators().try_for_each(|declarator| {
                     let name = declarator.name().at(declaration.syntax().span())?;
@@ -487,7 +497,7 @@ impl<'a> Compiler<'a> {
                     }
                 }
                 Some(ast::Initializer::Body(body)) => {
-                    // FTEF-9.21: a virtual member's body is the function `CLASS::NAME`.
+                    // FTEF-9.29: a virtual member's body is the function `CLASS::NAME`.
                     let place = match self.index.virtual_function(id) {
                         Some(function) => {
                             self.program.get_def(self.index, function).at(name.span())?

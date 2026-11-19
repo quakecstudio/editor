@@ -26,6 +26,7 @@ use qc_syntax::c_scalar::CScalar;
 use qc_types::Etype;
 
 use crate::Internal;
+use crate::pools::{Pool, Pools, Slot};
 
 /// The first global offset a definition may take: 0 is null, 1 to 3 the return value and 4 to
 /// 27 the eight parameter slots (QC-21.1, `RESERVED_OFS` in `qcc/qcc.h`).
@@ -42,7 +43,7 @@ pub(crate) const OFS_PARM0: u32 = 4;
 const COMPONENTS: [&str; 3] = ["_x", "_y", "_z"];
 
 /// FTEQCC's `MEMBERFIELDNAME`, `"__m%s"`: what a class member's entity field is named after its
-/// class's `CLASS::`, `CLASS::__mNAME` (FTEF-9.21).
+/// class's `CLASS::`, `CLASS::__mNAME` (FTEF-9.29).
 const MEMBER_FIELD_PREFIX: &str = "__m";
 
 /// A type as `qcc`'s expressions carry it (QC-10): one the semantic model gives, or `qcc`'s
@@ -275,6 +276,12 @@ pub(crate) struct Program {
     /// The globals that are to hold a function's number once every function is defined, each
     /// with the function's definition (`$relocf`, FTEF-32.23).
     function_relocs: Vec<(u32, usize)>,
+    /// Where each class's member is held (FTEF-9.29), once a member is asked for.
+    pools: Option<Pools>,
+    /// The first global of each pool of [`Program::pools`], once it is taken.
+    pool_bases: Vec<Option<u32>>,
+    /// How many of the members of [`Program::pools`], in declaration order, have their fields.
+    members_made: usize,
 }
 
 impl Program {
@@ -301,6 +308,9 @@ impl Program {
             translated: 0,
             named_functions: Vec::new(),
             function_relocs: Vec::new(),
+            pools: None,
+            pool_bases: Vec::new(),
+            members_made: 0,
         }
     }
 
@@ -657,12 +667,12 @@ impl Program {
                 _ => written.clone(),
             })
         });
-        // FTEF-9.21: a class's data or virtual member is the entity field `CLASS::__mNAME`
+        // FTEF-9.29: a class's data or virtual member is the entity field `CLASS::__mNAME`
         // (`QCC_PR_ParseEntClass`, `MEMBERFIELDNAME`), which names the entity field `NAME` when
         // one is defined (`d = QCC_PR_GetDef(NULL, parmname, ...); if (d) basicindex = 0;`).
         let class = definition
             .member_of
-            .filter(|_| definition.kind == DefKind::Field && ty.field_inner().is_none())
+            .filter(|_| definition.kind == DefKind::Field)
             .and_then(|class| index.def(class));
         if let (Some(class), ValueType::Of(held)) = (class, &ty) {
             return self.member_field(index, id, &class.name, held.clone());
@@ -677,7 +687,7 @@ impl Program {
         };
         let place = self.defs.len();
         let count = index.array_len(id);
-        // FTEF-9.21: a nonvirtual or static member is the global `CLASS::NAME`.
+        // FTEF-9.29: a nonvirtual or static member is the global `CLASS::NAME`.
         let name = match definition.member_of.and_then(|class| index.def(class)) {
             Some(class) => format!("{}::{}", class.name, definition.name),
             None => definition.name.clone(),
@@ -754,8 +764,9 @@ impl Program {
         Ok(place)
     }
 
-    /// FTEF-9.21: the member `id` of the class `class`, holding `held`, as the entity field
-    /// `CLASS::__mNAME`: the entity field `NAME`'s offset when one is defined, else a new one.
+    /// FTEF-9.29: the member `id` of the class `class`, holding `held`, as the entity
+    /// field `CLASS::__mNAME`, held where [`Pools`] lays it: in the field of a member a class
+    /// above has, in the entity field `NAME`, or in its basic type's pool.
     fn member_field(
         &mut self,
         index: &ModuleIndex,
@@ -764,80 +775,49 @@ impl Program {
         held: Type,
     ) -> Result<usize, Internal> {
         let definition = index.def(id).ok_or(Internal::NoDefinition)?;
-        let name = definition.name.clone();
-        // QC-11.12: a vector member's component is a float field at the vector's field and its
-        // word, `_x`, `_y` or `_z`.
-        // Only a generated component, which a vector member makes, is looked up.
-        let generated = COMPONENTS
-            .iter()
-            .zip(0_u32..)
-            .filter(|_| definition.generated);
-        let component = generated.into_iter().find_map(|(suffix, word)| {
-            let vector = name.strip_suffix(suffix)?;
-            let (vector, _) = index.definitions().find(|(_, d)| {
-                d.name == vector
-                    && d.member_of == definition.member_of
-                    && d.kind == DefKind::Field
-                    && !d.generated
-            })?;
-            Some((vector, word))
-        });
-        if let Some((vector, word)) = component {
-            let vector_place = self.get_def(index, vector)?;
-            let vector_ofs = self
-                .defs
-                .get(vector_place)
-                .ok_or(Internal::NoDefinition)?
-                .ofs;
-            let field = self
-                .word(vector_ofs)
-                .checked_add(word)
-                .ok_or(Internal::TooLarge)?;
-            let ofs = self.allocate_global(1)?;
-            let place = self.defs.len();
-            self.defs.push(Def {
-                name: format!("{class}::{MEMBER_FIELD_PREFIX}{name}"),
-                ty: ValueType::FloatField,
-                ofs,
-                scope: None,
-                initialized: false,
-                // FTEF-9.25: as its vector, which a member given 0 is no constant.
-                constant: !index.def(vector).is_some_and(|d| d.initialized),
-                count: None,
-                id: Some(id),
-            });
-            self.places.insert(id, place);
-            self.set_words(ofs, &[field])?;
-            return Ok(place);
+        let name = format!("{class}::{MEMBER_FIELD_PREFIX}{}", definition.name);
+        if definition.generated {
+            return self.member_component(index, id, name);
         }
-        // A member a parent class has is the parent's field (`basicindex = pp[i].ofs; found =
-        // true;`), for which FTEQCC makes no definition.
-        let parent_member = index
-            .class_members(&Type::Named(class.into()))
-            .into_iter()
-            .find(|&other| {
-                index.def(other).is_some_and(|d| {
-                    d.name == name
-                        && d.member_of != definition.member_of
-                        && d.kind == DefKind::Field
-                })
-            });
-        if let Some(parent_member) = parent_member {
-            let place = self.get_def(index, parent_member)?;
-            self.places.insert(id, place);
-            return Ok(place);
-        }
-        let entity_field = index
-            .definitions()
-            .find(|(_, d)| d.name == name && d.member_of.is_none() && d.kind == DefKind::Field)
-            .map(|(other, _)| other);
-        let shared = match entity_field {
-            Some(other) => {
-                let place = self.get_def(index, other)?;
-                let ofs = self.defs.get(place).ok_or(Internal::NoDefinition)?.ofs;
-                Some(self.word(ofs))
+        let slot = self.pools(index)?.slot(id).cloned();
+        let ofs = match slot.ok_or(Internal::NoDefinition)? {
+            // A member a class above has is that member's field (`basicindex = pp[i].ofs;
+            // found = true;`), for which FTEQCC makes no definition.
+            Slot::Member(member) => {
+                let place = self.get_def(index, member)?;
+                self.places.insert(id, place);
+                return Ok(place);
             }
-            None => None,
+            // `QCC_PR_DummyDef(fieldtype, membername, pr_scope, arraysize, d, basicindex, ...)`
+            // with the entity field as `d`: the member is the field's own global.
+            Slot::EntityField(field) => {
+                let place = self.get_def(index, field)?;
+                self.defs.get(place).ok_or(Internal::NoDefinition)?.ofs
+            }
+            Slot::Pooled { pool, word, grown } => {
+                let base = self.pool_base(index, pool)?;
+                let made = self.pools(index)?.pools.get(pool).cloned();
+                let made = made.ok_or(Internal::NoDefinition)?;
+                // `QCC_PR_DummyDef(d->type, membername, d->scope, 0, d, d->arraysize, true,
+                // GDF_CONST)`: each element the pool grew by, `::TYPE[N]`.
+                for element in grown {
+                    let ofs = element
+                        .checked_mul(made.element_words)
+                        .and_then(|words| words.checked_add(base))
+                        .ok_or(Internal::TooLarge)?;
+                    self.defs.push(Def {
+                        name: format!("::{}[{element}]", made.name),
+                        ty: ValueType::Of(Type::Field(made.element.clone().into())),
+                        ofs,
+                        scope: None,
+                        initialized: false,
+                        constant: true,
+                        count: None,
+                        id: None,
+                    });
+                }
+                base.checked_add(word).ok_or(Internal::TooLarge)?
+            }
         };
         // FTEF-9.25: the field is a constant, which the field table lists, unless the member
         // is given 0 (`(isnull?0:GDF_CONST)`): a member with a value that is no function's
@@ -847,55 +827,175 @@ impl Program {
             .and_then(|function| index.def(function))
             .is_some_and(|function| function.initialized);
         let null = definition.initialized && !bodied;
-        let ty = ValueType::Of(Type::Field(held.into()));
-        // FTEF-31.33: an array of fields has a global for each word of each element, the
-        // offset of that word's field, as a pool of FTEQCC's has (`::vector[N]`); any other
-        // member has its field's one global.
-        let count = index.array_len(id);
-        // An array whose size the model did not read cannot be laid out.
-        if index.is_unsized_array(id) {
-            return Err(Internal::Unsupported);
-        }
-        let inner = ty.field_inner().ok_or(Internal::Unsupported)?;
-        let words = match count {
-            Some(count) => type_words(index, &inner)
-                .checked_mul(count)
-                .ok_or(Internal::TooLarge)?,
-            None => type_words(index, &ty),
-        };
-        let ofs = self.allocate_global(words)?;
         let place = self.defs.len();
         self.defs.push(Def {
-            name: format!("{class}::{MEMBER_FIELD_PREFIX}{name}"),
-            ty,
+            name,
+            ty: ValueType::Of(Type::Field(held.into())),
             ofs,
             scope: None,
             initialized: false,
             constant: !null,
-            count,
+            // FTEF-31.33: an array of fields has a global for each word of each element, the
+            // offset of that word's field.
+            count: index.array_len(id),
             id: Some(id),
         });
         self.places.insert(id, place);
-        let field = match shared {
-            Some(word) => word,
-            None => {
-                let field = self.size_fields;
-                let taken = type_words(index, &inner)
-                    .checked_mul(count.unwrap_or(1))
-                    .ok_or(Internal::TooLarge)?;
-                self.size_fields = self
-                    .size_fields
-                    .checked_add(taken)
-                    .ok_or(Internal::TooLarge)?;
-                field
+        Ok(place)
+    }
+
+    /// QC-11.12: the component `id` of a class's vector member, named `name`: the float field
+    /// at the vector's field and its word, `_x`, `_y` or `_z`, in the vector's own globals; the
+    /// component of the member a class above has where the vector is that member's.
+    fn member_component(
+        &mut self,
+        index: &ModuleIndex,
+        id: DefId,
+        name: String,
+    ) -> Result<usize, Internal> {
+        let definition = index.def(id).ok_or(Internal::NoDefinition)?;
+        let member = |class: Option<DefId>, name: &str, generated: bool| {
+            index
+                .definitions()
+                .find(|(_, d)| {
+                    d.name == name
+                        && d.member_of == class
+                        && d.kind == DefKind::Field
+                        && d.generated == generated
+                })
+                .map(|(other, _)| other)
+        };
+        let (vector, word, suffix) = COMPONENTS
+            .iter()
+            .zip(0_u32..)
+            .find_map(|(suffix, word)| {
+                let vector = definition.name.strip_suffix(suffix)?;
+                Some((member(definition.member_of, vector, false)?, word, *suffix))
+            })
+            .ok_or(Internal::NoDefinition)?;
+        let ofs = match self.pools(index)?.slot(vector).cloned() {
+            Some(Slot::Member(above)) => {
+                let above = index.def(above).ok_or(Internal::NoDefinition)?;
+                let component = member(above.member_of, &format!("{}{suffix}", above.name), true);
+                let place = self.get_def(index, component.ok_or(Internal::NoDefinition)?)?;
+                self.places.insert(id, place);
+                return Ok(place);
+            }
+            // The entity field's own component's global.
+            Some(Slot::EntityField(field)) => {
+                let component = component(index, field, suffix).ok_or(Internal::NoDefinition)?;
+                let place = self.get_def(index, component)?;
+                self.defs.get(place).ok_or(Internal::NoDefinition)?.ofs
+            }
+            Some(Slot::Pooled { .. }) | None => {
+                let place = self.get_def(index, vector)?;
+                self.defs
+                    .get(place)
+                    .ok_or(Internal::NoDefinition)?
+                    .ofs
+                    .checked_add(word)
+                    .ok_or(Internal::TooLarge)?
             }
         };
-        let offsets: Vec<u32> = match count {
-            Some(_) => (0..words).map(|word| field.saturating_add(word)).collect(),
-            None => vec![field],
-        };
-        self.set_words(ofs, &offsets)?;
+        let place = self.defs.len();
+        self.defs.push(Def {
+            name,
+            ty: ValueType::FloatField,
+            ofs,
+            scope: None,
+            initialized: false,
+            // FTEF-9.25: as its vector, which a member given 0 is no constant.
+            constant: !index.def(vector).is_some_and(|d| d.initialized),
+            count: None,
+            id: Some(id),
+        });
+        self.places.insert(id, place);
         Ok(place)
+    }
+
+    /// The layout of the module's classes, made when it is first asked for.
+    fn pools(&mut self, index: &ModuleIndex) -> Result<&Pools, Internal> {
+        if self.pools.is_none() {
+            let pools = Pools::of(index)?;
+            self.pool_bases = vec![None; pools.pools.len()];
+            self.pools = Some(pools);
+        }
+        self.pools.as_ref().ok_or(Internal::NoDefinition)
+    }
+
+    /// The first global of the pool `pool`, whose globals are taken when it is first asked
+    /// for: one for each of its fields, which hold no offset until
+    /// [`Program::number_class_fields`].
+    fn pool_base(&mut self, index: &ModuleIndex, pool: usize) -> Result<u32, Internal> {
+        if let Some(base) = self.pool_bases.get(pool).copied().flatten() {
+            return Ok(base);
+        }
+        let words = self.pools(index)?.pools.get(pool).and_then(Pool::words);
+        let base = self.allocate_global(words.ok_or(Internal::TooLarge)?)?;
+        *self
+            .pool_bases
+            .get_mut(pool)
+            .ok_or(Internal::NoDefinition)? = Some(base);
+        Ok(base)
+    }
+
+    /// FTEF-9.29: makes the field of each class member declared in `file` before `end`, and of
+    /// a vector member's components, as FTEQCC makes them where the class is declared, named
+    /// in a body or not.
+    pub(crate) fn make_class_fields(
+        &mut self,
+        index: &ModuleIndex,
+        file: FileId,
+        end: usize,
+    ) -> Result<(), Internal> {
+        loop {
+            let made = self.members_made;
+            let next = self.pools(index)?.members.get(made).copied();
+            let Some(id) = next else {
+                return Ok(());
+            };
+            let definition = index.def(id).ok_or(Internal::NoDefinition)?;
+            let at = definition.location;
+            if (at.file, at.span.start) >= (file, end) {
+                return Ok(());
+            }
+            self.members_made = self.members_made.saturating_add(1);
+            self.get_def(index, id)?;
+            if index.array_len(id).is_some() {
+                continue;
+            }
+            for suffix in COMPONENTS {
+                let name = format!("{}{suffix}", definition.name);
+                let component = index.definitions().find(|(_, d)| {
+                    d.name == name
+                        && d.member_of == definition.member_of
+                        && d.kind == DefKind::Field
+                        && d.generated
+                });
+                if let Some((component, _)) = component {
+                    self.get_def(index, component)?;
+                }
+            }
+        }
+    }
+
+    /// FTEF-9.29: gives each pool's fields their offsets, after every other field's, pool by
+    /// pool in the order FTEQCC makes them (`QCC_PR_FinishFieldDef`: `d->symboldata[i]._int =
+    /// pr.size_fields++;`).
+    pub(crate) fn number_class_fields(&mut self) -> Result<(), Internal> {
+        let Some(pools) = &self.pools else {
+            return Ok(());
+        };
+        let sizes: Vec<Option<u32>> = pools.pools.iter().map(Pool::words).collect();
+        for (words, base) in sizes.into_iter().zip(self.pool_bases.clone()) {
+            let (words, base) = words.zip(base).ok_or(Internal::NoDefinition)?;
+            for word in 0..words {
+                let ofs = base.checked_add(word).ok_or(Internal::TooLarge)?;
+                self.set_words(ofs, &[self.size_fields])?;
+                self.size_fields = self.size_fields.checked_add(1).ok_or(Internal::TooLarge)?;
+            }
+        }
+        Ok(())
     }
 
     /// FTEF-19.76: makes the field at `place` name the entity field the field at `other`

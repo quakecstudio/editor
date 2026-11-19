@@ -7588,3 +7588,171 @@ fn a_call_of_a_string_constant_folds() {
     assert_eq!(returned("fc"), immediate(&p, 16.0));
     assert_eq!(names_in(&p, "fd"), ["CALL1H", "RETURN"]);
 }
+
+/// The entity field the field definition `name` records.
+fn field_offset(progs: &ProgsFile, name: &str) -> u32 {
+    progs
+        .field_defs
+        .iter()
+        .find(|d| string(progs, d.s_name) == name)
+        .unwrap_or_else(|| panic!("no field definition {name}"))
+        .ofs
+}
+
+const POOL_SOURCE: &str = "#pragma target fte\n\
+    entity self; entity other; entity world; float time;\n\
+    void end_sys_globals;\n\
+    .float modelindex; .vector origin; .float health;\n\
+    void end_sys_fields;\n\
+    .float later;\n\
+    class A { float a1; vector av; float a2; string as; float health; float arr[3];\n\
+              virtual void() Think; void() A; };\n\
+    class B : A { float b1; float a2; entity be; vector bv[2]; };\n\
+    class C { float c1; float c2; float c3; int ci; };\n\
+    .float last;\n\
+    void() A::Think = { a1 = a2 + health + arr[1]; };\n\
+    void() A::A = { };\n\
+    void(A x, B y, C z) use = { x.a1 = y.b1 + z.c3; y.bv[1] = x.av; z.ci = 1; x.Think();\n\
+                               self.last = self.later; };\n";
+
+// spec FTEF-9.29: a member is held in its basic type's pool at the first word past its class's
+// and the classes' above it, so classes apart share fields; the pools' fields follow every
+// field the program declares, in the order the pools were made
+#[test]
+fn class_members_are_laid_into_shared_pools() {
+    let p = fte_progs(POOL_SOURCE);
+    let at = |name: &str| field_offset(&p, name);
+    assert_eq!((at("later"), at("last")), (5, 6), "declared fields first");
+    assert_eq!((at("A::__ma1"), at("A::__ma2")), (7, 8));
+    assert_eq!(
+        (at("C::__mc1"), at("C::__mc2"), at("C::__mc3")),
+        (7, 8, 9),
+        "a class apart shares the pool's words"
+    );
+    assert_eq!(at("B::__mb1"), 13, "after every float of the class above");
+    assert_eq!((at("::float[0]"), at("::float[6]")), (7, 13));
+    assert_eq!((at("A::__mas"), at("A::__mThink")), (32, 33));
+    assert_eq!((at("B::__mbe"), at("C::__mci")), (34, 35));
+    assert_eq!(p.entityfields, 36);
+    // A member no body names is a field too.
+    assert_eq!(at("C::__mc2"), 8);
+}
+
+// spec FTEF-9.29: a member a class above has is that member's field, with no definition of
+// its own, and a member named as an entity field is that field, counted among its class's
+// words
+#[test]
+fn a_member_above_or_an_entity_field_is_not_pooled() {
+    let p = fte_progs(POOL_SOURCE);
+    let at = |name: &str| field_offset(&p, name);
+    assert_eq!(at("A::__mhealth"), at("health"));
+    assert_eq!(
+        global(&p, "A::__mhealth"),
+        global(&p, "health"),
+        "the entity field's own global"
+    );
+    assert_eq!(
+        at("::float[2]"),
+        9,
+        "the pool's word the entity field counts for"
+    );
+    assert!(
+        !p.field_defs
+            .iter()
+            .any(|d| string(&p, d.s_name) == "B::__ma2"),
+        "the member above's field"
+    );
+}
+
+// spec FTEF-9.29: an array member takes its elements' words in turn, and a pool's fields are
+// its length times its element's words, a vector's counted twice over
+// spec FTEF-31.33: an array of fields has a record for each element
+#[test]
+fn a_pool_of_vectors_takes_its_length_times_three() {
+    let p = fte_progs(POOL_SOURCE);
+    let at = |name: &str| field_offset(&p, name);
+    assert_eq!(
+        (at("A::__marr[0]"), at("A::__marr[1]"), at("A::__marr[2]")),
+        (10, 11, 12)
+    );
+    assert_eq!((at("A::__mav"), at("A::__mav_y")), (14, 15));
+    assert_eq!((at("B::__mbv[0]"), at("B::__mbv[1]")), (17, 20));
+    assert_eq!((at("::vector[0]"), at("::vector[1]")), (14, 17));
+    assert_eq!(
+        at("A::__mas"),
+        32,
+        "eighteen fields for six words of vectors"
+    );
+}
+
+// spec FTEF-9.29: a class is an entity and a pointer to one a pointer; an enum is its base
+// type; each basic type has its pool, of its own element's words; a member that is itself a
+// field is in the field pool; a member named as a vector entity field has the field's
+// components
+// spec FTEF-9.25: a member given 0 is no constant and has no field record
+#[test]
+fn each_basic_type_has_its_pool() {
+    let p = fte_progs(
+        "#pragma target fte\n\
+         entity self; entity other; entity world; float time;\n\
+         void end_sys_globals;\n\
+         .float modelindex; .vector origin; .float health;\n\
+         void end_sys_fields;\n\
+         typedef enum { E_A, E_B } en_t;\n\
+         class Z { };\n\
+         class A { float f; en_t e; int i; unsigned int u; __double d; __int64 q; float *p;\n\
+                   __variant v; Z z; string s; __double da[2]; vector origin; float f2 = 0;\n\
+                   Z *zp; .float fld; };\n\
+         class B : A { float f; int i2; };\n\
+         void(A x, B y) use = { x.f = y.f; x.d = 1; x.q = 2; x.da[1] = 3; y.i2 = x.i; };\n",
+    );
+    let at = |name: &str| field_offset(&p, name);
+    assert_eq!((at("A::__mf"), at("A::__me")), (5, 6));
+    assert_eq!((at("A::__mi"), at("B::__mi2"), at("A::__mu")), (8, 9, 10));
+    assert_eq!(
+        (at("A::__md"), at("A::__mda[0]"), at("A::__mda[1]")),
+        (11, 13, 15)
+    );
+    assert_eq!(
+        at("A::__mq"),
+        19,
+        "the doubles' four words take eight fields"
+    );
+    assert_eq!((at("A::__mp"), at("A::__mzp")), (23, 24));
+    assert_eq!(at("::pointer[1]"), 24, "a pointer to a class is a pointer");
+    assert_eq!(at("A::__mv"), 25);
+    assert_eq!(at("A::__mz"), at("::entity[0]"));
+    assert_eq!(at("A::__mfld"), at("::field[0]"));
+    assert_eq!(
+        (
+            at("A::__morigin"),
+            at("A::__morigin_y"),
+            at("A::__morigin_z")
+        ),
+        (at("origin"), at("origin_y"), at("origin_z"))
+    );
+    assert!(
+        !p.field_defs
+            .iter()
+            .any(|d| string(&p, d.s_name) == "A::__mf2"),
+        "a member given 0 has no field record"
+    );
+    assert!(global(&p, "A::__mf2") > 0);
+}
+
+// spec FTEF-9.29: a member of a type with no pool, a struct, is not laid out, and a member the
+// model cannot size leaves no later member a place, whether or not a body names it
+#[test]
+fn a_member_with_no_pool_is_refused() {
+    let class = |members: &str| {
+        format!(
+            "{CLASS_HEADER}struct S {{ float a; float b; }};\nconst float N = 4;\n\
+             class A {{ float f; {members} }};\nvoid(A o) use = {{ o.f = 1; }};\n"
+        )
+    };
+    assert!(compile_fteqcc(&class("float g;")).is_ok());
+    let refused = compile_fteqcc(&class("S s;"));
+    assert!(refused.is_err(), "{:?}", refused.map(drop));
+    let refused = compile_fteqcc(&class("float sized[N]; float g;"));
+    assert!(refused.is_err(), "{:?}", refused.map(drop));
+}

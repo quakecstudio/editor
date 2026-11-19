@@ -142,7 +142,7 @@ pub struct ModuleIndex {
     pub(crate) class_names: HashMap<String, DefId>,
     /// Each FTEQCC class's parent, by the classes' type-name definitions.
     pub(crate) class_parents: HashMap<DefId, DefId>,
-    /// FTEF-9.21: the function `CLASS::NAME` a body of each virtual member defines, by the
+    /// FTEF-9.29: the function `CLASS::NAME` a body of each virtual member defines, by the
     /// member.
     pub(crate) virtual_functions: HashMap<DefId, DefId>,
     /// FTEF-9.27: each class's spawn function the program gives no body, whose body the model
@@ -262,11 +262,7 @@ impl ModuleIndex {
     /// class.
     #[must_use]
     pub fn class_members(&self, ty: &Type) -> Vec<DefId> {
-        let resolved = self.aliases.get(ty).unwrap_or(ty);
-        let mut class = resolved
-            .type_name()
-            .and_then(|name| self.class_names.get(name))
-            .copied();
+        let mut class = self.class_of(ty);
         let mut out = Vec::new();
         for _ in 0..MAX_CLASS_DEPTH {
             let Some(current) = class else {
@@ -282,7 +278,23 @@ impl ModuleIndex {
         out
     }
 
-    /// FTEF-9.21: the function `CLASS::NAME` a body of the virtual member `member` defines, when
+    /// The class the type `ty` names, through a typedef.
+    #[must_use]
+    pub fn class_of(&self, ty: &Type) -> Option<DefId> {
+        let resolved = self.aliases.get(ty).unwrap_or(ty);
+        resolved
+            .type_name()
+            .and_then(|name| self.class_names.get(name))
+            .copied()
+    }
+
+    /// The class the class `class` is declared under, `parentclass`.
+    #[must_use]
+    pub fn class_parent(&self, class: DefId) -> Option<DefId> {
+        self.class_parents.get(&class).copied()
+    }
+
+    /// FTEF-9.29: the function `CLASS::NAME` a body of the virtual member `member` defines, when
     /// one does: the definition the body is written to, and a scoped call (`super::m()`,
     /// `CLASS::m()`) calls.
     #[must_use]

@@ -38,6 +38,7 @@ mod back_end;
 mod compile;
 mod names;
 mod ops;
+mod pools;
 mod precache;
 mod program;
 mod write;
@@ -297,6 +298,11 @@ fn compile_lowered(
             span,
             internal,
         })?;
+    // FTEF-9.29: the pools' fields follow every other field.
+    compiler
+        .program
+        .number_class_fields()
+        .map_err(CompileError::unlocated)?;
     // FTE-21.8: the shared temporaries the spawn functions took, laid out after them.
     compiler
         .program

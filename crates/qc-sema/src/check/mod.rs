@@ -95,7 +95,7 @@ pub(crate) trait Env {
     fn definition(&self, def: DefId) -> Option<&Definition>;
     /// Whether a definition is an array (`def->arraysize`, FTEF-19.8).
     fn is_array(&self, def: DefId) -> bool;
-    /// FTEF-9.21: the function `CLASS::NAME` a body of the virtual member `member` defines.
+    /// FTEF-9.29: the function `CLASS::NAME` a body of the virtual member `member` defines.
     fn virtual_function(&self, member: DefId) -> Option<DefId>;
     /// `ty` through its typedefs: a typedef of a function type is that function type
     /// (FTEF-7.6).

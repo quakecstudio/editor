@@ -242,11 +242,26 @@ pub(crate) fn progs(
         let field_record =
             records == Records::Qcc || (def.constant && (def.scope.is_none() || def.initialized));
         if let Some(inner) = def.ty.field_inner().filter(|_| field_record) {
-            field_defs.push(DefRecord {
-                type_bits: u32::from(type_number(index, &inner)),
-                ofs: program.word(def.ofs),
-                s_name: program.copy_string(&latin1_encode(&def.name))?,
-            });
+            // FTEF-31.33: an array of fields has a record for each element, `NAME[N]`, as it
+            // has a global for each.
+            let words = def.element_words(index);
+            let elements = match def.count {
+                Some(count) => (0..count)
+                    .map(|i| (format!("{}[{i}]", def.name), i))
+                    .collect(),
+                None => vec![(def.name.clone(), 0)],
+            };
+            for (name, element) in elements {
+                let ofs = element
+                    .checked_mul(words)
+                    .and_then(|w| w.checked_add(def.ofs))
+                    .ok_or(Internal::TooLarge)?;
+                field_defs.push(DefRecord {
+                    type_bits: u32::from(type_number(index, &inner)),
+                    ofs: program.word(ofs),
+                    s_name: program.copy_string(&latin1_encode(&name))?,
+                });
+            }
         }
         // QC-25.3: id's `qcc` saves a global with no initial value. FTEF-19.82: FTEQCC saves a
         // global it is asked to save, `def->saved`, that it does not hold constant; each record

@@ -649,7 +649,7 @@ impl<'a> Resolver<'a> {
         TypedBody::written(body.statements, body.strings)
     }
 
-    /// FTEF-9.21: the function `CLASS::NAME` a body of the virtual member `member` defines,
+    /// FTEF-9.29: the function `CLASS::NAME` a body of the virtual member `member` defines,
     /// declared with the member (`QCC_PR_GetDef(newparm, membername, NULL, true, 0,
     /// gdf_flags)`): a constant of the member's type, initialised once a declaration of the
     /// member gives it a body. `None` for a member that is no virtual one, a field of function
