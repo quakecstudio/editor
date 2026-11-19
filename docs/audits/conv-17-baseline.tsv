@@ -26,7 +26,6 @@ bool-argument	crates/qc-preproc/src/fte_keywords.rs	Keywords::with_coexist
 bool-argument	crates/qc-preproc/src/fte_keywords.rs	Keywords::with_hexen2_target
 bool-argument	crates/qc-preproc/src/fte_macro.rs	ChunkReader::next_item
 bool-argument	crates/qc-preproc/src/fte_macro.rs	macro_string_spelling
-bool-argument	crates/qc-preproc/src/fte_opcodes.rs	OpcodeTarget::set
 bool-argument	crates/qc-preproc/src/fte_pragma.rs	FlagSettings::set
 bool-argument	crates/qc-preproc/src/fte_pragma.rs	FlagSettings::set_default
 bool-argument	crates/qc-preproc/src/fte_pragma.rs	FlagSettings::set_named
@@ -99,9 +98,6 @@ free-fn-on-type	crates/qc-ide/src/hover.rs	docs
 free-fn-on-type	crates/qc-preproc/src/fte_directive/load.rs	decode_utf
 free-fn-on-type	crates/qc-preproc/src/fte_macro.rs	read_body
 free-fn-on-type	crates/qc-preproc/src/fte_macro.rs	read_define
-free-fn-on-type	crates/qc-preproc/src/fte_opcodes.rs	max_revision
-free-fn-on-type	crates/qc-preproc/src/fte_opcodes.rs	place
-free-fn-on-type	crates/qc-preproc/src/fte_opcodes.rs	valid_for_target
 free-fn-on-type	crates/qc-progs/src/write.rs	encode_tables
 free-fn-on-type	crates/qc-progs/src/write.rs	write
 free-fn-on-type	crates/qc-sema/src/cast.rs	pointees_agree
@@ -212,7 +208,6 @@ free-fn-on-type	crates/qs-sim/src/collision/hull.rs	hull_for_entity
 free-fn-on-type	crates/qs-sim/src/collision/trace.rs	recursive_hull_check
 bare-id	crates/qc-edict/src/system.rs	SysVar.slot
 bare-id	crates/qc-ide/src/host.rs	AnalysisHost::module(index)
-bare-id	crates/qc-preproc/src/fte_opcodes.rs	OpcodeTarget::new(revision)
 bare-id	crates/qc-progs/src/read.rs	Table::get(index)
 bare-id	crates/qc-sema/src/db.rs	QueryCounts.module_index
 bare-id	crates/qc-sema/src/resolve/scope.rs	Resolver::in_scope_at(index)
@@ -494,17 +489,6 @@ magic-number	crates/qc-preproc/src/fte_keywords.rs	Keyword::bit:9
 magic-number	crates/qc-preproc/src/fte_line.rs	elif_test_end:128
 magic-number	crates/qc-preproc/src/fte_line.rs	elif_test_end:3
 magic-number	crates/qc-preproc/src/fte_line.rs	elif_test_end:4
-magic-number	crates/qc-preproc/src/fte_opcodes.rs	OpcodeTarget::stores_at_offset:20241108
-magic-number	crates/qc-preproc/src/fte_opcodes.rs	OpcodeTarget::stores_at_offset:5712
-magic-number	crates/qc-preproc/src/fte_opcodes.rs	place:6
-magic-number	crates/qc-preproc/src/fte_opcodes.rs	place:63
-magic-number	crates/qc-preproc/src/fte_opcodes.rs	valid_for_target:12901
-magic-number	crates/qc-preproc/src/fte_opcodes.rs	valid_for_target:20241108
-magic-number	crates/qc-preproc/src/fte_opcodes.rs	valid_for_target:20250104
-magic-number	crates/qc-preproc/src/fte_opcodes.rs	valid_for_target:3349
-magic-number	crates/qc-preproc/src/fte_opcodes.rs	valid_for_target:5698
-magic-number	crates/qc-preproc/src/fte_opcodes.rs	valid_for_target:5744
-magic-number	crates/qc-preproc/src/fte_opcodes.rs	valid_for_target:5768
 magic-number	crates/qc-preproc/src/fte_pragma.rs	optimise_warnings:3
 magic-number	crates/qc-preproc/src/lib.rs	Preprocessor::define:3
 magic-number	crates/qc-preproc/src/lib.rs	Preprocessor::define:4
@@ -616,8 +600,6 @@ magic-number	crates/qc-sema/src/check/reference.rs	Checker::extend_bits:8
 magic-number	crates/qc-sema/src/check/reference.rs	Checker::load_from_array:3
 magic-number	crates/qc-sema/src/check/reference.rs	Checker::load_from_pointer:16
 magic-number	crates/qc-sema/src/check/reference.rs	Checker::load_from_pointer:8
-magic-number	crates/qc-sema/src/check/reference.rs	Checker::narrow_bitfield:31
-magic-number	crates/qc-sema/src/check/reference.rs	Checker::narrow_element:31
 magic-number	crates/qc-sema/src/check/reference.rs	Checker::narrow_local:31
 magic-number	crates/qc-sema/src/check/reference.rs	Checker::read:8
 magic-number	crates/qc-sema/src/check/reference.rs	narrow_bits:16

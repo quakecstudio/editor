@@ -3435,6 +3435,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "qc-entities"
+version = "2026.11.1"
+dependencies = [
+ "qc-progs",
+ "qc-sema",
+ "qc-syntax",
+ "qc-types",
+ "qs-map",
+]
+
+[[package]]
 name = "qc-ide"
 version = "2026.11.1"
 dependencies = [
@@ -3468,6 +3479,7 @@ version = "2026.11.1"
 dependencies = [
  "proptest",
  "qc-lexer",
+ "qc-progs",
 ]
 
 [[package]]
@@ -3497,10 +3509,10 @@ dependencies = [
  "qc-diag",
  "qc-lexer",
  "qc-preproc",
+ "qc-progs",
  "qc-project",
  "qc-syntax",
  "qc-types",
- "qs-map",
 ]
 
 [[package]]
@@ -4010,6 +4022,7 @@ dependencies = [
  "qc-codegen",
  "qc-edict",
  "qc-engines",
+ "qc-entities",
  "qc-ide",
  "qc-progs",
  "qc-project",
@@ -6237,6 +6250,7 @@ dependencies = [
  "clap",
  "miniz_oxide 0.9.1",
  "qc-codegen",
+ "qc-entities",
  "qc-ide",
  "qc-lexer",
  "qc-lno",

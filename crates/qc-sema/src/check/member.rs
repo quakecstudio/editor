@@ -9,7 +9,7 @@
 //! union's member.
 
 use qc_diag::{Code, Span};
-use qc_preproc::Op;
+use qc_progs::Op;
 use qc_syntax::ast::{self, AstNode as _};
 use qc_syntax::c_scalar::CScalar;
 
@@ -19,7 +19,9 @@ use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::pointer;
 use crate::check::reference::{eval_int, expected_after};
-use crate::check::{Bitfield, Constness, ElementRef, FieldRef, MemberArray, Reference, Value};
+use crate::check::{
+    Bitfield, Constness, ElementRef, FieldRef, MemberArray, MemberStart, Reference, Value,
+};
 use crate::ir;
 use crate::ty::{SimpleType, Type};
 
@@ -539,8 +541,7 @@ impl Checker<'_> {
         let reference = if member.array {
             Reference::ArrayHead(Some(MemberArray {
                 length: member.length,
-                word: member.position.map_or(0, |position| position >> 5),
-                outer: None,
+                start: MemberStart::Word(member.position.map_or(0, |position| position >> 5)),
                 through: None,
             }))
         } else {
@@ -623,28 +624,26 @@ impl Checker<'_> {
             });
         };
         let start = before.saturating_add(word);
-        let (word, outer) = match &base.reference {
+        let start = match &base.reference {
             Reference::Element(element) if !element.vector => {
                 match element.index.known().and_then(eval_int) {
-                    Some(index) => (
+                    Some(index) => MemberStart::Word(
                         start.saturating_add(u32::from_le_bytes(index.to_le_bytes())),
-                        None,
                     ),
-                    None if self.global => (start, None),
+                    None if self.global => MemberStart::Word(start),
                     None => {
                         let at = self.element_member(base, element, member.clone(), start, span)?;
                         match at.reference {
-                            Reference::Element(at) => (0, Some(Box::new(at.index))),
-                            _ => (start, None),
+                            Reference::Element(at) => MemberStart::Index(Box::new(at.index)),
+                            _ => MemberStart::Word(start),
                         }
                     }
                 }
             }
-            _ => (start, None),
+            _ => MemberStart::Word(start),
         };
         let reference = Reference::ArrayHead(Some(MemberArray {
-            word,
-            outer,
+            start,
             ..array.clone()
         }));
         Ok(Value {

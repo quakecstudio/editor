@@ -11,7 +11,7 @@
 //! build the differential is recorded on.
 
 use qc_diag::Code;
-use qc_preproc::Op;
+use qc_progs::Op;
 use qc_types::c_int;
 
 use crate::cast::ConstType;

@@ -16,11 +16,9 @@ use crate::compiler_flags::{CompilerFlags, PragmaDefault, Priorities};
 use crate::cond::fte_atoi;
 use crate::fte_directive::com_parse;
 use crate::fte_keywords::{Keyword, Keywords};
-use crate::fte_ops::Op;
-use crate::fte_tables::{
-    DP_MAX_REVISION, FLAGS, FTE_MAX_REVISION, FteFlag, OPTIMISATIONS, QSS_MAX_REVISION, TARGETS,
-    TargetFormat,
-};
+use crate::fte_tables::{FLAGS, FteFlag, OPTIMISATIONS};
+use qc_progs::fte_target::TARGETS;
+use qc_progs::{Op, Revision, TargetFormat};
 
 /// Which of FTEQCC's compiler flags and keywords are on (FTEF-12.11): `compiler_flag[]`'s
 /// defaults, and what `#pragma flag` has set since.
@@ -303,7 +301,7 @@ pub(crate) fn opcode_pragma(message: &[u8]) -> (Vec<(Op, bool)>, Vec<String>) {
 /// highest "target revision N is unknown, assuming revision M". The switch to or from a Hexen II
 /// format after the first statement, which FTEQCC refuses, is the compiler's to see. Returns the
 /// format and revision it sets, if any, and the warnings, which have no name.
-pub(crate) fn target_warnings(message: &[u8]) -> (Option<(TargetFormat, u32)>, Vec<String>) {
+pub(crate) fn target_warnings(message: &[u8]) -> (Option<(TargetFormat, Revision)>, Vec<String>) {
     let name = com_parse(message, 0).map_or_default(|(name, _)| name);
     match target_named(&name) {
         Some((format, revision, warning)) => {
@@ -324,7 +322,7 @@ pub(crate) fn target_warnings(message: &[u8]) -> (Option<(TargetFormat, u32)>, V
 /// is unknown, assuming revision M" for a revision past the format's highest; `None` when no row
 /// is so named. The revision is the one asked for, which `OpcodeTarget::new` holds to the
 /// highest.
-pub(crate) fn target_named(name: &[u8]) -> Option<(TargetFormat, u32, Option<String>)> {
+pub(crate) fn target_named(name: &[u8]) -> Option<(TargetFormat, Revision, Option<String>)> {
     let (base, revision) = match name.iter().position(|&b| b == b'_') {
         Some(at) => (
             name.get(..at).unwrap_or_default(),
@@ -337,20 +335,16 @@ pub(crate) fn target_named(name: &[u8]) -> Option<(TargetFormat, u32, Option<Str
         .find(|(target, _, _)| target.as_bytes().eq_ignore_ascii_case(base))?;
     // `ver?atoi(ver):targets[i].defaultrev`, kept as an `unsigned int`.
     let revision = revision.map_or(default, |text| {
-        u32::from_le_bytes(fte_atoi(text).to_le_bytes())
+        Revision::new(u32::from_le_bytes(fte_atoi(text).to_le_bytes()))
     });
-    let max = match format {
-        TargetFormat::Fte | TargetFormat::Fteh2 | TargetFormat::FteDebug => FTE_MAX_REVISION,
-        TargetFormat::Darkplaces => DP_MAX_REVISION,
-        TargetFormat::Qss => QSS_MAX_REVISION,
-        TargetFormat::Standard
-        | TargetFormat::Hexen2
-        | TargetFormat::Uhexen2
-        | TargetFormat::Kk7
-        | TargetFormat::Qtest => 0,
-    };
-    let warning = (revision > max && revision != u32::MAX)
-        .then(|| format!("target revision {revision} is unknown, assuming revision {max}"));
+    let max = format.max_revision();
+    let warning = (revision > max && revision.number() != u32::MAX).then(|| {
+        format!(
+            "target revision {} is unknown, assuming revision {}",
+            revision.number(),
+            max.number()
+        )
+    });
     Some((format, revision, warning))
 }
 

@@ -2,13 +2,13 @@
 
 //! `map.check` and `map.rename_key` (P5-04, MAP-2, MAP-7): a `.map`'s diagnostics, its format's
 //! (`qs_map`, MAP-1 to MAP-7) and its entities' against the project's server QuakeC
-//! (`qc_sema::map_check`, MAP-8); and, once a rename of a field is confirmed, the key renamed in
+//! (`qc_entities::map_check`, MAP-8); and, once a rename of a field is confirmed, the key renamed in
 //! the open maps (MAP-8.7).
 
 use std::path::{Path, PathBuf};
 
+use qc_entities::{EntitySchema, MapDiagnosticKind};
 use qc_project::ModuleKind;
-use qc_sema::{EntitySchema, MapDiagnosticKind};
 use qs_commands::{Command, Outcome, RegisterError, Registry};
 use qs_map::MapFile;
 use schemars::JsonSchema;
@@ -161,7 +161,7 @@ impl<L: crate::Loader> Workbench<L> {
         let mut schema = EntitySchema::default();
         for module in self.host.project_modules() {
             if module.kind == ModuleKind::Ssqc {
-                schema.extend(module.db.entity_schema(module.input));
+                schema.extend(EntitySchema::of_module(module.db, module.input));
             }
         }
         Ok(schema)

@@ -10,10 +10,10 @@
 //! `QCC_SetDefaultProperties` resets the settings. Ported from FTEQCC's behaviour under
 //! ADR-0017's clean-port policy.
 
-use crate::fte_opcodes::OpcodeTarget;
 use crate::fte_pragma::{FlagSettings, target_named};
-use crate::fte_tables::{FteFlag, TargetFormat};
+use crate::fte_tables::FteFlag;
 use crate::fte_warning::{FteWarning, WarningAction, WarningSettings};
+use qc_progs::{OpcodeTarget, Revision, TargetFormat};
 
 /// The options FTEQCC was run with, kept to be read again with each reset of the settings.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
@@ -736,7 +736,7 @@ impl CommandLine {
 
 /// The target and revision the option `arg` sets: `-TNAME` (`!strncmp(myargv[i], "-T", 2)`, in
 /// this case only) whose NAME names one, `-Tparse` none.
-fn target_option(arg: &[u8]) -> Option<(TargetFormat, u32)> {
+fn target_option(arg: &[u8]) -> Option<(TargetFormat, Revision)> {
     let name = arg.strip_prefix(b"-T")?;
     if name == b"parse" {
         return None;
@@ -748,8 +748,9 @@ fn target_option(arg: &[u8]) -> Option<(TargetFormat, u32)> {
 mod tests {
     use super::{CommandLine, Std};
     use crate::fte_pragma::FlagSettings;
-    use crate::fte_tables::{FteFlag, TargetFormat};
+    use crate::fte_tables::FteFlag;
     use crate::fte_warning::{FteWarning as W, WarningAction as A, WarningSettings};
+    use qc_progs::TargetFormat;
 
     fn action(args: &[&str], warning: W) -> A {
         CommandLine::new(args)

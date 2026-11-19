@@ -11,7 +11,9 @@ use std::fmt;
 
 use qs_map::{Entity, MapFile};
 
-use crate::{Db, DefKind, ModuleInput, SimpleType, Type};
+use qc_sema::{Db, DefKind, ModuleInput, SimpleType, Type};
+
+use crate::entities::{EntityClass, Key};
 
 /// Keys the compilers and map editors write that are no field (MAP-8.2): qbsp's texture WADs
 /// (MAP-6.3) and the editors' format version.
@@ -166,17 +168,17 @@ impl fmt::Display for MapDiagnosticKind {
     }
 }
 
-impl Db {
-    /// The fields and functions of the module `input` names, and the keys its entity classes
-    /// read (MAP-8).
-    pub fn entity_schema(&mut self, input: &ModuleInput) -> EntitySchema {
-        let mut schema = EntitySchema::default();
-        for class in self.entity_classes(input) {
+impl EntitySchema {
+    /// The fields and functions of the module `input` names in `db`, and the keys its entity
+    /// classes read (MAP-8).
+    pub fn of_module(db: &mut Db, input: &ModuleInput) -> Self {
+        let mut schema = Self::default();
+        for class in EntityClass::of_module(db, input) {
             let keys = class.keys.iter().map(|key| key.name.clone()).collect();
             schema.class_keys.insert(class.name, keys);
         }
-        schema.targeting = self.targeting_keys(input).into_iter().collect();
-        let analysis = self.analyze_module(input);
+        schema.targeting = Key::targeting(db, input).into_iter().collect();
+        let analysis = db.analyze_module(input);
         for def in analysis.index.defs() {
             match def.kind {
                 DefKind::Field => {

@@ -13,6 +13,7 @@ qc-codegen = { workspace = true }
 qc-engines = { workspace = true }
 qc-ide = { workspace = true }
 qc-progs = { workspace = true }
+qc-entities = { workspace = true }
 qc-sema = { workspace = true }
 # project.info: the dialect a module is read in.
 qc-syntax = { workspace = true }

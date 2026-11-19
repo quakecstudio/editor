@@ -10,7 +10,7 @@
 //! is; what is left over is the reader's caller's to read.
 
 use qc_diag::Code;
-use qc_preproc::{Op, OpcodeTarget};
+use qc_progs::{Op, OpcodeTarget};
 
 use crate::lower::{RawAggregate, RawBraces, RawElement, RawValue, ValueKind};
 use crate::resolve::{Fatal, Holder, Resolver};

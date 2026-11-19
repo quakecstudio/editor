@@ -39,12 +39,12 @@ use crate::compiler_flags::{FlagEdit, PragmaDefault};
 use crate::cond::{self, FteIfError};
 use crate::fte_keywords::{KeywordEdit, Keywords};
 use crate::fte_macro::{Reading, Text};
-use crate::fte_opcodes::OpcodeTarget;
-use crate::fte_tables::{FteFlag, TargetFormat};
+use crate::fte_tables::FteFlag;
 use crate::{
     Body, ChunkReader, FileId, FileSpan, FlagSettings, Loader, Macro, Preprocessor, Run, Undef,
     Variadic, WarningSettings, fte_pragma,
 };
+use qc_progs::{OpcodeTarget, TargetFormat};
 
 /// The longest name `QCC_PR_DefineName` defines: `MAXCONSTANTNAMELENGTH` in FTEQCC's `qcc.h`,
 /// `#define MAXCONSTANTNAMELENGTH 64`, and `if (strlen(name) >= MAXCONSTANTNAMELENGTH ||
@@ -2046,7 +2046,11 @@ impl<L: Loader> Preprocessor<L> {
                 // FTEF-25.3: `pr_opcodes[f].flags |= OPF_VALID` or `&= ~OPF_VALID`, in order.
                 if !edits.is_empty() {
                     for (op, on) in edits {
-                        self.fte.opcodes.set(op, on);
+                        if on {
+                            self.fte.opcodes.enable(op);
+                        } else {
+                            self.fte.opcodes.disable(op);
+                        }
                     }
                     run.out
                         .targets

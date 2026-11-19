@@ -7,7 +7,7 @@
 //! target lacks is already emulated here (FTEF-27), once, where the checker also raises the
 //! warnings the emulation gives.
 
-use qc_preproc::Op;
+use qc_progs::Op;
 
 use crate::check::etype::Etype;
 use crate::check::opcodes::{Assoc, row as opcode_row};
@@ -245,10 +245,7 @@ impl BodyStatement {
     /// The arguments a call passes as its own operands, each with its slot: the first two of
     /// `CALL1H` to `CALL8H` (FTEF-32.19); none of any other statement's.
     pub fn operand_arguments(&self) -> impl Iterator<Item = (usize, Option<Name>)> + use<> {
-        let (count, passing) = self
-            .op
-            .call()
-            .unwrap_or((0, qc_preproc::CallPassing::Slots));
+        let (count, passing) = self.op.call().unwrap_or((0, qc_progs::CallPassing::Slots));
         [self.b, self.c]
             .into_iter()
             .enumerate()
@@ -370,7 +367,7 @@ impl BodyStatement {
 
 #[cfg(test)]
 mod tests {
-    use qc_preproc::Op;
+    use qc_progs::Op;
 
     use super::{BodyStatement, Immediate, ImmediateKind, Name, StatementIndex};
     use crate::DefId;

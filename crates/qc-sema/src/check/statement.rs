@@ -9,7 +9,8 @@
 //! finished function is checked for a missing return and for code no path reaches.
 
 use qc_diag::{Code, Span};
-use qc_preproc::{FteFlag, Op, TargetFormat};
+use qc_preproc::FteFlag;
+use qc_progs::{Op, TargetFormat};
 use qc_syntax::ast::{self, AstNode as _, Negation};
 
 use crate::VECTOR_WORDS;

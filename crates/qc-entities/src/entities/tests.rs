@@ -6,8 +6,8 @@
     reason = "test code: a failed unwrap or index is a failed test"
 )]
 
-use super::{EntityClass, Fgd, Found, KeyType, Shape, parse_quaked, quaked_comments};
-use crate::{Db, FileId, ModuleInput};
+use super::{EntityClass, Fgd, Found, Key, KeyType, Shape, parse_quaked, quaked_comments};
+use qc_sema::{Db, FileId, ModuleInput};
 
 /// The definitions every fixture declares, as id's `defs.qc` does.
 const DEFS: &str = "entity self; .string classname, model, target, targetname, noise;\n\
@@ -42,7 +42,7 @@ fn classes(spec: &ModuleSpec<'_>) -> Vec<EntityClass> {
         db.set_file(id, format!("f{index}.qc").into(), text.as_bytes().to_vec());
         input.compiled.push(id);
     }
-    db.entity_classes(&input)
+    EntityClass::of_module(&mut db, &input)
 }
 
 /// The classes of one file after [`DEFS`].
@@ -324,7 +324,7 @@ fn targeting(files: &[&str]) -> Vec<String> {
         db.set_file(id, format!("f{index}.qc").into(), text.as_bytes().to_vec());
         input.compiled.push(id);
     }
-    db.targeting_keys(&input)
+    Key::targeting(&mut db, &input)
 }
 
 // spec MAP-8.8: a key fires entities when the code passes its field to find as the value to
@@ -356,19 +356,25 @@ fn targeting_keys_are_read_from_the_code() {
 fn a_field_s_key_type_is_its_value_s() {
     use std::rc::Rc;
 
-    use crate::ty::{SimpleType, Type};
+    use qc_sema::ty::{SimpleType, Type};
     let field = |inner: Type| Type::Field(Rc::new(inner));
     assert_eq!(
-        field(Type::Simple(SimpleType::Entity)).key_type(),
+        KeyType::of(&field(Type::Simple(SimpleType::Entity))),
         KeyType::Entity
     );
     assert_eq!(
-        field(Type::function(Type::Simple(SimpleType::Void), Vec::new())).key_type(),
+        KeyType::of(&field(Type::function(
+            Type::Simple(SimpleType::Void),
+            Vec::new()
+        ))),
         KeyType::Function
     );
     assert_eq!(
-        field(Type::Simple(SimpleType::Float)).key_type(),
+        KeyType::of(&field(Type::Simple(SimpleType::Float))),
         KeyType::Float
     );
-    assert_eq!(Type::Simple(SimpleType::Float).key_type(), KeyType::Other);
+    assert_eq!(
+        KeyType::of(&Type::Simple(SimpleType::Float)),
+        KeyType::Other
+    );
 }

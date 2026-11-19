@@ -300,7 +300,7 @@ mod tests {
         reason = "test code: a failed unwrap or index is a failed test"
     )]
 
-    use qc_preproc::Op;
+    use qc_progs::Op;
     use qc_sema::ir::{BodyStatement, Effect, Name, StatementIndex};
 
     use super::{CreationOrder, Overlapping, Slots};

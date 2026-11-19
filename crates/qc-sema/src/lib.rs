@@ -69,11 +69,9 @@ const VECTOR_WORDS_INT: i32 = 3;
 pub mod cast;
 mod check;
 pub mod db;
-pub mod entities;
 pub mod expand;
 pub mod ir;
 pub mod lower;
-pub mod map_check;
 pub mod nav;
 pub mod resolve;
 pub mod symbol;
@@ -85,10 +83,8 @@ mod tests;
 pub use check::TypedBody;
 pub use check::fold::{fold_builtin_call, fold_floats};
 pub use db::{Db, ModuleAnalysis, QueryCounts};
-pub use entities::{EntityClass, Fgd, Found, Key, KeyType, Shape, SpawnFlag};
 pub use expand::{ModuleInput, OriginMap};
 pub use lower::{Binum, FileDecls, LiteralValue};
-pub use map_check::{EntitySchema, FieldValue, MapDiagnostic, MapDiagnosticKind};
 pub use resolve::InitialValue;
 pub use resolve::{
     AccessorShape, FileDiagnostic, MemberShape, ModuleIndex, ResolveOptions, Scalar, StructShape,

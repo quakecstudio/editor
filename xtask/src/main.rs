@@ -37,7 +37,7 @@
 //!   rerelease with FTEQCC. CI and `make oracles` run it; it is not part of
 //!   `ci`, which runs offline.
 //! - `entity-corpus`: derives the entity definitions of id 1.01 and the rerelease
-//!   with `qc-sema`, compares each FGD with its golden file, and with `--maps`
+//!   with `qc-entities`, compares each FGD with its golden file, and with `--maps`
 //!   checks that every classname a game's maps use has a class (P5-03).
 //! - `map-corpus`: reads every `.map` file under map directories with `qs-map` and
 //!   checks that each writes back byte for byte.

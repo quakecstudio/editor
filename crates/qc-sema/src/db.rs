@@ -174,7 +174,7 @@ pub struct Db {
     origins: HashMap<FileId, OriginMap>,
     /// Under FTEQCC, each compiled file's output targets and the offsets of its last expansion
     /// they hold from (FTEF-25), as the analysis read them.
-    targets: HashMap<FileId, Vec<(usize, qc_preproc::OpcodeTarget)>>,
+    targets: HashMap<FileId, Vec<(usize, qc_progs::OpcodeTarget)>>,
     /// The memoized analysis of a module read through the preprocessor.
     analysis: Option<Memo<(ModuleInput, Rc<ModuleAnalysis>)>>,
     /// Query-run counters.
@@ -639,7 +639,7 @@ impl Db {
     /// offsets they hold from (FTEF-25), as [`Db::analyze_module`] last read it; empty before a
     /// module that compiles it has been analysed, or under vanilla.
     #[must_use]
-    pub fn expanded_targets(&self, file: FileId) -> &[(usize, qc_preproc::OpcodeTarget)] {
+    pub fn expanded_targets(&self, file: FileId) -> &[(usize, qc_progs::OpcodeTarget)] {
         self.targets.get(&file).map_or(&[][..], Vec::as_slice)
     }
 

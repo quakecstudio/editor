@@ -214,7 +214,7 @@ pub fn compile(units: &[Unit<'_>]) -> Result<Compiled, CompileError> {
 fn compile_lowered(
     units: &[Unit<'_>],
     decls: &[FileDecls],
-    targets: &[&[(usize, qc_preproc::OpcodeTarget)]],
+    targets: &[&[(usize, qc_progs::OpcodeTarget)]],
     resolve: ResolveOptions,
     mut line_of: impl FnMut(FileId, usize) -> i32,
 ) -> Result<Compiled, CompileError> {
@@ -325,7 +325,7 @@ fn compile_lowered(
             progs.format = Format::Fte32;
         } else if resolve
             .target
-            .is_some_and(qc_preproc::TargetFormat::writes_version_7)
+            .is_some_and(qc_progs::TargetFormat::writes_version_7)
         {
             // FTE-24.3: an FTE target's 16-bit layout is version 7, its operands unsigned.
             progs.format = Format::Fte16;
@@ -394,7 +394,7 @@ pub fn compile_module(
     }
     // L-25, COMP-2: each file is built at the targets its analysis read it at, its
     // `#pragma target`s included, so the build refuses no opcode the check allows.
-    let targets: Vec<&[(usize, qc_preproc::OpcodeTarget)]> = input
+    let targets: Vec<&[(usize, qc_progs::OpcodeTarget)]> = input
         .compiled
         .iter()
         .map(|&id| db.expanded_targets(id))

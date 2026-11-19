@@ -99,7 +99,7 @@ ends, as the preprocessor reads on after it, and `relex_from` lexes the text fro
 the preprocessor does; the syntax tree groups its directive lines with them (`fte_line.rs`,
 FTEF-14.51).
 
-- **Layer:** L2 syntax. It depends on `qc-lexer`.
+- **Layer:** L2 syntax. It depends on `qc-lexer`, and on `qc-progs` for the opcodes and targets its pragmas choose.
 - **Spec sections:** QC-8 and QC-9 in [`language.md`](../../docs/spec/language.md); FTEF-14 in
   [`dialect-fteqcc.md`](../../docs/spec/dialect-fteqcc.md); the directive codes QCD-8 of
   [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md); the loaders' case rules

@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 
 use qc_diag::{Code, Span};
-use qc_preproc::Op;
+use qc_progs::Op;
 use qc_syntax::ast::{self, AstNode as _, BinaryOp, LiteralKind};
 
 use crate::check::assign::lexed_string;

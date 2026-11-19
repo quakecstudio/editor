@@ -8,7 +8,8 @@
 //! (FTEF-29).
 
 use qc_diag::{Code, Span};
-use qc_preproc::{FteFlag, Op};
+use qc_preproc::FteFlag;
+use qc_progs::Op;
 use qc_syntax::ast::{self, AstNode as _, BinaryOp};
 use qc_syntax::c_scalar::CScalar;
 use qc_syntax::{SyntaxKind, SyntaxNode};
@@ -20,7 +21,7 @@ use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::opcodes;
 use crate::check::opcodes::row;
-use crate::check::reference::{eval_int, word_type};
+use crate::check::reference::word_type;
 use crate::check::truth::Test;
 use crate::check::{Constness, Fold, Reference, Value, ValueUse};
 use crate::ir;
@@ -312,13 +313,16 @@ impl Checker<'_> {
         });
         let folded = stored.temp.is_some() && stored.temp == self.last_temp && !wider;
         let structured = matches!(self.etype(&target), Some(Etype::Struct | Etype::Union));
+        // FTEF-6.15: a bitfield, or an 8- or 16-bit element at a constant index, is stored by
+        // packing the value into its word, which is the only statement that writes it.
+        let packs = lhs.packs();
         // FTE-14.6: a struct stored to a definition is copied by `STORE_V` for each three words
         // and `STORE_F` for the rest, from a definition's or a block's words.
         let copied = matches!(kind, Assign::Store)
             && structured
             && lhs.reference == Reference::Global
             && self.copy_struct(&stored, lhs.name(), &target);
-        if matches!(kind, Assign::Store) && !copied {
+        if matches!(kind, Assign::Store) && !copied && !packs {
             let store = self.store_of(&target);
             // The store chosen for the `=`, which the code generator reads.
             self.opcodes.insert((span.start, span.end), store);
@@ -345,7 +349,7 @@ impl Checker<'_> {
         if matches!(kind, Assign::Compound(..)) {
             self.definition_store(&lhs, &stored, &target, span)?;
         }
-        if matches!(kind, Assign::Store | Assign::Compound(..)) {
+        if matches!(kind, Assign::Store | Assign::Compound(..)) && !packs {
             let fold = if folded { Fold::Folded } else { Fold::Stored };
             self.element_store(&lhs, &stored, &target, fold);
         }
@@ -373,6 +377,13 @@ impl Checker<'_> {
             .narrow_bitfield(&lhs, span)
             .unwrap_or_else(|| lhs.clone());
         let stored = self.bit_copy(&stored, &packed, span)?;
+        if packs && !self.global {
+            // A compound assignment of a packed value is not followed.
+            if !matches!(kind, Assign::Store) {
+                self.followed = false;
+            }
+            self.pack_into_word(&packed, &stored, span);
+        }
         self.store_reference(&lhs, &stored, span)?;
         self.not_an_lvalue(&lhs, span);
         if matches!(kind, Assign::Compound(..)) {
@@ -394,6 +405,14 @@ impl Checker<'_> {
         } else {
             stored
         };
+        // FTEF-6.15: the value of a packed store is the bitfield, read from its word again.
+        if packs {
+            return Ok(Value {
+                readonly: true,
+                postinc: false,
+                ..lhs
+            });
+        }
         Ok(Value {
             ty: lhs.ty,
             readonly: true,
@@ -401,6 +420,26 @@ impl Checker<'_> {
             postinc: false,
             ..stored
         })
+    }
+
+    /// FTEF-6.15: the word `joined`, [`Checker::bit_copy`]'s result with the value packed in,
+    /// written to the word `packed` is in: the statement that made it, the last one, writes
+    /// the word itself (`QCC_PR_Statement_BitCopy`'s last statement, whichever it folds to).
+    /// A target with `OP_BITCOPY_I`, and a word that is no definition's, are not followed.
+    fn pack_into_word(&mut self, packed: &Value, joined: &Value, span: Span) {
+        let word = packed.definition_place().and_then(|place| place.word());
+        let last = self.generated.len().checked_sub(1);
+        let made_last = joined.made.and_then(|made| usize::try_from(made).ok()) == last;
+        match word {
+            Some(word)
+                if made_last
+                    && last.is_some()
+                    && !self.env.target_at(span.start).valid(Op::BitcopyI) =>
+            {
+                self.fold_into(joined, Some(word));
+            }
+            _ => self.followed = false,
+        }
     }
 
     /// FTEF-6.15: a store to a bitfield, but through a pointer, reads the word that holds it and
@@ -876,6 +915,10 @@ impl Checker<'_> {
             operand.ty.clone()
         };
         self.store_mismatch(&updated, operand, &target, span)?;
+        // FTEF-6.15: a step of a bitfield or a packed element is not followed.
+        if operand.packs() && !self.global {
+            self.followed = false;
+        }
         self.update_stores(operand, &updated, &target, span)?;
         let updated = self.bit_copy(&updated, operand, span)?;
         self.store_reference(operand, &updated, span)?;
@@ -1059,21 +1102,11 @@ impl Checker<'_> {
         let Reference::Element(element) = &lhs.reference else {
             return;
         };
-        let Some(index) = element.index.known() else {
-            return;
-        };
-        if self.global {
+        if element.index.known().is_none() || self.global {
             return;
         }
         // The element's word, as a read of it at a constant index names it.
-        let word = eval_int(index).map(|word| u32::from_le_bytes(word.to_le_bytes()));
-        let to = word.and_then(|word| {
-            Value {
-                sym: lhs.sym.at(word),
-                ..Value::of(Type::Unknown)
-            }
-            .name()
-        });
+        let to = lhs.definition_place().and_then(|place| place.word());
         if folded {
             self.fold_into(stored, to);
         } else {

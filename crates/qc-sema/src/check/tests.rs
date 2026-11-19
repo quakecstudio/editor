@@ -6,7 +6,7 @@
     reason = "test code: fixtures are known"
 )]
 
-use qc_preproc::Op;
+use qc_progs::Op;
 
 use crate::check::convert::{Choice, Operand, choose_opcode};
 use crate::check::etype::Etype;

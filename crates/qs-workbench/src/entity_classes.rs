@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! `project.entities`: the entity classes the open project's server QuakeC defines, read from
-//! its spawn functions (`qc_sema::entities`, P5-03), and written as an FGD file for other map
+//! its spawn functions (`qc_entities::entities`, P5-03), and written as an FGD file for other map
 //! editors when asked.
 
 use std::path::PathBuf;
 
+use qc_entities::{EntityClass, Fgd, Found, Key, KeyType, Shape};
 use qc_project::ModuleKind;
-use qc_sema::{EntityClass, Fgd, Found, KeyType, Shape};
 use qs_commands::{Command, Outcome, RegisterError, Registry};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -96,7 +96,7 @@ impl<L: crate::Loader> Workbench<L> {
             if module.kind != ModuleKind::Ssqc {
                 continue;
             }
-            for class in module.db.entity_classes(module.input) {
+            for class in EntityClass::of_module(module.db, module.input) {
                 if !classes.iter().any(|known| known.name == class.name) {
                     classes.push(class);
                 }
@@ -111,7 +111,7 @@ impl<L: crate::Loader> Workbench<L> {
         let mut keys = std::collections::BTreeSet::new();
         for module in self.host.project_modules() {
             if module.kind == ModuleKind::Ssqc {
-                keys.extend(module.db.targeting_keys(module.input));
+                keys.extend(Key::targeting(module.db, module.input));
             }
         }
         keys.into_iter().collect()

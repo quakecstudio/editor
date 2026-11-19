@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! `cargo xtask entity-corpus [--write] [--maps <dir>]... <codebase>...`: the entity definitions
-//! `qc-sema` derives from each codebase's spawn functions (P5-03, MAP-1), as the FGD file
+//! `qc-entities` derives from each codebase's spawn functions (P5-03, MAP-1), as the FGD file
 //! `project.entities` writes, compared with the golden file
 //! `docs/spec/vectors/entities/<dir name>.fgd`; `--write` rewrites the golden file instead.
 //!
@@ -19,7 +19,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use qc_sema::{EntitySchema, MapDiagnosticKind};
+use qc_entities::{EntitySchema, MapDiagnosticKind};
 use qs_bsp::{Bsp, BspLoader};
 use qs_map::MapFile;
 use qs_pak::Pak;

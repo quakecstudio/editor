@@ -3695,7 +3695,7 @@ fn a_case_at_a_dropped_branchs_start_keeps_its_label() {
 fn an_fte_target_writes_version_7_with_fte_opcodes() {
     let fte = compile_fteqcc("#pragma target fte\nint a;\nvoid() f = { a = 2; };\n").unwrap();
     assert_eq!(fte.progs.format, qc_progs::Format::Fte16);
-    let store_i = u32::try_from(qc_preproc::Op::StoreI.number()).unwrap();
+    let store_i = u32::try_from(qc_progs::Op::StoreI.number()).unwrap();
     assert!(fte.progs.statements.iter().any(|s| s.op == store_i));
     let standard = compile_fteqcc("float a;\nvoid() f = { a = 2; };\n").unwrap();
     assert_eq!(standard.progs.format, qc_progs::Format::V6);
@@ -3711,16 +3711,16 @@ fn an_fte_switch_is_written_with_its_operands() {
          break;\n\tcase 2 .. 4: g = 2; break;\n\tdefault: g = 3;\n\t}\n};\n",
     )
     .unwrap();
-    let number = |op: qc_preproc::Op| u32::try_from(op.number()).unwrap();
+    let number = |op: qc_progs::Op| u32::try_from(op.number()).unwrap();
     let statements = &compiled.progs.statements;
     let find = |op| statements.iter().find(|s| s.op == number(op)).unwrap();
-    let switch = find(qc_preproc::Op::SwitchF);
+    let switch = find(qc_progs::Op::SwitchF);
     assert_ne!(switch.a, 0);
     assert_ne!(switch.b, 0);
-    let case = find(qc_preproc::Op::Case);
+    let case = find(qc_progs::Op::Case);
     assert_ne!(case.a, 0);
     assert_ne!(case.b, 0);
-    let range = find(qc_preproc::Op::Caserange);
+    let range = find(qc_progs::Op::Caserange);
     assert_ne!(range.a, 0);
     assert_ne!(range.b, 0);
     assert_ne!(range.c, 0);
@@ -3736,30 +3736,30 @@ fn an_fte_element_store_is_storep_at_the_index() {
          x[i] = r; v[i] = w; };\n",
     )
     .unwrap();
-    let number = |op: qc_preproc::Op| u32::try_from(op.number()).unwrap();
+    let number = |op: qc_progs::Op| u32::try_from(op.number()).unwrap();
     let statements = &compiled.progs.statements;
     let addresses: Vec<_> = statements
         .iter()
-        .filter(|s| s.op == number(qc_preproc::Op::Globaladdress))
+        .filter(|s| s.op == number(qc_progs::Op::Globaladdress))
         .collect();
     assert_eq!(addresses.len(), 2);
     assert!(addresses.iter().all(|s| s.a != 0 && s.b == 0 && s.c != 0));
     let store_f = statements
         .iter()
-        .find(|s| s.op == number(qc_preproc::Op::StorepF))
+        .find(|s| s.op == number(qc_progs::Op::StorepF))
         .unwrap();
     assert!(store_f.a != 0 && store_f.c != 0);
     assert!(addresses.iter().any(|s| s.c == store_f.b));
     let store_v = statements
         .iter()
-        .find(|s| s.op == number(qc_preproc::Op::StorepV))
+        .find(|s| s.op == number(qc_progs::Op::StorepV))
         .unwrap();
     assert!(addresses.iter().any(|s| s.c == store_v.b));
     assert_ne!(store_f.c, 0);
     assert!(
         !statements
             .iter()
-            .any(|s| s.op == number(qc_preproc::Op::Call2))
+            .any(|s| s.op == number(qc_progs::Op::Call2))
     );
 }
 
@@ -3773,16 +3773,16 @@ fn an_fte_element_read_is_loada() {
          void f(int i) { float x[6]; pair_t p[4]; r = x[i]; w = p[i].v; };\n",
     )
     .unwrap();
-    let number = |op: qc_preproc::Op| u32::try_from(op.number()).unwrap();
+    let number = |op: qc_progs::Op| u32::try_from(op.number()).unwrap();
     let statements = &compiled.progs.statements;
     let loada_f = statements
         .iter()
-        .find(|s| s.op == number(qc_preproc::Op::LoadaF))
+        .find(|s| s.op == number(qc_progs::Op::LoadaF))
         .unwrap();
     assert!(loada_f.a != 0 && loada_f.b != 0 && loada_f.c != 0);
     let loada_v = statements
         .iter()
-        .find(|s| s.op == number(qc_preproc::Op::LoadaV))
+        .find(|s| s.op == number(qc_progs::Op::LoadaV))
         .unwrap();
     assert!(loada_v.a != 0 && loada_v.b != 0 && loada_v.c != 0);
 }
@@ -3846,16 +3846,16 @@ fn a_float_shift_is_the_integer_shift_s_value() {
         "#pragma target fte_5768\nfloat top;\nvoid t(float a) { top = a + (a << 8); };\n",
     )
     .unwrap();
-    let number = |op: qc_preproc::Op| u32::try_from(op.number()).unwrap();
+    let number = |op: qc_progs::Op| u32::try_from(op.number()).unwrap();
     let statements = &compiled.progs.statements;
     let shift = statements
         .iter()
-        .find(|s| s.op == number(qc_preproc::Op::LshiftI))
+        .find(|s| s.op == number(qc_progs::Op::LshiftI))
         .unwrap();
     assert!(
         statements
             .iter()
-            .any(|s| (s.a == shift.c || s.b == shift.c) && s.op != number(qc_preproc::Op::LshiftI))
+            .any(|s| (s.a == shift.c || s.b == shift.c) && s.op != number(qc_progs::Op::LshiftI))
     );
 }
 
@@ -3882,7 +3882,7 @@ fn a_global_named_after_a_string_or_vector_constant_holds_its_words() {
 // offset: `g_s[i].b = "x"` is `MUL_I`, `ADD_I` of the member's word, `STOREP_S`
 #[test]
 fn a_member_through_a_pointer_at_an_index_is_loaded_and_stored_at_it() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let compiled = compile_fteqcc(
         "#pragma target fte_5768\ntypedef struct { float a; string b; vector v; } s_t;\n\
          s_t *g_s;\nfloat r;\nvoid t1() { int i = 1; g_s[i].b = \"x\"; };\n\
@@ -3914,7 +3914,7 @@ fn a_member_through_a_pointer_at_an_index_is_loaded_and_stored_at_it() {
 // is `LOAD_ENT w, m_other, temp`, `CALL1H take, temp`
 #[test]
 fn a_class_field_argument_is_the_calls_own_operand() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let compiled = compile_fteqcc(
         "#pragma target fte_5768\nentity self;\nentity() spawn = #14;\nvoid(entity e) take = #1;\n\
          class W { W m_other; virtual void(void) Draw; };\nvoid W::Draw(void) {};\n\
@@ -3939,7 +3939,7 @@ fn a_class_field_argument_is_the_calls_own_operand() {
 // stored to its slot; a call with no parameter is `CALL0`
 #[test]
 fn a_calls_first_two_parameters_are_its_operands() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let compiled = compile_fteqcc(
         "#pragma target fte_5768\nfloat a; float b; float c;\nvoid(float x, float y, float z) three = #1;\n\
          void() none = #2;\nvoid t(void) { three(a, b, c); none(); };\n",
@@ -3969,7 +3969,7 @@ fn a_calls_first_two_parameters_are_its_operands() {
 // `CONV_FTOI temp, temp2`, `CALL1H takei, temp2`
 #[test]
 fn a_converted_field_argument_is_loaded_then_converted() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let compiled = compile_fteqcc(
         "#pragma target fte_5768\nentity self;\nvoid(int i) takei = #2;\n.float fl;\n\
          void t(void) { takei(self.fl); };\n",
@@ -3994,7 +3994,7 @@ fn a_converted_field_argument_is_loaded_then_converted() {
 // the int by `OP_CONV_FTOI` and calls `mod` of the two
 #[test]
 fn an_ints_complement_and_mixed_remainder_are_emulated() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let compiled = compile_fteqcc(
         "#pragma target fte_5768\nint gi; int out; float gf; float r;\n\
          float(float a, float b) mod = { return a; };\n\
@@ -4021,7 +4021,7 @@ fn an_ints_complement_and_mixed_remainder_are_emulated() {
 // array's length by `OP_BOUNDCHECK` as it is read; with `boundchecks` off it is not
 #[test]
 fn a_variable_index_is_bound_checked() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "string tab[3]; float n; string out;\nvoid t(void) { out = tab[n]; };\n";
     let number = |op: Op| u32::try_from(op.number()).unwrap();
     let checked = compile_fteqcc(&format!("#pragma target fte_5768\n{source}")).unwrap();
@@ -4071,7 +4071,7 @@ fn a_static_locals_aggregate_is_its_initial_value() {
 // through the pointer, the operation, and the store back through it at the same index
 #[test]
 fn a_compound_assignment_through_a_pointer_loads_operates_and_stores() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let compiled = compile_fteqcc(
         "#pragma target fte_5768\ntypedef struct { float a; string b; } s_t;\ns_t *g_s;\n\
          void t() { g_s->a += 2; };\n",
@@ -4108,7 +4108,7 @@ fn a_compound_assignment_through_a_pointer_loads_operates_and_stores() {
 // before its store, and makes an integer first arm's store `OP_STORE_IF`
 #[test]
 fn a_ternary_of_mixed_arms_converts_the_integer_arm() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let compiled = compile_fteqcc(
         "#pragma target fte_5768\nfloat x;\nvoid t1(void) { int r = 1; x = (r == -1) ? 2.5f : r; };\n\
          void t2(void) { int r = 1; x = (r == -1) ? r : 2.5f; };\n",
@@ -4139,7 +4139,7 @@ fn a_ternary_of_mixed_arms_converts_the_integer_arm() {
 // `OP_STORE_IF`, then the vector
 #[test]
 fn a_vector_of_integer_components_stores_each_by_store_if() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let compiled = compile_fteqcc(
         "#pragma target fte_5768\nvector v;\nvoid t(void) { int a = 1; int b = 2; v = [a, b]; };\n",
     )
@@ -4158,7 +4158,7 @@ fn a_vector_of_integer_components_stores_each_by_store_if() {
 // field's address, then that opcode through it
 #[test]
 fn a_field_compound_assignment_updates_in_place() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let compiled = compile_fteqcc(
         "#pragma target fte_5768\nentity self;\n.float health;\nvoid t(void) { self.health += 1; };\n",
     )
@@ -4181,7 +4181,7 @@ fn a_field_compound_assignment_updates_in_place() {
 // spec FTEF-27.9: a pointer's comparison is the entity one of the same operands
 #[test]
 fn a_pointer_comparison_names_its_operands() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let compiled = compile_fteqcc(
         "#pragma target fte_5768\nint *p;\nfloat r;\nvoid t(void) { r = p == __NULL__; };\n",
     )
@@ -4209,7 +4209,7 @@ fn a_super_call_calls_the_parent_s_function() {
 // spec FTEF-31.28: `&g` of a global is `OP_GLOBALADDRESS` of it
 #[test]
 fn the_address_of_a_global_is_its_globaladdress() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let compiled =
         compile_fteqcc("#pragma target fte_5768\nfloat g;\nfloat *p;\nvoid t(void) { p = &g; };\n")
             .unwrap();
@@ -4229,6 +4229,7 @@ const ADDRESSED: &str = "#pragma target fte_5768\n\
     entity self;\n.float health;\n\
     float g;\nfloat arr[4];\nvector varr[3];\npair_t gp;\npair_t sarr[3];\n\
     typedef struct { __int8 c; __int8 d; float f; } nar_t;\n\
+    typedef struct { int a : 4; int b : 6; } bits_t;\nbits_t gs;\n\
     wide_t wp;\nwide_t warr[3];\nint iarr[4];\n__int8 barr[8];\n__int16 harr[8];\n\
     nar_t ns;\nnar_t nsarr[2];\n__int8 gb;\n__double darr[4];\n__double dd;\n\
     const vector cv = '1 2 3';\n\
@@ -4246,7 +4247,7 @@ fn addressed(statement: &str) -> (ProgsFile, Vec<Statement>) {
 /// The definition and the index of the one `OP_GLOBALADDRESS` of `statement` in `ADDRESSED`:
 /// the definition's name, and the index's value, or `None` when the statement has none.
 fn address(statement: &str) -> (&'static str, Option<u32>) {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let (progs, statements) = addressed(statement);
     let number = u32::try_from(Op::Globaladdress.number()).unwrap();
     let [address] = statements
@@ -4264,7 +4265,7 @@ fn address(statement: &str) -> (&'static str, Option<u32>) {
     (base, index)
 }
 
-fn numbers<const N: usize>(ops: [qc_preproc::Op; N]) -> [u32; N] {
+fn numbers<const N: usize>(ops: [qc_progs::Op; N]) -> [u32; N] {
     ops.map(|op| u32::try_from(op.number()).unwrap())
 }
 
@@ -4281,13 +4282,15 @@ fn an_address_carries_its_constant_index_in_words() {
     assert_eq!(address("vp = &gp.v;"), ("gp", Some(1)));
     assert_eq!(address("ip = &gp.n;"), ("gp", Some(4)));
     assert_eq!(address("ip = &sarr[1].n;"), ("sarr", Some(9)));
+    // An index before the array's start is the statement's as it is written.
+    assert_eq!(address("p = &arr[-1];"), ("arr", Some(u32::MAX)));
 }
 
 // spec FTEF-31.28: an index that is no constant is the statement's, of the definition at the
 // word its constant part reaches; a constant vector's component is addressed too
 #[test]
 fn an_address_at_an_index_that_is_no_constant_carries_the_index() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let (progs, statements) = addressed("p = &arr[k];");
     assert_eq!(
         opcodes(&statements)[..2],
@@ -4333,17 +4336,105 @@ fn the_forms_not_followed_are_refused() {
         "bp = &nsarr[k].d;",
         "barr[k] = 3;",
         "darr[k] = dd;",
+        "nsarr[1].c = ri;",
     ] {
         assert!(refused(statement), "{statement}");
     }
     assert!(!refused("bp = &gb;"));
 }
 
+// spec FTEF-2.12: an element at a constant index of an array of 8- or 16-bit integers is the
+// word of the array it is packed in, at its bit: read from that word, and stored by packing
+// the value into it
+#[test]
+fn a_narrow_element_at_a_constant_index_is_in_its_own_word() {
+    use qc_progs::Op;
+    for (statement, array, word) in [
+        ("ri = harr[2];", "harr", 1),
+        ("ri = harr[1];", "harr", 0),
+        ("ri = barr[5];", "barr", 1),
+        ("ri = barr[3];", "barr", 0),
+    ] {
+        let (progs, statements) = addressed(statement);
+        assert_eq!(
+            opcodes(&statements)[..2],
+            numbers([Op::LshiftI, Op::RshiftI]),
+            "{statement}"
+        );
+        assert_eq!(statements[0].a, global(&progs, array) + word, "{statement}");
+        assert_eq!(statements[1].c, global(&progs, "ri"), "{statement}");
+    }
+    for (statement, array, word, mask, shift) in [
+        ("harr[2] = ri;", "harr", 1, 0xffff_u32, 0_u32),
+        ("barr[5] = ri;", "barr", 1, 0xff, 8),
+    ] {
+        let (progs, statements) = addressed(statement);
+        assert_eq!(
+            opcodes(&statements)[..5],
+            numbers([Op::BitandI, Op::BitandI, Op::LshiftI, Op::BitorI, Op::Done]),
+            "{statement}"
+        );
+        let packed = global(&progs, array) + word;
+        assert_eq!(statements[0].a, packed, "{statement}");
+        assert_eq!(
+            words(&progs, statements[0].b, 1),
+            [!(mask << shift)],
+            "{statement}"
+        );
+        assert_eq!(statements[1].a, global(&progs, "ri"), "{statement}");
+        assert_eq!(words(&progs, statements[1].b, 1), [mask], "{statement}");
+        assert_eq!(words(&progs, statements[2].b, 1), [shift], "{statement}");
+        assert_eq!(statements[3].c, packed, "{statement}");
+    }
+    assert!(refused("barr[2]++;"));
+}
+
+// spec FTEF-6.15: a store to a bitfield reads its word, clears the field's bits, masks and
+// shifts the value and joins the two into the word, the only statement that writes it
+#[test]
+fn a_bitfield_store_packs_the_value_into_its_word() {
+    use qc_progs::Op;
+    let (progs, statements) = addressed("gs.b = ri;");
+    assert_eq!(
+        opcodes(&statements)[..5],
+        numbers([Op::BitandI, Op::BitandI, Op::LshiftI, Op::BitorI, Op::Done])
+    );
+    // The struct's one word, which both bitfields are in.
+    let word = statements[0].a;
+    assert!(word > 0);
+    assert_eq!(words(&progs, statements[0].b, 1), [!(0x3f_u32 << 4)]);
+    assert_eq!(words(&progs, statements[1].b, 1), [0x3f]);
+    assert_eq!(words(&progs, statements[2].b, 1), [4]);
+    assert_eq!(statements[3].c, word);
+    assert!(refused("gs.b += 1;"));
+    // A value of 0 folds the join away: the statement that clears the field writes the word.
+    let (progs, statements) = addressed("gs.b = 0;");
+    assert_eq!(opcodes(&statements)[..2], numbers([Op::BitandI, Op::Done]));
+    assert_eq!(statements[0].c, statements[0].a);
+    assert_eq!(words(&progs, statements[0].b, 1), [!(0x3f_u32 << 4)]);
+    // The value of the store is the bitfield, read from its word after the word is written.
+    let (progs, statements) = addressed("ri = (gs.b = k);");
+    assert_eq!(
+        opcodes(&statements)[..6],
+        numbers([
+            Op::BitandI,
+            Op::BitandI,
+            Op::LshiftI,
+            Op::BitorI,
+            Op::LshiftI,
+            Op::RshiftI
+        ])
+    );
+    assert_eq!(statements[3].c, statements[0].a);
+    assert_eq!(statements[4].a, statements[0].a);
+    assert_eq!(statements[5].c, global(&progs, "ri"));
+}
+
 // spec FTEF-31.29: a vector in parentheses is read before its component is taken, and on a
 // target that reads elements by the array's functions a component by index is refused
 #[test]
 fn a_component_of_a_parenthesised_or_function_read_element() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     for statement in ["r = (varr[i]).y;", "r = (varr[i])[1];"] {
         let (progs, statements) = addressed(statement);
         assert_eq!(
@@ -4373,7 +4464,7 @@ fn a_component_of_a_parenthesised_or_function_read_element() {
 // through the array's address and addressed at that index, with no load of the vector
 #[test]
 fn a_component_of_an_indexed_vector_is_the_float_at_its_index() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let index = [Op::ConvFtoi, Op::Boundcheck, Op::MulI, Op::AddI];
     for read in ["r = varr[i].y;", "r = varr[i][1];"] {
         let (progs, statements) = addressed(read);
@@ -4431,7 +4522,7 @@ fn a_component_of_an_indexed_vector_is_the_float_at_its_index() {
 // `OP_ADD_I` of the index in bytes
 #[test]
 fn a_narrow_elements_address_is_counted_in_bytes() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     for (statement, array, bytes) in [("bp = &barr[2];", "barr", 2), ("hp = &harr[2];", "harr", 4)]
     {
         let (progs, statements) = addressed(statement);
@@ -4471,7 +4562,7 @@ fn a_narrow_elements_address_is_counted_in_bytes() {
 // an integer element is stored by `OP_STOREP_I`
 #[test]
 fn an_increment_of_an_element_gives_the_elements_value() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let r = |progs: &ProgsFile| global(progs, "r");
     let (progs, statements) = addressed("r = arr[2]++;");
     assert_eq!(
@@ -4540,7 +4631,7 @@ fn an_increment_of_an_element_gives_the_elements_value() {
 // the definition's start, the member's word and an enclosing element's before the index
 #[test]
 fn a_member_array_is_indexed_from_its_definition() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let (progs, statements) = addressed("r = wp.m[2];");
     assert_eq!(statements[0].op, numbers([Op::StoreF])[0]);
     assert_eq!(
@@ -4598,7 +4689,7 @@ fn a_member_array_is_indexed_from_its_definition() {
 // index, at an integer one `OP_LOADP_U8`
 #[test]
 fn a_string_character_is_loaded_from_the_string() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let compiled = compile_fteqcc(
         "#pragma target fte_5768\nvoid t(void) { string s = \"abc\"; float i = 1; float c = s[i]; };\n\
          void u(void) { string s = \"abc\"; int i = 1; int c = s[i]; };\n",
@@ -4618,7 +4709,7 @@ fn a_string_character_is_loaded_from_the_string() {
 // folds too: `b &= ~EF_NODRAW` is `BITAND b, -17f, b`, as the pinned FTEQCC's `-Fwasm` writes it
 #[test]
 fn a_typedef_enum_item_is_its_folded_value() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let compiled = compile_fteqcc(
         "#pragma target fte_5768\nconst float EF_NODRAW = 16;\n\
          typedef enum { EF_NODRAW = (1<<4) } effects_t;\ntypedef enum { C = 5 } e_t;\nfloat b;\n\
@@ -4641,7 +4732,7 @@ fn a_typedef_enum_item_is_its_folded_value() {
 // through the pointer at the member's word plus the index
 #[test]
 fn a_member_array_element_through_a_pointer_is_stored_through_it() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let compiled = compile_fteqcc(
         "#pragma target fte_5768\ntypedef struct { float a; string m_str[4]; } seat_t;\n\
          seat_t *pSeat;\nstring r;\nvoid t(void) { int i = 1; pSeat->m_str[i] = \"x\"; };\n\
@@ -4672,7 +4763,7 @@ fn a_member_array_element_through_a_pointer_is_stored_through_it() {
 // shares no word with the float `1.0`; `0i` and `0.0` share theirs
 #[test]
 fn an_integer_literal_is_its_own_words() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let compiled = compile_fteqcc(
         "#pragma target fte_5768\nint g;\nfloat r;\nvoid t(void) { if (g >= 1i) { r = 1; } };\n",
     )
@@ -4688,7 +4779,7 @@ fn an_integer_literal_is_its_own_words() {
 // by an unsigned, is its own word: `k = 4u * g` is `MUL_I 0x4i, g, k`
 #[test]
 fn an_int_cast_to_unsigned_keeps_its_word() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let compiled =
         compile_fteqcc("#pragma target fte_5768\nint g;\nint k;\nvoid t(void) { k = 4u * g; };\n")
             .unwrap();
@@ -4791,7 +4882,7 @@ fn an_initialiser_names_a_function_before_its_body() {
 // operand, and a precache's file is recorded
 #[test]
 fn a_call_by_operands_is_a_call_to_what_reads_a_body() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let number = |op: Op| u32::try_from(op.number()).unwrap();
     let source = |target: &str| {
         format!(
@@ -4844,7 +4935,7 @@ fn a_call_by_operands_is_a_call_to_what_reads_a_body() {
 // own load; one stored to a slot is loaded by its size, `LOAD_F` (FTE-18.11)
 #[test]
 fn a_field_argument_past_the_operands_is_loaded_by_its_size() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let compiled = compile_fteqcc(
         "#pragma target fte_5768\nentity self;\n.string target;\nfloat a; float b;\n\
          void(float x, float y, string s) three = #1;\n\
@@ -4893,7 +4984,7 @@ fn a_defaultstatic_locals_aggregate_is_not_left_out() {
 // words, through a typedef and an enum's base, as the pinned FTEQCC writes them
 #[test]
 fn a_c_scalar_is_written_with_its_own_type_and_size() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = |base: &str| {
         format!(
             "#pragma target fte\ntypedef enum : {base} {{ XA, XB, XC = 5 }} x_t;\nx_t g;\n\
@@ -5065,7 +5156,7 @@ fn an_optional_parameter_s_default_is_not_passed() {
 // assignment's value is the value given, as the pinned FTEQCC's program has it
 #[test]
 fn a_bit_update_in_place_has_no_result() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let p = fte_progs(
         "#pragma target fte\nentity self;\n.float flags;\nfloat g;\nfloat x;\n\
          void end_sys_fields;\n\
@@ -5119,7 +5210,7 @@ fn a_bit_update_in_place_has_no_result() {
 // and the index, a chained read passing the return global, as the pinned FTEQCC writes them
 #[test]
 fn an_accessor_read_calls_its_get_function() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let p = fte_progs(
         "#pragma target fte\ntypedef struct json_s *json_t;\naccessor jsonnode : json_t;\n\
          string(jsonnode node) json_get_string = #1;\n\
@@ -5167,7 +5258,7 @@ fn an_accessor_read_calls_its_get_function() {
 // last, and a call's value stored is copied out of the return global before it
 #[test]
 fn an_accessor_store_calls_its_set_function() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let p = fte_progs(
         "#pragma target fte\naccessor strbuf : float;\n\
          string(strbuf bufhandle, float string_index) bufstr_get = #1;\n\
@@ -5209,7 +5300,7 @@ fn an_accessor_store_calls_its_set_function() {
 // `STORE_F` whatever its base, as the pinned FTEQCC writes them
 #[test]
 fn an_accessor_s_definition_has_its_own_type_and_store() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let p = fte_progs(
         "#pragma target fte\ntypedef struct json_s *json_t;\naccessor jsonnode : json_t;\n\
          jsonnode(string) json_parse = #1;\njsonnode keep;\n\
@@ -5240,7 +5331,7 @@ fn an_accessor_s_definition_has_its_own_type_and_store() {
 // plus the index, loaded and stored through the pointer, as the pinned FTEQCC writes them
 #[test]
 fn a_vector_s_component_through_a_pointer_is_its_word() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let p = fte_progs(
         "#pragma target fte\n\
          typedef struct { float m_x; vector m_v; float m_y; } seat_t;\n\
@@ -5285,7 +5376,7 @@ fn a_vector_s_component_through_a_pointer_is_its_word() {
 // pointers point at, as the pinned FTEQCC folds `OP_ADD_PIW` of two constants
 #[test]
 fn a_pointer_difference_divides_by_a_constant() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let p = fte_progs(
         "#pragma target fte\ntypedef struct { vector o; float r; int a; int b; } node_t;\n\
          node_t *base;\nint gi;\nvoid t(node_t *n) {\n\tgi = n - base;\n}\n",
@@ -5314,7 +5405,7 @@ fn a_pointer_difference_divides_by_a_constant() {
 // stores the sum through the pointer, as the pinned FTEQCC writes them
 #[test]
 fn a_postfix_through_a_pointer_stores_through_it() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let p = fte_progs(
         "#pragma target fte\ntypedef struct { vector o; float r; int a; int n; } node_t;\n\
          int gi;\nvoid t(node_t *p) {\n\tint idx = p->n ++;\n\tgi = idx;\n\tp->a = gi;\n}\n",
@@ -5356,7 +5447,7 @@ fn a_postfix_through_a_pointer_stores_through_it() {
 // index in words, which a call then passes, as the pinned FTEQCC writes it
 #[test]
 fn the_address_of_a_pointer_s_element_adds_to_the_pointer() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let p = fte_progs(
         "#pragma target fte\ntypedef struct { vector o; float r; int a; int b; } node_t;\n\
          node_t *graph;\nint i;\nvoid link(node_t *a, node_t *b) = #1;\n\
@@ -5386,7 +5477,7 @@ fn the_address_of_a_pointer_s_element_adds_to_the_pointer() {
 // from the vector field at the index, read through the entity, as the pinned FTEQCC writes it
 #[test]
 fn a_vector_field_at_a_variable_index_loads_its_component_s_field() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let p = fte_progs(
         "#pragma target fte\nentity self;\n.vector fv;\nvoid end_sys_fields;\n\
          int i;\nfloat f;\nvoid t(void) {\n\tf = self.fv[i];\n}\n",
@@ -5430,7 +5521,7 @@ fn a_vector_field_at_a_variable_index_loads_its_component_s_field() {
 // statement of the entity, the field and the value, as the pinned FTEQCC writes it
 #[test]
 fn a_field_store_is_one_statement_where_the_target_has_it() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let p = fte_progs(
         "#pragma target fte\nentity self;\n.float health;\n.vector origin;\n\
          .string classname;\n.entity enemy;\n.int n;\nvoid end_sys_fields;\n\
@@ -5503,7 +5594,7 @@ fn a_field_store_is_through_its_address_on_id_s_opcodes() {
 // of two words, as the pinned FTEQCC writes it
 #[test]
 fn a_wide_field_store_is_one_statement() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let p = fte_progs(
         "#pragma target fte\nentity self;\n.__uint64 big;\n.__double d;\n\
          void end_sys_fields;\n__uint64 g;\n\
@@ -5556,7 +5647,7 @@ fn an_autocvar_s_bracketed_default_is_its_value() {
 // before its last `DONE` only when its last statement is no `RETURN`, as the pinned FTEQCC does
 #[test]
 fn a_function_stores_its_out_parameters_where_it_returns() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let p = fte_progs(
         "#pragma target fte\n\
          float f(float a, __out float b, __inout vector c) {\n\tb = a;\n\tif (a)\n\
@@ -5590,7 +5681,7 @@ fn a_function_stores_its_out_parameters_where_it_returns() {
 // from its slot after the call, before the call's own value is read, as the pinned FTEQCC does
 #[test]
 fn a_call_stores_its_out_arguments_back() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let p = fte_progs(
         "#pragma target fte\nentity self;\n.float health;\n.vector origin;\n\
          void end_sys_fields;\nfloat gf;\n\
@@ -5634,7 +5725,7 @@ fn a_call_stores_its_out_arguments_back() {
 // spec FTEF-10.15: a definition of an accessor over an `int` is `ev_accessor`
 #[test]
 fn field_stores_follow_the_type_s_own_kind() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let p = fte_progs(
         "#pragma target fte\nentity self;\n.float flags;\nvoid end_sys_fields;\n\
          accessor handle : int { };\nhandle gh;\n.handle hf;\n\
@@ -5732,7 +5823,7 @@ fn a_reference_accessor_member_is_not_compiled_as_a_plain_call() {
 // the return global or of the temporary, as the pinned FTEQCC writes it
 #[test]
 fn a_vector_value_at_a_constant_index_is_its_word() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let p = fte_progs(
         "#pragma target fte\nvector size(void) = #1;\nvector gv;\nfloat w;\nfloat h;\n\
          void t(void) {\n\tw = size()[1] - 120;\n\tw = (gv * 2)[2];\n\
@@ -5770,7 +5861,7 @@ fn a_vector_value_at_a_constant_index_is_its_word() {
 // type is stored and stored back, as the pinned FTEQCC writes them
 #[test]
 fn a_wide_struct_is_passed_a_slot_for_each_three_words() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let p = fte_progs(
         "#pragma target fte\n\
          typedef struct { int a; int b; int c; vector v; float f; int g; string s; } font_s;\n\
@@ -5915,7 +6006,7 @@ fn a_global_is_saved_by_how_it_is_declared() {
 // parameter from first, the call is `CALL8H`, and the record sizes eight parameters
 #[test]
 fn slots_past_the_eighth_are_copied_from_their_globals() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let p = fte_progs(
         "#pragma target fte\n\
          typedef struct { int a; int b; int c; vector v; float f; int g; string s; } font_s;\n\

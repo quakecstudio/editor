@@ -9,7 +9,8 @@
 //! reference; and the stores to an array's element and a string's character.
 
 use qc_diag::{Code, Span};
-use qc_preproc::{FteFlag, Op};
+use qc_preproc::FteFlag;
+use qc_progs::Op;
 use qc_syntax::SyntaxKind;
 use qc_syntax::ast::{self, AstNode as _, BinaryOp, UnaryOp};
 use qc_types::c_int;
@@ -23,7 +24,9 @@ use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::member::WORD_ALIGNMENT;
 use crate::check::pointer::{Pointee, int};
-use crate::check::{Bitfield, ElementRef, FieldRef, MemberArray, Reference, Sym, Value};
+use crate::check::{
+    Bitfield, ElementRef, FieldRef, MemberArray, MemberStart, Reference, Sym, Value,
+};
 use crate::ir;
 use crate::ty::{SimpleType, Type};
 
@@ -203,9 +206,19 @@ impl Checker<'_> {
             } else {
                 constant.i()
             };
-            let at = u32::from_le_bytes(at.to_le_bytes());
-            let offset = at.wrapping_mul(bits) & 31;
-            return self.extend_bits(&value, offset, bits, span);
+            let (word, offset) = narrow_position(at, bits);
+            // The element's word of the array (`ret.ofs += bitofs>>5`), read at its bit.
+            // A narrow member of a struct that is an element is at its own word already.
+            let packed = if self.narrow_array(&value) {
+                Value {
+                    reference: Reference::Global,
+                    sym: value.sym.at(word),
+                    ..value
+                }
+            } else {
+                value
+            };
+            return self.extend_bits(&packed, offset, bits, span);
         }
         let address = self.address_of(&value, span)?;
         let named = self.name_of(&address);
@@ -214,6 +227,19 @@ impl Checker<'_> {
             ..value
         };
         self.load_from_pointer(narrow, (named, None), span)
+    }
+
+    /// Whether `value` is an element of a definition that is itself an array of 8- or 16-bit
+    /// integers, whose index counts those elements (FTEF-2.12).
+    fn narrow_array(&self, value: &Value) -> bool {
+        value.bitfield.is_none()
+            && value.sym.def().is_some_and(|def| {
+                self.env.is_array(def)
+                    && self
+                        .env
+                        .definition(def)
+                        .is_some_and(|definition| narrow_bits(&definition.ty).is_some())
+            })
     }
 
     /// FTEF-2.12: an element at a constant index of an array of 8- or 16-bit integers, or a
@@ -241,15 +267,33 @@ impl Checker<'_> {
         };
         let signed = matches!(lhs.ty.fteqcc_scalar(), Some(CScalar::Int8 | CScalar::Int16));
         let parent = if signed { "__int32" } else { "__uint32" };
-        Some(Value {
+        let (word, offset) = narrow_position(at, bits);
+        let packed = Value {
             ty: Type::Named(parent.into()),
             bitfield: Some(Bitfield {
                 bits,
-                offset: u32::from_le_bytes(at.to_le_bytes()).wrapping_mul(bits) & 31,
+                offset,
                 word: 0,
                 signed,
             }),
             ..lhs.clone()
+        };
+        // An element is the word of its array it is packed in (`ret.ofs += bitofs>>5`).
+        // A narrow member of a struct that is an element, and a narrow member array's element,
+        // whose index counts words, are not followed.
+        Some(match &lhs.reference {
+            Reference::Element(_) if self.narrow_array(lhs) => Value {
+                reference: Reference::Global,
+                sym: lhs.sym.at(word),
+                ..packed
+            },
+            Reference::Element(_) => {
+                if !self.global {
+                    self.followed = false;
+                }
+                packed
+            }
+            _ => packed,
         })
     }
 
@@ -540,10 +584,11 @@ impl Checker<'_> {
         // loaded into a temporary, and by the `ArrayGet` function into its return.
         // A constant vector's component at a constant index is still the immediate it
         // folded to (FTEF-31.9), a constant as `sym->constant` of the vector says.
-        let sym = match element.index.known().and_then(eval_int) {
-            _ if element.vector && value.known().is_some() => value.sym,
-            Some(words) => value.sym.at(u32::from_le_bytes(words.to_le_bytes())),
-            None => Sym::Temp,
+        let sym = if element.vector && value.known().is_some() {
+            value.sym
+        } else {
+            let place = value.definition_place();
+            place.and_then(|place| place.sym()).unwrap_or(Sym::Temp)
         };
         let name = if called {
             Some("return".to_owned())
@@ -1001,11 +1046,11 @@ impl Checker<'_> {
     /// with `OP_ADD_I` and else a float: `OP_ADD_F` of two floats, else `OP_ADD_I` of both made
     /// integers.
     fn member_array_index(&mut self, member: &MemberArray, at: &Value, span: Span) -> Checked {
-        // The struct an element at an index that is no constant: that index plus this one.
-        if let Some(outer) = &member.outer {
-            return self.joined_index(outer, at, span);
-        }
-        let word = i32::try_from(member.word).unwrap_or(i32::MAX);
+        let word = match &member.start {
+            // The struct an element at an index that is no constant: that index plus this.
+            MemberStart::Index(outer) => return self.joined_index(outer, at, span),
+            MemberStart::Word(word) => i32::try_from(*word).unwrap_or(i32::MAX),
+        };
         let int_target = self.env.target_at(span.start).valid(Op::AddI);
         let offset = if int_target {
             Value::constant(Constant::int(word))
@@ -1112,7 +1157,7 @@ impl Checker<'_> {
             // FTEF-6.24: a member array through a pointer is the pointer plus its offset.
             Reference::ArrayHead(Some(MemberArray {
                 through: Some(_),
-                word,
+                start: MemberStart::Word(word),
                 ..
             })) => {
                 let pointer = pointer_to(&value.ty);
@@ -1294,45 +1339,31 @@ impl Checker<'_> {
             self.env.report(Code::W0250, span, message);
         }
         // FTEF-31.28: the index is the reference's own, in words from the definition's
-        // start. A constant one is added to the word of a member read before it and
-        // the definition named whole; one that is no constant is of the definition at
-        // that word. A member of a definition that is no element is its word.
-        let (def, word) = match value.sym {
-            Sym::Def(def, _, word) => (Some(def), i32::try_from(word).ok()),
-            Sym::Temp | Sym::Immediate(_) => (None, None),
-        };
-        let whole = def.map(|def| ir::Name::Def(def, 0));
-        let constant = |words: i32| Some(Value::constant(Constant::int(words)));
-        let (base, index) = match &value.reference {
-            // A constant vector's component folded to its immediate has no word of the
-            // vector to address: not followed.
-            Reference::Element(_) if def.is_none() => (None, None),
-            Reference::Element(element) => {
-                match element.index.known().and_then(eval_int).zip(word) {
-                    Some((index, word)) => (whole, constant(index.wrapping_add(word))),
-                    None => (
-                        self.name_of(value),
-                        Some(self.converted(&element.index, Etype::Integer, span)?),
-                    ),
-                }
-            }
-            // FTEF-31.32: a struct's member array named bare is its address, the
-            // definition's at the member's index.
-            Reference::ArrayHead(Some(member)) => {
-                let index = match &member.outer {
-                    Some(outer) => Some(self.converted(outer, Etype::Integer, span)?),
-                    None => i32::try_from(member.word).ok().and_then(constant),
-                };
-                (whole, index)
-            }
-            // A member of a definition named as that definition's word; a parameter's or
-            // a temporary's is named as it is.
-            Reference::Global => match self.name_of(value) {
-                Some(ir::Name::Def(_, at)) if at != 0 => (whole, word.and_then(constant)),
-                named => (named, None),
+        // start. A constant one is the definition named whole and the words; one that is no
+        // constant is of the definition at the words known. A definition named alone, a
+        // parameter and a temporary are named as they are.
+        let place = value.definition_place();
+        let member = matches!(self.name_of(value), Some(ir::Name::Def(_, at)) if at != 0);
+        let (base, index) = match (&value.reference, place) {
+            (Reference::ArrayHead(None), _) => (self.name_of(value), None),
+            (Reference::Global, _) if !member => (self.name_of(value), None),
+            (_, Some(place)) => match place.index() {
+                Some(index) => (
+                    Some(place.start()),
+                    Some(self.converted(index, Etype::Integer, span)?),
+                ),
+                None => (
+                    Some(place.whole()),
+                    Some(int(i32::from_le_bytes(place.words().to_le_bytes()))),
+                ),
             },
-            Reference::ArrayHead(None) => (self.name_of(value), None),
-            _ => (None, None),
+            // A constant vector's component folded to its immediate has no word of the
+            // vector to address, and a member array through a pointer is not a definition's.
+            (_, None) => (None, None),
+        };
+        let word = match value.sym {
+            Sym::Def(_, _, word) => Some(word),
+            Sym::Temp | Sym::Immediate(_) => None,
         };
         if self.global {
             return Ok(pointer_to(&value.ty));
@@ -1719,6 +1750,19 @@ const fn int_f32(value: i32) -> f32 {
     value as f32
 }
 
+/// The bits of a word, which an 8- or 16-bit element is packed into.
+const WORD_BITS: u32 = 32;
+
+/// The word of its array the narrow element at index `at` is in, and the bit of that word it
+/// starts at: `bitofs>>5` and `bitofs&31` of `bitofs = at * bits` (FTEF-2.12).
+fn narrow_position(at: i32, bits: u32) -> (u32, u32) {
+    let bit = u32::from_le_bytes(at.to_le_bytes()).wrapping_mul(bits);
+    (
+        bit.checked_div(WORD_BITS).unwrap_or_default(),
+        bit.checked_rem(WORD_BITS).unwrap_or_default(),
+    )
+}
+
 /// The bits of a byte, which the address of an 8- or 16-bit element counts in.
 const BYTE_BITS: u32 = 8;
 
@@ -1731,7 +1775,7 @@ fn element_bytes(bits: u32) -> Value {
 }
 
 /// The bits of an 8- or 16-bit integer type, `ev_bitfld`'s `bits` (FTEF-2.12).
-fn narrow_bits(ty: &Type) -> Option<u32> {
+pub(super) fn narrow_bits(ty: &Type) -> Option<u32> {
     match ty.fteqcc_scalar() {
         Some(CScalar::Int8 | CScalar::Uint8) => Some(8),
         Some(CScalar::Int16 | CScalar::Uint16) => Some(16),

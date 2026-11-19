@@ -30,7 +30,8 @@
 use std::collections::{HashMap, HashSet};
 
 use qc_diag::{Code, Diagnostic, Span};
-use qc_preproc::{OpcodeTarget, TargetFormat, WarningSettings};
+use qc_preproc::WarningSettings;
+use qc_progs::{OpcodeTarget, TargetFormat};
 use qc_syntax::c_scalar::CScalar;
 use qc_syntax::{Dialect, Keywords};
 

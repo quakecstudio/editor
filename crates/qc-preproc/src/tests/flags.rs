@@ -8,11 +8,12 @@ use std::path::Path;
 use qc_lexer::Dialect;
 
 use super::{codes, one_fte, tokens};
-use crate::fte_tables::TARGETS;
 use crate::{
     Code, CommandLine, CompilerFlags, FileOutput, FteFlag, Keyword, KeywordEdit, Keywords,
     MemoryLoader, Preprocessor, Priorities, TargetFormat,
 };
+use qc_progs::Revision;
+use qc_progs::fte_target::TARGETS;
 
 /// The compiler flags in force after each of `out`'s flag marks, each at the token it holds
 /// from.
@@ -490,8 +491,8 @@ fn only_the_fte_targets_support_extern() {
 // spec FTEF-25.3: a `#pragma opcode` holds from the token after it
 #[test]
 fn opcode_targets_hold_from_the_token_after_their_pragma() {
-    use crate::Op;
     use crate::OpcodeTarget;
+    use qc_progs::Op;
     let (_, out) = one_fte(
         "float a;\n#pragma opcode enable ADD_I\nfloat b;\n#pragma target fte\nfloat c;\n\
          #pragma target id\nfloat d;\n",
@@ -526,7 +527,7 @@ fn the_command_lines_target_starts_the_file() {
         .targets
         .first()
         .map(|(_, target)| (target.format(), target.revision()));
-    assert_eq!(first, Some((TargetFormat::Fte, 5744)));
+    assert_eq!(first, Some((TargetFormat::Fte, Revision::FTE_BYTES)));
 }
 
 // spec FTEF-14.43: the places FTEQCC's messages give hold from the token after a `#pragma file`

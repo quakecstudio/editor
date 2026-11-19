@@ -21,8 +21,6 @@ mod fte_directive;
 mod fte_keywords;
 mod fte_line;
 mod fte_macro;
-mod fte_opcodes;
-mod fte_ops;
 mod fte_options;
 mod fte_pragma;
 pub(crate) mod fte_tables;
@@ -39,14 +37,14 @@ pub use fte_directive::{
 };
 pub use fte_keywords::{Enabled, Keyword, KeywordEdit, Keywords};
 pub use fte_line::{fte_directive_end, relex_from};
-pub use fte_opcodes::OpcodeTarget;
-pub use fte_ops::{CallPassing, Op};
 pub use fte_options::CommandLine;
 pub use fte_pragma::FlagSettings;
-pub use fte_tables::{FteFlag, TargetFormat, is_opcode_name};
+pub use fte_tables::{FteFlag, is_opcode_name};
 pub use fte_warning::{FteWarning, WarningAction, WarningSettings};
 pub use source::TextOrigin;
 pub use source::{FileId, FileSpan, FsLoader, Loader, MemoryLoader, SourceFile, SourceMap};
+
+use qc_progs::{OpcodeTarget, TargetFormat};
 
 use fte_directive::{Bytes, FteState, Position, Resume, TextStart, first_nul};
 use fte_macro::{ChunkReader, Text, ends_word};

@@ -11,12 +11,12 @@ publish.workspace = true
 [dependencies]
 qc-diag = { workspace = true }
 qc-lexer = { workspace = true }
+qc-progs = { workspace = true }
 qc-preproc = { workspace = true }
 qc-project = { workspace = true }
 qc-syntax = { workspace = true }
 # A vector's slots and C's `int` of an integer constant.
 qc-types = { workspace = true }
-qs-map = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true, features = ["std"] }

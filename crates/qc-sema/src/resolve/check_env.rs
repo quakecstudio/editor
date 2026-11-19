@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use qc_diag::{Code, Span};
 use qc_lexer::LexFlags;
-use qc_preproc::OpcodeTarget;
+use qc_progs::OpcodeTarget;
 use qc_syntax::CompilerFlags;
 use qc_syntax::c_scalar::CScalar;
 

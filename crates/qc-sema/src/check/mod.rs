@@ -23,6 +23,7 @@ pub(crate) mod fold;
 mod format;
 mod member;
 pub(crate) mod opcodes;
+mod place;
 mod pointer;
 pub(crate) mod reference;
 mod statement;
@@ -38,7 +39,7 @@ use std::rc::Rc;
 
 use qc_diag::{Code, Span};
 use qc_lexer::LexFlags;
-use qc_preproc::OpcodeTarget;
+use qc_progs::OpcodeTarget;
 use qc_syntax::CompilerFlags;
 use qc_syntax::ast::{self, AstNode as _};
 
@@ -444,19 +445,14 @@ impl Value {
     /// An array's element at a constant index as the word of its definition it is; any other
     /// value as it is.
     pub(crate) fn placed(self) -> Self {
-        let words = match &self.reference {
-            Reference::Element(element) if !element.vector => {
-                element.index.known().and_then(reference::eval_int)
-            }
-            _ => None,
-        };
-        match words {
-            Some(words) => Self {
+        let element = matches!(&self.reference, Reference::Element(element) if !element.vector);
+        match self.definition_place().and_then(|place| place.sym()) {
+            Some(sym) if element => Self {
                 reference: Reference::Global,
-                sym: self.sym.at(u32::from_le_bytes(words.to_le_bytes())),
+                sym,
                 ..self
             },
-            None => self,
+            _ => self,
         }
     }
 
@@ -613,15 +609,22 @@ pub(crate) struct StructMemberFacts {
 pub(crate) struct MemberArray {
     /// Its first size.
     pub(crate) length: Option<u32>,
-    /// The word it starts at: of the struct through a pointer, else of the definition the
-    /// struct is in, with the words of what it is a member or an element of before it.
-    pub(crate) word: u32,
-    /// The index it starts at when the struct is an element at an index that is no constant:
-    /// that index with the member's word added, in place of `word`.
-    pub(crate) outer: Option<Box<Value>>,
+    /// Where it starts, which its index is added to.
+    pub(crate) start: MemberStart,
     /// The pointer the struct is reached through, when it is, whose elements are read and
     /// stored through it (FTEF-31.21).
     pub(crate) through: Option<ir::Name>,
+}
+
+/// Where a struct's member array starts.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum MemberStart {
+    /// At a word: of the struct through a pointer, else of the definition the struct is in,
+    /// the words of what the struct is a member or an element of before the member's.
+    Word(u32),
+    /// At an index that is no constant, the struct an element at one: that index with the
+    /// member's word added, in words from the definition's start.
+    Index(Box<Value>),
 }
 
 /// A bitfield a value is (`ev_bitfld`, FTEF-6.15): its width and whether its base is signed.
@@ -853,7 +856,7 @@ impl CvarValue {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TypedBody {
     types: HashMap<(usize, usize), Type>,
-    opcodes: HashMap<(usize, usize), qc_preproc::Op>,
+    opcodes: HashMap<(usize, usize), qc_progs::Op>,
     generated: Vec<ir::BodyStatement>,
     strings: Vec<Vec<u8>>,
     origins: Vec<(u32, usize)>,
@@ -884,7 +887,7 @@ impl TypedBody {
     /// The opcode `QCC_PR_ChooseOpcode` chose for the binary operator whose token is at
     /// `span`, if the check chose one (FTEF-23.4).
     #[must_use]
-    pub fn opcode_at(&self, span: Span) -> Option<qc_preproc::Op> {
+    pub fn opcode_at(&self, span: Span) -> Option<qc_progs::Op> {
         self.opcodes.get(&(span.start, span.end)).copied()
     }
 
@@ -1005,7 +1008,7 @@ pub(crate) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
         checker.generated.push(ir::BodyStatement {
             a: frame,
             b: think,
-            ..ir::BodyStatement::bare(qc_preproc::Op::State)
+            ..ir::BodyStatement::bare(qc_progs::Op::State)
         });
     }
     if let Some(block) = body.block()
@@ -1025,7 +1028,7 @@ pub(crate) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
     let ended = checker
         .generated
         .last()
-        .is_some_and(|last| matches!(last.op, qc_preproc::Op::Return | qc_preproc::Op::Done));
+        .is_some_and(|last| matches!(last.op, qc_progs::Op::Return | qc_progs::Op::Done));
     if checker.ret_local || !ended {
         checker.return_outs(body.syntax().span());
     }
@@ -1033,13 +1036,13 @@ pub(crate) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
     if checker.ret_local {
         checker.generated.push(ir::BodyStatement {
             a: Some(ir::Name::RetLocal),
-            ..ir::BodyStatement::bare(qc_preproc::Op::Return)
+            ..ir::BodyStatement::bare(qc_progs::Op::Return)
         });
     }
     // QC-13.7: the body ends with `DONE`.
     checker
         .generated
-        .push(ir::BodyStatement::bare(qc_preproc::Op::Done));
+        .push(ir::BodyStatement::bare(qc_progs::Op::Done));
     TypedBody {
         start: body.syntax().span().start,
         ..checker.finish()

@@ -531,7 +531,7 @@ impl BareReturn {
     /// Whether `statement` is a `RETURN` of nothing where a bare `return` names the `ret*`
     /// local.
     fn misses_local(self, statement: &BodyStatement) -> bool {
-        statement.op == qc_preproc::Op::Return && statement.a.is_none() && self == Self::RetLocal
+        statement.op == qc_progs::Op::Return && statement.a.is_none() && self == Self::RetLocal
     }
 }
 
@@ -571,7 +571,7 @@ fn writable(body: &TypedBody, bare: BareReturn) -> bool {
 
 /// The arguments a call the semantic model generates passes, `CALL0` to `CALL8` and `CALL1H`
 /// to `CALL8H`; `None` for any other opcode.
-pub(super) fn call_count(op: qc_preproc::Op) -> Option<usize> {
+pub(super) fn call_count(op: qc_progs::Op) -> Option<usize> {
     op.call().map(|(count, _)| count)
 }
 
@@ -645,10 +645,10 @@ mod tests {
     // `return` names it; QC-13.8: id's form never does
     #[test]
     fn a_bare_return_misses_the_local_only_where_it_names_it() {
-        let bare = BodyStatement::bare(qc_preproc::Op::Return);
+        let bare = BodyStatement::bare(qc_progs::Op::Return);
         assert!(BareReturn::RetLocal.misses_local(&bare));
         assert!(!BareReturn::Plain.misses_local(&bare));
-        let other = BodyStatement::bare(qc_preproc::Op::Goto);
+        let other = BodyStatement::bare(qc_progs::Op::Goto);
         assert!(!BareReturn::RetLocal.misses_local(&other));
     }
 

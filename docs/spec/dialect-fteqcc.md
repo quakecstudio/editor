@@ -4649,7 +4649,7 @@ statement's checks (FTEF-23.6).
 fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
 
 Each opcode of `pr_opcodes[]` is valid for the output or not (`OPF_VALID`). The preprocessor
-keeps the validity where each token stands (`crates/qc-preproc/src/fte_opcodes.rs`), and the
+keeps the validity where each token stands (`crates/qc-progs/src/fte_target.rs`), and the
 check stage reads it where it types an operator, an opcode that is not valid being emulated or
 refused (`QCC_PR_StatementFlags`).
 

@@ -239,7 +239,7 @@ fn a_checked_body_keeps_its_expression_types() {
 // operator, by the operator's span, the row FTEQCC chose even when the target emulates it
 #[test]
 fn a_checked_body_keeps_its_operators_opcodes() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "float a; vector v; void() g = { a = a + 1; v = v * a; v = v / a; a = a < 2; };";
     let index = super::fte_index_of(source);
     let g = index
@@ -273,7 +273,7 @@ fn a_checked_body_keeps_its_operators_opcodes() {
 // (`docs/design/back-end.md`)
 #[test]
 fn a_checked_body_keeps_the_statements_it_generated() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "float a; vector v; void() t = { a = a + 1; v = v * a; a = !a; };";
     let index = super::fte_index_of(source);
     let t = index
@@ -300,7 +300,7 @@ fn a_checked_body_keeps_the_statements_it_generated() {
 #[test]
 fn a_vanilla_body_is_generated_as_qcc_emits_it() {
     use crate::ir::{Effect, Name};
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = ".vector o; .float fl; entity e; float a; void(float x, vector y) f; \
         void() t = [1, t] { e.o = '1 2 3'; e.fl = a; a = e.fl + 2; f(a, e.o); \
         if (a) a = 1; else a = 2; return a; };";
@@ -397,9 +397,9 @@ fn a_vanilla_body_keeps_qcc_quirks_it_follows() {
     assert_eq!(
         t.generated().iter().map(|s| s.op).collect::<Vec<_>>(),
         [
-            qc_preproc::Op::LoadF,
-            qc_preproc::Op::StoreF,
-            qc_preproc::Op::Done
+            qc_progs::Op::LoadF,
+            qc_progs::Op::StoreF,
+            qc_progs::Op::Done
         ]
     );
     let u = &index.bodies[&def("u")];
@@ -414,7 +414,7 @@ fn a_vanilla_body_keeps_qcc_quirks_it_follows() {
     let add = w
         .generated()
         .iter()
-        .find(|s| s.op == qc_preproc::Op::AddF)
+        .find(|s| s.op == qc_progs::Op::AddF)
         .unwrap();
     assert_eq!((add.a, add.b), (Some(Name::Return), Some(Name::Return)));
 }
@@ -428,7 +428,7 @@ fn a_vanilla_body_keeps_qcc_quirks_it_follows() {
 #[test]
 fn a_generated_body_holds_a_switch() {
     use crate::ir::Name;
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "float a; void() t = { switch (a) { case 1: a = 2; break; case 0: a = 3; \
         case 4 .. 6: a = 5; default: a = 4; } };";
     let index = super::fte_index_of(source);
@@ -481,7 +481,7 @@ fn a_generated_body_holds_a_switch() {
 #[test]
 fn a_generated_body_stores_through_a_calls_entity() {
     use crate::ir::{Immediate, ImmediateKind, Name};
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "entity() f; float() g; .float fl; void() t = { f().fl = 2; f().fl = g(); };";
     let index = super::fte_index_of(source);
     let def = |name: &str| {
@@ -526,7 +526,7 @@ fn a_generated_body_stores_through_a_calls_entity() {
 // `RETURN`
 #[test]
 fn a_generated_body_holds_its_jumps() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source =
         "float a; void() t = { if (a) a = 1; if (!a) a = 2; while (a) a = a - 1; return; };";
     let index = super::fte_index_of(source);
@@ -562,7 +562,7 @@ fn a_generated_body_holds_its_jumps() {
 #[test]
 fn a_generated_body_names_its_jumps() {
     use crate::ir::Name;
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "float a; void() t = { if (a) a = 1; while (a) { if (a) break; continue; } };";
     let index = super::fte_index_of(source);
     let def = |name: &str| {
@@ -600,7 +600,7 @@ fn a_generated_body_names_its_jumps() {
 #[test]
 fn a_generated_body_names_copies_of_values() {
     use crate::ir::Name;
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "float(float x) f; float(float a, float b) g; float k; float r[3]; \
         void() t = { k = g(f(1), f(2)); k = (k--) > 0; r[2] = k; };";
     let index = super::fte_index_of(source);
@@ -642,7 +642,7 @@ fn a_generated_body_names_copies_of_values() {
 #[test]
 fn a_generated_body_updates_an_element_by_its_array_functions() {
     use crate::ir::Name;
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "float i, k; float arr[4]; void() t = { arr[i * 2] -= 1; k = arr[i * 3]; };";
     let index = super::fte_index_of(source);
     let t = index
@@ -690,7 +690,7 @@ fn a_generated_body_updates_an_element_by_its_array_functions() {
 #[test]
 fn a_generated_variadic_body_starts_with_its_va_list() {
     use crate::ir::Name;
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "void() n; void(float a, ...) t = [1, n] { };";
     let index = super::fte_index_of(source);
     let t = index
@@ -723,7 +723,7 @@ fn a_generated_variadic_body_starts_with_its_va_list() {
 #[test]
 fn a_generated_body_names_vector_components_and_reads_a_field_once() {
     use crate::ir::Name;
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "entity self; .vector fv; .float f; vector v; float g; \
         void() t = { g = (self.fv).y + 1; g = v.z * 2; g = self.f + 0; };";
     let index = super::fte_index_of(source);
@@ -758,7 +758,7 @@ fn a_generated_body_names_vector_components_and_reads_a_field_once() {
 #[test]
 fn a_generated_call_stores_its_defaults() {
     use crate::ir::Name;
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "float(float a, string b = \"x\") f; void() t = { f(1); };";
     let index = super::fte_index_of(source);
     let t = index
@@ -783,7 +783,7 @@ fn a_generated_call_stores_its_defaults() {
 // `IFNOT` an `IF` of `!v`, and `if (!v)`'s `IF` an `IFNOT` of it
 #[test]
 fn a_generated_vector_test_flips_its_jump() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "#pragma flag enable ifvector\nvector v; float k; \
         void() t = { if (v) k = 1; if (!v) k = 2; };";
     let index = super::fte_index_of(source);
@@ -813,7 +813,7 @@ fn a_generated_vector_test_flips_its_jump() {
 #[test]
 fn a_generated_postfix_on_a_field_stores_through_its_address() {
     use crate::ir::Name;
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "entity self; .float f; void() t = { self.f--; };";
     let index = super::fte_index_of(source);
     let t = index
@@ -837,7 +837,7 @@ fn a_generated_postfix_on_a_field_stores_through_its_address() {
 #[test]
 fn a_generated_struct_element_member_adds_its_word_to_the_index() {
     use crate::ir::{Immediate, ImmediateKind, Name};
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "struct { float a; float b; } arr[4]; float i, k; void() t = { k = arr[i].b; };";
     let index = super::fte_index_of(source);
     let t = index
@@ -885,7 +885,7 @@ fn a_generated_body_records_each_statements_origin() {
 #[test]
 fn a_generated_body_lists_its_locals_and_returns_its_ret_local() {
     use crate::ir::Name;
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source =
         "float k; float() t = { local float a; a = k * 2; if (a) return; local vector v; };";
     let index = super::fte_index_of(source);
@@ -921,7 +921,7 @@ fn a_generated_body_lists_its_locals_and_returns_its_ret_local() {
 // statement's test does
 #[test]
 fn a_generated_ternary_test_drops_a_not() {
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "float a, b, k; void() t = { k = (!a) ? b : 2; };";
     let index = super::fte_index_of(source);
     let t = index
@@ -949,7 +949,7 @@ fn a_generated_ternary_test_drops_a_not() {
 #[test]
 fn a_generated_body_names_a_word_of_a_calls_vector() {
     use crate::ir::Name;
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "vector() f; float k; void() t = { k = (f()).y * 2; if ((f()).z) k = 1; };";
     let index = super::fte_index_of(source);
     let t = index
@@ -973,7 +973,7 @@ fn a_generated_body_names_a_word_of_a_calls_vector() {
 #[test]
 fn a_generated_assignment_of_a_call_stays_its_value() {
     use crate::ir::Name;
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "string() f; string s; void() t = { while ((s = f())) s = \"\"; };";
     let index = super::fte_index_of(source);
     let t = index
@@ -1000,7 +1000,7 @@ fn a_generated_assignment_of_a_call_stays_its_value() {
 #[test]
 fn a_generated_store_of_an_opaque_value_is_a_statement() {
     use crate::ir::Name;
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "string face; string fb[2] = {\"a\", \"b\"}; void() t = { face = fb[1]; };";
     let index = super::fte_index_of(source);
     let def = |name: &str| {
@@ -1021,7 +1021,7 @@ fn a_generated_store_of_an_opaque_value_is_a_statement() {
 #[test]
 fn a_generated_body_takes_a_fields_address_and_stores_through_it() {
     use crate::ir::Name;
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "entity world; .float sounds; float *cd; float k; \
         void() t = { cd = &world.sounds; *cd = k; };";
     let index = super::fte_index_of(source);
@@ -1053,7 +1053,7 @@ fn a_generated_body_takes_a_fields_address_and_stores_through_it() {
 #[test]
 fn a_generated_update_folds_into_its_definition() {
     use crate::ir::Name;
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "float k; float arr[3]; void() t = { k += 2; k++; arr[1]--; };";
     let index = super::fte_index_of(source);
     let def = |name: &str| {
@@ -1086,7 +1086,7 @@ fn a_generated_update_folds_into_its_definition() {
 #[test]
 fn a_generated_for_stores_the_local_its_clause_declares() {
     use crate::ir::Name;
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "float k; void() t = { for (float i = 0; i < k; i++) k = 1; };";
     let index = super::fte_index_of(source);
     let def = |name: &str| {
@@ -1110,7 +1110,7 @@ fn a_generated_for_stores_the_local_its_clause_declares() {
 #[test]
 fn a_generated_aggregate_stores_each_component() {
     use crate::ir::Name;
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "entity self; .vector md; void() t = { vector v = { self.md[0], 2, 3 }; };";
     let index = super::fte_index_of(source);
     let def = |name: &str| {
@@ -1142,7 +1142,7 @@ fn a_generated_aggregate_stores_each_component() {
 #[test]
 fn a_generated_conversion_calls_its_helper() {
     use crate::ir::Name;
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "float(__int i) itof = #0; float b; void(__int x) t = { b = x; };";
     let index = super::fte_index_of(source);
     let def = |name: &str| {
@@ -1177,7 +1177,7 @@ fn a_generated_conversion_calls_its_helper() {
 #[test]
 fn a_generated_wrap_calls_its_prior() {
     use crate::ir::Name;
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "void(string m) objerror = #11; \
         __wrap void(string msg) objerror = { prior(msg); };";
     let index = super::fte_index_of(source);
@@ -1248,7 +1248,7 @@ fn an_integer_constant_folds_to_its_number() {
 #[test]
 fn a_generated_prefix_folds_and_a_literal_names_its_float() {
     use crate::ir::{Immediate, ImmediateKind, Name};
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "float a; var void() g; void() t = { ++a; g = 0i; };";
     let index = super::fte_index_of(source);
     let def = |name: &str| {
@@ -1276,7 +1276,7 @@ fn a_generated_prefix_folds_and_a_literal_names_its_float() {
 #[test]
 fn a_generated_body_names_a_ternary() {
     use crate::ir::Name;
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "float a, b, k; void() t = { k = a ? b : a * b; };";
     let index = super::fte_index_of(source);
     let def = |name: &str| {
@@ -1313,7 +1313,7 @@ fn a_generated_body_names_a_ternary() {
 #[test]
 fn a_generated_body_names_states_locals_strings_and_random() {
     use crate::ir::Name;
-    use qc_preproc::Op;
+    use qc_progs::Op;
     let source = "float() random; void(string s) print; void() n; float h; \
         void() t = [1, n] { float l = 0; print(\"\\xff\"); l = random(2, h); };";
     let index = super::fte_index_of(source);
