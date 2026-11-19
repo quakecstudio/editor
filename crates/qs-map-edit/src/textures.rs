@@ -122,6 +122,8 @@ struct Held {
 const MAPS_FOLDER: &str = "maps/";
 /// The ending of a level's file.
 const BSP_ENDING: &str = ".bsp";
+/// The start of the name of a frame of an animated texture, before its frame's character.
+const ANIMATED: &str = "+";
 /// The start of the name of a BSP that is a model, an ammo or health box, and no level.
 const BOX_MODEL: &str = "b_";
 
@@ -189,23 +191,27 @@ impl GameTextures {
     }
 
     /// A WAD of the textures of `names` the levels hold, for a compile whose WADs lack them;
-    /// none when they hold none of them.
+    /// none when they hold none of them. A frame of an animation (`+0slip`) brings the
+    /// animation's other frames the levels hold (`+1slip`, `+aslip`), which the compiler
+    /// writes only from the WAD it is given (BSP-4.8).
     #[must_use]
     pub fn wad_of<'n>(&self, names: impl IntoIterator<Item = &'n [u8]>) -> Option<Vec<u8>> {
         let mut builder = WadBuilder::new();
         let mut any = None;
         for name in names {
             let key = String::from_utf8_lossy(name).to_lowercase();
-            let Some((held, lump)) = self.by_name.get(&key).and_then(|at| self.textures.get(*at))
-            else {
-                continue;
-            };
-            // A name asked for twice is in the WAD once.
-            if builder
-                .add(held.name.as_bytes(), WAD_TYP_MIPTEX, lump.clone())
-                .is_ok()
-            {
-                any = Some(());
+            let frames = animation_of(&key);
+            for (held, lump) in &self.textures {
+                let own = held.name.to_lowercase();
+                let frame_of_it = frames.is_some() && animation_of(&own) == frames;
+                // A name asked for twice, or a frame brought twice, is in the WAD once.
+                if (own == key || frame_of_it)
+                    && builder
+                        .add(held.name.as_bytes(), WAD_TYP_MIPTEX, lump.clone())
+                        .is_ok()
+                {
+                    any = Some(());
+                }
             }
         }
         any.and_then(|()| builder.to_bytes().ok())
@@ -222,6 +228,14 @@ impl GameTextures {
     pub fn is_empty(&self) -> bool {
         self.textures.is_empty()
     }
+}
+
+/// The animation the texture `name` is a frame of: its name from the third character on, after
+/// the `+` and the frame's character (BSP-4.8); none for a texture that is no frame.
+fn animation_of(name: &str) -> Option<&str> {
+    let rest = name.strip_prefix(ANIMATED)?;
+    let (at, _) = rest.char_indices().nth(1)?;
+    Some(rest.split_at(at).1)
 }
 
 /// A WAD's name as the world writes it, and its file, when one was found: its host path, when

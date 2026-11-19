@@ -797,6 +797,17 @@ fn a_chosen_menu_item_presses_its_key_or_runs_its_command() {
     let wrap = keymap::shortcut(qs_layout::TOGGLE_SOFT_WRAP).unwrap();
     choose(&mut harness, menu::Chosen::Key(wrap));
     assert_ne!(layout(&harness).soft_wrap, before.soft_wrap);
+    // A key of the Map menu waits a frame for the map view, and is pressed then.
+    let wrapped = layout(&harness).soft_wrap;
+    harness.state_mut().1.push(menu::Chosen::MapKey(wrap));
+    harness.run_steps(1);
+    assert_eq!(
+        layout(&harness).soft_wrap,
+        wrapped,
+        "not in the frame it is chosen"
+    );
+    harness.run();
+    assert_ne!(layout(&harness).soft_wrap, wrapped);
     let palette = MenuChoice::Palette.window_key().unwrap();
     choose(&mut harness, menu::Chosen::Key(palette));
     harness.get_by_role_and_label(Role::Dialog, Text::CommandPalette.get());

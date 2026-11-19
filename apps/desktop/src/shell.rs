@@ -844,6 +844,18 @@ impl Shell {
         }
     }
 
+    /// Whether a pane of the map view has the keyboard, where the map's keys are taken.
+    #[must_use]
+    pub fn map_has_keyboard(&self) -> bool {
+        self.map_shown() && self.features.map.map_editor.has_keyboard()
+    }
+
+    /// Gives the map view the keyboard when it is next drawn, for a Map menu item chosen
+    /// while a field or a panel had it (P7-17).
+    pub fn give_map_keyboard(&mut self) {
+        self.features.map.map_editor.take_keyboard();
+    }
+
     /// Whether a map shows in the centre: what the Map menu's items act on.
     #[must_use]
     pub fn map_shown(&self) -> bool {
@@ -1909,11 +1921,17 @@ impl Shell {
     /// agent, whose panel lists its own, is not at work: another agent's, staged through the
     /// app's socket, which a person would otherwise not know of (P7-18).
     fn follow_review(&mut self) {
+        // The open map's edits are read here too: the Map tab reads them only while it shows.
+        if self.centre_tab != CentreTab::Map {
+            self.with_map(MapFeature::refresh_map_review);
+        }
         let waiting = self.session.context().workbench.waiting().hunks;
         let waiting = waiting.saturating_add(self.features.map.map_editor.review().waiting());
         let began = self.review_seen == 0 && waiting > 0;
         self.review_seen = waiting;
-        if began && self.features.agent.panel.running() == 0 {
+        // A game being played in its tab is not taken from its player: the count says so.
+        let playing = self.centre_tab == CentreTab::Game;
+        if began && !playing && self.features.agent.panel.running() == 0 {
             self.open_review();
         }
     }

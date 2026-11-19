@@ -9,7 +9,11 @@
 //! A key equivalent in the menu bar is taken by the menu before the window sees the key, so an
 //! item with a key gives the key back to the window ([`Chosen::Key`]), which does with it what
 //! it does where the keyboard is: Cmd+Z takes back typing in the editor and a brush in the map
-//! view. An item with no key runs its command.
+//! view. An item of the Map menu gives the map view the keyboard first, where the map's keys
+//! are taken. An item with no key runs its command, and so does one whose key is the map
+//! view's own, which the menu does not take: a field being typed in has uses for those keys.
+//! Choosing an item with the mouse does the same as pressing its key, so Edit, Undo acts on
+//! what has the keyboard.
 
 use eframe::egui::{Key, KeyboardShortcut, Modifiers};
 use qs_layout::{DEFAULT_KEYS, KeyContext, Panel};
@@ -182,7 +186,10 @@ pub enum Chosen {
     /// Press this key, which the menu took: the window does what the key does where the
     /// keyboard is.
     Key(KeyboardShortcut),
-    /// Run this command, which has no key.
+    /// Press this key of the Map menu, once the map view has the keyboard: the map's keys are
+    /// taken there, and not while a field is typed in.
+    MapKey(KeyboardShortcut),
+    /// Run this command, which has no key the menu shows.
     Run(&'static str),
     /// Carry out this item.
     Choice(MenuChoice),

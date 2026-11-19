@@ -570,10 +570,16 @@ impl EditorView {
         self.folds.reveal(head);
         self.first_line = self.folds.shown_at_or_before(self.first_line);
 
-        if response.hovered() {
+        // Over the view, its scroll bars included, which are widgets of their own above it.
+        if ui.rect_contains_pointer(rect) {
             let delta = ui.input(|i| i.smooth_scroll_delta);
-            self.scroll(delta.y, row_height);
-            self.scroll_x -= delta.x;
+            // The greater of the two ways only, as Zed scrolls: a swipe down a trackpad carries
+            // a little sideways with it, which would drift a long line across.
+            if delta.y.abs() >= delta.x.abs() {
+                self.scroll(delta.y, row_height);
+            } else {
+                self.scroll_x -= delta.x;
+            }
         }
         let thumbs = self.scroll_bars(ui, style, styler, (rect, text_left, char_width));
         let text_left_scrolled = text_left - self.scroll_x;

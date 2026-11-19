@@ -110,6 +110,8 @@ pub struct App {
     shell: Shell,
     #[cfg(target_os = "macos")]
     menu: Option<menu::native::MenuBar>,
+    /// The Map menu's keys waiting a frame for the map view to have the keyboard (P7-17).
+    map_keys: Vec<egui::KeyboardShortcut>,
     /// The display settings the look was made for.
     display: Display,
     follow: Follow,
@@ -181,6 +183,7 @@ impl App {
         Ok(Self {
             #[cfg(target_os = "macos")]
             menu: None,
+            map_keys: Vec::new(),
             shell,
             display,
             follow: Follow::Fixed,
@@ -281,6 +284,12 @@ impl App {
         };
         match chosen {
             Chosen::Key(shortcut) => press(shortcut),
+            Chosen::MapKey(shortcut) if self.shell.map_has_keyboard() => press(shortcut),
+            Chosen::MapKey(shortcut) => {
+                self.shell.give_map_keyboard();
+                self.map_keys.push(shortcut);
+                ctx.request_repaint();
+            }
             Chosen::Run(id) => {
                 if let Err(error) = self.shell.execute(id, serde_json::json!({})) {
                     tracing::warn!(%error, command = id, "menu item failed");
@@ -347,6 +356,10 @@ impl App {
     /// Draws one frame, after carrying out the menu items `chosen`.
     pub fn frame_after(&mut self, ui: &mut egui::Ui, chosen: Vec<menu::Chosen>) {
         self.follow_display(ui.ctx());
+        // The keys that waited for the map view: pressed now, wherever the keyboard is.
+        for shortcut in std::mem::take(&mut self.map_keys) {
+            self.carry_out(ui.ctx(), menu::Chosen::Key(shortcut));
+        }
         for chosen in chosen {
             self.carry_out(ui.ctx(), chosen);
         }

@@ -539,5 +539,19 @@ fn a_wad_of_the_levels_textures_holds_those_asked_for() {
         "the header and all four levels"
     );
     assert!(levels.wad_of([b"nowhere".as_slice()]).is_none());
+
+    // spec BSP-4.8: frames belong to one animation when their names match from the third
+    // character on, so a frame asked for brings the others the levels hold
+    std::fs::write(
+        dir.join("id1/maps/e2.bsp"),
+        level_bsp(&["+0slip", "+1slip", "+aslip", "+0other", "slip"]),
+    )
+    .unwrap();
+    let levels = GameTextures::read(&Game::at(&dir));
+    let bytes = levels.wad_of([b"+0slip".as_slice(), b"+1slip"]).unwrap();
+    let wad = qs_wad::MapWad::read(&bytes).unwrap();
+    let mut held: Vec<&[u8]> = wad.entries().iter().map(|e| e.name.as_bytes()).collect();
+    held.sort_unstable();
+    assert_eq!(held, [b"+0slip".as_slice(), b"+1slip", b"+aslip"]);
     assert!(GameTextures::read(&Game::at(&dir.join("none"))).is_empty());
 }

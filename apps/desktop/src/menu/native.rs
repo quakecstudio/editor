@@ -17,6 +17,8 @@ use crate::strings::{Text, menu_title};
 struct Entry {
     id: MenuId,
     item: Item,
+    /// The menu it is in.
+    role: Role,
     /// The key shown beside it, which the menu takes.
     key: Option<KeyboardShortcut>,
     /// The item, for a command whose key follows the keymap.
@@ -65,7 +67,7 @@ impl MenuBar {
         };
         for spec in MENUS {
             let submenu = Submenu::new(spec.title.get(), true);
-            bar.fill(&submenu, spec.items, layout, keymap)?;
+            bar.fill(&submenu, (spec.role, spec.items), layout, keymap)?;
             menu.append(&submenu)?;
             match spec.role {
                 Role::Window => submenu.set_as_windows_menu_for_nsapp(),
@@ -90,7 +92,7 @@ impl MenuBar {
     fn fill(
         &mut self,
         menu: &Submenu,
-        items: &'static [Item],
+        (role, items): (Role, &'static [Item]),
         layout: &Layout,
         keymap: &Keymap,
     ) -> Result<(), muda::Error> {
@@ -100,7 +102,7 @@ impl MenuBar {
                 Item::MapViewKeys(title) => {
                     let submenu = Submenu::new(title.get(), true);
                     for id in map_view_commands() {
-                        self.command(&submenu, id, keymap)?;
+                        self.command(&submenu, (role, id), keymap)?;
                     }
                     menu.append(&submenu)?;
                 }
@@ -108,7 +110,7 @@ impl MenuBar {
                     Some((title, key)) => {
                         let made = MenuItem::new(title.get(), true, accelerator(key));
                         menu.append(&made)?;
-                        self.keep(&made, *item, Some(key), None);
+                        self.keep(&made, (role, *item), Some(key), None);
                     }
                     None => menu.append(&system.predefined())?,
                 },
@@ -119,6 +121,7 @@ impl MenuBar {
                     self.entries.push(Entry {
                         id: made.id().clone(),
                         item: *item,
+                        role,
                         key: None,
                         handle: None,
                     });
@@ -127,13 +130,13 @@ impl MenuBar {
                 Item::Choice(choice) => {
                     let key = choice
                         .window_key()
-                        .or_else(|| keymap.shortcut(choice.command()));
+                        .or_else(|| keymap.menu_shortcut(choice.command()));
                     let made = MenuItem::new(choice.title().get(), true, key.and_then(accelerator));
                     menu.append(&made)?;
                     let follows = choice.window_key().is_none().then(|| made.clone());
-                    self.keep(&made, *item, key, follows);
+                    self.keep(&made, (role, *item), key, follows);
                 }
-                Item::Command(id) => self.command(menu, id, keymap)?,
+                Item::Command(id) => self.command(menu, (role, id), keymap)?,
             }
         }
         Ok(())
@@ -143,29 +146,30 @@ impl MenuBar {
     fn command(
         &mut self,
         menu: &Submenu,
-        id: &'static str,
+        (role, id): (Role, &'static str),
         keymap: &Keymap,
     ) -> Result<(), muda::Error> {
-        let key = keymap.shortcut(id);
+        let key = keymap.menu_shortcut(id);
         let title = menu_title(id).unwrap_or(id);
         let made = MenuItem::new(title, true, key.and_then(accelerator));
         menu.append(&made)?;
-        self.keep(&made, Item::Command(id), key, Some(made.clone()));
+        self.keep(&made, (role, Item::Command(id)), key, Some(made.clone()));
         Ok(())
     }
 
-    /// Keeps `made`, the item `item` with the key `key`, to tell the window when it is chosen;
+    /// Keeps `made`, the item `item` of the menu `role` with the key `key`, to tell the window when it is chosen;
     /// `follows` is the item when its key follows the keymap.
     fn keep(
         &mut self,
         made: &MenuItem,
-        item: Item,
+        (role, item): (Role, Item),
         key: Option<KeyboardShortcut>,
         follows: Option<MenuItem>,
     ) {
         self.entries.push(Entry {
             id: made.id().clone(),
             item,
+            role,
             // A key the menu cannot show is not taken by it: the window still has it.
             key: key.filter(|key| accelerator(*key).is_some()),
             handle: follows,
@@ -181,9 +185,23 @@ impl MenuBar {
             };
             chosen.push(match (entry.item, entry.key) {
                 (Item::System(system), _) => Chosen::Edit(system),
-                (Item::Choice(choice @ MenuChoice::Zoom(_)), _) => Chosen::Choice(choice),
-                (Item::Command(_) | Item::Choice(_), Some(key)) => Chosen::Key(key),
-                (Item::Choice(choice), None) => Chosen::Choice(choice),
+                // The window's own key for it is the item; any other is carried out the
+                // window's way, with its dialog and its notice, whatever key it shows.
+                (Item::Choice(choice), Some(key)) if choice.window_key() == Some(key) => {
+                    match choice {
+                        MenuChoice::Zoom(_) => Chosen::Choice(choice),
+                        MenuChoice::OpenFolder
+                        | MenuChoice::NewProject(_)
+                        | MenuChoice::FileFinder
+                        | MenuChoice::GameFiles
+                        | MenuChoice::ExportMod
+                        | MenuChoice::Toggle(_)
+                        | MenuChoice::Palette => Chosen::Key(key),
+                    }
+                }
+                (Item::Choice(choice), _) => Chosen::Choice(choice),
+                (Item::Command(_), Some(key)) if entry.role == Role::Map => Chosen::MapKey(key),
+                (Item::Command(_), Some(key)) => Chosen::Key(key),
                 (Item::Command(id), None) => Chosen::Run(id),
                 (Item::Separator | Item::MapViewKeys(_), _) => continue,
             });
@@ -207,7 +225,7 @@ impl MenuBar {
                 continue;
             };
             let key = keymap
-                .shortcut(command)
+                .menu_shortcut(command)
                 .filter(|key| accelerator(*key).is_some());
             if key != entry.key {
                 if let Err(error) = handle.set_accelerator(key.and_then(accelerator)) {
