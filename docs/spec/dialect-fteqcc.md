@@ -23,13 +23,13 @@ fte-team/fteqw is a registered porting upstream ([`../porting.md`](../porting.md
 and code that ports an FTEQCC function, such as `qc-preproc`'s macro expansion, cites that
 function in its file header.
 
-This file is the parse-and-resolve spec (P2-25): syntax and type rules. **Code generation is
-out of scope and is marked later.** Each section's final statement is a `Codegen (later)`
-note that names the issue (L-01) which fixes the progs output. Those notes are active
-statements that no code implements yet, so they are listed in
-[`coverage-baseline.tsv`](coverage-baseline.tsv) until L-01's tests cite them. Many of these
-constructs need FTE's version 7 progs format ([`progs.md`](progs.md) PROGS-19 to PROGS-21),
-unlike the rerelease subset, which fits version 6 (`dialect-fteqcc-rerelease.md` FTE-1).
+This file began as the parse-and-resolve spec (P2-25): syntax and type rules, FTEF-1 to
+FTEF-18. Code generation is FTEF-19 to FTEF-34, and each of the sections FTEF-1 to FTEF-11
+that describes a construct ends with the statement of what that construct is written as
+(L-01): FTEF-1.5, FTEF-2.13, FTEF-3.6, FTEF-4.6, FTEF-5.5, FTEF-6.31, FTEF-7.7, FTEF-8.8,
+FTEF-9.25 and FTEF-11.5, each checked against the pinned FTEQCC's output. They replace the
+`Codegen (later)` notes this file first had, which are withdrawn in place. No construct
+chooses the progs format: it is the target's (FTEF-1.5).
 
 Implemented by the dialect profiles and `qc-sema` (P2-26); a statement no test cites yet is
 listed in [`coverage-baseline.tsv`](coverage-baseline.tsv) ([`README.md`](README.md)). The
@@ -72,16 +72,20 @@ subset does not.
 
 - **FTEF-1.1** **Withdrawn** 2026-11-16: it named the coverage scan (`cargo xtask
   fteqcc-full-coverage`), which was removed; replaced by FTEF-1.4.
-- **FTEF-1.2** Unlike the rerelease subset, which fits version 6 (`dialect-fteqcc-rerelease.md`
-  FTE-1.1), the full dialect's aggregate and pointer types (FTEF-6, FTEF-9) in general need
-  FTE's version 7 progs format ([`progs.md`](progs.md) PROGS-19). Which construct needs
-  version 7 and which lowers to version 6 is a code-generation question, fixed by L-01, not by
-  this parse-and-resolve spec.
-- **FTEF-1.3** Codegen (later): the progs format and opcode set each construct emits are fixed
-  by L-01 and recorded there, against FTEQCC's output. This spec does not state them.
+- **FTEF-1.2** **Withdrawn** 2026-11-19: it said the aggregate and pointer types in general
+  need version 7, which no construct does; replaced by FTEF-1.5.
+- **FTEF-1.3** **Withdrawn** 2026-11-19: it deferred the format and opcodes of each construct
+  to L-01; replaced by FTEF-1.5.
 - **FTEF-1.4** A FTEQCC corpus mod (`nuclide`, `freecs`, `freehl`) is accepted under the FTEQCC
   profile: every module parses and resolves with no error (`cargo xtask fteqcc-profile`). Every
   full-dialect construct it contains is covered by a section of this file.
+- **FTEF-1.5** No construct of this file chooses the progs format. `QCC_WriteData` writes the
+  format the target and the program's size give (FTE-24.1, FTE-24.3), so a program of structs,
+  sized arrays, typedefs, enums and classes is version 6 on the standard target and version 7
+  on an FTE one. What a construct needs of a target is its opcodes (FTEF-25): where the target
+  lacks one it is emulated or refused (FTEF-27), as the address of a global is refused on the
+  standard target (FTEF-4.6). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qccmain.c`, `QCC_WriteData`.
 
 ## FTEF-2 Integer and the other C scalar types
 
@@ -226,7 +230,20 @@ null.
 - **FTEF-3.4** The built-in macro `__NULL__` expands to `0i` (`qcc_pr_lex.c`,
   `QCC_PR_CheckBuiltinCompConst`), an integer zero used as a null pointer or entity; the corpus
   uses it.
-- **FTEF-3.5** Codegen (later): how each literal type becomes an immediate is fixed by L-01.
+- **FTEF-3.5** **Withdrawn** 2026-11-19: it deferred a literal's immediate to L-01; replaced
+  by FTEF-3.6.
+- **FTEF-3.6** A typed literal is an immediate of its type's size holding its value: an
+  integer of 32 bits one word (`QCC_MakeIntConst` and `QCC_MakeUIntConst`, both `return
+  QCC_Make32bitConst(type_integer, value);` or `type_uint`), an integer of 64 bits two words,
+  the low one first (`QCC_MakeInt64Const`, `QCC_Make64bitConst`), a double the two words of
+  its value and a float one. The digits' base changes nothing but the value: `0x10i` is the
+  integer 16, and `0x10` with no suffix the float 16 (FTEF-3.3). Integer immediates of one word
+  are shared by their bits, signed or not (`QCC_Make32bitConst`: `if (cn->type->size ==
+  type->size) if (((QCC_eval_t*)cn->symboldata)->_uint == value) return QCC_MakeSRefForce(cn,
+  0, type);`), so `6i` and `6u` are one immediate, and `6` and `6.0f` are one float's. A store of one is the store of the
+  target's type (FTEF-2.13). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_MakeIntConst`, `QCC_MakeUIntConst`, `QCC_MakeInt64Const`,
+  `QCC_Make32bitConst`.
 
 ## FTEF-4 Pointer types and pointer operators
 
@@ -252,8 +269,16 @@ addresses. The corpus uses `(__variant *)` casts and `&tcp_irc`-style address-of
   dereference operator is `*^` (`QCC_PR_LexPunctuation` notes "fteqcc uses *^ internally"), and
   `**` is remapped to it under `flag_dblstarexp` for GMQCC compatibility with a warning; in
   FTEQCC source `*` before a value is the dereference.
-- **FTEF-4.5** Codegen (later): pointers need FTE's version 7 progs
-  ([`progs.md`](progs.md) PROGS-19, PROGS-20); the lowering is fixed by L-01.
+- **FTEF-4.5** **Withdrawn** 2026-11-19: it said pointers need version 7 and deferred their
+  code to L-01; replaced by FTEF-4.6.
+- **FTEF-4.6** A pointer is one word (FTEF-6.13), written `ev_pointer`, 7. On a target with
+  the opcodes (FTEF-25) the address of a global is `OP_GLOBALADDRESS` of it (FTEF-31.28), a
+  store through a pointer `OP_STOREP_*` of what it points at (FTEF-6.18) and a read
+  `OP_LOADP_*` (FTEF-6.14, FTEF-6.21), an index the statement's second operand (FTEF-6.19):
+  `p = &g; *p = x; x = *p; x = p[1];` of floats is `GLOBALADDRESS g, , p`, `STOREP_F x, p`,
+  `LOADP_F p, , x` and `LOADP_F p, 1i, x`. On the standard target, which has no
+  `OP_GLOBALADDRESS`, the address of a global is the fatal error `E0331` (FTEF-31.4), so a
+  program that takes one does not compile there; no pointer needs version 7 (FTEF-1.5).
 
 ## FTEF-5 Arrays with a declared size and multiple dimensions
 
@@ -276,8 +301,17 @@ one dimension.
 - **FTEF-5.3** A sized array may be a struct (FTEF-6) or class member, a local, a global, a
   parameter (where FTEQCC may demote it to a pointer, FTEF-4) or a field; `QCC_PR_ParseStruct`
   and the function-type parser both call `QCC_PR_ParseArrayType`.
-- **FTEF-5.4** Codegen (later): array layout and subscript lowering are fixed by L-01 (and for
-  the inferred-size subset, FTE-13.4).
+- **FTEF-5.4** **Withdrawn** 2026-11-19: it deferred an array's layout and subscripts to
+  L-01; replaced by FTEF-5.5.
+- **FTEF-5.5** An array's elements are its definition's words in turn, with no word for the
+  array itself (FTE-13.10, FTE-13.13). An element at a constant index is the definition at
+  that word, read and stored as any definition: `arr[2] = x` is `STORE_F x, arr[2]`. At an
+  index that is no constant, a target with the opcodes makes the index an integer
+  (`OP_CONV_FTOI` of a float) and checks it (`OP_BOUNDCHECK`, FTEF-31.24), then stores by
+  `OP_GLOBALADDRESS` of the array and `OP_STOREP_*` at the index (FTEF-31.20) and reads by
+  `OP_LOADA_*` of the array and the index (FTEF-31.19). The standard target has none of
+  them, and there a read calls the array's `ArrayGet*NAME` and a store its `ArraySet*NAME`,
+  functions the compiler writes (FTE-13.8, FTE-13.11, FTEF-19.78).
 
 ## FTEF-6 `struct` and `union`
 
@@ -579,8 +613,8 @@ dialect aliases any type.
 - **FTEF-7.2** A typedef name is usable wherever a type is (`QCC_PR_ParseType` resolves it
   through `QCC_TypeForName`): as a member type, a parameter type, a cast, or the base of a
   pointer or array.
-- **FTEF-7.3** Codegen (later): a typedef is a front-end alias and emits nothing of its own
-  (its underlying type's codegen applies); confirmed by L-01.
+- **FTEF-7.3** **Withdrawn** 2026-11-19: it left what a typedef emits to L-01 to confirm;
+  replaced by FTEF-7.7.
 
 - **FTEF-7.4** `QCC_PR_ParseDefs` loops over its declarators after `typedef` as it does after any
   type (`do { ... } while (QCC_PR_CheckToken (","));`), each one defining a type, with its `*`s,
@@ -617,6 +651,10 @@ dialect aliases any type.
   float(float) cb_t; float r; void() g = { cb_t h; if (!h(2)) r = h(3) + 1; };` compiles with no
   error under the pinned FTEQCC (2026-11-16). Xonotic calls a typedef'd function value in
   `common/mutators/base.qh` and `lib/warpzone/common.qc`.
+- **FTEF-7.7** A typedef writes nothing: no definition, no word and no statement. A
+  definition, a parameter or a pointer of a typedef's type is written as one of the type it
+  names (`QCC_TypeForName`, FTEF-19.9), so a program that names a type through a typedef is,
+  byte for byte, the program that names the type itself.
 
 ## FTEF-8 `enum`, `enumflags` and typed or scoped enums
 
@@ -638,8 +676,8 @@ full dialect also uses `enumflags`.
 - **FTEF-8.2** `enumflags`, like `enum`, takes an explicit value (`A = n`) that sets the
   running value, and an optional element type (`: int`); the typed and `enum class` forms
   resolve as FTE-15.2 states. A bare `enum`'s increment-by-one semantics are FTE-15.1.
-- **FTEF-8.3** Codegen (later): each enum name is a folded constant and the enum contributes no
-  global of its own (as FTE-15.3 for the subset); confirmed by L-01.
+- **FTEF-8.3** **Withdrawn** 2026-11-19: it left what an enum emits to L-01 to confirm;
+  replaced by FTEF-8.8.
 - **FTEF-8.4** An `enum` or `enumflags` where a type belongs always has its body:
   `QCC_PR_ParseType` sends both keywords to `QCC_PR_ParseEnum` (`else if
   (QCC_PR_CheckKeyword(keyword_enum, "enum")) type = QCC_PR_ParseEnum(false);`), which reads an
@@ -677,6 +715,9 @@ full dialect also uses `enumflags`.
   (`strictenum = QCC_PR_CheckName("class");`). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseEnum`.
+- **FTEF-8.8** An enum's type writes nothing, and a use of one of its names is the immediate of
+  its value, of the enum's base type (FTEF-8.6): after `enumflags { EA, EB, EC }; enum : int {
+  P = 3, Q };`, `x = EC` stores the float immediate 4 and `y = Q` the integer immediate 4.
 
 ## FTEF-9 Classes
 
@@ -3068,9 +3109,10 @@ FTEF-18.5.
 
 Larger vectors: [`vectors/dialect-fteqcc/`](vectors/). The recorded coverage run over the
 FTEQCC corpus mods is
-[`vectors/dialect-fteqcc/coverage.txt`](vectors/dialect-fteqcc/coverage.txt). The vectors of
-the `Codegen (later)` statements are added when L-01 (codegen) fixes them, each checked
-against FTEQCC.
+[`vectors/dialect-fteqcc/coverage.txt`](vectors/dialect-fteqcc/coverage.txt). The statements of
+what each construct is written as (FTEF-1.5 and the others the head of this file lists) are
+pinned by tests in `crates/qc-codegen/src/tests/fteqcc.rs`, whose programs were compiled by
+the pinned FTEQCC and compared.
 - **FTEF-18.31** `until (e) s` repeats `s` while `e` is false, and `do s until (e);` is the
   `do` loop with the test reversed: `wasuntil = QCC_PR_CheckKeyword(keyword_until, "until"); if
   (wasuntil || QCC_PR_CheckKeyword(keyword_while, "while"))`, and in `do`, `until =
