@@ -4228,7 +4228,9 @@ const ADDRESSED: &str = "#pragma target fte_5768\n\
     typedef struct { float a; vector v; int n; float m[3]; vector vm[2]; } wide_t;\n\
     entity self;\n.float health;\n\
     float g;\nfloat arr[4];\nvector varr[3];\npair_t gp;\npair_t sarr[3];\n\
+    typedef struct { __int8 c; __int8 d; float f; } nar_t;\n\
     wide_t wp;\nwide_t warr[3];\nint iarr[4];\n__int8 barr[8];\n__int16 harr[8];\n\
+    nar_t ns;\nnar_t nsarr[2];\n__int8 gb;\n__double darr[4];\n__double dd;\n\
     const vector cv = '1 2 3';\n\
     float *p;\nvector *vp;\nint *ip;\n__int8 *bp;\n__int16 *hp;\n\
     float i;\nint k;\nfloat r;\nint ri;\n";
@@ -4312,8 +4314,58 @@ fn an_address_at_an_index_that_is_no_constant_carries_the_index() {
             "{statement}"
         );
     }
-    let (_, statements) = addressed("p = &cv.y;");
-    assert_eq!(opcodes(&statements)[0], numbers([Op::Globaladdress])[0]);
+}
+
+/// Whether `ADDRESSED` with `statement` as the body of `t` is refused.
+fn refused(statement: &str) -> bool {
+    compile_fteqcc(&format!("{ADDRESSED}void t(void) {{ {statement} }};\n")).is_err()
+}
+
+// spec FTEF-31.28, FTEF-31.30, FTEF-31.31: the forms not followed are refused, not written
+// wrongly: a constant vector's component's address, a narrow member's address, and a store of
+// an element one `OP_STOREP_*` does not store
+#[test]
+fn the_forms_not_followed_are_refused() {
+    for statement in [
+        "p = &cv[1];",
+        "bp = &ns.d;",
+        "bp = &nsarr[1].d;",
+        "bp = &nsarr[k].d;",
+        "barr[k] = 3;",
+        "darr[k] = dd;",
+    ] {
+        assert!(refused(statement), "{statement}");
+    }
+    assert!(!refused("bp = &gb;"));
+}
+
+// spec FTEF-31.29: a vector in parentheses is read before its component is taken, and on a
+// target that reads elements by the array's functions a component by index is refused
+#[test]
+fn a_component_of_a_parenthesised_or_function_read_element() {
+    use qc_preproc::Op;
+    for statement in ["r = (varr[i]).y;", "r = (varr[i])[1];"] {
+        let (progs, statements) = addressed(statement);
+        assert_eq!(
+            opcodes(&statements)[..5],
+            numbers([
+                Op::ConvFtoi,
+                Op::Boundcheck,
+                Op::MulI,
+                Op::LoadaV,
+                Op::StoreF
+            ]),
+            "{statement}"
+        );
+        assert_eq!(
+            (statements[4].a, statements[4].b),
+            (statements[3].c + 1, global(&progs, "r")),
+            "{statement}"
+        );
+    }
+    let standard = "vector varr[3];\nfloat i;\nfloat r;\n";
+    let source = format!("{standard}void t(void) {{ r = varr[i][1]; }};\n");
+    assert!(compile_fteqcc(&source).is_err());
 }
 
 // spec FTEF-31.29: a component of an element of an array of vectors at an index that is no

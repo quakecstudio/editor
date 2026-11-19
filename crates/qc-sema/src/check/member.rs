@@ -407,6 +407,8 @@ impl Checker<'_> {
             // at the index plus the component's word, as a struct's member is.
             (_, Some(word))
                 if !self.global
+                    && bare
+                    && self.indexes_words(selector.syntax().span())
                     && let Reference::Element(element) = &base.reference
                     && !element.vector
                     && element.index.known().is_none() =>

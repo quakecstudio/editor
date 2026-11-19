@@ -864,7 +864,16 @@ impl Checker<'_> {
                 let at = self.bound_checked(at, constant, Some(VECTOR_WORDS), span)?;
                 self.field_vector_index(&base, label, at, constant, span)
             }
-            (Some(Etype::Vector), _) => self.vector_index(base, label, at, constant, span),
+            (Some(Etype::Vector), _) => {
+                // A vector in parentheses is read before it is indexed (FTEF-31.27).
+                let element = matches!(&base.reference, Reference::Element(e) if !e.vector);
+                let base = if element && matches!(index.base(), Some(ast::Expr::Paren(_))) {
+                    self.read(base, span)?
+                } else {
+                    base
+                };
+                self.vector_index(base, label, at, constant, span)
+            }
             (Some(Etype::Field), Type::Field(held))
                 if self.etype_of(held) == Some(Etype::Vector) =>
             {
@@ -1210,6 +1219,14 @@ impl Checker<'_> {
         })
     }
 
+    /// Whether the target at `span` reads and stores an array's words at an index, by
+    /// `OP_LOADA_*` and through `OP_GLOBALADDRESS` (FTEF-31.19, FTEF-31.20). Any other reads
+    /// and stores whole elements by the array's functions, which a component's index is not for.
+    pub(super) fn indexes_words(&self, span: Span) -> bool {
+        let target = self.env.target_at(span.start);
+        target.valid(Op::LoadaF) && target.valid(Op::Globaladdress) && target.stores_at_offset()
+    }
+
     /// FTEF-31.29: the component at `at` of the vector `base` that is an array's element at an
     /// index that is no constant: the float at that index plus this one. `None` for any other
     /// vector.
@@ -1228,6 +1245,12 @@ impl Checker<'_> {
             _ => return Ok(None),
         };
         if self.global {
+            return Ok(None);
+        }
+        // A target that reads elements by the array's functions divides the index by the
+        // element's words for them (`OP_DIV_F`), which is not followed.
+        if !self.indexes_words(span) {
+            self.followed = false;
             return Ok(None);
         }
         let at = self.bound_checked(at.clone(), constant, Some(VECTOR_WORDS), span)?;
@@ -1281,8 +1304,9 @@ impl Checker<'_> {
         let whole = def.map(|def| ir::Name::Def(def, 0));
         let constant = |words: i32| Some(Value::constant(Constant::int(words)));
         let (base, index) = match &value.reference {
-            // A constant vector's component is the immediate's word.
-            Reference::Element(_) if def.is_none() => (self.name_of(value), None),
+            // A constant vector's component folded to its immediate has no word of the
+            // vector to address: not followed.
+            Reference::Element(_) if def.is_none() => (None, None),
             Reference::Element(element) => {
                 match element.index.known().and_then(eval_int).zip(word) {
                     Some((index, word)) => (whole, constant(index.wrapping_add(word))),
@@ -1320,22 +1344,20 @@ impl Checker<'_> {
         // FTEF-31.30: an element of 8 or 16 bits is addressed in bytes, which
         // `OP_GLOBALADDRESS`'s index of words does not count: the array's address,
         // then `OP_ADD_I` of the index times the element's bytes.
-        if let (Reference::Element(_), Some(bits), Some(index)) =
-            (&value.reference, narrow_bits(&value.ty), &index)
-        {
-            let made = self.next_made();
-            self.generated.push(ir::BodyStatement {
-                a: Some(base),
-                c: Some(ir::Name::Made(made)),
-                ..ir::BodyStatement::bare(Op::Globaladdress)
-            });
-            let temp = Some(self.env.temps().take(1));
-            self.last_temp = temp;
-            let array = Value {
-                temp,
-                made: Some(made),
-                ..pointer_to(&value.ty)
+        if let Some(bits) = narrow_bits(&value.ty) {
+            // A narrow member of a struct is at a bit of its word (`operand->bitofs`), and a
+            // narrow member array's index is in words: not followed.
+            let own = matches!(&value.reference, Reference::Element(element) if !element.vector)
+                && value.bitfield.is_none()
+                && word == Some(0);
+            let whole = matches!(value.reference, Reference::Global);
+            let Some(index) = index.as_ref().filter(|_| own) else {
+                if !whole || value.bitfield.is_some() || word != Some(0) {
+                    self.followed = false;
+                }
+                return Ok(self.global_address(base, None, &value.ty));
             };
+            let array = self.global_address(base, None, &value.ty);
             let offset = self.emit(Op::MulI, index, &element_bytes(bits), span)?;
             let address = self.emit(Op::AddI, &array, &offset, span)?;
             return Ok(Value {
@@ -1347,20 +1369,26 @@ impl Checker<'_> {
         // (`QCC_PR_Statement(&pr_opcodes[OP_GLOBALADDRESS], operand->base,
         // operand->index.cast?QCC_SupplyConversion(operand->index, ev_integer,
         // true):nullsref, NULL)`).
+        let index = index.as_ref().and_then(|index| self.name_of(index));
+        Ok(self.global_address(base, index, &value.ty))
+    }
+
+    /// `OP_GLOBALADDRESS` of `base` and `index` into a temporary: a pointer to a `pointee`.
+    fn global_address(&mut self, base: ir::Name, index: Option<ir::Name>, pointee: &Type) -> Value {
         let made = self.next_made();
         self.generated.push(ir::BodyStatement {
             a: Some(base),
-            b: index.as_ref().and_then(|index| self.name_of(index)),
+            b: index,
             c: Some(ir::Name::Made(made)),
             ..ir::BodyStatement::bare(Op::Globaladdress)
         });
         let temp = Some(self.env.temps().take(1));
         self.last_temp = temp;
-        Ok(Value {
+        Value {
             temp,
             made: Some(made),
-            ..pointer_to(&value.ty)
-        })
+            ..Value::of(Type::Pointer(pointee.clone().into()))
+        }
     }
 
     /// `&e` (`QCC_PR_RefTerm`): under `qccx` a float is a pointer to a float, and a string,
@@ -1437,25 +1465,23 @@ impl Checker<'_> {
                     let through = target.valid(Op::Globaladdress)
                         && target.stores_at_offset()
                         && !self.global;
-                    let address = through.then(|| {
-                        let made = self.next_made();
-                        self.generated.push(ir::BodyStatement {
-                            a: self.name_of(lhs),
-                            c: Some(ir::Name::Made(made)),
-                            ..ir::BodyStatement::bare(Op::Globaladdress)
-                        });
-                        let temp = Some(self.env.temps().take(1));
-                        self.last_temp = temp;
-                        made
-                    });
+                    let address = match self.name_of(lhs).filter(|_| through) {
+                        Some(array) => self.global_address(array, None, &lhs.ty).made,
+                        None => {
+                            if through {
+                                self.followed = false;
+                            }
+                            None
+                        }
+                    };
                     let index = if self.etype_of(&index.ty) == Some(Etype::Integer) {
                         index.clone()
                     } else {
                         self.converted(index, Etype::Integer, span)?
                     };
-                    // An element of 8 or 16 bits is stored by a narrow store at an index of
-                    // bytes (`OP_STOREP_I8`), which is not followed.
-                    if address.is_some() && narrow_bits(&lhs.ty).is_some() {
+                    // FTEF-31.30, FTEF-31.31: an element one `OP_STOREP_*` does not store, of 8,
+                    // 16 or 64 bits or a struct, is not followed.
+                    if address.is_some() && !self.one_store(&lhs.ty) {
                         self.followed = false;
                     }
                     if let Some(made) = address {
@@ -1693,7 +1719,6 @@ const fn int_f32(value: i32) -> f32 {
     value as f32
 }
 
-/// The bits of an 8- or 16-bit integer type, `ev_bitfld`'s `bits` (FTEF-2.12).
 /// The bits of a byte, which the address of an 8- or 16-bit element counts in.
 const BYTE_BITS: u32 = 8;
 
@@ -1705,6 +1730,7 @@ fn element_bytes(bits: u32) -> Value {
     int(bytes.unwrap_or(1))
 }
 
+/// The bits of an 8- or 16-bit integer type, `ev_bitfld`'s `bits` (FTEF-2.12).
 fn narrow_bits(ty: &Type) -> Option<u32> {
     match ty.fteqcc_scalar() {
         Some(CScalar::Int8 | CScalar::Uint8) => Some(8),

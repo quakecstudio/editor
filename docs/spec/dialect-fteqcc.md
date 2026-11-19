@@ -5605,7 +5605,8 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   member at word 0, `&gp.a`, has an index of 0 there and none here. An index that is no
   constant after a constant part, `&varr[1][k]` or `&gp.v[k]`, is there `ADD_I` of the part
   and the index and the definition whole, and here the definition at that word and the index.
-  And with `flag_pointerrelocs`, which FTE's revision 6614 sets (`flag_pointerrelocs =
+  The address of a constant vector's component, `&cv[1]`, which FTEQCC writes as
+  `GLOBALADDRESS cv, 1`, is not followed. And with `flag_pointerrelocs`, which FTE's revision 6614 sets (`flag_pointerrelocs =
   qcc_targetversion >= QCTARGVER_FTE_PRELOCS`), FTEQCC writes no statement for a constant
   index but the address as an immediate (`if (eval && flag_pointerrelocs) { ... ptr =
   QCC_MakeGAddress(...) }`), which is not followed: the statement is written on every target.
@@ -5620,7 +5621,16 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   `LOADA_F varr, temp, r`; `varr[i].y = r` ends `GLOBALADDRESS varr` and `STOREP_F r, address,
   temp`; `&varr[i].y` ends `GLOBALADDRESS varr, temp`; `varr[i].x` adds nothing. Of an element
   at a constant index the component is counted from that element: `varr[1][k] = r` stores at
-  `varr`'s word 3 plus `k`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `varr`'s word 3 plus `k`. A vector in parentheses is read first, and the component is the
+  temporary's: `r = (varr[i]).y` is `LOADA_V varr, temp, temp_1` and `STORE_F temp_1+1, r`, and
+  `(varr[i]).y = r` stores to the temporary. Two differences are stated. FTEQCC adds the
+  component by `OP_ADD_I` of both indexes made integers unless both are floats (`if (idx.cast
+  && idx.cast->type == ev_float && tmp.cast->type == ev_float) ... OP_ADD_F ... else ...
+  OP_ADD_I`), and here a float index, which only `#pragma flag disable boundchecks` leaves one,
+  is added to by `OP_ADD_F`: the same value by other statements. And on a target that reads and
+  stores elements by the array's functions FTEQCC divides the index by the element's words
+  (`OP_DIV_F`, `QCC_LoadFromArray`), which is not followed: `varr[i][1]` there is refused.
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`.
 - **FTEF-31.30** The address of an element of an array of 8- or 16-bit integers is in bytes,
   which `OP_GLOBALADDRESS`'s index of words does not count (`if (basetype->align &&
@@ -5632,7 +5642,10 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   `&barr[2]` of `__int8 barr[8]` is `GLOBALADDRESS barr` and `ADD_I address, 2`; `&harr[2]` of
   `__int16 harr[8]` adds 4; `&harr[k]` is `BOUNDCHECK k, 8`, `GLOBALADDRESS harr`, `MUL_I k, 2`
   and `ADD_I`. A store to such an element at an index that is no constant, FTEQCC's
-  `OP_STOREP_I8` at the index, and a read of one, are not followed. Source:
+  `OP_STOREP_I8` at the index, and a read of one, are not followed; nor is the address of a
+  narrow member of a struct or of a narrow member array's element, which is at a bit of its
+  word (`if (operand->bitofs) ptr = QCC_PR_Statement(&pr_opcodes[OP_ADD_I], ptr,
+  QCC_MakeIntConst(operand->bitofs/8), NULL)`). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_GenerateAddressOf`.
 - **FTEF-31.31** The value of an increment or a decrement of an element is the element's, not
@@ -5646,7 +5659,8 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   temp_1, r`, and `r = ++self.health` is `LOAD_F`, `ADD_F`, `STOREF_F` and `STORE_F` of the
   sum. An element that is an integer, a pointer, an entity, a string, a field or a function is
   stored through the array's address by its own `OP_STOREP_*` (FTEF-6.18): `iarr[k] = ri` is
-  `STOREP_I`. Run on the pinned FTEQCC with `-Tfte`. Source:
+  `STOREP_I`; an element of 64 bits or a struct, which no one `OP_STOREP_*` stores, is not
+  followed. Run on the pinned FTEQCC with `-Tfte`. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_RefToDef`, `QCC_StoreSRefToRef`.
 - **FTEF-31.32** A member array of a struct that is a definition, or an element of one, is

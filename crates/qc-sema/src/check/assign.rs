@@ -1101,8 +1101,30 @@ impl Checker<'_> {
         }
     }
 
+    /// Whether one `STOREP_*` stores a value of type `target`: no struct, union, 64-bit value
+    /// or narrow integer.
+    pub(super) fn one_store(&self, target: &Type) -> bool {
+        matches!(
+            self.etype(target),
+            Some(
+                Etype::Float
+                    | Etype::Vector
+                    | Etype::String
+                    | Etype::Entity
+                    | Etype::Field
+                    | Etype::Function
+                    | Etype::Integer
+                    | Etype::Uint
+                    | Etype::Pointer
+            )
+        ) && !matches!(
+            target.fteqcc_scalar(),
+            Some(CScalar::Int8 | CScalar::Uint8 | CScalar::Int16 | CScalar::Uint16)
+        )
+    }
+
     /// `STOREP_*` of a value of type `target`, by its basic type.
-    pub(super) fn storep_op(&self, target: &Type) -> Op {
+    fn storep_op(&self, target: &Type) -> Op {
         match self.etype(target) {
             Some(Etype::Vector) => Op::StorepV,
             Some(Etype::String) => Op::StorepS,
@@ -1131,24 +1153,7 @@ impl Checker<'_> {
         if self.global {
             return Ok(());
         }
-        // A value one `STOREP_*` stores: no struct, union, 64-bit value or narrow integer.
-        let word = matches!(
-            self.etype(target),
-            Some(
-                Etype::Float
-                    | Etype::Vector
-                    | Etype::String
-                    | Etype::Entity
-                    | Etype::Field
-                    | Etype::Function
-                    | Etype::Integer
-                    | Etype::Uint
-                    | Etype::Pointer
-            )
-        ) && !matches!(
-            target.fteqcc_scalar(),
-            Some(CScalar::Int8 | CScalar::Uint8 | CScalar::Int16 | CScalar::Uint16)
-        ) && lhs.bitfield.is_none();
+        let word = self.one_store(target) && lhs.bitfield.is_none();
         if pointer.named.is_none() || !word {
             self.followed = false;
             return Ok(());
