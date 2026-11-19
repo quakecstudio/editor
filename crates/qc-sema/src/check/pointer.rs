@@ -401,8 +401,11 @@ impl Checker<'_> {
         let word = |at: u32| int(i32::try_from(at).unwrap_or(i32::MAX));
         let mut at: u32 = 0;
         if target.stores_at_offset() {
+            // Each word's store and its index, `OP_ADD_I` of the index and the word, are
+            // written by [`Checker::store_words_through`]; here the opcodes are checked, and
+            // an `OP_ADD_I` the target lacks is emulated for its diagnostics.
             let store = |checker: &mut Self, at: u32, op: Op| -> Result<(), Fatal> {
-                if let Some(index) = index {
+                if let Some(index) = index.filter(|_| !target.valid(Op::AddI)) {
                     checker.emit(Op::AddI, index, &word(at), span)?;
                 }
                 checker.simple_statement(op, span)

@@ -6565,3 +6565,54 @@ fn immediates_are_shared_by_size_and_bits() {
     let types = [source(0), source(2), source(4), source(6)].map(type_at);
     assert_eq!(types, [9, 8, 10, 8], "each written as its first use");
 }
+
+// spec FTEF-6.18, FTEF-31.20: a struct stored through a pointer, or through an array's address
+// at an index that is no constant, is `OP_STOREP_V` of its first three words and `OP_STOREP_I`
+// of each word after, at the word's index: the word itself with no index, else `OP_ADD_I` of
+// the index and the word
+// spec FTEF-6.14, FTEF-31.19: one read through a pointer is `OP_LOADP_V` and `OP_LOADP_I` of
+// each word after, and one read from an array `OP_LOADA_V` and `OP_LOADA_I64`, into a block
+// that is then copied
+#[test]
+fn a_struct_is_stored_and_read_word_by_word_through_an_address() {
+    use qc_progs::Op::{
+        AddI, Boundcheck, Globaladdress, LoadaI64, LoadaV, LoadpI, LoadpV, MulI, StoreI64, StoreV,
+        StorepI, StorepV,
+    };
+    let of = |statement: &str| {
+        ops_of(&format!(
+            "#pragma target fte\ntypedef struct {{ float a; vector b; int c; }} w_t;\n\
+             w_t g;\nw_t arr[3];\nw_t *p;\nint i;\nvoid() f = {{ {statement} }};\n"
+        ))
+    };
+    assert_eq!(of("*p = g;"), numbers([StorepV, StorepI, StorepI]));
+    assert_eq!(
+        of("p[i] = g;"),
+        numbers([MulI, StorepV, AddI, StorepI, AddI, StorepI])
+    );
+    assert_eq!(
+        of("arr[i] = g;"),
+        numbers([
+            Boundcheck,
+            MulI,
+            Globaladdress,
+            StorepV,
+            AddI,
+            StorepI,
+            AddI,
+            StorepI
+        ])
+    );
+    assert_eq!(
+        of("g = *p;"),
+        numbers([LoadpV, LoadpI, LoadpI, StoreV, StoreI64])
+    );
+    assert_eq!(
+        of("g = p[i];"),
+        numbers([MulI, LoadpV, AddI, LoadpI, AddI, LoadpI, StoreV, StoreI64])
+    );
+    assert_eq!(
+        of("g = arr[i];"),
+        numbers([Boundcheck, MulI, LoadaV, LoadaI64, StoreV, StoreI64])
+    );
+}

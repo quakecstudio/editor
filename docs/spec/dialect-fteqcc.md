@@ -610,7 +610,10 @@ inheritance, bitfields and nested members.
   `STORE_V`, `STORE_I64` on an FTE target and `STORE_V`, `STORE_F`, `STORE_F` on the standard
   one (FTE-14.6), and one of seven `STORE_V`, `STORE_V`, `STORE_F` on both. An element at a
   constant index is its array's definition at the element's words, so a struct stored to one
-  or read from one is the same copy. A struct local's initialiser is stored by another
+  or read from one is the same copy. At an index that is no constant, on a target with the
+  opcodes, a struct is stored through the array's address word by word (FTEF-31.20,
+  FTEF-6.18) and read into a block by `OP_LOADA_V`, `OP_LOADA_I64` and `OP_LOADA_I`
+  (FTEF-31.19), which is then copied. A struct local's initialiser is stored by another
   function (FTE-14.9). No struct chooses
   the progs format, which is the target's (FTE-24.1, FTE-24.3). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,

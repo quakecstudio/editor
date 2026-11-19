@@ -383,9 +383,21 @@ impl Checker<'_> {
         if matches!(kind, Assign::Store | Assign::Compound(..)) {
             self.pointer_store(&lhs, &stored, &target, span)?;
         }
-        // Any other store of a struct or a union is word groups the body does not follow
-        // (FTE-14.5).
-        if structured && !copied && element == ElementStore::NotOne {
+        // A struct stored through a pointer, or through an array's address at an index that is
+        // no constant, is written word by word or refused where it is stored (FTEF-6.18,
+        // FTEF-31.20). Any other store of a struct or a union is word groups the body does
+        // not follow (FTE-14.5).
+        let opcodes = self.env.target_at(span.start);
+        let by_address = match &lhs.reference {
+            Reference::Pointer(_) => true,
+            Reference::Element(at) => {
+                at.index.known().is_none()
+                    && opcodes.valid(Op::Globaladdress)
+                    && opcodes.stores_at_offset()
+            }
+            _ => false,
+        };
+        if structured && !copied && element == ElementStore::NotOne && !by_address {
             self.followed = false;
         }
         // FTEF-29.3: `QCC_StoreSRefToRef`.
@@ -1249,7 +1261,10 @@ impl Checker<'_> {
             return Ok(());
         }
         let word = self.one_store(target) && lhs.bitfield.is_none();
-        if pointer.named.is_none() || !word {
+        // FTEF-6.18: a struct or a union is stored word by word.
+        let structured = matches!(self.etype(target), Some(Etype::Struct | Etype::Union))
+            && lhs.bitfield.is_none();
+        if pointer.named.is_none() || !(word || structured) {
             self.followed = false;
             return Ok(());
         }
@@ -1265,6 +1280,15 @@ impl Checker<'_> {
             }
             index => index.clone(),
         };
+        if structured {
+            let words = self.env.layout(target).map_or(0, |layout| layout.words);
+            let at = index.as_ref().and_then(|index| self.name_of(index));
+            let named = index.is_none() || at.is_some();
+            if !(named && self.store_words_through(stored, pointer.named, at, words, span)) {
+                self.followed = false;
+            }
+            return Ok(());
+        }
         let mut through = pointer.named;
         let mut at = None;
         if let Some(index) = &index {
@@ -1286,6 +1310,73 @@ impl Checker<'_> {
         self.read_returned(stored);
         self.last_temp = None;
         Ok(())
+    }
+
+    /// FTEF-6.18: `QCC_StoreToPointer`'s `case ev_struct: case ev_union:` on a target whose
+    /// stores take an offset: the `words` words of `stored` stored through `pointer`,
+    /// `OP_STOREP_V` for each three when the target has it, `OP_STOREP_I64` by FTEQCC's test
+    /// of bits against words (`for (; i+(32*2) <= type->size; i+=32*2)`), then `OP_STOREP_I`,
+    /// or else `OP_STOREP_F`, for each word left. Each is stored at its word's index: the
+    /// word itself with no `index`, else `OP_ADD_I` of `index` and the word, which the first
+    /// word folds away. Whether it was written: not on a target whose stores take no offset,
+    /// nor from a value whose words the body cannot name.
+    pub(super) fn store_words_through(
+        &mut self,
+        stored: &Value,
+        pointer: Option<ir::Name>,
+        index: Option<ir::Name>,
+        words: u32,
+        span: Span,
+    ) -> bool {
+        let target = self.env.target_at(span.start);
+        let from = self.name_of(stored).filter(|name| {
+            matches!(
+                name,
+                ir::Name::Def(..) | ir::Name::Made(_) | ir::Name::Immediate(_) | ir::Name::Return
+            )
+        });
+        let (Some(from), Some(pointer), true) = (from, pointer, target.stores_at_offset()) else {
+            return false;
+        };
+        let single = if target.valid(Op::StorepI) {
+            Op::StorepI
+        } else {
+            Op::StorepF
+        };
+        let mut at: u32 = 0;
+        while at < words {
+            let left = words.saturating_sub(at);
+            let (op, size) = if left >= VECTOR_WORDS && target.valid(Op::StorepV) {
+                (Op::StorepV, VECTOR_WORDS)
+            } else if target.valid(Op::StorepI64)
+                && at.saturating_mul(WORD_ALIGNMENT).saturating_add(INT64_BITS) <= words
+            {
+                (Op::StorepI64, 2)
+            } else {
+                (single, 1)
+            };
+            let word = ir::Name::Immediate(ir::Immediate {
+                kind: ir::ImmediateKind::Integer,
+                words: [at, 0, 0],
+            });
+            let place = match index {
+                None => Some(word),
+                Some(index) if at == 0 => Some(index),
+                Some(index) => self
+                    .push_made(Op::AddI, Some(index), Some(word))
+                    .map(ir::Name::Made),
+            };
+            self.generated.push(ir::BodyStatement {
+                a: from.word(at),
+                b: Some(pointer),
+                c: place,
+                ..ir::BodyStatement::bare(op)
+            });
+            at = at.saturating_add(size);
+        }
+        self.read_returned(stored);
+        self.last_temp = None;
+        true
     }
 
     /// A store of more statements than one, or of a type copied by its size, to the
@@ -1913,6 +2004,10 @@ enum Compounded {
     /// Nothing more is checked.
     Unchecked,
 }
+
+/// The bits of a 64-bit value, which `QCC_StoreToPointer` tests a struct's words against
+/// (`for (; i+(32*2) <= type->size; i+=32*2)`, FTEF-6.18).
+const INT64_BITS: u32 = 64;
 
 /// Whether an assignment's target was an element at a constant index, which
 /// [`Checker::element_store`] stores.
