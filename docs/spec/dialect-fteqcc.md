@@ -6043,7 +6043,8 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   (`OP_DIV_F`, `QCC_LoadFromArray`), which is not followed: `varr[i][1]` there is refused.
   Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`.
-- **FTEF-31.33** A class's member array is an array of fields, whatever its fields hold: a
+- **FTEF-31.33** A class's member array, and an array of fields declared at file level
+  (`.float slots[4];`), is an array of fields, whatever its fields hold: a
   global for each word of each element, each holding the offset of that word's field, so
   `vector vs[4]` is twelve globals and its records name `vs[1]` at the fourth. Its length is
   the integer its size folds to (`QCC_PR_IntConstExpr`), `16i` and `0x10` as their numbers

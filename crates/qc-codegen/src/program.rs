@@ -706,8 +706,22 @@ impl Program {
         // FTE-13.10: an array takes its elements' words in turn, a vector array's with no
         // component definitions; FTE-14.5: a struct takes its layout's words.
         if let Some(count) = count {
-            if ty.field_inner().is_some() {
-                return Err(Internal::Unsupported);
+            // FTEF-31.33: an array of fields has a global for each word of each element, each
+            // the offset of that word's field, the fields taken in turn.
+            if let Some(inner) = ty.field_inner() {
+                let words = type_words(index, &inner)
+                    .checked_mul(count)
+                    .ok_or(Internal::TooLarge)?;
+                let ofs = self.allocate_global(words)?;
+                let offsets: Vec<u32> = (0..words)
+                    .map(|word| self.size_fields.saturating_add(word))
+                    .collect();
+                self.set_words(ofs, &offsets)?;
+                self.size_fields = self
+                    .size_fields
+                    .checked_add(words)
+                    .ok_or(Internal::TooLarge)?;
+                return Ok(place);
             }
             let words = type_words(index, &ty)
                 .checked_mul(count)

@@ -8038,3 +8038,33 @@ fn a_hexen_ii_target_reads_random_from_the_return_global() {
         assert_eq!((f[3].a, f[5].a, f[5].b), (1, f[3].b, 1));
     }
 }
+
+// spec FTEF-31.33: an array of fields declared at file level has a global and a field for each
+// word of each element, the fields taken in turn, and is indexed as a member array is
+#[test]
+fn a_global_array_of_fields_is_laid_out_and_indexed() {
+    let p = fte_progs(&format!(
+        "{CLASS_HEADER}float i;\n.float slots[4]; .vector vs[2]; .float after;\n\
+         void() f = {{ self.slots[2] = 1; x = self.slots[i]; x = self.vs[1].y; self.after = x; }};\n"
+    ));
+    let at = |name: &str| field_offset(&p, name);
+    assert_eq!((at("slots[0]"), at("slots[3]")), (1, 4));
+    assert_eq!((at("vs[0]"), at("vs[1]"), at("after")), (5, 8, 11));
+    assert_eq!(p.entityfields, 12);
+    assert_eq!(
+        names_in(&p, "f"),
+        [
+            "STOREF_F",
+            "CONV_FI",
+            "BOUNDCHECK",
+            "LOADA_FLD",
+            "LOADF_F",
+            "LOADF_F",
+            "STOREF_F"
+        ]
+    );
+    let f = body(&p, "f");
+    let slots = global(&p, "slots");
+    assert_eq!((f[0].b, f[2].b, f[3].a), (slots + 2, 4, slots));
+    assert_eq!(f[5].b, global(&p, "vs") + 4, "the second vector's y");
+}
