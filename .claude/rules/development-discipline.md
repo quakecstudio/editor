@@ -25,7 +25,17 @@ came from a session that went wrong without it.
    else.
 6. **Fix the class, not the instance.** When a bug shows an invariant ("every opcode that
    writes a global must ..."), find every code path that touches it and fix them all in one
-   change, with a test for each.
+   change, with a test for each. No bandaids:
+   - Before writing a fix, say what the one rule is and where it lives: for a port, the
+     upstream function, read whole. A special case for one type inside code that follows an
+     upstream switch, or a new table beside one of the same shape, is a patch on a symptom.
+   - When a comparison or a review turns up several differences, list them all and group
+     them by the rule each comes from before fixing any. Fixing each as it is found is how
+     one rule becomes four patches (PR 1048, 2026-11-19).
+   - A review's finding is fixed on the branch, in its proper place, before the PR lands. It
+     is never written off as "not changed" or "a refactor for its own change": `land.sh`
+     refuses such a body unless the item says Justin decided it stays
+     (`check-code-review.sh`).
 7. **Scripted edits must prove they landed.** A `sed` or `str.replace` that misses its anchor
    changes nothing and reports success. After a scripted edit, search for the new text and
    for the absence of the old. Prefer edit tools that fail on a missed match.

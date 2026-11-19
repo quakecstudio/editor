@@ -250,3 +250,35 @@ fn a_body_lands_only_with_its_code_review_recorded() {
             .contains("no \"## Code review\" section")
     );
 }
+
+// development-discipline.md, rule 6: land.sh refuses a review section that leaves a finding
+// unfixed, as PR 1048's first body did ("Not changed: ... a refactor for its own change"),
+// unless the item says Justin decided it; a section whose findings are all fixed lands
+#[test]
+fn a_body_with_a_finding_left_unfixed_does_not_land() {
+    let review = |items: &str| format!("## Code review\n\n`/code-review high` ran.\n\n{items}\n");
+    for items in [
+        "- Fixed: the store reads the type's layout.\n- Fixed: one table.",
+        "- Fixed: the comment no longer says the menu is unchanging.",
+        "- Stays as it is: Justin decided on 2026-11-19 that the bare binary's title is not changed.",
+        "Nothing found.",
+    ] {
+        assert!(reviewed(&review(items)), "{items:?}");
+    }
+    for items in [
+        "- Fixed: one.\n- Not changed: the three places are not one store. A refactor for its own change.",
+        "- Stated, not changed: the cache belongs to its pair.",
+        "- Not fixed: the links' layout.",
+        "- The second table is left as it is.",
+        "- Deferred to a follow-up.",
+        "1. Fixed.\n2. Left for later: the palette.",
+    ] {
+        let body = review(items);
+        assert!(!reviewed(&body), "{items:?}");
+        assert!(
+            run("check-code-review.sh", &body)
+                .1
+                .contains("leaves a finding unfixed")
+        );
+    }
+}
