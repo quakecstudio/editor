@@ -5197,6 +5197,16 @@ as far as they report.
   refuses to write rather than follow. Without the opcodes it is the builtin's call and its
   value scaled (FTE-19, `-Tid`). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall`; checked against the
   pinned FTEQCC's output on an FTE target (2026-11-19).
+- **FTEF-27.24** `OP_ADD_I` whose left operand is the temporary the statement before made
+  by `OP_MUL_I` of a value and the word's size, 4, is written as `OP_ADD_PIW` of the addend
+  and the value, the multiplication dropped: "mul_i idx 4i tmp; add_i tmp 2i out becomes
+  add_piw 2i idx out" (`else if (op - pr_opcodes == OP_ADD_I &&
+  statements[numstatements-1].op == OP_MUL_I && opt_assignments && !flag_undefwordsize)`,
+  with `eval_b->_int == VMWORDSIZE` and the temporary read once). So the member at word 1 of
+  an element of an array of structs of four words, `tab[n].b`, is `ADD_PIW 1i, n` and one
+  load, where a struct of three words keeps `MUL_I n, 3i; ADD_I`. The other order, `2i + j *
+  4i`, is not rewritten. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_StatementFlags`; checked against the pinned
+  FTEQCC's output on an FTE target (2026-11-19).
 ## FTEF-28 The warnings of an emitted comparison
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_StatementFlags` (the switch after the emulation),

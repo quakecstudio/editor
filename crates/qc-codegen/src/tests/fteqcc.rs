@@ -7301,3 +7301,19 @@ fn a_methods_arguments_are_stored_after_self_is_set() {
         ["SUB_F", "STORE_ENT", "STORE_ENT", "STORE_F", "CALL3H"]
     );
 }
+
+// spec FTEF-27.24: a multiplication by the word's size whose temporary is the left operand of
+// the addition after it is one `OP_ADD_PIW` of the addend and the value; any other size, and
+// the other order, keep both statements
+#[test]
+fn a_multiply_by_the_word_size_and_an_add_are_one_statement() {
+    let head = "#pragma target fte\nint i, j;\n";
+    let of = |body: &str| names_of(&format!("{head}void() f = {{ {body} }};\n"));
+    assert_eq!(of("i = j * 4i + 2i;"), ["ADD_PIW"]);
+    assert_eq!(of("i = j * 3i + 2i;"), ["MUL_I", "ADD_I"]);
+    assert_eq!(of("i = 2i + j * 4i;"), ["MUL_I", "ADD_I"]);
+    let progs = fte_progs(&format!("{head}void() f = {{ i = j * 4i + 2i; }};\n"));
+    let t = body(&progs, "f");
+    assert_eq!(words(&progs, t[0].a, 1), [2]);
+    assert_eq!((t[0].b, t[0].c), (global(&progs, "j"), global(&progs, "i")));
+}

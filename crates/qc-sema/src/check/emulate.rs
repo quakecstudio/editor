@@ -107,6 +107,57 @@ enum Emulation {
 }
 
 impl Checker<'_> {
+    /// FTEF-27.24: `QCC_PR_StatementFlags`' rewrite of `OP_ADD_I` whose left operand is the
+    /// temporary the statement before made by `OP_MUL_I` of a value and the word's size
+    /// (`else if (op - pr_opcodes == OP_ADD_I && statements[numstatements-1].op == OP_MUL_I
+    /// && opt_assignments && !flag_undefwordsize)`, `eval_b->_int == VMWORDSIZE`): the
+    /// multiplication is dropped and the two are `OP_ADD_PIW` of the addend and the value.
+    /// The addend and the value, when `op` of `lhs` and `rhs` is that.
+    fn words_added(
+        &mut self,
+        op: Op,
+        lhs: &Value,
+        rhs: &Value,
+        span: Span,
+    ) -> Option<(Value, Value)> {
+        if op != Op::AddI
+            || self.global
+            || self.env.flags_at(span.start).has(FteFlag::Undefwordsize)
+        {
+            return None;
+        }
+        let last = self.generated.last().copied()?;
+        let word_size = ir::Name::Immediate(ir::Immediate {
+            kind: ir::ImmediateKind::Integer,
+            words: [u32::try_from(WORD_BYTES).ok()?, 0, 0],
+        });
+        // `var_a.sym == statements[numstatements-1].c.sym`, a temporary read once.
+        let made = lhs.temp.is_some()
+            && lhs.temp == self.last_temp
+            && lhs.made.map(ir::Name::Made) == last.c;
+        if last.op != Op::MulI || last.b != Some(word_size) || !made {
+            return None;
+        }
+        self.name_of(rhs)?;
+        let integer = lhs.ty.clone();
+        let index = match last.a? {
+            ir::Name::Made(index) => Value {
+                made: Some(index),
+                ..Value::of(integer)
+            },
+            ir::Name::Def(def, word) => Value {
+                sym: Sym::Def(def, false, word),
+                ..Value::of(integer)
+            },
+            _ => return None,
+        };
+        self.generated.pop();
+        if let Some(temp) = self.last_temp.take() {
+            self.env.temps().free(temp);
+        }
+        Some((rhs.clone(), index))
+    }
+
     /// `QCC_PR_StatementFlags` of `op` on `lhs` and `rhs` at `span`: folded (FTEF-26), else
     /// emitted when the target has it, else emulated (FTEF-27). An opaque constant operand
     /// decides nothing.
@@ -162,6 +213,10 @@ impl Checker<'_> {
                 constness: Constness::Opaque,
                 ..result
             });
+        }
+        // FTEF-27.24: `mul_i idx 4i tmp; add_i tmp 2i out` "becomes add_piw 2i idx out".
+        if let Some((addend, index)) = self.words_added(op, lhs, rhs, span) {
+            return self.emit(Op::AddPiw, &addend, &index, span);
         }
         // FTEF-27.19: `OP_ADD_PIW` of two constants is one, unless the word's size is undefined.
         if op == Op::AddPiw
