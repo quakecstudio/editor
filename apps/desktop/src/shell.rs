@@ -87,8 +87,7 @@ use crate::pick::Answer;
 use crate::picker::{PickerKind, PickerRow};
 use crate::project::ProjectFeature;
 use crate::project::{self, Jump, SymbolScope};
-use crate::strings::panel_button;
-use crate::strings::{Text, Truncation};
+use crate::strings::{Text, Truncation, panel_button, review_waiting};
 use crate::theme::{Theme, Token, semibold};
 #[cfg(test)]
 use qs_map_edit::uv::FaceRef;
@@ -184,6 +183,8 @@ enum StatusAsk {
     Show(DockPanel),
     /// Move this panel to that dock.
     Move(DockPanel, Panel),
+    /// Open the first edit waiting for review (P7-18).
+    Review,
 }
 
 /// The tab shown in the centre.
@@ -275,6 +276,8 @@ pub struct Shell {
     /// The count of focus commands the shell has applied (`Layout::focus_requests`): the
     /// layout's when the window opens, so the keyboard moves only when a focus command runs.
     focus_applied: u64,
+    /// The edits waiting for review as of the last frame (P7-18).
+    review_seen: usize,
     /// The last play-loop command's error, shown on the toolbar until the next one.
     preview_error: Option<String>,
     /// Where the app's menu is: the system's menu bar, or the toolbar in the window (P3-44).
@@ -341,6 +344,7 @@ impl Shell {
             game,
             game_shown: false,
             focus_applied: layout.focus_requests,
+            review_seen: 0,
             preview_error: None,
             menu: MenuPlace::default(),
             settings_file: None,
@@ -1254,8 +1258,10 @@ impl Shell {
                 let params = MovePanelParams { panel, dock };
                 let _: Option<Docks> = self.run(qs_layout::MOVE_PANEL, &params);
             }
+            Some(StatusAsk::Review) => self.open_review(),
             None => {}
         }
+        self.follow_review();
         let entered = self.command_line.show(
             ui,
             &self.theme,
@@ -1803,6 +1809,21 @@ impl Shell {
                             node.set_label(format!("{} {value}", name.get()));
                         });
                     }
+                    let waiting = self.session.context().workbench.waiting();
+                    let in_map = self.features.map.map_editor.review().waiting();
+                    let edits = waiting.hunks.saturating_add(in_map);
+                    if edits > 0 {
+                        let files = waiting.files.saturating_add(usize::from(in_map > 0));
+                        let text = RichText::new(review_waiting(edits, files))
+                            .small()
+                            .color(theme.color(Token::Accent));
+                        let item = ui
+                            .add(Button::new(text).frame(false))
+                            .on_hover_text(Text::ReviewWaitingHint.get());
+                        if item.clicked() {
+                            asked = Some(StatusAsk::Review);
+                        }
+                    }
                     let running = match self.session.context().preview.state() {
                         PlayState::Stopped => Text::PreviewStopped,
                         PlayState::Playing => Text::PreviewRunning,
@@ -1830,6 +1851,30 @@ impl Shell {
                 });
             });
         asked
+    }
+
+    /// Opens the first edit waiting for review (P7-18): the file of the first staged hunk at
+    /// its line, or the map view when only the open map's edits wait.
+    fn open_review(&mut self) {
+        if let Some((path, line)) = self.session.context().workbench.waiting().first {
+            let line = u32::try_from(line).unwrap_or(u32::MAX);
+            self.request(ShellRequest::ShowLine { path, line });
+        } else if self.features.map.map_editor.review().waiting() > 0 {
+            self.centre_tab = CentreTab::Map;
+        }
+    }
+
+    /// Opens the first edit waiting for review when edits begin to wait and the built-in
+    /// agent, whose panel lists its own, is not at work: another agent's, staged through the
+    /// app's socket, which a person would otherwise not know of (P7-18).
+    fn follow_review(&mut self) {
+        let waiting = self.session.context().workbench.waiting().hunks;
+        let waiting = waiting.saturating_add(self.features.map.map_editor.review().waiting());
+        let began = self.review_seen == 0 && waiting > 0;
+        self.review_seen = waiting;
+        if began && self.features.agent.panel.running() == 0 {
+            self.open_review();
+        }
     }
 
     /// The status-bar buttons of `dock`'s panels, each on while its panel shows; a click shows
@@ -2483,7 +2528,12 @@ impl Shell {
                         } else {
                             Saved::Saved
                         };
-                        if let Some(action) = file_tab(ui, theme, path, saved, shown) {
+                        let review = if workbench.awaits_review(path) {
+                            Review::Waiting
+                        } else {
+                            Review::None
+                        };
+                        if let Some(action) = file_tab(ui, theme, path, (saved, review), shown) {
                             chosen = Some(action);
                         }
                     }
@@ -2747,22 +2797,34 @@ enum Shown {
     Hidden,
 }
 
-/// A file's tab: its name, a dot when it is unsaved, and a button that closes it.
+/// Whether a file has edits waiting for review.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Review {
+    /// Hunks of it wait.
+    Waiting,
+    /// None do.
+    None,
+}
+
+/// A file's tab: its name, a dot when it is unsaved, a mark when edits of it wait for review,
+/// and a button that closes it.
 fn file_tab(
     ui: &mut Ui,
     theme: &Theme,
     path: &Path,
-    saved: Saved,
+    (saved, review): (Saved, Review),
     shown: Shown,
 ) -> Option<TabAction> {
     let name = path
         .file_name()
         .map_or_else(|| path.to_string_lossy(), |name| name.to_string_lossy());
-    let label = if saved == Saved::Unsaved {
-        format!("{name} {}", Text::UnsavedMark.get())
-    } else {
-        name.into_owned()
-    };
+    let mut label = name.into_owned();
+    if saved == Saved::Unsaved {
+        label = format!("{label} {}", Text::UnsavedMark.get());
+    }
+    if review == Review::Waiting {
+        label = format!("{label} {}", Text::ReviewMark.get());
+    }
     let mut action = None;
     let tab = ui
         .selectable_label(shown == Shown::Shown, label)

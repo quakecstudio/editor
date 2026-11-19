@@ -40,9 +40,8 @@ impl ReviewView {
         self.read_at = revision;
     }
 
-    /// How many hunks wait, for tests.
-    #[cfg(test)]
-    pub(crate) fn waiting(&self) -> usize {
+    /// How many hunks wait.
+    pub(crate) const fn waiting(&self) -> usize {
         self.hunks.len()
     }
 

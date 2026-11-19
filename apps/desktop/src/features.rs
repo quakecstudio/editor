@@ -418,6 +418,8 @@ pub(crate) fn project_panel(
                 open,
                 unsaved: &|path| workbench.is_unsaved(path),
                 mark: theme.color(Token::StatusWarn),
+                review: &|path| workbench.awaits_review(path),
+                review_mark: theme.color(Token::Accent),
             };
             project::tree_ui(ui, workbench.tree(), &rows)
         })

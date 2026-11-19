@@ -47,7 +47,7 @@ use crate::shell::{
 };
 use crate::strings::{
     Text, command_count, command_ran, command_unknown, exit_status, help_for, icon_hint,
-    match_count, missing_textures, panel_button, replace_with, select_all_of,
+    match_count, missing_textures, panel_button, replace_with, review_waiting, select_all_of,
 };
 use crate::theme::{Contrast, Mode, Motion, Theme, ThemeError, Token, semibold};
 use crate::{App, AppError};
@@ -1564,6 +1564,76 @@ fn ember_open() -> Harness<'static, Option<App>> {
 fn caret_line(harness: &Harness<'static, Option<App>>) -> usize {
     let shell = &harness.state().as_ref().unwrap().shell;
     shell.caret().unwrap().1.line
+}
+
+// No spec statement: P7-18, the acceptance criterion: hunks staged in a file that is not open
+// show their count on the status bar and mark the file's row and its tab, the file is opened
+// at the first of them since no agent of the window's staged them, and deciding the last
+// clears the count and the marks
+#[test]
+fn edits_waiting_for_review_are_shown_until_the_last_is_decided() {
+    let mut harness = ember_open();
+    let world = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/ember/src/world.qc");
+    let text = fs::read_to_string(&world).unwrap();
+    let count = review_waiting(2, 1);
+    let row = format!(
+        "world.qc {} {}",
+        Text::ModifiedMark.get(),
+        Text::ReviewMarkName.get()
+    );
+    let tab = format!(
+        "world.qc {} {}",
+        Text::UnsavedMark.get(),
+        Text::ReviewMark.get()
+    );
+    assert!(harness.query_by_label(&count).is_none());
+    let proposed = format!("// first\n{text}// last\n");
+    run_command_with(
+        &mut harness,
+        "edit.apply",
+        json!({ "files": [{ "path": world, "text": proposed }] }),
+    );
+    harness.run();
+    harness.get_by_label(&count);
+    harness.get_by_label(&row);
+    harness.get_by_role_and_label(Role::Tab, &tab);
+    let shell = &harness.state().as_ref().unwrap().shell;
+    let (path, at) = shell.caret().unwrap();
+    assert!(path.ends_with("world.qc"), "{path:?}");
+    assert_eq!(at.line, 0, "at the first hunk");
+
+    // The count opens the first edit again from another file.
+    let weapons = world.with_file_name("weapons.qc");
+    run_command_with(&mut harness, "file.open", json!({ "path": weapons }));
+    harness.get_by_label(&count).click();
+    harness.run();
+    harness.run();
+    let shell = &harness.state().as_ref().unwrap().shell;
+    assert!(shell.caret().unwrap().0.ends_with("world.qc"));
+
+    let staged = |harness: &mut Harness<'static, Option<App>>| {
+        let app = harness.state_mut().as_mut().unwrap();
+        let hunks = app.shell.execute("edit.staged", json!({})).unwrap();
+        let ids: Vec<serde_json::Value> = hunks
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|hunk| hunk["id"].clone())
+            .collect();
+        ids
+    };
+    let ids = staged(&mut harness);
+    let [first, last] = ids.as_slice() else {
+        panic!("two hunks, not {}", ids.len());
+    };
+    run_command_with(&mut harness, "edit.accept", json!({ "hunks": [first] }));
+    harness.get_by_label(&review_waiting(1, 1));
+    harness.get_by_label(&row);
+    run_command_with(&mut harness, "edit.reject", json!({ "hunks": [last] }));
+    harness.run();
+    assert!(harness.query_by_label(&review_waiting(1, 1)).is_none());
+    assert!(harness.query_by_label(&row).is_none());
+    assert!(harness.query_by_role_and_label(Role::Tab, &tab).is_none());
 }
 
 // No spec statement: P4-32, the acceptance criterion: every new layout and navigation action

@@ -45,6 +45,10 @@ pub(crate) struct Rows<'a> {
     pub(crate) unsaved: &'a dyn Fn(&Path) -> bool,
     /// The mark's colour, `status.warn`.
     pub(crate) mark: egui::Color32,
+    /// Whether a file has edits waiting for review (P7-18).
+    pub(crate) review: &'a dyn Fn(&Path) -> bool,
+    /// That mark's colour, the accent.
+    pub(crate) review_mark: egui::Color32,
 }
 
 /// The Project section's tree: each directory a collapsible header, each file a row that opens
@@ -82,10 +86,18 @@ fn level(ui: &mut Ui, entries: &[TreeEntry], rows: &Rows<'_>, jump: &mut Option<
                 let row = ui
                     .horizontal(|ui| {
                         let row = Icon::of_file(path).row(ui, selected, &entry.name);
+                        // A screen reader hears the marks with the name.
+                        let mut name = entry.name.clone();
                         if (rows.unsaved)(path) {
                             ui.label(RichText::new(Text::ModifiedMark.get()).color(rows.mark));
-                            // A screen reader hears the mark with the name.
-                            let name = format!("{} {}", entry.name, Text::ModifiedMark.get());
+                            name = format!("{name} {}", Text::ModifiedMark.get());
+                        }
+                        if (rows.review)(path) {
+                            let mark = RichText::new(Text::ReviewMark.get());
+                            ui.label(mark.color(rows.review_mark));
+                            name = format!("{name} {}", Text::ReviewMarkName.get());
+                        }
+                        if name != entry.name {
                             icons::mark(ui, &row, &name, icons::ROW);
                         }
                         row

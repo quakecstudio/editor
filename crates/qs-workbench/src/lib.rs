@@ -77,7 +77,7 @@ pub use crate::preview::{
 };
 pub use crate::recent::{RECENT_LIMIT, RecentProjects, recent_path};
 pub use crate::staged::{
-    ACCEPT_HUNKS, APPLY_EDIT, Decision, HunkId, REJECT_HUNKS, STAGED_EDITS, StagedHunk,
+    ACCEPT_HUNKS, APPLY_EDIT, Decision, HunkId, REJECT_HUNKS, STAGED_EDITS, StagedHunk, Waiting,
     register_staged,
 };
 pub use crate::terminal::{

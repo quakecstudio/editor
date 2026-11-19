@@ -161,6 +161,18 @@ impl Staged {
     }
 }
 
+/// The hunks waiting for a decision, counted: what a window says of them before a person
+/// has looked (P7-18).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Waiting {
+    /// How many hunks wait.
+    pub hunks: usize,
+    /// How many files they are in.
+    pub files: usize,
+    /// The first of them, in path order: its file and its line, from 1.
+    pub first: Option<(PathBuf, usize)>,
+}
+
 /// A staged hunk, as it is listed for review.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct StagedHunk {
@@ -258,6 +270,38 @@ impl<L: Loader> Workbench<L> {
             self.set_text(&path, text, Source::Elsewhere)?;
         }
         Ok(self.staged_hunks())
+    }
+
+    /// How many hunks wait for a decision, in how many files, and the first of them: the
+    /// count of [`Self::staged_hunks`], with no hunk's text copied.
+    #[must_use]
+    pub fn waiting(&self) -> Waiting {
+        let mut waiting = Waiting::default();
+        for (path, file) in &self.staged.files {
+            let mut hunks = file
+                .hunks
+                .iter()
+                .filter(|hunk| hunk.state == State::Waiting)
+                .peekable();
+            let Some(first) = hunks.peek() else {
+                continue;
+            };
+            if waiting.first.is_none() {
+                waiting.first = Some((path.clone(), first.old.start.saturating_add(1)));
+            }
+            waiting.files = waiting.files.saturating_add(1);
+            waiting.hunks = waiting.hunks.saturating_add(hunks.count());
+        }
+        waiting
+    }
+
+    /// Whether a hunk of `path` waits for a decision.
+    #[must_use]
+    pub fn awaits_review(&self, path: &Path) -> bool {
+        self.staged
+            .files
+            .get(path)
+            .is_some_and(|file| file.hunks.iter().any(|hunk| hunk.state == State::Waiting))
     }
 
     /// Every hunk waiting for a decision, in path order and, in a file, in line order.

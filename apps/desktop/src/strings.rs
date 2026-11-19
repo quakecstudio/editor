@@ -335,6 +335,12 @@ pub enum Text {
     CloseTabHint,
     /// Beside an unsaved file in the Project tree.
     ModifiedMark,
+    /// Beside a file with edits waiting for review, in the Project tree and on its tab.
+    ReviewMark,
+    /// That mark, to a screen reader.
+    ReviewMarkName,
+    /// What the status bar's count of edits waiting for review does.
+    ReviewWaitingHint,
     /// Between the steps of the breadcrumb.
     PathSeparator,
     /// The file finder's name for a screen reader.
@@ -991,7 +997,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 487] = [
+    pub const ALL: [Self; 490] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1104,6 +1110,9 @@ impl Text {
         Self::UnsavedMark,
         Self::CloseTabHint,
         Self::ModifiedMark,
+        Self::ReviewMark,
+        Self::ReviewMarkName,
+        Self::ReviewWaitingHint,
         Self::PathSeparator,
         Self::FileFinder,
         Self::SearchFiles,
@@ -1610,6 +1619,9 @@ impl Text {
             Self::UnsavedMark => "\u{25cf}",
             Self::CloseTabHint => "Close the tab; its unsaved edits are kept",
             Self::ModifiedMark => "M",
+            Self::ReviewMark => "R",
+            Self::ReviewMarkName => "edits to review",
+            Self::ReviewWaitingHint => "Open the first edit waiting for review",
             Self::PathSeparator => " / ",
             Self::FileFinder => "File finder",
             Self::SearchFiles => "Search files by name",
@@ -2123,6 +2135,15 @@ pub fn conflict_at(line: usize) -> String {
 #[must_use]
 pub fn exit_status(code: i32) -> String {
     format!("Exited with {code}")
+}
+
+/// The status bar's count of the edits waiting for review, and of the files they are in
+/// (P7-18).
+#[must_use]
+pub fn review_waiting(edits: usize, files: usize) -> String {
+    let edits_word = if edits == 1 { "edit" } else { "edits" };
+    let files_word = if files == 1 { "file" } else { "files" };
+    format!("{edits} {edits_word} to review in {files} {files_word}")
 }
 
 /// The file finder's count of the files it lists, out of all of them.
