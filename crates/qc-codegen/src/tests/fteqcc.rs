@@ -6739,3 +6739,21 @@ fn a_struct_of_two_words_is_the_setters_argument() {
     assert_eq!(*stores[0], st(StoreV, global(&progs, "g"), 7, 0));
     assert!(t.iter().any(|s| s.op == u32::from(Call2.number())));
 }
+
+// spec FTE-14.9, FTEF-32.15: a local array of vectors' braces are its elements', each stored
+// by `OP_STORE_V`, however many there are; a vector's own are its components'
+#[test]
+fn an_array_of_vectors_is_initialised_an_element_at_a_time() {
+    let progs = compile_fteqcc(
+        "vector w;\nvector u;\n\
+         void() f = { local vector va[2] = {w, u}; local vector vb[3] = {w, u, w}; };\n",
+    )
+    .unwrap()
+    .progs;
+    let (w, u) = (global(&progs, "w"), global(&progs, "u"));
+    let t = body(&progs, "f");
+    let sources: Vec<i32> = t[..5].iter().map(|s| s.a).collect();
+    assert_eq!(sources, [w, u, w, u, w]);
+    assert!(t[..5].iter().all(|s| s.op == u32::from(StoreV.number())));
+    assert_eq!(t[1].b, t[0].b + 3);
+}

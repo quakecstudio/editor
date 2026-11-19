@@ -991,18 +991,20 @@ impl Checker<'_> {
             return Ok(());
         };
         let start = name.span().start;
-        let vector = self
-            .env
-            .local_type(start)
-            .is_some_and(|ty| self.etype(&ty) == Some(Etype::Vector));
         let elements: Vec<ast::Expr> = aggregate.elements().collect();
         if self.global {
             return Ok(());
         }
         let local = self.env.reference(start);
         let array = local.is_some_and(|def| self.env.is_array(def));
+        // A vector's own braces are its components'; an array of vectors' are its elements'.
+        let vector = !array
+            && self
+                .env
+                .local_type(start)
+                .is_some_and(|ty| self.etype(&ty) == Some(Etype::Vector));
         let nested = aggregate.syntax().children().count() != elements.len();
-        if array && !vector && !nested && !self.env.local_static(start) {
+        if array && !nested && !self.env.local_static(start) {
             return self.array_aggregate(declarator, local, &elements);
         }
         // FTEF-32.21: a `static` local's aggregate is its initial value, written with the
