@@ -308,8 +308,8 @@ inheritance, bitfields and nested members.
 - **FTEF-6.5** `access.member` on a struct value or through a pointer (FTEF-4.3) reads or
   writes the member; a brace initialiser `{ a, b }` gives members in order (as FTE-14.3 for the
   typedef-struct subset).
-- **FTEF-6.6** Codegen (later): struct and union layout, and which need version 7, are fixed by
-  L-01.
+- **FTEF-6.6** **Withdrawn** 2026-11-19: it deferred a struct's layout and code to L-01;
+  replaced by FTEF-6.31.
 
 - **FTEF-6.7** `QCC_PR_ParseStruct` reads a body's members in a loop, and this profile reads them
   so: a `}` ends it, with "missing semi-colon" when a member's type is still open (`if (newparm)
@@ -546,6 +546,20 @@ inheritance, bitfields and nested members.
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_IntConstExpr`, `QCC_PR_ParseValue`.
 
+- **FTEF-6.31** A struct or union is written as its words: its definition takes its layout's
+  size (FTEF-6.13), a member that is a value is the definition at the member's word
+  (FTEF-6.20), and one reached through a pointer is loaded and stored at its index
+  (FTEF-6.14, FTEF-6.18, FTEF-6.19). A whole struct or union stored to a definition is copied
+  by `QCC_StoreToSRef`'s `default:`, which `case ev_struct:` and `case ev_union:` share:
+  `OP_STORE_V` for each three words, then, where the target has the opcode, `OP_STORE_I64` for
+  each two left (`if (QCC_OPCodeValid(&pr_opcodes[OP_STORE_I64])) for (; i+1 < type->size;
+  i+=2, dest.ofs+=2, source.ofs+=2) QCC_PR_SimpleStatement(&pr_opcodes[OP_STORE_I64], source,
+  dest, nullsref, false);`), then `OP_STORE_F` for each word left. So a struct of five words is
+  `STORE_V`, `STORE_I64` on an FTE target and `STORE_V`, `STORE_F`, `STORE_F` on the standard
+  one (FTE-14.6), and one of seven `STORE_V`, `STORE_V`, `STORE_F` on both. No struct chooses
+  the progs format, which is the target's (FTE-24.1, FTE-24.3). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_StoreToSRef`.
 ## FTEF-7 `typedef` of any type
 
 **Source:** `qcc_pr_lex.c`, `QCC_TypeForName` and the typedef path (`ev_typedef`,
@@ -698,8 +712,8 @@ heavily class-based (547 `class` declarations across the three mods).
   is not `void`, takes arguments, or is `static`.
 - **FTEF-9.5** For each class with a constructor FTEQCC defines a `spawnfunc_Name` function so
   maps can spawn it (`QCC_PR_ParseEntClass`'s trailing `QCC_PR_GetDef("spawnfunc_%s", ...)`).
-- **FTEF-9.6** Codegen (later): the field layout, vtable and `this`-call lowering, and the
-  version 7 requirement, are fixed by L-01.
+- **FTEF-9.6** **Withdrawn** 2026-11-19: it deferred a class's layout and calls to L-01;
+  replaced by FTEF-9.25.
 
 - **FTEF-9.7** `QCC_PR_ParseEntClass` reads a class's parent with `QCC_TypeForName`, so after
   `:` a name that is no type is the error `E0240` "Parent class NAME was not yet defined"
@@ -893,6 +907,18 @@ heavily class-based (547 `class` declarations across the three mods).
   `QCC_PR_GenerateFunctionCallRef`; checked against the pinned FTEQCC's `-Fwasm` output for a
   virtual and a nonvirtual call.
 
+- **FTEF-9.25** A class is written as its members and its functions, with no table of its
+  own. A data member and a virtual member function are entity fields (FTEF-9.21), each a
+  constant definition unless the member is given 0 (`QCC_PR_DummyDef(fieldtype, membername,
+  pr_scope, arraysize, d, basicindex, true, (isnull?0:GDF_CONST)|...)`), so the field table
+  lists `CLASS::__mNAME` with the member's type for each but one given 0. A virtual function
+  is called through its field, which the class's spawn function sets (FTEF-9.22, FTEF-9.23),
+  and a method is called with its object as `self` (FTEF-9.24). A class is an entity type
+  (FTEF-9.14), so a definition of one is one word written `ev_entity` (`dd->type =
+  def->type->type;`, FTEF-19.81). No class chooses the progs format, which is the target's
+  (FTE-24.1, FTE-24.3). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_lex.c`, `QCC_PR_ParseEntClass`; `engine/qclib/qccmain.c`,
+  `QCC_WriteData`.
 ## FTEF-10 Accessors
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseAccessorMember` and the `accessor` branch of

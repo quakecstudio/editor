@@ -6155,3 +6155,56 @@ fn each_width_is_stored_by_its_size() {
     let expected = numbers([StoreF, StoreF, StoreI, StoreI64, StoreI64]);
     assert_eq!(stores.get(..5), Some(&expected[..]));
 }
+
+// spec FTEF-9.25: a class's data member and virtual member function are entity fields the
+// field table lists, a member given 0 is not, and a definition of a class type is written as an
+// entity
+#[test]
+fn a_classes_fields_are_listed_and_its_objects_are_entities() {
+    let progs = compile_fteqcc(
+        "#pragma target fte\nentity self;\nentity() spawn = #14;\n\
+         class base { float m; float z = 0; vector w; virtual void() think; };\n\
+         void() base::think = { m = m + z; w_x = m; };\n\
+         void() f = { local base b; b = spawn(base); b.think(); };\n",
+    )
+    .unwrap()
+    .progs;
+    let fields: Vec<(String, u32)> = progs
+        .field_defs
+        .iter()
+        .map(|d| (string(&progs, d.s_name), d.type_bits))
+        .filter(|(name, _)| name.starts_with("base::"))
+        .collect();
+    let listed = |name: &str| fields.iter().find(|(n, _)| n == name).map(|(_, ty)| *ty);
+    assert_eq!(listed("base::__mm"), Some(2));
+    assert_eq!(listed("base::__mw"), Some(3));
+    assert_eq!(listed("base::__mw_x"), Some(2));
+    assert_eq!(listed("base::__mthink"), Some(6));
+    assert_eq!(listed("base::__mz"), None, "given 0: {fields:?}");
+    assert_eq!(record_type(&progs, "b"), 4);
+}
+
+// spec FTEF-6.31: a struct stored to a definition is `OP_STORE_V` for each three words, then
+// `OP_STORE_I64` for each two where the target has it, then `OP_STORE_F` for the rest
+#[test]
+fn a_struct_is_copied_by_threes_then_pairs_where_the_target_has_them() {
+    use qc_progs::Op::{StoreF, StoreI64, StoreV};
+    let source = "typedef struct { float a; vector b; float c; } five;\n\
+                  typedef struct { vector a; vector b; float c; } seven;\n\
+                  five g5;\nseven g7;\n\
+                  void() f = { local five l5; local seven l7; l5 = g5; l7 = g7; };\n";
+    let stores = |source: &str| -> Vec<u32> {
+        let progs = compile_fteqcc(source).unwrap().progs;
+        let mut ops: Vec<u32> = body(&progs, "f").iter().map(|s| s.op).collect();
+        ops.pop();
+        ops
+    };
+    assert_eq!(
+        stores(&format!("#pragma target fte\n{source}")),
+        numbers([StoreV, StoreI64, StoreV, StoreV, StoreF])
+    );
+    assert_eq!(
+        stores(source),
+        numbers([StoreV, StoreF, StoreF, StoreV, StoreV, StoreF])
+    );
+}

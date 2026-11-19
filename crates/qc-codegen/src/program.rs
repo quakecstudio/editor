@@ -785,7 +785,7 @@ impl Program {
                 ofs,
                 scope: None,
                 initialized: false,
-                constant: false,
+                constant: true,
                 count: None,
                 id: Some(id),
             });
@@ -822,6 +822,9 @@ impl Program {
             }
             None => None,
         };
+        // FTEF-9.25: the field is a constant, which the field table lists, unless the member
+        // is given 0 (`(isnull?0:GDF_CONST)`), which only one that is no function can be.
+        let null = definition.initialized && !matches!(held, Type::Function(_));
         let ty = ValueType::Of(Type::Field(held.into()));
         let words = type_words(index, &ty);
         let ofs = self.allocate_global(words)?;
@@ -832,7 +835,7 @@ impl Program {
             ofs,
             scope: None,
             initialized: false,
-            constant: index.is_constant(id),
+            constant: !null,
             count: index.array_len(id),
             id: Some(id),
         });
@@ -1300,7 +1303,15 @@ pub(crate) fn type_number(index: &ModuleIndex, ty: &ValueType) -> u16 {
             .or_else(|| index.scalar(t).map(|scalar| scalar.number)),
         ValueType::FloatField => None,
     };
-    numbered.unwrap_or_else(|| ty.etype().number())
+    // FTEF-9.25: a class is an entity type, and its definitions are written as entities.
+    let class = matches!(ty, ValueType::Of(t) if index.is_class(t));
+    numbered.unwrap_or_else(|| {
+        if class {
+            Etype::Entity.number()
+        } else {
+            ty.etype().number()
+        }
+    })
 }
 
 /// A global offset as a statement operand.

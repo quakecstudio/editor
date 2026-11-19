@@ -321,7 +321,7 @@ impl Checker<'_> {
         let copied = matches!(kind, Assign::Store)
             && structured
             && lhs.reference == Reference::Global
-            && self.copy_struct(&stored, lhs.name(), &target);
+            && self.copy_struct(&stored, lhs.name(), &target, span);
         if matches!(kind, Assign::Store) && !copied && !packs {
             let store = self.store_of(&target);
             // The store chosen for the `=`, which the code generator reads.
@@ -1229,7 +1229,13 @@ impl Checker<'_> {
     /// FTE-14.6: the struct `stored` of type `target` copied to the definition `to` by `STORE_V`
     /// for each three words and `STORE_F` for the rest, when it is a definition's or a block's
     /// words; whether it was.
-    fn copy_struct(&mut self, stored: &Value, to: Option<ir::Name>, target: &Type) -> bool {
+    fn copy_struct(
+        &mut self,
+        stored: &Value,
+        to: Option<ir::Name>,
+        target: &Type,
+        span: Span,
+    ) -> bool {
         let from = self
             .name_of(stored)
             .filter(|name| matches!(name, ir::Name::Def(..) | ir::Name::Made(_)));
@@ -1240,10 +1246,18 @@ impl Checker<'_> {
             return false;
         }
         let size = self.env.layout(target).map_or(0, |l| l.words);
+        // FTEF-6.31: where the target has `OP_STORE_I64`, two words left after the threes
+        // are one of it.
+        let pairs = self.env.target_at(span.start).valid(Op::StoreI64);
         let mut word = 0;
+        let mut threes = true;
         while word < size {
-            let (op, step) = if size.saturating_sub(word) >= VECTOR_WORDS {
+            let left = size.saturating_sub(word);
+            threes = threes && left >= VECTOR_WORDS;
+            let (op, step) = if threes {
                 (Op::StoreV, VECTOR_WORDS)
+            } else if pairs && left >= 2 {
+                (Op::StoreI64, 2)
             } else {
                 (Op::StoreF, 1)
             };

@@ -262,6 +262,16 @@ impl ModuleIndex {
         &self.diagnostics
     }
 
+    /// Whether the type `ty` names a class, through a typedef: an entity type (FTEF-9.14).
+    #[must_use]
+    pub fn is_class(&self, ty: &Type) -> bool {
+        self.aliases
+            .get(ty)
+            .unwrap_or(ty)
+            .type_name()
+            .is_some_and(|name| self.class_names.contains_key(name))
+    }
+
     /// The members of the class the type `ty` names, its own first in declaration order and
     /// then each parent's (FTEF-17.3, FTEF-24.6); the components the compiler makes for a
     /// vector member are left out, as they are for a vector field. Empty when `ty` names no
