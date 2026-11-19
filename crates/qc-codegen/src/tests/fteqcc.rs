@@ -7899,3 +7899,46 @@ fn a_function_members_record_is_named_after_its_type() {
         .count();
     assert_eq!(functions, 2);
 }
+
+// spec FTEF-16.8: adjacent string literals are one string, as an argument, a global's value
+// and a local's
+#[test]
+fn adjacent_string_literals_are_one_string() {
+    let p = fte_progs(
+        "void(string s) say = #1;\nstring g = \"one \" \"two\";\n\
+         void() f = { say(\"a \"\n   \"b\\n\"); string l = \"e \" \"f\"; say(l); say(g); };\n",
+    );
+    let f = body(&p, "f");
+    assert_eq!(f[0], st(StoreF, immediate_string(&p, "a b\n"), 4, 0));
+    assert!(f.iter().any(|s| s.a == immediate_string(&p, "e f")));
+    let g = usize::try_from(global(&p, "g")).unwrap();
+    assert_eq!(
+        string(&p, i32::try_from(p.globals[g].bits()).unwrap()),
+        "one two"
+    );
+}
+
+// spec FTEF-21.28: a null is returned as the zero vector from a function of a vector and as
+// the float 0 from any other
+#[test]
+fn a_returned_null_is_a_zero_of_the_return_type() {
+    for target in ["#pragma target fte\n", ""] {
+        let p = fte_progs(&format!(
+            "{target}float x;\nvector() rv = {{ if (x) return 0; return __NULL__; }};\n\
+             entity() re = {{ return 0; }};\nstring() rs = {{ return __NULL__; }};\n\
+             void() use = {{ rv(); re(); rs(); }};\n"
+        ));
+        let returns = |name: &str| -> Vec<i32> {
+            body(&p, name)
+                .into_iter()
+                .filter(|s| s.op == u32::from(Opcode::Return.number()))
+                .map(|s| s.a)
+                .collect()
+        };
+        let vector = immediate_vector(&p, [0.0; 3]);
+        assert_eq!(returns("rv"), [vector, vector], "{target}");
+        let float = immediate(&p, 0.0);
+        assert_eq!(returns("re"), [float], "{target}");
+        assert_eq!(returns("rs"), [float], "{target}");
+    }
+}

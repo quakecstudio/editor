@@ -11,6 +11,7 @@
 
 mod accessor;
 mod assign;
+pub(crate) use assign::joined_string;
 mod call;
 mod compare;
 pub(crate) mod constant;

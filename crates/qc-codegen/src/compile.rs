@@ -1315,6 +1315,27 @@ fn literal_of(expr: &ast::Expr, dialect: Dialect) -> Option<Literal> {
 /// A literal's value as the vanilla lexer reads its text (QC-4 to QC-6); a frame macro
 /// reference is the number the preprocessor wrote in its place (QC-8.5).
 fn literal_of_token(literal: &ast::Literal, dialect: Dialect) -> Option<Literal> {
+    // FTEF-16.8: a string's adjacent parts are one string.
+    if literal.kind() == Some(ast::LiteralKind::String) {
+        let mut joined = Vec::new();
+        for part in literal.syntax().child_tokens() {
+            if part.kind().is_trivia() {
+                continue;
+            }
+            let lexed = qc_lexer::lex_with(part.text(), dialect);
+            let [
+                qc_lexer::Token {
+                    kind: qc_lexer::TokenKind::String(bytes),
+                    ..
+                },
+            ] = lexed.tokens.as_slice()
+            else {
+                return None;
+            };
+            joined.extend_from_slice(bytes);
+        }
+        return Some(Literal::String(joined));
+    }
     let token = literal.token()?;
     let lexed = qc_lexer::lex_with(token.text(), dialect);
     let [token] = lexed.tokens.as_slice() else {

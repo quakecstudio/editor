@@ -4560,6 +4560,15 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   typing's (P2-06).
 - **FTEF-21.27** `iffloat` and `ifstring` are kept with FTEF-21.1's flags and are not on
   FTEF-21.26's: the jump of a condition reads them (FTEF-30.19).
+- **FTEF-21.28** `return` of a null, the constant 0 of any type or `__NULL__`, returns the
+  zero vector from a function of a vector and the float 0 from any other ("return __NULL__; is
+  allowed regardless of actual return type.": `if (QCC_SRef_IsNull(e)) { ... switch
+  (pr_scope->type->aux_type->type) { case ev_vector: e = QCC_MakeVectorConst(0, 0, 0); break;
+  default: case ev_float: e = QCC_MakeFloatConst(0); break; }`), so `return 0;` in a
+  `vector()` function is `RETURN` of three zero words, not of the one-word constant and the two
+  globals after it. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseStatement`;
+  checked against the pinned FTEQCC's output on the standard target and an FTE one
+  (2026-11-19).
 - **FTEF-21.21** With `qcfuncs` off a C function a body declares (FTEF-21.10) is defined by a
   body written with it, `void x() {}`, and needs none elsewhere; C's `(*name)(params)` there is
   a variable (`isvar |= isptr>0`), no function, so `float (*x)(float); x(1);` and `entity

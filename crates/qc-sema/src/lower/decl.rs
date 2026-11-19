@@ -4,7 +4,7 @@
 //! values of initialisers, as `QCC_PR_ParseDefs` and `PR_ParseDefs` read them (QC-11, FTEF-15,
 //! FTEF-19).
 
-use crate::check::{NO_FUNCTION, is_function_name};
+use crate::check::{NO_FUNCTION, is_function_name, joined_string};
 use std::collections::HashSet;
 
 use qc_diag::Span;
@@ -550,15 +550,9 @@ fn string_len(literal: &ast::Literal) -> Option<u32> {
     if literal.kind() != Some(ast::LiteralKind::String) {
         return None;
     }
-    let text = literal.token()?.text_lossless();
-    let lexed = qc_lexer::lex_with(text.as_bytes(), Dialect::Fteqcc);
-    match lexed.tokens.as_slice() {
-        [token] => match &token.kind {
-            qc_lexer::TokenKind::String(bytes) => u32::try_from(bytes.len()).ok(),
-            _ => None,
-        },
-        _ => None,
-    }
+    // FTEF-16.8: adjacent parts are one string.
+    let bytes = joined_string(literal.syntax())?;
+    u32::try_from(bytes.len()).ok()
 }
 
 /// A braced initialiser and the sizes of its declarator's array dimensions, each a number or

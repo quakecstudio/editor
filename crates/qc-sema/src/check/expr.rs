@@ -14,7 +14,7 @@ use qc_progs::Op;
 use qc_syntax::ast::{self, AstNode as _, BinaryOp};
 
 use crate::cast::{ConstType, Source};
-use crate::check::assign::{assign_spelling, lexed_string};
+use crate::check::assign::{assign_spelling, joined_string};
 use crate::check::constant::{Constant, unquoted};
 use crate::check::convert::{Choice, Operand, choose_opcode};
 use crate::check::emulate::conversion_opcodes;
@@ -294,7 +294,7 @@ impl<'e> Checker<'e> {
         match literal.kind() {
             Some(ast::LiteralKind::String) => {
                 let written = String::from_utf8_lossy(&literal.syntax().text()).into_owned();
-                self.string_constant(&unquoted(&written), lexed_string(token.text()))
+                self.string_constant(&unquoted(&written), joined_string(literal.syntax()))
             }
             Some(ast::LiteralKind::Vector) => {
                 let flags = self.env.lex_flags_at(token.span().start);

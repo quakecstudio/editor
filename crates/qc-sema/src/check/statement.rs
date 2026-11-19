@@ -455,10 +455,25 @@ impl Checker<'_> {
         let value = self.value(Some(expr.clone()))?;
         self.generated(&expr, &value, line, before);
         // The value is made the return type first (`QCC_EvaluateCast`), then returned.
+        // FTEF-21.28: a null is returned as the zero vector from a function of a vector and as
+        // the float 0 from any other (`if (QCC_SRef_IsNull(e)) { ... case ev_vector: e =
+        // QCC_MakeVectorConst(0, 0, 0); break; default: case ev_float: e =
+        // QCC_MakeFloatConst(0); ...`).
+        let null = value.null().then(|| {
+            let kind = if self.etype_of(&ret) == Some(Etype::Vector) {
+                ir::ImmediateKind::Vector
+            } else {
+                ir::ImmediateKind::Float
+            };
+            ir::Name::Immediate(ir::Immediate {
+                kind,
+                words: [0, 0, 0],
+            })
+        });
         let returned = self.returned_as(value, &ret, (void, &name, &ret_name), &expr)?;
         self.return_outs(span);
         self.jump(Step::Return, Op::Return, None, line);
-        self.name_last(Op::Return, self.name_of(&returned), None);
+        self.name_last(Op::Return, null.or_else(|| self.name_of(&returned)), None);
         Ok(())
     }
 

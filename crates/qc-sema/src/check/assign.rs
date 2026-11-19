@@ -2125,7 +2125,19 @@ pub(super) fn string_bytes(expr: &ast::Expr) -> Option<Vec<u8>> {
     if literal.kind() != Some(ast::LiteralKind::String) {
         return None;
     }
-    lexed_string(literal.token()?.text())
+    joined_string(literal.syntax())
+}
+
+/// FTEF-16.8: the bytes of the string literal whose node is `literal`, its adjacent parts
+/// joined into the one string `QCC_PR_LexString` reads them as; `None` when a part is no string.
+pub(crate) fn joined_string(literal: &SyntaxNode) -> Option<Vec<u8>> {
+    let mut bytes = Vec::new();
+    for part in literal.child_tokens() {
+        if !part.kind().is_trivia() {
+            bytes.extend(lexed_string(part.text())?);
+        }
+    }
+    Some(bytes)
 }
 
 /// The bytes of the one quoted string `text`, with its escapes read as FTEQCC's lexer reads them.
