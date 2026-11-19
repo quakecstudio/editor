@@ -421,6 +421,25 @@ impl<'a> Compiler<'a> {
             self.record_defaults(id, declaration.ty().as_ref(), &declarator);
             self.array_size_immediates(&declarator)?;
             let place = self.program.get_def(self.index, id).at(name.span())?;
+            // FTEF-15.5: a weak definition of what is already initialised, and a weak wrap of
+            // what is not, is read and left out, its body's statements with it ("if weak,
+            // only use the first non-weak version of the function ... ignore the code and
+            // stuff").
+            let initialised = self
+                .index
+                .virtual_function(id)
+                .map_or(Some(place), |function| self.program.place(function));
+            // A function is initialised once its definition holds its number.
+            let initialised = initialised
+                .and_then(|place| self.program.def(place))
+                .is_some_and(|def| def.initialized || self.program.word(def.ofs) != 0);
+            if self.dialect.has_fteqcc_extensions()
+                && declarator.initializer().is_some()
+                && declares(declaration.syntax(), &Qualifier::Weak)
+                && (initialised || written.wrap)
+            {
+                continue;
+            }
             match declarator.initializer() {
                 None => {}
                 Some(ast::Initializer::Value(expr)) => {

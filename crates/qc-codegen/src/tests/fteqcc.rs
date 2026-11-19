@@ -7453,3 +7453,28 @@ fn a_sizeof_operand_generates_no_statement() {
     let progs = fte_progs(source);
     assert_eq!(words(&progs, body(&progs, "f")[0].a, 1), [8]);
 }
+
+// spec FTEF-15.5: a weak definition of a function already defined is left out, its body's
+// statements with it; one before the function's own is written and replaced
+#[test]
+fn a_weak_body_after_the_functions_own_writes_no_statement() {
+    let after = fte_progs(
+        "float x;\nvoid() f = { x = 1; x = 2; };\n__weak void() f = { x = 3; };\n\
+         void() g = { f(); };\n",
+    );
+    assert_eq!(opcodes(&body(&after, "f")), ops(&[StoreF, StoreF, Done]));
+    // Statement 0, `f`'s three and `g`'s two.
+    assert_eq!(after.statements.len(), 6);
+    let before = fte_progs(
+        "float x;\n__weak void() f = { x = 3; };\nvoid() f = { x = 1; x = 2; };\n\
+         void() g = { f(); };\n",
+    );
+    // The definition holds the number of its own body's record, the later one.
+    let number = usize::try_from(words(&before, global(&before, "f"), 1)[0]).unwrap();
+    let start = usize::try_from(before.functions[number].first_statement).unwrap();
+    assert_eq!(
+        opcodes(&before.statements[start..start + 3]),
+        ops(&[StoreF, StoreF, Done])
+    );
+    assert_eq!(before.statements.len(), 8);
+}
