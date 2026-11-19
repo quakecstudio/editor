@@ -17,7 +17,7 @@ use qs_wad::texture::DecodedTexture;
 
 use crate::map_browser::{FILTER_WIDTH, filter_shows};
 use crate::shell::name_field;
-use crate::strings::{Text, replace_with, texture_count, wad_label};
+use crate::strings::{Text, replace_with, texture_count, texture_of_level, wad_label};
 use crate::texture_import::{ImportChoice, ImportPreview};
 use crate::theme::{Theme, Token};
 
@@ -187,7 +187,10 @@ impl TextureBrowser {
             .filter(|(_, texture)| match (&self.wad, &texture.origin) {
                 (None, _) => true,
                 (Some(wad), TextureOrigin::Wad { wad: from }) => wad == from,
-                (Some(_), TextureOrigin::Bsp | TextureOrigin::Missing) => false,
+                (
+                    Some(_),
+                    TextureOrigin::Bsp | TextureOrigin::Game { .. } | TextureOrigin::Missing,
+                ) => false,
             })
             .map(|(index, _)| index)
             .collect()
@@ -315,8 +318,14 @@ impl TextureBrowser {
                     ui.close();
                 }
             });
-            if texture.origin == TextureOrigin::Missing {
-                response.on_hover_text(Text::MapTextureMissing.get());
+            match &texture.origin {
+                TextureOrigin::Missing => {
+                    response.on_hover_text(Text::MapTextureMissing.get());
+                }
+                TextureOrigin::Game { map } => {
+                    response.on_hover_text(texture_of_level(map));
+                }
+                TextureOrigin::Wad { .. } | TextureOrigin::Bsp => {}
             }
             let selected = self.selected.as_deref() == Some(texture.name.as_str());
             if ui.is_rect_visible(rect) {

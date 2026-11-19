@@ -2298,6 +2298,12 @@ pub fn menu_title(id: &str) -> Option<&'static str> {
     })
 }
 
+/// What the texture browser says of a texture that comes from a level of the game (P6-43).
+#[must_use]
+pub fn texture_of_level(map: &str) -> String {
+    format!("From the game's level {map}")
+}
+
 /// The About window's line for the app's version (P7-17).
 #[must_use]
 pub fn version_line(version: &str) -> String {

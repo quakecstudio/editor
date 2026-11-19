@@ -17,7 +17,7 @@ use serde_json::json;
 use super::{MAP_COMPILE, MAP_LEAKS, MAP_PORTALS, MapPortals};
 use crate::preview::{HasPreview, Preview, PreviewConfig};
 use crate::{Config, HasWorkbench, Workbench, register, register_preview};
-use qs_map_edit::testing::{Opening, room};
+use qs_map_edit::testing::{Opening, level_bsp, room};
 use qs_map_edit::texture_import::{DitherChoice, TEXTURE_IMPORT, quantized};
 use qs_map_edit::{MAP_OPEN, MapReport, Seal};
 
@@ -60,6 +60,11 @@ impl HasPreview for Context {
 
 /// A session with the map at `path` open.
 pub(crate) fn open(path: &Path) -> Commands<Context> {
+    open_with_game(path, None)
+}
+
+/// A session with the map at `path` open and the game's files in `game`, when there is one.
+fn open_with_game(path: &Path, game: Option<PathBuf>) -> Commands<Context> {
     let mut registry = Registry::new();
     register(&mut registry).unwrap();
     register_preview(&mut registry).unwrap();
@@ -68,7 +73,7 @@ pub(crate) fn open(path: &Path) -> Commands<Context> {
         preview: Preview::new(PreviewConfig {
             host: None,
             app: Path::new("/nowhere/app").to_path_buf(),
-            game: None,
+            game,
             extra: Vec::new(),
         }),
     };
@@ -179,6 +184,72 @@ fn map_leaks_lists_the_missing_textures() {
         "{:?}",
         found.warnings
     );
+}
+
+// No spec statement: P6-43, the acceptance criterion: a map with no `wad` key whose faces name
+// textures of a level on the game's search path compiles with no missing texture, the BSP
+// written holds them whole, and nothing is written into the game's folder; with no game they
+// are missing
+#[test]
+fn a_map_with_no_wad_is_textured_from_the_games_levels() {
+    let path = room("levels", "rock", Opening::Sealed);
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("\"wad\" \"test.wad\"\n"));
+    std::fs::write(&path, text.replace("\"wad\" \"test.wad\"\n", "")).unwrap();
+    std::fs::remove_file(path.with_file_name("test.wad")).unwrap();
+    // The game keeps its levels in a PAK, as Quake does.
+    let game = path.with_file_name("game");
+    let id1 = game.join("id1");
+    std::fs::create_dir_all(&id1).unwrap();
+    let level = level_bsp(&["wall", "rock", "unused"]);
+    // The full game, whose search path is read (FS-4.2): id's pop table in gfx/pop.lmp.
+    let pop: Vec<u8> = qs_vfs::FS_POP_TABLE
+        .iter()
+        .flat_map(|value| value.to_be_bytes())
+        .collect();
+    let pak = qs_pak::write_pak(&[
+        (qs_vfs::FS_POP_PATH, pop.as_slice()),
+        ("maps/e1.bsp", level.as_slice()),
+    ])
+    .unwrap();
+    std::fs::write(id1.join("pak0.pak"), &pak).unwrap();
+    let folder = |dir: &Path| -> Vec<PathBuf> {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect()
+    };
+    let before = (folder(&game), folder(&id1));
+
+    let mut without = open(&path);
+    let lacking = report(&mut without, MAP_LEAKS).missing_textures;
+    assert_eq!(lacking, ["rock", "wall"], "no game, no texture");
+
+    let mut session = open_with_game(&path, Some(game.clone()));
+    let made = report(&mut session, MAP_COMPILE);
+    assert!(made.missing_textures.is_empty(), "{made:?}");
+    assert!(made.missing_wads.is_empty(), "{made:?}");
+    let bytes = std::fs::read(path.with_extension("bsp")).unwrap();
+    let bsp = qs_bsp::Bsp::read(&bytes, qs_bsp::BspLoader::GlQuake).unwrap();
+    let mut held: Vec<(String, usize)> = bsp
+        .textures
+        .iter()
+        .flatten()
+        .map(|t| {
+            (
+                String::from_utf8_lossy(&t.name).into_owned(),
+                t.pixels.len(),
+            )
+        })
+        .collect();
+    held.sort();
+    let whole = 256 + 64 + 16 + 4;
+    assert_eq!(
+        held,
+        [("rock".to_owned(), whole), ("wall".to_owned(), whole)]
+    );
+    assert_eq!((folder(&game), folder(&id1)), before, "nothing is added");
+    assert_eq!(std::fs::read(id1.join("pak0.pak")).unwrap(), pak);
 }
 
 // spec QBSP-15.49: map.compile writes the BSP and portal file beside a sealed map, and no leak

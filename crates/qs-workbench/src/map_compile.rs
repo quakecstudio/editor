@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use crate::preview::{HasPreview, PreviewError};
 use crate::{Workbench, WorkbenchError};
 use qs_map::{Region, Surface, TexDef};
-use qs_map_edit::textures::{Game, find_wad, light_palette};
+use qs_map_edit::textures::{Game, GameTextures, find_wad, light_palette};
 use qs_map_edit::{EntityIndex, MapEditError, MapReport, MapSource};
 
 /// The id of `map.leaks`.
@@ -86,6 +86,15 @@ impl<L: crate::Loader> Workbench<L> {
             match find_wad(&name, self.root(), document.path().parent(), game.as_ref()) {
                 Some((path, bytes)) => found.push((path.unwrap_or_else(|| name.into()), bytes)),
                 None => missing_wads.push(name),
+            }
+        }
+        // P6-43: a texture no WAD of the world has is looked for in the game's own levels,
+        // whose BSPs hold the game's textures; they are read in place and passed on in memory.
+        if let Some(game) = &game {
+            let lacking = lacking_textures(&file, &found);
+            let levels = (!lacking.is_empty()).then(|| GameTextures::read(game));
+            if let Some(wad) = levels.and_then(|levels| levels.wad_of(lacking)) {
+                found.push((PathBuf::from(GAME_LEVELS), wad));
             }
         }
         let wad = match found.len() {
@@ -177,6 +186,35 @@ const SEAL_TEXTURE: &[u8] = b"skip";
 /// What a region compile's files are named after, beside the map: `<map>-region.bsp`, so the
 /// whole map's compile is not written over (MAP-16.5).
 const REGION_SUFFIX: &str = "-region";
+
+/// What the WAD of the game's levels' textures is called in an error about it.
+const GAME_LEVELS: &str = "the game's levels";
+
+/// The textures the faces of `file` name that no WAD of `wads` holds, each once in any case;
+/// a WAD that does not read holds none, and is reported when the WADs are merged.
+fn lacking_textures<'f>(file: &'f qs_map::MapFile, wads: &[(PathBuf, Vec<u8>)]) -> Vec<&'f [u8]> {
+    let mut seen: HashSet<Vec<u8>> = HashSet::new();
+    for (_, bytes) in wads {
+        if let Ok(wad) = Wad::read(bytes) {
+            seen.extend(
+                wad.lumps()
+                    .iter()
+                    .map(|lump| lump.name.as_bytes().to_ascii_lowercase()),
+            );
+        }
+    }
+    let mut lacking = Vec::new();
+    for entity in &file.entities {
+        for brush in entity.brushes() {
+            for face in &brush.faces {
+                if seen.insert(face.texture().to_ascii_lowercase()) {
+                    lacking.push(face.texture());
+                }
+            }
+        }
+    }
+    lacking
+}
 
 /// Whether any face of `file` names `texture`, in any case.
 fn uses_texture(file: &qs_map::MapFile, texture: &[u8]) -> bool {

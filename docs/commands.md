@@ -140,7 +140,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.show_all`](#mapshow_all) | Shows every entity of the open map hidden in the editor (TrenchBroom's Show All); a hidden layer stays hidden. |
 | [`map.stage`](#mapstage) | Begins review of the open map's edits: the map as it is now is kept, and each edit after it waits as a hunk to accept or reject. The agent's map edits begin it themselves; while it is open it is left as it is. |
 | [`map.staged`](#mapstaged) | Lists the open map's hunks waiting for review: for each, the entities it is in, and the keys and brushes it adds, changes or removes. |
-| [`map.textures`](#maptextures) | Lists the open map's textures: those of the WADs its world names, found in the project, beside the map or in the game, and of the BSP it was opened from, each with its size and how many faces use it, and the names its faces use that nothing holds. |
+| [`map.textures`](#maptextures) | Lists the open map's textures: those of the WADs its world names, found in the project, beside the map or in the game, of the BSP it was opened from, and of the game's own levels, each once with where it comes from, its size and how many faces use it, and the names its faces use that nothing holds. |
 | [`map.turn`](#mapturn) | Turns entities and brushes by degrees about the vertical through the middle of their box, counter-clockwise seen from above: brushes and point entities' origins and facing, as TrenchBroom's Rotate. |
 | [`map.ungroup`](#mapungroup) | Takes a group's entities and brushes out of it into the layer or group it is in, or the world's, and removes the group. |
 | [`map.unlock_all`](#mapunlock_all) | Unlocks every entity of the open map locked in the editor; a locked layer stays locked. |
@@ -6548,7 +6548,7 @@ Parameters:
 
 ## `map.textures`
 
-Lists the open map's textures: those of the WADs its world names, found in the project, beside the map or in the game, and of the BSP it was opened from, each with its size and how many faces use it, and the names its faces use that nothing holds.
+Lists the open map's textures: those of the WADs its world names, found in the project, beside the map or in the game, of the BSP it was opened from, and of the game's own levels, each once with where it comes from, its size and how many faces use it, and the names its faces use that nothing holds.
 
 Parameters:
 
