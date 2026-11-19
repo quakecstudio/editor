@@ -230,6 +230,7 @@ impl Checker<'_> {
     /// parentheses after `.`, must be a field, whose value is what the field holds; anything else
     /// is "NAME is not a field", or "NAME is not a field of class CLASS" on a class's value.
     fn entity_field(&mut self, base: &Value, selector: &ast::Expr) -> Checked {
+        let mut selected = None;
         let field = match selector {
             ast::Expr::Name(name_ref) => {
                 let Some(token) = name_ref.name() else {
@@ -302,7 +303,20 @@ impl Checker<'_> {
                 }
                 let span = selector.syntax().span();
                 let label = value.label();
-                (value.ty, label, span, value.sym.def())
+                // FTEF-24.17: a selector that is no definition read directly, `e.(o.fld)`, is
+                // read where it is written, and the field is its value (`QCC_RefToDef(field,
+                // true)`).
+                if value.reference != Reference::Global {
+                    let (ty, def) = (value.ty.clone(), value.sym.def());
+                    let read = self.read(value, span)?;
+                    selected = self.name_of(&read);
+                    if selected.is_none() {
+                        self.followed = false;
+                    }
+                    (ty, label, span, def)
+                } else {
+                    (value.ty, label, span, value.sym.def())
+                }
             }
             other => {
                 self.expr(other)?;
@@ -310,20 +324,26 @@ impl Checker<'_> {
             }
         };
         let (ty, label, span, def) = field;
+        let selecting = |mut value: Value| {
+            if let (Reference::Field(field), Some(selected)) = (&mut value.reference, selected) {
+                field.selected = Some(selected);
+            }
+            value
+        };
         match self.env.shape(&ty).map(|s| s.etype) {
             Some(Etype::Field) => {
                 let held = match ty {
                     Type::Field(held) => held.as_ref().clone(),
                     other => other,
                 };
-                Ok(Value::field_of(base, label, held, def))
+                Ok(selecting(Value::field_of(base, label, held, def)))
             }
-            Some(Etype::Variant) => Ok(Value::field_of(
+            Some(Etype::Variant) => Ok(selecting(Value::field_of(
                 base,
                 label,
                 Type::Named("__variant".into()),
                 def,
-            )),
+            ))),
             None => Ok(Value::unknown()),
             Some(_) => {
                 let message = match &base.ty {

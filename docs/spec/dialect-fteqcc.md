@@ -4902,6 +4902,15 @@ statement's checks (FTEF-23.6).
   "is not a field of class" is given. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseField`.
+- **FTEF-24.17** The selector in parentheses of `e.(selector)` is any expression of a field's
+  type, read where it is written when it is no definition named directly, and the field is its
+  value (`field = QCC_PR_RefExpression(&fieldbuf, TOP_PRIORITY, 0); ... lhs =
+  QCC_PR_BuildRef(refbuf, REF_FIELD, QCC_RefToDef(lhs, true), QCC_RefToDef(field, true),
+  ...)`). So with `.float fld;` a member of a class, `x = self.(a.fld);` is `LOAD_FLD a, fld,
+  t; LOAD_F self, t, x`, a store through it `LOAD_FLD a, fld, t; STOREF_F other, t, value`, and
+  a compound assignment the field's address and the in-place opcode. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseField`; checked against the pinned FTEQCC's output
+  on an FTE target (2026-11-19).
 ## FTEF-25 The opcodes the target has
 
 **Source:** `qcc_pr_comp.c`, `QCC_OPCodeValidForTarget`, `QCC_OPCodeSetTarget` and
@@ -6023,8 +6032,9 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
 - **FTEF-31.33** A class's member array is an array of fields, whatever its fields hold: a
   global for each word of each element, each holding the offset of that word's field, so
   `vector vs[4]` is twelve globals and its records name `vs[1]` at the fourth. Its length is
-  the integer its size folds to (`QCC_PR_IntConstExpr`), `16i` and `0x10` as their numbers;
-  one this compiler does not fold, a name's, is refused, not laid out. At
+  the integer its size folds to (`QCC_PR_IntConstExpr`), `16i` and `0x10` as their numbers
+  and a constant's name or an expression of constants (`N * 2 + 1`) as its value (FTEF-19.62);
+  one that is no constant is refused, not laid out. At
   an index that is no constant the index is checked against the array's length
   (FTEF-31.24), multiplied by a vector's three words, and the field is loaded by
   `OP_LOADA_FLD` of the array; the entity's field is then read or stored at it by the held

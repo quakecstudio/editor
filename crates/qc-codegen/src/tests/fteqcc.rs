@@ -7143,8 +7143,8 @@ fn a_member_arrays_elements_have_their_own_fields() {
 }
 
 // spec FTEF-31.33: a member array's size is the integer its suffix folds to, `16i` and `0x4`
-// as their numbers, so its index is checked against it; one sized by a name, which the model
-// does not fold, is refused, not written as one field
+// as their numbers and a constant's name or an expression of constants as its value, so its
+// index is checked against it; one sized by no constant is refused, not written as one field
 #[test]
 fn a_member_arrays_size_is_its_integer_constant() {
     let source = |sizes: &str| {
@@ -7167,13 +7167,10 @@ fn a_member_arrays_size_is_its_integer_constant() {
         ]
     );
     assert_eq!((t[0].b, t[3].b), (16, 4));
-    assert!(matches!(
-        compile_fteqcc(&source("int ammo[N]; float fl[4];")),
-        Err(CompileError::Internal {
-            internal: Internal::Unsupported,
-            ..
-        })
-    ));
+    let named = fte_progs(&source("int ammo[N * 2 + 1]; float fl[N];"));
+    let t = body(&named, "base::Run");
+    assert_eq!((t[0].b, t[3].b), (9, 4));
+    assert!(compile_fteqcc(&source("int ammo[i]; float fl[4];")).is_err());
 }
 
 // spec FTEF-32.29: an array element argument at an index no constant is loaded after `self`
@@ -7753,7 +7750,7 @@ fn a_member_with_no_pool_is_refused() {
     assert!(compile_fteqcc(&class("float g;")).is_ok());
     let refused = compile_fteqcc(&class("S s;"));
     assert!(refused.is_err(), "{:?}", refused.map(drop));
-    let refused = compile_fteqcc(&class("float sized[N]; float g;"));
+    let refused = compile_fteqcc(&class("float sized[x]; float g;"));
     assert!(refused.is_err(), "{:?}", refused.map(drop));
 }
 
@@ -7966,4 +7963,39 @@ fn a_struct_of_narrow_members_through_a_pointer_is_refused() {
         "{:?}",
         refused.map(drop)
     );
+}
+
+// spec FTEF-24.17: a selector in parentheses that is no definition is read where it is
+// written, and the field is its value, for a read, a store and a compound assignment
+// spec FTEF-9.29: a class's member that is itself a field is read and stored as any member
+#[test]
+fn a_computed_field_selector_is_read_and_is_the_field() {
+    let p = fte_progs(&format!(
+        "{CLASS_HEADER}entity other;\n.float health;\nclass A {{ float f; .float fld; }};\n\
+         void(A a) t = {{ a.fld = health; x = self.(a.fld); other.(a.fld) = x;\n\
+                         self.(a.fld) += 3; }};\n\
+         void(A a) use = {{ t(a); }};\n"
+    ));
+    assert_eq!(
+        names_in(&p, "t"),
+        [
+            "STOREF_I",
+            "LOADF_FLD",
+            "LOADF_F",
+            "LOADF_FLD",
+            "STOREF_F",
+            "LOADF_FLD",
+            "FLDADDRESS",
+            "ADDSTOREP_F"
+        ]
+    );
+    let t = body(&p, "t");
+    let member = global(&p, "A::__mfld");
+    assert_eq!((t[1].b, t[3].b, t[5].b), (member, member, member));
+    assert_eq!(
+        (t[2].a, t[2].b, t[2].c),
+        (global(&p, "self"), t[1].c, global(&p, "x"))
+    );
+    assert_eq!(t[4].b, t[3].c, "stored through the field read");
+    assert_eq!(t[6].b, t[5].c);
 }

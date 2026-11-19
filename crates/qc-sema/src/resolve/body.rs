@@ -412,9 +412,21 @@ impl<'a> Resolver<'a> {
             .iter()
             .partition(|u| u.span.start >= within.start && u.span.end <= within.end);
         let size_uses: Vec<RawUse> = size_uses.into_iter().cloned().collect();
-        self.resolve_uses(file, None, &size_uses);
+        (self.fold_size(file, &expr, &size_uses, decl.flags), rest)
+    }
+
+    /// FTEF-19.62: the integer the size expression `expr` folds to, `QCC_PR_IntConstExpr`, its
+    /// names `uses` resolved at global scope under the compiler flags `flags`.
+    pub(in crate::resolve) fn fold_size(
+        &mut self,
+        file: FileId,
+        expr: &ast::Expr,
+        uses: &[RawUse],
+        flags: CompilerFlags,
+    ) -> Option<u32> {
+        self.resolve_uses(file, None, uses);
         let uses = self.use_defs.clone();
-        let flags = [(0, decl.flags)];
+        let flags = [(0, flags)];
         let reported = self.index.diagnostics.len();
         let mut env = BodyEnv {
             resolver: self,
@@ -431,7 +443,7 @@ impl<'a> Resolver<'a> {
             params: &[],
             naming: FunctionName::Named,
         };
-        (array_length(&mut env, &expr), rest)
+        array_length(&mut env, expr)
     }
 
     /// FTEF-34.9: an initialiser of a global that is an expression, read at global scope,

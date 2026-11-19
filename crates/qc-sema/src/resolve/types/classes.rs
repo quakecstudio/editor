@@ -115,6 +115,21 @@ impl<'a> Resolver<'a> {
 
     /// Records an FTEQCC class and declares its members (FTEF-17.1, FTEF-17.2). A member is a
     /// definition of the class, not a global by its name.
+    /// FTEF-31.2: the length of the member array `member` is, the integer its size is
+    /// (`QCC_PR_IntConstExpr`): a number as written, any other expression folded as a
+    /// definition's size is (FTEF-19.62), a constant's name among them. `None` for no array.
+    fn member_dimension(&mut self, file: FileId, member: &RawMember) -> Option<ArrayDim> {
+        let unfolded = match member.length.as_ref()? {
+            IntConst::Integer(size) => {
+                return Some(u32::try_from(*size).map_or(ArrayDim::Unknown, ArrayDim::Sized));
+            }
+            IntConst::NotInteger | IntConst::Name(_) | IntConst::Unfolded => member.size.as_ref(),
+        };
+        let folded =
+            unfolded.and_then(|size| self.fold_size(file, &size.expr, &size.uses, size.flags));
+        Some(folded.map_or(ArrayDim::Unknown, ArrayDim::Sized))
+    }
+
     pub(in crate::resolve) fn declare_class(
         &mut self,
         file: FileId,
@@ -255,17 +270,10 @@ impl<'a> Resolver<'a> {
                 }
                 // FTEF-31.2: a member array is an array of fields, indexed by its length, the
                 // integer its size is (`QCC_PR_IntConstExpr`), `16i` as `16`.
-                if let Some(length) = &member.length
+                if let Some(dimension) = self.member_dimension(file, member)
                     && let Some(facts) = self.facts.get_mut(id.index())
                 {
-                    facts.array = Some(match length {
-                        IntConst::Integer(size) => {
-                            u32::try_from(*size).map_or(ArrayDim::Unknown, ArrayDim::Sized)
-                        }
-                        IntConst::NotInteger | IntConst::Name(_) | IntConst::Unfolded => {
-                            ArrayDim::Unknown
-                        }
-                    });
+                    facts.array = Some(dimension);
                 }
                 id
             };
