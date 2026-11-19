@@ -6616,3 +6616,28 @@ fn a_struct_is_stored_and_read_word_by_word_through_an_address() {
         numbers([Boundcheck, MulI, LoadaV, LoadaI64, StoreV, StoreI64])
     );
 }
+
+// spec FTEF-32.25, FTEF-19.78: on the standard target a struct of more than a vector's words
+// stored to an element at an index that is no constant is the array's setter's argument in
+// pieces, a slot each from the second, stored before the index, and the call counts the slots
+#[test]
+fn a_wide_struct_is_the_setters_argument_in_pieces() {
+    let progs = compile_fteqcc(
+        "void(string s) error = #10;\ntypedef struct { float a; vector b; } w_t;\n\
+         w_t g;\nw_t arr[3];\nfloat i;\nvoid() f = { arr[i] = g; };\n",
+    )
+    .unwrap()
+    .progs;
+    let g = global(&progs, "g");
+    let t = body(&progs, "f");
+    assert_eq!(
+        t[0].op,
+        u32::from(MulF.number()),
+        "the index scaled by the words"
+    );
+    assert_eq!(t[1], st(StoreV, g, 7, 0));
+    assert_eq!(t[2], st(StoreF, g + 3, 10, 0));
+    assert_eq!(t[3], st(StoreF, t[0].c, 4, 0));
+    assert_eq!(t[4].op, u32::from(Opcode::Call3.number()));
+    assert_eq!(t[4].a, global(&progs, "ArraySet*arr"));
+}

@@ -762,7 +762,7 @@ impl Checker<'_> {
     /// on: to a value of its own where the slot is one of the call's operands, `registers`.
     /// One that is no definition's or statement's words, or whose pieces do not each start a
     /// slot, is not followed.
-    fn wide_argument(
+    pub(super) fn wide_argument(
         &mut self,
         from: Option<ir::Name>,
         words: u32,

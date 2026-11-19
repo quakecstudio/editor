@@ -388,12 +388,14 @@ impl Checker<'_> {
         // FTEF-31.20). Any other store of a struct or a union is word groups the body does
         // not follow (FTE-14.5).
         let opcodes = self.env.target_at(span.start);
+        // One of more than a vector's words stored by an array's setter is its argument in
+        // pieces (FTEF-32.25).
         let by_address = match &lhs.reference {
             Reference::Pointer(_) => true,
             Reference::Element(at) => {
                 at.index.known().is_none()
-                    && opcodes.valid(Op::Globaladdress)
-                    && opcodes.stores_at_offset()
+                    && ((opcodes.valid(Op::Globaladdress) && opcodes.stores_at_offset())
+                        || self.wide_words(&target).is_some())
             }
             _ => false,
         };
@@ -1533,6 +1535,29 @@ impl Checker<'_> {
             return Ok(());
         }
         let parameter = |slot| Some(ir::Name::Parameter(slot));
+        // FTEF-32.25: a struct of more than a vector's words is the setter's argument in
+        // pieces, a slot each from the second, stored before the index, and the call counts
+        // the slots.
+        if let Some(wide) = self.wide_words(target) {
+            self.wide_argument(self.name_of(stored), wide, 1, None, span);
+            self.generated.push(ir::BodyStatement {
+                a: self.name_of(&element.index),
+                b: parameter(0),
+                ..ir::BodyStatement::bare(Op::StoreF)
+            });
+            self.read_returned(&element.index);
+            self.clobber_return();
+            let slots = usize::try_from(wide.div_ceil(VECTOR_WORDS)).unwrap_or(usize::MAX);
+            match crate::check::call::call_opcode(slots.saturating_add(1)) {
+                Some(call) => self.generated.push(ir::BodyStatement {
+                    a: lhs.sym.def().map(ir::Name::ArraySet),
+                    ..ir::BodyStatement::bare(call)
+                }),
+                None => self.followed = false,
+            }
+            self.last_temp = None;
+            return Ok(());
+        }
         // A vector array's setter takes the element's index, its words' divided by 3.
         let index = if self.etype(target) == Some(Etype::Vector) {
             let three = Value::constant(Constant::float(VECTOR_WORDS_FLOAT));
