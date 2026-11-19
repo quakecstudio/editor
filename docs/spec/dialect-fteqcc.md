@@ -5552,13 +5552,9 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   different opcodes, a divergence from FTEQCC's output. A store through a pointer of a value no
   one `STOREP_*` stores, a narrow integer, a bitfield, a 64-bit value or a struct, is not
   followed.
-- **FTEF-31.23** `&g` of a global, an array or an element is `OP_GLOBALADDRESS` of the
-  definition, with the integer index for an element at an index that is no constant
-  (`QCC_PR_Statement(&pr_opcodes[OP_GLOBALADDRESS], operand->base,
-  operand->index.cast?QCC_SupplyConversion(operand->index, ev_integer, true):nullsref, NULL)`):
-  `TCP_Send(&tcp_irc, "x")` is `GLOBALADDRESS tcp_irc, offset_0, temp_0` (the pinned FTEQCC's
-  `-Fwasm` output). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
-  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_GenerateAddressOf`.
+- **FTEF-31.23** **Withdrawn** 2026-11-18: it gave the statement an index only for an element
+  at an index that is no constant, where FTEQCC writes a constant index and a member's word
+  too. Replaced by FTEF-31.28.
 - **FTEF-31.24** An index that is no constant is checked as it is read, on a target with
   `OP_BOUNDCHECK` and with the `boundchecks` flag on, as it is by default: the index is made an
   integer and `OP_BOUNDCHECK` written of it and the length, the length the operand itself and
@@ -5594,6 +5590,28 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   global before the second call (FTE-18.13), `STORE_V OFS_RETURN, temp`, then `ADD_F temp,
   OFS_RETURN+1, h`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`.
+- **FTEF-31.28** `&g` of a global, an array, an element or a member is `OP_GLOBALADDRESS` of
+  the definition and of the reference's index made an integer, whenever it has one
+  (`QCC_PR_Statement(&pr_opcodes[OP_GLOBALADDRESS], operand->base,
+  operand->index.cast?QCC_SupplyConversion(operand->index, ev_integer, true):nullsref, NULL)`).
+  The index is in words from the definition's start, a constant one an integer immediate, a
+  member's word added to an element's. Run on the pinned FTEQCC with `-Tfte`, of `float
+  arr[4]`, `vector varr[3]`, a struct `{ float a; vector v; int n; }` as `gp` and as `sarr[3]`:
+  `&arr[2]` is `GLOBALADDRESS arr, 2`, `&arr[0]` is `GLOBALADDRESS arr, 0`, `&varr[1]` is
+  `GLOBALADDRESS varr, 3`, `&gp.n` is `GLOBALADDRESS gp, 4`, `&sarr[1].n` is `GLOBALADDRESS
+  sarr, 9`, and `&g` of a float has no index. `TCP_Send(&tcp_irc, "x")` is `GLOBALADDRESS
+  tcp_irc, offset_0, temp_0` (the pinned FTEQCC's `-Fwasm` output). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GenerateAddressOf`.
+- **FTEF-31.29** A component named of an element of an array of vectors at an index that is no
+  constant, `a[i].y`, is the float at the element's index plus the component's (`tmp =
+  QCC_MakeIntConst(1); goto vectorarrayindex;`), read, stored and addressed as an element at
+  that index is, with no load of the vector. Run on the pinned FTEQCC with `-Tfte`, `i` a
+  float: `r = varr[i].y` is `CONV_FTOI i`, `BOUNDCHECK temp, 3`, `MUL_I temp, 3`, `ADD_I temp,
+  1` and `LOADA_F varr, temp, r`; `varr[i].y = r` ends `GLOBALADDRESS varr` and `STOREP_F r,
+  address, temp`; `varr[i].x` adds nothing. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseRefArrayPointer`.
 
 ## FTEF-32 Calls
 

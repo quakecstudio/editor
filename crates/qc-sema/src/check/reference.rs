@@ -1165,28 +1165,46 @@ impl Checker<'_> {
                     );
                     self.env.report(Code::W0250, span, message);
                 }
+                // FTEF-31.28: the index is the reference's own, in words from the definition's
+                // start: a constant one with the word of a member read before it, and a member
+                // of a definition that is no element its word.
+                let word = match value.sym {
+                    Sym::Def(_, _, word) => i32::try_from(word).ok(),
+                    Sym::Temp | Sym::Immediate(_) => None,
+                };
+                let constant = |words: i32| Some(Value::constant(Constant::int(words)));
                 let index = match &value.reference {
-                    Reference::Element(element) if element.index.known().is_none() => {
-                        Some(self.converted(&element.index, Etype::Integer, span)?)
+                    Reference::Element(element) => {
+                        match element.index.known().and_then(eval_int).zip(word) {
+                            Some((index, word)) => constant(index.wrapping_add(word)),
+                            None => Some(self.converted(&element.index, Etype::Integer, span)?),
+                        }
                     }
+                    // A member of a definition named as that definition's word; a parameter's or
+                    // a temporary's is named as it is.
+                    Reference::Global => match self.name_of(value) {
+                        Some(ir::Name::Def(_, at)) if at != 0 => word.and_then(constant),
+                        _ => None,
+                    },
                     _ => None,
                 };
                 if self.global {
                     return Ok(pointer_to(&value.ty));
                 }
-                // FTEF-31.23: `OP_GLOBALADDRESS` of the definition, and of an element the integer
+                // FTEF-31.28: `OP_GLOBALADDRESS` of the definition, and of an element the integer
                 // index (`QCC_PR_Statement(&pr_opcodes[OP_GLOBALADDRESS], operand->base,
                 // operand->index.cast?QCC_SupplyConversion(operand->index, ev_integer,
                 // true):nullsref, NULL)`).
                 let base = match &value.reference {
-                    Reference::Element(element) if index.is_some() => value
+                    Reference::Element(element) => value
                         .sym
                         .def()
                         .map(|def| ir::Name::Def(def, 0))
-                        .filter(|_| !element.vector),
-                    Reference::Element(_) | Reference::Global | Reference::ArrayHead(None) => {
-                        self.name_of(value)
+                        .filter(|_| !element.vector || element.index.known().is_some()),
+                    Reference::Global if index.is_some() => {
+                        value.sym.def().map(|def| ir::Name::Def(def, 0))
                     }
+                    Reference::Global | Reference::ArrayHead(None) => self.name_of(value),
                     _ => None,
                 };
                 let Some(base) = base else {

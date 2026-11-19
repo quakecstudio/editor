@@ -4206,7 +4206,7 @@ fn a_super_call_calls_the_parent_s_function() {
     assert_eq!(call.a, global(&compiled.progs, "P::R"));
 }
 
-// spec FTEF-31.23: `&g` of a global is `OP_GLOBALADDRESS` of it
+// spec FTEF-31.28: `&g` of a global is `OP_GLOBALADDRESS` of it
 #[test]
 fn the_address_of_a_global_is_its_globaladdress() {
     use qc_preproc::Op;
@@ -4220,6 +4220,96 @@ fn the_address_of_a_global_is_its_globaladdress() {
             u32::try_from(Op::Globaladdress.number()).unwrap(),
             global(&compiled.progs, "g")
         )
+    );
+}
+
+const ADDRESSED: &str = "#pragma target fte_5768\n\
+    typedef struct { float a; vector v; int n; } pair_t;\n\
+    float g;\nfloat arr[4];\nvector varr[3];\npair_t gp;\npair_t sarr[3];\n\
+    float *p;\nvector *vp;\nint *ip;\nfloat i;\nfloat r;\n";
+
+/// The definition and the index of the one `OP_GLOBALADDRESS` of `t` in `ADDRESSED` with
+/// `statement` as its body: the index's value, or `None` when the statement has none.
+fn addressed(statement: &str) -> (i32, Option<u32>) {
+    use qc_preproc::Op;
+    let source = format!("{ADDRESSED}void t(void) {{ {statement} }};\n");
+    let compiled = compile_fteqcc(&source).unwrap();
+    let number = u32::try_from(Op::Globaladdress.number()).unwrap();
+    let statements = body(&compiled.progs, "t");
+    let [address] = statements
+        .iter()
+        .filter(|s| s.op == number)
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("one address in {statements:?}");
+    };
+    let index = (address.b != 0).then(|| words(&compiled.progs, address.b, 1)[0]);
+    let base = ["g", "arr[0]", "varr[0]", "gp.a", "sarr[0]"]
+        .into_iter()
+        .position(|name| global(&compiled.progs, name) == address.a)
+        .unwrap();
+    (i32::try_from(base).unwrap(), index)
+}
+
+// spec FTEF-31.28: the address of an element or a member is `OP_GLOBALADDRESS` of the
+// definition and its index in words, a constant one an integer immediate; a global alone has
+// no index
+#[test]
+fn an_address_carries_its_constant_index_in_words() {
+    assert_eq!(addressed("p = &g;"), (0, None));
+    assert_eq!(addressed("p = &arr[2];"), (1, Some(2)));
+    assert_eq!(addressed("p = &arr[0];"), (1, Some(0)));
+    assert_eq!(addressed("vp = &varr[1];"), (2, Some(3)));
+    assert_eq!(addressed("p = &varr[1].y;"), (2, Some(4)));
+    assert_eq!(addressed("vp = &gp.v;"), (3, Some(1)));
+    assert_eq!(addressed("ip = &gp.n;"), (3, Some(4)));
+    assert_eq!(addressed("ip = &sarr[1].n;"), (4, Some(9)));
+}
+
+// spec FTEF-31.29: a component of an element of an array of vectors at an index that is no
+// constant is the float at the index plus the component's: read by `OP_LOADA_F`, stored
+// through the array's address, with no load of the vector
+#[test]
+fn a_component_of_an_indexed_vector_is_the_float_at_its_index() {
+    use qc_preproc::Op;
+    let number = |op: Op| u32::try_from(op.number()).unwrap();
+    let of = |statement: &str| {
+        let source = format!("{ADDRESSED}void t(void) {{ {statement} }};\n");
+        let compiled = compile_fteqcc(&source).unwrap();
+        let r = global(&compiled.progs, "r");
+        let varr = global(&compiled.progs, "varr[0]");
+        (
+            opcodes(&body(&compiled.progs, "t")),
+            body(&compiled.progs, "t"),
+            r,
+            varr,
+        )
+    };
+    let (ops, statements, r, varr) = of("r = varr[i].y;");
+    assert_eq!(
+        ops[..5],
+        [Op::ConvFtoi, Op::Boundcheck, Op::MulI, Op::AddI, Op::LoadaF].map(number)
+    );
+    assert_eq!((statements[4].a, statements[4].c), (varr, r));
+    let (ops, statements, r, varr) = of("varr[i].y = r;");
+    assert_eq!(
+        ops[..6],
+        [
+            Op::ConvFtoi,
+            Op::Boundcheck,
+            Op::MulI,
+            Op::AddI,
+            Op::Globaladdress,
+            Op::StorepF
+        ]
+        .map(number)
+    );
+    assert_eq!((statements[4].a, statements[5].a), (varr, r));
+    assert_eq!(statements[5].b, statements[4].c);
+    let (ops, ..) = of("r = varr[i].x;");
+    assert_eq!(
+        ops[..4],
+        [Op::ConvFtoi, Op::Boundcheck, Op::MulI, Op::LoadaF].map(number)
     );
 }
 

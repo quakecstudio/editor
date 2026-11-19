@@ -403,6 +403,29 @@ impl Checker<'_> {
                     ..component
                 }
             }
+            // FTEF-31.29: `a[i].y` of an array of vectors at an index no constant is the float
+            // at the index plus the component's word, as a struct's member is.
+            (_, Some(word))
+                if !self.global
+                    && let Reference::Element(element) = &base.reference
+                    && !element.vector
+                    && element.index.known().is_none() =>
+            {
+                let span = selector.syntax().span();
+                match u32::try_from(word).unwrap_or_default() {
+                    0 => Value {
+                        sym: base.sym,
+                        name: base.name.clone(),
+                        reference: base.reference.clone(),
+                        readonly: base.readonly,
+                        ..component
+                    },
+                    word => Value {
+                        readonly: base.readonly,
+                        ..self.element_member(base, element, component, word, span)?
+                    },
+                }
+            }
             // Another vector is read, a field's by `LOAD_V`, and the component is its word.
             (_, Some(word)) if !self.global => {
                 let span = selector.syntax().span();
