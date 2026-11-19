@@ -829,7 +829,7 @@ impl Gen {
 
 /// Whether an expression's text is one FTEQCC folds to a constant: every name in it is a
 /// constant (`K0` to `K2`), an enum item (`EN_`) or `floor` or `ceil`, the builtins it folds
-/// of a constant (FTEF-32.14); literals, operators and parentheses are constant.
+/// of a constant (FTEF-32.32); literals, operators and parentheses are constant.
 fn is_constant_text(text: &str) -> bool {
     let mut names = text
         .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))

@@ -479,7 +479,12 @@ impl Checker<'_> {
         // FTE-18.12: the first word's store folds into the statement that made its value when
         // that is the last one (`opt_assignments`), which then writes the word; every later
         // store follows a store. The vector is then taken before that statement.
-        let folds = values.first().and_then(|value| {
+        // FTEF-27.25: an integer's store is `OP_STORE_IF`, whose value's type is not the
+        // word's, so it folds into nothing.
+        let converts = values
+            .first()
+            .is_some_and(|value| self.etype_of(&value.ty) == Some(Etype::Integer));
+        let folds = values.first().filter(|_| !converts).and_then(|value| {
             value.made.filter(|&made| {
                 value.temp.is_some()
                     && value.temp == self.last_temp

@@ -982,6 +982,7 @@ impl Checker<'_> {
     pub(super) fn index(&mut self, index: &ast::IndexExpr) -> Checked {
         let span = index.syntax().span();
         let base = self.expr_of(index.base())?;
+        let after_base = self.generated.len();
         let at = self.value(index.index())?;
         self.end_of_construct()?;
         if base.ty == Type::Unknown || at.ty == Type::Unknown {
@@ -1021,6 +1022,16 @@ impl Checker<'_> {
             let length = self.env.array_length(def);
             self.bounds(constant, length, span);
             let at = self.bound_checked(at, constant, length, span)?;
+            // FTEF-31.34: the entity the array's fields are read through is loaded after the
+            // index is read and checked.
+            let (entity, at) = self.read_pointer_last(field.entity, at, after_base);
+            let base = Value {
+                reference: Reference::Field(Box::new(FieldRef {
+                    entity,
+                    ..field.as_ref().clone()
+                })),
+                ..base.clone()
+            };
             return self.field_array_element(base, def, at, span);
         }
         if base.is_array_head() {
@@ -1725,7 +1736,7 @@ impl Checker<'_> {
                 }
                 Ok(())
             }
-            Reference::Character(index) => self.store_character(index, stored, span),
+            Reference::Character(index) => self.store_character(lhs, index, stored, span),
             Reference::Accessor(accessor) => self.accessor_set(lhs, accessor, stored, span),
             // FTEF-2.12: a field of an 8- or 16-bit integer is stored through its address.
             Reference::Field(_) => match narrow_bits(&lhs.ty) {
@@ -1758,7 +1769,13 @@ impl Checker<'_> {
     /// else `OP_STOREP_C` or `OP_STOREP_I8`; the value made a float or an integer for it, and the
     /// index an integer, added to the string by `OP_ADD_I` on a target whose stores take no
     /// offset; then [`Self::small_store`].
-    fn store_character(&mut self, index: &Value, stored: &Value, span: Span) -> Result<(), Fatal> {
+    fn store_character(
+        &mut self,
+        lhs: &Value,
+        index: &Value,
+        stored: &Value,
+        span: Span,
+    ) -> Result<(), Fatal> {
         let target = self.env.target_at(span.start);
         let float = self.etype_of(&stored.ty) == Some(Etype::Float);
         let op = if (float && target.valid(Op::StorepC))
@@ -1778,12 +1795,30 @@ impl Checker<'_> {
         };
         let value = self.supplied(stored, &to, span)?;
         let index = self.supplied(index, &int, span)?;
-        if target.stores_at_offset() {
-            return self.small_store(op, &value, Some(&index), span);
+        let string = Value {
+            ty: Type::Simple(SimpleType::String),
+            reference: Reference::Global,
+            ..lhs.clone()
+        };
+        let (address, index) = if target.stores_at_offset() {
+            (string, Some(index))
+        } else {
+            (self.emit(Op::AddI, &string, &index, span)?, None)
+        };
+        if target.valid(op) {
+            let (a, b) = (self.name_of(&value), self.name_of(&address));
+            let c = index.as_ref().and_then(|index| self.name_of(index));
+            if a.is_none() || b.is_none() || c.is_none() != index.is_none() {
+                self.followed = false;
+            }
+            self.generated.push(ir::BodyStatement {
+                a,
+                b,
+                c,
+                ..ir::BodyStatement::bare(op)
+            });
         }
-        let string = Value::of(Type::Simple(SimpleType::String));
-        self.emit(Op::AddI, &string, &index, span)?;
-        self.small_store(op, &value, None, span)
+        self.small_store(op, &value, index.as_ref(), span)
     }
 }
 

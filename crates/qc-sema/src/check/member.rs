@@ -40,9 +40,12 @@ enum BaseForm {
     Parenthesized,
 }
 
-/// The opcodes that load a value a pointer may be: an entity's field, an array's element, or
-/// what another pointer points at.
-const POINTER_LOADS: [Op; 8] = [
+/// The opcodes that load a value an index reads through, a pointer or an entity: an entity's
+/// field, an array's element, or what another pointer points at.
+const POINTER_LOADS: [Op; 11] = [
+    Op::LoadEnt,
+    Op::LoadaEnt,
+    Op::LoadpEnt,
     Op::LoadI,
     Op::LoadP,
     Op::LoadF,

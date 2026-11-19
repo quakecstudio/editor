@@ -1707,7 +1707,7 @@ fn a_shift_without_pow_calls_bitshift() {
     assert_eq!(t[3], st(Call2, global(&p, "bitshift"), 0, 0));
 }
 
-// spec FTEF-32.14: in a body a call of a constant FTEQCC folds by its name makes no call
+// spec FTEF-32.32: in a body a call of a constant FTEQCC folds by its name makes no call
 #[test]
 fn a_folded_builtin_call_makes_no_call() {
     let p = fte_progs(
@@ -3298,7 +3298,7 @@ fn not_of_a_constant_folds() {
     assert_eq!(t[4].c, f);
 }
 
-// spec FTEF-32.14: `floor`, `ceil`, `sin`, `cos`, `log` and `sqrt` of a constant float fold to
+// spec FTEF-32.32: `floor`, `ceil`, `sin`, `cos`, `log` and `sqrt` of a constant float fold to
 // the constant, a folded argument too; of a value, or by another name, they are called
 #[test]
 fn some_builtins_of_a_constant_fold() {
@@ -7499,4 +7499,92 @@ fn a_typed_call_passes_its_types_defaults() {
         (words(&progs, t[2].b, 1), words(&progs, t[2].c, 1)),
         (vec![1.0_f32.to_bits()], vec![5.0_f32.to_bits()])
     );
+}
+
+const MENU_SOURCE: &str = "\
+    .int len; vector out;\n\
+    void() va = { out = [self.len, 24]; };\n\
+    string(string fmt, ...) sprintf = #1;\n\
+    string(string m, float i) vb = { return sprintf(\"%c%c\", m[i], m[i + 1]); };\n\
+    void(string r, float i) vc = { r[i] = x; };\n\
+    class L { string m_entries[4]; int m_selected; };\n\
+    class C { L m_list; virtual string() Get; };\n\
+    string() C::Get = { return m_list.m_entries[m_list.m_selected]; };\n\
+    float(string s) strlen = #2; float(string s) stof = #3;\n\
+    float(float a, float b) pow = #4;\n\
+    const string N = \"abc\"; const int KI = 3;\n\
+    float() fa = { return strlen(N) + strlen(\"a\" \"b\\n\"); };\n\
+    float() fb = { return stof(\"1e2\") + stof(\" -0x1.8p1z\") + stof(\"12.5x\") + stof(\"abc\"); };\n\
+    float() fc = { return pow(2, 3i) + pow(2, KI); };\n\
+    float() fd = { return strlen(\"a\\x80\"); };\n\
+    void(C c) use = { c.Get(); va(); vb(\"a\", 1); vc(\"a\", 1); fa(); fb(); fc(); fd(); };\n";
+
+fn menu_progs() -> ProgsFile {
+    fte_progs(&format!("{CLASS_HEADER}{MENU_SOURCE}"))
+}
+
+// spec FTEF-27.25: a vector's first component that is an integer is stored by `OP_STORE_IF`
+// after the statement that made it, which it does not fold into
+#[test]
+fn an_integer_first_component_is_stored_by_its_conversion() {
+    assert_eq!(
+        names_in(&menu_progs(), "va"),
+        ["LOADF_I", "STORE_IF", "STORE_F", "STORE_F", "STORE_V"]
+    );
+}
+
+// spec FTEF-32.29: a string's character passed as an argument is loaded as the arguments are
+// stored, after every argument is read
+#[test]
+fn a_character_argument_is_loaded_as_the_arguments_are_stored() {
+    assert_eq!(
+        names_in(&menu_progs(), "vb"),
+        ["ADD_F", "LOADP_C", "LOADP_C", "CALL3H", "RETURN"]
+    );
+}
+
+// spec FTEF-31.5: a string's character is stored by `OP_STOREP_C`, the float value at the
+// index made an integer
+#[test]
+fn a_string_character_store_is_written() {
+    let p = menu_progs();
+    assert_eq!(names_in(&p, "vc"), ["CONV_FI", "STOREP_C"]);
+    let vc = body(&p, "vc");
+    assert_eq!(vc[1].a, global(&p, "x"));
+    assert_eq!(vc[1].c, vc[0].c, "at the index made an integer");
+}
+
+// spec FTEF-31.34: the entity a member array is read through is loaded after its index is
+// read and checked
+#[test]
+fn a_member_array_entity_is_loaded_after_its_index() {
+    assert_eq!(
+        names_in(&menu_progs(), "C::Get"),
+        [
+            "LOADF_ENT",
+            "LOADF_I",
+            "BOUNDCHECK",
+            "LOADF_ENT",
+            "LOADA_FLD",
+            "LOADF_S",
+            "RETURN"
+        ]
+    );
+}
+
+// spec FTEF-32.32: `strlen` and `stof` of a string constant fold, adjacent parts joined and
+// escapes read; a byte with its high bit set leaves `strlen` called
+// spec FTEF-32.32: two arguments are floats as they are passed, cast to their parameters' types
+#[test]
+fn a_call_of_a_string_constant_folds() {
+    let p = menu_progs();
+    let returned = |name: &str| {
+        let f = body(&p, name);
+        assert_eq!(names_in(&p, name), ["RETURN"], "{name}");
+        f[0].a
+    };
+    assert_eq!(returned("fa"), immediate(&p, 6.0));
+    assert_eq!(returned("fb"), immediate(&p, 109.5));
+    assert_eq!(returned("fc"), immediate(&p, 16.0));
+    assert_eq!(names_in(&p, "fd"), ["CALL1H", "RETURN"]);
 }

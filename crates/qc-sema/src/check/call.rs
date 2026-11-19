@@ -255,7 +255,10 @@ impl Checker<'_> {
                 });
             } else if matches!(
                 reference.reference,
-                Reference::Element(_) | Reference::Pointer(_) | Reference::ArrayHead(_)
+                Reference::Element(_)
+                    | Reference::Pointer(_)
+                    | Reference::ArrayHead(_)
+                    | Reference::Character(_)
             ) && !self.global
                 && self.generated.len() > mark
                 && let Some(load) = self.generated.last().copied()
@@ -354,24 +357,34 @@ impl Checker<'_> {
             };
             self.env.report(Code::W0253, span, message);
         }
-        // FTEF-32.14: a call of a constant's value is folded before the arguments are checked.
-        let floats = passed.iter().all(|reference| {
-            reference
-                .as_ref()
-                .is_some_and(|r| r.ty == Type::Simple(SimpleType::Float))
+        // FTEF-32.32: a call of a constant's value is folded before the arguments are checked.
+        // The arguments are read as they are passed, cast to their parameters' types.
+        let floats = passed.iter().zip(&values).all(|(reference, value)| {
+            reference.is_some() && value.ty == Type::Simple(SimpleType::Float)
         });
-        // FTEF-32.17: only an argument read directly (`REF_GLOBAL`) is folded.
-        let constants: Vec<_> = passed
+        // FTEF-32.17: only an argument read directly (`REF_GLOBAL`) is folded, which one cast
+        // to its parameter's type is.
+        let direct: Vec<Option<&Value>> = passed
             .iter()
             .zip(&values)
-            .map(
-                |(reference, value)| match reference.as_ref().map(|r| &r.reference) {
-                    Some(Reference::Global) | None => value.known(),
-                    Some(_) => None,
-                },
-            )
+            .map(|(reference, value)| match reference {
+                Some(r) if r.reference != Reference::Global && r.ty == value.ty => None,
+                Some(_) | None => Some(value),
+            })
+            .collect();
+        let constants: Vec<_> = direct
+            .iter()
+            .map(|value| value.and_then(Value::known))
             .collect();
         if let Some(folded) = fold::builtin_call(&name, &constants, floats) {
+            return Ok(Value::constant(folded));
+        }
+        // FTEF-32.32: `strlen` and `stof` of a string constant.
+        if let [Some(value)] = direct.as_slice()
+            && value.known().is_some()
+            && let Some(folded) =
+                Self::constant_string(value).and_then(|bytes| fold::string_call(&name, &bytes))
+        {
             return Ok(Value::constant(folded));
         }
         self.verify_arguments(&name, &values, span);
@@ -1120,6 +1133,13 @@ impl Checker<'_> {
         self.generate(call, span);
     }
 
+    /// The bytes of the string constant `value` is: its text, a literal's adjacent parts
+    /// joined or a constant definition's initial value, read as FTEQCC's lexer reads one string.
+    fn constant_string(value: &Value) -> Option<Vec<u8>> {
+        let text = value.text.as_deref()?;
+        lexed_string(format!("\"{text}\"").as_bytes())
+    }
+
     /// FTEF-32.10: the intrinsics a call of a function with no parameters stands for, by the
     /// function's name: `_`, which takes only a string immediate; `random` and `randomv`, whose
     /// arguments are made floats; `alloca`, whose size is made an integer, rounded up to words and
@@ -1634,6 +1654,8 @@ enum Loada {
     Pointer(Loaded),
     /// `OP_GLOBALADDRESS`, the pointer an array named bare is passed as.
     Address,
+    /// `OP_LOADP_C`, a string's character.
+    Character,
 }
 
 /// The words a load reads.
@@ -1662,6 +1684,7 @@ impl Loada {
             Op::LoadpI64 => Some(Self::Pointer(Loaded::Pair)),
             Op::LoadpV => Some(Self::Pointer(Loaded::Vector)),
             Op::Globaladdress => Some(Self::Address),
+            Op::LoadpC => Some(Self::Character),
             _ => None,
         }
     }
@@ -1676,6 +1699,7 @@ impl Loada {
             Self::Pointer(Loaded::Pair) => Op::LoadpI64,
             Self::Pointer(Loaded::Vector) => Op::LoadpV,
             Self::Address => Op::Globaladdress,
+            Self::Character => Op::LoadpC,
         }
     }
 }

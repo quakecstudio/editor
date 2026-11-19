@@ -5214,6 +5214,15 @@ as far as they report.
   load, where a struct of three words keeps `MUL_I n, 3i; ADD_I`. The other order, `2i + j *
   4i`, is not rewritten. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_StatementFlags`; checked against the pinned
   FTEQCC's output on an FTE target (2026-11-19).
+- **FTEF-27.25** A store folds into the statement before it (FTE-18.12) only when the value's
+  type is the target's (`if (var_a.cast->type == var_b.cast->type)` in
+  `QCC_PR_StatementFlags`), so the first component of a vector written `[a, b]` or `[a, b, c]`
+  that is an integer is stored to the vector's first word by `OP_STORE_IF` after the statement
+  that made it: `out = [self.len, 24]` of an `int` field is `LOADF_I self, len; STORE_IF t,
+  v_x; STORE_F 24, v_y; STORE_F 0, v_z; STORE_V v, out`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_StatementFlags`; checked against the pinned FTEQCC's
+  output on an FTE target (2026-11-19).
+
 ## FTEF-28 The warnings of an emitted comparison
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_StatementFlags` (the switch after the emulation),
@@ -5956,7 +5965,11 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   `list` follows the addition of `cost`'s word: `MUL_I i, 6; ADD_I t, 4; MUL_I j, 3; ADD_I
   u, 1; LOADP_I g, t; LOADP_F list, u`. A component of a vector read through a pointer, a
   struct's member among them, is the float at the vector's word plus the component's
-  (FTEF-31.25): `x = p->at.y` is one `LOADP_F`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`;
+  (FTEF-31.25): `x = p->at.y` is one `LOADP_F`. The entity
+  an array member is read through is read the same way, after the index is read and checked
+  (`REF_FIELD, QCC_RefToDef(r, true), ...`): `m_list.m_entries[m_list.m_selected]` in a
+  class's function is `LOADF_ENT self, m_list; LOADF_I t, m_selected; BOUNDCHECK i, 4;
+  LOADF_ENT self, m_list; LOADA_FLD m_entries, i; LOADF_S u, f`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`;
   checked against the pinned FTEQCC's output on an FTE target (2026-11-19).
 - **FTEF-31.30** The address of an element of an array of 8- or 16-bit integers is in bytes,
   which `OP_GLOBALADDRESS`'s index of words does not count (`if (basetype->align &&
@@ -6110,20 +6123,9 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   them only otherwise (`finalnotconst`). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_GenerateInitializerType`.
-- **FTEF-32.14** With `opt_constantarithmatic` on, its default, a call is folded by its
-  function's name, before its arguments are checked, when they are constants
-  (`QCC_PR_GenerateFunctionCallRef`): with one argument, `floor`, `ceil`, `sin`, `cos`, `log`
-  and `sqrt` of its first word read as a float, computed in `double` and made a float
-  (`return QCC_MakeFloatConst(floor(a->_float));`); with two arguments that are floats as
-  written (`arglist[0]->cast == type_float && arglist[1]->cast == type_float`), `pow` as
-  `pow(a, b)`, `mod` as `fmodf((int)a, (int)b)`, `min` and `max` as `progsint.h`'s
-  `((a) < (b) ? (a) : (b))` and `((a) > (b) ? (a) : (b))`, and `bitshift` as `(int)a >> (int)-b`
-  for a negative `b`, else `(int)a << (int)b`. So `static const float m = floor(7 / 2);` at
-  global scope is the constant 3, with no "Unable to generate statements". FTEQCC also folds
-  `strlen` and `stof` of a string constant; this profile does not, as the model keeps no
-  string constant's text where calls are checked, and makes the call. Source:
-  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
-  `QCC_PR_GenerateFunctionCallRef`; `engine/qclib/progsint.h`, `min`, `max`.
+- **FTEF-32.14** **Withdrawn** 2026-11-19: it said two arguments are floats as written, where
+  FTEQCC reads them after their cast to the parameters' types, and that `strlen` and `stof` of
+  a string constant are called; replaced by FTEF-32.32.
 - **FTEF-32.15** A local array that is not constant or static, given a braced initialiser, stores
   each element's value to its element in turn each time the function runs: the array goes
   "recursive" (`QCC_PR_ParseInitializerType(0, basedef, def, ...)`, then `def.ofs +=
@@ -6292,7 +6294,7 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
 - **FTEF-32.29** An argument that is an array's element at an index no constant on a
   target with `OP_LOADA_F`, or what a pointer points at (`case REF_POINTER: ... copyop[2] =
   OP_LOADP_V; copyop[1] = OP_LOADP_I64; copyop[0] = OP_LOADP_F;`), or an array named bare,
-  whose address `OP_GLOBALADDRESS` makes, is read as the
+  whose address `OP_GLOBALADDRESS` makes, or a string's character at a float index (`OP_LOADP_C`), is read as the
   arguments are stored, after `self` is set for a
   method's call (FTEF-9.26), as a field argument is (FTEF-32.19): the index is read, made an
   integer and checked where the argument is written, and the load follows the stores of
@@ -6318,6 +6320,29 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   temp, parm1; CALL2 f`, on the standard target and an FTE one alike. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseFunctionCall`, `QCC_PR_GenerateFunctionCallRef`; checked against the pinned
   FTEQCC's output on both targets (2026-11-19).
+- **FTEF-32.32** With `opt_constantarithmatic` on, its default, a call is folded by its
+  function's name when its arguments are constants read directly (FTEF-32.17), as they are
+  passed: an argument whose type is not its parameter's has been cast to it by then (`else if
+  (p && typecmp(e->cast, p)) e = QCC_PR_BuildRef(&parambuf[arg], REF_GLOBAL,
+  QCC_EvaluateCast(QCC_RefToDef(e, true), p, true), nullsref, p, true, 0);` in
+  `QCC_PR_ParseFunctionCall`), and is a global read directly. With one argument, `floor`,
+  `ceil`, `sin`, `cos`, `log` and `sqrt` of its first word read as a float, computed in
+  `double` and made a float (`return QCC_MakeFloatConst(floor(a->_float));`); `strlen` of a
+  string constant, the count of its bytes, unless one has its high bit set or there are more
+  than `1u<<24` (`QCC_Intrinsic_strlen`: "don't shortcut it when its an extended char. we
+  don't know what the engine's strlen function would return."), when the call is made; and
+  `stof` of one, C's `atof` of it (`return QCC_MakeFloatConst(atof(&strings[a->string]));`).
+  With two arguments that are floats (`arglist[0]->cast == type_float && arglist[1]->cast ==
+  type_float`), `pow` as `pow(a, b)`, `mod` as `fmodf((int)a, (int)b)`, `min` and `max` as
+  `progsint.h`'s `((a) < (b) ? (a) : (b))` and `((a) > (b) ? (a) : (b))`, and `bitshift` as
+  `(int)a >> (int)-b` for a negative `b`, else `(int)a << (int)b`. So `static const float m =
+  floor(7 / 2);` at global scope is the constant 3, with no "Unable to generate statements";
+  `pow(2, 3i)` of a `pow` whose parameters are floats is 8; `strlen("a" "b\n")` is 3 and
+  `stof("12.5x")` 12.5. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GenerateFunctionCallRef`, `QCC_Intrinsic_strlen`, `QCC_PR_ParseFunctionCall`;
+  `engine/qclib/progsint.h`, `min`, `max`; checked against the pinned FTEQCC's output on an
+  FTE target (2026-11-19).
+
 ## FTEF-33 Builtin argument checks
 
 **Source:** `qcc_pr_comp.c`, `QCC_VerifyFormatString`, `QCC_VerifyArgs_sendevent`,
