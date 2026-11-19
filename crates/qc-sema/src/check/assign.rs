@@ -1473,7 +1473,7 @@ impl Checker<'_> {
             return Ok(());
         };
         let width = self.env.layout(&ty).map_or(1, |l| l.words);
-        let store = self.store_of(&ty, declarator.syntax().span());
+        let span = declarator.syntax().span();
         for (at, element) in (0_u32..).zip(elements) {
             let value = self.value(Some(element.clone()))?;
             // An element of another type is converted as it is stored, which the body does not
@@ -1489,11 +1489,8 @@ impl Checker<'_> {
             if value.temp.is_some() && value.temp == self.last_temp && !wider {
                 self.fold_into(&value, to);
             } else {
-                self.generated.push(ir::BodyStatement {
-                    a: self.name_of(&value),
-                    b: to,
-                    ..ir::BodyStatement::bare(store)
-                });
+                // FTE-14.9: each element is stored as a local's initialiser is.
+                self.store_initialiser(self.name_of(&value), to, &ty, span);
             }
             self.read_returned(&value);
             self.last_temp = None;

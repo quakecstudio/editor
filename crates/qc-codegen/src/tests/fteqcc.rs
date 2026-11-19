@@ -6641,3 +6641,20 @@ fn a_wide_struct_is_the_setters_argument_in_pieces() {
     assert_eq!(t[4].op, u32::from(Opcode::Call3.number()));
     assert_eq!(t[4].a, global(&progs, "ArraySet*arr"));
 }
+
+// spec FTE-14.9: each element of a local array's initialiser is stored as a local's initialiser
+// is: a double's or a 64-bit integer's by `OP_STORE_FLD` of each word on the standard target
+#[test]
+fn an_array_initialisers_elements_are_stored_as_initialisers() {
+    use qc_progs::Op::{StoreF, StoreFld, StoreI64};
+    let source = "__double k;\nfloat x;\n\
+                  void() f = { local __double da[2] = {k, k}; local float fa[2] = {x, x}; };\n";
+    assert_eq!(
+        ops_of(source),
+        numbers([StoreFld, StoreFld, StoreFld, StoreFld, StoreF, StoreF])
+    );
+    assert_eq!(
+        ops_of(&format!("#pragma target fte\n{source}")),
+        numbers([StoreI64, StoreI64, StoreF, StoreF])
+    );
+}
