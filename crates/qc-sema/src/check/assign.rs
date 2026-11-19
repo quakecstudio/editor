@@ -25,7 +25,7 @@ use crate::check::opcodes;
 use crate::check::opcodes::row;
 use crate::check::reference::word_type;
 use crate::check::truth::{Test, is_truth};
-use crate::check::{Constness, Fold, Reference, Value, ValueUse};
+use crate::check::{Constness, Fold, Reference, Sym, Value, ValueUse};
 use crate::ir;
 use crate::lower::{Qualifier, declares};
 use crate::ty::{SimpleType, Type};
@@ -435,9 +435,20 @@ impl Checker<'_> {
         // A store folded into the statement that made the value leaves the value in the
         // definition, which a store of the assignment's own value reads and no store folds
         // into again.
-        let stored = if folded && lhs.reference == Reference::Global && !self.global {
+        // The definition is the target's own, or the word of it an element at a constant index
+        // or a vector's component is: a fold into `v[1]` leaves the value in `v_y`, not in
+        // the temporary the statement would have made.
+        let place = match &lhs.reference {
+            Reference::Global => Some(lhs.sym),
+            Reference::Element(_) => lhs
+                .definition_place()
+                .and_then(|place| place.sym())
+                .filter(|sym| matches!(sym, Sym::Def(..))),
+            _ => None,
+        };
+        let stored = if let (true, Some(sym), false) = (folded, place, self.global) {
             Value {
-                sym: lhs.sym,
+                sym,
                 temp: None,
                 made: None,
                 call: None,

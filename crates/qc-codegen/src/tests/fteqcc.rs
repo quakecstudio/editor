@@ -7317,3 +7317,63 @@ fn a_multiply_by_the_word_size_and_an_add_are_one_statement() {
     assert_eq!(words(&progs, t[0].a, 1), [2]);
     assert_eq!((t[0].b, t[0].c), (global(&progs, "j"), global(&progs, "i")));
 }
+
+// spec FTEF-31.34: a pointer member indexed is loaded after the whole index is computed, the
+// member's word of what it points at added first; a vector member's component through a
+// pointer is one load of a float
+#[test]
+fn a_pointer_is_read_after_its_whole_index() {
+    let head = "#pragma target fte\nfloat x;\nint i, j;\n\
+                typedef struct { int id; float cost; vector at; } nb_t;\n\
+                typedef struct { vector origin; float radius; nb_t *list; } node_t;\n\
+                node_t *g;\nnb_t *n;\n";
+    let of = |body: &str| names_of(&format!("{head}void() f = {{ {body} }};\n"));
+    assert_eq!(
+        of("x = g[i].list[j].cost;"),
+        ["MUL_I", "ADD_I", "MUL_I", "ADD_I", "LOADP_I", "LOADP_F"]
+    );
+    assert_eq!(of("x = n->at.y;"), ["LOADP_F"]);
+    assert_eq!(of("x = n[j].at.y;"), ["MUL_I", "ADD_I", "ADD_I", "LOADP_F"]);
+    // The pointer loaded is the one the last load reads through.
+    let progs = fte_progs(&format!("{head}void() f = {{ x = g[i].list[j].cost; }};\n"));
+    let t = body(&progs, "f");
+    assert_eq!((t[4].a, t[5].a), (global(&progs, "g"), t[4].c));
+    assert_eq!((t[4].b, t[5].b), (t[1].c, t[3].c));
+}
+
+// spec FTEF-29.23: the value of an assignment folded into an element is that element, which a
+// second assignment stores from
+#[test]
+fn a_chained_assignment_through_an_element_stores_the_element() {
+    let progs = fte_progs(
+        "#pragma target fte\nfloat x, y;\nvector v;\nfloat arr[4];\n\
+         void() f = { v[0] = v[1] = 16 * x; y = arr[2] = 2 * x; };\n",
+    );
+    let t = body(&progs, "f");
+    assert_eq!(opcodes(&t), ops(&[MulF, StoreF, MulF, StoreF, Done]));
+    let (v, arr) = (global(&progs, "v"), global(&progs, "arr"));
+    assert_eq!((t[0].c, t[1].a, t[1].b), (v + 1, v + 1, v));
+    assert_eq!(
+        (t[2].c, t[3].a, t[3].b),
+        (arr + 2, arr + 2, global(&progs, "y"))
+    );
+}
+
+// spec FTEF-32.29: an array passed bare has its address made as the arguments are stored,
+// after a field argument before it is loaded, straight into its parameter's slot
+#[test]
+fn an_arrays_address_is_made_as_the_arguments_are_stored() {
+    let source = "#pragma target fte\nentity world;\n.float modelindex;\nvector faces[6];\n\
+                  float dists[6];\nvoid(float a, vector *b, float *c, float d) take = #1;\n\
+                  void() f = { take(world.modelindex, faces, dists, 2); };\n";
+    assert_eq!(
+        names_of(source),
+        [
+            "LOADF_F",
+            "GLOBALADDRESS",
+            "GLOBALADDRESS",
+            "STORE_F",
+            "CALL4H"
+        ]
+    );
+}

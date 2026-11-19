@@ -1122,15 +1122,17 @@ impl Checker<'_> {
 
     /// FTEF-31.25: component `word` of the vector `base` reads through a pointer: the float at
     /// the vector's word plus `word`, through the same pointer.
-    fn pointer_component(&mut self, base: Value, word: u32, span: Span) -> Checked {
+    pub(super) fn pointer_component(&mut self, base: Value, word: u32, span: Span) -> Checked {
         let Reference::Pointer(pointer) = &base.reference else {
             return Ok(base);
         };
         let component = Some((word, WORD_ALIGNMENT));
+        let before = self.generated.len();
         let index = self.member_index(pointer.index.as_ref(), component, span)?;
+        let (named, index) = self.read_pointer_last(pointer.named, index, before);
         Ok(Value {
             readonly: base.readonly,
-            reference: Reference::pointer(pointer.base.clone(), Some(index), pointer.named),
+            reference: Reference::pointer(pointer.base.clone(), Some(index), named),
             name: base.name,
             ..Value::of(Type::Simple(SimpleType::Float))
         })

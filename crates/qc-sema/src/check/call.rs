@@ -255,7 +255,7 @@ impl Checker<'_> {
                 });
             } else if matches!(
                 reference.reference,
-                Reference::Element(_) | Reference::Pointer(_)
+                Reference::Element(_) | Reference::Pointer(_) | Reference::ArrayHead(_)
             ) && !self.global
                 && self.generated.len() > mark
                 && let Some(load) = self.generated.last().copied()
@@ -263,10 +263,11 @@ impl Checker<'_> {
                 && value.made.is_some()
                 && load.c == value.made.map(ir::Name::Made)
             {
-                // FTEF-32.29: an array's element at an index no constant, and what a pointer
-                // points at, is loaded as the arguments are stored, after `self` is set, as a
-                // field is: the index is read and checked where it is written, the
-                // `OP_LOADA_*` or `OP_LOADP_*` held back.
+                // FTEF-32.29: an array's element at an index no constant, what a pointer
+                // points at, and the address an array named bare is passed as, are made as
+                // the arguments are stored, after `self` is set, as a field is loaded: the
+                // index is read and checked where it is written, the `OP_LOADA_*`,
+                // `OP_LOADP_*` or `OP_GLOBALADDRESS` held back.
                 self.generated.pop();
                 field_loads.push(FieldLoad {
                     slot: at,
@@ -1619,6 +1620,8 @@ enum Loada {
     Array(Loaded),
     /// `OP_LOADP_*` of this size.
     Pointer(Loaded),
+    /// `OP_GLOBALADDRESS`, the pointer an array named bare is passed as.
+    Address,
 }
 
 /// The words a load reads.
@@ -1646,6 +1649,7 @@ impl Loada {
             }
             Op::LoadpI64 => Some(Self::Pointer(Loaded::Pair)),
             Op::LoadpV => Some(Self::Pointer(Loaded::Vector)),
+            Op::Globaladdress => Some(Self::Address),
             _ => None,
         }
     }
@@ -1659,6 +1663,7 @@ impl Loada {
             Self::Pointer(Loaded::Word) => Op::LoadpF,
             Self::Pointer(Loaded::Pair) => Op::LoadpI64,
             Self::Pointer(Loaded::Vector) => Op::LoadpV,
+            Self::Address => Op::Globaladdress,
         }
     }
 }

@@ -5462,6 +5462,13 @@ whether it is the result of a postfix `++` or `--`. The semantic model checks as
   followed. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_RefExpression`,
   `QCC_PR_GenerateAddressOf`, `OpAssignsToC`; checked against the pinned FTEQCC's output on
   an FTE target (2026-11-19).
+- **FTEF-29.23** The value of an assignment whose store folded into the statement that
+  made its value (FTEF-29.13) is the definition the statement then writes, an element's at a
+  constant index or a vector's component as a whole definition's: `v[0] = v[1] = 16 * x` is
+  `MUL_F 16, x, v_y` and `STORE_F v_y, v_x`, and `x = arr[2] = 2 * y` is `MUL_F` into
+  `arr`'s third word and `STORE_F` of that word to `x`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_StatementFlags`' `opt_assignments`; checked against the pinned FTEQCC's output
+  (2026-11-19).
 ## FTEF-30 Terms
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_RefTerm`, `QCC_PR_GenerateLogicalTruth`,
@@ -5934,6 +5941,16 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   LOAD_F self, field`), and a store is `OP_STOREF_F` at that field. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseArrayPointer`, `QCC_LoadFromArray`; checked against the pinned FTEQCC's
   output on an FTE target (2026-11-19).
+- **FTEF-31.34** The pointer an index reads through is itself read only once its whole
+  index is computed: `QCC_PR_ParseRefArrayPointer` reads each `[i]` and `.member` into the
+  index and resolves the pointer after them (`if (dereference) r = QCC_PR_BuildRef(retbuf,
+  REF_POINTER, QCC_RefToDef(r, true), idx, ...)`). So in `g[i].list[j].cost`, whose `list`
+  is a pointer member at word 4 and `cost` the second word of what it points at, the load of
+  `list` follows the addition of `cost`'s word: `MUL_I i, 6; ADD_I t, 4; MUL_I j, 3; ADD_I
+  u, 1; LOADP_I g, t; LOADP_F list, u`. A component of a vector read through a pointer, a
+  struct's member among them, is the float at the vector's word plus the component's
+  (FTEF-31.25): `x = p->at.y` is one `LOADP_F`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`;
+  checked against the pinned FTEQCC's output on an FTE target (2026-11-19).
 - **FTEF-31.30** The address of an element of an array of 8- or 16-bit integers is in bytes,
   which `OP_GLOBALADDRESS`'s index of words does not count (`if (basetype->align &&
   basetype->align!=32) { //urgh. OP_GLOBALADDRESS is in terms of words, while pointers are often
@@ -6267,7 +6284,8 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   against the pinned FTEQCC's output on an FTE target (2026-11-19).
 - **FTEF-32.29** An argument that is an array's element at an index no constant on a
   target with `OP_LOADA_F`, or what a pointer points at (`case REF_POINTER: ... copyop[2] =
-  OP_LOADP_V; copyop[1] = OP_LOADP_I64; copyop[0] = OP_LOADP_F;`), is loaded as the
+  OP_LOADP_V; copyop[1] = OP_LOADP_I64; copyop[0] = OP_LOADP_F;`), or an array named bare,
+  whose address `OP_GLOBALADDRESS` makes, is read as the
   arguments are stored, after `self` is set for a
   method's call (FTEF-9.26), as a field argument is (FTEF-32.19): the index is read, made an
   integer and checked where the argument is written, and the load follows the stores of
