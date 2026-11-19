@@ -606,10 +606,24 @@ pub(crate) struct ParamFacts {
     /// Whether the code generator passes the default: under autoprototyping one naming any
     /// definition but a field is none (FTE-18.8).
     pub(crate) kept_default: bool,
+    /// The default's constant when the parameter is a function type's, called through a
+    /// value and not by the function's name (FTEF-32.30).
+    pub(crate) default_value: Option<ir::Immediate>,
     /// Whether `optional` marks it.
     pub(crate) optional: bool,
     /// Which way its value passes: an out parameter's is stored back after the call.
     pub(crate) passing: Passing,
+}
+
+impl ParamFacts {
+    /// What a call names for the default of this parameter, the function's `at`th: the
+    /// type's own constant, or the default the code generator reads at the function's
+    /// declaration (FTE-18.7).
+    pub(crate) fn default_name(&self, at: usize) -> Option<ir::Name> {
+        self.default_value
+            .map(ir::Name::Immediate)
+            .or_else(|| u8::try_from(at).ok().map(ir::Name::Default))
+    }
 }
 
 /// A struct or union member as the checks read it (FTEF-6.11, FTEF-6.15).

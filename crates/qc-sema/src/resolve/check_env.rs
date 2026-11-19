@@ -434,6 +434,7 @@ impl Env for BodyEnv<'_, '_> {
                 .map(|p| ParamFacts {
                     name: p.name.clone(),
                     has_default: p.default.is_some(),
+                    default_value: None,
                     kept_default: p.default.as_ref().is_some_and(|default| {
                         !self.resolver.profile.two_passes()
                             || match &default.kind {

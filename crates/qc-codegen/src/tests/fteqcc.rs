@@ -860,18 +860,19 @@ fn c_style_parameters_are_the_functions_first_locals() {
     assert_eq!(body(&p, "f")[0], st(Return, global(&p, "y"), 0, 0));
 }
 
-// spec FTEF-32.3: under FTEQCC an argument past the last parameter is read and ignored, and
+// spec FTEF-32.31: an argument past the last parameter is stored and counted as any other, and
 // fewer arguments leave the rest
 // spec FTE-18.4: every argument is read before any is stored to its slot
 #[test]
-fn extra_arguments_are_read_and_dropped() {
+fn extra_arguments_are_passed() {
     let p = fte_progs("void(float x) f = {};\nfloat a;\nvoid() t = { f(a, a + 1); f(); };\n");
     let t = body(&p, "t");
     assert_eq!(
         opcodes(&t),
-        ops(&[AddF, StoreF, Call1, Opcode::Call0, Done])
+        ops(&[AddF, StoreF, StoreF, Opcode::Call2, Opcode::Call0, Done])
     );
     assert_eq!(t[1], st(StoreF, global(&p, "a"), 4, 0));
+    assert_eq!(t[2], st(StoreF, t[0].c, 7, 0));
 }
 
 // spec FTE-18.4: a call's value is copied out of the return global before a later argument's
@@ -7477,4 +7478,25 @@ fn a_weak_body_after_the_functions_own_writes_no_statement() {
         ops(&[StoreF, StoreF, Done])
     );
     assert_eq!(before.statements.len(), 8);
+}
+
+// spec FTEF-32.30: a call through a value of a function type passes the type's default for an
+// argument left out
+#[test]
+fn a_typed_call_passes_its_types_defaults() {
+    let progs = fte_progs(
+        "#pragma target fte\nfloat x;\nint i;\ntypedef struct { int GetClip(entity w = __NULL__); \
+         float Two(float a, float b = 5); } api_t;\napi_t weapon;\n\
+         void() f = { i = weapon.GetClip(); x = weapon.Two(1); };\n",
+    );
+    assert_eq!(
+        names_in(&progs, "f"),
+        ["CALL1H", "STORE_I", "CALL2H", "STORE_F"]
+    );
+    let t = body(&progs, "f");
+    assert_eq!(words(&progs, t[0].b, 1), [0]);
+    assert_eq!(
+        (words(&progs, t[2].b, 1), words(&progs, t[2].c, 1)),
+        (vec![1.0_f32.to_bits()], vec![5.0_f32.to_bits()])
+    );
 }

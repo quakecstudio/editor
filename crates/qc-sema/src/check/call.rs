@@ -395,7 +395,7 @@ impl Checker<'_> {
         let defaulted: Vec<bool> = passed.iter().map(Option::is_none).collect();
         let unpassed: Vec<bool> = params.iter().map(|p| p.passing == Passing::Out).collect();
         let kept = self.call_statements(
-            &function,
+            (&function, &params),
             passed_count,
             (callee, &values, &defaulted, &unpassed),
             (newself, &field_loads, None),
@@ -545,7 +545,7 @@ impl Checker<'_> {
     /// is an `__out` parameter's, which nothing is passed for (FTEF-32.24).
     pub(super) fn call_statements(
         &mut self,
-        function: &FunctionType,
+        (function, params): (&FunctionType, &[ParamFacts]),
         count: usize,
         (callee, values, defaulted, unpassed): (Option<ir::Name>, &[Value], &[bool], &[bool]),
         (newself, field_loads, kept_value): (Option<ir::Name>, &[FieldLoad], Option<usize>),
@@ -554,10 +554,13 @@ impl Checker<'_> {
         // The arguments written and each parameter after them that takes its default
         // (FTE-18.7), of which a parameter takes its own.
         let count = count.max(values.len());
+        // Every argument written is passed, one past the parameters too, which FTEQCC only
+        // warns of ("too many parameters on call to %s, argument %s will be ignored") and
+        // then stores and counts as any other (FTEF-32.31).
         let passed = if function.variadic {
             count
         } else {
-            count.min(function.params.len())
+            count.min(function.params.len()).max(values.len())
         };
         // In a function, the statements of the call: each argument a parameter takes stored to
         // its slot unless the statement before made it (FTE-18.12), then the call.
@@ -683,7 +686,7 @@ impl Checker<'_> {
                 // An empty slot's value is its parameter's default, which the code generator
                 // reads (FTE-18.7).
                 let from = if defaulted.get(at).copied().unwrap_or(false) {
-                    u8::try_from(at).ok().map(ir::Name::Default)
+                    params.get(at).and_then(|param| param.default_name(at))
                 } else {
                     renamed(self.name_of(value))
                 };
@@ -695,7 +698,11 @@ impl Checker<'_> {
             }
         }
         let after = (values.len()..passed).map(|at| (at, slot_at(at)));
-        self.default_arguments(function, after, registers.then_some(&mut operands));
+        self.default_arguments(
+            (function, params),
+            after,
+            registers.then_some(&mut operands),
+        );
         let call = if registers {
             Op::CALLS_BY_OPERANDS
         } else {
@@ -725,7 +732,7 @@ impl Checker<'_> {
     /// where it is.
     fn default_arguments(
         &mut self,
-        function: &FunctionType,
+        (function, params): (&FunctionType, &[ParamFacts]),
         after: impl Iterator<Item = (usize, usize)>,
         mut registers: Option<&mut [Option<ir::Name>; REGISTER_PARMS]>,
     ) {
@@ -736,7 +743,7 @@ impl Checker<'_> {
                 .and_then(|param| self.env.layout(param))
                 .map_or(1, |l| l.words);
             let vector = words == VECTOR_WORDS || function.is_variant_parameter(at);
-            let default = u8::try_from(at).ok().map(ir::Name::Default);
+            let default = params.get(at).and_then(|param| param.default_name(at));
             let register = registers
                 .as_mut()
                 .and_then(|operands| operands.get_mut(slot));
@@ -1551,8 +1558,11 @@ impl FunctionType {
                     .map_or_else(ParamFacts::default, |label| ParamFacts {
                         name: label.name.clone(),
                         has_default: label.default.is_some(),
-                        // The code generator passes defaults only to a function it calls by name.
-                        kept_default: false,
+                        // The code generator passes a default it reads at the function's
+                        // declaration only to a function called by name; a type's own is its
+                        // constant.
+                        kept_default: label.default_value.is_some(),
+                        default_value: label.default_value,
                         optional: label.optional,
                         passing: label.passing,
                     })

@@ -137,7 +137,7 @@ impl Checker<'_> {
         };
         let defaulted = vec![false; args.len()];
         self.call_statements(
-            &function,
+            (&function, &[]),
             args.len(),
             (Some(ir::Name::Def(callee, 0)), args, &defaulted, &[]),
             (None, &[], kept_value),

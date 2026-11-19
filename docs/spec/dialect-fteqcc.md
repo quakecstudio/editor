@@ -6304,6 +6304,20 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   type is not its parameter's is read where it is written (FTEF-32.28). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_GenerateFunctionCallRef`; checked against the pinned FTEQCC's output on an FTE
   target (2026-11-19).
+- **FTEF-32.30** A parameter's default value belongs to the function's type
+  (`func.cast->params[arg].defltvalue`), so a call through a value of the type, a struct's
+  member or a pointer, passes it for an argument left out as a call by the function's name
+  does (FTE-18.7): `i = weapon.GetClip()` of a member `int GetClip(entity w = __NULL__)` is
+  `CALL1H` with the constant 0, and `weapon.Two(1)` of `float Two(float a, float b = 5)`
+  `CALL2H 1, 5`. This compiler follows a default that is a number or a null. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseFunctionCall`; checked against the pinned FTEQCC's output on an FTE target
+  (2026-11-19).
+- **FTEF-32.31** An argument past the last parameter of a function that is not variadic is
+  warned of (FTEF-32.3) and then passed as any other: it is stored to the next slot and
+  counted by the call, so `f(a, a + 1)` of `void(float x) f` is `STORE_F a, parm0; STORE_F
+  temp, parm1; CALL2 f`, on the standard target and an FTE one alike. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseFunctionCall`, `QCC_PR_GenerateFunctionCallRef`; checked against the pinned
+  FTEQCC's output on both targets (2026-11-19).
 ## FTEF-33 Builtin argument checks
 
 **Source:** `qcc_pr_comp.c`, `QCC_VerifyFormatString`, `QCC_VerifyArgs_sendevent`,
