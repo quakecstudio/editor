@@ -7141,3 +7141,39 @@ fn a_member_array_is_an_array_of_fields() {
         ["BOUNDCHECK", "MUL_I", "ADD_I", "LOADA_FLD", "STOREF_F"]
     );
 }
+
+// spec FTEF-31.33: a member array has a global for each word of each element, each the offset
+// of a field of its own, so an element at a constant index and a vector element's component
+// are read at their own fields, and what is declared after the array has its own
+#[test]
+fn a_member_arrays_elements_have_their_own_fields() {
+    let progs = fte_progs(&format!(
+        "{CLASS_HEADER}vector v;\nclass base {{ float fl[4]; vector vs[4]; float after; \
+         virtual void() Run; }};\nvoid base::Run(void) {{ x = fl[0]; x = fl[2]; v = vs[0]; \
+         v = vs[1]; x = vs[2].y; vs[3].z = x; x = after; }}\n"
+    ));
+    let t = body(&progs, "base::Run");
+    let (fl, vs) = (
+        global(&progs, "base::__mfl[0]"),
+        global(&progs, "base::__mvs[0]"),
+    );
+    let fields: Vec<i32> = t[..7].iter().map(|s| s.b).collect();
+    assert_eq!(fields[..6], [fl, fl + 2, vs, vs + 3, vs + 7, vs + 11]);
+    // Each global holds the offset of its own field, the array's in turn.
+    let first = words(&progs, fl, 1)[0];
+    assert_eq!(
+        words(&progs, fl, 4),
+        [first, first + 1, first + 2, first + 3]
+    );
+    let first = words(&progs, vs, 1)[0];
+    assert_eq!(
+        words(&progs, vs, 12),
+        (first..first + 12).collect::<Vec<_>>()
+    );
+    let after = words(&progs, fields[6], 1)[0];
+    assert!(!(first..first + 12).contains(&after));
+    assert!(!words(&progs, fl, 4).contains(&after));
+    // The records name each element at its own words.
+    assert_eq!(global(&progs, "base::__mvs[1]"), vs + 3);
+    assert_eq!(global(&progs, "base::__mfl[3]"), fl + 3);
+}

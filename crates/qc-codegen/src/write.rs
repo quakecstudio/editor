@@ -15,7 +15,7 @@ use qc_types::{Etype, Slot};
 use std::fmt::Write as _;
 
 use crate::Internal;
-use crate::program::{Def, Program, RESERVED_OFS, ValueType, type_number, type_words};
+use crate::program::{Def, Program, RESERVED_OFS, ValueType, type_number};
 use qc_lexer::latin1_encode;
 
 /// `PR_WriteProgdefs` (QC-25.5, QC-25.6): the text of `progdefs.h` and the CRC of it up to the
@@ -263,7 +263,7 @@ pub(crate) fn progs(
         if records == Records::Fteqcc
             && let Some(count) = def.count
         {
-            let words = type_words(index, &def.ty);
+            let words = def.element_words(index);
             for i in 0..count {
                 let ofs = i
                     .checked_mul(words)

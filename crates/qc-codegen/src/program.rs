@@ -134,6 +134,17 @@ pub(crate) struct Def {
     pub(crate) id: Option<DefId>,
 }
 
+impl Def {
+    /// The words of one element of the array it is: a field array's are what its fields
+    /// hold, a global for each (FTEF-31.33), any other's its type's.
+    pub(crate) fn element_words(&self, index: &ModuleIndex) -> u32 {
+        self.ty.field_inner().map_or_else(
+            || type_words(index, &self.ty),
+            |held| type_words(index, &held),
+        )
+    }
+}
+
 /// A literal's value as `qcc`'s lexer reads it (QC-4 to QC-6).
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Literal {
@@ -837,17 +848,27 @@ impl Program {
             .is_some_and(|function| function.initialized);
         let null = definition.initialized && !bodied;
         let ty = ValueType::Of(Type::Field(held.into()));
-        let words = type_words(index, &ty);
+        // FTEF-31.33: an array of fields has a global for each word of each element, the
+        // offset of that word's field, as a pool of FTEQCC's has (`::vector[N]`); any other
+        // member has its field's one global.
+        let count = index.array_len(id);
+        let inner = ty.field_inner().ok_or(Internal::Unsupported)?;
+        let words = match count {
+            Some(count) => type_words(index, &inner)
+                .checked_mul(count)
+                .ok_or(Internal::TooLarge)?,
+            None => type_words(index, &ty),
+        };
         let ofs = self.allocate_global(words)?;
         let place = self.defs.len();
         self.defs.push(Def {
             name: format!("{class}::{MEMBER_FIELD_PREFIX}{name}"),
-            ty: ty.clone(),
+            ty,
             ofs,
             scope: None,
             initialized: false,
             constant: !null,
-            count: index.array_len(id),
+            count,
             id: Some(id),
         });
         self.places.insert(id, place);
@@ -855,10 +876,8 @@ impl Program {
             Some(word) => word,
             None => {
                 let field = self.size_fields;
-                let inner = ty.field_inner().ok_or(Internal::Unsupported)?;
-                let count = index.array_len(id).unwrap_or(1);
                 let taken = type_words(index, &inner)
-                    .checked_mul(count)
+                    .checked_mul(count.unwrap_or(1))
                     .ok_or(Internal::TooLarge)?;
                 self.size_fields = self
                     .size_fields
@@ -867,7 +886,11 @@ impl Program {
                 field
             }
         };
-        self.set_words(ofs, &[field])?;
+        let offsets: Vec<u32> = match count {
+            Some(_) => (0..words).map(|word| field.saturating_add(word)).collect(),
+            None => vec![field],
+        };
+        self.set_words(ofs, &offsets)?;
         Ok(place)
     }
 

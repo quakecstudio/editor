@@ -22,7 +22,7 @@ use super::arrays::Access;
 use super::{At, Compiler, Lowered, Written, literal_of};
 use crate::Internal;
 use crate::back_end::Allocation;
-use crate::program::{Literal, OFS_RETURN, ValueType, operand, type_words};
+use crate::program::{Literal, OFS_RETURN, ValueType, operand};
 
 impl Compiler<'_> {
     /// Writes `body`'s statements as the code of the function being compiled, `named` the span
@@ -422,9 +422,7 @@ impl Compiler<'_> {
                 let def = self.program.def(place).at(span)?;
                 // FTE-13.6: a word past an array's elements is not lowered.
                 if let Some(count) = def.count {
-                    let words = count
-                        .checked_mul(type_words(self.index, &def.ty))
-                        .at(span)?;
+                    let words = count.checked_mul(def.element_words(self.index)).at(span)?;
                     if word >= words {
                         return Err(Internal::Unlowered).at(span);
                     }
