@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2004-2025 FTE's team and its contributors
+// Copyright (C) 2026 QuakeC Studio contributors
+//
+// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_comp.c, QCC_PR_ParseRefArrayPointer, QCC_PR_GenerateAddressOf, QCC_StoreSRefToRef
 
 //! Where a reference to a definition is: the definition, the words into it the checker knows,
 //! and an index that is known only as the program runs. FTEQCC keeps the same pair on every
 //! reference (`QCC_ref_t::base` and `QCC_ref_t::index`) and every subscript, member and
 //! component adds to the index (`QCC_PR_ParseRefArrayPointer`); here the pair is read from a
-//! value in one place, [`Value::place`], so that a read, a store, an address and an increment
+//! value in one place, [`Value::definition_place`], so that a read, a store, an address and an increment
 //! of a reference agree on where it is (FTEF-31.28, FTEF-31.32).
 
 use crate::check::reference::{eval_int, narrow_bits};
@@ -100,7 +104,8 @@ impl Value {
         Some(Place {
             def,
             constant,
-            words: before.saturating_add(words),
+            // An index before the definition's start wraps, as FTEQCC's `int` offset does.
+            words: before.wrapping_add(words),
             index,
         })
     }

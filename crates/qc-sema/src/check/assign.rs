@@ -378,20 +378,11 @@ impl Checker<'_> {
             .unwrap_or_else(|| lhs.clone());
         let stored = self.bit_copy(&stored, &packed, span)?;
         if packs && !self.global {
-            // The word with the value packed in is the last statement's result, written to the
-            // word itself (`QCC_PR_Statement_BitCopy`'s `OP_BITOR_I`). A compound assignment and
-            // a target with `OP_BITCOPY_I` are not followed.
-            let word = packed.definition_place().and_then(|place| place.word());
-            let joined = self
-                .generated
-                .last()
-                .is_some_and(|last| last.op == Op::BitorI);
-            match word {
-                Some(word) if matches!(kind, Assign::Store) && joined => {
-                    self.fold_into(&stored, Some(word));
-                }
-                _ => self.followed = false,
+            // A compound assignment of a packed value is not followed.
+            if !matches!(kind, Assign::Store) {
+                self.followed = false;
             }
+            self.pack_into_word(&packed, &stored, span);
         }
         self.store_reference(&lhs, &stored, span)?;
         self.not_an_lvalue(&lhs, span);
@@ -414,6 +405,14 @@ impl Checker<'_> {
         } else {
             stored
         };
+        // FTEF-6.15: the value of a packed store is the bitfield, read from its word again.
+        if packs {
+            return Ok(Value {
+                readonly: true,
+                postinc: false,
+                ..lhs
+            });
+        }
         Ok(Value {
             ty: lhs.ty,
             readonly: true,
@@ -421,6 +420,26 @@ impl Checker<'_> {
             postinc: false,
             ..stored
         })
+    }
+
+    /// FTEF-6.15: the word `joined`, [`Checker::bit_copy`]'s result with the value packed in,
+    /// written to the word `packed` is in: the statement that made it, the last one, writes
+    /// the word itself (`QCC_PR_Statement_BitCopy`'s last statement, whichever it folds to).
+    /// A target with `OP_BITCOPY_I`, and a word that is no definition's, are not followed.
+    fn pack_into_word(&mut self, packed: &Value, joined: &Value, span: Span) {
+        let word = packed.definition_place().and_then(|place| place.word());
+        let last = self.generated.len().checked_sub(1);
+        let made_last = joined.made.and_then(|made| usize::try_from(made).ok()) == last;
+        match word {
+            Some(word)
+                if made_last
+                    && last.is_some()
+                    && !self.env.target_at(span.start).valid(Op::BitcopyI) =>
+            {
+                self.fold_into(joined, Some(word));
+            }
+            _ => self.followed = false,
+        }
     }
 
     /// FTEF-6.15: a store to a bitfield, but through a pointer, reads the word that holds it and

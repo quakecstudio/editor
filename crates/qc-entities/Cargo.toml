@@ -11,6 +11,7 @@ publish.workspace = true
 [dependencies]
 qc-progs = { workspace = true }
 qc-sema = { workspace = true }
+qc-types = { workspace = true }
 qs-map = { workspace = true }
 
 [dev-dependencies]

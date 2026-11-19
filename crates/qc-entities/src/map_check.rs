@@ -15,9 +15,6 @@ use qc_sema::{Db, DefKind, ModuleInput, SimpleType, Type};
 
 use crate::entities::{EntityClass, Key};
 
-/// The numbers of a vector key's value, `PROGS_VECTOR_SLOTS`.
-const VECTOR_PARTS: usize = 3;
-
 /// Keys the compilers and map editors write that are no field (MAP-8.2): qbsp's texture WADs
 /// (MAP-6.3) and the editors' format version.
 const COMPILER_KEYS: [&str; 2] = ["wad", "mapversion"];
@@ -349,7 +346,8 @@ impl EntitySchema {
             FieldValue::Float => is_number(value),
             FieldValue::Vector => {
                 let parts: Vec<&str> = value.split(' ').collect();
-                parts.len() == VECTOR_PARTS && parts.iter().all(|part| is_number(part))
+                parts.len() == qc_types::PROGS_VECTOR_SLOTS
+                    && parts.iter().all(|part| is_number(part))
             }
             FieldValue::Entity => !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()),
             FieldValue::Function => self.functions.contains(value),

@@ -208,10 +208,15 @@ impl Checker<'_> {
             };
             let (word, offset) = narrow_position(at, bits);
             // The element's word of the array (`ret.ofs += bitofs>>5`), read at its bit.
-            let packed = Value {
-                reference: Reference::Global,
-                sym: value.sym.at(word),
-                ..value
+            // A narrow member of a struct that is an element is at its own word already.
+            let packed = if self.narrow_array(&value) {
+                Value {
+                    reference: Reference::Global,
+                    sym: value.sym.at(word),
+                    ..value
+                }
+            } else {
+                value
             };
             return self.extend_bits(&packed, offset, bits, span);
         }
@@ -222,6 +227,19 @@ impl Checker<'_> {
             ..value
         };
         self.load_from_pointer(narrow, (named, None), span)
+    }
+
+    /// Whether `value` is an element of a definition that is itself an array of 8- or 16-bit
+    /// integers, whose index counts those elements (FTEF-2.12).
+    fn narrow_array(&self, value: &Value) -> bool {
+        value.bitfield.is_none()
+            && value.sym.def().is_some_and(|def| {
+                self.env.is_array(def)
+                    && self
+                        .env
+                        .definition(def)
+                        .is_some_and(|definition| narrow_bits(&definition.ty).is_some())
+            })
     }
 
     /// FTEF-2.12: an element at a constant index of an array of 8- or 16-bit integers, or a
@@ -261,12 +279,20 @@ impl Checker<'_> {
             ..lhs.clone()
         };
         // An element is the word of its array it is packed in (`ret.ofs += bitofs>>5`).
+        // A narrow member of a struct that is an element, and a narrow member array's element,
+        // whose index counts words, are not followed.
         Some(match &lhs.reference {
-            Reference::Element(_) => Value {
+            Reference::Element(_) if self.narrow_array(lhs) => Value {
                 reference: Reference::Global,
                 sym: lhs.sym.at(word),
                 ..packed
             },
+            Reference::Element(_) => {
+                if !self.global {
+                    self.followed = false;
+                }
+                packed
+            }
             _ => packed,
         })
     }
@@ -1328,7 +1354,7 @@ impl Checker<'_> {
                 ),
                 None => (
                     Some(place.whole()),
-                    i32::try_from(place.words()).ok().map(int),
+                    Some(int(i32::from_le_bytes(place.words().to_le_bytes()))),
                 ),
             },
             // A constant vector's component folded to its immediate has no word of the

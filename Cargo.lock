@@ -3441,6 +3441,7 @@ dependencies = [
  "qc-progs",
  "qc-sema",
  "qc-syntax",
+ "qc-types",
  "qs-map",
 ]
 

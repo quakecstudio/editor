@@ -4282,6 +4282,8 @@ fn an_address_carries_its_constant_index_in_words() {
     assert_eq!(address("vp = &gp.v;"), ("gp", Some(1)));
     assert_eq!(address("ip = &gp.n;"), ("gp", Some(4)));
     assert_eq!(address("ip = &sarr[1].n;"), ("sarr", Some(9)));
+    // An index before the array's start is the statement's as it is written.
+    assert_eq!(address("p = &arr[-1];"), ("arr", Some(u32::MAX)));
 }
 
 // spec FTEF-31.28: an index that is no constant is the statement's, of the definition at the
@@ -4334,6 +4336,7 @@ fn the_forms_not_followed_are_refused() {
         "bp = &nsarr[k].d;",
         "barr[k] = 3;",
         "darr[k] = dd;",
+        "nsarr[1].c = ri;",
     ] {
         assert!(refused(statement), "{statement}");
     }
@@ -4404,6 +4407,27 @@ fn a_bitfield_store_packs_the_value_into_its_word() {
     assert_eq!(words(&progs, statements[2].b, 1), [4]);
     assert_eq!(statements[3].c, word);
     assert!(refused("gs.b += 1;"));
+    // A value of 0 folds the join away: the statement that clears the field writes the word.
+    let (progs, statements) = addressed("gs.b = 0;");
+    assert_eq!(opcodes(&statements)[..2], numbers([Op::BitandI, Op::Done]));
+    assert_eq!(statements[0].c, statements[0].a);
+    assert_eq!(words(&progs, statements[0].b, 1), [!(0x3f_u32 << 4)]);
+    // The value of the store is the bitfield, read from its word after the word is written.
+    let (progs, statements) = addressed("ri = (gs.b = k);");
+    assert_eq!(
+        opcodes(&statements)[..6],
+        numbers([
+            Op::BitandI,
+            Op::BitandI,
+            Op::LshiftI,
+            Op::BitorI,
+            Op::LshiftI,
+            Op::RshiftI
+        ])
+    );
+    assert_eq!(statements[3].c, statements[0].a);
+    assert_eq!(statements[4].a, statements[0].a);
+    assert_eq!(statements[5].c, global(&progs, "ri"));
 }
 
 // spec FTEF-31.29: a vector in parentheses is read before its component is taken, and on a
