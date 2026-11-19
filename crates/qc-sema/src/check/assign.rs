@@ -15,6 +15,7 @@ use qc_syntax::c_scalar::CScalar;
 use qc_syntax::{SyntaxKind, SyntaxNode};
 
 use crate::cast::{Source, Supply};
+use crate::check::call::call_opcode;
 use crate::check::constant::Constant;
 use crate::check::emulate::conversion_opcodes;
 use crate::check::etype::Etype;
@@ -1539,7 +1540,7 @@ impl Checker<'_> {
         // pieces, a slot each from the second, stored before the index, and the call counts
         // the slots.
         if let Some(wide) = self.wide_words(target) {
-            self.wide_argument(self.name_of(stored), wide, 1, None, span);
+            self.setter_argument(self.name_of(stored), wide, span);
             self.generated.push(ir::BodyStatement {
                 a: self.name_of(&element.index),
                 b: parameter(0),
@@ -1548,7 +1549,7 @@ impl Checker<'_> {
             self.read_returned(&element.index);
             self.clobber_return();
             let slots = usize::try_from(wide.div_ceil(VECTOR_WORDS)).unwrap_or(usize::MAX);
-            match crate::check::call::call_opcode(slots.saturating_add(1)) {
+            match call_opcode(slots.saturating_add(1)) {
                 Some(call) => self.generated.push(ir::BodyStatement {
                     a: lhs.sym.def().map(ir::Name::ArraySet),
                     ..ir::BodyStatement::bare(call)

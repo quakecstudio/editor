@@ -762,7 +762,7 @@ impl Checker<'_> {
     /// on: to a value of its own where the slot is one of the call's operands, `registers`.
     /// One that is no definition's or statement's words, or whose pieces do not each start a
     /// slot, is not followed.
-    pub(super) fn wide_argument(
+    fn wide_argument(
         &mut self,
         from: Option<ir::Name>,
         words: u32,
@@ -795,6 +795,12 @@ impl Checker<'_> {
             });
         }
         self.last_temp = None;
+    }
+
+    /// FTEF-32.25, FTEF-19.78: the value an array's setter stores, a struct `from` of `words`
+    /// words, copied to its slots, the setter's second parameter's on.
+    pub(super) fn setter_argument(&mut self, from: Option<ir::Name>, words: u32, span: Span) {
+        self.wide_argument(from, words, SETTER_VALUE_SLOT, None, span);
     }
 
     /// FTEF-32.25: the words of `ty` when it is a struct or union of more than a vector's,
@@ -1450,6 +1456,9 @@ impl FunctionType {
 }
 
 /// `CALL0` to `CALL8`, the call of `passed` arguments, the opcode of the count (QC-18.3).
+/// The slot of the value an array's setter stores, `ArraySet*NAME(index, value)`'s second.
+const SETTER_VALUE_SLOT: usize = 1;
+
 pub(super) fn call_opcode(passed: usize) -> Option<Op> {
     Op::CALLS.get(passed).copied()
 }
