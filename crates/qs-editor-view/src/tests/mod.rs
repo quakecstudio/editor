@@ -887,3 +887,76 @@ fn a_drag_selects_and_a_shift_click_extends() {
     assert_eq!(state.selections().len(), 2, "and the other caret kept");
     assert_ne!(head, pos(0, 0));
 }
+
+/// A press or a release of the primary button at `pos`.
+fn button(pos: Pos2, pressed: bool) -> Event {
+    Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    }
+}
+
+// No spec statement: P7-16: a drag of the scroll bar's thumb scrolls the view and selects
+// nothing, to the file's last line at the track's end and back to its first at the top
+#[test]
+fn a_drag_of_the_scroll_bars_thumb_scrolls_the_view() {
+    let mut harness = Harness::new(&numbered(400));
+    let bar = |y: f32| Pos2::new(786.0, y);
+    harness.frame(vec![Event::PointerMoved(bar(14.0))], &Plain);
+    harness.frame(vec![button(bar(14.0), true)], &Plain);
+    for y in [60.0, 120.0, 200.0] {
+        harness.frame(vec![Event::PointerMoved(bar(y))], &Plain);
+    }
+    let middle = harness.view.first_line();
+    assert!(middle > 100 && middle < 300, "{middle}");
+    harness.frame(vec![Event::PointerMoved(bar(900.0))], &Plain);
+    assert_eq!(
+        harness.view.first_line(),
+        399,
+        "the track's end is the last line"
+    );
+    harness.frame(vec![Event::PointerMoved(bar(-50.0))], &Plain);
+    assert_eq!(harness.view.first_line(), 0);
+    harness.frame(vec![Event::PointerMoved(bar(200.0))], &Plain);
+    harness.frame(vec![button(bar(200.0), false)], &Plain);
+    assert_eq!(harness.view.first_line(), middle);
+    let selection = harness.view.state().primary();
+    assert!(selection.is_caret(), "{selection:?}");
+    assert_eq!(selection.head, pos(0, 0), "the caret stays where it was");
+    // Released, the pointer moves the view no more.
+    harness.frame(vec![Event::PointerMoved(bar(300.0))], &Plain);
+    assert_eq!(harness.view.first_line(), middle);
+}
+
+// No spec statement: P7-16: a click in the scroll bar beside the thumb pages toward it; a file
+// the view shows whole has no scroll bar, and a click at its place is a click on the text
+#[test]
+fn a_click_beside_the_thumb_pages_and_a_short_file_has_no_bar() {
+    let mut harness = Harness::new(&numbered(400));
+    let bar = |y: f32| Pos2::new(786.0, y);
+    let click = |harness: &mut Harness, at: Pos2| {
+        harness.frame(vec![Event::PointerMoved(at)], &Plain);
+        harness.frame(vec![button(at, true)], &Plain);
+        harness.frame(vec![button(at, false)], &Plain);
+    };
+    click(&mut harness, bar(380.0));
+    let paged = harness.view.first_line();
+    assert!(paged > 5 && paged < 40, "a page down: {paged}");
+    click(&mut harness, bar(380.0));
+    assert_eq!(harness.view.first_line(), paged * 2);
+    harness.view.scroll_to(200);
+    harness.frame(Vec::new(), &Plain);
+    click(&mut harness, bar(12.0));
+    assert_eq!(harness.view.first_line(), 200 - paged, "a page up");
+    assert_eq!(harness.view.state().primary().head, pos(0, 0));
+
+    let mut short = Harness::new(&numbered(5));
+    click(&mut short, Pos2::new(786.0, 70.0));
+    assert_eq!(short.view.first_line(), 0);
+    assert!(
+        short.view.state().primary().head.line > 0,
+        "the click placed the caret"
+    );
+}

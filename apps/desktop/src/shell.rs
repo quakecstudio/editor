@@ -2887,6 +2887,8 @@ impl Theme {
             note_error: self.color(Token::StatusError),
             note_warning: self.color(Token::StatusWarn),
             lightbulb: self.color(Token::Accent),
+            scroll_thumb: self.color(Token::Border),
+            scroll_thumb_active: self.color(Token::TextFaint),
         }
     }
 }

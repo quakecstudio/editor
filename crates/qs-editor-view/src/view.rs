@@ -16,6 +16,7 @@ use crate::buffer::Position;
 use crate::diff::Diff;
 use crate::fold::{Fold, Folds};
 use crate::layout::{LayoutCache, Preedit, Styler, inlay_job, line_job};
+use crate::scrollbar;
 use crate::selection::{EditState, Extend, Motion, Selection};
 use crate::vim::{Mode, Vim, VimKey};
 
@@ -65,6 +66,10 @@ pub struct ViewStyle {
     pub note_warning: Color32,
     /// The mark before a note that has a quick fix, `accent`.
     pub lightbulb: Color32,
+    /// The scroll bar's thumb, `border`.
+    pub scroll_thumb: Color32,
+    /// The thumb under the pointer or dragged, `text.faint`.
+    pub scroll_thumb_active: Color32,
 }
 
 impl Default for ViewStyle {
@@ -92,6 +97,8 @@ impl Default for ViewStyle {
             note_error: Color32::from_rgb(0xec, 0x7a, 0x6c),
             note_warning: Color32::from_rgb(0xe2, 0xb0, 0x4a),
             lightbulb: Color32::from_rgb(0xee, 0x8b, 0x45),
+            scroll_thumb: Color32::from_rgb(0x2a, 0x28, 0x26),
+            scroll_thumb_active: Color32::from_rgb(0x8e, 0x87, 0x7d),
         }
     }
 }
@@ -108,6 +115,10 @@ const FIX_DOT_PARTS: f32 = 4.0;
 const MAX_UTF8_BYTES: u8 = 4;
 /// The caret's width in points.
 const CARET_WIDTH: f32 = 2.0;
+/// What the scroll bar's id adds to the view's.
+const SCROLL_BAR_ID: &str = "scroll-bar";
+/// The rounding of the scroll bar's thumb's corners, in points.
+const SCROLL_THUMB_ROUNDING: u8 = 3;
 /// The gutter's mark on a removed line's row.
 const REMOVED_MARK: &str = "-";
 /// What a folded line shows after its text.
@@ -179,6 +190,8 @@ pub struct EditorView {
     first_line: usize,
     /// Scrolled points not yet a whole line.
     scroll_rest: f32,
+    /// Where on the scroll bar's thumb a drag of it took hold, in points below its top.
+    scroll_grab: Option<f32>,
     /// The visible lines in the last frame, for paging.
     visible: usize,
     /// IME composition text at the primary caret, not yet in the text.
@@ -228,6 +241,7 @@ impl EditorView {
             state: EditState::new(text),
             first_line: 0,
             scroll_rest: 0.0,
+            scroll_grab: None,
             visible: 1,
             preedit: None,
             hovered: None,
@@ -532,6 +546,7 @@ impl EditorView {
             let delta = ui.input(|i| i.smooth_scroll_delta.y);
             self.scroll(delta, row_height);
         }
+        let bar = self.scroll_bar(ui, rect);
         // A press places the caret where the button went down, which for a drag is behind the
         // pointer by the drag threshold; each frame of a drag then moves the head to the pointer.
         let modifiers = ui.input(|i| i.modifiers);
@@ -579,8 +594,74 @@ impl EditorView {
         }
 
         self.paint(ui, style, styler, rect, gutter, row_height, focus);
+        if let Some((thumb, active)) = bar {
+            let colour = if active {
+                style.scroll_thumb_active
+            } else {
+                style.scroll_thumb
+            };
+            let shown = Rect::from_min_max(
+                Pos2::new(
+                    rect.right() - scrollbar::WIDTH + scrollbar::INSET,
+                    thumb.top,
+                ),
+                Pos2::new(rect.right() - scrollbar::INSET, thumb.top + thumb.height),
+            );
+            ui.painter_at(rect).rect_filled(
+                shown,
+                CornerRadius::same(SCROLL_THUMB_ROUNDING),
+                colour,
+            );
+        }
         self.cache.end();
         response
+    }
+
+    /// The vertical scroll bar at the right edge of `rect` (P7-16): a drag of its thumb
+    /// scrolls to the line under it, and a click beside the thumb pages toward the click. The
+    /// thumb to draw, and whether the pointer is on the bar or dragging it; none when the
+    /// view shows every line.
+    fn scroll_bar(&mut self, ui: &Ui, rect: Rect) -> Option<(scrollbar::Thumb, bool)> {
+        let lines = self.state.buffer().line_count();
+        // The rows that fit whole: a last row cut by the view's edge is not one to page by.
+        let track = scrollbar::Track::new(
+            rect.top(),
+            rect.height(),
+            lines,
+            self.visible.saturating_sub(1).max(1),
+        );
+        let Some(thumb) = track.thumb(self.first_line) else {
+            self.scroll_grab = None;
+            return None;
+        };
+        let bar = Rect::from_min_max(
+            Pos2::new(rect.right() - scrollbar::WIDTH, rect.top()),
+            rect.max,
+        );
+        let response = ui.interact(bar, self.id.with(SCROLL_BAR_ID), Sense::click_and_drag());
+        let pointer = response.interact_pointer_pos().map(|pos| pos.y);
+        if response.drag_started() {
+            // A drag from beside the thumb takes it by its middle.
+            self.scroll_grab = pointer.map(|y| {
+                if thumb.holds(y) {
+                    y - thumb.top
+                } else {
+                    thumb.height / 2.0
+                }
+            });
+        }
+        if let (true, Some(y), Some(grab)) = (response.dragged(), pointer, self.scroll_grab) {
+            self.first_line = self.folds.shown_at_or_before(track.line_at(y - grab));
+        } else if let (true, Some(y)) = (response.clicked(), pointer) {
+            self.first_line = self
+                .folds
+                .shown_at_or_before(track.paged(self.first_line, y));
+        }
+        if response.drag_stopped() {
+            self.scroll_grab = None;
+        }
+        let active = response.hovered() || response.dragged();
+        track.thumb(self.first_line).map(|thumb| (thumb, active))
     }
 
     /// Scrolls by `delta` points of wheel movement, whole lines at a time.
