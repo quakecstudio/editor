@@ -538,7 +538,18 @@ impl Checker<'_> {
             let ty = self.env.written_type(ty.syntax().span().start);
             return Ok(ty.map_or_else(opaque_uint, |ty| self.size_of(&ty)));
         }
+        // "the term should not have side effects, or generate any actual statements."
+        // (`numstatements = oldstcount;`): what the operand's statements named is still made.
+        let before = self.generated.len();
         let value = self.expr_of(sizeof.operand())?;
+        if self.generated.len() > before {
+            let effects = self.dropped_effects(before);
+            self.generated.truncate(before);
+            let at = self.next_made();
+            self.effects
+                .extend(effects.into_iter().map(|effect| (at, effect)));
+            self.last_temp = None;
+        }
         if let Some(text) = sizeof.operand().and_then(|e| string_immediate(&e)) {
             let bytes = u32::try_from(text.len()).unwrap_or(u32::MAX);
             return Ok(Value::constant(Constant::uint(bytes.saturating_add(1))));

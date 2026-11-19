@@ -440,11 +440,13 @@ fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody, flow: Flow) {
         // a `for` inside it has already ended its own.
         ast::Stmt::For(for_stmt) => {
             let first = body.locals.len();
+            // FTEF-16.9: the first clause may hold expressions and then a declaration, `v = 0,
+            // int i = 1`, each read in its turn.
             for clause in for_stmt.clauses() {
-                if let Some(local) = clause.children().find_map(ast::LocalDecl::cast) {
-                    lower_local(&local, cx, body);
-                } else {
-                    for expr in clause.children().filter_map(ast::Expr::cast) {
+                for child in clause.children() {
+                    if let Some(local) = ast::LocalDecl::cast(child.clone()) {
+                        lower_local(&local, cx, body);
+                    } else if let Some(expr) = ast::Expr::cast(child) {
                         lower_expr(&expr, cx, &mut body.uses);
                     }
                 }

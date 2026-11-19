@@ -7423,3 +7423,33 @@ fn a_nonvirtual_member_read_through_an_object_is_its_function() {
     );
     assert_eq!(body(&progs, "f")[1].a, global(&progs, "base::Plain"));
 }
+
+// spec FTEF-16.9: a `for`'s first clause may hold expressions and then a declaration, each
+// read in its turn: the expressions' stores come before the local's
+#[test]
+fn a_for_clause_of_expressions_and_a_declaration_keeps_both() {
+    let progs = fte_progs(
+        "#pragma target fte\nint n;\n\
+         void() f = { int v; for (v = 5, n = 2, int i = 1; i <= n; i++) { v++; } n = v; };\n",
+    );
+    let t = body(&progs, "f");
+    let store = u32::try_from(qc_progs::Op::StoreI.number()).unwrap();
+    assert_eq!(opcodes(&t)[..3], [store; 3]);
+    assert_eq!(words(&progs, t[0].a, 1), [5]);
+    assert_eq!(
+        (words(&progs, t[1].a, 1), t[1].b),
+        (vec![2], global(&progs, "n"))
+    );
+    assert_eq!(words(&progs, t[2].a, 1), [1]);
+}
+
+// spec FTEF-30.11: the operand of `sizeof` generates no statement
+#[test]
+fn a_sizeof_operand_generates_no_statement() {
+    let source = "#pragma target fte\nint i;\ntypedef struct { int id; float cost; } nb_t;\n\
+                  typedef struct { vector o; nb_t *list; } node_t;\nnode_t *n1;\n\
+                  void() f = { i = sizeof(*n1->list); };\n";
+    assert_eq!(names_of(source), ["STORE_I"]);
+    let progs = fte_progs(source);
+    assert_eq!(words(&progs, body(&progs, "f")[0].a, 1), [8]);
+}
