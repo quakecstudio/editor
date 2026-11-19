@@ -1623,9 +1623,8 @@ fn edits_waiting_for_review_are_shown_until_the_last_is_decided() {
         ids
     };
     let ids = staged(&mut harness);
-    let [first, last] = ids.as_slice() else {
-        panic!("two hunks, not {}", ids.len());
-    };
+    assert_eq!(ids.len(), 2);
+    let (first, last) = (ids.first().unwrap(), ids.last().unwrap());
     run_command_with(&mut harness, "edit.accept", json!({ "hunks": [first] }));
     harness.get_by_label(&review_waiting(1, 1));
     harness.get_by_label(&row);
