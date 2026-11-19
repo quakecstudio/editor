@@ -513,6 +513,9 @@ impl Checker<'_> {
                 self.generate(Op::StoreF, span);
                 self.name_last(Op::StoreF, self.name_of(value), Some(to));
             }
+            // The store reads a call's value out of the return global, which no later call
+            // then copies (FTE-18.13).
+            self.read_returned(value);
         }
         Ok(Value {
             made: (!self.global).then_some(first),

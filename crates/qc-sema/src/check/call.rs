@@ -998,6 +998,8 @@ impl Checker<'_> {
                 if let Some(offset) = arg.temp {
                     self.env.temps().free(offset);
                 }
+                // The opcode reads a call's value, which no later call then copies.
+                self.read_returned(arg);
             }
             self.last_temp = Some(temp);
             return Ok(Value {

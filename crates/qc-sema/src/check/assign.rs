@@ -1555,7 +1555,7 @@ impl Checker<'_> {
     }
 
     /// A store's read of `value`: a call's value is then out of the return global's keeping.
-    fn read_returned(&mut self, value: &Value) {
+    pub(super) fn read_returned(&mut self, value: &Value) {
         if value.returned {
             self.live_return = None;
             self.live_call = None;

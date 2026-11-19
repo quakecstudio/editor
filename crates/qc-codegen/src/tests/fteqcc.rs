@@ -7377,3 +7377,20 @@ fn an_arrays_address_is_made_as_the_arguments_are_stored() {
         ]
     );
 }
+
+// spec FTE-18.13: a call's value a vector constructor's store or `OP_RAND*` read is out of the
+// return global, so the call after it copies nothing
+#[test]
+fn a_calls_value_read_by_a_store_is_not_copied_again() {
+    let head = "#pragma target fte\nfloat() random = #7;\nfloat(float a) one = #5;\n\
+                void(vector a) setsize = #2;\nvoid(float a, float b) two = #3;\nfloat x, y;\n";
+    let of = |body: &str| names_of(&format!("{head}void() f = {{ {body} }};\n"));
+    assert_eq!(
+        of("setsize([one(x), 16]);"),
+        ["CALL1H", "STORE_F", "STORE_F", "STORE_F", "CALL1H"]
+    );
+    assert_eq!(
+        of("two(x, random(0, one(y)));"),
+        ["CALL1H", "RAND2", "CALL2H"]
+    );
+}
