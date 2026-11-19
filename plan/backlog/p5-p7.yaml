@@ -1209,6 +1209,54 @@ groups:
     - 'A level with no breakpoints in spawn functions loads as before; the simulation and view differentials pass'
     verify:
     - cargo xtask ci; cargo xtask bridge-client on LibreQuake; the recorded run of #942 repeated with the breakpoint in func_door
+  - key: P6-43
+    title: 'Texture a new map from the game''s own levels'
+    labels:
+    - L5-commands
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - MAP-5
+    - PLAT-6
+    summary: |
+      Found on 2026-11-18 building a map through the MCP tools for #135. Quake ships no texture WAD: each level's textures are inside its BSP (`maps/*.bsp` in `pak0.pak` and `pak1.pak`), and the only WAD in the game is `gfx.wad`, the HUD's. The texture browser lists the WADs the world names and the BSP a map was opened from, so a new map has no texture to choose until the modder finds a WAD elsewhere, and `map.compile` reports each face's texture missing. The run got its textures by copying `e1m1.bsp`'s out of the install into a WAD by hand.
+    depends: []
+    deliverable:
+    - 'crates/qs-map-edit/src/textures.rs: the texture browser also lists the textures of the BSPs on the game''s search path, read in place and each once, with the level it came from as its origin (`TextureOrigin`), beside the WADs'' and the open BSP''s'
+    - 'crates/qs-workbench/src/map_compile.rs: `map.compile`, `map.leaks` and `map.play_from_here` find a face''s texture among them when no WAD of the world has it, in memory; nothing is written into the install or the project'
+    - 'The map view draws those textures on brushes as it draws a WAD''s'
+    acceptance:
+    - 'A test: a map with no `wad` key whose faces name textures of a BSP on the game''s search path compiles with no missing texture, and the BSP written holds them'
+    - 'A test: `map.textures` on a new map lists a game BSP''s textures, each once, with its origin'
+    - 'A recorded run on the reference Mac with a game install: a new map textured from the browser, compiled and played, and `find <install> -newer <marker>` printing nothing'
+    verify:
+    - 'cargo xtask ci; the recorded run in the PR'
+  - key: P6-44
+    title: 'An MCP agent can make, save and play a map'
+    labels:
+    - L6-agent
+    - area:map
+    - type:bug
+    size: M
+    reqs:
+    - MAP-16
+    - MAP-13
+    summary: |
+      Found on 2026-11-18 building a map through `quakec-ide mcp --connect` for #135, where the map was built, compiled and found sealed through the tools but three steps needed something else. (1) No tool makes a map: `map.open` takes a file that exists, so the empty `.map` was written by hand. (2) No tool saves one: `map.save` is a command of the app that the MCP server does not offer. (3) The map could not be played: `preview.play` with `{"map": "arena"}` stopped the preview host with "maps/arena.bsp is not on the search path", because `map.compile` writes the BSP beside the `.map` in the project and Play reads maps from the run root; `map.play_from_here` copies it there but is not offered either. Also, `preview.pick` answers the current selection when its ray hits nothing, so a miss reads as a hit on what was selected before.
+    environment: |
+      macOS (Apple M5), main at 30683ba7, release builds of quakec-studio and quakec-ide; a project made by `quakec-ide new rerelease`, GOG's Quake Enhanced extracted by innoextract
+    depends: []
+    deliverable:
+    - 'crates/qs-mcp: `map.new` (a `.map` in the project with a world and the keys given), `map.save` and `map.play_from_here` among the agent''s tools, each with the access it needs, as the built-in agent has them'
+    - 'crates/qs-workbench/src/preview.rs: `preview.play` of a map the project compiled finds its BSP, by the run root holding the project''s `maps/` or the BSP put there as `map.play_from_here` puts it'
+    - '`preview.pick` answers no edict when its ray hits none'
+    acceptance:
+    - 'A test drives the MCP server alone: `map.new`, brushes, entities, `map.compile`, `map.save`, then a play of the map, each call answering without an error'
+    - 'A test: `preview.play` of a map compiled in the project plays it'
+    - 'A test: `preview.pick` at a point with no entity answers a null edict whatever was selected'
+    verify:
+    - 'cargo xtask ci'
   - key: P6-14
     title: Phase 6 gate review
     labels:
@@ -1262,6 +1310,8 @@ groups:
     - P6-40
     - P6-41
     - P6-42
+    - P6-43
+    - P6-44
     deliverable:
     - docs/gates/p6.md
     acceptance:
@@ -1558,6 +1608,70 @@ groups:
     - 'The accessibility, snapshot and zoom tests pass at 100 and 200 percent'
     verify:
     - 'kittest tests; snapshot tests; Justin''s approval of the snapshots'
+  - key: P7-16
+    title: 'A scroll bar in the code editor'
+    labels:
+    - L7-ui
+    - area:editor
+    - type:feature
+    size: S
+    reqs:
+    - UI-4
+    - UI-14
+    summary: |
+      Reported by Justin on 2026-11-18. The code editor (`qs-editor-view`) paints its own text and scrolls by the wheel and the keys; it draws no scroll bar, so there is nothing to show where a file is scrolled to or to drag. Every other panel is an egui `ScrollArea`, which draws one.
+    depends: []
+    deliverable:
+    - 'crates/qs-editor-view: a vertical scroll bar at the editor''s right edge, as Zed''s: a thumb whose size and place are the lines shown of the file''s, dragged to scroll and clicked beside to page, shown as the theme''s scroll bar tokens; and a horizontal one when a line is wider than the view and soft wrap is off'
+    acceptance:
+    - 'A test of the view: the thumb''s place and size follow the scroll offset and the file''s length, a drag of it scrolls to the line under it, and a click in the track pages'
+    - 'A file shorter than the view shows no thumb'
+    - 'The editor rows of `cargo xtask bench` stay within their budgets on the reference Mac, recorded in the PR'
+    verify:
+    - 'cargo xtask ci; the bench rows in the PR'
+  - key: P7-17
+    title: 'A full macOS menu bar and About window'
+    labels:
+    - apps
+    - area:editor
+    - type:feature
+    size: M
+    reqs:
+    - UI-14
+    - UI-23
+    summary: |
+      Reported by Justin on 2026-11-18 with a screenshot. The menu bar has the app's menu, File and View only, and About shows a folder icon over the name `quakec-studio`. The name and the icon in the screenshot are the unbundled binary's (a build run from `target/`), which has no Info.plist; the installed app is `QuakeC Studio` with its icon. The menus and the About window's contents are the app's own either way.
+    depends: []
+    deliverable:
+    - 'apps/desktop: the menu bar a Mac app has, each item a command of the registry with its shortcut shown: the app menu (About QuakeC Studio, Settings, Hide, Quit), File, Edit (Undo, Redo, Cut, Copy, Paste, Select All, Find), View, Go, Run (Play, Pause, Step, Restart map), Map, Window (Minimize, Zoom, the open windows) and Help (the user guide, Report an issue)'
+    - 'An About window with the app''s icon, the name QuakeC Studio, the version, the copyright and license (GPL-3.0-or-later) and links to the site and the source'
+    - 'A build run outside the bundle names itself QuakeC Studio in the menu bar and About too'
+    acceptance:
+    - 'A test: every menu item names a command of the registry, and every command with a default shortcut that belongs in a menu is in one'
+    - 'A recorded run on the reference Mac of the installed package: the menu bar and the About window as above'
+    verify:
+    - 'cargo xtask ci; the recorded run in the PR'
+  - key: P7-18
+    title: 'Show that an agent''s edits are waiting for review'
+    labels:
+    - L7-ui
+    - area:agent
+    - type:bug
+    size: S
+    reqs:
+    - UI-5
+    summary: |
+      Found on 2026-11-18 adding a weapon through `quakec-ide mcp --connect` for #135. `edit.apply` staged four hunks in `weapons.qc` in the running app, and the window showed nothing of it: the file was not open, the status bar read as before, and no panel listed the hunks. They could be seen only after the file was opened by hand and scrolled to. A person who did not make the edit has no way to know a review is waiting.
+    environment: |
+      macOS (Apple M5), main at 30683ba7, a release build of quakec-studio with `quakec-ide mcp --connect` attached
+    depends: []
+    deliverable:
+    - 'apps/desktop: when hunks are staged, of a file or of a map, the status bar shows how many wait and in how many files; activating it opens the first, and the file''s tab and its row of the Project panel are marked'
+    - 'The first hunk staged by an agent that is not the built-in one opens its file at the hunk when no review is open'
+    acceptance:
+    - 'A test: staging hunks in a file that is not open shows the count on the status bar and marks the file''s row, and accepting or rejecting the last clears both'
+    verify:
+    - 'cargo xtask ci'
   - key: P7-06
     title: Phase 7 gate review
     labels:
@@ -1584,6 +1698,9 @@ groups:
     - P7-13
     - P7-14
     - P7-15
+    - P7-16
+    - P7-17
+    - P7-18
     deliverable:
     - docs/gates/p7.md
     acceptance:
