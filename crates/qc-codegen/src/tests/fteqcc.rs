@@ -6232,3 +6232,161 @@ fn a_struct_is_copied_by_threes_then_pairs_where_the_target_has_them() {
         numbers([StoreV, StoreF, StoreF, StoreV, StoreV, StoreF])
     );
 }
+
+/// A program with a struct, a sized array, a typedef, an enum and a class, each used.
+const EVERY_CONSTRUCT: &str = "typedef struct { float a; vector b; } s_t;\n\
+     enumflags { EA, EB };\ntypedef float num;\ns_t gs;\nfloat arr[4];\nnum n;\n\
+     entity self;\nentity() spawn = #14;\n\
+     class C { float m; virtual void() v; };\nvoid() C::v = { m = 1; };\n\
+     void() f = { local C c; gs.a = EB; arr[1] = n; c = spawn(C); c.v(); };\n";
+
+// spec FTEF-1.5: no construct chooses the progs format: a program of structs, arrays, typedefs,
+// enums and classes is version 6 on the standard target and version 7 on an FTE one
+#[test]
+fn the_target_chooses_the_format_whatever_the_constructs() {
+    let standard = compile_fteqcc(EVERY_CONSTRUCT).unwrap();
+    assert_eq!(standard.progs.format, qc_progs::Format::V6);
+    let fte = compile_fteqcc(&format!("#pragma target fte\n{EVERY_CONSTRUCT}")).unwrap();
+    assert_eq!(fte.progs.format, qc_progs::Format::Fte16);
+}
+
+// spec FTEF-3.6: a typed literal is an immediate of its type's size holding its value: an
+// integer one word, a 64-bit integer and a double two, a float one; `6i` and `6u` are one
+// immediate, and so are `6` and `6.0f`
+#[test]
+fn a_typed_literal_is_an_immediate_of_its_size() {
+    let progs = compile_fteqcc(
+        "#pragma target fte\nint a;\n__uint u;\n__int64 l;\n__double d;\nfloat x;\nfloat y;\n\
+         void() f = { a = 6i; u = 6u; a = 0x10i; l = 6l; d = 2.5d; x = 6; y = 6.0f; x = 0x10; };\n",
+    )
+    .unwrap()
+    .progs;
+    let stores = body(&progs, "f");
+    let value = |at: usize, n: usize| words(&progs, stores[at].a, n);
+    assert_eq!(value(0, 1), [6]);
+    assert_eq!(stores[0].a, stores[1].a, "6i and 6u");
+    assert_eq!(value(2, 1), [16]);
+    assert_eq!(value(3, 2), [6, 0]);
+    let bits = 2.5_f64.to_bits();
+    let (low, high) = (bits & 0xffff_ffff, bits >> 32);
+    assert_eq!(
+        value(4, 2),
+        [u32::try_from(low).unwrap(), u32::try_from(high).unwrap()]
+    );
+    assert_eq!(value(5, 1), [6.0_f32.to_bits()]);
+    assert_eq!(stores[5].a, stores[6].a, "6 and 6.0f");
+    assert_eq!(value(7, 1), [16.0_f32.to_bits()]);
+}
+
+// spec FTEF-4.6: on a target with the opcodes a global's address is `OP_GLOBALADDRESS`, a
+// store through a pointer `OP_STOREP_*` and a read `OP_LOADP_*`, an index its second operand;
+// a pointer is one word written `ev_pointer`; the standard target refuses the address
+#[test]
+fn a_pointer_is_an_address_stored_and_loaded_through() {
+    use qc_progs::Op::{Globaladdress, LoadpF, StorepF};
+    let source = "float g;\nfloat x;\nfloat *p;\nfloat tail;\n\
+                  void() f = { p = &g; *p = x; x = *p; x = p[1]; };\n";
+    let progs = compile_fteqcc(&format!("#pragma target fte\n{source}"))
+        .unwrap()
+        .progs;
+    let statements = body(&progs, "f");
+    let ops: Vec<u32> = statements.iter().map(|s| s.op).collect();
+    let expected = numbers([Globaladdress, StorepF, LoadpF, LoadpF]);
+    assert_eq!(ops.get(..4), Some(&expected[..]));
+    let (g, x, p) = (
+        global(&progs, "g"),
+        global(&progs, "x"),
+        global(&progs, "p"),
+    );
+    assert_eq!((statements[0].a, statements[0].c), (g, p));
+    assert_eq!((statements[1].a, statements[1].b), (x, p));
+    assert_eq!(
+        (statements[2].a, statements[2].b, statements[2].c),
+        (p, 0, x)
+    );
+    assert_eq!(words(&progs, statements[3].b, 1), [1], "the index");
+    assert_eq!(record_type(&progs, "p"), 7);
+    assert_eq!(global(&progs, "tail") - p, 1);
+    let Err(CompileError::Diagnostics(diagnostics)) = compile_fteqcc(source) else {
+        panic!("the standard target takes no address");
+    };
+    assert!(diagnostics.iter().any(|d| d.diagnostic.code == Code::E0331));
+}
+
+// spec FTEF-5.5: an element at a constant index is its definition's word; at any other index a
+// target with the opcodes converts and checks the index, stores by `OP_GLOBALADDRESS` and
+// `OP_STOREP_*` and reads by `OP_LOADA_*`, and the standard target calls the array's functions
+#[test]
+fn an_element_is_a_word_or_an_indexed_store_and_fetch() {
+    use qc_progs::Op::{Boundcheck, ConvFtoi, Globaladdress, LoadaF, StoreF, StorepF};
+    let source = "void(string s) error = #10;\nfloat arr[4];\nfloat x;\nfloat i;\n\
+                  void() f = { arr[2] = x; x = arr[1]; arr[i] = x; x = arr[i]; };\n";
+    let progs = compile_fteqcc(&format!("#pragma target fte\n{source}"))
+        .unwrap()
+        .progs;
+    let statements = body(&progs, "f");
+    let arr = global(&progs, "arr");
+    assert_eq!(statements[0].b, arr + 2);
+    assert_eq!(statements[1].a, arr + 1);
+    let ops: Vec<u32> = statements.iter().map(|s| s.op).collect();
+    let expected = numbers([
+        StoreF,
+        StoreF,
+        ConvFtoi,
+        Boundcheck,
+        Globaladdress,
+        StorepF,
+        ConvFtoi,
+        Boundcheck,
+        LoadaF,
+    ]);
+    assert_eq!(ops.get(..9), Some(&expected[..]));
+    let standard = compile_fteqcc(source).unwrap().progs;
+    let written: Vec<String> = standard
+        .functions
+        .iter()
+        .map(|function| string(&standard, function.s_name))
+        .collect();
+    assert!(
+        written.iter().any(|name| name == "ArrayGet*arr"),
+        "{written:?}"
+    );
+    assert!(
+        written.iter().any(|name| name == "ArraySet*arr"),
+        "{written:?}"
+    );
+}
+
+// spec FTEF-7.7: a typedef writes nothing: a program that names a type through one is the
+// program that names the type itself
+#[test]
+fn a_typedef_writes_nothing() {
+    let through = compile_fteqcc(
+        "typedef float num;\ntypedef num *nump;\nnum x;\nvoid(num v) f = { x = v; };\n",
+    )
+    .unwrap()
+    .progs;
+    let plain = compile_fteqcc("float x;\nvoid(float v) f = { x = v; };\n")
+        .unwrap()
+        .progs;
+    assert_eq!(through.statements, plain.statements);
+    assert_eq!(through.globals, plain.globals);
+    assert_eq!(through.global_defs, plain.global_defs);
+    assert_eq!(through.functions, plain.functions);
+}
+
+// spec FTEF-8.8: a use of an enum's name is the immediate of its value, of the enum's base
+// type
+#[test]
+fn an_enums_name_is_the_immediate_of_its_value() {
+    let progs = compile_fteqcc(
+        "#pragma target fte\nenumflags { EA, EB, EC };\nenum : int { P = 3, Q };\n\
+         float x;\nint y;\nvoid() f = { x = EC; y = Q; };\n",
+    )
+    .unwrap()
+    .progs;
+    let stores = body(&progs, "f");
+    assert_eq!(words(&progs, stores[0].a, 1), [4.0_f32.to_bits()]);
+    assert_eq!(stores[0].a, immediate(&progs, 4.0));
+    assert_eq!(words(&progs, stores[1].a, 1), [4]);
+}
