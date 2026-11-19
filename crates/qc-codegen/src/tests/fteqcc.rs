@@ -7010,3 +7010,74 @@ fn a_spawn_function_stores_each_classs_fields_in_turn() {
     let t = body(&progs, "spawnfunc_kid");
     assert_eq!(t[0].b, t[6].b);
 }
+
+// spec FTEF-27.22: `&&` and `||` take the integer opcode when neither operand is a float, the
+// mixed ones for one float, and the float ones for two, a float comparison's value among them;
+// a target without them takes the float ones for all
+#[test]
+fn a_logic_opcode_is_chosen_by_which_operands_are_floats() {
+    let globals = "float x, y;\nint i, j;\nentity e;\n";
+    let of = |target: &str, test: &str| {
+        names_of(&format!(
+            "{target}{globals}void() f = {{ if ({test}) x = 1; }};\n"
+        ))[0]
+    };
+    let fte = "#pragma target fte\n";
+    assert_eq!(of(fte, "i && j"), "AND_I");
+    assert_eq!(of(fte, "e && i"), "AND_I");
+    assert_eq!(of(fte, "i && x"), "AND_IF");
+    assert_eq!(of(fte, "x && i"), "AND_FI");
+    assert_eq!(of(fte, "x && y"), "AND_F");
+    assert_eq!(of(fte, "i || j"), "OR_I");
+    assert_eq!(of(fte, "i || x"), "OR_IF");
+    assert_eq!(of(fte, "x || i"), "OR_FI");
+    assert_eq!(of(fte, "x || y"), "OR_F");
+    let truths = names_of(&format!(
+        "{fte}{globals}void() f = {{ if (x == 1 && y == 2) x = 1; }};\n"
+    ));
+    assert_eq!(truths[..3], ["EQ_F", "EQ_F", "AND_F"]);
+    for test in ["i && j", "i && x", "x && i", "x && y"] {
+        assert_eq!(of("", test), "AND_F", "{test}");
+    }
+}
+
+// spec FTEF-27.22: under `ifstring` a string operand is compared with the empty string, and two
+// string operands are `!(!a || !b)` and `!(!a && !b)`
+#[test]
+fn a_string_operand_of_a_logic_operator_is_compared_under_ifstring() {
+    let head = "#pragma target fte\n#pragma flag enable ifstring\nfloat x;\nstring s, t;\n";
+    let of = |test: &str| {
+        let mut names = names_of(&format!("{head}void() f = {{ if ({test}) x = 1; }};\n"));
+        names.truncate(names.len() - 2);
+        names
+    };
+    assert_eq!(of("s && x"), ["NE_S", "AND_IF"]);
+    assert_eq!(of("x && s"), ["NE_S", "AND_FI"]);
+    assert_eq!(of("s && t"), ["NOT_S", "NOT_S", "OR_I", "NOT_I"]);
+    assert_eq!(of("s || t"), ["NOT_S", "NOT_S", "AND_I", "NOT_I"]);
+    // The left operand is compared `s != ""`, the right `"" != s`.
+    let left = fte_progs(&format!("{head}void() f = {{ if (s && x) x = 1; }};\n"));
+    let right = fte_progs(&format!("{head}void() f = {{ if (x && s) x = 1; }};\n"));
+    assert_eq!(body(&left, "f")[0].a, global(&left, "s"));
+    assert_eq!(body(&right, "f")[0].b, global(&right, "s"));
+}
+
+// spec FTEF-27.23: where the target has them `random` is `OP_RAND0`, `OP_RAND1` or `OP_RAND2`
+// of its arguments, with no call, a store of its value folded into it
+#[test]
+fn random_is_the_targets_opcode_where_it_has_one() {
+    let head = "#pragma target fte\nfloat() random = #7;\nfloat x, y;\n";
+    let of = |body: &str| names_of(&format!("{head}void() f = {{ {body} }};\n"));
+    assert_eq!(of("x = random();"), ["RAND0"]);
+    assert_eq!(of("x = random(y);"), ["RAND1"]);
+    assert_eq!(of("x = random(1, y);"), ["RAND2"]);
+    assert_eq!(of("y = random() * random();"), ["RAND0", "RAND0", "MUL_F"]);
+    let progs = fte_progs(&format!("{head}void() f = {{ x = random(1, y); }};\n"));
+    let t = body(&progs, "f");
+    assert_eq!(
+        (t[0].a, t[0].b),
+        (immediate(&progs, 1.0), global(&progs, "y"))
+    );
+    // The store folds into the statement, whose value is then `x`.
+    assert_eq!(t[0].c, global(&progs, "x"));
+}

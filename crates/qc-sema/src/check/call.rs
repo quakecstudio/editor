@@ -949,6 +949,39 @@ impl Checker<'_> {
         if self.global {
             return Ok(float);
         }
+        // `if (QCC_OPCodeValid(&pr_opcodes[OP_RAND0]))`: the target's own opcode, its value a
+        // temporary taken before the arguments' are freed.
+        let target = self.env.target_at(span.start);
+        if target.valid(Op::Rand0) {
+            let (op, a, b) = match args {
+                [] => (Op::Rand0, None, None),
+                [scale] => (Op::Rand1, scale.name(), None),
+                [low, high, ..] => (Op::Rand2, low.name(), high.name()),
+            };
+            // "hexen2 requires the output be def_ret": the value is then the return global's,
+            // which the body does not follow.
+            if matches!(
+                target.format(),
+                qc_progs::TargetFormat::Hexen2 | qc_progs::TargetFormat::Uhexen2
+            ) {
+                self.followed = false;
+                return Ok(float);
+            }
+            let temp = self.env.temps().take(1);
+            let made = self.push_made(op, a, b);
+            for arg in args.iter().take(2).rev() {
+                if let Some(offset) = arg.temp {
+                    self.env.temps().free(offset);
+                }
+            }
+            self.last_temp = Some(temp);
+            return Ok(Value {
+                made,
+                temp: Some(temp),
+                returned: false,
+                ..float
+            });
+        }
         self.clobber_return();
         self.generated.push(ir::BodyStatement {
             a: callee,

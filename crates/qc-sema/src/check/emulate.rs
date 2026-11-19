@@ -18,10 +18,11 @@ use crate::DefId;
 use crate::VECTOR_WORDS;
 use crate::check::constant::Constant;
 use crate::check::etype::Etype;
-use crate::check::expr::{Checker, Fatal};
+use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::fold::{Folded, fold};
 use crate::check::opcodes::row;
 use crate::check::pointer::WORD_BYTES;
+use crate::check::truth::{Test, is_truth};
 use crate::check::{Constness, Sym, Value};
 use crate::ir;
 use crate::ty::{SimpleType, Type};
@@ -386,32 +387,83 @@ impl Checker<'_> {
         }
     }
 
-    /// FTE-19.10: the operands `OP_AND_ANY` and `OP_OR_ANY` read: a vector, under
-    /// `vectorlogic`, its dot product with itself (`QCC_PR_StatementFlags(&pr_opcodes[OP_MUL_V],
-    /// var_a, var_a, ...)`), the left operand's first; any other operand as it is. A string
-    /// under `ifstring`, which FTEQCC compares with `""`, is read as it is too: neither this
-    /// model nor the code generator follows `ifstring` yet.
-    fn truths(
-        &mut self,
-        op: Op,
-        lhs: &Value,
-        rhs: &Value,
-        span: Span,
-    ) -> Result<(Value, Value), Fatal> {
-        if !matches!(op, Op::AndAny | Op::OrAny) {
-            return Ok((lhs.clone(), rhs.clone()));
-        }
+    /// FTE-19.10, FTEF-27.22: `&&` and `||` as `QCC_PR_StatementFlags` writes them, whichever
+    /// of their opcodes `op` is. A vector under `vectorlogic` is its dot product with itself
+    /// (`QCC_PR_StatementFlags(&pr_opcodes[OP_MUL_V], var_a, var_a, ...)`), the left operand's
+    /// first. Two operands that are each of more words than one under `vectorlogic`, or a
+    /// string under `ifstring`, are `!(!a || !b)` for `&&` and `!(!a && !b)` for `||` ("just 3
+    /// extra instructions instead of 4"). Else a string under `ifstring` is compared with
+    /// `""` by `OP_NE_S`, and an operand of more words than one under `vectorlogic` is `!!`
+    /// of itself, but the left one of `&&`, whose test repeats the string's. The opcode is
+    /// then chosen by which operands are floats, a truth value being none: the integer one,
+    /// `OP_AND_IF` or `OP_AND_FI` where the target has it, else the float one.
+    fn logic(&mut self, op: Op, lhs: &Value, rhs: &Value, span: Span) -> Checked {
+        let and = matches!(op, Op::AndI | Op::AndFi | Op::AndIf | Op::AndAny);
         let flags = self.env.flags_at(span.start);
-        let truth = |checker: &mut Self, value: &Value| -> Result<Value, Fatal> {
-            let etype = checker.env.shape(&value.ty).map(|shape| shape.etype);
-            if etype == Some(Etype::Vector) && flags.has(FteFlag::Vectorlogic) {
-                return checker.emit(Op::MulV, value, value, span);
-            }
-            Ok(value.clone())
+        let (vectorlogic, ifstring) = (
+            flags.has(FteFlag::Vectorlogic),
+            flags.has(FteFlag::Ifstring),
+        );
+        let etype = |checker: &Self, value: &Value| checker.etype_of(&value.ty);
+        let wide = |checker: &Self, value: &Value| {
+            vectorlogic && checker.env.layout(&value.ty).is_some_and(|l| l.words != 1)
         };
-        let lhs = truth(self, lhs)?;
-        let rhs = truth(self, rhs)?;
-        Ok((lhs, rhs))
+        let string = |checker: &Self, value: &Value| {
+            ifstring && etype(checker, value) == Some(Etype::String)
+        };
+        let (mut a, mut b) = (lhs.clone(), rhs.clone());
+        if vectorlogic && etype(self, &a) == Some(Etype::Vector) {
+            a = self.emit(Op::MulV, &a, &a, span)?;
+        }
+        if vectorlogic && etype(self, &b) == Some(Etype::Vector) {
+            b = self.emit(Op::MulV, &b, &b, span)?;
+        }
+        const USED: &str = "%s used as truth value";
+        const NO_FLOAT: &str = "%s isn't a float...";
+        if (wide(self, &a) || string(self, &a)) && (wide(self, &b) || string(self, &b)) {
+            let a = self.test(Test::Not, &a, span, USED)?;
+            let b = self.test(Test::Not, &b, span, USED)?;
+            let other = if and { Op::OrAny } else { Op::AndAny };
+            let joined = self.emit(other, &a, &b, span)?;
+            return self.test(Test::Not, &joined, span, NO_FLOAT);
+        }
+        // `QCC_MakeStringConst("")`.
+        let empty = Value {
+            string: u32::try_from(self.strings.len()).ok(),
+            ..Value::constant(Constant::string(true))
+        };
+        if string(self, &a) || string(self, &b) {
+            self.strings.push(Vec::new());
+        }
+        if string(self, &a) {
+            a = self.emit(Op::NeS, &a, &empty, span)?;
+        } else if !and && wide(self, &a) {
+            let not = self.test(Test::Not, &a, span, USED)?;
+            a = self.test(Test::Not, &not, span, NO_FLOAT)?;
+        }
+        if string(self, &b) {
+            b = self.emit(Op::NeS, &empty, &b, span)?;
+        } else if wide(self, &b) {
+            let not = self.test(Test::Not, &b, span, USED)?;
+            b = self.test(Test::Not, &not, span, NO_FLOAT)?;
+        }
+        // `var_a.cast->type != ev_float`: a truth value is `ev_boolean`.
+        let float = |checker: &Self, value: &Value| {
+            etype(checker, value) == Some(Etype::Float) && !is_truth(&value.ty)
+        };
+        let target = self.env.target_at(span.start);
+        let [integer, integer_float, float_integer, floats] = if and {
+            [Op::AndI, Op::AndIf, Op::AndFi, Op::AndF]
+        } else {
+            [Op::OrI, Op::OrIf, Op::OrFi, Op::OrF]
+        };
+        let chosen = match (float(self, &a), float(self, &b)) {
+            (false, false) if target.valid(integer) => integer,
+            (false, true) if target.valid(integer_float) => integer_float,
+            (true, false) if target.valid(float_integer) => float_integer,
+            _ => floats,
+        };
+        self.emit(chosen, &a, &b, span)
     }
 
     /// `QCC_PR_EmulationFunc` (FTE-19.8): the program's `function` called with the two
@@ -636,8 +688,22 @@ impl Checker<'_> {
                 let reciprocal = self.emit(div, &Value::constant(one), rhs, span)?;
                 self.emit(then, lhs, &reciprocal, span)
             }
+            Emulation::Instead(_)
+                if matches!(
+                    op,
+                    Op::AndI
+                        | Op::AndFi
+                        | Op::AndIf
+                        | Op::AndAny
+                        | Op::OrI
+                        | Op::OrFi
+                        | Op::OrIf
+                        | Op::OrAny
+                ) =>
+            {
+                self.logic(op, lhs, rhs, span)
+            }
             Emulation::Instead(other) => {
-                let (lhs, rhs) = &self.truths(op, lhs, rhs, span)?;
                 // `var_c.cast = type_uint;` (or `type_uint64`) after an unsigned operator's
                 // signed one, a comparison's truth value included (FTEF-27.12).
                 let value = self.emit(other, lhs, rhs, span)?;
@@ -645,19 +711,7 @@ impl Checker<'_> {
                     Op::EqU | Op::NeU => Type::Named("__uint32".into()),
                     Op::EqU64 | Op::NeU64 => Type::Named("__uint64".into()),
                     // FTEF-31.18: `OP_CONV_FU` as `OP_CONV_FTOI` is an `int`.
-                    Op::ConvFu
-                    | Op::EqFld
-                    | Op::EqI
-                    | Op::NeFld
-                    | Op::NeI
-                    | Op::AndI
-                    | Op::AndFi
-                    | Op::AndIf
-                    | Op::AndAny
-                    | Op::OrI
-                    | Op::OrFi
-                    | Op::OrIf
-                    | Op::OrAny => value.ty.clone(),
+                    Op::ConvFu | Op::EqFld | Op::EqI | Op::NeFld | Op::NeI => value.ty.clone(),
                     _ => result.ty,
                 };
                 Ok(Value { ty, ..value })

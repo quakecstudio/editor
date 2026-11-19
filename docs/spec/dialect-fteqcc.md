@@ -5169,7 +5169,32 @@ as far as they report.
   rule. Where FTEQCC itself stores a one-word constant 0 by `OP_STORE_I64` unreplaced, reading
   the word after the constant, this compiler stores the 64-bit zero (FTEF-2.13). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_StatementFlags`, `QCC_StoreToSRef`, `QCC_PR_GenerateInitializerType`.
-
+- **FTEF-27.22** `&&` and `||` are written by one case of `QCC_PR_StatementFlags`, whichever
+  of their opcodes was asked for (`case OP_AND_I: case OP_AND_FI: case OP_AND_IF: case
+  OP_AND_ANY:`). A vector under `vectorlogic` is its dot product with itself, the left
+  operand's first (FTE-19.10). When each operand is of more words than one under
+  `vectorlogic`, or a string under `ifstring`, the whole is `!(!a || !b)` for `&&` and `!(!a
+  && !b)` for `||` ("just 3 extra instructions instead of 4"). Otherwise a string under
+  `ifstring` is compared with the empty string, `OP_NE_S a, ""` for the left operand and
+  `OP_NE_S "", b` for the right, and an operand of more words than one under `vectorlogic` is
+  `!!` of itself, but the left operand of `&&`, whose second test repeats the string's. The
+  opcode is then chosen by which operands' types are `ev_float`: `if (var_a.cast->type != ev_float && var_b.cast->type != ev_float &&
+  QCC_OPCodeValid(&pr_opcodes[OP_AND_I])) op = &pr_opcodes[OP_AND_I]; ... OP_AND_IF ...
+  OP_AND_FI ... else op = &pr_opcodes[OP_AND_F];`. So on an FTE target `i && j` of integers
+  is `AND_I`, `i && x` `AND_IF`, `x && i` `AND_FI` and `x && y` of floats `AND_F`, as is
+  `(x == 1) && (y == 2)`, whose comparisons' values are floats; on the standard target each
+  is `AND_F` (FTEF-27.6). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_StatementFlags`; checked against the pinned FTEQCC's output on both targets and
+  under `ifstring` (2026-11-19).
+- **FTEF-27.23** `random()`, `random(scale)` and `random(low, high)` (FTEF-32.10) are the
+  target's own opcodes where it has them (`if (QCC_OPCodeValid(&pr_opcodes[OP_RAND0]))`):
+  `OP_RAND0`, `OP_RAND1 scale` and `OP_RAND2 low, high`, each a plain statement whose value
+  is a float temporary taken before the arguments' are freed (`out =
+  QCC_GetTemp(type_float);`), with no call of the builtin. Under a Hexen II target the value
+  is the return global's ("hexen2 requires the output be def_ret"), which this compiler
+  refuses to write rather than follow. Without the opcodes it is the builtin's call and its
+  value scaled (FTE-19, `-Tid`). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall`; checked against the
+  pinned FTEQCC's output on an FTE target (2026-11-19).
 ## FTEF-28 The warnings of an emitted comparison
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_StatementFlags` (the switch after the emulation),
