@@ -6242,6 +6242,18 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   `int` parameter is `OP_CONV_FTOI` where the target has it, the program's `ftoi` standing for
   it only on a target without (FTEF-27.9). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall`; checked
   against the pinned FTEQCC's output on an FTE target (2026-11-19).
+- **FTEF-32.29** An argument that is an array's element at an index no constant is, on a
+  target with `OP_LOADA_F`, loaded as the arguments are stored, after `self` is set for a
+  method's call (FTEF-9.26), as a field argument is (FTEF-32.19): the index is read, made an
+  integer and checked where the argument is written, and the load follows the stores of
+  `self`. One of the call's own two operands is loaded by its element's opcode into a
+  temporary (`QCC_RefToDef`), any other by its size straight into its parameter's slot
+  (`case REF_ARRAY: ... copyop[2] = OP_LOADA_V; copyop[1] = OP_LOADA_I64; copyop[0] =
+  OP_LOADA_F;`). So `SetModel(names[id])` in a class's function is `BOUNDCHECK id, N;
+  STORE_ENT self, oself; STORE_ENT self, self; LOADA_S names, id; CALL1H`. An element whose
+  type is not its parameter's is read where it is written (FTEF-32.28). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_GenerateFunctionCallRef`; checked against the pinned FTEQCC's output on an FTE
+  target (2026-11-19).
 ## FTEF-33 Builtin argument checks
 
 **Source:** `qcc_pr_comp.c`, `QCC_VerifyFormatString`, `QCC_VerifyArgs_sendevent`,
@@ -6459,3 +6471,11 @@ name, a literal or a constant. The layout is FTEQCC's at its default optimisatio
   &patch3)` and `patch3->c.jumpofs = ...`. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseStatement`, the `switch` case.
+- **FTEF-34.19** The value of a constant of any number type is known wherever it is named
+  once its initialiser folded, an integer's as a float's (FTEF-34.15): `QCC_SRef_EvalConst`
+  reads the data of any definition that is `initialized` and `constant` (`if (ref.sym &&
+  ref.sym->initialized && ref.sym->constant && !ref.sym->reloc) ... return
+  QCC_SRef_Data(ref);`). So after `const int A = 2i; const int D = A | 1i;` the initialiser
+  of `const int E = D | 16i;` folds, and `i = D | A` in a function is one store of a
+  constant. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_SRef_EvalConst`; checked against the pinned FTEQCC's output
+  (2026-11-19).

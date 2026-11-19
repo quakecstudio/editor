@@ -253,6 +253,23 @@ impl Checker<'_> {
                     load,
                     entity_call: field.entity_call,
                 });
+            } else if matches!(reference.reference, Reference::Element(_))
+                && !self.global
+                && self.generated.len() > mark
+                && let Some(load) = self.generated.last().copied()
+                && Loada::of(load.op).is_some()
+                && value.made.is_some()
+                && load.c == value.made.map(ir::Name::Made)
+            {
+                // FTEF-32.29: an array's element at an index no constant is loaded as the
+                // arguments are stored, after `self` is set, as a field is: the index is
+                // read and checked where it is written, the `OP_LOADA_*` held back.
+                self.generated.pop();
+                field_loads.push(FieldLoad {
+                    slot: at,
+                    load: vec![load],
+                    entity_call: None,
+                });
             }
             if let Some(param) = function.params.get(at)
                 && value.ty != Type::Unknown
@@ -585,10 +602,10 @@ impl Checker<'_> {
                 .map(|&s| ir::BodyStatement {
                     // A register's is the field's own load, `QCC_RefToDef` (FTEF-32.19); a
                     // slot's is by its size, on any target (FTE-18.11).
-                    op: if in_register || s.op == Op::LoadV {
-                        s.op
-                    } else {
-                        Op::LoadF
+                    op: match Loada::of(s.op) {
+                        _ if in_register || s.op == Op::LoadV => s.op,
+                        Some(loada) => loada.by_size(),
+                        None => Op::LoadF,
                     },
                     a: renamed(self.copied(s.a, field.entity_call)),
                     c: slot,
@@ -1583,6 +1600,41 @@ impl Checker<'_> {
             returned: true,
             call,
             ..Value::of(param.clone())
+        }
+    }
+}
+
+/// An `OP_LOADA_*` by the words it loads, which an argument loaded into its parameter's slot
+/// is read by (`copyop[2] = OP_LOADA_V; copyop[1] = OP_LOADA_I64; copyop[0] = OP_LOADA_F;`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Loada {
+    /// One word.
+    Word,
+    /// Two words, `OP_LOADA_I64`.
+    Pair,
+    /// Three words, `OP_LOADA_V`.
+    Vector,
+}
+
+impl Loada {
+    /// The words `op` loads, if it is an `OP_LOADA_*`.
+    const fn of(op: Op) -> Option<Self> {
+        match op {
+            Op::LoadaF | Op::LoadaS | Op::LoadaEnt | Op::LoadaFld | Op::LoadaFnc | Op::LoadaI => {
+                Some(Self::Word)
+            }
+            Op::LoadaI64 => Some(Self::Pair),
+            Op::LoadaV => Some(Self::Vector),
+            _ => None,
+        }
+    }
+
+    /// The opcode that loads these words whatever they are.
+    const fn by_size(self) -> Op {
+        match self {
+            Self::Word => Op::LoadaF,
+            Self::Pair => Op::LoadaI64,
+            Self::Vector => Op::LoadaV,
         }
     }
 }

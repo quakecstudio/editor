@@ -7211,3 +7211,46 @@ fn a_member_arrays_size_is_its_integer_constant() {
         })
     ));
 }
+
+// spec FTEF-32.29: an array element argument at an index no constant is loaded after `self`
+// is set for the call, its index checked where it is written; one of the call's operands by
+// its element's opcode, any other by its size into the slot
+#[test]
+fn an_array_element_argument_is_loaded_as_the_arguments_are_stored() {
+    let progs = fte_progs(&format!(
+        "{CLASS_HEADER}int i;\nstring names[4];\nvoid(float a, float b, string c) three = #2;\n\
+         class base {{ int id; virtual void(string m) SetModel; virtual void() Run; }};\n\
+         void base::SetModel(string m) {{ }}\n\
+         void base::Run(void) {{ SetModel(names[id]); three(1, 2, names[i]); }}\n"
+    ));
+    assert_eq!(
+        names_in(&progs, "base::Run"),
+        [
+            "LOADF_FNC",
+            "LOADF_I",
+            "BOUNDCHECK",
+            "STORE_ENT",
+            "STORE_ENT",
+            "LOADA_S",
+            "CALL1H",
+            "STORE_ENT",
+            "BOUNDCHECK",
+            "LOADA_F",
+            "CALL3H"
+        ]
+    );
+}
+
+// spec FTEF-34.19: an integer constant whose initialiser folded is its value wherever it is
+// named, another constant's initialiser among them
+#[test]
+fn a_folded_integer_constant_is_its_value() {
+    let source = "#pragma target fte\nint i;\nconst int A = 0x02000000i;\nconst int B = 1i;\n\
+                  const int D = A | B;\nconst int E = D | 0x10i;\n\
+                  void() f = { i = D | A; i = E | 4i; };\n";
+    let progs = fte_progs(source);
+    let t = body(&progs, "f");
+    assert_eq!(names_of(source), ["STORE_I", "STORE_I"]);
+    assert_eq!(words(&progs, t[0].a, 1), [0x0200_0001]);
+    assert_eq!(words(&progs, t[1].a, 1), [0x0200_0015]);
+}
