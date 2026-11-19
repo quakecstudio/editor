@@ -82,6 +82,7 @@ mod tests;
 
 pub use check::TypedBody;
 pub use check::fold::{fold_builtin_call, fold_floats};
+pub use check::{NO_FUNCTION, is_function_name};
 pub use db::{Db, ModuleAnalysis, QueryCounts};
 pub use expand::{ModuleInput, OriginMap};
 pub use lower::{Binum, FileDecls, LiteralValue};

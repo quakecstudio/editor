@@ -159,6 +159,10 @@ impl Saving {
     }
 }
 
+/// The name of FTEQCC's function type, `type_function = QCC_PR_NewType("__function",
+/// ev_function, false);`, which a struct's function member's record is named after.
+const FUNCTION_TYPE_NAME: &str = "__function";
+
 /// FTE-13.13: the records of the members of the struct value `name` at `ofs`, `name.member`,
 /// each member that starts at a word, an array member as one record.
 fn member_records(
@@ -175,10 +179,20 @@ fn member_records(
             Some(_) => Saving::Unsaved,
             None => saving,
         };
+        // FTEF-6.33: a member that is a function is named after its type, `__function`, not
+        // itself (`case ev_function: QC_snprintfz(newname, sizeof(newname), "%s.%s", def->name,
+        // parttype->name);`).
+        let ty = index.alias(&member.ty).unwrap_or(&member.ty);
+        let number = type_number(index, &ValueType::Of(ty.clone()));
+        let member_name = if number == Etype::Function.number() {
+            FUNCTION_TYPE_NAME
+        } else {
+            member.name.as_str()
+        };
         out.push(DefRecord {
-            type_bits: saving.bits(type_number(index, &ValueType::Of(member.ty.clone()))),
+            type_bits: saving.bits(number),
             ofs: at,
-            s_name: program.copy_string(&latin1_encode(&format!("{name}.{}", member.name)))?,
+            s_name: program.copy_string(&latin1_encode(&format!("{name}.{member_name}")))?,
         });
     }
     Ok(())

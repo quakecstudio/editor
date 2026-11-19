@@ -9,6 +9,7 @@
 //! Function bodies: parameters, locals, aliases, state headers and the names a body uses
 //! (QC-12.5, QC-13, FTEF-19.1, FTEF-19.14, FTEF-20.5).
 
+use crate::check::is_function_name;
 use crate::resolve::Init;
 use qc_diag::{Code, Span};
 use qc_preproc::FteFlag;
@@ -801,6 +802,12 @@ impl<'a> Resolver<'a> {
                 }
                 Found::Nothing => {}
                 Found::Error(code, message) => self.report(code, location, message),
+                // FTEF-14.80: `__FUNC__` is the name of the function it is written in, which
+                // the check stage gives it.
+                Found::Unknown
+                    if use_.scope.is_none()
+                        && self.profile.fteqcc_diagnostics()
+                        && is_function_name(&use_.name) => {}
                 Found::Unknown => {
                     // FTEF-19.45: FTEQCC makes an unknown name a `variant` and reports it with a
                     // full stop, `QCC_PR_ParseWarning (ERR_UNKNOWNVALUE, "Unknown value

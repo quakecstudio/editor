@@ -116,7 +116,7 @@ pub struct PpToken {
     /// The expansion that produced it, if any.
     pub expansion: Option<ExpansionId>,
     /// Its text when that is not the bytes at [`PpToken::span`]: a token `##` pasted, a string
-    /// `#` made, or a built-in constant's value (FTEF-14.14, FTEF-14.31, FTEF-14.7).
+    /// `#` made, or a built-in constant's value (FTEF-14.14, FTEF-14.31, FTEF-14.80).
     pub spelling: Option<String>,
     /// In an expansion, the span of the token of the same expansion that the expansion's text
     /// has right before this one with nothing between them, if any (QC-9.16). Always `None`
@@ -2147,7 +2147,7 @@ impl<L: Loader> Preprocessor<L> {
     }
 
     /// Expands `item` if it names a macro it may expand to (QC-9.4, QC-9.10), or in an FTEQCC
-    /// dialect a built-in constant (FTEF-14.7), which [`Self::fte_try_expand`] does. Returns
+    /// dialect a built-in constant (FTEF-14.80), which [`Self::fte_try_expand`] does. Returns
     /// the item when it is not replaced. A use past the bound on a file's expansions (QC-9.18)
     /// is left as written, with `E0120` the first time.
     fn try_expand(&mut self, run: &mut Run, item: Item) -> Option<Item> {

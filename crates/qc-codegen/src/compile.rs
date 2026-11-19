@@ -217,7 +217,8 @@ impl<'a> Compiler<'a> {
                 .make_class_fields(self.index, file, span.end)
                 .map_err(|internal| (internal, file, span))?;
             let result = if let Some(declaration) = ast::Declaration::cast(item.clone()) {
-                self.declaration(&declaration)
+                self.nested_enumerations(&declaration)
+                    .and_then(|()| self.declaration(&declaration))
             } else if let Some(enumeration) = ast::EnumDecl::cast(item.clone()) {
                 self.enumeration(&enumeration)
             } else if let Some(typedef) = ast::TypedefDecl::cast(item) {
@@ -257,15 +258,17 @@ impl<'a> Compiler<'a> {
                 .make_class_fields(self.index, file, span.end)
                 .map_err(|internal| (internal, file, span))?;
             let result = if let Some(declaration) = ast::Declaration::cast(item.clone()) {
-                declaration.declarators().try_for_each(|declarator| {
-                    let name = declarator.name().at(declaration.syntax().span())?;
-                    let id = self.declared(&name)?;
-                    self.record_defaults(id, declaration.ty().as_ref(), &declarator);
-                    self.array_size_immediates(&declarator)?;
-                    self.program
-                        .get_def(self.index, id)
-                        .at(name.span())
-                        .map(drop)
+                self.nested_enumerations(&declaration).and_then(|()| {
+                    declaration.declarators().try_for_each(|declarator| {
+                        let name = declarator.name().at(declaration.syntax().span())?;
+                        let id = self.declared(&name)?;
+                        self.record_defaults(id, declaration.ty().as_ref(), &declarator);
+                        self.array_size_immediates(&declarator)?;
+                        self.program
+                            .get_def(self.index, id)
+                            .at(name.span())
+                            .map(drop)
+                    })
                 })
             } else if let Some(enumeration) = ast::EnumDecl::cast(item.clone()) {
                 self.enumeration(&enumeration)
@@ -575,6 +578,17 @@ impl<'a> Compiler<'a> {
 
     /// FTE-15.5: an `enum`'s items, each a constant global made in turn and initialised with
     /// its value.
+    /// FTEF-8.9: the items of each enum written inside `declaration`'s type, a parameter's
+    /// `enumflags:float{A, B}` among them, defined with their values before the declaration,
+    /// as FTEQCC defines them where it reads the type.
+    fn nested_enumerations(&mut self, declaration: &ast::Declaration) -> Lowered<()> {
+        declaration
+            .syntax()
+            .descendants()
+            .filter_map(ast::EnumDecl::cast)
+            .try_for_each(|enumeration| self.enumeration(&enumeration))
+    }
+
     fn enumeration(&mut self, enumeration: &ast::EnumDecl) -> Lowered<()> {
         let span = enumeration.syntax().span();
         if enumeration.declarators().next().is_some() {
@@ -1272,6 +1286,16 @@ fn operand_index(index: usize) -> Result<i32, Internal> {
 fn literal_of(expr: &ast::Expr, dialect: Dialect) -> Option<Literal> {
     match expr {
         ast::Expr::Literal(literal) => literal_of_token(literal, dialect),
+        // FTEF-14.80: outside every function `__FUNC__` is the string "<NO FUNCTION>".
+        ast::Expr::Name(name)
+            if dialect.has_fteqcc_extensions()
+                && name.scope().is_none()
+                && name
+                    .name()
+                    .is_some_and(|t| qc_sema::is_function_name(&t.text_lossless())) =>
+        {
+            Some(Literal::String(qc_sema::NO_FUNCTION.as_bytes().to_vec()))
+        }
         ast::Expr::Paren(_)
         | ast::Expr::Name(_)
         | ast::Expr::Not(_)

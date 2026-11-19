@@ -4,6 +4,7 @@
 //! values of initialisers, as `QCC_PR_ParseDefs` and `PR_ParseDefs` read them (QC-11, FTEF-15,
 //! FTEF-19).
 
+use crate::check::{NO_FUNCTION, is_function_name};
 use std::collections::HashSet;
 
 use qc_diag::Span;
@@ -467,6 +468,10 @@ pub(super) fn raw_value(expr: &ast::Expr, cx: Cx<'_>) -> RawValue {
             (None, _) | (Some(ast::LiteralKind::Float), None) => ValueKind::Other,
         },
         ast::Expr::Name(name) => match (name.scope(), name.name()) {
+            // FTEF-14.80: outside every function `__FUNC__` is the string "<NO FUNCTION>".
+            (None, Some(t)) if fte && is_function_name(&t.text_lossless()) => {
+                ValueKind::Literal(Literal::of(ConstType::String))
+            }
             (None, Some(t)) => ValueKind::Name(t.text_lossless()),
             // FTEF-19.10: `Enum::value` names the enum's value.
             (Some(scope), Some(t)) => {
@@ -984,6 +989,9 @@ impl LiteralValue {
     fn of_expr(expr: &ast::Expr, cx: Cx<'_>) -> Option<Self> {
         let flags = cx.lex_flags_at(expr.syntax().span().start);
         if cx.dialect.has_fteqcc_extensions() {
+            if function_name(expr) {
+                return Some(Self::String(format!("\"{NO_FUNCTION}\"")));
+            }
             Self::of_literal(expr, Dialect::Fteqcc, flags)
                 .or_else(|| Some(Self::Text(token_text(expr.syntax()))))
         } else {
@@ -1305,4 +1313,10 @@ pub(super) fn lower_array_sizes(declarator: &ast::Declarator, cx: Cx<'_>, uses: 
             lower_expr(&expr, cx, uses);
         }
     }
+}
+
+/// Whether `expr` is `__FUNC__` or `__func__` written bare (FTEF-14.80).
+fn function_name(expr: &ast::Expr) -> bool {
+    matches!(expr, ast::Expr::Name(name) if name.scope().is_none()
+        && name.name().is_some_and(|t| is_function_name(&t.text_lossless())))
 }

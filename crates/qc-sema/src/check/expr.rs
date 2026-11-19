@@ -272,6 +272,21 @@ impl<'e> Checker<'e> {
         })
     }
 
+    /// A string constant whose text is `text` and whose bytes, if they were read, are `bytes`,
+    /// kept among the body's strings.
+    fn string_constant(&mut self, text: &str, bytes: Option<Vec<u8>>) -> Value {
+        let string = bytes.and_then(|bytes| {
+            let index = u32::try_from(self.strings.len()).ok()?;
+            self.strings.push(bytes);
+            Some(index)
+        });
+        Value {
+            text: Some(text.into()),
+            string,
+            ..Value::constant(Constant::string(text.is_empty()))
+        }
+    }
+
     pub(super) fn literal(&mut self, literal: &ast::Literal) -> Value {
         let Some(token) = literal.token() else {
             return Value::unknown();
@@ -279,17 +294,7 @@ impl<'e> Checker<'e> {
         match literal.kind() {
             Some(ast::LiteralKind::String) => {
                 let written = String::from_utf8_lossy(&literal.syntax().text()).into_owned();
-                let text = unquoted(&written);
-                let string = lexed_string(token.text()).and_then(|bytes| {
-                    let index = u32::try_from(self.strings.len()).ok()?;
-                    self.strings.push(bytes);
-                    Some(index)
-                });
-                Value {
-                    text: Some(text.as_str().into()),
-                    string,
-                    ..Value::constant(Constant::string(text.is_empty()))
-                }
+                self.string_constant(&unquoted(&written), lexed_string(token.text()))
             }
             Some(ast::LiteralKind::Vector) => {
                 let flags = self.env.lex_flags_at(token.span().start);
@@ -386,12 +391,29 @@ impl<'e> Checker<'e> {
             {
                 return self.this(class, super::Object::Named);
             }
+            // FTEF-14.80: `__FUNC__` is the string of the function's name.
+            if !scoped && self.env.fteqcc() && super::is_function_name(&token.text_lossless()) {
+                let name = if self.function.name.is_empty() {
+                    super::NO_FUNCTION.to_owned()
+                } else {
+                    self.function.name.clone()
+                };
+                return self.string_constant(&name, Some(name.clone().into_bytes()));
+            }
             // FTEF-19.80: `nil` that names no definition is `QCC_MakeIntConst(0)`.
             if !scoped && token.text() == b"nil" && self.env.fteqcc() {
                 return Value::constant(Constant::int(0));
             }
             return Value::unknown();
         };
+        // FTEF-9.30: `CLASS::NAME`, `this::NAME` and `super::NAME` of a virtual member are its
+        // function, the definition of that name, tried before the member's field
+        // `CLASS::__mNAME`.
+        let def = self
+            .env
+            .virtual_function(def)
+            .filter(|_| name.scope().is_some())
+            .unwrap_or(def);
         self.def_value(def, &token, scoped)
     }
 

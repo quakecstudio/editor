@@ -626,6 +626,15 @@ inheritance, bitfields and nested members.
   NULL, 0);`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_StatementFlags`; checked against the pinned FTEQCC's
   output (2026-11-19).
+- **FTEF-6.33** The record of a struct's member in a global of the struct is named
+  `GLOBAL.MEMBER`, but a member that is a function is named after its type, `__function`,
+  whatever it is called and through a typedef too (`case ev_function: QC_snprintfz(newname,
+  sizeof(newname), "%s.%s", def->name, parttype->name);`, where the other types' case reads
+  `type->params[partnum].paramname`; `type_function = QCC_PR_NewType("__function", ev_function,
+  false);`). So `typedef struct { float(entity) Player; float n; } api_t; api_t is;` has the
+  records `is.__function` and `is.n`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_DummyDef`; `engine/qclib/qccmain.c`; checked against the pinned FTEQCC's output on
+  an FTE target (2026-11-19).
 
 ## FTEF-7 `typedef` of any type
 
@@ -752,6 +761,12 @@ full dialect also uses `enumflags`.
   its value, of the enum's base type (FTEF-8.6): after `enumflags { EA, EB, EC }; enum : int {
   P = 3, Q };`, `x = EC` stores the float immediate 4 and `y = Q` the integer immediate 4.
 
+- **FTEF-8.9** An enum written inside another declaration's type, as a builtin's parameter
+  `optional enumflags:float{WP_REFERENCEPACKAGE, WP_FULLPACKAGEPATH} flags` is, defines its
+  items where the type is read, with the values an enum at file level gives them (FTE-15.9):
+  `whichpack(name, WP_FULLPACKAGEPATH)` passes the constant 2. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_lex.c`, `QCC_PR_ParseType`, `QCC_PR_ParseEnum`; checked against the
+  pinned FTEQCC's output on the standard target and an FTE one (2026-11-19).
 ## FTEF-9 Classes
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseEntClass` (parsed by `QCC_PR_ParseType` on the
@@ -1064,6 +1079,19 @@ heavily class-based (547 `class` declarations across the three mods).
   `MEMBERFIELDNAME`; `engine/qclib/qcc_cmdlib.c`, `basictypenames`; checked against the pinned
   FTEQCC's output on an FTE target, and against every field definition of FreeCS's and
   Rad-Therapy's fourteen modules (2026-11-19).
+- **FTEF-9.30** A member named with a class before it, `CLASS::NAME`, `this::NAME` or
+  `super::NAME`, is looked for as the function `CLASS::NAME` first and as the member's field
+  `CLASS::__mNAME` only when there is none, in the class and then each class above it ("use
+  static functions in preference to virtual functions. kinda needed so you can use
+  super::func...": `QC_snprintfz(membername, sizeof(membername), "%s::%s", p->name, name); d =
+  QCC_PR_GetSRef (NULL, membername, pr_scope, false, 0, false); if (!d.cast) {
+  QC_snprintfz(membername, sizeof(membername), "%s::"MEMBERFIELDNAME, p->name, name); ...`). So
+  a virtual member that has a body, read as a value by such a name, is its function:
+  `think = T::Tick;` is `STOREF_I self, think, T::Tick`, not a store of the global that holds
+  the member's field; a data member, which has no function, is its field (FTEF-17.14). A call
+  by such a name calls the same function (FTEF-9.18). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefValue`; checked against the pinned FTEQCC's
+  output on an FTE target (2026-11-19).
 ## FTEF-10 Accessors
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseAccessorMember` and the `accessor` branch of
@@ -1750,13 +1778,8 @@ profile the preprocessor reads them as FTEQCC does.
 - **FTEF-14.6** **Withdrawn** (P2-78, #484): it said every macro body reads `#param` as a string
   and `a ## b` as one token, which only a function-like macro's does, and that a paste is always
   one token. Replaced by FTEF-14.14 to FTEF-14.16.
-- **FTEF-14.7** When no macro of the name is defined, `QCC_PR_CheckBuiltinCompConst` expands
-  `__NULL__` to `0i`, `__FILE__` to the file's name as a string, `__LINE__` to the line number
-  and `__LINESTR__` to it as a string, `__FUNC__` and `__func__` to the function's name as a
-  string, `__TIME__` and `__DATE__` to strings, `__RAND__` to a number and `__QCCVER__` to a
-  string. The preprocessor does not know the function a use is in, so this profile expands
-  `__FUNC__` to an empty string; the value is a compile-time string and does not change
-  resolution.
+- **FTEF-14.7** **Withdrawn** 2026-11-19: it expanded `__FUNC__` to an empty string, where
+  FTEQCC gives the name of the function it is written in; replaced by FTEF-14.80.
 - **FTEF-14.8** **Withdrawn** (P2-94 to P2-99, #507 to #512): it said the build directives
   produce no token and read only their line, where `#package` ends the text and `#pack` and
   `#forcecrc` may read into the next line. Replaced by FTEF-14.39.
@@ -2622,6 +2645,19 @@ profile the preprocessor reads them as FTEQCC does.
   (FTEF-12.11), so `#pragma flag enable acc caseinsens` gives "Cannot enable/disable
   keyword/flag via a pragma" once and `#pragma flag enable nosuch acc` two warnings. Those
   pairs are QCD-1.6's exceptions (ADR-0022).
+- **FTEF-14.80** When no macro of the name is defined, `QCC_PR_CheckBuiltinCompConst` expands
+  `__NULL__` to `0i`, `__FILE__` to the file's name as a string, `__LINE__` to the line number
+  and `__LINESTR__` to it as a string, `__TIME__` and `__DATE__` to strings, `__RAND__` to a
+  number and `__QCCVER__` to a string. `__FUNC__` and `__func__` are the name of the function
+  the use is in as a string, a member function's `CLASS::NAME`, and `<NO FUNCTION>` outside
+  every function (`QC_snprintfz(retbuf, retbufsize, "\"%s\"",pr_scope?pr_scope->name:"<NO
+  FUNCTION>");`): in `void() T::Tick = { say(__FUNC__); }` the argument is the string
+  `T::Tick`, through a macro's body too. FTEQCC's lexer reads the function from its parser;
+  here the preprocessor leaves the two names and the semantic model, which knows the function,
+  reads each as that string constant. One written beside a string literal is not joined to it
+  as FTEQCC's expansion is, and is a syntax error. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_CheckBuiltinCompConst`; checked against the pinned FTEQCC's output on the standard
+  target and an FTE one (2026-11-19).
 
 ## FTEF-15 Declarations
 

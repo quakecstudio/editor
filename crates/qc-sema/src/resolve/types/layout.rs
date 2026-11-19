@@ -290,19 +290,7 @@ impl Resolver<'_> {
             .map(|scalar| Type::Named(scalar.name().into())),
         );
         for ty in &named {
-            let Type::Named(name) = ty else {
-                continue;
-            };
-            let base = match (
-                self.named(&self.strict_enums, name),
-                self.named(&self.enum_types, name),
-            ) {
-                (Some(base), _) | (None, Some(base)) => base.clone(),
-                (None, None) => self.resolved(ty),
-            };
-            if base != *ty {
-                self.index.aliases.insert(ty.clone(), base);
-            }
+            self.record_alias(ty);
         }
         while let Some(ty) = pending.pop() {
             if self.index.structs.contains_key(&ty) {
@@ -311,6 +299,10 @@ impl Resolver<'_> {
             let Some(shape) = self.struct_shape(&ty, MAX_CLASS_DEPTH) else {
                 continue;
             };
+            // A member's typedef is read through as a definition's is (FTEF-6.33).
+            for member in &shape.members {
+                self.record_alias(&member.ty);
+            }
             pending.extend(shape.members.iter().map(|m| m.ty.clone()));
             written.extend(shape.members.iter().map(|m| m.ty.clone()));
             self.index.structs.insert(ty, shape);
@@ -342,6 +334,24 @@ impl Resolver<'_> {
                 }
                 Type::Simple(_) | Type::Unknown => {}
             }
+        }
+    }
+
+    /// Keeps the type the named type `ty` stands for, a typedef's or an enum's base, for
+    /// [`ModuleIndex::alias`].
+    fn record_alias(&mut self, ty: &Type) {
+        let Type::Named(name) = ty else {
+            return;
+        };
+        let base = match (
+            self.named(&self.strict_enums, name),
+            self.named(&self.enum_types, name),
+        ) {
+            (Some(base), _) | (None, Some(base)) => base.clone(),
+            (None, None) => self.resolved(ty),
+        };
+        if base != *ty {
+            self.index.aliases.insert(ty.clone(), base);
         }
     }
 

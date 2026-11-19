@@ -1094,3 +1094,13 @@ pub(crate) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
         ..checker.finish()
     }
 }
+
+/// What `__FUNC__` is outside every function, `pr_scope?pr_scope->name:"<NO FUNCTION>"`.
+pub const NO_FUNCTION: &str = "<NO FUNCTION>";
+
+/// Whether `name` is FTEQCC's built-in constant for the function it is written in, `__FUNC__`
+/// or `__func__` (FTEF-14.80).
+#[must_use]
+pub fn is_function_name(name: &str) -> bool {
+    matches!(name, "__FUNC__" | "__func__")
+}

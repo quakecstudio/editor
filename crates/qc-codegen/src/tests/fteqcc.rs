@@ -7774,3 +7774,128 @@ fn a_zero_argument_of_a_vector_parameter_reads_the_zero_vector() {
         assert_eq!(store, st(StoreV, zero, 7, 0));
     }
 }
+
+// spec FTEF-9.30: a virtual member named with a class, `this` or `super` before it is its
+// function, read as a value or called; named bare it is loaded from its field
+#[test]
+fn a_class_scoped_virtual_member_is_its_function() {
+    let p = fte_progs(&format!(
+        "{CLASS_HEADER}.void() think;\n\
+         class T {{ virtual void() Tick; void() Set; }};\n\
+         class U : T {{ virtual void() Tick; void() Up; }};\n\
+         void() T::Tick = {{ x = 1; }};\nvoid() U::Tick = {{ x = 3; }};\n\
+         void() T::Set = {{ think = T::Tick; think = this::Tick; think = Tick; }};\n\
+         void() U::Up = {{ think = super::Tick; think = U::Tick; }};\n\
+         void(T t, U u) use = {{ t.Set(); u.Up(); t.think = T::Tick; }};\n"
+    ));
+    let (base, derived) = (global(&p, "T::Tick"), global(&p, "U::Tick"));
+    assert_eq!(
+        names_in(&p, "T::Set"),
+        ["STOREF_I", "STOREF_I", "LOADF_FNC", "STOREF_I"]
+    );
+    let set = body(&p, "T::Set");
+    assert_eq!((set[0].c, set[1].c), (base, base));
+    assert_eq!(set[2].b, global(&p, "T::__mTick"), "bare, its field");
+    let up = body(&p, "U::Up");
+    assert_eq!((up[0].c, up[1].c), (base, derived));
+    let stored = body(&p, "use")
+        .into_iter()
+        .rfind(|s| s.op == u32::try_from(qc_progs::Op::StorefI.number()).unwrap())
+        .unwrap();
+    assert_eq!(stored.c, base);
+}
+
+// spec FTEF-8.9: the items of an enum written inside a parameter's type have their values
+#[test]
+fn an_enum_in_a_parameters_type_defines_its_items() {
+    for target in ["#pragma target fte\n", ""] {
+        let p = fte_progs(&format!(
+            "{target}float x;\n\
+             string(string f, optional enumflags:float{{WP_A,WP_B,WP_C}} flags) whichpack = #5;\n\
+             void(enum {{E_A, E_B}} which) user = {{ x = which; }};\n\
+             void() use = {{ whichpack(\"a\", WP_C); user(E_B); x = WP_B + E_B; }};\n"
+        ));
+        assert_eq!(global(&p, "WP_C"), immediate(&p, 4.0), "{target}");
+        assert_eq!(global(&p, "E_B"), immediate(&p, 1.0), "{target}");
+        let folded = body(&p, "use").into_iter().rev().nth(1).unwrap();
+        assert_eq!(folded, st(StoreF, immediate(&p, 3.0), global(&p, "x"), 0));
+    }
+}
+
+// spec FTEF-14.80: `__FUNC__` and `__func__` are the string of the function's name, a member
+// function's `CLASS::NAME`, through a macro too, and "<NO FUNCTION>" outside every function
+#[test]
+fn the_function_name_constant_is_the_functions_name() {
+    for target in ["#pragma target fte\n", ""] {
+        let p = fte_progs(&format!(
+            "{target}entity self;\nvoid end_sys_globals;\n.float modelindex;\n\
+             void end_sys_fields;\nfloat x;\n\
+             void(string s) say = #1;\nfloat(string s) strlen = #2;\n\
+             #define LOG() say(__FUNC__)\n\
+             string outside = __FUNC__;\n\
+             class T {{ virtual void() Tick; }};\n\
+             void() T::Tick = {{ LOG(); say(__func__); }};\n\
+             void() plain = {{ LOG(); say(\"plain\"); x = strlen(__FUNC__); say(outside); }};\n\
+             void(T t) use = {{ t.Tick(); plain(); }};\n"
+        ));
+        let said = |function: &str| -> Vec<i32> {
+            let say = global(&p, "say");
+            body(&p, function)
+                .windows(2)
+                .filter(|pair| pair[1].a == say || pair[0].a == say)
+                .map(|pair| {
+                    if pair[0].a == say {
+                        pair[0].b
+                    } else {
+                        pair[0].a
+                    }
+                })
+                .collect()
+        };
+        let method = immediate_string(&p, "T::Tick");
+        assert!(said("T::Tick").contains(&method), "{target}");
+        assert!(
+            said("plain").contains(&immediate_string(&p, "plain")),
+            "{target}"
+        );
+        let outside = usize::try_from(global(&p, "outside")).unwrap();
+        let text = i32::try_from(p.globals[outside].bits()).unwrap();
+        assert_eq!(string(&p, text), "<NO FUNCTION>", "{target}");
+        let folded = body(&p, "plain")
+            .into_iter()
+            .find(|s| s.op == u32::from(StoreF.number()) && s.b == global(&p, "x"))
+            .unwrap();
+        assert_eq!(folded.a, immediate(&p, 5.0), "strlen of the name folds");
+    }
+    // Beside a string literal it is not joined to it.
+    assert!(
+        compile_fteqcc("void(string s) say = #1;\nvoid() f = { say(__FUNC__ \": x\"); };\n")
+            .is_err()
+    );
+}
+
+// spec FTEF-6.33: a struct's member record is `GLOBAL.MEMBER`, a function member's
+// `GLOBAL.__function` whatever it is called
+#[test]
+fn a_function_members_record_is_named_after_its_type() {
+    let p = fte_progs(
+        "#pragma target fte\ntypedef void() cb_t;\n\
+         typedef struct { float(entity) Player; cb_t typed; float n; } api_t;\n\
+         api_t is;\nvoid() f = { is.n = 1; };\n",
+    );
+    let names: Vec<String> = p
+        .global_defs
+        .iter()
+        .map(|d| string(&p, d.s_name))
+        .filter(|name| name.starts_with("is."))
+        .collect();
+    assert_eq!(names, ["is.__function", "is.__function", "is.n"]);
+    // A typedef'd member's record has the type the typedef stands for.
+    let functions = p
+        .global_defs
+        .iter()
+        .filter(|d| string(&p, d.s_name) == "is.__function")
+        .filter(|d| d.type_bits & 0x7fff == 6)
+        .count();
+    assert_eq!(functions, 2);
+}
