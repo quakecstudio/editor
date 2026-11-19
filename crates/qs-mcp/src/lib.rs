@@ -64,7 +64,7 @@ pub struct Tool {
 /// preview and propose (AGT-1), with checkpoints to roll back (AGT-4); and the map's: open,
 /// inspect, place and key entities, build geometry with the brush, shape and CSG commands,
 /// compile and find leaks (MAP-16, MAP-29), each edit waiting for review as the agent's do.
-pub const AGENT_TOOLS: [Tool; 52] = [
+pub const AGENT_TOOLS: [Tool; 55] = [
     tool("project.symbols", Access::Read),
     tool("project.check", Access::Read),
     tool("file.read", Access::Read),
@@ -92,6 +92,9 @@ pub const AGENT_TOOLS: [Tool; 52] = [
     tool("engine.screenshot", Access::Write),
     tool("preview.reload", Access::Write),
     tool("map.open", Access::Write),
+    tool("map.new", Access::Write),
+    tool("map.save", Access::Write),
+    tool("map.play_from_here", Access::Write),
     tool("map.inspect", Access::Read),
     tool("map.staged", Access::Read),
     tool("map.leaks", Access::Read),
@@ -129,8 +132,11 @@ const UNSTAGE_MAP: &str = "map.unstage";
 const INSPECT_MAP: &str = "map.inspect";
 /// The workbench's command that opens a map in place of the open one.
 const OPEN_MAP: &str = "map.open";
-/// The workbench's command that writes the open map's BSP beside it.
-const COMPILE_MAP: &str = "map.compile";
+/// The workbench's command that makes a map and opens it in place of the open one.
+const NEW_MAP: &str = "map.new";
+/// The workbench's commands that write the open map's files but change no edit of it: its BSP
+/// beside it, the map itself, and its BSP where the game plays it.
+const WRITES_MAP_FILES: [&str; 3] = ["map.compile", "map.save", "map.play_from_here"];
 
 impl Tool {
     /// Whether it changes the open map, whose edits wait for review (P6-21).
@@ -143,15 +149,16 @@ impl Tool {
 /// agent's do (P6-21): only when the open map's file lies under a write root, since it may
 /// write beside it, and between `map.stage` and `map.unstage`, so its edits wait as hunks for
 /// a person to review and one that changed nothing leaves no review open. It is refused when
-/// review cannot begin, rather than run unreviewed. `map.open` replaces the open map, and its
-/// path is checked as an argument; `map.compile` changes no edit, so it opens no review.
+/// review cannot begin, rather than run unreviewed. `map.open` and `map.new` replace the open
+/// map, and their path is checked as an argument; `map.compile`, `map.save` and
+/// `map.play_from_here` change no edit, so they open no review.
 fn run_tool<K: Commands>(
     session: &mut K,
     tool: Tool,
     arguments: Value,
     settings: &ServerSettings,
 ) -> Result<Value, ToolError> {
-    if !tool.edits_map() || tool.id == OPEN_MAP {
+    if !tool.edits_map() || tool.id == OPEN_MAP || tool.id == NEW_MAP {
         return session.run(tool.id, arguments);
     }
     let none = || Value::Object(serde_json::Map::new());
@@ -161,7 +168,7 @@ fn run_tool<K: Commands>(
     if !settings.write.iter().any(|root| lies_under(&full, root)) {
         return Err(ToolError::OutsideRoots { path: full, tool });
     }
-    if tool.id == COMPILE_MAP {
+    if WRITES_MAP_FILES.contains(&tool.id) {
         return session.run(tool.id, arguments);
     }
     session.run(STAGE_MAP, none())?;

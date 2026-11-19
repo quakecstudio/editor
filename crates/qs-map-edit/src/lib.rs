@@ -127,6 +127,8 @@ pub fn opens_in_map_editor(path: &Path) -> bool {
 
 /// The id of `map.open`.
 pub const MAP_OPEN: &str = "map.open";
+/// The id of `map.new`.
+pub const MAP_NEW: &str = "map.new";
 /// The id of `map.select`.
 pub const MAP_SELECT: &str = "map.select";
 /// The id of `map.place`.
@@ -512,7 +514,18 @@ pub struct MapOpenParams {
     pub path: PathBuf,
 }
 
-/// What `map.open` answers.
+/// The parameters of `map.new`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MapNewParams {
+    /// The `.map` file to make; one that is there already is refused.
+    pub path: PathBuf,
+    /// The world's keys and values besides its classname, in order, such as `wad`.
+    #[serde(default)]
+    pub keys: Vec<(String, String)>,
+}
+
+/// What `map.open` and `map.new` answer.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct MapOpened {
     /// The map.
@@ -1018,6 +1031,53 @@ impl<C: HasMap + 'static> Command<C> for MapOpen {
     }
 }
 
+/// `map.new`.
+struct MapNew;
+
+impl<C: HasMap + 'static> Command<C> for MapNew {
+    const ID: &'static str = MAP_NEW;
+    const SUMMARY: &'static str = "Makes a new .map holding a world with the keys given, and \
+        opens it in the map view; a file that is there already is refused.";
+    type Params = MapNewParams;
+    type Output = MapOpened;
+    type Error = MapEditError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        MapNewParams { path, keys }: MapNewParams,
+    ) -> Result<Outcome<MapOpened, C>, MapEditError> {
+        if path.exists() {
+            return Err(MapEditError::Exists { path });
+        }
+        let mut world = Entity::new();
+        let classname = ("classname".to_owned(), "worldspawn".to_owned());
+        for (key, value) in std::iter::once(&classname).chain(&keys) {
+            world
+                .set(key.as_bytes(), value.as_bytes())
+                .map_err(|error| MapEditError::Map {
+                    path: path.clone(),
+                    error,
+                })?;
+        }
+        let mut file = MapFile::new();
+        file.push_entity(world);
+        let saved = |error| MapEditError::Save {
+            path: path.clone(),
+            error,
+        };
+        if let Some(folder) = path.parent() {
+            std::fs::create_dir_all(folder).map_err(saved)?;
+        }
+        std::fs::write(&path, file.to_bytes()).map_err(saved)?;
+        let document = context.map_store().open_map(&path)?;
+        Ok(Outcome::outside_history(MapOpened {
+            path: document.path.clone(),
+            entities: document.file.entities.len(),
+        }))
+    }
+}
+
 /// `map.select`.
 struct MapSelect;
 
@@ -1338,6 +1398,7 @@ pub fn register_map_edit<C: HasMap + 'static>(
     registry: &mut Registry<C>,
 ) -> Result<(), RegisterError> {
     registry.register(MapOpen)?;
+    registry.register(MapNew)?;
     registry.register(review::MapStage)?;
     registry.register(review::MapUnstage)?;
     registry.register(review::MapStaged)?;

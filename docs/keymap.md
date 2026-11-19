@@ -236,6 +236,7 @@ A command that answers a question is read by a panel, the agent or MCP. A comman
 | `map.make_structural` | needs a value | Gives a brush entity's brushes back to the world, in the layer or group the entity was in, and removes the entity (TrenchBroom's Make Structural). |
 | `map.move` | needs a value | Moves an entity of the open map: a point entity's origin, a brush entity's brushes. |
 | `map.move_to` | needs a value | Moves an entity or a group of the open map into a layer or a group, or into the default layer given the world, as TrenchBroom writes it. |
+| `map.new` | needs a value | Makes a new .map holding a world with the keys given, and opens it in the map view; a file that is there already is refused. |
 | `map.open` | needs a value | Opens a .map in the map view, or a shipped .bsp's entities when the map has no .map source; nothing is selected. |
 | `map.outline` | answers a question | The open map's outline: the default layer and each layer, their groups and linked groups, then their entities by classname and targetname, with brush counts; with filter, only what holds the text and what is around it. |
 | `map.paste` | needs a value | Adds a .map's text to the open map, its world's brushes to the world and its other entities after the map's: where the text has them, or with the middle of their floor at a point on the grid. |

@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use super::testing::{MapContext, TestProject};
 use super::{ClassInfo, KeyInfo};
 use super::{
-    EntityIndex, MAP_DELETE, MAP_DUPLICATE, MAP_ENTITY, MAP_MOVE, MAP_OPEN, MAP_PLACE,
+    EntityIndex, MAP_DELETE, MAP_DUPLICATE, MAP_ENTITY, MAP_MOVE, MAP_NEW, MAP_OPEN, MAP_PLACE,
     MAP_REMOVE_KEY, MAP_ROTATE, MAP_SAVE, MAP_SELECT, MAP_SET_KEY,
 };
 
@@ -463,4 +463,36 @@ fn duplicating_copies_keys_and_brushes() {
     );
     session.undo().unwrap();
     assert_eq!(text(&session), MAP);
+}
+
+// No spec statement: P6-44: map.new makes a map holding a world with the keys given, in a
+// folder made for it, and opens it; a file that is there already is refused and kept
+#[test]
+fn a_new_map_holds_a_world_and_is_open() {
+    let (dir, mut session) = project("new-map");
+    let path = dir.join("fresh/arena.map");
+    let made = session
+        .execute(
+            MAP_NEW,
+            json!({ "path": path, "keys": [["wad", "base.wad"]] }),
+        )
+        .unwrap();
+    assert_eq!(made["entities"], 1);
+    let written = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(
+        written,
+        "{\n\"classname\" \"worldspawn\"\n\"wad\" \"base.wad\"\n}\n"
+    );
+    assert_eq!(text(&session), written);
+    session
+        .execute(
+            MAP_PLACE,
+            json!({ "classname": "monster_thing", "origin": [0.0, 0.0, 24.0] }),
+        )
+        .unwrap();
+    assert!(text(&session).contains("monster_thing"));
+
+    let again = session.execute(MAP_NEW, json!({ "path": path }));
+    assert!(again.unwrap_err().to_string().ends_with("is there already"));
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), written);
 }

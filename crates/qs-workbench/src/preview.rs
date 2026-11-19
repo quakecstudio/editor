@@ -651,6 +651,9 @@ impl Preview {
             flavour,
         } = built;
         self.stop();
+        if let Some(name) = &map {
+            place_project_map(&project, &mod_name, name)?;
+        }
         // ADR-0008: the project's own game, the rerelease's files for a rerelease project.
         let (base, flavour) = game_base(self.config.game.as_deref(), flavour)?;
         self.flavour = flavour;
@@ -1326,6 +1329,40 @@ pub(crate) struct BuiltProgram {
     pub(crate) flavour: Flavour,
 }
 
+/// The directory of maps, in a project and in a game directory.
+const MAPS_DIR: &str = "maps";
+
+/// Puts the map `name` the project compiled, `maps/NAME.bsp` beside its `.map`, where the game
+/// reads maps, the mod's `maps` under `build`, when there is none there or an older one; with
+/// its `.lit`, and without the `.lit` of an older compile, which would colour it wrongly
+/// (BSP-18.2). A map the project did not compile is the game's own, and nothing is done.
+fn place_project_map(project: &Path, mod_name: &str, name: &str) -> Result<(), PreviewError> {
+    let made = |path: &Path| {
+        std::fs::metadata(path)
+            .and_then(|file| file.modified())
+            .ok()
+    };
+    let from = project.join(MAPS_DIR);
+    let to = project.join("build").join(mod_name).join(MAPS_DIR);
+    let bsp = format!("{name}.bsp");
+    let Some(compiled) = made(&from.join(&bsp)) else {
+        return Ok(());
+    };
+    if made(&to.join(&bsp)).is_some_and(|there| there >= compiled) {
+        return Ok(());
+    }
+    let written = |path: PathBuf| move |error| PreviewError::Write(path, error);
+    std::fs::create_dir_all(&to).map_err(written(to.clone()))?;
+    std::fs::copy(from.join(&bsp), to.join(&bsp)).map_err(written(to.join(&bsp)))?;
+    let lit = format!("{name}.lit");
+    if from.join(&lit).is_file() {
+        std::fs::copy(from.join(&lit), to.join(&lit)).map_err(written(to.join(&lit)))?;
+    } else if to.join(&lit).is_file() {
+        std::fs::remove_file(to.join(&lit)).map_err(written(to.join(&lit)))?;
+    }
+    Ok(())
+}
+
 /// The base directory of the game of `flavour`, with the flavour it is: `folder`'s, else the
 /// first install found with that game. Where no install has the rerelease a rerelease project
 /// plays on the original game's files, as the original.
@@ -1597,6 +1634,18 @@ pub struct SelectedEntity {
 }
 
 impl SelectedEntity {
+    /// What a pick answers: the edict its ray `hit`, now selected, or no edict when it hit
+    /// none, whatever was selected before.
+    fn picked(preview: &Preview, hit: Option<u32>) -> Self {
+        match hit {
+            Some(_) => Self::of(preview),
+            None => Self {
+                edict: None,
+                classname: None,
+            },
+        }
+    }
+
     fn of(preview: &Preview) -> Self {
         let selected = preview.entities().selected();
         Self {
@@ -1644,8 +1693,10 @@ impl<C: HasPreview + 'static> Command<C> for PickCommand {
         PickParams { x, y }: PickParams,
     ) -> Result<Outcome<SelectedEntity, C>, PreviewError> {
         let (_, preview) = context.workbench_and_preview();
-        preview.pick(x, y)?;
-        Ok(Outcome::outside_history(SelectedEntity::of(preview)))
+        let hit = preview.pick(x, y)?;
+        Ok(Outcome::outside_history(SelectedEntity::picked(
+            preview, hit,
+        )))
     }
 }
 

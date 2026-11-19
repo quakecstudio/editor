@@ -1124,7 +1124,7 @@ pub const VIEW_KEYS: [ViewKeyRow; 55] = [
 ];
 
 /// Every command with no key of its own, and why.
-pub const UNKEYED: [(&str, Unkeyed); 160] = [
+pub const UNKEYED: [(&str, Unkeyed); 161] = [
     ("checkpoint.list", Unkeyed::Query),
     ("checkpoint.restore", Unkeyed::Typed),
     ("code.actions", Unkeyed::Typed),
@@ -1210,6 +1210,7 @@ pub const UNKEYED: [(&str, Unkeyed); 160] = [
     ("map.make_structural", Unkeyed::Typed),
     ("map.move", Unkeyed::Typed),
     ("map.move_to", Unkeyed::Typed),
+    ("map.new", Unkeyed::Typed),
     ("map.open", Unkeyed::Typed),
     ("map.outline", Unkeyed::Query),
     ("map.paste", Unkeyed::Typed),

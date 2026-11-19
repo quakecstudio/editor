@@ -457,6 +457,9 @@ fn the_map_tools_are_listed_with_their_schemas() {
     let tools = answers["1"]["result"]["tools"].as_array().unwrap();
     for wanted in [
         "map.open",
+        "map.new",
+        "map.save",
+        "map.play_from_here",
         "map.inspect",
         "map.place",
         "map.set_key",
@@ -558,6 +561,51 @@ fn a_room_built_over_mcp_compiles_sealed() {
         .sum();
     assert_eq!(brushes, 6, "{staged}");
     assert!(staged.contains("info_player_start"), "{staged}");
+}
+
+// No spec statement: P6-44, MAP-16: a map is made, edited and saved through MCP tool calls
+// alone: map.new opens no review and its file is under the write roots, and map.save writes
+// what the tools put in it
+#[test]
+fn a_map_is_made_and_saved_over_mcp() {
+    let (server, map) = map_server("map-new", false);
+    let made = map.with_file_name("made.map");
+    let [init, initialized] = opening("2025-11-25");
+    let answers = exchange(
+        server,
+        &[
+            init,
+            initialized,
+            call(
+                1,
+                "map.new",
+                &json!({ "path": made, "keys": [["message", "made"]] }),
+            ),
+            call(2, "map.staged", &json!({})),
+            call(
+                3,
+                "map.place",
+                &json!({ "classname": "info_player_start", "origin": [0.0, 0.0, 24.0] }),
+            ),
+            call(4, "map.save", &json!({})),
+            call(5, "map.new", &json!({ "path": made })),
+        ],
+    );
+    for id in 1..=4 {
+        let answer = &answers[&id.to_string()]["result"];
+        assert_eq!(answer["isError"], false, "{id}: {answer}");
+    }
+    let unread = answers["2"]["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap();
+    assert_eq!(serde_json::from_str::<Value>(unread).unwrap(), json!([]));
+    let saved = std::fs::read_to_string(&made).unwrap();
+    assert!(saved.contains("\"message\" \"made\""), "{saved}");
+    assert!(saved.contains("info_player_start"), "{saved}");
+    assert_eq!(
+        answers["5"]["result"]["isError"], true,
+        "a map there is not made again"
+    );
 }
 
 // No spec statement: P6-36, P4-13: a read-only server refuses every map tool that writes,

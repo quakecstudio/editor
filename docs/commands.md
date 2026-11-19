@@ -108,6 +108,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.make_structural`](#mapmake_structural) | Gives a brush entity's brushes back to the world, in the layer or group the entity was in, and removes the entity (TrenchBroom's Make Structural). |
 | [`map.move`](#mapmove) | Moves an entity of the open map: a point entity's origin, a brush entity's brushes. |
 | [`map.move_to`](#mapmove_to) | Moves an entity or a group of the open map into a layer or a group, or into the default layer given the world, as TrenchBroom writes it. |
+| [`map.new`](#mapnew) | Makes a new .map holding a world with the keys given, and opens it in the map view; a file that is there already is refused. |
 | [`map.open`](#mapopen) | Opens a .map in the map view, or a shipped .bsp's entities when the map has no .map source; nothing is selected. |
 | [`map.outline`](#mapoutline) | The open map's outline: the default layer and each layer, their groups and linked groups, then their entities by classname and targetname, with brush counts; with filter, only what holds the text and what is around it. |
 | [`map.paste`](#mappaste) | Adds a .map's text to the open map, its world's brushes to the world and its other entities after the map's: where the text has them, or with the middle of their floor at a point on the grid. |
@@ -5325,6 +5326,49 @@ Parameters:
     "into"
   ],
   "title": "MoveToParams",
+  "type": "object"
+}
+```
+
+## `map.new`
+
+Makes a new .map holding a world with the keys given, and opens it in the map view; a file that is there already is refused.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.new`.",
+  "properties": {
+    "keys": {
+      "default": [],
+      "description": "The world's keys and values besides its classname, in order, such as `wad`.",
+      "items": {
+        "maxItems": 2,
+        "minItems": 2,
+        "prefixItems": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "string"
+          }
+        ],
+        "type": "array"
+      },
+      "type": "array"
+    },
+    "path": {
+      "description": "The `.map` file to make; one that is there already is refused.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "MapNewParams",
   "type": "object"
 }
 ```
