@@ -432,6 +432,7 @@ struct ListTasks;
 
 impl<C: HasWorkbench + 'static> Command<C> for ListTasks {
     const ID: &'static str = TASK_LIST;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str =
         "Lists the open project's tasks: the named command lines of its quakec.toml.";
     type Params = NoParams;
@@ -521,6 +522,7 @@ struct PollTerminals;
 
 impl<C: HasWorkbench + 'static> Command<C> for PollTerminals {
     const ID: &'static str = TERMINAL_POLL;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Takes what the terminal tabs have written and how their \
         processes ended, without waiting; true when any tab changed.";
     type Params = NoParams;

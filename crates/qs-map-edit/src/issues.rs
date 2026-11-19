@@ -388,6 +388,7 @@ pub(crate) struct MapIssuesCommand;
 
 impl<C: HasMap + 'static> Command<C> for MapIssuesCommand {
     const ID: &'static str = MAP_ISSUES;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Lists every issue of the open map, each with the entity or \
         brush it is about and a quick fix where one exists: its format's, brushes with no \
         volume, a missing player start, missing textures and, with a project open, its \
@@ -442,6 +443,7 @@ pub(crate) struct MapSearch;
 
 impl<C: HasMap + 'static> Command<C> for MapSearch {
     const ID: &'static str = MAP_SEARCH;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Finds the open map's objects as TrenchBroom's search does: \
         text found in names, classnames, keys, values, textures, smart tags and layer and group \
         names, ignoring case, or a query in its query language, which finds entities, groups, \

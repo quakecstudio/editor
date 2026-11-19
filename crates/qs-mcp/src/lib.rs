@@ -3,7 +3,10 @@
 //! The MCP server (P4-13, AGT-7, PRIN-6): the agent's tools, which are the IDE's commands,
 //! offered to other agents over the Model Context Protocol, one JSON-RPC message per line on
 //! stdio. Each tool is a command of the registry the window, the palette and the command line
-//! run, so an outside agent does what the built-in one does and nothing else.
+//! run, and every command is a tool: an outside agent can do whatever a person at the window
+//! can, the terminal and tasks included, where the built-in agent is held to its own list
+//! (`qs-agent`). What holds an outside agent is the roots below, the review its map edits wait
+//! in, and its client's own permissions, which read each tool's annotations.
 //!
 //! The protocol is `rmcp`'s, the Rust SDK of the protocol's own project: it answers both eras,
 //! modern requests carrying their version in `_meta` (MCP 2026-07-28) with `server/discover`,
@@ -34,6 +37,7 @@ use qs_commands::{CommandError, Session};
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Implementation,
     ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerConfig, Tool as McpTool,
+    ToolAnnotations,
 };
 use rmcp::service::RequestContext;
 use rmcp::{ErrorData, RoleServer, ServerHandler, ServiceExt};
@@ -42,82 +46,17 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::runtime::{self, Runtime};
 use tokio::sync::oneshot;
 
-/// Whether a tool only reads or also writes files.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Access {
-    /// It reads the project and the paths it names.
-    Read,
-    /// It writes the project (a build, a checkpoint, an edit) or the paths it names.
-    Write,
-}
+pub use qs_commands::Access;
 
-/// One tool offered: a command of the registry, and what it may touch.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// One tool offered: a command of the registry, and whether it only reads (the project, the
+/// paths it names, the game) or may write.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Tool {
     /// The command's id, which is the tool's name.
-    pub id: &'static str,
-    /// What it touches.
+    pub id: Arc<str>,
+    /// Whether it only reads.
     pub access: Access,
 }
-
-/// The agent's tools (AGT-2) and the commands its loop drives: plan, edit, compile, test,
-/// preview and propose (AGT-1), with checkpoints to roll back (AGT-4); and the map's: open,
-/// inspect, place and key entities, build geometry with the brush, shape and CSG commands,
-/// compile and find leaks (MAP-16, MAP-29), each edit waiting for review as the agent's do.
-pub const AGENT_TOOLS: [Tool; 52] = [
-    tool("project.symbols", Access::Read),
-    tool("project.check", Access::Read),
-    tool("file.read", Access::Read),
-    tool("symbol.definition", Access::Read),
-    tool("symbol.references", Access::Read),
-    tool("symbol.hover", Access::Read),
-    tool("engine.builtins", Access::Read),
-    tool("compile", Access::Write),
-    tool("project.test", Access::Write),
-    tool("vm.run", Access::Write),
-    tool("scenario.run", Access::Write),
-    tool("edit.apply", Access::Write),
-    tool("edit.accept", Access::Write),
-    tool("edit.reject", Access::Write),
-    tool("edit.staged", Access::Read),
-    tool("file.save", Access::Write),
-    tool("checkpoint.create", Access::Write),
-    tool("checkpoint.list", Access::Read),
-    tool("checkpoint.restore", Access::Write),
-    tool("preview.play", Access::Write),
-    tool("preview.stop", Access::Read),
-    tool("preview.poll", Access::Read),
-    tool("engine.inspect", Access::Read),
-    tool("engine.console", Access::Read),
-    tool("engine.screenshot", Access::Write),
-    tool("preview.reload", Access::Write),
-    tool("map.open", Access::Write),
-    tool("map.inspect", Access::Read),
-    tool("map.staged", Access::Read),
-    tool("map.leaks", Access::Read),
-    tool("map.compile", Access::Write),
-    tool("map.place", Access::Write),
-    tool("map.set_key", Access::Write),
-    tool("map.brush_create", Access::Write),
-    tool("map.brush_shape", Access::Write),
-    tool("map.brush_delete", Access::Write),
-    tool("map.brush_move", Access::Write),
-    tool("map.brush_texture", Access::Write),
-    tool("map.brush_clip", Access::Write),
-    tool("map.brush_vertex", Access::Write),
-    tool("map.brush_vertices", Access::Write),
-    tool("map.brush_split_edge", Access::Write),
-    tool("map.brush_split_face", Access::Write),
-    tool("map.brush_chamfer", Access::Write),
-    tool("map.brush_extrude", Access::Write),
-    tool("map.brush_scale", Access::Write),
-    tool("map.brush_shear", Access::Write),
-    tool("map.brush_sweep", Access::Write),
-    tool("map.brush_subtract", Access::Write),
-    tool("map.brush_merge", Access::Write),
-    tool("map.brush_intersect", Access::Write),
-    tool("map.brush_hollow", Access::Write),
-];
 
 /// The prefix of the map's commands, whose edits wait for review (P6-21).
 const MAP_COMMANDS: &str = "map.";
@@ -129,13 +68,19 @@ const UNSTAGE_MAP: &str = "map.unstage";
 const INSPECT_MAP: &str = "map.inspect";
 /// The workbench's command that opens a map in place of the open one.
 const OPEN_MAP: &str = "map.open";
-/// The workbench's command that writes the open map's BSP beside it.
-const COMPILE_MAP: &str = "map.compile";
+/// The workbench's command that makes a map and opens it in place of the open one.
+const NEW_MAP: &str = "map.new";
+/// The workbench's command that makes the last map edit again: a map edit under another name.
+const REPEAT_EDIT: &str = "edit.repeat";
+/// The workbench's commands that write the open map's files but change no edit of it: its BSP
+/// beside it, the map itself, and its BSP where the game plays it.
+const WRITES_MAP_FILES: [&str; 3] = ["map.compile", "map.save", "map.play_from_here"];
 
 impl Tool {
     /// Whether it changes the open map, whose edits wait for review (P6-21).
-    fn edits_map(self) -> bool {
-        self.access == Access::Write && self.id.starts_with(MAP_COMMANDS)
+    fn edits_map(&self) -> bool {
+        self.access == Access::Write
+            && (self.id.starts_with(MAP_COMMANDS) || &*self.id == REPEAT_EDIT)
     }
 }
 
@@ -143,37 +88,36 @@ impl Tool {
 /// agent's do (P6-21): only when the open map's file lies under a write root, since it may
 /// write beside it, and between `map.stage` and `map.unstage`, so its edits wait as hunks for
 /// a person to review and one that changed nothing leaves no review open. It is refused when
-/// review cannot begin, rather than run unreviewed. `map.open` replaces the open map, and its
-/// path is checked as an argument; `map.compile` changes no edit, so it opens no review.
+/// review cannot begin, rather than run unreviewed. `map.open` and `map.new` replace the open
+/// map, and their path is checked as an argument; `map.compile`, `map.save` and
+/// `map.play_from_here` change no edit, so they open no review.
 fn run_tool<K: Commands>(
     session: &mut K,
-    tool: Tool,
+    tool: &Tool,
     arguments: Value,
     settings: &ServerSettings,
 ) -> Result<Value, ToolError> {
-    if !tool.edits_map() || tool.id == OPEN_MAP {
-        return session.run(tool.id, arguments);
+    if !tool.edits_map() || &*tool.id == OPEN_MAP || &*tool.id == NEW_MAP {
+        return session.run(&tool.id, arguments);
     }
     let none = || Value::Object(serde_json::Map::new());
     let open = session.run(INSPECT_MAP, none())?;
     let path = open.get("path").and_then(Value::as_str).unwrap_or_default();
     let full = lexical(Path::new(path));
     if !settings.write.iter().any(|root| lies_under(&full, root)) {
-        return Err(ToolError::OutsideRoots { path: full, tool });
+        return Err(ToolError::OutsideRoots {
+            path: full,
+            tool: tool.clone(),
+        });
     }
-    if tool.id == COMPILE_MAP {
-        return session.run(tool.id, arguments);
+    if WRITES_MAP_FILES.contains(&&*tool.id) {
+        return session.run(&tool.id, arguments);
     }
     session.run(STAGE_MAP, none())?;
-    let result = session.run(tool.id, arguments);
+    let result = session.run(&tool.id, arguments);
     // A review with nothing in it is ended; one the edit filled stays for the person.
     let _ended = session.run(UNSTAGE_MAP, none());
     result
-}
-
-/// A tool of `id` that touches as `access` says.
-const fn tool(id: &'static str, access: Access) -> Tool {
-    Tool { id, access }
 }
 
 /// What the server serves: its project, its roots and the name it gives.
@@ -259,8 +203,8 @@ impl std::error::Error for ToolError {}
 
 /// What the server's tools run on.
 pub trait Commands {
-    /// The summary and parameter schema of the command `id`, if there is one.
-    fn describe(&self, id: &str) -> Option<(String, Value)>;
+    /// Every command: its id, summary, parameter schema and whether it only reads.
+    fn offered(&self) -> Vec<Described>;
 
     /// Runs the command `id` with `arguments`: its output, or why it failed.
     ///
@@ -271,9 +215,8 @@ pub trait Commands {
 }
 
 impl<C: 'static> Commands for Session<C> {
-    fn describe(&self, id: &str) -> Option<(String, Value)> {
-        let info = self.registry().get(id)?;
-        Some((info.summary().to_owned(), info.params().clone()))
+    fn offered(&self) -> Vec<Described> {
+        self.registry().commands().map(Described::of).collect()
     }
 
     fn run(&mut self, id: &str, arguments: Value) -> Result<Value, ToolError> {
@@ -301,9 +244,8 @@ impl Connected {
 }
 
 impl Commands for Connected {
-    fn describe(&self, id: &str) -> Option<(String, Value)> {
-        let command = self.commands.iter().find(|command| command.id() == id)?;
-        Some((command.summary().to_owned(), command.params().clone()))
+    fn offered(&self) -> Vec<Described> {
+        self.commands.clone()
     }
 
     fn run(&mut self, id: &str, arguments: Value) -> Result<Value, ToolError> {
@@ -331,7 +273,8 @@ pub struct Server {
 
 impl Server {
     /// Starts the commands `make` builds (a session, or a connection to the app's) on a
-    /// thread of its own and serves the tools of `tools` they have.
+    /// thread of its own and serves every one of them as a tool (PRIN-3), each told to the
+    /// client as reading only or not (MCP 2026-07-28, `ToolAnnotations.readOnlyHint`).
     ///
     /// # Errors
     ///
@@ -339,7 +282,6 @@ impl Server {
     pub fn start<K: Commands>(
         make: impl FnOnce() -> Result<K, String> + Send + 'static,
         settings: ServerSettings,
-        tools: &'static [Tool],
     ) -> Result<Self, McpError> {
         let settings = Arc::new(settings);
         let shared = Arc::clone(&settings);
@@ -354,19 +296,32 @@ impl Server {
                     return;
                 }
             };
-            let offered = tools
-                .iter()
-                .filter_map(|tool| {
-                    let (summary, params) = session.describe(tool.id)?;
-                    let schema = params.as_object().cloned().unwrap_or_default();
-                    Some((*tool, McpTool::new(tool.id, summary, schema)))
+            let offered = session
+                .offered()
+                .into_iter()
+                .map(|command| {
+                    let schema = command.params().as_object().cloned().unwrap_or_default();
+                    let tool = Tool {
+                        id: command.id().into(),
+                        access: command.access(),
+                    };
+                    // Nothing is said of the open world: the terminal and tasks run whatever
+                    // they are given, which no command declares.
+                    let annotations = ToolAnnotations::new().read_only(tool.access == Access::Read);
+                    let listed = McpTool::new(
+                        command.id().to_owned(),
+                        command.summary().to_owned(),
+                        schema,
+                    )
+                    .annotate(annotations);
+                    (tool, listed)
                 })
                 .collect();
             if ready.send(Ok(offered)).is_err() {
                 return;
             }
             while let Ok(job) = inbox.recv() {
-                let result = match run_tool(&mut session, job.tool, job.arguments, &shared) {
+                let result = match run_tool(&mut session, &job.tool, job.arguments, &shared) {
                     Ok(output) => tool_result(output),
                     Err(why) => tool_error(&why.to_string()),
                 };
@@ -385,10 +340,15 @@ impl Server {
         })
     }
 
+    /// The tools offered, each a command of the session.
+    pub fn tools(&self) -> impl Iterator<Item = &Tool> {
+        self.tools.iter().map(|(tool, _)| tool)
+    }
+
     /// The names of the tools offered.
     #[must_use]
-    pub fn tool_names(&self) -> Vec<&'static str> {
-        self.tools.iter().map(|(tool, _)| tool.id).collect()
+    pub fn tool_names(&self) -> Vec<&str> {
+        self.tools.iter().map(|(tool, _)| &*tool.id).collect()
     }
 
     /// Serves on `read` and `write` until the client closes `read`, on a runtime of its own.
@@ -468,7 +428,7 @@ impl Server {
 
     /// Whether every path `arguments` names lies under a root the tool may use, and, for a
     /// tool that writes, the project too.
-    fn check_roots(&self, tool: Tool, arguments: &Value) -> Result<(), ToolError> {
+    fn check_roots(&self, tool: &Tool, arguments: &Value) -> Result<(), ToolError> {
         let settings = &self.settings;
         let roots: Vec<&PathBuf> = match tool.access {
             Access::Read => settings.read.iter().chain(&settings.write).collect(),
@@ -482,7 +442,10 @@ impl Server {
         for path in paths {
             let full = lexical(Path::new(&path));
             if !roots.iter().any(|root| lies_under(&full, root)) {
-                return Err(ToolError::OutsideRoots { path: full, tool });
+                return Err(ToolError::OutsideRoots {
+                    path: full,
+                    tool: tool.clone(),
+                });
             }
         }
         Ok(())
@@ -515,12 +478,12 @@ impl ServerHandler for Server {
         let tool = self
             .tools
             .iter()
-            .map(|(tool, _)| *tool)
-            .find(|tool| tool.id == name)
+            .map(|(tool, _)| tool.clone())
+            .find(|tool| *tool.id == name)
             .ok_or_else(|| ErrorData::invalid_params(format!("Unknown tool: {name}"), None))?;
         let mut arguments = Value::Object(request.arguments.unwrap_or_default());
         absolute_paths(&mut arguments, &self.settings.project);
-        if let Err(why) = self.check_roots(tool, &arguments) {
+        if let Err(why) = self.check_roots(&tool, &arguments) {
             return Ok(tool_error(&why.to_string()).into());
         }
         let (reply, answer) = oneshot::channel();
@@ -551,11 +514,12 @@ fn runtime() -> Result<Runtime, McpError> {
 const DUPLEX_BUFFER: usize = 1 << 16;
 
 /// What the server tells a client's model about using it.
-const INSTRUCTIONS: &str = "QuakeC Studio's tools over the project this server was started on: \
+const INSTRUCTIONS: &str = "Every command of QuakeC Studio over the project this server was \
+    started on (commands.list names them all): \
     compile, test, run QuakeC in the VM, play scenarios, inspect and drive the running game, \
-    read files, stage edits as hunks and keep checkpoints; open a map, place and key its \
-    entities, build its brushes, compile it and find its leaks, each map edit staged for \
-    review. Paths are the project's, absolute or relative to it.";
+    read files, stage edits as hunks and keep checkpoints; make or open a map, place and \
+    key its entities, build its brushes, compile it and find its leaks, save it and play it, \
+    each map edit staged for review. Paths are the project's, absolute or relative to it.";
 
 /// A tool's result for `output`: its JSON as text, and as structured content when it is an
 /// object (MCP 2026-07-28, "Structured Content").

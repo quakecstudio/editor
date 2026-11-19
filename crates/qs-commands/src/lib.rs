@@ -33,7 +33,7 @@ mod tests;
 
 #[cfg(test)]
 pub(crate) use builtin::BUILTIN_IDS;
-pub use command::{BoxError, Command, NoParams, Outcome, UndoStep};
+pub use command::{Access, BoxError, Command, NoParams, Outcome, UndoStep};
 pub use error::{CommandError, RegisterError};
 #[cfg(test)]
 pub(crate) use id::MAX_ID_LEN;

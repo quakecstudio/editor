@@ -191,6 +191,7 @@ struct ProjectFiles;
 
 impl<C: HasWorkbench + 'static> Command<C> for ProjectFiles {
     const ID: &'static str = PROJECT_FILES;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Lists every source file the open project compiles, by path.";
     type Params = qs_commands::NoParams;
     type Output = Vec<PathBuf>;
@@ -214,6 +215,7 @@ struct ProjectInfoCommand;
 
 impl<C: HasWorkbench + 'static> Command<C> for ProjectInfoCommand {
     const ID: &'static str = PROJECT_INFO;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Describes the open project: its directory and each module's \
         kind, dialect, target engine and output.";
     type Params = qs_commands::NoParams;
@@ -238,6 +240,7 @@ struct ProjectSearch;
 
 impl<C: HasWorkbench + 'static> Command<C> for ProjectSearch {
     const ID: &'static str = PROJECT_SEARCH;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Finds every match of a text in the open project's files, \
         unsaved edits included, by file, line and byte range; matching case, whole words only \
         or as a regular expression.";
@@ -344,6 +347,7 @@ struct ProjectSymbols;
 
 impl<C: HasWorkbench + 'static> Command<C> for ProjectSymbols {
     const ID: &'static str = PROJECT_SYMBOLS;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Lists the open project's global definitions, functions, \
         globals and fields, each with where its name is first written; a query keeps those \
         whose name contains it.";
@@ -456,6 +460,7 @@ struct EngineBuiltinsCommand;
 
 impl<C: HasWorkbench + 'static> Command<C> for EngineBuiltinsCommand {
     const ID: &'static str = ENGINE_BUILTINS;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Lists an engine's builtins for a module kind, each with its \
         number or engine name, QuakeC name, signature and extensions; the open project's \
         engine and server QuakeC when none is named.";

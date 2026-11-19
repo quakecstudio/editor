@@ -252,6 +252,7 @@ pub(super) struct MapOutline;
 
 impl<C: HasMap + 'static> Command<C> for MapOutline {
     const ID: &'static str = MAP_OUTLINE;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "The open map's outline: the default layer and each layer, \
         their groups and linked groups, then their entities by classname and targetname, with \
         brush counts; with filter, only what holds the text and what is around it.";

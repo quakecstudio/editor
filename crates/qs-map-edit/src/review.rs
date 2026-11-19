@@ -366,6 +366,7 @@ pub(crate) struct MapStaged;
 
 impl<C: HasMap + 'static> Command<C> for MapStaged {
     const ID: &'static str = MAP_STAGED;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Lists the open map's hunks waiting for review: for each, the \
         entities it is in, and the keys and brushes it adds, changes or removes.";
     type Params = NoParams;

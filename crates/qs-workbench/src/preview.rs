@@ -634,6 +634,18 @@ impl Preview {
         map: Option<String>,
     ) -> Result<(), PreviewError> {
         let built = workbench.built_program()?;
+        // P6-44: a map the project compiled is read from where the game reads maps.
+        if let Some(name) = &map {
+            let beside = workbench
+                .map()
+                .filter(|open| {
+                    open.path()
+                        .file_stem()
+                        .is_some_and(|stem| stem == name.as_str())
+                })
+                .and_then(|open| open.path().parent().map(Path::to_path_buf));
+            place_project_map(&built.project, &built.mod_name, name, beside.as_deref())?;
+        }
         self.play_built(built, map)
     }
 
@@ -1326,6 +1338,74 @@ pub(crate) struct BuiltProgram {
     pub(crate) flavour: Flavour,
 }
 
+/// The directory of maps, in a project and in a game directory.
+const MAPS_DIR: &str = "maps";
+
+/// The files of a compiled map the game reads beside each other: the BSP, its coloured light
+/// (BSP-18.2) and the entities that override its own (BSP-19.1).
+const MAP_FILES: [&str; 3] = ["bsp", "lit", "ent"];
+
+/// Puts the map `name` the project compiled where the game reads maps, the mod's `maps` under
+/// `build`, when none is there or an older one. The BSP is the one beside the open map, in
+/// `beside`, when that map is `name`, else the one in the project's `maps`; its `.lit` and
+/// `.ent` go with it, and those of an older compile do not stay, which would colour it or
+/// people it wrongly. A map the project did not compile is the game's own, a name that is no
+/// file's name is the host's to refuse, and a map open where the game reads maps is already
+/// there: nothing is done for any of them.
+fn place_project_map(
+    project: &Path,
+    mod_name: &str,
+    name: &str,
+    beside: Option<&Path>,
+) -> Result<(), PreviewError> {
+    if Path::new(name).file_name().is_none_or(|file| file != name) {
+        return Ok(());
+    }
+    let made = |path: PathBuf| {
+        std::fs::metadata(path)
+            .and_then(|file| file.modified())
+            .ok()
+    };
+    let file = |extension: &str| format!("{name}.{extension}");
+    let maps = project.join(MAPS_DIR);
+    let folders = beside.into_iter().chain(std::iter::once(maps.as_path()));
+    let Some(from) = folders
+        .into_iter()
+        .find(|folder| folder.join(file("bsp")).is_file())
+    else {
+        return Ok(());
+    };
+    let to = project.join("build").join(mod_name).join(MAPS_DIR);
+    // A copy of a file onto itself empties it.
+    if from
+        .canonicalize()
+        .ok()
+        .zip(to.canonicalize().ok())
+        .is_some_and(|(from, to)| from == to)
+    {
+        return Ok(());
+    }
+    // The newest of what the compile and a save of the entities wrote.
+    let compiled = MAP_FILES
+        .iter()
+        .filter_map(|extension| made(from.join(file(extension))))
+        .max();
+    if made(to.join(file("bsp"))).is_some_and(|there| Some(there) >= compiled) {
+        return Ok(());
+    }
+    let written = |path: PathBuf| move |error| PreviewError::Write(path, error);
+    std::fs::create_dir_all(&to).map_err(written(to.clone()))?;
+    for extension in MAP_FILES {
+        let (source, placed) = (from.join(file(extension)), to.join(file(extension)));
+        if source.is_file() {
+            std::fs::copy(&source, &placed).map_err(written(placed))?;
+        } else if placed.is_file() {
+            std::fs::remove_file(&placed).map_err(written(placed))?;
+        }
+    }
+    Ok(())
+}
+
 /// The base directory of the game of `flavour`, with the flavour it is: `folder`'s, else the
 /// first install found with that game. Where no install has the rerelease a rerelease project
 /// plays on the original game's files, as the original.
@@ -1597,6 +1677,18 @@ pub struct SelectedEntity {
 }
 
 impl SelectedEntity {
+    /// What a pick answers: the edict its ray `hit`, now selected, or no edict when it hit
+    /// none, whatever was selected before.
+    fn picked(preview: &Preview, hit: Option<u32>) -> Self {
+        match hit {
+            Some(_) => Self::of(preview),
+            None => Self {
+                edict: None,
+                classname: None,
+            },
+        }
+    }
+
     fn of(preview: &Preview) -> Self {
         let selected = preview.entities().selected();
         Self {
@@ -1633,7 +1725,8 @@ struct PickCommand;
 
 impl<C: HasPreview + 'static> Command<C> for PickCommand {
     const ID: &'static str = PICK;
-    const SUMMARY: &'static str = "Selects the edict under a point of the game's window.";
+    const SUMMARY: &'static str = "Selects the edict under a point of the game's window. A \
+        point with no edict under it answers none and leaves the selection as it was.";
     type Params = PickParams;
     type Output = SelectedEntity;
     type Error = PreviewError;
@@ -1644,8 +1737,10 @@ impl<C: HasPreview + 'static> Command<C> for PickCommand {
         PickParams { x, y }: PickParams,
     ) -> Result<Outcome<SelectedEntity, C>, PreviewError> {
         let (_, preview) = context.workbench_and_preview();
-        preview.pick(x, y)?;
-        Ok(Outcome::outside_history(SelectedEntity::of(preview)))
+        let hit = preview.pick(x, y)?;
+        Ok(Outcome::outside_history(SelectedEntity::picked(
+            preview, hit,
+        )))
     }
 }
 
@@ -1836,6 +1931,8 @@ impl<A: Act + 'static, C: HasPreview + 'static> Command<C> for ActCommand<A> {
 trait Control: Send + Sync {
     const ID: &'static str;
     const SUMMARY: &'static str;
+    /// Whether it only reads, as [`Command::ACCESS`].
+    const ACCESS: qs_commands::Access = qs_commands::Access::Write;
     fn apply(preview: &mut Preview) -> Result<(), PreviewError>;
 }
 
@@ -1889,6 +1986,7 @@ impl Control for StopControl {
 struct PollControl;
 impl Control for PollControl {
     const ID: &'static str = POLL;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str =
         "Reads the running game's events: its state changes and console lines.";
     fn apply(preview: &mut Preview) -> Result<(), PreviewError> {
@@ -1902,6 +2000,7 @@ struct ControlCommand<A>(core::marker::PhantomData<A>);
 
 impl<A: Control + 'static, C: HasPreview + 'static> Command<C> for ControlCommand<A> {
     const ID: &'static str = A::ID;
+    const ACCESS: qs_commands::Access = A::ACCESS;
     const SUMMARY: &'static str = A::SUMMARY;
     type Params = NoParams;
     type Output = PreviewStatus;
@@ -2012,6 +2111,7 @@ struct GameCommand;
 
 impl<C: HasPreview + 'static> Command<C> for GameCommand {
     const ID: &'static str = GAME;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Says what game data the preview plays from: the chosen \
         folder, or the first install found, as found, shareware only, rerelease only or missing for \
         the game the project is for, with the files it lacks.";

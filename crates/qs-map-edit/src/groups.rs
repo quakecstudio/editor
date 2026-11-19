@@ -589,6 +589,7 @@ pub(super) struct MapLayers;
 
 impl<C: HasMap + 'static> Command<C> for MapLayers {
     const ID: &'static str = MAP_LAYERS;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "The open map's TrenchBroom layers: each one's name, whether \
         it is hidden, locked or left out of exports, and how many entities are in it.";
     type Params = NoParams;

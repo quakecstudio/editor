@@ -17,7 +17,7 @@ use qs_workbench::{
 };
 use serde_json::{Value, json};
 
-use super::{AGENT_TOOLS, Access, Connected, Server, ServerSettings};
+use super::{Access, Connected, Server, ServerSettings};
 
 /// A fresh project on disk for test `name`: a `progs.src` and a `world.qc` of `world`.
 fn project(name: &str, world: &str) -> PathBuf {
@@ -57,7 +57,6 @@ fn server(root: &Path, read_only: bool) -> Server {
             Ok(session)
         },
         settings,
-        &AGENT_TOOLS,
     )
     .unwrap()
 }
@@ -205,7 +204,7 @@ fn errors_are_reported_as_mcp_says() {
         &[
             init,
             initialized,
-            call(1, "project.open", &json!({})),
+            call(1, "project.no_such_command", &json!({})),
             call(
                 2,
                 "symbol.hover",
@@ -273,7 +272,6 @@ fn a_session_that_fails_is_reported() {
     let failed = Server::start::<Session<Workbench<FsLoader>>>(
         || Err("no project here".to_owned()),
         settings,
-        &AGENT_TOOLS,
     );
     assert!(
         failed
@@ -320,7 +318,6 @@ fn a_connected_server_runs_in_the_apps_session() {
     let connected = Server::start(
         move || Connected::connect(&socket).map_err(|e| e.to_string()),
         settings,
-        &AGENT_TOOLS,
     )
     .unwrap();
     assert!(connected.tool_names().contains(&"compile"));
@@ -426,17 +423,18 @@ fn map_server(name: &str, read_only: bool) -> (Server, PathBuf) {
             Ok(session)
         },
         settings,
-        &AGENT_TOOLS,
     )
     .unwrap();
     (server, map)
 }
 
-/// The map tools the server offers.
-fn map_tools() -> impl Iterator<Item = &'static super::Tool> {
-    AGENT_TOOLS
-        .iter()
+/// The map tools `server` offers.
+fn map_tools(server: &Server) -> Vec<super::Tool> {
+    server
+        .tools()
         .filter(|tool| tool.id.starts_with("map."))
+        .cloned()
+        .collect()
 }
 
 // No spec statement: P6-36, MAP-16, MAP-29: tools/list offers the map's tools, each with its
@@ -445,6 +443,7 @@ fn map_tools() -> impl Iterator<Item = &'static super::Tool> {
 #[test]
 fn the_map_tools_are_listed_with_their_schemas() {
     let (server, _) = map_server("map-list", false);
+    let offered = map_tools(&server);
     let [init, initialized] = opening("2025-06-18");
     let answers = exchange(
         server,
@@ -457,6 +456,9 @@ fn the_map_tools_are_listed_with_their_schemas() {
     let tools = answers["1"]["result"]["tools"].as_array().unwrap();
     for wanted in [
         "map.open",
+        "map.new",
+        "map.save",
+        "map.play_from_here",
         "map.inspect",
         "map.place",
         "map.set_key",
@@ -471,11 +473,12 @@ fn the_map_tools_are_listed_with_their_schemas() {
     ] {
         assert!(tools.iter().any(|t| t["name"] == wanted), "{wanted}");
     }
+    // Every command is a tool (PRIN-3): the review's own are among them.
     for decision in ["map.accept", "map.reject", "map.stage", "map.unstage"] {
-        assert!(tools.iter().all(|t| t["name"] != decision), "{decision}");
+        assert!(tools.iter().any(|t| t["name"] == decision), "{decision}");
     }
-    for tool in map_tools() {
-        let listed = tools.iter().find(|t| t["name"] == tool.id);
+    for tool in &offered {
+        let listed = tools.iter().find(|t| t["name"] == *tool.id);
         assert!(listed.is_some(), "{} is listed", tool.id);
         let listed = listed.unwrap();
         assert_eq!(listed["inputSchema"]["type"], "object", "{}", tool.id);
@@ -488,6 +491,61 @@ fn the_map_tools_are_listed_with_their_schemas() {
         create["inputSchema"]["properties"]["min"].is_object(),
         "{create}"
     );
+}
+
+// No spec statement: PRIN-3, P6-44: every command of the session is a tool, none chosen by
+// hand, each told to the client as reading only or not (MCP 2026-07-28,
+// `ToolAnnotations.readOnlyHint`: "If true, the tool does not modify its environment."), and
+// nothing claimed of `openWorldHint`, which the terminal and the tasks could not keep
+#[test]
+fn every_command_is_a_tool_with_its_access() {
+    let (server, _) = map_server("every-tool", false);
+    let offered: Vec<super::Tool> = server.tools().cloned().collect();
+    let [init, initialized] = opening("2025-11-25");
+    let answers = exchange(
+        server,
+        &[
+            init,
+            initialized,
+            json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }),
+            call(2, "commands.list", &json!({})),
+        ],
+    );
+    let tools = answers["1"]["result"]["tools"].as_array().unwrap();
+    let listed = answers["2"]["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap();
+    let commands: Vec<Value> = serde_json::from_str(listed).unwrap();
+    assert_eq!(tools.len(), commands.len(), "a tool for each command");
+    assert!(tools.len() > 150, "{}", tools.len());
+    for command in &commands {
+        let id = command["id"].as_str().unwrap();
+        let tool = tools.iter().find(|t| t["name"] == id);
+        assert!(tool.is_some(), "{id} is a tool");
+        let annotations = &tool.unwrap()["annotations"];
+        let reads = command["access"] == "read";
+        assert_eq!(annotations["readOnlyHint"], reads, "{id}");
+        assert!(annotations.get("openWorldHint").is_none(), "{id}");
+    }
+    let access = |id: &str| offered.iter().find(|tool| &*tool.id == id).unwrap().access;
+    for id in [
+        "map.inspect",
+        "file.read",
+        "git.status",
+        "project.symbols",
+        "commands.list",
+    ] {
+        assert_eq!(access(id), Access::Read, "{id}");
+    }
+    for id in [
+        "map.place",
+        "edit.apply",
+        "preview.play",
+        "git.commit",
+        "engine.console",
+    ] {
+        assert_eq!(access(id), Access::Write, "{id}");
+    }
 }
 
 /// The six walls of a room around -128 to 128, 16 thick.
@@ -560,15 +618,96 @@ fn a_room_built_over_mcp_compiles_sealed() {
     assert!(staged.contains("info_player_start"), "{staged}");
 }
 
+// No spec statement: P6-44, MAP-16: a map is made, edited and saved through MCP tool calls
+// alone: map.new opens no review and its file is under the write roots, and map.save writes
+// what the tools put in it
+#[test]
+fn a_map_is_made_and_saved_over_mcp() {
+    let (server, map) = map_server("map-new", false);
+    let made = map.with_file_name("made.map");
+    let [init, initialized] = opening("2025-11-25");
+    let answers = exchange(
+        server,
+        &[
+            init,
+            initialized,
+            call(
+                1,
+                "map.new",
+                &json!({ "path": made, "keys": [["message", "made"]] }),
+            ),
+            call(2, "map.staged", &json!({})),
+            call(
+                3,
+                "map.place",
+                &json!({ "classname": "info_player_start", "origin": [0.0, 0.0, 24.0] }),
+            ),
+            call(4, "map.save", &json!({})),
+            call(5, "map.new", &json!({ "path": made })),
+        ],
+    );
+    for id in 1..=4 {
+        let answer = &answers[&id.to_string()]["result"];
+        assert_eq!(answer["isError"], false, "{id}: {answer}");
+    }
+    let unread = answers["2"]["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap();
+    assert_eq!(serde_json::from_str::<Value>(unread).unwrap(), json!([]));
+    let saved = std::fs::read_to_string(&made).unwrap();
+    assert!(saved.contains("\"message\" \"made\""), "{saved}");
+    assert!(saved.contains("info_player_start"), "{saved}");
+    assert_eq!(
+        answers["5"]["result"]["isError"], true,
+        "a map there is not made again"
+    );
+}
+
+// No spec statement: P6-21: edit.repeat makes a map edit again, so its edit waits for review
+// as the edit's own tool's does
+#[test]
+fn a_repeated_map_edit_waits_for_review() {
+    let (server, map) = map_server("map-repeat", false);
+    let [init, initialized] = opening("2025-11-25");
+    let answers = exchange(
+        server,
+        &[
+            init,
+            initialized,
+            call(0, "map.open", &json!({ "path": map })),
+            call(
+                1,
+                "map.place",
+                &json!({ "classname": "info_player_start", "origin": [0.0, 0.0, 24.0] }),
+            ),
+            call(2, "map.accept", &json!({})),
+            call(3, "map.staged", &json!({})),
+            call(4, "edit.repeat", &json!({})),
+            call(5, "map.staged", &json!({})),
+        ],
+    );
+    let text = |id: &str| {
+        let answer = &answers[id]["result"];
+        assert_eq!(answer["isError"], false, "{id}: {answer}");
+        let text = answer["content"][0]["text"].as_str().unwrap();
+        serde_json::from_str::<Value>(text).unwrap()
+    };
+    assert_eq!(text("3"), json!([]), "the first edit was accepted");
+    text("4");
+    assert_eq!(text("5").as_array().unwrap().len(), 1, "the repeat waits");
+}
+
 // No spec statement: P6-36, P4-13: a read-only server refuses every map tool that writes,
 // map.open included, which replaces the open map; a map tool that reads is not refused
 #[test]
 fn a_read_only_server_refuses_the_map_tools_that_write() {
     let (server, map) = map_server("map-read-only", true);
     let [init, initialized] = opening("2025-11-25");
-    let writes: Vec<&str> = map_tools()
+    let offered = map_tools(&server);
+    let writes: Vec<&str> = offered
+        .iter()
         .filter(|tool| tool.access == Access::Write)
-        .map(|tool| tool.id)
+        .map(|tool| &*tool.id)
         .collect();
     for id in ["map.open", "map.place", "map.compile"] {
         assert!(writes.contains(&id), "{id}");
@@ -638,7 +777,6 @@ fn a_map_outside_the_write_roots_is_not_written() {
     let connected = Server::start(
         move || Connected::connect(&socket).map_err(|e| e.to_string()),
         settings,
-        &AGENT_TOOLS,
     )
     .unwrap();
     let [init, initialized] = opening("2025-11-25");

@@ -9,7 +9,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use qc_project::normalize;
-use qs_commands::{Command, NoParams, Outcome, RegisterError, Registry};
+use qs_commands::{Access, Command, NoParams, Outcome, RegisterError, Registry};
 use qs_git::{Change, DiffOf, GitError, Repo, Side};
 pub use qs_git::{ConflictIndex, HunkIndex};
 use schemars::JsonSchema;
@@ -344,11 +344,11 @@ fn repo<C: HasWorkbench>(context: &mut C) -> Result<Repo, GitCommandError> {
     context.workbench().repo()
 }
 
-/// Declares a command over the repository: its struct, id, summary, parameters, output and
+/// Declares a command over the repository: its struct, id, access, summary, parameters, output and
 /// body, which has `context` and `params` and returns the output.
 macro_rules! git_command {
     (
-        $name:ident, $id:expr, $summary:expr, $params:ty, $output:ty,
+        $name:ident, $id:expr, $access:expr, $summary:expr, $params:ty, $output:ty,
         |$context:ident, $params_name:ident| $body:block
     ) => {
         #[doc = concat!("`", stringify!($name), "`.")]
@@ -356,6 +356,7 @@ macro_rules! git_command {
 
         impl<C: HasWorkbench + 'static> Command<C> for $name {
             const ID: &'static str = $id;
+            const ACCESS: Access = $access;
             const SUMMARY: &'static str = $summary;
             type Params = $params;
             type Output = $output;
@@ -376,6 +377,7 @@ macro_rules! git_command {
 git_command!(
     StatusCommand,
     GIT_STATUS,
+    Access::Read,
     "Lists the project repository's branch and changed files, staged and not, as git status \
      does; none when the project is not in a git repository.",
     NoParams,
@@ -407,6 +409,7 @@ git_command!(
 git_command!(
     DiffCommand,
     GIT_DIFF,
+    Access::Read,
     "Lists the hunks of a file's unstaged or staged changes.",
     GitDiffParams,
     Vec<GitHunk>,
@@ -431,6 +434,7 @@ git_command!(
 git_command!(
     StageCommand,
     GIT_STAGE,
+    Access::Write,
     "Stages a file, or one hunk of its unstaged changes.",
     GitStageParams,
     (),
@@ -446,6 +450,7 @@ git_command!(
 git_command!(
     UnstageCommand,
     GIT_UNSTAGE,
+    Access::Write,
     "Unstages a file, or one hunk of its staged changes.",
     GitStageParams,
     (),
@@ -461,6 +466,7 @@ git_command!(
 git_command!(
     CommitCommand,
     GIT_COMMIT,
+    Access::Write,
     "Commits what is staged with a message; the new commit's id.",
     GitCommitParams,
     String,
@@ -470,6 +476,7 @@ git_command!(
 git_command!(
     BranchesCommand,
     GIT_BRANCHES,
+    Access::Read,
     "Lists the repository's local branches, the checked-out one marked.",
     NoParams,
     Vec<GitBranch>,
@@ -498,6 +505,7 @@ fn no_unsaved<C: HasWorkbench>(context: &mut C) -> Result<(), GitCommandError> {
 git_command!(
     SwitchCommand,
     GIT_SWITCH,
+    Access::Write,
     "Checks out a branch, as git switch does, and reads the project's files again; refused \
      while files have unsaved edits.",
     GitBranchParams,
@@ -515,6 +523,7 @@ git_command!(
 git_command!(
     CreateBranchCommand,
     GIT_CREATE_BRANCH,
+    Access::Write,
     "Creates a branch at the current commit and checks it out, as git switch -c does.",
     GitBranchParams,
     (),
@@ -526,6 +535,7 @@ git_command!(
 git_command!(
     LogCommand,
     GIT_LOG,
+    Access::Read,
     "Lists the commits that changed a file, the newest first, following renames.",
     GitLogParams,
     Vec<GitCommit>,
@@ -546,6 +556,7 @@ git_command!(
 git_command!(
     BlameCommand,
     GIT_BLAME,
+    Access::Read,
     "Says who last changed each line of a file, and in which commit.",
     GitPathParams,
     Vec<GitBlameLine>,
@@ -584,6 +595,7 @@ fn current_text<C: HasWorkbench>(context: &mut C, path: &Path) -> Result<String,
 git_command!(
     ConflictsCommand,
     GIT_CONFLICTS,
+    Access::Read,
     "Lists a file's merge conflicts: where each one's markers are.",
     GitPathParams,
     Vec<GitConflict>,
@@ -603,6 +615,7 @@ git_command!(
 git_command!(
     ResolveCommand,
     GIT_RESOLVE,
+    Access::Write,
     "Resolves one of a file's merge conflicts by keeping our side, theirs or both, and saves \
      the file.",
     GitResolveParams,
@@ -627,6 +640,7 @@ git_command!(
 git_command!(
     HeadTextCommand,
     GIT_HEAD_TEXT,
+    Access::Read,
     "Gives a file's text at HEAD, which the editor marks its changes against; none for a file \
      HEAD does not have.",
     GitPathParams,

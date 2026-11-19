@@ -233,6 +233,7 @@ struct CheckProject;
 
 impl<C: HasWorkbench + 'static> Command<C> for CheckProject {
     const ID: &'static str = CHECK_PROJECT;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Lists every error and warning in the open project, as the \
         Problems panel does.";
     type Params = NoParams;
@@ -426,6 +427,7 @@ struct ReadFile;
 
 impl<C: HasWorkbench + 'static> Command<C> for ReadFile {
     const ID: &'static str = READ_FILE;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Reads a file's current text: the editor's when it has \
         unsaved changes, else what is on disk.";
     type Params = SaveFileParams;
@@ -527,6 +529,7 @@ struct CodeActions;
 
 impl<C: HasWorkbench + 'static> Command<C> for CodeActions {
     const ID: &'static str = CODE_ACTIONS;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Lists the quick fixes for the diagnostics at a place in a \
         file: a missing builtin declared, a misspelled field corrected, an unused local removed, \
         a missing precache added.";
@@ -602,6 +605,7 @@ struct InlayHints;
 
 impl<C: HasWorkbench + 'static> Command<C> for InlayHints {
     const ID: &'static str = INLAY_HINTS;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Lists a file's inlay hints: the name of the parameter each \
         argument of a call is passed as.";
     type Params = SaveFileParams;
@@ -651,6 +655,7 @@ struct Definition;
 
 impl<C: HasWorkbench + 'static> Command<C> for Definition {
     const ID: &'static str = DEFINITION;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Finds where the name at a place is defined.";
     type Params = AtParams;
     type Output = Option<Place>;
@@ -674,6 +679,7 @@ struct References;
 
 impl<C: HasWorkbench + 'static> Command<C> for References {
     const ID: &'static str = REFERENCES;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Finds every declaration and use of the name at a place, in \
         every file.";
     type Params = AtParams;
@@ -711,6 +717,7 @@ struct HoverCommand;
 
 impl<C: HasWorkbench + 'static> Command<C> for HoverCommand {
     const ID: &'static str = HOVER;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Says what the name at a place is: its declaration and its \
         comment.";
     type Params = AtParams;
@@ -778,6 +785,7 @@ struct Complete;
 
 impl<C: HasWorkbench + 'static> Command<C> for Complete {
     const ID: &'static str = COMPLETE;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Lists the names that may be written at a place.";
     type Params = AtParams;
     type Output = Vec<Candidate>;

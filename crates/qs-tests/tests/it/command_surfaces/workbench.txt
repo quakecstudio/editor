@@ -84,6 +84,7 @@ map.make_brush_entity
 map.make_structural
 map.move
 map.move_to
+map.new
 map.open
 map.outline
 map.paste
