@@ -290,11 +290,7 @@ impl App {
                 self.map_keys.push(shortcut);
                 ctx.request_repaint();
             }
-            Chosen::Run(id) => {
-                if let Err(error) = self.shell.execute(id, serde_json::json!({})) {
-                    tracing::warn!(%error, command = id, "menu item failed");
-                }
-            }
+            Chosen::Run(id) => self.shell.run_chosen(id),
             Chosen::Choice(choice) => match choice {
                 MenuChoice::OpenFolder => self.shell.open_folder(),
                 MenuChoice::NewProject(template) => self.shell.new_project(template),

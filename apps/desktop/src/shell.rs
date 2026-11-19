@@ -1465,12 +1465,22 @@ impl Shell {
                 });
                 continue;
             }
-            if let Err(error) = self.session.execute(
-                &binding.command,
-                serde_json::Value::Object(serde_json::Map::new()),
-            ) {
-                tracing::warn!(%error, command = %binding.command, "shortcut failed");
-            }
+            self.run_chosen(&binding.command);
+        }
+    }
+
+    /// Runs the command `id` a key or a menu item chose, with no parameters. Play is run as
+    /// the toolbar's button runs it, so it shows why it failed and opens the guide to the
+    /// game's files when they are what it lacked (P3-21); the others have nowhere to show a
+    /// failure but the log.
+    pub fn run_chosen(&mut self, id: &str) {
+        if id == PLAY {
+            self.control(id);
+        } else if let Err(error) = self
+            .session
+            .execute(id, serde_json::Value::Object(serde_json::Map::new()))
+        {
+            tracing::warn!(%error, command = id, "command failed");
         }
     }
 

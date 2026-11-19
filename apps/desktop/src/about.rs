@@ -88,19 +88,17 @@ impl AboutWindow {
                             .color(muted),
                     );
                     ui.label(RichText::new(Text::AboutLicense.get()).small().color(muted));
-                    ui.horizontal(|ui| {
-                        for (text, url) in [(Text::AboutSite, SITE), (Text::AboutSource, SOURCE)] {
-                            let link = ui.link(text.get());
-                            // A link to a screen reader, named by its text.
-                            ui.ctx().accesskit_node_builder(link.id, |node| {
-                                node.set_role(egui::accesskit::Role::Link);
-                                node.set_label(text.get());
-                            });
-                            if link.clicked() {
-                                ui.ctx().open_url(egui::OpenUrl::new_tab(url));
-                            }
+                    for (text, url) in [(Text::AboutSite, SITE), (Text::AboutSource, SOURCE)] {
+                        let link = ui.link(text.get());
+                        // A link to a screen reader, named by its text.
+                        ui.ctx().accesskit_node_builder(link.id, |node| {
+                            node.set_role(egui::accesskit::Role::Link);
+                            node.set_label(text.get());
+                        });
+                        if link.clicked() {
+                            ui.ctx().open_url(egui::OpenUrl::new_tab(url));
                         }
-                    });
+                    }
                     if ui.button(Text::AboutClose.get()).clicked() {
                         close = true;
                     }

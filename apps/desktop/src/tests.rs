@@ -1478,6 +1478,54 @@ fn the_toolbar_opens_the_quake_files_guide_where_there_is_no_menu_bar() {
     assert!(harness.query_by_label(Text::GameGuide.get()).is_some());
 }
 
+// No spec statement: P3-21, Play that finds no game opens the guide to its files however it
+// was chosen: by its key and from the Run menu, as from the toolbar
+#[test]
+fn play_by_its_key_or_the_menu_opens_the_guide_when_there_is_no_game() {
+    let dir = TempDir::new("play-guide");
+    let project = dir.path().join("mod");
+    fs::create_dir_all(&project).unwrap();
+    fs::write(project.join("progs.src"), "progs.dat\nworld.qc\n").unwrap();
+    fs::write(project.join("world.qc"), "void() worldspawn = {};\n").unwrap();
+    let mut harness = Harness::builder()
+        .with_size([1440.0, 900.0])
+        .build_ui_state(
+            |ui, (app, chosen): &mut (Option<App>, Vec<menu::Chosen>)| {
+                if let Some(app) = app {
+                    app.frame_after(ui, std::mem::take(chosen));
+                }
+            },
+            (None, Vec::new()),
+        );
+    let mut app = App::checked_on_the_frame(&harness.ctx, None).unwrap();
+    app.shell.open_project(&project).unwrap();
+    harness.state_mut().0 = Some(app);
+    harness.run();
+    assert!(harness.query_by_label(Text::GameGuide.get()).is_none());
+
+    harness.key_press(egui::Key::F5);
+    harness.run();
+    harness.run();
+    assert!(
+        harness.query_by_label(Text::GameGuide.get()).is_some(),
+        "the key"
+    );
+    harness.get_by_label(Text::NotNow.get()).click();
+    harness.run();
+    assert!(harness.query_by_label(Text::GameGuide.get()).is_none());
+
+    harness
+        .state_mut()
+        .1
+        .push(menu::Chosen::Run(qs_workbench::PLAY));
+    harness.run();
+    harness.run();
+    assert!(
+        harness.query_by_label(Text::GameGuide.get()).is_some(),
+        "the menu"
+    );
+}
+
 // No spec statement: P4-28, File > Export Mod: with the menu in the window the toolbar's
 // Export Mod button, enabled once a project is open, writes the zip, and the status bar says
 // where it is

@@ -65,13 +65,15 @@ impl MenuBar {
             map: None,
             chosen: channel().1,
         };
+        let mut window = None;
+        let mut help = None;
         for spec in MENUS {
             let submenu = Submenu::new(spec.title.get(), true);
             bar.fill(&submenu, (spec.role, spec.items), layout, keymap)?;
             menu.append(&submenu)?;
             match spec.role {
-                Role::Window => submenu.set_as_windows_menu_for_nsapp(),
-                Role::Help => submenu.set_as_help_menu_for_nsapp(),
+                Role::Window => window = Some(submenu),
+                Role::Help => help = Some(submenu),
                 Role::Map => bar.map = Some((submenu, MapShown::Shown)),
                 Role::App | Role::Plain => {}
             }
@@ -85,6 +87,22 @@ impl MenuBar {
             wake();
         }));
         menu.init_for_nsapp();
+        // muda finds a menu to give AppKit one of these roles in the app's installed menu
+        // bar, so before the bar is installed either call does nothing, with no error: the
+        // Window menu would not list the open windows, and AppKit would put the Help
+        // search on a menu of its own choosing.
+        if let Some(window) = window {
+            window.set_as_windows_menu_for_nsapp();
+        }
+        if let Some(help) = help {
+            help.set_as_help_menu_for_nsapp();
+        }
+        if let Some(main) = objc2::MainThreadMarker::new() {
+            let app = objc2_app_kit::NSApplication::sharedApplication(main);
+            if app.windowsMenu().is_none() || app.helpMenu().is_none() {
+                tracing::warn!("the Window or Help menu did not take its role");
+            }
+        }
         Ok(bar)
     }
 
