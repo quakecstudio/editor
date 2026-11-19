@@ -16,5 +16,6 @@ on the issue on 2026-11-17.
 | The game docked beside the editor | Passed. The game's window sat 8 points right of the IDE's, their tops level; after the IDE was moved to (120, 80) it was at (1568, 80), and after the IDE was resized to 1200 by 800 at (1328, 80). With the IDE focused the game's window was in front of it, at window layer 3 over the IDE's 0. |
 | A click on an entity in the paused game | Not shown. `preview.pick`, which the click runs, answered no entity at any point of a grid over the game's window, from the start of `e1m1`, after walking forward, and aimed at each of the eighteen nearest monsters in turn; none was shown to be in sight. It needs a view with a solid entity in it. |
 
-Every call and its answer is in the session's log; the frames are the engine's own
-`engine.screenshot`.
+The frames read were the engine's own, written by `engine.screenshot`. The checks of the app's
+windows read each window's bounds and layer from the window server; no window was looked at
+by a person.
