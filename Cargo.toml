@@ -198,6 +198,7 @@ qs-map-bsp = { path = "crates/qs-map-bsp" }
 qs-map-light = { path = "crates/qs-map-light" }
 qs-map-vis = { path = "crates/qs-map-vis" }
 qc-diag = { path = "crates/qc-diag" }
+qc-entities = { path = "crates/qc-entities" }
 qc-lexer = { path = "crates/qc-lexer" }
 qc-lno = { path = "crates/qc-lno" }
 qc-preproc = { path = "crates/qc-preproc" }

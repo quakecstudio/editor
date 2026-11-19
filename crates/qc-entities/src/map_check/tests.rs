@@ -6,7 +6,7 @@
 )]
 
 use super::{EntitySchema, FieldValue, MapDiagnosticKind, distance};
-use crate::{Db, FileId, ModuleInput};
+use qc_sema::{Db, FileId, ModuleInput};
 
 /// A module as id's `defs.qc` declares its fields, with spawn functions that read them.
 const SOURCE: &str = "entity self; entity world; float time;\n\
@@ -29,7 +29,7 @@ fn schema() -> EntitySchema {
     db.set_file(FileId::new(0), "defs.qc".into(), SOURCE.as_bytes().to_vec());
     let mut input = ModuleInput::default();
     input.compiled.push(FileId::new(0));
-    db.entity_schema(&input)
+    EntitySchema::of_module(&mut db, &input)
 }
 
 /// The diagnostics of `map`, each as its entity, line and kind.

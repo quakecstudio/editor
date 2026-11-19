@@ -19,7 +19,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use qc_sema::{EntitySchema, MapDiagnosticKind};
+use qc_entities::{EntitySchema, MapDiagnosticKind};
 use qs_bsp::{Bsp, BspLoader};
 use qs_map::MapFile;
 use qs_pak::Pak;

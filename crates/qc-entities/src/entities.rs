@@ -11,7 +11,7 @@
 //! it and its code reads or writes a field of `self`: only the engine calls it then, by name.
 //! The engine's other entry points (EDICT-9.1) are left out.
 //!
-//! What each class reads comes from the intermediate layer (`crate::ir`), so it is the code as
+//! What each class reads comes from the intermediate layer (`qc_sema::ir`), so it is the code as
 //! the compiler generates it, through its own body, the functions it calls and the functions it
 //! stores in a field of `self` (its `use`, `touch` or `think`):
 //!
@@ -26,9 +26,11 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 
-use crate::ir::{BodyStatement, ImmediateKind, Name};
-use crate::{Db, DefId, DefKind, ModuleIndex, ModuleInput, SimpleType, Type, TypedBody};
 use qc_progs::Op;
+use qc_sema::ir::{BodyStatement, ImmediateKind, Name};
+use qc_sema::{
+    Db, DefId, DefKind, Definition, ModuleIndex, ModuleInput, SimpleType, Type, TypedBody,
+};
 
 /// The functions the engine calls by name that are not spawn functions (EDICT-9.1).
 const ENTRY_POINTS: [&str; 9] = [
@@ -146,14 +148,14 @@ struct Quaked {
     doc: Vec<String>,
 }
 
-impl Db {
-    /// The entity classes of the module `input` names, by classname.
-    pub fn entity_classes(&mut self, input: &ModuleInput) -> Vec<EntityClass> {
-        let analysis = self.analyze_module(input);
+impl EntityClass {
+    /// The entity classes of the module `input` names in `db`, by classname.
+    pub fn of_module(db: &mut Db, input: &ModuleInput) -> Vec<Self> {
+        let analysis = db.analyze_module(input);
         let mut comments = BTreeMap::new();
         let mut constants = HashMap::new();
         for &file in &input.compiled {
-            for (name, comment) in quaked_comments(self.file_text(file)) {
+            for (name, comment) in quaked_comments(db.file_text(file)) {
                 comments.entry(name).or_insert(comment);
             }
         }
@@ -161,7 +163,7 @@ impl Db {
             if def.kind != DefKind::Global || !def.initialized {
                 continue;
             }
-            let text = self.file_text(def.location.file);
+            let text = db.file_text(def.location.file);
             if let Some(value) = text.get(def.location.span.end..).and_then(literal_after) {
                 constants.entry(def.name.clone()).or_insert(value);
             }
@@ -170,7 +172,7 @@ impl Db {
             .index
             .defs()
             .iter()
-            .filter(|def| def.ty.key_type() == KeyType::Vector)
+            .filter(|def| KeyType::of(&def.ty) == KeyType::Vector)
             .map(|def| def.name.clone())
             .collect();
         Classes {
@@ -182,13 +184,13 @@ impl Db {
     }
 }
 
-impl Db {
-    /// The keys whose value names entities to fire, read from the module's code (MAP-8.8): a
-    /// field passed to `find` as the value to match against `targetname`, as
-    /// `find (world, targetname, self.target)` is, or compared with `targetname` by `==` or
-    /// `!=`. Sorted, each once.
-    pub fn targeting_keys(&mut self, input: &ModuleInput) -> Vec<String> {
-        let analysis = self.analyze_module(input);
+impl Key {
+    /// The names of the keys whose value names entities to fire, read from the code of the
+    /// module `input` names in `db` (MAP-8.8): a field passed to `find` as the value to match
+    /// against `targetname`, as `find (world, targetname, self.target)` is, or compared with
+    /// `targetname` by `==` or `!=`. Sorted, each once.
+    pub fn targeting(db: &mut Db, input: &ModuleInput) -> Vec<String> {
+        let analysis = db.analyze_module(input);
         let index = &analysis.index;
         let mut keys = std::collections::BTreeSet::new();
         for (id, def) in index.definitions() {
@@ -288,7 +290,7 @@ impl Classes<'_> {
         let mut classes = Vec::new();
         let mut seen = HashSet::new();
         for (id, def) in self.index.definitions() {
-            if def.kind != DefKind::Function || !def.ty.is_spawn() || !seen.insert(&def.name) {
+            if def.kind != DefKind::Function || !is_spawn(&def.ty) || !seen.insert(&def.name) {
                 continue;
             }
             let Some(body) = self.index.body(id) else {
@@ -486,7 +488,7 @@ impl Classes<'_> {
     }
 
     /// The field of `self` the statement names as `b`, when its `a` is `self`.
-    fn self_field(&self, statement: &BodyStatement) -> Option<&crate::Definition> {
+    fn self_field(&self, statement: &BodyStatement) -> Option<&Definition> {
         let (Some(Name::Def(entity, 0)), Some(Name::Def(field, 0))) = (statement.a, statement.b)
         else {
             return None;
@@ -520,14 +522,14 @@ impl Classes<'_> {
     }
 
     /// The key a field is: a vector's component is the vector (QC-11.7).
-    fn key_of(&self, field: &crate::Definition) -> (String, KeyType) {
+    fn key_of(&self, field: &Definition) -> (String, KeyType) {
         let parent = ["_x", "_y", "_z"]
             .iter()
             .find_map(|suffix| field.name.strip_suffix(suffix))
             .filter(|parent| self.vectors.contains(*parent));
         match parent {
             Some(parent) => (parent.to_owned(), KeyType::Vector),
-            None => (field.name.clone(), field.ty.key_type()),
+            None => (field.name.clone(), KeyType::of(&field.ty)),
         }
     }
 
@@ -742,25 +744,25 @@ fn literal_after(text: &[u8]) -> Option<Arg> {
     value.parse().ok().map(Arg::Float)
 }
 
-impl Type {
-    /// Whether `ty` is `void()`, the type the engine calls a spawn function as (EDICT-8.6).
-    fn is_spawn(&self) -> bool {
-        matches!(self, Type::Function(f)
-            if f.params.is_empty() && !f.variadic && f.ret == Type::Simple(SimpleType::Void))
-    }
+/// Whether `ty` is `void()`, the type the engine calls a spawn function as (EDICT-8.6).
+fn is_spawn(ty: &Type) -> bool {
+    matches!(ty, Type::Function(f)
+        if f.params.is_empty() && !f.variadic && f.ret == Type::Simple(SimpleType::Void))
+}
 
-    /// A field's key type.
-    fn key_type(&self) -> KeyType {
-        let Type::Field(inner) = self else {
-            return KeyType::Other;
+impl KeyType {
+    /// The key type of a field of type `ty`.
+    fn of(ty: &Type) -> Self {
+        let Type::Field(inner) = ty else {
+            return Self::Other;
         };
         match &**inner {
-            Type::Simple(SimpleType::Float) => KeyType::Float,
-            Type::Simple(SimpleType::Vector) => KeyType::Vector,
-            Type::Simple(SimpleType::String) => KeyType::String,
-            Type::Simple(SimpleType::Entity) => KeyType::Entity,
-            Type::Function(_) => KeyType::Function,
-            _ => KeyType::Other,
+            Type::Simple(SimpleType::Float) => Self::Float,
+            Type::Simple(SimpleType::Vector) => Self::Vector,
+            Type::Simple(SimpleType::String) => Self::String,
+            Type::Simple(SimpleType::Entity) => Self::Entity,
+            Type::Function(_) => Self::Function,
+            _ => Self::Other,
         }
     }
 }

@@ -89,6 +89,7 @@ README says more.
 | L2 | `qc-project` | QuakeC projects: quakec.toml, bare progs.src projects, and each module's ordered file graph |
 | L2 | `qc-syntax` | The QuakeC parser, for id's qcc and the FTEQCC dialects: a lossless, error-tolerant concrete syntax tree and a typed AST view |
 | L3 | `qc-engines` | The engine-target database: which builtins and extensions each Quake engine supports, and the missing-builtin diagnostic |
+| L3 | `qc-entities` | The entity classes a QuakeC module defines, their FGD export, and a map's entities checked against the progs |
 | L3 | `qc-ide` | The editor features of QuakeC Studio over the semantic model: navigation, rename, hover, completion, highlighting, inlay hints and diagnostics, with no protocol |
 | L3 | `qc-sema` | The incremental QuakeC semantic model: name resolution, types, and per-module symbol tables on salsa-style queries |
 | L4 | `qc-codegen` | The QuakeC compiler's code generator: lowers the semantic model to a version 6 progs.dat |
