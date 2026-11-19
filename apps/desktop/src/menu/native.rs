@@ -88,13 +88,20 @@ impl MenuBar {
         }));
         menu.init_for_nsapp();
         // muda finds a menu to give AppKit one of these roles in the app's installed menu
-        // bar, so before the bar is installed either call does nothing: the Window menu
-        // would not list the open windows, nor the Help menu have its search field.
+        // bar, so before the bar is installed either call does nothing, with no error: the
+        // Window menu would not list the open windows, and AppKit would put the Help
+        // search on a menu of its own choosing.
         if let Some(window) = window {
             window.set_as_windows_menu_for_nsapp();
         }
         if let Some(help) = help {
             help.set_as_help_menu_for_nsapp();
+        }
+        if let Some(main) = objc2::MainThreadMarker::new() {
+            let app = objc2_app_kit::NSApplication::sharedApplication(main);
+            if app.windowsMenu().is_none() || app.helpMenu().is_none() {
+                tracing::warn!("the Window or Help menu did not take its role");
+            }
         }
         Ok(bar)
     }

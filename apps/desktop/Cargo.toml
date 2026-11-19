@@ -81,7 +81,7 @@ muda = { workspace = true }
 # added between building eframe's event loop and running it.
 objc2 = { workspace = true, features = ["std"] }
 # NSWorkspace's Increase contrast and Reduce motion settings, which the theme follows (display.rs).
-objc2-app-kit = { workspace = true, features = ["std", "NSAccessibility", "NSApplication", "NSResponder", "NSWorkspace"] }
+objc2-app-kit = { workspace = true, features = ["std", "NSAccessibility", "NSApplication", "NSMenu", "NSResponder", "NSWorkspace"] }
 objc2-foundation = { workspace = true, features = ["std", "NSArray", "NSEnumerator", "NSProcessInfo", "NSString", "NSURL"] }
 winit = { workspace = true }
 
