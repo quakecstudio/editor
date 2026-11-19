@@ -20,7 +20,7 @@ use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::opcodes;
 use crate::check::opcodes::row;
-use crate::check::reference::{eval_int, word_type};
+use crate::check::reference::word_type;
 use crate::check::truth::Test;
 use crate::check::{Constness, Fold, Reference, Value, ValueUse};
 use crate::ir;
@@ -1059,21 +1059,11 @@ impl Checker<'_> {
         let Reference::Element(element) = &lhs.reference else {
             return;
         };
-        let Some(index) = element.index.known() else {
-            return;
-        };
-        if self.global {
+        if element.index.known().is_none() || self.global {
             return;
         }
         // The element's word, as a read of it at a constant index names it.
-        let word = eval_int(index).map(|word| u32::from_le_bytes(word.to_le_bytes()));
-        let to = word.and_then(|word| {
-            Value {
-                sym: lhs.sym.at(word),
-                ..Value::of(Type::Unknown)
-            }
-            .name()
-        });
+        let to = lhs.definition_place().and_then(|place| place.word());
         if folded {
             self.fold_into(stored, to);
         } else {

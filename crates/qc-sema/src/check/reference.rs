@@ -23,7 +23,9 @@ use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::member::WORD_ALIGNMENT;
 use crate::check::pointer::{Pointee, int};
-use crate::check::{Bitfield, ElementRef, FieldRef, MemberArray, Reference, Sym, Value};
+use crate::check::{
+    Bitfield, ElementRef, FieldRef, MemberArray, MemberStart, Reference, Sym, Value,
+};
 use crate::ir;
 use crate::ty::{SimpleType, Type};
 
@@ -540,10 +542,11 @@ impl Checker<'_> {
         // loaded into a temporary, and by the `ArrayGet` function into its return.
         // A constant vector's component at a constant index is still the immediate it
         // folded to (FTEF-31.9), a constant as `sym->constant` of the vector says.
-        let sym = match element.index.known().and_then(eval_int) {
-            _ if element.vector && value.known().is_some() => value.sym,
-            Some(words) => value.sym.at(u32::from_le_bytes(words.to_le_bytes())),
-            None => Sym::Temp,
+        let sym = if element.vector && value.known().is_some() {
+            value.sym
+        } else {
+            let place = value.definition_place();
+            place.and_then(|place| place.sym()).unwrap_or(Sym::Temp)
         };
         let name = if called {
             Some("return".to_owned())
@@ -1001,11 +1004,11 @@ impl Checker<'_> {
     /// with `OP_ADD_I` and else a float: `OP_ADD_F` of two floats, else `OP_ADD_I` of both made
     /// integers.
     fn member_array_index(&mut self, member: &MemberArray, at: &Value, span: Span) -> Checked {
-        // The struct an element at an index that is no constant: that index plus this one.
-        if let Some(outer) = &member.outer {
-            return self.joined_index(outer, at, span);
-        }
-        let word = i32::try_from(member.word).unwrap_or(i32::MAX);
+        let word = match &member.start {
+            // The struct an element at an index that is no constant: that index plus this.
+            MemberStart::Index(outer) => return self.joined_index(outer, at, span),
+            MemberStart::Word(word) => i32::try_from(*word).unwrap_or(i32::MAX),
+        };
         let int_target = self.env.target_at(span.start).valid(Op::AddI);
         let offset = if int_target {
             Value::constant(Constant::int(word))
@@ -1112,7 +1115,7 @@ impl Checker<'_> {
             // FTEF-6.24: a member array through a pointer is the pointer plus its offset.
             Reference::ArrayHead(Some(MemberArray {
                 through: Some(_),
-                word,
+                start: MemberStart::Word(word),
                 ..
             })) => {
                 let pointer = pointer_to(&value.ty);
@@ -1294,45 +1297,31 @@ impl Checker<'_> {
             self.env.report(Code::W0250, span, message);
         }
         // FTEF-31.28: the index is the reference's own, in words from the definition's
-        // start. A constant one is added to the word of a member read before it and
-        // the definition named whole; one that is no constant is of the definition at
-        // that word. A member of a definition that is no element is its word.
-        let (def, word) = match value.sym {
-            Sym::Def(def, _, word) => (Some(def), i32::try_from(word).ok()),
-            Sym::Temp | Sym::Immediate(_) => (None, None),
-        };
-        let whole = def.map(|def| ir::Name::Def(def, 0));
-        let constant = |words: i32| Some(Value::constant(Constant::int(words)));
-        let (base, index) = match &value.reference {
-            // A constant vector's component folded to its immediate has no word of the
-            // vector to address: not followed.
-            Reference::Element(_) if def.is_none() => (None, None),
-            Reference::Element(element) => {
-                match element.index.known().and_then(eval_int).zip(word) {
-                    Some((index, word)) => (whole, constant(index.wrapping_add(word))),
-                    None => (
-                        self.name_of(value),
-                        Some(self.converted(&element.index, Etype::Integer, span)?),
-                    ),
-                }
-            }
-            // FTEF-31.32: a struct's member array named bare is its address, the
-            // definition's at the member's index.
-            Reference::ArrayHead(Some(member)) => {
-                let index = match &member.outer {
-                    Some(outer) => Some(self.converted(outer, Etype::Integer, span)?),
-                    None => i32::try_from(member.word).ok().and_then(constant),
-                };
-                (whole, index)
-            }
-            // A member of a definition named as that definition's word; a parameter's or
-            // a temporary's is named as it is.
-            Reference::Global => match self.name_of(value) {
-                Some(ir::Name::Def(_, at)) if at != 0 => (whole, word.and_then(constant)),
-                named => (named, None),
+        // start. A constant one is the definition named whole and the words; one that is no
+        // constant is of the definition at the words known. A definition named alone, a
+        // parameter and a temporary are named as they are.
+        let place = value.definition_place();
+        let member = matches!(self.name_of(value), Some(ir::Name::Def(_, at)) if at != 0);
+        let (base, index) = match (&value.reference, place) {
+            (Reference::ArrayHead(None), _) => (self.name_of(value), None),
+            (Reference::Global, _) if !member => (self.name_of(value), None),
+            (_, Some(place)) => match place.index() {
+                Some(index) => (
+                    Some(place.start()),
+                    Some(self.converted(index, Etype::Integer, span)?),
+                ),
+                None => (
+                    Some(place.whole()),
+                    i32::try_from(place.words()).ok().map(int),
+                ),
             },
-            Reference::ArrayHead(None) => (self.name_of(value), None),
-            _ => (None, None),
+            // A constant vector's component folded to its immediate has no word of the
+            // vector to address, and a member array through a pointer is not a definition's.
+            (_, None) => (None, None),
+        };
+        let word = match value.sym {
+            Sym::Def(_, _, word) => Some(word),
+            Sym::Temp | Sym::Immediate(_) => None,
         };
         if self.global {
             return Ok(pointer_to(&value.ty));
