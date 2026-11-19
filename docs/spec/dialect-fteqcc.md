@@ -5894,6 +5894,19 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   (`OP_DIV_F`, `QCC_LoadFromArray`), which is not followed: `varr[i][1]` there is refused.
   Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`.
+- **FTEF-31.33** A class's member array is an array of fields, whatever its fields hold. At
+  an index that is no constant the index is checked against the array's length
+  (FTEF-31.24), multiplied by a vector's three words, and the field is loaded by
+  `OP_LOADA_FLD` of the array; the entity's field is then read or stored at it by the held
+  type's opcode: `i = ammo[n]` of `int ammo[4]` is `BOUNDCHECK n, 4; LOADA_FLD ammo, n;
+  LOADF_I self, field`. At a constant index the field is the array's definition at the
+  element's word. A component of an element of an array of vector fields is the float field
+  at the element's word plus the component's: at a constant index that word of the
+  definition, `x = vs[2].y` one `LOAD_F`; at any other the component's word is added to the
+  scaled index before the one `OP_LOADA_FLD` (`MUL_I n, 3; ADD_I t, 1; LOADA_FLD vs, t;
+  LOAD_F self, field`), and a store is `OP_STOREF_F` at that field. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseArrayPointer`, `QCC_LoadFromArray`; checked against the pinned FTEQCC's
+  output on an FTE target (2026-11-19).
 - **FTEF-31.30** The address of an element of an array of 8- or 16-bit integers is in bytes,
   which `OP_GLOBALADDRESS`'s index of words does not count (`if (basetype->align &&
   basetype->align!=32) { //urgh. OP_GLOBALADDRESS is in terms of words, while pointers are often
@@ -6215,7 +6228,16 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   the value it stores as its second argument by the same rule (FTEF-19.78). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_GenerateFunctionCallRef`.
-
+- **FTEF-32.28** An argument whose type is not its parameter's is read as a value and cast
+  before the call's arguments are stored (`else if (p && typecmp(e->cast, p)) e =
+  QCC_PR_BuildRef(&parambuf[arg], REF_GLOBAL, QCC_EvaluateCast(QCC_RefToDef(e, true), p,
+  true), nullsref, p, true, 0);`), so a field among them is loaded where it is written by its
+  own type's opcode and not by size into the parameter's slot (FTEF-32.19): a member of a
+  class's type passed as an `entity`, whose cast keeps its word, is `OP_LOAD_ENT`, where an
+  `entity` member passed as an `entity` is `OP_LOAD_F` into the slot. A float converted for an
+  `int` parameter is `OP_CONV_FTOI` where the target has it, the program's `ftoi` standing for
+  it only on a target without (FTEF-27.9). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall`; checked
+  against the pinned FTEQCC's output on an FTE target (2026-11-19).
 ## FTEF-33 Builtin argument checks
 
 **Source:** `qcc_pr_comp.c`, `QCC_VerifyFormatString`, `QCC_VerifyArgs_sendevent`,

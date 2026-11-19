@@ -261,8 +261,10 @@ impl Checker<'_> {
                 // FTEF-26.3: a float field of an `int` parameter is loaded straight into the
                 // slot of `ftoi`, whose value is the argument; FTEF-32.20: any other converted
                 // field argument is loaded where it is read and its value converted.
+                // The helper stands for `OP_CONV_FTOI` only on a target without the opcode.
                 let ftoi = (self.etype_of(&value.ty) == Some(Etype::Float)
-                    && self.etype_of(param) == Some(Etype::Integer))
+                    && self.etype_of(param) == Some(Etype::Integer)
+                    && !self.env.target_at(arg_span.start).valid(Op::ConvFtoi))
                 .then(|| self.env.helper("ftoi"))
                 .flatten();
                 let held = field_loads.last().is_some_and(|field| field.slot == at);
@@ -272,18 +274,18 @@ impl Checker<'_> {
                         value = self.ftoi_field(field, ftoi, param);
                         continue_after_conversion = true;
                     }
-                    // A cast that keeps the words, a class's entity as an `entity` among them,
-                    // leaves the held-back load as it is.
                     None => {
                         let converted = match (self.etype_of(&value.ty), self.etype_of(param)) {
                             (Some(from), Some(to)) => converts(from, to),
                             _ => true,
                         };
-                        // A converted field is read where it is written, as any value is,
-                        // and its value converted (`QCC_SupplyConversion` of the loaded
-                        // field): its held load goes back where it was.
-                        if converted
-                            && held
+                        // A field whose type is not the parameter's is read where it is
+                        // written, as any value is, by its own type's load, and its value
+                        // cast (`else if (p && typecmp(e->cast, p)) e = QCC_PR_BuildRef(...,
+                        // QCC_EvaluateCast(QCC_RefToDef(e, true), p, true), ...)`): its held
+                        // load goes back where it was, a class's entity passed as an `entity`
+                        // by `OP_LOAD_ENT` among them (FTEF-32.28).
+                        if held
                             && !self.global
                             && let Some(field) = field_loads.pop()
                         {

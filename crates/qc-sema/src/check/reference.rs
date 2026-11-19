@@ -631,12 +631,26 @@ impl Checker<'_> {
     ) -> Checked {
         // The index counts elements of the field's type, a vector's three words each.
         let at = self.scaled_index(&base.ty, at, span)?;
-        if at.known().is_some() {
-            return Ok(base);
+        // FTEF-31.33: at a constant index the element is the array's definition at the
+        // element's word, a field as any other.
+        if let Some(constant) = at.known() {
+            let element = eval_int(constant).and_then(|at| u32::try_from(at).ok());
+            return Ok(match &base.reference {
+                Reference::Field(field) => Value {
+                    reference: Reference::Field(Box::new(FieldRef {
+                        element,
+                        ..field.as_ref().clone()
+                    })),
+                    ..base
+                },
+                _ => base,
+            });
         }
+        // The array is of fields, whatever they hold: its element is loaded by
+        // `OP_LOADA_FLD`, after the index's bound is checked.
         let array = Value {
             sym: Sym::Def(def, false, 0),
-            ..Value::of(base.ty.clone())
+            ..Value::of(Type::Field(base.ty.clone().into()))
         };
         match self.load_from_array(&array, &at, ElementKind::Element, span)? {
             // FTEF-31.19: the field `OP_LOADA_*` loaded is the one the entity's is read or
@@ -658,6 +672,39 @@ impl Checker<'_> {
             ArrayRead::Called | ArrayRead::Block(_) => self.followed = false,
         }
         Ok(base)
+    }
+
+    /// FTEF-31.33: the float field at the word `at`, no constant, of the array of vector fields
+    /// `def` that `base` reads: loaded from the array by `OP_LOADA_FLD`, the field `component`
+    /// is then read or stored at.
+    pub(super) fn field_component(
+        &mut self,
+        base: &Value,
+        def: crate::DefId,
+        at: &Value,
+        component: Value,
+        span: Span,
+    ) -> Checked {
+        let float = Type::Simple(SimpleType::Float);
+        let array = Value {
+            sym: Sym::Def(def, false, 0),
+            ..Value::of(Type::Field(float.into()))
+        };
+        let (Reference::Field(field), ArrayRead::Loaded(loaded)) = (
+            &base.reference,
+            self.load_from_array(&array, at, ElementKind::Element, span)?,
+        ) else {
+            self.followed = false;
+            return Ok(component);
+        };
+        Ok(Value {
+            reference: Reference::Field(Box::new(FieldRef {
+                selected: self.name_of(&loaded),
+                ..field.as_ref().clone()
+            })),
+            readonly: base.readonly,
+            ..component
+        })
     }
 
     /// FTE-13.12: the struct element of `size` words at the float index `index`, read by the

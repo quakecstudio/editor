@@ -20,7 +20,7 @@ use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::pointer;
 use crate::check::reference::{eval_int, expected_after};
 use crate::check::{
-    Bitfield, Constness, ElementRef, FieldRef, MemberArray, MemberStart, Reference, Value,
+    Bitfield, Constness, ElementRef, FieldRef, MemberArray, MemberStart, Reference, Sym, Value,
 };
 use crate::ir;
 use crate::ty::{SimpleType, Type};
@@ -404,6 +404,69 @@ impl Checker<'_> {
                     readonly: base.readonly,
                     ..component
                 }
+            }
+            // FTEF-31.33: a component of an element of an array of vector fields is the field
+            // at the element's word plus the component's: at a constant index the array's
+            // definition there, at any other the field `OP_LOADA_FLD` loads at the index plus
+            // the component's word (`OP_ADD_I`), added before the load.
+            (_, Some(word))
+                if bare
+                    && !self.global
+                    && let Reference::Field(field) = &base.reference
+                    && field.selected.is_none()
+                    && let Some(element) = field.element =>
+            {
+                let word = u32::try_from(word).unwrap_or_default();
+                Value {
+                    reference: Reference::Field(Box::new(FieldRef {
+                        element: Some(element.saturating_add(word)),
+                        ..field.as_ref().clone()
+                    })),
+                    readonly: base.readonly,
+                    ..component
+                }
+            }
+            (_, Some(word))
+                if bare
+                    && !self.global
+                    && let Reference::Field(field) = &base.reference
+                    && let Some(selected) = field.selected
+                    && let Some(def) = field.def
+                    && let Some(load) = self
+                        .generated
+                        .last()
+                        .filter(|s| s.op == Op::LoadaFld && s.c == Some(selected))
+                        .copied() =>
+            {
+                let span = selector.syntax().span();
+                // The load of the vector's own field is not written: its index is.
+                self.generated.pop();
+                if let Some(temp) = self.last_temp.take() {
+                    self.env.temps().free(temp);
+                }
+                let integer = pointer::int(0).ty;
+                let index = match load.b {
+                    Some(ir::Name::Made(made)) => Value {
+                        made: Some(made),
+                        ..Value::of(integer)
+                    },
+                    Some(ir::Name::Def(index, word)) => Value {
+                        sym: Sym::Def(index, false, word),
+                        ..Value::of(integer)
+                    },
+                    _ => {
+                        self.followed = false;
+                        Value::of(integer)
+                    }
+                };
+                let word = i32::try_from(word).unwrap_or_default();
+                let at = self.emit(
+                    Op::AddI,
+                    &index,
+                    &Value::constant(Constant::int(word)),
+                    span,
+                )?;
+                self.field_component(base, def, &at, component, span)?
             }
             // FTEF-31.29: `a[i].y` of an array of vectors at an index no constant is the float
             // at the index plus the component's word, as a struct's member is.

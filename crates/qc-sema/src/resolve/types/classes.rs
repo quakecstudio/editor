@@ -256,6 +256,10 @@ impl<'a> Resolver<'a> {
                 if let Some(size) = &member.array
                     && let Some(facts) = self.facts.get_mut(id.index())
                 {
+                    // The suffix as it is written, `[N]`.
+                    let size = size.trim();
+                    let size = size.strip_prefix('[').unwrap_or(size);
+                    let size = size.strip_suffix(']').unwrap_or(size);
                     facts.array = Some(
                         size.trim()
                             .parse()

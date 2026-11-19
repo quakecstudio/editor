@@ -1070,8 +1070,9 @@ impl Checker<'_> {
             _ => None,
         };
         // `dest->index.cast->size == dest->cast->size`: not an array of fields named whole.
-        let whole_array =
-            field.selected.is_none() && field.def.is_some_and(|def| self.env.is_array(def));
+        let whole_array = field.selected.is_none()
+            && field.element.is_none()
+            && field.def.is_some_and(|def| self.env.is_array(def));
         // Two words with no `OP_STOREF_I64` are two `OP_STOREF_I`, which is not followed, as
         // is no store of two words through the field's address.
         if words == 2 && !valid(Op::StorefI64) {

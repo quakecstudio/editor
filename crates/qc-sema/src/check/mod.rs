@@ -588,6 +588,7 @@ impl Value {
                 entity: base.name(),
                 entity_call: base.call,
                 object: base.object,
+                element: None,
                 selected: None,
             })),
             ..Self::of(ty)
@@ -716,6 +717,10 @@ pub(crate) struct FieldRef {
     pub(crate) entity_call: Option<u32>,
     /// Which symbol the entity is ([`Object`]).
     pub(crate) object: Object,
+    /// FTEF-31.33: the word, within an array of fields, of the field a constant index (and a
+    /// vector's component after it) selected; `None` for the array named whole and for a
+    /// field that is no array's.
+    pub(crate) element: Option<u32>,
     /// FTEF-31.19: the field an array of fields' index that is no constant selected, the value
     /// of the statement that loaded it; the field is then that, not the definition.
     pub(crate) selected: Option<ir::Name>,
@@ -725,8 +730,10 @@ impl FieldRef {
     /// The field as an operand of a generated statement: the one an index selected, else the
     /// definition's.
     pub(crate) fn operand(&self) -> Option<ir::Name> {
-        self.selected
-            .or_else(|| self.def.map(|def| ir::Name::Def(def, 0)))
+        self.selected.or_else(|| {
+            self.def
+                .map(|def| ir::Name::Def(def, self.element.unwrap_or(0)))
+        })
     }
 }
 

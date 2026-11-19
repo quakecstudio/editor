@@ -7081,3 +7081,63 @@ fn random_is_the_targets_opcode_where_it_has_one() {
     // The store folds into the statement, whose value is then `x`.
     assert_eq!(t[0].c, global(&progs, "x"));
 }
+
+// spec FTEF-32.28: a field argument of another type than its parameter's is loaded by its own
+// type's opcode where it is written, a class's member passed as an `entity` by `OP_LOAD_ENT`;
+// one of the parameter's type is loaded by size into the slot
+#[test]
+fn a_field_argument_of_another_type_is_loaded_by_its_own_type() {
+    let progs = fte_progs(&format!(
+        "{CLASS_HEADER}void(float a, float b, entity c) take = #2;\n\
+         class base {{ base peer; entity plain; virtual void() Run; }};\n\
+         void base::Run(void) {{ take(1, 2, peer); take(1, 2, plain); }}\n"
+    ));
+    assert_eq!(
+        names_in(&progs, "base::Run"),
+        ["LOADF_ENT", "CALL3H", "LOADF_F", "CALL3H"]
+    );
+}
+
+// spec FTEF-32.28: the program's `ftoi` stands for `OP_CONV_FTOI` only where the target has no
+// such opcode
+#[test]
+fn ftoi_is_called_only_without_the_conversion_opcode() {
+    let source = "int(float f) ftoi = #1;\nvoid(float a, float b, int c) take = #2;\n\
+                  class base { float m; virtual void() Run; };\n\
+                  void base::Run(void) { take(1, 2, m); }\n";
+    let fte = fte_progs(&format!("{CLASS_HEADER}{source}"));
+    assert_eq!(
+        names_in(&fte, "base::Run"),
+        ["LOADF_F", "CONV_FI", "CALL3H"]
+    );
+}
+
+// spec FTEF-31.33: a member array's element at an index no constant is the field
+// `OP_LOADA_FLD` loads, after the index is checked and scaled, read or stored by the held
+// type's opcode; a vector element's component adds its word to the index before the one load
+#[test]
+fn a_member_array_is_an_array_of_fields() {
+    let of = |run: &str| {
+        let progs = fte_progs(&format!(
+            "{CLASS_HEADER}int i;\nentity e;\nvector v;\n\
+             class base {{ int ammo[4]; entity ents[4]; float fl[4]; vector vs[4]; \
+             virtual void() Run; }};\nvoid base::Run(void) {{ {run} }}\n"
+        ));
+        names_in(&progs, "base::Run")
+    };
+    assert_eq!(of("i = ammo[i];"), ["BOUNDCHECK", "LOADA_FLD", "LOADF_I"]);
+    assert_eq!(of("e = ents[i];"), ["BOUNDCHECK", "LOADA_FLD", "LOADF_ENT"]);
+    assert_eq!(of("fl[i] = x;"), ["BOUNDCHECK", "LOADA_FLD", "STOREF_F"]);
+    assert_eq!(
+        of("v = vs[i];"),
+        ["BOUNDCHECK", "MUL_I", "LOADA_FLD", "LOADF_V"]
+    );
+    assert_eq!(
+        of("x = vs[i].y;"),
+        ["BOUNDCHECK", "MUL_I", "ADD_I", "LOADA_FLD", "LOADF_F"]
+    );
+    assert_eq!(
+        of("vs[i].z = x;"),
+        ["BOUNDCHECK", "MUL_I", "ADD_I", "LOADA_FLD", "STOREF_F"]
+    );
+}
