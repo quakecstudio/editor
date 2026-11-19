@@ -412,18 +412,10 @@ impl Checker<'_> {
                     && element.index.known().is_none() =>
             {
                 let span = selector.syntax().span();
-                match u32::try_from(word).unwrap_or_default() {
-                    0 => Value {
-                        sym: base.sym,
-                        name: base.name.clone(),
-                        reference: base.reference.clone(),
-                        readonly: base.readonly,
-                        ..component
-                    },
-                    word => Value {
-                        readonly: base.readonly,
-                        ..self.element_member(base, element, component, word, span)?
-                    },
+                let word = u32::try_from(word).unwrap_or_default();
+                Value {
+                    readonly: base.readonly,
+                    ..self.element_member(base, element, component, word, span)?
                 }
             }
             // Another vector is read, a field's by `LOAD_V`, and the component is its word.
@@ -546,6 +538,7 @@ impl Checker<'_> {
             Reference::ArrayHead(Some(MemberArray {
                 length: member.length,
                 word: member.position.map_or(0, |position| position >> 5),
+                outer: None,
                 through: None,
             }))
         } else {
@@ -591,18 +584,15 @@ impl Checker<'_> {
                     ..member
                 }
             }
-            // `st.f` is the struct's own definition at the member's offset
-            // (`QCC_PR_BuildRef` of its sym), no temporary.
-            _ if member.is_array_head() => Value {
-                sym: base.sym.at(word),
-                name: base.name.clone(),
-                ..member
-            },
+            // FTEF-31.32: a member array of a definition's struct is the definition's own
+            // words from the member's, which its index counts from the definition's start.
+            _ if member.is_array_head() => {
+                let span = field.syntax().span();
+                self.member_array(base, member, word, span)?
+            }
             // `a[i].f` of an index no constant is the element at the index plus the
             // member's word.
-            Reference::Element(element)
-                if element.index.known().is_none() && word != 0 && !self.global =>
-            {
+            Reference::Element(element) if element.index.known().is_none() && !self.global => {
                 let span = field.syntax().span();
                 self.element_member(base, element, member, word, span)?
             }
@@ -615,8 +605,57 @@ impl Checker<'_> {
         })
     }
 
-    /// `a[i].f` of a struct array at an index no constant: the element at the index plus the
-    /// member's `word`, by `OP_ADD_I` of an integer index and `OP_ADD_F` of a float one.
+    /// FTEF-31.32: the member array `member`, at `word` of the struct `base`. The struct's
+    /// definition is named whole and the array starts at the words before it: the member's,
+    /// those of what the struct is a member of, and those of the element it is at a constant
+    /// index; at an index that is no constant, that index plus the member's word.
+    fn member_array(&mut self, base: &Value, member: Value, word: u32, span: Span) -> Checked {
+        let Reference::ArrayHead(Some(array)) = &member.reference else {
+            return Ok(member);
+        };
+        let Some((whole, before)) = base.sym.whole() else {
+            return Ok(Value {
+                sym: base.sym.at(word),
+                name: base.name.clone(),
+                ..member
+            });
+        };
+        let start = before.saturating_add(word);
+        let (word, outer) = match &base.reference {
+            Reference::Element(element) if !element.vector => {
+                match element.index.known().and_then(eval_int) {
+                    Some(index) => (
+                        start.saturating_add(u32::from_le_bytes(index.to_le_bytes())),
+                        None,
+                    ),
+                    None if self.global => (start, None),
+                    None => {
+                        let at = self.element_member(base, element, member.clone(), start, span)?;
+                        match at.reference {
+                            Reference::Element(at) => (0, Some(Box::new(at.index))),
+                            _ => (start, None),
+                        }
+                    }
+                }
+            }
+            _ => (start, None),
+        };
+        let reference = Reference::ArrayHead(Some(MemberArray {
+            word,
+            outer,
+            ..array.clone()
+        }));
+        Ok(Value {
+            sym: whole,
+            name: base.name.clone(),
+            reference,
+            ..member
+        })
+    }
+
+    /// `a[i].f` of an array at an index no constant: the element at the index plus the
+    /// member's `word`, by `OP_ADD_I` of an integer index and `OP_ADD_F` of a float one; at
+    /// word 0 the index itself.
     fn element_member(
         &mut self,
         base: &Value,
@@ -625,6 +664,14 @@ impl Checker<'_> {
         word: u32,
         span: Span,
     ) -> Checked {
+        if word == 0 {
+            return Ok(Value {
+                sym: base.sym,
+                name: base.name.clone(),
+                reference: base.reference.clone(),
+                ..member
+            });
+        }
         let (add, by) = match self.etype_of(&element.index.ty) {
             Some(Etype::Integer) => (
                 Op::AddI,

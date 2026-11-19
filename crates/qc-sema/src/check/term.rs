@@ -199,6 +199,22 @@ impl Checker<'_> {
         self.store_reference(operand, &updated, span)?;
         self.not_an_lvalue(operand, span);
         self.freed_again(operand, span);
+        // FTEF-31.31: an element at an index that is no constant, what a pointer points at and
+        // an entity's field are stored to by a statement of their own, and the value is the
+        // one stored.
+        let through = match &operand.reference {
+            Reference::Element(element) => element.index.known().is_none(),
+            Reference::Pointer(_) | Reference::Field(_) => true,
+            _ => false,
+        };
+        if through && updated.made.is_some() {
+            return Ok(Value {
+                readonly: true,
+                reference: Reference::Global,
+                ty: variable.ty,
+                ..updated
+            });
+        }
         // `QCC_StoreSRefToRef` folds the store into the operand, which is the value, read-only.
         Ok(Value {
             readonly: true,

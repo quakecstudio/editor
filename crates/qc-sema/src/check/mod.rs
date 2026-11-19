@@ -344,6 +344,14 @@ impl Sym {
         }
     }
 
+    /// The definition from its first word, and the word the value was at.
+    pub(crate) const fn whole(self) -> Option<(Self, u32)> {
+        match self {
+            Self::Def(def, constant, ofs) => Some((Self::Def(def, constant, 0), ofs)),
+            Self::Temp | Self::Immediate(_) => None,
+        }
+    }
+
     /// The same definition `words` further on (`ofs + words`); a temporary or an immediate at
     /// another word is none the comparison warnings know.
     pub(crate) const fn at(self, words: u32) -> Self {
@@ -430,6 +438,25 @@ impl Value {
             Sym::Def(def, _, word) => Some(ir::Name::Def(def, word)),
             Sym::Immediate(constant) => constant.immediate().map(ir::Name::Immediate),
             Sym::Temp => None,
+        }
+    }
+
+    /// An array's element at a constant index as the word of its definition it is; any other
+    /// value as it is.
+    pub(crate) fn placed(self) -> Self {
+        let words = match &self.reference {
+            Reference::Element(element) if !element.vector => {
+                element.index.known().and_then(reference::eval_int)
+            }
+            _ => None,
+        };
+        match words {
+            Some(words) => Self {
+                reference: Reference::Global,
+                sym: self.sym.at(u32::from_le_bytes(words.to_le_bytes())),
+                ..self
+            },
+            None => self,
         }
     }
 
@@ -580,14 +607,18 @@ pub(crate) struct StructMemberFacts {
     pub(crate) position: Option<u32>,
 }
 
-/// An array a struct's member is (FTEF-6.24): its first size, when the model knows it, and the
-/// word of the struct it starts at, which its index is added to.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// An array a struct's member is (FTEF-6.24): its first size, when the model knows it, and
+/// where it starts, which its index is added to.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct MemberArray {
     /// Its first size.
     pub(crate) length: Option<u32>,
-    /// The word of the struct it starts at.
+    /// The word it starts at: of the struct through a pointer, else of the definition the
+    /// struct is in, with the words of what it is a member or an element of before it.
     pub(crate) word: u32,
+    /// The index it starts at when the struct is an element at an index that is no constant:
+    /// that index with the member's word added, in place of `word`.
+    pub(crate) outer: Option<Box<Value>>,
     /// The pointer the struct is reached through, when it is, whose elements are read and
     /// stored through it (FTEF-31.21).
     pub(crate) through: Option<ir::Name>,
