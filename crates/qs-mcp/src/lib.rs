@@ -560,9 +560,9 @@ const DUPLEX_BUFFER: usize = 1 << 16;
 /// What the server tells a client's model about using it.
 const INSTRUCTIONS: &str = "QuakeC Studio's tools over the project this server was started on: \
     compile, test, run QuakeC in the VM, play scenarios, inspect and drive the running game, \
-    read files, stage edits as hunks and keep checkpoints; open a map, place and key its \
-    entities, build its brushes, compile it and find its leaks, each map edit staged for \
-    review. Paths are the project's, absolute or relative to it.";
+    read files, stage edits as hunks and keep checkpoints; make or open a map, place and \
+    key its entities, build its brushes, compile it and find its leaks, save it and play it, \
+    each map edit staged for review. Paths are the project's, absolute or relative to it.";
 
 /// A tool's result for `output`: its JSON as text, and as structured content when it is an
 /// object (MCP 2026-07-28, "Structured Content").

@@ -419,48 +419,98 @@ fn docking_with_no_game_is_kept_for_the_next() {
 }
 
 // No spec statement: P6-44: a pick whose ray hits no edict answers no edict, not the one
-// selected before
+// selected before; one that hits answers the edict it selected
 #[test]
 fn a_pick_that_misses_answers_no_edict() {
     let mut game = preview(None, None);
-    game.take_event(
-        "edict/list",
-        &json!({ "edicts": [{ "edict": 14, "classname": "door" }] }),
+    game.entities
+        .select(&json!({ "edict": 14, "classname": "door", "fields": [] }));
+    let selected = SelectedEntity::of(&game);
+    assert_eq!(
+        selected.classname.as_deref(),
+        Some("door"),
+        "an edict is selected"
     );
     let missed = SelectedEntity::picked(&game, None);
     assert_eq!((missed.edict, missed.classname), (None, None));
+    let hit = SelectedEntity::picked(&game, Some(14));
+    assert_eq!(hit.classname.as_deref(), Some("door"));
 }
 
-// No spec statement: P6-44, BSP-18.2: Play of a map the project compiled finds its BSP: the
-// one beside the `.map` is put in the mod's maps when none is there, with its `.lit`, and the
-// `.lit` of an older compile is removed; a map the project did not compile changes nothing
+// No spec statement: P6-44, BSP-18.2, BSP-19.1: Play of a map the project compiled finds its
+// BSP: the one beside the open map of that name, else the one in the project's maps, is put in
+// the mod's maps when none is there or an older one, with its `.lit` and `.ent`, and those of
+// an older compile are removed; a map the project did not compile, and a name that is no
+// file's name, change nothing
 #[test]
 fn a_compiled_map_is_put_where_the_game_reads_it() {
     let project = root("place-map");
     let maps = project.join("maps");
     let played = project.join("build").join("mod").join("maps");
     std::fs::create_dir_all(&maps).unwrap();
-    place_project_map(&project, "mod", "none").unwrap();
+    place_project_map(&project, "mod", "none", None).unwrap();
     assert!(!played.exists(), "no map of that name was compiled");
 
     std::fs::write(maps.join("room.bsp"), b"bsp one").unwrap();
     std::fs::write(maps.join("room.lit"), b"lit one").unwrap();
-    place_project_map(&project, "mod", "room").unwrap();
-    assert_eq!(std::fs::read(played.join("room.bsp")).unwrap(), b"bsp one");
-    assert_eq!(std::fs::read(played.join("room.lit")).unwrap(), b"lit one");
+    std::fs::write(maps.join("room.ent"), b"ent one").unwrap();
+    place_project_map(&project, "mod", "room", None).unwrap();
+    for (file, bytes) in [
+        ("room.bsp", "bsp one"),
+        ("room.lit", "lit one"),
+        ("room.ent", "ent one"),
+    ] {
+        assert_eq!(
+            std::fs::read_to_string(played.join(file)).unwrap(),
+            bytes,
+            "{file}"
+        );
+    }
 
     // A copy as new as the compile is kept: what a play from the map view wrote there.
     std::fs::write(played.join("room.bsp"), b"lit by play").unwrap();
-    place_project_map(&project, "mod", "room").unwrap();
+    place_project_map(&project, "mod", "room", None).unwrap();
     assert_eq!(
         std::fs::read(played.join("room.bsp")).unwrap(),
         b"lit by play"
     );
 
-    // A compile with no `.lit`, to a place with none of the map: the old `.lit` does not stay.
-    std::fs::remove_file(played.join("room.bsp")).unwrap();
+    // An older copy is replaced, and with a compile that has no `.lit` the old one goes.
+    let long_ago = std::time::SystemTime::UNIX_EPOCH;
+    std::fs::File::options()
+        .write(true)
+        .open(played.join("room.bsp"))
+        .unwrap()
+        .set_modified(long_ago)
+        .unwrap();
     std::fs::remove_file(maps.join("room.lit")).unwrap();
-    place_project_map(&project, "mod", "room").unwrap();
+    place_project_map(&project, "mod", "room", None).unwrap();
     assert_eq!(std::fs::read(played.join("room.bsp")).unwrap(), b"bsp one");
     assert!(!played.join("room.lit").exists());
+    assert!(played.join("room.ent").exists());
+
+    // The BSP beside the open map of that name is the one played, wherever the map is.
+    let elsewhere = project.join("fresh");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    std::fs::write(elsewhere.join("arena.bsp"), b"arena").unwrap();
+    place_project_map(&project, "mod", "arena", Some(&elsewhere)).unwrap();
+    assert_eq!(std::fs::read(played.join("arena.bsp")).unwrap(), b"arena");
+
+    // A name that is a path is the host's to refuse: nothing is read or written for it.
+    let outside = project.join("outside.bsp");
+    std::fs::write(&outside, b"outside").unwrap();
+    place_project_map(&project, "mod", "../outside", None).unwrap();
+    place_project_map(&project, "mod", "sub/room", None).unwrap();
+    assert!(
+        !project
+            .join("build")
+            .join("mod")
+            .join("outside.bsp")
+            .exists()
+    );
+    assert_eq!(
+        std::fs::read_dir(&played).unwrap().count(),
+        3,
+        "room's two and arena"
+    );
 }

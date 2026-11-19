@@ -634,6 +634,18 @@ impl Preview {
         map: Option<String>,
     ) -> Result<(), PreviewError> {
         let built = workbench.built_program()?;
+        // P6-44: a map the project compiled is read from where the game reads maps.
+        if let Some(name) = &map {
+            let beside = workbench
+                .map()
+                .filter(|open| {
+                    open.path()
+                        .file_stem()
+                        .is_some_and(|stem| stem == name.as_str())
+                })
+                .and_then(|open| open.path().parent().map(Path::to_path_buf));
+            place_project_map(&built.project, &built.mod_name, name, beside.as_deref())?;
+        }
         self.play_built(built, map)
     }
 
@@ -651,9 +663,6 @@ impl Preview {
             flavour,
         } = built;
         self.stop();
-        if let Some(name) = &map {
-            place_project_map(&project, &mod_name, name)?;
-        }
         // ADR-0008: the project's own game, the rerelease's files for a rerelease project.
         let (base, flavour) = game_base(self.config.game.as_deref(), flavour)?;
         self.flavour = flavour;
@@ -1332,33 +1341,57 @@ pub(crate) struct BuiltProgram {
 /// The directory of maps, in a project and in a game directory.
 const MAPS_DIR: &str = "maps";
 
-/// Puts the map `name` the project compiled, `maps/NAME.bsp` beside its `.map`, where the game
-/// reads maps, the mod's `maps` under `build`, when there is none there or an older one; with
-/// its `.lit`, and without the `.lit` of an older compile, which would colour it wrongly
-/// (BSP-18.2). A map the project did not compile is the game's own, and nothing is done.
-fn place_project_map(project: &Path, mod_name: &str, name: &str) -> Result<(), PreviewError> {
-    let made = |path: &Path| {
+/// The files of a compiled map the game reads beside each other: the BSP, its coloured light
+/// (BSP-18.2) and the entities that override its own (BSP-19.1).
+const MAP_FILES: [&str; 3] = ["bsp", "lit", "ent"];
+
+/// Puts the map `name` the project compiled where the game reads maps, the mod's `maps` under
+/// `build`, when none is there or an older one. The BSP is the one beside the open map, in
+/// `beside`, when that map is `name`, else the one in the project's `maps`; its `.lit` and
+/// `.ent` go with it, and those of an older compile do not stay, which would colour it or
+/// people it wrongly. A map the project did not compile is the game's own, and a name that is
+/// no file's name is the host's to refuse: nothing is done for either.
+fn place_project_map(
+    project: &Path,
+    mod_name: &str,
+    name: &str,
+    beside: Option<&Path>,
+) -> Result<(), PreviewError> {
+    if Path::new(name).file_name().is_none_or(|file| file != name) {
+        return Ok(());
+    }
+    let made = |path: PathBuf| {
         std::fs::metadata(path)
             .and_then(|file| file.modified())
             .ok()
     };
-    let from = project.join(MAPS_DIR);
-    let to = project.join("build").join(mod_name).join(MAPS_DIR);
-    let bsp = format!("{name}.bsp");
-    let Some(compiled) = made(&from.join(&bsp)) else {
+    let file = |extension: &str| format!("{name}.{extension}");
+    let maps = project.join(MAPS_DIR);
+    let folders = beside.into_iter().chain(std::iter::once(maps.as_path()));
+    let Some(from) = folders
+        .into_iter()
+        .find(|folder| folder.join(file("bsp")).is_file())
+    else {
         return Ok(());
     };
-    if made(&to.join(&bsp)).is_some_and(|there| there >= compiled) {
+    let to = project.join("build").join(mod_name).join(MAPS_DIR);
+    // The newest of what the compile and a save of the entities wrote.
+    let compiled = MAP_FILES
+        .iter()
+        .filter_map(|extension| made(from.join(file(extension))))
+        .max();
+    if made(to.join(file("bsp"))).is_some_and(|there| Some(there) >= compiled) {
         return Ok(());
     }
     let written = |path: PathBuf| move |error| PreviewError::Write(path, error);
     std::fs::create_dir_all(&to).map_err(written(to.clone()))?;
-    std::fs::copy(from.join(&bsp), to.join(&bsp)).map_err(written(to.join(&bsp)))?;
-    let lit = format!("{name}.lit");
-    if from.join(&lit).is_file() {
-        std::fs::copy(from.join(&lit), to.join(&lit)).map_err(written(to.join(&lit)))?;
-    } else if to.join(&lit).is_file() {
-        std::fs::remove_file(to.join(&lit)).map_err(written(to.join(&lit)))?;
+    for extension in MAP_FILES {
+        let (source, placed) = (from.join(file(extension)), to.join(file(extension)));
+        if source.is_file() {
+            std::fs::copy(&source, &placed).map_err(written(placed.clone()))?;
+        } else if placed.is_file() {
+            std::fs::remove_file(&placed).map_err(written(placed.clone()))?;
+        }
     }
     Ok(())
 }

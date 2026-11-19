@@ -514,13 +514,18 @@ pub struct MapOpenParams {
     pub path: PathBuf,
 }
 
+/// The key of an entity's class, and the world's.
+const CLASSNAME: &str = "classname";
+/// The world's classname.
+const WORLD_CLASSNAME: &str = "worldspawn";
+
 /// The parameters of `map.new`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MapNewParams {
-    /// The `.map` file to make; one that is there already is refused.
+    /// The `.map` file to make, in the open project; one that is there already is refused.
     pub path: PathBuf,
-    /// The world's keys and values besides its classname, in order, such as `wad`.
+    /// The world's keys and values, in order, such as `wad`; its classname is its own.
     #[serde(default)]
     pub keys: Vec<(String, String)>,
 }
@@ -1047,12 +1052,19 @@ impl<C: HasMap + 'static> Command<C> for MapNew {
         context: &mut C,
         MapNewParams { path, keys }: MapNewParams,
     ) -> Result<Outcome<MapOpened, C>, MapEditError> {
-        if path.exists() {
-            return Err(MapEditError::Exists { path });
+        // A `.map` in the open project: any other file would not open as the map made.
+        let root = context.map_project().project_root();
+        let is_map = path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case(MAP_EXTENSION));
+        if !is_map || root.is_some_and(|root| !path.starts_with(root)) {
+            return Err(MapEditError::NotNewMap { path });
         }
         let mut world = Entity::new();
-        let classname = ("classname".to_owned(), "worldspawn".to_owned());
-        for (key, value) in std::iter::once(&classname).chain(&keys) {
+        let classname = (CLASSNAME.to_owned(), WORLD_CLASSNAME.to_owned());
+        // The world's classname is its own: one among the keys is not taken.
+        let keys = keys.iter().filter(|(key, _)| key != CLASSNAME);
+        for (key, value) in std::iter::once(&classname).chain(keys) {
             world
                 .set(key.as_bytes(), value.as_bytes())
                 .map_err(|error| MapEditError::Map {
@@ -1069,7 +1081,16 @@ impl<C: HasMap + 'static> Command<C> for MapNew {
         if let Some(folder) = path.parent() {
             std::fs::create_dir_all(folder).map_err(saved)?;
         }
-        std::fs::write(&path, file.to_bytes()).map_err(saved)?;
+        // Made only when no file is there, so one made meanwhile is not written over.
+        let mut made = match std::fs::File::create_new(&path) {
+            Ok(made) => made,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                return Err(MapEditError::Exists { path });
+            }
+            Err(error) => return Err(saved(error)),
+        };
+        std::io::Write::write_all(&mut made, &file.to_bytes()).map_err(saved)?;
+        drop(made);
         let document = context.map_store().open_map(&path)?;
         Ok(Outcome::outside_history(MapOpened {
             path: document.path.clone(),

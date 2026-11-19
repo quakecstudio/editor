@@ -5344,7 +5344,7 @@ Parameters:
   "properties": {
     "keys": {
       "default": [],
-      "description": "The world's keys and values besides its classname, in order, such as `wad`.",
+      "description": "The world's keys and values, in order, such as `wad`; its classname is its own.",
       "items": {
         "maxItems": 2,
         "minItems": 2,
@@ -5361,7 +5361,7 @@ Parameters:
       "type": "array"
     },
     "path": {
-      "description": "The `.map` file to make; one that is there already is refused.",
+      "description": "The `.map` file to make, in the open project; one that is there already is refused.",
       "type": "string"
     }
   },

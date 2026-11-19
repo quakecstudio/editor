@@ -33,6 +33,11 @@ pub enum MapEditError {
         /// The file.
         path: PathBuf,
     },
+    /// A map to make whose file is no `.map`, or is outside the open project (`map.new`).
+    NotNewMap {
+        /// The file.
+        path: PathBuf,
+    },
     /// No project is open.
     NoProject,
     /// A prefab's name is not one its file can have: letters, digits, `-` and `_` (P6-23).
@@ -234,6 +239,11 @@ impl fmt::Display for MapEditError {
             }
             Self::NoFile { path } => write!(f, "{}: cannot be read", path.display()),
             Self::Exists { path } => write!(f, "{}: is there already", path.display()),
+            Self::NotNewMap { path } => write!(
+                f,
+                "{}: a new map is a .map file in the project",
+                path.display()
+            ),
             Self::NoProject => f.write_str("no project is open"),
             Self::PrefabName { name } => write!(
                 f,
@@ -344,6 +354,7 @@ impl Error for MapEditError {
             Self::Link { error } => Some(error),
             Self::NoFile { .. }
             | Self::Exists { .. }
+            | Self::NotNewMap { .. }
             | Self::NoProject
             | Self::PrefabName { .. }
             | Self::NoSelection

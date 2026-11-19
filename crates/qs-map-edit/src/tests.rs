@@ -495,4 +495,38 @@ fn a_new_map_holds_a_world_and_is_open() {
     let again = session.execute(MAP_NEW, json!({ "path": path }));
     assert!(again.unwrap_err().to_string().ends_with("is there already"));
     assert_eq!(std::fs::read_to_string(&path).unwrap(), written);
+
+    // The world keeps its classname whatever the keys say.
+    let world = dir.join("fresh/world.map");
+    session
+        .execute(
+            MAP_NEW,
+            json!({ "path": world, "keys": [["classname", "info_player_start"]] }),
+        )
+        .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&world).unwrap(),
+        "{\n\"classname\" \"worldspawn\"\n}\n"
+    );
+
+    // A file that is no `.map`, or is outside the project, is not made.
+    for refused in [dir.join("fresh/arena.bsp"), dir.join("fresh/notes.qc")] {
+        let answer = session.execute(MAP_NEW, json!({ "path": refused }));
+        assert!(
+            answer
+                .unwrap_err()
+                .to_string()
+                .ends_with("a new map is a .map file in the project"),
+            "{}",
+            refused.display()
+        );
+        assert!(!refused.exists(), "{}", refused.display());
+    }
+    let outside = dir.parent().unwrap().join("outside-new-map.map");
+    assert!(
+        session
+            .execute(MAP_NEW, json!({ "path": outside }))
+            .is_err()
+    );
+    assert!(!outside.exists());
 }
