@@ -31,6 +31,17 @@ use crate::lower::{Qualifier, declares};
 use crate::ty::{SimpleType, Type};
 use crate::{VECTOR_WORDS, VECTOR_WORDS_FLOAT};
 
+/// What a compound assignment updates in place through an address (FTEF-29.17, FTEF-29.22).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Through {
+    /// An entity's field, through `OP_ADDRESS` of the two.
+    Field,
+    /// What a pointer points at.
+    Pointer,
+    /// Neither: the left side is read, the operator applied and the result stored.
+    Nothing,
+}
+
 /// What an assignment operator stores (FTEF-29.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Assign {
@@ -507,6 +518,88 @@ impl Checker<'_> {
         self.emit(Op::BitorI, &cleared, &shifted, span)
     }
 
+    /// FTEF-29.17, FTEF-29.22: a compound assignment whose target has the in-place opcode
+    /// `op` for its types, to an entity's field or to what a pointer points at (`if (ops_ptr
+    /// && (lhsr->type == REF_FIELD || lhsr->type == REF_POINTER))`): the address, `OP_ADDRESS`
+    /// of the entity and the field, the pointer itself, or `OP_ADD_PIW` of the pointer and an
+    /// index (`QCC_PR_GenerateAddressOf`), then `op` of the value through it, whose result is
+    /// the assignment's value. `None` for any other target, which is read, operated on and
+    /// stored.
+    fn update_in_place(&mut self, lhs: &Value, rhs: &Value, op: Op) -> Option<Compounded> {
+        let through = match &lhs.reference {
+            Reference::Field(_) if !self.global => Through::Field,
+            Reference::Field(_) => return Some(Compounded::Unchecked),
+            // What is narrower than a word is addressed in bytes, which is not followed here.
+            Reference::Pointer(pointer)
+                if !self.global
+                    && pointer.named.is_some()
+                    && self
+                        .env
+                        .layout(&lhs.ty)
+                        .is_some_and(|l| l.bits == 0 || l.bits >= WORD_ALIGNMENT) =>
+            {
+                Through::Pointer
+            }
+            _ => Through::Nothing,
+        };
+        let address = match (&lhs.reference, through) {
+            (Reference::Field(field), Through::Field) => {
+                let Some(field_operand) = field.operand() else {
+                    self.followed = false;
+                    return Some(Compounded::Unchecked);
+                };
+                let address = self.next_made();
+                self.generated.push(ir::BodyStatement {
+                    a: self.copied(field.entity, field.entity_call),
+                    b: Some(field_operand),
+                    c: Some(ir::Name::Made(address)),
+                    ..ir::BodyStatement::bare(Op::Address)
+                });
+                Some(ir::Name::Made(address))
+            }
+            // An index of 0 adds nothing: the address is the pointer.
+            (Reference::Pointer(pointer), Through::Pointer) => match &pointer.index {
+                Some(index) if !index.null() => self
+                    .push_made(Op::AddPiw, pointer.named, self.name_of(index))
+                    .map(ir::Name::Made),
+                _ => pointer.named,
+            },
+            _ => return None,
+        };
+        // FTEF-29.18: an `ASSOC_RIGHT` opcode, `|=` and `&~=` of floats, has no result: the
+        // assignment's value is the value it was given.
+        if row(op).is_some_and(|r| r.assoc == opcodes::Assoc::Right) {
+            self.generated.push(ir::BodyStatement {
+                a: self.name_of(rhs),
+                b: address,
+                ..ir::BodyStatement::bare(op)
+            });
+            self.read_returned(rhs);
+            self.env.temps().take(1);
+            // `OpAssignsToC` is false of it, so no store folds into what came before.
+            self.last_temp = None;
+            return Some(Compounded::InPlace(rhs.clone()));
+        }
+        let result = self.next_made();
+        self.generated.push(ir::BodyStatement {
+            a: self.name_of(rhs),
+            b: address,
+            c: Some(ir::Name::Made(result)),
+            ..ir::BodyStatement::bare(op)
+        });
+        self.read_returned(rhs);
+        let temp = Some(self.env.temps().take(1));
+        // `OpAssignsToC`: `if(op >= OP_MULSTORE_F && op <= OP_SUBSTOREP_V) return false;`, so
+        // no store folds into one of those.
+        let folds = !(Op::MulstoreF.number()..=Op::SubstorepV.number()).contains(&op.number());
+        self.last_temp = temp.filter(|_| folds);
+        Some(Compounded::InPlace(Value {
+            made: Some(result),
+            temp,
+            ..Value::of(lhs.ty.clone())
+        }))
+    }
+
     /// FTEF-29.2: a compound assignment's opcode, the first of `ops` whose operands are the
     /// target's and the value's basic types, else after the value is cast to the target's type;
     /// "Type mismatch on assignment" when none. A field updated in place by an opcode of
@@ -532,52 +625,10 @@ impl Checker<'_> {
                         && r.types[2].etype() == to
                 })
         });
-        if let (Reference::Field(field), Some(op)) = (&lhs.reference, updates_in_place) {
-            // FTEF-29.17: `FLDADDRESS` of the entity and the field, then the in-place opcode of
-            // the value through that address, whose result is the assignment's value.
-            if !self.global {
-                let Some(field_operand) = field.operand() else {
-                    self.followed = false;
-                    return Ok(Compounded::Unchecked);
-                };
-                let address = self.next_made();
-                self.generated.push(ir::BodyStatement {
-                    a: self.copied(field.entity, field.entity_call),
-                    b: Some(field_operand),
-                    c: Some(ir::Name::Made(address)),
-                    ..ir::BodyStatement::bare(Op::Address)
-                });
-                // FTEF-29.18: an `ASSOC_RIGHT` opcode, `|=` and `&~=` of floats, has no result:
-                // the assignment's value is the value it was given.
-                if row(op).is_some_and(|r| r.assoc == opcodes::Assoc::Right) {
-                    self.generated.push(ir::BodyStatement {
-                        a: self.name_of(rhs),
-                        b: Some(ir::Name::Made(address)),
-                        ..ir::BodyStatement::bare(op)
-                    });
-                    self.read_returned(rhs);
-                    self.env.temps().take(1);
-                    // `OpAssignsToC` is false of it, so no store folds into what came before.
-                    self.last_temp = None;
-                    return Ok(Compounded::InPlace(rhs.clone()));
-                }
-                let result = self.next_made();
-                self.generated.push(ir::BodyStatement {
-                    a: self.name_of(rhs),
-                    b: Some(ir::Name::Made(address)),
-                    c: Some(ir::Name::Made(result)),
-                    ..ir::BodyStatement::bare(op)
-                });
-                self.read_returned(rhs);
-                let temp = Some(self.env.temps().take(1));
-                self.last_temp = temp;
-                return Ok(Compounded::InPlace(Value {
-                    made: Some(result),
-                    temp,
-                    ..Value::of(lhs.ty.clone())
-                }));
-            }
-            return Ok(Compounded::Unchecked);
+        if let Some(op) = updates_in_place
+            && let Some(updated) = self.update_in_place(lhs, rhs, op)
+        {
+            return Ok(updated);
         }
         // `lhsd = QCC_RefToDef(lhsr, false)`: the left side read, which for a string's character
         // is the load's own type (FTEF-31.18).

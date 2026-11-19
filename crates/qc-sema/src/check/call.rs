@@ -253,17 +253,20 @@ impl Checker<'_> {
                     load,
                     entity_call: field.entity_call,
                 });
-            } else if matches!(reference.reference, Reference::Element(_))
-                && !self.global
+            } else if matches!(
+                reference.reference,
+                Reference::Element(_) | Reference::Pointer(_)
+            ) && !self.global
                 && self.generated.len() > mark
                 && let Some(load) = self.generated.last().copied()
                 && Loada::of(load.op).is_some()
                 && value.made.is_some()
                 && load.c == value.made.map(ir::Name::Made)
             {
-                // FTEF-32.29: an array's element at an index no constant is loaded as the
-                // arguments are stored, after `self` is set, as a field is: the index is
-                // read and checked where it is written, the `OP_LOADA_*` held back.
+                // FTEF-32.29: an array's element at an index no constant, and what a pointer
+                // points at, is loaded as the arguments are stored, after `self` is set, as a
+                // field is: the index is read and checked where it is written, the
+                // `OP_LOADA_*` or `OP_LOADP_*` held back.
                 self.generated.pop();
                 field_loads.push(FieldLoad {
                     slot: at,
@@ -621,7 +624,9 @@ impl Checker<'_> {
         }
         // FTE-18.12: only the first store can fold, into the statement that made its
         // value; every later one follows a store or a load.
-        let mut first = field_loads.iter().all(|field| field.slot >= passed);
+        // The stores of `self` a method's call makes follow the arguments' statements too, so
+        // no store folds past them (FTEF-9.26).
+        let mut first = kept.is_none() && field_loads.iter().all(|field| field.slot >= passed);
         // FTEF-32.25: an argument in pieces is copied as it is read, before the others are
         // stored.
         for (at, value) in values.iter().take(passed).enumerate() {
@@ -1604,27 +1609,43 @@ impl Checker<'_> {
     }
 }
 
-/// An `OP_LOADA_*` by the words it loads, which an argument loaded into its parameter's slot
-/// is read by (`copyop[2] = OP_LOADA_V; copyop[1] = OP_LOADA_I64; copyop[0] = OP_LOADA_F;`).
+/// A load through an index, of an array's element or of what a pointer points at, by the
+/// words it loads: what an argument loaded into its parameter's slot is read by (`copyop[2] =
+/// OP_LOADA_V; copyop[1] = OP_LOADA_I64; copyop[0] = OP_LOADA_F;`, and `OP_LOADP_*` for
+/// `REF_POINTER`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Loada {
+    /// `OP_LOADA_*` of this size.
+    Array(Loaded),
+    /// `OP_LOADP_*` of this size.
+    Pointer(Loaded),
+}
+
+/// The words a load reads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Loaded {
     /// One word.
     Word,
-    /// Two words, `OP_LOADA_I64`.
+    /// Two words, a 64-bit value's.
     Pair,
-    /// Three words, `OP_LOADA_V`.
+    /// Three words, a vector's.
     Vector,
 }
 
 impl Loada {
-    /// The words `op` loads, if it is an `OP_LOADA_*`.
+    /// What `op` loads, if it is an `OP_LOADA_*` or an `OP_LOADP_*` of whole words.
     const fn of(op: Op) -> Option<Self> {
         match op {
             Op::LoadaF | Op::LoadaS | Op::LoadaEnt | Op::LoadaFld | Op::LoadaFnc | Op::LoadaI => {
-                Some(Self::Word)
+                Some(Self::Array(Loaded::Word))
             }
-            Op::LoadaI64 => Some(Self::Pair),
-            Op::LoadaV => Some(Self::Vector),
+            Op::LoadaI64 => Some(Self::Array(Loaded::Pair)),
+            Op::LoadaV => Some(Self::Array(Loaded::Vector)),
+            Op::LoadpF | Op::LoadpS | Op::LoadpEnt | Op::LoadpFld | Op::LoadpFnc | Op::LoadpI => {
+                Some(Self::Pointer(Loaded::Word))
+            }
+            Op::LoadpI64 => Some(Self::Pointer(Loaded::Pair)),
+            Op::LoadpV => Some(Self::Pointer(Loaded::Vector)),
             _ => None,
         }
     }
@@ -1632,9 +1653,12 @@ impl Loada {
     /// The opcode that loads these words whatever they are.
     const fn by_size(self) -> Op {
         match self {
-            Self::Word => Op::LoadaF,
-            Self::Pair => Op::LoadaI64,
-            Self::Vector => Op::LoadaV,
+            Self::Array(Loaded::Word) => Op::LoadaF,
+            Self::Array(Loaded::Pair) => Op::LoadaI64,
+            Self::Array(Loaded::Vector) => Op::LoadaV,
+            Self::Pointer(Loaded::Word) => Op::LoadpF,
+            Self::Pointer(Loaded::Pair) => Op::LoadpI64,
+            Self::Pointer(Loaded::Vector) => Op::LoadpV,
         }
     }
 }

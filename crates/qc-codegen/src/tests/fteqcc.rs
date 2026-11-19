@@ -4071,43 +4071,6 @@ fn a_static_locals_aggregate_is_its_initial_value() {
     assert!(body(p, "t").len() <= 1, "{:?}", body(p, "t").len());
 }
 
-// spec FTEF-31.22: a compound assignment through a pointer at an index is the member loaded
-// through the pointer, the operation, and the store back through it at the same index
-#[test]
-fn a_compound_assignment_through_a_pointer_loads_operates_and_stores() {
-    use qc_progs::Op;
-    let compiled = compile_fteqcc(
-        "#pragma target fte_5768\ntypedef struct { float a; string b; } s_t;\ns_t *g_s;\n\
-         void t() { g_s->a += 2; };\n",
-    )
-    .unwrap();
-    let number = |op: Op| u32::try_from(op.number()).unwrap();
-    let ops: Vec<_> = body(&compiled.progs, "t")
-        .iter()
-        .map(|s| (s.op, s.a, s.b, s.c))
-        .collect();
-    let pointer = global(&compiled.progs, "g_s");
-    let [load, add, store, _] = ops[..] else {
-        panic!("{ops:?}");
-    };
-    assert_eq!((load.0, load.1), (number(Op::LoadpF), pointer));
-    assert_eq!((add.0, add.1), (number(Op::AddF), load.3));
-    assert_eq!(
-        (store.0, store.1, store.2, store.3),
-        (number(Op::StorepF), add.3, pointer, load.2)
-    );
-    // At an index, the same: loaded at the index, operated on, stored back at it.
-    let compiled = compile_fteqcc(
-        "#pragma target fte_5768\ntypedef struct { float a; string b; } s_t;\ns_t *g_s;\n\
-         void t(int i) { g_s[i].a *= 3; };\n",
-    )
-    .unwrap();
-    let ops: Vec<u32> = body(&compiled.progs, "t").iter().map(|s| s.op).collect();
-    let mul = ops.iter().position(|&op| op == number(Op::MulF)).unwrap();
-    assert!(ops[..mul].contains(&number(Op::LoadpF)), "{ops:?}");
-    assert!(ops[mul..].contains(&number(Op::StorepF)), "{ops:?}");
-}
-
 // spec FTEF-30.18: a ternary of a float arm and an integer arm converts the integer last arm
 // before its store, and makes an integer first arm's store `OP_STORE_IF`
 #[test]
@@ -7280,4 +7243,61 @@ fn a_constant_locals_constant_value_is_its_initial_data() {
         "{head}void() f = {{ const float a = x; x = a; }};\n"
     ));
     assert_eq!(opcodes(&body(&stored, "f")), ops(&[StoreF, StoreF, Done]));
+}
+
+// spec FTEF-29.22: a compound assignment through a pointer is the in-place opcode through the
+// pointer, or through `OP_ADD_PIW` at an index other than 0; a store of its value folds into
+// none of them, a field's among them
+#[test]
+fn a_compound_assignment_through_a_pointer_updates_in_place() {
+    let head = "#pragma target fte\nentity e;\n.float health;\nfloat x, d;\nint i;\nvector v;\n\
+                typedef struct { float t; float amp; vector pos; int n; } seat_t;\n\
+                seat_t *p;\nfloat *fp;\n";
+    let of = |body: &str| names_of(&format!("{head}void() f = {{ {body} }};\n"));
+    assert_eq!(of("p->t -= d;"), ["SUBSTOREP_F"]);
+    assert_eq!(of("p->amp *= 2;"), ["ADD_PIW", "MULSTOREP_F"]);
+    assert_eq!(of("p->pos += v;"), ["ADD_PIW", "ADDSTOREP_V"]);
+    assert_eq!(of("*fp += 1;"), ["ADDSTOREP_F"]);
+    assert_eq!(of("fp[i] -= x;"), ["ADD_PIW", "SUBSTOREP_F"]);
+    assert_eq!(of("x = (p->t -= 1);"), ["SUBSTOREP_F", "STORE_F"]);
+    assert_eq!(
+        of("x = (e.health += 1);"),
+        ["FLDADDRESS", "ADDSTOREP_F", "STORE_F"]
+    );
+    // An integer's has no in-place opcode on this target.
+    assert_eq!(
+        of("i = (p->n += 2i);"),
+        ["LOADP_I", "ADD_I", "STOREP_I", "STORE_I"]
+    );
+    let progs = fte_progs(&format!("{head}void() f = {{ p->t -= d; }};\n"));
+    let t = body(&progs, "f");
+    assert_eq!((t[0].a, t[0].b), (global(&progs, "d"), global(&progs, "p")));
+}
+
+// spec FTEF-32.29, FTEF-9.26: what a pointer points at, passed to a method, is loaded after
+// `self` is set, and an argument's store folds into no statement before the stores of `self`
+#[test]
+fn a_methods_arguments_are_stored_after_self_is_set() {
+    let progs = fte_progs(&format!(
+        "{CLASS_HEADER}float time;\nentity e;\nint i;\n\
+         typedef struct {{ string name; float n; }} rec_t;\nrec_t *recs;\n\
+         class base {{ virtual void(string m) SetModel; \
+         virtual void(float a, float b, float c) Three; virtual void() Run; }};\n\
+         void base::SetModel(string m) {{ }}\nvoid base::Three(float a, float b, float c) {{ }}\n\
+         void base::Run(void) {{ base o = (base)e; SetModel(recs[i].name); \
+         o.Three(1, 2, time - x); }}\n"
+    ));
+    let names = names_in(&progs, "base::Run");
+    let at = |name: &str| names.iter().position(|n| *n == name).unwrap();
+    // The dereference follows the two stores of `self`.
+    assert_eq!(
+        names[at("LOADP_S") - 2..=at("LOADP_S")],
+        ["STORE_ENT", "STORE_ENT", "LOADP_S"]
+    );
+    // The difference is stored to its slot after them, not made in it.
+    let tail = &names[at("SUB_F")..];
+    assert_eq!(
+        tail[..5],
+        ["SUB_F", "STORE_ENT", "STORE_ENT", "STORE_F", "CALL3H"]
+    );
 }

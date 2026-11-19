@@ -617,7 +617,7 @@ fn parameter_forms_resolve() {
     assert!(func.params.is_empty());
 }
 
-// spec FTEF-31.22: a store through a pointer of a value no one `STOREP_*` stores, a narrow integer
+// spec FTEF-29.22: a store through a pointer of a value no one `STOREP_*` stores, a narrow integer
 // here, is not followed; a float's compound one is
 #[test]
 fn a_narrow_store_through_a_pointer_is_not_followed() {

@@ -988,7 +988,9 @@ heavily class-based (547 `class` declarations across the three mods).
   `self`'s storage (`QCC_PR_DummyDef(pr_classtype, "this", pr_scope, 0, ..., GDF_CONST|
   GDF_STRIP|GDF_ALIAS)`), so `M()` and `self.M()` there keep `self`, store `self` to `self`
   and restore it: `LOADF_FNC self, C::__mM; STORE_ENT self, oself; STORE_ENT self, self; CALL0;
-  STORE_ENT oself, self`. Once a function has made that definition the name `this` finds it
+  STORE_ENT oself, self`. The stores of `self` follow the arguments' own statements, so no
+  argument's store folds past them into the statement that made its value. Once a function
+  has made that definition the name `this` finds it
   before the keyword is tried, so every later `this.M()` in the function keeps and restores
   `self` too. Outside a class's function `self.M()` changes nothing. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_GenerateFunctionCallRef`, `QCC_PR_ParseFunctionCall`,
@@ -5431,7 +5433,25 @@ whether it is the result of a postfix `++` or `--`. The semantic model checks as
   by another function and compared once (FTE-14.9). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_StoreSRefToRef`, `QCC_TryEvaluateCast`; `engine/qclib/qcc_pr_lex.c`, `typecmp_lax`.
-
+- **FTEF-29.22** A compound assignment to what a pointer points at is updated in place as
+  a field is (FTEF-29.17), where the target has the opcode for its types: `if (ops_ptr &&
+  (lhsr->type == REF_FIELD || lhsr->type == REF_POINTER))`, then `lhsr =
+  QCC_PR_GenerateAddressOf(&ptr, lhsr); ... rhsd = QCC_PR_Statement(op, rhsd, lhsd, NULL);`.
+  The address is the pointer itself, or at an index `OP_ADD_PIW` of the pointer and the index
+  (`addr = QCC_PR_Statement(&pr_opcodes[OP_ADD_PIW], operand->base, ...)`), an index of 0
+  adding nothing: `p->t -= d` of a first member is `SUBSTOREP_F d, p`, and `p->amp *= 2` of
+  a second `ADD_PIW p, 1; MULSTOREP_F 2, temp`. A store of the assignment's value folds into
+  no opcode from `OP_MULSTORE_F` to `OP_SUBSTOREP_V` (`OpAssignsToC`: `if(op >=
+  OP_MULSTORE_F && op <= OP_SUBSTOREP_V) return false;`), a field's among them, so `x = (p->t
+  -= 1)` and `x = (e.health += 1)` end with `STORE_F temp, x`. Where the target has no such
+  opcode for the types, an integer member's on `fte`, the member is loaded through the
+  pointer, the operation applied and the result stored back through it: `p->n += 2i` is
+  `LOADP_I; ADD_I; STOREP_I`. A type narrower than a word is addressed in bytes, which this
+  compiler reads, updates and stores instead. A store through a pointer of a value no one
+  `STOREP_*` stores, a narrow integer, a bitfield, a 64-bit value or a struct, is not
+  followed. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_RefExpression`,
+  `QCC_PR_GenerateAddressOf`, `OpAssignsToC`; checked against the pinned FTEQCC's output on
+  an FTE target (2026-11-19).
 ## FTEF-30 Terms
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_RefTerm`, `QCC_PR_GenerateLogicalTruth`,
@@ -5805,15 +5825,8 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   `QCC_LoadFromPointer`, `QCC_StoreToPointer`. Checked against the pinned FTEQCC's `-Fwasm`
   output for `g_s[i].b = "x"`, `r = g_s[i].a`, `g_s->a = 2`, `r = g_s->a` and
   `g_s[f].v = '1 2 3'`.
-- **FTEF-31.22** A compound assignment through a pointer, `p->a += 2` or `p[i].a *= 3`, is in
-  FTEQCC the in-place opcode of the operation through the pointer, `ADDSTOREP_F 2f, g_s,
-  temp_0`, with the index added to the pointer first by `OP_ADD_PIW` (the pinned FTEQCC's
-  `-Fwasm` output). Our compiler writes the member loaded through the pointer at the index
-  (FTEF-31.21), the operation, and the store back through the pointer at the same index, an
-  index that is no integer converted for each. That leaves the same value in memory with
-  different opcodes, a divergence from FTEQCC's output. A store through a pointer of a value no
-  one `STOREP_*` stores, a narrow integer, a bitfield, a 64-bit value or a struct, is not
-  followed.
+- **FTEF-31.22** **Withdrawn** 2026-11-19: it recorded our load, operation and store where
+  FTEQCC updates in place, a divergence since ported; replaced by FTEF-29.22.
 - **FTEF-31.23** **Withdrawn** 2026-11-18: it gave the statement an index only for an element
   at an index that is no constant, where FTEQCC writes a constant index and a member's word
   too. Replaced by FTEF-31.28.
@@ -6242,8 +6255,10 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   `int` parameter is `OP_CONV_FTOI` where the target has it, the program's `ftoi` standing for
   it only on a target without (FTEF-27.9). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall`; checked
   against the pinned FTEQCC's output on an FTE target (2026-11-19).
-- **FTEF-32.29** An argument that is an array's element at an index no constant is, on a
-  target with `OP_LOADA_F`, loaded as the arguments are stored, after `self` is set for a
+- **FTEF-32.29** An argument that is an array's element at an index no constant on a
+  target with `OP_LOADA_F`, or what a pointer points at (`case REF_POINTER: ... copyop[2] =
+  OP_LOADP_V; copyop[1] = OP_LOADP_I64; copyop[0] = OP_LOADP_F;`), is loaded as the
+  arguments are stored, after `self` is set for a
   method's call (FTEF-9.26), as a field argument is (FTEF-32.19): the index is read, made an
   integer and checked where the argument is written, and the load follows the stores of
   `self`. One of the call's own two operands is loaded by its element's opcode into a
