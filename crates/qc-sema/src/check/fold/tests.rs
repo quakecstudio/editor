@@ -5,7 +5,7 @@
 
 use qc_progs::Op;
 
-use super::{Folded, Notice, fold};
+use super::{Folded, Notice, fold, string_call};
 use crate::check::constant::Constant;
 
 /// The folding of `op` and the messages it gives.
@@ -141,4 +141,40 @@ fn right_operand_divisions() {
     assert_eq!(by_zero, ["Division by 0"]);
     let (_, fine) = folded(Op::DivI, None, Some(Constant::int(2)));
     assert!(fine.is_empty());
+}
+
+// spec FTEF-32.32: `strlen` of a string constant is the count of its bytes before a 0, and is
+// called when a byte has its high bit set; `stof` is C's `atof`, the longest number at the
+// start after white space and a sign, 0 when there is none
+#[test]
+fn a_string_constant_call_folds_as_c_reads_it() {
+    let value = |name: &str, text: &[u8]| string_call(name, text).map(Constant::f);
+    assert_eq!(value("strlen", b""), Some(0.0));
+    assert_eq!(value("strlen", b"valve"), Some(5.0));
+    assert_eq!(value("strlen", b"ab\0cd"), Some(2.0));
+    assert_eq!(value("strlen", b"a\x80"), None);
+    assert_eq!(value("strcat", b"a"), None);
+    for (text, number) in [
+        (&b""[..], 0.0),
+        (b"abc", 0.0),
+        (b"12.5x", 12.5),
+        (b" \t-3", -3.0),
+        (b"+.5e+1", 5.0),
+        (b"7e", 7.0),
+        (b"7e-", 7.0),
+        (b".e5", 0.0),
+        (b"5.", 5.0),
+        (b"1e2", 100.0),
+        (b"0x1.8p1z", 3.0),
+        (b"-0X10", -16.0),
+        (b"0x", 0.0),
+        (b"0x.8p-1", 0.25),
+        (b"0x1p", 1.0),
+        (b"Infinity", f32::INFINITY),
+        (b"-inf", f32::NEG_INFINITY),
+        (b"1e999", f32::INFINITY),
+    ] {
+        assert_eq!(value("stof", text), Some(number), "{text:?}");
+    }
+    assert!(value("stof", b"NaN").is_some_and(f32::is_nan));
 }

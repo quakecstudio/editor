@@ -20,7 +20,7 @@ use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::pointer;
 use crate::check::reference::{eval_int, expected_after};
 use crate::check::{
-    Bitfield, Constness, ElementRef, FieldRef, MemberArray, MemberStart, Reference, Value,
+    Bitfield, Constness, ElementRef, FieldRef, MemberArray, MemberStart, Reference, Sym, Value,
 };
 use crate::ir;
 use crate::ty::{SimpleType, Type};
@@ -39,6 +39,22 @@ enum BaseForm {
     /// In parentheses.
     Parenthesized,
 }
+
+/// The opcodes that load a value an index reads through, a pointer or an entity: an entity's
+/// field, an array's element, or what another pointer points at.
+const POINTER_LOADS: [Op; 11] = [
+    Op::LoadEnt,
+    Op::LoadaEnt,
+    Op::LoadpEnt,
+    Op::LoadI,
+    Op::LoadP,
+    Op::LoadF,
+    Op::LoadaI,
+    Op::LoadaF,
+    Op::LoadpI,
+    Op::LoadpP,
+    Op::LoadpF,
+];
 
 impl Checker<'_> {
     /// The value of the member access `field` (FTEF-24).
@@ -214,6 +230,7 @@ impl Checker<'_> {
     /// parentheses after `.`, must be a field, whose value is what the field holds; anything else
     /// is "NAME is not a field", or "NAME is not a field of class CLASS" on a class's value.
     fn entity_field(&mut self, base: &Value, selector: &ast::Expr) -> Checked {
+        let mut selected = None;
         let field = match selector {
             ast::Expr::Name(name_ref) => {
                 let Some(token) = name_ref.name() else {
@@ -286,7 +303,20 @@ impl Checker<'_> {
                 }
                 let span = selector.syntax().span();
                 let label = value.label();
-                (value.ty, label, span, value.sym.def())
+                // FTEF-24.17: a selector that is no definition read directly, `e.(o.fld)`, is
+                // read where it is written, and the field is its value (`QCC_RefToDef(field,
+                // true)`).
+                if value.reference != Reference::Global {
+                    let (ty, def) = (value.ty.clone(), value.sym.def());
+                    let read = self.read(value, span)?;
+                    selected = self.name_of(&read);
+                    if selected.is_none() {
+                        self.followed = false;
+                    }
+                    (ty, label, span, def)
+                } else {
+                    (value.ty, label, span, value.sym.def())
+                }
             }
             other => {
                 self.expr(other)?;
@@ -294,20 +324,26 @@ impl Checker<'_> {
             }
         };
         let (ty, label, span, def) = field;
+        let selecting = |mut value: Value| {
+            if let (Reference::Field(field), Some(selected)) = (&mut value.reference, selected) {
+                field.selected = Some(selected);
+            }
+            value
+        };
         match self.env.shape(&ty).map(|s| s.etype) {
             Some(Etype::Field) => {
                 let held = match ty {
                     Type::Field(held) => held.as_ref().clone(),
                     other => other,
                 };
-                Ok(Value::field_of(base, label, held, def))
+                Ok(selecting(Value::field_of(base, label, held, def)))
             }
-            Some(Etype::Variant) => Ok(Value::field_of(
+            Some(Etype::Variant) => Ok(selecting(Value::field_of(
                 base,
                 label,
                 Type::Named("__variant".into()),
                 def,
-            )),
+            ))),
             None => Ok(Value::unknown()),
             Some(_) => {
                 let message = match &base.ty {
@@ -341,6 +377,49 @@ impl Checker<'_> {
             self.env.report(Code::E0319, span, message);
         }
         Value::field_of(base, name.to_owned(), Type::Named("__variant".into()), None)
+    }
+
+    /// FTEF-31.33: the component `word` of the element the `OP_LOADA_FLD` `load` just
+    /// selected from the array of vector fields `def`: the load is not written, the word is
+    /// added to its index, and the float field is loaded there.
+    fn indexed_component(
+        &mut self,
+        base: &Value,
+        def: crate::DefId,
+        load: ir::BodyStatement,
+        word: usize,
+        component: Value,
+        selector: &ast::Expr,
+    ) -> Checked {
+        let span = selector.syntax().span();
+        // The load of the vector's own field is not written: its index is.
+        self.generated.pop();
+        if let Some(temp) = self.last_temp.take() {
+            self.env.temps().free(temp);
+        }
+        let integer = pointer::int(0).ty;
+        let index = match load.b {
+            Some(ir::Name::Made(made)) => Value {
+                made: Some(made),
+                ..Value::of(integer)
+            },
+            Some(ir::Name::Def(index, word)) => Value {
+                sym: Sym::Def(index, false, word),
+                ..Value::of(integer)
+            },
+            _ => {
+                self.followed = false;
+                Value::of(integer)
+            }
+        };
+        let word = i32::try_from(word).unwrap_or_default();
+        let at = self.emit(
+            Op::AddI,
+            &index,
+            &Value::constant(Constant::int(word)),
+            span,
+        )?;
+        self.field_component(base, def, &at, component, span)
     }
 
     /// A vector's component, `v.x` (FTEF-24.2): of a constant vector, a constant, its float
@@ -405,6 +484,41 @@ impl Checker<'_> {
                     ..component
                 }
             }
+            // FTEF-31.33: a component of an element of an array of vector fields is the field
+            // at the element's word plus the component's: at a constant index the array's
+            // definition there, at any other the field `OP_LOADA_FLD` loads at the index plus
+            // the component's word (`OP_ADD_I`), added before the load.
+            (_, Some(word))
+                if bare
+                    && !self.global
+                    && let Reference::Field(field) = &base.reference
+                    && field.selected.is_none()
+                    && let Some(element) = field.element =>
+            {
+                let word = u32::try_from(word).unwrap_or_default();
+                Value {
+                    reference: Reference::Field(Box::new(FieldRef {
+                        element: Some(element.saturating_add(word)),
+                        ..field.as_ref().clone()
+                    })),
+                    readonly: base.readonly,
+                    ..component
+                }
+            }
+            (_, Some(word))
+                if bare
+                    && !self.global
+                    && let Reference::Field(field) = &base.reference
+                    && let Some(selected) = field.selected
+                    && let Some(def) = field.def
+                    && let Some(load) = self
+                        .generated
+                        .last()
+                        .filter(|s| s.op == Op::LoadaFld && s.c == Some(selected))
+                        .copied() =>
+            {
+                self.indexed_component(base, def, load, word, component, selector)?
+            }
             // FTEF-31.29: `a[i].y` of an array of vectors at an index no constant is the float
             // at the index plus the component's word, as a struct's member is.
             (_, Some(word))
@@ -421,6 +535,14 @@ impl Checker<'_> {
                     readonly: base.readonly,
                     ..self.element_member(base, element, component, word, span)?
                 }
+            }
+            // FTEF-31.25: a component of a vector read through a pointer, a struct's member
+            // among them, is the float at the vector's word plus the component's.
+            (_, Some(word))
+                if bare && !self.global && matches!(base.reference, Reference::Pointer(_)) =>
+            {
+                let word = u32::try_from(word).unwrap_or_default();
+                self.pointer_component(base.clone(), word, selector.syntax().span())?
             }
             // Another vector is read, a field's by `LOAD_V`, and the component is its word.
             (_, Some(word)) if !self.global => {
@@ -581,9 +703,11 @@ impl Checker<'_> {
             // `(*p).a` and `p[i].a` are members through the pointer.
             Reference::Pointer(pointer) => {
                 let span = field.syntax().span();
+                let before = self.generated.len();
                 let index = self.member_index(pointer.index.as_ref(), offset, span)?;
+                let (named, index) = self.read_pointer_last(pointer.named, index, before);
                 Value {
-                    reference: Reference::pointer(pointer.base.clone(), Some(index), pointer.named),
+                    reference: Reference::pointer(pointer.base.clone(), Some(index), named),
                     ..member
                 }
             }
@@ -690,6 +814,99 @@ impl Checker<'_> {
             reference: Reference::element(element.base.clone(), index, element.vector),
             ..member
         })
+    }
+
+    /// FTEF-31.34: the pointer an index reads through is itself read only once its whole
+    /// index is computed (`QCC_PR_ParseRefArrayPointer`: `if (dereference) r =
+    /// QCC_PR_BuildRef(retbuf, REF_POINTER, QCC_RefToDef(r, true), idx, ...)`, after the loop
+    /// that reads each `[i]` and `.member`). The load that made the pointer `named`, when it
+    /// is the statement before those the index made since `before`, is moved after them; the
+    /// pointer's name and `index` as they then are.
+    pub(super) fn read_pointer_last(
+        &mut self,
+        named: Option<ir::Name>,
+        index: Value,
+        before: usize,
+    ) -> (Option<ir::Name>, Value) {
+        let Some(at) = before.checked_sub(1) else {
+            return (named, index);
+        };
+        let made = u32::try_from(at).ok().map(ir::Name::Made);
+        let loads = self
+            .generated
+            .get(at)
+            .is_some_and(|load| load.c == made && POINTER_LOADS.contains(&load.op));
+        if self.generated.len() <= before || named != made || !loads {
+            return (named, index);
+        }
+        // A jump is named by the statement it lands on, and the steps of a branch by theirs:
+        // an index that branches, a `?:` or a `&&`, is not moved over, and the body is not
+        // followed.
+        let jumps = |name: Option<ir::Name>| matches!(name, Some(ir::Name::Jump(_)));
+        let branches = self
+            .generated
+            .iter()
+            .skip(before)
+            .any(|s| jumps(s.a) || jumps(s.b) || jumps(s.c));
+        if branches {
+            self.followed = false;
+            return (named, index);
+        }
+        // Every statement after the load is one earlier: the calls and copies the checker
+        // keeps by their statements move with them.
+        let earlier = |n: u32| {
+            if usize::try_from(n).is_ok_and(|n| n > at) {
+                n.saturating_sub(1)
+            } else {
+                n
+            }
+        };
+        self.live_call = self.live_call.map(earlier);
+        self.unfreed = self.unfreed.map(earlier);
+        self.not_of_return = self
+            .not_of_return
+            .map(|(not, copy)| (earlier(not), copy.map(earlier)));
+        for (from, to) in &mut self.copies {
+            (*from, *to) = (earlier(*from), earlier(*to));
+        }
+        for (statement, _) in &mut self.origins {
+            *statement = earlier(*statement);
+        }
+        for (statement, _) in &mut self.locals {
+            *statement = earlier(*statement);
+        }
+        let mut load = self.generated.remove(at);
+        let moved = |name: Option<ir::Name>| match name {
+            Some(ir::Name::Made(n)) if usize::try_from(n).is_ok_and(|n| n > at) => {
+                Some(ir::Name::Made(n.saturating_sub(1)))
+            }
+            Some(ir::Name::MadeWord(n, word)) if usize::try_from(n).is_ok_and(|n| n > at) => {
+                Some(ir::Name::MadeWord(n.saturating_sub(1), word))
+            }
+            other => other,
+        };
+        for statement in self.generated.iter_mut().skip(at) {
+            statement.a = moved(statement.a);
+            statement.b = moved(statement.b);
+            statement.c = moved(statement.c);
+        }
+        let last = u32::try_from(self.generated.len()).ok();
+        for (place, _) in &mut self.effects {
+            match usize::try_from(*place) {
+                Ok(n) if n > at => *place = place.saturating_sub(1),
+                Ok(n) if n == at => *place = last.unwrap_or(*place),
+                _ => {}
+            }
+        }
+        load.c = last.map(ir::Name::Made);
+        let named = load.c;
+        self.generated.push(load);
+        let index = Value {
+            made: index.made.map(earlier),
+            call: index.call.map(earlier),
+            ..index
+        };
+        (named, index)
     }
 
     /// FTEF-6.19: the index of a member through a pointer (`QCC_PR_ParseRefArrayPointer`), its

@@ -2,7 +2,7 @@
 // Copyright (c) 2004-2025 FTE's team and its contributors
 // Copyright (C) 2026 QuakeC Studio contributors
 //
-// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_comp.c, QCC_PR_RefExpression, QCC_StoreSRefToRef, QCC_SupplyConversionForAssignment, opcodes_addstore
+// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_comp.c, QCC_PR_RefExpression, QCC_StoreSRefToRef, QCC_StoreToSRef, QCC_StoreToPointer, QCC_PR_GenerateInitializerType, QCC_PR_StatementFlags, QCC_SupplyConversionForAssignment, opcodes_addstore
 
 //! Assignments, `=` and the compound ones, and postfix `++` and `--`, as FTEQCC checks them
 //! (FTEF-29).
@@ -15,19 +15,32 @@ use qc_syntax::c_scalar::CScalar;
 use qc_syntax::{SyntaxKind, SyntaxNode};
 
 use crate::cast::{Source, Supply};
+use crate::check::call::call_opcode;
 use crate::check::constant::Constant;
 use crate::check::emulate::conversion_opcodes;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
+use crate::check::member::WORD_ALIGNMENT;
 use crate::check::opcodes;
 use crate::check::opcodes::row;
 use crate::check::reference::word_type;
-use crate::check::truth::Test;
-use crate::check::{Constness, Fold, Reference, Value, ValueUse};
+use crate::check::truth::{Test, is_truth};
+use crate::check::{Constness, Fold, Reference, Sym, Value, ValueUse};
 use crate::ir;
 use crate::lower::{Qualifier, declares};
 use crate::ty::{SimpleType, Type};
 use crate::{VECTOR_WORDS, VECTOR_WORDS_FLOAT};
+
+/// What a compound assignment updates in place through an address (FTEF-29.17, FTEF-29.22).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Through {
+    /// An entity's field, through `OP_ADDRESS` of the two.
+    Field,
+    /// What a pointer points at.
+    Pointer,
+    /// Neither: the left side is read, the operator applied and the result stored.
+    Nothing,
+}
 
 /// What an assignment operator stores (FTEF-29.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -302,6 +315,12 @@ impl Checker<'_> {
                 }
             }
         };
+        // FTEF-29.21: `QCC_StoreSRefToRef` converts a number that is not of the target's type
+        // before it stores it, a truth value's by its comparison with zero.
+        let stored = match kind {
+            Assign::Store => self.store_converted(stored, &target, span)?,
+            Assign::Compound(..) => stored,
+        };
         // FTEF-29.13: a store to a definition is its `OP_STORE_*`, unless it folds into the
         // statement that made the value's temporary (`opt_assignments`).
         // DIFF-14.11: not into a statement whose result is wider than the value, a vector whose
@@ -313,22 +332,35 @@ impl Checker<'_> {
         });
         let folded = stored.temp.is_some() && stored.temp == self.last_temp && !wider;
         let structured = matches!(self.etype(&target), Some(Etype::Struct | Etype::Union));
+        // `QCC_StoreToSRef`'s `default:`: a type it has no case for is copied by its size.
+        let by_size = self.copied_by_size(&target);
         // FTEF-6.15: a bitfield, or an 8- or 16-bit element at a constant index, is stored by
         // packing the value into its word, which is the only statement that writes it.
         let packs = lhs.packs();
-        // FTE-14.6: a struct stored to a definition is copied by `STORE_V` for each three words
-        // and `STORE_F` for the rest, from a definition's or a block's words.
+        // FTE-14.6, FTEF-6.31: a struct stored to a definition is copied piece by piece from a
+        // definition's or a block's words, and so is any other type copied by its size whose
+        // store folds into no statement.
+        // A store that packs its value into a word is no store of the member's own type.
+        let steps = self.store_steps(by_size, &target, span);
         let copied = matches!(kind, Assign::Store)
-            && structured
+            && !packs
             && lhs.reference == Reference::Global
-            && self.copy_struct(&stored, lhs.name(), &target);
+            && (structured || !folded)
+            && (by_size.is_some() || steps.len() > 1)
+            && self.copy_steps(&stored, lhs.name(), &steps);
         if matches!(kind, Assign::Store) && !copied && !packs {
-            let store = self.store_of(&target);
-            // The store chosen for the `=`, which the code generator reads.
+            // The store chosen for the `=`, which the code generator reads: its first
+            // statement's.
+            let store = steps.first().map_or(Op::StoreF, |&(op, _)| op);
             self.opcodes.insert((span.start, span.end), store);
             if lhs.reference == Reference::Global && !folded {
+                // More statements than one whose words the body could not name.
+                if steps.len() > 1 {
+                    self.followed = false;
+                }
                 self.emit(store, &stored, &Value::unknown(), span)?;
-                self.name_last(store, self.name_of(&stored), lhs.name());
+                let source = self.store_source(store, &stored);
+                self.name_last(store, source, lhs.name());
                 // A converting store a helper emulates ends with a plain store of its value.
                 match store {
                     Op::StoreIf => self.name_last(Op::StoreF, None, lhs.name()),
@@ -349,10 +381,12 @@ impl Checker<'_> {
         if matches!(kind, Assign::Compound(..)) {
             self.definition_store(&lhs, &stored, &target, span)?;
         }
-        if matches!(kind, Assign::Store | Assign::Compound(..)) && !packs {
+        let element = if matches!(kind, Assign::Store | Assign::Compound(..)) && !packs {
             let fold = if folded { Fold::Folded } else { Fold::Stored };
-            self.element_store(&lhs, &stored, &target, fold);
-        }
+            self.element_store(&lhs, &stored, (&target, span), fold)
+        } else {
+            ElementStore::NotOne
+        };
         // FTEF-19.78: an element at an index that is no constant is stored by the array's
         // `ArraySet*` function: the index and the value stored to its parameters, then `CALL2`.
         if matches!(kind, Assign::Store | Assign::Compound(..)) {
@@ -362,9 +396,18 @@ impl Checker<'_> {
         if matches!(kind, Assign::Store | Assign::Compound(..)) {
             self.pointer_store(&lhs, &stored, &target, span)?;
         }
-        // Any other store of a struct or a union is word groups the body does not follow
-        // (FTE-14.5).
-        if structured && !copied {
+        // A struct stored through a pointer, or through an array's address at an index that is
+        // no constant, is written word by word or refused where it is stored (FTEF-6.18,
+        // FTEF-31.20). Any other store of a struct or a union is word groups the body does
+        // not follow (FTE-14.5).
+        // At such an index on a target with no address to store through, the struct is the
+        // array's setter's argument (FTEF-32.27, FTEF-32.25).
+        let by_address = match &lhs.reference {
+            Reference::Pointer(_) => true,
+            Reference::Element(at) => at.index.known().is_none(),
+            _ => false,
+        };
+        if structured && !copied && element == ElementStore::NotOne && !by_address {
             self.followed = false;
         }
         // FTEF-29.3: `QCC_StoreSRefToRef`.
@@ -392,9 +435,20 @@ impl Checker<'_> {
         // A store folded into the statement that made the value leaves the value in the
         // definition, which a store of the assignment's own value reads and no store folds
         // into again.
-        let stored = if folded && lhs.reference == Reference::Global && !self.global {
+        // The definition is the target's own, or the word of it an element at a constant index
+        // or a vector's component is: a fold into `v[1]` leaves the value in `v_y`, not in
+        // the temporary the statement would have made.
+        let place = match &lhs.reference {
+            Reference::Global => Some(lhs.sym),
+            Reference::Element(_) => lhs
+                .definition_place()
+                .and_then(|place| place.sym())
+                .filter(|sym| matches!(sym, Sym::Def(..))),
+            _ => None,
+        };
+        let stored = if let (true, Some(sym), false) = (folded, place, self.global) {
             Value {
-                sym: lhs.sym,
+                sym,
                 temp: None,
                 made: None,
                 call: None,
@@ -475,6 +529,88 @@ impl Checker<'_> {
         self.emit(Op::BitorI, &cleared, &shifted, span)
     }
 
+    /// FTEF-29.17, FTEF-29.22: a compound assignment whose target has the in-place opcode
+    /// `op` for its types, to an entity's field or to what a pointer points at (`if (ops_ptr
+    /// && (lhsr->type == REF_FIELD || lhsr->type == REF_POINTER))`): the address, `OP_ADDRESS`
+    /// of the entity and the field, the pointer itself, or `OP_ADD_PIW` of the pointer and an
+    /// index (`QCC_PR_GenerateAddressOf`), then `op` of the value through it, whose result is
+    /// the assignment's value. `None` for any other target, which is read, operated on and
+    /// stored.
+    fn update_in_place(&mut self, lhs: &Value, rhs: &Value, op: Op) -> Option<Compounded> {
+        let through = match &lhs.reference {
+            Reference::Field(_) if !self.global => Through::Field,
+            Reference::Field(_) => return Some(Compounded::Unchecked),
+            // What is narrower than a word is addressed in bytes, which is not followed here.
+            Reference::Pointer(pointer)
+                if !self.global
+                    && pointer.named.is_some()
+                    && self
+                        .env
+                        .layout(&lhs.ty)
+                        .is_some_and(|l| l.bits == 0 || l.bits >= WORD_ALIGNMENT) =>
+            {
+                Through::Pointer
+            }
+            _ => Through::Nothing,
+        };
+        let address = match (&lhs.reference, through) {
+            (Reference::Field(field), Through::Field) => {
+                let Some(field_operand) = field.operand() else {
+                    self.followed = false;
+                    return Some(Compounded::Unchecked);
+                };
+                let address = self.next_made();
+                self.generated.push(ir::BodyStatement {
+                    a: self.copied(field.entity, field.entity_call),
+                    b: Some(field_operand),
+                    c: Some(ir::Name::Made(address)),
+                    ..ir::BodyStatement::bare(Op::Address)
+                });
+                Some(ir::Name::Made(address))
+            }
+            // An index of 0 adds nothing: the address is the pointer.
+            (Reference::Pointer(pointer), Through::Pointer) => match &pointer.index {
+                Some(index) if !index.null() => self
+                    .push_made(Op::AddPiw, pointer.named, self.name_of(index))
+                    .map(ir::Name::Made),
+                _ => pointer.named,
+            },
+            _ => return None,
+        };
+        // FTEF-29.18: an `ASSOC_RIGHT` opcode, `|=` and `&~=` of floats, has no result: the
+        // assignment's value is the value it was given.
+        if row(op).is_some_and(|r| r.assoc == opcodes::Assoc::Right) {
+            self.generated.push(ir::BodyStatement {
+                a: self.name_of(rhs),
+                b: address,
+                ..ir::BodyStatement::bare(op)
+            });
+            self.read_returned(rhs);
+            self.env.temps().take(1);
+            // `OpAssignsToC` is false of it, so no store folds into what came before.
+            self.last_temp = None;
+            return Some(Compounded::InPlace(rhs.clone()));
+        }
+        let result = self.next_made();
+        self.generated.push(ir::BodyStatement {
+            a: self.name_of(rhs),
+            b: address,
+            c: Some(ir::Name::Made(result)),
+            ..ir::BodyStatement::bare(op)
+        });
+        self.read_returned(rhs);
+        let temp = Some(self.env.temps().take(1));
+        // `OpAssignsToC`: `if(op >= OP_MULSTORE_F && op <= OP_SUBSTOREP_V) return false;`, so
+        // no store folds into one of those.
+        let folds = !(Op::MulstoreF.number()..=Op::SubstorepV.number()).contains(&op.number());
+        self.last_temp = temp.filter(|_| folds);
+        Some(Compounded::InPlace(Value {
+            made: Some(result),
+            temp,
+            ..Value::of(lhs.ty.clone())
+        }))
+    }
+
     /// FTEF-29.2: a compound assignment's opcode, the first of `ops` whose operands are the
     /// target's and the value's basic types, else after the value is cast to the target's type;
     /// "Type mismatch on assignment" when none. A field updated in place by an opcode of
@@ -500,52 +636,10 @@ impl Checker<'_> {
                         && r.types[2].etype() == to
                 })
         });
-        if let (Reference::Field(field), Some(op)) = (&lhs.reference, updates_in_place) {
-            // FTEF-29.17: `FLDADDRESS` of the entity and the field, then the in-place opcode of
-            // the value through that address, whose result is the assignment's value.
-            if !self.global {
-                let Some(field_operand) = field.operand() else {
-                    self.followed = false;
-                    return Ok(Compounded::Unchecked);
-                };
-                let address = self.next_made();
-                self.generated.push(ir::BodyStatement {
-                    a: self.copied(field.entity, field.entity_call),
-                    b: Some(field_operand),
-                    c: Some(ir::Name::Made(address)),
-                    ..ir::BodyStatement::bare(Op::Address)
-                });
-                // FTEF-29.18: an `ASSOC_RIGHT` opcode, `|=` and `&~=` of floats, has no result:
-                // the assignment's value is the value it was given.
-                if row(op).is_some_and(|r| r.assoc == opcodes::Assoc::Right) {
-                    self.generated.push(ir::BodyStatement {
-                        a: self.name_of(rhs),
-                        b: Some(ir::Name::Made(address)),
-                        ..ir::BodyStatement::bare(op)
-                    });
-                    self.read_returned(rhs);
-                    self.env.temps().take(1);
-                    // `OpAssignsToC` is false of it, so no store folds into what came before.
-                    self.last_temp = None;
-                    return Ok(Compounded::InPlace(rhs.clone()));
-                }
-                let result = self.next_made();
-                self.generated.push(ir::BodyStatement {
-                    a: self.name_of(rhs),
-                    b: Some(ir::Name::Made(address)),
-                    c: Some(ir::Name::Made(result)),
-                    ..ir::BodyStatement::bare(op)
-                });
-                self.read_returned(rhs);
-                let temp = Some(self.env.temps().take(1));
-                self.last_temp = temp;
-                return Ok(Compounded::InPlace(Value {
-                    made: Some(result),
-                    temp,
-                    ..Value::of(lhs.ty.clone())
-                }));
-            }
-            return Ok(Compounded::Unchecked);
+        if let Some(op) = updates_in_place
+            && let Some(updated) = self.update_in_place(lhs, rhs, op)
+        {
+            return Ok(updated);
         }
         // `lhsd = QCC_RefToDef(lhsr, false)`: the left side read, which for a string's character
         // is the load's own type (FTEF-31.18).
@@ -675,7 +769,14 @@ impl Checker<'_> {
                 ..zero.map_or_else(Value::unknown, Value::constant)
             };
             let truth = self.emit(op, value, &zero, span)?;
-            return self.convert_to(&truth, &parent, span);
+            // `QCC_TryEvaluateCast(src, tmp->parentclass, implicit)`: the comparison's truth
+            // value is read as its parent (`while (src.cast->type == ev_boolean) src.cast =
+            // src.cast->parentclass;`), so the value is of the parent's type.
+            let converted = self.convert_to(&truth, &parent, span)?;
+            return Ok(Value {
+                ty: parent,
+                ..converted
+            });
         }
         // `t == ev_void && flag_laxcasts`: "cast to boolean", then `OP_NE_F` (FTEF-23.11).
         if let Some(parent) = parent
@@ -730,20 +831,8 @@ impl Checker<'_> {
         if untyped_pointer || from.etype == Etype::Variant || to.etype == Etype::Variant {
             return Ok(());
         }
-        let number = |etype: Etype| {
-            matches!(
-                etype,
-                Etype::Float
-                    | Etype::Integer
-                    | Etype::Uint
-                    | Etype::Int64
-                    | Etype::Uint64
-                    | Etype::Double
-                    | Etype::Boolean
-            )
-        };
-        if number(from.etype) && number(to.etype) {
-            self.convert_to(value, target, span)?;
+        // A number is converted before it is stored ([`Checker::store_converted`]).
+        if from.etype.is_number() && to.etype.is_number() {
             return Ok(());
         }
         let message = format!(
@@ -755,6 +844,32 @@ impl Checker<'_> {
         );
         self.env.report(Code::W0240, span, message);
         Ok(())
+    }
+
+    /// FTEF-29.21: `QCC_StoreSRefToRef`'s conversion of the value it stores: a number whose
+    /// type, or a parent's, is not the target's by `typecmp_lax` is converted to the target's
+    /// type (`QCC_SupplyConversion(source, dest->cast->type, true)`), and to a truth value by
+    /// its comparison with zero and then to the truth value's parent
+    /// (`QCC_SupplyConversion(QCC_PR_GenerateLogicalTruth(source, "cannot convert to
+    /// boolean"), dest->cast->parentclass->type, true)`). A value the cast already made a
+    /// number of the truth value's parent is compared again here, as FTEQCC compares it.
+    fn store_converted(&mut self, value: Value, target: &Type, span: Span) -> Checked {
+        if value.known().is_some_and(Constant::null) {
+            return Ok(value);
+        }
+        let (Some(from), Some(to)) = (self.env.shape(&value.ty), self.env.shape(target)) else {
+            return Ok(value);
+        };
+        // `typecmp_lax`'s `if (a->type != b->type) ... return 1;`: a number the cast left of
+        // a truth value's parent type is no truth value.
+        let to_truth = is_truth(target) && !is_truth(&value.ty);
+        if !to_truth && self.env.typecmp_lax(&value.ty, target) {
+            return Ok(value);
+        }
+        if from.etype.is_number() && to.etype.is_number() {
+            return self.convert_to(&value, target, span);
+        }
+        Ok(value)
     }
 
     /// FTEF-29.5: a postfix `++` or `--`: an operand that is read-only is a fatal error, and the
@@ -840,7 +955,7 @@ impl Checker<'_> {
             _ => false,
         };
         if !discarded && (placed || old.returned) {
-            let store = self.store_of(&operand.ty);
+            let store = self.store_of(&operand.ty, span);
             self.emit(store, &old, &Value::unknown(), span)?;
             copy = self
                 .generated
@@ -939,18 +1054,20 @@ impl Checker<'_> {
             return Ok(());
         };
         let start = name.span().start;
-        let vector = self
-            .env
-            .local_type(start)
-            .is_some_and(|ty| self.etype(&ty) == Some(Etype::Vector));
         let elements: Vec<ast::Expr> = aggregate.elements().collect();
         if self.global {
             return Ok(());
         }
         let local = self.env.reference(start);
         let array = local.is_some_and(|def| self.env.is_array(def));
+        // A vector's own braces are its components'; an array of vectors' are its elements'.
+        let vector = !array
+            && self
+                .env
+                .local_type(start)
+                .is_some_and(|ty| self.etype(&ty) == Some(Etype::Vector));
         let nested = aggregate.syntax().children().count() != elements.len();
-        if array && !vector && !nested && !self.env.local_static(start) {
+        if array && !nested && !self.env.local_static(start) {
             return self.array_aggregate(declarator, local, &elements);
         }
         // FTEF-32.21: a `static` local's aggregate is its initial value, written with the
@@ -1015,8 +1132,9 @@ impl Checker<'_> {
             _ => None,
         };
         // `dest->index.cast->size == dest->cast->size`: not an array of fields named whole.
-        let whole_array =
-            field.selected.is_none() && field.def.is_some_and(|def| self.env.is_array(def));
+        let whole_array = field.selected.is_none()
+            && field.element.is_none()
+            && field.def.is_some_and(|def| self.env.is_array(def));
         // Two words with no `OP_STOREF_I64` are two `OP_STOREF_I`, which is not followed, as
         // is no store of two words through the field's address.
         if words == 2 && !valid(Op::StorefI64) {
@@ -1067,7 +1185,7 @@ impl Checker<'_> {
         let folded = updated.temp.is_some() && updated.temp == self.last_temp;
         self.definition_store(operand, updated, target, span)?;
         let fold = if folded { Fold::Folded } else { Fold::Stored };
-        self.element_store(operand, updated, target, fold);
+        let _stored = self.element_store(operand, updated, (target, span), fold);
         Ok(())
     }
 
@@ -1088,7 +1206,7 @@ impl Checker<'_> {
             self.fold_into(stored, lhs.name());
             return Ok(());
         }
-        let store = self.store_of(target);
+        let store = self.store_of(target, span);
         self.emit(store, stored, &Value::unknown(), span)?;
         self.name_last(store, self.name_of(stored), lhs.name());
         Ok(())
@@ -1097,27 +1215,47 @@ impl Checker<'_> {
     /// FTEF-31.10: the store of `stored` to the element `lhs` at a constant index, a word of
     /// the array's definition, stored as a definition is unless the value folds into the
     /// statement that made it (`folded`).
-    fn element_store(&mut self, lhs: &Value, stored: &Value, target: &Type, fold: Fold) {
+    fn element_store(
+        &mut self,
+        lhs: &Value,
+        stored: &Value,
+        (target, span): (&Type, Span),
+        fold: Fold,
+    ) -> ElementStore {
         let folded = fold == Fold::Folded;
         let Reference::Element(element) = &lhs.reference else {
-            return;
+            return ElementStore::NotOne;
         };
         if element.index.known().is_none() || self.global {
-            return;
+            return ElementStore::NotOne;
         }
         // The element's word, as a read of it at a constant index names it.
         let to = lhs.definition_place().and_then(|place| place.word());
         if folded {
             self.fold_into(stored, to);
-        } else {
-            self.generated.push(ir::BodyStatement {
-                a: self.name_of(stored),
-                b: to,
-                ..ir::BodyStatement::bare(self.store_of(target))
-            });
-            self.read_returned(stored);
-            self.last_temp = None;
+            return ElementStore::Stored;
         }
+        // The element is its definition's words, stored as a definition is
+        // ([`Checker::store_steps`]): a struct, or a 64-bit value where the target has no
+        // `OP_STORE_I64`, by more statements than one.
+        let by_size = self.copied_by_size(target);
+        match self.store_steps(by_size, target, span).as_slice() {
+            [(store, _)] => {
+                self.generated.push(ir::BodyStatement {
+                    a: self.store_source(*store, stored),
+                    b: to,
+                    ..ir::BodyStatement::bare(*store)
+                });
+                self.read_returned(stored);
+                self.last_temp = None;
+            }
+            steps => {
+                if !self.copy_steps(stored, to, steps) {
+                    self.followed = false;
+                }
+            }
+        }
+        ElementStore::Stored
     }
 
     /// FTEF-6.18: `QCC_StoreToPointer`'s opcode for a value of type `target`: an integer by
@@ -1187,7 +1325,10 @@ impl Checker<'_> {
             return Ok(());
         }
         let word = self.one_store(target) && lhs.bitfield.is_none();
-        if pointer.named.is_none() || !word {
+        // FTEF-6.18: a struct or a union is stored word by word.
+        let structured = matches!(self.etype(target), Some(Etype::Struct | Etype::Union))
+            && lhs.bitfield.is_none();
+        if pointer.named.is_none() || !(word || structured) {
             self.followed = false;
             return Ok(());
         }
@@ -1203,6 +1344,14 @@ impl Checker<'_> {
             }
             index => index.clone(),
         };
+        if structured {
+            let at = index.as_ref().and_then(|index| self.name_of(index));
+            let named = index.is_none() || at.is_some();
+            if !(named && self.store_words_through(stored, pointer.named, at, target, span)) {
+                self.followed = false;
+            }
+            return Ok(());
+        }
         let mut through = pointer.named;
         let mut at = None;
         if let Some(index) = &index {
@@ -1226,34 +1375,115 @@ impl Checker<'_> {
         Ok(())
     }
 
-    /// FTE-14.6: the struct `stored` of type `target` copied to the definition `to` by `STORE_V`
-    /// for each three words and `STORE_F` for the rest, when it is a definition's or a block's
-    /// words; whether it was.
-    fn copy_struct(&mut self, stored: &Value, to: Option<ir::Name>, target: &Type) -> bool {
-        let from = self
-            .name_of(stored)
-            .filter(|name| matches!(name, ir::Name::Def(..) | ir::Name::Made(_)));
-        let (Some(from), Some(to)) = (from, to) else {
+    /// FTEF-6.18: `QCC_StoreToPointer`'s `case ev_struct: case ev_union:` on a target whose
+    /// stores take an offset: the `words` words of `stored` stored through `pointer`,
+    /// `OP_STOREP_V` for each three when the target has it, `OP_STOREP_I64` by FTEQCC's test
+    /// of bits against words (`for (; i+(32*2) <= type->size; i+=32*2)`), then `OP_STOREP_I`,
+    /// or else `OP_STOREP_F`, for each word left. Each is stored at its word's index: the
+    /// word itself with no `index`, else `OP_ADD_I` of `index` and the word, which the first
+    /// word folds away. Whether it was written: not on a target whose stores take no offset,
+    /// nor from a value whose words the body cannot name, nor a struct `ty` that is not whole
+    /// words, whose last 16 or 8 bits FTEQCC stores by `OP_STOREP_I16` or `OP_STOREP_I8` (`if
+    /// (i+16 <= bits) ... else if (i+8 <= bits)`) and whose index it scales by its alignment.
+    pub(super) fn store_words_through(
+        &mut self,
+        stored: &Value,
+        pointer: Option<ir::Name>,
+        index: Option<ir::Name>,
+        ty: &Type,
+        span: Span,
+    ) -> bool {
+        let Some(layout) = self.env.layout(ty) else {
+            return false;
+        };
+        if layout.bits != 0 || layout.align != WORD_ALIGNMENT {
+            return false;
+        }
+        let words = layout.words;
+        let target = self.env.target_at(span.start);
+        let from = self.name_of(stored).filter(|name| {
+            matches!(
+                name,
+                ir::Name::Def(..) | ir::Name::Made(_) | ir::Name::Immediate(_) | ir::Name::Return
+            )
+        });
+        let (Some(from), Some(pointer), true) = (from, pointer, target.stores_at_offset()) else {
+            return false;
+        };
+        for (at, op) in self.offset_store_steps(words, span) {
+            let word = ir::Name::Immediate(ir::Immediate {
+                kind: ir::ImmediateKind::Integer,
+                words: [at, 0, 0],
+            });
+            let place = match index {
+                None => Some(word),
+                Some(index) if at == 0 => Some(index),
+                Some(index) => self
+                    .push_made(Op::AddI, Some(index), Some(word))
+                    .map(ir::Name::Made),
+            };
+            self.generated.push(ir::BodyStatement {
+                a: from.word(at),
+                b: Some(pointer),
+                c: place,
+                ..ir::BodyStatement::bare(op)
+            });
+        }
+        self.read_returned(stored);
+        self.last_temp = None;
+        true
+    }
+
+    /// A store of more statements than one, or of a type copied by its size, to the
+    /// definition `to`: each of `steps` ([`Checker::store_steps`]) stores the word it starts
+    /// at, from a definition's, a block's, an immediate's or a call's words. A constant 0 is
+    /// stored from the zero of each step's size instead, as both of FTEQCC's functions store
+    /// it: `QCC_StoreToSRef`'s `default:` (`if (QCC_SRef_IsNull(source))`:
+    /// `QCC_MakeVectorConst(0,0,0)`, `QCC_MakeInt64Const(0)`, `QCC_MakeIntConst(0)`; FTE-14.6,
+    /// FTEF-2.13, FTEF-6.31, FTEF-11.5) and `QCC_PR_StatementFlags` of `OP_STORE_I64` (`var_a =
+    /// QCC_MakeInt64Const(0);`, FTEF-27.20). Whether it was: any other value is left to its
+    /// one statement.
+    pub(super) fn copy_steps(
+        &mut self,
+        stored: &Value,
+        to: Option<ir::Name>,
+        steps: &[(Op, u32)],
+    ) -> bool {
+        let Some(to) = to else {
             return false;
         };
         if self.global {
             return false;
         }
-        let size = self.env.layout(target).map_or(0, |l| l.words);
-        let mut word = 0;
-        while word < size {
-            let (op, step) = if size.saturating_sub(word) >= VECTOR_WORDS {
-                (Op::StoreV, VECTOR_WORDS)
+        let null = stored.null();
+        let from = self.name_of(stored).filter(|name| {
+            matches!(
+                name,
+                ir::Name::Def(..) | ir::Name::Made(_) | ir::Name::Immediate(_) | ir::Name::Return
+            )
+        });
+        if !null && from.is_none() {
+            return false;
+        }
+        for &(op, word) in steps {
+            let a = if null {
+                Zeroes::OfAStore
+                    .source(op, word)
+                    .or(Some(Zeroes::integer()))
             } else {
-                (Op::StoreF, 1)
+                from.and_then(|from| from.word(word))
             };
             self.generated.push(ir::BodyStatement {
-                a: from.word(word),
+                a,
                 b: to.word(word),
                 ..ir::BodyStatement::bare(op)
             });
-            word = word.saturating_add(step);
         }
+        if let Some(offset) = stored.temp {
+            self.env.temps().free(offset);
+        }
+        // The copy read a call's value, which no later call then copies out.
+        self.read_returned(stored);
         self.last_temp = None;
         true
     }
@@ -1292,7 +1522,7 @@ impl Checker<'_> {
             return Ok(());
         };
         let width = self.env.layout(&ty).map_or(1, |l| l.words);
-        let store = self.store_of(&ty);
+        let span = declarator.syntax().span();
         for (at, element) in (0_u32..).zip(elements) {
             let value = self.value(Some(element.clone()))?;
             // An element of another type is converted as it is stored, which the body does not
@@ -1308,11 +1538,8 @@ impl Checker<'_> {
             if value.temp.is_some() && value.temp == self.last_temp && !wider {
                 self.fold_into(&value, to);
             } else {
-                self.generated.push(ir::BodyStatement {
-                    a: self.name_of(&value),
-                    b: to,
-                    ..ir::BodyStatement::bare(store)
-                });
+                // FTE-14.9: each element is stored as a local's initialiser is.
+                self.store_initialiser((&value, self.name_of(&value)), to, &ty, span);
             }
             self.read_returned(&value);
             self.last_temp = None;
@@ -1321,7 +1548,7 @@ impl Checker<'_> {
     }
 
     /// A store's read of `value`: a call's value is then out of the return global's keeping.
-    fn read_returned(&mut self, value: &Value) {
+    pub(super) fn read_returned(&mut self, value: &Value) {
         if value.returned {
             self.live_return = None;
             self.live_call = None;
@@ -1355,6 +1582,29 @@ impl Checker<'_> {
             return Ok(());
         }
         let parameter = |slot| Some(ir::Name::Parameter(slot));
+        // FTEF-32.25: a struct of more than a vector's words is the setter's argument in
+        // pieces, a slot each from the second, stored before the index, and the call counts
+        // the slots.
+        if let Some(wide) = self.wide_words(target) {
+            self.setter_argument(self.name_of(stored), wide, span);
+            self.generated.push(ir::BodyStatement {
+                a: self.name_of(&element.index),
+                b: parameter(0),
+                ..ir::BodyStatement::bare(Op::StoreF)
+            });
+            self.read_returned(&element.index);
+            self.clobber_return();
+            let slots = usize::try_from(wide.div_ceil(VECTOR_WORDS)).unwrap_or(usize::MAX);
+            match call_opcode(slots.saturating_add(1)) {
+                Some(call) => self.generated.push(ir::BodyStatement {
+                    a: lhs.sym.def().map(ir::Name::ArraySet),
+                    ..ir::BodyStatement::bare(call)
+                }),
+                None => self.followed = false,
+            }
+            self.last_temp = None;
+            return Ok(());
+        }
         // A vector array's setter takes the element's index, its words' divided by 3.
         let index = if self.etype(target) == Some(Etype::Vector) {
             let three = Value::constant(Constant::float(VECTOR_WORDS_FLOAT));
@@ -1372,15 +1622,12 @@ impl Checker<'_> {
             });
             self.read_returned(&index);
         }
+        // The value is the setter's second argument, stored by its size (FTEF-32.27).
         let words = self.env.layout(target).map_or(1, |l| l.words);
         self.generated.push(ir::BodyStatement {
             a: self.name_of(stored),
             b: parameter(1),
-            ..ir::BodyStatement::bare(if words == VECTOR_WORDS {
-                Op::StoreV
-            } else {
-                Op::StoreF
-            })
+            ..ir::BodyStatement::bare(self.argument_store(words, span))
         });
         self.clobber_return();
         self.generated.push(ir::BodyStatement {
@@ -1419,14 +1666,166 @@ impl Checker<'_> {
         self.env.shape(ty).map(|s| s.etype)
     }
 
-    /// The store of a value of type `ty` to a definition, `QCC_StoreToSRef`: its basic type's,
-    /// but an accessor's by its words, `STORE_F` for one (FTEF-10.15).
-    pub(super) fn store_of(&self, ty: &Type) -> Op {
-        let words = self.env.layout(ty).map_or(1, |layout| layout.words);
-        if self.env.is_accessor(ty) && words == 1 {
-            return Op::StoreF;
+    /// The words of a value of type `ty` when `QCC_StoreToSRef` has no case for its type and
+    /// its `default:` copies it by its size: a struct, a union, a `__variant`, a double, an
+    /// integer narrower than a word, which is `ev_bitfld` (its layout says so through a
+    /// typedef), and an accessor (FTEF-2.13, FTEF-6.31, FTEF-10.15, FTEF-11.5). `None` for a
+    /// type with a case of its own.
+    pub(super) fn copied_by_size(&self, ty: &Type) -> Option<u32> {
+        let layout = self.env.layout(ty)?;
+        let narrow = layout.bits != 0 && layout.bits < WORD_ALIGNMENT;
+        let no_case = self.env.is_accessor(ty)
+            || match self.etype(ty) {
+                Some(
+                    Etype::Struct | Etype::Union | Etype::Enum | Etype::Variant | Etype::Double,
+                ) => true,
+                Some(Etype::Integer | Etype::Uint) => narrow,
+                _ => false,
+            };
+        no_case.then_some(layout.words)
+    }
+
+    /// The statements that store a value to a definition on this target, each its opcode and
+    /// the word it starts at. A type copied by its size, `by_size` its words, is its pieces
+    /// ([`Checker::pieces`]); any other is its type's case of `QCC_StoreToSRef`, one
+    /// statement, but `OP_STORE_I64` on a target without it, which `QCC_PR_StatementFlags`
+    /// writes as `OP_STORE_FLD` of each of its two words (FTEF-27.20).
+    pub(super) fn store_steps(
+        &self,
+        by_size: Option<u32>,
+        ty: &Type,
+        span: Span,
+    ) -> Vec<(Op, u32)> {
+        if let Some(words) = by_size {
+            return self.pieces(words, span);
         }
-        Checker::store_op(self.etype(ty))
+        match Checker::store_op(self.etype(ty)) {
+            Op::StoreI64 if !self.env.target_at(span.start).valid(Op::StoreI64) => {
+                vec![(Op::StoreFld, 0), (Op::StoreFld, 1)]
+            }
+            op => vec![(op, 0)],
+        }
+    }
+
+    /// The statements that store a local's initialiser, `QCC_PR_GenerateInitializerType`'s
+    /// loop over the local's words, each its opcode and the word it starts at (FTE-14.9):
+    /// `OP_STORE_V` while three words or more are left, `OP_STORE_I64` for two, which a
+    /// target without it writes as `OP_STORE_FLD` of each (FTEF-27.20), and the last word by
+    /// the local's basic type, `OP_STORE_F` for any but a function, a string, an entity, a
+    /// field or an integer. The third of each is the half of an emulated `OP_STORE_I64` the
+    /// statement is, for the zero it reads.
+    fn initialiser_steps(&self, ty: &Type, span: Span) -> Vec<(Op, u32, Option<u32>)> {
+        let words = self.env.layout(ty).map_or(1, |layout| layout.words);
+        let wide = self.env.target_at(span.start).valid(Op::StoreI64);
+        let mut steps = Vec::new();
+        let mut at = 0;
+        while at < words {
+            let left = words.saturating_sub(at);
+            let size = if left >= VECTOR_WORDS {
+                steps.push((Op::StoreV, at, None));
+                VECTOR_WORDS
+            } else if left == 2 {
+                if wide {
+                    steps.push((Op::StoreI64, at, None));
+                } else {
+                    steps.push((Op::StoreFld, at, Some(0)));
+                    steps.push((Op::StoreFld, at.saturating_add(1), Some(1)));
+                }
+                2
+            } else {
+                steps.push((
+                    match self.etype(ty) {
+                        Some(Etype::Function) => Op::StoreFnc,
+                        Some(Etype::String) => Op::StoreS,
+                        Some(Etype::Entity) => Op::StoreEnt,
+                        Some(Etype::Field) => Op::StoreFld,
+                        Some(Etype::Integer | Etype::Uint) => Op::StoreI,
+                        _ => Op::StoreF,
+                    },
+                    at,
+                    None,
+                ));
+                1
+            };
+            at = at.saturating_add(size);
+        }
+        steps
+    }
+
+    /// A local's initialiser `value`, named `from`, stored to `local` by
+    /// [`Checker::initialiser_steps`], each statement a word of the two. A constant 0 is
+    /// stored from zeroes, as `QCC_PR_GenerateInitializerType` stores it
+    /// ([`Zeroes::OfAnInitialiser`]). A value of more statements than one whose words the body
+    /// cannot name is not followed.
+    fn store_initialiser(
+        &mut self,
+        (value, from): (&Value, Option<ir::Name>),
+        local: Option<ir::Name>,
+        ty: &Type,
+        span: Span,
+    ) {
+        let steps = self.initialiser_steps(ty, span);
+        let null = value.null();
+        let named = from.is_some_and(|name| name.word(0).is_some());
+        if steps.len() > 1 && !named && !null {
+            self.followed = false;
+        }
+        for (op, word, half) in steps {
+            let word_of = |name: ir::Name| {
+                if word == 0 {
+                    Some(name)
+                } else {
+                    name.word(word)
+                }
+            };
+            let a = if null {
+                // A word stored alone reads the integer 0, an emulated pair's halves the
+                // words of the pair's zero.
+                let zero = match (op, half) {
+                    (Op::StoreFld, None) => None,
+                    _ => Zeroes::OfAnInitialiser.source(op, half.unwrap_or(0)),
+                };
+                zero.or(Some(Zeroes::integer()))
+            } else {
+                from.and_then(word_of)
+            };
+            self.generated.push(ir::BodyStatement {
+                a,
+                b: local.and_then(word_of),
+                ..ir::BodyStatement::bare(op)
+            });
+        }
+    }
+
+    /// What a store of `op` reads `stored` from: its name, or for a constant 0 stored by
+    /// `OP_STORE_V` or `OP_STORE_I64` the zero of that size (`QCC_PR_StatementFlags`: `if (op
+    /// - pr_opcodes == OP_STORE_V) { ... var_a = QCC_MakeVectorConst(0, 0, 0); }`, and
+    /// `QCC_MakeInt64Const(0)` for `OP_STORE_I64`).
+    pub(super) fn store_source(&self, op: Op, stored: &Value) -> Option<ir::Name> {
+        stored
+            .null()
+            .then(|| Zeroes::OfAStore.source(op, 0))
+            .flatten()
+            .or_else(|| self.name_of(stored))
+    }
+
+    /// The one statement of [`Checker::store_steps`], or, where there are more, a body that
+    /// is not followed: a site that writes one statement does not make the others.
+    fn store_or_refuse(&mut self, by_size: Option<u32>, ty: &Type, span: Span) -> Op {
+        match self.store_steps(by_size, ty, span).as_slice() {
+            [(op, _)] => *op,
+            _ => {
+                self.followed = false;
+                Op::StoreF
+            }
+        }
+    }
+
+    /// The one statement that stores a value of type `ty` to a definition
+    /// ([`Checker::store_or_refuse`]).
+    pub(super) fn store_of(&mut self, ty: &Type, span: Span) -> Op {
+        let by_size = self.copied_by_size(ty);
+        self.store_or_refuse(by_size, ty, span)
     }
 }
 
@@ -1478,6 +1877,45 @@ impl Checker<'_> {
         }
     }
 
+    /// FTEF-34.20: a constant local's constant value is its initial value too, copied when
+    /// the program is written (`if (basedef && (!basedef->scope || basedef->constant ||
+    /// basedef->isstatic))`, with a value that is `constant`); one whose value is no constant
+    /// is stored as the function runs (`goto finalnotconst;`). Whether `value`, the
+    /// initialiser `init` of `declarator`'s local, was such a value.
+    fn constant_local_value(
+        &mut self,
+        declarator: &ast::Declarator,
+        value: &Value,
+        init: &ast::Expr,
+    ) -> bool {
+        let local = declarator
+            .name()
+            .and_then(|name| self.env.reference(name.span().start));
+        let constant = !self.global
+            && value.known().is_some()
+            && declarator.array_suffixes().next().is_none()
+            && local.is_some_and(|def| self.env.constant(def));
+        if !constant {
+            return false;
+        }
+        let at = self.next_made();
+        let name = local.map(|def| ir::Name::Def(def, 0));
+        let words = value.known().and_then(Constant::immediate);
+        match (name, words, init) {
+            // A number's words are the value it folded to.
+            (Some(name), Some(words), _) => {
+                self.effects.push((at, ir::Effect::Value(name, words)));
+            }
+            // A string is its literal's text, which the code generator copies.
+            (Some(name), None, ast::Expr::Literal(_)) => {
+                self.effects.push((at, ir::Effect::Constant(name)));
+            }
+            _ => self.followed = false,
+        }
+        self.last_temp = None;
+        true
+    }
+
     /// [`Checker::local`] of one declarator: its size, then its value cast to its type.
     fn local_declarator(&mut self, declarator: &ast::Declarator) -> Result<(), Fatal> {
         // The local is declared before its value is read, where the next statement goes.
@@ -1519,9 +1957,9 @@ impl Checker<'_> {
         if value.ty == Type::Unknown {
             return Ok(());
         }
-        // A struct's or a union's initialiser of its own type is copied a word at a time by
-        // `STORE_FLD`, the words being fields of the struct to `QCC_PR_ParseInitializerType`;
-        // any other is not followed.
+        // FTE-14.9: a struct's or a union's initialiser of its own type is copied by
+        // `QCC_PR_GenerateInitializerType`'s statements ([`Checker::initialiser_steps`]); any
+        // other is not followed.
         if matches!(self.etype(&ty), Some(Etype::Struct | Etype::Union)) {
             let local = declarator
                 .name()
@@ -1536,14 +1974,8 @@ impl Checker<'_> {
                 && from.is_some()
                 && declarator.array_suffixes().next().is_none()
             {
-                let words = self.env.layout(&ty).map_or(0, |l| l.words);
-                for word in 0..words {
-                    self.generated.push(ir::BodyStatement {
-                        a: from.and_then(|name| name.word(word)),
-                        b: Some(ir::Name::Def(local, word)),
-                        ..ir::BodyStatement::bare(Op::StoreFld)
-                    });
-                }
+                let local = Some(ir::Name::Def(local, 0));
+                self.store_initialiser((&value, from), local, &ty, init.syntax().span());
                 if value.returned {
                     self.live_return = None;
                 }
@@ -1586,6 +2018,9 @@ impl Checker<'_> {
         let is_static = declarator
             .name()
             .is_some_and(|name| self.env.local_static(name.span().start));
+        if !is_static && self.constant_local_value(declarator, &value, &init) {
+            return Ok(());
+        }
         if !self.global && !is_static && declarator.array_suffixes().next().is_none() {
             if value.returned {
                 self.live_return = None;
@@ -1603,11 +2038,8 @@ impl Checker<'_> {
                     .name()
                     .and_then(|name| self.env.reference(name.span().start))
                     .map(|def| ir::Name::Def(def, 0));
-                self.generated.push(ir::BodyStatement {
-                    a: self.name_of(&value),
-                    b: local,
-                    ..ir::BodyStatement::bare(self.store_of(&ty))
-                });
+                let from = self.name_of(&value);
+                self.store_initialiser((&value, from), local, &ty, span);
                 self.last_temp = None;
             }
         }
@@ -1686,7 +2118,19 @@ pub(super) fn string_bytes(expr: &ast::Expr) -> Option<Vec<u8>> {
     if literal.kind() != Some(ast::LiteralKind::String) {
         return None;
     }
-    lexed_string(literal.token()?.text())
+    joined_string(literal.syntax())
+}
+
+/// FTEF-16.8: the bytes of the string literal whose node is `literal`, its adjacent parts
+/// joined into the one string `QCC_PR_LexString` reads them as; `None` when a part is no string.
+pub(crate) fn joined_string(literal: &SyntaxNode) -> Option<Vec<u8>> {
+    let mut bytes = Vec::new();
+    for part in literal.child_tokens() {
+        if !part.kind().is_trivia() {
+            bytes.extend(lexed_string(part.text())?);
+        }
+    }
+    Some(bytes)
 }
 
 /// The bytes of the one quoted string `text`, with its escapes read as FTEQCC's lexer reads them.
@@ -1717,4 +2161,57 @@ enum Compounded {
     InPlace(Value),
     /// Nothing more is checked.
     Unchecked,
+}
+
+/// Whether an assignment's target was an element at a constant index, which
+/// [`Checker::element_store`] stores.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ElementStore {
+    /// It was, and its store is written.
+    Stored,
+    /// The target is no such element.
+    NotOne,
+}
+
+/// Which of FTEQCC's functions stores a constant 0, each from zeroes of its own choosing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Zeroes {
+    /// `QCC_StoreToSRef`'s `default:` and `QCC_PR_StatementFlags`: the zero vector for
+    /// `OP_STORE_V` and the 64-bit zero for `OP_STORE_I64`, whose words an emulated one's two
+    /// `OP_STORE_FLD` read.
+    OfAStore,
+    /// `QCC_PR_GenerateInitializerType`: the zero vector for `OP_STORE_V` and for
+    /// `OP_STORE_I64` alike (`nullsource?QCC_MakeVectorConst(0,0,0):rhs`).
+    OfAnInitialiser,
+}
+
+impl Zeroes {
+    /// The zero a store of `op` reads, its word `word` for an emulated pair's `OP_STORE_FLD`;
+    /// `None` for a store of one word, which reads [`Zeroes::integer`] or the constant itself.
+    fn source(self, op: Op, word: u32) -> Option<ir::Name> {
+        let zero = |kind| {
+            ir::Name::Immediate(ir::Immediate {
+                kind,
+                words: [0, 0, 0],
+            })
+        };
+        let pair = match self {
+            Self::OfAStore => ir::ImmediateKind::Int64,
+            Self::OfAnInitialiser => ir::ImmediateKind::Vector,
+        };
+        match op {
+            Op::StoreV => Some(zero(ir::ImmediateKind::Vector)),
+            Op::StoreI64 => Some(zero(pair)),
+            Op::StoreFld => zero(pair).word(word),
+            _ => None,
+        }
+    }
+
+    /// The integer 0, `QCC_MakeIntConst(0)`, a word's zero.
+    const fn integer() -> ir::Name {
+        ir::Name::Immediate(ir::Immediate {
+            kind: ir::ImmediateKind::Integer,
+            words: [0, 0, 0],
+        })
+    }
 }

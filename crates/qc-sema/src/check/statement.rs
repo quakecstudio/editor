@@ -40,7 +40,7 @@ impl Checker<'_> {
     /// statements the body generates.
     fn jump(&mut self, step: Step, op: Op, target: Option<Mark>, line: u32) -> usize {
         let made = self.goto_made(op);
-        if matches!(op, Op::IfI | Op::IfnotI)
+        if op.is_conditional_jump()
             && let Some(statement) = self.generated.last_mut()
         {
             statement.a = self.branch_condition.take();
@@ -213,6 +213,10 @@ impl Checker<'_> {
                 Op::Goto => statement.a = target,
                 Op::IfI
                 | Op::IfnotI
+                | Op::IfF
+                | Op::IfnotF
+                | Op::IfS
+                | Op::IfnotS
                 | Op::SwitchF
                 | Op::SwitchE
                 | Op::SwitchV
@@ -387,25 +391,23 @@ impl Checker<'_> {
                 self.followed = false;
                 continue;
             };
-            // FTEF-32.25: one of more than a vector's words in pieces, a slot each.
-            if let Some(wide) = self.wide_words(param) {
-                let Some(pieces) = self.slot_pieces(wide, span) else {
-                    self.followed = false;
-                    continue;
-                };
-                for (piece, (op, word)) in (0_u8..).zip(pieces) {
+            // FTEF-32.25: one of more statements than one in pieces, each to its word of its
+            // slot.
+            if let Some(pieces) = self.passed_in_pieces(param, span) {
+                for (op, word) in pieces {
                     self.generated.push(ir::BodyStatement {
                         a: Some(ir::Name::Def(local, word)),
-                        b: Some(ir::Name::Parameter(held.saturating_add(piece))),
+                        b: Checker::slot_word(usize::from(held), word),
                         ..ir::BodyStatement::bare(op)
                     });
                 }
                 continue;
             }
+            let store = self.store_of(param, span);
             self.generated.push(ir::BodyStatement {
                 a: Some(ir::Name::Def(local, 0)),
                 b: Some(ir::Name::Parameter(held)),
-                ..ir::BodyStatement::bare(self.store_of(param))
+                ..ir::BodyStatement::bare(store)
             });
         }
     }
@@ -453,10 +455,25 @@ impl Checker<'_> {
         let value = self.value(Some(expr.clone()))?;
         self.generated(&expr, &value, line, before);
         // The value is made the return type first (`QCC_EvaluateCast`), then returned.
+        // FTEF-21.28: a null is returned as the zero vector from a function of a vector and as
+        // the float 0 from any other (`if (QCC_SRef_IsNull(e)) { ... case ev_vector: e =
+        // QCC_MakeVectorConst(0, 0, 0); break; default: case ev_float: e =
+        // QCC_MakeFloatConst(0); ...`).
+        let null = value.null().then(|| {
+            let kind = if self.etype_of(&ret) == Some(Etype::Vector) {
+                ir::ImmediateKind::Vector
+            } else {
+                ir::ImmediateKind::Float
+            };
+            ir::Name::Immediate(ir::Immediate {
+                kind,
+                words: [0, 0, 0],
+            })
+        });
         let returned = self.returned_as(value, &ret, (void, &name, &ret_name), &expr)?;
         self.return_outs(span);
         self.jump(Step::Return, Op::Return, None, line);
-        self.name_last(Op::Return, self.name_of(&returned), None);
+        self.name_last(Op::Return, null.or_else(|| self.name_of(&returned)), None);
         Ok(())
     }
 
@@ -713,8 +730,8 @@ impl Checker<'_> {
                 }
                 // The test is the last condition's `IFNOT`, short as FTEF-34.16 makes it.
                 let (op, condition) = match last {
-                    Some(value) => match self.drops_not(&value) {
-                        Some(operand) => (Op::IfI, operand),
+                    Some(value) => match self.drops_not(&value, Op::IfnotI, s.syntax().span()) {
+                        Some(short) => short,
                         None => (Op::IfnotI, self.name_of(&value)),
                     },
                     None => (Op::IfnotI, None),

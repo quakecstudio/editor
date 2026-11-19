@@ -54,8 +54,8 @@ pub(crate) fn fold(
     }
 }
 
-/// FTEF-32.14: the value `QCC_PR_GenerateFunctionCallRef` folds a call of `name` to, given its
-/// arguments' constants, `floats` when both of two arguments are floats as written: `floor`,
+/// FTEF-32.32: the value `QCC_PR_GenerateFunctionCallRef` folds a call of `name` to, given its
+/// arguments' constants, `floats` when both of two arguments are floats as passed: `floor`,
 /// `ceil`, `sin`, `cos`, `log` and `sqrt` of one constant, read as a float whatever its type,
 /// and `pow`, `mod`, `min`, `max` and `bitshift` of two floats. `None` when the call is made.
 pub(crate) fn builtin_call(
@@ -106,7 +106,148 @@ pub(crate) fn builtin_call(
     }
 }
 
-/// FTEF-32.14: `builtin_call` for a compiler, each argument the first word of its constant,
+/// The longest float a string can be and still be exact (`if (l > 1u<<24)`).
+const STRLEN_MAX: usize = 1 << 24;
+
+/// FTEF-32.32: the value `QCC_PR_GenerateFunctionCallRef` folds a call of `name` to, given the
+/// bytes of its one argument, a string constant: `strlen` (`QCC_Intrinsic_strlen`), the bytes
+/// before the first 0 counted unless one has its high bit set, and `stof`, C's `atof` of them.
+/// `None` when the call is made.
+pub(crate) fn string_call(name: &str, bytes: &[u8]) -> Option<Constant> {
+    let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+    let text = bytes.get(..end)?;
+    match name {
+        "strlen" => {
+            if !text.is_ascii() || text.len() > STRLEN_MAX {
+                return None;
+            }
+            let length = u32::try_from(text.len()).ok()?;
+            Some(Constant::float(double_to_f32(f64::from(length))))
+        }
+        "stof" => Some(Constant::float(double_to_f32(atof(text)))),
+        _ => None,
+    }
+}
+
+/// C's `atof`: the number the longest prefix of `text` writes, after white space and a sign: a
+/// decimal number with an optional exponent, a hexadecimal one after `0x` with an optional
+/// binary exponent, `inf`, `infinity` or `nan` in any case; 0 when there is none.
+fn atof(text: &[u8]) -> f64 {
+    let blank = |b: &u8| matches!(b, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r');
+    let start = text.iter().position(|b| !blank(b)).unwrap_or(text.len());
+    let mut rest = text.get(start..).unwrap_or_default();
+    let negative = rest.first() == Some(&b'-');
+    if matches!(rest.first(), Some(b'-' | b'+')) {
+        rest = rest.get(1..).unwrap_or_default();
+    }
+    let magnitude = unsigned_atof(rest);
+    if negative { -magnitude } else { magnitude }
+}
+
+/// [`atof`] after the sign.
+fn unsigned_atof(text: &[u8]) -> f64 {
+    let starts = |word: &[u8]| {
+        text.get(..word.len())
+            .is_some_and(|head| head.eq_ignore_ascii_case(word))
+    };
+    if starts(b"inf") {
+        return f64::INFINITY;
+    }
+    if starts(b"nan") {
+        return f64::NAN;
+    }
+    if starts(b"0x") {
+        return hex_float(text.get(2..).unwrap_or_default());
+    }
+    let digits = |from: usize| {
+        text.get(from..)
+            .unwrap_or_default()
+            .iter()
+            .take_while(|b| b.is_ascii_digit())
+            .count()
+    };
+    let whole = digits(0);
+    let mut end = whole;
+    let mut fraction = 0;
+    if text.get(end) == Some(&b'.') {
+        fraction = digits(end.saturating_add(1));
+        if whole.saturating_add(fraction) > 0 {
+            end = end.saturating_add(1).saturating_add(fraction);
+        }
+    }
+    if whole.saturating_add(fraction) == 0 {
+        return 0.0;
+    }
+    if matches!(text.get(end), Some(b'e' | b'E')) {
+        let sign = usize::from(matches!(text.get(end.saturating_add(1)), Some(b'-' | b'+')));
+        let from = end.saturating_add(1).saturating_add(sign);
+        let exponent = digits(from);
+        if exponent > 0 {
+            end = from.saturating_add(exponent);
+        }
+    }
+    text.get(..end)
+        .and_then(|number| std::str::from_utf8(number).ok())
+        .and_then(|number| number.parse().ok())
+        .unwrap_or(0.0)
+}
+
+/// A hexadecimal float after its `0x`: hexadecimal digits with an optional point, then an
+/// optional `p` and a decimal power of two; 0 with no digit.
+fn hex_float(text: &[u8]) -> f64 {
+    const HEX: u32 = 16;
+    const RADIX: f64 = 16.0;
+    let digit = |b: &u8| char::from(*b).to_digit(HEX).map(f64::from);
+    let mut value = 0.0;
+    let mut scale = 1.0;
+    let mut seen = 0_usize;
+    let mut point = false;
+    let mut at = 0_usize;
+    while let Some(b) = text.get(at) {
+        if let Some(d) = digit(b) {
+            if point {
+                scale /= RADIX;
+                value += d * scale;
+            } else {
+                value = value * RADIX + d;
+            }
+            seen = seen.saturating_add(1);
+        } else if *b == b'.' && !point {
+            point = true;
+        } else {
+            break;
+        }
+        at = at.saturating_add(1);
+    }
+    if seen == 0 {
+        return 0.0;
+    }
+    if matches!(text.get(at), Some(b'p' | b'P')) {
+        let rest = text.get(at.saturating_add(1)..).unwrap_or_default();
+        let negative = rest.first() == Some(&b'-');
+        let skip = usize::from(matches!(rest.first(), Some(b'-' | b'+')));
+        let power: Option<i32> = rest
+            .get(skip..)
+            .map(|digits| {
+                let count = digits.iter().take_while(|b| b.is_ascii_digit()).count();
+                digits.get(..count).unwrap_or_default()
+            })
+            .filter(|digits| !digits.is_empty())
+            .and_then(|digits| std::str::from_utf8(digits).ok())
+            .map(|digits| digits.parse().unwrap_or(i32::MAX));
+        if let Some(power) = power {
+            let power = if negative {
+                power.saturating_neg()
+            } else {
+                power
+            };
+            value *= 2.0_f64.powi(power);
+        }
+    }
+    value
+}
+
+/// FTEF-32.32: `builtin_call` for a compiler, each argument the first word of its constant,
 /// if it is one; the float the call folds to, or `None` when the call is made.
 #[must_use]
 pub fn fold_builtin_call(name: &str, words: &[Option<u32>], floats: bool) -> Option<f32> {
@@ -121,7 +262,7 @@ pub fn fold_builtin_call(name: &str, words: &[Option<u32>], floats: bool) -> Opt
 /// value of a `math.h` function.
 #[expect(
     clippy::cast_possible_truncation,
-    reason = "spec FTEF-32.14: C's double to float conversion rounds to nearest"
+    reason = "spec FTEF-32.32: C's double to float conversion rounds to nearest"
 )]
 const fn double_to_f32(value: f64) -> f32 {
     value as f32
@@ -130,7 +271,7 @@ const fn double_to_f32(value: f64) -> f32 {
 /// C's `fmodf`: the remainder of `x / y` with the sign of `x`.
 #[expect(
     clippy::modulo_arithmetic,
-    reason = "spec FTEF-32.14: C's fmodf, which Rust's float % computes"
+    reason = "spec FTEF-32.32: C's fmodf, which Rust's float % computes"
 )]
 fn fmodf(x: f32, y: f32) -> f32 {
     x % y

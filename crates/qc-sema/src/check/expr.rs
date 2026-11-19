@@ -14,7 +14,7 @@ use qc_progs::Op;
 use qc_syntax::ast::{self, AstNode as _, BinaryOp};
 
 use crate::cast::{ConstType, Source};
-use crate::check::assign::{assign_spelling, lexed_string};
+use crate::check::assign::{assign_spelling, joined_string};
 use crate::check::constant::{Constant, unquoted};
 use crate::check::convert::{Choice, Operand, choose_opcode};
 use crate::check::emulate::conversion_opcodes;
@@ -109,6 +109,8 @@ pub(super) struct Checker<'e> {
     /// The cases of each `switch` being read, the innermost last, which a `case` statement
     /// anywhere in its body joins (FTEF-16.16).
     pub(super) switches: Vec<Vec<Case>>,
+    /// Whether the function has made its `this` alias ([`super::Object::ThisAlias`]).
+    pub(super) this_aliased: bool,
 }
 
 /// A fatal error reported: FTEQCC's `QCC_PR_ParseError`, after which nothing more of the
@@ -154,6 +156,7 @@ impl<'e> Checker<'e> {
             stray: None,
             last_temp: None,
             switches: Vec::new(),
+            this_aliased: false,
         }
     }
 
@@ -269,6 +272,21 @@ impl<'e> Checker<'e> {
         })
     }
 
+    /// A string constant whose text is `text` and whose bytes, if they were read, are `bytes`,
+    /// kept among the body's strings.
+    fn string_constant(&mut self, text: &str, bytes: Option<Vec<u8>>) -> Value {
+        let string = bytes.and_then(|bytes| {
+            let index = u32::try_from(self.strings.len()).ok()?;
+            self.strings.push(bytes);
+            Some(index)
+        });
+        Value {
+            text: Some(text.into()),
+            string,
+            ..Value::constant(Constant::string(text.is_empty()))
+        }
+    }
+
     pub(super) fn literal(&mut self, literal: &ast::Literal) -> Value {
         let Some(token) = literal.token() else {
             return Value::unknown();
@@ -276,17 +294,7 @@ impl<'e> Checker<'e> {
         match literal.kind() {
             Some(ast::LiteralKind::String) => {
                 let written = String::from_utf8_lossy(&literal.syntax().text()).into_owned();
-                let text = unquoted(&written);
-                let string = lexed_string(token.text()).and_then(|bytes| {
-                    let index = u32::try_from(self.strings.len()).ok()?;
-                    self.strings.push(bytes);
-                    Some(index)
-                });
-                Value {
-                    text: Some(text.as_str().into()),
-                    string,
-                    ..Value::constant(Constant::string(text.is_empty()))
-                }
+                self.string_constant(&unquoted(&written), joined_string(literal.syntax()))
             }
             Some(ast::LiteralKind::Vector) => {
                 let flags = self.env.lex_flags_at(token.span().start);
@@ -322,19 +330,16 @@ impl<'e> Checker<'e> {
                     };
                 }
                 let constant = Constant::of_number(&text, flags);
-                // The code generator places a number as the lexer reads it, a float, when that
-                // float's word is the constant's: an integer such as `1i` is its own words, never
-                // the float `1.0`'s, which `0i` shares (FTE-20.5).
+                // The code generator places a float as the lexer reads it. An integer is its own
+                // constant, which shares a float's immediate of its bits, as `0i` does `0`'s, in
+                // the one table of constants (FTE-20.5, FTEF-3.6).
                 let lexed = qc_lexer::lex_with(token.text(), qc_syntax::Dialect::Fteqcc);
                 let literal = match lexed.tokens.as_slice() {
                     [lexed] => match lexed.kind {
                         // A one-word constant only: a 64-bit one's words are not the float's.
                         qc_lexer::TokenKind::Float(value)
                             if value.to_bits() == constant.u()
-                                && matches!(
-                                    constant.ty,
-                                    ConstType::Float | ConstType::Integer | ConstType::Uint
-                                ) =>
+                                && constant.ty == ConstType::Float =>
                         {
                             Some((
                                 constant,
@@ -376,7 +381,7 @@ impl<'e> Checker<'e> {
         {
             let message = "'self' used inside OO function, use 'this'.".to_owned();
             self.env.report(Code::W0316, token.span(), message);
-            return self.this(class);
+            return self.this(class, super::Object::ThisAlias);
         }
         let Some(def) = self.env.reference(token.span().start) else {
             // FTEF-17.14: `this` is the entity `self` as the function's class.
@@ -384,7 +389,16 @@ impl<'e> Checker<'e> {
                 && token.text() == b"this"
                 && let Some(class) = self.env.this_type()
             {
-                return self.this(class);
+                return self.this(class, super::Object::Named);
+            }
+            // FTEF-14.80: `__FUNC__` is the string of the function's name.
+            if !scoped && self.env.fteqcc() && super::is_function_name(&token.text_lossless()) {
+                let name = if self.function.name.is_empty() {
+                    super::NO_FUNCTION.to_owned()
+                } else {
+                    self.function.name.clone()
+                };
+                return self.string_constant(&name, Some(name.clone().into_bytes()));
             }
             // FTEF-19.80: `nil` that names no definition is `QCC_MakeIntConst(0)`.
             if !scoped && token.text() == b"nil" && self.env.fteqcc() {
@@ -392,13 +406,31 @@ impl<'e> Checker<'e> {
             }
             return Value::unknown();
         };
+        // FTEF-9.30: `CLASS::NAME`, `this::NAME` and `super::NAME` of a virtual member are its
+        // function, the definition of that name, tried before the member's field
+        // `CLASS::__mNAME`.
+        let def = self
+            .env
+            .virtual_function(def)
+            .filter(|_| name.scope().is_some())
+            .unwrap_or(def);
         self.def_value(def, &token, scoped)
     }
 
     /// FTEF-17.14: `this` in a member function, of type `class`: the global `self` as the
     /// class, `d = QCC_PR_GetSRef(type_entity, "self", NULL, true, 0, false); d.cast =
     /// pr_classtype;`, which a statement names as `self`.
-    fn this(&self, class: Type) -> Value {
+    ///
+    /// FTEF-9.26: a member named bare, or `self`, makes the function's `this` alias, and the
+    /// keyword `this` after it finds that definition by its name before the keyword is tried,
+    /// so it is the alias from then on.
+    fn this(&mut self, class: Type, object: super::Object) -> Value {
+        self.this_aliased |= object == super::Object::ThisAlias;
+        let object = if self.this_aliased {
+            super::Object::ThisAlias
+        } else {
+            object
+        };
         let sym = self
             .env
             .helper("self")
@@ -406,6 +438,7 @@ impl<'e> Checker<'e> {
         Value {
             name: Some("this".to_owned()),
             sym,
+            object,
             ..Value::of(class)
         }
     }
@@ -420,7 +453,12 @@ impl<'e> Checker<'e> {
     ) -> Value {
         let array = self.env.is_array(def);
         let constness = self.env.constness(def);
-        let Some(ty) = self.env.definition(def).map(|def| def.ty.clone()) else {
+        // A definition written with a typedef's name is of the type the name stands for.
+        let Some(ty) = self
+            .env
+            .definition(def)
+            .map(|def| self.env.typedef_free(&def.ty))
+        else {
             return Value::unknown();
         };
         let name = token.text_lossless();
@@ -442,7 +480,7 @@ impl<'e> Checker<'e> {
             && self.env.in_class()
             && !scoped
         {
-            let this = self.this(Type::Unknown);
+            let this = self.this(Type::Unknown, super::Object::ThisAlias);
             return Value::field_of(&this, name, held, Some(def));
         }
         Value {

@@ -16,7 +16,8 @@ use crate::check::TypedBody;
 use crate::ir;
 use crate::lower::ArrayDim;
 use crate::lower::{
-    MemberBase, MemberKind, MemberStorage, Qualification, RawClass, RawDecl, RawMember, RawUse,
+    IntConst, MemberBase, MemberKind, MemberStorage, Qualification, RawClass, RawDecl, RawMember,
+    RawUse,
 };
 use crate::resolve::{
     COMPONENTS, ClassInfo, Found, MAX_CLASS_DEPTH, Pending, Resolver, Scope, StructMatch,
@@ -112,6 +113,21 @@ impl<'a> Resolver<'a> {
         }
     }
 
+    /// FTEF-31.2: the length of the member array `member` is, the integer its size is
+    /// (`QCC_PR_IntConstExpr`): a number as written, any other expression folded as a
+    /// definition's size is (FTEF-19.62), a constant's name among them. `None` for no array.
+    fn member_dimension(&mut self, file: FileId, member: &RawMember) -> Option<ArrayDim> {
+        let unfolded = match member.length.as_ref()? {
+            IntConst::Integer(size) => {
+                return Some(u32::try_from(*size).map_or(ArrayDim::Unknown, ArrayDim::Sized));
+            }
+            IntConst::NotInteger | IntConst::Name(_) | IntConst::Unfolded => member.size.as_ref(),
+        };
+        let folded =
+            unfolded.and_then(|size| self.fold_size(file, &size.expr, &size.uses, size.flags));
+        Some(folded.map_or(ArrayDim::Unknown, ArrayDim::Sized))
+    }
+
     /// Records an FTEQCC class and declares its members (FTEF-17.1, FTEF-17.2). A member is a
     /// definition of the class, not a global by its name.
     pub(in crate::resolve) fn declare_class(
@@ -195,6 +211,7 @@ impl<'a> Resolver<'a> {
             let location = self.at(file, *span);
             self.check_type_names(ty, &[], span.start, location);
         }
+        let mut params = Vec::new();
         for member in &class.members {
             let location = self.at(file, member.span);
             // FTEF-9.9: `basetype = QCC_PR_ParseType(false, false, false)`: a member's type
@@ -251,18 +268,18 @@ impl<'a> Resolver<'a> {
                 if kind == DefKind::Field && member.array.is_none() {
                     self.declare_component_fields(def, member, location);
                 }
-                // FTEF-31.2: a member array is an array of fields, indexed by its length.
-                if let Some(size) = &member.array
+                // FTEF-31.2: a member array is an array of fields, indexed by its length, the
+                // integer its size is (`QCC_PR_IntConstExpr`), `16i` as `16`.
+                if let Some(dimension) = self.member_dimension(file, member)
                     && let Some(facts) = self.facts.get_mut(id.index())
                 {
-                    facts.array = Some(
-                        size.trim()
-                            .parse()
-                            .map_or(ArrayDim::Unknown, ArrayDim::Sized),
-                    );
+                    facts.array = Some(dimension);
                 }
                 id
             };
+            if kind == DefKind::Field {
+                params.push(id);
+            }
             let function = self.declare_virtual_function(id);
             if let Some(body) = &member.body {
                 if let Some(function) = function {
@@ -270,6 +287,11 @@ impl<'a> Resolver<'a> {
                 }
                 pending.push((file, id, Some(def), body, None));
             }
+        }
+        // A redeclaration keeps the class's first `params` (`if (redeclaration) ... else {
+        // newt->num_parms = numparms; ... }`).
+        if class.body {
+            self.index.class_params.entry(def).or_insert(params);
         }
         pending
     }
@@ -534,7 +556,7 @@ impl<'a> Resolver<'a> {
         self.spawnfuncs.push((id, class));
     }
 
-    /// FTEF-9.22: the body of each class's spawn function the program gives none, as
+    /// FTEF-9.27: the body of each class's spawn function the program gives none, as
     /// `QCC_PR_EmitClassFromFunction` writes it after every file.
     pub(in crate::resolve) fn write_spawn_functions(&mut self) {
         for (spawnfunc, class) in std::mem::take(&mut self.spawnfuncs) {
@@ -552,10 +574,11 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    /// FTEF-9.22: `QCC_PR_EmitClassFromFunction`'s body for the class `class`:
+    /// FTEF-9.27: `QCC_PR_EmitClassFromFunction`'s body for the class `class`:
     /// `self.classname = "CLASS"` when `classname` is a field; then for each class from the root
-    /// down, each virtual member with a body that no class below it declares again stored its
-    /// function, `self.__mNAME = CLASS::NAME` (`QCC_PR_EmitClassFunctionTable`); then each
+    /// down, each virtual member with a body stored its function, `self.__mNAME =
+    /// CLASS::NAME`, one a class below declares again by each of them in turn
+    /// (`QCC_PR_EmitClassFunctionTable`, FTEF-9.27); then each
     /// constructor `CLASS::CLASS` called, the class's own first and its parents' after; then
     /// `DONE`. A program with no `self` has one made, an entity declared at the class,
     /// `location` (`QCC_PR_GetSRef(type_entity, "self", NULL, true, 0, false)`).
@@ -586,44 +609,42 @@ impl<'a> Resolver<'a> {
             body.store_through(this, classname, string);
         }
         // `QCC_PR_EmitClassFunctionTable` recurses to the root before it reads a class.
-        for (depth, owner) in chain.iter().enumerate().rev() {
-            let below = chain.get(..depth).unwrap_or_default();
-            for &member in &members {
-                let Some(def) = self.index.def(member) else {
-                    continue;
-                };
-                if def.member_of != Some(*owner) {
-                    continue;
-                }
-                // "Member function %s was not defined": a member with no body is left empty.
+        for owner in chain.iter().rev() {
+            let params = self.index.class_params.get(owner).cloned();
+            for member in params.unwrap_or_default() {
+                // "Member function %s was not defined": a member with no body is left empty,
+                // but one given 0, whose function `CLASS::NAME` is declared and holds none:
+                // the table stores every member whose function is found (`if (!virt.cast)`).
+                let given_null = self.index.def(member).is_some_and(|d| d.initialized);
                 let Some(function) = self
                     .index
                     .virtual_function(member)
-                    .filter(|&f| self.index.def(f).is_some_and(|d| d.initialized))
+                    .filter(|&f| given_null || self.index.def(f).is_some_and(|d| d.initialized))
                 else {
                     continue;
                 };
-                // A class below that declares the member again fills the field itself.
-                let overridden = members.iter().any(|&other| {
-                    self.index.def(other).is_some_and(|o| {
-                        o.name == def.name && o.member_of.is_some_and(|c| below.contains(&c))
-                    })
-                });
-                if !overridden {
-                    body.store_through(this, member, ir::Name::Def(function, 0));
-                }
+                // A member a class below declares again is stored here too, and again by that
+                // class with its own function: the skip of an overridden member looks for a
+                // field of the lower class's own, `LOWER::__mNAME`, which a member found in
+                // a parent is never given (`QCC_PR_ParseEntClass`: `if (found) continue;`).
+                body.store_through(this, member, ir::Name::Def(function, 0));
             }
         }
         for &owner in &chain {
             let Some(owner_name) = self.index.def(owner).map(|d| d.name.as_str()) else {
                 continue;
             };
-            let constructor = members.iter().copied().find(|&member| {
-                self.index.def(member).is_some_and(|d| {
-                    d.member_of == Some(owner)
-                        && d.kind == DefKind::Function
-                        && d.name == owner_name
-                })
+            // The definition named `CLASS::CLASS` (`QCC_PR_GetSRef(NULL, membername, NULL,
+            // false, 0, false)`), a virtual constructor's function as a nonvirtual one's.
+            let constructor = members.iter().copied().find_map(|member| {
+                let def = self
+                    .index
+                    .def(member)
+                    .filter(|d| d.member_of == Some(owner) && d.name == owner_name)?;
+                match def.kind {
+                    DefKind::Function => Some(member),
+                    _ => self.index.virtual_function(member),
+                }
             });
             if let Some(constructor) = constructor {
                 body.statements.push(ir::BodyStatement {
@@ -636,7 +657,7 @@ impl<'a> Resolver<'a> {
         TypedBody::written(body.statements, body.strings)
     }
 
-    /// FTEF-9.21: the function `CLASS::NAME` a body of the virtual member `member` defines,
+    /// FTEF-9.29: the function `CLASS::NAME` a body of the virtual member `member` defines,
     /// declared with the member (`QCC_PR_GetDef(newparm, membername, NULL, true, 0,
     /// gdf_flags)`): a constant of the member's type, initialised once a declaration of the
     /// member gives it a body. `None` for a member that is no virtual one, a field of function
@@ -982,7 +1003,7 @@ impl Resolver<'_> {
     }
 }
 
-/// The statements and strings of a spawn function's body as it is written (FTEF-9.22).
+/// The statements and strings of a spawn function's body as it is written (FTEF-9.27).
 #[derive(Default)]
 struct SpawnBody {
     statements: Vec<ir::BodyStatement>,

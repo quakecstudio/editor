@@ -22,12 +22,12 @@ use super::arrays::Access;
 use super::{At, Compiler, Lowered, Written, literal_of};
 use crate::Internal;
 use crate::back_end::Allocation;
-use crate::program::{Literal, OFS_RETURN, ValueType, operand, type_words};
+use crate::program::{Literal, OFS_RETURN, ValueType, operand};
 
 impl Compiler<'_> {
     /// Writes `body`'s statements as the code of the function being compiled, `named` the span
     /// of its name, the origin of the statements before its first source statement. `syntax` is
-    /// the body's text, none for a body the semantic model wrote itself (FTEF-9.22).
+    /// the body's text, none for a body the semantic model wrote itself (FTEF-9.27).
     ///
     /// [`Internal::Unfollowed`] for a body [`writable`] refuses, and
     /// [`Internal::DefaultUnknown`] for one whose calls pass a default the semantic model did
@@ -249,6 +249,11 @@ impl Compiler<'_> {
                 return Ok(());
             }
             Effect::Constant(local) => return self.constant_local(syntax, local, span),
+            Effect::Value(Name::Def(local, _), value) => {
+                let place = self.program.get_def(self.index, local).at(span)?;
+                return self.program.initialise_words(place, value.value()).at(span);
+            }
+            Effect::Value(..) => return Err(Internal::Unlowered).at(span),
             Effect::Autocvar(cvar) => return self.autocvar_default(syntax, cvar, span),
             Effect::Nested(Name::Def(local, _)) => {
                 return self.nested_local(syntax, local, span).map(|_| ());
@@ -422,9 +427,7 @@ impl Compiler<'_> {
                 let def = self.program.def(place).at(span)?;
                 // FTE-13.6: a word past an array's elements is not lowered.
                 if let Some(count) = def.count {
-                    let words = count
-                        .checked_mul(type_words(self.index, &def.ty))
-                        .at(span)?;
+                    let words = count.checked_mul(def.element_words(self.index)).at(span)?;
                     if word >= words {
                         return Err(Internal::Unlowered).at(span);
                     }
@@ -459,6 +462,10 @@ impl Compiler<'_> {
             Name::Return => OFS_RETURN,
             Name::ReturnWord(word) => OFS_RETURN.checked_add(word).at(span)?,
             Name::Parameter(slot) => self.parameter_slot(usize::from(slot), span)?,
+            Name::ParameterWord(slot, word) => self
+                .parameter_slot(usize::from(slot), span)?
+                .checked_add(word)
+                .at(span)?,
             Name::VaList(word) => {
                 let list = self.va_list.at(span)?;
                 self.program

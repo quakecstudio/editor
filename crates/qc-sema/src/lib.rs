@@ -82,12 +82,13 @@ mod tests;
 
 pub use check::TypedBody;
 pub use check::fold::{fold_builtin_call, fold_floats};
+pub use check::{NO_FUNCTION, is_function_name};
 pub use db::{Db, ModuleAnalysis, QueryCounts};
 pub use expand::{ModuleInput, OriginMap};
 pub use lower::{Binum, FileDecls, LiteralValue};
 pub use resolve::InitialValue;
 pub use resolve::{
-    AccessorShape, FileDiagnostic, MemberShape, ModuleIndex, ResolveOptions, Scalar, StructShape,
+    FileDiagnostic, MemberShape, ModuleIndex, RecordShape, ResolveOptions, Scalar, StructShape,
     resolve_module, resolve_module_at_targets,
 };
 pub use symbol::{DefId, DefKind, Definition, FileId, Location, Reference};

@@ -131,7 +131,7 @@ fn bitfields_and_narrow_members_are_left_out() {
     assert_eq!(names("N"), ["g"]);
 }
 
-// spec FTEF-32.14: a call of constants FTEQCC folds by its name is the folded constant, so a
+// spec FTEF-32.32: a call of constants FTEQCC folds by its name is the folded constant, so a
 // global initialised with it is a constant with no statement at global scope
 #[test]
 fn a_folded_builtin_call_initialises_a_global() {

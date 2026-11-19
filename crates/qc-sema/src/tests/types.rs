@@ -1243,10 +1243,11 @@ fn an_integer_constant_folds_to_its_number() {
     assert_eq!(stored, [float(3.0), float(-2.0)]);
 }
 
-// FTE-19.4, FTEF-29.13: `++x` folds its store into the step; a number literal such as `0i` is
-// named by the immediate the lexer reads it as, a float
+// FTE-19.4, FTEF-29.13: `++x` folds its store into the step. FTEF-3.6: an integer literal
+// such as `0i` is named by its own constant, which the one table of constants shares with a
+// float of its bits
 #[test]
-fn a_generated_prefix_folds_and_a_literal_names_its_float() {
+fn a_generated_prefix_folds_and_an_integer_literal_names_its_constant() {
     use crate::ir::{Immediate, ImmediateKind, Name};
     use qc_progs::Op;
     let source = "float a; var void() g; void() t = { ++a; g = 0i; };";
@@ -1265,7 +1266,7 @@ fn a_generated_prefix_folds_and_a_literal_names_its_float() {
         (Op::AddF, Some(Name::Def(def("a"), 0)))
     );
     let zero = Name::Immediate(Immediate {
-        kind: ImmediateKind::Float,
+        kind: ImmediateKind::Integer,
         words: [0, 0, 0],
     });
     assert_eq!(generated[1].a, Some(zero));

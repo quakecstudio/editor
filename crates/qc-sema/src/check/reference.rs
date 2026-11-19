@@ -96,6 +96,22 @@ impl Checker<'_> {
         match value.reference.clone() {
             Reference::Global => self.extend_narrow(value, span),
             Reference::Accessor(accessor) => self.accessor_get(&value, &accessor, span),
+            // FTEF-9.28: a nonvirtual member read through an object is its function, the
+            // constant `CLASS::NAME` (`REF_NONVIRTUAL`), which has no field to load.
+            Reference::Field(field)
+                if let Some(def) = field.def
+                    && self.env.definition(def).is_some_and(|d| {
+                        d.member_of.is_some() && d.kind == crate::DefKind::Function
+                    }) =>
+            {
+                Ok(Value {
+                    constness: self.env.constness(def),
+                    sym: Sym::Def(def, true, 0),
+                    readonly: true,
+                    reference: Reference::Global,
+                    ..Value::of(value.ty)
+                })
+            }
             Reference::Field(_) => {
                 // FTEF-2.12: `QCC_PR_ExpandField` has no load of an 8- or 16-bit integer.
                 if narrow_bits(&value.ty).is_some() {
@@ -444,6 +460,21 @@ impl Checker<'_> {
                 _ => None,
             }
             .filter(|_| target.valid(Op::LoadaF));
+            // FTEF-31.19: a struct or a union is read word by word into a block.
+            let structured = matches!(
+                self.etype_of(&element.ty),
+                Some(Etype::Struct | Etype::Union)
+            );
+            if structured && target.valid(Op::LoadaF) && !self.global {
+                let words = self
+                    .env
+                    .layout(&element.ty)
+                    .map_or(0, |layout| layout.words);
+                if let (Some(array), Some(at)) = (self.name_of(element), self.name_of(&index)) {
+                    let block = self.load_words(Words::OfArray(array), Some(at), words, span);
+                    return Ok(ArrayRead::Block(block));
+                }
+            }
             match load {
                 Some(op) if !self.global => {
                     let loaded = self.emit(op, element, &index, span)?;
@@ -616,12 +647,26 @@ impl Checker<'_> {
     ) -> Checked {
         // The index counts elements of the field's type, a vector's three words each.
         let at = self.scaled_index(&base.ty, at, span)?;
-        if at.known().is_some() {
-            return Ok(base);
+        // FTEF-31.33: at a constant index the element is the array's definition at the
+        // element's word, a field as any other.
+        if let Some(constant) = at.known() {
+            let element = eval_int(constant).and_then(|at| u32::try_from(at).ok());
+            return Ok(match &base.reference {
+                Reference::Field(field) => Value {
+                    reference: Reference::Field(Box::new(FieldRef {
+                        element,
+                        ..field.as_ref().clone()
+                    })),
+                    ..base
+                },
+                _ => base,
+            });
         }
+        // The array is of fields, whatever they hold: its element is loaded by
+        // `OP_LOADA_FLD`, after the index's bound is checked.
         let array = Value {
             sym: Sym::Def(def, false, 0),
-            ..Value::of(base.ty.clone())
+            ..Value::of(Type::Field(base.ty.clone().into()))
         };
         match self.load_from_array(&array, &at, ElementKind::Element, span)? {
             // FTEF-31.19: the field `OP_LOADA_*` loaded is the one the entity's is read or
@@ -643,6 +688,39 @@ impl Checker<'_> {
             ArrayRead::Called | ArrayRead::Block(_) => self.followed = false,
         }
         Ok(base)
+    }
+
+    /// FTEF-31.33: the float field at the word `at`, no constant, of the array of vector fields
+    /// `def` that `base` reads: loaded from the array by `OP_LOADA_FLD`, the field `component`
+    /// is then read or stored at.
+    pub(super) fn field_component(
+        &mut self,
+        base: &Value,
+        def: crate::DefId,
+        at: &Value,
+        component: Value,
+        span: Span,
+    ) -> Checked {
+        let float = Type::Simple(SimpleType::Float);
+        let array = Value {
+            sym: Sym::Def(def, false, 0),
+            ..Value::of(Type::Field(float.into()))
+        };
+        let (Reference::Field(field), ArrayRead::Loaded(loaded)) = (
+            &base.reference,
+            self.load_from_array(&array, at, ElementKind::Element, span)?,
+        ) else {
+            self.followed = false;
+            return Ok(component);
+        };
+        Ok(Value {
+            reference: Reference::Field(Box::new(FieldRef {
+                selected: self.name_of(&loaded),
+                ..field.as_ref().clone()
+            })),
+            readonly: base.readonly,
+            ..component
+        })
     }
 
     /// FTE-13.12: the struct element of `size` words at the float index `index`, read by the
@@ -738,6 +816,31 @@ impl Checker<'_> {
             return Ok(value);
         };
         if matches!(etype, Etype::Struct | Etype::Union) {
+            // FTEF-6.14: read word by word into a block, when the body can name the pointer
+            // and the index.
+            let at = index.and_then(|index| self.name_of(index));
+            if let Some(pointer) =
+                named.filter(|_| !self.global && (index.is_none() || at.is_some()))
+            {
+                let words = self.env.layout(&value.ty).map_or(0, |layout| layout.words);
+                if words >= VECTOR_WORDS {
+                    self.simple_statement(Op::LoadpV, span)?;
+                }
+                if words.checked_rem(VECTOR_WORDS).unwrap_or(0) != 0 {
+                    self.simple_statement(Op::LoadpI, span)?;
+                }
+                let block = self.load_words(Words::Through(pointer), at, words, span);
+                return Ok(Value {
+                    reference: Reference::Global,
+                    sym: Sym::Temp,
+                    made: Some(block),
+                    word: 0,
+                    temp: None,
+                    returned: false,
+                    call: None,
+                    ..value
+                });
+            }
             self.load_words_from_pointer(&value.ty, index, span)?;
             return Ok(Value {
                 reference: Reference::Global,
@@ -781,6 +884,63 @@ impl Checker<'_> {
         })
     }
 
+    /// A struct's or a union's `words` words read into a block, the generated statement the
+    /// block is made at. Of an array at an integer index (FTEF-31.19, `QCC_LoadFromArray`):
+    /// `OP_LOADA_V` for each three words, `OP_LOADA_I64` for two left where the target has
+    /// it, else `OP_LOADA_I` of each, the array's offset moved on by the words read
+    /// (`base.ofs += 3;`). Through a pointer (FTEF-6.14, `QCC_LoadFromPointer`): `OP_LOADP_V`
+    /// for each three words and `OP_LOADP_I` for each after them, at the word's index, the
+    /// word itself with no index and else `OP_ADD_I` of the index and the word.
+    fn load_words(&mut self, from: Words, index: Option<ir::Name>, words: u32, span: Span) -> u32 {
+        let first = self.next_made();
+        self.effects.push((first, ir::Effect::Block(words)));
+        let pairs = self.env.target_at(span.start).valid(Op::LoadaI64);
+        let mut at: u32 = 0;
+        while at < words {
+            let left = words.saturating_sub(at);
+            let word = ir::Name::Immediate(ir::Immediate {
+                kind: ir::ImmediateKind::Integer,
+                words: [at, 0, 0],
+            });
+            let (op, size, a, b) = match from {
+                Words::OfArray(array) => {
+                    let (op, size) = if left >= VECTOR_WORDS {
+                        (Op::LoadaV, VECTOR_WORDS)
+                    } else if left >= 2 && pairs {
+                        (Op::LoadaI64, 2)
+                    } else {
+                        (Op::LoadaI, 1)
+                    };
+                    (op, size, array.word(at), index)
+                }
+                Words::Through(pointer) => {
+                    let (op, size) = if left >= VECTOR_WORDS {
+                        (Op::LoadpV, VECTOR_WORDS)
+                    } else {
+                        (Op::LoadpI, 1)
+                    };
+                    let place = match index {
+                        None => Some(word),
+                        Some(index) if at == 0 => Some(index),
+                        Some(index) => self
+                            .push_made(Op::AddI, Some(index), Some(word))
+                            .map(ir::Name::Made),
+                    };
+                    (op, size, Some(pointer), place)
+                }
+            };
+            self.generated.push(ir::BodyStatement {
+                op,
+                a,
+                b,
+                c: Some(ir::Name::MadeWord(first, at)),
+            });
+            at = at.saturating_add(size);
+        }
+        self.last_temp = None;
+        first
+    }
+
     /// FTEF-6.14: a struct or union of `ty` read through a pointer, `OP_LOADP_V` for each
     /// three words and `OP_LOADP_I` for each word after them (`QCC_PR_SimpleStatement`, whose
     /// opcode the target must have, a fatal error), each word's offset added to the index by
@@ -822,6 +982,7 @@ impl Checker<'_> {
     pub(super) fn index(&mut self, index: &ast::IndexExpr) -> Checked {
         let span = index.syntax().span();
         let base = self.expr_of(index.base())?;
+        let after_base = self.generated.len();
         let at = self.value(index.index())?;
         self.end_of_construct()?;
         if base.ty == Type::Unknown || at.ty == Type::Unknown {
@@ -861,6 +1022,16 @@ impl Checker<'_> {
             let length = self.env.array_length(def);
             self.bounds(constant, length, span);
             let at = self.bound_checked(at, constant, length, span)?;
+            // FTEF-31.34: the entity the array's fields are read through is loaded after the
+            // index is read and checked.
+            let (entity, at) = self.read_pointer_last(field.entity, at, after_base);
+            let base = Value {
+                reference: Reference::Field(Box::new(FieldRef {
+                    entity,
+                    ..field.as_ref().clone()
+                })),
+                ..base.clone()
+            };
             return self.field_array_element(base, def, at, span);
         }
         if base.is_array_head() {
@@ -978,15 +1149,17 @@ impl Checker<'_> {
 
     /// FTEF-31.25: component `word` of the vector `base` reads through a pointer: the float at
     /// the vector's word plus `word`, through the same pointer.
-    fn pointer_component(&mut self, base: Value, word: u32, span: Span) -> Checked {
+    pub(super) fn pointer_component(&mut self, base: Value, word: u32, span: Span) -> Checked {
         let Reference::Pointer(pointer) = &base.reference else {
             return Ok(base);
         };
         let component = Some((word, WORD_ALIGNMENT));
+        let before = self.generated.len();
         let index = self.member_index(pointer.index.as_ref(), component, span)?;
+        let (named, index) = self.read_pointer_last(pointer.named, index, before);
         Ok(Value {
             readonly: base.readonly,
-            reference: Reference::pointer(pointer.base.clone(), Some(index), pointer.named),
+            reference: Reference::pointer(pointer.base.clone(), Some(index), named),
             name: base.name,
             ..Value::of(Type::Simple(SimpleType::Float))
         })
@@ -1510,8 +1683,22 @@ impl Checker<'_> {
                     } else {
                         self.converted(index, Etype::Integer, span)?
                     };
-                    // FTEF-31.30, FTEF-31.31: an element one `OP_STOREP_*` does not store, of 8,
-                    // 16 or 64 bits or a struct, is not followed.
+                    // FTEF-31.20, FTEF-6.18: a struct or a union is stored through the address
+                    // word by word (`QCC_StoreToPointer`).
+                    if let Some(made) = address
+                        && matches!(self.etype_of(&lhs.ty), Some(Etype::Struct | Etype::Union))
+                    {
+                        let pointer = Some(ir::Name::Made(made));
+                        let at = self.name_of(&index);
+                        if !(at.is_some()
+                            && self.store_words_through(stored, pointer, at, &lhs.ty, span))
+                        {
+                            self.followed = false;
+                        }
+                        return Ok(());
+                    }
+                    // FTEF-31.30, FTEF-31.31: any other element one `OP_STOREP_*` does not
+                    // store, of 8, 16 or 64 bits, is not followed.
                     if address.is_some() && !self.one_store(&lhs.ty) {
                         self.followed = false;
                     }
@@ -1548,7 +1735,7 @@ impl Checker<'_> {
                 }
                 Ok(())
             }
-            Reference::Character(index) => self.store_character(index, stored, span),
+            Reference::Character(index) => self.store_character(lhs, index, stored, span),
             Reference::Accessor(accessor) => self.accessor_set(lhs, accessor, stored, span),
             // FTEF-2.12: a field of an 8- or 16-bit integer is stored through its address.
             Reference::Field(_) => match narrow_bits(&lhs.ty) {
@@ -1581,7 +1768,13 @@ impl Checker<'_> {
     /// else `OP_STOREP_C` or `OP_STOREP_I8`; the value made a float or an integer for it, and the
     /// index an integer, added to the string by `OP_ADD_I` on a target whose stores take no
     /// offset; then [`Self::small_store`].
-    fn store_character(&mut self, index: &Value, stored: &Value, span: Span) -> Result<(), Fatal> {
+    fn store_character(
+        &mut self,
+        lhs: &Value,
+        index: &Value,
+        stored: &Value,
+        span: Span,
+    ) -> Result<(), Fatal> {
         let target = self.env.target_at(span.start);
         let float = self.etype_of(&stored.ty) == Some(Etype::Float);
         let op = if (float && target.valid(Op::StorepC))
@@ -1601,12 +1794,30 @@ impl Checker<'_> {
         };
         let value = self.supplied(stored, &to, span)?;
         let index = self.supplied(index, &int, span)?;
-        if target.stores_at_offset() {
-            return self.small_store(op, &value, Some(&index), span);
+        let string = Value {
+            ty: Type::Simple(SimpleType::String),
+            reference: Reference::Global,
+            ..lhs.clone()
+        };
+        let (address, index) = if target.stores_at_offset() {
+            (string, Some(index))
+        } else {
+            (self.emit(Op::AddI, &string, &index, span)?, None)
+        };
+        if target.valid(op) {
+            let (a, b) = (self.name_of(&value), self.name_of(&address));
+            let c = index.as_ref().and_then(|index| self.name_of(index));
+            if a.is_none() || b.is_none() || c.is_none() != index.is_none() {
+                self.followed = false;
+            }
+            self.generated.push(ir::BodyStatement {
+                a,
+                b,
+                c,
+                ..ir::BodyStatement::bare(op)
+            });
         }
-        let string = Value::of(Type::Simple(SimpleType::String));
-        self.emit(Op::AddI, &string, &index, span)?;
-        self.small_store(op, &value, None, span)
+        self.small_store(op, &value, index.as_ref(), span)
     }
 }
 
@@ -1793,4 +2004,13 @@ enum ArrayRead {
     Loaded(Box<Value>),
     /// FTE-13.12: a struct's words by the getter into a block, made at this statement.
     Block(u32),
+}
+
+/// Where [`Checker::load_words`] reads a struct's words from.
+#[derive(Clone, Copy)]
+enum Words {
+    /// An array's definition at the element's first word.
+    OfArray(ir::Name),
+    /// What a pointer points at.
+    Through(ir::Name),
 }

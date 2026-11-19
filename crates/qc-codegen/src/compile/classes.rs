@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! FTEQCC's classes' spawn functions (FTEF-9.22).
+//! FTEQCC's classes' spawn functions (FTEF-9.27).
 //!
 //! A class's spawn function, `spawnfunc_CLASS`, that the program gives no body has one the
 //! semantic model writes (`qc_sema::ModuleIndex::spawn_functions`); FTEQCC writes it after every
@@ -16,7 +16,7 @@ use crate::Internal;
 use crate::program::operand;
 
 impl Compiler<'_> {
-    /// Each class's spawn function the semantic model wrote a body for (FTEF-9.22).
+    /// Each class's spawn function the semantic model wrote a body for (FTEF-9.27).
     pub(crate) fn emit_class_functions(&mut self) -> Result<(), (Internal, FileId, Span)> {
         for &id in self.index.spawn_functions() {
             let Some(location) = self.index.def(id).map(|d| d.location) else {
@@ -30,7 +30,7 @@ impl Compiler<'_> {
     }
 
     /// The spawn function `id`, declared at `location`: its body's statements, then its record,
-    /// with no parameters (FTEF-9.22).
+    /// with no parameters (FTEF-9.27).
     fn spawn_function(&mut self, id: DefId, Location { file, span }: Location) -> Lowered<()> {
         self.file = file;
         self.program.origin = Some((file, span.start));

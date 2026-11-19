@@ -11,6 +11,7 @@
 
 mod accessor;
 mod assign;
+pub(crate) use assign::joined_string;
 mod call;
 mod compare;
 pub(crate) mod constant;
@@ -69,6 +70,10 @@ pub(crate) trait Env {
     fn has_accessors(&self, ty: &Type) -> bool;
     /// Whether `ty` is an accessor type (`ev_accessor`, FTEF-10.8), which opcodes never take.
     fn is_accessor(&self, ty: &Type) -> bool;
+    /// `ty` as `QCC_TypeForName` gives it: the type a typedef's name stands for (`if (t &&
+    /// t->type == ev_typedef) return t->aux_type;`, FTEF-7.2), which is the type a definition
+    /// of it has.
+    fn typedef_free(&self, ty: &Type) -> Type;
     /// The type of the local whose name starts at offset `at`, through typedefs.
     fn local_type(&self, at: usize) -> Option<Type>;
     /// FTEF-17.17: the global `autocvar_name` of type `ty`, which an `autocvar` call makes and
@@ -91,7 +96,7 @@ pub(crate) trait Env {
     fn definition(&self, def: DefId) -> Option<&Definition>;
     /// Whether a definition is an array (`def->arraysize`, FTEF-19.8).
     fn is_array(&self, def: DefId) -> bool;
-    /// FTEF-9.21: the function `CLASS::NAME` a body of the virtual member `member` defines.
+    /// FTEF-9.29: the function `CLASS::NAME` a body of the virtual member `member` defines.
     fn virtual_function(&self, member: DefId) -> Option<DefId>;
     /// `ty` through its typedefs: a typedef of a function type is that function type
     /// (FTEF-7.6).
@@ -267,6 +272,23 @@ pub(crate) struct Value {
     pub(crate) literal: Option<Box<(Constant, ir::Name)>>,
     /// The parameter slot that holds it: an out argument's value after its call (FTEF-32.24).
     pub(crate) parameter: Option<u8>,
+    /// Which symbol of FTEQCC's an entity it names is.
+    pub(crate) object: Object,
+}
+
+/// Which of FTEQCC's symbols names an entity. In a class's function a member named bare, and
+/// `self`, are read through a definition of their own, `this`, that shares `self`'s storage
+/// (`QCC_PR_DummyDef(pr_classtype, "this", pr_scope, 0, ..."self"..., GDF_CONST|GDF_STRIP|
+/// GDF_ALIAS)`), where the keyword `this` is `self` itself as the class (`d =
+/// QCC_PR_GetSRef(type_entity, "self", NULL, true, 0, false); d.cast = pr_classtype;`). A
+/// method's call compares symbols, so only the first keeps and sets `self` (FTEF-9.26).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Object {
+    /// The definition its name is.
+    #[default]
+    Named,
+    /// `this`, the alias of `self` a class's function reads its members through.
+    ThisAlias,
 }
 
 /// FTEQCC's temporaries (`tempsinfo`), kept across the module's functions: each one's word
@@ -394,6 +416,7 @@ impl Value {
             word: 0,
             literal: None,
             parameter: None,
+            object: Object::Named,
         }
     }
 
@@ -565,6 +588,8 @@ impl Value {
                 dot: None,
                 entity: base.name(),
                 entity_call: base.call,
+                object: base.object,
+                element: None,
                 selected: None,
             })),
             ..Self::of(ty)
@@ -582,10 +607,24 @@ pub(crate) struct ParamFacts {
     /// Whether the code generator passes the default: under autoprototyping one naming any
     /// definition but a field is none (FTE-18.8).
     pub(crate) kept_default: bool,
+    /// The default's constant when the parameter is a function type's, called through a
+    /// value and not by the function's name (FTEF-32.30).
+    pub(crate) default_value: Option<ir::Immediate>,
     /// Whether `optional` marks it.
     pub(crate) optional: bool,
     /// Which way its value passes: an out parameter's is stored back after the call.
     pub(crate) passing: Passing,
+}
+
+impl ParamFacts {
+    /// What a call names for the default of this parameter, the function's `at`th: the
+    /// type's own constant, or the default the code generator reads at the function's
+    /// declaration (FTE-18.7).
+    pub(crate) fn default_name(&self, at: usize) -> Option<ir::Name> {
+        self.default_value
+            .map(ir::Name::Immediate)
+            .or_else(|| u8::try_from(at).ok().map(ir::Name::Default))
+    }
 }
 
 /// A struct or union member as the checks read it (FTEF-6.11, FTEF-6.15).
@@ -691,6 +730,12 @@ pub(crate) struct FieldRef {
     pub(crate) entity: Option<ir::Name>,
     /// The generated `CALL` whose value the entity is, when it is one.
     pub(crate) entity_call: Option<u32>,
+    /// Which symbol the entity is ([`Object`]).
+    pub(crate) object: Object,
+    /// FTEF-31.33: the word, within an array of fields, of the field a constant index (and a
+    /// vector's component after it) selected; `None` for the array named whole and for a
+    /// field that is no array's.
+    pub(crate) element: Option<u32>,
     /// FTEF-31.19: the field an array of fields' index that is no constant selected, the value
     /// of the statement that loaded it; the field is then that, not the definition.
     pub(crate) selected: Option<ir::Name>,
@@ -700,8 +745,10 @@ impl FieldRef {
     /// The field as an operand of a generated statement: the one an index selected, else the
     /// definition's.
     pub(crate) fn operand(&self) -> Option<ir::Name> {
-        self.selected
-            .or_else(|| self.def.map(|def| ir::Name::Def(def, 0)))
+        self.selected.or_else(|| {
+            self.def
+                .map(|def| ir::Name::Def(def, self.element.unwrap_or(0)))
+        })
     }
 }
 
@@ -868,7 +915,7 @@ pub struct TypedBody {
 
 impl TypedBody {
     /// A body the model writes itself, with no text of its own: its statements and the strings
-    /// they name (FTEF-9.22).
+    /// they name (FTEF-9.27).
     pub(crate) fn written(generated: Vec<ir::BodyStatement>, strings: Vec<Vec<u8>>) -> Self {
         Self {
             generated,
@@ -1047,4 +1094,14 @@ pub(crate) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
         start: body.syntax().span().start,
         ..checker.finish()
     }
+}
+
+/// What `__FUNC__` is outside every function, `pr_scope?pr_scope->name:"<NO FUNCTION>"`.
+pub const NO_FUNCTION: &str = "<NO FUNCTION>";
+
+/// Whether `name` is FTEQCC's built-in constant for the function it is written in, `__FUNC__`
+/// or `__func__` (FTEF-14.80).
+#[must_use]
+pub fn is_function_name(name: &str) -> bool {
+    matches!(name, "__FUNC__" | "__func__")
 }

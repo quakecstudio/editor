@@ -214,7 +214,7 @@ void B::V(void) { super::V(); };
 void B::B(void) { };
 ";
 
-// spec FTEF-9.21: a virtual member's body defines the function `CLASS::NAME`, a member of its
+// spec FTEF-9.29: a virtual member's body defines the function `CLASS::NAME`, a member of its
 // class the model makes, which a scoped call, `super::m()`, calls.
 #[test]
 fn a_virtual_member_body_defines_its_function() {
@@ -291,9 +291,9 @@ fn a_virtual_member_body_defines_its_function() {
     assert!(early.virtual_function(a_v).is_some());
 }
 
-// spec FTEF-9.22: a class's spawn function the program gives no body is the model's: the class's
-// name stored to `classname`, each virtual member's function from the root down that no class
-// below declares again, and each constructor called, the class's own first
+// spec FTEF-9.27: a class's spawn function the program gives no body is the model's: the class's
+// name stored to `classname`, each class's virtual members' functions from the root down, one a
+// class below declares again by each in turn, and each constructor called, the class's own first
 #[test]
 fn a_spawn_function_is_written_by_the_model() {
     use qc_progs::Op;
@@ -313,6 +313,8 @@ fn a_spawn_function_is_written_by_the_model() {
             Op::StorepFnc,
             Op::Address,
             Op::StorepFnc,
+            Op::Address,
+            Op::StorepFnc,
             Op::Call0,
             Op::Call0,
             Op::Done
@@ -328,15 +330,17 @@ fn a_spawn_function_is_written_by_the_model() {
         other => format!("{other:?}"),
     };
     let generated = body.generated();
-    // `B`'s own `V`, not `A`'s, which `B` declares again.
-    assert_eq!(name(generated[2].b), "B::V");
-    assert_eq!(name(generated[3].a), "B::V");
-    let Some(ir::Name::Def(function, 0)) = generated[3].a else {
-        panic!("no function stored: {:?}", generated[3]);
+    // `A`'s `V`, then `B`'s own, which `B` declares again.
+    assert_eq!(name(generated[2].b), "A::V");
+    assert_eq!(name(generated[3].a), "A::V");
+    assert_eq!(name(generated[4].b), "B::V");
+    assert_eq!(name(generated[5].a), "B::V");
+    let Some(ir::Name::Def(function, 0)) = generated[5].a else {
+        panic!("no function stored: {:?}", generated[5]);
     };
     assert!(index.defs[function.index()].generated);
-    assert_eq!(name(generated[4].a), "B::B");
-    assert_eq!(name(generated[5].a), "A::A");
+    assert_eq!(name(generated[6].a), "B::B");
+    assert_eq!(name(generated[7].a), "A::A");
     // A spawn function the program defines is its own.
     let defined = fte_index_of("class A { };\nvoid() spawnfunc_A = { };\n");
     assert_eq!(defined.spawn_functions(), []);
@@ -613,7 +617,7 @@ fn parameter_forms_resolve() {
     assert!(func.params.is_empty());
 }
 
-// spec FTEF-31.22: a store through a pointer of a value no one `STOREP_*` stores, a narrow integer
+// spec FTEF-29.22: a store through a pointer of a value no one `STOREP_*` stores, a narrow integer
 // here, is not followed; a float's compound one is
 #[test]
 fn a_narrow_store_through_a_pointer_is_not_followed() {

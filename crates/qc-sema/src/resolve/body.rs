@@ -9,6 +9,7 @@
 //! Function bodies: parameters, locals, aliases, state headers and the names a body uses
 //! (QC-12.5, QC-13, FTEF-19.1, FTEF-19.14, FTEF-20.5).
 
+use crate::check::is_function_name;
 use crate::resolve::Init;
 use qc_diag::{Code, Span};
 use qc_preproc::FteFlag;
@@ -411,9 +412,21 @@ impl<'a> Resolver<'a> {
             .iter()
             .partition(|u| u.span.start >= within.start && u.span.end <= within.end);
         let size_uses: Vec<RawUse> = size_uses.into_iter().cloned().collect();
-        self.resolve_uses(file, None, &size_uses);
+        (self.fold_size(file, &expr, &size_uses, decl.flags), rest)
+    }
+
+    /// FTEF-19.62: the integer the size expression `expr` folds to, `QCC_PR_IntConstExpr`, its
+    /// names `uses` resolved at global scope under the compiler flags `flags`.
+    pub(in crate::resolve) fn fold_size(
+        &mut self,
+        file: FileId,
+        expr: &ast::Expr,
+        uses: &[RawUse],
+        flags: CompilerFlags,
+    ) -> Option<u32> {
+        self.resolve_uses(file, None, uses);
         let uses = self.use_defs.clone();
-        let flags = [(0, decl.flags)];
+        let flags = [(0, flags)];
         let reported = self.index.diagnostics.len();
         let mut env = BodyEnv {
             resolver: self,
@@ -430,7 +443,7 @@ impl<'a> Resolver<'a> {
             params: &[],
             naming: FunctionName::Named,
         };
-        (array_length(&mut env, &expr), rest)
+        array_length(&mut env, expr)
     }
 
     /// FTEF-34.9: an initialiser of a global that is an expression, read at global scope,
@@ -801,6 +814,12 @@ impl<'a> Resolver<'a> {
                 }
                 Found::Nothing => {}
                 Found::Error(code, message) => self.report(code, location, message),
+                // FTEF-14.80: `__FUNC__` is the name of the function it is written in, which
+                // the check stage gives it.
+                Found::Unknown
+                    if use_.scope.is_none()
+                        && self.profile.fteqcc_diagnostics()
+                        && is_function_name(&use_.name) => {}
                 Found::Unknown => {
                     // FTEF-19.45: FTEQCC makes an unknown name a `variant` and reports it with a
                     // full stop, `QCC_PR_ParseWarning (ERR_UNKNOWNVALUE, "Unknown value

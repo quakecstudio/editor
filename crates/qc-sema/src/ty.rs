@@ -10,6 +10,8 @@
 
 use std::rc::Rc;
 
+use crate::ir::{Immediate, ImmediateKind};
+
 use crate::symbol::DefKind;
 
 use crate::check::fold::c_g;
@@ -150,6 +152,10 @@ pub struct ParamLabel {
     pub passing: Passing,
     /// Its default value as `QCC_VarAtOffset` prints it.
     pub default: Option<String>,
+    /// Its default value's constant, `defltvalue`, when it is a number or a null the type
+    /// alone tells the words of: what a call through a value of the type passes for an
+    /// argument left out (FTEF-32.30).
+    pub default_value: Option<Immediate>,
 }
 
 /// The parameters' labels of a function type; equal to any other, so they never tell two
@@ -392,6 +398,9 @@ impl Type {
                     optional: words.iter().any(|w| w == "optional"),
                     passing: Passing::of(&words, &param),
                     default: param.default_value().map(|value| default_text(&value, ty)),
+                    default_value: param
+                        .default_value()
+                        .and_then(|value| default_immediate(&value, ty)),
                 }
             })
             .collect();
@@ -465,6 +474,36 @@ impl SimpleType {
             Self::String => "string",
             Self::Entity => "entity",
         }
+    }
+}
+
+/// The constant a parameter of type `ty` is given by the default `value`: a float's or an
+/// integer's number, and a null for any type (`__NULL__`, `0`); `None` for any other value.
+fn default_immediate(value: &ast::Expr, ty: &Type) -> Option<Immediate> {
+    let written = String::from_utf8_lossy(&value.syntax().text())
+        .trim()
+        .to_owned();
+    let integer = |word: u32| Immediate {
+        kind: ImmediateKind::Integer,
+        words: [word, 0, 0],
+    };
+    if written == "__NULL__" {
+        return Some(integer(0));
+    }
+    let digits = written.trim_end_matches(['f', 'i']);
+    match ty {
+        Type::Simple(SimpleType::Float) => {
+            let number: f32 = digits.parse().ok()?;
+            Some(Immediate {
+                kind: ImmediateKind::Float,
+                words: [number.to_bits(), 0, 0],
+            })
+        }
+        Type::Named(name) if matches!(&**name, "__int32" | "__int" | "int" | "integer") => {
+            let number: i32 = digits.parse().ok()?;
+            Some(integer(u32::from_ne_bytes(number.to_ne_bytes())))
+        }
+        _ => (digits.parse::<f32>().ok()? == 0.0).then(|| integer(0)),
     }
 }
 

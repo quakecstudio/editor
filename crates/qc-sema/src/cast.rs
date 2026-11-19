@@ -752,6 +752,15 @@ impl Type {
         }
     }
 
+    /// Whether it is an integer of 8 or 16 bits, FTEQCC's `ev_bitfld` (FTEF-2.12).
+    #[must_use]
+    pub fn is_narrow_integer(&self) -> bool {
+        matches!(
+            self.fteqcc_scalar(),
+            Some(CScalar::Int8 | CScalar::Uint8 | CScalar::Int16 | CScalar::Uint16)
+        )
+    }
+
     /// The C scalar this type is, when it is C type words or a registered type name
     /// (FTEF-2.8).
     #[must_use]

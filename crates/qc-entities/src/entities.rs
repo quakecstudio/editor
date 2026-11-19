@@ -608,6 +608,7 @@ impl Classes<'_> {
                 ImmediateKind::Float => Some(Arg::Float(f32::from_bits(value.words[0]))),
                 ImmediateKind::Vector => Some(Arg::Vector(value.words.map(f32::from_bits))),
                 ImmediateKind::Integer
+                | ImmediateKind::Uint
                 | ImmediateKind::Int64
                 | ImmediateKind::Uint64
                 | ImmediateKind::Double => None,

@@ -124,9 +124,11 @@ pub struct ModuleIndex {
     /// Each C scalar type a definition is written with, with its words and record number
     /// (FTEF-19.81).
     pub(crate) scalars: HashMap<Type, Scalar>,
-    /// Each accessor type a definition is written with, with its words and record number
-    /// (FTEF-10.15).
-    pub(crate) accessor_shapes: HashMap<Type, AccessorShape>,
+    /// Each named type a definition is written with whose record is not its basic type's
+    /// alone, with its words and record number: a C scalar (FTEF-19.81), an accessor
+    /// (FTEF-10.15), a `__variant`, a truth value, a narrow integer (FTEF-19.84) and a class
+    /// (FTEF-9.25).
+    pub(crate) records: HashMap<Type, RecordShape>,
     /// The type each named type a definition is written with stands for, when it is another:
     /// a typedef's, or an enum's base type (FTEF-7.2, FTEF-19.10).
     pub(crate) aliases: HashMap<Type, Type>,
@@ -140,12 +142,18 @@ pub struct ModuleIndex {
     pub(crate) class_names: HashMap<String, DefId>,
     /// Each FTEQCC class's parent, by the classes' type-name definitions.
     pub(crate) class_parents: HashMap<DefId, DefId>,
-    /// FTEF-9.21: the function `CLASS::NAME` a body of each virtual member defines, by the
+    /// FTEF-9.29: the function `CLASS::NAME` a body of each virtual member defines, by the
     /// member.
     pub(crate) virtual_functions: HashMap<DefId, DefId>,
-    /// FTEF-9.22: each class's spawn function the program gives no body, whose body the model
+    /// FTEF-9.27: each class's spawn function the program gives no body, whose body the model
     /// writes, in declaration order.
     pub(crate) spawn_functions: Vec<DefId>,
+    /// The arrays whose size the model does not know.
+    pub(crate) unsized_arrays: HashSet<DefId>,
+    /// FTEF-9.27: each class's fields as its first body declares them, FTEQCC's `params` of
+    /// the class: a member declared twice is there twice, a static or nonvirtual one not at
+    /// all (`if (isnonvirt || isstatic) continue;`).
+    pub(crate) class_params: HashMap<DefId, Vec<DefId>>,
 }
 
 /// A C scalar as a progs holds it (FTEF-19.81).
@@ -153,18 +161,17 @@ pub struct ModuleIndex {
 pub struct Scalar {
     /// The words a value takes, `type->size`.
     pub words: u32,
-    /// Its number in a definition's record, FTEQCC's `etype_t`.
-    pub number: u16,
     /// Which scalar it is: an integer of 32 or 64 bits, signed or not, or a double.
     pub kind: CScalar,
 }
 
-/// An accessor type as a progs holds a definition of it (FTEF-10.15).
+/// What a definition of a named type is in a progs: its words and its record's type number
+/// (FTEF-19.81, FTEF-10.15, FTEF-19.84, FTEF-9.25).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct AccessorShape {
-    /// The words a value takes, its base type's.
+pub struct RecordShape {
+    /// The words a value takes, `type->size`.
     pub words: u32,
-    /// Its number in a definition's record, `ev_accessor`.
+    /// Its number in a definition's record, FTEQCC's `etype_t`.
     pub number: u16,
 }
 
@@ -255,11 +262,7 @@ impl ModuleIndex {
     /// class.
     #[must_use]
     pub fn class_members(&self, ty: &Type) -> Vec<DefId> {
-        let resolved = self.aliases.get(ty).unwrap_or(ty);
-        let mut class = resolved
-            .type_name()
-            .and_then(|name| self.class_names.get(name))
-            .copied();
+        let mut class = self.class_of(ty);
         let mut out = Vec::new();
         for _ in 0..MAX_CLASS_DEPTH {
             let Some(current) = class else {
@@ -275,7 +278,23 @@ impl ModuleIndex {
         out
     }
 
-    /// FTEF-9.21: the function `CLASS::NAME` a body of the virtual member `member` defines, when
+    /// The class the type `ty` names, through a typedef.
+    #[must_use]
+    pub fn class_of(&self, ty: &Type) -> Option<DefId> {
+        let resolved = self.aliases.get(ty).unwrap_or(ty);
+        resolved
+            .type_name()
+            .and_then(|name| self.class_names.get(name))
+            .copied()
+    }
+
+    /// The class the class `class` is declared under, `parentclass`.
+    #[must_use]
+    pub fn class_parent(&self, class: DefId) -> Option<DefId> {
+        self.class_parents.get(&class).copied()
+    }
+
+    /// FTEF-9.29: the function `CLASS::NAME` a body of the virtual member `member` defines, when
     /// one does: the definition the body is written to, and a scoped call (`super::m()`,
     /// `CLASS::m()`) calls.
     #[must_use]
@@ -283,7 +302,7 @@ impl ModuleIndex {
         self.virtual_functions.get(&member).copied()
     }
 
-    /// FTEF-9.22: each class's spawn function `spawnfunc_CLASS` the program gives no body, in
+    /// FTEF-9.27: each class's spawn function `spawnfunc_CLASS` the program gives no body, in
     /// declaration order: its body, [`ModuleIndex::body`], is the model's, written after every
     /// file.
     #[must_use]
@@ -332,6 +351,13 @@ impl ModuleIndex {
         self.arrays.get(&def).copied()
     }
 
+    /// Whether `def` is an array whose size the model does not know, which a compiler cannot
+    /// lay out.
+    #[must_use]
+    pub fn is_unsized_array(&self, def: DefId) -> bool {
+        self.unsized_arrays.contains(&def)
+    }
+
     /// The layout of the struct or union type `ty` as written, when the model lays it out
     /// (FTEF-6.13).
     #[must_use]
@@ -357,12 +383,14 @@ impl ModuleIndex {
             .flatten()
     }
 
-    /// What a definition of the accessor type `ty` is in a progs: its base's words and
-    /// `ev_accessor`'s number (FTEF-10.15). None for any other type.
+    /// What a definition of the named type `ty` is in a progs, through a typedef: its words
+    /// and its record's type number, when they are not its basic type's alone. None for any
+    /// other type.
     #[must_use]
-    pub fn accessor_shape(&self, ty: &Type) -> Option<AccessorShape> {
+    pub fn record(&self, ty: &Type) -> Option<RecordShape> {
+        // Only a named type has one, which spares hashing a function's whole type.
         matches!(ty, Type::Named(_))
-            .then(|| self.accessor_shapes.get(ty).copied())
+            .then(|| self.records.get(ty).copied())
             .flatten()
     }
 

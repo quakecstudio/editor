@@ -1331,6 +1331,16 @@ impl Op {
         NAMES.get(self.number()).copied().unwrap_or_default()
     }
 
+    /// Whether it is a jump on its first operand, `OP_IF_*` or `OP_IFNOT_*`, whose second is
+    /// where it goes.
+    #[must_use]
+    pub const fn is_conditional_jump(self) -> bool {
+        matches!(
+            self,
+            Self::IfI | Self::IfnotI | Self::IfS | Self::IfnotS | Self::IfF | Self::IfnotF
+        )
+    }
+
     /// Whether it is internal, from `OP_NUMREALOPS` on: never valid, and no `#pragma opcode`
     /// changes it (FTEF-25.2, FTEF-25.3).
     #[must_use]

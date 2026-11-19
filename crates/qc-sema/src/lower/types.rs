@@ -7,7 +7,7 @@ use qc_diag::{Code, Diagnostic, Span};
 use qc_preproc::{FteFlag, PragmaDefault};
 use qc_syntax::ast::{self, AstNode as _};
 use qc_syntax::c_scalar::{CScalar, CWords};
-use qc_syntax::{Dialect, Keyword, SyntaxKind, SyntaxNode};
+use qc_syntax::{CompilerFlags, Dialect, Keyword, SyntaxKind, SyntaxNode};
 
 use std::rc::Rc;
 
@@ -16,7 +16,7 @@ use crate::ty::{FunctionType, ParamLabel, ParamLabels, SimpleType, Type};
 use super::body::{RawBody, RawParam, lower_body, next_think_of};
 use super::decl::{
     LiteralValue, Qualifier, RawDecl, RawInit, RawValue, decl_base, declarator_type,
-    lower_declarators, no_function, qualifiers_of, raw_value,
+    lower_array_sizes, lower_declarators, no_function, qualifiers_of, raw_value, size_expr,
 };
 use super::expr::{RawUse, UseKind, lower_expr};
 use super::{Cx, FileDecls, RawAccessor, first_word, token_text};
@@ -102,6 +102,29 @@ pub(crate) struct RawClass {
     pub type_only: Vec<(Type, Span)>,
 }
 
+/// The size of a member array that is no number literal: its expression, the names it uses and
+/// the compiler flags where it is written.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct MemberSize {
+    /// The expression.
+    pub expr: ast::Expr,
+    /// The names it uses, in source order.
+    pub uses: Vec<RawUse>,
+    /// The flags in force at it.
+    pub flags: CompilerFlags,
+}
+
+impl MemberSize {
+    /// The size of `declarator`'s first array suffix, when it is an expression to fold.
+    fn of(declarator: &ast::Declarator, cx: Cx<'_>) -> Option<Self> {
+        let expr = size_expr(declarator)?;
+        let mut uses = Vec::new();
+        lower_array_sizes(declarator, cx, &mut uses);
+        let flags = cx.flags_at(expr.syntax().span().start);
+        Some(Self { expr, uses, flags })
+    }
+}
+
 /// One member of an FTEQCC class (FTEF-9.2, FTEF-9.3).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct RawMember {
@@ -130,6 +153,11 @@ pub(crate) struct RawMember {
     pub is_virtual: bool,
     /// The text of its first array suffix, compared on redeclaration (FTEF-9.13).
     pub array: Option<String>,
+    /// What that suffix's size is, as `QCC_PR_IntConstExpr` reads it.
+    pub length: Option<IntConst>,
+    /// That size when it is an expression the check stage folds (FTEF-19.62), a constant's
+    /// name among them.
+    pub size: Option<MemberSize>,
     /// Its `virtual`, `nonvirtual` and `static` words (FTEF-9.16).
     pub qualification: Qualification,
     /// Whether it belongs to each instance or is a global of the class's (FTEF-9.16, FTEF-9.18).
@@ -278,6 +306,20 @@ pub(crate) enum IntConst {
 }
 
 impl IntConst {
+    /// The first array suffix of `declarator`, `[N]`, as it is written, and the size it
+    /// gives, unfolded for one with none; neither for a declarator with no suffix.
+    fn of_suffix(declarator: &ast::Declarator, cx: Cx<'_>) -> (Option<String>, Option<Self>) {
+        let Some(suffix) = declarator.array_suffixes().next() else {
+            return (None, None);
+        };
+        let size = suffix
+            .children()
+            .find_map(ast::Expr::cast)
+            .map_or(Self::Unfolded, |size| Self::of(&size, cx));
+        let text = String::from_utf8_lossy(&suffix.text()).into_owned();
+        (Some(text), Some(size))
+    }
+
     /// The constant `expr` is.
     pub(super) fn of(expr: &ast::Expr, cx: Cx<'_>) -> Self {
         match expr {
@@ -943,6 +985,26 @@ enum KindLabel {
     Nonvirtual,
 }
 
+/// FTEF-9.10: whether a member's initialiser is the 0 a data member may be given:
+/// `QCC_PR_CheckImmediate("0") || QCC_PR_CheckImmediate("0i")` reads the token's text, which a
+/// vector immediate leaves as its last component's.
+fn null_initialiser(init: Option<&ast::Initializer>) -> bool {
+    let Some(ast::Initializer::Value(ast::Expr::Literal(literal))) = init else {
+        return false;
+    };
+    let text = token_text(literal.syntax());
+    let last = match text.strip_prefix('\'') {
+        Some(inner) => inner
+            .trim_end_matches('\'')
+            .split_whitespace()
+            .last()
+            .unwrap_or_default()
+            .to_owned(),
+        None => text,
+    };
+    matches!(last.as_str(), "0" | "0i")
+}
+
 /// One member declaration of a class (FTEF-9.2 to FTEF-9.4), after the kind label `label`.
 fn lower_member(
     decl: &ast::Declaration,
@@ -1012,29 +1074,14 @@ fn lower_member(
             }
             _ => None,
         };
-        // FTEF-9.10: `QCC_PR_CheckImmediate("0") || QCC_PR_CheckImmediate("0i")` reads the
-        // token's text, which a vector immediate leaves as its last component's.
-        let null = match &init {
-            Some(ast::Initializer::Value(ast::Expr::Literal(literal))) => {
-                let text = token_text(literal.syntax());
-                let last = match text.strip_prefix('\'') {
-                    Some(inner) => inner
-                        .trim_end_matches('\'')
-                        .split_whitespace()
-                        .last()
-                        .unwrap_or_default()
-                        .to_owned(),
-                    None => text,
-                };
-                matches!(last.as_str(), "0" | "0i")
-            }
-            _ => false,
-        };
+        let null = null_initialiser(init.as_ref());
         let bad_init = init.is_some()
             && kind == MemberKind::Field
             && !null
             && !has(MemberWord::Static)
             && !has(MemberWord::Const);
+        let (array, length) = IntConst::of_suffix(&declarator, cx);
+        let size = MemberSize::of(&declarator, cx);
         out.push(RawMember {
             name: name_token.text_lossless(),
             span: name_token.span(),
@@ -1059,10 +1106,9 @@ fn lower_member(
                 virtuality: has(MemberWord::Virtual) || has(MemberWord::Nonvirtual),
                 inline: has(MemberWord::Inline),
             },
-            array: declarator
-                .array_suffixes()
-                .next()
-                .map(|n| String::from_utf8_lossy(&n.text()).into_owned()),
+            array,
+            length,
+            size,
         });
     }
     // FTEF-9.4: `Name(void);`, a constructor written without a return type.
@@ -1095,6 +1141,8 @@ fn lower_member(
             is_global: false,
             is_virtual: false,
             array: None,
+            length: None,
+            size: None,
             qualification: Qualification::Qualified,
             storage: MemberStorage::Instance,
             follow: String::new(),

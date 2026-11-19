@@ -15,7 +15,7 @@ use crate::check::etype::Etype;
 use crate::lower::LiteralValue;
 use crate::lower::{ArrayDim, StructMember};
 use crate::resolve::{
-    AccessorShape, InitialValue, MAX_CLASS_DEPTH, MemberShape, Resolver, Scalar, StructShape,
+    InitialValue, MAX_CLASS_DEPTH, MemberShape, RecordShape, Resolver, Scalar, StructShape,
 };
 use crate::symbol::DefId;
 use crate::ty::Type;
@@ -242,8 +242,14 @@ impl Resolver<'_> {
     pub(in crate::resolve) fn record_shapes(&mut self) {
         let mut pending = Vec::new();
         for (i, def) in self.index.defs.iter().enumerate() {
-            if let Some(ArrayDim::Sized(count)) = self.facts.get(i).and_then(|f| f.array) {
-                self.index.arrays.insert(DefId::new(i), count);
+            match self.facts.get(i).and_then(|f| f.array) {
+                Some(ArrayDim::Sized(count)) => {
+                    self.index.arrays.insert(DefId::new(i), count);
+                }
+                Some(ArrayDim::Unsized | ArrayDim::Unknown) => {
+                    self.index.unsized_arrays.insert(DefId::new(i));
+                }
+                None => {}
             }
             if self.facts.get(i).is_some_and(|f| f.constant) {
                 self.index.constants.insert(DefId::new(i));
@@ -272,25 +278,19 @@ impl Resolver<'_> {
         }
         let named: Vec<Type> = self.index.defs.iter().map(|d| d.ty.clone()).collect();
         let mut written = named.clone();
-        // The scalars of two words, which an immediate a statement names may be of.
+        // The scalars an immediate a statement names may be of, whatever the program defines.
         written.extend(
-            [CScalar::Int64, CScalar::Uint64, CScalar::Double]
-                .map(|scalar| Type::Named(scalar.name().into())),
+            [
+                CScalar::Integer,
+                CScalar::Uint,
+                CScalar::Int64,
+                CScalar::Uint64,
+                CScalar::Double,
+            ]
+            .map(|scalar| Type::Named(scalar.name().into())),
         );
         for ty in &named {
-            let Type::Named(name) = ty else {
-                continue;
-            };
-            let base = match (
-                self.named(&self.strict_enums, name),
-                self.named(&self.enum_types, name),
-            ) {
-                (Some(base), _) | (None, Some(base)) => base.clone(),
-                (None, None) => self.resolved(ty),
-            };
-            if base != *ty {
-                self.index.aliases.insert(ty.clone(), base);
-            }
+            self.record_alias(ty);
         }
         while let Some(ty) = pending.pop() {
             if self.index.structs.contains_key(&ty) {
@@ -299,6 +299,10 @@ impl Resolver<'_> {
             let Some(shape) = self.struct_shape(&ty, MAX_CLASS_DEPTH) else {
                 continue;
             };
+            // A member's typedef is read through as a definition's is (FTEF-6.33).
+            for member in &shape.members {
+                self.record_alias(&member.ty);
+            }
             pending.extend(shape.members.iter().map(|m| m.ty.clone()));
             written.extend(shape.members.iter().map(|m| m.ty.clone()));
             self.index.structs.insert(ty, shape);
@@ -321,17 +325,11 @@ impl Resolver<'_> {
                         self.index.scalars.insert(self.resolved(&ty), scalar);
                         self.index.scalars.insert(ty.clone(), scalar);
                     }
-                    // FTEF-10.15: an accessor type is `ev_accessor`, of its base's words.
-                    if !self.index.accessor_shapes.contains_key(&ty)
-                        && self.is_accessor_type(&ty)
-                        && let Some(layout) = self.layout(&ty)
+                    if !self.index.records.contains_key(&ty)
+                        && let Some(shape) = self.record_of(&ty)
                     {
-                        let shape = AccessorShape {
-                            words: layout.words,
-                            number: Etype::ACCESSOR_NUMBER,
-                        };
-                        self.index.accessor_shapes.insert(self.resolved(&ty), shape);
-                        self.index.accessor_shapes.insert(ty, shape);
+                        self.index.records.insert(self.resolved(&ty), shape);
+                        self.index.records.insert(ty, shape);
                     }
                 }
                 Type::Simple(_) | Type::Unknown => {}
@@ -339,16 +337,30 @@ impl Resolver<'_> {
         }
     }
 
-    /// What a definition of `ty` is in a progs when `ty` is one of C's scalars of a word or
-    /// more, through a typedef and an enum's base: its words and its record's type number.
-    fn scalar_of(&self, ty: &Type) -> Option<Scalar> {
+    /// Keeps the type the named type `ty` stands for, a typedef's or an enum's base, for
+    /// [`ModuleIndex::alias`].
+    fn record_alias(&mut self, ty: &Type) {
+        let Type::Named(name) = ty else {
+            return;
+        };
+        let base = match (
+            self.named(&self.strict_enums, name),
+            self.named(&self.enum_types, name),
+        ) {
+            (Some(base), _) | (None, Some(base)) => base.clone(),
+            (None, None) => self.resolved(ty),
+        };
+        if base != *ty {
+            self.index.aliases.insert(ty.clone(), base);
+        }
+    }
+
+    /// The basic type of `ty` when it is one of C's scalars of a word or more, through a
+    /// typedef and an enum's base.
+    fn scalar_etype(&self, ty: &Type) -> Option<Etype> {
         let resolved = self.resolved(ty);
         // An integer narrower than a word is a bitfield's type, which no record numbers so.
-        let narrow = matches!(
-            resolved.fteqcc_scalar(),
-            Some(CScalar::Int8 | CScalar::Uint8 | CScalar::Int16 | CScalar::Uint16)
-        );
-        if narrow {
+        if resolved.is_narrow_integer() {
             return None;
         }
         let shape = self.shape(&resolved)?;
@@ -356,7 +368,13 @@ impl Resolver<'_> {
             Etype::Enum => shape.holds?,
             other => other,
         };
-        let kind = match etype {
+        etype.scalar_number().map(|_| etype)
+    }
+
+    /// What a definition of `ty` is in a progs when `ty` is one of C's scalars of a word or
+    /// more: its words and which scalar it is.
+    fn scalar_of(&self, ty: &Type) -> Option<Scalar> {
+        let kind = match self.scalar_etype(ty)? {
             Etype::Integer => CScalar::Integer,
             Etype::Uint => CScalar::Uint,
             Etype::Int64 => CScalar::Int64,
@@ -366,8 +384,39 @@ impl Resolver<'_> {
         };
         Some(Scalar {
             words: self.layout(ty)?.words,
-            number: etype.scalar_number()?,
             kind,
+        })
+    }
+
+    /// What a definition of the named type `ty` is in a progs when its record is not its
+    /// basic type's alone: an accessor is `ev_accessor` of its base's words (FTEF-10.15); an
+    /// integer narrower than a word `ev_bitfld`, a truth value `ev_boolean` and a `__variant`
+    /// `ev_variant` (FTEF-19.84); a C scalar of a word or more its own number (FTEF-19.81); a
+    /// class an entity (FTEF-9.25).
+    fn record_of(&self, ty: &Type) -> Option<RecordShape> {
+        let resolved = self.resolved(ty);
+        let scalar = resolved.fteqcc_scalar();
+        let narrow = resolved.is_narrow_integer();
+        // A class itself, not a pointer to one, which `type_name` would look through.
+        let class = matches!(&resolved, Type::Named(name)
+            if self.named(&self.class_names, name).is_some());
+        let number = if self.is_accessor_type(ty) {
+            Etype::ACCESSOR_NUMBER
+        } else if narrow {
+            Etype::BITFLD_NUMBER
+        } else if matches!(scalar, Some(CScalar::Bool | CScalar::BFloat)) {
+            Etype::BOOLEAN_NUMBER
+        } else if class {
+            // A class is an entity type (FTEF-9.14).
+            Etype::Entity.number()?
+        } else if self.shape(&resolved)?.etype == Etype::Variant {
+            Etype::VARIANT_NUMBER
+        } else {
+            self.scalar_etype(ty)?.scalar_number()?
+        };
+        Some(RecordShape {
+            words: self.layout(ty)?.words,
+            number,
         })
     }
 

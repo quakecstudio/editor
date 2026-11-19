@@ -22,7 +22,7 @@ use crate::lower::ValueKind;
 use crate::lower::{ArrayDim, LiteralValue, Qualifier, RawLocal};
 use crate::resolve::{AccessorFacts, InitialValue, Layout, MAX_TYPEDEF_DEPTH, Resolver};
 use crate::symbol::{DefId, DefKind, Definition, FileId};
-use crate::ty::{SimpleType, Type};
+use crate::ty::Type;
 
 /// Whether a function's name is its own or empty (FTEF-18.39).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -434,6 +434,7 @@ impl Env for BodyEnv<'_, '_> {
                 .map(|p| ParamFacts {
                     name: p.name.clone(),
                     has_default: p.default.is_some(),
+                    default_value: None,
                     kept_default: p.default.as_ref().is_some_and(|default| {
                         !self.resolver.profile.two_passes()
                             || match &default.kind {
@@ -559,6 +560,10 @@ impl Env for BodyEnv<'_, '_> {
         self.resolver.is_accessor_type(ty)
     }
 
+    fn typedef_free(&self, ty: &Type) -> Type {
+        self.resolver.resolved(ty)
+    }
+
     fn has_accessors(&self, ty: &Type) -> bool {
         let mut current = self.resolver.resolved(ty);
         for _ in 0..MAX_TYPEDEF_DEPTH {
@@ -589,7 +594,7 @@ impl Env for BodyEnv<'_, '_> {
         let suffix = ["_x", "_y", "_z"].get(usize::try_from(word).ok()?)?;
         let definition = self.resolver.index.def(def)?;
         let name = format!("{}{suffix}", definition.name);
-        // FTEF-9.21: a vector member's component is its class's member.
+        // FTEF-9.29: a vector member's component is its class's member.
         match definition.member_of {
             Some(class) => self.resolver.member_in(class, &name),
             None => self.resolver.lookup_global(&name),
@@ -741,16 +746,26 @@ impl Env for BodyEnv<'_, '_> {
 }
 
 impl BodyEnv<'_, '_> {
-    /// FTEF-34.15: the value the initialiser of the float or vector constant `def` folded to,
+    /// FTEF-34.15: the value the initialiser of the constant `def` folded to, by its basic type,
     /// when it did (FTEF-34.9).
     fn folded_value(&self, def: DefId) -> Option<Constant> {
         let words = self.resolver.index.initial_values.get(&def)?.words();
-        match (&self.resolver.index.def(def)?.ty, words) {
-            (Type::Simple(SimpleType::Float), &[bits]) => {
-                Some(Constant::float(f32::from_bits(bits)))
+        let ty = &self.resolver.index.def(def)?.ty;
+        let wide = |low: u32, high: u32| u64::from(low) | (u64::from(high) << u32::BITS);
+        // The value by the definition's basic type, an integer's as a float's.
+        match (self.shape(ty)?.etype, words) {
+            (Etype::Float, &[bits]) => Some(Constant::float(f32::from_bits(bits))),
+            (Etype::Vector, &[x, y, z]) => Some(Constant::vector([x, y, z].map(f32::from_bits))),
+            (Etype::Integer, &[bits]) => {
+                Some(Constant::int(i32::from_ne_bytes(bits.to_ne_bytes())))
             }
-            (Type::Simple(SimpleType::Vector), &[x, y, z]) => {
-                Some(Constant::vector([x, y, z].map(f32::from_bits)))
+            (Etype::Uint, &[bits]) => Some(Constant::uint(bits)),
+            (Etype::Int64, &[low, high]) => Some(Constant::int64(i64::from_ne_bytes(
+                wide(low, high).to_ne_bytes(),
+            ))),
+            (Etype::Uint64, &[low, high]) => Some(Constant::uint64(wide(low, high))),
+            (Etype::Double, &[low, high]) => {
+                Some(Constant::double(f64::from_bits(wide(low, high))))
             }
             _ => None,
         }

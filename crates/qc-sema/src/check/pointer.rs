@@ -13,10 +13,12 @@ use qc_preproc::FteFlag;
 use qc_progs::Op;
 use qc_syntax::c_scalar::CScalar;
 
+use crate::VECTOR_WORDS;
 use crate::check::constant::Constant;
 use crate::check::emulate::conversion_opcodes;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checker, Fatal};
+use crate::check::member::WORD_ALIGNMENT;
 use crate::check::{Constness, Value, ValueUse};
 use crate::ty::{SimpleType, Type};
 
@@ -44,6 +46,10 @@ struct Narrow {
     /// `OP_LOADP_I8` and `OP_LOADP_I16`.
     signed: bool,
 }
+
+/// The bits of a 64-bit value, which `QCC_StoreToPointer` tests a struct's words against
+/// (`for (; i+(32*2) <= type->size; i+=32*2)`, FTEF-6.18).
+const INT64_BITS: u32 = 64;
 
 impl Checker<'_> {
     /// `OP_ADD_PF`, `OP_ADD_FP`, `OP_ADD_PI`, `OP_ADD_IP`, `OP_ADD_PU`, `OP_ADD_UP`, `OP_SUB_PF`,
@@ -273,16 +279,12 @@ impl Checker<'_> {
             Some(CScalar::Int16 | CScalar::Uint16) => return Pointee::Bits(16),
             _ => {}
         }
-        Pointee::Words(match self.env.shape(inner).map(|shape| shape.etype) {
-            Some(Etype::Vector) => Some(3),
-            Some(Etype::Int64 | Etype::Uint64 | Etype::Double) => Some(2),
-            Some(Etype::Struct | Etype::Union) => self
-                .env
+        // `aux_type->size`, which the type's layout holds for every type the model follows.
+        Pointee::Words(
+            self.env
                 .layout(inner)
                 .and_then(|layout| i32::try_from(layout.words).ok()),
-            None => None,
-            Some(_) => Some(1),
-        })
+        )
     }
 
     /// `QCC_MakeIntConst(-aux_type->size)`: the size is unsigned, so its negation is
@@ -384,6 +386,37 @@ impl Checker<'_> {
         self.simple_statement(op, span)
     }
 
+    /// FTEF-6.18: the stores of `words` words through a pointer on a target whose stores take
+    /// an offset, each the word it starts at and its opcode: `OP_STOREP_V` for each three when
+    /// the target has it, `OP_STOREP_I64` by FTEQCC's test of bits against words (`for (;
+    /// i+(32*2) <= type->size; i+=32*2)`, so only a struct of 64 words or more), then
+    /// `OP_STOREP_I`, or else `OP_STOREP_F`, for each word left.
+    pub(super) fn offset_store_steps(&self, words: u32, span: Span) -> Vec<(u32, Op)> {
+        let target = self.env.target_at(span.start);
+        let single = if target.valid(Op::StorepI) {
+            Op::StorepI
+        } else {
+            Op::StorepF
+        };
+        let mut steps = Vec::new();
+        let mut at: u32 = 0;
+        while at < words {
+            let left = words.saturating_sub(at);
+            let (op, size) = if left >= VECTOR_WORDS && target.valid(Op::StorepV) {
+                (Op::StorepV, VECTOR_WORDS)
+            } else if target.valid(Op::StorepI64)
+                && at.saturating_mul(WORD_ALIGNMENT).saturating_add(INT64_BITS) <= words
+            {
+                (Op::StorepI64, 2)
+            } else {
+                (single, 1)
+            };
+            steps.push((at, op));
+            at = at.saturating_add(size);
+        }
+        steps
+    }
+
     /// `QCC_StoreToPointer`'s `case ev_struct: case ev_union:` and its `default`: `words` words
     /// stored. On a target whose stores take an offset, `OP_STOREP_V` for each three words when
     /// it has it, then `OP_STOREP_I` (or else `OP_STOREP_F`) for each word left, each word's
@@ -401,34 +434,17 @@ impl Checker<'_> {
         let word = |at: u32| int(i32::try_from(at).unwrap_or(i32::MAX));
         let mut at: u32 = 0;
         if target.stores_at_offset() {
+            // Each word's store and its index, `OP_ADD_I` of the index and the word, are
+            // written by [`Checker::store_words_through`]; here the opcodes are checked, and
+            // an `OP_ADD_I` the target lacks is emulated for its diagnostics.
             let store = |checker: &mut Self, at: u32, op: Op| -> Result<(), Fatal> {
-                if let Some(index) = index {
+                if let Some(index) = index.filter(|_| !target.valid(Op::AddI)) {
                     checker.emit(Op::AddI, index, &word(at), span)?;
                 }
                 checker.simple_statement(op, span)
             };
-            if target.valid(Op::StorepV) {
-                while at.saturating_add(3) <= words {
-                    store(self, at, Op::StorepV)?;
-                    at = at.saturating_add(3);
-                }
-            }
-            // `for (; i+(32*2) <= type->size; i+=32*2)`: bits against words, so only a struct
-            // of 64 words or more stores by `OP_STOREP_I64`.
-            if target.valid(Op::StorepI64) {
-                while at.saturating_mul(32).saturating_add(64) <= words {
-                    store(self, at, Op::StorepI64)?;
-                    at = at.saturating_add(2);
-                }
-            }
-            let op = if target.valid(Op::StorepI) {
-                Op::StorepI
-            } else {
-                Op::StorepF
-            };
-            while at < words {
+            for (at, op) in self.offset_store_steps(words, span) {
                 store(self, at, op)?;
-                at = at.saturating_add(1);
             }
             return Ok(());
         }

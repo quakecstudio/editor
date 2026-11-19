@@ -167,10 +167,14 @@ impl Resolver<'_> {
         prefix: &str,
         name: &str,
     ) -> Found {
-        let class = if prefix == "super" {
-            scope.and_then(|s| s.class).and_then(|c| self.parent_of(c))
-        } else {
-            self.named(&self.class_names, prefix).copied()
+        // `if (assumeclass && !strcmp(name, "super")) t = assumeclass->parentclass; else if
+        // (assumeclass && !strcmp(name, "this")) t = assumeclass; else t =
+        // QCC_TypeForName(name);`
+        let own = scope.and_then(|s| s.class);
+        let class = match (prefix, own) {
+            ("super", _) => own.and_then(|c| self.parent_of(c)),
+            ("this", Some(own)) => Some(own),
+            _ => self.named(&self.class_names, prefix).copied(),
         };
         // FTEF-19.33: the scope of `Scope::name` is read as a type name.
         if prefix != "super"

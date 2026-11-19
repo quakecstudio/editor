@@ -211,8 +211,14 @@ impl<'a> Compiler<'a> {
         };
         for item in tree.items() {
             self.scope = None;
+            // FTEF-9.29: a class's members are fields where it is declared.
+            let span = item.span();
+            self.program
+                .make_class_fields(self.index, file, span.end)
+                .map_err(|internal| (internal, file, span))?;
             let result = if let Some(declaration) = ast::Declaration::cast(item.clone()) {
-                self.declaration(&declaration)
+                self.nested_enumerations(&declaration)
+                    .and_then(|()| self.declaration(&declaration))
             } else if let Some(enumeration) = ast::EnumDecl::cast(item.clone()) {
                 self.enumeration(&enumeration)
             } else if let Some(typedef) = ast::TypedefDecl::cast(item) {
@@ -246,16 +252,23 @@ impl<'a> Compiler<'a> {
         };
         for item in tree.items() {
             self.scope = None;
+            // FTEF-9.29: a class's members are fields where it is declared.
+            let span = item.span();
+            self.program
+                .make_class_fields(self.index, file, span.end)
+                .map_err(|internal| (internal, file, span))?;
             let result = if let Some(declaration) = ast::Declaration::cast(item.clone()) {
-                declaration.declarators().try_for_each(|declarator| {
-                    let name = declarator.name().at(declaration.syntax().span())?;
-                    let id = self.declared(&name)?;
-                    self.record_defaults(id, declaration.ty().as_ref(), &declarator);
-                    self.array_size_immediates(&declarator)?;
-                    self.program
-                        .get_def(self.index, id)
-                        .at(name.span())
-                        .map(drop)
+                self.nested_enumerations(&declaration).and_then(|()| {
+                    declaration.declarators().try_for_each(|declarator| {
+                        let name = declarator.name().at(declaration.syntax().span())?;
+                        let id = self.declared(&name)?;
+                        self.record_defaults(id, declaration.ty().as_ref(), &declarator);
+                        self.array_size_immediates(&declarator)?;
+                        self.program
+                            .get_def(self.index, id)
+                            .at(name.span())
+                            .map(drop)
+                    })
                 })
             } else if let Some(enumeration) = ast::EnumDecl::cast(item.clone()) {
                 self.enumeration(&enumeration)
@@ -421,6 +434,25 @@ impl<'a> Compiler<'a> {
             self.record_defaults(id, declaration.ty().as_ref(), &declarator);
             self.array_size_immediates(&declarator)?;
             let place = self.program.get_def(self.index, id).at(name.span())?;
+            // FTEF-15.5: a weak definition of what is already initialised, and a weak wrap of
+            // what is not, is read and left out, its body's statements with it ("if weak,
+            // only use the first non-weak version of the function ... ignore the code and
+            // stuff").
+            let initialised = self
+                .index
+                .virtual_function(id)
+                .map_or(Some(place), |function| self.program.place(function));
+            // A function is initialised once its definition holds its number.
+            let initialised = initialised
+                .and_then(|place| self.program.def(place))
+                .is_some_and(|def| def.initialized || self.program.word(def.ofs) != 0);
+            if self.dialect.has_fteqcc_extensions()
+                && declarator.initializer().is_some()
+                && declares(declaration.syntax(), &Qualifier::Weak)
+                && (initialised || written.wrap)
+            {
+                continue;
+            }
             match declarator.initializer() {
                 None => {}
                 Some(ast::Initializer::Value(expr)) => {
@@ -468,7 +500,7 @@ impl<'a> Compiler<'a> {
                     }
                 }
                 Some(ast::Initializer::Body(body)) => {
-                    // FTEF-9.21: a virtual member's body is the function `CLASS::NAME`.
+                    // FTEF-9.29: a virtual member's body is the function `CLASS::NAME`.
                     let place = match self.index.virtual_function(id) {
                         Some(function) => {
                             self.program.get_def(self.index, function).at(name.span())?
@@ -542,6 +574,17 @@ impl<'a> Compiler<'a> {
         let token = name.name().at(expr.syntax().span())?;
         let other = self.declare(&token)?;
         Ok(is_field(&self.program, other).then_some(other))
+    }
+
+    /// FTEF-8.9: the items of each enum written inside `declaration`'s type, a parameter's
+    /// `enumflags:float{A, B}` among them, defined with their values before the declaration,
+    /// as FTEQCC defines them where it reads the type.
+    fn nested_enumerations(&mut self, declaration: &ast::Declaration) -> Lowered<()> {
+        declaration
+            .syntax()
+            .descendants()
+            .filter_map(ast::EnumDecl::cast)
+            .try_for_each(|enumeration| self.enumeration(&enumeration))
     }
 
     /// FTE-15.5: an `enum`'s items, each a constant global made in turn and initialised with
@@ -1112,10 +1155,15 @@ impl<'a> Compiler<'a> {
             ir::ImmediateKind::Float => Literal::Float(x),
             // FTEF-26.14: an integer constant, such as the truth `&&` and `||` of two
             // constants fold to (`QCC_MakeIntConst`).
-            ir::ImmediateKind::Integer => {
+            ir::ImmediateKind::Integer | ir::ImmediateKind::Uint => {
                 let [bits, _, _] = immediate.words;
-                let int = ValueType::Of(Type::Named(CScalar::Integer.name().into()));
-                return self.program.int_immediate(bits, int).at(span);
+                let scalar = if immediate.kind == ir::ImmediateKind::Uint {
+                    CScalar::Uint
+                } else {
+                    CScalar::Integer
+                };
+                let ty = ValueType::Of(Type::Named(scalar.name().into()));
+                return self.program.int_immediate(bits, ty).at(span);
             }
             // FTEF-19.81: a constant of two words, of its own scalar type.
             ir::ImmediateKind::Int64 | ir::ImmediateKind::Uint64 | ir::ImmediateKind::Double => {
@@ -1238,6 +1286,16 @@ fn operand_index(index: usize) -> Result<i32, Internal> {
 fn literal_of(expr: &ast::Expr, dialect: Dialect) -> Option<Literal> {
     match expr {
         ast::Expr::Literal(literal) => literal_of_token(literal, dialect),
+        // FTEF-14.80: outside every function `__FUNC__` is the string "<NO FUNCTION>".
+        ast::Expr::Name(name)
+            if dialect.has_fteqcc_extensions()
+                && name.scope().is_none()
+                && name
+                    .name()
+                    .is_some_and(|t| qc_sema::is_function_name(&t.text_lossless())) =>
+        {
+            Some(Literal::String(qc_sema::NO_FUNCTION.as_bytes().to_vec()))
+        }
         ast::Expr::Paren(_)
         | ast::Expr::Name(_)
         | ast::Expr::Not(_)
@@ -1257,6 +1315,27 @@ fn literal_of(expr: &ast::Expr, dialect: Dialect) -> Option<Literal> {
 /// A literal's value as the vanilla lexer reads its text (QC-4 to QC-6); a frame macro
 /// reference is the number the preprocessor wrote in its place (QC-8.5).
 fn literal_of_token(literal: &ast::Literal, dialect: Dialect) -> Option<Literal> {
+    // FTEF-16.8: a string's adjacent parts are one string.
+    if literal.kind() == Some(ast::LiteralKind::String) {
+        let mut joined = Vec::new();
+        for part in literal.syntax().child_tokens() {
+            if part.kind().is_trivia() {
+                continue;
+            }
+            let lexed = qc_lexer::lex_with(part.text(), dialect);
+            let [
+                qc_lexer::Token {
+                    kind: qc_lexer::TokenKind::String(bytes),
+                    ..
+                },
+            ] = lexed.tokens.as_slice()
+            else {
+                return None;
+            };
+            joined.extend_from_slice(bytes);
+        }
+        return Some(Literal::String(joined));
+    }
     let token = literal.token()?;
     let lexed = qc_lexer::lex_with(token.text(), dialect);
     let [token] = lexed.tokens.as_slice() else {

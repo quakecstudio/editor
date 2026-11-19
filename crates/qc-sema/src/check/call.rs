@@ -94,13 +94,18 @@ impl Checker<'_> {
             }),
             _ => false,
         };
-        // FTEF-9.24: a method called through an object is called with the object as `self`; a
+        // FTEF-9.26: a method called through an object is called with the object as `self`; a
         // nonvirtual one is its function `CLASS::NAME`, no field read.
         let self_def = self.env.helper("self");
         let newself = match (&callee.reference, member) {
+            // `if (newself.ofs != self.ofs || newself.sym != self.sym)`: `this`'s alias is
+            // another symbol than `self`.
             (Reference::Field(field), Some(_)) => self
                 .copied(field.entity, field.entity_call)
-                .filter(|&object| self_def.is_none_or(|def| object != ir::Name::Def(def, 0))),
+                .filter(|&object| {
+                    field.object == super::Object::ThisAlias
+                        || self_def.is_none_or(|def| object != ir::Name::Def(def, 0))
+                }),
             _ => None,
         };
         let nonvirtual = member
@@ -248,6 +253,30 @@ impl Checker<'_> {
                     load,
                     entity_call: field.entity_call,
                 });
+            } else if matches!(
+                reference.reference,
+                Reference::Element(_)
+                    | Reference::Pointer(_)
+                    | Reference::ArrayHead(_)
+                    | Reference::Character(_)
+            ) && !self.global
+                && self.generated.len() > mark
+                && let Some(load) = self.generated.last().copied()
+                && Loada::of(load.op).is_some()
+                && value.made.is_some()
+                && load.c == value.made.map(ir::Name::Made)
+            {
+                // FTEF-32.29: an array's element at an index no constant, what a pointer
+                // points at, and the address an array named bare is passed as, are made as
+                // the arguments are stored, after `self` is set, as a field is loaded: the
+                // index is read and checked where it is written, the `OP_LOADA_*`,
+                // `OP_LOADP_*` or `OP_GLOBALADDRESS` held back.
+                self.generated.pop();
+                field_loads.push(FieldLoad {
+                    slot: at,
+                    load: vec![load],
+                    entity_call: None,
+                });
             }
             if let Some(param) = function.params.get(at)
                 && value.ty != Type::Unknown
@@ -256,8 +285,10 @@ impl Checker<'_> {
                 // FTEF-26.3: a float field of an `int` parameter is loaded straight into the
                 // slot of `ftoi`, whose value is the argument; FTEF-32.20: any other converted
                 // field argument is loaded where it is read and its value converted.
+                // The helper stands for `OP_CONV_FTOI` only on a target without the opcode.
                 let ftoi = (self.etype_of(&value.ty) == Some(Etype::Float)
-                    && self.etype_of(param) == Some(Etype::Integer))
+                    && self.etype_of(param) == Some(Etype::Integer)
+                    && !self.env.target_at(arg_span.start).valid(Op::ConvFtoi))
                 .then(|| self.env.helper("ftoi"))
                 .flatten();
                 let held = field_loads.last().is_some_and(|field| field.slot == at);
@@ -267,18 +298,18 @@ impl Checker<'_> {
                         value = self.ftoi_field(field, ftoi, param);
                         continue_after_conversion = true;
                     }
-                    // A cast that keeps the words, a class's entity as an `entity` among them,
-                    // leaves the held-back load as it is.
                     None => {
                         let converted = match (self.etype_of(&value.ty), self.etype_of(param)) {
                             (Some(from), Some(to)) => converts(from, to),
                             _ => true,
                         };
-                        // A converted field is read where it is written, as any value is,
-                        // and its value converted (`QCC_SupplyConversion` of the loaded
-                        // field): its held load goes back where it was.
-                        if converted
-                            && held
+                        // A field whose type is not the parameter's is read where it is
+                        // written, as any value is, by its own type's load, and its value
+                        // cast (`else if (p && typecmp(e->cast, p)) e = QCC_PR_BuildRef(...,
+                        // QCC_EvaluateCast(QCC_RefToDef(e, true), p, true), ...)`): its held
+                        // load goes back where it was, a class's entity passed as an `entity`
+                        // by `OP_LOAD_ENT` among them (FTEF-32.28).
+                        if held
                             && !self.global
                             && let Some(field) = field_loads.pop()
                         {
@@ -326,24 +357,34 @@ impl Checker<'_> {
             };
             self.env.report(Code::W0253, span, message);
         }
-        // FTEF-32.14: a call of a constant's value is folded before the arguments are checked.
-        let floats = passed.iter().all(|reference| {
-            reference
-                .as_ref()
-                .is_some_and(|r| r.ty == Type::Simple(SimpleType::Float))
+        // FTEF-32.32: a call of a constant's value is folded before the arguments are checked.
+        // The arguments are read as they are passed, cast to their parameters' types.
+        let floats = passed.iter().zip(&values).all(|(reference, value)| {
+            reference.is_some() && value.ty == Type::Simple(SimpleType::Float)
         });
-        // FTEF-32.17: only an argument read directly (`REF_GLOBAL`) is folded.
-        let constants: Vec<_> = passed
+        // FTEF-32.17: only an argument read directly (`REF_GLOBAL`) is folded, which one cast
+        // to its parameter's type is.
+        let direct: Vec<Option<&Value>> = passed
             .iter()
             .zip(&values)
-            .map(
-                |(reference, value)| match reference.as_ref().map(|r| &r.reference) {
-                    Some(Reference::Global) | None => value.known(),
-                    Some(_) => None,
-                },
-            )
+            .map(|(reference, value)| match reference {
+                Some(r) if r.reference != Reference::Global && r.ty == value.ty => None,
+                Some(_) | None => Some(value),
+            })
+            .collect();
+        let constants: Vec<_> = direct
+            .iter()
+            .map(|value| value.and_then(Value::known))
             .collect();
         if let Some(folded) = fold::builtin_call(&name, &constants, floats) {
+            return Ok(Value::constant(folded));
+        }
+        // FTEF-32.32: `strlen` and `stof` of a string constant.
+        if let [Some(value)] = direct.as_slice()
+            && value.known().is_some()
+            && let Some(folded) =
+                Self::constant_string(value).and_then(|bytes| fold::string_call(&name, &bytes))
+        {
             return Ok(Value::constant(folded));
         }
         self.verify_arguments(&name, &values, span);
@@ -367,7 +408,7 @@ impl Checker<'_> {
         let defaulted: Vec<bool> = passed.iter().map(Option::is_none).collect();
         let unpassed: Vec<bool> = params.iter().map(|p| p.passing == Passing::Out).collect();
         let kept = self.call_statements(
-            &function,
+            (&function, &params),
             passed_count,
             (callee, &values, &defaulted, &unpassed),
             (newself, &field_loads, None),
@@ -427,17 +468,19 @@ impl Checker<'_> {
             };
             // FTEF-32.25: one of more than a vector's words comes back a piece from each slot,
             // to a definition's words.
-            if let Some(wide) = self.wide_words(&reference.ty).filter(|_| !self.global) {
+            let pieces = self
+                .passed_in_pieces(&reference.ty, span)
+                .filter(|_| !self.global);
+            if let Some(pieces) = pieces {
                 let to = reference
                     .name()
                     .filter(|name| matches!(name, ir::Name::Def(..)))
                     .filter(|_| reference.reference == Reference::Global);
-                match (to, self.slot_pieces(wide, span)) {
-                    (Some(to), Some(pieces)) => {
-                        for (piece, (op, word)) in (0_u32..).zip(pieces) {
-                            let from = u8::try_from(held.saturating_add(piece)).ok();
+                match (to, usize::try_from(held)) {
+                    (Some(to), Ok(held)) => {
+                        for (op, word) in pieces {
                             self.generated.push(ir::BodyStatement {
-                                a: from.map(ir::Name::Parameter),
+                                a: Checker::slot_word(held, word),
                                 b: to.word(word),
                                 ..ir::BodyStatement::bare(op)
                             });
@@ -508,14 +551,14 @@ impl Checker<'_> {
     /// parameter takes stored to its slot by its size, `STORE_V` for three words or a variant's
     /// and `STORE_F` for one, the first folded into the statement that made it, then each
     /// default a parameter takes, then `CALLn` of the callee; its value the return global.
-    /// FTEF-9.24: called with `newself`, the object a method is called through when it is not
+    /// FTEF-9.26: called with `newself`, the object a method is called through when it is not
     /// `self`, `self` is kept and set to it first; the temporary that kept it is returned, for
     /// `self` to be restored from after the call. `kept_value` is the argument whose value is
     /// read again after the call, an accessor's store's (FTEF-10.14); an argument of `unpassed`
     /// is an `__out` parameter's, which nothing is passed for (FTEF-32.24).
     pub(super) fn call_statements(
         &mut self,
-        function: &FunctionType,
+        (function, params): (&FunctionType, &[ParamFacts]),
         count: usize,
         (callee, values, defaulted, unpassed): (Option<ir::Name>, &[Value], &[bool], &[bool]),
         (newself, field_loads, kept_value): (Option<ir::Name>, &[FieldLoad], Option<usize>),
@@ -524,10 +567,13 @@ impl Checker<'_> {
         // The arguments written and each parameter after them that takes its default
         // (FTE-18.7), of which a parameter takes its own.
         let count = count.max(values.len());
+        // Every argument written is passed, one past the parameters too, which FTEQCC only
+        // warns of ("too many parameters on call to %s, argument %s will be ignored") and
+        // then stores and counts as any other (FTEF-32.31).
         let passed = if function.variadic {
             count
         } else {
-            count.min(function.params.len())
+            count.min(function.params.len()).max(values.len())
         };
         // In a function, the statements of the call: each argument a parameter takes stored to
         // its slot unless the statement before made it (FTE-18.12), then the call.
@@ -536,7 +582,7 @@ impl Checker<'_> {
         }
         let (wide, slot_of, slots) = self.argument_slots(values, passed);
         let slot_at = |at: usize| slot_of.get(at).copied().unwrap_or(at);
-        // FTEF-9.24: an argument that names `self` names the kept one.
+        // FTEF-9.26: an argument that names `self` names the kept one.
         let kept = self.keep_self(newself);
         let renamed = |name: Option<ir::Name>| match (name, kept) {
             (Some(ir::Name::Def(def, 0)), Some((this, kept))) if def == this => {
@@ -576,10 +622,10 @@ impl Checker<'_> {
                 .map(|&s| ir::BodyStatement {
                     // A register's is the field's own load, `QCC_RefToDef` (FTEF-32.19); a
                     // slot's is by its size, on any target (FTE-18.11).
-                    op: if in_register || s.op == Op::LoadV {
-                        s.op
-                    } else {
-                        Op::LoadF
+                    op: match Loada::of(s.op) {
+                        _ if in_register || s.op == Op::LoadV => s.op,
+                        Some(loada) => loada.by_size(),
+                        None => Op::LoadF,
                     },
                     a: renamed(self.copied(s.a, field.entity_call)),
                     c: slot,
@@ -595,7 +641,9 @@ impl Checker<'_> {
         }
         // FTE-18.12: only the first store can fold, into the statement that made its
         // value; every later one follows a store or a load.
-        let mut first = field_loads.iter().all(|field| field.slot >= passed);
+        // The stores of `self` a method's call makes follow the arguments' statements too, so
+        // no store folds past them (FTEF-9.26).
+        let mut first = kept.is_none() && field_loads.iter().all(|field| field.slot >= passed);
         // FTEF-32.25: an argument in pieces is copied as it is read, before the others are
         // stored.
         for (at, value) in values.iter().take(passed).enumerate() {
@@ -636,7 +684,11 @@ impl Checker<'_> {
                 };
                 continue;
             }
-            let vector = words == VECTOR_WORDS || function.is_variant_parameter(at);
+            let store = if function.is_variant_parameter(at) {
+                Op::StoreV
+            } else {
+                self.argument_store(words, span)
+            };
             let folded = first && value.temp.is_some() && value.temp == self.last_temp;
             first = false;
             if folded {
@@ -647,19 +699,24 @@ impl Checker<'_> {
                 // An empty slot's value is its parameter's default, which the code generator
                 // reads (FTE-18.7).
                 let from = if defaulted.get(at).copied().unwrap_or(false) {
-                    u8::try_from(at).ok().map(ir::Name::Default)
+                    params.get(at).and_then(|param| param.default_name(at))
                 } else {
-                    renamed(self.name_of(value))
+                    // FTEF-27.21: a constant 0 is read from a zero of the store's size.
+                    renamed(self.store_source(store, value))
                 };
                 self.generated.push(ir::BodyStatement {
                     a: from,
                     b: u8::try_from(slot).ok().map(ir::Name::Parameter),
-                    ..ir::BodyStatement::bare(if vector { Op::StoreV } else { Op::StoreF })
+                    ..ir::BodyStatement::bare(store)
                 });
             }
         }
         let after = (values.len()..passed).map(|at| (at, slot_at(at)));
-        self.default_arguments(function, after, registers.then_some(&mut operands));
+        self.default_arguments(
+            (function, params),
+            after,
+            registers.then_some(&mut operands),
+        );
         let call = if registers {
             Op::CALLS_BY_OPERANDS
         } else {
@@ -689,7 +746,7 @@ impl Checker<'_> {
     /// where it is.
     fn default_arguments(
         &mut self,
-        function: &FunctionType,
+        (function, params): (&FunctionType, &[ParamFacts]),
         after: impl Iterator<Item = (usize, usize)>,
         mut registers: Option<&mut [Option<ir::Name>; REGISTER_PARMS]>,
     ) {
@@ -700,7 +757,7 @@ impl Checker<'_> {
                 .and_then(|param| self.env.layout(param))
                 .map_or(1, |l| l.words);
             let vector = words == VECTOR_WORDS || function.is_variant_parameter(at);
-            let default = u8::try_from(at).ok().map(ir::Name::Default);
+            let default = params.get(at).and_then(|param| param.default_name(at));
             let register = registers
                 .as_mut()
                 .and_then(|operands| operands.get_mut(slot));
@@ -716,7 +773,7 @@ impl Checker<'_> {
         }
     }
 
-    /// FTEF-9.24: `oself = self; self = object;` before a call through `object`, an object
+    /// FTEF-9.26: `oself = self; self = object;` before a call through `object`, an object
     /// that is not `self`: `self`'s definition and the statement that kept it, from which it
     /// is restored after the call (`arglist[i]->base = oself`).
     fn keep_self(&mut self, object: Option<ir::Name>) -> Option<(crate::DefId, u32)> {
@@ -771,22 +828,28 @@ impl Checker<'_> {
         span: Span,
     ) {
         let from = from.filter(|name| matches!(name, ir::Name::Def(..) | ir::Name::Made(_)));
-        let (Some(from), Some(pieces)) = (from, self.slot_pieces(words, span)) else {
+        // A piece that is a call's operand is a slot whole; any other is stored to its word
+        // of its slot, a pair's two words on a target with no `OP_STORE_I64` among them.
+        let pieces = if registers.is_some() {
+            self.slot_pieces(words, span)
+        } else {
+            Some(self.pieces(words, span))
+        };
+        let (Some(from), Some(pieces)) = (from, pieces) else {
             self.followed = false;
             return;
         };
-        for (piece, (op, word)) in pieces.into_iter().enumerate() {
-            let slot = slot.saturating_add(piece);
+        for (op, word) in pieces {
             let register = registers
                 .as_mut()
-                .and_then(|operands| operands.get_mut(slot));
+                .and_then(|operands| operands.get_mut(Checker::slot_of_word(slot, word)));
             let to = match register {
                 Some(register) => {
                     let copy = u32::try_from(self.generated.len()).ok();
                     *register = copy.map(ir::Name::Made);
                     *register
                 }
-                None => u8::try_from(slot).ok().map(ir::Name::Parameter),
+                None => Checker::slot_word(slot, word),
             };
             self.generated.push(ir::BodyStatement {
                 a: from.word(word),
@@ -795,6 +858,53 @@ impl Checker<'_> {
             });
         }
         self.last_temp = None;
+    }
+
+    /// FTEF-32.27: `QCC_PR_GenerateFunctionCallRef`'s store of an argument of `words` words to
+    /// its slot, by its size: `OP_STORE_V` for three, for two `OP_STORE_I64` or else
+    /// `OP_STORE_V` (`else if (args[i].ref.cast->size == 2) ...
+    /// QCC_OPCodeValid(&pr_opcodes[OP_STORE_I64])?OP_STORE_I64:OP_STORE_V`), and `OP_STORE_F`
+    /// for one.
+    pub(super) fn argument_store(&self, words: u32, span: Span) -> Op {
+        match words {
+            VECTOR_WORDS => Op::StoreV,
+            2 if self.env.target_at(span.start).valid(Op::StoreI64) => Op::StoreI64,
+            2 => Op::StoreV,
+            _ => Op::StoreF,
+        }
+    }
+
+    /// The slot the word `word` of a value passed from the slot `first` on falls in, three
+    /// words to a slot.
+    fn slot_of_word(first: usize, word: u32) -> usize {
+        let slots = word.checked_div(VECTOR_WORDS).unwrap_or(0);
+        usize::try_from(slots).map_or(first, |slots| first.saturating_add(slots))
+    }
+
+    /// The word `word` of a value passed from the slot `first` on: its slot's first word, or
+    /// the word of the slot it falls in (FTEF-32.25).
+    pub(super) fn slot_word(first: usize, word: u32) -> Option<ir::Name> {
+        let within = word.checked_rem(VECTOR_WORDS).unwrap_or(0);
+        u8::try_from(Checker::slot_of_word(first, word))
+            .ok()
+            .map(ir::Name::Parameter)
+            .and_then(|name| name.word(within))
+    }
+
+    /// The pieces a value of type `ty` is passed and stored back in when it is more
+    /// statements than one, with its words: a struct or union of more than a vector's words
+    /// (FTEF-32.25), or a type copied by its size whose copy is more pieces than one on this
+    /// target, two words with no `OP_STORE_I64` (FTEF-2.13).
+    pub(super) fn passed_in_pieces(&self, ty: &Type, span: Span) -> Option<Vec<(Op, u32)>> {
+        let words = self.copied_by_size(ty)?;
+        let pieces = self.pieces(words, span);
+        (pieces.len() > 1).then_some(pieces)
+    }
+
+    /// FTEF-32.25, FTEF-19.78: the value an array's setter stores, a struct `from` of `words`
+    /// words, copied to its slots, the setter's second parameter's on.
+    pub(super) fn setter_argument(&mut self, from: Option<ir::Name>, words: u32, span: Span) {
+        self.wide_argument(from, words, SETTER_VALUE_SLOT, None, span);
     }
 
     /// FTEF-32.25: the words of `ty` when it is a struct or union of more than a vector's,
@@ -869,6 +979,126 @@ impl Checker<'_> {
         self.random_statements(callee, &values, span)
     }
 
+    /// FTEF-27.26: `randomv()`, `randomv(scale)` and `randomv(low, high)`, each argument a
+    /// vector as it is, with no conversion. Where the target has no `OP_RANDV0` the function is
+    /// called three times, each value written to a word of the return global, the last word
+    /// first, multiplied by that word of the scale, `high - low` for two arguments, and `low`
+    /// then added: the value is the return global's, or the sum's.
+    fn randomv(&mut self, args: &[ast::Expr], call: &ast::CallExpr) -> Checked {
+        let span = call.syntax().span();
+        let mut values = Vec::new();
+        for (at, arg) in args.iter().take(2).enumerate() {
+            let value = self.value(Some(arg.clone()))?;
+            if self.etype_of(&value.ty).is_some_and(|e| e != Etype::Vector) {
+                let message = format!("type mismatch on parm {}", at.saturating_add(1));
+                return self.fatal(Code::E0340, span, message);
+            }
+            values.push(value);
+        }
+        let vector = Value::of(Type::Simple(SimpleType::Vector));
+        if self.global {
+            return Ok(vector);
+        }
+        // `if (QCC_OPCodeValid(&pr_opcodes[OP_RANDV0]))`: the target's own opcode, its value a
+        // temporary taken before the arguments' are freed.
+        let target = self.env.target_at(span.start);
+        if target.valid(Op::Randv0) {
+            let (op, a, b) = match values.as_slice() {
+                [] => (Op::Randv0, None, None),
+                [scale] => (Op::Randv1, scale.name(), None),
+                [low, high, ..] => (Op::Randv2, low.name(), high.name()),
+            };
+            if matches!(
+                target.format(),
+                qc_progs::TargetFormat::Hexen2 | qc_progs::TargetFormat::Uhexen2
+            ) {
+                return Ok(self.random_to_return(op, (a, b), &values, vector, VECTOR_WORDS));
+            }
+            let temp = self.env.temps().take(VECTOR_WORDS);
+            let made = self.push_made(op, a, b);
+            for value in values.iter().rev() {
+                if let Some(offset) = value.temp {
+                    self.env.temps().free(offset);
+                }
+                self.read_returned(value);
+            }
+            self.last_temp = Some(temp);
+            return Ok(Value {
+                made,
+                temp: Some(temp),
+                ..vector
+            });
+        }
+        let callee = match call.callee() {
+            Some(ast::Expr::Name(name)) => name
+                .name()
+                .and_then(|token| self.env.reference(token.span().start))
+                .map(|def| ir::Name::Def(def, 0)),
+            _ => None,
+        };
+        let (low, scale) = match values.as_slice() {
+            [] => (None, None),
+            [scale] => (None, Some(scale.name())),
+            [low, high, ..] => {
+                let range = match (high.known(), low.known()) {
+                    (Some(_), Some(_)) => self.emit(Op::SubV, high, low, span)?.name(),
+                    _ => self
+                        .push_made(Op::SubV, high.name(), low.name())
+                        .map(ir::Name::Made),
+                };
+                (Some(low.name()), Some(range))
+            }
+        };
+        if callee.is_none() || scale == Some(None) || low == Some(None) {
+            self.followed = false;
+        }
+        self.clobber_return();
+        let mut called = None;
+        for word in (0..VECTOR_WORDS).rev() {
+            called = u32::try_from(self.generated.len()).ok();
+            self.generated.push(ir::BodyStatement {
+                a: callee,
+                ..ir::BodyStatement::bare(Op::Call0)
+            });
+            let to = ir::Name::Return.word(word);
+            match scale.flatten() {
+                Some(scale) => self.generated.push(ir::BodyStatement {
+                    a: Some(ir::Name::Return),
+                    b: scale.word(word),
+                    c: to,
+                    ..ir::BodyStatement::bare(Op::MulF)
+                }),
+                None if word > 0 => self.generated.push(ir::BodyStatement {
+                    a: Some(ir::Name::Return),
+                    b: to,
+                    ..ir::BodyStatement::bare(Op::StoreF)
+                }),
+                None => {}
+            }
+        }
+        for value in values.iter().rev() {
+            self.read_returned(value);
+        }
+        self.last_temp = None;
+        let Some(low) = low.flatten() else {
+            self.live_return = Some(VECTOR_WORDS);
+            self.live_call = called;
+            return Ok(Value {
+                returned: true,
+                call: called,
+                ..vector
+            });
+        };
+        let made = self.push_made(Op::AddV, Some(ir::Name::Return), Some(low));
+        let temp = self.env.temps().take(VECTOR_WORDS);
+        self.last_temp = Some(temp);
+        Ok(Value {
+            made,
+            temp: Some(temp),
+            ..vector
+        })
+    }
+
     /// The statements of `random` of `callee` with the arguments `args` in a function: the
     /// call of the builtin, then its value scaled, `* scale` for one argument and
     /// `low + (high - low) * value` for two; the value, the return global's with none.
@@ -884,6 +1114,40 @@ impl Checker<'_> {
         };
         if self.global {
             return Ok(float);
+        }
+        // `if (QCC_OPCodeValid(&pr_opcodes[OP_RAND0]))`: the target's own opcode, its value a
+        // temporary taken before the arguments' are freed.
+        let target = self.env.target_at(span.start);
+        if target.valid(Op::Rand0) {
+            let (op, a, b) = match args {
+                [] => (Op::Rand0, None, None),
+                [scale] => (Op::Rand1, scale.name(), None),
+                [low, high, ..] => (Op::Rand2, low.name(), high.name()),
+            };
+            // "hexen2 requires the output be def_ret": the opcode names no result, and the
+            // value is the return global's, as a call's is.
+            if matches!(
+                target.format(),
+                qc_progs::TargetFormat::Hexen2 | qc_progs::TargetFormat::Uhexen2
+            ) {
+                return Ok(self.random_to_return(op, (a, b), args, float, 1));
+            }
+            let temp = self.env.temps().take(1);
+            let made = self.push_made(op, a, b);
+            for arg in args.iter().take(2).rev() {
+                if let Some(offset) = arg.temp {
+                    self.env.temps().free(offset);
+                }
+                // The opcode reads a call's value, which no later call then copies.
+                self.read_returned(arg);
+            }
+            self.last_temp = Some(temp);
+            return Ok(Value {
+                made,
+                temp: Some(temp),
+                returned: false,
+                ..float
+            });
         }
         self.clobber_return();
         self.generated.push(ir::BodyStatement {
@@ -922,6 +1186,43 @@ impl Checker<'_> {
             temp,
             ..float
         })
+    }
+
+    /// A Hexen II format's `OP_RAND*` or `OP_RANDV*`, `op` of the operands `a` and `b` read
+    /// from `args`: "hexen2 requires the output be def_ret", so the return global is clobbered
+    /// first (`QCC_ClobberDef(&def_ret)`), the statement names no result, and the value, `of`
+    /// with `words` words, is the return global's as a call's is.
+    fn random_to_return(
+        &mut self,
+        op: Op,
+        (a, b): (Option<ir::Name>, Option<ir::Name>),
+        args: &[Value],
+        of: Value,
+        words: u32,
+    ) -> Value {
+        self.clobber_return();
+        let made = u32::try_from(self.generated.len()).ok();
+        self.generated.push(ir::BodyStatement {
+            a,
+            b,
+            // `out = nullsref;`: the result operand is written as none.
+            c: Some(ir::Name::Count(0)),
+            ..ir::BodyStatement::bare(op)
+        });
+        for arg in args.iter().take(2).rev() {
+            if let Some(offset) = arg.temp {
+                self.env.temps().free(offset);
+            }
+            self.read_returned(arg);
+        }
+        self.last_temp = None;
+        self.live_return = Some(words);
+        self.live_call = made;
+        Value {
+            returned: true,
+            call: made,
+            ..of
+        }
     }
 
     /// Generates `op` of `a` and `b` into a value of its own; the statement's index.
@@ -989,6 +1290,13 @@ impl Checker<'_> {
         self.generate(call, span);
     }
 
+    /// The bytes of the string constant `value` is: its text, a literal's adjacent parts
+    /// joined or a constant definition's initial value, read as FTEQCC's lexer reads one string.
+    fn constant_string(value: &Value) -> Option<Vec<u8>> {
+        let text = value.text.as_deref()?;
+        lexed_string(format!("\"{text}\"").as_bytes())
+    }
+
     /// FTEF-32.10: the intrinsics a call of a function with no parameters stands for, by the
     /// function's name: `_`, which takes only a string immediate; `random` and `randomv`, whose
     /// arguments are made floats; `alloca`, whose size is made an integer, rounded up to words and
@@ -1002,8 +1310,9 @@ impl Checker<'_> {
         call: &ast::CallExpr,
     ) -> Result<Option<Value>, Fatal> {
         let value = self.intrinsic_value(name, args, written, call)?;
-        // Of the intrinsics only `random`, `_` and `autocvar` are followed statement by statement.
-        if value.is_some() && !matches!(name, "random" | "_" | "autocvar") {
+        // Of the intrinsics only `random`, `randomv`, `_` and `autocvar` are followed statement by
+        // statement.
+        if value.is_some() && !matches!(name, "random" | "randomv" | "_" | "autocvar") {
             self.followed = false;
         }
         Ok(value)
@@ -1048,17 +1357,7 @@ impl Checker<'_> {
                     ..string()
                 }))
             }
-            "randomv" => {
-                // Each argument is a vector as it is, with no conversion.
-                for (at, arg) in args.iter().take(2).enumerate() {
-                    let value = self.value(Some(arg.clone()))?;
-                    if self.etype_of(&value.ty).is_some_and(|e| e != Etype::Vector) {
-                        let message = format!("type mismatch on parm {}", at.saturating_add(1));
-                        return self.fatal(Code::E0340, span, message).map(Some);
-                    }
-                }
-                Ok(Some(Value::of(Type::Simple(SimpleType::Vector))))
-            }
+            "randomv" => self.randomv(args, call).map(Some),
             "entnum" => {
                 // `(e / 1i) / (nextent(world) / 1i)`, by the `nextent` builtin.
                 let entity = self.value(args.first().cloned())?;
@@ -1427,8 +1726,11 @@ impl FunctionType {
                     .map_or_else(ParamFacts::default, |label| ParamFacts {
                         name: label.name.clone(),
                         has_default: label.default.is_some(),
-                        // The code generator passes defaults only to a function it calls by name.
-                        kept_default: false,
+                        // The code generator passes a default it reads at the function's
+                        // declaration only to a function called by name; a type's own is its
+                        // constant.
+                        kept_default: label.default_value.is_some(),
+                        default_value: label.default_value,
                         optional: label.optional,
                         passing: label.passing,
                     })
@@ -1448,6 +1750,9 @@ impl FunctionType {
         })
     }
 }
+
+/// The slot of the value an array's setter stores, `ArraySet*NAME(index, value)`'s second.
+const SETTER_VALUE_SLOT: usize = 1;
 
 /// `CALL0` to `CALL8`, the call of `passed` arguments, the opcode of the count (QC-18.3).
 pub(super) fn call_opcode(passed: usize) -> Option<Op> {
@@ -1481,6 +1786,68 @@ impl Checker<'_> {
             returned: true,
             call,
             ..Value::of(param.clone())
+        }
+    }
+}
+
+/// A load through an index, of an array's element or of what a pointer points at, by the
+/// words it loads: what an argument loaded into its parameter's slot is read by (`copyop[2] =
+/// OP_LOADA_V; copyop[1] = OP_LOADA_I64; copyop[0] = OP_LOADA_F;`, and `OP_LOADP_*` for
+/// `REF_POINTER`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Loada {
+    /// `OP_LOADA_*` of this size.
+    Array(Loaded),
+    /// `OP_LOADP_*` of this size.
+    Pointer(Loaded),
+    /// `OP_GLOBALADDRESS`, the pointer an array named bare is passed as.
+    Address,
+    /// `OP_LOADP_C`, a string's character.
+    Character,
+}
+
+/// The words a load reads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Loaded {
+    /// One word.
+    Word,
+    /// Two words, a 64-bit value's.
+    Pair,
+    /// Three words, a vector's.
+    Vector,
+}
+
+impl Loada {
+    /// What `op` loads, if it is an `OP_LOADA_*` or an `OP_LOADP_*` of whole words.
+    const fn of(op: Op) -> Option<Self> {
+        match op {
+            Op::LoadaF | Op::LoadaS | Op::LoadaEnt | Op::LoadaFld | Op::LoadaFnc | Op::LoadaI => {
+                Some(Self::Array(Loaded::Word))
+            }
+            Op::LoadaI64 => Some(Self::Array(Loaded::Pair)),
+            Op::LoadaV => Some(Self::Array(Loaded::Vector)),
+            Op::LoadpF | Op::LoadpS | Op::LoadpEnt | Op::LoadpFld | Op::LoadpFnc | Op::LoadpI => {
+                Some(Self::Pointer(Loaded::Word))
+            }
+            Op::LoadpI64 => Some(Self::Pointer(Loaded::Pair)),
+            Op::LoadpV => Some(Self::Pointer(Loaded::Vector)),
+            Op::Globaladdress => Some(Self::Address),
+            Op::LoadpC => Some(Self::Character),
+            _ => None,
+        }
+    }
+
+    /// The opcode that loads these words whatever they are.
+    const fn by_size(self) -> Op {
+        match self {
+            Self::Array(Loaded::Word) => Op::LoadaF,
+            Self::Array(Loaded::Pair) => Op::LoadaI64,
+            Self::Array(Loaded::Vector) => Op::LoadaV,
+            Self::Pointer(Loaded::Word) => Op::LoadpF,
+            Self::Pointer(Loaded::Pair) => Op::LoadpI64,
+            Self::Pointer(Loaded::Vector) => Op::LoadpV,
+            Self::Address => Op::Globaladdress,
+            Self::Character => Op::LoadpC,
         }
     }
 }

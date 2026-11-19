@@ -7,6 +7,7 @@
 //! The program's output (QC-25): `progdefs.h`, whose CRC the progs header carries, and the
 //! progs.dat tables `WriteData` writes.
 
+use qc_progs::Op;
 use qc_progs::crc::crc_block;
 use qc_progs::opcode::Opcode;
 use qc_progs::{Def as DefRecord, PROGS_DEF_SAVEGLOBAL, ProgsFile};
@@ -15,7 +16,7 @@ use qc_types::{Etype, Slot};
 use std::fmt::Write as _;
 
 use crate::Internal;
-use crate::program::{Def, Program, RESERVED_OFS, ValueType, type_number, type_words};
+use crate::program::{Def, Program, RESERVED_OFS, ValueType, type_number};
 use qc_lexer::latin1_encode;
 
 /// `PR_WriteProgdefs` (QC-25.5, QC-25.6): the text of `progdefs.h` and the CRC of it up to the
@@ -159,6 +160,10 @@ impl Saving {
     }
 }
 
+/// The name of FTEQCC's function type, `type_function = QCC_PR_NewType("__function",
+/// ev_function, false);`, which a struct's function member's record is named after.
+const FUNCTION_TYPE_NAME: &str = "__function";
+
 /// FTE-13.13: the records of the members of the struct value `name` at `ofs`, `name.member`,
 /// each member that starts at a word, an array member as one record.
 fn member_records(
@@ -175,11 +180,51 @@ fn member_records(
             Some(_) => Saving::Unsaved,
             None => saving,
         };
+        // FTEF-6.33: a member that is a function is named after its type, `__function`, not
+        // itself (`case ev_function: QC_snprintfz(newname, sizeof(newname), "%s.%s", def->name,
+        // parttype->name);`).
+        let ty = index.alias(&member.ty).unwrap_or(&member.ty);
+        let number = type_number(index, &ValueType::Of(ty.clone()));
+        let member_name = if number == Etype::Function.number() {
+            FUNCTION_TYPE_NAME
+        } else {
+            member.name.as_str()
+        };
         out.push(DefRecord {
-            type_bits: saving.bits(type_number(index, &ValueType::Of(member.ty.clone()))),
+            type_bits: saving.bits(number),
             ofs: at,
-            s_name: program.copy_string(&latin1_encode(&format!("{name}.{}", member.name)))?,
+            s_name: program.copy_string(&latin1_encode(&format!("{name}.{member_name}")))?,
         });
+    }
+    Ok(())
+}
+
+/// FTE-24.4: `QCC_WriteData` for `QCF_HEXEN2`, `QCF_UHEXEN2` and `QCF_FTEH2`: each
+/// `OP_CALL1H` to `OP_CALL8H` written as `OP_CALL1` to `OP_CALL8`, which in Hexen II take their
+/// first two arguments as operands (`statements[i].op = statements[i].op - OP_CALL1H +
+/// OP_CALL1;`). An `OP_CALL1` to `OP_CALL8` already there passes its arguments in the
+/// parameter slots, FTEQCC's "Target switching produced incompatible instructions".
+pub(crate) fn hexen2_calls(progs: &mut ProgsFile) -> Result<(), Internal> {
+    let by_operands = Op::CALLS_BY_OPERANDS;
+    let plain = Op::CALLS;
+    let number = |op: Op| u32::try_from(op.number()).ok();
+    for statement in &mut progs.statements {
+        if plain
+            .iter()
+            .skip(1)
+            .any(|&call| number(call) == Some(statement.op))
+        {
+            return Err(Internal::Unsupported);
+        }
+        let renumbered = by_operands
+            .iter()
+            .zip(plain)
+            .skip(1)
+            .find(|&(&call, _)| number(call) == Some(statement.op))
+            .and_then(|(_, to)| number(to));
+        if let Some(op) = renumbered {
+            statement.op = op;
+        }
     }
     Ok(())
 }
@@ -242,11 +287,26 @@ pub(crate) fn progs(
         let field_record =
             records == Records::Qcc || (def.constant && (def.scope.is_none() || def.initialized));
         if let Some(inner) = def.ty.field_inner().filter(|_| field_record) {
-            field_defs.push(DefRecord {
-                type_bits: u32::from(type_number(index, &inner)),
-                ofs: program.word(def.ofs),
-                s_name: program.copy_string(&latin1_encode(&def.name))?,
-            });
+            // FTEF-31.33: an array of fields has a record for each element, `NAME[N]`, as it
+            // has a global for each.
+            let words = def.element_words(index);
+            let elements = match def.count {
+                Some(count) => (0..count)
+                    .map(|i| (format!("{}[{i}]", def.name), i))
+                    .collect(),
+                None => vec![(def.name.clone(), 0)],
+            };
+            for (name, element) in elements {
+                let ofs = element
+                    .checked_mul(words)
+                    .and_then(|w| w.checked_add(def.ofs))
+                    .ok_or(Internal::TooLarge)?;
+                field_defs.push(DefRecord {
+                    type_bits: u32::from(type_number(index, &inner)),
+                    ofs: program.word(ofs),
+                    s_name: program.copy_string(&latin1_encode(&name))?,
+                });
+            }
         }
         // QC-25.3: id's `qcc` saves a global with no initial value. FTEF-19.82: FTEQCC saves a
         // global it is asked to save, `def->saved`, that it does not hold constant; each record
@@ -263,7 +323,7 @@ pub(crate) fn progs(
         if records == Records::Fteqcc
             && let Some(count) = def.count
         {
-            let words = type_words(index, &def.ty);
+            let words = def.element_words(index);
             for i in 0..count {
                 let ofs = i
                     .checked_mul(words)

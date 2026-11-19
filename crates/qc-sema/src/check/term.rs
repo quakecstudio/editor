@@ -479,7 +479,12 @@ impl Checker<'_> {
         // FTE-18.12: the first word's store folds into the statement that made its value when
         // that is the last one (`opt_assignments`), which then writes the word; every later
         // store follows a store. The vector is then taken before that statement.
-        let folds = values.first().and_then(|value| {
+        // FTEF-27.25: an integer's store is `OP_STORE_IF`, whose value's type is not the
+        // word's, so it folds into nothing.
+        let converts = values
+            .first()
+            .is_some_and(|value| self.etype_of(&value.ty) == Some(Etype::Integer));
+        let folds = values.first().filter(|_| !converts).and_then(|value| {
             value.made.filter(|&made| {
                 value.temp.is_some()
                     && value.temp == self.last_temp
@@ -513,6 +518,9 @@ impl Checker<'_> {
                 self.generate(Op::StoreF, span);
                 self.name_last(Op::StoreF, self.name_of(value), Some(to));
             }
+            // The store reads a call's value out of the return global, which no later call
+            // then copies (FTE-18.13).
+            self.read_returned(value);
         }
         Ok(Value {
             made: (!self.global).then_some(first),
@@ -535,7 +543,45 @@ impl Checker<'_> {
             let ty = self.env.written_type(ty.syntax().span().start);
             return Ok(ty.map_or_else(opaque_uint, |ty| self.size_of(&ty)));
         }
+        // "the term should not have side effects, or generate any actual statements."
+        // (`numstatements = oldstcount;`): what the operand's statements named is still made.
+        let before = self.generated.len();
+        // What the checker keeps of a call's value and its copies, by their statements.
+        let kept = (
+            self.live_return,
+            self.live_call,
+            self.not_of_return,
+            self.unfreed,
+            self.copies.len(),
+            self.emitted,
+        );
         let value = self.expr_of(sizeof.operand())?;
+        if self.generated.len() > before {
+            // A branch's steps are kept by its statements too, which are gone: an operand
+            // that branches is not followed.
+            let jumps = |name: Option<ir::Name>| matches!(name, Some(ir::Name::Jump(_)));
+            if self
+                .generated
+                .iter()
+                .skip(before)
+                .any(|s| jumps(s.a) || jumps(s.b) || jumps(s.c))
+            {
+                self.followed = false;
+            }
+            let effects = self.dropped_effects(before);
+            self.generated.truncate(before);
+            let at = self.next_made();
+            self.effects
+                .extend(effects.into_iter().map(|effect| (at, effect)));
+            self.last_temp = None;
+            let (live_return, live_call, not_of_return, unfreed, copies, emitted) = kept;
+            self.live_return = live_return;
+            self.live_call = live_call;
+            self.not_of_return = not_of_return;
+            self.unfreed = unfreed;
+            self.copies.truncate(copies);
+            self.emitted = emitted;
+        }
         if let Some(text) = sizeof.operand().and_then(|e| string_immediate(&e)) {
             let bytes = u32::try_from(text.len()).unwrap_or(u32::MAX);
             return Ok(Value::constant(Constant::uint(bytes.saturating_add(1))));

@@ -27,6 +27,24 @@ pub struct Immediate {
     pub words: [u32; 3],
 }
 
+impl Immediate {
+    /// The words of a 64-bit integer or a double.
+    const WIDE_WORDS: usize = 2;
+
+    /// The words of its value: one, two for a 64-bit integer or a double, three for a vector.
+    #[must_use]
+    pub fn value(&self) -> &[u32] {
+        let count = match self.kind {
+            ImmediateKind::Float | ImmediateKind::Integer | ImmediateKind::Uint => 1,
+            ImmediateKind::Int64 | ImmediateKind::Uint64 | ImmediateKind::Double => {
+                Self::WIDE_WORDS
+            }
+            ImmediateKind::Vector => self.words.len(),
+        };
+        self.words.get(..count).unwrap_or(&self.words)
+    }
+}
+
 /// The kinds of immediate a statement names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ImmediateKind {
@@ -36,6 +54,9 @@ pub enum ImmediateKind {
     Vector,
     /// An integer (FTEF-26.3).
     Integer,
+    /// An unsigned integer, `QCC_MakeUIntConst`, which shares an integer's immediate of the
+    /// same bits (FTEF-3.6).
+    Uint,
     /// A signed integer of 64 bits, `QCC_MakeInt64Const`.
     Int64,
     /// An unsigned integer of 64 bits, `QCC_MakeUInt64Const`.
@@ -101,6 +122,9 @@ pub enum Name {
     /// A call's parameter slot by its number, `OFS_PARM0 + 3 * n` (QC-18.3), and past the
     /// eighth FTEQCC's `$parmN` global (FTE-18.6).
     Parameter(u8),
+    /// A word after the first of a call's parameter slot: the slot and the word, 1 or 2, as a
+    /// value of two words, or the second of a struct's, is passed (FTEF-32.25).
+    ParameterWord(u8, u32),
     /// A word of the variadic function's `__va_list` (FTE-18.6).
     VaList(u32),
     /// The default value of this parameter of the function the next `CALL` calls (FTE-18.7).
@@ -144,6 +168,9 @@ pub enum Effect {
     /// The constant local the name names is given its aggregate initialiser's words at compile
     /// time, as a global is (FTEF-32.13).
     Constant(Name),
+    /// The constant local the name names is given the words of the value its initialiser
+    /// folded to, at compile time (FTEF-34.20).
+    Value(Name, Immediate),
     /// The `static` local the name names is given the number of the nested function its
     /// declaration defines (FTEF-18.2).
     Nested(Name),
@@ -172,7 +199,13 @@ impl Name {
             }
             Self::Return => Self::ReturnWord(word),
             Self::ReturnWord(at) => Self::ReturnWord(at.saturating_add(word)),
+            Self::Parameter(slot) if word == 0 => Self::Parameter(slot),
+            Self::Parameter(slot) if word < VECTOR_WORDS => Self::ParameterWord(slot, word),
+            Self::ParameterWord(slot, at) if at.saturating_add(word) < VECTOR_WORDS => {
+                Self::ParameterWord(slot, at.saturating_add(word))
+            }
             Self::Parameter(_)
+            | Self::ParameterWord(..)
             | Self::VaList(_)
             | Self::Default(_)
             | Self::RetLocal
@@ -201,7 +234,7 @@ impl Name {
             | Self::ArraySet(_)
             | Self::Nested(_)
             | Self::RetLocal => true,
-            Self::Parameter(slot) => *slot >= MAX_PARMS,
+            Self::Parameter(slot) | Self::ParameterWord(slot, _) => *slot >= MAX_PARMS,
             Self::Made(_)
             | Self::MadeWord(..)
             | Self::Return
@@ -265,7 +298,7 @@ impl BodyStatement {
         let c = row.makes_value();
         match self.op {
             Op::Goto => [true, false, false],
-            Op::IfI | Op::IfnotI | Op::IfS | Op::IfnotS | Op::IfF | Op::IfnotF => [a, true, c],
+            op if op.is_conditional_jump() => [a, true, c],
             Op::Return | Op::Done => [false; OPERANDS],
             // FTEF-32.19: `CALL1H` to `CALL8H` read their first two arguments as operands.
             op if op.call().is_some_and(|(_, passing)| passing.operands() > 0) => {
@@ -488,7 +521,17 @@ mod tests {
             Some(Name::ImmediateWord(immediate, 1))
         );
         assert_eq!(Name::Return.word(2), Some(Name::ReturnWord(2)));
-        assert_eq!(Name::Parameter(0).word(1), None);
+        assert_eq!(Name::Parameter(0).word(0), Some(Name::Parameter(0)));
+        assert_eq!(Name::Parameter(0).word(1), Some(Name::ParameterWord(0, 1)));
+        assert_eq!(
+            Name::ParameterWord(1, 1).word(1),
+            Some(Name::ParameterWord(1, 2))
+        );
+        assert_eq!(
+            Name::Parameter(0).word(3),
+            None,
+            "the next slot is another name"
+        );
         assert_eq!(Name::Jump(3).word(1), None);
     }
 }
