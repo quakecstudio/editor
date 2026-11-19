@@ -87,6 +87,7 @@ pub(super) struct MapInspect;
 
 impl<C: HasMap + 'static> Command<C> for MapInspect {
     const ID: &'static str = MAP_INSPECT;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "The open map's rooms (TrenchBroom's named layers and groups, \
         with their bounds) and its entities: each one's place, classname, origin, targetname \
         and room, filtered by room or classname.";

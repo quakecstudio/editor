@@ -111,6 +111,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.make_structural`](#mapmake_structural) | Gives a brush entity's brushes back to the world, in the layer or group the entity was in, and removes the entity (TrenchBroom's Make Structural). |
 | [`map.move`](#mapmove) | Moves an entity of the open map: a point entity's origin, a brush entity's brushes. |
 | [`map.move_to`](#mapmove_to) | Moves an entity or a group of the open map into a layer or a group, or into the default layer given the world, as TrenchBroom writes it. |
+| [`map.new`](#mapnew) | Makes a new .map holding a world with the keys given, and opens it in the map view; a file that is there already is refused. |
 | [`map.open`](#mapopen) | Opens a .map in the map view, or a shipped .bsp's entities when the map has no .map source; nothing is selected. |
 | [`map.outline`](#mapoutline) | The open map's outline: the default layer and each layer, their groups and linked groups, then their entities by classname and targetname, with brush counts; with filter, only what holds the text and what is around it. |
 | [`map.paste`](#mappaste) | Adds a .map's text to the open map, its world's brushes to the world and its other entities after the map's: where the text has them, or with the middle of their floor at a point on the grid. |
@@ -152,7 +153,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`preview.dock`](#previewdock) | Docks the game's window beside the IDE's window, given where the IDE's window is and whether it has the focus. |
 | [`preview.game`](#previewgame) | Says what game data the preview plays from: the chosen folder, or the first install found, as found, shareware only, rerelease only or missing for the game the project is for, with the files it lacks. |
 | [`preview.pause`](#previewpause) | Pauses the running game between frames. |
-| [`preview.pick`](#previewpick) | Selects the edict under a point of the game's window. |
+| [`preview.pick`](#previewpick) | Selects the edict under a point of the game's window. A point with no edict under it answers none and leaves the selection as it was. |
 | [`preview.play`](#previewplay) | Builds the open project and starts the preview host on its program, stopping a game already running. |
 | [`preview.poll`](#previewpoll) | Reads the running game's events: its state changes and console lines. |
 | [`preview.reload`](#previewreload) | Builds the open project and reloads its program in the running game, the map going on; nothing when no game runs. |
@@ -5381,6 +5382,49 @@ Parameters:
 }
 ```
 
+## `map.new`
+
+Makes a new .map holding a world with the keys given, and opens it in the map view; a file that is there already is refused.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.new`.",
+  "properties": {
+    "keys": {
+      "default": [],
+      "description": "The world's keys and values, in order, such as `wad`; its classname is its own.",
+      "items": {
+        "maxItems": 2,
+        "minItems": 2,
+        "prefixItems": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "string"
+          }
+        ],
+        "type": "array"
+      },
+      "type": "array"
+    },
+    "path": {
+      "description": "The `.map` file to make, in the open project; one that is there already is refused.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "MapNewParams",
+  "type": "object"
+}
+```
+
 ## `map.open`
 
 Opens a .map in the map view, or a shipped .bsp's entities when the map has no .map source; nothing is selected.
@@ -6887,7 +6931,7 @@ Parameters:
 
 ## `preview.pick`
 
-Selects the edict under a point of the game's window.
+Selects the edict under a point of the game's window. A point with no edict under it answers none and leaves the selection as it was.
 
 Parameters:
 

@@ -477,6 +477,7 @@ pub(super) struct MapTexturesCommand;
 
 impl<C: HasMap + 'static> Command<C> for MapTexturesCommand {
     const ID: &'static str = MAP_TEXTURES;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Lists the open map's textures: those of the WADs its world \
         names, found in the project, beside the map or in the game, and of the BSP it was \
         opened from, each with its size and how many faces use it, and the names its faces use \

@@ -38,7 +38,7 @@ use clap::error::ErrorKind;
 use clap::{Parser, Subcommand, ValueEnum};
 
 use qs_commands::{CommandError, Registry, Session};
-use qs_mcp::{AGENT_TOOLS, Connected, Server, ServerSettings};
+use qs_mcp::{Connected, Server, ServerSettings};
 use qs_templates::{Created, Fetch, Folder, GitHub, NEW_PROJECT, Template};
 use qs_workbench::{
     BUILD_PROJECT, CHECK_PROJECT, Config, Dialect, Gravity, HasPreview, HasWorkbench, Loader,
@@ -680,7 +680,7 @@ impl McpRequest {
         let server = match &mcp.session {
             McpSession::Own { game } => {
                 let make = own_session(loader, config, game.clone(), project, path);
-                Server::start(make, settings, &AGENT_TOOLS)
+                Server::start(make, settings)
             }
             McpSession::App { socket } => {
                 let socket = match socket {
@@ -698,7 +698,7 @@ impl McpRequest {
                         )
                     })
                 };
-                Server::start(make, settings, &AGENT_TOOLS)
+                Server::start(make, settings)
             }
         }
         .map_err(Stopped::Mcp)?;

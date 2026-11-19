@@ -9,7 +9,7 @@ setup for Claude Code and other clients.
   requests (2026-07-28) that carry their version and capabilities in `_meta`, with
   `server/discover`, and legacy clients that open with `initialize`. The server keeps no
   conversation state; its project and roots are its configuration.
-- **Tools:** `AGENT_TOOLS`, each a command id with whether it reads or writes. `Server`
+- **Tools:** every command of the session (PRIN-3), each with whether it only reads, as its command declares (`qs_commands::Access`), sent to the client as `readOnlyHint`. `Server`
   lists those the session's registry has and calls them through the session, which runs on a
   thread of its own because the analysis is not `Send`; rmcp's async handler sends it each
   call.

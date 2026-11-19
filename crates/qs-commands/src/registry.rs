@@ -9,7 +9,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::builtin::Builtin;
-use crate::command::{Command, Effect};
+use crate::command::{Access, Command, Effect};
 use crate::error::{CommandError, RegisterError};
 use crate::id::CommandId;
 
@@ -20,15 +20,28 @@ pub struct CommandInfo {
     id: CommandId,
     summary: &'static str,
     params: Value,
+    access: Access,
 }
 
 impl CommandInfo {
-    pub(crate) const fn new(id: CommandId, summary: &'static str, params: Value) -> Self {
+    pub(crate) const fn new(
+        id: CommandId,
+        summary: &'static str,
+        params: Value,
+        access: Access,
+    ) -> Self {
         Self {
             id,
             summary,
             params,
+            access,
         }
+    }
+
+    /// Whether it only reads.
+    #[must_use]
+    pub const fn access(&self) -> Access {
+        self.access
     }
 
     /// The command's stable id.
@@ -155,11 +168,7 @@ impl<C: 'static> Registry<C> {
         if params.get("type").and_then(Value::as_str) != Some("object") {
             return Err(RegisterError::ParamsNotObject(id));
         }
-        let info = CommandInfo {
-            id: id.clone(),
-            summary: T::SUMMARY,
-            params,
-        };
+        let info = CommandInfo::new(id.clone(), T::SUMMARY, params, T::ACCESS);
         self.entries.insert(
             id,
             Entry {

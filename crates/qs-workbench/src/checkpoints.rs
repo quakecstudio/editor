@@ -207,6 +207,7 @@ struct ListCheckpoints;
 
 impl<C: HasWorkbench + 'static> Command<C> for ListCheckpoints {
     const ID: &'static str = LIST_CHECKPOINTS;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Lists the open project's checkpoints, oldest first.";
     type Params = NoParams;
     type Output = Vec<CheckpointMade>;

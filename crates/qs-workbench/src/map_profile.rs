@@ -763,6 +763,8 @@ fn run_task<C: HasPreview>(
             } else {
                 remove_stale(&target)?;
             }
+            // An `.ent` of an earlier compile would people this one with its entities.
+            remove_stale(&maps.join(format!("{name}.ent")))?;
             preview
                 .play_built(built, Some(name))
                 .map_err(TaskError::Preview)?;
@@ -784,6 +786,7 @@ pub(crate) struct MapProfiles;
 
 impl<C: HasPreview + 'static> Command<C> for MapProfiles {
     const ID: &'static str = MAP_PROFILES;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Lists the compile profiles: the built-in Full and Fast, then \
         the project's own from compile-profiles.toml, each its name and its tasks.";
     type Params = NoParams;

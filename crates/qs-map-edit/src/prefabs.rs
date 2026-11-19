@@ -299,6 +299,7 @@ pub(super) struct ListPrefabs;
 
 impl<C: HasMap + 'static> Command<C> for ListPrefabs {
     const ID: &'static str = MAP_PREFABS;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Lists the .map files in the project's prefabs folder.";
     type Params = NoParams;
     type Output = Prefabs;

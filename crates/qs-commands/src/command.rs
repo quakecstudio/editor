@@ -5,12 +5,27 @@
 use std::error::Error;
 
 use schemars::JsonSchema;
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
 /// A command's own failure, or an undo step's, boxed so one registry holds commands with
 /// different error types.
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
+
+/// Whether a command only reads or may also change something: the project's files, the open
+/// map, the running game, the window. A caller that must not change anything, such as an MCP
+/// server started read-only, runs only the commands that read, and an MCP client is told
+/// which they are (MCP 2026-07-28, `ToolAnnotations.readOnlyHint`: "If true, the tool does
+/// not modify its environment.").
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Access {
+    /// It changes nothing: it answers from what is there.
+    Read,
+    /// It may change something. What a command is taken for when it does not say.
+    #[default]
+    Write,
+}
 
 /// One action a person, the CLI, the agent or MCP can run (PRIN-3).
 ///
@@ -36,6 +51,10 @@ pub trait Command<C>: Send + Sync + 'static {
     /// One sentence saying what the command does, shown in the palette, `commands.list`, the
     /// generated reference and as the agent tool's description.
     const SUMMARY: &'static str;
+
+    /// Whether the command only reads. A command that does not say may write, so that one
+    /// nobody classified is never run where nothing may change.
+    const ACCESS: Access = Access::Write;
 
     /// The parameters. Doc comments on the type and its fields become the schema's
     /// descriptions.
