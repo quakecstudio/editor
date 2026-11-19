@@ -16,10 +16,12 @@ use qs_wad::texture::Palette;
 use qs_wad::write::WadBuilder;
 use serde_json::json;
 
-use super::{MAP_TEXTURES, MapTextures, TextureOrigin, TextureSources, WadState};
+use super::{
+    Game, GameTextures, MAP_TEXTURES, MapTextures, TextureOrigin, TextureSources, WadState,
+};
 use crate::MapEditError;
-use crate::testing::MapContext;
-use crate::{MAP_OPEN, MAP_SET_KEY};
+use crate::testing::{MapContext, TestGame, level_bsp};
+use crate::{GameFolders, MAP_NEW, MAP_OPEN, MAP_SET_KEY};
 
 /// A texture lump `name`, `width` by `height`, every pixel `index`.
 fn miptex(name: &str, width: u32, height: u32, index: u8) -> Vec<u8> {
@@ -435,4 +437,121 @@ fn the_lights_palette_is_the_projects_then_the_games() {
     assert_eq!(super::light_palette(Some(&project), Some(&game)), None);
     assert_eq!(super::light_palette(None, None), None);
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+// No spec statement: P6-43, the acceptance criterion: the textures of the levels on the game's
+// search path are listed after the WADs', each once with the level it comes from, the first
+// level by name holding a name and a WAD's texture of a name before any level's; a box
+// model's are not, and a new map with no WAD lists them through map.textures
+#[test]
+fn the_textures_of_the_games_levels_are_listed_each_once() {
+    let (project, game, session) = opened("levels", &Scene::default());
+    let maps = game.join("id1/maps");
+    std::fs::create_dir_all(&maps).unwrap();
+    std::fs::write(maps.join("e2.bsp"), level_bsp(&["rock", "slime"])).unwrap();
+    std::fs::write(maps.join("E1.BSP"), level_bsp(&["rock", "brick"])).unwrap();
+    std::fs::write(maps.join("b_box.bsp"), level_bsp(&["crate"])).unwrap();
+    std::fs::write(maps.join("notes.txt"), "no level").unwrap();
+    let sources = sources(&project, &game, &session);
+    let listing = sources.listing(session.context().map().unwrap());
+    let found: Vec<(&str, &TextureOrigin)> = listing
+        .textures
+        .iter()
+        .map(|t| (t.name.as_str(), &t.origin))
+        .collect();
+    let wad = TextureOrigin::Wad {
+        wad: "gfx/a.wad".to_owned(),
+    };
+    let level = |map: &str| TextureOrigin::Game {
+        map: map.to_owned(),
+    };
+    assert_eq!(
+        found,
+        [
+            ("brick", &wad),
+            ("metal", &wad),
+            ("rock", &level("e1")),
+            ("slime", &level("e2")),
+            ("nope", &TextureOrigin::Missing),
+        ]
+    );
+    assert_eq!(sources.size("rock"), Some([16, 16]));
+    assert!(
+        sources.decode("slime").is_some(),
+        "shown in the game's palette"
+    );
+
+    // A new map, with no WAD, has the game's textures to choose from.
+    let fresh = project.join("maps/fresh.map");
+    let mut context = MapContext {
+        game: Some(TestGame {
+            folders: GameFolders {
+                base: Some(game),
+                chosen: None,
+            },
+            ..TestGame::default()
+        }),
+        ..MapContext::default()
+    }
+    .into_session();
+    context.execute(MAP_NEW, json!({ "path": fresh })).unwrap();
+    let answer: MapTextures =
+        serde_json::from_value(context.execute(MAP_TEXTURES, json!({})).unwrap()).unwrap();
+    let names: Vec<(&str, &TextureOrigin)> = answer
+        .textures
+        .iter()
+        .map(|t| (t.name.as_str(), &t.origin))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            ("rock", &level("e1")),
+            ("brick", &level("e1")),
+            ("slime", &level("e2")),
+        ]
+    );
+    assert!(answer.wads.is_empty());
+}
+
+// No spec statement: P6-43: a WAD of the levels' textures holds those asked for that a level
+// has, each whole and once, and there is none when no level has any
+#[test]
+fn a_wad_of_the_levels_textures_holds_those_asked_for() {
+    let dir = std::env::temp_dir().join(format!("qs-wb-tex-wad-of-{}", std::process::id()));
+    let _gone = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("id1/maps")).unwrap();
+    std::fs::write(dir.join("id1/maps/e1.bsp"), level_bsp(&["rock", "brick"])).unwrap();
+    let levels = GameTextures::read(&Game::at(&dir));
+    assert_eq!(levels.len(), 2);
+    assert!(!levels.is_empty());
+    let names: [&[u8]; 4] = [b"ROCK", b"nowhere", b"rock", b"brick"];
+    let bytes = levels.wad_of(names).unwrap();
+    let wad = qs_wad::MapWad::read(&bytes).unwrap();
+    let held: Vec<&[u8]> = wad.entries().iter().map(|e| e.name.as_bytes()).collect();
+    assert_eq!(held, [b"rock".as_slice(), b"brick"]);
+    let rock = wad.texture(b"rock").unwrap();
+    assert_eq!((rock.width, rock.height), (16, 16));
+    let whole = qs_wad::Wad::read(&bytes).unwrap();
+    let lump = whole.lumps().first().unwrap();
+    assert_eq!(
+        whole.data(lump).unwrap().len(),
+        40 + 256 + 64 + 16 + 4,
+        "the header and all four levels"
+    );
+    assert!(levels.wad_of([b"nowhere".as_slice()]).is_none());
+
+    // spec BSP-4.8: frames belong to one animation when their names match from the third
+    // character on, so a frame asked for brings the others the levels hold
+    std::fs::write(
+        dir.join("id1/maps/e2.bsp"),
+        level_bsp(&["+0slip", "+1slip", "+aslip", "+0other", "slip"]),
+    )
+    .unwrap();
+    let levels = GameTextures::read(&Game::at(&dir));
+    let bytes = levels.wad_of([b"+0slip".as_slice(), b"+1slip"]).unwrap();
+    let wad = qs_wad::MapWad::read(&bytes).unwrap();
+    let mut held: Vec<&[u8]> = wad.entries().iter().map(|e| e.name.as_bytes()).collect();
+    held.sort_unstable();
+    assert_eq!(held, [b"+0slip".as_slice(), b"+1slip", b"+aslip"]);
+    assert!(GameTextures::read(&Game::at(&dir.join("none"))).is_empty());
 }

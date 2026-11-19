@@ -13,6 +13,7 @@
 //! apps. It depends on `qs-layout`, `qs-workbench` and `qs-commands` (L5), `qs-editor-view`
 //! and `qs-render` (L7), `qs-log` and `qs-paths` (L0), and `eframe`.
 
+mod about;
 pub mod agent;
 pub mod bench;
 mod code_style;
@@ -51,7 +52,6 @@ mod map_shading;
 mod map_tools;
 mod map_uv;
 pub mod map_view;
-#[cfg(target_os = "macos")]
 pub mod menu;
 mod multibuffer;
 #[cfg(target_os = "macos")]
@@ -109,7 +109,9 @@ enum Focused {
 pub struct App {
     shell: Shell,
     #[cfg(target_os = "macos")]
-    menu: Option<menu::MenuBar>,
+    menu: Option<menu::native::MenuBar>,
+    /// The Map menu's keys waiting a frame for the map view to have the keyboard (P7-17).
+    map_keys: Vec<egui::KeyboardShortcut>,
     /// The display settings the look was made for.
     display: Display,
     follow: Follow,
@@ -181,6 +183,7 @@ impl App {
         Ok(Self {
             #[cfg(target_os = "macos")]
             menu: None,
+            map_keys: Vec::new(),
             shell,
             display,
             follow: Follow::Fixed,
@@ -237,8 +240,10 @@ impl App {
 
     /// Installs the macOS menu bar, on the main thread, as `muda` requires.
     #[cfg(target_os = "macos")]
-    pub fn install_menu(&mut self) {
-        match menu::MenuBar::install(self.shell.layout()) {
+    pub fn install_menu(&mut self, ctx: &egui::Context) {
+        let ctx = ctx.clone();
+        let wake = move || ctx.request_repaint();
+        match menu::native::MenuBar::install(self.shell.layout(), self.shell.keymap(), wake) {
             Ok(menu) => self.menu = Some(menu),
             Err(error) => tracing::warn!(%error, "no menu bar"),
         }
@@ -255,25 +260,108 @@ impl App {
         &mut self.shell
     }
 
-    /// Draws one frame, after running the menu items chosen since the last.
-    pub fn frame(&mut self, ui: &mut egui::Ui) {
-        self.follow_display(ui.ctx());
-        #[cfg(target_os = "macos")]
-        if let Some(menu) = &self.menu {
-            for choice in menu.chosen() {
-                match choice {
-                    menu::MenuChoice::OpenFolder => self.shell.open_folder(),
-                    menu::MenuChoice::NewProject(template) => self.shell.new_project(template),
-                    menu::MenuChoice::GameFiles => self.shell.show_game_guide(),
-                    menu::MenuChoice::ExportMod => self.shell.export_mod(),
-                    menu::MenuChoice::Zoom(step) => self.shell.zoom(step),
-                    menu::MenuChoice::Toggle(panel) => {
-                        if let Err(error) = self.shell.toggle(panel) {
-                            tracing::warn!(%error, "panel toggle failed");
-                        }
-                    }
+    /// Carries out what a chosen menu item asks (P7-17). An item with a key gives the key to
+    /// this frame's input, since the menu took it before the window saw it: the window then
+    /// does what the key does where the keyboard is.
+    fn carry_out(&mut self, ctx: &egui::Context, chosen: menu::Chosen) {
+        use menu::{Chosen, MenuChoice, SystemItem};
+        let press = |shortcut: egui::KeyboardShortcut| {
+            let mut modifiers = shortcut.modifiers;
+            // The platform's modifier as a key event of this platform carries it.
+            match keymap::Platform::HERE {
+                keymap::Platform::Mac => modifiers.mac_cmd |= modifiers.command,
+                keymap::Platform::Other => modifiers.ctrl |= modifiers.command,
+            }
+            ctx.input_mut(|input| {
+                input.events.push(egui::Event::Key {
+                    key: shortcut.logical_key,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers,
+                });
+            });
+        };
+        match chosen {
+            Chosen::Key(shortcut) => press(shortcut),
+            Chosen::MapKey(shortcut) if self.shell.map_has_keyboard() => press(shortcut),
+            Chosen::MapKey(shortcut) => {
+                self.shell.give_map_keyboard();
+                self.map_keys.push(shortcut);
+                ctx.request_repaint();
+            }
+            Chosen::Run(id) => {
+                if let Err(error) = self.shell.execute(id, serde_json::json!({})) {
+                    tracing::warn!(%error, command = id, "menu item failed");
                 }
             }
+            Chosen::Choice(choice) => match choice {
+                MenuChoice::OpenFolder => self.shell.open_folder(),
+                MenuChoice::NewProject(template) => self.shell.new_project(template),
+                MenuChoice::GameFiles => self.shell.show_game_guide(),
+                MenuChoice::ExportMod => self.shell.export_mod(),
+                MenuChoice::Zoom(step) => self.shell.zoom(step),
+                MenuChoice::Toggle(panel) => {
+                    if let Err(error) = self.shell.toggle(panel) {
+                        tracing::warn!(%error, "panel toggle failed");
+                    }
+                }
+                MenuChoice::FileFinder | MenuChoice::Palette => {
+                    if let Some(key) = choice.window_key() {
+                        press(key);
+                    }
+                }
+            },
+            // What egui makes of the clipboard's keys, which the text and the map view read.
+            Chosen::Edit(SystemItem::Cut) => {
+                ctx.input_mut(|input| input.events.push(egui::Event::Cut));
+            }
+            Chosen::Edit(SystemItem::Copy) => {
+                ctx.input_mut(|input| input.events.push(egui::Event::Copy));
+            }
+            Chosen::Edit(SystemItem::Paste) => {
+                ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+            }
+            Chosen::Edit(SystemItem::SelectAll) => {
+                press(egui::KeyboardShortcut::new(
+                    egui::Modifiers::COMMAND,
+                    egui::Key::A,
+                ));
+            }
+            // macOS carries these out itself; the window is not told of them.
+            Chosen::Edit(
+                SystemItem::Hide
+                | SystemItem::HideOthers
+                | SystemItem::ShowAll
+                | SystemItem::Quit
+                | SystemItem::Minimize
+                | SystemItem::Maximize
+                | SystemItem::Fullscreen,
+            ) => {}
+        }
+    }
+
+    /// Draws one frame, after running the menu items chosen since the last.
+    pub fn frame(&mut self, ui: &mut egui::Ui) {
+        #[cfg(target_os = "macos")]
+        let chosen = self
+            .menu
+            .as_ref()
+            .map_or_default(menu::native::MenuBar::chosen);
+        #[cfg(not(target_os = "macos"))]
+        let chosen = Vec::new();
+        self.frame_after(ui, chosen);
+    }
+
+    /// Draws one frame, after carrying out the menu items `chosen`.
+    pub fn frame_after(&mut self, ui: &mut egui::Ui, chosen: Vec<menu::Chosen>) {
+        self.follow_display(ui.ctx());
+        // The keys that waited for the map view: pressed now, wherever the keyboard is.
+        for shortcut in std::mem::take(&mut self.map_keys) {
+            self.carry_out(ui.ctx(), menu::Chosen::Key(shortcut));
+        }
+        for chosen in chosen {
+            self.carry_out(ui.ctx(), chosen);
         }
         #[cfg(target_os = "macos")]
         {
@@ -284,8 +372,13 @@ impl App {
         }
         self.shell.ui(ui);
         #[cfg(target_os = "macos")]
-        if let Some(menu) = &self.menu {
-            menu.sync(self.shell.layout());
+        if let Some(menu) = &mut self.menu {
+            let map = if self.shell.map_shown() {
+                menu::native::MapShown::Shown
+            } else {
+                menu::native::MapShown::Hidden
+            };
+            menu.sync(self.shell.layout(), self.shell.keymap(), map);
         }
     }
 }

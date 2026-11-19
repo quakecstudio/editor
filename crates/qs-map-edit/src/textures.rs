@@ -4,6 +4,12 @@
 //! WADs its world names, found in the project, beside the map or in the game, and of the BSP
 //! it was opened from; each with how many faces use it; decoded through the game's palette only
 //! when asked. Each WAD and BSP is read once, when the sources are made.
+//!
+//! Quake ships no texture WAD: each level's textures are in its BSP, in `pak0.pak` and
+//! `pak1.pak`. So the textures of every level on the game's search path are listed too
+//! (P6-43), read in place, each name once, after the WADs' and the open BSP's; a new map can be
+//! textured from the game alone, and a compile finds those textures in memory
+//! ([`GameTextures::wad_of`]).
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -13,7 +19,8 @@ use qs_commands::{Command, NoParams, Outcome};
 use qs_map::Compiler;
 use qs_vfs::{FS_GAMENAME, Location, StdFs, Vfs};
 use qs_wad::texture::{DecodedTexture, Palette};
-use qs_wad::{MapWad, WAD_TYP_MIPTEX, WAD_TYP_MIPTEX_PALETTE};
+use qs_wad::write::WadBuilder;
+use qs_wad::{MapWad, WAD_NAME_SIZE, WAD_TYP_MIPTEX, WAD_TYP_MIPTEX_PALETTE};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -37,6 +44,11 @@ pub enum TextureOrigin {
     },
     /// The BSP the map was opened from.
     Bsp,
+    /// A level of the game, read from its BSP on the game's search path (P6-43).
+    Game {
+        /// The level's name, as `map` takes it: `e1m1`.
+        map: String,
+    },
     /// No WAD or BSP holds it: a name a face uses that nothing found.
     Missing,
 }
@@ -88,8 +100,8 @@ pub struct WadFound {
 pub struct MapTextures {
     /// The WADs the world names, in its order.
     pub wads: Vec<WadFound>,
-    /// Every texture: the WADs' in their order, then the BSP's, then the names no WAD holds,
-    /// each name once.
+    /// Every texture: the WADs' in their order, then the BSP's, then the game's levels', then
+    /// the names nothing holds, each name once.
     pub textures: Vec<BrowserTexture>,
 }
 
@@ -104,6 +116,126 @@ struct Held {
     pixels: Vec<u8>,
     /// The palette a WAD3 texture carries (WAD-8.4).
     palette: Option<Palette>,
+}
+
+/// The folder of the search path that holds the levels.
+const MAPS_FOLDER: &str = "maps/";
+/// The ending of a level's file.
+const BSP_ENDING: &str = ".bsp";
+/// The start of the name of a frame of an animated texture, before its frame's character.
+const ANIMATED: &str = "+";
+/// The start of the name of a BSP that is a model, an ammo or health box, and no level.
+const BOX_MODEL: &str = "b_";
+
+/// The textures of the game's levels (P6-43): those of every `maps/*.bsp` on the game's search
+/// path, each name once, the first level holding it by the levels' names; read in place, and
+/// kept whole, so a compile can be given them as a WAD.
+#[derive(Clone, Debug, Default)]
+pub struct GameTextures {
+    /// Each texture as the browser holds it, with its `miptex_t` whole: header and four levels.
+    textures: Vec<(Held, Vec<u8>)>,
+    /// Each by its name in lower case.
+    by_name: HashMap<String, usize>,
+}
+
+impl GameTextures {
+    /// The textures of the levels of `game`.
+    #[must_use]
+    pub fn read(game: &Game<'_>) -> Self {
+        let mut textures = Self::default();
+        for (map, bytes) in game.levels() {
+            textures.take(&map, &bytes);
+        }
+        textures
+    }
+
+    /// Takes the textures of the level `map`, whose BSP is `bytes`, that no level before it
+    /// held. id's own loader reads them, which keeps all four levels of each; a BSP it does
+    /// not read, and a texture kept in a WAD outside its BSP, give none.
+    fn take(&mut self, map: &str, bytes: &[u8]) {
+        let Ok(bsp) = Bsp::read(bytes, BspLoader::GlQuake) else {
+            return;
+        };
+        for texture in bsp.textures.iter().flatten() {
+            let name = String::from_utf8_lossy(&texture.name).into_owned();
+            let key = name.to_lowercase();
+            if self.by_name.contains_key(&key) {
+                continue;
+            }
+            let mut lump = Vec::with_capacity(texture.pixels.len().saturating_add(WAD_NAME_SIZE));
+            let mut field = [0_u8; WAD_NAME_SIZE];
+            for (slot, byte) in field.iter_mut().zip(&texture.name) {
+                *slot = *byte;
+            }
+            lump.extend_from_slice(&field);
+            for word in [texture.width, texture.height]
+                .into_iter()
+                .chain(texture.offsets)
+            {
+                lump.extend_from_slice(&word.to_le_bytes());
+            }
+            lump.extend_from_slice(texture.pixels);
+            let held = Held {
+                name,
+                origin: TextureOrigin::Game {
+                    map: map.to_owned(),
+                },
+                width: texture.width,
+                height: texture.height,
+                pixels: texture.pixels.to_vec(),
+                palette: None,
+            };
+            self.by_name.insert(key, self.textures.len());
+            self.textures.push((held, lump));
+        }
+    }
+
+    /// A WAD of the textures of `names` the levels hold, for a compile whose WADs lack them;
+    /// none when they hold none of them. A frame of an animation (`+0slip`) brings the
+    /// animation's other frames the levels hold (`+1slip`, `+aslip`), which the compiler
+    /// writes only from the WAD it is given (BSP-4.8).
+    #[must_use]
+    pub fn wad_of<'n>(&self, names: impl IntoIterator<Item = &'n [u8]>) -> Option<Vec<u8>> {
+        let mut builder = WadBuilder::new();
+        let mut any = None;
+        for name in names {
+            let key = String::from_utf8_lossy(name).to_lowercase();
+            let frames = animation_of(&key);
+            for (held, lump) in &self.textures {
+                let own = held.name.to_lowercase();
+                let frame_of_it = frames.is_some() && animation_of(&own) == frames;
+                // A name asked for twice, or a frame brought twice, is in the WAD once.
+                if (own == key || frame_of_it)
+                    && builder
+                        .add(held.name.as_bytes(), WAD_TYP_MIPTEX, lump.clone())
+                        .is_ok()
+                {
+                    any = Some(());
+                }
+            }
+        }
+        any.and_then(|()| builder.to_bytes().ok())
+    }
+
+    /// How many textures the levels hold.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.textures.len()
+    }
+
+    /// Whether the levels hold none.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.textures.is_empty()
+    }
+}
+
+/// The animation the texture `name` is a frame of: its name from the third character on, after
+/// the `+` and the frame's character (BSP-4.8); none for a texture that is no frame.
+fn animation_of(name: &str) -> Option<&str> {
+    let rest = name.strip_prefix(ANIMATED)?;
+    let (at, _) = rest.char_indices().nth(1)?;
+    Some(rest.split_at(at).1)
 }
 
 /// A WAD's name as the world writes it, and its file, when one was found: its host path, when
@@ -173,6 +305,33 @@ impl<'a> Game<'a> {
             || self.base.join(FS_GAMENAME),
             |vfs| PathBuf::from(vfs.game_dir()),
         )
+    }
+
+    /// Each level on the search path, by its name in lower case and in the names' order, with
+    /// its BSP's bytes: a `maps/*.bsp` that is no box model, the first file of a name on the
+    /// search path, as the engine would load it.
+    fn levels(&self) -> Vec<(String, Vec<u8>)> {
+        let Some(vfs) = &self.vfs else {
+            return Vec::new();
+        };
+        let mut levels: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+        for file in vfs.files() {
+            let name = String::from_utf8_lossy(file.name()).to_lowercase();
+            let Some(map) = name
+                .strip_prefix(MAPS_FOLDER)
+                .and_then(|name| name.strip_suffix(BSP_ENDING))
+                .filter(|map| !map.contains('/') && !map.starts_with(BOX_MODEL))
+            else {
+                continue;
+            };
+            if levels.contains_key(map) {
+                continue;
+            }
+            if let Ok(bytes) = vfs.read(&file) {
+                levels.insert(map.to_owned(), bytes);
+            }
+        }
+        levels.into_iter().collect()
     }
 
     /// The file `name`: on the search path, else loose in the game directory; with its host
@@ -302,6 +461,11 @@ impl TextureSources {
         };
         let palette = game_palette(project, game_at.as_ref());
         let mut sources = Self::from_read(files, bsp.as_deref(), palette);
+        // The game's own levels last: a WAD of the map's, or its BSP, has the say over a name.
+        let levels = game_at.as_ref().map_or_default(GameTextures::read);
+        for (texture, _) in levels.textures {
+            sources.hold(texture);
+        }
         sources.made_for = (paths, chosen.map(Path::to_path_buf));
         sources
     }
@@ -352,7 +516,7 @@ impl TextureSources {
     }
 
     /// Keeps `texture` unless one of its name is held already: the first WAD holding a name
-    /// wins, then the BSP.
+    /// wins, then the BSP, then the game's levels.
     fn hold(&mut self, texture: Held) {
         let key = texture.name.to_lowercase();
         if self.by_name.contains_key(&key) {
@@ -479,9 +643,9 @@ impl<C: HasMap + 'static> Command<C> for MapTexturesCommand {
     const ID: &'static str = MAP_TEXTURES;
     const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Lists the open map's textures: those of the WADs its world \
-        names, found in the project, beside the map or in the game, and of the BSP it was \
-        opened from, each with its size and how many faces use it, and the names its faces use \
-        that nothing holds.";
+        names, found in the project, beside the map or in the game, of the BSP it was opened \
+        from, and of the game's own levels, each once with where it comes from, its size and \
+        how many faces use it, and the names its faces use that nothing holds.";
     type Params = NoParams;
     type Output = MapTextures;
     type Error = MapEditError;

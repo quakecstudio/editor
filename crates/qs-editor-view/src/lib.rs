@@ -9,6 +9,7 @@
 //! - [`find`]: finding and replacing text.
 //! - [`diff`]: the line diff from a base text the view shows inline.
 //! - [`layout`]: the [`Styler`] hook that colours lines and the [`LayoutCache`].
+//! - `scrollbar`: the vertical scroll bar's thumb and what a drag or a click of it scrolls to.
 //! - [`view`]: [`EditorView`], which draws only the visible lines, turns egui's keyboard,
 //!   pointer, clipboard and IME events into edits, places the IME candidate window at the
 //!   primary caret and publishes AccessKit text runs with the caret and selection.
@@ -23,6 +24,7 @@ pub mod find;
 pub mod fold;
 mod history;
 pub mod layout;
+mod scrollbar;
 pub mod selection;
 pub mod view;
 pub mod vim;

@@ -208,6 +208,46 @@ pub fn room(name: &str, first: &str, open: Opening) -> PathBuf {
     path
 }
 
+/// The BSP of a level of a game: a sealed room compiled with a WAD of `textures`, its walls
+/// using them in turn, so the BSP holds each as the game's own levels hold theirs.
+pub fn level_bsp(textures: &[&str]) -> Vec<u8> {
+    let mut wad = WadBuilder::new();
+    for texture in textures {
+        wad.add(texture.as_bytes(), qs_wad::WAD_TYP_MIPTEX, miptex(texture))
+            .unwrap();
+    }
+    let mut file = MapFile::parse(
+        b"{\n\"classname\" \"worldspawn\"\n}\n\
+          {\n\"classname\" \"info_player_start\"\n\"origin\" \"0 0 24\"\n}\n",
+    )
+    .unwrap();
+    let (a, b) = (128.0, 144.0);
+    let walls = [
+        ([-b, -b, -b], [b, b, -a]),
+        ([-b, -b, a], [b, b, b]),
+        ([-b, -b, -a], [-a, b, a]),
+        ([a, -b, -a], [b, b, a]),
+        ([-a, -b, -a], [a, -a, a]),
+        ([-a, a, -a], [a, b, a]),
+    ];
+    for ((min, max), texture) in walls.into_iter().zip(textures.iter().cycle()) {
+        let surface = Surface {
+            texture: texture.as_bytes().to_vec(),
+            texdef: TexDef::Standard {
+                shift: [0.0; 2],
+                rotate: 0.0,
+                scale: [1.0; 2],
+            },
+        };
+        let brush = Brush::cuboid(min, max, &surface).unwrap();
+        file.entities[0].items.push(Item::Brush(brush));
+    }
+    qs_map_bsp::Compiler::default()
+        .compile(&file.to_bytes(), Some(&wad.to_bytes().unwrap()))
+        .unwrap()
+        .bsp
+}
+
 /// Whether the room has its +y wall.
 #[derive(Clone, Copy)]
 pub enum Opening {

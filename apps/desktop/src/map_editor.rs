@@ -352,6 +352,8 @@ pub struct MapEditor {
     orbit: Option<[f32; 3]>,
     /// Whether a pane of the view had the keyboard in the last frame (UI-23).
     keyboard: Keyboard,
+    /// Whether the view was asked to take the keyboard: the first pane drawn takes it.
+    keyboard_asked: Keyboard,
     /// What the command line asks for that a click in the view can give, and what a click
     /// gave, as the line reads it (UI-23).
     asked: Option<Pick>,
@@ -1093,7 +1095,8 @@ impl MapEditor {
             Sense::click_and_drag(),
         );
         response.widget_info(|| WidgetInfo::labeled(WidgetType::Other, true, pane.text().get()));
-        if response.clicked() || response.secondary_clicked() {
+        let asked = std::mem::take(&mut self.keyboard_asked) == Keyboard::Here;
+        if response.clicked() || response.secondary_clicked() || asked {
             response.request_focus();
         }
         if response.secondary_clicked() {
@@ -2087,6 +2090,11 @@ impl MapEditor {
     /// are its to take (UI-23).
     pub(crate) fn has_keyboard(&self) -> bool {
         self.keyboard == Keyboard::Here
+    }
+
+    /// Asks the view to take the keyboard when it is next drawn, as a click in it does.
+    pub(crate) const fn take_keyboard(&mut self) {
+        self.keyboard_asked = Keyboard::Here;
     }
 
     /// The box around the map's first `entities` entities, as the standard views frame it.

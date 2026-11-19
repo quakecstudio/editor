@@ -40,6 +40,14 @@ pub const TOGGLE_EMBEDDED_GAME: &str = "view.toggle_embedded_game";
 pub const TAB_SWITCHER: &str = "view.tab_switcher";
 /// The id of the command that opens the project search over the multibuffer (P4-33).
 pub const PROJECT_SEARCH_VIEW: &str = "view.project_search";
+/// The id of the command that opens the About window (P7-17).
+pub const ABOUT: &str = "help.about";
+/// The id of the command that opens the user guide in the browser (P7-17).
+pub const USER_GUIDE: &str = "help.user_guide";
+/// The id of the command that opens the page where an issue is reported (P7-17).
+pub const REPORT_ISSUE: &str = "help.report_issue";
+/// The id of the command that opens the user's settings file in the editor (P7-17).
+pub const OPEN_SETTINGS: &str = "settings.open";
 /// The id of the command that splits the editor into two panes side by side.
 pub const SPLIT_RIGHT: &str = "view.split_right";
 /// The id of the command that splits the editor into two panes, one above the other.
@@ -115,6 +123,14 @@ pub enum EditorRequest {
     TabSwitcher,
     /// Open the project search over the multibuffer (P4-33).
     ProjectSearch,
+    /// Open the About window (P7-17).
+    About,
+    /// Open the user guide in the browser.
+    UserGuide,
+    /// Open the page where an issue is reported, in the browser.
+    ReportIssue,
+    /// Open the user's settings file in the editor.
+    Settings,
 }
 
 /// Asks the window for `request`.
@@ -206,6 +222,32 @@ asking!(
     EditorRequest::ProjectSearch,
     "Opens the project search: every match in the project's files as a multibuffer of \
      editable excerpts, to edit or replace in place."
+);
+
+asking!(
+    AboutCommand,
+    ABOUT,
+    EditorRequest::About,
+    "Opens the About window: the app's name, version, copyright and license, and links to \
+     its site and its source."
+);
+asking!(
+    UserGuideCommand,
+    USER_GUIDE,
+    EditorRequest::UserGuide,
+    "Opens the user guide on the website, in the browser."
+);
+asking!(
+    ReportIssueCommand,
+    REPORT_ISSUE,
+    EditorRequest::ReportIssue,
+    "Opens the page where an issue with the app is reported, in the browser."
+);
+asking!(
+    SettingsCommand,
+    OPEN_SETTINGS,
+    EditorRequest::Settings,
+    "Opens the user's settings file in the editor, made with nothing set when there is none."
 );
 
 /// The parameters of `editor.go_to_line`.
@@ -364,6 +406,10 @@ pub(crate) fn register<C: HasLayout + 'static>(
     registry.register(Asking::<GoToSymbolCommand>(std::marker::PhantomData))?;
     registry.register(Asking::<TabSwitcherCommand>(std::marker::PhantomData))?;
     registry.register(Asking::<ProjectSearchCommand>(std::marker::PhantomData))?;
+    registry.register(Asking::<AboutCommand>(std::marker::PhantomData))?;
+    registry.register(Asking::<UserGuideCommand>(std::marker::PhantomData))?;
+    registry.register(Asking::<ReportIssueCommand>(std::marker::PhantomData))?;
+    registry.register(Asking::<SettingsCommand>(std::marker::PhantomData))?;
     registry.register(GoToLine)?;
     registry.register(ToggleSoftWrap)?;
     registry.register(ToggleOutline)?;
@@ -405,6 +451,10 @@ mod tests {
             (super::GO_TO_SYMBOL, EditorRequest::GoToSymbol),
             (super::TAB_SWITCHER, EditorRequest::TabSwitcher),
             (super::PROJECT_SEARCH_VIEW, EditorRequest::ProjectSearch),
+            (super::ABOUT, EditorRequest::About),
+            (super::USER_GUIDE, EditorRequest::UserGuide),
+            (super::REPORT_ISSUE, EditorRequest::ReportIssue),
+            (super::OPEN_SETTINGS, EditorRequest::Settings),
         ] {
             let before = s.context().editor_requests;
             s.execute(id, json!({})).unwrap();

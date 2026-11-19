@@ -370,6 +370,18 @@ impl Keymap {
             .map(|binding| binding.shortcut)
     }
 
+    /// The shortcut bound to `command` that a menu may take for it (P7-17): none for a key
+    /// taken only while the map view has the keyboard, which a menu would take from a field
+    /// being typed in, where Cmd+Shift+Left selects to the line's start and Alt+1 types a
+    /// character.
+    #[must_use]
+    pub fn menu_shortcut(&self, command: &str) -> Option<KeyboardShortcut> {
+        self.bindings
+            .iter()
+            .find(|binding| binding.command == command && binding.scope != Scope::MapView)
+            .map(|binding| binding.shortcut)
+    }
+
     /// What is wrong in the keymap file, each in words.
     #[must_use]
     pub fn problems(&self) -> &[String] {

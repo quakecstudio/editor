@@ -158,7 +158,8 @@ fn keymap<C: 'static>(registry: &Registry<C>) -> String {
         "\n## Commands with no key\n\nA command that answers a question is read by a panel, \
          the agent or MCP. A command the window runs itself is a poll or a hand-over. A command \
          that needs a value, a path, a name or a place, runs from the command line, which asks \
-         for each, or from the control in the window that has the value.\n\n\
+         for each, or from the control in the window that has the value. A command run from a \
+         menu, or the palette, is used too seldom for a key.\n\n\
          | Command | Why | Summary |\n| --- | --- | --- |\n",
     );
     for (command, why) in &UNKEYED {
@@ -166,6 +167,7 @@ fn keymap<C: 'static>(registry: &Registry<C>) -> String {
             Unkeyed::Query => "answers a question",
             Unkeyed::Window => "run by the window",
             Unkeyed::Typed => "needs a value",
+            Unkeyed::Menu => "run from a menu",
         };
         let summary = registry
             .get(command)

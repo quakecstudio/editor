@@ -120,9 +120,14 @@ fn main() -> ExitCode {
         #[cfg(target_os = "macos")]
         open_documents::set_context(&cc.egui_ctx);
         #[cfg(target_os = "macos")]
-        app.install_menu();
+        app.install_menu(&cc.egui_ctx);
         Ok(Box::new(app))
     });
+    // P7-17: a build run outside its bundle has no Info.plist to name it, and the menu bar
+    // would show the binary's name.
+    #[cfg(target_os = "macos")]
+    objc2_foundation::NSProcessInfo::processInfo()
+        .setProcessName(&objc2_foundation::NSString::from_str(Text::AppName.get()));
     #[cfg(target_os = "macos")]
     let result = run_macos(options, creator);
     #[cfg(not(target_os = "macos"))]

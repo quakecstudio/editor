@@ -55,6 +55,7 @@ use qs_workbench::{
 };
 use qs_workbench::{SELECT, SET_FIELD, SelectParams, SelectedEntity, SetFieldParams};
 
+use crate::about::{self, AboutWindow};
 use crate::agent::{self, AgentAction, AgentPanel, ThreadIndex};
 use crate::command_line::CommandLineView;
 use crate::debugger::DebugAction;
@@ -69,7 +70,7 @@ use crate::features::{panel_icon, panel_topic};
 use crate::finder::FileFinder;
 use crate::game_view::GameSlot;
 use crate::git_panel::TabShown;
-use crate::help::{self, Topic};
+use crate::help::{self, GUIDE, Topic};
 use crate::icons::Icon;
 use crate::icons::Toggled;
 use crate::keymap::{self, Platform, Scope};
@@ -87,8 +88,7 @@ use crate::pick::Answer;
 use crate::picker::{PickerKind, PickerRow};
 use crate::project::ProjectFeature;
 use crate::project::{self, Jump, SymbolScope};
-use crate::strings::panel_button;
-use crate::strings::{Text, Truncation};
+use crate::strings::{Text, Truncation, panel_button, review_waiting};
 use crate::theme::{Theme, Token, semibold};
 #[cfg(test)]
 use qs_map_edit::uv::FaceRef;
@@ -184,6 +184,8 @@ enum StatusAsk {
     Show(DockPanel),
     /// Move this panel to that dock.
     Move(DockPanel, Panel),
+    /// Open the first edit waiting for review (P7-18).
+    Review,
 }
 
 /// The tab shown in the centre.
@@ -260,6 +262,8 @@ pub struct Shell {
     pub(crate) drawn: [Option<f32>; 3],
     /// The command palette.
     pub(crate) palette: Palette,
+    /// The About window (P7-17).
+    about: AboutWindow,
     /// The command line above the status bar (UI-23).
     pub(crate) command_line: CommandLineView,
     /// The file finder.
@@ -275,6 +279,8 @@ pub struct Shell {
     /// The count of focus commands the shell has applied (`Layout::focus_requests`): the
     /// layout's when the window opens, so the keyboard moves only when a focus command runs.
     focus_applied: u64,
+    /// The edits waiting for review as of the last frame (P7-18).
+    review_seen: usize,
     /// The last play-loop command's error, shown on the toolbar until the next one.
     preview_error: Option<String>,
     /// Where the app's menu is: the system's menu bar, or the toolbar in the window (P3-44).
@@ -333,6 +339,7 @@ impl Shell {
             centre_tab: CentreTab::default(),
             drawn: [None; 3],
             palette: Palette::default(),
+            about: AboutWindow::default(),
             command_line: CommandLineView::default(),
             finder: FileFinder::default(),
             symbol_scope: SymbolScope::default(),
@@ -341,6 +348,7 @@ impl Shell {
             game,
             game_shown: false,
             focus_applied: layout.focus_requests,
+            review_seen: 0,
             preview_error: None,
             menu: MenuPlace::default(),
             settings_file: None,
@@ -836,8 +844,46 @@ impl Shell {
         }
     }
 
+    /// Whether a pane of the map view has the keyboard, where the map's keys are taken.
+    #[must_use]
+    pub fn map_has_keyboard(&self) -> bool {
+        self.map_shown() && self.features.map.map_editor.has_keyboard()
+    }
+
+    /// Gives the map view the keyboard when it is next drawn, for a Map menu item chosen
+    /// while a field or a panel had it (P7-17).
+    pub fn give_map_keyboard(&mut self) {
+        self.features.map.map_editor.take_keyboard();
+    }
+
+    /// Whether a map shows in the centre: what the Map menu's items act on.
+    #[must_use]
+    pub fn map_shown(&self) -> bool {
+        self.centre_tab == CentreTab::Map && self.session.context().workbench.map().is_some()
+    }
+
+    /// Opens the user's settings file in the editor (P7-17), made with nothing set when there
+    /// is none, as Zed's Open Settings does.
+    fn open_settings(&mut self) {
+        let Some(path) = self.settings_file.clone() else {
+            tracing::warn!("no settings file to open: the app has no config directory");
+            return;
+        };
+        if !path.exists() {
+            let made = path
+                .parent()
+                .map_or(Ok(()), std::fs::create_dir_all)
+                .and_then(|()| std::fs::write(&path, ""));
+            if let Err(error) = made {
+                tracing::warn!(%error, path = %path.display(), "settings file not made");
+                return;
+            }
+        }
+        self.jump(Jump { path, offset: 0 });
+    }
+
     /// Carries out the editor action the layout last asked for, once (P4-32).
-    fn editor_request(&mut self) {
+    fn editor_request(&mut self, ctx: &egui::Context) {
         let layout = *self.layout();
         if layout.editor_requests == self.features.editors.editor_seen {
             return;
@@ -861,6 +907,12 @@ impl Shell {
                 self.centre_tab = CentreTab::Search;
                 return;
             }
+            EditorRequest::About => return self.about.open(),
+            EditorRequest::UserGuide => return ctx.open_url(egui::OpenUrl::new_tab(GUIDE)),
+            EditorRequest::ReportIssue => {
+                return ctx.open_url(egui::OpenUrl::new_tab(about::NEW_ISSUE));
+            }
+            EditorRequest::Settings => return self.open_settings(),
             EditorRequest::Fold
             | EditorRequest::Unfold
             | EditorRequest::FoldAll
@@ -885,7 +937,11 @@ impl Shell {
             EditorRequest::AskLine
             | EditorRequest::GoToSymbol
             | EditorRequest::TabSwitcher
-            | EditorRequest::ProjectSearch => {}
+            | EditorRequest::ProjectSearch
+            | EditorRequest::About
+            | EditorRequest::UserGuide
+            | EditorRequest::ReportIssue
+            | EditorRequest::Settings => {}
         }
         // A fold over the caret puts it on the fold's first line, as VS Code does, so the
         // fold is not undone by the caret in it.
@@ -1242,6 +1298,7 @@ impl Shell {
         self.toolbar(ui);
         self.reset_notice(ui);
         self.game_guide(ui);
+        self.about.show(ui.ctx(), &self.theme);
         match self.status_bar(ui) {
             Some(StatusAsk::Show(panel)) => {
                 let params = ShowPanelParams {
@@ -1254,8 +1311,10 @@ impl Shell {
                 let params = MovePanelParams { panel, dock };
                 let _: Option<Docks> = self.run(qs_layout::MOVE_PANEL, &params);
             }
+            Some(StatusAsk::Review) => self.open_review(),
             None => {}
         }
+        self.follow_review();
         let entered = self.command_line.show(
             ui,
             &self.theme,
@@ -1803,6 +1862,21 @@ impl Shell {
                             node.set_label(format!("{} {value}", name.get()));
                         });
                     }
+                    let waiting = self.session.context().workbench.waiting();
+                    let in_map = self.features.map.map_editor.review().waiting();
+                    let edits = waiting.hunks.saturating_add(in_map);
+                    if edits > 0 {
+                        let files = waiting.files.saturating_add(usize::from(in_map > 0));
+                        let text = RichText::new(review_waiting(edits, files))
+                            .small()
+                            .color(theme.color(Token::Accent));
+                        let item = ui
+                            .add(Button::new(text).frame(false))
+                            .on_hover_text(Text::ReviewWaitingHint.get());
+                        if item.clicked() {
+                            asked = Some(StatusAsk::Review);
+                        }
+                    }
                     let running = match self.session.context().preview.state() {
                         PlayState::Stopped => Text::PreviewStopped,
                         PlayState::Playing => Text::PreviewRunning,
@@ -1830,6 +1904,36 @@ impl Shell {
                 });
             });
         asked
+    }
+
+    /// Opens the first edit waiting for review (P7-18): the file of the first staged hunk at
+    /// its line, or the map view when only the open map's edits wait.
+    fn open_review(&mut self) {
+        if let Some((path, line)) = self.session.context().workbench.waiting().first {
+            let line = u32::try_from(line).unwrap_or(u32::MAX);
+            self.request(ShellRequest::ShowLine { path, line });
+        } else if self.features.map.map_editor.review().waiting() > 0 {
+            self.centre_tab = CentreTab::Map;
+        }
+    }
+
+    /// Opens the first edit waiting for review when edits begin to wait and the built-in
+    /// agent, whose panel lists its own, is not at work: another agent's, staged through the
+    /// app's socket, which a person would otherwise not know of (P7-18).
+    fn follow_review(&mut self) {
+        // The open map's edits are read here too: the Map tab reads them only while it shows.
+        if self.centre_tab != CentreTab::Map {
+            self.with_map(MapFeature::refresh_map_review);
+        }
+        let waiting = self.session.context().workbench.waiting().hunks;
+        let waiting = waiting.saturating_add(self.features.map.map_editor.review().waiting());
+        let began = self.review_seen == 0 && waiting > 0;
+        self.review_seen = waiting;
+        // A game being played in its tab is not taken from its player: the count says so.
+        let playing = self.centre_tab == CentreTab::Game;
+        if began && !playing && self.features.agent.panel.running() == 0 {
+            self.open_review();
+        }
     }
 
     /// The status-bar buttons of `dock`'s panels, each on while its panel shows; a click shows
@@ -2483,7 +2587,12 @@ impl Shell {
                         } else {
                             Saved::Saved
                         };
-                        if let Some(action) = file_tab(ui, theme, path, saved, shown) {
+                        let review = if workbench.awaits_review(path) {
+                            Review::Waiting
+                        } else {
+                            Review::None
+                        };
+                        if let Some(action) = file_tab(ui, theme, path, (saved, review), shown) {
                             chosen = Some(action);
                         }
                     }
@@ -2534,7 +2643,7 @@ impl Shell {
         if switched {
             self.sync_editor();
         }
-        self.editor_request();
+        self.editor_request(ui.ctx());
         self.refresh_inlays();
         self.outline_panel(ui);
         self.second_pane(ui);
@@ -2747,22 +2856,34 @@ enum Shown {
     Hidden,
 }
 
-/// A file's tab: its name, a dot when it is unsaved, and a button that closes it.
+/// Whether a file has edits waiting for review.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Review {
+    /// Hunks of it wait.
+    Waiting,
+    /// None do.
+    None,
+}
+
+/// A file's tab: its name, a dot when it is unsaved, a mark when edits of it wait for review,
+/// and a button that closes it.
 fn file_tab(
     ui: &mut Ui,
     theme: &Theme,
     path: &Path,
-    saved: Saved,
+    (saved, review): (Saved, Review),
     shown: Shown,
 ) -> Option<TabAction> {
     let name = path
         .file_name()
         .map_or_else(|| path.to_string_lossy(), |name| name.to_string_lossy());
-    let label = if saved == Saved::Unsaved {
-        format!("{name} {}", Text::UnsavedMark.get())
-    } else {
-        name.into_owned()
-    };
+    let mut label = name.into_owned();
+    if saved == Saved::Unsaved {
+        label = format!("{label} {}", Text::UnsavedMark.get());
+    }
+    if review == Review::Waiting {
+        label = format!("{label} {}", Text::ReviewMark.get());
+    }
     let mut action = None;
     let tab = ui
         .selectable_label(shown == Shown::Shown, label)
@@ -2887,6 +3008,8 @@ impl Theme {
             note_error: self.color(Token::StatusError),
             note_warning: self.color(Token::StatusWarn),
             lightbulb: self.color(Token::Accent),
+            scroll_thumb: self.color(Token::Border),
+            scroll_thumb_active: self.color(Token::TextFaint),
         }
     }
 }

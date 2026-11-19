@@ -45,6 +45,7 @@ Every command's default key (UI-21). A key follows TrenchBroom's default where T
 | `project.export` | `secondary-alt-e` | anywhere | ours: E for export |
 | `checkpoint.create` | `secondary-alt-s` | anywhere | ours: a save beside the file's |
 | `terminal.new` | `ctrl-shift-`` | anywhere | ours: VS Code's Create New Terminal |
+| `settings.open` | `secondary-,` | anywhere | ours: the settings key of every Mac app, and Zed's |
 | `map.save` | `secondary-s` | in the Map tab | TrenchBroom's `Menu/File/Save` |
 | `map.copy` | `secondary-c` | in the Map tab | TrenchBroom's `Menu/Edit/Copy` |
 | `map.select` | `secondary-shift-a` | in the Map tab | TrenchBroom's `Menu/Edit/Deselect All` |
@@ -147,7 +148,7 @@ These act on what the map view holds, the selection it draws, its tool and its c
 
 ## Commands with no key
 
-A command that answers a question is read by a panel, the agent or MCP. A command the window runs itself is a poll or a hand-over. A command that needs a value, a path, a name or a place, runs from the command line, which asks for each, or from the control in the window that has the value.
+A command that answers a question is read by a panel, the agent or MCP. A command the window runs itself is a poll or a hand-over. A command that needs a value, a path, a name or a place, runs from the command line, which asks for each, or from the control in the window that has the value. A command run from a menu, or the palette, is used too seldom for a key.
 
 | Command | Why | Summary |
 | --- | --- | --- |
@@ -187,6 +188,9 @@ A command that answers a question is read by a panel, the agent or MCP. A comman
 | `git.status` | answers a question | Lists the project repository's branch and changed files, staged and not, as git status does; none when the project is not in a git repository. |
 | `git.switch` | needs a value | Checks out a branch, as git switch does, and reads the project's files again; refused while files have unsaved edits. |
 | `git.unstage` | needs a value | Unstages a file, or one hunk of its staged changes. |
+| `help.about` | run from a menu | Opens the About window: the app's name, version, copyright and license, and links to its site and its source. |
+| `help.report_issue` | run from a menu | Opens the page where an issue with the app is reported, in the browser. |
+| `help.user_guide` | run from a menu | Opens the user guide on the website, in the browser. |
 | `map.add_layer` | needs a value | Adds an empty layer to the open map, as TrenchBroom writes one. |
 | `map.add_wad` | needs a value | Adds a WAD file to the open map's list in its world's `wad` or `_wad` key, by its path from the map's folder when it is under it, as TrenchBroom adds a WAD dropped on its window; one listed already is not listed again. |
 | `map.backups` | answers a question | Lists the open map's backups in the autosave folder beside it, the newest first. |
@@ -259,7 +263,7 @@ A command that answers a question is read by a panel, the agent or MCP. A comman
 | `map.set_key` | needs a value | Sets a key of an entity of the open map, and of the entities in also with it in one step: its last occurrence keeps its place and formatting, a new key goes after the others. |
 | `map.set_layer` | needs a value | Turns a layer of the open map hidden, locked or left out of exports on or off, written as TrenchBroom writes it. |
 | `map.staged` | answers a question | Lists the open map's hunks waiting for review: for each, the entities it is in, and the keys and brushes it adds, changes or removes. |
-| `map.textures` | answers a question | Lists the open map's textures: those of the WADs its world names, found in the project, beside the map or in the game, and of the BSP it was opened from, each with its size and how many faces use it, and the names its faces use that nothing holds. |
+| `map.textures` | answers a question | Lists the open map's textures: those of the WADs its world names, found in the project, beside the map or in the game, of the BSP it was opened from, and of the game's own levels, each once with where it comes from, its size and how many faces use it, and the names its faces use that nothing holds. |
 | `map.turn` | needs a value | Turns entities and brushes by degrees about the vertical through the middle of their box, counter-clockwise seen from above: brushes and point entities' origins and facing, as TrenchBroom's Rotate. |
 | `map.ungroup` | needs a value | Takes a group's entities and brushes out of it into the layer or group it is in, or the world's, and removes the group. |
 | `paths.open` | needs a value | Opens folders as projects, and files in the nearest project above each (a folder holding quakec.toml or progs.src): a .map or .bsp in the map editor, any other file in the editor. A file outside every project opens in the open project, or opens its folder when none is open. |

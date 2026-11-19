@@ -335,6 +335,48 @@ pub enum Text {
     CloseTabHint,
     /// Beside an unsaved file in the Project tree.
     ModifiedMark,
+    /// The app's menu, Hide.
+    HideApp,
+    /// The app's menu, Quit.
+    QuitApp,
+    /// Edit, Cut.
+    CutMenu,
+    /// Edit, Copy.
+    CopyMenu,
+    /// Edit, Paste.
+    PasteMenu,
+    /// Edit, Select All.
+    SelectAllMenu,
+    /// The Go menu's title.
+    GoMenu,
+    /// The Window menu's title.
+    WindowMenu,
+    /// The Help menu's title.
+    HelpMenu,
+    /// View, Command Palette.
+    PaletteMenu,
+    /// File, Go to File.
+    FileFinderMenu,
+    /// The About window's title, and its item of the app's menu.
+    AboutTitle,
+    /// The About window's icon, to a screen reader.
+    AboutIcon,
+    /// The About window's copyright line.
+    AboutCopyright,
+    /// The About window's license line.
+    AboutLicense,
+    /// The About window's link to the app's site.
+    AboutSite,
+    /// The About window's link to the app's source.
+    AboutSource,
+    /// The About window's button that closes it.
+    AboutClose,
+    /// Beside a file with edits waiting for review, in the Project tree and on its tab.
+    ReviewMark,
+    /// That mark, to a screen reader.
+    ReviewMarkName,
+    /// What the status bar's count of edits waiting for review does.
+    ReviewWaitingHint,
     /// Between the steps of the breadcrumb.
     PathSeparator,
     /// The file finder's name for a screen reader.
@@ -991,7 +1033,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 487] = [
+    pub const ALL: [Self; 508] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1104,6 +1146,27 @@ impl Text {
         Self::UnsavedMark,
         Self::CloseTabHint,
         Self::ModifiedMark,
+        Self::HideApp,
+        Self::QuitApp,
+        Self::CutMenu,
+        Self::CopyMenu,
+        Self::PasteMenu,
+        Self::SelectAllMenu,
+        Self::GoMenu,
+        Self::WindowMenu,
+        Self::HelpMenu,
+        Self::PaletteMenu,
+        Self::FileFinderMenu,
+        Self::AboutTitle,
+        Self::AboutIcon,
+        Self::AboutCopyright,
+        Self::AboutLicense,
+        Self::AboutSite,
+        Self::AboutSource,
+        Self::AboutClose,
+        Self::ReviewMark,
+        Self::ReviewMarkName,
+        Self::ReviewWaitingHint,
         Self::PathSeparator,
         Self::FileFinder,
         Self::SearchFiles,
@@ -1610,6 +1673,30 @@ impl Text {
             Self::UnsavedMark => "\u{25cf}",
             Self::CloseTabHint => "Close the tab; its unsaved edits are kept",
             Self::ModifiedMark => "M",
+            Self::HideApp => "Hide QuakeC Studio",
+            Self::QuitApp => "Quit QuakeC Studio",
+            Self::CutMenu => "Cut",
+            Self::CopyMenu => "Copy",
+            Self::PasteMenu => "Paste",
+            Self::SelectAllMenu => "Select All",
+            Self::GoMenu => "Go",
+            Self::WindowMenu => "Window",
+            Self::HelpMenu => "Help",
+            Self::PaletteMenu => "Command Palette\u{2026}",
+            Self::FileFinderMenu => "Go to File\u{2026}",
+            Self::AboutTitle => "About QuakeC Studio",
+            Self::AboutIcon => "The QuakeC Studio icon",
+            Self::AboutCopyright => "Copyright (C) 2026 QuakeC Studio contributors",
+            Self::AboutLicense => {
+                "Free software under the GNU General Public License, version 3 or later, \
+                 with no warranty"
+            }
+            Self::AboutSite => "Website",
+            Self::AboutSource => "Source code",
+            Self::AboutClose => "OK",
+            Self::ReviewMark => "R",
+            Self::ReviewMarkName => "edits to review",
+            Self::ReviewWaitingHint => "Open the first edit waiting for review",
             Self::PathSeparator => " / ",
             Self::FileFinder => "File finder",
             Self::SearchFiles => "Search files by name",
@@ -2123,6 +2210,113 @@ pub fn conflict_at(line: usize) -> String {
 #[must_use]
 pub fn exit_status(code: i32) -> String {
     format!("Exited with {code}")
+}
+
+/// The title of the menu item that runs the command `id` (P7-17), in the case Apple's menus
+/// use; none for a command no menu has.
+#[must_use]
+pub fn menu_title(id: &str) -> Option<&'static str> {
+    Some(match id {
+        "help.about" => "About QuakeC Studio",
+        "settings.open" => "Settings\u{2026}",
+        "checkpoint.create" => "Save a Checkpoint",
+        "edit.undo" => "Undo",
+        "edit.redo" => "Redo",
+        "edit.repeat" => "Repeat",
+        "view.project_search" => "Find in Project\u{2026}",
+        "editor.fold" => "Fold",
+        "editor.unfold" => "Unfold",
+        "editor.fold_all" => "Fold All",
+        "editor.unfold_all" => "Unfold All",
+        "editor.toggle_soft_wrap" => "Soft Wrap",
+        "view.toggle_outline" => "Outline",
+        "view.split_right" => "Split Right",
+        "view.split_down" => "Split Down",
+        "view.close_split" => "Close Split",
+        "view.toggle_embedded_game" => "Game in a Tab",
+        "view.focus_editor" => "Editor",
+        "view.focus_left_panel" => "Left Panel",
+        "view.focus_right_panel" => "Right Panel",
+        "view.focus_bottom_panel" => "Bottom Panel",
+        "view.focus_command_line" => "Command Line",
+        "editor.go_to_line" => "Go to Line\u{2026}",
+        "editor.go_to_symbol" => "Go to Symbol\u{2026}",
+        "view.tab_switcher" => "Switch Tab\u{2026}",
+        "preview.play" => "Play",
+        "preview.pause" => "Pause",
+        "preview.resume" => "Resume",
+        "preview.step" => "Step",
+        "preview.stop" => "Stop",
+        "preview.restart" => "Restart Map",
+        "preview.reload" => "Reload Program",
+        "project.build" => "Build",
+        "project.check" => "Check",
+        "compile" => "Compile to progs.dat",
+        "project.test" => "Run Tests",
+        "terminal.new" => "New Terminal",
+        "map.save" => "Save Map",
+        "map.backup" => "Back Up Map",
+        "map.run_profile" => "Run Compile Profile",
+        "map.choose_profile" => "Use the Full Profile",
+        "map.leaks" => "Find Leaks",
+        "map.copy" => "Copy Selection",
+        "map.select" => "Deselect All",
+        "map.show_all" => "Show All",
+        "map.unlock_all" => "Unlock All",
+        "map.stage" => "Begin Review",
+        "map.unstage" => "End Review",
+        "map.accept" => "Accept All Changes",
+        "map.reject" => "Reject All Changes",
+        "view.map_top" => "Top",
+        "view.map_bottom" => "Bottom",
+        "view.map_front" => "Front",
+        "view.map_back" => "Back",
+        "view.map_left" => "Left",
+        "view.map_right" => "Right",
+        "view.map_isometric" => "Isometric",
+        "view.map_orbit_left" => "Orbit Left",
+        "view.map_orbit_right" => "Orbit Right",
+        "view.map_orbit_up" => "Orbit Up",
+        "view.map_orbit_down" => "Orbit Down",
+        "view.map_pan_left" => "Pan Left",
+        "view.map_pan_right" => "Pan Right",
+        "view.map_pan_up" => "Pan Up",
+        "view.map_pan_down" => "Pan Down",
+        "view.map_zoom_in" => "Zoom In on the Map",
+        "view.map_zoom_out" => "Zoom Out of the Map",
+        "view.map_view_1" => "Saved View 1",
+        "view.map_view_2" => "Saved View 2",
+        "view.map_view_3" => "Saved View 3",
+        "view.map_view_4" => "Saved View 4",
+        "view.map_save_view_1" => "Save View 1",
+        "view.map_save_view_2" => "Save View 2",
+        "view.map_save_view_3" => "Save View 3",
+        "view.map_save_view_4" => "Save View 4",
+        "help.user_guide" => "QuakeC Studio Guide",
+        "help.report_issue" => "Report an Issue\u{2026}",
+        _ => return None,
+    })
+}
+
+/// What the texture browser says of a texture that comes from a level of the game (P6-43).
+#[must_use]
+pub fn texture_of_level(map: &str) -> String {
+    format!("From the game's level {map}")
+}
+
+/// The About window's line for the app's version (P7-17).
+#[must_use]
+pub fn version_line(version: &str) -> String {
+    format!("Version {version}")
+}
+
+/// The status bar's count of the edits waiting for review, and of the files they are in
+/// (P7-18).
+#[must_use]
+pub fn review_waiting(edits: usize, files: usize) -> String {
+    let edits_word = if edits == 1 { "edit" } else { "edits" };
+    let files_word = if files == 1 { "file" } else { "files" };
+    format!("{edits} {edits_word} to review in {files} {files_word}")
 }
 
 /// The file finder's count of the files it lists, out of all of them.

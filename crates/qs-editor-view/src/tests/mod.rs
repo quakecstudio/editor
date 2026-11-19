@@ -18,7 +18,7 @@ mod layout;
 mod paint;
 
 use crate::layout::{Plain, StyleRevision, StyledSpan, Styler};
-use crate::{Buffer, EditState, EditorView, Extend, Motion, Position, Selection, ViewStyle};
+use crate::{Buffer, EditState, EditorView, Extend, Motion, Position, Selection, ViewStyle, Wrap};
 
 const FONT: &[u8] =
     include_bytes!("../../../../apps/desktop/assets/fonts/JetBrainsMono-Regular.ttf");
@@ -886,4 +886,325 @@ fn a_drag_selects_and_a_shift_click_extends() {
     );
     assert_eq!(state.selections().len(), 2, "and the other caret kept");
     assert_ne!(head, pos(0, 0));
+}
+
+/// A press or a release of the primary button at `pos`.
+fn button(pos: Pos2, pressed: bool) -> Event {
+    Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    }
+}
+
+// No spec statement: P7-16: a drag of the scroll bar's thumb scrolls the view and selects
+// nothing, to the file's last line at the track's end and back to its first at the top
+#[test]
+fn a_drag_of_the_scroll_bars_thumb_scrolls_the_view() {
+    let mut harness = Harness::new(&numbered(400));
+    let bar = |y: f32| Pos2::new(786.0, y);
+    harness.frame(vec![Event::PointerMoved(bar(14.0))], &Plain);
+    harness.frame(vec![button(bar(14.0), true)], &Plain);
+    harness.frame(vec![Event::PointerMoved(bar(24.0))], &Plain);
+    let nudged = harness.view.first_line();
+    assert!(nudged <= 2, "held where it was taken: {nudged}");
+    for y in [60.0, 120.0, 200.0] {
+        harness.frame(vec![Event::PointerMoved(bar(y))], &Plain);
+    }
+    let middle = harness.view.first_line();
+    assert!(middle > 100 && middle < 300, "{middle}");
+    harness.frame(vec![Event::PointerMoved(bar(900.0))], &Plain);
+    assert_eq!(
+        harness.view.first_line(),
+        399,
+        "the track's end is the last line"
+    );
+    harness.frame(vec![Event::PointerMoved(bar(-50.0))], &Plain);
+    assert_eq!(harness.view.first_line(), 0);
+    harness.frame(vec![Event::PointerMoved(bar(200.0))], &Plain);
+    harness.frame(vec![button(bar(200.0), false)], &Plain);
+    assert_eq!(harness.view.first_line(), middle);
+    let selection = harness.view.state().primary();
+    assert!(selection.is_caret(), "{selection:?}");
+    assert_eq!(selection.head, pos(0, 0), "the caret stays where it was");
+    // Released, the pointer moves the view no more.
+    harness.frame(vec![Event::PointerMoved(bar(300.0))], &Plain);
+    assert_eq!(harness.view.first_line(), middle);
+
+    // A thumb taken part of the way down stays under the pointer where it was taken.
+    harness.view.scroll_to(200);
+    harness.frame(vec![Event::PointerMoved(bar(200.0))], &Plain);
+    harness.frame(vec![button(bar(200.0), true)], &Plain);
+    harness.frame(vec![Event::PointerMoved(bar(210.0))], &Plain);
+    let held = harness.view.first_line();
+    assert!((198..=202).contains(&held), "taken with no jump: {held}");
+    harness.frame(vec![Event::PointerMoved(bar(220.0))], &Plain);
+    let moved = harness.view.first_line();
+    assert!((209..=214).contains(&moved), "ten points on: {moved}");
+    harness.frame(vec![button(bar(220.0), false)], &Plain);
+    // A drag begun beside the thumb takes it by its middle.
+    harness.view.scroll_to(0);
+    harness.frame(vec![Event::PointerMoved(bar(300.0))], &Plain);
+    harness.frame(vec![button(bar(300.0), true)], &Plain);
+    harness.frame(vec![Event::PointerMoved(bar(310.0))], &Plain);
+    let taken = harness.view.first_line();
+    assert!((316..=326).contains(&taken), "{taken}");
+}
+
+// No spec statement: P7-16: a click in the scroll bar beside the thumb pages toward it; a file
+// the view shows whole has no scroll bar, and a click at its place is a click on the text
+#[test]
+fn a_click_beside_the_thumb_pages_and_a_short_file_has_no_bar() {
+    let mut harness = Harness::new(&numbered(400));
+    let bar = |y: f32| Pos2::new(786.0, y);
+    let click = |harness: &mut Harness, at: Pos2| {
+        harness.frame(vec![Event::PointerMoved(at)], &Plain);
+        harness.frame(vec![button(at, true)], &Plain);
+        harness.frame(vec![button(at, false)], &Plain);
+    };
+    click(&mut harness, bar(380.0));
+    let paged = harness.view.first_line();
+    assert!(paged > 5 && paged < 40, "a page down: {paged}");
+    click(&mut harness, bar(380.0));
+    assert_eq!(harness.view.first_line(), paged * 2);
+    harness.view.scroll_to(200);
+    harness.frame(Vec::new(), &Plain);
+    click(&mut harness, bar(12.0));
+    assert_eq!(harness.view.first_line(), 200 - paged, "a page up");
+    assert_eq!(harness.view.state().primary().head, pos(0, 0));
+
+    let mut short = Harness::new(&numbered(5));
+    click(&mut short, Pos2::new(786.0, 70.0));
+    assert_eq!(short.view.first_line(), 0);
+    assert!(
+        short.view.state().primary().head.line > 0,
+        "the click placed the caret"
+    );
+}
+
+// The width of one character and the left edge of the text, read from the caret at the
+// start of a line and fifty characters along it: each character is drawn on a whole pixel,
+// so one alone is a fraction off.
+fn metrics(harness: &mut Harness) -> (f32, f32) {
+    harness.key(Key::Home, Modifiers::NONE);
+    let start = harness.view.caret_rect().unwrap().left();
+    for _ in 0..50 {
+        harness.key(Key::ArrowRight, Modifiers::NONE);
+    }
+    let along = harness.view.caret_rect().unwrap().left();
+    harness.key(Key::Home, Modifiers::NONE);
+    ((along - start) / 50.0, start)
+}
+
+// A column as a number to compare with a width in characters.
+fn points(col: usize) -> f32 {
+    f32::from(u16::try_from(col).unwrap())
+}
+
+// The right edge of the text in the harness's view: the window's, less the panel's margin
+// and the scroll bar down it.
+const TEXT_RIGHT: f32 = 780.0;
+
+// No spec statement: P7-16: with wrap off a caret moved along a line wider than the view is
+// scrolled into view across with four characters of the line past it, the wheel scrolls
+// across, and a click lands on the character drawn under it; wrapped lines are not scrolled
+// and end short of the scroll bar
+#[test]
+fn a_caret_on_a_wide_line_is_scrolled_into_view_across() {
+    let wide = format!("{}\n{}\n", "0".repeat(400), "0".repeat(300));
+    let mut harness = Harness::new(&wide);
+    let (char_width, text_left) = metrics(&mut harness);
+    assert!(
+        char_width > 4.0 && text_left > 20.0,
+        "{char_width} {text_left}"
+    );
+    assert!(harness.view.scrolled_across().abs() < f32::EPSILON);
+    harness.key(Key::ArrowDown, Modifiers::NONE);
+    harness.key(Key::End, Modifiers::NONE);
+    let scrolled = harness.view.scrolled_across();
+    let caret = harness.view.caret_rect().unwrap();
+    let from_right = TEXT_RIGHT - caret.left();
+    assert!(
+        (from_right - 4.0 * char_width).abs() < 1.0,
+        "four characters left of the edge: {caret:?}"
+    );
+    assert!(
+        (scrolled - (300.0 * char_width - (caret.left() - text_left))).abs() < 1.0,
+        "{scrolled}"
+    );
+    // A click near the view's left edge is on the character drawn there.
+    let at = Pos2::new(text_left + 10.5 * char_width, 20.0);
+    harness.frame(vec![Event::PointerMoved(at)], &Plain);
+    harness.frame(vec![button(at, true)], &Plain);
+    harness.frame(vec![button(at, false)], &Plain);
+    let head = harness.view.state().primary().head;
+    let under = (scrolled / char_width) + 10.5;
+    assert_eq!(head.line, 0);
+    assert!((points(head.col) - under).abs() <= 1.0, "{head:?} {under}");
+    assert!(
+        (harness.view.scrolled_across() - scrolled).abs() < f32::EPSILON,
+        "a caret in view moves nothing"
+    );
+    // Moving left, the view follows once the caret is four characters from its left edge.
+    for _ in 0..30 {
+        harness.key(Key::ArrowLeft, Modifiers::NONE);
+    }
+    let caret = harness.view.caret_rect().unwrap();
+    assert!(
+        (caret.left() - text_left - 4.0 * char_width).abs() < 1.0,
+        "{caret:?}"
+    );
+    assert!(harness.view.scrolled_across() < scrolled - 10.0 * char_width);
+
+    // Moving right a character at a time, the caret keeps its four characters from the
+    // right edge too.
+    harness.key(Key::Home, Modifiers::NONE);
+    for _ in 0..120 {
+        harness.key(Key::ArrowRight, Modifiers::NONE);
+        let caret = harness.view.caret_rect().unwrap();
+        assert!(TEXT_RIGHT - caret.left() > 3.0 * char_width, "{caret:?}");
+    }
+    assert!(harness.view.scrolled_across() > 20.0 * char_width);
+
+    let wheel = |x: f32| {
+        vec![
+            Event::PointerMoved(Pos2::new(400.0, 200.0)),
+            Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: Vec2::new(x, 0.0),
+                phase: egui::TouchPhase::Move,
+                modifiers: Modifiers::NONE,
+            },
+        ]
+    };
+    let before = harness.view.scrolled_across();
+    for _ in 0..20 {
+        harness.frame(wheel(-30.0), &Plain);
+    }
+    assert!(
+        harness.view.scrolled_across() > before + 100.0,
+        "wheeled on"
+    );
+    harness.key(Key::Home, Modifiers::NONE);
+    assert!(harness.view.scrolled_across().abs() < f32::EPSILON);
+
+    harness.key(Key::End, Modifiers::NONE);
+    harness.view.set_wrap(Wrap::Width);
+    harness.frame(Vec::new(), &Plain);
+    assert!(harness.view.scrolled_across().abs() < f32::EPSILON);
+    // The wrapped line's rows end short of the bar down the view: its second row starts
+    // after as many characters as fit left of the bar, and no more.
+    let at = Pos2::new(text_left + 1.0, 36.0);
+    harness.frame(vec![Event::PointerMoved(at)], &Plain);
+    harness.frame(vec![button(at, true)], &Plain);
+    harness.frame(vec![button(at, false)], &Plain);
+    let head = harness.view.state().primary().head;
+    let fit = ((TEXT_RIGHT - text_left - 2.0) / char_width).floor();
+    assert_eq!(head.line, 0);
+    assert!((points(head.col) - fit).abs() < 0.5, "{head:?} of {fit}");
+}
+
+// No spec statement: P7-16: a drag of the thumb of the bar across the view's bottom scrolls
+// to the widest line's end at the track's end and no further, and back; the bar is the view's
+// last twelve points, right of the gutter; a line out of sight is counted in the width; lines
+// the view shows whole have no bar there, and a click at its place is a click on the text
+#[test]
+fn a_drag_of_the_bar_across_scrolls_to_the_widest_lines_end() {
+    let wide = format!("{}\n", "0".repeat(400));
+    let mut harness = Harness::new(&wide);
+    let (char_width, text_left) = metrics(&mut harness);
+    let bar = |x: f32| Pos2::new(x, 386.0);
+    harness.frame(vec![Event::PointerMoved(bar(60.0))], &Plain);
+    harness.frame(vec![button(bar(60.0), true)], &Plain);
+    harness.frame(vec![Event::PointerMoved(bar(70.0))], &Plain);
+    let nudged = harness.view.scrolled_across();
+    assert!(
+        nudged < 10.0 * char_width,
+        "held where it was taken: {nudged}"
+    );
+    harness.frame(vec![Event::PointerMoved(bar(300.0))], &Plain);
+    let middle = harness.view.scrolled_across();
+    assert!(middle > 100.0, "{middle}");
+    harness.frame(vec![Event::PointerMoved(bar(2_000.0))], &Plain);
+    let end = harness.view.scrolled_across();
+    // The line's 400 characters and room for a caret after them, less a view of them.
+    let furthest = 401.0 * char_width - (TEXT_RIGHT - text_left);
+    assert!((end - furthest).abs() < 1.5, "{end} of {furthest}");
+    harness.frame(vec![Event::PointerMoved(bar(3_000.0))], &Plain);
+    assert!((harness.view.scrolled_across() - end).abs() < f32::EPSILON);
+    harness.frame(vec![Event::PointerMoved(bar(-500.0))], &Plain);
+    assert!(harness.view.scrolled_across().abs() < f32::EPSILON);
+    harness.frame(vec![button(bar(-500.0), false)], &Plain);
+    assert_eq!(harness.view.state().primary().head, pos(0, 0));
+
+    // Above the bar's twelve points, and in the gutter beside it, a click is not the bar's.
+    let click = |harness: &mut Harness, at: Pos2| {
+        harness.frame(vec![Event::PointerMoved(at)], &Plain);
+        harness.frame(vec![button(at, true)], &Plain);
+        harness.frame(vec![button(at, false)], &Plain);
+    };
+    click(&mut harness, Pos2::new(600.0, 376.0));
+    assert!(harness.view.scrolled_across().abs() < f32::EPSILON);
+    assert_eq!(
+        harness.view.state().primary().head.line,
+        1,
+        "a click on text"
+    );
+    click(&mut harness, Pos2::new(text_left - 4.0, 386.0));
+    assert!(harness.view.scrolled_across().abs() < f32::EPSILON);
+    // In the track right of the thumb, a click pages on by a view less a point.
+    click(&mut harness, bar(600.0));
+    let paged = harness.view.scrolled_across();
+    assert!(
+        (paged - (TEXT_RIGHT - text_left - 1.0)).abs() < 1.5,
+        "{paged}"
+    );
+
+    // A wide line out of sight is scrolled to as one in sight is.
+    let mut text = numbered(100);
+    text.push('\n');
+    text.push_str(&"0".repeat(400));
+    let mut far = Harness::new(&text);
+    // Its gutter is a digit wider, so its text starts further right.
+    let text_left = far.view.caret_rect().unwrap().left();
+    let furthest = 401.0 * char_width - (TEXT_RIGHT - text_left);
+    far.frame(vec![Event::PointerMoved(bar(60.0))], &Plain);
+    far.frame(vec![button(bar(60.0), true)], &Plain);
+    far.frame(vec![Event::PointerMoved(bar(2_000.0))], &Plain);
+    far.frame(vec![button(bar(2_000.0), false)], &Plain);
+    let reached = far.view.scrolled_across();
+    assert!((reached - furthest).abs() < 1.5, "{reached} of {furthest}");
+    // Once it is gone, there is nothing to scroll across.
+    far.view.state_mut().set_selections(&[Selection {
+        anchor: pos(99, 0),
+        head: pos(100, 400),
+    }]);
+    far.view.state_mut().insert("");
+    far.frame(Vec::new(), &Plain);
+    assert!(far.view.scrolled_across().abs() < f32::EPSILON);
+    let wheel = vec![
+        Event::PointerMoved(Pos2::new(400.0, 200.0)),
+        Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: Vec2::new(-300.0, 0.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: Modifiers::NONE,
+        },
+    ];
+    for _ in 0..5 {
+        far.frame(wheel.clone(), &Plain);
+    }
+    assert!(
+        far.view.scrolled_across().abs() < f32::EPSILON,
+        "the width is measured again after an edit"
+    );
+
+    let mut short = Harness::new(&numbered(40));
+    click(&mut short, bar(200.0));
+    assert!(
+        short.view.state().primary().head.line > 0,
+        "a click on text"
+    );
+    assert!(short.view.scrolled_across().abs() < f32::EPSILON);
 }

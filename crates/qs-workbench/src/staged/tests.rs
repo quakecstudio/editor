@@ -16,8 +16,8 @@ use serde_json::json;
 
 use super::HunkId;
 use crate::{
-    ACCEPT_HUNKS, APPLY_EDIT, Config, Decision, REJECT_HUNKS, STAGED_EDITS, StagedHunk, Workbench,
-    WorkbenchError, register,
+    ACCEPT_HUNKS, APPLY_EDIT, Config, Decision, REJECT_HUNKS, STAGED_EDITS, StagedHunk, Waiting,
+    Workbench, WorkbenchError, register,
 };
 
 const ROOT: &str = "/p";
@@ -189,6 +189,66 @@ fn rejecting_every_hunk_leaves_the_file_as_it_was() {
     );
     assert!(!workbench.is_unsaved(&path("world.qc")));
     assert!(workbench.staged_hunks().is_empty());
+}
+
+// No spec statement: P7-18: the hunks waiting are counted with their files and the first of
+// them, a decided hunk is no longer counted, and a file with none left awaits no review
+#[test]
+fn the_hunks_waiting_are_counted_with_their_files() {
+    let mut workbench = in_memory(&ProjectSpec::default());
+    assert_eq!(workbench.waiting(), Waiting::default());
+    let hunks = workbench
+        .stage(vec![
+            (
+                path("world.qc"),
+                b"// first
+void() worldspawn = {
+	local float x;
+	x = speed * 3;
+};
+"
+                .to_vec(),
+            ),
+            (
+                path("defs.qc"),
+                b"float speed = 300;
+float jump;
+"
+                .to_vec(),
+            ),
+        ])
+        .unwrap();
+    assert_eq!(hunks.len(), 3, "{hunks:?}");
+    assert_eq!(
+        workbench.waiting(),
+        Waiting {
+            hunks: 3,
+            files: 2,
+            first: Some((path("defs.qc"), 2)),
+        }
+    );
+    assert!(workbench.awaits_review(&path("world.qc")));
+    assert!(!workbench.awaits_review(&path("progs.src")));
+    let defs: Vec<HunkId> = hunks
+        .iter()
+        .filter(|hunk| hunk.path == path("defs.qc"))
+        .map(|hunk| hunk.id)
+        .collect();
+    workbench.decide(&defs, Decision::Accept).unwrap();
+    assert!(!workbench.awaits_review(&path("defs.qc")));
+    let world: Vec<HunkId> = ids(&workbench.staged_hunks());
+    workbench.decide(&world[..1], Decision::Reject).unwrap();
+    assert_eq!(
+        workbench.waiting(),
+        Waiting {
+            hunks: 1,
+            files: 1,
+            first: Some((path("world.qc"), 3)),
+        }
+    );
+    workbench.decide(&world[1..], Decision::Accept).unwrap();
+    assert_eq!(workbench.waiting(), Waiting::default());
+    assert!(!workbench.awaits_review(&path("world.qc")));
 }
 
 // No spec statement: P4-04. A file with an editor's text before it was staged keeps that text

@@ -16,6 +16,7 @@ use crate::buffer::Position;
 use crate::diff::Diff;
 use crate::fold::{Fold, Folds};
 use crate::layout::{LayoutCache, Preedit, Styler, inlay_job, line_job};
+use crate::scrollbar::{self, Axis};
 use crate::selection::{EditState, Extend, Motion, Selection};
 use crate::vim::{Mode, Vim, VimKey};
 
@@ -65,6 +66,10 @@ pub struct ViewStyle {
     pub note_warning: Color32,
     /// The mark before a note that has a quick fix, `accent`.
     pub lightbulb: Color32,
+    /// The scroll bar's thumb, `border`.
+    pub scroll_thumb: Color32,
+    /// The thumb under the pointer or dragged, `text.faint`.
+    pub scroll_thumb_active: Color32,
 }
 
 impl Default for ViewStyle {
@@ -92,6 +97,8 @@ impl Default for ViewStyle {
             note_error: Color32::from_rgb(0xec, 0x7a, 0x6c),
             note_warning: Color32::from_rgb(0xe2, 0xb0, 0x4a),
             lightbulb: Color32::from_rgb(0xee, 0x8b, 0x45),
+            scroll_thumb: Color32::from_rgb(0x2a, 0x28, 0x26),
+            scroll_thumb_active: Color32::from_rgb(0x8e, 0x87, 0x7d),
         }
     }
 }
@@ -108,6 +115,16 @@ const FIX_DOT_PARTS: f32 = 4.0;
 const MAX_UTF8_BYTES: u8 = 4;
 /// The caret's width in points.
 const CARET_WIDTH: f32 = 2.0;
+/// What the scroll bar's id adds to the view's.
+const SCROLL_BAR_ID: &str = "scroll-bar";
+/// The id, under the view's, of the scroll bar across it.
+const SCROLL_BAR_ACROSS_ID: &str = "scroll-bar-across";
+/// The characters kept in view past a caret scrolled into view across.
+const REVEAL_CHARS: f32 = 4.0;
+/// The part of the view's width those characters take at most: one in this many.
+const REVEAL_VIEW_PARTS: f32 = 4.0;
+/// The rounding of the scroll bar's thumb's corners, in points.
+const SCROLL_THUMB_ROUNDING: u8 = 3;
 /// The gutter's mark on a removed line's row.
 const REMOVED_MARK: &str = "-";
 /// What a folded line shows after its text.
@@ -179,6 +196,18 @@ pub struct EditorView {
     first_line: usize,
     /// Scrolled points not yet a whole line.
     scroll_rest: f32,
+    /// Where on the thumb of the scroll bar down the view a drag of it took hold, in points
+    /// below its top; and the same of the bar across, in points right of its left.
+    scroll_grab: Option<f32>,
+    scroll_grab_across: Option<f32>,
+    /// The points of the text scrolled past the view's left edge, with wrap off (P7-16).
+    scroll_x: f32,
+    /// The widest line drawn in the last frame, in points.
+    widest_shown: f32,
+    /// The width of the text's longest line, as last measured.
+    longest: Option<Measured>,
+    /// The primary caret's place when it was last scrolled into view across.
+    revealed: Position,
     /// The visible lines in the last frame, for paging.
     visible: usize,
     /// IME composition text at the primary caret, not yet in the text.
@@ -228,6 +257,12 @@ impl EditorView {
             state: EditState::new(text),
             first_line: 0,
             scroll_rest: 0.0,
+            scroll_grab: None,
+            scroll_grab_across: None,
+            scroll_x: 0.0,
+            widest_shown: 0.0,
+            longest: None,
+            revealed: Position::default(),
             visible: 1,
             preedit: None,
             hovered: None,
@@ -450,6 +485,12 @@ impl EditorView {
             .collect()
     }
 
+    /// The points of the text scrolled past the view's left edge: 0 while long lines wrap.
+    #[must_use]
+    pub const fn scrolled_across(&self) -> f32 {
+        self.scroll_x
+    }
+
     /// Where the primary caret was in the last frame, `None` when it was off screen: where a
     /// popup about the text at the caret goes.
     #[must_use]
@@ -513,7 +554,8 @@ impl EditorView {
         self.wrap_width = match self.wrap {
             Wrap::Off => f32::INFINITY,
             // Whole points, so a frame a fraction wider lays nothing out again.
-            Wrap::Width => (rect.right() - text_left - CARET_WIDTH)
+            // Short of the scroll bar, which would cover a line's last characters.
+            Wrap::Width => (rect.right() - text_left - CARET_WIDTH - scrollbar::WIDTH)
                 .floor()
                 .max(char_width),
         };
@@ -528,10 +570,19 @@ impl EditorView {
         self.folds.reveal(head);
         self.first_line = self.folds.shown_at_or_before(self.first_line);
 
-        if response.hovered() {
-            let delta = ui.input(|i| i.smooth_scroll_delta.y);
-            self.scroll(delta, row_height);
+        // Over the view, its scroll bars included, which are widgets of their own above it.
+        if ui.rect_contains_pointer(rect) {
+            let delta = ui.input(|i| i.smooth_scroll_delta);
+            // The greater of the two ways only, as Zed scrolls: a swipe down a trackpad carries
+            // a little sideways with it, which would drift a long line across.
+            if delta.y.abs() >= delta.x.abs() {
+                self.scroll(delta.y, row_height);
+            } else {
+                self.scroll_x -= delta.x;
+            }
         }
+        let thumbs = self.scroll_bars(ui, style, styler, (rect, text_left, char_width));
+        let text_left_scrolled = text_left - self.scroll_x;
         // A press places the caret where the button went down, which for a drag is behind the
         // pointer by the drag threshold; each frame of a drag then moves the head to the pointer.
         let modifiers = ui.input(|i| i.modifiers);
@@ -540,8 +591,15 @@ impl EditorView {
                 .input(|i| i.pointer.press_origin())
                 .or_else(|| response.interact_pointer_pos());
             if let Some(origin) = origin {
-                let at =
-                    self.position_at(ui, style, styler, origin, rect.top(), text_left, row_height);
+                let at = self.position_at(
+                    ui,
+                    style,
+                    styler,
+                    origin,
+                    rect.top(),
+                    text_left_scrolled,
+                    row_height,
+                );
                 let on_fold_mark =
                     origin.x >= text_left - GUTTER_PAD && self.folds.start_at(at.line).is_some();
                 let on_note = self
@@ -563,24 +621,186 @@ impl EditorView {
             }
         }
         self.hovered = match response.hover_pos() {
-            Some(pos) if pos.x >= text_left => {
-                Some(self.position_at(ui, style, styler, pos, rect.top(), text_left, row_height))
-            }
+            Some(pos) if pos.x >= text_left => Some(self.position_at(
+                ui,
+                style,
+                styler,
+                pos,
+                rect.top(),
+                text_left_scrolled,
+                row_height,
+            )),
             Some(_) | None => None,
         };
         if response.dragged()
             && let Some(pos) = response.interact_pointer_pos()
         {
-            let at = self.position_at(ui, style, styler, pos, rect.top(), text_left, row_height);
+            let at = self.position_at(
+                ui,
+                style,
+                styler,
+                pos,
+                rect.top(),
+                text_left_scrolled,
+                row_height,
+            );
             self.extend_to(at);
         }
         if focus == Focus::Focused {
             self.input(ui);
         }
+        // A caret a key moved is in view across in this frame; the bar's thumb follows in
+        // the next.
+        let before = self.scroll_x;
+        self.across(ui, style, styler, (text_left, rect.right(), char_width));
+        #[expect(clippy::float_cmp, reason = "any change at all is one to draw")]
+        if self.scroll_x != before {
+            ui.ctx().request_repaint();
+        }
 
         self.paint(ui, style, styler, rect, gutter, row_height, focus);
+        for (shape, active) in thumbs.into_iter().flatten() {
+            let colour = if active {
+                style.scroll_thumb_active
+            } else {
+                style.scroll_thumb
+            };
+            ui.painter_at(rect).rect_filled(
+                shape,
+                CornerRadius::same(SCROLL_THUMB_ROUNDING),
+                colour,
+            );
+        }
         self.cache.end();
         response
+    }
+
+    /// This frame's input to the two scroll bars of the view in `rect`, whose text starts at
+    /// `text_left` in characters `char_width` wide: the view scrolled as they say, and each
+    /// bar's thumb to draw with whether the pointer is on its bar.
+    fn scroll_bars(
+        &mut self,
+        ui: &Ui,
+        style: &ViewStyle,
+        styler: &dyn Styler,
+        (rect, text_left, char_width): (Rect, f32, f32),
+    ) -> [Option<(Rect, bool)>; 2] {
+        let across = self.across(ui, style, styler, (text_left, rect.right(), char_width));
+        let lines = self.state.buffer().line_count();
+        // The rows that fit whole: a last row cut by the view's edge is not one to page by.
+        let down = scrollbar::Track::of_lines(
+            rect.top(),
+            rect.height(),
+            lines,
+            self.visible.saturating_sub(1).max(1),
+        );
+        let down_bar = Rect::from_min_max(
+            Pos2::new(rect.right() - scrollbar::WIDTH, rect.top()),
+            rect.max,
+        );
+        let across_bar = Rect::from_min_max(
+            Pos2::new(text_left, rect.bottom() - scrollbar::WIDTH),
+            Pos2::new(rect.right() - scrollbar::WIDTH, rect.bottom()),
+        );
+        let (first, down_thumb) = self.bar(ui, Axis::Down, down, down_bar, self.first_line);
+        self.first_line = self.folds.shown_at_or_before(first);
+        let scrolled = scrollbar::nearest(f64::from(self.scroll_x));
+        let (scrolled, across_thumb) = self.bar(ui, Axis::Across, across, across_bar, scrolled);
+        if across_thumb.is_some_and(|(_, active)| active) {
+            self.scroll_x = scrollbar::span(scrolled);
+        }
+        [down_thumb, across_thumb]
+    }
+
+    /// One of the view's scroll bars (P7-16), in `bar`: a drag of its thumb scrolls to the
+    /// place under it, and a click beside the thumb pages toward the click. Where the view is
+    /// scrolled to after this frame's input, it being at `first` before; and the thumb to
+    /// draw, with whether the pointer is on the bar or dragging it, none when the view shows
+    /// everything, which leaves the bar's place to the text.
+    fn bar(
+        &mut self,
+        ui: &Ui,
+        axis: Axis,
+        track: scrollbar::Track,
+        bar: Rect,
+        first: usize,
+    ) -> (usize, Option<(Rect, bool)>) {
+        let (id, grab) = match axis {
+            Axis::Down => (SCROLL_BAR_ID, &mut self.scroll_grab),
+            Axis::Across => (SCROLL_BAR_ACROSS_ID, &mut self.scroll_grab_across),
+        };
+        if track.thumb(first).is_none() {
+            *grab = None;
+            return (first, None);
+        }
+        let response = ui.interact(bar, self.id.with(id), Sense::click_and_drag());
+        let to = track.follow(&response, axis, grab, first);
+        let active = response.hovered() || response.dragged();
+        let thumb = track
+            .thumb(to)
+            .map(|thumb| (thumb.shape(axis, bar), active));
+        (to, thumb)
+    }
+
+    /// The track of the scroll bar across the view, whose text is from `left` to `right` and
+    /// whose characters are `char_width` wide, after the primary caret, when it has moved,
+    /// is scrolled into view and the scroll is held to the widest line's end. Wrapped lines
+    /// are never wider than the view, and so never scrolled.
+    fn across(
+        &mut self,
+        ui: &Ui,
+        style: &ViewStyle,
+        styler: &dyn Styler,
+        (left, right, char_width): (f32, f32, f32),
+    ) -> scrollbar::Track {
+        let view = (right - left - scrollbar::WIDTH).max(char_width);
+        if self.wrap == Wrap::Width {
+            self.scroll_x = 0.0;
+            return scrollbar::Track::of_width(left, view, 0, 0);
+        }
+        let revision = self.state.revision();
+        let longest = match &self.longest {
+            Some(known) if known.revision == revision && known.font == style.font => known.width,
+            Some(_) | None => {
+                let buffer = self.state.buffer();
+                let line = (0..buffer.line_count())
+                    .max_by_key(|&line| buffer.line(line).len())
+                    .unwrap_or(0);
+                // Laid out once for its width and not kept: the cache holds the lines drawn.
+                let job = line_job(buffer.line(line), &[], &style.font, style.text, None);
+                let width = ui.fonts_mut(|f| f.layout_job(job)).size().x;
+                self.longest = Some(Measured {
+                    revision,
+                    font: style.font.clone(),
+                    width,
+                });
+                width
+            }
+        };
+        // Any wider line that was drawn counts too: a line of tabs or wide characters can
+        // be wider than a longer one.
+        let mut content = longest.max(self.widest_shown);
+        let head = self.state.primary().head;
+        if head != self.revealed {
+            self.revealed = head;
+            let galley = self.galley(ui, style, styler, head.line, None);
+            let chars = self.char_index(head.line, head.col, None);
+            let caret = galley.pos_from_cursor(CCursor::new(chars)).min.x;
+            content = content.max(caret);
+            // A few characters past the caret stay in view, as far as the view has room.
+            let margin = (char_width * REVEAL_CHARS).min(view / REVEAL_VIEW_PARTS);
+            if caret < self.scroll_x + margin {
+                self.scroll_x = caret - margin;
+            } else if caret > self.scroll_x + view - margin {
+                self.scroll_x = caret - view + margin;
+            }
+        }
+        // Room for the caret after the widest line's last character.
+        let content = scrollbar::nearest(f64::from(content + char_width));
+        let track =
+            scrollbar::Track::of_width(left, view, content, scrollbar::nearest(f64::from(view)));
+        self.scroll_x = self.scroll_x.clamp(0.0, scrollbar::span(track.last()));
+        track
     }
 
     /// Scrolls by `delta` points of wheel movement, whole lines at a time.
@@ -963,6 +1183,10 @@ impl EditorView {
         clippy::too_many_arguments,
         reason = "the frame's metrics, computed once in show"
     )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one pass over the frame's rows, each drawn whole where its top is known"
+    )]
     fn paint(
         &mut self,
         ui: &mut Ui,
@@ -984,6 +1208,12 @@ impl EditorView {
         let selections = self.state.selections().to_vec();
         let composing = self.preedit.clone();
         let text_left = rect.left() + gutter;
+        // The text is drawn scrolled across, and only right of the gutter.
+        let text_x = text_left - self.scroll_x;
+        let text_painter = painter.with_clip_rect(
+            Rect::from_min_max(Pos2::new(text_left, rect.top()), rect.max).intersect(rect),
+        );
+        let mut widest = 0.0_f32;
         let mut ime_caret = None;
         let mut runs: Vec<(Rect, String, Vec<u8>)> = Vec::new();
         let mut top = rect.top();
@@ -998,7 +1228,13 @@ impl EditorView {
                         Pos2::new(rect.left(), top),
                         Vec2::new(rect.width(), row_height),
                     );
-                    removed_row(ui, &painter, style, &text, (row_rect, text_left));
+                    removed_row(
+                        ui,
+                        (&painter, &text_painter),
+                        style,
+                        &text,
+                        (row_rect, text_left, text_x),
+                    );
                     top += row_height;
                     continue;
                 }
@@ -1012,6 +1248,7 @@ impl EditorView {
             };
             let galley = self.galley(ui, style, styler, line, preedit);
             let height = line_height(&galley, row_height);
+            widest = widest.max(galley.size().x);
             let row_rect =
                 Rect::from_min_size(Pos2::new(rect.left(), top), Vec2::new(rect.width(), height));
             let paused = self.paused == Some(line);
@@ -1027,39 +1264,46 @@ impl EditorView {
             let chars_of = |col: usize| self.char_index(line, col, preedit);
             let text_top = top + (height - galley.size().y).max(0.0) / 2.0;
             indent_guides(
-                &painter,
+                &text_painter,
                 style,
                 &galley,
                 buffer.line(line),
-                (text_left, text_top),
+                (text_x, text_top),
             );
             let line_end = buffer.line(line).len();
             paint_selections(
-                &painter,
+                &text_painter,
                 style,
                 &galley,
                 (&selections, line, line_end),
                 &chars_of,
-                (text_left, text_top, top, height),
+                (text_x, text_top, top, height),
             );
             let number = (line.saturating_add(1).to_string(), style.line_number);
             text_row(
-                &painter,
+                (&painter, &text_painter),
                 style,
                 Arc::clone(&galley),
                 (top, height),
-                text_left,
+                (text_left, text_x),
                 number,
             );
             if let Some(note) = self.notes.get(&line) {
                 let end = galley.rows.last().map_or(0.0, |row| row.rect().right());
-                let at = Pos2::new(text_left + end + NOTE_GAP, text_top);
-                if let Some(clickable) = paint_note(&painter, style, note, at, row_height) {
+                let at = Pos2::new(text_x + end + NOTE_GAP, text_top);
+                if let Some(clickable) = paint_note(&text_painter, style, note, at, row_height) {
                     note_rects.push((clickable, line));
                 }
             }
             if let Some(fold) = self.folds.start_at(line) {
-                fold_mark(&painter, style, &galley, fold, (text_left, top), row_height);
+                fold_mark(
+                    (&painter, &text_painter),
+                    style,
+                    &galley,
+                    fold,
+                    (text_left, text_x, top),
+                    row_height,
+                );
             }
             let marks = Marks {
                 breakpoint: self.breakpoints.contains(&line),
@@ -1084,11 +1328,11 @@ impl EditorView {
                     text_top + at.min.y
                 };
                 let caret = Rect::from_min_size(
-                    Pos2::new(text_left + at.min.x, caret_top + 1.0),
+                    Pos2::new(text_x + at.min.x, caret_top + 1.0),
                     Vec2::new(CARET_WIDTH, row_height - 2.0),
                 );
                 if focus == Focus::Focused {
-                    painter.rect_filled(caret, CornerRadius::ZERO, style.caret);
+                    text_painter.rect_filled(caret, CornerRadius::ZERO, style.caret);
                 }
                 if *selection == primary {
                     ime_caret = Some(caret);
@@ -1104,6 +1348,7 @@ impl EditorView {
             top += height;
         }
         self.caret_rect = ime_caret;
+        self.widest_shown = widest;
         self.note_rects = note_rects;
         if focus == Focus::Focused
             && let Some(cursor_rect) = ime_caret
@@ -1200,6 +1445,14 @@ fn whole(x: f32) -> usize {
     usize::from(x.clamp(0.0, f32::from(u16::MAX)) as u16)
 }
 
+/// The width of the text's longest line, measured at a revision of the text in a font.
+#[derive(Debug)]
+struct Measured {
+    revision: u64,
+    font: FontId,
+    width: f32,
+}
+
 /// The inline diff's base text, and its diff with the text as of a revision.
 #[derive(Debug)]
 struct DiffState {
@@ -1256,16 +1509,16 @@ impl Marks {
 /// and `gutter`'s text right-aligned before it in its colour: a line's number, or a removed
 /// line's mark.
 fn text_row(
-    painter: &egui::Painter,
+    (painter, text_painter): (&egui::Painter, &egui::Painter),
     style: &ViewStyle,
     galley: Arc<Galley>,
     (top, row_height): (f32, f32),
-    text_left: f32,
+    (text_left, text_x): (f32, f32),
     gutter: (String, Color32),
 ) {
     let text_top = top + (row_height - galley.size().y).max(0.0) / 2.0;
     let (label, color) = gutter;
-    painter.galley(Pos2::new(text_left, text_top), galley, style.text);
+    text_painter.galley(Pos2::new(text_x, text_top), galley, style.text);
     painter.text(
         Pos2::new(text_left - GUTTER_PAD, text_top),
         egui::Align2::RIGHT_TOP,
@@ -1317,21 +1570,23 @@ fn paint_selections(
 /// Paints a line the diff's base had, `text`, in `row_rect` with its text at `text_left`.
 fn removed_row(
     ui: &Ui,
-    painter: &egui::Painter,
+    painters: (&egui::Painter, &egui::Painter),
     style: &ViewStyle,
     text: &str,
-    (row_rect, text_left): (Rect, f32),
+    (row_rect, text_left, text_x): (Rect, f32, f32),
 ) {
-    painter.rect_filled(row_rect, CornerRadius::ZERO, style.removed);
+    painters
+        .0
+        .rect_filled(row_rect, CornerRadius::ZERO, style.removed);
     let galley =
         ui.fonts_mut(|f| f.layout_job(line_job(text, &[], &style.font, style.removed_text, None)));
     let gutter = (REMOVED_MARK.to_owned(), style.removed_text);
     text_row(
-        painter,
+        painters,
         style,
         galley,
         (row_rect.top(), row_rect.height()),
-        text_left,
+        (text_left, text_x),
         gutter,
     );
 }
@@ -1533,14 +1788,14 @@ enum Focus {
 /// triangle when folded, a down-pointing one when open; a folded line also gets an ellipsis
 /// after its text.
 fn fold_mark(
-    painter: &egui::Painter,
+    (painter, text_painter): (&egui::Painter, &egui::Painter),
     style: &ViewStyle,
     galley: &Galley,
     fold: Fold,
-    origin: (f32, f32),
+    origin: (f32, f32, f32),
     row_height: f32,
 ) {
-    let (text_left, top) = origin;
+    let (text_left, text_x, top) = origin;
     let centre = Pos2::new(text_left - GUTTER_PAD / 2.0, top + row_height / 2.0);
     let r = (GUTTER_PAD / 2.0 - 2.0).min(row_height / FOLD_MARK_PARTS);
     let points = if fold == Fold::Folded {
@@ -1563,8 +1818,8 @@ fn fold_mark(
     ));
     if fold == Fold::Folded {
         let end = galley.rows.last().map_or(0.0, |row| row.rect().right());
-        let at = Pos2::new(text_left + end + GUTTER_PAD / 2.0, top);
-        painter.text(
+        let at = Pos2::new(text_x + end + GUTTER_PAD / 2.0, top);
+        text_painter.text(
             at,
             egui::Align2::LEFT_TOP,
             FOLDED_MARK,
