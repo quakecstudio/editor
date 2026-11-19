@@ -820,9 +820,11 @@ jobs:
       # P1-34: Xonotic's three modules open through the quakec.toml corpus fetch writes (its
       # archive is only qcsrc/, 2 MB), and FreeCS opens whole in its Nuclide SDK tree, with
       # Rad-Therapy (FreeHL) beside it (about 120 MB in the macOS downloads cache). FreeCS
-      # runs on macOS: its shared/defs.h includes "animations.h" and the file is
-      # Animations.h, which only a case-insensitive file system opens, as FTEQCC's fopen
-      # would (PRJ-7.1); its client and server modules each get warning W0402 there (PRJ-7.2).
+      # runs on macOS: its shared/defs.h includes "animations.h" and its file is
+      # Animations.h, which a case-insensitive file system opens, as FTEQCC's fopen would
+      # (PRJ-7.1); its client and server modules each get warning W0402 there (PRJ-7.2). On
+      # Linux the include directory of its project file (corpus/projects/freecs) opens
+      # Rad-Therapy's animations.h, which the release's compatibility list compiles.
       - name: Open Xonotic as a project
         if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: |
