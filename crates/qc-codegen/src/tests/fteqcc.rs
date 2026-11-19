@@ -6144,21 +6144,31 @@ fn a_variant_is_stored_whole_and_read_by_the_targets_type() {
 }
 
 // spec FTEF-2.13: a store to an 8- or 16-bit integer definition that folds into no statement is
-// `OP_STORE_F`, through a typedef too, a 32-bit one's `OP_STORE_I` and, on a target with it, a
-// 64-bit one's or a double's `OP_STORE_I64`
+// `OP_STORE_F`, through a typedef too, a 32-bit one's `OP_STORE_I`, a 64-bit one's
+// `OP_STORE_I64`, and a double's a copy by its size: `OP_STORE_I64` where the target has it,
+// from the 64-bit zero for a constant 0, and two `OP_STORE_F` where it has not
 #[test]
 fn each_width_is_stored_by_its_size() {
     use qc_progs::Op::{StoreF, StoreI, StoreI64};
     let progs = compile_fteqcc(
         "#pragma target fte\nint a;\n__int8 c;\n__uint16 h;\n__uint u;\n__int64 l;\n\
          __int64 m;\n__double d;\n__double k;\ntypedef __int8 small;\nsmall t;\n\
-         void() f = { c = a; h = a; u = a; l = m; d = k; t = a; };\n",
+         void() f = { c = a; h = a; u = a; l = m; d = k; t = a; d = 0; };\n",
     )
     .unwrap()
     .progs;
-    let stores: Vec<u32> = body(&progs, "f").iter().map(|s| s.op).collect();
-    let expected = numbers([StoreF, StoreF, StoreI, StoreI64, StoreI64, StoreF]);
-    assert_eq!(stores.get(..6), Some(&expected[..]));
+    let statements = body(&progs, "f");
+    let stores: Vec<u32> = statements.iter().map(|s| s.op).collect();
+    let expected = numbers([StoreF, StoreF, StoreI, StoreI64, StoreI64, StoreF, StoreI64]);
+    assert_eq!(stores.get(..7), Some(&expected[..]));
+    assert_eq!(words(&progs, statements[6].a, 2), [0, 0], "the 64-bit zero");
+    let standard = compile_fteqcc("__double d;\n__double k;\nvoid() f = { d = k; };\n")
+        .unwrap()
+        .progs;
+    let copy = body(&standard, "f");
+    let (d, k) = (global(&standard, "d"), global(&standard, "k"));
+    assert_eq!(copy[0], st(Opcode::StoreF, k, d, 0));
+    assert_eq!(copy[1], st(Opcode::StoreF, k + 1, d + 1, 0));
 }
 
 // spec FTEF-9.25: a class's data member and virtual member function are entity fields the

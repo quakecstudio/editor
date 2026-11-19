@@ -199,8 +199,9 @@ corpus uses `int` heavily (3392 occurrences across the three mods) and `bool` (1
   QCC_PR_SimpleStatement(&pr_opcodes[OP_STORE_F], source, dest, nullsref, false);`). So
   `__int8 c; int a; c = a;` is `STORE_F a, c`, through a typedef of the type too, and a double
   stored to a double is one `OP_STORE_I64` on an FTE target and two `OP_STORE_F` on the
-  standard one, where a 64-bit integer's `OP_STORE_I64` is emulated instead (FTEF-27); our
-  compiler follows neither two-word store on the standard target and refuses it. No width
+  standard one, where a 64-bit integer's own `OP_STORE_I64` is emulated instead (FTEF-27).
+  A constant 0 is copied from the zero of each piece's size (`if (QCC_SRef_IsNull(source))`:
+  `QCC_MakeVectorConst(0,0,0)`, `QCC_MakeInt64Const(0)`, `QCC_MakeIntConst(0)`). No width
   chooses the progs format, which is the target's (FTE-24.1, FTE-24.3). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_StoreToSRef`.

@@ -15,8 +15,7 @@ use crate::check::etype::Etype;
 use crate::lower::LiteralValue;
 use crate::lower::{ArrayDim, StructMember};
 use crate::resolve::{
-    AccessorShape, InitialValue, MAX_CLASS_DEPTH, MemberShape, QcOnly, Resolver, Scalar,
-    StructShape,
+    InitialValue, MAX_CLASS_DEPTH, MemberShape, RecordShape, Resolver, Scalar, StructShape,
 };
 use crate::symbol::DefId;
 use crate::ty::Type;
@@ -322,25 +321,11 @@ impl Resolver<'_> {
                         self.index.scalars.insert(self.resolved(&ty), scalar);
                         self.index.scalars.insert(ty.clone(), scalar);
                     }
-                    // FTEF-19.84: a `__variant`, a truth value and a narrow integer are
-                    // written with their own numbers too.
-                    if !self.index.qc_only.contains_key(&ty)
-                        && let Some(shape) = self.qc_only_of(&ty)
+                    if !self.index.records.contains_key(&ty)
+                        && let Some(shape) = self.record_of(&ty)
                     {
-                        self.index.qc_only.insert(self.resolved(&ty), shape);
-                        self.index.qc_only.insert(ty.clone(), shape);
-                    }
-                    // FTEF-10.15: an accessor type is `ev_accessor`, of its base's words.
-                    if !self.index.accessor_shapes.contains_key(&ty)
-                        && self.is_accessor_type(&ty)
-                        && let Some(layout) = self.layout(&ty)
-                    {
-                        let shape = AccessorShape {
-                            words: layout.words,
-                            number: Etype::ACCESSOR_NUMBER,
-                        };
-                        self.index.accessor_shapes.insert(self.resolved(&ty), shape);
-                        self.index.accessor_shapes.insert(ty, shape);
+                        self.index.records.insert(self.resolved(&ty), shape);
+                        self.index.records.insert(ty, shape);
                     }
                 }
                 Type::Simple(_) | Type::Unknown => {}
@@ -380,28 +365,35 @@ impl Resolver<'_> {
         })
     }
 
-    /// What a definition of `ty` is in a progs when `ty` is a `__variant`, a truth value or
-    /// an integer narrower than a word (FTEF-19.84).
-    fn qc_only_of(&self, ty: &Type) -> Option<QcOnly> {
+    /// What a definition of the named type `ty` is in a progs when its record is not its
+    /// basic type's alone: an accessor is `ev_accessor` of its base's words (FTEF-10.15); an
+    /// integer narrower than a word `ev_bitfld`, a truth value `ev_boolean` and a `__variant`
+    /// `ev_variant` (FTEF-19.84); a C scalar of a word or more its own number (FTEF-19.81); a
+    /// class an entity (FTEF-9.25).
+    fn record_of(&self, ty: &Type) -> Option<RecordShape> {
         let resolved = self.resolved(ty);
+        let scalar = resolved.fteqcc_scalar();
         let narrow = matches!(
-            resolved.fteqcc_scalar(),
+            scalar,
             Some(CScalar::Int8 | CScalar::Uint8 | CScalar::Int16 | CScalar::Uint16)
         );
-        let truth = matches!(
-            resolved.fteqcc_scalar(),
-            Some(CScalar::Bool | CScalar::BFloat)
-        );
-        let number = if narrow {
+        let class = resolved
+            .type_name()
+            .is_some_and(|name| self.named(&self.class_names, name).is_some());
+        let number = if self.is_accessor_type(ty) {
+            Etype::ACCESSOR_NUMBER
+        } else if narrow {
             Etype::BITFLD_NUMBER
-        } else if truth {
+        } else if matches!(scalar, Some(CScalar::Bool | CScalar::BFloat)) {
             Etype::BOOLEAN_NUMBER
+        } else if class {
+            Etype::ENTITY_NUMBER
         } else if self.shape(&resolved)?.etype == Etype::Variant {
             Etype::VARIANT_NUMBER
         } else {
-            return None;
+            self.scalar_of(ty)?.number
         };
-        Some(QcOnly {
+        Some(RecordShape {
             words: self.layout(ty)?.words,
             number,
         })

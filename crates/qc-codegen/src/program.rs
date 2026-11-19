@@ -1280,46 +1280,27 @@ impl Program {
     }
 }
 
-/// The words a value of `ty` takes: a struct's layout's (FTE-14.5), else `type_size`.
+/// The words a value of `ty` takes: a struct's layout's (FTE-14.5), a named type's record's,
+/// else `type_size`.
 pub(crate) fn type_words(index: &ModuleIndex, ty: &ValueType) -> u32 {
     match ty {
-        // A struct's layout and a C scalar's size are the model's (FTEF-19.81).
-        ValueType::Of(t) => index.struct_shape(t).map_or_else(
-            || {
-                let accessor = index.accessor_shape(t).map(|shape| shape.words);
-                let scalar = index.scalar(t).map(|scalar| scalar.words);
-                let qc_only = index.qc_only(t).map(|shape| shape.words);
-                accessor
-                    .or(scalar)
-                    .or(qc_only)
-                    .unwrap_or_else(|| ty.words())
-            },
-            |s| s.words,
-        ),
+        ValueType::Of(t) => index
+            .struct_shape(t)
+            .map(|shape| shape.words)
+            .or_else(|| index.record(t).map(|record| record.words))
+            .unwrap_or_else(|| ty.words()),
         ValueType::FloatField => ty.words(),
     }
 }
 
-/// The type number of a definition's record of type `ty`: a C scalar's own, `ev_integer` to
-/// `ev_double` (FTEF-19.81), or an accessor's (FTEF-10.15), which the model gives, else its
-/// basic type's.
+/// The type number of a definition's record of type `ty`: a named type's own, which the model
+/// gives (`ModuleIndex::record`), else its basic type's.
 pub(crate) fn type_number(index: &ModuleIndex, ty: &ValueType) -> u16 {
-    let numbered = match ty {
-        ValueType::Of(t) => index
-            .accessor_shape(t)
-            .map(|shape| shape.number)
-            .or_else(|| index.qc_only(t).map(|shape| shape.number))
-            .or_else(|| index.scalar(t).map(|scalar| scalar.number)),
+    let record = match ty {
+        ValueType::Of(t) => index.record(t),
         ValueType::FloatField => None,
     };
-    numbered.unwrap_or_else(|| {
-        // FTEF-9.25: a class is an entity type, and its definitions are written as entities.
-        if matches!(ty, ValueType::Of(t) if index.is_class(t)) {
-            Etype::Entity.number()
-        } else {
-            ty.etype().number()
-        }
-    })
+    record.map_or_else(|| ty.etype().number(), |record| record.number)
 }
 
 /// A global offset as a statement operand.

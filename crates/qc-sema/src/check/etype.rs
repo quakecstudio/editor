@@ -62,6 +62,9 @@ impl Etype {
         Self::Double,
     ];
 
+    /// `ev_entity` in FTEQCC's `etype_t`, which a class is (FTEF-9.25).
+    pub(crate) const ENTITY_NUMBER: u16 = 4;
+
     /// `ev_variant` in FTEQCC's `etype_t`, after `ev_double` (FTEF-19.84).
     pub(crate) const VARIANT_NUMBER: u16 = 13;
 

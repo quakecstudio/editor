@@ -124,12 +124,11 @@ pub struct ModuleIndex {
     /// Each C scalar type a definition is written with, with its words and record number
     /// (FTEF-19.81).
     pub(crate) scalars: HashMap<Type, Scalar>,
-    /// Each accessor type a definition is written with, with its words and record number
-    /// (FTEF-10.15).
-    pub(crate) accessor_shapes: HashMap<Type, AccessorShape>,
-    /// Each `__variant`, truth or narrow integer type a definition is written with, with its
-    /// words and record number (FTEF-19.84).
-    pub(crate) qc_only: HashMap<Type, QcOnly>,
+    /// Each named type a definition is written with whose record is not its basic type's
+    /// alone, with its words and record number: a C scalar (FTEF-19.81), an accessor
+    /// (FTEF-10.15), a `__variant`, a truth value, a narrow integer (FTEF-19.84) and a class
+    /// (FTEF-9.25).
+    pub(crate) records: HashMap<Type, RecordShape>,
     /// The type each named type a definition is written with stands for, when it is another:
     /// a typedef's, or an enum's base type (FTEF-7.2, FTEF-19.10).
     pub(crate) aliases: HashMap<Type, Type>,
@@ -162,22 +161,13 @@ pub struct Scalar {
     pub kind: CScalar,
 }
 
-/// One of FTEQCC's types the engine has none of, as a progs holds a definition of it
-/// (FTEF-19.84): a `__variant`, a truth value or an integer narrower than a word.
+/// What a definition of a named type is in a progs: its words and its record's type number
+/// (FTEF-19.81, FTEF-10.15, FTEF-19.84, FTEF-9.25).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct QcOnly {
+pub struct RecordShape {
     /// The words a value takes, `type->size`.
     pub words: u32,
     /// Its number in a definition's record, FTEQCC's `etype_t`.
-    pub number: u16,
-}
-
-/// An accessor type as a progs holds a definition of it (FTEF-10.15).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct AccessorShape {
-    /// The words a value takes, its base type's.
-    pub words: u32,
-    /// Its number in a definition's record, `ev_accessor`.
     pub number: u16,
 }
 
@@ -260,18 +250,6 @@ impl ModuleIndex {
     #[must_use]
     pub fn diagnostics(&self) -> &[FileDiagnostic] {
         &self.diagnostics
-    }
-
-    /// Whether the type `ty` names a class, through a typedef: an entity type (FTEF-9.14).
-    #[must_use]
-    pub fn is_class(&self, ty: &Type) -> bool {
-        // Only a named type is one: a pointer to a class is a pointer.
-        let Some(Type::Named(name)) =
-            matches!(ty, Type::Named(_)).then(|| self.aliases.get(ty).unwrap_or(ty))
-        else {
-            return false;
-        };
-        self.class_names.contains_key(name.as_ref())
     }
 
     /// The members of the class the type `ty` names, its own first in declaration order and
@@ -382,22 +360,14 @@ impl ModuleIndex {
             .flatten()
     }
 
-    /// What a definition of the type `ty` is in a progs when it is a `__variant`, a truth
-    /// value or an integer narrower than a word, through a typedef: its words and its record's
-    /// type number (FTEF-19.84). None for any other type.
+    /// What a definition of the named type `ty` is in a progs, through a typedef: its words
+    /// and its record's type number, when they are not its basic type's alone. None for any
+    /// other type.
     #[must_use]
-    pub fn qc_only(&self, ty: &Type) -> Option<QcOnly> {
+    pub fn record(&self, ty: &Type) -> Option<RecordShape> {
+        // Only a named type has one, which spares hashing a function's whole type.
         matches!(ty, Type::Named(_))
-            .then(|| self.qc_only.get(ty).copied())
-            .flatten()
-    }
-
-    /// What a definition of the accessor type `ty` is in a progs: its base's words and
-    /// `ev_accessor`'s number (FTEF-10.15). None for any other type.
-    #[must_use]
-    pub fn accessor_shape(&self, ty: &Type) -> Option<AccessorShape> {
-        matches!(ty, Type::Named(_))
-            .then(|| self.accessor_shapes.get(ty).copied())
+            .then(|| self.records.get(ty).copied())
             .flatten()
     }
 

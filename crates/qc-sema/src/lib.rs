@@ -87,8 +87,8 @@ pub use expand::{ModuleInput, OriginMap};
 pub use lower::{Binum, FileDecls, LiteralValue};
 pub use resolve::InitialValue;
 pub use resolve::{
-    AccessorShape, FileDiagnostic, MemberShape, ModuleIndex, QcOnly, ResolveOptions, Scalar,
-    StructShape, resolve_module, resolve_module_at_targets,
+    FileDiagnostic, MemberShape, ModuleIndex, RecordShape, ResolveOptions, Scalar, StructShape,
+    resolve_module, resolve_module_at_targets,
 };
 pub use symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
 pub use ty::{FunctionType, SimpleType, Type};

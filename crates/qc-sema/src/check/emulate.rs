@@ -288,15 +288,14 @@ impl Checker<'_> {
     /// FTEF-34.9: the store a value of basic type `etype` is copied by, `OP_STORE_*`.
     pub(super) const fn store_op(etype: Option<Etype>) -> Op {
         match etype {
-            // A `__variant` is copied by its size, three words (FTEF-11.5).
-            Some(Etype::Vector | Etype::Variant) => Op::StoreV,
+            Some(Etype::Vector) => Op::StoreV,
             Some(Etype::String) => Op::StoreS,
             Some(Etype::Entity) => Op::StoreEnt,
             Some(Etype::Field) => Op::StoreFld,
             Some(Etype::Function) => Op::StoreFnc,
             Some(Etype::Integer | Etype::Uint | Etype::Boolean) => Op::StoreI,
             Some(Etype::Pointer) => Op::StoreP,
-            Some(Etype::Int64 | Etype::Uint64 | Etype::Double) => Op::StoreI64,
+            Some(Etype::Int64 | Etype::Uint64) => Op::StoreI64,
             _ => Op::StoreF,
         }
     }

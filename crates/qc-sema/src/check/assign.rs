@@ -314,31 +314,25 @@ impl Checker<'_> {
         });
         let folded = stored.temp.is_some() && stored.temp == self.last_temp && !wider;
         let structured = matches!(self.etype(&target), Some(Etype::Struct | Etype::Union));
+        // `QCC_StoreToSRef`'s `default:`: a type it has no case for is copied by its size.
+        let by_size = self.copied_by_size(&target);
         // FTEF-6.15: a bitfield, or an 8- or 16-bit element at a constant index, is stored by
         // packing the value into its word, which is the only statement that writes it.
         let packs = lhs.packs();
-        // FTE-14.6: a struct stored to a definition is copied by `STORE_V` for each three words
-        // and `STORE_F` for the rest, from a definition's or a block's words.
+        // FTE-14.6, FTEF-6.31: a struct stored to a definition is copied piece by piece from a
+        // definition's or a block's words, and so is any other type copied by its size whose
+        // store folds into no statement.
         let copied = matches!(kind, Assign::Store)
-            && structured
             && lhs.reference == Reference::Global
-            && self.copy_struct(&stored, lhs.name(), &target, span);
+            && (structured || !folded)
+            && by_size.is_some_and(|words| self.copy_by_size(&stored, lhs.name(), words, span));
         if matches!(kind, Assign::Store) && !copied && !packs {
             let store = self.store_of(&target);
             // The store chosen for the `=`, which the code generator reads.
             self.opcodes.insert((span.start, span.end), store);
             if lhs.reference == Reference::Global && !folded {
                 self.emit(store, &stored, &Value::unknown(), span)?;
-                // FTEF-11.5: a constant 0 stored to a `__variant` is the zero vector's words
-                // (`if (QCC_SRef_IsNull(source)) ... QCC_MakeVectorConst(0,0,0)`).
-                let zeroes = (store == Op::StoreV
-                    && self.etype(&target) == Some(Etype::Variant)
-                    && stored.null())
-                .then_some(ir::Name::Immediate(ir::Immediate {
-                    kind: ir::ImmediateKind::Vector,
-                    words: [0, 0, 0],
-                }));
-                self.name_last(store, zeroes.or_else(|| self.name_of(&stored)), lhs.name());
+                self.name_last(store, self.name_of(&stored), lhs.name());
                 // A converting store a helper emulates ends with a plain store of its value.
                 match store {
                     Op::StoreIf => self.name_last(Op::StoreF, None, lhs.name()),
@@ -1236,33 +1230,54 @@ impl Checker<'_> {
         Ok(())
     }
 
-    /// FTE-14.6: the struct `stored` of type `target` copied to the definition `to` by `STORE_V`
-    /// for each three words and `STORE_F` for the rest, when it is a definition's or a block's
-    /// words; whether it was.
-    fn copy_struct(
+    /// `QCC_StoreToSRef`'s `default:` (FTE-14.6, FTEF-2.13, FTEF-6.31, FTEF-11.5): `stored`, of
+    /// `words` words, copied to the definition `to` piece by piece ([`Checker::pieces`]), from
+    /// a definition's or a block's words, or, when it is a constant 0, from the zero of each
+    /// piece's size (`if (QCC_SRef_IsNull(source))`: `QCC_MakeVectorConst(0,0,0)`,
+    /// `QCC_MakeInt64Const(0)`, `QCC_MakeIntConst(0)`). Whether it was: a value that is
+    /// neither is left to its one statement.
+    fn copy_by_size(
         &mut self,
         stored: &Value,
         to: Option<ir::Name>,
-        target: &Type,
+        words: u32,
         span: Span,
     ) -> bool {
-        let from = self
-            .name_of(stored)
-            .filter(|name| matches!(name, ir::Name::Def(..) | ir::Name::Made(_)));
-        let (Some(from), Some(to)) = (from, to) else {
+        let Some(to) = to else {
             return false;
         };
         if self.global {
             return false;
         }
-        let size = self.env.layout(target).map_or(0, |l| l.words);
-        // FTEF-6.31: threes, then a pair where the target has `OP_STORE_I64`, then words.
-        for (op, word) in self.pieces(size, span) {
+        let null = stored.null();
+        let from = self
+            .name_of(stored)
+            .filter(|name| matches!(name, ir::Name::Def(..) | ir::Name::Made(_)));
+        if !null && from.is_none() {
+            return false;
+        }
+        for (op, word) in self.pieces(words, span) {
+            let a = if null {
+                let kind = match op {
+                    Op::StoreV => ir::ImmediateKind::Vector,
+                    Op::StoreI64 => ir::ImmediateKind::Int64,
+                    _ => ir::ImmediateKind::Integer,
+                };
+                Some(ir::Name::Immediate(ir::Immediate {
+                    kind,
+                    words: [0, 0, 0],
+                }))
+            } else {
+                from.and_then(|from| from.word(word))
+            };
             self.generated.push(ir::BodyStatement {
-                a: from.word(word),
+                a,
                 b: to.word(word),
                 ..ir::BodyStatement::bare(op)
             });
+        }
+        if let Some(offset) = stored.temp {
+            self.env.temps().free(offset);
         }
         self.last_temp = None;
         true
@@ -1429,23 +1444,34 @@ impl Checker<'_> {
         self.env.shape(ty).map(|s| s.etype)
     }
 
-    /// The store of a value of type `ty` to a definition, `QCC_StoreToSRef`: its basic type's,
-    /// but an accessor's by its words, `STORE_F` for one (FTEF-10.15).
+    /// The words of a value of type `ty` when `QCC_StoreToSRef` has no case for its type and
+    /// its `default:` copies it by its size: a struct, a union, a `__variant`, a double, an
+    /// integer narrower than a word, which is `ev_bitfld` (its layout says so through a
+    /// typedef), and an accessor (FTEF-2.13, FTEF-6.31, FTEF-10.15, FTEF-11.5). `None` for a
+    /// type with a case of its own.
+    pub(super) fn copied_by_size(&self, ty: &Type) -> Option<u32> {
+        let layout = self.env.layout(ty)?;
+        let narrow = layout.bits != 0 && layout.bits < WORD_ALIGNMENT;
+        let no_case = self.env.is_accessor(ty)
+            || match self.etype(ty) {
+                Some(Etype::Struct | Etype::Union | Etype::Variant | Etype::Double) => true,
+                Some(Etype::Integer | Etype::Uint) => narrow,
+                _ => false,
+            };
+        no_case.then_some(layout.words)
+    }
+
+    /// The one statement that stores a value of type `ty` to a definition, `QCC_StoreToSRef`:
+    /// its type's case, or for a type copied by its size the piece that is the whole of
+    /// three words, two or one ([`Checker::pieces`]). A copy of more pieces is
+    /// [`Checker::copy_by_size`]'s.
     pub(super) fn store_of(&self, ty: &Type) -> Op {
-        let words = self.env.layout(ty).map_or(1, |layout| layout.words);
-        if self.env.is_accessor(ty) && words == 1 {
-            return Op::StoreF;
+        match self.copied_by_size(ty) {
+            Some(VECTOR_WORDS) => Op::StoreV,
+            Some(2) => Op::StoreI64,
+            Some(_) => Op::StoreF,
+            None => Checker::store_op(self.etype(ty)),
         }
-        // FTEF-2.13: an integer narrower than a word is `ev_bitfld`, copied by its size, a
-        // word, with `OP_STORE_F`; its layout says so through a typedef too.
-        let narrow = self
-            .env
-            .layout(ty)
-            .is_some_and(|layout| layout.bits != 0 && layout.bits < WORD_ALIGNMENT);
-        if narrow && matches!(self.etype(ty), Some(Etype::Integer | Etype::Uint)) {
-            return Op::StoreF;
-        }
-        Checker::store_op(self.etype(ty))
     }
 }
 
