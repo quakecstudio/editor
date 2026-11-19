@@ -600,8 +600,6 @@ magic-number	crates/qc-sema/src/check/reference.rs	Checker::extend_bits:8
 magic-number	crates/qc-sema/src/check/reference.rs	Checker::load_from_array:3
 magic-number	crates/qc-sema/src/check/reference.rs	Checker::load_from_pointer:16
 magic-number	crates/qc-sema/src/check/reference.rs	Checker::load_from_pointer:8
-magic-number	crates/qc-sema/src/check/reference.rs	Checker::narrow_bitfield:31
-magic-number	crates/qc-sema/src/check/reference.rs	Checker::narrow_element:31
 magic-number	crates/qc-sema/src/check/reference.rs	Checker::narrow_local:31
 magic-number	crates/qc-sema/src/check/reference.rs	Checker::read:8
 magic-number	crates/qc-sema/src/check/reference.rs	narrow_bits:16

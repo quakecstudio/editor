@@ -195,6 +195,10 @@ impl Checker<'_> {
         // The step's opcode, which the code generator reads.
         self.opcodes.insert((span.start, span.end), op);
         let updated = self.emit(op, &variable, &by, span)?;
+        // FTEF-6.15: a step of a bitfield or a packed element is not followed.
+        if operand.packs() && !self.global {
+            self.followed = false;
+        }
         let updated = self.bit_copy(&updated, operand, span)?;
         self.update_stores(operand, &updated, &ty, span)?;
         self.store_reference(operand, &updated, span)?;

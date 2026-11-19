@@ -7,7 +7,7 @@
 //! value in one place, [`Value::place`], so that a read, a store, an address and an increment
 //! of a reference agree on where it is (FTEF-31.28, FTEF-31.32).
 
-use crate::check::reference::eval_int;
+use crate::check::reference::{eval_int, narrow_bits};
 use crate::check::{MemberStart, Reference, Sym, Value};
 use crate::ir;
 use crate::symbol::DefId;
@@ -62,6 +62,18 @@ impl<'a> Place<'a> {
 }
 
 impl Value {
+    /// Whether a store to the value packs it into a word (`QCC_PR_Statement_BitCopy`): a
+    /// bitfield, or an element at a constant index of an array of 8- or 16-bit integers, but
+    /// not what a pointer points at (FTEF-6.15, FTEF-2.12).
+    pub(crate) fn packs(&self) -> bool {
+        let element = matches!(&self.reference,
+            Reference::Element(element) if element.index.known().is_some());
+        match &self.reference {
+            Reference::Pointer(_) => false,
+            _ => self.bitfield.is_some() || (element && narrow_bits(&self.ty).is_some()),
+        }
+    }
+
     /// Where the value is in its definition, when it refers to one: a definition, a member of
     /// one, an element or a component of one, or an array named bare. `None` for a temporary,
     /// an immediate, and what is reached through a pointer, a field or an accessor.

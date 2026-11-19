@@ -206,9 +206,14 @@ impl Checker<'_> {
             } else {
                 constant.i()
             };
-            let at = u32::from_le_bytes(at.to_le_bytes());
-            let offset = at.wrapping_mul(bits) & 31;
-            return self.extend_bits(&value, offset, bits, span);
+            let (word, offset) = narrow_position(at, bits);
+            // The element's word of the array (`ret.ofs += bitofs>>5`), read at its bit.
+            let packed = Value {
+                reference: Reference::Global,
+                sym: value.sym.at(word),
+                ..value
+            };
+            return self.extend_bits(&packed, offset, bits, span);
         }
         let address = self.address_of(&value, span)?;
         let named = self.name_of(&address);
@@ -244,15 +249,25 @@ impl Checker<'_> {
         };
         let signed = matches!(lhs.ty.fteqcc_scalar(), Some(CScalar::Int8 | CScalar::Int16));
         let parent = if signed { "__int32" } else { "__uint32" };
-        Some(Value {
+        let (word, offset) = narrow_position(at, bits);
+        let packed = Value {
             ty: Type::Named(parent.into()),
             bitfield: Some(Bitfield {
                 bits,
-                offset: u32::from_le_bytes(at.to_le_bytes()).wrapping_mul(bits) & 31,
+                offset,
                 word: 0,
                 signed,
             }),
             ..lhs.clone()
+        };
+        // An element is the word of its array it is packed in (`ret.ofs += bitofs>>5`).
+        Some(match &lhs.reference {
+            Reference::Element(_) => Value {
+                reference: Reference::Global,
+                sym: lhs.sym.at(word),
+                ..packed
+            },
+            _ => packed,
         })
     }
 
@@ -1709,6 +1724,19 @@ const fn int_f32(value: i32) -> f32 {
     value as f32
 }
 
+/// The bits of a word, which an 8- or 16-bit element is packed into.
+const WORD_BITS: u32 = 32;
+
+/// The word of its array the narrow element at index `at` is in, and the bit of that word it
+/// starts at: `bitofs>>5` and `bitofs&31` of `bitofs = at * bits` (FTEF-2.12).
+fn narrow_position(at: i32, bits: u32) -> (u32, u32) {
+    let bit = u32::from_le_bytes(at.to_le_bytes()).wrapping_mul(bits);
+    (
+        bit.checked_div(WORD_BITS).unwrap_or_default(),
+        bit.checked_rem(WORD_BITS).unwrap_or_default(),
+    )
+}
+
 /// The bits of a byte, which the address of an 8- or 16-bit element counts in.
 const BYTE_BITS: u32 = 8;
 
@@ -1721,7 +1749,7 @@ fn element_bytes(bits: u32) -> Value {
 }
 
 /// The bits of an 8- or 16-bit integer type, `ev_bitfld`'s `bits` (FTEF-2.12).
-fn narrow_bits(ty: &Type) -> Option<u32> {
+pub(super) fn narrow_bits(ty: &Type) -> Option<u32> {
     match ty.fteqcc_scalar() {
         Some(CScalar::Int8 | CScalar::Uint8) => Some(8),
         Some(CScalar::Int16 | CScalar::Uint16) => Some(16),

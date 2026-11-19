@@ -4229,6 +4229,7 @@ const ADDRESSED: &str = "#pragma target fte_5768\n\
     entity self;\n.float health;\n\
     float g;\nfloat arr[4];\nvector varr[3];\npair_t gp;\npair_t sarr[3];\n\
     typedef struct { __int8 c; __int8 d; float f; } nar_t;\n\
+    typedef struct { int a : 4; int b : 6; } bits_t;\nbits_t gs;\n\
     wide_t wp;\nwide_t warr[3];\nint iarr[4];\n__int8 barr[8];\n__int16 harr[8];\n\
     nar_t ns;\nnar_t nsarr[2];\n__int8 gb;\n__double darr[4];\n__double dd;\n\
     const vector cv = '1 2 3';\n\
@@ -4337,6 +4338,72 @@ fn the_forms_not_followed_are_refused() {
         assert!(refused(statement), "{statement}");
     }
     assert!(!refused("bp = &gb;"));
+}
+
+// spec FTEF-2.12: an element at a constant index of an array of 8- or 16-bit integers is the
+// word of the array it is packed in, at its bit: read from that word, and stored by packing
+// the value into it
+#[test]
+fn a_narrow_element_at_a_constant_index_is_in_its_own_word() {
+    use qc_progs::Op;
+    for (statement, array, word) in [
+        ("ri = harr[2];", "harr", 1),
+        ("ri = harr[1];", "harr", 0),
+        ("ri = barr[5];", "barr", 1),
+        ("ri = barr[3];", "barr", 0),
+    ] {
+        let (progs, statements) = addressed(statement);
+        assert_eq!(
+            opcodes(&statements)[..2],
+            numbers([Op::LshiftI, Op::RshiftI]),
+            "{statement}"
+        );
+        assert_eq!(statements[0].a, global(&progs, array) + word, "{statement}");
+        assert_eq!(statements[1].c, global(&progs, "ri"), "{statement}");
+    }
+    for (statement, array, word, mask, shift) in [
+        ("harr[2] = ri;", "harr", 1, 0xffff_u32, 0_u32),
+        ("barr[5] = ri;", "barr", 1, 0xff, 8),
+    ] {
+        let (progs, statements) = addressed(statement);
+        assert_eq!(
+            opcodes(&statements)[..5],
+            numbers([Op::BitandI, Op::BitandI, Op::LshiftI, Op::BitorI, Op::Done]),
+            "{statement}"
+        );
+        let packed = global(&progs, array) + word;
+        assert_eq!(statements[0].a, packed, "{statement}");
+        assert_eq!(
+            words(&progs, statements[0].b, 1),
+            [!(mask << shift)],
+            "{statement}"
+        );
+        assert_eq!(statements[1].a, global(&progs, "ri"), "{statement}");
+        assert_eq!(words(&progs, statements[1].b, 1), [mask], "{statement}");
+        assert_eq!(words(&progs, statements[2].b, 1), [shift], "{statement}");
+        assert_eq!(statements[3].c, packed, "{statement}");
+    }
+    assert!(refused("barr[2]++;"));
+}
+
+// spec FTEF-6.15: a store to a bitfield reads its word, clears the field's bits, masks and
+// shifts the value and joins the two into the word, the only statement that writes it
+#[test]
+fn a_bitfield_store_packs_the_value_into_its_word() {
+    use qc_progs::Op;
+    let (progs, statements) = addressed("gs.b = ri;");
+    assert_eq!(
+        opcodes(&statements)[..5],
+        numbers([Op::BitandI, Op::BitandI, Op::LshiftI, Op::BitorI, Op::Done])
+    );
+    // The struct's one word, which both bitfields are in.
+    let word = statements[0].a;
+    assert!(word > 0);
+    assert_eq!(words(&progs, statements[0].b, 1), [!(0x3f_u32 << 4)]);
+    assert_eq!(words(&progs, statements[1].b, 1), [0x3f]);
+    assert_eq!(words(&progs, statements[2].b, 1), [4]);
+    assert_eq!(statements[3].c, word);
+    assert!(refused("gs.b += 1;"));
 }
 
 // spec FTEF-31.29: a vector in parentheses is read before its component is taken, and on a
