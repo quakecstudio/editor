@@ -7756,3 +7756,21 @@ fn a_member_with_no_pool_is_refused() {
     let refused = compile_fteqcc(&class("float sized[N]; float g;"));
     assert!(refused.is_err(), "{:?}", refused.map(drop));
 }
+
+// spec FTEF-27.21: a constant 0 passed for a vector parameter is stored from the zero vector,
+// not from the one word of the constant and the two globals after it
+#[test]
+fn a_zero_argument_of_a_vector_parameter_reads_the_zero_vector() {
+    let p = fte_progs(
+        "void(float a, vector v) two = #3;\nfloat g;\nvoid() t = { two(g, 0); two(g, 0i); };\n",
+    );
+    let zero = immediate_vector(&p, [0.0; 3]);
+    let stores: Vec<_> = body(&p, "t")
+        .into_iter()
+        .filter(|s| s.op == u32::from(StoreV.number()))
+        .collect();
+    assert_eq!(stores.len(), 2);
+    for store in stores {
+        assert_eq!(store, st(StoreV, zero, 7, 0));
+    }
+}

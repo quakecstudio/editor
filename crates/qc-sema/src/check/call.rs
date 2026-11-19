@@ -701,7 +701,8 @@ impl Checker<'_> {
                 let from = if defaulted.get(at).copied().unwrap_or(false) {
                     params.get(at).and_then(|param| param.default_name(at))
                 } else {
-                    renamed(self.name_of(value))
+                    // FTEF-27.21: a constant 0 is read from a zero of the store's size.
+                    renamed(self.store_source(store, value))
                 };
                 self.generated.push(ir::BodyStatement {
                     a: from,
