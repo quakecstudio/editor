@@ -1276,7 +1276,11 @@ pub(crate) fn type_words(index: &ModuleIndex, ty: &ValueType) -> u32 {
             || {
                 let accessor = index.accessor_shape(t).map(|shape| shape.words);
                 let scalar = index.scalar(t).map(|scalar| scalar.words);
-                accessor.or(scalar).unwrap_or_else(|| ty.words())
+                let qc_only = index.qc_only(t).map(|shape| shape.words);
+                accessor
+                    .or(scalar)
+                    .or(qc_only)
+                    .unwrap_or_else(|| ty.words())
             },
             |s| s.words,
         ),
@@ -1292,6 +1296,7 @@ pub(crate) fn type_number(index: &ModuleIndex, ty: &ValueType) -> u16 {
         ValueType::Of(t) => index
             .accessor_shape(t)
             .map(|shape| shape.number)
+            .or_else(|| index.qc_only(t).map(|shape| shape.number))
             .or_else(|| index.scalar(t).map(|scalar| scalar.number)),
         ValueType::FloatField => None,
     };

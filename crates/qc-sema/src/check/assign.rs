@@ -1426,6 +1426,14 @@ impl Checker<'_> {
         if self.env.is_accessor(ty) && words == 1 {
             return Op::StoreF;
         }
+        // FTEF-2.13: an integer narrower than a word is `ev_bitfld`, copied by its size, a
+        // word, with `OP_STORE_F`.
+        if matches!(
+            ty.fteqcc_scalar(),
+            Some(CScalar::Int8 | CScalar::Uint8 | CScalar::Int16 | CScalar::Uint16)
+        ) {
+            return Op::StoreF;
+        }
         Checker::store_op(self.etype(ty))
     }
 }

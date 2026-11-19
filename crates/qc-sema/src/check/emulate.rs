@@ -288,7 +288,8 @@ impl Checker<'_> {
     /// FTEF-34.9: the store a value of basic type `etype` is copied by, `OP_STORE_*`.
     pub(super) const fn store_op(etype: Option<Etype>) -> Op {
         match etype {
-            Some(Etype::Vector) => Op::StoreV,
+            // A `__variant` is copied by its size, three words (FTEF-11.5).
+            Some(Etype::Vector | Etype::Variant) => Op::StoreV,
             Some(Etype::String) => Op::StoreS,
             Some(Etype::Entity) => Op::StoreEnt,
             Some(Etype::Field) => Op::StoreFld,
@@ -867,7 +868,10 @@ impl Checker<'_> {
             return Ok(result);
         }
         if op == Op::ConvUf {
-            self.emit(Op::ConvItof, value, &Value::unknown(), span)?;
+            // The value is the `OP_CONV_ITOF`'s, which a store folds into (FTEF-29.13).
+            let converted = self.emit(Op::ConvItof, value, &Value::unknown(), span)?;
+            self.env.report(code, span, message);
+            return Ok(converted);
         }
         self.env.report(code, span, message);
         // `5i / 1i` and `5.0 * 1i` of the integer constant 1 (`QCC_MakeIntConst(1)`), made

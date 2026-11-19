@@ -15,7 +15,8 @@ use crate::check::etype::Etype;
 use crate::lower::LiteralValue;
 use crate::lower::{ArrayDim, StructMember};
 use crate::resolve::{
-    AccessorShape, InitialValue, MAX_CLASS_DEPTH, MemberShape, Resolver, Scalar, StructShape,
+    AccessorShape, InitialValue, MAX_CLASS_DEPTH, MemberShape, QcOnly, Resolver, Scalar,
+    StructShape,
 };
 use crate::symbol::DefId;
 use crate::ty::Type;
@@ -321,6 +322,14 @@ impl Resolver<'_> {
                         self.index.scalars.insert(self.resolved(&ty), scalar);
                         self.index.scalars.insert(ty.clone(), scalar);
                     }
+                    // FTEF-19.84: a `__variant`, a truth value and a narrow integer are
+                    // written with their own numbers too.
+                    if !self.index.qc_only.contains_key(&ty)
+                        && let Some(shape) = self.qc_only_of(&ty)
+                    {
+                        self.index.qc_only.insert(self.resolved(&ty), shape);
+                        self.index.qc_only.insert(ty.clone(), shape);
+                    }
                     // FTEF-10.15: an accessor type is `ev_accessor`, of its base's words.
                     if !self.index.accessor_shapes.contains_key(&ty)
                         && self.is_accessor_type(&ty)
@@ -368,6 +377,33 @@ impl Resolver<'_> {
             words: self.layout(ty)?.words,
             number: etype.scalar_number()?,
             kind,
+        })
+    }
+
+    /// What a definition of `ty` is in a progs when `ty` is a `__variant`, a truth value or
+    /// an integer narrower than a word (FTEF-19.84).
+    fn qc_only_of(&self, ty: &Type) -> Option<QcOnly> {
+        let resolved = self.resolved(ty);
+        let narrow = matches!(
+            resolved.fteqcc_scalar(),
+            Some(CScalar::Int8 | CScalar::Uint8 | CScalar::Int16 | CScalar::Uint16)
+        );
+        let truth = matches!(
+            resolved.fteqcc_scalar(),
+            Some(CScalar::Bool | CScalar::BFloat)
+        );
+        let number = if narrow {
+            Etype::BITFLD_NUMBER
+        } else if truth {
+            Etype::BOOLEAN_NUMBER
+        } else if self.shape(&resolved)?.etype == Etype::Variant {
+            Etype::VARIANT_NUMBER
+        } else {
+            return None;
+        };
+        Some(QcOnly {
+            words: self.layout(ty)?.words,
+            number,
         })
     }
 

@@ -658,7 +658,7 @@ impl Etype {
     /// The words a value of this basic type takes, `type->size`.
     pub(crate) const fn words(self) -> u32 {
         match self {
-            Self::Vector => VECTOR_WORDS,
+            Self::Vector | Self::Variant => VECTOR_WORDS,
             Self::Int64 | Self::Uint64 | Self::Double => 2,
             _ => 1,
         }

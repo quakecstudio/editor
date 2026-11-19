@@ -62,9 +62,19 @@ impl Etype {
         Self::Double,
     ];
 
+    /// `ev_variant` in FTEQCC's `etype_t`, after `ev_double` (FTEF-19.84).
+    pub(crate) const VARIANT_NUMBER: u16 = 13;
+
     /// `ev_accessor` in FTEQCC's `etype_t`, after `ev_variant`, `ev_struct` and `ev_union`
     /// (FTEF-10.15).
     pub(crate) const ACCESSOR_NUMBER: u16 = 16;
+
+    /// `ev_boolean` in FTEQCC's `etype_t`, after `ev_accessor`, `ev_enum` and `ev_typedef`
+    /// (FTEF-19.84).
+    pub(crate) const BOOLEAN_NUMBER: u16 = 19;
+
+    /// `ev_bitfld` in FTEQCC's `etype_t`, the last (FTEF-19.84).
+    pub(crate) const BITFLD_NUMBER: u16 = 20;
 
     /// Its number in a definition's record when it is one of C's scalars: an integer of 32
     /// or 64 bits or a double, `ev_integer` to `ev_double` (FTEF-19.81).

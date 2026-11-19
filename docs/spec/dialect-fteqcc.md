@@ -114,8 +114,8 @@ corpus uses `int` heavily (3392 occurrences across the three mods) and `bool` (1
   at `int`). Replaced by FTEF-2.8 and FTEF-2.9.
 - **FTEF-2.5** **Withdrawn** (P2-117, #545): it said `volatile` is accepted, but
   `keyword_volatile` is disabled by default. Replaced by FTEF-2.11.
-- **FTEF-2.6** Codegen (later): how each width is stored and which need version 7 is fixed by
-  L-01.
+- **FTEF-2.6** **Withdrawn** 2026-11-19: it deferred how each width is stored to L-01;
+  replaced by FTEF-2.13.
 - **FTEF-2.7** A C type word is matched as `QCC_PR_CheckKeyword(keywordenabled, string)` matches
   it: a token that starts with `__` matches its keyword in any case whether or not the keyword
   is enabled (`if (pr_token[0] == '_' && pr_token[1] == '_') { if (stricmp(string,
@@ -184,6 +184,21 @@ corpus uses `int` heavily (3392 occurrences across the three mods) and `bool` (1
   and stored through its address (FTEF-6.18). FTEQCC prints "INTERNAL: over-freed refcount to
   NAME" for such a local's initialiser, its own temporaries' bookkeeping, which the semantic model
   does not report.
+- **FTEF-2.13** Each width is stored by its size. A 32-bit integer is one word and a 64-bit
+  integer or a double two, written with their own type numbers (FTEF-19.81); an 8- or 16-bit
+  integer that is a definition of its own, no member, is one word written `ev_bitfld`, and a
+  truth value one word written `ev_boolean` (FTEF-19.84). A store to a definition that folds
+  into no statement (FTEF-29.13) is `QCC_StoreToSRef`'s: `OP_STORE_I` for a 32-bit integer
+  (`case ev_integer: case ev_uint:`) and a truth value of one, which is stored as its
+  `parentclass` (`case ev_boolean: QCC_StoreToSRef(dest, source, type->parentclass, ...)`),
+  `OP_STORE_I64` for a 64-bit integer or a double, and for an 8- or 16-bit integer, which has
+  no case, the `default:` that copies the type's words, here one `OP_STORE_F` (`for (; i <
+  type->size; i++, dest.ofs++, source.ofs++) QCC_PR_SimpleStatement(&pr_opcodes[OP_STORE_F],
+  source, dest, nullsref, false);`): `__int8 c; int a; c = a;` is `STORE_F a, c`. No width
+  chooses the progs format, which is the target's (FTE-24.1, FTE-24.3); an opcode of a width
+  that the target lacks is emulated or refused (FTEF-27). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_StoreToSRef`.
 
 ## FTEF-3 Integer, double and typed numeric literals
 
@@ -1039,14 +1054,26 @@ Vanilla `qcc` has no `__variant`; the word is a name and "not a type" (QC-11). T
   values, and `__variant *` (FTEF-4) for untyped memory.
 - **FTEF-11.2** An assignment or call that mixes `__variant` with a concrete type resolves
   without a type error, because of FTEF-11.1; the concrete type governs the operation.
-- **FTEF-11.3** Codegen (later): how a `__variant` value is stored and dispatched is fixed by
-  L-01.
+- **FTEF-11.3** **Withdrawn** 2026-11-19: it deferred how a `__variant` is stored to L-01;
+  replaced by FTEF-11.5.
 - **FTEF-11.4** FTEF-11.1 holds only after `typecmp_lax` compares the two types' `aux_type`s
   (`if (typecmp_lax(a->aux_type, b->aux_type)) return 1;` comes before the `ev_variant` return),
   so a `__variant` differs from a pointer or a function, whose `aux_type` it lacks: `float **p;
   __variant *q; q = p;` and `void() *r; q = r;` are `W0220` "Implicit cast from float** to
   __variant*", as is `p = q;`, while `__variant **t; t = p;` and `string *s; q = s;` cast with
   no warning.
+- **FTEF-11.5** A `__variant` definition, a global, a local or a parameter, is three words
+  (FTEF-19.84), and nothing in it says what was stored: no opcode is chosen by a `__variant`'s
+  value. A store to one that folds into no statement (FTEF-29.13) copies its size whatever the
+  value's type: `QCC_StoreToSRef` has no case for `ev_variant`, so its `default:` writes
+  `OP_STORE_V` for each three words (`for (i = 0; i+2 < type->size; i+=3, dest.ofs += 3,
+  source.ofs += 3) QCC_PR_SimpleStatement(&pr_opcodes[OP_STORE_V], source, dest, nullsref,
+  false);`), so `v = f` of a float `f`, `v = i` of an `int` and `v = s` of a string are each
+  `STORE_V` of the value's definition, which reads the two words after a one-word value. A
+  value read from one is stored by the target's type: `f = v` is `STORE_F`, `vec = v`
+  `STORE_V` and `e = v` `STORE_ENT`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_StoreToSRef`; `engine/qclib/qcc_cmdlib.c`, `type_size`.
 
 ## FTEF-12 The remaining `#pragma` directives
 
@@ -3867,6 +3894,17 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   (1u<<reloffset)) QCC_PR_ParseError (ERR_EXPECTED, "%s.%s was already ininitialised",
   type->name, mname);`). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseInitializerType_Internal`.
+- **FTEF-19.84** A definition of one of the types the engine has none of is written with that
+  type's own number too (`dd->type = def->type->type;`, FTEF-19.81), as `etype_t` numbers them
+  after `ev_double`, 12: `ev_variant` 13 for a `__variant`, `ev_boolean` 19 for a truth value,
+  `_Bool` or `__bfloat`, and `ev_bitfld` 20 for an 8- or 16-bit integer (`ev_variant,
+  ev_struct, ev_union, ev_accessor, ev_enum, ev_typedef, ev_boolean, ev_bitfld`), through a
+  typedef. A `__variant` takes three words (`type_size[]`: `3, //fixme: how big should a
+  variant be?`) and each of the others one: `__variant v; _Bool b; __int8 c; __uint16 h; float
+  t;` puts `b` three words after `v` and `c`, `h` and `t` a word after each other. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/progslib.h`,
+  `etype_t`; `engine/qclib/qcc_cmdlib.c`, `type_size`; `engine/qclib/qccmain.c`,
+  `QCC_WriteData`.
 
 ## FTEF-20 Keywords
 

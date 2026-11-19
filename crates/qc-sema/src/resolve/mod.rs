@@ -127,6 +127,9 @@ pub struct ModuleIndex {
     /// Each accessor type a definition is written with, with its words and record number
     /// (FTEF-10.15).
     pub(crate) accessor_shapes: HashMap<Type, AccessorShape>,
+    /// Each `__variant`, truth or narrow integer type a definition is written with, with its
+    /// words and record number (FTEF-19.84).
+    pub(crate) qc_only: HashMap<Type, QcOnly>,
     /// The type each named type a definition is written with stands for, when it is another:
     /// a typedef's, or an enum's base type (FTEF-7.2, FTEF-19.10).
     pub(crate) aliases: HashMap<Type, Type>,
@@ -157,6 +160,16 @@ pub struct Scalar {
     pub number: u16,
     /// Which scalar it is: an integer of 32 or 64 bits, signed or not, or a double.
     pub kind: CScalar,
+}
+
+/// One of FTEQCC's types the engine has none of, as a progs holds a definition of it
+/// (FTEF-19.84): a `__variant`, a truth value or an integer narrower than a word.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct QcOnly {
+    /// The words a value takes, `type->size`.
+    pub words: u32,
+    /// Its number in a definition's record, FTEQCC's `etype_t`.
+    pub number: u16,
 }
 
 /// An accessor type as a progs holds a definition of it (FTEF-10.15).
@@ -354,6 +367,16 @@ impl ModuleIndex {
         // Only a named type can be one, which spares hashing a function's whole type.
         matches!(ty, Type::Named(_))
             .then(|| self.scalars.get(ty).copied())
+            .flatten()
+    }
+
+    /// What a definition of the type `ty` is in a progs when it is a `__variant`, a truth
+    /// value or an integer narrower than a word, through a typedef: its words and its record's
+    /// type number (FTEF-19.84). None for any other type.
+    #[must_use]
+    pub fn qc_only(&self, ty: &Type) -> Option<QcOnly> {
+        matches!(ty, Type::Named(_))
+            .then(|| self.qc_only.get(ty).copied())
             .flatten()
     }
 

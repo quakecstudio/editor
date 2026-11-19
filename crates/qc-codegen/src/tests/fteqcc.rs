@@ -6069,3 +6069,89 @@ fn a_member_named_twice_is_already_initialised() {
         "{diagnostics:?}"
     );
 }
+
+// spec FTEF-27.8, FTEF-29.13: an unsigned value stored to a float is converted by
+// `OP_CONV_ITOF`, and the store folds into that statement, which writes the float itself
+#[test]
+fn an_unsigned_value_stored_to_a_float_is_converted_into_it() {
+    let progs = compile_fteqcc(
+        "#pragma target fte\n__uint u;\nint a;\n__uint8 b;\nfloat x;\nfloat y;\n\
+         void() f = { x = u; y = a + b; };\n",
+    )
+    .unwrap()
+    .progs;
+    let conv = u32::try_from(qc_progs::Op::ConvItof.number()).unwrap();
+    let written: Vec<i32> = body(&progs, "f")
+        .iter()
+        .filter(|s| s.op == conv)
+        .map(|s| s.c)
+        .collect();
+    assert_eq!(written, [global(&progs, "x"), global(&progs, "y")]);
+}
+
+/// The record type of the global `name`, its save bit left out.
+fn record_type(progs: &ProgsFile, name: &str) -> u32 {
+    let def = progs
+        .global_defs
+        .iter()
+        .find(|d| string(progs, d.s_name) == name)
+        .unwrap();
+    def.type_bits & 0x7fff
+}
+
+// spec FTEF-19.84: a `__variant`, a truth value and an integer narrower than a word are written
+// with their own type numbers, 13, 19 and 20, a `__variant` in three words and the others in one
+#[test]
+fn a_variant_a_truth_value_and_a_narrow_integer_have_their_own_records() {
+    let progs = compile_fteqcc(
+        "#pragma target fte\n__variant v;\n_Bool b;\n__bfloat bf;\n__int8 c;\n__uint16 h;\n\
+         typedef __variant any;\nany w;\nfloat tail;\n",
+    )
+    .unwrap()
+    .progs;
+    let types = ["v", "b", "bf", "c", "h", "w"].map(|name| record_type(&progs, name));
+    assert_eq!(types, [13, 19, 19, 20, 20, 13]);
+    let offsets = ["v", "b", "bf", "c", "h", "w", "tail"].map(|name| global(&progs, name));
+    let steps: Vec<i32> = offsets.windows(2).map(|pair| pair[1] - pair[0]).collect();
+    assert_eq!(steps, [3, 1, 1, 1, 1, 3]);
+}
+
+// spec FTEF-11.5: a store to a `__variant` is `OP_STORE_V` whatever the value, and a value
+// read from one is stored by the target's type; a parameter and a local of it are three words
+#[test]
+fn a_variant_is_stored_whole_and_read_by_the_targets_type() {
+    use qc_progs::Op::{StoreEnt, StoreF, StoreV};
+    let progs = compile_fteqcc(
+        "#pragma target fte\nfloat x;\nvector w;\nstring s;\nentity e;\nint i;\n\
+         __variant v;\n__variant u;\n\
+         void() f = { v = x; v = w; v = s; v = i; u = v; x = v; w = v; e = v; };\n\
+         void(__variant p, float q) g = { local __variant l; l = p; x = q; };\n",
+    )
+    .unwrap()
+    .progs;
+    let stores: Vec<u32> = body(&progs, "f").iter().map(|s| s.op).collect();
+    let expected = numbers([
+        StoreV, StoreV, StoreV, StoreV, StoreV, StoreF, StoreV, StoreEnt,
+    ]);
+    assert_eq!(stores.get(..8), Some(&expected[..]));
+    let g = function(&progs, "g");
+    assert_eq!(g.parm_size[..2], [3, 1]);
+    assert_eq!(g.locals, 7, "p, q and l");
+}
+
+// spec FTEF-2.13: a store to an 8- or 16-bit integer definition that folds into no statement is
+// `OP_STORE_F`, a 32-bit one's `OP_STORE_I` and a 64-bit one's or a double's `OP_STORE_I64`
+#[test]
+fn each_width_is_stored_by_its_size() {
+    use qc_progs::Op::{StoreF, StoreI, StoreI64};
+    let progs = compile_fteqcc(
+        "#pragma target fte\nint a;\n__int8 c;\n__uint16 h;\n__uint u;\n__int64 l;\n\
+         __int64 m;\n__double d;\n__double k;\n\
+         void() f = { c = a; h = a; u = a; l = m; d = k; };\n",
+    )
+    .unwrap()
+    .progs;
+    let stores: Vec<u32> = body(&progs, "f").iter().map(|s| s.op).collect();
+    let expected = numbers([StoreF, StoreF, StoreI, StoreI64, StoreI64]);
+    assert_eq!(stores.get(..5), Some(&expected[..]));
+}
