@@ -8068,3 +8068,92 @@ fn a_global_array_of_fields_is_laid_out_and_indexed() {
     assert_eq!((f[0].b, f[2].b, f[3].a), (slots + 2, 4, slots));
     assert_eq!(f[5].b, global(&p, "vs") + 4, "the second vector's y");
 }
+
+// spec FTEF-30.19: a constant condition whose comparison with 0 folds is no statement, so the
+// statement before it keeps its own operand
+#[test]
+fn a_folded_condition_leaves_the_statement_before_it() {
+    let p = fte_progs(
+        "#pragma flag enable iffloat\nfloat x; float y; float a; float b;\n\
+         void() f = { y = 2; x = 1 ? a : b; };\n",
+    );
+    assert_eq!(
+        body(&p, "f")[0],
+        st(StoreF, immediate(&p, 2.0), global(&p, "y"), 0)
+    );
+}
+
+const INDEXED_HEADER: &str = "#pragma target fte\nentity self;\nvoid end_sys_globals;\n\
+    .float modelindex; .entity owner;\nvoid end_sys_fields;\nfloat x; float n;\n\
+    .float slots[4];\nfloat() pick = #1;\nfloat() other = #2;\n";
+
+// spec FTEF-31.34: the entity an array of fields is read through is loaded after an index that
+// calls, the call's value still read from the return global; an index that branches is not
+// moved over, and is refused
+#[test]
+fn an_entity_is_loaded_after_an_index_that_calls() {
+    let p = fte_progs(&format!(
+        "{INDEXED_HEADER}void() f = {{ self.owner.slots[pick()] = 5; }};\n"
+    ));
+    assert_eq!(
+        names_in(&p, "f"),
+        [
+            "CALL0",
+            "CONV_FI",
+            "BOUNDCHECK",
+            "LOADF_ENT",
+            "LOADA_FLD",
+            "STOREF_F"
+        ]
+    );
+    let f = body(&p, "f");
+    assert_eq!(f[1].a, 1, "the call's value");
+    assert_eq!((f[5].a, f[5].b), (f[3].c, f[4].c));
+    let branching =
+        format!("{INDEXED_HEADER}void() f = {{ self.owner.slots[(n > 2) ? 0 : 1] = 5; }};\n");
+    assert!(compile_fteqcc(&branching).is_err());
+}
+
+// spec FTEF-30.11: `sizeof` of an operand that calls drops the call, and a later call copies
+// no value of it out of the return global
+#[test]
+fn sizeof_of_a_call_leaves_no_call_to_copy() {
+    let p = fte_progs(&format!(
+        "{INDEXED_HEADER}void() f = {{ x = sizeof(pick()) + other(); }};\n"
+    ));
+    assert_eq!(names_in(&p, "f"), ["CALL0", "ADD_F"]);
+}
+
+// spec FTEF-6.31: a value copied by its size from a call's value reads the return global, and
+// the next call copies nothing out of it
+#[test]
+fn a_copy_of_a_calls_value_is_not_copied_again() {
+    let p = fte_progs(&format!(
+        "{INDEXED_HEADER}__double d;\n__double() wide = #3;\n\
+         void() f = {{ d = wide(); x = other(); }};\n"
+    ));
+    let names = names_in(&p, "f");
+    assert_eq!(names.iter().filter(|n| n.starts_with("CALL")).count(), 2);
+    assert_eq!(names.len(), 4, "{names:?}");
+}
+
+// spec FTEF-9.29: a member of a type FTEQCC has no pool for, an accessor's, a truth value's or
+// a narrow integer's, is refused where its class is declared
+#[test]
+fn a_member_of_a_type_with_no_pool_is_refused_at_its_class() {
+    for member in ["_Bool b;", "__int8 c;", "__int16 s;"] {
+        let source = format!(
+            "{CLASS_HEADER}float before;\nclass A {{ float f; {member} }};\n\
+             void(A a) use = {{ a.f = 1; }};\n"
+        );
+        let class = source.find("class A").unwrap();
+        match compile_fteqcc(&source) {
+            Err(CompileError::Internal {
+                internal: Internal::Unsupported,
+                span,
+                ..
+            }) => assert!(span.start >= class, "{member}: at {span:?}"),
+            other => panic!("{member}: {:?}", other.map(drop)),
+        }
+    }
+}

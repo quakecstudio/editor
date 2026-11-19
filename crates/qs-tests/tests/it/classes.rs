@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! FTEQCC classes compiled by `qc-codegen` and run in `qc-vm` (FTEF-9.29 to FTEF-9.23): a
+//! FTEQCC classes compiled by `qc-codegen` and run in `qc-vm` (FTEF-9.23, FTEF-9.27, FTEF-9.29): a
 //! spawned class's entity holds its members, its class's name and its virtual functions, set by
 //! the spawn function the compiler writes.
 

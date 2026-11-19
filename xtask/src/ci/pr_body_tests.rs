@@ -265,6 +265,8 @@ fn a_body_with_a_finding_left_unfixed_does_not_land() {
         "- Stays as it is: Justin decided on 2026-11-19 that the bare binary's title is not changed.",
         "- Not changed: the title. It was decided by Justin on 2026-11-19.",
         "- Left as it is. Justin has decided the palette waits.",
+        "- The wrapper was not changed: Justin decided it stays.",
+        "- Fixed: `deferred_store` no longer reads the slot twice.",
         "Nothing found.",
     ] {
         assert!(reviewed(&review(items)), "{items:?}");

@@ -1751,10 +1751,10 @@ impl FunctionType {
     }
 }
 
-/// `CALL0` to `CALL8`, the call of `passed` arguments, the opcode of the count (QC-18.3).
 /// The slot of the value an array's setter stores, `ArraySet*NAME(index, value)`'s second.
 const SETTER_VALUE_SLOT: usize = 1;
 
+/// `CALL0` to `CALL8`, the call of `passed` arguments, the opcode of the count (QC-18.3).
 pub(super) fn call_opcode(passed: usize) -> Option<Op> {
     Op::CALLS.get(passed).copied()
 }

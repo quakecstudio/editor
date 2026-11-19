@@ -113,8 +113,6 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    /// Records an FTEQCC class and declares its members (FTEF-17.1, FTEF-17.2). A member is a
-    /// definition of the class, not a global by its name.
     /// FTEF-31.2: the length of the member array `member` is, the integer its size is
     /// (`QCC_PR_IntConstExpr`): a number as written, any other expression folded as a
     /// definition's size is (FTEF-19.62), a constant's name among them. `None` for no array.
@@ -130,6 +128,8 @@ impl<'a> Resolver<'a> {
         Some(folded.map_or(ArrayDim::Unknown, ArrayDim::Sized))
     }
 
+    /// Records an FTEQCC class and declares its members (FTEF-17.1, FTEF-17.2). A member is a
+    /// definition of the class, not a global by its name.
     pub(in crate::resolve) fn declare_class(
         &mut self,
         file: FileId,

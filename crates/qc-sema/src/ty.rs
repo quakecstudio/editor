@@ -477,10 +477,6 @@ impl SimpleType {
     }
 }
 
-/// A default value as `QCC_VarAtOffset` prints the constant it is once cast to the parameter's
-/// type `ty` (FTEF-24.7): a float `%gf`, a double `%gd`, an `int` `%#xi`, a `uint` `%#xu`, a
-/// 64-bit integer `%#xill` or `%#xull` (`0` for zero), a vector `'%g %g %g'`, a string quoted;
-/// any other expression as written.
 /// The constant a parameter of type `ty` is given by the default `value`: a float's or an
 /// integer's number, and a null for any type (`__NULL__`, `0`); `None` for any other value.
 fn default_immediate(value: &ast::Expr, ty: &Type) -> Option<Immediate> {
@@ -511,6 +507,10 @@ fn default_immediate(value: &ast::Expr, ty: &Type) -> Option<Immediate> {
     }
 }
 
+/// A default value as `QCC_VarAtOffset` prints the constant it is once cast to the parameter's
+/// type `ty` (FTEF-24.7): a float `%gf`, a double `%gd`, an `int` `%#xi`, a `uint` `%#xu`, a
+/// 64-bit integer `%#xill` or `%#xull` (`0` for zero), a vector `'%g %g %g'`, a string quoted;
+/// any other expression as written.
 fn default_text(value: &ast::Expr, ty: &Type) -> String {
     let written = String::from_utf8_lossy(&value.syntax().text())
         .trim()

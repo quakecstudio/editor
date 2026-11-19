@@ -1482,6 +1482,8 @@ impl Checker<'_> {
         if let Some(offset) = stored.temp {
             self.env.temps().free(offset);
         }
+        // The copy read a call's value, which no later call then copies out.
+        self.read_returned(stored);
         self.last_temp = None;
         true
     }

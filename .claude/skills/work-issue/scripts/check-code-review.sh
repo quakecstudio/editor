@@ -6,8 +6,8 @@
 # with the review skipped. It also refuses a section that leaves a finding unfixed: an item or
 # paragraph that says a finding was not changed, not fixed, left as it is, left for later,
 # deferred, skipped, out of scope or kept for a change of its own, unless the item says Justin
-# decided it, in those words and with nothing before them that hedges or negates it ("Justin has
-# not decided", "until Justin decides"). A finding is fixed on the branch, in its proper place, or it is his call
+# decided it, in those words and with nothing before them in their clause that hedges or negates
+# it ("Justin has not decided", "until Justin decides"). Text in code marks is not read. A finding is fixed on the branch, in its proper place, or it is his call
 # (development-discipline.md, rule 6). The words are matched as they are written, so an item
 # about a fixed finding that happens to use one ("no longer deferred") is reworded.
 # Usage: check-code-review.sh < body
@@ -54,14 +54,20 @@ perl -e '
     }xi;
     for my $sentence (split /(?<=[.!?;])\s+/, $item) {
       next unless $sentence =~ $said;
+      # The clause the words are in: what follows the last ":", ";" or "," before them, so
+      # "not changed: Justin decided it stays" is his decision and "not fixed, pending what
+      # Justin decided to look at" is none.
       my $before = substr($sentence, 0, $-[0]);
+      $before =~ s/^.*[:;,]//s;
       return 1 unless $before =~ $hedge;
     }
     return 0;
   }
   my $bad = 0;
   for my $item (split /\n[ \t]*\n|\n(?=[ \t]*(?:[-*+]|\d+[.)])[ \t])/, $section) {
-    next unless $item =~ $deferred;
+    # A name in code marks, such as `deferred_store`, is not prose.
+    my $prose = $item =~ s/`[^`\n]*`//gr;
+    next unless $prose =~ $deferred;
     next if decided($item);
     my $flat = $item =~ s/\s+/ /gr;
     print "The \"## Code review\" section leaves a finding unfixed: $flat\n";

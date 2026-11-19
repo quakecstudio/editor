@@ -291,9 +291,13 @@ impl Checker<'_> {
                 ty: value.ty.clone(),
                 ..Value::constant(zero)
             };
+            let before = self.generated.len();
             let compared = self.emit(compare, value, &zero, span)?;
-            // The operand of a `NOT` the jump dropped, not the temporary it made.
-            if let Some(statement) = self.generated.last_mut() {
+            // The operand of a `NOT` the jump dropped, not the temporary it made; a comparison
+            // of constants folds and is no statement.
+            if self.generated.len() > before
+                && let Some(statement) = self.generated.last_mut()
+            {
                 statement.a = condition;
             }
             condition = compared.name();

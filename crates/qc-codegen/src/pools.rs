@@ -38,6 +38,10 @@ pub(crate) enum Slot {
     /// In the entity field of its name (`d = QCC_PR_GetDef(NULL, parmname, NULL, 0, 0,
     /// GDF_CONST); if (d) basicindex = 0;`).
     EntityField(DefId),
+    /// Nowhere: a member the model cannot size, or of a type FTEQCC has no pool for (it
+    /// reads `*basictypes[newparm->type]` of a null for an accessor's, a truth value's or a
+    /// narrow integer's, and stops there).
+    Unsupported,
     /// In a pool.
     Pooled {
         /// Which of [`Pools::pools`].
@@ -47,6 +51,15 @@ pub(crate) enum Slot {
         /// The elements `::TYPE[N]` the pool grew by to hold it.
         grown: Range<u32>,
     },
+}
+
+/// Who made a class's field member.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum Made {
+    /// The program, which declares it.
+    Declared,
+    /// The compiler: a vector member's `_x`, `_y` or `_z`.
+    Component,
 }
 
 /// A pool of fields, `::*TYPE`.
@@ -91,6 +104,8 @@ pub(crate) struct Pools {
     pub(crate) pools: Vec<Pool>,
     /// The members that have a slot, in declaration order.
     pub(crate) members: Vec<DefId>,
+    /// Each class's field members by name and by who made them.
+    named: HashMap<(DefId, String, Made), DefId>,
 }
 
 impl Pools {
@@ -99,28 +114,42 @@ impl Pools {
     ///
     /// # Errors
     ///
-    /// [`Internal::Unsupported`] for a member the model cannot size, after which no later
-    /// member's place is known, and for a member of a type FTEQCC has no pool for.
+    /// [`Internal::TooLarge`] for a pool past what an offset holds.
     pub(crate) fn of(index: &ModuleIndex) -> Result<Self, Internal> {
         let mut layout = Self::default();
         let mut classes: HashMap<DefId, Vec<Param<'_>>> = HashMap::new();
         let mut numbers: HashMap<u16, usize> = HashMap::new();
+        // The first entity field of each name, which a member declared after it is.
+        let mut fields: HashMap<&str, DefId> = HashMap::new();
         for (id, definition) in index.definitions() {
             let Some(class) = definition.member_of else {
+                if definition.kind == DefKind::Field {
+                    fields.entry(definition.name.as_str()).or_insert(id);
+                }
                 continue;
             };
+            if definition.kind == DefKind::Field {
+                let made = if definition.generated {
+                    Made::Component
+                } else {
+                    Made::Declared
+                };
+                let key = (class, definition.name.clone(), made);
+                layout.named.entry(key).or_insert(id);
+            }
             let Some(held) = member_type(index, id) else {
                 continue;
             };
-            if index.is_unsized_array(id) {
-                return Err(Internal::Unsupported);
-            }
             let number = basic_number(index, &held);
             let name = BASIC_TYPE_NAMES
                 .get(usize::from(number))
                 .copied()
-                .filter(|_| number != Etype::Void.number())
-                .ok_or(Internal::Unsupported)?;
+                .filter(|_| number != Etype::Void.number() && !index.is_unsized_array(id));
+            let Some(name) = name else {
+                layout.slots.insert(id, Slot::Unsupported);
+                layout.members.push(id);
+                continue;
+            };
             let element_words = type_words(index, &ValueType::Of(held.clone()));
             let count = index.array_len(id).unwrap_or(1);
             // `for(pc = newt; pc && !found; pc = pc->parentclass)`: the first word past every
@@ -159,7 +188,7 @@ impl Pools {
             });
             let slot = if let Some(member) = found {
                 Slot::Member(member)
-            } else if let Some(field) = entity_field(index, id, &definition.name) {
+            } else if let Some(&field) = fields.get(definition.name.as_str()) {
                 Slot::EntityField(field)
             } else {
                 let pool = *numbers.entry(number).or_insert_with(|| {
@@ -203,6 +232,11 @@ impl Pools {
     pub(crate) fn slot(&self, id: DefId) -> Option<&Slot> {
         self.slots.get(&id)
     }
+
+    /// The field member of `class` named `name` that is `made` so.
+    pub(crate) fn member(&self, class: DefId, name: &str, made: Made) -> Option<DefId> {
+        self.named.get(&(class, name.to_owned(), made)).copied()
+    }
 }
 
 /// The type the class member `id` holds, a typedef's or an enum's read through as a
@@ -240,13 +274,4 @@ fn element_type(index: &ModuleIndex, held: &Type) -> Type {
     } else {
         held.clone()
     }
-}
-
-/// The entity field named `name` that is declared before the member `member`.
-fn entity_field(index: &ModuleIndex, member: DefId, name: &str) -> Option<DefId> {
-    index
-        .definitions()
-        .take_while(|(other, _)| *other != member)
-        .find(|(_, d)| d.name == name && d.member_of.is_none() && d.kind == DefKind::Field)
-        .map(|(other, _)| other)
 }

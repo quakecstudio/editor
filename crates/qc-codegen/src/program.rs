@@ -26,7 +26,7 @@ use qc_syntax::c_scalar::CScalar;
 use qc_types::Etype;
 
 use crate::Internal;
-use crate::pools::{Pool, Pools, Slot};
+use crate::pools::{Made, Pool, Pools, Slot};
 
 /// The first global offset a definition may take: 0 is null, 1 to 3 the return value and 4 to
 /// 27 the eight parameter slots (QC-21.1, `RESERVED_OFS` in `qcc/qcc.h`).
@@ -808,6 +808,7 @@ impl Program {
                 let place = self.get_def(index, field)?;
                 self.defs.get(place).ok_or(Internal::NoDefinition)?.ofs
             }
+            Slot::Unsupported => return Err(Internal::Unsupported),
             Slot::Pooled { pool, word, grown } => {
                 let base = self.pool_base(index, pool)?;
                 let made = self.pools(index)?.pools.get(pool).cloned();
@@ -868,29 +869,22 @@ impl Program {
         name: String,
     ) -> Result<usize, Internal> {
         let definition = index.def(id).ok_or(Internal::NoDefinition)?;
-        let member = |class: Option<DefId>, name: &str, generated: bool| {
-            index
-                .definitions()
-                .find(|(_, d)| {
-                    d.name == name
-                        && d.member_of == class
-                        && d.kind == DefKind::Field
-                        && d.generated == generated
-                })
-                .map(|(other, _)| other)
-        };
+        let pools = self.pools(index)?;
         let (vector, word, suffix) = COMPONENTS
             .iter()
             .zip(0_u32..)
             .find_map(|(suffix, word)| {
                 let vector = definition.name.strip_suffix(suffix)?;
-                Some((member(definition.member_of, vector, false)?, word, *suffix))
+                let vector = pools.member(definition.member_of?, vector, Made::Declared)?;
+                Some((vector, word, *suffix))
             })
             .ok_or(Internal::NoDefinition)?;
-        let ofs = match self.pools(index)?.slot(vector).cloned() {
+        let ofs = match pools.slot(vector).cloned() {
             Some(Slot::Member(above)) => {
                 let above = index.def(above).ok_or(Internal::NoDefinition)?;
-                let component = member(above.member_of, &format!("{}{suffix}", above.name), true);
+                let component = above.member_of.and_then(|class| {
+                    pools.member(class, &format!("{}{suffix}", above.name), Made::Component)
+                });
                 let place = self.get_def(index, component.ok_or(Internal::NoDefinition)?)?;
                 self.places.insert(id, place);
                 return Ok(place);
@@ -901,6 +895,7 @@ impl Program {
                 let place = self.get_def(index, component)?;
                 self.defs.get(place).ok_or(Internal::NoDefinition)?.ofs
             }
+            Some(Slot::Unsupported) => return Err(Internal::Unsupported),
             Some(Slot::Pooled { .. }) | None => {
                 let place = self.get_def(index, vector)?;
                 self.defs
@@ -978,15 +973,12 @@ impl Program {
             if index.array_len(id).is_some() {
                 continue;
             }
+            let Some(class) = definition.member_of else {
+                continue;
+            };
             for suffix in COMPONENTS {
                 let name = format!("{}{suffix}", definition.name);
-                let component = index.definitions().find(|(_, d)| {
-                    d.name == name
-                        && d.member_of == definition.member_of
-                        && d.kind == DefKind::Field
-                        && d.generated
-                });
-                if let Some((component, _)) = component {
+                if let Some(component) = self.pools(index)?.member(class, &name, Made::Component) {
                     self.get_def(index, component)?;
                 }
             }

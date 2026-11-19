@@ -839,6 +839,42 @@ impl Checker<'_> {
         if self.generated.len() <= before || named != made || !loads {
             return (named, index);
         }
+        // A jump is named by the statement it lands on, and the steps of a branch by theirs:
+        // an index that branches, a `?:` or a `&&`, is not moved over, and the body is not
+        // followed.
+        let jumps = |name: Option<ir::Name>| matches!(name, Some(ir::Name::Jump(_)));
+        let branches = self
+            .generated
+            .iter()
+            .skip(before)
+            .any(|s| jumps(s.a) || jumps(s.b) || jumps(s.c));
+        if branches {
+            self.followed = false;
+            return (named, index);
+        }
+        // Every statement after the load is one earlier: the calls and copies the checker
+        // keeps by their statements move with them.
+        let earlier = |n: u32| {
+            if usize::try_from(n).is_ok_and(|n| n > at) {
+                n.saturating_sub(1)
+            } else {
+                n
+            }
+        };
+        self.live_call = self.live_call.map(earlier);
+        self.unfreed = self.unfreed.map(earlier);
+        self.not_of_return = self
+            .not_of_return
+            .map(|(not, copy)| (earlier(not), copy.map(earlier)));
+        for (from, to) in &mut self.copies {
+            (*from, *to) = (earlier(*from), earlier(*to));
+        }
+        for (statement, _) in &mut self.origins {
+            *statement = earlier(*statement);
+        }
+        for (statement, _) in &mut self.locals {
+            *statement = earlier(*statement);
+        }
         let mut load = self.generated.remove(at);
         let moved = |name: Option<ir::Name>| match name {
             Some(ir::Name::Made(n)) if usize::try_from(n).is_ok_and(|n| n > at) => {
@@ -866,13 +902,8 @@ impl Checker<'_> {
         let named = load.c;
         self.generated.push(load);
         let index = Value {
-            made: index.made.map(|n| {
-                if usize::try_from(n).is_ok_and(|n| n > at) {
-                    n.saturating_sub(1)
-                } else {
-                    n
-                }
-            }),
+            made: index.made.map(earlier),
+            call: index.call.map(earlier),
             ..index
         };
         (named, index)

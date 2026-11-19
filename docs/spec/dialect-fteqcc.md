@@ -1072,7 +1072,11 @@ heavily class-based (547 `class` declarations across the three mods).
   `d->symbolsize = (d->arraysize?d->arraysize:1) * d->type->size; ... for (i = 0; i <
   d->symbolsize; i++) d->symboldata[i]._int = pr.size_fields++;`), which counts the words of an
   element of more than one twice: the vector pool of `av` and `bv[2]`, six words long, takes
-  eighteen fields. A member is a field where its class is declared, named in a body or not.
+  eighteen fields. A member is a field where its class is declared, named in a body or not. A member
+  of an accessor's type, a truth value's (`_Bool`, `__bfloat`, `__bint`), a narrow integer's
+  (`__int8`, `__int16`) or a strict enum's has no pool (`if (!*basictypes[newparm->type])`
+  reads a null for them, and the pinned FTEQCC stops with a fault, exit status 139, on a class
+  that has one); this compiler refuses the class.
   FTEQCC lists a pool's definitions together where the pool was first made; this compiler
   lists each where it makes it, at the same offsets. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`, `QCC_PR_ParseEntClass`;
   `engine/qclib/qccmain.c`, `QCC_PR_FinishFieldDef`; `engine/qclib/qcc_pr_comp.c`,

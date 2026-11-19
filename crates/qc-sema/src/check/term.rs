@@ -546,14 +546,41 @@ impl Checker<'_> {
         // "the term should not have side effects, or generate any actual statements."
         // (`numstatements = oldstcount;`): what the operand's statements named is still made.
         let before = self.generated.len();
+        // What the checker keeps of a call's value and its copies, by their statements.
+        let kept = (
+            self.live_return,
+            self.live_call,
+            self.not_of_return,
+            self.unfreed,
+            self.copies.len(),
+            self.emitted,
+        );
         let value = self.expr_of(sizeof.operand())?;
         if self.generated.len() > before {
+            // A branch's steps are kept by its statements too, which are gone: an operand
+            // that branches is not followed.
+            let jumps = |name: Option<ir::Name>| matches!(name, Some(ir::Name::Jump(_)));
+            if self
+                .generated
+                .iter()
+                .skip(before)
+                .any(|s| jumps(s.a) || jumps(s.b) || jumps(s.c))
+            {
+                self.followed = false;
+            }
             let effects = self.dropped_effects(before);
             self.generated.truncate(before);
             let at = self.next_made();
             self.effects
                 .extend(effects.into_iter().map(|effect| (at, effect)));
             self.last_temp = None;
+            let (live_return, live_call, not_of_return, unfreed, copies, emitted) = kept;
+            self.live_return = live_return;
+            self.live_call = live_call;
+            self.not_of_return = not_of_return;
+            self.unfreed = unfreed;
+            self.copies.truncate(copies);
+            self.emitted = emitted;
         }
         if let Some(text) = sizeof.operand().and_then(|e| string_immediate(&e)) {
             let bytes = u32::try_from(text.len()).unwrap_or(u32::MAX);

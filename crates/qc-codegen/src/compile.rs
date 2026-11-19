@@ -576,8 +576,6 @@ impl<'a> Compiler<'a> {
         Ok(is_field(&self.program, other).then_some(other))
     }
 
-    /// FTE-15.5: an `enum`'s items, each a constant global made in turn and initialised with
-    /// its value.
     /// FTEF-8.9: the items of each enum written inside `declaration`'s type, a parameter's
     /// `enumflags:float{A, B}` among them, defined with their values before the declaration,
     /// as FTEQCC defines them where it reads the type.
@@ -589,6 +587,8 @@ impl<'a> Compiler<'a> {
             .try_for_each(|enumeration| self.enumeration(&enumeration))
     }
 
+    /// FTE-15.5: an `enum`'s items, each a constant global made in turn and initialised with
+    /// its value.
     fn enumeration(&mut self, enumeration: &ast::EnumDecl) -> Lowered<()> {
         let span = enumeration.syntax().span();
         if enumeration.declarators().next().is_some() {
