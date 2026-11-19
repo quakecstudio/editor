@@ -265,11 +265,13 @@ impl ModuleIndex {
     /// Whether the type `ty` names a class, through a typedef: an entity type (FTEF-9.14).
     #[must_use]
     pub fn is_class(&self, ty: &Type) -> bool {
-        self.aliases
-            .get(ty)
-            .unwrap_or(ty)
-            .type_name()
-            .is_some_and(|name| self.class_names.contains_key(name))
+        // Only a named type is one: a pointer to a class is a pointer.
+        let Some(Type::Named(name)) =
+            matches!(ty, Type::Named(_)).then(|| self.aliases.get(ty).unwrap_or(ty))
+        else {
+            return false;
+        };
+        self.class_names.contains_key(name.as_ref())
     }
 
     /// The members of the class the type `ty` names, its own first in declaration order and

@@ -195,12 +195,17 @@ corpus uses `int` heavily (3392 occurrences across the three mods) and `bool` (1
   into no statement (FTEF-29.13) is `QCC_StoreToSRef`'s: `OP_STORE_I` for a 32-bit integer
   (`case ev_integer: case ev_uint:`) and a truth value of one, which is stored as its
   `parentclass` (`case ev_boolean: QCC_StoreToSRef(dest, source, type->parentclass, ...)`),
-  `OP_STORE_I64` for a 64-bit integer or a double, and for an 8- or 16-bit integer, which has
-  no case, the `default:` that copies the type's words, here one `OP_STORE_F` (`for (; i <
-  type->size; i++, dest.ofs++, source.ofs++) QCC_PR_SimpleStatement(&pr_opcodes[OP_STORE_F],
-  source, dest, nullsref, false);`): `__int8 c; int a; c = a;` is `STORE_F a, c`. No width
-  chooses the progs format, which is the target's (FTE-24.1, FTE-24.3); an opcode of a width
-  that the target lacks is emulated or refused (FTEF-27). Source:
+  `OP_STORE_I64` for a 64-bit integer (`case ev_int64: case ev_uint64:`), and for the types
+  with no case, a double and an 8- or 16-bit integer, the `default:` that copies the type's
+  words: a pair by `OP_STORE_I64` only where the target has it (`if
+  (QCC_OPCodeValid(&pr_opcodes[OP_STORE_I64]))`), then each word left by `OP_STORE_F` (`for (;
+  i < type->size; i++, dest.ofs++, source.ofs++)
+  QCC_PR_SimpleStatement(&pr_opcodes[OP_STORE_F], source, dest, nullsref, false);`). So
+  `__int8 c; int a; c = a;` is `STORE_F a, c`, through a typedef of the type too, and a double
+  stored to a double is one `OP_STORE_I64` on an FTE target and two `OP_STORE_F` on the
+  standard one, where a 64-bit integer's `OP_STORE_I64` is emulated instead (FTEF-27); our
+  compiler follows neither two-word store on the standard target and refuses it. No width
+  chooses the progs format, which is the target's (FTE-24.1, FTE-24.3). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_StoreToSRef`.
 
@@ -950,9 +955,11 @@ heavily class-based (547 `class` declarations across the three mods).
 
 - **FTEF-9.25** A class is written as its members and its functions, with no table of its
   own. A data member and a virtual member function are entity fields (FTEF-9.21), each a
-  constant definition unless the member is given 0 (`QCC_PR_DummyDef(fieldtype, membername,
-  pr_scope, arraysize, d, basicindex, true, (isnull?0:GDF_CONST)|...)`), so the field table
-  lists `CLASS::__mNAME` with the member's type for each but one given 0. A virtual function
+  constant definition unless the member is given 0, a function among them (`isnull =
+  (QCC_PR_CheckImmediate("0") || QCC_PR_CheckImmediate("0i"));`, `QCC_PR_DummyDef(fieldtype,
+  membername, pr_scope, arraysize, d, basicindex, true, (isnull?0:GDF_CONST)|...)`), so the
+  field table lists `CLASS::__mNAME` with the member's type for each but one given 0, whose
+  vector's components it leaves out too. A pointer to a class is a pointer, not an entity. A virtual function
   is called through its field, which the class's spawn function sets (FTEF-9.22, FTEF-9.23),
   and a method is called with its object as `self` (FTEF-9.24). A class is an entity type
   (FTEF-9.14), so a definition of one is one word written `ev_entity` (`dd->type =
@@ -1137,6 +1144,9 @@ Vanilla `qcc` has no `__variant`; the word is a name and "not a type" (QC-11). T
   source.ofs += 3) QCC_PR_SimpleStatement(&pr_opcodes[OP_STORE_V], source, dest, nullsref,
   false);`), so `v = f` of a float `f`, `v = i` of an `int` and `v = s` of a string are each
   `STORE_V` of the value's definition, which reads the two words after a one-word value. A
+  constant 0 is stored from the zero vector instead (`if (QCC_SRef_IsNull(source)) ...
+  QCC_PR_SimpleStatement(&pr_opcodes[OP_STORE_V], QCC_MakeVectorConst(0,0,0), dest, nullsref,
+  false);`): `v = 0` is `STORE_V '0 0 0', v`. A
   value read from one is stored by the target's type: `f = v` is `STORE_F`, `vec = v`
   `STORE_V` and `e = v` `STORE_ENT`. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
