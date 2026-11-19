@@ -784,6 +784,7 @@ pub(crate) struct MapProfiles;
 
 impl<C: HasPreview + 'static> Command<C> for MapProfiles {
     const ID: &'static str = MAP_PROFILES;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Lists the compile profiles: the built-in Full and Fast, then \
         the project's own from compile-profiles.toml, each its name and its tasks.";
     type Params = NoParams;

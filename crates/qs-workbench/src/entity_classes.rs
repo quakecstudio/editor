@@ -123,6 +123,7 @@ struct ProjectEntities;
 
 impl<C: HasWorkbench + 'static> Command<C> for ProjectEntities {
     const ID: &'static str = PROJECT_ENTITIES;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Lists the entity classes the open project's server QuakeC \
         defines, read from its spawn functions: each class's keys, defaults, spawnflags, \
         comment, model and size; with fgd, also writes them as an FGD file for other map \

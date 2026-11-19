@@ -81,6 +81,16 @@ when it starts.
 
 ## Tools
 
+Every command of the app is a tool (PRIN-3): the server lists the session's registry, so a new
+command is a tool with no list to add it to. [`commands.md`](commands.md) is the whole list,
+generated from the registry, and `commands.list` answers it. Each tool tells the client
+whether it only reads (MCP 2026-07-28, `ToolAnnotations.readOnlyHint`: "If true, the tool does
+not modify its environment."), as its command declares (`Command::ACCESS`; a command that does
+not say may write), and that it works on nothing outside the project and its game
+(`openWorldHint: false`). A client can so run the reading tools without asking.
+
+The tools an agent's loop most often uses:
+
 | Tool | What it does |
 | --- | --- |
 | `project.symbols`, `project.check` | The project's definitions; its errors and warnings |
@@ -106,9 +116,7 @@ when it starts.
 A map tool that edits runs as the built-in agent's do (P6-21): the server begins the map's
 review with `map.stage` before it and ends it with `map.unstage` after, so every edit waits as a
 hunk for a person to accept or reject in the app, and a call that changed nothing leaves no
-review open. When review cannot begin the edit is refused, not run unreviewed. The map tools
-that read open no review. `map.accept`, `map.reject`, `map.stage` and `map.unstage` are not
-offered: the decision is the person's.
+review open. When review cannot begin the edit is refused, not run unreviewed. The map tools that read open no review. `map.accept` and `map.reject` are tools as `edit.accept` and `edit.reject` are: whether an agent may decide its own hunks is the client's to ask its person.
 
 `map.open` and `map.new` write, since they replace the open map, its unsaved and staged edits
 with it. A map tool that edits, compiles, saves or plays also needs the open map's file under

@@ -1920,6 +1920,8 @@ impl<A: Act + 'static, C: HasPreview + 'static> Command<C> for ActCommand<A> {
 trait Control: Send + Sync {
     const ID: &'static str;
     const SUMMARY: &'static str;
+    /// Whether it only reads, as [`Command::ACCESS`].
+    const ACCESS: qs_commands::Access = qs_commands::Access::Write;
     fn apply(preview: &mut Preview) -> Result<(), PreviewError>;
 }
 
@@ -1973,6 +1975,7 @@ impl Control for StopControl {
 struct PollControl;
 impl Control for PollControl {
     const ID: &'static str = POLL;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str =
         "Reads the running game's events: its state changes and console lines.";
     fn apply(preview: &mut Preview) -> Result<(), PreviewError> {
@@ -1986,6 +1989,7 @@ struct ControlCommand<A>(core::marker::PhantomData<A>);
 
 impl<A: Control + 'static, C: HasPreview + 'static> Command<C> for ControlCommand<A> {
     const ID: &'static str = A::ID;
+    const ACCESS: qs_commands::Access = A::ACCESS;
     const SUMMARY: &'static str = A::SUMMARY;
     type Params = NoParams;
     type Output = PreviewStatus;
@@ -2096,6 +2100,7 @@ struct GameCommand;
 
 impl<C: HasPreview + 'static> Command<C> for GameCommand {
     const ID: &'static str = GAME;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Says what game data the preview plays from: the chosen \
         folder, or the first install found, as found, shareware only, rerelease only or missing for \
         the game the project is for, with the files it lacks.";

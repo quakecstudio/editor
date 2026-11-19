@@ -21,7 +21,7 @@ use interprocess::local_socket::{GenericFilePath, ListenerOptions, Stream, ToFsN
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::Session;
+use crate::{Access, CommandInfo, Session};
 
 /// A command as another process sees it: its id, its summary and its parameters' schema.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -29,9 +29,23 @@ pub struct Described {
     id: String,
     summary: String,
     params: Value,
+    /// Whether it only reads; an app that does not say is taken to mean it may write.
+    #[serde(default)]
+    access: Access,
 }
 
 impl Described {
+    /// The command `info` describes, as another process sees it.
+    #[must_use]
+    pub fn of(info: &CommandInfo) -> Self {
+        Self {
+            id: info.id().to_string(),
+            summary: info.summary().to_owned(),
+            params: info.params().clone(),
+            access: info.access(),
+        }
+    }
+
     /// The command's id.
     #[must_use]
     pub fn id(&self) -> &str {
@@ -42,6 +56,12 @@ impl Described {
     #[must_use]
     pub fn summary(&self) -> &str {
         &self.summary
+    }
+
+    /// Whether the command only reads.
+    #[must_use]
+    pub const fn access(&self) -> Access {
+        self.access
     }
 
     /// The JSON Schema of the command's parameters.
@@ -189,17 +209,9 @@ impl Call {
     /// Runs `call` in `session` and sends its answer back to the connection's thread.
     fn run<C: 'static>(self, session: &mut Session<C>) {
         let answer = match self.request {
-            Request::Commands => Answer::Commands(
-                session
-                    .registry()
-                    .commands()
-                    .map(|info| Described {
-                        id: info.id().to_string(),
-                        summary: info.summary().to_owned(),
-                        params: info.params().clone(),
-                    })
-                    .collect(),
-            ),
+            Request::Commands => {
+                Answer::Commands(session.registry().commands().map(Described::of).collect())
+            }
             Request::Execute { command, params } => match session.execute(&command, params) {
                 Ok(output) => Answer::Output(output),
                 Err(error) => Answer::Error(error.to_string()),

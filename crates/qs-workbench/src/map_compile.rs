@@ -228,6 +228,7 @@ pub(crate) struct MapLeaks;
 
 impl<C: HasPreview + 'static> Command<C> for MapLeaks {
     const ID: &'static str = MAP_LEAKS;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Compiles the open map in memory and reports whether it leaks, \
         with the trail from the entity the outside reaches out to the void, and the textures \
         its WADs lack.";

@@ -425,6 +425,7 @@ struct StagedEdits;
 
 impl<C: HasWorkbench + 'static> Command<C> for StagedEdits {
     const ID: &'static str = STAGED_EDITS;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Lists the staged hunks waiting to be accepted or rejected.";
     type Params = NoParams;
     type Output = Vec<StagedHunk>;

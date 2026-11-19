@@ -268,6 +268,7 @@ struct MapCheck;
 
 impl<C: HasWorkbench + 'static> Command<C> for MapCheck {
     const ID: &'static str = MAP_CHECK;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Checks a .map: what id's qbsp and ericw-tools read \
         otherwise, and its entities against the project's server QuakeC as the engine reads \
         them: unknown classnames and keys with the closest name, values their field cannot \

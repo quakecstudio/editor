@@ -247,6 +247,7 @@ struct EngineInspect;
 
 impl<C: HasPreview + 'static> Command<C> for EngineInspect {
     const ID: &'static str = ENGINE_INSPECT;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Reads the running game: the edicts in use, one edict's \
         fields, every named global, or the call stack while stopped in a frame.";
     type Params = EngineInspectParams;

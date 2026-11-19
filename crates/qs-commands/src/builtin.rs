@@ -4,7 +4,7 @@
 
 use serde::Serialize;
 
-use crate::command::NoParams;
+use crate::command::{Access, NoParams};
 use crate::id::CommandId;
 use crate::registry::{CommandInfo, schema_of};
 
@@ -54,11 +54,20 @@ impl Builtin {
         }
     }
 
+    /// Listing the commands reads; undoing, redoing and repeating a change write.
+    const fn access(self) -> Access {
+        match self {
+            Self::List => Access::Read,
+            Self::Redo | Self::Repeat | Self::Undo => Access::Write,
+        }
+    }
+
     pub(crate) fn info(self) -> CommandInfo {
         CommandInfo::new(
             CommandId::builtin(self.id()),
             self.summary(),
             schema_of::<NoParams>(),
+            self.access(),
         )
     }
 }

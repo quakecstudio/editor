@@ -141,6 +141,7 @@ pub(crate) struct MapBackups;
 
 impl<C: HasMap + 'static> Command<C> for MapBackups {
     const ID: &'static str = MAP_BACKUPS;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Lists the open map's backups in the autosave folder beside \
         it, the newest first.";
     type Params = NoParams;

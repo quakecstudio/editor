@@ -1366,6 +1366,7 @@ struct MapEntity;
 
 impl<C: HasMap + 'static> Command<C> for MapEntity {
     const ID: &'static str = MAP_ENTITY;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "An entity of the open map: its pairs, the keys its class \
         reads with their types and defaults, and the map's targetnames for its target keys.";
     type Params = EntityParams;
