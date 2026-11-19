@@ -1388,9 +1388,9 @@ fn place_project_map(
     for extension in MAP_FILES {
         let (source, placed) = (from.join(file(extension)), to.join(file(extension)));
         if source.is_file() {
-            std::fs::copy(&source, &placed).map_err(written(placed.clone()))?;
+            std::fs::copy(&source, &placed).map_err(written(placed))?;
         } else if placed.is_file() {
-            std::fs::remove_file(&placed).map_err(written(placed.clone()))?;
+            std::fs::remove_file(&placed).map_err(written(placed))?;
         }
     }
     Ok(())
