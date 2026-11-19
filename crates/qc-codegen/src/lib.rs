@@ -327,6 +327,18 @@ fn compile_lowered(
     let mut progs =
         write::progs(compiler.program, crc, &index, records).map_err(CompileError::unlocated)?;
     if compiler.dialect == Dialect::Fteqcc {
+        // FTE-24.4: a Hexen II format's calls pass their first two arguments as operands by
+        // the opcodes `OP_CALL1` to `OP_CALL8` themselves.
+        if matches!(
+            resolve.target,
+            Some(
+                qc_progs::TargetFormat::Hexen2
+                    | qc_progs::TargetFormat::Uhexen2
+                    | qc_progs::TargetFormat::Fteh2
+            )
+        ) {
+            write::hexen2_calls(&mut progs).map_err(CompileError::unlocated)?;
+        }
         if write::needs_fte32(&progs) {
             progs.format = Format::Fte32;
         } else if resolve

@@ -7999,3 +7999,42 @@ fn a_computed_field_selector_is_read_and_is_the_field() {
     assert_eq!(t[4].b, t[3].c, "stored through the field read");
     assert_eq!(t[6].b, t[5].c);
 }
+
+// spec FTEF-27.23: on a Hexen II format `random`'s opcode names no result and its value is the
+// return global's, copied out before the next one
+// spec FTEF-27.26: `randomv`'s is too
+// spec FTE-24.4: a Hexen II format's calls are written as `OP_CALL1` to `OP_CALL8`, their first
+// two arguments operands
+#[test]
+fn a_hexen_ii_target_reads_random_from_the_return_global() {
+    for target in ["h2", "fteh2"] {
+        let p = fte_progs(&format!(
+            "#pragma target {target}\nvector v; vector a; float x; float y;\n\
+             vector() randomv = #8;\nfloat() random = #7;\nvoid(vector p, float q) take = #1;\n\
+             void() f = {{ v = randomv(a); x = random(y) + random(1, 2); take(a, x); }};\n"
+        ));
+        let f = body(&p, "f");
+        let call = f.iter().find(|s| s.a == global(&p, "take")).unwrap();
+        assert_eq!(
+            *call,
+            st(
+                Opcode::Call2,
+                global(&p, "take"),
+                global(&p, "a"),
+                global(&p, "x")
+            ),
+            "{target}"
+        );
+        if target == "fteh2" {
+            assert_eq!(names_in(&p, "f")[..2], ["RANDV1", "RAND1"]);
+            continue;
+        }
+        assert_eq!(
+            names_in(&p, "f")[..6],
+            ["RANDV1", "STORE_V", "RAND1", "STORE_F", "RAND2", "ADD_F"]
+        );
+        assert_eq!((f[0].a, f[0].c), (global(&p, "a"), 0), "no result operand");
+        assert_eq!(f[1], st(StoreV, 1, global(&p, "v"), 0));
+        assert_eq!((f[3].a, f[5].a, f[5].b), (1, f[3].b, 1));
+    }
+}

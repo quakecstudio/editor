@@ -5288,11 +5288,13 @@ as far as they report.
   target's own opcodes where it has them (`if (QCC_OPCodeValid(&pr_opcodes[OP_RAND0]))`):
   `OP_RAND0`, `OP_RAND1 scale` and `OP_RAND2 low, high`, each a plain statement whose value
   is a float temporary taken before the arguments' are freed (`out =
-  QCC_GetTemp(type_float);`), with no call of the builtin. Under a Hexen II target the value
-  is the return global's ("hexen2 requires the output be def_ret"), which this compiler
-  refuses to write rather than follow. Without the opcodes it is the builtin's call and its
+  QCC_GetTemp(type_float);`), with no call of the builtin. Under a Hexen II format (`QCF_HEXEN2`,
+  `QCF_UHEXEN2`) the value is the return global's ("hexen2 requires the output be def_ret"):
+  the return global is clobbered first, the opcode names no result, and what follows reads
+  the return global as it reads a call's value, so `x = random(y) + random(1, 2);` is `RAND1
+  y; STORE_F ret, t; RAND2 1, 2; ADD_F t, ret, x`. Without the opcodes it is the builtin's call and its
   value scaled (FTE-19, `-Tid`). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall`; checked against the
-  pinned FTEQCC's output on an FTE target (2026-11-19).
+  pinned FTEQCC's output on an FTE target and a Hexen II one (2026-11-19).
 - **FTEF-27.24** `OP_ADD_I` whose left operand is the temporary the statement before made
   by `OP_MUL_I` of a value and the word's size, 4, is written as `OP_ADD_PIW` of the addend
   and the value, the multiplication dropped: "mul_i idx 4i tmp; add_i tmp 2i out becomes
@@ -5311,6 +5313,18 @@ as far as they report.
   v_x; STORE_F 24, v_y; STORE_F 0, v_z; STORE_V v, out`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_StatementFlags`; checked against the pinned FTEQCC's
   output on an FTE target (2026-11-19).
+- **FTEF-27.26** `randomv()`, `randomv(scale)` and `randomv(low, high)` (FTEF-32.10) are the
+  target's own opcodes where it has them (`if (QCC_OPCodeValid(&pr_opcodes[OP_RANDV0]))`):
+  `OP_RANDV0`, `OP_RANDV1 scale` and `OP_RANDV2 low, high`, into a temporary a store folds
+  into, so `v = randomv(a, b);` on an FTE target is `RANDV2 a, b, v`. On a target without
+  them the function `randomv` names is called three times, each value's first word written to
+  a word of the return global, the last word first: with no argument `CALL0; STORE_F ret_x,
+  ret_z; CALL0; STORE_F ret_x, ret_y; CALL0`; with a scale each is `MUL_F ret_x, scale_N,
+  ret_N`; with two arguments the scale is `SUB_V high, low`, which folds for two constants,
+  and `ADD_V ret, low` follows. The value is the return global's, or that sum. On a Hexen II
+  format the opcode's value is the return global's, as `OP_RAND0`'s is (FTEF-27.23): `v =
+  randomv();` is `RANDV0; STORE_V ret, v`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall`; checked
+  against the pinned FTEQCC's output on the standard target and an FTE one (2026-11-19).
 
 ## FTEF-28 The warnings of an emitted comparison
 

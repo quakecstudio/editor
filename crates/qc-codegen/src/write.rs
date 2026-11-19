@@ -7,6 +7,7 @@
 //! The program's output (QC-25): `progdefs.h`, whose CRC the progs header carries, and the
 //! progs.dat tables `WriteData` writes.
 
+use qc_progs::Op;
 use qc_progs::crc::crc_block;
 use qc_progs::opcode::Opcode;
 use qc_progs::{Def as DefRecord, PROGS_DEF_SAVEGLOBAL, ProgsFile};
@@ -194,6 +195,36 @@ fn member_records(
             ofs: at,
             s_name: program.copy_string(&latin1_encode(&format!("{name}.{member_name}")))?,
         });
+    }
+    Ok(())
+}
+
+/// FTE-24.4: `QCC_WriteData` for `QCF_HEXEN2`, `QCF_UHEXEN2` and `QCF_FTEH2`: each
+/// `OP_CALL1H` to `OP_CALL8H` written as `OP_CALL1` to `OP_CALL8`, which in Hexen II take their
+/// first two arguments as operands (`statements[i].op = statements[i].op - OP_CALL1H +
+/// OP_CALL1;`). An `OP_CALL1` to `OP_CALL8` already there passes its arguments in the
+/// parameter slots, FTEQCC's "Target switching produced incompatible instructions".
+pub(crate) fn hexen2_calls(progs: &mut ProgsFile) -> Result<(), Internal> {
+    let by_operands = Op::CALLS_BY_OPERANDS;
+    let plain = Op::CALLS;
+    let number = |op: Op| u32::try_from(op.number()).ok();
+    for statement in &mut progs.statements {
+        if plain
+            .iter()
+            .skip(1)
+            .any(|&call| number(call) == Some(statement.op))
+        {
+            return Err(Internal::Unsupported);
+        }
+        let renumbered = by_operands
+            .iter()
+            .zip(plain)
+            .skip(1)
+            .find(|&(&call, _)| number(call) == Some(statement.op))
+            .and_then(|(_, to)| number(to));
+        if let Some(op) = renumbered {
+            statement.op = op;
+        }
     }
     Ok(())
 }

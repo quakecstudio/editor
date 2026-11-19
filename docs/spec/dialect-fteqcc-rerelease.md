@@ -1440,3 +1440,11 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   On DarkPlaces' target (`QCF_DARKPLACES`) the 16-bit layout stays version 6, `if
   (qcc_targetformat == QCF_DARKPLACES) progs.version = PROG_VERSION;`. A statement of an
   opcode beyond id's (FTEF-25) is written by its number in either.
+- **FTE-24.4** On the Hexen II formats (`QCF_HEXEN2`, `QCF_UHEXEN2`, `QCF_FTEH2`) each
+  `OP_CALL1H` to `OP_CALL8H` is written as `OP_CALL1` to `OP_CALL8`, which in Hexen II take
+  their first two arguments as operands (`else if (statements[i].op >= OP_CALL1H &&
+  statements[i].op <= OP_CALL8H) statements[i].op = statements[i].op - OP_CALL1H + OP_CALL1;`
+  in `QCC_WriteData`); an `OP_CALL1` to `OP_CALL8` generated as such is "Target switching
+  produced incompatible instructions", which this compiler refuses. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qccmain.c`, `QCC_WriteData`; checked against the pinned FTEQCC's output on the
+  `h2` and `fteh2` targets (2026-11-19).

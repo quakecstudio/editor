@@ -979,6 +979,126 @@ impl Checker<'_> {
         self.random_statements(callee, &values, span)
     }
 
+    /// FTEF-27.26: `randomv()`, `randomv(scale)` and `randomv(low, high)`, each argument a
+    /// vector as it is, with no conversion. Where the target has no `OP_RANDV0` the function is
+    /// called three times, each value written to a word of the return global, the last word
+    /// first, multiplied by that word of the scale, `high - low` for two arguments, and `low`
+    /// then added: the value is the return global's, or the sum's.
+    fn randomv(&mut self, args: &[ast::Expr], call: &ast::CallExpr) -> Checked {
+        let span = call.syntax().span();
+        let mut values = Vec::new();
+        for (at, arg) in args.iter().take(2).enumerate() {
+            let value = self.value(Some(arg.clone()))?;
+            if self.etype_of(&value.ty).is_some_and(|e| e != Etype::Vector) {
+                let message = format!("type mismatch on parm {}", at.saturating_add(1));
+                return self.fatal(Code::E0340, span, message);
+            }
+            values.push(value);
+        }
+        let vector = Value::of(Type::Simple(SimpleType::Vector));
+        if self.global {
+            return Ok(vector);
+        }
+        // `if (QCC_OPCodeValid(&pr_opcodes[OP_RANDV0]))`: the target's own opcode, its value a
+        // temporary taken before the arguments' are freed.
+        let target = self.env.target_at(span.start);
+        if target.valid(Op::Randv0) {
+            let (op, a, b) = match values.as_slice() {
+                [] => (Op::Randv0, None, None),
+                [scale] => (Op::Randv1, scale.name(), None),
+                [low, high, ..] => (Op::Randv2, low.name(), high.name()),
+            };
+            if matches!(
+                target.format(),
+                qc_progs::TargetFormat::Hexen2 | qc_progs::TargetFormat::Uhexen2
+            ) {
+                return Ok(self.random_to_return(op, (a, b), &values, vector, VECTOR_WORDS));
+            }
+            let temp = self.env.temps().take(VECTOR_WORDS);
+            let made = self.push_made(op, a, b);
+            for value in values.iter().rev() {
+                if let Some(offset) = value.temp {
+                    self.env.temps().free(offset);
+                }
+                self.read_returned(value);
+            }
+            self.last_temp = Some(temp);
+            return Ok(Value {
+                made,
+                temp: Some(temp),
+                ..vector
+            });
+        }
+        let callee = match call.callee() {
+            Some(ast::Expr::Name(name)) => name
+                .name()
+                .and_then(|token| self.env.reference(token.span().start))
+                .map(|def| ir::Name::Def(def, 0)),
+            _ => None,
+        };
+        let (low, scale) = match values.as_slice() {
+            [] => (None, None),
+            [scale] => (None, Some(scale.name())),
+            [low, high, ..] => {
+                let range = match (high.known(), low.known()) {
+                    (Some(_), Some(_)) => self.emit(Op::SubV, high, low, span)?.name(),
+                    _ => self
+                        .push_made(Op::SubV, high.name(), low.name())
+                        .map(ir::Name::Made),
+                };
+                (Some(low.name()), Some(range))
+            }
+        };
+        if callee.is_none() || scale == Some(None) || low == Some(None) {
+            self.followed = false;
+        }
+        self.clobber_return();
+        let mut called = None;
+        for word in (0..VECTOR_WORDS).rev() {
+            called = u32::try_from(self.generated.len()).ok();
+            self.generated.push(ir::BodyStatement {
+                a: callee,
+                ..ir::BodyStatement::bare(Op::Call0)
+            });
+            let to = ir::Name::Return.word(word);
+            match scale.flatten() {
+                Some(scale) => self.generated.push(ir::BodyStatement {
+                    a: Some(ir::Name::Return),
+                    b: scale.word(word),
+                    c: to,
+                    ..ir::BodyStatement::bare(Op::MulF)
+                }),
+                None if word > 0 => self.generated.push(ir::BodyStatement {
+                    a: Some(ir::Name::Return),
+                    b: to,
+                    ..ir::BodyStatement::bare(Op::StoreF)
+                }),
+                None => {}
+            }
+        }
+        for value in values.iter().rev() {
+            self.read_returned(value);
+        }
+        self.last_temp = None;
+        let Some(low) = low.flatten() else {
+            self.live_return = Some(VECTOR_WORDS);
+            self.live_call = called;
+            return Ok(Value {
+                returned: true,
+                call: called,
+                ..vector
+            });
+        };
+        let made = self.push_made(Op::AddV, Some(ir::Name::Return), Some(low));
+        let temp = self.env.temps().take(VECTOR_WORDS);
+        self.last_temp = Some(temp);
+        Ok(Value {
+            made,
+            temp: Some(temp),
+            ..vector
+        })
+    }
+
     /// The statements of `random` of `callee` with the arguments `args` in a function: the
     /// call of the builtin, then its value scaled, `* scale` for one argument and
     /// `low + (high - low) * value` for two; the value, the return global's with none.
@@ -1004,14 +1124,13 @@ impl Checker<'_> {
                 [scale] => (Op::Rand1, scale.name(), None),
                 [low, high, ..] => (Op::Rand2, low.name(), high.name()),
             };
-            // "hexen2 requires the output be def_ret": the value is then the return global's,
-            // which the body does not follow.
+            // "hexen2 requires the output be def_ret": the opcode names no result, and the
+            // value is the return global's, as a call's is.
             if matches!(
                 target.format(),
                 qc_progs::TargetFormat::Hexen2 | qc_progs::TargetFormat::Uhexen2
             ) {
-                self.followed = false;
-                return Ok(float);
+                return Ok(self.random_to_return(op, (a, b), args, float, 1));
             }
             let temp = self.env.temps().take(1);
             let made = self.push_made(op, a, b);
@@ -1067,6 +1186,43 @@ impl Checker<'_> {
             temp,
             ..float
         })
+    }
+
+    /// A Hexen II format's `OP_RAND*` or `OP_RANDV*`, `op` of the operands `a` and `b` read
+    /// from `args`: "hexen2 requires the output be def_ret", so the return global is clobbered
+    /// first (`QCC_ClobberDef(&def_ret)`), the statement names no result, and the value, `of`
+    /// with `words` words, is the return global's as a call's is.
+    fn random_to_return(
+        &mut self,
+        op: Op,
+        (a, b): (Option<ir::Name>, Option<ir::Name>),
+        args: &[Value],
+        of: Value,
+        words: u32,
+    ) -> Value {
+        self.clobber_return();
+        let made = u32::try_from(self.generated.len()).ok();
+        self.generated.push(ir::BodyStatement {
+            a,
+            b,
+            // `out = nullsref;`: the result operand is written as none.
+            c: Some(ir::Name::Count(0)),
+            ..ir::BodyStatement::bare(op)
+        });
+        for arg in args.iter().take(2).rev() {
+            if let Some(offset) = arg.temp {
+                self.env.temps().free(offset);
+            }
+            self.read_returned(arg);
+        }
+        self.last_temp = None;
+        self.live_return = Some(words);
+        self.live_call = made;
+        Value {
+            returned: true,
+            call: made,
+            ..of
+        }
     }
 
     /// Generates `op` of `a` and `b` into a value of its own; the statement's index.
@@ -1154,8 +1310,9 @@ impl Checker<'_> {
         call: &ast::CallExpr,
     ) -> Result<Option<Value>, Fatal> {
         let value = self.intrinsic_value(name, args, written, call)?;
-        // Of the intrinsics only `random`, `_` and `autocvar` are followed statement by statement.
-        if value.is_some() && !matches!(name, "random" | "_" | "autocvar") {
+        // Of the intrinsics only `random`, `randomv`, `_` and `autocvar` are followed statement by
+        // statement.
+        if value.is_some() && !matches!(name, "random" | "randomv" | "_" | "autocvar") {
             self.followed = false;
         }
         Ok(value)
@@ -1200,17 +1357,7 @@ impl Checker<'_> {
                     ..string()
                 }))
             }
-            "randomv" => {
-                // Each argument is a vector as it is, with no conversion.
-                for (at, arg) in args.iter().take(2).enumerate() {
-                    let value = self.value(Some(arg.clone()))?;
-                    if self.etype_of(&value.ty).is_some_and(|e| e != Etype::Vector) {
-                        let message = format!("type mismatch on parm {}", at.saturating_add(1));
-                        return self.fatal(Code::E0340, span, message).map(Some);
-                    }
-                }
-                Ok(Some(Value::of(Type::Simple(SimpleType::Vector))))
-            }
+            "randomv" => self.randomv(args, call).map(Some),
             "entnum" => {
                 // `(e / 1i) / (nextent(world) / 1i)`, by the `nextent` builtin.
                 let entity = self.value(args.first().cloned())?;
