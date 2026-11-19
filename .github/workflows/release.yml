@@ -518,10 +518,13 @@ jobs:
 
   # P4-21 (COMP-9): every release regenerates the compatibility list from the conformance
   # corpus, attaches it, and fails when the list on the tagged commit is out of date, so the
-  # list published with a release is the one its code earns. It needs no signing secret.
+  # list published with a release is the one its code earns. It needs no signing secret. It
+  # runs on macOS, whose file system finds a file whatever the case of its name, as the Mac the
+  # list is committed from does: FreeCS's shared/defs.h includes animations.h and the file is
+  # Animations.h, so on Linux FreeCS does not compile, with FTEQCC or with us.
   compatibility:
     name: Regenerate the compatibility list
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     timeout-minutes: 120
     permissions:
       contents: read

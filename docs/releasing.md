@@ -250,7 +250,9 @@ Every release tag also runs the release workflow's **Regenerate the compatibilit
 (P4-21, COMP-9). It fetches the conformance corpus, writes
 [`docs/compatibility.md`](compatibility.md) with `cargo xtask compatibility`, attaches it to the
 run and shows it in the job summary. The job fails when the list on the tagged commit differs
-from the one it wrote. In that case, commit the attached list and tag again.
+from the one it wrote. In that case, commit the attached list and tag again. The job runs on
+macOS, and the list is written on a Mac or on Windows: FreeCS includes `animations.h` where its
+file is `Animations.h`, so it compiles only where a file name matches in any case.
 
 To write the list before tagging, with the corpus fetched (`cargo xtask corpus fetch`):
 
