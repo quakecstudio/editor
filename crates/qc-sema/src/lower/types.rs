@@ -130,6 +130,8 @@ pub(crate) struct RawMember {
     pub is_virtual: bool,
     /// The text of its first array suffix, compared on redeclaration (FTEF-9.13).
     pub array: Option<String>,
+    /// What that suffix's size is, as `QCC_PR_IntConstExpr` reads it.
+    pub length: Option<IntConst>,
     /// Its `virtual`, `nonvirtual` and `static` words (FTEF-9.16).
     pub qualification: Qualification,
     /// Whether it belongs to each instance or is a global of the class's (FTEF-9.16, FTEF-9.18).
@@ -278,6 +280,20 @@ pub(crate) enum IntConst {
 }
 
 impl IntConst {
+    /// The first array suffix of `declarator`, `[N]`, as it is written, and the size it
+    /// gives, unfolded for one with none; neither for a declarator with no suffix.
+    fn of_suffix(declarator: &ast::Declarator, cx: Cx<'_>) -> (Option<String>, Option<Self>) {
+        let Some(suffix) = declarator.array_suffixes().next() else {
+            return (None, None);
+        };
+        let size = suffix
+            .children()
+            .find_map(ast::Expr::cast)
+            .map_or(Self::Unfolded, |size| Self::of(&size, cx));
+        let text = String::from_utf8_lossy(&suffix.text()).into_owned();
+        (Some(text), Some(size))
+    }
+
     /// The constant `expr` is.
     pub(super) fn of(expr: &ast::Expr, cx: Cx<'_>) -> Self {
         match expr {
@@ -1035,6 +1051,7 @@ fn lower_member(
             && !null
             && !has(MemberWord::Static)
             && !has(MemberWord::Const);
+        let (array, length) = IntConst::of_suffix(&declarator, cx);
         out.push(RawMember {
             name: name_token.text_lossless(),
             span: name_token.span(),
@@ -1059,10 +1076,8 @@ fn lower_member(
                 virtuality: has(MemberWord::Virtual) || has(MemberWord::Nonvirtual),
                 inline: has(MemberWord::Inline),
             },
-            array: declarator
-                .array_suffixes()
-                .next()
-                .map(|n| String::from_utf8_lossy(&n.text()).into_owned()),
+            array,
+            length,
         });
     }
     // FTEF-9.4: `Name(void);`, a constructor written without a return type.
@@ -1095,6 +1110,7 @@ fn lower_member(
             is_global: false,
             is_virtual: false,
             array: None,
+            length: None,
             qualification: Qualification::Qualified,
             storage: MemberStorage::Instance,
             follow: String::new(),

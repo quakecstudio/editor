@@ -16,7 +16,8 @@ use crate::check::TypedBody;
 use crate::ir;
 use crate::lower::ArrayDim;
 use crate::lower::{
-    MemberBase, MemberKind, MemberStorage, Qualification, RawClass, RawDecl, RawMember, RawUse,
+    IntConst, MemberBase, MemberKind, MemberStorage, Qualification, RawClass, RawDecl, RawMember,
+    RawUse,
 };
 use crate::resolve::{
     COMPONENTS, ClassInfo, Found, MAX_CLASS_DEPTH, Pending, Resolver, Scope, StructMatch,
@@ -252,19 +253,19 @@ impl<'a> Resolver<'a> {
                 if kind == DefKind::Field && member.array.is_none() {
                     self.declare_component_fields(def, member, location);
                 }
-                // FTEF-31.2: a member array is an array of fields, indexed by its length.
-                if let Some(size) = &member.array
+                // FTEF-31.2: a member array is an array of fields, indexed by its length, the
+                // integer its size is (`QCC_PR_IntConstExpr`), `16i` as `16`.
+                if let Some(length) = &member.length
                     && let Some(facts) = self.facts.get_mut(id.index())
                 {
-                    // The suffix as it is written, `[N]`.
-                    let size = size.trim();
-                    let size = size.strip_prefix('[').unwrap_or(size);
-                    let size = size.strip_suffix(']').unwrap_or(size);
-                    facts.array = Some(
-                        size.trim()
-                            .parse()
-                            .map_or(ArrayDim::Unknown, ArrayDim::Sized),
-                    );
+                    facts.array = Some(match length {
+                        IntConst::Integer(size) => {
+                            u32::try_from(*size).map_or(ArrayDim::Unknown, ArrayDim::Sized)
+                        }
+                        IntConst::NotInteger | IntConst::Name(_) | IntConst::Unfolded => {
+                            ArrayDim::Unknown
+                        }
+                    });
                 }
                 id
             };

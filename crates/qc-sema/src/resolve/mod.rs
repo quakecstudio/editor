@@ -148,6 +148,8 @@ pub struct ModuleIndex {
     /// FTEF-9.27: each class's spawn function the program gives no body, whose body the model
     /// writes, in declaration order.
     pub(crate) spawn_functions: Vec<DefId>,
+    /// The arrays whose size the model does not know.
+    pub(crate) unsized_arrays: HashSet<DefId>,
     /// FTEF-9.27: each class's fields as its first body declares them, FTEQCC's `params` of
     /// the class: a member declared twice is there twice, a static or nonvirtual one not at
     /// all (`if (isnonvirt || isstatic) continue;`).
@@ -335,6 +337,13 @@ impl ModuleIndex {
     #[must_use]
     pub fn array_len(&self, def: DefId) -> Option<u32> {
         self.arrays.get(&def).copied()
+    }
+
+    /// Whether `def` is an array whose size the model does not know, which a compiler cannot
+    /// lay out.
+    #[must_use]
+    pub fn is_unsized_array(&self, def: DefId) -> bool {
+        self.unsized_arrays.contains(&def)
     }
 
     /// The layout of the struct or union type `ty` as written, when the model lays it out

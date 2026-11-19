@@ -7177,3 +7177,37 @@ fn a_member_arrays_elements_have_their_own_fields() {
     assert_eq!(global(&progs, "base::__mvs[1]"), vs + 3);
     assert_eq!(global(&progs, "base::__mfl[3]"), fl + 3);
 }
+
+// spec FTEF-31.33: a member array's size is the integer its suffix folds to, `16i` and `0x4`
+// as their numbers, so its index is checked against it; one sized by a name, which the model
+// does not fold, is refused, not written as one field
+#[test]
+fn a_member_arrays_size_is_its_integer_constant() {
+    let source = |sizes: &str| {
+        format!(
+            "{CLASS_HEADER}int i;\nconst float N = 4;\nclass base {{ {sizes} \
+             virtual void() Run; }};\nvoid base::Run(void) {{ i = ammo[i]; x = fl[i]; }}\n"
+        )
+    };
+    let progs = fte_progs(&source("int ammo[16i]; float fl[0x4];"));
+    let t = body(&progs, "base::Run");
+    assert_eq!(
+        names_in(&progs, "base::Run"),
+        [
+            "BOUNDCHECK",
+            "LOADA_FLD",
+            "LOADF_I",
+            "BOUNDCHECK",
+            "LOADA_FLD",
+            "LOADF_F"
+        ]
+    );
+    assert_eq!((t[0].b, t[3].b), (16, 4));
+    assert!(matches!(
+        compile_fteqcc(&source("int ammo[N]; float fl[4];")),
+        Err(CompileError::Internal {
+            internal: Internal::Unsupported,
+            ..
+        })
+    ));
+}

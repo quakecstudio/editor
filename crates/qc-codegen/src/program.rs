@@ -852,6 +852,10 @@ impl Program {
         // offset of that word's field, as a pool of FTEQCC's has (`::vector[N]`); any other
         // member has its field's one global.
         let count = index.array_len(id);
+        // An array whose size the model did not read cannot be laid out.
+        if index.is_unsized_array(id) {
+            return Err(Internal::Unsupported);
+        }
         let inner = ty.field_inner().ok_or(Internal::Unsupported)?;
         let words = match count {
             Some(count) => type_words(index, &inner)

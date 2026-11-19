@@ -242,8 +242,14 @@ impl Resolver<'_> {
     pub(in crate::resolve) fn record_shapes(&mut self) {
         let mut pending = Vec::new();
         for (i, def) in self.index.defs.iter().enumerate() {
-            if let Some(ArrayDim::Sized(count)) = self.facts.get(i).and_then(|f| f.array) {
-                self.index.arrays.insert(DefId::new(i), count);
+            match self.facts.get(i).and_then(|f| f.array) {
+                Some(ArrayDim::Sized(count)) => {
+                    self.index.arrays.insert(DefId::new(i), count);
+                }
+                Some(ArrayDim::Unsized | ArrayDim::Unknown) => {
+                    self.index.unsized_arrays.insert(DefId::new(i));
+                }
+                None => {}
             }
             if self.facts.get(i).is_some_and(|f| f.constant) {
                 self.index.constants.insert(DefId::new(i));
