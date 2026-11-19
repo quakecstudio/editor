@@ -7394,3 +7394,32 @@ fn a_calls_value_read_by_a_store_is_not_copied_again() {
         ["CALL1H", "RAND2", "CALL2H"]
     );
 }
+
+// spec FTEF-9.27: a function member given 0 is stored in the table as it is
+#[test]
+fn a_function_member_given_null_is_stored_in_the_table() {
+    let progs = fte_progs(&format!(
+        "{CLASS_HEADER}class base {{ virtual void(void) changed = 0; virtual void() Run; }};\n\
+         void base::Run(void) {{ if (changed) changed(); }}\n"
+    ));
+    assert_eq!(
+        names_in(&progs, "spawnfunc_base"),
+        ["FLDADDRESS", "STOREP_FNC", "FLDADDRESS", "STOREP_FNC"]
+    );
+}
+
+// spec FTEF-9.28: a nonvirtual member read through an object is its function, with no load; a
+// virtual one is loaded from the object
+#[test]
+fn a_nonvirtual_member_read_through_an_object_is_its_function() {
+    let progs = fte_progs(&format!(
+        "{CLASS_HEADER}entity e;\nclass base {{ nonvirtual void(void) Plain; \
+         virtual void() Run; }};\nvoid base::Plain(void) {{ }}\nvoid base::Run(void) {{ }}\n\
+         void() f = {{ base t = (base)e; void() fn = t.Plain; fn = t.Run; }};\n"
+    ));
+    assert_eq!(
+        names_in(&progs, "f"),
+        ["STORE_ENT", "STORE_FNC", "LOADF_FNC"]
+    );
+    assert_eq!(body(&progs, "f")[1].a, global(&progs, "base::Plain"));
+}

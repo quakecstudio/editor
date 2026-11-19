@@ -604,11 +604,14 @@ impl<'a> Resolver<'a> {
         for owner in chain.iter().rev() {
             let params = self.index.class_params.get(owner).cloned();
             for member in params.unwrap_or_default() {
-                // "Member function %s was not defined": a member with no body is left empty.
+                // "Member function %s was not defined": a member with no body is left empty,
+                // but one given 0, whose function `CLASS::NAME` is declared and holds none:
+                // the table stores every member whose function is found (`if (!virt.cast)`).
+                let given_null = self.index.def(member).is_some_and(|d| d.initialized);
                 let Some(function) = self
                     .index
                     .virtual_function(member)
-                    .filter(|&f| self.index.def(f).is_some_and(|d| d.initialized))
+                    .filter(|&f| given_null || self.index.def(f).is_some_and(|d| d.initialized))
                 else {
                     continue;
                 };

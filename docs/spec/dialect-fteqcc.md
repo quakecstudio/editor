@@ -1004,7 +1004,9 @@ heavily class-based (547 `class` declarations across the three mods).
      each of the class's fields in the order its body declares them (`for (p = 0; p <
      clas->num_parms; p++)`) that holds a function with a body is stored: `OP_ADDRESS` of
      `self` and the field, then `OP_STOREP_FNC` of `CLASS::NAME`. One with no body is skipped
-     ("Member function %s was not defined"). A member declared twice in a class's body is
+     ("Member function %s was not defined"), but a member given 0, `virtual void() m = 0;`,
+     whose function is declared and holds none, is stored as it is. A member declared twice
+     in a class's body is
      twice among its fields and is stored twice. A member a class below declares again is
      stored by its own class and again, to the same field, by each class below with that
      class's function: the table skips a member only when a lower class has a field of its
@@ -1021,7 +1023,12 @@ heavily class-based (547 `class` declarations across the three mods).
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_EmitClassFromFunction`, `QCC_PR_EmitClassFunctionTable`;
   `engine/qclib/qcc_pr_lex.c`, `QCC_PR_ParseEntClass`; every spawn function of FreeCS's
   client and server compared with the pinned FTEQCC's by opcode (2026-11-19).
-
+- **FTEF-9.28** A nonvirtual member read through an object as a value is its function, the
+  constant `CLASS::NAME` (`REF_NONVIRTUAL`), with no field to load: `fn = t.Spawn` of
+  `nonvirtual void() Spawn` is `STORE_FNC base::Spawn, fn`, and `if (t.Spawn)` tests that
+  constant, where a virtual member is loaded from the object by `OP_LOAD_FNC`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseField`, `QCC_RefToDef`; checked against the pinned FTEQCC's output on an FTE
+  target (2026-11-19).
 ## FTEF-10 Accessors
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseAccessorMember` and the `accessor` branch of

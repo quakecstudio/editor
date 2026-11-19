@@ -96,6 +96,22 @@ impl Checker<'_> {
         match value.reference.clone() {
             Reference::Global => self.extend_narrow(value, span),
             Reference::Accessor(accessor) => self.accessor_get(&value, &accessor, span),
+            // FTEF-9.28: a nonvirtual member read through an object is its function, the
+            // constant `CLASS::NAME` (`REF_NONVIRTUAL`), which has no field to load.
+            Reference::Field(field)
+                if let Some(def) = field.def
+                    && self.env.definition(def).is_some_and(|d| {
+                        d.member_of.is_some() && d.kind == crate::DefKind::Function
+                    }) =>
+            {
+                Ok(Value {
+                    constness: self.env.constness(def),
+                    sym: Sym::Def(def, true, 0),
+                    readonly: true,
+                    reference: Reference::Global,
+                    ..Value::of(value.ty)
+                })
+            }
             Reference::Field(_) => {
                 // FTEF-2.12: `QCC_PR_ExpandField` has no load of an 8- or 16-bit integer.
                 if narrow_bits(&value.ty).is_some() {
