@@ -54,6 +54,9 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`git.status`](#gitstatus) | Lists the project repository's branch and changed files, staged and not, as git status does; none when the project is not in a git repository. |
 | [`git.switch`](#gitswitch) | Checks out a branch, as git switch does, and reads the project's files again; refused while files have unsaved edits. |
 | [`git.unstage`](#gitunstage) | Unstages a file, or one hunk of its staged changes. |
+| [`help.about`](#helpabout) | Opens the About window: the app's name, version, copyright and license, and links to its site and its source. |
+| [`help.report_issue`](#helpreport_issue) | Opens the page where an issue with the app is reported, in the browser. |
+| [`help.user_guide`](#helpuser_guide) | Opens the user guide on the website, in the browser. |
 | [`map.accept`](#mapaccept) | Accepts hunks of the open map's review, every one when none are named: their change is kept and no longer waits. |
 | [`map.add_layer`](#mapadd_layer) | Adds an empty layer to the open map, as TrenchBroom writes one. |
 | [`map.add_wad`](#mapadd_wad) | Adds a WAD file to the open map's list in its world's `wad` or `_wad` key, by its path from the map's folder when it is under it, as TrenchBroom adds a WAD dropped on its window; one listed already is not listed again. |
@@ -177,6 +180,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`scenario.run`](#scenariorun) | Builds the open project and plays a scenario file on it in the server simulation, answering whether each assertion held, with the values read, and writing its screenshots beside it. |
 | [`settings.get`](#settingsget) | Gives one setting's value and where it comes from. |
 | [`settings.list`](#settingslist) | Lists every setting with its default, its value and where the value comes from. |
+| [`settings.open`](#settingsopen) | Opens the user's settings file in the editor, made with nothing set when there is none. |
 | [`settings.reset`](#settingsreset) | Removes a setting from the user's or the project's settings file and writes the file. |
 | [`settings.set`](#settingsset) | Sets a setting in the user's or the project's settings file and writes the file. |
 | [`symbol.complete`](#symbolcomplete) | Lists the names that may be written at a place. |
@@ -1678,6 +1682,54 @@ Parameters:
     "path"
   ],
   "title": "GitStageParams",
+  "type": "object"
+}
+```
+
+## `help.about`
+
+Opens the About window: the app's name, version, copyright and license, and links to its site and its source.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `help.report_issue`
+
+Opens the page where an issue with the app is reported, in the browser.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `help.user_guide`
+
+Opens the user guide on the website, in the browser.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
   "type": "object"
 }
 ```
@@ -7591,6 +7643,22 @@ Parameters:
 ## `settings.list`
 
 Lists every setting with its default, its value and where the value comes from.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `settings.open`
+
+Opens the user's settings file in the editor, made with nothing set when there is none.
 
 Parameters:
 

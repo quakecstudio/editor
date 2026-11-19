@@ -33,6 +33,7 @@ mod tests;
 
 #[cfg(test)]
 pub(crate) use builtin::BUILTIN_IDS;
+pub use builtin::{LIST_COMMANDS, REDO, REPEAT, UNDO};
 pub use command::{BoxError, Command, NoParams, Outcome, UndoStep};
 pub use error::{CommandError, RegisterError};
 #[cfg(test)]

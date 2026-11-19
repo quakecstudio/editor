@@ -35,9 +35,10 @@ pub use docks::{
     DockPanel, Docks, MOVE_PANEL, MovePanelParams, SHOW_PANEL, ShowPanelParams, WhenShown,
 };
 pub use editor::{
-    CLOSE_SPLIT, EditorRequest, FOLD, FOLD_ALL, GO_TO_LINE, GO_TO_SYMBOL, GamePlace,
-    GoToLineParams, Outline, PROJECT_SEARCH_VIEW, SPLIT_DOWN, SPLIT_RIGHT, SoftWrap, Split,
-    TAB_SWITCHER, TOGGLE_EMBEDDED_GAME, TOGGLE_OUTLINE, TOGGLE_SOFT_WRAP, UNFOLD, UNFOLD_ALL,
+    ABOUT, CLOSE_SPLIT, EditorRequest, FOLD, FOLD_ALL, GO_TO_LINE, GO_TO_SYMBOL, GamePlace,
+    GoToLineParams, OPEN_SETTINGS, Outline, PROJECT_SEARCH_VIEW, REPORT_ISSUE, SPLIT_DOWN,
+    SPLIT_RIGHT, SoftWrap, Split, TAB_SWITCHER, TOGGLE_EMBEDDED_GAME, TOGGLE_OUTLINE,
+    TOGGLE_SOFT_WRAP, UNFOLD, UNFOLD_ALL, USER_GUIDE,
 };
 pub use keys::{
     DEFAULT_KEYS, DefaultKey, Follows, KeyContext, TextureStep, UNKEYED, Unkeyed, VIEW_KEYS,

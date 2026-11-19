@@ -55,6 +55,7 @@ use qs_workbench::{
 };
 use qs_workbench::{SELECT, SET_FIELD, SelectParams, SelectedEntity, SetFieldParams};
 
+use crate::about::{self, AboutWindow};
 use crate::agent::{self, AgentAction, AgentPanel, ThreadIndex};
 use crate::command_line::CommandLineView;
 use crate::debugger::DebugAction;
@@ -69,7 +70,7 @@ use crate::features::{panel_icon, panel_topic};
 use crate::finder::FileFinder;
 use crate::game_view::GameSlot;
 use crate::git_panel::TabShown;
-use crate::help::{self, Topic};
+use crate::help::{self, GUIDE, Topic};
 use crate::icons::Icon;
 use crate::icons::Toggled;
 use crate::keymap::{self, Platform, Scope};
@@ -261,6 +262,8 @@ pub struct Shell {
     pub(crate) drawn: [Option<f32>; 3],
     /// The command palette.
     pub(crate) palette: Palette,
+    /// The About window (P7-17).
+    about: AboutWindow,
     /// The command line above the status bar (UI-23).
     pub(crate) command_line: CommandLineView,
     /// The file finder.
@@ -336,6 +339,7 @@ impl Shell {
             centre_tab: CentreTab::default(),
             drawn: [None; 3],
             palette: Palette::default(),
+            about: AboutWindow::default(),
             command_line: CommandLineView::default(),
             finder: FileFinder::default(),
             symbol_scope: SymbolScope::default(),
@@ -840,8 +844,34 @@ impl Shell {
         }
     }
 
+    /// Whether a map shows in the centre: what the Map menu's items act on.
+    #[must_use]
+    pub fn map_shown(&self) -> bool {
+        self.centre_tab == CentreTab::Map && self.session.context().workbench.map().is_some()
+    }
+
+    /// Opens the user's settings file in the editor (P7-17), made with nothing set when there
+    /// is none, as Zed's Open Settings does.
+    fn open_settings(&mut self) {
+        let Some(path) = self.settings_file.clone() else {
+            tracing::warn!("no settings file to open: the app has no config directory");
+            return;
+        };
+        if !path.exists() {
+            let made = path
+                .parent()
+                .map_or(Ok(()), std::fs::create_dir_all)
+                .and_then(|()| std::fs::write(&path, ""));
+            if let Err(error) = made {
+                tracing::warn!(%error, path = %path.display(), "settings file not made");
+                return;
+            }
+        }
+        self.jump(Jump { path, offset: 0 });
+    }
+
     /// Carries out the editor action the layout last asked for, once (P4-32).
-    fn editor_request(&mut self) {
+    fn editor_request(&mut self, ctx: &egui::Context) {
         let layout = *self.layout();
         if layout.editor_requests == self.features.editors.editor_seen {
             return;
@@ -865,6 +895,12 @@ impl Shell {
                 self.centre_tab = CentreTab::Search;
                 return;
             }
+            EditorRequest::About => return self.about.open(),
+            EditorRequest::UserGuide => return ctx.open_url(egui::OpenUrl::new_tab(GUIDE)),
+            EditorRequest::ReportIssue => {
+                return ctx.open_url(egui::OpenUrl::new_tab(about::NEW_ISSUE));
+            }
+            EditorRequest::Settings => return self.open_settings(),
             EditorRequest::Fold
             | EditorRequest::Unfold
             | EditorRequest::FoldAll
@@ -889,7 +925,11 @@ impl Shell {
             EditorRequest::AskLine
             | EditorRequest::GoToSymbol
             | EditorRequest::TabSwitcher
-            | EditorRequest::ProjectSearch => {}
+            | EditorRequest::ProjectSearch
+            | EditorRequest::About
+            | EditorRequest::UserGuide
+            | EditorRequest::ReportIssue
+            | EditorRequest::Settings => {}
         }
         // A fold over the caret puts it on the fold's first line, as VS Code does, so the
         // fold is not undone by the caret in it.
@@ -1246,6 +1286,7 @@ impl Shell {
         self.toolbar(ui);
         self.reset_notice(ui);
         self.game_guide(ui);
+        self.about.show(ui.ctx(), &self.theme);
         match self.status_bar(ui) {
             Some(StatusAsk::Show(panel)) => {
                 let params = ShowPanelParams {
@@ -2584,7 +2625,7 @@ impl Shell {
         if switched {
             self.sync_editor();
         }
-        self.editor_request();
+        self.editor_request(ui.ctx());
         self.refresh_inlays();
         self.outline_panel(ui);
         self.second_pane(ui);

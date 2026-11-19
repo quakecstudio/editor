@@ -41,13 +41,15 @@ use crate::keymap::{self, Platform};
 use crate::launch::{Launch, forward_paths};
 use crate::map_editor::MIN_VIEW_HEIGHT;
 use crate::map_tools::{MapTool, Readout};
+use crate::menu::{self, Item, MenuChoice};
 use crate::palette::highlighted;
 use crate::shell::{
     CentreTab, EDITOR_AREA, PointerHeld, Shell, ZoomStep, commanded_size, dragged_size,
 };
 use crate::strings::{
     Text, command_count, command_ran, command_unknown, exit_status, help_for, icon_hint,
-    match_count, missing_textures, panel_button, replace_with, review_waiting, select_all_of,
+    match_count, menu_title, missing_textures, panel_button, replace_with, review_waiting,
+    select_all_of, version_line,
 };
 use crate::theme::{Contrast, Mode, Motion, Theme, ThemeError, Token, semibold};
 use crate::{App, AppError};
@@ -693,6 +695,111 @@ fn every_binding_names_a_registered_command_without_parameters() {
         assert_eq!(keymap::shortcut(binding.command), Some(binding.shortcut));
     }
     assert_eq!(keymap::shortcut("view.toggle_panel"), None);
+}
+
+// No spec statement: P7-17, the acceptance criterion: every menu item that is not the system's
+// own names a command of the registry, a command item one that takes no parameter and has a
+// title, each once; and every command with a default key is an item of a menu
+#[test]
+fn every_menu_item_is_a_command_and_every_keyed_command_is_in_a_menu() {
+    let ctx = egui::Context::default();
+    let app = App::checked_on_the_frame(&ctx, None).unwrap();
+    let registry = app.shell().session().registry();
+    let mut in_menus = BTreeSet::new();
+    let mut titles = BTreeSet::new();
+    for spec in menu::MENUS {
+        assert!(!spec.items.is_empty(), "{:?}", spec.title);
+        for item in spec.flat() {
+            let command = match item {
+                Item::Command(id) => {
+                    assert!(keymap::bindable(registry, id), "{id} takes no parameter");
+                    let title = menu_title(id);
+                    assert!(title.is_some(), "{id} has a title");
+                    let title = title.unwrap_or_default();
+                    assert!(titles.insert(title), "{title} is one item");
+                    assert!(in_menus.insert(id), "{id} is one item");
+                    id
+                }
+                Item::Choice(choice) => {
+                    assert!(titles.insert(choice.title().get()), "{choice:?}");
+                    in_menus.insert(choice.command());
+                    choice.command()
+                }
+                Item::System(_) | Item::Separator | Item::MapViewKeys(_) => continue,
+            };
+            assert!(registry.get(command).is_some(), "{command} is registered");
+        }
+    }
+    for key in qs_layout::DEFAULT_KEYS {
+        assert!(
+            in_menus.contains(key.command),
+            "{} is in a menu",
+            key.command
+        );
+    }
+    // The app's own menu comes first, and the Window and Help menus last, as on every Mac.
+    let roles: Vec<menu::Role> = menu::MENUS.iter().map(|spec| spec.role).collect();
+    assert_eq!(roles.first(), Some(&menu::Role::App));
+    assert_eq!(
+        roles.get(roles.len() - 2..),
+        Some(&[menu::Role::Window, menu::Role::Help][..])
+    );
+}
+
+// No spec statement: P7-17: an item with a key gives the key to the window, which does what
+// the key does where the keyboard is; an item with none runs its command or is carried out
+// the window's way; and Help, About opens the window with the app's name, version, copyright,
+// license and links
+#[test]
+fn a_chosen_menu_item_presses_its_key_or_runs_its_command() {
+    type Chosen = Vec<menu::Chosen>;
+    let mut harness = Harness::builder()
+        .with_size([1440.0, 900.0])
+        .build_ui_state(
+            |ui, (app, chosen): &mut (Option<App>, Chosen)| {
+                if let Some(app) = app {
+                    app.frame_after(ui, std::mem::take(chosen));
+                }
+            },
+            (None, Vec::new()),
+        );
+    harness.state_mut().0 = Some(App::checked_on_the_frame(&harness.ctx, None).unwrap());
+    harness.run();
+    let choose = |harness: &mut Harness<'static, (Option<App>, Chosen)>, chosen| {
+        harness.state_mut().1.push(chosen);
+        harness.run();
+        harness.run();
+    };
+    assert!(harness.query_by_label(Text::AboutCopyright.get()).is_none());
+    choose(&mut harness, menu::Chosen::Run(qs_layout::ABOUT));
+    harness.get_by_label(Text::AboutCopyright.get());
+    harness.get_by_label(Text::AboutLicense.get());
+    harness.get_by_label(&version_line(env!("CARGO_PKG_VERSION")));
+    harness.get_by_role_and_label(Role::Link, Text::AboutSite.get());
+    harness.get_by_role_and_label(Role::Link, Text::AboutSource.get());
+    harness.get_by_label(Text::AboutClose.get()).click();
+    harness.run();
+    assert!(harness.query_by_label(Text::AboutCopyright.get()).is_none());
+
+    let layout = |harness: &Harness<'static, (Option<App>, Chosen)>| {
+        *harness.state().0.as_ref().unwrap().shell().layout()
+    };
+    let before = layout(&harness);
+    choose(
+        &mut harness,
+        menu::Chosen::Choice(MenuChoice::Toggle(Panel::Left)),
+    );
+    assert_ne!(
+        layout(&harness).panel(Panel::Left).visible,
+        before.panel(Panel::Left).visible
+    );
+    // The key of a keyed item is pressed for the window, which runs what it is bound to.
+    let wrap = keymap::shortcut(qs_layout::TOGGLE_SOFT_WRAP).unwrap();
+    choose(&mut harness, menu::Chosen::Key(wrap));
+    assert_ne!(layout(&harness).soft_wrap, before.soft_wrap);
+    let palette = MenuChoice::Palette.window_key().unwrap();
+    choose(&mut harness, menu::Chosen::Key(palette));
+    harness.get_by_role_and_label(Role::Dialog, Text::CommandPalette.get());
 }
 
 // PRIN-3: a binding's shortcut runs its command, and is left alone while the palette is open.

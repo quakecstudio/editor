@@ -59,10 +59,12 @@ pub enum Unkeyed {
     /// It needs a value a key cannot give, a path, a name, a place: it runs from the command
     /// line, which asks for each, or from the control in the window that has the value.
     Typed,
+    /// It is run from a menu or the palette, too seldom for a key to be spent on it.
+    Menu,
 }
 
 /// Every default key, a command once.
-pub const DEFAULT_KEYS: [DefaultKey; 74] = [
+pub const DEFAULT_KEYS: [DefaultKey; 75] = [
     DefaultKey {
         command: "edit.undo",
         keys: "secondary-z",
@@ -286,6 +288,12 @@ pub const DEFAULT_KEYS: [DefaultKey; 74] = [
         keys: "ctrl-shift-`",
         context: KeyContext::Window,
         follows: Follows::Own("VS Code's Create New Terminal"),
+    },
+    DefaultKey {
+        command: "settings.open",
+        keys: "secondary-,",
+        context: KeyContext::Window,
+        follows: Follows::Own("the settings key of every Mac app, and Zed's"),
     },
     DefaultKey {
         command: "map.save",
@@ -1124,7 +1132,7 @@ pub const VIEW_KEYS: [ViewKeyRow; 55] = [
 ];
 
 /// Every command with no key of its own, and why.
-pub const UNKEYED: [(&str, Unkeyed); 160] = [
+pub const UNKEYED: [(&str, Unkeyed); 163] = [
     ("checkpoint.list", Unkeyed::Query),
     ("checkpoint.restore", Unkeyed::Typed),
     ("code.actions", Unkeyed::Typed),
@@ -1161,6 +1169,9 @@ pub const UNKEYED: [(&str, Unkeyed); 160] = [
     ("git.status", Unkeyed::Query),
     ("git.switch", Unkeyed::Typed),
     ("git.unstage", Unkeyed::Typed),
+    ("help.about", Unkeyed::Menu),
+    ("help.report_issue", Unkeyed::Menu),
+    ("help.user_guide", Unkeyed::Menu),
     ("map.add_layer", Unkeyed::Typed),
     ("map.add_wad", Unkeyed::Typed),
     ("map.backups", Unkeyed::Query),

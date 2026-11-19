@@ -45,6 +45,7 @@ Every command's default key (UI-21). A key follows TrenchBroom's default where T
 | `project.export` | `secondary-alt-e` | anywhere | ours: E for export |
 | `checkpoint.create` | `secondary-alt-s` | anywhere | ours: a save beside the file's |
 | `terminal.new` | `ctrl-shift-`` | anywhere | ours: VS Code's Create New Terminal |
+| `settings.open` | `secondary-,` | anywhere | ours: the settings key of every Mac app, and Zed's |
 | `map.save` | `secondary-s` | in the Map tab | TrenchBroom's `Menu/File/Save` |
 | `map.copy` | `secondary-c` | in the Map tab | TrenchBroom's `Menu/Edit/Copy` |
 | `map.select` | `secondary-shift-a` | in the Map tab | TrenchBroom's `Menu/Edit/Deselect All` |
@@ -147,7 +148,7 @@ These act on what the map view holds, the selection it draws, its tool and its c
 
 ## Commands with no key
 
-A command that answers a question is read by a panel, the agent or MCP. A command the window runs itself is a poll or a hand-over. A command that needs a value, a path, a name or a place, runs from the command line, which asks for each, or from the control in the window that has the value.
+A command that answers a question is read by a panel, the agent or MCP. A command the window runs itself is a poll or a hand-over. A command that needs a value, a path, a name or a place, runs from the command line, which asks for each, or from the control in the window that has the value. A command run from a menu, or the palette, is used too seldom for a key.
 
 | Command | Why | Summary |
 | --- | --- | --- |
@@ -187,6 +188,9 @@ A command that answers a question is read by a panel, the agent or MCP. A comman
 | `git.status` | answers a question | Lists the project repository's branch and changed files, staged and not, as git status does; none when the project is not in a git repository. |
 | `git.switch` | needs a value | Checks out a branch, as git switch does, and reads the project's files again; refused while files have unsaved edits. |
 | `git.unstage` | needs a value | Unstages a file, or one hunk of its staged changes. |
+| `help.about` | run from a menu | Opens the About window: the app's name, version, copyright and license, and links to its site and its source. |
+| `help.report_issue` | run from a menu | Opens the page where an issue with the app is reported, in the browser. |
+| `help.user_guide` | run from a menu | Opens the user guide on the website, in the browser. |
 | `map.add_layer` | needs a value | Adds an empty layer to the open map, as TrenchBroom writes one. |
 | `map.add_wad` | needs a value | Adds a WAD file to the open map's list in its world's `wad` or `_wad` key, by its path from the map's folder when it is under it, as TrenchBroom adds a WAD dropped on its window; one listed already is not listed again. |
 | `map.backups` | answers a question | Lists the open map's backups in the autosave folder beside it, the newest first. |

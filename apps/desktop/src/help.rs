@@ -10,6 +10,7 @@
 
 use eframe::egui::{self, Button, Response, RichText, Ui, Vec2};
 
+use crate::about::{SITE, SOURCE};
 use crate::icons::{ICON_BUTTON, mark};
 use crate::strings::{self, Text};
 use crate::theme::{Theme, Token};
@@ -246,13 +247,18 @@ pub(crate) fn open_links(ctx: &egui::Context) {
     }
 }
 
-/// The guide links the frame asked to open, taken from egui's output, which has no browser of
-/// its own here; any other request is left where it is.
+/// The links to the guide, the app's site and its source the frame asked to open, taken from
+/// egui's output, which has no browser of its own here; any other request is left where it
+/// is.
 fn take_links(ctx: &egui::Context) -> Vec<String> {
     ctx.output_mut(|output| {
         let mut urls = Vec::new();
         output.commands.retain(|command| match command {
-            egui::OutputCommand::OpenUrl(open) if open.url.starts_with(GUIDE) => {
+            egui::OutputCommand::OpenUrl(open)
+                if [GUIDE, SITE, SOURCE]
+                    .iter()
+                    .any(|own| open.url.starts_with(own)) =>
+            {
                 urls.push(open.url.clone());
                 false
             }

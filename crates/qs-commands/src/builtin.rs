@@ -17,6 +17,15 @@ pub(crate) const BUILTIN_IDS: [&str; 4] = [
     Builtin::Undo.id(),
 ];
 
+/// The id of the command that lists every command.
+pub const LIST_COMMANDS: &str = "commands.list";
+/// The id of the command that makes the last undone change again.
+pub const REDO: &str = "edit.redo";
+/// The id of the command that makes the last map edit once more.
+pub const REPEAT: &str = "edit.repeat";
+/// The id of the command that takes the last change back.
+pub const UNDO: &str = "edit.undo";
+
 /// A built-in command. These read or change the session's registry and undo history, which
 /// no [`crate::Command`] can reach, so the session carries them out itself.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -36,10 +45,10 @@ impl Builtin {
 
     const fn id(self) -> &'static str {
         match self {
-            Self::List => "commands.list",
-            Self::Redo => "edit.redo",
-            Self::Repeat => "edit.repeat",
-            Self::Undo => "edit.undo",
+            Self::List => LIST_COMMANDS,
+            Self::Redo => REDO,
+            Self::Repeat => REPEAT,
+            Self::Undo => UNDO,
         }
     }
 

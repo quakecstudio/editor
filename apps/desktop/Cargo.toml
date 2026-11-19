@@ -26,6 +26,8 @@ clap = { workspace = true, features = ["std", "derive", "help", "usage", "error-
 # with `accesskit` for screen readers (P2-23, #79): its Linux backend pulls in zvariant and
 # zbus_names, whose RUSTSEC-2026-0370 to -0372 notices deny.toml ignores with their reasons.
 eframe = { workspace = true, features = ["accesskit", "wayland", "wgpu", "x11"] }
+# The PNG decoder, for the About window's icon; the map editor's texture import links it already.
+image = { workspace = true, features = ["png"] }
 qs-agent = { workspace = true }
 # Base64, which a screenshot is attached to a thread in.
 qs-bridge = { workspace = true }
@@ -72,9 +74,6 @@ winresource = { workspace = true }
 # The offscreen snapshot harness (P2-21): egui's own, rendering through wgpu with no window and
 # comparing PNGs.
 egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
-# The image a test renderer returns to egui_kittest, which the map view's needs to draw with a
-# depth buffer.
-image = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 muda = { workspace = true }
@@ -83,7 +82,7 @@ muda = { workspace = true }
 objc2 = { workspace = true, features = ["std"] }
 # NSWorkspace's Increase contrast and Reduce motion settings, which the theme follows (display.rs).
 objc2-app-kit = { workspace = true, features = ["std", "NSAccessibility", "NSApplication", "NSResponder", "NSWorkspace"] }
-objc2-foundation = { workspace = true, features = ["std", "NSArray", "NSEnumerator", "NSString", "NSURL"] }
+objc2-foundation = { workspace = true, features = ["std", "NSArray", "NSEnumerator", "NSProcessInfo", "NSString", "NSURL"] }
 winit = { workspace = true }
 
 [lints]

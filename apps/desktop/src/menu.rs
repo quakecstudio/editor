@@ -1,175 +1,369 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The macOS menu bar (ADR-0003, ADR-0010): the app menu, a File menu with Open Folder and Quake
-//! Files, and a
-//! View menu whose items run the panel commands, through `muda`. Windows and Linux get theirs
-//! with the client-side title bar.
+//! The menu bar (ADR-0003, ADR-0010, P7-17): the menus a Mac app has, each item a command of
+//! the registry with its key shown. The menus are a table here, read on every platform by the
+//! test that holds each item to a command and each keyed command to an item; macOS draws the
+//! table through `muda` ([`native`]). Windows and Linux get theirs with the client-side title
+//! bar.
+//!
+//! A key equivalent in the menu bar is taken by the menu before the window sees the key, so an
+//! item with a key gives the key back to the window ([`Chosen::Key`]), which does with it what
+//! it does where the keyboard is: Cmd+Z takes back typing in the editor and a brush in the map
+//! view. An item with no key runs its command.
 
-use muda::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
-use qs_layout::{Layout, Panel};
+use eframe::egui::{Key, KeyboardShortcut, Modifiers};
+use qs_layout::{DEFAULT_KEYS, KeyContext, Panel};
+use qs_map_edit::backup::MAP_BACKUP;
 use qs_templates::Template;
+use qs_workbench::checkpoints::CREATE_CHECKPOINT;
+use qs_workbench::export::PROJECT_EXPORT;
+use qs_workbench::map_compile::MAP_LEAKS;
+use qs_workbench::map_profile::{MAP_CHOOSE_PROFILE, MAP_RUN_PROFILE};
+use qs_workbench::tools::{COMPILE, PROJECT_FILES};
 
+use crate::keymap;
 use crate::shell::ZoomStep;
 use crate::strings::Text;
 
-/// A menu item chosen.
+#[cfg(target_os = "macos")]
+pub mod native;
+
+/// An item the window carries out its own way: with a dialog first, or with what it holds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MenuChoice {
     /// File, Open Folder.
     OpenFolder,
     /// File, New id1 Project or New Rerelease Project (P4-17).
     NewProject(Template),
+    /// File, Go to File: the file finder.
+    FileFinder,
     /// File, Quake Files: the guide to the game's files (P3-21).
     GameFiles,
     /// File, Export Mod: the open project as a zip players install (P4-28).
     ExportMod,
     /// A View item: show or hide the panel.
     Toggle(Panel),
+    /// View, Command Palette.
+    Palette,
     /// View, Zoom In, Zoom Out or Actual Size (P7-12).
     Zoom(ZoomStep),
 }
 
-/// The menu bar, kept alive while the app runs.
-pub struct MenuBar {
-    _menu: Menu,
-    open_folder: MenuItem,
-    new_projects: [(Template, MenuItem); 2],
-    game_files: MenuItem,
-    export_mod: MenuItem,
-    items: [(Panel, CheckMenuItem); 3],
-    zooms: [(ZoomStep, MenuItem); 3],
+impl MenuChoice {
+    /// The registry command the item is the window's way of running.
+    #[must_use]
+    pub const fn command(self) -> &'static str {
+        match self {
+            Self::OpenFolder => qs_workbench::OPEN_PROJECT,
+            Self::NewProject(_) => qs_templates::NEW_PROJECT,
+            Self::FileFinder => PROJECT_FILES,
+            Self::GameFiles => qs_workbench::CHOOSE_GAME,
+            Self::ExportMod => PROJECT_EXPORT,
+            Self::Toggle(_) => qs_layout::TOGGLE_PANEL,
+            Self::Palette => qs_commands::LIST_COMMANDS,
+            Self::Zoom(_) => qs_layout::ZOOM,
+        }
+    }
+
+    /// The item's title.
+    #[must_use]
+    pub const fn title(self) -> Text {
+        match self {
+            Self::OpenFolder => Text::OpenFolderMenu,
+            Self::NewProject(Template::Id1) => Text::NewId1Menu,
+            Self::NewProject(Template::Rerelease) => Text::NewRereleaseMenu,
+            Self::FileFinder => Text::FileFinderMenu,
+            Self::GameFiles => Text::GameFilesMenu,
+            Self::ExportMod => Text::ExportModMenu,
+            Self::Toggle(Panel::Left) => Text::ToggleLeftPanel,
+            Self::Toggle(Panel::Right) => Text::ToggleRightPanel,
+            Self::Toggle(Panel::Bottom) => Text::ToggleBottomPanel,
+            Self::Palette => Text::PaletteMenu,
+            Self::Zoom(ZoomStep::In) => Text::ZoomInMenu,
+            Self::Zoom(ZoomStep::Out) => Text::ZoomOutMenu,
+            Self::Zoom(ZoomStep::Actual) => Text::ActualSizeMenu,
+        }
+    }
+
+    /// The key the window takes for the item itself, outside the keymap; none for an item
+    /// whose key, if it has one, is its command's in the keymap.
+    #[must_use]
+    pub const fn window_key(self) -> Option<KeyboardShortcut> {
+        match self {
+            Self::OpenFolder => Some(keymap::OPEN_FOLDER),
+            Self::FileFinder => Some(keymap::OPEN_FILE_FINDER),
+            Self::Palette => Some(keymap::OPEN_PALETTE),
+            // egui's own zoom keys, which the menu takes first and so runs itself.
+            Self::Zoom(ZoomStep::In) => Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::Plus)),
+            Self::Zoom(ZoomStep::Out) => {
+                Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::Minus))
+            }
+            Self::Zoom(ZoomStep::Actual) => {
+                Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::Num0))
+            }
+            Self::NewProject(_) | Self::GameFiles | Self::ExportMod | Self::Toggle(_) => None,
+        }
+    }
 }
 
-impl MenuBar {
-    /// Builds the menu bar and installs it in the app, its View items checked as `layout`
-    /// shows the panels.
-    ///
-    /// # Errors
-    ///
-    /// `muda`'s error when a menu cannot be built.
-    pub fn install(layout: &Layout) -> Result<Self, muda::Error> {
-        let item = |panel: Panel, text: Text| {
-            (
-                panel,
-                CheckMenuItem::new(text.get(), true, layout.panel(panel).visible, None),
-            )
-        };
-        let items = [
-            item(Panel::Left, Text::ToggleLeftPanel),
-            item(Panel::Right, Text::ToggleRightPanel),
-            item(Panel::Bottom, Text::ToggleBottomPanel),
-        ];
-        let app = Submenu::with_items(
-            Text::AppName.get(),
-            true,
-            &[
-                &PredefinedMenuItem::about(None, None),
-                &PredefinedMenuItem::separator(),
-                &PredefinedMenuItem::hide(None),
-                &PredefinedMenuItem::quit(None),
-            ],
-        )?;
-        // Cmd+O is the window's own binding (`keymap::OPEN_FOLDER`), on every platform; an
-        // accelerator here would take the key first on macOS and open the dialog twice.
-        let open_folder = MenuItem::new(Text::OpenFolderMenu.get(), true, None);
-        let new_projects = [
-            (
-                Template::Id1,
-                MenuItem::new(Text::NewId1Menu.get(), true, None),
-            ),
-            (
-                Template::Rerelease,
-                MenuItem::new(Text::NewRereleaseMenu.get(), true, None),
-            ),
-        ];
-        let game_files = MenuItem::new(Text::GameFilesMenu.get(), true, None);
-        let export_mod = MenuItem::new(Text::ExportModMenu.get(), true, None);
-        let file = Submenu::with_items(
-            Text::File.get(),
-            true,
-            &[
-                &new_projects[0].1,
-                &new_projects[1].1,
-                &open_folder,
-                &export_mod,
-                &game_files,
-            ],
-        )?;
-        // Cmd+Plus, Cmd+Minus and Cmd+0 are egui's own zoom keys, so the items have no
-        // accelerator, which would take the keys first and zoom twice.
-        let zooms = [
-            (
-                ZoomStep::In,
-                MenuItem::new(Text::ZoomInMenu.get(), true, None),
-            ),
-            (
-                ZoomStep::Out,
-                MenuItem::new(Text::ZoomOutMenu.get(), true, None),
-            ),
-            (
-                ZoomStep::Actual,
-                MenuItem::new(Text::ActualSizeMenu.get(), true, None),
-            ),
-        ];
-        let view = Submenu::with_items(
-            Text::ViewMenu.get(),
-            true,
-            &[
-                &items[0].1,
-                &items[1].1,
-                &items[2].1,
-                &PredefinedMenuItem::separator(),
-                &zooms[0].1,
-                &zooms[1].1,
-                &zooms[2].1,
-            ],
-        )?;
-        let menu = Menu::with_items(&[&app, &file, &view])?;
-        menu.init_for_nsapp();
-        Ok(Self {
-            _menu: menu,
-            open_folder,
-            new_projects,
-            game_files,
-            export_mod,
-            items,
-            zooms,
-        })
-    }
+/// One of the system's own items, which macOS carries out or the window is told of.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SystemItem {
+    /// Hide the app.
+    Hide,
+    /// Hide every other app.
+    HideOthers,
+    /// Show every app.
+    ShowAll,
+    /// Quit the app.
+    Quit,
+    /// Cut the selection to the clipboard.
+    Cut,
+    /// Copy the selection to the clipboard.
+    Copy,
+    /// Paste the clipboard.
+    Paste,
+    /// Select everything where the keyboard is.
+    SelectAll,
+    /// Minimize the window.
+    Minimize,
+    /// Zoom the window, as its green button does.
+    Maximize,
+    /// Make the window fill the screen, or stop.
+    Fullscreen,
+}
 
-    /// The items chosen since the last call.
-    pub fn chosen(&self) -> Vec<MenuChoice> {
-        let mut chosen = Vec::new();
-        while let Ok(event) = MenuEvent::receiver().try_recv() {
-            if event.id() == self.open_folder.id() {
-                chosen.push(MenuChoice::OpenFolder);
-            } else if let Some((template, _)) = self
-                .new_projects
-                .iter()
-                .find(|(_, item)| item.id() == event.id())
-            {
-                chosen.push(MenuChoice::NewProject(*template));
-            } else if event.id() == self.game_files.id() {
-                chosen.push(MenuChoice::GameFiles);
-            } else if event.id() == self.export_mod.id() {
-                chosen.push(MenuChoice::ExportMod);
-            } else if let Some((panel, _)) =
-                self.items.iter().find(|(_, item)| item.id() == event.id())
-            {
-                chosen.push(MenuChoice::Toggle(*panel));
-            } else if let Some((step, _)) =
-                self.zooms.iter().find(|(_, item)| item.id() == event.id())
-            {
-                chosen.push(MenuChoice::Zoom(*step));
+/// An item of a menu.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Item {
+    /// A registry command that takes no parameters, titled by
+    /// [`crate::strings::menu_title`]; its key is the keymap's.
+    Command(&'static str),
+    /// An item the window carries out its own way.
+    Choice(MenuChoice),
+    /// One of the system's own.
+    System(SystemItem),
+    /// A line between groups of items.
+    Separator,
+    /// A menu inside the menu holding every command the map view has a default key for, in the
+    /// keymap's order: its standard views, its camera's moves and its saved views.
+    MapViewKeys(Text),
+}
+
+/// A menu of the bar.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MenuSpec {
+    /// Its title.
+    pub title: Text,
+    /// Which of the bar's menus it is to the system.
+    pub role: Role,
+    /// Its items, top to bottom.
+    pub items: &'static [Item],
+}
+
+/// What a menu is to the system, beyond its items.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Role {
+    /// The app's own menu, first in the bar under the app's name.
+    App,
+    /// An ordinary menu.
+    Plain,
+    /// The Map menu, whose items act on the map shown: off while no map is.
+    Map,
+    /// The Window menu, which macOS adds the open windows to.
+    Window,
+    /// The Help menu, which macOS adds its search to.
+    Help,
+}
+
+/// What choosing an item asks of the window.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Chosen {
+    /// Press this key, which the menu took: the window does what the key does where the
+    /// keyboard is.
+    Key(KeyboardShortcut),
+    /// Run this command, which has no key.
+    Run(&'static str),
+    /// Carry out this item.
+    Choice(MenuChoice),
+    /// Cut, copy, paste or select all where the keyboard is.
+    Edit(SystemItem),
+}
+
+/// The menu bar, left to right.
+pub const MENUS: &[MenuSpec] = &[
+    MenuSpec {
+        title: Text::AppName,
+        role: Role::App,
+        items: &[
+            Item::Command(qs_layout::ABOUT),
+            Item::Separator,
+            Item::Command(qs_layout::OPEN_SETTINGS),
+            Item::Separator,
+            Item::System(SystemItem::Hide),
+            Item::System(SystemItem::HideOthers),
+            Item::System(SystemItem::ShowAll),
+            Item::Separator,
+            Item::System(SystemItem::Quit),
+        ],
+    },
+    MenuSpec {
+        title: Text::File,
+        role: Role::Plain,
+        items: &[
+            Item::Choice(MenuChoice::NewProject(Template::Id1)),
+            Item::Choice(MenuChoice::NewProject(Template::Rerelease)),
+            Item::Choice(MenuChoice::OpenFolder),
+            Item::Choice(MenuChoice::FileFinder),
+            Item::Separator,
+            Item::Command(CREATE_CHECKPOINT),
+            Item::Choice(MenuChoice::ExportMod),
+            Item::Separator,
+            Item::Choice(MenuChoice::GameFiles),
+        ],
+    },
+    MenuSpec {
+        title: Text::AgentEdit,
+        role: Role::Plain,
+        items: &[
+            Item::Command(qs_commands::UNDO),
+            Item::Command(qs_commands::REDO),
+            Item::Command(qs_commands::REPEAT),
+            Item::Separator,
+            Item::System(SystemItem::Cut),
+            Item::System(SystemItem::Copy),
+            Item::System(SystemItem::Paste),
+            Item::System(SystemItem::SelectAll),
+            Item::Separator,
+            Item::Command(qs_layout::PROJECT_SEARCH_VIEW),
+            Item::Separator,
+            Item::Command(qs_layout::FOLD),
+            Item::Command(qs_layout::UNFOLD),
+            Item::Command(qs_layout::FOLD_ALL),
+            Item::Command(qs_layout::UNFOLD_ALL),
+            Item::Command(qs_layout::TOGGLE_SOFT_WRAP),
+        ],
+    },
+    MenuSpec {
+        title: Text::ViewMenu,
+        role: Role::Plain,
+        items: &[
+            Item::Choice(MenuChoice::Toggle(Panel::Left)),
+            Item::Choice(MenuChoice::Toggle(Panel::Right)),
+            Item::Choice(MenuChoice::Toggle(Panel::Bottom)),
+            Item::Command(qs_layout::TOGGLE_OUTLINE),
+            Item::Separator,
+            Item::Command(qs_layout::SPLIT_RIGHT),
+            Item::Command(qs_layout::SPLIT_DOWN),
+            Item::Command(qs_layout::CLOSE_SPLIT),
+            Item::Command(qs_layout::TOGGLE_EMBEDDED_GAME),
+            Item::Separator,
+            Item::Choice(MenuChoice::Palette),
+            Item::Separator,
+            Item::Choice(MenuChoice::Zoom(ZoomStep::In)),
+            Item::Choice(MenuChoice::Zoom(ZoomStep::Out)),
+            Item::Choice(MenuChoice::Zoom(ZoomStep::Actual)),
+        ],
+    },
+    MenuSpec {
+        title: Text::GoMenu,
+        role: Role::Plain,
+        items: &[
+            Item::Command(qs_layout::FOCUS_EDITOR),
+            Item::Command(qs_layout::FOCUS_LEFT_PANEL),
+            Item::Command(qs_layout::FOCUS_RIGHT_PANEL),
+            Item::Command(qs_layout::FOCUS_BOTTOM_PANEL),
+            Item::Command(qs_layout::FOCUS_COMMAND_LINE),
+            Item::Separator,
+            Item::Command(qs_layout::GO_TO_LINE),
+            Item::Command(qs_layout::GO_TO_SYMBOL),
+            Item::Command(qs_layout::TAB_SWITCHER),
+        ],
+    },
+    MenuSpec {
+        title: Text::PaletteRunButton,
+        role: Role::Plain,
+        items: &[
+            Item::Command(qs_workbench::PLAY),
+            Item::Command(qs_workbench::PAUSE),
+            Item::Command(qs_workbench::RESUME),
+            Item::Command(qs_workbench::STEP),
+            Item::Command(qs_workbench::STOP),
+            Item::Command(qs_workbench::RESTART),
+            Item::Command(qs_workbench::RELOAD),
+            Item::Separator,
+            Item::Command(qs_workbench::BUILD_PROJECT),
+            Item::Command(qs_workbench::CHECK_PROJECT),
+            Item::Command(COMPILE),
+            Item::Command(qs_workbench::RUN_TESTS),
+            Item::Separator,
+            Item::Command(qs_workbench::TERMINAL_NEW),
+        ],
+    },
+    MenuSpec {
+        title: Text::Map,
+        role: Role::Map,
+        items: &[
+            Item::Command(qs_map_edit::MAP_SAVE),
+            Item::Command(MAP_BACKUP),
+            Item::Separator,
+            Item::Command(MAP_RUN_PROFILE),
+            Item::Command(MAP_CHOOSE_PROFILE),
+            Item::Command(MAP_LEAKS),
+            Item::Separator,
+            Item::Command(qs_map_edit::MAP_COPY),
+            Item::Command(qs_map_edit::MAP_SELECT),
+            Item::Command(qs_map_edit::MAP_SHOW_ALL),
+            Item::Command(qs_map_edit::MAP_UNLOCK_ALL),
+            Item::Separator,
+            Item::Command(qs_map_edit::MAP_STAGE),
+            Item::Command(qs_map_edit::MAP_UNSTAGE),
+            Item::Command(qs_map_edit::MAP_ACCEPT),
+            Item::Command(qs_map_edit::MAP_REJECT),
+            Item::Separator,
+            Item::MapViewKeys(Text::MapCamera),
+        ],
+    },
+    MenuSpec {
+        title: Text::WindowMenu,
+        role: Role::Window,
+        items: &[
+            Item::System(SystemItem::Minimize),
+            Item::System(SystemItem::Maximize),
+            Item::System(SystemItem::Fullscreen),
+        ],
+    },
+    MenuSpec {
+        title: Text::HelpMenu,
+        role: Role::Help,
+        items: &[
+            Item::Command(qs_layout::USER_GUIDE),
+            Item::Command(qs_layout::REPORT_ISSUE),
+        ],
+    },
+];
+
+impl MenuSpec {
+    /// Every item of the menu and of the menu inside it, in order.
+    #[must_use]
+    pub fn flat(&self) -> Vec<Item> {
+        let mut out = Vec::new();
+        for item in self.items {
+            match item {
+                Item::MapViewKeys(_) => out.extend(map_view_commands().map(Item::Command)),
+                Item::Command(_) | Item::Choice(_) | Item::System(_) | Item::Separator => {
+                    out.push(*item);
+                }
             }
         }
-        chosen
+        out
     }
+}
 
-    /// Checks each View item as `layout` shows its panel.
-    pub fn sync(&self, layout: &Layout) {
-        for (panel, item) in &self.items {
-            item.set_checked(layout.panel(*panel).visible);
-        }
-    }
+/// The commands the map view has a default key for, in the keymap's order.
+pub fn map_view_commands() -> impl Iterator<Item = &'static str> {
+    DEFAULT_KEYS
+        .iter()
+        .filter(|key| key.context == KeyContext::MapView)
+        .map(|key| key.command)
 }
