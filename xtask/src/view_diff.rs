@@ -289,7 +289,11 @@ const HOST_PROTOCOL: [&str; 2] = ["--protocol", "15"];
 /// The protocol options the host is given before `host_args`: [`HOST_PROTOCOL`] unless one of
 /// them names a protocol, which clap would refuse to read twice (VIEWDIFF-6.1).
 fn host_protocol(host_args: &[String]) -> &'static [&'static str] {
-    if host_args.iter().any(|a| a.starts_with(HOST_PROTOCOL[0])) {
+    // `--protocol`, or QuakeSpasm's `-protocol`, which the host reads too.
+    if host_args
+        .iter()
+        .any(|a| a.trim_start_matches('-').starts_with("protocol"))
+    {
         &[]
     } else {
         &HOST_PROTOCOL

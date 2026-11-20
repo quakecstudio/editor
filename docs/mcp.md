@@ -134,7 +134,7 @@ the app between them joins the review.
 
 ### Building and reviewing a map
 
-The server's instructions give an agent the order (L-30); it is the one a person follows:
+The server's instructions give an agent the order (L-40); it is the one a person follows:
 
 1. `map.new` makes the map, or `map.open` opens one; `map.textures` lists the textures there
    are, those of the game's own levels among them, so a map needs no WAD of its own.

@@ -257,7 +257,7 @@ fn format_and_texture_issues_are_placed() {
     );
 }
 
-// No spec statement: L-30: that the world names no WAD is an issue only when a texture is
+// No spec statement: L-40: that the world names no WAD is an issue only when a texture is
 // missing: a map whose textures are all found, as one textured from the game's levels is, has
 // nothing to fix, and one with a texture found nowhere is told of both
 #[test]

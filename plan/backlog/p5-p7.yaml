@@ -2252,6 +2252,28 @@ groups:
     - 'cargo xtask view-diff passes with each port''s difference listed as expected and no other'
     verify:
     - 'The tests citing each new statement; cargo xtask sim-diff and view-diff'
+  - key: L-30
+    title: Set the later engines' options from the console, by their upstream names
+    labels:
+    - apps
+    - area:preview
+    - type:feature
+    size: S
+    reqs:
+    - ENG-2
+    summary: |
+      Justin chose on 2026-11-20 (option 1) that L-21's options follow QuakeSpasm and Ironwail: console variables a modder sets live, not launch flags. L-21 (#978) added --lerplightstyles, --nozfix and --nolitwater; QuakeSpasm and Ironwail have the cvars r_lerplightstyles, gl_zfix and r_litwater, and QuakeSpasm both the sv_protocol command and the -protocol launch option.
+    depends:
+    - L-21
+    deliverable:
+    - 'qs-sim: the settings r_lerplightstyles (1), gl_zfix (1) and r_litwater (1), archived as Ironwail archives them, and sv_protocol (666), which the next map load takes, as QuakeSpasm''s SV_SpawnServer does'
+    - 'qs-game: the preview host reads the three drawing settings each frame as it reads gamma (CON-7.4), so a change takes effect at once; --lerplightstyles, --nozfix and --nolitwater are removed; --protocol stays as QuakeSpasm''s -protocol and sets sv_protocol'
+    - 'docs/spec/: the statements naming the removed options withdrawn and replaced with ones naming the settings'
+    acceptance:
+    - 'A test sets each setting at the console and the next frame draws as the setting says, both ways'
+    - 'A test sets sv_protocol and the next map''s serverinfo names that protocol; --protocol sets it at launch'
+    verify:
+    - 'The tests citing the new statements'
   - key: L-29
     title: Record and play demos in the preview host
     labels:
@@ -2408,7 +2430,7 @@ groups:
     - 'Choosing id1, a mission pack''s folder, a link to id1 or the id1 of an install''s rerelease folder finds the install, each checked by a qs-install test citing FS-6.7; an export refuses id''s files with id1 or innoextract''s output chosen, checked by a qs-workbench test'
     verify:
     - 'cargo nextest run -p quakec-studio; the shell snapshots'
-  - key: L-30
+  - key: L-40
     title: An agent builds and reviews a map without guessing
     labels:
     - L5-commands
@@ -2432,7 +2454,7 @@ groups:
     - 'Claude Code builds a map with monsters and lights through the MCP server from one request, with its edits staged for review, recorded in the PR'
     verify:
     - 'cargo nextest run -p qs-map-edit -p qs-workbench -p qs-mcp; the recorded session in the PR'
-  - key: L-31
+  - key: L-41
     title: Tell an agent what a map review cannot see in one frame
     labels:
     - L5-commands
@@ -2442,9 +2464,9 @@ groups:
     reqs:
     - MAP-16
     summary: |
-      Found by L-30's trial on 2026-11-20, in which Claude Code built and reviewed a map through the MCP server. Three things slowed it or misled it and were not changed there. `map.play_from_here` answered no light warning for a room that was nearly black; only the screenshot showed it. A monster near the point played from was already attacking when the frame was taken, so a review picture shows a fight rather than the room. And a tool that hollows or cuts brushes changes the places of an entity's brushes without saying which brushes it made, so the agent lists them again after each one.
+      Found by L-40's trial on 2026-11-20, in which Claude Code built and reviewed a map through the MCP server. Three things slowed it or misled it and were not changed there. `map.play_from_here` answered no light warning for a room that was nearly black; only the screenshot showed it. A monster near the point played from was already attacking when the frame was taken, so a review picture shows a fight rather than the room. And a tool that hollows or cuts brushes changes the places of an entity's brushes without saying which brushes it made, so the agent lists them again after each one.
     depends:
-    - L-30
+    - L-40
     deliverable:
     - 'The map tools that light a map report how dark it is where it matters: each room, or the space around the player start and each entity, with its light level, so a room too dark to play is found without a picture'
     - 'A way to look at a map as the game draws it with its monsters asleep: a play option or a view that takes the frame before any monster acts'
