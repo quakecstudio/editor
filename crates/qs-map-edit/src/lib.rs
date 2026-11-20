@@ -2,14 +2,14 @@
 
 //! Map editing (P6-40): the open map and the map commands that need no QuakeC.
 //!
-//! `map.open` reads a `.map`, or a shipped `.bsp`'s entity lump when the map has no source,
-//! into a `MapStore`; the entity commands (`map.select`, `map.place_entity`, `map.move_entity`,
-//! `map.set_entity_angle`, `map.delete_entity`, `map.set_key`, `map.remove_key`), the brush tools, shapes,
-//! layers, links, prefabs, the issues list, staged review, face UVs and textures edit it, each
-//! with undo where it changes the map; and `map.save` writes the `.map`, or for a BSP a `.ent`
-//! override beside it or the BSP with its entity lump rewritten (P5-06, MAP-4, MAP-22).
-//! Edits go through `qs-map`'s lossless document, so a saved `.map` differs from the one read
-//! only where an edit changed it (MAP-7).
+//! `map.open` reads a `.map`, or a shipped `.bsp`'s entity lump when the map has no source, into a
+//! `MapStore`; the entity commands (`map.select`, `map.place_entity`, `map.move_entity`,
+//! `map.rotate_entity`, `map.delete_entity`, `map.set_key`, `map.remove_key`), the brush tools,
+//! shapes, layers, links, prefabs, the issues list, staged review, face UVs and textures edit it,
+//! each with undo where it changes the map; and `map.save` writes the `.map`, or for a BSP a `.ent`
+//! override beside it or the BSP with its entity lump rewritten (P5-06, MAP-4, MAP-22). Edits go
+//! through `qs-map`'s lossless document, so a saved `.map` differs from the one read only where an
+//! edit changed it (MAP-7).
 //!
 //! The crate reads no QuakeC: a context gives it the project's entity classes and the running
 //! game through the `HasMap` seam, which `qs-workbench` answers.
@@ -139,8 +139,8 @@ pub const MAP_SELECT: &str = "map.select";
 pub const MAP_PLACE: &str = "map.place_entity";
 /// The id of `map.move_entity`.
 pub const MAP_MOVE: &str = "map.move_entity";
-/// The id of `map.set_entity_angle`.
-pub const MAP_ROTATE: &str = "map.set_entity_angle";
+/// The id of `map.rotate_entity`.
+pub const MAP_ROTATE: &str = "map.rotate_entity";
 /// The id of `map.delete_entity`.
 pub const MAP_DELETE: &str = "map.delete_entity";
 /// The id of `map.set_key`.
@@ -578,7 +578,7 @@ pub struct MoveParams {
     pub by: [f64; 3],
 }
 
-/// The parameters of `map.set_entity_angle`.
+/// The parameters of `map.rotate_entity`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RotateParams {
@@ -1218,7 +1218,7 @@ impl<C: HasMap + 'static> Command<C> for MapMove {
     }
 }
 
-/// `map.set_entity_angle`.
+/// `map.rotate_entity`.
 struct MapRotate;
 
 impl<C: HasMap + 'static> Command<C> for MapRotate {

@@ -90,7 +90,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.copy`](#mapcopy) | Writes brushes of the world and whole entities of the open map as a .map's text, where they are, for the clipboard; the map is unchanged. |
 | [`map.delete_entity`](#mapdelete_entity) | Deletes an entity of the open map; the world stays. |
 | [`map.duplicate_entity`](#mapduplicate_entity) | Duplicates an entity of the open map, its keys and brushes, in place at the end of the map, and selects the copy; the world is not duplicated. A targetname ending in a number takes the next free number, and the keys the code fires entities by move on by as many. |
-| [`map.entities_by_skill`](#mapentities_by_skill) | The entities of the open map the game removes at a skill and in a kind of game (single, coop or deathmatch), found by spawning the map with the project's program: those the spawnflags rule out and those the QuakeC removes. |
+| [`map.entities_removed_by_skill`](#mapentities_removed_by_skill) | The entities of the open map the game removes at a skill and in a kind of game (single, coop or deathmatch), found by spawning the map with the project's program: those the spawnflags rule out and those the QuakeC removes. |
 | [`map.export`](#mapexport) | Writes the open map to another .map without the layers marked to be left out of exports and the entities in them (TrenchBroom's Export). |
 | [`map.extract_linked`](#mapextract_linked) | Moves entities of a linked group, and the same entities of every group linked to it, into new groups linked to each other (TrenchBroom's Extract Linked Groups). |
 | [`map.face_align`](#mapface_align) | Carries one face's texture alignment onto other faces of the open map, so the texture continues across the line their planes share (MAP-13.8). |
@@ -110,7 +110,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.make_brush_entity`](#mapmake_brush_entity) | Makes brushes of the world a new brush entity of a class, such as func_door (TrenchBroom's Create Brush Entity). |
 | [`map.make_structural`](#mapmake_structural) | Gives a brush entity's brushes back to the world, in the layer or group the entity was in, and removes the entity (TrenchBroom's Make Structural). |
 | [`map.move_entity`](#mapmove_entity) | Moves an entity of the open map: a point entity's origin, a brush entity's brushes. |
-| [`map.move_to_layer`](#mapmove_to_layer) | Moves an entity or a group of the open map into a layer or a group, or into the default layer given the world, as TrenchBroom writes it. |
+| [`map.move_to_layer_or_group`](#mapmove_to_layer_or_group) | Moves an entity or a group of the open map into a layer or a group, or into the default layer given the world, as TrenchBroom writes it. |
 | [`map.new`](#mapnew) | Makes a new .map holding a world with the keys given, and opens it in the map view; a file that is there already is refused. |
 | [`map.open`](#mapopen) | Opens a .map in the map view, or a shipped .bsp's entities when the map has no .map source; nothing is selected. |
 | [`map.outline`](#mapoutline) | The open map's outline: the default layer and each layer, their groups and linked groups, then their entities by classname and targetname, with brush counts; with filter, only what holds the text and what is around it. |
@@ -128,19 +128,19 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.replace_texture`](#mapreplace_texture) | Puts one texture in another's place on the faces of brushes, or of every brush of the map, keeping their alignment (TrenchBroom's Replace Material). |
 | [`map.resolve_disk_change`](#mapresolve_disk_change) | After another program changed the open map's file while it had unsaved edits: keep disk to read the file again, or mine to keep the edits and save them over it. |
 | [`map.restore_backup`](#maprestore_backup) | Puts a backup of the open map in the editor in place of the map, unsaved, as an edit that undo takes back. |
-| [`map.review_hunks`](#mapreview_hunks) | Lists the open map's hunks waiting for review: for each, the entities it is in, and the keys and brushes it adds, changes or removes. |
+| [`map.rotate_entity`](#maprotate_entity) | Turns a point entity of the open map about the vertical: its angle, or its angles' yaw. |
 | [`map.rotate_objects`](#maprotate_objects) | Turns entities and brushes by degrees about the vertical through the middle of their box, counter-clockwise seen from above: brushes and point entities' origins and facing, as TrenchBroom's Rotate. |
 | [`map.run_profile`](#maprun_profile) | Runs a compile profile on the open map, the one chosen when none is named: its tasks in order, each timed, stopping at the first that fails; reports each task's time and result. |
 | [`map.save`](#mapsave) | Saves the open map: a .map over itself; a BSP's entities as a .ent beside it (bsp: ent, the default) or into the BSP's entity lump (bsp: lump). |
 | [`map.save_prefab`](#mapsave_prefab) | Writes brushes of the world and whole entities of the open map as a prefab in the project's prefabs folder, around the middle of their floor. |
 | [`map.search`](#mapsearch) | Finds the open map's objects as TrenchBroom's search does: text found in names, classnames, keys, values, textures, smart tags and layer and group names, ignoring case, or a query in its query language, which finds entities, groups, brushes, the contents of layers, or faces. |
 | [`map.select`](#mapselect) | Selects an entity of the open map, or clears the selection. |
-| [`map.set_entity_angle`](#mapset_entity_angle) | Turns a point entity of the open map about the vertical: its angle, or its angles' yaw. |
 | [`map.set_flag`](#mapset_flag) | Sets or clears one spawnflag of an entity of the open map, and of the entities in also, in one step, keeping each entity's other flags. |
 | [`map.set_key`](#mapset_key) | Sets a key of an entity of the open map, and of the entities in also with it in one step: its last occurrence keeps its place and formatting, a new key goes after the others. |
 | [`map.set_layer`](#mapset_layer) | Turns a layer of the open map hidden, locked or left out of exports on or off, written as TrenchBroom writes it. |
 | [`map.show_all`](#mapshow_all) | Shows every entity of the open map hidden in the editor (TrenchBroom's Show All); a hidden layer stays hidden. |
 | [`map.stage`](#mapstage) | Begins review of the open map's edits: the map as it is now is kept, and each edit after it waits as a hunk to accept or reject. The agent's map edits begin it themselves; while it is open it is left as it is. |
+| [`map.staged_hunks`](#mapstaged_hunks) | Lists the open map's hunks waiting for review: for each, the entities it is in, and the keys and brushes it adds, changes or removes. |
 | [`map.summary`](#mapsummary) | A map in short, to review it or compare it with others: the box around its brushes, its brush and entity counts, its entities counted by classname (monsters, lights, items, triggers), its textures counted by face, and its world's keys. The open map, or with a path a .map file read from the disk without opening it; with `most_textures`, only that many textures of the count it gives, which keeps it short when many maps are read. map.list_entities lists each entity; this counts them. |
 | [`map.ungroup`](#mapungroup) | Takes a group's entities and brushes out of it into the layer or group it is in, or the world's, and removes the group. |
 | [`map.unlink_group`](#mapunlink_group) | Unlinks a group from the groups linked to it, which then change on their own (TrenchBroom's Separate Linked Groups). |
@@ -1731,7 +1731,7 @@ Parameters:
 {
   "$defs": {
     "MapHunkNumber": {
-      "description": "A hunk's number in the list `map.review_hunks` gives, from 0.",
+      "description": "A hunk's number in the list `map.staged_hunks` gives, from 0.",
       "format": "uint",
       "minimum": 0,
       "type": "integer"
@@ -1743,7 +1743,7 @@ Parameters:
   "properties": {
     "hunks": {
       "default": [],
-      "description": "The hunks' numbers, as `map.review_hunks` lists them now; every hunk when empty.",
+      "description": "The hunks' numbers, as `map.staged_hunks` lists them now; every hunk when empty.",
       "items": {
         "$ref": "#/$defs/MapHunkNumber"
       },
@@ -4337,7 +4337,7 @@ Parameters:
 }
 ```
 
-## `map.entities_by_skill`
+## `map.entities_removed_by_skill`
 
 The entities of the open map the game removes at a skill and in a kind of game (single, coop or deathmatch), found by spawning the map with the project's program: those the spawnflags rule out and those the QuakeC removes.
 
@@ -4394,7 +4394,7 @@ Parameters:
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The parameters of `map.entities_by_skill`.",
+  "description": "The parameters of `map.entities_removed_by_skill`.",
   "properties": {
     "mode": {
       "$ref": "#/$defs/GameMode",
@@ -5370,7 +5370,7 @@ Parameters:
 }
 ```
 
-## `map.move_to_layer`
+## `map.move_to_layer_or_group`
 
 Moves an entity or a group of the open map into a layer or a group, or into the default layer given the world, as TrenchBroom writes it.
 
@@ -5388,7 +5388,7 @@ Parameters:
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The parameters of `map.move_to_layer`.",
+  "description": "The parameters of `map.move_to_layer_or_group`.",
   "properties": {
     "entity": {
       "$ref": "#/$defs/EntityIndex",
@@ -5865,7 +5865,7 @@ Parameters:
 {
   "$defs": {
     "MapHunkNumber": {
-      "description": "A hunk's number in the list `map.review_hunks` gives, from 0.",
+      "description": "A hunk's number in the list `map.staged_hunks` gives, from 0.",
       "format": "uint",
       "minimum": 0,
       "type": "integer"
@@ -5877,7 +5877,7 @@ Parameters:
   "properties": {
     "hunks": {
       "default": [],
-      "description": "The hunks' numbers, as `map.review_hunks` lists them now; every hunk when empty.",
+      "description": "The hunks' numbers, as `map.staged_hunks` lists them now; every hunk when empty.",
       "items": {
         "$ref": "#/$defs/MapHunkNumber"
       },
@@ -6086,18 +6086,41 @@ Parameters:
 }
 ```
 
-## `map.review_hunks`
+## `map.rotate_entity`
 
-Lists the open map's hunks waiting for review: for each, the entities it is in, and the keys and brushes it adds, changes or removes.
+Turns a point entity of the open map about the vertical: its angle, or its angles' yaw.
 
 Parameters:
 
 ```json
 {
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The command takes no parameters: pass the empty object {}.",
-  "title": "No parameters",
+  "description": "The parameters of `map.rotate_entity`.",
+  "properties": {
+    "degrees": {
+      "description": "Degrees to turn it about the vertical axis, counter-clockwise seen from above.",
+      "format": "double",
+      "type": "number"
+    },
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity, a point entity."
+    }
+  },
+  "required": [
+    "entity",
+    "degrees"
+  ],
+  "title": "RotateParams",
   "type": "object"
 }
 ```
@@ -6390,45 +6413,6 @@ Parameters:
 }
 ```
 
-## `map.set_entity_angle`
-
-Turns a point entity of the open map about the vertical: its angle, or its angles' yaw.
-
-Parameters:
-
-```json
-{
-  "$defs": {
-    "EntityIndex": {
-      "description": "An entity of a map, by its place in the file from 0, the world first.",
-      "format": "uint",
-      "minimum": 0,
-      "type": "integer"
-    }
-  },
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "additionalProperties": false,
-  "description": "The parameters of `map.set_entity_angle`.",
-  "properties": {
-    "degrees": {
-      "description": "Degrees to turn it about the vertical axis, counter-clockwise seen from above.",
-      "format": "double",
-      "type": "number"
-    },
-    "entity": {
-      "$ref": "#/$defs/EntityIndex",
-      "description": "The entity, a point entity."
-    }
-  },
-  "required": [
-    "entity",
-    "degrees"
-  ],
-  "title": "RotateParams",
-  "type": "object"
-}
-```
-
 ## `map.set_flag`
 
 Sets or clears one spawnflag of an entity of the open map, and of the entities in also, in one step, keeping each entity's other flags.
@@ -6645,6 +6629,22 @@ Parameters:
 ## `map.stage`
 
 Begins review of the open map's edits: the map as it is now is kept, and each edit after it waits as a hunk to accept or reject. The agent's map edits begin it themselves; while it is open it is left as it is.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `map.staged_hunks`
+
+Lists the open map's hunks waiting for review: for each, the entities it is in, and the keys and brushes it adds, changes or removes.
 
 Parameters:
 

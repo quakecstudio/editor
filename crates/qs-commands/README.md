@@ -94,7 +94,7 @@ impl Command<Doc> for Append {
 
 The tests in `src/tests.rs` have more: failing commands and steps, and the guard's cases.
 
-- **Ids** are dotted lowercase segments (`edit.undo`, `vm.run`, `compile`), at most 128
+- **Ids** are dotted lowercase segments (`edit.undo`, `vm.run`, `project.compile`), at most 128
   bytes. Every such id is a valid MCP tool name: "The following SHOULD be the only allowed
   characters: uppercase and lowercase ASCII letters (A-Z, a-z), digits (0-9), underscore
   (\_), hyphen (-), and dot (.)" and "Tool names SHOULD be between 1 and 128 characters in

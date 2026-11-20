@@ -217,7 +217,7 @@ impl Externals {
 }
 
 /// The entities the map view shows: every one, or those the game spawns at a skill or in a
-/// kind of game (P5-13, `map.entities_by_skill`).
+/// kind of game (P5-13, `map.entities_removed_by_skill`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ShowFilter {
     /// Every entity.

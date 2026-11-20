@@ -123,9 +123,9 @@ fn a_map_with_no_edits_is_read_again() {
     assert_eq!(reread(&session), [map]);
 }
 
-// No spec statement: P5-17, MAP-32: with unsaved edits, the changed file is kept aside: map.compare_with_disk
-// lists how it differs, map.resolve_disk_change keeps mine (the edits stay, the conflict goes) or disk (the
-// file is read again, the edits dropped, the game told)
+// No spec statement: P5-17, MAP-32: with unsaved edits, the changed file is kept aside:
+// map.compare_with_disk lists how it differs, map.resolve_disk_change keeps mine (the edits
+// stay, the conflict goes) or disk (the file is read again, the edits dropped, the game told)
 #[test]
 fn a_map_with_edits_waits_for_resolve() {
     let (map, mut session) = opened("conflict");
@@ -167,7 +167,8 @@ fn a_map_with_edits_waits_for_resolve() {
     assert_eq!(reread(&session), [map]);
 }
 
-// No spec statement: P5-17, MAP-32: map.compare_with_disk and map.resolve_disk_change with no map open say so
+// No spec statement: P5-17, MAP-32: map.compare_with_disk and map.resolve_disk_change with no
+// map open say so
 #[test]
 fn no_map_is_no_map() {
     let mut session = MapContext::session();

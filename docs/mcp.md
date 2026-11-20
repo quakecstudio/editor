@@ -14,8 +14,8 @@ JSON-RPC message per line from stdin, answering each on stdout. It writes nothin
 stdout. It runs headless: no window opens, and a game it plays runs in the preview host with no
 window and no sound either (`--headless`), its frames drawn offscreen for `engine.screenshot`,
 so an agent that plays a map to look at it opens nothing on the person's screen. On a machine
-with no GPU device the game still runs, and `engine.screenshot` is refused with "no GPU
-device". The player is moved from the console: `engine.console` with `+forward`, `+attack` or
+with no GPU device the game still runs, and `engine.screenshot` is refused with "the preview
+host does not offer screenshot". The player is moved from the console: `engine.console` with `+forward`, `+attack` or
 `impulse 9` holds a button or sends an impulse, as a key would in the window. To watch the game
 an agent plays, connect the server to the running app.
 
@@ -111,7 +111,7 @@ The tools an agent's loop most often uses:
 | `checkpoint.create`, `checkpoint.list`, `checkpoint.restore` | Checkpoints of the project, restored deletions and all |
 | `preview.play`, `preview.reload`, `preview.stop`, `preview.poll` | The live game: start it, reload the program, stop it, read its events |
 | `engine.inspect`, `engine.console`, `engine.screenshot` | The running game's edicts, globals and stack; a console command and its output; a frame as a PNG |
-| `map.open`, `map.new`, `map.list_entities`, `map.review_hunks` | Opens a `.map` file; makes a new one in the project, holding a world with the keys given, and opens it; its rooms and entities; the map edits waiting for review |
+| `map.open`, `map.new`, `map.list_entities`, `map.staged_hunks` | Opens a `.map` file; makes a new one in the project, holding a world with the keys given, and opens it; its rooms and entities; the map edits waiting for review |
 | `map.brushes`, `map.summary` | An entity's brushes, each with its place, the box around it and its textures; the map in short: its bounds, brush and entity counts, entities by classname and textures by face |
 | `map.place_entity`, `map.set_key` | Places an entity; sets one of an entity's keys |
 | `map.brush_create`, `map.brush_shape`, `map.brush_delete`, `map.brush_move`, `map.brush_texture` | Adds a box brush, or a shape of brushes (cylinder, cone, arch, spheroid, rock, curve, stairs); deletes, moves or retextures brushes |

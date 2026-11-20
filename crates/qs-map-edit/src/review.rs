@@ -23,8 +23,8 @@ use crate::{HasMap, MapEditError, MapStore};
 pub const MAP_STAGE: &str = "map.stage";
 /// The id of `map.unstage`.
 pub const MAP_UNSTAGE: &str = "map.unstage";
-/// The id of `map.review_hunks`.
-pub const MAP_STAGED: &str = "map.review_hunks";
+/// The id of `map.staged_hunks`.
+pub const MAP_STAGED: &str = "map.staged_hunks";
 /// The id of `map.accept_hunks`.
 pub const MAP_ACCEPT: &str = "map.accept_hunks";
 /// The id of `map.reject_hunks`.
@@ -111,7 +111,7 @@ fn rebuild(parts: &[Part], known: &[&MapFile]) -> Vec<Entity> {
     entities
 }
 
-/// A hunk's number in the list `map.review_hunks` gives, from 0.
+/// A hunk's number in the list `map.staged_hunks` gives, from 0.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
 )]
@@ -361,7 +361,7 @@ impl<C: HasMap + 'static> Command<C> for MapUnstage {
     }
 }
 
-/// `map.review_hunks`.
+/// `map.staged_hunks`.
 pub(crate) struct MapStaged;
 
 impl<C: HasMap + 'static> Command<C> for MapStaged {
@@ -382,7 +382,7 @@ impl<C: HasMap + 'static> Command<C> for MapStaged {
 #[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MapHunksParams {
-    /// The hunks' numbers, as `map.review_hunks` lists them now; every hunk when empty.
+    /// The hunks' numbers, as `map.staged_hunks` lists them now; every hunk when empty.
     #[serde(default)]
     pub hunks: Vec<MapHunkNumber>,
 }

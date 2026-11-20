@@ -919,11 +919,11 @@ fn the_agents_map_edits_wait_for_review() {
         ..RunConfig::new(&root)
     };
     run(&mut session, &mut model, "Light the room.", &config).unwrap();
-    let hunks = session.execute("map.review_hunks", json!({})).unwrap();
+    let hunks = session.execute("map.staged_hunks", json!({})).unwrap();
     assert_eq!(hunks.as_array().map(Vec::len), Some(1), "{hunks}");
     assert_eq!(hunks[0]["entities"][0]["classname"], json!("light"));
     session.execute("map.reject_hunks", json!({})).unwrap();
-    let left = session.execute("map.review_hunks", json!({})).unwrap();
+    let left = session.execute("map.staged_hunks", json!({})).unwrap();
     assert_eq!(left, json!([]));
 }
 
@@ -952,7 +952,7 @@ fn other_tools_begin_no_map_review() {
         )
         .unwrap();
     assert_eq!(
-        session.execute("map.review_hunks", json!({})).unwrap(),
+        session.execute("map.staged_hunks", json!({})).unwrap(),
         json!([])
     );
 }
@@ -974,7 +974,7 @@ fn the_agent_cannot_decide_its_map_review() {
     let map = root.join("maps/room.map");
     std::fs::write(&map, "{\n\"classname\" \"worldspawn\"\n}\n").unwrap();
     session.execute("map.open", json!({ "path": map })).unwrap();
-    let mut model = Scripted::new(vec![calls(vec![("map.review_hunks", json!({}))]), finish()]);
+    let mut model = Scripted::new(vec![calls(vec![("map.staged_hunks", json!({}))]), finish()]);
     let config = RunConfig {
         permissions: Permissions {
             profile: AgentProfile::Full,
@@ -990,7 +990,7 @@ fn the_agent_cannot_decide_its_map_review() {
         )
         .unwrap();
     assert_eq!(
-        session.execute("map.review_hunks", json!({})).unwrap(),
+        session.execute("map.staged_hunks", json!({})).unwrap(),
         json!([])
     );
 }

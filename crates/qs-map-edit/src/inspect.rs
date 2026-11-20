@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! `map.list_entities` (P5-08, MAP-16): the open map as the agent reads it before it edits: its rooms,
-//! TrenchBroom's named layers and groups with their bounds (MAP-9), and each entity's place,
-//! classname, origin and room, so a prompt that names a room ("three Shamblers in the armory")
-//! can be carried out with `map.place_entity` and `map.set_key`.
+//! `map.list_entities` (P5-08, MAP-16): the open map as the agent reads it before it edits: its
+//! rooms, TrenchBroom's named layers and groups with their bounds (MAP-9), and each entity's place,
+//! classname, origin and room, so a prompt that names a room ("three Shamblers in the armory") can
+//! be carried out with `map.place_entity` and `map.set_key`.
 
 use qs_commands::{Command, Outcome};
 use qs_map::RoomKind;

@@ -91,7 +91,8 @@ fn anthropic_speaks_the_messages_api() {
         "content": [
             thinking,
             { "type": "text", "text": "Staging it." },
-            { "type": "tool_use", "id": "toolu_1", "name": "edit_stage_change", "input": { "files": [] } },
+            { "type": "tool_use", "id": "toolu_1", "name": "edit_stage_change",
+              "input": { "files": [] } },
         ],
     });
     let second = json!({
@@ -498,7 +499,8 @@ fn anthropic_streams_text_thinking_and_calls() {
           "delta": { "type": "text_delta", "text": "ing it." } },
         { "type": "content_block_stop", "index": 1 },
         { "type": "content_block_start", "index": 2,
-          "content_block": { "type": "tool_use", "id": "toolu_1", "name": "edit_stage_change", "input": {} } },
+          "content_block": { "type": "tool_use", "id": "toolu_1", "name": "edit_stage_change",
+                             "input": {} } },
         { "type": "content_block_delta", "index": 2,
           "delta": { "type": "input_json_delta", "partial_json": "{\"files\":" } },
         { "type": "content_block_delta", "index": 2,
@@ -558,7 +560,8 @@ fn openai_streams_text_and_calls() {
             { "index": 0, "id": "c1", "type": "function",
               "function": { "name": "edit_", "arguments": "{\"fi" } }] } }] },
         { "choices": [{ "index": 0, "delta": { "tool_calls": [
-            { "index": 0, "function": { "name": "stage_change", "arguments": "les\":[]}" } }] } }] },
+            { "index": 0,
+              "function": { "name": "stage_change", "arguments": "les\":[]}" } }] } }] },
         { "choices": [{ "index": 0, "delta": {}, "finish_reason": "tool_calls" }] },
     ]);
     let transport = Scripted::new(vec![Ok(chunks)]);

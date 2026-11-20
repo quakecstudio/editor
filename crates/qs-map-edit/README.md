@@ -27,7 +27,7 @@ never reads QuakeC.
   where an edit changed it (MAP-7), and saved as a `.map`, a `.ent` beside a BSP, or the BSP
   with its entity lump rewritten (`map.save`).
 - The map commands, registered by `register_map_edit`: entity edits (`map.select`,
-  `map.place_entity`, `map.move_entity`, `map.set_entity_angle`, `map.delete_entity`, `map.duplicate_entity`, `map.set_key`,
+  `map.place_entity`, `map.move_entity`, `map.rotate_entity`, `map.delete_entity`, `map.duplicate_entity`, `map.set_key`,
   `map.remove_key`), brushes and their tools (`map.brush_*`), shapes, layers and groups,
   links, prefabs, the outline, the issues list, staged edits for review, face UVs and texture
   alignment, the textures the map names, `texture.import`, backups (`backup`), and

@@ -297,7 +297,8 @@ impl Compiled {
     }
 }
 
-/// `project.compile`: builds the open project, as `project.build` does, and says whether it is clean.
+/// `project.compile`: builds the open project, as `project.build` does, and says whether it is
+/// clean.
 struct CompileCommand;
 
 impl<C: HasWorkbench + 'static> Command<C> for CompileCommand {

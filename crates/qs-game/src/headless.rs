@@ -67,7 +67,13 @@ impl Args {
             if let Some(swap) = world.game.take_swap() {
                 world.draw_swap(offscreen.as_ref(), swap);
             }
-            world.steer(frametime_f32(FRAME));
+            // Paused, no time passes for the keys that turn the view; the move is still made,
+            // so an impulse typed while paused is in the frame a step runs (PHYS-9.8).
+            world.steer(if world.game.paused() {
+                0.0
+            } else {
+                frametime_f32(FRAME)
+            });
             let ran = world.game.frame(FRAME);
             // The progs' `localcmd` and `stuffcmd` reach the client's commands too.
             world.client_commands();
@@ -77,6 +83,8 @@ impl Args {
                         let next = Headless::new(*loaded, offscreen.as_ref());
                         let old = core::mem::replace(&mut world, next);
                         world.game.carry_from(old.game);
+                        // A button held stays held into the next level, as the window's.
+                        world.input = old.input;
                         continue;
                     }
                     Acted::Quit => return Ok(()),
@@ -529,6 +537,8 @@ impl Headless {
     /// The paint callback of the client's view, from `eye` at its yaw when one is given, as
     /// `timerefresh` turns the view, else from the client's own eye.
     fn callback(&mut self, eye: Option<([f32; 3], f32)>) -> qs_render::MapCallback {
+        // The view size and gamma first: the scene places the weapon and blends by them.
+        self.apply_settings();
         let mut scene = self.client.scene();
         if let Some((origin, yaw)) = eye {
             scene.view.origin = origin;
@@ -538,7 +548,6 @@ impl Headless {
         self.client
             .set_contents(contents_at(self.bsp.bsp(), scene.view.origin));
         let hud = self.client.hud();
-        self.apply_settings();
         self.play.screen = [CONWIDTH, screen_height(ASPECT)];
         self.client
             .set_screen(self.play.screen[0], self.play.screen[1]);
