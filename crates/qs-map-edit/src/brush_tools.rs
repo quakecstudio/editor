@@ -13,7 +13,7 @@ use qs_map::{Affine, Brush, BrushError, BrushFace, WorldAxis};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::brushes::{BrushIndex, Lock, snap};
+use super::brushes::{BrushIndex, BrushesEdited, Lock, edit_brushes, snap};
 use super::{EntityIndex, MapDocument, MapEdited, MapStep, edit_map};
 use crate::uv::FaceRef;
 use crate::{HasMap, MapEditError};
@@ -429,23 +429,22 @@ impl<C: HasMap + 'static> Command<C> for BrushScale {
         a point, the middle of their bounds unless given, their textures fixed in the world \
         unless lock is free (MAP-15.2).";
     type Params = BrushScaleParams;
-    type Output = MapEdited;
+    type Output = BrushesEdited;
     type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushScaleParams,
-    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
-        let ((), step) = edit_map(context, |document| {
+    ) -> Result<Outcome<BrushesEdited, C>, MapEditError> {
+        edit_brushes(context, params.entity, |document| {
             let about = match params.about {
                 Some(about) => about,
                 None => document.middle(params.entity, &params.brushes)?,
             };
             let map = Affine::scale(about, params.factors);
             document.transform(params.entity, &params.brushes, &map, params.lock)
-        })?;
-        Ok(MapEdited::undoable(params.entity, step))
+        })
     }
 }
 
@@ -458,15 +457,15 @@ impl<C: HasMap + 'static> Command<C> for BrushShear {
         by a factor times its distance from a point along another, their textures fixed in the \
         world unless lock is free (MAP-15.2).";
     type Params = BrushShearParams;
-    type Output = MapEdited;
+    type Output = BrushesEdited;
     type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushShearParams,
-    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
-        let ((), step) = edit_map(context, |document| {
+    ) -> Result<Outcome<BrushesEdited, C>, MapEditError> {
+        edit_brushes(context, params.entity, |document| {
             let about = match params.about {
                 Some(about) => about,
                 None => document.middle(params.entity, &params.brushes)?,
@@ -474,8 +473,7 @@ impl<C: HasMap + 'static> Command<C> for BrushShear {
             let map = Affine::shear(about, params.along.into(), params.by.into(), params.factor)
                 .ok_or(BrushError::Degenerate)?;
             document.transform(params.entity, &params.brushes, &map, params.lock)
-        })?;
-        Ok(MapEdited::undoable(params.entity, step))
+        })
     }
 }
 
@@ -488,14 +486,14 @@ impl<C: HasMap + 'static> Command<C> for BrushExtrude {
         snapped to the grid, out or in, its texture fixed in the world unless lock is free \
         (MAP-15.3).";
     type Params = BrushExtrudeParams;
-    type Output = MapEdited;
+    type Output = BrushesEdited;
     type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushExtrudeParams,
-    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
+    ) -> Result<Outcome<BrushesEdited, C>, MapEditError> {
         let FaceRef {
             entity,
             brush,
@@ -504,7 +502,7 @@ impl<C: HasMap + 'static> Command<C> for BrushExtrude {
         let by = snap(params.by, params.grid);
         let face = BrushFace::new(face.get());
         let lock = params.lock.into();
-        let ((), step) = edit_map(context, |document| {
+        edit_brushes(context, entity, |document| {
             let surface = document.new_surface(None);
             document.rework(entity, brush, |found| match params.mode {
                 ExtrudeMode::Extrude => Ok(vec![found.extruded(face, by, lock)?]),
@@ -512,8 +510,7 @@ impl<C: HasMap + 'static> Command<C> for BrushExtrude {
                 ExtrudeMode::Stamp => Ok(vec![found.clone(), found.stamped(face, by, &surface)?]),
                 ExtrudeMode::Move => Ok(vec![found.face_moved(face, by)?]),
             })
-        })?;
-        Ok(MapEdited::undoable(entity, step))
+        })
     }
 }
 
@@ -526,25 +523,24 @@ impl<C: HasMap + 'static> Command<C> for BrushSweep {
         the brush becomes one brush for each step, the hull of it at the step's two ends \
         (MAP-15.4).";
     type Params = BrushSweepParams;
-    type Output = MapEdited;
+    type Output = BrushesEdited;
     type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushSweepParams,
-    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
+    ) -> Result<Outcome<BrushesEdited, C>, MapEditError> {
         let path: Vec<[f64; 3]> = params
             .path
             .iter()
             .map(|p| p.map(|c| snap(c, params.grid)))
             .collect();
-        let ((), step) = edit_map(context, |document| {
+        edit_brushes(context, params.entity, |document| {
             document.rework(params.entity, params.brush, |found| {
                 found.swept(&path, params.lock.into())
             })
-        })?;
-        Ok(MapEdited::undoable(params.entity, step))
+        })
     }
 }
 
@@ -556,20 +552,19 @@ impl<C: HasMap + 'static> Command<C> for BrushHollow {
     const SUMMARY: &'static str = "Hollows a brush into walls of a thickness: the brush becomes \
         itself with the brush its walls enclose taken out (MAP-15.5).";
     type Params = BrushHollowParams;
-    type Output = MapEdited;
+    type Output = BrushesEdited;
     type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushHollowParams,
-    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
-        let ((), step) = edit_map(context, |document| {
+    ) -> Result<Outcome<BrushesEdited, C>, MapEditError> {
+        edit_brushes(context, params.entity, |document| {
             document.rework(params.entity, params.brush, |found| {
                 found.hollowed(params.wall)
             })
-        })?;
-        Ok(MapEdited::undoable(params.entity, step))
+        })
     }
 }
 
@@ -581,15 +576,15 @@ impl<C: HasMap + 'static> Command<C> for BrushIntersect {
     const SUMMARY: &'static str = "Replaces two or more brushes of an entity with the solid all \
         of them hold, which takes the first's place (MAP-15.6).";
     type Params = BrushIntersectParams;
-    type Output = MapEdited;
+    type Output = BrushesEdited;
     type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushIntersectParams,
-    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
-        let ((), step) = edit_map(context, |document| {
+    ) -> Result<Outcome<BrushesEdited, C>, MapEditError> {
+        edit_brushes(context, params.entity, |document| {
             let mut indices = params.brushes.clone();
             indices.sort();
             indices.dedup();
@@ -607,8 +602,7 @@ impl<C: HasMap + 'static> Command<C> for BrushIntersect {
                 document.replace_brush(params.entity, index, Vec::new())?;
             }
             document.replace_brush(params.entity, first, vec![both])
-        })?;
-        Ok(MapEdited::undoable(params.entity, step))
+        })
     }
 }
 
@@ -620,25 +614,24 @@ impl<C: HasMap + 'static> Command<C> for BrushVertices {
     const SUMMARY: &'static str = "Moves several vertices of a brush at once, each to a point \
         snapped to the grid; the brush becomes the hull of its vertices so moved (MAP-15.7).";
     type Params = BrushVerticesParams;
-    type Output = MapEdited;
+    type Output = BrushesEdited;
     type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushVerticesParams,
-    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
+    ) -> Result<Outcome<BrushesEdited, C>, MapEditError> {
         let moves: Vec<([f64; 3], [f64; 3])> = params
             .moves
             .iter()
             .map(|m| (m.from, m.to.map(|c| snap(c, params.grid))))
             .collect();
-        let ((), step) = edit_map(context, |document| {
+        edit_brushes(context, params.entity, |document| {
             document.rework(params.entity, params.brush, |found| {
                 Ok(vec![found.moved_vertices(&moves)?])
             })
-        })?;
-        Ok(MapEdited::undoable(params.entity, step))
+        })
     }
 }
 
@@ -650,16 +643,16 @@ impl<C: HasMap + 'static> Command<C> for BrushSplitEdge {
     const SUMMARY: &'static str = "Splits an edge of a brush by a new vertex at a point snapped \
         to the grid, or a distance out from the edge's middle (MAP-15.8).";
     type Params = BrushSplitEdgeParams;
-    type Output = MapEdited;
+    type Output = BrushesEdited;
     type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushSplitEdgeParams,
-    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
+    ) -> Result<Outcome<BrushesEdited, C>, MapEditError> {
         let [a, b] = params.edge;
-        let ((), step) = edit_map(context, |document| {
+        edit_brushes(context, params.entity, |document| {
             document.rework(params.entity, params.brush, |found| {
                 let to = match params.at {
                     NewVertex::Point { to, grid } => to.map(|c| snap(c, grid)),
@@ -669,8 +662,7 @@ impl<C: HasMap + 'static> Command<C> for BrushSplitEdge {
                 };
                 Ok(vec![found.split_edge(a, b, to)?])
             })
-        })?;
-        Ok(MapEdited::undoable(params.entity, step))
+        })
     }
 }
 
@@ -682,21 +674,21 @@ impl<C: HasMap + 'static> Command<C> for BrushSplitFace {
     const SUMMARY: &'static str = "Splits a face of a brush by a new vertex in front of it, at a \
         point snapped to the grid, or a distance out from the face's middle (MAP-15.8).";
     type Params = BrushSplitFaceParams;
-    type Output = MapEdited;
+    type Output = BrushesEdited;
     type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushSplitFaceParams,
-    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
+    ) -> Result<Outcome<BrushesEdited, C>, MapEditError> {
         let FaceRef {
             entity,
             brush,
             face,
         } = params.face;
         let face = BrushFace::new(face.get());
-        let ((), step) = edit_map(context, |document| {
+        edit_brushes(context, entity, |document| {
             document.rework(entity, brush, |found| {
                 let to = match params.at {
                     NewVertex::Point { to, grid } => to.map(|c| snap(c, grid)),
@@ -706,8 +698,7 @@ impl<C: HasMap + 'static> Command<C> for BrushSplitFace {
                 };
                 Ok(vec![found.split_face(face, to)?])
             })
-        })?;
-        Ok(MapEdited::undoable(entity, step))
+        })
     }
 }
 
@@ -719,16 +710,16 @@ impl<C: HasMap + 'static> Command<C> for BrushChamfer {
     const SUMMARY: &'static str = "Chamfers an edge of a brush into one or more bevel faces, from \
         a distance along each of its two faces (MAP-15.9).";
     type Params = BrushChamferParams;
-    type Output = MapEdited;
+    type Output = BrushesEdited;
     type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushChamferParams,
-    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
+    ) -> Result<Outcome<BrushesEdited, C>, MapEditError> {
         let [a, b] = params.edge;
-        let ((), step) = edit_map(context, |document| {
+        edit_brushes(context, params.entity, |document| {
             document.rework(params.entity, params.brush, |found| {
                 Ok(vec![found.chamfered(
                     a,
@@ -737,8 +728,7 @@ impl<C: HasMap + 'static> Command<C> for BrushChamfer {
                     params.faces,
                 )?])
             })
-        })?;
-        Ok(MapEdited::undoable(params.entity, step))
+        })
     }
 }
 

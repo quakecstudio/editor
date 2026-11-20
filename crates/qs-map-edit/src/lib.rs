@@ -32,9 +32,9 @@ pub use brush_tools::{
 };
 pub use brushes::{
     BrushClipParams, BrushCreateParams, BrushHullParams, BrushIndex, BrushMergeParams,
-    BrushMoveParams, BrushParams, BrushTextureParams, BrushVertexParams, Keep as KeepPart, Lock,
-    MAP_BRUSH_CLIP, MAP_BRUSH_CREATE, MAP_BRUSH_DELETE, MAP_BRUSH_HULL, MAP_BRUSH_MERGE,
-    MAP_BRUSH_MOVE, MAP_BRUSH_SUBTRACT, MAP_BRUSH_TEXTURE, MAP_BRUSH_VERTEX,
+    BrushMoveParams, BrushParams, BrushTextureParams, BrushVertexParams, BrushesEdited,
+    Keep as KeepPart, Lock, MAP_BRUSH_CLIP, MAP_BRUSH_CREATE, MAP_BRUSH_DELETE, MAP_BRUSH_HULL,
+    MAP_BRUSH_MERGE, MAP_BRUSH_MOVE, MAP_BRUSH_SUBTRACT, MAP_BRUSH_TEXTURE, MAP_BRUSH_VERTEX,
 };
 pub use classes::{ClassInfo, FlagInfo, KeyInfo};
 pub use containers::{

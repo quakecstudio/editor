@@ -144,10 +144,12 @@ The server's instructions give an agent the order (L-40); it is the one a person
 2. A room is a box (`map.brush_create`) hollowed into walls (`map.brush_hollow`). Rooms are
    joined by a box across the walls between them given to `map.brush_subtract`, which carves
    it out of every brush it overlaps and removes it.
-3. The `map.brush_*` tools take a brush by its place among its entity's brushes. `map.brushes`
+3. The `map.brush_*` tools take a brush by its place among its entity's brushes, and each
+   answers the places of the brushes it made or changed (`brushes`) with how many the entity
+   now has (`total`): the box just added, the walls of a hollowed room, the pieces a cut
+   left. A tool that removes brushes moves the places of those after them. `map.brushes`
    lists the places, each with the box around the brush and its textures, all of them or those
-   touching a box. A brush just added has the place `total` had before it; a tool that cuts or
-   hollows changes the places, so they are listed again after it.
+   touching a box, for a map someone else built.
 4. `map.place_entity` puts in the player start, the lights, the monsters and the items, with keys
    such as `light` and `angle`; `map.make_brush_entity` makes a door or a platform of a brush.
 5. `map.issues` and `map.find_leaks` say what is wrong: a missing player start, an entity the
