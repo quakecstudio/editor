@@ -67,7 +67,7 @@ anything that issue answers no to moves to the post-MVP backlog and onto this pa
 Everything in the design document's "Out (later)" list, each with its issue in the next section:
 
 - GMQCC dialect, CSQC and MenuQC modules.
-- Compiler optimizations behind `--opt` flags, constant folding among them.
+- Compiler optimizations beyond constant folding as FTEQCC does it, always on, with no flag.
 - Embedded game view, web build, and the map editor (Phases 5 to 7).
 
 ## Post-MVP
@@ -80,7 +80,7 @@ milestone (`MVP-3`). All of them wait for the MVP gate.
 | GMQCC dialect | Non-goals for v1; MVP scope, Out | [L-10](https://github.com/quakecstudio/editor/issues/194) Spec: GMQCC dialect; [L-02](https://github.com/quakecstudio/editor/issues/186) GMQCC dialect |
 | CSQC and MenuQC modules | MVP scope, Out | [L-03](https://github.com/quakecstudio/editor/issues/187) Spec: CSQC and MenuQC modules; [L-09](https://github.com/quakecstudio/editor/issues/193) Implement CSQC and MenuQC modules |
 | The rest of FTEQCC, beyond the features the rerelease uses | Compiler, Dialects in order | [L-01](https://github.com/quakecstudio/editor/issues/185) Spec: FTEQCC code generation beyond the rerelease subset; [L-08](https://github.com/quakecstudio/editor/issues/192) Generate code for full FTEQCC |
-| Compiler optimizations behind `--opt` flags, constant folding among them | MVP scope, Out; Compiler | [L-04](https://github.com/quakecstudio/editor/issues/188) Constant folding, dead-code removal and string and global deduplication |
+| Compiler optimizations beyond constant folding as FTEQCC does it, always on, with no flag | MVP scope, Out; Compiler | [L-04](https://github.com/quakecstudio/editor/issues/188) Constant folding, dead-code removal and string and global deduplication |
 | Embedded game view | MVP scope, Out; Engine bridge, Docking; in the IDE's process by [ADR-0028](adr/0028-embedded-game-view.md), Justin, 2026-11-16 | [L-06](https://github.com/quakecstudio/editor/issues/190) Run the preview host's game loop from a library both apps use; [L-26](https://github.com/quakecstudio/editor/issues/1001) Embedded game view |
 | Web build | Non-goals for v1; MVP scope, Out | [L-07](https://github.com/quakecstudio/editor/issues/191) Web build |
 | ericw-tools class advanced lighting | Map editor, Our own map compiler | [L-12](https://github.com/quakecstudio/editor/issues/195) Advanced lighting (ericw-tools class) |
@@ -100,6 +100,8 @@ milestone (`MVP-3`). All of them wait for the MVP gate.
 | ericw-tools' dirt and bounce | Map editor (MAP-21); scheduled by [ADR-0027](adr/0027-advanced-lighting.md), Justin, 2026-11-15 | [L-23](https://github.com/quakecstudio/editor/issues/980) Port ericw-tools' dirt and bounce lighting |
 | Side panels with icons rather than text | Editor and UI (UI-2); asked for by Justin on 2026-11-15 | [L-24](https://github.com/quakecstudio/editor/issues/981) Make the side panels less text heavy |
 | A build that reads `#pragma target` as the check does | Compiler (COMP-2); found by #187's work on 2026-11-16 | [L-25](https://github.com/quakecstudio/editor/issues/993) A build ignores #pragma target, which the check reads |
+| A Welcome page on first launch and the app's own icon | Editor and UI (PLAT-8, UI-14); asked for by Justin on 2026-11-20 | [L-27](https://github.com/quakecstudio/editor/issues/1053) Show a Welcome page on first launch and the app's own icon |
+| One New Project entry that asks which game in plain words | Editor and UI (UI-14, PLAT-8); asked for by Justin on 2026-11-20 | [L-28](https://github.com/quakecstudio/editor/issues/1055) Ask which game a new project is for once, in plain words |
 | In-app update check | Quality, testing and release; moved out of the MVP by [ADR-0007](adr/0007-mvp-scope.md) | [P4-19](https://github.com/quakecstudio/editor/issues/130) Update mechanism |
 | Editor integrations for VS Code, Zed and Neovim | Language server; moved out of Phase 2 by Justin on 2026-10-29, as it serves other editors and not the IDE or the engine | [P2-16](https://github.com/quakecstudio/editor/issues/72) Package editor integrations for VS Code, Zed and Neovim |
 

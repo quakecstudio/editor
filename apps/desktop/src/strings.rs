@@ -391,14 +391,54 @@ pub enum Text {
     OpenFolderTitle,
     /// The Project section's button with no project open.
     OpenFolderButton,
-    /// File, New id1 Project: a project from id's QuakeC 1.01 (P4-17).
-    NewId1Menu,
-    /// File, New Rerelease Project: a project from the rerelease's QuakeC (P4-17).
-    NewRereleaseMenu,
+    /// File, New Project, and the button of the same name: opens the New Project dialog (L-28).
+    NewProjectMenu,
+    /// The New Project dialog's title.
+    NewProjectHeading,
+    /// The New Project dialog's question.
+    NewProjectWhich,
+    /// The original game, in the New Project dialog.
+    GameOriginal,
+    /// What a project for the original game starts from.
+    GameOriginalFrom,
+    /// The 2021 rerelease, in the New Project dialog.
+    GameRerelease,
+    /// What a project for the rerelease starts from.
+    GameRereleaseFrom,
+    /// The New Project dialog's button that asks for the folder.
+    NewProjectChoose,
     /// The system dialog's title when naming a new project's folder.
     NewProjectTitle,
     /// The heading over the recent projects.
     RecentProjects,
+    /// The Welcome page's heading.
+    WelcomeTitle,
+    /// Under the Welcome page's heading.
+    WelcomeTagline,
+    /// The Welcome page's first step.
+    WelcomeGame,
+    /// The first step before the game was looked for.
+    WelcomeGameWhy,
+    /// The first step's button, which opens the guide to the game's files.
+    WelcomeGameButton,
+    /// The Welcome page's second step.
+    WelcomeProject,
+    /// Under the second step.
+    WelcomeProjectHow,
+    /// The Welcome page's third step.
+    WelcomePlay,
+    /// Under the third step.
+    WelcomePlayHow,
+    /// The Welcome page's link to the command palette.
+    WelcomePalette,
+    /// The Welcome page's link to the user guide.
+    WelcomeGuide,
+    /// The first step's number.
+    WelcomeFirst,
+    /// The second step's number.
+    WelcomeSecond,
+    /// The third step's number.
+    WelcomeThird,
     /// Before the path of a folder that is not there.
     FolderGone,
     /// A control that has no action yet.
@@ -1033,7 +1073,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 508] = [
+    pub const ALL: [Self; 528] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1174,10 +1214,30 @@ impl Text {
         Self::OpenFolderMenu,
         Self::OpenFolderTitle,
         Self::OpenFolderButton,
-        Self::NewId1Menu,
-        Self::NewRereleaseMenu,
+        Self::NewProjectMenu,
+        Self::NewProjectHeading,
+        Self::NewProjectWhich,
+        Self::GameOriginal,
+        Self::GameOriginalFrom,
+        Self::GameRerelease,
+        Self::GameRereleaseFrom,
+        Self::NewProjectChoose,
         Self::NewProjectTitle,
         Self::RecentProjects,
+        Self::WelcomeTitle,
+        Self::WelcomeTagline,
+        Self::WelcomeGame,
+        Self::WelcomeGameWhy,
+        Self::WelcomeGameButton,
+        Self::WelcomeProject,
+        Self::WelcomeProjectHow,
+        Self::WelcomePlay,
+        Self::WelcomePlayHow,
+        Self::WelcomePalette,
+        Self::WelcomeGuide,
+        Self::WelcomeFirst,
+        Self::WelcomeSecond,
+        Self::WelcomeThird,
         Self::FolderGone,
         Self::NotYetAvailable,
         Self::ViewMenu,
@@ -1622,7 +1682,7 @@ impl Text {
             Self::Paused => "Paused",
             Self::ReloadFailed => "The reload failed; see the Console",
             Self::GameGuide => "Your Quake files",
-            Self::GameFound => "Found Quake. Play reads it where it is.",
+            Self::GameFound => "Found Quake.",
             Self::GameSharewareOnly => {
                 "Only the shareware episode is here. Play works on its maps; the rest of the game needs id1/pak1.pak."
             }
@@ -1704,10 +1764,34 @@ impl Text {
             Self::OpenFolderMenu => "Open Folder\u{2026}",
             Self::OpenFolderTitle => "Open a QuakeC project folder",
             Self::OpenFolderButton => "Open Folder",
-            Self::NewId1Menu => "New id1 Project\u{2026}",
-            Self::NewRereleaseMenu => "New Rerelease Project\u{2026}",
+            Self::NewProjectMenu => "New Project\u{2026}",
+            Self::NewProjectHeading => "New project",
+            Self::NewProjectWhich => "Which game is the mod for?",
+            Self::GameOriginal => "Original Quake",
+            Self::GameOriginalFrom => "Starts from id's QuakeC 1.01.",
+            Self::GameRerelease => "Quake rerelease (2021)",
+            Self::GameRereleaseFrom => "Starts from the rerelease's QuakeC.",
+            Self::NewProjectChoose => "Choose Folder\u{2026}",
             Self::NewProjectTitle => "Name the new project's folder",
             Self::RecentProjects => "Recent projects",
+            Self::WelcomeTitle => "Welcome to QuakeC Studio",
+            Self::WelcomeTagline => "Write QuakeC, press Play, and see it run in Quake.",
+            Self::WelcomeGame => "Find Quake's files",
+            Self::WelcomeGameWhy => "Play runs your mod in your own copy of Quake.",
+            Self::WelcomeGameButton => "Set Up Quake Files\u{2026}",
+            Self::WelcomeProject => "Start a project",
+            Self::WelcomeProjectHow => {
+                "A new project is a copy of the game's QuakeC, ready to change; or open a mod you have."
+            }
+            Self::WelcomePlay => "Press Play",
+            Self::WelcomePlayHow => {
+                "Play builds your mod and starts the game. While it runs, each save reloads your code in it."
+            }
+            Self::WelcomePalette => "Search every command",
+            Self::WelcomeGuide => "Read the user guide",
+            Self::WelcomeFirst => "1",
+            Self::WelcomeSecond => "2",
+            Self::WelcomeThird => "3",
             Self::FolderGone => "The folder is no longer there:",
             Self::NotYetAvailable => "Not available yet",
             Self::ViewMenu => "View",

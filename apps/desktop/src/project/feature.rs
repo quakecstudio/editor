@@ -17,6 +17,7 @@ use qs_workbench::{
 
 use crate::features::Commands;
 use crate::game_guide::{self, Guide, GuideAction};
+use crate::new_project::NewProject;
 use crate::shell::{ShellError, Workspace};
 use crate::strings::Text;
 use crate::theme::Theme;
@@ -39,6 +40,11 @@ pub(crate) struct ProjectFeature {
     guide: Guide,
     /// What the game folder holds and lacks, for the guide.
     guide_files: Option<GameFiles>,
+    /// The New Project dialog (L-28).
+    new_project: NewProject,
+    /// What Play would read the game from, for the Welcome page, with the game folder chosen
+    /// when it was looked for; `None` before the first look.
+    found: Option<(Option<PathBuf>, GameFiles)>,
 }
 
 impl ProjectFeature {
@@ -86,9 +92,27 @@ impl ProjectFeature {
         }
     }
 
+    /// Shows the New Project dialog, the games the game folder (or the first install found)
+    /// holds deciding which is chosen to begin with.
+    pub(crate) fn ask_new_project(&mut self, commands: &Commands<'_>) {
+        let games = commands.session().context().preview.games();
+        self.new_project.open(games);
+    }
+
+    /// The New Project dialog while it is shown: Choose Folder makes the project.
+    pub(crate) fn new_project_dialog(
+        &mut self,
+        commands: &mut Commands<'_>,
+        (ctx, theme): (&egui::Context, &Theme),
+    ) {
+        if let Some(template) = self.new_project.show(ctx, theme) {
+            self.new_project(commands, template);
+        }
+    }
+
     /// Asks for a new folder with the system's dialog, makes a project of `template` there
     /// (`project.new`, P4-17) and opens it, saying why when it could not.
-    pub(crate) fn new_project(&mut self, commands: &mut Commands<'_>, template: Template) {
+    fn new_project(&mut self, commands: &mut Commands<'_>, template: Template) {
         let picked = rfd::FileDialog::new()
             .set_title(Text::NewProjectTitle.get())
             .save_file();
@@ -198,6 +222,32 @@ impl ProjectFeature {
             self.guide = Guide::for_files(&files);
             self.guide_files = Some(files);
         }
+    }
+
+    /// Looks for the game, so the Welcome page says what Play would read: the chosen folder,
+    /// or the first install on this machine.
+    pub(crate) fn look_for_game(&mut self, commands: &mut Commands<'_>) {
+        let chosen = Self::chosen_game(commands);
+        self.found = commands
+            .run(GAME, &serde_json::json!({}))
+            .map(|files| (chosen, files));
+    }
+
+    /// The game folder chosen for Play, if one was.
+    fn chosen_game(commands: &Commands<'_>) -> Option<PathBuf> {
+        let preview = &commands.session().context().preview;
+        preview.game_folder().map(Path::to_path_buf)
+    }
+
+    /// What Play would read the game from, for the Welcome page. Once the game was looked for
+    /// it is looked for again whenever the folder chosen changed, however it was chosen: the
+    /// guide, the palette, the agent or MCP.
+    pub(crate) fn game_found(&mut self, commands: &mut Commands<'_>) -> Option<&GameFiles> {
+        let looked = self.found.as_ref().map(|(chosen, _)| chosen);
+        if looked.is_some_and(|chosen| *chosen != Self::chosen_game(commands)) {
+            self.look_for_game(commands);
+        }
+        self.found.as_ref().map(|(_, files)| files)
     }
 
     /// Opens the guide to the game's files (P3-21), from the File menu: what the game folder,

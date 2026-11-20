@@ -11,7 +11,6 @@ use std::path::PathBuf;
 use eframe::egui::{self, Button, RichText, Ui};
 use qs_commands::{CommandError, Session};
 use qs_map_edit::MapDocument;
-use qs_templates::Template;
 use qs_workbench::{FsLoader, OpenFile, PlayState, Preview, Workbench};
 
 use crate::agent::AgentFeature;
@@ -520,13 +519,8 @@ pub(crate) fn no_project(
         if ui.button(Text::OpenFolderButton.get()).clicked() {
             action = Some(LeftAction::OpenFolder);
         }
-        for (template, text) in [
-            (Template::Id1, Text::NewId1Menu),
-            (Template::Rerelease, Text::NewRereleaseMenu),
-        ] {
-            if ui.button(text.get()).clicked() {
-                action = Some(LeftAction::New(template));
-            }
+        if ui.button(Text::NewProjectMenu.get()).clicked() {
+            action = Some(LeftAction::New);
         }
     });
     if let Some(error) = error {
@@ -563,8 +557,8 @@ pub(crate) enum LeftAction {
     Open(PathBuf),
     /// Ask for a project folder with the system's dialog.
     OpenFolder,
-    /// Make a new project from a template.
-    New(Template),
+    /// Ask which game a new project is for, then make it.
+    New,
 }
 
 /// What a click or a typed line in the bottom panel asks for.

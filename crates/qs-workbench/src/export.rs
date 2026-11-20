@@ -216,13 +216,11 @@ impl<L: qc_project::Loader> Workbench<L> {
         };
         let assets = collect_assets(&root)?;
         let notices = collect_notices(&root)?;
-        let game_folder = params.game.clone().or_else(|| {
-            qs_install::find_installs()
-                .into_iter()
-                .next()
-                .map(|install| install.root)
-        });
-        let id_files = IdFiles::of(game_folder.as_deref());
+        let install = match &params.game {
+            Some(folder) => qs_install::examine_folder(folder),
+            None => qs_install::find_installs().into_iter().next(),
+        };
+        let id_files = IdFiles::of(install.as_ref());
         for piece in programs.iter().chain(&assets).chain(&notices) {
             id_files.refuse(piece)?;
         }
@@ -444,12 +442,15 @@ struct IdFiles {
 }
 
 impl IdFiles {
-    /// The PAK members of `game`'s `id1` and `rerelease/id1`, none without a game folder.
-    fn of(game: Option<&Path>) -> Self {
+    /// The PAK members of the `id1` of each game `install` holds, wherever the install keeps
+    /// it (FS-6.1, FS-6.6, FS-6.7); none without an install.
+    fn of(install: Option<&qs_install::Install>) -> Self {
         let mut by_size: BTreeMap<usize, Vec<(PathBuf, String, Vec<u8>)>> = BTreeMap::new();
-        for dir in game
+        for dir in install
             .into_iter()
-            .flat_map(|game| [game.join("id1"), game.join("rerelease").join("id1")])
+            .flat_map(|install| [&install.original, &install.rerelease])
+            .flatten()
+            .map(|base| base.id1.clone())
         {
             for entry in fs::read_dir(&dir).ok().into_iter().flatten().flatten() {
                 let path = entry.path();

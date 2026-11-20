@@ -54,6 +54,7 @@ mod map_uv;
 pub mod map_view;
 pub mod menu;
 mod multibuffer;
+mod new_project;
 #[cfg(target_os = "macos")]
 pub mod open_documents;
 pub mod palette;
@@ -66,6 +67,9 @@ mod terminal;
 mod texture_browser;
 mod texture_import;
 pub mod theme;
+mod welcome;
+
+pub use about::ICON;
 
 #[cfg(test)]
 mod snapshots;
@@ -293,7 +297,7 @@ impl App {
             Chosen::Run(id) => self.shell.run_chosen(id),
             Chosen::Choice(choice) => match choice {
                 MenuChoice::OpenFolder => self.shell.open_folder(),
-                MenuChoice::NewProject(template) => self.shell.new_project(template),
+                MenuChoice::NewProject => self.shell.ask_new_project(),
                 MenuChoice::GameFiles => self.shell.show_game_guide(),
                 MenuChoice::ExportMod => self.shell.export_mod(),
                 MenuChoice::Zoom(step) => self.shell.zoom(step),

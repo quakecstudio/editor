@@ -32,7 +32,7 @@ use qs_layout::{
 use qs_map_edit::opens_in_map_editor;
 use qs_render::{Camera, MapMesh};
 use qs_settings::SettingsFile;
-use qs_templates::{GitHub, Template};
+use qs_templates::GitHub;
 use qs_workbench::TASK_LIST;
 use qs_workbench::dock::DockFrame;
 use qs_workbench::game_files::GameFiles;
@@ -90,6 +90,7 @@ use crate::project::ProjectFeature;
 use crate::project::{self, Jump, SymbolScope};
 use crate::strings::{Text, Truncation, panel_button, review_waiting};
 use crate::theme::{Theme, Token, semibold};
+use crate::welcome::{self, WelcomeAction};
 #[cfg(test)]
 use qs_map_edit::uv::FaceRef;
 
@@ -539,6 +540,13 @@ impl Shell {
         self.menu = MenuPlace::InWindow;
     }
 
+    /// Looks for the game, so the Welcome page says what was found; called once the settings
+    /// file gave the folder chosen before.
+    pub fn look_for_game(&mut self) {
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        self.features.project.look_for_game(&mut commands);
+    }
+
     /// Chooses `path` as the game folder, read in place (`preview.choose_game`), and keeps it
     /// in the settings file when it plays, so the next start finds it (P3-44).
     pub fn choose_game_folder(&mut self, path: &Path) -> Option<GameFiles> {
@@ -673,11 +681,20 @@ impl Shell {
             .apply(action, &mut commands, settings.as_deref(), ctx);
     }
 
-    /// Asks for a new folder with the system's dialog, makes a project of `template` there
-    /// (`project.new`, P4-17) and opens it, saying why when it could not.
-    pub fn new_project(&mut self, template: Template) {
+    /// Shows the New Project dialog (L-28), which asks which game the mod is for and then for
+    /// its folder, makes the project (`project.new`, P4-17) and opens it.
+    pub fn ask_new_project(&mut self) {
+        let commands = Commands::new(&mut self.session, &mut self.preview_error);
+        self.features.project.ask_new_project(&commands);
+    }
+
+    /// The New Project dialog while it is shown.
+    fn new_project_dialog(&mut self, ui: &Ui) {
+        let ctx = ui.ctx().clone();
         let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
-        self.features.project.new_project(&mut commands, template);
+        self.features
+            .project
+            .new_project_dialog(&mut commands, (&ctx, &self.theme));
     }
 
     /// Exports the open project for players (`project.export`, P4-28); the status bar says
@@ -1298,6 +1315,7 @@ impl Shell {
         self.toolbar(ui);
         self.reset_notice(ui);
         self.game_guide(ui);
+        self.new_project_dialog(ui);
         self.about.show(ui.ctx(), &self.theme);
         match self.status_bar(ui) {
             Some(StatusAsk::Show(panel)) => {
@@ -2208,7 +2226,7 @@ impl Shell {
             FeatureAction::Agent(action) => self.agent_action(action, ctx),
             FeatureAction::Left(LeftAction::Open(folder)) => self.open_asked(&folder),
             FeatureAction::Left(LeftAction::OpenFolder) => self.open_folder(),
-            FeatureAction::Left(LeftAction::New(template)) => self.new_project(template),
+            FeatureAction::Left(LeftAction::New) => self.ask_new_project(),
             FeatureAction::Left(LeftAction::Jump(_)) => {}
         }
     }
@@ -2737,6 +2755,11 @@ impl Shell {
         if self.centre_tab == CentreTab::Game && self.game.ui(ui) {
             return;
         }
+        if self.centre_tab == CentreTab::Editor && self.session.context().workbench.root().is_none()
+        {
+            self.welcome(ui);
+            return;
+        }
         let (fill, message) = match self.centre_tab {
             CentreTab::Editor => (Token::SurfaceEditor, Text::NoFileOpen),
             CentreTab::Game => (Token::SurfaceViewport, Text::GameStopped),
@@ -2755,6 +2778,37 @@ impl Shell {
             );
             ui.allocate_response(egui::Vec2::ZERO, Sense::hover());
         });
+    }
+}
+
+impl Shell {
+    /// The Welcome page, which the editor's tab shows while no project is open, and what a
+    /// click on it asks for.
+    fn welcome(&mut self, ui: &mut Ui) {
+        let ctx = ui.ctx().clone();
+        let icon = self.about.icon(&ctx).map(egui::TextureHandle::id);
+        let play_key = self
+            .keymap
+            .shortcut(PLAY)
+            .map(|key| ctx.format_shortcut(&key));
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        let project = &mut self.features.project;
+        let files = project.game_found(&mut commands).cloned();
+        let page = welcome::Page {
+            icon,
+            files: files.as_ref(),
+            recent: project.recent_projects(),
+            error: project.error.as_deref(),
+            play_key,
+            palette_key: ctx.format_shortcut(&keymap::OPEN_PALETTE),
+        };
+        match welcome::page(ui, &self.theme, &page) {
+            Some(WelcomeAction::GameFiles) => self.show_game_guide(),
+            Some(WelcomeAction::Project(asked)) => self.apply(FeatureAction::Left(asked), &ctx),
+            Some(WelcomeAction::Palette) => self.open_palette(),
+            Some(WelcomeAction::UserGuide) => ctx.open_url(egui::OpenUrl::new_tab(GUIDE)),
+            None => {}
+        }
     }
 }
 

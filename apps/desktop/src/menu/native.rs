@@ -209,7 +209,7 @@ impl MenuBar {
                     match choice {
                         MenuChoice::Zoom(_) => Chosen::Choice(choice),
                         MenuChoice::OpenFolder
-                        | MenuChoice::NewProject(_)
+                        | MenuChoice::NewProject
                         | MenuChoice::FileFinder
                         | MenuChoice::GameFiles
                         | MenuChoice::ExportMod

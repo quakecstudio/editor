@@ -10,7 +10,7 @@
 # design_doc_sha256 is the SHA-256 of docs/design/design-doc.md (LF line endings) that these
 # requirements were last reviewed against. plan/check.py fails when the design doc changes until
 # the requirements are reviewed and the new hash, which the failure prints, is recorded here.
-design_doc_sha256: afa4005cd36d3d88bd0d4ffe1d5ed5eae922c7eb83e2449228d25ea35cd7324d
+design_doc_sha256: 1c04cc493b0820d9ed8809b78cd82c03e3b0f0aa840df45c177ffaacb062c580
 
 sections:
   - id: GOAL
@@ -101,7 +101,7 @@ sections:
       - {id: COMP-2, kind: stated, text: "As-you-type errors are exactly the build's errors"}
       - {id: COMP-3, kind: stated, text: "Dialect order: vanilla, rerelease's FTEQCC features (MVP), rest of FTEQCC, GMQCC last"}
       - {id: COMP-4, kind: stated, text: "Correctness = same globals and edicts as id's VM running qcc output; byte-identical output not a goal"}
-      - {id: COMP-5, kind: stated, text: "Optimizations (constant folding, dead code, string/global dedup) each behind a flag and covered by the differential suite"}
+      - {id: COMP-5, kind: stated, text: "Optimizations (constant folding, dead code, string/global dedup) always on, with no flag, and covered by the differential suite"}
       - {id: COMP-6, kind: stated, text: "Incremental recompile of id1-sized code under 200 ms"}
       - {id: COMP-7, kind: stated, text: "id qcc built from GPL source is the vanilla oracle in CI only"}
       - {id: COMP-8, kind: stated, text: "Extended-dialect conformance by compiling the rerelease and public mods and checking runtime behaviour"}

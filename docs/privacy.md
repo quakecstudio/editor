@@ -21,7 +21,7 @@ links one (`cargo tree -i ureq`).
 | When | What is requested | Crate |
 | --- | --- | --- |
 | The agent is asked something (a thread or an inline edit), once a provider is set up | The provider's API: `https://api.anthropic.com` for Anthropic, the OpenAI-compatible address entered (`https://api.openai.com/v1` by default), or `http://localhost:11434/v1` for a local Ollama, which stays on the computer. Each request carries the task, the project's context the agent was given or read, and the key. | `qs-models` |
-| A project is made from a template (New id1 or New Rerelease, `project.new`, `quakec-ide new`) without a local copy | The template's files at their pinned commit from `https://raw.githubusercontent.com` (id-Software/Quake-Tools for id1, id-Software/quake-rerelease-qc for the rerelease), each checked against its pinned SHA-256. `--from <dir>` reads a local copy instead and makes no request. | `qs-templates` |
+| A project is made from a template (File, New Project, `project.new`, `quakec-ide new`) without a local copy | The template's files at their pinned commit from `https://raw.githubusercontent.com` (id-Software/Quake-Tools for id1, id-Software/quake-rerelease-qc for the rerelease), each checked against its pinned SHA-256. `--from <dir>` reads a local copy instead and makes no request. | `qs-templates` |
 
 Nothing else goes over the network:
 

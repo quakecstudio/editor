@@ -28,7 +28,7 @@ writing anything, and then adds:
   and what was added.
 
 The command is `project.new` (`template`, `path`); the window's File menu and its no-project
-panel offer New id1 Project and New Rerelease Project, and the command line has
+panel offer New Project, whose dialog asks which game the mod is for (L-28), and the command line has
 `quakec-ide new <id1|rerelease> <dir> [--from <folder>]`.
 
 ## Tests

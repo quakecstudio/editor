@@ -6802,7 +6802,7 @@ Parameters:
   "description": "The parameters of `preview.choose_game`.",
   "properties": {
     "path": {
-      "description": "The folder: a store's install, a steamcmd download, an innoextract output, or one\nholding `id1`.",
+      "description": "The folder: a store's install, a steamcmd download, an innoextract output, one\nholding `id1`, or a game directory of one of those, `id1` itself for one (FS-6.7).",
       "type": "string"
     }
   },
