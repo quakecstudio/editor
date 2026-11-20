@@ -519,7 +519,20 @@ const INSTRUCTIONS: &str = "Every command of QuakeC Studio over the project this
     compile, test, run QuakeC in the VM, play scenarios, inspect and drive the running game, \
     read files, stage edits as hunks and keep checkpoints; make or open a map, place and \
     key its entities, build its brushes, compile it and find its leaks, save it and play it, \
-    each map edit staged for review. Paths are the project's, absolute or relative to it.";
+    each map edit staged for review. Paths are the project's, absolute or relative to it. \
+    To build a map: map.new (or map.open), then map.textures for the texture names there \
+    are. A room is map.brush_create for a box and map.brush_hollow for its walls; rooms are \
+    joined by a box across the walls between them given to map.brush_subtract. The \
+    map.brush_* tools take a brush by its place among its entity's brushes: map.brushes \
+    lists the places with each brush's box, a brush just added has the place `total` had \
+    before it, and a tool that cuts or hollows changes the places, so list them again. \
+    map.place puts in the player start, lights, monsters and items, with keys such as \
+    `light` and `angle`; map.make_brush_entity makes a door of a brush. Then map.issues and \
+    map.leaks must find nothing, and map.save writes the file. To review a map: \
+    map.summary counts what it holds (with a path, a .map file read without opening it, to \
+    compare many maps), map.inspect lists its entities, and \
+    map.play_from_here with engine.screenshot shows it as the game draws it from a point; \
+    look at the picture and fix what is dark, empty or blocked.";
 
 /// A tool's result for `output`: its JSON as text, and as structured content when it is an
 /// object (MCP 2026-07-28, "Structured Content").
