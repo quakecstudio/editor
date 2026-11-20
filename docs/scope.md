@@ -104,6 +104,7 @@ milestone (`MVP-3`). All of them wait for the MVP gate.
 | One New Project entry that asks which game in plain words | Editor and UI (UI-14, PLAT-8); asked for by Justin on 2026-11-20 | [L-28](https://github.com/quakecstudio/editor/issues/1055) Ask which game a new project is for once, in plain words |
 | Demos recorded and played in the preview host, in the server's protocol | Preview (ENG-2); split from L-21 by Justin on 2026-11-20 | [L-29](https://github.com/quakecstudio/editor/issues/1059) Record and play demos in the preview host |
 | The later engines' options as console variables | Preview (ENG-2); chosen by Justin on 2026-11-20 | [L-30](https://github.com/quakecstudio/editor/issues/1061) Set the later engines' options from the console, by their upstream names |
+| The startup configuration before the first map, and `sv_protocol` as QuakeSpasm's command | Preview (ENG-2); chosen by Justin on 2026-11-20 | [L-31](https://github.com/quakecstudio/editor/issues/1068) Run the startup configuration before the first map, and sv_protocol as QuakeSpasm's command |
 | In-app update check | Quality, testing and release; moved out of the MVP by [ADR-0007](adr/0007-mvp-scope.md) | [P4-19](https://github.com/quakecstudio/editor/issues/130) Update mechanism |
 | Editor integrations for VS Code, Zed and Neovim | Language server; moved out of Phase 2 by Justin on 2026-10-29, as it serves other editors and not the IDE or the engine | [P2-16](https://github.com/quakecstudio/editor/issues/72) Package editor integrations for VS Code, Zed and Neovim |
 
