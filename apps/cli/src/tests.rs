@@ -671,7 +671,7 @@ fn new_refuses_a_copy_without_the_pinned_files() {
     assert!(err.contains("quake2"), "{err}");
 }
 
-// No spec statement: L-31: the game `mcp`'s own session plays has no window and no sound, so
+// No spec statement: L-41: the game `mcp`'s own session plays has no window and no sound, so
 // an agent that plays a map to look at a frame of it opens nothing on the person's screen;
 // the game folder named is the one it plays over
 #[test]
