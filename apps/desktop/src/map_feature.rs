@@ -631,6 +631,7 @@ impl MapFeature {
                     0.0,
                 ]),
                 region: None,
+                start: qs_workbench::GameStart::Running,
             },
         );
         // As Play from the toolbar: the error on the toolbar, and the guide when no game was

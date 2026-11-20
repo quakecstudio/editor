@@ -26,7 +26,6 @@ use crate::gpu::{
     ModelDepth, ModelFrame, ModelPlacement, PLAYER_SKINS, PlayerSkin, PlayerSlot, SkinKey,
     SpriteDraw, SpriteFrame, View,
 };
-use crate::light::light_point;
 use crate::look::Look;
 use crate::md5::Md5Model;
 use crate::mesh::{Image, LitWater, MapMesh, Palette, Placement, fullbright_split};
@@ -528,7 +527,7 @@ impl Play {
             *world = Some(ModelPlacement::WORLD);
         }
         let mut player_skins = Vec::new();
-        let light = |origin| light_point(bsp, &styles, origin);
+        let light = |origin| qs_client::light_point(bsp, &|style| styles.scale(style), origin);
         // R_DrawEntitiesOnList: the alias and brush models, then the sprites.
         for entity in scene.entities.iter().chain(&scene.statics) {
             match self.models.get(entity.model.get()) {

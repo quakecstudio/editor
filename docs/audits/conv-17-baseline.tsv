@@ -914,8 +914,6 @@ magic-number	crates/qs-render/src/alias.rs	word:4
 magic-number	crates/qs-render/src/camera.rs	multiply:4
 magic-number	crates/qs-render/src/gpu.rs	model_bytes:256
 magic-number	crates/qs-render/src/gpu.rs	model_offset:256
-magic-number	crates/qs-render/src/light.rs	recursive_light_point:255
-magic-number	crates/qs-render/src/light.rs	recursive_light_point:3
 magic-number	crates/qs-render/src/mesh.rs	Colour::texel:255
 magic-number	crates/qs-render/src/mesh.rs	Colour::texel:256
 magic-number	crates/qs-render/src/mesh.rs	Lightmaps::image_with:255

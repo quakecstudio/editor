@@ -130,6 +130,8 @@ impl LaunchSpec {
     /// The extra word that runs the host with no window and no sound, its frames drawn
     /// offscreen for a screenshot.
     pub const HEADLESS: &'static str = "--headless";
+    /// The extra word that starts the game paused, before a frame runs after the map loads.
+    pub const PAUSED: &'static str = "--paused";
 
     /// The command that starts the host (ADR-0008): `-basedir`, `-game` when there is a mod,
     /// `-kpf` when the run root passes the file, `-bridge`, then the extra words and the map.

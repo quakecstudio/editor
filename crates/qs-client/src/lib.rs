@@ -14,6 +14,7 @@ mod entity;
 #[cfg(test)]
 mod fitz_tests;
 mod hud;
+mod light;
 mod menu;
 mod message;
 mod models;
@@ -45,6 +46,7 @@ pub use hud::{
     HUD_NUM_WIDTH, HUD_PRINTSPEED, HUD_SBAR_HEIGHT, HUD_WEAPONS, HudInput, HudItem, Placed,
     color_for_map, sort_frags,
 };
+pub use light::{StyleScale, UNSET_STYLE_SCALE, light_point};
 pub use menu::{
     Grabbed, MENU_BINDINGS, MENU_HELP_PAGES, MENU_SAVEGAMES, Menu, MenuEvent, MenuFrame, MenuGame,
     MenuKey, MenuSettings, MenuState, save_comment,

@@ -40,6 +40,8 @@ qs-pak = { workspace = true }
 # scenario.run: the map, the game's files and the server simulation a scenario plays in
 # (SCN-2.1).
 qs-bsp = { workspace = true }
+# The light at a point of a lit map, which says how dark a place is (REND-4.10).
+qs-client = { workspace = true }
 qs-sim = { workspace = true }
 qs-vfs = { workspace = true }
 qs-wad = { workspace = true }

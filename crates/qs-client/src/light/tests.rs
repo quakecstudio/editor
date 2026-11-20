@@ -7,11 +7,108 @@
     reason = "test code: a failed unwrap, index or overflow is a failed test"
 )]
 
-use qs_bsp::SURF_DRAWTILED;
+use qs_bsp::{
+    BSP_HEADER_LUMPS, BSP_MAX_MAP_HULLS, Bsp, BspVersion, Face, Lump, Model, Node, Plane,
+    SURF_DRAWTILED, Texinfo,
+};
 
-use super::light_point;
-use crate::mesh::tests::{LIGHTMAP, MapSpec, bsp, samples};
-use crate::styles::{LightStyles, StyleLerp};
+use super::{UNSET_STYLE_SCALE, light_point};
+
+/// Every style as the map was lit.
+const UNSET: &dyn Fn(u8) -> u32 = &|_| UNSET_STYLE_SCALE;
+
+/// One face of a test map: a 64 by 32 rectangle in the z = 0 plane.
+struct MapSpec {
+    /// The face's flags.
+    flags: u32,
+    /// The face's styles.
+    styles: [u8; 4],
+    /// Where its samples start in the lighting lump; -1 for none.
+    lightofs: i32,
+}
+
+impl Default for MapSpec {
+    fn default() -> Self {
+        Self {
+            flags: 0,
+            styles: [0, 255, 255, 255],
+            lightofs: 0,
+        }
+    }
+}
+
+/// The face's lightmap: `(64>>4)+1` by `(32>>4)+1` samples.
+const LIGHTMAP: [usize; 2] = [5, 3];
+
+/// The test map: its one face lies in the z = 0 plane of node 0, whose sides are leaves.
+fn bsp<'a>(spec: &MapSpec, lighting: &'a [u8]) -> Bsp<'a> {
+    Bsp {
+        version: BspVersion::Bsp29,
+        lumps: [Lump::default(); BSP_HEADER_LUMPS],
+        entity_lump: b"",
+        planes: vec![Plane {
+            normal: [0.0, 0.0, 1.0],
+            dist: 0.0,
+            plane_type: 2,
+            signbits: 0,
+        }],
+        textures: vec![None],
+        vertexes: Vec::new(),
+        visibility: b"",
+        nodes: vec![Node {
+            planenum: 0,
+            children: [-1, -2],
+            mins: [0.0; 3],
+            maxs: [64.0, 32.0, 0.0],
+            firstface: 0,
+            numfaces: 1,
+        }],
+        texinfo: vec![Texinfo {
+            vecs: [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]],
+            miptex: 0,
+            texture: None,
+            flags: 0,
+            mipadjust: 1,
+        }],
+        faces: vec![Face {
+            planenum: 0,
+            side: 0,
+            firstedge: 0,
+            numedges: 0,
+            texinfo: 0,
+            styles: spec.styles,
+            lightofs: spec.lightofs,
+            texturemins: [0, 0],
+            extents: [64, 32],
+            flags: spec.flags,
+            lightmap_size: LIGHTMAP,
+        }],
+        lighting,
+        clipnodes: Vec::new(),
+        leafs: Vec::new(),
+        marksurfaces: Vec::new(),
+        edges: Vec::new(),
+        surfedges: Vec::new(),
+        models: vec![Model {
+            mins: [0.0; 3],
+            maxs: [64.0, 32.0, 0.0],
+            origin: [0.0; 3],
+            headnode: [0; BSP_MAX_MAP_HULLS],
+            visleafs: 0,
+            firstface: 0,
+            numfaces: 1,
+            radius: 0.0,
+        }],
+    }
+}
+
+/// Fifteen samples of each of `values`, one style after another.
+fn samples(values: &[u8]) -> Vec<u8> {
+    values
+        .iter()
+        .flat_map(|&v| [v; LIGHTMAP[0] * LIGHTMAP[1]])
+        .collect()
+}
 
 /// Fifteen samples numbered 0, 10, 20, ... row by row.
 fn numbered() -> Vec<u8> {
@@ -27,14 +124,8 @@ fn the_light_is_the_sample_below_the_point() {
     let lighting = numbered();
     let map = bsp(&MapSpec::default(), &lighting);
     // ds 40 >> 4 = 2, dt 20 >> 4 = 1: sample 1*5 + 2 = 7.
-    assert_eq!(
-        light_point(&map, &LightStyles::unset(), [40.0, 20.0, 10.0]),
-        70
-    );
-    assert_eq!(
-        light_point(&map, &LightStyles::unset(), [0.0, 0.0, 2000.0]),
-        0
-    );
+    assert_eq!(light_point(&map, UNSET, [40.0, 20.0, 10.0]), 70);
+    assert_eq!(light_point(&map, UNSET, [0.0, 0.0, 2000.0]), 0);
 }
 
 // spec REND-4.10: the styles' samples are summed, each at the unset style's value
@@ -46,11 +137,7 @@ fn every_style_adds_its_sample() {
         ..MapSpec::default()
     };
     assert_eq!(
-        light_point(
-            &bsp(&spec, &lighting),
-            &LightStyles::unset(),
-            [8.0, 8.0, 1.0]
-        ),
+        light_point(&bsp(&spec, &lighting), UNSET, [8.0, 8.0, 1.0]),
         30
     );
 }
@@ -61,34 +148,15 @@ fn every_style_adds_its_sample() {
 fn unlit_maps_and_misses() {
     let lighting = samples(&[64]);
     assert_eq!(
-        light_point(
-            &bsp(&MapSpec::default(), &[]),
-            &LightStyles::unset(),
-            [8.0, 8.0, 1.0]
-        ),
+        light_point(&bsp(&MapSpec::default(), &[]), UNSET, [8.0, 8.0, 1.0]),
         255
     );
     let map = bsp(&MapSpec::default(), &lighting);
-    assert_eq!(
-        light_point(&map, &LightStyles::unset(), [8.0, 8.0, 3000.0]),
-        0
-    );
-    assert_eq!(
-        light_point(&map, &LightStyles::unset(), [8.0, 8.0, -1.0]),
-        0
-    );
-    assert_eq!(
-        light_point(&map, &LightStyles::unset(), [100.0, 8.0, 1.0]),
-        0
-    );
-    assert_eq!(
-        light_point(&map, &LightStyles::unset(), [-1.0, 8.0, 1.0]),
-        0
-    );
-    assert_eq!(
-        light_point(&map, &LightStyles::unset(), [8.0, 8.0, 1.0]),
-        64
-    );
+    assert_eq!(light_point(&map, UNSET, [8.0, 8.0, 3000.0]), 0);
+    assert_eq!(light_point(&map, UNSET, [8.0, 8.0, -1.0]), 0);
+    assert_eq!(light_point(&map, UNSET, [100.0, 8.0, 1.0]), 0);
+    assert_eq!(light_point(&map, UNSET, [-1.0, 8.0, 1.0]), 0);
+    assert_eq!(light_point(&map, UNSET, [8.0, 8.0, 1.0]), 64);
 }
 
 // spec REND-4.10: a face hit with no samples is 0, and a tiled face is passed over
@@ -100,11 +168,7 @@ fn faces_with_no_samples_or_drawn_tiled() {
         ..MapSpec::default()
     };
     assert_eq!(
-        light_point(
-            &bsp(&dark, &lighting),
-            &LightStyles::unset(),
-            [8.0, 8.0, 1.0]
-        ),
+        light_point(&bsp(&dark, &lighting), UNSET, [8.0, 8.0, 1.0]),
         0
     );
     let tiled = MapSpec {
@@ -112,11 +176,7 @@ fn faces_with_no_samples_or_drawn_tiled() {
         ..MapSpec::default()
     };
     assert_eq!(
-        light_point(
-            &bsp(&tiled, &lighting),
-            &LightStyles::unset(),
-            [8.0, 8.0, 1.0]
-        ),
+        light_point(&bsp(&tiled, &lighting), UNSET, [8.0, 8.0, 1.0]),
         0
     );
 }
@@ -127,10 +187,7 @@ fn a_node_that_is_its_own_child_ends() {
     let mut map = bsp(&MapSpec::default(), &lighting);
     map.nodes[0].children = [0, 0];
     // The walk stops at the node count instead of recursing for ever, then finds the face.
-    assert_eq!(
-        light_point(&map, &LightStyles::unset(), [8.0, 8.0, 1.0]),
-        64
-    );
+    assert_eq!(light_point(&map, UNSET, [8.0, 8.0, 1.0]), 64);
 }
 
 /// Three nodes: node 0's plane is z = 4 with node 1 in front and node 2 behind; node 1's is
@@ -194,7 +251,7 @@ fn tree_lighting() -> Vec<u8> {
 fn the_walk_crosses_each_plane_where_the_line_does() {
     let lighting = tree_lighting();
     let map = tree(&lighting);
-    let light = |x: f32, y: f32, z: f32| light_point(&map, &LightStyles::unset(), [x, y, z]);
+    let light = |x: f32, y: f32, z: f32| light_point(&map, UNSET, [x, y, z]);
     // At z = 8: s = x + 10, t = y + 4; face 0's sample ((t-16)>>4)*5 + ((s-16)>>4).
     assert_eq!(light(21.0, 12.0, 10.0), 10);
     assert_eq!(light(22.0, 12.0, 10.0), 11);
@@ -217,7 +274,7 @@ fn the_walk_crosses_each_plane_where_the_line_does() {
 fn a_face_is_hit_within_its_extents_inclusive() {
     let lighting = tree_lighting();
     let map = tree(&lighting);
-    let light = |x: f32, y: f32| light_point(&map, &LightStyles::unset(), [x, y, 10.0]);
+    let light = |x: f32, y: f32| light_point(&map, UNSET, [x, y, 10.0]);
     // s = 16 and t = 16, face 0's first texel.
     assert_eq!(light(6.0, 12.0), 10);
     // s = 15: before face 0, so face 1's sample (15>>4) + (16>>4)*9.
@@ -244,9 +301,17 @@ fn the_light_point_reads_the_styles() {
         ..MapSpec::default()
     };
     let map = bsp(&spec, &lighting);
-    let off = LightStyles::at(|s| (s == 1).then_some(b"a".as_slice()), 0.0, StyleLerp::Off);
+    // Style 1 switched off, as the letter `a` leaves it.
+    let off = |style: u8| if style == 1 { 0 } else { UNSET_STYLE_SCALE };
     assert_eq!(light_point(&map, &off, [8.0, 8.0, 1.0]), 10);
-    let negative = LightStyles::at(|s| (s == 0).then_some(b"0".as_slice()), 0.0, StyleLerp::Off);
+    // Style 0 at -1078, as the letter `0` leaves it, an `unsigned` to the product.
+    let negative = |style: u8| {
+        if style == 0 {
+            (-1078_i32).cast_unsigned()
+        } else {
+            UNSET_STYLE_SCALE
+        }
+    };
     // 10 * -1078 + 20 * 256 = -5660, >> 8 = -23: no light, as below 0 is 0.
     assert_eq!(light_point(&map, &negative, [8.0, 8.0, 1.0]), 0);
 }

@@ -137,6 +137,13 @@ An event is a notification from the host. Each carries `time`, the server's cloc
   sends `edict/picked` with it; the click neither captures the mouse nor runs a frame. A
   click that hits no edict sends nothing. A running game's click captures the mouse as
   before.
+- **BRIDGE-3.6** A host started with `--paused` pauses once the map it starts on has loaded,
+  before a server frame runs after the load: its first `state/changed` is to `paused` with reason
+  `pause`, which the client that connects is sent, and `resume` or `step` goes on from there.
+  Every entity is then where the map put it, so a frame drawn shows the map before a monster has
+  seen the player. A map loaded later, by a level change or the `map` command, is paused when the
+  game was and runs when it ran, with no `state/changed` for it. With no bridge `--paused` does
+  nothing, since nothing could resume the game.
 
 ## BRIDGE-4 Commands
 

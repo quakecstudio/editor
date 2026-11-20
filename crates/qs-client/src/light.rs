@@ -4,27 +4,38 @@
 //
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/gl_rlight.c, R_LightPoint, RecursiveLightPoint
 
-//! The light at a point of the world, which an alias model is shaded by (REND-4.10).
+//! The light at a point of the world, which an alias model is shaded by (REND-4.10), and
+//! which says how dark a place of a map is before the game draws it.
 
 use qs_bsp::{Bsp, SURF_DRAWTILED};
 
-use crate::styles::LightStyles;
-use crate::vector::dot;
+/// What a light style's samples are multiplied by, `d_lightstylevalue` as an `unsigned`
+/// (REND-5.4): 256 is the light as the map was lit.
+pub type StyleScale<'a> = &'a dyn Fn(u8) -> u32;
+
+/// The scale of every style before any light string is set (REND-5.2).
+pub const UNSET_STYLE_SCALE: u32 = 256;
+
+fn dot([a, b, c]: [f32; 3], [x, y, z]: [f32; 3]) -> f32 {
+    a * x + b * y + c * z
+}
 
 /// `end[2] = p[2] - 2048`: how far below the point the light is looked for (REND-4.10).
 const LIGHT_DEPTH: f32 = 2048.0;
 /// `r >>= 8` in `RecursiveLightPoint` (REND-4.10).
 const LIGHT_SHIFT: u32 = 8;
+/// The style that ends a face's list of styles (BSP-9.6).
+const NO_STYLE: u8 = 255;
 /// The light of a map with no lighting lump (REND-4.10).
 const FULL_BRIGHT: i32 = 255;
 /// The world units of one lightmap sample, `ds >>= 4`.
 const SAMPLE_SHIFT: u32 = 4;
 
 /// `R_LightPoint`: the light of the first lit world surface straight below `point`, within
-/// 2048 units, its styles at the values `styles` gives; 0 when there is none, 255 in a map
-/// with no lighting lump (REND-4.10, REND-5.6).
+/// 2048 units, each style's samples scaled as `styles` says; 0 when there is none, 255 in a
+/// map with no lighting lump (REND-4.10, REND-5.6).
 #[must_use]
-pub fn light_point(bsp: &Bsp<'_>, styles: &LightStyles, point: [f32; 3]) -> i32 {
+pub fn light_point(bsp: &Bsp<'_>, styles: StyleScale<'_>, point: [f32; 3]) -> i32 {
     if bsp.lighting.is_empty() {
         return FULL_BRIGHT;
     }
@@ -37,7 +48,7 @@ pub fn light_point(bsp: &Bsp<'_>, styles: &LightStyles, point: [f32; 3]) -> i32 
 /// `RecursiveLightPoint`: `None` for id's -1, nothing hit.
 fn recursive_light_point(
     bsp: &Bsp<'_>,
-    styles: &LightStyles,
+    styles: StyleScale<'_>,
     child: i32,
     start: [f32; 3],
     end: [f32; 3],
@@ -79,9 +90,9 @@ fn recursive_light_point(
         let Some(tex) = bsp.texinfo.get(face.texinfo) else {
             continue;
         };
-        let [svec, tvec] = tex.vecs;
-        let s = truncate(dot(mid, vec3(svec)) + svec[3]);
-        let t = truncate(dot(mid, vec3(tvec)) + tvec[3]);
+        let [(sdir, sofs), (tdir, tofs)] = tex.vecs.map(axis);
+        let s = truncate(dot(mid, sdir) + sofs);
+        let t = truncate(dot(mid, tdir) + tofs);
         let [smin, tmin] = face.texturemins.map(i32::from);
         if s < smin || t < tmin {
             continue;
@@ -106,8 +117,8 @@ fn recursive_light_point(
         let mut r = 0_u32;
         for map in 0..face.style_count() {
             let sample = samples.get(map.checked_mul(size)?.checked_add(at)?)?;
-            let style = face.styles.get(map).copied().unwrap_or(255);
-            r = r.wrapping_add(u32::from(*sample).wrapping_mul(styles.scale(style)));
+            let style = face.styles.get(map).copied().unwrap_or(NO_STYLE);
+            r = r.wrapping_add(u32::from(*sample).wrapping_mul(styles(style)));
         }
         // `r` is an `int` in id's code: the unsigned products wrap into it.
         return Some(r.cast_signed() >> LIGHT_SHIFT);
@@ -115,9 +126,9 @@ fn recursive_light_point(
     recursive_light_point(bsp, styles, far, mid, end, depth)
 }
 
-/// A texinfo vector's direction, without its offset.
-const fn vec3([x, y, z, _]: [f32; 4]) -> [f32; 3] {
-    [x, y, z]
+/// A texinfo vector as its direction and its offset.
+const fn axis([x, y, z, offset]: [f32; 4]) -> ([f32; 3], f32) {
+    ([x, y, z], offset)
 }
 
 /// C's float to int conversion, toward zero (REND-4.10); a value past `i32` is out of every

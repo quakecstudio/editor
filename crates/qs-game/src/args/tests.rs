@@ -99,3 +99,15 @@ fn the_protocol_option_sets_sv_protocol() {
     assert_eq!(parse(&[]).protocol.version(), ProtocolVersion::FitzQuake);
     assert!(Args::parse_words(["--protocol".to_owned(), "16".to_owned()]).is_err());
 }
+
+// spec BRIDGE-3.6: `--paused` starts the game paused when there is a bridge to resume it by;
+// with none it is read and does nothing
+#[test]
+fn paused_needs_a_bridge_to_resume_by() {
+    let with = parse(&["-bridge", "/tmp/qs.sock", "--paused", "start"]).unwrap();
+    assert!(with.paused && with.starts_paused());
+    let without = parse(&["--paused", "start"]).unwrap();
+    assert!(without.paused && !without.starts_paused());
+    let running = parse(&["-bridge", "/tmp/qs.sock", "start"]).unwrap();
+    assert!(!running.starts_paused());
+}

@@ -24,7 +24,7 @@ use qs_wad::write::WadBuilder;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::preview::{HasPreview, PreviewError};
+use crate::preview::{GameStart, HasPreview, PreviewError};
 use crate::{Workbench, WorkbenchError};
 use qs_map::{Region, Surface, TexDef};
 use qs_map_edit::textures::{Game, GameTextures, find_wad, light_palette};
@@ -396,6 +396,13 @@ pub struct PlayFromHereParams {
     /// (MAP-16); the whole map when not given.
     #[serde(default)]
     pub region: Option<CompileRegion>,
+    /// Whether the game runs or is left paused where the player was put. Paused, the game
+    /// starts paused, the player is put in place and one frame is run to show the view from
+    /// there: `engine.screenshot` then shows the map with every monster where the map put
+    /// it, not yet awake, which is the picture to review a room by; `preview.resume` plays
+    /// on. Running when not given.
+    #[serde(default)]
+    pub start: GameStart,
 }
 
 /// How far, in whole units up or down, [`PlayFromHereParams::origin_in`] looks for room for
@@ -437,6 +444,117 @@ impl PlayFromHereParams {
     }
 }
 
+/// The light below which a place is dark: the level id raises the player's own weapon to, so
+/// that it can be seen (REND-4.11).
+const DARK_BELOW: i32 = 24;
+
+/// The classnames that start with this are lights.
+const LIGHT_CLASS: &[u8] = b"light";
+
+/// A place of a lit map and the light there.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PlaceLight {
+    /// The classname of the entity that stands there.
+    pub classname: String,
+    /// Its origin.
+    pub origin: [f32; 3],
+    /// The light of the floor below it, as the game shades a model standing there
+    /// (REND-4.10): 0 is black, about 100 a lit room, 255 the most a lightmap holds.
+    pub light: i32,
+}
+
+/// The classnames that start with this are where a player enters the map.
+const PLAYER_START_CLASS: &[u8] = b"info_player";
+/// The first light style a switchable light is given (LIGHT-6): below it a style is one
+/// of the fixed patterns, which are never off.
+const FIRST_SWITCHABLE_STYLE: u32 = 32;
+/// `START_OFF`, the spawnflag a light starts off with: id's `light` (`misc.qc` of QuakeC
+/// 1.01) runs `lightstyle(self.style, "a")` for it.
+const START_OFF: u32 = 1;
+
+/// A whole number a map entity's key holds, 0 for none or one that is not a number.
+fn key_number(entity: &qs_map::Entity, key: &[u8]) -> u32 {
+    entity
+        .value(key)
+        .and_then(|value| std::str::from_utf8(value).ok())
+        .and_then(|text| text.trim().parse().ok())
+        .unwrap_or(0)
+}
+
+impl PlaceLight {
+    /// The light at `origin` of the lit map `bsp` as a game just started lights it: every
+    /// style as the map was lit, but those of `off`, the switchable lights that start off.
+    #[must_use]
+    pub fn at(bsp: &Bsp<'_>, off: &[u8], origin: [f32; 3]) -> i32 {
+        let scale = |style: u8| {
+            if off.contains(&style) {
+                0
+            } else {
+                qs_client::UNSET_STYLE_SCALE
+            }
+        };
+        qs_client::light_point(bsp, &scale, origin)
+    }
+
+    /// The light styles of `lump`'s lights that start off: each light with a switchable
+    /// style and the `START_OFF` spawnflag.
+    fn styles_off(lump: &qs_map::MapFile) -> Vec<u8> {
+        lump.entities
+            .iter()
+            .filter(|entity| {
+                entity
+                    .classname()
+                    .is_some_and(|name| name.starts_with(LIGHT_CLASS))
+                    && key_number(entity, b"spawnflags") & START_OFF != 0
+            })
+            .map(|entity| key_number(entity, b"style"))
+            .filter(|&style| style >= FIRST_SWITCHABLE_STYLE)
+            .filter_map(|style| u8::try_from(style).ok())
+            .collect()
+    }
+
+    /// The light where the player was put, at `origin`, and the entities of the lit map `bsp`
+    /// that stand in the dark: each entity of its entity lump, which is what the game spawns,
+    /// that the game draws or a player enters at, where the light is below [`DARK_BELOW`].
+    /// `drawn` says whether a classname's entities are drawn, which the project's QuakeC
+    /// tells by the model its spawn function sets; a path corner, a trigger's target or a
+    /// sound has nothing to see. An entity with a model of the map's is passed over: its
+    /// origin is not where it stands.
+    ///
+    /// # Errors
+    ///
+    /// The lump's error when it does not parse, so that no list is not read as no dark.
+    pub fn around(
+        bsp: &Bsp<'_>,
+        origin: [f32; 3],
+        drawn: &dyn Fn(&str) -> bool,
+    ) -> Result<(i32, Vec<Self>), qs_map::MapError> {
+        let lump = qs_map::MapFile::parse(bsp.entity_lump)?;
+        let off = Self::styles_off(&lump);
+        let mut dark = Vec::new();
+        for entity in lump.entities.iter().skip(1) {
+            let Some(classname) = entity.classname() else {
+                continue;
+            };
+            let name = String::from_utf8_lossy(classname);
+            let seen = classname.starts_with(PLAYER_START_CLASS) || drawn(&name);
+            if !seen || entity.value(b"origin").is_none() || entity.submodel().is_some() {
+                continue;
+            }
+            let origin = entity.origin().map(single);
+            let light = Self::at(bsp, &off, origin);
+            if light < DARK_BELOW {
+                dark.push(Self {
+                    classname: name.into_owned(),
+                    origin,
+                    light,
+                });
+            }
+        }
+        Ok((Self::at(bsp, &off, origin), dark))
+    }
+}
+
 /// What `map.play_from_here` played.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct PlayedHere {
@@ -450,6 +568,16 @@ pub struct PlayedHere {
     pub report: MapReport,
     /// What lighting it warned of, as `light` prints each.
     pub light_warnings: Vec<String>,
+    /// The light where the player was put (REND-4.10): 0 is black, about 100 a lit room.
+    /// Below 24 the place is too dark to see by, and a picture of it shows little. It is the
+    /// fast light's, as the game starts with: the lights' own light with no bounce, and a
+    /// switchable light that starts off as dark. The full light swapped in afterwards can
+    /// only be brighter where the map sets bounce.
+    pub light: i32,
+    /// The entities that stand in the dark, a light below 24 by the same measure: the
+    /// player starts, and the monsters, items and other things the game draws. A room is
+    /// dark when what stands in it is; add a light there, or raise one's `light` key.
+    pub dark: Vec<PlaceLight>,
 }
 
 /// A float of a map, as the game's single precision holds it.
@@ -461,6 +589,42 @@ const fn single(value: f64) -> f32 {
     value as f32
 }
 
+/// `count` of a thing named `one`, or `many` when it is not one of them.
+fn counted(count: usize, one: &str, many: &str) -> String {
+    let name = if count == 1 { one } else { many };
+    format!("{count} {name}")
+}
+
+/// The status line of a map played with something to say: its light warnings and what stands
+/// in the dark, after whether the game runs or waits; none when there is neither.
+fn played_status(
+    name: &str,
+    start: GameStart,
+    warnings: &[String],
+    dark: &[PlaceLight],
+) -> Option<String> {
+    let mut found = Vec::new();
+    if let Some(first) = warnings.first() {
+        let count = counted(warnings.len(), "light warning", "light warnings");
+        found.push(format!("{count}, the first {first}"));
+    }
+    if let Some(first) = dark.first() {
+        let count = counted(dark.len(), "entity stands", "entities stand");
+        found.push(format!(
+            "{count} in the dark, the first a {}",
+            first.classname
+        ));
+    }
+    if found.is_empty() {
+        return None;
+    }
+    let verb = match start {
+        GameStart::Running => "Playing",
+        GameStart::Paused => "Paused in",
+    };
+    Some(format!("{verb} {name}: {}", found.join("; ")))
+}
+
 /// `map.play_from_here`.
 pub(crate) struct MapPlayFromHere;
 
@@ -468,7 +632,9 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
     const ID: &'static str = MAP_PLAY_FROM_HERE;
     const SUMMARY: &'static str = "Compiles the open map fast, with no vis and fast light, into \
         the project's build, starts the game on it and puts the player's eye at a point, facing \
-        a way: the map view's camera (MAP-13).";
+        a way: the map view's camera (MAP-13). It answers where the player was put, the light \
+        there and the entities that stand in the dark; with start paused the game waits there \
+        with its monsters not yet awake, for a screenshot of the map as it was built.";
     type Params = PlayFromHereParams;
     type Output = PlayedHere;
     type Error = PreviewError;
@@ -544,7 +710,25 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
         // The map is written first, as a compile writes it; a camera with no room for the
         // player then plays nothing.
         let origin = params.origin_in(&bsp)?;
-        preview.play_built(built, Some(name.clone()))?;
+        // What is drawn is what the QuakeC gives a model; read before the game starts, so
+        // that nothing plays when it cannot be told.
+        let drawn: HashSet<String> = workbench
+            .entity_classes()
+            .map_err(PreviewError::Build)?
+            .into_iter()
+            .filter(|class| class.model.is_some())
+            .map(|class| class.name)
+            .collect();
+        let entity_lump = |error| {
+            PreviewError::Build(WorkbenchError::MapEdit(MapEditError::Map {
+                path: path.clone(),
+                error,
+            }))
+        };
+        // The player's own light is read again where the game puts it.
+        let (_, dark) =
+            PlaceLight::around(&bsp, origin, &|name| drawn.contains(name)).map_err(entity_lump)?;
+        preview.play_built(built, Some(name.clone()), params.start)?;
         let client = preview.client().ok_or(PreviewError::NotRunning)?;
         let angles = params.angles.unwrap_or_default().map(single);
         // BRIDGE-4.19: the game puts the player where its box is free of the map's entities
@@ -562,6 +746,14 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
             }
             Err(error) => return Err(error.into()),
         };
+        if params.start == GameStart::Paused {
+            // One frame, so the client's view is the player's new place; no monster has
+            // moved in it. A game that cannot be stepped is not left running half started.
+            if let Err(error) = preview.step() {
+                preview.stop();
+                return Err(error);
+            }
+        }
         // P7-02: full vis and full light of the same BSP, swapped in when done; a map that leaks
         // has no portals to see through, and plays with the fast compile.
         match compiled.portal_file {
@@ -576,17 +768,17 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
             ),
         }
         let light_warnings: Vec<String> = lit.warnings.iter().map(ToString::to_string).collect();
-        if let Some(first) = light_warnings.first() {
-            preview.set_status(format!(
-                "Playing {name}: {} light warnings, the first {first}",
-                light_warnings.len()
-            ));
+        let (light, _) = PlaceLight::around(&bsp, origin, &|_| false).map_err(entity_lump)?;
+        if let Some(found) = played_status(&name, params.start, &light_warnings, &dark) {
+            preview.set_status(found);
         }
         Ok(Outcome::outside_history(PlayedHere {
             map: name,
             origin,
             report,
             light_warnings,
+            light,
+            dark,
         }))
     }
 }

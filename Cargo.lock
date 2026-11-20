@@ -3635,6 +3635,7 @@ dependencies = [
  "qc-builtins",
  "qc-edict",
  "qc-vm",
+ "qs-bsp",
  "qs-mdl",
  "qs-sim",
 ]
@@ -4044,6 +4045,7 @@ dependencies = [
  "qs-bridge",
  "qs-bsp",
  "qs-checkpoint",
+ "qs-client",
  "qs-commands",
  "qs-diff",
  "qs-engine",

@@ -431,7 +431,7 @@ impl qs_engine::EmbeddedHost for Window {
 // when it does not, the preview host's process is asked for as before
 #[test]
 fn a_play_starts_the_game_in_the_apps_own_window_when_it_shows_it() {
-    use crate::preview::{PlayState, PreviewConfig, PreviewError};
+    use crate::preview::{GameStart, PlayState, PreviewConfig, PreviewError};
     let dir = std::env::temp_dir().join(format!("qs-wb-embedded-{}", std::process::id()));
     let _gone = std::fs::remove_dir_all(&dir);
     let project = dir.join("project");
@@ -480,5 +480,14 @@ fn a_play_starts_the_game_in_the_apps_own_window_when_it_shows_it() {
     assert_eq!(shown.state(), PlayState::Stopped);
     assert!(!shown.is_embedded());
     assert_eq!(counts.borrow().1, 1, "the window stopped its game");
+    // spec BRIDGE-3.6: a game asked for paused is launched with `--paused` and is paused
+    // from the start
+    let built = workbench.built_program().unwrap();
+    shown
+        .play_built(built, Some("start".to_owned()), GameStart::Paused)
+        .unwrap();
+    assert_eq!(shown.state(), PlayState::Paused);
+    assert_eq!(counts.borrow().0[1].extra, ["--nosound", "--paused"]);
+    shown.stop();
     let _gone = std::fs::remove_dir_all(&dir);
 }

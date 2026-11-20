@@ -6,7 +6,8 @@ dynamic lights, temporary entities and beams; the particle system; the view; and
 handed to the renderer. The server's messages come from `qs-sim`, byte for byte as id writes
 them (NET), so the client knows exactly what id's client knows.
 
-- **Layer:** L4 bridges. It depends on `qc-builtins` and `qc-vm` (L1) and `qs-mdl` (L0);
+- **Layer:** L4 bridges. It depends on `qc-builtins` and `qc-vm` (L1) and `qs-mdl` and
+  `qs-bsp` (L0);
   its tests build packets with `qs-sim`'s writers.
 - **Spec sections:** CLIENT-1 to CLIENT-9 of [`client.md`](../../docs/spec/engine/client.md),
   PART-1 to PART-3 of [`particles.md`](../../docs/spec/engine/particles.md) and VIEW-1 to
@@ -16,7 +17,9 @@ them (NET), so the client knows exactly what id's client knows.
   [`menu.md`](../../docs/spec/engine/menu.md).
 - **Ported from:** id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`:
   `WinQuake/cl_main.c`, `cl_parse.c`, `cl_tent.c`, `r_part.c`, `view.c` and `common.c`
-  (the readers), `console.c`, `keys.c` and `menu.c`; and sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`:
+  (the readers), `console.c`, `keys.c` and `menu.c`, and `gl_rlight.c` (`R_LightPoint`,
+  REND-4.10: the light at a point of a lit map, here so the layers below the renderer can
+  say how dark a place is); and sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`:
   `Quake/cl_parse.c` (the lerp flags), `console.c` (`Con_DrawConsole`, CON-5) and `r_alias.c` (`R_SetupAliasFrame`,
   `R_SetupEntityTransform`), under ADR-0018. Each file's header lists its functions.
 - **Shipped:** yes.

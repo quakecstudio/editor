@@ -117,7 +117,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.paste`](#mappaste) | Adds a .map's text to the open map, its world's brushes to the world and its other entities after the map's: where the text has them, or with the middle of their floor at a point on the grid. |
 | [`map.place_entity`](#mapplace_entity) | Places a point entity of a classname at an origin in the open map, with the keys given, and selects it. |
 | [`map.place_prefab`](#mapplace_prefab) | Copies a prefab into the open map with its origin at a point on the grid: its world's brushes into the world, its other entities after the map's. |
-| [`map.play_from_here`](#mapplay_from_here) | Compiles the open map fast, with no vis and fast light, into the project's build, starts the game on it and puts the player's eye at a point, facing a way: the map view's camera (MAP-13). |
+| [`map.play_from_here`](#mapplay_from_here) | Compiles the open map fast, with no vis and fast light, into the project's build, starts the game on it and puts the player's eye at a point, facing a way: the map view's camera (MAP-13). It answers where the player was put, the light there and the entities that stand in the dark; with start paused the game waits there with its monsters not yet awake, for a screenshot of the map as it was built. |
 | [`map.portals`](#mapportals) | Reads the portal file the open map's last compile wrote beside it, each portal's points, to show where the map's leaves meet. |
 | [`map.prefabs`](#mapprefabs) | Lists the .map files in the project's prefabs folder. |
 | [`map.profiles`](#mapprofiles) | Lists the compile profiles: the built-in Full and Fast, then the project's own from compile-profiles.toml, each its name and its tasks. |
@@ -5651,7 +5651,7 @@ Parameters:
 
 ## `map.play_from_here`
 
-Compiles the open map fast, with no vis and fast light, into the project's build, starts the game on it and puts the player's eye at a point, facing a way: the map view's camera (MAP-13).
+Compiles the open map fast, with no vis and fast light, into the project's build, starts the game on it and puts the player's eye at a point, facing a way: the map view's camera (MAP-13). It answers where the player was put, the light there and the entities that stand in the dark; with start paused the game waits there with its monsters not yet awake, for a screenshot of the map as it was built.
 
 Parameters:
 
@@ -5723,6 +5723,21 @@ Parameters:
       "format": "uint",
       "minimum": 0,
       "type": "integer"
+    },
+    "GameStart": {
+      "description": "How a game starts once its map has loaded.",
+      "oneOf": [
+        {
+          "const": "running",
+          "description": "The game runs.",
+          "type": "string"
+        },
+        {
+          "const": "paused",
+          "description": "The game is paused before a frame runs (BRIDGE-3.6): every entity is where the map\nput it, the monsters not yet awake, until it is resumed or stepped.",
+          "type": "string"
+        }
+      ]
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -5764,6 +5779,11 @@ Parameters:
       ],
       "default": null,
       "description": "Only this part of the map, sealed, so the room being worked on compiles at once\n(MAP-16); the whole map when not given."
+    },
+    "start": {
+      "$ref": "#/$defs/GameStart",
+      "default": "running",
+      "description": "Whether the game runs or is left paused where the player was put. Paused, the game\nstarts paused, the player is put in place and one frame is run to show the view from\nthere: `engine.screenshot` then shows the map with every monster where the map put\nit, not yet awake, which is the picture to review a room by; `preview.resume` plays\non. Running when not given."
     }
   },
   "required": [

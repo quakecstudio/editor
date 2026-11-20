@@ -65,6 +65,18 @@ pub enum PlayState {
     Paused,
 }
 
+/// How a game starts once its map has loaded.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum GameStart {
+    /// The game runs.
+    #[default]
+    Running,
+    /// The game is paused before a frame runs (BRIDGE-3.6): every entity is where the map
+    /// put it, the monsters not yet awake, until it is resumed or stepped.
+    Paused,
+}
+
 /// Where the preview finds the host and the game.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PreviewConfig {
@@ -653,15 +665,17 @@ impl Preview {
                 .and_then(|open| open.path().parent().map(Path::to_path_buf));
             place_project_map(&built.project, &built.mod_name, name, beside.as_deref())?;
         }
-        self.play_built(built, map)
+        self.play_built(built, map, GameStart::Running)
     }
 
     /// Starts the host on the program `built` gives, the project, its program and its mod
-    /// folder, on `map` or the host's own first map; a host already running is stopped first.
+    /// folder, on `map` or the host's own first map, running or paused as `start` says; a host
+    /// already running is stopped first.
     pub(crate) fn play_built(
         &mut self,
         built: BuiltProgram,
         map: Option<String>,
+        start: GameStart,
     ) -> Result<(), PreviewError> {
         let BuiltProgram {
             project,
@@ -684,6 +698,9 @@ impl Preview {
                 .map_err(PreviewError::Launch)?
         };
         let mut extra = self.config.extra.clone();
+        if start == GameStart::Paused {
+            extra.push(LaunchSpec::PAUSED.to_owned());
+        }
         // The window opens where it docks; `window/place` then sets its frame exactly.
         if let Some(frame) = self.dock.0.filter(|_| !embeds) {
             let at = frame.placement();
@@ -721,7 +738,10 @@ impl Preview {
             step: Step::Unchecked,
             edits: 0,
         });
-        self.state = PlayState::Playing;
+        self.state = match start {
+            GameStart::Running => PlayState::Playing,
+            GameStart::Paused => PlayState::Paused,
+        };
         self.status = Some(format!("Playing {mod_name}"));
         self.console.clear();
         self.set_breakpoints();

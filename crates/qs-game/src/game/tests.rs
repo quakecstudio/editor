@@ -681,6 +681,27 @@ fn map_entities_are_named_by_their_place() {
     assert_eq!(code(float), ErrorCode::InvalidParams);
 }
 
+// spec BRIDGE-3.6: a game started paused runs no frame, says it is paused with reason pause,
+// and goes on when it is resumed
+#[test]
+fn a_game_started_paused_waits_for_resume() {
+    let (mut game, mut session) = game();
+    let before = game.world().time();
+    game.start_paused();
+    assert!(game.paused());
+    assert!(!game.frame(0.1), "no frame runs");
+    assert_eq!(game.world().time().to_bits(), before.to_bits());
+    let events = game.take_events();
+    let (name, params) = events.last().unwrap();
+    assert_eq!(*name, "state/changed");
+    assert_eq!(
+        (params["state"].as_str(), params["reason"].as_str()),
+        (Some("paused"), Some("pause"))
+    );
+    call(&mut game, &mut session, "resume", &json!({})).unwrap();
+    assert!(game.frame(0.1), "resumed, a frame runs");
+}
+
 // spec BRIDGE-4.9: spawn player at moves the player to the origin and angles
 #[test]
 fn the_player_is_moved() {
@@ -922,6 +943,15 @@ fn the_next_level_carries_what_the_last_one_owed() {
         .collect();
     assert_eq!(maps, [json!("old"), json!("next")]);
     assert!(next.wants_screenshot());
+    // spec BRIDGE-3.6: a level loaded while the game is paused is paused, and one loaded
+    // while it runs runs
+    assert!(!next.paused());
+    let (mut paused, _) = game();
+    paused.start_paused();
+    let (mut level, _) = game();
+    level.carry_from(paused);
+    assert!(level.paused());
+    assert!(!level.frame(0.1), "no frame runs on the new level");
     next.screenshot_taken(&frame(1, 1));
     let responses = next.take_responses();
     assert_eq!(responses.len(), 1);

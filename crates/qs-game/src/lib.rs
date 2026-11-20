@@ -79,14 +79,14 @@ impl args::Args {
                 nosound: true,
                 ..args.clone()
             };
-            let loaded = args.load_map(&args.map, None, Start::New(Startup::Bare), None, None)?;
+            let loaded = args.first_map(Startup::Bare)?;
             let path = args
                 .bridge
                 .as_deref()
                 .ok_or_else(|| Error::Usage("--headless needs -bridge".to_owned()))?;
             return args.run_headless(loaded, listen(path)?);
         }
-        let loaded = args.load_map(&args.map, None, Start::New(Startup::QuakeRc), None, None)?;
+        let loaded = args.first_map(Startup::QuakeRc)?;
         let bridge = match &args.bridge {
             Some(path) => Some(listen(path)?),
             None => None,
