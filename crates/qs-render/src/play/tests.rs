@@ -770,7 +770,7 @@ fn gamma_goes_to_the_frame_or_the_blend_by_look() {
     }
 }
 
-// spec REND-1.15: a brush entity is placed behind the world by default, as GLQuake draws it
+// spec REND-1.16: a brush entity is placed behind the world by default, as GLQuake draws it
 // with the option; the world is always as drawn
 #[test]
 fn a_brush_entity_is_placed_behind_by_default() {

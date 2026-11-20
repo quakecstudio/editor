@@ -200,11 +200,11 @@ pub struct Vertex {
 }
 
 /// Whether a liquid face with a lightmap is drawn lit, QuakeSpasm's and Ironwail's
-/// `r_litwater` (REND-2.6).
+/// `r_litwater` (REND-2.7).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum LitWater {
     /// `r_litwater 1`, the default: in a map whose world has lit water, each liquid face with
-    /// a lightmap is darkened by it as a lit face is.
+    /// a lightmap is darkened by it as a lit face is; for a world, that it has lit water.
     #[default]
     Lit,
     /// `r_litwater 0`: every liquid drawn at its texture's colour, as GLQuake draws it
@@ -213,7 +213,7 @@ pub enum LitWater {
 }
 
 /// The light coordinates a face with none to draw is given, which the turbulent shader reads
-/// as full bright (REND-2.6).
+/// as full bright (REND-2.7).
 pub(crate) const NO_LIGHTMAP: [f32; 2] = [-1.0, -1.0];
 
 /// How a surface is drawn.
@@ -287,8 +287,6 @@ pub struct MapMesh {
     pub models: Vec<Placement>,
     /// The look it was built in, which the renderer draws it in (REND-13).
     pub look: Look,
-    /// Whether its liquids were built to be drawn lit, `r_litwater` (REND-2.6).
-    pub water: LitWater,
 }
 
 impl MapMesh {
@@ -426,9 +424,7 @@ pub struct MeshBuilder<'p> {
     by_texture: Vec<Vec<Polygon>>,
     bounds: Option<([f32; 3], [f32; 3])>,
     models: Vec<Placement>,
-    /// `r_litwater` (REND-2.6).
-    water: LitWater,
-    /// Whether the world, the first BSP added, has lit water, `haslitwater` (REND-2.6).
+    /// Whether the world, the first BSP added, has lit water, `haslitwater` (REND-2.7).
     world_water: Option<LitWater>,
 }
 
@@ -449,16 +445,8 @@ impl<'p> MeshBuilder<'p> {
             by_texture: Vec::new(),
             bounds: None,
             models: Vec::new(),
-            water: LitWater::default(),
             world_water: None,
         }
-    }
-
-    /// The builder with liquids drawn as `water` says (REND-2.6).
-    #[must_use]
-    pub const fn with_water(mut self, water: LitWater) -> Self {
-        self.water = water;
-        self
     }
 
     /// Adds `bsp`'s textures and each of `placements`' models of it (REND-1, REND-2). The
@@ -486,7 +474,7 @@ impl<'p> MeshBuilder<'p> {
     ) -> Result<(), MeshError> {
         let lit = extras.lit;
         let base = self.textures.len();
-        // REND-2.6: `Mod_LoadFaces` sets `haslitwater` for a liquid face that is not drawn
+        // REND-2.7: `Mod_LoadFaces` sets `haslitwater` for a liquid face that is not drawn
         // tiled and has samples; the world's decides for every model.
         if self.world_water.is_none() {
             let has = bsp.faces.iter().any(|face| {
@@ -545,7 +533,7 @@ impl<'p> MeshBuilder<'p> {
                     Surface::Lit
                 };
                 // REND-1.6 and REND-1.14: a sky, a liquid and a face with no texture have no
-                // lightmap; REND-2.6: but a liquid not drawn tiled has, as
+                // lightmap; REND-2.7: but a liquid not drawn tiled has, as
                 // `GL_CreateSurfaceLightmap` skips only `SURF_DRAWTILED`.
                 let lightmapped = match surface {
                     Surface::Lit => found.is_some(),
@@ -655,13 +643,9 @@ impl<'p> MeshBuilder<'p> {
             maxs,
             models: self.models.clone(),
             look: self.look,
-            water: self.water,
         };
-        // REND-2.6: "`cl.worldmodel->haslitwater && r_litwater.value`".
-        let water = match (self.world_water, self.water) {
-            (Some(LitWater::Lit), LitWater::Lit) => LitWater::Lit,
-            _ => LitWater::Unlit,
-        };
+        // REND-2.7: "`cl.worldmodel->haslitwater`"; `r_litwater` is the frame's (`View::water`).
+        let water = self.world_water.unwrap_or(LitWater::Unlit);
         // REND-1.11: the world's batches, then each entity's.
         for model in 0..self.models.len() {
             for (slot, polygons) in self.by_texture.iter().enumerate() {
@@ -704,7 +688,7 @@ struct Polygon {
 impl Polygon {
     /// REND-1.1 to REND-1.3: the face's vertices and a fan of triangles over them; a liquid
     /// with its lightmap's coordinates when `water` draws it lit, else [`NO_LIGHTMAP`]
-    /// (REND-2.6).
+    /// (REND-2.7).
     fn emit(&self, mesh: &mut MapMesh, (width, height): (f32, f32), water: LitWater) {
         let base = u32_of(mesh.vertices.len());
         for corner in &self.corners {

@@ -560,7 +560,7 @@ fn a_layer_compiles_as_its_region() {
     );
 }
 
-// No spec statement: L-30, the acceptance criterion: two rooms joined by a carved doorway are
+// No spec statement: L-40, the acceptance criterion: two rooms joined by a carved doorway are
 // built using only the brush places map.brushes answered, and the map is sealed: a brush a
 // tool adds takes the place `total`, the places are read again after a tool that cuts, and
 // the doorway's own space holds no brush once it is carved

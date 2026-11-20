@@ -57,7 +57,7 @@ fn listed(
     serde_json::from_value(session.execute(MAP_BRUSHES, params).unwrap()).unwrap()
 }
 
-// No spec statement: L-30, MAP-16: map.brushes names each brush of an entity by its place, with
+// No spec statement: L-40, MAP-16: map.brushes names each brush of an entity by its place, with
 // the box around it and its textures each once; the world's when no entity is named; an entity
 // the map has not is refused, as is a map that is not open
 #[test]
@@ -93,7 +93,7 @@ fn brushes_are_listed_with_their_places_and_boxes() {
     );
 }
 
-// No spec statement: L-30: `within` keeps the brushes whose box touches the one given, each
+// No spec statement: L-40: `within` keeps the brushes whose box touches the one given, each
 // with the place it has among all of its entity's brushes, and `total` still counts them all
 #[test]
 fn brushes_are_found_by_a_box() {
@@ -124,7 +124,7 @@ fn brushes_are_found_by_a_box() {
     }
 }
 
-// No spec statement: L-30, the acceptance criterion: map.summary answers the map's counts,
+// No spec statement: L-40, the acceptance criterion: map.summary answers the map's counts,
 // checked against the map's text: its entities, each classname's count the most first, its
 // brushes by where they are, its textures by face, the box around its brushes and the world's
 // keys
@@ -222,7 +222,7 @@ fn the_summary_counts_what_the_map_holds() {
     );
 }
 
-// No spec statement: L-30: a brush that is not closed has no box: its corners are where its
+// No spec statement: L-40: a brush that is not closed has no box: its corners are where its
 // open faces were cut off, far outside the map, so it is listed with none, no box finds it,
 // and the map's own box does not count it
 #[test]

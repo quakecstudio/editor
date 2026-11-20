@@ -13,8 +13,7 @@ use qs_client::{Client, Event, MENU_SAVEGAMES, ModelInfo, Models, Random};
 use qs_mdl::mdl::Mdl;
 use qs_mdl::spr::Sprite;
 use qs_render::{
-    Camera, Degrees, Extras, LitWater, Look, MapMesh, MeshBuilder, ModelDepth, Palette, Pics,
-    Placement, Play, Surface,
+    Camera, Degrees, Extras, Look, MapMesh, MeshBuilder, Palette, Pics, Placement, Play, Surface,
 };
 use qs_sim::debug::Debugger;
 use qs_sim::localization::{Localization, RRE_LOC_FILE};
@@ -287,7 +286,7 @@ pub(crate) fn map_mesh(
     (map, bsp): (&str, &Bsp<'_>),
     world: &World,
     read: &dyn Fn(&str) -> Result<Vec<u8>, Error>,
-    (palette, look, water): (&Palette, Look, LitWater),
+    (palette, look): (&Palette, Look),
 ) -> Result<(MapMesh, Vec<(qs_client::EntitySlot, usize)>), Error> {
     let name = format!("maps/{map}.bsp");
     let placements: Vec<Placement> = (0..bsp.models.len())
@@ -317,7 +316,7 @@ pub(crate) fn map_mesh(
             .map_err(|error| tracing::warn!(%error, "maps/{map}.lit"))
             .ok()
     });
-    let mut builder = MeshBuilder::new(palette, look).with_water(water);
+    let mut builder = MeshBuilder::new(palette, look);
     let extras = Extras {
         lit: lit.as_ref(),
         ..Extras::default()
@@ -461,11 +460,6 @@ impl Args {
             .at
             .as_deref()
             .and_then(|values| <[f32; 4]>::try_from(values).ok());
-        let zfix = if self.nozfix {
-            ModelDepth::AsDrawn
-        } else {
-            ModelDepth::Behind
-        };
         let look = self.look.look();
         let gamma = self.gamma.unwrap_or_else(|| look.gamma());
         let vfs = Vfs::new(StdFs, &engine, ".").map_err(|e| Error::Load(format!("{e:?}")))?;
@@ -522,6 +516,7 @@ impl Args {
         // RRE-1.6, RRE-1.10: the rerelease's strings, read before the map as QuakeSpasm's
         // `LOC_Init` reads them, from the search path, the base directory or `QuakeEX.kpf`.
         let text = localization(&vfs, self)?;
+        let settings = self.launch_settings(host.as_ref());
         let options = LoadOptions {
             localization: text.map_or_default(|text| Localization::loc_load_file(&text)),
             builtins,
@@ -540,8 +535,9 @@ impl Args {
                 })
                 .collect(),
             seed: None,
-            settings: Vec::new(),
-            protocol: self.protocol.protocol(),
+            // NET-6.10: QuakeSpasm's `-protocol` sets `sv_protocol` once, when the host starts;
+            // a later level keeps what the console made it.
+            settings,
         };
         let mut world = World::prepare(&progs, &map, &bsp, files()?, options)
             .map_err(|e| Error::Load(e.to_string()))?;
@@ -647,18 +643,11 @@ impl Args {
             }
         }
         let mut play = Play::new(palette.clone(), pics, bsp.entities());
-        play.zfix = zfix;
-        play.style_lerp = self.lerplightstyles.style_lerp();
         play.look = look;
         play.load_models(client.model_names(), &*reader()?, &ranker()?)
             .map_err(|e| Error::Load(e.to_string()))?;
         play.load_sky(&*reader()?);
-        let (mesh, instances) = map_mesh(
-            (&map, &bsp),
-            game.world(),
-            &read,
-            (&palette, look, self.water()),
-        )?;
+        let (mesh, instances) = map_mesh((&map, &bsp), game.world(), &read, (&palette, look))?;
         play.set_instances(instances);
         let placed = at.map(|[x, y, z, yaw]| {
             let mut camera = Camera::new([x, y, z], Degrees::new(yaw));

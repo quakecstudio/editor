@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! `map.brushes` and `map.summary` (L-30, MAP-16): the open map as an agent reads it to build
+//! `map.brushes` and `map.summary` (L-40, MAP-16): the open map as an agent reads it to build
 //! on and to review. `map.brushes` names each brush of an entity by its place, with the box
 //! around it and its textures, so the brush a tool takes by its place need not be counted by
 //! hand; `map.summary` is the map in short, to judge it by and to compare maps with.

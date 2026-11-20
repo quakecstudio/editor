@@ -15,7 +15,9 @@ use egui_wgpu::{CallbackResources, CallbackTrait, ScreenDescriptor};
 
 use crate::alias::AliasVertex;
 use crate::look::Look;
-use crate::mesh::{Animation, Batch, Image, LightmapPatch, MapMesh, Surface, frame, mip_levels};
+use crate::mesh::{
+    Animation, Batch, Image, LightmapPatch, LitWater, MapMesh, Surface, frame, mip_levels,
+};
 use crate::particles::{ParticleVertex, particle_texture};
 use crate::skybox::Skybox;
 use crate::sprite::SpriteVertex;
@@ -164,16 +166,16 @@ impl Grown {
 const MODEL_STRIDE: u64 = 256;
 /// The bytes of one model's uniform: its matrix, then its depth bias in a `vec4`.
 const MODEL_BYTES: u64 = 20 * 4;
-/// Ironwail's `ZBIAS`, "`1./1024`", added to a brush entity's clip depth (REND-1.15).
+/// Ironwail's `ZBIAS`, "`1./1024`", added to a brush entity's clip depth (REND-1.16).
 const ZFIX_BIAS: f32 = 1.0 / 1024.0;
 
 /// Where one of the mesh's models is drawn this frame: its matrix and its depth (REND-1.9,
-/// REND-1.15).
+/// REND-1.16).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ModelPlacement {
     /// The column-major matrix that moves its vertices (REND-1.9).
     pub matrix: [[f32; 4]; 4],
-    /// Whether its depth is pushed back behind faces it is flush with (REND-1.15).
+    /// Whether its depth is pushed back behind faces it is flush with (REND-1.16).
     pub depth: ModelDepth,
     /// Its entity's alpha, `None` for `ENTALPHA_DEFAULT` (REND-14.2).
     pub alpha: Option<f32>,
@@ -199,7 +201,7 @@ impl ModelPlacement {
     }
 }
 
-/// A model's depth (REND-1.15).
+/// A model's depth (REND-1.16).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ModelDepth {
     /// As GLQuake rasterizes it, and the world always.
@@ -873,7 +875,7 @@ impl MapRenderer {
     }
 
     /// Moves the models to `placements`, the world's first, as the entities stand now
-    /// (REND-1.9), each at its depth (REND-1.15); a model given `None` is not drawn, and a
+    /// (REND-1.9), each at its depth (REND-1.16); a model given `None` is not drawn, and a
     /// placement past the mesh's models is left out.
     pub fn set_placements(&mut self, queue: &Queue, placements: &[Option<ModelPlacement>]) {
         let take = placements.len().min(self.model_count);
@@ -1043,7 +1045,11 @@ impl MapRenderer {
             .map_or(NO_SKYBOX, |[w, h]| [1.0, f32_of_u32(w), f32_of_u32(h), 0.0]);
         // REND-13.5: what a lightmap texel is multiplied by, the mesh's look's.
         // REND-13.9: the gamma every fragment is raised to.
-        let look = [self.light_scale, view.gamma, 0.0, 0.0];
+        let lit_water = match view.water {
+            LitWater::Lit => 1.0,
+            LitWater::Unlit => 0.0,
+        };
+        let look = [self.light_scale, view.gamma, lit_water, 0.0];
         let bytes: Vec<u8> = view
             .clip_from_world
             .iter()
@@ -1485,6 +1491,8 @@ pub struct View {
     pub screen: [f32; 2],
     /// QuakeSpasm's `gamma` over every fragment, 1 for none (REND-13.9).
     pub gamma: f32,
+    /// `r_litwater`: whether a liquid with a lightmap is drawn darkened by it (REND-2.7).
+    pub water: LitWater,
 }
 
 impl View {
@@ -1501,6 +1509,7 @@ impl View {
             skyfog: REND_SKYFOG,
             screen: [CONWIDTH, CONWIDTH * CONSOLE_ASPECT],
             gamma: 1.0,
+            water: LitWater::Lit,
         }
     }
 }
@@ -1937,7 +1946,7 @@ mod tests {
         assert_eq!(pixel(&image, 2, 2), [0, 0, 0, 255]);
     }
 
-    // spec REND-1.15: a model's uniform is its matrix and then its depth bias, 1/1024 behind
+    // spec REND-1.16: a model's uniform is its matrix and then its depth bias, 1/1024 behind
     // or 0 as drawn
     #[test]
     fn a_models_uniform_carries_its_depth_bias() {
@@ -1956,7 +1965,7 @@ mod tests {
         assert_eq!(f32::from_ne_bytes(bytes[60..64].try_into().unwrap()), 1.0);
     }
 
-    // spec REND-1.15: of a brush entity's face flush with the world's, the entity's is seen as
+    // spec REND-1.16: of a brush entity's face flush with the world's, the entity's is seen as
     // GLQuake draws it (REND-1.11) and the world's with Ironwail's z-fix
     #[test]
     fn the_zfix_draws_a_flush_entity_behind_the_world() {
@@ -2052,7 +2061,7 @@ mod tests {
         );
     }
 
-    // spec REND-2.6: lit water is drawn darkened by its lightmap, and at its texture's colour
+    // spec REND-2.7: lit water is drawn darkened by its lightmap, and at its texture's colour
     // with r_litwater 0
     #[test]
     fn lit_water_is_darkened_by_its_lightmap() {
@@ -2067,7 +2076,7 @@ mod tests {
         };
         let palette = palette();
         let seen = |lit| {
-            let mut builder = MeshBuilder::new(&palette, Look::GlQuake).with_water(lit);
+            let mut builder = MeshBuilder::new(&palette, Look::GlQuake);
             builder
                 .add(&bsp(&water, &lighting), &[Placement::WORLD])
                 .unwrap();
@@ -2079,7 +2088,9 @@ mod tests {
                 &mesh,
                 &Assets::default(),
             );
-            pixel(&render(&state, renderer, &frame(), BLACK), 32, 32)
+            let mut callback = frame();
+            callback.view.water = lit;
+            pixel(&render(&state, renderer, &callback, BLACK), 32, 32)
         };
         assert_eq!(seen(LitWater::Unlit), FACE);
         // The sample 51 at style 256 is the texel `51*256 >> 7`, 102, two fifths (REND-1.13).
