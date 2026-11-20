@@ -582,7 +582,7 @@ fn a_room_built_over_mcp_compiles_sealed() {
         initialized,
         call(1, "map.open", &json!({ "path": map })),
         call(30, "map.list_entities", &json!({})),
-        call(31, "map.review_hunks", &json!({})),
+        call(31, "map.staged_hunks", &json!({})),
         call(
             2,
             "map.place_entity",
@@ -598,7 +598,7 @@ fn a_room_built_over_mcp_compiles_sealed() {
     }
     messages.push(call(20, "map.find_leaks", &json!({})));
     messages.push(call(21, "map.compile", &json!({})));
-    messages.push(call(22, "map.review_hunks", &json!({})));
+    messages.push(call(22, "map.staged_hunks", &json!({})));
     let answers = exchange(server, &messages);
     for id in 1..=8 {
         let answer = &answers[&id.to_string()]["result"];
@@ -648,7 +648,7 @@ fn a_map_is_made_and_saved_over_mcp() {
                 "map.new",
                 &json!({ "path": made, "keys": [["message", "made"]] }),
             ),
-            call(2, "map.review_hunks", &json!({})),
+            call(2, "map.staged_hunks", &json!({})),
             call(
                 3,
                 "map.place_entity",
@@ -693,9 +693,9 @@ fn a_repeated_map_edit_waits_for_review() {
                 &json!({ "classname": "info_player_start", "origin": [0.0, 0.0, 24.0] }),
             ),
             call(2, "map.accept_hunks", &json!({})),
-            call(3, "map.review_hunks", &json!({})),
+            call(3, "map.staged_hunks", &json!({})),
             call(4, "edit.repeat", &json!({})),
-            call(5, "map.review_hunks", &json!({})),
+            call(5, "map.staged_hunks", &json!({})),
         ],
     );
     let text = |id: &str| {
@@ -724,7 +724,7 @@ fn a_read_only_server_refuses_the_map_tools_that_write() {
     for id in ["map.open", "map.place_entity", "map.compile"] {
         assert!(writes.contains(&id), "{id}");
     }
-    let mut messages = vec![init, initialized, call(1, "map.review_hunks", &json!({}))];
+    let mut messages = vec![init, initialized, call(1, "map.staged_hunks", &json!({}))];
     for (n, id) in (3..).zip(&writes) {
         let arguments = if *id == "map.open" {
             json!({ "path": map })
@@ -777,7 +777,7 @@ fn a_map_outside_the_write_roots_is_not_written() {
         for _ in 0..2 {
             assert!(host.answer_next(&mut session));
         }
-        session.execute("map.review_hunks", json!({})).unwrap()
+        session.execute("map.staged_hunks", json!({})).unwrap()
     });
     let settings = ServerSettings {
         project: root.clone(),
@@ -812,11 +812,11 @@ fn a_map_outside_the_write_roots_is_not_written() {
 
 // No spec statement: L-42: an agent whose client defers the tool list reads the server's
 // instructions and the tools' names before it searches, so the instructions name every kind
-// of tool there is, by the start of its name
+// of tool the server's own session offers, the preview's among them, by the start of its
+// name, and the kinds the running app adds
 #[test]
 fn the_instructions_name_every_kind_of_tool() {
-    let root = project("kinds", "void() worldspawn = {};\n");
-    let server = server(&root, false);
+    let (server, _) = map_server("kinds", false);
     let mut kinds: Vec<&str> = server
         .tool_names()
         .into_iter()
@@ -825,10 +825,16 @@ fn the_instructions_name_every_kind_of_tool() {
     kinds.sort_unstable();
     kinds.dedup();
     assert!(
-        kinds.contains(&"map") && kinds.contains(&"project"),
+        ["map", "project", "preview", "scenario", "texture"]
+            .iter()
+            .all(|kind| kinds.contains(kind)),
         "{kinds:?}"
     );
-    for kind in kinds {
+    // The app's own kinds, which the server offers only with `--connect`.
+    for kind in kinds
+        .into_iter()
+        .chain(["view", "editor", "settings", "help"])
+    {
         assert!(
             super::INSTRUCTIONS.contains(&format!("{kind}.")),
             "the instructions do not name {kind}.*"

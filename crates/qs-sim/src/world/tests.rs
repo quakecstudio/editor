@@ -1669,6 +1669,40 @@ fn the_command_sets_the_view_and_buttons() {
     assert_eq!(w.float(P, "impulse"), 5.0);
 }
 
+// spec PHYS-9.8: an impulse is read once, by the first frame after it arrives, though a move
+// with none arrives before that frame; a frame no move arrived before sets no impulse again,
+// and keeps the buttons and the movement
+#[test]
+fn a_move_is_read_once() {
+    let mut run = standing(&ledge(), "0 0 24", "0 0 0", "");
+    let progs_bytes = run.progs.clone();
+    let progs = Progs::read(&progs_bytes).unwrap();
+    run.world.set_command(UserCmd {
+        buttons: 1,
+        impulse: 5,
+        ..UserCmd::default()
+    });
+    run.world.set_command(UserCmd {
+        buttons: 2,
+        forward: 200.0,
+        ..UserCmd::default()
+    });
+    run.frames(1, 0.1).unwrap();
+    let w = &run.world;
+    assert_eq!(w.float(P, "impulse"), 5.0, "the earlier move's impulse");
+    assert_eq!((w.float(P, "button0"), w.float(P, "button2")), (0.0, 1.0));
+    // The progs has taken the impulse, as `ImpulseCommands` does; no move arrives.
+    run.world
+        .set_field_value(&progs, P, "impulse", &crate::QcValue::Float(0.0))
+        .unwrap();
+    let before = run.world.vector(P, "origin");
+    run.frames(1, 0.1).unwrap();
+    let w = &run.world;
+    assert_eq!(w.float(P, "impulse"), 0.0, "not read again");
+    assert_eq!((w.float(P, "button0"), w.float(P, "button2")), (0.0, 1.0));
+    assert!(w.vector(P, "origin")[0] > before[0], "still walking");
+}
+
 /// A player standing on the ledge at `origin`, already moving at `velocity`.
 fn standing(spec: &MapSpec, origin: &str, velocity: &str, more: &str) -> Running {
     let put = format!(

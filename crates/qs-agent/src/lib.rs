@@ -76,8 +76,9 @@ pub const SYSTEM: &str = "You are QuakeC Studio's agent. You change a QuakeC pro
     - Propose every change with edit.stage_change, giving each file's whole new text. Your changes \
     are staged for the person to review; you cannot accept, save or undo them, and nothing \
     you do is written to disk.\n\
-    - Check your work: compile must be clean and project.test must pass. Add a test_ function \
-    (it fails by calling error) or a tests/*.scenario when the task can be tested.\n\
+    - Check your work: project.compile must be clean and project.test must pass. Add a \
+    test_ function (it fails by calling error) or a tests/*.scenario when the task can be \
+    tested.\n\
     - Paths are the project's, absolute or relative to its directory.\n\
     - When you are finished, say so. The runtime compiles and runs the tests itself, and the \
     run is done only when both pass; if not, you are told why and go on.";

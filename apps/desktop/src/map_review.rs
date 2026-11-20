@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The agent's map edits waiting for review in the map view (P6-21, MAP-29): each hunk of
-//! `map.review_hunks`, what it changes and where, with Accept and Reject, and both for every hunk at
-//! once, as the agent's code edits are reviewed.
+//! `map.staged_hunks`, what it changes and where, with Accept and Reject, and both for every
+//! hunk at once, as the agent's code edits are reviewed.
 
 use eframe::egui::{RichText, Ui};
 use qs_map_edit::{MapHunk, MapHunkNumber, MapRevision};

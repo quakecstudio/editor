@@ -611,6 +611,10 @@ impl World {
         }
         let clients = self.builtins.mock.engine().clients_active.clone();
         let player = self.player;
+        // PHYS-9.8: the move is read once; a frame no move arrives before sets no impulse.
+        if let Some(read) = &mut self.player {
+            read.impulse = 0;
+        }
         // PHYS-11.8: paused, the client's move is read but not thought, and no physics runs;
         // PHYS-11.9: so too in single player while the keys go to the console or a menu.
         let paused = self.builtins.paused || self.focus == KeyFocus::Elsewhere;
@@ -873,10 +877,16 @@ impl World {
         self.commands.push(text.as_bytes().to_vec());
     }
 
-    /// What the player asks for from the next frame on (PHYS-9.6).
+    /// What the player asks for from the next frame on (PHYS-9.6): a move arriving
+    /// (PHYS-9.8), so an impulse no frame has read yet stands when `cmd` carries none.
     pub fn set_command(&mut self, cmd: UserCmd) {
-        if self.player.is_some() {
-            self.player = Some(cmd);
+        if let Some(waiting) = self.player {
+            let impulse = if cmd.impulse == 0 {
+                waiting.impulse
+            } else {
+                cmd.impulse
+            };
+            self.player = Some(UserCmd { impulse, ..cmd });
         }
     }
 

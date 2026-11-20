@@ -592,6 +592,9 @@ fn paused_health(client: &mut Client, monster: u32) -> Result<(), String> {
 
 /// How many frames the player walks for.
 const WALK_FRAMES: u8 = 20;
+/// The least the player walks in them, in map units, on the floor: a fraction of what
+/// `cl_forwardspeed` covers, since the walk starts from rest.
+const WALKED: f64 = 16.0;
 
 /// INPUT-2.1, CON-6.1: with no window the console's buttons are the player's: `+forward` typed
 /// there moves the player, and `-forward` lets the button go.
@@ -612,22 +615,44 @@ fn console_moves_the_player(client: &mut Client) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
         field(&edict, "origin").ok_or_else(|| "the player has an origin".to_owned())
     };
+    let walk = |client: &mut Client| -> Result<f64, String> {
+        let before = origin(client)?;
+        for _ in 0..WALK_FRAMES {
+            client
+                .step(StepKind::Frame)
+                .map_err(|e| format!("step: {e}"))?;
+        }
+        let after = origin(client)?;
+        let along = |axis: usize| {
+            let at = |vector: &Value| {
+                vector
+                    .get("value")
+                    .and_then(|words| words.get(axis))
+                    .and_then(Value::as_f64)
+            };
+            Some(at(&after)? - at(&before)?)
+        };
+        let (x, y) = along(0)
+            .zip(along(1))
+            .ok_or("the player's origin is a vector")?;
+        Ok(x.hypot(y))
+    };
     client.pause().map_err(|e| format!("pause: {e}"))?;
-    let before = origin(client)?;
+    // With no button the player stands: what moves it below is the button.
+    let standing = walk(client)?;
     client
         .console("+forward")
         .map_err(|e| format!("console: {e}"))?;
-    for _ in 0..WALK_FRAMES {
-        client
-            .step(StepKind::Frame)
-            .map_err(|e| format!("step: {e}"))?;
-    }
-    let after = origin(client)?;
+    let walked = walk(client)?;
     client
         .console("-forward")
         .map_err(|e| format!("console: {e}"))?;
     client.resume().map_err(|e| format!("resume: {e}"))?;
-    expect(before != after, "+forward at the console moves the player")
+    expect(standing < 1.0, "with no button the player stands")?;
+    expect(
+        walked > WALKED,
+        "+forward at the console moves the player across the floor",
+    )
 }
 
 /// P4-28: the exported mod's progs reloaded over the map plays: the reload loses nothing of

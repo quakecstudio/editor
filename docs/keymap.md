@@ -224,7 +224,7 @@ A command that answers a question is read by a panel, the agent or MCP. A comman
 | `map.extract_linked` | needs a value | Moves entities of a linked group, and the same entities of every group linked to it, into new groups linked to each other (TrenchBroom's Extract Linked Groups). |
 | `map.face_align` | needs a value | Carries one face's texture alignment onto other faces of the open map, so the texture continues across the line their planes share (MAP-13.8). |
 | `map.face_uv` | needs a value | Fits, justifies, flips, resets, snaps or adjusts the texture of faces of the open map, at the size its WAD gives it (MAP-13). |
-| `map.entities_by_skill` | answers a question | The entities of the open map the game removes at a skill and in a kind of game (single, coop or deathmatch), found by spawning the map with the project's program: those the spawnflags rule out and those the QuakeC removes. |
+| `map.entities_removed_by_skill` | answers a question | The entities of the open map the game removes at a skill and in a kind of game (single, coop or deathmatch), found by spawning the map with the project's program: those the spawnflags rule out and those the QuakeC removes. |
 | `map.apply_fix` | needs a value | Applies a quick fix `map.issues` gave, as one step with undo. |
 | `map.flip` | needs a value | Mirrors entities and brushes along an axis through the middle of their box: brushes and point entities' origins, and their facing, as TrenchBroom's Flip. |
 | `map.group` | needs a value | Puts entities and brushes of the world in a new group, in the layer or group the first is in, as TrenchBroom writes a group. |
@@ -241,7 +241,7 @@ A command that answers a question is read by a panel, the agent or MCP. A comman
 | `map.make_brush_entity` | needs a value | Makes brushes of the world a new brush entity of a class, such as func_door (TrenchBroom's Create Brush Entity). |
 | `map.make_structural` | needs a value | Gives a brush entity's brushes back to the world, in the layer or group the entity was in, and removes the entity (TrenchBroom's Make Structural). |
 | `map.move_entity` | needs a value | Moves an entity of the open map: a point entity's origin, a brush entity's brushes. |
-| `map.move_to_layer` | needs a value | Moves an entity or a group of the open map into a layer or a group, or into the default layer given the world, as TrenchBroom writes it. |
+| `map.move_to_layer_or_group` | needs a value | Moves an entity or a group of the open map into a layer or a group, or into the default layer given the world, as TrenchBroom writes it. |
 | `map.new` | needs a value | Makes a new .map holding a world with the keys given, and opens it in the map view; a file that is there already is refused. |
 | `map.open` | needs a value | Opens a .map in the map view, or a shipped .bsp's entities when the map has no .map source; nothing is selected. |
 | `map.outline` | answers a question | The open map's outline: the default layer and each layer, their groups and linked groups, then their entities by classname and targetname, with brush counts; with filter, only what holds the text and what is around it. |
@@ -257,14 +257,14 @@ A command that answers a question is read by a panel, the agent or MCP. A comman
 | `map.replace_texture` | needs a value | Puts one texture in another's place on the faces of brushes, or of every brush of the map, keeping their alignment (TrenchBroom's Replace Material). |
 | `map.resolve_disk_change` | needs a value | After another program changed the open map's file while it had unsaved edits: keep disk to read the file again, or mine to keep the edits and save them over it. |
 | `map.restore_backup` | needs a value | Puts a backup of the open map in the editor in place of the map, unsaved, as an edit that undo takes back. |
-| `map.set_entity_angle` | needs a value | Turns a point entity of the open map about the vertical: its angle, or its angles' yaw. |
+| `map.rotate_entity` | needs a value | Turns a point entity of the open map about the vertical: its angle, or its angles' yaw. |
 | `map.save_prefab` | needs a value | Writes brushes of the world and whole entities of the open map as a prefab in the project's prefabs folder, around the middle of their floor. |
 | `map.search` | needs a value | Finds the open map's objects as TrenchBroom's search does: text found in names, classnames, keys, values, textures, smart tags and layer and group names, ignoring case, or a query in its query language, which finds entities, groups, brushes, the contents of layers, or faces. |
 | `map.unlink_group` | needs a value | Unlinks a group from the groups linked to it, which then change on their own (TrenchBroom's Separate Linked Groups). |
 | `map.set_flag` | needs a value | Sets or clears one spawnflag of an entity of the open map, and of the entities in also, in one step, keeping each entity's other flags. |
 | `map.set_key` | needs a value | Sets a key of an entity of the open map, and of the entities in also with it in one step: its last occurrence keeps its place and formatting, a new key goes after the others. |
 | `map.set_layer` | needs a value | Turns a layer of the open map hidden, locked or left out of exports on or off, written as TrenchBroom writes it. |
-| `map.review_hunks` | answers a question | Lists the open map's hunks waiting for review: for each, the entities it is in, and the keys and brushes it adds, changes or removes. |
+| `map.staged_hunks` | answers a question | Lists the open map's hunks waiting for review: for each, the entities it is in, and the keys and brushes it adds, changes or removes. |
 | `map.list_textures` | answers a question | Lists the open map's textures: those of the WADs its world names, found in the project, beside the map or in the game, of the BSP it was opened from, and of the game's own levels, each once with where it comes from, its size and how many faces use it, and the names its faces use that nothing holds. |
 | `map.rotate_objects` | needs a value | Turns entities and brushes by degrees about the vertical through the middle of their box, counter-clockwise seen from above: brushes and point entities' origins and facing, as TrenchBroom's Rotate. |
 | `map.ungroup` | needs a value | Takes a group's entities and brushes out of it into the layer or group it is in, or the world's, and removes the group. |

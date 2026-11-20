@@ -2,8 +2,8 @@
 
 //! The open map changed by another program (P5-17, MAP-32). When its file is among those
 //! `files.changed` is told of, the map with no unsaved edits is read again with its selection
-//! kept, and one with unsaved edits keeps them and waits for `map.resolve_disk_change`. `map.compare_with_disk`
-//! lists how the map on disk differs from the one being edited.
+//! kept, and one with unsaved edits keeps them and waits for `map.resolve_disk_change`.
+//! `map.compare_with_disk` lists how the map on disk differs from the one being edited.
 
 use std::path::{Path, PathBuf};
 

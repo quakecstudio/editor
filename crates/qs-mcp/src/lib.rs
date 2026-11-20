@@ -523,7 +523,8 @@ const INSTRUCTIONS: &str = "Every command of QuakeC Studio over the project this
     screenshots; vm.* and scenario.* run QuakeC without the game; texture.* imports an \
     image as a texture; checkpoint.* and git.* keep and restore work; terminal.* and \
     task.* run shell commands; paths.* and files.* are the app's own, for what it is asked \
-    to open and what changed on disk. In short: \
+    to open and what changed on disk. A server connected to the running app (--connect) \
+    also has the app's window: view.*, editor.*, settings.* and help.*. In short: \
     compile, test, run QuakeC in the VM, play scenarios, inspect and drive the running game, \
     read files, stage edits as hunks and keep checkpoints; make or open a map, place and \
     key its entities, build its brushes, compile it and find its leaks, save it and play it, \

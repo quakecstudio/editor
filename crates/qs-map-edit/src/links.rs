@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Links between entities (P5-13, MAP-27): `map.link_target` points a key the code fires entities by
-//! (MAP-8.8) at another entity, naming that entity when it has no `targetname`; and the
+//! Links between entities (P5-13, MAP-27): `map.link_target` points a key the code fires
+//! entities by (MAP-8.8) at another entity, naming that entity when it has no `targetname`; and the
 //! numbering a duplicate takes, so a copy of `door1` is the next door and its targets the next
 //! targets, without typing either.
 

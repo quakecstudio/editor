@@ -342,9 +342,9 @@ fn a_selection_flips_along_each_axis() {
     assert_eq!(key(&session, 3, "origin"), "64 64 0");
 }
 
-// No spec statement: P7-08: map.rotate_objects turns a selection about the vertical through the middle of
-// its box: a right angle keeps brushes on the grid, a point entity's yaw turns with it and a
-// facing straight up stays; nothing selected, or the world as a whole entity, is refused
+// No spec statement: P7-08: map.rotate_objects turns a selection about the vertical through the
+// middle of its box: a right angle keeps brushes on the grid, a point entity's yaw turns with it
+// and a facing straight up stays; nothing selected, or the world as a whole entity, is refused
 #[test]
 fn a_selection_turns_about_the_vertical() {
     use crate::MAP_TURN;

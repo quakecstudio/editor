@@ -41,7 +41,7 @@ it too.
   (`map.set_key` with `also`), and a spawnflag ticked or cleared changes that bit alone in each
   entity's own flags (`map.set_flag`).
 - **Show (P5-13):** the view can show only the entities the game spawns on easy, normal, hard or
-  nightmare, or in coop or deathmatch. `map.entities_by_skill` compiles the project's server QuakeC in
+  nightmare, or in coop or deathmatch. `map.entities_removed_by_skill` compiles the project's server QuakeC in
   memory, writing nothing, and spawns the entity lump qbsp would write for the map in `qs-sim`
   with those settings, so what the spawnflags rule out and what the QuakeC removes itself are
   both hidden. It is found again after each edit.
@@ -69,7 +69,7 @@ it too.
   (`map.outline`). The filter keeps what holds its text in a classname, key or value, with the
   layers and groups around it. Choosing a row selects the entity and frames it in the view,
   keeping where the camera looks; a selection made in the view opens and scrolls to its row.
-  Dragging a row onto a layer or group moves it there (`map.move_to_layer`), into a linked group
+  Dragging a row onto a layer or group moves it there (`map.move_to_layer_or_group`), into a linked group
   copied into the groups linked to it; the world and a layer stay where they are. An entity
   naming both a layer and a group is shown in the layer, as hiding and locking treat it (MAP-9.2);
   groups that name each other are shown under the default layer.
@@ -183,7 +183,7 @@ it too.
   brush, shape and CSG commands as the editor (`map.brush_create`, `map.brush_shape`,
   `map.brush_subtract` and the rest). Its first map command begins a review (`map.stage`): the
   map is edited at once, so a compile and the game see the change, and each run of changed parts
-  since, an entity's keys or one of its brushes, waits as a hunk (`map.review_hunks`). The Properties
+  since, an entity's keys or one of its brushes, waits as a hunk (`map.staged_hunks`). The Properties
   panel lists them with Accept and Reject, and both for every hunk; a rejected hunk's parts are
   put back as an edit undo takes back (`map.accept_hunks`, `map.reject_hunks`). Review ends when no hunk is
   left.

@@ -54,8 +54,8 @@ pub(crate) struct FilesChangedCommand;
 impl<C: HasWorkbench + 'static> Command<C> for FilesChangedCommand {
     const ID: &'static str = FILES_CHANGED;
     const SUMMARY: &'static str = "Takes files another program changed: the open map is read \
-        again when it has no unsaved edits, else kept for map.resolve_disk_change; changed QuakeC is read \
-        again with the entity definitions derived from it.";
+        again when it has no unsaved edits, else kept for map.resolve_disk_change; changed \
+        QuakeC is read again with the entity definitions derived from it.";
     type Params = FilesChangedParams;
     type Output = FilesChanged;
     type Error = WorkbenchError;
