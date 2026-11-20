@@ -200,6 +200,17 @@ impl ProjectFeature {
         }
     }
 
+    /// Looks for the game once, at the start, so the Welcome page says what was found: the
+    /// chosen folder, or the first install on this machine.
+    pub(crate) fn look_for_game(&mut self, commands: &mut Commands<'_>) {
+        self.guide_files = commands.run(GAME, &serde_json::json!({}));
+    }
+
+    /// What the game folder holds and lacks, as last looked at.
+    pub(crate) const fn game_files(&self) -> Option<&GameFiles> {
+        self.guide_files.as_ref()
+    }
+
     /// Opens the guide to the game's files (P3-21), from the File menu: what the game folder,
     /// or the first install found, holds and lacks, and the folder picker.
     pub(crate) fn show_game_guide(&mut self, commands: &mut Commands<'_>) {

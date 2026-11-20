@@ -16,8 +16,8 @@ pub(crate) const SOURCE: &str = "https://github.com/quakecstudio/editor";
 /// The page that takes a new issue.
 pub(crate) const NEW_ISSUE: &str = "https://github.com/quakecstudio/editor/issues/new/choose";
 
-/// The app's icon, the drawing its packages carry, at 256 pixels.
-const ICON: &[u8] = include_bytes!("../assets/icon.png");
+/// The app's icon, the drawing its packages carry, at 256 pixels, as a PNG.
+pub const ICON: &[u8] = include_bytes!("../assets/icon.png");
 /// The side the icon is drawn at, in points.
 const ICON_SIDE: f32 = 96.0;
 
@@ -45,7 +45,7 @@ impl AboutWindow {
     }
 
     /// The icon as a texture, decoded once; none when the drawing does not decode.
-    fn icon(&mut self, ctx: &egui::Context) -> Option<&egui::TextureHandle> {
+    pub(crate) fn icon(&mut self, ctx: &egui::Context) -> Option<&egui::TextureHandle> {
         if self.icon.is_none() {
             let decoded = image::load_from_memory_with_format(ICON, image::ImageFormat::Png)
                 .map_err(|error| tracing::warn!(%error, "the app's icon did not decode"))

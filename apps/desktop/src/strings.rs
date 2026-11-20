@@ -399,6 +399,28 @@ pub enum Text {
     NewProjectTitle,
     /// The heading over the recent projects.
     RecentProjects,
+    /// The Welcome page's heading.
+    WelcomeTitle,
+    /// Under the Welcome page's heading.
+    WelcomeTagline,
+    /// The Welcome page's first step.
+    WelcomeGame,
+    /// The first step before the game was looked for.
+    WelcomeGameWhy,
+    /// The first step's button, which opens the guide to the game's files.
+    WelcomeGameButton,
+    /// The Welcome page's second step.
+    WelcomeProject,
+    /// Under the second step.
+    WelcomeProjectHow,
+    /// The Welcome page's third step.
+    WelcomePlay,
+    /// Under the third step.
+    WelcomePlayHow,
+    /// The Welcome page's link to the command palette.
+    WelcomePalette,
+    /// The Welcome page's link to the user guide.
+    WelcomeGuide,
     /// Before the path of a folder that is not there.
     FolderGone,
     /// A control that has no action yet.
@@ -1033,7 +1055,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 508] = [
+    pub const ALL: [Self; 519] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1178,6 +1200,17 @@ impl Text {
         Self::NewRereleaseMenu,
         Self::NewProjectTitle,
         Self::RecentProjects,
+        Self::WelcomeTitle,
+        Self::WelcomeTagline,
+        Self::WelcomeGame,
+        Self::WelcomeGameWhy,
+        Self::WelcomeGameButton,
+        Self::WelcomeProject,
+        Self::WelcomeProjectHow,
+        Self::WelcomePlay,
+        Self::WelcomePlayHow,
+        Self::WelcomePalette,
+        Self::WelcomeGuide,
         Self::FolderGone,
         Self::NotYetAvailable,
         Self::ViewMenu,
@@ -1708,6 +1741,21 @@ impl Text {
             Self::NewRereleaseMenu => "New Rerelease Project\u{2026}",
             Self::NewProjectTitle => "Name the new project's folder",
             Self::RecentProjects => "Recent projects",
+            Self::WelcomeTitle => "Welcome to QuakeC Studio",
+            Self::WelcomeTagline => "Write QuakeC, press Play, and see it run in Quake.",
+            Self::WelcomeGame => "Find Quake's files",
+            Self::WelcomeGameWhy => "Play runs your mod in your own copy of Quake.",
+            Self::WelcomeGameButton => "Set Up Quake Files\u{2026}",
+            Self::WelcomeProject => "Start a project",
+            Self::WelcomeProjectHow => {
+                "A new project is a copy of the game's QuakeC, ready to change; or open a mod you have."
+            }
+            Self::WelcomePlay => "Press Play",
+            Self::WelcomePlayHow => {
+                "Play builds your mod and starts the game. While it runs, each save reloads your code in it."
+            }
+            Self::WelcomePalette => "Search every command",
+            Self::WelcomeGuide => "Read the user guide",
             Self::FolderGone => "The folder is no longer there:",
             Self::NotYetAvailable => "Not available yet",
             Self::ViewMenu => "View",

@@ -11,7 +11,7 @@ use quakec_studio::launch::{Launch, STARTING_WAIT};
 #[cfg(target_os = "macos")]
 use quakec_studio::open_documents;
 use quakec_studio::strings::Text;
-use quakec_studio::{App, agent, keymap};
+use quakec_studio::{App, ICON, agent, keymap};
 #[cfg(target_os = "macos")]
 use winit::event_loop::EventLoop;
 
@@ -73,9 +73,15 @@ fn main() -> ExitCode {
         .ok()
         .map(|dirs| keymap::keymap_path(dirs.config()));
     let layout_file = dirs.ok().map(|dirs| qs_layout::layout_path(dirs.data()));
+    // Without an icon of its own eframe puts egui's on the Dock and the task bar, over the
+    // one the app's package carries.
+    let icon = eframe::icon_data::from_png_bytes(ICON)
+        .map_err(|error| tracing::warn!(%error, "the app's icon did not decode"))
+        .unwrap_or_default();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(Text::AppName.get())
+            .with_icon(icon)
             .with_inner_size([1440.0, 900.0])
             .with_min_inner_size([960.0, 600.0]),
         // The map view tests depth inside egui's render pass (`map_view::DEPTH_FORMAT`).
@@ -102,6 +108,7 @@ fn main() -> ExitCode {
         if let Some(file) = settings_file {
             app.shell_mut().set_settings_file(file);
         }
+        app.shell_mut().look_for_game();
         // P4-07: the agent's provider; its key is in the keychain.
         if let Some(file) = agent_file {
             app.shell_mut().set_agent_file(file);

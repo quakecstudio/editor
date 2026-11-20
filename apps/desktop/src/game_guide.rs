@@ -41,7 +41,7 @@ impl Guide {
 }
 
 /// The text that says what `state` is.
-const fn summary(state: GameState) -> Text {
+pub(crate) const fn summary(state: GameState) -> Text {
     match state {
         GameState::Found => Text::GameFound,
         GameState::SharewareOnly => Text::GameSharewareOnly,

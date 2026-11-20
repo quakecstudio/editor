@@ -388,7 +388,7 @@ fn the_window_paints_every_region() {
         Text::NoProblems,
         Text::Editor,
         Text::Game,
-        Text::NoFileOpen,
+        Text::WelcomeTitle,
         Text::PreviewStopped,
     ]
     .iter()
@@ -1372,8 +1372,14 @@ fn recent_projects_open_from_the_project_section() {
         .shell
         .set_recent_file(file.clone());
     harness.run();
-    assert!(harness.query_by_label(Text::RecentProjects.get()).is_some());
-    harness.get_by_label("gone").click();
+    // The Project section and the Welcome page both list them; the section's come first.
+    assert_eq!(
+        harness
+            .query_all_by_label(Text::RecentProjects.get())
+            .count(),
+        2
+    );
+    harness.get_all_by_label("gone").next().unwrap().click();
     harness.run();
     harness.run();
     let shell = &harness.state().as_ref().unwrap().shell;
@@ -1388,7 +1394,7 @@ fn recent_projects_open_from_the_project_section() {
             .query_by_label_contains(Text::FolderGone.get())
             .is_some()
     );
-    harness.get_by_label("ember").click();
+    harness.get_all_by_label("ember").next().unwrap().click();
     harness.run();
     harness.run();
     let shell = &harness.state().as_ref().unwrap().shell;
@@ -6045,4 +6051,28 @@ fn the_command_line_keeps_a_draft_leaves_by_tab_and_gives_up_from_the_view() {
     let leaves = Shell::leaves_the_game(FOCUS_COMMAND_LINE);
     assert_eq!(leaves, Platform::HERE == Platform::Mac);
     assert!(!Shell::leaves_the_game("edit.undo"));
+}
+
+// No spec statement: L-27, the Welcome page is the editor's tab only while no project is open;
+// a project with no file open says to open one
+#[test]
+fn the_welcome_page_goes_when_a_project_opens() {
+    let mut harness = accessible();
+    harness.run();
+    assert!(harness.query_by_label(Text::WelcomeTitle.get()).is_some());
+    let project = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/ember");
+    let app = harness.state_mut().as_mut().unwrap();
+    app.shell_mut().open_project(&project).unwrap();
+    harness.run();
+    assert!(harness.query_by_label(Text::WelcomeTitle.get()).is_none());
+    assert!(harness.query_by_label(Text::NoFileOpen.get()).is_some());
+}
+
+// No spec statement: L-27, the icon the window is given decodes, to the 256 pixels a side the
+// packages' drawing has, so eframe does not put egui's own on the Dock and the task bar
+#[test]
+fn the_apps_icon_decodes() {
+    let icon = eframe::icon_data::from_png_bytes(crate::ICON).unwrap();
+    assert_eq!((icon.width, icon.height), (256, 256));
+    assert!(!icon.rgba.is_empty());
 }

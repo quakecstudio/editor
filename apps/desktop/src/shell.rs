@@ -90,6 +90,7 @@ use crate::project::ProjectFeature;
 use crate::project::{self, Jump, SymbolScope};
 use crate::strings::{Text, Truncation, panel_button, review_waiting};
 use crate::theme::{Theme, Token, semibold};
+use crate::welcome::{self, WelcomeAction};
 #[cfg(test)]
 use qs_map_edit::uv::FaceRef;
 
@@ -537,6 +538,13 @@ impl Shell {
     /// their own: Windows and Linux (P3-44).
     pub fn set_menu_in_window(&mut self) {
         self.menu = MenuPlace::InWindow;
+    }
+
+    /// Looks for the game, so the Welcome page says what was found; called once the settings
+    /// file gave the folder chosen before.
+    pub fn look_for_game(&mut self) {
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        self.features.project.look_for_game(&mut commands);
     }
 
     /// Chooses `path` as the game folder, read in place (`preview.choose_game`), and keeps it
@@ -2737,6 +2745,11 @@ impl Shell {
         if self.centre_tab == CentreTab::Game && self.game.ui(ui) {
             return;
         }
+        if self.centre_tab == CentreTab::Editor && self.session.context().workbench.root().is_none()
+        {
+            self.welcome(ui);
+            return;
+        }
         let (fill, message) = match self.centre_tab {
             CentreTab::Editor => (Token::SurfaceEditor, Text::NoFileOpen),
             CentreTab::Game => (Token::SurfaceViewport, Text::GameStopped),
@@ -2755,6 +2768,32 @@ impl Shell {
             );
             ui.allocate_response(egui::Vec2::ZERO, Sense::hover());
         });
+    }
+}
+
+impl Shell {
+    /// The Welcome page, which the editor's tab shows while no project is open, and what a
+    /// click on it asks for.
+    fn welcome(&mut self, ui: &mut Ui) {
+        let ctx = ui.ctx().clone();
+        let project = &self.features.project;
+        let page = welcome::Page {
+            icon: self.about.icon(&ctx).map(egui::TextureHandle::id),
+            files: project.game_files(),
+            recent: project.recent_projects(),
+            play_key: self
+                .keymap
+                .shortcut(PLAY)
+                .map(|key| ctx.format_shortcut(&key)),
+            palette_key: ctx.format_shortcut(&keymap::OPEN_PALETTE),
+        };
+        match welcome::page(ui, &self.theme, &page) {
+            Some(WelcomeAction::GameFiles) => self.show_game_guide(),
+            Some(WelcomeAction::Project(asked)) => self.apply(FeatureAction::Left(asked), &ctx),
+            Some(WelcomeAction::Palette) => self.open_palette(),
+            Some(WelcomeAction::UserGuide) => ctx.open_url(egui::OpenUrl::new_tab(GUIDE)),
+            None => {}
+        }
     }
 }
 
