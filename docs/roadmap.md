@@ -61,7 +61,7 @@ flowchart LR
 | **1. Foundations** | Specs and Rust ports of id's formats and VM: qc-types, qc-progs, qc-edict, qc-vm and qc-builtins; the oracles and a differential runner that compares our VM to id's statement by statement; PAK/WAD2, BSP, MDL, SPR, WAV and MD5 readers, and finding the player's game files (including on a Mac); the lexer, preprocessor and lossless parser, fuzzed | qc-vm matches id's VM on the id 1.01 and rerelease corpus; the parser round-trips it losslessly |
 | **2. Language core and editor** | The incremental semantic model, dialects and engine-target database; our compiler (vanilla, then the rerelease's FTEQCC features) with differential and conformance suites; the command engine; CLI, LSP and tree-sitter grammar; the app shell, code editor, panels and command palette to the approved mockups | The rerelease compiles with our compiler and behaves identically in qc-vm; full navigation and clean diagnostics in the editor |
 | **3. Live preview** | The bridge protocol; the Rust preview host (engine spec, server simulation, the wgpu renderer moved up from Phase 5, sound) proved against id's engine as an oracle, with hot reload, debugging and headless mode; the play toolbar, Entities, Properties, Debugger and Console; docking the engine window; deterministic scenarios | Save reloads the running game in place, with breakpoints and entity inspection on all three OSes; save-to-game in about a second on each is proven at the MVP demo (P4-24) |
-| **4. Agent and MVP** | Agent tools as commands, staged edits and hunk review, checkpoints, the agent loop and providers, the agent panel, inline edit, MCP, evals; privacy audit, signing and packaging, mod export, docs, license compliance review | The MVP demo on three OSes; signed builds published |
+| **4. Agent and MVP** | Agent tools as commands, staged edits and hunk review, checkpoints, the agent loop and providers, the agent panel, inline edit, MCP, evals; privacy audit, signing and packaging, mod export, docs, license compliance review | The MVP demo on macOS (Windows and Linux are L-16); signed builds published |
 | **5. Map entity editing** | Entity definitions derived from QuakeC, the map view with entity editing, live entity updates, agent map tools, reading Half-Life's BSP version 30 and WAD3 | Entities in existing maps are edited with QuakeC-derived definitions and appear live in the game |
 | **6. Brushes and map compiler** | Specs and ports of id's tools as our qs-map-bsp, qs-map-vis and fast qs-map-light, checked against id's tools and ericw-tools; brush tools, 2D views, texture browser and PNG texture import, leak diagnostics, play from here | A new map built from brushes compiles with our tools and plays, matching id's tools on the map corpus |
 | **7. Lighting and performance** | Full coloured lighting, background full compile, region compile, compile performance | Lighting, region compile and background compile meet the performance budgets |
@@ -107,18 +107,14 @@ Closed, each with its gate report:
 - Phase 1, foundations ([report](gates/p1.md)).
 - Phase 2, language core and editor ([report](gates/p2.md)).
 - Phase 3, live preview ([report](gates/p3.md)).
+- Phase 4, agent and MVP release ([report](gates/p4.md)): the MVP, `v2026.11.1`, released on
+  2026-11-20.
 - Phase 5, map entity editing ([report](gates/p5.md)).
 - Phase 6, brushes and map compiler ([report](gates/p6.md)).
 - Phase 7, lighting, region compile and performance ([report](gates/p7.md)).
 
-Open:
-
-- Phase 4, agent and MVP release: every issue an agent can do is closed. The gate
-  ([#136](https://github.com/quakecstudio/editor/issues/136)) is the MVP release and waits for
-  the steps only a person can take: the license review, the MVP acceptance on macOS, the
-  Windows and Linux checks and the release itself.
-
-The largest risk on the way to the MVP is the Rust preview host (R-11).
+Every gate is closed. What remains is the Post-MVP backlog; its largest piece is the Windows
+and Linux desktop checks (L-16, [#851](https://github.com/quakecstudio/editor/issues/851)).
 
 ## Working an issue
 
