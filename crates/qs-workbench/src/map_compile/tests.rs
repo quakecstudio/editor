@@ -725,3 +725,42 @@ fn two_rooms_are_joined_using_the_places_the_brush_tools_answer() {
     let leaks = report(&mut session, MAP_LEAKS);
     assert_eq!(leaks.seal, Seal::Sealed, "{leaks:?}");
 }
+
+// No spec statement: L-41: the status of a map played names its light warnings and what
+// stands in the dark together, counts one as one, says a paused game is paused, and is
+// none when there is nothing to say
+#[test]
+fn the_played_status_says_all_it_found() {
+    use super::{PlaceLight, played_status};
+    use crate::preview::GameStart;
+
+    let dark = |classname: &str| PlaceLight {
+        classname: classname.to_owned(),
+        origin: [0.0; 3],
+        light: 3,
+    };
+    assert_eq!(played_status("room", GameStart::Running, &[], &[]), None);
+    assert_eq!(
+        played_status(
+            "room",
+            GameStart::Paused,
+            &["a light in a wall".to_owned(), "another".to_owned()],
+            &[dark("monster_army")],
+        )
+        .as_deref(),
+        Some(
+            "Paused in room: 2 light warnings, the first a light in a wall; 1 entity stands \
+             in the dark, the first a monster_army"
+        )
+    );
+    assert_eq!(
+        played_status(
+            "room",
+            GameStart::Running,
+            &[],
+            &[dark("item_health"), dark("monster_dog")],
+        )
+        .as_deref(),
+        Some("Playing room: 2 entities stand in the dark, the first a item_health")
+    );
+}

@@ -358,6 +358,9 @@ impl Game {
         self.events.extend(mine);
         self.responses.splice(0..0, old.responses);
         self.shots.splice(0..0, old.shots);
+        // A game paused stays paused on the level it loads (BRIDGE-3.6): the client, which
+        // was told of the pause, is told of nothing else.
+        self.state = old.state;
         self.stopped |= old.stopped;
         // The breakpoints stay set on the next level, which runs the same progs.
         self.lines = old.lines;

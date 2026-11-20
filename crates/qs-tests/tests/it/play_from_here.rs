@@ -119,7 +119,8 @@ fn a_new_map_plays_from_the_camera() {
 // No spec statement: L-41, the acceptance criterion: a map with a lit room and an unlit room
 // is reported with the unlit room dark: what stands in the west room, by its light, is not
 // listed; what stands in the east room out of the light's sight through the doorway is, with
-// its light; the light entity itself is passed over
+// its light; an entity the game does not draw is passed over, and a switchable light that
+// starts off lights nothing
 #[test]
 fn what_stands_in_an_unlit_room_is_reported_dark() {
     use qs_workbench::map_compile::PlaceLight;
@@ -134,15 +135,46 @@ fn what_stands_in_an_unlit_room_is_reported_dark() {
         .unwrap();
     let lit = Light::new(Sampling::Fast).run(&compiled.bsp).unwrap();
     let bsp = Bsp::read(&lit.bsp, BspLoader::default()).unwrap();
-    let dark = PlaceLight::dark_in(&bsp);
+    let start = [-200.0, 0.0, 24.0];
+    // The soldier is drawn; nothing is known of the item, which is then passed over.
+    let (light, dark) = PlaceLight::around(&bsp, start, &|name| name == "monster_army").unwrap();
+    assert!(light >= 24, "the player start is lit: {light}");
     assert_eq!(dark.len(), 1, "{dark:?}");
     assert_eq!(dark[0].classname, "monster_army");
     assert_eq!(dark[0].origin, [200.0, 100.0, 24.0]);
     assert!(dark[0].light < 24, "{dark:?}");
-    // The west room is lit where the player start and the item stand.
-    assert!(PlaceLight::at(&bsp, [-200.0, 0.0, 24.0]) >= 24);
-    assert!(PlaceLight::at(&bsp, [-96.0, 40.0, 24.0]) >= 24);
-    assert_eq!(PlaceLight::at(&bsp, [200.0, 100.0, 24.0]), dark[0].light);
+    // The west room is lit where the item stands, and the east room is as dark for the
+    // player as for the soldier.
+    assert!(PlaceLight::at(&bsp, &[], [-96.0, 40.0, 24.0]) >= 24);
+    assert_eq!(
+        PlaceLight::at(&bsp, &[], [200.0, 100.0, 24.0]),
+        dark[0].light
+    );
+    // With the map's one light a switchable one that starts off, both rooms are dark, and
+    // the player start is listed though no class is drawn.
+    let mut off = map();
+    let lit_light = b"\"classname\" \"light\"\n";
+    let at = off
+        .windows(lit_light.len())
+        .position(|window| window == lit_light)
+        .unwrap();
+    off.splice(
+        at..at,
+        b"\"targetname\" \"lamp\"\n\"spawnflags\" \"1\"\n"
+            .iter()
+            .copied(),
+    );
+    let compiled = qs_map_bsp::Compiler::default().compile(&off, None).unwrap();
+    let lit = Light::new(Sampling::Fast).run(&compiled.bsp).unwrap();
+    let bsp = Bsp::read(&lit.bsp, BspLoader::default()).unwrap();
+    let (light, dark) = PlaceLight::around(&bsp, start, &|_| false).unwrap();
+    assert!(light < 24, "the lamp starts off: {light}");
+    assert_eq!(dark.len(), 1, "{dark:?}");
+    assert_eq!(dark[0].classname, "info_player_start");
+    assert!(
+        PlaceLight::at(&bsp, &[], start) >= 24,
+        "as lit, it is bright"
+    );
 }
 
 // spec REND-1.14: a new map whose textures no WAD holds is drawn: each face of the map

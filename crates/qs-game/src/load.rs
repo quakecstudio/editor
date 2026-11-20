@@ -470,12 +470,18 @@ impl Args {
         base.join(self.game.as_deref().unwrap_or("id1"))
     }
 
+    /// Whether the game starts paused (BRIDGE-3.6): `--paused` with a bridge, whose client
+    /// is all that can resume it.
+    pub(crate) const fn starts_paused(&self) -> bool {
+        self.paused && self.bridge.is_some()
+    }
+
     /// The map the host starts on, loaded as [`Args::load_map`] loads it with `startup`,
-    /// and paused when `--paused` says so: a map loaded later, by a level change or a
-    /// `map` command, runs or stands as the game does then.
+    /// and paused when [`Args::starts_paused`]. A map loaded later, by a level change or a
+    /// `map` command, is paused when the game was (`Game::carry_from`).
     pub(crate) fn first_map(&self, startup: Startup) -> Result<Loaded, Error> {
         let mut loaded = self.load_map(&self.map, None, Start::New(startup), None, None)?;
-        if self.paused {
+        if self.starts_paused() {
             loaded.game.start_paused();
         }
         Ok(loaded)

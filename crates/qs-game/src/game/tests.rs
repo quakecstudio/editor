@@ -943,6 +943,15 @@ fn the_next_level_carries_what_the_last_one_owed() {
         .collect();
     assert_eq!(maps, [json!("old"), json!("next")]);
     assert!(next.wants_screenshot());
+    // spec BRIDGE-3.6: a level loaded while the game is paused is paused, and one loaded
+    // while it runs runs
+    assert!(!next.paused());
+    let (mut paused, _) = game();
+    paused.start_paused();
+    let (mut level, _) = game();
+    level.carry_from(paused);
+    assert!(level.paused());
+    assert!(!level.frame(0.1), "no frame runs on the new level");
     next.screenshot_taken(&frame(1, 1));
     let responses = next.take_responses();
     assert_eq!(responses.len(), 1);
