@@ -414,9 +414,7 @@ fn suite(
     map_entities(client, monster)?;
     steps.push("a monster placed, moved and removed as the map editor does".to_owned());
 
-    client
-        .spawn_player_at([0.0, 0.0, 64.0], [0.0, 90.0, 0.0])
-        .map_err(|e| format!("player/spawn_at: {e}"))?;
+    player_is_put_where_it_fits(client)?;
     let hit = client.pick(0.5, 0.5).map_err(|e| format!("pick: {e}"))?;
     expect(hit.get("point").is_some(), "pick says where the ray stops")?;
     steps.push("player/spawn_at and pick".to_owned());
@@ -596,45 +594,69 @@ const WALK_FRAMES: u8 = 20;
 /// `cl_forwardspeed` covers, since the walk starts from rest.
 const WALKED: f64 = 16.0;
 
+/// The player's origin, as `inspect` reads it from its edict.
+fn player_origin(client: &mut Client) -> Result<[f64; 3], String> {
+    let entities = client
+        .inspect(InspectWhat::Entities)
+        .map_err(|e| e.to_string())?;
+    let player = entities
+        .get("entities")
+        .and_then(Value::as_array)
+        .and_then(|list| list.iter().find(|e| text(e, "classname") == "player"))
+        .and_then(|e| e.get("edict").and_then(Value::as_u64))
+        .and_then(|n| u32::try_from(n).ok())
+        .ok_or("the player is in the game")?;
+    let edict = client
+        .inspect(InspectWhat::Edict(Edict::new(player).into()))
+        .map_err(|e| e.to_string())?;
+    field(&edict, "origin")
+        .and_then(|origin| serde_json::from_value(origin.get("value")?.clone()).ok())
+        .ok_or_else(|| "the player has an origin".to_owned())
+}
+
+/// A point outside every map: nothing but solid is there, or around it.
+const NOWHERE: [f32; 3] = [30000.0, 30000.0, 30000.0];
+
+/// BRIDGE-4.19: the player is put where its box is free and the answer says where: where it
+/// stands now, there; where there is no room, nowhere, and it stays.
+fn player_is_put_where_it_fits(client: &mut Client) -> Result<(), String> {
+    let stands = player_origin(client)?;
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "the game holds positions in single precision"
+    )]
+    let at = stands.map(|c| c as f32);
+    let placed = client
+        .spawn_player_at(at, [0.0, 90.0, 0.0])
+        .map_err(|e| format!("player/spawn_at: {e}"))?;
+    expect(
+        placed.get("origin") == Some(&json!(at)),
+        "player/spawn_at answers where it put the player",
+    )?;
+    let refused = client.spawn_player_at(NOWHERE, [0.0; 3]);
+    expect(
+        matches!(&refused, Err(qs_engine::ClientError::Rpc { code, .. }) if *code == qs_engine::ErrorCode::InvalidParams),
+        "player/spawn_at with no room is refused",
+    )?;
+    let after = player_origin(client)?;
+    expect(
+        (after[0] - stands[0]).abs() < 1.0 && (after[1] - stands[1]).abs() < 1.0,
+        "refused, the player stays",
+    )
+}
+
 /// INPUT-2.1, CON-6.1: with no window the console's buttons are the player's: `+forward` typed
 /// there moves the player, and `-forward` lets the button go.
 fn console_moves_the_player(client: &mut Client) -> Result<(), String> {
-    let origin = |client: &mut Client| -> Result<Value, String> {
-        let entities = client
-            .inspect(InspectWhat::Entities)
-            .map_err(|e| e.to_string())?;
-        let player = entities
-            .get("entities")
-            .and_then(Value::as_array)
-            .and_then(|list| list.iter().find(|e| text(e, "classname") == "player"))
-            .and_then(|e| e.get("edict").and_then(Value::as_u64))
-            .and_then(|n| u32::try_from(n).ok())
-            .ok_or("the player is in the game")?;
-        let edict = client
-            .inspect(InspectWhat::Edict(Edict::new(player).into()))
-            .map_err(|e| e.to_string())?;
-        field(&edict, "origin").ok_or_else(|| "the player has an origin".to_owned())
-    };
     let walk = |client: &mut Client| -> Result<f64, String> {
-        let before = origin(client)?;
+        let before = player_origin(client)?;
         for _ in 0..WALK_FRAMES {
             client
                 .step(StepKind::Frame)
                 .map_err(|e| format!("step: {e}"))?;
         }
-        let after = origin(client)?;
-        let along = |axis: usize| {
-            let at = |vector: &Value| {
-                vector
-                    .get("value")
-                    .and_then(|words| words.get(axis))
-                    .and_then(Value::as_f64)
-            };
-            Some(at(&after)? - at(&before)?)
-        };
-        let (x, y) = along(0)
-            .zip(along(1))
-            .ok_or("the player's origin is a vector")?;
+        let after = player_origin(client)?;
+        let (x, y) = (after[0] - before[0], after[1] - before[1]);
         Ok(x.hypot(y))
     };
     client.pause().map_err(|e| format!("pause: {e}"))?;
