@@ -66,6 +66,9 @@ mod terminal;
 mod texture_browser;
 mod texture_import;
 pub mod theme;
+mod welcome;
+
+pub use about::ICON;
 
 #[cfg(test)]
 mod snapshots;

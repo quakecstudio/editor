@@ -2334,3 +2334,25 @@ groups:
     - 'quakec-ide build on freecs-tree''s valve/src reports no E0320 that quakec-ide check does not, recorded in the PR'
     verify:
     - 'cargo test -p qc-codegen; the FreeHL build recorded in the PR'
+  - key: L-27
+    title: Show a Welcome page on first launch and the app's own icon
+    labels:
+    - L7-ui
+    - area:editor
+    - type:feature
+    size: S
+    reqs:
+    - PLAT-8
+    - UI-14
+    summary: |
+      Justin, 2026-11-20: a first launch shows an empty window with no word on what to do next, and the Dock shows egui's icon instead of the app's. Zed's welcome tab and TrenchBroom's welcome window are the model: with no project open the centre says what the steps are. eframe puts egui's default icon on the Dock and the task bar when the window is given none, over the icon the package carries.
+    depends: []
+    deliverable:
+    - 'apps/desktop/src/welcome.rs: with no project open the Editor tab shows a Welcome page of three steps: Quake''s files (what was found and where, and the way to the guide to them), a project (new from a template, open a folder, the recent projects) and Play (what it does and its key), with links to the command palette and the user guide'
+    - 'apps/desktop/src/main.rs: the window is given the app''s icon (apps/desktop/assets/icon.png)'
+    acceptance:
+    - 'With no project open the Editor tab shows the Welcome page, and with a project open and no file it does not, checked by the window''s tests and the shell snapshots'
+    - 'Each button and link on the page asks for its own action, and a recent project opens on a click, checked by kittest tests of the page'
+    - 'The window''s viewport carries the app''s icon rather than eframe''s default'
+    verify:
+    - 'cargo nextest run -p quakec-studio; the shell snapshots'
