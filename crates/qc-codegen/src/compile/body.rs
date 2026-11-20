@@ -19,7 +19,7 @@ use std::rc::Rc;
 
 use super::allocate::{CreationOrder, Overlapping, Slots};
 use super::arrays::Access;
-use super::{At, Compiler, Lowered, Written, literal_of};
+use super::{At, Compiler, Lowered, Written};
 use crate::Internal;
 use crate::back_end::Allocation;
 use crate::program::{Literal, OFS_RETURN, ValueType, operand};
@@ -158,7 +158,7 @@ impl Compiler<'_> {
     ) -> Lowered<usize> {
         match expr {
             ast::Expr::Literal(_) => {
-                let literal = literal_of(expr, self.dialect).at(span)?;
+                let literal = self.literal_of(expr).at(span)?;
                 self.program.immediate(&literal).at(span)
             }
             ast::Expr::Name(name) => {
@@ -286,7 +286,7 @@ impl Compiler<'_> {
         let aggregate = match initializer {
             ast::Initializer::Aggregate(aggregate) => aggregate,
             ast::Initializer::Value(expr) => {
-                let literal = literal_of(&expr, self.dialect).at(span)?;
+                let literal = self.literal_of(&expr).at(span)?;
                 self.program.initialise(place, &literal).at(span)?;
                 return Ok(());
             }

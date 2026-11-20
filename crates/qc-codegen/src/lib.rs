@@ -243,6 +243,15 @@ fn compile_lowered(
     compiler.dialect = resolve.dialect;
     compiler.back_end = back_end::BackEnd::of(resolve.dialect);
     compiler.autoproto = resolve.autoproto;
+    // FTEQCC writes the functions it makes itself after every file, at the target the last
+    // one ends at.
+    if targets
+        .last()
+        .and_then(|file| file.last())
+        .is_some_and(|(_, target)| target.valid(qc_progs::Op::Call1h))
+    {
+        compiler.calls = qc_progs::CallPassing::Operands;
+    }
     if resolve.dialect.has_fteqcc_extensions() && resolve.autoproto {
         for (i, unit) in units.iter().enumerate() {
             compiler

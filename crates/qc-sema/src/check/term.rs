@@ -582,7 +582,10 @@ impl Checker<'_> {
             self.copies.truncate(copies);
             self.emitted = emitted;
         }
-        if let Some(text) = sizeof.operand().and_then(|e| string_immediate(&e)) {
+        if let Some(text) = sizeof
+            .operand()
+            .and_then(|e| string_immediate(&e, self.function_name()))
+        {
             let bytes = u32::try_from(text.len()).unwrap_or(u32::MAX);
             return Ok(Value::constant(Constant::uint(bytes.saturating_add(1))));
         }
@@ -624,7 +627,9 @@ impl Checker<'_> {
     /// initialised constant", any other type "_length() unsupported argument type for
     /// intrinsic".
     pub(super) fn length(&mut self, operand: Option<ast::Expr>, span: Span) -> Checked {
-        let text = operand.as_ref().and_then(string_immediate);
+        let text = operand
+            .as_ref()
+            .and_then(|e| string_immediate(e, self.function_name()));
         let value = self.expr_of(operand)?;
         if value.ty == Type::Unknown {
             return Ok(Value::unknown());
@@ -684,7 +689,9 @@ const fn int_f32(value: i32) -> f32 {
 }
 
 /// The text of a string literal `expr` is, without its quotes, with adjacent parts joined.
-pub(super) fn string_immediate(expr: &ast::Expr) -> Option<String> {
+///
+/// FTEF-14.81: a part that is `__FUNC__` is `function`.
+pub(super) fn string_immediate(expr: &ast::Expr, function: &str) -> Option<String> {
     let ast::Expr::Literal(literal) = expr else {
         return None;
     };
@@ -693,6 +700,10 @@ pub(super) fn string_immediate(expr: &ast::Expr) -> Option<String> {
     }
     let mut text = String::new();
     for token in literal.syntax().child_tokens() {
+        if token.kind() == qc_syntax::SyntaxKind::Name {
+            text.push_str(function);
+            continue;
+        }
         let part = token.text_lossless();
         text.push_str(
             part.get(1..part.len().saturating_sub(1))

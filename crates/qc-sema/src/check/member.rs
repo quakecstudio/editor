@@ -470,6 +470,7 @@ impl Checker<'_> {
                     && !self.global
                     && let Reference::Field(field) = &base.reference
                     && field.selected.is_none()
+                    && field.element.is_none()
                     && let Some(component_def) = field.def.and_then(|def| {
                         self.env
                             .component(def, u32::try_from(word).unwrap_or(u32::MAX))
@@ -723,6 +724,24 @@ impl Checker<'_> {
                 let span = field.syntax().span();
                 self.element_member(base, element, member, word, span)?
             }
+            // FTEF-6.34: a member of a struct that is an entity's field is the field at the
+            // member's word (`QCC_PR_ParseRefArrayPointer`'s `REF_FIELD`, whose index is the
+            // field's definition at the member's offset); a field an index selected has no
+            // definition to offset.
+            Reference::Field(of) => {
+                if of.selected.is_some() && word != 0 {
+                    self.followed = false;
+                }
+                Value {
+                    sym: base.sym,
+                    name: base.name.clone(),
+                    reference: Reference::Field(Box::new(FieldRef {
+                        element: Some(of.element.unwrap_or(0).saturating_add(word)),
+                        ..of.as_ref().clone()
+                    })),
+                    ..member
+                }
+            }
             _ => Value {
                 sym: base.sym.at(word),
                 name: base.name.clone(),
@@ -839,19 +858,6 @@ impl Checker<'_> {
         if self.generated.len() <= before || named != made || !loads {
             return (named, index);
         }
-        // A jump is named by the statement it lands on, and the steps of a branch by theirs:
-        // an index that branches, a `?:` or a `&&`, is not moved over, and the body is not
-        // followed.
-        let jumps = |name: Option<ir::Name>| matches!(name, Some(ir::Name::Jump(_)));
-        let branches = self
-            .generated
-            .iter()
-            .skip(before)
-            .any(|s| jumps(s.a) || jumps(s.b) || jumps(s.c));
-        if branches {
-            self.followed = false;
-            return (named, index);
-        }
         // Every statement after the load is one earlier: the calls and copies the checker
         // keeps by their statements move with them.
         let earlier = |n: u32| {
@@ -883,8 +889,13 @@ impl Checker<'_> {
             Some(ir::Name::MadeWord(n, word)) if usize::try_from(n).is_ok_and(|n| n > at) => {
                 Some(ir::Name::MadeWord(n.saturating_sub(1), word))
             }
+            // A jump is named by the statement it lands on: one of an index that branches,
+            // a `?:` or a `&&`, lands a statement earlier, and one to the index's end on
+            // the load.
+            Some(ir::Name::Jump(n)) => Some(ir::Name::Jump(earlier(n))),
             other => other,
         };
+        self.layout.remove(u32::try_from(at).unwrap_or(u32::MAX));
         for statement in self.generated.iter_mut().skip(at) {
             statement.a = moved(statement.a);
             statement.b = moved(statement.b);

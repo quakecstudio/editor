@@ -635,6 +635,49 @@ inheritance, bitfields and nested members.
   records `is.__function` and `is.n`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_DummyDef`; `engine/qclib/qccmain.c`; checked against the pinned FTEQCC's output on
   an FTE target (2026-11-19).
+- **FTEF-6.34** A struct or a union that is an entity's field takes a field for each of its
+  words, and is read and stored by them. A read loads its words into a temporary
+  (`QCC_PR_ExpandField`, `case ev_struct: case ev_union:`): three at a time by `OP_LOAD_V`
+  (`for (; i+2 < type->size; i+=3 ...)`), then two by `OP_LOAD_I64` where the target has it,
+  then one by `OP_LOAD_F`, each from the field's definition at the word; one that is one load
+  is that load, which a store of its value folds into (`three = e.f3` of three floats is
+  `LOAD_V e, f3, three`). A member of it is the
+  field at the member's word, read and stored as a field of the member's type: `x = e.sf.b` is
+  `LOAD_F e, sf+1`. A store (`QCC_StoreSRefToRef`, `case REF_FIELD:`) is the same pieces: where
+  the target has the type's `OP_STOREF_*`, `OP_STOREF_V` for each three words, `OP_STOREF_I64`
+  for two where it has that, and `OP_STOREF_I` for a word; else, for each piece, `OP_ADDRESS`
+  of the entity and the field at the piece's word and `OP_STOREP_V`, `OP_STOREP_I64` where the
+  target has it, or `OP_STOREP_F` through it. So on the standard target `self.sf = one` of a
+  struct of 5 words is `ADDRESS self, sf`, `STOREP_V one`, `ADDRESS self, sf+3`, `STOREP_F
+  one+3`, `ADDRESS self, sf+4`, `STOREP_F one+4`, and on an FTE target `STOREF_V self, sf,
+  one` and `STOREF_I64 self, sf+3, one+3`. An out parameter comes back to such a field the
+  same way from its slot's words (FTEF-32.24), and to an element at a constant index at the
+  element's own words. FTEQCC stores a constant 0 to a pair of such a field's words by
+  `OP_STOREF_V` of the zero vector, three words to two, which is not written; nor is a store
+  of more pieces than one to a field an index selected, or from a value whose words have no
+  name, a call's of more than a vector's among them; nor such a field as a call's argument,
+  whose loads FTEQCC writes to the words of its slots. An `__out` argument passes nothing and
+  takes one slot of the call whatever its words (FTEF-32.24): `give5(one)` of a struct of 5
+  words is `CALL1`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ExpandField`, `QCC_StoreSRefToRef`, `QCC_PR_ParseRefArrayPointer`; checked against
+  the pinned FTEQCC's output on the standard and an FTE target (2026-11-19).
+- **FTEF-6.35** A struct that is not whole words is stored through a pointer by
+  `QCC_StoreToPointer`'s walk of its bits: its whole words as FTEF-6.18 has them, then the 16
+  bits left by `OP_STOREP_I16` or else the 8 bits left by `OP_STOREP_I8` (`if (i+16 <= bits)
+  ... else if (i+8 <= bits)`), each through `QCC_PR_Statement_SmallStore`, which writes the
+  opcode where the target has it and else reads the word by `OP_LOADP_I`, masks the value and
+  shifts it to its bits, clears those bits of the word, joins the two and stores the word by
+  `OP_STOREP_I` (FTEF-6.18). Bits left after that are FTEQCC's internal error "Underwrote", as
+  a struct of three 8-bit members is. A struct with a member of a word before its narrow ones
+  is padded to whole words and is stored as words. On an FTE target `*p = g` of a struct of
+  one `__int8` is `STOREP_I8 g, p, 0`, and of two, or of one `__int16`, `LOADP_I p, 0`,
+  `BITAND_I g, 65535`, `LSHIFT_I t, 0`, `BITAND_I word, ~65535`, `BITOR_I` and `STOREP_I`.
+  With an index, for a struct of 24 bits, and on a target whose stores take no offset or that
+  has neither the opcode nor those of its emulation, the store is not written. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_StoreToPointer`, `QCC_PR_Statement_SmallStore`; checked against the pinned FTEQCC's
+  output on an FTE target (2026-11-19).
 
 ## FTEF-7 `typedef` of any type
 
@@ -2649,7 +2692,21 @@ profile the preprocessor reads them as FTEQCC does.
   (FTEF-12.11), so `#pragma flag enable acc caseinsens` gives "Cannot enable/disable
   keyword/flag via a pragma" once and `#pragma flag enable nosuch acc` two warnings. Those
   pairs are QCD-1.6's exceptions (ADR-0022).
-- **FTEF-14.80** When no macro of the name is defined, `QCC_PR_CheckBuiltinCompConst` expands
+- **FTEF-14.80** **Withdrawn** 2026-11-19: it said `__FUNC__` written beside a string literal
+  is not joined to it and is a syntax error, where FTEQCC joins them into one string; replaced
+  by FTEF-14.82, with FTEF-14.81 for the joined string.
+- **FTEF-14.81** `__FUNC__` and `__func__` (FTEF-14.82) are read by the lexer as a string, so
+  one written beside a string literal, or beside another of itself, is a part of the one
+  string adjacent strings make (FTEF-16.8), on either side: in a function `fname`, `"pre:"
+  __FUNC__` is `"pre:fname"`, `__FUNC__ ":post"` is `"fname:post"`, `"a" __func__ "b"` is
+  `"afnameb"` and `__FUNC__ __FUNC__` is `"fnamefname"`; outside every function `"g:"
+  __FUNC__` is `"g:<NO FUNCTION>"`. A constant fold reads the joined string: `strlen("pre:"
+  __FUNC__)` in `plain` is 9. Inside a function, the initialiser of a constant that joins
+  `__FUNC__` is not written. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_CheckBuiltinCompConst`, `QCC_PR_LexString`; checked against the strings of the
+  pinned FTEQCC's output (2026-11-19).
+- **FTEF-14.82** When no macro of the name is defined, `QCC_PR_CheckBuiltinCompConst` expands
   `__NULL__` to `0i`, `__FILE__` to the file's name as a string, `__LINE__` to the line number
   and `__LINESTR__` to it as a string, `__TIME__` and `__DATE__` to strings, `__RAND__` to a
   number and `__QCCVER__` to a string. `__FUNC__` and `__func__` are the name of the function
@@ -2658,8 +2715,7 @@ profile the preprocessor reads them as FTEQCC does.
   FUNCTION>");`): in `void() T::Tick = { say(__FUNC__); }` the argument is the string
   `T::Tick`, through a macro's body too. FTEQCC's lexer reads the function from its parser;
   here the preprocessor leaves the two names and the semantic model, which knows the function,
-  reads each as that string constant. One written beside a string literal is not joined to it
-  as FTEQCC's expansion is, and is a syntax error. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  reads each as that string constant (FTEF-14.81 for one beside a string literal). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
   `QCC_PR_CheckBuiltinCompConst`; checked against the pinned FTEQCC's output on the standard
   target and an FTE one (2026-11-19).
 
@@ -6080,6 +6136,44 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   class's function is `LOADF_ENT self, m_list; LOADF_I t, m_selected; BOUNDCHECK i, 4;
   LOADF_ENT self, m_list; LOADA_FLD m_entries, i; LOADF_S u, f`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`;
   checked against the pinned FTEQCC's output on an FTE target (2026-11-19).
+- **FTEF-31.35** On a target with `OP_FETCH_GBL_*` and no `OP_LOADA_*`, Hexen II's, an element
+  of an array with a length prefix (FTEF-31.15) at an index that is no constant is fetched by
+  its type (`QCC_LoadFromArray`, `accel == 1`): `OP_FETCH_GBL_F` for a float, an integer, a
+  field or a pointer, `OP_FETCH_GBL_S`, `OP_FETCH_GBL_E` and `OP_FETCH_GBL_FNC` for a string,
+  an entity and a function; a vector by `OP_FETCH_GBL_V` with the index, which counts words,
+  divided by 3 (`OP_DIV_F`: "hexen2 uses element indicies. we internally use words."); a
+  struct or union a word at a time by `OP_FETCH_GBL_F` into a temporary, each word after the
+  first at the index plus the word (`OP_ADD_F`), every fetch from the array's start ("we can't
+  cheese these offsets because OP_FETCH_GBL_ has some built-in bounds check"). So `one =
+  sts[n]` of a struct of 5 words is `MUL_F n, 5`, five `FETCH_GBL_F` with four `ADD_F` between
+  them, then the copy. The format has no opcode that stores to an array ("hexen2 format has
+  opcodes to read arrays (but has no way to write)"), so a store calls the array's setter, and
+  a read of an array with no prefix its getter. Those calls, as every call on a target with
+  `OP_CALL1H`, take their first two arguments as operands (FTEF-32.19): `arr[n] = 3` is
+  `CALL2H ArraySet*arr, n, 3` with no store to a parameter, and the bounds error inside a
+  getter or setter is `CALL1H error, message`. With no `error` defined that call's function is
+  an integer constant of every bit set (`errfnc = QCC_MakeIntConst(~0); errfnc.cast =
+  type_function;`), on every target. A value still in the return global when the setter is
+  called is copied out of it first, and the call reads the copy: `arr[pick()] = other()` is
+  `CALL0 pick`, `STORE_F`, `CALL0 other`, `STORE_F` and `CALL2H`. A member array of a struct
+  has no length prefix and is read by the struct's getter, which is not written on this
+  target. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_LoadFromArray`, `QCC_StoreToArray`, `QCC_PR_EmitArrayGetFunction`,
+  `QCC_PR_EmitArraySetFunction`; checked against the pinned FTEQCC's output with `-Th2`
+  (2026-11-19).
+- **FTEF-31.36** The index an array's getter or setter is called with is divided by 3 when the
+  array's own type is a vector, whatever the type read or stored (`if (base.sym->type->type ==
+  ev_vector)` in `QCC_LoadFromArray` and `QCC_StoreToArray`). A vector member of an element of
+  an array of structs is therefore not divided: `sts[n].c = v` is `MUL_F n, 5`, `ADD_F t, 2`
+  into the first parameter, `STORE_V v` to the second and `CALL2 ArraySet*sts`, and `v =
+  sts[n].c`, a value of more words than one from an array that is not of vectors (`if (t->size
+  > 1)`), is read a word at a time, three calls of the getter each stored to its word of a
+  temporary. The setter of such an array stores one word for an index, so the store writes the
+  vector's first word only; that is FTEQCC's behaviour and is written as it writes it. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_LoadFromArray`, `QCC_StoreToArray`; checked against the pinned FTEQCC's output on the
+  standard target and with `-Th2` (2026-11-19).
 - **FTEF-31.30** The address of an element of an array of 8- or 16-bit integers is in bytes,
   which `OP_GLOBALADDRESS`'s index of words does not count (`if (basetype->align &&
   basetype->align!=32) { //urgh. OP_GLOBALADDRESS is in terms of words, while pointers are often
@@ -6451,6 +6545,17 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   `QCC_PR_GenerateFunctionCallRef`, `QCC_Intrinsic_strlen`, `QCC_PR_ParseFunctionCall`;
   `engine/qclib/progsint.h`, `min`, `max`; checked against the pinned FTEQCC's output on an
   FTE target (2026-11-19).
+- **FTEF-32.33** Where a slot of a struct or union passed in pieces (FTEF-32.25) is one of the
+  call's operands, every piece of that slot is stored to the words of one temporary, which is
+  the operand: a piece of three words by `OP_STORE_V`, and the two words left on a target with
+  no `OP_STORE_I64` by two `OP_STORE_F`, to the temporary's first and second words. With
+  `-Th2`, `take(one)` of a struct of 5 words is `STORE_V one, temp_0`, `STORE_F one+3,
+  temp_3`, `STORE_F one+4, temp_4` and `CALL2H take, temp_0, temp_3`; of 8 words, two
+  `STORE_V` to temporaries, `STORE_F` of the last two words to `OFS_PARM2` and `OFS_PARM2+1`,
+  and `CALL3H`. A parameter in a slot past the eighth is copied back to its local from the
+  slot's words the same way. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_GenerateFunctionCallSref`; checked against the pinned
+  FTEQCC's output with `-Th2` (2026-11-19).
 
 ## FTEF-33 Builtin argument checks
 

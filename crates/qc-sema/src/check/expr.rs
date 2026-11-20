@@ -287,14 +287,33 @@ impl<'e> Checker<'e> {
         }
     }
 
+    /// FTEF-14.82: what `__FUNC__` is here: the function's name, or `<NO FUNCTION>` outside
+    /// every function.
+    pub(super) fn function_name(&self) -> &str {
+        if self.function.name.is_empty() {
+            super::NO_FUNCTION
+        } else {
+            &self.function.name
+        }
+    }
+
     pub(super) fn literal(&mut self, literal: &ast::Literal) -> Value {
         let Some(token) = literal.token() else {
             return Value::unknown();
         };
         match literal.kind() {
             Some(ast::LiteralKind::String) => {
-                let written = String::from_utf8_lossy(&literal.syntax().text()).into_owned();
-                self.string_constant(&unquoted(&written), joined_string(literal.syntax()))
+                // FTEF-14.81: a part that is `__FUNC__` is written as the string it is.
+                let written: String = literal
+                    .syntax()
+                    .child_tokens()
+                    .map(|part| match part.kind() {
+                        qc_syntax::SyntaxKind::Name => format!("\"{}\"", self.function_name()),
+                        _ => part.text_lossless(),
+                    })
+                    .collect();
+                let joined = joined_string(literal.syntax(), self.function_name());
+                self.string_constant(&unquoted(&written), joined)
             }
             Some(ast::LiteralKind::Vector) => {
                 let flags = self.env.lex_flags_at(token.span().start);
@@ -391,13 +410,9 @@ impl<'e> Checker<'e> {
             {
                 return self.this(class, super::Object::Named);
             }
-            // FTEF-14.80: `__FUNC__` is the string of the function's name.
+            // FTEF-14.82: `__FUNC__` is the string of the function's name.
             if !scoped && self.env.fteqcc() && super::is_function_name(&token.text_lossless()) {
-                let name = if self.function.name.is_empty() {
-                    super::NO_FUNCTION.to_owned()
-                } else {
-                    self.function.name.clone()
-                };
+                let name = self.function_name().to_owned();
                 return self.string_constant(&name, Some(name.clone().into_bytes()));
             }
             // FTEF-19.80: `nil` that names no definition is `QCC_MakeIntConst(0)`.

@@ -426,7 +426,7 @@ static NO_TEXT: Text = Text {
 const FTE_BUILTIN_TEXT: usize = 256;
 
 /// The text `QCC_PR_CheckBuiltinCompConst` writes for the built-in constant `name`, which FTEQCC
-/// then reads as a chunk of its own (FTEF-14.80, FTEF-14.74), at the line `line` (FTEF-14.27) in
+/// then reads as a chunk of its own (FTEF-14.82, FTEF-14.74), at the line `line` (FTEF-14.27) in
 /// the file named `file`; `None` when `name` is none. `__FILE__` is `"%s"` of the name, kept to
 /// 255 bytes and ended at its first `:` (`erk = strchr(retbuf, ':'); if (erk) { erk[0] = '\"';
 /// erk[1] = 0; }`), nothing in it escaped.
@@ -1623,7 +1623,7 @@ impl<L: Loader> Preprocessor<L> {
     }
 
     /// Expands `item` under FTEQCC if it is the name of a macro `QCC_PR_CheckCompConst`
-    /// expands there, or of a built-in constant (FTEF-14.80); returns the item when it is not
+    /// expands there, or of a built-in constant (FTEF-14.82); returns the item when it is not
     /// replaced. The name's word must end with it (FTEF-14.13), the macro must not be stopped
     /// by FTEQCC's recursion rule (FTEF-14.17), and a function-like macro needs a `(` after
     /// spaces and tabs in the text it stands in, whose arguments are found there
@@ -1878,7 +1878,7 @@ impl<L: Loader> Preprocessor<L> {
         out
     }
 
-    /// The built-in constant the name `item` is, when no macro has its name (FTEF-14.80): the text
+    /// The built-in constant the name `item` is, when no macro has its name (FTEF-14.82): the text
     /// `QCC_PR_CheckBuiltinCompConst` writes for it ([`builtin_text`]), read as a chunk of its
     /// own (`QCC_PR_IncludeChunkEx(tok, true, NULL, NULL);`) before the text after the name, so
     /// its tokens touch nothing beside them (FTEF-14.17), and its lexical errors reported at the

@@ -29,7 +29,7 @@ use crate::{MAX_PARMS, VECTOR_WORDS, VECTOR_WORDS_FLOAT, VECTOR_WORDS_INT};
 /// `MAX_PARMS + MAX_EXTRA_PARMS`: the most arguments a call may pass.
 const MAX_ARGUMENTS: usize = 136;
 /// The parameters `OP_CALL1H` to `OP_CALL8H` take as their own operands (FTEF-32.19).
-const REGISTER_PARMS: usize = 2;
+pub(super) const REGISTER_PARMS: usize = 2;
 
 impl Checker<'_> {
     /// FTEF-32: the call `call`.
@@ -241,6 +241,14 @@ impl Checker<'_> {
             let mut value = self.read(reference.clone(), arg_span)?;
             let mut continue_after_conversion = false;
             if let Reference::Field(field) = &reference.reference {
+                // A struct's loads are held back as one field's is, each to its slot's word,
+                // which is not followed.
+                if matches!(
+                    self.etype_of(&reference.ty),
+                    Some(Etype::Struct | Etype::Union)
+                ) {
+                    self.followed = false;
+                }
                 let load = self.generated.split_off(mark.min(self.generated.len()));
                 // FTE-18.13: an entity that is a call's value stays referenced until the field is
                 // loaded, so a later call's clobber copies it first.
@@ -472,10 +480,21 @@ impl Checker<'_> {
                 .passed_in_pieces(&reference.ty, span)
                 .filter(|_| !self.global);
             if let Some(pieces) = pieces {
-                let to = reference
-                    .name()
-                    .filter(|name| matches!(name, ir::Name::Def(..)))
-                    .filter(|_| reference.reference == Reference::Global);
+                // FTEF-6.34: to an entity's field, its pieces from the slots' words.
+                if matches!(reference.reference, Reference::Field(_)) {
+                    self.field_store(reference, &returned, &reference.ty, span);
+                    continue;
+                }
+                // A definition's words, or those of its element at a constant index.
+                let to = match &reference.reference {
+                    Reference::Global => reference
+                        .name()
+                        .filter(|name| matches!(name, ir::Name::Def(..))),
+                    Reference::Element(element) if !element.vector => {
+                        reference.definition_place().and_then(|place| place.word())
+                    }
+                    _ => None,
+                };
                 match (to, usize::try_from(held)) {
                     (Some(to), Ok(held)) => {
                         for (op, word) in pieces {
@@ -580,7 +599,7 @@ impl Checker<'_> {
         if self.global {
             return None;
         }
-        let (wide, slot_of, slots) = self.argument_slots(values, passed);
+        let (wide, slot_of, slots) = self.argument_slots(values, passed, unpassed);
         let slot_at = |at: usize| slot_of.get(at).copied().unwrap_or(at);
         // FTEF-9.26: an argument that names `self` names the kept one.
         let kept = self.keep_self(newself);
@@ -795,13 +814,22 @@ impl Checker<'_> {
     /// FTEF-32.25: for the first `passed` of the arguments `values`, the words of each that
     /// is passed in pieces, the parameter slot each starts at, one for an argument and one
     /// for each three words of one in pieces, and the slots they take together.
+    ///
+    /// FTEF-32.24: an `__out` argument, one of `unpassed`, passes nothing and takes one slot
+    /// whatever its words.
     fn argument_slots(
         &self,
         values: &[Value],
         passed: usize,
+        unpassed: &[bool],
     ) -> (Vec<Option<u32>>, Vec<usize>, usize) {
         let wide: Vec<Option<u32>> = (0..passed)
-            .map(|at| values.get(at).and_then(|value| self.wide_words(&value.ty)))
+            .map(|at| {
+                values
+                    .get(at)
+                    .filter(|_| !unpassed.get(at).copied().unwrap_or(false))
+                    .and_then(|value| self.wide_words(&value.ty))
+            })
             .collect();
         let mut slot_of: Vec<usize> = Vec::with_capacity(passed);
         let mut slots: usize = 0;
@@ -816,9 +844,9 @@ impl Checker<'_> {
     }
 
     /// FTEF-32.25: the argument `from` of `words` words copied a piece to a slot from `slot`
-    /// on: to a value of its own where the slot is one of the call's operands, `registers`.
-    /// One that is no definition's or statement's words, or whose pieces do not each start a
-    /// slot, is not followed.
+    /// on: to a value of its own where the slot is one of the call's operands, `registers`,
+    /// which the pieces of the slot are each stored to their word of. One that is no
+    /// definition's or statement's words is not followed.
     fn wide_argument(
         &mut self,
         from: Option<ir::Name>,
@@ -828,26 +856,43 @@ impl Checker<'_> {
         span: Span,
     ) {
         let from = from.filter(|name| matches!(name, ir::Name::Def(..) | ir::Name::Made(_)));
-        // A piece that is a call's operand is a slot whole; any other is stored to its word
-        // of its slot, a pair's two words on a target with no `OP_STORE_I64` among them.
-        let pieces = if registers.is_some() {
-            self.slot_pieces(words, span)
-        } else {
-            Some(self.pieces(words, span))
-        };
-        let (Some(from), Some(pieces)) = (from, pieces) else {
+        let Some(from) = from else {
             self.followed = false;
             return;
         };
-        for (op, word) in pieces {
-            let register = registers
-                .as_mut()
-                .and_then(|operands| operands.get_mut(Checker::slot_of_word(slot, word)));
-            let to = match register {
+        // The value a call's operand is, by its slot: the statement it is made at.
+        let mut values: [Option<u32>; REGISTER_PARMS] = [None; REGISTER_PARMS];
+        for (op, word) in self.pieces(words, span) {
+            let at = Checker::slot_of_word(slot, word);
+            let within = word.checked_rem(VECTOR_WORDS).unwrap_or(0);
+            let to = match registers.as_mut().and_then(|operands| operands.get_mut(at)) {
                 Some(register) => {
-                    let copy = u32::try_from(self.generated.len()).ok();
-                    *register = copy.map(ir::Name::Made);
-                    *register
+                    let value = values.get_mut(at).and_then(|value| {
+                        if value.is_none() {
+                            *value = u32::try_from(self.generated.len()).ok();
+                        }
+                        *value
+                    });
+                    // The words of the value left for the slot: a piece of fewer is one of
+                    // several that write the value's words.
+                    let left = words.saturating_sub(word).min(VECTOR_WORDS);
+                    let stored = match op {
+                        Op::StoreV => VECTOR_WORDS,
+                        Op::StoreI64 => 2,
+                        _ => 1,
+                    };
+                    let whole = within == 0 && stored == left;
+                    if within == 0 {
+                        *register = value.map(ir::Name::Made);
+                        if let Some(value) = value.filter(|_| !whole) {
+                            self.effects.push((value, ir::Effect::Block(left)));
+                        }
+                    }
+                    if whole {
+                        *register
+                    } else {
+                        value.map(|value| ir::Name::MadeWord(value, within))
+                    }
                 }
                 None => Checker::slot_word(slot, word),
             };
@@ -903,8 +948,14 @@ impl Checker<'_> {
 
     /// FTEF-32.25, FTEF-19.78: the value an array's setter stores, a struct `from` of `words`
     /// words, copied to its slots, the setter's second parameter's on.
-    pub(super) fn setter_argument(&mut self, from: Option<ir::Name>, words: u32, span: Span) {
-        self.wide_argument(from, words, SETTER_VALUE_SLOT, None, span);
+    pub(super) fn setter_argument(
+        &mut self,
+        from: Option<ir::Name>,
+        words: u32,
+        registers: Option<&mut [Option<ir::Name>; REGISTER_PARMS]>,
+        span: Span,
+    ) {
+        self.wide_argument(from, words, SETTER_VALUE_SLOT, registers, span);
     }
 
     /// FTEF-32.25: the words of `ty` when it is a struct or union of more than a vector's,
@@ -936,17 +987,6 @@ impl Checker<'_> {
             at = at.saturating_add(size);
         }
         pieces
-    }
-
-    /// FTEF-32.25: [`Checker::pieces`] when each starts a parameter's slot, which is all the
-    /// body's statements name: `None` where a word is left in the middle of one, two words
-    /// with no `OP_STORE_I64`.
-    pub(super) fn slot_pieces(&self, words: u32, span: Span) -> Option<Vec<(Op, u32)>> {
-        let pieces = self.pieces(words, span);
-        pieces
-            .iter()
-            .all(|(_, word)| word.is_multiple_of(VECTOR_WORDS))
-            .then_some(pieces)
     }
 
     /// `random()`, `random(scale)` and `random(low, high)`: each argument made a float, of
@@ -1430,7 +1470,12 @@ impl Checker<'_> {
                 };
                 let default = args.get(1).cloned();
                 let value = self.value(default.clone())?;
-                let cvar = match (value.known(), default.as_ref().and_then(string_immediate)) {
+                let cvar = match (
+                    value.known(),
+                    default
+                        .as_ref()
+                        .and_then(|e| string_immediate(e, self.function_name())),
+                ) {
                     (_, Some(text)) => CvarValue::Text(text),
                     (Some(constant), None) => CvarValue::Number(constant),
                     (None, None) => CvarValue::Unknown,
@@ -1460,7 +1505,10 @@ impl Checker<'_> {
                 } else {
                     PathList::Model
                 };
-                if let Some(bytes) = args.first().and_then(string_bytes) {
+                if let Some(bytes) = args
+                    .first()
+                    .and_then(|arg| string_bytes(arg, self.function_name()))
+                {
                     self.env
                         .record_path(list, &String::from_utf8_lossy(&bytes), span);
                 }
@@ -1664,7 +1712,7 @@ impl Checker<'_> {
             _ => return,
         };
         let bytes = match arg {
-            ast::Expr::Literal(_) => string_bytes(arg),
+            ast::Expr::Literal(_) => string_bytes(arg, self.function_name()),
             ast::Expr::Name(name) => name
                 .name()
                 .and_then(|t| self.env.reference(t.span().start))
@@ -1752,7 +1800,7 @@ impl FunctionType {
 }
 
 /// The slot of the value an array's setter stores, `ArraySet*NAME(index, value)`'s second.
-const SETTER_VALUE_SLOT: usize = 1;
+pub(super) const SETTER_VALUE_SLOT: usize = 1;
 
 /// `CALL0` to `CALL8`, the call of `passed` arguments, the opcode of the count (QC-18.3).
 pub(super) fn call_opcode(passed: usize) -> Option<Op> {

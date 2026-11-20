@@ -1228,7 +1228,8 @@ impl Literal {
         match self.token()?.kind() {
             K::FloatLit => Some(LiteralKind::Float),
             K::VectorLit => Some(LiteralKind::Vector),
-            K::StringLit => Some(LiteralKind::String),
+            // FTEF-14.81: one that starts with `__FUNC__` is the string its parts make.
+            K::StringLit | K::Name => Some(LiteralKind::String),
             K::FrameRef => Some(LiteralKind::FrameRef),
             _ => None,
         }

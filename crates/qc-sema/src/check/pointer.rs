@@ -486,11 +486,7 @@ impl Checker<'_> {
         if target.valid(op) {
             return Ok(());
         }
-        let (bits, shift, place) = if op == Op::StorepI16 {
-            (16, 1, 1)
-        } else {
-            (8, 2, 3)
-        };
+        let SmallStore { bits, shift, place } = SmallStore::of(op);
         let value = if op == Op::StorepC {
             self.converted(value, Etype::Uint, span)?
         } else {
@@ -503,7 +499,7 @@ impl Checker<'_> {
         let pointer = Value::of(Type::Pointer(Type::Named("__int32".into()).into()));
         let word = self.emit(Op::LoadpI, &pointer, &word_index, span)?;
         let bit = self.emit(Op::MulI, &place, &uint(bits), span)?;
-        let mask = uint(if bits == 16 { 0xffff } else { 0xff });
+        let mask = uint(SmallStore::of(op).mask());
         let value = self.emit(Op::BitandI, &value, &mask, span)?;
         let value = self.emit(Op::LshiftI, &value, &bit, span)?;
         let mask = self.emit(Op::LshiftI, &mask, &bit, span)?;
@@ -523,6 +519,61 @@ impl Checker<'_> {
         if self.env.flags_at(span.start).has(FteFlag::Undefwordsize) {
             self.env.report(Code::E0326, span, message.to_owned());
         }
+    }
+}
+
+/// The bits of a byte.
+const BYTE_BITS: i32 = 8;
+/// The bits of a 16-bit integer.
+const SHORT_BITS: i32 = 16;
+
+/// How `QCC_PR_Statement_SmallStore` emulates a store of 8 or 16 bits (FTEF-6.18), which the
+/// check of its opcodes and the body's statements both read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct SmallStore {
+    /// The bits stored.
+    bits: i32,
+    /// The shift that makes an index of them an index of words, `idxshift`.
+    shift: i32,
+    /// The mask that leaves an index's place in its word, `(32/bits)-1`.
+    place: i32,
+}
+
+impl SmallStore {
+    /// The statements of the emulation at an index that is a constant, whose split and the
+    /// mask's shift fold away: the word read, the value masked and shifted to its place, the
+    /// word's bits there cleared, and the two joined.
+    pub(super) const EMULATION: [Op; 5] = [
+        Op::LoadpI,
+        Op::BitandI,
+        Op::LshiftI,
+        Op::BitandI,
+        Op::BitorI,
+    ];
+
+    /// That of `op`: `OP_STOREP_I16`'s, or else a byte's.
+    pub(super) fn of(op: Op) -> Self {
+        /// A word's bits, which the bits stored divide.
+        const WORD_BITS: i32 = 32;
+        let bits = if op == Op::StorepI16 {
+            SHORT_BITS
+        } else {
+            BYTE_BITS
+        };
+        // The values of a word: two 16-bit ones, four bytes.
+        let in_word = WORD_BITS.checked_div(bits).unwrap_or(1);
+        Self {
+            bits,
+            shift: i32::try_from(in_word.trailing_zeros()).unwrap_or(0),
+            place: in_word.saturating_sub(1),
+        }
+    }
+
+    /// The bits of a value it stores, `(1u<<bits)-1`.
+    pub(super) fn mask(self) -> i32 {
+        1_i32
+            .checked_shl(self.bits.unsigned_abs())
+            .map_or(i32::MAX, |high| high.saturating_sub(1))
     }
 }
 
