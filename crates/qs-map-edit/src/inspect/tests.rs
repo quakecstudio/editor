@@ -21,7 +21,7 @@ const MAP: &str = "{\n\"classname\" \"worldspawn\"\n}\n\
     ( 0 0 0 ) ( 1 0 0 ) ( 0 1 0 ) t 0 0 0 1 1\n( 0 0 64 ) ( 0 1 64 ) ( 1 0 64 ) t 0 0 0 1 1\n}\n}\n\
     {\n\"classname\" \"monster_dog\"\n\"origin\" \"500 0 24\"\n\"targetname\" \"rex\"\n}\n";
 
-// No spec statement: P5-08, MAP-16: map.inspect gives the rooms with their bounds and the
+// No spec statement: P5-08, MAP-16: map.list_entities gives the rooms with their bounds and the
 // entities with their places, origins and rooms, filtered by room and classname; an entity
 // placed in a room is listed in it
 #[test]

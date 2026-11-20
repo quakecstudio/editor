@@ -1061,7 +1061,7 @@ fn the_agents_rules_are_kept_in_the_projects_file() {
         ..ToolPermissions::default()
     };
     rules.tools.insert(
-        "edit.apply".to_owned(),
+        "edit.stage_change".to_owned(),
         ToolRule {
             allow: vec!["src/*.qc".to_owned()],
             deny: vec!["progs.src".to_owned()],

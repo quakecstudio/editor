@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! `map.inspect` (P5-08, MAP-16): the open map as the agent reads it before it edits: its rooms,
+//! `map.list_entities` (P5-08, MAP-16): the open map as the agent reads it before it edits: its rooms,
 //! TrenchBroom's named layers and groups with their bounds (MAP-9), and each entity's place,
 //! classname, origin and room, so a prompt that names a room ("three Shamblers in the armory")
-//! can be carried out with `map.place` and `map.set_key`.
+//! can be carried out with `map.place_entity` and `map.set_key`.
 
 use qs_commands::{Command, Outcome};
 use qs_map::RoomKind;
@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use super::{EntityIndex, MAP_INSPECT};
 use crate::{HasMap, MapEditError};
 
-/// The parameters of `map.inspect`.
+/// The parameters of `map.list_entities`.
 #[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct InspectParams {
@@ -45,7 +45,7 @@ impl From<RoomKind> for RoomShape {
     }
 }
 
-/// A room of the map, as `map.inspect` answers it.
+/// A room of the map, as `map.list_entities` answers it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RoomInfo {
     /// Its name.
@@ -56,7 +56,7 @@ pub struct RoomInfo {
     pub bounds: Option<[[f64; 3]; 2]>,
 }
 
-/// An entity of the map, as `map.inspect` answers it.
+/// An entity of the map, as `map.list_entities` answers it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct EntityInfo {
     /// Its place in the map, which the other `map.*` commands take.
@@ -71,7 +71,7 @@ pub struct EntityInfo {
     pub room: Option<String>,
 }
 
-/// What `map.inspect` answers.
+/// What `map.list_entities` answers.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct MapInspected {
     /// The map's file.
@@ -82,7 +82,7 @@ pub struct MapInspected {
     pub entities: Vec<EntityInfo>,
 }
 
-/// `map.inspect`.
+/// `map.list_entities`.
 pub(super) struct MapInspect;
 
 impl<C: HasMap + 'static> Command<C> for MapInspect {

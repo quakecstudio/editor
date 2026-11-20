@@ -9,4 +9,4 @@ read by a reviewer against these:
   `map.brush_shape`, `map.brush_hollow`, `map.brush_subtract` or the like), not written as text.
 - The player start stands on the floor inside the ring, not in a wall or the pillar; the lights
   are spread around the ring.
-- The agent checked its work with `map.leaks` or `map.compile` before saving with `map.save`.
+- The agent checked its work with `map.find_leaks` or `map.compile` before saving with `map.save`.

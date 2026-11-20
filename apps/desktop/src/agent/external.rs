@@ -408,7 +408,7 @@ impl ExternalThread {
     }
 
     /// Answers a write: a file of the project is staged as hunks for the modder to accept or
-    /// reject (`edit.apply`), and nothing reaches the disk until then; a file outside the
+    /// reject (`edit.stage_change`), and nothing reaches the disk until then; a file outside the
     /// project is refused.
     fn write<C: 'static>(
         &mut self,

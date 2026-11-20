@@ -3,7 +3,7 @@
 //! The map outline (P5-16, MAP-31): every layer, group and entity of the open map in a tree as
 //! TrenchBroom's map inspector shows them: the default layer, holding the world and what no
 //! layer names, then each layer; in each, its groups, then its entities by classname and
-//! targetname, each with its brush count. `map.outline` filters it by text; `map.move_to` moves
+//! targetname, each with its brush count. `map.outline` filters it by text; `map.move_to_layer` moves
 //! an entity or a group into another layer or group, as dragging a row does.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -20,8 +20,8 @@ use crate::{HasMap, MapEditError};
 
 /// The id of `map.outline`.
 pub const MAP_OUTLINE: &str = "map.outline";
-/// The id of `map.move_to`.
-pub const MAP_MOVE_TO: &str = "map.move_to";
+/// The id of `map.move_to_layer`.
+pub const MAP_MOVE_TO: &str = "map.move_to_layer";
 
 /// The parameters of `map.outline`.
 #[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
@@ -92,7 +92,7 @@ impl OutlineRow {
     }
 }
 
-/// The parameters of `map.move_to`.
+/// The parameters of `map.move_to_layer`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MoveToParams {
@@ -272,7 +272,7 @@ impl<C: HasMap + 'static> Command<C> for MapOutline {
     }
 }
 
-/// `map.move_to`.
+/// `map.move_to_layer`.
 pub(super) struct MapMoveTo;
 
 impl<C: HasMap + 'static> Command<C> for MapMoveTo {

@@ -38,7 +38,7 @@ answer from scripts and a local stub server.
   `content_filter` and `length` end the run.
 - **Tool names:** `FunctionObject.name` "Must be a-z, A-Z, 0-9, or contain underscores and
   dashes, with a maximum length of 64", so a command id's `.` is sent as `_`
-  (`edit.apply` as `edit_apply`) and mapped back from the tools offered.
+  (`edit.stage_change` as `edit_stage_change`) and mapped back from the tools offered.
 - **Ollama:** docs.ollama.com, OpenAI compatibility: the local server is
   `http://localhost:11434/v1/`, and "The client requires an API key value, but Ollama
   ignores it", so none is sent. With Ollama nothing leaves the machine.

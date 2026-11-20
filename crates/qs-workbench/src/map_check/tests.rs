@@ -260,7 +260,7 @@ fn map_issues(session: &mut Session<Context>) -> Vec<qs_map_edit::MapIssue> {
     found.issues
 }
 
-/// The fix `map.issues` gives for the issue naming `name`, applied through `map.fix`: the
+/// The fix `map.issues` gives for the issue naming `name`, applied through `map.apply_fix`: the
 /// issue is gone after it.
 fn fixed(session: &mut Session<Context>, issues: &[qs_map_edit::MapIssue], name: &str) -> QuickFix {
     let fix = issues
@@ -280,7 +280,7 @@ fn fixed(session: &mut Session<Context>, issues: &[qs_map_edit::MapIssue], name:
 }
 
 // spec MAP-8.2: through the workbench, map.issues finds a misspelled key from the project's
-// QuakeC, and map.fix renames it to the field it is closest to
+// QuakeC, and map.apply_fix renames it to the field it is closest to
 #[test]
 fn the_workbench_s_check_reaches_map_issues_for_a_key() {
     let ogre = "{\n\"classname\" \"monster_ogre\"\n\"origin\" \"0 0 24\"\n\"sped\" \"200\"\n}\n";
@@ -296,7 +296,7 @@ fn the_workbench_s_check_reaches_map_issues_for_a_key() {
 }
 
 // spec MAP-8.1: through the workbench, map.issues finds a misspelled classname from the
-// project's QuakeC, and map.fix sets the class it is closest to
+// project's QuakeC, and map.apply_fix sets the class it is closest to
 #[test]
 fn the_workbench_s_check_reaches_map_issues_for_a_class() {
     let ogre = "{\n\"classname\" \"monster_orge\"\n\"origin\" \"0 0 24\"\n}\n";

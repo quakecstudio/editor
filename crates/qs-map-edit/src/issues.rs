@@ -4,7 +4,7 @@
 //! diagnostic of the open map: its format's (`qs_map`, MAP-1 to MAP-7), a brush with no volume,
 //! a missing player start, textures its WADs lack, and, with a project open, its entities'
 //! against the server QuakeC (MAP-8). Each issue gives the entity or brush it is about and a
-//! quick fix where one exists; `map.fix` applies one as a step with undo. `map.search` finds
+//! quick fix where one exists; `map.apply_fix` applies one as a step with undo. `map.search` finds
 //! what a text or a query in TrenchBroom's query language matches (`crate::query`).
 
 use std::collections::BTreeSet;
@@ -22,8 +22,8 @@ use crate::{EntityProblem, HasMap, MapEditError, MapProject};
 
 /// The id of `map.issues`.
 pub const MAP_ISSUES: &str = "map.issues";
-/// The id of `map.fix`.
-pub const MAP_FIX: &str = "map.fix";
+/// The id of `map.apply_fix`.
+pub const MAP_FIX: &str = "map.apply_fix";
 /// The id of `map.search`.
 pub const MAP_SEARCH: &str = "map.search";
 
@@ -92,7 +92,7 @@ pub struct MapIssues {
     pub issues: Vec<MapIssue>,
 }
 
-/// The parameters of `map.fix`.
+/// The parameters of `map.apply_fix`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MapFixParams {
@@ -442,7 +442,7 @@ impl<C: HasMap + 'static> Command<C> for MapIssuesCommand {
     }
 }
 
-/// `map.fix`.
+/// `map.apply_fix`.
 pub(crate) struct MapFix;
 
 impl<C: HasMap + 'static> Command<C> for MapFix {

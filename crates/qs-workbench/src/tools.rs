@@ -2,7 +2,7 @@
 
 //! The semantic tools the agent and MCP call as commands (P4-03): `project.symbols`, every
 //! global definition of the open project, `engine.builtins`, an engine's builtin table, and
-//! `compile`, the project built with a verdict and counts the agent can act on.
+//! `project.compile`, the project built with a verdict and counts the agent can act on.
 
 use std::path::PathBuf;
 
@@ -20,7 +20,7 @@ pub const PROJECT_SYMBOLS: &str = "project.symbols";
 /// The id of the command that lists an engine's builtins.
 pub const ENGINE_BUILTINS: &str = "engine.builtins";
 /// The id of the command that compiles the open project and says whether it is clean.
-pub const COMPILE: &str = "compile";
+pub const COMPILE: &str = "project.compile";
 /// The id of the command that lists the open project's source files.
 pub const PROJECT_FILES: &str = "project.files";
 /// The id of the command that searches the open project's text.
@@ -268,7 +268,7 @@ impl<C: HasWorkbench + 'static> Command<C> for ProjectSearch {
     }
 }
 
-/// What `compile` answers: whether the compile is clean, its counts, and each module.
+/// What `project.compile` answers: whether the compile is clean, its counts, and each module.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Compiled {
     /// Every module built, with no error (AGT-5's clean compile).
@@ -297,7 +297,7 @@ impl Compiled {
     }
 }
 
-/// `compile`: builds the open project, as `project.build` does, and says whether it is clean.
+/// `project.compile`: builds the open project, as `project.build` does, and says whether it is clean.
 struct CompileCommand;
 
 impl<C: HasWorkbench + 'static> Command<C> for CompileCommand {

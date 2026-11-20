@@ -268,7 +268,7 @@ fn scripts() -> Vec<Script> {
                     "map.brush_texture",
                     json!({ "entity": 4, "brushes": [0], "texture": "nowhere" }),
                 ),
-                Step::Run("map.leaks", json!({})),
+                Step::Run("map.find_leaks", json!({})),
             ],
         },
         Script {

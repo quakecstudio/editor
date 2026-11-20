@@ -47,7 +47,7 @@ impl Model for Scripted {
         transcript: &[Message],
     ) -> Result<Reply, ModelError> {
         assert_eq!(system, system_prompt());
-        assert!(tools.iter().any(|t| t.name == "compile"));
+        assert!(tools.iter().any(|t| t.name == "project.compile"));
         self.seen.push(transcript.len());
         self.replies
             .pop_front()
@@ -179,7 +179,7 @@ fn a_run_fixes_its_work_until_it_passes() {
     let mut model = Scripted::new(vec![
         finish(),
         calls(vec![(
-            "edit.apply",
+            "edit.stage_change",
             json!({ "files": [{ "path": weapons, "text": FIXED }] }),
         )]),
         finish(),
@@ -321,13 +321,13 @@ fn the_guardrails_hold() {
     let mut model = Scripted::new(vec![
         calls(vec![
             (
-                "edit.apply",
+                "edit.stage_change",
                 json!({ "files": [{ "path": "../outside.qc", "text": "float x;\n" }] }),
             ),
             ("file.read", json!({ "path": "weapons.qc" })),
             ("project.search", json!({ "text": "damage" })),
             (
-                "edit.apply",
+                "edit.stage_change",
                 json!({ "files": [{ "path": "weapons.qc", "text": broken }] }),
             ),
         ]),
@@ -467,8 +467,11 @@ fn a_run_steps_one_reply_at_a_time() {
     let first = run.request().unwrap();
     assert_eq!(first.system, system_prompt());
     assert_eq!(first.transcript.len(), 1, "the brief");
-    run.answer(&mut session, Ok(calls(vec![("compile", json!({}))])))
-        .unwrap();
+    run.answer(
+        &mut session,
+        Ok(calls(vec![("project.compile", json!({}))])),
+    )
+    .unwrap();
     assert_eq!(run.transcript().len(), 3, "the calls and their result");
     run.answer(&mut session, Ok(finish())).unwrap();
     assert!(run.request().is_none(), "done: nothing more to ask");
@@ -630,7 +633,7 @@ fn profiles_switch_the_tools_offered() {
         .cloned()
         .collect();
     assert_eq!(ask, reading, "reading only, in tools/list order");
-    assert!(!ask.contains(&"edit.apply".to_owned()));
+    assert!(!ask.contains(&"edit.stage_change".to_owned()));
     assert_eq!(offered(&mut session, AgentProfile::Write), every);
     assert_eq!(offered(&mut session, AgentProfile::Full), every);
 
@@ -903,7 +906,7 @@ fn the_agents_map_edits_wait_for_review() {
     let mut model = Scripted::new(vec![
         calls(vec![("map.open", json!({ "path": map }))]),
         calls(vec![(
-            "map.place",
+            "map.place_entity",
             json!({ "classname": "light", "origin": [0.0, 0.0, 64.0] }),
         )]),
         finish(),
@@ -916,11 +919,11 @@ fn the_agents_map_edits_wait_for_review() {
         ..RunConfig::new(&root)
     };
     run(&mut session, &mut model, "Light the room.", &config).unwrap();
-    let hunks = session.execute("map.staged", json!({})).unwrap();
+    let hunks = session.execute("map.review_hunks", json!({})).unwrap();
     assert_eq!(hunks.as_array().map(Vec::len), Some(1), "{hunks}");
     assert_eq!(hunks[0]["entities"][0]["classname"], json!("light"));
-    session.execute("map.reject", json!({})).unwrap();
-    let left = session.execute("map.staged", json!({})).unwrap();
+    session.execute("map.reject_hunks", json!({})).unwrap();
+    let left = session.execute("map.review_hunks", json!({})).unwrap();
     assert_eq!(left, json!([]));
 }
 
@@ -944,18 +947,26 @@ fn other_tools_begin_no_map_review() {
     run(&mut session, &mut model, "Look around.", &config).unwrap();
     session
         .execute(
-            "map.place",
+            "map.place_entity",
             json!({ "classname": "light", "origin": [0.0, 0.0, 64.0] }),
         )
         .unwrap();
-    assert_eq!(session.execute("map.staged", json!({})).unwrap(), json!([]));
+    assert_eq!(
+        session.execute("map.review_hunks", json!({})).unwrap(),
+        json!([])
+    );
 }
 
 // No spec statement: P6-21: the agent cannot decide its own map review; a map command that
 // changes nothing leaves no review open
 #[test]
 fn the_agent_cannot_decide_its_map_review() {
-    for id in ["map.accept", "map.reject", "map.stage", "map.unstage"] {
+    for id in [
+        "map.accept_hunks",
+        "map.reject_hunks",
+        "map.stage",
+        "map.unstage",
+    ] {
         assert!(super::DENIED.contains(&id), "{id}");
     }
     let (root, mut session) = project("map-read-only", FIXED);
@@ -963,7 +974,7 @@ fn the_agent_cannot_decide_its_map_review() {
     let map = root.join("maps/room.map");
     std::fs::write(&map, "{\n\"classname\" \"worldspawn\"\n}\n").unwrap();
     session.execute("map.open", json!({ "path": map })).unwrap();
-    let mut model = Scripted::new(vec![calls(vec![("map.staged", json!({}))]), finish()]);
+    let mut model = Scripted::new(vec![calls(vec![("map.review_hunks", json!({}))]), finish()]);
     let config = RunConfig {
         permissions: Permissions {
             profile: AgentProfile::Full,
@@ -974,11 +985,14 @@ fn the_agent_cannot_decide_its_map_review() {
     run(&mut session, &mut model, "Look at the map.", &config).unwrap();
     session
         .execute(
-            "map.place",
+            "map.place_entity",
             json!({ "classname": "light", "origin": [0.0, 0.0, 64.0] }),
         )
         .unwrap();
-    assert_eq!(session.execute("map.staged", json!({})).unwrap(), json!([]));
+    assert_eq!(
+        session.execute("map.review_hunks", json!({})).unwrap(),
+        json!([])
+    );
 }
 
 // No spec statement: P6-34, a model's failure reads as what went wrong, and a thread's number
@@ -1017,7 +1031,7 @@ fn a_call_to_a_tool_not_offered_is_refused_as_such() {
     let mut config = RunConfig::new(&root);
     config.permissions = Permissions::of(AgentProfile::Ask);
     config.permissions.rules.tools.insert(
-        "edit.apply".to_owned(),
+        "edit.stage_change".to_owned(),
         ToolRule {
             default: Some(Decision::Deny),
             ..ToolRule::default()
@@ -1026,10 +1040,10 @@ fn a_call_to_a_tool_not_offered_is_refused_as_such() {
     let mut run = super::Run::start(&mut session, "Edit.", config).unwrap();
     run.answer(
         &mut session,
-        Ok(calls(vec![("edit.apply", json!({ "edits": [] }))])),
+        Ok(calls(vec![("edit.stage_change", json!({ "edits": [] }))])),
     )
     .unwrap();
     let (refused, is_error) = result_of(run.transcript(), "c0").unwrap();
     assert!(is_error);
-    assert_eq!(refused, json!("edit.apply is not one of your tools"));
+    assert_eq!(refused, json!("edit.stage_change is not one of your tools"));
 }

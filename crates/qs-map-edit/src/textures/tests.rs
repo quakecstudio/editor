@@ -442,7 +442,7 @@ fn the_lights_palette_is_the_projects_then_the_games() {
 // No spec statement: P6-43, the acceptance criterion: the textures of the levels on the game's
 // search path are listed after the WADs', each once with the level it comes from, the first
 // level by name holding a name and a WAD's texture of a name before any level's; a box
-// model's are not, and a new map with no WAD lists them through map.textures
+// model's are not, and a new map with no WAD lists them through map.list_textures
 #[test]
 fn the_textures_of_the_games_levels_are_listed_each_once() {
     let (project, game, session) = opened("levels", &Scene::default());

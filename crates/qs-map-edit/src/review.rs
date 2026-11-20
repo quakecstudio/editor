@@ -23,12 +23,12 @@ use crate::{HasMap, MapEditError, MapStore};
 pub const MAP_STAGE: &str = "map.stage";
 /// The id of `map.unstage`.
 pub const MAP_UNSTAGE: &str = "map.unstage";
-/// The id of `map.staged`.
-pub const MAP_STAGED: &str = "map.staged";
-/// The id of `map.accept`.
-pub const MAP_ACCEPT: &str = "map.accept";
-/// The id of `map.reject`.
-pub const MAP_REJECT: &str = "map.reject";
+/// The id of `map.review_hunks`.
+pub const MAP_STAGED: &str = "map.review_hunks";
+/// The id of `map.accept_hunks`.
+pub const MAP_ACCEPT: &str = "map.accept_hunks";
+/// The id of `map.reject_hunks`.
+pub const MAP_REJECT: &str = "map.reject_hunks";
 
 /// One part of a map, as review compares them: an entity's keys, then each of its brushes.
 #[derive(Clone, Debug, PartialEq)]
@@ -111,7 +111,7 @@ fn rebuild(parts: &[Part], known: &[&MapFile]) -> Vec<Entity> {
     entities
 }
 
-/// A hunk's number in the list `map.staged` gives, from 0.
+/// A hunk's number in the list `map.review_hunks` gives, from 0.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
 )]
@@ -162,7 +162,7 @@ pub struct HunkEntity {
 /// What a hunk changes, as the person reads it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct MapHunk {
-    /// Its number in the list, which `map.accept` and `map.reject` take.
+    /// Its number in the list, which `map.accept_hunks` and `map.reject_hunks` take.
     pub index: MapHunkNumber,
     /// The entities it is in.
     pub entities: Vec<HunkEntity>,
@@ -361,7 +361,7 @@ impl<C: HasMap + 'static> Command<C> for MapUnstage {
     }
 }
 
-/// `map.staged`.
+/// `map.review_hunks`.
 pub(crate) struct MapStaged;
 
 impl<C: HasMap + 'static> Command<C> for MapStaged {
@@ -378,16 +378,16 @@ impl<C: HasMap + 'static> Command<C> for MapStaged {
     }
 }
 
-/// The parameters of `map.accept` and `map.reject`.
+/// The parameters of `map.accept_hunks` and `map.reject_hunks`.
 #[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MapHunksParams {
-    /// The hunks' numbers, as `map.staged` lists them now; every hunk when empty.
+    /// The hunks' numbers, as `map.review_hunks` lists them now; every hunk when empty.
     #[serde(default)]
     pub hunks: Vec<MapHunkNumber>,
 }
 
-/// `map.accept`.
+/// `map.accept_hunks`.
 pub(crate) struct MapAccept;
 
 impl<C: HasMap + 'static> Command<C> for MapAccept {
@@ -420,7 +420,7 @@ impl<C: HasMap + 'static> Command<C> for MapAccept {
     }
 }
 
-/// `map.reject`.
+/// `map.reject_hunks`.
 pub(crate) struct MapReject;
 
 impl<C: HasMap + 'static> Command<C> for MapReject {

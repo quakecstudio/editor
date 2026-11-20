@@ -177,7 +177,7 @@ fn a_key_is_set_on_several_entities_at_once() {
     assert_eq!(text(&session), MAP);
 }
 
-// No spec statement: P5-13, MAP-27: map.entity gives the class's spawnflags as the QuakeC names
+// No spec statement: P5-13, MAP-27: map.read_entity gives the class's spawnflags as the QuakeC names
 // them, for the spawnflag editor
 #[test]
 fn the_spawnflags_named_by_the_code_come_with_the_keys() {

@@ -1001,7 +1001,7 @@ impl MapFeature {
         }
     }
 
-    /// Finds the entities the game does not spawn under `show` with `map.filter`, for the map
+    /// Finds the entities the game does not spawn under `show` with `map.entities_by_skill`, for the map
     /// editor to hide; every entity shown when it fails.
     pub(crate) fn filter_map(
         &mut self,

@@ -102,7 +102,7 @@ fn a_selection_is_grouped_and_ungrouped() {
 
 // No spec statement: P7-08: map.add_layer adds a layer as TrenchBroom writes one, its _tb_id one
 // more than the greatest; map.link_duplicate copies a group and its entities as a group linked
-// to it, both given one _tb_linked_group_id (MAP-9.5); map.separate unlinks one, and refuses a
+// to it, both given one _tb_linked_group_id (MAP-9.5); map.unlink_group unlinks one, and refuses a
 // group not linked
 #[test]
 fn layers_are_added_and_groups_linked_and_separated() {

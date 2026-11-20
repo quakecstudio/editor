@@ -15,7 +15,7 @@
 //!   files, and its problems and tests as they are, so it starts from the facts instead of
 //!   exploring for them (P4-08).
 //! - **Rules it works under** ([`system_prompt`]): [`SYSTEM`], propose edits with
-//!   `edit.apply`, read before writing, compile and test before finishing; then the QuakeC
+//!   `edit.stage_change`, read before writing, compile and test before finishing; then the QuakeC
 //!   reference written for it, `docs/agent-reference/`.
 //! - **Guardrails.** A relative path is taken from the project; an edit outside the project is
 //!   refused; a tool's output longer than [`RunConfig::output_limit`] is cut, saying so; the
@@ -47,8 +47,8 @@ use serde_json::{Value, json};
 pub const DENIED: [&str; 21] = [
     "edit.accept",
     "edit.reject",
-    "map.accept",
-    "map.reject",
+    "map.accept_hunks",
+    "map.reject_hunks",
     "map.stage",
     "map.unstage",
     "file.save",
@@ -73,7 +73,7 @@ pub const SYSTEM: &str = "You are QuakeC Studio's agent. You change a QuakeC pro
     the task, using the tools, which are the IDE's own commands.\n\
     - Read before you write: use project.files, project.search, file.read and the symbol tools \
     to find the code the task touches.\n\
-    - Propose every change with edit.apply, giving each file's whole new text. Your changes \
+    - Propose every change with edit.stage_change, giving each file's whole new text. Your changes \
     are staged for the person to review; you cannot accept, save or undo them, and nothing \
     you do is written to disk.\n\
     - Check your work: compile must be clean and project.test must pass. Add a test_ function \
@@ -559,7 +559,7 @@ impl RunConfig {
 /// What the runtime found when it checked the work (AGT-5).
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct Verification {
-    /// `compile` answered clean.
+    /// `project.compile` answered clean.
     pub compile_clean: bool,
     /// `project.test` answered passed: no test, unit or scenario, failed.
     pub tests_passed: bool,
@@ -1234,7 +1234,7 @@ fn call_tool<C: 'static>(
     }
     let mut arguments = call.arguments.clone();
     absolute_paths(&mut arguments, &config.project);
-    if call.name == "edit.apply" {
+    if call.name == "edit.stage_change" {
         let mut paths = Vec::new();
         collect_paths(&arguments, &mut paths);
         let project = lexical(&config.project);
@@ -1287,7 +1287,7 @@ fn cut(output: Value, limit: usize) -> Value {
 /// Checks the work as AGT-5 says: a clean compile and passing tests.
 fn verify<C: 'static>(session: &mut Session<C>, test_params: &Value) -> Verification {
     let mut checked = Verification::default();
-    match session.execute("compile", json!({})) {
+    match session.execute("project.compile", json!({})) {
         Ok(compiled) if compiled.get("clean") == Some(&json!(true)) => {
             checked.compile_clean = true;
         }

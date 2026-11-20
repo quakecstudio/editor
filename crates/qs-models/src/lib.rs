@@ -386,7 +386,7 @@ impl<T: Transport> Model for ProviderModel<T> {
 
 /// A command id as a tool name the providers take: letters, digits, `_` and `-` only (OpenAI's
 /// `FunctionObject.name`: "Must be a-z, A-Z, 0-9, or contain underscores and dashes, with a
-/// maximum length of 64"), so `edit.apply` is sent as `edit_apply`.
+/// maximum length of 64"), so `edit.stage_change` is sent as `edit_stage_change`.
 fn tool_name(id: &str) -> String {
     id.chars()
         .map(|c| {

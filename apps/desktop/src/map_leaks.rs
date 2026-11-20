@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The map's leak and texture diagnostics in the map view (P6-11, MAP-7): what `map.leaks` or
+//! The map's leak and texture diagnostics in the map view (P6-11, MAP-7): what `map.find_leaks` or
 //! `map.compile` last found, kept with the map until it is edited and run from anywhere, the
 //! agent included, shown in the Properties panel; the leak's trail drawn in every pane from the
 //! entity the outside reaches out to the void (QBSP-9.8); the brushes whose textures the

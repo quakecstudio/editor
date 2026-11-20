@@ -159,7 +159,7 @@ fn hunks_are_reviewed_and_checkpoints_restored() {
             text: "Editing.".to_owned(),
             calls: vec![ToolCall {
                 id: "c1".to_owned(),
-                name: "edit.apply".to_owned(),
+                name: "edit.stage_change".to_owned(),
                 arguments: json!({ "files": [{ "path": world,
                     "text": "void() worldspawn = { local float x; };\n" }] }),
             }],
@@ -463,7 +463,7 @@ fn a_thread_reopened_from_history_shows_messages_hunks_and_checkpoint() {
         text: "Adding the local.".to_owned(),
         calls: vec![ToolCall {
             id: "c1".to_owned(),
-            name: "edit.apply".to_owned(),
+            name: "edit.stage_change".to_owned(),
             arguments: json!({ "files": [{ "path": world,
                 "text": "void() worldspawn = { local float x; x = 1; };\n" }] }),
         }],

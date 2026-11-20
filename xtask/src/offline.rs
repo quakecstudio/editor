@@ -39,7 +39,7 @@ const MCP_SESSION: [&str; 5] = [
     r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"offline","version":"0"}}}"#,
     r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
     r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
-    r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"compile","arguments":{}}}"#,
+    r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"project.compile","arguments":{}}}"#,
     r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"project.files","arguments":{}}}"#,
 ];
 

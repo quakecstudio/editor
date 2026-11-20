@@ -217,7 +217,7 @@ impl Externals {
 }
 
 /// The entities the map view shows: every one, or those the game spawns at a skill or in a
-/// kind of game (P5-13, `map.filter`).
+/// kind of game (P5-13, `map.entities_by_skill`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ShowFilter {
     /// Every entity.
@@ -307,7 +307,7 @@ pub struct MapEditor {
     /// The class models' files, which the textured and lit views draw (P7-08).
     model_files: HashMap<String, std::sync::Arc<[u8]>>,
     browser: EntityBrowser,
-    /// The selected entity's keys, as `map.entity` gave them.
+    /// The selected entity's keys, as `map.read_entity` gave them.
     keys: Option<(EntityIndex, EntityKeys)>,
     /// The document revision the keys were read at.
     keys_read: Option<MapRevision>,
@@ -2449,7 +2449,7 @@ const Z_AXIS: usize = 2;
 pub enum Arrange {
     /// Mirror along an axis (`map.flip`).
     Flip(Vec<EntityIndex>, Vec<(EntityIndex, BrushIndex)>, Axis),
-    /// Turn by degrees about the vertical (`map.turn`).
+    /// Turn by degrees about the vertical (`map.rotate_objects`).
     Turn(Vec<EntityIndex>, Vec<(EntityIndex, BrushIndex)>, f64),
 }
 

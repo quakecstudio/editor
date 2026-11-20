@@ -241,14 +241,14 @@ semantic answers and live state, not grep over files:
 | --- | --- |
 | `project.symbols`, `symbol.definition`, `symbol.references` | Semantic answers from the model, not text search |
 | `engine.builtins` | What the selected target engine supports, with signatures |
-| `edit.apply` | A staged diff; nothing touches disk until accepted |
-| `compile` | Diagnostics and a progs.dat from our compiler |
+| `edit.stage_change` | A staged diff; nothing touches disk until accepted |
+| `project.compile` | Diagnostics and a progs.dat from our compiler |
 | `vm.run` | Runs a QC function in `qc-vm` with mocked builtins: unit tests in milliseconds |
 | `scenario.run` | A headless engine run of a map plus scripted inputs, with assertions on edicts and globals |
 | `engine.inspect`, `engine.console`, `engine.screenshot` | Live state from the running preview host |
 
 Edits arrive as reviewable hunks you accept or reject one by one, every run has a git-backed
-checkpoint you can roll back, and a run is marked done only when `compile` is clean and its tests
+checkpoint you can roll back, and a run is marked done only when `project.compile` is clean and its tests
 pass. The MCP server (`quakec-ide mcp`) exposes the same tools headless, `--connect` attaches to
 a running app, and the Agent Client Protocol lets outside agents such as Claude Code run in the
 panel. A per-project `AGENTS.md` holds the mod's rules and is loaded into every run. Model
@@ -369,7 +369,7 @@ The loop that joins the two sides, data and control flowing top to bottom and ev
    everywhere, down to its spawn and think functions in the code. Pause freezes the world so
    you, or the agent, can inspect it.
 
-The agent drives the same loop through the same commands: it edits, compiles with `compile`,
+The agent drives the same loop through the same commands: it edits, compiles with `project.compile`,
 runs unit-level checks with `vm.run` in `qc-vm`, runs scripted scenarios against the headless
 preview host with `scenario.run`, and inspects live state with `engine.inspect`, then proposes a
 reviewable diff.

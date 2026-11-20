@@ -27,8 +27,8 @@ use serde::{Deserialize, Serialize};
 use crate::{HasMap, MapEditError, MapProject};
 use crate::{MapDocument, MapSource};
 
-/// The id of `map.textures`.
-pub const MAP_TEXTURES: &str = "map.textures";
+/// The id of `map.list_textures`.
+pub const MAP_TEXTURES: &str = "map.list_textures";
 
 /// The game's palette, `gfx/palette.lmp` (REND-1.8).
 const PALETTE_LMP: &str = "gfx/palette.lmp";
@@ -95,7 +95,7 @@ pub struct WadFound {
     pub state: WadState,
 }
 
-/// What `map.textures` answers.
+/// What `map.list_textures` answers.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct MapTextures {
     /// The WADs the world names, in its order.
@@ -641,7 +641,7 @@ impl MapDocument {
     }
 }
 
-/// `map.textures`.
+/// `map.list_textures`.
 pub(super) struct MapTexturesCommand;
 
 impl<C: HasMap + 'static> Command<C> for MapTexturesCommand {

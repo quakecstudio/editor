@@ -244,7 +244,7 @@ impl<C: HasMap + 'static> Command<C> for MapSummarise {
         (monsters, lights, items, triggers), its textures counted by face, and its world's \
         keys. The open map, or with a path a .map file read from the disk without opening \
         it; with `most`, only that many classnames and textures, which keeps it short when \
-        many maps are read. map.inspect lists each entity; this counts them.";
+        many maps are read. map.list_entities lists each entity; this counts them.";
     type Params = SummaryParams;
     type Output = MapSummary;
     type Error = MapEditError;

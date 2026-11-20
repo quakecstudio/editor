@@ -12,8 +12,8 @@ Read a file with `file.read` before changing it.
 
 ## Changing it
 
-`edit.apply` stages each file's whole new text as hunks for the person to review. Nothing is
-written to disk by you. Then `compile` must report `"clean": true`.
+`edit.stage_change` stages each file's whole new text as hunks for the person to review. Nothing is
+written to disk by you. Then `project.compile` must report `"clean": true`.
 
 ## Proving it
 
@@ -35,4 +35,4 @@ written to disk by you. Then `compile` must report `"clean": true`.
   ```
 
 - `project.test` runs every test; `scenario.run` plays one file. The run is done only when
-  `compile` is clean and `project.test` passes.
+  `project.compile` is clean and `project.test` passes.

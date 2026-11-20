@@ -387,7 +387,7 @@ fn mcp_serves_the_agents_tools() {
         r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}"#,
         r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
         r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
-        r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"compile","arguments":{}}}"#,
+        r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"project.compile","arguments":{}}}"#,
     );
     let (mut out, mut err) = (Vec::new(), Vec::new());
     let exit = run_with_input(
@@ -414,7 +414,7 @@ fn mcp_serves_the_agents_tools() {
         .map(|t| t["name"].as_str().unwrap())
         .collect();
     for tool in [
-        "compile",
+        "project.compile",
         "project.symbols",
         "engine.inspect",
         "scenario.run",

@@ -69,7 +69,7 @@ impl Transport for &Scripted {
 
 fn tools() -> Vec<ToolSpec> {
     vec![ToolSpec {
-        name: "edit.apply".to_owned(),
+        name: "edit.stage_change".to_owned(),
         description: "Stages a change.".to_owned(),
         input_schema: json!({ "type": "object" }),
     }]
@@ -91,7 +91,7 @@ fn anthropic_speaks_the_messages_api() {
         "content": [
             thinking,
             { "type": "text", "text": "Staging it." },
-            { "type": "tool_use", "id": "toolu_1", "name": "edit_apply", "input": { "files": [] } },
+            { "type": "tool_use", "id": "toolu_1", "name": "edit_stage_change", "input": { "files": [] } },
         ],
     });
     let second = json!({
@@ -114,7 +114,7 @@ fn anthropic_speaks_the_messages_api() {
     };
     assert_eq!(text, "Staging it.");
     assert_eq!(
-        calls[0].name, "edit.apply",
+        calls[0].name, "edit.stage_change",
         "the command, not the wire name"
     );
     assert_eq!(calls[0].arguments, json!({ "files": [] }));
@@ -138,7 +138,7 @@ fn anthropic_speaks_the_messages_api() {
     assert_eq!(header(headers, "anthropic-version"), Some("2026-10-21"));
     assert_eq!(body["model"], "claude-opus-5-5");
     assert_eq!(body["system"], "system");
-    assert_eq!(body["tools"][0]["name"], "edit_apply");
+    assert_eq!(body["tools"][0]["name"], "edit_stage_change");
     assert_eq!(body["tools"][0]["input_schema"]["type"], "object");
     assert_eq!(body["fallbacks"], "default");
     assert_eq!(body["output_config"]["effort"], "high");
@@ -170,7 +170,7 @@ fn anthropic_failures_and_joined_results() {
         ProviderModel::new(config, Some(Secret::new(KEY.to_owned())), &transport).unwrap();
     let call = |id: &str| ToolCall {
         id: id.to_owned(),
-        name: "edit.apply".to_owned(),
+        name: "edit.stage_change".to_owned(),
         arguments: json!({}),
     };
     let transcript = vec![
@@ -203,7 +203,7 @@ fn anthropic_failures_and_joined_results() {
     assert!(body.get("fallbacks").is_none() && body.get("tools").is_none());
     let messages = body["messages"].as_array().unwrap();
     assert_eq!(messages.len(), 3, "{messages:?}");
-    assert_eq!(messages[1]["content"][0]["name"], "edit_apply");
+    assert_eq!(messages[1]["content"][0]["name"], "edit_stage_change");
     let results = messages[2]["content"].as_array().unwrap();
     assert_eq!(results.len(), 2, "both results in one message");
     assert_eq!(results[1]["is_error"], true);
@@ -218,9 +218,9 @@ fn openai_speaks_chat_completions() {
     let first = json!({ "choices": [{ "finish_reason": "tool_calls", "message": {
         "role": "assistant", "content": null, "tool_calls": [
             { "id": "c1", "type": "function",
-              "function": { "name": "edit_apply", "arguments": "{\"files\":[]}" } },
+              "function": { "name": "edit_stage_change", "arguments": "{\"files\":[]}" } },
             { "id": "c2", "type": "function",
-              "function": { "name": "edit_apply", "arguments": "{not json" } },
+              "function": { "name": "edit_stage_change", "arguments": "{not json" } },
         ] } }] });
     let second = json!({ "choices": [{ "finish_reason": "stop",
         "message": { "role": "assistant", "content": "Done." } }] });
@@ -240,7 +240,7 @@ fn openai_speaks_chat_completions() {
     let Reply::Calls { calls, text } = model.reply("s", &tools(), &transcript).unwrap() else {
         panic!()
     };
-    assert_eq!(calls[0].name, "edit.apply");
+    assert_eq!(calls[0].name, "edit.stage_change");
     assert_eq!(calls[0].arguments, json!({ "files": [] }));
     assert_eq!(calls[1].arguments, json!("{not json"));
     transcript.push(Message::Assistant { text, calls });
@@ -269,7 +269,7 @@ fn openai_speaks_chat_completions() {
     );
     assert_eq!(body["messages"][0]["role"], "system");
     assert_eq!(body["tools"][0]["type"], "function");
-    assert_eq!(body["tools"][0]["function"]["name"], "edit_apply");
+    assert_eq!(body["tools"][0]["function"]["name"], "edit_stage_change");
     let messages = sent[1].2["messages"].as_array().unwrap();
     assert_eq!(
         messages[2]["tool_calls"][0]["id"], "c1",
@@ -498,7 +498,7 @@ fn anthropic_streams_text_thinking_and_calls() {
           "delta": { "type": "text_delta", "text": "ing it." } },
         { "type": "content_block_stop", "index": 1 },
         { "type": "content_block_start", "index": 2,
-          "content_block": { "type": "tool_use", "id": "toolu_1", "name": "edit_apply", "input": {} } },
+          "content_block": { "type": "tool_use", "id": "toolu_1", "name": "edit_stage_change", "input": {} } },
         { "type": "content_block_delta", "index": 2,
           "delta": { "type": "input_json_delta", "partial_json": "{\"files\":" } },
         { "type": "content_block_delta", "index": 2,
@@ -530,7 +530,7 @@ fn anthropic_streams_text_thinking_and_calls() {
         panic!("{reply:?}")
     };
     assert_eq!(text, "Staging it.");
-    assert_eq!(calls[0].name, "edit.apply");
+    assert_eq!(calls[0].name, "edit.stage_change");
     assert_eq!(calls[0].arguments, json!({ "files": [] }));
     assert_eq!(model.usage().input_tokens, 50);
     assert_eq!(model.usage().output_tokens, 9, "the last delta's count");
@@ -558,7 +558,7 @@ fn openai_streams_text_and_calls() {
             { "index": 0, "id": "c1", "type": "function",
               "function": { "name": "edit_", "arguments": "{\"fi" } }] } }] },
         { "choices": [{ "index": 0, "delta": { "tool_calls": [
-            { "index": 0, "function": { "name": "apply", "arguments": "les\":[]}" } }] } }] },
+            { "index": 0, "function": { "name": "stage_change", "arguments": "les\":[]}" } }] } }] },
         { "choices": [{ "index": 0, "delta": {}, "finish_reason": "tool_calls" }] },
     ]);
     let transport = Scripted::new(vec![Ok(chunks)]);
@@ -582,7 +582,7 @@ fn openai_streams_text_and_calls() {
     };
     assert_eq!(text, "On it.");
     assert_eq!(calls[0].id, "c1");
-    assert_eq!(calls[0].name, "edit.apply");
+    assert_eq!(calls[0].name, "edit.stage_change");
     assert_eq!(calls[0].arguments, json!({ "files": [] }));
 }
 

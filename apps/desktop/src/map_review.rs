@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The agent's map edits waiting for review in the map view (P6-21, MAP-29): each hunk of
-//! `map.staged`, what it changes and where, with Accept and Reject, and both for every hunk at
+//! `map.review_hunks`, what it changes and where, with Accept and Reject, and both for every hunk at
 //! once, as the agent's code edits are reviewed.
 
 use eframe::egui::{RichText, Ui};

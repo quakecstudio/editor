@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Compiling the open map (P6-11, P6-13, MAP-7, MAP-16): `map.leaks` compiles it in memory
+//! Compiling the open map (P6-11, P6-13, MAP-7, MAP-16): `map.find_leaks` compiles it in memory
 //! with `qs-map-bsp` and reports whether it leaks, the leak's trail from the entity the outside
 //! reached out to the void (QBSP-9.8), and the textures its WADs lack; `map.compile` does the
 //! same and writes the BSP, portal and leak files beside the map, as id's qbsp names them.
@@ -29,8 +29,8 @@ use qs_map::{Region, Surface, TexDef};
 use qs_map_edit::textures::{Game, GameTextures, find_wad, light_palette};
 use qs_map_edit::{EntityIndex, MapEditError, MapReport, MapSource};
 
-/// The id of `map.leaks`.
-pub const MAP_LEAKS: &str = "map.leaks";
+/// The id of `map.find_leaks`.
+pub const MAP_LEAKS: &str = "map.find_leaks";
 /// The id of `map.compile`.
 pub const MAP_COMPILE: &str = "map.compile";
 /// The id of `map.play_from_here`.
@@ -261,7 +261,7 @@ fn merged(wads: &[(PathBuf, Vec<u8>)]) -> Result<Vec<u8>, WorkbenchError> {
         })
 }
 
-/// `map.leaks`.
+/// `map.find_leaks`.
 pub(crate) struct MapLeaks;
 
 impl<C: HasPreview + 'static> Command<C> for MapLeaks {

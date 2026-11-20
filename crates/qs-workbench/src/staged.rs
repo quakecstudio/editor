@@ -25,7 +25,7 @@ use crate::editing::Source;
 use crate::{HasWorkbench, Workbench, WorkbenchError};
 
 /// The id of the command that stages a change to several files as hunks.
-pub const APPLY_EDIT: &str = "edit.apply";
+pub const APPLY_EDIT: &str = "edit.stage_change";
 
 /// The id of the command that accepts staged hunks.
 pub const ACCEPT_HUNKS: &str = "edit.accept";
@@ -189,7 +189,7 @@ pub struct StagedHunk {
     pub added: String,
 }
 
-/// One file's proposed text, as `edit.apply` takes it.
+/// One file's proposed text, as `edit.stage_change` takes it.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ProposedFile {
@@ -199,7 +199,7 @@ pub struct ProposedFile {
     pub text: String,
 }
 
-/// The parameters of `edit.apply`.
+/// The parameters of `edit.stage_change`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ApplyEditParams {
@@ -393,7 +393,7 @@ impl<L: Loader> Workbench<L> {
     }
 }
 
-/// `edit.apply`: stages a change to several files as hunks.
+/// `edit.stage_change`: stages a change to several files as hunks.
 struct ApplyEdit;
 
 impl<C: HasWorkbench + 'static> Command<C> for ApplyEdit {
@@ -484,7 +484,7 @@ impl<C: HasWorkbench + 'static> Command<C> for StagedEdits {
     }
 }
 
-/// Registers `edit.apply`, `edit.accept`, `edit.reject` and `edit.staged`.
+/// Registers `edit.stage_change`, `edit.accept`, `edit.reject` and `edit.staged`.
 ///
 /// # Errors
 ///

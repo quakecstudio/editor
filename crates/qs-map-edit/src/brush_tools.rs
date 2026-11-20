@@ -43,7 +43,7 @@ pub const MAP_BRUSH_CHAMFER: &str = "map.brush_chamfer";
 pub const MAP_FLIP: &str = "map.flip";
 
 /// The id of the command that turns a selection about the vertical (P7-08).
-pub const MAP_TURN: &str = "map.turn";
+pub const MAP_TURN: &str = "map.rotate_objects";
 
 /// The id of the command that puts one texture in another's place (P7-08).
 pub const MAP_REPLACE_TEXTURE: &str = "map.replace_texture";
@@ -94,7 +94,7 @@ pub struct FlipParams {
     pub lock: Lock,
 }
 
-/// The parameters of `map.turn`.
+/// The parameters of `map.rotate_objects`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TurnParams {
@@ -946,7 +946,7 @@ impl<C: HasMap + 'static> Command<C> for Flip {
     }
 }
 
-/// `map.turn`.
+/// `map.rotate_objects`.
 pub(super) struct Turn;
 
 impl<C: HasMap + 'static> Command<C> for Turn {
