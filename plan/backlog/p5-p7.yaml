@@ -2252,6 +2252,28 @@ groups:
     - 'cargo xtask view-diff passes with each port''s difference listed as expected and no other'
     verify:
     - 'The tests citing each new statement; cargo xtask sim-diff and view-diff'
+  - key: L-30
+    title: Set the later engines' options from the console, by their upstream names
+    labels:
+    - apps
+    - area:preview
+    - type:feature
+    size: S
+    reqs:
+    - ENG-2
+    summary: |
+      Justin chose on 2026-11-20 (option 1) that L-21's options follow QuakeSpasm and Ironwail: console variables a modder sets live, not launch flags. L-21 (#978) added --lerplightstyles, --nozfix and --nolitwater; QuakeSpasm and Ironwail have the cvars r_lerplightstyles, gl_zfix and r_litwater, and QuakeSpasm both the sv_protocol command and the -protocol launch option.
+    depends:
+    - L-21
+    deliverable:
+    - 'qs-sim: the settings r_lerplightstyles (1), gl_zfix (1) and r_litwater (1), archived as Ironwail archives them, and sv_protocol (666), which the next map load takes, as QuakeSpasm''s SV_SpawnServer does'
+    - 'qs-game: the preview host reads the three drawing settings each frame as it reads gamma (CON-7.4), so a change takes effect at once; --lerplightstyles, --nozfix and --nolitwater are removed; --protocol stays as QuakeSpasm''s -protocol and sets sv_protocol'
+    - 'docs/spec/: the statements naming the removed options withdrawn and replaced with ones naming the settings'
+    acceptance:
+    - 'A test sets each setting at the console and the next frame draws as the setting says, both ways'
+    - 'A test sets sv_protocol and the next map''s serverinfo names that protocol; --protocol sets it at launch'
+    verify:
+    - 'The tests citing the new statements'
   - key: L-29
     title: Record and play demos in the preview host
     labels:
