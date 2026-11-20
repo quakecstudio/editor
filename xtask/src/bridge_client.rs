@@ -87,7 +87,7 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
         run_root,
         map: Some(args.map.clone()),
         socket: socket_path(),
-        extra: vec!["--headless".to_owned()],
+        extra: vec![LaunchSpec::HEADLESS.to_owned()],
     };
     let mut running = spec
         .launch("cargo xtask bridge-client")
@@ -303,6 +303,9 @@ fn suite(
 
     engine_tools(client)?;
     steps.push("engine.inspect, engine.console and engine.screenshot".to_owned());
+
+    console_moves_the_player(client)?;
+    steps.push("+forward at the console moves the player".to_owned());
 
     // BRIDGE-4.5: a breakpoint at a line no statement is on is refused.
     let missing = client.request("breakpoint/set", json!({ "file": "nosuch.qc", "line": 1 }));
@@ -585,6 +588,46 @@ fn paused_health(client: &mut Client, monster: u32) -> Result<(), String> {
         "resumed, the monster's health is set",
     )?;
     Ok(())
+}
+
+/// How many frames the player walks for.
+const WALK_FRAMES: u8 = 20;
+
+/// INPUT-2.1, CON-6.1: with no window the console's buttons are the player's: `+forward` typed
+/// there moves the player, and `-forward` lets the button go.
+fn console_moves_the_player(client: &mut Client) -> Result<(), String> {
+    let origin = |client: &mut Client| -> Result<Value, String> {
+        let entities = client
+            .inspect(InspectWhat::Entities)
+            .map_err(|e| e.to_string())?;
+        let player = entities
+            .get("entities")
+            .and_then(Value::as_array)
+            .and_then(|list| list.iter().find(|e| text(e, "classname") == "player"))
+            .and_then(|e| e.get("edict").and_then(Value::as_u64))
+            .and_then(|n| u32::try_from(n).ok())
+            .ok_or("the player is in the game")?;
+        let edict = client
+            .inspect(InspectWhat::Edict(Edict::new(player).into()))
+            .map_err(|e| e.to_string())?;
+        field(&edict, "origin").ok_or_else(|| "the player has an origin".to_owned())
+    };
+    client.pause().map_err(|e| format!("pause: {e}"))?;
+    let before = origin(client)?;
+    client
+        .console("+forward")
+        .map_err(|e| format!("console: {e}"))?;
+    for _ in 0..WALK_FRAMES {
+        client
+            .step(StepKind::Frame)
+            .map_err(|e| format!("step: {e}"))?;
+    }
+    let after = origin(client)?;
+    client
+        .console("-forward")
+        .map_err(|e| format!("console: {e}"))?;
+    client.resume().map_err(|e| format!("resume: {e}"))?;
+    expect(before != after, "+forward at the console moves the player")
 }
 
 /// P4-28: the exported mod's progs reloaded over the map plays: the reload loses nothing of

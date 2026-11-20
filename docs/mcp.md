@@ -13,8 +13,11 @@ The server opens the project (the current directory when none is named) and then
 JSON-RPC message per line from stdin, answering each on stdout. It writes nothing else to
 stdout. It runs headless: no window opens, and a game it plays runs in the preview host with no
 window and no sound either (`--headless`), its frames drawn offscreen for `engine.screenshot`,
-so an agent that plays a map to look at it opens nothing on the person's screen. To watch the
-game an agent plays, connect the server to the running app.
+so an agent that plays a map to look at it opens nothing on the person's screen. On a machine
+with no GPU device the game still runs, and `engine.screenshot` is refused with "no GPU
+device". The player is moved from the console: `engine.console` with `+forward`, `+attack` or
+`impulse 9` holds a button or sends an impulse, as a key would in the window. To watch the game
+an agent plays, connect the server to the running app.
 
 ## Connecting to the running app
 
@@ -151,7 +154,8 @@ The server's instructions give an agent the order (L-40); it is the one a person
    QuakeC does not know, a leak with its trail. `map.save` writes the file.
 6. To review it, `map.summary` counts what the map holds and `map.inspect` lists its entities;
    with a `path`, `map.summary` reads a `.map` file from the disk without opening it, which
-   is how a set of maps is compared, under a read root;
+   is how a set of maps is compared, under a read root, and `most_textures` cuts its list of
+   textures to the most used, the count of them all still given;
    `map.play_from_here` compiles and lights it and starts the game at a point, and
    `engine.screenshot` writes the frame as a PNG the agent can look at.
 

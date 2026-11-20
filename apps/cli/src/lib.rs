@@ -712,9 +712,6 @@ impl McpRequest {
     }
 }
 
-/// The preview host's flag for no window and no sound, its frames drawn offscreen.
-const HEADLESS: &str = "--headless";
-
 /// The preview of `mcp`'s own session, over `game`: the host runs with no window and no
 /// sound, as the server does, so an agent that plays a map to look at a frame of it opens
 /// nothing on the person's screen. A game to watch is the app's, with `--connect`.
@@ -723,7 +720,9 @@ fn own_preview(game: Option<PathBuf>) -> PreviewConfig {
     if game.is_some() {
         config.game = game;
     }
-    config.extra.push(HEADLESS.to_owned());
+    config
+        .extra
+        .push(qs_engine::LaunchSpec::HEADLESS.to_owned());
     config
 }
 
