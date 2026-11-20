@@ -353,4 +353,8 @@ three (DIFF-16).
   that `SV_Init` reads, sets it when the host starts and not again, so a later level keeps what
   the console made it. QuakeSpasm's `sv_protocol` command refuses a value other than 15, 666 or
   999 ("`sv_protocol must be %i or %i or %i`"); the host's is a setting, which takes any value,
-  and a map loads in 666 when it names none of the three.
+  and a map loads in 666 when it names none of the three, the console then showing "`sv_protocol
+  must be 15 or 666 or 999`". A deliberate divergence: QuakeSpasm runs `quake.rc`, and with it
+  `config.cfg` and `autoexec.cfg`, in `Host_Init` before the first map, where the host loads its
+  first map before `quake.rc` runs (INPUT-3.3), so a configuration's `sv_protocol` takes the
+  host's second map, and `--protocol` is the way to choose the first's.

@@ -38,7 +38,7 @@ use crate::physics::MoveType;
 use crate::physics::Sound;
 use crate::protocol::{EntAlpha, Protocol, ProtocolVersion};
 use crate::rerelease::BuiltinTable;
-use crate::settings::{ARCHIVED, CLIENT_SETTINGS, LATER_ARCHIVED, LATER_SETTINGS, SERVER_SETTINGS};
+use crate::settings::{ARCHIVED, CLIENT_SETTINGS, SERVER_SETTINGS};
 use qc_builtins::localization::Localization;
 use save::NUM_SPAWN_PARMS;
 
@@ -374,8 +374,7 @@ impl World {
             }
             // PHYS-12.1: the server's and the host's settings, with id's defaults.
             None => {
-                let all = SERVER_SETTINGS.iter().chain(&CLIENT_SETTINGS);
-                for (name, value) in all.chain(&LATER_SETTINGS) {
+                for (name, value) in SERVER_SETTINGS.iter().chain(&CLIENT_SETTINGS) {
                     engine.cvars.create(name, value);
                 }
             }
@@ -433,13 +432,18 @@ impl World {
             pending_spawn: None,
         };
         // NET-6.10: the protocol is `sv_protocol`'s as the map loads.
-        let protocol = world
+        let version = world
             .setting("sv_protocol")
             .map(float_to_int)
-            .and_then(ProtocolVersion::from_number)
-            .map_or(Protocol::FITZQUAKE, |version| {
-                Protocol::new(version, Protocol::RMQ.flags())
-            });
+            .and_then(ProtocolVersion::from_number);
+        if version.is_none() {
+            world
+                .console_out
+                .extend_from_slice(b"sv_protocol must be 15 or 666 or 999\n");
+        }
+        let protocol = version.map_or(Protocol::FITZQUAKE, |version| {
+            Protocol::new(version, Protocol::RMQ.flags())
+        });
         world.builtins.messages.set_protocol(protocol);
         let entities = bsp.entities();
         // EDICT-4.1: the world's fields.
@@ -814,7 +818,6 @@ impl World {
         let cvars = &self.builtins.mock.engine().cvars;
         ARCHIVED
             .iter()
-            .chain(&LATER_ARCHIVED)
             .filter_map(|name| cvars.text(name).map(|text| format!("{name} \"{text}\"\n")))
             .collect()
     }

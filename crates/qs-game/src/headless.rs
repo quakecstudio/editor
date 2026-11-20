@@ -29,6 +29,7 @@ use crate::keys::focus;
 use crate::load::{Acted, Describer, Loaded, Rand, map_mesh};
 use crate::map_bsp::MapBsp;
 use crate::screenshot::{Drawer, Frame};
+use crate::settings::DrawingSettings;
 use crate::view_script::{Step, ViewScript};
 use crate::window::{CONWIDTH, FRAME, frametime_f32, screen_height};
 
@@ -473,11 +474,19 @@ impl Headless {
         self.client
             .set_contents(contents_at(self.bsp.bsp(), scene.view.origin));
         let hud = self.client.hud();
+        self.apply_drawing_settings();
         self.play.screen = [CONWIDTH, screen_height(ASPECT)];
         self.client
             .set_screen(self.play.screen[0], self.play.screen[1]);
         self.play
             .frame(&scene, &hud, self.bsp.bsp(), &mut self.mesh, ASPECT)
+    }
+
+    /// The later engines' drawing settings as the console left them (CON-7.5), as the window
+    /// reads them each frame.
+    fn apply_drawing_settings(&mut self) {
+        let world = self.game.world();
+        DrawingSettings::read(|name| world.setting(name)).apply(&mut self.play);
     }
 
     /// The client's view alone, on an image `aspect` wide per unit of height: no status bar,
@@ -491,6 +500,7 @@ impl Headless {
             .set_contents(contents_at(self.bsp.bsp(), origin));
         let mut scene = self.client.scene();
         scene.view.weapon.model = qs_client::ModelIndex::NONE;
+        self.apply_drawing_settings();
         self.play
             .frame(&scene, hud, self.bsp.bsp(), &mut self.mesh, aspect)
     }

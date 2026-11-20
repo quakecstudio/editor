@@ -14,7 +14,8 @@ use qs_sim::protocol::ProtocolVersion;
 /// them; clap reads them with two.
 const ENGINE_OPTIONS: [&str; 5] = ["-basedir", "-game", "-kpf", "-bridge", "-protocol"];
 
-/// `quakec-engine [-basedir PATH] [-game NAME] [-kpf PATH] [-bridge PATH] [map]`.
+/// `quakec-engine [-basedir PATH] [-game NAME] [-kpf PATH] [-bridge PATH] [-protocol
+/// 15|666|999] [map]`.
 #[derive(clap::Parser, Clone, Debug, PartialEq)]
 #[command(
     name = "quakec-engine",
@@ -145,12 +146,12 @@ pub enum ProtocolArg {
 }
 
 impl ProtocolArg {
-    /// The protocol's number, which `sv_protocol` is set to (NET-6.10).
-    pub const fn number(self) -> i32 {
+    /// The protocol it names, whose number `sv_protocol` is set to (NET-6.10).
+    pub const fn version(self) -> ProtocolVersion {
         match self {
-            Self::NetQuake => ProtocolVersion::NetQuake.number(),
-            Self::FitzQuake => ProtocolVersion::FitzQuake.number(),
-            Self::Rmq => ProtocolVersion::Rmq.number(),
+            Self::NetQuake => ProtocolVersion::NetQuake,
+            Self::FitzQuake => ProtocolVersion::FitzQuake,
+            Self::Rmq => ProtocolVersion::Rmq,
         }
     }
 }
@@ -170,7 +171,10 @@ impl Args {
     /// later level, which keeps what the console made it.
     pub(crate) fn launch_settings(&self, host: Option<&HostState>) -> Vec<(String, String)> {
         match host {
-            None => vec![("sv_protocol".to_owned(), self.protocol.number().to_string())],
+            None => vec![(
+                "sv_protocol".to_owned(),
+                self.protocol.version().number().to_string(),
+            )],
             Some(_) => Vec::new(),
         }
     }

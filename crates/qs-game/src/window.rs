@@ -1147,9 +1147,7 @@ impl Viewer {
         );
         self.client.set_view_settings(read.view);
         self.play.gamma = read.frame_gamma;
-        self.play.style_lerp = read.style_lerp;
-        self.play.zfix = read.zfix;
-        self.play.water = read.water;
+        read.drawing.apply(&mut self.play);
         self.audio.set_volume(read.volume);
         self.audio.set_music_volume(read.music);
     }

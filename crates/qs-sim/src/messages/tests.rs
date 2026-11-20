@@ -1495,7 +1495,8 @@ fn fitzquake_buffers_hold_what_ids_cannot() {
     assert!(next_datagram(&mut id).len() <= NET_MAX_DATAGRAM);
 }
 
-// spec NET-6.10: the map loads in sv_protocol's protocol; a value that names none loads 666
+// spec NET-6.10: the map loads in sv_protocol's protocol; a value that names none loads 666 and
+// says so at the console
 #[test]
 fn sv_protocol_chooses_the_maps_protocol() {
     let with = |value: &str| {
@@ -1517,4 +1518,16 @@ fn sv_protocol_chooses_the_maps_protocol() {
     assert_eq!(with("666"), 666);
     assert_eq!(with("16"), 666, "no protocol: the default");
     assert_eq!(with("junk"), 666);
+    let options = LoadOptions {
+        settings: vec![("sv_protocol".to_owned(), "16".to_owned())],
+        ..LoadOptions::default()
+    };
+    let mut run = running_with(&ledge(), "", "", Vec::new(), options);
+    let lines = run.world.take_console_output();
+    assert!(
+        lines.contains(&b"sv_protocol must be 15 or 666 or 999".to_vec()),
+        "{lines:?}"
+    );
+    let mut fine = running_with(&ledge(), "", "", Vec::new(), speaking(Protocol::RMQ));
+    assert!(fine.world.take_console_output().is_empty());
 }

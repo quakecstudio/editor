@@ -108,17 +108,18 @@ fn gamma_goes_to_the_blend_table_in_glquakes_look() {
 }
 
 // spec CON-7.5: the later engines' drawing settings reach the frame: r_lerplightstyles 0 holds,
-// below 2 skips abrupt changes, from 2 blends all; gl_zfix and r_litwater are off only at 0
+// below 2 skips abrupt changes, from 2 blends all; gl_zfix and r_litwater are off only at 0;
+// each is what Play draws the next frame with
 #[test]
+#[expect(clippy::unwrap_used, reason = "test code: 768 bytes are a palette")]
 fn the_later_engines_settings_reach_the_frame() {
-    use qs_render::{LitWater, ModelDepth, StyleLerp};
-    let at = |changed: &[(&str, f32)]| read(changed, Look::QuakeSpasm);
-    let defaults = [
+    use qs_render::{LitWater, ModelDepth, Palette, Pics, Play, StyleLerp};
+    let at = |changed: &[(&str, f32)]| read(changed, Look::QuakeSpasm).drawing;
+    let on = at(&[
         ("r_lerplightstyles", 1.0),
         ("gl_zfix", 1.0),
         ("r_litwater", 1.0),
-    ];
-    let on = at(&defaults);
+    ]);
     assert_eq!(on.style_lerp, StyleLerp::SkipAbrupt);
     assert_eq!(on.zfix, ModelDepth::Behind);
     assert_eq!(on.water, LitWater::Lit);
@@ -139,10 +140,20 @@ fn the_later_engines_settings_reach_the_frame() {
         StyleLerp::SkipAbrupt
     );
     assert_eq!(at(&[("gl_zfix", 0.5)]).zfix, ModelDepth::Behind);
-    let missing = at(&[]);
     assert_eq!(
-        missing.zfix,
+        at(&[]).zfix,
         ModelDepth::AsDrawn,
         "a setting the world lacks reads as 0"
+    );
+    let mut play = Play::new(Palette::read(&[0; 768]).unwrap(), Pics::new(), b"");
+    off.apply(&mut play);
+    assert_eq!(
+        (play.style_lerp, play.zfix, play.water),
+        (StyleLerp::Off, ModelDepth::AsDrawn, LitWater::Unlit)
+    );
+    on.apply(&mut play);
+    assert_eq!(
+        (play.style_lerp, play.zfix, play.water),
+        (StyleLerp::SkipAbrupt, ModelDepth::Behind, LitWater::Lit)
     );
 }
