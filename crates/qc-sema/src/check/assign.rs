@@ -23,6 +23,7 @@ use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::member::WORD_ALIGNMENT;
 use crate::check::opcodes;
 use crate::check::opcodes::row;
+use crate::check::pointer::SmallStore;
 use crate::check::reference::word_type;
 use crate::check::truth::{Test, is_truth};
 use crate::check::{Constness, Fold, Reference, Sym, Value, ValueUse};
@@ -103,12 +104,12 @@ pub(super) const fn assign_spelling(op: BinaryOp) -> Option<Assign> {
     })
 }
 
-/// `opcodes_addstore`.
 /// The bits of an 8-bit integer, the least a struct holds.
 const BYTE_BITS: u32 = 8;
 /// The bits of a 16-bit integer.
 const SHORT_BITS: u32 = 16;
 
+/// `opcodes_addstore`.
 const ADD: &[Op] = &[
     Op::AddF,
     Op::AddV,
@@ -330,11 +331,7 @@ impl Checker<'_> {
         // statement that made the value's temporary (`opt_assignments`).
         // DIFF-14.11: not into a statement whose result is wider than the value, a vector whose
         // first word is stored.
-        let wider = self.generated.last().is_some_and(|last| {
-            let made = opcodes::row(last.op).map(|row| row.types[2].etype());
-            let stored = self.etype(&target);
-            made.map_or(1, Etype::words) > stored.map_or(1, Etype::words)
-        });
+        let wider = self.wider_than(&target);
         let folded = stored.temp.is_some() && stored.temp == self.last_temp && !wider;
         let structured = matches!(self.etype(&target), Some(Etype::Struct | Etype::Union));
         // `QCC_StoreToSRef`'s `default:`: a type it has no case for is copied by its size.
@@ -350,7 +347,7 @@ impl Checker<'_> {
         let copied = matches!(kind, Assign::Store)
             && !packs
             && lhs.reference == Reference::Global
-            && (structured || !folded)
+            && !folded
             && (by_size.is_some() || steps.len() > 1)
             && self.copy_steps(&stored, lhs.name(), &steps);
         if matches!(kind, Assign::Store) && !copied && !packs {
@@ -413,7 +410,7 @@ impl Checker<'_> {
             Reference::Element(at) => at.index.known().is_none(),
             _ => false,
         };
-        if structured && !copied && element == ElementStore::NotOne && !by_address {
+        if structured && !copied && !folded && element == ElementStore::NotOne && !by_address {
             self.followed = false;
         }
         // FTEF-29.3: `QCC_StoreSRefToRef`.
@@ -1103,6 +1100,22 @@ impl Checker<'_> {
         Ok(())
     }
 
+    /// DIFF-14.11: whether the last statement's result is of more words than a value of type
+    /// `target`, which a store of it does not fold into.
+    fn wider_than(&self, target: &Type) -> bool {
+        self.generated.last().is_some_and(|last| {
+            let made = opcodes::row(last.op).map(|row| row.types[2].etype());
+            // A struct's or a union's words are its layout's.
+            let stored = match self.etype(target) {
+                Some(Etype::Struct | Etype::Union) => {
+                    self.env.layout(target).map_or(1, |layout| layout.words)
+                }
+                stored => stored.map_or(1, Etype::words),
+            };
+            made.map_or(1, Etype::words) > stored
+        })
+    }
+
     /// FTE-6.4: the store of `stored` to the field `lhs` of type `target`, a compound one's
     /// and a postfix's too: its `ADDRESS`, made after the value, and `STOREP_*` of the field's
     /// type through it. FTEF-29.20: on a target with `OP_STOREF_*` it is that one statement, of
@@ -1144,8 +1157,21 @@ impl Checker<'_> {
             && field.element.is_none()
             && field.def.is_some_and(|def| self.env.is_array(def));
         let storef = storef.filter(|&op| valid(op) && !whole_array);
-        // A field an index selected is a value, which has no word after it.
-        if field.selected.is_some() && words > 1 {
+        // A field an index selected is a value, which has no word after it for a second
+        // piece; and the pieces are read from words the body can name: a definition's, a
+        // statement's, a parameter's slots' or a call's value of at most a vector's.
+        let pairs = match storef {
+            Some(_) => valid(Op::StorefI64),
+            None => valid(Op::StorepI64),
+        };
+        let pieces = words > VECTOR_WORDS || (words == 2 && !pairs);
+        let named = stored.parameter.is_some()
+            || match self.name_of(stored) {
+                Some(ir::Name::Def(..) | ir::Name::Made(_) | ir::Name::MadeWord(..)) => true,
+                Some(ir::Name::Return) => words <= VECTOR_WORDS,
+                _ => stored.null(),
+            };
+        if pieces && (field.selected.is_some() || !named) {
             self.followed = false;
         }
         let entity = self.copied(field.entity, field.entity_call);
@@ -1153,10 +1179,6 @@ impl Checker<'_> {
         // FTEF-6.34: three words at a time, then two where the target stores a pair, then one:
         // `for (i = 0; i+2 < sz; i+=3 ...)`, `for (; i+1 < sz; i+=2 ...)`, `for (; i < sz;
         // i++ ...)`.
-        let pairs = match storef {
-            Some(_) => valid(Op::StorefI64),
-            None => valid(Op::StorepI64),
-        };
         let mut at: u32 = 0;
         while at < words {
             let left = words.saturating_sub(at);
@@ -1485,7 +1507,13 @@ impl Checker<'_> {
             let (Some(op), Some(from), Some(pointer), None) = (small, from, pointer, index) else {
                 return false;
             };
-            self.small_store_through(op, layout.bits, [from, pointer], span);
+            let target = self.env.target_at(span.start);
+            if !target.stores_at_offset()
+                || !(target.valid(op) || SmallStore::EMULATION.iter().all(|&op| target.valid(op)))
+            {
+                return false;
+            }
+            self.small_store_through(op, [from, pointer], span);
             self.read_returned(stored);
             self.last_temp = None;
             return true;
@@ -1525,17 +1553,12 @@ impl Checker<'_> {
         true
     }
 
-    /// FTEF-6.35: the statements of [`Checker::small_store`] for `value`'s low `bits` bits through `pointer`
+    /// FTEF-6.35: the statements of [`Checker::small_store`] of `op` for `value` through
+    /// `pointer`
     /// at index 0: the opcode itself where the target has it, else the word read by
     /// `OP_LOADP_I`, the value masked and shifted to its bits, the word's own bits cleared,
     /// the two joined and the word stored back by `OP_STOREP_I` (or else `OP_STOREP_F`).
-    fn small_store_through(
-        &mut self,
-        op: Op,
-        bits: u32,
-        [value, pointer]: [ir::Name; 2],
-        span: Span,
-    ) {
+    fn small_store_through(&mut self, op: Op, [value, pointer]: [ir::Name; 2], span: Span) {
         let target = self.env.target_at(span.start);
         let constant = |kind, word: u32| {
             Some(ir::Name::Immediate(ir::Immediate {
@@ -1553,24 +1576,19 @@ impl Checker<'_> {
             return;
         }
         let uint = |word| constant(ir::ImmediateKind::Uint, word);
-        let mask = 1_u32
-            .checked_shl(bits)
-            .map_or(u32::MAX, |high| high.wrapping_sub(1));
+        let mask = SmallStore::of(op).mask().unsigned_abs();
+        // [`SmallStore::EMULATION`]: the word, the value masked, shifted, the word cleared,
+        // the two joined.
+        let [load, mask_value, shift, clear, join] = SmallStore::EMULATION;
         let word = self
-            .push_made(Op::LoadpI, Some(pointer), uint(0))
+            .push_made(load, Some(pointer), uint(0))
             .map(ir::Name::Made);
         let masked = self
-            .push_made(Op::BitandI, Some(value), uint(mask))
+            .push_made(mask_value, Some(value), uint(mask))
             .map(ir::Name::Made);
-        let shifted = self
-            .push_made(Op::LshiftI, masked, uint(0))
-            .map(ir::Name::Made);
-        let cleared = self
-            .push_made(Op::BitandI, word, uint(!mask))
-            .map(ir::Name::Made);
-        let joined = self
-            .push_made(Op::BitorI, cleared, shifted)
-            .map(ir::Name::Made);
+        let shifted = self.push_made(shift, masked, uint(0)).map(ir::Name::Made);
+        let cleared = self.push_made(clear, word, uint(!mask)).map(ir::Name::Made);
+        let joined = self.push_made(join, cleared, shifted).map(ir::Name::Made);
         let store = if target.valid(Op::StorepI) {
             Op::StorepI
         } else {
@@ -1780,13 +1798,20 @@ impl Checker<'_> {
             element.index.clone()
         };
         if by_operands {
-            self.read_returned(&index);
+            // The value still in the return global is copied out of it before the call
+            // (`QCC_ClobberDef`), and the call reads the copy.
+            let live = stored.returned && self.live_return.is_some();
+            let before = self.next_made();
             self.clobber_return();
+            let value = match live {
+                true if self.next_made() > before => Some(ir::Name::Made(before)),
+                _ => self.name_of(stored),
+            };
             self.generated.push(ir::BodyStatement {
                 op: Op::Call2h,
                 a: setter,
                 b: self.name_of(&index),
-                c: self.name_of(stored),
+                c: value,
             });
             self.last_temp = None;
             return Ok(());

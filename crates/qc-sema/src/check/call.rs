@@ -241,6 +241,14 @@ impl Checker<'_> {
             let mut value = self.read(reference.clone(), arg_span)?;
             let mut continue_after_conversion = false;
             if let Reference::Field(field) = &reference.reference {
+                // A struct's loads are held back as one field's is, each to its slot's word,
+                // which is not followed.
+                if matches!(
+                    self.etype_of(&reference.ty),
+                    Some(Etype::Struct | Etype::Union)
+                ) {
+                    self.followed = false;
+                }
                 let load = self.generated.split_off(mark.min(self.generated.len()));
                 // FTE-18.13: an entity that is a call's value stays referenced until the field is
                 // loaded, so a later call's clobber copies it first.
@@ -591,7 +599,7 @@ impl Checker<'_> {
         if self.global {
             return None;
         }
-        let (wide, slot_of, slots) = self.argument_slots(values, passed);
+        let (wide, slot_of, slots) = self.argument_slots(values, passed, unpassed);
         let slot_at = |at: usize| slot_of.get(at).copied().unwrap_or(at);
         // FTEF-9.26: an argument that names `self` names the kept one.
         let kept = self.keep_self(newself);
@@ -806,13 +814,22 @@ impl Checker<'_> {
     /// FTEF-32.25: for the first `passed` of the arguments `values`, the words of each that
     /// is passed in pieces, the parameter slot each starts at, one for an argument and one
     /// for each three words of one in pieces, and the slots they take together.
+    ///
+    /// FTEF-32.24: an `__out` argument, one of `unpassed`, passes nothing and takes one slot
+    /// whatever its words.
     fn argument_slots(
         &self,
         values: &[Value],
         passed: usize,
+        unpassed: &[bool],
     ) -> (Vec<Option<u32>>, Vec<usize>, usize) {
         let wide: Vec<Option<u32>> = (0..passed)
-            .map(|at| values.get(at).and_then(|value| self.wide_words(&value.ty)))
+            .map(|at| {
+                values
+                    .get(at)
+                    .filter(|_| !unpassed.get(at).copied().unwrap_or(false))
+                    .and_then(|value| self.wide_words(&value.ty))
+            })
             .collect();
         let mut slot_of: Vec<usize> = Vec::with_capacity(passed);
         let mut slots: usize = 0;
@@ -1453,7 +1470,12 @@ impl Checker<'_> {
                 };
                 let default = args.get(1).cloned();
                 let value = self.value(default.clone())?;
-                let cvar = match (value.known(), default.as_ref().and_then(string_immediate)) {
+                let cvar = match (
+                    value.known(),
+                    default
+                        .as_ref()
+                        .and_then(|e| string_immediate(e, self.function_name())),
+                ) {
                     (_, Some(text)) => CvarValue::Text(text),
                     (Some(constant), None) => CvarValue::Number(constant),
                     (None, None) => CvarValue::Unknown,

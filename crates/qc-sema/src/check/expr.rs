@@ -303,7 +303,15 @@ impl<'e> Checker<'e> {
         };
         match literal.kind() {
             Some(ast::LiteralKind::String) => {
-                let written = String::from_utf8_lossy(&literal.syntax().text()).into_owned();
+                // FTEF-14.81: a part that is `__FUNC__` is written as the string it is.
+                let written: String = literal
+                    .syntax()
+                    .child_tokens()
+                    .map(|part| match part.kind() {
+                        qc_syntax::SyntaxKind::Name => format!("\"{}\"", self.function_name()),
+                        _ => part.text_lossless(),
+                    })
+                    .collect();
                 let joined = joined_string(literal.syntax(), self.function_name());
                 self.string_constant(&unquoted(&written), joined)
             }

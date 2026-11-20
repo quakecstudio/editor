@@ -8472,3 +8472,104 @@ fn func_beside_a_string_is_part_of_it() {
     );
     assert_eq!(text(global(&p, "g")), "g:<NO FUNCTION>");
 }
+
+const FIELD_FORMS: &str = "float sf_y;\ntypedef struct { float a; float b; float c; } s3_t;\n\
+    s3_t three; .s3_t f3; st_t sts[2];\nvoid(st_t t) take = #51;\n\
+    void(__out st_t o) give5 = #42;\nvoid(__out st_t o, float f) give5f = #43;\n";
+
+// spec FTEF-6.34: a struct field of one load's words is loaded into the definition it is stored
+// to, a component of a vector member is the field at its word whatever other definition has
+// the component's name, and a struct field as an argument is not written
+#[test]
+fn a_struct_field_of_one_load_folds_into_its_store() {
+    let p = fte_progs(&format!(
+        "{STRUCT_FIELDS}{FIELD_FORMS}void() f = {{ three = e.f3; }};\n\
+         void() g = {{ x = e.sf.c.y; }};\n"
+    ));
+    assert_eq!(names_in(&p, "f"), ["LOADF_V"]);
+    assert_eq!(body(&p, "f")[0].c, global(&p, "three"));
+    assert_eq!(body(&p, "g")[0].b, global(&p, "sf") + 3);
+    let refused = compile_fteqcc(&format!(
+        "{STRUCT_FIELDS}{FIELD_FORMS}void() f = {{ take(e.sf); }};\n"
+    ));
+    assert!(refused.is_err());
+}
+
+// spec FTEF-32.24: an `__out` argument takes one slot whatever its words, so the call counts
+// it once and the argument after it is in the second slot
+#[test]
+fn an_out_struct_takes_one_slot() {
+    let p = fte_progs(&format!(
+        "{STRUCT_FIELDS}{FIELD_FORMS}void() f = {{ give5(self.sf); give5(sts[1]); }};\n\
+         void() g = {{ give5f(one, 3); }};\n"
+    ));
+    let names = names_in(&p, "f");
+    assert_eq!(names.iter().filter(|n| **n == "CALL1").count(), 2);
+    assert!(!names.contains(&"CALL2"));
+    assert_eq!(
+        names_in(&p, "g"),
+        ["STORE_F", "CALL2", "STORE_V", "STORE_F", "STORE_F"]
+    );
+    assert_eq!(body(&p, "g")[0].b, 7);
+}
+
+// spec FTEF-31.19: a vector field an index selected is stored by its one statement
+#[test]
+fn a_selected_vector_field_is_stored_by_one_statement() {
+    let p = fte_progs(
+        "#pragma target fte\nentity self;\nvoid end_sys_globals;\n.float modelindex;\n\
+         void end_sys_fields;\nfloat n; vector v;\n.vector vslots[4];\n\
+         void() f = { self.vslots[n] = v; };\n",
+    );
+    assert_eq!(names_in(&p, "f").last().copied(), Some("STOREF_V"));
+}
+
+// spec FTEF-31.35: a value still in the return global is copied out before the setter's call,
+// which reads the copy, and a member array of a struct, which has no length prefix, is not
+// fetched
+#[test]
+fn hexen2_copies_a_calls_value_before_the_setters_call() {
+    let p = fte_progs(&format!(
+        "#pragma target h2\n{HEXEN2_ARRAYS}float() pick = #53;\nfloat() other = #54;\n\
+         void() f = {{ arr[pick()] = other(); }};\n"
+    ));
+    assert_eq!(
+        names_in(&p, "f"),
+        ["CALL0", "STORE_F", "CALL0", "STORE_F", "CALL2"]
+    );
+    let f = body(&p, "f");
+    assert_eq!((f[4].b, f[4].c), (f[1].b, f[3].b));
+    let member = format!(
+        "#pragma target h2\n{HEXEN2_ARRAYS}typedef struct {{ float a; float m[2]; }} ms_t;\n\
+         ms_t mone;\nvoid() f = {{ x = mone.m[n]; }};\n"
+    );
+    assert!(compile_fteqcc(&member).is_err());
+}
+
+// spec FTEF-14.81: a constant fold reads the joined string, and inside a function a constant's
+// initialiser that joins `__FUNC__` is not written; spec FTEF-6.35: a small store is written
+// only where the target stores at an offset
+#[test]
+fn a_fold_reads_the_string_joined_with_func() {
+    let p = fte_progs(
+        "void end_sys_globals;\nvoid end_sys_fields;\nfloat x; float y;\n\
+         float(string s) strlen = #2;\n\
+         void() plain = { x = strlen(\"pre:\" __FUNC__); y = sizeof(\"ab\" __FUNC__); };\n",
+    );
+    let f = body(&p, "plain");
+    assert_eq!(f[0].a, immediate(&p, 9.0));
+    assert_eq!(f[1].a, immediate(&p, 8.0));
+    assert!(
+        compile_fteqcc(
+            "void(string s) say = #1;\n\
+             void() g = { const string cs = \"C:\" __FUNC__; say(cs); };\n"
+        )
+        .is_err()
+    );
+    assert!(
+        compile_fteqcc(
+            "typedef struct { __int8 a; } s_t;\ns_t g;\nvoid(s_t *p) f = { *p = g; };\n"
+        )
+        .is_err()
+    );
+}

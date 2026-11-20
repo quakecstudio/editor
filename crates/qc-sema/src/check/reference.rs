@@ -121,8 +121,13 @@ impl Checker<'_> {
                     );
                     return self.fatal(Code::E0358, span, message);
                 }
-                // FTEF-6.34: a struct's or a union's is loaded in pieces into a temporary.
-                if matches!(self.etype_of(&value.ty), Some(Etype::Struct | Etype::Union))
+                // FTEF-6.34: a struct's or a union's is loaded in pieces into a temporary; one
+                // that is one piece is the load of its size, as any field's.
+                let structured =
+                    matches!(self.etype_of(&value.ty), Some(Etype::Struct | Etype::Union));
+                let one_load = self.one_field_load(&value.ty, span).filter(|_| structured);
+                if structured
+                    && one_load.is_none()
                     && !self.global
                     && let Reference::Field(field) = &value.reference
                 {
@@ -149,7 +154,7 @@ impl Checker<'_> {
                     Some(Etype::Integer | Etype::Uint) => Op::LoadI,
                     Some(Etype::Pointer) => Op::LoadP,
                     Some(Etype::Int64 | Etype::Uint64 | Etype::Double) => Op::LoadI64,
-                    _ => Op::LoadF,
+                    _ => one_load.unwrap_or(Op::LoadF),
                 };
                 // Emitted, or on a target without it as `QCC_PR_StatementFlags` replaces it:
                 // `OP_LOAD_I` and `OP_LOAD_P` as `OP_LOAD_F`, `OP_LOAD_I64` as two plain
@@ -221,6 +226,18 @@ impl Checker<'_> {
         }
     }
 
+    /// FTEF-6.34: the one load that reads a struct or a union of `ty`'s words from a field:
+    /// `OP_LOAD_V` for three, `OP_LOAD_I64` for two where the target has it, `OP_LOAD_F` for
+    /// one; `None` for one read in more pieces.
+    fn one_field_load(&self, ty: &Type, span: Span) -> Option<Op> {
+        match self.env.layout(ty).map_or(1, |layout| layout.words) {
+            VECTOR_WORDS => Some(Op::LoadV),
+            2 if self.env.target_at(span.start).valid(Op::LoadI64) => Some(Op::LoadI64),
+            1 => Some(Op::LoadF),
+            _ => None,
+        }
+    }
+
     /// FTEF-6.34: `QCC_PR_ExpandField` of a struct or a union: its words loaded from the
     /// entity into a temporary, three at a time by `OP_LOAD_V`, then two by `OP_LOAD_I64` where
     /// the target has it, then one by `OP_LOAD_F`, each from the field's definition at the
@@ -229,8 +246,8 @@ impl Checker<'_> {
         let words = self.env.layout(ty).map_or(0, |layout| layout.words);
         let pairs = self.env.target_at(span.start).valid(Op::LoadI64);
         let entity = self.copied(field.entity, field.entity_call);
-        // A field an index selected is a value, which has no word after it.
-        if field.selected.is_some() && words > 1 {
+        // A field an index selected is a value, which has no word after it for a second load.
+        if field.selected.is_some() && (words > VECTOR_WORDS || (words == 2 && !pairs)) {
             self.followed = false;
         }
         let block = self.next_made();
@@ -492,9 +509,11 @@ impl Checker<'_> {
         // class's member field is a `QCC_PR_DummyDef` with a root symbol, so it has none.
         let length_prefix = !vector
             && element.sym.def().is_some_and(|def| {
-                self.env
-                    .definition(def)
-                    .is_none_or(|d| d.member_of.is_none())
+                self.env.is_array(def)
+                    && self
+                        .env
+                        .definition(def)
+                        .is_none_or(|d| d.member_of.is_none())
             })
             && target.valid(Op::FetchGblF);
         let as_integer = target.valid(Op::LoadaF) || target.valid(Op::GloadF);

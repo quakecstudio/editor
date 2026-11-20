@@ -21,7 +21,7 @@ use qc_sema::{DefId, FileId, FunctionType, Location, SimpleType, Type};
 use qc_syntax::ast::{self, AstNode};
 use qc_types::Etype;
 
-use super::{Abort, At, CScalar, Compiler, Lowered, Value, ValueKind, literal_of, operand_index};
+use super::{Abort, At, CScalar, Compiler, Lowered, Value, ValueKind, operand_index};
 use crate::Internal;
 use crate::ops::{self, Operator};
 use crate::program::{Literal, OFS_PARM0, OFS_RETURN, ValueType, operand, type_words};
@@ -623,7 +623,7 @@ impl Compiler<'_> {
         {
             return Ok(words);
         }
-        Ok(match literal_of(expr, self.dialect) {
+        Ok(match self.literal_of(expr) {
             Some(literal) if literal.ty().etype() == ty.etype() => {
                 self.program.literal_words(&literal).at(span)?
             }

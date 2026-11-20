@@ -639,7 +639,9 @@ inheritance, bitfields and nested members.
   words, and is read and stored by them. A read loads its words into a temporary
   (`QCC_PR_ExpandField`, `case ev_struct: case ev_union:`): three at a time by `OP_LOAD_V`
   (`for (; i+2 < type->size; i+=3 ...)`), then two by `OP_LOAD_I64` where the target has it,
-  then one by `OP_LOAD_F`, each from the field's definition at the word. A member of it is the
+  then one by `OP_LOAD_F`, each from the field's definition at the word; one that is one load
+  is that load, which a store of its value folds into (`three = e.f3` of three floats is
+  `LOAD_V e, f3, three`). A member of it is the
   field at the member's word, read and stored as a field of the member's type: `x = e.sf.b` is
   `LOAD_F e, sf+1`. A store (`QCC_StoreSRefToRef`, `case REF_FIELD:`) is the same pieces: where
   the target has the type's `OP_STOREF_*`, `OP_STOREF_V` for each three words, `OP_STOREF_I64`
@@ -651,7 +653,12 @@ inheritance, bitfields and nested members.
   one` and `STOREF_I64 self, sf+3, one+3`. An out parameter comes back to such a field the
   same way from its slot's words (FTEF-32.24), and to an element at a constant index at the
   element's own words. FTEQCC stores a constant 0 to a pair of such a field's words by
-  `OP_STOREF_V` of the zero vector, three words to two, which is not written. Source:
+  `OP_STOREF_V` of the zero vector, three words to two, which is not written; nor is a store
+  of more pieces than one to a field an index selected, or from a value whose words have no
+  name, a call's of more than a vector's among them; nor such a field as a call's argument,
+  whose loads FTEQCC writes to the words of its slots. An `__out` argument passes nothing and
+  takes one slot of the call whatever its words (FTEF-32.24): `give5(one)` of a struct of 5
+  words is `CALL1`. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ExpandField`, `QCC_StoreSRefToRef`, `QCC_PR_ParseRefArrayPointer`; checked against
   the pinned FTEQCC's output on the standard and an FTE target (2026-11-19).
@@ -666,7 +673,8 @@ inheritance, bitfields and nested members.
   is padded to whole words and is stored as words. On an FTE target `*p = g` of a struct of
   one `__int8` is `STOREP_I8 g, p, 0`, and of two, or of one `__int16`, `LOADP_I p, 0`,
   `BITAND_I g, 65535`, `LSHIFT_I t, 0`, `BITAND_I word, ~65535`, `BITOR_I` and `STOREP_I`.
-  With an index, and for a struct of 24 bits, the store is not written. Source:
+  With an index, for a struct of 24 bits, and on a target whose stores take no offset or that
+  has neither the opcode nor those of its emulation, the store is not written. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_StoreToPointer`, `QCC_PR_Statement_SmallStore`; checked against the pinned FTEQCC's
   output on an FTE target (2026-11-19).
@@ -2692,7 +2700,9 @@ profile the preprocessor reads them as FTEQCC does.
   string adjacent strings make (FTEF-16.8), on either side: in a function `fname`, `"pre:"
   __FUNC__` is `"pre:fname"`, `__FUNC__ ":post"` is `"fname:post"`, `"a" __func__ "b"` is
   `"afnameb"` and `__FUNC__ __FUNC__` is `"fnamefname"`; outside every function `"g:"
-  __FUNC__` is `"g:<NO FUNCTION>"`. Source:
+  __FUNC__` is `"g:<NO FUNCTION>"`. A constant fold reads the joined string: `strlen("pre:"
+  __FUNC__)` in `plain` is 9. Inside a function, the initialiser of a constant that joins
+  `__FUNC__` is not written. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
   `QCC_PR_CheckBuiltinCompConst`, `QCC_PR_LexString`; checked against the strings of the
   pinned FTEQCC's output (2026-11-19).
@@ -6143,7 +6153,11 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   `CALL2H ArraySet*arr, n, 3` with no store to a parameter, and the bounds error inside a
   getter or setter is `CALL1H error, message`. With no `error` defined that call's function is
   an integer constant of every bit set (`errfnc = QCC_MakeIntConst(~0); errfnc.cast =
-  type_function;`), on every target. Source:
+  type_function;`), on every target. A value still in the return global when the setter is
+  called is copied out of it first, and the call reads the copy: `arr[pick()] = other()` is
+  `CALL0 pick`, `STORE_F`, `CALL0 other`, `STORE_F` and `CALL2H`. A member array of a struct
+  has no length prefix and is read by the struct's getter, which is not written on this
+  target. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_LoadFromArray`, `QCC_StoreToArray`, `QCC_PR_EmitArrayGetFunction`,
   `QCC_PR_EmitArraySetFunction`; checked against the pinned FTEQCC's output with `-Th2`

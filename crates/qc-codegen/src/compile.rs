@@ -485,7 +485,7 @@ impl<'a> Compiler<'a> {
                         // FTEF-32.22: the string itself, and a `dotranslate_N` record of it.
                         self.program.initialise(place, &literal).at(span)?;
                         self.program.alias_translation(place).at(span)?;
-                    } else if let Some(literal) = literal_of(&expr, self.dialect) {
+                    } else if let Some(literal) = self.literal_of(&expr) {
                         self.program.initialise(place, &literal).at(span)?;
                         // FTE-15.9: the literal's `IMMEDIATE` record follows the constant's.
                         if self.dialect.has_fteqcc_extensions() && self.constant(place) {
@@ -553,7 +553,7 @@ impl<'a> Compiler<'a> {
                 if !matches!(expr, ast::Expr::Literal(_)) {
                     continue;
                 }
-                if let Some(literal) = literal_of(&expr, self.dialect) {
+                if let Some(literal) = self.literal_of(&expr) {
                     self.program.immediate(&literal).at(expr.syntax().span())?;
                 }
             }
@@ -1018,7 +1018,8 @@ impl<'a> Compiler<'a> {
         let (Some(only), None) = (args.next(), args.next()) else {
             return None;
         };
-        literal_of(&only, self.dialect).filter(|literal| matches!(literal, Literal::String(_)))
+        self.literal_of(&only)
+            .filter(|literal| matches!(literal, Literal::String(_)))
     }
 
     /// The sizes a function's record gives its parameters and the slots they take:
@@ -1080,7 +1081,7 @@ impl<'a> Compiler<'a> {
     /// the C scalar type `ty`, a global's or an aggregate's item's; `None` for any other type
     /// or expression.
     pub(super) fn scalar_literal_of(&self, ty: &Type, expr: &ast::Expr) -> Option<Vec<u32>> {
-        let Some(Literal::Float(value)) = literal_of(expr, self.dialect) else {
+        let Some(Literal::Float(value)) = self.literal_of(expr) else {
             return None;
         };
         let text = match expr {
@@ -1141,6 +1142,18 @@ impl<'a> Compiler<'a> {
     /// which no store folds into (FTEF-30.3).
     fn is_joined(&self, value: &Value) -> bool {
         self.joined.get(&value.ofs) == Some(&self.program.statements.len().saturating_sub(1))
+    }
+
+    /// The literal `expr` is ([`literal_of`]). FTEF-14.81: inside a function a string with a
+    /// part that is `__FUNC__` is the semantic model's to read, which knows the function: it
+    /// is no literal here.
+    pub(super) fn literal_of(&self, expr: &ast::Expr) -> Option<Literal> {
+        let names_function = matches!(expr, ast::Expr::Literal(literal)
+            if literal.syntax().child_tokens().any(|part| part.kind() == SyntaxKind::Name));
+        if self.scope.is_some() && names_function {
+            return None;
+        }
+        literal_of(expr, self.dialect)
     }
 
     fn def_value(&self, place: usize, span: Span) -> Lowered<Value> {
@@ -1326,7 +1339,8 @@ fn literal_of_token(literal: &ast::Literal, dialect: Dialect) -> Option<Literal>
             if part.kind().is_trivia() {
                 continue;
             }
-            // FTEF-14.81: a part that is `__FUNC__`, outside every function.
+            // FTEF-14.81: a part that is `__FUNC__`, outside every function
+            // ([`Compiler::literal_of`]).
             if part.kind() == SyntaxKind::Name {
                 joined.extend_from_slice(qc_sema::NO_FUNCTION.as_bytes());
                 continue;
