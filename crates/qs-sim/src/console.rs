@@ -25,6 +25,7 @@ use crate::host_commands::{COLOR_MASK, COLOR_ROW, MAX_COLOR, Words, atoi, tokeni
 use crate::input::Button;
 use crate::offsets::FieldOffset;
 use crate::physics::MoveType;
+use crate::protocol::ProtocolVersion;
 use crate::settings::{CLIENT_SETTINGS, SERVER_SETTINGS};
 use crate::world::{ClientCommand, HostCommand, RawState as _, World};
 
@@ -41,7 +42,7 @@ const FORWARDED: [&str; 11] = [
 
 /// Every command [`World::execute_console`] runs, its own and the forwarded ones, in name
 /// order, for completion (CON-4.3).
-const COMMANDS: [&str; 37] = [
+const COMMANDS: [&str; 38] = [
     "alias",
     "begin",
     "changelevel",
@@ -76,6 +77,7 @@ const COMMANDS: [&str; 37] = [
     "spawn",
     "status",
     "stuffcmds",
+    "sv_protocol",
     "tell",
     "version",
     "wait",
@@ -364,10 +366,37 @@ impl World {
             "edictcount" => self.edict_count(),
             "profile" => self.profile(progs),
             "path" => self.path(),
+            "sv_protocol" => self.sv_protocol(&words),
             forwarded if FORWARDED.contains(&forwarded) => self.forward(&words, Forward::Named),
             _ => self.alias_or_setting(&words, &first),
         }
         Flow::Next
+    }
+
+    /// QuakeSpasm's `SV_Protocol_f` (NET-6.11): with no argument the protocol; with one, its
+    /// `atoi` when it is 15, 666 or 999, the next map's protocol, else the three it may be.
+    fn sv_protocol(&mut self, words: &Words) {
+        match words.argv.as_slice() {
+            [_] => self.print(format!(
+                "\"sv_protocol\" is \"{}\"\n",
+                self.protocol.number()
+            )),
+            [_, value] => match ProtocolVersion::from_number(atoi(value)) {
+                None => self.print(format!(
+                    "sv_protocol must be {} or {} or {}\n",
+                    ProtocolVersion::NetQuake.number(),
+                    ProtocolVersion::FitzQuake.number(),
+                    ProtocolVersion::Rmq.number()
+                )),
+                Some(version) => {
+                    self.protocol = version;
+                    if self.builtins.mock.engine().server_active {
+                        self.print("changes will not take effect until the next level load.\n");
+                    }
+                }
+            },
+            _ => self.print("usage: sv_protocol <protocol>\n"),
+        }
     }
 
     /// `Cmd_Echo_f`: each argument and a space, then a line feed.

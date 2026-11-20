@@ -65,7 +65,7 @@ fn bindings_run_by_the_key_destination() {
     assert!(menu_bound(K_ESCAPE) && !menu_bound(K_F1 + 12));
 }
 
-// spec INPUT-3.6: the host runs exec quake.rc, as Host_Init does
+// spec INPUT-3.7: the windowed host's startup text is exec quake.rc, as Host_Init's
 #[test]
 fn the_host_starts_with_quake_rc() {
     assert_eq!(STARTUP, b"exec quake.rc");

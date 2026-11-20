@@ -27,7 +27,7 @@ use crate::Error;
 use crate::args::{Args, Show};
 use crate::audio::{Audio, CdImage, Device};
 use crate::game::{Game, HeldSpawn, HostAction, NextLevel, Reporting};
-use crate::keys::{config_path, host_files};
+use crate::keys::{STARTUP, config_path, host_files};
 use crate::map_bsp::MapBsp;
 
 /// `rand ()`'s linear congruential step, `next = next * 1103515245 + 12345`.
@@ -366,6 +366,23 @@ pub(crate) enum Acted {
     Stay,
 }
 
+/// What a map load's host starts from.
+pub(crate) enum Start {
+    /// A new host, with or without its startup configuration (INPUT-3.7).
+    New(Startup),
+    /// The last level's host, kept (MOVE-6.3, PHYS-12.3).
+    Kept(HostState),
+}
+
+/// Whether a new host runs `quake.rc` before its first map's settings are read (INPUT-3.7).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Startup {
+    /// `exec quake.rc`, as QuakeSpasm's `Host_Init` runs it: the windowed host's.
+    QuakeRc,
+    /// Nothing: a headless run starts from the defaults, as a scenario needs.
+    Bare,
+}
+
 impl Args {
     /// Carries out `action` (PHYS-13.6): a level loaded, the game saved or loaded as
     /// `Host_Savegame_f` and `Host_Loadgame_f` do, or the host stopped.
@@ -405,7 +422,7 @@ impl Args {
                     }
                 };
                 let host = game.world().host_state();
-                match self.load_map(&save.map, None, Some(host), Some(&save), None) {
+                match self.load_map(&save.map, None, Start::Kept(host), Some(&save), None) {
                     Ok(loaded) => Acted::Load(Box::new(loaded)),
                     Err(error) => {
                         game.console_line(&format!("{error}\n"));
@@ -420,7 +437,13 @@ impl Args {
     /// Loads `next`, its spawning watched by `watched`'s breakpoints when given (WORLD-9.7);
     /// stays on this level when it does not load.
     fn next_level(&self, next: NextLevel, watched: Option<Watched>) -> Acted {
-        match self.load_map(&next.map, next.carried, Some(next.host), None, watched) {
+        match self.load_map(
+            &next.map,
+            next.carried,
+            Start::Kept(next.host),
+            None,
+            watched,
+        ) {
             Ok(loaded) => Acted::Load(Box::new(loaded)),
             Err(error) => {
                 tracing::warn!(%error, map = next.map, "the next level did not load");
@@ -446,7 +469,7 @@ impl Args {
         &self,
         map: &str,
         carried: Option<SpawnParms>,
-        host: Option<HostState>,
+        host: Start,
         save: Option<&SaveGame>,
         watched: Option<Watched>,
     ) -> Result<Loaded, Error> {
@@ -516,7 +539,11 @@ impl Args {
         // RRE-1.6, RRE-1.10: the rerelease's strings, read before the map as QuakeSpasm's
         // `LOC_Init` reads them, from the search path, the base directory or `QuakeEX.kpf`.
         let text = localization(&vfs, self)?;
-        let settings = self.launch_settings(host.as_ref());
+        let (host, startup) = match host {
+            Start::New(Startup::QuakeRc) => (None, STARTUP.to_vec()),
+            Start::New(Startup::Bare) => (None, Vec::new()),
+            Start::Kept(host) => (Some(host), Vec::new()),
+        };
         let options = LoadOptions {
             localization: text.map_or_default(|text| Localization::loc_load_file(&text)),
             builtins,
@@ -535,9 +562,10 @@ impl Args {
                 })
                 .collect(),
             seed: None,
-            // NET-6.10: QuakeSpasm's `-protocol` sets `sv_protocol` once, when the host starts;
-            // a later level keeps what the console made it.
-            settings,
+            settings: Vec::new(),
+            // NET-6.11: QuakeSpasm's `-protocol`, which a later level's kept host overrides.
+            protocol: self.protocol.version(),
+            startup,
         };
         let mut world = World::prepare(&progs, &map, &bsp, files()?, options)
             .map_err(|e| Error::Load(e.to_string()))?;

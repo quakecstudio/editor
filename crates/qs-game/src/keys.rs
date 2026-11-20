@@ -270,8 +270,8 @@ pub(crate) fn configuration(bindings: &str, settings: &str, mlook: MouseLook) ->
 /// The host's configuration's file name in its config directory (INPUT-4.4).
 pub(crate) const CONFIG_FILE: &str = "quakec-engine.cfg";
 
-/// `Host_Init`'s "`Cbuf_InsertText ("exec quake.rc\n");`", the line the host runs once
-/// before its first frame (INPUT-3.3).
+/// `Host_Init`'s "`Cbuf_InsertText ("exec quake.rc\n");`", the line the windowed host runs
+/// once, before its first map's settings are read (INPUT-3.7).
 pub(crate) const STARTUP: &[u8] = b"exec quake.rc";
 
 /// The mouse's `motion` for the move with the keys going to `dest`: QuakeSpasm's

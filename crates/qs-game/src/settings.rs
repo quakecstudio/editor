@@ -22,11 +22,11 @@ pub(crate) struct HostSettings {
     pub(crate) volume: f32,
     /// The CD music's volume, `bgmvolume` (SND-6.2).
     pub(crate) music: f32,
-    /// The later engines' drawing settings (CON-7.5).
+    /// The later engines' drawing settings (CON-7.6).
     pub(crate) drawing: DrawingSettings,
 }
 
-/// The later engines' drawing settings as the host reads them each frame (CON-7.5): Ironwail's
+/// The later engines' drawing settings as the host reads them each frame (CON-7.6): Ironwail's
 /// `r_lerplightstyles` (REND-5.8) and `gl_zfix` (REND-1.16), and `r_litwater` (REND-2.7).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct DrawingSettings {
@@ -36,7 +36,7 @@ pub(crate) struct DrawingSettings {
 }
 
 impl DrawingSettings {
-    /// The settings `setting` gives by name, one it lacks 0 (CON-7.5).
+    /// The settings `setting` gives by name, one it lacks 0 (CON-7.6).
     pub(crate) fn read(setting: impl Fn(&str) -> Option<f32>) -> Self {
         let setting = |name: &str| setting(name).unwrap_or(0.0);
         Self {

@@ -20,7 +20,7 @@ use qc_edict::EdictNumber;
 use qc_edict::system::{field_by_name, global_by_name};
 use qc_progs::Progs;
 use qc_types::{DefType, Etype, Slot};
-use qc_vm::convert::{double_to_float, float_to_int};
+use qc_vm::convert::double_to_float;
 use qc_vm::{Machine, NoObserver, Observer, RunError, ServerState};
 use qs_bsp::Bsp;
 use qs_vfs::Registration;
@@ -169,6 +169,9 @@ pub struct World {
     /// The map's entities waiting to spawn, from [`World::prepare`] until
     /// [`World::spawn_map`] (WORLD-9.7).
     pending_spawn: Option<PendingSpawn>,
+    /// QuakeSpasm's `sv_protocol`, which the console's `sv_protocol` sets and the next map
+    /// is written in (NET-6.11).
+    pub(crate) protocol: ProtocolVersion,
 }
 
 /// What the host gives a world besides its map and progs.
@@ -198,6 +201,12 @@ pub struct LoadOptions {
     /// Settings given before the map loads, each a name and a value, such as `skill` and
     /// `deathmatch`, which choose the entities the load keeps (DIFF-3.2, EDICT-8.4).
     pub settings: Vec<(String, String)>,
+    /// The protocol a new host starts with, QuakeSpasm's `-protocol` (NET-6.11); a level
+    /// carrying the last one's host state keeps that one's `sv_protocol`.
+    pub protocol: ProtocolVersion,
+    /// Console text a new host runs before the map's settings are read, as QuakeSpasm's
+    /// `Host_Init` runs `exec quake.rc` before the first map (INPUT-3.7); empty for none.
+    pub startup: Vec<u8>,
 }
 
 /// What lives in id's engine for the whole process, not one level: the C library's random
@@ -210,6 +219,8 @@ pub struct HostState {
     /// The console's text not yet run and its aliases (PHYS-13.6).
     buffer: Vec<u8>,
     aliases: Vec<(String, String)>,
+    /// `sv_protocol` (NET-6.11).
+    protocol: ProtocolVersion,
 }
 
 /// The stages of a client's entry, `CL_SignonReply`'s answers and the server's commands for
@@ -365,6 +376,11 @@ impl World {
         let seed = options.seed.unwrap_or(RANDOM_SEED);
         let mut engine = MockEngine::new(map, submodels, seed);
         let aliases = options.host.as_ref().map_or_default(|h| h.aliases.clone());
+        // NET-6.11: `-protocol` when the host starts; a later level keeps the console's.
+        let protocol = options
+            .host
+            .as_ref()
+            .map_or(options.protocol, |h| h.protocol);
         match options.host {
             // MOVE-6.3, PHYS-12.3: the last level's random state and settings go on.
             Some(host) => {
@@ -388,23 +404,6 @@ impl World {
         engine
             .cvars
             .create("registered", options.registration.cvar());
-        for (name, value) in &options.settings {
-            engine.cvars.create(name, value);
-            engine.cvars.set(name, value);
-        }
-        // DIFF-3.2: deathmatch is 0 under coop; the skill is `(int)(skill + 0.5)` clamped.
-        let setting = |name: &str| engine.cvars.value(name).unwrap_or(0.0);
-        let coop = setting("coop");
-        let deathmatch = if coop == 0.0 {
-            setting("deathmatch")
-        } else {
-            0.0
-        };
-        let skill = spawn::clamp_skill(setting("skill"));
-        engine.cvars.set("skill", &skill.to_string());
-        if coop != 0.0 {
-            engine.cvars.set("deathmatch", "0");
-        }
         let mut world = Self {
             machine,
             builtins: SimBuiltins::new(
@@ -430,20 +429,37 @@ impl World {
             map: map.to_owned(),
             map_entities: map_entities::MapEntities::default(),
             pending_spawn: None,
+            protocol,
         };
-        // NET-6.10: the protocol is `sv_protocol`'s as the map loads.
-        let version = world
-            .setting("sv_protocol")
-            .map(float_to_int)
-            .and_then(ProtocolVersion::from_number);
-        if version.is_none() {
-            world
-                .console_out
-                .extend_from_slice(b"sv_protocol must be 15 or 666 or 999\n");
+        // INPUT-3.7: the startup text goes before the buffer's rest and runs before the map's
+        // settings are read, as `Host_Init`'s `Cbuf_InsertText ("exec quake.rc\n")` does.
+        if !options.startup.is_empty() {
+            let engine = world.builtins.mock.engine_mut();
+            let rest = core::mem::replace(&mut engine.command_buffer, options.startup);
+            engine.command_buffer.push(b'\n');
+            engine.command_buffer.extend_from_slice(&rest);
+            world.execute_console(progs);
         }
-        let protocol = version.map_or(Protocol::FITZQUAKE, |version| {
-            Protocol::new(version, Protocol::RMQ.flags())
-        });
+        let engine = world.builtins.mock.engine_mut();
+        for (name, value) in &options.settings {
+            engine.cvars.create(name, value);
+            engine.cvars.set(name, value);
+        }
+        // DIFF-3.2: deathmatch is 0 under coop; the skill is `(int)(skill + 0.5)` clamped.
+        let setting = |name: &str| engine.cvars.value(name).unwrap_or(0.0);
+        let coop = setting("coop");
+        let deathmatch = if coop == 0.0 {
+            setting("deathmatch")
+        } else {
+            0.0
+        };
+        let skill = spawn::clamp_skill(setting("skill"));
+        engine.cvars.set("skill", &skill.to_string());
+        if coop != 0.0 {
+            engine.cvars.set("deathmatch", "0");
+        }
+        // NET-6.11: `SV_SpawnServer`'s `sv.protocol = sv_protocol;`.
+        let protocol = Protocol::new(world.protocol, Protocol::RMQ.flags());
         world.builtins.messages.set_protocol(protocol);
         let entities = bsp.entities();
         // EDICT-4.1: the world's fields.
@@ -642,6 +658,7 @@ impl World {
             cvars: engine.cvars.clone(),
             buffer: engine.command_buffer.clone(),
             aliases: self.aliases.clone(),
+            protocol: self.protocol,
         }
     }
 
