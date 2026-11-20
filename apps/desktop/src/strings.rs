@@ -66,6 +66,32 @@ pub enum Text {
     AgentScreenshot,
     /// A thread's line for an image given as context.
     AgentImage,
+    /// The agent panel's button that adds Claude Code as an external agent (P4-14).
+    AgentUseClaude,
+    /// Claude Code's name among the external agents.
+    AgentClaudeCode,
+    /// Under Use Claude Code: what it needs.
+    AgentClaudeNeeds,
+    /// Between Use Claude Code and the provider form.
+    AgentOrProvider,
+    /// An external agent's thread: stops its turn.
+    AgentStop,
+    /// An external agent's thread before its session is ready.
+    AgentStarting,
+    /// An external agent's thread whose turn was stopped.
+    AgentStopped,
+    /// An external agent's thread that ended at a limit.
+    AgentHitLimit,
+    /// An external agent's thread the agent declined to go on with.
+    AgentRefused,
+    /// An external agent's thread whose program ended.
+    AgentExited,
+    /// Before the protocol version an external agent speaks that this app does not.
+    AgentVersion,
+    /// Told to an external agent that asks to write a file outside the project.
+    AgentOutside,
+    /// Told to an external agent when a file's text could not be read.
+    AgentUnread,
     /// The bottom panel's Git tab (P4-35).
     Git,
     /// The Git tab's label before the branch.
@@ -1073,7 +1099,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 528] = [
+    pub const ALL: [Self; 541] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1265,6 +1291,19 @@ impl Text {
         Self::AgentQueueHint,
         Self::AgentScreenshot,
         Self::AgentImage,
+        Self::AgentUseClaude,
+        Self::AgentClaudeCode,
+        Self::AgentClaudeNeeds,
+        Self::AgentOrProvider,
+        Self::AgentStop,
+        Self::AgentStarting,
+        Self::AgentStopped,
+        Self::AgentHitLimit,
+        Self::AgentRefused,
+        Self::AgentExited,
+        Self::AgentVersion,
+        Self::AgentOutside,
+        Self::AgentUnread,
         Self::Git,
         Self::Branch,
         Self::NewBranchName,
@@ -1819,6 +1858,21 @@ impl Text {
             Self::AgentQueueHint => "A message for its next turn",
             Self::AgentScreenshot => "Attach screenshot",
             Self::AgentImage => "An image, given as context",
+            Self::AgentUseClaude => "Use Claude Code",
+            Self::AgentClaudeCode => "Claude Code",
+            Self::AgentClaudeNeeds => "Needs Node 22 or later and the claude command, signed in.",
+            Self::AgentOrProvider => "Or use a model provider:",
+            Self::AgentStop => "Stop",
+            Self::AgentStarting => "Starting the agent\u{2026}",
+            Self::AgentStopped => "Stopped",
+            Self::AgentHitLimit => "The agent reached its limit for one turn.",
+            Self::AgentRefused => "The agent declined to go on.",
+            Self::AgentExited => "The agent's program ended.",
+            Self::AgentVersion => {
+                "The agent speaks a version of the Agent Client Protocol this app does not:"
+            }
+            Self::AgentOutside => "The file is outside the project.",
+            Self::AgentUnread => "The file's text could not be read.",
             Self::Git => "Git",
             Self::Branch => "Branch",
             Self::NewBranchName => "New branch name",

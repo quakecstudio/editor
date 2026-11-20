@@ -61,6 +61,37 @@ impl AgentFeature {
         self.start_thread(session, &root, &task, settings_file, ctx)
     }
 
+    /// Reads the external agents from the user's settings in `settings_file` (`agent.external`,
+    /// P4-14), for the panel to offer.
+    pub(crate) fn load_external(&mut self, settings_file: &Path) {
+        let agents = SettingsStore::open(settings_file.to_path_buf(), None)
+            .map_err(|error| tracing::warn!(%error, "the external agents were not read"))
+            .ok()
+            .and_then(|store| serde_json::from_value(store.value(Setting::AgentExternal).0).ok())
+            .unwrap_or_default();
+        self.panel.set_external_agents(agents);
+    }
+
+    /// Adds Claude Code to the external agents, kept in the user's settings when there is a
+    /// file for them, and has new threads run on it.
+    fn use_claude_code(&mut self, settings_file: Option<&Path>) {
+        let claude = super::external::claude_code();
+        let mut agents = self.panel.external_agents().to_vec();
+        if !agents.iter().any(|agent| agent.name == claude.name) {
+            agents.push(claude);
+        }
+        if let Some(file) = settings_file {
+            let value = serde_json::to_value(&agents).ok();
+            let kept = SettingsStore::open(file.to_path_buf(), None).and_then(|mut store| {
+                store.put(SettingsScope::User, Setting::AgentExternal, value)
+            });
+            if let Err(error) = kept {
+                tracing::warn!(%error, "the external agents were not kept");
+            }
+        }
+        self.panel.set_external_agents(agents);
+    }
+
     /// Starts a thread about `entity`, its state attached (Ask about this, UI-9); why it could
     /// not. Its field values are attached as they are, never read as mentions.
     ///
@@ -88,10 +119,18 @@ impl AgentFeature {
         settings_file: Option<&Path>,
         ctx: &egui::Context,
     ) -> Result<(), String> {
+        let ctx = ctx.clone();
+        // An external agent decides its own calls and asks through the panel; the IDE's tools
+        // reach it over MCP.
+        if self.panel.external_agent().is_some() {
+            let servers = super::external::ide_tools(root);
+            return self
+                .panel
+                .start_external(root, task, servers, move || ctx.request_repaint());
+        }
         if let Some(permissions) = AgentSettings::of(settings_file, root).permissions() {
             self.panel.set_permissions(permissions);
         }
-        let ctx = ctx.clone();
         self.panel
             .start(session, root, task, move || ctx.request_repaint())
     }
@@ -153,6 +192,7 @@ impl AgentFeature {
                 self.panel.set_error(started.err());
             }
             AgentAction::SaveSetup => self.panel.save_setup_to_keychain(),
+            AgentAction::UseClaudeCode => self.use_claude_code(settings_file),
             AgentAction::Accept(hunks) => {
                 let _accepted: Option<serde_json::Value> =
                     commands.run(ACCEPT_HUNKS, &HunksParams { hunks });

@@ -89,26 +89,45 @@ impl Agent {
 
     /// What the agent's lines since the last call mean, in order; [`Event::Exited`] comes
     /// last, once, when its output has closed. A line that is not a message is logged and
-    /// passed over.
+    /// passed over. It never waits.
     pub fn poll(&mut self) -> Vec<Event> {
         let mut events = Vec::new();
-        let Some(lines) = &self.lines else {
-            return events;
-        };
-        loop {
+        while let Some(lines) = &self.lines {
             match lines.try_recv() {
-                Ok(line) => match self.client.handle(&line) {
-                    Ok(more) => events.extend(more),
-                    Err(error) => tracing::warn!(%error, "agent line not read"),
-                },
-                Err(TryRecvError::Empty) => return events,
-                Err(TryRecvError::Disconnected) => {
-                    self.lines = None;
-                    events.push(Event::Exited);
-                    return events;
-                }
+                Ok(line) => self.read(&line, &mut events),
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => self.exited(&mut events),
             }
         }
+        events
+    }
+
+    /// As [`Self::poll`], after waiting for the agent's next line or its end; nothing once
+    /// it has ended.
+    pub fn wait(&mut self) -> Vec<Event> {
+        let mut events = Vec::new();
+        if let Some(lines) = &self.lines {
+            match lines.recv() {
+                Ok(line) => self.read(&line, &mut events),
+                Err(_closed) => self.exited(&mut events),
+            }
+        }
+        events.extend(self.poll());
+        events
+    }
+
+    /// Adds what `line` means to `events`.
+    fn read(&mut self, line: &str, events: &mut Vec<Event>) {
+        match self.client.handle(line) {
+            Ok(more) => events.extend(more),
+            Err(error) => tracing::warn!(%error, "agent line not read"),
+        }
+    }
+
+    /// The agent's output has closed: no more lines are read.
+    fn exited(&mut self, events: &mut Vec<Event>) {
+        self.lines = None;
+        events.push(Event::Exited);
     }
 }
 

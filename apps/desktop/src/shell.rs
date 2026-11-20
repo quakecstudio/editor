@@ -525,6 +525,7 @@ impl Shell {
             Some(qs_settings::KeyMode::Standard) | None => KeyMode::Standard,
         };
         let saved = settings.and_then(|settings| settings.game.folder);
+        self.features.agent.load_external(&file);
         self.settings_file = Some(file);
         if let Some(path) = saved {
             let chosen: Option<GameFiles> = self.run(CHOOSE_GAME, &ChooseGameParams { path });
@@ -670,6 +671,17 @@ impl Shell {
     #[cfg(test)]
     pub(crate) fn wait_agent(&mut self, index: ThreadIndex) -> bool {
         self.features.agent.panel.wait(&mut self.session, index)
+    }
+
+    /// Waits for external agent thread `index` to say something and takes it. For tests.
+    #[cfg(test)]
+    pub(crate) fn wait_external_agent(&mut self, index: usize) -> bool {
+        let session = &mut self.session;
+        self.features
+            .agent
+            .panel
+            .external_thread(index)
+            .is_some_and(|thread| thread.wait(session))
     }
 
     /// Does what the agent panel asked for.
