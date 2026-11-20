@@ -593,6 +593,27 @@ impl Client {
         )
     }
 
+    /// `player/spawn_at` with `room` `find` (BRIDGE-4.19): the player put at the nearest
+    /// height to `origin` where its box is free; where that is.
+    ///
+    /// # Errors
+    ///
+    /// The request's [`ClientError`]: [`ErrorCode::InvalidParams`] when no height is free.
+    pub fn place_player_near(
+        &mut self,
+        origin: [f32; 3],
+        angles: [f32; 3],
+    ) -> Result<[f32; 3], ClientError> {
+        let placed = self.request(
+            "player/spawn_at",
+            json!({ "origin": origin, "angles": angles, "room": "find" }),
+        )?;
+        Ok(placed
+            .get("origin")
+            .and_then(|at| serde_json::from_value(at.clone()).ok())
+            .unwrap_or(origin))
+    }
+
     /// `reload` (BRIDGE-4.9), of the progs at `path`, or the running one's again.
     ///
     /// # Errors

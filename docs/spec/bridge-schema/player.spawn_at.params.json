@@ -9,6 +9,13 @@
     },
     "angles": {
       "$ref": "https://quakecstudio.com/spec/bridge-schema/value.json#/$defs/vector"
+    },
+    "room": {
+      "enum": [
+        "exact",
+        "find"
+      ],
+      "description": "exact, or none: at the origin; find: the nearest free height (BRIDGE-4.19)"
     }
   },
   "required": [

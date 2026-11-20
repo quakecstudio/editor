@@ -6,9 +6,11 @@
 //! `qs-map`'s brush operations, which give only valid brushes; an edit that would not is
 //! refused and changes nothing.
 
+use std::collections::BTreeMap;
+
 use qs_commands::{Command, Outcome};
 use qs_map::geometry::plane as plane_of;
-use qs_map::{Alignment, Brush, BrushError, Entity, Item, Surface, TexDef, TextureLock};
+use qs_map::{Alignment, Brush, BrushError, Entity, Item, MapFile, Surface, TexDef, TextureLock};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -24,42 +26,44 @@ pub struct BrushesEdited {
     /// How many brushes the entity has now.
     pub total: usize,
     /// The brushes the tool made or changed, by their places among the entity's brushes
-    /// now, in order; none when it only removed brushes. A brush the tool left as it was
-    /// may have a new place: the places are the entity's brushes counted from 0.
+    /// now, in order. None when it only removed brushes, or left every brush as it was: a
+    /// move that the grid snaps to nothing, or a texture a brush already has. A tool that
+    /// changes how many brushes the entity has moves the places of those after the brush
+    /// it worked on, so places answered before it are stale for them.
     pub brushes: Vec<BrushIndex>,
 }
 
+/// What tells most brushes apart without comparing them whole: how many faces a brush has
+/// and its first face's points, as their bits.
+type BrushKey = (usize, Option<[[u64; 3]; 3]>);
+
 impl BrushesEdited {
+    /// The key of `brush`.
+    fn key(brush: &Brush) -> BrushKey {
+        let first = brush
+            .faces
+            .first()
+            .map(|face| face.points().map(|point| point.map(f64::to_bits)));
+        (brush.faces.len(), first)
+    }
+
     /// What is left of `entity` whose brushes were `before` and are `after`: the brushes of
-    /// `after` that are not brushes of `before`. The brushes a tool leaves alone keep their
-    /// order, so those the two lists start and end with alike are passed over, and each
-    /// brush between them is new unless one equal to it was there before.
-    fn of(entity: EntityIndex, before: &[Brush], after: &[&Brush]) -> Self {
-        let head = before
-            .iter()
-            .zip(after)
-            .take_while(|(was, is)| was == *is)
-            .count();
-        let tail = before
-            .iter()
-            .rev()
-            .zip(after.iter().rev())
-            .take(before.len().min(after.len()).saturating_sub(head))
-            .take_while(|(was, is)| was == *is)
-            .count();
-        let mut old: Vec<&Brush> = before
-            .iter()
-            .skip(head)
-            .take(before.len().saturating_sub(head).saturating_sub(tail))
-            .collect();
+    /// `after` that are not brushes of `before`, each brush of `before` standing for one of
+    /// `after` at most. The brushes are found by their keys, so the work grows with their
+    /// number, not its square.
+    fn of(entity: EntityIndex, before: &[&Brush], after: &[&Brush]) -> Self {
+        let mut old: BTreeMap<BrushKey, Vec<&Brush>> = BTreeMap::new();
+        for brush in before {
+            old.entry(Self::key(brush)).or_default().push(brush);
+        }
         let mut brushes = Vec::new();
-        let between = after.len().saturating_sub(head).saturating_sub(tail);
-        for (place, brush) in after.iter().enumerate().skip(head).take(between) {
-            match old.iter().position(|was| was == brush) {
-                Some(found) => {
-                    old.swap_remove(found);
-                }
-                None => brushes.push(BrushIndex::new(place)),
+        for (place, brush) in after.iter().enumerate() {
+            let same = old.get_mut(&Self::key(brush)).and_then(|alike| {
+                let found = alike.iter().position(|was| was == brush)?;
+                Some(alike.swap_remove(found))
+            });
+            if same.is_none() {
+                brushes.push(BrushIndex::new(place));
             }
         }
         Self {
@@ -70,28 +74,28 @@ impl BrushesEdited {
     }
 }
 
+/// The brushes of `entity` in `file`; none for an entity that is not there.
+fn brushes_of(file: &MapFile, entity: EntityIndex) -> Vec<&Brush> {
+    file.entities
+        .get(entity.get())
+        .map_or_default(|found| found.brushes().collect())
+}
+
 /// Runs a brush tool's `edit` on the open map of `context`, as [`edit_map`] does, and answers
-/// what it left of `entity`'s brushes ([`BrushesEdited`]).
+/// what it left of `entity`'s brushes ([`BrushesEdited`]), told from the map as it was, which
+/// the undo step keeps.
 pub(crate) fn edit_brushes<C: HasMap + 'static>(
     context: &mut C,
     entity: EntityIndex,
     edit: impl FnOnce(&mut MapDocument) -> Result<(), MapEditError>,
 ) -> Result<Outcome<BrushesEdited, C>, MapEditError> {
-    let (edited, step) = edit_map(context, |document| {
-        // An entity that is not there has no brushes; the edit says so itself.
-        let before: Vec<Brush> = document
-            .file
-            .entities
-            .get(entity.get())
-            .map_or_default(|found| found.brushes().cloned().collect());
-        edit(document)?;
-        let after: Vec<&Brush> = document
-            .file
-            .entities
-            .get(entity.get())
-            .map_or_default(|found| found.brushes().collect());
-        Ok(BrushesEdited::of(entity, &before, &after))
-    })?;
+    let ((), step) = edit_map(context, edit)?;
+    let document = context.map_store().map_mut()?;
+    let edited = BrushesEdited::of(
+        entity,
+        &brushes_of(&step.other.0, entity),
+        &brushes_of(&document.file, entity),
+    );
     Ok(Outcome::undoable(edited, step))
 }
 

@@ -333,19 +333,25 @@ impl World {
         let [x, y, z] = origin;
         let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
         let was = call.vector(CLIENT, "origin");
-        let mut free = None;
+        let mut found = Ok(None);
         for lift in (0..=ROOM_SEARCH).flat_map(|step| [f32::from(step), -f32::from(step)]) {
             let at = [x, y, z + lift];
             call.set_vector(CLIENT, "origin", at);
-            let stuck =
-                test_entity_position(&call, CLIENT).map_err(|e| EditError::Spawn(e.to_string()))?;
-            if !stuck {
-                free = Some(at);
-                break;
+            match test_entity_position(&call, CLIENT) {
+                Ok(true) => {}
+                Ok(false) => {
+                    found = Ok(Some(at));
+                    break;
+                }
+                Err(error) => {
+                    found = Err(EditError::Spawn(error.to_string()));
+                    break;
+                }
             }
         }
+        // Whatever the search met, the player is where it was until it is moved.
         call.set_vector(CLIENT, "origin", was);
-        let at = free.ok_or(EditError::NoRoom)?;
+        let at = found?.ok_or(EditError::NoRoom)?;
         self.move_player(progs, at, angles)?;
         Ok(at)
     }

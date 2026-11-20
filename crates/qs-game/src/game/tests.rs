@@ -693,8 +693,28 @@ fn the_player_is_moved() {
     )
     .unwrap();
     assert_eq!(moved["edict"], 1);
-    // spec BRIDGE-4.19: the result says where the player was put
+    // spec BRIDGE-4.19: the result says where the player was put: the point when no room
+    // is asked for or `exact` is, and with `find` the point when it is free (the refusal is
+    // the simulation's test and the bridge client's)
     assert_eq!(moved["origin"], json!([64.0, 32.0, 24.0]));
+    let found = call(
+        &mut game,
+        &mut session,
+        "player/spawn_at",
+        &json!({ "origin": [64, 32, 24], "room": "find" }),
+    )
+    .unwrap();
+    assert_eq!(found["origin"], json!([64.0, 32.0, 24.0]));
+    let exact = json!({ "origin": [30000, 30000, 30000], "room": "exact" });
+    let put = call(&mut game, &mut session, "player/spawn_at", &exact).unwrap();
+    assert_eq!(put["origin"], json!([30000.0, 30000.0, 30000.0]));
+    call(
+        &mut game,
+        &mut session,
+        "player/spawn_at",
+        &json!({ "origin": [64, 32, 24], "angles": [0, 90, 0] }),
+    )
+    .unwrap();
     let result = call(
         &mut game,
         &mut session,
