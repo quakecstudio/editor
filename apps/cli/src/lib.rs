@@ -712,6 +712,21 @@ impl McpRequest {
     }
 }
 
+/// The preview host's flag for no window and no sound, its frames drawn offscreen.
+const HEADLESS: &str = "--headless";
+
+/// The preview of `mcp`'s own session, over `game`: the host runs with no window and no
+/// sound, as the server does, so an agent that plays a map to look at a frame of it opens
+/// nothing on the person's screen. A game to watch is the app's, with `--connect`.
+fn own_preview(game: Option<PathBuf>) -> PreviewConfig {
+    let mut config = PreviewConfig::from_env(std::env::current_exe().unwrap_or_default());
+    if game.is_some() {
+        config.game = game;
+    }
+    config.extra.push(HEADLESS.to_owned());
+    config
+}
+
 /// What makes `mcp`'s own session: the workbench and the preview over `game`, the project at
 /// `path` open.
 fn own_session<L: Loader + Send + 'static>(
@@ -721,10 +736,7 @@ fn own_session<L: Loader + Send + 'static>(
     project: PathBuf,
     path: String,
 ) -> impl FnOnce() -> Result<Session<McpContext<L>>, String> + Send + 'static {
-    let mut preview_config = PreviewConfig::from_env(std::env::current_exe().unwrap_or_default());
-    if let Some(game) = game {
-        preview_config.game = Some(game);
-    }
+    let preview_config = own_preview(game);
     let no_project = Stopped::NoProject(project).to_string();
     move || {
         let mut registry = Registry::new();

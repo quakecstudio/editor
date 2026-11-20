@@ -670,3 +670,24 @@ fn new_refuses_a_copy_without_the_pinned_files() {
     assert_eq!(exit, Exit::Failure);
     assert!(err.contains("quake2"), "{err}");
 }
+
+// No spec statement: L-31: the game `mcp`'s own session plays has no window and no sound, so
+// an agent that plays a map to look at a frame of it opens nothing on the person's screen;
+// the game folder named is the one it plays over
+#[test]
+fn the_servers_own_game_is_headless() {
+    let game = PathBuf::from("/games/quake");
+    let config = super::own_preview(Some(game.clone()));
+    assert!(
+        config.extra.iter().any(|flag| flag == "--headless"),
+        "{:?}",
+        config.extra
+    );
+    assert_eq!(config.game, Some(game));
+    assert!(
+        super::own_preview(None)
+            .extra
+            .iter()
+            .any(|flag| flag == "--headless")
+    );
+}

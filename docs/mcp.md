@@ -11,8 +11,10 @@ quakec-ide mcp [<project>] [--dialect <vanilla|fteqcc>] [--read <dir>]... [--wri
 
 The server opens the project (the current directory when none is named) and then reads one
 JSON-RPC message per line from stdin, answering each on stdout. It writes nothing else to
-stdout. It runs headless: no window opens, and a game it plays runs in the preview host, as
-Play starts it.
+stdout. It runs headless: no window opens, and a game it plays runs in the preview host with no
+window and no sound either (`--headless`), its frames drawn offscreen for `engine.screenshot`,
+so an agent that plays a map to look at it opens nothing on the person's screen. To watch the
+game an agent plays, connect the server to the running app.
 
 ## Connecting to the running app
 
