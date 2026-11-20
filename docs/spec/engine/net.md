@@ -347,14 +347,18 @@ three (DIFF-16).
   byte, is "`(byte)(Q_rint((ent->v.nextthink-sv.time)*255))`", `sv.time` then the frame's end.
   Under 15 the bit is never sent. None of it changes an edict (the marks are kept beside the
   fields), so the simulation is NET-1 to NET-5's.
-- **NET-6.10** The protocol a map is written in is the setting `sv_protocol` as the map loads
-  (CON-7.5), as QuakeSpasm's `SV_SpawnServer` takes "`sv.protocol = sv_protocol;`": a change
-  at the console takes the next map. The launch option `--protocol`, QuakeSpasm's `-protocol`
-  that `SV_Init` reads, sets it when the host starts and not again, so a later level keeps what
-  the console made it. QuakeSpasm's `sv_protocol` command refuses a value other than 15, 666 or
-  999 ("`sv_protocol must be %i or %i or %i`"); the host's is a setting, which takes any value,
-  and a map loads in 666 when it names none of the three, the console then showing "`sv_protocol
-  must be 15 or 666 or 999`". A deliberate divergence: QuakeSpasm runs `quake.rc`, and with it
-  `config.cfg` and `autoexec.cfg`, in `Host_Init` before the first map, where the host loads its
-  first map before `quake.rc` runs (INPUT-3.3), so a configuration's `sv_protocol` takes the
-  host's second map, and `--protocol` is the way to choose the first's.
+- **NET-6.10** **Withdrawn** 2026-11-20: it made `sv_protocol` a setting and ran `quake.rc`
+  after the first map; `sv_protocol` is now QuakeSpasm's command, and `quake.rc` runs before
+  the first map (INPUT-3.7). Replaced by NET-6.11.
+- **NET-6.11** The protocol a map is written in is QuakeSpasm's `sv_protocol` as the map loads,
+  as `SV_SpawnServer` takes "`sv.protocol = sv_protocol;`". It is a value of the host's, kept
+  from one level to the next, which the launch option `--protocol` sets when the host starts, as
+  `SV_Init` reads "`sv_protocol = atoi (com_argv[i + 1]);`" for `-protocol`, and the console's
+  `sv_protocol` command sets after, as `SV_Protocol_f` (`Quake/sv_main.c`): with no argument it
+  prints "`\"sv_protocol\" is \"%i\"`"; with one, the argument's `atoi` when it is 15, 666 or
+  999, printing "`changes will not take effect until the next level load.`" while a map is
+  running (`if (sv.active)`), else "`sv_protocol must be %i or %i or %i`" with 15, 666 and 999,
+  the value kept; with more, "`usage: sv_protocol <protocol>`". So a configuration's
+  `sv_protocol`, run before the first map (INPUT-3.7), takes the first map, and a change at the
+  console the next. It is not a setting: `cvarlist` and the progs' `cvar` do not see it, as
+  they do not in QuakeSpasm.

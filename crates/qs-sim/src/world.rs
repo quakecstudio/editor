@@ -1,11 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 1996-1997 Id Software, Inc.
+// Copyright (C) 2002-2009 John Fitzgibbons and others
+// Copyright (C) 2007-2008 Kristian Duske
+// Copyright (C) 2010-2014 QuakeSpasm developers
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/sv_main.c, SV_SpawnServer, SV_SaveSpawnparms
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/host_cmd.c, Host_Changelevel_f
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/cmd.c, Cbuf_Execute
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/pr_edict.c, ED_Alloc, ED_Free, ED_FindField, ED_FindFunction
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/host.c, Host_Init
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/sv_main.c, SV_Init, SV_SpawnServer
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/cl_main.c, CL_SignonReply
 
 //! A map's world: the progs' VM with a map's entities spawned in it, as `SV_SpawnServer` spawns
 //! them (EDICT-4.1, EDICT-8, EDICT-11.4), and what each entity in use shows.
@@ -20,7 +26,7 @@ use qc_edict::EdictNumber;
 use qc_edict::system::{field_by_name, global_by_name};
 use qc_progs::Progs;
 use qc_types::{DefType, Etype, Slot};
-use qc_vm::convert::{double_to_float, float_to_int};
+use qc_vm::convert::{double_to_float, float_to_int, int_to_float};
 use qc_vm::{Machine, NoObserver, Observer, RunError, ServerState};
 use qs_bsp::Bsp;
 use qs_vfs::Registration;
@@ -28,7 +34,7 @@ use qs_vfs::Registration;
 use crate::builtins::{ModelFiles, SimBuiltins, SimCall};
 use crate::client::UserCmd;
 use crate::debug::Debugger;
-use crate::host_commands::{ClientStage, SignonCommand};
+use crate::host_commands::{COLOR_MASK, COLOR_SHIFT, ClientStage, SignonCommand};
 use crate::input::Button;
 #[cfg(test)]
 use crate::messages::ServerMessages;
@@ -169,6 +175,9 @@ pub struct World {
     /// The map's entities waiting to spawn, from [`World::prepare`] until
     /// [`World::spawn_map`] (WORLD-9.7).
     pending_spawn: Option<PendingSpawn>,
+    /// QuakeSpasm's `sv_protocol`, which the console's `sv_protocol` sets and the next map
+    /// is written in (NET-6.11).
+    pub(crate) protocol: ProtocolVersion,
 }
 
 /// What the host gives a world besides its map and progs.
@@ -198,6 +207,12 @@ pub struct LoadOptions {
     /// Settings given before the map loads, each a name and a value, such as `skill` and
     /// `deathmatch`, which choose the entities the load keeps (DIFF-3.2, EDICT-8.4).
     pub settings: Vec<(String, String)>,
+    /// The protocol a new host starts with, QuakeSpasm's `-protocol` (NET-6.11); a level
+    /// carrying the last one's host state keeps that one's `sv_protocol`.
+    pub protocol: ProtocolVersion,
+    /// Console text a new host runs before the map's settings are read, as QuakeSpasm's
+    /// `Host_Init` runs `exec quake.rc` before the first map (INPUT-3.7); empty for none.
+    pub startup: Vec<u8>,
 }
 
 /// What lives in id's engine for the whole process, not one level: the C library's random
@@ -210,6 +225,8 @@ pub struct HostState {
     /// The console's text not yet run and its aliases (PHYS-13.6).
     buffer: Vec<u8>,
     aliases: Vec<(String, String)>,
+    /// `sv_protocol` (NET-6.11).
+    protocol: ProtocolVersion,
 }
 
 /// The stages of a client's entry, `CL_SignonReply`'s answers and the server's commands for
@@ -365,6 +382,11 @@ impl World {
         let seed = options.seed.unwrap_or(RANDOM_SEED);
         let mut engine = MockEngine::new(map, submodels, seed);
         let aliases = options.host.as_ref().map_or_default(|h| h.aliases.clone());
+        // NET-6.11: `-protocol` when the host starts; a later level keeps the console's.
+        let protocol = options
+            .host
+            .as_ref()
+            .map_or(options.protocol, |h| h.protocol);
         match options.host {
             // MOVE-6.3, PHYS-12.3: the last level's random state and settings go on.
             Some(host) => {
@@ -388,23 +410,6 @@ impl World {
         engine
             .cvars
             .create("registered", options.registration.cvar());
-        for (name, value) in &options.settings {
-            engine.cvars.create(name, value);
-            engine.cvars.set(name, value);
-        }
-        // DIFF-3.2: deathmatch is 0 under coop; the skill is `(int)(skill + 0.5)` clamped.
-        let setting = |name: &str| engine.cvars.value(name).unwrap_or(0.0);
-        let coop = setting("coop");
-        let deathmatch = if coop == 0.0 {
-            setting("deathmatch")
-        } else {
-            0.0
-        };
-        let skill = spawn::clamp_skill(setting("skill"));
-        engine.cvars.set("skill", &skill.to_string());
-        if coop != 0.0 {
-            engine.cvars.set("deathmatch", "0");
-        }
         let mut world = Self {
             machine,
             builtins: SimBuiltins::new(
@@ -430,20 +435,46 @@ impl World {
             map: map.to_owned(),
             map_entities: map_entities::MapEntities::default(),
             pending_spawn: None,
+            protocol,
         };
-        // NET-6.10: the protocol is `sv_protocol`'s as the map loads.
-        let version = world
-            .setting("sv_protocol")
-            .map(float_to_int)
-            .and_then(ProtocolVersion::from_number);
-        if version.is_none() {
-            world
-                .console_out
-                .extend_from_slice(b"sv_protocol must be 15 or 666 or 999\n");
+        // INPUT-3.7: the startup text goes before the buffer's rest and runs before the map's
+        // settings are read, as `Host_Init`'s `Cbuf_InsertText ("exec quake.rc\n")` does.
+        if !options.startup.is_empty() {
+            let engine = world.builtins.mock.engine_mut();
+            let rest = core::mem::replace(&mut engine.command_buffer, options.startup);
+            engine.command_buffer.push(b'\n');
+            engine.command_buffer.extend_from_slice(&rest);
+            world.execute_console(progs);
+            // INPUT-3.7: the map being loaded is `stuffcmds`' `+map`, which comes after the
+            // text, so a level command in it is passed over; `quit` still waits for the host.
+            while world
+                .pending_host
+                .take_if(|command| *command != HostCommand::Quit)
+                .is_some()
+            {
+                world.execute_console(progs);
+            }
         }
-        let protocol = version.map_or(Protocol::FITZQUAKE, |version| {
-            Protocol::new(version, Protocol::RMQ.flags())
-        });
+        let engine = world.builtins.mock.engine_mut();
+        for (name, value) in &options.settings {
+            engine.cvars.create(name, value);
+            engine.cvars.set(name, value);
+        }
+        // DIFF-3.2: deathmatch is 0 under coop; the skill is `(int)(skill + 0.5)` clamped.
+        let setting = |name: &str| engine.cvars.value(name).unwrap_or(0.0);
+        let coop = setting("coop");
+        let deathmatch = if coop == 0.0 {
+            setting("deathmatch")
+        } else {
+            0.0
+        };
+        let skill = spawn::clamp_skill(setting("skill"));
+        engine.cvars.set("skill", &skill.to_string());
+        if coop != 0.0 {
+            engine.cvars.set("deathmatch", "0");
+        }
+        // NET-6.11: `SV_SpawnServer`'s `sv.protocol = sv_protocol;`.
+        let protocol = Protocol::new(world.protocol, Protocol::RMQ.flags());
         world.builtins.messages.set_protocol(protocol);
         let entities = bsp.entities();
         // EDICT-4.1: the world's fields.
@@ -646,6 +677,7 @@ impl World {
             cvars: engine.cvars.clone(),
             buffer: engine.command_buffer.clone(),
             aliases: self.aliases.clone(),
+            protocol: self.protocol,
         }
     }
 
@@ -698,7 +730,36 @@ impl World {
             Signon::Spawn,
             Signon::Begin,
         ] {
+            if stage == Signon::Spawn {
+                self.signon_reply_identity(progs)?;
+            }
             self.signon(progs, stage)?;
+            // PHYS-10.8: the spawn stage's frame ends with `SV_UpdateToReliableMessages`, so
+            // the name and colours the client sent follow the spawn message.
+            if stage == Signon::Spawn {
+                SimCall::frame(&mut self.machine, progs, &mut self.builtins)
+                    .update_to_reliable_messages();
+            }
+        }
+        Ok(())
+    }
+
+    /// `CL_SignonReply`'s answer before `spawn` (PHYS-10.8): the client's `name` and `color`
+    /// string commands from `_cl_name` and `_cl_color`, which the server runs as PHYS-11.7 says,
+    /// so a name or colour the console set before the client connected is the spawned player's.
+    fn signon_reply_identity(&mut self, progs: &Progs<'_>) -> Result<(), WorldError> {
+        let cvars = &self.builtins.mock.engine().cvars;
+        let name = cvars.text("_cl_name").unwrap_or_default().to_owned();
+        let color = float_to_int(cvars.value("_cl_color").unwrap_or(0.0));
+        let top = color.wrapping_shr(COLOR_SHIFT);
+        let bottom = color & COLOR_MASK;
+        for text in [
+            format!("name \"{name}\"\n"),
+            format!("color {top} {bottom}\n"),
+        ] {
+            SimCall::frame(&mut self.machine, progs, &mut self.builtins)
+                .client_command(CLIENT, text.as_bytes(), ClientStage::Connecting)
+                .map_err(WorldError::Frame)?;
         }
         Ok(())
     }
@@ -763,7 +824,7 @@ impl World {
     /// `Host_Spawn_f` (PHYS-10.1): the client's edict cleared and named, its parms set, then
     /// `ClientConnect` and `PutClientInServer`, and the spawn message (NET-2.4).
     fn signon_spawn(&mut self, progs: &Progs<'_>) -> Result<(), WorldError> {
-        let name = self.make_string(self.builtins.client_name.clone());
+        let name = self.make_string(self.builtins.messages.client.name.clone());
         let parms = self.spawn_parms;
         let loaded = self.loaded;
         let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
@@ -781,7 +842,9 @@ impl World {
             );
         }
         call.set_float(CLIENT, "colormap", 1.0);
-        call.set_float(CLIENT, "team", 1.0);
+        // PHYS-10.1: "`ent->v.team = (host_client->colors & 15) + 1;`".
+        let team = (call.sim.messages.client.colors & COLOR_MASK).wrapping_add(1);
+        call.set_float(CLIENT, "team", int_to_float(team));
         call.set_entity_raw(CLIENT, "netname", name);
         for (n, parm) in (1..=16).zip(parms) {
             call.set_global(&format!("parm{n}"), parm);

@@ -570,7 +570,7 @@ impl Headless {
         read.drawing.apply(&mut self.play);
     }
 
-    /// The later engines' drawing settings alone (CON-7.5), for the view oracle's frames, whose
+    /// The later engines' drawing settings alone (CON-7.6), for the view oracle's frames, whose
     /// view size and gamma are the script's.
     fn apply_drawing_settings(&mut self) {
         let world = self.game.world();

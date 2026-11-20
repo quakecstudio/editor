@@ -8,6 +8,7 @@
 use std::path::PathBuf;
 
 use super::{Args, engine_style};
+use qs_sim::protocol::ProtocolVersion;
 
 fn parse(words: &[&str]) -> Result<Args, clap::Error> {
     let line = core::iter::once("quakec-engine")
@@ -83,21 +84,18 @@ fn each_mission_pack_plays_its_own_cd() {
     assert_eq!(parse(&["-game", "mymod"]).unwrap().cd_sheet(), "game.cue");
 }
 
-// spec NET-6.10: --protocol sets sv_protocol for a new host's first map, 666 when not given
+// spec NET-6.11: --protocol, or -protocol, is the host's first sv_protocol, 666 when not given
 #[test]
 fn the_protocol_option_sets_sv_protocol() {
     let parse = |words: &[&str]| Args::parse_words(words.iter().map(|w| (*w).to_owned())).unwrap();
     assert_eq!(
-        parse(&["--protocol", "15", "e1m1"]).launch_settings(None),
-        [("sv_protocol".to_owned(), "15".to_owned())]
+        parse(&["--protocol", "15", "e1m1"]).protocol.version(),
+        ProtocolVersion::NetQuake
     );
     assert_eq!(
-        parse(&["-protocol", "999"]).launch_settings(None),
-        [("sv_protocol".to_owned(), "999".to_owned())]
+        parse(&["-protocol", "999"]).protocol.version(),
+        ProtocolVersion::Rmq
     );
-    assert_eq!(
-        parse(&[]).launch_settings(None),
-        [("sv_protocol".to_owned(), "666".to_owned())]
-    );
+    assert_eq!(parse(&[]).protocol.version(), ProtocolVersion::FitzQuake);
     assert!(Args::parse_words(["--protocol".to_owned(), "16".to_owned()]).is_err());
 }

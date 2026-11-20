@@ -611,8 +611,8 @@ fn the_archived_settings_are_written() {
     assert_eq!(text.lines().count(), 17);
 }
 
-// spec CON-7.5: the later engines' settings exist with their defaults, Ironwail's two
-// archived ones written after id's, r_litwater and sv_protocol not
+// spec CON-7.6: the later engines' settings exist with their defaults, Ironwail's two
+// archived ones written after id's, r_litwater not
 #[test]
 fn the_later_engines_settings_are_registered() {
     let mut run = connected();
@@ -620,7 +620,6 @@ fn the_later_engines_settings_are_registered() {
         ("r_lerplightstyles", 1.0),
         ("gl_zfix", 1.0),
         ("r_litwater", 1.0),
-        ("sv_protocol", 666.0),
     ] {
         assert_eq!(run.world.setting(name), Some(value), "{name}");
     }
@@ -630,6 +629,6 @@ fn the_later_engines_settings_are_registered() {
         text.ends_with("r_lerplightstyles \"1\"\ngl_zfix \"0\"\n"),
         "{text}"
     );
-    assert!(!text.contains("r_litwater") && !text.contains("sv_protocol"));
+    assert!(!text.contains("r_litwater"));
     assert_eq!(run.world.complete("gl_z").as_deref(), Some("gl_zfix"));
 }

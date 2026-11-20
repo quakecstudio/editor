@@ -1866,3 +1866,24 @@ fn a_breakpoint_outside_the_spawn_functions_loads_the_level_at_once() {
         );
     }
 }
+
+// spec INPUT-3.7: only a new windowed host runs exec quake.rc; a headless one and a kept host
+// run nothing
+#[test]
+fn only_a_new_windowed_host_runs_quake_rc() {
+    use crate::load::{Start, Startup};
+    let (game, _) = game();
+    let host = game.world().host_state();
+    assert_eq!(
+        Start::New(Startup::QuakeRc).host_and_startup(),
+        (None, b"exec quake.rc".to_vec())
+    );
+    assert_eq!(
+        Start::New(Startup::Bare).host_and_startup(),
+        (None, Vec::new())
+    );
+    assert_eq!(
+        Start::Kept(host.clone()).host_and_startup(),
+        (Some(host), Vec::new())
+    );
+}
