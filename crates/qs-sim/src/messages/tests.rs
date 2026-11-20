@@ -18,7 +18,18 @@ use qc_vm::convert::{double_to_float, float_to_int};
 use super::{Message, NET_MAX_DATAGRAM, NET_MAX_MSGLEN, Vis};
 use crate::UserCmd;
 use crate::fixtures::{CONTENTS_EMPTY, CONTENTS_SOLID, MapSpec};
-use crate::world::tests::{PLAYER_SIZE, Running, entity, ledge, ledge_over, moved, player, run_on};
+use crate::protocol::Protocol;
+use crate::world::tests::{
+    PLAYER_SIZE, Running, entity, ledge, ledge_over, moved, player, run_on, running_with,
+};
+
+/// Id's protocol 15, which the NET statements of id's server describe.
+fn netquake() -> LoadOptions {
+    LoadOptions {
+        protocol: Protocol::NETQUAKE,
+        ..LoadOptions::default()
+    }
+}
 
 /// Reads a message back, as the client will.
 struct Reader<'a> {
@@ -417,7 +428,7 @@ fn baselines_describe_the_spawn_state() {
 fn the_serverinfo_names_the_game() {
     let source = "void() worldspawn = { precache_sound(\"misc/a.wav\"); \
         self.message = \"Hello\"; self.sounds = 4; };\n";
-    let mut run = run_on(&ledge(), source, "");
+    let mut run = running_with(&ledge(), source, "", Vec::new(), netquake());
     run.connect();
     let packets = run.packets();
     let mut r = Reader::new(&packets[0]);
@@ -545,7 +556,7 @@ fn entities_are_sent_when_they_are_visible() {
         while (i < 300) { local entity e; e = spawn(); setmodel(e, \"progs/t.mdl\"); \
         setorigin(e, '0 0 0' + i * '1 0 0'); e.movetype = 8; e.velocity = '100 100 100'; \
         i = i + 1; } };\n";
-    let mut crowded = player(&ledge(), "", "", many);
+    let mut crowded = player_with_options(&ledge(), "", "", many, netquake());
     crowded.packets();
     crowded.frames(1, 0.1).unwrap();
     let packets = crowded.packets();
@@ -1075,4 +1086,356 @@ fn a_patched_progs_runs_the_rereleases_builtins() {
     run.packets();
     run.frames(1, 0.1).unwrap();
     assert_eq!(run.packets()[1], [56, 0, 2]);
+}
+
+/// `options` with the server writing in `protocol`.
+fn speaking(protocol: Protocol) -> LoadOptions {
+    LoadOptions {
+        protocol,
+        ..LoadOptions::default()
+    }
+}
+
+/// The serverinfo's protocol, its flags when it is 999, and maxclients after them, of a world
+/// speaking `protocol`.
+fn serverinfo_protocol(protocol: Protocol) -> (i32, Option<i32>, u8) {
+    let mut run = running_with(&ledge(), "", "", Vec::new(), speaking(protocol));
+    run.connect();
+    let packets = run.packets();
+    let mut r = Reader::new(&packets[0]);
+    assert_eq!(r.byte(), 8);
+    r.string();
+    assert_eq!(r.byte(), 11, "svc_serverinfo");
+    let version = r.long();
+    let flags = (version == 999).then(|| r.long());
+    (version, flags, r.byte())
+}
+
+// spec NET-6.1: the serverinfo names the protocol, 666 by default, and 999 its flags after it;
+// the version line is id's
+#[test]
+fn the_serverinfo_names_the_protocol() {
+    let mut run = running_with(&ledge(), "", "", Vec::new(), LoadOptions::default());
+    run.connect();
+    let packets = run.packets();
+    let mut r = Reader::new(&packets[0]);
+    assert_eq!(r.byte(), 8);
+    assert!(r.string().starts_with("\x02\nVERSION 1.09 SERVER ("));
+    assert_eq!(serverinfo_protocol(Protocol::FITZQUAKE), (666, None, 1));
+    assert_eq!(serverinfo_protocol(Protocol::NETQUAKE), (15, None, 1));
+    assert_eq!(
+        serverinfo_protocol(Protocol::RMQ),
+        (999, Some((1 << 7) | (1 << 1)), 1)
+    );
+}
+
+// spec NET-6.2: every buffer writes in the server's protocol: under 999 a builtin's WriteCoord
+// is a long of sixteenths and its WriteAngle a short
+#[test]
+fn the_builtins_write_in_the_servers_protocol() {
+    let body = "WriteCoord(2, 1.5); WriteAngle(2, 90);";
+    let more = format!("void() StartFrame = {{ {body} }};\n");
+    let written = |protocol| {
+        let mut run = player_with_options(&ledge(), "", "", &more, speaking(protocol));
+        run.packets();
+        run.frames(1, 0.1).unwrap();
+        run.packets()[1].clone()
+    };
+    assert_eq!(written(Protocol::NETQUAKE), [12, 0, 64]);
+    assert_eq!(written(Protocol::FITZQUAKE), [12, 0, 64]);
+    assert_eq!(written(Protocol::RMQ), [24, 0, 0, 0, 0, 0x40]);
+}
+
+// spec NET-6.2: a Message written in a protocol encodes as it says
+#[test]
+fn a_message_writes_in_its_protocol() {
+    let mut m = Message::new(64, Overflow::Fatal).with_protocol(Protocol::FITZQUAKE);
+    m.write_coord(1.99);
+    m.write_angle(359.9);
+    m.write_angle16(90.0);
+    assert_eq!(m.bytes(), [16, 0, 0, 0, 0x40]);
+    assert_eq!(m.protocol(), Protocol::FITZQUAKE);
+    let mut id = Message::new(64, Overflow::Fatal);
+    id.write_coord(1.99);
+    assert_eq!(id.bytes(), [15, 0], "id's 15 until told otherwise");
+}
+
+/// The entity updates of a FitzQuake datagram, each its number, its bits through the extend
+/// bytes and its field bytes, the coordinates shorts and the angles bytes (666's).
+fn fitz_updates(bytes: &[u8]) -> Vec<(usize, u32, Vec<u8>)> {
+    let mut r = Reader::new(bytes);
+    assert_eq!(r.byte(), 7, "svc_time");
+    r.float();
+    assert_eq!(r.byte(), 15, "svc_clientdata");
+    let mut cbits = u32::from(u16::from_le_bytes([r.byte(), r.byte()]));
+    if cbits & (1 << 15) != 0 {
+        cbits |= u32::from(r.byte()) << 16;
+    }
+    if cbits & (1 << 23) != 0 {
+        cbits |= u32::from(r.byte()) << 24;
+    }
+    let skip = |r: &mut Reader<'_>, n: usize| {
+        for _ in 0..n {
+            r.byte();
+        }
+    };
+    let singles = [0, 1, 2, 5, 3, 6, 4, 7]
+        .iter()
+        .filter(|&&b| cbits & (1 << b) != 0)
+        .count();
+    skip(&mut r, singles);
+    skip(&mut r, 4);
+    skip(
+        &mut r,
+        [12, 13, 14]
+            .iter()
+            .filter(|&&b| cbits & (1 << b) != 0)
+            .count(),
+    );
+    skip(&mut r, 2 + 5 + 1);
+    skip(
+        &mut r,
+        (16..=25)
+            .filter(|&b| b != 23 && cbits & (1 << b) != 0)
+            .count(),
+    );
+    let mut out = Vec::new();
+    while !r.done() && r.bytes[r.at] & 128 != 0 {
+        let first = r.byte();
+        let mut bits = u32::from(first & 127);
+        if bits & 1 != 0 {
+            bits |= u32::from(r.byte()) << 8;
+        }
+        if bits & (1 << 15) != 0 {
+            bits |= u32::from(r.byte()) << 16;
+        }
+        if bits & (1 << 23) != 0 {
+            bits |= u32::from(r.byte()) << 24;
+        }
+        let number = if bits & (1 << 14) != 0 {
+            usize::try_from(r.short()).unwrap()
+        } else {
+            usize::from(r.byte())
+        };
+        let start = r.at;
+        for bit in [10, 6, 11, 12, 13] {
+            if bits & (1 << bit) != 0 {
+                r.byte();
+            }
+        }
+        for (i, angle_bit) in [8, 4, 9].into_iter().enumerate() {
+            if bits & (1 << (1 + i)) != 0 {
+                r.short();
+            }
+            if bits & (1 << angle_bit) != 0 {
+                r.byte();
+            }
+        }
+        for bit in [16, 20, 17, 18, 19] {
+            if bits & (1 << bit) != 0 {
+                r.byte();
+            }
+        }
+        out.push((number, bits, r.bytes[start..r.at].to_vec()));
+    }
+    out
+}
+
+/// The datagram of the next frame of `run`.
+fn next_datagram(run: &mut Running) -> Vec<u8> {
+    run.packets();
+    run.frames(1, 0.1).unwrap();
+    run.packets()[0].clone()
+}
+
+const THING: &str = "void() worldspawn = { precache_model(\"progs/t.mdl\"); };\n\
+    .float alpha; .float scale; entity the_thing;\n\
+    void() thing = { setmodel(self, \"progs/t.mdl\"); the_thing = self; };\n";
+
+// spec NET-6.3: under 666 a frame past a byte sets U_FRAME2 and U_EXTEND1, the high byte last;
+// an alpha other than the baseline's sets U_ALPHA; under 15 neither
+#[test]
+fn entity_updates_carry_fitzquakes_bits() {
+    let entities = entity("thing", "10 20 30", "");
+    let source = format!("{THING}void() StartFrame = {{ the_thing.alpha = 0.5; }};\n");
+    let mut run = player_with_entities(&source, &entities, Protocol::FITZQUAKE);
+    // After the baselines, which the settle frames' StartFrame came before.
+    run.world.set_float_field(2, "frame", 300.0);
+    let updates = fitz_updates(&next_datagram(&mut run));
+    let (_, bits, rest) = updates.iter().find(|u| u.0 == 2).unwrap().clone();
+    assert_ne!(bits & (1 << 6), 0, "U_FRAME");
+    assert_ne!(bits & (1 << 17), 0, "U_FRAME2");
+    assert_ne!(bits & (1 << 16), 0, "U_ALPHA");
+    assert_ne!(bits & (1 << 15), 0, "U_EXTEND1");
+    // The frame's low byte, then no origin or angle moved, then the alpha and the high byte.
+    assert_eq!(&rest[..3], [44, 128, 1]);
+    let mut id = player_with_entities(&source, &entities, Protocol::NETQUAKE);
+    id.world.set_float_field(2, "frame", 300.0);
+    let (_, updates, _) = datagram(&next_datagram(&mut id));
+    let (_, bits, rest) = updates.iter().find(|u| u.0 == 2).unwrap().clone();
+    assert_eq!(u32::from(bits) & !0x7fff, 0, "no bit past 14");
+    assert_eq!(rest[0], 44, "the frame's low byte alone");
+}
+
+/// A connected player whose map has `entities`, the server speaking `protocol`.
+fn player_with_entities(source: &str, entities: &str, protocol: Protocol) -> Running {
+    let source = format!(
+        "{source}void() PutClientInServer = {{ self.health = 100; self.solid = 3; \
+         self.movetype = 3; self.view_ofs = '0 0 22'; {PLAYER_SIZE} }};\n"
+    );
+    let mut run = running_with(&ledge(), &source, entities, Vec::new(), speaking(protocol));
+    run.settle();
+    run.connect();
+    run
+}
+
+// spec NET-6.3: under 666 an entity whose alpha is ENTALPHA_ZERO is not sent unless it has
+// effects; under 15 it is
+#[test]
+fn an_invisible_entity_is_not_sent() {
+    let entities = entity("thing", "10 20 30", "");
+    let source = format!("{THING}void() StartFrame = {{ the_thing.alpha = -1; }};\n");
+    let numbers = |protocol| {
+        let mut run = player_with_entities(&source, &entities, protocol);
+        let mut seen = Vec::new();
+        for effects in [0.0, 4.0] {
+            run.world.set_float_field(2, "effects", effects);
+            let bytes = next_datagram(&mut run);
+            let numbers: Vec<usize> = if protocol == Protocol::NETQUAKE {
+                datagram(&bytes).1.iter().map(|u| u.0).collect()
+            } else {
+                fitz_updates(&bytes).iter().map(|u| u.0).collect()
+            };
+            seen.push(numbers);
+        }
+        seen
+    };
+    assert_eq!(numbers(Protocol::NETQUAKE), [vec![1, 2], vec![1, 2]]);
+    assert_eq!(
+        numbers(Protocol::FITZQUAKE),
+        [vec![1], vec![1, 2]],
+        "invisible, then with effects"
+    );
+}
+
+// spec NET-6.4: under 666 an entity spawned with an alpha key has svc_spawnbaseline2 with
+// B_ALPHA and the alpha byte last; under 15 svc_spawnbaseline
+#[test]
+fn a_baseline_with_alpha_is_spawnbaseline2() {
+    let entities = entity("thing", "8 0 0", "\"alpha\" \"0.5\"\n");
+    let signon = |protocol| {
+        let run = player_with_entities(THING, &entities, protocol);
+        run.world.builtins.messages.signon.bytes().to_vec()
+    };
+    let fitz = signon(Protocol::FITZQUAKE);
+    let at = fitz.iter().position(|&b| b == 42).unwrap();
+    assert_eq!(&fitz[at..at + 4], [42, 2, 0, 1 << 2], "edict 2, B_ALPHA");
+    // model, frame, colormap, skin, then three coords and angles, then the alpha.
+    assert_eq!(fitz[at + 4 + 4 + 9], 128);
+    let id = signon(Protocol::NETQUAKE);
+    assert!(!id.contains(&42) || id.iter().position(|&b| b == 22).is_some());
+    assert!(
+        id.windows(3).any(|w| w == [22, 2, 0]),
+        "svc_spawnbaseline for edict 2"
+    );
+}
+
+// spec NET-6.5: makestatic under 666 writes svc_spawnstatic2 with B_ALPHA for an alpha, and
+// nothing for ENTALPHA_ZERO; under 15 svc_spawnstatic for both
+#[test]
+fn statics_with_alpha() {
+    let source = "void() worldspawn = { precache_model(\"progs/t.mdl\"); };\n\
+        void() thing = { setmodel(self, \"progs/t.mdl\"); makestatic(self); };\n";
+    let signon = |protocol, alpha: &str| {
+        let entities = entity("thing", "8 0 0", &format!("\"alpha\" \"{alpha}\"\n"));
+        let run = player_with_entities(source, &entities, protocol);
+        run.world.builtins.messages.signon.bytes().to_vec()
+    };
+    let half = signon(Protocol::FITZQUAKE, "0.5");
+    let at = half.iter().position(|&b| b == 43).unwrap();
+    assert_eq!(half[at + 1], 1 << 2, "B_ALPHA");
+    assert_eq!(
+        half[at + 2 + 4 + 9],
+        128,
+        "the alpha after the origin and angles"
+    );
+    assert!(!signon(Protocol::FITZQUAKE, "-1").contains(&20));
+    assert!(!signon(Protocol::FITZQUAKE, "-1").contains(&43));
+    assert!(signon(Protocol::NETQUAKE, "-1").contains(&20));
+    assert!(signon(Protocol::NETQUAKE, "0.5").contains(&20));
+}
+
+// spec NET-6.6: under 666 ammo past a byte sets its high-byte bit and SU_EXTEND1, the high
+// byte after the weapon; under 15 it is the low byte alone
+#[test]
+fn client_data_sends_high_bytes() {
+    let put = "self.ammo_nails = 300; self.weapon = 1;";
+    let data = |protocol| {
+        let mut run = player_with_options(&ledge(), put, "", "", speaking(protocol));
+        run.packets();
+        run.frames(1, 0.1).unwrap();
+        run.packets()[0].clone()
+    };
+    let fitz = data(Protocol::FITZQUAKE);
+    assert_eq!(fitz[5], 15, "svc_clientdata");
+    let bits = u32::from(u16::from_le_bytes([fitz[6], fitz[7]])) | (u32::from(fitz[8]) << 16);
+    assert_ne!(bits & (1 << 15), 0, "SU_EXTEND1");
+    assert_ne!(bits & (1 << 20), 0, "SU_NAILS2");
+    let id = data(Protocol::NETQUAKE);
+    let id_bits = u16::from_le_bytes([id[6], id[7]]);
+    assert_eq!(id_bits & (1 << 15), 0);
+    assert_eq!(
+        fitz.len(),
+        id.len() + 2,
+        "the extend byte and the high byte"
+    );
+    let nails2 = fitz.len() - id.len();
+    assert_eq!(nails2, 2);
+}
+
+/// A connected player whose server has 300 sounds precached, the last `big.wav`, past id's
+/// 256 (as vkQuake's limits allow), the server speaking `protocol`; `pre` is the player's
+/// `PlayerPreThink`.
+fn many_sounds(pre: &str, protocol: Protocol) -> Running {
+    let mut run = player_with_options(&ledge(), "", pre, "", speaking(protocol));
+    let engine = run.world.builtins.mock.engine_mut();
+    while engine.sound_precache.len() < 300 {
+        let n = engine.sound_precache.len();
+        engine.sound_precache.push(format!("s{n}.wav"));
+    }
+    engine.sound_precache.push("big.wav".to_owned());
+    run
+}
+
+// spec NET-6.7: under 666 a sound past 255 is SND_LARGESOUND and a short; under 15 it is not
+// sent
+#[test]
+fn a_large_sound_is_sent_as_a_short() {
+    let pre = "sound(self, 1, \"big.wav\", 1, 1);";
+    let fitz = next_datagram(&mut many_sounds(pre, Protocol::FITZQUAKE));
+    let at = fitz.iter().position(|&b| b == 6).unwrap();
+    assert_eq!(fitz[at + 1], 1 << 4, "SND_LARGESOUND");
+    // The entity and channel short, then the sound, 300, as a short.
+    assert_eq!(&fitz[at + 2..at + 6], [(1 << 3) | 1, 0, 44, 1]);
+    let id = next_datagram(&mut many_sounds(pre, Protocol::NETQUAKE));
+    assert!(!id.windows(2).any(|w| w == [6, 0]), "no svc_sound");
+}
+
+// spec NET-6.5: under 666 an ambient sound past 255 is svc_spawnstaticsound2 with the sound as
+// a short; under 15 it is not written
+#[test]
+fn a_large_ambient_sound_is_spawnstaticsound2() {
+    let pre = "ambientsound('8 0 0', \"big.wav\", 1, 1);";
+    let signon = |protocol| {
+        let mut run = many_sounds(pre, protocol);
+        next_datagram(&mut run);
+        run.world.builtins.messages.signon.bytes().to_vec()
+    };
+    let fitz = signon(Protocol::FITZQUAKE);
+    let at = fitz.iter().rposition(|&b| b == 44).unwrap();
+    // Three coordinates, then the sound 300 as a short, the volume and the attenuation.
+    assert_eq!(fitz[at - 1 - 6], 44, "svc_spawnstaticsound2");
+    assert_eq!(&fitz[at..at + 4], [44, 1, 255, 64]);
+    let id = signon(Protocol::NETQUAKE);
+    assert!(!id.contains(&44));
 }

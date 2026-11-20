@@ -36,6 +36,7 @@ use crate::messages::{ClientMessages, GameKind};
 use crate::offsets::{FieldOffset, GlobalOffset};
 use crate::physics::MoveType;
 use crate::physics::Sound;
+use crate::protocol::{EntAlpha, Protocol};
 use crate::rerelease::BuiltinTable;
 use crate::settings::{ARCHIVED, CLIENT_SETTINGS, SERVER_SETTINGS};
 use qc_builtins::localization::Localization;
@@ -197,6 +198,9 @@ pub struct LoadOptions {
     /// Settings given before the map loads, each a name and a value, such as `skill` and
     /// `deathmatch`, which choose the entities the load keeps (DIFF-3.2, EDICT-8.4).
     pub settings: Vec<(String, String)>,
+    /// The protocol the server writes its messages in, QuakeSpasm's `sv_protocol`: FitzQuake's
+    /// 666 by default, id's 15 or RMQ's 999 (NET-6.1).
+    pub protocol: Protocol,
 }
 
 /// What lives in id's engine for the whole process, not one level: the C library's random
@@ -430,6 +434,7 @@ impl World {
             map_entities: map_entities::MapEntities::default(),
             pending_spawn: None,
         };
+        world.builtins.messages.set_protocol(options.protocol);
         let entities = bsp.entities();
         // EDICT-4.1: the world's fields.
         let model = world.make_string(format!("maps/{map}.bsp").into_bytes());
@@ -1116,9 +1121,17 @@ impl SpawnHost for Spawner<'_, '_> {
 
     fn free(&mut self, edict: EdictNumber) {
         let clock = self.world.builtins.mock.engine().clock;
-        // WORLD-8.3: ED_Free unlinks.
+        // WORLD-8.3: ED_Free unlinks; NET-6.8: "reset alpha for next entity".
         self.world.builtins.collision.unlink(edict.index());
+        self.world
+            .builtins
+            .messages
+            .set_alpha(edict.index(), EntAlpha::DEFAULT);
         self.world.machine.edicts_mut().free(edict, clock);
+    }
+
+    fn set_alpha(&mut self, edict: EdictNumber, alpha: EntAlpha) {
+        self.world.builtins.messages.set_alpha(edict.index(), alpha);
     }
 }
 

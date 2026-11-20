@@ -19,6 +19,7 @@ mod messages;
 mod movement;
 mod offsets;
 mod physics;
+pub mod protocol;
 pub mod rerelease;
 pub mod scenario;
 mod settings;

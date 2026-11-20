@@ -9,7 +9,7 @@ server runs them. Collision, monster movement, physics and the player all follow
   `qc-sema` and `qc-codegen`; its examples use `qs-vfs` and `clap`.
 - **Spec sections:** WORLD-1 to WORLD-8 of [`world.md`](../../docs/spec/engine/world.md),
   MOVE-1 to MOVE-5 of [`move.md`](../../docs/spec/engine/move.md), PHYS-1 to PHYS-13 of
-  [`physics.md`](../../docs/spec/engine/physics.md), WORLD-9 (the debugger), NET-1 to NET-5 of
+  [`physics.md`](../../docs/spec/engine/physics.md), WORLD-9 (the debugger), NET-1 to NET-6 of
   [`net.md`](../../docs/spec/engine/net.md), and the spawning of EDICT-8; the rerelease's
   localization (RRE-1) is `qc-builtins`', and its local sounds (RRE-2.1, RRE-2.4) and named builtins
   (RRE-4) are here, with the map editor's list of which edict each map entity became
@@ -35,7 +35,10 @@ server runs them. Collision, monster movement, physics and the player all follow
 - `World::take_messages()`: the packets the server sent the client since the last call, in
   order: each frame's datagram of time, client data, entity updates and effects, and the
   reliable messages the builtins and the frame wrote (NET-1 to NET-5), byte for byte as id
-  writes them. `messages.rs` holds the writers (`Message`) and the fat PVS.
+  writes them under protocol 15, and as QuakeSpasm writes FitzQuake's 666 (the default) and
+  RMQ's 999 (NET-6), which `LoadOptions::protocol` chooses. `messages.rs` holds the writers
+  (`Message`) and the fat PVS; `protocol.rs` the protocols, their codecs and the alpha and
+  scale bytes.
 - `World::entities()`, `World::player_view()`, `World::take_set_angle()`,
   `World::take_sounds()` and `World::time()`: what a client draws and plays without reading
   the messages, kept for the viewer until the client crate reads them.

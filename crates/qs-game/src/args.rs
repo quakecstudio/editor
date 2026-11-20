@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 use crate::Error;
 use qs_render::{LitWater, Look, StyleLerp};
+use qs_sim::protocol::Protocol;
 
 /// The engine-style options, each written with one dash as the engines and ADR-0008 write
 /// them; clap reads them with two.
@@ -51,6 +52,10 @@ pub struct Args {
     /// with lit water: QuakeSpasm's `r_litwater 0` (REND-2.6).
     #[arg(long)]
     pub nolitwater: bool,
+    /// The protocol the server writes its messages in, QuakeSpasm's `-protocol`: FitzQuake's
+    /// 666 (the default), id's 15 or RMQ's 999 (NET-6.1).
+    #[arg(long, value_enum, default_value_t = ProtocolArg::FitzQuake)]
+    pub protocol: ProtocolArg,
     /// How light styles blend from letter to letter, Ironwail's `r_lerplightstyles`: every
     /// change but an abrupt one (1, the default), every change (2) or none, as id's engine
     /// (0) (REND-5.8).
@@ -156,6 +161,32 @@ impl StyleLerpArg {
             Self::SkipAbrupt => StyleLerp::SkipAbrupt,
             Self::Always => StyleLerp::Always,
             Self::Off => StyleLerp::Off,
+        }
+    }
+}
+
+/// What `--protocol` takes (NET-6.1).
+#[derive(clap::ValueEnum, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ProtocolArg {
+    /// `PROTOCOL_NETQUAKE`, id's.
+    #[value(name = "15")]
+    NetQuake,
+    /// `PROTOCOL_FITZQUAKE`.
+    #[default]
+    #[value(name = "666")]
+    FitzQuake,
+    /// `PROTOCOL_RMQ`.
+    #[value(name = "999")]
+    Rmq,
+}
+
+impl ProtocolArg {
+    /// The server's protocol.
+    pub const fn protocol(self) -> Protocol {
+        match self {
+            Self::NetQuake => Protocol::NETQUAKE,
+            Self::FitzQuake => Protocol::FITZQUAKE,
+            Self::Rmq => Protocol::RMQ,
         }
     }
 }

@@ -541,6 +541,7 @@ impl Args {
                 .collect(),
             seed: None,
             settings: Vec::new(),
+            protocol: self.protocol.protocol(),
         };
         let mut world = World::prepare(&progs, &map, &bsp, files()?, options)
             .map_err(|e| Error::Load(e.to_string()))?;

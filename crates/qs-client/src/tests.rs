@@ -375,7 +375,7 @@ fn the_serverinfo_starts_a_map() {
     );
     assert_eq!(
         ParseError::Version(1).to_string(),
-        "Server returned version 1, not 15"
+        "Server returned version 1, not 15 or 666 or 999"
     );
 }
 

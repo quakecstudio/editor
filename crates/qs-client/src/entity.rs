@@ -10,6 +10,8 @@
 //! An entity slot, `entity_t` (CLIENT-1.2, CLIENT-2): its baseline, the two latest
 //! positions from the server, where it is drawn, and the interpolation flags of CLIENT-7.
 
+use qs_sim::protocol::{EntAlpha, EntScale};
+
 /// An entity's baseline, `entity_state_t` (CLIENT-1.3).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Baseline {
@@ -27,10 +29,13 @@ pub struct Baseline {
     pub skin: i32,
     /// Its effects, never set from a message.
     pub effects: i32,
+    /// Its alpha and scale, FitzQuake's `baseline.alpha` and `baseline.scale` (CLIENT-9.4).
+    pub alpha: EntAlpha,
+    pub scale: EntScale,
 }
 
 /// The interpolation flags the FitzQuake lineage keeps (CLIENT-7).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct LerpFlags {
     /// `LERP_MOVESTEP`: a `MOVETYPE_STEP` entity, whose moves are interpolated.
     pub movestep: bool,
@@ -40,6 +45,9 @@ pub struct LerpFlags {
     pub reset_anim2: bool,
     /// `LERP_RESETMOVE`: restart the move lerp.
     pub reset_move: bool,
+    /// `LERP_FINISH` with `lerpfinish`: the time the server said the entity's next frame comes
+    /// (CLIENT-9.5); `None` without the flag.
+    pub finish: Option<f32>,
 }
 
 /// The animation and move lerp state of an entity (CLIENT-7.3, CLIENT-7.4).
@@ -98,6 +106,9 @@ pub struct Entity {
     pub lerpflags: LerpFlags,
     /// The interpolation state (CLIENT-7).
     pub lerp: Lerp,
+    /// Its alpha and scale, FitzQuake's `alpha` and `scale` (CLIENT-9.3).
+    pub alpha: EntAlpha,
+    pub scale: EntScale,
 }
 
 impl Entity {

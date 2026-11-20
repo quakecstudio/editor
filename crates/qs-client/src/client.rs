@@ -32,12 +32,17 @@ use crate::scene::{DynamicLight, EntitySlot, PoseBlend, Scene, SceneEntity, Scen
 use crate::view::{
     AXES, Contents, FULL_TURN, Footing, HALF_TURN, Refdef, ViewInput, ViewSettings, ViewState,
 };
+use qs_sim::protocol::{
+    B_ALPHA, B_LARGEFRAME, B_LARGEMODEL, B_SCALE, EntAlpha, EntScale, FOURTH_SHIFT, HIGH_SHIFT,
+    Protocol, ProtocolFlags, ProtocolVersion, SND_LARGEENTITY, SU_AMMO2, SU_ARMOR2, SU_CELLS2,
+    SU_EXTEND1, SU_EXTEND2, SU_NAILS2, SU_ROCKETS2, SU_SHELLS2, SU_WEAPON2, SU_WEAPONALPHA,
+    SU_WEAPONFRAME2, SVC_SPAWNBASELINE2, SVC_SPAWNSTATIC2, SVC_SPAWNSTATICSOUND2, THIRD_SHIFT,
+    U_ALPHA, U_EXTEND1, U_EXTEND2, U_FRAME2, U_LERPFINISH, U_MODEL2, U_SCALE, U_TRANS,
+};
 
 /// `IT_INVISIBILITY`, which hides the view model (REND-4.11).
 const IT_INVISIBILITY: i32 = 524_288;
 
-/// `PROTOCOL_VERSION` (CLIENT-1.1).
-pub const CLIENT_PROTOCOL_VERSION: i32 = 15;
 /// `MAX_SCOREBOARD` (CLIENT-1.1).
 pub const CLIENT_MAX_SCOREBOARD: usize = 16;
 /// `MAX_MODELS` (CLIENT-1.1).
@@ -155,6 +160,12 @@ const DIVIDER_MIDDLE: u8 = 0x1e;
 const DIVIDER_LENGTH: usize = 35;
 /// The bits of a byte, by which an update's second bits byte is shifted (`i<<8`).
 const BYTE_BITS: i32 = 8;
+/// A short read as unsigned, `(unsigned short) MSG_ReadShort ()` (CLIENT-9.6, CLIENT-9.7).
+const SHORT_BITS: i32 = 0xffff;
+/// The low byte a FitzQuake high byte joins (CLIENT-9.3).
+const LOW_BYTE: i32 = 0xff;
+/// Nehahra's first float, 2 when a third, the fullbright value, follows (CLIENT-9.3).
+const NEHAHRA_FULLBRIGHT: f32 = 2.0;
 /// `rand()&0x7fff`, divided by the same for a random sync base (`CL_ParseUpdate`).
 const SYNC_RANGE: i32 = 0x7fff;
 /// The ammo stats after `STAT_SHELLS`, read in order (`for (i=0 ; i<4 ; i++)`).
@@ -379,8 +390,10 @@ pub enum ParseError {
     Illegible(i32),
     /// `CL_ParseLocalSound: <n> > MAX_SOUNDS` (RRE-2.2).
     LocalSound(i32),
-    /// `Server returned version <n>, not 15`.
+    /// `Server returned version <n>, not 15 or 666 or 999` (CLIENT-9.2).
     Version(i32),
+    /// `CL_ParseStartSoundPacket: <n> > MAX_SOUNDS` (CLIENT-9.7).
+    SoundNumber(i32),
     /// `Bad maxclients (<n>) from server`.
     MaxClients(i32),
     /// `Server sent too many model precaches` or sound precaches.
@@ -417,7 +430,8 @@ impl core::fmt::Display for ParseError {
             Self::Illegible(cmd) => {
                 write!(f, "CL_ParseServerMessage: Illegible server message ({cmd})")
             }
-            Self::Version(v) => write!(f, "Server returned version {v}, not 15"),
+            Self::Version(v) => write!(f, "Server returned version {v}, not 15 or 666 or 999"),
+            Self::SoundNumber(n) => write!(f, "CL_ParseStartSoundPacket: {n} > MAX_SOUNDS"),
             Self::MaxClients(n) => write!(f, "Bad maxclients ({n}) from server"),
             Self::TooManyPrecaches => write!(f, "Server sent too many precaches"),
             Self::ModelNotFound(name) => write!(f, "Model {name} not found"),
@@ -702,6 +716,8 @@ pub struct Client {
     showscores: Scores,
     /// `sb_lines`: how many rows of the bar the view size leaves (HUD-1.1).
     bar_lines: i32,
+    /// `cl.protocol` and `cl.protocolflags`, from the serverinfo (CLIENT-9.1).
+    protocol: Protocol,
 }
 
 impl Default for Client {
@@ -762,6 +778,7 @@ impl Client {
             cdtrack: (0, 0),
             visedicts: Vec::new(),
             weapon: Entity::new(),
+            protocol: Protocol::NETQUAKE,
             contents: Contents::Empty,
             gravity: PART_GRAVITY,
             forwardmove: 0.0,
@@ -1222,7 +1239,7 @@ impl Client {
         events: &mut Vec<Event>,
     ) -> Result<(), ParseError> {
         self.onground = Footing::InAir;
-        let mut r = Reader::new(bytes);
+        let mut r = Reader::new(bytes).with_protocol(self.protocol);
         loop {
             if r.bad() {
                 return Err(ParseError::BadMessage);
@@ -1242,14 +1259,21 @@ impl Client {
                     self.mtime[0] = r.float();
                 }
                 SVC_CLIENTDATA => {
-                    let bits = r.short();
+                    let mut bits = r.short() & SHORT_BITS;
+                    // CLIENT-9.6: FitzQuake's third and fourth bytes of bits.
+                    if bits & SU_EXTEND1 != 0 {
+                        bits |= r.byte() << THIRD_SHIFT;
+                    }
+                    if bits & SU_EXTEND2 != 0 {
+                        bits |= r.byte() << FOURTH_SHIFT;
+                    }
                     self.parse_clientdata(&mut r, bits);
                 }
                 SVC_VERSION => {
                     let v = r.long();
-                    if v != CLIENT_PROTOCOL_VERSION {
-                        return Err(ParseError::Version(v));
-                    }
+                    let version = ProtocolVersion::from_number(v).ok_or(ParseError::Version(v))?;
+                    self.protocol = Protocol::new(version, self.protocol.flags());
+                    r.set_protocol(self.protocol);
                 }
                 SVC_DISCONNECT => {
                     events.push(Event::Disconnect);
@@ -1270,7 +1294,10 @@ impl Client {
                     self.view
                         .damage(self.time, armor, blood, from, entity.origin, entity.angles);
                 }
-                SVC_SERVERINFO => self.parse_serverinfo(&mut r, models, events)?,
+                SVC_SERVERINFO => {
+                    self.parse_serverinfo(&mut r, models, events)?;
+                    r.set_protocol(self.protocol);
+                }
                 SVC_SETANGLE => {
                     self.viewangles = [r.angle(), r.angle(), r.angle()];
                 }
@@ -1325,15 +1352,17 @@ impl Client {
                     self.particles
                         .run_effect(rand, self.time, org, dir, color, count);
                 }
-                SVC_SPAWNBASELINE => {
+                SVC_SPAWNBASELINE | SVC_SPAWNBASELINE2 => {
                     let i = r.short();
                     let n = self.entity_num(i)?;
-                    let baseline = r.baseline();
+                    let baseline = r.baseline(BaselineForm::of(cmd))?;
                     if let Some(entity) = self.entities.get_mut(n) {
                         entity.baseline = baseline;
                     }
                 }
-                SVC_SPAWNSTATIC => self.parse_static(&mut r)?,
+                SVC_SPAWNSTATIC | SVC_SPAWNSTATIC2 => {
+                    self.parse_static(&mut r, BaselineForm::of(cmd))?;
+                }
                 SVC_TEMP_ENTITY => self.parse_temp_entity(&mut r, rand, events)?,
                 SVC_SETPAUSE => {
                     self.paused = r.byte() != 0;
@@ -1362,9 +1391,15 @@ impl Client {
                         .ok_or(ParseError::Stat(i))?;
                     *slot = value;
                 }
-                SVC_SPAWNSTATICSOUND => {
+                SVC_SPAWNSTATICSOUND | SVC_SPAWNSTATICSOUND2 => {
                     let origin = [r.coord(), r.coord(), r.coord()];
-                    let sound = usize::try_from(r.byte()).unwrap_or(0);
+                    // CLIENT-9.7: `svc_spawnstaticsound2`'s sound is a short.
+                    let sound = if cmd == SVC_SPAWNSTATICSOUND2 {
+                        r.short() & SHORT_BITS
+                    } else {
+                        r.byte()
+                    };
+                    let sound = usize::try_from(sound).unwrap_or(0);
                     let volume = r.byte();
                     let attenuation = r.byte();
                     events.push(Event::StaticSound {
@@ -1431,10 +1466,16 @@ impl Client {
         events: &mut Vec<Event>,
     ) -> Result<(), ParseError> {
         self.clear_state();
-        let version = r.long();
-        if version != CLIENT_PROTOCOL_VERSION {
-            return Err(ParseError::Version(version));
-        }
+        let number = r.long();
+        let version = ProtocolVersion::from_number(number).ok_or(ParseError::Version(number))?;
+        // CLIENT-9.2: 999's flags follow; the others have none.
+        let flags = if version == ProtocolVersion::Rmq {
+            ProtocolFlags::from_bits(u32::from_le_bytes(r.long().to_le_bytes()))
+        } else {
+            ProtocolFlags::NONE
+        };
+        self.protocol = Protocol::new(version, flags);
+        r.set_protocol(self.protocol);
         let maxclients = r.byte();
         self.maxclients = usize::try_from(maxclients)
             .ok()
@@ -1499,7 +1540,11 @@ impl Client {
     }
 
     /// `CL_ParseUpdate (bits)` (CLIENT-2), with the FitzQuake lineage's lerp flags
-    /// (CLIENT-7.1).
+    /// (CLIENT-7.1) and FitzQuake's fields (CLIENT-9.3).
+    #[expect(
+        clippy::too_many_lines,
+        reason = "CL_ParseUpdate reads its fields in the message's order, which reads best whole"
+    )]
     fn parse_update(
         &mut self,
         r: &mut Reader<'_>,
@@ -1512,6 +1557,16 @@ impl Client {
         let mut bits = bits;
         if bits & U_MOREBITS != 0 {
             bits |= r.byte() << BYTE_BITS;
+        }
+        // CLIENT-9.3: FitzQuake's third and fourth bytes of bits.
+        let fitz = !r.protocol().is_netquake();
+        if fitz {
+            if bits & U_EXTEND1 != 0 {
+                bits |= r.byte() << THIRD_SHIFT;
+            }
+            if bits & U_EXTEND2 != 0 {
+                bits |= r.byte() << FOURTH_SHIFT;
+            }
         }
         let num = if bits & U_LONGENTITY != 0 {
             r.short()
@@ -1533,7 +1588,7 @@ impl Client {
             ent.lerpflags.reset_anim = true;
         }
         ent.msgtime = mtime[0];
-        let modnum = if bits & U_MODEL != 0 {
+        let mut modnum = if bits & U_MODEL != 0 {
             let modnum = r.byte();
             usize::try_from(modnum)
                 .ok()
@@ -1542,21 +1597,6 @@ impl Client {
         } else {
             ent.baseline.modelindex
         };
-        let model = self.models.get(modnum).and_then(Option::as_ref);
-        if modnum != ent.model {
-            ent.model = modnum;
-            ent.lerpflags.reset_anim = true;
-            match model {
-                Some(info) => {
-                    ent.syncbase = if info.random_sync {
-                        double_to_float(f64::from(rand.rand() & SYNC_RANGE) / f64::from(SYNC_RANGE))
-                    } else {
-                        0.0
-                    };
-                }
-                None => forcelink = true,
-            }
-        }
         ent.frame = if bits & U_FRAME != 0 {
             r.byte()
         } else {
@@ -1612,6 +1652,60 @@ impl Client {
             ent.forcelink = true;
         } else {
             ent.lerpflags.movestep = false;
+        }
+        if fitz {
+            // CLIENT-9.3: the alpha, the scale and the high bytes, then LERP_FINISH (CLIENT-9.5).
+            ent.alpha = if bits & U_ALPHA != 0 {
+                EntAlpha::from_byte(r.byte_u8())
+            } else {
+                ent.baseline.alpha
+            };
+            ent.scale = if bits & U_SCALE != 0 {
+                EntScale::from_byte(r.byte_u8())
+            } else {
+                ent.baseline.scale
+            };
+            if bits & U_FRAME2 != 0 {
+                ent.frame = (ent.frame & LOW_BYTE) | (r.byte() << HIGH_SHIFT);
+            }
+            if bits & U_MODEL2 != 0 {
+                let high = usize::try_from(r.byte()).unwrap_or(0) << HIGH_SHIFT;
+                modnum = (modnum & usize::from(u8::MAX)) | high;
+            }
+            ent.lerpflags.finish = (bits & U_LERPFINISH != 0)
+                .then(|| ent.msgtime + double_to_float(f64::from(r.byte()) / f64::from(u8::MAX)));
+        } else {
+            // CLIENT-9.3: "if this bit is set, assume this is PROTOCOL_NEHAHRA".
+            ent.alpha = if bits & U_TRANS != 0 {
+                let a = r.float();
+                let b = r.float();
+                #[expect(
+                    clippy::float_cmp_const,
+                    reason = "spec CLIENT-9.3: Nehahra's third float follows when the first is exactly 2"
+                )]
+                if a == NEHAHRA_FULLBRIGHT {
+                    r.float();
+                }
+                EntAlpha::encode(b)
+            } else {
+                ent.baseline.alpha
+            };
+            ent.scale = ent.baseline.scale;
+        }
+        let model = self.models.get(modnum).and_then(Option::as_ref);
+        if modnum != ent.model {
+            ent.model = modnum;
+            ent.lerpflags.reset_anim = true;
+            match model {
+                Some(info) => {
+                    ent.syncbase = if info.random_sync {
+                        double_to_float(f64::from(rand.rand() & SYNC_RANGE) / f64::from(SYNC_RANGE))
+                    } else {
+                        0.0
+                    };
+                }
+                None => forcelink = true,
+            }
         }
         if forcelink {
             ent.msg_origins[1] = ent.msg_origins[0];
@@ -1690,14 +1784,37 @@ impl Client {
             Game::Standard => weapon,
             Game::MissionPack => 1_i32.wrapping_shl(u32::try_from(weapon).unwrap_or(0)),
         };
+        // CLIENT-9.6: FitzQuake's high bytes, then the weapon's alpha.
+        for (bit, slot) in [
+            (SU_WEAPON2, stat::WEAPON),
+            (SU_ARMOR2, stat::ARMOR),
+            (SU_AMMO2, stat::AMMO),
+            (SU_SHELLS2, stat::SHELLS),
+            (SU_NAILS2, stat::NAILS),
+            (SU_ROCKETS2, stat::ROCKETS),
+            (SU_CELLS2, stat::CELLS),
+            (SU_WEAPONFRAME2, stat::WEAPONFRAME),
+        ] {
+            if bits & bit != 0 {
+                let high = r.byte() << HIGH_SHIFT;
+                if let Some(stat) = self.stats.get_mut(slot) {
+                    *stat |= high;
+                }
+            }
+        }
+        self.weapon.alpha = if bits & SU_WEAPONALPHA != 0 {
+            EntAlpha::from_byte(r.byte_u8())
+        } else {
+            EntAlpha::DEFAULT
+        };
     }
 
-    /// `CL_ParseStatic` (CLIENT-1.3).
-    fn parse_static(&mut self, r: &mut Reader<'_>) -> Result<(), ParseError> {
+    /// `CL_ParseStatic` (CLIENT-1.3), `svc_spawnstatic2`'s by its bits (CLIENT-9.4).
+    fn parse_static(&mut self, r: &mut Reader<'_>, form: BaselineForm) -> Result<(), ParseError> {
         if self.statics.len() >= self.limits.statics {
             return Err(ParseError::TooManyStatics);
         }
-        let baseline = r.baseline();
+        let baseline = r.baseline(form)?;
         let mut ent = Entity::new();
         ent.baseline = baseline;
         ent.model = baseline.modelindex;
@@ -1707,6 +1824,8 @@ impl Client {
         ent.effects = baseline.effects;
         ent.origin = baseline.origin;
         ent.angles = baseline.angles;
+        ent.alpha = baseline.alpha;
+        ent.scale = baseline.scale;
         self.statics.push(ent);
         Ok(())
     }
@@ -1724,10 +1843,23 @@ impl Client {
         } else {
             SND_PACKET_ATTENUATION
         };
-        let channel = r.short();
-        let sound_num = r.byte();
-        let ent = channel >> SOUND_CHANNEL_SHIFT;
-        let channel = channel & SOUND_CHANNEL_MASK;
+        // CLIENT-9.7: FitzQuake's large entity and large sound.
+        let (ent, channel) = if field_mask & SND_LARGEENTITY != 0 {
+            let ent = r.short() & SHORT_BITS;
+            (ent, r.byte())
+        } else {
+            let channel = r.short() & SHORT_BITS;
+            (channel >> SOUND_CHANNEL_SHIFT, channel & SOUND_CHANNEL_MASK)
+        };
+        let sound_num = if field_mask & SND_LARGESOUND != 0 {
+            r.short() & SHORT_BITS
+        } else {
+            r.byte()
+        };
+        // "if (sound_num >= MAX_SOUNDS)", a signed comparison.
+        if usize::try_from(sound_num).is_ok_and(|n| n >= CLIENT_MAX_SOUNDS) {
+            return Err(ParseError::SoundNumber(sound_num));
+        }
         if usize::try_from(ent).unwrap_or(usize::MAX) > CLIENT_MAX_EDICTS {
             return Err(ParseError::SoundEntity(ent));
         }
@@ -2228,11 +2360,48 @@ impl Client {
     }
 }
 
+/// Which form of a baseline a message carries (CLIENT-9.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BaselineForm {
+    /// `svc_spawnbaseline` or `svc_spawnstatic`: id's.
+    Id,
+    /// `svc_spawnbaseline2` or `svc_spawnstatic2`: FitzQuake's, its bits first.
+    Fitz,
+}
+
+impl BaselineForm {
+    /// The form of the server command `cmd`.
+    const fn of(cmd: i32) -> Self {
+        match cmd {
+            SVC_SPAWNBASELINE2 | SVC_SPAWNSTATIC2 => Self::Fitz,
+            _ => Self::Id,
+        }
+    }
+}
+
 impl Reader<'_> {
-    /// `CL_ParseBaseline` (CLIENT-1.3): a baseline's model, frame, colormap, skin, origin and angles.
-    fn baseline(&mut self) -> Baseline {
-        let modelindex = usize::try_from(self.byte()).unwrap_or(0);
-        let frame = self.byte();
+    /// `CL_ParseBaseline (ent, version)` (CLIENT-1.3, CLIENT-9.4): a baseline's model, frame,
+    /// colormap, skin, origin and angles, with FitzQuake's bits first and its alpha and scale
+    /// last in the second form.
+    fn baseline(&mut self, form: BaselineForm) -> Result<Baseline, ParseError> {
+        let bits = match form {
+            BaselineForm::Fitz => self.byte(),
+            BaselineForm::Id => 0,
+        };
+        let model = if bits & B_LARGEMODEL != 0 {
+            self.short() & SHORT_BITS
+        } else {
+            self.byte()
+        };
+        let modelindex = usize::try_from(model)
+            .ok()
+            .filter(|&m| m < CLIENT_MAX_MODELS || bits & B_LARGEMODEL == 0)
+            .ok_or(ParseError::BadModel(model))?;
+        let frame = if bits & B_LARGEFRAME != 0 {
+            self.short() & SHORT_BITS
+        } else {
+            self.byte()
+        };
         let colormap = self.byte();
         let skin = self.byte();
         let mut origin = [0.0; AXES];
@@ -2241,7 +2410,7 @@ impl Reader<'_> {
             *o = self.coord();
             *a = self.angle();
         }
-        Baseline {
+        Ok(Baseline {
             origin,
             angles,
             modelindex,
@@ -2249,7 +2418,17 @@ impl Reader<'_> {
             colormap,
             skin,
             effects: 0,
-        }
+            alpha: if bits & B_ALPHA != 0 {
+                EntAlpha::from_byte(self.byte_u8())
+            } else {
+                EntAlpha::DEFAULT
+            },
+            scale: if bits & B_SCALE != 0 {
+                EntScale::from_byte(self.byte_u8())
+            } else {
+                EntScale::DEFAULT
+            },
+        })
     }
 }
 

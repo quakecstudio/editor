@@ -33,6 +33,7 @@ use crate::messages::{BIT_MASK, BYTE_SHIFT};
 use crate::messages::{SVC_CENTERPRINT, SVC_PRINT, ServerMessages, Vis, WRITE_BYTE, WRITE_ENTITY};
 use crate::physics::MoveType;
 use crate::physics::{Sound, dot};
+use crate::protocol::EntAlpha;
 use crate::rerelease::{BuiltinTable, RRE_NUM_BUILTINS};
 use crate::settings::Setting;
 use crate::{HALF, POINT, ZERO};
@@ -294,6 +295,8 @@ impl Builtins for SimBuiltins {
                 self.mock.call(number, context)?;
                 let ent = Vm::Builtin(context).parm_edict(PARM0)?;
                 self.collision.unlink(ent);
+                // NET-6.8: ED_Free resets the alpha.
+                self.messages.set_alpha(ent, EntAlpha::DEFAULT);
                 Ok(())
             }
             MAKESTATIC => {
@@ -306,6 +309,7 @@ impl Builtins for SimBuiltins {
                 }
                 let ent = Vm::Builtin(context).parm_edict(PARM0)?;
                 self.collision.unlink(ent);
+                self.messages.set_alpha(ent, EntAlpha::DEFAULT);
                 Ok(())
             }
             PRECACHE_MODEL | PRECACHE_MODEL2 => {
