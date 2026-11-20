@@ -13,7 +13,7 @@
 use qc_vm::convert::{double_to_float, double_to_int, float_to_int};
 
 /// `PROTOCOL_NETQUAKE`, id's `PROTOCOL_VERSION` (NET-2.2).
-pub const PROTOCOL_NETQUAKE: i32 = 15;
+pub const NET_PROTOCOL_VERSION: i32 = 15;
 /// `PROTOCOL_FITZQUAKE` (NET-6.1).
 pub const PROTOCOL_FITZQUAKE: i32 = 666;
 /// `PROTOCOL_RMQ` (NET-6.1).
@@ -201,8 +201,7 @@ const SHORT_ANGLE_STEPS: f64 = 65536.0;
 /// The low byte and the low 16 bits.
 const BYTE_MASK: i32 = 0xff;
 const SHORT_MASK: i32 = 0xffff;
-/// `Q_rint`'s half (NET-6.2).
-const HALF: f32 = 0.5;
+/// `Q_rint`'s half, the double `0.5` (NET-6.2).
 const HALF_F64: f64 = 0.5;
 
 /// Which protocol a server speaks, `sv.protocol` (NET-6.1).
@@ -222,7 +221,7 @@ impl ProtocolVersion {
     #[must_use]
     pub const fn number(self) -> i32 {
         match self {
-            Self::NetQuake => PROTOCOL_NETQUAKE,
+            Self::NetQuake => NET_PROTOCOL_VERSION,
             Self::FitzQuake => PROTOCOL_FITZQUAKE,
             Self::Rmq => PROTOCOL_RMQ,
         }
@@ -233,7 +232,7 @@ impl ProtocolVersion {
     #[must_use]
     pub const fn from_number(number: i32) -> Option<Self> {
         match number {
-            PROTOCOL_NETQUAKE => Some(Self::NetQuake),
+            NET_PROTOCOL_VERSION => Some(Self::NetQuake),
             PROTOCOL_FITZQUAKE => Some(Self::FitzQuake),
             PROTOCOL_RMQ => Some(Self::Rmq),
             _ => None,
@@ -348,6 +347,17 @@ impl Protocol {
         }
     }
 
+    /// The protocol `version` with these flags kept, as `svc_version` sets `cl.protocol` and
+    /// leaves `cl.protocolflags` (CLIENT-9.2). The writers read the flags only under 999; the
+    /// client reads them under any.
+    #[must_use]
+    pub const fn with_version(self, version: ProtocolVersion) -> Self {
+        Self {
+            version,
+            flags: self.flags,
+        }
+    }
+
     /// Its version.
     #[must_use]
     pub const fn version(self) -> ProtocolVersion {
@@ -446,18 +456,16 @@ fn angle16_steps(f: f32) -> i32 {
     q_rint_f64(f64::from(f) * SHORT_ANGLE_STEPS / FULL_TURN) & SHORT_MASK
 }
 
-/// `Q_rint (x)`, "`((x) > 0 ? (int)((x) + 0.5) : (int)((x) - 0.5))`", in float (NET-6.2).
+/// `Q_rint (x)`, "`((x) > 0 ? (int)((x) + 0.5) : (int)((x) - 0.5))`", of a float expression:
+/// C's `0.5` is a double, so the sum is taken in double (NET-6.2).
 #[must_use]
 pub fn q_rint(x: f32) -> i32 {
-    if x > 0.0 {
-        float_to_int(x + HALF)
-    } else {
-        float_to_int(x - HALF)
-    }
+    q_rint_f64(f64::from(x))
 }
 
 /// `Q_rint` of a double expression (NET-6.2).
-fn q_rint_f64(x: f64) -> i32 {
+#[must_use]
+pub fn q_rint_f64(x: f64) -> i32 {
     if x > 0.0 {
         double_to_int(x + HALF_F64)
     } else {

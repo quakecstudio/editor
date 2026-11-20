@@ -1280,7 +1280,7 @@ impl Client {
                 SVC_VERSION => {
                     let v = r.long();
                     let version = ProtocolVersion::from_number(v).ok_or(ParseError::Version(v))?;
-                    self.protocol = Protocol::new(version, self.protocol.flags());
+                    self.protocol = self.protocol.with_version(version);
                     r.set_protocol(self.protocol);
                 }
                 SVC_DISCONNECT => {
@@ -2372,6 +2372,15 @@ impl Client {
     }
 }
 
+/// `CLAMP (0.0f, elapsed / span, 1.0f)`, a span of 0 or less finished at 1 (CLIENT-9.5), where
+/// QuakeSpasm's 0/0 gives NaN.
+pub(crate) fn finished_blend(elapsed: f64, span: f64) -> f32 {
+    if span <= 0.0 {
+        return 1.0;
+    }
+    double_to_float((elapsed / span).clamp(0.0, 1.0))
+}
+
 /// Which form of a baseline a message carries (CLIENT-9.4).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BaselineForm {
@@ -2491,7 +2500,7 @@ impl Entity {
                 _ => f64::from(self.lerp.time),
             };
             let elapsed = f64::from(double_to_float(f64::from(time) - self.lerp.start));
-            let blend = double_to_float((elapsed / span).clamp(0.0, 1.0));
+            let blend = finished_blend(elapsed, span);
             #[expect(
                 clippy::float_cmp,
                 reason = "spec CLIENT-7.3: a blend of exactly 1 makes the previous pose the current"
@@ -2537,7 +2546,7 @@ impl Entity {
                 None => f64::from(CLIENT_LERP_MOVE_TIME),
             };
             let elapsed = f64::from(double_to_float(f64::from(time) - self.lerp.move_start));
-            let blend = double_to_float((elapsed / span).clamp(0.0, 1.0));
+            let blend = finished_blend(elapsed, span);
             let mut origin = [0.0; AXES];
             let mut angles = [0.0; AXES];
             for i in 0..AXES {

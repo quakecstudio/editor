@@ -135,3 +135,22 @@ fn angles_read_back() {
     assert_eq!(Protocol::RMQ.wire_angle(270.0), -90.0);
     assert_eq!(rmq(ProtocolFlags::FLOAT_ANGLE).wire_angle(12.25), 12.25);
 }
+
+// spec NET-6.2: Q_rint adds C's double 0.5, so a float just under a half rounds down, where a
+// float sum would round to 1
+#[test]
+fn q_rint_adds_a_double_half() {
+    let just_under = 0.499_999_97_f32;
+    assert_eq!(just_under + 0.5, 1.0, "the float sum rounds up");
+    assert_eq!(q_rint(just_under), 0);
+    assert_eq!(q_rint(-just_under), 0);
+    assert_eq!(super::q_rint_f64(0.5), 1);
+}
+
+// spec CLIENT-9.2: svc_version changes the protocol and keeps the flags
+#[test]
+fn a_version_keeps_the_flags() {
+    let changed = Protocol::RMQ.with_version(ProtocolVersion::FitzQuake);
+    assert_eq!(changed.version(), ProtocolVersion::FitzQuake);
+    assert_eq!(changed.flags(), Protocol::RMQ.flags());
+}

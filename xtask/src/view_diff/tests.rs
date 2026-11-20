@@ -11,8 +11,8 @@
 
 use super::{
     CONSOLE_TOLERANCE, Frames, HOST_PROTOCOL, MENU_TOLERANCE, PPM_HEADER, Side, Sound, Tolerance,
-    compare_frames, compare_sound, monster_near, parse_tolerances, route, shot_tolerance, start_of,
-    tolerance_of,
+    compare_frames, compare_sound, host_protocol, monster_near, parse_tolerances, route,
+    shot_tolerance, start_of, tolerance_of,
 };
 
 /// A 320 by 240 binary PPM of one grey `level`, its pixel `at` set to `other`.
@@ -312,9 +312,13 @@ fn the_menu_and_console_have_their_own_tolerances() {
     assert!(!measured(10.0, 0.6).fits(CONSOLE_TOLERANCE));
 }
 
-// spec VIEWDIFF-6.1: the host plays the route at id's protocol 15, before any option the run
-// adds, so a later --host-arg can still choose another
+// spec VIEWDIFF-6.1: the host plays the route at id's protocol 15, unless the run's
+// --host-arg names a protocol, which is then the only one
 #[test]
 fn the_host_runs_at_protocol_15() {
     assert_eq!(HOST_PROTOCOL, ["--protocol", "15"]);
+    assert_eq!(host_protocol(&[]), HOST_PROTOCOL);
+    assert_eq!(host_protocol(&["--nozfix".to_owned()]), HOST_PROTOCOL);
+    assert!(host_protocol(&["--protocol".to_owned(), "666".to_owned()]).is_empty());
+    assert!(host_protocol(&["--protocol=999".to_owned()]).is_empty());
 }

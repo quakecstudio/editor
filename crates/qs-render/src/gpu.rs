@@ -426,6 +426,9 @@ enum Pass {
     Blended,
     /// Blended, with `glDepthMask (GL_FALSE)`: the particles.
     BlendedNoDepthWrite,
+    /// Blended, with `glDepthMask (GL_FALSE)` and the faces culled as an opaque model's: an
+    /// entity in the alpha pass (REND-14.2).
+    Translucent,
     /// Blended, with no depth test: the 2D layer.
     Flat,
     /// Opaque, pulled toward the eye: a decal.
@@ -626,13 +629,10 @@ impl MapRenderer {
         let alias_alpha_pipeline = pipeline(
             ("alias_vertex", &alias_vertex),
             "alias_fragment",
-            Pass::BlendedNoDepthWrite,
+            Pass::Translucent,
         );
-        let lit_alpha_pipeline = pipeline(
-            ("lit_vertex", &world_vertex),
-            "fragment",
-            Pass::BlendedNoDepthWrite,
-        );
+        let lit_alpha_pipeline =
+            pipeline(("lit_vertex", &world_vertex), "fragment", Pass::Translucent);
         let sprite = ("sprite_vertex", &sprite_vertex);
         let sprite_pipelines = [
             pipeline(sprite, "sprite_fragment", Pass::Opaque),
@@ -1289,7 +1289,9 @@ const DEPTH_COMPARE: wgpu::CompareFunction = wgpu::CompareFunction::LessEqual;
 fn depth_stencil(format: TextureFormat, pass: Pass) -> wgpu::DepthStencilState {
     let (write, compare, bias) = match pass {
         Pass::Opaque | Pass::Blended => (true, DEPTH_COMPARE, wgpu::DepthBiasState::default()),
-        Pass::BlendedNoDepthWrite => (false, DEPTH_COMPARE, wgpu::DepthBiasState::default()),
+        Pass::BlendedNoDepthWrite | Pass::Translucent => {
+            (false, DEPTH_COMPARE, wgpu::DepthBiasState::default())
+        }
         Pass::Flat => (
             false,
             wgpu::CompareFunction::Always,
@@ -1311,7 +1313,7 @@ impl Pass {
     const fn blend(self) -> Option<wgpu::BlendState> {
         match self {
             Pass::Opaque | Pass::Decal => None,
-            Pass::Blended | Pass::BlendedNoDepthWrite | Pass::Flat => {
+            Pass::Blended | Pass::BlendedNoDepthWrite | Pass::Translucent | Pass::Flat => {
                 Some(wgpu::BlendState::ALPHA_BLENDING)
             }
         }
@@ -1323,7 +1325,7 @@ impl Pass {
     /// particles, which face the eye either way.
     fn primitive(self) -> wgpu::PrimitiveState {
         let cull = match self {
-            Pass::Opaque | Pass::Blended => Some(wgpu::Face::Front),
+            Pass::Opaque | Pass::Blended | Pass::Translucent => Some(wgpu::Face::Front),
             Pass::BlendedNoDepthWrite | Pass::Flat | Pass::Decal => None,
         };
         wgpu::PrimitiveState {
@@ -1717,8 +1719,8 @@ mod tests {
     use super::{
         ALIAS_VERTEX_BYTES, AliasDraw, Assets, DEPTH_COMPARE, EntityPass, FlatBlend, FlatDraw,
         FlatFrame, FlatVertex, Fog, MapCallback, MapRenderer, ModelDepth, ModelFrame,
-        ModelPlacement, Pass, SpriteDraw, SpriteFrame, View, ZFIX_BIAS, alias_bytes, grown,
-        model_bytes,
+        ModelPlacement, Pass, SpriteDraw, SpriteFrame, View, ZFIX_BIAS, alias_bytes, depth_stencil,
+        grown, model_bytes,
     };
     use crate::alias::AliasVertex;
     use crate::camera::Camera;
@@ -2564,6 +2566,18 @@ mod tests {
     #[test]
     fn depth_ties_go_to_the_later_surface() {
         assert_eq!(DEPTH_COMPARE, wgpu::CompareFunction::LessEqual);
+    }
+
+    // spec REND-14.2: an entity in the alpha pass is culled as an opaque one, blended, and
+    // writes no depth
+    #[test]
+    fn the_alpha_pass_culls_blends_and_keeps_the_depth() {
+        let pass = Pass::Translucent;
+        assert_eq!(pass.primitive().cull_mode, Some(wgpu::Face::Front));
+        assert_eq!(pass.blend(), Some(wgpu::BlendState::ALPHA_BLENDING));
+        let depth = depth_stencil(wgpu::TextureFormat::Depth32Float, pass);
+        assert_eq!(depth.depth_write_enabled, Some(false));
+        assert_eq!(depth.depth_compare, Some(DEPTH_COMPARE));
     }
 
     // spec REND-1.10: only a face's front is drawn: GL's counter-clockwise front, front culled

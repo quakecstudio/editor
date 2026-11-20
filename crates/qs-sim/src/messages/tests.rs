@@ -769,7 +769,9 @@ fn the_builtins_bytes_match_the_mocks_counts() {
          WriteChar(1, -1); WriteShort(1, 300); WriteLong(1, 70000); WriteCoord(1, 1.5); \
          WriteAngle(1, -90); WriteString(1, \"hi\"); WriteEntity(1, self); {PLAYER_SIZE} }};\n"
     );
-    let mut run = run_on(&ledge(), &more, &entity("statue", "4 8 12", ""));
+    // Id's 15, whose sizes the mock counts against.
+    let statue = entity("statue", "4 8 12", "");
+    let mut run = running_with(&ledge(), &more, &statue, Vec::new(), netquake());
     {
         let m = run.world.messages();
         let e = run.world.engine();
@@ -1475,4 +1477,19 @@ fn the_next_think_is_sent() {
         "a tenth is not sent"
     );
     assert!(finish(0.2, Protocol::NETQUAKE).is_empty());
+}
+
+// spec NET-6.1: under 666 and 999 the buffers are QuakeSpasm's, so 300 moving things, which do
+// not fit id's 1024-byte datagram, are all sent
+#[test]
+fn fitzquake_buffers_hold_what_ids_cannot() {
+    let many = "void() worldspawn = { precache_model(\"progs/t.mdl\"); local float i; i = 0; \
+        while (i < 300) { local entity e; e = spawn(); setmodel(e, \"progs/t.mdl\"); \
+        setorigin(e, '0 0 0' + i * '1 0 0'); e.movetype = 8; e.velocity = '100 100 100'; \
+        i = i + 1; } };\n";
+    let mut rmq = player_with_options(&ledge(), "", "", many, speaking(Protocol::RMQ));
+    let datagram = next_datagram(&mut rmq);
+    assert!(datagram.len() > NET_MAX_DATAGRAM, "{}", datagram.len());
+    let mut id = player_with_options(&ledge(), "", "", many, netquake());
+    assert!(next_datagram(&mut id).len() <= NET_MAX_DATAGRAM);
 }

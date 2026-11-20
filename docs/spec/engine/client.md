@@ -374,7 +374,8 @@ CLIENT-1 to CLIENT-7 say, with QuakeSpasm's one addition for 15, Nehahra's alpha
   and 666 have no flags.
 - **CLIENT-9.2** `CL_ParseServerInfo` accepts 15, 666 and 999, and refuses any other with
   "`Server returned version %i, not %i or %i or %i`"; under 999 the protocol flags follow as a
-  long. `svc_version` accepts the same three.
+  long. `svc_version` accepts the same three and sets only the protocol, "`cl.protocol = i;`":
+  the flags stay, and coordinates and angles are read by the flags whatever the protocol.
 - **CLIENT-9.3** Under 666 and 999 `CL_ParseUpdate` reads the third byte of bits after the
   second under `U_EXTEND1` and the fourth under `U_EXTEND2`; after the origins and angles, the
   alpha byte under `U_ALPHA` (else the baseline's), the scale byte under `U_SCALE` (else the
@@ -392,7 +393,9 @@ CLIENT-1 to CLIENT-7 say, with QuakeSpasm's one addition for 15, Nehahra's alpha
   its baseline's alpha and scale. A large model at or past the client's `MAX_MODELS` is the
   error of CLIENT-2.1's bad model.
 - **CLIENT-9.5** `U_LERPFINISH` sets "`ent->lerpfinish = ent->msgtime + ((float)(MSG_ReadByte())
-  / 255)`" and `LERP_FINISH`; an update without it clears `LERP_FINISH` (CLIENT-7.3).
+  / 255)`" and `LERP_FINISH`; an update without it clears `LERP_FINISH` (CLIENT-7.3). A span to
+  `lerpfinish` of 0 or less, a byte of 0 on the frame a pose changes, makes QuakeSpasm's blend
+  `0/0`, NaN; the preview host takes such a blend as finished, 1, our choice.
 - **CLIENT-9.6** `svc_clientdata`'s bits are the short read unsigned, then a third byte under
   `SU_EXTEND1` and a fourth under `SU_EXTEND2`. After the weapon, each of `SU_WEAPON2`,
   `SU_ARMOR2`, `SU_AMMO2`, `SU_SHELLS2`, `SU_NAILS2`, `SU_ROCKETS2`, `SU_CELLS2` and

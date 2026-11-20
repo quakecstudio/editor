@@ -36,7 +36,7 @@ use crate::protocol::{
     SU_ARMOR2, SU_CELLS2, SU_EXTEND1, SU_EXTEND2, SU_NAILS2, SU_ROCKETS2, SU_SHELLS2, SU_WEAPON2,
     SU_WEAPONALPHA, SU_WEAPONFRAME2, SVC_SPAWNBASELINE2, SVC_SPAWNSTATIC2, SVC_SPAWNSTATICSOUND2,
     THIRD_BYTE, THIRD_SHIFT, U_ALPHA, U_EXTEND1, U_EXTEND2, U_FRAME2, U_LERPFINISH, U_MODEL2,
-    U_SCALE, WireAngle, WireCoord, q_rint,
+    U_SCALE, WireAngle, WireCoord, q_rint_f64,
 };
 use crate::settings::Setting;
 use crate::spawn::c_atof;
@@ -48,8 +48,6 @@ pub const NET_MAX_DATAGRAM: usize = 1024;
 pub const NET_MAX_MSGLEN: usize = 8000;
 /// The signon buffer's size (NET-1.2).
 pub const NET_SIGNON_SIZE: usize = 8192;
-/// `PROTOCOL_VERSION` (NET-2.2).
-pub const NET_PROTOCOL_VERSION: i32 = 15;
 /// `VERSION` as `%4.2f` prints it (NET-2.2).
 pub const NET_VERSION: &str = "1.09";
 /// `GAME_COOP` (NET-2.2).
@@ -591,17 +589,20 @@ impl ServerMessages {
         set_at(&mut self.send_intervals, n, interval);
     }
 
-    /// Every buffer written in `protocol` from now on (NET-6.1).
+    /// Every buffer written in `protocol` from now on, at its sizes (NET-6.1); called before
+    /// anything is written.
     pub(crate) fn set_protocol(&mut self, protocol: Protocol) {
         self.protocol = protocol;
-        for message in [
-            &mut self.datagram,
-            &mut self.reliable_datagram,
-            &mut self.signon,
-            &mut self.client.message,
-        ] {
-            message.protocol = protocol;
-        }
+        let sizes = BufferSizes::of(protocol);
+        self.datagram = self.message(sizes.datagram, Overflow::Fatal);
+        self.reliable_datagram = self.message(sizes.datagram, Overflow::Fatal);
+        self.signon = self.message(sizes.signon, Overflow::Fatal);
+        self.client.message = self.message(sizes.msglen, Overflow::Allowed);
+    }
+
+    /// The sizes of the server's buffers in its protocol (NET-6.1).
+    fn sizes(&self) -> BufferSizes {
+        BufferSizes::of(self.protocol)
     }
 
     /// A new buffer of `max` bytes in the server's protocol.
@@ -987,7 +988,7 @@ impl SimCall<'_, '_, '_> {
                 }
             }
         }
-        let mut out = messages.message(NET_SIGNON_SIZE, Overflow::Fatal);
+        let mut out = messages.message(messages.sizes().signon, Overflow::Fatal);
         if bits == 0 {
             out.write_byte(SVC_SPAWNSTATIC);
         } else {
@@ -1329,7 +1330,8 @@ impl SimCall<'_, '_, '_> {
             message.write_angle(angles[1]);
             message.write_angle(0.0);
         }
-        let mut data = self.sim.messages.message(NET_MAX_MSGLEN, Overflow::Allowed);
+        let msglen = self.sim.messages.sizes().msglen;
+        let mut data = self.sim.messages.message(msglen, Overflow::Allowed);
         self.write_clientdata(client, &mut data)?;
         let slot = &mut self.sim.messages.client;
         slot.message.write_bytes(data.bytes());
@@ -1411,7 +1413,8 @@ impl SimCall<'_, '_, '_> {
 
     /// `SV_SendClientDatagram` (NET-1.5): the datagram for the client of edict `client`.
     fn client_datagram(&mut self, client: usize) -> Result<Vec<u8>, RunError> {
-        let mut msg = self.sim.messages.message(NET_MAX_DATAGRAM, Overflow::Fatal);
+        let datagram = self.sim.messages.sizes().datagram;
+        let mut msg = self.sim.messages.message(datagram, Overflow::Fatal);
         msg.write_byte(SVC_TIME);
         msg.write_float(double_to_float(self.clock()));
         self.write_clientdata(client, &mut msg)?;
@@ -1610,8 +1613,9 @@ impl SimCall<'_, '_, '_> {
             }
             if bits & U_LERPFINISH != 0 {
                 // "`(byte)(Q_rint((ent->v.nextthink-sv.time)*255))`", sv.time this frame's end.
+                // The float less the double `sv.time`, times 255, in double.
                 let ahead = f64::from(self.float(e, "nextthink")) - self.clock();
-                msg.write_byte(q_rint(double_to_float(ahead) * LERP_FINISH_STEPS));
+                msg.write_byte(q_rint_f64(ahead * f64::from(LERP_FINISH_STEPS)));
             }
         }
     }
@@ -1884,6 +1888,40 @@ fn set_at<T: Copy + Default>(table: &mut Vec<T>, n: usize, value: T) {
         *slot = value;
     }
 }
+
+/// The sizes of the server's buffers (NET-1.2, NET-6.1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct BufferSizes {
+    datagram: usize,
+    msglen: usize,
+    signon: usize,
+}
+
+impl BufferSizes {
+    /// Id's under 15; QuakeSpasm's under 666 and 999, "`#define MAX_DATAGRAM 64000`", "`#define
+    /// MAX_MSGLEN 64000`" and "`#define SIGNON_SIZE 31500`", so that no message its larger
+    /// encodings make is cut short where id's engine kept it whole.
+    const fn of(protocol: Protocol) -> Self {
+        if protocol.is_netquake() {
+            Self {
+                datagram: NET_MAX_DATAGRAM,
+                msglen: NET_MAX_MSGLEN,
+                signon: NET_SIGNON_SIZE,
+            }
+        } else {
+            Self {
+                datagram: FITZ_MAX_DATAGRAM,
+                msglen: FITZ_MAX_MSGLEN,
+                signon: FITZ_SIGNON_SIZE,
+            }
+        }
+    }
+}
+
+/// QuakeSpasm's `MAX_DATAGRAM`, `MAX_MSGLEN` and `SIGNON_SIZE` (NET-6.1).
+const FITZ_MAX_DATAGRAM: usize = 64000;
+const FITZ_MAX_MSGLEN: usize = 64000;
+const FITZ_SIGNON_SIZE: usize = 31500;
 
 /// What QuakeSpasm's `SV_RunThink` keeps of an entity's last think, `oldthinktime` and
 /// `oldframe` (NET-6.9).

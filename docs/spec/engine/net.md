@@ -253,7 +253,11 @@ three (DIFF-16).
   place of NET-2.2's 15, and for 999 its flags as a long after it; under 15 it sends the model
   and sound names "`if (sv.protocol != PROTOCOL_NETQUAKE || i < 256)`", so at most the first
   255 of each. The preview host chooses the protocol with `--protocol` (15, 666 or 999) before
-  the map loads, so its baselines (NET-2.1) are written in it. QuakeSpasm prints "`FITZQUAKE
+  the map loads, so its baselines (NET-2.1) are written in it. Under 666 and 999 the buffers are
+  QuakeSpasm's sizes, "`#define MAX_DATAGRAM 64000`", "`#define MAX_MSGLEN 64000`" and
+  "`#define SIGNON_SIZE 31500`" (`Quake/quakedef.h`, `Quake/sv_main.c`), where 15 keeps NET-1.2's,
+  so no message the larger encodings make is cut short where id's engine kept it whole; the
+  mock engine's counts (DIFF-6.5) still decide which builtin's bytes are written. QuakeSpasm prints "`FITZQUAKE
   %1.2f SERVER (%i CRC)`" where id prints NET-2.2's version line; the host keeps id's line,
   since it is not FitzQuake.
 - **NET-6.2** Under 15 a coordinate and an angle are NET-1.1's. Under 666 and 999 they are
@@ -263,8 +267,8 @@ three (DIFF-16).
   "`MSG_WriteShort (sb, Q_rint(f*8));`"; and `MSG_WriteAngle (sb, f, flags)`: a float with
   `PRFL_FLOATANGLE`, "`MSG_WriteShort (sb, Q_rint(f * 65536.0 / 360.0) & 65535)`" with
   `PRFL_SHORTANGLE`, else "`MSG_WriteByte (sb, Q_rint(f * 256.0 / 360.0) & 255)`". `Q_rint (x)`
-  is "`((x) > 0 ? (int)((x) + 0.5) : (int)((x) - 0.5))`", the products with `65536.0` and
-  `256.0` in double. `MSG_WriteAngle16` is a float with `PRFL_FLOATANGLE`, else the short. Every
+  is "`((x) > 0 ? (int)((x) + 0.5) : (int)((x) - 0.5))`"; C's `0.5` is a double, so the sum is
+  taken in double whatever `x` is, and the products with `65536.0` and `256.0` are in double. `MSG_WriteAngle16` is a float with `PRFL_FLOATANGLE`, else the short. Every
   buffer of NET-1.2, and each message built from them, writes in the server's protocol, the
   builtins' `WriteCoord` and `WriteAngle` (BUILTIN-13.2) included. A deliberate divergence:
   QuakeSpasm's client sends its move's angles with `MSG_WriteAngle16` under 666 and its

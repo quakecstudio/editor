@@ -110,7 +110,7 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
                 // The host reads `-basedir` and `-game` as the engines write them (ADR-0008).
                 command
                     .args(&engine)
-                    .args(HOST_PROTOCOL)
+                    .args(host_protocol(&args.host_args))
                     .args(&args.host_args)
                     .arg("--view-script")
                     .arg(&script)
@@ -282,8 +282,19 @@ impl std::fmt::Display for Side {
 }
 
 /// The host's protocol in the differential, id's 15 (VIEWDIFF-6.1): 666 rounds the angle the
-/// player is placed at where id's engine truncates it. A later `--host-arg` wins.
+/// player is placed at where id's engine truncates it; a `--host-arg` naming `--protocol` is
+/// used in its place.
 const HOST_PROTOCOL: [&str; 2] = ["--protocol", "15"];
+
+/// The protocol options the host is given before `host_args`: [`HOST_PROTOCOL`] unless one of
+/// them names a protocol, which clap would refuse to read twice (VIEWDIFF-6.1).
+fn host_protocol(host_args: &[String]) -> &'static [&'static str] {
+    if host_args.iter().any(|a| a.starts_with(HOST_PROTOCOL[0])) {
+        &[]
+    } else {
+        &HOST_PROTOCOL
+    }
+}
 
 /// The host's line that turns off the fog a map's worldspawn sets, which id's engine does not
 /// draw (VIEWDIFF-5.6, REND-10.5).

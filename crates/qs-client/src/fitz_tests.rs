@@ -10,6 +10,7 @@
 use qs_sim::protocol::{EntAlpha, EntScale, Protocol, ProtocolFlags, ProtocolVersion};
 use qs_sim::{Message, Overflow};
 
+use crate::client::finished_blend;
 use crate::{
     Client, ClientLimits, Event, FrameInfo, Game, ModelInfo, ModelKind, Models, ParseError, Random,
     Reader, SoundEntity, SoundRef, stat,
@@ -461,4 +462,24 @@ fn the_weapon_blends_to_the_players_next_think() {
     assert!((blend_at(51) - 0.25).abs() < 1e-4, "{}", blend_at(51));
     // 0.4: 0.05 of 0.4.
     assert!((blend_at(102) - 0.125).abs() < 1e-4, "{}", blend_at(102));
+}
+
+// spec CLIENT-9.5: a span to lerpfinish of 0 is a finished blend, 1, where QuakeSpasm's is NaN
+#[test]
+fn an_empty_lerp_span_is_finished() {
+    assert_eq!(finished_blend(0.0, 0.0), 1.0);
+    assert_eq!(finished_blend(0.1, -0.2), 1.0);
+    assert_eq!(finished_blend(0.05, 0.2), 0.25);
+    assert_eq!(finished_blend(0.5, 0.2), 1.0, "clamped");
+}
+
+// spec CLIENT-9.2: svc_version keeps the 999 flags, so a coordinate after it is still a long
+#[test]
+fn svc_version_keeps_the_flags() {
+    let p = Protocol::RMQ;
+    let mut version = msg(p);
+    version.write_byte(4);
+    version.write_long(666);
+    let client = connected(p, &[version.take(), thing_baseline(p)]).unwrap();
+    assert_eq!(client.entities()[THING].baseline.origin, [8.0, 0.0, 0.0]);
 }

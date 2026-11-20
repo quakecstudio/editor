@@ -830,7 +830,7 @@ default alpha and scale is drawn as REND-1 to REND-13 say.
 - **REND-14.2** The alpha is `ENTALPHA_DECODE` (NET-6.8): 1 for `ENTALPHA_DEFAULT`, else `(a -
   1) / 254`. `R_DrawAliasModel` draws nothing when it is 0 ("`if (entalpha == 0) goto
   cleanup`") and below 1 blends the model with "`glDepthMask(GL_FALSE); glEnable(GL_BLEND);`",
-  its colour's alpha the entity's; the weapon takes `cl.viewent.alpha` (CLIENT-9.6).
+  its colour's alpha the entity's, its faces culled as an opaque model's (REND-1.10); the weapon takes `cl.viewent.alpha` (CLIENT-9.6).
   `R_DrawTextureChains_GLSL` blends a brush entity's lit faces the same way, and
   `GL_WaterAlphaForEntitySurface` gives its liquid faces "`if (ent == NULL || ent->alpha ==
   ENTALPHA_DEFAULT) entalpha = GL_WaterAlphaForSurface(s); else entalpha =
