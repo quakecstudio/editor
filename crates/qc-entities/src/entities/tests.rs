@@ -221,6 +221,16 @@ fn a_call_by_operands_gives_the_model_and_size() {
     assert_eq!(item.model.as_deref(), Some("progs/thing.mdl"));
     assert_eq!(item.size, Some([[-16.0, -16.0, 0.0], [16.0, 16.0, 56.0]]));
     assert_eq!(class(&found, "func_wall2").shape, Shape::Brush);
+    // FTEQCC with no target named loads `self.model` straight into the parameter's slot.
+    let source = source.replace("#pragma target fte_5768\n", "");
+    let found = classes(&ModuleSpec {
+        files: &[&source],
+        dialect: qc_syntax::Dialect::Fteqcc,
+    });
+    let item = class(&found, "item_thing");
+    assert_eq!(item.model.as_deref(), Some("progs/thing.mdl"));
+    assert_eq!(item.size, Some([[-16.0, -16.0, 0.0], [16.0, 16.0, 56.0]]));
+    assert_eq!(class(&found, "func_wall2").shape, Shape::Brush);
 }
 
 // No spec statement: P5-03: a comment's colour, box, brush mark, flags and text; the rerelease
@@ -315,11 +325,12 @@ fn no_spawn_functions_no_classes() {
     assert!(classes(&ModuleSpec::default()).is_empty());
 }
 
-/// The targeting keys of a module of [`DEFS`] and `files`.
-fn targeting(files: &[&str]) -> Vec<String> {
+/// The targeting keys of a module of [`DEFS`] and `spec`'s files, in its dialect.
+fn targeting(spec: &ModuleSpec<'_>) -> Vec<String> {
     let mut db = Db::new();
+    db.set_dialect(spec.dialect);
     let mut input = ModuleInput::default();
-    for (index, text) in std::iter::once(&DEFS).chain(files).enumerate() {
+    for (index, text) in std::iter::once(&DEFS).chain(spec.files).enumerate() {
         let id = FileId::new(index);
         db.set_file(id, format!("f{index}.qc").into(), text.as_bytes().to_vec());
         input.compiled.push(id);
@@ -329,7 +340,9 @@ fn targeting(files: &[&str]) -> Vec<String> {
 
 // spec MAP-8.8: a key fires entities when the code passes its field to find as the value to
 // match against targetname, from self or another entity, or compares it with targetname by ==
-// or !=; a comparison with a global, or find over another field, makes no key
+// or !=; a comparison with a global, or find over another field, makes no key. However the
+// dialect passes the argument: stored into its slot, loaded straight into it as FTEQCC does,
+// or as the call's own operand (FTEF-32.19)
 #[test]
 fn targeting_keys_are_read_from_the_code() {
     let code = ".string killtarget, target2, pathtarget, netname; string string_null;\n\
@@ -343,11 +356,22 @@ fn targeting_keys_are_read_from_the_code() {
             if (self.targetname != string_null) t = world;\n\
             t = find (world, netname, self.noise);\n\
         };\n";
-    assert_eq!(
-        targeting(&[code]),
-        ["killtarget", "pathtarget", "target", "target2"]
-    );
-    assert!(targeting(&[""]).is_empty());
+    let by_operands = format!("#pragma target fte_5768\n{code}");
+    for (files, dialect) in [
+        ([code], qc_syntax::Dialect::Vanilla),
+        ([code], qc_syntax::Dialect::Fteqcc),
+        ([by_operands.as_str()], qc_syntax::Dialect::Fteqcc),
+    ] {
+        assert_eq!(
+            targeting(&ModuleSpec {
+                files: &files,
+                dialect
+            }),
+            ["killtarget", "pathtarget", "target", "target2"],
+            "{dialect:?}"
+        );
+    }
+    assert!(targeting(&ModuleSpec::default()).is_empty());
 }
 
 // No spec statement: P5-03, a field's key type is its value's: an entity by number, a
