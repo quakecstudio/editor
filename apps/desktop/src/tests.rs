@@ -6130,3 +6130,43 @@ fn the_welcome_page_follows_the_game_folder_chosen() {
     assert!(shown(&mut app, &second));
     assert!(!shown(&mut app, &first));
 }
+
+// No spec statement: L-28, the Project panel and the Welcome page each have one New Project
+// entry and none names a template; a click on either shows the dialog, which Cancel hides
+#[test]
+fn new_project_is_asked_for_in_one_dialog() {
+    let mut harness = accessible();
+    harness.run();
+    assert_eq!(
+        harness
+            .query_all_by_label(Text::NewProjectMenu.get())
+            .count(),
+        2,
+        "the panel's and the page's"
+    );
+    for nth in [0, 1] {
+        assert!(
+            harness
+                .query_by_label(Text::NewProjectWhich.get())
+                .is_none()
+        );
+        harness
+            .get_all_by_label(Text::NewProjectMenu.get())
+            .nth(nth)
+            .unwrap()
+            .click();
+        harness.run();
+        harness.run();
+        harness.get_by_label(Text::NewProjectWhich.get());
+        harness.get_by_label(Text::GameOriginal.get());
+        harness.get_by_label(Text::GameRerelease.get());
+        harness.get_by_label(Text::PaletteCancel.get()).click();
+        harness.run();
+        harness.run();
+    }
+    assert!(
+        harness
+            .query_by_label(Text::NewProjectWhich.get())
+            .is_none()
+    );
+}

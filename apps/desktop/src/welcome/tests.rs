@@ -11,7 +11,6 @@ use eframe::egui;
 use eframe::egui::accesskit::Role;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use qs_templates::Template;
 use qs_workbench::game_files::{GameFiles, GameState};
 
 use super::{Page, WelcomeAction, page};
@@ -137,12 +136,8 @@ fn each_click_asks_for_its_own_thing() {
         Some(WelcomeAction::GameFiles)
     ));
     assert!(matches!(
-        clicked(Spec::default(), Text::NewId1Menu.get()),
-        Some(WelcomeAction::Project(LeftAction::New(Template::Id1)))
-    ));
-    assert!(matches!(
-        clicked(Spec::default(), Text::NewRereleaseMenu.get()),
-        Some(WelcomeAction::Project(LeftAction::New(Template::Rerelease)))
+        clicked(Spec::default(), Text::NewProjectMenu.get()),
+        Some(WelcomeAction::Project(LeftAction::New))
     ));
     assert!(matches!(
         clicked(Spec::default(), Text::OpenFolderButton.get()),

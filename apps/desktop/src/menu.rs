@@ -18,7 +18,6 @@
 use eframe::egui::{Key, KeyboardShortcut, Modifiers};
 use qs_layout::{DEFAULT_KEYS, KeyContext, Panel};
 use qs_map_edit::backup::MAP_BACKUP;
-use qs_templates::Template;
 use qs_workbench::checkpoints::CREATE_CHECKPOINT;
 use qs_workbench::export::PROJECT_EXPORT;
 use qs_workbench::map_compile::MAP_LEAKS;
@@ -37,8 +36,8 @@ pub mod native;
 pub enum MenuChoice {
     /// File, Open Folder.
     OpenFolder,
-    /// File, New id1 Project or New Rerelease Project (P4-17).
-    NewProject(Template),
+    /// File, New Project: the New Project dialog (P4-17, L-28).
+    NewProject,
     /// File, Go to File: the file finder.
     FileFinder,
     /// File, Quake Files: the guide to the game's files (P3-21).
@@ -59,7 +58,7 @@ impl MenuChoice {
     pub const fn command(self) -> &'static str {
         match self {
             Self::OpenFolder => qs_workbench::OPEN_PROJECT,
-            Self::NewProject(_) => qs_templates::NEW_PROJECT,
+            Self::NewProject => qs_templates::NEW_PROJECT,
             Self::FileFinder => PROJECT_FILES,
             Self::GameFiles => qs_workbench::CHOOSE_GAME,
             Self::ExportMod => PROJECT_EXPORT,
@@ -74,8 +73,7 @@ impl MenuChoice {
     pub const fn title(self) -> Text {
         match self {
             Self::OpenFolder => Text::OpenFolderMenu,
-            Self::NewProject(Template::Id1) => Text::NewId1Menu,
-            Self::NewProject(Template::Rerelease) => Text::NewRereleaseMenu,
+            Self::NewProject => Text::NewProjectMenu,
             Self::FileFinder => Text::FileFinderMenu,
             Self::GameFiles => Text::GameFilesMenu,
             Self::ExportMod => Text::ExportModMenu,
@@ -105,7 +103,7 @@ impl MenuChoice {
             Self::Zoom(ZoomStep::Actual) => {
                 Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::Num0))
             }
-            Self::NewProject(_) | Self::GameFiles | Self::ExportMod | Self::Toggle(_) => None,
+            Self::NewProject | Self::GameFiles | Self::ExportMod | Self::Toggle(_) => None,
         }
     }
 }
@@ -218,8 +216,7 @@ pub const MENUS: &[MenuSpec] = &[
         title: Text::File,
         role: Role::Plain,
         items: &[
-            Item::Choice(MenuChoice::NewProject(Template::Id1)),
-            Item::Choice(MenuChoice::NewProject(Template::Rerelease)),
+            Item::Choice(MenuChoice::NewProject),
             Item::Choice(MenuChoice::OpenFolder),
             Item::Choice(MenuChoice::FileFinder),
             Item::Separator,

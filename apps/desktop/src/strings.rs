@@ -391,10 +391,22 @@ pub enum Text {
     OpenFolderTitle,
     /// The Project section's button with no project open.
     OpenFolderButton,
-    /// File, New id1 Project: a project from id's QuakeC 1.01 (P4-17).
-    NewId1Menu,
-    /// File, New Rerelease Project: a project from the rerelease's QuakeC (P4-17).
-    NewRereleaseMenu,
+    /// File, New Project, and the button of the same name: opens the New Project dialog (L-28).
+    NewProjectMenu,
+    /// The New Project dialog's title.
+    NewProjectHeading,
+    /// The New Project dialog's question.
+    NewProjectWhich,
+    /// The original game, in the New Project dialog.
+    GameOriginal,
+    /// What a project for the original game starts from.
+    GameOriginalFrom,
+    /// The 2021 rerelease, in the New Project dialog.
+    GameRerelease,
+    /// What a project for the rerelease starts from.
+    GameRereleaseFrom,
+    /// The New Project dialog's button that asks for the folder.
+    NewProjectChoose,
     /// The system dialog's title when naming a new project's folder.
     NewProjectTitle,
     /// The heading over the recent projects.
@@ -1061,7 +1073,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 522] = [
+    pub const ALL: [Self; 528] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1202,8 +1214,14 @@ impl Text {
         Self::OpenFolderMenu,
         Self::OpenFolderTitle,
         Self::OpenFolderButton,
-        Self::NewId1Menu,
-        Self::NewRereleaseMenu,
+        Self::NewProjectMenu,
+        Self::NewProjectHeading,
+        Self::NewProjectWhich,
+        Self::GameOriginal,
+        Self::GameOriginalFrom,
+        Self::GameRerelease,
+        Self::GameRereleaseFrom,
+        Self::NewProjectChoose,
         Self::NewProjectTitle,
         Self::RecentProjects,
         Self::WelcomeTitle,
@@ -1746,8 +1764,14 @@ impl Text {
             Self::OpenFolderMenu => "Open Folder\u{2026}",
             Self::OpenFolderTitle => "Open a QuakeC project folder",
             Self::OpenFolderButton => "Open Folder",
-            Self::NewId1Menu => "New id1 Project\u{2026}",
-            Self::NewRereleaseMenu => "New Rerelease Project\u{2026}",
+            Self::NewProjectMenu => "New Project\u{2026}",
+            Self::NewProjectHeading => "New project",
+            Self::NewProjectWhich => "Which game is the mod for?",
+            Self::GameOriginal => "Original Quake",
+            Self::GameOriginalFrom => "Starts from id's QuakeC 1.01.",
+            Self::GameRerelease => "Quake rerelease (2021)",
+            Self::GameRereleaseFrom => "Starts from the rerelease's QuakeC.",
+            Self::NewProjectChoose => "Choose Folder\u{2026}",
             Self::NewProjectTitle => "Name the new project's folder",
             Self::RecentProjects => "Recent projects",
             Self::WelcomeTitle => "Welcome to QuakeC Studio",

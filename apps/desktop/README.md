@@ -23,10 +23,15 @@ the preview host and the agent land; the toolbar's game controls are disabled un
 
 With no project open the Editor tab shows the Welcome page (`src/welcome.rs`, L-27): three
 steps from a first launch to a running mod. The first says what was found of Quake's files and
-opens the guide to them, the second makes a project from a template, opens a folder or a recent
+opens the guide to them, the second opens the New Project dialog, a folder or a recent
 project and says why one did not open, and the third says what Play does and its key; below
 them are links to the command palette and the user guide. The game is looked for when the app
 starts with nothing to open, and again when the folder chosen for Play changes.
+
+New Project, in the File menu, the Project panel and the Welcome page, opens one dialog
+(`src/new_project.rs`, L-28) that asks which game the mod is for, Original Quake or the 2021
+rerelease, and then for the folder. The rerelease is chosen to begin with when it is the only
+game found, the original otherwise.
 
 The window is given the app's icon (`assets/icon.png`), which eframe would otherwise replace
 with egui's; inside the macOS bundle the bundle's own icon is left in place.

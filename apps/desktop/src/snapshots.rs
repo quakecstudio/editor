@@ -82,6 +82,12 @@ fn scripts() -> Vec<Script> {
             name: "shell",
             steps: Vec::new(),
         },
+        // L-28: the New Project dialog, from the Welcome page with the Project panel hidden,
+        // so one button has the name.
+        Script {
+            name: "new-project",
+            steps: vec![toggle("left"), Step::Click("New Project\u{2026}")],
+        },
         Script {
             name: "shell-light",
             steps: vec![Step::Display(Display {
