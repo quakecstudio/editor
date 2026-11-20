@@ -66,7 +66,7 @@ pub struct ToolPermissions {
     /// unset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<Decision>,
-    /// The rules of each tool, by command id (`edit.apply`).
+    /// The rules of each tool, by command id (`edit.stage_change`).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub tools: BTreeMap<String, ToolRule>,
 }

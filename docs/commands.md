@@ -12,12 +12,11 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`code.actions`](#codeactions) | Lists the quick fixes for the diagnostics at a place in a file: a missing builtin declared, a misspelled field corrected, an unused local removed, a missing precache added. |
 | [`code.fix`](#codefix) | Applies a quick fix for the diagnostics at a place in a file, the first unless one is named by its index in code.actions' list; the file is not saved. |
 | [`commands.list`](#commandslist) | Lists every command with its id, summary and parameter schema. |
-| [`compile`](#compile) | Compiles the open project and says whether it is clean, with its error counts. |
 | [`edit.accept`](#editaccept) | Accepts staged hunks: their lines stay in the editor's text, unsaved, once each hunk of their file is decided. |
-| [`edit.apply`](#editapply) | Stages a change to several files as hunks to accept or reject one by one; the project is checked with them, and nothing is written to disk. |
 | [`edit.redo`](#editredo) | Makes the most recently undone change again. |
 | [`edit.reject`](#editreject) | Rejects staged hunks: the lines they replaced come back, byte for byte. |
 | [`edit.repeat`](#editrepeat) | Makes the most recent map edit once more: same command, same arguments. |
+| [`edit.stage_change`](#editstage_change) | Stages a change to several files as hunks to accept or reject one by one; the project is checked with them, and nothing is written to disk. |
 | [`edit.staged`](#editstaged) | Lists the staged hunks waiting to be accepted or rejected. |
 | [`edit.undo`](#editundo) | Takes back the most recent change that has not been undone. |
 | [`editor.fold`](#editorfold) | Folds the innermost block or block comment at the caret. |
@@ -40,7 +39,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`file.replace_range`](#filereplace_range) | Replaces a byte range of a file's text, in the editor's text; nothing is saved. An edit in an excerpt of the multibuffer. |
 | [`file.save`](#filesave) | Writes a file's current text, as the editor has it, to disk. |
 | [`file.update`](#fileupdate) | Takes the whole text of a file as an editor has it, unsaved, and checks the project again. |
-| [`files.changed`](#fileschanged) | Takes files another program changed: the open map is read again when it has no unsaved edits, else kept for map.resolve; changed QuakeC is read again with the entity definitions derived from it. |
+| [`files.changed`](#fileschanged) | Takes files another program changed: the open map is read again when it has no unsaved edits, else kept for map.resolve_disk_change; changed QuakeC is read again with the entity definitions derived from it. |
 | [`git.blame`](#gitblame) | Says who last changed each line of a file, and in which commit. |
 | [`git.branches`](#gitbranches) | Lists the repository's local branches, the checked-out one marked. |
 | [`git.commit`](#gitcommit) | Commits what is staged with a message; the new commit's id. |
@@ -57,9 +56,10 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`help.about`](#helpabout) | Opens the About window: the app's name, version, copyright and license, and links to its site and its source. |
 | [`help.report_issue`](#helpreport_issue) | Opens the page where an issue with the app is reported, in the browser. |
 | [`help.user_guide`](#helpuser_guide) | Opens the user guide on the website, in the browser. |
-| [`map.accept`](#mapaccept) | Accepts hunks of the open map's review, every one when none are named: their change is kept and no longer waits. |
+| [`map.accept_hunks`](#mapaccept_hunks) | Accepts hunks of the open map's review, every one when none are named: their change is kept and no longer waits. |
 | [`map.add_layer`](#mapadd_layer) | Adds an empty layer to the open map, as TrenchBroom writes one. |
 | [`map.add_wad`](#mapadd_wad) | Adds a WAD file to the open map's list in its world's `wad` or `_wad` key, by its path from the map's folder when it is under it, as TrenchBroom adds a WAD dropped on its window; one listed already is not listed again. |
+| [`map.apply_fix`](#mapapply_fix) | Applies a quick fix `map.issues` gave, as one step with undo. |
 | [`map.backup`](#mapbackup) | Writes the open map, as it is in the editor, saved or not, as its next backup in the autosave folder beside it, keeping the last 20. |
 | [`map.backups`](#mapbackups) | Lists the open map's backups in the autosave folder beside it, the newest first. |
 | [`map.brush_chamfer`](#mapbrush_chamfer) | Chamfers an edge of a brush into one or more bevel faces, from a distance along each of its two faces (MAP-15.9). |
@@ -83,68 +83,67 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.brush_vertex`](#mapbrush_vertex) | Moves a vertex of a brush of the open map to a point snapped to the grid; the brush becomes the convex hull of its vertices so moved. |
 | [`map.brush_vertices`](#mapbrush_vertices) | Moves several vertices of a brush at once, each to a point snapped to the grid; the brush becomes the hull of its vertices so moved (MAP-15.7). |
 | [`map.brushes`](#mapbrushes) | Lists the brushes of an entity of the open map, the world's when none is named: each brush's place, which the map.brush_* tools take, the box around it and its textures; all of them, or those touching a box. A brush a tool adds takes the place `total`; a tool that cuts or hollows brushes changes their places, so list them again after it. |
-| [`map.check`](#mapcheck) | Checks a .map: what id's qbsp and ericw-tools read otherwise, and its entities against the project's server QuakeC as the engine reads them: unknown classnames and keys with the closest name, values their field cannot read, and targets and targetnames nothing matches. It reads the file alone, so it says a world that names no WAD is one as id's qbsp does; map.issues and map.leaks say whether a texture of the open map is missing. |
+| [`map.check`](#mapcheck) | Checks a .map: what id's qbsp and ericw-tools read otherwise, and its entities against the project's server QuakeC as the engine reads them: unknown classnames and keys with the closest name, values their field cannot read, and targets and targetnames nothing matches. It reads the file alone, so it says a world that names no WAD is one as id's qbsp does; map.issues and map.find_leaks say whether a texture of the open map is missing. |
 | [`map.choose_profile`](#mapchoose_profile) | Chooses the compile profile map.run_profile runs when given none; none given chooses Full again. |
-| [`map.compare`](#mapcompare) | How the open map's file, changed by another program, differs from the map being edited, entity by entity. |
+| [`map.compare_with_disk`](#mapcompare_with_disk) | How the open map's file, changed by another program, differs from the map being edited, entity by entity. |
 | [`map.compile`](#mapcompile) | Compiles the open map, as it is in the editor, or only a region of it, sealed, to a BSP beside it, with its portal and leak files, and reports whether it leaks and the textures its WADs lack. |
 | [`map.copy`](#mapcopy) | Writes brushes of the world and whole entities of the open map as a .map's text, where they are, for the clipboard; the map is unchanged. |
-| [`map.delete`](#mapdelete) | Deletes an entity of the open map; the world stays. |
-| [`map.duplicate`](#mapduplicate) | Duplicates an entity of the open map, its keys and brushes, in place at the end of the map, and selects the copy; the world is not duplicated. A targetname ending in a number takes the next free number, and the keys the code fires entities by move on by as many. |
-| [`map.entity`](#mapentity) | An entity of the open map: its pairs, the keys its class reads with their types and defaults, and the map's targetnames for its target keys. |
+| [`map.delete_entity`](#mapdelete_entity) | Deletes an entity of the open map; the world stays. |
+| [`map.duplicate_entity`](#mapduplicate_entity) | Duplicates an entity of the open map, its keys and brushes, in place at the end of the map, and selects the copy; the world is not duplicated. A targetname ending in a number takes the next free number, and the keys the code fires entities by move on by as many. |
+| [`map.entities_removed_by_skill`](#mapentities_removed_by_skill) | The entities of the open map the game removes at a skill and in a kind of game (single, coop or deathmatch), found by spawning the map with the project's program: those the spawnflags rule out and those the QuakeC removes. |
 | [`map.export`](#mapexport) | Writes the open map to another .map without the layers marked to be left out of exports and the entities in them (TrenchBroom's Export). |
 | [`map.extract_linked`](#mapextract_linked) | Moves entities of a linked group, and the same entities of every group linked to it, into new groups linked to each other (TrenchBroom's Extract Linked Groups). |
 | [`map.face_align`](#mapface_align) | Carries one face's texture alignment onto other faces of the open map, so the texture continues across the line their planes share (MAP-13.8). |
 | [`map.face_uv`](#mapface_uv) | Fits, justifies, flips, resets, snaps or adjusts the texture of faces of the open map, at the size its WAD gives it (MAP-13). |
-| [`map.filter`](#mapfilter) | The entities of the open map the game removes at a skill and in a kind of game (single, coop or deathmatch), found by spawning the map with the project's program: those the spawnflags rule out and those the QuakeC removes. |
-| [`map.fix`](#mapfix) | Applies a quick fix `map.issues` gave, as one step with undo. |
+| [`map.find_leaks`](#mapfind_leaks) | Compiles the open map in memory and reports whether it leaks, with the trail from the entity the outside reaches out to the void, and the textures its WADs lack. |
 | [`map.flip`](#mapflip) | Mirrors entities and brushes along an axis through the middle of their box: brushes and point entities' origins, and their facing, as TrenchBroom's Flip. |
 | [`map.group`](#mapgroup) | Puts entities and brushes of the world in a new group, in the layer or group the first is in, as TrenchBroom writes a group. |
 | [`map.hide`](#maphide) | Hides entities of the open map in the editor until map.show_all (TrenchBroom's Hide Selection); the map is not changed. |
-| [`map.inspect`](#mapinspect) | The open map's rooms (TrenchBroom's named layers and groups, with their bounds) and its entities: each one's place, classname, origin, targetname and room, filtered by room or classname. |
 | [`map.isolate`](#mapisolate) | Hides every entity of the open map but these in the editor until map.show_all (TrenchBroom's Isolate Selection); the map is not changed. |
 | [`map.issues`](#mapissues) | Lists every issue of the open map, each with the entity or brush it is about and a quick fix where one exists: its format's, brushes with no volume, a missing player start, missing textures and, with a project open, its entities' against the server QuakeC. |
 | [`map.layers`](#maplayers) | The open map's TrenchBroom layers: each one's name, whether it is hidden, locked or left out of exports, and how many entities are in it. |
-| [`map.leaks`](#mapleaks) | Compiles the open map in memory and reports whether it leaks, with the trail from the entity the outside reaches out to the void, and the textures its WADs lack. |
-| [`map.link`](#maplink) | Points a key of an entity of the open map, one the code fires entities by such as target or killtarget, at another entity: the key takes the other's targetname, and the other its classname and the next free number as one when it has none. |
 | [`map.link_duplicate`](#maplink_duplicate) | Copies a group and its entities as a new group linked to it, so an edit in one is made in the other (TrenchBroom's Create Linked Duplicate). |
+| [`map.link_target`](#maplink_target) | Points a key of an entity of the open map, one the code fires entities by such as target or killtarget, at another entity: the key takes the other's targetname, and the other its classname and the next free number as one when it has none. |
+| [`map.list_entities`](#maplist_entities) | The open map's rooms (TrenchBroom's named layers and groups, with their bounds) and its entities: each one's place, classname, origin, targetname and room, filtered by room or classname. |
+| [`map.list_textures`](#maplist_textures) | Lists the open map's textures: those of the WADs its world names, found in the project, beside the map or in the game, of the BSP it was opened from, and of the game's own levels, each once with where it comes from, its size and how many faces use it, and the names its faces use that nothing holds. |
 | [`map.lock`](#maplock) | Locks entities of the open map against edits until map.unlock_all; the map is not changed. |
 | [`map.make_brush_entity`](#mapmake_brush_entity) | Makes brushes of the world a new brush entity of a class, such as func_door (TrenchBroom's Create Brush Entity). |
 | [`map.make_structural`](#mapmake_structural) | Gives a brush entity's brushes back to the world, in the layer or group the entity was in, and removes the entity (TrenchBroom's Make Structural). |
-| [`map.move`](#mapmove) | Moves an entity of the open map: a point entity's origin, a brush entity's brushes. |
-| [`map.move_to`](#mapmove_to) | Moves an entity or a group of the open map into a layer or a group, or into the default layer given the world, as TrenchBroom writes it. |
+| [`map.move_entity`](#mapmove_entity) | Moves an entity of the open map: a point entity's origin, a brush entity's brushes. |
+| [`map.move_to_layer_or_group`](#mapmove_to_layer_or_group) | Moves an entity or a group of the open map into a layer or a group, or into the default layer given the world, as TrenchBroom writes it. |
 | [`map.new`](#mapnew) | Makes a new .map holding a world with the keys given, and opens it in the map view; a file that is there already is refused. |
 | [`map.open`](#mapopen) | Opens a .map in the map view, or a shipped .bsp's entities when the map has no .map source; nothing is selected. |
 | [`map.outline`](#mapoutline) | The open map's outline: the default layer and each layer, their groups and linked groups, then their entities by classname and targetname, with brush counts; with filter, only what holds the text and what is around it. |
 | [`map.paste`](#mappaste) | Adds a .map's text to the open map, its world's brushes to the world and its other entities after the map's: where the text has them, or with the middle of their floor at a point on the grid. |
-| [`map.place`](#mapplace) | Places a point entity of a classname at an origin in the open map, with the keys given, and selects it. |
+| [`map.place_entity`](#mapplace_entity) | Places a point entity of a classname at an origin in the open map, with the keys given, and selects it. |
 | [`map.place_prefab`](#mapplace_prefab) | Copies a prefab into the open map with its origin at a point on the grid: its world's brushes into the world, its other entities after the map's. |
 | [`map.play_from_here`](#mapplay_from_here) | Compiles the open map fast, with no vis and fast light, into the project's build, starts the game on it and puts the player's eye at a point, facing a way: the map view's camera (MAP-13). |
 | [`map.portals`](#mapportals) | Reads the portal file the open map's last compile wrote beside it, each portal's points, to show where the map's leaves meet. |
 | [`map.prefabs`](#mapprefabs) | Lists the .map files in the project's prefabs folder. |
 | [`map.profiles`](#mapprofiles) | Lists the compile profiles: the built-in Full and Fast, then the project's own from compile-profiles.toml, each its name and its tasks. |
-| [`map.reject`](#mapreject) | Rejects hunks of the open map's review, every one when none are named: the parts they replaced are put back, as an edit undo takes back. |
+| [`map.read_entity`](#mapread_entity) | An entity of the open map: its pairs, the keys its class reads with their types and defaults, and the map's targetnames for its target keys. |
+| [`map.reject_hunks`](#mapreject_hunks) | Rejects hunks of the open map's review, every one when none are named: the parts they replaced are put back, as an edit undo takes back. |
 | [`map.remove_key`](#mapremove_key) | Removes every pair with a key from an entity of the open map. |
 | [`map.rename_key`](#maprename_key) | Renames a key in every open .map, keeping each value and its formatting: what to run once the person confirms, after symbol.rename renames a field a map may name. Nothing is saved. |
 | [`map.replace_texture`](#mapreplace_texture) | Puts one texture in another's place on the faces of brushes, or of every brush of the map, keeping their alignment (TrenchBroom's Replace Material). |
-| [`map.resolve`](#mapresolve) | After another program changed the open map's file while it had unsaved edits: keep disk to read the file again, or mine to keep the edits and save them over it. |
+| [`map.resolve_disk_change`](#mapresolve_disk_change) | After another program changed the open map's file while it had unsaved edits: keep disk to read the file again, or mine to keep the edits and save them over it. |
 | [`map.restore_backup`](#maprestore_backup) | Puts a backup of the open map in the editor in place of the map, unsaved, as an edit that undo takes back. |
-| [`map.rotate`](#maprotate) | Turns a point entity of the open map about the vertical: its angle, or its angles' yaw. |
+| [`map.rotate_entity`](#maprotate_entity) | Turns a point entity of the open map about the vertical: its angle, or its angles' yaw. |
+| [`map.rotate_objects`](#maprotate_objects) | Turns entities and brushes by degrees about the vertical through the middle of their box, counter-clockwise seen from above: brushes and point entities' origins and facing, as TrenchBroom's Rotate. |
 | [`map.run_profile`](#maprun_profile) | Runs a compile profile on the open map, the one chosen when none is named: its tasks in order, each timed, stopping at the first that fails; reports each task's time and result. |
 | [`map.save`](#mapsave) | Saves the open map: a .map over itself; a BSP's entities as a .ent beside it (bsp: ent, the default) or into the BSP's entity lump (bsp: lump). |
 | [`map.save_prefab`](#mapsave_prefab) | Writes brushes of the world and whole entities of the open map as a prefab in the project's prefabs folder, around the middle of their floor. |
 | [`map.search`](#mapsearch) | Finds the open map's objects as TrenchBroom's search does: text found in names, classnames, keys, values, textures, smart tags and layer and group names, ignoring case, or a query in its query language, which finds entities, groups, brushes, the contents of layers, or faces. |
 | [`map.select`](#mapselect) | Selects an entity of the open map, or clears the selection. |
-| [`map.separate`](#mapseparate) | Unlinks a group from the groups linked to it, which then change on their own (TrenchBroom's Separate Linked Groups). |
 | [`map.set_flag`](#mapset_flag) | Sets or clears one spawnflag of an entity of the open map, and of the entities in also, in one step, keeping each entity's other flags. |
 | [`map.set_key`](#mapset_key) | Sets a key of an entity of the open map, and of the entities in also with it in one step: its last occurrence keeps its place and formatting, a new key goes after the others. |
 | [`map.set_layer`](#mapset_layer) | Turns a layer of the open map hidden, locked or left out of exports on or off, written as TrenchBroom writes it. |
 | [`map.show_all`](#mapshow_all) | Shows every entity of the open map hidden in the editor (TrenchBroom's Show All); a hidden layer stays hidden. |
 | [`map.stage`](#mapstage) | Begins review of the open map's edits: the map as it is now is kept, and each edit after it waits as a hunk to accept or reject. The agent's map edits begin it themselves; while it is open it is left as it is. |
-| [`map.staged`](#mapstaged) | Lists the open map's hunks waiting for review: for each, the entities it is in, and the keys and brushes it adds, changes or removes. |
-| [`map.summary`](#mapsummary) | A map in short, to review it or compare it with others: the box around its brushes, its brush and entity counts, its entities counted by classname (monsters, lights, items, triggers), its textures counted by face, and its world's keys. The open map, or with a path a .map file read from the disk without opening it. map.inspect lists each entity; this counts them. |
-| [`map.textures`](#maptextures) | Lists the open map's textures: those of the WADs its world names, found in the project, beside the map or in the game, of the BSP it was opened from, and of the game's own levels, each once with where it comes from, its size and how many faces use it, and the names its faces use that nothing holds. |
-| [`map.turn`](#mapturn) | Turns entities and brushes by degrees about the vertical through the middle of their box, counter-clockwise seen from above: brushes and point entities' origins and facing, as TrenchBroom's Rotate. |
+| [`map.staged_hunks`](#mapstaged_hunks) | Lists the open map's hunks waiting for review: for each, the entities it is in, and the keys and brushes it adds, changes or removes. |
+| [`map.summary`](#mapsummary) | A map in short, to review it or compare it with others: the box around its brushes, its brush and entity counts, its entities counted by classname (monsters, lights, items, triggers), its textures counted by face, and its world's keys. The open map, or with a path a .map file read from the disk without opening it; with `most_textures`, only that many textures of the count it gives, which keeps it short when many maps are read. map.list_entities lists each entity; this counts them. |
 | [`map.ungroup`](#mapungroup) | Takes a group's entities and brushes out of it into the layer or group it is in, or the world's, and removes the group. |
+| [`map.unlink_group`](#mapunlink_group) | Unlinks a group from the groups linked to it, which then change on their own (TrenchBroom's Separate Linked Groups). |
 | [`map.unlock_all`](#mapunlock_all) | Unlocks every entity of the open map locked in the editor; a locked layer stays locked. |
 | [`map.unstage`](#mapunstage) | Ends the open map's review when nothing waits in it, as after an agent's map command that changed nothing; a review with hunks is left open. |
 | [`paths.open`](#pathsopen) | Opens folders as projects, and files in the nearest project above each (a folder holding quakec.toml or progs.src): a .map or .bsp in the map editor, any other file in the editor. A file outside every project opens in the open project, or opens its folder when none is open. |
@@ -153,7 +152,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`preview.choose_game`](#previewchoose_game) | Chooses the folder the preview reads the game from, in place, and says what it holds; a folder that cannot be played is not kept. |
 | [`preview.console`](#previewconsole) | Runs a command in the running game's console. |
 | [`preview.dock`](#previewdock) | Docks the game's window beside the IDE's window, given where the IDE's window is and whether it has the focus. |
-| [`preview.game`](#previewgame) | Says what game data the preview plays from: the chosen folder, or the first install found, as found, shareware only, rerelease only or missing for the game the project is for, with the files it lacks. |
+| [`preview.game_files`](#previewgame_files) | Says what game data the preview plays from: the chosen folder, or the first install found, as found, shareware only, rerelease only or missing for the game the project is for, with the files it lacks. |
 | [`preview.pause`](#previewpause) | Pauses the running game between frames. |
 | [`preview.pick`](#previewpick) | Selects the edict under a point of the game's window. A point with no edict under it answers none and leaves the selection as it was. |
 | [`preview.play`](#previewplay) | Builds the open project and starts the preview host on its program, stopping a game already running. |
@@ -170,6 +169,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`preview.watch`](#previewwatch) | Adds a watch, an expression read each time the game stops in a frame. |
 | [`project.build`](#projectbuild) | Compiles each module of the open project, with the editor's text of each open file, and writes its progs.dat and .lno. |
 | [`project.check`](#projectcheck) | Lists every error and warning in the open project, as the Problems panel does. |
+| [`project.compile`](#projectcompile) | Compiles the open project and says whether it is clean, with its error counts. |
 | [`project.entities`](#projectentities) | Lists the entity classes the open project's server QuakeC defines, read from its spawn functions: each class's keys, defaults, spawnflags, comment, model and size; with fgd, also writes them as an FGD file for other map editors. |
 | [`project.export`](#projectexport) | Builds the open project and exports it as a zip players install: its programs, its own assets (optionally in pak0.pak), a README and its license notices, never id's game data. |
 | [`project.files`](#projectfiles) | Lists every source file the open project compiles, by path. |
@@ -443,22 +443,6 @@ Parameters:
 }
 ```
 
-## `compile`
-
-Compiles the open project and says whether it is clean, with its error counts.
-
-Parameters:
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "additionalProperties": false,
-  "description": "The command takes no parameters: pass the empty object {}.",
-  "title": "No parameters",
-  "type": "object"
-}
-```
-
 ## `edit.accept`
 
 Accepts staged hunks: their lines stay in the editor's text, unsaved, once each hunk of their file is decided.
@@ -491,55 +475,6 @@ Parameters:
     "hunks"
   ],
   "title": "HunksParams",
-  "type": "object"
-}
-```
-
-## `edit.apply`
-
-Stages a change to several files as hunks to accept or reject one by one; the project is checked with them, and nothing is written to disk.
-
-Parameters:
-
-```json
-{
-  "$defs": {
-    "ProposedFile": {
-      "additionalProperties": false,
-      "description": "One file's proposed text, as `edit.apply` takes it.",
-      "properties": {
-        "path": {
-          "description": "The file; one not in the project, or not on disk, is a new file.",
-          "type": "string"
-        },
-        "text": {
-          "description": "Its whole new text.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "path",
-        "text"
-      ],
-      "type": "object"
-    }
-  },
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "additionalProperties": false,
-  "description": "The parameters of `edit.apply`.",
-  "properties": {
-    "files": {
-      "description": "Each file's proposed text.",
-      "items": {
-        "$ref": "#/$defs/ProposedFile"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "files"
-  ],
-  "title": "ApplyEditParams",
   "type": "object"
 }
 ```
@@ -608,6 +543,55 @@ Parameters:
   "additionalProperties": false,
   "description": "The command takes no parameters: pass the empty object {}.",
   "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `edit.stage_change`
+
+Stages a change to several files as hunks to accept or reject one by one; the project is checked with them, and nothing is written to disk.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "ProposedFile": {
+      "additionalProperties": false,
+      "description": "One file's proposed text, as `edit.stage_change` takes it.",
+      "properties": {
+        "path": {
+          "description": "The file; one not in the project, or not on disk, is a new file.",
+          "type": "string"
+        },
+        "text": {
+          "description": "Its whole new text.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "text"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `edit.stage_change`.",
+  "properties": {
+    "files": {
+      "description": "Each file's proposed text.",
+      "items": {
+        "$ref": "#/$defs/ProposedFile"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "files"
+  ],
+  "title": "ApplyEditParams",
   "type": "object"
 }
 ```
@@ -1246,7 +1230,7 @@ Parameters:
 
 ## `files.changed`
 
-Takes files another program changed: the open map is read again when it has no unsaved edits, else kept for map.resolve; changed QuakeC is read again with the entity definitions derived from it.
+Takes files another program changed: the open map is read again when it has no unsaved edits, else kept for map.resolve_disk_change; changed QuakeC is read again with the entity definitions derived from it.
 
 Parameters:
 
@@ -1737,7 +1721,7 @@ Parameters:
 }
 ```
 
-## `map.accept`
+## `map.accept_hunks`
 
 Accepts hunks of the open map's review, every one when none are named: their change is kept and no longer waits.
 
@@ -1747,7 +1731,7 @@ Parameters:
 {
   "$defs": {
     "MapHunkNumber": {
-      "description": "A hunk's number in the list `map.staged` gives, from 0.",
+      "description": "A hunk's number in the list `map.staged_hunks` gives, from 0.",
       "format": "uint",
       "minimum": 0,
       "type": "integer"
@@ -1755,11 +1739,11 @@ Parameters:
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The parameters of `map.accept` and `map.reject`.",
+  "description": "The parameters of `map.accept_hunks` and `map.reject_hunks`.",
   "properties": {
     "hunks": {
       "default": [],
-      "description": "The hunks' numbers, as `map.staged` lists them now; every hunk when empty.",
+      "description": "The hunks' numbers, as `map.staged_hunks` lists them now; every hunk when empty.",
       "items": {
         "$ref": "#/$defs/MapHunkNumber"
       },
@@ -1817,6 +1801,152 @@ Parameters:
     "path"
   ],
   "title": "AddWadParams",
+  "type": "object"
+}
+```
+
+## `map.apply_fix`
+
+Applies a quick fix `map.issues` gave, as one step with undo.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "QuickFix": {
+      "description": "A quick fix of an issue.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Delete a brush with no volume, which the compilers drop.",
+          "properties": {
+            "brush": {
+              "$ref": "#/$defs/BrushIndex",
+              "description": "The brush."
+            },
+            "entity": {
+              "$ref": "#/$defs/EntityIndex",
+              "description": "The entity holding it."
+            },
+            "kind": {
+              "const": "remove_brush",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "entity",
+            "brush"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Rename a misspelled key to the field it is closest to.",
+          "properties": {
+            "entity": {
+              "$ref": "#/$defs/EntityIndex",
+              "description": "The entity."
+            },
+            "from": {
+              "description": "The key as written.",
+              "type": "string"
+            },
+            "kind": {
+              "const": "rename_key",
+              "type": "string"
+            },
+            "to": {
+              "description": "The key to write instead.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "entity",
+            "from",
+            "to"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Set a classname to the class it is closest to.",
+          "properties": {
+            "classname": {
+              "description": "The classname to write.",
+              "type": "string"
+            },
+            "entity": {
+              "$ref": "#/$defs/EntityIndex",
+              "description": "The entity."
+            },
+            "kind": {
+              "const": "set_classname",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "entity",
+            "classname"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Place an `info_player_start` at a point inside the map.",
+          "properties": {
+            "kind": {
+              "const": "add_player_start",
+              "type": "string"
+            },
+            "origin": {
+              "description": "Where.",
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 3,
+              "minItems": 3,
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind",
+            "origin"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.apply_fix`.",
+  "properties": {
+    "fix": {
+      "$ref": "#/$defs/QuickFix",
+      "description": "The fix, as `map.issues` gave it."
+    }
+  },
+  "required": [
+    "fix"
+  ],
+  "title": "MapFixParams",
   "type": "object"
 }
 ```
@@ -3921,7 +4051,7 @@ Parameters:
 
 ## `map.check`
 
-Checks a .map: what id's qbsp and ericw-tools read otherwise, and its entities against the project's server QuakeC as the engine reads them: unknown classnames and keys with the closest name, values their field cannot read, and targets and targetnames nothing matches. It reads the file alone, so it says a world that names no WAD is one as id's qbsp does; map.issues and map.leaks say whether a texture of the open map is missing.
+Checks a .map: what id's qbsp and ericw-tools read otherwise, and its entities against the project's server QuakeC as the engine reads them: unknown classnames and keys with the closest name, values their field cannot read, and targets and targetnames nothing matches. It reads the file alone, so it says a world that names no WAD is one as id's qbsp does; map.issues and map.find_leaks say whether a texture of the open map is missing.
 
 Parameters:
 
@@ -3970,7 +4100,7 @@ Parameters:
 }
 ```
 
-## `map.compare`
+## `map.compare_with_disk`
 
 How the open map's file, changed by another program, differs from the map being edited, entity by entity.
 
@@ -4141,7 +4271,7 @@ Parameters:
 }
 ```
 
-## `map.delete`
+## `map.delete_entity`
 
 Deletes an entity of the open map; the world stays.
 
@@ -4159,7 +4289,7 @@ Parameters:
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The parameters of `map.delete` and `map.entity`.",
+  "description": "The parameters of `map.delete_entity` and `map.read_entity`.",
   "properties": {
     "entity": {
       "$ref": "#/$defs/EntityIndex",
@@ -4174,7 +4304,7 @@ Parameters:
 }
 ```
 
-## `map.duplicate`
+## `map.duplicate_entity`
 
 Duplicates an entity of the open map, its keys and brushes, in place at the end of the map, and selects the copy; the world is not duplicated. A targetname ending in a number takes the next free number, and the keys the code fires entities by move on by as many.
 
@@ -4192,7 +4322,7 @@ Parameters:
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The parameters of `map.delete` and `map.entity`.",
+  "description": "The parameters of `map.delete_entity` and `map.read_entity`.",
   "properties": {
     "entity": {
       "$ref": "#/$defs/EntityIndex",
@@ -4207,35 +4337,77 @@ Parameters:
 }
 ```
 
-## `map.entity`
+## `map.entities_removed_by_skill`
 
-An entity of the open map: its pairs, the keys its class reads with their types and defaults, and the map's targetnames for its target keys.
+The entities of the open map the game removes at a skill and in a kind of game (single, coop or deathmatch), found by spawning the map with the project's program: those the spawnflags rule out and those the QuakeC removes.
 
 Parameters:
 
 ```json
 {
   "$defs": {
-    "EntityIndex": {
-      "description": "An entity of a map, by its place in the file from 0, the world first.",
-      "format": "uint",
-      "minimum": 0,
-      "type": "integer"
+    "GameMode": {
+      "description": "The kind of game a map is spawned for: the `coop` and `deathmatch` settings.",
+      "oneOf": [
+        {
+          "const": "single",
+          "description": "Single player.",
+          "type": "string"
+        },
+        {
+          "const": "coop",
+          "description": "Cooperative: `coop 1`.",
+          "type": "string"
+        },
+        {
+          "const": "deathmatch",
+          "description": "Deathmatch: `deathmatch 1`.",
+          "type": "string"
+        }
+      ]
+    },
+    "Skill": {
+      "description": "The skill a map is spawned at, the `skill` setting (DIFF-3.2).",
+      "oneOf": [
+        {
+          "const": "easy",
+          "description": "0.",
+          "type": "string"
+        },
+        {
+          "const": "normal",
+          "description": "1, the game's own default.",
+          "type": "string"
+        },
+        {
+          "const": "hard",
+          "description": "2.",
+          "type": "string"
+        },
+        {
+          "const": "nightmare",
+          "description": "3.",
+          "type": "string"
+        }
+      ]
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The parameters of `map.delete` and `map.entity`.",
+  "description": "The parameters of `map.entities_removed_by_skill`.",
   "properties": {
-    "entity": {
-      "$ref": "#/$defs/EntityIndex",
-      "description": "The entity."
+    "mode": {
+      "$ref": "#/$defs/GameMode",
+      "default": "single",
+      "description": "The kind of game."
+    },
+    "skill": {
+      "$ref": "#/$defs/Skill",
+      "default": "normal",
+      "description": "The skill."
     }
   },
-  "required": [
-    "entity"
-  ],
-  "title": "EntityParams",
+  "title": "FilterParams",
   "type": "object"
 }
 ```
@@ -4638,223 +4810,18 @@ Parameters:
 }
 ```
 
-## `map.filter`
+## `map.find_leaks`
 
-The entities of the open map the game removes at a skill and in a kind of game (single, coop or deathmatch), found by spawning the map with the project's program: those the spawnflags rule out and those the QuakeC removes.
-
-Parameters:
-
-```json
-{
-  "$defs": {
-    "GameMode": {
-      "description": "The kind of game a map is spawned for: the `coop` and `deathmatch` settings.",
-      "oneOf": [
-        {
-          "const": "single",
-          "description": "Single player.",
-          "type": "string"
-        },
-        {
-          "const": "coop",
-          "description": "Cooperative: `coop 1`.",
-          "type": "string"
-        },
-        {
-          "const": "deathmatch",
-          "description": "Deathmatch: `deathmatch 1`.",
-          "type": "string"
-        }
-      ]
-    },
-    "Skill": {
-      "description": "The skill a map is spawned at, the `skill` setting (DIFF-3.2).",
-      "oneOf": [
-        {
-          "const": "easy",
-          "description": "0.",
-          "type": "string"
-        },
-        {
-          "const": "normal",
-          "description": "1, the game's own default.",
-          "type": "string"
-        },
-        {
-          "const": "hard",
-          "description": "2.",
-          "type": "string"
-        },
-        {
-          "const": "nightmare",
-          "description": "3.",
-          "type": "string"
-        }
-      ]
-    }
-  },
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "additionalProperties": false,
-  "description": "The parameters of `map.filter`.",
-  "properties": {
-    "mode": {
-      "$ref": "#/$defs/GameMode",
-      "default": "single",
-      "description": "The kind of game."
-    },
-    "skill": {
-      "$ref": "#/$defs/Skill",
-      "default": "normal",
-      "description": "The skill."
-    }
-  },
-  "title": "FilterParams",
-  "type": "object"
-}
-```
-
-## `map.fix`
-
-Applies a quick fix `map.issues` gave, as one step with undo.
+Compiles the open map in memory and reports whether it leaks, with the trail from the entity the outside reaches out to the void, and the textures its WADs lack.
 
 Parameters:
 
 ```json
 {
-  "$defs": {
-    "BrushIndex": {
-      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
-      "format": "uint",
-      "minimum": 0,
-      "type": "integer"
-    },
-    "EntityIndex": {
-      "description": "An entity of a map, by its place in the file from 0, the world first.",
-      "format": "uint",
-      "minimum": 0,
-      "type": "integer"
-    },
-    "QuickFix": {
-      "description": "A quick fix of an issue.",
-      "oneOf": [
-        {
-          "additionalProperties": false,
-          "description": "Delete a brush with no volume, which the compilers drop.",
-          "properties": {
-            "brush": {
-              "$ref": "#/$defs/BrushIndex",
-              "description": "The brush."
-            },
-            "entity": {
-              "$ref": "#/$defs/EntityIndex",
-              "description": "The entity holding it."
-            },
-            "kind": {
-              "const": "remove_brush",
-              "type": "string"
-            }
-          },
-          "required": [
-            "kind",
-            "entity",
-            "brush"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "description": "Rename a misspelled key to the field it is closest to.",
-          "properties": {
-            "entity": {
-              "$ref": "#/$defs/EntityIndex",
-              "description": "The entity."
-            },
-            "from": {
-              "description": "The key as written.",
-              "type": "string"
-            },
-            "kind": {
-              "const": "rename_key",
-              "type": "string"
-            },
-            "to": {
-              "description": "The key to write instead.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "kind",
-            "entity",
-            "from",
-            "to"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "description": "Set a classname to the class it is closest to.",
-          "properties": {
-            "classname": {
-              "description": "The classname to write.",
-              "type": "string"
-            },
-            "entity": {
-              "$ref": "#/$defs/EntityIndex",
-              "description": "The entity."
-            },
-            "kind": {
-              "const": "set_classname",
-              "type": "string"
-            }
-          },
-          "required": [
-            "kind",
-            "entity",
-            "classname"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "description": "Place an `info_player_start` at a point inside the map.",
-          "properties": {
-            "kind": {
-              "const": "add_player_start",
-              "type": "string"
-            },
-            "origin": {
-              "description": "Where.",
-              "items": {
-                "format": "double",
-                "type": "number"
-              },
-              "maxItems": 3,
-              "minItems": 3,
-              "type": "array"
-            }
-          },
-          "required": [
-            "kind",
-            "origin"
-          ],
-          "type": "object"
-        }
-      ]
-    }
-  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The parameters of `map.fix`.",
-  "properties": {
-    "fix": {
-      "$ref": "#/$defs/QuickFix",
-      "description": "The fix, as `map.issues` gave it."
-    }
-  },
-  "required": [
-    "fix"
-  ],
-  "title": "MapFixParams",
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
   "type": "object"
 }
 ```
@@ -5055,40 +5022,6 @@ Parameters:
 }
 ```
 
-## `map.inspect`
-
-The open map's rooms (TrenchBroom's named layers and groups, with their bounds) and its entities: each one's place, classname, origin, targetname and room, filtered by room or classname.
-
-Parameters:
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "additionalProperties": false,
-  "description": "The parameters of `map.inspect`.",
-  "properties": {
-    "classname": {
-      "default": null,
-      "description": "Only the entities whose classname starts with this, as written; every entity with none.",
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "room": {
-      "default": null,
-      "description": "Only the entities in the room of this name, in any case, or a room inside it; every\nentity with none. A name no room has is refused.",
-      "type": [
-        "string",
-        "null"
-      ]
-    }
-  },
-  "title": "InspectParams",
-  "type": "object"
-}
-```
-
 ## `map.isolate`
 
 Hides every entity of the open map but these in the editor until map.show_all (TrenchBroom's Isolate Selection); the map is not changed.
@@ -5157,23 +5090,40 @@ Parameters:
 }
 ```
 
-## `map.leaks`
+## `map.link_duplicate`
 
-Compiles the open map in memory and reports whether it leaks, with the trail from the entity the outside reaches out to the void, and the textures its WADs lack.
+Copies a group and its entities as a new group linked to it, so an edit in one is made in the other (TrenchBroom's Create Linked Duplicate).
 
 Parameters:
 
 ```json
 {
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The command takes no parameters: pass the empty object {}.",
-  "title": "No parameters",
+  "description": "The parameters of `map.ungroup`, `map.link_duplicate` and `map.unlink_group`.",
+  "properties": {
+    "group": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The group's own entity."
+    }
+  },
+  "required": [
+    "group"
+  ],
+  "title": "ContainerParams",
   "type": "object"
 }
 ```
 
-## `map.link`
+## `map.link_target`
 
 Points a key of an entity of the open map, one the code fires entities by such as target or killtarget, at another entity: the key takes the other's targetname, and the other its classname and the next free number as one when it has none.
 
@@ -5191,7 +5141,7 @@ Parameters:
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The parameters of `map.link`.",
+  "description": "The parameters of `map.link_target`.",
   "properties": {
     "entity": {
       "$ref": "#/$defs/EntityIndex",
@@ -5216,35 +5166,52 @@ Parameters:
 }
 ```
 
-## `map.link_duplicate`
+## `map.list_entities`
 
-Copies a group and its entities as a new group linked to it, so an edit in one is made in the other (TrenchBroom's Create Linked Duplicate).
+The open map's rooms (TrenchBroom's named layers and groups, with their bounds) and its entities: each one's place, classname, origin, targetname and room, filtered by room or classname.
 
 Parameters:
 
 ```json
 {
-  "$defs": {
-    "EntityIndex": {
-      "description": "An entity of a map, by its place in the file from 0, the world first.",
-      "format": "uint",
-      "minimum": 0,
-      "type": "integer"
-    }
-  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The parameters of `map.ungroup`, `map.link_duplicate` and `map.separate`.",
+  "description": "The parameters of `map.list_entities`.",
   "properties": {
-    "group": {
-      "$ref": "#/$defs/EntityIndex",
-      "description": "The group's own entity."
+    "classname": {
+      "default": null,
+      "description": "Only the entities whose classname starts with this, as written; every entity with none.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "room": {
+      "default": null,
+      "description": "Only the entities in the room of this name, in any case, or a room inside it; every\nentity with none. A name no room has is refused.",
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
-  "required": [
-    "group"
-  ],
-  "title": "ContainerParams",
+  "title": "InspectParams",
+  "type": "object"
+}
+```
+
+## `map.list_textures`
+
+Lists the open map's textures: those of the WADs its world names, found in the project, beside the map or in the game, of the BSP it was opened from, and of the game's own levels, each once with where it comes from, its size and how many faces use it, and the names its faces use that nothing holds.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
   "type": "object"
 }
 ```
@@ -5359,7 +5326,7 @@ Parameters:
 }
 ```
 
-## `map.move`
+## `map.move_entity`
 
 Moves an entity of the open map: a point entity's origin, a brush entity's brushes.
 
@@ -5377,7 +5344,7 @@ Parameters:
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The parameters of `map.move`.",
+  "description": "The parameters of `map.move_entity`.",
   "properties": {
     "by": {
       "description": "How far, in map units.",
@@ -5403,7 +5370,7 @@ Parameters:
 }
 ```
 
-## `map.move_to`
+## `map.move_to_layer_or_group`
 
 Moves an entity or a group of the open map into a layer or a group, or into the default layer given the world, as TrenchBroom writes it.
 
@@ -5421,7 +5388,7 @@ Parameters:
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The parameters of `map.move_to`.",
+  "description": "The parameters of `map.move_to_layer_or_group`.",
   "properties": {
     "entity": {
       "$ref": "#/$defs/EntityIndex",
@@ -5583,7 +5550,7 @@ Parameters:
 }
 ```
 
-## `map.place`
+## `map.place_entity`
 
 Places a point entity of a classname at an origin in the open map, with the keys given, and selects it.
 
@@ -5593,7 +5560,7 @@ Parameters:
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The parameters of `map.place`.",
+  "description": "The parameters of `map.place_entity`.",
   "properties": {
     "classname": {
       "description": "The new entity's classname.",
@@ -5855,7 +5822,40 @@ Parameters:
 }
 ```
 
-## `map.reject`
+## `map.read_entity`
+
+An entity of the open map: its pairs, the keys its class reads with their types and defaults, and the map's targetnames for its target keys.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.delete_entity` and `map.read_entity`.",
+  "properties": {
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity."
+    }
+  },
+  "required": [
+    "entity"
+  ],
+  "title": "EntityParams",
+  "type": "object"
+}
+```
+
+## `map.reject_hunks`
 
 Rejects hunks of the open map's review, every one when none are named: the parts they replaced are put back, as an edit undo takes back.
 
@@ -5865,7 +5865,7 @@ Parameters:
 {
   "$defs": {
     "MapHunkNumber": {
-      "description": "A hunk's number in the list `map.staged` gives, from 0.",
+      "description": "A hunk's number in the list `map.staged_hunks` gives, from 0.",
       "format": "uint",
       "minimum": 0,
       "type": "integer"
@@ -5873,11 +5873,11 @@ Parameters:
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The parameters of `map.accept` and `map.reject`.",
+  "description": "The parameters of `map.accept_hunks` and `map.reject_hunks`.",
   "properties": {
     "hunks": {
       "default": [],
-      "description": "The hunks' numbers, as `map.staged` lists them now; every hunk when empty.",
+      "description": "The hunks' numbers, as `map.staged_hunks` lists them now; every hunk when empty.",
       "items": {
         "$ref": "#/$defs/MapHunkNumber"
       },
@@ -6019,7 +6019,7 @@ Parameters:
 }
 ```
 
-## `map.resolve`
+## `map.resolve_disk_change`
 
 After another program changed the open map's file while it had unsaved edits: keep disk to read the file again, or mine to keep the edits and save them over it.
 
@@ -6029,7 +6029,7 @@ Parameters:
 {
   "$defs": {
     "Keep": {
-      "description": "Which map `map.resolve` keeps.",
+      "description": "Which map `map.resolve_disk_change` keeps.",
       "oneOf": [
         {
           "const": "disk",
@@ -6046,7 +6046,7 @@ Parameters:
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The parameters of `map.resolve`.",
+  "description": "The parameters of `map.resolve_disk_change`.",
   "properties": {
     "keep": {
       "$ref": "#/$defs/Keep",
@@ -6086,7 +6086,7 @@ Parameters:
 }
 ```
 
-## `map.rotate`
+## `map.rotate_entity`
 
 Turns a point entity of the open map about the vertical: its angle, or its angles' yaw.
 
@@ -6104,7 +6104,7 @@ Parameters:
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The parameters of `map.rotate`.",
+  "description": "The parameters of `map.rotate_entity`.",
   "properties": {
     "degrees": {
       "description": "Degrees to turn it about the vertical axis, counter-clockwise seen from above.",
@@ -6121,6 +6121,92 @@ Parameters:
     "degrees"
   ],
   "title": "RotateParams",
+  "type": "object"
+}
+```
+
+## `map.rotate_objects`
+
+Turns entities and brushes by degrees about the vertical through the middle of their box, counter-clockwise seen from above: brushes and point entities' origins and facing, as TrenchBroom's Rotate.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "Lock": {
+      "description": "Whether a moved brush's textures stay fixed in the world (P6-09, MAP-11.2).",
+      "oneOf": [
+        {
+          "const": "locked",
+          "description": "Texture lock on: the textures stay where they are in the world.",
+          "type": "string"
+        },
+        {
+          "const": "free",
+          "description": "Texture lock off: the textures move with the brush.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.rotate_objects`.",
+  "properties": {
+    "brushes": {
+      "default": [],
+      "description": "Brushes, each by its entity.",
+      "items": {
+        "maxItems": 2,
+        "minItems": 2,
+        "prefixItems": [
+          {
+            "$ref": "#/$defs/EntityIndex"
+          },
+          {
+            "$ref": "#/$defs/BrushIndex"
+          }
+        ],
+        "type": "array"
+      },
+      "type": "array"
+    },
+    "degrees": {
+      "description": "Degrees to turn about the vertical through the selection's middle, counter-clockwise\nseen from above.",
+      "format": "double",
+      "type": "number"
+    },
+    "entities": {
+      "default": [],
+      "description": "Whole entities: a point entity's origin and facing, every brush of a brush entity.",
+      "items": {
+        "$ref": "#/$defs/EntityIndex"
+      },
+      "type": "array"
+    },
+    "lock": {
+      "$ref": "#/$defs/Lock",
+      "default": "locked",
+      "description": "Whether their textures stay fixed in the world; locked when not given."
+    }
+  },
+  "required": [
+    "degrees"
+  ],
+  "title": "TurnParams",
   "type": "object"
 }
 ```
@@ -6323,39 +6409,6 @@ Parameters:
     }
   },
   "title": "SelectParams",
-  "type": "object"
-}
-```
-
-## `map.separate`
-
-Unlinks a group from the groups linked to it, which then change on their own (TrenchBroom's Separate Linked Groups).
-
-Parameters:
-
-```json
-{
-  "$defs": {
-    "EntityIndex": {
-      "description": "An entity of a map, by its place in the file from 0, the world first.",
-      "format": "uint",
-      "minimum": 0,
-      "type": "integer"
-    }
-  },
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "additionalProperties": false,
-  "description": "The parameters of `map.ungroup`, `map.link_duplicate` and `map.separate`.",
-  "properties": {
-    "group": {
-      "$ref": "#/$defs/EntityIndex",
-      "description": "The group's own entity."
-    }
-  },
-  "required": [
-    "group"
-  ],
-  "title": "ContainerParams",
   "type": "object"
 }
 ```
@@ -6589,7 +6642,7 @@ Parameters:
 }
 ```
 
-## `map.staged`
+## `map.staged_hunks`
 
 Lists the open map's hunks waiting for review: for each, the entities it is in, and the keys and brushes it adds, changes or removes.
 
@@ -6607,7 +6660,7 @@ Parameters:
 
 ## `map.summary`
 
-A map in short, to review it or compare it with others: the box around its brushes, its brush and entity counts, its entities counted by classname (monsters, lights, items, triggers), its textures counted by face, and its world's keys. The open map, or with a path a .map file read from the disk without opening it. map.inspect lists each entity; this counts them.
+A map in short, to review it or compare it with others: the box around its brushes, its brush and entity counts, its entities counted by classname (monsters, lights, items, triggers), its textures counted by face, and its world's keys. The open map, or with a path a .map file read from the disk without opening it; with `most_textures`, only that many textures of the count it gives, which keeps it short when many maps are read. map.list_entities lists each entity; this counts them.
 
 Parameters:
 
@@ -6617,6 +6670,16 @@ Parameters:
   "additionalProperties": false,
   "description": "The parameters of `map.summary`.",
   "properties": {
+    "most_textures": {
+      "default": null,
+      "description": "Only this many of the textures, the most used first; all of them when not given. A\nfull map names hundreds of textures, so a few is what to ask for when reading many\nmaps. The classnames are never cut: they are the map's monsters, items and triggers.",
+      "format": "uint",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
     "path": {
       "default": null,
       "description": "A `.map` file to summarise from the disk, which is not opened: the way to read many\nmaps, as when comparing a set of them. The open map when not given.",
@@ -6627,108 +6690,6 @@ Parameters:
     }
   },
   "title": "SummaryParams",
-  "type": "object"
-}
-```
-
-## `map.textures`
-
-Lists the open map's textures: those of the WADs its world names, found in the project, beside the map or in the game, of the BSP it was opened from, and of the game's own levels, each once with where it comes from, its size and how many faces use it, and the names its faces use that nothing holds.
-
-Parameters:
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "additionalProperties": false,
-  "description": "The command takes no parameters: pass the empty object {}.",
-  "title": "No parameters",
-  "type": "object"
-}
-```
-
-## `map.turn`
-
-Turns entities and brushes by degrees about the vertical through the middle of their box, counter-clockwise seen from above: brushes and point entities' origins and facing, as TrenchBroom's Rotate.
-
-Parameters:
-
-```json
-{
-  "$defs": {
-    "BrushIndex": {
-      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
-      "format": "uint",
-      "minimum": 0,
-      "type": "integer"
-    },
-    "EntityIndex": {
-      "description": "An entity of a map, by its place in the file from 0, the world first.",
-      "format": "uint",
-      "minimum": 0,
-      "type": "integer"
-    },
-    "Lock": {
-      "description": "Whether a moved brush's textures stay fixed in the world (P6-09, MAP-11.2).",
-      "oneOf": [
-        {
-          "const": "locked",
-          "description": "Texture lock on: the textures stay where they are in the world.",
-          "type": "string"
-        },
-        {
-          "const": "free",
-          "description": "Texture lock off: the textures move with the brush.",
-          "type": "string"
-        }
-      ]
-    }
-  },
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "additionalProperties": false,
-  "description": "The parameters of `map.turn`.",
-  "properties": {
-    "brushes": {
-      "default": [],
-      "description": "Brushes, each by its entity.",
-      "items": {
-        "maxItems": 2,
-        "minItems": 2,
-        "prefixItems": [
-          {
-            "$ref": "#/$defs/EntityIndex"
-          },
-          {
-            "$ref": "#/$defs/BrushIndex"
-          }
-        ],
-        "type": "array"
-      },
-      "type": "array"
-    },
-    "degrees": {
-      "description": "Degrees to turn about the vertical through the selection's middle, counter-clockwise\nseen from above.",
-      "format": "double",
-      "type": "number"
-    },
-    "entities": {
-      "default": [],
-      "description": "Whole entities: a point entity's origin and facing, every brush of a brush entity.",
-      "items": {
-        "$ref": "#/$defs/EntityIndex"
-      },
-      "type": "array"
-    },
-    "lock": {
-      "$ref": "#/$defs/Lock",
-      "default": "locked",
-      "description": "Whether their textures stay fixed in the world; locked when not given."
-    }
-  },
-  "required": [
-    "degrees"
-  ],
-  "title": "TurnParams",
   "type": "object"
 }
 ```
@@ -6751,7 +6712,40 @@ Parameters:
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The parameters of `map.ungroup`, `map.link_duplicate` and `map.separate`.",
+  "description": "The parameters of `map.ungroup`, `map.link_duplicate` and `map.unlink_group`.",
+  "properties": {
+    "group": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The group's own entity."
+    }
+  },
+  "required": [
+    "group"
+  ],
+  "title": "ContainerParams",
+  "type": "object"
+}
+```
+
+## `map.unlink_group`
+
+Unlinks a group from the groups linked to it, which then change on their own (TrenchBroom's Separate Linked Groups).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.ungroup`, `map.link_duplicate` and `map.unlink_group`.",
   "properties": {
     "group": {
       "$ref": "#/$defs/EntityIndex",
@@ -6982,7 +6976,7 @@ Parameters:
 }
 ```
 
-## `preview.game`
+## `preview.game_files`
 
 Says what game data the preview plays from: the chosen folder, or the first install found, as found, shareware only, rerelease only or missing for the game the project is for, with the files it lacks.
 
@@ -7384,6 +7378,22 @@ Parameters:
 ## `project.check`
 
 Lists every error and warning in the open project, as the Problems panel does.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `project.compile`
+
+Compiles the open project and says whether it is clean, with its error counts.
 
 Parameters:
 

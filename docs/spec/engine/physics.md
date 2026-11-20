@@ -223,7 +223,8 @@ stop.
 
 ## PHYS-9 The client's command
 
-**Source:** `WinQuake/sv_user.c`, `SV_ReadClientMove`, `SV_ClientThink`, `SV_AirMove`,
+**Source:** `WinQuake/sv_user.c`, `SV_ReadClientMessage`, `SV_ReadClientMove`,
+`SV_ClientThink`, `SV_AirMove`,
 `SV_WaterMove`, `SV_WaterJump`, `SV_UserFriction`, `SV_Accelerate`, `SV_AirAccelerate`,
 `DropPunchAngle`; `WinQuake/view.c`, `V_CalcRoll`; `WinQuake/common.c`, `MSG_WriteAngle`,
 `MSG_ReadAngle`; `WinQuake/cl_input.c`, `CL_SendMove`.
@@ -272,6 +273,14 @@ stop.
   `SV_WalkMove`'s `-STEPSIZE + oldvel[2]*host_frametime`; and `SV_Physics_Pusher`'s
   `thinktime < ent->v.ltime + host_frametime`, compared in double. A function that takes it as
   a `float` parameter (`SV_FlyMove`, `VectorMA`, `VectorScale`) gets it rounded to float.
+- **PHYS-9.8** A move is read once, by the first frame after it arrives: `SV_ReadClientMessage`
+  reads each message `NET_GetMessage` gives, a `clc_move` by `SV_ReadClientMove
+  (&host_client->cmd)`, and returns when there is none. So of several moves that arrive before a
+  frame, a non-zero impulse stands through the later ones that carry none (`if (i)
+  host_client->edict->v.impulse = i;`) and the last one's angles, movement and buttons stand; and
+  a frame no move arrived before reads none: `SV_ClientThink` moves by the movement kept (`cmd =
+  host_client->cmd;`), the button fields are as they were, and the impulse is not set again. The
+  host's `set_command` is a move arriving.
 
 ## PHYS-10 Entering the game
 

@@ -273,7 +273,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapCheck {
         otherwise, and its entities against the project's server QuakeC as the engine reads \
         them: unknown classnames and keys with the closest name, values their field cannot \
         read, and targets and targetnames nothing matches. It reads the file alone, so it \
-        says a world that names no WAD is one as id's qbsp does; map.issues and map.leaks say \
+        says a world that names no WAD is one as id's qbsp does; map.issues and map.find_leaks say \
         whether a texture of the open map is missing.";
     type Params = MapCheckParams;
     type Output = MapChecked;

@@ -2,7 +2,7 @@
 
 A run whose gate opens when the player walks into it is then read by a reviewer against these:
 
-- The agent read the gate's keys in the map, with `map.inspect` or the map's text, and found its
+- The agent read the gate's keys in the map, with `map.list_entities` or the map's text, and found its
   `targetname` with nothing firing it.
 - The agent read `func_door` and `LinkDoors` in `doors.qc` and said why: a door with a
   `targetname` spawns no trigger field and opens only when a button or trigger fires it.

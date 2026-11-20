@@ -11,7 +11,7 @@ use serde::Serialize;
 /// Names: "Tool names SHOULD be between 1 and 128 characters in length (inclusive)").
 pub(crate) const MAX_ID_LEN: usize = 128;
 
-/// A command's stable id, such as `edit.undo` or `compile`.
+/// A command's stable id, such as `edit.undo` or `project.compile`.
 ///
 /// One or more segments joined by `.`; each segment is a lowercase ASCII letter followed by
 /// lowercase ASCII letters, digits and `_`; at most `MAX_ID_LEN` bytes in all. Every such id

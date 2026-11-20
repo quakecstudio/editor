@@ -27,11 +27,11 @@ never reads QuakeC.
   where an edit changed it (MAP-7), and saved as a `.map`, a `.ent` beside a BSP, or the BSP
   with its entity lump rewritten (`map.save`).
 - The map commands, registered by `register_map_edit`: entity edits (`map.select`,
-  `map.place`, `map.move`, `map.rotate`, `map.delete`, `map.duplicate`, `map.set_key`,
+  `map.place_entity`, `map.move_entity`, `map.rotate_entity`, `map.delete_entity`, `map.duplicate_entity`, `map.set_key`,
   `map.remove_key`), brushes and their tools (`map.brush_*`), shapes, layers and groups,
   links, prefabs, the outline, the issues list, staged edits for review, face UVs and texture
   alignment, the textures the map names, `texture.import`, backups (`backup`), and
-  `map.resolve` and `map.compare` after another program wrote the map. `register_map_game`
+  `map.resolve_disk_change` and `map.compare_with_disk` after another program wrote the map. `register_map_game`
   adds the commands only a context with a game offers.
 - The seam (`HasMap`): a context gives the map store (`map_store`), the project
   (`MapProject`: its folder, an entity class, the targeting keys and a check of a map's

@@ -619,7 +619,7 @@ jobs:
           test -s "$RUNNER_TEMP_DIR/rerelease-cli/build/rerelease-cli/progs.lno"
           # P4-03: the agent's tools answer for the rerelease, through the same registry.
           rerelease=(--project "$RUNNER_TEMP_DIR/rerelease-cli" --dialect fteqcc)
-          compiled=$(cargo run --locked -p quakec-ide -- run compile "${rerelease[@]}")
+          compiled=$(cargo run --locked -p quakec-ide -- run project.compile "${rerelease[@]}")
           grep -q '"clean": true' <<<"$compiled"
           found=$(cargo run --locked -p quakec-ide -- run project.symbols \
             '{"query":"PlayerPreThink"}' "${rerelease[@]}")

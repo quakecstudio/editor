@@ -2,14 +2,14 @@
 
 //! Map editing (P6-40): the open map and the map commands that need no QuakeC.
 //!
-//! `map.open` reads a `.map`, or a shipped `.bsp`'s entity lump when the map has no source,
-//! into a `MapStore`; the entity commands (`map.select`, `map.place`, `map.move`,
-//! `map.rotate`, `map.delete`, `map.set_key`, `map.remove_key`), the brush tools, shapes,
-//! layers, links, prefabs, the issues list, staged review, face UVs and textures edit it, each
-//! with undo where it changes the map; and `map.save` writes the `.map`, or for a BSP a `.ent`
-//! override beside it or the BSP with its entity lump rewritten (P5-06, MAP-4, MAP-22).
-//! Edits go through `qs-map`'s lossless document, so a saved `.map` differs from the one read
-//! only where an edit changed it (MAP-7).
+//! `map.open` reads a `.map`, or a shipped `.bsp`'s entity lump when the map has no source, into a
+//! `MapStore`; the entity commands (`map.select`, `map.place_entity`, `map.move_entity`,
+//! `map.rotate_entity`, `map.delete_entity`, `map.set_key`, `map.remove_key`), the brush tools,
+//! shapes, layers, links, prefabs, the issues list, staged review, face UVs and textures edit it,
+//! each with undo where it changes the map; and `map.save` writes the `.map`, or for a BSP a `.ent`
+//! override beside it or the BSP with its entity lump rewritten (P5-06, MAP-4, MAP-22). Edits go
+//! through `qs-map`'s lossless document, so a saved `.map` differs from the one read only where an
+//! edit changed it (MAP-7).
 //!
 //! The crate reads no QuakeC: a context gives it the project's entity classes and the running
 //! game through the `HasMap` seam, which `qs-workbench` answers.
@@ -135,24 +135,24 @@ pub const MAP_OPEN: &str = "map.open";
 pub const MAP_NEW: &str = "map.new";
 /// The id of `map.select`.
 pub const MAP_SELECT: &str = "map.select";
-/// The id of `map.place`.
-pub const MAP_PLACE: &str = "map.place";
-/// The id of `map.move`.
-pub const MAP_MOVE: &str = "map.move";
-/// The id of `map.rotate`.
-pub const MAP_ROTATE: &str = "map.rotate";
-/// The id of `map.delete`.
-pub const MAP_DELETE: &str = "map.delete";
+/// The id of `map.place_entity`.
+pub const MAP_PLACE: &str = "map.place_entity";
+/// The id of `map.move_entity`.
+pub const MAP_MOVE: &str = "map.move_entity";
+/// The id of `map.rotate_entity`.
+pub const MAP_ROTATE: &str = "map.rotate_entity";
+/// The id of `map.delete_entity`.
+pub const MAP_DELETE: &str = "map.delete_entity";
 /// The id of `map.set_key`.
 pub const MAP_SET_KEY: &str = "map.set_key";
 /// The id of `map.remove_key`.
 pub const MAP_REMOVE_KEY: &str = "map.remove_key";
-/// The id of `map.entity`.
-pub const MAP_ENTITY: &str = "map.entity";
-/// The id of `map.duplicate`.
-pub const MAP_DUPLICATE: &str = "map.duplicate";
-/// The id of `map.inspect`.
-pub const MAP_INSPECT: &str = "map.inspect";
+/// The id of `map.read_entity`.
+pub const MAP_ENTITY: &str = "map.read_entity";
+/// The id of `map.duplicate_entity`.
+pub const MAP_DUPLICATE: &str = "map.duplicate_entity";
+/// The id of `map.list_entities`.
+pub const MAP_INSPECT: &str = "map.list_entities";
 /// The id of `map.brushes`.
 pub const MAP_BRUSHES: &str = "map.brushes";
 /// The id of `map.summary`.
@@ -555,7 +555,7 @@ pub struct SelectParams {
     pub entity: Option<EntityIndex>,
 }
 
-/// The parameters of `map.place`.
+/// The parameters of `map.place_entity`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PlaceParams {
@@ -568,7 +568,7 @@ pub struct PlaceParams {
     pub keys: Vec<(String, String)>,
 }
 
-/// The parameters of `map.move`.
+/// The parameters of `map.move_entity`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MoveParams {
@@ -578,7 +578,7 @@ pub struct MoveParams {
     pub by: [f64; 3],
 }
 
-/// The parameters of `map.rotate`.
+/// The parameters of `map.rotate_entity`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RotateParams {
@@ -588,7 +588,7 @@ pub struct RotateParams {
     pub degrees: f64,
 }
 
-/// The parameters of `map.delete` and `map.entity`.
+/// The parameters of `map.delete_entity` and `map.read_entity`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct EntityParams {
@@ -646,7 +646,7 @@ pub struct MapEdited {
     pub entity: Option<EntityIndex>,
 }
 
-/// What `map.entity` answers.
+/// What `map.read_entity` answers.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct EntityKeys {
     /// The classname, when it has one.
@@ -1147,7 +1147,7 @@ impl<C: HasMap + 'static> Command<C> for MapSelect {
     }
 }
 
-/// `map.place`.
+/// `map.place_entity`.
 struct MapPlace;
 
 impl<C: HasMap + 'static> Command<C> for MapPlace {
@@ -1190,7 +1190,7 @@ impl<C: HasMap + 'static> Command<C> for MapPlace {
     }
 }
 
-/// `map.move`.
+/// `map.move_entity`.
 struct MapMove;
 
 impl<C: HasMap + 'static> Command<C> for MapMove {
@@ -1218,7 +1218,7 @@ impl<C: HasMap + 'static> Command<C> for MapMove {
     }
 }
 
-/// `map.rotate`.
+/// `map.rotate_entity`.
 struct MapRotate;
 
 impl<C: HasMap + 'static> Command<C> for MapRotate {
@@ -1246,7 +1246,7 @@ impl<C: HasMap + 'static> Command<C> for MapRotate {
     }
 }
 
-/// `map.delete`.
+/// `map.delete_entity`.
 struct MapDelete;
 
 impl<C: HasMap + 'static> Command<C> for MapDelete {
@@ -1281,7 +1281,7 @@ impl<C: HasMap + 'static> Command<C> for MapDelete {
     }
 }
 
-/// `map.duplicate`.
+/// `map.duplicate_entity`.
 struct MapDuplicate;
 
 impl<C: HasMap + 'static> Command<C> for MapDuplicate {
@@ -1382,7 +1382,7 @@ impl<C: HasMap + 'static> Command<C> for MapRemoveKey {
     }
 }
 
-/// `map.entity`.
+/// `map.read_entity`.
 struct MapEntity;
 
 impl<C: HasMap + 'static> Command<C> for MapEntity {

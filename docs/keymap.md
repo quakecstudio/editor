@@ -40,7 +40,7 @@ Every command's default key (UI-21). A key follows TrenchBroom's default where T
 | `preview.reload` | `secondary-shift-r` | anywhere | ours: a browser's reload |
 | `project.build` | `f7` | anywhere | ours: Visual Studio's Build |
 | `project.check` | `shift-f7` | anywhere | ours: the build key with Shift |
-| `compile` | `secondary-f7` | anywhere | ours: the build key with the platform's modifier |
+| `project.compile` | `secondary-f7` | anywhere | ours: the build key with the platform's modifier |
 | `project.test` | `secondary-shift-t` | anywhere | ours: T for test |
 | `project.export` | `secondary-alt-e` | anywhere | ours: E for export |
 | `checkpoint.create` | `secondary-alt-s` | anywhere | ours: a save beside the file's |
@@ -51,9 +51,9 @@ Every command's default key (UI-21). A key follows TrenchBroom's default where T
 | `map.select` | `secondary-shift-a` | in the Map tab | TrenchBroom's `Menu/Edit/Deselect All` |
 | `map.show_all` | `secondary-shift-i` | in the Map tab | TrenchBroom's `Menu/View/Show All` |
 | `map.unlock_all` | `secondary-shift-l` | in the Map tab | ours: TrenchBroom has no key; L for lock, as Show All is I |
-| `map.leaks` | `secondary-shift-k` | in the Map tab | ours: TrenchBroom loads a point file from a menu with no key |
-| `map.accept` | `secondary-alt-y` | in the Map tab | ours: Y for yes, to every change in review |
-| `map.reject` | `secondary-alt-n` | in the Map tab | ours: N for no, to every change in review |
+| `map.find_leaks` | `secondary-shift-k` | in the Map tab | ours: TrenchBroom loads a point file from a menu with no key |
+| `map.accept_hunks` | `secondary-alt-y` | in the Map tab | ours: Y for yes, to every change in review |
+| `map.reject_hunks` | `secondary-alt-n` | in the Map tab | ours: N for no, to every change in review |
 | `map.stage` | `secondary-alt-r` | in the Map tab | ours: R for review |
 | `map.unstage` | `secondary-alt-shift-r` | in the Map tab | ours: the review key with Shift |
 | `map.backup` | `secondary-alt-b` | in the Map tab | ours: B for backup |
@@ -158,7 +158,7 @@ A command that answers a question is read by a panel, the agent or MCP. A comman
 | `code.fix` | needs a value | Applies a quick fix for the diagnostics at a place in a file, the first unless one is named by its index in code.actions' list; the file is not saved. |
 | `commands.list` | answers a question | Lists every command with its id, summary and parameter schema. |
 | `edit.accept` | needs a value | Accepts staged hunks: their lines stay in the editor's text, unsaved, once each hunk of their file is decided. |
-| `edit.apply` | needs a value | Stages a change to several files as hunks to accept or reject one by one; the project is checked with them, and nothing is written to disk. |
+| `edit.stage_change` | needs a value | Stages a change to several files as hunks to accept or reject one by one; the project is checked with them, and nothing is written to disk. |
 | `edit.reject` | needs a value | Rejects staged hunks: the lines they replaced come back, byte for byte. |
 | `edit.staged` | answers a question | Lists the staged hunks waiting to be accepted or rejected. |
 | `engine.builtins` | answers a question | Lists an engine's builtins for a module kind, each with its number or engine name, QuakeC name, signature and extensions; the open project's engine and server QuakeC when none is named. |
@@ -174,7 +174,7 @@ A command that answers a question is read by a panel, the agent or MCP. A comman
 | `file.replace_range` | needs a value | Replaces a byte range of a file's text, in the editor's text; nothing is saved. An edit in an excerpt of the multibuffer. |
 | `file.save` | needs a value | Writes a file's current text, as the editor has it, to disk. |
 | `file.update` | needs a value | Takes the whole text of a file as an editor has it, unsaved, and checks the project again. |
-| `files.changed` | needs a value | Takes files another program changed: the open map is read again when it has no unsaved edits, else kept for map.resolve; changed QuakeC is read again with the entity definitions derived from it. |
+| `files.changed` | needs a value | Takes files another program changed: the open map is read again when it has no unsaved edits, else kept for map.resolve_disk_change; changed QuakeC is read again with the entity definitions derived from it. |
 | `git.blame` | needs a value | Says who last changed each line of a file, and in which commit. |
 | `git.branches` | answers a question | Lists the repository's local branches, the checked-out one marked. |
 | `git.commit` | needs a value | Commits what is staged with a message; the new commit's id. |
@@ -214,39 +214,39 @@ A command that answers a question is read by a panel, the agent or MCP. A comman
 | `map.brush_texture` | needs a value | Sets the texture, shift, rotation or scale of every face of brushes of an entity, keeping what is not given (MAP-12). |
 | `map.brush_vertex` | needs a value | Moves a vertex of a brush of the open map to a point snapped to the grid; the brush becomes the convex hull of its vertices so moved. |
 | `map.brush_vertices` | needs a value | Moves several vertices of a brush at once, each to a point snapped to the grid; the brush becomes the hull of its vertices so moved (MAP-15.7). |
-| `map.check` | needs a value | Checks a .map: what id's qbsp and ericw-tools read otherwise, and its entities against the project's server QuakeC as the engine reads them: unknown classnames and keys with the closest name, values their field cannot read, and targets and targetnames nothing matches. It reads the file alone, so it says a world that names no WAD is one as id's qbsp does; map.issues and map.leaks say whether a texture of the open map is missing. |
-| `map.compare` | answers a question | How the open map's file, changed by another program, differs from the map being edited, entity by entity. |
+| `map.check` | needs a value | Checks a .map: what id's qbsp and ericw-tools read otherwise, and its entities against the project's server QuakeC as the engine reads them: unknown classnames and keys with the closest name, values their field cannot read, and targets and targetnames nothing matches. It reads the file alone, so it says a world that names no WAD is one as id's qbsp does; map.issues and map.find_leaks say whether a texture of the open map is missing. |
+| `map.compare_with_disk` | answers a question | How the open map's file, changed by another program, differs from the map being edited, entity by entity. |
 | `map.compile` | needs a value | Compiles the open map, as it is in the editor, or only a region of it, sealed, to a BSP beside it, with its portal and leak files, and reports whether it leaks and the textures its WADs lack. |
-| `map.delete` | needs a value | Deletes an entity of the open map; the world stays. |
-| `map.duplicate` | needs a value | Duplicates an entity of the open map, its keys and brushes, in place at the end of the map, and selects the copy; the world is not duplicated. A targetname ending in a number takes the next free number, and the keys the code fires entities by move on by as many. |
-| `map.entity` | needs a value | An entity of the open map: its pairs, the keys its class reads with their types and defaults, and the map's targetnames for its target keys. |
+| `map.delete_entity` | needs a value | Deletes an entity of the open map; the world stays. |
+| `map.duplicate_entity` | needs a value | Duplicates an entity of the open map, its keys and brushes, in place at the end of the map, and selects the copy; the world is not duplicated. A targetname ending in a number takes the next free number, and the keys the code fires entities by move on by as many. |
+| `map.read_entity` | needs a value | An entity of the open map: its pairs, the keys its class reads with their types and defaults, and the map's targetnames for its target keys. |
 | `map.export` | needs a value | Writes the open map to another .map without the layers marked to be left out of exports and the entities in them (TrenchBroom's Export). |
 | `map.extract_linked` | needs a value | Moves entities of a linked group, and the same entities of every group linked to it, into new groups linked to each other (TrenchBroom's Extract Linked Groups). |
 | `map.face_align` | needs a value | Carries one face's texture alignment onto other faces of the open map, so the texture continues across the line their planes share (MAP-13.8). |
 | `map.face_uv` | needs a value | Fits, justifies, flips, resets, snaps or adjusts the texture of faces of the open map, at the size its WAD gives it (MAP-13). |
-| `map.filter` | answers a question | The entities of the open map the game removes at a skill and in a kind of game (single, coop or deathmatch), found by spawning the map with the project's program: those the spawnflags rule out and those the QuakeC removes. |
-| `map.fix` | needs a value | Applies a quick fix `map.issues` gave, as one step with undo. |
+| `map.entities_removed_by_skill` | answers a question | The entities of the open map the game removes at a skill and in a kind of game (single, coop or deathmatch), found by spawning the map with the project's program: those the spawnflags rule out and those the QuakeC removes. |
+| `map.apply_fix` | needs a value | Applies a quick fix `map.issues` gave, as one step with undo. |
 | `map.flip` | needs a value | Mirrors entities and brushes along an axis through the middle of their box: brushes and point entities' origins, and their facing, as TrenchBroom's Flip. |
 | `map.group` | needs a value | Puts entities and brushes of the world in a new group, in the layer or group the first is in, as TrenchBroom writes a group. |
 | `map.hide` | needs a value | Hides entities of the open map in the editor until map.show_all (TrenchBroom's Hide Selection); the map is not changed. |
-| `map.inspect` | answers a question | The open map's rooms (TrenchBroom's named layers and groups, with their bounds) and its entities: each one's place, classname, origin, targetname and room, filtered by room or classname. |
+| `map.list_entities` | answers a question | The open map's rooms (TrenchBroom's named layers and groups, with their bounds) and its entities: each one's place, classname, origin, targetname and room, filtered by room or classname. |
 | `map.brushes` | answers a question | Lists the brushes of an entity of the open map, the world's when none is named: each brush's place, which the map.brush_* tools take, the box around it and its textures; all of them, or those touching a box. A brush a tool adds takes the place `total`; a tool that cuts or hollows brushes changes their places, so list them again after it. |
-| `map.summary` | answers a question | A map in short, to review it or compare it with others: the box around its brushes, its brush and entity counts, its entities counted by classname (monsters, lights, items, triggers), its textures counted by face, and its world's keys. The open map, or with a path a .map file read from the disk without opening it. map.inspect lists each entity; this counts them. |
+| `map.summary` | answers a question | A map in short, to review it or compare it with others: the box around its brushes, its brush and entity counts, its entities counted by classname (monsters, lights, items, triggers), its textures counted by face, and its world's keys. The open map, or with a path a .map file read from the disk without opening it; with `most_textures`, only that many textures of the count it gives, which keeps it short when many maps are read. map.list_entities lists each entity; this counts them. |
 | `map.isolate` | needs a value | Hides every entity of the open map but these in the editor until map.show_all (TrenchBroom's Isolate Selection); the map is not changed. |
 | `map.issues` | answers a question | Lists every issue of the open map, each with the entity or brush it is about and a quick fix where one exists: its format's, brushes with no volume, a missing player start, missing textures and, with a project open, its entities' against the server QuakeC. |
 | `map.layers` | answers a question | The open map's TrenchBroom layers: each one's name, whether it is hidden, locked or left out of exports, and how many entities are in it. |
-| `map.link` | needs a value | Points a key of an entity of the open map, one the code fires entities by such as target or killtarget, at another entity: the key takes the other's targetname, and the other its classname and the next free number as one when it has none. |
+| `map.link_target` | needs a value | Points a key of an entity of the open map, one the code fires entities by such as target or killtarget, at another entity: the key takes the other's targetname, and the other its classname and the next free number as one when it has none. |
 | `map.link_duplicate` | needs a value | Copies a group and its entities as a new group linked to it, so an edit in one is made in the other (TrenchBroom's Create Linked Duplicate). |
 | `map.lock` | needs a value | Locks entities of the open map against edits until map.unlock_all; the map is not changed. |
 | `map.make_brush_entity` | needs a value | Makes brushes of the world a new brush entity of a class, such as func_door (TrenchBroom's Create Brush Entity). |
 | `map.make_structural` | needs a value | Gives a brush entity's brushes back to the world, in the layer or group the entity was in, and removes the entity (TrenchBroom's Make Structural). |
-| `map.move` | needs a value | Moves an entity of the open map: a point entity's origin, a brush entity's brushes. |
-| `map.move_to` | needs a value | Moves an entity or a group of the open map into a layer or a group, or into the default layer given the world, as TrenchBroom writes it. |
+| `map.move_entity` | needs a value | Moves an entity of the open map: a point entity's origin, a brush entity's brushes. |
+| `map.move_to_layer_or_group` | needs a value | Moves an entity or a group of the open map into a layer or a group, or into the default layer given the world, as TrenchBroom writes it. |
 | `map.new` | needs a value | Makes a new .map holding a world with the keys given, and opens it in the map view; a file that is there already is refused. |
 | `map.open` | needs a value | Opens a .map in the map view, or a shipped .bsp's entities when the map has no .map source; nothing is selected. |
 | `map.outline` | answers a question | The open map's outline: the default layer and each layer, their groups and linked groups, then their entities by classname and targetname, with brush counts; with filter, only what holds the text and what is around it. |
 | `map.paste` | needs a value | Adds a .map's text to the open map, its world's brushes to the world and its other entities after the map's: where the text has them, or with the middle of their floor at a point on the grid. |
-| `map.place` | needs a value | Places a point entity of a classname at an origin in the open map, with the keys given, and selects it. |
+| `map.place_entity` | needs a value | Places a point entity of a classname at an origin in the open map, with the keys given, and selects it. |
 | `map.place_prefab` | needs a value | Copies a prefab into the open map with its origin at a point on the grid: its world's brushes into the world, its other entities after the map's. |
 | `map.play_from_here` | needs a value | Compiles the open map fast, with no vis and fast light, into the project's build, starts the game on it and puts the player's eye at a point, facing a way: the map view's camera (MAP-13). |
 | `map.portals` | answers a question | Reads the portal file the open map's last compile wrote beside it, each portal's points, to show where the map's leaves meet. |
@@ -255,18 +255,18 @@ A command that answers a question is read by a panel, the agent or MCP. A comman
 | `map.remove_key` | needs a value | Removes every pair with a key from an entity of the open map. |
 | `map.rename_key` | needs a value | Renames a key in every open .map, keeping each value and its formatting: what to run once the person confirms, after symbol.rename renames a field a map may name. Nothing is saved. |
 | `map.replace_texture` | needs a value | Puts one texture in another's place on the faces of brushes, or of every brush of the map, keeping their alignment (TrenchBroom's Replace Material). |
-| `map.resolve` | needs a value | After another program changed the open map's file while it had unsaved edits: keep disk to read the file again, or mine to keep the edits and save them over it. |
+| `map.resolve_disk_change` | needs a value | After another program changed the open map's file while it had unsaved edits: keep disk to read the file again, or mine to keep the edits and save them over it. |
 | `map.restore_backup` | needs a value | Puts a backup of the open map in the editor in place of the map, unsaved, as an edit that undo takes back. |
-| `map.rotate` | needs a value | Turns a point entity of the open map about the vertical: its angle, or its angles' yaw. |
+| `map.rotate_entity` | needs a value | Turns a point entity of the open map about the vertical: its angle, or its angles' yaw. |
 | `map.save_prefab` | needs a value | Writes brushes of the world and whole entities of the open map as a prefab in the project's prefabs folder, around the middle of their floor. |
 | `map.search` | needs a value | Finds the open map's objects as TrenchBroom's search does: text found in names, classnames, keys, values, textures, smart tags and layer and group names, ignoring case, or a query in its query language, which finds entities, groups, brushes, the contents of layers, or faces. |
-| `map.separate` | needs a value | Unlinks a group from the groups linked to it, which then change on their own (TrenchBroom's Separate Linked Groups). |
+| `map.unlink_group` | needs a value | Unlinks a group from the groups linked to it, which then change on their own (TrenchBroom's Separate Linked Groups). |
 | `map.set_flag` | needs a value | Sets or clears one spawnflag of an entity of the open map, and of the entities in also, in one step, keeping each entity's other flags. |
 | `map.set_key` | needs a value | Sets a key of an entity of the open map, and of the entities in also with it in one step: its last occurrence keeps its place and formatting, a new key goes after the others. |
 | `map.set_layer` | needs a value | Turns a layer of the open map hidden, locked or left out of exports on or off, written as TrenchBroom writes it. |
-| `map.staged` | answers a question | Lists the open map's hunks waiting for review: for each, the entities it is in, and the keys and brushes it adds, changes or removes. |
-| `map.textures` | answers a question | Lists the open map's textures: those of the WADs its world names, found in the project, beside the map or in the game, of the BSP it was opened from, and of the game's own levels, each once with where it comes from, its size and how many faces use it, and the names its faces use that nothing holds. |
-| `map.turn` | needs a value | Turns entities and brushes by degrees about the vertical through the middle of their box, counter-clockwise seen from above: brushes and point entities' origins and facing, as TrenchBroom's Rotate. |
+| `map.staged_hunks` | answers a question | Lists the open map's hunks waiting for review: for each, the entities it is in, and the keys and brushes it adds, changes or removes. |
+| `map.list_textures` | answers a question | Lists the open map's textures: those of the WADs its world names, found in the project, beside the map or in the game, of the BSP it was opened from, and of the game's own levels, each once with where it comes from, its size and how many faces use it, and the names its faces use that nothing holds. |
+| `map.rotate_objects` | needs a value | Turns entities and brushes by degrees about the vertical through the middle of their box, counter-clockwise seen from above: brushes and point entities' origins and facing, as TrenchBroom's Rotate. |
 | `map.ungroup` | needs a value | Takes a group's entities and brushes out of it into the layer or group it is in, or the world's, and removes the group. |
 | `paths.open` | needs a value | Opens folders as projects, and files in the nearest project above each (a folder holding quakec.toml or progs.src): a .map or .bsp in the map editor, any other file in the editor. A file outside every project opens in the open project, or opens its folder when none is open. |
 | `paths.take_opened` | run by the window | Takes what the last paths.open opened, once, or null: the desktop app shows it and comes to the front when another launch sent the paths. |
@@ -274,7 +274,7 @@ A command that answers a question is read by a panel, the agent or MCP. A comman
 | `preview.choose_game` | needs a value | Chooses the folder the preview reads the game from, in place, and says what it holds; a folder that cannot be played is not kept. |
 | `preview.console` | needs a value | Runs a command in the running game's console. |
 | `preview.dock` | needs a value | Docks the game's window beside the IDE's window, given where the IDE's window is and whether it has the focus. |
-| `preview.game` | answers a question | Says what game data the preview plays from: the chosen folder, or the first install found, as found, shareware only, rerelease only or missing for the game the project is for, with the files it lacks. |
+| `preview.game_files` | answers a question | Says what game data the preview plays from: the chosen folder, or the first install found, as found, shareware only, rerelease only or missing for the game the project is for, with the files it lacks. |
 | `preview.pick` | needs a value | Selects the edict under a point of the game's window. A point with no edict under it answers none and leaves the selection as it was. |
 | `preview.poll` | run by the window | Reads the running game's events: its state changes and console lines. |
 | `preview.select` | needs a value | Selects an edict of the running game and reads its fields for the Properties panel. |

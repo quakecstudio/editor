@@ -154,7 +154,7 @@ fn host(game: Option<&Path>, installs: &[Install]) -> Outcome {
         run_root,
         map: Some(START_MAP.to_owned()),
         socket: socket(),
-        extra: vec!["--headless".to_owned()],
+        extra: vec![LaunchSpec::HEADLESS.to_owned()],
     };
     let mut running = spec
         .launch("quakec-ide doctor")

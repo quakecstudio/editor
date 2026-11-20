@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Links between entities (P5-13, MAP-27): `map.link` points a key the code fires entities by
-//! (MAP-8.8) at another entity, naming that entity when it has no `targetname`; and the
+//! Links between entities (P5-13, MAP-27): `map.link_target` points a key the code fires
+//! entities by (MAP-8.8) at another entity, naming that entity when it has no `targetname`; and the
 //! numbering a duplicate takes, so a copy of `door1` is the next door and its targets the next
 //! targets, without typing either.
 
@@ -15,13 +15,13 @@ use serde::{Deserialize, Serialize};
 use super::{EntityIndex, MapDocument, MapEdited, edit_map};
 use crate::{HasMap, MapEditError};
 
-/// The id of `map.link`.
-pub const MAP_LINK: &str = "map.link";
+/// The id of `map.link_target`.
+pub const MAP_LINK: &str = "map.link_target";
 
 /// The key an entity is fired by, which every targeting key names (MAP-8.8).
 pub(super) const TARGETNAME: &[u8] = b"targetname";
 
-/// The parameters of `map.link`.
+/// The parameters of `map.link_target`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct LinkParams {
@@ -157,7 +157,7 @@ impl MapDocument {
     }
 }
 
-/// `map.link`.
+/// `map.link_target`.
 pub(super) struct MapLink;
 
 impl<C: HasMap + 'static> Command<C> for MapLink {

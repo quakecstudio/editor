@@ -1764,7 +1764,7 @@ fn edits_waiting_for_review_are_shown_until_the_last_is_decided() {
     let proposed = format!("// first\n{text}// last\n");
     run_command_with(
         &mut harness,
-        "edit.apply",
+        "edit.stage_change",
         json!({ "files": [{ "path": world, "text": proposed }] }),
     );
     harness.run();
@@ -4183,7 +4183,7 @@ fn a_leak_is_found_and_flown_along() {
     shell
         .execute("map.brush_delete", json!({ "entity": 0, "brush": 2 }))
         .unwrap();
-    shell.execute("map.leaks", json!({})).unwrap();
+    shell.execute("map.find_leaks", json!({})).unwrap();
     harness.run();
     let trail = editor(&harness).unwrap().leak;
     assert!(trail.len() >= 2, "{trail:?}");
@@ -4238,7 +4238,7 @@ fn a_leak_is_found_and_flown_along() {
             json!({ "entity": 4, "brushes": [0], "texture": "nowhere" }),
         )
         .unwrap();
-    shell.execute("map.leaks", json!({})).unwrap();
+    shell.execute("map.find_leaks", json!({})).unwrap();
     harness.run();
     assert_eq!(editor(&harness).unwrap().missing_textures, ["nowhere"]);
     assert!(
@@ -5911,7 +5911,7 @@ fn the_command_line_takes_an_entity_and_a_point_picked_in_the_map_view() {
     let before = count(&harness);
     run_command(&mut harness, FOCUS_COMMAND_LINE);
     harness.run();
-    type_text(&mut harness, "map.place");
+    type_text(&mut harness, "map.place_entity");
     press(&mut harness, egui::Key::Enter);
     assert_eq!(asked(&harness).as_deref(), Some("classname"));
     // A click while a typed value is asked for is the view's own: it is no answer.
@@ -6001,7 +6001,7 @@ fn the_command_line_keeps_a_draft_leaves_by_tab_and_gives_up_from_the_view() {
     let shell = &mut harness.state_mut().as_mut().unwrap().shell;
     shell
         .execute(
-            "map.place",
+            "map.place_entity",
             json!({ "classname": "light", "origin": [0, 0, 64] }),
         )
         .unwrap();

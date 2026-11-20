@@ -111,7 +111,7 @@ impl MapExpect {
     }
 
     /// Whether `map` holds it: `count` entities of its classname in its room or a room inside
-    /// it, as `map.inspect` finds them (MAP-9.4).
+    /// it, as `map.list_entities` finds them (MAP-9.4).
     fn holds(&self, map: &MapFile) -> bool {
         let rooms = map.rooms();
         let count = map

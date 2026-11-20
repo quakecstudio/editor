@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! `map.filter` (P5-13, MAP-27): the entities a skill and a game mode remove, found by spawning
-//! the open map in `qs-sim` against the project's server program, compiled in memory, so the
-//! answer is the game's, the spawnflags test (EDICT-8.4) and the entities the QuakeC removes
-//! itself included (BRIDGE-4.13). A map read from a BSP spawns its entity lump in that BSP; a
-//! `.map` spawns the entity lump qbsp would write for it (MAP-2.6, MAP-6.2) in the BSP beside it
+//! `map.entities_removed_by_skill` (P5-13, MAP-27): the entities a skill and a game mode remove,
+//! found by spawning the open map in `qs-sim` against the project's server program, compiled in
+//! memory, so the answer is the game's, the spawnflags test (EDICT-8.4) and the entities the QuakeC
+//! removes itself included (BRIDGE-4.13). A map read from a BSP spawns its entity lump in that BSP;
+//! a `.map` spawns the entity lump qbsp would write for it (MAP-2.6, MAP-6.2) in the BSP beside it
 //! when there is one, else in an empty world.
 
 use std::collections::BTreeSet;
@@ -24,8 +24,8 @@ use serde::{Deserialize, Serialize};
 use crate::{HasWorkbench, Workbench, WorkbenchError};
 use qs_map_edit::{BSP_EXTENSION, EntityIndex, MapSource};
 
-/// The id of `map.filter`.
-pub const MAP_FILTER: &str = "map.filter";
+/// The id of `map.entities_removed_by_skill`.
+pub const MAP_FILTER: &str = "map.entities_removed_by_skill";
 
 /// The skill a map is spawned at, the `skill` setting (DIFF-3.2).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -79,7 +79,7 @@ impl GameMode {
     }
 }
 
-/// The parameters of `map.filter`.
+/// The parameters of `map.entities_removed_by_skill`.
 #[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FilterParams {
@@ -91,7 +91,7 @@ pub struct FilterParams {
     pub mode: GameMode,
 }
 
-/// What `map.filter` answers.
+/// What `map.entities_removed_by_skill` answers.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct MapFiltered {
     /// The entities the game does not keep at that skill and in that kind of game, the world
@@ -202,7 +202,7 @@ impl<L: crate::Loader> Workbench<L> {
     }
 }
 
-/// `map.filter`.
+/// `map.entities_removed_by_skill`.
 pub(crate) struct MapFilter;
 
 impl<C: HasWorkbench + 'static> Command<C> for MapFilter {

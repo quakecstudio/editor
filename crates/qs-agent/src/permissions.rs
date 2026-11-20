@@ -24,7 +24,7 @@ use crate::ToolCall;
 /// allowed in every profile.
 pub const READ_TOOLS: [&str; 22] = [
     "checkpoint.list",
-    "compile",
+    "project.compile",
     "edit.staged",
     "engine.builtins",
     "engine.inspect",
@@ -49,7 +49,7 @@ pub const READ_TOOLS: [&str; 22] = [
 
 /// The tools that change the project's code, which the Write profile runs unasked: its edits
 /// are staged for review and its build only writes the compiler's output.
-pub const EDIT_TOOLS: [&str; 2] = ["edit.apply", "project.build"];
+pub const EDIT_TOOLS: [&str; 2] = ["edit.stage_change", "project.build"];
 
 /// What decides a run's tool calls: the profile and the rules over it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -405,10 +405,16 @@ mod tests {
                 .decision
         };
         let ask = Permissions::of(AgentProfile::Ask);
-        assert!(ask.offers("file.read") && !ask.offers("edit.apply"));
-        assert_eq!(decide(AgentProfile::Ask, "edit.apply"), Decision::Deny);
+        assert!(ask.offers("file.read") && !ask.offers("edit.stage_change"));
+        assert_eq!(
+            decide(AgentProfile::Ask, "edit.stage_change"),
+            Decision::Deny
+        );
         assert!(Permissions::of(AgentProfile::Write).offers("preview.play"));
-        assert_eq!(decide(AgentProfile::Write, "edit.apply"), Decision::Allow);
+        assert_eq!(
+            decide(AgentProfile::Write, "edit.stage_change"),
+            Decision::Allow
+        );
         assert_eq!(decide(AgentProfile::Write, "preview.play"), Decision::Ask);
         assert_eq!(decide(AgentProfile::Write, "settings.set"), Decision::Ask);
         assert_eq!(decide(AgentProfile::Full, "preview.play"), Decision::Allow);

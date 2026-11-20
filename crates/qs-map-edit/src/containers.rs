@@ -3,7 +3,7 @@
 //! Making layers and groups (P7-08, MAP-30), as TrenchBroom's manual's "Groups", "Linked
 //! Groups" and "Layers" describe them, written as it writes them (MAP-9): `map.group` puts a
 //! selection in a new group, `map.ungroup` takes a group's contents out of it, `map.add_layer`
-//! adds a layer, `map.link_duplicate` copies a group as one linked to it, and `map.separate`
+//! adds a layer, `map.link_duplicate` copies a group as one linked to it, and `map.unlink_group`
 //! unlinks a group from the groups linked to it.
 
 use qs_commands::{Command, Outcome};
@@ -28,7 +28,7 @@ pub const MAP_ADD_LAYER: &str = "map.add_layer";
 pub const MAP_LINK_DUPLICATE: &str = "map.link_duplicate";
 
 /// The id of the command that unlinks a group from the groups linked to it.
-pub const MAP_SEPARATE: &str = "map.separate";
+pub const MAP_SEPARATE: &str = "map.unlink_group";
 
 /// The id of the command that moves members of a linked group into a new linked group.
 pub const MAP_EXTRACT_LINKED: &str = "map.extract_linked";
@@ -81,7 +81,7 @@ pub struct GroupParams {
     pub brushes: Vec<BrushIndex>,
 }
 
-/// The parameters of `map.ungroup`, `map.link_duplicate` and `map.separate`.
+/// The parameters of `map.ungroup`, `map.link_duplicate` and `map.unlink_group`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ContainerParams {
@@ -344,7 +344,7 @@ impl<C: HasMap + 'static> Command<C> for LinkDuplicate {
     }
 }
 
-/// `map.separate`.
+/// `map.unlink_group`.
 pub(super) struct Separate;
 
 impl<C: HasMap + 'static> Command<C> for Separate {

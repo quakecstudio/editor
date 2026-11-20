@@ -65,7 +65,7 @@ const STAGE_MAP: &str = "map.stage";
 /// The workbench's command that ends the open map's review when nothing waits in it.
 const UNSTAGE_MAP: &str = "map.unstage";
 /// The workbench's command that names the open map's file.
-const INSPECT_MAP: &str = "map.inspect";
+const INSPECT_MAP: &str = "map.list_entities";
 /// The workbench's command that opens a map in place of the open one.
 const OPEN_MAP: &str = "map.open";
 /// The workbench's command that makes a map and opens it in place of the open one.
@@ -515,22 +515,32 @@ const DUPLEX_BUFFER: usize = 1 << 16;
 
 /// What the server tells a client's model about using it.
 const INSTRUCTIONS: &str = "Every command of QuakeC Studio over the project this server was \
-    started on (commands.list names them all): \
+    started on (commands.list names them all). The kinds of tools, by the start of their \
+    names: map.* builds, reads and reviews a level (map.brush_* its brushes, the rest its \
+    entities, textures, layers, compile and review hunks); project.* compiles, checks, \
+    tests and searches the QuakeC; file.*, edit.*, symbol.* and code.* read, change, \
+    navigate and fix source files; preview.* and engine.* run the game, debug it and take \
+    screenshots; vm.* and scenario.* run QuakeC without the game; texture.* imports an \
+    image as a texture; checkpoint.* and git.* keep and restore work; terminal.* and \
+    task.* run shell commands; paths.* and files.* are the app's own, for what it is asked \
+    to open and what changed on disk. A server connected to the running app (--connect) \
+    also has the app's window: view.*, editor.*, settings.* and help.*. In short: \
     compile, test, run QuakeC in the VM, play scenarios, inspect and drive the running game, \
     read files, stage edits as hunks and keep checkpoints; make or open a map, place and \
     key its entities, build its brushes, compile it and find its leaks, save it and play it, \
     each map edit staged for review. Paths are the project's, absolute or relative to it. \
-    To build a map: map.new (or map.open), then map.textures for the texture names there \
+    To build a map: map.new (or map.open), then map.list_textures for the texture names there \
     are. A room is map.brush_create for a box and map.brush_hollow for its walls; rooms are \
     joined by a box across the walls between them given to map.brush_subtract. The \
     map.brush_* tools take a brush by its place among its entity's brushes: map.brushes \
     lists the places with each brush's box, a brush just added has the place `total` had \
     before it, and a tool that cuts or hollows changes the places, so list them again. \
-    map.place puts in the player start, lights, monsters and items, with keys such as \
+    map.place_entity puts in the player start, lights, monsters and items, with keys such as \
     `light` and `angle`; map.make_brush_entity makes a door of a brush. Then map.issues and \
-    map.leaks must find nothing, and map.save writes the file. To review a map: \
+    map.find_leaks must find nothing, and map.save writes the file. To review a map: \
     map.summary counts what it holds (with a path, a .map file read without opening it, to \
-    compare many maps), map.inspect lists its entities, and \
+    compare many maps; most_textures keeps its texture list short), map.list_entities lists \
+    its entities, and \
     map.play_from_here with engine.screenshot shows it as the game draws it from a point; \
     look at the picture and fix what is dark, empty or blocked.";
 

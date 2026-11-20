@@ -86,8 +86,8 @@ fn report(session: &mut Commands<Context>, id: &str) -> MapReport {
     serde_json::from_value(session.execute(id, json!({})).unwrap()).unwrap()
 }
 
-// spec QBSP-15.36: map.leaks reports a leak's trail from the player start out through the hole,
-// and none for the sealed room; neither writes a file
+// spec QBSP-15.36: map.find_leaks reports a leak's trail from the player start out through the
+// hole, and none for the sealed room; neither writes a file
 #[test]
 fn map_leaks_reports_the_trail_out() {
     let open_room = room("leaky", "wall", Opening::Open);

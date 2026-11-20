@@ -118,7 +118,7 @@ fn a_legacy_client_initializes_and_calls() {
             init,
             initialized,
             json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }),
-            call(2, "compile", &json!({})),
+            call(2, "project.compile", &json!({})),
             call(3, "file.read", &json!({ "path": "./world.qc" })),
         ],
     );
@@ -127,7 +127,10 @@ fn a_legacy_client_initializes_and_calls() {
     assert!(init["capabilities"]["tools"].is_object(), "{init}");
     assert_eq!(init["serverInfo"]["name"], "quakec-ide");
     let tools = answers["1"]["result"]["tools"].as_array().unwrap();
-    let compile = tools.iter().find(|t| t["name"] == "compile").unwrap();
+    let compile = tools
+        .iter()
+        .find(|t| t["name"] == "project.compile")
+        .unwrap();
     assert_eq!(compile["inputSchema"]["type"], "object");
     assert!(
         compile["description"]
@@ -212,10 +215,10 @@ fn errors_are_reported_as_mcp_says() {
             ),
             call(
                 3,
-                "edit.apply",
+                "edit.stage_change",
                 &json!({ "files": [{ "path": "../elsewhere/x.qc", "text": "" }] }),
             ),
-            call(4, "compile", &json!({})),
+            call(4, "project.compile", &json!({})),
         ],
     );
     assert_eq!(answers["1"]["error"]["code"], -32602, "{}", answers["1"]);
@@ -250,7 +253,7 @@ fn a_read_only_project_refuses_writing_tools() {
         &[
             init,
             initialized,
-            call(1, "compile", &json!({})),
+            call(1, "project.compile", &json!({})),
             call(2, "project.check", &json!({})),
         ],
     );
@@ -279,7 +282,11 @@ fn a_session_that_fails_is_reported() {
             .is_some_and(|e| e.to_string() == "no project here")
     );
     let root = project("names", WORLD);
-    assert!(server(&root, false).tool_names().contains(&"compile"));
+    assert!(
+        server(&root, false)
+            .tool_names()
+            .contains(&"project.compile")
+    );
 }
 
 // No spec statement: P4-13 and AGT-7, with --connect the tools run in the running app's
@@ -320,17 +327,17 @@ fn a_connected_server_runs_in_the_apps_session() {
         settings,
     )
     .unwrap();
-    assert!(connected.tool_names().contains(&"compile"));
+    assert!(connected.tool_names().contains(&"project.compile"));
     let [init, initialized] = opening("2025-11-25");
     let answers = exchange(
         connected,
         &[
             init,
             initialized,
-            call(1, "compile", &json!({})),
+            call(1, "project.compile", &json!({})),
             call(
                 2,
-                "edit.apply",
+                "edit.stage_change",
                 &json!({ "files": [{ "path": "world.qc", "text": "void() worldspawn = { };\n" }] }),
             ),
             call(3, "vm.run", &json!({ "function": "nowhere" })),
@@ -459,8 +466,8 @@ fn the_map_tools_are_listed_with_their_schemas() {
         "map.new",
         "map.save",
         "map.play_from_here",
-        "map.inspect",
-        "map.place",
+        "map.list_entities",
+        "map.place_entity",
         "map.set_key",
         "map.brush_create",
         "map.brush_shape",
@@ -469,12 +476,17 @@ fn the_map_tools_are_listed_with_their_schemas() {
         "map.brush_intersect",
         "map.brush_hollow",
         "map.compile",
-        "map.leaks",
+        "map.find_leaks",
     ] {
         assert!(tools.iter().any(|t| t["name"] == wanted), "{wanted}");
     }
     // Every command is a tool (PRIN-3): the review's own are among them.
-    for decision in ["map.accept", "map.reject", "map.stage", "map.unstage"] {
+    for decision in [
+        "map.accept_hunks",
+        "map.reject_hunks",
+        "map.stage",
+        "map.unstage",
+    ] {
         assert!(tools.iter().any(|t| t["name"] == decision), "{decision}");
     }
     for tool in &offered {
@@ -529,7 +541,7 @@ fn every_command_is_a_tool_with_its_access() {
     }
     let access = |id: &str| offered.iter().find(|tool| &*tool.id == id).unwrap().access;
     for id in [
-        "map.inspect",
+        "map.list_entities",
         "file.read",
         "git.status",
         "project.symbols",
@@ -538,8 +550,8 @@ fn every_command_is_a_tool_with_its_access() {
         assert_eq!(access(id), Access::Read, "{id}");
     }
     for id in [
-        "map.place",
-        "edit.apply",
+        "map.place_entity",
+        "edit.stage_change",
         "preview.play",
         "git.commit",
         "engine.console",
@@ -569,11 +581,11 @@ fn a_room_built_over_mcp_compiles_sealed() {
         init,
         initialized,
         call(1, "map.open", &json!({ "path": map })),
-        call(30, "map.inspect", &json!({})),
-        call(31, "map.staged", &json!({})),
+        call(30, "map.list_entities", &json!({})),
+        call(31, "map.staged_hunks", &json!({})),
         call(
             2,
-            "map.place",
+            "map.place_entity",
             &json!({ "classname": "info_player_start", "origin": [0.0, 0.0, 24.0] }),
         ),
     ];
@@ -584,9 +596,9 @@ fn a_room_built_over_mcp_compiles_sealed() {
             &json!({ "min": min, "max": max, "texture": "wall" }),
         ));
     }
-    messages.push(call(20, "map.leaks", &json!({})));
+    messages.push(call(20, "map.find_leaks", &json!({})));
     messages.push(call(21, "map.compile", &json!({})));
-    messages.push(call(22, "map.staged", &json!({})));
+    messages.push(call(22, "map.staged_hunks", &json!({})));
     let answers = exchange(server, &messages);
     for id in 1..=8 {
         let answer = &answers[&id.to_string()]["result"];
@@ -636,10 +648,10 @@ fn a_map_is_made_and_saved_over_mcp() {
                 "map.new",
                 &json!({ "path": made, "keys": [["message", "made"]] }),
             ),
-            call(2, "map.staged", &json!({})),
+            call(2, "map.staged_hunks", &json!({})),
             call(
                 3,
-                "map.place",
+                "map.place_entity",
                 &json!({ "classname": "info_player_start", "origin": [0.0, 0.0, 24.0] }),
             ),
             call(4, "map.save", &json!({})),
@@ -677,13 +689,13 @@ fn a_repeated_map_edit_waits_for_review() {
             call(0, "map.open", &json!({ "path": map })),
             call(
                 1,
-                "map.place",
+                "map.place_entity",
                 &json!({ "classname": "info_player_start", "origin": [0.0, 0.0, 24.0] }),
             ),
-            call(2, "map.accept", &json!({})),
-            call(3, "map.staged", &json!({})),
+            call(2, "map.accept_hunks", &json!({})),
+            call(3, "map.staged_hunks", &json!({})),
             call(4, "edit.repeat", &json!({})),
-            call(5, "map.staged", &json!({})),
+            call(5, "map.staged_hunks", &json!({})),
         ],
     );
     let text = |id: &str| {
@@ -709,10 +721,10 @@ fn a_read_only_server_refuses_the_map_tools_that_write() {
         .filter(|tool| tool.access == Access::Write)
         .map(|tool| &*tool.id)
         .collect();
-    for id in ["map.open", "map.place", "map.compile"] {
+    for id in ["map.open", "map.place_entity", "map.compile"] {
         assert!(writes.contains(&id), "{id}");
     }
-    let mut messages = vec![init, initialized, call(1, "map.staged", &json!({}))];
+    let mut messages = vec![init, initialized, call(1, "map.staged_hunks", &json!({}))];
     for (n, id) in (3..).zip(&writes) {
         let arguments = if *id == "map.open" {
             json!({ "path": map })
@@ -765,7 +777,7 @@ fn a_map_outside_the_write_roots_is_not_written() {
         for _ in 0..2 {
             assert!(host.answer_next(&mut session));
         }
-        session.execute("map.staged", json!({})).unwrap()
+        session.execute("map.staged_hunks", json!({})).unwrap()
     });
     let settings = ServerSettings {
         project: root.clone(),
@@ -787,7 +799,7 @@ fn a_map_outside_the_write_roots_is_not_written() {
             initialized,
             call(
                 1,
-                "map.place",
+                "map.place_entity",
                 &json!({ "classname": "light", "origin": [0.0, 0.0, 64.0] }),
             ),
         ],
@@ -796,4 +808,36 @@ fn a_map_outside_the_write_roots_is_not_written() {
     assert_eq!(answer["isError"], true, "{answer}");
     assert!(answer.to_string().contains("outside the roots"), "{answer}");
     assert_eq!(app.join().unwrap(), json!([]));
+}
+
+// No spec statement: L-42: an agent whose client defers the tool list reads the server's
+// instructions and the tools' names before it searches, so the instructions name every kind
+// of tool the server's own session offers, the preview's among them, by the start of its
+// name, and the kinds the running app adds
+#[test]
+fn the_instructions_name_every_kind_of_tool() {
+    let (server, _) = map_server("kinds", false);
+    let mut kinds: Vec<&str> = server
+        .tool_names()
+        .into_iter()
+        .filter_map(|name| name.split_once('.').map(|(kind, _)| kind))
+        .collect();
+    kinds.sort_unstable();
+    kinds.dedup();
+    assert!(
+        ["map", "project", "preview", "scenario", "texture"]
+            .iter()
+            .all(|kind| kinds.contains(kind)),
+        "{kinds:?}"
+    );
+    // The app's own kinds, which the server offers only with `--connect`.
+    for kind in kinds
+        .into_iter()
+        .chain(["view", "editor", "settings", "help"])
+    {
+        assert!(
+            super::INSTRUCTIONS.contains(&format!("{kind}.")),
+            "the instructions do not name {kind}.*"
+        );
+    }
 }

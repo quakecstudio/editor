@@ -95,7 +95,8 @@ pub enum MapEditError {
         error: qs_map::MapError,
     },
     /// Another program changed the map's file since the editor read or saved it (P5-17):
-    /// saving would overwrite that, so the map is reloaded or kept first (`map.resolve`).
+    /// saving would overwrite that, so the map is reloaded or kept first
+    /// (`map.resolve_disk_change`).
     ChangedOnDisk {
         /// The file.
         path: PathBuf,

@@ -21,13 +21,13 @@ it too.
 - **Placing and linking (P5-13, MAP-27):**
   - The Entities browser below the view lists the classes the project's QuakeC defines, each
     with its model's wireframe, or its box where it has no model, in its class's colour. A
-    point class dragged into the view is placed (`map.place`) 256 units ahead of the camera
+    point class dragged into the view is placed (`map.place_entity`) 256 units ahead of the camera
     along the pointer's ray, on the 16-unit grid. A brush class is listed, but is made from
     brushes.
   - Lines join each entity to the entities its keys fire, for the selection or for every
     entity (Links). The keys are those the QuakeC compares with `targetname` (MAP-8.8), so
     `killtarget` and a mod's own keys link as `target` does.
-  - Pick, beside such a key, sets it to the next entity clicked (`map.link`). An Alt-drag from
+  - Pick, beside such a key, sets it to the next entity clicked (`map.link_target`). An Alt-drag from
     the selection onto another entity sets the key last picked, else the shortest such key
     (`target` in id's QuakeC). An entity with no `targetname` is given its classname and the
     first number no entity has as its `targetname`.
@@ -41,7 +41,7 @@ it too.
   (`map.set_key` with `also`), and a spawnflag ticked or cleared changes that bit alone in each
   entity's own flags (`map.set_flag`).
 - **Show (P5-13):** the view can show only the entities the game spawns on easy, normal, hard or
-  nightmare, or in coop or deathmatch. `map.filter` compiles the project's server QuakeC in
+  nightmare, or in coop or deathmatch. `map.entities_removed_by_skill` compiles the project's server QuakeC in
   memory, writing nothing, and spawns the entity lump qbsp would write for the map in `qs-sim`
   with those settings, so what the spawnflags rule out and what the QuakeC removes itself are
   both hidden. It is found again after each edit.
@@ -69,7 +69,7 @@ it too.
   (`map.outline`). The filter keeps what holds its text in a classname, key or value, with the
   layers and groups around it. Choosing a row selects the entity and frames it in the view,
   keeping where the camera looks; a selection made in the view opens and scrolls to its row.
-  Dragging a row onto a layer or group moves it there (`map.move_to`), into a linked group
+  Dragging a row onto a layer or group moves it there (`map.move_to_layer_or_group`), into a linked group
   copied into the groups linked to it; the world and a layer stay where they are. An entity
   naming both a layer and a group is shown in the layer, as hiding and locking treat it (MAP-9.2);
   groups that name each other are shown under the default layer.
@@ -100,7 +100,7 @@ it too.
   entities and world brushes in a new group, named "Group 1" and on (`map.group`). With a
   group's own entity selected, Cmd+Shift+G (Ungroup) takes its contents out (`map.ungroup`),
   Cmd+Shift+D (Linked duplicate) copies it as a group linked to it (`map.link_duplicate`) and
-  Separate unlinks it (`map.separate`). With an entity of a linked group selected, the view's
+  Separate unlinks it (`map.unlink_group`). With an entity of a linked group selected, the view's
   menu's "Extract into linked groups" moves it, and the same entity of every linked copy, into
   new groups linked to each other (`map.extract_linked`). Add layer, beside Layers, adds a layer
   (`map.add_layer`), and "New objects in" picks the current layer: a brush drawn goes into the
@@ -146,7 +146,7 @@ it too.
   Alt+Left and Right turn it a right angle about the vertical. With brushes selected, the
   Properties panel turns the selection by any angle, 15 degrees at first, and flips it along x,
   y or z. Both go about the middle of the selection's box, point entities' facing with it
-  (`map.flip`, `map.turn`).
+  (`map.flip`, `map.rotate_objects`).
 - **Moving on an axis (P7-08):** the Move tool moves the selection across the ground in the 3D
   view and across its own plane in a 2D view; Alt moves it up and down, and Shift keeps it on the
   axis it has moved farthest, as TrenchBroom's axis restriction.
@@ -183,9 +183,9 @@ it too.
   brush, shape and CSG commands as the editor (`map.brush_create`, `map.brush_shape`,
   `map.brush_subtract` and the rest). Its first map command begins a review (`map.stage`): the
   map is edited at once, so a compile and the game see the change, and each run of changed parts
-  since, an entity's keys or one of its brushes, waits as a hunk (`map.staged`). The Properties
+  since, an entity's keys or one of its brushes, waits as a hunk (`map.staged_hunks`). The Properties
   panel lists them with Accept and Reject, and both for every hunk; a rejected hunk's parts are
-  put back as an edit undo takes back (`map.accept`, `map.reject`). Review ends when no hunk is
+  put back as an edit undo takes back (`map.accept_hunks`, `map.reject_hunks`). Review ends when no hunk is
   left.
 - **Compile profiles (P6-20, MAP-28):** a profile is a list of tasks run in order on the open
   map (`map.run_profile`), as TrenchBroom's compile profiles are: `bsp` (qs-map-bsp, the map as it

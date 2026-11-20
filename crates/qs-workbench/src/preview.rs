@@ -2109,11 +2109,11 @@ impl<C: HasPreview + 'static> Command<C> for ScenarioRunCommand {
 }
 
 /// The id of the command that says what game data the preview can play (P3-21).
-pub const GAME: &str = "preview.game";
+pub const GAME: &str = "preview.game_files";
 /// The id of the command that chooses the game folder the preview plays from (P3-21).
 pub const CHOOSE_GAME: &str = "preview.choose_game";
 
-/// `preview.game`: what the configured game folder, or the first install found, holds.
+/// `preview.game_files`: what the configured game folder, or the first install found, holds.
 struct GameCommand;
 
 impl<C: HasPreview + 'static> Command<C> for GameCommand {

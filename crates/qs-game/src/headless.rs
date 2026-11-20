@@ -18,6 +18,8 @@ use qs_client::{
     Client, Connection, Console, ConsoleHold, Hud, KeyDest, Menu, MenuFrame, MenuSettings,
 };
 use qs_render::{Look, MapMesh, MapRenderer, Offscreen, Play};
+use qs_sim::ClientCommand;
+use qs_sim::input::{Input, MoveSettings};
 
 use crate::Error;
 use crate::args::Args;
@@ -29,7 +31,7 @@ use crate::keys::focus;
 use crate::load::{Acted, Describer, Loaded, Rand, map_mesh};
 use crate::map_bsp::MapBsp;
 use crate::screenshot::{Drawer, Frame};
-use crate::settings::DrawingSettings;
+use crate::settings::{DrawingSettings, HostSettings};
 use crate::view_script::{Step, ViewScript};
 use crate::window::{CONWIDTH, FRAME, frametime_f32, screen_height};
 
@@ -65,13 +67,24 @@ impl Args {
             if let Some(swap) = world.game.take_swap() {
                 world.draw_swap(offscreen.as_ref(), swap);
             }
+            // Paused, no time passes for the keys that turn the view; the move is still made,
+            // so an impulse typed while paused is in the frame a step runs (PHYS-9.8).
+            world.steer(if world.game.paused() {
+                0.0
+            } else {
+                frametime_f32(FRAME)
+            });
             let ran = world.game.frame(FRAME);
+            // The progs' `localcmd` and `stuffcmd` reach the client's commands too.
+            world.client_commands();
             if let Some(action) = world.game.host_action() {
                 match self.act(&mut world.game, action) {
                     Acted::Load(loaded) => {
                         let next = Headless::new(*loaded, offscreen.as_ref());
                         let old = core::mem::replace(&mut world, next);
                         world.game.carry_from(old.game);
+                        // A button held stays held into the next level, as the window's.
+                        world.input = old.input;
                         continue;
                     }
                     Acted::Quit => return Ok(()),
@@ -363,6 +376,10 @@ struct Headless {
     audio: Audio,
     /// What the map's first client frame printed (CLIENT-1.7).
     printed: Vec<Vec<u8>>,
+    /// The buttons and the impulse the console's commands hold (INPUT-2.1): with no window
+    /// there is no key and no mouse, so `+forward`, `+attack` and `impulse` typed at the
+    /// console, or sent over the bridge, are all that moves the player.
+    input: Input,
 }
 
 impl Headless {
@@ -409,6 +426,61 @@ impl Headless {
             bsp,
             audio,
             printed,
+            input: Input::new(),
+        }
+    }
+
+    /// The player for a frame of `seconds` (INPUT-2), as the window steers it with no key
+    /// down and the mouse still: the buttons the console holds turn the client's view and
+    /// make the command for the next server frame.
+    fn steer(&mut self, seconds: f32) {
+        let world = self.game.world();
+        let settings = MoveSettings::read(&|name| world.setting(name).unwrap_or(0.0));
+        let [pitch, yaw, _] = self.client.viewangles();
+        let mut angles = [pitch, yaw, 0.0];
+        let (cmd, drift) = self.input.frame(&settings, seconds, &mut angles, [0.0; 2]);
+        self.client.set_viewangles(angles);
+        if drift.stop {
+            self.client.stop_pitch_drift();
+        }
+        if drift.start {
+            self.client.start_pitch_drift();
+        }
+        self.game.world_mut().set_command(cmd);
+    }
+
+    /// The client's commands the console met, run in order (CON-6.1): the buttons and the
+    /// impulse. The console, the menus and the bindings are the window's: with no screen and
+    /// no key there is nothing for them to change.
+    fn client_commands(&mut self) {
+        for command in self.game.world_mut().take_client_commands() {
+            match command {
+                ClientCommand::Impulse(n) => self.input.set_impulse(n),
+                ClientCommand::Press(button, key) => {
+                    // What `KeyDown` prints goes to the console on the screen, which is the
+                    // window's.
+                    let _printed = self.input.press(button, key);
+                }
+                ClientCommand::Release(button, key) => {
+                    let lookspring = self.game.world().setting("lookspring").unwrap_or(0.0);
+                    if self.input.release(button, key, lookspring).start {
+                        self.client.start_pitch_drift();
+                    }
+                }
+                ClientCommand::ToggleConsole
+                | ClientCommand::Clear
+                | ClientCommand::ToggleMenu
+                | ClientCommand::MenuMain
+                | ClientCommand::MenuSinglePlayer
+                | ClientCommand::MenuLoad
+                | ClientCommand::MenuSave
+                | ClientCommand::MenuOptions
+                | ClientCommand::Help
+                | ClientCommand::MenuQuit
+                | ClientCommand::Bind(_)
+                | ClientCommand::Unbind(_)
+                | ClientCommand::UnbindAll => {}
+            }
         }
     }
 
@@ -465,6 +537,8 @@ impl Headless {
     /// The paint callback of the client's view, from `eye` at its yaw when one is given, as
     /// `timerefresh` turns the view, else from the client's own eye.
     fn callback(&mut self, eye: Option<([f32; 3], f32)>) -> qs_render::MapCallback {
+        // The view size and gamma first: the scene places the weapon and blends by them.
+        self.apply_settings();
         let mut scene = self.client.scene();
         if let Some((origin, yaw)) = eye {
             scene.view.origin = origin;
@@ -474,7 +548,6 @@ impl Headless {
         self.client
             .set_contents(contents_at(self.bsp.bsp(), scene.view.origin));
         let hud = self.client.hud();
-        self.apply_drawing_settings();
         self.play.screen = [CONWIDTH, screen_height(ASPECT)];
         self.client
             .set_screen(self.play.screen[0], self.play.screen[1]);
@@ -482,8 +555,23 @@ impl Headless {
             .frame(&scene, &hud, self.bsp.bsp(), &mut self.mesh, ASPECT)
     }
 
-    /// The later engines' drawing settings as the console left them (CON-7.6), as the window
-    /// reads them each frame.
+    /// The client's settings as the console left them (CON-7.4), as the window reads them each
+    /// frame: the view size and gamma for the view and the frame. Nothing is played, so the
+    /// volumes are left.
+    fn apply_settings(&mut self) {
+        let world = self.game.world();
+        let read = HostSettings::read(
+            |name| world.setting(name),
+            *self.client.view_settings(),
+            self.mesh.look,
+        );
+        self.client.set_view_settings(read.view);
+        self.play.gamma = read.frame_gamma;
+        read.drawing.apply(&mut self.play);
+    }
+
+    /// The later engines' drawing settings alone (CON-7.6), for the view oracle's frames, whose
+    /// view size and gamma are the script's.
     fn apply_drawing_settings(&mut self) {
         let world = self.game.world();
         DrawingSettings::read(|name| world.setting(name)).apply(&mut self.play);

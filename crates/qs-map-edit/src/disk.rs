@@ -2,8 +2,8 @@
 
 //! The open map changed by another program (P5-17, MAP-32). When its file is among those
 //! `files.changed` is told of, the map with no unsaved edits is read again with its selection
-//! kept, and one with unsaved edits keeps them and waits for `map.resolve`. `map.compare`
-//! lists how the map on disk differs from the one being edited.
+//! kept, and one with unsaved edits keeps them and waits for `map.resolve_disk_change`.
+//! `map.compare_with_disk` lists how the map on disk differs from the one being edited.
 
 use std::path::{Path, PathBuf};
 
@@ -15,10 +15,10 @@ use serde::{Deserialize, Serialize};
 use super::{EntityIndex, LiveChange, MapDocument, MapRead};
 use crate::{HasMap, LiveMap, MapEditError, MapStore};
 
-/// The id of `map.resolve`.
-pub const MAP_RESOLVE: &str = "map.resolve";
-/// The id of `map.compare`.
-pub const MAP_COMPARE: &str = "map.compare";
+/// The id of `map.resolve_disk_change`.
+pub const MAP_RESOLVE: &str = "map.resolve_disk_change";
+/// The id of `map.compare_with_disk`.
+pub const MAP_COMPARE: &str = "map.compare_with_disk";
 
 /// What happened to the open map when its file changed.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -29,11 +29,11 @@ pub enum MapOnDisk {
     Same,
     /// It had no unsaved edits and was read again, its selection kept.
     Reloaded,
-    /// It has unsaved edits, kept until `map.resolve` says which to take.
+    /// It has unsaved edits, kept until `map.resolve_disk_change` says which to take.
     Conflict,
 }
 
-/// Which map `map.resolve` keeps.
+/// Which map `map.resolve_disk_change` keeps.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Keep {
@@ -43,7 +43,7 @@ pub enum Keep {
     Mine,
 }
 
-/// The parameters of `map.resolve`.
+/// The parameters of `map.resolve_disk_change`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ResolveParams {
@@ -128,7 +128,7 @@ impl MapStore {
 
 /// Reads the open map of `context` again when one of `paths`, the files another program
 /// wrote, is its file: with no unsaved edits it is read again and its game told, with unsaved
-/// edits they are kept for `map.resolve` (P5-17).
+/// edits they are kept for `map.resolve_disk_change` (P5-17).
 ///
 /// # Errors
 ///
@@ -171,7 +171,7 @@ fn out_of_step<C: HasMap>(context: &mut C) {
     }
 }
 
-/// `map.resolve`.
+/// `map.resolve_disk_change`.
 pub(super) struct MapResolve;
 
 impl<C: HasMap + 'static> Command<C> for MapResolve {
@@ -192,7 +192,7 @@ impl<C: HasMap + 'static> Command<C> for MapResolve {
     }
 }
 
-/// `map.compare`.
+/// `map.compare_with_disk`.
 pub(super) struct MapCompare;
 
 impl<C: HasMap + 'static> Command<C> for MapCompare {

@@ -387,7 +387,10 @@ fn mcp_serves_the_agents_tools() {
         r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}"#,
         r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
         r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
-        r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"compile","arguments":{}}}"#,
+        concat!(
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","#,
+            r#""params":{"name":"project.compile","arguments":{}}}"#
+        ),
     );
     let (mut out, mut err) = (Vec::new(), Vec::new());
     let exit = run_with_input(
@@ -414,7 +417,7 @@ fn mcp_serves_the_agents_tools() {
         .map(|t| t["name"].as_str().unwrap())
         .collect();
     for tool in [
-        "compile",
+        "project.compile",
         "project.symbols",
         "engine.inspect",
         "scenario.run",
@@ -669,4 +672,25 @@ fn new_refuses_a_copy_without_the_pinned_files() {
     let (exit, _, err) = cli(&["new", "quake2", text(&target)]);
     assert_eq!(exit, Exit::Failure);
     assert!(err.contains("quake2"), "{err}");
+}
+
+// No spec statement: L-41: the game `mcp`'s own session plays has no window and no sound, so
+// an agent that plays a map to look at a frame of it opens nothing on the person's screen;
+// the game folder named is the one it plays over
+#[test]
+fn the_servers_own_game_is_headless() {
+    let game = PathBuf::from("/games/quake");
+    let config = super::own_preview(Some(game.clone()));
+    assert!(
+        config.extra.iter().any(|flag| flag == "--headless"),
+        "{:?}",
+        config.extra
+    );
+    assert_eq!(config.game, Some(game));
+    assert!(
+        super::own_preview(None)
+            .extra
+            .iter()
+            .any(|flag| flag == "--headless")
+    );
 }

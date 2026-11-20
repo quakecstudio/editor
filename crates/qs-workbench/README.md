@@ -44,7 +44,7 @@ an edit, so both commands run outside the edit history
 - The play loop and the debugger (`preview`, `debug`, `entities`): the preview host started
   on the project's program, its entities, the debugger's breakpoints, stack and watches, and
   the `preview.*` commands.
-- Staged edits (`staged`, P4-04, AGT-3): `stage` and `edit.apply` take a change to several
+- Staged edits (`staged`, P4-04, AGT-3): `stage` and `edit.stage_change` take a change to several
   files and stage it as hunks, the runs of changed lines of `qs-diff`'s Myers diff. While a
   hunk waits, the semantic model and a build read the file with it, and nothing is written
   to disk; `decide`, `edit.accept` and `edit.reject` settle hunks one by one, a rejected hunk
@@ -79,7 +79,7 @@ an edit, so both commands run outside the edit history
 - The open map is `qs-map-edit`'s (P6-40): the workbench holds its `MapStore` and answers the
   map commands' seam from the server QuakeC and the preview. `files.changed` takes the files
   another program wrote: the open map is read again, or with unsaved edits kept for
-  `map.resolve` and `map.compare`, and changed QuakeC is read again (P5-17, MAP-32).
+  `map.resolve_disk_change` and `map.compare_with_disk`, and changed QuakeC is read again (P5-17, MAP-32).
 - Git (`git`, P4-35, UI-19): `git.status`, `git.diff`, `git.stage` and `git.unstage` (a file
   or one hunk), `git.commit`, `git.branches`, `git.switch`, `git.create_branch`, `git.log`,
   `git.blame`, `git.conflicts`, `git.resolve` and `git.head_text`, over `qs-git` in the open
@@ -103,7 +103,7 @@ an edit, so both commands run outside the edit history
   attribution file does not name. The same sources export to the same zip.
 - The agent's tools (`tools` and `engine`, P4-03, AGT-2): `project.symbols`, `project.files`,
   `project.search` (every match of a text, unsaved edits included), `engine.builtins`
-  and `compile`, the project built with whether it is clean and its counts; and over the
+  and `project.compile`, the project built with whether it is clean and its counts; and over the
   running game, `engine.inspect` (edicts, one edict's fields, the globals or the stack),
   `engine.console` (a command and the lines it printed) and `engine.screenshot` (the frame
   as a PNG, in `build/screenshots` by default). The engine tools are functions over the

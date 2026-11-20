@@ -11,8 +11,13 @@ quakec-ide mcp [<project>] [--dialect <vanilla|fteqcc>] [--read <dir>]... [--wri
 
 The server opens the project (the current directory when none is named) and then reads one
 JSON-RPC message per line from stdin, answering each on stdout. It writes nothing else to
-stdout. It runs headless: no window opens, and a game it plays runs in the preview host, as
-Play starts it.
+stdout. It runs headless: no window opens, and a game it plays runs in the preview host with no
+window and no sound either (`--headless`), its frames drawn offscreen for `engine.screenshot`,
+so an agent that plays a map to look at it opens nothing on the person's screen. On a machine
+with no GPU device the game still runs, and `engine.screenshot` is refused with "the preview
+host does not offer screenshot". The player is moved from the console: `engine.console` with `+forward`, `+attack` or
+`impulse 9` holds a button or sends an impulse, as a key would in the window. To watch the game
+an agent plays, connect the server to the running app.
 
 ## Connecting to the running app
 
@@ -97,32 +102,32 @@ The tools an agent's loop most often uses:
 | `project.symbols`, `project.check` | The project's definitions; its errors and warnings |
 | `symbol.definition`, `symbol.references`, `symbol.hover` | Where a name is defined and used, and what it is |
 | `engine.builtins` | An engine's builtins for a module kind |
-| `compile` | Builds the project: whether it is clean, its counts and each module's problems |
+| `project.compile` | Builds the project: whether it is clean, its counts and each module's problems |
 | `project.test` | Runs the project's `test_` functions and `tests/*.scenario` files ([`spec/qc-tests.md`](spec/qc-tests.md)) |
 | `vm.run` | Calls one QuakeC function in the VM over a mock engine |
 | `scenario.run` | Plays a scenario file in the server simulation ([`spec/scenario.md`](spec/scenario.md)) |
-| `edit.apply`, `edit.accept`, `edit.reject`, `edit.staged` | Stages a change as hunks, decided one by one; nothing is written to disk until accepted and saved |
+| `edit.stage_change`, `edit.accept`, `edit.reject`, `edit.staged` | Stages a change as hunks, decided one by one; nothing is written to disk until accepted and saved |
 | `file.read`, `file.save` | A file's current text, unsaved edits included; writes a file's text to disk |
 | `checkpoint.create`, `checkpoint.list`, `checkpoint.restore` | Checkpoints of the project, restored deletions and all |
 | `preview.play`, `preview.reload`, `preview.stop`, `preview.poll` | The live game: start it, reload the program, stop it, read its events |
 | `engine.inspect`, `engine.console`, `engine.screenshot` | The running game's edicts, globals and stack; a console command and its output; a frame as a PNG |
-| `map.open`, `map.new`, `map.inspect`, `map.staged` | Opens a `.map` file; makes a new one in the project, holding a world with the keys given, and opens it; its rooms and entities; the map edits waiting for review |
+| `map.open`, `map.new`, `map.list_entities`, `map.staged_hunks` | Opens a `.map` file; makes a new one in the project, holding a world with the keys given, and opens it; its rooms and entities; the map edits waiting for review |
 | `map.brushes`, `map.summary` | An entity's brushes, each with its place, the box around it and its textures; the map in short: its bounds, brush and entity counts, entities by classname and textures by face |
-| `map.place`, `map.set_key` | Places an entity; sets one of an entity's keys |
+| `map.place_entity`, `map.set_key` | Places an entity; sets one of an entity's keys |
 | `map.brush_create`, `map.brush_shape`, `map.brush_delete`, `map.brush_move`, `map.brush_texture` | Adds a box brush, or a shape of brushes (cylinder, cone, arch, spheroid, rock, curve, stairs); deletes, moves or retextures brushes |
 | `map.brush_clip`, `map.brush_vertex`, `map.brush_vertices`, `map.brush_split_edge`, `map.brush_split_face`, `map.brush_chamfer`, `map.brush_extrude`, `map.brush_scale`, `map.brush_shear`, `map.brush_sweep` | Reshapes a brush: clips it by a plane, moves its corners, splits, chamfers, extrudes, scales, shears or sweeps it |
 | `map.brush_subtract`, `map.brush_merge`, `map.brush_intersect`, `map.brush_hollow` | CSG: carves a brush out of the others of its entity, merges brushes into their convex hull, keeps their common solid, hollows a brush into walls |
-| `map.compile`, `map.leaks` | Compiles the map as it is in the editor to a BSP beside it, with its portal and leak files; reports whether it leaks without writing a file |
+| `map.compile`, `map.find_leaks` | Compiles the map as it is in the editor to a BSP beside it, with its portal and leak files; reports whether it leaks without writing a file |
 | `map.save`, `map.play_from_here` | Saves the open map; compiles and lights it and plays it with the player at a point |
 
 A map tool that edits runs as the built-in agent's do (P6-21): the server begins the map's
 review with `map.stage` before it and ends it with `map.unstage` after, so every edit waits as a
 hunk for a person to accept or reject in the app, and a call that changed nothing leaves no
-review open. When review cannot begin the edit is refused, not run unreviewed. The map tools that read open no review. `map.accept` and `map.reject` are tools as `edit.accept` and `edit.reject` are: whether an agent may decide its own hunks is the client's to ask its person.
+review open. When review cannot begin the edit is refused, not run unreviewed. The map tools that read open no review. `map.accept_hunks` and `map.reject_hunks` are tools as `edit.accept` and `edit.reject` are: whether an agent may decide its own hunks is the client's to ask its person.
 
 `map.open` and `map.new` write, since they replace the open map, its unsaved and staged edits
 with it. A map tool that edits, compiles, saves or plays also needs the open map's file under
-a write root, since `map.compile` and `map.save` write beside it: the server asks `map.inspect`
+a write root, since `map.compile` and `map.save` write beside it: the server asks `map.list_entities`
 for it first. `map.compile`, `map.save` and `map.play_from_here` change no edit and open no
 review; `map.save` writes the map as it is in the editor, the edits still waiting for review
 included. `preview.play` of a map the project compiled reads its BSP from beside the open map
@@ -134,7 +139,7 @@ the app between them joins the review.
 
 The server's instructions give an agent the order (L-40); it is the one a person follows:
 
-1. `map.new` makes the map, or `map.open` opens one; `map.textures` lists the textures there
+1. `map.new` makes the map, or `map.open` opens one; `map.list_textures` lists the textures there
    are, those of the game's own levels among them, so a map needs no WAD of its own.
 2. A room is a box (`map.brush_create`) hollowed into walls (`map.brush_hollow`). Rooms are
    joined by a box across the walls between them given to `map.brush_subtract`, which carves
@@ -143,13 +148,14 @@ The server's instructions give an agent the order (L-40); it is the one a person
    lists the places, each with the box around the brush and its textures, all of them or those
    touching a box. A brush just added has the place `total` had before it; a tool that cuts or
    hollows changes the places, so they are listed again after it.
-4. `map.place` puts in the player start, the lights, the monsters and the items, with keys
+4. `map.place_entity` puts in the player start, the lights, the monsters and the items, with keys
    such as `light` and `angle`; `map.make_brush_entity` makes a door or a platform of a brush.
-5. `map.issues` and `map.leaks` say what is wrong: a missing player start, an entity the
+5. `map.issues` and `map.find_leaks` say what is wrong: a missing player start, an entity the
    QuakeC does not know, a leak with its trail. `map.save` writes the file.
-6. To review it, `map.summary` counts what the map holds and `map.inspect` lists its entities;
+6. To review it, `map.summary` counts what the map holds and `map.list_entities` lists its entities;
    with a `path`, `map.summary` reads a `.map` file from the disk without opening it, which
-   is how a set of maps is compared, under a read root;
+   is how a set of maps is compared, under a read root, and `most_textures` cuts its list of
+   textures to the most used, the count of them all still given;
    `map.play_from_here` compiles and lights it and starts the game at a point, and
    `engine.screenshot` writes the frame as a PNG the agent can look at.
 
@@ -196,5 +202,5 @@ runs `quakec-ide mcp` on a project end to end, and `--connect` with no app.
 Claude Code, given only this server's tools, on id's QuakeC 1.01 over LibreQuake's `start`
 map (`quakec-ide mcp <mod> --game librequake-lite`), was asked to make the player spawn with
 150 health, compile, and prove it with a scenario. In 11 turns it read `client.qc`, staged
-the change and `tests/health.scenario` with `edit.apply`, accepted and saved them, compiled
+the change and `tests/health.scenario` with `edit.stage_change`, accepted and saved them, compiled
 (`"clean": true`) and ran the scenario (`expect field player health == 150` passed).

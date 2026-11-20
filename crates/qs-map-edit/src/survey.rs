@@ -170,7 +170,10 @@ pub struct MapSummary {
     pub entities: usize,
     /// Its entities by classname, the most first: its monsters, lights, items and triggers.
     pub classes: Vec<Counted>,
-    /// Its textures by how many faces wear each, the most first.
+    /// How many textures its faces wear, however many of them `textures` lists.
+    pub texture_count: usize,
+    /// Its textures by how many faces wear each, the most first: all of them, or the most
+    /// used the request asked for.
     pub textures: Vec<Counted>,
     /// The world's keys and values, in order: its message, WADs, music and the like.
     pub world: Vec<(String, String)>,
@@ -184,6 +187,11 @@ pub struct SummaryParams {
     /// maps, as when comparing a set of them. The open map when not given.
     #[serde(default)]
     pub path: Option<PathBuf>,
+    /// Only this many of the textures, the most used first; all of them when not given. A
+    /// full map names hundreds of textures, so a few is what to ask for when reading many
+    /// maps. The classnames are never cut: they are the map's monsters, items and triggers.
+    #[serde(default)]
+    pub most_textures: Option<usize>,
 }
 
 impl MapSummary {
@@ -215,6 +223,7 @@ impl MapSummary {
             .flat_map(|world| world.pairs())
             .map(|pair| (text(pair.key()), text(pair.value())))
             .collect();
+        let textures = counted(uses_in(file));
         Self {
             path: path.to_path_buf(),
             bounds: bounds(corners),
@@ -222,7 +231,8 @@ impl MapSummary {
             entity_brushes,
             entities: file.entities.len(),
             classes: counted(classes),
-            textures: counted(uses_in(file)),
+            texture_count: textures.len(),
+            textures,
             world,
         }
     }
@@ -238,7 +248,8 @@ impl<C: HasMap + 'static> Command<C> for MapSummarise {
         box around its brushes, its brush and entity counts, its entities counted by classname \
         (monsters, lights, items, triggers), its textures counted by face, and its world's \
         keys. The open map, or with a path a .map file read from the disk without opening \
-        it. map.inspect lists each entity; this counts them.";
+        it; with `most_textures`, only that many textures of the count it gives, which keeps \
+        it short when many maps are read. map.list_entities lists each entity; this counts them.";
     type Params = SummaryParams;
     type Output = MapSummary;
     type Error = MapEditError;
@@ -248,15 +259,16 @@ impl<C: HasMap + 'static> Command<C> for MapSummarise {
         context: &mut C,
         params: SummaryParams,
     ) -> Result<Outcome<MapSummary, C>, MapEditError> {
-        if let Some(path) = params.path {
-            let read = MapRead::of(&path)?;
-            return Ok(Outcome::unchanged(MapSummary::of(&path, &read.file)));
+        let mut summary = if let Some(path) = params.path {
+            MapSummary::of(&path, &MapRead::of(&path)?.file)
+        } else {
+            let document = context.map_store().map().ok_or(MapEditError::NoMap)?;
+            MapSummary::of(document.path(), document.file())
+        };
+        if let Some(most) = params.most_textures {
+            summary.textures.truncate(most);
         }
-        let document = context.map_store().map().ok_or(MapEditError::NoMap)?;
-        Ok(Outcome::unchanged(MapSummary::of(
-            document.path(),
-            document.file(),
-        )))
+        Ok(Outcome::unchanged(summary))
     }
 }
 

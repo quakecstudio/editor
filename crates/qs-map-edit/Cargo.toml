@@ -10,7 +10,7 @@ publish.workspace = true
 
 [dependencies]
 qs-commands = { workspace = true }
-# map.compare: the line diff of the map being edited against the one on disk.
+# map.compare_with_disk: the line diff of the map being edited against the one on disk.
 qs-diff = { workspace = true }
 qs-map = { workspace = true }
 # The report a compile gives the map view (MapReport::of).

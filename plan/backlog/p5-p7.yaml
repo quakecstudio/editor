@@ -2493,9 +2493,38 @@ groups:
     - 'The map tools that light a map report how dark it is where it matters: each room, or the space around the player start and each entity, with its light level, so a room too dark to play is found without a picture'
     - 'A way to look at a map as the game draws it with its monsters asleep: a play option or a view that takes the frame before any monster acts'
     - 'The brush tools that add, cut or hollow brushes answer the places of the brushes they made'
+    - 'The game the MCP server''s own session plays has no window and no sound, and its player is moved by the console''s buttons; `map.summary` can answer only the most used textures, with the count of them all (both done first, on 2026-11-20, in apps/cli, crates/qs-game and crates/qs-map-edit: an agent''s review opened the game on the person''s screen at every look, and a full summary named hundreds of textures)'
+    - '`map.issues` finds the entity a `target` names: a second trial on 2026-11-20 was told nothing targets a door that a func_button of LibreQuake targets'
+    - '`map.play_from_here` answers where the player is in the game, not where it was asked to be: asked for a point inside a button, it answered that point while the player stood at the start'
     acceptance:
     - 'A map with a lit room and an unlit room is reported with the unlit room dark, checked by a test'
     - 'A frame of a map with a monster beside the point played from shows the monster where the map put it, checked by a test in the simulation'
     - 'A doorway is carved between two rooms using only the places the brush tools answered, with no `map.brushes` call, checked by a test'
+    - 'A func_button whose target is a door''s targetname leaves no issue on the door, checked by a test on LibreQuake''s QuakeC or a fixture like it'
+    - '`map.play_from_here` at a point where the player does not fit answers the origin the game reports, checked by a test'
+    - 'The MCP server''s own preview is launched with `--headless`, checked by a test of the CLI; `+forward` typed at the headless host''s console moves the player, checked by `cargo xtask bridge-client`; `map.summary` with `most_textures` lists that many textures and counts them all, checked by a test'
     verify:
-    - 'cargo nextest run -p qs-map-edit -p qs-workbench'
+    - 'cargo nextest run -p qs-map-edit -p qs-workbench -p quakec-ide; cargo xtask bridge-client <game root>'
+  - key: L-42
+    title: Name the commands an agent finds by name for what they do
+    labels:
+    - L5-commands
+    - area:agent
+    - type:chore
+    size: M
+    reqs:
+    - PRIN-3
+    - PRIN-6
+    summary: |
+      Justin, 2026-11-20: keep every tool, and name them so an agent's tool search works as well as it can; there are no users yet, so ids can change with no shim. Claude Code defers a tool list this long: "Only tool names and server instructions load at startup; Claude fetches the full schema on demand" (code.claude.com/docs/en/glossary, MCP Tool Search), and "The search mechanism matches queries against tool names and descriptions. Names like `search_slack_messages` surface for a wider range of requests than `query_slack`" (code.claude.com/docs/en/agent-sdk/tool-search, Optimize tool discovery; both fetched 2026-11-20). In L-40's trial the agent took `map.move_to` for a move to a point, which it is not, and moved lights a key at a time.
+    depends:
+    - L-40
+    deliverable:
+    - 'Twenty-three command ids renamed to say what they act on and do: map.move_to to map.move_to_layer_or_group, map.move to map.move_entity, map.place to map.place_entity, map.delete to map.delete_entity, map.duplicate to map.duplicate_entity, map.entity to map.read_entity, map.inspect to map.list_entities, map.rotate to map.rotate_entity, map.turn to map.rotate_objects, map.filter to map.entities_removed_by_skill, map.link to map.link_target, map.separate to map.unlink_group, map.fix to map.apply_fix, map.leaks to map.find_leaks, map.textures to map.list_textures, map.staged to map.staged_hunks, map.accept to map.accept_hunks, map.reject to map.reject_hunks, map.resolve to map.resolve_disk_change, map.compare to map.compare_with_disk, edit.apply to edit.stage_change, preview.game to preview.game_files, compile to project.compile; no old id is kept'
+    - 'crates/qs-mcp: the server''s instructions list the kinds of tools there are, since they are what an agent reads before it searches'
+    acceptance:
+    - 'No old id is left in the code, the generated references or the living docs, checked by a search recorded in the PR'
+    - 'Every check and test passes with the new ids, the generated command and keymap references among them'
+    - 'A test holds the server''s instructions to naming each kind of tool'
+    verify:
+    - 'cargo xtask ci; the search recorded in the PR'
