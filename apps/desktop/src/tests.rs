@@ -1389,10 +1389,12 @@ fn recent_projects_open_from_the_project_section() {
         std::slice::from_ref(&ember),
         "gone came off"
     );
-    assert!(
+    // The Project section and the Welcome page both say why.
+    assert_eq!(
         harness
-            .query_by_label_contains(Text::FolderGone.get())
-            .is_some()
+            .query_all_by_label_contains(Text::FolderGone.get())
+            .count(),
+        2
     );
     harness.get_all_by_label("ember").next().unwrap().click();
     harness.run();
@@ -6075,4 +6077,56 @@ fn the_apps_icon_decodes() {
     let icon = eframe::icon_data::from_png_bytes(crate::ICON).unwrap();
     assert_eq!((icon.width, icon.height), (256, 256));
     assert!(!icon.rgba.is_empty());
+}
+
+// No spec statement: L-27, the Welcome page says what Play would read the game from: once
+// looked for, the game is looked for again when the folder chosen changes, however it was
+// chosen, and a folder that was refused changes nothing
+#[test]
+fn the_welcome_page_follows_the_game_folder_chosen() {
+    let dir = TempDir::new("welcome-game");
+    let first = game_folder(&dir);
+    let second = dir.0.join("other");
+    fs::create_dir_all(second.join("id1")).unwrap();
+    fs::write(second.join("id1/pak0.pak"), b"PACK").unwrap();
+    fs::write(second.join("id1/pak1.pak"), b"PACK").unwrap();
+    let empty = dir.0.join("empty");
+    fs::create_dir_all(&empty).unwrap();
+    let ctx = egui::Context::default();
+    let mut app = App::checked_on_the_frame(&ctx, None).unwrap();
+    let shown = |app: &mut App, folder: &Path| {
+        frame_with(&ctx, app, Vec::new())
+            .iter()
+            .any(|text| *text == folder.display().to_string())
+    };
+
+    assert!(
+        app.shell_mut()
+            .choose_game_folder(&first)
+            .unwrap()
+            .state
+            .plays()
+    );
+    app.shell_mut().look_for_game();
+    assert!(shown(&mut app, &first));
+
+    assert!(
+        !app.shell_mut()
+            .choose_game_folder(&empty)
+            .unwrap()
+            .state
+            .plays()
+    );
+    assert!(shown(&mut app, &first), "a refused folder is not Play's");
+    assert!(!shown(&mut app, &empty));
+
+    assert!(
+        app.shell_mut()
+            .choose_game_folder(&second)
+            .unwrap()
+            .state
+            .plays()
+    );
+    assert!(shown(&mut app, &second));
+    assert!(!shown(&mut app, &first));
 }

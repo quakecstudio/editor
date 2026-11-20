@@ -2776,15 +2776,20 @@ impl Shell {
     /// click on it asks for.
     fn welcome(&mut self, ui: &mut Ui) {
         let ctx = ui.ctx().clone();
-        let project = &self.features.project;
+        let icon = self.about.icon(&ctx).map(egui::TextureHandle::id);
+        let play_key = self
+            .keymap
+            .shortcut(PLAY)
+            .map(|key| ctx.format_shortcut(&key));
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        let project = &mut self.features.project;
+        let files = project.game_found(&mut commands).cloned();
         let page = welcome::Page {
-            icon: self.about.icon(&ctx).map(egui::TextureHandle::id),
-            files: project.game_files(),
+            icon,
+            files: files.as_ref(),
             recent: project.recent_projects(),
-            play_key: self
-                .keymap
-                .shortcut(PLAY)
-                .map(|key| ctx.format_shortcut(&key)),
+            error: project.error.as_deref(),
+            play_key,
             palette_key: ctx.format_shortcut(&keymap::OPEN_PALETTE),
         };
         match welcome::page(ui, &self.theme, &page) {

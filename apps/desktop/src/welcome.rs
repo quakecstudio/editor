@@ -46,28 +46,39 @@ pub(crate) struct Page<'a> {
     pub(crate) files: Option<&'a GameFiles>,
     /// The projects opened most recently, the latest first.
     pub(crate) recent: &'a [PathBuf],
+    /// Why the project last asked for did not open or was not made.
+    pub(crate) error: Option<&'a str>,
     /// Play's key, as the system writes it; `None` when it has none.
     pub(crate) play_key: Option<String>,
     /// The command palette's key, as the system writes it.
     pub(crate) palette_key: String,
 }
 
+/// A label a screen reader reads as a heading, by its text, as the panels' headings are.
+fn heading(ui: &mut Ui, text: Text, rich: RichText) {
+    let response = ui.label(rich);
+    ui.ctx().accesskit_node_builder(response.id, |node| {
+        node.set_role(egui::accesskit::Role::Heading);
+        node.set_label(text.get());
+    });
+}
+
 /// A step's number and title.
-fn step(ui: &mut Ui, theme: &Theme, number: &str, title: Text) {
+fn step(ui: &mut Ui, theme: &Theme, number: Text, title: Text) {
     ui.add_space(theme.space(GAP));
     ui.horizontal(|ui| {
         ui.label(
-            RichText::new(number)
+            RichText::new(number.get())
                 .strong()
                 .color(theme.color(Token::Accent)),
         );
-        ui.label(RichText::new(title.get()).strong());
+        heading(ui, title, RichText::new(title.get()).strong());
     });
 }
 
 /// The first step: what was found of the game, and the way to its guide.
 fn game_step(ui: &mut Ui, theme: &Theme, files: Option<&GameFiles>) -> Option<WelcomeAction> {
-    step(ui, theme, "1", Text::WelcomeGame);
+    step(ui, theme, Text::WelcomeFirst, Text::WelcomeGame);
     let muted = theme.color(Token::TextMuted);
     if let Some(files) = files {
         let colour = if files.state.plays() {
@@ -91,9 +102,11 @@ fn game_step(ui: &mut Ui, theme: &Theme, files: Option<&GameFiles>) -> Option<We
         .then_some(WelcomeAction::GameFiles)
 }
 
-/// The second step: a new project from a template, a folder to open, and the recent projects.
-fn project_step(ui: &mut Ui, theme: &Theme, recent: &[PathBuf]) -> Option<WelcomeAction> {
-    step(ui, theme, "2", Text::WelcomeProject);
+/// The second step: a new project from a template, a folder to open, why the last one asked
+/// for did not open, and the recent projects.
+fn project_step(ui: &mut Ui, theme: &Theme, page: &Page<'_>) -> Option<WelcomeAction> {
+    let recent = page.recent;
+    step(ui, theme, Text::WelcomeSecond, Text::WelcomeProject);
     let muted = theme.color(Token::TextMuted);
     ui.label(RichText::new(Text::WelcomeProjectHow.get()).color(muted));
     let mut action = None;
@@ -110,6 +123,11 @@ fn project_step(ui: &mut Ui, theme: &Theme, recent: &[PathBuf]) -> Option<Welcom
             action = Some(LeftAction::OpenFolder);
         }
     });
+    if let Some(error) = page.error {
+        ui.add(
+            egui::Label::new(RichText::new(error).color(theme.color(Token::StatusError))).wrap(),
+        );
+    }
     if !recent.is_empty() {
         ui.horizontal_wrapped(|ui| {
             ui.label(
@@ -149,13 +167,17 @@ fn column(ui: &mut Ui, theme: &Theme, page: &Page<'_>) -> Option<WelcomeAction> 
             ui.add(egui::Image::new((icon, side)).alt_text(Text::AboutIcon.get()));
         }
         ui.vertical(|ui| {
-            ui.heading(Text::WelcomeTitle.get());
+            heading(
+                ui,
+                Text::WelcomeTitle,
+                RichText::new(Text::WelcomeTitle.get()).heading(),
+            );
             ui.label(RichText::new(Text::WelcomeTagline.get()).color(muted));
         });
     });
     let mut action = game_step(ui, theme, page.files);
-    action = project_step(ui, theme, page.recent).or(action);
-    step(ui, theme, "3", Text::WelcomePlay);
+    action = project_step(ui, theme, page).or(action);
+    step(ui, theme, Text::WelcomeThird, Text::WelcomePlay);
     ui.horizontal_wrapped(|ui| {
         ui.label(RichText::new(Text::WelcomePlayHow.get()).color(muted));
         if let Some(key) = &page.play_key {

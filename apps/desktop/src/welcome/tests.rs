@@ -8,6 +8,7 @@
 use std::path::PathBuf;
 
 use eframe::egui;
+use eframe::egui::accesskit::Role;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use qs_templates::Template;
@@ -26,6 +27,7 @@ const PAGE: egui::Vec2 = egui::Vec2::new(800.0, 800.0);
 struct Spec {
     files: Option<GameFiles>,
     recent: Vec<PathBuf>,
+    error: Option<String>,
     play_key: Option<String>,
 }
 
@@ -40,6 +42,7 @@ fn drawn(spec: Spec) -> Harness<'static, (Spec, Option<WelcomeAction>)> {
                 icon: None,
                 files: spec.files.as_ref(),
                 recent: &spec.recent,
+                error: spec.error.as_deref(),
                 play_key: spec.play_key.clone(),
                 palette_key: "Cmd+Shift+P".to_owned(),
             };
@@ -96,7 +99,7 @@ fn the_three_steps_are_named() {
     assert!(!shows(&harness, Text::RecentProjects), "none to list");
 }
 
-// spec FS-6.5: the first step says what was found of the game and where
+// No spec statement: the first step says what was found of the game and where
 #[test]
 fn the_first_step_says_what_was_found() {
     let harness = drawn(Spec {
@@ -169,4 +172,34 @@ fn a_recent_project_opens_on_a_click() {
         _ => None,
     };
     assert_eq!(folder.as_ref(), recent.last());
+}
+
+// No spec statement: why a project did not open is said under the second step, so it is seen
+// with the Project panel hidden
+#[test]
+fn a_project_that_did_not_open_says_why() {
+    let harness = drawn(Spec {
+        error: Some("The folder is no longer there: /mods/gone".to_owned()),
+        ..Spec::default()
+    });
+    assert!(
+        harness
+            .query_by_label("The folder is no longer there: /mods/gone")
+            .is_some()
+    );
+}
+
+// No spec statement: the page's title and each step's title are headings to a screen reader,
+// as the panels' are
+#[test]
+fn the_titles_are_headings() {
+    let harness = drawn(Spec::default());
+    for text in [
+        Text::WelcomeTitle,
+        Text::WelcomeGame,
+        Text::WelcomeProject,
+        Text::WelcomePlay,
+    ] {
+        harness.get_by_role_and_label(Role::Heading, text.get());
+    }
 }

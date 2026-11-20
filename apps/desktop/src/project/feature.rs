@@ -39,6 +39,9 @@ pub(crate) struct ProjectFeature {
     guide: Guide,
     /// What the game folder holds and lacks, for the guide.
     guide_files: Option<GameFiles>,
+    /// What Play would read the game from, for the Welcome page, with the game folder chosen
+    /// when it was looked for; `None` before the first look.
+    found: Option<(Option<PathBuf>, GameFiles)>,
 }
 
 impl ProjectFeature {
@@ -200,15 +203,30 @@ impl ProjectFeature {
         }
     }
 
-    /// Looks for the game once, at the start, so the Welcome page says what was found: the
-    /// chosen folder, or the first install on this machine.
+    /// Looks for the game, so the Welcome page says what Play would read: the chosen folder,
+    /// or the first install on this machine.
     pub(crate) fn look_for_game(&mut self, commands: &mut Commands<'_>) {
-        self.guide_files = commands.run(GAME, &serde_json::json!({}));
+        let chosen = Self::chosen_game(commands);
+        self.found = commands
+            .run(GAME, &serde_json::json!({}))
+            .map(|files| (chosen, files));
     }
 
-    /// What the game folder holds and lacks, as last looked at.
-    pub(crate) const fn game_files(&self) -> Option<&GameFiles> {
-        self.guide_files.as_ref()
+    /// The game folder chosen for Play, if one was.
+    fn chosen_game(commands: &Commands<'_>) -> Option<PathBuf> {
+        let preview = &commands.session().context().preview;
+        preview.game_folder().map(Path::to_path_buf)
+    }
+
+    /// What Play would read the game from, for the Welcome page. Once the game was looked for
+    /// it is looked for again whenever the folder chosen changed, however it was chosen: the
+    /// guide, the palette, the agent or MCP.
+    pub(crate) fn game_found(&mut self, commands: &mut Commands<'_>) -> Option<&GameFiles> {
+        let looked = self.found.as_ref().map(|(chosen, _)| chosen);
+        if looked.is_some_and(|chosen| *chosen != Self::chosen_game(commands)) {
+            self.look_for_game(commands);
+        }
+        self.found.as_ref().map(|(_, files)| files)
     }
 
     /// Opens the guide to the game's files (P3-21), from the File menu: what the game folder,

@@ -421,6 +421,12 @@ pub enum Text {
     WelcomePalette,
     /// The Welcome page's link to the user guide.
     WelcomeGuide,
+    /// The first step's number.
+    WelcomeFirst,
+    /// The second step's number.
+    WelcomeSecond,
+    /// The third step's number.
+    WelcomeThird,
     /// Before the path of a folder that is not there.
     FolderGone,
     /// A control that has no action yet.
@@ -1055,7 +1061,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 519] = [
+    pub const ALL: [Self; 522] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1211,6 +1217,9 @@ impl Text {
         Self::WelcomePlayHow,
         Self::WelcomePalette,
         Self::WelcomeGuide,
+        Self::WelcomeFirst,
+        Self::WelcomeSecond,
+        Self::WelcomeThird,
         Self::FolderGone,
         Self::NotYetAvailable,
         Self::ViewMenu,
@@ -1756,6 +1765,9 @@ impl Text {
             }
             Self::WelcomePalette => "Search every command",
             Self::WelcomeGuide => "Read the user guide",
+            Self::WelcomeFirst => "1",
+            Self::WelcomeSecond => "2",
+            Self::WelcomeThird => "3",
             Self::FolderGone => "The folder is no longer there:",
             Self::NotYetAvailable => "Not available yet",
             Self::ViewMenu => "View",

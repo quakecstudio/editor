@@ -31,11 +31,39 @@ pub(crate) enum About {
     Shown,
 }
 
+/// The app's icon as a texture.
+#[derive(Default)]
+enum IconTexture {
+    /// Not decoded yet.
+    #[default]
+    Untried,
+    /// The drawing did not decode; it is not tried again.
+    Failed,
+    /// Decoded.
+    Loaded(egui::TextureHandle),
+}
+
 /// The About window and the icon it draws, loaded when it first shows.
 #[derive(Default)]
 pub(crate) struct AboutWindow {
     shown: About,
-    icon: Option<egui::TextureHandle>,
+    icon: IconTexture,
+}
+
+/// The app's icon decoded, or none, with a warning, when the drawing does not decode.
+fn decoded_icon() -> Option<egui::ColorImage> {
+    let decoded = image::load_from_memory_with_format(ICON, image::ImageFormat::Png)
+        .map_err(|error| tracing::warn!(%error, "the app's icon did not decode"))
+        .ok()?
+        .into_rgba8();
+    let size = [
+        usize::try_from(decoded.width()).ok()?,
+        usize::try_from(decoded.height()).ok()?,
+    ];
+    Some(egui::ColorImage::from_rgba_unmultiplied(
+        size,
+        decoded.as_raw(),
+    ))
 }
 
 impl AboutWindow {
@@ -44,22 +72,23 @@ impl AboutWindow {
         self.shown = About::Shown;
     }
 
-    /// The icon as a texture, decoded once; none when the drawing does not decode.
+    /// The icon as a texture, decoded once; none when the drawing does not decode, which is
+    /// found out once too.
     pub(crate) fn icon(&mut self, ctx: &egui::Context) -> Option<&egui::TextureHandle> {
-        if self.icon.is_none() {
-            let decoded = image::load_from_memory_with_format(ICON, image::ImageFormat::Png)
-                .map_err(|error| tracing::warn!(%error, "the app's icon did not decode"))
-                .ok()?
-                .into_rgba8();
-            let size = [
-                usize::try_from(decoded.width()).ok()?,
-                usize::try_from(decoded.height()).ok()?,
-            ];
-            let image = egui::ColorImage::from_rgba_unmultiplied(size, decoded.as_raw());
-            self.icon =
-                Some(ctx.load_texture(Text::AppName.get(), image, egui::TextureOptions::LINEAR));
+        if let IconTexture::Untried = self.icon {
+            self.icon = match decoded_icon() {
+                Some(image) => IconTexture::Loaded(ctx.load_texture(
+                    Text::AppName.get(),
+                    image,
+                    egui::TextureOptions::LINEAR,
+                )),
+                None => IconTexture::Failed,
+            };
         }
-        self.icon.as_ref()
+        match &self.icon {
+            IconTexture::Loaded(texture) => Some(texture),
+            IconTexture::Untried | IconTexture::Failed => None,
+        }
     }
 
     /// Draws the window over the app while it shows; its Close button, or Escape, hides it.

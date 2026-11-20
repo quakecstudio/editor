@@ -73,11 +73,10 @@ fn main() -> ExitCode {
         .ok()
         .map(|dirs| keymap::keymap_path(dirs.config()));
     let layout_file = dirs.ok().map(|dirs| qs_layout::layout_path(dirs.data()));
-    // Without an icon of its own eframe puts egui's on the Dock and the task bar, over the
-    // one the app's package carries.
-    let icon = eframe::icon_data::from_png_bytes(ICON)
-        .map_err(|error| tracing::warn!(%error, "the app's icon did not decode"))
-        .unwrap_or_default();
+    let icon = window_icon();
+    // The Welcome page says what was found of the game; a launch that opens a project or a
+    // file does not show it, and does not wait on the search for installs.
+    let welcome = paths.is_empty();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(Text::AppName.get())
@@ -108,7 +107,9 @@ fn main() -> ExitCode {
         if let Some(file) = settings_file {
             app.shell_mut().set_settings_file(file);
         }
-        app.shell_mut().look_for_game();
+        if welcome {
+            app.shell_mut().look_for_game();
+        }
         // P4-07: the agent's provider; its key is in the keychain.
         if let Some(file) = agent_file {
             app.shell_mut().set_agent_file(file);
@@ -146,6 +147,23 @@ fn main() -> ExitCode {
     };
     eprintln!("{}: {error}", Text::AppName.get());
     ExitCode::FAILURE
+}
+
+/// The icon the window is given. With none eframe puts egui's own on the Dock and the task
+/// bar; with an empty one it leaves the system's, which in the app's macOS bundle is the
+/// bundle's own drawing at every size, so only a build run outside its bundle, and Windows and
+/// Linux, are given the 256-pixel drawing.
+fn window_icon() -> egui::IconData {
+    #[cfg(target_os = "macos")]
+    if objc2_foundation::NSBundle::mainBundle()
+        .bundleIdentifier()
+        .is_some()
+    {
+        return egui::IconData::default();
+    }
+    eframe::icon_data::from_png_bytes(ICON)
+        .map_err(|error| tracing::warn!(%error, "the app's icon did not decode"))
+        .unwrap_or_default()
 }
 
 /// Runs the app on an event loop it builds itself, so the files Finder opens with it reach
