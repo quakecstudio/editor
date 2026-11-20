@@ -1955,9 +1955,9 @@ groups:
     - P2-08
     - L-14
     deliverable:
-    - Optimizations behind --opt flags, as passes over the intermediate layer of L-14, constant folding beyond FTEQCC's (FTEF-26.2) among them, replacing the --opt fold removed from P2-08
+    - Optimizations as passes over the intermediate layer of L-14 that run on every build, with no flag (Justin, 2026-11-20), constant folding beyond FTEQCC's (FTEF-26.2) among them, replacing the --opt fold removed from P2-08
     acceptance:
-    - No divergence in the differential suite with each flag on
+    - No divergence in the differential suite with the passes on, and no option that turns one off
     verify:
     - Differential suite
   - key: L-06
