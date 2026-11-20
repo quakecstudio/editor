@@ -2684,20 +2684,10 @@ profile the preprocessor reads them as FTEQCC does.
   (FTEF-12.11), so `#pragma flag enable acc caseinsens` gives "Cannot enable/disable
   keyword/flag via a pragma" once and `#pragma flag enable nosuch acc` two warnings. Those
   pairs are QCD-1.6's exceptions (ADR-0022).
-- **FTEF-14.80** When no macro of the name is defined, `QCC_PR_CheckBuiltinCompConst` expands
-  `__NULL__` to `0i`, `__FILE__` to the file's name as a string, `__LINE__` to the line number
-  and `__LINESTR__` to it as a string, `__TIME__` and `__DATE__` to strings, `__RAND__` to a
-  number and `__QCCVER__` to a string. `__FUNC__` and `__func__` are the name of the function
-  the use is in as a string, a member function's `CLASS::NAME`, and `<NO FUNCTION>` outside
-  every function (`QC_snprintfz(retbuf, retbufsize, "\"%s\"",pr_scope?pr_scope->name:"<NO
-  FUNCTION>");`): in `void() T::Tick = { say(__FUNC__); }` the argument is the string
-  `T::Tick`, through a macro's body too. FTEQCC's lexer reads the function from its parser;
-  here the preprocessor leaves the two names and the semantic model, which knows the function,
-  reads each as that string constant. One written beside a string literal is not joined to it
-  as FTEQCC's expansion is, and is a syntax error. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
-  `QCC_PR_CheckBuiltinCompConst`; checked against the pinned FTEQCC's output on the standard
-  target and an FTE one (2026-11-19).
-- **FTEF-14.81** `__FUNC__` and `__func__` (FTEF-14.80) are read by the lexer as a string, so
+- **FTEF-14.80** **Withdrawn** 2026-11-19: it said `__FUNC__` written beside a string literal
+  is not joined to it and is a syntax error, where FTEQCC joins them into one string; replaced
+  by FTEF-14.82, with FTEF-14.81 for the joined string.
+- **FTEF-14.81** `__FUNC__` and `__func__` (FTEF-14.82) are read by the lexer as a string, so
   one written beside a string literal, or beside another of itself, is a part of the one
   string adjacent strings make (FTEF-16.8), on either side: in a function `fname`, `"pre:"
   __FUNC__` is `"pre:fname"`, `__FUNC__ ":post"` is `"fname:post"`, `"a" __func__ "b"` is
@@ -2706,6 +2696,18 @@ profile the preprocessor reads them as FTEQCC does.
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
   `QCC_PR_CheckBuiltinCompConst`, `QCC_PR_LexString`; checked against the strings of the
   pinned FTEQCC's output (2026-11-19).
+- **FTEF-14.82** When no macro of the name is defined, `QCC_PR_CheckBuiltinCompConst` expands
+  `__NULL__` to `0i`, `__FILE__` to the file's name as a string, `__LINE__` to the line number
+  and `__LINESTR__` to it as a string, `__TIME__` and `__DATE__` to strings, `__RAND__` to a
+  number and `__QCCVER__` to a string. `__FUNC__` and `__func__` are the name of the function
+  the use is in as a string, a member function's `CLASS::NAME`, and `<NO FUNCTION>` outside
+  every function (`QC_snprintfz(retbuf, retbufsize, "\"%s\"",pr_scope?pr_scope->name:"<NO
+  FUNCTION>");`): in `void() T::Tick = { say(__FUNC__); }` the argument is the string
+  `T::Tick`, through a macro's body too. FTEQCC's lexer reads the function from its parser;
+  here the preprocessor leaves the two names and the semantic model, which knows the function,
+  reads each as that string constant (FTEF-14.81 for one beside a string literal). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_CheckBuiltinCompConst`; checked against the pinned FTEQCC's output on the standard
+  target and an FTE one (2026-11-19).
 
 ## FTEF-15 Declarations
 

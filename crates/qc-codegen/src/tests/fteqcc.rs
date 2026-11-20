@@ -7819,7 +7819,7 @@ fn an_enum_in_a_parameters_type_defines_its_items() {
     }
 }
 
-// spec FTEF-14.80: `__FUNC__` and `__func__` are the string of the function's name, a member
+// spec FTEF-14.82: `__FUNC__` and `__func__` are the string of the function's name, a member
 // function's `CLASS::NAME`, through a macro too, and "<NO FUNCTION>" outside every function
 #[test]
 fn the_function_name_constant_is_the_functions_name() {

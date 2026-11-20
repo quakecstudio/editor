@@ -1290,7 +1290,7 @@ fn operand_index(index: usize) -> Result<i32, Internal> {
 fn literal_of(expr: &ast::Expr, dialect: Dialect) -> Option<Literal> {
     match expr {
         ast::Expr::Literal(literal) => literal_of_token(literal, dialect),
-        // FTEF-14.80: outside every function `__FUNC__` is the string "<NO FUNCTION>".
+        // FTEF-14.82: outside every function `__FUNC__` is the string "<NO FUNCTION>".
         ast::Expr::Name(name)
             if dialect.has_fteqcc_extensions()
                 && name.scope().is_none()

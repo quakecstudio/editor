@@ -287,7 +287,7 @@ impl<'e> Checker<'e> {
         }
     }
 
-    /// FTEF-14.80: what `__FUNC__` is here: the function's name, or `<NO FUNCTION>` outside
+    /// FTEF-14.82: what `__FUNC__` is here: the function's name, or `<NO FUNCTION>` outside
     /// every function.
     pub(super) fn function_name(&self) -> &str {
         if self.function.name.is_empty() {
@@ -402,7 +402,7 @@ impl<'e> Checker<'e> {
             {
                 return self.this(class, super::Object::Named);
             }
-            // FTEF-14.80: `__FUNC__` is the string of the function's name.
+            // FTEF-14.82: `__FUNC__` is the string of the function's name.
             if !scoped && self.env.fteqcc() && super::is_function_name(&token.text_lossless()) {
                 let name = self.function_name().to_owned();
                 return self.string_constant(&name, Some(name.clone().into_bytes()));

@@ -814,7 +814,7 @@ impl<'a> Resolver<'a> {
                 }
                 Found::Nothing => {}
                 Found::Error(code, message) => self.report(code, location, message),
-                // FTEF-14.80: `__FUNC__` is the name of the function it is written in, which
+                // FTEF-14.82: `__FUNC__` is the name of the function it is written in, which
                 // the check stage gives it.
                 Found::Unknown
                     if use_.scope.is_none()
