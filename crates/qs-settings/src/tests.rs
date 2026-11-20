@@ -16,8 +16,8 @@ use qs_commands::{CommandError, Registry, Session};
 use serde_json::{Value, json};
 
 use crate::{
-    HasSettings, Scope, Setting, SettingsError, SettingsFile, SettingsStore, Source, Theme,
-    project_settings_path, reference, register, user_settings_path,
+    ExternalAgent, HasSettings, Scope, Setting, SettingsError, SettingsFile, SettingsStore, Source,
+    Theme, project_settings_path, reference, register, user_settings_path,
 };
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
@@ -592,6 +592,7 @@ fn settings_commands_change_the_files_and_undo() {
             "game.folder",
             "agent.profile",
             "agent.tool_permissions",
+            "agent.external",
             "editor.key_mode"
         ]
     );
@@ -1099,4 +1100,45 @@ fn the_agents_rules_are_kept_in_the_projects_file() {
             .is_err(),
         "an unknown profile is refused"
     );
+}
+
+// No spec statement: P4-14, `agent.external` lists the agents the panel can run: each a name
+// and a command, with arguments and an environment when it has them; it is kept in the file
+// and read back, and an entry with no command is refused
+#[test]
+fn external_agents_are_kept_in_the_file() {
+    let dir = TempDir::new("external");
+    let path = dir.0.join("settings.toml");
+    let mut store = SettingsStore::open(path.clone(), None).unwrap();
+    assert_eq!(Setting::AgentExternal.default_value(), json!([]));
+    let agents = json!([
+        { "name": "Claude Code", "command": "npx",
+          "args": ["-y", "@agentclientprotocol/claude-agent-acp"] },
+        { "name": "Local", "command": "/opt/agent", "env": { "MODE": "acp" } },
+    ]);
+    store
+        .put(Scope::User, Setting::AgentExternal, Some(agents.clone()))
+        .unwrap();
+    let text = fs::read_to_string(&path).unwrap();
+    assert!(
+        text.contains("[agent]") && text.contains("external ="),
+        "{text}"
+    );
+    let read = SettingsStore::open(path, None).unwrap();
+    let kept = read.file(Scope::User).unwrap().get(Setting::AgentExternal);
+    assert_eq!(kept, Some(agents));
+    let parsed: Vec<ExternalAgent> = serde_json::from_value(kept.unwrap()).unwrap();
+    assert_eq!(
+        parsed[0].args,
+        ["-y", "@agentclientprotocol/claude-agent-acp"]
+    );
+    assert_eq!(parsed[1].env["MODE"], "acp");
+
+    let mut store = read;
+    let refused = store.put(
+        Scope::User,
+        Setting::AgentExternal,
+        Some(json!([{ "name": "No command" }])),
+    );
+    assert!(refused.is_err());
 }

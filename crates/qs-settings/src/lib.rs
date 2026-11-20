@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use toml_edit::{Decor, DocumentMut, Item, TableLike};
 
-pub use agent::{Agent, AgentProfile, Decision, ToolPermissions, ToolRule};
+pub use agent::{Agent, AgentProfile, Decision, ExternalAgent, ToolPermissions, ToolRule};
 pub use commands::{Entry, HasSettings, register};
 pub use error::SettingsError;
 
@@ -112,6 +112,9 @@ pub enum Setting {
     /// `agent.tool_permissions`.
     #[serde(rename = "agent.tool_permissions")]
     ToolPermissions,
+    /// `agent.external`.
+    #[serde(rename = "agent.external")]
+    AgentExternal,
     /// `editor.key_mode`.
     #[serde(rename = "editor.key_mode")]
     KeyMode,
@@ -119,12 +122,13 @@ pub enum Setting {
 
 impl Setting {
     /// Every setting, in the order the reference lists them.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Theme,
         Self::LogFilter,
         Self::GameFolder,
         Self::AgentProfile,
         Self::ToolPermissions,
+        Self::AgentExternal,
         Self::KeyMode,
     ];
 
@@ -137,6 +141,7 @@ impl Setting {
             Self::GameFolder => "game.folder",
             Self::AgentProfile => "agent.profile",
             Self::ToolPermissions => "agent.tool_permissions",
+            Self::AgentExternal => "agent.external",
             Self::KeyMode => "editor.key_mode",
         }
     }
@@ -149,6 +154,7 @@ impl Setting {
             Self::GameFolder => ("game", "folder"),
             Self::AgentProfile => ("agent", "profile"),
             Self::ToolPermissions => ("agent", "tool_permissions"),
+            Self::AgentExternal => ("agent", "external"),
             Self::KeyMode => ("editor", "key_mode"),
         }
     }
@@ -181,6 +187,11 @@ impl Setting {
                  `allow`, `ask` and `deny` patterns (`*` and `?`, matched against the call's \
                  paths in the project). A `deny` pattern wins, then `ask`, then `allow`."
             }
+            Self::AgentExternal => {
+                "The external agents the agent panel can run over the Agent Client Protocol \
+                 (P4-14): each a `name`, the `command` that starts it, its `args` and `env`. \
+                 The panel's Use Claude Code adds Claude Code's."
+            }
         }
     }
 
@@ -193,6 +204,7 @@ impl Setting {
             Self::GameFolder => Value::Null,
             Self::AgentProfile => json(AgentProfile::default()),
             Self::ToolPermissions => json(ToolPermissions::default()),
+            Self::AgentExternal => json(Vec::<ExternalAgent>::new()),
             Self::KeyMode => json(KeyMode::default()),
         }
     }
@@ -286,6 +298,7 @@ impl SettingsFile {
             Setting::GameFolder => self.game.folder.as_ref().map(json),
             Setting::AgentProfile => self.agent.profile.map(json),
             Setting::ToolPermissions => self.agent.tool_permissions.as_ref().map(json),
+            Setting::AgentExternal => self.agent.external.as_ref().map(json),
             Setting::KeyMode => self.editor.key_mode.map(json),
         }
     }
@@ -330,6 +343,12 @@ impl SettingsFile {
             }
             Setting::ToolPermissions => {
                 self.agent.tool_permissions = value
+                    .map(serde_json::from_value)
+                    .transpose()
+                    .map_err(invalid)?;
+            }
+            Setting::AgentExternal => {
+                self.agent.external = value
                     .map(serde_json::from_value)
                     .transpose()
                     .map_err(invalid)?;
