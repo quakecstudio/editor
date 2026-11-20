@@ -7,8 +7,9 @@
 
 use eframe::egui::{self, RichText, Ui};
 use qs_templates::Template;
-use qs_workbench::game_files::GameState;
+use qs_workbench::game_files::Games;
 
+use crate::shell::heading;
 use crate::strings::Text;
 use crate::theme::{Theme, Token};
 
@@ -32,38 +33,37 @@ pub(crate) enum NewProject {
 }
 
 impl NewProject {
-    /// The template chosen to begin with for the game found, `None` when it was not looked
-    /// for: the rerelease's when the rerelease is all there is, id's otherwise.
-    pub(crate) const fn preselected(found: Option<GameState>) -> Template {
-        match found {
-            Some(GameState::RereleaseOnly) => Template::Rerelease,
-            Some(GameState::Found | GameState::SharewareOnly | GameState::Missing) | None => {
-                Template::Id1
-            }
+    /// The template chosen to begin with for the `games` found: the rerelease's when the
+    /// rerelease is all there is, id's otherwise.
+    pub(crate) const fn preselected(games: Games) -> Template {
+        match games {
+            Games::Rerelease => Template::Rerelease,
+            Games::None | Games::Original | Games::Both => Template::Id1,
         }
     }
 
-    /// Shows the dialog, with the template for the game `found` chosen.
-    pub(crate) const fn open(&mut self, found: Option<GameState>) {
-        *self = Self::Shown(Self::preselected(found));
+    /// Shows the dialog, with the template for the `games` found chosen.
+    pub(crate) const fn open(&mut self, games: Games) {
+        *self = Self::Shown(Self::preselected(games));
     }
 
-    /// Draws the dialog over the app while it shows. Cancel, Escape and Choose Folder hide it;
-    /// Choose Folder returns the template to make a project of.
+    /// Draws the dialog over the app while it shows, as a modal: the window behind takes no
+    /// click and no key until it is answered. Cancel, Escape, a click outside it and Choose
+    /// Folder hide it; Choose Folder returns the template to make a project of.
     pub(crate) fn show(&mut self, ctx: &egui::Context, theme: &Theme) -> Option<Template> {
         let Self::Shown(chosen) = self else {
             return None;
         };
-        let mut action = ctx
-            .input(|input| input.key_pressed(egui::Key::Escape))
-            .then_some(NewProjectAction::Close);
-        egui::Window::new(Text::NewProjectHeading.get())
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-            .show(ctx, |ui| {
-                action = body(ui, theme, chosen).or(action);
-            });
+        let modal = egui::Modal::new(egui::Id::new(Text::NewProjectHeading)).show(ctx, |ui| {
+            heading(ui, theme, Text::NewProjectHeading);
+            ui.add_space(theme.space(1));
+            body(ui, theme, chosen)
+        });
+        let action = if modal.should_close() {
+            Some(NewProjectAction::Close)
+        } else {
+            modal.inner
+        };
         match action? {
             NewProjectAction::Make(template) => {
                 *self = Self::Hidden;

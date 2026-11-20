@@ -4,7 +4,8 @@ Finds the player's Quake game data, checks it, and links it into a run root. `fi
 looks where Steam, GOG and the Heroic launcher put the game on the running OS, and
 `examine_folder` accepts any folder the player chooses that holds `id1/pak0.pak`, recognising
 steamcmd downloads and GOG installers extracted with innoextract (the way onto a Mac, where both
-stores sell Quake for Windows only). Each `Install` reports its original and rerelease base
+stores sell Quake for Windows only); a game directory chosen in place of its install, `id1`
+itself for one, is the install of the folder above it (FS-6.7). Each `Install` reports its original and rerelease base
 directories, their `id1` and their other game directories; GOG's Quake Enhanced has the
 original game in its `dos` folder (FS-6.6). `Install::validate` identifies each
 `pak0.pak` and `pak1.pak` by its published size and MD5 checksum and reports the editions

@@ -6170,3 +6170,34 @@ fn new_project_is_asked_for_in_one_dialog() {
             .is_none()
     );
 }
+
+// No spec statement: L-28, the File menu has one New Project item, which names no template,
+// and choosing it shows the dialog
+#[test]
+fn the_file_menu_has_one_new_project_item() {
+    let file = menu::MENUS
+        .iter()
+        .find(|spec| spec.title == Text::File)
+        .unwrap();
+    let new: Vec<&Item> = file
+        .items
+        .iter()
+        .filter(|item| matches!(item, Item::Choice(choice) if choice.command() == qs_templates::NEW_PROJECT))
+        .collect();
+    assert_eq!(new, [&Item::Choice(MenuChoice::NewProject)]);
+    assert_eq!(MenuChoice::NewProject.title(), Text::NewProjectMenu);
+
+    let ctx = egui::Context::default();
+    let mut app = App::checked_on_the_frame(&ctx, None).unwrap();
+    let which = Text::NewProjectWhich.get();
+    assert!(
+        !frame_with(&ctx, &mut app, Vec::new())
+            .iter()
+            .any(|text| text == which)
+    );
+    app.carry_out(&ctx, menu::Chosen::Choice(MenuChoice::NewProject));
+    // Twice: the dialog is laid out on its first frame and painted from its second.
+    frame_with(&ctx, &mut app, Vec::new());
+    let shown = frame_with(&ctx, &mut app, Vec::new());
+    assert!(shown.iter().any(|text| text == which), "{shown:?}");
+}

@@ -107,6 +107,7 @@ fn the_first_step_says_what_was_found() {
     });
     assert!(shows(&harness, Text::GameFound));
     assert!(harness.query_by_label("/games/quake").is_some());
+    assert!(shows(&harness, Text::GameInPlace));
     assert!(!shows(&harness, Text::WelcomeGameWhy));
     let harness = drawn(Spec {
         files: Some(GameFiles {

@@ -684,8 +684,8 @@ impl Shell {
     /// Shows the New Project dialog (L-28), which asks which game the mod is for and then for
     /// its folder, makes the project (`project.new`, P4-17) and opens it.
     pub fn ask_new_project(&mut self) {
-        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
-        self.features.project.ask_new_project(&mut commands);
+        let commands = Commands::new(&mut self.session, &mut self.preview_error);
+        self.features.project.ask_new_project(&commands);
     }
 
     /// The New Project dialog while it is shown.

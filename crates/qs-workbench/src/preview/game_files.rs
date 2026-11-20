@@ -36,6 +36,43 @@ impl GameState {
     }
 }
 
+/// The install at `folder`, or with `None` the first install found on this machine.
+fn install_at(folder: Option<&Path>) -> Option<Install> {
+    match folder {
+        Some(folder) => qs_install::examine_folder(folder),
+        None => qs_install::find_installs().into_iter().next(),
+    }
+}
+
+/// Which games the game data holds, whatever game the open project is for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Games {
+    /// No game data.
+    None,
+    /// The original game alone.
+    Original,
+    /// The 2021 rerelease alone.
+    Rerelease,
+    /// Both.
+    Both,
+}
+
+impl Games {
+    /// What `folder` holds, or with `None` the first install found on this machine.
+    #[must_use]
+    pub fn check(folder: Option<&Path>) -> Self {
+        let Some(install) = install_at(folder) else {
+            return Self::None;
+        };
+        match (&install.original, &install.rerelease) {
+            (Some(_), Some(_)) => Self::Both,
+            (Some(_), None) => Self::Original,
+            (None, Some(_)) => Self::Rerelease,
+            (None, None) => Self::None,
+        }
+    }
+}
+
 /// The game data a folder holds, or the first install found holds.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct GameFiles {
@@ -52,11 +89,7 @@ impl GameFiles {
     /// project for the game of `flavour` (ADR-0008).
     #[must_use]
     pub fn check(folder: Option<&Path>, flavour: Flavour) -> Self {
-        let install = match folder {
-            Some(folder) => qs_install::examine_folder(folder),
-            None => qs_install::find_installs().into_iter().next(),
-        };
-        match install {
+        match install_at(folder) {
             Some(install) => Self::of(&install, flavour),
             None => Self {
                 state: GameState::Missing,

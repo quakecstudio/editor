@@ -8,7 +8,7 @@
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use qs_templates::Template;
-use qs_workbench::game_files::GameState;
+use qs_workbench::game_files::Games;
 
 use super::{NewProject, NewProjectAction, body};
 use crate::strings::Text;
@@ -100,25 +100,25 @@ fn cancel_closes() {
 }
 
 // No spec statement: L-28, the rerelease is chosen to begin with only when the rerelease is
-// all that was found; the original otherwise, and when the game was not looked for
+// all the game data holds; the original otherwise, and when there is none
 #[test]
-fn the_game_found_decides_the_one_marked() {
-    for (found, template) in [
-        (Some(GameState::RereleaseOnly), Template::Rerelease),
-        (Some(GameState::Found), Template::Id1),
-        (Some(GameState::SharewareOnly), Template::Id1),
-        (Some(GameState::Missing), Template::Id1),
-        (None, Template::Id1),
+fn the_games_found_decide_the_one_marked() {
+    for (games, template) in [
+        (Games::Rerelease, Template::Rerelease),
+        (Games::Original, Template::Id1),
+        (Games::Both, Template::Id1),
+        (Games::None, Template::Id1),
     ] {
-        assert_eq!(NewProject::preselected(found), template, "{found:?}");
+        assert_eq!(NewProject::preselected(games), template, "{games:?}");
         let mut dialog = NewProject::default();
-        dialog.open(found);
+        dialog.open(games);
         assert_eq!(dialog, NewProject::Shown(template));
     }
 }
 
-// No spec statement: L-28, the window hides on Choose Folder, which returns the game marked,
-// and on Escape, which returns nothing; hidden, it draws nothing
+// No spec statement: L-28, the dialog hides on Choose Folder, which returns the game marked,
+// and on Escape, which returns nothing and which no one else then reads; hidden, it draws
+// nothing
 #[test]
 fn the_window_hides_when_answered() {
     let theme = Theme::load(Mode::Dark).unwrap();
@@ -130,10 +130,13 @@ fn the_window_hides_when_answered() {
                 *made = Some(template);
             }
         },
-        (NewProject::Shown(Template::Rerelease), None),
+        (NewProject::Hidden, None),
     );
+    // The dialog is shown once the bundled fonts are there: its heading is in the semibold.
     fonts.apply(&harness.ctx);
-    // Twice: the window takes its place a frame after the fonts change its size.
+    harness.run();
+    harness.state_mut().0.open(Games::Rerelease);
+    // Twice: the dialog takes its place a frame after it is first drawn.
     harness.run();
     harness.run();
     click(&mut harness, &[Text::NewProjectChoose]);
@@ -147,7 +150,7 @@ fn the_window_hides_when_answered() {
             .is_none()
     );
 
-    harness.state_mut().0.open(None);
+    harness.state_mut().0.open(Games::None);
     harness.state_mut().1 = None;
     harness.run();
     harness.key_press(eframe::egui::Key::Escape);

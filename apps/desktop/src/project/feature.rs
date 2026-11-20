@@ -92,10 +92,11 @@ impl ProjectFeature {
         }
     }
 
-    /// Shows the New Project dialog, the game found deciding which is chosen to begin with.
-    pub(crate) fn ask_new_project(&mut self, commands: &mut Commands<'_>) {
-        let found = self.game_found(commands).map(|files| files.state);
-        self.new_project.open(found);
+    /// Shows the New Project dialog, the games the game folder (or the first install found)
+    /// holds deciding which is chosen to begin with.
+    pub(crate) fn ask_new_project(&mut self, commands: &Commands<'_>) {
+        let games = commands.session().context().preview.games();
+        self.new_project.open(games);
     }
 
     /// The New Project dialog while it is shown: Choose Folder makes the project.

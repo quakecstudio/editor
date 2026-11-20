@@ -93,6 +93,7 @@ fn game_step(ui: &mut Ui, theme: &Theme, files: Option<&GameFiles>) -> Option<We
                     .color(muted),
             );
         }
+        ui.label(RichText::new(Text::GameInPlace.get()).small().color(muted));
     } else {
         ui.label(RichText::new(Text::WelcomeGameWhy.get()).color(muted));
     }

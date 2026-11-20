@@ -486,6 +486,39 @@ fn a_game_directory_chosen_is_its_bases_install() {
     assert!(examine(&fs, "/Volumes/Games").is_none());
 }
 
+// spec FS-6.7: the folder above is found with links resolved, so a link to `id1` is the
+// install `id1` is in, not the folder the link is in
+#[test]
+fn a_linked_game_directory_is_its_targets_install() {
+    let fs = MemFs::default()
+        .paks("/Volumes/Games/Quake", &["id1/pak0.pak"])
+        .dir("/Users/q/links")
+        .alias("/Users/q/links/quake-id1", "/Volumes/Games/Quake/id1");
+    let install = examine(&fs, "/Users/q/links/quake-id1").unwrap();
+    assert_eq!(install.root, p("/Volumes/Games/Quake"));
+}
+
+// spec FS-6.7: the `id1` of an install's `rerelease` folder is the whole install, the
+// original game above it included; where the folder above holds no original game, the
+// rerelease alone
+#[test]
+fn the_rereleases_id1_chosen_is_the_whole_install() {
+    let fs = MemFs::default()
+        .paks(
+            "/Steam/common/Quake",
+            &["id1/pak0.pak", "id1/pak1.pak", "rerelease/id1/pak0.pak"],
+        )
+        .file("/Steam/common/Quake/rerelease/QuakeEX.kpf", b"")
+        .paks("/Epic/Quake/rerelease", &["id1/pak0.pak"])
+        .file("/Epic/Quake/rerelease/QuakeEX.kpf", b"");
+    let install = examine(&fs, "/Steam/common/Quake/rerelease/id1").unwrap();
+    assert_eq!(install.root, p("/Steam/common/Quake"));
+    assert!(install.original.is_some() && install.rerelease.is_some());
+    let install = examine(&fs, "/Epic/Quake/rerelease/id1").unwrap();
+    assert_eq!(install.root, p("/Epic/Quake"));
+    assert!(install.original.is_none() && install.rerelease.is_some());
+}
+
 // spec FS-6.1: any folder whose id1 holds pak0.pak is accepted as the manual override.
 #[test]
 fn any_folder_with_id1_pak0_is_accepted() {
