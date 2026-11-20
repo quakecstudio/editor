@@ -13,8 +13,8 @@ use qs_client::{Client, Event, MENU_SAVEGAMES, ModelInfo, Models, Random};
 use qs_mdl::mdl::Mdl;
 use qs_mdl::spr::Sprite;
 use qs_render::{
-    Camera, Degrees, Extras, Look, MapMesh, MeshBuilder, ModelDepth, Palette, Pics, Placement,
-    Play, Surface,
+    Camera, Degrees, Extras, LitWater, Look, MapMesh, MeshBuilder, ModelDepth, Palette, Pics,
+    Placement, Play, Surface,
 };
 use qs_sim::debug::Debugger;
 use qs_sim::localization::{Localization, RRE_LOC_FILE};
@@ -287,7 +287,7 @@ pub(crate) fn map_mesh(
     (map, bsp): (&str, &Bsp<'_>),
     world: &World,
     read: &dyn Fn(&str) -> Result<Vec<u8>, Error>,
-    (palette, look): (&Palette, Look),
+    (palette, look, water): (&Palette, Look, LitWater),
 ) -> Result<(MapMesh, Vec<(qs_client::EntitySlot, usize)>), Error> {
     let name = format!("maps/{map}.bsp");
     let placements: Vec<Placement> = (0..bsp.models.len())
@@ -317,7 +317,7 @@ pub(crate) fn map_mesh(
             .map_err(|error| tracing::warn!(%error, "maps/{map}.lit"))
             .ok()
     });
-    let mut builder = MeshBuilder::new(palette, look);
+    let mut builder = MeshBuilder::new(palette, look).with_water(water);
     let extras = Extras {
         lit: lit.as_ref(),
         ..Extras::default()
@@ -652,7 +652,12 @@ impl Args {
         play.load_models(client.model_names(), &*reader()?, &ranker()?)
             .map_err(|e| Error::Load(e.to_string()))?;
         play.load_sky(&*reader()?);
-        let (mesh, instances) = map_mesh((&map, &bsp), game.world(), &read, (&palette, look))?;
+        let (mesh, instances) = map_mesh(
+            (&map, &bsp),
+            game.world(),
+            &read,
+            (&palette, look, self.water()),
+        )?;
         play.set_instances(instances);
         let placed = at.map(|[x, y, z, yaw]| {
             let mut camera = Camera::new([x, y, z], Degrees::new(yaw));

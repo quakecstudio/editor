@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 
 use crate::Error;
-use qs_render::{Look, StyleLerp};
+use qs_render::{LitWater, Look, StyleLerp};
 
 /// The engine-style options, each written with one dash as the engines and ADR-0008 write
 /// them; clap reads them with two.
@@ -47,6 +47,10 @@ pub struct Args {
     /// Brush models drawn as GLQuake draws them, without Ironwail's `gl_zfix` (REND-1.15).
     #[arg(long)]
     pub nozfix: bool,
+    /// Liquids drawn at their textures' colours, as GLQuake draws them, even in a map built
+    /// with lit water: QuakeSpasm's `r_litwater 0` (REND-2.6).
+    #[arg(long)]
+    pub nolitwater: bool,
     /// How light styles blend from letter to letter, Ironwail's `r_lerplightstyles`: every
     /// change but an abrupt one (1, the default), every change (2) or none, as id's engine
     /// (0) (REND-5.8).
@@ -166,6 +170,15 @@ pub enum Show {
 }
 
 impl Args {
+    /// How the map's liquids are drawn (REND-2.6).
+    pub(crate) const fn water(&self) -> LitWater {
+        if self.nolitwater {
+            LitWater::Unlit
+        } else {
+            LitWater::Lit
+        }
+    }
+
     /// The process's command line.
     pub fn from_env() -> Self {
         <Self as clap::Parser>::parse_from(engine_style(std::env::args()))

@@ -7,7 +7,7 @@
 //! renderer.
 
 use crate::look::Look;
-use crate::mesh::{Batch, Image, Lightmaps, MapMesh, Placement, Surface, Vertex, u32_of};
+use crate::mesh::{Batch, Image, Lightmaps, LitWater, MapMesh, Placement, Surface, Vertex, u32_of};
 use crate::{CHANNEL_MAX, RGBA_BYTES};
 
 /// How brightly a face is drawn, as a share of full light out of [`Shade::FULL`].
@@ -83,6 +83,7 @@ impl MapMesh {
             maxs: [0.0, 0.0, 0.0],
             models: vec![Placement::WORLD],
             look,
+            water: LitWater::default(),
             textures,
         };
         let mut bounds: Option<([f32; 3], [f32; 3])> = None;

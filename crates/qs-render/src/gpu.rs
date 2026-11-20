@@ -1624,7 +1624,7 @@ mod tests {
     use crate::camera::Camera;
     use crate::look::Look;
     use crate::mesh::tests::{MapSpec, bsp, palette, samples};
-    use crate::mesh::{Image, LightmapPatch, MeshBuilder, Placement};
+    use crate::mesh::{Image, LightmapPatch, LitWater, MeshBuilder, Placement};
     use crate::particles::ParticleVertex;
     use crate::picture::tests::{TgaSpec, solid, tga};
     use crate::skybox::Skybox;
@@ -1894,6 +1894,44 @@ mod tests {
         };
         assert_eq!(seen(ModelDepth::Behind), FACE, "the world's, at full light");
         assert_ne!(seen(ModelDepth::AsDrawn), FACE, "the entity's, dimmer");
+    }
+
+    // spec REND-2.6: lit water is drawn darkened by its lightmap, and at its texture's colour
+    // with r_litwater 0
+    #[test]
+    fn lit_water_is_darkened_by_its_lightmap() {
+        let state = egui_kittest::wgpu::create_render_state(
+            egui_kittest::wgpu::default_wgpu_setup(),
+            egui_wgpu::RendererOptions::default(),
+        );
+        let lighting = samples(&[51]);
+        let water = MapSpec {
+            flags: SURF_DRAWTURB,
+            ..seen_from_above()
+        };
+        let palette = palette();
+        let seen = |lit| {
+            let mut builder = MeshBuilder::new(&palette, Look::GlQuake).with_water(lit);
+            builder
+                .add(&bsp(&water, &lighting), &[Placement::WORLD])
+                .unwrap();
+            let mesh = builder.finish();
+            let renderer = MapRenderer::new(
+                &state.device,
+                &state.queue,
+                FORMATS,
+                &mesh,
+                &Assets::default(),
+            );
+            pixel(&render(&state, renderer, &frame(), BLACK), 32, 32)
+        };
+        assert_eq!(seen(LitWater::Unlit), FACE);
+        // The sample 51 at style 256 is the texel `51*256 >> 7`, 102, two fifths (REND-1.13).
+        assert!(
+            near(seen(LitWater::Lit), [3, 6, 8, 255], 1),
+            "{:?}",
+            seen(LitWater::Lit)
+        );
     }
 
     // spec REND-4.13: a player skin is uploaded when its key is not the one its slot holds;

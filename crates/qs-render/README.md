@@ -39,6 +39,8 @@ the map view and the preview host share one renderer.
 - `LightStyles::at(strings, time, lerp)`: `R_AnimateLight`, every style's value from the
   strings the progs set with `lightstyle` (REND-5), blended from letter to letter as Ironwail's
   `r_lerplightstyles` by default and held as id's with `StyleLerp::Off` (REND-5.8).
+- `MeshBuilder::with_water(water)`: lit water drawn darkened by its lightmap, QuakeSpasm's and
+  Ironwail's `r_litwater 1`, or unlit with `LitWater::Unlit` (REND-2.6).
 - `MeshBuilder::add_with(bsp, extras, placements)`: a model lit in colour by its map's
   `.lit` file (REND-6), and its textures each through a palette of its own where `Extras`
   gives one, as Half-Life's textures carry (MAP-24).

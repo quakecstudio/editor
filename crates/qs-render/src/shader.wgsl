@@ -14,6 +14,9 @@ const TURB_AMPLITUDE: f32 = 8.0;
 const TURB_FREQUENCY: f32 = 0.125;
 // REND-2.2: `s *= (1.0/64)` in `EmitWaterPolys`: the texels a turbulent texture repeats over.
 const TURB_TILE: f32 = 64.0;
+// REND-2.6: a lightmap's coordinates are from this; a liquid drawn unlit has the mesh's
+// `NO_LIGHTMAP`, -1, below it.
+const LIGHTMAP_START: f32 = 0.0;
 // REND-2.3: `dir[2] *= 3` in `EmitSkyPolys`, which "flatten[s] the sphere".
 const SKY_FLATTEN: f32 = 3.0;
 // REND-2.3: `length = 6*63/length` in `EmitSkyPolys`: the sky dome's radius in texels.
@@ -167,15 +170,20 @@ fn fragment(input: Out) -> @location(0) vec4<f32> {
     return vec4<f32>(corrected(fogged(lit, input.world)), OPAQUE);
 }
 
-// REND-2.2: `(s + 8 sin(t*0.125 + realtime)) / 64`, and t the same way round; REND-9.1:
-// blended over the scene with the water alpha.
+// REND-2.2: `(s + 8 sin(t*0.125 + realtime)) / 64`, and t the same way round; REND-2.6: lit
+// water darkened by its lightmap as a lit face is (REND-1.7, REND-13.5), unlit water's light
+// coordinates below 0; REND-9.1: blended over the scene with the water alpha.
 @fragment
 fn turbulent(input: Out) -> @location(0) vec4<f32> {
     let time = view.eye_time.w;
     let st = input.texture;
     let s = (st.x + TURB_AMPLITUDE * sin(st.y * TURB_FREQUENCY + time)) / TURB_TILE;
     let t = (st.y + TURB_AMPLITUDE * sin(st.x * TURB_FREQUENCY + time)) / TURB_TILE;
-    let colour = textureSample(surface, surface_sampler, vec2<f32>(s, t)).rgb;
+    var colour = textureSample(surface, surface_sampler, vec2<f32>(s, t)).rgb;
+    let light = textureSample(lightmap, lightmap_sampler, input.light).rgb * view.look.x;
+    if (input.light.x >= LIGHTMAP_START) {
+        colour = clamp(colour * light, vec3<f32>(0.0), vec3<f32>(1.0));
+    }
     return vec4<f32>(corrected(fogged(colour, input.world)), view.params.x);
 }
 

@@ -4,6 +4,7 @@
     clippy::unwrap_used,
     clippy::indexing_slicing,
     clippy::float_cmp,
+    clippy::float_cmp_const,
     clippy::arithmetic_side_effects,
     reason = "test code: a failed unwrap or index is a failed test; exact inputs give exact floats; the atlas's offsets are small"
 )]
@@ -11,12 +12,15 @@
 use crate::look::Look;
 use qs_bsp::{
     BSP_HEADER_LUMPS, BSP_MAX_MAP_HULLS, BSP_MIPTEX_HEADER_SIZE, Bsp, BspVersion, Face, Lit, Lump,
-    Model, Node, Plane, SURF_DRAWSKY, SURF_DRAWTURB, Texinfo, Texture,
+    Model, Node, Plane, SURF_DRAWSKY, SURF_DRAWTILED, SURF_DRAWTURB, Texinfo, Texture,
 };
 
 use qs_client::DynamicLight;
 
-use super::{Changes, Extras, Image, MapMesh, MeshBuilder, MeshError, Palette, Placement, Surface};
+use super::{
+    Changes, Extras, Image, LitWater, MapMesh, MeshBuilder, MeshError, NO_LIGHTMAP, Palette,
+    Placement, Surface,
+};
 use crate::light::light_point;
 use crate::styles::{LightStyles, StyleLerp};
 
@@ -346,18 +350,100 @@ fn an_unlit_face_is_black_and_an_unlit_map_full_bright() {
     assert_eq!(build(&MapSpec::default(), &[]).lightmap.rgba[4], 255);
 }
 
-// spec REND-1.6: a sky or turbulent face has no lightmap and takes the full-bright texel
+// spec REND-1.6: a sky or turbulent face drawn tiled has no lightmap: the sky takes the
+// full-bright texel, the water the coordinates the turbulent shader draws full bright
 #[test]
 fn sky_and_water_are_full_bright() {
-    for flags in [SURF_DRAWSKY, SURF_DRAWTURB] {
+    for (flags, light) in [
+        (SURF_DRAWSKY | SURF_DRAWTILED, [0.5 / 1024.0, 0.5]),
+        (SURF_DRAWTURB | SURF_DRAWTILED, NO_LIGHTMAP),
+    ] {
         let spec = MapSpec {
             flags,
             ..MapSpec::default()
         };
         let mesh = build(&spec, &samples(&[10]));
         assert_eq!(mesh.lightmap.height, 1, "no texels placed");
-        assert!(mesh.vertices.iter().all(|v| v.light == [0.5 / 1024.0, 0.5]));
+        assert!(mesh.vertices.iter().all(|v| v.light == light));
     }
+}
+
+/// The test map's face as lit water, `SURF_DRAWTURB` without `SURF_DRAWTILED`, with its
+/// samples at `lightofs`.
+fn lit_water(lightofs: i32) -> MapSpec {
+    MapSpec {
+        flags: SURF_DRAWTURB,
+        lightofs,
+        ..MapSpec::default()
+    }
+}
+
+// spec REND-2.6: a liquid not drawn tiled has a lightmap, and with r_litwater 1 in a world
+// with lit water its corners take its coordinates, as a lit face's
+#[test]
+fn lit_water_takes_its_lightmap() {
+    let lighting = samples(&[10]);
+    let mesh = MapMesh::build(&bsp(&lit_water(0), &lighting), &palette(), Look::GlQuake).unwrap();
+    assert_eq!(mesh.lightmap.height, 3, "its texels placed");
+    let lit = build(&MapSpec::default(), &lighting);
+    let light: Vec<[f32; 2]> = mesh.vertices.iter().map(|v| v.light).collect();
+    let lit_light: Vec<[f32; 2]> = lit.vertices.iter().map(|v| v.light).collect();
+    assert_eq!(light, lit_light);
+    assert_eq!(mesh.batches[0].surface, Surface::Turbulent);
+    assert_eq!(texel(&mesh, 0, 0), texel(&lit, 0, 0));
+}
+
+// spec REND-2.6: r_litwater 0 draws lit water unlit, its lightmap still made
+#[test]
+fn r_litwater_0_draws_it_unlit() {
+    let lighting = samples(&[10]);
+    let palette = palette();
+    let mut builder = MeshBuilder::new(&palette, Look::GlQuake).with_water(LitWater::Unlit);
+    builder
+        .add(&bsp(&lit_water(0), &lighting), &[Placement::WORLD])
+        .unwrap();
+    let mesh = builder.finish();
+    assert_eq!(mesh.lightmap.height, 3);
+    assert!(mesh.vertices.iter().all(|v| v.light == NO_LIGHTMAP));
+}
+
+// spec REND-2.6: the world's haslitwater decides for every model: a world with only tiled
+// water, or lit water's faces without samples, draws a later BSP's lit water unlit
+#[test]
+fn the_worlds_lit_water_decides() {
+    let lighting = samples(&[10]);
+    let palette = palette();
+    for world in [
+        MapSpec {
+            flags: SURF_DRAWTURB | SURF_DRAWTILED,
+            ..MapSpec::default()
+        },
+        lit_water(-1),
+    ] {
+        let mut builder = MeshBuilder::new(&palette, Look::GlQuake);
+        builder
+            .add(&bsp(&world, &lighting), &[Placement::WORLD])
+            .unwrap();
+        builder
+            .add(&bsp(&lit_water(0), &lighting), &[Placement::WORLD])
+            .unwrap();
+        let mesh = builder.finish();
+        assert!(mesh.vertices.iter().all(|v| v.light == NO_LIGHTMAP));
+    }
+    let mut builder = MeshBuilder::new(&palette, Look::GlQuake);
+    builder
+        .add(&bsp(&lit_water(0), &lighting), &[Placement::WORLD])
+        .unwrap();
+    builder
+        .add(&bsp(&MapSpec::default(), &lighting), &[Placement::WORLD])
+        .unwrap();
+    assert!(
+        builder
+            .finish()
+            .vertices
+            .iter()
+            .all(|v| v.light != NO_LIGHTMAP)
+    );
 }
 
 // spec REND-1.8: pixels are palette indices; a palette is 256 colours of three bytes

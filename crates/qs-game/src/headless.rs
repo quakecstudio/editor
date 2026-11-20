@@ -428,7 +428,7 @@ impl Headless {
             (&self.map, swap.bsp().bsp()),
             self.game.world(),
             &read,
-            (&palette, self.mesh.look),
+            (&palette, self.mesh.look, self.mesh.water),
         );
         let (mesh, instances) = match mesh {
             Ok(mesh) => mesh,

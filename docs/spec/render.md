@@ -159,6 +159,30 @@ turbulent surfaces ripple, and the sky's two layers scroll.
   renderer computes the same formulas for each pixel, with `8 sin` of the angle itself: a
   deliberate divergence, which draws the warp and the sky without the subdivision and gives
   each pixel the value GLQuake gives the vertices near it.
+- **REND-2.6** QuakeSpasm draws lit water, a liquid compiled with a lightmap
+  (`sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`; `Quakespasm.txt`, 0.95.0:
+  "Add support for lit water"), as Ironwail does ("support for lightmapped liquid surfaces",
+  `andrei-drexler/ironwail@08d578136ff43d7d1ef38e636dfbfd3e844be7cd`, `README.md`).
+  `Quake/gl_model.c`, `Mod_LoadFaces`, gives a `*` or `!` face `SURF_DRAWTURB`, and
+  `SURF_DRAWTILED` only when its texinfo has `TEX_SPECIAL`; "`else if (out->samples &&
+  !loadmodel->haslitwater)`" sets the model's `haslitwater` (BSP-20.11). `Quake/r_brush.c`,
+  `GL_CreateSurfaceLightmap`, skips only a `SURF_DRAWTILED` face, so such a liquid has a
+  lightmap, made again for its styles and dynamic lights as a lit face's (REND-5.5, REND-7),
+  and `BuildSurfaceDisplayList` gives it lightmap coordinates as any face (REND-1.3) and
+  texture coordinates "`// match Mod_PolyForUnlitSurface`", the raw dot products.
+  `Quake/r_world.c`, `R_DrawTextureChains_Water`, draws a texture's liquid faces with its
+  world program, the warped texture times the lightmap with `gl_overbright`, when
+  "`cl.worldmodel->haslitwater && r_litwater.value`", `r_litwater` "`1`" by default
+  (`Quake/gl_rmain.c`), and the liquid as unlit water otherwise; it asks for
+  `TEX_SPECIAL` on the first face of a texture's chain. The preview host does the same by
+  default, under ADR-0026: in a map whose world has a liquid face not drawn tiled with
+  samples, every liquid face of every model not drawn tiled is drawn with REND-2.2's warp times
+  its lightmap, as a lit face is (REND-1.7, REND-13.5), with no fullbright glow and with
+  REND-9.1's alpha; it asks for each face's own flags rather than its chain's first. With the
+  option `--nolitwater`, QuakeSpasm's `r_litwater 0`, every liquid is drawn at its texture's
+  colour, as GLQuake draws it (REND-1.6), its lightmap still made. id's qbsp gives every `*`
+  texture `TEX_SPECIAL`, so id's maps have no lit water; and GLQuake's loader draws every liquid
+  tiled (BSP-9.5), so a map read with it has none either.
 
 ### Constants
 
