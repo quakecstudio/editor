@@ -25,7 +25,13 @@ const SOURCE: &str = "entity self; entity world; float time;\n\
         t = find (world, targetname, self.target); t = find (t, targetname, self.killtarget); };\n";
 
 fn schema() -> EntitySchema {
+    schema_in(qc_syntax::Dialect::Vanilla)
+}
+
+/// The schema of [`SOURCE`] compiled in `dialect`.
+fn schema_in(dialect: qc_syntax::Dialect) -> EntitySchema {
     let mut db = Db::new();
+    db.set_dialect(dialect);
     db.set_file(FileId::new(0), "defs.qc".into(), SOURCE.as_bytes().to_vec());
     let mut input = ModuleInput::default();
     input.compiled.push(FileId::new(0));
@@ -161,7 +167,9 @@ fn a_value_of_the_wrong_type_is_reported() {
 }
 
 // spec MAP-8.9: a key the code fires entities by that names no targetname is reported, and a
-// targetname no such key names
+// targetname no such key names; a button's target that is a door's targetname leaves nothing
+// on the door, in the FTEQCC dialect as in the vanilla one (L-41: LibreQuake's doors were all
+// reported, since its dialect passes find's arguments another way)
 #[test]
 fn dangling_targets_and_targetnames_are_reported() {
     let map = format!(
@@ -169,6 +177,13 @@ fn dangling_targets_and_targetnames_are_reported() {
          {{\n\"classname\" \"func_door\"\n\"targetname\" \"door1\"\n}}\n\
          {{\n\"classname\" \"func_door\"\n\"targetname\" \"lonely\"\n}}\n"
     );
+    let file = qs_map::MapFile::parse(map.as_bytes()).unwrap();
+    let in_fteqcc: Vec<_> = schema_in(qc_syntax::Dialect::Fteqcc)
+        .check(&file)
+        .into_iter()
+        .map(|d| (d.entity.get(), d.line, d.kind))
+        .collect();
+    assert_eq!(in_fteqcc, check(&map));
     assert_eq!(
         check(&map),
         [

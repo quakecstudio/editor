@@ -6,6 +6,9 @@
   "properties": {
     "edict": {
       "$ref": "https://quakecstudio.com/spec/bridge-schema/value.json#/$defs/edict"
+    },
+    "origin": {
+      "$ref": "https://quakecstudio.com/spec/bridge-schema/value.json#/$defs/vector"
     }
   },
   "required": [

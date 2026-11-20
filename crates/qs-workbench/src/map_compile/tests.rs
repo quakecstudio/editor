@@ -637,3 +637,91 @@ fn two_rooms_are_joined_using_the_places_map_brushes_answers() {
     let leaks = report(&mut session, MAP_LEAKS);
     assert_eq!(leaks.seal, Seal::Sealed, "{leaks:?}");
 }
+
+// No spec statement: L-41, the acceptance criterion: a doorway is carved between two rooms
+// using only the places the brush tools answered, with no map.brushes call, and the map is
+// sealed: a tool that adds a brush answers its place, one that hollows answers the walls it
+// made, one that cuts answers the pieces, each with the entity's count, and one that only
+// removes a brush answers none
+#[test]
+fn two_rooms_are_joined_using_the_places_the_brush_tools_answer() {
+    use qs_map_edit::{
+        BrushIndex, BrushesEdited, MAP_BRUSH_CREATE, MAP_BRUSH_DELETE, MAP_BRUSH_HOLLOW,
+        MAP_BRUSH_MOVE, MAP_BRUSH_SUBTRACT, MAP_PLACE,
+    };
+
+    let dir = std::env::temp_dir().join(format!("qs-wb-answered-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("answered.map");
+    std::fs::write(&path, "{\n\"classname\" \"worldspawn\"\n}\n").unwrap();
+    let mut session = open(&path);
+    let tool = |session: &mut Commands<Context>, id: &str, params: serde_json::Value| {
+        let edited: BrushesEdited =
+            serde_json::from_value(session.execute(id, params).unwrap()).unwrap();
+        edited
+    };
+    let places =
+        |range: std::ops::Range<usize>| -> Vec<BrushIndex> { range.map(BrushIndex::new).collect() };
+    // A box, hollowed into a room at the place its tool answered.
+    let room = |session: &mut Commands<Context>, min: [i32; 3], max: [i32; 3]| {
+        let made = tool(
+            session,
+            MAP_BRUSH_CREATE,
+            json!({ "min": min, "max": max, "texture": "wall" }),
+        );
+        assert_eq!(made.brushes.len(), 1, "{made:?}");
+        tool(
+            session,
+            MAP_BRUSH_HOLLOW,
+            json!({ "entity": 0, "brush": made.brushes[0], "wall": 16 }),
+        )
+    };
+    let west = room(&mut session, [-256, -256, 0], [256, 256, 224]);
+    assert_eq!((west.total, &west.brushes), (6, &places(0..6)));
+    let east = room(&mut session, [240, -256, 0], [752, 256, 224]);
+    assert_eq!((east.total, &east.brushes), (12, &places(6..12)));
+
+    let cutter = tool(
+        &mut session,
+        MAP_BRUSH_CREATE,
+        json!({ "min": [224, -32, 16], "max": [272, 32, 128], "texture": "wall" }),
+    );
+    assert_eq!((cutter.total, &cutter.brushes), (13, &places(12..13)));
+    let cut = tool(
+        &mut session,
+        MAP_BRUSH_SUBTRACT,
+        json!({ "entity": 0, "brush": cutter.brushes[0] }),
+    );
+    // The two walls the doorway goes through are in pieces, the cutter is gone, and the
+    // ten walls it did not meet are not answered.
+    assert!(cut.brushes.len() > 2, "{cut:?}");
+    assert_eq!(cut.total, 10 + cut.brushes.len());
+
+    // A brush moved is answered at its place; one removed answers none.
+    let block = tool(
+        &mut session,
+        MAP_BRUSH_CREATE,
+        json!({ "min": [-64, -64, 16], "max": [-32, -32, 48], "texture": "wall" }),
+    );
+    let moved = tool(
+        &mut session,
+        MAP_BRUSH_MOVE,
+        json!({ "entity": 0, "brushes": block.brushes, "by": [16, 0, 0] }),
+    );
+    assert_eq!((moved.total, &moved.brushes), (block.total, &block.brushes));
+    let gone = tool(
+        &mut session,
+        MAP_BRUSH_DELETE,
+        json!({ "entity": 0, "brush": block.brushes[0] }),
+    );
+    assert_eq!((gone.total, gone.brushes.len()), (cut.total, 0));
+
+    session
+        .execute(
+            MAP_PLACE,
+            json!({ "classname": "info_player_start", "origin": [0, 0, 40], "keys": [] }),
+        )
+        .unwrap();
+    let leaks = report(&mut session, MAP_LEAKS);
+    assert_eq!(leaks.seal, Seal::Sealed, "{leaks:?}");
+}

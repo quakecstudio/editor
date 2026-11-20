@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 
 use qs_bsp::{Bsp, BspLoader};
 use qs_commands::{Command, NoParams, Outcome};
+use qs_engine::{ClientError, ErrorCode};
 use qs_map::qbsp::QbspWarning;
 use qs_map_bsp::{Compiled, Compiler, Warning};
 use qs_map_light::{Extras, Finish, Light, Sampling, Sidecars};
@@ -441,7 +442,9 @@ impl PlayFromHereParams {
 pub struct PlayedHere {
     /// The map's name, as the game's `map` command takes it.
     pub map: String,
-    /// Where the player was put: its origin, in the map's units.
+    /// Where the game put the player: its origin, in the map's units. It is the eye less
+    /// the view height when the player's box is free there, else the nearest height above
+    /// or below where it is free of the world and of every entity (BRIDGE-4.19).
     pub origin: [f32; 3],
     /// What compiling it found.
     pub report: MapReport,
@@ -544,7 +547,21 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
         preview.play_built(built, Some(name.clone()))?;
         let client = preview.client().ok_or(PreviewError::NotRunning)?;
         let angles = params.angles.unwrap_or_default().map(single);
-        client.spawn_player_at(origin, angles)?;
+        // BRIDGE-4.19: the game puts the player where its box is free of the map's entities
+        // too, which the BSP's hull does not hold, and says where.
+        let origin = match client.place_player_near(origin, angles) {
+            Ok(placed) => placed,
+            // An entity fills the place and every height near it: as with a camera in a
+            // wall, nothing plays.
+            Err(ClientError::Rpc {
+                code: ErrorCode::InvalidParams,
+                ..
+            }) => {
+                preview.stop();
+                return Err(PreviewError::NoRoom(params.eye));
+            }
+            Err(error) => return Err(error.into()),
+        };
         // P7-02: full vis and full light of the same BSP, swapped in when done; a map that leaks
         // has no portals to see through, and plays with the fast compile.
         match compiled.portal_file {

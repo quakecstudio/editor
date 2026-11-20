@@ -77,12 +77,8 @@ is required."
   replaced by BRIDGE-2.8.
 - **BRIDGE-2.8** **Withdrawn** 2026-11-14: the version this document describes is `1.3`;
   replaced by BRIDGE-2.9.
-- **BRIDGE-2.9** A protocol version is `major.minor` in decimal. The host accepts a client
-  whose `major` is its own and answers with its own version; a different `major` is answered
-  with `-32001` (incompatible version) and the host closes the connection. A client reading a
-  higher `minor` than it knows proceeds; it ignores what it does not know (BRIDGE-6). This
-  document describes version `1.3`: `1.1` added `window/place` (BRIDGE-6.3), `1.2` spawns an
-  entity in play as at the map's load (BRIDGE-4.12) and `1.3` added `map/swap` (BRIDGE-4.14).
+- **BRIDGE-2.9** **Withdrawn** 2026-11-20: the version this document describes is `1.4`; replaced
+  by BRIDGE-2.11.
 - **BRIDGE-2.10** The capabilities are one boolean per capability-flagged command (BRIDGE-4.9):
   every command but `initialize`, `shutdown` and `inspect`, so a host built without reload
   (P3-03), debugging (P3-04) or an ENG-14 command says so: `reload`, `breakpoint/set`,
@@ -90,6 +86,13 @@ is required."
   `entity/spawn`, `entity/remove`, `entity/edit`, `player/spawn_at`, `screenshot`,
   `evaluate`, `window/place` and `map/swap`. A command whose flag is absent or `false` is
   answered with `-32005` (unsupported); the client shows it disabled.
+- **BRIDGE-2.11** A protocol version is `major.minor` in decimal. The host accepts a client whose
+  `major` is its own and answers with its own version; a different `major` is answered with
+  `-32001` (incompatible version) and the host closes the connection. A client reading a higher
+  `minor` than it knows proceeds; it ignores what it does not know (BRIDGE-6). This document
+  describes version `1.4`: `1.1` added `window/place` (BRIDGE-6.3), `1.2` spawns an entity in play
+  as at the map's load (BRIDGE-4.12), `1.3` added `map/swap` (BRIDGE-4.14) and `1.4` gave
+  `player/spawn_at` its `room` member and its result's `origin` (BRIDGE-4.19).
 
 ## BRIDGE-3 Events
 
@@ -288,6 +291,15 @@ A command is a request from the client, answered with a result on success or an 
   linked again (`SV_LinkEdict` without touching, WORLD-6), in edict order, since the new
   collision starts with none linked; an edict with no solid stays unlinked as before. The result
   is `swapped`, the number of edicts given a model.
+- **BRIDGE-4.19** `player/spawn_at` takes `room`: `exact`, or no `room`, puts the player at
+  `origin` as a teleporter would (BRIDGE-4.9); `find` puts it where its box is in nothing solid,
+  the world's or an entity's, as `SV_TestEntityPosition` finds it (WORLD-7.6): at `origin`, else
+  at the nearest height a whole unit at a time up to 64 above or below it, above before below at
+  each distance, and when no height tried is free it is answered with `-32602` (invalid params)
+  and the player stays where it was. The result's `origin` is where the player was put. `find` is
+  not id's: a teleporter's `setorigin` checks nothing, and `SV_CheckStuck` then moves a player in
+  solid back to its `oldorigin` (PHYS-8.7), the last place it was free, so a player put beside a
+  button was found at the map's start.
 
 ## BRIDGE-5 Values
 

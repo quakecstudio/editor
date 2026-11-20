@@ -532,9 +532,12 @@ const INSTRUCTIONS: &str = "Every command of QuakeC Studio over the project this
     To build a map: map.new (or map.open), then map.list_textures for the texture names there \
     are. A room is map.brush_create for a box and map.brush_hollow for its walls; rooms are \
     joined by a box across the walls between them given to map.brush_subtract. The \
-    map.brush_* tools take a brush by its place among its entity's brushes: map.brushes \
-    lists the places with each brush's box, a brush just added has the place `total` had \
-    before it, and a tool that cuts or hollows changes the places, so list them again. \
+    map.brush_* tools take a brush by its place among its entity's brushes: each \
+    answers the places of the brushes it made or changed (`brushes`) and the entity's count \
+    (`total`), so use those for the next tool. A tool that changes how many brushes the \
+    entity has (hollow, clip, subtract, merge, delete and the like) moves the places of the \
+    brushes after the one it worked on, so an answer from before it is stale for those; \
+    map.brushes lists the places with each brush's box when they are not known. \
     map.place_entity puts in the player start, lights, monsters and items, with keys such as \
     `light` and `angle`; map.make_brush_entity makes a door of a brush. Then map.issues and \
     map.find_leaks must find nothing, and map.save writes the file. To review a map: \

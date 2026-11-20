@@ -52,6 +52,9 @@ const COMMANDS: [&str; 17] = [
     "map/swap",
 ];
 
+/// `player/spawn_at`'s `room` that looks for room for the player (BRIDGE-4.19).
+const ROOM_FIND: &str = "find";
+
 /// How far `pick`'s ray reaches, in map units.
 const PICK_REACH: f32 = 8192.0;
 
@@ -1031,11 +1034,19 @@ impl Game {
                 self.require_between_frames()?;
                 let origin = vector_param(params, "origin");
                 let angles = vector_param(params, "angles");
-                self.world
-                    .move_player(progs, origin, angles)
-                    .map_err(|e| edit_error(&e))?;
+                // BRIDGE-4.19: at the point as a teleporter puts it, or with `room` `find`
+                // where the player's box is in nothing solid, at or near the point.
+                let find = params.get("room").and_then(Value::as_str) == Some(ROOM_FIND);
+                let placed = if find {
+                    self.world.place_player(progs, origin, angles)
+                } else {
+                    self.world
+                        .move_player(progs, origin, angles)
+                        .map(|()| origin)
+                }
+                .map_err(|e| edit_error(&e))?;
                 self.report_changes(progs);
-                Ok(json!({ "edict": qs_sim::CLIENT_EDICT }))
+                Ok(json!({ "edict": qs_sim::CLIENT_EDICT, "origin": placed }))
             }
             "console" => {
                 self.require_between_frames()?;
@@ -1132,9 +1143,10 @@ fn edit_error(error: &EditError) -> RpcError {
     let code = match error {
         EditError::NoSuchEdict(_) => ErrorCode::NoSuchEdict,
         EditError::NoSuchField(_) | EditError::BadValue(_) => ErrorCode::BadValue,
-        EditError::Kept(_) | EditError::Spawn(_) | EditError::NotPrecached(_) => {
-            ErrorCode::InvalidParams
-        }
+        EditError::Kept(_)
+        | EditError::Spawn(_)
+        | EditError::NotPrecached(_)
+        | EditError::NoRoom => ErrorCode::InvalidParams,
     };
     RpcError::new(code, error.to_string())
 }

@@ -217,40 +217,19 @@ impl Key {
                     .filter(|def| def.kind == DefKind::Field)
                     .map(|def| def.name.as_str())
             };
-            let mut params: [Option<Name>; FIND_ARGS] = [None; FIND_ARGS];
-            for statement in code {
-                if let Some(Name::Parameter(slot)) = statement.b
-                    && is_store(statement.op)
+            for call in Call::all(code) {
+                let named = |name: Option<Name>| match name {
+                    Some(Name::Def(id, 0)) => index.def(id).map(|d| d.name.as_str()),
+                    _ => None,
+                };
+                if named(call.callee) == Some(FIND)
+                    && named(call.argument(FIND_FIELD)) == Some(TARGETNAME)
+                    && let Some(key) = field(call.argument(FIND_MATCH))
                 {
-                    if let Some(param) = params.get_mut(usize::from(slot)) {
-                        *param = statement.a;
-                    }
-                    continue;
+                    keys.insert(key.to_owned());
                 }
-                if is_call(statement.op) {
-                    for (slot, name) in statement.operand_arguments() {
-                        if let Some(param) = params.get_mut(slot) {
-                            *param = name;
-                        }
-                    }
-                    let callee = match statement.a {
-                        Some(Name::Def(id, 0)) => index.def(id).map(|d| d.name.as_str()),
-                        _ => None,
-                    };
-                    let [_, against, value] = params;
-                    let against = match against {
-                        Some(Name::Def(id, 0)) => index.def(id).map(|d| d.name.as_str()),
-                        _ => None,
-                    };
-                    if callee == Some(FIND)
-                        && against == Some(TARGETNAME)
-                        && let Some(key) = field(value)
-                    {
-                        keys.insert(key.to_owned());
-                    }
-                    params = [None; FIND_ARGS];
-                    continue;
-                }
+            }
+            for statement in code {
                 if matches!(statement.op, Op::EqS | Op::NeS) {
                     match (field(statement.a), field(statement.b)) {
                         (Some(TARGETNAME), Some(other)) | (Some(other), Some(TARGETNAME))
@@ -271,8 +250,64 @@ impl Key {
 const FIND: &str = "find";
 /// The field a targeting key's value is matched against.
 const TARGETNAME: &str = "targetname";
-/// The parameters `find` takes.
-const FIND_ARGS: usize = 3;
+/// The parameter of `find` that is the field to look in, and the one that is the value to
+/// match.
+const FIND_FIELD: usize = 1;
+const FIND_MATCH: usize = 2;
+/// The parameter of `setmodel` that is the model.
+const SETMODEL_MODEL: usize = 1;
+
+/// A call a body makes, with what each parameter slot holds when it is made (QC-18.3).
+struct Call {
+    /// The function called.
+    callee: Option<Name>,
+    /// What each slot holds, by its number; none for a slot nothing was put in since the
+    /// call before.
+    arguments: Vec<Option<Name>>,
+}
+
+impl Call {
+    /// Every call of `code`, in order. A slot is filled in one of three ways: a store into
+    /// it, a statement that makes its value straight in it, which is then
+    /// [`Name::Made`] of that statement, as FTEQCC's `LOAD_S self, target, parm2` is, or the
+    /// call's own operands, the first two arguments of `CALL1H` to `CALL8H` (FTEF-32.19).
+    fn all(code: &[BodyStatement]) -> Vec<Self> {
+        let mut slots: Vec<Option<Name>> = Vec::new();
+        let put = |slots: &mut Vec<Option<Name>>, slot: usize, name: Option<Name>| {
+            if slots.len() <= slot {
+                slots.resize(slot.saturating_add(1), None);
+            }
+            if let Some(held) = slots.get_mut(slot) {
+                *held = name;
+            }
+        };
+        let mut calls = Vec::new();
+        for (at, statement) in code.iter().enumerate() {
+            if is_call(statement.op) {
+                for (slot, name) in statement.operand_arguments() {
+                    put(&mut slots, slot, name);
+                }
+                calls.push(Self {
+                    callee: statement.a,
+                    arguments: std::mem::take(&mut slots),
+                });
+            } else if let Some(Name::Parameter(slot)) = statement.b
+                && is_store(statement.op)
+            {
+                put(&mut slots, usize::from(slot), statement.a);
+            } else if let Some(Name::Parameter(slot)) = statement.c {
+                let made = u32::try_from(at).ok().map(Name::Made);
+                put(&mut slots, usize::from(slot), made);
+            }
+        }
+        calls
+    }
+
+    /// What the slot `slot` holds.
+    fn argument(&self, slot: usize) -> Option<Name> {
+        self.arguments.get(slot).copied().flatten()
+    }
+}
 
 /// What reading the classes needs.
 struct Classes<'a> {
@@ -623,38 +658,17 @@ impl Classes<'_> {
 
     /// Each call a body makes to a function by name, with the constants it passes.
     fn calls(&self, body: &TypedBody) -> Vec<(String, Vec<Option<Arg>>)> {
-        let mut args: Vec<Option<Arg>> = Vec::new();
         let mut found = Vec::new();
-        for statement in body.generated() {
-            if let Some(Name::Parameter(slot)) = statement.b
-                && is_store(statement.op)
+        for call in Call::all(body.generated()) {
+            if let Some(Name::Def(id, 0)) = call.callee
+                && let Some(def) = self.index.def(id)
             {
-                let slot = usize::from(slot);
-                if args.len() <= slot {
-                    args.resize(slot.saturating_add(1), None);
-                }
-                let value = self.value(statement.a, body);
-                if let Some(arg) = args.get_mut(slot) {
-                    *arg = value;
-                }
-                continue;
-            }
-            if is_call(statement.op) {
-                for (slot, name) in statement.operand_arguments() {
-                    if args.len() <= slot {
-                        args.resize(slot.saturating_add(1), None);
-                    }
-                    let value = self.value(name, body);
-                    if let Some(arg) = args.get_mut(slot) {
-                        *arg = value;
-                    }
-                }
-                if let Some(Name::Def(id, 0)) = statement.a
-                    && let Some(def) = self.index.def(id)
-                {
-                    found.push((def.name.clone(), std::mem::take(&mut args)));
-                }
-                args.clear();
+                let constants = call
+                    .arguments
+                    .iter()
+                    .map(|name| self.value(*name, body))
+                    .collect();
+                found.push((def.name.clone(), constants));
             }
         }
         found
@@ -662,27 +676,15 @@ impl Classes<'_> {
 
     /// Whether a body passes `self.model` to `setmodel`: a brush entity's model.
     fn sets_model_from_self(&self, code: &[BodyStatement]) -> bool {
-        let mut model = false;
-        for statement in code {
-            if is_store(statement.op) && statement.b == Some(Name::Parameter(1)) {
-                model = matches!(statement.a, Some(Name::Made(index))
-                    if self.field_at(code, index).as_deref() == Some(MODEL));
-            } else if is_call(statement.op) {
-                // `CALL2H setmodel, self, self.model`: the model is the call's own operand.
-                if let Some((_, Some(Name::Made(index)))) = statement.operand_arguments().nth(1) {
-                    model = self.field_at(code, index).as_deref() == Some(MODEL);
-                }
-                let callee = match statement.a {
-                    Some(Name::Def(id, 0)) => self.index.def(id).map(|d| d.name.as_str()),
-                    _ => None,
-                };
-                if model && callee == Some(SETMODEL) {
-                    return true;
-                }
-                model = false;
-            }
-        }
-        false
+        Call::all(code).iter().any(|call| {
+            let callee = match call.callee {
+                Some(Name::Def(id, 0)) => self.index.def(id).map(|d| d.name.as_str()),
+                _ => None,
+            };
+            callee == Some(SETMODEL)
+                && matches!(call.argument(SETMODEL_MODEL), Some(Name::Made(index))
+                    if self.field_at(code, index).as_deref() == Some(MODEL))
+        })
     }
 }
 

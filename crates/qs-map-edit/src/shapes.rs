@@ -13,8 +13,8 @@ use qs_map::shapes::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::brushes::{DEFAULT_GRID, snap};
-use super::{EntityIndex, MapEdited, edit_map};
+use super::EntityIndex;
+use super::brushes::{BrushesEdited, DEFAULT_GRID, edit_brushes, snap};
 use crate::{HasMap, MapEditError};
 
 /// The id of `map.brush_shape`.
@@ -353,31 +353,25 @@ impl<C: HasMap + 'static> Command<C> for BrushShape {
         scalable curve of 12, 24, 48 or 96 sides, or straight or spiral stairs whose default \
         step a player climbs; to the world or an entity of the open map, with a texture.";
     type Params = BrushShapeParams;
-    type Output = MapEdited;
+    type Output = BrushesEdited;
     type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushShapeParams,
-    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
+    ) -> Result<Outcome<BrushesEdited, C>, MapEditError> {
         let entity = params.entity.unwrap_or(EntityIndex::WORLD);
         let grid = params.grid.unwrap_or(DEFAULT_GRID);
         let shape = params.shape.shape(if grid > 0.0 { grid } else { 1.0 })?;
-        let ((), step) = edit_map(context, |document| {
+        edit_brushes(context, entity, |document| {
             let [min, max] = [params.min, params.max].map(|p| p.map(|c| snap(c, params.grid)));
             let surface = document.new_surface(params.texture.as_deref());
             let brushes = shape.brushes(min, max, &surface)?;
             let target = document.entity_mut(entity)?;
             target.items.extend(brushes.into_iter().map(Item::Brush));
             Ok(())
-        })?;
-        Ok(Outcome::undoable(
-            MapEdited {
-                entity: Some(entity),
-            },
-            step,
-        ))
+        })
     }
 }
 

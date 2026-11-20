@@ -6,14 +6,98 @@
 //! `qs-map`'s brush operations, which give only valid brushes; an edit that would not is
 //! refused and changes nothing.
 
+use std::collections::BTreeMap;
+
 use qs_commands::{Command, Outcome};
 use qs_map::geometry::plane as plane_of;
-use qs_map::{Alignment, Brush, BrushError, Entity, Item, Surface, TexDef, TextureLock};
+use qs_map::{Alignment, Brush, BrushError, Entity, Item, MapFile, Surface, TexDef, TextureLock};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{EntityIndex, MapDocument, MapEdited, edit_map};
+use super::{EntityIndex, MapDocument, edit_map};
 use crate::{HasMap, MapEditError};
+
+/// What a brush tool answers: the brushes it left of the entity it worked on, so the next tool
+/// can name them without listing the entity's brushes again.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BrushesEdited {
+    /// The entity, by its place in the file.
+    pub entity: EntityIndex,
+    /// How many brushes the entity has now.
+    pub total: usize,
+    /// The brushes the tool made or changed, by their places among the entity's brushes
+    /// now, in order. None when it only removed brushes, or left every brush as it was: a
+    /// move that the grid snaps to nothing, or a texture a brush already has. A tool that
+    /// changes how many brushes the entity has moves the places of those after the brush
+    /// it worked on, so places answered before it are stale for them.
+    pub brushes: Vec<BrushIndex>,
+}
+
+/// What tells most brushes apart without comparing them whole: how many faces a brush has
+/// and its first face's points, as their bits.
+type BrushKey = (usize, Option<[[u64; 3]; 3]>);
+
+impl BrushesEdited {
+    /// The key of `brush`.
+    fn key(brush: &Brush) -> BrushKey {
+        let first = brush
+            .faces
+            .first()
+            .map(|face| face.points().map(|point| point.map(f64::to_bits)));
+        (brush.faces.len(), first)
+    }
+
+    /// What is left of `entity` whose brushes were `before` and are `after`: the brushes of
+    /// `after` that are not brushes of `before`, each brush of `before` standing for one of
+    /// `after` at most. The brushes are found by their keys, so the work grows with their
+    /// number, not its square.
+    fn of(entity: EntityIndex, before: &[&Brush], after: &[&Brush]) -> Self {
+        let mut old: BTreeMap<BrushKey, Vec<&Brush>> = BTreeMap::new();
+        for brush in before {
+            old.entry(Self::key(brush)).or_default().push(brush);
+        }
+        let mut brushes = Vec::new();
+        for (place, brush) in after.iter().enumerate() {
+            let same = old.get_mut(&Self::key(brush)).and_then(|alike| {
+                let found = alike.iter().position(|was| was == brush)?;
+                Some(alike.swap_remove(found))
+            });
+            if same.is_none() {
+                brushes.push(BrushIndex::new(place));
+            }
+        }
+        Self {
+            entity,
+            total: after.len(),
+            brushes,
+        }
+    }
+}
+
+/// The brushes of `entity` in `file`; none for an entity that is not there.
+fn brushes_of(file: &MapFile, entity: EntityIndex) -> Vec<&Brush> {
+    file.entities
+        .get(entity.get())
+        .map_or_default(|found| found.brushes().collect())
+}
+
+/// Runs a brush tool's `edit` on the open map of `context`, as [`edit_map`] does, and answers
+/// what it left of `entity`'s brushes ([`BrushesEdited`]), told from the map as it was, which
+/// the undo step keeps.
+pub(crate) fn edit_brushes<C: HasMap + 'static>(
+    context: &mut C,
+    entity: EntityIndex,
+    edit: impl FnOnce(&mut MapDocument) -> Result<(), MapEditError>,
+) -> Result<Outcome<BrushesEdited, C>, MapEditError> {
+    let ((), step) = edit_map(context, edit)?;
+    let document = context.map_store().map_mut()?;
+    let edited = BrushesEdited::of(
+        entity,
+        &brushes_of(&step.other.0, entity),
+        &brushes_of(&document.file, entity),
+    );
+    Ok(Outcome::undoable(edited, step))
+}
 
 /// The id of `map.brush_create`.
 pub const MAP_BRUSH_CREATE: &str = "map.brush_create";
@@ -47,16 +131,16 @@ impl<C: HasMap + 'static> Command<C> for BrushHull {
         around points snapped to the grid, with a texture, as TrenchBroom's complex shape tool \
         makes one.";
     type Params = BrushHullParams;
-    type Output = MapEdited;
+    type Output = BrushesEdited;
     type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushHullParams,
-    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
+    ) -> Result<Outcome<BrushesEdited, C>, MapEditError> {
         let entity = params.entity.unwrap_or(EntityIndex::WORLD);
-        let ((), step) = edit_map(context, |document| {
+        edit_brushes(context, entity, |document| {
             document.editable(entity)?;
             let points: Vec<[f64; 3]> = params
                 .points
@@ -67,13 +151,7 @@ impl<C: HasMap + 'static> Command<C> for BrushHull {
             let brush = Brush::convex_hull(&points, &surface)?;
             document.entity_mut(entity)?.items.push(Item::Brush(brush));
             Ok(())
-        })?;
-        Ok(Outcome::undoable(
-            MapEdited {
-                entity: Some(entity),
-            },
-            step,
-        ))
+        })
     }
 }
 /// The id of `map.brush_clip`.
@@ -349,16 +427,16 @@ impl<C: HasMap + 'static> Command<C> for BrushCreate {
     const SUMMARY: &'static str = "Adds a box brush from two corners, snapped to the grid (16 \
         units unless given), to the world or an entity of the open map, with a texture.";
     type Params = BrushCreateParams;
-    type Output = MapEdited;
+    type Output = BrushesEdited;
     type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushCreateParams,
-    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
+    ) -> Result<Outcome<BrushesEdited, C>, MapEditError> {
         let entity = params.entity.unwrap_or(EntityIndex::WORLD);
-        let ((), step) = edit_map(context, |document| {
+        edit_brushes(context, entity, |document| {
             let corners = [params.min, params.max].map(|p| p.map(|c| snap(c, params.grid)));
             let [a, b] = corners;
             let min = [0, 1, 2].map(|i| {
@@ -377,13 +455,7 @@ impl<C: HasMap + 'static> Command<C> for BrushCreate {
             let brush = Brush::cuboid(min, max, &surface)?;
             document.entity_mut(entity)?.items.push(Item::Brush(brush));
             Ok(())
-        })?;
-        Ok(Outcome::undoable(
-            MapEdited {
-                entity: Some(entity),
-            },
-            step,
-        ))
+        })
     }
 }
 
@@ -395,16 +467,16 @@ impl<C: HasMap + 'static> Command<C> for BrushMove {
     const SUMMARY: &'static str = "Moves brushes of an entity by an offset snapped to the grid \
         (16 units unless given), their textures fixed in the world unless lock is free.";
     type Params = BrushMoveParams;
-    type Output = MapEdited;
+    type Output = BrushesEdited;
     type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushMoveParams,
-    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
+    ) -> Result<Outcome<BrushesEdited, C>, MapEditError> {
         let by = params.by.map(|c| snap(c, params.grid));
-        let ((), step) = edit_map(context, |document| {
+        edit_brushes(context, params.entity, |document| {
             for &brush in &params.brushes {
                 let moved = document
                     .brush(params.entity, brush)?
@@ -412,13 +484,7 @@ impl<C: HasMap + 'static> Command<C> for BrushMove {
                 document.replace_brush(params.entity, brush, vec![moved])?;
             }
             Ok(())
-        })?;
-        Ok(Outcome::undoable(
-            MapEdited {
-                entity: Some(params.entity),
-            },
-            step,
-        ))
+        })
     }
 }
 
@@ -430,20 +496,20 @@ impl<C: HasMap + 'static> Command<C> for BrushTexture {
     const SUMMARY: &'static str = "Sets the texture, shift, rotation or scale of every face of \
         brushes of an entity, keeping what is not given (MAP-12).";
     type Params = BrushTextureParams;
-    type Output = MapEdited;
+    type Output = BrushesEdited;
     type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushTextureParams,
-    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
+    ) -> Result<Outcome<BrushesEdited, C>, MapEditError> {
         let alignment = Alignment {
             shift: params.shift,
             rotate: params.rotate,
             scale: params.scale,
         };
-        let ((), step) = edit_map(context, |document| {
+        edit_brushes(context, params.entity, |document| {
             for &brush in &params.brushes {
                 let mut found = document.brush(params.entity, brush)?;
                 for face in &mut found.faces {
@@ -459,13 +525,7 @@ impl<C: HasMap + 'static> Command<C> for BrushTexture {
                 document.replace_brush(params.entity, brush, vec![found])?;
             }
             Ok(())
-        })?;
-        Ok(Outcome::undoable(
-            MapEdited {
-                entity: Some(params.entity),
-            },
-            step,
-        ))
+        })
     }
 }
 
@@ -477,15 +537,15 @@ impl<C: HasMap + 'static> Command<C> for BrushClip {
     const SUMMARY: &'static str = "Clips a brush of the open map by the plane through three \
         points, keeping the part behind it, in front of it, or both as two brushes.";
     type Params = BrushClipParams;
-    type Output = MapEdited;
+    type Output = BrushesEdited;
     type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushClipParams,
-    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
-        let ((), step) = edit_map(context, |document| {
+    ) -> Result<Outcome<BrushesEdited, C>, MapEditError> {
+        edit_brushes(context, params.entity, |document| {
             let brush = document.brush(params.entity, params.brush)?;
             let plane = plane_of(params.points).ok_or(BrushError::Degenerate)?;
             let surface = brush
@@ -509,13 +569,7 @@ impl<C: HasMap + 'static> Command<C> for BrushClip {
                 return Err(BrushError::Missed.into());
             }
             document.replace_brush(params.entity, params.brush, kept)
-        })?;
-        Ok(Outcome::undoable(
-            MapEdited {
-                entity: Some(params.entity),
-            },
-            step,
-        ))
+        })
     }
 }
 
@@ -527,26 +581,20 @@ impl<C: HasMap + 'static> Command<C> for BrushVertex {
     const SUMMARY: &'static str = "Moves a vertex of a brush of the open map to a point snapped \
         to the grid; the brush becomes the convex hull of its vertices so moved.";
     type Params = BrushVertexParams;
-    type Output = MapEdited;
+    type Output = BrushesEdited;
     type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushVertexParams,
-    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
-        let ((), step) = edit_map(context, |document| {
+    ) -> Result<Outcome<BrushesEdited, C>, MapEditError> {
+        edit_brushes(context, params.entity, |document| {
             let brush = document.brush(params.entity, params.brush)?;
             let to = params.to.map(|c| snap(c, params.grid));
             let moved = brush.move_vertex(params.from, to)?;
             document.replace_brush(params.entity, params.brush, vec![moved])
-        })?;
-        Ok(Outcome::undoable(
-            MapEdited {
-                entity: Some(params.entity),
-            },
-            step,
-        ))
+        })
     }
 }
 
@@ -558,15 +606,15 @@ impl<C: HasMap + 'static> Command<C> for BrushSubtract {
     const SUMMARY: &'static str = "Subtracts a brush of the open map from every other brush of \
         its entity, then deletes it: the brushes it overlapped become the parts outside it.";
     type Params = BrushParams;
-    type Output = MapEdited;
+    type Output = BrushesEdited;
     type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushParams,
-    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
-        let ((), step) = edit_map(context, |document| {
+    ) -> Result<Outcome<BrushesEdited, C>, MapEditError> {
+        edit_brushes(context, params.entity, |document| {
             let cutter = document.brush(params.entity, params.brush)?;
             let found = document.entity_mut(params.entity)?;
             let place = found
@@ -591,13 +639,7 @@ impl<C: HasMap + 'static> Command<C> for BrushSubtract {
             }
             document.entity_mut(params.entity)?.items = items;
             Ok(())
-        })?;
-        Ok(Outcome::undoable(
-            MapEdited {
-                entity: Some(params.entity),
-            },
-            step,
-        ))
+        })
     }
 }
 
@@ -609,15 +651,15 @@ impl<C: HasMap + 'static> Command<C> for BrushMerge {
     const SUMMARY: &'static str = "Merges two or more brushes of an entity of the open map into \
         their convex hull, which takes the first's place.";
     type Params = BrushMergeParams;
-    type Output = MapEdited;
+    type Output = BrushesEdited;
     type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushMergeParams,
-    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
-        let ((), step) = edit_map(context, |document| {
+    ) -> Result<Outcome<BrushesEdited, C>, MapEditError> {
+        edit_brushes(context, params.entity, |document| {
             let mut indices = params.brushes.clone();
             indices.sort();
             indices.dedup();
@@ -635,13 +677,7 @@ impl<C: HasMap + 'static> Command<C> for BrushMerge {
                 document.replace_brush(params.entity, index, Vec::new())?;
             }
             document.replace_brush(params.entity, first, vec![merged])
-        })?;
-        Ok(Outcome::undoable(
-            MapEdited {
-                entity: Some(params.entity),
-            },
-            step,
-        ))
+        })
     }
 }
 
@@ -652,23 +688,17 @@ impl<C: HasMap + 'static> Command<C> for BrushDelete {
     const ID: &'static str = MAP_BRUSH_DELETE;
     const SUMMARY: &'static str = "Deletes a brush of an entity of the open map.";
     type Params = BrushParams;
-    type Output = MapEdited;
+    type Output = BrushesEdited;
     type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushParams,
-    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
-        let ((), step) = edit_map(context, |document| {
+    ) -> Result<Outcome<BrushesEdited, C>, MapEditError> {
+        edit_brushes(context, params.entity, |document| {
             document.replace_brush(params.entity, params.brush, Vec::new())
-        })?;
-        Ok(Outcome::undoable(
-            MapEdited {
-                entity: Some(params.entity),
-            },
-            step,
-        ))
+        })
     }
 }
 
