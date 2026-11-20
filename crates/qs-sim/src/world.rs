@@ -20,7 +20,7 @@ use qc_edict::EdictNumber;
 use qc_edict::system::{field_by_name, global_by_name};
 use qc_progs::Progs;
 use qc_types::{DefType, Etype, Slot};
-use qc_vm::convert::double_to_float;
+use qc_vm::convert::{double_to_float, float_to_int};
 use qc_vm::{Machine, NoObserver, Observer, RunError, ServerState};
 use qs_bsp::Bsp;
 use qs_vfs::Registration;
@@ -36,9 +36,9 @@ use crate::messages::{ClientMessages, GameKind};
 use crate::offsets::{FieldOffset, GlobalOffset};
 use crate::physics::MoveType;
 use crate::physics::Sound;
-use crate::protocol::{EntAlpha, Protocol};
+use crate::protocol::{EntAlpha, Protocol, ProtocolVersion};
 use crate::rerelease::BuiltinTable;
-use crate::settings::{ARCHIVED, CLIENT_SETTINGS, SERVER_SETTINGS};
+use crate::settings::{ARCHIVED, CLIENT_SETTINGS, LATER_ARCHIVED, LATER_SETTINGS, SERVER_SETTINGS};
 use qc_builtins::localization::Localization;
 use save::NUM_SPAWN_PARMS;
 
@@ -198,9 +198,6 @@ pub struct LoadOptions {
     /// Settings given before the map loads, each a name and a value, such as `skill` and
     /// `deathmatch`, which choose the entities the load keeps (DIFF-3.2, EDICT-8.4).
     pub settings: Vec<(String, String)>,
-    /// The protocol the server writes its messages in, QuakeSpasm's `sv_protocol`: FitzQuake's
-    /// 666 by default, id's 15 or RMQ's 999 (NET-6.1).
-    pub protocol: Protocol,
 }
 
 /// What lives in id's engine for the whole process, not one level: the C library's random
@@ -377,7 +374,8 @@ impl World {
             }
             // PHYS-12.1: the server's and the host's settings, with id's defaults.
             None => {
-                for (name, value) in SERVER_SETTINGS.iter().chain(&CLIENT_SETTINGS) {
+                let all = SERVER_SETTINGS.iter().chain(&CLIENT_SETTINGS);
+                for (name, value) in all.chain(&LATER_SETTINGS) {
                     engine.cvars.create(name, value);
                 }
             }
@@ -434,7 +432,15 @@ impl World {
             map_entities: map_entities::MapEntities::default(),
             pending_spawn: None,
         };
-        world.builtins.messages.set_protocol(options.protocol);
+        // NET-6.10: the protocol is `sv_protocol`'s as the map loads.
+        let protocol = world
+            .setting("sv_protocol")
+            .map(float_to_int)
+            .and_then(ProtocolVersion::from_number)
+            .map_or(Protocol::FITZQUAKE, |version| {
+                Protocol::new(version, Protocol::RMQ.flags())
+            });
+        world.builtins.messages.set_protocol(protocol);
         let entities = bsp.entities();
         // EDICT-4.1: the world's fields.
         let model = world.make_string(format!("maps/{map}.bsp").into_bytes());
@@ -808,6 +814,7 @@ impl World {
         let cvars = &self.builtins.mock.engine().cvars;
         ARCHIVED
             .iter()
+            .chain(&LATER_ARCHIVED)
             .filter_map(|name| cvars.text(name).map(|text| format!("{name} \"{text}\"\n")))
             .collect()
     }

@@ -106,3 +106,43 @@ fn gamma_goes_to_the_blend_table_in_glquakes_look() {
     );
     assert_eq!((none.volume, none.music), (0.0, 0.0));
 }
+
+// spec CON-7.5: the later engines' drawing settings reach the frame: r_lerplightstyles 0 holds,
+// below 2 skips abrupt changes, from 2 blends all; gl_zfix and r_litwater are off only at 0
+#[test]
+fn the_later_engines_settings_reach_the_frame() {
+    use qs_render::{LitWater, ModelDepth, StyleLerp};
+    let at = |changed: &[(&str, f32)]| read(changed, Look::QuakeSpasm);
+    let defaults = [
+        ("r_lerplightstyles", 1.0),
+        ("gl_zfix", 1.0),
+        ("r_litwater", 1.0),
+    ];
+    let on = at(&defaults);
+    assert_eq!(on.style_lerp, StyleLerp::SkipAbrupt);
+    assert_eq!(on.zfix, ModelDepth::Behind);
+    assert_eq!(on.water, LitWater::Lit);
+    let off = at(&[
+        ("r_lerplightstyles", 0.0),
+        ("gl_zfix", 0.0),
+        ("r_litwater", 0.0),
+    ]);
+    assert_eq!(off.style_lerp, StyleLerp::Off);
+    assert_eq!(off.zfix, ModelDepth::AsDrawn);
+    assert_eq!(off.water, LitWater::Unlit);
+    assert_eq!(
+        at(&[("r_lerplightstyles", 2.0)]).style_lerp,
+        StyleLerp::Always
+    );
+    assert_eq!(
+        at(&[("r_lerplightstyles", 1.5)]).style_lerp,
+        StyleLerp::SkipAbrupt
+    );
+    assert_eq!(at(&[("gl_zfix", 0.5)]).zfix, ModelDepth::Behind);
+    let missing = at(&[]);
+    assert_eq!(
+        missing.zfix,
+        ModelDepth::AsDrawn,
+        "a setting the world lacks reads as 0"
+    );
+}

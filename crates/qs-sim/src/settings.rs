@@ -82,6 +82,19 @@ pub(crate) const ARCHIVED: [&str; 15] = [
     "volume",
 ];
 
+/// The settings QuakeSpasm and Ironwail add that the preview host reads (CON-7.5), with their
+/// defaults: Ironwail's `r_lerplightstyles` "`1`" and `gl_zfix` "`1`" (`Quake/gl_rmain.c`),
+/// QuakeSpasm's `r_litwater` "`1`" and its `sv_protocol`, `PROTOCOL_FITZQUAKE`.
+pub(crate) const LATER_SETTINGS: [(&str, &str); 4] = [
+    ("r_lerplightstyles", "1"),
+    ("gl_zfix", "1"),
+    ("r_litwater", "1"),
+    ("sv_protocol", "666"),
+];
+
+/// The later engines' settings Ironwail declares `CVAR_ARCHIVE` (CON-7.5).
+pub(crate) const LATER_ARCHIVED: [&str; 2] = ["r_lerplightstyles", "gl_zfix"];
+
 /// A setting the server's own code reads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Setting {

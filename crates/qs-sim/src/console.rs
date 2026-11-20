@@ -25,7 +25,7 @@ use crate::host_commands::{COLOR_MASK, COLOR_ROW, MAX_COLOR, Words, atoi, tokeni
 use crate::input::Button;
 use crate::offsets::FieldOffset;
 use crate::physics::MoveType;
-use crate::settings::{CLIENT_SETTINGS, SERVER_SETTINGS};
+use crate::settings::{CLIENT_SETTINGS, LATER_SETTINGS, SERVER_SETTINGS};
 use crate::world::{ClientCommand, HostCommand, RawState as _, World};
 
 /// `VERSION` (`WinQuake/quakedef.h`), which `version` and `status` print.
@@ -211,6 +211,7 @@ impl World {
         let mut settings: Vec<&str> = SERVER_SETTINGS
             .iter()
             .chain(&CLIENT_SETTINGS)
+            .chain(&LATER_SETTINGS)
             .map(|(name, _)| *name)
             .collect();
         settings.sort_unstable();

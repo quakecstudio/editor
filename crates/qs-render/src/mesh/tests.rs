@@ -18,8 +18,8 @@ use qs_bsp::{
 use qs_client::DynamicLight;
 
 use super::{
-    Changes, Extras, Image, LitWater, MapMesh, MeshBuilder, MeshError, NO_LIGHTMAP, Palette,
-    Placement, Surface,
+    Changes, Extras, Image, MapMesh, MeshBuilder, MeshError, NO_LIGHTMAP, Palette, Placement,
+    Surface,
 };
 use crate::light::light_point;
 use crate::styles::{LightStyles, StyleLerp};
@@ -378,7 +378,7 @@ fn lit_water(lightofs: i32) -> MapSpec {
     }
 }
 
-// spec REND-2.6: a liquid not drawn tiled has a lightmap, and with r_litwater 1 in a world
+// spec REND-2.7: a liquid not drawn tiled has a lightmap, and with r_litwater 1 in a world
 // with lit water its corners take its coordinates, as a lit face's
 #[test]
 fn lit_water_takes_its_lightmap() {
@@ -393,21 +393,7 @@ fn lit_water_takes_its_lightmap() {
     assert_eq!(texel(&mesh, 0, 0), texel(&lit, 0, 0));
 }
 
-// spec REND-2.6: r_litwater 0 draws lit water unlit, its lightmap still made
-#[test]
-fn r_litwater_0_draws_it_unlit() {
-    let lighting = samples(&[10]);
-    let palette = palette();
-    let mut builder = MeshBuilder::new(&palette, Look::GlQuake).with_water(LitWater::Unlit);
-    builder
-        .add(&bsp(&lit_water(0), &lighting), &[Placement::WORLD])
-        .unwrap();
-    let mesh = builder.finish();
-    assert_eq!(mesh.lightmap.height, 3);
-    assert!(mesh.vertices.iter().all(|v| v.light == NO_LIGHTMAP));
-}
-
-// spec REND-2.6: the world's haslitwater decides for every model: a world with only tiled
+// spec REND-2.7: the world's haslitwater decides for every model: a world with only tiled
 // water, or lit water's faces without samples, draws a later BSP's lit water unlit
 #[test]
 fn the_worlds_lit_water_decides() {

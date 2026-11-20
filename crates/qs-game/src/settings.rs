@@ -4,7 +4,10 @@
 //! and the options menu set, turned into what the view, the frame and the mixer use.
 
 use qs_client::ViewSettings;
-use qs_render::Look;
+use qs_render::{LitWater, Look, ModelDepth, StyleLerp};
+
+/// `r_lerplightstyles 2`, from which every change blends (REND-5.8).
+const ALWAYS_LERP: f32 = 2.0;
 
 /// What the host does with the client's settings in one frame (CON-7.4).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -19,6 +22,11 @@ pub(crate) struct HostSettings {
     pub(crate) volume: f32,
     /// The CD music's volume, `bgmvolume` (SND-6.2).
     pub(crate) music: f32,
+    /// The later engines' drawing settings (CON-7.5): Ironwail's `r_lerplightstyles`
+    /// (REND-5.8) and `gl_zfix` (REND-1.16), and `r_litwater` (REND-2.7).
+    pub(crate) style_lerp: StyleLerp,
+    pub(crate) zfix: ModelDepth,
+    pub(crate) water: LitWater,
 }
 
 impl HostSettings {
@@ -40,6 +48,25 @@ impl HostSettings {
             frame_gamma: gamma,
             volume: setting("volume"),
             music: setting("bgmvolume"),
+            // "`if (!r_lerplightstyles.value) f = 0.0;`" and "`if (r_lerplightstyles.value <
+            // 2.f && ...) n = k;`".
+            style_lerp: match setting("r_lerplightstyles") {
+                0.0 => StyleLerp::Off,
+                value if value < ALWAYS_LERP => StyleLerp::SkipAbrupt,
+                _ => StyleLerp::Always,
+            },
+            // "`if (!gl_zfix.value ...) zfix = 0;`"
+            zfix: if setting("gl_zfix") == 0.0 {
+                ModelDepth::AsDrawn
+            } else {
+                ModelDepth::Behind
+            },
+            // "`cl.worldmodel->haslitwater && r_litwater.value`"
+            water: if setting("r_litwater") == 0.0 {
+                LitWater::Unlit
+            } else {
+                LitWater::Lit
+            },
         }
     }
 }

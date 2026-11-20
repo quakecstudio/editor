@@ -29,7 +29,7 @@ use crate::gpu::{
 use crate::light::light_point;
 use crate::look::Look;
 use crate::md5::Md5Model;
-use crate::mesh::{Image, MapMesh, Palette, Placement, fullbright_split};
+use crate::mesh::{Image, LitWater, MapMesh, Palette, Placement, fullbright_split};
 use crate::particles::particle_triangles;
 use crate::skybox::{SkyKeys, Skybox, sky_parse_worldspawn};
 use crate::sprite::{Eye, SpriteEntity, SpriteError, SpriteModel, angle_vectors};
@@ -274,11 +274,13 @@ pub struct Play {
     /// The 2D layer's size, `vid.width` and `vid.height` (HUD-1).
     pub screen: [i32; 2],
     /// The depth brush entities are drawn at: behind the world's faces they are flush with,
-    /// Ironwail's `gl_zfix`, or as GLQuake draws them (REND-1.15).
+    /// Ironwail's `gl_zfix`, or as GLQuake draws them (REND-1.16).
     pub zfix: ModelDepth,
     /// How the light styles blend from letter to letter, Ironwail's `r_lerplightstyles`
     /// (REND-5.8).
     pub style_lerp: StyleLerp,
+    /// Whether lit water is drawn lit, `r_litwater` (REND-2.7).
+    pub water: LitWater,
     /// Whether an `.mdl` is drawn as the rerelease's MD5 model where there is one
     /// (REND-12.1).
     pub md5_models: bool,
@@ -342,6 +344,7 @@ impl Play {
             screen: DEFAULT_SCREEN,
             zfix: ModelDepth::Behind,
             style_lerp: StyleLerp::default(),
+            water: LitWater::default(),
             md5_models: true,
             look: Look::default(),
             gamma: 1.0,
@@ -664,6 +667,7 @@ impl Play {
         view.skyfog = self.skyfog;
         view.screen = screen;
         view.gamma = self.look.frame_gamma(self.gamma);
+        view.water = self.water;
         MapCallback {
             view,
             models,
@@ -677,7 +681,7 @@ impl Play {
         }
     }
 
-    /// A brush model at its entity (REND-1.9), its depth as the z-fix says (REND-1.15).
+    /// A brush model at its entity (REND-1.9), its depth as the z-fix says (REND-1.16).
     fn place(&self, placements: &mut [Option<ModelPlacement>], n: usize, entity: &SceneEntity) {
         let Some(slot) = placements.get_mut(n) else {
             return;

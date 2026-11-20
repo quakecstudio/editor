@@ -25,10 +25,7 @@ use crate::world::tests::{
 
 /// Id's protocol 15, which the NET statements of id's server describe.
 fn netquake() -> LoadOptions {
-    LoadOptions {
-        protocol: Protocol::NETQUAKE,
-        ..LoadOptions::default()
-    }
+    speaking(Protocol::NETQUAKE)
 }
 
 /// Reads a message back, as the client will.
@@ -1090,10 +1087,14 @@ fn a_patched_progs_runs_the_rereleases_builtins() {
     assert_eq!(run.packets()[1], [56, 0, 2]);
 }
 
-/// `options` with the server writing in `protocol`.
+/// `options` with the server writing in `protocol`: `sv_protocol` set before the map loads
+/// (NET-6.10).
 fn speaking(protocol: Protocol) -> LoadOptions {
     LoadOptions {
-        protocol,
+        settings: vec![(
+            "sv_protocol".to_owned(),
+            protocol.version().number().to_string(),
+        )],
         ..LoadOptions::default()
     }
 }
@@ -1492,4 +1493,28 @@ fn fitzquake_buffers_hold_what_ids_cannot() {
     assert!(datagram.len() > NET_MAX_DATAGRAM, "{}", datagram.len());
     let mut id = player_with_options(&ledge(), "", "", many, netquake());
     assert!(next_datagram(&mut id).len() <= NET_MAX_DATAGRAM);
+}
+
+// spec NET-6.10: the map loads in sv_protocol's protocol; a value that names none loads 666
+#[test]
+fn sv_protocol_chooses_the_maps_protocol() {
+    let with = |value: &str| {
+        let options = LoadOptions {
+            settings: vec![("sv_protocol".to_owned(), value.to_owned())],
+            ..LoadOptions::default()
+        };
+        let mut run = running_with(&ledge(), "", "", Vec::new(), options);
+        run.connect();
+        let packets = run.packets();
+        let mut r = Reader::new(&packets[0]);
+        r.byte();
+        r.string();
+        r.byte();
+        r.long()
+    };
+    assert_eq!(with("15"), 15);
+    assert_eq!(with("999"), 999);
+    assert_eq!(with("666"), 666);
+    assert_eq!(with("16"), 666, "no protocol: the default");
+    assert_eq!(with("junk"), 666);
 }

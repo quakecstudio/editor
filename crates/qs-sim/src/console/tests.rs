@@ -608,5 +608,28 @@ fn the_archived_settings_are_written() {
     );
     assert!(text.contains("\nvolume \"0.5\"\n"), "{text}");
     assert!(!text.contains("cl_upspeed"), "not archived");
-    assert_eq!(text.lines().count(), 15);
+    assert_eq!(text.lines().count(), 17);
+}
+
+// spec CON-7.5: the later engines' settings exist with their defaults, Ironwail's two
+// archived ones written after id's, r_litwater and sv_protocol not
+#[test]
+fn the_later_engines_settings_are_registered() {
+    let mut run = connected();
+    for (name, value) in [
+        ("r_lerplightstyles", 1.0),
+        ("gl_zfix", 1.0),
+        ("r_litwater", 1.0),
+        ("sv_protocol", 666.0),
+    ] {
+        assert_eq!(run.world.setting(name), Some(value), "{name}");
+    }
+    console(&mut run, "gl_zfix 0; r_litwater 0\n");
+    let text = run.world.archived_settings();
+    assert!(
+        text.ends_with("r_lerplightstyles \"1\"\ngl_zfix \"0\"\n"),
+        "{text}"
+    );
+    assert!(!text.contains("r_litwater") && !text.contains("sv_protocol"));
+    assert_eq!(run.world.complete("gl_z").as_deref(), Some("gl_zfix"));
 }

@@ -6,12 +6,13 @@
 use std::path::PathBuf;
 
 use crate::Error;
-use qs_render::{LitWater, Look, StyleLerp};
-use qs_sim::protocol::Protocol;
+use qs_render::Look;
+use qs_sim::HostState;
+use qs_sim::protocol::ProtocolVersion;
 
 /// The engine-style options, each written with one dash as the engines and ADR-0008 write
 /// them; clap reads them with two.
-const ENGINE_OPTIONS: [&str; 4] = ["-basedir", "-game", "-kpf", "-bridge"];
+const ENGINE_OPTIONS: [&str; 5] = ["-basedir", "-game", "-kpf", "-bridge", "-protocol"];
 
 /// `quakec-engine [-basedir PATH] [-game NAME] [-kpf PATH] [-bridge PATH] [map]`.
 #[derive(clap::Parser, Clone, Debug, PartialEq)]
@@ -45,22 +46,11 @@ pub struct Args {
     /// GLQuake's `-gamma` (REND-3.1); without it, the look's (REND-13.2).
     #[arg(long)]
     pub gamma: Option<f32>,
-    /// Brush models drawn as GLQuake draws them, without Ironwail's `gl_zfix` (REND-1.15).
-    #[arg(long)]
-    pub nozfix: bool,
-    /// Liquids drawn at their textures' colours, as GLQuake draws them, even in a map built
-    /// with lit water: QuakeSpasm's `r_litwater 0` (REND-2.6).
-    #[arg(long)]
-    pub nolitwater: bool,
-    /// The protocol the server writes its messages in, QuakeSpasm's `-protocol`: FitzQuake's
-    /// 666 (the default), id's 15 or RMQ's 999 (NET-6.1).
+    /// The protocol the server writes its messages in, QuakeSpasm's `-protocol`, which sets
+    /// `sv_protocol` when the host starts: FitzQuake's 666 (the default), id's 15 or RMQ's 999
+    /// (NET-6.10).
     #[arg(long, value_enum, default_value_t = ProtocolArg::FitzQuake)]
     pub protocol: ProtocolArg,
-    /// How light styles blend from letter to letter, Ironwail's `r_lerplightstyles`: every
-    /// change but an abrupt one (1, the default), every change (2) or none, as id's engine
-    /// (0) (REND-5.8).
-    #[arg(long, value_enum, default_value_t = StyleLerpArg::SkipAbrupt)]
-    pub lerplightstyles: StyleLerpArg,
     /// Where a free camera starts: x, y, z and yaw.
     #[arg(long, num_args = 4, value_names = ["x", "y", "z", "yaw"], allow_negative_numbers = true)]
     pub at: Option<Vec<f32>>,
@@ -139,32 +129,6 @@ impl LookArg {
     }
 }
 
-/// What `--lerplightstyles` takes (REND-5.8).
-#[derive(clap::ValueEnum, Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum StyleLerpArg {
-    /// `r_lerplightstyles 1`: blended, but not an abrupt change.
-    #[default]
-    #[value(name = "1")]
-    SkipAbrupt,
-    /// `r_lerplightstyles 2`: every change blended.
-    #[value(name = "2")]
-    Always,
-    /// `r_lerplightstyles 0`: id's, each letter held for its tenth of a second.
-    #[value(name = "0")]
-    Off,
-}
-
-impl StyleLerpArg {
-    /// The renderer's blend.
-    pub const fn style_lerp(self) -> StyleLerp {
-        match self {
-            Self::SkipAbrupt => StyleLerp::SkipAbrupt,
-            Self::Always => StyleLerp::Always,
-            Self::Off => StyleLerp::Off,
-        }
-    }
-}
-
 /// What `--protocol` takes (NET-6.1).
 #[derive(clap::ValueEnum, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ProtocolArg {
@@ -181,12 +145,12 @@ pub enum ProtocolArg {
 }
 
 impl ProtocolArg {
-    /// The server's protocol.
-    pub const fn protocol(self) -> Protocol {
+    /// The protocol's number, which `sv_protocol` is set to (NET-6.10).
+    pub const fn number(self) -> i32 {
         match self {
-            Self::NetQuake => Protocol::NETQUAKE,
-            Self::FitzQuake => Protocol::FITZQUAKE,
-            Self::Rmq => Protocol::RMQ,
+            Self::NetQuake => ProtocolVersion::NetQuake.number(),
+            Self::FitzQuake => ProtocolVersion::FitzQuake.number(),
+            Self::Rmq => ProtocolVersion::Rmq.number(),
         }
     }
 }
@@ -201,12 +165,13 @@ pub enum Show {
 }
 
 impl Args {
-    /// How the map's liquids are drawn (REND-2.6).
-    pub(crate) const fn water(&self) -> LitWater {
-        if self.nolitwater {
-            LitWater::Unlit
-        } else {
-            LitWater::Lit
+    /// The settings a map load is given before it spawns (NET-6.10): `--protocol` as
+    /// `sv_protocol` for the first map of a new host, with no `host` carried, and nothing for a
+    /// later level, which keeps what the console made it.
+    pub(crate) fn launch_settings(&self, host: Option<&HostState>) -> Vec<(String, String)> {
+        match host {
+            None => vec![("sv_protocol".to_owned(), self.protocol.number().to_string())],
+            Some(_) => Vec::new(),
         }
     }
 

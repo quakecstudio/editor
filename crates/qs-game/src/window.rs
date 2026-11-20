@@ -734,7 +734,7 @@ impl Viewer {
             (&self.map, swap.bsp().bsp()),
             self.game.world(),
             &read,
-            (&palette, self.mesh.look, self.mesh.water),
+            (&palette, self.mesh.look),
         );
         let (mesh, instances) = match mesh {
             Ok(mesh) => mesh,
@@ -1147,6 +1147,9 @@ impl Viewer {
         );
         self.client.set_view_settings(read.view);
         self.play.gamma = read.frame_gamma;
+        self.play.style_lerp = read.style_lerp;
+        self.play.zfix = read.zfix;
+        self.play.water = read.water;
         self.audio.set_volume(read.volume);
         self.audio.set_music_volume(read.music);
     }
