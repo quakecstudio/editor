@@ -21,6 +21,39 @@ pub struct AgentCommand {
     pub env: Vec<(String, String)>,
 }
 
+impl AgentCommand {
+    /// The process to start. On Windows the program is run by the command interpreter, which
+    /// finds the `.cmd` scripts Node installs its programs as (`npx.cmd`), as a program
+    /// started directly does not.
+    fn to_process(&self) -> Command {
+        #[cfg(windows)]
+        {
+            let mut process = Command::new("cmd");
+            process.arg("/C").arg(&self.program).args(&self.args);
+            process
+        }
+        #[cfg(not(windows))]
+        {
+            let mut process = Command::new(&self.program);
+            process.args(&self.args);
+            process
+        }
+    }
+}
+
+/// The next line of `from` without its line ending, bytes that are not UTF-8 replaced; `None`
+/// at its end, or when it can no longer be read.
+pub(crate) fn next_line(from: &mut impl BufRead) -> Option<String> {
+    let mut line = Vec::new();
+    match from.read_until(b'\n', &mut line) {
+        Ok(0) | Err(_) => None,
+        Ok(_) => {
+            let text = String::from_utf8_lossy(&line);
+            Some(text.trim_end_matches(['\n', '\r']).to_owned())
+        }
+    }
+}
+
 /// A running agent: the protocol's client on its standard input, and the lines of its
 /// standard output as they come. Dropping it ends the process.
 #[derive(Debug)]
@@ -44,8 +77,8 @@ impl Agent {
         wake: impl Fn() + Send + 'static,
     ) -> Result<Self, AcpError> {
         let spawn_error = |error| AcpError::Spawn(command.program.clone(), error);
-        let mut child = Command::new(&command.program)
-            .args(&command.args)
+        let mut child = command
+            .to_process()
             .envs(command.env.iter().map(|(name, value)| (name, value)))
             .current_dir(cwd)
             .stdin(Stdio::piped())
@@ -60,7 +93,8 @@ impl Agent {
         };
         let (sender, lines) = mpsc::channel();
         std::thread::spawn(move || {
-            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            let mut stdout = BufReader::new(stdout);
+            while let Some(line) = next_line(&mut stdout) {
                 if sender.send(line).is_err() {
                     return;
                 }
@@ -71,7 +105,8 @@ impl Agent {
         });
         // What the agent says of itself, which is not the protocol's, goes to the log.
         std::thread::spawn(move || {
-            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            let mut stderr = BufReader::new(stderr);
+            while let Some(line) = next_line(&mut stderr) {
                 tracing::debug!(%line, "agent");
             }
         });

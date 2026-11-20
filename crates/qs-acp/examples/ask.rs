@@ -86,7 +86,7 @@ fn take(agent: &mut Agent, args: &Args, session: &mut Option<SessionId>, event: 
         }
         Event::Plan(entries) => {
             for entry in entries {
-                println!("[plan] {} ({})", entry.content, entry.status);
+                println!("[plan] {} ({:?})", entry.content, entry.status);
             }
             Ok(())
         }

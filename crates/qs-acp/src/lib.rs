@@ -219,8 +219,19 @@ pub enum StopReason {
 pub struct PlanEntry {
     /// What the step is.
     pub content: String,
-    /// `pending`, `in_progress` or `completed`, as the agent wrote it.
-    pub status: String,
+    /// Where the step stands.
+    pub status: PlanStatus,
+}
+
+/// Where a step of the plan stands (`agent-plan.mdx`, Plan Entries).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlanStatus {
+    /// Not started; also a status this client does not know.
+    Pending,
+    /// Being worked on.
+    InProgress,
+    /// Done.
+    Completed,
 }
 
 /// What a line from the agent means to the panel.

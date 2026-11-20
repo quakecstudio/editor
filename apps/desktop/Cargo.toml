@@ -28,6 +28,7 @@ clap = { workspace = true, features = ["std", "derive", "help", "usage", "error-
 eframe = { workspace = true, features = ["accesskit", "wayland", "wgpu", "x11"] }
 # The PNG decoder, for the About window's icon; the map editor's texture import links it already.
 image = { workspace = true, features = ["png"] }
+qc-project = { workspace = true }
 qs-acp = { workspace = true }
 qs-agent = { workspace = true }
 # Base64, which a screenshot is attached to a thread in.

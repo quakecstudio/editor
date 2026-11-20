@@ -431,13 +431,12 @@ impl Editor {
         }
         view.context_menu(|ui| {
             if ui.button(Text::ExplainMenu.get()).clicked() {
-                let (first, last) = (
-                    selection.anchor.line.min(selection.head.line),
-                    selection.anchor.line.max(selection.head.line),
-                );
+                // The primary selection's own text and lines: with several selections the
+                // others are not what the menu was opened over.
+                let (start, end) = (selection.start(), selection.end());
                 requests.push(Request::Explain {
-                    selection: self.view.state().selected_text(),
-                    lines: (first.saturating_add(1), last.saturating_add(1)),
+                    selection: self.view.state().buffer().slice(start, end),
+                    lines: (start.line.saturating_add(1), end.line.saturating_add(1)),
                 });
                 ui.close();
             }

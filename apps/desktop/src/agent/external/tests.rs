@@ -162,6 +162,10 @@ printf '%s\n' '{"jsonrpc":"2.0","id":11,"method":"fs/read_text_file","params":{"
 read -r line; printf '%s\n' "$line" > "$1/read.json"
 printf '%s\n' '{"jsonrpc":"2.0","id":12,"method":"fs/write_text_file","params":{"sessionId":"s1","path":"/outside-the-project.qc","content":"x"}}'
 read -r line; printf '%s\n' "$line" > "$1/outside.json"
+printf '%s\n' '{"jsonrpc":"2.0","id":13,"method":"fs/write_text_file","params":{"sessionId":"s1","path":"'"$1"'/../climbs-out.qc","content":"x"}}'
+read -r line; printf '%s\n' "$line" > "$1/climbs.json"
+printf '%s\n' '{"jsonrpc":"2.0","id":14,"method":"fs/write_text_file","params":{"sessionId":"s1","path":"'"$1"'/new.qc","content":"float fresh;\n"}}'
+read -r line; printf '%s\n' "$line" > "$1/new.json"
 printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"stopReason":"end_turn"}}'
 "#
     );
@@ -173,9 +177,23 @@ printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"stopReason":"end_turn"}}'
         serde_json::json!({})
     );
     let hunks = app.shell().workbench().staged_hunks();
-    assert_eq!(hunks.len(), 1, "{hunks:?}");
-    assert!(hunks[0].path.ends_with("world.qc"));
-    assert_eq!(hunks[0].added, "float added;\n");
+    assert_eq!(hunks.len(), 2, "{hunks:?}");
+    let of = |name: &str| hunks.iter().find(|hunk| hunk.path.ends_with(name)).unwrap();
+    assert_eq!(of("world.qc").added, "float added;\n");
+    // ACP v1, file-system.mdx: "The Client **MUST** create the file if it doesn't exist.": a
+    // file that is not there is taken, staged as a new file, which accepting its hunk makes
+    assert_eq!(
+        read_json(&root, "new.json")["result"],
+        serde_json::json!({})
+    );
+    assert_eq!(of("new.qc").added, "float fresh;\n");
+    assert!(
+        !root.join("new.qc").exists(),
+        "made when its hunk is accepted"
+    );
+    // A path that climbs out of the project with `..` is outside it.
+    let climbs = read_json(&root, "climbs.json");
+    assert_eq!(climbs["error"]["message"], Text::AgentOutside.get());
     assert_eq!(
         fs::read_to_string(root.join("world.qc")).unwrap(),
         "void() worldspawn = {};\n",
@@ -405,5 +423,140 @@ printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"stopReason":"end_turn"}}'
     assert_eq!(
         fs::read_to_string(root.join("world.qc")).unwrap(),
         "void() worldspawn = {};\n"
+    );
+}
+
+// No spec statement: P4-14, permission requests that come together each wait their turn, the
+// oldest first, and each is answered
+#[test]
+fn permission_requests_that_come_together_are_each_answered() {
+    let request = |id: u32, title: &str| {
+        format!(
+            r#"printf '%s\n' '{{"jsonrpc":"2.0","id":{id},"method":"session/request_permission","params":{{"sessionId":"s1","toolCall":{{"toolCallId":"c{id}","title":"{title}"}},"options":[{{"optionId":"yes","name":"Allow {title}","kind":"allow_once"}}]}}}}'"#
+        )
+    };
+    let script = format!(
+        "{HANDSHAKE}\n{}\n{}\n{}",
+        request(20, "first"),
+        request(21, "second"),
+        r#"
+read -r line; printf '%s\n' "$line" > "$1/a.json"
+read -r line; printf '%s\n' "$line" > "$1/b.json"
+printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"stopReason":"end_turn"}}'
+"#
+    );
+    let (root, ctx, mut app) = window("two-asks", &script);
+    let mut seen = Vec::new();
+    app.shell_mut()
+        .agent_action(AgentAction::Start("Go.".to_owned()), &ctx);
+    while thread(&mut app).running() {
+        assert!(app.shell_mut().wait_external_agent(0));
+        let waiting = thread(&mut app);
+        while let Some(options) = waiting.asking() {
+            seen.extend(options);
+            waiting.permit_for_test(0);
+        }
+    }
+    assert_eq!(seen, ["Allow first", "Allow second"]);
+    assert_eq!(read_json(&root, "a.json")["id"], 20);
+    assert_eq!(read_json(&root, "b.json")["id"], 21);
+}
+
+// No spec statement: P4-14, an agent that does not answer `session/cancel` cannot hold its
+// thread: the first Stop asks it to cancel, a second ends its process
+#[test]
+fn a_second_stop_ends_an_agent_that_does_not_answer() {
+    let script = format!("{HANDSHAKE}\nwhile read -r line; do :; done\n");
+    let (_root, ctx, mut app) = window("deaf", &script);
+    app.shell_mut()
+        .agent_action(AgentAction::Start("Go.".to_owned()), &ctx);
+    while thread(&mut app).shown().1 != "Working" {
+        assert!(app.shell_mut().wait_external_agent(0));
+    }
+    thread(&mut app).stop_for_test();
+    assert_eq!(thread(&mut app).shown().1, "Stopping");
+    assert!(thread(&mut app).running());
+    thread(&mut app).stop_for_test();
+    assert_eq!(thread(&mut app).shown().1, "Ended(Cancelled)");
+    assert!(!thread(&mut app).running());
+}
+
+// No spec statement: P4-14, a new thread runs on the built-in agent when a model provider is
+// set up and on the first external agent when none is, whichever the app reads first at its
+// start
+#[test]
+fn the_agent_a_new_thread_runs_on_by_default() {
+    use qs_models::{ProviderConfig, ProviderKind};
+
+    let agents = || vec![claude_code()];
+    let mut panel = AgentPanel::new(Box::new(|_| Err("no model".to_owned())));
+    assert!(panel.external_agent().is_none());
+    panel.set_external_agents(agents());
+    assert_eq!(panel.external_agent(), Some(&claude_code()));
+    // The provider read after the agents, as the app reads them.
+    panel.set_config(ProviderConfig::new(ProviderKind::Ollama, "local"));
+    assert!(panel.external_agent().is_none(), "the built-in agent");
+
+    let mut panel = AgentPanel::new(Box::new(|_| Err("no model".to_owned())));
+    panel.set_config(ProviderConfig::new(ProviderKind::Ollama, "local"));
+    panel.set_external_agents(agents());
+    assert!(panel.external_agent().is_none(), "the built-in agent");
+    panel.set_external_agents(Vec::new());
+    assert!(panel.external_agent().is_none());
+}
+
+// No spec statement: P4-14, the agent is found on the login shell's PATH, which an app
+// started from the Finder does not have: a login shell is asked for it
+#[test]
+fn the_login_shells_path_is_asked_for() {
+    let path = super::path_of_login_shell(Path::new("/bin/sh")).unwrap();
+    assert!(
+        path.split(':')
+            .any(|folder| folder == "/bin" || folder == "/usr/bin"),
+        "{path}"
+    );
+    assert!(super::path_of_login_shell(Path::new("/no/such/shell")).is_none());
+}
+
+// No spec statement: P4-14, with an external agent and no model provider the provider form
+// can be left without saving one: Cancel goes back to the threads
+#[test]
+fn the_provider_form_can_be_left_without_saving() {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+
+    let mut harness = Harness::builder()
+        .with_size([1440.0, 900.0])
+        .build_ui_state(
+            |ui, app: &mut Option<App>| {
+                if let Some(app) = app {
+                    app.frame(ui);
+                }
+            },
+            None,
+        );
+    let (_root, mut app) = window_on(&harness.ctx, "form", "");
+    app.shell_mut()
+        .execute(
+            qs_layout::SHOW_PANEL,
+            serde_json::json!({ "panel": "agent", "when_shown": "keep" }),
+        )
+        .unwrap();
+    *harness.state_mut() = Some(app);
+    harness.run();
+    harness.get_by_label(Text::AgentRun.get());
+    harness.get_by_label(Text::AgentSettings.get()).click();
+    harness.run();
+    assert!(harness.query_by_label(Text::AgentRun.get()).is_none());
+    harness.get_by_label(Text::AgentSave.get());
+    harness.get_by_label(Text::PaletteCancel.get()).click();
+    harness.run();
+    harness.get_by_label(Text::AgentRun.get());
+    assert!(
+        app_of(&mut harness)
+            .shell_mut()
+            .agent_mut()
+            .external_agent()
+            .is_some()
     );
 }

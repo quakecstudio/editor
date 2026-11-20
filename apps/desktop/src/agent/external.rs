@@ -6,9 +6,12 @@
 //! writes come through the IDE: a read gets the editor's text, unsaved changes included, and a
 //! write is staged as hunks to accept or reject, as the built-in agent's are (AGT-3).
 
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use eframe::egui::{self, RichText, Ui};
+use qc_project::normalize;
 use qs_acp::{
     AcpError, Agent, AgentCommand, ClientInfo, Event, FileRequestId, Files, McpServer, OptionKind,
     Outcome, PermissionId, PermissionOption, SessionId, StopReason, ToolCall, ToolStatus,
@@ -30,6 +33,33 @@ const CLAUDE_ADAPTER: &str = "@agentclientprotocol/claude-agent-acp@0.109.0";
 /// The command line program beside the app, which serves the IDE's tools over MCP.
 const TOOLS_PROGRAM: &str = "quakec-ide";
 
+/// The environment variable programs are found by.
+const PATH: &str = "PATH";
+
+/// The PATH of the modder's login shell, asked for once; `None` where there is no such shell
+/// (Windows) or it does not say.
+fn login_path() -> Option<&'static String> {
+    static FOUND: OnceLock<Option<String>> = OnceLock::new();
+    FOUND
+        .get_or_init(|| {
+            let shell = std::env::var_os("SHELL")?;
+            path_of_login_shell(Path::new(&shell))
+        })
+        .as_ref()
+}
+
+/// The PATH the login shell `shell` sets up, by running it once as a login shell.
+fn path_of_login_shell(shell: &Path) -> Option<String> {
+    let output = std::process::Command::new(shell)
+        .args(["-l", "-c", r#"printf %s "$PATH""#])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    let path = String::from_utf8(output.stdout).ok()?;
+    (output.status.success() && !path.trim().is_empty()).then_some(path)
+}
+
 /// The entry Use Claude Code adds to `agent.external`: Claude Code through its ACP adapter,
 /// run by `npx`, which needs Node and the `claude` command signed in.
 pub(crate) fn claude_code() -> ExternalAgent {
@@ -47,7 +77,10 @@ pub(crate) fn claude_code() -> ExternalAgent {
 pub(crate) fn ide_tools(project: &Path) -> Vec<McpServer> {
     let program = std::env::current_exe()
         .ok()
-        .and_then(|app| Some(app.parent()?.join(TOOLS_PROGRAM)))
+        .and_then(|app| {
+            let name = format!("{TOOLS_PROGRAM}{}", std::env::consts::EXE_SUFFIX);
+            Some(app.parent()?.join(name))
+        })
         .filter(|program| program.is_file());
     program
         .into_iter()
@@ -82,6 +115,8 @@ enum State {
     Starting,
     /// A turn is running.
     Working,
+    /// The agent was asked to cancel the turn and has not yet ended it.
+    Stopping,
     /// The turn ended.
     Ended(StopReason),
     /// The thread cannot go on, and why.
@@ -111,7 +146,8 @@ pub(crate) struct ExternalThread {
     servers: Vec<McpServer>,
     session: Option<SessionId>,
     items: Vec<Item>,
-    asked: Option<Asked>,
+    /// The agent's permission requests that wait, the oldest first; each is answered.
+    asked: VecDeque<Asked>,
     state: State,
     /// The checkpoint recorded before the agent started, which puts the project back: an
     /// agent that writes the disk itself, as Claude Code does, leaves no hunks to reject.
@@ -132,10 +168,19 @@ impl ExternalThread {
         (servers, checkpoint): (Vec<McpServer>, Option<CheckpointNumber>),
         wake: impl Fn() + Send + 'static,
     ) -> Result<Self, String> {
+        let mut env: Vec<(String, String)> = agent.env.clone().into_iter().collect();
+        // An app started from the Finder or a launcher has the system's short PATH, with no
+        // Homebrew, nvm or volta folder in it; the agent is found on the login shell's, as a
+        // terminal would find it, unless the settings give it a PATH of its own.
+        if !agent.env.contains_key(PATH)
+            && let Some(path) = login_path()
+        {
+            env.push((PATH.to_owned(), path.clone()));
+        }
         let command = AgentCommand {
             program: PathBuf::from(&agent.command),
             args: agent.args.clone(),
-            env: agent.env.clone().into_iter().collect(),
+            env,
         };
         let mut running = Agent::spawn(&command, project, wake).map_err(|e| e.to_string())?;
         let info = ClientInfo {
@@ -149,13 +194,13 @@ impl ExternalThread {
             .map_err(|e| e.to_string())?;
         Ok(Self {
             task: task.to_owned(),
-            project: project.to_path_buf(),
+            project: normalize(project),
             name: agent.name.clone(),
             agent: Some(running),
             servers,
             session: None,
             items: Vec::new(),
-            asked: None,
+            asked: VecDeque::new(),
             state: State::Starting,
             checkpoint,
         })
@@ -168,7 +213,10 @@ impl ExternalThread {
 
     /// Whether the agent is still starting or working.
     pub(crate) const fn running(&self) -> bool {
-        matches!(self.state, State::Starting | State::Working)
+        matches!(
+            self.state,
+            State::Starting | State::Working | State::Stopping
+        )
     }
 
     /// Takes what the agent said since the last call: the handshake goes on, what it says is
@@ -189,7 +237,7 @@ impl ExternalThread {
     /// The option names of the permission request that waits, if one does. For tests.
     #[cfg(test)]
     pub(crate) fn asking(&self) -> Option<Vec<String>> {
-        let asked = self.asked.as_ref()?;
+        let asked = self.asked.front()?;
         Some(asked.options.iter().map(|o| o.name.clone()).collect())
     }
 
@@ -244,7 +292,7 @@ impl ExternalThread {
     /// Ends the thread with `why`, and the agent's process with it.
     fn fail(&mut self, why: String) {
         self.state = State::Failed(why);
-        self.asked = None;
+        self.asked.clear();
         self.agent = None;
     }
 
@@ -277,13 +325,11 @@ impl ExternalThread {
                 request,
                 tool,
                 options,
-            } => {
-                self.asked = Some(Asked {
-                    request,
-                    tool,
-                    options,
-                });
-            }
+            } => self.asked.push_back(Asked {
+                request,
+                tool,
+                options,
+            }),
             Event::ReadFile { request, path } => self.read(session, &request, &path)?,
             Event::WriteFile {
                 request,
@@ -292,7 +338,7 @@ impl ExternalThread {
             } => self.write(session, &request, &path, &content)?,
             Event::TurnEnded(reason) => {
                 self.state = State::Ended(reason);
-                self.asked = None;
+                self.asked.clear();
                 self.agent = None;
             }
             Event::Refused { method, message } => self.fail(format!("{method}: {message}")),
@@ -324,10 +370,8 @@ impl ExternalThread {
         if !call.text.is_empty() {
             known.text = call.text;
         }
-        for path in call.paths {
-            if !known.paths.contains(&path) {
-                known.paths.push(path);
-            }
+        if !call.paths.is_empty() {
+            known.paths = call.paths;
         }
     }
 
@@ -342,6 +386,7 @@ impl ExternalThread {
         let Some(agent) = self.agent.as_mut() else {
             return Ok(());
         };
+        let path = &normalize(path);
         let text = if path.starts_with(&self.project) {
             session
                 .execute(READ_FILE, json!({ "path": path }))
@@ -375,6 +420,8 @@ impl ExternalThread {
         let Some(agent) = self.agent.as_mut() else {
             return Ok(());
         };
+        // As the workbench reads it, so `..` cannot lead out of the project.
+        let path = &normalize(path);
         if !path.starts_with(&self.project) {
             return agent
                 .client()
@@ -390,9 +437,9 @@ impl ExternalThread {
         }
     }
 
-    /// Answers the permission request that waits with the option `chosen`.
+    /// Answers the oldest permission request that waits with its option `chosen`.
     fn permit(&mut self, chosen: usize) {
-        let (Some(asked), Some(agent)) = (self.asked.take(), self.agent.as_mut()) else {
+        let (Some(asked), Some(agent)) = (self.asked.pop_front(), self.agent.as_mut()) else {
             return;
         };
         let outcome = asked
@@ -406,17 +453,23 @@ impl ExternalThread {
         }
     }
 
-    /// Stops the turn: the agent is asked to cancel, and ends the turn itself
-    /// (`prompt-turn.mdx`, Cancellation); before there is a session the agent is ended.
+    /// Stops the turn. The first Stop asks the agent to cancel, and the agent ends the turn
+    /// itself (`prompt-turn.mdx`, Cancellation); a Stop of a turn already asked to cancel, or
+    /// before there is a session, ends the agent's process, so an agent that does not answer
+    /// cannot hold the thread.
     fn stop(&mut self) {
-        self.asked = None;
-        let (Some(session), Some(agent)) = (&self.session, self.agent.as_mut()) else {
+        self.asked.clear();
+        let asked_before = self.state == State::Stopping;
+        let (Some(session), Some(agent), false) =
+            (&self.session, self.agent.as_mut(), asked_before)
+        else {
             self.state = State::Ended(StopReason::Cancelled);
             self.agent = None;
             return;
         };
-        if let Err(error) = agent.client().cancel(session) {
-            self.fail(error.to_string());
+        match agent.client().cancel(session) {
+            Ok(()) => self.state = State::Stopping,
+            Err(error) => self.fail(error.to_string()),
         }
     }
 
@@ -435,7 +488,7 @@ impl ExternalThread {
                 }
             });
         let mut chosen = None;
-        if let Some(asked) = &self.asked {
+        if let Some(asked) = self.asked.front() {
             chosen = permission_view(ui, theme, asked);
         }
         if let Some(chosen) = chosen {
@@ -443,7 +496,8 @@ impl ExternalThread {
         }
         let ended = match &self.state {
             State::Starting => Some((Text::AgentStarting, Token::TextMuted)),
-            State::Working if self.asked.is_none() => Some((Text::AgentWorking, Token::TextMuted)),
+            State::Working if self.asked.is_empty() => Some((Text::AgentWorking, Token::TextMuted)),
+            State::Stopping => Some((Text::AgentStopping, Token::TextMuted)),
             State::Working | State::Failed(_) => None,
             State::Ended(reason) => Some(match reason {
                 StopReason::EndTurn => (Text::AgentDone, Token::Text),

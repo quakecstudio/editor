@@ -12,8 +12,8 @@ use std::path::{Path, PathBuf};
 use serde_json::{Value, json};
 
 use super::{
-    Client, ClientInfo, Event, Files, Lines, McpServer, OptionKind, Outcome, PlanEntry, SessionId,
-    StopReason, ToolStatus,
+    Client, ClientInfo, Event, Files, Lines, McpServer, OptionKind, Outcome, PlanEntry, PlanStatus,
+    SessionId, StopReason, ToolStatus,
 };
 
 /// A client writing to memory.
@@ -221,7 +221,7 @@ fn a_turn_streams_and_ends() {
         told(&mut client, &plan),
         [Event::Plan(vec![PlanEntry {
             content: "Read demon.qc".to_owned(),
-            status: "completed".to_owned(),
+            status: PlanStatus::Completed,
         }])]
     );
     // An update the panel does not show, a chunk that is not text and a notification that
@@ -645,4 +645,41 @@ fn a_write_is_answered_or_refused() {
     );
     assert_eq!(events, []);
     assert_eq!(written(&mut client)[0]["error"]["code"], -32601);
+}
+
+// ACP v1, transports.mdx: "JSON-RPC messages **MUST** be UTF-8 encoded": a line that is not
+// is read with its bad bytes replaced, so it fails as one message and the lines after it are
+// still read; a line's CR LF ending is no part of it
+#[test]
+fn a_line_that_is_not_utf8_does_not_end_the_reading() {
+    let mut output = std::io::Cursor::new(b"caf\xe9\r\nnext\nlast".to_vec());
+    let lines: Vec<String> =
+        core::iter::from_fn(|| super::process::next_line(&mut output)).collect();
+    assert_eq!(lines, ["caf\u{fffd}", "next", "last"]);
+}
+
+// ACP v1, agent-plan.mdx, Plan Entries: a step is `pending`, `in_progress` or `completed`; a
+// status added later reads as pending
+#[test]
+fn a_plan_steps_status_is_read() {
+    let (mut client, _) = in_session();
+    let entry = |status: &str| json!({ "content": "x", "priority": "low", "status": status });
+    let plan = json!({ "jsonrpc": "2.0", "method": "session/update", "params": {
+    "sessionId": "sess_1", "update": { "sessionUpdate": "plan", "entries": [
+        entry("pending"), entry("in_progress"), entry("completed"), entry("added_later"),
+    ]}}});
+    let events = told(&mut client, &plan);
+    let [Event::Plan(entries)] = events.as_slice() else {
+        unreachable!("{events:?}");
+    };
+    let read: Vec<PlanStatus> = entries.iter().map(|entry| entry.status).collect();
+    assert_eq!(
+        read,
+        [
+            PlanStatus::Pending,
+            PlanStatus::InProgress,
+            PlanStatus::Completed,
+            PlanStatus::Pending
+        ]
+    );
 }

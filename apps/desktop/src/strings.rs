@@ -84,6 +84,8 @@ pub enum Text {
     AgentStarting,
     /// An external agent's thread whose turn was stopped.
     AgentStopped,
+    /// An external agent's thread asked to stop, before the agent has ended the turn.
+    AgentStopping,
     /// An external agent's thread that ended at a limit.
     AgentHitLimit,
     /// An external agent's thread the agent declined to go on with.
@@ -1103,7 +1105,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 543] = [
+    pub const ALL: [Self; 544] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1304,6 +1306,7 @@ impl Text {
         Self::AgentStop,
         Self::AgentStarting,
         Self::AgentStopped,
+        Self::AgentStopping,
         Self::AgentHitLimit,
         Self::AgentRefused,
         Self::AgentExited,
@@ -1875,6 +1878,7 @@ impl Text {
             Self::AgentStop => "Stop",
             Self::AgentStarting => "Starting the agent\u{2026}",
             Self::AgentStopped => "Stopped",
+            Self::AgentStopping => "Stopping\u{2026} Stop again to end the agent.",
             Self::AgentHitLimit => "The agent reached its limit for one turn.",
             Self::AgentRefused => "The agent declined to go on.",
             Self::AgentExited => "The agent's program ended.",

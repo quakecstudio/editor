@@ -322,6 +322,15 @@ pub enum Runs {
     External(usize),
 }
 
+/// How the agent a new thread runs on came to be chosen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Picked {
+    /// By the panel's rule.
+    ByDefault,
+    /// By the modder, in the panel's list.
+    ByModder,
+}
+
 /// The agent panel's state.
 pub struct AgentPanel {
     threads: Vec<Thread>,
@@ -334,6 +343,8 @@ pub struct AgentPanel {
     agents: Vec<ExternalAgent>,
     /// Which agent a new thread runs on.
     runs: Runs,
+    /// Whether the modder chose it.
+    picked: Picked,
     task: String,
     config: Option<ProviderConfig>,
     setup: Setup,
@@ -370,6 +381,7 @@ impl AgentPanel {
             external_selected: None,
             agents: Vec::new(),
             runs: Runs::Builtin,
+            picked: Picked::ByDefault,
             task: String::new(),
             config: None,
             setup: Setup::of(None),
@@ -516,6 +528,7 @@ impl AgentPanel {
             .and_then(|text| serde_json::from_str(&text).ok());
         self.setup = Setup::of(self.config.as_ref());
         self.config_file = Some(file);
+        self.default_runs();
     }
 
     /// Uses `config`, keeping it in the configuration file when there is one.
@@ -535,6 +548,7 @@ impl AgentPanel {
         }
         self.setup = Setup::of(Some(&config));
         self.config = Some(config);
+        self.default_runs();
     }
 
     /// How many threads there are, the external agents' included.
@@ -560,21 +574,30 @@ impl AgentPanel {
         self.external.get_mut(index)
     }
 
-    /// Takes the external agents of `agent.external`. With no model provider set up a new
-    /// thread runs on the first of them; a choice of one that is gone falls back likewise.
+    /// Takes the external agents of `agent.external`.
     pub fn set_external_agents(&mut self, agents: Vec<ExternalAgent>) {
         self.agents = agents;
-        let gone = match self.runs {
-            Runs::Builtin => self.config.is_none(),
-            Runs::External(index) => index >= self.agents.len(),
+        self.default_runs();
+    }
+
+    /// Which agent a new thread runs on when the modder has not chosen, or chose one that is
+    /// gone: the built-in agent when a model provider is set up, else the first external
+    /// agent. It is worked out again whenever the provider or the agents change, in whatever
+    /// order the app reads them at its start.
+    fn default_runs(&mut self) {
+        let chosen_is_there = match self.runs {
+            Runs::Builtin => self.config.is_some(),
+            Runs::External(index) => index < self.agents.len(),
         };
-        if gone {
-            self.runs = if self.agents.is_empty() {
-                Runs::Builtin
-            } else {
-                Runs::External(0)
-            };
+        if self.picked == Picked::ByModder && chosen_is_there {
+            return;
         }
+        self.picked = Picked::ByDefault;
+        self.runs = if self.config.is_some() || self.agents.is_empty() {
+            Runs::Builtin
+        } else {
+            Runs::External(0)
+        };
     }
 
     /// The external agents the panel can run.
@@ -786,6 +809,11 @@ impl AgentPanel {
             if self.setup_form(ui, theme) {
                 action = Some(AgentAction::SaveSetup);
             }
+            // With an agent to run there is a panel to go back to without saving a provider.
+            let can_leave = self.config.is_some() || !self.agents.is_empty();
+            if can_leave && ui.button(Text::PaletteCancel.get()).clicked() {
+                self.setup = Setup::of(self.config.as_ref());
+            }
             return action;
         }
         ui.horizontal_wrapped(|ui| {
@@ -924,7 +952,10 @@ impl AgentPanel {
                     ui.selectable_value(&mut runs, choice, name(choice));
                 }
             });
-        self.runs = runs;
+        if runs != self.runs {
+            self.runs = runs;
+            self.picked = Picked::ByModder;
+        }
     }
 
     /// The thread history: a search over the threads kept, and one reopened with its messages,

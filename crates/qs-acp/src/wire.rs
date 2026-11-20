@@ -11,8 +11,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    Event, Lines, OptionId, OptionKind, PROTOCOL_VERSION, PermissionOption, PlanEntry, SessionId,
-    StopReason, ToolCall, ToolCallId, ToolStatus,
+    Event, Lines, OptionId, OptionKind, PROTOCOL_VERSION, PermissionOption, PlanEntry, PlanStatus,
+    SessionId, StopReason, ToolCall, ToolCallId, ToolStatus,
 };
 
 /// A JSON-RPC message of any kind: a request has a method and an id, a notification a
@@ -115,7 +115,18 @@ struct RawLocation {
 #[derive(Deserialize)]
 struct RawPlanEntry {
     content: String,
-    status: String,
+    status: RawPlanStatus,
+}
+
+/// `PlanEntryStatus`.
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum RawPlanStatus {
+    Pending,
+    InProgress,
+    Completed,
+    #[serde(other)]
+    Other,
 }
 
 /// `RequestPermissionRequest`.
@@ -253,7 +264,11 @@ pub(crate) fn update(method: &str, params: Option<Value>) -> Vec<Event> {
                 .into_iter()
                 .map(|entry| PlanEntry {
                     content: entry.content,
-                    status: entry.status,
+                    status: match entry.status {
+                        RawPlanStatus::Pending | RawPlanStatus::Other => PlanStatus::Pending,
+                        RawPlanStatus::InProgress => PlanStatus::InProgress,
+                        RawPlanStatus::Completed => PlanStatus::Completed,
+                    },
                 })
                 .collect(),
         ),
