@@ -257,6 +257,28 @@ fn format_and_texture_issues_are_placed() {
     );
 }
 
+// No spec statement: L-30: that the world names no WAD is an issue only when a texture is
+// missing: a map whose textures are all found, as one textured from the game's levels is, has
+// nothing to fix, and one with a texture found nowhere is told of both
+#[test]
+fn no_wad_is_an_issue_only_with_a_texture_missing() {
+    const NO_WAD: &str = "the world names no WAD";
+    let named = |found: &[MapIssue]| found.iter().any(|issue| issue.message == NO_WAD);
+    // No WAD and no face: nothing is missing.
+    let bare = format!("{{\n\"classname\" \"worldspawn\"\n}}\n{START}");
+    let mut bare_session = session("no-wad-bare", &bare);
+    assert!(!named(&issues(&mut bare_session)));
+    // No WAD and faces whose texture is nowhere: both are said.
+    let unwadded = map(&room(), START).replace("\"wad\" \"gfx/keep.wad\"\n", "");
+    let mut session = session("no-wad-missing", &unwadded);
+    let found = issues(&mut session);
+    assert!(named(&found), "{found:?}");
+    assert!(
+        found.iter().any(|issue| issue.message.contains("wall")),
+        "{found:?}"
+    );
+}
+
 /// A session of the map `text`, whose project gives the ogre a box 64 across.
 fn search_session(text: &str) -> Session<MapContext> {
     let context = MapContext {

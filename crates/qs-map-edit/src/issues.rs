@@ -10,7 +10,7 @@
 use std::collections::BTreeSet;
 
 use qs_commands::{Command, NoParams, Outcome};
-use qs_map::{Brush, Entity, Face, Item, MapFile};
+use qs_map::{Brush, DiagnosticKind, Entity, Face, Item, MapFile};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -236,14 +236,26 @@ fn start_point(file: &MapFile) -> Option<[f64; 3]> {
     (!world.brushes().any(|brush| holds(brush, point))).then_some(point)
 }
 
+/// Whether every texture the map's faces name was found somewhere.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Textures {
+    /// Each is in a WAD, the BSP the map came from or a level of the game.
+    AllFound,
+    /// One or more is nowhere.
+    SomeMissing,
+}
+
 impl MapDocument {
     /// The issues of the map found without the project: its format's, empty brushes and a
-    /// missing player start.
-    fn own_issues(&self, places: &[LinePlace]) -> Vec<MapIssue> {
+    /// missing player start. That the world names no WAD is an issue only when a texture is
+    /// `textures` missing: a map textured from the game's own levels needs none (P6-43), and
+    /// the issue has nothing to fix.
+    fn own_issues(&self, places: &[LinePlace], textures: Textures) -> Vec<MapIssue> {
         let file = self.file();
         let mut issues: Vec<MapIssue> = file
             .check()
             .into_iter()
+            .filter(|d| d.kind != DiagnosticKind::NoWad || textures == Textures::SomeMissing)
             .map(|d| {
                 let (entity, brush) = place_of(places, d.line);
                 MapIssue {
@@ -403,17 +415,23 @@ impl<C: HasMap + 'static> Command<C> for MapIssuesCommand {
         let root = context.map_project().project_root();
         let document = context.map_store().map().ok_or(MapEditError::NoMap)?;
         let places = line_places(document.file());
-        let mut issues = document.own_issues(&places);
-        if let Some(check) = &check {
-            issues.extend(entity_issues(&places, check(document.file())));
-        }
         let sources = TextureSources::load(
             document,
             root.as_deref(),
             game.base.as_deref(),
             game.chosen.as_deref(),
         );
-        issues.extend(document.texture_issues(&sources));
+        let missing = document.texture_issues(&sources);
+        let textures = if missing.is_empty() {
+            Textures::AllFound
+        } else {
+            Textures::SomeMissing
+        };
+        let mut issues = document.own_issues(&places, textures);
+        if let Some(check) = &check {
+            issues.extend(entity_issues(&places, check(document.file())));
+        }
+        issues.extend(missing);
         Ok(Outcome::outside_history(MapIssues { issues }))
     }
 }
