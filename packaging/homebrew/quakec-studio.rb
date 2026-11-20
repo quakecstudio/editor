@@ -8,8 +8,7 @@ cask "quakec-studio" do
   version "@VERSION@"
   sha256 "@SHA256@"
 
-  url "https://github.com/quakecstudio/editor/releases/download/v#{version}/quakec-studio-#{version}-macos-arm64.pkg",
-      verified: "github.com/quakecstudio/editor/"
+  url "https://github.com/quakecstudio/editor/releases/download/v#{version}/quakec-studio-#{version}-macos-arm64.pkg"
   name "QuakeC Studio"
   desc "IDE for QuakeC with its own compiler, live in-game preview and a built-in agent"
   homepage "https://www.quakecstudio.com/"
