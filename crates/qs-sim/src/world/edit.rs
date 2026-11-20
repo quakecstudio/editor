@@ -11,7 +11,7 @@ use qc_vm::ServerState;
 
 use super::{CLIENT, SpawnWatch, Spawner, World};
 use crate::builtins::SimCall;
-use crate::collision::MoveKind;
+use crate::collision::{MoveKind, test_entity_position};
 use crate::spawn::{EdictPlace, SpawnHost, apply_key};
 use crate::world::QcValue;
 use crate::{POINT, ZERO};
@@ -32,7 +32,14 @@ pub enum EditError {
     /// A spawn in play precached a model or sound the map had not (BRIDGE-4.12): the client
     /// has the map's lists, so a new name waits for the map to load again.
     NotPrecached(String),
+    /// The player's box is in something solid at the point asked for and at every height
+    /// tried around it (BRIDGE-4.19).
+    NoRoom,
 }
+
+/// How far up or down of the point asked for, in whole units, [`World::place_player`] looks
+/// for room for the player (BRIDGE-4.19).
+const ROOM_SEARCH: u8 = 64;
 
 impl core::fmt::Display for EditError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -45,6 +52,10 @@ impl core::fmt::Display for EditError {
             Self::NotPrecached(name) => write!(
                 f,
                 "spawning: {name} is not precached by the map; reload the map to load it"
+            ),
+            Self::NoRoom => write!(
+                f,
+                "no room for the player there, or within {ROOM_SEARCH} units above or below"
             ),
         }
     }
@@ -297,6 +308,46 @@ impl World {
         call.set_float(CLIENT, "fixangle", 1.0);
         call.link(CLIENT, false)
             .map_err(|e| EditError::Spawn(e.to_string()))
+    }
+
+    /// Moves the player as [`World::move_player`] does to the place nearest `origin` where
+    /// its box is in nothing solid, the world's or an entity's, as `SV_TestEntityPosition`
+    /// finds it (WORLD-7.6): `origin` itself, else a unit at a time up to [`ROOM_SEARCH`]
+    /// above and then below it, the nearer first and above before below. The place it was
+    /// moved to. Implements BRIDGE-4.19.
+    ///
+    /// # Errors
+    ///
+    /// [`EditError::NoSuchEdict`] before the player has entered the game;
+    /// [`EditError::NoRoom`] when no place tried is free, the player left where it was; or
+    /// what the trace or linking it fails with.
+    pub fn place_player(
+        &mut self,
+        progs: &Progs<'_>,
+        origin: [f32; 3],
+        angles: [f32; 3],
+    ) -> Result<[f32; 3], EditError> {
+        if self.player.is_none() || !self.in_use(CLIENT) {
+            return Err(EditError::NoSuchEdict(CLIENT));
+        }
+        let [x, y, z] = origin;
+        let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
+        let was = call.vector(CLIENT, "origin");
+        let mut free = None;
+        for lift in (0..=ROOM_SEARCH).flat_map(|step| [f32::from(step), -f32::from(step)]) {
+            let at = [x, y, z + lift];
+            call.set_vector(CLIENT, "origin", at);
+            let stuck =
+                test_entity_position(&call, CLIENT).map_err(|e| EditError::Spawn(e.to_string()))?;
+            if !stuck {
+                free = Some(at);
+                break;
+            }
+        }
+        call.set_vector(CLIENT, "origin", was);
+        let at = free.ok_or(EditError::NoRoom)?;
+        self.move_player(progs, at, angles)?;
+        Ok(at)
     }
 }
 

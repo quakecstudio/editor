@@ -1031,11 +1031,13 @@ impl Game {
                 self.require_between_frames()?;
                 let origin = vector_param(params, "origin");
                 let angles = vector_param(params, "angles");
-                self.world
-                    .move_player(progs, origin, angles)
+                // BRIDGE-4.19: where the player's box is in nothing solid, at or near the point.
+                let placed = self
+                    .world
+                    .place_player(progs, origin, angles)
                     .map_err(|e| edit_error(&e))?;
                 self.report_changes(progs);
-                Ok(json!({ "edict": qs_sim::CLIENT_EDICT }))
+                Ok(json!({ "edict": qs_sim::CLIENT_EDICT, "origin": placed }))
             }
             "console" => {
                 self.require_between_frames()?;
@@ -1132,9 +1134,10 @@ fn edit_error(error: &EditError) -> RpcError {
     let code = match error {
         EditError::NoSuchEdict(_) => ErrorCode::NoSuchEdict,
         EditError::NoSuchField(_) | EditError::BadValue(_) => ErrorCode::BadValue,
-        EditError::Kept(_) | EditError::Spawn(_) | EditError::NotPrecached(_) => {
-            ErrorCode::InvalidParams
-        }
+        EditError::Kept(_)
+        | EditError::Spawn(_)
+        | EditError::NotPrecached(_)
+        | EditError::NoRoom => ErrorCode::InvalidParams,
     };
     RpcError::new(code, error.to_string())
 }

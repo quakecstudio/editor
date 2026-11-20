@@ -288,6 +288,14 @@ A command is a request from the client, answered with a result on success or an 
   linked again (`SV_LinkEdict` without touching, WORLD-6), in edict order, since the new
   collision starts with none linked; an edict with no solid stays unlinked as before. The result
   is `swapped`, the number of edicts given a model.
+- **BRIDGE-4.19** `player/spawn_at` puts the player where its box is in nothing solid, the world's
+  or an entity's, as `SV_TestEntityPosition` finds it (WORLD-7.6): at `origin`, else at the
+  nearest height a whole unit at a time up to 64 above or below it, above before below at each
+  distance. The result's `origin` is where the player was put. When no height tried is free it is
+  answered with `-32602` (invalid params) and the player stays where it was. Not id's: a
+  teleporter's `setorigin` checks nothing, and `SV_CheckStuck` then moves a player in solid back
+  to its `oldorigin` (PHYS-8.7), the last place it was free, so a player put beside a button was
+  found at the map's start.
 
 ## BRIDGE-5 Values
 

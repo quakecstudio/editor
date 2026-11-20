@@ -108,6 +108,60 @@ fn the_player_moves_as_a_teleporter_moves_it() {
     assert_eq!(run.world.float(1, "fixangle"), 1.0);
 }
 
+// spec BRIDGE-4.19: the player is put at the point when its box is free there; in the world's
+// solid, at the nearest height above; beside an entity its box would be in, above it; and with
+// no height free it is refused and stays where it was. A player moved into an entity without
+// the check is back where it was last free a frame later (PHYS-8.7)
+#[test]
+fn the_player_is_put_where_its_box_is_free() {
+    let more = "void() info_block = { self.solid = 2; \
+        setsize(self, '-16 -16 -16', '16 16 16'); setorigin(self, self.origin); };\n";
+    let mut run = player_from(
+        &ledge(),
+        player_progs("self.health = 100;", "", more),
+        LoadOptions::default(),
+    );
+    let progs_bytes = run.progs.clone();
+    let progs = Progs::read(&progs_bytes).unwrap();
+    let angles = [0.0, 90.0, 0.0];
+    // Free: the floor is at 24 for the player's origin.
+    let free = [32.0, 16.0, 40.0];
+    assert_eq!(run.world.place_player(&progs, free, angles), Ok(free));
+    assert_eq!(run.world.vector(1, "origin"), free);
+    assert_eq!(run.world.vector(1, "angles"), angles);
+    assert_eq!(run.world.float(1, "fixangle"), 1.0);
+    // In the floor: the first free height above.
+    assert_eq!(
+        run.world.place_player(&progs, [32.0, 16.0, 10.0], angles),
+        Ok([32.0, 16.0, 24.0])
+    );
+    // Too deep for the search: refused, and the player has not moved.
+    assert_eq!(
+        run.world.place_player(&progs, [32.0, 16.0, -100.0], angles),
+        Err(EditError::NoRoom)
+    );
+    assert_eq!(run.world.vector(1, "origin"), [32.0, 16.0, 24.0]);
+    // A block from 24 to 56 where the player would stand: the player goes above it.
+    let pairs = [
+        ("classname".to_owned(), "info_block".to_owned()),
+        ("origin".to_owned(), "-64 16 40".to_owned()),
+    ];
+    run.world.spawn_entity(&progs, &pairs).unwrap();
+    let beside = [-60.0, 16.0, 40.0];
+    let placed = run.world.place_player(&progs, beside, angles).unwrap();
+    assert_eq!(placed, [-60.0, 16.0, 80.0]);
+    run.frames(1, 1.0 / 72.0).unwrap();
+    let after = run.world.vector(1, "origin");
+    assert_eq!([after[0], after[1]], [-60.0, 16.0], "still above the block");
+    // Without the check the game takes the player back to where it was last free.
+    run.world.place_player(&progs, free, angles).unwrap();
+    run.frames(1, 1.0 / 72.0).unwrap();
+    run.world.move_player(&progs, beside, angles).unwrap();
+    run.frames(1, 1.0 / 72.0).unwrap();
+    let back = run.world.vector(1, "origin");
+    assert_eq!([back[0], back[1]], [free[0], free[1]]);
+}
+
 // spec BRIDGE-4.4: an edit held while paused is checked when it is asked for: a value of
 // another type, or naming nothing, is refused then, and checking writes nothing
 #[test]

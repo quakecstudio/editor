@@ -693,6 +693,8 @@ fn the_player_is_moved() {
     )
     .unwrap();
     assert_eq!(moved["edict"], 1);
+    // spec BRIDGE-4.19: the result says where the player was put
+    assert_eq!(moved["origin"], json!([64.0, 32.0, 24.0]));
     let result = call(
         &mut game,
         &mut session,
