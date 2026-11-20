@@ -593,7 +593,7 @@ impl AgentPanel {
     }
 
     /// Starts a thread of the external agent chosen, in `project` on `task`, with the MCP
-    /// `servers` it should connect to.
+    /// servers it should connect to and the checkpoint recorded for it.
     ///
     /// # Errors
     ///
@@ -602,13 +602,13 @@ impl AgentPanel {
         &mut self,
         project: &Path,
         task: &str,
-        servers: Vec<qs_acp::McpServer>,
+        with: (Vec<qs_acp::McpServer>, Option<qs_agent::CheckpointNumber>),
         wake: impl Fn() + Send + 'static,
     ) -> Result<(), String> {
         let agent = self
             .external_agent()
             .ok_or_else(|| Text::NoAgent.get().to_owned())?;
-        let thread = external::ExternalThread::start(agent, project, task, servers, wake)?;
+        let thread = external::ExternalThread::start(agent, project, task, with, wake)?;
         self.external.push(thread);
         self.external_selected = Some(self.external.len().saturating_sub(1));
         self.selected = None;
@@ -842,8 +842,9 @@ impl AgentPanel {
         if let Some(thread) = self
             .external_selected
             .and_then(|index| self.external.get_mut(index))
+            && let Some(number) = thread.ui(ui, theme)
         {
-            thread.ui(ui, theme);
+            action = Some(AgentAction::Restore(number));
         }
         if let Some(index) = self.selected
             && let Some(thread) = self.threads.get_mut(index)

@@ -36,6 +36,10 @@ struct Args {
     /// What to ask.
     #[arg(long)]
     prompt: String,
+    /// Offer the agent this client's file system: its reads are answered from the disk, and
+    /// its writes are printed and answered as taken, with nothing written.
+    #[arg(long)]
+    files: bool,
     /// The agent's program and its arguments.
     #[arg(last = true, required = true)]
     agent: Vec<String>,
@@ -101,10 +105,25 @@ fn take(agent: &mut Agent, args: &Args, session: &mut Option<SessionId>, event: 
                 .map_or(Outcome::Cancelled, |option| Outcome::Selected(option.id));
             agent.client().answer(&request, &outcome)
         }
-        // Never asked for: the example leaves the agent its own file tools.
-        Event::ReadFile { request, .. } | Event::WriteFile { request, .. } => agent
-            .client()
-            .refuse_file(&request, "this client offers no file system"),
+        Event::ReadFile { request, path } => {
+            println!("\n[read] {}", path.display());
+            match std::fs::read_to_string(&path) {
+                Ok(text) => agent.client().answer_read(&request, &text),
+                Err(error) => agent.client().refuse_file(&request, &error.to_string()),
+            }
+        }
+        Event::WriteFile {
+            request,
+            path,
+            content,
+        } => {
+            println!(
+                "\n[write] {}: {} bytes, not written",
+                path.display(),
+                content.len()
+            );
+            agent.client().answer_write(&request)
+        }
         Event::TurnEnded(reason) => {
             println!("\n[ended] {reason:?}");
             return Next::End(ExitCode::SUCCESS);
@@ -153,12 +172,17 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let files = if args.files {
+        Files::ThroughClient
+    } else {
+        Files::AgentsOwn
+    };
     let info = ClientInfo {
         name: "qs-acp-ask".to_owned(),
         title: "QuakeC Studio".to_owned(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
     };
-    if let Err(error) = agent.client().initialize(&info, Files::AgentsOwn) {
+    if let Err(error) = agent.client().initialize(&info, files) {
         println!("[error] {error}");
         return ExitCode::FAILURE;
     }

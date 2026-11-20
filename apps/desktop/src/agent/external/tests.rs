@@ -24,6 +24,13 @@ use crate::strings::Text;
 /// A project on disk for test `name`, open in a window whose agent panel has one external
 /// agent: `/bin/sh` running `script`, which is given the project's folder as `$1`.
 fn window(name: &str, script: &str) -> (PathBuf, egui::Context, App) {
+    let ctx = egui::Context::default();
+    let (root, app) = window_on(&ctx, name, script);
+    (root, ctx, app)
+}
+
+/// [`window`] drawn on `ctx`.
+fn window_on(ctx: &egui::Context, name: &str, script: &str) -> (PathBuf, App) {
     let root = fs::canonicalize(std::env::temp_dir())
         .unwrap()
         .join(format!("qs-external-{name}-{}", std::process::id()));
@@ -32,8 +39,7 @@ fn window(name: &str, script: &str) -> (PathBuf, egui::Context, App) {
     fs::write(root.join("progs.src"), "progs.dat\nworld.qc\n").unwrap();
     fs::write(root.join("world.qc"), "void() worldspawn = {};\n").unwrap();
     fs::write(root.join("agent.sh"), script).unwrap();
-    let ctx = egui::Context::default();
-    let mut app = App::checked_on_the_frame(&ctx, None).unwrap();
+    let mut app = App::checked_on_the_frame(ctx, None).unwrap();
     *app.shell_mut().agent_mut() = AgentPanel::new(Box::new(|_| Err("no model".to_owned())));
     app.shell_mut()
         .agent_mut()
@@ -47,7 +53,7 @@ fn window(name: &str, script: &str) -> (PathBuf, egui::Context, App) {
             env: std::collections::BTreeMap::new(),
         }]);
     app.shell_mut().open_project(&root).unwrap();
-    (root, ctx, app)
+    (root, app)
 }
 
 /// The handshake every script begins with: `initialize`, `session/new` and the prompt, each
@@ -75,6 +81,11 @@ fn run(ctx: &egui::Context, app: &mut App, task: &str) {
             waiting.permit_for_test(0);
         }
     }
+}
+
+/// The app a harness draws.
+fn app_of<'a>(harness: &'a mut egui_kittest::Harness<'static, Option<App>>) -> &'a mut App {
+    harness.state_mut().as_mut().unwrap()
 }
 
 /// The first external thread.
@@ -288,4 +299,111 @@ fn use_claude_code_adds_the_adapter() {
     assert!(chosen.args[1].starts_with("@agentclientprotocol/claude-agent-acp@"));
     // The project is still the window's own.
     assert!(app.shell().workbench().root().is_some());
+}
+
+// No spec statement: P4-14, the acceptance criterion: with code selected, the editor's context
+// menu starts a thread that asks what the code does, naming the file and its lines and giving
+// the code; the agent panel is shown
+#[test]
+fn the_editors_menu_asks_what_selected_code_does() {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    use qs_layout::{DockPanel, Panel};
+
+    let script = format!(
+        "{HANDSHAKE}{}",
+        r#"
+printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"stopReason":"end_turn"}}'
+"#
+    );
+    let mut harness = Harness::builder()
+        .with_size([1440.0, 900.0])
+        .build_ui_state(
+            |ui, app: &mut Option<App>| {
+                if let Some(app) = app {
+                    app.frame(ui);
+                }
+            },
+            None,
+        );
+    let (root, mut app) = window_on(&harness.ctx, "explain", &script);
+    app.shell_mut()
+        .execute(
+            "file.open",
+            serde_json::json!({ "path": root.join("world.qc") }),
+        )
+        .unwrap();
+    *harness.state_mut() = Some(app);
+    harness.run();
+    app_of(&mut harness)
+        .shell_mut()
+        .execute(qs_layout::FOCUS_EDITOR, serde_json::json!({}))
+        .unwrap();
+    harness.run();
+
+    // With no selection the editor has no menu.
+    let editor = egui::pos2(700.0, 300.0);
+    let secondary_click = |harness: &mut Harness<'static, Option<App>>| {
+        harness.event(egui::Event::PointerMoved(editor));
+        for pressed in [true, false] {
+            harness.event(egui::Event::PointerButton {
+                pos: editor,
+                button: egui::PointerButton::Secondary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            });
+        }
+        harness.run();
+    };
+    secondary_click(&mut harness);
+    assert!(harness.query_by_label(Text::ExplainMenu.get()).is_none());
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.run();
+    secondary_click(&mut harness);
+    harness.get_by_label(Text::ExplainMenu.get()).click();
+    // One frame: the agent wakes the window for as long as it talks.
+    harness.step();
+
+    while thread(app_of(&mut harness)).running() {
+        assert!(app_of(&mut harness).shell_mut().wait_external_agent(0));
+    }
+    let prompt = read_json(&root, "prompt.json");
+    let asked = prompt["params"]["prompt"][0]["text"].as_str().unwrap();
+    assert!(asked.starts_with(Text::ExplainAsk.get()), "{asked}");
+    assert!(asked.contains("world.qc, lines 1 to 2:"), "{asked}");
+    assert!(asked.contains("void() worldspawn = {};"), "{asked}");
+    let shown = app_of(&mut harness)
+        .shell()
+        .layout()
+        .docks
+        .shown(Panel::Right);
+    assert_eq!(shown, Some(DockPanel::Agent));
+}
+
+// No spec statement: P4-14, AGT-3, an agent that writes the disk itself, as Claude Code's
+// adapter does, leaves no hunk to reject: the checkpoint recorded before it started puts the
+// project back as it was
+#[test]
+fn the_checkpoint_before_the_agent_restores_what_it_wrote() {
+    let script = format!(
+        "{HANDSHAKE}{}",
+        r#"
+printf 'float written_by_the_agent;\n' > "$1/world.qc"
+printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"stopReason":"end_turn"}}'
+"#
+    );
+    let (root, ctx, mut app) = window("checkpoint", &script);
+    run(&ctx, &mut app, "Rewrite the world.");
+    assert_eq!(
+        fs::read_to_string(root.join("world.qc")).unwrap(),
+        "float written_by_the_agent;\n"
+    );
+    let checkpoint = thread(&mut app).checkpoint().unwrap();
+    app.shell_mut()
+        .agent_action(AgentAction::Restore(checkpoint), &ctx);
+    assert_eq!(
+        fs::read_to_string(root.join("world.qc")).unwrap(),
+        "void() worldspawn = {};\n"
+    );
 }

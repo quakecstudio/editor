@@ -88,7 +88,7 @@ use crate::pick::Answer;
 use crate::picker::{PickerKind, PickerRow};
 use crate::project::ProjectFeature;
 use crate::project::{self, Jump, SymbolScope};
-use crate::strings::{Text, Truncation, panel_button, review_waiting};
+use crate::strings::{Text, Truncation, explain_task, panel_button, review_waiting};
 use crate::theme::{Theme, Token, semibold};
 use crate::welcome::{self, WelcomeAction};
 #[cfg(test)]
@@ -671,6 +671,30 @@ impl Shell {
     #[cfg(test)]
     pub(crate) fn wait_agent(&mut self, index: ThreadIndex) -> bool {
         self.features.agent.panel.wait(&mut self.session, index)
+    }
+
+    /// Asks the agent what `selection`, the lines `lines` of the editor's file at `path`, does
+    /// (P4-14): a thread of its own, with the agent panel shown; why it did not start is said
+    /// under the panel's task box.
+    fn explain(&mut self, path: &Path, selection: &str, lines: (usize, usize)) {
+        let root = self.session.context().workbench.root();
+        let file = root
+            .and_then(|root| path.strip_prefix(root).ok())
+            .unwrap_or(path)
+            .display()
+            .to_string();
+        let task = explain_task(&file, lines, selection);
+        let settings = self.settings_file.clone();
+        let started = match self.ctx.clone() {
+            Some(ctx) => {
+                self.features
+                    .agent
+                    .ask(&mut self.session, &task, settings.as_deref(), &ctx)
+            }
+            None => Ok(()),
+        };
+        self.features.agent.panel.set_error(started.err());
+        self.request(ShellRequest::ShowPanel(DockPanel::Agent));
     }
 
     /// Waits for external agent thread `index` to say something and takes it. For tests.
@@ -2513,6 +2537,10 @@ impl Shell {
                     let _: Option<serde_json::Value> =
                         self.run(FORMAT_FILE, &SaveFileParams { path });
                     self.sync_editor();
+                    None
+                }
+                Request::Explain { selection, lines } => {
+                    self.explain(&path, &selection, lines);
                     None
                 }
                 Request::InlineEdit {

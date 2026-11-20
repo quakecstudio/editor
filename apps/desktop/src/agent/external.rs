@@ -13,6 +13,7 @@ use qs_acp::{
     AcpError, Agent, AgentCommand, ClientInfo, Event, FileRequestId, Files, McpServer, OptionKind,
     Outcome, PermissionId, PermissionOption, SessionId, StopReason, ToolCall, ToolStatus,
 };
+use qs_agent::CheckpointNumber;
 use qs_commands::Session;
 use qs_settings::ExternalAgent;
 use qs_workbench::{APPLY_EDIT, READ_FILE};
@@ -112,6 +113,9 @@ pub(crate) struct ExternalThread {
     items: Vec<Item>,
     asked: Option<Asked>,
     state: State,
+    /// The checkpoint recorded before the agent started, which puts the project back: an
+    /// agent that writes the disk itself, as Claude Code does, leaves no hunks to reject.
+    checkpoint: Option<CheckpointNumber>,
 }
 
 impl ExternalThread {
@@ -125,7 +129,7 @@ impl ExternalThread {
         agent: &ExternalAgent,
         project: &Path,
         task: &str,
-        servers: Vec<McpServer>,
+        (servers, checkpoint): (Vec<McpServer>, Option<CheckpointNumber>),
         wake: impl Fn() + Send + 'static,
     ) -> Result<Self, String> {
         let command = AgentCommand {
@@ -153,6 +157,7 @@ impl ExternalThread {
             items: Vec::new(),
             asked: None,
             state: State::Starting,
+            checkpoint,
         })
     }
 
@@ -192,6 +197,12 @@ impl ExternalThread {
     #[cfg(test)]
     pub(crate) fn permit_for_test(&mut self, chosen: usize) {
         self.permit(chosen);
+    }
+
+    /// The checkpoint recorded before the agent started. For tests.
+    #[cfg(test)]
+    pub(crate) const fn checkpoint(&self) -> Option<CheckpointNumber> {
+        self.checkpoint
     }
 
     /// Stops the turn, as the Stop button does. For tests.
@@ -410,8 +421,9 @@ impl ExternalThread {
     }
 
     /// Draws the thread: what the agent said and did, the permission it asks for, and how the
-    /// turn ended; Stop while it runs.
-    pub(crate) fn ui(&mut self, ui: &mut Ui, theme: &Theme) {
+    /// turn ended; Stop while it runs, and once it is over Restore checkpoint, whose
+    /// checkpoint is returned when it is clicked.
+    pub(crate) fn ui(&mut self, ui: &mut Ui, theme: &Theme) -> Option<CheckpointNumber> {
         muted(ui, theme, &self.name);
         egui::ScrollArea::vertical()
             .max_height(THREAD_MAX_HEIGHT)
@@ -453,6 +465,8 @@ impl ExternalThread {
         if self.running() && ui.button(Text::AgentStop.get()).clicked() {
             self.stop();
         }
+        self.checkpoint
+            .filter(|_| !self.running() && ui.button(Text::AgentRestore.get()).clicked())
     }
 }
 

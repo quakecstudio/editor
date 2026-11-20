@@ -10,7 +10,10 @@ use eframe::egui;
 use qs_agent::history;
 use qs_commands::Session;
 use qs_settings::{Scope as SettingsScope, Setting, SettingsStore};
-use qs_workbench::checkpoints::{RESTORE_CHECKPOINT, RestoreCheckpointParams};
+use qs_workbench::checkpoints::{
+    CREATE_CHECKPOINT, CheckpointMade, CreateCheckpointParams, RESTORE_CHECKPOINT,
+    RestoreCheckpointParams,
+};
 use qs_workbench::engine::{ENGINE_SCREENSHOT, EngineScreenshotParams, Screenshot};
 use qs_workbench::staged::HunksParams;
 use qs_workbench::{ACCEPT_HUNKS, REJECT_HUNKS};
@@ -109,6 +112,23 @@ impl AgentFeature {
         self.start_thread(session, &root, &entity.ask_about(), settings_file, ctx)
     }
 
+    /// Starts a thread on `task` exactly as given, with nothing in it read as a mention: the
+    /// editor's question about selected code (P4-14); why it could not.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::start`].
+    pub(crate) fn ask(
+        &mut self,
+        session: &mut Session<Workspace>,
+        task: &str,
+        settings_file: Option<&Path>,
+        ctx: &egui::Context,
+    ) -> Result<(), String> {
+        let root = session.context().agent_root()?;
+        self.start_thread(session, &root, task, settings_file, ctx)
+    }
+
     /// Starts a thread on `task` as given, over the project in `root`, its calls decided by the
     /// profile and tool rules the settings hold now (P4-30).
     fn start_thread(
@@ -124,9 +144,25 @@ impl AgentFeature {
         // reach it over MCP.
         if self.panel.external_agent().is_some() {
             let servers = super::external::ide_tools(root);
+            // The project as it is before the agent touches it, to restore (AGT-3).
+            let label = CreateCheckpointParams {
+                label: Some(task.to_owned()),
+            };
+            let checkpoint = serde_json::to_value(label)
+                .ok()
+                .and_then(|label| {
+                    session
+                        .execute(CREATE_CHECKPOINT, label)
+                        .map_err(|error| tracing::warn!(%error, "no checkpoint before the agent"))
+                        .ok()
+                })
+                .and_then(|made| serde_json::from_value::<CheckpointMade>(made).ok())
+                .map(|made| made.number);
             return self
                 .panel
-                .start_external(root, task, servers, move || ctx.request_repaint());
+                .start_external(root, task, (servers, checkpoint), move || {
+                    ctx.request_repaint();
+                });
         }
         if let Some(permissions) = AgentSettings::of(settings_file, root).permissions() {
             self.panel.set_permissions(permissions);

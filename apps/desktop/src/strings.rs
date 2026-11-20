@@ -66,6 +66,10 @@ pub enum Text {
     AgentScreenshot,
     /// A thread's line for an image given as context.
     AgentImage,
+    /// The editor's context menu over a selection: asks the agent what the code does (P4-14).
+    ExplainMenu,
+    /// What the agent is asked about selected code.
+    ExplainAsk,
     /// The agent panel's button that adds Claude Code as an external agent (P4-14).
     AgentUseClaude,
     /// Claude Code's name among the external agents.
@@ -1099,7 +1103,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 541] = [
+    pub const ALL: [Self; 543] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1291,6 +1295,8 @@ impl Text {
         Self::AgentQueueHint,
         Self::AgentScreenshot,
         Self::AgentImage,
+        Self::ExplainMenu,
+        Self::ExplainAsk,
         Self::AgentUseClaude,
         Self::AgentClaudeCode,
         Self::AgentClaudeNeeds,
@@ -1858,6 +1864,10 @@ impl Text {
             Self::AgentQueueHint => "A message for its next turn",
             Self::AgentScreenshot => "Attach screenshot",
             Self::AgentImage => "An image, given as context",
+            Self::ExplainMenu => "What Does This Code Do?",
+            Self::ExplainAsk => {
+                "What does this code do? Explain it in plain, simple language. Do not change anything."
+            }
             Self::AgentUseClaude => "Use Claude Code",
             Self::AgentClaudeCode => "Claude Code",
             Self::AgentClaudeNeeds => "Needs Node 22 or later and the claude command, signed in.",
@@ -2324,6 +2334,22 @@ pub fn command_choices(names: &[&str], more: usize) -> String {
     } else {
         format!("{listed}  and {more} more")
     }
+}
+
+/// What the agent is asked about `selection`, the lines `first` to `last` of `file` (P4-14):
+/// the question, where the code is, and the code itself.
+#[must_use]
+pub fn explain_task(file: &str, (first, last): (usize, usize), selection: &str) -> String {
+    let ask = Text::ExplainAsk.get();
+    let lines = if first == last {
+        format!("line {first}")
+    } else {
+        format!("lines {first} to {last}")
+    };
+    format!(
+        "{ask}\n\n{file}, {lines}:\n\n```\n{}\n```",
+        selection.trim_end()
+    )
 }
 
 /// A thread's estimated token use (P4-31).
