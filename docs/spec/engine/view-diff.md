@@ -174,7 +174,7 @@ reads the table between the `view-diff` markers.
 ## VIEWDIFF-6 The later engines' ports
 
 **Source:** ours: `xtask/src/view_diff.rs`, `main`; the ports of
-[ADR-0026](../../adr/0026-preview-host-later-engine-improvements.md) (L-21): REND-1.15, REND-2.6,
+[ADR-0026](../../adr/0026-preview-host-later-engine-improvements.md) (L-21): REND-1.16, REND-2.7,
 REND-5.8, REND-14, NET-6 and CLIENT-9. Measured with `cargo xtask view-diff` on LibreQuake lite
 on macOS, 2026-11-20.
 
@@ -189,9 +189,10 @@ on macOS, 2026-11-20.
   alike in both.
 The other ports run at their defaults and stay within VIEWDIFF-5's
   tolerances, with no row of their own: Ironwail's lightstyle blend (REND-5.8) moves a
-  fading style's brightness by less than a letter's step a frame, the z-fix (REND-1.15) only
-  where a brush entity's face is flush with the world's, lit water (REND-2.6) only on a map
+  fading style's brightness by less than a letter's step a frame, the z-fix (REND-1.16) only
+  where a brush entity's face is flush with the world's, lit water (REND-2.7) only on a map
   whose world has it, which none of LibreQuake's starts shows, and the alpha and scale passes
   (REND-14) only for an entity with its own, which none of them has. Turning each off with its
-  option (`--lerplightstyles 0`, `--nozfix`, `--nolitwater`) left every measurement on
+  setting (`r_lerplightstyles 0`, `gl_zfix 0`, `r_litwater 0`; L-21 measured them as launch
+  options) left every measurement on
   `lq_e0m1` unchanged.

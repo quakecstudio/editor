@@ -221,3 +221,13 @@ declarations); `WinQuake/cl_input.c`, `CL_BaseMove`; `WinQuake/in_win.c`, `IN_Mo
   INPUT-2.4); `viewsize` and `gamma` for the view (VIEW-3.6, VIEW-4.7), `gamma` again for the
   whole frame in QuakeSpasm's look (REND-13.9); `volume` for the mixer (SND-5.4) and
   `bgmvolume` for the music (SND-6.2). A setting the world lacks reads as 0.
+- **CON-7.5** The table also holds the later engines' settings the preview host draws by
+  (ADR-0026, L-30), with their defaults: Ironwail's `r_lerplightstyles` "`1`" (REND-5.8) and
+  `gl_zfix` "`1`" (REND-1.16), both `CVAR_ARCHIVE` and written after id's archived settings
+  (INPUT-4.1), QuakeSpasm's `r_litwater` "`1`" (REND-2.7), and `sv_protocol` "`666`"
+  (NET-6.10). The host reads the first three each frame with the others of CON-7.4, so a
+  change at the console draws the next frame: `r_lerplightstyles` 0 holds each letter, below
+  2 skips abrupt changes and from 2 blends every one ("`if (!r_lerplightstyles.value) f =
+  0.0;`", "`if (r_lerplightstyles.value < 2.f && ...)`"); `gl_zfix` and `r_litwater` are off at
+  0 and on otherwise, as "`if (!gl_zfix.value ...)`" and "`r_litwater.value`" test them. They
+  are in the one table, so the progs' `cvar` reads them too, where id's engine has none.

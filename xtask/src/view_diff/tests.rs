@@ -321,4 +321,5 @@ fn the_host_runs_at_protocol_15() {
     assert_eq!(host_protocol(&["--nozfix".to_owned()]), HOST_PROTOCOL);
     assert!(host_protocol(&["--protocol".to_owned(), "666".to_owned()]).is_empty());
     assert!(host_protocol(&["--protocol=999".to_owned()]).is_empty());
+    assert!(host_protocol(&["-protocol".to_owned(), "666".to_owned()]).is_empty());
 }
