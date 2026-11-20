@@ -24,6 +24,8 @@ fn dot([a, b, c]: [f32; 3], [x, y, z]: [f32; 3]) -> f32 {
 const LIGHT_DEPTH: f32 = 2048.0;
 /// `r >>= 8` in `RecursiveLightPoint` (REND-4.10).
 const LIGHT_SHIFT: u32 = 8;
+/// The style that ends a face's list of styles (BSP-9.6).
+const NO_STYLE: u8 = 255;
 /// The light of a map with no lighting lump (REND-4.10).
 const FULL_BRIGHT: i32 = 255;
 /// The world units of one lightmap sample, `ds >>= 4`.
@@ -88,9 +90,9 @@ fn recursive_light_point(
         let Some(tex) = bsp.texinfo.get(face.texinfo) else {
             continue;
         };
-        let [svec, tvec] = tex.vecs;
-        let s = truncate(dot(mid, vec3(svec)) + svec[3]);
-        let t = truncate(dot(mid, vec3(tvec)) + tvec[3]);
+        let [(sdir, sofs), (tdir, tofs)] = tex.vecs.map(axis);
+        let s = truncate(dot(mid, sdir) + sofs);
+        let t = truncate(dot(mid, tdir) + tofs);
         let [smin, tmin] = face.texturemins.map(i32::from);
         if s < smin || t < tmin {
             continue;
@@ -115,7 +117,7 @@ fn recursive_light_point(
         let mut r = 0_u32;
         for map in 0..face.style_count() {
             let sample = samples.get(map.checked_mul(size)?.checked_add(at)?)?;
-            let style = face.styles.get(map).copied().unwrap_or(255);
+            let style = face.styles.get(map).copied().unwrap_or(NO_STYLE);
             r = r.wrapping_add(u32::from(*sample).wrapping_mul(styles(style)));
         }
         // `r` is an `int` in id's code: the unsigned products wrap into it.
@@ -124,9 +126,9 @@ fn recursive_light_point(
     recursive_light_point(bsp, styles, far, mid, end, depth)
 }
 
-/// A texinfo vector's direction, without its offset.
-const fn vec3([x, y, z, _]: [f32; 4]) -> [f32; 3] {
-    [x, y, z]
+/// A texinfo vector as its direction and its offset.
+const fn axis([x, y, z, offset]: [f32; 4]) -> ([f32; 3], f32) {
+    ([x, y, z], offset)
 }
 
 /// C's float to int conversion, toward zero (REND-4.10); a value past `i32` is out of every

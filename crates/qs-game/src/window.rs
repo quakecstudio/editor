@@ -39,7 +39,7 @@ use crate::keys::{
     MouseLook, config_path, configuration, focus, keynum, modifier_keys, mouse_key, mouse_motion,
     runs_binding, wheel_key,
 };
-use crate::load::{Acted, Describer, Loaded, Rand, Start, Startup, map_mesh};
+use crate::load::{Acted, Describer, Loaded, Rand, Startup, map_mesh};
 use crate::map_bsp::MapBsp;
 use crate::screenshot::Drawer;
 use crate::settings::HostSettings;
@@ -1376,7 +1376,7 @@ impl GameView {
             // started with `-bridge` does (BRIDGE-3.1), on this level and each later one.
             args.bridge = Some(std::path::PathBuf::from(PIPES));
         }
-        let loaded = args.load_map(&args.map, None, Start::New(Startup::QuakeRc), None, None)?;
+        let loaded = args.first_map(Startup::QuakeRc)?;
         let bridge = link.map(|(read, write)| Bridge::over(read, write));
         Ok(Self {
             viewer: Viewer::new(args, loaded, bridge, state, Shell::Panel),

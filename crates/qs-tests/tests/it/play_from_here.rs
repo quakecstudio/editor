@@ -18,6 +18,7 @@ use qs_map::{Brush, Item, MapFile, Surface, TexDef};
 use qs_map_light::{Light, Sampling};
 use qs_sim::{LoadOptions, UserCmd, World};
 use qs_wad::write::WadBuilder;
+use qs_workbench::GameStart;
 use qs_workbench::map_compile::PlayFromHereParams;
 
 use crate::shape_stairs::{EYE, FRAME, progs};
@@ -190,6 +191,7 @@ fn the_player_is_put_where_its_box_fits() {
             eye,
             angles: None,
             region: None,
+            start: GameStart::default(),
         }
         .origin_in(&bsp)
     };

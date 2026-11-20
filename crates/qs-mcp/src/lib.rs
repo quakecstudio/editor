@@ -543,8 +543,10 @@ const INSTRUCTIONS: &str = "Every command of QuakeC Studio over the project this
     map.summary counts what it holds (with a path, a .map file read without opening it, to \
     compare many maps; most_textures keeps its texture list short), map.list_entities lists \
     its entities, and \
-    map.play_from_here with engine.screenshot shows it as the game draws it from a point; \
-    look at the picture and fix what is dark, empty or blocked.";
+    map.play_from_here with engine.screenshot shows it as the game draws it from a point: \
+    give it start paused, so the monsters stand where the map put them, and read its `dark` \
+    list, the entities no light reaches; look at the picture and fix what is dark, empty or \
+    blocked.";
 
 /// A tool's result for `output`: its JSON as text, and as structured content when it is an
 /// object (MCP 2026-07-28, "Structured Content").

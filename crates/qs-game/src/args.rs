@@ -73,6 +73,12 @@ pub struct Args {
     /// `-bridge`.
     #[arg(long, requires = "bridge")]
     pub headless: bool,
+    /// The game starts paused once the map has loaded, before a frame runs: every entity is
+    /// where the map put it until the IDE resumes or steps the game, so a look at the map
+    /// shows it before a monster has seen the player. It is the bridge's client that goes
+    /// on, over a socket or the pipes of a game embedded in the app.
+    #[arg(long)]
+    pub paused: bool,
     /// A free camera instead of the player.
     #[arg(long)]
     pub fly: bool,

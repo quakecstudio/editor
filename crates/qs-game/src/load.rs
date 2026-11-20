@@ -470,6 +470,17 @@ impl Args {
         base.join(self.game.as_deref().unwrap_or("id1"))
     }
 
+    /// The map the host starts on, loaded as [`Args::load_map`] loads it with `startup`,
+    /// and paused when `--paused` says so: a map loaded later, by a level change or a
+    /// `map` command, runs or stands as the game does then.
+    pub(crate) fn first_map(&self, startup: Startup) -> Result<Loaded, Error> {
+        let mut loaded = self.load_map(&self.map, None, Start::New(startup), None, None)?;
+        if self.paused {
+            loaded.game.start_paused();
+        }
+        Ok(loaded)
+    }
+
     /// Reads `map` from the install `-basedir` and `-game` name, with the engine options after
     /// `--` passed on to the game filesystem; starts its server with what the level before it
     /// `carried` (PHYS-10.4), connects its client and reads the models the server precached.

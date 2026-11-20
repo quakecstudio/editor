@@ -542,6 +542,13 @@ impl Game {
         ));
     }
 
+    /// Pauses the game before its first frame, for `--paused`, and says so to the client
+    /// that connects (BRIDGE-3.6).
+    pub(crate) fn start_paused(&mut self) {
+        self.state = State::Paused;
+        self.state_changed(Some(Reason::Pause), None);
+    }
+
     /// Runs one server frame of `frametime` seconds unless paused, then raises the edicts'
     /// events (BRIDGE-3.2); a frame that fails pauses the game with a `qc/error`
     /// (BRIDGE-3.3). Returns whether a frame ran.

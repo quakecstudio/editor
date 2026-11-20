@@ -2498,7 +2498,7 @@ groups:
     - '`map.play_from_here` answers where the player is in the game, not where it was asked to be: asked for a point inside a button, it answered that point while the player stood at the start'
     acceptance:
     - 'A map with a lit room and an unlit room is reported with the unlit room dark, checked by a test'
-    - 'A frame of a map with a monster beside the point played from shows the monster where the map put it, checked by a test in the simulation'
+    - 'A game started paused runs no frame until it is resumed, checked by a test of the host, and a frame of a map played paused with a monster beside the point shows the monster where the map put it, recorded in the PR'
     - 'A doorway is carved between two rooms using only the places the brush tools answered, with no `map.brushes` call, checked by a test'
     - 'A func_button whose target is a door''s targetname leaves no issue on the door, checked by a test on LibreQuake''s QuakeC or a fixture like it'
     - '`map.play_from_here` at a point where the player does not fit answers the origin the game reports, checked by a test'

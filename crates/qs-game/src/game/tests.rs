@@ -681,6 +681,27 @@ fn map_entities_are_named_by_their_place() {
     assert_eq!(code(float), ErrorCode::InvalidParams);
 }
 
+// spec BRIDGE-3.6: a game started paused runs no frame, says it is paused with reason pause,
+// and goes on when it is resumed
+#[test]
+fn a_game_started_paused_waits_for_resume() {
+    let (mut game, mut session) = game();
+    let before = game.world().time();
+    game.start_paused();
+    assert!(game.paused());
+    assert!(!game.frame(0.1), "no frame runs");
+    assert_eq!(game.world().time().to_bits(), before.to_bits());
+    let events = game.take_events();
+    let (name, params) = events.last().unwrap();
+    assert_eq!(*name, "state/changed");
+    assert_eq!(
+        (params["state"].as_str(), params["reason"].as_str()),
+        (Some("paused"), Some("pause"))
+    );
+    call(&mut game, &mut session, "resume", &json!({})).unwrap();
+    assert!(game.frame(0.1), "resumed, a frame runs");
+}
+
 // spec BRIDGE-4.9: spawn player at moves the player to the origin and angles
 #[test]
 fn the_player_is_moved() {

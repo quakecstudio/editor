@@ -159,7 +159,11 @@ The server's instructions give an agent the order (L-40); it is the one a person
    is how a set of maps is compared, under a read root, and `most_textures` cuts its list of
    textures to the most used, the count of them all still given;
    `map.play_from_here` compiles and lights it and starts the game at a point, and
-   `engine.screenshot` writes the frame as a PNG the agent can look at.
+   `engine.screenshot` writes the frame as a PNG the agent can look at. With `start` paused
+   the game waits where the player was put, its monsters where the map put them and not yet
+   awake, which is the picture to review a room by; `preview.resume` plays on. Its answer
+   names the light where the player stands and the entities that stand in the dark (`dark`),
+   so an unlit room is found without a picture.
 
 Every edit of these waits as a hunk in the map's review, as above.
 

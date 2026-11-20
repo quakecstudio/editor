@@ -23,7 +23,7 @@ use qs_wad::write::WadBuilder;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::preview::{HasPreview, PreviewError};
+use crate::preview::{GameStart, HasPreview, PreviewError};
 use crate::{Workbench, WorkbenchError};
 use qs_map::{Region, Surface, TexDef};
 use qs_map_edit::textures::{Game, GameTextures, find_wad, light_palette};
@@ -395,6 +395,13 @@ pub struct PlayFromHereParams {
     /// (MAP-16); the whole map when not given.
     #[serde(default)]
     pub region: Option<CompileRegion>,
+    /// Whether the game runs or is left paused where the player was put. Paused, the game
+    /// starts paused, the player is put in place and one frame is run to show the view from
+    /// there: `engine.screenshot` then shows the map with every monster where the map put
+    /// it, not yet awake, which is the picture to review a room by; `preview.resume` plays
+    /// on. Running when not given.
+    #[serde(default)]
+    pub start: GameStart,
 }
 
 /// How far, in whole units up or down, [`PlayFromHereParams::origin_in`] looks for room for
@@ -532,7 +539,9 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
     const ID: &'static str = MAP_PLAY_FROM_HERE;
     const SUMMARY: &'static str = "Compiles the open map fast, with no vis and fast light, into \
         the project's build, starts the game on it and puts the player's eye at a point, facing \
-        a way: the map view's camera (MAP-13).";
+        a way: the map view's camera (MAP-13). It answers where the player was put, the light \
+        there and the entities that stand in the dark; with start paused the game waits there \
+        with its monsters not yet awake, for a screenshot of the map as it was built.";
     type Params = PlayFromHereParams;
     type Output = PlayedHere;
     type Error = PreviewError;
@@ -608,7 +617,7 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
         // The map is written first, as a compile writes it; a camera with no room for the
         // player then plays nothing.
         let origin = params.origin_in(&bsp)?;
-        preview.play_built(built, Some(name.clone()))?;
+        preview.play_built(built, Some(name.clone()), params.start)?;
         let client = preview.client().ok_or(PreviewError::NotRunning)?;
         let angles = params.angles.unwrap_or_default().map(single);
         // BRIDGE-4.19: the game puts the player where its box is free of the map's entities
@@ -618,6 +627,11 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
             .get("origin")
             .and_then(|at| serde_json::from_value(at.clone()).ok())
             .unwrap_or(origin);
+        if params.start == GameStart::Paused {
+            // One frame, so the client's view is the player's new place; no monster has
+            // moved in it.
+            preview.step()?;
+        }
         // P7-02: full vis and full light of the same BSP, swapped in when done; a map that leaks
         // has no portals to see through, and plays with the fast compile.
         match compiled.portal_file {
