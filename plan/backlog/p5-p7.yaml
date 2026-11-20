@@ -2452,3 +2452,50 @@ groups:
     - 'Choosing id1, a mission pack''s folder, a link to id1 or the id1 of an install''s rerelease folder finds the install, each checked by a qs-install test citing FS-6.7; an export refuses id''s files with id1 or innoextract''s output chosen, checked by a qs-workbench test'
     verify:
     - 'cargo nextest run -p quakec-studio; the shell snapshots'
+  - key: L-40
+    title: An agent builds and reviews a map without guessing
+    labels:
+    - L5-commands
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - MAP-16
+    - PRIN-6
+    summary: |
+      Justin, 2026-11-20: asking Claude Code to build maps, over MCP from a terminal and over ACP in the agent panel, with the edits reviewed as hunks, and to review the LibreQuake maps and design a new one from the best of them. A trial on 2026-11-20, with the session as the agent driving `quakec-ide mcp`, built, compiled, played and screenshotted a two-room map with a carved corridor, a door, lights, monsters and items, every edit staged as a hunk. It also showed where an agent guesses: no tool lists an entity's brushes with their bounds, so the brush a tool takes by its place has to be counted by hand; reading a large map means its whole entity list, with nothing shorter to compare maps by; and the server's instructions do not say how a map is built.
+    depends:
+    - P4-14
+    deliverable:
+    - 'crates/qs-map-edit: `map.brushes`, the brushes of an entity of the open map, each with its place, the box around it and its textures, all of them or those touching a box'
+    - 'crates/qs-map-edit: `map.summary`, the open map, or a .map file read without opening it, in short: its bounds, its brush and entity counts, its entities counted by classname, its textures counted by face, and its world''s keys'
+    - 'crates/qs-mcp and docs/mcp.md: the server''s instructions and the guide say how a map is built and reviewed: the order of the tools, how brushes are named, and how the result is looked at'
+    acceptance:
+    - 'A test builds two rooms joined by a carved doorway using only brush places `map.brushes` answered, and the map is sealed'
+    - '`map.summary` of a map answers its counts, checked against the map''s text by a test'
+    - 'Claude Code builds a map with monsters and lights through the MCP server from one request, with its edits staged for review, recorded in the PR'
+    verify:
+    - 'cargo nextest run -p qs-map-edit -p qs-workbench -p qs-mcp; the recorded session in the PR'
+  - key: L-41
+    title: Tell an agent what a map review cannot see in one frame
+    labels:
+    - L5-commands
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - MAP-16
+    summary: |
+      Found by L-40's trial on 2026-11-20, in which Claude Code built and reviewed a map through the MCP server. Three things slowed it or misled it and were not changed there. `map.play_from_here` answered no light warning for a room that was nearly black; only the screenshot showed it. A monster near the point played from was already attacking when the frame was taken, so a review picture shows a fight rather than the room. And a tool that hollows or cuts brushes changes the places of an entity's brushes without saying which brushes it made, so the agent lists them again after each one.
+    depends:
+    - L-40
+    deliverable:
+    - 'The map tools that light a map report how dark it is where it matters: each room, or the space around the player start and each entity, with its light level, so a room too dark to play is found without a picture'
+    - 'A way to look at a map as the game draws it with its monsters asleep: a play option or a view that takes the frame before any monster acts'
+    - 'The brush tools that add, cut or hollow brushes answer the places of the brushes they made'
+    acceptance:
+    - 'A map with a lit room and an unlit room is reported with the unlit room dark, checked by a test'
+    - 'A frame of a map with a monster beside the point played from shows the monster where the map put it, checked by a test in the simulation'
+    - 'A doorway is carved between two rooms using only the places the brush tools answered, with no `map.brushes` call, checked by a test'
+    verify:
+    - 'cargo nextest run -p qs-map-edit -p qs-workbench'

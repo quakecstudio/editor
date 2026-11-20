@@ -71,6 +71,9 @@ pub use review::{
 };
 pub use shapes::{ArchWall, BrushShapeParams, Circle, Climb, MAP_BRUSH_SHAPE, ShapeSpec};
 pub use store::{EntityCheck, EntityProblem, GameFolders, HasMap, LiveMap, MapProject, MapStore};
+pub use survey::{
+    Bounds, BrushInfo, BrushesListed, BrushesParams, Counted, MapSummary, SummaryParams,
+};
 
 pub mod backup;
 mod brush_tools;
@@ -92,6 +95,7 @@ mod report;
 mod review;
 mod shapes;
 mod store;
+mod survey;
 pub mod texture_import;
 pub mod textures;
 pub mod uv;
@@ -149,6 +153,10 @@ pub const MAP_ENTITY: &str = "map.entity";
 pub const MAP_DUPLICATE: &str = "map.duplicate";
 /// The id of `map.inspect`.
 pub const MAP_INSPECT: &str = "map.inspect";
+/// The id of `map.brushes`.
+pub const MAP_BRUSHES: &str = "map.brushes";
+/// The id of `map.summary`.
+pub const MAP_SUMMARY: &str = "map.summary";
 /// The id of `map.save`.
 pub const MAP_SAVE: &str = "map.save";
 
@@ -1452,6 +1460,8 @@ pub fn register_map_edit<C: HasMap + 'static>(
     registry.register(MapRemoveKey)?;
     registry.register(MapEntity)?;
     registry.register(inspect::MapInspect)?;
+    registry.register(survey::MapBrushes)?;
+    registry.register(survey::MapSummarise)?;
     registry.register(disk::MapResolve)?;
     registry.register(disk::MapCompare)?;
     registry.register(links::MapLink)?;
