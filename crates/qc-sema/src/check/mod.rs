@@ -1100,7 +1100,7 @@ pub(crate) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
 pub const NO_FUNCTION: &str = "<NO FUNCTION>";
 
 /// Whether `name` is FTEQCC's built-in constant for the function it is written in, `__FUNC__`
-/// or `__func__` (FTEF-14.80).
+/// or `__func__` (FTEF-14.82).
 #[must_use]
 pub fn is_function_name(name: &str) -> bool {
     matches!(name, "__FUNC__" | "__func__")

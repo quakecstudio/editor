@@ -155,6 +155,23 @@ impl Layout {
         jumps
     }
 
+    /// The generated statement `at` is taken from among the others (FTEF-31.34): each jump
+    /// made after it, and each target after it, is one earlier.
+    pub(super) fn remove(&mut self, at: u32) {
+        let earlier = |made: &mut u32| {
+            if *made > at {
+                *made = made.saturating_sub(1);
+            }
+        };
+        for statement in &mut self.code {
+            statement.made.iter_mut().for_each(earlier);
+            statement.made_target.iter_mut().for_each(earlier);
+        }
+        for (_, mark) in &mut self.labels {
+            earlier(&mut mark.made);
+        }
+    }
+
     /// `QCC_UngenerateStatements(from)`: drops the statements from `from` on, and the jumps among
     /// them that wait for a target.
     pub(super) fn truncate(&mut self, from: usize) {

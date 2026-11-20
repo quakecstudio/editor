@@ -90,17 +90,20 @@ impl Checker<'_> {
             let local = label
                 .and_then(|label| label.name.as_deref())
                 .and_then(|name| self.env.parameter(name));
-            let (Some(local), Some(pieces)) = (local, self.slot_pieces(words, span)) else {
+            let Some(local) = local else {
                 self.followed = false;
                 continue;
             };
-            for (op, word) in pieces {
+            for (op, word) in self.pieces(words, span) {
                 let from = first.saturating_add(word.checked_div(VECTOR_WORDS).unwrap_or(0));
                 if from < engine_slots {
                     continue;
                 }
+                let within = word.checked_rem(VECTOR_WORDS).unwrap_or(0);
                 self.generated.push(ir::BodyStatement {
-                    a: u8::try_from(from).ok().map(ir::Name::Parameter),
+                    a: u8::try_from(from)
+                        .ok()
+                        .and_then(|from| ir::Name::Parameter(from).word(within)),
                     b: Some(ir::Name::Def(local, word)),
                     ..ir::BodyStatement::bare(op)
                 });

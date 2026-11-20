@@ -303,7 +303,6 @@ magic-number	crates/qc-builtins/src/mock.rs	MockEngine::model_bounds_for:3
 magic-number	crates/qc-builtins/src/mock.rs	Rng::next_rand:16
 magic-number	crates/qc-builtins/src/mock.rs	Rng::next_rand:32767
 magic-number	crates/qc-codegen/src/compile.rs	Compiler::function:8
-magic-number	crates/qc-codegen/src/compile/arrays.rs	Compiler::bounds_error:3
 magic-number	crates/qc-codegen/src/compile/arrays.rs	Compiler::emit_getter:3
 magic-number	crates/qc-codegen/src/compile/arrays.rs	Compiler::emit_setter:3
 magic-number	crates/qc-codegen/src/compile/arrays.rs	Compiler::ladder:4
@@ -585,11 +584,6 @@ magic-number	crates/qc-sema/src/check/pointer.rs	Checker::pointee:16
 magic-number	crates/qc-sema/src/check/pointer.rs	Checker::pointee:8
 magic-number	crates/qc-sema/src/check/pointer.rs	Checker::pointer_offset:8
 magic-number	crates/qc-sema/src/check/pointer.rs	Checker::pointer_step:8
-magic-number	crates/qc-sema/src/check/pointer.rs	Checker::small_store:16
-magic-number	crates/qc-sema/src/check/pointer.rs	Checker::small_store:255
-magic-number	crates/qc-sema/src/check/pointer.rs	Checker::small_store:3
-magic-number	crates/qc-sema/src/check/pointer.rs	Checker::small_store:65535
-magic-number	crates/qc-sema/src/check/pointer.rs	Checker::small_store:8
 magic-number	crates/qc-sema/src/check/pointer.rs	Checker::store_words_to_pointer:3
 magic-number	crates/qc-sema/src/check/pointer.rs	bytes:8
 magic-number	crates/qc-sema/src/check/reference.rs	Checker::address_of:4

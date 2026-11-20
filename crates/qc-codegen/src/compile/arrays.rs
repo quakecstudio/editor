@@ -15,16 +15,19 @@
 
 use qc_diag::Span;
 use qc_lexer::latin1_encode;
-use qc_progs::Function;
 use qc_progs::opcode::Opcode;
+use qc_progs::{CallPassing, Function, Op};
 use qc_sema::{DefId, FileId, FunctionType, Location, SimpleType, Type};
 use qc_syntax::ast::{self, AstNode};
 use qc_types::Etype;
 
-use super::{Abort, At, Compiler, Lowered, Value, ValueKind, literal_of, operand_index};
+use super::{Abort, At, CScalar, Compiler, Lowered, Value, ValueKind, operand_index};
 use crate::Internal;
 use crate::ops::{self, Operator};
 use crate::program::{Literal, OFS_PARM0, OFS_RETURN, ValueType, operand, type_words};
+
+/// The words of a parameter's slot.
+const PARM_WORDS: u32 = 3;
 
 /// An array definition as a subscript reads it.
 #[derive(Clone, Debug)]
@@ -282,13 +285,7 @@ impl Compiler<'_> {
         self.patch_b(low, span)?;
         self.patch_b(high, span)?;
         let message = self.string_immediate(b"bounds check failed\n".to_vec(), span)?;
-        let error = self
-            .defined("error")
-            .ok_or(Abort::Internal(Internal::Unsupported, span))?;
-        // `QCC_PR_EmitArraySetFunction` stores the message with `OP_STORE_F`.
-        self.store_word(message, OFS_PARM0, Etype::Float, span)?;
-        self.program
-            .emit(Opcode::Call1, operand(error).at(span)?, 0);
+        self.call_error(message, span)?;
         self.program.emit(Opcode::Done, 0, 0);
         let number = operand_index(self.program.functions.len()).at(span)?;
         let ofs = self.program.def(setter.place).at(span)?.ofs;
@@ -426,29 +423,54 @@ impl Compiler<'_> {
                 let format = b"bounds check failed (0 <= %g < %g is false)\n".to_vec();
                 let format = self.string_immediate(format, span)?;
                 let count = self.float_immediate(slots, span)?;
-                for (slot, arg) in [format, index, count].into_iter().enumerate() {
-                    let to = u32::try_from(slot)
-                        .ok()
-                        .and_then(|s| s.checked_mul(3))
-                        .and_then(|s| s.checked_add(OFS_PARM0))
-                        .at(span)?;
-                    // `QCC_PR_EmitArrayGetFunction` stores every argument with `OP_STORE_F`.
-                    self.store_word(arg, to, Etype::Float, span)?;
-                }
-                self.program
-                    .emit(Opcode::Call3, operand(sprintf).at(span)?, 0);
+                self.call(sprintf, &[format, index, count], span)?;
                 OFS_RETURN
             }
             None => self.string_immediate(b"bounds check failed\n".to_vec(), span)?,
         };
-        let error = self
-            .defined("error")
-            .ok_or(Abort::Internal(Internal::Unsupported, span))?;
-        // `QCC_PR_EmitArrayGetFunction` stores the message with `OP_STORE_F`, whatever its
-        // type, as every one-word argument of the functions it emits.
-        self.store_word(message, OFS_PARM0, Etype::Float, span)?;
-        self.program
-            .emit(Opcode::Call1, operand(error).at(span)?, 0);
+        self.call_error(message, span)
+    }
+
+    /// `error(message)`, and with no `error` defined the call of the function numbered by an
+    /// integer constant of every bit set (`errfnc = QCC_MakeIntConst(~0); errfnc.cast =
+    /// type_function;`).
+    fn call_error(&mut self, message: u32, span: Span) -> Lowered<()> {
+        let error = match self.defined("error") {
+            Some(error) => error,
+            None => {
+                let integer = ValueType::Of(Type::Named(CScalar::Integer.name().into()));
+                let place = self.program.int_immediate(u32::MAX, integer).at(span)?;
+                self.program.def(place).at(span)?.ofs
+            }
+        };
+        self.call(error, &[message], span)
+    }
+
+    /// `QCC_PR_GenerateFunctionCallSref` as the functions FTEQCC writes itself call: every
+    /// argument, a word each, stored to its parameter's slot with `OP_STORE_F` whatever its
+    /// type, then `OP_CALL1` to `OP_CALL8`; on a target with `OP_CALL1H` the first two are the
+    /// call's own operands and only the rest are stored (FTEF-32.19).
+    fn call(&mut self, function: u32, arguments: &[u32], span: Span) -> Lowered<()> {
+        let by_operands = self.calls.operands();
+        for (slot, &argument) in arguments.iter().enumerate().skip(by_operands) {
+            let to = u32::try_from(slot)
+                .ok()
+                .and_then(|slot| slot.checked_mul(PARM_WORDS))
+                .and_then(|slot| slot.checked_add(OFS_PARM0))
+                .at(span)?;
+            self.store_word(argument, to, Etype::Float, span)?;
+        }
+        let calls = match self.calls {
+            CallPassing::Slots => Op::CALLS,
+            CallPassing::Operands => Op::CALLS_BY_OPERANDS,
+        };
+        let call = calls.get(arguments.len()).at(span)?;
+        let number = u32::try_from(call.number()).ok().at(span)?;
+        let mut operands = [operand(function).at(span)?, 0, 0];
+        for (to, &argument) in operands.iter_mut().skip(1).zip(arguments).take(by_operands) {
+            *to = operand(argument).at(span)?;
+        }
+        self.program.emit_number(number, operands);
         Ok(())
     }
 
@@ -601,7 +623,7 @@ impl Compiler<'_> {
         {
             return Ok(words);
         }
-        Ok(match literal_of(expr, self.dialect) {
+        Ok(match self.literal_of(expr) {
             Some(literal) if literal.ty().etype() == ty.etype() => {
                 self.program.literal_words(&literal).at(span)?
             }

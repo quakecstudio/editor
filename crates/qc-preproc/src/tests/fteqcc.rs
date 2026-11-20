@@ -380,12 +380,12 @@ fn stringify_and_paste() {
 }
 
 // spec FTEF-3.4: `__NULL__` is `0i`.
-// spec FTEF-14.80: the built-in constants expand when no macro has the name; a macro of the
+// spec FTEF-14.82: the built-in constants expand when no macro has the name; a macro of the
 // same name wins; vanilla has none.
 #[test]
 fn builtin_constants() {
     let (_, out) = one_fte("__NULL__ __FILE__ __LINE__\n__LINESTR__ __FUNC__ __func__\n");
-    // FTEF-14.80: the function's name is the semantic model's to give; the names are left.
+    // FTEF-14.82: the function's name is the semantic model's to give; the names are left.
     assert_eq!(tokens(&out), r#"0 "a.qc" 1 "2" __FUNC__ __func__"#);
     let (toks, _) = fte("__TIME__ __DATE__ __QCCVER__ __RAND__ __OTHER__\n");
     assert_eq!(toks, r#""" "" "" 0 __OTHER__"#);

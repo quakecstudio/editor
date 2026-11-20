@@ -7819,7 +7819,7 @@ fn an_enum_in_a_parameters_type_defines_its_items() {
     }
 }
 
-// spec FTEF-14.80: `__FUNC__` and `__func__` are the string of the function's name, a member
+// spec FTEF-14.82: `__FUNC__` and `__func__` are the string of the function's name, a member
 // function's `CLASS::NAME`, through a macro too, and "<NO FUNCTION>" outside every function
 #[test]
 fn the_function_name_constant_is_the_functions_name() {
@@ -7864,11 +7864,6 @@ fn the_function_name_constant_is_the_functions_name() {
             .unwrap();
         assert_eq!(folded.a, immediate(&p, 5.0), "strlen of the name folds");
     }
-    // Beside a string literal it is not joined to it.
-    assert!(
-        compile_fteqcc("void(string s) say = #1;\nvoid() f = { say(__FUNC__ \": x\"); };\n")
-            .is_err()
-    );
 }
 
 // spec FTEF-6.33: a struct's member record is `GLOBAL.MEMBER`, a function member's
@@ -7940,10 +7935,11 @@ fn a_returned_null_is_a_zero_of_the_return_type() {
     }
 }
 
-// spec FTEF-6.18: a struct that is not whole words, stored through a pointer, is not written
-// as words, which would store past it; one of whole words is
+// spec FTEF-6.35: a struct of 8 or 16 bits stored through a pointer is one small store of its
+// word, the opcode itself or its emulation; one of 24 bits, which FTEQCC cannot store, is not
+// written
 #[test]
-fn a_struct_of_narrow_members_through_a_pointer_is_refused() {
+fn a_struct_of_narrow_members_through_a_pointer_is_a_small_store() {
     let source = |members: &str| {
         format!(
             "#pragma target fte\ntypedef struct {{ {members} }} s_t;\ns_t g;\n\
@@ -7951,7 +7947,28 @@ fn a_struct_of_narrow_members_through_a_pointer_is_refused() {
         )
     };
     assert!(compile_fteqcc(&source("int a; int b;")).is_ok());
-    let refused = compile_fteqcc(&source("__int8 a; __int8 b;"));
+    let p = fte_progs(&source("__int8 a;"));
+    assert_eq!(names_in(&p, "f"), ["STOREP_I8"]);
+    // The struct's one word is the first global after the system's.
+    let g = body(&p, "f")[0].a;
+    assert!(g > 0);
+    for members in ["__int8 a; __int8 b;", "__int16 a;"] {
+        let p = fte_progs(&source(members));
+        assert_eq!(
+            names_in(&p, "f"),
+            [
+                "LOADP_I", "BITAND_I", "LSHIFT_I", "BITAND_I", "BITOR_I", "STOREP_I"
+            ],
+            "{members}"
+        );
+        let f = body(&p, "f");
+        assert_eq!(f[1].a, g, "{members}");
+        assert_eq!(words(&p, f[1].b, 1), [0xffff], "{members}");
+        assert_eq!(words(&p, f[3].b, 1), [!0xffff_u32], "{members}");
+        assert_eq!((f[3].a, f[4].a, f[4].b), (f[0].c, f[3].c, f[2].c));
+        assert_eq!((f[5].a, f[5].b), (f[4].c, f[0].a), "{members}");
+    }
+    let refused = compile_fteqcc(&source("__int8 a; __int8 b; __int8 c;"));
     assert!(
         matches!(
             refused,
@@ -8088,8 +8105,8 @@ const INDEXED_HEADER: &str = "#pragma target fte\nentity self;\nvoid end_sys_glo
     .float slots[4];\nfloat() pick = #1;\nfloat() other = #2;\n";
 
 // spec FTEF-31.34: the entity an array of fields is read through is loaded after an index that
-// calls, the call's value still read from the return global; an index that branches is not
-// moved over, and is refused
+// calls, the call's value still read from the return global, and after one that branches,
+// whose jumps land where they did
 #[test]
 fn an_entity_is_loaded_after_an_index_that_calls() {
     let p = fte_progs(&format!(
@@ -8109,9 +8126,30 @@ fn an_entity_is_loaded_after_an_index_that_calls() {
     let f = body(&p, "f");
     assert_eq!(f[1].a, 1, "the call's value");
     assert_eq!((f[5].a, f[5].b), (f[3].c, f[4].c));
-    let branching =
-        format!("{INDEXED_HEADER}void() f = {{ self.owner.slots[(n > 2) ? 0 : 1] = 5; }};\n");
-    assert!(compile_fteqcc(&branching).is_err());
+    let p = fte_progs(&format!(
+        "{INDEXED_HEADER}void() f = {{ while (n) {{ n = self.owner.slots[(n > 2) ? 0 : 1]; }} }};\n"
+    ));
+    assert_eq!(
+        names_in(&p, "f"),
+        [
+            "IFNOT_F",
+            "GT_F",
+            "IFNOT",
+            "STORE_F",
+            "GOTO",
+            "STORE_F",
+            "CONV_FI",
+            "BOUNDCHECK",
+            "LOADF_ENT",
+            "LOADA_FLD",
+            "LOADF_F",
+            "GOTO"
+        ]
+    );
+    let f = body(&p, "f");
+    // The loop's jumps past and back over the whole body, the `?:`'s over its arms.
+    let jumps = [f[0].b, f[2].b, f[4].a, f[11].a];
+    assert_eq!(jumps, [12, 3, 2, 65525]);
 }
 
 // spec FTEF-30.11: `sizeof` of an operand that calls drops the call, and a later call copies
@@ -8156,4 +8194,382 @@ fn a_member_of_a_type_with_no_pool_is_refused_at_its_class() {
             other => panic!("{member}: {:?}", other.map(drop)),
         }
     }
+}
+
+const HEXEN2_ARRAYS: &str = "entity self;\nvoid end_sys_globals;\n.float modelindex;\n\
+    void end_sys_fields;\nfloat x; float n; vector v; string s; entity e;\n\
+    typedef struct { float a; float b; vector c; } st_t;\nst_t one;\n\
+    float arr[4]; vector vs[3]; string ss[2]; entity es[2]; st_t sts[2];\n\
+    void(string m) error = #10;\nvoid(st_t taken) take = #20;\n";
+
+// spec FTEF-31.35: on a target with `OP_FETCH_GBL_*` an element at an index that is no constant
+// is fetched by its type, a vector's index divided by 3 and a struct's words one at a time
+#[test]
+fn hexen2_fetches_an_element_by_its_type() {
+    let p = fte_progs(&format!(
+        "#pragma target h2\n{HEXEN2_ARRAYS}\
+         void() f = {{ x = arr[n]; v = vs[n]; s = ss[n]; e = es[n]; }};\n\
+         void() g = {{ one = sts[n]; }};\nvoid() h = {{ x = sts[n].b; v = sts[n].c; }};\n"
+    ));
+    assert_eq!(
+        names_in(&p, "f"),
+        [
+            "FETCH_GBL_F",
+            "MUL_F",
+            "DIV_F",
+            "FETCH_GBL_V",
+            "FETCH_GBL_S",
+            "FETCH_GBL_E"
+        ]
+    );
+    let f = body(&p, "f");
+    assert_eq!(
+        (f[0].a, f[0].b, f[0].c),
+        (global(&p, "arr"), global(&p, "n"), global(&p, "x"))
+    );
+    assert_eq!(
+        names_in(&p, "g"),
+        [
+            "MUL_F",
+            "FETCH_GBL_F",
+            "ADD_F",
+            "FETCH_GBL_F",
+            "ADD_F",
+            "FETCH_GBL_F",
+            "ADD_F",
+            "FETCH_GBL_F",
+            "ADD_F",
+            "FETCH_GBL_F",
+            "STORE_V",
+            "STORE_F",
+            "STORE_F"
+        ]
+    );
+    let g = body(&p, "g");
+    // Each word is fetched from the array's start, at the index plus the word.
+    assert!(g.iter().skip(1).step_by(2).take(5).all(|s| s.a == g[1].a));
+    assert_eq!((g[3].c, g[9].c), (g[1].c + 1, g[1].c + 4));
+    assert_eq!(
+        names_in(&p, "h"),
+        [
+            "MUL_F",
+            "ADD_F",
+            "FETCH_GBL_F",
+            "MUL_F",
+            "ADD_F",
+            "DIV_F",
+            "FETCH_GBL_V"
+        ]
+    );
+}
+
+// spec FTEF-31.35: where calls take their first two arguments as operands, the setter is called
+// with the index and the value, and a struct's first three words through a value of their own
+#[test]
+fn hexen2_calls_a_setter_by_its_operands() {
+    let p = fte_progs(&format!(
+        "#pragma target h2\n{HEXEN2_ARRAYS}\
+         void() f = {{ arr[n] = 3; vs[n] = v; }};\nvoid() g = {{ sts[n] = one; }};\n"
+    ));
+    assert_eq!(names_in(&p, "f"), ["CALL2", "MUL_F", "DIV_F", "CALL2"]);
+    let f = body(&p, "f");
+    assert_eq!(
+        (f[0].a, f[0].b, f[0].c),
+        (
+            global(&p, "ArraySet*arr"),
+            global(&p, "n"),
+            immediate(&p, 3.0)
+        )
+    );
+    assert_eq!((f[3].b, f[3].c), (f[2].c, global(&p, "v")));
+    assert_eq!(
+        names_in(&p, "g"),
+        ["MUL_F", "STORE_V", "STORE_F", "STORE_F", "CALL3"]
+    );
+    let g = body(&p, "g");
+    let one = global(&p, "one");
+    assert_eq!((g[1].a, g[2].a, g[3].a), (one, one + 3, one + 4));
+    // The words left after the three are the third parameter's slot.
+    assert_eq!((g[2].b, g[3].b), (10, 11));
+    assert_eq!((g[4].b, g[4].c), (g[0].c, g[1].b));
+    // The setter's bounds error is called by its operand too.
+    let setter = body(&p, "ArraySet*arr");
+    let error = setter[setter.len() - 2];
+    assert_eq!(names_in(&p, "ArraySet*arr")[setter.len() - 2], "CALL1");
+    assert_eq!(error.a, global(&p, "error"));
+    assert!(error.b > 0);
+}
+
+// spec FTEF-32.33: a struct's words left for a slot that is the call's operand are stored a
+// word at a time to the words of one value, which is the operand
+#[test]
+fn a_structs_last_words_are_stored_to_the_operands_value() {
+    let p = fte_progs(&format!(
+        "#pragma target h2\n{HEXEN2_ARRAYS}void() f = {{ take(one); }};\n"
+    ));
+    assert_eq!(
+        names_in(&p, "f"),
+        ["STORE_V", "STORE_F", "STORE_F", "CALL2"]
+    );
+    let f = body(&p, "f");
+    let one = global(&p, "one");
+    assert_eq!((f[0].a, f[1].a, f[2].a), (one, one + 3, one + 4));
+    assert_eq!(f[2].b, f[1].b + 1);
+    assert_eq!((f[3].b, f[3].c), (f[0].b, f[1].b));
+}
+
+// spec FTEF-31.36: the index of an array's getter and setter is divided by 3 for an array of
+// vectors only, so a vector member of an array of structs is stored at its word and read a
+// word at a time
+#[test]
+fn a_vector_member_of_an_element_is_not_divided() {
+    let p = fte_progs(&format!(
+        "{HEXEN2_ARRAYS}void() f = {{ sts[n].c = v; }};\nvoid() g = {{ v = sts[n].c; }};\n\
+         void() h = {{ vs[n] = v; v = vs[n]; }};\n"
+    ));
+    assert_eq!(names_in(&p, "f"), ["MUL_F", "ADD_F", "STORE_V", "CALL2"]);
+    assert_eq!(
+        names_in(&p, "g"),
+        [
+            "MUL_F", "ADD_F", "STORE_F", "CALL1", "STORE_F", "ADD_F", "CALL1", "STORE_F", "ADD_F",
+            "CALL1", "STORE_F", "STORE_V"
+        ]
+    );
+    assert_eq!(
+        names_in(&p, "h"),
+        [
+            "MUL_F", "DIV_F", "STORE_V", "CALL2", "MUL_F", "DIV_F", "CALL1", "STORE_V"
+        ]
+    );
+}
+
+// spec FTEF-31.35: with no `error` defined the bounds error calls the function an integer
+// constant of every bit set numbers
+#[test]
+fn a_bounds_error_with_no_error_function_calls_minus_one() {
+    let p = fte_progs(
+        "void end_sys_globals;\nvoid end_sys_fields;\nfloat n;\nfloat arr[4];\n\
+         void() f = { arr[n] = 3; };\n",
+    );
+    let setter = body(&p, "ArraySet*arr");
+    let call = setter[setter.len() - 2];
+    assert_eq!(names_in(&p, "ArraySet*arr")[setter.len() - 2], "CALL1");
+    assert_eq!(words(&p, call.a, 1), [u32::MAX]);
+}
+
+const STRUCT_FIELDS: &str = "entity self;\nvoid end_sys_globals;\n.float modelindex;\n\
+    void end_sys_fields;\nfloat x; vector v; entity e;\n\
+    typedef struct { float a; float b; } two_t;\ntwo_t pair; two_t pairs[3];\n\
+    typedef struct { float a; float b; vector c; } st_t;\nst_t one;\n\
+    .two_t pf; .st_t sf;\nvoid(__out two_t o) give = #40;\n";
+
+// spec FTEF-6.34: a struct that is an entity's field is loaded in pieces from the field's
+// words, and a member of it is the field at the member's word
+#[test]
+fn a_struct_field_is_loaded_in_pieces() {
+    let p = fte_progs(&format!(
+        "{STRUCT_FIELDS}void() f = {{ one = e.sf; }};\nvoid() g = {{ pair = self.pf; }};\n\
+         void() h = {{ x = e.sf.b; v = e.sf.c; }};\n"
+    ));
+    let (sf, pf) = (global(&p, "sf"), global(&p, "pf"));
+    assert_eq!(
+        names_in(&p, "f"),
+        [
+            "LOADF_V", "LOADF_F", "LOADF_F", "STORE_V", "STORE_F", "STORE_F"
+        ]
+    );
+    let f = body(&p, "f");
+    assert_eq!((f[0].b, f[1].b, f[2].b), (sf, sf + 3, sf + 4));
+    assert_eq!((f[1].c, f[2].c), (f[0].c + 3, f[0].c + 4));
+    assert_eq!((f[3].a, f[4].a, f[5].a), (f[0].c, f[1].c, f[2].c));
+    assert_eq!(
+        names_in(&p, "g"),
+        ["LOADF_F", "LOADF_F", "STORE_F", "STORE_F"]
+    );
+    let g = body(&p, "g");
+    assert_eq!((g[0].b, g[1].b), (pf, pf + 1));
+    assert_eq!((g[2].a, g[3].a), (g[0].c, g[1].c));
+    assert_eq!(names_in(&p, "h"), ["LOADF_F", "LOADF_V"]);
+    let h = body(&p, "h");
+    assert_eq!((h[0].b, h[1].b), (sf + 1, sf + 2));
+}
+
+// spec FTEF-6.34: a store to a struct that is an entity's field is its pieces, each through the
+// address of the field at the piece's word, or by `OP_STOREF_*` where the target has it; an
+// out parameter comes back to one from its slot's words, and to an element at its own words
+#[test]
+fn a_struct_field_is_stored_in_pieces() {
+    let p = fte_progs(&format!(
+        "{STRUCT_FIELDS}void() f = {{ self.sf = one; }};\nvoid() g = {{ e.sf.c = v; }};\n\
+         void() h = {{ give(self.pf); }};\nvoid() k = {{ give(pairs[2]); }};\n"
+    ));
+    let (sf, pf, one) = (global(&p, "sf"), global(&p, "pf"), global(&p, "one"));
+    assert_eq!(
+        names_in(&p, "f"),
+        [
+            "FLDADDRESS",
+            "STOREP_V",
+            "FLDADDRESS",
+            "STOREP_F",
+            "FLDADDRESS",
+            "STOREP_F"
+        ]
+    );
+    let f = body(&p, "f");
+    assert_eq!((f[0].b, f[2].b, f[4].b), (sf, sf + 3, sf + 4));
+    assert_eq!((f[1].a, f[3].a, f[5].a), (one, one + 3, one + 4));
+    assert_eq!((f[1].b, f[3].b, f[5].b), (f[0].c, f[2].c, f[4].c));
+    assert_eq!(names_in(&p, "g"), ["FLDADDRESS", "STOREP_V"]);
+    assert_eq!(body(&p, "g")[0].b, sf + 2);
+    assert_eq!(
+        names_in(&p, "h"),
+        ["CALL1", "FLDADDRESS", "STOREP_F", "FLDADDRESS", "STOREP_F"]
+    );
+    let h = body(&p, "h");
+    assert_eq!((h[1].b, h[3].b), (pf, pf + 1));
+    assert_eq!((h[2].a, h[4].a), (4, 5));
+    assert_eq!(names_in(&p, "k"), ["CALL1", "STORE_F", "STORE_F"]);
+    let k = body(&p, "k");
+    let pairs = global(&p, "pairs");
+    assert_eq!((k[1].b, k[2].b), (pairs + 4, pairs + 5));
+    let p = fte_progs(&format!(
+        "#pragma target fte\n{STRUCT_FIELDS}void() f = {{ self.sf = one; one = e.sf; }};\n"
+    ));
+    assert_eq!(
+        names_in(&p, "f"),
+        [
+            "STOREF_V",
+            "STOREF_I64",
+            "LOADF_V",
+            "LOADF_I64",
+            "STORE_V",
+            "STORE_I64"
+        ]
+    );
+}
+
+// spec FTEF-14.81: `__FUNC__` beside a string literal, or another of itself, is a part of the
+// one string they make: the function's name inside one, `<NO FUNCTION>` outside
+#[test]
+fn func_beside_a_string_is_part_of_it() {
+    let p = fte_progs(
+        "void end_sys_globals;\nvoid end_sys_fields;\nstring s;\nstring g = \"g:\" __FUNC__;\n\
+         void() fname = { s = \"pre:\" __FUNC__; s = __FUNC__ \":post\"; \
+         s = \"a\" __func__ \"b\"; s = __FUNC__ __FUNC__; s = __FUNC__; };\n",
+    );
+    let text = |ofs: i32| {
+        let word = i32::try_from(words(&p, ofs, 1)[0]).unwrap();
+        super::string(&p, word)
+    };
+    let stored: Vec<String> = body(&p, "fname")
+        .iter()
+        .take(5)
+        .map(|s| text(s.a))
+        .collect();
+    assert_eq!(
+        stored,
+        ["pre:fname", "fname:post", "afnameb", "fnamefname", "fname"]
+    );
+    assert_eq!(text(global(&p, "g")), "g:<NO FUNCTION>");
+}
+
+const FIELD_FORMS: &str = "float sf_y;\ntypedef struct { float a; float b; float c; } s3_t;\n\
+    s3_t three; .s3_t f3; st_t sts[2];\nvoid(st_t t) take = #51;\n\
+    void(__out st_t o) give5 = #42;\nvoid(__out st_t o, float f) give5f = #43;\n";
+
+// spec FTEF-6.34: a struct field of one load's words is loaded into the definition it is stored
+// to, a component of a vector member is the field at its word whatever other definition has
+// the component's name, and a struct field as an argument is not written
+#[test]
+fn a_struct_field_of_one_load_folds_into_its_store() {
+    let p = fte_progs(&format!(
+        "{STRUCT_FIELDS}{FIELD_FORMS}void() f = {{ three = e.f3; }};\n\
+         void() g = {{ x = e.sf.c.y; }};\n"
+    ));
+    assert_eq!(names_in(&p, "f"), ["LOADF_V"]);
+    assert_eq!(body(&p, "f")[0].c, global(&p, "three"));
+    assert_eq!(body(&p, "g")[0].b, global(&p, "sf") + 3);
+    let refused = compile_fteqcc(&format!(
+        "{STRUCT_FIELDS}{FIELD_FORMS}void() f = {{ take(e.sf); }};\n"
+    ));
+    assert!(refused.is_err());
+}
+
+// spec FTEF-32.24: an `__out` argument takes one slot whatever its words, so the call counts
+// it once and the argument after it is in the second slot
+#[test]
+fn an_out_struct_takes_one_slot() {
+    let p = fte_progs(&format!(
+        "{STRUCT_FIELDS}{FIELD_FORMS}void() f = {{ give5(self.sf); give5(sts[1]); }};\n\
+         void() g = {{ give5f(one, 3); }};\n"
+    ));
+    let names = names_in(&p, "f");
+    assert_eq!(names.iter().filter(|n| **n == "CALL1").count(), 2);
+    assert!(!names.contains(&"CALL2"));
+    assert_eq!(
+        names_in(&p, "g"),
+        ["STORE_F", "CALL2", "STORE_V", "STORE_F", "STORE_F"]
+    );
+    assert_eq!(body(&p, "g")[0].b, 7);
+}
+
+// spec FTEF-31.19: a vector field an index selected is stored by its one statement
+#[test]
+fn a_selected_vector_field_is_stored_by_one_statement() {
+    let p = fte_progs(
+        "#pragma target fte\nentity self;\nvoid end_sys_globals;\n.float modelindex;\n\
+         void end_sys_fields;\nfloat n; vector v;\n.vector vslots[4];\n\
+         void() f = { self.vslots[n] = v; };\n",
+    );
+    assert_eq!(names_in(&p, "f").last().copied(), Some("STOREF_V"));
+}
+
+// spec FTEF-31.35: a value still in the return global is copied out before the setter's call,
+// which reads the copy, and a member array of a struct, which has no length prefix, is not
+// fetched
+#[test]
+fn hexen2_copies_a_calls_value_before_the_setters_call() {
+    let p = fte_progs(&format!(
+        "#pragma target h2\n{HEXEN2_ARRAYS}float() pick = #53;\nfloat() other = #54;\n\
+         void() f = {{ arr[pick()] = other(); }};\n"
+    ));
+    assert_eq!(
+        names_in(&p, "f"),
+        ["CALL0", "STORE_F", "CALL0", "STORE_F", "CALL2"]
+    );
+    let f = body(&p, "f");
+    assert_eq!((f[4].b, f[4].c), (f[1].b, f[3].b));
+    let member = format!(
+        "#pragma target h2\n{HEXEN2_ARRAYS}typedef struct {{ float a; float m[2]; }} ms_t;\n\
+         ms_t mone;\nvoid() f = {{ x = mone.m[n]; }};\n"
+    );
+    assert!(compile_fteqcc(&member).is_err());
+}
+
+// spec FTEF-14.81: a constant fold reads the joined string, and inside a function a constant's
+// initialiser that joins `__FUNC__` is not written; spec FTEF-6.35: a small store is written
+// only where the target stores at an offset
+#[test]
+fn a_fold_reads_the_string_joined_with_func() {
+    let p = fte_progs(
+        "void end_sys_globals;\nvoid end_sys_fields;\nfloat x; float y;\n\
+         float(string s) strlen = #2;\n\
+         void() plain = { x = strlen(\"pre:\" __FUNC__); y = sizeof(\"ab\" __FUNC__); };\n",
+    );
+    let f = body(&p, "plain");
+    assert_eq!(f[0].a, immediate(&p, 9.0));
+    assert_eq!(f[1].a, immediate(&p, 8.0));
+    assert!(
+        compile_fteqcc(
+            "void(string s) say = #1;\n\
+             void() g = { const string cs = \"C:\" __FUNC__; say(cs); };\n"
+        )
+        .is_err()
+    );
+    assert!(
+        compile_fteqcc(
+            "typedef struct { __int8 a; } s_t;\ns_t g;\nvoid(s_t *p) f = { *p = g; };\n"
+        )
+        .is_err()
+    );
 }

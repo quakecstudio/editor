@@ -1309,7 +1309,7 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   `QCC_PR_CheckCompConst` takes the word from the byte after the `#` up to the first
   `qcc_iswhite` byte (space, CR, LF, tab, VT) or one of `)(+-*/|&=^~[]"{};:<>,.#`, and expands
   it when it names a macro (`pHash_Get(&compconstantstable, pr_token)`) or a built-in constant
-  (`QCC_PR_CheckBuiltinCompConst`, FTEF-14.80); a function-like macro only when a `(` follows,
+  (`QCC_PR_CheckBuiltinCompConst`, FTEF-14.82); a function-like macro only when a `(` follows,
   after spaces and tabs. So with `#define N 5`, `= #N;` is `= 5;`, `= :#N;` is `= :5;` and
   `= #N:ex_b;` is `= 5:ex_b;`; `#M(5)` with `#define M(x) x` is `5`; `#__LINE__` is the line;
   an empty `N` leaves `#N #5` as `#5`; and `# N`, `#N!` (the word is `N!`), `#M` with no `(`

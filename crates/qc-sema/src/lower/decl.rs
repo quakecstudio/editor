@@ -468,7 +468,7 @@ pub(super) fn raw_value(expr: &ast::Expr, cx: Cx<'_>) -> RawValue {
             (None, _) | (Some(ast::LiteralKind::Float), None) => ValueKind::Other,
         },
         ast::Expr::Name(name) => match (name.scope(), name.name()) {
-            // FTEF-14.80: outside every function `__FUNC__` is the string "<NO FUNCTION>".
+            // FTEF-14.82: outside every function `__FUNC__` is the string "<NO FUNCTION>".
             (None, Some(t)) if fte && is_function_name(&t.text_lossless()) => {
                 ValueKind::Literal(Literal::of(ConstType::String))
             }
@@ -551,7 +551,7 @@ fn string_len(literal: &ast::Literal) -> Option<u32> {
         return None;
     }
     // FTEF-16.8: adjacent parts are one string.
-    let bytes = joined_string(literal.syntax())?;
+    let bytes = joined_string(literal.syntax(), NO_FUNCTION)?;
     u32::try_from(bytes.len()).ok()
 }
 
@@ -1309,7 +1309,7 @@ pub(super) fn lower_array_sizes(declarator: &ast::Declarator, cx: Cx<'_>, uses: 
     }
 }
 
-/// Whether `expr` is `__FUNC__` or `__func__` written bare (FTEF-14.80).
+/// Whether `expr` is `__FUNC__` or `__func__` written bare (FTEF-14.82).
 fn function_name(expr: &ast::Expr) -> bool {
     matches!(expr, ast::Expr::Name(name) if name.scope().is_none()
         && name.name().is_some_and(|t| is_function_name(&t.text_lossless())))
