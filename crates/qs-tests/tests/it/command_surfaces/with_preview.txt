@@ -64,6 +64,7 @@ map.brush_sweep
 map.brush_texture
 map.brush_vertex
 map.brush_vertices
+map.brushes
 map.check
 map.choose_profile
 map.compare
@@ -122,6 +123,7 @@ map.set_layer
 map.show_all
 map.stage
 map.staged
+map.summary
 map.textures
 map.turn
 map.ungroup

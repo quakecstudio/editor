@@ -559,3 +559,81 @@ fn a_layer_compiles_as_its_region() {
         world.maxs
     );
 }
+
+// No spec statement: L-30, the acceptance criterion: two rooms joined by a carved doorway are
+// built using only the brush places map.brushes answered, and the map is sealed: a brush a
+// tool adds takes the place `total`, the places are read again after a tool that cuts, and
+// the doorway's own space holds no brush once it is carved
+#[test]
+fn two_rooms_are_joined_using_the_places_map_brushes_answers() {
+    use qs_map_edit::{
+        BrushesListed, MAP_BRUSH_CREATE, MAP_BRUSH_HOLLOW, MAP_BRUSH_SUBTRACT, MAP_BRUSHES,
+        MAP_PLACE,
+    };
+
+    let dir = std::env::temp_dir().join(format!("qs-wb-joined-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("joined.map");
+    std::fs::write(&path, "{\n\"classname\" \"worldspawn\"\n}\n").unwrap();
+    let mut session = open(&path);
+    let listed = |session: &mut Commands<Context>, params: serde_json::Value| -> BrushesListed {
+        serde_json::from_value(session.execute(MAP_BRUSHES, params).unwrap()).unwrap()
+    };
+    // A box, added at the place `total`, then hollowed into a room.
+    let room = |session: &mut Commands<Context>, min: [i32; 3], max: [i32; 3]| {
+        let place = listed(session, json!({})).total;
+        session
+            .execute(
+                MAP_BRUSH_CREATE,
+                json!({ "min": min, "max": max, "texture": "wall" }),
+            )
+            .unwrap();
+        session
+            .execute(
+                MAP_BRUSH_HOLLOW,
+                json!({ "entity": 0, "brush": place, "wall": 16 }),
+            )
+            .unwrap();
+    };
+    room(&mut session, [-256, -256, 0], [256, 256, 224]);
+    room(&mut session, [240, -256, 0], [752, 256, 224]);
+    assert_eq!(
+        listed(&mut session, json!({})).total,
+        12,
+        "six walls a room"
+    );
+
+    // The two rooms' walls between them, from x = 240 to 256, are what the doorway goes
+    // through; before it is carved, brushes fill its space.
+    let doorway = json!([[241, -31, 17], [255, 31, 127]]);
+    assert!(
+        !listed(&mut session, json!({ "within": doorway }))
+            .brushes
+            .is_empty()
+    );
+    let cutter = listed(&mut session, json!({})).total;
+    session
+        .execute(
+            MAP_BRUSH_CREATE,
+            json!({ "min": [224, -32, 16], "max": [272, 32, 128], "texture": "wall" }),
+        )
+        .unwrap();
+    session
+        .execute(MAP_BRUSH_SUBTRACT, json!({ "entity": 0, "brush": cutter }))
+        .unwrap();
+    assert!(
+        listed(&mut session, json!({ "within": doorway }))
+            .brushes
+            .is_empty(),
+        "the doorway's space is clear"
+    );
+
+    session
+        .execute(
+            MAP_PLACE,
+            json!({ "classname": "info_player_start", "origin": [0, 0, 40], "keys": [] }),
+        )
+        .unwrap();
+    let leaks = report(&mut session, MAP_LEAKS);
+    assert_eq!(leaks.seal, Seal::Sealed, "{leaks:?}");
+}

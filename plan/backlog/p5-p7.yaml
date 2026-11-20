@@ -2428,7 +2428,7 @@ groups:
     - 'crates/qs-mcp and docs/mcp.md: the server''s instructions and the guide say how a map is built and reviewed: the order of the tools, how brushes are named, and how the result is looked at'
     acceptance:
     - 'A test builds two rooms joined by a carved doorway using only brush places `map.brushes` answered, and the map is sealed'
-    - '`map.summary` of a corpus map answers its counts, checked against the map''s text by a test'
+    - '`map.summary` of a map answers its counts, checked against the map''s text by a test'
     - 'Claude Code builds a map with monsters and lights through the MCP server from one request, with its edits staged for review, recorded in the PR'
     verify:
     - 'cargo nextest run -p qs-map-edit -p qs-mcp; the recorded session in the PR'

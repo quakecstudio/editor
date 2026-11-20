@@ -1,0 +1,245 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! `map.brushes` and `map.summary` (L-30, MAP-16): the open map as an agent reads it to build
+//! on and to review. `map.brushes` names each brush of an entity by its place, with the box
+//! around it and its textures, so the brush a tool takes by its place need not be counted by
+//! hand; `map.summary` is the map in short, to judge it by and to compare maps with.
+
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
+use qs_commands::{Command, NoParams, Outcome};
+use qs_map::Brush;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+use super::{BrushIndex, EntityIndex, MAP_BRUSHES, MAP_SUMMARY};
+use crate::{HasMap, MapEditError};
+
+/// A box, its least corner then its greatest.
+pub type Bounds = [[f64; 3]; 2];
+
+/// The box around `points`; none for no point.
+fn bounds_of(points: impl IntoIterator<Item = [f64; 3]>) -> Option<Bounds> {
+    points.into_iter().fold(None, |bounds, point| {
+        let [min, max] = bounds.unwrap_or([point, point]);
+        let axis = |pick: fn(f64, f64) -> f64, of: [f64; 3]| {
+            let [a, b, c] = of;
+            let [x, y, z] = point;
+            [pick(a, x), pick(b, y), pick(c, z)]
+        };
+        Some([axis(f64::min, min), axis(f64::max, max)])
+    })
+}
+
+/// Whether the boxes `a` and `b` touch or overlap.
+fn touch([a_min, a_max]: Bounds, [b_min, b_max]: Bounds) -> bool {
+    a_min.iter().zip(b_max).all(|(&min, max)| min <= max)
+        && b_min.iter().zip(a_max).all(|(&min, max)| min <= max)
+}
+
+/// The textures of `brush`'s faces, each once, in face order.
+fn textures_of(brush: &Brush) -> Vec<String> {
+    let mut textures: Vec<String> = Vec::new();
+    for face in &brush.faces {
+        let name = String::from_utf8_lossy(face.texture()).into_owned();
+        if !textures.contains(&name) {
+            textures.push(name);
+        }
+    }
+    textures
+}
+
+/// The parameters of `map.brushes`.
+#[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BrushesParams {
+    /// The entity whose brushes are listed; the world when not given.
+    #[serde(default)]
+    pub entity: Option<EntityIndex>,
+    /// Only the brushes whose box touches this one, `[min, max]`; every brush when not given.
+    #[serde(default)]
+    pub within: Option<Bounds>,
+}
+
+/// A brush, as `map.brushes` answers it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BrushInfo {
+    /// Its place among its entity's brushes, which the `map.brush_*` commands take.
+    pub brush: BrushIndex,
+    /// The box around it, `[min, max]`; none for a brush with no volume.
+    pub bounds: Option<Bounds>,
+    /// The textures of its faces, each once.
+    pub textures: Vec<String>,
+}
+
+/// What `map.brushes` answers.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BrushesListed {
+    /// The entity.
+    pub entity: EntityIndex,
+    /// How many brushes the entity has; a new brush takes this place.
+    pub total: usize,
+    /// Its brushes, in the map's order, those `within` leaves.
+    pub brushes: Vec<BrushInfo>,
+}
+
+/// `map.brushes`.
+pub(super) struct MapBrushes;
+
+impl<C: HasMap + 'static> Command<C> for MapBrushes {
+    const ID: &'static str = MAP_BRUSHES;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
+    const SUMMARY: &'static str = "Lists the brushes of an entity of the open map, the world's \
+        when none is named: each brush's place, which the map.brush_* tools take, the box \
+        around it and its textures; all of them, or those touching a box. A brush a tool adds \
+        takes the place `total`; a tool that cuts or hollows brushes changes their places, so \
+        list them again after it.";
+    type Params = BrushesParams;
+    type Output = BrushesListed;
+    type Error = MapEditError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: BrushesParams,
+    ) -> Result<Outcome<BrushesListed, C>, MapEditError> {
+        let document = context.map_store().map().ok_or(MapEditError::NoMap)?;
+        let entity = params.entity.unwrap_or(EntityIndex::WORLD);
+        let of = document
+            .file()
+            .entities
+            .get(entity.get())
+            .ok_or(MapEditError::NoEntity { entity })?;
+        let all: Vec<BrushInfo> = of
+            .brushes()
+            .enumerate()
+            .map(|(index, brush)| BrushInfo {
+                brush: BrushIndex::new(index),
+                bounds: bounds_of(brush.vertices()),
+                textures: textures_of(brush),
+            })
+            .collect();
+        let total = all.len();
+        let brushes = all
+            .into_iter()
+            .filter(|brush| {
+                params
+                    .within
+                    .is_none_or(|within| brush.bounds.is_some_and(|bounds| touch(bounds, within)))
+            })
+            .collect();
+        Ok(Outcome::unchanged(BrushesListed {
+            entity,
+            total,
+            brushes,
+        }))
+    }
+}
+
+/// How many of something a map has, by its name.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Counted {
+    /// The name: a classname, or a texture.
+    pub name: String,
+    /// How many.
+    pub count: usize,
+}
+
+/// `counts` as a list, the most first and names in order among equals.
+fn counted(counts: BTreeMap<String, usize>) -> Vec<Counted> {
+    let mut list: Vec<Counted> = counts
+        .into_iter()
+        .map(|(name, count)| Counted { name, count })
+        .collect();
+    list.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.name.cmp(&b.name)));
+    list
+}
+
+/// What `map.summary` answers.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct MapSummary {
+    /// The map's file.
+    pub path: PathBuf,
+    /// The box around every brush, `[min, max]`; none for a map with no brush.
+    pub bounds: Option<Bounds>,
+    /// How many brushes the world has.
+    pub world_brushes: usize,
+    /// How many brushes its other entities have, doors and platforms among them.
+    pub entity_brushes: usize,
+    /// How many entities it has, the world among them.
+    pub entities: usize,
+    /// Its entities by classname, the most first: its monsters, lights, items and triggers.
+    pub classes: Vec<Counted>,
+    /// Its textures by how many faces wear each, the most first.
+    pub textures: Vec<Counted>,
+    /// The world's keys and values, in order: its message, WADs, music and the like.
+    pub world: Vec<(String, String)>,
+}
+
+/// `map.summary`.
+pub(super) struct MapSummarise;
+
+impl<C: HasMap + 'static> Command<C> for MapSummarise {
+    const ID: &'static str = MAP_SUMMARY;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
+    const SUMMARY: &'static str = "The open map in short, to review it or compare it with \
+        others: the box around its brushes, its brush and entity counts, its entities counted \
+        by classname (monsters, lights, items, triggers), its textures counted by face, and \
+        its world's keys. map.inspect lists each entity; this counts them.";
+    type Params = NoParams;
+    type Output = MapSummary;
+    type Error = MapEditError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        NoParams {}: NoParams,
+    ) -> Result<Outcome<MapSummary, C>, MapEditError> {
+        let document = context.map_store().map().ok_or(MapEditError::NoMap)?;
+        let file = document.file();
+        let text = |bytes: &[u8]| String::from_utf8_lossy(bytes).into_owned();
+        let mut classes: BTreeMap<String, usize> = BTreeMap::new();
+        let mut textures: BTreeMap<String, usize> = BTreeMap::new();
+        let mut corners = Vec::new();
+        let (mut world_brushes, mut entity_brushes) = (0_usize, 0_usize);
+        for (index, entity) in file.entities.iter().enumerate() {
+            let class = entity.classname().map_or_default(text);
+            let count = classes.entry(class).or_default();
+            *count = count.saturating_add(1);
+            for brush in entity.brushes() {
+                let of = if index == EntityIndex::WORLD.get() {
+                    &mut world_brushes
+                } else {
+                    &mut entity_brushes
+                };
+                *of = of.saturating_add(1);
+                corners.extend(brush.vertices());
+                for face in &brush.faces {
+                    let faces = textures.entry(text(face.texture())).or_default();
+                    *faces = faces.saturating_add(1);
+                }
+            }
+        }
+        let world = file
+            .entities
+            .first()
+            .into_iter()
+            .flat_map(|world| world.pairs())
+            .map(|pair| (text(pair.key()), text(pair.value())))
+            .collect();
+        Ok(Outcome::unchanged(MapSummary {
+            path: document.path().to_path_buf(),
+            bounds: bounds_of(corners),
+            world_brushes,
+            entity_brushes,
+            entities: file.entities.len(),
+            classes: counted(classes),
+            textures: counted(textures),
+            world,
+        }))
+    }
+}
+
+#[cfg(test)]
+mod tests;

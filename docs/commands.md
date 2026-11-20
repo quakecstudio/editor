@@ -82,6 +82,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.brush_texture`](#mapbrush_texture) | Sets the texture, shift, rotation or scale of every face of brushes of an entity, keeping what is not given (MAP-12). |
 | [`map.brush_vertex`](#mapbrush_vertex) | Moves a vertex of a brush of the open map to a point snapped to the grid; the brush becomes the convex hull of its vertices so moved. |
 | [`map.brush_vertices`](#mapbrush_vertices) | Moves several vertices of a brush at once, each to a point snapped to the grid; the brush becomes the hull of its vertices so moved (MAP-15.7). |
+| [`map.brushes`](#mapbrushes) | Lists the brushes of an entity of the open map, the world's when none is named: each brush's place, which the map.brush_* tools take, the box around it and its textures; all of them, or those touching a box. A brush a tool adds takes the place `total`; a tool that cuts or hollows brushes changes their places, so list them again after it. |
 | [`map.check`](#mapcheck) | Checks a .map: what id's qbsp and ericw-tools read otherwise, and its entities against the project's server QuakeC as the engine reads them: unknown classnames and keys with the closest name, values their field cannot read, and targets and targetnames nothing matches. |
 | [`map.choose_profile`](#mapchoose_profile) | Chooses the compile profile map.run_profile runs when given none; none given chooses Full again. |
 | [`map.compare`](#mapcompare) | How the open map's file, changed by another program, differs from the map being edited, entity by entity. |
@@ -140,6 +141,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.show_all`](#mapshow_all) | Shows every entity of the open map hidden in the editor (TrenchBroom's Show All); a hidden layer stays hidden. |
 | [`map.stage`](#mapstage) | Begins review of the open map's edits: the map as it is now is kept, and each edit after it waits as a hunk to accept or reject. The agent's map edits begin it themselves; while it is open it is left as it is. |
 | [`map.staged`](#mapstaged) | Lists the open map's hunks waiting for review: for each, the entities it is in, and the keys and brushes it adds, changes or removes. |
+| [`map.summary`](#mapsummary) | The open map in short, to review it or compare it with others: the box around its brushes, its brush and entity counts, its entities counted by classname (monsters, lights, items, triggers), its textures counted by face, and its world's keys. map.inspect lists each entity; this counts them. |
 | [`map.textures`](#maptextures) | Lists the open map's textures: those of the WADs its world names, found in the project, beside the map or in the game, of the BSP it was opened from, and of the game's own levels, each once with where it comes from, its size and how many faces use it, and the names its faces use that nothing holds. |
 | [`map.turn`](#mapturn) | Turns entities and brushes by degrees about the vertical through the middle of their box, counter-clockwise seen from above: brushes and point entities' origins and facing, as TrenchBroom's Rotate. |
 | [`map.ungroup`](#mapungroup) | Takes a group's entities and brushes out of it into the layer or group it is in, or the world's, and removes the group. |
@@ -3860,6 +3862,63 @@ Parameters:
 }
 ```
 
+## `map.brushes`
+
+Lists the brushes of an entity of the open map, the world's when none is named: each brush's place, which the map.brush_* tools take, the box around it and its textures; all of them, or those touching a box. A brush a tool adds takes the place `total`; a tool that cuts or hollows brushes changes their places, so list them again after it.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.brushes`.",
+  "properties": {
+    "entity": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EntityIndex"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The entity whose brushes are listed; the world when not given."
+    },
+    "within": {
+      "default": null,
+      "description": "Only the brushes whose box touches this one, `[min, max]`; every brush when not given.",
+      "items": {
+        "items": {
+          "format": "double",
+          "type": "number"
+        },
+        "maxItems": 3,
+        "minItems": 3,
+        "type": "array"
+      },
+      "maxItems": 2,
+      "minItems": 2,
+      "type": [
+        "array",
+        "null"
+      ]
+    }
+  },
+  "title": "BrushesParams",
+  "type": "object"
+}
+```
+
 ## `map.check`
 
 Checks a .map: what id's qbsp and ericw-tools read otherwise, and its entities against the project's server QuakeC as the engine reads them: unknown classnames and keys with the closest name, values their field cannot read, and targets and targetnames nothing matches.
@@ -6533,6 +6592,22 @@ Parameters:
 ## `map.staged`
 
 Lists the open map's hunks waiting for review: for each, the entities it is in, and the keys and brushes it adds, changes or removes.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `map.summary`
+
+The open map in short, to review it or compare it with others: the box around its brushes, its brush and entity counts, its entities counted by classname (monsters, lights, items, triggers), its textures counted by face, and its world's keys. map.inspect lists each entity; this counts them.
 
 Parameters:
 

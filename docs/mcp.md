@@ -107,6 +107,7 @@ The tools an agent's loop most often uses:
 | `preview.play`, `preview.reload`, `preview.stop`, `preview.poll` | The live game: start it, reload the program, stop it, read its events |
 | `engine.inspect`, `engine.console`, `engine.screenshot` | The running game's edicts, globals and stack; a console command and its output; a frame as a PNG |
 | `map.open`, `map.new`, `map.inspect`, `map.staged` | Opens a `.map` file; makes a new one in the project, holding a world with the keys given, and opens it; its rooms and entities; the map edits waiting for review |
+| `map.brushes`, `map.summary` | An entity's brushes, each with its place, the box around it and its textures; the map in short: its bounds, brush and entity counts, entities by classname and textures by face |
 | `map.place`, `map.set_key` | Places an entity; sets one of an entity's keys |
 | `map.brush_create`, `map.brush_shape`, `map.brush_delete`, `map.brush_move`, `map.brush_texture` | Adds a box brush, or a shape of brushes (cylinder, cone, arch, spheroid, rock, curve, stairs); deletes, moves or retextures brushes |
 | `map.brush_clip`, `map.brush_vertex`, `map.brush_vertices`, `map.brush_split_edge`, `map.brush_split_face`, `map.brush_chamfer`, `map.brush_extrude`, `map.brush_scale`, `map.brush_shear`, `map.brush_sweep` | Reshapes a brush: clips it by a plane, moves its corners, splits, chamfers, extrudes, scales, shears or sweeps it |
@@ -128,6 +129,29 @@ included. `preview.play` of a map the project compiled reads its BSP from beside
 of that name, or from the project's `maps`. With `--connect`,
 the stage, the edit and the unstage are three calls to the app, so an edit the person makes in
 the app between them joins the review.
+
+### Building and reviewing a map
+
+The server's instructions give an agent the order (L-30); it is the one a person follows:
+
+1. `map.new` makes the map, or `map.open` opens one; `map.textures` lists the textures there
+   are, those of the game's own levels among them, so a map needs no WAD of its own.
+2. A room is a box (`map.brush_create`) hollowed into walls (`map.brush_hollow`). Rooms are
+   joined by a box across the walls between them given to `map.brush_subtract`, which carves
+   it out of every brush it overlaps and removes it.
+3. The `map.brush_*` tools take a brush by its place among its entity's brushes. `map.brushes`
+   lists the places, each with the box around the brush and its textures, all of them or those
+   touching a box. A brush just added has the place `total` had before it; a tool that cuts or
+   hollows changes the places, so they are listed again after it.
+4. `map.place` puts in the player start, the lights, the monsters and the items, with keys
+   such as `light` and `angle`; `map.make_brush_entity` makes a door or a platform of a brush.
+5. `map.issues` and `map.leaks` say what is wrong: a missing player start, an entity the
+   QuakeC does not know, a leak with its trail. `map.save` writes the file.
+6. To review it, `map.summary` counts what the map holds and `map.inspect` lists its entities;
+   `map.play_from_here` compiles and lights it and starts the game at a point, and
+   `engine.screenshot` writes the frame as a PNG the agent can look at.
+
+Every edit of these waits as a hunk in the map's review, as above.
 
 `tools/list` gives each tool's input schema, the command's parameter schema. A tool whose
 command the server's registry lacks is not listed. A command that fails answers
