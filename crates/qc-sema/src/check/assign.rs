@@ -15,7 +15,7 @@ use qc_syntax::c_scalar::CScalar;
 use qc_syntax::{SyntaxKind, SyntaxNode};
 
 use crate::cast::{Source, Supply};
-use crate::check::call::call_opcode;
+use crate::check::call::{REGISTER_PARMS, SETTER_VALUE_SLOT};
 use crate::check::constant::Constant;
 use crate::check::emulate::conversion_opcodes;
 use crate::check::etype::Etype;
@@ -1582,36 +1582,65 @@ impl Checker<'_> {
             return Ok(());
         }
         let parameter = |slot| Some(ir::Name::Parameter(slot));
+        let setter = lhs.sym.def().map(ir::Name::ArraySet);
+        // FTEF-32.19: with `OP_CALL1H` the index and a value of at most three words are the
+        // call's own operands.
+        let by_operands = opcodes.valid(Op::Call1h);
         // FTEF-32.25: a struct of more than a vector's words is the setter's argument in
         // pieces, a slot each from the second, stored before the index, and the call counts
         // the slots.
         if let Some(wide) = self.wide_words(target) {
-            self.setter_argument(self.name_of(stored), wide, span);
-            self.generated.push(ir::BodyStatement {
-                a: self.name_of(&element.index),
-                b: parameter(0),
-                ..ir::BodyStatement::bare(Op::StoreF)
-            });
+            let mut operands = [None; REGISTER_PARMS];
+            let registers = by_operands.then_some(&mut operands);
+            self.setter_argument(self.name_of(stored), wide, registers, span);
+            let index = self.name_of(&element.index);
+            if !by_operands {
+                self.generated.push(ir::BodyStatement {
+                    a: index,
+                    b: parameter(0),
+                    ..ir::BodyStatement::bare(Op::StoreF)
+                });
+            }
             self.read_returned(&element.index);
             self.clobber_return();
             let slots = usize::try_from(wide.div_ceil(VECTOR_WORDS)).unwrap_or(usize::MAX);
-            match call_opcode(slots.saturating_add(1)) {
-                Some(call) => self.generated.push(ir::BodyStatement {
-                    a: lhs.sym.def().map(ir::Name::ArraySet),
-                    ..ir::BodyStatement::bare(call)
+            let calls = if by_operands {
+                Op::CALLS_BY_OPERANDS
+            } else {
+                Op::CALLS
+            };
+            match calls.get(slots.saturating_add(1)) {
+                Some(&call) => self.generated.push(ir::BodyStatement {
+                    a: setter,
+                    b: index.filter(|_| by_operands),
+                    c: operands.get(SETTER_VALUE_SLOT).copied().flatten(),
+                    op: call,
                 }),
                 None => self.followed = false,
             }
             self.last_temp = None;
             return Ok(());
         }
-        // A vector array's setter takes the element's index, its words' divided by 3.
-        let index = if self.etype(target) == Some(Etype::Vector) {
+        // A vector array's setter takes the element's index, its words' divided by 3: the
+        // array's own type decides (`if (base.sym->type->type == ev_vector)`).
+        let index = if self.array_of_vectors(lhs) {
             let three = Value::constant(Constant::float(VECTOR_WORDS_FLOAT));
             self.emit(Op::DivF, &element.index, &three, span)?
         } else {
             element.index.clone()
         };
+        if by_operands {
+            self.read_returned(&index);
+            self.clobber_return();
+            self.generated.push(ir::BodyStatement {
+                op: Op::Call2h,
+                a: setter,
+                b: self.name_of(&index),
+                c: self.name_of(stored),
+            });
+            self.last_temp = None;
+            return Ok(());
+        }
         if index.temp.is_some() && index.temp == self.last_temp {
             self.fold_into(&index, parameter(0));
         } else {
@@ -1631,7 +1660,7 @@ impl Checker<'_> {
         });
         self.clobber_return();
         self.generated.push(ir::BodyStatement {
-            a: lhs.sym.def().map(ir::Name::ArraySet),
+            a: setter,
             ..ir::BodyStatement::bare(Op::Call2)
         });
         self.last_temp = None;

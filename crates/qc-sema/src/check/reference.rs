@@ -497,7 +497,10 @@ impl Checker<'_> {
                     self.env.report(Code::W0319, span, message);
                 }
             }
-            return Ok(ArrayRead::Indexed);
+            if self.global {
+                return Ok(ArrayRead::Indexed);
+            }
+            return self.fetch_global(element, index, span);
         }
         let float = self.converted(index, Etype::Float, span)?;
         if vector {
@@ -505,8 +508,10 @@ impl Checker<'_> {
             self.emit(Op::DivF, &float, &three, span)?;
             return Ok(ArrayRead::Indexed);
         }
-        // A vector array's getter takes the element's index, its words' divided by 3.
-        let divided = self.etype_of(&element.ty) == Some(Etype::Vector) && !self.global;
+        // A vector array's getter takes the element's index, its words' divided by 3: the
+        // array's own type decides (`if (base.sym->type->type == ev_vector)`), so a vector
+        // member of an array of structs is read as any value of more words than one.
+        let divided = self.array_of_vectors(element) && !self.global;
         let float = if divided {
             let three = Value::constant(Constant::float(VECTOR_WORDS_FLOAT));
             self.emit(Op::DivF, &float, &three, span)?
@@ -531,43 +536,124 @@ impl Checker<'_> {
         // folded, each word's index `ADD_F` of the word into the parameter, and each `CALL1`'s
         // value stored to its word (FTE-13.12).
         let size = self.env.layout(&element.ty).map_or(1, |l| l.words);
-        let structured = matches!(
-            self.etype_of(&element.ty),
-            Some(Etype::Struct | Etype::Union)
-        );
-        if !self.global && structured && size > 1 && !divided && !big_struct {
-            let block = self.struct_element(element, &float, size);
+        if !self.global && size > 1 && !divided && !big_struct {
+            let block = self.struct_element(element, &float, size, span);
             return Ok(ArrayRead::Block(block));
         }
         // FTEF-19.78: the read is `ArrayGet*`'s call: the index stored to its parameter unless
         // it folds, `CALL1`, the value the call's in the return global.
         if !self.global {
+            let getter = element.sym.def().map(ir::Name::ArrayGet);
+            // FTEF-32.19: with `OP_CALL1H` the index is the call's own operand.
+            let by_operands = target.valid(Op::Call1h);
             // A held index is not folded into, but the quotient of a vector array's is new.
-            if float.temp.is_some() && float.temp == self.last_temp && (!self.index_held || divided)
-            {
+            let folds = !by_operands
+                && float.temp.is_some()
+                && float.temp == self.last_temp
+                && (!self.index_held || divided);
+            if folds {
                 self.fold_into(&float, Some(ir::Name::Parameter(0)));
             } else {
-                self.generated.push(ir::BodyStatement {
-                    a: self.name_of(&float),
-                    b: Some(ir::Name::Parameter(0)),
-                    ..ir::BodyStatement::bare(Op::StoreF)
-                });
-                // The store reads a call's value, which the getter's call need not copy.
+                if !by_operands {
+                    self.generated.push(ir::BodyStatement {
+                        a: self.name_of(&float),
+                        b: Some(ir::Name::Parameter(0)),
+                        ..ir::BodyStatement::bare(Op::StoreF)
+                    });
+                }
+                // The store, or the call, reads a call's value, which the getter's call need
+                // not copy.
                 if float.returned {
                     self.live_return = None;
                     self.live_call = None;
                 }
             }
             self.clobber_return();
-            self.generated.push(ir::BodyStatement {
-                a: element.sym.def().map(ir::Name::ArrayGet),
-                ..ir::BodyStatement::bare(Op::Call1)
+            self.generated.push(if by_operands {
+                ir::BodyStatement {
+                    a: getter,
+                    b: self.name_of(&float),
+                    ..ir::BodyStatement::bare(Op::Call1h)
+                }
+            } else {
+                ir::BodyStatement {
+                    a: getter,
+                    ..ir::BodyStatement::bare(Op::Call1)
+                }
             });
             self.last_temp = None;
             self.live_return = Some(self.env.layout(&element.ty).map_or(1, |l| l.words));
             self.live_call = self.last_made();
         }
         Ok(ArrayRead::Called)
+    }
+
+    /// Whether the array `element` is read from is one of vectors, `base.sym->type->type ==
+    /// ev_vector`: the definition's own type, whatever the type read from it.
+    pub(super) fn array_of_vectors(&self, element: &Value) -> bool {
+        let own = element
+            .sym
+            .def()
+            .and_then(|def| self.env.definition(def).map(|d| d.ty.clone()));
+        self.etype_of(own.as_ref().unwrap_or(&element.ty)) == Some(Etype::Vector)
+    }
+
+    /// FTEF-31.2: `QCC_LoadFromArray`'s `accel == 1`, Hexen II's `OP_FETCH_GBL_*` of the array
+    /// and the index, by the element's type: a vector's with the index divided by 3 ("hexen2
+    /// uses element indicies. we internally use words."), a struct's or a union's a word at a
+    /// time by `OP_FETCH_GBL_F` into a block, each word after the first at the index plus the
+    /// word (`OP_ADD_F`).
+    fn fetch_global(
+        &mut self,
+        element: &Value,
+        index: &Value,
+        span: Span,
+    ) -> Result<ArrayRead, Fatal> {
+        let fetch = match self.etype_of(&element.ty) {
+            Some(Etype::Float | Etype::Integer | Etype::Pointer | Etype::Field) => Op::FetchGblF,
+            Some(Etype::Vector) => {
+                let three = Value::constant(Constant::float(VECTOR_WORDS_FLOAT));
+                let divided = self.emit(Op::DivF, index, &three, span)?;
+                let loaded = self.emit(Op::FetchGblV, element, &divided, span)?;
+                return Ok(ArrayRead::Loaded(Box::new(loaded)));
+            }
+            Some(Etype::String) => Op::FetchGblS,
+            Some(Etype::Entity) => Op::FetchGblE,
+            Some(Etype::Function) => Op::FetchGblFnc,
+            _ => {
+                let words = self
+                    .env
+                    .layout(&element.ty)
+                    .map_or(0, |layout| layout.words);
+                let (Some(array), Some(at)) = (self.name_of(element), self.name_of(index)) else {
+                    self.followed = false;
+                    return Ok(ArrayRead::Indexed);
+                };
+                let block = self.next_made();
+                self.effects.push((block, ir::Effect::Block(words)));
+                for word in 0..words {
+                    let at = if word == 0 {
+                        Some(at)
+                    } else {
+                        let by = Value::constant(Constant::float(f32::from(
+                            u16::try_from(word).unwrap_or(u16::MAX),
+                        )));
+                        let next = self.emit(Op::AddF, index, &by, span)?;
+                        self.name_of(&next)
+                    };
+                    self.generated.push(ir::BodyStatement {
+                        a: Some(array),
+                        b: at,
+                        c: Some(ir::Name::MadeWord(block, word)),
+                        ..ir::BodyStatement::bare(Op::FetchGblF)
+                    });
+                }
+                self.last_temp = None;
+                return Ok(ArrayRead::Block(block));
+            }
+        };
+        let loaded = self.emit(fetch, element, index, span)?;
+        Ok(ArrayRead::Loaded(Box::new(loaded)))
     }
 
     /// An element read: a narrow one by its bits, one at a constant index the array's own
@@ -726,7 +812,8 @@ impl Checker<'_> {
     /// FTE-13.12: the struct element of `size` words at the float index `index`, read by the
     /// array's getter a word at a time into a block: the generated statement the block is made
     /// at, which the read's value is.
-    fn struct_element(&mut self, element: &Value, index: &Value, size: u32) -> u32 {
+    fn struct_element(&mut self, element: &Value, index: &Value, size: u32, span: Span) -> u32 {
+        let by_operands = self.env.target_at(span.start).valid(Op::Call1h);
         let first = self.next_made();
         self.effects.push((first, ir::Effect::Block(size)));
         let getter = element.sym.def().map(ir::Name::ArrayGet);
@@ -736,25 +823,44 @@ impl Checker<'_> {
             self.live_call = None;
         }
         for word in 0..size {
-            if word == 0 {
-                self.generated.push(ir::BodyStatement {
-                    a: index_name,
-                    b: Some(ir::Name::Parameter(0)),
-                    ..ir::BodyStatement::bare(Op::StoreF)
-                });
-            } else {
-                let offset = Constant::float(f32::from(u16::try_from(word).unwrap_or(u16::MAX)));
-                self.generated.push(ir::BodyStatement {
-                    op: Op::AddF,
-                    a: index_name,
-                    b: offset.immediate().map(ir::Name::Immediate),
-                    c: Some(ir::Name::Parameter(0)),
-                });
-            }
-            self.generated.push(ir::BodyStatement {
-                a: getter,
-                ..ir::BodyStatement::bare(Op::Call1)
-            });
+            let offset = Constant::float(f32::from(u16::try_from(word).unwrap_or(u16::MAX)));
+            let offset = offset.immediate().map(ir::Name::Immediate);
+            // FTEF-32.19: with `OP_CALL1H` each word's index is the call's own operand.
+            let call = match (by_operands, word) {
+                (true, 0) => ir::BodyStatement {
+                    a: getter,
+                    b: index_name,
+                    ..ir::BodyStatement::bare(Op::Call1h)
+                },
+                (true, _) => ir::BodyStatement {
+                    a: getter,
+                    b: self
+                        .push_made(Op::AddF, index_name, offset)
+                        .map(ir::Name::Made),
+                    ..ir::BodyStatement::bare(Op::Call1h)
+                },
+                (false, _) => {
+                    self.generated.push(if word == 0 {
+                        ir::BodyStatement {
+                            a: index_name,
+                            b: Some(ir::Name::Parameter(0)),
+                            ..ir::BodyStatement::bare(Op::StoreF)
+                        }
+                    } else {
+                        ir::BodyStatement {
+                            op: Op::AddF,
+                            a: index_name,
+                            b: offset,
+                            c: Some(ir::Name::Parameter(0)),
+                        }
+                    });
+                    ir::BodyStatement {
+                        a: getter,
+                        ..ir::BodyStatement::bare(Op::Call1)
+                    }
+                }
+            };
+            self.generated.push(call);
             self.generated.push(ir::BodyStatement {
                 a: Some(ir::Name::Return),
                 b: Some(ir::Name::MadeWord(first, word)),

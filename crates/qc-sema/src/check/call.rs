@@ -29,7 +29,7 @@ use crate::{MAX_PARMS, VECTOR_WORDS, VECTOR_WORDS_FLOAT, VECTOR_WORDS_INT};
 /// `MAX_PARMS + MAX_EXTRA_PARMS`: the most arguments a call may pass.
 const MAX_ARGUMENTS: usize = 136;
 /// The parameters `OP_CALL1H` to `OP_CALL8H` take as their own operands (FTEF-32.19).
-const REGISTER_PARMS: usize = 2;
+pub(super) const REGISTER_PARMS: usize = 2;
 
 impl Checker<'_> {
     /// FTEF-32: the call `call`.
@@ -816,9 +816,9 @@ impl Checker<'_> {
     }
 
     /// FTEF-32.25: the argument `from` of `words` words copied a piece to a slot from `slot`
-    /// on: to a value of its own where the slot is one of the call's operands, `registers`.
-    /// One that is no definition's or statement's words, or whose pieces do not each start a
-    /// slot, is not followed.
+    /// on: to a value of its own where the slot is one of the call's operands, `registers`,
+    /// which the pieces of the slot are each stored to their word of. One that is no
+    /// definition's or statement's words is not followed.
     fn wide_argument(
         &mut self,
         from: Option<ir::Name>,
@@ -828,26 +828,43 @@ impl Checker<'_> {
         span: Span,
     ) {
         let from = from.filter(|name| matches!(name, ir::Name::Def(..) | ir::Name::Made(_)));
-        // A piece that is a call's operand is a slot whole; any other is stored to its word
-        // of its slot, a pair's two words on a target with no `OP_STORE_I64` among them.
-        let pieces = if registers.is_some() {
-            self.slot_pieces(words, span)
-        } else {
-            Some(self.pieces(words, span))
-        };
-        let (Some(from), Some(pieces)) = (from, pieces) else {
+        let Some(from) = from else {
             self.followed = false;
             return;
         };
-        for (op, word) in pieces {
-            let register = registers
-                .as_mut()
-                .and_then(|operands| operands.get_mut(Checker::slot_of_word(slot, word)));
-            let to = match register {
+        // The value a call's operand is, by its slot: the statement it is made at.
+        let mut values: [Option<u32>; REGISTER_PARMS] = [None; REGISTER_PARMS];
+        for (op, word) in self.pieces(words, span) {
+            let at = Checker::slot_of_word(slot, word);
+            let within = word.checked_rem(VECTOR_WORDS).unwrap_or(0);
+            let to = match registers.as_mut().and_then(|operands| operands.get_mut(at)) {
                 Some(register) => {
-                    let copy = u32::try_from(self.generated.len()).ok();
-                    *register = copy.map(ir::Name::Made);
-                    *register
+                    let value = values.get_mut(at).and_then(|value| {
+                        if value.is_none() {
+                            *value = u32::try_from(self.generated.len()).ok();
+                        }
+                        *value
+                    });
+                    // The words of the value left for the slot: a piece of fewer is one of
+                    // several that write the value's words.
+                    let left = words.saturating_sub(word).min(VECTOR_WORDS);
+                    let stored = match op {
+                        Op::StoreV => VECTOR_WORDS,
+                        Op::StoreI64 => 2,
+                        _ => 1,
+                    };
+                    let whole = within == 0 && stored == left;
+                    if within == 0 {
+                        *register = value.map(ir::Name::Made);
+                        if let Some(value) = value.filter(|_| !whole) {
+                            self.effects.push((value, ir::Effect::Block(left)));
+                        }
+                    }
+                    if whole {
+                        *register
+                    } else {
+                        value.map(|value| ir::Name::MadeWord(value, within))
+                    }
                 }
                 None => Checker::slot_word(slot, word),
             };
@@ -903,8 +920,14 @@ impl Checker<'_> {
 
     /// FTEF-32.25, FTEF-19.78: the value an array's setter stores, a struct `from` of `words`
     /// words, copied to its slots, the setter's second parameter's on.
-    pub(super) fn setter_argument(&mut self, from: Option<ir::Name>, words: u32, span: Span) {
-        self.wide_argument(from, words, SETTER_VALUE_SLOT, None, span);
+    pub(super) fn setter_argument(
+        &mut self,
+        from: Option<ir::Name>,
+        words: u32,
+        registers: Option<&mut [Option<ir::Name>; REGISTER_PARMS]>,
+        span: Span,
+    ) {
+        self.wide_argument(from, words, SETTER_VALUE_SLOT, registers, span);
     }
 
     /// FTEF-32.25: the words of `ty` when it is a struct or union of more than a vector's,
@@ -936,17 +959,6 @@ impl Checker<'_> {
             at = at.saturating_add(size);
         }
         pieces
-    }
-
-    /// FTEF-32.25: [`Checker::pieces`] when each starts a parameter's slot, which is all the
-    /// body's statements name: `None` where a word is left in the middle of one, two words
-    /// with no `OP_STORE_I64`.
-    pub(super) fn slot_pieces(&self, words: u32, span: Span) -> Option<Vec<(Op, u32)>> {
-        let pieces = self.pieces(words, span);
-        pieces
-            .iter()
-            .all(|(_, word)| word.is_multiple_of(VECTOR_WORDS))
-            .then_some(pieces)
     }
 
     /// `random()`, `random(scale)` and `random(low, high)`: each argument made a float, of
@@ -1752,7 +1764,7 @@ impl FunctionType {
 }
 
 /// The slot of the value an array's setter stores, `ArraySet*NAME(index, value)`'s second.
-const SETTER_VALUE_SLOT: usize = 1;
+pub(super) const SETTER_VALUE_SLOT: usize = 1;
 
 /// `CALL0` to `CALL8`, the call of `passed` arguments, the opcode of the count (QC-18.3).
 pub(super) fn call_opcode(passed: usize) -> Option<Op> {

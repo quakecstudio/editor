@@ -117,6 +117,9 @@ pub(crate) struct Compiler<'a> {
     defaults: HashMap<DefId, Vec<Option<(FileId, ast::Expr)>>>,
     /// Whether the module is compiled with FTEQCC's `-Fautoproto` (FTE-22.3, FTE-18.8).
     pub(crate) autoproto: bool,
+    /// Where a call of the functions the compiler writes itself passes its arguments: as the
+    /// call's own operands on a target with `OP_CALL1H` (FTEF-32.19).
+    pub(crate) calls: qc_progs::CallPassing,
     /// The return type of the function whose body is being compiled, `None` outside one.
     body_return: Option<ValueType>,
     /// The function's `ret*` local, once a bare `return` made it (FTE-18.10).
@@ -183,6 +186,7 @@ impl<'a> Compiler<'a> {
             ret_local: None,
             defaults: HashMap::new(),
             autoproto: false,
+            calls: qc_progs::CallPassing::Slots,
             s_files: HashMap::new(),
             nested: Vec::new(),
             next_nested: 0,
