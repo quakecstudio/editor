@@ -334,7 +334,8 @@ world's light below the entity.
 
 **Source:** `WinQuake/gl_rlight.c`, `R_AnimateLight` and `R_LightPoint`; `WinQuake/gl_rsurf.c`,
 `R_BuildLightMap` and `R_RenderBrushPoly`; `WinQuake/r_main.c`, `d_lightstylevalue`
-(id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`).
+(id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`); Ironwail's `R_AnimateLight`
+for REND-5.8 ([ADR-0026](../adr/0026-preview-host-later-engine-improvements.md)).
 
 A face's lightmaps are one per light style it lists. The progs sets each style's string with
 `lightstyle`, a letter a tenth of a second; GLQuake turns the letters into a scale for each
@@ -369,6 +370,22 @@ style every frame and rebuilds the lightmaps of the faces whose styles changed.
   one atlas cut into 256 by 256 blocks; a face counts in the block of its top left texel, and
   each block's rectangle, clipped to the atlas, is written once a frame, its columns as well as
   its rows, where QuakeSpasm writes the block's full width. The texels drawn are the same.
+- **REND-5.8** Ironwail blends a style from one letter to the next
+  (`andrei-drexler/ironwail@08d578136ff43d7d1ef38e636dfbfd3e844be7cd`, `Quake/gl_rlight.c`,
+  `R_AnimateLight`), with the option `r_lerplightstyles`, "`1`" by default
+  (`Quake/gl_rmain.c`: "`0=off; 1=skip abrupt transitions; 2=always lerp`"): `f = cl.time *
+  10.0; base = floor(f); i = (int)base; f -= base;`, `f = 0.0` when the option is 0; for a
+  style with a string, `k = i % cl_lightstyle[j].length; n = k + 1; if (n ==
+  cl_lightstyle[j].length) n = 0;`, both turned into letters less `'a'`; below 2, "only
+  interpolate abrupt changes (e.g. flickering light in e1m1) if r_lerplightstyles >= 2": `if
+  (r_lerplightstyles.value < 2.f && abs(n - k) >= ('m' - 'a') / 2) n = k;`; and
+  `d_lightstylevalue[j] = (int)(k*22 + (n-k)*22*f);`, in double. The preview host blends as
+  `r_lerplightstyles 1` does by default, under ADR-0026 (a visible defect, the ten steps a
+  second of a fading light, fixed as the later engine fixes it), offers 2, and keeps id's
+  REND-5.3 as the option 0, `floor` and all: with 0 it truncates `cl.time*10` as id does. A
+  negative time reads the first letter for `k`, and for `n` when it would read before the
+  string, as REND-5.3 does. A style's value changes every frame while it fades, so its faces
+  are made again each frame (REND-5.5).
 
 ## REND-6 Coloured light
 

@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 
 use crate::Error;
-use qs_render::Look;
+use qs_render::{Look, StyleLerp};
 
 /// The engine-style options, each written with one dash as the engines and ADR-0008 write
 /// them; clap reads them with two.
@@ -47,6 +47,11 @@ pub struct Args {
     /// Brush models without QuakeSpasm's `gl_zfix` (REND-1.12).
     #[arg(long)]
     pub nozfix: bool,
+    /// How light styles blend from letter to letter, Ironwail's `r_lerplightstyles`: every
+    /// change but an abrupt one (1, the default), every change (2) or none, as id's engine
+    /// (0) (REND-5.8).
+    #[arg(long, value_enum, default_value_t = StyleLerpArg::SkipAbrupt)]
+    pub lerplightstyles: StyleLerpArg,
     /// Where a free camera starts: x, y, z and yaw.
     #[arg(long, num_args = 4, value_names = ["x", "y", "z", "yaw"], allow_negative_numbers = true)]
     pub at: Option<Vec<f32>>,
@@ -121,6 +126,32 @@ impl LookArg {
         match self {
             Self::Quakespasm => Look::QuakeSpasm,
             Self::Glquake => Look::GlQuake,
+        }
+    }
+}
+
+/// What `--lerplightstyles` takes (REND-5.8).
+#[derive(clap::ValueEnum, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum StyleLerpArg {
+    /// `r_lerplightstyles 1`: blended, but not an abrupt change.
+    #[default]
+    #[value(name = "1")]
+    SkipAbrupt,
+    /// `r_lerplightstyles 2`: every change blended.
+    #[value(name = "2")]
+    Always,
+    /// `r_lerplightstyles 0`: id's, each letter held for its tenth of a second.
+    #[value(name = "0")]
+    Off,
+}
+
+impl StyleLerpArg {
+    /// The renderer's blend.
+    pub const fn style_lerp(self) -> StyleLerp {
+        match self {
+            Self::SkipAbrupt => StyleLerp::SkipAbrupt,
+            Self::Always => StyleLerp::Always,
+            Self::Off => StyleLerp::Off,
         }
     }
 }

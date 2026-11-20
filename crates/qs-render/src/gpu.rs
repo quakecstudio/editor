@@ -1573,7 +1573,7 @@ mod tests {
     use crate::picture::tests::{TgaSpec, solid, tga};
     use crate::skybox::Skybox;
     use crate::sprite::SpriteVertex;
-    use crate::{LightStyles, MapMesh};
+    use crate::{LightStyles, MapMesh, StyleLerp};
     use egui_wgpu::CallbackTrait as _;
 
     const FORMATS: (wgpu::TextureFormat, wgpu::TextureFormat) = (
@@ -2175,7 +2175,7 @@ mod tests {
     fn a_new_lightmap_is_written_over_the_old() {
         let (state, renderer, mut mesh) = renderer();
         assert_eq!(&lightmap_row(&state, &renderer)[4..8], [100, 100, 100, 255]);
-        let off = LightStyles::at(|s| (s == 0).then_some(b"a".as_slice()), 0.0);
+        let off = LightStyles::at(|s| (s == 0).then_some(b"a".as_slice()), 0.0, StyleLerp::Off);
         for patch in mesh.relight(&off) {
             renderer.set_lightmap(&state.queue, &patch);
         }
@@ -2216,7 +2216,7 @@ mod tests {
     #[test]
     fn the_callback_writes_its_lightmap() {
         let (state, renderer, mut mesh) = renderer();
-        let off = LightStyles::at(|s| (s == 0).then_some(b"a".as_slice()), 0.0);
+        let off = LightStyles::at(|s| (s == 0).then_some(b"a".as_slice()), 0.0, StyleLerp::Off);
         let lightmap = mesh.relight(&off);
         let mut resources = egui_wgpu::CallbackResources::default();
         resources.insert(renderer);

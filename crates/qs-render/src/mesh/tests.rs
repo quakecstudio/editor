@@ -18,7 +18,7 @@ use qs_client::DynamicLight;
 
 use super::{Changes, Extras, Image, MapMesh, MeshBuilder, MeshError, Palette, Placement, Surface};
 use crate::light::light_point;
-use crate::styles::LightStyles;
+use crate::styles::{LightStyles, StyleLerp};
 
 /// One face of a test map: a 64 by 32 rectangle in the z = 0 plane, lit by `lighting`.
 pub(crate) struct MapSpec {
@@ -692,7 +692,7 @@ fn texel_for(mesh: &MapMesh, styles: &LightStyles) -> [u8; 4] {
 
 /// Style `style`'s string is `string`; the others have none.
 fn style(style: usize, string: &'static [u8]) -> LightStyles {
-    LightStyles::at(move |s| (s == style).then_some(string), 0.0)
+    LightStyles::at(move |s| (s == style).then_some(string), 0.0, StyleLerp::Off)
 }
 
 // spec REND-1.13: a texel sums each of its styles' samples times the style's value at the time,

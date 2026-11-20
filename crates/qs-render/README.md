@@ -36,8 +36,9 @@ the map view and the preview host share one renderer.
   atlas (REND-1.1 to REND-1.6, REND-1.8). `MapMesh::relight(styles)` makes the atlas again
   when a style a face reads changes (REND-5.5), and `MapRenderer::set_lightmap` writes each
   256 by 256 block's changed rectangle, as QuakeSpasm uploads its lightmaps (REND-5.7).
-- `LightStyles::at(strings, time)`: `R_AnimateLight`, every style's value from the strings the
-  progs set with `lightstyle` (REND-5).
+- `LightStyles::at(strings, time, lerp)`: `R_AnimateLight`, every style's value from the
+  strings the progs set with `lightstyle` (REND-5), blended from letter to letter as Ironwail's
+  `r_lerplightstyles` by default and held as id's with `StyleLerp::Off` (REND-5.8).
 - `MeshBuilder::add_with(bsp, extras, placements)`: a model lit in colour by its map's
   `.lit` file (REND-6), and its textures each through a palette of its own where `Extras`
   gives one, as Half-Life's textures carry (MAP-24).

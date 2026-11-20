@@ -642,6 +642,7 @@ impl Args {
         }
         let mut play = Play::new(palette.clone(), pics, bsp.entities());
         play.zfix = zfix;
+        play.style_lerp = self.lerplightstyles.style_lerp();
         play.look = look;
         play.load_models(client.model_names(), &*reader()?, &ranker()?)
             .map_err(|e| Error::Load(e.to_string()))?;

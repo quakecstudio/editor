@@ -33,7 +33,7 @@ use crate::mesh::{Image, MapMesh, Palette, Placement, fullbright_split};
 use crate::particles::particle_triangles;
 use crate::skybox::{SkyKeys, Skybox, sky_parse_worldspawn};
 use crate::sprite::{Eye, SpriteEntity, SpriteError, SpriteModel, angle_vectors};
-use crate::styles::LightStyles;
+use crate::styles::{LightStyles, StyleLerp};
 
 /// The bar's width, which the bar is centred by on a wider screen: `(vid.width - 320)>>1`
 /// (HUD-1).
@@ -274,6 +274,9 @@ pub struct Play {
     pub screen: [i32; 2],
     /// QuakeSpasm's `gl_zfix` for brush models (REND-1.12).
     pub zfix: bool,
+    /// How the light styles blend from letter to letter, Ironwail's `r_lerplightstyles`
+    /// (REND-5.8).
+    pub style_lerp: StyleLerp,
     /// Whether an `.mdl` is drawn as the rerelease's MD5 model where there is one
     /// (REND-12.1).
     pub md5_models: bool,
@@ -336,6 +339,7 @@ impl Play {
             skyfog: sky.skyfog,
             screen: DEFAULT_SCREEN,
             zfix: true,
+            style_lerp: StyleLerp::default(),
             md5_models: true,
             look: Look::default(),
             gamma: 1.0,
@@ -501,6 +505,7 @@ impl Play {
                     .filter(|s| !s.is_empty())
             },
             scene.time,
+            self.style_lerp,
         );
         let lightmap = mesh.relight_with(&styles, &scene.lights);
         let refdef = &scene.view;
