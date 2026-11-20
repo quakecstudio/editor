@@ -499,8 +499,11 @@ pub(crate) struct ClientSlot {
     pub(crate) active: bool,
     pub(crate) spawned: bool,
     sendsignon: bool,
-    name: Vec<u8>,
-    colors: i32,
+    /// `host_client->name`, which `spawn` gives its `netname` (PHYS-10.1).
+    pub(crate) name: Vec<u8>,
+    /// `host_client->colors`, `top * 16 + bottom`, whose bottom `spawn` gives its `team`
+    /// (PHYS-10.1).
+    pub(crate) colors: i32,
     old_frags: i32,
     /// Its reliable message, which may overflow (BUILTIN-13.4).
     pub(crate) message: Message,
@@ -1396,7 +1399,7 @@ impl SimCall<'_, '_, '_> {
     }
 
     /// `SV_UpdateToReliableMessages` (NET-1.4).
-    fn update_to_reliable_messages(&mut self) {
+    pub(crate) fn update_to_reliable_messages(&mut self) {
         let frags = float_to_int(self.float(1, "frags"));
         let reliable = self.sim.messages.reliable_datagram.take();
         let slot = &mut self.sim.messages.client;

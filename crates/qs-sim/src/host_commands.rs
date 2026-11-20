@@ -115,6 +115,8 @@ pub(crate) fn tokenize(text: &[u8]) -> Words {
 pub(crate) const COLOR_MASK: i32 = 15;
 pub(crate) const MAX_COLOR: i32 = 13;
 pub(crate) const COLOR_ROW: i32 = 16;
+/// `CL_SignonReply`'s top colour, `(int)cl_color.value >> 4` (PHYS-10.8).
+pub(crate) const COLOR_SHIFT: u32 = 4;
 /// `atoi`'s base.
 const DECIMAL: i32 = 10;
 
@@ -275,7 +277,7 @@ impl SimCall<'_, '_, '_> {
             _ => words.args.clone(),
         };
         name.truncate(NAME_LENGTH);
-        self.sim.client_name.clone_from(&name);
+        self.sim.messages.client.name.clone_from(&name);
         let value = self.sim.mock.engine_mut().strings.make(name.clone());
         self.set_entity_raw(ent, "netname", value);
         let message = &mut self.sim.messages.reliable_datagram;
@@ -301,11 +303,13 @@ impl SimCall<'_, '_, '_> {
         };
         let top = (top & COLOR_MASK).min(MAX_COLOR);
         let bottom = (bottom & COLOR_MASK).min(MAX_COLOR);
+        let colors = top.wrapping_mul(COLOR_ROW).wrapping_add(bottom);
+        self.sim.messages.client.colors = colors;
         self.set_float(ent, "team", int_to_float(bottom.wrapping_add(1)));
         let message = &mut self.sim.messages.reliable_datagram;
         message.write_byte(SVC_UPDATECOLORS);
         message.write_byte(0);
-        message.write_byte(top.wrapping_mul(COLOR_ROW).wrapping_add(bottom));
+        message.write_byte(colors);
     }
 
     /// PHYS-11.8: `Host_Pause_f`: with `pausable` set, the game pauses or unpauses, saying so to

@@ -18,9 +18,10 @@ use qc_vm::convert::{double_to_float, float_to_int};
 use super::{Message, NET_MAX_DATAGRAM, NET_MAX_MSGLEN, Vis};
 use crate::UserCmd;
 use crate::fixtures::{CONTENTS_EMPTY, CONTENTS_SOLID, MapSpec};
-use crate::protocol::Protocol;
+use crate::protocol::{Protocol, ProtocolVersion};
 use crate::world::tests::{
-    PLAYER_SIZE, Running, entity, ledge, ledge_over, moved, player, run_on, running_with,
+    PLAYER_SIZE, Running, entity, ledge, ledge_over, moved, player, run_on, running_from,
+    running_with,
 };
 
 /// Id's protocol 15, which the NET statements of id's server describe.
@@ -457,6 +458,7 @@ fn the_serverinfo_names_the_game() {
 // spec NET-2.4: the spawn message: the time, each slot's name, frags and colours, the 64
 // light styles, the four stats, the client's setangle, the client data, signon 3
 // spec NET-2.5: datagrams start with the frame after the begin
+// spec PHYS-10.8: the client's name and colours follow the spawn message
 #[test]
 fn the_spawn_message_lists_the_client_state() {
     let more = "void() worldspawn = { lightstyle(0, \"m\"); lightstyle(63, \"az\"); \
@@ -492,6 +494,9 @@ fn the_spawn_message_lists_the_client_state() {
     assert_eq!([r.angle(), r.angle(), r.angle()], [9.84375, 19.6875, 0.0]);
     skip_clientdata(&mut r);
     assert_eq!((r.byte(), r.byte()), (25, 3));
+    // PHYS-10.8: the name and colours the client sent before spawn, after the spawn message.
+    assert_eq!((r.byte(), r.byte(), r.string().as_str()), (13, 0, "player"));
+    assert_eq!((r.byte(), r.byte(), r.byte()), (17, 0, 0));
     assert!(r.done());
     run.frames(1, 0.1).unwrap();
     assert_eq!(run.packets().len(), 1, "a datagram, and nothing reliable");
@@ -1087,14 +1092,10 @@ fn a_patched_progs_runs_the_rereleases_builtins() {
     assert_eq!(run.packets()[1], [56, 0, 2]);
 }
 
-/// `options` with the server writing in `protocol`: `sv_protocol` set before the map loads
-/// (NET-6.10).
+/// `options` with the server writing in `protocol`, the host's launch protocol (NET-6.11).
 fn speaking(protocol: Protocol) -> LoadOptions {
     LoadOptions {
-        settings: vec![(
-            "sv_protocol".to_owned(),
-            protocol.version().number().to_string(),
-        )],
+        protocol: protocol.version(),
         ..LoadOptions::default()
     }
 }
@@ -1495,39 +1496,121 @@ fn fitzquake_buffers_hold_what_ids_cannot() {
     assert!(next_datagram(&mut id).len() <= NET_MAX_DATAGRAM);
 }
 
-// spec NET-6.10: the map loads in sv_protocol's protocol; a value that names none loads 666 and
-// says so at the console
+/// The protocol the serverinfo of `run`'s world names.
+fn protocol_sent(run: &mut Running) -> i32 {
+    run.connect();
+    let packets = run.packets();
+    let mut r = Reader::new(&packets[0]);
+    r.byte();
+    r.string();
+    r.byte();
+    r.long()
+}
+
+/// A world loaded with `options`, its console's lines taken.
+fn loaded(options: LoadOptions) -> (Running, Vec<String>) {
+    let mut run = running_with(&ledge(), "", "", Vec::new(), options);
+    let lines = run
+        .world
+        .take_console_output()
+        .iter()
+        .map(|line| String::from_utf8_lossy(line).into_owned())
+        .collect();
+    (run, lines)
+}
+
+/// [`LoadOptions`] with the startup text `text`.
+fn starting(text: &str, protocol: ProtocolVersion) -> LoadOptions {
+    LoadOptions {
+        startup: text.as_bytes().to_vec(),
+        protocol,
+        ..LoadOptions::default()
+    }
+}
+
+// spec NET-6.11: the map loads in sv_protocol's protocol: the launch protocol, 666 by default,
+// then what the console set before the map; a value other than 15, 666 or 999 is refused
+// and the protocol kept
 #[test]
 fn sv_protocol_chooses_the_maps_protocol() {
-    let with = |value: &str| {
-        let options = LoadOptions {
-            settings: vec![("sv_protocol".to_owned(), value.to_owned())],
-            ..LoadOptions::default()
-        };
-        let mut run = running_with(&ledge(), "", "", Vec::new(), options);
-        run.connect();
-        let packets = run.packets();
-        let mut r = Reader::new(&packets[0]);
-        r.byte();
-        r.string();
-        r.byte();
-        r.long()
-    };
-    assert_eq!(with("15"), 15);
-    assert_eq!(with("999"), 999);
-    assert_eq!(with("666"), 666);
-    assert_eq!(with("16"), 666, "no protocol: the default");
-    assert_eq!(with("junk"), 666);
-    let options = LoadOptions {
-        settings: vec![("sv_protocol".to_owned(), "16".to_owned())],
-        ..LoadOptions::default()
-    };
-    let mut run = running_with(&ledge(), "", "", Vec::new(), options);
-    let lines = run.world.take_console_output();
-    assert!(
-        lines.contains(&b"sv_protocol must be 15 or 666 or 999".to_vec()),
-        "{lines:?}"
+    let with =
+        |text: &str, launch: ProtocolVersion| protocol_sent(&mut loaded(starting(text, launch)).0);
+    assert_eq!(with("", ProtocolVersion::default()), 666);
+    assert_eq!(with("", ProtocolVersion::NetQuake), 15);
+    assert_eq!(with("", ProtocolVersion::Rmq), 999);
+    assert_eq!(
+        with("sv_protocol 15", ProtocolVersion::Rmq),
+        15,
+        "the console's wins"
     );
-    let mut fine = running_with(&ledge(), "", "", Vec::new(), speaking(Protocol::RMQ));
-    assert!(fine.world.take_console_output().is_empty());
+    assert_eq!(with("sv_protocol 999", ProtocolVersion::default()), 999);
+    assert_eq!(
+        with("sv_protocol 16", ProtocolVersion::NetQuake),
+        15,
+        "refused, kept"
+    );
+    assert_eq!(with("sv_protocol 666", ProtocolVersion::NetQuake), 666);
+    assert_eq!(with("sv_protocol 666", ProtocolVersion::Rmq), 666);
+    let (mut both, _) = loaded(starting(
+        "skill 3; sv_protocol 15",
+        ProtocolVersion::default(),
+    ));
+    assert_eq!(both.world.setting("skill"), Some(3.0));
+    assert_eq!(protocol_sent(&mut both), 15);
+    let (_, lines) = loaded(starting("sv_protocol junk", ProtocolVersion::default()));
+    assert_eq!(lines, ["sv_protocol must be 15 or 666 or 999"]);
+    let (_, lines) = loaded(starting("sv_protocol 15", ProtocolVersion::default()));
+    assert!(lines.is_empty(), "no map is running yet: {lines:?}");
+}
+
+// spec NET-6.11: SV_Protocol_f's answers: the value with no argument, the usage with more than
+// one, a change while a map runs taking the next level, which the host state carries; it is
+// no setting
+#[test]
+fn sv_protocol_answers_as_quakespasm_does() {
+    let (mut run, _) = loaded(starting("", ProtocolVersion::default()));
+    let say = |run: &mut Running, text: &str| -> Vec<String> {
+        run.world.console(text);
+        run.world.execute_console(&Progs::read(&run.progs).unwrap());
+        run.world
+            .take_console_output()
+            .iter()
+            .map(|line| String::from_utf8_lossy(line).into_owned())
+            .collect()
+    };
+    assert_eq!(
+        say(&mut run, "sv_protocol\n"),
+        ["\"sv_protocol\" is \"666\""]
+    );
+    assert_eq!(
+        say(&mut run, "sv_protocol 15 999\n"),
+        ["usage: sv_protocol <protocol>"]
+    );
+    assert_eq!(
+        say(&mut run, "sv_protocol 15\n"),
+        ["changes will not take effect until the next level load."]
+    );
+    assert_eq!(
+        say(&mut run, "sv_protocol\n"),
+        ["\"sv_protocol\" is \"15\""]
+    );
+    assert_eq!(run.world.setting("sv_protocol"), None);
+    assert_eq!(protocol_sent(&mut run), 666, "this map keeps its protocol");
+    let host = run.world.host_state();
+    let mut next = running_from(
+        &ledge(),
+        run.progs.clone(),
+        "",
+        Vec::new(),
+        LoadOptions {
+            host: Some(host),
+            protocol: ProtocolVersion::Rmq,
+            ..LoadOptions::default()
+        },
+    );
+    assert_eq!(
+        protocol_sent(&mut next),
+        15,
+        "the kept host's, not the launch's"
+    );
 }

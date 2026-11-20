@@ -107,7 +107,7 @@ fn gamma_goes_to_the_blend_table_in_glquakes_look() {
     assert_eq!((none.volume, none.music), (0.0, 0.0));
 }
 
-// spec CON-7.5: the later engines' drawing settings reach the frame: r_lerplightstyles 0 holds,
+// spec CON-7.6: the later engines' drawing settings reach the frame: r_lerplightstyles 0 holds,
 // below 2 skips abrupt changes, from 2 blends all; gl_zfix and r_litwater are off only at 0;
 // each is what Play draws the next frame with
 #[test]

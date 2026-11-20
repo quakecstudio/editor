@@ -8,7 +8,7 @@
 /// default each is declared with (`WinQuake/sv_main.c`, `sv_phys.c`, `sv_user.c`,
 /// `pr_cmds.c`, `host.c`, `net_main.c`, `cl_main.c`); `skill`, `deathmatch`, `coop` and
 /// `teamplay` the engine already has.
-pub(crate) const SERVER_SETTINGS: [(&str, &str); 25] = [
+pub(crate) const SERVER_SETTINGS: [(&str, &str); 24] = [
     ("hostname", "UNNAMED"),
     ("_cl_name", "player"),
     ("_cl_color", "0"),
@@ -33,8 +33,6 @@ pub(crate) const SERVER_SETTINGS: [(&str, &str); 25] = [
     ("developer", "0"),
     ("pausable", "1"),
     ("temp1", "0"),
-    // NET-6.10: QuakeSpasm's `sv_protocol`, `PROTOCOL_FITZQUAKE` by default.
-    ("sv_protocol", "666"),
 ];
 
 /// The client's settings the preview host reads, with id's defaults (CON-7.1):
@@ -61,7 +59,7 @@ pub(crate) const CLIENT_SETTINGS: [(&str, &str); 22] = [
     ("gamma", "1"),
     ("bgmvolume", "1"),
     ("volume", "0.7"),
-    // CON-7.5: Ironwail's `r_lerplightstyles` and `gl_zfix`, "`1`" (`Quake/gl_rmain.c`), and
+    // CON-7.6: Ironwail's `r_lerplightstyles` and `gl_zfix`, "`1`" (`Quake/gl_rmain.c`), and
     // QuakeSpasm's `r_litwater`, "`1`".
     ("r_lerplightstyles", "1"),
     ("gl_zfix", "1"),
@@ -87,7 +85,7 @@ pub(crate) const ARCHIVED: [&str; 17] = [
     "viewsize",
     "bgmvolume",
     "volume",
-    // CON-7.5: the two Ironwail declares `CVAR_ARCHIVE`.
+    // CON-7.6: the two Ironwail declares `CVAR_ARCHIVE`.
     "r_lerplightstyles",
     "gl_zfix",
 ];

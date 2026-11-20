@@ -36,10 +36,10 @@ use crate::bridge::Bridge;
 use crate::contents::contents_at;
 use crate::game::{Eye, Game, PendingSwap, Placement, Screen};
 use crate::keys::{
-    MouseLook, STARTUP, config_path, configuration, focus, keynum, modifier_keys, mouse_key,
-    mouse_motion, runs_binding, wheel_key,
+    MouseLook, config_path, configuration, focus, keynum, modifier_keys, mouse_key, mouse_motion,
+    runs_binding, wheel_key,
 };
-use crate::load::{Acted, Describer, Loaded, Rand, map_mesh};
+use crate::load::{Acted, Describer, Loaded, Rand, Start, Startup, map_mesh};
 use crate::map_bsp::MapBsp;
 use crate::screenshot::Drawer;
 use crate::settings::HostSettings;
@@ -279,7 +279,6 @@ impl Viewer {
             input: Input::new(),
             motion: [0.0; 2],
             modifiers: egui::Modifiers::NONE,
-            configured: false,
             config_file: config_path(),
         }
     }
@@ -350,8 +349,6 @@ struct Viewer {
     motion: [f32; 2],
     /// The modifier keys as the last frame saw them, for their key events (INPUT-3.1).
     modifiers: egui::Modifiers,
-    /// Whether `quake.rc` has run, as `Host_Init` runs it once (INPUT-3.3).
-    configured: bool,
     /// The host's own configuration, run after `quake.rc` and written on exit (INPUT-4).
     config_file: Option<std::path::PathBuf>,
 }
@@ -421,11 +418,6 @@ impl Viewer {
                     },
                 );
             });
-        }
-        // INPUT-3.3: `Host_Init`'s "`Cbuf_InsertText ("exec quake.rc\n");`", once.
-        if !self.configured {
-            self.configured = true;
-            self.run_line(STARTUP);
         }
         // In a panel the window's keys are the game's only while the panel has the keyboard: a
         // click in it takes it, and a click elsewhere, or another widget's focus, gives it up.
@@ -1384,7 +1376,7 @@ impl GameView {
             // started with `-bridge` does (BRIDGE-3.1), on this level and each later one.
             args.bridge = Some(std::path::PathBuf::from(PIPES));
         }
-        let loaded = args.load_map(&args.map, None, None, None, None)?;
+        let loaded = args.load_map(&args.map, None, Start::New(Startup::QuakeRc), None, None)?;
         let bridge = link.map(|(read, write)| Bridge::over(read, write));
         Ok(Self {
             viewer: Viewer::new(args, loaded, bridge, state, Shell::Panel),

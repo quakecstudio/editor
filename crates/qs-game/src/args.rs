@@ -7,7 +7,6 @@ use std::path::PathBuf;
 
 use crate::Error;
 use qs_render::Look;
-use qs_sim::HostState;
 use qs_sim::protocol::ProtocolVersion;
 
 /// The engine-style options, each written with one dash as the engines and ADR-0008 write
@@ -49,7 +48,7 @@ pub struct Args {
     pub gamma: Option<f32>,
     /// The protocol the server writes its messages in, QuakeSpasm's `-protocol`, which sets
     /// `sv_protocol` when the host starts: FitzQuake's 666 (the default), id's 15 or RMQ's 999
-    /// (NET-6.10).
+    /// (NET-6.11).
     #[arg(long, value_enum, default_value_t = ProtocolArg::FitzQuake)]
     pub protocol: ProtocolArg,
     /// Where a free camera starts: x, y, z and yaw.
@@ -146,7 +145,7 @@ pub enum ProtocolArg {
 }
 
 impl ProtocolArg {
-    /// The protocol it names, whose number `sv_protocol` is set to (NET-6.10).
+    /// The protocol it names, the host's first `sv_protocol` (NET-6.11).
     pub const fn version(self) -> ProtocolVersion {
         match self {
             Self::NetQuake => ProtocolVersion::NetQuake,
@@ -166,19 +165,6 @@ pub enum Show {
 }
 
 impl Args {
-    /// The settings a map load is given before it spawns (NET-6.10): `--protocol` as
-    /// `sv_protocol` for the first map of a new host, with no `host` carried, and nothing for a
-    /// later level, which keeps what the console made it.
-    pub(crate) fn launch_settings(&self, host: Option<&HostState>) -> Vec<(String, String)> {
-        match host {
-            None => vec![(
-                "sv_protocol".to_owned(),
-                self.protocol.version().number().to_string(),
-            )],
-            Some(_) => Vec::new(),
-        }
-    }
-
     /// The process's command line.
     pub fn from_env() -> Self {
         <Self as clap::Parser>::parse_from(engine_style(std::env::args()))

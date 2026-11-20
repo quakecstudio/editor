@@ -367,6 +367,16 @@ frametime it is given; the viewer paces its frames that way.
   (`CL_SignonReply`), so the four take frames 1 to 4. From the first stage the client is
   active, so the frames' physics run `PlayerPreThink` and `PlayerPostThink` on its edict before
   it has spawned (`SV_Physics_Client` tests `active`, not `spawned`).
+- **PHYS-10.8** Before `spawn` the client sends its name and colours, as QuakeSpasm's
+  `CL_SignonReply` does at its second stage ("`va("name \"%s\"\n", cl_name.string)`" and
+  "`va("color %i %i\n", ((int)cl_color.value)>>4, ((int)cl_color.value)&15)`", `Quake/cl_main.c`,
+  sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`), and the server runs them as
+  PHYS-11.7 says, so a `name` or `color` the startup configuration set (INPUT-3.7) before the
+  client connected is the spawned player's: `Host_Spawn_f` gives the edict `netname` the
+  client's name and `team` "`(host_client->colors & 15) + 1`". The host's `World::connect`,
+  which runs the four stages at once, sends them before the `spawn` stage and ends that stage
+  as its frame ends, with `SV_UpdateToReliableMessages` (NET-1.4), so their `svc_updatename`
+  and `svc_updatecolors` follow the spawn message, as they do in id's engine.
 ## PHYS-11 The client's string commands
 
 **Source:** `WinQuake/sv_user.c`, `SV_ReadClientMessage`; `WinQuake/host_cmd.c`, `Host_God_f`,

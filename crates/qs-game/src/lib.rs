@@ -21,6 +21,8 @@ mod values;
 mod view_script;
 mod window;
 
+use load::{Start, Startup};
+
 pub use args::{Args, LookArg, Show};
 pub use error::Error;
 pub use window::{GameView, Running};
@@ -47,7 +49,7 @@ impl args::Args {
                 ..args.clone()
             };
             let start = std::time::Instant::now();
-            let loaded = args.load_map(&args.map, None, None, None, None)?;
+            let loaded = args.load_map(&args.map, None, Start::New(Startup::Bare), None, None)?;
             let line = loaded.timerefresh(start.elapsed(), eye)?;
             let mut out = std::io::stdout().lock();
             std::io::Write::write_all(&mut out, format!("{line}\n").as_bytes())
@@ -64,7 +66,7 @@ impl args::Args {
                 .map_err(Error::Load)?;
             let script = view_script::ViewScript::parse(&text)?;
             // `load` keeps the sound for a view script (VIEWDIFF-1.3).
-            let loaded = args.load_map(&script.map, None, None, None, None)?;
+            let loaded = args.load_map(&script.map, None, Start::New(Startup::Bare), None, None)?;
             let size = args
                 .view_size
                 .as_deref()
@@ -77,14 +79,14 @@ impl args::Args {
                 nosound: true,
                 ..args.clone()
             };
-            let loaded = args.load_map(&args.map, None, None, None, None)?;
+            let loaded = args.load_map(&args.map, None, Start::New(Startup::Bare), None, None)?;
             let path = args
                 .bridge
                 .as_deref()
                 .ok_or_else(|| Error::Usage("--headless needs -bridge".to_owned()))?;
             return args.run_headless(loaded, listen(path)?);
         }
-        let loaded = args.load_map(&args.map, None, None, None, None)?;
+        let loaded = args.load_map(&args.map, None, Start::New(Startup::QuakeRc), None, None)?;
         let bridge = match &args.bridge {
             Some(path) => Some(listen(path)?),
             None => None,

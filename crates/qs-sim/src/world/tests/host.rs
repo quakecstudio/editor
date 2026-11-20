@@ -289,3 +289,24 @@ fn a_spawned_client_cannot_spawn_again() {
         "PutClientInServer ran once"
     );
 }
+
+// spec PHYS-10.8: connecting sends _cl_name and _cl_color before spawn, so a name and colour
+// the startup text set are the spawned player's
+#[test]
+fn the_startup_name_and_color_reach_the_player() {
+    let progs_bytes = super::player_progs("", "", "");
+    let options = crate::LoadOptions {
+        startup: b"name Ranger; color 4 3".to_vec(),
+        ..crate::LoadOptions::default()
+    };
+    let run = super::player_from(&ledge(), progs_bytes, options);
+    let progs = qc_progs::Progs::read(&run.progs).unwrap();
+    let fields = run.world.edict_fields(&progs, P).unwrap();
+    let netname = fields.iter().find(|f| f.name == "netname").unwrap();
+    assert_eq!(netname.value, crate::QcValue::String(b"Ranger".to_vec()));
+    assert_eq!(run.world.float(P, "team"), 4.0, "bottom 3, team 4");
+    let plain = player(&ledge(), "", "", "");
+    let fields = plain.world.edict_fields(&progs, P).unwrap();
+    let netname = fields.iter().find(|f| f.name == "netname").unwrap();
+    assert_eq!(netname.value, crate::QcValue::String(b"player".to_vec()));
+}
