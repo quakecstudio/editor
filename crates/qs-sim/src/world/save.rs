@@ -19,6 +19,7 @@ use qc_vm::ServerState;
 
 use super::{CLIENT, SpawnWatch, Spawner, World, field_slot};
 use crate::builtins::SimCall;
+use crate::protocol::EntAlpha;
 use crate::spawn::{FieldDef, Parser, SpawnError, Token, c_atof, parse_saved_edict, parse_value};
 
 /// `SAVEGAME_VERSION` (`host_cmd.c`).
@@ -382,6 +383,11 @@ impl World {
                     }
                 };
                 write_pair(out, name, &text);
+            }
+            // NET-6.8: "save entity alpha manually when progs.dat doesn't know about alpha".
+            let alpha = self.builtins.messages.alpha(n);
+            if progs.ed_find_field(b"alpha").is_none() && alpha != EntAlpha::DEFAULT {
+                write_pair(out, b"alpha", format!("{:.6}", alpha.to_save()).as_bytes());
             }
         }
         out.extend_from_slice(b"}\n");

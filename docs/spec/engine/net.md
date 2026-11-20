@@ -322,7 +322,10 @@ three (DIFF-16).
   `ENTALPHA_DEFAULT` 0 and `ENTALPHA_ZERO` 1. `ED_ParseEdict` sets it from an `alpha` key, "hack
   to support .alpha even when progs.dat doesn't know about it", with `Q_atof`; when the progs
   has an `alpha` field (`pr_alpha_supported`), `SV_WriteEntitiesToClient` sets it from the field
-  each time it reaches the edict; `ED_Free` resets it ("reset alpha for next entity"). The
+  each time it reaches the edict; `ED_Free` resets it ("reset alpha for next entity"); and
+  `ED_Write` saves it when the progs has no `alpha` field, "`fprintf (f, "\"alpha\" \"%f\"\n",
+  ENTALPHA_TOSAVE(ed->alpha))`", `ENTALPHA_TOSAVE` 0 for the default, -1 for `ENTALPHA_ZERO` and
+  `(a - 1) / 254` else, which the load reads back by the same key. The
   scale is `ENTSCALE_ENCODE` of the progs' `scale` field, "`((a) ? ((a) * ENTSCALE_DEFAULT) :
   ENTSCALE_DEFAULT)`" with `ENTSCALE_DEFAULT` 16, kept in an `unsigned char`: the host keeps
   the low byte of the product converted to an int, as x86 does, which C leaves undefined past

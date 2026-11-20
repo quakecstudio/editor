@@ -120,6 +120,17 @@ impl EntAlpha {
         }
     }
 
+    /// `ENTALPHA_TOSAVE(a)`: "`(((a)==ENTALPHA_DEFAULT)?0.0f:(((a)==ENTALPHA_ZERO)?-1.0f:((float)(a)-1)/(254)))`",
+    /// the value a savegame keeps (NET-6.8).
+    #[must_use]
+    pub fn to_save(self) -> f32 {
+        match self.0 {
+            ENTALPHA_DEFAULT => 0.0,
+            ENTALPHA_ZERO => -1.0,
+            byte => (f32::from(byte) - 1.0) / ALPHA_STEPS,
+        }
+    }
+
     /// Whether it is `ENTALPHA_ZERO`, an invisible entity the server does not send.
     #[must_use]
     pub const fn is_zero(self) -> bool {
