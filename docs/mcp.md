@@ -148,6 +148,8 @@ The server's instructions give an agent the order (L-30); it is the one a person
 5. `map.issues` and `map.leaks` say what is wrong: a missing player start, an entity the
    QuakeC does not know, a leak with its trail. `map.save` writes the file.
 6. To review it, `map.summary` counts what the map holds and `map.inspect` lists its entities;
+   with a `path`, `map.summary` reads a `.map` file from the disk without opening it, which
+   is how a set of maps is compared, under a read root;
    `map.play_from_here` compiles and lights it and starts the game at a point, and
    `engine.screenshot` writes the frame as a PNG the agent can look at.
 

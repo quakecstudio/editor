@@ -2424,7 +2424,7 @@ groups:
     - P4-14
     deliverable:
     - 'crates/qs-map-edit: `map.brushes`, the brushes of an entity of the open map, each with its place, the box around it and its textures, all of them or those touching a box'
-    - 'crates/qs-map-edit: `map.summary`, the open map in short: its bounds, its brush and entity counts, its entities counted by classname, its textures counted by face, and its world''s keys'
+    - 'crates/qs-map-edit: `map.summary`, the open map, or a .map file read without opening it, in short: its bounds, its brush and entity counts, its entities counted by classname, its textures counted by face, and its world''s keys'
     - 'crates/qs-mcp and docs/mcp.md: the server''s instructions and the guide say how a map is built and reviewed: the order of the tools, how brushes are named, and how the result is looked at'
     acceptance:
     - 'A test builds two rooms joined by a carved doorway using only brush places `map.brushes` answered, and the map is sealed'

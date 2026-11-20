@@ -187,4 +187,34 @@ fn the_summary_counts_what_the_map_holds() {
         ]
     );
     assert!(summary.path.ends_with("keep.map"));
+
+    // A file is summarised from the disk without being opened: the open map stays the open
+    // map, and a file that is not there is refused.
+    let other = summary.path.with_file_name("other.map");
+    std::fs::write(&other, "{\n\"classname\" \"worldspawn\"\n}\n").unwrap();
+    let read: MapSummary = serde_json::from_value(
+        session
+            .execute(MAP_SUMMARY, json!({ "path": other }))
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        (read.entities, read.world_brushes, read.bounds),
+        (1, 0, None)
+    );
+    assert!(read.path.ends_with("other.map"));
+    let still: MapSummary =
+        serde_json::from_value(session.execute(MAP_SUMMARY, json!({})).unwrap()).unwrap();
+    assert_eq!(still, summary);
+    let missing = summary.path.with_file_name("missing.map");
+    assert!(
+        session
+            .execute(MAP_SUMMARY, json!({ "path": missing }))
+            .is_err()
+    );
+    let mut none = MapContext::session();
+    assert!(
+        none.execute(MAP_SUMMARY, json!({ "path": other })).is_ok(),
+        "no map need be open"
+    );
 }

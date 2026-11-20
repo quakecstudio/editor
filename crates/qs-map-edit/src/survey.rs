@@ -6,14 +6,14 @@
 //! hand; `map.summary` is the map in short, to judge it by and to compare maps with.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use qs_commands::{Command, NoParams, Outcome};
-use qs_map::Brush;
+use qs_commands::{Command, Outcome};
+use qs_map::{Brush, MapFile};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{BrushIndex, EntityIndex, MAP_BRUSHES, MAP_SUMMARY};
+use super::{BrushIndex, EntityIndex, MAP_BRUSHES, MAP_SUMMARY, MapRead};
 use crate::{HasMap, MapEditError};
 
 /// A box, its least corner then its greatest.
@@ -177,27 +177,19 @@ pub struct MapSummary {
     pub world: Vec<(String, String)>,
 }
 
-/// `map.summary`.
-pub(super) struct MapSummarise;
+/// The parameters of `map.summary`.
+#[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SummaryParams {
+    /// A `.map` file to summarise from the disk, which is not opened: the way to read many
+    /// maps, as when comparing a set of them. The open map when not given.
+    #[serde(default)]
+    pub path: Option<PathBuf>,
+}
 
-impl<C: HasMap + 'static> Command<C> for MapSummarise {
-    const ID: &'static str = MAP_SUMMARY;
-    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
-    const SUMMARY: &'static str = "The open map in short, to review it or compare it with \
-        others: the box around its brushes, its brush and entity counts, its entities counted \
-        by classname (monsters, lights, items, triggers), its textures counted by face, and \
-        its world's keys. map.inspect lists each entity; this counts them.";
-    type Params = NoParams;
-    type Output = MapSummary;
-    type Error = MapEditError;
-
-    fn run(
-        &self,
-        context: &mut C,
-        NoParams {}: NoParams,
-    ) -> Result<Outcome<MapSummary, C>, MapEditError> {
-        let document = context.map_store().map().ok_or(MapEditError::NoMap)?;
-        let file = document.file();
+impl MapSummary {
+    /// The summary of the map `file` at `path`.
+    fn of(path: &Path, file: &MapFile) -> Self {
         let text = |bytes: &[u8]| String::from_utf8_lossy(bytes).into_owned();
         let mut classes: BTreeMap<String, usize> = BTreeMap::new();
         let mut textures: BTreeMap<String, usize> = BTreeMap::new();
@@ -228,8 +220,8 @@ impl<C: HasMap + 'static> Command<C> for MapSummarise {
             .flat_map(|world| world.pairs())
             .map(|pair| (text(pair.key()), text(pair.value())))
             .collect();
-        Ok(Outcome::unchanged(MapSummary {
-            path: document.path().to_path_buf(),
+        Self {
+            path: path.to_path_buf(),
             bounds: bounds_of(corners),
             world_brushes,
             entity_brushes,
@@ -237,7 +229,39 @@ impl<C: HasMap + 'static> Command<C> for MapSummarise {
             classes: counted(classes),
             textures: counted(textures),
             world,
-        }))
+        }
+    }
+}
+
+/// `map.summary`.
+pub(super) struct MapSummarise;
+
+impl<C: HasMap + 'static> Command<C> for MapSummarise {
+    const ID: &'static str = MAP_SUMMARY;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
+    const SUMMARY: &'static str = "A map in short, to review it or compare it with others: the \
+        box around its brushes, its brush and entity counts, its entities counted by classname \
+        (monsters, lights, items, triggers), its textures counted by face, and its world's \
+        keys. The open map, or with a path a .map file read from the disk without opening \
+        it. map.inspect lists each entity; this counts them.";
+    type Params = SummaryParams;
+    type Output = MapSummary;
+    type Error = MapEditError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: SummaryParams,
+    ) -> Result<Outcome<MapSummary, C>, MapEditError> {
+        if let Some(path) = params.path {
+            let read = MapRead::of(&path)?;
+            return Ok(Outcome::unchanged(MapSummary::of(&path, &read.file)));
+        }
+        let document = context.map_store().map().ok_or(MapEditError::NoMap)?;
+        Ok(Outcome::unchanged(MapSummary::of(
+            document.path(),
+            document.file(),
+        )))
     }
 }
 

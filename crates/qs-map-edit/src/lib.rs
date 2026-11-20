@@ -71,7 +71,9 @@ pub use review::{
 };
 pub use shapes::{ArchWall, BrushShapeParams, Circle, Climb, MAP_BRUSH_SHAPE, ShapeSpec};
 pub use store::{EntityCheck, EntityProblem, GameFolders, HasMap, LiveMap, MapProject, MapStore};
-pub use survey::{Bounds, BrushInfo, BrushesListed, BrushesParams, Counted, MapSummary};
+pub use survey::{
+    Bounds, BrushInfo, BrushesListed, BrushesParams, Counted, MapSummary, SummaryParams,
+};
 
 pub mod backup;
 mod brush_tools;
