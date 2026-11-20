@@ -115,6 +115,35 @@ fn a_new_map_plays_from_the_camera() {
     assert!(through.is_some(), "walked into the east room");
 }
 
+// No spec statement: L-41, the acceptance criterion: a map with a lit room and an unlit room
+// is reported with the unlit room dark: what stands in the west room, by its light, is not
+// listed; what stands in the east room out of the light's sight through the doorway is, with
+// its light; the light entity itself is passed over
+#[test]
+fn what_stands_in_an_unlit_room_is_reported_dark() {
+    use qs_workbench::map_compile::PlaceLight;
+
+    let mut text = map();
+    text.extend_from_slice(
+        b"{\n\"classname\" \"item_health\"\n\"origin\" \"-96 40 24\"\n}\n\
+          {\n\"classname\" \"monster_army\"\n\"origin\" \"200 100 24\"\n}\n",
+    );
+    let compiled = qs_map_bsp::Compiler::default()
+        .compile(&text, None)
+        .unwrap();
+    let lit = Light::new(Sampling::Fast).run(&compiled.bsp).unwrap();
+    let bsp = Bsp::read(&lit.bsp, BspLoader::default()).unwrap();
+    let dark = PlaceLight::dark_in(&bsp);
+    assert_eq!(dark.len(), 1, "{dark:?}");
+    assert_eq!(dark[0].classname, "monster_army");
+    assert_eq!(dark[0].origin, [200.0, 100.0, 24.0]);
+    assert!(dark[0].light < 24, "{dark:?}");
+    // The west room is lit where the player start and the item stand.
+    assert!(PlaceLight::at(&bsp, [-200.0, 0.0, 24.0]) >= 24);
+    assert!(PlaceLight::at(&bsp, [-96.0, 40.0, 24.0]) >= 24);
+    assert_eq!(PlaceLight::at(&bsp, [200.0, 100.0, 24.0]), dark[0].light);
+}
+
 // spec REND-1.14: a new map whose textures no WAD holds is drawn: each face of the map
 // qs-map-bsp compiles from brushes takes the stand-in for a missing texture, so the world has
 // vertices to draw (an empty world was the preview host's panic, #926)

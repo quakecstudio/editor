@@ -436,6 +436,64 @@ impl PlayFromHereParams {
     }
 }
 
+/// The light below which a place is dark: the level id raises the player's own weapon to, so
+/// that it can be seen (REND-4.11).
+const DARK_BELOW: i32 = 24;
+
+/// The classnames that start with this are lights, which stand where they like.
+const LIGHT_CLASS: &[u8] = b"light";
+
+/// A place of a lit map and the light there.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PlaceLight {
+    /// The classname of the entity that stands there.
+    pub classname: String,
+    /// Its origin.
+    pub origin: [f32; 3],
+    /// The light of the floor below it, as the game shades a model standing there
+    /// (REND-4.10): 0 is black, about 100 a lit room, 255 the most a lightmap holds.
+    pub light: i32,
+}
+
+impl PlaceLight {
+    /// The light at `origin` of the lit map `bsp`, every style as the map was lit.
+    #[must_use]
+    pub fn at(bsp: &Bsp<'_>, origin: [f32; 3]) -> i32 {
+        qs_client::light_point(bsp, &|_| qs_client::UNSET_STYLE_SCALE, origin)
+    }
+
+    /// The entities of the lit map `bsp` that stand in the dark: each point entity of its
+    /// entity lump, which is what the game spawns, with an origin where the light is below
+    /// [`DARK_BELOW`]. The lights themselves are passed over, and so is an entity with a
+    /// model of the map's, whose origin is not where it stands.
+    #[must_use]
+    pub fn dark_in(bsp: &Bsp<'_>) -> Vec<Self> {
+        let Ok(lump) = qs_map::MapFile::parse(bsp.entity_lump) else {
+            return Vec::new();
+        };
+        let mut dark = Vec::new();
+        for entity in lump.entities.iter().skip(1) {
+            let Some(classname) = entity.classname() else {
+                continue;
+            };
+            let placed = entity.value(b"origin").is_some() && entity.submodel().is_none();
+            if !placed || classname.starts_with(LIGHT_CLASS) {
+                continue;
+            }
+            let origin = entity.origin().map(single);
+            let light = Self::at(bsp, origin);
+            if light < DARK_BELOW {
+                dark.push(Self {
+                    classname: String::from_utf8_lossy(classname).into_owned(),
+                    origin,
+                    light,
+                });
+            }
+        }
+        dark
+    }
+}
+
 /// What `map.play_from_here` played.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct PlayedHere {
@@ -449,6 +507,13 @@ pub struct PlayedHere {
     pub report: MapReport,
     /// What lighting it warned of, as `light` prints each.
     pub light_warnings: Vec<String>,
+    /// The light where the player was put (REND-4.10): 0 is black, about 100 a lit room.
+    /// Below 24 the place is too dark to see by, and a picture of it shows little.
+    pub light: i32,
+    /// The entities that stand in the dark, a light below 24: the player start, the
+    /// monsters and the items a light does not reach. A room is dark when what stands in it
+    /// is; add a light there, or raise one's `light` key.
+    pub dark: Vec<PlaceLight>,
 }
 
 /// A float of a map, as the game's single precision holds it.
@@ -573,11 +638,21 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
                 light_warnings.len()
             ));
         }
+        let dark = PlaceLight::dark_in(&bsp);
+        if let Some(first) = dark.first() {
+            preview.set_status(format!(
+                "Playing {name}: {} entities stand in the dark, the first a {}",
+                dark.len(),
+                first.classname
+            ));
+        }
         Ok(Outcome::outside_history(PlayedHere {
             map: name,
             origin,
             report,
             light_warnings,
+            light: PlaceLight::at(&bsp, origin),
+            dark,
         }))
     }
 }

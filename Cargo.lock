@@ -4045,6 +4045,7 @@ dependencies = [
  "qs-bridge",
  "qs-bsp",
  "qs-checkpoint",
+ "qs-client",
  "qs-commands",
  "qs-diff",
  "qs-engine",
