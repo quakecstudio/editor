@@ -71,6 +71,23 @@ pub struct ToolPermissions {
     pub tools: BTreeMap<String, ToolRule>,
 }
 
+/// One entry of `agent.external`: an agent that speaks the Agent Client Protocol on its
+/// standard input and output, and how it is started (P4-14).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ExternalAgent {
+    /// The name the agent panel shows.
+    pub name: String,
+    /// The program to run.
+    pub command: String,
+    /// Its arguments.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,
+    /// Environment variables to set for it.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
+}
+
 /// `[agent]` of a settings file.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -81,4 +98,7 @@ pub struct Agent {
     /// The rules for tool calls.
     #[serde(default)]
     pub tool_permissions: Option<ToolPermissions>,
+    /// The external agents the panel can run.
+    #[serde(default)]
+    pub external: Option<Vec<ExternalAgent>>,
 }

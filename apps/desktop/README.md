@@ -114,6 +114,27 @@ With no provider set up, the box says so. `src/editor/tests.rs` drives it with a
 
 ## The agent panel
 
+**External agents (P4-14, UI-11).** A thread can run on an external agent over the Agent Client
+Protocol (`qs-acp`, `src/agent/external.rs`) instead of the built-in one: the agent is a
+subprocess with its own model and account, so no provider is set up for it.
+
+- **Setting one up:** with no agent set up the panel offers Use Claude Code, which adds Claude
+  Code's ACP adapter, run by `npx` at a pinned version, to `agent.external` in the user's
+  settings (it needs Node 22 or later and the `claude` command, signed in). Other agents are
+  added there by hand; with more than one agent to run, a list beside the threads chooses.
+- **What a thread shows:** what the agent says and reasons as it streams, each tool call with
+  its state, the agent's own permission options as buttons, Stop while it runs, and how the turn
+  ended.
+- **The IDE's tools** reach the agent as an MCP server: `quakec-ide mcp --connect`, beside the
+  app.
+- **Edits:** the IDE offers ACP's file methods. An agent that uses them reads the editor's text,
+  unsaved changes included, and its writes are staged as hunks to accept or reject. Claude
+  Code's adapter (0.109.0) does not use them: it reads and writes the disk itself. So every
+  external thread records a checkpoint before the agent starts, and Restore checkpoint puts the
+  project back.
+- **What Does This Code Do?** in the editor's context menu, over a selection, starts a thread
+  that asks the agent to explain the selected lines in plain language, and shows the panel.
+
 The right panel's Agent section (P4-09, UI-5, PRIN-4), modelled on Zed's agent panel, is
 `src/agent.rs`:
 

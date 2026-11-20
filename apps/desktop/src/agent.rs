@@ -17,11 +17,13 @@ use qs_agent::{
 };
 use qs_commands::Session;
 use qs_models::{KeyStore, Keychain, ProviderConfig, ProviderKind, ProviderModel, Secret};
+use qs_settings::ExternalAgent;
 use qs_workbench::{HunkId, StagedHunk};
 
 use crate::shell::name_field;
 use crate::strings::{Text, queued_count, tokens_used};
 
+mod external;
 mod feature;
 
 pub(crate) use feature::AgentFeature;
@@ -310,10 +312,39 @@ impl Setup {
     }
 }
 
+/// Which agent a new thread runs on.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Runs {
+    /// The built-in agent, on the model provider set up.
+    #[default]
+    Builtin,
+    /// The external agent at this place in `agent.external` (P4-14).
+    External(usize),
+}
+
+/// How the agent a new thread runs on came to be chosen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Picked {
+    /// By the panel's rule.
+    ByDefault,
+    /// By the modder, in the panel's list.
+    ByModder,
+}
+
 /// The agent panel's state.
 pub struct AgentPanel {
     threads: Vec<Thread>,
     selected: Option<usize>,
+    /// The threads external agents run (P4-14), after the built-in agent's in the list.
+    external: Vec<external::ExternalThread>,
+    /// The external thread shown, when one is rather than a built-in thread.
+    external_selected: Option<usize>,
+    /// The external agents of `agent.external`.
+    agents: Vec<ExternalAgent>,
+    /// Which agent a new thread runs on.
+    runs: Runs,
+    /// Whether the modder chose it.
+    picked: Picked,
     task: String,
     config: Option<ProviderConfig>,
     setup: Setup,
@@ -346,6 +377,11 @@ impl AgentPanel {
         Self {
             threads: Vec::new(),
             selected: None,
+            external: Vec::new(),
+            external_selected: None,
+            agents: Vec::new(),
+            runs: Runs::Builtin,
+            picked: Picked::ByDefault,
             task: String::new(),
             config: None,
             setup: Setup::of(None),
@@ -492,6 +528,7 @@ impl AgentPanel {
             .and_then(|text| serde_json::from_str(&text).ok());
         self.setup = Setup::of(self.config.as_ref());
         self.config_file = Some(file);
+        self.default_runs();
     }
 
     /// Uses `config`, keeping it in the configuration file when there is one.
@@ -511,21 +548,95 @@ impl AgentPanel {
         }
         self.setup = Setup::of(Some(&config));
         self.config = Some(config);
+        self.default_runs();
     }
 
-    /// How many threads there are.
+    /// How many threads there are, the external agents' included.
     #[must_use]
     pub fn threads(&self) -> usize {
-        self.threads.len()
+        self.threads.len().saturating_add(self.external.len())
     }
 
-    /// How many threads still wait on their model.
+    /// How many threads still wait on their model or their agent.
     #[must_use]
     pub fn running(&self) -> usize {
-        self.threads
-            .iter()
-            .filter(|thread| thread.running())
-            .count()
+        let builtin = self.threads.iter().filter(|thread| thread.running());
+        let external = self.external.iter().filter(|thread| thread.running());
+        builtin.count().saturating_add(external.count())
+    }
+
+    /// External thread `index`, to drive and read. For the tests, which run a shell script as
+    /// the agent and so are Unix's.
+    #[cfg(all(test, unix))]
+    pub(crate) fn external_thread(
+        &mut self,
+        index: usize,
+    ) -> Option<&mut external::ExternalThread> {
+        self.external.get_mut(index)
+    }
+
+    /// Takes the external agents of `agent.external`.
+    pub fn set_external_agents(&mut self, agents: Vec<ExternalAgent>) {
+        self.agents = agents;
+        self.default_runs();
+    }
+
+    /// Which agent a new thread runs on when the modder has not chosen, or chose one that is
+    /// gone: the built-in agent when a model provider is set up, else the first external
+    /// agent. It is worked out again whenever the provider or the agents change, in whatever
+    /// order the app reads them at its start.
+    fn default_runs(&mut self) {
+        let chosen_is_there = match self.runs {
+            Runs::Builtin => self.config.is_some(),
+            Runs::External(index) => index < self.agents.len(),
+        };
+        if self.picked == Picked::ByModder && chosen_is_there {
+            return;
+        }
+        self.picked = Picked::ByDefault;
+        self.runs = if self.config.is_some() || self.agents.is_empty() {
+            Runs::Builtin
+        } else {
+            Runs::External(0)
+        };
+    }
+
+    /// The external agents the panel can run.
+    #[must_use]
+    pub fn external_agents(&self) -> &[ExternalAgent] {
+        &self.agents
+    }
+
+    /// The external agent a new thread runs on; `None` for the built-in agent.
+    #[must_use]
+    pub fn external_agent(&self) -> Option<&ExternalAgent> {
+        match self.runs {
+            Runs::Builtin => None,
+            Runs::External(index) => self.agents.get(index),
+        }
+    }
+
+    /// Starts a thread of the external agent chosen, in `project` on `task`, with the MCP
+    /// servers it should connect to and the checkpoint recorded for it.
+    ///
+    /// # Errors
+    ///
+    /// No external agent is chosen, or it could not be started.
+    pub fn start_external(
+        &mut self,
+        project: &Path,
+        task: &str,
+        with: (Vec<qs_acp::McpServer>, Option<qs_agent::CheckpointNumber>),
+        wake: impl Fn() + Send + 'static,
+    ) -> Result<(), String> {
+        let agent = self
+            .external_agent()
+            .ok_or_else(|| Text::NoAgent.get().to_owned())?;
+        let thread = external::ExternalThread::start(agent, project, task, with, wake)?;
+        self.external.push(thread);
+        self.external_selected = Some(self.external.len().saturating_sub(1));
+        self.selected = None;
+        Ok(())
     }
 
     /// The report of thread `index`, once it has ended.
@@ -575,6 +686,7 @@ impl AgentPanel {
         thread.go_on(session, run);
         self.threads.push(thread);
         self.selected = Some(self.threads.len().saturating_sub(1));
+        self.external_selected = None;
         Ok(())
     }
 
@@ -628,6 +740,13 @@ impl AgentPanel {
                 any = true;
             }
         }
+        for thread in &mut self.external {
+            let was_running = thread.running();
+            any |= thread.pump(session);
+            if was_running && !thread.running() {
+                self.finished = self.finished.saturating_add(1);
+            }
+        }
         self.after_events(session, followed);
         any
     }
@@ -679,19 +798,27 @@ impl AgentPanel {
     /// and the proposed changes; what was asked for.
     pub fn ui(&mut self, ui: &mut Ui, theme: &Theme, staged: &[StagedHunk]) -> Option<AgentAction> {
         let mut action = None;
-        if self.config.is_none() || self.setup.open {
-            if self.config.is_none() {
+        if (self.config.is_none() && self.agents.is_empty()) || self.setup.open {
+            if self.config.is_none() && self.agents.is_empty() {
                 muted(ui, theme, Text::NoAgent.get());
+                if ui.button(Text::AgentUseClaude.get()).clicked() {
+                    action = Some(AgentAction::UseClaudeCode);
+                }
+                muted(ui, theme, Text::AgentClaudeNeeds.get());
+                muted(ui, theme, Text::AgentOrProvider.get());
             }
             if self.setup_form(ui, theme) {
                 action = Some(AgentAction::SaveSetup);
             }
+            // With an agent to run there is a panel to go back to without saving a provider.
+            let can_leave = self.config.is_some() || !self.agents.is_empty();
+            if can_leave && ui.button(Text::PaletteCancel.get()).clicked() {
+                self.setup = Setup::of(self.config.as_ref());
+            }
             return action;
         }
         ui.horizontal_wrapped(|ui| {
-            if let Some(config) = &self.config {
-                muted(ui, theme, &config.model);
-            }
+            self.agent_picker(ui, theme);
             if ui.small_button(Text::AgentSettings.get()).clicked() {
                 self.setup.open = true;
             }
@@ -722,9 +849,32 @@ impl AgentPanel {
                     .clicked()
                 {
                     self.selected = Some(index);
+                    self.external_selected = None;
+                }
+            }
+            for (index, thread) in self.external.iter().enumerate() {
+                let title: String = thread.task().chars().take(TITLE_CHARS).collect();
+                let label = if thread.running() {
+                    format!("{RUNNING} {title}")
+                } else {
+                    title
+                };
+                if ui
+                    .selectable_label(self.external_selected == Some(index), label)
+                    .clicked()
+                {
+                    self.external_selected = Some(index);
+                    self.selected = None;
                 }
             }
         });
+        if let Some(thread) = self
+            .external_selected
+            .and_then(|index| self.external.get_mut(index))
+            && let Some(number) = thread.ui(ui, theme)
+        {
+            action = Some(AgentAction::Restore(number));
+        }
         if let Some(index) = self.selected
             && let Some(thread) = self.threads.get_mut(index)
         {
@@ -776,6 +926,37 @@ impl AgentPanel {
             action = changes(ui, theme, staged).or(action);
         }
         action
+    }
+
+    /// Which agent a new thread runs on: the model of the provider set up, or an external
+    /// agent of `agent.external`, chosen from a list when there is more than one to choose.
+    fn agent_picker(&mut self, ui: &mut Ui, theme: &Theme) {
+        let builtin = self.config.as_ref().map(|config| config.model.clone());
+        let name = |runs: Runs| match runs {
+            Runs::Builtin => builtin.clone().unwrap_or_default(),
+            Runs::External(index) => self
+                .agents
+                .get(index)
+                .map_or_default(|agent| agent.name.clone()),
+        };
+        let mut choices: Vec<Runs> = builtin.iter().map(|_| Runs::Builtin).collect();
+        choices.extend((0..self.agents.len()).map(Runs::External));
+        if choices.len() < 2 {
+            muted(ui, theme, &name(self.runs));
+            return;
+        }
+        let mut runs = self.runs;
+        egui::ComboBox::from_id_salt(Text::Agent.get())
+            .selected_text(name(runs))
+            .show_ui(ui, |ui| {
+                for choice in choices {
+                    ui.selectable_value(&mut runs, choice, name(choice));
+                }
+            });
+        if runs != self.runs {
+            self.runs = runs;
+            self.picked = Picked::ByModder;
+        }
     }
 
     /// The thread history: a search over the threads kept, and one reopened with its messages,
@@ -972,6 +1153,8 @@ pub enum AgentAction {
     AttachScreenshot,
     /// Run a thread again from a message, edited: the thread, the message's index, its text.
     RunAgain(ThreadIndex, usize, String),
+    /// Add Claude Code to the external agents and use it (P4-14).
+    UseClaudeCode,
 }
 
 /// What the panel calls `profile`.

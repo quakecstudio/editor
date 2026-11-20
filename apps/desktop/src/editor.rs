@@ -19,8 +19,8 @@
 use std::path::PathBuf;
 
 use eframe::egui::{
-    Align2, Area, Button, Frame, Id, Key, KeyboardShortcut, Modifiers, Order, Pos2, RichText,
-    TextEdit, Ui,
+    Align2, Area, Button, Frame, Id, Key, KeyboardShortcut, Modifiers, Order, Pos2, Response,
+    RichText, TextEdit, Ui,
 };
 use qs_editor_view::find::{Case, Query};
 use qs_editor_view::fold::FoldRegion;
@@ -94,6 +94,13 @@ pub(crate) enum Request {
     Fix(usize, usize),
     /// `file.format`.
     Format,
+    /// Ask the agent what the selected code does (P4-14).
+    Explain {
+        /// The selection's text.
+        selection: String,
+        /// Its first and last lines, counted from 1.
+        lines: (usize, usize),
+    },
     /// An inline edit: the model asked to rewrite the selection's text as the instruction says.
     InlineEdit {
         /// The selection's text.
@@ -335,7 +342,8 @@ impl Editor {
         if let Some(find) = self.find.as_mut() {
             find_bar(ui, theme, find, self.view.state_mut());
         }
-        self.view.show(ui, style, &self.styler);
+        let view = self.view.show(ui, style, &self.styler);
+        self.context_menu(&view, &mut requests);
         self.after_edit(ui, now, &mut requests);
         self.rest(ui, now, &mut requests);
         self.popup_ui(ui, theme, &mut requests);
@@ -412,6 +420,27 @@ impl Editor {
             self.inline_from = Some(self.view.state().primary());
             self.popup = Some(Popup::InlinePrompt(String::new()));
         }
+    }
+
+    /// The editor's context menu, shown over a selection: asking the agent what the selected
+    /// code does.
+    fn context_menu(&self, view: &Response, requests: &mut Vec<Request>) {
+        let selection = self.view.state().primary();
+        if selection.is_caret() {
+            return;
+        }
+        view.context_menu(|ui| {
+            if ui.button(Text::ExplainMenu.get()).clicked() {
+                // The primary selection's own text and lines: with several selections the
+                // others are not what the menu was opened over.
+                let (start, end) = (selection.start(), selection.end());
+                requests.push(Request::Explain {
+                    selection: self.view.state().buffer().slice(start, end),
+                    lines: (start.line.saturating_add(1), end.line.saturating_add(1)),
+                });
+                ui.close();
+            }
+        });
     }
 
     /// Shows an inline edit's answer: the selection it was asked about becomes `text`, one

@@ -2084,11 +2084,16 @@ groups:
     depends:
     - P4-09
     deliverable:
-    - Agent Client Protocol host so Claude Code, Codex and others run in the agent panel with the IDE's tools available
+    - 'crates/qs-acp: the client side of the Agent Client Protocol, version 1 (specs/acp/v1), running an external agent as a subprocess'
+    - 'apps/desktop: external agents run in the agent panel with the IDE''s tools available over MCP; with no agent set up the panel offers Use Claude Code, which keeps the agent in the settings; the IDE offers the agent ACP''s file methods, so the edits of an agent that uses them are staged for review as the built-in agent''s are; each external thread records a checkpoint first, which restores the project after an agent that writes the disk itself, as Claude Code''s adapter does'
+    - 'apps/desktop: the editor''s context menu asks the agent what the selected code does'
     acceptance:
-    - At least two external agents complete a task in the panel
+    - 'Claude Code completes a task in the panel through its ACP adapter, recorded in the PR (Justin, 2026-11-20: one real agent, with the protocol held by tests against a scripted agent; a second real agent is checked later)'
+    - 'Each message the client writes is valid against specs/acp/v1/schema/schema.json, and each MUST of the protocol the client is bound by is held by a test quoting it'
+    - 'An external agent''s edit of a project file through the client is staged as hunks to accept or reject, and the checkpoint recorded before an agent restores what it wrote to disk itself, each checked by a test with a scripted agent'
+    - 'With code selected, the editor''s context menu starts a thread that asks what the code does, checked by a kittest test'
     verify:
-    - Recorded sessions; protocol tests
+    - 'cargo nextest run -p qs-acp -p quakec-studio; the recorded session in the PR'
   - key: P4-19
     title: Update mechanism
     labels:

@@ -3550,6 +3550,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "qs-acp"
+version = "2026.11.1"
+dependencies = [
+ "clap",
+ "jsonschema",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "qs-agent"
 version = "2026.11.1"
 dependencies = [
@@ -4111,6 +4122,8 @@ dependencies = [
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
+ "qc-project",
+ "qs-acp",
  "qs-agent",
  "qs-bridge",
  "qs-bsp",

@@ -1,0 +1,23 @@
+[package]
+name = "qs-acp"
+description = "The ACP client: an external agent (Claude Code, Codex and others) run as a subprocess and spoken to over the Agent Client Protocol on stdio"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true, features = ["std"] }
+tracing = { workspace = true, features = ["std"] }
+
+[dev-dependencies]
+# The example's arguments.
+clap = { workspace = true, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
+# The messages the client writes are held to the protocol's own schema (specs/acp/v1/schema).
+jsonschema = { workspace = true }
+
+[lints]
+workspace = true

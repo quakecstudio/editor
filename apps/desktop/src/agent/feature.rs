@@ -10,7 +10,10 @@ use eframe::egui;
 use qs_agent::history;
 use qs_commands::Session;
 use qs_settings::{Scope as SettingsScope, Setting, SettingsStore};
-use qs_workbench::checkpoints::{RESTORE_CHECKPOINT, RestoreCheckpointParams};
+use qs_workbench::checkpoints::{
+    CREATE_CHECKPOINT, CheckpointMade, CreateCheckpointParams, RESTORE_CHECKPOINT,
+    RestoreCheckpointParams,
+};
 use qs_workbench::engine::{ENGINE_SCREENSHOT, EngineScreenshotParams, Screenshot};
 use qs_workbench::staged::HunksParams;
 use qs_workbench::{ACCEPT_HUNKS, REJECT_HUNKS};
@@ -61,6 +64,37 @@ impl AgentFeature {
         self.start_thread(session, &root, &task, settings_file, ctx)
     }
 
+    /// Reads the external agents from the user's settings in `settings_file` (`agent.external`,
+    /// P4-14), for the panel to offer.
+    pub(crate) fn load_external(&mut self, settings_file: &Path) {
+        let agents = SettingsStore::open(settings_file.to_path_buf(), None)
+            .map_err(|error| tracing::warn!(%error, "the external agents were not read"))
+            .ok()
+            .and_then(|store| serde_json::from_value(store.value(Setting::AgentExternal).0).ok())
+            .unwrap_or_default();
+        self.panel.set_external_agents(agents);
+    }
+
+    /// Adds Claude Code to the external agents, kept in the user's settings when there is a
+    /// file for them, and has new threads run on it.
+    fn use_claude_code(&mut self, settings_file: Option<&Path>) {
+        let claude = super::external::claude_code();
+        let mut agents = self.panel.external_agents().to_vec();
+        if !agents.iter().any(|agent| agent.name == claude.name) {
+            agents.push(claude);
+        }
+        if let Some(file) = settings_file {
+            let value = serde_json::to_value(&agents).ok();
+            let kept = SettingsStore::open(file.to_path_buf(), None).and_then(|mut store| {
+                store.put(SettingsScope::User, Setting::AgentExternal, value)
+            });
+            if let Err(error) = kept {
+                tracing::warn!(%error, "the external agents were not kept");
+            }
+        }
+        self.panel.set_external_agents(agents);
+    }
+
     /// Starts a thread about `entity`, its state attached (Ask about this, UI-9); why it could
     /// not. Its field values are attached as they are, never read as mentions.
     ///
@@ -78,6 +112,23 @@ impl AgentFeature {
         self.start_thread(session, &root, &entity.ask_about(), settings_file, ctx)
     }
 
+    /// Starts a thread on `task` exactly as given, with nothing in it read as a mention: the
+    /// editor's question about selected code (P4-14); why it could not.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::start`].
+    pub(crate) fn ask(
+        &mut self,
+        session: &mut Session<Workspace>,
+        task: &str,
+        settings_file: Option<&Path>,
+        ctx: &egui::Context,
+    ) -> Result<(), String> {
+        let root = session.context().agent_root()?;
+        self.start_thread(session, &root, task, settings_file, ctx)
+    }
+
     /// Starts a thread on `task` as given, over the project in `root`, its calls decided by the
     /// profile and tool rules the settings hold now (P4-30).
     fn start_thread(
@@ -88,10 +139,34 @@ impl AgentFeature {
         settings_file: Option<&Path>,
         ctx: &egui::Context,
     ) -> Result<(), String> {
+        let ctx = ctx.clone();
+        // An external agent decides its own calls and asks through the panel; the IDE's tools
+        // reach it over MCP.
+        if self.panel.external_agent().is_some() {
+            let servers = super::external::ide_tools(root);
+            // The project as it is before the agent touches it, to restore (AGT-3).
+            let label = CreateCheckpointParams {
+                label: Some(task.to_owned()),
+            };
+            let checkpoint = serde_json::to_value(label)
+                .ok()
+                .and_then(|label| {
+                    session
+                        .execute(CREATE_CHECKPOINT, label)
+                        .map_err(|error| tracing::warn!(%error, "no checkpoint before the agent"))
+                        .ok()
+                })
+                .and_then(|made| serde_json::from_value::<CheckpointMade>(made).ok())
+                .map(|made| made.number);
+            return self
+                .panel
+                .start_external(root, task, (servers, checkpoint), move || {
+                    ctx.request_repaint();
+                });
+        }
         if let Some(permissions) = AgentSettings::of(settings_file, root).permissions() {
             self.panel.set_permissions(permissions);
         }
-        let ctx = ctx.clone();
         self.panel
             .start(session, root, task, move || ctx.request_repaint())
     }
@@ -153,6 +228,7 @@ impl AgentFeature {
                 self.panel.set_error(started.err());
             }
             AgentAction::SaveSetup => self.panel.save_setup_to_keychain(),
+            AgentAction::UseClaudeCode => self.use_claude_code(settings_file),
             AgentAction::Accept(hunks) => {
                 let _accepted: Option<serde_json::Value> =
                     commands.run(ACCEPT_HUNKS, &HunksParams { hunks });

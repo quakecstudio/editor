@@ -66,6 +66,38 @@ pub enum Text {
     AgentScreenshot,
     /// A thread's line for an image given as context.
     AgentImage,
+    /// The editor's context menu over a selection: asks the agent what the code does (P4-14).
+    ExplainMenu,
+    /// What the agent is asked about selected code.
+    ExplainAsk,
+    /// The agent panel's button that adds Claude Code as an external agent (P4-14).
+    AgentUseClaude,
+    /// Claude Code's name among the external agents.
+    AgentClaudeCode,
+    /// Under Use Claude Code: what it needs.
+    AgentClaudeNeeds,
+    /// Between Use Claude Code and the provider form.
+    AgentOrProvider,
+    /// An external agent's thread: stops its turn.
+    AgentStop,
+    /// An external agent's thread before its session is ready.
+    AgentStarting,
+    /// An external agent's thread whose turn was stopped.
+    AgentStopped,
+    /// An external agent's thread asked to stop, before the agent has ended the turn.
+    AgentStopping,
+    /// An external agent's thread that ended at a limit.
+    AgentHitLimit,
+    /// An external agent's thread the agent declined to go on with.
+    AgentRefused,
+    /// An external agent's thread whose program ended.
+    AgentExited,
+    /// Before the protocol version an external agent speaks that this app does not.
+    AgentVersion,
+    /// Told to an external agent that asks to write a file outside the project.
+    AgentOutside,
+    /// Told to an external agent when a file's text could not be read.
+    AgentUnread,
     /// The bottom panel's Git tab (P4-35).
     Git,
     /// The Git tab's label before the branch.
@@ -1073,7 +1105,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 528] = [
+    pub const ALL: [Self; 544] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1265,6 +1297,22 @@ impl Text {
         Self::AgentQueueHint,
         Self::AgentScreenshot,
         Self::AgentImage,
+        Self::ExplainMenu,
+        Self::ExplainAsk,
+        Self::AgentUseClaude,
+        Self::AgentClaudeCode,
+        Self::AgentClaudeNeeds,
+        Self::AgentOrProvider,
+        Self::AgentStop,
+        Self::AgentStarting,
+        Self::AgentStopped,
+        Self::AgentStopping,
+        Self::AgentHitLimit,
+        Self::AgentRefused,
+        Self::AgentExited,
+        Self::AgentVersion,
+        Self::AgentOutside,
+        Self::AgentUnread,
         Self::Git,
         Self::Branch,
         Self::NewBranchName,
@@ -1819,6 +1867,26 @@ impl Text {
             Self::AgentQueueHint => "A message for its next turn",
             Self::AgentScreenshot => "Attach screenshot",
             Self::AgentImage => "An image, given as context",
+            Self::ExplainMenu => "What Does This Code Do?",
+            Self::ExplainAsk => {
+                "What does this code do? Explain it in plain, simple language. Do not change anything."
+            }
+            Self::AgentUseClaude => "Use Claude Code",
+            Self::AgentClaudeCode => "Claude Code",
+            Self::AgentClaudeNeeds => "Needs Node 22 or later and the claude command, signed in.",
+            Self::AgentOrProvider => "Or use a model provider:",
+            Self::AgentStop => "Stop",
+            Self::AgentStarting => "Starting the agent\u{2026}",
+            Self::AgentStopped => "Stopped",
+            Self::AgentStopping => "Stopping\u{2026} Stop again to end the agent.",
+            Self::AgentHitLimit => "The agent reached its limit for one turn.",
+            Self::AgentRefused => "The agent declined to go on.",
+            Self::AgentExited => "The agent's program ended.",
+            Self::AgentVersion => {
+                "The agent speaks a version of the Agent Client Protocol this app does not:"
+            }
+            Self::AgentOutside => "The file is outside the project.",
+            Self::AgentUnread => "The file's text could not be read.",
             Self::Git => "Git",
             Self::Branch => "Branch",
             Self::NewBranchName => "New branch name",
@@ -2270,6 +2338,22 @@ pub fn command_choices(names: &[&str], more: usize) -> String {
     } else {
         format!("{listed}  and {more} more")
     }
+}
+
+/// What the agent is asked about `selection`, the lines `first` to `last` of `file` (P4-14):
+/// the question, where the code is, and the code itself.
+#[must_use]
+pub fn explain_task(file: &str, (first, last): (usize, usize), selection: &str) -> String {
+    let ask = Text::ExplainAsk.get();
+    let lines = if first == last {
+        format!("line {first}")
+    } else {
+        format!("lines {first} to {last}")
+    };
+    format!(
+        "{ask}\n\n{file}, {lines}:\n\n```\n{}\n```",
+        selection.trim_end()
+    )
 }
 
 /// A thread's estimated token use (P4-31).

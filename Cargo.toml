@@ -214,6 +214,7 @@ qs-checkpoint = { path = "crates/qs-checkpoint" }
 qs-agent = { path = "crates/qs-agent" }
 qs-commands = { path = "crates/qs-commands" }
 qs-mcp = { path = "crates/qs-mcp" }
+qs-acp = { path = "crates/qs-acp" }
 qs-models = { path = "crates/qs-models" }
 qs-diff = { path = "crates/qs-diff" }
 qs-editor-view = { path = "crates/qs-editor-view" }
