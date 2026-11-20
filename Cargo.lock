@@ -3553,6 +3553,7 @@ dependencies = [
 name = "qs-acp"
 version = "2026.11.1"
 dependencies = [
+ "clap",
  "jsonschema",
  "serde",
  "serde_json",
