@@ -481,7 +481,35 @@ fn a_wait_ends_on_time_while_other_events_come() {
     let mut client = Client::over(Chatty::new(), std::io::sink());
     let waited = client.wait_event("map/loaded", Duration::from_millis(50));
     assert!(matches!(waited, Err(ClientError::Timeout)), "{waited:?}");
-    assert!(!client.take_events().is_empty());
+}
+
+// spec BRIDGE-3.1: a wait for one event keeps every other event that came before it, in order
+#[test]
+fn a_wait_keeps_the_events_before_the_one_it_waits_for() {
+    // Whether the reader thread has read any of the host's events when a wait ends is the
+    // scheduler's to say, so the events kept are counted from a host that sends them in a
+    // known order and then the one waited for.
+    let mut frames = Vec::new();
+    for text in ["a", "b", "c"] {
+        let line = event(
+            "console/line",
+            json!({ "text": text, "level": "print", "time": 0 }),
+        );
+        write_frame(&mut frames, &line.to_bytes()).unwrap();
+    }
+    let loaded = event("map/loaded", json!({ "map": "start", "entities": 1 }));
+    write_frame(&mut frames, &loaded.to_bytes()).unwrap();
+    let mut client = Client::over(std::io::Cursor::new(frames), std::io::sink());
+    let waited = client
+        .wait_event("map/loaded", Duration::from_secs(5))
+        .unwrap();
+    assert_eq!(waited.params["map"], "start");
+    let kept: Vec<Value> = client
+        .take_events()
+        .into_iter()
+        .map(|event| event.params["text"].clone())
+        .collect();
+    assert_eq!(kept, [json!("a"), json!("b"), json!("c")]);
 }
 
 // spec BRIDGE-3.1: polling takes the events already read without waiting for more, and a
