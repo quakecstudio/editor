@@ -697,8 +697,9 @@ impl Shell {
         self.request(ShellRequest::ShowPanel(DockPanel::Agent));
     }
 
-    /// Waits for external agent thread `index` to say something and takes it. For tests.
-    #[cfg(test)]
+    /// Waits for external agent thread `index` to say something and takes it. For the tests,
+    /// which are Unix's.
+    #[cfg(all(test, unix))]
     pub(crate) fn wait_external_agent(&mut self, index: usize) -> bool {
         let session = &mut self.session;
         self.features

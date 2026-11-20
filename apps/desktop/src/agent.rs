@@ -565,8 +565,9 @@ impl AgentPanel {
         builtin.count().saturating_add(external.count())
     }
 
-    /// External thread `index`, to drive and read. For tests.
-    #[cfg(test)]
+    /// External thread `index`, to drive and read. For the tests, which run a shell script as
+    /// the agent and so are Unix's.
+    #[cfg(all(test, unix))]
     pub(crate) fn external_thread(
         &mut self,
         index: usize,

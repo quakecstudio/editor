@@ -228,39 +228,39 @@ impl ExternalThread {
     }
 
     /// As [`Self::pump`], after waiting for the agent to say something. For tests.
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(crate) fn wait<C: 'static>(&mut self, session: &mut Session<C>) -> bool {
         let events = self.agent.as_mut().map_or_default(Agent::wait);
         self.take_all(session, events)
     }
 
     /// The option names of the permission request that waits, if one does. For tests.
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(crate) fn asking(&self) -> Option<Vec<String>> {
         let asked = self.asked.front()?;
         Some(asked.options.iter().map(|o| o.name.clone()).collect())
     }
 
     /// Answers the permission request that waits with its option `chosen`. For tests.
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(crate) fn permit_for_test(&mut self, chosen: usize) {
         self.permit(chosen);
     }
 
     /// The checkpoint recorded before the agent started. For tests.
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(crate) const fn checkpoint(&self) -> Option<CheckpointNumber> {
         self.checkpoint
     }
 
     /// Stops the turn, as the Stop button does. For tests.
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(crate) fn stop_for_test(&mut self) {
         self.stop();
     }
 
     /// What the thread shows, a line an item, and how it stands. For tests.
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(crate) fn shown(&self) -> (Vec<String>, String) {
         let items = self
             .items
