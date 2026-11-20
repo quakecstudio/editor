@@ -3550,6 +3550,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "qs-acp"
+version = "2026.11.1"
+dependencies = [
+ "jsonschema",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "qs-agent"
 version = "2026.11.1"
 dependencies = [

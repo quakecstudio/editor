@@ -107,6 +107,7 @@ README says more.
 | L5 | `qs-settings` | QuakeC Studio settings: user and project settings files, their schema, and the commands that read and change them |
 | L5 | `qs-templates` | New-project templates: starters from id's QuakeC, fetched by commit under their GPLv2 terms and checked by SHA-256, with quakec.toml and a sample test |
 | L5 | `qs-workbench` | The open project and file: the file tree, symbols and problems the panels list, and the commands that open a project or a file |
+| L6 | `qs-acp` | The ACP client: an external agent (Claude Code, Codex and others) run as a subprocess and spoken to over the Agent Client Protocol on stdio |
 | L6 | `qs-agent` | The agent loop: plan, edit, compile, test and propose over the command registry, a run done only when the compile is clean and its tests pass |
 | L6 | `qs-mcp` | The MCP server: the agent's tools, the IDE's commands, offered to other agents over the Model Context Protocol on stdio, within read and write roots |
 | L6 | `qs-models` | The agent's model providers: Anthropic, OpenAI-compatible endpoints and Ollama, with API keys kept in the OS keychain |
