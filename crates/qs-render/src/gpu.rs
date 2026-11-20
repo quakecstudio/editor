@@ -1846,9 +1846,9 @@ mod tests {
             }]);
             f32::from_ne_bytes(bytes[64..68].try_into().unwrap())
         };
-        assert_eq!(ZFIX_BIAS, 1.0 / 1024.0);
-        assert_eq!(bias(ModelDepth::Behind), ZFIX_BIAS);
-        assert_eq!(bias(ModelDepth::AsDrawn), 0.0);
+        assert_eq!(ZFIX_BIAS.to_bits(), (1.0_f32 / 1024.0).to_bits());
+        assert_eq!(bias(ModelDepth::Behind).to_bits(), ZFIX_BIAS.to_bits());
+        assert_eq!(bias(ModelDepth::AsDrawn).to_bits(), 0.0_f32.to_bits());
         let bytes = model_bytes(&[ModelPlacement::WORLD]);
         assert_eq!(f32::from_ne_bytes(bytes[0..4].try_into().unwrap()), 1.0);
         assert_eq!(f32::from_ne_bytes(bytes[60..64].try_into().unwrap()), 1.0);
