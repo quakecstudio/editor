@@ -35,8 +35,8 @@ use crate::protocol::{
     HIGH_BYTE, HIGH_SHIFT, Protocol, ProtocolVersion, SND_LARGEENTITY, SND_LARGESOUND, SU_AMMO2,
     SU_ARMOR2, SU_CELLS2, SU_EXTEND1, SU_EXTEND2, SU_NAILS2, SU_ROCKETS2, SU_SHELLS2, SU_WEAPON2,
     SU_WEAPONALPHA, SU_WEAPONFRAME2, SVC_SPAWNBASELINE2, SVC_SPAWNSTATIC2, SVC_SPAWNSTATICSOUND2,
-    THIRD_BYTE, THIRD_SHIFT, U_ALPHA, U_EXTEND1, U_EXTEND2, U_FRAME2, U_MODEL2, U_SCALE, WireAngle,
-    WireCoord,
+    THIRD_BYTE, THIRD_SHIFT, U_ALPHA, U_EXTEND1, U_EXTEND2, U_FRAME2, U_LERPFINISH, U_MODEL2,
+    U_SCALE, WireAngle, WireCoord, q_rint,
 };
 use crate::settings::Setting;
 use crate::spawn::c_atof;
@@ -545,6 +545,10 @@ pub(crate) struct ServerMessages {
     /// Each edict's `ent->alpha`, QuakeSpasm's byte beside the fields, by edict number
     /// (NET-6.8); an edict past the end is `ENTALPHA_DEFAULT`.
     pub(crate) alphas: Vec<EntAlpha>,
+    /// Each edict's last think and whether its next think's time is sent, QuakeSpasm's
+    /// `oldthinktime`, `oldframe` and `sendinterval` (NET-6.9).
+    thinks: Vec<ThinkMark>,
+    send_intervals: Vec<bool>,
 }
 
 impl ServerMessages {
@@ -562,7 +566,29 @@ impl ServerMessages {
             set_angle: None,
             protocol: Protocol::NETQUAKE,
             alphas: Vec::new(),
+            thinks: Vec::new(),
+            send_intervals: Vec::new(),
         }
+    }
+
+    /// Edict `n`'s last think (NET-6.9).
+    pub(crate) fn think(&self, n: usize) -> ThinkMark {
+        self.thinks.get(n).copied().unwrap_or_default()
+    }
+
+    /// Keeps edict `n`'s last think (NET-6.9).
+    pub(crate) fn set_think(&mut self, n: usize, mark: ThinkMark) {
+        set_at(&mut self.thinks, n, mark);
+    }
+
+    /// Whether edict `n`'s next think's time is sent, `sendinterval` (NET-6.9).
+    pub(crate) fn send_interval(&self, n: usize) -> bool {
+        self.send_intervals.get(n).copied().unwrap_or(false)
+    }
+
+    /// Sets edict `n`'s `sendinterval` (NET-6.9).
+    pub(crate) fn set_send_interval(&mut self, n: usize, send: bool) {
+        set_at(&mut self.send_intervals, n, send);
     }
 
     /// Every buffer written in `protocol` from now on (NET-6.1).
@@ -590,12 +616,7 @@ impl ServerMessages {
 
     /// Sets edict `n`'s `ent->alpha` (NET-6.8).
     pub(crate) fn set_alpha(&mut self, n: usize, alpha: EntAlpha) {
-        if self.alphas.len() <= n {
-            self.alphas.resize(n.saturating_add(1), EntAlpha::DEFAULT);
-        }
-        if let Some(slot) = self.alphas.get_mut(n) {
-            *slot = alpha;
-        }
+        set_at(&mut self.alphas, n, alpha);
     }
 }
 
@@ -1520,6 +1541,9 @@ impl SimCall<'_, '_, '_> {
                 if bits & U_MODEL != 0 && modelindex & HIGH_BYTE != 0 {
                     bits |= U_MODEL2;
                 }
+                if self.sim.messages.send_interval(e) {
+                    bits |= U_LERPFINISH;
+                }
                 if bits >= THIRD_BYTE {
                     bits |= U_EXTEND1;
                 }
@@ -1583,6 +1607,11 @@ impl SimCall<'_, '_, '_> {
             }
             if bits & U_MODEL2 != 0 {
                 msg.write_byte(float_to_int(self.float(e, "modelindex")) >> HIGH_SHIFT);
+            }
+            if bits & U_LERPFINISH != 0 {
+                // "`(byte)(Q_rint((ent->v.nextthink-sv.time)*255))`", sv.time this frame's end.
+                let ahead = f64::from(self.float(e, "nextthink")) - self.clock();
+                msg.write_byte(q_rint(double_to_float(ahead) * LERP_FINISH_STEPS));
             }
         }
     }
@@ -1845,6 +1874,31 @@ impl SimCall<'_, '_, '_> {
         Ok(())
     }
 }
+
+/// Sets entry `n` of a per-edict table, growing it with defaults to reach it.
+fn set_at<T: Copy + Default>(table: &mut Vec<T>, n: usize, value: T) {
+    if table.len() <= n {
+        table.resize(n.saturating_add(1), T::default());
+    }
+    if let Some(slot) = table.get_mut(n) {
+        *slot = value;
+    }
+}
+
+/// What QuakeSpasm's `SV_RunThink` keeps of an entity's last think, `oldthinktime` and
+/// `oldframe` (NET-6.9).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct ThinkMark {
+    /// The time the think ran at.
+    pub(crate) time: f32,
+    /// The entity's frame before it.
+    pub(crate) frame: f32,
+}
+
+/// `U_LERPFINISH`'s steps a second, "0.0-1.0 maps to 0-255" (NET-6.9).
+pub(crate) const LERP_FINISH_STEPS: f32 = 255.0;
+/// The intervals "close enough to 0.1 to not send", `i != 25 && i != 26` (NET-6.9).
+pub(crate) const TENTH_STEPS: [i32; 2] = [25, 26];
 
 /// A world's messages to its client, in sending order (NET-1.3).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

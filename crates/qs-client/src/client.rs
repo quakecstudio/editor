@@ -1131,6 +1131,11 @@ impl Client {
         } else {
             self.weapon.model = refdef.weapon.model.get();
             self.weapon.frame = refdef.weapon.frame;
+            // CLIENT-9.8: the weapon takes the view entity's LERP_FINISH.
+            self.weapon.lerpflags.finish = self
+                .entities
+                .get(self.viewentity)
+                .and_then(|e| e.lerpflags.finish);
             self.alias_poses_for_weapon()
         };
         let statics = self
@@ -2472,9 +2477,14 @@ impl Entity {
             }
         }
         if lerp_models && !model.nolerp {
-            let blend =
-                double_to_float((f64::from(time) - self.lerp.start) / f64::from(self.lerp.time));
-            let blend = blend.clamp(0.0, 1.0);
+            // CLIENT-9.5: "if (e->lerpflags & LERP_FINISH && numposes == 1)", over the span to
+            // the time the server gave.
+            let span = match self.lerpflags.finish {
+                Some(finish) if numposes == 1 => f64::from(finish) - self.lerp.start,
+                _ => f64::from(self.lerp.time),
+            };
+            let elapsed = f64::from(double_to_float(f64::from(time) - self.lerp.start));
+            let blend = double_to_float((elapsed / span).clamp(0.0, 1.0));
             #[expect(
                 clippy::float_cmp,
                 reason = "spec CLIENT-7.3: a blend of exactly 1 makes the previous pose the current"
@@ -2514,10 +2524,13 @@ impl Entity {
             self.lerp.current_angles = self.angles;
         }
         if lerp.moves && self.lerpflags.movestep {
-            let blend = double_to_float(
-                (f64::from(time) - self.lerp.move_start) / f64::from(CLIENT_LERP_MOVE_TIME),
-            )
-            .clamp(0.0, 1.0);
+            // CLIENT-9.5: over the span to `lerpfinish` with `LERP_FINISH`.
+            let span = match self.lerpflags.finish {
+                Some(finish) => f64::from(finish) - self.lerp.move_start,
+                None => f64::from(CLIENT_LERP_MOVE_TIME),
+            };
+            let elapsed = f64::from(double_to_float(f64::from(time) - self.lerp.move_start));
+            let blend = double_to_float((elapsed / span).clamp(0.0, 1.0));
             let mut origin = [0.0; AXES];
             let mut angles = [0.0; AXES];
             for i in 0..AXES {

@@ -328,3 +328,15 @@ three (DIFF-16).
   the low byte of the product converted to an int, as x86 does, which C leaves undefined past
   255; `ENTSCALE_DEFAULT` when the progs has no `scale` field. The host's `Q_atof` is id's
   (BUILTIN-11.7), which skips no leading space where QuakeSpasm's does.
+- **NET-6.9** QuakeSpasm's "Fix viewmodel interpolation with >10Hz animations" (`Quakespasm.txt`;
+  commit `e132da234ba8e9a77e1dcb7f518ace39bec6521d`): `SV_RunThink` keeps "`ent->oldthinktime =
+  thinktime; ent->oldframe = ent->v.frame;`", the think's time after "don't let things stay
+  in the past", and `SV_Physics`, after each entity's physics, sets `sendinterval` when "`!ent->free
+  && ent->v.nextthink > sv.time && (ent->v.movetype == MOVETYPE_STEP || ent->v.movetype ==
+  MOVETYPE_WALK || ent->v.frame != ent->oldframe)`" and `j = Q_rint((ent->v.nextthink -
+  ent->oldthinktime)*255)` is from 0 to 255 and neither 25 nor 26 ("25 and 26 are close enough
+  to 0.1 to not send"), `sv.time` the frame's start. Under 666 and 999 an entity with
+  `sendinterval` has `U_LERPFINISH` (1<<19) in its update, and its byte, after the model's high
+  byte, is "`(byte)(Q_rint((ent->v.nextthink-sv.time)*255))`", `sv.time` then the frame's end.
+  Under 15 the bit is never sent. None of it changes an edict (the marks are kept beside the
+  fields), so the simulation is NET-1 to NET-5's.

@@ -31,11 +31,13 @@ impl Models for TestModels {
             "maps/test.bsp" => Some(ModelInfo::brush()),
             "progs/t.mdl" | "progs/u.mdl" => Some(ModelInfo {
                 kind: ModelKind::Alias {
-                    frames: vec![FrameInfo {
-                        first_pose: 0,
-                        poses: 1,
-                        interval: 0.0,
-                    }],
+                    frames: (0..2)
+                        .map(|pose| FrameInfo {
+                            first_pose: pose,
+                            poses: 1,
+                            interval: 0.0,
+                        })
+                        .collect(),
                 },
                 flags: 0,
                 random_sync: false,
@@ -397,4 +399,66 @@ fn large_sounds_are_read() {
         matches!(events.first(), Some(Event::StaticSound { sound: 2, .. })),
         "{events:?}"
     );
+}
+
+/// A datagram at `time` whose client data holds weapon model 2 at `weaponframe`, and with
+/// `finish` the player's update with `U_LERPFINISH`'s byte.
+fn weapon_datagram(time: f32, weaponframe: i32, finish: Option<u8>) -> Vec<u8> {
+    let p = Protocol::FITZQUAKE;
+    let mut m = msg(p);
+    m.write_byte(7);
+    m.write_float(time);
+    m.write_byte(15);
+    m.write_short(1 << 9 | 1 << 12 | 1 << 14);
+    m.write_long(0);
+    m.write_byte(weaponframe);
+    m.write_byte(2);
+    m.write_short(100);
+    for _ in 0..6 {
+        m.write_byte(0);
+    }
+    // The player: U_MOREBITS, U_EXTEND1 and U_LERPFINISH.
+    if let Some(finish) = finish {
+        m.write_byte(128 | 1);
+        m.write_byte(128);
+        m.write_byte(1 << 3);
+        m.write_byte(1);
+        m.write_byte(i32::from(finish));
+    }
+    m.take()
+}
+
+// spec CLIENT-9.8: the weapon takes the view entity's LERP_FINISH, and a single pose blends
+// over the span to lerpfinish rather than 0.1 (CLIENT-9.5)
+#[test]
+fn the_weapon_blends_to_the_players_next_think() {
+    let p = Protocol::FITZQUAKE;
+    let mut baseline = msg(p);
+    baseline.write_byte(22);
+    baseline.write_short(1);
+    for byte in [2, 0, 0, 0] {
+        baseline.write_byte(byte);
+    }
+    for _ in 0..3 {
+        baseline.write_coord(0.0);
+        baseline.write_angle(0.0);
+    }
+    let blend_at = |finish: u8| {
+        let mut client = connected(p, &[baseline.bytes().to_vec()]).unwrap();
+        let mut frame = |dt: f32, packets: Vec<Vec<u8>>| {
+            client
+                .frame(dt, &packets, &mut TestModels, &mut NoRandom)
+                .unwrap();
+            client.scene().weapon_poses.unwrap()
+        };
+        frame(1.0, vec![weapon_datagram(1.0, 0, Some(finish))]);
+        let started = frame(0.0, vec![weapon_datagram(1.0, 1, Some(finish))]);
+        assert_eq!((started.previous, started.current), (0, 1));
+        // The clock follows the server's time (CLIENT-5.1); the player's flag is kept.
+        frame(0.05, vec![weapon_datagram(1.05, 1, None)]).blend
+    };
+    // lerpfinish 1.0 + 51/255 = 1.2: 0.05 of a span of 0.2.
+    assert!((blend_at(51) - 0.25).abs() < 1e-4, "{}", blend_at(51));
+    // 0.4: 0.05 of 0.4.
+    assert!((blend_at(102) - 0.125).abs() < 1e-4, "{}", blend_at(102));
 }

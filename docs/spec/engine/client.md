@@ -404,3 +404,10 @@ CLIENT-1 to CLIENT-7 say, with QuakeSpasm's one addition for 15, Nehahra's alpha
   (sound_num >= MAX_SOUNDS) Host_Error ("CL_ParseStartSoundPacket: %i > MAX_SOUNDS",
   sound_num)`", before CLIENT-4.1's entity check. `svc_spawnstaticsound2` (44) is
   CLIENT-4.2's with the sound an unsigned short.
+- **CLIENT-9.8** The weapon takes the view entity's `LERP_FINISH` and `lerpfinish` each frame, as
+  QuakeSpasm's `V_CalcRefdef` gives them to `cl.viewent` (commit
+  `e132da234ba8e9a77e1dcb7f518ace39bec6521d`, "Fix viewmodel interpolation with >10Hz
+  animations"), so a weapon animating faster than ten frames a second blends each pose over the
+  player's think interval (CLIENT-7.3), not 0.1. The blend over a `LERP_FINISH` span is
+  "`(float)(cl.time - e->lerpstart) / (e->lerpfinish - e->lerpstart)`" clamped to 0 to 1, and
+  the move lerp's the same over `movelerpstart` (CLIENT-7.4).

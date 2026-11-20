@@ -1439,3 +1439,40 @@ fn a_large_ambient_sound_is_spawnstaticsound2() {
     let id = signon(Protocol::NETQUAKE);
     assert!(!id.contains(&44));
 }
+
+// spec NET-6.9: under 666 an entity that thinks at an interval other than a tenth sends
+// U_LERPFINISH with the time to its next think in 255ths; one at a tenth does not, nor does
+// any under 15
+#[test]
+fn the_next_think_is_sent() {
+    let finish = |interval: f32, protocol: Protocol| {
+        let source = format!(
+            "{THING}void() tick = {{ self.nextthink = time + {interval}; }};\n\
+             void() walker = {{ setmodel(self, \"progs/t.mdl\"); self.movetype = 4; \
+             self.think = tick; self.nextthink = time + {interval}; }};\n"
+        );
+        let entities = entity("walker", "10 20 30", "");
+        let mut run = player_with_entities(&source, &entities, protocol);
+        let mut seen = Vec::new();
+        for _ in 0..12 {
+            let bytes = next_datagram(&mut run);
+            if protocol == Protocol::NETQUAKE {
+                continue;
+            }
+            if let Some((_, bits, tail)) = fitz_updates(&bytes).into_iter().find(|u| u.0 == 2)
+                && bits & (1 << 19) != 0
+            {
+                seen.push(*tail.last().unwrap());
+            }
+        }
+        seen
+    };
+    let fifth = finish(0.2, Protocol::FITZQUAKE);
+    assert!(!fifth.is_empty());
+    assert!(fifth.iter().all(|&b| b <= 51), "{fifth:?}");
+    assert!(
+        finish(0.1, Protocol::FITZQUAKE).is_empty(),
+        "a tenth is not sent"
+    );
+    assert!(finish(0.2, Protocol::NETQUAKE).is_empty());
+}
