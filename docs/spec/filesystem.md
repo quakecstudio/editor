@@ -396,6 +396,14 @@ layout and runs on Windows and Linux were not checked.
   `pak1.pak` of `FS_KNOWN_FILES`), `dos/hipnotic/pak0.pak` and `dos/rogue/pak0.pak`. No
   published source gives this layout; it was read from Justin's GOG install on 2026-10-16,
   [#277](https://github.com/quakecstudio/editor/issues/277#issuecomment-6221264809).
+- **FS-6.7** A folder the user chooses that FS-6.1 does not accept, and that holds
+  `pak0.pak` (matched as FS-3.7 matches names), is taken as a game directory, and the folder
+  above it is examined in its place by FS-6.1: choosing `id1`, or a mission pack's folder,
+  finds the install it belongs to. Only the one folder above is looked at, and only for a
+  folder holding `pak0.pak`. This is this project's own rule; id's engine is given its base
+  directory and never asked to find one. It was added on 2026-11-20 because the system's
+  folder dialog opens where the last one was left, which after a project is made beside the
+  game is often inside `id1`.
 
 ### Constants
 

@@ -1682,7 +1682,7 @@ impl Text {
             Self::Paused => "Paused",
             Self::ReloadFailed => "The reload failed; see the Console",
             Self::GameGuide => "Your Quake files",
-            Self::GameFound => "Found Quake. Play reads it where it is.",
+            Self::GameFound => "Found Quake.",
             Self::GameSharewareOnly => {
                 "Only the shareware episode is here. Play works on its maps; the rest of the game needs id1/pak1.pak."
             }

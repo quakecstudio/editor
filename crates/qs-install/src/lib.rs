@@ -347,9 +347,18 @@ impl<'a, F: InstallFs + ?Sized, R: Registry + ?Sized> Finder<'a, F, R> {
 
     /// Looks at a folder the user chose: any folder whose `id1` holds `pak0.pak`, the
     /// folder above a Steam install's `rerelease`, a steamcmd download or the output of
-    /// innoextract. `None` if the folder holds no game.
+    /// innoextract; or a game directory of one of those, `id1` itself for one, in which case
+    /// the folder above it is looked at (FS-6.7). `None` if the folder holds no game.
     #[must_use]
     pub fn examine(&self, folder: &Path) -> Option<Install> {
+        self.examine_chosen(folder).or_else(|| {
+            self.child(folder, "pak0.pak", EntryKind::File)?;
+            self.examine_chosen(folder.parent()?)
+        })
+    }
+
+    /// The install at the folder `folder` itself, as FS-6.1 accepts a folder the user chose.
+    fn examine_chosen(&self, folder: &Path) -> Option<Install> {
         let source = if self.is_steamcmd(folder) {
             Source::Steamcmd
         } else {

@@ -457,6 +457,35 @@ fn macos_innoextract_output() {
     assert_eq!(names(&install, false), ["hipnotic", "rogue"]);
 }
 
+// spec FS-6.7: a game directory chosen in place of its base directory, `id1` for one, is the
+// install of the folder above it: found as a folder's, and as innoextract's `app`; a folder
+// with no `pak0.pak` is not looked above
+#[test]
+fn a_game_directory_chosen_is_its_bases_install() {
+    let fs = MemFs::default()
+        .paks(
+            "/Volumes/Games/Quake",
+            &["id1/pak0.pak", "hipnotic/pak0.pak"],
+        )
+        .dir("/Volumes/Games/Quake/id1/maps")
+        .paks(
+            "/Users/q/Downloads/gog/app",
+            &["ID1/PAK0.PAK", "ID1/PAK1.PAK"],
+        );
+    for chosen in ["/Volumes/Games/Quake/id1", "/Volumes/Games/Quake/hipnotic"] {
+        let install = examine(&fs, chosen).unwrap();
+        assert_eq!(install.source, Source::Folder, "{chosen}");
+        assert_eq!(install.root, p("/Volumes/Games/Quake"), "{chosen}");
+        let original = install.original.as_ref().unwrap();
+        assert_eq!(original.id1, p("/Volumes/Games/Quake/id1"), "{chosen}");
+    }
+    let install = examine(&fs, "/Users/q/Downloads/gog/app/ID1").unwrap();
+    assert_eq!(install.root, p("/Users/q/Downloads/gog/app"));
+    assert!(install.original.is_some());
+    assert!(examine(&fs, "/Volumes/Games/Quake/id1/maps").is_none());
+    assert!(examine(&fs, "/Volumes/Games").is_none());
+}
+
 // spec FS-6.1: any folder whose id1 holds pak0.pak is accepted as the manual override.
 #[test]
 fn any_folder_with_id1_pak0_is_accepted() {
