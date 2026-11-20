@@ -126,8 +126,6 @@ pub struct SimBuiltins {
     pub(crate) qc_time: std::time::Duration,
     /// Whether the server is paused, `sv.paused` (PHYS-11.8).
     pub(crate) paused: bool,
-    /// The client's name, `host_client->name`, which `spawn` gives its `netname`.
-    pub(crate) client_name: Vec<u8>,
     /// The PVS of the client `checkclient` chose last, id's `checkpvs`.
     checkpvs: Vec<u8>,
     pub(crate) files: ModelFiles,
@@ -158,7 +156,6 @@ impl SimBuiltins {
             profile: Vec::new(),
             qc_time: std::time::Duration::ZERO,
             paused: false,
-            client_name: b"player".to_vec(),
             checkpvs: Vec::new(),
             files,
         }

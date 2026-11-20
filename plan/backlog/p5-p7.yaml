@@ -2252,6 +2252,28 @@ groups:
     - 'cargo xtask view-diff passes with each port''s difference listed as expected and no other'
     verify:
     - 'The tests citing each new statement; cargo xtask sim-diff and view-diff'
+  - key: L-31
+    title: Run the startup configuration before the first map, and sv_protocol as QuakeSpasm's command
+    labels:
+    - apps
+    - area:preview
+    - type:feature
+    size: S
+    reqs:
+    - ENG-2
+    summary: |
+      Justin chose on 2026-11-20 to match QuakeSpasm in the two places L-30 left different. The host loads its first map before quake.rc runs, so a config.cfg's or autoexec.cfg's skill, deathmatch or sv_protocol misses the first map; QuakeSpasm's Host_Init runs quake.rc before the command line's map. And L-30 made sv_protocol a setting that takes any value, where QuakeSpasm's SV_Protocol_f is a command that refuses one other than 15, 666 or 999.
+    depends:
+    - L-30
+    deliverable:
+    - 'qs-sim and qs-game: the windowed host runs exec quake.rc in the first map''s world before the map''s settings are read, so the configurations reach the first map as they do in QuakeSpasm'
+    - 'qs-sim: sv_protocol as QuakeSpasm''s SV_Protocol_f, ported from sezero/quakespasm at the commit docs/porting.md pins: no argument prints the protocol, a valid one is kept for the next map, any other is refused with its message'
+    - 'docs/spec/: INPUT-3.6, CON-7.5 and NET-6.10 withdrawn and replaced where they say otherwise'
+    acceptance:
+    - 'A test runs a startup text setting skill and sv_protocol and the first map spawns at that skill and is written in that protocol'
+    - 'A test runs sv_protocol with no argument, with 15, 666 and 999, and with 16, each as QuakeSpasm answers'
+    verify:
+    - 'The tests citing the new statements; cargo xtask sim-diff'
   - key: L-30
     title: Set the later engines' options from the console, by their upstream names
     labels:

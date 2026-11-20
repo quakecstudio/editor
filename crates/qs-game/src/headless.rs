@@ -482,7 +482,7 @@ impl Headless {
             .frame(&scene, &hud, self.bsp.bsp(), &mut self.mesh, ASPECT)
     }
 
-    /// The later engines' drawing settings as the console left them (CON-7.5), as the window
+    /// The later engines' drawing settings as the console left them (CON-7.6), as the window
     /// reads them each frame.
     fn apply_drawing_settings(&mut self) {
         let world = self.game.world();

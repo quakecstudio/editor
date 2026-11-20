@@ -135,7 +135,7 @@ texture darkened by the lightmap. The map view and the preview host draw the wor
   entity's clip depth is moved 1/1024 back, in its depth from 0 near to 1 far, the clip control
   path's amount, so of such a pair the world's face is seen. It has no alpha-tested brush
   faces, so no face is a decal, and no `map_checks`. GLQuake's drawing, REND-1.11's, is the
-  setting `gl_zfix 0` (CON-7.5), read each frame. The world is never moved.
+  setting `gl_zfix 0` (CON-7.6), read each frame. The world is never moved.
 
 ## REND-2 Moving textures
 
@@ -221,7 +221,7 @@ turbulent surfaces ripple, and the sky's two layers scroll.
   samples, every liquid face of every model not drawn tiled is drawn with REND-2.2's warp times
   its lightmap, as a lit face is (REND-1.7, REND-13.5), with no fullbright glow and with
   REND-9.1's alpha; it asks for each face's own flags rather than its chain's first. With the
-  setting `r_litwater 0` (CON-7.5), read each frame as QuakeSpasm reads it as it draws, every
+  setting `r_litwater 0` (CON-7.6), read each frame as QuakeSpasm reads it as it draws, every
   liquid is drawn at its texture's colour, as GLQuake draws it (REND-1.6), its lightmap still
   made. id's qbsp gives every `*`
   texture `TEX_SPECIAL`, so id's maps have no lit water; and GLQuake's loader draws every liquid

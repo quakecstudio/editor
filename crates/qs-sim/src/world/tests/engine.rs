@@ -7,7 +7,7 @@ use qc_progs::Progs;
 
 use super::{Running, entity, player_progs, run_on, running_from};
 use crate::fixtures::{CONTENTS_EMPTY, CONTENTS_SOLID, MapSpec, plane};
-use crate::{LoadOptions, Signon, UserCmd};
+use crate::{ClientCommand, LoadOptions, Signon, UserCmd};
 use qs_bsp::{ClipNode, Node};
 
 /// Two open leaves either side of x = 0: leaf 1 behind (x <= 0), leaf 2 in front; `rows` is
@@ -277,4 +277,81 @@ fn the_host_state_goes_on_to_the_next_level() {
         fresh.world.float(2, "frags"),
         "the second level's draw is the one after the first's"
     );
+}
+
+// spec INPUT-3.7: the startup text runs before the map's settings are read, so its skill is the
+// spawn's; the host's launch settings come after it; a wait leaves the rest for the first
+// frame; its bindings wait for the host
+#[test]
+fn the_startup_text_runs_before_the_map() {
+    let source = "float(string s) cvar = #45;\n\
+        void() reader = { self.frags = cvar(\"skill\"); };\n";
+    let load = |startup: &str, settings: &[(&str, &str)]| {
+        running_from(
+            &MapSpec::default(),
+            super::compile(source),
+            &entity("reader", "0 0 0", ""),
+            Vec::new(),
+            LoadOptions {
+                startup: startup.as_bytes().to_vec(),
+                settings: settings
+                    .iter()
+                    .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+                    .collect(),
+                ..LoadOptions::default()
+            },
+        )
+    };
+    assert_eq!(load("", &[]).world.float(2, "frags"), 1.0, "id's default");
+    assert_eq!(load("skill 3", &[]).world.float(2, "frags"), 3.0);
+    assert_eq!(
+        load("skill 3", &[("skill", "0")]).world.float(2, "frags"),
+        0.0
+    );
+    let mut waited = load("skill 2; wait; skill 0\n", &[]);
+    assert_eq!(waited.world.float(2, "frags"), 2.0);
+    waited
+        .world
+        .execute_console(&Progs::read(&waited.progs).unwrap());
+    assert_eq!(
+        waited.world.setting("skill"),
+        Some(0.0),
+        "the rest ran next"
+    );
+    let mut bound = load("bind x +jump", &[]);
+    assert_eq!(
+        bound.world.take_client_commands(),
+        [ClientCommand::Bind(vec![
+            b"bind".to_vec(),
+            b"x".to_vec(),
+            b"+jump".to_vec()
+        ])]
+    );
+}
+
+// spec INPUT-3.7: the map being loaded comes after the startup text, so a level command in it
+// is passed over and the rest runs; quit waits for the host
+#[test]
+fn the_startup_text_passes_over_level_commands() {
+    let load = |startup: &str| {
+        running_from(
+            &MapSpec::default(),
+            super::compile(""),
+            "",
+            Vec::new(),
+            LoadOptions {
+                startup: startup.as_bytes().to_vec(),
+                ..LoadOptions::default()
+            },
+        )
+    };
+    let mut run = load("map start; skill 2; changelevel e1m2; restart; load s0; save s1; skill 3");
+    assert_eq!(run.world.take_host_command(), None);
+    assert_eq!(run.world.setting("skill"), Some(3.0), "the rest ran");
+    let mut quit = load("quit; skill 2");
+    assert_eq!(
+        quit.world.take_host_command(),
+        Some(crate::HostCommand::Quit)
+    );
+    assert_eq!(quit.world.setting("skill"), Some(1.0), "the rest waits");
 }

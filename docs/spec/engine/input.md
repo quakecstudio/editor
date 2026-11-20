@@ -101,10 +101,25 @@ id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d` does it in `WinQuak
   backquote is left to the window, which toggles the console with it (CON-4.8, CON-4.9).
 - **INPUT-3.3** **Withdrawn** 2026-11-06: the game's `config.cfg` is no longer read; replaced
   by INPUT-3.6.
-- **INPUT-3.6** The host runs `exec quake.rc` once, before its first frame, as `Host_Init`
-  does ("`Cbuf_InsertText ("exec quake.rc\n");`"). id1's `quake.rc` runs `default.cfg`,
-  `config.cfg` and `autoexec.cfg`; `config.cfg` is the host's own (INPUT-4.4), not the game
-  directory's, which another engine wrote for itself.
+- **INPUT-3.6** **Withdrawn** 2026-11-20: it ran `quake.rc` on the window's first frame, after
+  the first map had loaded, where QuakeSpasm runs it before; replaced by INPUT-3.7.
+- **INPUT-3.7** The windowed host, a window of its own or the IDE's Game tab, runs `exec
+  quake.rc` once, before its first map's settings are read, as QuakeSpasm's `Host_Init` does
+  ("`Cbuf_InsertText ("exec quake.rc\n");`", `Quake/host.c`, sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`)
+  before a map is started: the text goes before the console's buffer and runs then, so a
+  configuration's `skill`, `deathmatch`, `coop` and `sv_protocol` (NET-6.11) take the first map,
+  and its bindings reach the window with its first frame; what it prints shows as the map
+  starts. A `wait` in it leaves the rest to the map's first frame. The map the host was started
+  on is QuakeSpasm's `+map`, which `stuffcmds` runs last in `quake.rc`, after the configuration:
+  so the host passes over a host command the text asks for (`map`, `changelevel`, `restart`,
+  `load`, `save`) and runs the rest, where QuakeSpasm would load that map and then the command
+  line's, and only `quit` waits for the host (PHYS-13.6). `--protocol` is the protocol the host
+  starts with, which the text's `sv_protocol` may change (NET-6.11); the host's other launch
+  settings come after the text, as `stuffcmds` does. A
+  headless host (`--headless`, a view script, `--timerefresh`) runs none, so a scenario starts
+  from the defaults. id1's `quake.rc` runs `default.cfg`, `config.cfg` and `autoexec.cfg`;
+  `config.cfg` is the host's own (INPUT-4.4), not the game directory's, which another engine
+  wrote for itself.
 - **INPUT-3.4** QuakeSpasm's `IN_MouseMove` drops the motion while the keys are not the
   game's (`key_dest != key_game`); so does the host, which also frees the mouse then.
 - **INPUT-3.5** In QuakeSpasm's look `exec default.cfg` reads the host's own default instead of
