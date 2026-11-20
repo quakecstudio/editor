@@ -109,6 +109,9 @@ fn brushes_are_found_by_a_box() {
         (json!([[130, 0, 0], [250, 10, 10]]), vec![]),
         // Above everything.
         (json!([[0, 0, 500], [600, 600, 600]]), vec![]),
+        // The corners the other way round on every axis, and on one.
+        (json!([[310, 10, 20], [300, 0, 10]]), vec![1]),
+        (json!([[300, 0, 0], [100, 10, 10]]), vec![0, 1]),
     ] {
         let found = listed(&mut session, json!({ "within": within }));
         let got: Vec<usize> = found
@@ -217,4 +220,43 @@ fn the_summary_counts_what_the_map_holds() {
         none.execute(MAP_SUMMARY, json!({ "path": other })).is_ok(),
         "no map need be open"
     );
+}
+
+// No spec statement: L-30: a brush that is not closed has no box: its corners are where its
+// open faces were cut off, far outside the map, so it is listed with none, no box finds it,
+// and the map's own box does not count it
+#[test]
+fn a_brush_that_is_not_closed_has_no_box() {
+    // A box with its top face left out.
+    let open = cuboid([0, 0, 0], [64, 64, 64], "brick");
+    let top = open.lines().nth(6).unwrap().to_owned();
+    assert!(top.contains("( 0 0 64 )"), "{top}");
+    let open = open.replace(&format!("{top}\n"), "");
+    let text = format!(
+        "{{\n\"classname\" \"worldspawn\"\n{}{open}}}\n",
+        cuboid([128, 0, 0], [192, 64, 64], "brick")
+    );
+    let dir = std::env::temp_dir().join(format!("qs-map-survey-open-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("open.map");
+    std::fs::write(&path, text).unwrap();
+    let mut session = MapContext::session();
+    session.execute(MAP_OPEN, json!({ "path": path })).unwrap();
+
+    let all = listed(&mut session, json!({}));
+    assert_eq!(all.total, 2);
+    assert!(all.brushes[0].bounds.is_some());
+    assert_eq!(all.brushes[1].bounds, None);
+    let far = listed(
+        &mut session,
+        json!({ "within": [[0, 0, 1000], [64, 64, 2000]] }),
+    );
+    assert!(far.brushes.is_empty(), "{far:?}");
+    let summary: MapSummary =
+        serde_json::from_value(session.execute(MAP_SUMMARY, json!({})).unwrap()).unwrap();
+    assert_eq!(
+        summary.bounds,
+        Some([[128.0, 0.0, 0.0], [192.0, 64.0, 64.0]])
+    );
+    assert_eq!(summary.world_brushes, 2, "it is still counted");
 }

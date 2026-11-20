@@ -2411,7 +2411,7 @@ groups:
   - key: L-30
     title: An agent builds and reviews a map without guessing
     labels:
-    - L4-bridges
+    - L5-commands
     - area:map
     - type:feature
     size: M
@@ -2431,4 +2431,27 @@ groups:
     - '`map.summary` of a map answers its counts, checked against the map''s text by a test'
     - 'Claude Code builds a map with monsters and lights through the MCP server from one request, with its edits staged for review, recorded in the PR'
     verify:
-    - 'cargo nextest run -p qs-map-edit -p qs-mcp; the recorded session in the PR'
+    - 'cargo nextest run -p qs-map-edit -p qs-workbench -p qs-mcp; the recorded session in the PR'
+  - key: L-31
+    title: Tell an agent what a map review cannot see in one frame
+    labels:
+    - L5-commands
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - MAP-16
+    summary: |
+      Found by L-30's trial on 2026-11-20, in which Claude Code built and reviewed a map through the MCP server. Three things slowed it or misled it and were not changed there. `map.play_from_here` answered no light warning for a room that was nearly black; only the screenshot showed it. A monster near the point played from was already attacking when the frame was taken, so a review picture shows a fight rather than the room. And a tool that hollows or cuts brushes changes the places of an entity's brushes without saying which brushes it made, so the agent lists them again after each one.
+    depends:
+    - L-30
+    deliverable:
+    - 'The map tools that light a map report how dark it is where it matters: each room, or the space around the player start and each entity, with its light level, so a room too dark to play is found without a picture'
+    - 'A way to look at a map as the game draws it with its monsters asleep: a play option or a view that takes the frame before any monster acts'
+    - 'The brush tools that add, cut or hollow brushes answer the places of the brushes they made'
+    acceptance:
+    - 'A map with a lit room and an unlit room is reported with the unlit room dark, checked by a test'
+    - 'A frame of a map with a monster beside the point played from shows the monster where the map put it, checked by a test in the simulation'
+    - 'A doorway is carved between two rooms using only the places the brush tools answered, with no `map.brushes` call, checked by a test'
+    verify:
+    - 'cargo nextest run -p qs-map-edit -p qs-workbench'

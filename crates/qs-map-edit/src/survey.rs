@@ -14,22 +14,21 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{BrushIndex, EntityIndex, MAP_BRUSHES, MAP_SUMMARY, MapRead};
+use crate::issues::{bounds, solid_bounds};
+use crate::textures::uses_in;
 use crate::{HasMap, MapEditError};
 
 /// A box, its least corner then its greatest.
 pub type Bounds = [[f64; 3]; 2];
 
-/// The box around `points`; none for no point.
-fn bounds_of(points: impl IntoIterator<Item = [f64; 3]>) -> Option<Bounds> {
-    points.into_iter().fold(None, |bounds, point| {
-        let [min, max] = bounds.unwrap_or([point, point]);
-        let axis = |pick: fn(f64, f64) -> f64, of: [f64; 3]| {
-            let [a, b, c] = of;
-            let [x, y, z] = point;
-            [pick(a, x), pick(b, y), pick(c, z)]
-        };
-        Some([axis(f64::min, min), axis(f64::max, max)])
-    })
+/// The box with corners `a` and `b`, whichever way round they were given on each axis.
+fn ordered([a, b]: Bounds) -> Bounds {
+    let [ax, ay, az] = a;
+    let [bx, by, bz] = b;
+    [
+        [ax.min(bx), ay.min(by), az.min(bz)],
+        [ax.max(bx), ay.max(by), az.max(bz)],
+    ]
 }
 
 /// Whether the boxes `a` and `b` touch or overlap.
@@ -57,7 +56,8 @@ pub struct BrushesParams {
     /// The entity whose brushes are listed; the world when not given.
     #[serde(default)]
     pub entity: Option<EntityIndex>,
-    /// Only the brushes whose box touches this one, `[min, max]`; every brush when not given.
+    /// Only the brushes whose box touches this one, two opposite corners in either order;
+    /// every brush when not given.
     #[serde(default)]
     pub within: Option<Bounds>,
 }
@@ -116,17 +116,16 @@ impl<C: HasMap + 'static> Command<C> for MapBrushes {
             .enumerate()
             .map(|(index, brush)| BrushInfo {
                 brush: BrushIndex::new(index),
-                bounds: bounds_of(brush.vertices()),
+                bounds: solid_bounds(brush),
                 textures: textures_of(brush),
             })
             .collect();
         let total = all.len();
+        let within = params.within.map(ordered);
         let brushes = all
             .into_iter()
             .filter(|brush| {
-                params
-                    .within
-                    .is_none_or(|within| brush.bounds.is_some_and(|bounds| touch(bounds, within)))
+                within.is_none_or(|within| brush.bounds.is_some_and(|bounds| touch(bounds, within)))
             })
             .collect();
         Ok(Outcome::unchanged(BrushesListed {
@@ -192,7 +191,6 @@ impl MapSummary {
     fn of(path: &Path, file: &MapFile) -> Self {
         let text = |bytes: &[u8]| String::from_utf8_lossy(bytes).into_owned();
         let mut classes: BTreeMap<String, usize> = BTreeMap::new();
-        let mut textures: BTreeMap<String, usize> = BTreeMap::new();
         let mut corners = Vec::new();
         let (mut world_brushes, mut entity_brushes) = (0_usize, 0_usize);
         for (index, entity) in file.entities.iter().enumerate() {
@@ -206,11 +204,8 @@ impl MapSummary {
                     &mut entity_brushes
                 };
                 *of = of.saturating_add(1);
-                corners.extend(brush.vertices());
-                for face in &brush.faces {
-                    let faces = textures.entry(text(face.texture())).or_default();
-                    *faces = faces.saturating_add(1);
-                }
+                // A brush that is not closed has no box of its own to count.
+                corners.extend(solid_bounds(brush).into_iter().flatten());
             }
         }
         let world = file
@@ -222,12 +217,12 @@ impl MapSummary {
             .collect();
         Self {
             path: path.to_path_buf(),
-            bounds: bounds_of(corners),
+            bounds: bounds(corners),
             world_brushes,
             entity_brushes,
             entities: file.entities.len(),
             classes: counted(classes),
-            textures: counted(textures),
+            textures: counted(uses_in(file)),
             world,
         }
     }

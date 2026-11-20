@@ -618,21 +618,26 @@ impl TextureSources {
     }
 }
 
+/// How many faces of the map `file` use each texture name, by name.
+pub(crate) fn uses_in(file: &qs_map::MapFile) -> BTreeMap<String, usize> {
+    let mut uses = BTreeMap::new();
+    for entity in &file.entities {
+        for brush in entity.brushes() {
+            for face in &brush.faces {
+                let name = String::from_utf8_lossy(face.texture()).into_owned();
+                let count: &mut usize = uses.entry(name).or_default();
+                *count = count.saturating_add(1);
+            }
+        }
+    }
+    uses
+}
+
 impl MapDocument {
     /// How many faces use each texture name, by name.
     #[must_use]
     pub fn texture_uses(&self) -> BTreeMap<String, usize> {
-        let mut uses = BTreeMap::new();
-        for entity in &self.file().entities {
-            for brush in entity.brushes() {
-                for face in &brush.faces {
-                    let name = String::from_utf8_lossy(face.texture()).into_owned();
-                    let count: &mut usize = uses.entry(name).or_default();
-                    *count = count.saturating_add(1);
-                }
-            }
-        }
-        uses
+        uses_in(self.file())
     }
 }
 

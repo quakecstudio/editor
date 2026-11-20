@@ -207,6 +207,12 @@ pub(crate) fn bounds_of(brush: &Brush) -> Option<[[f64; 3]; 2]> {
     bounds(brush.vertices())
 }
 
+/// The box around `brush` when it is a bounded solid (MAP-3.4); none for one that is not
+/// closed, whose corners are where its open faces were cut off, far outside the map.
+pub(crate) fn solid_bounds(brush: &Brush) -> Option<[[f64; 3]; 2]> {
+    brush.is_valid().then(|| bounds_of(brush)).flatten()
+}
+
 /// Whether `point` is inside or on `brush`'s solid; a brush with no volume holds nothing.
 fn holds(brush: &Brush, point: [f64; 3]) -> bool {
     !is_empty(brush)
@@ -247,9 +253,9 @@ enum Textures {
 
 impl MapDocument {
     /// The issues of the map found without the project: its format's, empty brushes and a
-    /// missing player start. That the world names no WAD is an issue only when a texture is
-    /// `textures` missing: a map textured from the game's own levels needs none (P6-43), and
-    /// the issue has nothing to fix.
+    /// missing player start. That the world names no WAD is an issue only when `textures` is
+    /// [`Textures::SomeMissing`]: a map textured from the game's own levels needs none
+    /// (P6-43), and the issue has nothing to fix.
     fn own_issues(&self, places: &[LinePlace], textures: Textures) -> Vec<MapIssue> {
         let file = self.file();
         let mut issues: Vec<MapIssue> = file
