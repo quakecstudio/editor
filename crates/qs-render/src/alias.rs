@@ -78,6 +78,8 @@ pub struct AliasVertex {
     pub texture: [f32; 2],
     /// How brightly it is lit, 0 to 1 (REND-4.8).
     pub shade: f32,
+    /// Its entity's alpha, 1 for opaque (REND-14.2).
+    pub alpha: f32,
 }
 
 /// What an entity showing an alias model is drawn with.
@@ -99,6 +101,10 @@ pub struct AliasEntity {
     pub blend: Option<PoseBlend>,
     /// What floor its light has (REND-4.11).
     pub kind: AliasKind,
+    /// `ENTALPHA_DECODE (e->alpha)`, 1 for opaque (REND-14.2).
+    pub alpha: f32,
+    /// `ENTSCALE_DECODE (e->scale)`, 1 for the model's own size (REND-14.3).
+    pub scale: f32,
 }
 
 /// Which entity an alias model is drawn for, which sets its light's floor (REND-4.11).
@@ -132,6 +138,8 @@ impl AliasEntity {
             light,
             blend: None,
             kind: AliasKind::Other,
+            alpha: 1.0,
+            scale: 1.0,
         }
     }
 }
@@ -310,10 +318,13 @@ impl AliasModel {
                 *p = a * iblend + b * blend;
             }
             let shade = dot(normal1) * iblend + dot(normal2) * blend;
+            // REND-14.3: `R_RotateForEntity`'s `glScalef (scalefactor, ...)`, after the turn.
+            let position = position.map(|c| c * entity.scale);
             Some(AliasVertex {
                 position: rotate_for_entity(entity.origin, turn, position),
                 texture: corner.texture,
                 shade: (shade * shadelight).clamp(0.0, 1.0),
+                alpha: entity.alpha,
             })
         }));
         self.skin(entity.skin, time)

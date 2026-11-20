@@ -25,6 +25,8 @@
 //! (EXAMPLE-1), as EDICT-8.2 requires.
 
 use crate::offsets::{FieldOffset, GlobalOffset};
+use crate::protocol::EntAlpha;
+use qc_builtins::math::q_atof;
 use qc_edict::EdictNumber;
 use qc_types::{Etype, Slot};
 
@@ -297,6 +299,13 @@ pub trait SpawnHost {
     /// Frees edict `edict`, id's `ED_Free` (EDICT-7), for an inhibited or classless entity
     /// (EDICT-8.4, EDICT-8.5).
     fn free(&mut self, edict: EdictNumber);
+
+    /// QuakeSpasm's "hack to support .alpha even when progs.dat doesn't know about it": an
+    /// `alpha` key sets the edict's `ent->alpha` beside its fields (NET-6.8). A host with no
+    /// alpha ignores it.
+    fn set_alpha(&mut self, edict: EdictNumber, alpha: EntAlpha) {
+        let _ = (edict, alpha);
+    }
 }
 
 /// Converts one `"key" "value"` pair's value by the field's type and writes it, id's
@@ -405,6 +414,13 @@ pub(crate) fn apply_key<H: SpawnHost>(
     // A key starting with `_` is ignored (EDICT-8.2).
     if key.first() == Some(&b'_') {
         return Ok(());
+    }
+
+    // NET-6.8: `ent->alpha = ENTALPHA_ENCODE(Q_atof(com_token))`, whether or not a field
+    // follows.
+    if key == b"alpha" {
+        let text = String::from_utf8_lossy(value);
+        host.set_alpha(edict, EntAlpha::encode(q_atof(&text)));
     }
 
     // A key that names no field is ignored, with the message `'<key>' is not a field`

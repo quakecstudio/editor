@@ -11,7 +11,7 @@ use qs_bsp::SURF_DRAWTILED;
 
 use super::light_point;
 use crate::mesh::tests::{LIGHTMAP, MapSpec, bsp, samples};
-use crate::styles::LightStyles;
+use crate::styles::{LightStyles, StyleLerp};
 
 /// Fifteen samples numbered 0, 10, 20, ... row by row.
 fn numbered() -> Vec<u8> {
@@ -244,9 +244,9 @@ fn the_light_point_reads_the_styles() {
         ..MapSpec::default()
     };
     let map = bsp(&spec, &lighting);
-    let off = LightStyles::at(|s| (s == 1).then_some(b"a".as_slice()), 0.0);
+    let off = LightStyles::at(|s| (s == 1).then_some(b"a".as_slice()), 0.0, StyleLerp::Off);
     assert_eq!(light_point(&map, &off, [8.0, 8.0, 1.0]), 10);
-    let negative = LightStyles::at(|s| (s == 0).then_some(b"0".as_slice()), 0.0);
+    let negative = LightStyles::at(|s| (s == 0).then_some(b"0".as_slice()), 0.0, StyleLerp::Off);
     // 10 * -1078 + 20 * 256 = -5660, >> 8 = -23: no light, as below 0 is 0.
     assert_eq!(light_point(&map, &negative, [8.0, 8.0, 1.0]), 0);
 }

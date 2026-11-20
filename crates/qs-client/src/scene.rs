@@ -6,6 +6,7 @@
 
 use crate::client::ModelIndex;
 use crate::view::Refdef;
+use qs_sim::protocol::{EntAlpha, EntScale};
 
 /// How an alias model's poses blend this frame (CLIENT-7.3).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -68,6 +69,9 @@ pub struct SceneEntity {
     pub syncbase: f32,
     /// The poses an alias model blends (CLIENT-7.3); `None` for another model.
     pub poses: Option<PoseBlend>,
+    /// Its alpha and scale, as the server sent them (CLIENT-9.3, CLIENT-9.4).
+    pub alpha: EntAlpha,
+    pub scale: EntScale,
 }
 
 /// A dynamic light, `dlight_t` (CLIENT-5.7).
@@ -105,6 +109,8 @@ pub struct Scene {
     pub view: Refdef,
     /// The weapon's pose blend, when it has a model.
     pub weapon_poses: Option<PoseBlend>,
+    /// The weapon's alpha, `cl.viewent.alpha` (CLIENT-9.6).
+    pub weapon_alpha: EntAlpha,
     /// The blend over the view, RGBA (VIEW-4.6).
     pub blend: [f32; 4],
     /// The live dynamic lights (CLIENT-5.7).

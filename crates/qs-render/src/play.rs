@@ -16,15 +16,15 @@
 use std::sync::Arc;
 
 use qs_bsp::{Bsp, Submodel};
-use qs_client::{Anchor, EntitySlot, HUD_SBAR_HEIGHT, Hud, HudItem, Scene, SceneEntity};
+use qs_client::{Anchor, EntAlpha, EntitySlot, HUD_SBAR_HEIGHT, Hud, HudItem, Scene, SceneEntity};
 use qs_wad::{Conchars, QPic, WAD_CONCHARS_TRANSPARENT, Wad};
 
-use crate::CHANNEL_MAX;
 use crate::alias::{AliasEntity, AliasError, AliasKind, AliasModel, Shading, entity_light};
 use crate::camera::Camera;
 use crate::gpu::{
-    AliasDraw, Assets, FlatBlend, FlatDraw, FlatFrame, FlatVertex, Fog, MapCallback, ModelFrame,
-    PLAYER_SKINS, PlayerSkin, PlayerSlot, SkinKey, SpriteDraw, SpriteFrame, View,
+    AliasDraw, Assets, EntityPass, FlatBlend, FlatDraw, FlatFrame, FlatVertex, Fog, MapCallback,
+    ModelDepth, ModelFrame, ModelPlacement, PLAYER_SKINS, PlayerSkin, PlayerSlot, SkinKey,
+    SpriteDraw, SpriteFrame, View,
 };
 use crate::light::light_point;
 use crate::look::Look;
@@ -33,7 +33,8 @@ use crate::mesh::{Image, MapMesh, Palette, Placement, fullbright_split};
 use crate::particles::particle_triangles;
 use crate::skybox::{SkyKeys, Skybox, sky_parse_worldspawn};
 use crate::sprite::{Eye, SpriteEntity, SpriteError, SpriteModel, angle_vectors};
-use crate::styles::LightStyles;
+use crate::styles::{LightStyles, StyleLerp};
+use crate::{AXES, CHANNEL_MAX};
 
 /// The bar's width, which the bar is centred by on a wider screen: `(vid.width - 320)>>1`
 /// (HUD-1).
@@ -272,8 +273,12 @@ pub struct Play {
     pub skyfog: f32,
     /// The 2D layer's size, `vid.width` and `vid.height` (HUD-1).
     pub screen: [i32; 2],
-    /// QuakeSpasm's `gl_zfix` for brush models (REND-1.12).
-    pub zfix: bool,
+    /// The depth brush entities are drawn at: behind the world's faces they are flush with,
+    /// Ironwail's `gl_zfix`, or as GLQuake draws them (REND-1.15).
+    pub zfix: ModelDepth,
+    /// How the light styles blend from letter to letter, Ironwail's `r_lerplightstyles`
+    /// (REND-5.8).
+    pub style_lerp: StyleLerp,
     /// Whether an `.mdl` is drawn as the rerelease's MD5 model where there is one
     /// (REND-12.1).
     pub md5_models: bool,
@@ -335,7 +340,8 @@ impl Play {
             water_alpha: 1.0,
             skyfog: sky.skyfog,
             screen: DEFAULT_SCREEN,
-            zfix: true,
+            zfix: ModelDepth::Behind,
+            style_lerp: StyleLerp::default(),
             md5_models: true,
             look: Look::default(),
             gamma: 1.0,
@@ -501,6 +507,7 @@ impl Play {
                     .filter(|s| !s.is_empty())
             },
             scene.time,
+            self.style_lerp,
         );
         let lightmap = mesh.relight_with(&styles, &scene.lights);
         let refdef = &scene.view;
@@ -513,9 +520,9 @@ impl Play {
         };
         let mut models = ModelFrame::default();
         let mut sprites = SpriteFrame::default();
-        let mut placements: Vec<Option<[[f32; 4]; 4]>> = vec![None; mesh.models.len()];
+        let mut placements: Vec<Option<ModelPlacement>> = vec![None; mesh.models.len()];
         if let Some(world) = placements.first_mut() {
-            *world = Some(Placement::WORLD.matrix());
+            *world = Some(ModelPlacement::WORLD);
         }
         let mut player_skins = Vec::new();
         let light = |origin| light_point(bsp, &styles, origin);
@@ -523,6 +530,11 @@ impl Play {
         for entity in scene.entities.iter().chain(&scene.statics) {
             match self.models.get(entity.model.get()) {
                 Some(drawn @ (Model::Alias(..) | Model::Md5(..))) => {
+                    // REND-14.2: "if (entalpha == 0) goto cleanup".
+                    let alpha = entity.alpha.decode();
+                    if alpha == 0.0 {
+                        continue;
+                    }
                     let player = entity.entity.player(scene.maxclients);
                     let kind = if player.is_some() {
                         AliasKind::Player
@@ -539,6 +551,8 @@ impl Play {
                         light: lit,
                         blend: entity.poses,
                         kind,
+                        alpha,
+                        scale: entity.scale.decode(),
                     };
                     drawn.draw_alias(&alias, scene.time, &mut models);
                     let Model::Alias(model, _) = drawn else {
@@ -567,6 +581,7 @@ impl Play {
                         angles: entity.angles,
                         frame: entity.frame,
                         syncbase: entity.syncbase,
+                        scale: entity.scale,
                     };
                     let start = sprites.vertices.len();
                     if let Some(image) =
@@ -611,8 +626,12 @@ impl Play {
                 light: lit,
                 blend: scene.weapon_poses,
                 kind: AliasKind::ViewModel,
+                alpha: scene.weapon_alpha.decode(),
+                scale: 1.0,
             };
-            drawn.draw_alias(&alias, scene.time, &mut weapon);
+            if alias.alpha != 0.0 {
+                drawn.draw_alias(&alias, scene.time, &mut weapon);
+            }
         }
         let screen = self.screen.map(f32_of_i32);
         let mut flat = FlatFrame::default();
@@ -658,8 +677,8 @@ impl Play {
         }
     }
 
-    /// A brush model at its entity (REND-1.9, REND-1.12).
-    fn place(&self, placements: &mut [Option<[[f32; 4]; 4]>], n: usize, entity: &SceneEntity) {
+    /// A brush model at its entity (REND-1.9), its depth as the z-fix says (REND-1.15).
+    fn place(&self, placements: &mut [Option<ModelPlacement>], n: usize, entity: &SceneEntity) {
         let Some(slot) = placements.get_mut(n) else {
             return;
         };
@@ -668,8 +687,20 @@ impl Play {
             origin: entity.origin,
             angles: entity.angles,
         };
-        let placed = if self.zfix { placed.zfixed() } else { placed };
-        *slot = Some(placed.matrix());
+        // REND-14.3: `R_RotateForEntity`'s scale, after the turn: the matrix's axes.
+        let scale = entity.scale.decode();
+        let mut matrix = placed.matrix();
+        for column in matrix.iter_mut().take(AXES) {
+            for value in column.iter_mut().take(AXES) {
+                *value *= scale;
+            }
+        }
+        *slot = Some(ModelPlacement {
+            matrix,
+            depth: self.zfix,
+            // REND-14.2: the entity's alpha, unless it is the default.
+            alpha: (entity.alpha != EntAlpha::DEFAULT).then(|| entity.alpha.decode()),
+        });
     }
 
     /// The status bar, the overlay and the centre print as quads (HUD-1 to HUD-3).
@@ -857,6 +888,7 @@ impl Model {
                         skin: first.saturating_add(image),
                         first: u32_of(start),
                         count: u32_of(count),
+                        pass: EntityPass::of(entity.alpha),
                     });
                     start = start.saturating_add(count);
                 }
@@ -881,6 +913,7 @@ impl AliasModel {
             skin: first_skin.saturating_add(image),
             first: u32_of(start),
             count: u32_of(out.vertices.len().saturating_sub(start)),
+            pass: EntityPass::of(entity.alpha),
         });
     }
 }

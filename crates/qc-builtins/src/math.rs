@@ -244,7 +244,7 @@ fn u32_to_i32(v: u32) -> i32 {
 /// decimal digits with at most one `.`; it stops at the first other character, with no
 /// exponent and no leading spaces. The result is id's `(float)(sign * total)`.
 #[must_use]
-pub(crate) fn q_atof(text: &str) -> f32 {
+pub fn q_atof(text: &str) -> f32 {
     let bytes = text.as_bytes();
     let mut i = 0;
     // id: skip a leading '-' only; no spaces are skipped (BUILTIN-11.7, `" 5"` is 0).

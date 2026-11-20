@@ -351,3 +351,66 @@ are of the FitzQuake lineage. id's limits are kept as a mode, as the BSP loader 
 - **CLIENT-8.2** A caller that asks for id's limits (`ClientLimits::WINQUAKE`) gets them, the
   constants of CLIENT-1 to CLIENT-6, as those statements say: a compatibility mode a caller
   chooses, as ADR-0012 keeps `BspLoader::WinQuake`.
+
+## CLIENT-9 Reading FitzQuake's 666 and RMQ's 999
+
+**Source:** QuakeSpasm (`sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`):
+`Quake/common.c`, `MSG_ReadCoord`, `MSG_ReadAngle`, `MSG_ReadAngle16`; `Quake/cl_parse.c`,
+`CL_ParseStartSoundPacket`, `CL_ParseServerInfo`, `CL_ParseUpdate`, `CL_ParseBaseline`,
+`CL_ParseClientdata`, `CL_ParseStatic`, `CL_ParseStaticSound`, `CL_ParseServerMessage`. The
+client reads the three protocols the server writes (NET-6), under
+[ADR-0026](../../adr/0026-preview-host-later-engine-improvements.md); under 15 it reads as
+CLIENT-1 to CLIENT-7 say, with QuakeSpasm's one addition for 15, Nehahra's alpha
+(CLIENT-9.3).
+
+### Behaviour
+
+- **CLIENT-9.1** Coordinates and angles are read in the protocol the serverinfo named, from the
+  next read on: "`MSG_ReadCoord (flags)`" is a float with `PRFL_FLOATCOORD`, "`MSG_ReadLong ()
+  * (1.0 / 16.0)`" with `PRFL_INT32COORD`, "`MSG_ReadShort() + MSG_ReadByte() * (1.0/255)`"
+  with `PRFL_24BITCOORD`, else "`MSG_ReadShort() * (1.0/8)`"; "`MSG_ReadAngle (flags)`" is a
+  float with `PRFL_FLOATANGLE`, "`MSG_ReadShort () * (360.0 / 65536)`" with `PRFL_SHORTANGLE`,
+  else "`MSG_ReadChar () * (360.0 / 256)`"; `MSG_ReadAngle16` is the float or the short. 15
+  and 666 have no flags.
+- **CLIENT-9.2** `CL_ParseServerInfo` accepts 15, 666 and 999, and refuses any other with
+  "`Server returned version %i, not %i or %i or %i`"; under 999 the protocol flags follow as a
+  long. `svc_version` accepts the same three and sets only the protocol, "`cl.protocol = i;`":
+  the flags stay, and coordinates and angles are read by the flags whatever the protocol.
+- **CLIENT-9.3** Under 666 and 999 `CL_ParseUpdate` reads the third byte of bits after the
+  second under `U_EXTEND1` and the fourth under `U_EXTEND2`; after the origins and angles, the
+  alpha byte under `U_ALPHA` (else the baseline's), the scale byte under `U_SCALE` (else the
+  baseline's), "`ent->frame = (ent->frame & 0x00FF) | (MSG_ReadByte() << 8)`" under
+  `U_FRAME2`, the same for the model under `U_MODEL2`, then `U_LERPFINISH`'s byte (CLIENT-9.5);
+  only then is a change of model taken, "`johnfitz -- moved here from above`". Under 15, an
+  update with bit 15, `U_TRANS`, is taken as Nehahra's ("if this bit is set, assume this is
+  PROTOCOL_NEHAHRA"): two floats, the second the alpha, `ENTALPHA_ENCODE`d, and a third, the
+  unused fullbright, when the first is exactly 2; without it the alpha is the baseline's; the
+  scale is always the baseline's.
+- **CLIENT-9.4** `svc_spawnbaseline2` (42) and `svc_spawnstatic2` (43) are `CL_ParseBaseline`
+  with version 2: a bits byte first, then the model as a short under `B_LARGEMODEL` and the
+  frame as a short under `B_LARGEFRAME`, else bytes, then NET-6.4's fields, then the alpha byte
+  under `B_ALPHA` and the scale byte under `B_SCALE`, else the defaults. A static entity takes
+  its baseline's alpha and scale. A large model at or past the client's `MAX_MODELS` is the
+  error of CLIENT-2.1's bad model.
+- **CLIENT-9.5** `U_LERPFINISH` sets "`ent->lerpfinish = ent->msgtime + ((float)(MSG_ReadByte())
+  / 255)`" and `LERP_FINISH`; an update without it clears `LERP_FINISH` (CLIENT-7.3). A span to
+  `lerpfinish` of 0 or less, a byte of 0 on the frame a pose changes, makes QuakeSpasm's blend
+  `0/0`, NaN; the preview host takes such a blend as finished, 1, our choice.
+- **CLIENT-9.6** `svc_clientdata`'s bits are the short read unsigned, then a third byte under
+  `SU_EXTEND1` and a fourth under `SU_EXTEND2`. After the weapon, each of `SU_WEAPON2`,
+  `SU_ARMOR2`, `SU_AMMO2`, `SU_SHELLS2`, `SU_NAILS2`, `SU_ROCKETS2`, `SU_CELLS2` and
+  `SU_WEAPONFRAME2` that is set reads a byte that is the stat's high byte, `|= (MSG_ReadByte()
+  << 8)`; then "`if (bits & SU_WEAPONALPHA) cl.viewent.alpha = MSG_ReadByte(); else
+  cl.viewent.alpha = ENTALPHA_DEFAULT;`".
+- **CLIENT-9.7** `svc_sound` under `SND_LARGEENTITY` reads the entity as an unsigned short and
+  the channel as a byte, and under `SND_LARGESOUND` the sound as an unsigned short; "`if
+  (sound_num >= MAX_SOUNDS) Host_Error ("CL_ParseStartSoundPacket: %i > MAX_SOUNDS",
+  sound_num)`", before CLIENT-4.1's entity check. `svc_spawnstaticsound2` (44) is
+  CLIENT-4.2's with the sound an unsigned short.
+- **CLIENT-9.8** The weapon takes the view entity's `LERP_FINISH` and `lerpfinish` each frame, as
+  QuakeSpasm's `V_CalcRefdef` gives them to `cl.viewent` (commit
+  `e132da234ba8e9a77e1dcb7f518ace39bec6521d`, "Fix viewmodel interpolation with >10Hz
+  animations"), so a weapon animating faster than ten frames a second blends each pose over the
+  player's think interval (CLIENT-7.3), not 0.1. The blend over a `LERP_FINISH` span is
+  "`(float)(cl.time - e->lerpstart) / (e->lerpfinish - e->lerpstart)`" clamped to 0 to 1, and
+  the move lerp's the same over `movelerpstart` (CLIENT-7.4).

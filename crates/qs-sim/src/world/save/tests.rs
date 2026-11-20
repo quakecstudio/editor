@@ -14,6 +14,7 @@ use qc_types::Slot;
 
 use super::{SaveError, SaveGame, next_block};
 use crate::LoadOptions;
+use crate::protocol::EntAlpha;
 use crate::world::field_slot;
 use crate::world::tests::{Running, ledge, player_from, player_progs, running_from};
 
@@ -242,4 +243,39 @@ fn the_comment_keeps_the_level_names_bytes() {
     let comment = text.split(|&b| b == b'\n').nth(1).unwrap();
     assert_eq!(comment.len(), 39);
     assert_eq!(&comment[..7], b"Gold_\xe9_");
+}
+
+// spec NET-6.8: an edict's alpha is saved as an alpha key, ENTALPHA_TOSAVE's %f, when the progs
+// has no alpha field, and read back by the same key; with an alpha field the field holds it
+#[test]
+fn an_alpha_is_saved_when_the_progs_has_no_field() {
+    let mut run = running();
+    run.frames(1, 0.1).unwrap();
+    let progs = Progs::read(&run.progs).unwrap();
+    run.world
+        .builtins
+        .messages
+        .set_alpha(1, EntAlpha::encode(0.5));
+    let text = save(&run);
+    assert!(lines(&text).contains(&"\"alpha\" \"0.500000\"".to_owned()));
+    let game = SaveGame::read(&text).unwrap();
+    let mut back = running_from(
+        &ledge(),
+        run.progs.clone(),
+        "",
+        Vec::new(),
+        LoadOptions::default(),
+    );
+    back.world.restore(&progs, &game).unwrap();
+    assert_eq!(back.world.builtins.messages.alpha(1), EntAlpha::encode(0.5));
+    assert_eq!(EntAlpha::from_byte(1).to_save(), -1.0);
+    assert_eq!(EntAlpha::DEFAULT.to_save(), 0.0);
+    let with_field = player_progs("", "", ".float alpha;\n");
+    let mut field = player_from(&ledge(), with_field, LoadOptions::default());
+    field
+        .world
+        .builtins
+        .messages
+        .set_alpha(1, EntAlpha::encode(0.5));
+    assert!(!String::from_utf8_lossy(&save(&field)).contains("\"alpha\""));
 }

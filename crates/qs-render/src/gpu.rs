@@ -15,9 +15,7 @@ use egui_wgpu::{CallbackResources, CallbackTrait, ScreenDescriptor};
 
 use crate::alias::AliasVertex;
 use crate::look::Look;
-use crate::mesh::{
-    Animation, Batch, Image, LightmapPatch, MapMesh, Placement, Surface, frame, mip_levels,
-};
+use crate::mesh::{Animation, Batch, Image, LightmapPatch, MapMesh, Surface, frame, mip_levels};
 use crate::particles::{ParticleVertex, particle_texture};
 use crate::skybox::Skybox;
 use crate::sprite::SpriteVertex;
@@ -32,7 +30,7 @@ const CONSOLE_ASPECT: f32 = 0.75;
 /// The bytes of a [`crate::mesh::Vertex`] on the GPU: position, texture and light coordinates.
 const VERTEX_BYTES: u64 = 7 * 4;
 /// The bytes of an [`AliasVertex`] on the GPU: position, skin coordinates and shade.
-const ALIAS_VERTEX_BYTES: u64 = 6 * 4;
+const ALIAS_VERTEX_BYTES: u64 = 7 * 4;
 /// The bytes of a [`SpriteVertex`]: position and texture coordinates.
 const SPRITE_VERTEX_BYTES: u64 = 5 * 4;
 /// The bytes of a [`ParticleVertex`]: position, texture coordinates and colour.
@@ -61,6 +59,8 @@ const DECAL_BIAS: wgpu::DepthBiasState = wgpu::DepthBiasState {
 pub struct MapRenderer {
     /// The pipelines of lit, turbulent and sky surfaces.
     pipelines: [RenderPipeline; 3],
+    /// The lit surfaces of a brush entity with an alpha below 1 (REND-14.2).
+    lit_alpha_pipeline: RenderPipeline,
     vertices: Buffer,
     indices: Buffer,
     view: Buffer,
@@ -68,8 +68,9 @@ pub struct MapRenderer {
     textures: Vec<BindGroup>,
     batches: Vec<Batch>,
     animations: Vec<Option<Animation>>,
-    /// The pipeline of alias models (REND-4).
+    /// The pipelines of alias models (REND-4), opaque and in the alpha pass (REND-14.2).
     alias_pipeline: RenderPipeline,
+    alias_alpha_pipeline: RenderPipeline,
     /// Each alias skin image, bound as a surface texture, then [`PLAYER_SKINS`] player skins,
     /// each a client slot's skin in its colours (REND-4.13).
     skins: Vec<BindGroup>,
@@ -108,6 +109,8 @@ pub struct MapRenderer {
     model_count: usize,
     /// Whether each model is drawn this frame: a brush entity not in the visible list is not.
     shown: Vec<bool>,
+    /// Which pass draws each model's lit faces this frame (REND-14.1).
+    passes: Vec<EntityPass>,
     /// The lightmap atlas, written again as the light styles change (REND-5.5).
     lightmap: wgpu::Texture,
     /// The skybox's face size, `None` for the scrolling layers (REND-8.2).
@@ -159,8 +162,64 @@ impl Grown {
 
 /// The bytes between two models' matrices: the dynamic offset alignment every device allows.
 const MODEL_STRIDE: u64 = 256;
-/// The bytes of one model's matrix.
-const MATRIX_BYTES: u64 = 16 * 4;
+/// The bytes of one model's uniform: its matrix, then its depth bias in a `vec4`.
+const MODEL_BYTES: u64 = 20 * 4;
+/// Ironwail's `ZBIAS`, "`1./1024`", added to a brush entity's clip depth (REND-1.15).
+const ZFIX_BIAS: f32 = 1.0 / 1024.0;
+
+/// Where one of the mesh's models is drawn this frame: its matrix and its depth (REND-1.9,
+/// REND-1.15).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ModelPlacement {
+    /// The column-major matrix that moves its vertices (REND-1.9).
+    pub matrix: [[f32; 4]; 4],
+    /// Whether its depth is pushed back behind faces it is flush with (REND-1.15).
+    pub depth: ModelDepth,
+    /// Its entity's alpha, `None` for `ENTALPHA_DEFAULT` (REND-14.2).
+    pub alpha: Option<f32>,
+}
+
+impl ModelPlacement {
+    /// The world's: unmoved, its depth as drawn.
+    pub const WORLD: Self = Self {
+        matrix: [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+        depth: ModelDepth::AsDrawn,
+        alpha: None,
+    };
+
+    /// Which pass draws its lit faces (REND-14.1).
+    #[must_use]
+    pub fn pass(&self) -> EntityPass {
+        EntityPass::of(self.alpha.unwrap_or(1.0))
+    }
+}
+
+/// A model's depth (REND-1.15).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ModelDepth {
+    /// As GLQuake rasterizes it, and the world always.
+    #[default]
+    AsDrawn,
+    /// Ironwail's z-fighting work-around, `CF_USE_POLYGON_OFFSET`: the clip depth moved back
+    /// by [`ZFIX_BIAS`], so of a brush entity's face and a world face at one depth the world's
+    /// is seen.
+    Behind,
+}
+
+impl ModelDepth {
+    /// What is added to the clip space depth of every vertex.
+    const fn bias(self) -> f32 {
+        match self {
+            Self::AsDrawn => 0.0,
+            Self::Behind => ZFIX_BIAS,
+        }
+    }
+}
 
 /// The player skins the renderer keeps after the models' skins, one per client slot,
 /// GLQuake's `playertextures` for `MAX_SCOREBOARD` 16 clients (REND-4.13).
@@ -175,6 +234,32 @@ pub struct AliasDraw {
     pub first: u32,
     /// Its vertices, three a triangle.
     pub count: u32,
+    /// Which pass draws it (REND-14.1).
+    pub pass: EntityPass,
+}
+
+/// QuakeSpasm's two passes of `R_DrawEntitiesOnList` (REND-14.1): the opaque entities after
+/// the world, those with an alpha below 1 after its water.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum EntityPass {
+    /// `alphapass` false: drawn opaque, writing depth.
+    #[default]
+    Opaque,
+    /// `alphapass` true: blended by its alpha, `glDepthMask(GL_FALSE)`.
+    Alpha,
+}
+
+impl EntityPass {
+    /// The pass of an entity of alpha `alpha`: "`ENTALPHA_DECODE(currententity->alpha) < 1`"
+    /// is the alpha pass's.
+    #[must_use]
+    pub fn of(alpha: f32) -> Self {
+        if alpha < 1.0 {
+            Self::Alpha
+        } else {
+            Self::Opaque
+        }
+    }
 }
 
 /// What a player slot's translated skin was made from (REND-4.13).
@@ -341,6 +426,9 @@ enum Pass {
     Blended,
     /// Blended, with `glDepthMask (GL_FALSE)`: the particles.
     BlendedNoDepthWrite,
+    /// Blended, with `glDepthMask (GL_FALSE)` and the faces culled as an opaque model's: an
+    /// entity in the alpha pass (REND-14.2).
+    Translucent,
     /// Blended, with no depth test: the 2D layer.
     Flat,
     /// Opaque, pulled toward the eye: a decal.
@@ -422,11 +510,11 @@ impl MapRenderer {
             label: Some("qs-render model"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: true,
-                    min_binding_size: wgpu::BufferSize::new(MATRIX_BYTES),
+                    min_binding_size: wgpu::BufferSize::new(MODEL_BYTES),
                 },
                 count: None,
             }],
@@ -455,11 +543,18 @@ impl MapRenderer {
                 resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                     buffer: &models,
                     offset: 0,
-                    size: wgpu::BufferSize::new(MATRIX_BYTES),
+                    size: wgpu::BufferSize::new(MODEL_BYTES),
                 }),
             }],
         });
-        let placed: Vec<[[f32; 4]; 4]> = mesh.models.iter().map(Placement::matrix).collect();
+        let placed: Vec<ModelPlacement> = mesh
+            .models
+            .iter()
+            .map(|p| ModelPlacement {
+                matrix: p.matrix(),
+                ..ModelPlacement::WORLD
+            })
+            .collect();
         queue.write_buffer(&models, 0, &model_bytes(&placed));
         let world_vertex = wgpu::VertexBufferLayout {
             array_stride: VERTEX_BYTES,
@@ -469,7 +564,12 @@ impl MapRenderer {
         let alias_vertex = wgpu::VertexBufferLayout {
             array_stride: ALIAS_VERTEX_BYTES,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2, 2 => Float32],
+            attributes: &wgpu::vertex_attr_array![
+                0 => Float32x3,
+                1 => Float32x2,
+                2 => Float32,
+                3 => Float32
+            ],
         };
         let sprite_vertex = wgpu::VertexBufferLayout {
             array_stride: SPRITE_VERTEX_BYTES,
@@ -517,7 +617,7 @@ impl MapRenderer {
         };
         let world = ("vertex", &world_vertex);
         let pipelines = [
-            pipeline(world, "fragment", Pass::Opaque),
+            pipeline(("lit_vertex", &world_vertex), "fragment", Pass::Opaque),
             pipeline(world, "turbulent", Pass::Blended),
             pipeline(world, "sky", Pass::Opaque),
         ];
@@ -526,6 +626,13 @@ impl MapRenderer {
             "alias_fragment",
             Pass::Opaque,
         );
+        let alias_alpha_pipeline = pipeline(
+            ("alias_vertex", &alias_vertex),
+            "alias_fragment",
+            Pass::Translucent,
+        );
+        let lit_alpha_pipeline =
+            pipeline(("lit_vertex", &world_vertex), "fragment", Pass::Translucent);
         let sprite = ("sprite_vertex", &sprite_vertex);
         let sprite_pipelines = [
             pipeline(sprite, "sprite_fragment", Pass::Opaque),
@@ -732,6 +839,8 @@ impl MapRenderer {
             batches: mesh.batches.clone(),
             animations: mesh.animations.clone(),
             alias_pipeline,
+            alias_alpha_pipeline,
+            lit_alpha_pipeline,
             skins,
             light_scale: mesh.look.light_scale(),
             skin_binding: (texture_layout.clone(), mipmapped, black),
@@ -757,23 +866,27 @@ impl MapRenderer {
             model_group,
             model_count,
             shown: vec![true; model_count],
+            passes: vec![EntityPass::Opaque; model_count],
             lightmap: lightmap_texture,
             skybox: fitting.map(Skybox::size),
         }
     }
 
-    /// Moves the models to `matrices`, the world's first, as the entities stand now
-    /// (REND-1.9); a model given `None` is not drawn, and a matrix past the mesh's models is
-    /// left out.
-    pub fn set_placements(&mut self, queue: &Queue, matrices: &[Option<[[f32; 4]; 4]>]) {
-        let take = matrices.len().min(self.model_count);
-        let matrices = matrices.get(..take).unwrap_or(&[]);
-        for (shown, matrix) in self.shown.iter_mut().zip(matrices) {
-            *shown = matrix.is_some();
+    /// Moves the models to `placements`, the world's first, as the entities stand now
+    /// (REND-1.9), each at its depth (REND-1.15); a model given `None` is not drawn, and a
+    /// placement past the mesh's models is left out.
+    pub fn set_placements(&mut self, queue: &Queue, placements: &[Option<ModelPlacement>]) {
+        let take = placements.len().min(self.model_count);
+        let placements = placements.get(..take).unwrap_or(&[]);
+        for (shown, placement) in self.shown.iter_mut().zip(placements) {
+            *shown = placement.is_some();
         }
-        let placed: Vec<[[f32; 4]; 4]> = matrices
+        for (pass, placement) in self.passes.iter_mut().zip(placements) {
+            *pass = placement.map_or(EntityPass::Opaque, |p| p.pass());
+        }
+        let placed: Vec<ModelPlacement> = placements
             .iter()
-            .map(|m| m.unwrap_or(Placement::WORLD.matrix()))
+            .map(|p| p.unwrap_or(ModelPlacement::WORLD))
             .collect();
         queue.write_buffer(&self.models, 0, &model_bytes(&placed));
     }
@@ -950,24 +1063,37 @@ impl MapRenderer {
     /// which the view model's depth range is set on.
     pub fn draw(&self, pass: &mut wgpu::RenderPass<'_>, time: f32, viewport: Option<[f32; 4]>) {
         pass.set_bind_group(0, &self.shared, &[]);
-        self.draw_world(pass, time, Surface::Lit);
-        self.draw_world(pass, time, Surface::Sky);
-        self.draw_alias(pass, &self.alias, &self.alias_draws);
+        self.draw_world(pass, time, (Surface::Lit, EntityPass::Opaque));
+        self.draw_world(pass, time, (Surface::Sky, EntityPass::Opaque));
+        self.draw_alias(pass, (&self.alias, &self.alias_draws), EntityPass::Opaque);
         self.draw_sprites(pass);
         self.draw_particles(pass);
         // REND-4.11: the view model in the nearest 0.3 of the depth range.
-        if let Some([x, y, w, h]) = viewport {
-            pass.set_viewport(x, y, w, h, FULL_DEPTH.0, VIEW_MODEL_DEPTH);
-            self.draw_alias(pass, &self.weapon, &self.weapon_draws);
-            pass.set_viewport(x, y, w, h, FULL_DEPTH.0, FULL_DEPTH.1);
-        }
+        let weapon = |pass: &mut wgpu::RenderPass<'_>, entity_pass| {
+            if let Some([x, y, w, h]) = viewport {
+                pass.set_viewport(x, y, w, h, FULL_DEPTH.0, VIEW_MODEL_DEPTH);
+                self.draw_alias(pass, (&self.weapon, &self.weapon_draws), entity_pass);
+                pass.set_viewport(x, y, w, h, FULL_DEPTH.0, FULL_DEPTH.1);
+            }
+        };
+        weapon(pass, EntityPass::Opaque);
         // REND-9.1: the water after everything else, blended.
-        self.draw_world(pass, time, Surface::Turbulent);
+        self.draw_world(pass, time, (Surface::Turbulent, EntityPass::Opaque));
+        // REND-14.1: "R_DrawEntitiesOnList (true)", the entities with an alpha, after the water.
+        self.draw_world(pass, time, (Surface::Lit, EntityPass::Alpha));
+        self.draw_alias(pass, (&self.alias, &self.alias_draws), EntityPass::Alpha);
+        weapon(pass, EntityPass::Alpha);
         self.draw_flat(pass);
     }
 
-    /// The batches of `kind` (REND-1.11).
-    fn draw_world(&self, pass: &mut wgpu::RenderPass<'_>, time: f32, kind: Surface) {
+    /// The batches of `kind` whose model `entity_pass` draws (REND-1.11, REND-14.1): a
+    /// turbulent or sky face in the first, of every model.
+    fn draw_world(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        time: f32,
+        (kind, entity_pass): (Surface, EntityPass),
+    ) {
         // A world with no face to draw has empty buffers, which wgpu refuses to bind.
         if self.vertices.size() == 0 || self.indices.size() == 0 {
             return;
@@ -978,11 +1104,19 @@ impl MapRenderer {
             if !self.shown.get(batch.model).copied().unwrap_or(true) {
                 continue;
             }
+            let model_pass = match kind {
+                Surface::Lit => self.passes.get(batch.model).copied().unwrap_or_default(),
+                Surface::Turbulent | Surface::Sky => EntityPass::Opaque,
+            };
+            if model_pass != entity_pass {
+                continue;
+            }
             let frame = frame(&self.animations, batch.texture, time);
-            if let (Some(texture), Some(pipeline)) = (
-                self.textures.get(frame),
-                self.pipelines.get(pipeline_of(batch.surface)),
-            ) {
+            let pipeline = match entity_pass {
+                EntityPass::Opaque => self.pipelines.get(pipeline_of(batch.surface)),
+                EntityPass::Alpha => Some(&self.lit_alpha_pipeline),
+            };
+            if let (Some(texture), Some(pipeline)) = (self.textures.get(frame), pipeline) {
                 pass.set_pipeline(pipeline);
                 pass.set_bind_group(1, texture, &[]);
                 pass.set_bind_group(2, &self.model_group, &[model_offset(batch.model)]);
@@ -995,15 +1129,27 @@ impl MapRenderer {
         }
     }
 
-    fn draw_alias(&self, pass: &mut wgpu::RenderPass<'_>, buffer: &Grown, draws: &[AliasDraw]) {
+    /// The alias draws of `buffer` that `entity_pass` draws (REND-14.1).
+    fn draw_alias(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        (buffer, draws): (&Grown, &[AliasDraw]),
+        entity_pass: EntityPass,
+    ) {
         let Some(slice) = buffer.slice() else {
             return;
         };
-        pass.set_pipeline(&self.alias_pipeline);
+        if !draws.iter().any(|d| d.pass == entity_pass) {
+            return;
+        }
+        pass.set_pipeline(match entity_pass {
+            EntityPass::Opaque => &self.alias_pipeline,
+            EntityPass::Alpha => &self.alias_alpha_pipeline,
+        });
         pass.set_vertex_buffer(0, slice);
         // Alias vertices are already where they are drawn: the world's matrix.
         pass.set_bind_group(2, &self.model_group, &[0]);
-        for draw in draws {
+        for draw in draws.iter().filter(|d| d.pass == entity_pass) {
             if let Some(skin) = self.skins.get(draw.skin) {
                 pass.set_bind_group(1, skin, &[]);
                 pass.draw(draw.first..draw.first.saturating_add(draw.count), 0..1);
@@ -1065,15 +1211,24 @@ impl MapRenderer {
 /// `Fog_SetupFrame`: `glFogf (GL_FOG_DENSITY, Fog_GetDensity () / 64.0)` (REND-10.4).
 const REND_FOG_DENSITY_SCALE: f32 = 64.0;
 
-/// Each matrix at its [`MODEL_STRIDE`], column by column.
-fn model_bytes(matrices: &[[[f32; 4]; 4]]) -> Vec<u8> {
+/// Each placement at its [`MODEL_STRIDE`]: its matrix column by column, then its depth bias,
+/// its alpha, 1 when the alpha is the entity's own, and a zero.
+fn model_bytes(placements: &[ModelPlacement]) -> Vec<u8> {
     let stride = usize::try_from(MODEL_STRIDE).unwrap_or(256);
-    let mut bytes = vec![0; matrices.len().saturating_mul(stride)];
-    for (chunk, matrix) in bytes.chunks_mut(stride).zip(matrices) {
-        let floats: Vec<u8> = matrix
+    let mut bytes = vec![0; placements.len().saturating_mul(stride)];
+    for (chunk, placement) in bytes.chunks_mut(stride).zip(placements) {
+        let floats: Vec<u8> = placement
+            .matrix
             .iter()
             .flatten()
-            .flat_map(|v| v.to_ne_bytes())
+            .copied()
+            .chain([
+                placement.depth.bias(),
+                placement.alpha.unwrap_or(1.0),
+                if placement.alpha.is_some() { 1.0 } else { 0.0 },
+                0.0,
+            ])
+            .flat_map(f32::to_ne_bytes)
             .collect();
         for (b, f) in chunk.iter_mut().zip(floats) {
             *b = f;
@@ -1090,14 +1245,14 @@ fn model_offset(model: usize) -> u32 {
         .unwrap_or(0)
 }
 
-/// `vertices` as the alias pipeline reads them: position, skin coordinates and shade.
+/// `vertices` as the alias pipeline reads them: position, skin coordinates, shade and alpha.
 fn alias_bytes(vertices: &[AliasVertex]) -> Vec<u8> {
     vertices
         .iter()
         .flat_map(|v| {
             let [x, y, z] = v.position;
             let [s, t] = v.texture;
-            [x, y, z, s, t, v.shade]
+            [x, y, z, s, t, v.shade, v.alpha]
         })
         .flat_map(f32::to_ne_bytes)
         .collect()
@@ -1134,7 +1289,9 @@ const DEPTH_COMPARE: wgpu::CompareFunction = wgpu::CompareFunction::LessEqual;
 fn depth_stencil(format: TextureFormat, pass: Pass) -> wgpu::DepthStencilState {
     let (write, compare, bias) = match pass {
         Pass::Opaque | Pass::Blended => (true, DEPTH_COMPARE, wgpu::DepthBiasState::default()),
-        Pass::BlendedNoDepthWrite => (false, DEPTH_COMPARE, wgpu::DepthBiasState::default()),
+        Pass::BlendedNoDepthWrite | Pass::Translucent => {
+            (false, DEPTH_COMPARE, wgpu::DepthBiasState::default())
+        }
         Pass::Flat => (
             false,
             wgpu::CompareFunction::Always,
@@ -1156,7 +1313,7 @@ impl Pass {
     const fn blend(self) -> Option<wgpu::BlendState> {
         match self {
             Pass::Opaque | Pass::Decal => None,
-            Pass::Blended | Pass::BlendedNoDepthWrite | Pass::Flat => {
+            Pass::Blended | Pass::BlendedNoDepthWrite | Pass::Translucent | Pass::Flat => {
                 Some(wgpu::BlendState::ALPHA_BLENDING)
             }
         }
@@ -1168,7 +1325,7 @@ impl Pass {
     /// particles, which face the eye either way.
     fn primitive(self) -> wgpu::PrimitiveState {
         let cull = match self {
-            Pass::Opaque | Pass::Blended => Some(wgpu::Face::Front),
+            Pass::Opaque | Pass::Blended | Pass::Translucent => Some(wgpu::Face::Front),
             Pass::BlendedNoDepthWrite | Pass::Flat | Pass::Decal => None,
         };
         wgpu::PrimitiveState {
@@ -1371,8 +1528,8 @@ pub struct MapCallback {
     pub particles: Vec<ParticleVertex>,
     /// The 2D layer: the view blend, then the status bar and the centre print.
     pub flat: FlatFrame,
-    /// Each of the mesh's models' matrices, the world's first; `None` for one not drawn.
-    pub placements: Vec<Option<[[f32; 4]; 4]>>,
+    /// Each of the mesh's models' placements, the world's first; `None` for one not drawn.
+    pub placements: Vec<Option<ModelPlacement>>,
     /// The faces' lightmaps made again for this frame's light styles and dynamic lights
     /// (REND-5.5, REND-5.7).
     pub lightmap: Vec<LightmapPatch>,
@@ -1560,20 +1717,21 @@ mod tests {
     use qs_bsp::{SURF_DRAWSKY, SURF_DRAWTURB};
 
     use super::{
-        ALIAS_VERTEX_BYTES, AliasDraw, Assets, DEPTH_COMPARE, FlatBlend, FlatDraw, FlatFrame,
-        FlatVertex, Fog, MapCallback, MapRenderer, ModelFrame, Pass, SpriteDraw, SpriteFrame, View,
-        alias_bytes, grown,
+        ALIAS_VERTEX_BYTES, AliasDraw, Assets, DEPTH_COMPARE, EntityPass, FlatBlend, FlatDraw,
+        FlatFrame, FlatVertex, Fog, MapCallback, MapRenderer, ModelDepth, ModelFrame,
+        ModelPlacement, Pass, SpriteDraw, SpriteFrame, View, ZFIX_BIAS, alias_bytes, depth_stencil,
+        grown, model_bytes,
     };
     use crate::alias::AliasVertex;
     use crate::camera::Camera;
     use crate::look::Look;
     use crate::mesh::tests::{MapSpec, bsp, palette, samples};
-    use crate::mesh::{Image, LightmapPatch};
+    use crate::mesh::{Image, LightmapPatch, LitWater, MeshBuilder, Placement};
     use crate::particles::ParticleVertex;
     use crate::picture::tests::{TgaSpec, solid, tga};
     use crate::skybox::Skybox;
     use crate::sprite::SpriteVertex;
-    use crate::{LightStyles, MapMesh};
+    use crate::{LightStyles, MapMesh, StyleLerp};
     use egui_wgpu::CallbackTrait as _;
 
     const FORMATS: (wgpu::TextureFormat, wgpu::TextureFormat) = (
@@ -1777,6 +1935,159 @@ mod tests {
         // The view spans x -8 to 72 and y -24 to 56: the face's corner (0, 0) is 8 units from
         // the view's left edge and 24 from its top, 6 and 19 pixels; beyond it is the clear.
         assert_eq!(pixel(&image, 2, 2), [0, 0, 0, 255]);
+    }
+
+    // spec REND-1.15: a model's uniform is its matrix and then its depth bias, 1/1024 behind
+    // or 0 as drawn
+    #[test]
+    fn a_models_uniform_carries_its_depth_bias() {
+        let bias = |depth| {
+            let bytes = model_bytes(&[ModelPlacement {
+                depth,
+                ..ModelPlacement::WORLD
+            }]);
+            f32::from_ne_bytes(bytes[64..68].try_into().unwrap())
+        };
+        assert_eq!(ZFIX_BIAS.to_bits(), (1.0_f32 / 1024.0).to_bits());
+        assert_eq!(bias(ModelDepth::Behind).to_bits(), ZFIX_BIAS.to_bits());
+        assert_eq!(bias(ModelDepth::AsDrawn).to_bits(), 0.0_f32.to_bits());
+        let bytes = model_bytes(&[ModelPlacement::WORLD]);
+        assert_eq!(f32::from_ne_bytes(bytes[0..4].try_into().unwrap()), 1.0);
+        assert_eq!(f32::from_ne_bytes(bytes[60..64].try_into().unwrap()), 1.0);
+    }
+
+    // spec REND-1.15: of a brush entity's face flush with the world's, the entity's is seen as
+    // GLQuake draws it (REND-1.11) and the world's with Ironwail's z-fix
+    #[test]
+    fn the_zfix_draws_a_flush_entity_behind_the_world() {
+        let state = egui_kittest::wgpu::create_render_state(
+            egui_kittest::wgpu::default_wgpu_setup(),
+            egui_wgpu::RendererOptions::default(),
+        );
+        let (bright, dim) = (samples(&[255]), samples(&[50]));
+        let palette = palette();
+        let mut builder = MeshBuilder::new(&palette, Look::GlQuake);
+        builder
+            .add(&bsp(&seen_from_above(), &bright), &[Placement::WORLD])
+            .unwrap();
+        builder
+            .add(&bsp(&seen_from_above(), &dim), &[Placement::WORLD])
+            .unwrap();
+        let mesh = builder.finish();
+        let seen = |depth| {
+            let renderer = MapRenderer::new(
+                &state.device,
+                &state.queue,
+                FORMATS,
+                &mesh,
+                &Assets::default(),
+            );
+            let callback = MapCallback {
+                placements: vec![
+                    Some(ModelPlacement::WORLD),
+                    Some(ModelPlacement {
+                        depth,
+                        ..ModelPlacement::WORLD
+                    }),
+                ],
+                ..frame()
+            };
+            pixel(&render(&state, renderer, &callback, BLACK), 32, 32)
+        };
+        assert_eq!(seen(ModelDepth::Behind), FACE, "the world's, at full light");
+        assert_ne!(seen(ModelDepth::AsDrawn), FACE, "the entity's, dimmer");
+    }
+
+    // spec REND-14.2: a brush entity with an alpha below 1 is blended over what is behind it,
+    // after the opaque world; its water takes its alpha in place of the water's
+    #[test]
+    fn a_brush_entity_is_blended_by_its_alpha() {
+        let state = egui_kittest::wgpu::create_render_state(
+            egui_kittest::wgpu::default_wgpu_setup(),
+            egui_wgpu::RendererOptions::default(),
+        );
+        let palette = palette();
+        let seen = |spec: &MapSpec, alpha: Option<f32>| {
+            let lighting = samples(&[255]);
+            let mut builder = MeshBuilder::new(&palette, Look::GlQuake);
+            builder
+                .add(&bsp(spec, &lighting), &[Placement::WORLD, Placement::WORLD])
+                .unwrap();
+            let mesh = builder.finish();
+            let renderer = MapRenderer::new(
+                &state.device,
+                &state.queue,
+                FORMATS,
+                &mesh,
+                &Assets::default(),
+            );
+            let callback = MapCallback {
+                placements: vec![
+                    None,
+                    Some(ModelPlacement {
+                        alpha,
+                        ..ModelPlacement::WORLD
+                    }),
+                ],
+                ..frame()
+            };
+            pixel(&render(&state, renderer, &callback, BLACK), 32, 32)
+        };
+        let lit = seen_from_above();
+        assert_eq!(seen(&lit, None), FACE);
+        assert!(
+            near(seen(&lit, Some(0.5)), [4, 7, 11, 255], 1),
+            "{:?}",
+            seen(&lit, Some(0.5))
+        );
+        let water = MapSpec {
+            flags: SURF_DRAWTURB | qs_bsp::SURF_DRAWTILED,
+            ..seen_from_above()
+        };
+        assert_eq!(seen(&water, None), FACE, "the water's alpha, 1");
+        assert!(
+            near(seen(&water, Some(0.5)), [4, 7, 11, 255], 1),
+            "{:?}",
+            seen(&water, Some(0.5))
+        );
+    }
+
+    // spec REND-2.6: lit water is drawn darkened by its lightmap, and at its texture's colour
+    // with r_litwater 0
+    #[test]
+    fn lit_water_is_darkened_by_its_lightmap() {
+        let state = egui_kittest::wgpu::create_render_state(
+            egui_kittest::wgpu::default_wgpu_setup(),
+            egui_wgpu::RendererOptions::default(),
+        );
+        let lighting = samples(&[51]);
+        let water = MapSpec {
+            flags: SURF_DRAWTURB,
+            ..seen_from_above()
+        };
+        let palette = palette();
+        let seen = |lit| {
+            let mut builder = MeshBuilder::new(&palette, Look::GlQuake).with_water(lit);
+            builder
+                .add(&bsp(&water, &lighting), &[Placement::WORLD])
+                .unwrap();
+            let mesh = builder.finish();
+            let renderer = MapRenderer::new(
+                &state.device,
+                &state.queue,
+                FORMATS,
+                &mesh,
+                &Assets::default(),
+            );
+            pixel(&render(&state, renderer, &frame(), BLACK), 32, 32)
+        };
+        assert_eq!(seen(LitWater::Unlit), FACE);
+        // The sample 51 at style 256 is the texel `51*256 >> 7`, 102, two fifths (REND-1.13).
+        assert!(
+            near(seen(LitWater::Lit), [3, 6, 8, 255], 1),
+            "{:?}",
+            seen(LitWater::Lit)
+        );
     }
 
     // spec REND-4.13: a player skin is uploaded when its key is not the one its slot holds;
@@ -2052,6 +2363,7 @@ mod tests {
             position: [x, y, -10.0],
             texture: [0.5, 0.5],
             shade: 1.0,
+            alpha: 1.0,
         };
         // Wound as a Quake face is, so the front culled by REND-1.10 is away from the eye.
         let model = ModelFrame {
@@ -2064,6 +2376,7 @@ mod tests {
                 skin: 0,
                 first: 0,
                 count: 3,
+                pass: EntityPass::Opaque,
             }],
         };
         let (state, renderer, _) = renderer_of(&seen_from_above(), &[255], &assets);
@@ -2175,7 +2488,7 @@ mod tests {
     fn a_new_lightmap_is_written_over_the_old() {
         let (state, renderer, mut mesh) = renderer();
         assert_eq!(&lightmap_row(&state, &renderer)[4..8], [100, 100, 100, 255]);
-        let off = LightStyles::at(|s| (s == 0).then_some(b"a".as_slice()), 0.0);
+        let off = LightStyles::at(|s| (s == 0).then_some(b"a".as_slice()), 0.0, StyleLerp::Off);
         for patch in mesh.relight(&off) {
             renderer.set_lightmap(&state.queue, &patch);
         }
@@ -2216,7 +2529,7 @@ mod tests {
     #[test]
     fn the_callback_writes_its_lightmap() {
         let (state, renderer, mut mesh) = renderer();
-        let off = LightStyles::at(|s| (s == 0).then_some(b"a".as_slice()), 0.0);
+        let off = LightStyles::at(|s| (s == 0).then_some(b"a".as_slice()), 0.0, StyleLerp::Off);
         let lightmap = mesh.relight(&off);
         let mut resources = egui_wgpu::CallbackResources::default();
         resources.insert(renderer);
@@ -2255,6 +2568,18 @@ mod tests {
         assert_eq!(DEPTH_COMPARE, wgpu::CompareFunction::LessEqual);
     }
 
+    // spec REND-14.2: an entity in the alpha pass is culled as an opaque one, blended, and
+    // writes no depth
+    #[test]
+    fn the_alpha_pass_culls_blends_and_keeps_the_depth() {
+        let pass = Pass::Translucent;
+        assert_eq!(pass.primitive().cull_mode, Some(wgpu::Face::Front));
+        assert_eq!(pass.blend(), Some(wgpu::BlendState::ALPHA_BLENDING));
+        let depth = depth_stencil(wgpu::TextureFormat::Depth32Float, pass);
+        assert_eq!(depth.depth_write_enabled, Some(false));
+        assert_eq!(depth.depth_compare, Some(DEPTH_COMPARE));
+    }
+
     // spec REND-1.10: only a face's front is drawn: GL's counter-clockwise front, front culled
     #[test]
     fn faces_are_culled_as_glquake_culls_them() {
@@ -2268,11 +2593,12 @@ mod tests {
         }
     }
     #[test]
-    fn alias_vertices_are_six_floats_in_order() {
+    fn alias_vertices_are_seven_floats_in_order() {
         let vertex = AliasVertex {
             position: [1.0, 2.0, 3.0],
             texture: [4.0, 5.0],
             shade: 6.0,
+            alpha: 7.0,
         };
         let bytes = alias_bytes(&[vertex, vertex]);
         assert_eq!(u64::try_from(bytes.len()).unwrap(), 2 * ALIAS_VERTEX_BYTES);
@@ -2281,9 +2607,9 @@ mod tests {
             .0
             .iter()
             .map(|b| f32::from_ne_bytes(*b))
-            .take(6)
+            .take(7)
             .collect();
-        assert_eq!(floats, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        assert_eq!(floats, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
     }
 
     #[test]
@@ -2342,6 +2668,7 @@ mod tests {
             entries,
             [
                 "vertex",
+                "lit_vertex",
                 "fragment",
                 "turbulent",
                 "sky",

@@ -14,6 +14,7 @@ use std::rc::Rc;
 
 use qc_progs::Progs;
 use qs_sim::localization::{Localization, RRE_LOC_FILE};
+use qs_sim::protocol::Protocol;
 use qs_sim::rerelease::{BuiltinTable, patch_builtins};
 use qs_sim::{LoadOptions, SaveError, SaveGame, UserCmd, World};
 use qs_vfs::{LoadedFile, StdFs, Vfs};
@@ -133,6 +134,7 @@ fn run(
         search_path: Vec::new(),
         seed: None,
         settings: Vec::new(),
+        protocol: Protocol::default(),
     };
     let mut world =
         World::load(progs, map, &bsp, models()?, options.clone()).map_err(|e| e.to_string())?;

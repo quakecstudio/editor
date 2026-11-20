@@ -2252,6 +2252,27 @@ groups:
     - 'cargo xtask view-diff passes with each port''s difference listed as expected and no other'
     verify:
     - 'The tests citing each new statement; cargo xtask sim-diff and view-diff'
+  - key: L-29
+    title: Record and play demos in the preview host
+    labels:
+    - apps
+    - area:preview
+    - type:feature
+    size: M
+    reqs:
+    - ENG-2
+    summary: |
+      Split from L-21 (#978) by Justin on 2026-11-20: the host writes its server messages in protocols 15, 666 and 999 (NET-6) and its client reads them (CLIENT-9), but it records and plays no demos. QuakeSpasm's cl_demo.c records the messages a client reads into a .dem file and plays one back through the same parser, in whichever protocol the server wrote.
+    depends:
+    - L-21
+    deliverable:
+    - 'The host''s console commands record, stop, playdemo and timedemo, ported from sezero/quakespasm at the commit docs/porting.md pins (Quake/cl_demo.c, CL_Record_f, CL_Stop_f, CL_PlayDemo_f, CL_TimeDemo_f, CL_GetMessage, CL_WriteDemoMessage)'
+    - 'A demo section in docs/spec/engine/client.md citing those functions and ADR-0026, with tests citing each statement'
+    acceptance:
+    - 'A demo recorded under each of 15, 666 and 999 plays back to the same client state, frame by frame, in a test'
+    - 'A demo recorded by QuakeSpasm or id''s engine at protocol 15 plays in the host, recorded in the PR'
+    verify:
+    - 'The tests citing the demo statements; a demo from the reference engine played by hand, recorded in the PR'
   - key: L-22
     title: Port ericw-tools' sunlight, sky dome, surface lights, minimum light and phong
     labels:

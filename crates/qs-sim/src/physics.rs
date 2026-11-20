@@ -16,6 +16,8 @@ use crate::builtins::{FL_ONGROUND, SimCall};
 use crate::collision::{
     CONTENTS_EMPTY, CONTENTS_WATER, MoveKind, Solid, Trace, test_entity_position,
 };
+use crate::messages::{LERP_FINISH_STEPS, TENTH_STEPS, ThinkInterval, ThinkMark};
+use crate::protocol::q_rint;
 use crate::settings::Setting;
 
 /// `STOP_EPSILON` (PHYS-6.2).
@@ -188,6 +190,7 @@ impl SimCall<'_, '_, '_> {
                         }));
                     }
                 }
+                self.mark_send_interval(n);
             }
             n = n.saturating_add(1);
         }
@@ -198,6 +201,33 @@ impl SimCall<'_, '_, '_> {
         let clock = self.clock() + frametime;
         self.sim.mock.engine_mut().clock = clock;
         Ok(())
+    }
+
+    /// QuakeSpasm's `sendinterval` after an entity's physics (NET-6.9): "capture interval to
+    /// nextthink here and send it to client for better lerp timing, but only if interval is
+    /// not 0.1 (which client assumes)".
+    fn mark_send_interval(&mut self, ent: usize) {
+        let mark = self.sim.messages.think(ent);
+        let nextthink = self.float(ent, "nextthink");
+        let movetype = self.movetype(ent);
+        #[expect(
+            clippy::float_cmp,
+            reason = "spec NET-6.9: a frame that is not exactly the one before the think"
+        )]
+        let animated = self.float(ent, "frame") != mark.frame;
+        let send = !self.is_free(ent)
+            && f64::from(nextthink) > self.clock()
+            && (matches!(movetype, MoveType::Step | MoveType::Walk) || animated)
+            && {
+                let steps = q_rint((nextthink - mark.time) * LERP_FINISH_STEPS);
+                (0..=i32::from(u8::MAX)).contains(&steps) && !TENTH_STEPS.contains(&steps)
+            };
+        let interval = if send {
+            ThinkInterval::Sent
+        } else {
+            ThinkInterval::Assumed
+        };
+        self.sim.messages.set_send_interval(ent, interval);
     }
 
     /// `SV_RunThink`: whether the entity is still in use (PHYS-2.1).
@@ -213,6 +243,9 @@ impl SimCall<'_, '_, '_> {
         } else {
             nextthink
         };
+        // NET-6.9: QuakeSpasm keeps the think's time and the frame before it.
+        let frame = self.float(ent, "frame");
+        self.sim.messages.set_think(ent, ThinkMark { time, frame });
         self.set_float(ent, "nextthink", 0.0);
         self.set_global("time", Slot::from_f32(time));
         let value = self.value_of(ent);

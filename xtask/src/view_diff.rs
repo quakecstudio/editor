@@ -110,6 +110,7 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
                 // The host reads `-basedir` and `-game` as the engines write them (ADR-0008).
                 command
                     .args(&engine)
+                    .args(host_protocol(&args.host_args))
                     .args(&args.host_args)
                     .arg("--view-script")
                     .arg(&script)
@@ -277,6 +278,21 @@ impl Side {
 impl std::fmt::Display for Side {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.name())
+    }
+}
+
+/// The host's protocol in the differential, id's 15 (VIEWDIFF-6.1): 666 rounds the angle the
+/// player is placed at where id's engine truncates it; a `--host-arg` naming `--protocol` is
+/// used in its place.
+const HOST_PROTOCOL: [&str; 2] = ["--protocol", "15"];
+
+/// The protocol options the host is given before `host_args`: [`HOST_PROTOCOL`] unless one of
+/// them names a protocol, which clap would refuse to read twice (VIEWDIFF-6.1).
+fn host_protocol(host_args: &[String]) -> &'static [&'static str] {
+    if host_args.iter().any(|a| a.starts_with(HOST_PROTOCOL[0])) {
+        &[]
+    } else {
+        &HOST_PROTOCOL
     }
 }
 

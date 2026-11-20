@@ -9,17 +9,17 @@
 
 use crate::look::Look;
 use qs_client::{
-    Anchor, ConsoleHold, DynamicLight, EntitySlot, Hud, HudItem, ModelIndex, Placed, Scene,
-    SceneEntity, SceneParticle,
+    Anchor, ConsoleHold, DynamicLight, EntAlpha, EntScale, EntitySlot, Hud, HudItem, ModelIndex,
+    Placed, Refdef, Scene, SceneEntity, SceneParticle, Weapon,
 };
 use qs_wad::{WAD_MAGIC, WAD_TYP_QPIC};
 
 use super::{FogState, Model, Pics, Play, PlayError, fog_parse_worldspawn};
 use crate::alias::tests::{MdlSpec, SkinSpec, mdl};
-use crate::gpu::{FlatBlend, FlatDraw, Fog};
+use crate::gpu::{EntityPass, FlatBlend, FlatDraw, Fog, ModelDepth};
 use crate::md5::tests::{Md5Spec, md5mesh};
 use crate::mesh::tests::{MapSpec, bsp, palette, samples};
-use crate::mesh::{Image, MapMesh};
+use crate::mesh::{Image, MapMesh, MeshBuilder, Placement};
 use crate::picture::tests::solid;
 
 /// A WAD2 of picture lumps: each a name, a size and one palette index for every pixel.
@@ -768,4 +768,194 @@ fn gamma_goes_to_the_frame_or_the_blend_by_look() {
         let callback = play.frame(&Scene::default(), &Hud::default(), &bsp, &mut mesh, 1.0);
         assert_eq!(callback.view.gamma, framed, "{look:?}");
     }
+}
+
+// spec REND-1.15: a brush entity is placed behind the world by default, as GLQuake draws it
+// with the option; the world is always as drawn
+#[test]
+fn a_brush_entity_is_placed_behind_by_default() {
+    let lighting = samples(&[50]);
+    let world = bsp(&MapSpec::default(), &lighting);
+    let palette = palette();
+    let mut builder = MeshBuilder::new(&palette, Look::GlQuake);
+    let lift = Placement {
+        model: 0,
+        origin: [0.0, 0.0, 5.0],
+        angles: [0.0; 3],
+    };
+    builder.add(&world, &[Placement::WORLD, lift]).unwrap();
+    let mut mesh = builder.finish();
+    let mut play = play();
+    play.models = vec![Model::None, Model::Submodel(1)];
+    let scene = Scene {
+        entities: vec![SceneEntity {
+            model: ModelIndex::new(1),
+            origin: [0.0, 0.0, 9.0],
+            ..SceneEntity::default()
+        }],
+        ..Scene::default()
+    };
+    let depths = |play: &mut Play, mesh: &mut MapMesh| {
+        play.frame(&scene, &Hud::default(), &world, mesh, 1.0)
+            .placements
+            .iter()
+            .map(|p| p.map(|p| p.depth))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        depths(&mut play, &mut mesh),
+        [Some(ModelDepth::AsDrawn), Some(ModelDepth::Behind)]
+    );
+    play.zfix = ModelDepth::AsDrawn;
+    assert_eq!(
+        depths(&mut play, &mut mesh),
+        [Some(ModelDepth::AsDrawn), Some(ModelDepth::AsDrawn)]
+    );
+    let placed = play
+        .frame(&scene, &Hud::default(), &world, &mut mesh, 1.0)
+        .placements[1]
+        .unwrap();
+    assert_eq!(placed.matrix[3], [0.0, 0.0, 9.0, 1.0], "moved, not shifted");
+}
+
+/// Play with one alias model, `progs/player.mdl`, at index 1.
+fn play_with_alias() -> Play {
+    let mut play = play();
+    let bytes = mdl(&MdlSpec::default());
+    play.load_models(
+        &[String::new(), "progs/player.mdl".to_owned()],
+        &|name| name.ends_with(".mdl").then(|| bytes.clone()),
+        &|name| name.ends_with(".mdl").then_some(0),
+    )
+    .unwrap();
+    play
+}
+
+// spec REND-14.1: an alias entity with an alpha below 1 is the alpha pass's, its vertices
+// carrying the alpha; one at ENTALPHA_ZERO is not drawn; the default is the opaque pass's
+// spec REND-14.2: the alpha is ENTALPHA_DECODE's, the weapon's from the client data
+#[test]
+fn alias_entities_by_their_alpha() {
+    let mut play = play_with_alias();
+    let lighting = samples(&[50]);
+    let bsp = bsp(&MapSpec::default(), &lighting);
+    let mut mesh = MapMesh::build(&bsp, &palette(), Look::GlQuake).unwrap();
+    let entity = |alpha| SceneEntity {
+        entity: EntitySlot::new(5),
+        model: ModelIndex::new(1),
+        alpha: EntAlpha::from_byte(alpha),
+        ..SceneEntity::default()
+    };
+    let scene = Scene {
+        entities: vec![entity(0), entity(128), entity(1)],
+        view: Refdef {
+            weapon: Weapon {
+                model: ModelIndex::new(1),
+                ..Weapon::default()
+            },
+            ..Refdef::default()
+        },
+        weapon_alpha: EntAlpha::from_byte(255),
+        ..Scene::default()
+    };
+    let callback = play.frame(&scene, &Hud::default(), &bsp, &mut mesh, 1.0);
+    let passes: Vec<EntityPass> = callback.models.draws.iter().map(|d| d.pass).collect();
+    assert_eq!(
+        passes,
+        [EntityPass::Opaque, EntityPass::Alpha],
+        "the invisible one is not drawn"
+    );
+    let second = callback.models.draws[1];
+    let alpha = callback.models.vertices[usize::try_from(second.first).unwrap()].alpha;
+    assert!((alpha - 127.0 / 254.0).abs() < 1e-6, "{alpha}");
+    assert_eq!(
+        callback.weapon.draws[0].pass,
+        EntityPass::Opaque,
+        "255 decodes to 1"
+    );
+}
+
+// spec REND-14.3: an alias model's vertices are scaled about its origin by its scale, after
+// the turn
+#[test]
+fn alias_entities_by_their_scale() {
+    let mut play = play_with_alias();
+    let lighting = samples(&[50]);
+    let bsp = bsp(&MapSpec::default(), &lighting);
+    let mut mesh = MapMesh::build(&bsp, &palette(), Look::GlQuake).unwrap();
+    let mut at = |scale| {
+        let scene = Scene {
+            entities: vec![SceneEntity {
+                entity: EntitySlot::new(5),
+                model: ModelIndex::new(1),
+                origin: [100.0, 0.0, 0.0],
+                scale: EntScale::from_byte(scale),
+                ..SceneEntity::default()
+            }],
+            ..Scene::default()
+        };
+        let callback = play.frame(&scene, &Hud::default(), &bsp, &mut mesh, 1.0);
+        callback
+            .models
+            .vertices
+            .iter()
+            .map(|v| v.position)
+            .collect::<Vec<_>>()
+    };
+    let one = at(16);
+    let two = at(32);
+    for (a, b) in one.iter().zip(&two) {
+        for axis in 0..3 {
+            let origin = [100.0, 0.0, 0.0][axis];
+            assert!(((b[axis] - origin) - 2.0 * (a[axis] - origin)).abs() < 1e-4);
+        }
+    }
+}
+
+// spec REND-14.2: a brush entity's alpha is its placement's when it is not the default; its
+// pass the alpha pass's below 1
+// spec REND-14.3: and its axes scaled by its scale
+#[test]
+fn brush_entities_by_their_alpha_and_scale() {
+    let lighting = samples(&[50]);
+    let world = bsp(&MapSpec::default(), &lighting);
+    let palette = palette();
+    let mut builder = MeshBuilder::new(&palette, Look::GlQuake);
+    builder
+        .add(&world, &[Placement::WORLD, Placement::WORLD])
+        .unwrap();
+    let mut mesh = builder.finish();
+    let mut play = play();
+    play.models = vec![Model::None, Model::Submodel(1)];
+    let mut placed = |alpha, scale| {
+        let scene = Scene {
+            entities: vec![SceneEntity {
+                model: ModelIndex::new(1),
+                alpha: EntAlpha::from_byte(alpha),
+                scale: EntScale::from_byte(scale),
+                ..SceneEntity::default()
+            }],
+            ..Scene::default()
+        };
+        play.frame(&scene, &Hud::default(), &world, &mut mesh, 1.0)
+            .placements[1]
+            .unwrap()
+    };
+    let plain = placed(0, 16);
+    assert_eq!(plain.alpha, None);
+    assert_eq!(plain.pass(), EntityPass::Opaque);
+    let half = placed(128, 16);
+    assert!((half.alpha.unwrap() - 127.0 / 254.0).abs() < 1e-6);
+    assert_eq!(half.pass(), EntityPass::Alpha);
+    assert_eq!(
+        placed(255, 16).pass(),
+        EntityPass::Opaque,
+        "an own alpha of 1"
+    );
+    let doubled = placed(0, 32);
+    assert_eq!(doubled.matrix[0][0], 2.0 * plain.matrix[0][0]);
+    assert_eq!(
+        doubled.matrix[3], plain.matrix[3],
+        "the origin is not scaled"
+    );
 }

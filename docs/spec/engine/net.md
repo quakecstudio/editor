@@ -227,3 +227,123 @@ to `PF_WriteEntity`; `WinQuake/sv_main.c`, `SV_StartSound`, `SV_StartParticle`,
   BUILTIN-11.4, BUILTIN-12.3 to BUILTIN-12.5, BUILTIN-12.7, BUILTIN-12.8 and BUILTIN-13.1 to
   BUILTIN-13.2. `qs-sim` writes them into the buffers of NET-1.2 beside the mock engine's
   byte counts (DIFF-6.5), and the bytes it holds equal the counts the mock keeps.
+
+## NET-6 FitzQuake's 666 and RMQ's 999
+
+**Source:** QuakeSpasm (`sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`):
+`Quake/protocol.h`; `Quake/common.c`, `MSG_WriteCoord`, `MSG_WriteAngle`, `MSG_WriteAngle16`
+and their readers; `Quake/sv_main.c`, `SV_Protocol_f`, `SV_StartSound`, `SV_LocalSound`,
+`SV_SendServerinfo`, `SV_WriteEntitiesToClient`, `SV_WriteClientdataToMessage`,
+`SV_CreateBaseline`, `SV_SpawnServer`; `Quake/pr_cmds.c`, `PF_ambientsound`, `PF_makestatic`;
+`Quake/pr_edict.c`, `ED_Free`, `ED_ParseEdict`, `PR_LoadProgs`. Adopted under
+[ADR-0026](../../adr/0026-preview-host-later-engine-improvements.md): the server writes its
+messages in FitzQuake's protocol by default, as QuakeSpasm does, with id's 15 one option away.
+
+The protocol is how the server's messages are written, not what the server simulates: every
+edict and global stays as NET-1 to NET-5 and the PHYS statements say, whichever protocol is
+written, so `cargo xtask sim-diff` holds `qs-sim` to id's server frame by frame in any of the
+three (DIFF-16).
+
+### Behaviour
+
+- **NET-6.1** The server speaks one protocol, QuakeSpasm's `sv_protocol`: "`int sv_protocol =
+  PROTOCOL_FITZQUAKE;`", 666, by default, or `PROTOCOL_NETQUAKE` 15 or `PROTOCOL_RMQ` 999.
+  `SV_SpawnServer` gives 999 the flags "`sv.protocolflags = PRFL_INT32COORD |
+  PRFL_SHORTANGLE;`" and the others none. `SV_SendServerinfo` writes the protocol's number in
+  place of NET-2.2's 15, and for 999 its flags as a long after it; under 15 it sends the model
+  and sound names "`if (sv.protocol != PROTOCOL_NETQUAKE || i < 256)`", so at most the first
+  255 of each. The preview host chooses the protocol with `--protocol` (15, 666 or 999) before
+  the map loads, so its baselines (NET-2.1) are written in it. Under 666 and 999 the buffers are
+  QuakeSpasm's sizes, "`#define MAX_DATAGRAM 64000`", "`#define MAX_MSGLEN 64000`" and
+  "`#define SIGNON_SIZE 31500`" (`Quake/quakedef.h`, `Quake/sv_main.c`), where 15 keeps NET-1.2's,
+  so no message the larger encodings make is cut short where id's engine kept it whole; the
+  mock engine's counts (DIFF-6.5) still decide which builtin's bytes are written. QuakeSpasm prints "`FITZQUAKE
+  %1.2f SERVER (%i CRC)`" where id prints NET-2.2's version line; the host keeps id's line,
+  since it is not FitzQuake.
+- **NET-6.2** Under 15 a coordinate and an angle are NET-1.1's. Under 666 and 999 they are
+  QuakeSpasm's `MSG_WriteCoord (sb, f, flags)`: a float with `PRFL_FLOATCOORD`, "`MSG_WriteLong
+  (sb, Q_rint (f * 16))`" with `PRFL_INT32COORD`, `MSG_WriteCoord24`'s "`MSG_WriteShort (sb,
+  f); MSG_WriteByte (sb, (int)(f*255)%255);`" with `PRFL_24BITCOORD`, else `MSG_WriteCoord16`'s
+  "`MSG_WriteShort (sb, Q_rint(f*8));`"; and `MSG_WriteAngle (sb, f, flags)`: a float with
+  `PRFL_FLOATANGLE`, "`MSG_WriteShort (sb, Q_rint(f * 65536.0 / 360.0) & 65535)`" with
+  `PRFL_SHORTANGLE`, else "`MSG_WriteByte (sb, Q_rint(f * 256.0 / 360.0) & 255)`". `Q_rint (x)`
+  is "`((x) > 0 ? (int)((x) + 0.5) : (int)((x) - 0.5))`"; C's `0.5` is a double, so the sum is
+  taken in double whatever `x` is, and the products with `65536.0` and `256.0` are in double. `MSG_WriteAngle16` is a float with `PRFL_FLOATANGLE`, else the short. Every
+  buffer of NET-1.2, and each message built from them, writes in the server's protocol, the
+  builtins' `WriteCoord` and `WriteAngle` (BUILTIN-13.2) included. A deliberate divergence:
+  QuakeSpasm's client sends its move's angles with `MSG_WriteAngle16` under 666 and its
+  `SV_ReadClientMove` reads them so; the host's moves arrive as PHYS-9.6 says in every
+  protocol, since they are what the simulation reads and ENG-15 holds the simulation to id's.
+- **NET-6.3** Under 666 and 999 `SV_WriteEntitiesToClient` changes NET-3.2 and NET-3.3: the
+  updates stop when fewer than 40 bytes are left ("For float coords and angles the limit is
+  40") where 15 stops at NET-3.2's 16; once the bits of NET-3.3 are made, the entity's alpha and
+  scale are read (NET-6.8), an entity whose alpha is `ENTALPHA_ZERO` with `effects` 0 is not
+  sent ("don't send invisible entities unless they have effects"), and the bits gain
+  `U_ALPHA` (1<<16) when the alpha differs from the baseline's, `U_SCALE` (1<<20) when the scale
+  does, `U_FRAME2` (1<<17) with `U_FRAME` and a frame past a byte (`& 0xFF00`), `U_MODEL2`
+  (1<<18) with `U_MODEL` and a model past a byte, then `U_EXTEND1` (1<<15) for "`bits >=
+  65536`" and `U_EXTEND2` (1<<23) for "`bits >= 16777216`". The third and fourth bytes of bits
+  follow the second, under their extend bits, and after the angles come the alpha byte, the
+  scale byte, the frame's and the model's high bytes (`>> 8`), each under its bit. Under 15
+  an entity whose model is past a byte is not sent ("don't send model>255 entities if
+  protocol is 15"), and none of these bits is set. QuakeSpasm masks `effects` with
+  `pr_effects_mask` for the rerelease's lights; the host sends `effects` as NET-3.3 does.
+- **NET-6.4** Under 666 and 999 `SV_CreateBaseline` keeps a baseline alpha, the edict's (NET-6.8)
+  or `ENTALPHA_DEFAULT` for a client slot, and a baseline scale, `ENTSCALE_DEFAULT` or under 999
+  the edict's `scale` field's, and decides "which extra data needs to be sent": `B_LARGEMODEL`
+  (1<<0) and `B_LARGEFRAME` (1<<1) for a model or frame past a byte, `B_ALPHA` (1<<2) and
+  `B_SCALE` (1<<3) for a value that is not the default. With no bits the baseline is NET-2.1's
+  `svc_spawnbaseline`; with any it is `svc_spawnbaseline2` (42), the edict's number as a short,
+  the bits as a byte, the model and the frame each a short under its large bit and else a
+  byte, the colormap, the skin, the origins and angles as NET-2.1, then the alpha and the
+  scale bytes under their bits. Under 15 a model or frame past a byte is kept as 0, the alpha
+  and scale as the defaults ("still want to send baseline in PROTOCOL_NETQUAKE, so reset these
+  values"), and the baseline is NET-2.1's.
+- **NET-6.5** `PF_makestatic` under 666 and 999 writes nothing for an edict whose alpha is
+  `ENTALPHA_ZERO` ("don't send invisible static entities") and otherwise takes NET-6.4's bits,
+  `B_SCALE` only under 999: with none it is BUILTIN-12.8's `svc_spawnstatic`, with any
+  `svc_spawnstatic2` (43) and the bits, the model and frame sized by them, then the alpha and
+  scale bytes under their bits. Under 15 a static whose model or frame is past a byte writes
+  nothing ("can't display the correct model & frame, so don't show it at all"). The edict is
+  freed either way. `PF_ambientsound` with a sound past 255 writes `svc_spawnstaticsound2`
+  (44) with the sound as a short under 666 and 999, and nothing under 15.
+- **NET-6.6** Under 666 and 999 `SV_WriteClientdataToMessage` adds to NET-4.4's bits:
+  `SU_WEAPON2` (1<<16) for a weapon model past a byte, `SU_ARMOR2`, `SU_AMMO2`, `SU_SHELLS2`,
+  `SU_NAILS2`, `SU_ROCKETS2` and `SU_CELLS2` (1<<17 to 1<<22) for `armorvalue`,
+  `currentammo` and the four ammo counts past a byte, `SU_WEAPONFRAME2` (1<<24) with
+  `SU_WEAPONFRAME` and a frame past a byte, `SU_WEAPONALPHA` (1<<25) when the client's alpha is
+  not the default ("for now, weaponalpha = client entity alpha"), then `SU_EXTEND1` (1<<15)
+  and `SU_EXTEND2` (1<<23) as NET-6.3's. The third and fourth bytes of bits follow the short;
+  after the weapon come the high bytes in that order and the alpha byte, each under its bit.
+- **NET-6.7** `SV_StartSound` under 666 and 999 sets `SND_LARGEENTITY` (1<<3) for an entity of
+  8192 or more and `SND_LARGESOUND` (1<<4) for a sound past 255 or a channel of 8 or more, and
+  under 15 writes nothing for either ("don't send any info protocol can't support"); with
+  `SND_LARGEENTITY` the entity is a short and the channel a byte where BUILTIN-12.3 packs
+  them in one short, and with `SND_LARGESOUND` the sound is a short. `SV_LocalSound`
+  (RRE-2.1) sends a sound past 255 as `SND_LARGESOUND` and a short under 666 and 999.
+- **NET-6.8** An edict's alpha is QuakeSpasm's `ent->alpha`, a byte beside its fields:
+  `ENTALPHA_ENCODE(a)`, "`(((a)==0)?ENTALPHA_DEFAULT:Q_rint(CLAMP(1.0f,(a)*254.0f+1,255.0f)))`",
+  `ENTALPHA_DEFAULT` 0 and `ENTALPHA_ZERO` 1. `ED_ParseEdict` sets it from an `alpha` key, "hack
+  to support .alpha even when progs.dat doesn't know about it", with `Q_atof`; when the progs
+  has an `alpha` field (`pr_alpha_supported`), `SV_WriteEntitiesToClient` sets it from the field
+  each time it reaches the edict; `ED_Free` resets it ("reset alpha for next entity"); and
+  `ED_Write` saves it when the progs has no `alpha` field, "`fprintf (f, "\"alpha\" \"%f\"\n",
+  ENTALPHA_TOSAVE(ed->alpha))`", `ENTALPHA_TOSAVE` 0 for the default, -1 for `ENTALPHA_ZERO` and
+  `(a - 1) / 254` else, which the load reads back by the same key. The
+  scale is `ENTSCALE_ENCODE` of the progs' `scale` field, "`((a) ? ((a) * ENTSCALE_DEFAULT) :
+  ENTSCALE_DEFAULT)`" with `ENTSCALE_DEFAULT` 16, kept in an `unsigned char`: the host keeps
+  the low byte of the product converted to an int, as x86 does, which C leaves undefined past
+  255; `ENTSCALE_DEFAULT` when the progs has no `scale` field. The host's `Q_atof` is id's
+  (BUILTIN-11.7), which skips no leading space where QuakeSpasm's does.
+- **NET-6.9** QuakeSpasm's "Fix viewmodel interpolation with >10Hz animations" (`Quakespasm.txt`;
+  commit `e132da234ba8e9a77e1dcb7f518ace39bec6521d`): `SV_RunThink` keeps "`ent->oldthinktime =
+  thinktime; ent->oldframe = ent->v.frame;`", the think's time after "don't let things stay
+  in the past", and `SV_Physics`, after each entity's physics, sets `sendinterval` when "`!ent->free
+  && ent->v.nextthink > sv.time && (ent->v.movetype == MOVETYPE_STEP || ent->v.movetype ==
+  MOVETYPE_WALK || ent->v.frame != ent->oldframe)`" and `j = Q_rint((ent->v.nextthink -
+  ent->oldthinktime)*255)` is from 0 to 255 and neither 25 nor 26 ("25 and 26 are close enough
+  to 0.1 to not send"), `sv.time` the frame's start. Under 666 and 999 an entity with
+  `sendinterval` has `U_LERPFINISH` (1<<19) in its update, and its byte, after the model's high
+  byte, is "`(byte)(Q_rint((ent->v.nextthink-sv.time)*255))`", `sv.time` then the frame's end.
+  Under 15 the bit is never sent. None of it changes an edict (the marks are kept beside the
+  fields), so the simulation is NET-1 to NET-5's.

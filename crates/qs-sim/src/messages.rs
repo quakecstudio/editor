@@ -28,9 +28,16 @@ use qs_bsp::Bsp;
 
 use crate::builtins::{FL_ONGROUND, SimCall};
 use crate::builtins::{PARM0, PARM1, PARM2, PARM3, PARM4};
-use crate::client::wire_angle;
 use crate::collision::{CONTENTS_SOLID, MoveKind};
 use crate::physics::MoveType;
+use crate::protocol::{
+    B_ALPHA, B_LARGEFRAME, B_LARGEMODEL, B_SCALE, EntAlpha, EntScale, FOURTH_BYTE, FOURTH_SHIFT,
+    HIGH_BYTE, HIGH_SHIFT, Protocol, ProtocolVersion, SND_LARGEENTITY, SND_LARGESOUND, SU_AMMO2,
+    SU_ARMOR2, SU_CELLS2, SU_EXTEND1, SU_EXTEND2, SU_NAILS2, SU_ROCKETS2, SU_SHELLS2, SU_WEAPON2,
+    SU_WEAPONALPHA, SU_WEAPONFRAME2, SVC_SPAWNBASELINE2, SVC_SPAWNSTATIC2, SVC_SPAWNSTATICSOUND2,
+    THIRD_BYTE, THIRD_SHIFT, U_ALPHA, U_EXTEND1, U_EXTEND2, U_FRAME2, U_LERPFINISH, U_MODEL2,
+    U_SCALE, WireAngle, WireCoord, q_rint_f64,
+};
 use crate::settings::Setting;
 use crate::spawn::c_atof;
 use crate::{HALF, POINT};
@@ -41,8 +48,6 @@ pub const NET_MAX_DATAGRAM: usize = 1024;
 pub const NET_MAX_MSGLEN: usize = 8000;
 /// The signon buffer's size (NET-1.2).
 pub const NET_SIGNON_SIZE: usize = 8192;
-/// `PROTOCOL_VERSION` (NET-2.2).
-pub const NET_PROTOCOL_VERSION: i32 = 15;
 /// `VERSION` as `%4.2f` prints it (NET-2.2).
 pub const NET_VERSION: &str = "1.09";
 /// `GAME_COOP` (NET-2.2).
@@ -57,12 +62,8 @@ pub const NET_PACKET_SLACK: usize = 16;
 pub const NET_MAX_FORWARD: usize = 6;
 /// `MAX_LIGHTSTYLES`, the styles the spawn message lists (NET-2.4).
 const MAX_LIGHTSTYLES: usize = 64;
-/// `MSG_WriteCoord`'s eighths of a unit (NET-1.1).
-const COORD_SCALE: f32 = 8.0;
-/// `MSG_WriteAngle`: a turn of 360 degrees in 256 steps, and the byte kept (NET-1.1).
-const ANGLE_STEPS: i32 = 256;
+/// A turn of 360 degrees (NET-4.2).
 const FULL_TURN_DEGREES: i32 = 360;
-const BYTE_MASK: i32 = 0xff;
 /// A PVS row's bytes: `(numleafs + 31) >> 3`, a leaf a bit (NET-3.1).
 const ROW_ROUND_UP: usize = 31;
 /// A leaf's byte in a PVS row, `leaf >> 3`, and its bit, `1 << (leaf & 7)` (NET-3.2).
@@ -172,6 +173,13 @@ const SU_WEAPON: i32 = 1 << 14;
 const SND_VOLUME: i32 = 1;
 const SND_ATTENUATION: i32 = 2;
 const DEFAULT_SOUND_PACKET_VOLUME: i32 = 255;
+/// The first entity a sound's short cannot carry beside its channel, `ent >= 8192` (NET-6.7).
+const LARGE_SOUND_ENTITY: i32 = 8192;
+/// The channels a sound's short carries, `channel >= 8` (NET-6.7).
+const SOUND_CHANNELS: i32 = 8;
+/// What an entity update can take at most, QuakeSpasm's "For float coords and angles the
+/// limit is 40" (NET-6.3).
+const FITZ_PACKET_SLACK: usize = 40;
 
 /// What a [`Message`] does with a write that does not fit: `allowoverflow` (BUILTIN-13.3,
 /// BUILTIN-13.4).
@@ -201,6 +209,8 @@ pub struct Message {
     max: usize,
     overflow: Overflow,
     overflowed: bool,
+    /// The protocol its coordinates and angles are written in (NET-6.2).
+    protocol: Protocol,
 }
 
 impl Message {
@@ -214,7 +224,22 @@ impl Message {
             max,
             overflow,
             overflowed: false,
+            protocol: Protocol::NETQUAKE,
         }
+    }
+
+    /// The buffer writing its coordinates and angles in `protocol` (NET-6.2); id's 15 until
+    /// it is given one.
+    #[must_use]
+    pub const fn with_protocol(mut self, protocol: Protocol) -> Self {
+        self.protocol = protocol;
+        self
+    }
+
+    /// The protocol it writes in.
+    #[must_use]
+    pub const fn protocol(&self) -> Protocol {
+        self.protocol
     }
 
     /// The bytes written so far.
@@ -311,19 +336,48 @@ impl Message {
         self.write_bytes(&text);
     }
 
-    /// `MSG_WriteCoord`: the short `(int) (f * 8)` (NET-1.1).
+    /// `MSG_WriteCoord`: under 15 the short `(int) (f * 8)` (NET-1.1), under the others as
+    /// the protocol's flags say (NET-6.2).
     pub fn write_coord(&mut self, f: f32) {
-        self.write_short(float_to_int(f * COORD_SCALE));
+        match self.protocol.coord(f) {
+            WireCoord::Short(v) => self.write_short(v),
+            WireCoord::Short24(v, fraction) => {
+                self.write_short(v);
+                self.write_byte(fraction);
+            }
+            WireCoord::Long(v) => self.write_long(v),
+            WireCoord::Float(v) => self.write_float(v),
+        }
     }
 
-    /// `MSG_WriteAngle`: the byte `((int) f * 256 / 360) & 255` (NET-1.1).
+    /// `MSG_WriteAngle`: under 15 the byte `((int) f * 256 / 360) & 255` (NET-1.1), under the
+    /// others as the protocol's flags say (NET-6.2).
     pub fn write_angle(&mut self, f: f32) {
-        self.write_byte(
-            float_to_int(f)
-                .wrapping_mul(ANGLE_STEPS)
-                .wrapping_div(FULL_TURN_DEGREES)
-                & BYTE_MASK,
-        );
+        let angle = self.protocol.angle(f);
+        self.write_wire_angle(angle);
+    }
+
+    /// `MSG_WriteAngle16` (NET-6.2).
+    pub fn write_angle16(&mut self, f: f32) {
+        let angle = self.protocol.angle16(f);
+        self.write_wire_angle(angle);
+    }
+
+    /// A value as a short when `bits` has `flag`, else a byte (NET-6.4).
+    fn write_sized(&mut self, (bits, flag): (i32, i32), value: i32) {
+        if bits & flag != 0 {
+            self.write_short(value);
+        } else {
+            self.write_byte(value);
+        }
+    }
+
+    fn write_wire_angle(&mut self, angle: WireAngle) {
+        match angle {
+            WireAngle::Byte(v) => self.write_byte(v),
+            WireAngle::Short(v) => self.write_short(v),
+            WireAngle::Float(v) => self.write_float(v),
+        }
     }
 }
 
@@ -434,6 +488,9 @@ pub(crate) struct Baseline {
     skin: i32,
     /// Never set by `SV_CreateBaseline`, so 0.
     effects: i32,
+    /// FitzQuake's `baseline.alpha` and `baseline.scale` (NET-6.4).
+    alpha: EntAlpha,
+    scale: EntScale,
 }
 
 /// The one client slot, `client_t` (NET-1.3, NET-2).
@@ -481,6 +538,15 @@ pub(crate) struct ServerMessages {
     pub(crate) outbox: Vec<Vec<u8>>,
     /// The last `svc_setangle`, as the client reads it (NET-4.3).
     pub(crate) set_angle: Option<[f32; 3]>,
+    /// `sv.protocol` and `sv.protocolflags` (NET-6.1).
+    pub(crate) protocol: Protocol,
+    /// Each edict's `ent->alpha`, QuakeSpasm's byte beside the fields, by edict number
+    /// (NET-6.8); an edict past the end is `ENTALPHA_DEFAULT`.
+    pub(crate) alphas: Vec<EntAlpha>,
+    /// Each edict's last think and whether its next think's time is sent, QuakeSpasm's
+    /// `oldthinktime`, `oldframe` and `sendinterval` (NET-6.9).
+    thinks: Vec<ThinkMark>,
+    send_intervals: Vec<ThinkInterval>,
 }
 
 impl ServerMessages {
@@ -496,7 +562,62 @@ impl ServerMessages {
             crc,
             outbox: Vec::new(),
             set_angle: None,
+            protocol: Protocol::NETQUAKE,
+            alphas: Vec::new(),
+            thinks: Vec::new(),
+            send_intervals: Vec::new(),
         }
+    }
+
+    /// Edict `n`'s last think (NET-6.9).
+    pub(crate) fn think(&self, n: usize) -> ThinkMark {
+        self.thinks.get(n).copied().unwrap_or_default()
+    }
+
+    /// Keeps edict `n`'s last think (NET-6.9).
+    pub(crate) fn set_think(&mut self, n: usize, mark: ThinkMark) {
+        set_at(&mut self.thinks, n, mark);
+    }
+
+    /// Whether edict `n`'s next think's time is sent, `sendinterval` (NET-6.9).
+    pub(crate) fn send_interval(&self, n: usize) -> ThinkInterval {
+        self.send_intervals.get(n).copied().unwrap_or_default()
+    }
+
+    /// Sets edict `n`'s `sendinterval` (NET-6.9).
+    pub(crate) fn set_send_interval(&mut self, n: usize, interval: ThinkInterval) {
+        set_at(&mut self.send_intervals, n, interval);
+    }
+
+    /// Every buffer written in `protocol` from now on, at its sizes (NET-6.1); called before
+    /// anything is written.
+    pub(crate) fn set_protocol(&mut self, protocol: Protocol) {
+        self.protocol = protocol;
+        let sizes = BufferSizes::of(protocol);
+        self.datagram = self.message(sizes.datagram, Overflow::Fatal);
+        self.reliable_datagram = self.message(sizes.datagram, Overflow::Fatal);
+        self.signon = self.message(sizes.signon, Overflow::Fatal);
+        self.client.message = self.message(sizes.msglen, Overflow::Allowed);
+    }
+
+    /// The sizes of the server's buffers in its protocol (NET-6.1).
+    fn sizes(&self) -> BufferSizes {
+        BufferSizes::of(self.protocol)
+    }
+
+    /// A new buffer of `max` bytes in the server's protocol.
+    fn message(&self, max: usize, overflow: Overflow) -> Message {
+        Message::new(max, overflow).with_protocol(self.protocol)
+    }
+
+    /// Edict `n`'s `ent->alpha` (NET-6.8).
+    pub(crate) fn alpha(&self, n: usize) -> EntAlpha {
+        self.alphas.get(n).copied().unwrap_or_default()
+    }
+
+    /// Sets edict `n`'s `ent->alpha` (NET-6.8).
+    pub(crate) fn set_alpha(&mut self, n: usize, alpha: EntAlpha) {
+        set_at(&mut self.alphas, n, alpha);
     }
 }
 
@@ -634,17 +755,24 @@ impl SimCall<'_, '_, '_> {
             // "SV_LocalSound: <sample> not precached"
             return Ok(());
         };
-        // PROTOCOL_NETQUAKE has no SND_LARGESOUND.
-        let Ok(index) = u8::try_from(index) else {
+        // PROTOCOL_NETQUAKE has no SND_LARGESOUND (NET-6.7).
+        let large = index > usize::from(u8::MAX);
+        if large && self.sim.messages.protocol.is_netquake() {
             return Ok(());
-        };
+        }
+        let index = i32::try_from(index).unwrap_or(0);
         let message = &mut self.sim.messages.client.message;
         if message.len() > message.max().saturating_sub(LOCALSOUND_BYTES) {
             return Ok(());
         }
         message.write_byte(SVC_LOCALSOUND);
-        message.write_byte(0);
-        message.write_byte(i32::from(index));
+        if large {
+            message.write_byte(SND_LARGESOUND);
+            message.write_short(index);
+        } else {
+            message.write_byte(0);
+            message.write_byte(index);
+        }
         Ok(())
     }
 
@@ -708,6 +836,20 @@ impl SimCall<'_, '_, '_> {
             field_mask |= SND_ATTENUATION;
         }
         let number = i32::try_from(ent).unwrap_or(0);
+        // NET-6.7: FitzQuake's large entity and sound, which 15 does not send at all.
+        let netquake = self.sim.messages.protocol.is_netquake();
+        if number >= LARGE_SOUND_ENTITY {
+            if netquake {
+                return;
+            }
+            field_mask |= SND_LARGEENTITY;
+        }
+        if sound_num > i32::from(u8::MAX) || channel >= SOUND_CHANNELS {
+            if netquake {
+                return;
+            }
+            field_mask |= SND_LARGESOUND;
+        }
         let datagram = &mut self.sim.messages.datagram;
         datagram.write_byte(SVC_SOUND);
         datagram.write_byte(field_mask);
@@ -717,8 +859,17 @@ impl SimCall<'_, '_, '_> {
         if field_mask & SND_ATTENUATION != 0 {
             datagram.write_byte(float_to_int(attenuation * ATTENUATION_SCALE));
         }
-        datagram.write_short((number << SOUND_CHANNEL_SHIFT) | channel);
-        datagram.write_byte(sound_num);
+        if field_mask & SND_LARGEENTITY != 0 {
+            datagram.write_short(number);
+            datagram.write_byte(channel);
+        } else {
+            datagram.write_short((number << SOUND_CHANNEL_SHIFT) | channel);
+        }
+        if field_mask & SND_LARGESOUND != 0 {
+            datagram.write_short(sound_num);
+        } else {
+            datagram.write_byte(sound_num);
+        }
         for c in centre {
             datagram.write_coord(c);
         }
@@ -740,12 +891,25 @@ impl SimCall<'_, '_, '_> {
         else {
             return;
         };
+        // NET-6.5: a sound past 255 is `svc_spawnstaticsound2`'s, which 15 does not send.
+        let large = sound_num > i32::from(u8::MAX);
+        if large && self.sim.messages.protocol.is_netquake() {
+            return;
+        }
         let signon = &mut self.sim.messages.signon;
-        signon.write_byte(SVC_SPAWNSTATICSOUND);
+        signon.write_byte(if large {
+            SVC_SPAWNSTATICSOUND2
+        } else {
+            SVC_SPAWNSTATICSOUND
+        });
         for c in pos {
             signon.write_coord(c);
         }
-        signon.write_byte(sound_num);
+        if large {
+            signon.write_short(sound_num);
+        } else {
+            signon.write_byte(sound_num);
+        }
         signon.write_byte(float_to_int(vol * VOLUME_SCALE));
         signon.write_byte(float_to_int(atten * ATTENUATION_SCALE));
     }
@@ -787,14 +951,52 @@ impl SimCall<'_, '_, '_> {
     }
 
     /// `makestatic`'s bytes to the signon buffer (BUILTIN-12.8), read from the edict before
-    /// the mock frees it.
+    /// the mock frees it; none for a static QuakeSpasm does not send (NET-6.5).
     pub(crate) fn static_bytes(&self) -> Result<Vec<u8>, RunError> {
         let ent = self.edict_of(self.context.parm_raw(PARM0));
         let model = self.string_text(self.entity_raw(ent, "model"));
-        let mut out = Message::new(NET_SIGNON_SIZE, Overflow::Fatal);
-        out.write_byte(SVC_SPAWNSTATIC);
-        out.write_byte(self.model_index(&model)?);
-        out.write_byte(float_to_int(self.float(ent, "frame")));
+        let modelindex = self.model_index(&model)?;
+        let frame = float_to_int(self.float(ent, "frame"));
+        let messages = &self.sim.messages;
+        let protocol = messages.protocol;
+        let alpha = messages.alpha(ent);
+        let mut bits = 0;
+        // "don't send invisible static entities": id's 15 has no alpha.
+        if !protocol.is_netquake() && alpha.is_zero() {
+            return Ok(Vec::new());
+        }
+        let mut scale = EntScale::DEFAULT;
+        if protocol.is_netquake() {
+            // "can't display the correct model & frame, so don't show it at all"
+            if modelindex & HIGH_BYTE != 0 || frame & HIGH_BYTE != 0 {
+                return Ok(Vec::new());
+            }
+        } else {
+            if modelindex & HIGH_BYTE != 0 {
+                bits |= B_LARGEMODEL;
+            }
+            if frame & HIGH_BYTE != 0 {
+                bits |= B_LARGEFRAME;
+            }
+            if alpha != EntAlpha::DEFAULT {
+                bits |= B_ALPHA;
+            }
+            if protocol.version() == ProtocolVersion::Rmq {
+                scale = self.scale_of(ent);
+                if scale != EntScale::DEFAULT {
+                    bits |= B_SCALE;
+                }
+            }
+        }
+        let mut out = messages.message(messages.sizes().signon, Overflow::Fatal);
+        if bits == 0 {
+            out.write_byte(SVC_SPAWNSTATIC);
+        } else {
+            out.write_byte(SVC_SPAWNSTATIC2);
+            out.write_byte(bits);
+        }
+        out.write_sized((bits, B_LARGEMODEL), modelindex);
+        out.write_sized((bits, B_LARGEFRAME), frame);
         out.write_byte(float_to_int(self.float(ent, "colormap")));
         out.write_byte(float_to_int(self.float(ent, "skin")));
         let origin = self.vector(ent, "origin");
@@ -803,7 +1005,31 @@ impl SimCall<'_, '_, '_> {
             out.write_coord(o);
             out.write_angle(a);
         }
+        if bits & B_ALPHA != 0 {
+            out.write_byte(i32::from(alpha.byte()));
+        }
+        if bits & B_SCALE != 0 {
+            out.write_byte(i32::from(scale.byte()));
+        }
         Ok(out.take())
+    }
+
+    /// `ent->scale` from the progs' `scale` field, `ENTSCALE_DEFAULT` when the progs has none
+    /// (NET-6.8).
+    fn scale_of(&self, ent: usize) -> EntScale {
+        self.progs_field(ent, "scale")
+            .map_or(EntScale::DEFAULT, |value| EntScale::encode(value.as_f32()))
+    }
+
+    /// `ent->alpha` as `SV_WriteEntitiesToClient` makes it when the progs has an `alpha`
+    /// field, `pr_alpha_supported`; else the byte the edict holds (NET-6.8).
+    fn alpha_of(&mut self, ent: usize) -> EntAlpha {
+        if let Some(value) = self.progs_field(ent, "alpha") {
+            self.sim
+                .messages
+                .set_alpha(ent, EntAlpha::encode(value.as_f32()));
+        }
+        self.sim.messages.alpha(ent)
     }
 
     /// The buffer a `Write*` builtin's PARM0 names (BUILTIN-13.1), `None` for a client
@@ -873,7 +1099,19 @@ impl SimCall<'_, '_, '_> {
                     self.model_index(&self.string_text(self.entity_raw(n, "model")))?,
                 )
             };
-            let baseline = Baseline {
+            let protocol = self.sim.messages.protocol;
+            // NET-6.4: a client's alpha and scale are the defaults, another's its own.
+            let (alpha, scale) = if client {
+                (EntAlpha::DEFAULT, EntScale::DEFAULT)
+            } else {
+                let scale = if protocol.version() == ProtocolVersion::Rmq {
+                    self.scale_of(n)
+                } else {
+                    EntScale::DEFAULT
+                };
+                (self.sim.messages.alpha(n), scale)
+            };
+            let mut baseline = Baseline {
                 origin: self.vector(n, "origin"),
                 angles: self.vector(n, "angles"),
                 modelindex,
@@ -881,20 +1119,59 @@ impl SimCall<'_, '_, '_> {
                 colormap,
                 skin: float_to_int(self.float(n, "skin")),
                 effects: 0,
+                alpha,
+                scale,
             };
+            let mut bits = 0;
+            if protocol.is_netquake() {
+                // "still want to send baseline in PROTOCOL_NETQUAKE, so reset these values"
+                if baseline.modelindex & HIGH_BYTE != 0 {
+                    baseline.modelindex = 0;
+                }
+                if baseline.frame & HIGH_BYTE != 0 {
+                    baseline.frame = 0;
+                }
+                baseline.alpha = EntAlpha::DEFAULT;
+                baseline.scale = EntScale::DEFAULT;
+            } else {
+                if baseline.modelindex & HIGH_BYTE != 0 {
+                    bits |= B_LARGEMODEL;
+                }
+                if baseline.frame & HIGH_BYTE != 0 {
+                    bits |= B_LARGEFRAME;
+                }
+                if baseline.alpha != EntAlpha::DEFAULT {
+                    bits |= B_ALPHA;
+                }
+                if baseline.scale != EntScale::DEFAULT {
+                    bits |= B_SCALE;
+                }
+            }
             if let Some(slot) = baselines.get_mut(n) {
                 *slot = baseline;
             }
             let signon = &mut self.sim.messages.signon;
-            signon.write_byte(SVC_SPAWNBASELINE);
-            signon.write_short(i32::try_from(n).unwrap_or(0));
-            signon.write_byte(baseline.modelindex);
-            signon.write_byte(baseline.frame);
+            if bits == 0 {
+                signon.write_byte(SVC_SPAWNBASELINE);
+                signon.write_short(i32::try_from(n).unwrap_or(0));
+            } else {
+                signon.write_byte(SVC_SPAWNBASELINE2);
+                signon.write_short(i32::try_from(n).unwrap_or(0));
+                signon.write_byte(bits);
+            }
+            signon.write_sized((bits, B_LARGEMODEL), baseline.modelindex);
+            signon.write_sized((bits, B_LARGEFRAME), baseline.frame);
             signon.write_byte(baseline.colormap);
             signon.write_byte(baseline.skin);
             for (o, a) in baseline.origin.into_iter().zip(baseline.angles) {
                 signon.write_coord(o);
                 signon.write_angle(a);
+            }
+            if bits & B_ALPHA != 0 {
+                signon.write_byte(i32::from(baseline.alpha.byte()));
+            }
+            if bits & B_SCALE != 0 {
+                signon.write_byte(i32::from(baseline.scale.byte()));
             }
         }
         self.sim.messages.baselines = baselines;
@@ -916,11 +1193,19 @@ impl SimCall<'_, '_, '_> {
             NET_GAME_COOP
         };
         let maxclients = i32::try_from(self.maxclients()).unwrap_or(0);
+        let protocol = self.sim.messages.protocol;
+        // NET-6.1: "only send the first 256 model and sound precaches if protocol is 15".
+        let sent = if protocol.is_netquake() {
+            usize::from(u8::MAX)
+        } else {
+            usize::MAX
+        };
         let models: Vec<Vec<u8>> = engine
             .model_precache
             .iter()
             .skip(1)
             .take_while(|m| !m.is_empty())
+            .take(sent)
             .map(|m| m.as_bytes().to_vec())
             .collect();
         let sounds: Vec<Vec<u8>> = engine
@@ -928,6 +1213,7 @@ impl SimCall<'_, '_, '_> {
             .iter()
             .skip(1)
             .take_while(|s| !s.is_empty())
+            .take(sent)
             .map(|s| s.as_bytes().to_vec())
             .collect();
         let crc = self.sim.messages.crc;
@@ -938,7 +1224,10 @@ impl SimCall<'_, '_, '_> {
         message.write_byte(SVC_PRINT);
         message.write_string(format!("\x02\nVERSION {NET_VERSION} SERVER ({crc} CRC)").as_bytes());
         message.write_byte(SVC_SERVERINFO);
-        message.write_long(NET_PROTOCOL_VERSION);
+        message.write_long(protocol.version().number());
+        if protocol.version() == ProtocolVersion::Rmq {
+            message.write_long(i32::from_le_bytes(protocol.flags().bits().to_le_bytes()));
+        }
         message.write_byte(maxclients);
         message.write_byte(game);
         message.write_string(&message_text);
@@ -1041,7 +1330,8 @@ impl SimCall<'_, '_, '_> {
             message.write_angle(angles[1]);
             message.write_angle(0.0);
         }
-        let mut data = Message::new(NET_MAX_MSGLEN, Overflow::Allowed);
+        let msglen = self.sim.messages.sizes().msglen;
+        let mut data = self.sim.messages.message(msglen, Overflow::Allowed);
         self.write_clientdata(client, &mut data)?;
         let slot = &mut self.sim.messages.client;
         slot.message.write_bytes(data.bytes());
@@ -1123,7 +1413,8 @@ impl SimCall<'_, '_, '_> {
 
     /// `SV_SendClientDatagram` (NET-1.5): the datagram for the client of edict `client`.
     fn client_datagram(&mut self, client: usize) -> Result<Vec<u8>, RunError> {
-        let mut msg = Message::new(NET_MAX_DATAGRAM, Overflow::Fatal);
+        let datagram = self.sim.messages.sizes().datagram;
+        let mut msg = self.sim.messages.message(datagram, Overflow::Fatal);
         msg.write_byte(SVC_TIME);
         msg.write_float(double_to_float(self.clock()));
         self.write_clientdata(client, &mut msg)?;
@@ -1135,7 +1426,12 @@ impl SimCall<'_, '_, '_> {
         Ok(msg.take())
     }
 
-    /// `SV_WriteEntitiesToClient` (NET-3.2, NET-3.3).
+    /// `SV_WriteEntitiesToClient` (NET-3.2, NET-3.3), and FitzQuake's bits under 666 and 999
+    /// (NET-6.3).
+    #[expect(
+        clippy::too_many_lines,
+        reason = "SV_WriteEntitiesToClient's one loop, the bits then the bytes, reads best whole"
+    )]
     fn write_entities(&mut self, client: usize, msg: &mut Message) {
         let origin = self.vector(client, "origin");
         let view_ofs = self.vector(client, "view_ofs");
@@ -1144,10 +1440,22 @@ impl SimCall<'_, '_, '_> {
         let eye = [ox + vx, oy + vy, oz + vz];
         let pvs = self.sim.messages.vis.fat_pvs(eye);
         let count = self.context.machine_view().edicts().num_edicts();
+        let protocol = msg.protocol();
+        let slack = if protocol.is_netquake() {
+            NET_PACKET_SLACK
+        } else {
+            FITZ_PACKET_SLACK
+        };
         for e in 1..count {
             if e != client {
                 if self.float(e, "modelindex") == 0.0
                     || self.string_text(self.entity_raw(e, "model")).is_empty()
+                {
+                    continue;
+                }
+                // NET-6.3: "don't send model>255 entities if protocol is 15".
+                if protocol.is_netquake()
+                    && float_to_int(self.float(e, "modelindex")) & HIGH_BYTE != 0
                 {
                     continue;
                 }
@@ -1161,7 +1469,7 @@ impl SimCall<'_, '_, '_> {
                     continue;
                 }
             }
-            if msg.max().saturating_sub(msg.len()) < NET_PACKET_SLACK {
+            if msg.max().saturating_sub(msg.len()) < slack {
                 return;
             }
             let baseline = self
@@ -1213,6 +1521,39 @@ impl SimCall<'_, '_, '_> {
                     bits |= U_MODEL;
                 }
             }
+            let mut alpha = EntAlpha::DEFAULT;
+            let mut scale = EntScale::DEFAULT;
+            if !protocol.is_netquake() {
+                alpha = self.alpha_of(e);
+                // "don't send invisible entities unless they have effects"
+                if alpha.is_zero() && float_to_int(self.float(e, "effects")) == 0 {
+                    continue;
+                }
+                scale = self.scale_of(e);
+                let frame = float_to_int(self.float(e, "frame"));
+                let modelindex = float_to_int(self.float(e, "modelindex"));
+                if baseline.alpha != alpha {
+                    bits |= U_ALPHA;
+                }
+                if baseline.scale != scale {
+                    bits |= U_SCALE;
+                }
+                if bits & U_FRAME != 0 && frame & HIGH_BYTE != 0 {
+                    bits |= U_FRAME2;
+                }
+                if bits & U_MODEL != 0 && modelindex & HIGH_BYTE != 0 {
+                    bits |= U_MODEL2;
+                }
+                if self.sim.messages.send_interval(e) == ThinkInterval::Sent {
+                    bits |= U_LERPFINISH;
+                }
+                if bits >= THIRD_BYTE {
+                    bits |= U_EXTEND1;
+                }
+                if bits >= FOURTH_BYTE {
+                    bits |= U_EXTEND2;
+                }
+            }
             if e >= LONG_ENTITY {
                 bits |= U_LONGENTITY;
             }
@@ -1222,6 +1563,12 @@ impl SimCall<'_, '_, '_> {
             msg.write_byte(bits | U_SIGNAL);
             if bits & U_MOREBITS != 0 {
                 msg.write_byte(bits >> SECOND_BYTE_SHIFT);
+            }
+            if bits & U_EXTEND1 != 0 {
+                msg.write_byte(bits >> THIRD_SHIFT);
+            }
+            if bits & U_EXTEND2 != 0 {
+                msg.write_byte(bits >> FOURTH_SHIFT);
             }
             let number = i32::try_from(e).unwrap_or(0);
             if bits & U_LONGENTITY != 0 {
@@ -1252,10 +1599,33 @@ impl SimCall<'_, '_, '_> {
                     msg.write_angle(a);
                 }
             }
+            if bits & U_ALPHA != 0 {
+                msg.write_byte(i32::from(alpha.byte()));
+            }
+            if bits & U_SCALE != 0 {
+                msg.write_byte(i32::from(scale.byte()));
+            }
+            if bits & U_FRAME2 != 0 {
+                msg.write_byte(float_to_int(self.float(e, "frame")) >> HIGH_SHIFT);
+            }
+            if bits & U_MODEL2 != 0 {
+                msg.write_byte(float_to_int(self.float(e, "modelindex")) >> HIGH_SHIFT);
+            }
+            if bits & U_LERPFINISH != 0 {
+                // "`(byte)(Q_rint((ent->v.nextthink-sv.time)*255))`", sv.time this frame's end.
+                // The float less the double `sv.time`, times 255, in double.
+                let ahead = f64::from(self.float(e, "nextthink")) - self.clock();
+                msg.write_byte(q_rint_f64(ahead * f64::from(LERP_FINISH_STEPS)));
+            }
         }
     }
 
-    /// `SV_WriteClientdataToMessage` (NET-4).
+    /// `SV_WriteClientdataToMessage` (NET-4), and FitzQuake's bits under 666 and 999
+    /// (NET-6.6).
+    #[expect(
+        clippy::too_many_lines,
+        reason = "SV_WriteClientdataToMessage's bits then their bytes, in id's order, read best whole"
+    )]
     pub(crate) fn write_clientdata(
         &mut self,
         ent: usize,
@@ -1285,7 +1655,8 @@ impl SimCall<'_, '_, '_> {
             for angle in angles {
                 msg.write_angle(angle);
             }
-            self.sim.messages.set_angle = Some(angles.map(wire_angle));
+            let protocol = msg.protocol();
+            self.sim.messages.set_angle = Some(angles.map(|a| protocol.wire_angle(a)));
             self.set_float(ent, "fixangle", 0.0);
         }
         // NET-4.4: the bits.
@@ -1337,8 +1708,49 @@ impl SimCall<'_, '_, '_> {
             bits |= SU_ARMOR;
         }
         bits |= SU_WEAPON;
+        let model = self.string_text(self.entity_raw(ent, "weaponmodel"));
+        let weaponmodel = self.model_index(&model)?;
+        let seconds = [
+            (SU_ARMOR2, "armorvalue"),
+            (SU_AMMO2, "currentammo"),
+            (SU_SHELLS2, "ammo_shells"),
+            (SU_NAILS2, "ammo_nails"),
+            (SU_ROCKETS2, "ammo_rockets"),
+            (SU_CELLS2, "ammo_cells"),
+        ]
+        .map(|(bit, field)| (bit, float_to_int(self.float(ent, field))));
+        let alpha = self.sim.messages.alpha(ent);
+        // NET-6.6: FitzQuake's high bytes and the weapon's alpha.
+        if !msg.protocol().is_netquake() {
+            if bits & SU_WEAPON != 0 && weaponmodel & HIGH_BYTE != 0 {
+                bits |= SU_WEAPON2;
+            }
+            for (bit, value) in seconds {
+                if value & HIGH_BYTE != 0 {
+                    bits |= bit;
+                }
+            }
+            if bits & SU_WEAPONFRAME != 0 && float_to_int(weaponframe) & HIGH_BYTE != 0 {
+                bits |= SU_WEAPONFRAME2;
+            }
+            if bits & SU_WEAPON != 0 && alpha != EntAlpha::DEFAULT {
+                bits |= SU_WEAPONALPHA;
+            }
+            if bits >= THIRD_BYTE {
+                bits |= SU_EXTEND1;
+            }
+            if bits >= FOURTH_BYTE {
+                bits |= SU_EXTEND2;
+            }
+        }
         msg.write_byte(SVC_CLIENTDATA);
         msg.write_short(bits);
+        if bits & SU_EXTEND1 != 0 {
+            msg.write_byte(bits >> THIRD_SHIFT);
+        }
+        if bits & SU_EXTEND2 != 0 {
+            msg.write_byte(bits >> FOURTH_SHIFT);
+        }
         if bits & SU_VIEWHEIGHT != 0 {
             msg.write_byte(float_to_int(viewheight));
         }
@@ -1361,8 +1773,7 @@ impl SimCall<'_, '_, '_> {
             msg.write_byte(float_to_int(armorvalue));
         }
         if bits & SU_WEAPON != 0 {
-            let model = self.string_text(self.entity_raw(ent, "weaponmodel"));
-            msg.write_byte(self.model_index(&model)?);
+            msg.write_byte(weaponmodel);
         }
         msg.write_short(float_to_int(self.float(ent, "health")));
         for field in [
@@ -1379,6 +1790,20 @@ impl SimCall<'_, '_, '_> {
             msg.write_byte(weapon);
         } else if let Some(bit) = (0..ITEM_BITS).find(|&i| weapon & (1 << i) != 0) {
             msg.write_byte(bit);
+        }
+        if bits & SU_WEAPON2 != 0 {
+            msg.write_byte(weaponmodel >> HIGH_SHIFT);
+        }
+        for (bit, value) in seconds {
+            if bits & bit != 0 {
+                msg.write_byte(value >> HIGH_SHIFT);
+            }
+        }
+        if bits & SU_WEAPONFRAME2 != 0 {
+            msg.write_byte(float_to_int(weaponframe) >> HIGH_SHIFT);
+        }
+        if bits & SU_WEAPONALPHA != 0 {
+            msg.write_byte(i32::from(alpha.byte()));
         }
         Ok(())
     }
@@ -1453,6 +1878,76 @@ impl SimCall<'_, '_, '_> {
         Ok(())
     }
 }
+
+/// Sets entry `n` of a per-edict table, growing it with defaults to reach it.
+fn set_at<T: Copy + Default>(table: &mut Vec<T>, n: usize, value: T) {
+    if table.len() <= n {
+        table.resize(n.saturating_add(1), T::default());
+    }
+    if let Some(slot) = table.get_mut(n) {
+        *slot = value;
+    }
+}
+
+/// The sizes of the server's buffers (NET-1.2, NET-6.1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct BufferSizes {
+    datagram: usize,
+    msglen: usize,
+    signon: usize,
+}
+
+impl BufferSizes {
+    /// Id's under 15; QuakeSpasm's under 666 and 999, "`#define MAX_DATAGRAM 64000`", "`#define
+    /// MAX_MSGLEN 64000`" and "`#define SIGNON_SIZE 31500`", so that no message its larger
+    /// encodings make is cut short where id's engine kept it whole.
+    const fn of(protocol: Protocol) -> Self {
+        if protocol.is_netquake() {
+            Self {
+                datagram: NET_MAX_DATAGRAM,
+                msglen: NET_MAX_MSGLEN,
+                signon: NET_SIGNON_SIZE,
+            }
+        } else {
+            Self {
+                datagram: FITZ_MAX_DATAGRAM,
+                msglen: FITZ_MAX_MSGLEN,
+                signon: FITZ_SIGNON_SIZE,
+            }
+        }
+    }
+}
+
+/// QuakeSpasm's `MAX_DATAGRAM`, `MAX_MSGLEN` and `SIGNON_SIZE` (NET-6.1).
+const FITZ_MAX_DATAGRAM: usize = 64000;
+const FITZ_MAX_MSGLEN: usize = 64000;
+const FITZ_SIGNON_SIZE: usize = 31500;
+
+/// What QuakeSpasm's `SV_RunThink` keeps of an entity's last think, `oldthinktime` and
+/// `oldframe` (NET-6.9).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct ThinkMark {
+    /// The time the think ran at.
+    pub(crate) time: f32,
+    /// The entity's frame before it.
+    pub(crate) frame: f32,
+}
+
+/// Whether an entity's next think's time goes to the client, QuakeSpasm's `sendinterval`
+/// (NET-6.9).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum ThinkInterval {
+    /// Not sent: the client assumes a tenth of a second.
+    #[default]
+    Assumed,
+    /// Sent with `U_LERPFINISH`.
+    Sent,
+}
+
+/// `U_LERPFINISH`'s steps a second, "0.0-1.0 maps to 0-255" (NET-6.9).
+pub(crate) const LERP_FINISH_STEPS: f32 = 255.0;
+/// The intervals "close enough to 0.1 to not send", `i != 25 && i != 26` (NET-6.9).
+pub(crate) const TENTH_STEPS: [i32; 2] = [25, 26];
 
 /// A world's messages to its client, in sending order (NET-1.3).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

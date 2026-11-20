@@ -14,6 +14,9 @@ const TURB_AMPLITUDE: f32 = 8.0;
 const TURB_FREQUENCY: f32 = 0.125;
 // REND-2.2: `s *= (1.0/64)` in `EmitWaterPolys`: the texels a turbulent texture repeats over.
 const TURB_TILE: f32 = 64.0;
+// REND-2.6: a lightmap's coordinates are from this; a liquid drawn unlit has the mesh's
+// `NO_LIGHTMAP`, -1, below it.
+const LIGHTMAP_START: f32 = 0.0;
 // REND-2.3: `dir[2] *= 3` in `EmitSkyPolys`, which "flatten[s] the sphere".
 const SKY_FLATTEN: f32 = 3.0;
 // REND-2.3: `length = 6*63/length` in `EmitSkyPolys`: the sky dome's radius in texels.
@@ -50,6 +53,8 @@ const SKY_T_FLIP: f32 = 1.0;
 const SKY_NEGATIVE: f32 = 0.0;
 // The skybox has no mipmaps.
 const SKY_LEVEL: f32 = 0.0;
+// REND-14.2: `depth.z` above this when a brush entity's alpha is its own, not the default.
+const NO_OWN_ALPHA: f32 = 0.0;
 // Every surface is drawn opaque: the sky's alpha layer is blended in the shader (REND-2.3).
 const OPAQUE: f32 = 1.0;
 // The w of a position, which makes it a point the view matrix moves.
@@ -108,7 +113,13 @@ fn fogged(colour: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
 // (REND-13.4).
 @group(1) @binding(2) var second: texture_2d<f32>;
 // The model's matrix: where a brush entity stands now (REND-1.9); the world's moves nothing.
-@group(2) @binding(0) var<uniform> model: mat4x4<f32>;
+// Then its depth bias in `depth.x`: Ironwail's `gl_Position.z += ZBIAS` for a brush entity
+// (REND-1.15), 0 for the world, which only its lit faces take.
+struct Model {
+    matrix: mat4x4<f32>,
+    depth: vec4<f32>,
+};
+@group(2) @binding(0) var<uniform> model: Model;
 
 struct In {
     @location(0) position: vec3<f32>,
@@ -123,14 +134,30 @@ struct Out {
     @location(2) world: vec3<f32>,
 };
 
-@vertex
-fn vertex(input: In) -> Out {
+// A face's corner where its model stands (REND-1.9).
+fn placed(input: In) -> Out {
     var out: Out;
-    let world = model * vec4<f32>(input.position, POINT);
+    let world = model.matrix * vec4<f32>(input.position, POINT);
     out.clip = view.clip_from_world * world;
     out.texture = input.texture;
     out.light = input.light;
     out.world = world.xyz;
+    return out;
+}
+
+// The water's and the sky's corners, which Ironwail's own vertex shaders draw without the
+// z-fix's bias (REND-1.15).
+@vertex
+fn vertex(input: In) -> Out {
+    return placed(input);
+}
+
+// A lit face's corner, its depth moved by the model's bias, as Ironwail's world vertex shader
+// does "`if ((call.flags & CF_USE_POLYGON_OFFSET) != 0u) gl_Position.z += ZBIAS;`" (REND-1.15).
+@vertex
+fn lit_vertex(input: In) -> Out {
+    var out = placed(input);
+    out.clip.z = out.clip.z + model.depth.x;
     return out;
 }
 
@@ -142,19 +169,31 @@ fn fragment(input: Out) -> @location(0) vec4<f32> {
     // REND-13.4: "result += texture2D(FullbrightTex, ...)", then "clamp(result, 0.0, 1.0)".
     let glow = textureSample(second, surface_sampler, input.texture).rgb;
     let lit = clamp(colour.rgb * light + glow, vec3<f32>(0.0), vec3<f32>(1.0));
-    return vec4<f32>(corrected(fogged(lit, input.world)), OPAQUE);
+    // REND-14.2: a brush entity's alpha, blended in the alpha pass; 1 for any other model.
+    return vec4<f32>(corrected(fogged(lit, input.world)), model.depth.y);
 }
 
-// REND-2.2: `(s + 8 sin(t*0.125 + realtime)) / 64`, and t the same way round; REND-9.1:
-// blended over the scene with the water alpha.
+// REND-2.2: `(s + 8 sin(t*0.125 + realtime)) / 64`, and t the same way round; REND-2.6: lit
+// water darkened by its lightmap as a lit face is (REND-1.7, REND-13.5), unlit water's light
+// coordinates below 0; REND-9.1: blended over the scene with the water alpha.
 @fragment
 fn turbulent(input: Out) -> @location(0) vec4<f32> {
     let time = view.eye_time.w;
     let st = input.texture;
     let s = (st.x + TURB_AMPLITUDE * sin(st.y * TURB_FREQUENCY + time)) / TURB_TILE;
     let t = (st.y + TURB_AMPLITUDE * sin(st.x * TURB_FREQUENCY + time)) / TURB_TILE;
-    let colour = textureSample(surface, surface_sampler, vec2<f32>(s, t)).rgb;
-    return vec4<f32>(corrected(fogged(colour, input.world)), view.params.x);
+    var colour = textureSample(surface, surface_sampler, vec2<f32>(s, t)).rgb;
+    let light = textureSample(lightmap, lightmap_sampler, input.light).rgb * view.look.x;
+    if (input.light.x >= LIGHTMAP_START) {
+        colour = clamp(colour * light, vec3<f32>(0.0), vec3<f32>(1.0));
+    }
+    // REND-14.2: `GL_WaterAlphaForEntitySurface`, the entity's alpha unless it is the
+    // default, then the water's.
+    var alpha = view.params.x;
+    if (model.depth.z > NO_OWN_ALPHA) {
+        alpha = model.depth.y;
+    }
+    return vec4<f32>(corrected(fogged(colour, input.world)), alpha);
 }
 
 // REND-2.3: the solid layer scrolling under the alpha layer, both seen from the eye, or
@@ -225,6 +264,8 @@ struct AliasIn {
     @location(0) position: vec3<f32>,
     @location(1) texture: vec2<f32>,
     @location(2) shade: f32,
+    // REND-14.2: the entity's alpha, 1 for opaque.
+    @location(3) alpha: f32,
 };
 
 struct AliasOut {
@@ -233,6 +274,7 @@ struct AliasOut {
     // Interpolated across the triangle, `glShadeModel (GL_SMOOTH)` (REND-4.8).
     @location(1) shade: f32,
     @location(2) world: vec3<f32>,
+    @location(3) alpha: f32,
 };
 
 @vertex
@@ -242,6 +284,7 @@ fn alias_vertex(input: AliasIn) -> AliasOut {
     out.texture = input.texture;
     out.shade = input.shade;
     out.world = input.position;
+    out.alpha = input.alpha;
     return out;
 }
 
@@ -252,7 +295,8 @@ fn alias_fragment(input: AliasOut) -> @location(0) vec4<f32> {
     // REND-13.4: a skin's glow, black for one with none.
     let glow = textureSample(second, surface_sampler, input.texture).rgb;
     let lit = clamp(colour.rgb * input.shade + glow, vec3<f32>(0.0), vec3<f32>(1.0));
-    return vec4<f32>(corrected(fogged(lit, input.world)), OPAQUE);
+    // REND-14.2: "glColor4f(1,1,1,entalpha)", blended in the alpha pass.
+    return vec4<f32>(corrected(fogged(lit, input.world)), input.alpha);
 }
 
 struct SpriteIn {

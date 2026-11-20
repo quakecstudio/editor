@@ -71,7 +71,8 @@ texture darkened by the lightmap. The map view and the preview host draw the wor
   `R_DrawEntitiesOnList` in `R_RenderScene`), with `glDepthFunc (GL_LEQUAL)`
   (`R_Clear`): of a brush entity's face and a world face at the same depth, such as a lowered
   lift's top flush with the floor, the entity's is seen.
-- **REND-1.12** GLQuake draws such a pair as it rasterizes them, so where their depths differ
+- **REND-1.12** **Withdrawn** 2026-11-20: it moved a brush entity by QuakeSpasm's `gl_zfix`;
+  ADR-0026 takes Ironwail's work-around in its place; replaced by REND-1.15. GLQuake draws such a pair as it rasterizes them, so where their depths differ
   by rounding they flicker. QuakeSpasm (`sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`,
   `Quake/r_brush.c`, `R_DrawBrushModel`) has the option `gl_zfix`, off by default
   (`Quake/gl_rmain.c`, `cvar_t gl_zfix = {"gl_zfix", "0", CVAR_NONE}`), which before
@@ -102,6 +103,22 @@ texture darkened by the lightmap. The map view and the preview host draw the wor
   the image is drawn with the world's sampler and mipmaps, not `TEXPREF_NEAREST`, so with
   linear filtering the squares' edges blend and at a distance the checker averages to one
   colour.
+- **REND-1.15** GLQuake draws REND-1.11's pair as it rasterizes them, so where their depths
+  differ by rounding they flicker. Ironwail (`andrei-drexler/ironwail@08d578136ff43d7d1ef38e636dfbfd3e844be7cd`)
+  has "a more precise ~hack~work-around for the z-fighting issues present in the original
+  levels" (`README.md`) under `gl_zfix`, "`1`" by default (`Quake/gl_rmain.c`, "`// QuakeSpasm
+  z-fighting fix`"), where QuakeSpasm's is "`0`" and moves the entity's origin by
+  `-DIST_EPSILON` on each axis. `Quake/r_world.c`, `R_DrawBrushModels_Real`, gives a model's
+  draw calls `zfix = !isworld && !isdecal`, a decal being a static entity's alpha-tested faces,
+  and `R_AddBModelCall` sets the call's `CF_USE_POLYGON_OFFSET` from it unless `gl_zfix` is 0
+  or `map_checks` is set; the world vertex shader (`Quake/gl_shaders.h`) then does "`if
+  ((call.flags & CF_USE_POLYGON_OFFSET) != 0u) gl_Position.z += ZBIAS;`", `ZBIAS` being
+  "`-1./1024`" with `REVERSED_Z` (the clip control path, depth from 1 near to 0 far) and
+  "`1./1024`" without. The preview host does the same by default, under ADR-0026: every brush
+  entity's clip depth is moved 1/1024 back, in its depth from 0 near to 1 far, the clip control
+  path's amount, so of such a pair the world's face is seen. It has no alpha-tested brush
+  faces, so no face is a decal, and no `map_checks`. GLQuake's drawing, REND-1.11's, is the
+  option, `--nozfix`. The world is never moved.
 
 ## REND-2 Moving textures
 
@@ -142,6 +159,30 @@ turbulent surfaces ripple, and the sky's two layers scroll.
   renderer computes the same formulas for each pixel, with `8 sin` of the angle itself: a
   deliberate divergence, which draws the warp and the sky without the subdivision and gives
   each pixel the value GLQuake gives the vertices near it.
+- **REND-2.6** QuakeSpasm draws lit water, a liquid compiled with a lightmap
+  (`sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`; `Quakespasm.txt`, 0.95.0:
+  "Add support for lit water"), as Ironwail does ("support for lightmapped liquid surfaces",
+  `andrei-drexler/ironwail@08d578136ff43d7d1ef38e636dfbfd3e844be7cd`, `README.md`).
+  `Quake/gl_model.c`, `Mod_LoadFaces`, gives a `*` or `!` face `SURF_DRAWTURB`, and
+  `SURF_DRAWTILED` only when its texinfo has `TEX_SPECIAL`; "`else if (out->samples &&
+  !loadmodel->haslitwater)`" sets the model's `haslitwater` (BSP-20.11). `Quake/r_brush.c`,
+  `GL_CreateSurfaceLightmap`, skips only a `SURF_DRAWTILED` face, so such a liquid has a
+  lightmap, made again for its styles and dynamic lights as a lit face's (REND-5.5, REND-7),
+  and `BuildSurfaceDisplayList` gives it lightmap coordinates as any face (REND-1.3) and
+  texture coordinates "`// match Mod_PolyForUnlitSurface`", the raw dot products.
+  `Quake/r_world.c`, `R_DrawTextureChains_Water`, draws a texture's liquid faces with its
+  world program, the warped texture times the lightmap with `gl_overbright`, when
+  "`cl.worldmodel->haslitwater && r_litwater.value`", `r_litwater` "`1`" by default
+  (`Quake/gl_rmain.c`), and the liquid as unlit water otherwise; it asks for
+  `TEX_SPECIAL` on the first face of a texture's chain. The preview host does the same by
+  default, under ADR-0026: in a map whose world has a liquid face not drawn tiled with
+  samples, every liquid face of every model not drawn tiled is drawn with REND-2.2's warp times
+  its lightmap, as a lit face is (REND-1.7, REND-13.5), with no fullbright glow and with
+  REND-9.1's alpha; it asks for each face's own flags rather than its chain's first. With the
+  option `--nolitwater`, QuakeSpasm's `r_litwater 0`, every liquid is drawn at its texture's
+  colour, as GLQuake draws it (REND-1.6), its lightmap still made. id's qbsp gives every `*`
+  texture `TEX_SPECIAL`, so id's maps have no lit water; and GLQuake's loader draws every liquid
+  tiled (BSP-9.5), so a map read with it has none either.
 
 ### Constants
 
@@ -334,7 +375,8 @@ world's light below the entity.
 
 **Source:** `WinQuake/gl_rlight.c`, `R_AnimateLight` and `R_LightPoint`; `WinQuake/gl_rsurf.c`,
 `R_BuildLightMap` and `R_RenderBrushPoly`; `WinQuake/r_main.c`, `d_lightstylevalue`
-(id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`).
+(id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`); Ironwail's `R_AnimateLight`
+for REND-5.8 ([ADR-0026](../adr/0026-preview-host-later-engine-improvements.md)).
 
 A face's lightmaps are one per light style it lists. The progs sets each style's string with
 `lightstyle`, a letter a tenth of a second; GLQuake turns the letters into a scale for each
@@ -369,6 +411,22 @@ style every frame and rebuilds the lightmaps of the faces whose styles changed.
   one atlas cut into 256 by 256 blocks; a face counts in the block of its top left texel, and
   each block's rectangle, clipped to the atlas, is written once a frame, its columns as well as
   its rows, where QuakeSpasm writes the block's full width. The texels drawn are the same.
+- **REND-5.8** Ironwail blends a style from one letter to the next
+  (`andrei-drexler/ironwail@08d578136ff43d7d1ef38e636dfbfd3e844be7cd`, `Quake/gl_rlight.c`,
+  `R_AnimateLight`), with the option `r_lerplightstyles`, "`1`" by default
+  (`Quake/gl_rmain.c`: "`0=off; 1=skip abrupt transitions; 2=always lerp`"): `f = cl.time *
+  10.0; base = floor(f); i = (int)base; f -= base;`, `f = 0.0` when the option is 0; for a
+  style with a string, `k = i % cl_lightstyle[j].length; n = k + 1; if (n ==
+  cl_lightstyle[j].length) n = 0;`, both turned into letters less `'a'`; below 2, "only
+  interpolate abrupt changes (e.g. flickering light in e1m1) if r_lerplightstyles >= 2": `if
+  (r_lerplightstyles.value < 2.f && abs(n - k) >= ('m' - 'a') / 2) n = k;`; and
+  `d_lightstylevalue[j] = (int)(k*22 + (n-k)*22*f);`, in double. The preview host blends as
+  `r_lerplightstyles 1` does by default, under ADR-0026 (a visible defect, the ten steps a
+  second of a fading light, fixed as the later engine fixes it), offers 2, and keeps id's
+  REND-5.3 as the option 0, `floor` and all: with 0 it truncates `cl.time*10` as id does. A
+  negative time reads the first letter for `k`, and for `n` when it would read before the
+  string, as REND-5.3 does. A style's value changes every frame while it fades, so its faces
+  are made again each frame (REND-5.5).
 
 ## REND-6 Coloured light
 
@@ -748,3 +806,38 @@ QuakeSpasm's look by default and GLQuake's as a mode.
   client's blend table is built at gamma 1 in this look, since QuakeSpasm's `R_PolyBlend`
   draws the blend as it is. In GLQuake's look `gamma` only builds the blend table (VIEW-4.7),
   as GLQuake's `V_UpdatePalette` ramps reach no screen.
+
+## REND-14 Entity alpha and scale
+
+**Source:** QuakeSpasm (`sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`):
+`Quake/gl_rmain.c`, `R_DrawEntitiesOnList`, `R_RenderScene`, `R_RotateForEntity`;
+`Quake/r_alias.c`, `R_DrawAliasModel`; `Quake/r_world.c`, `R_DrawTextureChains_GLSL`,
+`GL_WaterAlphaForEntitySurface`; `Quake/r_sprite.c`, `R_DrawSpriteModel`. The alpha and scale an
+entity carries in FitzQuake's protocols (NET-6.8, CLIENT-9.3), drawn as QuakeSpasm draws them,
+under [ADR-0026](../adr/0026-preview-host-later-engine-improvements.md). An entity with the
+default alpha and scale is drawn as REND-1 to REND-13 say.
+
+### Behaviour
+
+- **REND-14.1** QuakeSpasm draws the entities in two passes, "`R_DrawEntitiesOnList (false); //
+  johnfitz -- false means this is the pass for nonalpha entities`" after the world and
+  "`R_DrawEntitiesOnList (true)`" after the world's water, an entity going to the second when
+  "`ENTALPHA_DECODE(currententity->alpha) < 1`". The preview host draws an alias model or a
+  brush entity's lit faces with an alpha below 1 after its water (REND-9.1), and the weapon with
+  an alpha below 1 after them, in its depth range (REND-4.11). A sprite is drawn with the
+  opaque entities whatever its alpha: `R_DrawSpriteModel` reads no alpha, so its pixels are
+  the same, drawn earlier.
+- **REND-14.2** The alpha is `ENTALPHA_DECODE` (NET-6.8): 1 for `ENTALPHA_DEFAULT`, else `(a -
+  1) / 254`. `R_DrawAliasModel` draws nothing when it is 0 ("`if (entalpha == 0) goto
+  cleanup`") and below 1 blends the model with "`glDepthMask(GL_FALSE); glEnable(GL_BLEND);`",
+  its colour's alpha the entity's, its faces culled as an opaque model's (REND-1.10); the weapon takes `cl.viewent.alpha` (CLIENT-9.6).
+  `R_DrawTextureChains_GLSL` blends a brush entity's lit faces the same way, and
+  `GL_WaterAlphaForEntitySurface` gives its liquid faces "`if (ent == NULL || ent->alpha ==
+  ENTALPHA_DEFAULT) entalpha = GL_WaterAlphaForSurface(s); else entalpha =
+  ENTALPHA_DECODE(ent->alpha);`": the entity's alpha in place of REND-9.1's when it has its own.
+- **REND-14.3** The scale is `ENTSCALE_DECODE` (NET-6.8). `R_RotateForEntity (origin, angles,
+  scale)` turns the model and then "`if (scalefactor != 1.0f) glScalef(scalefactor,
+  scalefactor, scalefactor);`", so an alias model's (and an MD5 model's) vertices and a brush
+  entity's are scaled about its origin after the turn; `R_DrawSpriteModel` takes each corner as
+  "`VectorMA (e->origin, frame->down * scale, s_up, point)`", its frame's offsets times the
+  scale. The weapon is drawn at scale 1, as `cl.viewent`'s scale is never sent.

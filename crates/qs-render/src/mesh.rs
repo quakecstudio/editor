@@ -20,7 +20,7 @@
 //! `docs/spec/render.md` for its behaviour, as `qs-bsp` reads the file; none of its code is
 //! ported.
 
-use qs_bsp::{Bsp, Face, Lit, SURF_DRAWSKY, SURF_DRAWTURB, Texinfo};
+use qs_bsp::{Bsp, Face, Lit, SURF_DRAWSKY, SURF_DRAWTILED, SURF_DRAWTURB, Texinfo};
 use qs_client::DynamicLight;
 use qs_wad::texture::{Palette as WadPalette, PaletteIndex};
 
@@ -52,9 +52,6 @@ const TEXEL_UNITS: f32 = 16.0;
 /// `MAX_DLIGHTS`: the lights `R_PushDlights` marks, one bit each (REND-7.1), QuakeSpasm's 64
 /// (REND-7.7).
 pub const REND_MAX_DLIGHTS: usize = 64;
-/// QuakeSpasm's `DIST_EPSILON`, `(0.03125)`, by which `gl_zfix` moves a brush entity
-/// (REND-1.12).
-const ZFIX: f32 = 0.031_25;
 /// The world units of one lightmap texel, `light_s*16` (REND-1.3).
 const LIGHTMAP_TEXEL: f32 = 16.0;
 /// The atlas's width in texels; its height grows with the faces it holds.
@@ -202,6 +199,23 @@ pub struct Vertex {
     pub light: [f32; 2],
 }
 
+/// Whether a liquid face with a lightmap is drawn lit, QuakeSpasm's and Ironwail's
+/// `r_litwater` (REND-2.6).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LitWater {
+    /// `r_litwater 1`, the default: in a map whose world has lit water, each liquid face with
+    /// a lightmap is darkened by it as a lit face is.
+    #[default]
+    Lit,
+    /// `r_litwater 0`: every liquid drawn at its texture's colour, as GLQuake draws it
+    /// (REND-1.6).
+    Unlit,
+}
+
+/// The light coordinates a face with none to draw is given, which the turbulent shader reads
+/// as full bright (REND-2.6).
+pub(crate) const NO_LIGHTMAP: [f32; 2] = [-1.0, -1.0];
+
 /// How a surface is drawn.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Surface {
@@ -273,6 +287,8 @@ pub struct MapMesh {
     pub models: Vec<Placement>,
     /// The look it was built in, which the renderer draws it in (REND-13).
     pub look: Look,
+    /// Whether its liquids were built to be drawn lit, `r_litwater` (REND-2.6).
+    pub water: LitWater,
 }
 
 impl MapMesh {
@@ -351,16 +367,6 @@ impl Placement {
         angles: [0.0; 3],
     };
 
-    /// The placement QuakeSpasm's `gl_zfix` draws: the origin moved by -1/32 on every axis
-    /// (REND-1.12), so a brush entity flush with the world is drawn just behind it.
-    #[must_use]
-    pub fn zfixed(&self) -> Self {
-        Self {
-            origin: self.origin.map(|v| v - ZFIX),
-            ..*self
-        }
-    }
-
     /// The column-major matrix that moves a model's vertex to where [`Self::position`] puts it.
     #[must_use]
     pub fn matrix(&self) -> [[f32; 4]; 4] {
@@ -420,6 +426,10 @@ pub struct MeshBuilder<'p> {
     by_texture: Vec<Vec<Polygon>>,
     bounds: Option<([f32; 3], [f32; 3])>,
     models: Vec<Placement>,
+    /// `r_litwater` (REND-2.6).
+    water: LitWater,
+    /// Whether the world, the first BSP added, has lit water, `haslitwater` (REND-2.6).
+    world_water: Option<LitWater>,
 }
 
 impl<'p> MeshBuilder<'p> {
@@ -439,7 +449,16 @@ impl<'p> MeshBuilder<'p> {
             by_texture: Vec::new(),
             bounds: None,
             models: Vec::new(),
+            water: LitWater::default(),
+            world_water: None,
         }
+    }
+
+    /// The builder with liquids drawn as `water` says (REND-2.6).
+    #[must_use]
+    pub const fn with_water(mut self, water: LitWater) -> Self {
+        self.water = water;
+        self
     }
 
     /// Adds `bsp`'s textures and each of `placements`' models of it (REND-1, REND-2). The
@@ -467,6 +486,16 @@ impl<'p> MeshBuilder<'p> {
     ) -> Result<(), MeshError> {
         let lit = extras.lit;
         let base = self.textures.len();
+        // REND-2.6: `Mod_LoadFaces` sets `haslitwater` for a liquid face that is not drawn
+        // tiled and has samples; the world's decides for every model.
+        if self.world_water.is_none() {
+            let has = bsp.faces.iter().any(|face| {
+                face.flags & SURF_DRAWTURB != 0
+                    && face.flags & SURF_DRAWTILED == 0
+                    && face.lightofs != -1
+            });
+            self.world_water = Some(if has { LitWater::Lit } else { LitWater::Unlit });
+        }
         // REND-1.14: the stand-in for a missing texture takes the slot after the BSP's own.
         let notexture = bsp.textures.len();
         let mut surfaces = vec![Surface::Lit; notexture.saturating_add(1)];
@@ -516,10 +545,16 @@ impl<'p> MeshBuilder<'p> {
                     Surface::Lit
                 };
                 // REND-1.6 and REND-1.14: a sky, a liquid and a face with no texture have no
-                // lightmap.
+                // lightmap; REND-2.6: but a liquid not drawn tiled has, as
+                // `GL_CreateSurfaceLightmap` skips only `SURF_DRAWTILED`.
+                let lightmapped = match surface {
+                    Surface::Lit => found.is_some(),
+                    Surface::Turbulent => face.flags & SURF_DRAWTILED == 0,
+                    Surface::Sky => false,
+                };
                 let place = match placed.get(number).copied().flatten() {
                     Some(place) => Some(place),
-                    None if surface == Surface::Lit && found.is_some() => {
+                    None if lightmapped => {
                         let place = self.atlas.place(face, bsp, lit)?;
                         if let Some(slot) = slots.get_mut(number) {
                             *slot = Some(self.atlas.faces.len().saturating_sub(1));
@@ -620,13 +655,19 @@ impl<'p> MeshBuilder<'p> {
             maxs,
             models: self.models.clone(),
             look: self.look,
+            water: self.water,
+        };
+        // REND-2.6: "`cl.worldmodel->haslitwater && r_litwater.value`".
+        let water = match (self.world_water, self.water) {
+            (Some(LitWater::Lit), LitWater::Lit) => LitWater::Lit,
+            _ => LitWater::Unlit,
         };
         // REND-1.11: the world's batches, then each entity's.
         for model in 0..self.models.len() {
             for (slot, polygons) in self.by_texture.iter().enumerate() {
                 let first = u32_of(mesh.indices.len());
                 for polygon in polygons.iter().filter(|p| p.model == model) {
-                    polygon.emit(&mut mesh, (width, height));
+                    polygon.emit(&mut mesh, (width, height), water);
                 }
                 let count = u32_of(mesh.indices.len()).saturating_sub(first);
                 if count > 0 {
@@ -661,8 +702,10 @@ struct Polygon {
 }
 
 impl Polygon {
-    /// REND-1.1 to REND-1.3: the face's vertices and a fan of triangles over them.
-    fn emit(&self, mesh: &mut MapMesh, (width, height): (f32, f32)) {
+    /// REND-1.1 to REND-1.3: the face's vertices and a fan of triangles over them; a liquid
+    /// with its lightmap's coordinates when `water` draws it lit, else [`NO_LIGHTMAP`]
+    /// (REND-2.6).
+    fn emit(&self, mesh: &mut MapMesh, (width, height): (f32, f32), water: LitWater) {
         let base = u32_of(mesh.vertices.len());
         for corner in &self.corners {
             let s = dot(corner, self.texinfo.vecs[0]);
@@ -674,7 +717,11 @@ impl Polygon {
                 // REND-2.3: the sky's coordinates come from the eye, in the shader.
                 Surface::Sky => [0.0, 0.0],
             };
-            let light = match self.place {
+            let place = match (self.surface, water) {
+                (Surface::Turbulent, LitWater::Unlit) => None,
+                _ => self.place,
+            };
+            let light = match place {
                 Some([column, row]) => [
                     (s - f32::from(self.texturemins[0])
                         + f32_of_usize(column) * LIGHTMAP_TEXEL
@@ -685,6 +732,7 @@ impl Polygon {
                         + LIGHTMAP_TEXEL / 2.0)
                         / (height * LIGHTMAP_TEXEL),
                 ],
+                None if self.surface == Surface::Turbulent => NO_LIGHTMAP,
                 // The full-bright texel's centre.
                 None => [0.5 / width, 0.5 / height],
             };

@@ -14,8 +14,7 @@ qc-vm = { workspace = true }
 # A sound's entity, which the mixer takes as the client parses it.
 qc-edict = { workspace = true }
 qs-mdl = { workspace = true }
-
-[dev-dependencies]
+# The protocols the server writes in and their codecs (NET-6), which the client reads.
 qs-sim = { workspace = true }
 
 [lints]

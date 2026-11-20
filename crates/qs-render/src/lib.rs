@@ -47,16 +47,17 @@ pub use alias::{
 pub use camera::{Camera, Degrees};
 pub use flat::{FlatFace, Shade};
 pub use gpu::{
-    AliasDraw, Assets, EditorCallback, EditorRenderer, FlatBlend, FlatDraw, FlatFrame, FlatVertex,
-    Fog, GameCallback, GameRenderer, MapCallback, MapRenderer, ModelFrame, PlayerSkin, PlayerSlot,
-    SkinKey, SpriteDraw, SpriteFrame, View,
+    AliasDraw, Assets, EditorCallback, EditorRenderer, EntityPass, FlatBlend, FlatDraw, FlatFrame,
+    FlatVertex, Fog, GameCallback, GameRenderer, MapCallback, MapRenderer, ModelDepth, ModelFrame,
+    ModelPlacement, PlayerSkin, PlayerSlot, SkinKey, SpriteDraw, SpriteFrame, View,
 };
 pub use light::light_point;
 pub use look::Look;
 pub use md5::Md5Model;
 pub use mesh::{
-    Animation, Batch, Extras, GAMMA, Image, LightmapPatch, Lightmaps, MapMesh, MeshBuilder,
-    MeshError, Palette, Placement, REND_MAX_DLIGHTS, Surface, Vertex, frame, mip_levels,
+    Animation, Batch, Extras, GAMMA, Image, LightmapPatch, Lightmaps, LitWater, MapMesh,
+    MeshBuilder, MeshError, Palette, Placement, REND_MAX_DLIGHTS, Surface, Vertex, frame,
+    mip_levels,
 };
 pub use offscreen::{Offscreen, OffscreenError, Pixels};
 pub use particles::{ParticleVertex, particle_texture, particle_triangles};
@@ -64,4 +65,4 @@ pub use pick::Hit;
 pub use play::{FogState, Pics, Play, PlayError, fog_parse_worldspawn};
 pub use skybox::{SKY_SIDES, SkyKeys, Skybox, sky_parse_worldspawn};
 pub use sprite::{Eye, SpriteEntity, SpriteError, SpriteModel, SpriteVertex};
-pub use styles::{LightStyles, MAX_LIGHTSTYLES};
+pub use styles::{LightStyles, MAX_LIGHTSTYLES, StyleLerp};

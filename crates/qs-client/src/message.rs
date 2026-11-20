@@ -1,15 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 1996-1997 Id Software, Inc.
+// Copyright (C) 2002-2009 John Fitzgibbons and others
+// Copyright (C) 2010-2014 QuakeSpasm developers
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/common.c, MSG_BeginReading, MSG_ReadChar, MSG_ReadByte, MSG_ReadShort, MSG_ReadLong, MSG_ReadFloat, MSG_ReadString, MSG_ReadCoord, MSG_ReadAngle
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/common.c, MSG_ReadCoord16, MSG_ReadCoord24, MSG_ReadCoord, MSG_ReadAngle, MSG_ReadAngle16
 
 //! Reading a server message's bytes as id's `MSG_Read*` read them (CLIENT-1.4): a coordinate
 //! is a short over 8, an angle a byte over 256 of a turn, and reading past the end is the
-//! error `Bad server message`.
+//! error `Bad server message`; under FitzQuake's 666 and RMQ's 999 they are read as the
+//! protocol's flags say (CLIENT-9.1).
 
 use crate::view::FULL_TURN;
 use qc_vm::convert::double_to_float;
+use qs_sim::protocol::{Protocol, ProtocolFlags};
 
 /// The bytes of a long and a float.
 const LONG_BYTES: usize = 4;
@@ -18,6 +23,12 @@ const COORD_STEPS: f64 = 8.0;
 /// A turn in degrees.
 /// An angle byte's steps per turn, `MSG_ReadChar() * (360.0/256)`.
 const ANGLE_STEPS: f64 = 256.0;
+/// A short angle's steps, `MSG_ReadShort () * (360.0 / 65536)` (CLIENT-9.1).
+const SHORT_ANGLE_STEPS: f64 = 65536.0;
+/// `PRFL_INT32COORD`'s sixteenths, `MSG_ReadLong () * (1.0 / 16.0)` (CLIENT-9.1).
+const COORD32_STEPS: f64 = 16.0;
+/// `MSG_ReadCoord24`'s fraction byte, `MSG_ReadByte() * (1.0/255)` (CLIENT-9.1).
+const COORD24_FRACTION: f64 = 255.0;
 
 /// A message being read, `net_message` with `msg_readcount` (CLIENT-1.4).
 #[derive(Clone, Debug)]
@@ -26,6 +37,9 @@ pub struct Reader<'a> {
     at: usize,
     /// `msg_badread`: a read ran past the end.
     bad: bool,
+    /// `cl.protocol` and `cl.protocolflags`, which say how coordinates and angles are read
+    /// (CLIENT-9.1).
+    protocol: Protocol,
 }
 
 impl<'a> Reader<'a> {
@@ -36,7 +50,26 @@ impl<'a> Reader<'a> {
             bytes,
             at: 0,
             bad: false,
+            protocol: Protocol::NETQUAKE,
         }
+    }
+
+    /// The reader reading coordinates and angles in `protocol` (CLIENT-9.1).
+    #[must_use]
+    pub const fn with_protocol(mut self, protocol: Protocol) -> Self {
+        self.protocol = protocol;
+        self
+    }
+
+    /// Reads the rest of the message in `protocol`, as the serverinfo sets it (CLIENT-9.1).
+    pub const fn set_protocol(&mut self, protocol: Protocol) {
+        self.protocol = protocol;
+    }
+
+    /// The protocol it reads in.
+    #[must_use]
+    pub const fn protocol(&self) -> Protocol {
+        self.protocol
     }
 
     /// Whether a read ran past the end (`msg_badread`).
@@ -80,6 +113,11 @@ impl<'a> Reader<'a> {
             .map_or(-1, |&b| i32::from(b))
     }
 
+    /// `MSG_ReadByte` kept as a byte, 255 past the end.
+    pub fn byte_u8(&mut self) -> u8 {
+        u8::try_from(self.byte()).unwrap_or(u8::MAX)
+    }
+
     /// `MSG_ReadShort`: a signed little-endian short, -1 past the end.
     pub fn short(&mut self) -> i32 {
         match self.take(2) {
@@ -115,13 +153,47 @@ impl<'a> Reader<'a> {
         text.to_vec()
     }
 
-    /// `MSG_ReadCoord`: a short over 8.
+    /// `MSG_ReadCoord (flags)`: a float with `PRFL_FLOATCOORD`, a long over 16 with
+    /// `PRFL_INT32COORD`, a short and a byte over 255 with `PRFL_24BITCOORD`, else a short over
+    /// 8, id's (CLIENT-9.1).
     pub fn coord(&mut self) -> f32 {
-        double_to_float(f64::from(self.short()) * (1.0 / COORD_STEPS))
+        let flags = self.protocol.flags();
+        if flags.has(ProtocolFlags::FLOAT_COORD) {
+            self.float()
+        } else if flags.has(ProtocolFlags::INT32_COORD) {
+            double_to_float(f64::from(self.long()) * (1.0 / COORD32_STEPS))
+        } else if flags.has(ProtocolFlags::COORD_24) {
+            let whole = f64::from(self.short());
+            double_to_float(whole + f64::from(self.byte()) * (1.0 / COORD24_FRACTION))
+        } else {
+            double_to_float(f64::from(self.short()) * (1.0 / COORD_STEPS))
+        }
     }
 
-    /// `MSG_ReadAngle`: a char times 360 over 256.
+    /// `MSG_ReadAngle (flags)`: a float with `PRFL_FLOATANGLE`, a short times 360 over 65536
+    /// with `PRFL_SHORTANGLE`, else a char times 360 over 256, id's (CLIENT-9.1).
     pub fn angle(&mut self) -> f32 {
-        double_to_float(f64::from(self.char()) * (f64::from(FULL_TURN) / ANGLE_STEPS))
+        let flags = self.protocol.flags();
+        if flags.has(ProtocolFlags::FLOAT_ANGLE) {
+            self.float()
+        } else if flags.has(ProtocolFlags::SHORT_ANGLE) {
+            self.short_angle()
+        } else {
+            double_to_float(f64::from(self.char()) * (f64::from(FULL_TURN) / ANGLE_STEPS))
+        }
+    }
+
+    /// `MSG_ReadAngle16 (flags)`: a float with `PRFL_FLOATANGLE`, else a short times 360 over
+    /// 65536 (CLIENT-9.1).
+    pub fn angle16(&mut self) -> f32 {
+        if self.protocol.flags().has(ProtocolFlags::FLOAT_ANGLE) {
+            self.float()
+        } else {
+            self.short_angle()
+        }
+    }
+
+    fn short_angle(&mut self) -> f32 {
+        double_to_float(f64::from(self.short()) * (f64::from(FULL_TURN) / SHORT_ANGLE_STEPS))
     }
 }
