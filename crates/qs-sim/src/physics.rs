@@ -16,7 +16,7 @@ use crate::builtins::{FL_ONGROUND, SimCall};
 use crate::collision::{
     CONTENTS_EMPTY, CONTENTS_WATER, MoveKind, Solid, Trace, test_entity_position,
 };
-use crate::messages::{LERP_FINISH_STEPS, TENTH_STEPS, ThinkMark};
+use crate::messages::{LERP_FINISH_STEPS, TENTH_STEPS, ThinkInterval, ThinkMark};
 use crate::protocol::q_rint;
 use crate::settings::Setting;
 
@@ -222,7 +222,12 @@ impl SimCall<'_, '_, '_> {
                 let steps = q_rint((nextthink - mark.time) * LERP_FINISH_STEPS);
                 (0..=i32::from(u8::MAX)).contains(&steps) && !TENTH_STEPS.contains(&steps)
             };
-        self.sim.messages.set_send_interval(ent, send);
+        let interval = if send {
+            ThinkInterval::Sent
+        } else {
+            ThinkInterval::Assumed
+        };
+        self.sim.messages.set_send_interval(ent, interval);
     }
 
     /// `SV_RunThink`: whether the entity is still in use (PHYS-2.1).

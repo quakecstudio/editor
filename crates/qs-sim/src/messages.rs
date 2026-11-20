@@ -548,7 +548,7 @@ pub(crate) struct ServerMessages {
     /// Each edict's last think and whether its next think's time is sent, QuakeSpasm's
     /// `oldthinktime`, `oldframe` and `sendinterval` (NET-6.9).
     thinks: Vec<ThinkMark>,
-    send_intervals: Vec<bool>,
+    send_intervals: Vec<ThinkInterval>,
 }
 
 impl ServerMessages {
@@ -582,13 +582,13 @@ impl ServerMessages {
     }
 
     /// Whether edict `n`'s next think's time is sent, `sendinterval` (NET-6.9).
-    pub(crate) fn send_interval(&self, n: usize) -> bool {
-        self.send_intervals.get(n).copied().unwrap_or(false)
+    pub(crate) fn send_interval(&self, n: usize) -> ThinkInterval {
+        self.send_intervals.get(n).copied().unwrap_or_default()
     }
 
     /// Sets edict `n`'s `sendinterval` (NET-6.9).
-    pub(crate) fn set_send_interval(&mut self, n: usize, send: bool) {
-        set_at(&mut self.send_intervals, n, send);
+    pub(crate) fn set_send_interval(&mut self, n: usize, interval: ThinkInterval) {
+        set_at(&mut self.send_intervals, n, interval);
     }
 
     /// Every buffer written in `protocol` from now on (NET-6.1).
@@ -1541,7 +1541,7 @@ impl SimCall<'_, '_, '_> {
                 if bits & U_MODEL != 0 && modelindex & HIGH_BYTE != 0 {
                     bits |= U_MODEL2;
                 }
-                if self.sim.messages.send_interval(e) {
+                if self.sim.messages.send_interval(e) == ThinkInterval::Sent {
                     bits |= U_LERPFINISH;
                 }
                 if bits >= THIRD_BYTE {
@@ -1893,6 +1893,17 @@ pub(crate) struct ThinkMark {
     pub(crate) time: f32,
     /// The entity's frame before it.
     pub(crate) frame: f32,
+}
+
+/// Whether an entity's next think's time goes to the client, QuakeSpasm's `sendinterval`
+/// (NET-6.9).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum ThinkInterval {
+    /// Not sent: the client assumes a tenth of a second.
+    #[default]
+    Assumed,
+    /// Sent with `U_LERPFINISH`.
+    Sent,
 }
 
 /// `U_LERPFINISH`'s steps a second, "0.0-1.0 maps to 0-255" (NET-6.9).
