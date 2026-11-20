@@ -25,13 +25,17 @@ for it.
   feeds a `Client` from the lines; what the agent writes to standard error goes to the log.
   Dropping it ends the process.
 
-The client advertises no capability, so the agent reads and writes files and runs commands
-itself. A request for a method the client did not offer (`fs/read_text_file`, `terminal/*`)
-is answered with JSON-RPC's "Method not found". Cancelling a turn answers every permission
-request that waits with the `cancelled` outcome, as the protocol requires.
+The one capability the client may advertise is the file system's (`Files::ThroughClient`):
+the agent then asks the client for a file's text (`fs/read_text_file`, answered with the lines
+asked for) and hands it each file it writes (`fs/write_text_file`), so the IDE gives it unsaved
+text and holds its writes for review. With `Files::AgentsOwn` the agent uses its own file
+tools. A request for a method the client did not offer (`terminal/*`, and the file methods when
+they were not offered) is answered with JSON-RPC's "Method not found". Cancelling a turn
+answers every permission request that waits with the `cancelled` outcome, as the protocol
+requires.
 
 ## Tests
 
 `src/tests.rs`: each request the client writes, against the schema; the agent's answers and
-updates as events; permission requests answered once; cancellation; methods not offered; one
-message a line.
+updates as events; permission requests answered once; cancellation; file reads and writes;
+methods not offered; one message a line; an agent run as a subprocess.

@@ -12,8 +12,8 @@ use std::path::{Path, PathBuf};
 use serde_json::{Value, json};
 
 use super::{
-    Client, ClientInfo, Event, McpServer, OptionKind, Outcome, PlanEntry, SessionId, StopReason,
-    ToolStatus,
+    Client, ClientInfo, Event, Files, Lines, McpServer, OptionKind, Outcome, PlanEntry, SessionId,
+    StopReason, ToolStatus,
 };
 
 /// A client writing to memory.
@@ -46,7 +46,7 @@ fn info() -> ClientInfo {
 /// A client with a session: `initialize` and `session/new` asked and answered.
 fn in_session() -> (Client<Vec<u8>>, SessionId) {
     let mut client = client();
-    client.initialize(&info()).unwrap();
+    client.initialize(&info(), Files::AgentsOwn).unwrap();
     told(
         &mut client,
         &json!({ "jsonrpc": "2.0", "id": 0, "result": { "protocolVersion": 1 } }),
@@ -78,7 +78,7 @@ fn valid_as(name: &str, value: &Value) -> bool {
 #[test]
 fn initialize_gives_the_version_and_who_asks() {
     let mut client = client();
-    client.initialize(&info()).unwrap();
+    client.initialize(&info(), Files::AgentsOwn).unwrap();
     let sent = written(&mut client);
     assert_eq!(
         sent,
@@ -105,7 +105,7 @@ fn initialize_gives_the_version_and_who_asks() {
 #[test]
 fn the_agents_answer_names_it() {
     let mut client = client();
-    client.initialize(&info()).unwrap();
+    client.initialize(&info(), Files::AgentsOwn).unwrap();
     let events = told(
         &mut client,
         &json!({ "jsonrpc": "2.0", "id": 0, "result": {
@@ -135,7 +135,7 @@ fn the_agents_answer_names_it() {
 #[test]
 fn another_version_is_reported() {
     let mut client = client();
-    client.initialize(&info()).unwrap();
+    client.initialize(&info(), Files::AgentsOwn).unwrap();
     let events = told(
         &mut client,
         &json!({ "jsonrpc": "2.0", "id": 0, "result": { "protocolVersion": 2 } }),
@@ -445,7 +445,7 @@ fn a_method_not_offered_is_refused() {
 #[test]
 fn a_refused_request_says_why() {
     let mut client = client();
-    client.initialize(&info()).unwrap();
+    client.initialize(&info(), Files::AgentsOwn).unwrap();
     client.new_session(Path::new("/mods/ember"), &[]).unwrap();
     let events = told(
         &mut client,
@@ -511,7 +511,10 @@ fn an_agent_runs_as_a_subprocess() {
         let _gone = woken.send(());
     })
     .unwrap();
-    agent.client().initialize(&info()).unwrap();
+    agent
+        .client()
+        .initialize(&info(), Files::AgentsOwn)
+        .unwrap();
     let mut events = Vec::new();
     // Each wake is a line or the end; a wake that never comes fails the test.
     while !events.contains(&Event::Exited) {
@@ -528,4 +531,118 @@ fn an_agent_runs_as_a_subprocess() {
     };
     let error = Agent::spawn(&missing, Path::new("/"), || {}).unwrap_err();
     assert!(error.to_string().contains("/no/such/agent"), "{error}");
+}
+
+/// A client that offered the file system, in a session.
+fn with_files() -> Client<Vec<u8>> {
+    let mut client = client();
+    client.initialize(&info(), Files::ThroughClient).unwrap();
+    let sent = written(&mut client);
+    assert_eq!(
+        sent[0]["params"]["clientCapabilities"],
+        json!({ "fs": { "readTextFile": true, "writeTextFile": true } })
+    );
+    assert!(valid_as("InitializeRequest", &sent[0]["params"]));
+    told(
+        &mut client,
+        &json!({ "jsonrpc": "2.0", "id": 0, "result": { "protocolVersion": 1 } }),
+    );
+    client
+}
+
+// ACP v1, file-system.mdx: "The `fs/read_text_file` method allows Agents to read text file
+// contents from the Client's filesystem, including unsaved changes in the editor", with an
+// "Optional line number to start reading from (1-based)" and an "Optional maximum number of
+// lines to read"; "The Client responds with the file contents"
+#[test]
+fn a_read_is_answered_with_the_lines_asked_for() {
+    let mut client = with_files();
+    let events = told(
+        &mut client,
+        &json!({ "jsonrpc": "2.0", "id": 3, "method": "fs/read_text_file",
+                 "params": { "sessionId": "sess_1", "path": "/mods/ember/ai.qc",
+                             "line": 2, "limit": 2 } }),
+    );
+    let [Event::ReadFile { request, path }] = events.as_slice() else {
+        unreachable!("{events:?}");
+    };
+    assert_eq!(path, Path::new("/mods/ember/ai.qc"));
+    client
+        .answer_read(request, "one\ntwo\nthree\nfour\n")
+        .unwrap();
+    let sent = written(&mut client);
+    assert_eq!(
+        sent,
+        [json!({ "jsonrpc": "2.0", "id": 3, "result": { "content": "two\nthree\n" } })]
+    );
+    assert!(valid_as("ReadTextFileResponse", &sent[0]["result"]));
+    client.answer_read(request, "again").unwrap();
+    assert!(written(&mut client).is_empty(), "answered once");
+}
+
+// ACP v1, file-system.mdx: a read's line is 1-based and both of its bounds are optional
+#[test]
+fn the_lines_of_a_text() {
+    let text = "one\ntwo\nthree";
+    for (line, limit, lines) in [
+        (None, None, text),
+        (Some(1), None, text),
+        (Some(0), None, text),
+        (Some(3), None, "three"),
+        (Some(4), None, ""),
+        (None, Some(1), "one\n"),
+        (None, Some(0), ""),
+        (Some(2), Some(9), "two\nthree"),
+    ] {
+        assert_eq!(Lines { line, limit }.of(text), lines, "{line:?} {limit:?}");
+    }
+}
+
+// ACP v1, file-system.mdx: "The `fs/write_text_file` method allows Agents to write or update
+// text files in the Client's filesystem" and "The Client responds with an empty result on
+// success"; a write the client could not carry out is answered with an error
+#[test]
+fn a_write_is_answered_or_refused() {
+    let mut client = with_files();
+    let write = |id: u32| {
+        json!({ "jsonrpc": "2.0", "id": id, "method": "fs/write_text_file",
+                "params": { "sessionId": "sess_1", "path": "/mods/ember/ai.qc",
+                            "content": "float x;\n" } })
+    };
+    let events = told(&mut client, &write(4));
+    let [
+        Event::WriteFile {
+            request,
+            path,
+            content,
+        },
+    ] = events.as_slice()
+    else {
+        unreachable!("{events:?}");
+    };
+    assert_eq!(path, Path::new("/mods/ember/ai.qc"));
+    assert_eq!(content, "float x;\n");
+    client.answer_write(request).unwrap();
+    let sent = written(&mut client);
+    assert_eq!(sent, [json!({ "jsonrpc": "2.0", "id": 4, "result": {} })]);
+    assert!(valid_as("WriteTextFileResponse", &sent[0]["result"]));
+
+    let events = told(&mut client, &write(5));
+    let [Event::WriteFile { request, .. }] = events.as_slice() else {
+        unreachable!("{events:?}");
+    };
+    client.refuse_file(request, "outside the project").unwrap();
+    assert_eq!(
+        written(&mut client),
+        [json!({ "jsonrpc": "2.0", "id": 5,
+                 "error": { "code": -32603, "message": "outside the project" } })]
+    );
+    // A file request that is not the protocol's is not offered.
+    let events = told(
+        &mut client,
+        &json!({ "jsonrpc": "2.0", "id": 6, "method": "fs/write_text_file",
+                 "params": { "sessionId": "sess_1" } }),
+    );
+    assert_eq!(events, []);
+    assert_eq!(written(&mut client)[0]["error"]["code"], -32601);
 }

@@ -21,7 +21,7 @@ use std::process::ExitCode;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use qs_acp::{Agent, AgentCommand, ClientInfo, Event, OptionKind, Outcome, SessionId};
+use qs_acp::{Agent, AgentCommand, ClientInfo, Event, Files, OptionKind, Outcome, SessionId};
 
 /// How long the agent may say nothing before the session is given up.
 const QUIET: Duration = Duration::from_secs(300);
@@ -101,6 +101,10 @@ fn take(agent: &mut Agent, args: &Args, session: &mut Option<SessionId>, event: 
                 .map_or(Outcome::Cancelled, |option| Outcome::Selected(option.id));
             agent.client().answer(&request, &outcome)
         }
+        // Never asked for: the example leaves the agent its own file tools.
+        Event::ReadFile { request, .. } | Event::WriteFile { request, .. } => agent
+            .client()
+            .refuse_file(&request, "this client offers no file system"),
         Event::TurnEnded(reason) => {
             println!("\n[ended] {reason:?}");
             return Next::End(ExitCode::SUCCESS);
@@ -154,7 +158,7 @@ fn main() -> ExitCode {
         title: "QuakeC Studio".to_owned(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
     };
-    if let Err(error) = agent.client().initialize(&info) {
+    if let Err(error) = agent.client().initialize(&info, Files::AgentsOwn) {
         println!("[error] {error}");
         return ExitCode::FAILURE;
     }

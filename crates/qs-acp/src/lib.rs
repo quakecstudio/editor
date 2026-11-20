@@ -10,10 +10,12 @@
 //! stdio transport has it (`transports.mdx`): "Messages are delimited by newlines (`\n`), and
 //! **MUST NOT** contain embedded newlines."
 //!
-//! The client advertises no capability (`initialization.mdx`: "Clients and Agents **MUST**
-//! treat all capabilities omitted in the `initialize` request as **UNSUPPORTED**"), so the
-//! agent reads and writes files and runs commands itself; the IDE's own tools reach it as an
-//! MCP server named in `session/new`.
+//! The one capability the client may advertise is the file system's ([`Files::ThroughClient`],
+//! `file-system.mdx`): the agent then reads and writes text files through the client, which
+//! sees unsaved text and can hold a write for review. Every other capability is left out
+//! (`initialization.mdx`: "Clients and Agents **MUST** treat all capabilities omitted in the
+//! `initialize` request as **UNSUPPORTED**"), so the agent runs commands itself; the IDE's own
+//! tools reach it as an MCP server named in `session/new`.
 
 mod process;
 mod wire;
@@ -33,6 +35,10 @@ pub const PROTOCOL_VERSION: u64 = 1;
 /// JSON-RPC's "Method not found", answered to a request for a method the client does not
 /// offer (JSON-RPC 2.0, section 5.1).
 const METHOD_NOT_FOUND: i64 = -32601;
+
+/// JSON-RPC's "Internal error", answered to a file request the client could not carry out
+/// (JSON-RPC 2.0, section 5.1).
+const INTERNAL_ERROR: i64 = -32603;
 
 /// A session's id, as the agent gave it.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -66,6 +72,43 @@ pub struct OptionId(String);
 /// or a string as the agent chose.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PermissionId(String);
+
+/// A request of the agent's to read or write a file that waits for its answer.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct FileRequestId(String);
+
+/// Whose file tools the agent uses.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Files {
+    /// The agent's own: it reads and writes the disk itself.
+    #[default]
+    AgentsOwn,
+    /// The client's: `fs/read_text_file` and `fs/write_text_file` are offered
+    /// (`file-system.mdx`).
+    ThroughClient,
+}
+
+/// The part of a file a read asks for: lines from `line`, counted from 1, and at most `limit`
+/// of them; the whole file when both are `None`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Lines {
+    /// The first line, counted from 1.
+    pub line: Option<u32>,
+    /// The most lines.
+    pub limit: Option<u32>,
+}
+
+impl Lines {
+    /// The lines of `text` asked for, each with its line ending.
+    #[must_use]
+    pub fn of(self, text: &str) -> String {
+        let skip = usize::try_from(self.line.unwrap_or(1).saturating_sub(1)).unwrap_or(usize::MAX);
+        let take = self.limit.map_or(usize::MAX, |limit| {
+            usize::try_from(limit).unwrap_or(usize::MAX)
+        });
+        text.split_inclusive('\n').skip(skip).take(take).collect()
+    }
+}
 
 /// Who the client says it is (`initialization.mdx`: clients "**SHOULD** also provide a name
 /// and version to the Agent").
@@ -209,6 +252,22 @@ pub enum Event {
         /// The answers offered.
         options: Vec<PermissionOption>,
     },
+    /// The agent asks for a file's text; [`Client::answer_read`] answers it.
+    ReadFile {
+        /// The request to answer.
+        request: FileRequestId,
+        /// The file, by its absolute path.
+        path: PathBuf,
+    },
+    /// The agent asks for a file to be written; [`Client::answer_write`] answers it.
+    WriteFile {
+        /// The request to answer.
+        request: FileRequestId,
+        /// The file, by its absolute path.
+        path: PathBuf,
+        /// Its whole new text.
+        content: String,
+    },
     /// The prompt turn ended.
     TurnEnded(StopReason),
     /// The agent refused one of the client's requests.
@@ -296,6 +355,11 @@ pub struct Client<W> {
     /// The agent's permission requests not yet answered: the JSON-RPC id to answer with,
     /// and the session each is in.
     permissions: BTreeMap<PermissionId, (Value, SessionId)>,
+    /// Whose file tools the agent was told to use.
+    files: Files,
+    /// The agent's file requests not yet answered: the JSON-RPC id to answer with, and for a
+    /// read the lines asked for.
+    file_requests: BTreeMap<FileRequestId, (Value, Lines)>,
 }
 
 impl<W: Write> Client<W> {
@@ -306,6 +370,8 @@ impl<W: Write> Client<W> {
             next: 0,
             asked: BTreeMap::new(),
             permissions: BTreeMap::new(),
+            files: Files::AgentsOwn,
+            file_requests: BTreeMap::new(),
         }
     }
 
@@ -332,19 +398,26 @@ impl<W: Write> Client<W> {
         }))
     }
 
-    /// Sends `initialize` with this client's version and no capability
-    /// (`initialization.mdx`: "Clients **MUST** initialize the connection by calling the
-    /// `initialize` method"). [`Event::Initialized`] answers it.
+    /// Sends `initialize` with this client's version and, for [`Files::ThroughClient`], the
+    /// file system capability (`initialization.mdx`: "Clients **MUST** initialize the
+    /// connection by calling the `initialize` method"). [`Event::Initialized`] answers it.
     ///
     /// # Errors
     ///
     /// [`AcpError`] when the agent cannot be written to.
-    pub fn initialize(&mut self, info: &ClientInfo) -> Result<(), AcpError> {
+    pub fn initialize(&mut self, info: &ClientInfo, files: Files) -> Result<(), AcpError> {
+        self.files = files;
+        let capabilities = match files {
+            Files::AgentsOwn => json!({}),
+            Files::ThroughClient => {
+                json!({ "fs": { "readTextFile": true, "writeTextFile": true } })
+            }
+        };
         self.request(
             Asked::Initialize,
             &json!({
                 "protocolVersion": PROTOCOL_VERSION,
-                "clientCapabilities": {},
+                "clientCapabilities": capabilities,
                 "clientInfo": {
                     "name": info.name,
                     "title": info.title,
@@ -416,6 +489,52 @@ impl<W: Write> Client<W> {
         self.write(&json!({ "jsonrpc": "2.0", "id": id, "result": { "outcome": outcome } }))
     }
 
+    /// Answers the agent's read `request` with the lines it asked for of `text`, the file's
+    /// whole text; a request already answered is not answered twice.
+    ///
+    /// # Errors
+    ///
+    /// [`AcpError`] when the agent cannot be written to.
+    pub fn answer_read(&mut self, request: &FileRequestId, text: &str) -> Result<(), AcpError> {
+        let Some((id, lines)) = self.file_requests.remove(request) else {
+            return Ok(());
+        };
+        self.write(&json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": { "content": lines.of(text) },
+        }))
+    }
+
+    /// Answers the agent's write `request`: the file was taken (`file-system.mdx`: "The
+    /// Client responds with an empty result on success").
+    ///
+    /// # Errors
+    ///
+    /// [`AcpError`] when the agent cannot be written to.
+    pub fn answer_write(&mut self, request: &FileRequestId) -> Result<(), AcpError> {
+        let Some((id, _)) = self.file_requests.remove(request) else {
+            return Ok(());
+        };
+        self.write(&json!({ "jsonrpc": "2.0", "id": id, "result": {} }))
+    }
+
+    /// Answers the agent's file `request` with an error saying `why` it could not be done.
+    ///
+    /// # Errors
+    ///
+    /// [`AcpError`] when the agent cannot be written to.
+    pub fn refuse_file(&mut self, request: &FileRequestId, why: &str) -> Result<(), AcpError> {
+        let Some((id, _)) = self.file_requests.remove(request) else {
+            return Ok(());
+        };
+        self.write(&json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": { "code": INTERNAL_ERROR, "message": why },
+        }))
+    }
+
     /// Cancels the prompt turn of `session`: the `session/cancel` notification, and the
     /// `cancelled` outcome to every permission request of the session that waits
     /// (`prompt-turn.mdx`, Cancellation: "The Client **MUST** respond to all pending
@@ -463,14 +582,40 @@ impl<W: Write> Client<W> {
         }
     }
 
-    /// A request from the agent: a permission request waits for the person; any other
-    /// method is not offered.
+    /// A request from the agent: a permission request waits for the person, a file request
+    /// for the client when it offered the file system; any other method is not offered.
     fn asked_by_agent(
         &mut self,
         method: &str,
         id: Value,
         params: Option<Value>,
     ) -> Result<Vec<Event>, AcpError> {
+        if self.files == Files::ThroughClient
+            && let Some(asked) = params
+                .clone()
+                .and_then(|params| wire::file_request(method, params))
+        {
+            let request = FileRequestId(id.to_string());
+            let (lines, event) = match asked {
+                wire::FileAsked::Read { path, lines } => (
+                    lines,
+                    Event::ReadFile {
+                        request: request.clone(),
+                        path,
+                    },
+                ),
+                wire::FileAsked::Write { path, content } => (
+                    Lines::default(),
+                    Event::WriteFile {
+                        request: request.clone(),
+                        path,
+                        content,
+                    },
+                ),
+            };
+            self.file_requests.insert(request, (id, lines));
+            return Ok(vec![event]);
+        }
         let asked = (method == "session/request_permission")
             .then(|| params.and_then(wire::permission))
             .flatten();

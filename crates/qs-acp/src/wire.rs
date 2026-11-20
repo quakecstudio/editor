@@ -11,7 +11,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    Event, OptionId, OptionKind, PROTOCOL_VERSION, PermissionOption, PlanEntry, SessionId,
+    Event, Lines, OptionId, OptionKind, PROTOCOL_VERSION, PermissionOption, PlanEntry, SessionId,
     StopReason, ToolCall, ToolCallId, ToolStatus,
 };
 
@@ -286,6 +286,63 @@ pub(crate) fn permission(params: Value) -> Option<(SessionId, ToolCall, Vec<Perm
         })
         .collect();
     Some((SessionId(raw.session_id), raw.tool_call.into(), options))
+}
+
+/// `ReadTextFileRequest`.
+#[derive(Deserialize)]
+struct RawRead {
+    path: PathBuf,
+    line: Option<u32>,
+    limit: Option<u32>,
+}
+
+/// `WriteTextFileRequest`.
+#[derive(Deserialize)]
+struct RawWrite {
+    path: PathBuf,
+    content: String,
+}
+
+/// A file request of the agent's.
+pub(crate) enum FileAsked {
+    /// `fs/read_text_file`.
+    Read {
+        /// The file.
+        path: PathBuf,
+        /// The lines of it.
+        lines: Lines,
+    },
+    /// `fs/write_text_file`.
+    Write {
+        /// The file.
+        path: PathBuf,
+        /// Its new text.
+        content: String,
+    },
+}
+
+/// The file request `method` with `params` is, if it is one and is the protocol's.
+pub(crate) fn file_request(method: &str, params: Value) -> Option<FileAsked> {
+    match method {
+        "fs/read_text_file" => {
+            let raw: RawRead = serde_json::from_value(params).ok()?;
+            Some(FileAsked::Read {
+                path: raw.path,
+                lines: Lines {
+                    line: raw.line,
+                    limit: raw.limit,
+                },
+            })
+        }
+        "fs/write_text_file" => {
+            let raw: RawWrite = serde_json::from_value(params).ok()?;
+            Some(FileAsked::Write {
+                path: raw.path,
+                content: raw.content,
+            })
+        }
+        _ => None,
+    }
 }
 
 /// The answer to `initialize`: the version must be this client's.
