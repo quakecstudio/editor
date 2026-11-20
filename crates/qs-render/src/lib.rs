@@ -27,7 +27,6 @@ mod anorm_dots;
 mod camera;
 mod flat;
 mod gpu;
-mod light;
 mod look;
 mod md5;
 mod mesh;
@@ -51,7 +50,6 @@ pub use gpu::{
     FlatVertex, Fog, GameCallback, GameRenderer, MapCallback, MapRenderer, ModelDepth, ModelFrame,
     ModelPlacement, PlayerSkin, PlayerSlot, SkinKey, SpriteDraw, SpriteFrame, View,
 };
-pub use light::light_point;
 pub use look::Look;
 pub use md5::Md5Model;
 pub use mesh::{

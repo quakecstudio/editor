@@ -21,7 +21,6 @@ use super::{
     Changes, Extras, Image, MapMesh, MeshBuilder, MeshError, NO_LIGHTMAP, Palette, Placement,
     Surface,
 };
-use crate::light::light_point;
 use crate::styles::{LightStyles, StyleLerp};
 
 /// One face of a test map: a 64 by 32 rectangle in the z = 0 plane, lit by `lighting`.
@@ -1287,14 +1286,14 @@ fn light_point_ignores_the_dynamic_lights() {
     let lighting = samples(&[50]);
     let bsp = bsp(&MapSpec::default(), &lighting);
     let mut mesh = MapMesh::build(&bsp, &palette(), Look::GlQuake).unwrap();
-    let before = light_point(&bsp, &LightStyles::unset(), [8.0, 8.0, 10.0]);
+    let before = qs_client::light_point(&bsp, &|_| qs_client::UNSET_STYLE_SCALE, [8.0, 8.0, 10.0]);
     assert!(
         !mesh
             .relight_with(&LightStyles::unset(), &[light([0.0, 0.0, 3.0], 5.0, 0.0)])
             .is_empty()
     );
     assert_eq!(texel(&mesh, 0, 0)[0], 104);
-    let after = light_point(&bsp, &LightStyles::unset(), [8.0, 8.0, 10.0]);
+    let after = qs_client::light_point(&bsp, &|_| qs_client::UNSET_STYLE_SCALE, [8.0, 8.0, 10.0]);
     assert_eq!((before, after), (50, 50));
 }
 

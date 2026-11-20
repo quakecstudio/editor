@@ -15,7 +15,7 @@ the map view and the preview host share one renderer.
 - **Ported from:** id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`,
   `WinQuake/gl_rsurf.c` (`BuildSurfaceDisplayList`, `GL_CreateSurfaceLightmap`,
   `R_BuildLightMap`, `R_AddDynamicLights`, `R_DrawBrushModel`), `WinQuake/gl_rlight.c`
-  (`R_LightPoint`, `R_PushDlights`, `R_MarkLights`, `R_AnimateLight`), `WinQuake/gl_rmain.c`
+  (`R_PushDlights`, `R_MarkLights`, `R_AnimateLight`), `WinQuake/gl_rmain.c`
   (`R_DrawAliasModel`, `R_DrawViewModel`, `R_PolyBlend`, `R_RotateForEntity`),
   `WinQuake/gl_rmisc.c` (`R_TranslatePlayerSkin`), `WinQuake/r_part.c` (`R_DrawParticles`),
   `WinQuake/gl_draw.c` (`Draw_Character`, `Draw_Pic`, `Draw_Fill`, `GL_Set2D`),
@@ -48,7 +48,7 @@ the map view and the preview host share one renderer.
   entity's origin and angles, such as a map's doors and lifts and its item boxes (REND-1.9).
 - `AliasModel::read(name, bytes, palette)`: an `.mdl`'s skins, poses and triangles;
   `draw(entity, time, out)` appends an entity's shaded triangles for its frame and skin at a
-  time (REND-4). `light_point(bsp, point)` is `R_LightPoint`, the light it is shaded by.
+  time (REND-4), shaded by `qs-client`'s `light_point`, id's `R_LightPoint`.
 - `MapMesh::relight_with(styles, lights)`: the atlas again with the frame's dynamic lights
   pushed through the BSP's nodes and added to the faces they reach, each face checked first as
   QuakeSpasm's `R_MarkLights` does (REND-7, REND-7.6).
