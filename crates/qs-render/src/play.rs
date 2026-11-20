@@ -23,8 +23,9 @@ use crate::CHANNEL_MAX;
 use crate::alias::{AliasEntity, AliasError, AliasKind, AliasModel, Shading, entity_light};
 use crate::camera::Camera;
 use crate::gpu::{
-    AliasDraw, Assets, FlatBlend, FlatDraw, FlatFrame, FlatVertex, Fog, MapCallback, ModelFrame,
-    PLAYER_SKINS, PlayerSkin, PlayerSlot, SkinKey, SpriteDraw, SpriteFrame, View,
+    AliasDraw, Assets, FlatBlend, FlatDraw, FlatFrame, FlatVertex, Fog, MapCallback, ModelDepth,
+    ModelFrame, ModelPlacement, PLAYER_SKINS, PlayerSkin, PlayerSlot, SkinKey, SpriteDraw,
+    SpriteFrame, View,
 };
 use crate::light::light_point;
 use crate::look::Look;
@@ -272,8 +273,9 @@ pub struct Play {
     pub skyfog: f32,
     /// The 2D layer's size, `vid.width` and `vid.height` (HUD-1).
     pub screen: [i32; 2],
-    /// QuakeSpasm's `gl_zfix` for brush models (REND-1.12).
-    pub zfix: bool,
+    /// The depth brush entities are drawn at: behind the world's faces they are flush with,
+    /// Ironwail's `gl_zfix`, or as GLQuake draws them (REND-1.15).
+    pub zfix: ModelDepth,
     /// How the light styles blend from letter to letter, Ironwail's `r_lerplightstyles`
     /// (REND-5.8).
     pub style_lerp: StyleLerp,
@@ -338,7 +340,7 @@ impl Play {
             water_alpha: 1.0,
             skyfog: sky.skyfog,
             screen: DEFAULT_SCREEN,
-            zfix: true,
+            zfix: ModelDepth::Behind,
             style_lerp: StyleLerp::default(),
             md5_models: true,
             look: Look::default(),
@@ -518,9 +520,9 @@ impl Play {
         };
         let mut models = ModelFrame::default();
         let mut sprites = SpriteFrame::default();
-        let mut placements: Vec<Option<[[f32; 4]; 4]>> = vec![None; mesh.models.len()];
+        let mut placements: Vec<Option<ModelPlacement>> = vec![None; mesh.models.len()];
         if let Some(world) = placements.first_mut() {
-            *world = Some(Placement::WORLD.matrix());
+            *world = Some(ModelPlacement::WORLD);
         }
         let mut player_skins = Vec::new();
         let light = |origin| light_point(bsp, &styles, origin);
@@ -663,8 +665,8 @@ impl Play {
         }
     }
 
-    /// A brush model at its entity (REND-1.9, REND-1.12).
-    fn place(&self, placements: &mut [Option<[[f32; 4]; 4]>], n: usize, entity: &SceneEntity) {
+    /// A brush model at its entity (REND-1.9), its depth as the z-fix says (REND-1.15).
+    fn place(&self, placements: &mut [Option<ModelPlacement>], n: usize, entity: &SceneEntity) {
         let Some(slot) = placements.get_mut(n) else {
             return;
         };
@@ -673,8 +675,10 @@ impl Play {
             origin: entity.origin,
             angles: entity.angles,
         };
-        let placed = if self.zfix { placed.zfixed() } else { placed };
-        *slot = Some(placed.matrix());
+        *slot = Some(ModelPlacement {
+            matrix: placed.matrix(),
+            depth: self.zfix,
+        });
     }
 
     /// The status bar, the overlay and the centre print as quads (HUD-1 to HUD-3).

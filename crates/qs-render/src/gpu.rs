@@ -15,9 +15,7 @@ use egui_wgpu::{CallbackResources, CallbackTrait, ScreenDescriptor};
 
 use crate::alias::AliasVertex;
 use crate::look::Look;
-use crate::mesh::{
-    Animation, Batch, Image, LightmapPatch, MapMesh, Placement, Surface, frame, mip_levels,
-};
+use crate::mesh::{Animation, Batch, Image, LightmapPatch, MapMesh, Surface, frame, mip_levels};
 use crate::particles::{ParticleVertex, particle_texture};
 use crate::skybox::Skybox;
 use crate::sprite::SpriteVertex;
@@ -159,8 +157,55 @@ impl Grown {
 
 /// The bytes between two models' matrices: the dynamic offset alignment every device allows.
 const MODEL_STRIDE: u64 = 256;
-/// The bytes of one model's matrix.
-const MATRIX_BYTES: u64 = 16 * 4;
+/// The bytes of one model's uniform: its matrix, then its depth bias in a `vec4`.
+const MODEL_BYTES: u64 = 20 * 4;
+/// Ironwail's `ZBIAS`, "`1./1024`", added to a brush entity's clip depth (REND-1.15).
+const ZFIX_BIAS: f32 = 1.0 / 1024.0;
+
+/// Where one of the mesh's models is drawn this frame: its matrix and its depth (REND-1.9,
+/// REND-1.15).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ModelPlacement {
+    /// The column-major matrix that moves its vertices (REND-1.9).
+    pub matrix: [[f32; 4]; 4],
+    /// Whether its depth is pushed back behind faces it is flush with (REND-1.15).
+    pub depth: ModelDepth,
+}
+
+impl ModelPlacement {
+    /// The world's: unmoved, its depth as drawn.
+    pub const WORLD: Self = Self {
+        matrix: [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+        depth: ModelDepth::AsDrawn,
+    };
+}
+
+/// A model's depth (REND-1.15).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ModelDepth {
+    /// As GLQuake rasterizes it, and the world always.
+    #[default]
+    AsDrawn,
+    /// Ironwail's z-fighting work-around, `CF_USE_POLYGON_OFFSET`: the clip depth moved back
+    /// by [`ZFIX_BIAS`], so of a brush entity's face and a world face at one depth the world's
+    /// is seen.
+    Behind,
+}
+
+impl ModelDepth {
+    /// What is added to the clip space depth of every vertex.
+    const fn bias(self) -> f32 {
+        match self {
+            Self::AsDrawn => 0.0,
+            Self::Behind => ZFIX_BIAS,
+        }
+    }
+}
 
 /// The player skins the renderer keeps after the models' skins, one per client slot,
 /// GLQuake's `playertextures` for `MAX_SCOREBOARD` 16 clients (REND-4.13).
@@ -426,7 +471,7 @@ impl MapRenderer {
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: true,
-                    min_binding_size: wgpu::BufferSize::new(MATRIX_BYTES),
+                    min_binding_size: wgpu::BufferSize::new(MODEL_BYTES),
                 },
                 count: None,
             }],
@@ -455,11 +500,18 @@ impl MapRenderer {
                 resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                     buffer: &models,
                     offset: 0,
-                    size: wgpu::BufferSize::new(MATRIX_BYTES),
+                    size: wgpu::BufferSize::new(MODEL_BYTES),
                 }),
             }],
         });
-        let placed: Vec<[[f32; 4]; 4]> = mesh.models.iter().map(Placement::matrix).collect();
+        let placed: Vec<ModelPlacement> = mesh
+            .models
+            .iter()
+            .map(|p| ModelPlacement {
+                matrix: p.matrix(),
+                depth: ModelDepth::AsDrawn,
+            })
+            .collect();
         queue.write_buffer(&models, 0, &model_bytes(&placed));
         let world_vertex = wgpu::VertexBufferLayout {
             array_stride: VERTEX_BYTES,
@@ -517,7 +569,7 @@ impl MapRenderer {
         };
         let world = ("vertex", &world_vertex);
         let pipelines = [
-            pipeline(world, "fragment", Pass::Opaque),
+            pipeline(("lit_vertex", &world_vertex), "fragment", Pass::Opaque),
             pipeline(world, "turbulent", Pass::Blended),
             pipeline(world, "sky", Pass::Opaque),
         ];
@@ -762,18 +814,18 @@ impl MapRenderer {
         }
     }
 
-    /// Moves the models to `matrices`, the world's first, as the entities stand now
-    /// (REND-1.9); a model given `None` is not drawn, and a matrix past the mesh's models is
-    /// left out.
-    pub fn set_placements(&mut self, queue: &Queue, matrices: &[Option<[[f32; 4]; 4]>]) {
-        let take = matrices.len().min(self.model_count);
-        let matrices = matrices.get(..take).unwrap_or(&[]);
-        for (shown, matrix) in self.shown.iter_mut().zip(matrices) {
-            *shown = matrix.is_some();
+    /// Moves the models to `placements`, the world's first, as the entities stand now
+    /// (REND-1.9), each at its depth (REND-1.15); a model given `None` is not drawn, and a
+    /// placement past the mesh's models is left out.
+    pub fn set_placements(&mut self, queue: &Queue, placements: &[Option<ModelPlacement>]) {
+        let take = placements.len().min(self.model_count);
+        let placements = placements.get(..take).unwrap_or(&[]);
+        for (shown, placement) in self.shown.iter_mut().zip(placements) {
+            *shown = placement.is_some();
         }
-        let placed: Vec<[[f32; 4]; 4]> = matrices
+        let placed: Vec<ModelPlacement> = placements
             .iter()
-            .map(|m| m.unwrap_or(Placement::WORLD.matrix()))
+            .map(|p| p.unwrap_or(ModelPlacement::WORLD))
             .collect();
         queue.write_buffer(&self.models, 0, &model_bytes(&placed));
     }
@@ -1065,15 +1117,19 @@ impl MapRenderer {
 /// `Fog_SetupFrame`: `glFogf (GL_FOG_DENSITY, Fog_GetDensity () / 64.0)` (REND-10.4).
 const REND_FOG_DENSITY_SCALE: f32 = 64.0;
 
-/// Each matrix at its [`MODEL_STRIDE`], column by column.
-fn model_bytes(matrices: &[[[f32; 4]; 4]]) -> Vec<u8> {
+/// Each placement at its [`MODEL_STRIDE`]: its matrix column by column, then its depth bias
+/// and three zeros.
+fn model_bytes(placements: &[ModelPlacement]) -> Vec<u8> {
     let stride = usize::try_from(MODEL_STRIDE).unwrap_or(256);
-    let mut bytes = vec![0; matrices.len().saturating_mul(stride)];
-    for (chunk, matrix) in bytes.chunks_mut(stride).zip(matrices) {
-        let floats: Vec<u8> = matrix
+    let mut bytes = vec![0; placements.len().saturating_mul(stride)];
+    for (chunk, placement) in bytes.chunks_mut(stride).zip(placements) {
+        let floats: Vec<u8> = placement
+            .matrix
             .iter()
             .flatten()
-            .flat_map(|v| v.to_ne_bytes())
+            .copied()
+            .chain([placement.depth.bias(), 0.0, 0.0, 0.0])
+            .flat_map(f32::to_ne_bytes)
             .collect();
         for (b, f) in chunk.iter_mut().zip(floats) {
             *b = f;
@@ -1371,8 +1427,8 @@ pub struct MapCallback {
     pub particles: Vec<ParticleVertex>,
     /// The 2D layer: the view blend, then the status bar and the centre print.
     pub flat: FlatFrame,
-    /// Each of the mesh's models' matrices, the world's first; `None` for one not drawn.
-    pub placements: Vec<Option<[[f32; 4]; 4]>>,
+    /// Each of the mesh's models' placements, the world's first; `None` for one not drawn.
+    pub placements: Vec<Option<ModelPlacement>>,
     /// The faces' lightmaps made again for this frame's light styles and dynamic lights
     /// (REND-5.5, REND-5.7).
     pub lightmap: Vec<LightmapPatch>,
@@ -1561,14 +1617,14 @@ mod tests {
 
     use super::{
         ALIAS_VERTEX_BYTES, AliasDraw, Assets, DEPTH_COMPARE, FlatBlend, FlatDraw, FlatFrame,
-        FlatVertex, Fog, MapCallback, MapRenderer, ModelFrame, Pass, SpriteDraw, SpriteFrame, View,
-        alias_bytes, grown,
+        FlatVertex, Fog, MapCallback, MapRenderer, ModelDepth, ModelFrame, ModelPlacement, Pass,
+        SpriteDraw, SpriteFrame, View, ZFIX_BIAS, alias_bytes, grown, model_bytes,
     };
     use crate::alias::AliasVertex;
     use crate::camera::Camera;
     use crate::look::Look;
     use crate::mesh::tests::{MapSpec, bsp, palette, samples};
-    use crate::mesh::{Image, LightmapPatch};
+    use crate::mesh::{Image, LightmapPatch, MeshBuilder, Placement};
     use crate::particles::ParticleVertex;
     use crate::picture::tests::{TgaSpec, solid, tga};
     use crate::skybox::Skybox;
@@ -1777,6 +1833,67 @@ mod tests {
         // The view spans x -8 to 72 and y -24 to 56: the face's corner (0, 0) is 8 units from
         // the view's left edge and 24 from its top, 6 and 19 pixels; beyond it is the clear.
         assert_eq!(pixel(&image, 2, 2), [0, 0, 0, 255]);
+    }
+
+    // spec REND-1.15: a model's uniform is its matrix and then its depth bias, 1/1024 behind
+    // or 0 as drawn
+    #[test]
+    fn a_models_uniform_carries_its_depth_bias() {
+        let bias = |depth| {
+            let bytes = model_bytes(&[ModelPlacement {
+                depth,
+                ..ModelPlacement::WORLD
+            }]);
+            f32::from_ne_bytes(bytes[64..68].try_into().unwrap())
+        };
+        assert_eq!(ZFIX_BIAS, 1.0 / 1024.0);
+        assert_eq!(bias(ModelDepth::Behind), ZFIX_BIAS);
+        assert_eq!(bias(ModelDepth::AsDrawn), 0.0);
+        let bytes = model_bytes(&[ModelPlacement::WORLD]);
+        assert_eq!(f32::from_ne_bytes(bytes[0..4].try_into().unwrap()), 1.0);
+        assert_eq!(f32::from_ne_bytes(bytes[60..64].try_into().unwrap()), 1.0);
+    }
+
+    // spec REND-1.15: of a brush entity's face flush with the world's, the entity's is seen as
+    // GLQuake draws it (REND-1.11) and the world's with Ironwail's z-fix
+    #[test]
+    fn the_zfix_draws_a_flush_entity_behind_the_world() {
+        let state = egui_kittest::wgpu::create_render_state(
+            egui_kittest::wgpu::default_wgpu_setup(),
+            egui_wgpu::RendererOptions::default(),
+        );
+        let (bright, dim) = (samples(&[255]), samples(&[50]));
+        let palette = palette();
+        let mut builder = MeshBuilder::new(&palette, Look::GlQuake);
+        builder
+            .add(&bsp(&seen_from_above(), &bright), &[Placement::WORLD])
+            .unwrap();
+        builder
+            .add(&bsp(&seen_from_above(), &dim), &[Placement::WORLD])
+            .unwrap();
+        let mesh = builder.finish();
+        let seen = |depth| {
+            let renderer = MapRenderer::new(
+                &state.device,
+                &state.queue,
+                FORMATS,
+                &mesh,
+                &Assets::default(),
+            );
+            let callback = MapCallback {
+                placements: vec![
+                    Some(ModelPlacement::WORLD),
+                    Some(ModelPlacement {
+                        depth,
+                        ..ModelPlacement::WORLD
+                    }),
+                ],
+                ..frame()
+            };
+            pixel(&render(&state, renderer, &callback, BLACK), 32, 32)
+        };
+        assert_eq!(seen(ModelDepth::Behind), FACE, "the world's, at full light");
+        assert_ne!(seen(ModelDepth::AsDrawn), FACE, "the entity's, dimmer");
     }
 
     // spec REND-4.13: a player skin is uploaded when its key is not the one its slot holds;
@@ -2342,6 +2459,7 @@ mod tests {
             entries,
             [
                 "vertex",
+                "lit_vertex",
                 "fragment",
                 "turbulent",
                 "sky",

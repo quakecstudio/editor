@@ -52,9 +52,6 @@ const TEXEL_UNITS: f32 = 16.0;
 /// `MAX_DLIGHTS`: the lights `R_PushDlights` marks, one bit each (REND-7.1), QuakeSpasm's 64
 /// (REND-7.7).
 pub const REND_MAX_DLIGHTS: usize = 64;
-/// QuakeSpasm's `DIST_EPSILON`, `(0.03125)`, by which `gl_zfix` moves a brush entity
-/// (REND-1.12).
-const ZFIX: f32 = 0.031_25;
 /// The world units of one lightmap texel, `light_s*16` (REND-1.3).
 const LIGHTMAP_TEXEL: f32 = 16.0;
 /// The atlas's width in texels; its height grows with the faces it holds.
@@ -350,16 +347,6 @@ impl Placement {
         origin: [0.0; 3],
         angles: [0.0; 3],
     };
-
-    /// The placement QuakeSpasm's `gl_zfix` draws: the origin moved by -1/32 on every axis
-    /// (REND-1.12), so a brush entity flush with the world is drawn just behind it.
-    #[must_use]
-    pub fn zfixed(&self) -> Self {
-        Self {
-            origin: self.origin.map(|v| v - ZFIX),
-            ..*self
-        }
-    }
 
     /// The column-major matrix that moves a model's vertex to where [`Self::position`] puts it.
     #[must_use]

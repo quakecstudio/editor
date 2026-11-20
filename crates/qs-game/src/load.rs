@@ -13,7 +13,8 @@ use qs_client::{Client, Event, MENU_SAVEGAMES, ModelInfo, Models, Random};
 use qs_mdl::mdl::Mdl;
 use qs_mdl::spr::Sprite;
 use qs_render::{
-    Camera, Degrees, Extras, Look, MapMesh, MeshBuilder, Palette, Pics, Placement, Play, Surface,
+    Camera, Degrees, Extras, Look, MapMesh, MeshBuilder, ModelDepth, Palette, Pics, Placement,
+    Play, Surface,
 };
 use qs_sim::debug::Debugger;
 use qs_sim::localization::{Localization, RRE_LOC_FILE};
@@ -460,7 +461,11 @@ impl Args {
             .at
             .as_deref()
             .and_then(|values| <[f32; 4]>::try_from(values).ok());
-        let zfix = !self.nozfix;
+        let zfix = if self.nozfix {
+            ModelDepth::AsDrawn
+        } else {
+            ModelDepth::Behind
+        };
         let look = self.look.look();
         let gamma = self.gamma.unwrap_or_else(|| look.gamma());
         let vfs = Vfs::new(StdFs, &engine, ".").map_err(|e| Error::Load(format!("{e:?}")))?;

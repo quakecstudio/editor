@@ -71,7 +71,8 @@ texture darkened by the lightmap. The map view and the preview host draw the wor
   `R_DrawEntitiesOnList` in `R_RenderScene`), with `glDepthFunc (GL_LEQUAL)`
   (`R_Clear`): of a brush entity's face and a world face at the same depth, such as a lowered
   lift's top flush with the floor, the entity's is seen.
-- **REND-1.12** GLQuake draws such a pair as it rasterizes them, so where their depths differ
+- **REND-1.12** **Withdrawn** 2026-11-20: it moved a brush entity by QuakeSpasm's `gl_zfix`;
+  ADR-0026 takes Ironwail's work-around in its place; replaced by REND-1.15. GLQuake draws such a pair as it rasterizes them, so where their depths differ
   by rounding they flicker. QuakeSpasm (`sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`,
   `Quake/r_brush.c`, `R_DrawBrushModel`) has the option `gl_zfix`, off by default
   (`Quake/gl_rmain.c`, `cvar_t gl_zfix = {"gl_zfix", "0", CVAR_NONE}`), which before
@@ -102,6 +103,22 @@ texture darkened by the lightmap. The map view and the preview host draw the wor
   the image is drawn with the world's sampler and mipmaps, not `TEXPREF_NEAREST`, so with
   linear filtering the squares' edges blend and at a distance the checker averages to one
   colour.
+- **REND-1.15** GLQuake draws REND-1.11's pair as it rasterizes them, so where their depths
+  differ by rounding they flicker. Ironwail (`andrei-drexler/ironwail@08d578136ff43d7d1ef38e636dfbfd3e844be7cd`)
+  has "a more precise ~hack~work-around for the z-fighting issues present in the original
+  levels" (`README.md`) under `gl_zfix`, "`1`" by default (`Quake/gl_rmain.c`, "`// QuakeSpasm
+  z-fighting fix`"), where QuakeSpasm's is "`0`" and moves the entity's origin by
+  `-DIST_EPSILON` on each axis. `Quake/r_world.c`, `R_DrawBrushModels_Real`, gives a model's
+  draw calls `zfix = !isworld && !isdecal`, a decal being a static entity's alpha-tested faces,
+  and `R_AddBModelCall` sets the call's `CF_USE_POLYGON_OFFSET` from it unless `gl_zfix` is 0
+  or `map_checks` is set; the world vertex shader (`Quake/gl_shaders.h`) then does "`if
+  ((call.flags & CF_USE_POLYGON_OFFSET) != 0u) gl_Position.z += ZBIAS;`", `ZBIAS` being
+  "`-1./1024`" with `REVERSED_Z` (the clip control path, depth from 1 near to 0 far) and
+  "`1./1024`" without. The preview host does the same by default, under ADR-0026: every brush
+  entity's clip depth is moved 1/1024 back, in its depth from 0 near to 1 far, the clip control
+  path's amount, so of such a pair the world's face is seen. It has no alpha-tested brush
+  faces, so no face is a decal, and no `map_checks`. GLQuake's drawing, REND-1.11's, is the
+  option, `--nozfix`. The world is never moved.
 
 ## REND-2 Moving textures
 

@@ -16,10 +16,10 @@ use qs_wad::{WAD_MAGIC, WAD_TYP_QPIC};
 
 use super::{FogState, Model, Pics, Play, PlayError, fog_parse_worldspawn};
 use crate::alias::tests::{MdlSpec, SkinSpec, mdl};
-use crate::gpu::{FlatBlend, FlatDraw, Fog};
+use crate::gpu::{FlatBlend, FlatDraw, Fog, ModelDepth};
 use crate::md5::tests::{Md5Spec, md5mesh};
 use crate::mesh::tests::{MapSpec, bsp, palette, samples};
-use crate::mesh::{Image, MapMesh};
+use crate::mesh::{Image, MapMesh, MeshBuilder, Placement};
 use crate::picture::tests::solid;
 
 /// A WAD2 of picture lumps: each a name, a size and one palette index for every pixel.
@@ -768,4 +768,52 @@ fn gamma_goes_to_the_frame_or_the_blend_by_look() {
         let callback = play.frame(&Scene::default(), &Hud::default(), &bsp, &mut mesh, 1.0);
         assert_eq!(callback.view.gamma, framed, "{look:?}");
     }
+}
+
+// spec REND-1.15: a brush entity is placed behind the world by default, as GLQuake draws it
+// with the option; the world is always as drawn
+#[test]
+fn a_brush_entity_is_placed_behind_by_default() {
+    let lighting = samples(&[50]);
+    let world = bsp(&MapSpec::default(), &lighting);
+    let palette = palette();
+    let mut builder = MeshBuilder::new(&palette, Look::GlQuake);
+    let lift = Placement {
+        model: 0,
+        origin: [0.0, 0.0, 5.0],
+        angles: [0.0; 3],
+    };
+    builder.add(&world, &[Placement::WORLD, lift]).unwrap();
+    let mut mesh = builder.finish();
+    let mut play = play();
+    play.models = vec![Model::None, Model::Submodel(1)];
+    let scene = Scene {
+        entities: vec![SceneEntity {
+            model: ModelIndex::new(1),
+            origin: [0.0, 0.0, 9.0],
+            ..SceneEntity::default()
+        }],
+        ..Scene::default()
+    };
+    let depths = |play: &mut Play, mesh: &mut MapMesh| {
+        play.frame(&scene, &Hud::default(), &world, mesh, 1.0)
+            .placements
+            .iter()
+            .map(|p| p.map(|p| p.depth))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        depths(&mut play, &mut mesh),
+        [Some(ModelDepth::AsDrawn), Some(ModelDepth::Behind)]
+    );
+    play.zfix = ModelDepth::AsDrawn;
+    assert_eq!(
+        depths(&mut play, &mut mesh),
+        [Some(ModelDepth::AsDrawn), Some(ModelDepth::AsDrawn)]
+    );
+    let placed = play
+        .frame(&scene, &Hud::default(), &world, &mut mesh, 1.0)
+        .placements[1]
+        .unwrap();
+    assert_eq!(placed.matrix[3], [0.0, 0.0, 9.0, 1.0], "moved, not shifted");
 }

@@ -44,7 +44,7 @@ pub struct Args {
     /// GLQuake's `-gamma` (REND-3.1); without it, the look's (REND-13.2).
     #[arg(long)]
     pub gamma: Option<f32>,
-    /// Brush models without QuakeSpasm's `gl_zfix` (REND-1.12).
+    /// Brush models drawn as GLQuake draws them, without Ironwail's `gl_zfix` (REND-1.15).
     #[arg(long)]
     pub nozfix: bool,
     /// How light styles blend from letter to letter, Ironwail's `r_lerplightstyles`: every
