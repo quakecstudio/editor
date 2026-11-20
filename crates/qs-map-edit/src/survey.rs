@@ -184,6 +184,11 @@ pub struct SummaryParams {
     /// maps, as when comparing a set of them. The open map when not given.
     #[serde(default)]
     pub path: Option<PathBuf>,
+    /// Only this many of the classnames and of the textures, the most used first; all of
+    /// them when not given. A full map names hundreds of textures, so a few of each is what
+    /// to ask for when reading many maps.
+    #[serde(default)]
+    pub most: Option<usize>,
 }
 
 impl MapSummary {
@@ -238,7 +243,8 @@ impl<C: HasMap + 'static> Command<C> for MapSummarise {
         box around its brushes, its brush and entity counts, its entities counted by classname \
         (monsters, lights, items, triggers), its textures counted by face, and its world's \
         keys. The open map, or with a path a .map file read from the disk without opening \
-        it. map.inspect lists each entity; this counts them.";
+        it; with `most`, only that many classnames and textures, which keeps it short when \
+        many maps are read. map.inspect lists each entity; this counts them.";
     type Params = SummaryParams;
     type Output = MapSummary;
     type Error = MapEditError;
@@ -248,15 +254,17 @@ impl<C: HasMap + 'static> Command<C> for MapSummarise {
         context: &mut C,
         params: SummaryParams,
     ) -> Result<Outcome<MapSummary, C>, MapEditError> {
-        if let Some(path) = params.path {
-            let read = MapRead::of(&path)?;
-            return Ok(Outcome::unchanged(MapSummary::of(&path, &read.file)));
+        let mut summary = if let Some(path) = params.path {
+            MapSummary::of(&path, &MapRead::of(&path)?.file)
+        } else {
+            let document = context.map_store().map().ok_or(MapEditError::NoMap)?;
+            MapSummary::of(document.path(), document.file())
+        };
+        if let Some(most) = params.most {
+            summary.classes.truncate(most);
+            summary.textures.truncate(most);
         }
-        let document = context.map_store().map().ok_or(MapEditError::NoMap)?;
-        Ok(Outcome::unchanged(MapSummary::of(
-            document.path(),
-            document.file(),
-        )))
+        Ok(Outcome::unchanged(summary))
     }
 }
 

@@ -191,6 +191,21 @@ fn the_summary_counts_what_the_map_holds() {
     );
     assert!(summary.path.ends_with("keep.map"));
 
+    // `most` keeps the most used of each list and nothing else is cut.
+    let short: MapSummary =
+        serde_json::from_value(session.execute(MAP_SUMMARY, json!({ "most": 2 })).unwrap())
+            .unwrap();
+    assert_eq!(short.classes, summary.classes[..2]);
+    assert_eq!(short.textures, summary.textures[..2]);
+    assert_eq!(
+        (short.entities, short.bounds),
+        (summary.entities, summary.bounds)
+    );
+    let none: MapSummary =
+        serde_json::from_value(session.execute(MAP_SUMMARY, json!({ "most": 0 })).unwrap())
+            .unwrap();
+    assert!(none.classes.is_empty() && none.textures.is_empty());
+
     // A file is summarised from the disk without being opened: the open map stays the open
     // map, and a file that is not there is refused.
     let other = summary.path.with_file_name("other.map");

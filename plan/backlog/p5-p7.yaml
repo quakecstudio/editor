@@ -2449,9 +2449,14 @@ groups:
     - 'The map tools that light a map report how dark it is where it matters: each room, or the space around the player start and each entity, with its light level, so a room too dark to play is found without a picture'
     - 'A way to look at a map as the game draws it with its monsters asleep: a play option or a view that takes the frame before any monster acts'
     - 'The brush tools that add, cut or hollow brushes answer the places of the brushes they made'
+    - 'The game the MCP server''s own session plays has no window and no sound, and `map.summary` can answer only the most used classnames and textures (both done first, on 2026-11-20: an agent''s review opened the game on the person''s screen at every look, and a full summary named hundreds of textures)'
+    - '`map.issues` finds the entity a `target` names: a second trial on 2026-11-20 was told nothing targets a door that a func_button of LibreQuake targets'
+    - '`map.play_from_here` answers where the player is in the game, not where it was asked to be: asked for a point inside a button, it answered that point while the player stood at the start'
     acceptance:
     - 'A map with a lit room and an unlit room is reported with the unlit room dark, checked by a test'
     - 'A frame of a map with a monster beside the point played from shows the monster where the map put it, checked by a test in the simulation'
     - 'A doorway is carved between two rooms using only the places the brush tools answered, with no `map.brushes` call, checked by a test'
+    - 'A func_button whose target is a door''s targetname leaves no issue on the door, checked by a test on LibreQuake''s QuakeC or a fixture like it'
+    - '`map.play_from_here` at a point where the player does not fit answers the origin the game reports, checked by a test'
     verify:
     - 'cargo nextest run -p qs-map-edit -p qs-workbench'

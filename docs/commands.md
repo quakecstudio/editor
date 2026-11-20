@@ -141,7 +141,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.show_all`](#mapshow_all) | Shows every entity of the open map hidden in the editor (TrenchBroom's Show All); a hidden layer stays hidden. |
 | [`map.stage`](#mapstage) | Begins review of the open map's edits: the map as it is now is kept, and each edit after it waits as a hunk to accept or reject. The agent's map edits begin it themselves; while it is open it is left as it is. |
 | [`map.staged`](#mapstaged) | Lists the open map's hunks waiting for review: for each, the entities it is in, and the keys and brushes it adds, changes or removes. |
-| [`map.summary`](#mapsummary) | A map in short, to review it or compare it with others: the box around its brushes, its brush and entity counts, its entities counted by classname (monsters, lights, items, triggers), its textures counted by face, and its world's keys. The open map, or with a path a .map file read from the disk without opening it. map.inspect lists each entity; this counts them. |
+| [`map.summary`](#mapsummary) | A map in short, to review it or compare it with others: the box around its brushes, its brush and entity counts, its entities counted by classname (monsters, lights, items, triggers), its textures counted by face, and its world's keys. The open map, or with a path a .map file read from the disk without opening it; with `most`, only that many classnames and textures, which keeps it short when many maps are read. map.inspect lists each entity; this counts them. |
 | [`map.textures`](#maptextures) | Lists the open map's textures: those of the WADs its world names, found in the project, beside the map or in the game, of the BSP it was opened from, and of the game's own levels, each once with where it comes from, its size and how many faces use it, and the names its faces use that nothing holds. |
 | [`map.turn`](#mapturn) | Turns entities and brushes by degrees about the vertical through the middle of their box, counter-clockwise seen from above: brushes and point entities' origins and facing, as TrenchBroom's Rotate. |
 | [`map.ungroup`](#mapungroup) | Takes a group's entities and brushes out of it into the layer or group it is in, or the world's, and removes the group. |
@@ -6607,7 +6607,7 @@ Parameters:
 
 ## `map.summary`
 
-A map in short, to review it or compare it with others: the box around its brushes, its brush and entity counts, its entities counted by classname (monsters, lights, items, triggers), its textures counted by face, and its world's keys. The open map, or with a path a .map file read from the disk without opening it. map.inspect lists each entity; this counts them.
+A map in short, to review it or compare it with others: the box around its brushes, its brush and entity counts, its entities counted by classname (monsters, lights, items, triggers), its textures counted by face, and its world's keys. The open map, or with a path a .map file read from the disk without opening it; with `most`, only that many classnames and textures, which keeps it short when many maps are read. map.inspect lists each entity; this counts them.
 
 Parameters:
 
@@ -6617,6 +6617,16 @@ Parameters:
   "additionalProperties": false,
   "description": "The parameters of `map.summary`.",
   "properties": {
+    "most": {
+      "default": null,
+      "description": "Only this many of the classnames and of the textures, the most used first; all of\nthem when not given. A full map names hundreds of textures, so a few of each is what\nto ask for when reading many maps.",
+      "format": "uint",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
     "path": {
       "default": null,
       "description": "A `.map` file to summarise from the disk, which is not opened: the way to read many\nmaps, as when comparing a set of them. The open map when not given.",
