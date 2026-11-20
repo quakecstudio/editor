@@ -328,3 +328,30 @@ fn the_startup_text_runs_before_the_map() {
         ])]
     );
 }
+
+// spec INPUT-3.7: the map being loaded comes after the startup text, so a level command in it
+// is passed over and the rest runs; quit waits for the host
+#[test]
+fn the_startup_text_passes_over_level_commands() {
+    let load = |startup: &str| {
+        running_from(
+            &MapSpec::default(),
+            super::compile(""),
+            "",
+            Vec::new(),
+            LoadOptions {
+                startup: startup.as_bytes().to_vec(),
+                ..LoadOptions::default()
+            },
+        )
+    };
+    let mut run = load("map start; skill 2; changelevel e1m2; restart; load s0; save s1; skill 3");
+    assert_eq!(run.world.take_host_command(), None);
+    assert_eq!(run.world.setting("skill"), Some(3.0), "the rest ran");
+    let mut quit = load("quit; skill 2");
+    assert_eq!(
+        quit.world.take_host_command(),
+        Some(crate::HostCommand::Quit)
+    );
+    assert_eq!(quit.world.setting("skill"), Some(1.0), "the rest waits");
+}

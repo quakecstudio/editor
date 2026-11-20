@@ -108,9 +108,14 @@ id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d` does it in `WinQuak
   ("`Cbuf_InsertText ("exec quake.rc\n");`", `Quake/host.c`, sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`)
   before a map is started: the text goes before the console's buffer and runs then, so a
   configuration's `skill`, `deathmatch`, `coop` and `sv_protocol` (NET-6.11) take the first map,
-  and its bindings reach the window with its first frame. A `wait` in it leaves the rest to the
-  map's first frame, and a host command in it (`map`, `load`) waits for the host as PHYS-13.6
-  says. The host's launch settings come after it, as `stuffcmds` comes last in `quake.rc`. A
+  and its bindings reach the window with its first frame; what it prints shows as the map
+  starts. A `wait` in it leaves the rest to the map's first frame. The map the host was started
+  on is QuakeSpasm's `+map`, which `stuffcmds` runs last in `quake.rc`, after the configuration:
+  so the host passes over a host command the text asks for (`map`, `changelevel`, `restart`,
+  `load`, `save`) and runs the rest, where QuakeSpasm would load that map and then the command
+  line's, and only `quit` waits for the host (PHYS-13.6). `--protocol` is the protocol the host
+  starts with, which the text's `sv_protocol` may change (NET-6.11); the host's other launch
+  settings come after the text, as `stuffcmds` does. A
   headless host (`--headless`, a view script, `--timerefresh`) runs none, so a scenario starts
   from the defaults. id1's `quake.rc` runs `default.cfg`, `config.cfg` and `autoexec.cfg`;
   `config.cfg` is the host's own (INPUT-4.4), not the game directory's, which another engine

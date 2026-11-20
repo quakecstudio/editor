@@ -12,6 +12,7 @@
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/pr_exec.c, PR_Profile_f
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/common.c, COM_Path_f
 // Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/cmd.c, Cmd_List_f, Cmd_AddCommand
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/sv_main.c, SV_Protocol_f
 
 //! The console (PHYS-13): id's command buffer and `Cmd_ExecuteString` for text from the console
 //! or the progs' `localcmd`, with one table of commands: `cmd.c`'s, the settings, the commands
@@ -617,7 +618,7 @@ impl World {
         self.print(format!("map:     {map}\n"));
         self.print(format!("players: {active} active (1 max)\n\n"));
         if active == 1 {
-            let name = String::from_utf8_lossy(&self.builtins.client_name).into_owned();
+            let name = String::from_utf8_lossy(&self.builtins.messages.client.name).into_owned();
             let frags = float_to_int(self.field(1, "frags").as_f32());
             self.print(format!("#1  {name:<16.16}  {frags:3}   0:00:00\n"));
             // `loop_server->address`, the server's end of the loopback connection.

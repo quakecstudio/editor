@@ -374,6 +374,18 @@ pub(crate) enum Start {
     Kept(HostState),
 }
 
+impl Start {
+    /// The kept host state for [`LoadOptions::host`] and the console text for
+    /// [`LoadOptions::startup`]: `exec quake.rc` only for a new host that runs it (INPUT-3.7).
+    pub(crate) fn host_and_startup(self) -> (Option<HostState>, Vec<u8>) {
+        match self {
+            Self::New(Startup::QuakeRc) => (None, STARTUP.to_vec()),
+            Self::New(Startup::Bare) => (None, Vec::new()),
+            Self::Kept(host) => (Some(host), Vec::new()),
+        }
+    }
+}
+
 /// Whether a new host runs `quake.rc` before its first map's settings are read (INPUT-3.7).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Startup {
@@ -539,11 +551,7 @@ impl Args {
         // RRE-1.6, RRE-1.10: the rerelease's strings, read before the map as QuakeSpasm's
         // `LOC_Init` reads them, from the search path, the base directory or `QuakeEX.kpf`.
         let text = localization(&vfs, self)?;
-        let (host, startup) = match host {
-            Start::New(Startup::QuakeRc) => (None, STARTUP.to_vec()),
-            Start::New(Startup::Bare) => (None, Vec::new()),
-            Start::Kept(host) => (Some(host), Vec::new()),
-        };
+        let (host, startup) = host.host_and_startup();
         let options = LoadOptions {
             localization: text.map_or_default(|text| Localization::loc_load_file(&text)),
             builtins,
@@ -602,6 +610,8 @@ impl Args {
             Reporting::Off
         };
         let mut game = Game::new(world, progs_bytes.clone(), reporting);
+        // INPUT-3.7: what the startup configuration printed, shown as the map starts.
+        game.report_console();
         // BRIDGE-3.4, WORLD-9.4: the line of each statement, from the `.lno` beside the progs when
         // it is one for this progs (LNO-4.1).
         let lines = read("progs.lno")

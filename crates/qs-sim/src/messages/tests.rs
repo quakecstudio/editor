@@ -458,6 +458,7 @@ fn the_serverinfo_names_the_game() {
 // spec NET-2.4: the spawn message: the time, each slot's name, frags and colours, the 64
 // light styles, the four stats, the client's setangle, the client data, signon 3
 // spec NET-2.5: datagrams start with the frame after the begin
+// spec PHYS-10.8: the client's name and colours follow the spawn message
 #[test]
 fn the_spawn_message_lists_the_client_state() {
     let more = "void() worldspawn = { lightstyle(0, \"m\"); lightstyle(63, \"az\"); \
@@ -493,6 +494,9 @@ fn the_spawn_message_lists_the_client_state() {
     assert_eq!([r.angle(), r.angle(), r.angle()], [9.84375, 19.6875, 0.0]);
     skip_clientdata(&mut r);
     assert_eq!((r.byte(), r.byte()), (25, 3));
+    // PHYS-10.8: the name and colours the client sent before spawn, after the spawn message.
+    assert_eq!((r.byte(), r.byte(), r.string().as_str()), (13, 0, "player"));
+    assert_eq!((r.byte(), r.byte(), r.byte()), (17, 0, 0));
     assert!(r.done());
     run.frames(1, 0.1).unwrap();
     assert_eq!(run.packets().len(), 1, "a datagram, and nothing reliable");
@@ -1545,6 +1549,14 @@ fn sv_protocol_chooses_the_maps_protocol() {
         15,
         "refused, kept"
     );
+    assert_eq!(with("sv_protocol 666", ProtocolVersion::NetQuake), 666);
+    assert_eq!(with("sv_protocol 666", ProtocolVersion::Rmq), 666);
+    let (mut both, _) = loaded(starting(
+        "skill 3; sv_protocol 15",
+        ProtocolVersion::default(),
+    ));
+    assert_eq!(both.world.setting("skill"), Some(3.0));
+    assert_eq!(protocol_sent(&mut both), 15);
     let (_, lines) = loaded(starting("sv_protocol junk", ProtocolVersion::default()));
     assert_eq!(lines, ["sv_protocol must be 15 or 666 or 999"]);
     let (_, lines) = loaded(starting("sv_protocol 15", ProtocolVersion::default()));
