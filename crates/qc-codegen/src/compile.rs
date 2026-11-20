@@ -1326,6 +1326,11 @@ fn literal_of_token(literal: &ast::Literal, dialect: Dialect) -> Option<Literal>
             if part.kind().is_trivia() {
                 continue;
             }
+            // FTEF-14.81: a part that is `__FUNC__`, outside every function.
+            if part.kind() == SyntaxKind::Name {
+                joined.extend_from_slice(qc_sema::NO_FUNCTION.as_bytes());
+                continue;
+            }
             let lexed = qc_lexer::lex_with(part.text(), dialect);
             let [
                 qc_lexer::Token {

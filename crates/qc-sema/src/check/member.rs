@@ -723,6 +723,24 @@ impl Checker<'_> {
                 let span = field.syntax().span();
                 self.element_member(base, element, member, word, span)?
             }
+            // FTEF-6.34: a member of a struct that is an entity's field is the field at the
+            // member's word (`QCC_PR_ParseRefArrayPointer`'s `REF_FIELD`, whose index is the
+            // field's definition at the member's offset); a field an index selected has no
+            // definition to offset.
+            Reference::Field(of) => {
+                if of.selected.is_some() && word != 0 {
+                    self.followed = false;
+                }
+                Value {
+                    sym: base.sym,
+                    name: base.name.clone(),
+                    reference: Reference::Field(Box::new(FieldRef {
+                        element: Some(of.element.unwrap_or(0).saturating_add(word)),
+                        ..of.as_ref().clone()
+                    })),
+                    ..member
+                }
+            }
             _ => Value {
                 sym: base.sym.at(word),
                 name: base.name.clone(),

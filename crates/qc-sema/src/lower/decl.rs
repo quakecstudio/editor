@@ -551,7 +551,7 @@ fn string_len(literal: &ast::Literal) -> Option<u32> {
         return None;
     }
     // FTEF-16.8: adjacent parts are one string.
-    let bytes = joined_string(literal.syntax())?;
+    let bytes = joined_string(literal.syntax(), NO_FUNCTION)?;
     u32::try_from(bytes.len()).ok()
 }
 

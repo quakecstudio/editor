@@ -472,10 +472,21 @@ impl Checker<'_> {
                 .passed_in_pieces(&reference.ty, span)
                 .filter(|_| !self.global);
             if let Some(pieces) = pieces {
-                let to = reference
-                    .name()
-                    .filter(|name| matches!(name, ir::Name::Def(..)))
-                    .filter(|_| reference.reference == Reference::Global);
+                // FTEF-6.34: to an entity's field, its pieces from the slots' words.
+                if matches!(reference.reference, Reference::Field(_)) {
+                    self.field_store(reference, &returned, &reference.ty, span);
+                    continue;
+                }
+                // A definition's words, or those of its element at a constant index.
+                let to = match &reference.reference {
+                    Reference::Global => reference
+                        .name()
+                        .filter(|name| matches!(name, ir::Name::Def(..))),
+                    Reference::Element(element) if !element.vector => {
+                        reference.definition_place().and_then(|place| place.word())
+                    }
+                    _ => None,
+                };
                 match (to, usize::try_from(held)) {
                     (Some(to), Ok(held)) => {
                         for (op, word) in pieces {
@@ -1472,7 +1483,10 @@ impl Checker<'_> {
                 } else {
                     PathList::Model
                 };
-                if let Some(bytes) = args.first().and_then(string_bytes) {
+                if let Some(bytes) = args
+                    .first()
+                    .and_then(|arg| string_bytes(arg, self.function_name()))
+                {
                     self.env
                         .record_path(list, &String::from_utf8_lossy(&bytes), span);
                 }
@@ -1676,7 +1690,7 @@ impl Checker<'_> {
             _ => return,
         };
         let bytes = match arg {
-            ast::Expr::Literal(_) => string_bytes(arg),
+            ast::Expr::Literal(_) => string_bytes(arg, self.function_name()),
             ast::Expr::Name(name) => name
                 .name()
                 .and_then(|t| self.env.reference(t.span().start))

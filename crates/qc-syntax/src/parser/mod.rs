@@ -685,6 +685,15 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// FTEF-14.81: whether the token `n` ahead is `__FUNC__` or `__func__`, which FTEQCC's
+    /// lexer reads as a string.
+    fn function_name_at(&self, n: usize) -> bool {
+        self.fteqcc()
+            && self
+                .nth(n)
+                .is_some_and(|t| t.kind == K::Name && matches!(&*t.text, "__FUNC__" | "__func__"))
+    }
+
     /// [`Self::checks`] of a keyword's own flag.
     fn kw(&self, n: usize, keyword: Keyword) -> bool {
         self.checks(n, Enabled::By(keyword), keyword.word())
@@ -3344,8 +3353,26 @@ impl<'a> Parser<'a> {
             K::FloatLit | K::VectorLit | K::StringLit | K::FrameRef => {
                 self.start_node(K::Literal);
                 self.bump();
-                // FTEF-16.8: adjacent string literals are one string.
-                while self.fteqcc() && kind == K::StringLit && self.at(K::StringLit) {
+                // FTEF-16.8: adjacent string literals are one string, `__FUNC__` among them
+                // (FTEF-14.81).
+                while self.fteqcc()
+                    && kind == K::StringLit
+                    && (self.at(K::StringLit) || self.function_name_at(0))
+                {
+                    self.bump();
+                }
+                (K::Literal, false)
+            }
+            // FTEF-14.81: `__FUNC__` beside a string, or another of itself, is a part of the
+            // one string they make.
+            K::Name
+                if self.function_name_at(0)
+                    && (self.nth(1).is_some_and(|t| t.kind == K::StringLit)
+                        || self.function_name_at(1)) =>
+            {
+                self.start_node(K::Literal);
+                self.bump();
+                while self.at(K::StringLit) || self.function_name_at(0) {
                     self.bump();
                 }
                 (K::Literal, false)

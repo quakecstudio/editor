@@ -121,6 +121,24 @@ impl Checker<'_> {
                     );
                     return self.fatal(Code::E0358, span, message);
                 }
+                // FTEF-6.34: a struct's or a union's is loaded in pieces into a temporary.
+                if matches!(self.etype_of(&value.ty), Some(Etype::Struct | Etype::Union))
+                    && !self.global
+                    && let Reference::Field(field) = &value.reference
+                {
+                    let field = field.as_ref().clone();
+                    let block = self.load_field_words(&field, &value.ty, span);
+                    return Ok(Value {
+                        reference: Reference::Global,
+                        sym: Sym::Temp,
+                        made: Some(block),
+                        word: 0,
+                        temp: None,
+                        returned: false,
+                        call: None,
+                        ..value
+                    });
+                }
                 // FTEF-34.9: an entity's field is loaded by `OP_LOAD_*` of its type.
                 let load = match self.etype_of(&value.ty) {
                     Some(Etype::Vector) => Op::LoadV,
@@ -201,6 +219,46 @@ impl Checker<'_> {
                 self.emit(op, &string, &index, span)
             }
         }
+    }
+
+    /// FTEF-6.34: `QCC_PR_ExpandField` of a struct or a union: its words loaded from the
+    /// entity into a temporary, three at a time by `OP_LOAD_V`, then two by `OP_LOAD_I64` where
+    /// the target has it, then one by `OP_LOAD_F`, each from the field's definition at the
+    /// word. The generated statement the temporary is made at.
+    fn load_field_words(&mut self, field: &FieldRef, ty: &Type, span: Span) -> u32 {
+        let words = self.env.layout(ty).map_or(0, |layout| layout.words);
+        let pairs = self.env.target_at(span.start).valid(Op::LoadI64);
+        let entity = self.copied(field.entity, field.entity_call);
+        // A field an index selected is a value, which has no word after it.
+        if field.selected.is_some() && words > 1 {
+            self.followed = false;
+        }
+        let block = self.next_made();
+        self.effects.push((block, ir::Effect::Block(words)));
+        let mut at: u32 = 0;
+        while at < words {
+            let left = words.saturating_sub(at);
+            let (op, size) = if left >= VECTOR_WORDS {
+                (Op::LoadV, VECTOR_WORDS)
+            } else if left >= 2 && pairs {
+                (Op::LoadI64, 2)
+            } else {
+                (Op::LoadF, 1)
+            };
+            self.generated.push(ir::BodyStatement {
+                op,
+                a: entity,
+                b: field.operand().and_then(|name| name.word(at)),
+                c: Some(ir::Name::MadeWord(block, at)),
+            });
+            at = at.saturating_add(size);
+        }
+        if entity == Some(ir::Name::Return) {
+            self.live_return = None;
+            self.live_call = None;
+        }
+        self.last_temp = None;
+        block
     }
 
     /// FTEF-2.12: a definition of an 8- or 16-bit integer, `ev_bitfld`, read as a bitfield at bit

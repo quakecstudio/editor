@@ -635,6 +635,41 @@ inheritance, bitfields and nested members.
   records `is.__function` and `is.n`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_DummyDef`; `engine/qclib/qccmain.c`; checked against the pinned FTEQCC's output on
   an FTE target (2026-11-19).
+- **FTEF-6.34** A struct or a union that is an entity's field takes a field for each of its
+  words, and is read and stored by them. A read loads its words into a temporary
+  (`QCC_PR_ExpandField`, `case ev_struct: case ev_union:`): three at a time by `OP_LOAD_V`
+  (`for (; i+2 < type->size; i+=3 ...)`), then two by `OP_LOAD_I64` where the target has it,
+  then one by `OP_LOAD_F`, each from the field's definition at the word. A member of it is the
+  field at the member's word, read and stored as a field of the member's type: `x = e.sf.b` is
+  `LOAD_F e, sf+1`. A store (`QCC_StoreSRefToRef`, `case REF_FIELD:`) is the same pieces: where
+  the target has the type's `OP_STOREF_*`, `OP_STOREF_V` for each three words, `OP_STOREF_I64`
+  for two where it has that, and `OP_STOREF_I` for a word; else, for each piece, `OP_ADDRESS`
+  of the entity and the field at the piece's word and `OP_STOREP_V`, `OP_STOREP_I64` where the
+  target has it, or `OP_STOREP_F` through it. So on the standard target `self.sf = one` of a
+  struct of 5 words is `ADDRESS self, sf`, `STOREP_V one`, `ADDRESS self, sf+3`, `STOREP_F
+  one+3`, `ADDRESS self, sf+4`, `STOREP_F one+4`, and on an FTE target `STOREF_V self, sf,
+  one` and `STOREF_I64 self, sf+3, one+3`. An out parameter comes back to such a field the
+  same way from its slot's words (FTEF-32.24), and to an element at a constant index at the
+  element's own words. FTEQCC stores a constant 0 to a pair of such a field's words by
+  `OP_STOREF_V` of the zero vector, three words to two, which is not written. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ExpandField`, `QCC_StoreSRefToRef`, `QCC_PR_ParseRefArrayPointer`; checked against
+  the pinned FTEQCC's output on the standard and an FTE target (2026-11-19).
+- **FTEF-6.35** A struct that is not whole words is stored through a pointer by
+  `QCC_StoreToPointer`'s walk of its bits: its whole words as FTEF-6.18 has them, then the 16
+  bits left by `OP_STOREP_I16` or else the 8 bits left by `OP_STOREP_I8` (`if (i+16 <= bits)
+  ... else if (i+8 <= bits)`), each through `QCC_PR_Statement_SmallStore`, which writes the
+  opcode where the target has it and else reads the word by `OP_LOADP_I`, masks the value and
+  shifts it to its bits, clears those bits of the word, joins the two and stores the word by
+  `OP_STOREP_I` (FTEF-6.18). Bits left after that are FTEQCC's internal error "Underwrote", as
+  a struct of three 8-bit members is. A struct with a member of a word before its narrow ones
+  is padded to whole words and is stored as words. On an FTE target `*p = g` of a struct of
+  one `__int8` is `STOREP_I8 g, p, 0`, and of two, or of one `__int16`, `LOADP_I p, 0`,
+  `BITAND_I g, 65535`, `LSHIFT_I t, 0`, `BITAND_I word, ~65535`, `BITOR_I` and `STOREP_I`.
+  With an index, and for a struct of 24 bits, the store is not written. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_StoreToPointer`, `QCC_PR_Statement_SmallStore`; checked against the pinned FTEQCC's
+  output on an FTE target (2026-11-19).
 
 ## FTEF-7 `typedef` of any type
 
@@ -2662,6 +2697,15 @@ profile the preprocessor reads them as FTEQCC does.
   as FTEQCC's expansion is, and is a syntax error. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
   `QCC_PR_CheckBuiltinCompConst`; checked against the pinned FTEQCC's output on the standard
   target and an FTE one (2026-11-19).
+- **FTEF-14.81** `__FUNC__` and `__func__` (FTEF-14.80) are read by the lexer as a string, so
+  one written beside a string literal, or beside another of itself, is a part of the one
+  string adjacent strings make (FTEF-16.8), on either side: in a function `fname`, `"pre:"
+  __FUNC__` is `"pre:fname"`, `__FUNC__ ":post"` is `"fname:post"`, `"a" __func__ "b"` is
+  `"afnameb"` and `__FUNC__ __FUNC__` is `"fnamefname"`; outside every function `"g:"
+  __FUNC__` is `"g:<NO FUNCTION>"`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_CheckBuiltinCompConst`, `QCC_PR_LexString`; checked against the strings of the
+  pinned FTEQCC's output (2026-11-19).
 
 ## FTEF-15 Declarations
 
