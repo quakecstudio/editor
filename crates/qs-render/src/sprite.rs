@@ -16,6 +16,7 @@ use qs_mdl::spr::{
 
 use crate::mesh::{Image, Palette};
 use crate::vector::{add, cross, dot, scale, sub};
+use qs_client::EntScale;
 
 /// The palette index a sprite does not draw, `GL_LoadTexture (..., alpha)` with
 /// `TEXPREF_ALPHA` (REND-11.2).
@@ -67,6 +68,8 @@ pub struct SpriteEntity {
     pub frame: i32,
     /// `syncbase` (CLIENT-2.4).
     pub syncbase: f32,
+    /// Its scale, QuakeSpasm's `ENTSCALE_DECODE(e->scale)` (REND-14.3).
+    pub scale: EntScale,
 }
 
 /// The eye the sprites face: its origin and its forward, right and up vectors.
@@ -198,8 +201,14 @@ impl SpriteModel {
     ) -> Option<usize> {
         let frame = self.frame(entity, time, eye)?;
         let (s_up, s_right) = self.axes(entity, eye)?;
+        // REND-14.3: "`VectorMA (e->origin, frame->down * scale, s_up, point)`", each offset
+        // times the entity's scale.
+        let size = entity.scale.decode();
         let corner = |up: f32, right: f32, texture: [f32; 2]| SpriteVertex {
-            position: add(add(entity.origin, scale(s_up, up)), scale(s_right, right)),
+            position: add(
+                add(entity.origin, scale(s_up, up * size)),
+                scale(s_right, right * size),
+            ),
             texture,
         };
         // `glBegin (GL_TRIANGLE_FAN)` over the four corners: two triangles from the first.

@@ -216,10 +216,12 @@ impl Md5Model {
                 );
                 let shade =
                     normal_dot(one.normal, light) * iblend + normal_dot(two.normal, light) * blend;
+                let position = position.map(|c| c * entity.scale);
                 Some(AliasVertex {
                     position: rotate_for_entity(entity.origin, turn, position),
                     texture,
                     shade: (shade * shadelight).clamp(0.0, 1.0),
+                    alpha: entity.alpha,
                 })
             }));
             let slots = part.skins.get(entity.skin).or_else(|| part.skins.first());

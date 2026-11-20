@@ -53,6 +53,8 @@ const SKY_T_FLIP: f32 = 1.0;
 const SKY_NEGATIVE: f32 = 0.0;
 // The skybox has no mipmaps.
 const SKY_LEVEL: f32 = 0.0;
+// REND-14.2: `depth.z` above this when a brush entity's alpha is its own, not the default.
+const NO_OWN_ALPHA: f32 = 0.0;
 // Every surface is drawn opaque: the sky's alpha layer is blended in the shader (REND-2.3).
 const OPAQUE: f32 = 1.0;
 // The w of a position, which makes it a point the view matrix moves.
@@ -167,7 +169,8 @@ fn fragment(input: Out) -> @location(0) vec4<f32> {
     // REND-13.4: "result += texture2D(FullbrightTex, ...)", then "clamp(result, 0.0, 1.0)".
     let glow = textureSample(second, surface_sampler, input.texture).rgb;
     let lit = clamp(colour.rgb * light + glow, vec3<f32>(0.0), vec3<f32>(1.0));
-    return vec4<f32>(corrected(fogged(lit, input.world)), OPAQUE);
+    // REND-14.2: a brush entity's alpha, blended in the alpha pass; 1 for any other model.
+    return vec4<f32>(corrected(fogged(lit, input.world)), model.depth.y);
 }
 
 // REND-2.2: `(s + 8 sin(t*0.125 + realtime)) / 64`, and t the same way round; REND-2.6: lit
@@ -184,7 +187,13 @@ fn turbulent(input: Out) -> @location(0) vec4<f32> {
     if (input.light.x >= LIGHTMAP_START) {
         colour = clamp(colour * light, vec3<f32>(0.0), vec3<f32>(1.0));
     }
-    return vec4<f32>(corrected(fogged(colour, input.world)), view.params.x);
+    // REND-14.2: `GL_WaterAlphaForEntitySurface`, the entity's alpha unless it is the
+    // default, then the water's.
+    var alpha = view.params.x;
+    if (model.depth.z > NO_OWN_ALPHA) {
+        alpha = model.depth.y;
+    }
+    return vec4<f32>(corrected(fogged(colour, input.world)), alpha);
 }
 
 // REND-2.3: the solid layer scrolling under the alpha layer, both seen from the eye, or
@@ -255,6 +264,8 @@ struct AliasIn {
     @location(0) position: vec3<f32>,
     @location(1) texture: vec2<f32>,
     @location(2) shade: f32,
+    // REND-14.2: the entity's alpha, 1 for opaque.
+    @location(3) alpha: f32,
 };
 
 struct AliasOut {
@@ -263,6 +274,7 @@ struct AliasOut {
     // Interpolated across the triangle, `glShadeModel (GL_SMOOTH)` (REND-4.8).
     @location(1) shade: f32,
     @location(2) world: vec3<f32>,
+    @location(3) alpha: f32,
 };
 
 @vertex
@@ -272,6 +284,7 @@ fn alias_vertex(input: AliasIn) -> AliasOut {
     out.texture = input.texture;
     out.shade = input.shade;
     out.world = input.position;
+    out.alpha = input.alpha;
     return out;
 }
 
@@ -282,7 +295,8 @@ fn alias_fragment(input: AliasOut) -> @location(0) vec4<f32> {
     // REND-13.4: a skin's glow, black for one with none.
     let glow = textureSample(second, surface_sampler, input.texture).rgb;
     let lit = clamp(colour.rgb * input.shade + glow, vec3<f32>(0.0), vec3<f32>(1.0));
-    return vec4<f32>(corrected(fogged(lit, input.world)), OPAQUE);
+    // REND-14.2: "glColor4f(1,1,1,entalpha)", blended in the alpha pass.
+    return vec4<f32>(corrected(fogged(lit, input.world)), input.alpha);
 }
 
 struct SpriteIn {

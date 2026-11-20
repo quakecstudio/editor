@@ -16,16 +16,15 @@
 use std::sync::Arc;
 
 use qs_bsp::{Bsp, Submodel};
-use qs_client::{Anchor, EntitySlot, HUD_SBAR_HEIGHT, Hud, HudItem, Scene, SceneEntity};
+use qs_client::{Anchor, EntAlpha, EntitySlot, HUD_SBAR_HEIGHT, Hud, HudItem, Scene, SceneEntity};
 use qs_wad::{Conchars, QPic, WAD_CONCHARS_TRANSPARENT, Wad};
 
-use crate::CHANNEL_MAX;
 use crate::alias::{AliasEntity, AliasError, AliasKind, AliasModel, Shading, entity_light};
 use crate::camera::Camera;
 use crate::gpu::{
-    AliasDraw, Assets, FlatBlend, FlatDraw, FlatFrame, FlatVertex, Fog, MapCallback, ModelDepth,
-    ModelFrame, ModelPlacement, PLAYER_SKINS, PlayerSkin, PlayerSlot, SkinKey, SpriteDraw,
-    SpriteFrame, View,
+    AliasDraw, Assets, EntityPass, FlatBlend, FlatDraw, FlatFrame, FlatVertex, Fog, MapCallback,
+    ModelDepth, ModelFrame, ModelPlacement, PLAYER_SKINS, PlayerSkin, PlayerSlot, SkinKey,
+    SpriteDraw, SpriteFrame, View,
 };
 use crate::light::light_point;
 use crate::look::Look;
@@ -35,6 +34,7 @@ use crate::particles::particle_triangles;
 use crate::skybox::{SkyKeys, Skybox, sky_parse_worldspawn};
 use crate::sprite::{Eye, SpriteEntity, SpriteError, SpriteModel, angle_vectors};
 use crate::styles::{LightStyles, StyleLerp};
+use crate::{AXES, CHANNEL_MAX};
 
 /// The bar's width, which the bar is centred by on a wider screen: `(vid.width - 320)>>1`
 /// (HUD-1).
@@ -530,6 +530,11 @@ impl Play {
         for entity in scene.entities.iter().chain(&scene.statics) {
             match self.models.get(entity.model.get()) {
                 Some(drawn @ (Model::Alias(..) | Model::Md5(..))) => {
+                    // REND-14.2: "if (entalpha == 0) goto cleanup".
+                    let alpha = entity.alpha.decode();
+                    if alpha == 0.0 {
+                        continue;
+                    }
                     let player = entity.entity.player(scene.maxclients);
                     let kind = if player.is_some() {
                         AliasKind::Player
@@ -546,6 +551,8 @@ impl Play {
                         light: lit,
                         blend: entity.poses,
                         kind,
+                        alpha,
+                        scale: entity.scale.decode(),
                     };
                     drawn.draw_alias(&alias, scene.time, &mut models);
                     let Model::Alias(model, _) = drawn else {
@@ -574,6 +581,7 @@ impl Play {
                         angles: entity.angles,
                         frame: entity.frame,
                         syncbase: entity.syncbase,
+                        scale: entity.scale,
                     };
                     let start = sprites.vertices.len();
                     if let Some(image) =
@@ -618,8 +626,12 @@ impl Play {
                 light: lit,
                 blend: scene.weapon_poses,
                 kind: AliasKind::ViewModel,
+                alpha: scene.weapon_alpha.decode(),
+                scale: 1.0,
             };
-            drawn.draw_alias(&alias, scene.time, &mut weapon);
+            if alias.alpha != 0.0 {
+                drawn.draw_alias(&alias, scene.time, &mut weapon);
+            }
         }
         let screen = self.screen.map(f32_of_i32);
         let mut flat = FlatFrame::default();
@@ -675,9 +687,19 @@ impl Play {
             origin: entity.origin,
             angles: entity.angles,
         };
+        // REND-14.3: `R_RotateForEntity`'s scale, after the turn: the matrix's axes.
+        let scale = entity.scale.decode();
+        let mut matrix = placed.matrix();
+        for column in matrix.iter_mut().take(AXES) {
+            for value in column.iter_mut().take(AXES) {
+                *value *= scale;
+            }
+        }
         *slot = Some(ModelPlacement {
-            matrix: placed.matrix(),
+            matrix,
             depth: self.zfix,
+            // REND-14.2: the entity's alpha, unless it is the default.
+            alpha: (entity.alpha != EntAlpha::DEFAULT).then(|| entity.alpha.decode()),
         });
     }
 
@@ -866,6 +888,7 @@ impl Model {
                         skin: first.saturating_add(image),
                         first: u32_of(start),
                         count: u32_of(count),
+                        pass: EntityPass::of(entity.alpha),
                     });
                     start = start.saturating_add(count);
                 }
@@ -890,6 +913,7 @@ impl AliasModel {
             skin: first_skin.saturating_add(image),
             first: u32_of(start),
             count: u32_of(out.vertices.len().saturating_sub(start)),
+            pass: EntityPass::of(entity.alpha),
         });
     }
 }

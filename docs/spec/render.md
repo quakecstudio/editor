@@ -806,3 +806,38 @@ QuakeSpasm's look by default and GLQuake's as a mode.
   client's blend table is built at gamma 1 in this look, since QuakeSpasm's `R_PolyBlend`
   draws the blend as it is. In GLQuake's look `gamma` only builds the blend table (VIEW-4.7),
   as GLQuake's `V_UpdatePalette` ramps reach no screen.
+
+## REND-14 Entity alpha and scale
+
+**Source:** QuakeSpasm (`sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`):
+`Quake/gl_rmain.c`, `R_DrawEntitiesOnList`, `R_RenderScene`, `R_RotateForEntity`;
+`Quake/r_alias.c`, `R_DrawAliasModel`; `Quake/r_world.c`, `R_DrawTextureChains_GLSL`,
+`GL_WaterAlphaForEntitySurface`; `Quake/r_sprite.c`, `R_DrawSpriteModel`. The alpha and scale an
+entity carries in FitzQuake's protocols (NET-6.8, CLIENT-9.3), drawn as QuakeSpasm draws them,
+under [ADR-0026](../adr/0026-preview-host-later-engine-improvements.md). An entity with the
+default alpha and scale is drawn as REND-1 to REND-13 say.
+
+### Behaviour
+
+- **REND-14.1** QuakeSpasm draws the entities in two passes, "`R_DrawEntitiesOnList (false); //
+  johnfitz -- false means this is the pass for nonalpha entities`" after the world and
+  "`R_DrawEntitiesOnList (true)`" after the world's water, an entity going to the second when
+  "`ENTALPHA_DECODE(currententity->alpha) < 1`". The preview host draws an alias model or a
+  brush entity's lit faces with an alpha below 1 after its water (REND-9.1), and the weapon with
+  an alpha below 1 after them, in its depth range (REND-4.11). A sprite is drawn with the
+  opaque entities whatever its alpha: `R_DrawSpriteModel` reads no alpha, so its pixels are
+  the same, drawn earlier.
+- **REND-14.2** The alpha is `ENTALPHA_DECODE` (NET-6.8): 1 for `ENTALPHA_DEFAULT`, else `(a -
+  1) / 254`. `R_DrawAliasModel` draws nothing when it is 0 ("`if (entalpha == 0) goto
+  cleanup`") and below 1 blends the model with "`glDepthMask(GL_FALSE); glEnable(GL_BLEND);`",
+  its colour's alpha the entity's; the weapon takes `cl.viewent.alpha` (CLIENT-9.6).
+  `R_DrawTextureChains_GLSL` blends a brush entity's lit faces the same way, and
+  `GL_WaterAlphaForEntitySurface` gives its liquid faces "`if (ent == NULL || ent->alpha ==
+  ENTALPHA_DEFAULT) entalpha = GL_WaterAlphaForSurface(s); else entalpha =
+  ENTALPHA_DECODE(ent->alpha);`": the entity's alpha in place of REND-9.1's when it has its own.
+- **REND-14.3** The scale is `ENTSCALE_DECODE` (NET-6.8). `R_RotateForEntity (origin, angles,
+  scale)` turns the model and then "`if (scalefactor != 1.0f) glScalef(scalefactor,
+  scalefactor, scalefactor);`", so an alias model's (and an MD5 model's) vertices and a brush
+  entity's are scaled about its origin after the turn; `R_DrawSpriteModel` takes each corner as
+  "`VectorMA (e->origin, frame->down * scale, s_up, point)`", its frame's offsets times the
+  scale. The weapon is drawn at scale 1, as `cl.viewent`'s scale is never sent.

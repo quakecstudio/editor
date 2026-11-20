@@ -14,6 +14,7 @@ use qs_mdl::spr::{
 
 use super::{Eye, SPR_ANGLED, SpriteEntity, SpriteError, SpriteModel, SpriteVertex};
 use crate::mesh::Palette;
+use qs_client::EntScale;
 
 /// One frame: its origin, size and every pixel's index.
 struct FrameSpec {
@@ -117,6 +118,7 @@ fn entity(origin: [f32; 3]) -> SpriteEntity {
         angles: [0.0; 3],
         frame: 0,
         syncbase: 0.0,
+        scale: EntScale::DEFAULT,
     }
 }
 
@@ -352,4 +354,34 @@ fn only_oriented_sprites_are_decals() {
         .is_oriented()
     );
     assert!(!read(&SprSpec::default()).is_oriented());
+}
+
+// spec REND-14.3: a sprite's corners are its frame's offsets times the entity's scale
+#[test]
+fn a_sprite_is_scaled_by_its_entity() {
+    let model = read(&SprSpec {
+        entries: vec![EntrySpec::Single(FrameSpec {
+            origin: [-2, 3],
+            size: [4, 6],
+            pixel: 0,
+        })],
+        ..SprSpec::default()
+    });
+    let origin = [10.0, 20.0, 30.0];
+    let corners = |scale| {
+        let entity = SpriteEntity {
+            scale: EntScale::from_byte(scale),
+            ..entity(origin)
+        };
+        draw(&model, &entity, 0.0).0
+    };
+    let one = corners(16);
+    let three = corners(48);
+    for (a, b) in one.iter().zip(&three) {
+        for axis in 0..3 {
+            let near = (b.position[axis] - origin[axis]) - 3.0 * (a.position[axis] - origin[axis]);
+            assert!(near.abs() < 1e-4, "{a:?} {b:?}");
+        }
+        assert_eq!(a.texture, b.texture);
+    }
 }

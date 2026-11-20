@@ -58,6 +58,9 @@ the map view and the preview host share one renderer.
 - `Look`: QuakeSpasm's look by default (palette as it is, trilinear mipmaps, glowing
   fullbright texels, overbright light, the view widened to the window) or GLQuake's, which
   `MeshBuilder::new` and `MapMesh::build` take and the renderer draws (REND-13).
+- Entity alpha and scale, FitzQuake's (REND-14): `AliasEntity::alpha` and `scale`,
+  `ModelPlacement::alpha`, `SpriteEntity::scale`; an entity with an alpha below 1 is drawn in
+  the `EntityPass::Alpha` pass, after the water.
 - `SpriteModel::read(name, bytes, palette)`: a `.spr`'s frames; `draw(entity, time, eye,
   out)` appends the quad facing the eye by the sprite's type (REND-11).
 - `particle_triangles(particles, palette, eye)`: a triangle per particle (PART-3.2).

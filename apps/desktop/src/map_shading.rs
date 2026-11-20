@@ -20,8 +20,8 @@ use qs_map::MapFile;
 use qs_map_edit::textures::TextureSources;
 use qs_map_edit::{EntityIndex, MapDocument, MapRevision};
 use qs_render::{
-    AliasDraw, AliasEntity, AliasModel, Camera, EditorCallback, Extras, FlatFace, Image, Look,
-    MapMesh, MeshBuilder, ModelFrame, Placement, Shade, View,
+    AliasDraw, AliasEntity, AliasModel, Camera, EditorCallback, EntityPass, Extras, FlatFace,
+    Image, Look, MapMesh, MeshBuilder, ModelFrame, Placement, Shade, View,
 };
 use qs_wad::texture::Palette;
 
@@ -501,6 +501,7 @@ impl Scene {
                 skin: first.saturating_add(image),
                 first: first_vertex,
                 count,
+                pass: EntityPass::Opaque,
             });
         }
         posed

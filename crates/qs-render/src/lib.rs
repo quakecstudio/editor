@@ -47,8 +47,8 @@ pub use alias::{
 pub use camera::{Camera, Degrees};
 pub use flat::{FlatFace, Shade};
 pub use gpu::{
-    AliasDraw, Assets, EditorCallback, EditorRenderer, FlatBlend, FlatDraw, FlatFrame, FlatVertex,
-    Fog, GameCallback, GameRenderer, MapCallback, MapRenderer, ModelDepth, ModelFrame,
+    AliasDraw, Assets, EditorCallback, EditorRenderer, EntityPass, FlatBlend, FlatDraw, FlatFrame,
+    FlatVertex, Fog, GameCallback, GameRenderer, MapCallback, MapRenderer, ModelDepth, ModelFrame,
     ModelPlacement, PlayerSkin, PlayerSlot, SkinKey, SpriteDraw, SpriteFrame, View,
 };
 pub use light::light_point;

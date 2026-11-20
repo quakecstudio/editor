@@ -1151,6 +1151,8 @@ impl Client {
                 skin: e.skin,
                 syncbase: 0.0,
                 poses: None,
+                alpha: e.alpha,
+                scale: e.scale,
             })
             .collect();
         Scene {
@@ -1160,6 +1162,7 @@ impl Client {
             statics,
             view: refdef,
             weapon_poses,
+            weapon_alpha: self.weapon.alpha,
             blend: self.view.blend(self.view_settings.cshiftpercent),
             lights: self
                 .dlights
@@ -2265,6 +2268,8 @@ impl Client {
             skin: ent.skin,
             syncbase: ent.syncbase,
             poses,
+            alpha: ent.alpha,
+            scale: ent.scale,
         }
     }
 
@@ -2345,6 +2350,8 @@ impl Client {
                         current: 0,
                         blend: 1.0,
                     }),
+                    alpha: EntAlpha::DEFAULT,
+                    scale: EntScale::DEFAULT,
                 });
                 for (o, u) in org.iter_mut().zip(unit) {
                     *o += u * CLIENT_BEAM_STEP;

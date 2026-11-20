@@ -57,6 +57,7 @@ pub use particles::{
     Trail, TrailSpacing,
 };
 pub use qc_edict::SoundEntity;
+pub use qs_sim::protocol::{EntAlpha, EntScale};
 pub use scene::{DynamicLight, EntitySlot, PoseBlend, Scene, SceneEntity, SceneParticle};
 pub use view::{
     Contents, Footing, Refdef, Shift, VIEW_BOB, VIEW_BOBCYCLE, VIEW_BOBUP, VIEW_CENTERMOVE,
