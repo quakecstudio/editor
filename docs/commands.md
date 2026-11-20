@@ -82,7 +82,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.brush_texture`](#mapbrush_texture) | Sets the texture, shift, rotation or scale of every face of brushes of an entity, keeping what is not given (MAP-12). |
 | [`map.brush_vertex`](#mapbrush_vertex) | Moves a vertex of a brush of the open map to a point snapped to the grid; the brush becomes the convex hull of its vertices so moved. |
 | [`map.brush_vertices`](#mapbrush_vertices) | Moves several vertices of a brush at once, each to a point snapped to the grid; the brush becomes the hull of its vertices so moved (MAP-15.7). |
-| [`map.brushes`](#mapbrushes) | Lists the brushes of an entity of the open map, the world's when none is named: each brush's place, which the map.brush_* tools take, the box around it and its textures; all of them, or those touching a box. A brush a tool adds takes the place `total`; a tool that cuts or hollows brushes changes their places, so list them again after it. |
+| [`map.brushes`](#mapbrushes) | Lists the brushes of an entity of the open map, the world's when none is named: each brush's place, which the map.brush_* tools take, the box around it and its textures; all of them, or those touching a box. The brush tools answer the places of the brushes they make, so this is for brushes whose places are not known: a map someone else built, or after a tool that changed how many brushes the entity has. |
 | [`map.check`](#mapcheck) | Checks a .map: what id's qbsp and ericw-tools read otherwise, and its entities against the project's server QuakeC as the engine reads them: unknown classnames and keys with the closest name, values their field cannot read, and targets and targetnames nothing matches. It reads the file alone, so it says a world that names no WAD is one as id's qbsp does; map.issues and map.find_leaks say whether a texture of the open map is missing. |
 | [`map.choose_profile`](#mapchoose_profile) | Chooses the compile profile map.run_profile runs when given none; none given chooses Full again. |
 | [`map.compare_with_disk`](#mapcompare_with_disk) | How the open map's file, changed by another program, differs from the map being edited, entity by entity. |
@@ -3994,7 +3994,7 @@ Parameters:
 
 ## `map.brushes`
 
-Lists the brushes of an entity of the open map, the world's when none is named: each brush's place, which the map.brush_* tools take, the box around it and its textures; all of them, or those touching a box. A brush a tool adds takes the place `total`; a tool that cuts or hollows brushes changes their places, so list them again after it.
+Lists the brushes of an entity of the open map, the world's when none is named: each brush's place, which the map.brush_* tools take, the box around it and its textures; all of them, or those touching a box. The brush tools answer the places of the brushes they make, so this is for brushes whose places are not known: a map someone else built, or after a tool that changed how many brushes the entity has.
 
 Parameters:
 

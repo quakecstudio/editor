@@ -147,7 +147,9 @@ The server's instructions give an agent the order (L-40); it is the one a person
 3. The `map.brush_*` tools take a brush by its place among its entity's brushes, and each
    answers the places of the brushes it made or changed (`brushes`) with how many the entity
    now has (`total`): the box just added, the walls of a hollowed room, the pieces a cut
-   left. A tool that removes brushes moves the places of those after them. `map.brushes`
+   left. A tool that changes how many brushes the entity has (a hollow, a clip, a cut, a
+   merge, a delete) moves the places of the brushes after the one it worked on, so an answer
+   from before it is stale for those. `map.brushes`
    lists the places, each with the box around the brush and its textures, all of them or those
    touching a box, for a map someone else built.
 4. `map.place_entity` puts in the player start, the lights, the monsters and the items, with keys

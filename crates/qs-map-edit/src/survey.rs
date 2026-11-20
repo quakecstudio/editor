@@ -92,9 +92,10 @@ impl<C: HasMap + 'static> Command<C> for MapBrushes {
     const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "Lists the brushes of an entity of the open map, the world's \
         when none is named: each brush's place, which the map.brush_* tools take, the box \
-        around it and its textures; all of them, or those touching a box. A brush a tool adds \
-        takes the place `total`; a tool that cuts or hollows brushes changes their places, so \
-        list them again after it.";
+        around it and its textures; all of them, or those touching a box. The brush tools \
+        answer the places of the brushes they make, so this is for brushes whose places are \
+        not known: a map someone else built, or after a tool that changed how many brushes \
+        the entity has.";
     type Params = BrushesParams;
     type Output = BrushesListed;
     type Error = MapEditError;

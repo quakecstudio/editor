@@ -195,7 +195,7 @@ impl core::fmt::Display for PreviewError {
             Self::NoRoom([x, y, z]) => write!(
                 f,
                 "there is no room for the player at ({x} {y} {z}) or above or below it: move \
-                 the camera out of the wall or floor"
+                 the camera out of the wall, the floor or the door or other entity it is in"
             ),
         }
     }

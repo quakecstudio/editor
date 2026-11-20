@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 
 use qs_bsp::{Bsp, BspLoader};
 use qs_commands::{Command, NoParams, Outcome};
+use qs_engine::{ClientError, ErrorCode};
 use qs_map::qbsp::QbspWarning;
 use qs_map_bsp::{Compiled, Compiler, Warning};
 use qs_map_light::{Extras, Finish, Light, Sampling, Sidecars};
@@ -622,11 +623,19 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
         let angles = params.angles.unwrap_or_default().map(single);
         // BRIDGE-4.19: the game puts the player where its box is free of the map's entities
         // too, which the BSP's hull does not hold, and says where.
-        let placed = client.spawn_player_at(origin, angles)?;
-        let origin = placed
-            .get("origin")
-            .and_then(|at| serde_json::from_value(at.clone()).ok())
-            .unwrap_or(origin);
+        let origin = match client.place_player_near(origin, angles) {
+            Ok(placed) => placed,
+            // An entity fills the place and every height near it: as with a camera in a
+            // wall, nothing plays.
+            Err(ClientError::Rpc {
+                code: ErrorCode::InvalidParams,
+                ..
+            }) => {
+                preview.stop();
+                return Err(PreviewError::NoRoom(params.eye));
+            }
+            Err(error) => return Err(error.into()),
+        };
         if params.start == GameStart::Paused {
             // One frame, so the client's view is the player's new place; no monster has
             // moved in it.

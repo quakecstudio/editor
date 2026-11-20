@@ -617,32 +617,36 @@ fn player_origin(client: &mut Client) -> Result<[f64; 3], String> {
 /// A point outside every map: nothing but solid is there, or around it.
 const NOWHERE: [f32; 3] = [30000.0, 30000.0, 30000.0];
 
-/// BRIDGE-4.19: the player is put where its box is free and the answer says where: where it
-/// stands now, there; where there is no room, nowhere, and it stays.
+/// BRIDGE-4.19: with `room` `find` the player is put where its box is free and the answer
+/// says where: where it stands now, there; where there is no room, nowhere, and it stays.
+/// The game is paused meanwhile, so nothing else moves the player.
 fn player_is_put_where_it_fits(client: &mut Client) -> Result<(), String> {
+    client.pause().map_err(|e| format!("pause: {e}"))?;
     let stands = player_origin(client)?;
     #[expect(
         clippy::cast_possible_truncation,
         reason = "the game holds positions in single precision"
     )]
     let at = stands.map(|c| c as f32);
+    let near = |a: [f64; 3], b: [f64; 3]| a.iter().zip(b).all(|(a, b)| (a - b).abs() < 0.01);
     let placed = client
-        .spawn_player_at(at, [0.0, 90.0, 0.0])
+        .place_player_near(at, [0.0, 90.0, 0.0])
         .map_err(|e| format!("player/spawn_at: {e}"))?;
     expect(
-        placed.get("origin") == Some(&json!(at)),
+        near(placed.map(f64::from), stands),
         "player/spawn_at answers where it put the player",
     )?;
-    let refused = client.spawn_player_at(NOWHERE, [0.0; 3]);
+    let refused = client.place_player_near(NOWHERE, [0.0; 3]);
     expect(
         matches!(&refused, Err(qs_engine::ClientError::Rpc { code, .. }) if *code == qs_engine::ErrorCode::InvalidParams),
         "player/spawn_at with no room is refused",
     )?;
-    let after = player_origin(client)?;
     expect(
-        (after[0] - stands[0]).abs() < 1.0 && (after[1] - stands[1]).abs() < 1.0,
+        near(player_origin(client)?, stands),
         "refused, the player stays",
-    )
+    )?;
+    client.resume().map_err(|e| format!("resume: {e}"))?;
+    Ok(())
 }
 
 /// INPUT-2.1, CON-6.1: with no window the console's buttons are the player's: `+forward` typed
