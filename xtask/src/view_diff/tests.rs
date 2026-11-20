@@ -10,8 +10,9 @@
 )]
 
 use super::{
-    CONSOLE_TOLERANCE, Frames, MENU_TOLERANCE, PPM_HEADER, Side, Sound, Tolerance, compare_frames,
-    compare_sound, monster_near, parse_tolerances, route, shot_tolerance, start_of, tolerance_of,
+    CONSOLE_TOLERANCE, Frames, HOST_PROTOCOL, MENU_TOLERANCE, PPM_HEADER, Side, Sound, Tolerance,
+    compare_frames, compare_sound, monster_near, parse_tolerances, route, shot_tolerance, start_of,
+    tolerance_of,
 };
 
 /// A 320 by 240 binary PPM of one grey `level`, its pixel `at` set to `other`.
@@ -309,4 +310,11 @@ fn the_menu_and_console_have_their_own_tolerances() {
     assert!(measured(19.26, 0.747).fits(CONSOLE_TOLERANCE));
     assert!(!measured(40.0, 1.0).fits(MENU_TOLERANCE));
     assert!(!measured(10.0, 0.6).fits(CONSOLE_TOLERANCE));
+}
+
+// spec VIEWDIFF-6.1: the host plays the route at id's protocol 15, before any option the run
+// adds, so a later --host-arg can still choose another
+#[test]
+fn the_host_runs_at_protocol_15() {
+    assert_eq!(HOST_PROTOCOL, ["--protocol", "15"]);
 }

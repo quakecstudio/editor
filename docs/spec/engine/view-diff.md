@@ -170,3 +170,28 @@ reads the table between the `view-diff` markers.
 | `e4m7` | 14 | 0.15 | 0.35 | the behind shot looks at a scrolling texture at another position (11.4 measured) |
 | `end` | 8 | 0.15 | 0.35 | the water's surface moves (6.8 measured) |
 <!-- /view-diff -->
+
+## VIEWDIFF-6 The later engines' ports
+
+**Source:** ours: `xtask/src/view_diff.rs`, `main`; the ports of
+[ADR-0026](../../adr/0026-preview-host-later-engine-improvements.md) (L-21): REND-1.15, REND-2.6,
+REND-5.8, REND-14, NET-6 and CLIENT-9. Measured with `cargo xtask view-diff` on LibreQuake lite
+on macOS, 2026-11-20.
+
+### Behaviour
+
+- **VIEWDIFF-6.1** The host runs the differential at protocol 15 (`--protocol 15`), id's engine's:
+  under 666 `MSG_WriteAngle` is `Q_rint(f * 256.0 / 360.0) & 255` where id's is `((int)f *
+  256 / 360) & 255` (NET-6.2), so a player placed at an angle that is not a whole number of
+  steps faces another way. `lq_e0m1`'s start, angle 15, is byte 11 (15.47 degrees) under 666 and
+  10 (14.06 degrees) in id's engine, and its sky-filled shots measured differences of 14.04 and
+  16.09 at 666 against 7.94 and 9.17 at 15; the other maps' starts are whole steps and measured
+  alike in both.
+The other ports run at their defaults and stay within VIEWDIFF-5's
+  tolerances, with no row of their own: Ironwail's lightstyle blend (REND-5.8) moves a
+  fading style's brightness by less than a letter's step a frame, the z-fix (REND-1.15) only
+  where a brush entity's face is flush with the world's, lit water (REND-2.6) only on a map
+  whose world has it, which none of LibreQuake's starts shows, and the alpha and scale passes
+  (REND-14) only for an entity with its own, which none of them has. Turning each off with its
+  option (`--lerplightstyles 0`, `--nozfix`, `--nolitwater`) left every measurement on
+  `lq_e0m1` unchanged.
