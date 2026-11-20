@@ -191,20 +191,31 @@ fn the_summary_counts_what_the_map_holds() {
     );
     assert!(summary.path.ends_with("keep.map"));
 
-    // `most` keeps the most used of each list and nothing else is cut.
-    let short: MapSummary =
-        serde_json::from_value(session.execute(MAP_SUMMARY, json!({ "most": 2 })).unwrap())
-            .unwrap();
-    assert_eq!(short.classes, summary.classes[..2]);
-    assert_eq!(short.textures, summary.textures[..2]);
+    assert_eq!(summary.texture_count, 4);
+
+    // `most_textures` keeps the most used textures and says how many there are; nothing else
+    // is cut, the classnames least of all.
+    let short = |session: &mut qs_commands::Session<MapContext>, most: usize| -> MapSummary {
+        serde_json::from_value(
+            session
+                .execute(MAP_SUMMARY, json!({ "most_textures": most }))
+                .unwrap(),
+        )
+        .unwrap()
+    };
+    let two = short(&mut session, 2);
+    assert_eq!(two.textures, summary.textures[..2]);
     assert_eq!(
-        (short.entities, short.bounds),
-        (summary.entities, summary.bounds)
+        MapSummary {
+            textures: summary.textures.clone(),
+            ..two
+        },
+        summary
     );
-    let none: MapSummary =
-        serde_json::from_value(session.execute(MAP_SUMMARY, json!({ "most": 0 })).unwrap())
-            .unwrap();
-    assert!(none.classes.is_empty() && none.textures.is_empty());
+    assert!(short(&mut session, 0).textures.is_empty());
+    // A limit at the list's length, or above it, cuts nothing.
+    assert_eq!(short(&mut session, 4), summary);
+    assert_eq!(short(&mut session, 5), summary);
 
     // A file is summarised from the disk without being opened: the open map stays the open
     // map, and a file that is not there is refused.
@@ -224,6 +235,18 @@ fn the_summary_counts_what_the_map_holds() {
     let still: MapSummary =
         serde_json::from_value(session.execute(MAP_SUMMARY, json!({})).unwrap()).unwrap();
     assert_eq!(still, summary);
+    // A file read from the disk is cut the same way.
+    let cut: MapSummary = serde_json::from_value(
+        session
+            .execute(
+                MAP_SUMMARY,
+                json!({ "path": summary.path, "most_textures": 1 }),
+            )
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(cut.textures, summary.textures[..1]);
+    assert_eq!((cut.texture_count, &cut.classes), (4, &summary.classes));
     let missing = summary.path.with_file_name("missing.map");
     assert!(
         session

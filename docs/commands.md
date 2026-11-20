@@ -141,7 +141,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.set_layer`](#mapset_layer) | Turns a layer of the open map hidden, locked or left out of exports on or off, written as TrenchBroom writes it. |
 | [`map.show_all`](#mapshow_all) | Shows every entity of the open map hidden in the editor (TrenchBroom's Show All); a hidden layer stays hidden. |
 | [`map.stage`](#mapstage) | Begins review of the open map's edits: the map as it is now is kept, and each edit after it waits as a hunk to accept or reject. The agent's map edits begin it themselves; while it is open it is left as it is. |
-| [`map.summary`](#mapsummary) | A map in short, to review it or compare it with others: the box around its brushes, its brush and entity counts, its entities counted by classname (monsters, lights, items, triggers), its textures counted by face, and its world's keys. The open map, or with a path a .map file read from the disk without opening it; with `most`, only that many classnames and textures, which keeps it short when many maps are read. map.list_entities lists each entity; this counts them. |
+| [`map.summary`](#mapsummary) | A map in short, to review it or compare it with others: the box around its brushes, its brush and entity counts, its entities counted by classname (monsters, lights, items, triggers), its textures counted by face, and its world's keys. The open map, or with a path a .map file read from the disk without opening it; with `most_textures`, only that many textures of the count it gives, which keeps it short when many maps are read. map.list_entities lists each entity; this counts them. |
 | [`map.ungroup`](#mapungroup) | Takes a group's entities and brushes out of it into the layer or group it is in, or the world's, and removes the group. |
 | [`map.unlink_group`](#mapunlink_group) | Unlinks a group from the groups linked to it, which then change on their own (TrenchBroom's Separate Linked Groups). |
 | [`map.unlock_all`](#mapunlock_all) | Unlocks every entity of the open map locked in the editor; a locked layer stays locked. |
@@ -6660,7 +6660,7 @@ Parameters:
 
 ## `map.summary`
 
-A map in short, to review it or compare it with others: the box around its brushes, its brush and entity counts, its entities counted by classname (monsters, lights, items, triggers), its textures counted by face, and its world's keys. The open map, or with a path a .map file read from the disk without opening it; with `most`, only that many classnames and textures, which keeps it short when many maps are read. map.list_entities lists each entity; this counts them.
+A map in short, to review it or compare it with others: the box around its brushes, its brush and entity counts, its entities counted by classname (monsters, lights, items, triggers), its textures counted by face, and its world's keys. The open map, or with a path a .map file read from the disk without opening it; with `most_textures`, only that many textures of the count it gives, which keeps it short when many maps are read. map.list_entities lists each entity; this counts them.
 
 Parameters:
 
@@ -6670,9 +6670,9 @@ Parameters:
   "additionalProperties": false,
   "description": "The parameters of `map.summary`.",
   "properties": {
-    "most": {
+    "most_textures": {
       "default": null,
-      "description": "Only this many of the classnames and of the textures, the most used first; all of\nthem when not given. A full map names hundreds of textures, so a few of each is what\nto ask for when reading many maps.",
+      "description": "Only this many of the textures, the most used first; all of them when not given. A\nfull map names hundreds of textures, so a few is what to ask for when reading many\nmaps. The classnames are never cut: they are the map's monsters, items and triggers.",
       "format": "uint",
       "minimum": 0,
       "type": [

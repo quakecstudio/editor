@@ -538,7 +538,8 @@ const INSTRUCTIONS: &str = "Every command of QuakeC Studio over the project this
     `light` and `angle`; map.make_brush_entity makes a door of a brush. Then map.issues and \
     map.find_leaks must find nothing, and map.save writes the file. To review a map: \
     map.summary counts what it holds (with a path, a .map file read without opening it, to \
-    compare many maps), map.list_entities lists its entities, and \
+    compare many maps; most_textures keeps its texture list short), map.list_entities lists \
+    its entities, and \
     map.play_from_here with engine.screenshot shows it as the game draws it from a point; \
     look at the picture and fix what is dark, empty or blocked.";
 

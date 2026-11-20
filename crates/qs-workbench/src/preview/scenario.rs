@@ -128,7 +128,7 @@ impl Preview {
             run_root,
             map: Some(scenario.map),
             socket: socket_path(),
-            extra: vec!["--headless".to_owned()],
+            extra: vec![LaunchSpec::HEADLESS.to_owned()],
         };
         let mut running = spec
             .launch("QuakeC Studio")
