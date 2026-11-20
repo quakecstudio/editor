@@ -103,6 +103,7 @@ milestone (`MVP-3`). All of them wait for the MVP gate.
 | A Welcome page on first launch and the app's own icon | Editor and UI (PLAT-8, UI-14); asked for by Justin on 2026-11-20 | [L-27](https://github.com/quakecstudio/editor/issues/1053) Show a Welcome page on first launch and the app's own icon |
 | One New Project entry that asks which game in plain words | Editor and UI (UI-14, PLAT-8); asked for by Justin on 2026-11-20 | [L-28](https://github.com/quakecstudio/editor/issues/1055) Ask which game a new project is for once, in plain words |
 | Demos recorded and played in the preview host, in the server's protocol | Preview (ENG-2); split from L-21 by Justin on 2026-11-20 | [L-29](https://github.com/quakecstudio/editor/issues/1059) Record and play demos in the preview host |
+| Map tools an agent can build and review a map with | Map editor (MAP-16), PRIN-6; asked for by Justin on 2026-11-20 | [L-30](https://github.com/quakecstudio/editor/issues/1061) An agent builds and reviews a map without guessing |
 | In-app update check | Quality, testing and release; moved out of the MVP by [ADR-0007](adr/0007-mvp-scope.md) | [P4-19](https://github.com/quakecstudio/editor/issues/130) Update mechanism |
 | Editor integrations for VS Code, Zed and Neovim | Language server; moved out of Phase 2 by Justin on 2026-10-29, as it serves other editors and not the IDE or the engine | [P2-16](https://github.com/quakecstudio/editor/issues/72) Package editor integrations for VS Code, Zed and Neovim |
 
