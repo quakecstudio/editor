@@ -32,7 +32,7 @@ use qs_layout::{
 use qs_map_edit::opens_in_map_editor;
 use qs_render::{Camera, MapMesh};
 use qs_settings::SettingsFile;
-use qs_templates::{GitHub, Template};
+use qs_templates::GitHub;
 use qs_workbench::TASK_LIST;
 use qs_workbench::dock::DockFrame;
 use qs_workbench::game_files::GameFiles;
@@ -681,11 +681,20 @@ impl Shell {
             .apply(action, &mut commands, settings.as_deref(), ctx);
     }
 
-    /// Asks for a new folder with the system's dialog, makes a project of `template` there
-    /// (`project.new`, P4-17) and opens it, saying why when it could not.
-    pub fn new_project(&mut self, template: Template) {
+    /// Shows the New Project dialog (L-28), which asks which game the mod is for and then for
+    /// its folder, makes the project (`project.new`, P4-17) and opens it.
+    pub fn ask_new_project(&mut self) {
+        let commands = Commands::new(&mut self.session, &mut self.preview_error);
+        self.features.project.ask_new_project(&commands);
+    }
+
+    /// The New Project dialog while it is shown.
+    fn new_project_dialog(&mut self, ui: &Ui) {
+        let ctx = ui.ctx().clone();
         let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
-        self.features.project.new_project(&mut commands, template);
+        self.features
+            .project
+            .new_project_dialog(&mut commands, (&ctx, &self.theme));
     }
 
     /// Exports the open project for players (`project.export`, P4-28); the status bar says
@@ -1306,6 +1315,7 @@ impl Shell {
         self.toolbar(ui);
         self.reset_notice(ui);
         self.game_guide(ui);
+        self.new_project_dialog(ui);
         self.about.show(ui.ctx(), &self.theme);
         match self.status_bar(ui) {
             Some(StatusAsk::Show(panel)) => {
@@ -2216,7 +2226,7 @@ impl Shell {
             FeatureAction::Agent(action) => self.agent_action(action, ctx),
             FeatureAction::Left(LeftAction::Open(folder)) => self.open_asked(&folder),
             FeatureAction::Left(LeftAction::OpenFolder) => self.open_folder(),
-            FeatureAction::Left(LeftAction::New(template)) => self.new_project(template),
+            FeatureAction::Left(LeftAction::New) => self.ask_new_project(),
             FeatureAction::Left(LeftAction::Jump(_)) => {}
         }
     }

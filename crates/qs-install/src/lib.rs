@@ -5,9 +5,10 @@
 //! [`find_installs`] looks where Steam, GOG (the registry, GOG Galaxy's library and the
 //! offline installers' folder) and the Heroic launcher put Quake on the running OS, and
 //! [`examine_folder`] accepts any folder the user points at that holds `id1/pak0.pak`,
-//! recognising steamcmd downloads and GOG installers extracted with innoextract. Each
+//! recognising steamcmd downloads and GOG installers extracted with innoextract, and a game
+//! directory of one of those, `id1` itself for one (FS-6.7). Each
 //! [`Install`] reports its original and rerelease base directories with their `id1` and
-//! other game directories (FS-6.1, FS-6.6). [`Install::validate`] identifies the files by their
+//! other game directories (FS-6.1, FS-6.6, FS-6.7). [`Install::validate`] identifies the files by their
 //! published sizes and checksums and says which editions are there and what is missing
 //! (FS-6.2 to FS-6.4). [`link_dir`] makes the directory links of ADR-0008's run roots.
 //!
@@ -347,9 +348,33 @@ impl<'a, F: InstallFs + ?Sized, R: Registry + ?Sized> Finder<'a, F, R> {
 
     /// Looks at a folder the user chose: any folder whose `id1` holds `pak0.pak`, the
     /// folder above a Steam install's `rerelease`, a steamcmd download or the output of
-    /// innoextract. `None` if the folder holds no game.
+    /// innoextract; or a game directory of one of those, `id1` itself for one, in which case
+    /// the folder above it is looked at (FS-6.7). `None` if the folder holds no game.
     #[must_use]
     pub fn examine(&self, folder: &Path) -> Option<Install> {
+        self.examine_chosen(folder)
+            .or_else(|| self.examine_above(folder))
+    }
+
+    /// The install a game directory `folder` belongs to (FS-6.7): the folder above it, links
+    /// resolved, or for the `id1` of an install's `rerelease` folder the folder above that.
+    fn examine_above(&self, folder: &Path) -> Option<Install> {
+        let folder = self.fs.canonical(folder);
+        self.child(&folder, "pak0.pak", EntryKind::File)?;
+        let above = folder.parent()?;
+        let is_rerelease = above
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.eq_ignore_ascii_case(RERELEASE_DIR));
+        is_rerelease
+            .then(|| above.parent())
+            .flatten()
+            .and_then(|install| self.examine_chosen(install))
+            .or_else(|| self.examine_chosen(above))
+    }
+
+    /// The install at the folder `folder` itself, as FS-6.1 accepts a folder the user chose.
+    fn examine_chosen(&self, folder: &Path) -> Option<Install> {
         let source = if self.is_steamcmd(folder) {
             Source::Steamcmd
         } else {

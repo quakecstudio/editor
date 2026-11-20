@@ -91,3 +91,26 @@ fn an_empty_folder_is_missing() {
     assert_eq!(files.missing, ["id1/pak0.pak", "id1/pak1.pak"]);
     assert!(!files.state.plays());
 }
+
+// No spec statement: L-28, which games a folder holds does not depend on the project's game:
+// the original, the rerelease, both (FS-6.6), or none
+#[test]
+fn the_games_a_folder_holds() {
+    use super::Games;
+    for (name, files, games) in [
+        ("games-original", &["id1/pak0.pak"][..], Games::Original),
+        (
+            "games-rerelease",
+            &["QuakeEX.kpf", "id1/pak0.pak"][..],
+            Games::Rerelease,
+        ),
+        (
+            "games-both",
+            &["QuakeEX.kpf", "id1/pak0.pak", "dos/id1/pak0.pak"][..],
+            Games::Both,
+        ),
+        ("games-none", &["readme.txt"][..], Games::None),
+    ] {
+        assert_eq!(Games::check(Some(&folder(name, files))), games, "{name}");
+    }
+}

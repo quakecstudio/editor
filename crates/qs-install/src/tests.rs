@@ -457,6 +457,68 @@ fn macos_innoextract_output() {
     assert_eq!(names(&install, false), ["hipnotic", "rogue"]);
 }
 
+// spec FS-6.7: a game directory chosen in place of its base directory, `id1` for one, is the
+// install of the folder above it: found as a folder's, and as innoextract's `app`; a folder
+// with no `pak0.pak` is not looked above
+#[test]
+fn a_game_directory_chosen_is_its_bases_install() {
+    let fs = MemFs::default()
+        .paks(
+            "/Volumes/Games/Quake",
+            &["id1/pak0.pak", "hipnotic/pak0.pak"],
+        )
+        .dir("/Volumes/Games/Quake/id1/maps")
+        .paks(
+            "/Users/q/Downloads/gog/app",
+            &["ID1/PAK0.PAK", "ID1/PAK1.PAK"],
+        );
+    for chosen in ["/Volumes/Games/Quake/id1", "/Volumes/Games/Quake/hipnotic"] {
+        let install = examine(&fs, chosen).unwrap();
+        assert_eq!(install.source, Source::Folder, "{chosen}");
+        assert_eq!(install.root, p("/Volumes/Games/Quake"), "{chosen}");
+        let original = install.original.as_ref().unwrap();
+        assert_eq!(original.id1, p("/Volumes/Games/Quake/id1"), "{chosen}");
+    }
+    let install = examine(&fs, "/Users/q/Downloads/gog/app/ID1").unwrap();
+    assert_eq!(install.root, p("/Users/q/Downloads/gog/app"));
+    assert!(install.original.is_some());
+    assert!(examine(&fs, "/Volumes/Games/Quake/id1/maps").is_none());
+    assert!(examine(&fs, "/Volumes/Games").is_none());
+}
+
+// spec FS-6.7: the folder above is found with links resolved, so a link to `id1` is the
+// install `id1` is in, not the folder the link is in
+#[test]
+fn a_linked_game_directory_is_its_targets_install() {
+    let fs = MemFs::default()
+        .paks("/Volumes/Games/Quake", &["id1/pak0.pak"])
+        .dir("/Users/q/links")
+        .alias("/Users/q/links/quake-id1", "/Volumes/Games/Quake/id1");
+    let install = examine(&fs, "/Users/q/links/quake-id1").unwrap();
+    assert_eq!(install.root, p("/Volumes/Games/Quake"));
+}
+
+// spec FS-6.7: the `id1` of an install's `rerelease` folder is the whole install, the
+// original game above it included; where the folder above holds no original game, the
+// rerelease alone
+#[test]
+fn the_rereleases_id1_chosen_is_the_whole_install() {
+    let fs = MemFs::default()
+        .paks(
+            "/Steam/common/Quake",
+            &["id1/pak0.pak", "id1/pak1.pak", "rerelease/id1/pak0.pak"],
+        )
+        .file("/Steam/common/Quake/rerelease/QuakeEX.kpf", b"")
+        .paks("/Epic/Quake/rerelease", &["id1/pak0.pak"])
+        .file("/Epic/Quake/rerelease/QuakeEX.kpf", b"");
+    let install = examine(&fs, "/Steam/common/Quake/rerelease/id1").unwrap();
+    assert_eq!(install.root, p("/Steam/common/Quake"));
+    assert!(install.original.is_some() && install.rerelease.is_some());
+    let install = examine(&fs, "/Epic/Quake/rerelease/id1").unwrap();
+    assert_eq!(install.root, p("/Epic/Quake"));
+    assert!(install.original.is_none() && install.rerelease.is_some());
+}
+
 // spec FS-6.1: any folder whose id1 holds pak0.pak is accepted as the manual override.
 #[test]
 fn any_folder_with_id1_pak0_is_accepted() {

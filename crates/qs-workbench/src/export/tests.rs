@@ -172,6 +172,35 @@ fn the_assets_can_be_packed() {
     assert_eq!(pak.entry_data(&pak_bytes, entry).unwrap(), b"BSP2 start");
 }
 
+// No spec statement: P4-28, LIC-4, id's files are refused wherever the game folder chosen keeps
+// its id1: the folder itself chosen (FS-6.7), and innoextract's `app` below the folder chosen
+// (FS-6.1)
+#[test]
+fn id_data_is_refused_wherever_the_install_keeps_id1() {
+    for (name, id1, chosen) in [("inside", "id1", "id1"), ("innoextract", "app/id1", "")] {
+        let game =
+            std::env::temp_dir().join(format!("qs-export-game-{name}-{}", std::process::id()));
+        let _gone = std::fs::remove_dir_all(&game);
+        std::fs::create_dir_all(game.join(id1)).unwrap();
+        let pak =
+            qs_pak::write_pak(&[("progs/player.mdl", b"IDPO id's player".as_slice())]).unwrap();
+        std::fs::write(game.join(id1).join("pak0.pak"), pak).unwrap();
+        let mut spec = ProjectSpec::default();
+        spec.files
+            .push(("progs/player.mdl", b"IDPO id's player".to_vec()));
+        let root = project(&format!("iddata{name}"), &spec);
+        let params = ExportParams {
+            game: Some(game.join(chosen)),
+            ..ExportParams::default()
+        };
+        let error = export(&root, &params).unwrap_err();
+        assert!(
+            matches!(error, ExportError::IdData { .. }),
+            "{name}: {error}"
+        );
+    }
+}
+
 // No spec statement: P4-28, LIC-4, the acceptance criterion: an export that would include a
 // file of the game's id1 PAKs fails with a message naming it, and the zip is not written
 #[test]

@@ -522,6 +522,13 @@ impl Preview {
         self.config.game.as_deref()
     }
 
+    /// Which games the game folder, or the first install found, holds, whatever game the open
+    /// project is for.
+    #[must_use]
+    pub fn games(&self) -> game_files::Games {
+        game_files::Games::check(self.config.game.as_deref())
+    }
+
     /// The base directory the game's files are read from: the game's the project last played
     /// is for, else the other game's where the install has only that one; `None` when no
     /// install is found.
@@ -2135,8 +2142,8 @@ impl<C: HasPreview + 'static> Command<C> for GameCommand {
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ChooseGameParams {
-    /// The folder: a store's install, a steamcmd download, an innoextract output, or one
-    /// holding `id1`.
+    /// The folder: a store's install, a steamcmd download, an innoextract output, one
+    /// holding `id1`, or a game directory of one of those, `id1` itself for one (FS-6.7).
     pub path: PathBuf,
 }
 

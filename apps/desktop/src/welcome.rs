@@ -7,7 +7,6 @@
 use std::path::PathBuf;
 
 use eframe::egui::{self, Button, RichText, Ui};
-use qs_templates::Template;
 use qs_workbench::game_files::GameFiles;
 
 use crate::features::LeftAction;
@@ -94,6 +93,7 @@ fn game_step(ui: &mut Ui, theme: &Theme, files: Option<&GameFiles>) -> Option<We
                     .color(muted),
             );
         }
+        ui.label(RichText::new(Text::GameInPlace.get()).small().color(muted));
     } else {
         ui.label(RichText::new(Text::WelcomeGameWhy.get()).color(muted));
     }
@@ -102,7 +102,7 @@ fn game_step(ui: &mut Ui, theme: &Theme, files: Option<&GameFiles>) -> Option<We
         .then_some(WelcomeAction::GameFiles)
 }
 
-/// The second step: a new project from a template, a folder to open, why the last one asked
+/// The second step: a new project, a folder to open, why the last one asked
 /// for did not open, and the recent projects.
 fn project_step(ui: &mut Ui, theme: &Theme, page: &Page<'_>) -> Option<WelcomeAction> {
     let recent = page.recent;
@@ -111,13 +111,8 @@ fn project_step(ui: &mut Ui, theme: &Theme, page: &Page<'_>) -> Option<WelcomeAc
     ui.label(RichText::new(Text::WelcomeProjectHow.get()).color(muted));
     let mut action = None;
     ui.horizontal_wrapped(|ui| {
-        for (template, text) in [
-            (Template::Id1, Text::NewId1Menu),
-            (Template::Rerelease, Text::NewRereleaseMenu),
-        ] {
-            if ui.button(text.get()).clicked() {
-                action = Some(LeftAction::New(template));
-            }
+        if ui.button(Text::NewProjectMenu.get()).clicked() {
+            action = Some(LeftAction::New);
         }
         if ui.button(Text::OpenFolderButton.get()).clicked() {
             action = Some(LeftAction::OpenFolder);

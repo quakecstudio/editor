@@ -2356,3 +2356,29 @@ groups:
     - 'The window''s viewport carries the app''s icon rather than eframe''s default'
     verify:
     - 'cargo nextest run -p quakec-studio; the shell snapshots'
+  - key: L-28
+    title: Ask which game a new project is for once, in plain words
+    labels:
+    - L7-ui
+    - area:editor
+    - type:feature
+    size: S
+    reqs:
+    - UI-14
+    - PLAT-8
+    summary: |
+      Justin, 2026-11-20: making a project offers "New id1 Project" and "New Rerelease Project" in the File menu, the Project panel and the Welcome page. "id1" is the original game's folder name, not a word a newcomer knows, and the pair is repeated wherever a project can be started. The choice is real, since the two templates are different starting source for different games, but it is needed once, when a project is made. FTEQW is the model: its game table (engine/common/fs.c, gamemode_info, fte-team/fteqw@f937b9d8) takes the rerelease when the folder holds QuakeEX.kpf and standard Quake when it holds id1/pak0.pak, with a switch to override, and never asks.
+    depends:
+    - L-27
+    deliverable:
+    - 'apps/desktop/src/new_project.rs: a New Project dialog that asks which game the mod is for, Original Quake or Quake rerelease (2021), and then for the folder'
+    - 'The File menu, the Project panel with no project open and the Welcome page each offer one New Project entry that opens the dialog; no interface text says "id1 project"'
+    - 'crates/qs-install and docs/spec/filesystem.md FS-6.7: a game directory chosen as the game folder, id1 itself for one, is the install of the folder above it, so the Quake files guide finds the game when the folder dialog is left inside id1; the export checks id''s files in the id1 the install keeps'
+    - 'The Quake files guide says "Found Quake." and the line that the files are read where they are; the Welcome page says the same'
+    acceptance:
+    - 'Each of the three places has one New Project entry and none names a template, checked by kittest tests and the menu''s tests'
+    - 'The dialog names both games, and choosing one then a folder asks project.new for that template, checked by a kittest test of the dialog'
+    - 'The rerelease is preselected when the game data holds only the rerelease and the original otherwise, whatever game the open project is for, checked by a test over each case'
+    - 'Choosing id1, a mission pack''s folder, a link to id1 or the id1 of an install''s rerelease folder finds the install, each checked by a qs-install test citing FS-6.7; an export refuses id''s files with id1 or innoextract''s output chosen, checked by a qs-workbench test'
+    verify:
+    - 'cargo nextest run -p quakec-studio; the shell snapshots'
