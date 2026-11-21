@@ -50,6 +50,8 @@ const SHADE_MASK: u8 = 0x0F;
 /// The first colour of the rows whose shades run from bright to dark, "backwards ranges"
 /// (REND-4.13).
 const BACKWARDS_FROM: u8 = 128;
+/// The axes a vertex has.
+const AXES: usize = 3;
 /// The bytes of a pixel of a PNG read or written here: red, green, blue and alpha.
 const RGBA: usize = 4;
 /// A pixel that shows all of its colour.
@@ -366,8 +368,8 @@ impl<C: 'static> Command<C> for ModelInspect {
                 },
             })
             .collect();
-        let mut low = [u8::MAX; 3];
-        let mut high = [0_u8; 3];
+        let mut low = [u8::MAX; AXES];
+        let mut high = [0_u8; AXES];
         for vert in frames(model).flat_map(|frame| &frame.verts) {
             for ((least, most), at) in low.iter_mut().zip(&mut high).zip(vert.v) {
                 *least = (*least).min(at);
@@ -375,7 +377,7 @@ impl<C: 'static> Command<C> for ModelInspect {
             }
         }
         let place = |packed: [u8; 3]| {
-            let mut out = [0.0_f32; 3];
+            let mut out = [0.0_f32; AXES];
             for (((at, byte), step), origin) in out
                 .iter_mut()
                 .zip(packed)
@@ -933,7 +935,7 @@ impl<C: 'static> Command<C> for ModelAddFrames {
             // the byte of this model's step nearest it (MDL-5.3).
             let mut verts = Vec::with_capacity(frame.verts.len());
             for vert in &frame.verts {
-                let mut v = [0_u8; 3];
+                let mut v = [0_u8; AXES];
                 for ((((byte, packed), (step, origin)), to_step), to_origin) in v
                     .iter_mut()
                     .zip(vert.v)
@@ -953,7 +955,7 @@ impl<C: 'static> Command<C> for ModelAddFrames {
                     lightnormalindex: vert.lightnormalindex,
                 });
             }
-            let (mut low, mut high) = ([u8::MAX; 3], [0_u8; 3]);
+            let (mut low, mut high) = ([u8::MAX; AXES], [0_u8; AXES]);
             for vert in &verts {
                 for ((least, most), at) in low.iter_mut().zip(&mut high).zip(vert.v) {
                     *least = (*least).min(at);

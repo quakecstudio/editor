@@ -146,6 +146,16 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.unlink_group`](#mapunlink_group) | Unlinks a group from the groups linked to it, which then change on their own (TrenchBroom's Separate Linked Groups). |
 | [`map.unlock_all`](#mapunlock_all) | Unlocks every entity of the open map locked in the editor; a locked layer stays locked. |
 | [`map.unstage`](#mapunstage) | Ends the open map's review when nothing waits in it, as after an agent's map command that changed nothing; a review with hunks is left open. |
+| [`model.add_frames`](#modeladd_frames) | Adds frames of another model of the same vertices to the end of a model's own, each by its name: QuakeC's $frame list gains the same names at its end. |
+| [`model.copy_from_game`](#modelcopy_from_game) | Copies a model of the game, by its name there such as progs/soldier.mdl, into the project as a file of its own to change: a mod's file of the same name takes the game's place, and one of a new name is a new model. |
+| [`model.export_skin`](#modelexport_skin) | Writes a skin of a model as a PNG, in the game's palette, to look at or to paint on and give back with model.set_skin. |
+| [`model.inspect`](#modelinspect) | Reads a .mdl model: its skins and their size, its vertices and triangles, the box it fills, and its frames by name in the order QuakeC numbers them, as a $frame line lists them. |
+| [`model.move`](#modelmove) | Moves a model against its origin, the point the entity's origin is at: its vertices keep their packed places and the header's origin moves. |
+| [`model.recolor`](#modelrecolor) | Recolours a skin of a model by rows of the palette: every pixel of a row becomes the same shade of another row, as the game recolours a player's shirt and trousers. |
+| [`model.remove_frames`](#modelremove_frames) | Takes frames out of a model, each by its name. The frames after one taken out are numbered one less, so QuakeC's $frame list loses the same names. |
+| [`model.rename_frames`](#modelrename_frames) | Renames frames of a model, each by its name. The game finds a frame by its number, so QuakeC's $frame names are its own: keep them in step. |
+| [`model.scale`](#modelscale) | Makes a model larger or smaller about its origin, on each axis: its vertices keep their packed places and the header's step and origin are scaled, so nothing is rounded again. The box QuakeC gives the entity (setsize) is its own to change. |
+| [`model.set_skin`](#modelset_skin) | Replaces a skin of a model with a PNG of the skin's size, each pixel matched to the nearest colour of the game's palette. |
 | [`paths.open`](#pathsopen) | Opens folders as projects, and files in the nearest project above each (a folder holding quakec.toml or progs.src): a .map or .bsp in the map editor, any other file in the editor. A file outside every project opens in the open project, or opens its folder when none is open. |
 | [`paths.take_opened`](#pathstake_opened) | Takes what the last paths.open opened, once, or null: the desktop app shows it and comes to the front when another launch sent the paths. |
 | [`preview.breakpoint`](#previewbreakpoint) | Adds a breakpoint at a line of a file, or takes it away when there is one; set in the running game too and in each game that starts. |
@@ -176,7 +186,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`project.info`](#projectinfo) | Describes the open project: its directory and each module's kind, dialect, target engine and output. |
 | [`project.new`](#projectnew) | Makes a new project from a starter template, id's QuakeC 1.01 or the rerelease's, with quakec.toml, a sample test and the GPLv2 notices; it builds and plays at once. |
 | [`project.open`](#projectopen) | Opens the QuakeC project in a directory: its quakec.toml, or its progs.src and csprogs.src. |
-| [`project.reference`](#projectreference) | The reference to read before writing or debugging QuakeC or building a map, by topic: quakec (the language, how a mod runs, pitfalls), entities (what the engine calls, movetype and solid, the builtins by purpose, what QuakeC does that C does not, debugging), monsters (how a monster is written and every place a new one is added), maps, workflow (tests and scenarios). Written from id's QuakeC and the engine's specs; a mod's own code comes first where it differs. |
+| [`project.reference`](#projectreference) | The reference to read before writing or debugging QuakeC or building a map, by topic: quakec (the language, how a mod runs, pitfalls), entities (what the engine calls, movetype and solid, the builtins by purpose, what QuakeC does that C does not, debugging), monsters (how a monster is written and every place a new one is added), models (what a model is, and how to recolour, scale and reframe one), maps, workflow (tests and scenarios). Written from id's QuakeC and the engine's specs; a mod's own code comes first where it differs. |
 | [`project.search`](#projectsearch) | Finds every match of a text in the open project's files, unsaved edits included, by file, line and byte range; matching case, whole words only or as a regular expression. |
 | [`project.symbols`](#projectsymbols) | Lists the open project's global definitions, functions, globals and fields, each with where its name is first written; a query keeps those whose name contains it. |
 | [`project.take_checked`](#projecttake_checked) | Takes the problems, symbols and highlighting the background check worked out for the latest edit, if it has finished; says whether anything changed. |
@@ -6813,6 +6823,364 @@ Parameters:
 }
 ```
 
+## `model.add_frames`
+
+Adds frames of another model of the same vertices to the end of a model's own, each by its name: QuakeC's $frame list gains the same names at its end.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `model.add_frames`.",
+  "properties": {
+    "frames": {
+      "description": "The frames to add, each by its name there, in this order, after the model's own.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "from_path": {
+      "description": "The `.mdl` file the frames come from, a model of the same vertices: another copy of\nthe model with other poses.",
+      "type": "string"
+    },
+    "path": {
+      "description": "The `.mdl` file to add frames to.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path",
+    "from_path",
+    "frames"
+  ],
+  "title": "AddFramesParams",
+  "type": "object"
+}
+```
+
+## `model.copy_from_game`
+
+Copies a model of the game, by its name there such as progs/soldier.mdl, into the project as a file of its own to change: a mod's file of the same name takes the game's place, and one of a new name is a new model.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `model.copy_from_game`.",
+  "properties": {
+    "name": {
+      "description": "The model's name in the game, such as `progs/soldier.mdl`.",
+      "type": "string"
+    },
+    "path": {
+      "description": "The `.mdl` file to make of it, in the project; one that is there already is refused.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "path"
+  ],
+  "title": "CopyParams",
+  "type": "object"
+}
+```
+
+## `model.export_skin`
+
+Writes a skin of a model as a PNG, in the game's palette, to look at or to paint on and give back with model.set_skin.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `model.export_skin`.",
+  "properties": {
+    "path": {
+      "description": "The `.mdl` file.",
+      "type": "string"
+    },
+    "png_path": {
+      "description": "The PNG file to write it to.",
+      "type": "string"
+    },
+    "skin": {
+      "default": 0,
+      "description": "The skin, from 0; 0 when not given.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "path",
+    "png_path"
+  ],
+  "title": "ExportSkinParams",
+  "type": "object"
+}
+```
+
+## `model.inspect`
+
+Reads a .mdl model: its skins and their size, its vertices and triangles, the box it fills, and its frames by name in the order QuakeC numbers them, as a $frame line lists them.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of a command that only names a model.",
+  "properties": {
+    "path": {
+      "description": "The `.mdl` file, in the project.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "ModelParams",
+  "type": "object"
+}
+```
+
+## `model.move`
+
+Moves a model against its origin, the point the entity's origin is at: its vertices keep their packed places and the header's origin moves.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `model.scale` and `model.move`.",
+  "properties": {
+    "by": {
+      "description": "For `model.scale`, how many times larger on x, y and z, each above 0; for\n`model.move`, how far along each, in the model's units.",
+      "items": {
+        "format": "float",
+        "type": "number"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    },
+    "path": {
+      "description": "The `.mdl` file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path",
+    "by"
+  ],
+  "title": "TransformParams",
+  "type": "object"
+}
+```
+
+## `model.recolor`
+
+Recolours a skin of a model by rows of the palette: every pixel of a row becomes the same shade of another row, as the game recolours a player's shirt and trousers.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `model.recolor`.",
+  "properties": {
+    "path": {
+      "description": "The `.mdl` file.",
+      "type": "string"
+    },
+    "rows": {
+      "description": "Rows of the palette to change, each a row to take and the row to give: the palette is\n16 rows of 16 shades, and a pixel keeps its shade. `[[1, 4]]` turns the browns of row\n1 into the reds of row 4.",
+      "items": {
+        "items": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "maxItems": 2,
+        "minItems": 2,
+        "type": "array"
+      },
+      "type": "array"
+    },
+    "skin": {
+      "default": 0,
+      "description": "The skin, from 0; 0 when not given.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "path",
+    "rows"
+  ],
+  "title": "RecolorParams",
+  "type": "object"
+}
+```
+
+## `model.remove_frames`
+
+Takes frames out of a model, each by its name. The frames after one taken out are numbered one less, so QuakeC's $frame list loses the same names.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `model.remove_frames`.",
+  "properties": {
+    "frames": {
+      "description": "The frames to take out, each by its name; a group goes with its first frame's name.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "path": {
+      "description": "The `.mdl` file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path",
+    "frames"
+  ],
+  "title": "RemoveFramesParams",
+  "type": "object"
+}
+```
+
+## `model.rename_frames`
+
+Renames frames of a model, each by its name. The game finds a frame by its number, so QuakeC's $frame names are its own: keep them in step.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `model.rename_frames`.",
+  "properties": {
+    "names": {
+      "description": "Each a frame's name and the name to give it, at most 15 bytes.",
+      "items": {
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 2,
+        "minItems": 2,
+        "type": "array"
+      },
+      "type": "array"
+    },
+    "path": {
+      "description": "The `.mdl` file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path",
+    "names"
+  ],
+  "title": "RenameFramesParams",
+  "type": "object"
+}
+```
+
+## `model.scale`
+
+Makes a model larger or smaller about its origin, on each axis: its vertices keep their packed places and the header's step and origin are scaled, so nothing is rounded again. The box QuakeC gives the entity (setsize) is its own to change.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `model.scale` and `model.move`.",
+  "properties": {
+    "by": {
+      "description": "For `model.scale`, how many times larger on x, y and z, each above 0; for\n`model.move`, how far along each, in the model's units.",
+      "items": {
+        "format": "float",
+        "type": "number"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    },
+    "path": {
+      "description": "The `.mdl` file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path",
+    "by"
+  ],
+  "title": "TransformParams",
+  "type": "object"
+}
+```
+
+## `model.set_skin`
+
+Replaces a skin of a model with a PNG of the skin's size, each pixel matched to the nearest colour of the game's palette.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `model.set_skin`.",
+  "properties": {
+    "path": {
+      "description": "The `.mdl` file.",
+      "type": "string"
+    },
+    "png_path": {
+      "description": "The PNG to take it from, of the skin's own width and height: each pixel becomes the\nnearest colour of the game's palette.",
+      "type": "string"
+    },
+    "skin": {
+      "default": 0,
+      "description": "The skin to replace, from 0; 0 when not given.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "path",
+    "png_path"
+  ],
+  "title": "SetSkinParams",
+  "type": "object"
+}
+```
+
 ## `paths.open`
 
 Opens folders as projects, and files in the nearest project above each (a folder holding quakec.toml or progs.src): a .map or .bsp in the map editor, any other file in the editor. A file outside every project opens in the open project, or opens its folder when none is open.
@@ -7599,7 +7967,7 @@ Parameters:
 
 ## `project.reference`
 
-The reference to read before writing or debugging QuakeC or building a map, by topic: quakec (the language, how a mod runs, pitfalls), entities (what the engine calls, movetype and solid, the builtins by purpose, what QuakeC does that C does not, debugging), monsters (how a monster is written and every place a new one is added), maps, workflow (tests and scenarios). Written from id's QuakeC and the engine's specs; a mod's own code comes first where it differs.
+The reference to read before writing or debugging QuakeC or building a map, by topic: quakec (the language, how a mod runs, pitfalls), entities (what the engine calls, movetype and solid, the builtins by purpose, what QuakeC does that C does not, debugging), monsters (how a monster is written and every place a new one is added), models (what a model is, and how to recolour, scale and reframe one), maps, workflow (tests and scenarios). Written from id's QuakeC and the engine's specs; a mod's own code comes first where it differs.
 
 Parameters:
 
@@ -7622,6 +7990,11 @@ Parameters:
         {
           "const": "monsters",
           "description": "How a monster is written, from id's own, and where a new one must be added.",
+          "type": "string"
+        },
+        {
+          "const": "models",
+          "description": "What a model is, a mod's own models, and how to recolour, scale and reframe one.",
           "type": "string"
         },
         {

@@ -19,6 +19,9 @@ use super::{
 /// `WriteModelFile`: a little over the 255 steps a byte counts, so the far side packs to 255.
 const MDL_SCALE_STEPS: f32 = 255.9;
 
+/// The axes a position has.
+const AXES: usize = 3;
+
 /// A frame being made: its name and where each vertex is.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Pose {
@@ -129,7 +132,7 @@ fn packed(value: f32) -> u8 {
     if value.is_nan() {
         return 0;
     }
-    value.clamp(0.0, 255.0) as u8
+    value.clamp(0.0, f32::from(u8::MAX)) as u8
 }
 
 impl Shape {
@@ -141,7 +144,7 @@ impl Shape {
     /// [`MdlWriteError::LooseVertex`] for a vertex no triangle with an area has for a corner,
     /// which modelgen stops at.
     fn normals(&self, positions: &[[f32; 3]]) -> Result<Vec<u8>, MdlWriteError> {
-        let mut sums = vec![([0.0_f32; 3], 0_u16); positions.len()];
+        let mut sums = vec![([0.0_f32; AXES], 0_u16); positions.len()];
         for triangle in &self.triangles {
             let [a, b, c] = triangle.vertindex;
             let (Some(&pa), Some(&pb), Some(&pc)) =
@@ -184,8 +187,8 @@ impl Shape {
     pub fn build(&self) -> Result<Model, MdlWriteError> {
         let numverts = self.stverts.len();
         // The box the frames fill starts as the origin alone (MDL-7.1).
-        let mut mins = [0.0_f32; 3];
-        let mut maxs = [0.0_f32; 3];
+        let mut mins = [0.0_f32; AXES];
+        let mut maxs = [0.0_f32; AXES];
         for (place, entry) in self.poses.iter().enumerate() {
             for pose in entry.poses() {
                 if pose.positions.len() != numverts {
@@ -199,8 +202,8 @@ impl Shape {
                 }
             }
         }
-        let mut scale = [0.0_f32; 3];
-        let mut far = [0.0_f32; 3];
+        let mut scale = [0.0_f32; AXES];
+        let mut far = [0.0_f32; AXES];
         for (((step, reach), low), high) in scale.iter_mut().zip(&mut far).zip(mins).zip(maxs) {
             *step = (high - low) / MDL_SCALE_STEPS;
             *reach = if low.abs() > high.abs() { low } else { high };
@@ -223,11 +226,11 @@ impl Shape {
         };
         let frame = |pose: &Pose| -> Result<ModelFrame, MdlWriteError> {
             let normals = self.normals(&pose.positions)?;
-            let mut bboxmin = [u8::MAX; 3];
-            let mut bboxmax = [0_u8; 3];
+            let mut bboxmin = [u8::MAX; AXES];
+            let mut bboxmax = [0_u8; AXES];
             let mut verts = Vec::with_capacity(numverts);
             for (position, normal) in pose.positions.iter().zip(normals) {
-                let mut v = [0_u8; 3];
+                let mut v = [0_u8; AXES];
                 for ((((byte, at), origin), step), (low, high)) in v
                     .iter_mut()
                     .zip(position)
@@ -266,8 +269,8 @@ impl Shape {
                 PoseEntry::Group(poses) => {
                     let mut made = Vec::with_capacity(poses.len());
                     let mut intervals = Vec::with_capacity(poses.len());
-                    let mut bboxmin = [u8::MAX; 3];
-                    let mut bboxmax = [0_u8; 3];
+                    let mut bboxmin = [u8::MAX; AXES];
+                    let mut bboxmax = [0_u8; AXES];
                     // The time each frame ends at: the intervals summed (MDL-7.6).
                     let mut total = 0.0_f32;
                     for (pose, interval) in poses {

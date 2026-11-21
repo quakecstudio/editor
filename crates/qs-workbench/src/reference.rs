@@ -26,6 +26,8 @@ pub enum Topic {
     Entities,
     /// How a monster is written, from id's own, and where a new one must be added.
     Monsters,
+    /// What a model is, a mod's own models, and how to recolour, scale and reframe one.
+    Models,
     /// The `.map` format, units, the entities a map needs, textures and leaks.
     Maps,
     /// How to work in QuakeC Studio: finding code, changing it, tests and scenarios.
@@ -34,10 +36,11 @@ pub enum Topic {
 
 impl Topic {
     /// Every topic, in the order to read them.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Quakec,
         Self::Entities,
         Self::Monsters,
+        Self::Models,
         Self::Maps,
         Self::Workflow,
     ];
@@ -49,6 +52,7 @@ impl Topic {
             Self::Quakec => include_str!("../../../docs/agent-reference/quakec.md"),
             Self::Entities => include_str!("../../../docs/agent-reference/entities.md"),
             Self::Monsters => include_str!("../../../docs/agent-reference/monsters.md"),
+            Self::Models => include_str!("../../../docs/agent-reference/models.md"),
             Self::Maps => include_str!("../../../docs/agent-reference/maps.md"),
             Self::Workflow => include_str!("../../../docs/agent-reference/workflow.md"),
         }
@@ -82,7 +86,8 @@ impl<C: 'static> Command<C> for ProjectReference {
         building a map, by topic: quakec (the language, how a mod runs, pitfalls), entities \
         (what the engine calls, movetype and solid, the builtins by purpose, what QuakeC does \
         that C does not, debugging), monsters (how a monster is written and every place a new \
-        one is added), maps, workflow (tests and scenarios). Written from id's QuakeC and the \
+        one is added), models (what a model is, and how to recolour, scale and reframe one), \
+        maps, workflow (tests and scenarios). Written from id's QuakeC and the \
         engine's specs; a mod's own code comes first where it differs.";
     type Params = ReferenceParams;
     type Output = Reference;

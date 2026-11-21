@@ -115,6 +115,16 @@ map.ungroup
 map.unlink_group
 map.unlock_all
 map.unstage
+model.add_frames
+model.copy_from_game
+model.export_skin
+model.inspect
+model.move
+model.recolor
+model.remove_frames
+model.rename_frames
+model.scale
+model.set_skin
 paths.open
 paths.take_opened
 project.build

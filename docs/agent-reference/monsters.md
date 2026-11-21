@@ -201,8 +201,9 @@ add yours where its neighbours are:
    (self.classname == "monster_army")`. Two of a new class do not fight each other unless
    it is added there.
 
-A model must also be in the game's files: reuse a model the game ships, with its frames, or
-the map shows nothing.
+A model must also be in the game's files or the mod's: reuse a model the game ships, with
+its frames, or give the monster one of its own (the `models` topic), or the map shows
+nothing.
 
 ## Trying it
 

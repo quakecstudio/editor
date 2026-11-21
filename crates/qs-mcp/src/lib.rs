@@ -528,7 +528,8 @@ const INSTRUCTIONS: &str = "Every command of QuakeC Studio over the project this
     also has the app's window: view.*, editor.*, settings.* and help.*. Before you write or \
     debug QuakeC, read project.reference: topic quakec for the language and how a mod runs, \
     topic entities for what the engine calls, how entities move and collide, the builtins \
-    and debugging, topic monsters before adding a monster, topic workflow for tests and \
+    and debugging, topic monsters before adding a monster, topic models before changing how \
+    something looks, topic workflow for tests and \
     scenarios; and topic maps before building a map. Then read the project's own code for the same thing \
     (project.search, project.symbols, file.read) and follow it. In short: \
     compile, test, run QuakeC in the VM, play scenarios, inspect and drive the running game, \
