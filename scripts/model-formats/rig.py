@@ -55,9 +55,11 @@ LIMBS = [
     ("root", None, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), None),
     ("arm", 0, (8.0, 0.0, 0.0), (0.0, 0.0, 10.0), (0.0, 0.0, -20.0), [10, 20, 45, 70, 90]),
     ("first", 1, (4.0, 1.0, 0.0), (0.0, 0.0, 0.0), (0.0, 15.0, 0.0), [0, 30, 60, 30, 0]),
+    # The second is turned before its own turn: a pre-rotation, as a joint's orientation is written.
     ("second", 1, (4.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), [0, -20, -40, -60, -80]),
     ("third", 1, (4.0, -1.0, 0.0), (20.0, 0.0, 0.0), (0.0, 0.0, 0.0), [0, 45, 0, -45, 0]),
 ]
+PRE = {"second": [("PreRotation", "Vector3D", "Vector", "", 40.0, 0.0, 0.0)]}
 MESH = ((1.0, -1.0, 0.5), (0.0, 0.0, 30.0), (2.0, 1.5, 2.0))
 GEOMETRIC = ((1.0, 0.0, 0.0), (0.0, 10.0, 0.0), (1.0, 1.0, 0.5))
 # The armature rises along its own y from its first key to its last: two keys, where the
@@ -121,7 +123,7 @@ for at, (name, parent, move, rest, bind, keys) in enumerate(LIMBS):
     pairs = [(i, weight) for i, blends in enumerate(BL) for j, weight in blends if j == at]
     objects += [
         ("NodeAttribute", [ID + attribute, named(name, "NodeAttribute"), "LimbNode"], [("TypeFlags", ["Skeleton"], [])]),
-        model(limb, name, "LimbNode", lcl(move, rest, (1.0, 1.0, 1.0))),
+        model(limb, name, "LimbNode", lcl(move, rest, (1.0, 1.0, 1.0)) + PRE.get(name, [])),
         ("Deformer", [ID + cluster, named(name, "SubDeformer"), "Cluster"], [
             ("Version", [100], []), ("Indexes", [("i", [i for i, _ in pairs])], []), ("Weights", [("d", [w for _, w in pairs])], []),
             # The mesh in the limb's space, and the limb in the file's, when the mesh was bound.

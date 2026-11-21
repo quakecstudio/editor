@@ -244,6 +244,7 @@ Objects:  {
 			P: "Lcl Translation", "Lcl Translation", "", "A", 4.0, 0.0, 1.0
 			P: "Lcl Rotation", "Lcl Rotation", "", "A", 0.0, 0.0, 0.0
 			P: "Lcl Scaling", "Lcl Scaling", "", "A", 1.0, 1.0, 1.0
+			P: "PreRotation", "Vector3D", "Vector", "", 40.0, 0.0, 0.0
 		}
 	}
 	Deformer: 4294967709, "SubDeformer::second", "Cluster" {

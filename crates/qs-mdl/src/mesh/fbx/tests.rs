@@ -631,3 +631,106 @@ fn a_rigged_model_is_posed_as_blender_poses_it() {
     let binary = unhex(include_str!("../fixtures/rig-7400.fbx.hex"));
     agrees(&read_bytes(&binary, Up::Z).unwrap(), recorded);
 }
+
+/// A file of one triangle in the plane z = 0, the geometry 100 of the mesh model 200, with
+/// `objects` after them and `joins` among its connections.
+fn triangle(objects: &str, joins: &str) -> String {
+    format!(
+        "; FBX 7.3.0 project file\nObjects:  {{\n\
+         Geometry: 100, \"Geometry::t\", \"Mesh\" {{\nVertices: *9 {{\na: 0,0,0,4,0,0,0,4,0\n}}\n\
+         PolygonVertexIndex: *3 {{\na: 0,1,-3\n}}\n}}\n\
+         Model: 200, \"Model::t\", \"Mesh\" {{\n}}\n{objects}}}\n\
+         Connections:  {{\nC: \"OO\",100,200\n{joins}}}\n"
+    )
+}
+
+/// The corners of `mesh`'s frame `frame` in hundredths, least first.
+fn corners(mesh: &Mesh, frame: usize) -> Vec<[i32; 3]> {
+    let mut corners: Vec<[i32; 3]> = mesh.frames[frame]
+        .positions
+        .iter()
+        .map(|at| at.map(|part| format!("{:.0}", part * 100.0).parse().unwrap()))
+        .collect();
+    corners.sort_unstable();
+    corners
+}
+
+// spec MDL-10.9: a skinned geometry stands where its cluster's Transform says, after where
+// the cluster's model stood: its TransformLink, or without one its place at rest; a matrix
+// that is not sixteen numbers is none
+#[test]
+fn a_skinned_geometry_stands_where_it_was_bound() {
+    let limb = "Model: 300, \"Model::l\", \"LimbNode\" {\nProperties70:  {\n\
+                P: \"Lcl Translation\", \"Lcl Translation\", \"\", \"A\",10,0,0\n}\n}\n\
+                Deformer: 400, \"Deformer::\", \"Skin\" {\n}\n";
+    let joins = "C: \"OO\",400,100\nC: \"OO\",401,400\nC: \"OO\",300,401\n";
+    let cluster = |matrices: &str| {
+        format!(
+            "{limb}Deformer: 401, \"SubDeformer::\", \"Cluster\" {{\nIndexes: *3 {{\na: 0,1,2\n}}\n\
+             Weights: *3 {{\na: 1,1,1\n}}\n{matrices}}}\n"
+        )
+    };
+    // The mesh 5 up its limb's z, the limb bound at the file's origin: the limb, which
+    // stands 10 along x, has carried the mesh there.
+    let moved = "Transform: *16 {\na: 1,0,0,0,0,1,0,0,0,0,1,0,0,0,5,1\n}\n";
+    let link = "TransformLink: *16 {\na: 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1\n}\n";
+    let both = read(&triangle(&cluster(&format!("{moved}{link}")), joins), Up::Z).unwrap();
+    assert_eq!(
+        corners(&both, 0),
+        [[1000, 0, 500], [1000, 400, 500], [1400, 0, 500]]
+    );
+    // With no TransformLink the limb was bound where it stands, and the mesh is 5 up it.
+    let alone = read(&triangle(&cluster(moved), joins), Up::Z).unwrap();
+    assert_eq!(corners(&alone, 0), corners(&both, 0));
+    // With neither, and with a Transform of fifteen numbers, the mesh is where its model is.
+    let short = "Transform: *15 {\na: 1,0,0,0,0,1,0,0,0,0,1,0,0,0,5\n}\n";
+    for matrices in ["", short] {
+        let plain = read(&triangle(&cluster(matrices), joins), Up::Z).unwrap();
+        assert_eq!(
+            corners(&plain, 0),
+            [[0, 0, 0], [0, 400, 0], [400, 0, 0]],
+            "{matrices:?}"
+        );
+    }
+}
+
+// spec MDL-10.9: a geometry with no skin follows its model, and its model the model above
+// it, of whatever kind, as that one's curves move it; a model nothing follows is no joint,
+// so one of no size refuses nothing, where one a geometry follows does
+#[test]
+fn a_geometry_with_no_skin_follows_its_model() {
+    let above = |scaling: &str| {
+        format!(
+            "Model: 250, \"Model::group\", \"Null\" {{\nProperties70:  {{\n\
+             P: \"Lcl Translation\", \"Lcl Translation\", \"\", \"A\",0,0,2\n\
+             P: \"Lcl Scaling\", \"Lcl Scaling\", \"\", \"A\",{scaling}\n}}\n}}\n\
+             Model: 260, \"Model::idle\", \"Light\" {{\nProperties70:  {{\n\
+             P: \"Lcl Scaling\", \"Lcl Scaling\", \"\", \"A\",0,0,0\n}}\n}}\n\
+             AnimationStack: 500, \"AnimStack::rise\", \"\" {{\n}}\n\
+             AnimationLayer: 501, \"AnimLayer::\", \"\" {{\n}}\n\
+             AnimationCurveNode: 510, \"AnimCurveNode::\", \"\" {{\nProperties70:  {{\n\
+             P: \"d|X\", \"Number\", \"\", \"A\",0\nP: \"d|Y\", \"Number\", \"\", \"A\",0\n\
+             P: \"d|Z\", \"Number\", \"\", \"A\",2\n}}\n}}\n\
+             AnimationCurve: 520, \"AnimCurve::\", \"\" {{\nKeyTime: *2 {{\na: 0,1\n}}\n\
+             KeyValueFloat: *2 {{\na: 2,7\n}}\n}}\n"
+        )
+    };
+    let joins = "C: \"OO\",200,250\nC: \"OO\",501,500\nC: \"OO\",510,501\n\
+                 C: \"OP\",510,250, \"Lcl Translation\"\nC: \"OP\",520,510, \"d|Z\"\n";
+    let mesh = read(&triangle(&above("3,3,3"), joins), Up::Z).unwrap();
+    assert_eq!(mesh.frames.len(), 2);
+    // Three times the size, 2 up and then 7 up.
+    assert_eq!(
+        corners(&mesh, 0),
+        [[0, 0, 200], [0, 1200, 200], [1200, 0, 200]]
+    );
+    assert_eq!(
+        corners(&mesh, 1),
+        [[0, 0, 700], [0, 1200, 700], [1200, 0, 700]]
+    );
+    // The model above of no size is one the geometry follows.
+    assert_eq!(
+        read(&triangle(&above("0,0,0"), joins), Up::Z).unwrap_err(),
+        FbxError::Flat
+    );
+}
