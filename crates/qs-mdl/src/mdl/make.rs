@@ -91,10 +91,7 @@ fn normalize(v: &mut [f32; 3]) -> f64 {
         length += f64::from(part * part);
     }
     let length = length.sqrt();
-    #[expect(
-        clippy::float_cmp,
-        reason = "spec MDL-7.4: `if (length == 0) return 0;`, an exact comparison"
-    )]
+    // spec MDL-7.4: `if (length == 0) return 0;`, an exact comparison.
     if length == 0.0 {
         return 0.0;
     }

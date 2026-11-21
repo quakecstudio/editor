@@ -4,9 +4,7 @@
     clippy::unwrap_used,
     clippy::indexing_slicing,
     clippy::panic,
-    clippy::float_cmp,
-    reason = "test code: a failed unwrap, index or panic is a failed test, and the values \
-              compared are exact"
+    reason = "test code: a failed unwrap, index or panic is a failed test"
 )]
 
 use super::*;
