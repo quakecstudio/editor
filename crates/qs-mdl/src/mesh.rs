@@ -10,6 +10,8 @@ pub mod fbx;
 pub mod iqe;
 pub mod md5;
 pub mod obj;
+#[cfg(test)]
+mod recorded;
 mod rig;
 pub mod smd;
 

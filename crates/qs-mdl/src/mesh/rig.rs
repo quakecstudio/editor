@@ -347,3 +347,47 @@ pub(super) fn frame_stem(
             .then_some(stem)
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // spec MDL-10.1: a weight of 0.001 or less is left out, the four heaviest are kept
+    // heaviest first, one given earlier before another as heavy, and they are divided by
+    // their sum; no weight at all is no blend
+    #[test]
+    fn blends_are_the_four_heaviest() {
+        assert_eq!(blend(&[(3, 0.5), (1, 0.5)]), [(3, 0.5), (1, 0.5)]);
+        assert_eq!(blend(&[(0, 0.001), (2, 0.002)]), [(2, 1.0)]);
+        let five = blend(&[(0, 1.0), (1, 5.0), (2, 2.0), (3, 0.5), (4, 1.5)]);
+        let joints: Vec<usize> = five.iter().map(|(joint, _)| *joint).collect();
+        assert_eq!(joints, [1, 2, 4, 0], "the lightest of five is left out");
+        let total: f64 = five.iter().map(|(_, weight)| weight).sum();
+        assert!((total - 1.0).abs() < 1e-12);
+        assert!((five.first().map_or(0.0, |(_, weight)| *weight) - 5.0 / 9.5).abs() < 1e-12);
+        assert!(blend(&[]).is_empty());
+        assert!(blend(&[(0, f64::NAN), (1, -1.0)]).is_empty());
+    }
+
+    // spec MDL-10.3: angles turn about x, then y, then z: a quarter about z takes x to y,
+    // and a quarter about x and then one about z takes y to z
+    #[test]
+    fn angles_turn_about_x_then_y_then_z() {
+        let quarter = core::f64::consts::FRAC_PI_2;
+        let near = |at: Vec3, want: Vec3| {
+            at.iter()
+                .zip(want)
+                .all(|(at, want)| (at - want).abs() < 1e-12)
+        };
+        let about_z = Affine {
+            matrix: turn(from_angles([0.0, 0.0, quarter])),
+            moved: [0.0, 0.0, 0.0],
+        };
+        assert!(near(about_z.apply([1.0, 0.0, 0.0]), [0.0, 1.0, 0.0]));
+        let both = Affine {
+            matrix: turn(from_angles([quarter, 0.0, quarter])),
+            moved: [0.0, 0.0, 0.0],
+        };
+        assert!(near(both.apply([0.0, 1.0, 0.0]), [0.0, 0.0, 1.0]));
+    }
+}
