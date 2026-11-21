@@ -187,6 +187,8 @@ enum StatusAsk {
     Move(DockPanel, Panel),
     /// Open the first edit waiting for review (P7-18).
     Review,
+    /// Show the Problems panel, which lists what the counts count (L-44).
+    Problems,
 }
 
 /// The tab shown in the centre.
@@ -1354,21 +1356,8 @@ impl Shell {
         self.game_guide(ui);
         self.new_project_dialog(ui);
         self.about.show(ui.ctx(), &self.theme);
-        match self.status_bar(ui) {
-            Some(StatusAsk::Show(panel)) => {
-                let params = ShowPanelParams {
-                    panel,
-                    when_shown: WhenShown::Hide,
-                };
-                let _: Option<Docks> = self.run(qs_layout::SHOW_PANEL, &params);
-            }
-            Some(StatusAsk::Move(panel, dock)) => {
-                let params = MovePanelParams { panel, dock };
-                let _: Option<Docks> = self.run(qs_layout::MOVE_PANEL, &params);
-            }
-            Some(StatusAsk::Review) => self.open_review(),
-            None => {}
-        }
+        let asked = self.status_bar(ui);
+        self.answer_status(asked);
         self.follow_review();
         let entered = self.command_line.show(
             ui,
@@ -1893,6 +1882,33 @@ impl Shell {
         Some(layout.focus)
     }
 
+    /// Does what a click on the status bar asked for.
+    fn answer_status(&mut self, asked: Option<StatusAsk>) {
+        match asked {
+            Some(StatusAsk::Show(panel)) => {
+                let params = ShowPanelParams {
+                    panel,
+                    when_shown: WhenShown::Hide,
+                };
+                let _: Option<Docks> = self.run(qs_layout::SHOW_PANEL, &params);
+            }
+            Some(StatusAsk::Move(panel, dock)) => {
+                let params = MovePanelParams { panel, dock };
+                let _: Option<Docks> = self.run(qs_layout::MOVE_PANEL, &params);
+            }
+            Some(StatusAsk::Review) => self.open_review(),
+            Some(StatusAsk::Problems) => {
+                // Shown, and kept when it shows already: the counts are no toggle.
+                let params = ShowPanelParams {
+                    panel: DockPanel::Problems,
+                    when_shown: WhenShown::Keep,
+                };
+                let _: Option<Docks> = self.run(qs_layout::SHOW_PANEL, &params);
+            }
+            None => {}
+        }
+    }
+
     /// The status bar: the panels' buttons, as Zed's, and the problems and the game's state;
     /// what a click on a panel's button, or its menu, asked for.
     fn status_bar(&self, ui: &mut Ui) -> Option<StatusAsk> {
@@ -1919,13 +1935,18 @@ impl Shell {
                         (Icon::Error, errors, Text::ErrorCount),
                         (Icon::Warning, warnings, Text::WarningCount),
                     ] {
+                        // A button, as Zed's and VS Code's counts are: it shows the problems.
+                        let text = RichText::new(count(icon, value)).small().color(muted);
                         let response = ui
-                            .label(RichText::new(count(icon, value)).small().color(muted))
+                            .add(Button::new(text).frame(false))
                             .on_hover_text(name.get());
                         // Read as its name and number, not the icon's character.
                         ui.ctx().accesskit_node_builder(response.id, |node| {
                             node.set_label(format!("{} {value}", name.get()));
                         });
+                        if response.clicked() {
+                            asked = Some(StatusAsk::Problems);
+                        }
                     }
                     let waiting = self.session.context().workbench.waiting();
                     let in_map = self.features.map.map_editor.review().waiting();
@@ -1947,15 +1968,18 @@ impl Shell {
                         PlayState::Playing => Text::PreviewRunning,
                         PlayState::Paused => Text::PreviewPaused,
                     };
-                    ui.label(RichText::new(running.get()).small().color(muted));
+                    // What the bar says is read, not typed in or copied: the arrow, not the
+                    // text cursor (L-44).
+                    let said = |text: RichText| egui::Label::new(text).selectable(false);
+                    ui.add(said(RichText::new(running.get()).small().color(muted)));
                     match &self.features.project.export_note {
                         Some(Ok(path)) => {
                             let text = format!("{} {}", Text::ExportedTo.get(), path.display());
-                            ui.label(RichText::new(text).small().color(muted));
+                            ui.add(said(RichText::new(text).small().color(muted)));
                         }
                         Some(Err(why)) => {
                             let error = theme.color(Token::StatusError);
-                            ui.label(RichText::new(why).small().color(error));
+                            ui.add(said(RichText::new(why).small().color(error)));
                         }
                         None => {}
                     }

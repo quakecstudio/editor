@@ -5569,6 +5569,38 @@ fn every_command_is_entered_on_the_command_line() {
     }
 }
 
+// No spec statement: L-44, the acceptance criterion: a click on the status bar's counts shows
+// the Problems panel, and keeps it shown on a second click
+#[test]
+fn the_status_bars_counts_show_the_problems() {
+    let mut harness = accessible();
+    let shown = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        let docks = shell.layout().docks;
+        (
+            docks.shown(qs_layout::Panel::Bottom),
+            shell.layout().bottom.visible,
+        )
+    };
+    run_command_with(
+        &mut harness,
+        "view.show_panel",
+        json!({ "panel": "console", "when_shown": "keep" }),
+    );
+    harness.run();
+    assert_eq!(shown(&harness).0, Some(qs_layout::DockPanel::Console));
+    let errors = format!("{} 0", Text::ErrorCount.get());
+    for _ in 0..2 {
+        harness.get_by_role_and_label(Role::Button, &errors).click();
+        harness.run();
+        harness.run();
+        assert_eq!(
+            shown(&harness),
+            (Some(qs_layout::DockPanel::Problems), true)
+        );
+    }
+}
+
 // UI-23, #971: the command line's key brings the keyboard to it; Tab completes a name, Enter
 // runs the command, Up brings the line back, and a parameter is asked for and taken
 #[test]
@@ -5606,12 +5638,63 @@ fn the_command_line_completes_runs_recalls_and_asks() {
     assert_eq!(typed(&harness), "view.toggle_embedded_game");
     press(&mut harness, egui::Key::ArrowDown);
     assert_eq!(typed(&harness), "");
-    // A name several commands start is not run: they are listed.
+    // L-44: a name several commands start lists them above the line, each with what it does,
+    // the first marked; Down moves the mark and Tab completes to the marked command.
+    let offered = |harness: &Harness<'static, Option<App>>, typed: &str| -> Vec<String> {
+        let shell = harness.state().as_ref().unwrap().shell();
+        let registry = shell.session().registry();
+        let ids = registry.listed(typed).into_iter();
+        ids.map(|info| info.id().as_str().to_owned()).collect()
+    };
     type_text(&mut harness, "view.toggle");
-    press(&mut harness, egui::Key::Enter);
-    assert_eq!(typed(&harness), "view.toggle");
+    let toggles = offered(&harness, "view.toggle");
+    assert!(toggles.len() > 2, "{toggles:?}");
+    harness.get_by_role_and_label(Role::ListBox, Text::CommandLineOffers.get());
+    for id in toggles.iter().take(2) {
+        harness.get_by_label(id);
+    }
+    let summary = {
+        let shell = harness.state().as_ref().unwrap().shell();
+        shell
+            .session()
+            .registry()
+            .get(toggles.first().unwrap())
+            .unwrap()
+            .summary()
+    };
+    harness.get_by_label(summary);
+    press(&mut harness, egui::Key::ArrowDown);
+    press(&mut harness, egui::Key::Tab);
+    assert_eq!(Some(&typed(&harness)), toggles.get(1));
     press(&mut harness, egui::Key::Escape);
     assert_eq!(typed(&harness), "");
+    assert!(
+        harness
+            .query_by_role_and_label(Role::ListBox, Text::CommandLineOffers.get())
+            .is_none(),
+        "nothing typed lists nothing"
+    );
+    // A `/` alone lists every command, and one after it names a command as without it.
+    type_text(&mut harness, "/");
+    harness.get_by_role_and_label(Role::ListBox, Text::CommandLineOffers.get());
+    let all = offered(&harness, "/");
+    harness.get_by_label(all.first().unwrap());
+    type_text(&mut harness, "view.toggle_embedded");
+    press(&mut harness, egui::Key::Enter);
+    harness.get_by_label(&command_ran("view.toggle_embedded_game"));
+    assert_eq!(typed(&harness), "");
+    // A click on a listed command runs it, as Enter on it would.
+    type_text(&mut harness, "toggle_embedded");
+    let twice = place(&harness);
+    assert_eq!(twice, before, "toggled twice so far");
+    harness.get_by_label("view.toggle_embedded_game").click();
+    harness.run();
+    harness.run();
+    assert_eq!(typed(&harness), "");
+    assert_ne!(place(&harness), twice, "the click toggled it again");
+    // The click left the keyboard in the field.
+    let field = harness.get_by_role_and_label(Role::TextInput, Text::CommandLine.get());
+    assert!(field.is_focused());
     // A parameter is asked for by name, and what is typed for it is taken.
     type_text(&mut harness, "view.show_panel");
     press(&mut harness, egui::Key::Enter);
@@ -5632,6 +5715,58 @@ fn the_command_line_completes_runs_recalls_and_asks() {
     type_text(&mut harness, "no.such.command");
     press(&mut harness, egui::Key::Enter);
     harness.get_by_label(&command_unknown("no.such.command"));
+    press(&mut harness, egui::Key::Escape);
+    // L-44 (the review's findings): Tab puts the caret after the completed name, so what
+    // is typed next goes on at its end.
+    type_text(&mut harness, "toggle_emb");
+    press(&mut harness, egui::Key::Tab);
+    harness.run();
+    type_text(&mut harness, "!");
+    assert_eq!(typed(&harness), "view.toggle_embedded_game!");
+    press(&mut harness, egui::Key::Escape);
+    // A name the list only finds by its summary, or in another case, has no row marked,
+    // and Enter does not run one.
+    type_text(&mut harness, "Undo");
+    harness.get_by_label("edit.undo");
+    assert!(
+        harness
+            .query_all_by_role(Role::Button)
+            .all(|row| !row.accesskit_node().is_selected().unwrap_or(false)),
+        "no row is marked"
+    );
+    press(&mut harness, egui::Key::Enter);
+    harness.get_by_label(&command_unknown("Undo"));
+    press(&mut harness, egui::Key::Escape);
+    // Down and Tab complete to the second command; the mark then goes back to the first
+    // of what the completed name lists, so Enter enters that very command.
+    type_text(&mut harness, "view.toggle");
+    press(&mut harness, egui::Key::ArrowDown);
+    press(&mut harness, egui::Key::Tab);
+    let second = typed(&harness);
+    assert_eq!(Some(&second), toggles.get(1));
+    press(&mut harness, egui::Key::Enter);
+    let line = &harness.state().as_ref().unwrap().shell().command_line;
+    let (prompt, _, noted) = line.state();
+    match prompt {
+        Some(prompt) => assert_eq!(prompt.command, second),
+        None => {
+            assert!(noted);
+            harness.get_by_label(&command_ran(&second));
+        }
+    }
+}
+
+// No spec statement: L-44, the acceptance criterion: the status bar's and the command line's
+// labels are read, not typed in: the pointer over them is the arrow, not the text cursor
+#[test]
+fn the_status_bars_labels_show_the_arrow() {
+    let mut harness = accessible();
+    for label in [Text::PreviewStopped.get(), Text::CommandLinePrompt.get()] {
+        harness.get_by_label(label).hover();
+        harness.run();
+        let icon = harness.output().platform_output.cursor_icon;
+        assert_eq!(icon, egui::CursorIcon::Default, "{label}");
+    }
 }
 
 // UI-23, #971: the 3D view is driven from the keyboard alone: Alt and a digit turns it to each

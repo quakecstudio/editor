@@ -507,6 +507,8 @@ pub enum Text {
     CommandLinePrompt,
     /// The command line's field while it is empty.
     CommandLineHint,
+    /// The list of the commands the command line offers for what is typed.
+    CommandLineOffers,
     /// A parameter the command line asks for that may be left empty.
     CommandLineOptional,
     /// The command line's field while it asks for what the map view can give.
@@ -1105,7 +1107,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 544] = [
+    pub const ALL: [Self; 545] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1353,6 +1355,7 @@ impl Text {
         Self::CommandLine,
         Self::CommandLinePrompt,
         Self::CommandLineHint,
+        Self::CommandLineOffers,
         Self::CommandLineOptional,
         Self::CommandLinePick,
         Self::KeyEscape,
@@ -1928,7 +1931,8 @@ impl Text {
             Self::PaletteChoose => "Choose…",
             Self::CommandLine => "Command line",
             Self::CommandLinePrompt => "Command:",
-            Self::CommandLineHint => "Type a command; Tab completes, Enter runs",
+            Self::CommandLineHint => "Type / to list commands; Tab completes, Enter runs",
+            Self::CommandLineOffers => "Commands",
             Self::CommandLineOptional => "Enter for none",
             Self::CommandLinePick => "Type it, or click it in the map view",
             Self::KeyEscape => "esc",
@@ -2326,6 +2330,13 @@ pub fn command_ran(id: &str) -> String {
 #[must_use]
 pub fn command_unknown(name: &str) -> String {
     format!("No command is named {name}")
+}
+
+/// The last row of the command line's list of offers: how many `more` commands match than
+/// it shows (L-44).
+#[must_use]
+pub fn more_commands(more: usize) -> String {
+    format!("and {more} more")
 }
 
 /// The command line's list of the commands what is typed may name: `names`, and how many

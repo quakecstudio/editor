@@ -88,6 +88,14 @@ fn scripts() -> Vec<Script> {
             name: "new-project",
             steps: vec![toggle("left"), Step::Click("New Project\u{2026}")],
         },
+        // L-44: the command line lists the commands that match what is typed after a `/`.
+        Script {
+            name: "command-line",
+            steps: vec![
+                Step::Run(qs_layout::FOCUS_COMMAND_LINE, json!({})),
+                Step::Type("/brush"),
+            ],
+        },
         Script {
             name: "shell-light",
             steps: vec![Step::Display(Display {

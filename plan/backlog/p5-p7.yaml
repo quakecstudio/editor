@@ -2550,3 +2550,47 @@ groups:
     - 'A map edit through the MCP server leaves nothing waiting for review and is taken back by undo, checked by a test of the server'
     verify:
     - 'cargo nextest run -p quakec-studio -p qs-mcp; the recorded run in the PR'
+  - key: L-44
+    title: Make the status bar's counts open Problems and the command line list its commands
+    labels:
+    - L7-ui
+    - area:editor
+    - type:feature
+    size: S
+    reqs:
+    - UI-23
+    - UI-14
+    summary: |
+      Justin, 2026-11-20, using the app. The status bar's error and warning counts and the game's state could not be clicked, and the pointer over them was a text cursor though nothing can be typed there. And the command line said "Type a command; Tab completes, Enter runs" with nothing to show what a command is or which there are: "can we have command start with a '/' or something and have auto complete work? it's not clear what people should do there or how to use them". The models followed are the slash menu of Claude Code and Zed's command palette: typing lists what matches, with what each does.
+    depends:
+    - L-43
+    deliverable:
+    - 'apps/desktop/src/shell.rs: the status bar''s error and warning counts are a button that shows the Problems panel; the status bar''s and the command line''s labels show the arrow pointer, not the text cursor'
+    - 'crates/qs-commands/src/line.rs and apps/desktop/src/command_line.rs: a line may start with `/`; as a command is typed the line lists the commands that match above it, each with what it does, the first marked; Up and Down move the mark, Tab completes to the marked command, Enter or a click runs it; `/` alone lists every command; the hint says so'
+    acceptance:
+    - 'A click on the counts shows the Problems panel, and the status bar''s labels are not selectable, checked by kittest tests'
+    - 'Typing a start of a command lists the matching commands with their summaries; `/` lists all; Down and Tab complete to the second; Enter runs the marked one; a line with a leading `/` runs as without it; checked by tests of the line and of the view'
+    verify:
+    - 'cargo nextest run -p qs-commands -p quakec-studio; the shell snapshots'
+  - key: L-45
+    title: Give an outside agent what it needs to write and debug QuakeC
+    labels:
+    - L6-agent
+    - area:agent
+    - type:feature
+    size: M
+    reqs:
+    - PRIN-6
+    - AGT-9
+    summary: |
+      Justin, 2026-11-20: "i want agents to know how to write QuakeC code as well as you know how to write Rust and Python", and asked whether an agent over MCP or ACP could be prompted to come up with a new monster. The built-in agent's prompt carries the agent reference (docs/agent-reference/), but the MCP server tells an outside agent nothing of it, and the QuakeC reference is 45 lines: an outside agent writes QuakeC from what its model happens to know and what it reads in the project.
+    depends:
+    - L-43
+    deliverable:
+    - 'docs/agent-reference/quakec.md: the language as our compiler takes it in each dialect, the engine''s entity model and frame loop, the builtins by what they are for, and how a monster, a weapon, an item and a trigger are written, each from id''s QuakeC 1.01 and the engine specs, with the mistakes a model makes named'
+    - 'crates/qs-mcp: the references are served to an outside agent, and the server''s instructions tell it to read the one for its task first'
+    acceptance:
+    - 'Claude Code, asked through the MCP server for a new monster in LibreQuake''s QuakeC, writes one that compiles clean, spawns from a map and attacks the player in a scenario or a played map, recorded in the PR'
+    - 'A test holds the server to serving each reference and to naming them in its instructions'
+    verify:
+    - 'cargo nextest run -p qs-mcp -p qs-agent; the recorded run in the PR'

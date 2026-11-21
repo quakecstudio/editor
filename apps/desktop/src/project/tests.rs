@@ -159,8 +159,9 @@ fn choosing_a_symbol_opens_its_definition() {
 #[test]
 fn the_problems_are_counted() {
     let harness = harness();
-    harness.get_by_label(&format!("{} 2", Icon::Error.char()));
-    harness.get_by_label(&format!("{} 1", Icon::Warning.char()));
+    // Each count is a button read as its name and number (L-44).
+    harness.get_by_label(&format!("{} 2", Text::ErrorCount.get()));
+    harness.get_by_label(&format!("{} 1", Text::WarningCount.get()));
     let problems = app(&harness).shell().workbench().problems();
     assert_eq!(counts(problems), (2, 1));
     assert_eq!(counts(&[]), (0, 0));
