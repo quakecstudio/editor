@@ -1030,8 +1030,13 @@ impl Geometry {
     }
 }
 
-/// Reads a text `.fbx` file as a mesh, its axes turned as `up` says: a pose for each frame
-/// of each of its animation stacks, or one of the mesh as it is.
+/// Reads a text `.fbx` file as a mesh: a pose for each frame of each of its animation
+/// stacks, or one of the mesh as it is.
+///
+/// The converter turns what it reads a quarter about x, "`erotate *= Quat(M_PI/2, Vec3(1, 0,
+/// 0));`", which stands a file whose y is up on Quake's z: a position `(x, y, z)` is `(x, -z,
+/// y)`. That is what [`Up::Y`] is here; [`Up::Z`] is for a file whose z is up already, which
+/// is left as it is.
 ///
 /// Implements MDL-10.4.
 ///
@@ -1056,10 +1061,21 @@ pub fn read(text: &str, up: Up) -> Result<Mesh, FbxError> {
             _ => {}
         }
     }
-    scene.boned().mesh(up).map_err(|error| match error {
+    let mut mesh = scene.boned().mesh(Up::Z).map_err(|error| match error {
         RigError::Flat => FbxError::Flat,
         RigError::Names => FbxError::Names,
-    })
+    })?;
+    if up == Up::Y {
+        for position in mesh
+            .frames
+            .iter_mut()
+            .flat_map(|frame| &mut frame.positions)
+        {
+            let [x, y, z] = *position;
+            *position = [x, -z, y];
+        }
+    }
+    Ok(mesh)
 }
 
 #[cfg(test)]
