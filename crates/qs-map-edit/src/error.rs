@@ -232,6 +232,12 @@ pub enum MapEditError {
     },
     /// No game was found to take a level's textures from (`map.generate`).
     NoGame,
+    /// The project's code defines no class of the name a command would place
+    /// (`map.build_passage`'s door).
+    NoClass {
+        /// The classname.
+        classname: String,
+    },
     /// A level could not be generated (`map.generate`).
     Generate {
         /// Why.
@@ -342,6 +348,10 @@ impl fmt::Display for MapEditError {
             Self::Shape { error } => write!(f, "{error}"),
             Self::NotLayer { entity } => write!(f, "entity {entity} is no layer"),
             Self::Link { error } => write!(f, "{error}"),
+            Self::NoClass { classname } => write!(
+                f,
+                "the project's code defines no {classname}: the game would remove it"
+            ),
             Self::NoGame => f.write_str(
                 "no game was found to take textures from: choose the folder of the game's files",
             ),
@@ -370,6 +380,7 @@ impl Error for MapEditError {
             | Self::NotNewMap { .. }
             | Self::NoProject
             | Self::NoGame
+            | Self::NoClass { .. }
             | Self::PrefabName { .. }
             | Self::NoSelection
             | Self::NotGroup { .. }

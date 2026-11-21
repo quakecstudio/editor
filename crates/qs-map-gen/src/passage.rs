@@ -29,6 +29,15 @@ const DOOR_THICK: f64 = 16.0;
 const LIGHT: f64 = 200.0;
 const LIGHT_DROP: f64 = 24.0;
 
+/// A flight of steps in a passage.
+#[derive(Clone, Copy, Debug)]
+struct Flight {
+    /// A step's depth.
+    depth: f64,
+    /// How far the first step's edge is from the passage's lower end.
+    edge: f64,
+}
+
 /// A passage being built.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Passage {
@@ -139,7 +148,68 @@ impl Passage {
         [a.min(b), a.max(b)]
     }
 
-    /// Takes the passage out of `mass` and builds its steps and its door.
+    /// The flight of steps between its floors: how many, how deep each is, and how far its
+    /// first edge is from the passage's lower end; `None` for a level passage.
+    fn flight(&self) -> Option<Flight> {
+        let [low, high] = self.low_high();
+        let climb = high - low;
+        if climb <= 0.0 {
+            return None;
+        }
+        let count = climb / STEP_RISE;
+        let room = self.length - LANDING - LANDING;
+        let depth = STEP_DEPTHS
+            .into_iter()
+            .find(|depth| depth * count <= room)
+            .unwrap_or(STEP_RISE);
+        Some(Flight {
+            depth,
+            edge: (self.length - depth * count) / 2.0,
+        })
+    }
+
+    /// Whether its floor rises from its first end to its second.
+    fn rises_along(&self) -> bool {
+        let [first, second] = self.floors;
+        first < second
+    }
+
+    /// The part of the passage's space from `along[0]` to `along[1]` between the heights `z`:
+    /// a box, or under an arch its upper corners cut.
+    fn section(
+        &self,
+        paints: &Paints,
+        along: [f64; 2],
+        [floor, top]: [f64; 2],
+    ) -> Result<Brush, BrushError> {
+        let space = Coat::space(&paints.floor, &paints.ceiling, &paints.trim);
+        match self.doorway {
+            Doorway::Arch => {
+                let mut corners = Vec::new();
+                for at in along {
+                    for (over, z) in [
+                        (-HALF_WIDTH, floor),
+                        (HALF_WIDTH, floor),
+                        (HALF_WIDTH, top - ARCH_CUT),
+                        (HALF_WIDTH - ARCH_CUT, top),
+                        (-HALF_WIDTH + ARCH_CUT, top),
+                        (-HALF_WIDTH, top - ARCH_CUT),
+                    ] {
+                        corners.push(self.point(at, over, z));
+                    }
+                }
+                space.hull(&corners)
+            }
+            Doorway::Open | Doorway::Door | Doorway::Locked => {
+                space.boxed(self.bounds(along, [-HALF_WIDTH, HALF_WIDTH], [floor, top]))
+            }
+        }
+    }
+
+    /// Takes the passage out of `mass` and builds its steps and its door. Its space is a
+    /// doorway's height above the floor at each end: up to its first step it is that high
+    /// above its lower floor, and from there on that high above its higher one, so each end
+    /// is the doorway of the room it meets and no higher.
     ///
     /// # Errors
     ///
@@ -147,44 +217,34 @@ impl Passage {
     pub(crate) fn build(&self, mass: &mut Mass, paints: &Paints) -> Result<Passed, BrushError> {
         let [low, high] = self.low_high();
         let top = high + HEIGHT;
-        let space = Coat::space(&paints.floor, &paints.ceiling, &paints.trim);
         let across = [-HALF_WIDTH, HALF_WIDTH];
-        let void = match self.doorway {
-            Doorway::Arch => {
-                let mut corners = Vec::new();
-                for along in [0.0, self.length] {
-                    for (over, z) in [
-                        (-HALF_WIDTH, low),
-                        (HALF_WIDTH, low),
-                        (HALF_WIDTH, top - ARCH_CUT),
-                        (HALF_WIDTH - ARCH_CUT, top),
-                        (-HALF_WIDTH + ARCH_CUT, top),
-                        (-HALF_WIDTH, top - ARCH_CUT),
-                    ] {
-                        corners.push(self.point(along, over, z));
-                    }
-                }
-                space.hull(&corners)?
+        match self.flight() {
+            None => mass.carve(&self.section(paints, [0.0, self.length], [low, top])?)?,
+            Some(flight) => {
+                // The landing before the first step, at the lower end, and the rest.
+                let (landing, rest) = if self.rises_along() {
+                    ([0.0, flight.edge], [flight.edge, self.length])
+                } else {
+                    let from = self.length - flight.edge;
+                    ([from, self.length], [0.0, from])
+                };
+                mass.carve(&self.section(paints, landing, [low, low + HEIGHT])?)?;
+                mass.carve(&self.section(paints, rest, [low, top])?)?;
             }
-            Doorway::Open | Doorway::Door | Doorway::Locked => {
-                space.boxed(self.bounds([0.0, self.length], across, [low, top]))?
-            }
-        };
-        mass.carve(&void)?;
+        }
         let mut passed = Passed {
             light: Some((self.point(self.length / 2.0, 0.0, top - LIGHT_DROP), LIGHT)),
             ..Passed::default()
         };
         self.steps(paints, &mut passed.solids)?;
-        let [first, _] = self.floors;
         // The door stands at the higher end, where the passage is no taller than it.
-        let door_at = if first >= high {
-            [DOOR_FROM_END, DOOR_FROM_END + DOOR_THICK]
-        } else {
+        let door_at = if self.rises_along() {
             [
                 self.length - DOOR_FROM_END - DOOR_THICK,
                 self.length - DOOR_FROM_END,
             ]
+        } else {
+            [DOOR_FROM_END, DOOR_FROM_END + DOOR_THICK]
         };
         match self.doorway {
             Doorway::Open | Doorway::Arch => {}
@@ -200,25 +260,15 @@ impl Passage {
     /// The steps from its lower floor to its higher, each a slab from its own edge to the
     /// higher end.
     fn steps(&self, paints: &Paints, solids: &mut Vec<Brush>) -> Result<(), BrushError> {
-        let [low, high] = self.low_high();
-        let climb = high - low;
-        if climb <= 0.0 {
+        let Some(flight) = self.flight() else {
             return Ok(());
-        }
-        let count = climb / STEP_RISE;
-        let room = self.length - LANDING - LANDING;
-        let depth = STEP_DEPTHS
-            .into_iter()
-            .find(|depth| depth * count <= room)
-            .unwrap_or(STEP_RISE);
+        };
+        let [low, high] = self.low_high();
         let step = Coat::deck(&paints.floor, &paints.trim);
-        let [first, _] = self.floors;
-        let rises_along = first < high;
-        // How far the first step's edge is from the lower end.
-        let mut edge = (self.length - depth * count) / 2.0;
+        let mut edge = flight.edge;
         let mut foot = low;
         while foot < high {
-            let along = if rises_along {
+            let along = if self.rises_along() {
                 [edge, self.length]
             } else {
                 [0.0, self.length - edge]
@@ -228,7 +278,7 @@ impl Passage {
                 [-HALF_WIDTH, HALF_WIDTH],
                 [foot, foot + STEP_RISE],
             ))?);
-            edge += depth;
+            edge += flight.depth;
             foot += STEP_RISE;
         }
         Ok(())

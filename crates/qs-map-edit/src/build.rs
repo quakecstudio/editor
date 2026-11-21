@@ -9,13 +9,15 @@ use qs_commands::{Command, Outcome};
 use qs_map::{Brush, Entity, Item};
 use qs_map_gen::{
     Arch, DOOR, DOOR_SILVER_KEY, Door, KIT_WALL, PassageKit, RoomKit, RoomShape, Side, TORCH,
-    TORCH_LIGHT, Textures, UP,
+    TORCH_LIGHT, Textures, UP, WallLights,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::textures::{Game, GameTextures};
-use crate::{EntityIndex, HasMap, MapDocument, MapEditError, MapProject, edit_map, origin_text};
+use crate::{
+    EntityIndex, HasMap, MapDocument, MapEditError, MapProject, WORLD_CLASSNAME, edit_map,
+    origin_text,
+};
 
 /// The id of `map.build_room`.
 pub const MAP_BUILD_ROOM: &str = "map.build_room";
@@ -212,15 +214,12 @@ impl BuildTextures {
                 trim,
                 liquid,
                 sky,
+                wall_lights: WallLights::Torches,
             });
         }
         let base = context.game_folders().base.ok_or(MapEditError::NoGame)?;
-        let names: Vec<String> = GameTextures::read(&Game::at(&base))
-            .names()
-            .map(str::to_owned)
-            .collect();
-        let themed =
-            Textures::themed(&names, theme).map_err(|error| MapEditError::Generate { error })?;
+        let themed = Textures::themed(context.map_store().level_names(&base), theme)
+            .map_err(|error| MapEditError::Generate { error })?;
         Ok(Textures {
             wall: wall.unwrap_or(themed.wall),
             floor: floor.unwrap_or(themed.floor),
@@ -229,6 +228,7 @@ impl BuildTextures {
             door: door.unwrap_or(themed.door),
             liquid: liquid.or(themed.liquid),
             sky: sky.or(themed.sky),
+            wall_lights: themed.wall_lights,
         })
     }
 }
@@ -306,7 +306,8 @@ pub struct BuildPassageParams {
     pub from: [f64; 3],
     /// The other end: a doorway that faces the first along x or along y.
     pub to: [f64; 3],
-    /// How the passage's top is shaped; square when not given.
+    /// How the passage's top is shaped; square when not given, and square with a door,
+    /// which is a box.
     #[serde(default)]
     pub arch: TopShape,
     /// What stands in it; nothing when not given.
@@ -380,6 +381,8 @@ impl<C: HasMap + 'static> Command<C> for MapBuildRoom {
         context: &mut C,
         params: BuildRoomParams,
     ) -> Result<Outcome<RoomBuilt, C>, MapEditError> {
+        // Before a game's levels are read for textures: there must be a map to build in.
+        context.map_store().map().ok_or(MapEditError::NoMap)?;
         let textures = params.textures.resolve(context)?;
         let room = RoomKit {
             shape: params.shape.into(),
@@ -394,12 +397,13 @@ impl<C: HasMap + 'static> Command<C> for MapBuildRoom {
         }
         .build(&textures)
         .map_err(|error| MapEditError::Generate { error })?;
-        // A torch where the project's code has one, a light of its brightness where not.
-        let torch = if context.map_project().entity_class(TORCH).is_some() {
-            TORCH
-        } else {
-            "light"
+        // A torch where the theme burns them and the project's code has one, a light of its
+        // brightness where not.
+        let burns = match textures.wall_lights {
+            WallLights::Torches => context.map_project().entity_class(TORCH).is_some(),
+            WallLights::Lamps => false,
         };
+        let torch = if burns { TORCH } else { "light" };
         let (built, step) = edit_map(context, |document| {
             let added = room.brushes.len();
             let total = document.add_to_world(room.brushes)?;
@@ -460,6 +464,20 @@ impl<C: HasMap + 'static> Command<C> for MapBuildPassage {
         context: &mut C,
         params: BuildPassageParams,
     ) -> Result<Outcome<PassageBuilt, C>, MapEditError> {
+        context.map_store().map().ok_or(MapEditError::NoMap)?;
+        // A door the project's code has no class for would be removed by the game: where
+        // the code's classes can be read, as its world's can, the door must be among them.
+        let project = context.map_project();
+        let doorless =
+            project.entity_class(WORLD_CLASSNAME).is_some() && project.entity_class(DOOR).is_none();
+        match params.door {
+            PassageDoor::Door | PassageDoor::Locked if doorless => {
+                return Err(MapEditError::NoClass {
+                    classname: DOOR.to_owned(),
+                });
+            }
+            PassageDoor::Door | PassageDoor::Locked | PassageDoor::None => {}
+        }
         let textures = params.textures.resolve(context)?;
         let passage = PassageKit {
             from: params.from,

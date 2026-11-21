@@ -4175,7 +4175,7 @@ Parameters:
     "arch": {
       "$ref": "#/$defs/TopShape",
       "default": "square",
-      "description": "How the passage's top is shaped; square when not given."
+      "description": "How the passage's top is shaped; square when not given, and square with a door,\nwhich is a box."
     },
     "door": {
       "$ref": "#/$defs/PassageDoor",

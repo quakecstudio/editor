@@ -7,29 +7,35 @@
 
 use qs_map::{Brush, Surface, TexDef};
 
-use crate::layout::{Doorway, RAISE, RoomPlan, Side};
+use crate::layout::{Doorway, RoomPlan, Side};
 use crate::mass::{Bounds, Mass};
 use crate::passage::Passage;
 use crate::rng::Rng;
 use crate::rooms::{Part, Room};
-use crate::theme::Paints;
+use crate::theme::{Paints, WorldType};
 use crate::{GenError, RoomShape};
 
 /// The grid a room's and a passage's numbers are on: every corner the kit makes is then on
 /// whole units (MAP-3.3).
 pub const KIT_GRID: f64 = 16.0;
-/// The thinnest and the thickest a shell's rock is around its space, and what it is when
-/// none is asked for.
+/// The thinnest a shell's rock is around its space.
 pub const KIT_MIN_WALL: f64 = 32.0;
+/// The thickest a shell's rock is around its space.
 pub const KIT_MAX_WALL: f64 = 256.0;
+/// How thick a shell's rock is when none is asked for.
 pub const KIT_WALL: f64 = 64.0;
-/// The widest a room's half-width and the highest its height may be.
+/// The widest a room's half-width may be.
 pub const KIT_MAX_HALF: f64 = 1024.0;
+/// The highest a room may be, floor to ceiling.
 pub const KIT_MAX_HEIGHT: f64 = 1024.0;
-/// How wide and how high a doorway is: a passage's width and its height above the higher of
-/// its floors.
+/// How wide a doorway is: a passage's width.
 pub const KIT_DOORWAY_WIDTH: f64 = 112.0;
+/// How high a doorway is: a passage's height above the floor at each of its ends.
 pub const KIT_DOORWAY_HEIGHT: f64 = 128.0;
+/// The longest a passage may be.
+pub const KIT_MAX_LENGTH: f64 = 2048.0;
+/// The most a passage may climb between its ends' floors.
+pub const KIT_MAX_CLIMB: f64 = 512.0;
 
 /// The least half-width and the least height of each shape: what stands in it needs them.
 const SMALL_HALF: f64 = 192.0;
@@ -87,6 +93,18 @@ pub struct Textures {
     pub liquid: Option<String>,
     /// The sky; a courtyard needs one.
     pub sky: Option<String>,
+    /// What lights a room's walls.
+    pub wall_lights: WallLights,
+}
+
+/// What lights a room's walls, where a theme has a say: a base is lit electrically.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WallLights {
+    /// Torches, where the game has them.
+    #[default]
+    Torches,
+    /// Lights with nothing to see.
+    Lamps,
 }
 
 impl Textures {
@@ -107,6 +125,10 @@ impl Textures {
             door: name(&paints.door),
             liquid: paints.liquid.as_ref().map(name),
             sky: paints.sky.as_ref().map(name),
+            wall_lights: match paints.world {
+                WorldType::Medieval | WorldType::Metal => WallLights::Torches,
+                WorldType::Base => WallLights::Lamps,
+            },
         })
     }
 }
@@ -229,6 +251,8 @@ pub enum KitError {
     NeedsTexture(RoomShape),
     /// A passage whose ends are not in line along x or along y, or are one place.
     Askew,
+    /// A passage longer than [`KIT_MAX_LENGTH`], or that climbs more than [`KIT_MAX_CLIMB`].
+    TooFar,
     /// A passage too short for the stairs between its floors.
     TooSteep {
         /// The least length that holds them.
@@ -270,6 +294,10 @@ impl core::fmt::Display for KitError {
             Self::Askew => {
                 f.write_str("a passage's two ends are in line along x or along y, and apart")
             }
+            Self::TooFar => write!(
+                f,
+                "a passage is at most {KIT_MAX_LENGTH} long and climbs at most {KIT_MAX_CLIMB}"
+            ),
             Self::TooSteep { least_length } => write!(
                 f,
                 "the passage is too short for its stairs: it needs a length of {least_length}"
@@ -415,7 +443,8 @@ pub struct PassageKit {
     pub from: [f64; 3],
     /// The other end.
     pub to: [f64; 3],
-    /// How its top is shaped.
+    /// How its top is shaped. A passage with a door is square whatever this says: a door is
+    /// a box.
     pub arch: Arch,
     /// What stands in it.
     pub door: Door,
@@ -468,6 +497,9 @@ impl PassageKit {
         }
         let (side, length) = self.run().ok_or(GenError::Kit(KitError::Askew))?;
         let climb = (bz - az).abs();
+        if length > KIT_MAX_LENGTH || climb > KIT_MAX_CLIMB {
+            return Err(GenError::Kit(KitError::TooFar));
+        }
         let least_length = Passage::least_length(climb);
         if length < least_length {
             return Err(GenError::Kit(KitError::TooSteep { least_length }));
@@ -492,23 +524,5 @@ impl PassageKit {
             light: passed.light,
             steps,
         })
-    }
-}
-
-impl RoomKit {
-    /// The floor at the room's doorway on `side`: its floor, or the raised one of a room on
-    /// two levels on the side it is turned to.
-    #[must_use]
-    pub fn door_floor(&self, side: Side) -> f64 {
-        match self.shape {
-            RoomShape::Split if side == self.turned => self.floor + RAISE,
-            RoomShape::Split
-            | RoomShape::Hall
-            | RoomShape::Chamber
-            | RoomShape::Pit
-            | RoomShape::Court
-            | RoomShape::Cross
-            | RoomShape::Vault => self.floor,
-        }
     }
 }

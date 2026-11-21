@@ -235,8 +235,9 @@ fn a_missing_start_is_placed() {
     );
 }
 
-// spec NET-1.1: a position is sent as the short `(int) (f * 8)`, so a map with an entity or a
-// brush corner 4096 units or more from the middle is told so, and one just within is not
+// spec NET-1.1: a position is sent as the short `(int) (f * 8)`, which holds -4096 and less
+// than 4096: a map with a point entity outside that is told so, by that entity, and one with
+// only a brush out there, which is not sent, is not
 #[test]
 fn a_map_past_the_games_reach_is_an_issue() {
     let past = |issues: Vec<MapIssue>| -> Vec<Option<EntityIndex>> {
@@ -248,23 +249,27 @@ fn a_map_past_the_games_reach_is_an_issue() {
     };
     let at =
         |origin: &str| format!("{{\n\"classname\" \"monster_ogre\"\n\"origin\" \"{origin}\"\n}}\n");
-    // A level within 4096 on every axis has no such issue, up to the last eighth of a unit.
-    let within = format!("{START}{}", at("4095.875 -4095 24"));
+    // Within what the short holds, to its last eighth of a unit one way and -4096 the other.
+    let within = format!("{START}{}", at("4095.875 -4096 24"));
     assert!(past(issues(&mut session("within", &map(&room(), &within)))).is_empty());
-    // A point entity at 4096, on any axis and either side, is past it: the first is named.
+    // A point entity at 4096, or below -4096, on any axis is past it: the first is named.
     for (name, origin) in [
         ("east", "4096 0 24"),
-        ("south", "0 -4096 24"),
+        ("south", "0 -4096.125 24"),
         ("up", "0 0 5000"),
     ] {
         let rest = format!("{START}{}", at(origin));
         let found = past(issues(&mut session(name, &map(&room(), &rest))));
         assert_eq!(found, [Some(EntityIndex::new(2))], "{origin}");
     }
-    // So is a brush that reaches there: the world is the entity named.
-    let wide = format!("{}{}", room(), cuboid([4000, -64, 0], [4096, 64, 64]));
-    let found = past(issues(&mut session("wide", &map(&wide, START))));
-    assert_eq!(found, [Some(EntityIndex::new(0))]);
+    // A brush that reaches there is not sent, and neither is a brush that is not closed,
+    // whose corners are far off wherever it is: no entity is past the reach.
+    let wide = format!("{}{}", room(), cuboid([4000, -64, 0], [4200, 64, 64]));
+    assert!(past(issues(&mut session("wide", &map(&wide, START)))).is_empty());
+    let open = cuboid([0, 0, 0], [64, 64, 64]);
+    let open = open.lines().skip(2).collect::<Vec<_>>().join("\n");
+    let unclosed = format!("{}{{\n{open}\n", room());
+    assert!(past(issues(&mut session("open", &map(&unclosed, START)))).is_empty());
 }
 
 // No spec statement: P6-19: a format diagnostic is listed with the entity and brush its line

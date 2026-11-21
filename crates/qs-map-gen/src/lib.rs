@@ -28,9 +28,9 @@ use std::fmt;
 use qs_map::{Brush, BrushError, Entity, Item, MapError, MapFile};
 
 pub use kit::{
-    Arch, Door, KIT_DOORWAY_HEIGHT, KIT_DOORWAY_WIDTH, KIT_GRID, KIT_MAX_HALF, KIT_MAX_HEIGHT,
-    KIT_MAX_WALL, KIT_MIN_WALL, KIT_WALL, KitError, Opening, PassageKit, PassageParts, RoomKit,
-    RoomParts, Textures,
+    Arch, Door, KIT_DOORWAY_HEIGHT, KIT_DOORWAY_WIDTH, KIT_GRID, KIT_MAX_CLIMB, KIT_MAX_HALF,
+    KIT_MAX_HEIGHT, KIT_MAX_LENGTH, KIT_MAX_WALL, KIT_MIN_WALL, KIT_WALL, KitError, Opening,
+    PassageKit, PassageParts, RoomKit, RoomParts, Textures, WallLights,
 };
 pub use layout::Side;
 use layout::{Doorway, Has, Liquid, Plan, Sky};
@@ -207,11 +207,13 @@ pub struct Level {
 /// The key that opens a locked door: `item_key1` is the silver key (`items.qc`), and
 /// `DOOR_SILVER_KEY = 16` (`doors.qc`).
 const KEY: &str = "item_key1";
+/// The `spawnflags` of a door that needs the silver key: `DOOR_SILVER_KEY = 16` (`doors.qc`).
 pub const DOOR_SILVER_KEY: &str = "16";
 /// The door (`doors.qc`).
 pub const DOOR: &str = "func_door";
-/// The torch on a wall (`misc.qc`), and how bright one is.
+/// The torch on a wall (`misc.qc`).
 pub const TORCH: &str = "light_torch_small_walltorch";
+/// How bright a torch on a wall is, as its `light` key.
 pub const TORCH_LIGHT: &str = "250";
 /// The `angle` of a door that opens upward (`SetMovedir`, `subs.qc`).
 pub const UP: &str = "-1";

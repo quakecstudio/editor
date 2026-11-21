@@ -319,3 +319,69 @@ fn what_cannot_be_built_is_refused() {
     );
     assert!(error.contains("it needs a length of 128"), "{error}");
 }
+
+// No spec statement: L-49, a door is built only where the project's code has one: a project
+// whose code defines the world and no func_door is refused a door and gets an open passage,
+// and one whose classes cannot be read is given its door
+#[test]
+fn a_door_needs_its_class() {
+    let passage = |door: &str| json!({ "from": [0, 0, 0], "to": [256, 0, 0], "door": door, "textures": named() });
+    let (_, mut doorless) = opened("doorless", &["worldspawn", "monster_mine"], false);
+    for door in ["door", "locked"] {
+        let error = doorless
+            .execute(MAP_BUILD_PASSAGE, passage(door))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("the project's code defines no func_door"),
+            "{error}"
+        );
+        assert_eq!(held(&doorless), (vec!["worldspawn".to_owned()], 0));
+    }
+    let open = doorless
+        .execute(MAP_BUILD_PASSAGE, passage("none"))
+        .unwrap();
+    assert_eq!(open["door"], json!(null));
+
+    let (_, mut doored) = opened("doored", &["worldspawn", "func_door"], false);
+    assert_eq!(
+        doored.execute(MAP_BUILD_PASSAGE, passage("door")).unwrap()["door"],
+        2
+    );
+    let (_, mut unread) = opened("unread", &[], false);
+    assert_eq!(
+        unread
+            .execute(MAP_BUILD_PASSAGE, passage("locked"))
+            .unwrap()["door"],
+        2
+    );
+}
+
+// No spec statement: L-49, a room or a passage needs a map open, which is asked before any
+// game is looked for; and a game's level textures are read once for the rooms of a map
+#[test]
+fn a_map_is_open_before_a_game_is_read() {
+    let room = json!({
+        "shape": "hall", "middle": [0, 0], "floor": 0, "half": [192, 192], "height": 192,
+    });
+    let mut none = MapContext::session();
+    for (id, params) in [
+        (MAP_BUILD_ROOM, room.clone()),
+        (
+            MAP_BUILD_PASSAGE,
+            json!({ "from": [0, 0, 0], "to": [256, 0, 0] }),
+        ),
+    ] {
+        let error = none.execute(id, params).unwrap_err().to_string();
+        assert!(error.ends_with("no map is open"), "{error}");
+    }
+
+    let (root, mut session) = opened("once", &[], true);
+    session.execute(MAP_BUILD_ROOM, room.clone()).unwrap();
+    // The game's level is gone: the names read for the first room serve the next.
+    let level = root.parent().unwrap().join("game/id1/maps/e1.bsp");
+    std::fs::remove_file(level).unwrap();
+    let mut next = room;
+    next["middle"] = json!([1024, 0]);
+    session.execute(MAP_BUILD_ROOM, next).unwrap();
+}

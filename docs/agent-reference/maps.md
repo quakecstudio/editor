@@ -98,10 +98,12 @@ median over the levels.
 - **About one face in seven is slanted in id's levels**, one in four in LibreQuake's: cut
   corners, arches, sloped ceilings and ramps. A level of boxes has none.
 - **Light is many small lights, not a few large ones**: `e1m1` has 252 lights for 6148
-  faces. A sample at distance `d` from a light gets `(light - d)` times the cosine of the
-  angle it is lit at (LIGHT-4.3, [`docs/spec/light.md`](../spec/light.md)), so a light of 200
-  gives a floor 100 below it half its brightness, and a light of 300 hung 300 above a floor
-  gives it none. Put lights within 150 of what they light.
+  faces. A sample at distance `d` from a light gets `(light - d) * ((1 - scalecos) +
+  scalecos * cos)`, `cos` the cosine between the face's normal and the direction to the light
+  (LIGHT-4.3, [`docs/spec/light.md`](../spec/light.md)), and `scalecos` is 0.5 (LIGHT-1.2). So
+  a light adds nothing to what is `light` units or more from it, half as much at half that
+  distance as beside it, and half as much to a wall it grazes as to one it faces: a light
+  of 300 hung 300 above a floor leaves it dark. Put lights within 150 of what they light.
 - **A level is busy with things that move**: `e1m1` has 21 doors, 2 lifts and 6 buttons.
 
 ## Rooms other than boxes
@@ -137,7 +139,7 @@ asked for, with its lights; `map.build_passage` joins two doorways. Each is one 
 - Keep the whole level within 4096 units of 0 on every axis: the game sends a position as
   the short `(int) (f * 8)` (NET-1.1, [`docs/spec/engine/net.md`](../spec/engine/net.md)), so
   a player or a monster past that is drawn somewhere else. Rooms 1024 apart fit seven in a
-  row from -3072 to 3072; `map.issues` says when a map reaches past it.
+  row from -3072 to 3072; `map.issues` says when an entity is past it.
 - Build a level from these, no two rooms of it the same shape and size, and vary the
   floors: a room 64 up or down from the last is four steps in the passage. `map.compile`
   says whether it is sealed, and `map.play_from_here` whether anything stands in the dark.
