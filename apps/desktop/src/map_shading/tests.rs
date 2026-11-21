@@ -165,9 +165,16 @@ fn the_textured_view_leaves_out_unseen_textures() {
         assert!(!textured(seen).unseen(), "{seen}");
     }
     let mut clip = floor_brush(0, 0.0);
-    clip.faces[0].texture = "clip".to_owned();
+    for face in &mut clip.faces {
+        face.texture = "clip".to_owned();
+    }
+    // A detail brush with a hidden side skipped: its other face is drawn.
+    let mut mixed = floor_brush(3, 24.0);
+    let mut skipped = mixed.faces[0].clone();
+    skipped.texture = "skip".to_owned();
+    mixed.faces.push(skipped);
     let scene = crate::map_scene::Scene {
-        brushes: vec![clip, floor_brush(1, 8.0), floor_brush(2, 16.0)],
+        brushes: vec![clip, floor_brush(1, 8.0), floor_brush(2, 16.0), mixed],
         ..crate::map_scene::Scene::default()
     };
     let mesh = scene.textured_mesh(
@@ -175,8 +182,13 @@ fn the_textured_view_leaves_out_unseen_textures() {
         &BTreeSet::from([EntityIndex::new(2)]),
         Look::QuakeSpasm,
     );
-    assert_eq!(mesh.indices.len(), 6);
-    // The clip brush and the trigger keep their edges over the faces.
+    assert_eq!(
+        mesh.indices.len(),
+        12,
+        "the floor's face and the mixed brush's seen face"
+    );
+    // The all-clip brush and the trigger keep their edges over the faces; the mixed brush,
+    // whose drawn face shows it, does not.
     assert_eq!(
         scene.outlined(&BTreeSet::from([EntityIndex::new(2)])),
         [0, 2]

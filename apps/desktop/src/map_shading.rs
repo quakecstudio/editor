@@ -292,14 +292,15 @@ impl FaceShape {
 impl Scene {
     /// The textured mesh of the scene's brush faces but those of the entities `hidden`: each
     /// texture's image from `image`, and each face shaded by its normal.
-    /// The brushes, by their place, with a face the textured view leaves out: those of
-    /// `triggers`, and those with an unseen face ([`FaceShape::unseen`]). The map editor draws
-    /// their edges over the faces, so they stay visible and can be picked.
+    /// The brushes, by their place, the textured view draws nothing of: those of `triggers`,
+    /// and those whose every face is unseen ([`FaceShape::unseen`]), such as a clip or hint
+    /// brush. The map editor draws their edges over the faces, so they stay visible and can be
+    /// picked; a brush with a face drawn is seen by it, as TrenchBroom outlines none.
     pub(crate) fn outlined(&self, triggers: &BTreeSet<EntityIndex>) -> Vec<usize> {
         self.brushes
             .iter()
             .enumerate()
-            .filter(|(_, b)| triggers.contains(&b.entity) || b.faces.iter().any(FaceShape::unseen))
+            .filter(|(_, b)| triggers.contains(&b.entity) || b.faces.iter().all(FaceShape::unseen))
             .map(|(index, _)| index)
             .collect()
     }
