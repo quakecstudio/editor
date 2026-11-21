@@ -369,8 +369,12 @@ impl<L: Loader> AnalysisHost<L> {
         }
     }
 
-    /// Adds the one-file module of `path`, a file no project module compiles.
+    /// Adds the one-file module of `path`, a file no project module compiles; nothing for a
+    /// file that is no QuakeC, whose text is the editor's and no more.
     fn add_orphan(&mut self, path: PathBuf) {
+        if !may_be_quakec(&path) {
+            return;
+        }
         let dialect = self.config.dialect.unwrap_or(Dialect::Vanilla);
         let target = self.config.target.unwrap_or(Target::Quake);
         let input = ModuleInput {
@@ -466,7 +470,12 @@ impl<L: Loader> AnalysisHost<L> {
             return self.reload();
         }
         let before = before.or_else(|| self.loader.load(&path).ok());
-        if before.is_some_and(|before| directive_lines(&before) != directive_lines(text)) {
+        let Some(before) = before else {
+            // A file with no text until now may be one a module names, which could not be read
+            // when the project was (PRJ-4.5): read the project again, so the module compiles it.
+            return self.read_again(Keep::OnError);
+        };
+        if directive_lines(&before) != directive_lines(text) {
             return self.read_again(Keep::OnError);
         }
         let mut found = false;
@@ -608,6 +617,20 @@ fn is_project_file(path: &Path) -> bool {
         || path
             .extension()
             .is_some_and(|e| e.eq_ignore_ascii_case("src"))
+}
+
+/// The endings of the files that may hold QuakeC: sources, and the headers and included
+/// files a source names.
+const QUAKEC_ENDINGS: [&str; 4] = ["qc", "qh", "h", "inc"];
+
+/// Whether `path` may hold QuakeC, by its ending: only such a file is analysed on its own
+/// when no module compiles it (QC-12.5).
+fn may_be_quakec(path: &Path) -> bool {
+    path.extension().is_some_and(|ending| {
+        QUAKEC_ENDINGS
+            .iter()
+            .any(|quakec| ending.eq_ignore_ascii_case(quakec))
+    })
 }
 
 /// The UTF-8 byte order mark a file may start with, which the graph skips (PRJ-5.1).

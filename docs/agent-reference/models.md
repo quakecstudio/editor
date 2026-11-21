@@ -1,7 +1,7 @@
 # Models for the agent
 
 Sources: [`docs/spec/mdl.md`](../spec/mdl.md) (MDL-1 to MDL-7); [`docs/spec/render.md`](../spec/render.md)
-(REND-4.13); the `model.*` commands (`crates/qs-workbench/src/models.rs`, L-47).
+(REND-4.13); the model commands (`crates/qs-workbench/src/models.rs`, L-47).
 
 ## What a model is
 
@@ -45,7 +45,7 @@ Each of these is one step that `edit.undo` takes back.
 
 | Command | What it does |
 | --- | --- |
-| `model.inspect` | The skins and their size, the vertices and triangles, the box the frames fill, and the frames by name |
+| `model.inspect` | The skins, their size and the rows of the palette each is of, the vertices and triangles, the box the frames fill, and the frames by name |
 | `model.recolor` | Recolours a skin by rows of the palette |
 | `model.export_skin`, `model.set_skin` | A skin out as a PNG, and a PNG of the same size back as a skin, each pixel the palette's nearest colour |
 | `model.scale`, `model.move` | Makes the model larger or smaller, or moves it against the entity's origin; no vertex is rounded again |
@@ -54,7 +54,9 @@ Each of these is one step that `edit.undo` takes back.
 - **The palette is 16 rows of 16 shades**, a colour's row its number divided by 16. Rows 0
   to 7 run from dark to bright and rows 8 to 15 from bright to dark (REND-4.13: "the artists
   made some backwards ranges"); `model.recolor` keeps a pixel's shade between the two kinds.
-  The game recolours a player's shirt from row 1 and trousers from row 6 the same way. Look
+  The game recolours a player's shirt from row 1 and trousers from row 6 the same way.
+  `model.inspect` answers the rows a skin is of, most pixels first: those are the rows to
+  give `model.recolor`. Look
   at a skin (`model.export_skin`, then read the PNG) before and after.
 - **Scale about the origin**: a model stands with its origin where the entity's is, so a
   monster made 1.3 times larger also reaches 1.3 times as far below it. Its feet are at the

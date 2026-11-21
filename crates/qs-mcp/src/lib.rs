@@ -536,6 +536,9 @@ const INSTRUCTIONS: &str = "Every command of QuakeC Studio over the project this
     read files, stage edits as hunks and keep checkpoints; make or open a map, place and \
     key its entities, build its brushes, compile it and find its leaks, save it and play it. \
     A map edit is made at once and edit.undo takes it back. Paths are the project's, absolute or relative to it. \
+    To change how a monster, a weapon or an item looks: model.copy_from_game makes a file of \
+    the project's own of a model of the game, model.inspect reads it, model.recolor, \
+    model.scale and model.move change it, and the QuakeC names the new file. \
     To build a map: map.new (or map.open), then map.list_textures for the texture names there \
     are. A room is map.brush_create for a box and map.brush_hollow for its walls; rooms are \
     joined by a box across the walls between them given to map.brush_subtract. The \

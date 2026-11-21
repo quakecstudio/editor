@@ -145,8 +145,8 @@ fn names(model: &Model) -> Vec<String> {
     frames(model).map(name_of).collect()
 }
 
-// No spec statement: L-47, `model.inspect` answers a model's skins, vertices, triangles, the
-// box its frames fill and its frames by name, as a $frame line lists them
+// No spec statement: L-47, `model.inspect` answers a model's skins and the rows of the
+// palette each is of, most pixels first, its vertices, triangles, the box its frames fill and its frames by name, as a $frame line lists them
 #[test]
 fn a_model_is_inspected() {
     let (root, mut session) = project("inspect", &[]);
@@ -157,6 +157,11 @@ fn a_model_is_inspected() {
         )
         .unwrap();
     assert_eq!(seen["skins"], 1);
+    // The skin's colours are 16 to 47: sixteen of row 1 and sixteen of row 2.
+    assert_eq!(
+        seen["skin_rows"],
+        json!([[{ "row": 1, "pixels": 16 }, { "row": 2, "pixels": 16 }]])
+    );
     assert_eq!(seen["skin_size"], json!([8, 4]));
     assert_eq!(
         (seen["vertices"].clone(), seen["triangles"].clone()),

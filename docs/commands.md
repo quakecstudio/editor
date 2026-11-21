@@ -149,7 +149,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`model.add_frames`](#modeladd_frames) | Adds frames of another model of the same vertices to the end of a model's own, each by its name: QuakeC's $frame list gains the same names at its end. |
 | [`model.copy_from_game`](#modelcopy_from_game) | Copies a model of the game, by its name there such as progs/soldier.mdl, into the project as a file of its own to change: a mod's file of the same name takes the game's place, and one of a new name is a new model. |
 | [`model.export_skin`](#modelexport_skin) | Writes a skin of a model as a PNG, in the game's palette, to look at or to paint on and give back with model.set_skin. |
-| [`model.inspect`](#modelinspect) | Reads a .mdl model: its skins and their size, its vertices and triangles, the box it fills, and its frames by name in the order QuakeC numbers them, as a $frame line lists them. |
+| [`model.inspect`](#modelinspect) | Reads a .mdl model: its skins, their size and the rows of the palette each is of, its vertices and triangles, the box it fills, and its frames by name in the order QuakeC numbers them, as a $frame line lists them. |
 | [`model.move`](#modelmove) | Moves a model against its origin, the point the entity's origin is at: its vertices keep their packed places and the header's origin moves. |
 | [`model.recolor`](#modelrecolor) | Recolours a skin of a model by rows of the palette: every pixel of a row becomes the same shade of another row, as the game recolours a player's shirt and trousers. |
 | [`model.remove_frames`](#modelremove_frames) | Takes frames out of a model, each by its name. The frames after one taken out are numbered one less, so QuakeC's $frame list loses the same names. |
@@ -6930,7 +6930,7 @@ Parameters:
 
 ## `model.inspect`
 
-Reads a .mdl model: its skins and their size, its vertices and triangles, the box it fills, and its frames by name in the order QuakeC numbers them, as a $frame line lists them.
+Reads a .mdl model: its skins, their size and the rows of the palette each is of, its vertices and triangles, the box it fills, and its frames by name in the order QuakeC numbers them, as a $frame line lists them.
 
 Parameters:
 

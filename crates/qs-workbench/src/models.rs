@@ -315,11 +315,44 @@ pub struct FrameInfo {
     pub names: Vec<String>,
 }
 
+/// How much of a skin is of one row of the palette, as `model.inspect` answers it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RowUse {
+    /// The row of the palette, 0 to 15.
+    pub row: u8,
+    /// How many of the skin's pixels are of it.
+    pub pixels: usize,
+}
+
+/// The rows of the palette the pixels of `skin` are of, most pixels first.
+fn rows_used(skin: &ModelSkin) -> Vec<RowUse> {
+    let mut counts = [0_usize; ROW as usize];
+    let pixels: Vec<&u8> = match skin {
+        ModelSkin::Single(pixels) => pixels.iter().collect(),
+        ModelSkin::Group { skins, .. } => skins.iter().flatten().collect(),
+    };
+    for pixel in pixels {
+        if let Some(count) = counts.get_mut(usize::from(pixel >> ROW_SHIFT)) {
+            *count = count.saturating_add(1);
+        }
+    }
+    let mut used: Vec<RowUse> = (0..ROW)
+        .zip(counts)
+        .filter(|&(_, pixels)| pixels > 0)
+        .map(|(row, pixels)| RowUse { row, pixels })
+        .collect();
+    used.sort_by_key(|row| core::cmp::Reverse(row.pixels));
+    used
+}
+
 /// What `model.inspect` answers.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ModelInspected {
     /// How many skins it has.
     pub skins: usize,
+    /// For each skin, the rows of the palette its pixels are of, most pixels first: what
+    /// `model.recolor` takes as the rows to change.
+    pub skin_rows: Vec<Vec<RowUse>>,
     /// A skin's width and height in pixels.
     pub skin_size: [i32; 2],
     /// How many vertices it has.
@@ -343,8 +376,8 @@ struct ModelInspect;
 impl<C: 'static> Command<C> for ModelInspect {
     const ID: &'static str = MODEL_INSPECT;
     const ACCESS: Access = Access::Read;
-    const SUMMARY: &'static str = "Reads a .mdl model: its skins and their size, its vertices \
-        and triangles, the box it fills, and its frames by name in the order QuakeC numbers \
+    const SUMMARY: &'static str = "Reads a .mdl model: its skins, their size and the rows \
+        of the palette each is of, its vertices and triangles, the box it fills, and its frames by name in the order QuakeC numbers \
         them, as a $frame line lists them.";
     type Params = ModelParams;
     type Output = ModelInspected;
@@ -395,6 +428,7 @@ impl<C: 'static> Command<C> for ModelInspect {
             .join(" ");
         Ok(Outcome::outside_history(ModelInspected {
             skins: model.skins.len(),
+            skin_rows: model.skins.iter().map(rows_used).collect(),
             skin_size: [header.skinwidth, header.skinheight],
             vertices: model.stverts.len(),
             triangles: model.triangles.len(),
