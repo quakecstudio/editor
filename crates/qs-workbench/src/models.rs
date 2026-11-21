@@ -187,7 +187,8 @@ pub enum ModelError {
         /// Why.
         error: FbxError,
     },
-    /// Animation files were given for a mesh whose file holds its own animations.
+    /// Animation files were given for a mesh that takes none: one whose file holds its own
+    /// animations, or has none.
     Animations {
         /// The mesh's file.
         path: PathBuf,
@@ -257,8 +258,7 @@ impl fmt::Display for ModelError {
             Self::Fbx { path, error } => write!(f, "{}: {error}", path.display()),
             Self::Animations { path } => write!(
                 f,
-                "{}: holds its own animations: animation files go with an .md5mesh or an \
-                 .smd model",
+                "{}: takes no animation files: they go with an .md5mesh or an .smd model",
                 path.display()
             ),
             Self::Mesh(error) => write!(f, "{error}"),
@@ -1198,7 +1198,9 @@ pub struct ImportParams {
     /// The `.mdl` file to make of it, in the project; one that is there already is refused.
     pub path: PathBuf,
     /// Which axis of the file is up: y for an `.obj` and an `.fbx`, and z for the others,
-    /// when not given.
+    /// when not given. A y-up `.obj` is turned so that its -z is forward; a y-up `.fbx` is
+    /// turned a quarter about x, as FTEQW's converter turns it, and keeps its x: turn the
+    /// entity, or the mesh before it is written, when it faces the wrong way.
     #[serde(default)]
     pub up: Option<UpAxis>,
     /// What every position is multiplied by, to make the model the size Quake's are (a
@@ -1255,25 +1257,39 @@ impl ImportParams {
                     })
                     .collect()
             };
-        let boned = matches!(ending.as_deref(), Some("md5mesh" | "smd"));
-        if !boned && !self.animation_paths.is_empty() {
-            return Err(ModelError::Animations {
-                path: source.clone(),
-            });
-        }
+        // Only a model whose animations are files of their own takes animation files; what
+        // is no mesh at all is said to be that first.
+        let alone = || {
+            if self.animation_paths.is_empty() {
+                Ok(())
+            } else {
+                Err(ModelError::Animations {
+                    path: source.clone(),
+                })
+            }
+        };
         let mesh: Mesh = match ending.as_deref() {
-            Some("obj") => obj::read(&text, up(Up::Y)).map_err(|error| ModelError::Obj {
-                path: source.clone(),
-                error,
-            })?,
-            Some("iqe") => iqe::read(&text, up(Up::Z)).map_err(|error| ModelError::Iqe {
-                path: source.clone(),
-                error,
-            })?,
-            Some("fbx") => fbx::read(&text, up(Up::Y)).map_err(|error| ModelError::Fbx {
-                path: source.clone(),
-                error,
-            })?,
+            Some("obj") => {
+                alone()?;
+                obj::read(&text, up(Up::Y)).map_err(|error| ModelError::Obj {
+                    path: source.clone(),
+                    error,
+                })?
+            }
+            Some("iqe") => {
+                alone()?;
+                iqe::read(&text, up(Up::Z)).map_err(|error| ModelError::Iqe {
+                    path: source.clone(),
+                    error,
+                })?
+            }
+            Some("fbx") => {
+                alone()?;
+                fbx::read(&text, up(Up::Y)).map_err(|error| ModelError::Fbx {
+                    path: source.clone(),
+                    error,
+                })?
+            }
             Some("md5mesh") => {
                 let model = Md5Mesh::read(&bytes).map_err(|error| ModelError::Md5 {
                     path: source.clone(),

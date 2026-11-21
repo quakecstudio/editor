@@ -51,7 +51,8 @@ with, and every model's own bounds are the same to the engine (MDL-1.7).
   answer's `frame_line` is the QuakeC's `$frame` line.
 - **An `.fbx` file**, in its text form, version 7 (export as ASCII: the binary form is not
   read), with the animations it holds. Its y is taken to be up; give `up` as `z` for one
-  whose z is.
+  whose z is. A y-up fbx keeps its x, so it may face a quarter turn from the same mesh as
+  an `.obj`: play it, and turn the mesh in the program it came from if it faces sideways.
 - **An `.md5mesh` or an `.smd` model**, with its animations in files of their own, given
   as `animation_paths`: `.md5anim` files, or the `.smd` files that hold a skeleton and no
   triangles. Each animation's frames are named by its file (`walk.smd` gives `walk1`,

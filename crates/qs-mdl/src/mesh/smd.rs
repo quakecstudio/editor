@@ -23,6 +23,9 @@ pub const SMD_ANIMATION: &str = "anim";
 pub const SMD_VERSION: i64 = 1;
 /// The greatest number a joint may have: "`id > 255`" is left out.
 pub const SMD_MAX_JOINT: usize = 255;
+/// The greatest time a frame may have. Ours: the converter makes a frame for every time up
+/// to the greatest a file names, whatever it is.
+pub const SMD_MAX_TIME: usize = 65_535;
 /// The numbers a vertex's line has before its links: its joint, its position, its normal
 /// and its texture coordinate.
 const VERTEX_NUMBERS: usize = 9;
@@ -262,7 +265,11 @@ impl Smd {
                 break;
             }
             if let Some(time) = line.strip_prefix("time") {
-                frame = time.trim().parse().ok();
+                frame = time
+                    .trim()
+                    .parse()
+                    .ok()
+                    .filter(|time| *time <= SMD_MAX_TIME);
                 if let Some(frame) = frame
                     && self.frames.len() <= frame
                 {
@@ -291,14 +298,15 @@ impl Smd {
     }
 
     /// The poses of frame `frame`, a joint it has none for taking the first frame's, and one
-    /// that has none there standing where its parent is.
-    fn poses(&self, frame: &[Option<Affine>]) -> Vec<Affine> {
+    /// that has none there the pose `base` has for it, the model's.
+    fn poses(&self, frame: &[Option<Affine>], base: &[Affine]) -> Vec<Affine> {
         let first = self.frames.first();
         frame
             .iter()
             .enumerate()
             .map(|(joint, pose)| {
                 pose.or_else(|| first.and_then(|first| first.get(joint).copied().flatten()))
+                    .or_else(|| base.get(joint).copied())
                     .unwrap_or(Affine::IDENTITY)
             })
             .collect()
@@ -321,7 +329,7 @@ impl Smd {
         }
         let base = self.frames.first().map_or_else(
             || vec![Affine::IDENTITY; self.parents.len()],
-            |first| self.poses(first),
+            |first| self.poses(first, &[]),
         );
         // Each three vertices in turn are a triangle.
         let corners: Vec<usize> = (0..self.vertices.len()).collect();
@@ -336,14 +344,14 @@ impl Smd {
                 .collect(),
             triangles,
             parents: self.parents.clone(),
-            base,
+            base: base.clone(),
             animations: animations
                 .iter()
                 .map(|(name, animation)| {
                     let frames = animation
                         .frames
                         .iter()
-                        .map(|frame| animation.poses(frame))
+                        .map(|frame| animation.poses(frame, &base))
                         .collect();
                     (name.clone(), frames)
                 })

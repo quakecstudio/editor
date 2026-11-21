@@ -1000,5 +1000,22 @@ fn an_fbx_model_is_imported_with_its_animations() {
         )
         .unwrap_err()
         .to_string();
-    assert!(error.contains("holds its own animations"), "{error}");
+    assert!(
+        error.contains("arm.fbx: takes no animation files"),
+        "{error}"
+    );
+    // What is no mesh at all is said to be that, whatever else is given.
+    std::fs::write(root.join("thing.gltf"), "").unwrap();
+    let error = session
+        .execute(
+            MODEL_IMPORT,
+            json!({
+                "source_path": root.join("thing.gltf"),
+                "path": root.join("progs/no.mdl"),
+                "animation_paths": [root.join("arm.fbx")],
+            }),
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("thing.gltf: is no .obj"), "{error}");
 }

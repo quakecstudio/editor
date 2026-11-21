@@ -3,7 +3,9 @@
 #![expect(
     clippy::unwrap_used,
     clippy::indexing_slicing,
-    reason = "test code: a failed unwrap or index is a failed test"
+    clippy::string_slice,
+    clippy::arithmetic_side_effects,
+    reason = "test code: a failed unwrap, index or sum is a failed test"
 )]
 
 use super::super::recorded::agrees;
@@ -155,4 +157,77 @@ fn what_is_no_text_fbx_is_refused() {
     assert!(FbxError::Version.to_string().contains("export it as ASCII"));
     let empty = read("; FBX 7.3.0 project file\nObjects:  {\n}\n", Up::Y).unwrap();
     assert!(empty.triangles.is_empty());
+}
+
+// spec MDL-10.4: a number is a sign, digits with a point among them and an exponent when
+// digits follow its e; a long run of signs is as many zeros, each one byte
+#[test]
+fn a_number_is_read_as_strtod_reads_one() {
+    let read = |text: &'static str| {
+        let mut tokens = Tokens { rest: text };
+        let first = tokens.token();
+        (first, tokens.rest)
+    };
+    assert_eq!(read("1.5e3x"), (Some(Token::Number(1500.0)), "x"));
+    assert_eq!(read("-.5,"), (Some(Token::Number(-0.5)), ","));
+    assert_eq!(read("2e"), (Some(Token::Number(2.0)), "e"));
+    assert_eq!(read("3e+"), (Some(Token::Number(3.0)), "e+"));
+    assert_eq!(read("4.e-2 "), (Some(Token::Number(0.04)), " "));
+    assert_eq!(read("+-1"), (Some(Token::Number(0.0)), "-1"));
+    assert_eq!(read(".x"), (Some(Token::Number(0.0)), "x"));
+    // Two hundred thousand signs are read in one pass each.
+    let signs = "-".repeat(200_000);
+    let mut tokens = Tokens { rest: &signs };
+    let mut count = 0_u32;
+    while tokens.token().is_some() {
+        count += 1;
+    }
+    assert_eq!(count, 200_000);
+}
+
+// spec MDL-10.1, MDL-10.4: a limb written before its parent follows it all the same
+#[test]
+fn a_limb_before_its_parent_follows_it() {
+    let text = include_str!("../fixtures/arm.fbx.txt");
+    // The arm's limb, 301, written before the root's, 300.
+    let arm = text.find("\tModel: 301").unwrap();
+    let root = text.find("\tModel: 300").unwrap();
+    let skin = text.find("\tDeformer: 400").unwrap();
+    let swapped = format!(
+        "{}{}{}{}",
+        &text[..root],
+        &text[arm..skin],
+        &text[root..arm],
+        &text[skin..]
+    );
+    let as_written = read(text, Up::Z).unwrap();
+    let made = read(&swapped, Up::Z).unwrap();
+    assert_eq!(made.frames.len(), 3);
+    // The limbs' numbers change places and nothing else: every pose is the same.
+    for (ours, theirs) in made.frames.iter().zip(&as_written.frames) {
+        for (at, want) in ours.positions.iter().zip(&theirs.positions) {
+            assert!(
+                at.iter()
+                    .zip(want)
+                    .all(|(at, want)| (at - want).abs() < 1e-4),
+                "{}",
+                ours.name
+            );
+        }
+    }
+}
+
+proptest::proptest! {
+    // spec MDL-10.4, MDL-10.5: whatever follows the first line, a mesh is made or the file
+    // is refused
+    #[test]
+    fn any_fbx_is_read_or_refused(
+        tail in proptest::collection::vec(proptest::prelude::any::<u8>(), 0..300),
+        swap in 0_usize..2600,
+    ) {
+        let mut bytes = include_bytes!("../fixtures/arm.fbx.txt").to_vec();
+        let at = swap.clamp(26, bytes.len());
+        bytes.splice(at..(at + tail.len()).min(bytes.len()), tail);
+        let _made = read(&String::from_utf8_lossy(&bytes), Up::Y);
+    }
 }

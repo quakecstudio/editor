@@ -7546,7 +7546,7 @@ Parameters:
         }
       ],
       "default": null,
-      "description": "Which axis of the file is up: y for an `.obj` and an `.fbx`, and z for the others,\nwhen not given."
+      "description": "Which axis of the file is up: y for an `.obj` and an `.fbx`, and z for the others,\nwhen not given. A y-up `.obj` is turned so that its -z is forward; a y-up `.fbx` is\nturned a quarter about x, as FTEQW's converter turns it, and keeps its x: turn the\nentity, or the mesh before it is written, when it faces the wrong way."
     }
   },
   "required": [

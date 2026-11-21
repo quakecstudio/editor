@@ -139,17 +139,38 @@ impl<'a> Tokens<'a> {
         }
     }
 
-    /// The number the text starts with, as `strtod` reads one: the longest start of it that
-    /// is a number, and 0 with one byte taken where there is none.
+    /// The number the text starts with, as `strtod` reads one: a sign, digits with a point
+    /// among them, and an exponent when digits follow its `e`; 0 with one byte taken where
+    /// that is no number.
     fn number(&mut self) -> f64 {
-        let end = self
+        let bytes = self.rest.as_bytes();
+        let digits = |from: usize| {
+            bytes
+                .get(from..)
+                .unwrap_or(&[])
+                .iter()
+                .take_while(|byte| byte.is_ascii_digit())
+                .count()
+        };
+        let is = |at: usize, wanted: &[u8]| bytes.get(at).is_some_and(|byte| wanted.contains(byte));
+        let mut end = usize::from(is(0, b"+-"));
+        end = end.saturating_add(digits(end));
+        if is(end, b".") {
+            end = end.saturating_add(1);
+            end = end.saturating_add(digits(end));
+        }
+        if is(end, b"eE") {
+            let sign = end.saturating_add(1);
+            let from = sign.saturating_add(usize::from(is(sign, b"+-")));
+            let exponent = digits(from);
+            if exponent > 0 {
+                end = from.saturating_add(exponent);
+            }
+        }
+        let found = self
             .rest
-            .find(|c: char| !(c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e' | 'E')))
-            .unwrap_or(self.rest.len());
-        let found = (1..=end).rev().find_map(|len| {
-            let (text, rest) = self.rest.split_at_checked(len)?;
-            Some((text.parse::<f64>().ok()?, rest))
-        });
+            .split_at_checked(end)
+            .and_then(|(text, rest)| Some((text.parse::<f64>().ok()?, rest)));
         if let Some((value, rest)) = found {
             self.rest = rest;
             value
@@ -801,10 +822,11 @@ impl Scene {
             else {
                 continue;
             };
-            let xforms: Vec<Xform> = xforms
+            // Each curve node with the number of the limb it is joined to, found once.
+            let xforms: Vec<(usize, Xform)> = xforms
                 .iter()
                 .filter_map(|xform| match self.nodes.get(xform) {
-                    Some(Node::Xform(xform)) => Some(*xform),
+                    Some(Node::Xform(xform)) => Some((self.limb(xform.limb)?.index, *xform)),
                     _ => None,
                 })
                 .collect();
@@ -815,7 +837,7 @@ impl Scene {
             // The curves of a layer are of one length, the animation's frames.
             let lengths: Vec<usize> = xforms
                 .iter()
-                .flat_map(|xform| xform.curves)
+                .flat_map(|(_, xform)| xform.curves)
                 .filter_map(|number| curve(number).map(Vec::len))
                 .collect();
             let count = lengths.first().copied().unwrap_or(0);
@@ -828,11 +850,7 @@ impl Scene {
                         .iter()
                         .map(|limb| {
                             let mut parts = [limb.translation, limb.rotation, limb.scaling];
-                            for xform in &xforms {
-                                let own = self.limb(xform.limb).map(|own| own.index);
-                                if own != Some(limb.index) {
-                                    continue;
-                                }
+                            for (_, xform) in xforms.iter().filter(|(own, _)| *own == limb.index) {
                                 let mut value = xform.value;
                                 for (part, number) in value.iter_mut().zip(xform.curves) {
                                     if let Some(at) = curve(number).and_then(|c| c.get(frame)) {

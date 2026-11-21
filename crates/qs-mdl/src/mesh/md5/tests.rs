@@ -3,7 +3,8 @@
 #![expect(
     clippy::unwrap_used,
     clippy::indexing_slicing,
-    reason = "test code: a failed unwrap or index is a failed test"
+    clippy::arithmetic_side_effects,
+    reason = "test code: a failed unwrap, index or sum is a failed test"
 )]
 
 use super::super::recorded::agrees;
@@ -101,4 +102,55 @@ fn an_animation_of_other_joints_is_refused() {
         error.to_string(),
         "the animation nod is not of as many joints as the mesh"
     );
+}
+
+// spec MDL-10.2: a file that says it has more vertices, triangles, weights or frames than
+// 65536 is refused before anything is made of that many, and one that says as many is not
+#[test]
+fn a_count_past_the_bound_is_refused() {
+    let text = include_str!("../fixtures/arm.md5mesh.txt");
+    let animation = include_str!("../fixtures/wave.md5anim.txt");
+    for (from, to) in [
+        ("numverts 5", "numverts 4000000000000"),
+        ("numtris 5", "numtris 65537"),
+        ("numweights 6", "numweights 65537"),
+    ] {
+        assert!(text.contains(from), "{from}");
+        let (md5, _) = model(&text.replace(from, to), animation);
+        assert_eq!(
+            md5.mesh(&[], Up::Z).unwrap_err(),
+            Md5MeshError::Count,
+            "{to}"
+        );
+    }
+    let (md5, _) = model(&text.replace("numtris 5", "numtris 65536"), animation);
+    assert_eq!(md5.mesh(&[], Up::Z).unwrap().triangles.len(), 65_536);
+    let (md5, long) = model(
+        text,
+        &animation.replace("numFrames 3", "numFrames 99999999999"),
+    );
+    assert_eq!(md5.mesh(&long, Up::Z).unwrap_err(), Md5MeshError::Count);
+    assert!(
+        Md5MeshError::Count
+            .to_string()
+            .contains("more than 65536 vertices")
+    );
+}
+
+proptest::proptest! {
+    // spec MDL-10.2: whatever the files hold, a mesh is made of them or they are refused
+    #[test]
+    fn any_md5_is_read_or_refused(
+        mesh in proptest::collection::vec(proptest::prelude::any::<u8>(), 0..400),
+        swap in 0_usize..600,
+    ) {
+        // The fixture with a run of its bytes replaced, so the readers get past its start.
+        let mut bytes = include_bytes!("../fixtures/arm.md5mesh.txt").to_vec();
+        let at = swap.min(bytes.len());
+        bytes.splice(at..(at + mesh.len()).min(bytes.len()), mesh);
+        if let Ok(md5) = Md5Mesh::read(&bytes) {
+            let animation = Md5Anim::read(include_bytes!("../fixtures/wave.md5anim.txt")).unwrap();
+            let _made = md5.mesh(&[("wave".to_owned(), animation)], Up::Z);
+        }
+    }
 }

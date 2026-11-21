@@ -14,6 +14,18 @@ const COMMIT_LEN: usize = 40;
 /// The holder our own copyright line names; every upstream's line must be above it.
 const OUR_HOLDER: &str = "QuakeC Studio contributors";
 
+/// How many of a row's copyright lines a file ported from its upstream keeps.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Keep {
+    /// At least one: the upstream's files carry different sets of them.
+    Any,
+    /// Each of them: the row's last cell starts with [`EACH`].
+    Each,
+}
+
+/// What the last cell of a row starts with when a ported file keeps each of its lines.
+const EACH: &str = "Each of";
+
 /// An upstream registered in `docs/porting.md`.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Upstream {
@@ -23,8 +35,10 @@ pub(crate) struct Upstream {
     /// repository has several rows, a file is of the row whose directory holds it.
     pub(crate) paths: Vec<String>,
     /// The copyright lines its row lists, runs of spaces collapsed; a file ported from it
-    /// keeps at least one.
+    /// keeps at least one, or each of them, as `keep` says.
     pub(crate) copyrights: Vec<String>,
+    /// How many of the row's lines a ported file keeps.
+    pub(crate) keep: Keep,
 }
 
 impl Upstream {
@@ -66,10 +80,16 @@ pub(crate) fn upstreams(doc: &str) -> Result<Vec<Upstream>, String> {
         if let Some(repo) = repo
             && !copyrights.is_empty()
         {
+            let keep = if last.trim_start().starts_with(EACH) {
+                Keep::Each
+            } else {
+                Keep::Any
+            };
             upstreams.push(Upstream {
                 repo: repo.to_owned(),
                 paths,
                 copyrights,
+                keep,
             });
         }
     }
@@ -166,6 +186,15 @@ pub(crate) fn check_header(header: &[&str], upstreams: &[Upstream]) -> Vec<Strin
                 .iter()
                 .any(|dir| path.starts_with(dir.as_str()))
         });
+        // A repository whose rows each name their directories has no row for a file
+        // outside them.
+        let scoped = rows().count() > 1 && rows().all(|upstream| !upstream.paths.is_empty());
+        if held.is_none() && scoped {
+            problems.push(format!(
+                "H5: {path} is in no directory of {repo} that the Upstreams table of {DOC} lists"
+            ));
+            continue;
+        }
         let Some(upstream) = held.or_else(|| rows().next()) else {
             problems.push(format!(
                 "H5: upstream {repo} is not registered in the Upstreams table of {DOC}"
@@ -197,6 +226,20 @@ fn check_copyrights(header: &[&str], required: &[&Upstream]) -> Vec<String> {
         .collect();
     let mut problems = Vec::new();
     for upstream in required {
+        let missing = match upstream.keep {
+            Keep::Any => None,
+            Keep::Each => upstream
+                .copyrights
+                .iter()
+                .find(|wanted| !copyrights.iter().any(|line| line.contains(wanted.as_str()))),
+        };
+        if let Some(missing) = missing {
+            problems.push(format!(
+                "H4: cites {} but the header lacks its copyright line `{missing}`",
+                upstream.repo
+            ));
+            continue;
+        }
         if !copyrights.iter().any(|line| upstream.lists(line)) {
             problems.push(format!(
                 "H4: cites {} but the header lacks its copyright line {}",
@@ -612,6 +655,9 @@ mod tests {
 
     /// A header with the given Copyright lines (ours among them where the test puts it) and
     /// one `Ported from` line per citation.
+    /// The file and function a test header cites of FTEQW, in `engine/qclib/`.
+    const FTE_FILE: &str = "engine/qclib/qcc_pr_lex.c, QCC_PR_Lex";
+
     fn lineage(copyrights: &[&str], cites: &[&str]) -> String {
         let mut text = "// SPDX-License-Identifier: GPL-3.0-or-later\n".to_owned();
         for line in copyrights {
@@ -619,7 +665,13 @@ mod tests {
         }
         text.push_str("//\n");
         for cite in cites {
-            _ = writeln!(text, "// Ported from {cite}: Quake/sv_phys.c, SV_Physics");
+            // A file each upstream has, in a directory its row names.
+            let file = if cite.starts_with("fte-team/") {
+                FTE_FILE
+            } else {
+                "Quake/sv_phys.c, SV_Physics"
+            };
+            _ = writeln!(text, "// Ported from {cite}: {file}");
         }
         text
     }
@@ -740,19 +792,33 @@ mod tests {
         const SALZMAN: &str = "Copyright (c) 2010-2016 Lee Salzman";
         // The helper's citation with the file it names made one of `iqm/`.
         let iqm = |copyrights: &[&str]| {
-            lineage(copyrights, &[&fte_cite()])
-                .replace("Quake/sv_phys.c, SV_Physics", "iqm/iqm.cpp, loadsmd")
+            lineage(copyrights, &[&fte_cite()]).replace(FTE_FILE, "iqm/iqm.cpp, loadsmd")
         };
         let both = iqm(&[SALZMAN, FTE_COPYRIGHT, OUR_COPYRIGHT]);
         assert!(rules(&both).is_empty(), "{:?}", rules(&both));
-        // Either of the row's lines is enough, and it comes first.
-        let one = iqm(&[SALZMAN, OUR_COPYRIGHT]);
-        assert!(rules(&one).is_empty(), "{:?}", rules(&one));
+        // The row asks for each of its lines: one of the two is not enough.
+        assert_eq!(rules(&iqm(&[SALZMAN, OUR_COPYRIGHT])), ["H4"]);
+        assert_eq!(rules(&iqm(&[FTE_COPYRIGHT, OUR_COPYRIGHT])), ["H4"]);
         assert_eq!(rules(&iqm(&[ID_COPYRIGHT, OUR_COPYRIGHT])), ["H4"]);
-        assert_eq!(rules(&iqm(&[OUR_COPYRIGHT, SALZMAN])), ["H4"]);
-        // A file of engine/qclib/ is not excused by Lee Salzman's line.
-        let qclib = lineage(&[SALZMAN, OUR_COPYRIGHT], &[&fte_cite()]);
-        assert_eq!(rules(&qclib), ["H4"]);
+        assert_eq!(
+            rules(&iqm(&[OUR_COPYRIGHT, SALZMAN, FTE_COPYRIGHT])),
+            ["H4"]
+        );
+        // A file of engine/qclib/ is held to FTE's line, as before, and one of neither
+        // directory has no row.
+        let of = |copyrights: &[&str], path: &str| {
+            lineage(copyrights, &[&fte_cite()]).replace(FTE_FILE, &format!("{path}, QCC_PR_Lex"))
+        };
+        let qclib = "engine/qclib/qcc_pr_lex.c";
+        assert!(rules(&of(&[FTE_COPYRIGHT, OUR_COPYRIGHT], qclib)).is_empty());
+        assert_eq!(rules(&of(&[SALZMAN, OUR_COPYRIGHT], qclib)), ["H4"]);
+        assert_eq!(
+            rules(&of(
+                &[FTE_COPYRIGHT, OUR_COPYRIGHT],
+                "engine/client/cl_main.c"
+            )),
+            ["H5"]
+        );
     }
 
     #[test]
@@ -760,12 +826,14 @@ mod tests {
         let one = Upstream {
             repo: "a/b".to_owned(),
             paths: Vec::new(),
+            keep: Keep::Any,
             copyrights: vec!["Copyright x".to_owned()],
         };
         assert_eq!(listed(&one), "`Copyright x`");
         let two = Upstream {
             repo: "a/b".to_owned(),
             paths: Vec::new(),
+            keep: Keep::Any,
             copyrights: vec!["Copyright x".to_owned(), "Copyright y".to_owned()],
         };
         assert_eq!(listed(&two), "(one of `Copyright x`, `Copyright y`)");

@@ -101,3 +101,67 @@ fn what_is_no_smd_model_is_refused() {
                0 1 0 0 0 0 1 0 0\n0 0 1 0 0 0 1 0 0\nskin\n0 0 0 0 0 0 1 0 0\n0 1 0 0\n";
     assert_eq!(Smd::read(cut).unwrap().vertices.len(), 3);
 }
+
+// spec MDL-10.3: a time past 65535 starts no frame, so its lines are no poses, and the
+// greatest time taken makes that many frames and one
+#[test]
+fn a_time_past_the_bound_starts_no_frame() {
+    let nodes = "version 1\nnodes\n0 \"root\" -1\nend\nskeleton\ntime 0\n0 0 0 0 0 0 0\n";
+    for time in ["1000000000000", "999999999999999999", "65536", "-1", "soon"] {
+        let file = Smd::read(&format!("{nodes}time {time}\n0 1 2 3 0 0 0\nend\n")).unwrap();
+        assert_eq!(file.frames.len(), 1, "{time}");
+    }
+    let most = Smd::read(&format!("{nodes}time 65535\n0 1 2 3 0 0 0\nend\n")).unwrap();
+    assert_eq!(most.frames.len(), 65_536);
+}
+
+// spec MDL-10.1, MDL-10.3: a joint may come before its parent, and follows it all the same;
+// a joint an animation gives no pose at all keeps the model's base pose
+#[test]
+fn a_joint_before_its_parent_follows_it() {
+    // The hand, joint 0, is under the arm, joint 1, which comes after it.
+    let model = "version 1\nnodes\n0 \"hand\" 1\n1 \"arm\" -1\nend\nskeleton\ntime 0\n\
+                 0 4 0 0 0 0 0\n1 8 0 0 0 0 0\nend\ntriangles\nskin\n\
+                 0 12 0 0 0 0 1 0 0\n0 12 1 0 0 0 1 0 0\n0 12 0 1 0 0 1 0 0\nend\n";
+    // The arm turns a quarter about z; the hand has no line in the animation.
+    let animation = "version 1\nnodes\n0 \"hand\" 1\n1 \"arm\" -1\nend\nskeleton\ntime 0\n\
+                     1 8 0 0 0 0 1.570796327\nend\n";
+    let made = Smd::read(model)
+        .unwrap()
+        .mesh(&[("turn".to_owned(), Smd::read(animation).unwrap())], Up::Z)
+        .unwrap();
+    // The third line's vertex, the first corner, was at (12, 0, 1): 4 along the arm from
+    // its joint at (8, 0, 0), so a quarter turn takes it to (8, 4, 1).
+    let [x, y, z] = made.frames[0].positions[0];
+    assert!(
+        (x - 8.0).abs() < 1e-4 && (y - 4.0).abs() < 1e-4 && (z - 1.0).abs() < 1e-4,
+        "{:?}",
+        made.frames[0].positions
+    );
+}
+
+proptest::proptest! {
+    // spec MDL-10.3: whatever a file holds, it is read or refused, and a mesh is made of it
+    // or it is refused
+    #[test]
+    fn any_smd_is_read_or_refused(
+        lines in proptest::collection::vec(
+            proptest::prop_oneof![
+                proptest::prelude::Just("nodes".to_owned()),
+                proptest::prelude::Just("skeleton".to_owned()),
+                proptest::prelude::Just("triangles".to_owned()),
+                proptest::prelude::Just("end".to_owned()),
+                proptest::prelude::Just("version 1".to_owned()),
+                "time -?[0-9]{1,20}",
+                "[0-9]{1,3} \"[a-z ]{0,6}\" -?[0-9]{1,3}",
+                "(-?[0-9]{1,4}(\\.[0-9]{1,3})? ){0,14}",
+                "\\PC{0,30}",
+            ],
+            0..40,
+        ),
+    ) {
+        if let Ok(file) = Smd::read(&lines.join("\n")) {
+            let _made = file.mesh(&[("a".to_owned(), file.clone())], Up::Z);
+        }
+    }
+}

@@ -219,21 +219,46 @@ pub(super) struct Boned {
 
 impl Boned {
     /// Each joint's pose in the model's space, of `poses`, each in its parent's: a joint the
-    /// frame gives no pose keeps its base pose.
+    /// frame gives no pose keeps its base pose. A joint may come before its parent: each is
+    /// placed once its parent is, and a joint whose parents come round to itself, or whose
+    /// parent is no joint, stands as a root.
     fn world(&self, poses: &[Affine]) -> Vec<Affine> {
-        let mut world: Vec<Affine> = Vec::with_capacity(self.parents.len());
-        for (joint, parent) in self.parents.iter().enumerate() {
-            let own = poses
+        let own = |joint: usize| {
+            poses
                 .get(joint)
                 .or_else(|| self.base.get(joint))
                 .copied()
-                .unwrap_or(Affine::IDENTITY);
-            let placed = parent
-                .and_then(|parent| world.get(parent))
-                .map_or(own, |parent| parent.after(&own));
-            world.push(placed);
+                .unwrap_or(Affine::IDENTITY)
+        };
+        let mut world: Vec<Option<Affine>> = vec![None; self.parents.len()];
+        loop {
+            let mut placed = false;
+            for (joint, parent) in self.parents.iter().enumerate() {
+                if world.get(joint).copied().flatten().is_some() {
+                    continue;
+                }
+                let above = match parent.filter(|parent| *parent < self.parents.len()) {
+                    Some(parent) => world
+                        .get(parent)
+                        .copied()
+                        .flatten()
+                        .map(|parent| parent.after(&own(joint))),
+                    None => Some(own(joint)),
+                };
+                if let (Some(above), Some(slot)) = (above, world.get_mut(joint)) {
+                    *slot = Some(above);
+                    placed = true;
+                }
+            }
+            if !placed {
+                break;
+            }
         }
         world
+            .into_iter()
+            .enumerate()
+            .map(|(joint, placed)| placed.unwrap_or_else(|| own(joint)))
+            .collect()
     }
 
     /// The mesh: a pose for each frame of each animation, named by the animation and the

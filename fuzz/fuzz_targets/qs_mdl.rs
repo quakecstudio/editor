@@ -6,13 +6,18 @@
 //! fuzzer reaches past the headers. Fails on a panic, on a frame whose pixels do not match its
 //! size, on an alias model whose triangles name vertices it lacks, and on an MD5 animation
 //! frame that does not hold `numAnimatedComponents` values or a count past the file's length
-//! (MD5-3.6, MD5-3.11).
+//! (MD5-3.6, MD5-3.11). The mesh readers (MDL-9, MDL-10) are given the same bytes as text, each
+//! as given and after its format's first line, and an MD5 mesh that reads is posed by its
+//! animation: each must return, with a mesh or a refusal.
 
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
 use qs_mdl::spr::{SpriteFrame, SpriteFrameEntry};
 use qs_mdl::mdl::MdlFrameEntry;
+use qs_mdl::mesh::obj::Up;
+use qs_mdl::mesh::smd::Smd;
+use qs_mdl::mesh::{fbx, iqe, obj};
 use qs_mdl::{Md5Anim, Md5Mesh, Mdl, Sprite};
 
 /// The `base` vector of `docs/spec/vectors/mdl/`, an `xxd` dump.
@@ -165,6 +170,24 @@ fn md5(mesh: &[u8], anim: &[u8]) {
         assert!(anim.frame(anim.num_frames).is_none());
         if let Ok(mesh) = &mesh {
             let _fits = anim.check_mesh(mesh);
+            let _posed = mesh.mesh(&[("a".to_owned(), anim)], Up::Z);
+        }
+    } else if let Ok(mesh) = &mesh {
+        let _still = mesh.mesh(&[], Up::Z);
+    }
+}
+
+/// The mesh readers that take text: each reads `data` or refuses it.
+fn meshes(data: &[u8]) {
+    let text = String::from_utf8_lossy(data);
+    let _obj = obj::read(&text, Up::Y);
+    let _iqe = iqe::read(&text, Up::Z);
+    let _iqe = iqe::read(&format!("{}\n{text}", iqe::IQE_HEADER), Up::Z);
+    let _fbx = fbx::read(&text, Up::Y);
+    let _fbx = fbx::read(&format!("; {} project file\n{text}", fbx::FBX_VERSION), Up::Y);
+    for smd in [text.to_string(), format!("version 1\nnodes\n0 \"a\" -1\nend\n{text}")] {
+        if let Ok(file) = Smd::read(&smd) {
+            let _made = file.mesh(&[("a".to_owned(), file.clone())], Up::Z);
         }
     }
 }
@@ -184,4 +207,5 @@ fuzz_target!(|data: &[u8]| {
     md5(&prefixed(MESH_START, data), &prefixed(ANIM_START, data));
     let text = words(data);
     md5(&prefixed(MESH_START, &text), &prefixed(ANIM_START, &text));
+    meshes(data);
 });

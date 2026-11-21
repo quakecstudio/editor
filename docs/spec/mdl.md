@@ -610,7 +610,8 @@ and frames, which become a mesh of poses as MDL-9.2 says an `.iqe`'s do.
   heaviest first, one given earlier before another as heavy, and `finalize` divides them by
   their sum. A pose is its scale, then its rotation, then its move, in its joint's parent's
   space, and a mesh of poses is made of the joints, the blends and the frames as MDL-9.2
-  says.
+  says. Ours: a joint may come before its parent in a file and follows it all the same,
+  and one whose parents come round to itself, or whose parent is no joint, stands as a root.
 - **MDL-10.2** An `.md5mesh` and its `.md5anim` files, read as MD5-1 to MD5-3 say, are a
   mesh as `buildmd5verts` and `loadmd5anim` make one. A vertex is "`pos +=
   (j.orient.transform(w.pos) + j.pos)*w.bias;`" over its weights, by the mesh's joints,
@@ -622,7 +623,9 @@ and frames, which become a mesh of poses as MDL-9.2 says an `.iqe`'s do.
   with the components the joint's flags name put in from the frame, in turn from the
   joint's first ("`if(h.flags&1) j.pos.x = *jdata++;`" and so on, then
   "`j.orient.restorew();`"), in its parent's space. Ours: an animation of another number
-  of joints than the mesh, which the converter reads past, is refused.
+  of joints than the mesh, which the converter reads past, is refused, and so is a file
+  that says it has more than 65536 vertices, triangles, weights or frames, before anything
+  is made of that many.
 - **MDL-10.3** An `.smd` file is read line by line; a line that is empty or starts with
   `#`, `;` or `//` is passed over, and a file whose `version` is not 1 is refused. `nodes`
   has a line for each joint, its number, its name and its parent's number, to `end`: a
@@ -641,13 +644,14 @@ and frames, which become a mesh of poses as MDL-9.2 says an `.iqe`'s do.
   passed over. A file with triangles is the model, its base pose the first frame of its
   own skeleton and its other frames no poses of the mesh ("`eframes.setsize(firstframe);`");
   a file without is an animation of the same joints. Ours: a joint with no pose in a
-  file's first frame, which the converter leaves unset, stands where its parent is; a file
-  with no triangles is no model.
+  file's first frame, which the converter leaves unset, keeps the model's base pose; a
+  `time` past 65535 starts no frame; a file with no triangles is no model.
 - **MDL-10.4** A text `.fbx` file is read when its first line holds "`FBX 7`". Its tokens:
   spaces and commas are passed over, a `;` starts a comment to the end of its line, `{`
   and `}` open and close a block, text in double quotes is one token, a number is one,
   `*` and a count come before an array, any other word is a property's name, with the
-  colon after it, and the end of a line is a token. Of the file's top properties `Objects`
+  colon after it, and the end of a line is a token. A number is read as `strtod` reads one, and 0 with
+  one byte taken where there is none. Of the file's top properties `Objects`
   and `Connections` are read. An object is `Geometry` (its `Vertices`, its
   `PolygonVertexIndex`, whose last corner of a polygon is written `-(vertex + 1)`, and of
   `LayerElementUV` its `UV` and `UVIndex`); `Model` of the kind `Mesh` or `LimbNode`, with,
@@ -688,7 +692,8 @@ and frames, which become a mesh of poses as MDL-9.2 says an `.iqe`'s do.
   read: a model has none of them. A file whose mesh model is turned and whose geometry
   has no normals, at which the converter fails, is read. A name is kept whole, where the
   converter keeps 63 bytes of it. A caller that says the file's z is up has it left
-  unturned.
+  unturned. The converter's turn keeps a file's x, where an `.obj`'s y-up turn (MDL-9.1)
+  takes its -z for forward: the same model faces a quarter apart from the two.
 
 ### Constants
 
@@ -700,6 +705,8 @@ and frames, which become a mesh of poses as MDL-9.2 says an `.iqe`'s do.
 | `SMD_MAX_JOINT` | 255 | `smd::readnodes` |
 | `FBX_VERSION` | `FBX 7` | `fbx::checkversion` |
 | `FBX_MAX_LIMB` | 255 | `fbx::clusternode::process` |
+| `MD5_MAX_COUNT` | 65536 | Ours |
+| `SMD_MAX_TIME` | 65535 | Ours |
 
 ### Test vectors
 

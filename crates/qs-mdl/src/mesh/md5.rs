@@ -23,6 +23,9 @@ pub const MD5_ANIMATION: &str = "anim";
 /// The flags of a hierarchy entry, one for each component a frame gives: the position's x,
 /// y and z and the quaternion's (MD5-3.3).
 const COMPONENTS: usize = 6;
+/// The most vertices, triangles, weights and frames a file may say it has. Ours: the
+/// readers keep a count as the file gives it, and a model has far fewer of each.
+pub const MD5_MAX_COUNT: u64 = 65_536;
 /// A scale of one on each axis: an MD5 pose has none.
 const NO_SCALE: Vec3 = [1.0, 1.0, 1.0];
 
@@ -34,6 +37,9 @@ pub enum Md5MeshError {
         /// The animation's name.
         animation: String,
     },
+    /// A file says it has more vertices, triangles, weights or frames than
+    /// [`MD5_MAX_COUNT`].
+    Count,
     /// A joint of the mesh has no size on an axis.
     Flat,
     /// More animations have one name than can be told apart in a frame's name.
@@ -46,6 +52,11 @@ impl fmt::Display for Md5MeshError {
             Self::Joints { animation } => write!(
                 f,
                 "the animation {animation} is not of as many joints as the mesh"
+            ),
+            Self::Count => write!(
+                f,
+                "the model says it has more than {MD5_MAX_COUNT} vertices, triangles, weights or \
+                 frames"
             ),
             Self::Flat => f.write_str("a joint of the mesh has no size on an axis"),
             Self::Names => {
@@ -106,6 +117,16 @@ impl Md5Mesh {
             base.push(own);
         }
 
+        // A count is the file's word, checked before anything is made of that many.
+        let counts = md5
+            .meshes
+            .iter()
+            .flat_map(|surface| [surface.num_verts, surface.num_tris, surface.num_weights])
+            .chain(animations.iter().map(|(_, animation)| animation.num_frames));
+        if counts.into_iter().any(|count| count > MD5_MAX_COUNT) {
+            return Err(Md5MeshError::Count);
+        }
+
         let mut positions = Vec::new();
         let mut texcoords = Vec::new();
         let mut blends = Vec::new();
@@ -114,7 +135,7 @@ impl Md5Mesh {
             let first = positions.len();
             for index in 0..surface.num_verts {
                 let vert = surface.vert(index).unwrap_or_default();
-                let weights: Vec<_> = (0..vert.weight_count)
+                let weights: Vec<_> = (0..vert.weight_count.min(surface.num_weights))
                     .filter_map(|at| surface.weight(vert.first_weight.checked_add(at)?))
                     .collect();
                 let mut at = [0.0, 0.0, 0.0];
