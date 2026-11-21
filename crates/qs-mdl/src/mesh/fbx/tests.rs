@@ -617,3 +617,17 @@ fn curves_without_times_or_with_none_that_are_numbers() {
         assert_eq!(with(&turn_now, lift), 1, "{first} to {last}");
     }
 }
+
+// spec MDL-10.9, MDL-10.10, MDL-10.8: limbs under an armature that is moved, turned, scaled
+// and animated, a mesh model with a geometric turn and scale, a bind pose that is not the
+// limbs' own and a vertex of five weights are posed as Blender poses the file, from its
+// text and from its binary form
+#[test]
+fn a_rigged_model_is_posed_as_blender_poses_it() {
+    let recorded = include_str!("../fixtures/rig.blender.txt");
+    let text = read(include_str!("../fixtures/rig.fbx.txt"), Up::Z).unwrap();
+    assert_eq!(text.frames.len(), 5);
+    agrees(&text, recorded);
+    let binary = unhex(include_str!("../fixtures/rig-7400.fbx.hex"));
+    agrees(&read_bytes(&binary, Up::Z).unwrap(), recorded);
+}

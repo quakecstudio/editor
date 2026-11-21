@@ -266,6 +266,7 @@ impl File {
                 .into_iter()
                 .map(|animation| (animation.name, animation.frames))
                 .collect(),
+            bind: Vec::new(),
             rest: IQE_FRAME,
             unnamed: IQE_ANIMATION,
         }

@@ -296,25 +296,20 @@ struct Geometry {
     model: Option<u64>,
 }
 
-/// A model of the kind `Mesh`: where its geometry stands.
+/// A model: a node of the file's one tree, and a joint. It stands in its parent's space by
+/// its own translation, rotation and scaling; a geometry that belongs to it stands in its
+/// space by the geometric three.
 #[derive(Clone, Copy, Debug)]
-struct MeshModel {
-    geometric_translation: Vec3,
-    pre_rotation: Vec3,
-    translation: Vec3,
-    rotation: Vec3,
-    scaling: Vec3,
-}
-
-/// A model of the kind `LimbNode`: a joint.
-#[derive(Clone, Copy, Debug)]
-struct Limb {
-    /// Its number among the limbs, in the order the file has them.
-    index: usize,
+struct Model {
+    /// Its number among the models, in the order the file has them: its joint.
+    joint: usize,
     parent: Option<u64>,
+    geometric_translation: Vec3,
+    geometric_rotation: Vec3,
+    geometric_scaling: Vec3,
+    pre_rotation: Vec3,
     translation: Vec3,
     rotation: Vec3,
-    pre_rotation: Vec3,
     scaling: Vec3,
 }
 
@@ -323,11 +318,17 @@ struct Limb {
 struct Cluster {
     indexes: Vec<f64>,
     weights: Vec<f64>,
+    /// `Transform`: where the mesh stood, in the space of the cluster's model, when it was
+    /// bound.
+    transform: Vec<f64>,
+    /// `TransformLink`: where the cluster's model stood then, in the file's space.
+    transform_link: Vec<f64>,
     skin: Option<u64>,
-    limb: Option<u64>,
+    /// The model the vertices follow.
+    model: Option<u64>,
 }
 
-/// Which of a limb's three properties an animation's curves give.
+/// Which of a model's three properties an animation's curves give.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Channel {
     Translation,
@@ -335,11 +336,11 @@ enum Channel {
     Scaling,
 }
 
-/// An animation curve node: one of a limb's properties over an animation's frames, a value
+/// An animation curve node: one of a model's properties over an animation's frames, a value
 /// or a curve for each axis.
 #[derive(Clone, Copy, Debug, Default)]
 struct Xform {
-    limb: Option<u64>,
+    model: Option<u64>,
     channel: Option<Channel>,
     value: Vec3,
     curves: [Option<u64>; 3],
@@ -389,8 +390,7 @@ enum Moment {
 #[derive(Clone, Debug)]
 enum Node {
     Geometry(Geometry),
-    Mesh(MeshModel),
-    Limb(Limb),
+    Model(Model),
     Cluster(Cluster),
     /// A skin deformer, and the geometry it deforms.
     Skin(Option<u64>),
@@ -430,12 +430,24 @@ fn turning(matrix: Mat3) -> Affine {
     }
 }
 
+/// The pose a matrix of four columns of four is, as a cluster's `Transform` is written: its
+/// first three columns the turn and scale, its fourth the move. None for any other count.
+fn matrix(values: &[f64]) -> Option<Affine> {
+    let &[a, b, c, _, d, e, f, _, g, h, i, _, x, y, z, _] = values else {
+        return None;
+    };
+    Some(Affine {
+        matrix: [[a, d, g], [b, e, h], [c, f, i]],
+        moved: [x, y, z],
+    })
+}
+
 /// What is read of a file.
 #[derive(Default)]
 struct Scene {
     nodes: BTreeMap<u64, Node>,
-    /// How many limbs the file has had so far.
-    limbs: usize,
+    /// How many models the file has had so far.
+    models: usize,
 }
 
 impl Scene {
@@ -490,45 +502,27 @@ impl Scene {
         self.nodes.insert(number, Node::Geometry(geometry));
     }
 
-    /// `Model: id, "Model::name", "Mesh" { ... }` or `"LimbNode"`: where a geometry stands,
-    /// or a joint, from the `P` lines of its `Properties70`.
+    /// `Model: id, "Model::name", "kind" { ... }`, of any kind: a node of the tree, with
+    /// where it stands from the `P` lines of its `Properties70`.
     fn model(&mut self, tokens: &mut Tokens<'_>) -> Option<()> {
         let (number, _, kind) = (tokens.token()?, tokens.token()?, tokens.token()?);
-        let (Token::Number(_, number), Token::Text(kind)) = (number, kind) else {
+        let (Token::Number(_, number), Token::Text(_)) = (number, kind) else {
             tokens.skip_prop();
             return Some(());
         };
-        let mut mesh = MeshModel {
+        let mut model = Model {
+            joint: self.models,
+            parent: None,
             geometric_translation: NONE,
+            geometric_rotation: NONE,
+            geometric_scaling: ONE,
             pre_rotation: NONE,
             translation: NONE,
             rotation: NONE,
             scaling: ONE,
         };
-        let limb = kind == "LimbNode";
-        if !(limb || kind == "Mesh") {
-            tokens.skip_prop();
-            return Some(());
-        }
-        let index = self.limbs;
-        if limb {
-            self.limbs = self.limbs.saturating_add(1);
-        }
-        let node = |mesh: MeshModel| {
-            if limb {
-                Node::Limb(Limb {
-                    index,
-                    parent: None,
-                    translation: mesh.translation,
-                    rotation: mesh.rotation,
-                    pre_rotation: mesh.pre_rotation,
-                    scaling: mesh.scaling,
-                })
-            } else {
-                Node::Mesh(mesh)
-            }
-        };
-        self.nodes.insert(number, node(mesh));
+        self.models = self.models.saturating_add(1);
+        self.nodes.insert(number, Node::Model(model));
         if !tokens.find_begin() {
             return Some(());
         }
@@ -544,13 +538,19 @@ impl Scene {
                             Token::End => break,
                             Token::Prop("P") => {
                                 let into = match tokens.token()? {
-                                    Token::Text("PreRotation") => Some(&mut mesh.pre_rotation),
-                                    Token::Text("GeometricTranslation") if !limb => {
-                                        Some(&mut mesh.geometric_translation)
+                                    Token::Text("PreRotation") => Some(&mut model.pre_rotation),
+                                    Token::Text("GeometricTranslation") => {
+                                        Some(&mut model.geometric_translation)
                                     }
-                                    Token::Text("Lcl Translation") => Some(&mut mesh.translation),
-                                    Token::Text("Lcl Rotation") => Some(&mut mesh.rotation),
-                                    Token::Text("Lcl Scaling") => Some(&mut mesh.scaling),
+                                    Token::Text("GeometricRotation") => {
+                                        Some(&mut model.geometric_rotation)
+                                    }
+                                    Token::Text("GeometricScaling") => {
+                                        Some(&mut model.geometric_scaling)
+                                    }
+                                    Token::Text("Lcl Translation") => Some(&mut model.translation),
+                                    Token::Text("Lcl Rotation") => Some(&mut model.rotation),
+                                    Token::Text("Lcl Scaling") => Some(&mut model.scaling),
                                     _ => None,
                                 };
                                 if let Some(into) = into {
@@ -572,7 +572,7 @@ impl Scene {
                 _ => {}
             }
         }
-        self.nodes.insert(number, node(mesh));
+        self.nodes.insert(number, Node::Model(model));
         Some(())
     }
 
@@ -598,6 +598,8 @@ impl Scene {
                         Token::End => break,
                         Token::Prop("Indexes") => cluster.indexes = tokens.array(),
                         Token::Prop("Weights") => cluster.weights = tokens.array(),
+                        Token::Prop("Transform") => cluster.transform = tokens.array(),
+                        Token::Prop("TransformLink") => cluster.transform_link = tokens.array(),
                         Token::Prop(_) => {
                             tokens.skip_prop();
                         }
@@ -773,14 +775,14 @@ impl Scene {
         };
         let (source, target) = (self.nodes.get(&from).cloned(), self.nodes.get(&to).cloned());
         match (kind, source, target) {
-            ("OO", Some(Node::Limb(_)), Some(Node::Limb(_))) => {
-                if let Some(Node::Limb(limb)) = self.nodes.get_mut(&from) {
-                    limb.parent = Some(to);
+            ("OO", Some(Node::Model(_)), Some(Node::Model(_))) => {
+                if let Some(Node::Model(model)) = self.nodes.get_mut(&from) {
+                    model.parent = Some(to);
                 }
             }
-            ("OO", Some(Node::Limb(_)), Some(Node::Cluster(_))) => {
+            ("OO", Some(Node::Model(_)), Some(Node::Cluster(_))) => {
                 if let Some(Node::Cluster(cluster)) = self.nodes.get_mut(&to) {
-                    cluster.limb = Some(from);
+                    cluster.model = Some(from);
                 }
             }
             ("OO", Some(Node::Skin(_)), Some(Node::Geometry(_))) => {
@@ -788,7 +790,7 @@ impl Scene {
                     *geometry = Some(to);
                 }
             }
-            ("OO", Some(Node::Geometry(_)), Some(Node::Mesh(_))) => {
+            ("OO", Some(Node::Geometry(_)), Some(Node::Model(_))) => {
                 if let Some(Node::Geometry(geometry)) = self.nodes.get_mut(&from) {
                     geometry.model = Some(to);
                 }
@@ -830,7 +832,7 @@ impl Scene {
                     }
                 }
             }
-            ("OP", Some(Node::Xform(_)), Some(Node::Limb(_))) => {
+            ("OP", Some(Node::Xform(_)), Some(Node::Model(_))) => {
                 let channel = match property {
                     Some("Lcl Translation") => Some(Channel::Translation),
                     Some("Lcl Rotation") => Some(Channel::Rotation),
@@ -838,7 +840,7 @@ impl Scene {
                     _ => None,
                 };
                 if let Some(Node::Xform(xform)) = self.nodes.get_mut(&from) {
-                    xform.limb = Some(to);
+                    xform.model = Some(to);
                     xform.channel = channel;
                 }
             }
@@ -869,33 +871,33 @@ impl Scene {
         }
     }
 
-    /// The limbs in the order the file has them.
-    fn limbs(&self) -> Vec<Limb> {
-        let mut limbs: Vec<Limb> = self
+    /// The models in the order the file has them: the joints.
+    fn models(&self) -> Vec<Model> {
+        let mut models: Vec<Model> = self
             .nodes
             .values()
             .filter_map(|node| match node {
-                Node::Limb(limb) => Some(*limb),
+                Node::Model(model) => Some(*model),
                 _ => None,
             })
             .collect();
-        limbs.sort_by_key(|limb| limb.index);
-        limbs
+        models.sort_by_key(|model| model.joint);
+        models
     }
 
-    /// The limb `number` names.
-    fn limb(&self, number: Option<u64>) -> Option<&Limb> {
+    /// The model `number` names.
+    fn model_of(&self, number: Option<u64>) -> Option<&Model> {
         match self.nodes.get(&number?) {
-            Some(Node::Limb(limb)) => Some(limb),
+            Some(Node::Model(model)) => Some(model),
             _ => None,
         }
     }
 
     /// The animations: for each stack its name and, for each frame of its first layer, a
-    /// pose for each limb, the limb's own with what the layer's curve nodes give put in: a
+    /// pose for each model, the model's own with what the layer's curve nodes give put in: a
     /// frame for each key where the curves' keys are at the same times, else a pose ten
     /// times a second by the keys' times.
-    fn animations(&self, limbs: &[Limb]) -> Vec<(String, Vec<Vec<Affine>>)> {
+    fn animations(&self, models: &[Model]) -> Vec<(String, Vec<Vec<Affine>>)> {
         let mut animations = Vec::new();
         for node in self.nodes.values() {
             let Node::Stack(name, layers) = node else {
@@ -905,11 +907,11 @@ impl Scene {
             else {
                 continue;
             };
-            // Each curve node with the number of the limb it is joined to, found once.
+            // Each curve node with the joint of the model it is joined to, found once.
             let xforms: Vec<(usize, Xform)> = xforms
                 .iter()
                 .filter_map(|xform| match self.nodes.get(xform) {
-                    Some(Node::Xform(xform)) => Some((self.limb(xform.limb)?.index, *xform)),
+                    Some(Node::Xform(xform)) => Some((self.model_of(xform.model)?.joint, *xform)),
                     _ => None,
                 })
                 .collect();
@@ -964,11 +966,11 @@ impl Scene {
             let frames = moments
                 .iter()
                 .map(|moment| {
-                    limbs
+                    models
                         .iter()
-                        .map(|limb| {
-                            let mut parts = [limb.translation, limb.rotation, limb.scaling];
-                            for (_, xform) in xforms.iter().filter(|(own, _)| *own == limb.index) {
+                        .map(|model| {
+                            let mut parts = [model.translation, model.rotation, model.scaling];
+                            for (_, xform) in xforms.iter().filter(|(own, _)| *own == model.joint) {
                                 let mut value = xform.value;
                                 for (part, number) in value.iter_mut().zip(xform.curves) {
                                     let found = curve(number).and_then(|curve| match moment {
@@ -988,7 +990,7 @@ impl Scene {
                                 }
                             }
                             let [translation, rotation, scaling] = parts;
-                            limb.pose(translation, rotation, scaling)
+                            model.pose(translation, rotation, scaling)
                         })
                         .collect()
                 })
@@ -998,60 +1000,90 @@ impl Scene {
         animations
     }
 
-    /// The mesh with its skeleton.
+    /// The mesh with its skeleton: every model a joint, each geometry where its clusters
+    /// say it was bound, or where its model stands, and blended to its clusters' models, or
+    /// to its own model when it has no skin.
     fn boned(&self) -> Boned {
-        let limbs = self.limbs();
-        let base: Vec<Affine> = limbs
-            .iter()
-            .map(|limb| limb.pose(limb.translation, limb.rotation, limb.scaling))
-            .collect();
-        let parents = limbs
-            .iter()
-            .map(|limb| self.limb(limb.parent).map(|parent| parent.index))
-            .collect();
-
-        let mut positions: Vec<Vec3> = Vec::new();
-        let mut texcoords: Vec<[f32; 2]> = Vec::new();
-        let mut blends: Vec<Vec<(usize, f64)>> = Vec::new();
-        let mut triangles = Vec::new();
+        let models = self.models();
+        let mut boned = Boned {
+            positions: Vec::new(),
+            texcoords: Vec::new(),
+            blends: Vec::new(),
+            triangles: Vec::new(),
+            parents: models
+                .iter()
+                .map(|model| self.model_of(model.parent).map(|parent| parent.joint))
+                .collect(),
+            base: models
+                .iter()
+                .map(|model| model.pose(model.translation, model.rotation, model.scaling))
+                .collect(),
+            bind: vec![None; models.len()],
+            animations: self.animations(&models),
+            rest: FBX_FRAME,
+            unnamed: FBX_ANIMATION,
+        };
+        // Where each model stands with nothing animated.
+        let rest = boned.world(&boned.base);
+        let Boned {
+            positions,
+            texcoords,
+            blends,
+            triangles,
+            bind,
+            ..
+        } = &mut boned;
         for (number, node) in &self.nodes {
             let Node::Geometry(geometry) = node else {
                 continue;
             };
             let corners = geometry.corners();
-            let model = match geometry.model.and_then(|model| self.nodes.get(&model)) {
-                Some(Node::Mesh(model)) => Some(*model),
-                _ => None,
-            };
-            let place_of = |at: Vec3| model.map_or(at, |model| model.placed(at));
+            let model = self.model_of(geometry.model);
             let (verts, _) = geometry.verts.as_chunks::<CORNERS>();
             let coordinates = geometry.texcoords(&corners);
-            // What each of the geometry's own vertices is blended to, by its skin's clusters.
+            // What each of the geometry's own vertices is blended to, by its skin's clusters,
+            // and where the first of them says the mesh stood when it was bound.
             let mut weights: Vec<Vec<(usize, f64)>> = vec![Vec::new(); verts.len()];
+            let mut bound = None;
+            let mut skinned = false;
             for cluster in self.nodes.values() {
                 let Node::Cluster(cluster) = cluster else {
                     continue;
                 };
-                let skinned = match cluster.skin.and_then(|skin| self.nodes.get(&skin)) {
+                let own = match cluster.skin.and_then(|skin| self.nodes.get(&skin)) {
                     Some(Node::Skin(geometry)) => *geometry == Some(*number),
                     _ => false,
                 };
-                let limb = self
-                    .limb(cluster.limb)
-                    .map(|limb| limb.index)
-                    .filter(|limb| *limb <= FBX_MAX_LIMB);
-                let (true, Some(limb)) = (skinned, limb) else {
+                let (true, Some(joint)) = (own, self.model_of(cluster.model)) else {
                     continue;
                 };
+                let joint = joint.joint;
+                skinned = true;
+                // `TransformLink` is where the cluster's model stood when the mesh was
+                // bound, and `Transform` the mesh in that model's space.
+                let link = matrix(&cluster.transform_link);
+                if let (Some(link), Some(slot)) = (link, bind.get_mut(joint)) {
+                    *slot = Some(link);
+                }
+                let stood = link.or_else(|| rest.get(joint).copied());
+                bound = bound.or_else(|| Some(stood?.after(&matrix(&cluster.transform)?)));
                 if cluster.indexes.len() != cluster.weights.len() {
                     continue;
                 }
                 for (vertex, weight) in cluster.indexes.iter().zip(&cluster.weights) {
                     if let Some(own) = index(*vertex).and_then(|vertex| weights.get_mut(vertex)) {
-                        own.push((limb, *weight));
+                        own.push((joint, *weight));
                     }
                 }
             }
+            // A geometry with no skin follows its model.
+            if let (false, Some(model)) = (skinned, model) {
+                weights.fill(vec![(model.joint, 1.0)]);
+            }
+            let stood = bound
+                .or_else(|| model.and_then(|model| rest.get(model.joint).copied()))
+                .unwrap_or(Affine::IDENTITY);
+            let placed = model.map_or(stood, |model| stood.after(&model.geometric()));
             // The corners that are one of the geometry's vertices with one texture
             // coordinate are one vertex of the mesh (MDL-10.7).
             let mut welded: BTreeMap<(usize, [u32; 2]), usize> = BTreeMap::new();
@@ -1063,7 +1095,7 @@ impl Scene {
                 let place = *welded.entry(key).or_insert(next);
                 if place == next {
                     let at = verts.get(*vertex).copied().unwrap_or(NONE);
-                    positions.push(place_of(at));
+                    positions.push(placed.apply(at));
                     texcoords.extend(coordinate);
                     blends.push(blend(weights.get(*vertex).map_or(&[], Vec::as_slice)));
                 }
@@ -1087,48 +1119,28 @@ impl Scene {
             }
         }
 
-        let animations = self.animations(&limbs);
-
-        Boned {
-            positions,
-            texcoords,
-            blends,
-            triangles,
-            parents,
-            base,
-            animations,
-            rest: FBX_FRAME,
-            unnamed: FBX_ANIMATION,
-        }
+        boned.without_idle_joints()
     }
 }
 
-impl Limb {
-    /// The limb's pose of a translation, a rotation and a scaling: its scale, its turn after
-    /// its pre-rotation's, and its move.
+impl Model {
+    /// The model's pose of a translation, a rotation and a scaling: its scale, its turn
+    /// after its pre-rotation's, and its move.
     fn pose(&self, translation: Vec3, rotation: Vec3, scaling: Vec3) -> Affine {
         let matrix = turning(turned(self.pre_rotation))
             .after(&turning(turned(rotation)))
             .matrix;
         scaled(matrix, scaling, translation)
     }
-}
 
-impl MeshModel {
-    /// Where a vertex of the model's geometry stands: moved by the geometric translation,
-    /// scaled, turned by the rotation and then the pre-rotation, and moved by the
-    /// translation.
-    fn placed(&self, at: Vec3) -> Vec3 {
-        let [gx, gy, gz] = self.geometric_translation;
-        let [sx, sy, sz] = self.scaling;
-        let [x, y, z] = at;
-        let scaled = [(x + gx) * sx, (y + gy) * sy, (z + gz) * sz];
-        let turned_once = turning(turned(self.rotation)).apply(scaled);
-        Affine {
-            matrix: turned(self.pre_rotation),
-            moved: self.translation,
-        }
-        .apply(turned_once)
+    /// Where a geometry that belongs to the model stands in the model's space: scaled,
+    /// turned and moved by the geometric three.
+    fn geometric(&self) -> Affine {
+        scaled(
+            turned(self.geometric_rotation),
+            self.geometric_scaling,
+            self.geometric_translation,
+        )
     }
 }
 

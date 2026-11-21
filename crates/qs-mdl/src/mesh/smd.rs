@@ -356,6 +356,7 @@ impl Smd {
                     (name.clone(), frames)
                 })
                 .collect(),
+            bind: Vec::new(),
             rest: SMD_FRAME,
             unnamed: SMD_ANIMATION,
         }
