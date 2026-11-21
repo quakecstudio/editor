@@ -29,7 +29,7 @@ use qs_layout::{
     MovePanelParams, Outline, Panel, RESIZE_PANEL, ResizePanelParams, ShowPanelParams, SoftWrap,
     Split, TOGGLE_PANEL, TogglePanelParams, WhenShown, Zoom, ZoomParams,
 };
-use qs_map_edit::opens_in_map_editor;
+use qs_map_edit::{MAP_GENERATE, opens_in_map_editor};
 use qs_render::{Camera, MapMesh};
 use qs_settings::SettingsFile;
 use qs_templates::GitHub;
@@ -286,6 +286,8 @@ pub struct Shell {
     review_seen: usize,
     /// The last play-loop command's error, shown on the toolbar until the next one.
     preview_error: Option<String>,
+    /// Why the last New Random Map made none, shown in the map tab until the next (L-48).
+    random_map_error: Option<String>,
     /// Where the app's menu is: the system's menu bar, or the toolbar in the window (P3-44).
     menu: MenuPlace,
     /// Each feature's state (P6-41).
@@ -353,6 +355,7 @@ impl Shell {
             focus_applied: layout.focus_requests,
             review_seen: 0,
             preview_error: None,
+            random_map_error: None,
             menu: MenuPlace::default(),
             settings_file: None,
             features: Features::new(AgentPanel::new(Box::new(agent::provider_model))),
@@ -1511,6 +1514,17 @@ impl Shell {
             }
             self.run_chosen(&binding.command);
         }
+    }
+
+    /// Makes a random level in the open project and shows it in the map tab (L-48); the map
+    /// tab says why when none was made.
+    pub fn new_random_map(&mut self) {
+        self.centre_tab = CentreTab::Map;
+        self.random_map_error = self
+            .session
+            .execute(MAP_GENERATE, serde_json::Value::Object(serde_json::Map::new()))
+            .err()
+            .map(|error| error.to_string());
     }
 
     /// Runs the command `id` a key or a menu item chose, with no parameters. Play is run as
@@ -2831,18 +2845,48 @@ impl Shell {
             CentreTab::Map => (Token::SurfaceViewport, Text::NoMap),
             CentreTab::Search => (Token::SurfaceEditor, Text::NoSearchMatch),
         };
+        // With a project open, the map tab offers a level made for it (L-48).
+        let offers_map = self.centre_tab == CentreTab::Map
+            && self.session.context().workbench.root().is_some();
         let theme = &self.theme;
+        let mut random_map = false;
         egui::Frame::NONE.fill(theme.color(fill)).show(ui, |ui| {
             let size = ui.available_size();
-            ui.allocate_ui_with_layout(
-                size,
-                EguiLayout::centered_and_justified(egui::Direction::TopDown),
-                |ui| {
-                    ui.label(RichText::new(message.get()).color(theme.color(Token::TextMuted)));
-                },
-            );
+            if offers_map {
+                ui.allocate_ui_with_layout(
+                    size,
+                    EguiLayout::top_down(egui::Align::Center),
+                    |ui| {
+                        ui.add_space(size.y / EMPTY_MAP_DROP);
+                        let muted = theme.color(Token::TextMuted);
+                        ui.label(RichText::new(message.get()).color(muted));
+                        ui.add_space(theme.space(1));
+                        random_map = ui.button(Text::NewRandomMapMenu.get()).clicked();
+                        ui.label(RichText::new(Text::NewRandomMapHow.get()).small().color(muted));
+                        if let Some(error) = &self.random_map_error {
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(error).color(theme.color(Token::StatusError)),
+                                )
+                                .wrap(),
+                            );
+                        }
+                    },
+                );
+            } else {
+                ui.allocate_ui_with_layout(
+                    size,
+                    EguiLayout::centered_and_justified(egui::Direction::TopDown),
+                    |ui| {
+                        ui.label(RichText::new(message.get()).color(theme.color(Token::TextMuted)));
+                    },
+                );
+            }
             ui.allocate_response(egui::Vec2::ZERO, Sense::hover());
         });
+        if random_map {
+            self.new_random_map();
+        }
     }
 }
 
@@ -3268,6 +3312,8 @@ fn status_dot(ui: &mut Ui, colour: egui::Color32) {
 
 /// A status dot's radius as a part of the line's height: a quarter.
 const STATUS_DOT_PARTS: f32 = 4.0;
+/// How far down the map tab its words stand with no map open: this part of its height.
+const EMPTY_MAP_DROP: f32 = 3.0;
 
 /// The most of the window's width a side panel takes when the interface is zoomed in.
 const SIDE_PANEL_SHARE: f32 = 0.3;

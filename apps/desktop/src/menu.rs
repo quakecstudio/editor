@@ -38,6 +38,8 @@ pub enum MenuChoice {
     OpenFolder,
     /// File, New Project: the New Project dialog (P4-17, L-28).
     NewProject,
+    /// File, New Random Map: a generated level, opened in the map tab (L-48).
+    RandomMap,
     /// File, Go to File: the file finder.
     FileFinder,
     /// File, Quake Files: the guide to the game's files (P3-21).
@@ -59,6 +61,7 @@ impl MenuChoice {
         match self {
             Self::OpenFolder => qs_workbench::OPEN_PROJECT,
             Self::NewProject => qs_templates::NEW_PROJECT,
+            Self::RandomMap => qs_map_edit::MAP_GENERATE,
             Self::FileFinder => PROJECT_FILES,
             Self::GameFiles => qs_workbench::CHOOSE_GAME,
             Self::ExportMod => PROJECT_EXPORT,
@@ -74,6 +77,7 @@ impl MenuChoice {
         match self {
             Self::OpenFolder => Text::OpenFolderMenu,
             Self::NewProject => Text::NewProjectMenu,
+            Self::RandomMap => Text::NewRandomMapMenu,
             Self::FileFinder => Text::FileFinderMenu,
             Self::GameFiles => Text::GameFilesMenu,
             Self::ExportMod => Text::ExportModMenu,
@@ -103,7 +107,11 @@ impl MenuChoice {
             Self::Zoom(ZoomStep::Actual) => {
                 Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::Num0))
             }
-            Self::NewProject | Self::GameFiles | Self::ExportMod | Self::Toggle(_) => None,
+            Self::NewProject
+            | Self::RandomMap
+            | Self::GameFiles
+            | Self::ExportMod
+            | Self::Toggle(_) => None,
         }
     }
 }
@@ -218,6 +226,7 @@ pub const MENUS: &[MenuSpec] = &[
         items: &[
             Item::Choice(MenuChoice::NewProject),
             Item::Choice(MenuChoice::OpenFolder),
+            Item::Choice(MenuChoice::RandomMap),
             Item::Choice(MenuChoice::FileFinder),
             Item::Separator,
             Item::Command(CREATE_CHECKPOINT),

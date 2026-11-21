@@ -3817,12 +3817,20 @@ dependencies = [
  "qs-diff",
  "qs-map",
  "qs-map-bsp",
+ "qs-map-gen",
  "qs-vfs",
  "qs-wad",
  "schemars",
  "serde",
  "serde_json",
  "tracing",
+]
+
+[[package]]
+name = "qs-map-gen"
+version = "2026.11.1"
+dependencies = [
+ "qs-map",
 ]
 
 [[package]]
@@ -3992,6 +4000,7 @@ dependencies = [
  "qs-map",
  "qs-map-bsp",
  "qs-map-edit",
+ "qs-map-gen",
  "qs-map-light",
  "qs-pak",
  "qs-paths",

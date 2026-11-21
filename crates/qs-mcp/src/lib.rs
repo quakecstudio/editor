@@ -66,6 +66,11 @@ const INSPECT_MAP: &str = "map.list_entities";
 const OPEN_MAP: &str = "map.open";
 /// The workbench's command that makes a map and opens it in place of the open one.
 const NEW_MAP: &str = "map.new";
+/// The workbench's command that generates a level and opens it in place of the open one.
+const GENERATE_MAP: &str = "map.generate";
+/// The commands that open a map of their own, so need none open: the file each makes or
+/// opens is held to the project by the command itself.
+const OPENERS: [&str; 3] = [OPEN_MAP, NEW_MAP, GENERATE_MAP];
 /// The workbench's command that makes the last map edit again: a map edit under another name.
 const REPEAT_EDIT: &str = "edit.repeat";
 /// The workbench's commands that take back and make again the last change of the session's
@@ -101,7 +106,7 @@ fn run_tool<K: Commands>(
     settings: &ServerSettings,
 ) -> Result<Value, ToolError> {
     let history = tool.walks_history();
-    if !(tool.edits_map() || history) || &*tool.id == OPEN_MAP || &*tool.id == NEW_MAP {
+    if !(tool.edits_map() || history) || OPENERS.contains(&&*tool.id) {
         return session.run(&tool.id, arguments);
     }
     let open = match session.run(INSPECT_MAP, Value::Object(serde_json::Map::new())) {

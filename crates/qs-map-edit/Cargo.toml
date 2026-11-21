@@ -13,6 +13,8 @@ qs-commands = { workspace = true }
 # map.compare_with_disk: the line diff of the map being edited against the one on disk.
 qs-diff = { workspace = true }
 qs-map = { workspace = true }
+# map.generate: the level maker.
+qs-map-gen = { workspace = true }
 # The report a compile gives the map view (MapReport::of).
 qs-map-bsp = { workspace = true }
 # A BSP's entities, which map.open edits when the map has no source.

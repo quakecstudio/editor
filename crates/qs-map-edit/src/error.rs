@@ -230,6 +230,11 @@ pub enum MapEditError {
         /// Why.
         error: qs_map::LinkError,
     },
+    /// A level could not be generated (`map.generate`).
+    Generate {
+        /// Why.
+        error: qs_map_gen::GenError,
+    },
 }
 
 impl fmt::Display for MapEditError {
@@ -335,6 +340,7 @@ impl fmt::Display for MapEditError {
             Self::Shape { error } => write!(f, "{error}"),
             Self::NotLayer { entity } => write!(f, "entity {entity} is no layer"),
             Self::Link { error } => write!(f, "{error}"),
+            Self::Generate { error } => write!(f, "no level was made: {error}"),
         }
     }
 }
@@ -353,6 +359,7 @@ impl Error for MapEditError {
             Self::Brush { error } => Some(error),
             Self::Shape { error } => Some(error),
             Self::Link { error } => Some(error),
+            Self::Generate { error } => Some(error),
             Self::NoFile { .. }
             | Self::Exists { .. }
             | Self::NotNewMap { .. }
