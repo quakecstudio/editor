@@ -1076,15 +1076,14 @@ impl Scene {
         };
         // Where each model stands with nothing animated.
         let rest = boned.world(&boned.base);
-        // The joints made for a model that two geometries were bound to in two places: the
-        // model's joint and where the second had it.
+        // The joints made for the places clusters say their models stood when a mesh was
+        // bound: each a model's joint and the place.
         let mut twins: Vec<(usize, Affine)> = Vec::new();
         let Boned {
             positions,
             texcoords,
             blends,
             triangles,
-            bind,
             ..
         } = &mut boned;
         for (number, node) in &self.nodes {
@@ -1115,26 +1114,18 @@ impl Scene {
                 // `TransformLink` is where the cluster's model stood when the mesh was
                 // bound, and `Transform` the mesh in that model's space.
                 let link = matrix(&cluster.transform_link);
-                let joint = match (link, bind.get_mut(limb.joint)) {
-                    (Some(link), Some(slot)) => match *slot {
-                        Some(taken) if taken != link => {
-                            // Another geometry was bound with the model elsewhere: a joint
-                            // of its own that stands where the model does.
-                            let twin = (limb.joint, link);
-                            let place = twins.iter().position(|other| *other == twin);
-                            let place = place.unwrap_or_else(|| {
-                                twins.push(twin);
-                                twins.len().saturating_sub(1)
-                            });
-                            models.len().saturating_add(place)
-                        }
-                        _ => {
-                            *slot = Some(link);
-                            limb.joint
-                        }
-                    },
-                    _ => limb.joint,
-                };
+                // A cluster that says where its model stood is bound to a joint of its own
+                // that stands where the model does, one for each such place: two geometries
+                // may have been bound with one model in two places.
+                let joint = link.map_or(limb.joint, |link| {
+                    let twin = (limb.joint, link);
+                    let place = twins.iter().position(|other| *other == twin);
+                    let place = place.unwrap_or_else(|| {
+                        twins.push(twin);
+                        twins.len().saturating_sub(1)
+                    });
+                    models.len().saturating_add(place)
+                });
                 let stood = link.or_else(|| rest.get(limb.joint).copied());
                 bound = bound.or_else(|| Some(stood?.after(&matrix(&cluster.transform)?)));
                 if cluster.indexes.len() != cluster.weights.len() {
