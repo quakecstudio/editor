@@ -284,10 +284,9 @@ pub struct Shell {
     focus_applied: u64,
     /// The edits waiting for review as of the last frame (P7-18).
     review_seen: usize,
-    /// The last play-loop command's error, shown on the toolbar until the next one.
+    /// The last play-loop command's error, or why New Random Map made no map (L-48), shown
+    /// on the toolbar until the next one.
     preview_error: Option<String>,
-    /// Why the last New Random Map made none, shown in the map tab until the next (L-48).
-    random_map_error: Option<String>,
     /// Where the app's menu is: the system's menu bar, or the toolbar in the window (P3-44).
     menu: MenuPlace,
     /// Each feature's state (P6-41).
@@ -355,7 +354,6 @@ impl Shell {
             focus_applied: layout.focus_requests,
             review_seen: 0,
             preview_error: None,
-            random_map_error: None,
             menu: MenuPlace::default(),
             settings_file: None,
             features: Features::new(AgentPanel::new(Box::new(agent::provider_model))),
@@ -1516,24 +1514,48 @@ impl Shell {
         }
     }
 
-    /// Makes a random level in the open project and shows it in the map tab (L-48); the map
-    /// tab says why when none was made.
+    /// Makes a random level in the open project and shows it in the map tab (L-48). When
+    /// none is made the toolbar says why, as it does for Play, and the guide to the game's
+    /// files opens when the game is what it lacked. An open map with unsaved edits is not
+    /// replaced: the level would take its place.
     pub fn new_random_map(&mut self) {
-        self.centre_tab = CentreTab::Map;
-        self.random_map_error = self
-            .session
-            .execute(
-                MAP_GENERATE,
-                serde_json::Value::Object(serde_json::Map::new()),
-            )
-            .err()
-            .map(|error| error.to_string());
+        let context = self.session.context();
+        let unsaved = context
+            .workbench
+            .map()
+            .is_some_and(qs_map_edit::MapDocument::is_unsaved);
+        let no_game =
+            context.workbench.root().is_some() && context.preview.game_base_path().is_none();
+        let result = if unsaved {
+            Err(Text::RandomMapUnsaved.get().to_owned())
+        } else {
+            self.session
+                .execute(
+                    MAP_GENERATE,
+                    serde_json::Value::Object(serde_json::Map::new()),
+                )
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        };
+        match result {
+            Ok(()) => {
+                self.centre_tab = CentreTab::Map;
+                self.preview_error = None;
+            }
+            Err(error) => {
+                tracing::warn!(%error, "no random map was made");
+                if no_game && !unsaved {
+                    self.show_game_guide();
+                }
+                self.preview_error = Some(error);
+            }
+        }
     }
 
-    /// Why the last New Random Map made none, for tests.
+    /// What the toolbar says went wrong, for tests.
     #[cfg(test)]
-    pub(crate) fn random_map_error(&self) -> Option<&str> {
-        self.random_map_error.as_deref()
+    pub(crate) fn toolbar_error(&self) -> Option<&str> {
+        self.preview_error.as_deref()
     }
 
     /// Runs the command `id` a key or a menu item chose, with no parameters. Play is run as
@@ -2873,14 +2895,6 @@ impl Shell {
                             .small()
                             .color(muted),
                     );
-                    if let Some(error) = &self.random_map_error {
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(error).color(theme.color(Token::StatusError)),
-                            )
-                            .wrap(),
-                        );
-                    }
                 });
             } else {
                 ui.allocate_ui_with_layout(

@@ -6,7 +6,7 @@
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use qs_commands::{Command, Outcome};
 use qs_map_gen::{Classes, Request, Size};
@@ -14,7 +14,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::textures::{Game, GameTextures};
-use crate::{HasMap, MapEditError, MapProject, new_map_path, write_new_map};
+use crate::{HasMap, MapEditError, MapProject, WORLD_CLASSNAME, new_map_path, write_new_map};
 
 /// The id of `map.generate`.
 pub const MAP_GENERATE: &str = "map.generate";
@@ -118,30 +118,38 @@ impl<C: HasMap + 'static> Command<C> for MapGenerate {
         if context.map_project().project_root().is_none() {
             return Err(MapEditError::NoProject);
         }
-        let seed = seed.unwrap_or_else(drawn_seed);
+        // The clock is read here and nowhere else: the seed it gives is `seed_at`'s.
+        let seed = seed.unwrap_or_else(|| {
+            seed_at(
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default(),
+            )
+        });
         let path = path
             .unwrap_or_else(|| PathBuf::from(MAPS_FOLDER).join(format!("{NAME_START}{seed}.map")));
         let path = new_map_path(context, &path)?;
         let name = path
             .file_stem()
             .map_or_default(|stem| stem.to_string_lossy().into_owned());
-        let game = context.game_folders();
-        let textures: Vec<String> = game.base.as_deref().map_or_default(|base| {
-            GameTextures::read(&Game::at(base))
-                .names()
-                .map(str::to_owned)
-                .collect()
-        });
-        let project = context.map_project();
-        let defined: BTreeSet<String> = Classes::wanted()
-            .filter(|classname| project.entity_class(classname).is_some())
+        let base = context.game_folders().base.ok_or(MapEditError::NoGame)?;
+        let textures: Vec<String> = GameTextures::read(&Game::at(&base))
+            .names()
             .map(str::to_owned)
             .collect();
-        // A project whose code defines none of them is one the classes cannot be read from.
-        let classes = if defined.is_empty() {
-            Classes::Any
+        let project = context.map_project();
+        // Every game's code defines the world: a project that does not is one whose classes
+        // cannot be read, such as the command line's, and id's are taken to be there. One
+        // that does gets only what it defines, which may be none of them.
+        let classes = if project.entity_class(WORLD_CLASSNAME).is_some() {
+            Classes::Named(
+                Classes::wanted()
+                    .filter(|classname| project.entity_class(classname).is_some())
+                    .map(str::to_owned)
+                    .collect::<BTreeSet<String>>(),
+            )
         } else {
-            Classes::Named(defined)
+            Classes::Any
         };
         let level = Request {
             seed,
@@ -175,11 +183,10 @@ impl<C: HasMap + 'static> Command<C> for MapGenerate {
     }
 }
 
-/// A seed from the clock, for a level asked for with none: small enough to read and type.
-fn drawn_seed() -> u64 {
-    let since = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
+/// The seed of a level asked for with none at the time `since` the epoch: its seconds mixed
+/// with the fraction of its second, so two asked for a moment apart differ, and small enough
+/// to read and type.
+fn seed_at(since: Duration) -> u64 {
     u64::from(since.subsec_nanos()) ^ since.as_secs()
 }
 

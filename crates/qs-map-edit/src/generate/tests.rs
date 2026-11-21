@@ -11,9 +11,11 @@ use std::path::PathBuf;
 use qs_commands::Session;
 use serde_json::json;
 
-use super::MAP_GENERATE;
+use std::time::Duration;
+
+use super::{MAP_GENERATE, seed_at};
 use crate::testing::{MapContext, TestGame, TestProject, level_bsp};
-use crate::{ClassInfo, GameFolders, MAP_ENTITY};
+use crate::{ClassInfo, GameFolders, MAP_ENTITY, MAP_ISSUES};
 
 /// A project in a folder of its own, whose code defines `classes`, and a game one of whose
 /// levels holds `textures`.
@@ -127,42 +129,102 @@ fn a_seed_is_drawn_when_none_is_given() {
     assert_eq!(made["rooms"].as_array().unwrap().len(), 8);
 }
 
-// No spec statement: L-48, only the classes the project's code defines are placed
+// No spec statement: L-48, a project whose code defines the world gets only the classes it
+// defines, which may be none of a level's; one whose classes cannot be read gets id's
 #[test]
 fn only_the_projects_classes_are_placed() {
+    let always = [
+        "worldspawn",
+        "info_player_start",
+        "trigger_changelevel",
+        "light",
+    ];
     let (_, mut session) = project(
         "classes",
-        &["monster_dog", "item_shells"],
+        &["worldspawn", "monster_dog", "item_shells"],
         &["brick", "stone"],
     );
     session
         .execute(MAP_GENERATE, json!({ "seed": 2, "size": "large" }))
         .unwrap();
-    let allowed = [
-        "worldspawn",
-        "info_player_start",
-        "trigger_changelevel",
-        "light",
-        "func_door",
-        "monster_dog",
-        "item_shells",
-    ];
     let names = classnames(&session);
     assert!(names.iter().any(|name| name == "monster_dog"));
     for name in names {
-        assert!(allowed.contains(&name.as_str()), "{name}");
+        let named = ["monster_dog", "item_shells"];
+        assert!(
+            always.contains(&name.as_str()) || named.contains(&name.as_str()),
+            "{name}"
+        );
+    }
+
+    // A game of its own, with none of id's classes: no monster, door or key is put in it.
+    let (_, mut session) = project("own", &["worldspawn", "monster_mine"], &["brick"]);
+    let made = session
+        .execute(MAP_GENERATE, json!({ "seed": 2, "size": "large" }))
+        .unwrap();
+    assert_eq!(
+        (made["monsters"].as_u64(), made["locked"].as_bool()),
+        (Some(0), Some(false))
+    );
+    for name in classnames(&session) {
+        assert!(always.contains(&name.as_str()), "{name}");
+    }
+
+    // No world defined: the classes cannot be read, and id's are placed.
+    let (_, mut session) = project("unread", &["monster_mine"], &["brick"]);
+    session
+        .execute(MAP_GENERATE, json!({ "seed": 2, "size": "large" }))
+        .unwrap();
+    let names = classnames(&session);
+    assert!(names.iter().any(|name| name.starts_with("monster_")));
+    assert!(names.iter().all(|name| name != "monster_mine"));
+}
+
+// No spec statement: L-48, a level of each size has no issue `map.issues` finds
+#[test]
+fn a_generated_level_has_no_issue() {
+    let (_, mut session) = project("issues", &[], &["brick", "stone", "*lava1", "sky1"]);
+    for (seed, size) in [(1, "small"), (2, "medium"), (3, "large")] {
+        session
+            .execute(MAP_GENERATE, json!({ "seed": seed, "size": size }))
+            .unwrap();
+        let found = session.execute(MAP_ISSUES, json!({})).unwrap();
+        assert_eq!(found["issues"], json!([]), "seed {seed} {size}");
     }
 }
 
-// No spec statement: L-48, no level is made with no game textures, with no project open, or outside the project
+// No spec statement: L-48, the seed drawn for a time is its seconds mixed with the fraction
+// of its second: two times a moment apart draw two seeds, and one time always the same
+#[test]
+fn a_seed_is_drawn_from_the_time() {
+    let at = |secs: u64, nanos: u32| seed_at(Duration::new(secs, nanos));
+    assert_eq!(at(0, 0), 0);
+    assert_eq!(at(1_800_000_000, 0), 1_800_000_000);
+    assert_eq!(at(1_800_000_000, 5), at(1_800_000_000, 5));
+    assert_ne!(at(1_800_000_000, 5), at(1_800_000_000, 6));
+    assert_ne!(at(1_800_000_000, 5), at(1_800_000_001, 5));
+}
+
+// No spec statement: L-48, no level is made with no game, with no texture in the game's
+// levels, with no project open, or outside the project
 #[test]
 fn no_level_is_made_without_a_project_or_a_texture() {
+    // A game whose levels hold no texture.
     let (root, mut session) = project("bare", &[], &[]);
     let error = session
         .execute(MAP_GENERATE, json!({ "seed": 1 }))
         .unwrap_err()
         .to_string();
     assert!(error.contains("no texture to paint a wall with"), "{error}");
+    assert!(!root.join("maps").exists());
+
+    // No game at all, as on the command line: it says that, not that textures are missing.
+    let mut session = MapContext::in_project(&root);
+    let error = session
+        .execute(MAP_GENERATE, json!({ "seed": 1 }))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("no game was found"), "{error}");
     assert!(!root.join("maps").exists());
 
     let error = MapContext::session()

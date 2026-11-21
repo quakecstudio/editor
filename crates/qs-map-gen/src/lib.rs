@@ -302,7 +302,7 @@ impl Assembly<'_> {
                 max: [cx + POST_HALF, cy + POST_HALF, floor + POST_HEIGHT],
             })?);
         }
-        let trigger = Coat::all(&self.paints.trigger).boxed(mass::Bounds {
+        let trigger = Coat::all(self.paints.trigger()).boxed(mass::Bounds {
             min: [x - EXIT_HALF, y - EXIT_HALF, floor],
             max: [x + EXIT_HALF, y + EXIT_HALF, floor + EXIT_HEIGHT],
         })?;

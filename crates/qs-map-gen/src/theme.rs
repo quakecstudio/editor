@@ -127,13 +127,14 @@ const PLAIN_THEME: &str = "plain";
 
 /// What the sky's name starts with (MAP-4.5).
 const SKY_MARK: &str = "sky";
-/// The starts of the liquids a pit may hold, the deadliest first.
+/// The starts of the liquids a pit may hold; a level's is drawn from those the game has.
 const LIQUIDS: &[&str] = &["*lava", "*slime", "*water"];
 /// The first bytes of names that are no wall: liquids, animations and fences.
 const SPECIAL_STARTS: &[char] = &['*', '+', '{'];
 /// Names that are tools' own, not surfaces.
 const TOOL_NAMES: &[&str] = &["clip", "trigger", "skip", "hint", "hintskip", "origin"];
-/// The texture a trigger's brush is given (`docs/agent-reference/maps.md`, Textures).
+/// The texture a trigger's brush is given when the game has it
+/// (`docs/agent-reference/maps.md`, Textures).
 const TRIGGER: &str = "trigger";
 
 /// The names a level is painted with.
@@ -157,8 +158,8 @@ pub(crate) struct Paints {
     pub(crate) liquid: Option<Surface>,
     /// The sky; none when the game has none.
     pub(crate) sky: Option<Surface>,
-    /// Triggers.
-    pub(crate) trigger: Surface,
+    /// The game's `trigger` texture, when it has one.
+    trigger: Option<Surface>,
 }
 
 /// The surface of the texture `name`, aligned to the world.
@@ -187,7 +188,8 @@ impl Names {
         rng.pick(&there).copied()
     }
 
-    /// A name that starts with one of `starts`, the earlier starts first.
+    /// A name that starts with one of `starts`: the start is drawn, then a name of that
+    /// start, and a start no name has is passed over.
     fn starting(&self, starts: &[&str], rng: &mut Rng) -> Option<String> {
         let mut order: Vec<&str> = starts.to_vec();
         rng.shuffle(&mut order);
@@ -211,6 +213,12 @@ impl Names {
 }
 
 impl Paints {
+    /// What a trigger's brush is painted with: the game's `trigger` texture, else its walls',
+    /// since a trigger is not drawn whatever its texture (`InitTrigger` clears its model).
+    pub(crate) fn trigger(&self) -> &Surface {
+        self.trigger.as_ref().unwrap_or(&self.wall)
+    }
+
     /// The paints for a level, from the names in `textures`: a theme whose walls, floors and
     /// ceilings are all there, chosen by `rng`, else any plain textures.
     ///
@@ -221,7 +229,7 @@ impl Paints {
         let names = Names(textures.iter().map(|name| name.to_lowercase()).collect());
         let liquid = names.starting(LIQUIDS, rng).map(|name| surface(&name));
         let sky = names.starting(&[SKY_MARK], rng).map(|name| surface(&name));
-        let trigger = surface(TRIGGER);
+        let trigger = names.0.contains(TRIGGER).then(|| surface(TRIGGER));
         let mut themes: Vec<&Theme> = THEMES.iter().collect();
         rng.shuffle(&mut themes);
         for theme in themes {

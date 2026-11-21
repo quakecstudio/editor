@@ -179,6 +179,16 @@ fn a_game_with_no_theme_is_painted_plain() {
     .generate()
     .unwrap();
     assert_eq!(level.theme, "plain");
+    // Every face is painted with a texture the game has: its trigger's too, with no
+    // `trigger` texture to give it.
+    for entity in &level.map.entities {
+        for brush in entity.brushes() {
+            for face in &brush.faces {
+                let name = String::from_utf8_lossy(face.texture()).into_owned();
+                assert!(textures.contains(&name), "{name}");
+            }
+        }
+    }
     // Neither a pit nor a courtyard without a liquid and a sky to paint them.
     for seed in 0..20 {
         let level = Request {

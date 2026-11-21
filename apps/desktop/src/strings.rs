@@ -429,6 +429,8 @@ pub enum Text {
     NewRandomMapMenu,
     /// Under that button: what it makes.
     NewRandomMapHow,
+    /// Why New Random Map made none while the open map has edits not saved.
+    RandomMapUnsaved,
     /// The New Project dialog's title.
     NewProjectHeading,
     /// The New Project dialog's question.
@@ -1111,7 +1113,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 547] = [
+    pub const ALL: [Self; 548] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1255,6 +1257,7 @@ impl Text {
         Self::NewProjectMenu,
         Self::NewRandomMapMenu,
         Self::NewRandomMapHow,
+        Self::RandomMapUnsaved,
         Self::NewProjectHeading,
         Self::NewProjectWhich,
         Self::GameOriginal,
@@ -1823,6 +1826,7 @@ impl Text {
             Self::OpenFolderButton => "Open Folder",
             Self::NewProjectMenu => "New Project\u{2026}",
             Self::NewRandomMapMenu => "New Random Map",
+            Self::RandomMapUnsaved => "Save the open map first: a new map takes its place.",
             Self::NewRandomMapHow => {
                 "Makes a level of several rooms with monsters, weapons and an exit, in the project's maps folder."
             }

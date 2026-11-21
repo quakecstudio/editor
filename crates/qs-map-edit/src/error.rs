@@ -230,6 +230,8 @@ pub enum MapEditError {
         /// Why.
         error: qs_map::LinkError,
     },
+    /// No game was found to take a level's textures from (`map.generate`).
+    NoGame,
     /// A level could not be generated (`map.generate`).
     Generate {
         /// Why.
@@ -340,6 +342,9 @@ impl fmt::Display for MapEditError {
             Self::Shape { error } => write!(f, "{error}"),
             Self::NotLayer { entity } => write!(f, "entity {entity} is no layer"),
             Self::Link { error } => write!(f, "{error}"),
+            Self::NoGame => f.write_str(
+                "no game was found to take textures from: choose the folder of the game's files",
+            ),
             Self::Generate { error } => write!(f, "no level was made: {error}"),
         }
     }
@@ -364,6 +369,7 @@ impl Error for MapEditError {
             | Self::Exists { .. }
             | Self::NotNewMap { .. }
             | Self::NoProject
+            | Self::NoGame
             | Self::PrefabName { .. }
             | Self::NoSelection
             | Self::NotGroup { .. }

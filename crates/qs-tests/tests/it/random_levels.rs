@@ -15,6 +15,7 @@
 use std::collections::{HashSet, VecDeque};
 
 use qs_bsp::{Bsp, BspLoader};
+use qs_map::{Diagnostic, DiagnosticKind};
 use qs_map_gen::{Classes, Level, Request, Size};
 use qs_sim::collision::{Hull, HullSet};
 
@@ -138,9 +139,19 @@ fn walked(hull: &Hull<'_>, head: i32, start: [f32; 3]) -> Vec<[f32; 3]> {
     reached
 }
 
-/// Compiles `level` and checks it: sealed, and every room's standing place, the exit's among
-/// them, walked to from the start.
+/// Checks `level` and compiles it: the map's own checks find nothing, it is sealed, and
+/// every room's standing place, the exit's among them, is open to the player's box and walked
+/// to from the start.
 fn check(level: &Level, what: &str) {
+    // The map's own checks find one thing: it names no WAD, since its textures are those of
+    // the game's levels, which a compile in the IDE is given (P6-43).
+    let found: Vec<Diagnostic> = level
+        .map
+        .check()
+        .into_iter()
+        .filter(|found| !matches!(found.kind, DiagnosticKind::NoWad))
+        .collect();
+    assert!(found.is_empty(), "{what}: {found:?}");
     let compiled = qs_map_bsp::Compiler::default()
         .compile(&level.map.to_bytes(), None)
         .unwrap_or_else(|error| panic!("{what}: {error}"));
@@ -186,8 +197,9 @@ fn check_all(seeds: std::ops::Range<u64>, textures: &[&str]) {
     }
 }
 
-/// The seeds checked with each game's textures on every run. `QS_RANDOM_LEVEL_SEEDS` checks
-/// more: the run recorded for L-48 was of 25 with each game's, 150 levels.
+/// The seeds checked with each game's textures on every run, which a level's compile makes
+/// the cost of. L-48's bar is 50 seeds in each size: `QS_RANDOM_LEVEL_SEEDS=25` checks 25
+/// with each game's textures, 150 levels, and its run is recorded in the PR.
 const SEEDS: u64 = 4;
 
 /// How many seeds to check: [`SEEDS`], or what `QS_RANDOM_LEVEL_SEEDS` says.
