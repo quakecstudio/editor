@@ -76,7 +76,7 @@ pub struct Shape {
 }
 
 /// `CrossProduct (a - b, c - b)`, in single precision.
-pub(super) fn corner_normal(a: [f32; 3], b: [f32; 3], c: [f32; 3]) -> [f32; 3] {
+fn corner_normal(a: [f32; 3], b: [f32; 3], c: [f32; 3]) -> [f32; 3] {
     let ([a0, a1, a2], [b0, b1, b2], [c0, c1, c2]) = (a, b, c);
     let [ax, ay, az] = [a0 - b0, a1 - b1, a2 - b2];
     let [cx, cy, cz] = [c0 - b0, c1 - b1, c2 - b2];

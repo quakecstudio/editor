@@ -10,15 +10,24 @@ pub mod iqe;
 pub mod obj;
 
 use core::fmt;
+use std::collections::BTreeMap;
 
 use crate::mdl::grab::{Base, Corners, GrabError};
 use crate::mdl::make::{Pose, PoseEntry, Shape};
 use crate::mdl::write::{MdlWriteError, Model, ModelSkin};
-use crate::mdl::{MDL_DT_FACES_FRONT, MDL_ST_RAND, StVert, Triangle};
+use crate::mdl::{
+    MDL_DT_FACES_FRONT, MDL_MAX_SKIN_HEIGHT, MDL_MAX_VERTS, MDL_ST_RAND, StVert, Triangle,
+};
 
 /// The colour GLQuake fills a skin's background with, `filledcolor` (REND-4.1): the first
 /// pixel of a skin of one colour, so that the fill, which starts there, finds nothing to do.
 pub const MESH_SKIN_FIRST: u8 = 0;
+
+/// The widest skin a mesh is given. Ours: the format bounds a skin's height (MDL-1.4) and
+/// not its width.
+pub const MESH_MAX_SKIN_WIDTH: i32 = 1024;
+/// What a skin's width is a multiple of (MDL-1.4).
+const SKIN_WIDTH_STEP: i32 = 4;
 
 /// A corner of a triangle of a mesh.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -87,6 +96,14 @@ pub enum MeshError {
     /// A picture was given for a mesh without texture coordinates, whose skin is laid out
     /// here.
     NoTexcoords,
+    /// The skin's size is none a model has: a side under 1, a width that is no multiple of 4
+    /// or over [`MESH_MAX_SKIN_WIDTH`], or a height over the format's.
+    SkinSize {
+        /// The width and height asked for.
+        size: [i32; 2],
+    },
+    /// The mesh needs more vertices than a model has.
+    Vertices,
     /// The skin's layout could not be made.
     Layout(GrabError),
     /// The model cannot be written.
@@ -107,6 +124,18 @@ impl fmt::Display for MeshError {
                  imported and a picture cannot be put on it yet: export the skin, paint it and \
                  set it",
             ),
+            Self::SkinSize {
+                size: [width, height],
+            } => write!(
+                f,
+                "a skin of {width} by {height} is none a model has: its width is a multiple of \
+                 4 from 4 to {MESH_MAX_SKIN_WIDTH} and its height from 1 to {MDL_MAX_SKIN_HEIGHT}"
+            ),
+            Self::Vertices => write!(
+                f,
+                "the mesh needs more than the {MDL_MAX_VERTS} vertices a model has: make it \
+                 simpler in the program it came from"
+            ),
             Self::Layout(error) => write!(f, "{error}"),
             Self::Write(error) => write!(f, "{error}"),
         }
@@ -118,9 +147,22 @@ impl core::error::Error for MeshError {
         match self {
             Self::Layout(error) => Some(error),
             Self::Write(error) => Some(error),
-            Self::Empty | Self::Corner { .. } | Self::NoTexcoords => None,
+            Self::Empty
+            | Self::Corner { .. }
+            | Self::NoTexcoords
+            | Self::SkinSize { .. }
+            | Self::Vertices => None,
         }
     }
+}
+
+/// How a mesh's vertices lie on its skin: the position each vertex takes of a pose, where
+/// each is on the skin, the triangles, and the skin's width and height.
+struct Layout {
+    vertices: Vec<usize>,
+    stverts: Vec<StVert>,
+    faces: Vec<Triangle>,
+    skin_size: [i32; 2],
 }
 
 /// C's conversion of a float to an `int` for a value checked to be in range: its whole part.
@@ -153,12 +195,14 @@ impl Mesh {
                 .all(|corner| corner.texcoord.is_some())
     }
 
-    /// The triangles two of whose corners are not one position: the rest have no area.
-    fn solid(&self) -> Vec<[Corner; 3]> {
+    /// The triangles two of whose corners are not one position, each with its place among
+    /// the mesh's: the rest have no area.
+    fn solid(&self) -> Vec<(usize, [Corner; 3])> {
         self.triangles
             .iter()
             .copied()
-            .filter(|[a, b, c]| {
+            .enumerate()
+            .filter(|(_, [a, b, c])| {
                 a.position != b.position && b.position != c.position && c.position != a.position
             })
             .collect()
@@ -175,14 +219,25 @@ impl Mesh {
     /// or texture coordinates, a picture for a mesh without texture coordinates, and a model
     /// the writer refuses, as one past the format's limits.
     pub fn model(&self, skin: &MeshSkin) -> Result<Model, MeshError> {
-        let triangles = self.solid();
+        let solid = self.solid();
         let Some(first) = self.frames.first() else {
             return Err(MeshError::Empty);
         };
-        if triangles.is_empty() {
+        if solid.is_empty() {
             return Err(MeshError::Empty);
         }
-        for (triangle, corners) in triangles.iter().enumerate() {
+        // A size is checked before anything of that size is made.
+        let (MeshSkin::Flat { size, .. } | MeshSkin::Picture { size, .. }) = skin;
+        let [wide, high] = *size;
+        let fits = (SKIN_WIDTH_STEP..=MESH_MAX_SKIN_WIDTH).contains(&wide)
+            && wide.checked_rem(SKIN_WIDTH_STEP) == Some(0)
+            && (1..=MDL_MAX_SKIN_HEIGHT).contains(&high);
+        // A mesh without texture coordinates has the size its layout gives, not this one.
+        if self.has_texcoords() && !fits {
+            return Err(MeshError::SkinSize { size: *size });
+        }
+        for (triangle, corners) in &solid {
+            let triangle = *triangle;
             let known = corners.iter().all(|corner| {
                 self.frames
                     .iter()
@@ -196,12 +251,14 @@ impl Mesh {
             }
         }
         // Each vertex of the model: the position it takes of a frame.
-        let (vertices, stverts, faces, skin_size) = if self.has_texcoords() {
-            let size = match skin {
-                MeshSkin::Flat { size, .. } | MeshSkin::Picture { size, .. } => *size,
-            };
-            let (vertices, stverts, faces) = self.own_layout(&triangles, size);
-            (vertices, stverts, faces, size)
+        let triangles: Vec<[Corner; 3]> = solid.into_iter().map(|(_, corners)| corners).collect();
+        let Layout {
+            vertices,
+            stverts,
+            faces,
+            skin_size,
+        } = if self.has_texcoords() {
+            self.own_layout(&triangles, *size)?
         } else {
             if matches!(skin, MeshSkin::Picture { .. }) {
                 return Err(MeshError::NoTexcoords);
@@ -260,20 +317,23 @@ impl Mesh {
         &self,
         triangles: &[[Corner; 3]],
         [width, height]: [i32; 2],
-    ) -> (Vec<usize>, Vec<StVert>, Vec<Triangle>) {
+    ) -> Result<Layout, MeshError> {
+        let most = usize::try_from(MDL_MAX_VERTS).unwrap_or(0);
         let mut pairs: Vec<(usize, usize)> = Vec::new();
+        let mut places: BTreeMap<(usize, usize), usize> = BTreeMap::new();
         let mut faces = Vec::with_capacity(triangles.len());
         for corners in triangles {
             let vertindex = corners.map(|corner| {
                 let pair = (corner.position, corner.texcoord.unwrap_or(0));
-                pairs
-                    .iter()
-                    .position(|known| *known == pair)
-                    .unwrap_or_else(|| {
-                        pairs.push(pair);
-                        pairs.len().saturating_sub(1)
-                    })
+                *places.entry(pair).or_insert_with(|| {
+                    pairs.push(pair);
+                    pairs.len().saturating_sub(1)
+                })
             });
+            // A mesh of more vertices than a model has is refused as soon as it is known.
+            if pairs.len() > most {
+                return Err(MeshError::Vertices);
+            }
             faces.push(Triangle {
                 facesfront: MDL_DT_FACES_FRONT,
                 vertindex,
@@ -294,24 +354,18 @@ impl Mesh {
                 }
             })
             .collect();
-        (
-            pairs.into_iter().map(|(position, _)| position).collect(),
+        Ok(Layout {
+            vertices: pairs.into_iter().map(|(position, _)| position).collect(),
             stverts,
             faces,
-        )
+            skin_size: [width, height],
+        })
     }
 
     /// The vertices of a mesh without texture coordinates, laid out as modelgen lays its
     /// base (MDL-8.1, MDL-8.3, MDL-8.4) from the pose `first`: the model's front, what faces
     /// +x, on the skin's left half and its back on the right, with the skin's size.
-    #[expect(
-        clippy::type_complexity,
-        reason = "the four parts of a layout, named where they are taken apart"
-    )]
-    fn laid_out(
-        triangles: &[[Corner; 3]],
-        first: &MeshFrame,
-    ) -> Result<(Vec<usize>, Vec<StVert>, Vec<Triangle>, [i32; 2]), MeshError> {
+    fn laid_out(triangles: &[[Corner; 3]], first: &MeshFrame) -> Result<Layout, MeshError> {
         // modelgen turns what it reads to face down +x, (x, y, z) to (-y, x, z); this is the
         // pose turned the other way, so that its layout is of the mesh as it stands.
         let soup: Vec<Corners> = triangles
@@ -327,7 +381,10 @@ impl Mesh {
                 })
             })
             .collect();
-        let base = Base::of(&soup).map_err(MeshError::Layout)?;
+        let base = Base::of(&soup).map_err(|error| match error {
+            GrabError::Vertices => MeshError::Vertices,
+            other => MeshError::Layout(other),
+        })?;
         // The position each of the base's vertices is: that of the first corner at it.
         let mut vertices = vec![None; base.vertices()];
         for (corners, at) in triangles.iter().zip(base.corners()) {
@@ -337,15 +394,15 @@ impl Mesh {
                 }
             }
         }
-        Ok((
-            vertices
+        Ok(Layout {
+            vertices: vertices
                 .into_iter()
                 .map(Option::unwrap_or_default)
                 .collect(),
-            base.stverts().to_vec(),
-            base.triangles(),
-            base.skin_size(),
-        ))
+            stverts: base.stverts().to_vec(),
+            faces: base.triangles(),
+            skin_size: base.skin_size(),
+        })
     }
 }
 

@@ -8,6 +8,7 @@
 //! blended to.
 
 use core::fmt;
+use std::collections::BTreeSet;
 
 use super::obj::Up;
 use super::{Corner, Mesh, MeshFrame};
@@ -33,6 +34,8 @@ pub enum IqeFault {
     Number,
     /// A face has fewer than three corners, or one that is no vertex of the file.
     Face,
+    /// The file has more animations of one name than can be told apart in a frame's name.
+    Names,
     /// A joint's parent is not a joint above it.
     Joint,
     /// A `pa` pose: the description does not say in what order its three rotations apply.
@@ -56,6 +59,7 @@ impl fmt::Display for IqeError {
             IqeFault::Header => "the file does not start with \"# Inter-Quake Export\"",
             IqeFault::Number => "an argument is no number",
             IqeFault::Face => "a face needs three corners, each a vertex of the file",
+            IqeFault::Names => "too many animations have one name for their frames to be named",
             IqeFault::Joint => "a joint's parent must be a joint above it",
             IqeFault::Angles => {
                 "a pa pose is not read: the format does not say in what order its rotations \
@@ -212,12 +216,19 @@ fn scaled(rotation: Mat3, [sx, sy, sz]: Vec3, moved: Vec3) -> Affine {
     }
 }
 
-/// A vertex of the file.
-#[derive(Clone, Debug, Default)]
-struct Vertex {
-    position: Vec3,
-    /// The joints it is blended to, each with its weight.
-    blends: Vec<(usize, f64)>,
+/// A face as its line gives it, kept until the whole file is read: a face may come before
+/// the vertices it names.
+#[derive(Clone, Debug)]
+struct Face {
+    line: usize,
+    /// Its corners' indexes as written.
+    indexes: Vec<i64>,
+    /// The vertex an index of 0 or more counts from: the file's first for `fa`, the mesh's
+    /// first for `fm`.
+    from: usize,
+    /// How many vertices were defined above the face: an index below 0 counts back from
+    /// there.
+    above: usize,
 }
 
 /// An animation: its name and its frames, each a pose for each joint in turn.
@@ -252,13 +263,15 @@ fn single(point: Vec3) -> [f32; 3] {
     point.map(|part| part as f32)
 }
 
-/// What is read of a file.
+/// What is read of a file. Its vertex attributes are arrays of their own, which "may be
+/// interleaved in any order, or not interleaved at all": the Nth of each is the Nth vertex's.
 #[derive(Default)]
 struct File {
-    vertices: Vec<Vertex>,
+    positions: Vec<Vec3>,
     texcoords: Vec<[f32; 2]>,
-    /// The faces, each three vertices.
-    faces: Vec<[usize; 3]>,
+    /// For each `vb` in turn, the joints a vertex is blended to, each with its weight.
+    blends: Vec<Vec<(usize, f64)>>,
+    faces: Vec<Face>,
     /// Where each mesh's vertices start.
     meshes: Vec<usize>,
     /// Each joint's parent.
@@ -269,35 +282,56 @@ struct File {
 }
 
 impl File {
-    /// A face's corners as vertices: counted from `from`, or below 0 back from the last
-    /// vertex, "-1" the last; more than three are "a convex, planar polygon", a fan.
-    fn face(&mut self, words: &[&str], from: usize) -> Option<()> {
-        let count = i64::try_from(self.vertices.len()).ok()?;
-        let from = i64::try_from(from).ok()?;
-        let mut corners = Vec::with_capacity(words.len());
-        for word in words {
-            let index = word.parse::<i64>().ok()?;
-            let place = if index < 0 {
-                count.checked_add(index)?
-            } else {
-                from.checked_add(index)?
-            };
-            corners.push(
-                usize::try_from(place)
-                    .ok()
-                    .filter(|at| *at < self.vertices.len())?,
-            );
-        }
-        let (&first, rest) = corners.split_first()?;
-        if rest.len() < CORNERS.saturating_sub(1) {
+    /// Keeps the face of `words`, whose indexes of 0 or more count from `from`: three
+    /// corners or more, each a whole number.
+    fn face(&mut self, line: usize, words: &[&str], from: usize) -> Option<()> {
+        let indexes: Vec<i64> = words
+            .iter()
+            .map(|word| word.parse().ok())
+            .collect::<Option<_>>()?;
+        if indexes.len() < CORNERS {
             return None;
         }
-        for pair in rest.windows(2) {
-            if let [second, third] = *pair {
-                self.faces.push([first, second, third]);
+        self.faces.push(Face {
+            line,
+            indexes,
+            from,
+            above: self.positions.len(),
+        });
+        Some(())
+    }
+
+    /// The triangles of the faces, now that every vertex is read: an index of 0 or more
+    /// counts from the face's start, one below 0 back from the last vertex above the face,
+    /// "-1" that one; more than three are "a convex, planar polygon", a fan.
+    fn triangles(&self) -> Result<Vec<[usize; 3]>, IqeError> {
+        let mut triangles = Vec::new();
+        for face in &self.faces {
+            let place = |index: i64| -> Option<usize> {
+                let start = if index < 0 { face.above } else { face.from };
+                let place = i64::try_from(start).ok()?.checked_add(index)?;
+                usize::try_from(place)
+                    .ok()
+                    .filter(|at| *at < self.positions.len())
+            };
+            let corners: Vec<usize> = face
+                .indexes
+                .iter()
+                .map(|index| place(*index))
+                .collect::<Option<_>>()
+                .ok_or(IqeError {
+                    line: face.line,
+                    fault: IqeFault::Face,
+                })?;
+            if let Some((&first, rest)) = corners.split_first() {
+                for pair in rest.windows(2) {
+                    if let [second, third] = *pair {
+                        triangles.push([first, second, third]);
+                    }
+                }
             }
         }
-        Some(())
+        Ok(triangles)
     }
 
     /// Each joint's pose in the model's space, of `poses`, each in its parent's: a joint the
@@ -328,7 +362,7 @@ impl File {
             if starts.first() != Some(&0) {
                 starts.insert(0, 0);
             }
-            starts.push(self.vertices.len());
+            starts.push(self.positions.len());
             let mut faces = Vec::new();
             for pair in starts.windows(2) {
                 if let [from, to] = *pair {
@@ -341,11 +375,13 @@ impl File {
             }
             faces
         } else {
-            self.faces.clone()
+            self.triangles()?
         };
         // "Each vertex array must either be absent, or the same length as all other vertex
         // arrays": a vertex has the texture coordinate of its own number.
-        let textured = self.texcoords.len() == self.vertices.len();
+        let textured = self.texcoords.len() == self.positions.len();
+        let blended = self.blends.len() == self.positions.len();
+        let no_blends = Vec::new();
         let triangles = faces
             .into_iter()
             .map(|face| {
@@ -368,30 +404,40 @@ impl File {
                 .zip(&unbind)
                 .map(|(now, unbind)| now.after(unbind))
                 .collect();
-            self.vertices
+            self.positions
                 .iter()
-                .map(|vertex| {
-                    let total: f64 = vertex.blends.iter().map(|(_, weight)| weight).sum();
+                .enumerate()
+                .map(|(vertex, position)| {
+                    let blends = self
+                        .blends
+                        .get(vertex)
+                        .filter(|_| blended)
+                        .unwrap_or(&no_blends);
+                    let total: f64 = blends.iter().map(|(_, weight)| weight).sum();
                     let mut at = [0.0, 0.0, 0.0];
-                    for (joint, weight) in &vertex.blends {
+                    for (joint, weight) in blends {
                         let Some(moved) = moves.get(*joint) else {
                             continue;
                         };
-                        for (sum, part) in at.iter_mut().zip(moved.apply(vertex.position)) {
+                        for (sum, part) in at.iter_mut().zip(moved.apply(*position)) {
                             *sum += part * weight / total;
                         }
                     }
-                    let blended =
-                        total > 0.0 && vertex.blends.iter().all(|(joint, _)| *joint < moves.len());
-                    up.turned(single(if blended { at } else { vertex.position }))
+                    let moved = total > 0.0 && blends.iter().all(|(joint, _)| *joint < moves.len());
+                    up.turned(single(if moved { at } else { *position }))
                 })
                 .collect()
         };
         let mut frames = Vec::new();
+        let mut used = BTreeSet::new();
         for animation in &self.animations {
+            let stem = frame_stem(&animation.name, animation.frames.len(), &used)
+                .ok_or_else(|| whole(IqeFault::Names))?;
             for (number, poses) in (1_usize..).zip(&animation.frames) {
+                let name = format!("{stem}{number}");
+                used.insert(name.clone());
                 frames.push(MeshFrame {
-                    name: frame_name(&animation.name, number),
+                    name,
                     positions: posed(poses),
                 });
             }
@@ -410,21 +456,33 @@ impl File {
     }
 }
 
-/// The name of frame `number` of the animation `animation`: its name and the number, as
-/// QuakeC names frames (`run1`, `run2`), the name cut to what a frame's name holds.
-fn frame_name(animation: &str, number: usize) -> String {
-    let digits = number.to_string();
-    let room = NAME_MAX.saturating_sub(digits.len());
-    let mut name: String = animation
+/// What may follow an animation's name to tell it from another whose frames would have the
+/// same names: nothing, then a letter.
+const MARKS: [&str; 8] = ["", "b", "c", "d", "e", "f", "g", "h"];
+
+/// What the frames of the animation `animation` are named by, before each one's number from
+/// 1 (`run1`, `run2`, as QuakeC names frames): its name's letters, digits and underscores,
+/// `anim` for none, cut so that the name of its last frame, of `count`, fits a frame's name,
+/// and with a letter after it when a frame so named is in `used` already. `None` when no
+/// letter makes its frames' names its own.
+fn frame_stem(animation: &str, count: usize, used: &BTreeSet<String>) -> Option<String> {
+    let mut letters: String = animation
         .chars()
         .filter(|letter| letter.is_ascii_alphanumeric() || *letter == '_')
         .collect();
-    name.truncate(room);
-    if name.is_empty() {
-        name.push_str(IQE_ANIMATION);
+    if letters.is_empty() {
+        letters.push_str(IQE_ANIMATION);
     }
-    name.push_str(&digits);
-    name
+    let digits = count.max(1).to_string().len();
+    MARKS.iter().find_map(|mark| {
+        let room = NAME_MAX.saturating_sub(digits).saturating_sub(mark.len());
+        let mut stem = letters.clone();
+        stem.truncate(room);
+        stem.push_str(mark);
+        (1..=count.max(1))
+            .all(|number| !used.contains(&format!("{stem}{number}")))
+            .then_some(stem)
+    })
 }
 
 /// Reads an `.iqe` file as a mesh, its axes turned as `up` says: a pose for each frame of
@@ -467,10 +525,8 @@ pub fn read(text: &str, up: Up) -> Result<Mesh, IqeError> {
         match command {
             "vp" => {
                 let values = numbers()?;
-                file.vertices.push(Vertex {
-                    position: [at(&values, 0), at(&values, 1), at(&values, 2)],
-                    blends: Vec::new(),
-                });
+                file.positions
+                    .push([at(&values, 0), at(&values, 1), at(&values, 2)]);
             }
             "vt" => {
                 let values = numbers()?;
@@ -487,17 +543,15 @@ pub fn read(text: &str, up: Up) -> Result<Mesh, IqeError> {
                         blends.push((joint, weight));
                     }
                 }
-                if let Some(vertex) = file.vertices.last_mut() {
-                    vertex.blends = blends;
-                }
+                file.blends.push(blends);
             }
-            "mesh" => file.meshes.push(file.vertices.len()),
+            "mesh" => file.meshes.push(file.positions.len()),
             "fa" => file
-                .face(arguments, 0)
+                .face(line, arguments, 0)
                 .ok_or_else(|| fault(IqeFault::Face))?,
             "fm" => {
                 let from = file.meshes.last().copied().unwrap_or(0);
-                file.face(arguments, from)
+                file.face(line, arguments, from)
                     .ok_or_else(|| fault(IqeFault::Face))?;
             }
             "joint" => {

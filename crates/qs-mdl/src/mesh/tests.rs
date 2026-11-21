@@ -247,4 +247,116 @@ fn what_is_no_model_is_refused() {
             .to_string()
             .contains("export the skin, paint it and set it")
     );
+    // The triangle named is the mesh's own, whatever triangles of no area come before it.
+    let mut after = tetra(true);
+    after
+        .triangles
+        .insert(0, [corner(1, 1), corner(1, 1), corner(2, 2)]);
+    after.triangles[4][0].texcoord = Some(99);
+    assert_eq!(
+        after.model(&flat).unwrap_err(),
+        MeshError::Corner { triangle: 4 }
+    );
+}
+
+// spec MDL-9.3: a skin's size is checked before a skin of it is made: a side under 1, a
+// width that is no multiple of 4 or over 1024 and a height over 480 are refused, and the
+// greatest that is taken is made; a mesh without texture coordinates has its layout's size
+#[test]
+fn a_skin_has_a_size_a_model_has() {
+    let mesh = tetra(true);
+    for size in [
+        [0, 8],
+        [8, 0],
+        [-4, 8],
+        [6, 8],
+        [1028, 8],
+        [8, 481],
+        [2_147_483_644, 480],
+        [128, 100_000_000],
+    ] {
+        assert_eq!(
+            mesh.model(&MeshSkin::Flat { colour: 1, size }).unwrap_err(),
+            MeshError::SkinSize { size },
+            "{size:?}"
+        );
+        let picture = MeshSkin::Picture {
+            size,
+            pixels: Vec::new(),
+        };
+        assert_eq!(
+            mesh.model(&picture).unwrap_err(),
+            MeshError::SkinSize { size }
+        );
+    }
+    let most = mesh
+        .model(&MeshSkin::Flat {
+            colour: 1,
+            size: [1024, 480],
+        })
+        .unwrap();
+    assert_eq!((most.header.skinwidth, most.header.skinheight), (1024, 480));
+    assert!(
+        MeshError::SkinSize { size: [6, 8] }
+            .to_string()
+            .contains("a multiple of 4 from 4 to 1024 and its height from 1 to 480")
+    );
+    let laid = tetra(false).model(&MeshSkin::Flat {
+        colour: 1,
+        size: [-1, 100_000_000],
+    });
+    assert!(laid.is_ok(), "{laid:?}");
+}
+
+// spec MDL-9.3, MDL-9.4, MDL-8.9: a mesh that needs more vertices than a model has is
+// refused, with or without texture coordinates, and one of as many as a model has is not
+#[test]
+fn a_mesh_of_too_many_vertices_is_refused() {
+    // A strip of triangles, each with three positions of its own.
+    let strip = |triangles: usize, textured: bool| {
+        let positions: Vec<[f32; 3]> = (0..triangles)
+            .zip(0_u16..)
+            .flat_map(|(_, at)| {
+                let x = f32::from(at);
+                [[x, 0.0, 0.0], [x, 0.0, 1.0], [x + 0.5, 1.0, 0.0]]
+            })
+            .collect();
+        Mesh {
+            triangles: (0..triangles)
+                .map(|triangle| {
+                    [0, 1, 2].map(|at| {
+                        let position = triangle.saturating_mul(3).saturating_add(at);
+                        Corner {
+                            position,
+                            texcoord: textured.then_some(0),
+                        }
+                    })
+                })
+                .collect(),
+            texcoords: vec![[0.5, 0.5]],
+            frames: vec![MeshFrame {
+                name: "base".to_owned(),
+                positions,
+            }],
+        }
+    };
+    let flat = MeshSkin::Flat {
+        colour: 1,
+        size: [8, 8],
+    };
+    for textured in [true, false] {
+        // 667 triangles are 2001 vertices.
+        assert_eq!(
+            strip(667, textured).model(&flat).unwrap_err(),
+            MeshError::Vertices,
+            "{textured}"
+        );
+    }
+    // 666 are 1998, which a model has; its skin's layout is the widest the scale allows.
+    assert_eq!(strip(666, true).model(&flat).unwrap().stverts.len(), 1998);
+    assert!(
+        MeshError::Vertices
+            .to_string()
+            .contains("more than the 2000 vertices a model has")
+    );
 }

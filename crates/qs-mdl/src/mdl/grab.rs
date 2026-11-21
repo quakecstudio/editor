@@ -17,7 +17,7 @@ use core::fmt;
 
 use super::make::{Grabbed, GrabbedEntry, Parts, nearest_normal, normalize, single};
 use super::write::{MdlWriteError, Model, ModelSkin};
-use super::{MDL_ALIAS_ONSEAM, StVert, Triangle};
+use super::{MDL_ALIAS_ONSEAM, MDL_MAX_VERTS, StVert, Triangle};
 
 /// A triangle as modelgen reads one from a `.tri` file: its three corners.
 pub type Corners = [[f32; 3]; 3];
@@ -82,6 +82,15 @@ pub enum GrabError {
         /// The vertex, in the base's order.
         vertex: usize,
     },
+    /// The base has more vertices than a model has (MDL-1.4).
+    Vertices,
+    /// A group has no frame ("Empty group").
+    EmptyGroup,
+    /// A frame of a group is shown for no time or less ("Non-positive interval").
+    Interval {
+        /// The frame's name.
+        frame: String,
+    },
     /// The model cannot be written.
     Write(MdlWriteError),
 }
@@ -105,6 +114,15 @@ impl fmt::Display for GrabError {
                 f,
                 "vertex {vertex} is a corner of more than {MDL_GRAB_MAX_NORMALS} triangles"
             ),
+            Self::Vertices => write!(
+                f,
+                "the base has more than the {MDL_MAX_VERTS} vertices a model has"
+            ),
+            Self::EmptyGroup => f.write_str("a group of frames has no frame"),
+            Self::Interval { frame } => write!(
+                f,
+                "the frame {frame} of a group is shown for no time: its interval is above 0"
+            ),
             Self::Write(error) => write!(f, "{error}"),
         }
     }
@@ -117,7 +135,10 @@ impl core::error::Error for GrabError {
             Self::NoTriangles
             | Self::Triangles { .. }
             | Self::Skin { .. }
-            | Self::Corners { .. } => None,
+            | Self::Corners { .. }
+            | Self::Vertices
+            | Self::EmptyGroup
+            | Self::Interval { .. } => None,
         }
     }
 }
@@ -193,11 +214,13 @@ impl Base {
     ///
     /// # Errors
     ///
-    /// [`GrabError::NoTriangles`] for no triangles, whose box modelgen leaves as it began.
+    /// [`GrabError::NoTriangles`] for no triangles, whose box modelgen leaves as it began,
+    /// and [`GrabError::Vertices`] for more vertices than a model has.
     pub fn of(triangles: &[Corners]) -> Result<Self, GrabError> {
         if triangles.is_empty() {
             return Err(GrabError::NoTriangles);
         }
+        let most = usize::try_from(MDL_MAX_VERTS).unwrap_or(0);
         let mut verts: Vec<[f32; 3]> = Vec::new();
         let mut corners = Vec::with_capacity(triangles.len());
         let mut degenerate = Vec::with_capacity(triangles.len());
@@ -214,6 +237,11 @@ impl Base {
                         verts.len().saturating_sub(1)
                     })
             }));
+            // Ours: modelgen writes past its `MAXVERTS`; more than a model has is refused
+            // as soon as it is known.
+            if verts.len() > most {
+                return Err(GrabError::Vertices);
+            }
         }
         // The box of the base, widened to whole units.
         let mut mins = [FAR; AXES];
@@ -510,12 +538,26 @@ impl Grab {
             };
             entries.push(match entry {
                 GrabEntry::Single(frame) => GrabbedEntry::Single(grab(frame)?),
-                GrabEntry::Group(frames) => GrabbedEntry::Group(
-                    frames
-                        .iter()
-                        .map(|(frame, interval)| Ok((grab(frame)?, *interval)))
-                        .collect::<Result<_, GrabError>>()?,
-                ),
+                GrabEntry::Group(frames) => {
+                    if frames.is_empty() {
+                        return Err(GrabError::EmptyGroup);
+                    }
+                    GrabbedEntry::Group(
+                        frames
+                            .iter()
+                            .map(|(frame, interval)| {
+                                // "if (frames[framecount].interval <= 0.0) Error"; what is
+                                // no number is refused with it.
+                                if interval.is_nan() || *interval <= 0.0 {
+                                    return Err(GrabError::Interval {
+                                        frame: String::from_utf8_lossy(&frame.name).into_owned(),
+                                    });
+                                }
+                                Ok((grab(frame)?, *interval))
+                            })
+                            .collect::<Result<_, GrabError>>()?,
+                    )
+                }
             });
         }
         let [origin_x, origin_y, origin_z] = self.origin;

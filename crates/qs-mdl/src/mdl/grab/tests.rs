@@ -414,6 +414,30 @@ fn the_first_frame_gives_the_size() {
             frame: "stand3".to_owned()
         }
     );
+
+    // A group with no frame, and a frame of a group shown for no time or less, stop modelgen
+    // ("Empty group", "Non-positive interval") and are refused.
+    assert_eq!(
+        grab(pyramid(tip), vec![GrabEntry::Group(Vec::new())])
+            .build()
+            .unwrap_err(),
+        GrabError::EmptyGroup
+    );
+    for interval in [0.0, -0.1, f32::NAN] {
+        let group = vec![
+            (frame("a", pyramid(tip)), 0.5),
+            (frame("b", pyramid(tip)), interval),
+        ];
+        assert_eq!(
+            grab(pyramid(tip), vec![GrabEntry::Group(group)])
+                .build()
+                .unwrap_err(),
+            GrabError::Interval {
+                frame: "b".to_owned()
+            },
+            "{interval}"
+        );
+    }
 }
 
 // spec MDL-8.9: a base with no triangle is refused
@@ -428,4 +452,15 @@ fn a_base_needs_a_triangle() {
         GrabError::NoTriangles.to_string(),
         "the base has no triangle"
     );
+    // More vertices than a model has: 667 triangles, each with corners of its own.
+    let many = |triangles: u16| -> Vec<Corners> {
+        (0..triangles)
+            .map(|at| {
+                let x = f32::from(at);
+                [[x, 0.0, 0.0], [x, 0.0, 1.0], [x + 0.5, 1.0, 0.0]]
+            })
+            .collect()
+    };
+    assert_eq!(Base::of(&many(667)).unwrap_err(), GrabError::Vertices);
+    assert_eq!(Base::of(&many(666)).unwrap().vertices(), 1998);
 }

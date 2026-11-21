@@ -5,8 +5,8 @@
 //! `oracles/maps.toml`. `cargo xtask oracles models` builds it and gives it and `qs-mdl`'s
 //! `Grab::build` the same scripts, each made from a seed: a base of triangles, frames of the
 //! same triangles moved, a skin or two, and now and then an origin, a scale, an eye position,
-//! a group of frames and a triangle of no area. Each must write the same model, or both
-//! refuse the script.
+//! a group of frames, a triangle of no area, a group with no frame and a frame shown for no
+//! time or less. Each must write the same model, or both refuse the script.
 //!
 //! Two kinds of byte modelgen writes are whatever its stack held, and are not compared: what
 //! follows the NUL of a frame's name, and the `lightnormalindex` of a frame's and a group's
@@ -129,10 +129,18 @@ fn case(seed: u64) -> Grab {
     let mut frames = Vec::new();
     for _ in 0..rng.below(3).saturating_add(1) {
         if rng.chance(33) {
-            let group = (0..rng.below(3).saturating_add(1))
+            // Now and then a group has no frame, or a frame shown for no time or less.
+            let count = if rng.chance(4) {
+                0
+            } else {
+                rng.below(3).saturating_add(1)
+            };
+            let group = (0..count)
                 .map(|_| {
                     let interval = if rng.chance(50) {
                         MDL_GRAB_INTERVAL
+                    } else if rng.chance(8) {
+                        f32::from(i8::try_from(rng.below(2)).unwrap_or(0).saturating_neg()) / 4.0
                     } else {
                         f32::from(u8::try_from(rng.below(40)).unwrap_or(0).saturating_add(5))
                             / 100.0

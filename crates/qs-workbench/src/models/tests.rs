@@ -816,6 +816,11 @@ fn an_import_that_fails_says_why() {
     let good = write("good.obj", &crate_obj(false));
     let error = refused(json!({ "source_path": good, "path": path, "scale": 0.0 }));
     assert!(error.contains("a scale is a number above 0"), "{error}");
+    let textured = write("textured.obj", &crate_obj(true));
+    let error = refused(
+        json!({ "source_path": textured, "path": path, "skin_size": [2_147_483_644, 480] }),
+    );
+    assert!(error.contains("is none a model has"), "{error}");
     let error = refused(json!({ "source_path": root.join("none.obj"), "path": path }));
     assert!(error.contains("cannot be read"), "{error}");
 }

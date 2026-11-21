@@ -441,12 +441,17 @@ grabbed become a file.
 - **MDL-8.8** The header's `size` is `totsize / model.numtris`, where `numtris` counts the
   degenerate triangles: for the first frame the script grabs, each triangle that is not
   degenerate adds half the length of the cross product of its two edges each multiplied by
-  `scale_up`, the square root taken in double and added in double. A frame of a group is
+  `scale_up`. `totsize` is a `float` ("`float totsize, averagesize;`"): the square root is
+  taken and added in double, and each sum is stored back in single. A frame of a group is
   shown for the interval the script gives after its name, else "`frames[framecount].interval
-  = 0.1;`". A frame whose file has another number of triangles than the base's stops
-  modelgen ("number of triangles doesn't match") and is refused.
-- **MDL-8.9** Ours: a base with no triangle, whose box modelgen leaves at `9999999`, is
+  = 0.1;`"; an interval that is not above 0 stops modelgen ("`if
+  (frames[framecount].interval <= 0.0) Error ("Non-positive interval %s %f", ...`"), as does
+  a group with no frame ("`Error ("Empty group\n");`") and a frame whose file has another
+  number of triangles than the base's ("number of triangles doesn't match"), and each is
   refused.
+- **MDL-8.9** Ours: a base with no triangle, whose box modelgen leaves at `9999999`, is
+  refused, and so is a base of more vertices than a model has (MDL-1.4), where modelgen
+  writes past its `MAXVERTS`, as soon as it has that many.
 
 ### Constants
 
@@ -480,7 +485,8 @@ a triangle of no area). On 2026-11-21, of 1000 scripts modelgen wrote a model fo
 ours was the same file for each, but for the bytes modelgen leaves as its stack had them (a
 frame's name after its NUL, and the `lightnormalindex` of a frame's and a group's bounds);
 the other 231 both refused. With `Q_rint`'s half made a quarter in ours, every script
-modelgen took differed.
+modelgen took differed. The scripts have since gained groups with no frame and frames shown
+for no time or less, which both refuse.
 
 ## MDL-9 Reading a mesh
 
@@ -521,12 +527,16 @@ x forward, y left, z up.
 - **MDL-9.2** An `.iqe` file "must" start with "`# Inter-Quake Export`", and "Any line
   beginning with # is a comment". `vp X Y Z W` is a vertex's position, `vt U V` its texture
   coordinate ("If U or V are unspecified, they default to 0") and `vb Ai Aw Bi Bw ...` the
-  joints it is blended to and their weights; "Each vertex array must either be absent, or
-  the same length as all other vertex arrays", so the mesh has texture coordinates when
-  every vertex has one. `fa A B C...` names vertices "starting from the first vertex in the
+  joints it is blended to and their weights. "All vertex attributes are read into separate
+  vertex arrays", which "may be interleaved in any order, or not interleaved at all", so the
+  Nth of each is the Nth vertex's; and "Each vertex array must either be absent, or the same
+  length as all other vertex arrays", so the mesh has texture coordinates, and its vertices
+  their blends, when the file has one for every vertex. `fa A B C...` names vertices "starting from the first vertex in the
   file at index 0", `fm` "from the first vertex defined after the last "mesh" command", and
   for both "Negative indexes are relative to the last defined vertex which is at -1" and
-  more than three are "a convex, planar polygon", read as a fan. "If there is no triangle
+  more than three are "a convex, planar polygon", read as a fan. A face may come before the
+  vertices it names: its indexes are looked up once the file is read, one below 0 counting
+  back from the vertices above the face. "If there is no triangle
   data, then all vertex data between the preceding "mesh" command and the next is
   interpreted as mesh local triangle data, where each group of 3 vertexes defines a
   triangle." `joint NAME PARENT` adds a joint, with no parent "If PARENT is less than 0 or
@@ -549,18 +559,23 @@ x forward, y left, z up.
   by its weights over their total, of where each joint it is blended to takes it from where
   the base poses had it; a vertex with no blend stays. A frame is named by its animation's
   letters, digits and underscores and its number from 1 (`run1`, `run2`), the name cut so
-  that both fit a frame's 15 bytes, `anim` for one with no name; a file with no animation
-  has one pose, `base`.
+  that both fit a frame's 15 bytes, `anim` for one with no name. An animation with no name
+  has "an unused dummy name": one whose frames would be named as an earlier animation's
+  are has a letter after its name, `b` to `h`, and a file with more such than the letters
+  tell apart is refused. A file with no animation has one pose, `base`.
 - **MDL-9.3** Ours: a mesh every corner of which has a texture coordinate is a model whose
   vertices are the pairs of a position and a texture coordinate its corners have, in the
   order they come. A vertex is at the skin's pixel `floor(u * skinwidth)`, `floor(v *
   skinheight)`, kept on the skin; no vertex is on the seam and every triangle has
-  `facesfront` `DT_FACES_FRONT`. The skin is the caller's picture, or one colour of the size
+  `facesfront` `DT_FACES_FRONT`. The skin's width is a multiple of 4 from 4 to 1024 and its
+  height from 1 to 480 (MDL-1.4, which does not bound the width: 1024 is ours), checked
+  before a skin of that size is made; a mesh of more vertices than a model has (MDL-1.4)
+  is refused as soon as it has that many. The skin is the caller's picture, or one colour of the size
   the caller gives, its first pixel colour 0: GLQuake fills what is joined to a skin's first
   pixel and of its colour with its `filledcolor`, 0 (REND-4.1), which is all of a skin of one
   colour, and fills nothing when the first pixel is that colour already. A triangle two of whose corners are one position is left out; a mesh
   with no triangle left or no pose, and a corner past the mesh's positions or texture
-  coordinates, are refused. Each pose is a frame made as MDL-7 says.
+  coordinates, named by its triangle's place in the mesh, are refused. Each pose is a frame made as MDL-7 says.
 - **MDL-9.4** Ours: a mesh without a texture coordinate for every corner is laid out as
   modelgen lays a base (MDL-8.1, MDL-8.3, MDL-8.4) from its first pose, turned so that the
   layout is of the mesh as it stands: what faces -x is on the back, the skin's right half,

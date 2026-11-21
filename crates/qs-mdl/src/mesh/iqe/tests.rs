@@ -6,6 +6,8 @@
     reason = "test code: a failed unwrap or index is a failed test"
 )]
 
+use std::collections::BTreeSet;
+
 use super::*;
 
 /// An arm: a root joint at the origin and a joint one unit along x, a triangle whose first
@@ -139,13 +141,93 @@ fn poses_are_read_as_the_format_says() {
 }
 
 // spec MDL-9.2: a frame's name is its animation's letters, digits and underscores, cut so
-// that the name with its number is at most 15 bytes; an animation with no name is anim
+// that the name with its number is at most 15 bytes; an animation with no name is anim; an
+// animation whose frames would be named as another's are has a letter after its name
 #[test]
 fn frames_are_named_by_animation_and_number() {
-    assert_eq!(frame_name("run", 3), "run3");
-    assert_eq!(frame_name("a long animation name", 12), "alonganimatio12");
-    assert_eq!(frame_name("", 1), "anim1");
-    assert_eq!(frame_name("death (b)", 7), "deathb7");
+    let none = BTreeSet::new();
+    assert_eq!(frame_stem("run", 3, &none).unwrap(), "run");
+    assert_eq!(
+        frame_stem("a long animation name", 12, &none).unwrap(),
+        "alonganimatio"
+    );
+    assert_eq!(frame_stem("", 1, &none).unwrap(), "anim");
+    assert_eq!(frame_stem("death (b)", 7, &none).unwrap(), "deathb");
+
+    // run has eleven frames, and run1's first would be run11 too; two have no name.
+    let frames = |count: usize| "frame\n".repeat(count);
+    let text = format!(
+        "# Inter-Quake Export\nvp 0 0 0\nvp 1 0 0\nvp 0 1 0\nanimation run\n{}animation run1\n{}\
+         animation\n{}animation\n{}",
+        frames(11),
+        frames(2),
+        frames(1),
+        frames(1)
+    );
+    let mesh = read(&text, Up::Z).unwrap();
+    let names: Vec<&str> = mesh
+        .frames
+        .iter()
+        .map(|frame| frame.name.as_str())
+        .collect();
+    assert_eq!(names[..2], ["run1", "run2"]);
+    assert_eq!(
+        names[10..],
+        ["run11", "run1b1", "run1b2", "anim1", "animb1"]
+    );
+    let all: BTreeSet<&str> = names.iter().copied().collect();
+    assert_eq!(all.len(), names.len(), "every name is its own");
+
+    // Nine animations of one name cannot be told apart by the letters there are.
+    let many = format!(
+        "# Inter-Quake Export\nvp 0 0 0\nvp 1 0 0\nvp 0 1 0\n{}",
+        "animation same\nframe\n".repeat(9)
+    );
+    assert_eq!(
+        read(&many, Up::Z).unwrap_err(),
+        IqeError {
+            line: 0,
+            fault: IqeFault::Names
+        }
+    );
+}
+
+// spec MDL-9.2: the vertex attributes are arrays of their own, the Nth of each the Nth
+// vertex's, however the file's lines mix them: all positions and then all blends, or each
+// blend before its position, pose the mesh as lines taking turns do
+#[test]
+fn attributes_are_arrays_in_any_order() {
+    let rest = ARM.split_once("mesh \"arm\"").unwrap();
+    let head = rest.0;
+    let tail = rest.1.split_once("fm 0 1 2").unwrap().1;
+    let taking_turns = read(ARM, Up::Z).unwrap();
+    for body in [
+        // Not interleaved at all.
+        "vp 0 0 0\nvp 2 0 0\nvp 2 0 0\nvt 0 0\nvt 1 0\nvt 1 1\nvb 0 1\nvb 1 1\n\
+         vb 0 0.5 1 0.5 2 0\n",
+        // Each blend and texture coordinate before its position.
+        "vb 0 1\nvt 0 0\nvp 0 0 0\nvb 1 1\nvt 1 0\nvp 2 0 0\nvb 0 0.5 1 0.5 2 0\nvt 1 1\n\
+         vp 2 0 0\n",
+    ] {
+        let text = format!("{head}mesh \"arm\"\n{body}fm 0 1 2{tail}");
+        assert_eq!(read(&text, Up::Z).unwrap(), taking_turns, "{body}");
+    }
+    // A face may come before the vertices it names; an index below 0 counts back from the
+    // vertices above the face, of which there are none here.
+    let early = "# Inter-Quake Export\nfa 0 1 2\nvp 0 0 0\nvp 1 0 0\nvp 0 1 0\n";
+    assert_eq!(read(early, Up::Z).unwrap().triangles.len(), 1);
+    let back = "# Inter-Quake Export\nfa -1 0 1\nvp 0 0 0\nvp 1 0 0\nvp 0 1 0\n";
+    assert_eq!(
+        read(back, Up::Z).unwrap_err(),
+        IqeError {
+            line: 2,
+            fault: IqeFault::Face
+        }
+    );
+    // Blends for fewer vertices than the file has are no array of the vertices': unused.
+    let short = ARM.replacen("\tvb 1 1\n", "", 1);
+    let mesh = read(&short, Up::Z).unwrap();
+    assert_eq!(mesh.frames[1].positions, mesh.frames[0].positions);
 }
 
 // spec MDL-9.2: a file without the header, an argument that is no number, a face that is

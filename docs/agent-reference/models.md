@@ -58,6 +58,8 @@ with, and every model's own bounds are the same to the engine (MDL-1.7).
   `model.set_skin` it.
 - **Limits**: 2000 vertices at most, and 1024 vertices and 2048 triangles for engines made
   from GLQuake. Make the mesh simpler in the program it came from when it has more.
+- `model.import` makes a new file and is no step `edit.undo` takes back: to import again
+  with another `up` or `scale`, give another `path`.
 - To add poses to a model already imported, import the other poses as a model beside it
   and `model.add_frames` from it.
 
@@ -67,7 +69,6 @@ Each of these is one step that `edit.undo` takes back.
 
 | Command | What it does |
 | --- | --- |
-| `model.import` | Makes a model of a mesh in an `.obj` or an `.iqe` file |
 | `model.inspect` | The skins, their size and the rows of the palette each is of, the vertices and triangles, the box the frames fill, and the frames by name |
 | `model.recolor` | Recolours a skin by rows of the palette |
 | `model.export_skin`, `model.set_skin` | A skin out as a PNG, and a PNG of the same size back as a skin, each changed pixel the nearest of the palette's colours 0 to 223 |
