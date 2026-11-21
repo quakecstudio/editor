@@ -42,8 +42,10 @@ fn corpus() -> Vec<(String, Vec<u8>)> {
 // run over a game's models with QS_MDL_PAKS, and over none without it
 #[test]
 fn a_games_models_are_written_back_as_read() {
-    let mut count = 0;
-    for (name, bytes) in corpus() {
+    let models = corpus();
+    // Asked for a game's models, there are some.
+    assert_eq!(models.is_empty(), std::env::var("QS_MDL_PAKS").is_err());
+    for (name, bytes) in models {
         let model = Model::read(&bytes).unwrap_or_else(|error| panic!("{name}: {error}"));
         let written = model
             .to_bytes()
@@ -54,9 +56,7 @@ fn a_games_models_are_written_back_as_read() {
             written.len(),
             bytes.len()
         );
-        count += 1;
     }
-    eprintln!("{count} models written back as read");
 }
 
 use proptest::prelude::*;
@@ -79,7 +79,7 @@ fn a_model_is_written_back_as_read() {
     assert_eq!(model.to_bytes().unwrap(), bytes);
     assert!(model.trailing.is_empty());
 
-    let mut longer = bytes.clone();
+    let mut longer = bytes;
     longer.extend_from_slice(b"what a tool left");
     let model = Model::read(&longer).unwrap();
     assert_eq!(model.trailing, b"what a tool left");
@@ -263,7 +263,7 @@ fn model() -> impl Strategy<Value = Model> {
         let pixels = usize::try_from(width * height).unwrap();
         let skin = proptest::collection::vec(any::<u8>(), pixels);
         let skin_entry = prop_oneof![
-            skin.clone().prop_map(ModelSkin::Single),
+            skin.prop_map(ModelSkin::Single),
             (1_usize..3).prop_flat_map(move |count| {
                 (
                     proptest::collection::vec(interval(), count),
