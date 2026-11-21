@@ -104,6 +104,11 @@ impl Side {
     }
 }
 
+/// How far from the grid's middle a room may be, in cells each way. The game sends a position
+/// as the short `(int) (f * 8)` (NET-1.1), which holds less than 4096: four cells of 768 and
+/// half a cell more is 3456, and a fifth would pass it.
+const GRID_REACH: i32 = 4;
+
 /// A place on the grid.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Cell {
@@ -135,6 +140,11 @@ impl Cell {
                 y: self.y.saturating_sub(1),
             },
         }
+    }
+
+    /// Whether a room may be there: within [`GRID_REACH`] of the grid's middle.
+    const fn in_reach(self) -> bool {
+        self.x.abs() <= GRID_REACH && self.y.abs() <= GRID_REACH
     }
 
     /// Its middle, in map units.
@@ -332,7 +342,7 @@ impl Plan {
             let free: Vec<Cell> = Side::ALL
                 .into_iter()
                 .map(|side| last.beside(side))
-                .filter(|cell| !cells.contains(cell))
+                .filter(|cell| cell.in_reach() && !cells.contains(cell))
                 .collect();
             cells.push(*rng.pick(&free)?);
         }
@@ -432,9 +442,10 @@ impl Plan {
                 let at = *taken.get(parent)?;
                 let mut sides = Side::ALL;
                 rng.shuffle(&mut sides);
-                let side = sides
-                    .into_iter()
-                    .find(|&side| !taken.contains(&at.beside(side)))?;
+                let side = sides.into_iter().find(|&side| {
+                    let beside = at.beside(side);
+                    beside.in_reach() && !taken.contains(&beside)
+                })?;
                 Some((parent, side, at.beside(side), room.floor, room.depth))
             });
             let Some((parent, side, cell, floor, depth)) = found else {
