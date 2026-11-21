@@ -1,6 +1,6 @@
 # qs-mdl
 
-Reads Quake's models other than brush models.
+Reads Quake's models other than brush models, and writes and makes alias models.
 
 - **Alias models** (`mdl`): `Mdl::read` is id's `Mod_LoadAliasModel`, with
   `Mod_LoadAliasSkin`, `Mod_LoadAliasSkinGroup`, `Mod_LoadAliasFrame` and
@@ -10,6 +10,16 @@ Reads Quake's models other than brush models.
   skin offset, normal indexes past the table, and the limits of GLQuake's loader a model
   exceeds. Ported from `WinQuake/model.c` at the commit pinned in
   [`docs/porting.md`](../../docs/porting.md).
+- **Writing an alias model** (`mdl::write`, MDL-6): `Model` holds every part of a `.mdl`
+  owned, to change, and `Model::to_bytes` lays it out as id's modelgen's `WriteModelFile`
+  does. A model read and written with nothing changed is its file byte for byte: each
+  frame keeps the 16 bytes of its name and the file the bytes after its last frame. What
+  the loader would refuse is not written.
+- **Making an alias model** (`mdl::make`, MDL-7): `Shape` holds each frame as positions,
+  and `Shape::build` is modelgen's arithmetic: the box the frames fill, each position
+  packed into three bytes, each vertex's normal matched to the nearest of the table's 162,
+  and a group's intervals summed. Ported from `qutils/MODELGEN/MODELGEN.C` and
+  `qutils/COMMON/MATHLIB.C` of id's tools at the pinned commit.
 - **Sprites** (`spr`): `Sprite::read` is id's `Mod_LoadSpriteModel`, with
   `Mod_LoadSpriteFrame` and `Mod_LoadSpriteGroup`, plus the bounds checks id's engine leaves
   out. It returns a zero-copy view whose frames borrow the file's bytes, and rejects
@@ -53,6 +63,14 @@ README records for id's loader. On 2026-10-16 id's `Mod_LoadAliasModel`, built f
 commit, and `qs-mdl` loaded the 81 alias models of LibreQuake's `lite` release alike: header,
 texture coordinates, triangles and every frame entry's name and bounds (the run is in
 [`../qs-bsp/README.md`](../qs-bsp/README.md#differential-result)).
+
+The writer has id's own files for an oracle: on 2026-11-21 every `.mdl` of LibreQuake's
+`pak0.pak` and `pak1.pak` and of the original game's `id1/pak0.pak`, 160 models, was read and
+written back byte for byte (`QS_MDL_PAKS=<paks> cargo nextest run -p qs-mdl a_games_models`).
+The maker's normals were checked against the same files: computed as MDL-7.4 says from the
+positions each model's first frame stores, 5819 of 5824 are within 45 degrees of the entry
+the file stores and none is opposite. modelgen itself is not built as an oracle: its inputs
+are Alias `.tri` files, which nothing of today writes.
 
 id's sprite loader, built from the pinned commit, and `qs-mdl` agree on every vector in
 SPR-2 and on the three sprites of LibreQuake's `lite` `id1` (2026-10-16; the method is in
