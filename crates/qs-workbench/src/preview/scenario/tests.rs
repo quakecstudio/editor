@@ -109,4 +109,22 @@ fn a_scenario_plays_a_map_the_project_compiled() {
     assert_eq!(placed.len(), 1, "{placed:?}");
     let placed = placed.first().unwrap();
     assert_eq!(std::fs::read(placed).unwrap(), b"the project's own");
+
+    // The BSP beside the open map of the scenario's name is the one played, wherever the
+    // map is; one beside an open map of another name is not.
+    let elsewhere = root.join("fresh");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    for name in ["arena", "other"] {
+        std::fs::write(elsewhere.join(format!("{name}.bsp")), name).unwrap();
+    }
+    let arena = elsewhere.join("arena.map");
+    std::fs::write(&arena, "{\n\"classname\" \"worldspawn\"\n}\n").unwrap();
+    workbench.maps_mut().open_map(&arena).unwrap();
+    for (name, there) in [("arena", true), ("other", false)] {
+        let scenario = root.join(format!("{name}.scenario"));
+        std::fs::write(&scenario, format!("map {name}\nframes 1\n")).unwrap();
+        assert!(preview().run_scenario(&mut workbench, &scenario).is_err());
+        let played = placed.with_file_name(format!("{name}.bsp"));
+        assert_eq!(played.is_file(), there, "{name}");
+    }
 }
