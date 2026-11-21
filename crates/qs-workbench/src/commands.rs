@@ -22,6 +22,7 @@ use crate::files_changed::FilesChangedCommand;
 use crate::map_check::register_map;
 use crate::map_filter::MapFilter;
 use crate::models::register_models;
+use crate::next_edit::register_next_edit;
 use crate::open_paths::register_open_paths;
 use crate::reference::register_reference;
 use crate::search::register_search;
@@ -154,6 +155,7 @@ pub fn register<C: HasWorkbench + 'static>(
     register_terminal(registry)?;
     register_git(registry)?;
     register_staged(registry)?;
+    register_next_edit(registry)?;
     register_tools(registry)?;
     register_entities(registry)?;
     register_reference(registry)?;

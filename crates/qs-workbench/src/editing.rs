@@ -113,7 +113,11 @@ impl<L: Loader> Workbench<L> {
     ///
     /// [`WorkbenchError::Project`] when `path` is a project file whose new text does not open.
     pub fn update(&mut self, path: &Path, text: Vec<u8>) -> Result<(), WorkbenchError> {
-        self.set_text(path, text, Source::Editor)
+        let path = normalize(path);
+        if let Some(before) = self.host.text(&path) {
+            self.note_typed(&path, &before, &text);
+        }
+        self.set_text(&path, text, Source::Editor)
     }
 
     /// Takes `text` as the text of `path`, from `source`.
