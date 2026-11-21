@@ -179,7 +179,9 @@ for commands:
 
 `line::CommandLine` is the docked command line's state (UI-23), as AutoCAD's command window:
 `Registry::named` finds the command a typed line names, by its id, by its name after the last
-dot, or by a start of either; `CommandLine::enter` then asks for each parameter in turn, the
+dot, or by a start of either, one `/` before it being no part of it; `Registry::listed` is
+what to offer for a line as it is typed, those it names and then those the palette's search
+finds, or every command for `/` alone (L-44); `CommandLine::enter` then asks for each parameter in turn, the
 required ones first, an optional one left out when nothing is typed, and returns the command
 and its parameter object once the last is given. `completions` lists what a typed start may
 be completed to, and `history` the lines entered before.

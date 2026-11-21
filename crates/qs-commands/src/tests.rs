@@ -1529,6 +1529,13 @@ fn the_command_line_lists_what_it_offers() {
         Entered::Run { id, .. } if id == "edit.undo"
     ));
     assert_eq!(line.enter(registry, "/"), Entered::Nothing);
+    // One slash is taken off, not two: `//undo` names nothing, and offers what `/undo` is
+    // found in by the search alone.
+    assert!(registry.named("//undo").is_empty());
+    assert_eq!(
+        line.enter(registry, "//edit.undo"),
+        Entered::Unknown("/edit.undo".to_owned())
+    );
     assert_eq!(line.history(), ["edit.undo"], "kept as the name alone");
 }
 
