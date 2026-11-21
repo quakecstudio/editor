@@ -5,10 +5,13 @@
 //
 // Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: iqm/iqm.cpp, loadfbx, checkversion, parse, skipprop, findbegin, readarray, parsegeometry, parsemodel, parsedeformer, parsecurve, parsexform, parseanimlayer, parseanimstack, parseobjects, parseconnection, parseconnections, process, finish, setcurve, numframes
 
-//! Autodesk's `.fbx` files in their text form, version 7, as a mesh of poses (MDL-10.4), read
+//! Autodesk's `.fbx` files in their text form, version 7, as a mesh of poses (MDL-10.6), read
 //! as FTEQW's model converter reads them: the objects of the file (geometries, the models
 //! they belong to, limbs, skin clusters, animation curves, layers and stacks) and the
-//! connections among them. The binary form is not read.
+//! connections among them. The binary form (MDL-11) is written out as text first, by
+//! [`binary`], and read the same way.
+
+mod binary;
 
 use core::fmt;
 use std::collections::BTreeMap;
@@ -31,6 +34,13 @@ const P_BEFORE_VALUES: usize = 3;
 const CORNERS: usize = 3;
 /// The numbers of a texture coordinate.
 const UV: usize = 2;
+/// The ticks of an animation key's time in a second, "`#define FBX_SEC 46186158000.0`".
+const FBX_SEC: f64 = 46_186_158_000.0;
+/// How many poses a second an animation whose curves are not of one length is sampled at.
+/// Ours: the rate QuakeC steps a model's frames at (MD5-3.10).
+pub const FBX_SAMPLE_RATE: f64 = 10.0;
+/// The most poses an animation is sampled to. Ours.
+pub const FBX_MAX_FRAMES: usize = 4096;
 /// Half a turn in degrees.
 const HALF_TURN: f64 = 180.0;
 /// No move, no turn, and a scale of one.
@@ -40,9 +50,11 @@ const ONE: Vec3 = [1.0, 1.0, 1.0];
 /// Why an `.fbx` file was not read, or is no mesh of poses.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FbxError {
-    /// The file's first line does not say [`FBX_VERSION`]: it is the binary form, or another
-    /// version.
+    /// The file is not of FBX 7: a text file whose first line does not say [`FBX_VERSION`],
+    /// or a binary one of another version.
     Version,
+    /// A binary file is cut short, or holds a record, a property or an array that cannot be.
+    Binary,
     /// A limb's base pose has no size on an axis.
     Flat,
     /// More animations have one name than can be told apart in a frame's name.
@@ -52,9 +64,8 @@ pub enum FbxError {
 impl fmt::Display for FbxError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::Version => {
-                "the file is not a text FBX of version 7: export it as ASCII, not binary"
-            }
+            Self::Version => "the file is not an FBX of version 7",
+            Self::Binary => "the binary file is cut short or damaged",
             Self::Flat => "a limb's base pose has no size on an axis",
             Self::Names => "too many animations have one name for their frames to be named",
         })
@@ -68,8 +79,9 @@ impl core::error::Error for FbxError {}
 enum Token<'a> {
     /// A word, with the colon after it, if any, taken.
     Prop(&'a str),
-    /// A number.
-    Number(f64),
+    /// A number, and what an object of that number is known by: the whole number it is
+    /// written as, kept exactly, which a double does not do past 2 to the 53rd.
+    Number(f64, u64),
     /// What is between double quotes.
     Text(&'a str),
     /// `*` and a count, before an array.
@@ -124,7 +136,10 @@ impl<'a> Tokens<'a> {
                     self.rest = after.trim_start_matches(|digit: char| digit.is_ascii_digit());
                     return Some(Token::Array);
                 }
-                '0'..='9' | '.' | '-' | '+' => return Some(Token::Number(self.number())),
+                '0'..='9' | '.' | '-' | '+' => {
+                    let (value, known) = self.number();
+                    return Some(Token::Number(value, known));
+                }
                 space if space.is_whitespace() => self.rest = after,
                 _ => {
                     let end = self
@@ -141,8 +156,9 @@ impl<'a> Tokens<'a> {
 
     /// The number the text starts with, as `strtod` reads one: a sign, digits with a point
     /// among them, and an exponent when digits follow its `e`; 0 with one byte taken where
-    /// that is no number.
-    fn number(&mut self) -> f64 {
+    /// that is no number. With it, what an object of that number is known by: its 64 bits
+    /// as a whole number where it is written as one, else as the double.
+    fn number(&mut self) -> (f64, u64) {
         let bytes = self.rest.as_bytes();
         let digits = |from: usize| {
             bytes
@@ -172,11 +188,37 @@ impl<'a> Tokens<'a> {
             .split_at_checked(end)
             .and_then(|(text, rest)| Some((text.parse::<f64>().ok()?, rest)));
         if let Some((value, rest)) = found {
+            let known = self
+                .rest
+                .get(..end)
+                .and_then(|text| text.parse::<i64>().ok())
+                .map_or_else(
+                    || value.to_bits(),
+                    |whole| u64::from_ne_bytes(whole.to_ne_bytes()),
+                );
             self.rest = rest;
-            value
+            (value, known)
         } else {
             self.rest = self.rest.get(1..).unwrap_or("");
-            0.0
+            (0.0, 0.0_f64.to_bits())
+        }
+    }
+
+    /// Passes over the rest of the block that is open: to the `}` that closes it, with the
+    /// blocks inside it, however deep they are.
+    fn close(&mut self) {
+        let mut open = 1_usize;
+        while let Some(token) = self.token() {
+            match token {
+                Token::Begin => open = open.saturating_add(1),
+                Token::End => {
+                    open = open.saturating_sub(1);
+                    if open == 0 {
+                        return;
+                    }
+                }
+                _ => {}
+            }
         }
     }
 
@@ -188,15 +230,7 @@ impl<'a> Tokens<'a> {
             match token {
                 Token::Line => return true,
                 Token::Begin => {
-                    while let Some(inner) = self.token() {
-                        match inner {
-                            Token::Prop(_) => {
-                                self.skip_prop();
-                            }
-                            Token::End => return true,
-                            _ => {}
-                        }
-                    }
+                    self.close();
                     return true;
                 }
                 Token::End => return false,
@@ -226,7 +260,7 @@ impl<'a> Tokens<'a> {
         }
         while let Some(token) = self.token() {
             match token {
-                Token::Number(value) => values.push(value),
+                Token::Number(value, _) => values.push(value),
                 Token::End => break,
                 _ => {}
             }
@@ -242,7 +276,7 @@ impl<'a> Tokens<'a> {
         }
         for part in into {
             match self.token()? {
-                Token::Number(value) => *part = value,
+                Token::Number(value, _) => *part = value,
                 _ => break,
             }
         }
@@ -311,6 +345,46 @@ struct Xform {
     curves: [Option<u64>; 3],
 }
 
+/// An animation curve: its keys' times, in ticks, and their values.
+#[derive(Clone, Debug, Default)]
+struct Curve {
+    times: Vec<f64>,
+    values: Vec<f64>,
+}
+
+impl Curve {
+    /// The curve's value at the time `at`: the value of the key at that time, a value
+    /// between the two keys around it, in a straight line, or the first or last key's
+    /// outside them. `None` for a curve that has not a time for each value.
+    fn at(&self, at: f64) -> Option<f64> {
+        if self.times.len() != self.values.len() {
+            return None;
+        }
+        let after = self.times.partition_point(|time| *time < at);
+        let key = |place: usize| {
+            self.times
+                .get(place)
+                .copied()
+                .zip(self.values.get(place).copied())
+        };
+        match (after.checked_sub(1).and_then(key), key(after)) {
+            (Some((t0, v0)), Some((t1, v1))) if t1 > t0 => {
+                Some(v0 + (v1 - v0) * (at - t0) / (t1 - t0))
+            }
+            (_, Some((_, value))) | (Some((_, value)), None) => Some(value),
+            (None, None) => None,
+        }
+    }
+}
+
+/// When a pose of an animation is: at one of its curves' keys, by its place, where the
+/// curves are of one length, or at a time.
+#[derive(Clone, Copy, Debug)]
+enum Moment {
+    Key(usize),
+    Time(f64),
+}
+
 /// An object of the file.
 #[derive(Clone, Debug)]
 enum Node {
@@ -320,8 +394,8 @@ enum Node {
     Cluster(Cluster),
     /// A skin deformer, and the geometry it deforms.
     Skin(Option<u64>),
-    /// An animation curve: its value at each frame.
-    Curve(Vec<f64>),
+    /// An animation curve.
+    Curve(Curve),
     Xform(Xform),
     /// An animation layer: its curve nodes.
     Layer(Vec<u64>),
@@ -334,11 +408,6 @@ enum Node {
 enum Named {
     Layer,
     Stack,
-}
-
-/// An object's number, as the file writes it.
-const fn id(number: f64) -> u64 {
-    number.to_bits()
 }
 
 /// A whole number of an array that names a vertex or a limb.
@@ -372,11 +441,23 @@ struct Scene {
 impl Scene {
     /// `Geometry: id, "name", "Mesh" { ... }`.
     fn geometry(&mut self, tokens: &mut Tokens<'_>) {
-        let Some(Token::Number(number)) = tokens.token() else {
+        let Some(Token::Number(_, number)) = tokens.token() else {
             tokens.skip_prop();
             return;
         };
-        if !tokens.find_begin() {
+        // `Geometry: number, "name", "kind" {`: a geometry of the kind `Shape`, a shape key's
+        // offsets, is no mesh.
+        let mut kind = None;
+        loop {
+            match tokens.token() {
+                Some(Token::Text(text)) => kind = Some(text),
+                Some(Token::Begin) => break,
+                Some(Token::Line) | None => return,
+                Some(_) => {}
+            }
+        }
+        if kind.is_some_and(|kind| kind != "Mesh") {
+            tokens.close();
             return;
         }
         let mut geometry = Geometry::default();
@@ -406,14 +487,14 @@ impl Scene {
                 _ => {}
             }
         }
-        self.nodes.insert(id(number), Node::Geometry(geometry));
+        self.nodes.insert(number, Node::Geometry(geometry));
     }
 
     /// `Model: id, "Model::name", "Mesh" { ... }` or `"LimbNode"`: where a geometry stands,
     /// or a joint, from the `P` lines of its `Properties70`.
     fn model(&mut self, tokens: &mut Tokens<'_>) -> Option<()> {
         let (number, _, kind) = (tokens.token()?, tokens.token()?, tokens.token()?);
-        let (Token::Number(number), Token::Text(kind)) = (number, kind) else {
+        let (Token::Number(_, number), Token::Text(kind)) = (number, kind) else {
             tokens.skip_prop();
             return Some(());
         };
@@ -429,7 +510,6 @@ impl Scene {
             tokens.skip_prop();
             return Some(());
         }
-        let number = id(number);
         let index = self.limbs;
         if limb {
             self.limbs = self.limbs.saturating_add(1);
@@ -499,13 +579,13 @@ impl Scene {
     /// `Deformer: id, "name", "Skin"` or `"Cluster" { ... }`.
     fn deformer(&mut self, tokens: &mut Tokens<'_>) -> Option<()> {
         let (number, _, kind) = (tokens.token()?, tokens.token()?, tokens.token()?);
-        let (Token::Number(number), Token::Text(kind)) = (number, kind) else {
+        let (Token::Number(_, number), Token::Text(kind)) = (number, kind) else {
             tokens.skip_prop();
             return Some(());
         };
         match kind {
             "Skin" => {
-                self.nodes.insert(id(number), Node::Skin(None));
+                self.nodes.insert(number, Node::Skin(None));
                 tokens.skip_prop();
             }
             "Cluster" => {
@@ -524,7 +604,7 @@ impl Scene {
                         _ => {}
                     }
                 }
-                self.nodes.insert(id(number), Node::Cluster(cluster));
+                self.nodes.insert(number, Node::Cluster(cluster));
             }
             _ => {
                 tokens.skip_prop();
@@ -533,24 +613,25 @@ impl Scene {
         Some(())
     }
 
-    /// `AnimationCurve: id, ... { KeyValueFloat: ... }`.
+    /// `AnimationCurve: id, ... { KeyTime: ..., KeyValueFloat: ... }`.
     fn curve(&mut self, tokens: &mut Tokens<'_>) {
-        let Some(Token::Number(number)) = tokens.token() else {
+        let Some(Token::Number(_, number)) = tokens.token() else {
             tokens.skip_prop();
             return;
         };
-        let mut values = Vec::new();
+        let mut curve = Curve::default();
         while let Some(token) = tokens.token() {
             match token {
                 Token::End => break,
-                Token::Prop("KeyValueFloat") => values = tokens.array(),
+                Token::Prop("KeyTime") => curve.times = tokens.array(),
+                Token::Prop("KeyValueFloat") => curve.values = tokens.array(),
                 Token::Prop(_) => {
                     tokens.skip_prop();
                 }
                 _ => {}
             }
         }
-        self.nodes.insert(id(number), Node::Curve(values));
+        self.nodes.insert(number, Node::Curve(curve));
     }
 
     /// The `P` lines of a `Properties70` block, each given to `take` with its name once the
@@ -597,7 +678,7 @@ impl Scene {
 
     /// `AnimationCurveNode: id, ... { Properties70: { P: "d|X", ... } }`.
     fn xform(&mut self, tokens: &mut Tokens<'_>) {
-        let Some(Token::Number(number)) = tokens.token() else {
+        let Some(Token::Number(_, number)) = tokens.token() else {
             tokens.skip_prop();
             return;
         };
@@ -613,18 +694,18 @@ impl Scene {
                 "d|Z" => &mut *z,
                 _ => return,
             };
-            if let Some(Token::Number(value)) = tokens.token() {
+            if let Some(Token::Number(value, _)) = tokens.token() {
                 *into = value;
             }
         });
-        self.nodes.insert(id(number), Node::Xform(xform));
+        self.nodes.insert(number, Node::Xform(xform));
     }
 
     /// `AnimationLayer: id, "AnimLayer::name", ...` and `AnimationStack: id,
     /// "AnimStack::name", ...`.
     fn named(&mut self, tokens: &mut Tokens<'_>, kind: Named) -> Option<()> {
         let (number, name) = (tokens.token()?, tokens.token()?);
-        if let (Token::Number(number), Token::Text(name)) = (number, name) {
+        if let (Token::Number(_, number), Token::Text(name)) = (number, name) {
             let node = match kind {
                 Named::Stack => {
                     let name = name.strip_prefix("AnimStack::").unwrap_or(name);
@@ -632,7 +713,7 @@ impl Scene {
                 }
                 Named::Layer => Node::Layer(Vec::new()),
             };
-            self.nodes.insert(id(number), node);
+            self.nodes.insert(number, node);
         }
         tokens.skip_prop();
         Some(())
@@ -678,11 +759,11 @@ impl Scene {
     /// from, to, "property"` joins an object to a property of another.
     fn connection(&mut self, tokens: &mut Tokens<'_>) -> Option<()> {
         let (kind, from, to) = (tokens.token()?, tokens.token()?, tokens.token()?);
-        let (Token::Text(kind), Token::Number(from), Token::Number(to)) = (kind, from, to) else {
+        let (Token::Text(kind), Token::Number(_, from), Token::Number(_, to)) = (kind, from, to)
+        else {
             tokens.skip_prop();
             return Some(());
         };
-        let (from, to) = (id(from), id(to));
         let property = match kind {
             "OP" => match tokens.token()? {
                 Token::Text(property) => Some(property),
@@ -735,14 +816,15 @@ impl Scene {
                     _ => None,
                 };
                 // A curve that changes is the axis's; one that does not is its value.
-                let varies = curve.iter().any(|value| Some(value) != curve.first());
+                let values = &curve.values;
+                let varies = values.iter().any(|value| Some(value) != values.first());
                 if let (Some(axis), Some(Node::Xform(xform))) = (axis, self.nodes.get_mut(&to)) {
                     if varies {
                         if let Some(slot) = xform.curves.get_mut(axis) {
                             *slot = Some(from);
                         }
                     } else if let (Some(value), Some(first)) =
-                        (xform.value.get_mut(axis), curve.first())
+                        (xform.value.get_mut(axis), values.first())
                     {
                         *value = *first;
                     }
@@ -810,8 +892,9 @@ impl Scene {
     }
 
     /// The animations: for each stack its name and, for each frame of its first layer, a
-    /// pose for each limb, the limb's own with what the layer's curve nodes give put in. A
-    /// layer whose curves are not of one length is no animation.
+    /// pose for each limb, the limb's own with what the layer's curve nodes give put in: a
+    /// frame for each key where the curves' keys are at the same times, else a pose ten
+    /// times a second by the keys' times.
     fn animations(&self, limbs: &[Limb]) -> Vec<(String, Vec<Vec<Affine>>)> {
         let mut animations = Vec::new();
         for node in self.nodes.values() {
@@ -831,21 +914,56 @@ impl Scene {
                 })
                 .collect();
             let curve = |number: Option<u64>| match self.nodes.get(&number?) {
-                Some(Node::Curve(values)) => Some(values),
+                Some(Node::Curve(curve)) => Some(curve),
                 _ => None,
             };
-            // The curves of a layer are of one length, the animation's frames.
-            let lengths: Vec<usize> = xforms
+            let curves: Vec<&Curve> = xforms
                 .iter()
                 .flat_map(|(_, xform)| xform.curves)
-                .filter_map(|number| curve(number).map(Vec::len))
+                .filter_map(curve)
                 .collect();
-            let count = lengths.first().copied().unwrap_or(0);
-            if lengths.iter().any(|length| *length != count) {
+            // Curves with a key each at the same times are the animation's frames, a key
+            // each, as the converter has them of curves of one length. Any others are
+            // sampled by their keys' times (MDL-10.7).
+            let count = curves.first().map_or(0, |curve| curve.values.len());
+            let ticks = |curve: &Curve| -> Vec<u64> {
+                curve.times.iter().map(|time| time.to_bits()).collect()
+            };
+            let together = curves.iter().all(|curve| curve.values.len() == count)
+                && curves
+                    .first()
+                    .is_none_or(|first| curves.iter().all(|curve| ticks(curve) == ticks(first)));
+            let timed = curves
+                .iter()
+                .all(|curve| curve.times.len() == curve.values.len());
+            let untimed_keys = !timed && curves.iter().all(|curve| curve.values.len() == count);
+            let moments: Vec<Moment> = if together || untimed_keys {
+                (0..count).map(Moment::Key).collect()
+            } else if timed {
+                let ends = |pick: fn(&Curve) -> Option<f64>| -> Vec<f64> {
+                    curves.iter().filter_map(|curve| pick(curve)).collect()
+                };
+                let starts = ends(|curve| curve.times.first().copied());
+                let stops = ends(|curve| curve.times.last().copied());
+                let start = starts.iter().copied().fold(f64::INFINITY, f64::min);
+                let stop = stops.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                let step = FBX_SEC / FBX_SAMPLE_RATE;
+                if !start.is_finite() || !stop.is_finite() {
+                    continue;
+                }
+                // A pose at each step short of the last key, and one at the last key itself.
+                core::iter::successors(Some(start), |at| Some(at + step))
+                    .take_while(|at| *at < stop)
+                    .take(FBX_MAX_FRAMES.saturating_sub(1))
+                    .chain(core::iter::once(stop))
+                    .map(Moment::Time)
+                    .collect()
+            } else {
                 continue;
-            }
-            let frames = (0..count)
-                .map(|frame| {
+            };
+            let frames = moments
+                .iter()
+                .map(|moment| {
                     limbs
                         .iter()
                         .map(|limb| {
@@ -853,8 +971,12 @@ impl Scene {
                             for (_, xform) in xforms.iter().filter(|(own, _)| *own == limb.index) {
                                 let mut value = xform.value;
                                 for (part, number) in value.iter_mut().zip(xform.curves) {
-                                    if let Some(at) = curve(number).and_then(|c| c.get(frame)) {
-                                        *part = *at;
+                                    let found = curve(number).and_then(|curve| match moment {
+                                        Moment::Key(key) => curve.values.get(*key).copied(),
+                                        Moment::Time(at) => curve.at(*at),
+                                    });
+                                    if let Some(found) = found {
+                                        *part = found;
                                     }
                                 }
                                 let [translation, rotation, scaling] = &mut parts;
@@ -896,18 +1018,14 @@ impl Scene {
             let Node::Geometry(geometry) = node else {
                 continue;
             };
-            let first = positions.len();
             let corners = geometry.corners();
-            let place = match geometry.model.and_then(|model| self.nodes.get(&model)) {
+            let model = match geometry.model.and_then(|model| self.nodes.get(&model)) {
                 Some(Node::Mesh(model)) => Some(*model),
                 _ => None,
             };
+            let place_of = |at: Vec3| model.map_or(at, |model| model.placed(at));
             let (verts, _) = geometry.verts.as_chunks::<CORNERS>();
-            for (vertex, _) in &corners {
-                let at = verts.get(*vertex).copied().unwrap_or(NONE);
-                positions.push(place.map_or(at, |model| model.placed(at)));
-            }
-            texcoords.extend(geometry.texcoords(&corners));
+            let coordinates = geometry.texcoords(&corners);
             // What each of the geometry's own vertices is blended to, by its skin's clusters.
             let mut weights: Vec<Vec<(usize, f64)>> = vec![Vec::new(); verts.len()];
             for cluster in self.nodes.values() {
@@ -934,13 +1052,27 @@ impl Scene {
                     }
                 }
             }
-            for (vertex, _) in &corners {
-                blends.push(blend(weights.get(*vertex).map_or(&[], Vec::as_slice)));
+            // The corners that are one of the geometry's vertices with one texture
+            // coordinate are one vertex of the mesh (MDL-10.7).
+            let mut welded: BTreeMap<(usize, [u32; 2]), usize> = BTreeMap::new();
+            let mut places = Vec::with_capacity(corners.len());
+            for (corner, (vertex, _)) in corners.iter().enumerate() {
+                let coordinate = coordinates.get(corner).copied();
+                let key = (*vertex, coordinate.unwrap_or_default().map(f32::to_bits));
+                let next = positions.len();
+                let place = *welded.entry(key).or_insert(next);
+                if place == next {
+                    let at = verts.get(*vertex).copied().unwrap_or(NONE);
+                    positions.push(place_of(at));
+                    texcoords.extend(coordinate);
+                    blends.push(blend(weights.get(*vertex).map_or(&[], Vec::as_slice)));
+                }
+                places.push(place);
             }
             // A polygon is a fan from its first corner, each triangle turned around.
             let mut polygon: Vec<usize> = Vec::new();
-            for (corner, (_, last)) in corners.iter().enumerate() {
-                polygon.push(first.saturating_add(corner));
+            for (place, (_, last)) in places.iter().zip(&corners) {
+                polygon.push(*place);
                 if !last {
                     continue;
                 }
@@ -1030,7 +1162,7 @@ impl Geometry {
     /// none when the file has not one for each.
     #[expect(
         clippy::cast_possible_truncation,
-        reason = "spec MDL-10.4: a texture coordinate is kept in single precision"
+        reason = "spec MDL-10.6: a texture coordinate is kept in single precision"
     )]
     fn texcoords(&self, corners: &[(usize, bool)]) -> Vec<[f32; 2]> {
         let (uvs, _) = self.uvs.as_chunks::<UV>();
@@ -1059,12 +1191,12 @@ impl Geometry {
 /// Reads a text `.fbx` file as a mesh: a pose for each frame of each of its animation
 /// stacks, or one of the mesh as it is.
 ///
-/// The converter turns what it reads a quarter about x, "`erotate *= Quat(M_PI/2, Vec3(1, 0,
-/// 0));`", which stands a file whose y is up on Quake's z: a position `(x, y, z)` is `(x, -z,
-/// y)`. That is what [`Up::Y`] is here; [`Up::Z`] is for a file whose z is up already, which
-/// is left as it is.
+/// Its axes are turned as `up` says, as an `.obj`'s are (MDL-9.1): with y up, a position
+/// `(x, y, z)` is Quake's `(-z, -x, y)`, so that a model facing -z faces forward. The
+/// converter turns a file a quarter about x instead, "`erotate *= Quat(M_PI/2, Vec3(1, 0,
+/// 0));`", which leaves such a model facing left (MDL-10.7).
 ///
-/// Implements MDL-10.4.
+/// Implements MDL-10.6.
 ///
 /// # Errors
 ///
@@ -1087,21 +1219,26 @@ pub fn read(text: &str, up: Up) -> Result<Mesh, FbxError> {
             _ => {}
         }
     }
-    let mut mesh = scene.boned().mesh(Up::Z).map_err(|error| match error {
+    scene.boned().mesh(up).map_err(|error| match error {
         RigError::Flat => FbxError::Flat,
         RigError::Names => FbxError::Names,
-    })?;
-    if up == Up::Y {
-        for position in mesh
-            .frames
-            .iter_mut()
-            .flat_map(|frame| &mut frame.positions)
-        {
-            let [x, y, z] = *position;
-            *position = [x, -z, y];
-        }
+    })
+}
+
+/// Reads an `.fbx` file of either form as a mesh: a binary file, known by its first bytes,
+/// is written out as the text form and read as [`read`] reads one.
+///
+/// Implements MDL-10.6, MDL-10.7 and MDL-11.
+///
+/// # Errors
+///
+/// As [`read`], and [`FbxError::Binary`] for a binary file that is cut short or damaged.
+pub fn read_bytes(bytes: &[u8], up: Up) -> Result<Mesh, FbxError> {
+    if binary::is_binary(bytes) {
+        read(&binary::text(bytes)?, up)
+    } else {
+        read(&String::from_utf8_lossy(bytes), up)
     }
-    Ok(mesh)
 }
 
 #[cfg(test)]

@@ -49,10 +49,12 @@ with, and every model's own bounds are the same to the engine (MDL-1.7).
   skeleton and animations. A model has no skeleton, so every frame of every animation
   becomes a frame of the model, named by its animation and its number (`run1`, `run2`): the
   answer's `frame_line` is the QuakeC's `$frame` line.
-- **An `.fbx` file**, in its text form, version 7 (export as ASCII: the binary form is not
-  read), with the animations it holds. Its y is taken to be up; give `up` as `z` for one
-  whose z is. A y-up fbx keeps its x, so it may face a quarter turn from the same mesh as
-  an `.obj`: play it, and turn the mesh in the program it came from if it faces sideways.
+- **An `.fbx` file** of version 7, binary or text, with the animations it holds. Its y is
+  taken to be up, as an `.obj`'s is, and it faces the same way as the same mesh as an
+  `.obj`; give `up` as `z` for one whose z is. An animation whose curves have a key for
+  each frame gives a frame for each key; any other is sampled ten times a second, the rate
+  QuakeC steps frames at, so bake or resample it in the program it came from for other
+  frames. Corners that share a vertex and a texture coordinate are one vertex.
 - **An `.md5mesh` or an `.smd` model**, with its animations in files of their own, given
   as `animation_paths`: `.md5anim` files, or the `.smd` files that hold a skeleton and no
   triangles. Each animation's frames are named by its file (`walk.smd` gives `walk1`,

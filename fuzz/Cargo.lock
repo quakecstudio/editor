@@ -484,6 +484,7 @@ version = "2026.11.2"
 name = "qs-mdl"
 version = "2026.11.2"
 dependencies = [
+ "miniz_oxide",
  "qc-progs",
 ]
 

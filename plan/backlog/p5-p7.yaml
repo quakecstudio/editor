@@ -2688,3 +2688,26 @@ groups:
     - 'Claude Code, asked through the MCP server for a level of five rooms, builds one in which no two rooms have the same shape and none is a plain box, compiled and played, with screenshots, recorded in the PR'
     verify:
     - 'cargo nextest run -p qs-map-edit -p qs-tests; the recorded run in the PR'
+  - key: L-50
+    title: Import binary fbx models, facing the way obj models do
+    labels:
+    - L0-formats
+    - area:editor
+    - type:feature
+    size: M
+    reqs:
+    - PRIN-6
+    - MAP-4
+    summary: |
+      Justin, 2026-11-21, of L-47's fbx import, which reads the text form alone as FTEQW's converter does: "if its not too much work to support binary fbx it seems like it would reduce steps for users needing to convert", and of a y-up fbx facing a quarter turn from the same model as an obj, "what is the most intuitive for users". Programs write binary fbx unless told not to. The binary form holds the same tree of nodes and properties as the text form, so one reader of the tree serves both. FTEQW has no binary reader: this one is written from the format's public description, nothing ported. The most intuitive facing is one rule for every format: a y-up model facing -z faces Quake's +x, as an obj does (MDL-9.1), where FTEQW's quarter turn about x leaves it facing left.
+    depends:
+    - L-47
+    deliverable:
+    - 'crates/qs-mdl: a reader of binary fbx (version 7), its arrays inflated with miniz_oxide, to the same tree the text reader makes, and `mesh::fbx` reading either form; its statements in docs/spec/mdl.md, written from the format''s description fetched and quoted'
+    - 'crates/qs-mdl: a y-up fbx turned as a y-up obj is, stated as a difference from FTEQW''s converter, with the tests that hold the reader to the converter''s output kept'
+    - 'crates/qs-workbench: `model.import` takes a binary fbx; docs/agent-reference/models.md says so'
+    acceptance:
+    - 'A model written as binary fbx and as text fbx imports to the same mesh, checked by a test with a binary fixture; a binary file that is cut short, or whose array does not inflate, is refused, and a property test feeds the reader arbitrary bytes'
+    - 'A y-up model facing -z imports facing +x from fbx as it does from obj, checked by a test'
+    verify:
+    - 'cargo nextest run -p qs-mdl -p qs-workbench'

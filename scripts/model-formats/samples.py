@@ -26,13 +26,13 @@ for i, (p, uv, bl) in enumerate(zip(V, UV, BL)):
 mesh = ['MD5Version 10', 'commandline ""', '', 'numJoints 2', 'numMeshes 1', '', 'joints {',
         '\t"root" -1 ( 0 0 0 ) ( 0 0 0 )', ('\t"arm" 0 ( 8 0 0 ) ( 0 0 %.9f )' % -S45 if HARD else '\t"arm" 0 ( 8 0 0 ) ( 0 0 0 )'), '}', '', 'mesh {', '\tshader "skin"',
         f'\tnumverts {len(V)}'] + verts + [f'\tnumtris {len(TRI)}'] + [f"\ttri {i} {a} {b} {c}" for i, (a, b, c) in enumerate(TRI)] + [f'\tnumweights {len(w)}'] + w + ['}', '']
-open(f"{out}/arm.md5mesh", "w").write("\n".join(mesh))
+open(f"{out}/arm.md5mesh.txt", "w").write("\n".join(mesh))
 anim = ['MD5Version 10', 'commandline ""', '', 'numFrames 3', 'numJoints 2', 'frameRate 10', 'numAnimatedComponents 2', '',
         'hierarchy {', '\t"root" -1 4 0', '\t"arm" 0 32 1', '}', '', 'bounds {'] + ['\t( -1 -1 -1 ) ( 20 20 20 )'] * 3 + ['}', '',
        'baseframe {', '\t( 0 0 0 ) ( 0 0 0 )', ('\t( 8 0 0 ) ( 0 0 %.9f )' % -S45 if HARD else '\t( 8 0 0 ) ( 0 0 0 )'), '}', '']
 for f, (a, z) in enumerate(zip(ANGLES, LIFT)):
     anim += [f'frame {f} {{', f'\t{z} {-math.sin(math.radians(a + (90 if HARD else 0)) / 2):.9f}', '}', '']
-open(f"{out}/wave.md5anim", "w").write("\n".join(anim))
+open(f"{out}/wave.md5anim.txt", "w").write("\n".join(anim))
 
 # ---- smd
 def smd_vert(i):
@@ -43,14 +43,14 @@ ref = ['version 1', 'nodes', '0 "root" -1', '1 "arm" 0', 'end', 'skeleton', 'tim
 for a, b, c in TRI:
     ref += ['skin.bmp', smd_vert(c), smd_vert(b), smd_vert(a)]
 ref += ['end', '']
-open(f"{out}/arm.smd", "w").write("\n".join(ref))
+open(f"{out}/arm.smd.txt", "w").write("\n".join(ref))
 ani = ['version 1', 'nodes', '0 "root" -1', '1 "arm" 0', 'end', 'skeleton']
 for f, (a, z) in enumerate(zip(ANGLES, LIFT)):
     if HARD and f == 1:
         continue
     ani += [f'time {f}', f'0 0 0 {z} 0 0 0'] + ([] if HARD and f == 2 else [f'1 8 0 0 0 0 {math.radians(a + (90 if HARD else 0)):.9f}'])
 ani += ['end', '']
-open(f"{out}/wave.smd", "w").write("\n".join(ani))
+open(f"{out}/wave.smd.txt", "w").write("\n".join(ani))
 
 # ---- fbx
 def arr(name, vals):
@@ -82,4 +82,91 @@ fbx = ['; FBX 7.3.0 project file', 'FBXHeaderExtension:  {', '\tFBXHeaderVersion
        '\tC: "OO",100,200', '\tC: "OO",301,300', '\tC: "OO",400,100', '\tC: "OO",401,400', '\tC: "OO",402,400',
        '\tC: "OO",300,401', '\tC: "OO",301,402', '\tC: "OO",501,500', '\tC: "OO",510,501', '\tC: "OO",511,501',
        '\tC: "OP",510,301, "Lcl Rotation"', '\tC: "OP",511,300, "Lcl Translation"', '\tC: "OP",520,510, "d|Z"', '\tC: "OP",521,511, "d|Z"', '}', '']
-open(f"{out}/arm.fbx", "w").write("\n".join(fbx))
+open(f"{out}/arm.fbx.txt", "w").write("\n".join(fbx))
+
+# ---- fbx, binary: the same tree as the text file, as records
+import struct, zlib
+def prop(v):
+    if isinstance(v, bool):
+        return b"C" + struct.pack("<B", v)
+    if isinstance(v, int):
+        return b"L" + struct.pack("<q", v) if abs(v) >= 2 ** 31 else b"I" + struct.pack("<i", v)
+    if isinstance(v, float):
+        return b"D" + struct.pack("<d", v)
+    if isinstance(v, str):
+        raw = v.encode()
+        return b"S" + struct.pack("<I", len(raw)) + raw
+    kind, vals = v                                 # an array: its kind and its values
+    # The file's "l" is a 64-bit integer, which struct calls "q".
+    raw = struct.pack("<%d%s" % (len(vals), "q" if kind == "l" else kind), *vals)
+    packed = zlib.compress(raw)
+    return kind.encode() + struct.pack("<III", len(vals), 1, len(packed)) + packed
+def record(name, props, children, wide, at):
+    """A record that starts at the file's byte `at`."""
+    head = "<QQQB" if wide else "<IIIB"
+    body = b"".join(prop(v) for v in props)
+    start = at + struct.calcsize(head) + len(name)
+    nested = b""
+    for child in children:
+        nested += record(*child, wide, start + len(body) + len(nested))
+    if children:
+        nested += bytes(struct.calcsize(head))
+    end = start + len(body) + len(nested)
+    return struct.pack(head, end, len(props), len(body), len(name)) + name.encode() + body + nested
+def named(name, cls):
+    return name + "\x00\x01" + cls
+def p70(*lines):
+    return ("Properties70", [], [("P", list(line), []) for line in lines])
+def binary(wide, ids):
+    """`ids` is added to every object's number: a great one is past what a double holds."""
+    def limb_node(idn, name, t):
+        lines = [("Lcl Translation", "Lcl Translation", "", "A", float(t[0]), float(t[1]), float(t[2]))]
+        if HARD and name == "arm":
+            lines.append(("PreRotation", "Vector3D", "Vector", "", 0.0, 0.0, 90.0))
+        return ("Model", [ids + idn, named(name, "Model"), "LimbNode"], [p70(*lines)])
+    def cluster_node(idn, joint):
+        pairs = [(i, wt) for i, bl in enumerate(BL) for j, wt in bl if j == joint]
+        return ("Deformer", [ids + idn, named("", "SubDeformer"), "Cluster"],
+                [("Indexes", [("i", [i for i, _ in pairs])], []), ("Weights", [("d", [wt for _, wt in pairs])], [])])
+    def curve_node(idn):
+        return ("AnimationCurveNode", [ids + idn, named("n", "AnimCurveNode"), ""],
+                [p70(("d|X", "Number", "", "A", 0.0), ("d|Y", "Number", "", "A", 0.0), ("d|Z", "Number", "", "A", 0.0))])
+    def curve_values(idn, vals):
+        return ("AnimationCurve", [ids + idn, named("", "AnimCurve"), ""],
+                [("Default", [0.0], []), ("KeyTime", [("l", [0, 1, 2])], []), ("KeyValueFloat", [("f", [float(v) for v in vals])], [])])
+    mesh_lines = [("Lcl Scaling", "Lcl Scaling", "", "A", 1.0, 1.0, 1.0)]
+    if HARD:
+        mesh_lines = [("GeometricTranslation", "Vector3D", "Vector", "", 1.0, 0.0, 0.0), ("Lcl Translation", "Lcl Translation", "", "A", 0.0, 3.0, 0.0),
+                      ("Lcl Rotation", "Lcl Rotation", "", "A", 0.0, 0.0, 30.0), ("Lcl Scaling", "Lcl Scaling", "", "A", 2.0, 2.0, 2.0)]
+    objects = [
+        ("Geometry", [ids + 100, named("arm", "Geometry"), "Mesh"], [
+            ("Vertices", [("d", [float(x) for p in V for x in p])], []),
+            ("PolygonVertexIndex", [("i", poly)], []),
+            ("LayerElementNormal", [0], [("Version", [101], []), ("Normals", [("d", [x for _ in poly for x in (0.0, 0.0, 1.0)])], [])]),
+            ("LayerElementUV", [0], [("Version", [101], []), ("Name", ["UVMap"], []),
+                                     ("UV", [("d", [x for uv in UV for x in (uv[0], 1 - uv[1])])], []), ("UVIndex", [("i", uvi)], [])]),
+        ]),
+        ("Model", [ids + 200, named("arm", "Model"), "Mesh"], [("Version", [232], []), p70(*mesh_lines), ("Shading", [True], [])]),
+        limb_node(300, "root", (0, 0, 0)), limb_node(301, "arm", (8, 0, 0)),
+        ("Deformer", [ids + 400, named("", "Deformer"), "Skin"], [("Version", [101], [])]),
+        cluster_node(401, 0), cluster_node(402, 1),
+        ("AnimationStack", [ids + 500, named("wave", "AnimStack"), ""], []),
+        ("AnimationLayer", [ids + 501, named("base", "AnimLayer"), ""], []),
+        curve_node(510), curve_node(511), curve_values(520, ANGLES), curve_values(521, LIFT),
+    ]
+    joins = [("OO", 100, 200), ("OO", 301, 300), ("OO", 400, 100), ("OO", 401, 400), ("OO", 402, 400), ("OO", 300, 401), ("OO", 301, 402),
+             ("OO", 501, 500), ("OO", 510, 501), ("OO", 511, 501), ("OP", 510, 301, "Lcl Rotation"), ("OP", 511, 300, "Lcl Translation"),
+             ("OP", 520, 510, "d|Z"), ("OP", 521, 511, "d|Z")]
+    top = [("FBXHeaderExtension", [], [("FBXHeaderVersion", [1003], []), ("Creator", ["samples.py"], [])]),
+           ("Objects", [], objects),
+           ("Connections", [], [("C", [j[0], ids + j[1], ids + j[2]] + list(j[3:]), []) for j in joins])]
+    out = b"Kaydara FBX Binary  \x00\x1a\x00" + struct.pack("<I", 7500 if wide else 7400)
+    for node in top:
+        out += record(*node, wide, len(out))
+    out += bytes(25 if wide else 13) + b"\xfa\xbc\xab\x09 a footer the readers pass over"
+    return out
+def hexed(data):
+    return "\n".join(data[i:i + 32].hex() for i in range(0, len(data), 32)) + "\n"
+# Version 7.4 with 32-bit counts, and 7.5 with 64-bit counts and object numbers past 2 to the 53rd.
+open(f"{out}/arm-7400.fbx.hex", "w").write(hexed(binary(False, 0)))
+open(f"{out}/arm-7500.fbx.hex", "w").write(hexed(binary(True, 2 ** 62)))
