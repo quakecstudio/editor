@@ -705,9 +705,14 @@ and frames, which become a mesh of poses as MDL-9.2 says an `.iqe`'s do.
   the first of its clusters with a `Transform` says: that matrix after where the cluster's
   model stood, its `TransformLink` or, without one, its place with nothing animated. A
   cluster's model takes a vertex from where its `TransformLink` had it, or without one from
-  its place with nothing animated (MDL-10.8). A geometry with no skin stands where its
-  model does with nothing animated and follows it. The mesh's joints are the models a
-  vertex follows and the models above them. A triangle of corners `a b c` is kept as `b a c`
+  its place with nothing animated (MDL-10.8). A model two geometries were bound to in two places
+  takes each from where its own cluster had it. A vertex of a skinned geometry that no
+  cluster names follows the skeleton's armature, the first model above the first cluster's
+  model that is no `LimbNode`, as Blender moves it, or with none its geometry's model. A
+  geometry with no skin stands where its model does with nothing animated and follows it.
+  The mesh's joints are the models a vertex follows and the models above them, and only
+  their curves are an animation's: a camera's keys neither add frames to it nor lengthen
+  it. Two models written with one number are one, the later. A triangle of corners `a b c` is kept as `b a c`
   ("`etriangle(i+1, i, i+2)`"). An animation stack is an animation of the frames of its
   first layer's curves, which are of one length, else it is none: a frame's pose of a model
   is the model's own with, for each curve node joined to it, the property the node is joined

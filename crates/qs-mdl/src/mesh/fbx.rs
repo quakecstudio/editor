@@ -9,7 +9,8 @@
 //! as FTEQW's model converter reads them: the objects of the file (geometries, models, skin
 //! clusters, animation curves, layers and stacks) and the connections among them. Where a
 //! file Blender wrote needs more than the converter reads, the models of every kind as one
-//! tree and the clusters' bind matrices, the reader is held to Blender's poses (MDL-10.10). The binary form (MDL-11) is written out as text first, by
+//! tree and the clusters' bind matrices, the reader is held to Blender's poses
+//! (MDL-10.10). The binary form (MDL-11) is written out as text first, by
 //! [`binary`], and read the same way.
 
 mod binary;
@@ -27,8 +28,6 @@ pub const FBX_FRAME: &str = "base";
 pub const FBX_ANIMATION: &str = "anim";
 /// What the file's first line holds: "`strstr(p.buf, "FBX 7")`".
 pub const FBX_VERSION: &str = "FBX 7";
-/// The greatest number of a limb a vertex is blended to: "`limb->index > 255`" is left out.
-pub const FBX_MAX_LIMB: usize = 255;
 /// The tokens between a property's name and its value: its two types and its flags.
 const P_BEFORE_VALUES: usize = 3;
 /// The corners of a triangle, and the numbers of a position.
@@ -56,7 +55,7 @@ pub enum FbxError {
     Version,
     /// A binary file is cut short, or holds a record, a property or an array that cannot be.
     Binary,
-    /// A limb's base pose has no size on an axis.
+    /// A model a vertex follows, or the pose it was bound in, has no size on an axis.
     Flat,
     /// More animations have one name than can be told apart in a frame's name.
     Names,
@@ -67,7 +66,9 @@ impl fmt::Display for FbxError {
         f.write_str(match self {
             Self::Version => "the file is not an FBX of version 7",
             Self::Binary => "the binary file is cut short or damaged",
-            Self::Flat => "a limb's base pose has no size on an axis",
+            Self::Flat => {
+                "a model the mesh follows, or the pose it was bound in, has no size on an axis"
+            }
             Self::Names => "too many animations have one name for their frames to be named",
         })
     }
@@ -297,6 +298,14 @@ struct Geometry {
     model: Option<u64>,
 }
 
+/// Whether a model is a limb of a skeleton or anything else: a mesh's, an armature's, a
+/// group's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ModelKind {
+    Limb,
+    Other,
+}
+
 /// A model: a node of the file's one tree, and a joint. It stands in its parent's space by
 /// its own translation, rotation and scaling; a geometry that belongs to it stands in its
 /// space by the geometric three.
@@ -304,6 +313,7 @@ struct Geometry {
 struct Model {
     /// Its number among the models, in the order the file has them: its joint.
     joint: usize,
+    kind: ModelKind,
     parent: Option<u64>,
     geometric_translation: Vec3,
     geometric_rotation: Vec3,
@@ -507,12 +517,16 @@ impl Scene {
     /// where it stands from the `P` lines of its `Properties70`.
     fn model(&mut self, tokens: &mut Tokens<'_>) -> Option<()> {
         let (number, _, kind) = (tokens.token()?, tokens.token()?, tokens.token()?);
-        let (Token::Number(_, number), Token::Text(_)) = (number, kind) else {
+        let (Token::Number(_, number), Token::Text(kind)) = (number, kind) else {
             tokens.skip_prop();
             return Some(());
         };
         let mut model = Model {
             joint: self.models,
+            kind: match kind {
+                "LimbNode" => ModelKind::Limb,
+                _ => ModelKind::Other,
+            },
             parent: None,
             geometric_translation: NONE,
             geometric_rotation: NONE,
@@ -886,6 +900,33 @@ impl Scene {
         models
     }
 
+    /// Numbers the models by their places in the file, from 0 with none left out: a number
+    /// two objects share leaves a file with fewer models than it has numbered.
+    fn number_models(&mut self) {
+        let mut joints: Vec<usize> = self.models().iter().map(|model| model.joint).collect();
+        joints.sort_unstable();
+        for node in self.nodes.values_mut() {
+            if let Node::Model(model) = node {
+                model.joint = joints.partition_point(|joint| *joint < model.joint);
+            }
+        }
+    }
+
+    /// The armature of the skeleton `limb` is of: the first model above it that is no limb.
+    /// None for a limb with only limbs above it.
+    fn armature_of(&self, limb: &Model) -> Option<usize> {
+        let mut above = self.model_of(limb.parent);
+        // No further up than the file has models, so a ring of parents ends.
+        for _ in 0..self.models {
+            let model = above?;
+            if model.kind == ModelKind::Other {
+                return Some(model.joint);
+            }
+            above = self.model_of(model.parent);
+        }
+        None
+    }
+
     /// The model `number` names.
     fn model_of(&self, number: Option<u64>) -> Option<&Model> {
         match self.nodes.get(&number?) {
@@ -897,8 +938,10 @@ impl Scene {
     /// The animations: for each stack its name and, for each frame of its first layer, a
     /// pose for each model, the model's own with what the layer's curve nodes give put in: a
     /// frame for each key where the curves' keys are at the same times, else a pose ten
-    /// times a second by the keys' times.
-    fn animations(&self, models: &[Model]) -> Vec<(String, Vec<Vec<Affine>>)> {
+    /// times a second by the keys' times. Only the curves of the models `followed` marks,
+    /// by their joints, are an animation's: a camera's or a light's keys are none of the
+    /// mesh's.
+    fn animations(&self, models: &[Model], followed: &[bool]) -> Vec<(String, Vec<Vec<Affine>>)> {
         let mut animations = Vec::new();
         for node in self.nodes.values() {
             let Node::Stack(name, layers) = node else {
@@ -912,7 +955,13 @@ impl Scene {
             let xforms: Vec<(usize, Xform)> = xforms
                 .iter()
                 .filter_map(|xform| match self.nodes.get(xform) {
-                    Some(Node::Xform(xform)) => Some((self.model_of(xform.model)?.joint, *xform)),
+                    Some(Node::Xform(xform)) => {
+                        let joint = self.model_of(xform.model)?.joint;
+                        followed
+                            .get(joint)
+                            .is_some_and(|followed| *followed)
+                            .then_some((joint, *xform))
+                    }
                     _ => None,
                 })
                 .collect();
@@ -1002,8 +1051,9 @@ impl Scene {
     }
 
     /// The mesh with its skeleton: every model a joint, each geometry where its clusters
-    /// say it was bound, or where its model stands, and blended to its clusters' models, or
-    /// to its own model when it has no skin.
+    /// say it was bound, or where its model stands, and blended to its clusters' models. A
+    /// vertex no cluster names follows its skin's armature, or its geometry's own model
+    /// when the skeleton has none or the geometry no skin.
     fn boned(&self) -> Boned {
         let models = self.models();
         let mut boned = Boned {
@@ -1020,12 +1070,15 @@ impl Scene {
                 .map(|model| model.pose(model.translation, model.rotation, model.scaling))
                 .collect(),
             bind: vec![None; models.len()],
-            animations: self.animations(&models),
+            animations: Vec::new(),
             rest: FBX_FRAME,
             unnamed: FBX_ANIMATION,
         };
         // Where each model stands with nothing animated.
         let rest = boned.world(&boned.base);
+        // The joints made for a model that two geometries were bound to in two places: the
+        // model's joint and where the second had it.
+        let mut twins: Vec<(usize, Affine)> = Vec::new();
         let Boned {
             positions,
             texcoords,
@@ -1046,7 +1099,7 @@ impl Scene {
             // and where the first of them says the mesh stood when it was bound.
             let mut weights: Vec<Vec<(usize, f64)>> = vec![Vec::new(); verts.len()];
             let mut bound = None;
-            let mut skinned = false;
+            let mut armature = None;
             for cluster in self.nodes.values() {
                 let Node::Cluster(cluster) = cluster else {
                     continue;
@@ -1055,18 +1108,34 @@ impl Scene {
                     Some(Node::Skin(geometry)) => *geometry == Some(*number),
                     _ => false,
                 };
-                let (true, Some(joint)) = (own, self.model_of(cluster.model)) else {
+                let (true, Some(limb)) = (own, self.model_of(cluster.model)) else {
                     continue;
                 };
-                let joint = joint.joint;
-                skinned = true;
+                armature = armature.or_else(|| self.armature_of(limb));
                 // `TransformLink` is where the cluster's model stood when the mesh was
                 // bound, and `Transform` the mesh in that model's space.
                 let link = matrix(&cluster.transform_link);
-                if let (Some(link), Some(slot)) = (link, bind.get_mut(joint)) {
-                    *slot = Some(link);
-                }
-                let stood = link.or_else(|| rest.get(joint).copied());
+                let joint = match (link, bind.get_mut(limb.joint)) {
+                    (Some(link), Some(slot)) => match *slot {
+                        Some(taken) if taken != link => {
+                            // Another geometry was bound with the model elsewhere: a joint
+                            // of its own that stands where the model does.
+                            let twin = (limb.joint, link);
+                            let place = twins.iter().position(|other| *other == twin);
+                            let place = place.unwrap_or_else(|| {
+                                twins.push(twin);
+                                twins.len().saturating_sub(1)
+                            });
+                            models.len().saturating_add(place)
+                        }
+                        _ => {
+                            *slot = Some(link);
+                            limb.joint
+                        }
+                    },
+                    _ => limb.joint,
+                };
+                let stood = link.or_else(|| rest.get(limb.joint).copied());
                 bound = bound.or_else(|| Some(stood?.after(&matrix(&cluster.transform)?)));
                 if cluster.indexes.len() != cluster.weights.len() {
                     continue;
@@ -1077,10 +1146,8 @@ impl Scene {
                     }
                 }
             }
-            // A geometry with no skin follows its model.
-            if let (false, Some(model)) = (skinned, model) {
-                weights.fill(vec![(model.joint, 1.0)]);
-            }
+            // What a vertex no cluster names follows.
+            let follows = armature.or_else(|| model.map(|model| model.joint));
             let stood = bound
                 .or_else(|| model.and_then(|model| rest.get(model.joint).copied()))
                 .unwrap_or(Affine::IDENTITY);
@@ -1098,7 +1165,11 @@ impl Scene {
                     let at = verts.get(*vertex).copied().unwrap_or(NONE);
                     positions.push(placed.apply(at));
                     texcoords.extend(coordinate);
-                    blends.push(blend(weights.get(*vertex).map_or(&[], Vec::as_slice)));
+                    let mut own = blend(weights.get(*vertex).map_or(&[], Vec::as_slice));
+                    if let (true, Some(joint)) = (own.is_empty(), follows) {
+                        own.push((joint, 1.0));
+                    }
+                    blends.push(own);
                 }
                 places.push(place);
             }
@@ -1120,6 +1191,19 @@ impl Scene {
             }
         }
 
+        // A twin stands where its model does, in every pose.
+        for (joint, link) in &twins {
+            boned.parents.push(Some(*joint));
+            boned.base.push(Affine::IDENTITY);
+            boned.bind.push(Some(*link));
+        }
+        let mut animations = self.animations(&models, &boned.followed());
+        for (_, frames) in &mut animations {
+            for frame in frames.iter_mut() {
+                frame.resize(boned.parents.len(), Affine::IDENTITY);
+            }
+        }
+        boned.animations = animations;
         boned.without_idle_joints()
     }
 }
@@ -1232,6 +1316,7 @@ pub fn read(text: &str, up: Up) -> Result<Mesh, FbxError> {
             _ => {}
         }
     }
+    scene.number_models();
     scene.boned().mesh(up).map_err(|error| match error {
         RigError::Flat => FbxError::Flat,
         RigError::Names => FbxError::Names,

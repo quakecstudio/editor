@@ -734,3 +734,72 @@ fn a_geometry_with_no_skin_follows_its_model() {
         FbxError::Flat
     );
 }
+
+// spec MDL-10.9: the curves of a model no vertex follows, a camera's, are none of the mesh's
+// animation: its frames are the limbs' keys as before; and two models written with one
+// number leave the others their own joints
+#[test]
+fn what_no_vertex_follows_changes_nothing() {
+    let text = include_str!("../fixtures/arm.fbx.txt");
+    let camera = text
+        .replacen(
+            "\tAnimationStack: 500,",
+            "\tModel: 900, \"Model::cam\", \"Camera\" {\n\t}\n\
+             \tAnimationCurveNode: 910, \"AnimCurveNode::n\", \"\" {\n\t}\n\
+             \tAnimationCurve: 920, \"AnimCurve::\", \"\" {\n\t\tKeyTime: *2 {\n\t\t\ta: 0,4618615800000\n\t\t}\n\
+             \t\tKeyValueFloat: *2 {\n\t\t\ta: 0,5\n\t\t}\n\t}\n\tAnimationStack: 500,",
+            1,
+        )
+        .replacen(
+            "\tC: \"OO\",501,500\n",
+            "\tC: \"OO\",501,500\n\tC: \"OO\",910,501\n\
+             \tC: \"OP\",910,900, \"Lcl Translation\"\n\tC: \"OP\",920,910, \"d|X\"\n",
+            1,
+        );
+    assert!(camera.contains("Model::cam") && camera.contains("\"OP\",920,910"));
+    assert_eq!(read(&camera, Up::Z).unwrap(), read(text, Up::Z).unwrap());
+
+    let twice = "\tModel: 999, \"Model::a\", \"Null\" {\n\t}\n";
+    let doubled = text.replacen("\tModel: 200,", &format!("{twice}{twice}\tModel: 200,"), 1);
+    assert_ne!(doubled, text);
+    assert_eq!(read(&doubled, Up::Z).unwrap(), read(text, Up::Z).unwrap());
+}
+
+// spec MDL-10.9: two geometries bound to one model where it stood in two places are each
+// taken from where their own cluster had it
+#[test]
+fn two_geometries_are_bound_to_one_model_in_two_places() {
+    let skin = |skin: u32, cluster: u32, x: u32| {
+        format!(
+            "Deformer: {skin}, \"Deformer::\", \"Skin\" {{\n}}\n\
+             Deformer: {cluster}, \"SubDeformer::\", \"Cluster\" {{\nIndexes: *3 {{\na: 0,1,2\n}}\n\
+             Weights: *3 {{\na: 1,1,1\n}}\n\
+             Transform: *16 {{\na: 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1\n}}\n\
+             TransformLink: *16 {{\na: 1,0,0,0,0,1,0,0,0,0,1,0,{x},0,0,1\n}}\n}}\n"
+        )
+    };
+    let objects = format!(
+        "Geometry: 101, \"Geometry::u\", \"Mesh\" {{\nVertices: *9 {{\na: 0,0,1,4,0,1,0,4,1\n}}\n\
+         PolygonVertexIndex: *3 {{\na: 0,1,-3\n}}\n}}\n\
+         Model: 201, \"Model::u\", \"Mesh\" {{\n}}\n\
+         Model: 300, \"Model::l\", \"LimbNode\" {{\n}}\n{}{}",
+        skin(400, 401, 0),
+        skin(410, 411, 10)
+    );
+    let joins = "C: \"OO\",101,201\nC: \"OO\",400,100\nC: \"OO\",401,400\nC: \"OO\",300,401\n\
+                 C: \"OO\",410,101\nC: \"OO\",411,410\nC: \"OO\",300,411\n";
+    let mesh = read(&triangle(&objects, joins), Up::Z).unwrap();
+    // The limb stands at the origin. The first triangle was bound with it there; the second
+    // with it 10 along x, the triangle then at 10 with it, and has come back with it.
+    assert_eq!(
+        corners(&mesh, 0),
+        [
+            [0, 0, 0],
+            [0, 0, 100],
+            [0, 400, 0],
+            [0, 400, 100],
+            [400, 0, 0],
+            [400, 0, 100]
+        ]
+    );
+}

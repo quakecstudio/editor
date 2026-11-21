@@ -4005,7 +4005,8 @@ fn play_from_here_writes_the_map_into_the_build() {
 
 // No spec statement: L-52: Play, from the toolbar, a key or the menu, plays the map open in the
 // Map tab while that tab shows, compiling it into the build as Play from here does; with
-// another tab showing it plays the project and compiles no map
+// another tab showing it plays the project and compiles no map; from the Game tab it plays
+// what it last played
 #[test]
 fn play_with_the_map_tab_showing_plays_the_open_map() {
     let built = |dir: &Path| -> usize {
@@ -4044,6 +4045,25 @@ fn play_with_the_map_tab_showing_plays_the_open_map() {
         harness.run();
         // The open map is compiled into the build only when its tab shows.
         assert_eq!(built(&dir), usize::from(tab == CentreTab::Map), "{name}");
+        // The Game tab shows what was last played, and Play there plays that again.
+        for entry in fs::read_dir(dir.join("build"))
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
+            let _gone = fs::remove_file(entry.path().join("maps/keep.bsp"));
+        }
+        harness.get_by_label(Text::Game.get()).click();
+        harness.run();
+        let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+        assert_eq!(shell.centre_tab(), CentreTab::Game);
+        shell.run_chosen(qs_workbench::PLAY);
+        harness.run();
+        assert_eq!(
+            built(&dir),
+            usize::from(tab == CentreTab::Map),
+            "{name} again"
+        );
     }
 }
 

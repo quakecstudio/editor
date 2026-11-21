@@ -527,7 +527,7 @@ fn play_from_outside_the_region_is_refused() {
 #[test]
 fn with_no_eye_a_map_plays_from_its_own_start() {
     use super::PlayFromHereParams;
-    use crate::preview::GameStart;
+    use crate::preview::{GameStart, PreviewError};
     let params = |eye, angles| PlayFromHereParams {
         eye,
         angles,
@@ -570,6 +570,24 @@ fn with_no_eye_a_map_plays_from_its_own_start() {
         .unwrap_err();
     assert!(error.to_string().contains("no player start"), "{error}");
     assert!(!path.with_extension("bsp").exists(), "nothing was compiled");
+
+    // What is said of a start with no room, or outside a region, names the start.
+    let path = room("region-start", "wall", Opening::Sealed);
+    let mut session = open(&path);
+    let far = json!({ "region": { "box": { "min": [300, 300, 300], "max": [400, 400, 400] } } });
+    let error = session.execute(super::MAP_PLAY_FROM_HERE, far).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("player start is outside the region"),
+        "{error}"
+    );
+    assert!(!path.with_extension("bsp").exists(), "nothing was compiled");
+    let said = PreviewError::NoRoomAtStart([8.0, -16.0, 24.0]).to_string();
+    assert!(
+        said.contains("player start, (8 -16 24)") && said.contains("info_player_start"),
+        "{said}"
+    );
 }
 
 // spec MAP-16.1: the region of a layer is the box around its brushes: compiling it leaves out

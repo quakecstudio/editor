@@ -165,6 +165,8 @@ pub enum PreviewError {
     Write(PathBuf, std::io::Error),
     /// The player's box fits nowhere near the eye given: in or beside solid, or off the map.
     NoRoom([f64; 3]),
+    /// The player's box fits nowhere near the map's own player start, whose origin this is.
+    NoRoomAtStart([f64; 3]),
 }
 
 impl core::fmt::Display for PreviewError {
@@ -197,6 +199,12 @@ impl core::fmt::Display for PreviewError {
                 f,
                 "there is no room for the player at ({x} {y} {z}) or above or below it: move \
                  the camera out of the wall, the floor or the door or other entity it is in"
+            ),
+            Self::NoRoomAtStart([x, y, z]) => write!(
+                f,
+                "there is no room for the player at the map's player start, ({x} {y} {z}), or \
+                 above or below it: move the info_player_start out of the wall, the floor or \
+                 the door or other entity it is in"
             ),
         }
     }

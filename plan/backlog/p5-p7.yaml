@@ -2729,7 +2729,7 @@ groups:
       macOS (Apple M5), main at 39f45bf6; assimp's `test/models/FBX/huesitos.fbx` and `animation_with_skeleton.fbx`; Blender 5.2.4 run with `-b`, the scene's rate as the file sets it, a pose every tenth of a second and at the last key
     deliverable:
     - 'crates/qs-mdl: every `Model` of an fbx is a node of one tree, a joint, whatever its kind, each posed in its parent''s space and animated by its curve nodes; a skinned geometry is bound by its clusters'' `Transform` and `TransformLink` where the file has them; a mesh model''s `GeometricRotation` and `GeometricScaling` are read; the statements in docs/spec/mdl.md, the changed ones withdrawn and restated'
-    - 'crates/qs-mdl/src/mesh/fixtures: a model with its limbs under a scaled, turned and animated `Null` and a bind pose other than its limbs'' own, written by scripts/model-formats/samples.py as text and binary, with the poses Blender makes of it recorded beside it'
+    - 'crates/qs-mdl/src/mesh/fixtures: a model with its limbs under a scaled, turned and animated `Null` and a bind pose other than its limbs'' own, written by scripts/model-formats/rig.py as text and binary, with the poses Blender makes of it recorded beside it by scripts/model-formats/blender.py'
     acceptance:
     - 'The reader''s poses of the new fixture are Blender''s recorded poses of it, every vertex of every frame, checked by a test that fails before the fix'
     - 'Recorded in the PR: `huesitos.fbx` and `animation_with_skeleton.fbx` posed by the reader and by Blender at the same times, every vertex of every frame, with the greatest distance between them; and the six other files of assimp''s FBX test models used for L-50 compared at rest'

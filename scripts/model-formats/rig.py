@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Writes one rigged model as Blender writes one, in text and binary fbx: five limbs under
 an armature, a `Null` model that is moved, turned, scaled and animated; a mesh model with a
-geometric transform; a bind pose that is not the limbs' own; and a vertex of five weights.
+geometric transform; a bind pose that is not the limbs' own; a vertex of five weights and
+one of none.
 
     python3 scripts/model-formats/rig.py crates/qs-mdl/src/mesh/fixtures
 
@@ -46,8 +47,9 @@ V = [(0, 0, 0), (0, 4, 0), (0, 0, 4), (16, 0, 0), (8, 2, 0)]
 UV = [(0.1, 0.2), (0.9, 0.2), (0.1, 0.8), (0.9, 0.8), (0.5, 0.5)]
 # The polygons: a quad and three triangles.
 POLY = [(0, 1, 4, 3), (0, 2, 1), (0, 3, 2), (1, 2, 3)]
-# Each vertex's weights, by limb: the last follows all five, the lightest by a twentieth.
-BL = [[(0, 1.0)], [(0, 1.0)], [(0, 1.0)], [(1, 1.0)], [(0, 0.3), (1, 0.3), (2, 0.2), (3, 0.15), (4, 0.05)]]
+# Each vertex's weights, by limb: the second has none, and follows the armature; the last
+# follows all five limbs, the lightest by a twentieth.
+BL = [[(0, 1.0)], [], [(0, 1.0)], [(1, 1.0)], [(0, 0.3), (1, 0.3), (2, 0.2), (3, 0.15), (4, 0.05)]]
 ARMATURE = ((3.0, 0.0, -2.0), (-90.0, 0.0, 0.0), (2.0, 2.0, 2.0))
 # Each limb: its name, its parent among the limbs, where it stands, how it is turned at
 # rest, how it was turned when the mesh was bound, and its turn about z at each key.

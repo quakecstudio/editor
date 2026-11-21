@@ -251,6 +251,15 @@ pub(crate) const EDITOR_AREA: Area = Area::Editor;
 /// How often the open map is backed up while it has unsaved edits, in seconds (P6-20).
 pub(crate) const MAP_BACKUP_INTERVAL: f64 = 60.0;
 
+/// What Play last played.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Played {
+    /// The project, on the game's own first map.
+    Project,
+    /// The map open in the Map tab.
+    Map,
+}
+
 /// The window's state.
 pub struct Shell {
     session: Session<Workspace>,
@@ -288,6 +297,8 @@ pub struct Shell {
     /// The last play-loop command's error, or why New Random Map made no map (L-48), shown
     /// on the toolbar until the next one.
     preview_error: Option<String>,
+    /// What the last Play played: the open map, or the project (L-52).
+    played: Played,
     /// Where the app's menu is: the system's menu bar, or the toolbar in the window (P3-44).
     menu: MenuPlace,
     /// Each feature's state (P6-41).
@@ -355,6 +366,7 @@ impl Shell {
             focus_applied: layout.focus_requests,
             review_seen: 0,
             preview_error: None,
+            played: Played::Project,
             menu: MenuPlace::default(),
             settings_file: None,
             features: Features::new(AgentPanel::new(Box::new(agent::provider_model))),
@@ -1689,10 +1701,23 @@ impl Shell {
 
     /// Runs the play-loop command `id` from the toolbar, keeping its error for the toolbar to
     /// show until the next command. Play, while the Map tab shows an open map, plays that
-    /// map from its own player start (L-52); anywhere else it plays the project.
+    /// map from its own player start (L-52), and again from the Game tab while that shows
+    /// the map's game; anywhere else it plays the project.
     fn control(&mut self, id: &str) {
-        let map_shown =
-            self.centre_tab == CentreTab::Map && self.session.context().workbench.map().is_some();
+        // The Game tab shows what was last played: Play there plays that again.
+        let of_map = match self.centre_tab {
+            CentreTab::Map => true,
+            CentreTab::Game => self.played == Played::Map,
+            CentreTab::Editor | CentreTab::Search => false,
+        };
+        let map_shown = of_map && self.session.context().workbench.map().is_some();
+        if id == PLAY {
+            self.played = if map_shown {
+                Played::Map
+            } else {
+                Played::Project
+            };
+        }
         let result = if id == PLAY && map_shown {
             let params = PlayFromHereParams {
                 eye: None,

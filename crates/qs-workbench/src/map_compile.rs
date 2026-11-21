@@ -445,8 +445,9 @@ impl PlayFromHereParams {
     }
 
     /// Where the player's origin goes in `bsp` for the eye `eye`: `view_ofs` (id's
-    /// `'0 0 22'`, NET-4.4) below the eye, at the nearest height within [`PLAYER_ROOM_SEARCH`] units where hull 1, the
-    /// player's box, is not in solid; looked for first above, then below, a unit at a time.
+    /// `'0 0 22'`, NET-4.4) below the eye, at the nearest height within
+    /// [`PLAYER_ROOM_SEARCH`] units where hull 1, the player's box, is not in solid; looked
+    /// for first above, then below, a unit at a time.
     ///
     /// # Errors
     ///
@@ -682,12 +683,27 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
         let (eye, angles) = params
             .view_in(document.file())
             .map_err(PreviewError::Build)?;
+        // What is said of a place with no room names what gave the place: the camera, or
+        // with no eye the map's own start, whose origin is `view_ofs` below the eye.
+        let from_start = params.eye.is_none();
+        let no_room = move || {
+            if from_start {
+                let [x, y, z] = eye;
+                PreviewError::NoRoomAtStart([x, y, z - f64::from(DEFAULT_VIEWHEIGHT)])
+            } else {
+                PreviewError::NoRoom(eye)
+            }
+        };
         // A region the camera is outside would put the player in the seal: refused before
         // anything is compiled or written.
         if let Some(region) = &params.region {
             let region = region.of(document.file()).map_err(PreviewError::Build)?;
             if !region.holds(eye) {
-                return Err(PreviewError::Build(WorkbenchError::EyeOutsideRegion));
+                return Err(PreviewError::Build(if from_start {
+                    WorkbenchError::StartOutsideRegion
+                } else {
+                    WorkbenchError::EyeOutsideRegion
+                }));
             }
         }
         let game = preview.game_base_path();
@@ -743,7 +759,7 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
         }
         // The map is written first, as a compile writes it; a camera with no room for the
         // player then plays nothing.
-        let origin = PlayFromHereParams::origin_in(eye, &bsp)?;
+        let origin = PlayFromHereParams::origin_in(eye, &bsp).map_err(|_| no_room())?;
         // What is drawn is what the QuakeC gives a model; read before the game starts, so
         // that nothing plays when it cannot be told.
         let drawn: HashSet<String> = workbench
@@ -776,7 +792,7 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
                 ..
             }) => {
                 preview.stop();
-                return Err(PreviewError::NoRoom(eye));
+                return Err(no_room());
             }
             Err(error) => return Err(error.into()),
         };

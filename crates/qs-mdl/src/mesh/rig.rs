@@ -6,7 +6,8 @@
 // Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: iqm/iqm.cpp, addweight, finalize
 // Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: iqm/util.h, fromangles
 
-//! A mesh with a skeleton, as the formats that have one give it (MDL-9.2, MDL-10): joints
+//! A mesh with a skeleton, as the formats that have one give it (MDL-9.2, MDL-10):
+//! joints
 //! each with a parent and a base pose, vertices blended to joints, and animations of poses.
 //! An alias model has no skeleton, so [`Boned::mesh`] makes every frame of every animation a
 //! pose of the mesh.
@@ -207,11 +208,9 @@ pub(super) struct Boned {
 }
 
 impl Boned {
-    /// The mesh with only the joints something is blended to and those above them, in
-    /// their order: a file's other nodes, which move nothing, are no joints of it.
-    pub(super) fn without_idle_joints(mut self) -> Self {
-        let count = self.parents.len();
-        let mut kept = vec![false; count];
+    /// Which joints a vertex follows: those something is blended to and those above them.
+    pub(super) fn followed(&self) -> Vec<bool> {
+        let mut kept = vec![false; self.parents.len()];
         for (joint, _) in self.blends.iter().flatten() {
             // Up from the joint until one already kept, or the top; a ring of parents
             // ends at its first joint kept.
@@ -227,6 +226,14 @@ impl Boned {
                     .flatten();
             }
         }
+        kept
+    }
+
+    /// The mesh with only the joints something is blended to and those above them, in
+    /// their order: a file's other nodes, which move nothing, are no joints of it.
+    pub(super) fn without_idle_joints(mut self) -> Self {
+        let count = self.parents.len();
+        let kept = self.followed();
         // Each kept joint's new number.
         let mut next = 0_usize;
         let numbers: Vec<Option<usize>> = kept

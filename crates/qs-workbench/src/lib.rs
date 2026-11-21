@@ -830,6 +830,8 @@ pub enum WorkbenchError {
     EyeOutsideRegion,
     /// The map is played from its own start and has none (L-52).
     NoPlayerStart,
+    /// The map is played from its own start, in a region the start is outside (L-52).
+    StartOutsideRegion,
     /// A region's sealing brushes could not be written (MAP-16.3).
     RegionSeal(qs_map::BrushError),
 }
@@ -895,6 +897,9 @@ impl fmt::Display for WorkbenchError {
             Self::EyeOutsideRegion => {
                 f.write_str("the camera is outside the region: play from inside it")
             }
+            Self::StartOutsideRegion => f.write_str(
+                "the map's player start is outside the region: play from the camera, inside it",
+            ),
             Self::NoPlayerStart => f.write_str(
                 "the map has no player start: place an info_player_start, or play from the camera",
             ),
@@ -934,7 +939,8 @@ impl Error for WorkbenchError {
             Self::NoRegion
             | Self::NotInRoom { .. }
             | Self::EyeOutsideRegion
-            | Self::NoPlayerStart => None,
+            | Self::NoPlayerStart
+            | Self::StartOutsideRegion => None,
             Self::RegionSeal(error) => Some(error),
         }
     }
