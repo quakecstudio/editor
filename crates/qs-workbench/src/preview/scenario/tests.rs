@@ -77,9 +77,9 @@ fn a_scenario_is_read_before_the_project_builds() {
     );
 }
 
-// No spec statement: P6-44: a scenario on a map the project compiled finds its BSP, as
-// Play does: the one in the project's maps is put where the game reads maps before the
-// game's files are looked for
+// spec SCN-2.7: a scenario on a map the project compiled finds its BSP, as
+// Play does: the one in the project's maps is put where the game reads maps, with the
+// project's other files, before the game's files are looked for
 #[test]
 fn a_scenario_plays_a_map_the_project_compiled() {
     let root = dir("own-map");
@@ -94,6 +94,8 @@ fn a_scenario_plays_a_map_the_project_compiled() {
     workbench.open_project(&root).unwrap();
     std::fs::create_dir_all(root.join("maps")).unwrap();
     std::fs::write(root.join("maps/room.bsp"), b"the project's own").unwrap();
+    std::fs::create_dir_all(root.join("progs")).unwrap();
+    std::fs::write(root.join("progs/thing.mdl"), b"a model").unwrap();
     let scenario = root.join("room.scenario");
     std::fs::write(&scenario, "map room\nframes 1\n").unwrap();
     // There is no game at /nowhere/game, so nothing is played; the map is in place by then.
@@ -109,6 +111,9 @@ fn a_scenario_plays_a_map_the_project_compiled() {
     assert_eq!(placed.len(), 1, "{placed:?}");
     let placed = placed.first().unwrap();
     assert_eq!(std::fs::read(placed).unwrap(), b"the project's own");
+    // And the project's other files a game reads, as Play places them.
+    let model = placed.with_file_name("..").join("progs/thing.mdl");
+    assert_eq!(std::fs::read(model).unwrap(), b"a model");
 
     // The BSP beside the open map of the scenario's name is the one played, wherever the
     // map is; one beside an open map of another name is not.

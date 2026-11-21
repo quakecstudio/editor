@@ -2796,7 +2796,7 @@ groups:
     environment: |
       macOS, release build, the game in the Game tab at 1x and at 2x scale; the combat clip's steps: `map.generate` with seed 7, `map.play_from_here` facing the grunt and paused, `god`, `notarget`, the grunt selected, resumed, and `+attack` within about a second
     deliverable:
-    - 'The cause found and fixed where it is, in the game or in the panel, with a test that holds it; or, when the clip''s steps run many times show the shot always landing, the runs recorded with `engine.inspect` beside Properties'
+    - 'crates/qs-sim or apps/desktop/src/entities.rs: the cause found and fixed where it is, in the game or in the panel, with a test that holds it; or, when the clip''s steps run many times show the shot always landing, the runs recorded in the pull request with `engine.inspect` beside Properties'
     acceptance:
     - 'The combat clip''s steps, run repeatedly with the grunt''s health read by `engine.inspect` and from Properties after the first shot, show the same health in both, below 30, every time; recorded in the PR'
     verify:

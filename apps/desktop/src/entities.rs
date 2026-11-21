@@ -67,8 +67,9 @@ pub(crate) struct Properties {
 impl Properties {
     /// Keeps the boxes' texts for `edict` while the game is paused, and for nothing else:
     /// what was typed is for one pause of one edict, so a box never shows a value read
-    /// before the game last ran.
-    fn follow(&mut self, edict: Option<Edict>, game: PlayState) {
+    /// before the game last ran. The window calls it every frame, whether or not the panel
+    /// is drawn, so a pause the panel did not see ends the texts too.
+    pub(crate) fn follow(&mut self, edict: Option<Edict>, game: PlayState) {
         if self.edict != edict || game != PlayState::Paused {
             self.edits.clear();
         }
@@ -177,22 +178,48 @@ fn format_live(count: usize) -> String {
     format!("{count} {}", Text::Live.get())
 }
 
+/// What the Properties panel shows of a game: its entities, whether it runs or is paused,
+/// and the value typed for a field of an edict while paused that the game has yet to take.
+pub(crate) struct Shown<'a> {
+    pub(crate) entities: &'a Entities,
+    pub(crate) game: PlayState,
+    pub(crate) pending: &'a dyn Fn(Edict, &str) -> Option<String>,
+}
+
+impl<'a> Shown<'a> {
+    /// What the panel shows of `preview`'s game, `pending` its lookup of a typed value.
+    pub(crate) fn of(
+        preview: &'a Preview,
+        pending: &'a dyn Fn(Edict, &str) -> Option<String>,
+    ) -> Self {
+        Self {
+            entities: preview.entities(),
+            game: preview.state(),
+            pending,
+        }
+    }
+}
+
 /// The selected edict's fields: read only while the game runs, editable while it is paused,
 /// a function's name opening its definition.
 pub(crate) fn properties(
     ui: &mut Ui,
     theme: &Theme,
-    preview: &Preview,
+    shown: &Shown<'_>,
     state: &mut Properties,
 ) -> Option<EntityAction> {
-    let entities = preview.entities();
+    let Shown {
+        entities,
+        game,
+        pending,
+    } = *shown;
     let Some(selected) = entities.selected() else {
-        state.follow(None, preview.state());
+        state.follow(None, game);
         ui.label(RichText::new(Text::NothingSelected.get()).color(theme.color(Token::TextMuted)));
         return None;
     };
-    state.follow(Some(selected.edict), preview.state());
-    let paused = preview.state() == PlayState::Paused;
+    state.follow(Some(selected.edict), game);
+    let paused = game == PlayState::Paused;
     ui.label(
         RichText::new(format!("{}  #{}", selected.classname, selected.edict))
             .color(theme.color(Token::Accent)),
@@ -228,9 +255,8 @@ pub(crate) fn properties(
                 .show(ui, |ui| {
                     for field in &selected.fields {
                         ui.label(RichText::new(&field.name).monospace());
-                        let shown = preview
-                            .pending(selected.edict, &field.name)
-                            .map_or_else(|| entities.show(&field.value), str::to_owned);
+                        let shown = pending(selected.edict, &field.name)
+                            .unwrap_or_else(|| entities.show(&field.value));
                         if paused {
                             let text = state.text(&field.name, &shown);
                             let response = ui.add(
@@ -260,7 +286,7 @@ pub(crate) fn properties(
     let edited: Vec<&str> = selected
         .fields
         .iter()
-        .filter(|f| preview.pending(selected.edict, &f.name).is_some())
+        .filter(|f| pending(selected.edict, &f.name).is_some())
         .map(|f| f.name.as_str())
         .collect();
     if !edited.is_empty() {
@@ -273,10 +299,6 @@ pub(crate) fn properties(
             .small()
             .color(theme.color(Token::Accent)),
         );
-    }
-    if matches!(action, Some(EntityAction::SetField { .. })) {
-        // The field is read again from the game; its text follows the new value.
-        state.edits.clear();
     }
     action
 }
