@@ -473,7 +473,13 @@ impl<L: Loader> AnalysisHost<L> {
         let Some(before) = before else {
             // A file with no text until now may be one a module names, which could not be read
             // when the project was (PRJ-4.5): read the project again, so the module compiles it.
-            return self.read_again(Keep::OnError);
+            self.read_again(Keep::OnError)?;
+            // A project that does not open as it stands was not read again: the file is then
+            // analysed on its own, as any file no module holds.
+            if !self.modules.iter().any(|m| m.file_id(&path).is_some()) {
+                self.add_orphan(path);
+            }
+            return Ok(());
         };
         if directive_lines(&before) != directive_lines(text) {
             return self.read_again(Keep::OnError);

@@ -156,7 +156,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`model.remove_frames`](#modelremove_frames) | Takes frames out of a model, each by its name. The frames after one taken out are numbered one less, so QuakeC's $frame list loses the same names. |
 | [`model.rename_frames`](#modelrename_frames) | Renames frames of a model, each by its name. The game finds a frame by its number, so QuakeC's $frame names are its own: keep them in step. |
 | [`model.scale`](#modelscale) | Makes a model larger or smaller about its origin, on each axis: its vertices keep their packed places and the header's step and origin are scaled, so nothing is rounded again. The box QuakeC gives the entity (setsize) is its own to change. |
-| [`model.set_skin`](#modelset_skin) | Replaces a skin of a model with a PNG of the skin's size, each pixel matched to the nearest colour of the game's palette. |
+| [`model.set_skin`](#modelset_skin) | Replaces a skin of a model with a PNG of the skin's size, each changed pixel matched to the nearest of the palette's colours that do not glow in the dark, or to a fullbright colour when it is exactly that colour. |
 | [`paths.open`](#pathsopen) | Opens folders as projects, and files in the nearest project above each (a folder holding quakec.toml or progs.src): a .map or .bsp in the map editor, any other file in the editor. A file outside every project opens in the open project, or opens its folder when none is open. |
 | [`paths.take_opened`](#pathstake_opened) | Takes what the last paths.open opened, once, or null: the desktop app shows it and comes to the front when another launch sent the paths. |
 | [`preview.breakpoint`](#previewbreakpoint) | Adds a breakpoint at a line of a file, or takes it away when there is one; set in the running game too and in each game that starts. |
@@ -7147,7 +7147,7 @@ Parameters:
   "description": "The parameters of `model.rename_frames`.",
   "properties": {
     "names": {
-      "description": "Each a frame's name and the name to give it, at most 15 bytes.",
+      "description": "Each a frame's name, as the file has it, and the name to give it, at most 15 bytes.\nAll are renamed at once, so two frames can take each other's names.",
       "items": {
         "items": {
           "type": "string"
@@ -7210,7 +7210,7 @@ Parameters:
 
 ## `model.set_skin`
 
-Replaces a skin of a model with a PNG of the skin's size, each pixel matched to the nearest colour of the game's palette.
+Replaces a skin of a model with a PNG of the skin's size, each changed pixel matched to the nearest of the palette's colours that do not glow in the dark, or to a fullbright colour when it is exactly that colour.
 
 Parameters:
 
@@ -7225,7 +7225,7 @@ Parameters:
       "type": "string"
     },
     "png_path": {
-      "description": "The PNG to take it from, of the skin's own width and height: each pixel becomes the\nnearest colour of the game's palette.",
+      "description": "The PNG to take it from, of the skin's own width and height: each pixel that changed\nbecomes the nearest of the palette's colours 0 to 223, or a fullbright colour (224 to\n255, which glow in the dark) when it is exactly that colour.",
       "type": "string"
     },
     "skin": {

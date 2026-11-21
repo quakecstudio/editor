@@ -292,7 +292,7 @@ A command that answers a question is read by a panel, the agent or MCP. A comman
 | `model.remove_frames` | needs a value | Takes frames out of a model, each by its name. The frames after one taken out are numbered one less, so QuakeC's $frame list loses the same names. |
 | `model.rename_frames` | needs a value | Renames frames of a model, each by its name. The game finds a frame by its number, so QuakeC's $frame names are its own: keep them in step. |
 | `model.scale` | needs a value | Makes a model larger or smaller about its origin, on each axis: its vertices keep their packed places and the header's step and origin are scaled, so nothing is rounded again. The box QuakeC gives the entity (setsize) is its own to change. |
-| `model.set_skin` | needs a value | Replaces a skin of a model with a PNG of the skin's size, each pixel matched to the nearest colour of the game's palette. |
+| `model.set_skin` | needs a value | Replaces a skin of a model with a PNG of the skin's size, each changed pixel matched to the nearest of the palette's colours that do not glow in the dark, or to a fullbright colour when it is exactly that colour. |
 | `project.entities` | answers a question | Lists the entity classes the open project's server QuakeC defines, read from its spawn functions: each class's keys, defaults, spawnflags, comment, model and size; with fgd, also writes them as an FGD file for other map editors. |
 | `project.files` | answers a question | Lists every source file the open project compiles, by path. |
 | `project.info` | answers a question | Describes the open project: its directory and each module's kind, dialect, target engine and output. |

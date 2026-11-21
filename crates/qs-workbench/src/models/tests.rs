@@ -257,6 +257,40 @@ fn a_skin_goes_out_as_a_png_and_comes_back() {
     session.undo().unwrap();
     assert_eq!(std::fs::read(&path).unwrap(), before);
 
+    // spec WAD-7.4: a painted colour nearest a fullbright one, (230, 25, 115) of colour 230,
+    // takes the nearest ordinary colour, 223, and does not glow; a colour that is exactly a
+    // fullbright one, colour 240, is that one, and stays so when the skin goes out and back.
+    let mut painted = image::open(&png).unwrap().into_rgba8();
+    painted.put_pixel(0, 0, image::Rgba([230, 26, 114, 255]));
+    painted.put_pixel(1, 0, image::Rgba([240, 15, 120, 255]));
+    painted.save(&png).unwrap();
+    session
+        .execute(MODEL_SET_SKIN, json!({ "path": path, "png_path": png }))
+        .unwrap();
+    let glowing = std::fs::read(&path).unwrap();
+    let ModelSkin::Single(pixels) = &read(&path).skins[0] else {
+        panic!("single");
+    };
+    assert_eq!(pixels[..2], [223, 240]);
+    session
+        .execute(MODEL_EXPORT_SKIN, json!({ "path": path, "png_path": png }))
+        .unwrap();
+    session
+        .execute(MODEL_SET_SKIN, json!({ "path": path, "png_path": png }))
+        .unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), glowing);
+
+    // A PNG that cannot be written is said to be that, not to be no PNG.
+    std::fs::write(root.join("a-file"), b"").unwrap();
+    let error = session
+        .execute(
+            MODEL_EXPORT_SKIN,
+            json!({ "path": path, "png_path": root.join("a-file/skin.png") }),
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("cannot be written"), "{error}");
+
     let small = root.join("skins/small.png");
     image::RgbaImage::new(4, 4).save(&small).unwrap();
     let error = session
@@ -394,6 +428,30 @@ fn frames_are_renamed_removed_and_added() {
         .unwrap_err()
         .to_string();
     assert!(error.contains("at most 15 bytes"), "{error}");
+    // Frames are renamed at once, by the names the file has: two change names with each
+    // other, and a pair whose frame is another pair's new name is refused, nothing written.
+    session
+        .execute(
+            MODEL_RENAME_FRAMES,
+            json!({ "path": path, "names": [["stand1", "idle1"], ["idle1", "stand1"]] }),
+        )
+        .unwrap();
+    assert_eq!(names(&read(&path)), ["idle1", "stand1"]);
+    let error = session
+        .execute(
+            MODEL_RENAME_FRAMES,
+            json!({ "path": path, "names": [["idle1", "a"], ["a", "b"]] }),
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("no frame named a"), "{error}");
+    session
+        .execute(
+            MODEL_RENAME_FRAMES,
+            json!({ "path": path, "names": [["stand1", "idle1"], ["idle1", "stand1"]] }),
+        )
+        .unwrap();
+    assert_eq!(names(&read(&path)), ["stand1", "idle1"]);
 
     // Another copy of the model, its tip lower and to one side: within this model's box.
     let other = root.join("progs/poses.mdl");
@@ -452,4 +510,73 @@ fn frames_are_renamed_removed_and_added() {
         .to_string();
     assert!(error.contains("the model cannot be written"), "{error}");
     assert_eq!(names(&read(&path)), ["stand1", "pain1"]);
+}
+
+/// A model of one flat square in the plane z = 0, its far corner at `corner`, with the
+/// frames `frames`.
+fn flat(frames: &[(&str, [f32; 2])]) -> Vec<u8> {
+    let mut made = Model::read(&model(&[("stand1", [0.0, 0.0, 16.0])])).unwrap();
+    let shape = Shape {
+        skin_width: made.header.skinwidth,
+        skin_height: made.header.skinheight,
+        skins: std::mem::take(&mut made.skins),
+        stverts: made.stverts.clone(),
+        triangles: made.triangles.clone(),
+        poses: frames
+            .iter()
+            .map(|(name, [x, y])| {
+                PoseEntry::Single(Pose {
+                    name: name.as_bytes().to_vec(),
+                    positions: pyramid([*x, *y, 0.0]),
+                })
+            })
+            .collect(),
+        eye_position: [0.0; 3],
+        flags: 0,
+        synctype: MDL_ST_RAND,
+    };
+    shape.build().unwrap().to_bytes().unwrap()
+}
+
+// spec MDL-7.2: a model flat on an axis has a step of 0 there; a frame of another copy that
+// lies in its plane is added, each vertex at byte 0 on that axis, and one that leaves the
+// plane is outside its box. A move that is no number is refused as a move.
+#[test]
+fn a_flat_model_takes_frames_in_its_plane() {
+    let (root, mut session) = project("flat", &[]);
+    let path = root.join("progs/flat.mdl");
+    let other = root.join("progs/flat-poses.mdl");
+    std::fs::write(&path, flat(&[("lie1", [0.0, 0.0])])).unwrap();
+    std::fs::write(&other, flat(&[("lie2", [4.0, 4.0])])).unwrap();
+    assert!(read(&path).header.scale[2].abs() <= 0.0);
+    let added = session
+        .execute(
+            MODEL_ADD_FRAMES,
+            json!({ "path": path, "from_path": other, "frames": ["lie2"] }),
+        )
+        .unwrap();
+    assert_eq!(added["frames"], 2);
+    let ModelFrameEntry::Single(lie) = &read(&path).frames[1] else {
+        panic!("single");
+    };
+    assert!(lie.verts.iter().all(|vert| vert.v[2] == 0));
+
+    let error = session
+        .execute(
+            MODEL_ADD_FRAMES,
+            json!({
+                "path": path,
+                "from_path": root.join("progs/thing.mdl"),
+                "frames": ["stand1"],
+            }),
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("stand1 reaches outside the box"), "{error}");
+
+    let error = session
+        .execute(MODEL_MOVE, json!({ "path": path, "by": [1e39, 0.0, 0.0] }))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("a move is a number on each axis"), "{error}");
 }

@@ -333,7 +333,8 @@ coordinates has its own.
   framesmaxs);`"), and `GrabFrame` grows it to every vertex of every frame. So it holds the
   origin whatever the frames are.
 - **MDL-7.2** `WriteModelFile` sets, on each axis, `scale` to `(framesmaxs[i] -
-  framesmins[i]) / 255.9` and `scale_origin` to `framesmins[i]`. `boundingradius` is the
+  framesmins[i]) / 255.9`, the difference of two floats divided in double by the double
+  `255.9` and stored in a float, and `scale_origin` to `framesmins[i]`. `boundingradius` is the
   square root of the sum of the squares of, on each axis, `framesmins[i]` when `fabs
   (framesmins[i]) > fabs (framesmaxs[i])` and `framesmaxs[i]` otherwise. `eyeposition`,
   `flags` and `synctype` are as given; the skins' size is the header's.

@@ -289,6 +289,28 @@ fn typing_an_includelist_entry_reads_the_modules_files_again() {
     assert!(host.files().contains(&path("b.qc")));
 }
 
+// spec QC-12.5: a file made while the project file does not open is analysed on its own, as
+// any file no module compiles
+#[test]
+fn a_file_made_while_the_project_does_not_open_is_analysed() {
+    let mut host = host(&ProjectSpec {
+        files: &[("a.qc", "float x;\n")],
+        ..ProjectSpec::default()
+    });
+    assert!(
+        host.set_overlay(&path("quakec.toml"), b"bad [".as_ref())
+            .is_err()
+    );
+    let text = "float y;\nvoid() g = { y = 1; };\n";
+    host.set_overlay(&path("scratch.qc"), text.as_bytes())
+        .unwrap();
+    assert!(host.files().contains(&path("scratch.qc")));
+    assert!(
+        host.definition(&path("scratch.qc"), nth(text, "y", 1))
+            .is_some()
+    );
+}
+
 // spec PRJ-1.2: an edit to a QuakeC file while the project file does not open keeps the
 // analysis, and is no error
 #[test]

@@ -17,7 +17,8 @@ use super::{
 
 /// What the box the frames fill is divided by for one vertex step, `255.9` in
 /// `WriteModelFile`: a little over the 255 steps a byte counts, so the far side packs to 255.
-const MDL_SCALE_STEPS: f32 = 255.9;
+/// A double, as a C constant with no suffix is: the division is in double (MDL-7.2).
+const MDL_SCALE_STEPS: f64 = 255.9;
 
 /// The axes a position has.
 const AXES: usize = 3;
@@ -120,6 +121,15 @@ fn nearest_normal(normal: [f32; 3]) -> u8 {
     best
 }
 
+/// A double as C stores it in a float: the nearest single.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "spec MDL-7.2: C's assignment of a double to a float, the nearest single"
+)]
+const fn single(value: f64) -> f32 {
+    value as f32
+}
+
 /// A float as C stores it in a byte when it is from 0 to under 256: its whole part. Outside
 /// that C's conversion is undefined, and here it is the nearest end.
 #[expect(
@@ -205,7 +215,7 @@ impl Shape {
         let mut scale = [0.0_f32; AXES];
         let mut far = [0.0_f32; AXES];
         for (((step, reach), low), high) in scale.iter_mut().zip(&mut far).zip(mins).zip(maxs) {
-            *step = (high - low) / MDL_SCALE_STEPS;
+            *step = single(f64::from(high - low) / MDL_SCALE_STEPS);
             *reach = if low.abs() > high.abs() { low } else { high };
         }
         let radius = far.iter().map(|reach| reach * reach).sum::<f32>().sqrt();

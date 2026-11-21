@@ -309,14 +309,26 @@ fn collect_assets(root: &Path) -> Result<Vec<Piece>, ExportError> {
         .collect()
 }
 
-/// Every file of the project's own assets but its maps, by its path in the mod folder and
-/// where it is: what Play places where the game reads it (ADR-0008). Maps are placed as they
-/// are played, each with what its compile wrote.
+/// The files of a compiled map the game reads beside each other: the BSP, its coloured light
+/// (BSP-18.2) and the entities that override its own (BSP-19.1).
+pub(crate) const MAP_FILES: [&str; 3] = ["bsp", "lit", "ent"];
+
+/// Every file of the project's own assets, by its path in the mod folder and where it is:
+/// what Play places where the game reads it (ADR-0008). Of the `maps` folder these are the
+/// compiled maps alone, each a level or a model of an item (`maps/b_bh25.bsp`), with its
+/// [`MAP_FILES`]: not what a compile leaves beside them.
 pub(crate) fn asset_files(root: &Path) -> Result<BTreeMap<String, PathBuf>, ExportError> {
     let mut found = BTreeMap::new();
-    for dir in ASSET_DIRS.into_iter().filter(|dir| *dir != MAPS_DIR) {
+    for dir in ASSET_DIRS {
         walk(&root.join(dir), dir, &mut found)?;
     }
+    found.retain(|name, _| {
+        let name = Path::new(name);
+        !name.starts_with(MAPS_DIR)
+            || name
+                .extension()
+                .is_some_and(|ending| MAP_FILES.iter().any(|map| ending.eq_ignore_ascii_case(map)))
+    });
     Ok(found)
 }
 

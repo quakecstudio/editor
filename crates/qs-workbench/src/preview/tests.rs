@@ -438,9 +438,9 @@ fn a_pick_that_misses_answers_no_edict() {
 }
 
 // No spec statement: L-47, ADR-0008: Play puts the project's own assets in the mod's folder,
-// where the game reads them: a model, a sound and a file in a folder of a folder; a file
-// changed since is placed again, one the project lost is taken away, and its maps, its map
-// sources and the programs at the folder's top are not touched
+// where the game reads them: a model, a sound, a file in a folder of a folder and a compiled
+// map that is an item's model; its map sources, what a compile leaves beside a map, and the
+// programs at the folder's top are not touched
 #[test]
 fn a_projects_assets_are_put_where_the_game_reads_them() {
     let project = root("place-assets");
@@ -455,68 +455,174 @@ fn a_projects_assets_are_put_where_the_game_reads_them() {
     write("sound/brute/sight.wav", b"sound");
     write("maps/room.map", b"a source");
     write("maps/room.bsp", b"a map");
+    write("maps/room.prt", b"left by the compile");
+    write("maps/b_box.bsp", b"an item");
+    write("maps/b_box.lit", b"its light");
     write("notes.txt", b"not an asset");
     std::fs::create_dir_all(&built).unwrap();
     std::fs::write(built.join("progs.dat"), b"the program").unwrap();
-    place_project_assets(&project, "mod").unwrap();
-    assert_eq!(
-        placed("progs/brute.mdl").as_deref(),
-        Some(b"model one".as_slice())
-    );
-    assert_eq!(
-        placed("sound/brute/sight.wav").as_deref(),
-        Some(b"sound".as_slice())
-    );
-    assert_eq!(
-        placed("progs.dat").as_deref(),
-        Some(b"the program".as_slice())
-    );
-    assert!(
-        placed("maps/room.bsp").is_none(),
-        "a map is placed when it is played"
-    );
-    assert!(placed("notes.txt").is_none());
+    place_project_assets(&project, "mod", None).unwrap();
+    for (file, bytes) in [
+        ("progs/brute.mdl", b"model one".as_slice()),
+        ("sound/brute/sight.wav", b"sound"),
+        ("maps/room.bsp", b"a map"),
+        ("maps/b_box.bsp", b"an item"),
+        ("maps/b_box.lit", b"its light"),
+        ("progs.dat", b"the program"),
+    ] {
+        assert_eq!(placed(file).as_deref(), Some(bytes), "{file}");
+    }
+    for file in ["maps/room.map", "maps/room.prt", "notes.txt"] {
+        assert!(placed(file).is_none(), "{file}");
+    }
 
-    // Placed again only when the project's file is the newer.
+    // A project with no assets places nothing and fails nothing.
+    let bare = root("place-none");
+    place_project_assets(&bare, "mod", None).unwrap();
+    assert!(!bare.join("build").exists());
+}
+
+// No spec statement: L-47, ADR-0008: a placed file is placed again when the project's file is
+// no longer the one it was made from, newer or older, and not otherwise; the files of the
+// map being played are left to the play
+#[test]
+fn an_asset_is_placed_again_when_its_file_changes() {
+    let project = root("place-again");
+    let built = project.join("build").join("mod");
+    let write = |file: &str, bytes: &[u8]| {
+        let path = project.join(file);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, bytes).unwrap();
+    };
+    let dated = |file: &str, at: std::time::SystemTime| {
+        std::fs::File::options()
+            .write(true)
+            .open(project.join(file))
+            .unwrap()
+            .set_modified(at)
+            .unwrap();
+    };
+    let placed = |file: &str| std::fs::read(built.join(file)).ok();
+    let now = std::time::SystemTime::now();
+    write("progs/brute.mdl", b"model one");
+    write("maps/room.bsp", b"a map");
+    place_project_assets(&project, "mod", None).unwrap();
+
+    // The project's file as it was: what is in the folder stays, whatever it is.
     std::fs::write(built.join("progs/brute.mdl"), b"model built").unwrap();
-    place_project_assets(&project, "mod").unwrap();
+    place_project_assets(&project, "mod", None).unwrap();
     assert_eq!(
         placed("progs/brute.mdl").as_deref(),
         Some(b"model built".as_slice())
     );
-    let later = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
+    // A file of the same size from years ago takes its place: older, and placed.
+    write("progs/brute.mdl", b"model old");
+    dated(
+        "progs/brute.mdl",
+        now - std::time::Duration::from_secs(600_000_000),
+    );
+    place_project_assets(&project, "mod", None).unwrap();
+    assert_eq!(
+        placed("progs/brute.mdl").as_deref(),
+        Some(b"model old".as_slice())
+    );
+    // And a newer one.
     write("progs/brute.mdl", b"model two");
-    std::fs::File::options()
-        .write(true)
-        .open(project.join("progs/brute.mdl"))
-        .unwrap()
-        .set_modified(later)
-        .unwrap();
-    place_project_assets(&project, "mod").unwrap();
+    dated("progs/brute.mdl", now + std::time::Duration::from_secs(60));
+    place_project_assets(&project, "mod", None).unwrap();
+    assert_eq!(
+        placed("progs/brute.mdl").as_deref(),
+        Some(b"model two".as_slice())
+    );
+    // A placed file that is gone is placed again.
+    std::fs::remove_file(built.join("progs/brute.mdl")).unwrap();
+    place_project_assets(&project, "mod", None).unwrap();
     assert_eq!(
         placed("progs/brute.mdl").as_deref(),
         Some(b"model two".as_slice())
     );
 
-    // A file the project no longer has is taken away; a map placed for a play stays.
-    std::fs::create_dir_all(built.join("maps")).unwrap();
-    std::fs::write(built.join("maps/room.bsp"), b"a played map").unwrap();
-    std::fs::remove_file(project.join("sound/brute/sight.wav")).unwrap();
-    place_project_assets(&project, "mod").unwrap();
-    assert!(placed("sound/brute/sight.wav").is_none());
+    // The map being played is the play's to place: a changed one is not placed here, and is
+    // on the next Play of another map.
+    std::fs::write(built.join("maps/room.bsp"), b"placed for the play").unwrap();
+    write("maps/room.bsp", b"compiled again");
+    place_project_assets(&project, "mod", Some("room")).unwrap();
     assert_eq!(
         placed("maps/room.bsp").as_deref(),
-        Some(b"a played map".as_slice())
+        Some(b"placed for the play".as_slice())
+    );
+    place_project_assets(&project, "mod", Some("other")).unwrap();
+    assert_eq!(
+        placed("maps/room.bsp").as_deref(),
+        Some(b"compiled again".as_slice())
+    );
+}
+
+// No spec statement: L-47, ADR-0008: Play takes away only what it placed and the project no
+// longer has: a file put in the mod's folder by hand stays, a file named anew in another
+// case is there under its new name, and a list that names a file outside the folder removes
+// nothing
+#[test]
+fn only_what_play_placed_is_taken_away() {
+    let project = root("place-removal");
+    let built = project.join("build").join("mod");
+    let write = |file: &str, bytes: &[u8]| {
+        let path = project.join(file);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, bytes).unwrap();
+    };
+    let placed = |file: &str| std::fs::read(built.join(file)).ok();
+    write("progs/brute.mdl", b"model");
+    write("sound/brute/sight.wav", b"sound");
+    // Put there by hand, as was the only way before Play placed anything.
+    std::fs::create_dir_all(built.join("progs")).unwrap();
+    std::fs::write(built.join("progs/byhand.mdl"), b"by hand").unwrap();
+    place_project_assets(&project, "mod", None).unwrap();
+
+    std::fs::remove_file(project.join("sound/brute/sight.wav")).unwrap();
+    place_project_assets(&project, "mod", None).unwrap();
+    assert!(placed("sound/brute/sight.wav").is_none());
+    assert_eq!(
+        placed("progs/byhand.mdl").as_deref(),
+        Some(b"by hand".as_slice())
     );
     assert_eq!(
-        placed("progs.dat").as_deref(),
-        Some(b"the program".as_slice())
+        placed("progs/brute.mdl").as_deref(),
+        Some(b"model".as_slice())
     );
 
-    // A project with no assets places nothing and fails nothing.
-    let bare = root("place-none");
-    place_project_assets(&bare, "mod").unwrap();
-    assert!(!bare.join("build").exists());
+    // Named anew in another case: there under its new name on any file system, where one
+    // that tells the two names apart no longer has the old one.
+    std::fs::rename(
+        project.join("progs/brute.mdl"),
+        project.join("progs/Brute.mdl"),
+    )
+    .unwrap();
+    place_project_assets(&project, "mod", None).unwrap();
+    assert_eq!(
+        placed("progs/Brute.mdl").as_deref(),
+        Some(b"model".as_slice())
+    );
+    let names: Vec<String> = std::fs::read_dir(built.join("progs"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(names.contains(&"Brute.mdl".to_owned()), "{names:?}");
+    assert!(!names.contains(&"brute.mdl".to_owned()), "{names:?}");
+
+    // A list that names a file outside the folder, or no file at all, removes nothing.
+    let outside = project.join("notes.txt");
+    std::fs::write(&outside, b"kept").unwrap();
+    let list = built.join(".placed");
+    let mut text = std::fs::read_to_string(&list).unwrap();
+    text.push_str("../../notes.txt\t4\t0\n/etc/hosts\t1\t1\nno numbers\n\t1\t1\n");
+    std::fs::write(&list, text).unwrap();
+    place_project_assets(&project, "mod", None).unwrap();
+    assert_eq!(std::fs::read(&outside).unwrap(), b"kept");
+    assert_eq!(
+        placed("progs/byhand.mdl").as_deref(),
+        Some(b"by hand".as_slice())
+    );
 }
 
 // No spec statement: P6-44, BSP-18.2, BSP-19.1: Play of a map the project compiled finds its

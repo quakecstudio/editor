@@ -65,8 +65,8 @@ fn pose(name: &str, tip: [f32; 3]) -> Pose {
 }
 
 // spec MDL-7.1, MDL-7.2: the box the frames fill starts as the origin alone and grows to
-// every vertex of every frame; a step is the box's size over 255.9, the origin its low
-// corner, and the radius is the far corner's distance, the farther of each axis's two sides
+// every vertex of every frame; a step is the box's size over 255.9, divided in double and
+// stored in single, the origin its low corner, and the radius is the far corner's distance, the farther of each axis's two sides
 #[test]
 fn the_header_is_the_box_the_frames_fill() {
     let model = shape(vec![
@@ -77,7 +77,11 @@ fn the_header_is_the_box_the_frames_fill() {
     .unwrap();
     let header = model.header;
     assert_eq!(header.scale_origin, [-8.0, -20.0, 0.0]);
-    assert_eq!(header.scale, [16.0 / 255.9, 28.0 / 255.9, 32.0 / 255.9]);
+    // 16, 28 and 32 over 255.9, each divided in double and rounded to single.
+    assert_eq!(
+        header.scale.map(f32::to_bits),
+        [0x3d80_0cce, 0x3de0_1669, 0x3e00_0cce]
+    );
     // The far sides: 8 either way in x (the high side when they are even), -20 in y, 32 in z.
     assert_eq!(
         header.bounding_radius,
@@ -99,7 +103,25 @@ fn the_header_is_the_box_the_frames_fill() {
     .build()
     .unwrap();
     assert_eq!(model.header.scale_origin, [0.0, -8.0, 0.0]);
-    assert_eq!(model.header.scale[0], 108.0 / 255.9);
+    assert_eq!(
+        model.header.scale[0].to_bits(),
+        0x3ed8_159c,
+        "108 over 255.9"
+    );
+
+    // A size whose quotient in single is one step of the last place off the one in double:
+    // modelgen's is 0x3e180c09, and a division by a single 255.9 gives 0x3e180c0a.
+    let wide: Vec<[f32; 3]> = pyramid([0.0, 0.0, 16.0])
+        .into_iter()
+        .map(|[x, y, z]| [if x > 0.0 { 29.996_906 } else { x }, y, z])
+        .collect();
+    let model = shape(vec![PoseEntry::Single(Pose {
+        name: b"wide".to_vec(),
+        positions: wide,
+    })])
+    .build()
+    .unwrap();
+    assert_eq!(model.header.scale[0].to_bits(), 0x3e18_0c09);
 }
 
 // spec MDL-7.3: a position packs to the whole part of its distance from the origin in steps,

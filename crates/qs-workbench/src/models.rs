@@ -14,7 +14,7 @@ use qs_map_edit::textures::light_palette;
 use qs_mdl::mdl::write::{MdlWriteError, Model, ModelFrame, ModelFrameEntry, ModelSkin};
 use qs_mdl::mdl::{Mdl, MdlError, TriVertX};
 use qs_vfs::{StdFs, Vfs};
-use qs_wad::texture::{Palette, PaletteIndex};
+use qs_wad::texture::{Palette, PaletteIndex, WAD_FULLBRIGHT_FIRST};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -50,6 +50,9 @@ const SHADE_MASK: u8 = 0x0F;
 /// The first colour of the rows whose shades run from bright to dark, "backwards ranges"
 /// (REND-4.13).
 const BACKWARDS_FROM: u8 = 128;
+/// The last of the palette's ordinary colours; those after it show at full brightness in
+/// the dark (WAD-7.4).
+const ORDINARY_LAST: u8 = WAD_FULLBRIGHT_FIRST - 1;
 /// The axes a vertex has.
 const AXES: usize = 3;
 /// The bytes of a pixel of a PNG read or written here: red, green, blue and alpha.
@@ -125,6 +128,8 @@ pub enum ModelError {
     },
     /// A scale that is 0 or less, or no number.
     Scale,
+    /// A move that is no number.
+    Move,
     /// The two models do not have the same vertices, so a frame of one is none of the other.
     Vertices {
         /// How many the model has.
@@ -174,6 +179,7 @@ impl fmt::Display for ModelError {
             Self::NotInGame { name } => write!(f, "the game has no file {name}"),
             Self::Exists { path } => write!(f, "{}: is there already", path.display()),
             Self::Scale => f.write_str("a scale is a number above 0"),
+            Self::Move => f.write_str("a move is a number on each axis"),
             Self::Vertices { model, other } => write!(
                 f,
                 "the model has {model} vertices and the one the frames come from {other}: \
@@ -203,6 +209,7 @@ impl core::error::Error for ModelError {
             | Self::NotInGame { .. }
             | Self::Exists { .. }
             | Self::Scale
+            | Self::Move
             | Self::Vertices { .. }
             | Self::OutsideBox { .. } => None,
         }
@@ -577,7 +584,10 @@ impl<C: HasWorkbench + HasMap + 'static> Command<C> for ModelExportSkin {
             image::ExtendedColorType::Rgba8,
             image::ImageFormat::Png,
         )
-        .map_err(ModelError::Image)?;
+        .map_err(|error| match error {
+            image::ImageError::IoError(error) => wrote(error),
+            other => ModelError::Image(other),
+        })?;
         Ok(Outcome::outside_history(SkinExported {
             png_path: params.png_path,
             size: [header.skinwidth, header.skinheight],
@@ -594,9 +604,28 @@ pub struct SetSkinParams {
     /// The skin to replace, from 0; 0 when not given.
     #[serde(default)]
     pub skin: usize,
-    /// The PNG to take it from, of the skin's own width and height: each pixel becomes the
-    /// nearest colour of the game's palette.
+    /// The PNG to take it from, of the skin's own width and height: each pixel that changed
+    /// becomes the nearest of the palette's colours 0 to 223, or a fullbright colour (224 to
+    /// 255, which glow in the dark) when it is exactly that colour.
     pub png_path: PathBuf,
+}
+
+/// The palette index a pixel of a skin takes from `colour`, a pixel of a PNG. The index it
+/// has when that is its colour already, so a skin given back as it went out is unchanged; else
+/// the nearest of the ordinary colours (WAD-7.4), so a painted colour does not glow in the
+/// dark; but a colour that is exactly a fullbright one and no ordinary one is that one, which
+/// is how a part is painted to glow.
+fn skin_index(palette: &Palette, now: u8, colour: [u8; 3]) -> u8 {
+    if palette.colour(PaletteIndex::new(now)) == colour {
+        return now;
+    }
+    let exact =
+        |found: Option<PaletteIndex>| found.filter(|index| palette.colour(*index) == colour);
+    let ordinary = palette.nearest(colour, 0..=ORDINARY_LAST);
+    exact(ordinary)
+        .or_else(|| exact(palette.nearest(colour, WAD_FULLBRIGHT_FIRST..=u8::MAX)))
+        .or(ordinary)
+        .map_or(now, PaletteIndex::get)
 }
 
 /// `model.set_skin`.
@@ -605,7 +634,8 @@ struct ModelSetSkin;
 impl<C: HasWorkbench + HasMap + 'static> Command<C> for ModelSetSkin {
     const ID: &'static str = MODEL_SET_SKIN;
     const SUMMARY: &'static str = "Replaces a skin of a model with a PNG of the skin's size, \
-        each pixel matched to the nearest colour of the game's palette.";
+        each changed pixel matched to the nearest of the palette's colours that do not glow \
+        in the dark, or to a fullbright colour when it is exactly that colour.";
     type Params = SetSkinParams;
     type Output = ModelWritten;
     type Error = ModelError;
@@ -636,9 +666,7 @@ impl<C: HasWorkbench + HasMap + 'static> Command<C> for ModelSetSkin {
         let pixels = loaded.skin_mut(params.skin)?;
         let (colours, _) = image.as_raw().as_chunks::<RGBA>();
         for (pixel, [red, green, blue, _]) in pixels.iter_mut().zip(colours) {
-            if let Some(nearest) = palette.nearest([*red, *green, *blue], 0..=u8::MAX) {
-                *pixel = nearest.get();
-            }
+            *pixel = skin_index(&palette, *pixel, [*red, *green, *blue]);
         }
         let frames = loaded.model.frames.len();
         let path = loaded.path.clone();
@@ -808,7 +836,7 @@ impl<C: 'static> Command<C> for ModelMove {
         params: TransformParams,
     ) -> Result<Outcome<Transformed, C>, ModelError> {
         if !params.by.iter().all(|by| by.is_finite()) {
-            return Err(ModelError::Scale);
+            return Err(ModelError::Move);
         }
         let mut loaded = Loaded::read(&params.path)?;
         for (origin, by) in loaded.model.header.scale_origin.iter_mut().zip(params.by) {
@@ -826,7 +854,8 @@ impl<C: 'static> Command<C> for ModelMove {
 pub struct RenameFramesParams {
     /// The `.mdl` file.
     pub path: PathBuf,
-    /// Each a frame's name and the name to give it, at most 15 bytes.
+    /// Each a frame's name, as the file has it, and the name to give it, at most 15 bytes.
+    /// All are renamed at once, so two frames can take each other's names.
     pub names: Vec<[String; 2]>,
 }
 
@@ -847,25 +876,30 @@ impl<C: 'static> Command<C> for ModelRenameFrames {
         params: RenameFramesParams,
     ) -> Result<Outcome<ModelWritten, C>, ModelError> {
         let mut loaded = Loaded::read(&params.path)?;
-        for [from, to] in &params.names {
-            let mut found = false;
-            for entry in &mut loaded.model.frames {
-                let each: &mut [ModelFrame] = match entry {
-                    ModelFrameEntry::Single(frame) => core::slice::from_mut(frame),
-                    ModelFrameEntry::Group { frames, .. } => frames,
-                };
-                for frame in each
-                    .iter_mut()
-                    .filter(|frame| frame.name() == from.as_bytes())
-                {
+        // Each pair names a frame as the file has it, so two frames can change names with
+        // each other: no pair renames what another pair named.
+        if let Some([from, _]) = params
+            .names
+            .iter()
+            .find(|[from, _]| !frames(&loaded.model).any(|frame| frame.name() == from.as_bytes()))
+        {
+            return Err(ModelError::NoFrame { name: from.clone() });
+        }
+        for entry in &mut loaded.model.frames {
+            let each: &mut [ModelFrame] = match entry {
+                ModelFrameEntry::Single(frame) => core::slice::from_mut(frame),
+                ModelFrameEntry::Group { frames, .. } => frames,
+            };
+            for frame in each {
+                let renamed = params
+                    .names
+                    .iter()
+                    .find(|[from, _]| frame.name() == from.as_bytes());
+                if let Some([_, to]) = renamed {
                     frame
                         .set_name(to.as_bytes())
                         .map_err(ModelError::Unwritable)?;
-                    found = true;
                 }
-            }
-            if !found {
-                return Err(ModelError::NoFrame { name: from.clone() });
             }
         }
         let frames = loaded.model.frames.len();
@@ -978,7 +1012,15 @@ impl<C: 'static> Command<C> for ModelAddFrames {
                     .zip(to.scale_origin)
                 {
                     let at = f32::from(packed) * step + origin;
-                    let steps = ((at - to_origin) / to_step).round();
+                    // A model flat on an axis has no step there (MDL-7.2): only a vertex in
+                    // its plane fits, at byte 0.
+                    let steps = if to_step.abs() > 0.0 {
+                        ((at - to_origin) / to_step).round()
+                    } else if (at - to_origin).abs() > 0.0 {
+                        f32::NAN
+                    } else {
+                        0.0
+                    };
                     if !(0.0..=f32::from(u8::MAX)).contains(&steps) {
                         return Err(ModelError::OutsideBox { name: name.clone() });
                     }

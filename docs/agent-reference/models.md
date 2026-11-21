@@ -34,7 +34,7 @@ with, and every model's own bounds are the same to the engine (MDL-1.7).
 
 - A model of the mod's own is a file under the project's `progs` folder, such as
   `progs/brute.mdl`, named in QuakeC as `"progs/brute.mdl"`. Play puts the project's `progs`,
-  `sound` and `gfx` files where the game reads them.
+  `sound` and `gfx` files, and the compiled maps of its `maps`, where the game reads them.
 - `model.copy_from_game` copies a model of the game, by its name there, into the project to
   change. A file of the same name as the game's takes the game's place for every entity that
   uses it; a file of a new name is a new model, for the QuakeC that names it.
@@ -47,9 +47,9 @@ Each of these is one step that `edit.undo` takes back.
 | --- | --- |
 | `model.inspect` | The skins, their size and the rows of the palette each is of, the vertices and triangles, the box the frames fill, and the frames by name |
 | `model.recolor` | Recolours a skin by rows of the palette |
-| `model.export_skin`, `model.set_skin` | A skin out as a PNG, and a PNG of the same size back as a skin, each pixel the palette's nearest colour |
+| `model.export_skin`, `model.set_skin` | A skin out as a PNG, and a PNG of the same size back as a skin, each changed pixel the nearest of the palette's colours 0 to 223 |
 | `model.scale`, `model.move` | Makes the model larger or smaller, or moves it against the entity's origin; no vertex is rounded again |
-| `model.rename_frames`, `model.remove_frames`, `model.add_frames` | Names a frame anew, takes frames out, or adds frames of another copy of the model with other poses |
+| `model.rename_frames`, `model.remove_frames`, `model.add_frames` | Names frames anew, all at once by the names they have, takes frames out, or adds frames of another copy of the model with other poses |
 
 - **The palette is 16 rows of 16 shades**, a colour's row its number divided by 16. Rows 0
   to 7 run from dark to bright and rows 8 to 15 from bright to dark (REND-4.13: "the artists
@@ -58,6 +58,9 @@ Each of these is one step that `edit.undo` takes back.
   `model.inspect` answers the rows a skin is of, most pixels first: those are the rows to
   give `model.recolor`. Look
   at a skin (`model.export_skin`, then read the PNG) before and after.
+- **Colours 224 to 255 glow**: they show at full brightness in the dark. A painted pixel
+  takes one only when it is exactly that colour of the palette; any other colour takes the
+  nearest of colours 0 to 223.
 - **Scale about the origin**: a model stands with its origin where the entity's is, so a
   monster made 1.3 times larger also reaches 1.3 times as far below it. Its feet are at the
   low z of the box `model.inspect` answers; when QuakeC's `setsize` box starts at -24, move
