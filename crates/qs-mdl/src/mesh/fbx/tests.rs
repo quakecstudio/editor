@@ -782,24 +782,69 @@ fn two_geometries_are_bound_to_one_model_in_two_places() {
         "Geometry: 101, \"Geometry::u\", \"Mesh\" {{\nVertices: *9 {{\na: 0,0,1,4,0,1,0,4,1\n}}\n\
          PolygonVertexIndex: *3 {{\na: 0,1,-3\n}}\n}}\n\
          Model: 201, \"Model::u\", \"Mesh\" {{\n}}\n\
-         Model: 300, \"Model::l\", \"LimbNode\" {{\n}}\n{}{}",
+         Geometry: 102, \"Geometry::v\", \"Mesh\" {{\nVertices: *9 {{\na: 0,0,2,4,0,2,0,4,2\n}}\n\
+         PolygonVertexIndex: *3 {{\na: 0,1,-3\n}}\n}}\n\
+         Model: 202, \"Model::v\", \"Mesh\" {{\n}}\n\
+         Model: 300, \"Model::l\", \"LimbNode\" {{\n}}\n{}{}{}{}",
         skin(400, 401, 0),
-        skin(410, 411, 10)
+        skin(410, 411, 10),
+        skin(420, 421, 20),
+        // A fourth cluster, of the second geometry's skin, where the second had the limb.
+        skin(430, 431, 10)
     );
     let joins = "C: \"OO\",101,201\nC: \"OO\",400,100\nC: \"OO\",401,400\nC: \"OO\",300,401\n\
-                 C: \"OO\",410,101\nC: \"OO\",411,410\nC: \"OO\",300,411\n";
+                 C: \"OO\",410,101\nC: \"OO\",411,410\nC: \"OO\",300,411\n\
+                 C: \"OO\",102,202\nC: \"OO\",420,102\nC: \"OO\",421,420\nC: \"OO\",300,421\n\
+                 C: \"OO\",431,410\nC: \"OO\",300,431\n";
     let mesh = read(&triangle(&objects, joins), Up::Z).unwrap();
     // The limb stands at the origin. The first triangle was bound with it there; the second
-    // with it 10 along x, the triangle then at 10 with it, and has come back with it.
+    // with it 10 along x and the third 20, each triangle then there with it, and each has
+    // come back with it.
     assert_eq!(
         corners(&mesh, 0),
         [
             [0, 0, 0],
             [0, 0, 100],
+            [0, 0, 200],
             [0, 400, 0],
             [0, 400, 100],
+            [0, 400, 200],
             [400, 0, 0],
-            [400, 0, 100]
+            [400, 0, 100],
+            [400, 0, 200]
         ]
+    );
+}
+
+// spec MDL-10.9: a vertex of a skinned geometry that no cluster names follows the armature,
+// the first model above the cluster's model that is no limb, and not the limbs between
+#[test]
+fn a_vertex_no_cluster_names_follows_the_armature() {
+    // The geometry's skin names its second vertex alone, by the child limb. The root limb
+    // turns a quarter about z; the armature above it rises 5.
+    let objects = "Model: 300, \"Model::root\", \"LimbNode\" {\n}\n\
+        Model: 301, \"Model::child\", \"LimbNode\" {\n}\n\
+        Model: 250, \"Model::Armature\", \"Null\" {\n}\n\
+        Deformer: 400, \"Deformer::\", \"Skin\" {\n}\n\
+        Deformer: 401, \"SubDeformer::\", \"Cluster\" {\nIndexes: *1 {\na: 1\n}\nWeights: *1 {\na: 1\n}\n}\n\
+        AnimationStack: 500, \"AnimStack::go\", \"\" {\n}\n\
+        AnimationLayer: 501, \"AnimLayer::\", \"\" {\n}\n\
+        AnimationCurveNode: 510, \"AnimCurveNode::\", \"\" {\n}\n\
+        AnimationCurveNode: 511, \"AnimCurveNode::\", \"\" {\n}\n\
+        AnimationCurve: 520, \"AnimCurve::\", \"\" {\nKeyTime: *2 {\na: 0,1\n}\n\
+        KeyValueFloat: *2 {\na: 0,90\n}\n}\n\
+        AnimationCurve: 521, \"AnimCurve::\", \"\" {\nKeyTime: *2 {\na: 0,1\n}\n\
+        KeyValueFloat: *2 {\na: 0,5\n}\n}\n";
+    let joins = "C: \"OO\",300,250\nC: \"OO\",301,300\nC: \"OO\",400,100\nC: \"OO\",401,400\n\
+        C: \"OO\",301,401\nC: \"OO\",501,500\nC: \"OO\",510,501\nC: \"OO\",511,501\n\
+        C: \"OP\",510,300, \"Lcl Rotation\"\nC: \"OP\",511,250, \"Lcl Translation\"\n\
+        C: \"OP\",520,510, \"d|Z\"\nC: \"OP\",521,511, \"d|Z\"\n";
+    let mesh = read(&triangle(objects, joins), Up::Z).unwrap();
+    assert_eq!(mesh.frames.len(), 2);
+    // The second vertex, (4, 0, 0), turns with the limbs to (0, 4, 0) and rises; the first
+    // and the third only rise with the armature, the third staying at (0, 4, 0).
+    assert_eq!(
+        corners(&mesh, 1),
+        [[0, 0, 500], [0, 400, 500], [0, 400, 500]]
     );
 }

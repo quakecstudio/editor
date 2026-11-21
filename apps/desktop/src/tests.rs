@@ -4067,6 +4067,36 @@ fn play_with_the_map_tab_showing_plays_the_open_map() {
     }
 }
 
+// No spec statement: L-52: Play of a map whose player start is in a wall says so of the start,
+// by its origin, and not of a camera
+#[test]
+fn play_of_a_map_whose_start_has_no_room_says_so() {
+    let dir = keep_copy("play-walled");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/keep/gfx/keep.wad");
+    fs::create_dir_all(dir.join("gfx")).unwrap();
+    fs::copy(fixture, dir.join("gfx/keep.wad")).unwrap();
+    // Inside the west wall, which stands from x -272 to -256 the room's whole height.
+    let map = dir.join("maps/keep.map");
+    let text = fs::read_to_string(&map).unwrap();
+    let walled = text.replacen("\"origin\" \"-192 0 24\"", "\"origin\" \"-264 0 128\"", 1);
+    assert_ne!(walled, text);
+    fs::write(&map, walled).unwrap();
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell.execute("map.open", json!({ "path": map })).unwrap();
+    harness.run();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.run_chosen(qs_workbench::PLAY);
+    let said = shell.toolbar_error().unwrap_or_default().to_owned();
+    assert!(
+        said.contains("player start, (-264 0 128)") && !said.contains("camera"),
+        "{said}"
+    );
+}
+
 // No spec statement: P6-20, MAP-28: Compile runs the chosen profile and says how it ended and
 // how long it took, Cmd+B as the button; Show portals draws the last compile's portals;
 // Restore the newest backup puts the backup in the editor
