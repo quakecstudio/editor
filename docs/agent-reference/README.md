@@ -10,6 +10,14 @@ names its source. Keep it short: every word of it is read on every turn.
 - [`maps.md`](maps.md): the `.map` format, units and the player's limits, the entities a map
   needs, textures and leaks.
 
+Two more are read when the task needs them, through `project.reference`, which serves every
+topic here to any agent, the built-in one and one that reaches the IDE over MCP (L-45):
+
+- [`entities.md`](entities.md): what the engine calls, how an entity moves and collides, the
+  builtins by what they are for, what the language does that C does not, and debugging.
+- [`monsters.md`](monsters.md): how a monster is written, from id's soldier, and every place
+  a new one must be added.
+
 Per run, the agent is also given:
 
 - the project's own `AGENTS.md`, when it has one, which the modder writes for their mod;

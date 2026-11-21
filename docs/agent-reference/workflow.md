@@ -12,8 +12,10 @@ Read a file with `file.read` before changing it.
 
 ## Changing it
 
-`edit.stage_change` stages each file's whole new text as hunks for the person to review. Nothing is
-written to disk by you. Then `project.compile` must report `"clean": true`.
+`edit.stage_change` stages each file's whole new text as hunks to review: `edit.staged` lists
+them, and `edit.accept` then `file.save` writes them. `file.update` and `file.replace_range`
+change a file's text in the editor at once, and `file.save` writes it. Which of these an agent
+may use is its own rules' to say. Then `project.compile` must report `"clean": true`.
 
 ## Proving it
 
@@ -34,5 +36,5 @@ written to disk by you. Then `project.compile` must report `"clean": true`.
   expect field player health == 100
   ```
 
-- `project.test` runs every test; `scenario.run` plays one file. The run is done only when
+- `project.test` runs every test; `scenario.run` plays one file. A change is done when
   `project.compile` is clean and `project.test` passes.

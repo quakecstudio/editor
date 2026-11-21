@@ -48,8 +48,8 @@ Sources: the same `client.qc`; `qutils/LIGHT/ENTITIES.C` and `ENTITIES.H` at the
 - `info_player_start`, as above, and `info_player_deathmatch` for deathmatch.
 - `light` entities. The `light` tool lights only from them; `light` (or `_light`) is the
   brightness, 300 when not given (`DEFAULTLIGHTLEVEL`).
-- The classes a mod spawns are its QuakeC functions of the same name. The brief lists the
-  open map's classes, and `project.entities` describes each class the project defines.
+- The classes a mod spawns are its QuakeC functions of the same name. `map.summary` counts
+  the open map's classes, and `project.entities` describes each class the project defines.
 
 ## Textures
 

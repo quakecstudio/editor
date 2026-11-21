@@ -54,7 +54,7 @@ and a failed `Classify the change` job are all full. Renames count both paths.
 
 | Light | Why only `cargo xtask ci` and xtask's tests read it |
 | --- | --- |
-| `docs/**`, except `docs/spec/**` | read by `cargo xtask` `adr`, `conventions`, `licenses` (and `docs/porting.md` through it), `attribution`, `contrast` (`docs/design/tokens.toml`) and `commands` (`docs/commands.md`), and by xtask's tests: the same checks on the repository, the porting-header rules and the benchmark budgets (`docs/perf-budgets.md`) |
+| `docs/**`, except `docs/spec/**` and `docs/agent-reference/**` | read by `cargo xtask` `adr`, `conventions`, `licenses` (and `docs/porting.md` through it), `attribution`, `contrast` (`docs/design/tokens.toml`) and `commands` (`docs/commands.md`), and by xtask's tests: the same checks on the repository, the porting-header rules and the benchmark budgets (`docs/perf-budgets.md`) |
 | `plan/**` | read by the `plan` and `plan-tests` steps of `cargo xtask ci` |
 | `.claude/**`, `.kiro/**` | read only by `cargo xtask licenses` and its test, and by xtask's tests of `.claude/skills/work-issue/scripts/check-pr-body.sh` |
 | `*.md` at the root (`README.md`, `CLAUDE.md`, `AGENTS.md`, `ATTRIBUTION.md`, ...) | read only by `cargo xtask licenses` and `attribution` and their tests |
@@ -63,13 +63,15 @@ Never light, whatever directory they are in:
 
 - `docs/spec/**`: the spec-citation ratchet in `qs-tests` (`spec_coverage.rs`), the test
   vectors several crates read, and `corpus/language_coverage.py` in `Test Assets (linux)`.
+- `docs/agent-reference/**`: `qs-workbench` embeds each topic for `project.reference`, and
+  its tests check that the reference names only commands there are (L-45).
 - Any `.rs` file: `qs-tests` reads every `.rs` file in the tree for spec citations.
 - Everything else, including `.github/**`, `specs/**`, `scripts/**`, crate READMEs and any
   path the script does not know.
 
 No crate but xtask reads a light path in its tests or build: the only repository files the
 other crates' tests open or embed with `include_str!` and `include_bytes!` are under
-`docs/spec/`, and no crate has a build script. On the light path:
+`docs/spec/` and `docs/agent-reference/`, and no crate has a build script. On the light path:
 
 | Check | What it does |
 | --- | --- |

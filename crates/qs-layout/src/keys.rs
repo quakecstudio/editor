@@ -1267,6 +1267,7 @@ pub const UNKEYED: [(&str, Unkeyed); 167] = [
     ("project.entities", Unkeyed::Query),
     ("project.files", Unkeyed::Query),
     ("project.info", Unkeyed::Query),
+    ("project.reference", Unkeyed::Query),
     ("project.new", Unkeyed::Typed),
     ("project.open", Unkeyed::Typed),
     ("project.search", Unkeyed::Typed),

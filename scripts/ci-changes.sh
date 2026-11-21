@@ -22,6 +22,8 @@ is_light() {
   *.rs) return 1 ;;
   # The spec-citation ratchet, the test vectors and Test Assets read docs/spec.
   docs/spec/*) return 1 ;;
+  # qs-workbench embeds the agent reference and tests that it names real commands.
+  docs/agent-reference/*) return 1 ;;
   docs/* | plan/* | .claude/* | .kiro/*) return 0 ;;
   */*) return 1 ;;
   # Markdown at the root: README.md, CLAUDE.md, AGENTS.md, ATTRIBUTION.md and the like.
