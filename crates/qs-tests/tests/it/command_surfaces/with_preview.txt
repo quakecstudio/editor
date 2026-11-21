@@ -134,6 +134,7 @@ map.unstage
 model.add_frames
 model.copy_from_game
 model.export_skin
+model.import
 model.inspect
 model.move
 model.recolor

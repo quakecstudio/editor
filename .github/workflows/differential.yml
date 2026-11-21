@@ -166,6 +166,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends cmake libtbb-dev libembree-dev
       - name: Build the map tool oracles and compile the room
         run: cargo xtask oracles maps
+      - name: Compare qs-mdl with id's modelgen
+        run: cargo xtask oracles models
       - name: Point QS_TEST_ASSETS outside the source tree
         env:
           RUNNER_TEMP_DIR: ${{ runner.temp }}

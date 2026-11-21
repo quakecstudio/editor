@@ -112,6 +112,7 @@ cargo xtask attribution                   # every asset is listed in ATTRIBUTION
 cargo xtask notices --out <file>          # the third-party notices a release package carries (ADR-0029); --check: every linked crate states a license
 cargo xtask oracles                       # build the oracles from id's sources, run the VM vectors and the builtin and grammar differentials (network, C compiler)
 cargo xtask oracles maps                  # build id's qbsp, vis and light and ericw-tools (CMake, TBB, Embree 4) and compile a room with each (network)
+cargo xtask oracles models [--rounds n]   # build id's modelgen and compare the models it and qs-mdl write from the same generated scripts (L-47, MDL-8; network)
 cargo run --release -p xtask -- map-diff [--map <name>]...  # qs-map-bsp against id's qbsp and ericw-tools' qbsp on every corpus map: leaks, entities, faces, traces (P6-07; release, the brush BSP is slow unoptimized)
 cargo run --release -p xtask -- light-diff [--map <name>]...  # qs-map-light's lightmaps against id's light on every corpus map, both modes, and the extended dialect's against ericw-tools' light (P7-01, L-22, L-23)
 cargo xtask fuzz qc-progs --time 10m      # one fuzz target (nightly, cargo-fuzz); no target runs all
@@ -290,6 +291,7 @@ fetching:
 - [Language Server Protocol 3.18](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification/): `specs/lsp/3.18/`
 - [Model Context Protocol 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28): `specs/mcp/2026-07-28/`
 - [Agent Client Protocol v1](https://agentclientprotocol.com/protocol/overview): `specs/acp/v1/`
+- [Inter-Quake Export](https://github.com/lsalzman/iqm/blob/master/iqe.txt), the mesh format `model.import` reads: `specs/iqe/`
 
 id's source, the specification for everything in L0 and L1, is pinned in
 [`docs/porting.md`](docs/porting.md#upstreams): `id-Software/Quake` and the `qcc/` directory of

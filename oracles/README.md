@@ -365,6 +365,25 @@ version skips an unchanged build; after upgrading TBB or Embree, delete
 `target/oracles/bin/maps-stamp`. Each run compiles the room in an emptied directory, so a tool
 that writes nothing fails.
 
+## The model tool oracle
+
+id's modelgen, for the model maker's differential (L-47, [MDL-8](../docs/spec/mdl.md)).
+`cargo xtask oracles models` builds `qutils/MODELGEN/MODELGEN.C` with `qutils/COMMON`'s
+`cmdlib.c`, `mathlib.c`, `scriplib.c`, `trilib.c` and `lbmlib.c`, unchanged, as the map tools
+are built and from the same pins ([`maps.toml`](maps.toml)), to `target/oracles/bin/modelgen`.
+It then makes 1000 scripts (`--rounds` for another number), each from its number: a base of 2
+to 19 triangles over a pool of points, one to three frame entries of the same triangles moved,
+some of them groups, one or two skins, and for two in three an origin, a scale and an eye
+position; now and then a triangle has no area. Each script's files are written as modelgen
+reads them (Alias `.tri` triangle files, a 320 by 200 `PBM ` picture and the script) under
+`target/oracles/models-work/quake/id1`, modelgen is run on them, and `qs-mdl`'s `Grab::build`
+is given the same triangles. The two must write the same model, or both refuse the script.
+
+Two kinds of byte modelgen writes are whatever its stack held, and are set to 0 in its file
+before the two are compared: what follows the NUL of a frame's name, and the
+`lightnormalindex` of a frame's and a group's bounds (MDL-7.3). It runs in CI in the nightly
+Differential workflow's "Map tool oracles" job; Linux and macOS only.
+
 ## Readiness
 
 The oracles' C is the C tools layer's own code, and the readiness bar of

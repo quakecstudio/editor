@@ -152,6 +152,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`model.add_frames`](#modeladd_frames) | Adds frames of another model of the same vertices to the end of a model's own, each by its name: QuakeC's $frame list gains the same names at its end. |
 | [`model.copy_from_game`](#modelcopy_from_game) | Copies a model of the game, by its name there such as progs/soldier.mdl, into the project as a file of its own to change: a mod's file of the same name takes the game's place, and one of a new name is a new model. |
 | [`model.export_skin`](#modelexport_skin) | Writes a skin of a model as a PNG, in the game's palette, to look at or to paint on and give back with model.set_skin. |
+| [`model.import`](#modelimport) | Makes a .mdl model in the project of a mesh in an .obj file (one pose) or an .iqe file (a frame for each frame of each animation, posed by its skeleton). A mesh with texture coordinates keeps them, on a PNG given as its skin or one colour; one without is laid out front and back, to export, paint and set. |
 | [`model.inspect`](#modelinspect) | Reads a .mdl model: its skins, their size and the rows of the palette each is of, its vertices and triangles, the box it fills, and its frames by name in the order QuakeC numbers them, as a $frame line lists them. |
 | [`model.move`](#modelmove) | Moves a model against its origin, the point the entity's origin is at: its vertices keep their packed places and the header's origin moves. |
 | [`model.recolor`](#modelrecolor) | Recolours a skin of a model by rows of the palette: every pixel of a row becomes the same shade of another row, as the game recolours a player's shirt and trousers. |
@@ -7444,6 +7445,107 @@ Parameters:
     "png_path"
   ],
   "title": "ExportSkinParams",
+  "type": "object"
+}
+```
+
+## `model.import`
+
+Makes a .mdl model in the project of a mesh in an .obj file (one pose) or an .iqe file (a frame for each frame of each animation, posed by its skeleton). A mesh with texture coordinates keeps them, on a PNG given as its skin or one colour; one without is laid out front and back, to export, paint and set.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "UpAxis": {
+      "description": "Which axis of a mesh's file points up.",
+      "oneOf": [
+        {
+          "const": "y",
+          "description": "y is up and -z forward, as most programs write an `.obj`.",
+          "type": "string"
+        },
+        {
+          "const": "z",
+          "description": "z is up and x forward, as Quake has them.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `model.import`.",
+  "properties": {
+    "colour": {
+      "default": null,
+      "description": "The colour of the palette the skin is filled with when no PNG is given; 8 when not\ngiven.",
+      "format": "uint8",
+      "maximum": 255,
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "path": {
+      "description": "The `.mdl` file to make of it, in the project; one that is there already is refused.",
+      "type": "string"
+    },
+    "png_path": {
+      "default": null,
+      "description": "A PNG for the skin of a mesh that has texture coordinates, each pixel matched to the\npalette as `model.set_skin` matches one. Its width is a multiple of 4 and its height\nat most 480.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "scale": {
+      "default": null,
+      "description": "What every position is multiplied by, to make the model the size Quake's are (a\nplayer is 56 units high); 1 when not given.",
+      "format": "float",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "skin_size": {
+      "default": null,
+      "description": "The skin's width and height for a mesh with texture coordinates and no PNG; 128 by\n128 when not given. A mesh without them has a skin of the size its layout needs.",
+      "items": {
+        "format": "int32",
+        "type": "integer"
+      },
+      "maxItems": 2,
+      "minItems": 2,
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "source_path": {
+      "description": "The mesh to read: an `.obj` file, one pose, or an `.iqe` file, a pose for each frame\nof each of its animations.",
+      "type": "string"
+    },
+    "up": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/UpAxis"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Which axis of the file is up: y for an `.obj` and z for an `.iqe` when not given."
+    }
+  },
+  "required": [
+    "source_path",
+    "path"
+  ],
+  "title": "ImportParams",
   "type": "object"
 }
 ```

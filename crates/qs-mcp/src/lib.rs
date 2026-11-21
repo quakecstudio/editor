@@ -543,7 +543,8 @@ const INSTRUCTIONS: &str = "Every command of QuakeC Studio over the project this
     A map edit is made at once and edit.undo takes it back. Paths are the project's, absolute or relative to it. \
     To change how a monster, a weapon or an item looks: model.copy_from_game makes a file of \
     the project's own of a model of the game, model.inspect reads it, model.recolor, \
-    model.scale and model.move change it, and the QuakeC names the new file. \
+    model.scale and model.move change it, and the QuakeC names the new file; model.import \
+    makes a model of a mesh in an .obj or .iqe file. \
     map.generate makes a whole random level to play or to start from. \
     map.build_room builds a room of a shape of id's levels (hall, chamber, pit, split, court, \
     cross, vault) with its lights and answers its doorways; map.build_passage joins two \

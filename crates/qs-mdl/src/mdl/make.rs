@@ -89,7 +89,7 @@ fn corner_normal(a: [f32; 3], b: [f32; 3], c: [f32; 3]) -> [f32; 3] {
     clippy::cast_possible_truncation,
     reason = "spec MDL-7.4: id divides a float by the double length and stores a float"
 )]
-fn normalize(v: &mut [f32; 3]) -> f64 {
+pub(super) fn normalize(v: &mut [f32; 3]) -> f64 {
     let mut length = 0.0_f64;
     for part in v.iter() {
         length += f64::from(part * part);
@@ -107,7 +107,7 @@ fn normalize(v: &mut [f32; 3]) -> f64 {
 
 /// The entry of the normal table whose dot product with `normal` is greatest, the first of
 /// equals: `GrabFrame`'s `maxdot` loop.
-fn nearest_normal(normal: [f32; 3]) -> u8 {
+pub(super) fn nearest_normal(normal: [f32; 3]) -> u8 {
     let mut best = 0_u8;
     let mut most = f32::NEG_INFINITY;
     for (index, entry) in (0_u8..).zip(MDL_VERTEX_NORMALS.iter()) {
@@ -126,7 +126,7 @@ fn nearest_normal(normal: [f32; 3]) -> u8 {
     clippy::cast_possible_truncation,
     reason = "spec MDL-7.2: C's assignment of a double to a float, the nearest single"
 )]
-const fn single(value: f64) -> f32 {
+pub(super) const fn single(value: f64) -> f32 {
     value as f32
 }
 
@@ -196,12 +196,139 @@ impl Shape {
     /// [`Model::to_bytes`] refuses.
     pub fn build(&self) -> Result<Model, MdlWriteError> {
         let numverts = self.stverts.len();
+        let grabbed = |pose: &Pose, frame: usize| -> Result<Grabbed, MdlWriteError> {
+            if pose.positions.len() != numverts {
+                return Err(MdlWriteError::FrameVertices { frame });
+            }
+            Ok(Grabbed {
+                name: pose.name.clone(),
+                positions: pose.positions.clone(),
+                normals: self.normals(&pose.positions)?,
+            })
+        };
+        let mut entries = Vec::with_capacity(self.poses.len());
+        for (place, entry) in self.poses.iter().enumerate() {
+            entries.push(match entry {
+                PoseEntry::Single(pose) => GrabbedEntry::Single(grabbed(pose, place)?),
+                PoseEntry::Group(poses) => GrabbedEntry::Group(
+                    poses
+                        .iter()
+                        .map(|(pose, interval)| Ok((grabbed(pose, place)?, *interval)))
+                        .collect::<Result<_, MdlWriteError>>()?,
+                ),
+            });
+        }
+        Parts {
+            skin_width: self.skin_width,
+            skin_height: self.skin_height,
+            skins: self.skins.clone(),
+            stverts: self.stverts.clone(),
+            triangles: self.triangles.clone(),
+            entries,
+            eye_position: self.eye_position,
+            flags: self.flags,
+            synctype: self.synctype,
+            size: self.average_size(),
+        }
+        .model()
+    }
+
+    /// The header's `size`: the area of the first frame's triangles, summed and divided by
+    /// how many there are (MDL-7.5).
+    fn average_size(&self) -> f32 {
+        let Some(first) = self
+            .poses
+            .first()
+            .and_then(|entry| entry.poses().into_iter().next())
+        else {
+            return 0.0;
+        };
+        let mut total = 0.0_f32;
+        for triangle in &self.triangles {
+            let [a, b, c] = triangle.vertindex;
+            let (Some(&pa), Some(&pb), Some(&pc)) = (
+                first.positions.get(a),
+                first.positions.get(b),
+                first.positions.get(c),
+            ) else {
+                continue;
+            };
+            let normal = corner_normal(pa, pb, pc);
+            let squared = normal.iter().map(|part| part * part).sum::<f32>();
+            total += squared.sqrt() / 2.0;
+        }
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "spec MDL-7.5: `totsize / model.numtris`, an int made a float"
+        )]
+        let count = self.triangles.len() as f32;
+        if count > 0.0 { total / count } else { 0.0 }
+    }
+}
+
+#[cfg(test)]
+mod tests;
+
+/// A frame as `GrabFrame` leaves it: its name, where each vertex is, and each vertex's entry
+/// of the normal table.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct Grabbed {
+    pub(super) name: Vec<u8>,
+    pub(super) positions: Vec<[f32; 3]>,
+    pub(super) normals: Vec<u8>,
+}
+
+/// One frame entry as grabbed: a frame, or a group's frames each with its interval.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) enum GrabbedEntry {
+    Single(Grabbed),
+    Group(Vec<(Grabbed, f32)>),
+}
+
+impl GrabbedEntry {
+    /// The frames of the entry, in order.
+    fn frames(&self) -> Vec<&Grabbed> {
+        match self {
+            Self::Single(frame) => vec![frame],
+            Self::Group(frames) => frames.iter().map(|(frame, _)| frame).collect(),
+        }
+    }
+}
+
+/// What `WriteModelFile` writes a model from: the base, the skins, the grabbed frames and
+/// the header's given values.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct Parts {
+    pub(super) skin_width: i32,
+    pub(super) skin_height: i32,
+    pub(super) skins: Vec<ModelSkin>,
+    pub(super) stverts: Vec<StVert>,
+    pub(super) triangles: Vec<Triangle>,
+    pub(super) entries: Vec<GrabbedEntry>,
+    pub(super) eye_position: [f32; 3],
+    pub(super) flags: i32,
+    pub(super) synctype: i32,
+    /// The header's `size` (MDL-7.5).
+    pub(super) size: f32,
+}
+
+impl Parts {
+    /// The model: `WriteModelFile`, `WriteFrame` and `WriteGroupBBox` (MDL-7.1 to MDL-7.3,
+    /// MDL-7.6).
+    ///
+    /// # Errors
+    ///
+    /// [`MdlWriteError::FrameVertices`] for a frame without a position and a normal for each
+    /// texture coordinate, [`MdlWriteError::FrameName`], and what [`Model::to_bytes`]
+    /// refuses.
+    pub(super) fn model(self) -> Result<Model, MdlWriteError> {
+        let numverts = self.stverts.len();
         // The box the frames fill starts as the origin alone (MDL-7.1).
         let mut mins = [0.0_f32; AXES];
         let mut maxs = [0.0_f32; AXES];
-        for (place, entry) in self.poses.iter().enumerate() {
-            for pose in entry.poses() {
-                if pose.positions.len() != numverts {
+        for (place, entry) in self.entries.iter().enumerate() {
+            for pose in entry.frames() {
+                if pose.positions.len() != numverts || pose.normals.len() != numverts {
                     return Err(MdlWriteError::FrameVertices { frame: place });
                 }
                 for position in &pose.positions {
@@ -232,14 +359,13 @@ impl Shape {
             numframes: 0,
             synctype: self.synctype,
             flags: self.flags,
-            size: self.average_size(),
+            size: self.size,
         };
-        let frame = |pose: &Pose| -> Result<ModelFrame, MdlWriteError> {
-            let normals = self.normals(&pose.positions)?;
+        let frame = |pose: &Grabbed| -> Result<ModelFrame, MdlWriteError> {
             let mut bboxmin = [u8::MAX; AXES];
             let mut bboxmax = [0_u8; AXES];
             let mut verts = Vec::with_capacity(numverts);
-            for (position, normal) in pose.positions.iter().zip(normals) {
+            for (position, &normal) in pose.positions.iter().zip(&pose.normals) {
                 let mut v = [0_u8; AXES];
                 for ((((byte, at), origin), step), (low, high)) in v
                     .iter_mut()
@@ -272,11 +398,11 @@ impl Shape {
             made.set_name(&pose.name)?;
             Ok(made)
         };
-        let mut frames = Vec::with_capacity(self.poses.len());
-        for entry in &self.poses {
+        let mut frames = Vec::with_capacity(self.entries.len());
+        for entry in &self.entries {
             frames.push(match entry {
-                PoseEntry::Single(pose) => ModelFrameEntry::Single(frame(pose)?),
-                PoseEntry::Group(poses) => {
+                GrabbedEntry::Single(pose) => ModelFrameEntry::Single(frame(pose)?),
+                GrabbedEntry::Group(poses) => {
                     let mut made = Vec::with_capacity(poses.len());
                     let mut intervals = Vec::with_capacity(poses.len());
                     let mut bboxmin = [u8::MAX; AXES];
@@ -315,9 +441,9 @@ impl Shape {
         }
         let model = Model {
             header,
-            skins: self.skins.clone(),
-            stverts: self.stverts.clone(),
-            triangles: self.triangles.clone(),
+            skins: self.skins,
+            stverts: self.stverts,
+            triangles: self.triangles,
             frames,
             trailing: Vec::new(),
         };
@@ -325,39 +451,4 @@ impl Shape {
         model.to_bytes()?;
         Ok(model)
     }
-
-    /// The header's `size`: the area of the first frame's triangles, summed and divided by
-    /// how many there are (MDL-7.5).
-    fn average_size(&self) -> f32 {
-        let Some(first) = self
-            .poses
-            .first()
-            .and_then(|entry| entry.poses().into_iter().next())
-        else {
-            return 0.0;
-        };
-        let mut total = 0.0_f32;
-        for triangle in &self.triangles {
-            let [a, b, c] = triangle.vertindex;
-            let (Some(&pa), Some(&pb), Some(&pc)) = (
-                first.positions.get(a),
-                first.positions.get(b),
-                first.positions.get(c),
-            ) else {
-                continue;
-            };
-            let normal = corner_normal(pa, pb, pc);
-            let squared = normal.iter().map(|part| part * part).sum::<f32>();
-            total += squared.sqrt() / 2.0;
-        }
-        #[expect(
-            clippy::cast_precision_loss,
-            reason = "spec MDL-7.5: `totsize / model.numtris`, an int made a float"
-        )]
-        let count = self.triangles.len() as f32;
-        if count > 0.0 { total / count } else { 0.0 }
-    }
 }
-
-#[cfg(test)]
-mod tests;
