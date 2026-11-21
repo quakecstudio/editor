@@ -19,6 +19,9 @@ const OUR_HOLDER: &str = "QuakeC Studio contributors";
 pub(crate) struct Upstream {
     /// `owner/repo`, as a `Ported from` line names it.
     pub(crate) repo: String,
+    /// The directories of the repository the row names, each ending in `/`: where a
+    /// repository has several rows, a file is of the row whose directory holds it.
+    pub(crate) paths: Vec<String>,
     /// The copyright lines its row lists, runs of spaces collapsed; a file ported from it
     /// keeps at least one.
     pub(crate) copyrights: Vec<String>,
@@ -34,7 +37,8 @@ impl Upstream {
 }
 
 /// Reads the "Upstreams" table of `docs/porting.md`: the first backticked
-/// `owner/repo` of each row and the backticked copyright lines in its last cell.
+/// `owner/repo` of each row, the backticked directories beside it, and the backticked
+/// copyright lines in its last cell.
 pub(crate) fn upstreams(doc: &str) -> Result<Vec<Upstream>, String> {
     let mut upstreams = Vec::new();
     let mut in_section = false;
@@ -50,7 +54,11 @@ pub(crate) fn upstreams(doc: &str) -> Result<Vec<Upstream>, String> {
         let (Some(first), Some(last)) = (cells.first(), cells.last()) else {
             continue;
         };
-        let repo = backticked(first).find(|text| text.contains('/'));
+        let repo = backticked(first).find(|text| text.contains('/') && !text.ends_with('/'));
+        let paths: Vec<String> = backticked(first)
+            .filter(|text| text.ends_with('/'))
+            .map(str::to_owned)
+            .collect();
         let copyrights: Vec<String> = backticked(last)
             .filter(|text| text.starts_with("Copyright"))
             .map(collapse_spaces)
@@ -60,6 +68,7 @@ pub(crate) fn upstreams(doc: &str) -> Result<Vec<Upstream>, String> {
         {
             upstreams.push(Upstream {
                 repo: repo.to_owned(),
+                paths,
                 copyrights,
             });
         }
@@ -128,7 +137,7 @@ pub(crate) fn check_header(header: &[&str], upstreams: &[Upstream]) -> Vec<Strin
     let mut cited = Vec::new();
     for line in &citing {
         match citation(line) {
-            Some(repo) => cited.push(repo),
+            Some(found) => cited.push(found),
             None => problems.push(format!(
                 "H2: {:?} is not `Ported from <owner>/<repo>@<40-hex commit>: <path>, \
                  <Function>[, <Function>...]`",
@@ -148,8 +157,16 @@ pub(crate) fn check_header(header: &[&str], upstreams: &[Upstream]) -> Vec<Strin
     // the same lines (id's two repositories) count once. Rows that only share some lines (the
     // QuakeSpasm lineage) stay separate, and check_copyrights orders them.
     let mut required: Vec<&Upstream> = Vec::new();
-    for repo in cited {
-        let Some(upstream) = upstreams.iter().find(|upstream| upstream.repo == repo) else {
+    for (repo, path) in cited {
+        // The row of the repository whose directory holds the file cited, else its first.
+        let rows = || upstreams.iter().filter(|upstream| upstream.repo == repo);
+        let held = rows().find(|upstream| {
+            upstream
+                .paths
+                .iter()
+                .any(|dir| path.starts_with(dir.as_str()))
+        });
+        let Some(upstream) = held.or_else(|| rows().next()) else {
             problems.push(format!(
                 "H5: upstream {repo} is not registered in the Upstreams table of {DOC}"
             ));
@@ -266,9 +283,9 @@ fn listed(upstream: &Upstream) -> String {
     }
 }
 
-/// The `owner/repo` a line cites if it matches rule H2:
+/// The `owner/repo` and the path a line cites if it matches rule H2:
 /// `^(//|#|\s*\*)?\s*Ported from [\w.-]+/[\w.-]+@[0-9a-f]{40}: \S+, \w+(, \w+)*$`.
-fn citation(line: &str) -> Option<&str> {
+fn citation(line: &str) -> Option<(&str, &str)> {
     let rest = if let Some(rest) = line.strip_prefix("//") {
         rest
     } else if let Some(rest) = line.strip_prefix('#') {
@@ -299,7 +316,7 @@ fn citation(line: &str) -> Option<&str> {
     functions
         .split(", ")
         .all(|function| !function.is_empty() && function.chars().all(is_word))
-        .then_some(repo)
+        .then_some((repo, path))
 }
 
 fn is_repo_part(part: &str) -> bool {
@@ -391,6 +408,7 @@ mod tests {
                 "id-Software/Quake",
                 "id-Software/Quake-Tools",
                 "fte-team/fteqw",
+                "fte-team/fteqw",
                 "sezero/quakespasm",
                 "andrei-drexler/ironwail",
                 "Novum/vkQuake",
@@ -405,6 +423,7 @@ mod tests {
                 "Copyright (C) 1996-1997 Id Software, Inc.",
                 "Copyright (C) 1996-1997 Id Software, Inc.",
                 "Copyright (c) 2004-2025 FTE's team and its contributors",
+                "Copyright (c) 2010-2016 Lee Salzman",
                 QS_ID,
                 QS_ID,
                 QS_ID,
@@ -415,8 +434,9 @@ mod tests {
         let counts: Vec<usize> = upstreams.iter().map(|u| u.copyrights.len()).collect();
         // QuakeSpasm's row lists its three common lines and bgmusic.c's two, ericw-tools' its
         // two common lines and the two of its light's files (docs/porting.md).
-        assert_eq!(counts, [1, 1, 1, 5, 5, 6, 1, 4]);
-        assert!(upstreams[4].copyrights.contains(&SPIKE.to_owned()));
+        // FTEQW's row for `iqm/` lists Lee Salzman's line and its own (ADR-0030).
+        assert_eq!(counts, [1, 1, 1, 2, 5, 5, 6, 1, 4]);
+        assert!(upstreams[5].copyrights.contains(&SPIKE.to_owned()));
         assert!(super::upstreams("## Upstreams\n| `a/b` | `not a copyright` |\n").is_err());
         assert!(super::upstreams("# no table\n").is_err());
         let elsewhere = "## Other\n| `a/b` | `Copyright (C) x` |\n## Upstreams\n\
@@ -712,15 +732,40 @@ mod tests {
         assert_eq!(rules(&text), ["H4"]);
     }
 
+    // A repository with a row for each of two directories: a file is held to the row whose
+    // directory holds what it cites, FTEQW's `iqm/` to Lee Salzman's line and FTE's
+    // (ADR-0030), and its `engine/qclib/` to FTE's alone, as before
+    #[test]
+    fn a_citation_is_of_the_row_whose_directory_holds_it() {
+        const SALZMAN: &str = "Copyright (c) 2010-2016 Lee Salzman";
+        // The helper's citation with the file it names made one of `iqm/`.
+        let iqm = |copyrights: &[&str]| {
+            lineage(copyrights, &[&fte_cite()])
+                .replace("Quake/sv_phys.c, SV_Physics", "iqm/iqm.cpp, loadsmd")
+        };
+        let both = iqm(&[SALZMAN, FTE_COPYRIGHT, OUR_COPYRIGHT]);
+        assert!(rules(&both).is_empty(), "{:?}", rules(&both));
+        // Either of the row's lines is enough, and it comes first.
+        let one = iqm(&[SALZMAN, OUR_COPYRIGHT]);
+        assert!(rules(&one).is_empty(), "{:?}", rules(&one));
+        assert_eq!(rules(&iqm(&[ID_COPYRIGHT, OUR_COPYRIGHT])), ["H4"]);
+        assert_eq!(rules(&iqm(&[OUR_COPYRIGHT, SALZMAN])), ["H4"]);
+        // A file of engine/qclib/ is not excused by Lee Salzman's line.
+        let qclib = lineage(&[SALZMAN, OUR_COPYRIGHT], &[&fte_cite()]);
+        assert_eq!(rules(&qclib), ["H4"]);
+    }
+
     #[test]
     fn listed_names_one_line_plainly_and_several_as_a_choice() {
         let one = Upstream {
             repo: "a/b".to_owned(),
+            paths: Vec::new(),
             copyrights: vec!["Copyright x".to_owned()],
         };
         assert_eq!(listed(&one), "`Copyright x`");
         let two = Upstream {
             repo: "a/b".to_owned(),
+            paths: Vec::new(),
             copyrights: vec!["Copyright x".to_owned(), "Copyright y".to_owned()],
         };
         assert_eq!(listed(&two), "(one of `Copyright x`, `Copyright y`)");
