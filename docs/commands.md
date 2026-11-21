@@ -152,7 +152,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`model.add_frames`](#modeladd_frames) | Adds frames of another model of the same vertices to the end of a model's own, each by its name: QuakeC's $frame list gains the same names at its end. |
 | [`model.copy_from_game`](#modelcopy_from_game) | Copies a model of the game, by its name there such as progs/soldier.mdl, into the project as a file of its own to change: a mod's file of the same name takes the game's place, and one of a new name is a new model. |
 | [`model.export_skin`](#modelexport_skin) | Writes a skin of a model as a PNG, in the game's palette, to look at or to paint on and give back with model.set_skin. |
-| [`model.import`](#modelimport) | Makes a .mdl model in the project of a mesh in an .obj file (one pose) or an .iqe file (a frame for each frame of each animation, posed by its skeleton). A mesh with texture coordinates keeps them, on a PNG given as its skin or one colour; one without is laid out front and back, to export, paint and set. |
+| [`model.import`](#modelimport) | Makes a .mdl model in the project of a mesh in an .obj file (one pose), or an .iqe, text .fbx, .md5mesh or .smd file (a frame for each frame of each animation, posed by its skeleton). A mesh with texture coordinates keeps them, on a PNG given as its skin or one colour; one without is laid out front and back, to export, paint and set. |
 | [`model.inspect`](#modelinspect) | Reads a .mdl model: its skins, their size and the rows of the palette each is of, its vertices and triangles, the box it fills, and its frames by name in the order QuakeC numbers them, as a $frame line lists them. |
 | [`model.move`](#modelmove) | Moves a model against its origin, the point the entity's origin is at: its vertices keep their packed places and the header's origin moves. |
 | [`model.recolor`](#modelrecolor) | Recolours a skin of a model by rows of the palette: every pixel of a row becomes the same shade of another row, as the game recolours a player's shirt and trousers. |
@@ -7451,7 +7451,7 @@ Parameters:
 
 ## `model.import`
 
-Makes a .mdl model in the project of a mesh in an .obj file (one pose) or an .iqe file (a frame for each frame of each animation, posed by its skeleton). A mesh with texture coordinates keeps them, on a PNG given as its skin or one colour; one without is laid out front and back, to export, paint and set.
+Makes a .mdl model in the project of a mesh in an .obj file (one pose), or an .iqe, text .fbx, .md5mesh or .smd file (a frame for each frame of each animation, posed by its skeleton). A mesh with texture coordinates keeps them, on a PNG given as its skin or one colour; one without is laid out front and back, to export, paint and set.
 
 Parameters:
 
@@ -7478,6 +7478,14 @@ Parameters:
   "additionalProperties": false,
   "description": "The parameters of `model.import`.",
   "properties": {
+    "animation_paths": {
+      "default": [],
+      "description": "The animations of an `.md5mesh`, its `.md5anim` files, or of an `.smd` model, its\nanimation `.smd` files: a pose for each frame of each, named by the file and the\nframe's number. An `.md5mesh` given none takes the `.md5anim` of its own name beside\nit, when there is one.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "colour": {
       "default": null,
       "description": "The colour of the palette the skin is filled with when no PNG is given; 8 when not\ngiven.",
@@ -7525,7 +7533,7 @@ Parameters:
       ]
     },
     "source_path": {
-      "description": "The mesh to read: an `.obj` file, one pose, or an `.iqe` file, a pose for each frame\nof each of its animations.",
+      "description": "The mesh to read: an `.obj` file, one pose; an `.iqe` or a text `.fbx` file, a pose\nfor each frame of each of its animations; or an `.md5mesh` or an `.smd` model, posed\nby the files of `animation_paths`.",
       "type": "string"
     },
     "up": {
@@ -7538,7 +7546,7 @@ Parameters:
         }
       ],
       "default": null,
-      "description": "Which axis of the file is up: y for an `.obj` and z for an `.iqe` when not given."
+      "description": "Which axis of the file is up: y for an `.obj` and an `.fbx`, and z for the others,\nwhen not given."
     }
   },
   "required": [

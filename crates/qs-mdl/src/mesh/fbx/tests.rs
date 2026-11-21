@@ -16,11 +16,11 @@ use super::*;
 fn an_fbx_model_is_the_converters() {
     for (text, recorded) in [
         (
-            include_str!("../fixtures/arm.fbx"),
+            include_str!("../fixtures/arm.fbx.txt"),
             include_str!("../fixtures/fbx.fteqw.txt"),
         ),
         (
-            include_str!("../fixtures/hard-arm.fbx"),
+            include_str!("../fixtures/hard-arm.fbx.txt"),
             include_str!("../fixtures/hard-fbx.fteqw.txt"),
         ),
     ] {
@@ -40,7 +40,7 @@ fn an_fbx_model_is_the_converters() {
 // about x; a file whose z is up is left as it is
 #[test]
 fn an_fbx_is_turned_a_quarter_about_x() {
-    let text = include_str!("../fixtures/arm.fbx");
+    let text = include_str!("../fixtures/arm.fbx.txt");
     let turned = read(text, Up::Y).unwrap();
     let as_is = read(text, Up::Z).unwrap();
     // The fifth corner the file's polygons name is the vertex (0, 0, 4).

@@ -1,6 +1,6 @@
 # Models for the agent
 
-Sources: [`docs/spec/mdl.md`](../spec/mdl.md) (MDL-1 to MDL-9); [`docs/spec/render.md`](../spec/render.md)
+Sources: [`docs/spec/mdl.md`](../spec/mdl.md) (MDL-1 to MDL-10); [`docs/spec/render.md`](../spec/render.md)
 (REND-4.13); the model commands (`crates/qs-workbench/src/models.rs`, L-47).
 
 ## What a model is
@@ -49,6 +49,13 @@ with, and every model's own bounds are the same to the engine (MDL-1.7).
   skeleton and animations. A model has no skeleton, so every frame of every animation
   becomes a frame of the model, named by its animation and its number (`run1`, `run2`): the
   answer's `frame_line` is the QuakeC's `$frame` line.
+- **An `.fbx` file**, in its text form, version 7 (export as ASCII: the binary form is not
+  read), with the animations it holds. Its y is taken to be up; give `up` as `z` for one
+  whose z is.
+- **An `.md5mesh` or an `.smd` model**, with its animations in files of their own, given
+  as `animation_paths`: `.md5anim` files, or the `.smd` files that hold a skeleton and no
+  triangles. Each animation's frames are named by its file (`walk.smd` gives `walk1`,
+  `walk2`). An `.md5mesh` given none takes the `.md5anim` of its own name beside it.
 - **Size**: Quake's units are small, a player being 56 high. Give `scale` to make the mesh
   that size, or `model.scale` it after; `model.inspect` answers the box it fills.
 - **Its skin**: a mesh with texture coordinates keeps them. Give `png_path`, a picture whose

@@ -703,8 +703,8 @@ and frames, which become a mesh of poses as MDL-9.2 says an `.iqe`'s do.
 
 ### Test vectors
 
-`crates/qs-mdl/src/mesh/fixtures/` holds one model in each format, written by
-`scripts/model-formats/samples.py`: two joints, a root at the origin and an arm 8 along x
+`crates/qs-mdl/src/mesh/fixtures/` holds one model in each format, each file named with
+`.txt` after its own ending, written by `scripts/model-formats/samples.py`: two joints, a root at the origin and an arm 8 along x
 under it; five vertices, three of the root's, one of the arm's at `(16, 0, 0)` and one of
 both in halves at `(8, 2, 0)`; five triangles; and an animation of three frames in which
 the arm turns 0, 45 and 90 degrees about z and the root rises 0, 1 and 2. The `hard-` files

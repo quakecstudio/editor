@@ -308,6 +308,13 @@ enum Node {
     Stack(String, Vec<u64>),
 }
 
+/// Which of the two named objects of an animation a line is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Named {
+    Layer,
+    Stack,
+}
+
 /// An object's number, as the file writes it.
 const fn id(number: f64) -> u64 {
     number.to_bits()
@@ -594,14 +601,15 @@ impl Scene {
 
     /// `AnimationLayer: id, "AnimLayer::name", ...` and `AnimationStack: id,
     /// "AnimStack::name", ...`.
-    fn named(&mut self, tokens: &mut Tokens<'_>, stack: bool) -> Option<()> {
+    fn named(&mut self, tokens: &mut Tokens<'_>, kind: Named) -> Option<()> {
         let (number, name) = (tokens.token()?, tokens.token()?);
         if let (Token::Number(number), Token::Text(name)) = (number, name) {
-            let node = if stack {
-                let name = name.strip_prefix("AnimStack::").unwrap_or(name);
-                Node::Stack(name.to_owned(), Vec::new())
-            } else {
-                Node::Layer(Vec::new())
+            let node = match kind {
+                Named::Stack => {
+                    let name = name.strip_prefix("AnimStack::").unwrap_or(name);
+                    Node::Stack(name.to_owned(), Vec::new())
+                }
+                Named::Layer => Node::Layer(Vec::new()),
             };
             self.nodes.insert(id(number), node);
         }
@@ -631,8 +639,8 @@ impl Scene {
                     self.xform(tokens);
                     Some(())
                 }
-                Token::Prop("AnimationLayer") => self.named(tokens, false),
-                Token::Prop("AnimationStack") => self.named(tokens, true),
+                Token::Prop("AnimationLayer") => self.named(tokens, Named::Layer),
+                Token::Prop("AnimationStack") => self.named(tokens, Named::Stack),
                 Token::Prop(_) => {
                     tokens.skip_prop();
                     Some(())

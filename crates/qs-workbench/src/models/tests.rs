@@ -792,9 +792,19 @@ fn an_import_that_fails_says_why() {
         assert!(!path.exists(), "{error}");
         error
     };
-    let fbx = write("thing.fbx", "");
-    let error = refused(json!({ "source_path": fbx, "path": path }));
-    assert!(error.contains("is no .obj or .iqe file"), "{error}");
+    let gltf = write("thing.gltf", "");
+    let error = refused(json!({ "source_path": gltf, "path": path }));
+    assert!(
+        error.contains("is no .obj, .iqe, .md5mesh, .smd or .fbx file"),
+        "{error}"
+    );
+    // A binary fbx, or one of another version, is said to be that.
+    let binary = write("binary.fbx", "Kaydara FBX Binary  ");
+    let error = refused(json!({ "source_path": binary, "path": path }));
+    assert!(
+        error.contains("binary.fbx: the file is not a text FBX of version 7"),
+        "{error}"
+    );
     let obj = write("bad.obj", "v 0 0 0\nf 1 2 3\n");
     let error = refused(json!({ "source_path": obj, "path": path }));
     assert!(
@@ -823,4 +833,172 @@ fn an_import_that_fails_says_why() {
     assert!(error.contains("is none a model has"), "{error}");
     let error = refused(json!({ "source_path": root.join("none.obj"), "path": path }));
     assert!(error.contains("cannot be read"), "{error}");
+}
+
+/// The fixtures of `qs-mdl`'s mesh readers: one model in each of the formats FTEQW's
+/// converter reads, with its animation of three frames.
+const ARM_MD5MESH: &str = include_str!("../../../qs-mdl/src/mesh/fixtures/arm.md5mesh.txt");
+const WAVE_MD5ANIM: &str = include_str!("../../../qs-mdl/src/mesh/fixtures/wave.md5anim.txt");
+const ARM_SMD: &str = include_str!("../../../qs-mdl/src/mesh/fixtures/arm.smd.txt");
+const WAVE_SMD: &str = include_str!("../../../qs-mdl/src/mesh/fixtures/wave.smd.txt");
+const ARM_FBX: &str = include_str!("../../../qs-mdl/src/mesh/fixtures/arm.fbx.txt");
+
+/// Where the arm's own vertex, at (16, 0, 0) in the base pose, is in frame `entry` of the
+/// model at `path`: the vertex farthest from the origin in the first frame.
+fn arm_tip(path: &Path, entry: usize) -> [f32; 3] {
+    let model = read(path);
+    let bytes = std::fs::read(path).unwrap();
+    let mdl = qs_mdl::Mdl::read(&bytes).unwrap();
+    let frame = |entry: usize| {
+        let ModelFrameEntry::Single(frame) = &model.frames[entry] else {
+            panic!("single");
+        };
+        frame.verts.clone()
+    };
+    let first = frame(0);
+    let far = (0..first.len())
+        .max_by(|a, b| {
+            let reach = |at: usize| mdl.position(first[at]).map(f32::abs).iter().sum::<f32>();
+            reach(*a).total_cmp(&reach(*b))
+        })
+        .unwrap();
+    mdl.position(frame(entry)[far])
+}
+
+// spec MDL-10.2: an .md5mesh is imported with the .md5anim of its own name beside it, or
+// with the animations given, a frame for each frame, named by the animation's file
+#[test]
+fn an_md5_model_is_imported_with_its_animations() {
+    let (root, mut session) = project("import-md5", &[]);
+    std::fs::write(root.join("arm.md5mesh"), ARM_MD5MESH).unwrap();
+    std::fs::write(root.join("arm.md5anim"), WAVE_MD5ANIM).unwrap();
+    std::fs::write(root.join("wave.md5anim"), WAVE_MD5ANIM).unwrap();
+    let own = root.join("progs/own.mdl");
+    let made = session
+        .execute(
+            MODEL_IMPORT,
+            json!({ "source_path": root.join("arm.md5mesh"), "path": own }),
+        )
+        .unwrap();
+    assert_eq!(made["frame_line"], "arm1 arm2 arm3");
+    assert_eq!(made["layout"], "own");
+    assert_eq!(made["triangles"], 5);
+
+    let path = root.join("progs/arm.mdl");
+    let made = session
+        .execute(
+            MODEL_IMPORT,
+            json!({
+                "source_path": root.join("arm.md5mesh"),
+                "path": path,
+                "animation_paths": [root.join("wave.md5anim")],
+            }),
+        )
+        .unwrap();
+    assert_eq!(made["frame_line"], "wave1 wave2 wave3");
+    // In the last frame the arm is a quarter turn about z and the root 2 higher.
+    for (at, want) in arm_tip(&path, 2).iter().zip([8.0, 8.0, 2.0]) {
+        assert!((at - want).abs() < 0.1, "{:?}", arm_tip(&path, 2));
+    }
+    // An animation that is none is said to be that, by its file.
+    std::fs::write(root.join("bad.md5anim"), "MD5Version 9\n").unwrap();
+    let error = session
+        .execute(
+            MODEL_IMPORT,
+            json!({
+                "source_path": root.join("arm.md5mesh"),
+                "path": root.join("progs/bad.mdl"),
+                "animation_paths": [root.join("bad.md5anim")],
+            }),
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("bad.md5anim: "), "{error}");
+    assert!(!root.join("progs/bad.mdl").exists());
+}
+
+// spec MDL-10.3: an .smd model is imported with its animation files; a file with no
+// triangles is no model
+#[test]
+fn an_smd_model_is_imported_with_its_animations() {
+    let (root, mut session) = project("import-smd", &[]);
+    std::fs::write(root.join("arm.smd"), ARM_SMD).unwrap();
+    std::fs::write(root.join("wave.smd"), WAVE_SMD).unwrap();
+    let still = root.join("progs/still.mdl");
+    let made = session
+        .execute(
+            MODEL_IMPORT,
+            json!({ "source_path": root.join("arm.smd"), "path": still }),
+        )
+        .unwrap();
+    assert_eq!(made["frame_line"], "base");
+    let path = root.join("progs/arm.mdl");
+    let made = session
+        .execute(
+            MODEL_IMPORT,
+            json!({
+                "source_path": root.join("arm.smd"),
+                "path": path,
+                "animation_paths": [root.join("wave.smd")],
+            }),
+        )
+        .unwrap();
+    assert_eq!(made["frame_line"], "wave1 wave2 wave3");
+    for (at, want) in arm_tip(&path, 2).iter().zip([8.0, 8.0, 2.0]) {
+        assert!((at - want).abs() < 0.1, "{:?}", arm_tip(&path, 2));
+    }
+    let error = session
+        .execute(
+            MODEL_IMPORT,
+            json!({ "source_path": root.join("wave.smd"), "path": root.join("progs/no.mdl") }),
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("wave.smd: the file has no triangles"),
+        "{error}"
+    );
+}
+
+// spec MDL-10.4: a text .fbx is imported with the animations it holds, its y made z; it
+// takes no animation files
+#[test]
+fn an_fbx_model_is_imported_with_its_animations() {
+    let (root, mut session) = project("import-fbx", &[]);
+    std::fs::write(root.join("arm.fbx"), ARM_FBX).unwrap();
+    let path = root.join("progs/arm.mdl");
+    let made = session
+        .execute(
+            MODEL_IMPORT,
+            json!({ "source_path": root.join("arm.fbx"), "path": path, "up": "z" }),
+        )
+        .unwrap();
+    assert_eq!(made["frame_line"], "wave1 wave2 wave3");
+    assert_eq!(made["layout"], "own");
+    for (at, want) in arm_tip(&path, 2).iter().zip([8.0, 8.0, 2.0]) {
+        assert!((at - want).abs() < 0.1, "{:?}", arm_tip(&path, 2));
+    }
+    // With y up, as an fbx is taken to be, the file's z is the model's -y.
+    let turned = root.join("progs/turned.mdl");
+    session
+        .execute(
+            MODEL_IMPORT,
+            json!({ "source_path": root.join("arm.fbx"), "path": turned }),
+        )
+        .unwrap();
+    for (at, want) in arm_tip(&turned, 2).iter().zip([8.0, -2.0, 8.0]) {
+        assert!((at - want).abs() < 0.1, "{:?}", arm_tip(&turned, 2));
+    }
+    let error = session
+        .execute(
+            MODEL_IMPORT,
+            json!({
+                "source_path": root.join("arm.fbx"),
+                "path": root.join("progs/no.mdl"),
+                "animation_paths": [root.join("arm.fbx")],
+            }),
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("holds its own animations"), "{error}");
 }

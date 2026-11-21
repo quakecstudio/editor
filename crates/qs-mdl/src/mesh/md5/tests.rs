@@ -26,18 +26,18 @@ fn model(mesh: &str, animation: &str) -> (Md5Mesh, Vec<(String, Md5Anim)>) {
 fn an_md5_model_is_the_converters() {
     for (mesh_text, animation, recorded) in [
         (
-            include_str!("../fixtures/arm.md5mesh"),
-            include_str!("../fixtures/wave.md5anim"),
+            include_str!("../fixtures/arm.md5mesh.txt"),
+            include_str!("../fixtures/wave.md5anim.txt"),
             include_str!("../fixtures/md5.fteqw.txt"),
         ),
         (
-            include_str!("../fixtures/hard-arm.md5mesh"),
-            include_str!("../fixtures/hard-wave.md5anim"),
+            include_str!("../fixtures/hard-arm.md5mesh.txt"),
+            include_str!("../fixtures/hard-wave.md5anim.txt"),
             include_str!("../fixtures/hard-md5.fteqw.txt"),
         ),
     ] {
         let (md5, animations) = model(mesh_text, animation);
-        let made = mesh(&md5, &animations, Up::Z).unwrap();
+        let made = md5.mesh(&animations, Up::Z).unwrap();
         let names: Vec<&str> = made
             .frames
             .iter()
@@ -55,16 +55,16 @@ fn an_md5_model_is_the_converters() {
 #[test]
 fn an_md5_vertex_follows_its_joints() {
     let (md5, animations) = model(
-        include_str!("../fixtures/arm.md5mesh"),
-        include_str!("../fixtures/wave.md5anim"),
+        include_str!("../fixtures/arm.md5mesh.txt"),
+        include_str!("../fixtures/wave.md5anim.txt"),
     );
-    let still = mesh(&md5, &[], Up::Z).unwrap();
+    let still = md5.mesh(&[], Up::Z).unwrap();
     assert_eq!(still.frames.len(), 1);
     assert_eq!(still.frames[0].name, MD5_FRAME);
     assert_eq!(still.frames[0].positions[3], [16.0, 0.0, 0.0]);
     assert_eq!(still.frames[0].positions[4], [8.0, 2.0, 0.0]);
 
-    let made = mesh(&md5, &animations, Up::Z).unwrap();
+    let made = md5.mesh(&animations, Up::Z).unwrap();
     let near = |at: [f32; 3], want: [f32; 3]| {
         at.iter()
             .zip(want)
@@ -83,14 +83,14 @@ fn an_md5_vertex_follows_its_joints() {
 #[test]
 fn an_animation_of_other_joints_is_refused() {
     let (md5, _) = model(
-        include_str!("../fixtures/arm.md5mesh"),
-        include_str!("../fixtures/wave.md5anim"),
+        include_str!("../fixtures/arm.md5mesh.txt"),
+        include_str!("../fixtures/wave.md5anim.txt"),
     );
     let one = "MD5Version 10\ncommandline \"\"\nnumFrames 1\nnumJoints 1\nframeRate 10\n\
                numAnimatedComponents 0\nhierarchy {\n\"root\" -1 0 0\n}\nbounds {\n\
                ( 0 0 0 ) ( 1 1 1 )\n}\nbaseframe {\n( 0 0 0 ) ( 0 0 0 )\n}\nframe 0 {\n}\n";
     let other = vec![("nod".to_owned(), Md5Anim::read(one.as_bytes()).unwrap())];
-    let error = mesh(&md5, &other, Up::Z).unwrap_err();
+    let error = md5.mesh(&other, Up::Z).unwrap_err();
     assert_eq!(
         error,
         Md5MeshError::Joints {

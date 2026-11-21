@@ -16,13 +16,13 @@ use super::*;
 fn an_smd_model_is_the_converters() {
     for (model, animation, recorded) in [
         (
-            include_str!("../fixtures/arm.smd"),
-            include_str!("../fixtures/wave.smd"),
+            include_str!("../fixtures/arm.smd.txt"),
+            include_str!("../fixtures/wave.smd.txt"),
             include_str!("../fixtures/smd.fteqw.txt"),
         ),
         (
-            include_str!("../fixtures/hard-arm.smd"),
-            include_str!("../fixtures/hard-wave.smd"),
+            include_str!("../fixtures/hard-arm.smd.txt"),
+            include_str!("../fixtures/hard-wave.smd.txt"),
             include_str!("../fixtures/hard-smd.fteqw.txt"),
         ),
     ] {
@@ -87,7 +87,7 @@ fn a_triangle_is_read_as_the_converter_reads_one() {
 #[test]
 fn what_is_no_smd_model_is_refused() {
     assert_eq!(Smd::read("version 2\n").unwrap_err(), SmdError::Version);
-    let animation = Smd::read(include_str!("../fixtures/wave.smd")).unwrap();
+    let animation = Smd::read(include_str!("../fixtures/wave.smd.txt")).unwrap();
     assert_eq!(
         animation.mesh(&[], Up::Z).unwrap_err(),
         SmdError::NoTriangles

@@ -26,9 +26,8 @@ pub const SMD_MAX_JOINT: usize = 255;
 /// The numbers a vertex's line has before its links: its joint, its position, its normal
 /// and its texture coordinate.
 const VERTEX_NUMBERS: usize = 9;
-/// The numbers of a joint's line of a frame after the joint's own: a position and three
-/// angles.
-const POSE_NUMBERS: usize = 6;
+/// The numbers of a joint's line of a frame: the joint's own, a position and three angles.
+const POSE_NUMBERS: usize = 7;
 /// The corners of a triangle.
 const CORNERS: usize = 3;
 /// A scale of one on each axis: an SMD pose has none.
@@ -204,11 +203,11 @@ impl Smd {
                 let Some(values) = lines.next().map(numbers) else {
                     return;
                 };
-                let at = |place: usize| values.get(place).copied().unwrap_or(0.0);
-                if values.len() < VERTEX_NUMBERS {
+                let Some(&[own, x, y, z, _, _, _, u, v]) = values.first_chunk::<VERTEX_NUMBERS>()
+                else {
                     return;
-                }
-                let own = whole(at(0));
+                };
+                let own = whole(own);
                 let links = values
                     .get(VERTEX_NUMBERS)
                     .copied()
@@ -239,9 +238,9 @@ impl Smd {
                     clippy::cast_possible_truncation,
                     reason = "spec MDL-10.3: a texture coordinate is kept in single precision"
                 )]
-                let texcoord = [at(7) as f32, (1.0 - at(8)) as f32];
+                let texcoord = [u as f32, (1.0 - v) as f32];
                 corners.push(Vertex {
-                    position: [at(1), at(2), at(3)],
+                    position: [x, y, z],
                     texcoord,
                     blends: blend(&others),
                 });
@@ -273,19 +272,19 @@ impl Smd {
                 continue;
             }
             let values = numbers(line);
-            let at = |place: usize| values.get(place).copied().unwrap_or(0.0);
-            if values.len() <= POSE_NUMBERS {
+            let Some(&[joint, px, py, pz, rx, ry, rz]) = values.first_chunk::<POSE_NUMBERS>()
+            else {
                 continue;
-            }
+            };
             let slot = frame
                 .and_then(|frame| self.frames.get_mut(frame))
-                .zip(whole(at(0)))
+                .zip(whole(joint))
                 .and_then(|(poses, joint)| poses.get_mut(joint));
             if let Some(slot) = slot {
                 *slot = Some(scaled(
-                    turn(from_angles([at(4), at(5), at(6)])),
+                    turn(from_angles([rx, ry, rz])),
                     NO_SCALE,
-                    [at(1), at(2), at(3)],
+                    [px, py, pz],
                 ));
             }
         }
