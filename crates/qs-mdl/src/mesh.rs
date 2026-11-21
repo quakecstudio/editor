@@ -16,6 +16,10 @@ use crate::mdl::make::{Pose, PoseEntry, Shape};
 use crate::mdl::write::{MdlWriteError, Model, ModelSkin};
 use crate::mdl::{MDL_DT_FACES_FRONT, MDL_ST_RAND, StVert, Triangle};
 
+/// The colour GLQuake fills a skin's background with, `filledcolor` (REND-4.1): the first
+/// pixel of a skin of one colour, so that the fill, which starts there, finds nothing to do.
+pub const MESH_SKIN_FIRST: u8 = 0;
+
 /// A corner of a triangle of a mesh.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Corner {
@@ -51,8 +55,9 @@ pub struct Mesh {
 /// A skin for a model made of a mesh.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MeshSkin {
-    /// One colour of the palette all over, on a skin of the given width and height where the
-    /// mesh has texture coordinates, and of the size the layout needs where it has none.
+    /// One colour of the palette all over but for the first pixel ([`MESH_SKIN_FIRST`]), on
+    /// a skin of the given width and height where the mesh has texture coordinates, and of
+    /// the size the layout needs where it has none.
     Flat {
         /// The colour.
         colour: u8,
@@ -209,7 +214,14 @@ impl Mesh {
                 let count = usize::try_from(width)
                     .unwrap_or(0)
                     .saturating_mul(usize::try_from(height).unwrap_or(0));
-                vec![*colour; count]
+                // An engine made from GLQuake fills what is joined to a skin's first pixel
+                // and of its colour with black (REND-4.1), which is all of a skin of one
+                // colour: the first pixel is that black already, and nothing is filled.
+                let mut pixels = vec![*colour; count];
+                if let Some(first) = pixels.first_mut() {
+                    *first = MESH_SKIN_FIRST;
+                }
+                pixels
             }
             MeshSkin::Picture { pixels, .. } => pixels.clone(),
         };

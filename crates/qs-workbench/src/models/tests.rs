@@ -640,7 +640,7 @@ fn an_obj_is_imported_with_its_own_skin() {
     let made = session
         .execute(
             MODEL_IMPORT,
-            json!({ "source": source, "path": path, "skin_png": png, "scale": 32.0 }),
+            json!({ "source_path": source, "path": path, "png_path": png, "scale": 32.0 }),
         )
         .unwrap();
     assert_eq!(made["layout"], "own");
@@ -663,7 +663,7 @@ fn an_obj_is_imported_with_its_own_skin() {
     }
     // A file that is there is not written over.
     let error = session
-        .execute(MODEL_IMPORT, json!({ "source": source, "path": path }))
+        .execute(MODEL_IMPORT, json!({ "source_path": source, "path": path }))
         .unwrap_err()
         .to_string();
     assert!(error.contains("is there already"), "{error}");
@@ -681,7 +681,7 @@ fn an_obj_without_coordinates_is_laid_out() {
     let made = session
         .execute(
             MODEL_IMPORT,
-            json!({ "source": source, "path": path, "up": "z", "scale": 16.0, "colour": 20 }),
+            json!({ "source_path": source, "path": path, "up": "z", "scale": 16.0, "colour": 20 }),
         )
         .unwrap();
     assert_eq!(made["layout"], "front_and_back");
@@ -692,7 +692,10 @@ fn an_obj_without_coordinates_is_laid_out() {
         (json!(8), json!(12))
     );
     let model = read(&path);
-    assert_eq!(model.skins, [ModelSkin::Single(vec![20; 264 * 132])]);
+    // One colour but for the first pixel, so that GLQuake's fill does nothing (REND-4.1).
+    let mut flat = vec![20; 264 * 132];
+    flat[0] = 0;
+    assert_eq!(model.skins, [ModelSkin::Single(flat)]);
     // The face that looks back along x is on the skin's back half, the rest on the front.
     let back = model
         .triangles
@@ -712,7 +715,7 @@ fn an_obj_without_coordinates_is_laid_out() {
     let error = session
         .execute(
             MODEL_IMPORT,
-            json!({ "source": source, "path": other, "skin_png": png }),
+            json!({ "source_path": source, "path": other, "png_path": png }),
         )
         .unwrap_err()
         .to_string();
@@ -747,7 +750,7 @@ fn an_iqe_is_imported_with_its_animation() {
     .unwrap();
     let path = root.join("progs/arm.mdl");
     let made = session
-        .execute(MODEL_IMPORT, json!({ "source": source, "path": path }))
+        .execute(MODEL_IMPORT, json!({ "source_path": source, "path": path }))
         .unwrap();
     assert_eq!(made["frame_line"], "wave1 wave2");
     assert_eq!(made["layout"], "front_and_back");
@@ -790,10 +793,10 @@ fn an_import_that_fails_says_why() {
         error
     };
     let fbx = write("thing.fbx", "");
-    let error = refused(json!({ "source": fbx, "path": path }));
+    let error = refused(json!({ "source_path": fbx, "path": path }));
     assert!(error.contains("is no .obj or .iqe file"), "{error}");
     let obj = write("bad.obj", "v 0 0 0\nf 1 2 3\n");
-    let error = refused(json!({ "source": obj, "path": path }));
+    let error = refused(json!({ "source_path": obj, "path": path }));
     assert!(
         error.contains("bad.obj: line 2: a face refers to a vertex"),
         "{error}"
@@ -802,17 +805,17 @@ fn an_import_that_fails_says_why() {
         "bad.iqe",
         "# Inter-Quake Export\njoint a -1\npa 0 0 0 0 0 0\n",
     );
-    let error = refused(json!({ "source": iqe, "path": path }));
+    let error = refused(json!({ "source_path": iqe, "path": path }));
     assert!(
         error.contains("bad.iqe: line 3: a pa pose is not read"),
         "{error}"
     );
     let empty = write("empty.obj", "v 0 0 0\n");
-    let error = refused(json!({ "source": empty, "path": path }));
+    let error = refused(json!({ "source_path": empty, "path": path }));
     assert!(error.contains("the mesh has no triangle"), "{error}");
     let good = write("good.obj", &crate_obj(false));
-    let error = refused(json!({ "source": good, "path": path, "scale": 0.0 }));
+    let error = refused(json!({ "source_path": good, "path": path, "scale": 0.0 }));
     assert!(error.contains("a scale is a number above 0"), "{error}");
-    let error = refused(json!({ "source": root.join("none.obj"), "path": path }));
+    let error = refused(json!({ "source_path": root.join("none.obj"), "path": path }));
     assert!(error.contains("cannot be read"), "{error}");
 }

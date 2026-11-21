@@ -7493,20 +7493,20 @@ Parameters:
       "description": "The `.mdl` file to make of it, in the project; one that is there already is refused.",
       "type": "string"
     },
+    "png_path": {
+      "default": null,
+      "description": "A PNG for the skin of a mesh that has texture coordinates, each pixel matched to the\npalette as `model.set_skin` matches one. Its width is a multiple of 4 and its height\nat most 480.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "scale": {
       "default": null,
       "description": "What every position is multiplied by, to make the model the size Quake's are (a\nplayer is 56 units high); 1 when not given.",
       "format": "float",
       "type": [
         "number",
-        "null"
-      ]
-    },
-    "skin_png": {
-      "default": null,
-      "description": "A PNG for the skin of a mesh that has texture coordinates, each pixel matched to the\npalette as `model.set_skin` matches one. Its width is a multiple of 4 and its height\nat most 480.",
-      "type": [
-        "string",
         "null"
       ]
     },
@@ -7524,7 +7524,7 @@ Parameters:
         "null"
       ]
     },
-    "source": {
+    "source_path": {
       "description": "The mesh to read: an `.obj` file, one pose, or an `.iqe` file, a pose for each frame\nof each of its animations.",
       "type": "string"
     },
@@ -7542,7 +7542,7 @@ Parameters:
     }
   },
   "required": [
-    "source",
+    "source_path",
     "path"
   ],
   "title": "ImportParams",

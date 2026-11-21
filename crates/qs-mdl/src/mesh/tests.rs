@@ -115,7 +115,10 @@ fn a_textured_mesh_keeps_its_own_coordinates() {
     );
     assert_eq!(model.triangles[1].vertindex, [2, 3, 4]);
     assert_eq!(model.triangles[3].vertindex, [0, 2, 4]);
-    assert_eq!(model.skins, [ModelSkin::Single(vec![9; 64 * 32])]);
+    // One colour but for the first pixel, GLQuake's fill colour (REND-4.1).
+    let mut flat = vec![9; 64 * 32];
+    flat[0] = MESH_SKIN_FIRST;
+    assert_eq!(model.skins, [ModelSkin::Single(flat)]);
     assert_eq!(names(&model), ["stand1", "stand2"]);
     // The file loads, and its top is where the second pose has it.
     let bytes = model.to_bytes().unwrap();
@@ -161,7 +164,9 @@ fn an_untextured_mesh_is_laid_out_front_and_back() {
         (model.header.skinwidth, model.header.skinheight),
         (264, 132)
     );
-    assert_eq!(model.skins, [ModelSkin::Single(vec![3; 264 * 132])]);
+    let mut flat = vec![3; 264 * 132];
+    flat[0] = MESH_SKIN_FIRST;
+    assert_eq!(model.skins, [ModelSkin::Single(flat)]);
     assert_eq!(model.stverts.len(), 4);
     assert_eq!(names(&model), ["stand1", "stand2"]);
     // The face away from +x, the one opposite the foot's forward corner, is on the back.

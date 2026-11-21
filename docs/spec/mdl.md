@@ -556,14 +556,16 @@ x forward, y left, z up.
   order they come. A vertex is at the skin's pixel `floor(u * skinwidth)`, `floor(v *
   skinheight)`, kept on the skin; no vertex is on the seam and every triangle has
   `facesfront` `DT_FACES_FRONT`. The skin is the caller's picture, or one colour of the size
-  the caller gives. A triangle two of whose corners are one position is left out; a mesh
+  the caller gives, its first pixel colour 0: GLQuake fills what is joined to a skin's first
+  pixel and of its colour with its `filledcolor`, 0 (REND-4.1), which is all of a skin of one
+  colour, and fills nothing when the first pixel is that colour already. A triangle two of whose corners are one position is left out; a mesh
   with no triangle left or no pose, and a corner past the mesh's positions or texture
   coordinates, are refused. Each pose is a frame made as MDL-7 says.
 - **MDL-9.4** Ours: a mesh without a texture coordinate for every corner is laid out as
   modelgen lays a base (MDL-8.1, MDL-8.3, MDL-8.4) from its first pose, turned so that the
   layout is of the mesh as it stands: what faces -x is on the back, the skin's right half,
-  and the rest on the front, seen from +x with +y to the right. Its skin is one colour, of
-  the size the layout gives; a picture is refused, since where the layout puts a triangle
+  and the rest on the front, seen from +x with +y to the right. Its skin is one colour, its
+  first pixel colour 0 as MDL-9.3 says, of the size the layout gives; a picture is refused, since where the layout puts a triangle
   is not known before it is made.
 
 ### Test vectors

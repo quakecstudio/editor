@@ -1140,7 +1140,7 @@ pub enum SkinLayout {
 pub struct ImportParams {
     /// The mesh to read: an `.obj` file, one pose, or an `.iqe` file, a pose for each frame
     /// of each of its animations.
-    pub source: PathBuf,
+    pub source_path: PathBuf,
     /// The `.mdl` file to make of it, in the project; one that is there already is refused.
     pub path: PathBuf,
     /// Which axis of the file is up: y for an `.obj` and z for an `.iqe` when not given.
@@ -1154,7 +1154,7 @@ pub struct ImportParams {
     /// palette as `model.set_skin` matches one. Its width is a multiple of 4 and its height
     /// at most 480.
     #[serde(default)]
-    pub skin_png: Option<PathBuf>,
+    pub png_path: Option<PathBuf>,
     /// The skin's width and height for a mesh with texture coordinates and no PNG; 128 by
     /// 128 when not given. A mesh without them has a skin of the size its layout needs.
     #[serde(default)]
@@ -1209,7 +1209,7 @@ impl<C: HasWorkbench + HasMap + 'static> Command<C> for ModelImport {
         {
             return Err(ModelError::Scale);
         }
-        let source = &params.source;
+        let source = &params.source_path;
         let ending = source
             .extension()
             .map(|ending| ending.to_string_lossy().to_ascii_lowercase());
@@ -1248,7 +1248,7 @@ impl<C: HasWorkbench + HasMap + 'static> Command<C> for ModelImport {
             }
         }
         let colour = params.colour.unwrap_or(IMPORT_SKIN_COLOUR);
-        let skin = match &params.skin_png {
+        let skin = match &params.png_path {
             Some(png_path) => {
                 let palette = palette(context)?;
                 let png = std::fs::read(png_path).map_err(|error| ModelError::Read {

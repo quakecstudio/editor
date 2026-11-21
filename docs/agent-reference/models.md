@@ -51,7 +51,7 @@ with, and every model's own bounds are the same to the engine (MDL-1.7).
   answer's `frame_line` is the QuakeC's `$frame` line.
 - **Size**: Quake's units are small, a player being 56 high. Give `scale` to make the mesh
   that size, or `model.scale` it after; `model.inspect` answers the box it fills.
-- **Its skin**: a mesh with texture coordinates keeps them. Give `skin_png`, a picture whose
+- **Its skin**: a mesh with texture coordinates keeps them. Give `png_path`, a picture whose
   width is a multiple of 4 and whose height is at most 480, or it is one colour to paint
   over. A mesh without them is laid out front and back, what faces forward (+x) on the
   skin's left half and what faces back on its right: `model.export_skin` it, paint it and
@@ -84,6 +84,11 @@ Each of these is one step that `edit.undo` takes back.
 - **Colours 224 to 255 glow**: they show at full brightness in the dark. A painted pixel
   takes one only when it is exactly that colour of the palette; any other colour takes the
   nearest of colours 0 to 223.
+- **A skin needs a background**: engines made from GLQuake fill the part of a skin that
+  is joined to its top left pixel and of that pixel's colour with black before drawing
+  (REND-4.1). id's skins have a background there that no triangle uses. A skin painted one
+  colour all over, top left pixel included, is drawn black: leave the top left pixel as it
+  is, or keep it another colour than what it touches.
 - **Scale about the origin**: a model stands with its origin where the entity's is, so a
   monster made 1.3 times larger also reaches 1.3 times as far below it. Its feet are at the
   low z of the box `model.inspect` answers; when QuakeC's `setsize` box starts at -24, move
