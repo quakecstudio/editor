@@ -12,8 +12,8 @@
 use core::fmt;
 
 use super::{
-    MDL_FRAME_NAME_SIZE, MDL_FRAME_SINGLE, MDL_MAGIC, MDL_SKIN_SINGLE, MDL_VERSION, Mdl, MdlError, MdlFrame, MdlFrameEntry, MdlHeader, MdlSkin,
-    StVert, Triangle, TriVertX,
+    MDL_FRAME_NAME_SIZE, MDL_FRAME_SINGLE, MDL_MAGIC, MDL_SKIN_SINGLE, MDL_VERSION, Mdl, MdlError,
+    MdlFrame, MdlFrameEntry, MdlHeader, MdlSkin, StVert, TriVertX, Triangle,
 };
 
 /// One skin entry of a model held whole (MDL-2.1).
@@ -134,14 +134,15 @@ pub enum MdlWriteError {
 impl fmt::Display for MdlWriteError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::FrameName => {
-                f.write_str("a frame's name is at most 15 bytes and holds no NUL")
-            }
+            Self::FrameName => f.write_str("a frame's name is at most 15 bytes and holds no NUL"),
             Self::SkinSize { skin } => {
                 write!(f, "skin {skin} is not the model's skin width by its height")
             }
             Self::FrameVertices { frame } => {
-                write!(f, "frame {frame} does not have a vertex for each of the model's")
+                write!(
+                    f,
+                    "frame {frame} does not have a vertex for each of the model's"
+                )
             }
             Self::Intervals => {
                 f.write_str("a group needs one interval for each of its skins or frames")
