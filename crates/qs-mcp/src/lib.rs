@@ -541,6 +541,10 @@ const INSTRUCTIONS: &str = "Every command of QuakeC Studio over the project this
     key its entities, build its brushes, compile it and find its leaks, save it and play it. \
     A map edit is made at once and edit.undo takes it back. Paths are the project's, absolute or relative to it. \
     map.generate makes a whole random level to play or to start from. \
+    map.build_room builds a room of a shape of id's levels (hall, chamber, pit, split, court, \
+    cross, vault) with its lights and answers its doorways; map.build_passage joins two \
+    doorways, with stairs between their floors: build a level from these, no two rooms alike, \
+    rather than from boxes. \
     To build a map: map.new (or map.open), then map.list_textures for the texture names there \
     are. A room is map.brush_create for a box and map.brush_hollow for its walls; rooms are \
     joined by a box across the walls between them given to map.brush_subtract. The \

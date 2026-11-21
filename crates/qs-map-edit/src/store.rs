@@ -12,12 +12,35 @@ use std::path::{Path, PathBuf};
 
 use qs_map::{Entity, MapFile};
 
+use crate::textures::{Game, GameTextures};
 use crate::{ClassInfo, EntityIndex, LiveChange, MapDocument, QuickFix};
 
 /// The map open in the map view, if one is.
 #[derive(Debug, Default)]
 pub struct MapStore {
     pub(crate) document: Option<MapDocument>,
+    /// The names of the textures of the game's levels, with the base directory they were
+    /// read for: every level's BSP is read to list them, so they are read once for a game.
+    level_names: Option<(PathBuf, Vec<String>)>,
+}
+
+impl MapStore {
+    /// The names of the textures the levels of the game at `base` hold, read when first
+    /// asked for and when the game's folder has changed.
+    pub(crate) fn level_names(&mut self, base: &Path) -> &[String] {
+        let kept = self
+            .level_names
+            .take()
+            .filter(|(read_for, _)| read_for == base);
+        let (_, names) = self.level_names.insert(kept.unwrap_or_else(|| {
+            let names = GameTextures::read(&Game::at(base))
+                .names()
+                .map(str::to_owned)
+                .collect();
+            (base.to_path_buf(), names)
+        }));
+        names
+    }
 }
 
 /// A context the map commands work on: one with a [`MapStore`].

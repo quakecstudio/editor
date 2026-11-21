@@ -54,7 +54,8 @@ fn one_seed_is_one_level() {
     assert_ne!(a, c);
 }
 
-// No spec statement: L-48, every brush of a level is a valid solid whose faces' points are whole (MAP-3.3)
+// No spec statement: L-48, every brush of a level is a valid solid whose faces' points are whole
+// (MAP-3.3), within 4096 units of the map's middle (NET-1.1)
 #[test]
 fn every_brush_is_valid_and_on_the_grid() {
     for seed in 0..40 {
@@ -63,6 +64,10 @@ fn every_brush_is_valid_and_on_the_grid() {
             for entity in &level.map.entities {
                 for brush in entity.brushes() {
                     assert!(brush.is_valid(), "seed {seed}");
+                    // Within what the game can send of a position (NET-1.1).
+                    for corner in brush.vertices() {
+                        assert!(corner.iter().all(|at| at.abs() < 4096.0), "seed {seed}");
+                    }
                     for face in &brush.faces {
                         for point in face.points() {
                             for at in point {

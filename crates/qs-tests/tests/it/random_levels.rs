@@ -27,7 +27,7 @@ const PACE: f32 = 16.0;
 const CLIMB: f32 = 18.0;
 const FINE: f32 = 2.0;
 /// How far a walker may be from a place and have reached it.
-const NEAR: f32 = 48.0;
+pub(crate) const NEAR: f32 = 48.0;
 /// Below every level.
 const BOTTOM: f32 = -1024.0;
 
@@ -98,7 +98,7 @@ fn level(seed: u64, size: Size, textures: &[&str]) -> Level {
 }
 
 /// Whether the player's box is in solid at `at`.
-fn blocked(hull: &Hull<'_>, head: i32, at: [f32; 3]) -> bool {
+pub(crate) fn blocked(hull: &Hull<'_>, head: i32, at: [f32; 3]) -> bool {
     hull.point_contents(head, at).unwrap() == SOLID
 }
 
@@ -121,7 +121,7 @@ fn paced(hull: &Hull<'_>, head: i32, from: [f32; 3], step: [f32; 2]) -> Option<[
 }
 
 /// Every place a walking player reaches from `start`.
-fn walked(hull: &Hull<'_>, head: i32, start: [f32; 3]) -> Vec<[f32; 3]> {
+pub(crate) fn walked(hull: &Hull<'_>, head: i32, start: [f32; 3]) -> Vec<[f32; 3]> {
     let key = |at: [f32; 3]| (at[0] as i32, at[1] as i32, (at[2] / 8.0) as i32);
     let mut seen = HashSet::from([key(start)]);
     let mut queue = VecDeque::from([start]);

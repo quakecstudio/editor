@@ -191,13 +191,27 @@ impl Mass {
     ///
     /// The [`BrushError`] of a block that could not be made.
     pub(crate) fn of(cells: &[Cell], rock: &Surface) -> Result<Self, BrushError> {
+        let blocks: Vec<Bounds> = cells
+            .iter()
+            .map(|cell| {
+                let [x, y] = cell.middle();
+                Bounds {
+                    min: [x - HALF_CELL, y - HALF_CELL, BLOCK_BOTTOM],
+                    max: [x + HALF_CELL, y + HALF_CELL, BLOCK_TOP],
+                }
+            })
+            .collect();
+        Self::of_blocks(&blocks, rock)
+    }
+
+    /// Rock filling each of `bounds`, painted with `rock`.
+    ///
+    /// # Errors
+    ///
+    /// The [`BrushError`] of a block with no volume.
+    pub(crate) fn of_blocks(bounds: &[Bounds], rock: &Surface) -> Result<Self, BrushError> {
         let mut blocks = Vec::new();
-        for cell in cells {
-            let [x, y] = cell.middle();
-            let bounds = Bounds {
-                min: [x - HALF_CELL, y - HALF_CELL, BLOCK_BOTTOM],
-                max: [x + HALF_CELL, y + HALF_CELL, BLOCK_TOP],
-            };
+        for &bounds in bounds {
             blocks.push(Block {
                 bounds,
                 pieces: vec![Coat::all(rock).boxed(bounds)?],

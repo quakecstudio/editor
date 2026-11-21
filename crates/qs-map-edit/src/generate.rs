@@ -13,7 +13,6 @@ use qs_map_gen::{Classes, Request, Size};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::textures::{Game, GameTextures};
 use crate::{HasMap, MapEditError, MapProject, WORLD_CLASSNAME, new_map_path, write_new_map};
 
 /// The id of `map.generate`.
@@ -133,10 +132,7 @@ impl<C: HasMap + 'static> Command<C> for MapGenerate {
             .file_stem()
             .map_or_default(|stem| stem.to_string_lossy().into_owned());
         let base = context.game_folders().base.ok_or(MapEditError::NoGame)?;
-        let textures: Vec<String> = GameTextures::read(&Game::at(&base))
-            .names()
-            .map(str::to_owned)
-            .collect();
+        let textures = context.map_store().level_names(&base).to_vec();
         let project = context.map_project();
         // Every game's code defines the world: a project that does not is one whose classes
         // cannot be read, such as the command line's, and id's are taken to be there. One
