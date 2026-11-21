@@ -127,6 +127,12 @@ pub enum MdlWriteError {
     Intervals,
     /// A count does not fit the file's 32-bit fields.
     TooMany,
+    /// A vertex of a model being made is a corner of no triangle with an area, so it has no
+    /// normal (MDL-7.4).
+    LooseVertex {
+        /// The vertex.
+        vertex: usize,
+    },
     /// What would be written does not load: the loader's own error for it (MDL-6.4).
     Unreadable(MdlError),
 }
@@ -148,6 +154,9 @@ impl fmt::Display for MdlWriteError {
                 f.write_str("a group needs one interval for each of its skins or frames")
             }
             Self::TooMany => f.write_str("a count does not fit the file"),
+            Self::LooseVertex { vertex } => {
+                write!(f, "vertex {vertex} is a corner of no triangle with an area")
+            }
             Self::Unreadable(error) => write!(f, "{}", error.message("the model")),
         }
     }
