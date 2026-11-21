@@ -17,7 +17,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::preview::scenario::{engine_words, play_on_game};
-use crate::preview::{game_base, mod_folder};
+use crate::preview::{game_base, mod_folder, place_played};
 use crate::vm_run::{VmRunParams, run};
 use crate::{HasWorkbench, ModuleBuilt, Workbench, WorkbenchError};
 
@@ -261,19 +261,22 @@ impl<L: Loader> Workbench<L> {
             .collect();
         if !scenarios.is_empty() {
             let game = (params.game.as_deref(), self.flavour());
-            tests.extend(play_scenarios(&root, &progs, game, &scenarios));
+            let beside = |map: &str| self.beside_open_map(map);
+            tests.extend(play_scenarios(&root, &progs, game, &scenarios, &beside));
         }
         Ok(TestRun::of(tests))
     }
 }
 
 /// Each of `scenarios` played on the program `progs` of the project at `root`, over the game
-/// `game` names, a folder or the first install found, and the game the project is for (QCT-3).
+/// `game` names, a folder or the first install found, and the game the project is for (QCT-3),
+/// `beside` giving the folder of the open map of a name.
 fn play_scenarios(
     root: &Path,
     progs: &Path,
     (game, flavour): (Option<&Path>, Flavour),
     scenarios: &[(String, PathBuf)],
+    beside: &dyn Fn(&str) -> Option<PathBuf>,
 ) -> Vec<TestResult> {
     let result = |name: String, (verdict, message): (Verdict, Option<String>)| TestResult {
         kind: TestKind::Scenario,
@@ -308,6 +311,10 @@ fn play_scenarios(
             .map_err(|e| e.to_string())
             .and_then(|text| Scenario::parse(&text).map_err(|e| e.to_string()))
             .and_then(|scenario| {
+                // SCN-2.7: the map and the project's files, where the game reads them.
+                let beside = beside(&scenario.map);
+                place_played(root, &mod_name, &scenario.map, beside.as_deref())
+                    .map_err(|e| e.to_string())?;
                 play_on_game(&engine_words(&run_root, &scenario), &scenario)
                     .map_err(|e| e.to_string())
             });

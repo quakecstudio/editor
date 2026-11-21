@@ -2759,3 +2759,45 @@ groups:
     - 'Recorded in the PR: New Random Map then Play in the running app, with the screenshot of the game in the level'
     verify:
     - 'cargo nextest run -p qs-workbench -p quakec-studio'
+  - key: L-53
+    title: Properties shows an entity's spawn-time fields while the game is paused
+    labels:
+    - L7-ui
+    - area:preview
+    - type:bug
+    size: S
+    reqs:
+    - UI-13
+    depends:
+    - L-48
+    summary: |
+      Filed by hand on 2026-11-21 from the showcase's combat clip (#1096). While the game is paused the Properties panel shows the selected entity's fields in edit boxes. A grunt selected while the game was paused at its start, then shot while it ran (Properties showing `health 6`, `think army_painc2`), showed `health 30`, `think army_stand2`, `frame 0` and `nextthink 1.53` again at the next pause, its values at the first one, and the live values once more after Resume. A modder who pauses to read an entity reads stale values, and would edit a field starting from them. The panel keeps each box's text from the first time it draws it for an edict (`apps/desktop/src/entities.rs`, `Properties::edits`) and only drops them for another edict.
+    environment: |
+      macOS, the editor at the showcase-media branch, the game in the Game tab; LibreQuake's qcsrc as the project and LibreQuake lite as the game; `map.generate` with seed 7, `map.play_from_here` paused, a grunt selected, resumed, shot once, paused
+    deliverable:
+    - 'apps/desktop: a paused field''s box shows the game''s value at that pause: what a box held is kept only while the game stays paused on that edict, and a value the game changes under it while paused, by a step or a set field, is followed'
+    acceptance:
+    - 'A box that showed a value in one pause shows the game''s value in the next, after the game ran; what is typed stays while the game is paused and the value under it does not change; checked by a test that fails before the fix'
+    verify:
+    - 'cargo nextest run -p quakec-studio'
+  - key: L-54
+    title: The first shotgun shot sometimes draws blood without taking health
+    labels:
+    - L4-bridges
+    - area:preview
+    - type:bug
+    size: S
+    reqs:
+    - ENG-2
+    depends:
+    - L-48
+    summary: |
+      Filed by hand on 2026-11-21 from headless runs of the showcase's combat clip (#1097): the first shotgun shot of a game sometimes drew blood on a grunt without taking any of its 30 health, Properties still reading `health 30` and a think of `army_stand*`, and the second shot took it to 6. LibreQuake's `TraceAttack` spawns blood and adds damage in one branch, so blood without damage means `T_Damage` did not land, or the panel showed a value that was not the game's. It was intermittent, and the last run did not show it.
+    environment: |
+      macOS, release build, the game in the Game tab at 1x and at 2x scale; the combat clip's steps: `map.generate` with seed 7, `map.play_from_here` facing the grunt and paused, `god`, `notarget`, the grunt selected, resumed, and `+attack` within about a second
+    deliverable:
+    - 'crates/qs-sim or apps/desktop/src/entities.rs: the cause found and fixed where it is, in the game or in the panel, with a test that holds it; or, when the clip''s steps run many times show the shot always landing, the runs recorded in the pull request with `engine.inspect` beside Properties'
+    acceptance:
+    - 'The combat clip''s steps, run repeatedly with the grunt''s health read by `engine.inspect` and from Properties after the first shot, show the same health in both, below 30, every time; recorded in the PR'
+    verify:
+    - 'The recorded runs in the PR; the test of the cause, when one is found'
