@@ -27,7 +27,7 @@ const MAPS: &str = "oracles/maps.toml";
 /// The sealed room each set of tools compiles.
 const ROOM: &str = "oracles/maps/room.map";
 /// What qutils' files are compiled with before anything else.
-const COMPAT: &str = "oracles/maps/compat.h";
+pub(crate) const COMPAT: &str = "oracles/maps/compat.h";
 /// qutils' library files every tool links.
 const COMMON: [&str; 3] = ["common/cmdlib.c", "common/mathlib.c", "common/bspfile.c"];
 /// The tools, as the directories of `qutils/` and of ericw-tools' build hold them.
@@ -185,17 +185,15 @@ fn stamp(root: &Path, compiler: &Compiler<'_>, exec: &dyn Exec) -> Result<String
     Ok(sha256::hex_digest(inputs.join("\n").as_bytes()))
 }
 
-/// id's tools: qutils' files fetched, copied to lower-case names (the files' own `#include`s
-/// are lower case, the repository's names upper case), and compiled unchanged.
-fn build_id(
+/// qutils' files, fetched by checksum and copied under `objects` to lower-case names: the
+/// files' own `#include`s are lower case, the repository's names upper case. Answers the
+/// directory they are in.
+fn fetch_qutils(
     pins: &Pins,
     cache: &Path,
     objects: &Path,
-    compiler: &Compiler<'_>,
-    root: &Path,
     net: &dyn Net,
-    tools: &MapTools,
-) -> Result<(), String> {
+) -> Result<PathBuf, String> {
     let upstream = Upstream {
         id: pins.qutils.id.clone(),
         repo: pins.qutils.repo.clone(),
@@ -221,6 +219,29 @@ fn build_id(
         let from = fetched.join(file.strip_prefix("qutils/").unwrap_or(file));
         fs::copy(&from, &to).map_err(|e| format!("{}: {e}", from.display()))?;
     }
+    Ok(lower)
+}
+
+/// qutils' pinned files under `objects`, for a tool the map tools' build does not make
+/// (`models.rs`): the directory they are in.
+pub(crate) fn qutils(root: &Path, objects: &Path, net: &dyn Net) -> Result<PathBuf, String> {
+    let pins = read_pins(root)?;
+    let cache = root.join(OUT).join("src");
+    fs::create_dir_all(&cache).map_err(|e| format!("{}: {e}", cache.display()))?;
+    fetch_qutils(&pins, &cache, objects, net)
+}
+
+/// id's tools: qutils' files compiled unchanged.
+fn build_id(
+    pins: &Pins,
+    cache: &Path,
+    objects: &Path,
+    compiler: &Compiler<'_>,
+    root: &Path,
+    net: &dyn Net,
+    tools: &MapTools,
+) -> Result<(), String> {
+    let lower = fetch_qutils(pins, cache, objects, net)?;
     let compat = root.join(COMPAT);
     let common = lower.join("common");
     for (tool, out) in TOOLS.iter().zip(&tools.id) {

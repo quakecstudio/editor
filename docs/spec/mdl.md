@@ -472,10 +472,12 @@ packed as (255, 0, 0), (255, 255, 0), (127, 127, 199), (0, 255, 0), (0, 0, 0) wi
 17, 118, 84, 139, 42, and the second frame's tip as (111, 159, 255); and a `size` of
 138.07224.
 
-**Checked:** on 2026-11-21, 4000 scripts made from a seed (2 to 19 triangles over a pool of
-4 to 15 points, one to three frame entries of which some are groups, with and without
-`$origin`, `$scale`, `$eyeposition`, `$flags` and `$sync`, and now and then a triangle of
-no area) were given to id's modelgen, built unchanged with the oracles' flags, and to
-`Grab::build`. modelgen wrote a model for 3146 and ours was the same file for each, but for
-the bytes modelgen leaves as its stack had them (a frame's name after its NUL, and the
-`lightnormalindex` of a frame's and a group's bounds); the other 854 both refused.
+**Checked:** `cargo xtask oracles models` builds id's modelgen unchanged from the pinned
+commit and gives it and `Grab::build` the same scripts, each made from its number (2 to 19
+triangles over a pool of 4 to 15 points, one to three frame entries of which some are groups,
+with and without `$origin`, `$scale`, `$eyeposition`, `$flags` and `$sync`, and now and then
+a triangle of no area). On 2026-11-21, of 1000 scripts modelgen wrote a model for 769 and
+ours was the same file for each, but for the bytes modelgen leaves as its stack had them (a
+frame's name after its NUL, and the `lightnormalindex` of a frame's and a group's bounds);
+the other 231 both refused. With `Q_rint`'s half made a quarter in ours, every script
+modelgen took differed.

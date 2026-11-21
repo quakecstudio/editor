@@ -1,8 +1,9 @@
 # The map tool oracles (P6-03): id's qbsp, vis and light from qutils/ of Quake-Tools, and a
 # pinned ericw-tools. cargo xtask oracles maps downloads each file or archive at its pinned
 # commit and refuses it unless its SHA-256 matches; none of them is committed (LIC-7), and none
-# is shipped. qutils/ is read and run here, never ported, until the license review rules on it
-# (docs/porting.md, P4-22); ericw-tools is GPL-2.0-or-later and is only ever run. README.md,
+# is shipped. qutils/ also holds id's modelgen, which cargo xtask oracles models builds (L-47).
+# qutils/ was read and run here, never ported, until the license review ruled on it
+# (docs/porting.md, ADR-0029); ericw-tools is GPL-2.0-or-later and is only ever run. README.md,
 # "The map tool oracles", describes the build.
 
 [qutils]
@@ -17,6 +18,15 @@ commit = "c0d1b91c74eb654365ac7755bc837e497caaca73"
 "qutils/COMMON/CMDLIB.H" = "1d76fa7c1ecedd6077173a76035a4feb901dba67a330a3fec7226475a676ffc2"
 "qutils/COMMON/MATHLIB.C" = "d6f7922962a723f0523a3ead0ee2f00a6b9da645aa1171f044c3a0dfa9ec40c8"
 "qutils/COMMON/MATHLIB.H" = "fbb87ba8337cdd68cdcf13c66bb82f44c5aed2eae0fae1250901ade7b47a7fe9"
+"qutils/COMMON/LBMLIB.C" = "b44e88edf882963df6c73c23e2dd95c6ab0b4d8c0364eb2e1c94642288399f82"
+"qutils/COMMON/LBMLIB.H" = "9cfce1e9d642de1f6b4eac0f2d547c9ecb1911cd3164d28ff8bbac2e35b495fb"
+"qutils/COMMON/SCRIPLIB.C" = "cf0238893daefe675cfa56e7b7672a69db9e887041a42be4b99aca72db38a6f1"
+"qutils/COMMON/SCRIPLIB.H" = "1eee241d0865fe16be0f213a46f377617996dde167c0b7f003948b0123d43242"
+"qutils/COMMON/TRILIB.C" = "395966a64943ab4ee30319a380ad920fa0e79fcb51b5e1a2410b409437b4d693"
+"qutils/COMMON/TRILIB.H" = "a1c02b9f000557433eb768f96c49590c76f95ea79e50037ab28928a8c3e43313"
+"qutils/MODELGEN/ANORMS.H" = "c2b74d11e7f723d516f8424325ab0c908165e17b7217d34dbfc8cbd47c146a59"
+"qutils/MODELGEN/MODELGEN.C" = "3ef7e16aef8be1c58b08abef819965914f85ac42d2c4900a7b7cdc77ad50e455"
+"qutils/MODELGEN/MODELGEN.H" = "72cc8372f74c6be438502f1e9353c250021fb4dcaab9d3e5b96791018175fdf3"
 "qutils/QBSP/BRUSH.C" = "ffaebf968da609fb463ddd260808ad8b833b57c9045a33cb1ba064fbce89764d"
 "qutils/QBSP/BSP5.H" = "c31e3392e47f694e8090505280eec53c8f28f1f0850b5f524750a16ca07b74e8"
 "qutils/QBSP/CSG4.C" = "ea9e34f811935a47b4df1e0943d4ffc9f9286452e78bd3184e132f92675e8878"

@@ -46,6 +46,7 @@ mod fuzz;
 mod grammar;
 pub(crate) mod id101;
 pub(crate) mod maps;
+mod models;
 mod numbers;
 mod probes;
 pub(crate) mod rerelease;
@@ -347,6 +348,13 @@ enum OracleCommand {
     /// Build the map tool oracles, id's and ericw-tools' qbsp, vis and light, and compile a
     /// sealed room with each (P6-03).
     Maps,
+    /// Build id's modelgen and compare the models it and qs-mdl write from the same scripts
+    /// (L-47, MDL-8).
+    Models {
+        /// How many scripts, each made from its number.
+        #[arg(long, default_value_t = models::ROUNDS)]
+        rounds: u32,
+    },
     /// A trace file as JSON.
     Json {
         /// The trace.
@@ -458,6 +466,7 @@ fn run(
             Ok(passed)
         }
         OracleCommand::Maps => maps::check(root, exec, net),
+        OracleCommand::Models { rounds } => models::check(root, exec, net, *rounds),
         OracleCommand::Json { trace } => {
             let name = trace.display();
             let bytes = fs::read(trace).map_err(|e| format!("{name}: {e}"))?;
