@@ -664,14 +664,7 @@ impl Preview {
         let built = workbench.built_program()?;
         // P6-44: a map the project compiled is read from where the game reads maps.
         if let Some(name) = &map {
-            let beside = workbench
-                .map()
-                .filter(|open| {
-                    open.path()
-                        .file_stem()
-                        .is_some_and(|stem| stem == name.as_str())
-                })
-                .and_then(|open| open.path().parent().map(Path::to_path_buf));
+            let beside = workbench.beside_open_map(name);
             place_project_map(&built.project, &built.mod_name, name, beside.as_deref())?;
         }
         self.play_built(built, map, GameStart::Running)
@@ -1373,6 +1366,31 @@ pub(crate) struct BuiltProgram {
     pub(crate) progs: PathBuf,
     pub(crate) mod_name: String,
     pub(crate) flavour: Flavour,
+}
+
+impl<L: Loader> Workbench<L> {
+    /// The folder of the open map when its name is `name`: a BSP beside it is the one a
+    /// game on that map plays (P6-44).
+    pub(crate) fn beside_open_map(&self, name: &str) -> Option<PathBuf> {
+        self.map()
+            .filter(|open| open.path().file_stem().is_some_and(|stem| stem == name))
+            .and_then(|open| open.path().parent().map(Path::to_path_buf))
+    }
+}
+
+/// Puts what a game on the map `map` reads of the project at `project` where the game
+/// reads it, the mod `mod_name`'s folder under `build`: the map, when the project compiled
+/// it, from `beside` or the project's `maps` ([`place_project_map`]), then the project's
+/// other files ([`place_project_assets`]). What Play does before it starts the host, and a
+/// scenario and a scenario test before they play (SCN-2.7).
+pub(crate) fn place_played(
+    project: &Path,
+    mod_name: &str,
+    map: &str,
+    beside: Option<&Path>,
+) -> Result<(), PreviewError> {
+    place_project_map(project, mod_name, map, beside)?;
+    place_project_assets(project, mod_name, Some(map))
 }
 
 /// Puts the map `name` the project compiled where the game reads maps, the mod's `maps` under

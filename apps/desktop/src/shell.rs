@@ -1346,6 +1346,11 @@ impl Shell {
         }
         self.follow_stop();
         self.follow_game_place(ui.ctx());
+        // The Properties panel's boxes are for one pause of one edict, drawn or not.
+        let preview = &self.session.context().preview;
+        let selected = preview.entities().selected().map(|selected| selected.edict);
+        let game = preview.state();
+        self.features.map.properties.follow(selected, game);
         // P3-35: the background check's results for the latest edit, once it has finished.
         if self.run::<_, bool>(TAKE_CHECKED, &serde_json::json!({})) == Some(true) {
             ui.ctx().request_repaint();
