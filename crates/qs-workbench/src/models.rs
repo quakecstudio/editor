@@ -11,11 +11,15 @@ use std::path::{Path, PathBuf};
 use qs_commands::{Access, BoxError, Command, Outcome, RegisterError, Registry, UndoStep};
 use qs_map_edit::HasMap;
 use qs_map_edit::textures::light_palette;
+use qs_mdl::md5::{Md5Anim, Md5Error, Md5Mesh};
 use qs_mdl::mdl::write::{MdlWriteError, Model, ModelFrame, ModelFrameEntry, ModelSkin};
 use qs_mdl::mdl::{Mdl, MdlError, TriVertX};
+use qs_mdl::mesh::fbx::FbxError;
 use qs_mdl::mesh::iqe::IqeError;
+use qs_mdl::mesh::md5::Md5MeshError;
 use qs_mdl::mesh::obj::{ObjError, Up};
-use qs_mdl::mesh::{Mesh, MeshError, MeshSkin, iqe, obj};
+use qs_mdl::mesh::smd::{Smd, SmdError};
+use qs_mdl::mesh::{Mesh, MeshError, MeshSkin, fbx, iqe, obj};
 use qs_vfs::{StdFs, Vfs};
 use qs_wad::texture::{Palette, PaletteIndex, WAD_FULLBRIGHT_FIRST};
 use schemars::JsonSchema;
@@ -160,6 +164,35 @@ pub enum ModelError {
         /// Why.
         error: IqeError,
     },
+    /// The `.md5mesh` or `.md5anim` file to import could not be read as one.
+    Md5 {
+        /// The file.
+        path: PathBuf,
+        /// Why.
+        error: Md5Error,
+    },
+    /// The MD5 model's animations do not pose its mesh.
+    Md5Mesh(Md5MeshError),
+    /// The `.smd` file to import could not be read as one, or is no model.
+    Smd {
+        /// The file.
+        path: PathBuf,
+        /// Why.
+        error: SmdError,
+    },
+    /// The `.fbx` file to import could not be read as one.
+    Fbx {
+        /// The file.
+        path: PathBuf,
+        /// Why.
+        error: FbxError,
+    },
+    /// Animation files were given for a mesh that takes none: one whose file holds its own
+    /// animations, or has none.
+    Animations {
+        /// The mesh's file.
+        path: PathBuf,
+    },
     /// The mesh read is no model.
     Mesh(MeshError),
     /// The two models do not have the same vertices, so a frame of one is none of the other.
@@ -214,11 +247,20 @@ impl fmt::Display for ModelError {
             Self::Move => f.write_str("a move is a number on each axis"),
             Self::Format { path } => write!(
                 f,
-                "{}: is no .obj or .iqe file, the meshes that are read",
+                "{}: is no .obj, .iqe, .md5mesh, .smd or .fbx file, the meshes that are read",
                 path.display()
             ),
             Self::Obj { path, error } => write!(f, "{}: {error}", path.display()),
             Self::Iqe { path, error } => write!(f, "{}: {error}", path.display()),
+            Self::Md5 { path, error } => write!(f, "{}: {error}", path.display()),
+            Self::Md5Mesh(error) => write!(f, "{error}"),
+            Self::Smd { path, error } => write!(f, "{}: {error}", path.display()),
+            Self::Fbx { path, error } => write!(f, "{}: {error}", path.display()),
+            Self::Animations { path } => write!(
+                f,
+                "{}: takes no animation files: they go with an .md5mesh or an .smd model",
+                path.display()
+            ),
             Self::Mesh(error) => write!(f, "{error}"),
             Self::Vertices { model, other } => write!(
                 f,
@@ -242,6 +284,10 @@ impl core::error::Error for ModelError {
             Self::Image(error) => Some(error),
             Self::Obj { error, .. } => Some(error),
             Self::Iqe { error, .. } => Some(error),
+            Self::Md5 { error, .. } => Some(error),
+            Self::Md5Mesh(error) => Some(error),
+            Self::Smd { error, .. } => Some(error),
+            Self::Fbx { error, .. } => Some(error),
             Self::Mesh(error) => Some(error),
             Self::NoProject
             | Self::NoSkin { .. }
@@ -254,6 +300,7 @@ impl core::error::Error for ModelError {
             | Self::Scale
             | Self::Move
             | Self::Format { .. }
+            | Self::Animations { .. }
             | Self::Vertices { .. }
             | Self::OutsideBox { .. } => None,
         }
@@ -1138,12 +1185,22 @@ pub enum SkinLayout {
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ImportParams {
-    /// The mesh to read: an `.obj` file, one pose, or an `.iqe` file, a pose for each frame
-    /// of each of its animations.
+    /// The mesh to read: an `.obj` file, one pose; an `.iqe` or a text `.fbx` file, a pose
+    /// for each frame of each of its animations; or an `.md5mesh` or an `.smd` model, posed
+    /// by the files of `animation_paths`.
     pub source_path: PathBuf,
+    /// The animations of an `.md5mesh`, its `.md5anim` files, or of an `.smd` model, its
+    /// animation `.smd` files: a pose for each frame of each, named by the file and the
+    /// frame's number. An `.md5mesh` given none takes the `.md5anim` of its own name beside
+    /// it, when there is one.
+    #[serde(default)]
+    pub animation_paths: Vec<PathBuf>,
     /// The `.mdl` file to make of it, in the project; one that is there already is refused.
     pub path: PathBuf,
-    /// Which axis of the file is up: y for an `.obj` and z for an `.iqe` when not given.
+    /// Which axis of the file is up: y for an `.obj` and an `.fbx`, and z for the others,
+    /// when not given. A y-up `.obj` is turned so that its -z is forward; a y-up `.fbx` is
+    /// turned a quarter about x, as FTEQW's converter turns it, and keeps its x: turn the
+    /// entity, or the mesh before it is written, when it faces the wrong way.
     #[serde(default)]
     pub up: Option<UpAxis>,
     /// What every position is multiplied by, to make the model the size Quake's are (a
@@ -1163,6 +1220,125 @@ pub struct ImportParams {
     /// given.
     #[serde(default)]
     pub colour: Option<u8>,
+}
+
+impl ImportParams {
+    /// The mesh of the file to import, read as its ending says, with its animation files.
+    fn mesh(&self) -> Result<Mesh, ModelError> {
+        let source = &self.source_path;
+        let ending = source
+            .extension()
+            .map(|ending| ending.to_string_lossy().to_ascii_lowercase());
+        let text = std::fs::read(source).map_err(|error| ModelError::Read {
+            path: source.clone(),
+            error,
+        })?;
+        let up = |or: Up| match self.up {
+            Some(UpAxis::Y) => Up::Y,
+            Some(UpAxis::Z) => Up::Z,
+            None => or,
+        };
+        let bytes = text;
+        let text = String::from_utf8_lossy(&bytes);
+        // Each animation file with the name its frames take: the file's, without its ending.
+        let animations =
+            |paths: &[PathBuf]| -> Result<Vec<(String, Vec<u8>, PathBuf)>, ModelError> {
+                paths
+                    .iter()
+                    .map(|path| {
+                        let name = path
+                            .file_stem()
+                            .map_or_default(|stem| stem.to_string_lossy().into_owned());
+                        let bytes = std::fs::read(path).map_err(|error| ModelError::Read {
+                            path: path.clone(),
+                            error,
+                        })?;
+                        Ok((name, bytes, path.clone()))
+                    })
+                    .collect()
+            };
+        // Only a model whose animations are files of their own takes animation files; what
+        // is no mesh at all is said to be that first.
+        let alone = || {
+            if self.animation_paths.is_empty() {
+                Ok(())
+            } else {
+                Err(ModelError::Animations {
+                    path: source.clone(),
+                })
+            }
+        };
+        let mesh: Mesh = match ending.as_deref() {
+            Some("obj") => {
+                alone()?;
+                obj::read(&text, up(Up::Y)).map_err(|error| ModelError::Obj {
+                    path: source.clone(),
+                    error,
+                })?
+            }
+            Some("iqe") => {
+                alone()?;
+                iqe::read(&text, up(Up::Z)).map_err(|error| ModelError::Iqe {
+                    path: source.clone(),
+                    error,
+                })?
+            }
+            Some("fbx") => {
+                alone()?;
+                fbx::read(&text, up(Up::Y)).map_err(|error| ModelError::Fbx {
+                    path: source.clone(),
+                    error,
+                })?
+            }
+            Some("md5mesh") => {
+                let model = Md5Mesh::read(&bytes).map_err(|error| ModelError::Md5 {
+                    path: source.clone(),
+                    error,
+                })?;
+                // The animation of the mesh's own name (MD5-3.1), when none is given.
+                let own = source.with_extension("md5anim");
+                let paths = if self.animation_paths.is_empty() && own.is_file() {
+                    vec![own]
+                } else {
+                    self.animation_paths.clone()
+                };
+                let read = animations(&paths)?
+                    .into_iter()
+                    .map(|(name, bytes, path)| {
+                        Md5Anim::read(&bytes)
+                            .map(|animation| (name, animation))
+                            .map_err(|error| ModelError::Md5 { path, error })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                model.mesh(&read, up(Up::Z)).map_err(ModelError::Md5Mesh)?
+            }
+            Some("smd") => {
+                let smd = |path: &Path, bytes: &[u8]| {
+                    Smd::read(&String::from_utf8_lossy(bytes)).map_err(|error| ModelError::Smd {
+                        path: path.to_path_buf(),
+                        error,
+                    })
+                };
+                let model = smd(source, &bytes)?;
+                let read = animations(&self.animation_paths)?
+                    .into_iter()
+                    .map(|(name, bytes, path)| Ok((name, smd(&path, &bytes)?)))
+                    .collect::<Result<Vec<_>, ModelError>>()?;
+                model
+                    .mesh(&read, up(Up::Z))
+                    .map_err(|error| ModelError::Smd {
+                        path: source.clone(),
+                        error,
+                    })?
+            }
+            Some(_) | None => {
+                return Err(ModelError::Format {
+                    path: source.clone(),
+                });
+            }
+        };
+        Ok(mesh)
+    }
 }
 
 /// What `model.import` answers.
@@ -1188,8 +1364,8 @@ struct ModelImport;
 impl<C: HasWorkbench + HasMap + 'static> Command<C> for ModelImport {
     const ID: &'static str = MODEL_IMPORT;
     const SUMMARY: &'static str = "Makes a .mdl model in the project of a mesh in an .obj \
-        file (one pose) or an .iqe file (a frame for each frame of each animation, posed by \
-        its skeleton). A mesh with texture coordinates keeps them, on a PNG given as its skin \
+        file (one pose), or an .iqe, text .fbx, .md5mesh or .smd file (a frame for each frame \
+        of each animation, posed by its skeleton). A mesh with texture coordinates keeps them, on a PNG given as its skin \
         or one colour; one without is laid out front and back, to export, paint and set.";
     type Params = ImportParams;
     type Output = ModelImported;
@@ -1209,35 +1385,7 @@ impl<C: HasWorkbench + HasMap + 'static> Command<C> for ModelImport {
         {
             return Err(ModelError::Scale);
         }
-        let source = &params.source_path;
-        let ending = source
-            .extension()
-            .map(|ending| ending.to_string_lossy().to_ascii_lowercase());
-        let text = std::fs::read(source).map_err(|error| ModelError::Read {
-            path: source.clone(),
-            error,
-        })?;
-        let text = String::from_utf8_lossy(&text);
-        let up = |or: Up| match params.up {
-            Some(UpAxis::Y) => Up::Y,
-            Some(UpAxis::Z) => Up::Z,
-            None => or,
-        };
-        let mut mesh: Mesh = match ending.as_deref() {
-            Some("obj") => obj::read(&text, up(Up::Y)).map_err(|error| ModelError::Obj {
-                path: source.clone(),
-                error,
-            })?,
-            Some("iqe") => iqe::read(&text, up(Up::Z)).map_err(|error| ModelError::Iqe {
-                path: source.clone(),
-                error,
-            })?,
-            Some(_) | None => {
-                return Err(ModelError::Format {
-                    path: source.clone(),
-                });
-            }
-        };
+        let mut mesh = params.mesh()?;
         if let Some(scale) = params.scale {
             for position in mesh
                 .frames

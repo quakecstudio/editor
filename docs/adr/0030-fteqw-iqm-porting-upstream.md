@@ -1,8 +1,8 @@
 # ADR-0030: Make FTEQW's model converter a porting upstream for model import
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-21
-- **Decided by:** pending
+- **Decided by:** Justin Plock
 - **Issue:** [#1081](https://github.com/quakecstudio/editor/issues/1081) (L-47)
 - **Requirements:** PRIN-6, MAP-4, LIC-2
 
@@ -58,21 +58,22 @@ palette matching (`qs-wad`), so none of that is needed.
 
 ## Decision
 
-Recommended: option A. The licence allows it, on the same reading ADR-0029 made of the rest of
+Option A, chosen by Justin on 2026-11-21, as recommended. The licence allows it, on the same reading ADR-0029 made of the rest of
 FTEQW plus an MIT notice kept; it is what Justin asked for by name; and fbx in particular is
-a format better ported from a reader that works than worked out again. Until this is
-accepted nothing of `iqm/` is ported: `model.import` reads obj with a reader written from the
-format itself (option B's part that costs little), and the other formats wait.
+a format better ported from a reader that works than worked out again. Before this was
+accepted nothing of `iqm/` was ported: `model.import` read obj and iqe with readers written
+from the formats' own descriptions (MDL-9), which stay as they are.
 
 ## Consequences
 
-- If accepted: `docs/porting.md` gains the row, with the commit, "MIT (`iqm/LICENSE`), FTE's
-  changes GPL-2.0-or-later as ADR-0029 reads FTEQW" and the lines to keep, `Copyright (c)
-  2010-2016 Lee Salzman` then `Copyright (c) 2004-2025 FTE's team and its contributors`;
-  `.claude/rules/porting.md` gains its bullet; `cargo xtask notices` carries the MIT text; L-47's
-  importers for iqe, md5, smd and fbx are ported and its issue closes on them.
-- If option C: L-47's deliverable and acceptance are changed to obj alone.
-- Either way the `.mdl` writer and maker stay id's modelgen, proved against id's files.
+- `docs/porting.md` has a row for FTEQW's `iqm/` beside the one for `engine/qclib/`: "MIT
+  (`iqm/LICENSE`), FTE's changes GPL-2.0-or-later as ADR-0029 reads FTEQW", and a file
+  ported from `iqm/` keeps `Copyright (c) 2010-2016 Lee Salzman` and `Copyright (c) 2004-2025
+  FTE's team and its contributors` above ours. `.claude/rules/porting.md` has its bullet.
+- The MIT text is `crates/qs-mdl/LICENSE-iqm.txt`, `iqm/LICENSE` as it is, listed in
+  `ATTRIBUTION.md`, from which `cargo xtask notices` puts it in a release's notices.
+- L-47's importers for md5, smd and fbx are ported from `iqm/` and its issue closes on them.
+- The `.mdl` writer and maker stay id's modelgen, proved against id's files.
 
 ## Links
 

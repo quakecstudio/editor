@@ -589,3 +589,143 @@ The arm of `crates/qs-mdl/src/mesh/iqe/tests.rs`: a joint at the origin and a jo
 along x under it, with a vertex at `(2, 0, 0)` blended to the second. In a frame whose
 second joint is `pq 1 0 0 0 0 0.70710678 0.70710678`, a quarter turn about z, the vertex is
 at `(1, 1, 0)`; one blended half to each joint is at `(1.5, 0.5, 0)`.
+
+## MDL-10 Reading a mesh as FTEQW's converter does
+
+**Source:** `iqm/iqm.cpp` and `iqm/util.h` of
+fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`, FTE's fork of Lee Salzman's IQM
+exporter ([ADR-0030](../adr/0030-fteqw-iqm-porting-upstream.md)): `blendcombo::addweight`,
+`blendcombo::finalize`, `buildmd5verts`, `makerelativebasepose`, `loadmd5mesh`,
+`loadmd5anim`, the `smd` namespace and `loadsmd`, the `fbx` namespace and `loadfbx`;
+`Quat::fromangles`, `Quat::fromdegrees`. Implemented by `crates/qs-mdl`'s `mesh::rig`,
+`mesh::md5`, `mesh::smd` and `mesh::fbx`
+([#1081](https://github.com/quakecstudio/editor/issues/1081), L-47). The converter's own
+output is an `.iqm` file; what is ported is how it reads each format into vertices, joints
+and frames, which become a mesh of poses as MDL-9.2 says an `.iqe`'s do.
+
+### Behaviour
+
+- **MDL-10.1** A vertex's blends are kept as `blendcombo` keeps them: "`if(weight <= 1e-3)
+  return;`" leaves a weight of a thousandth or less out, the four heaviest are kept,
+  heaviest first, one given earlier before another as heavy, and `finalize` divides them by
+  their sum. A pose is its scale, then its rotation, then its move, in its joint's parent's
+  space, and a mesh of poses is made of the joints, the blends and the frames as MDL-9.2
+  says. Ours: a joint may come before its parent in a file and follows it all the same,
+  and one whose parents come round to itself, or whose parent is no joint, stands as a root.
+- **MDL-10.2** An `.md5mesh` and its `.md5anim` files, read as MD5-1 to MD5-3 say, are a
+  mesh as `buildmd5verts` and `loadmd5anim` make one. A vertex is "`pos +=
+  (j.orient.transform(w.pos) + j.pos)*w.bias;`" over its weights, by the mesh's joints,
+  which the file gives in the model's space; its texture coordinate is the file's; it is
+  blended to its weights' joints by their biases (MDL-10.1). A triangle's corners are kept
+  in the file's order. `makerelativebasepose` makes each joint's pose its parent's:
+  "`child.pos = (-parent.orient).transform(child.pos - parent.pos); child.orient =
+  (-parent.orient)*child.orient;`". A frame's pose of a joint is the animation's base frame
+  with the components the joint's flags name put in from the frame, in turn from the
+  joint's first ("`if(h.flags&1) j.pos.x = *jdata++;`" and so on, then
+  "`j.orient.restorew();`"), in its parent's space. Ours: an animation of another number
+  of joints than the mesh, which the converter reads past, is refused, and so is a file
+  that says it has more than 65536 vertices, triangles, weights or frames, before anything
+  is made of that many.
+- **MDL-10.3** An `.smd` file is read line by line; a line that is empty or starts with
+  `#`, `;` or `//` is passed over, and a file whose `version` is not 1 is refused. `nodes`
+  has a line for each joint, its number, its name and its parent's number, to `end`: a
+  number over 255, a line with no name and a second line for one number are left out.
+  `skeleton` has `time N` lines, each starting frame `N`, and lines of a joint's number, a
+  position and three angles, the joint's pose in its parent's space, turned about x, then
+  y, then z (`Quat::fromangles`, in radians); a frame the file skips, and a joint a frame
+  gives no pose, have the first frame's. `triangles` has, for each triangle, a line naming
+  its material and a line for each of three vertices: its joint, its position, its normal,
+  its texture coordinate and, after a count, the joints it is linked to each with a
+  weight; the section ends at a vertex's line of fewer than nine numbers. "`tc->y = 1 -
+  tc->y;`": `v` is measured up the picture. A vertex's links to its own joint are summed,
+  with what the links' weights lack of 1 ("`if(tweight < 1) pweight += 1 - tweight;`"), and
+  it is blended to its own joint by that and to the others by theirs (MDL-10.1). The three
+  vertices are kept last first, which turns the triangle around. `vertexanimation` is
+  passed over. A file with triangles is the model, its base pose the first frame of its
+  own skeleton and its other frames no poses of the mesh ("`eframes.setsize(firstframe);`");
+  a file without is an animation of the same joints. Ours: a joint with no pose in a
+  file's first frame, which the converter leaves unset, keeps the model's base pose; a
+  `time` past 65535 starts no frame; a file with no triangles is no model.
+- **MDL-10.4** A text `.fbx` file is read when its first line holds "`FBX 7`". Its tokens:
+  spaces and commas are passed over, a `;` starts a comment to the end of its line, `{`
+  and `}` open and close a block, text in double quotes is one token, a number is one,
+  `*` and a count come before an array, any other word is a property's name, with the
+  colon after it, and the end of a line is a token. A number is read as `strtod` reads one, and 0 with
+  one byte taken where there is none. Of the file's top properties `Objects`
+  and `Connections` are read. An object is `Geometry` (its `Vertices`, its
+  `PolygonVertexIndex`, whose last corner of a polygon is written `-(vertex + 1)`, and of
+  `LayerElementUV` its `UV` and `UVIndex`); `Model` of the kind `Mesh` or `LimbNode`, with,
+  from the `P` lines of its `Properties70`, `Lcl Translation`, `Lcl Rotation`, `Lcl
+  Scaling`, `PreRotation` and, for a mesh, `GeometricTranslation`; `Deformer` of the kind
+  `Skin` or `Cluster`, a cluster with its `Indexes` and `Weights`; `AnimationCurve` with
+  its `KeyValueFloat`; `AnimationCurveNode` with `d|X`, `d|Y` and `d|Z`;
+  `AnimationLayer`; and `AnimationStack`, named after `AnimStack::`. A `C` line joins two
+  objects (`"OO"`): a geometry to its mesh model, a limb to its parent limb, a skin to its
+  geometry, a cluster to its skin, a limb to its cluster, a curve node to its layer and a
+  layer to its stack; or an object to a property (`"OP"`): a curve to `d|X`, `d|Y` or
+  `d|Z` of a curve node, and a curve node to `Lcl Translation`, `Lcl Rotation` or `Lcl
+  Scaling` of a limb. The limbs are the joints, in the file's order, each posed by its
+  scaling, its rotation after its pre-rotation ("`eposes[i].orient = prequat *
+  eposes[i].orient;`"), and its translation; angles are degrees, about x, then y, then z
+  (`Quat::fromdegrees`). The mesh has a vertex for each corner of each polygon, at its
+  geometry's vertex moved by the mesh model's geometric translation, scaled, turned by its
+  rotation and then its pre-rotation, and moved by its translation; with a texture
+  coordinate, `v` measured up the picture ("`1-uvs[idx+1]`"), by the corner's `UVIndex`,
+  else by its vertex when the file has a coordinate for each vertex, else by its place. A
+  cluster whose limb's number is at most 255 blends the vertices its `Indexes` name to its
+  limb by its `Weights` (MDL-10.1). A triangle of corners `a b c` is kept as `b a c`
+  ("`etriangle(i+1, i, i+2)`"). An animation stack is an animation of the frames of its
+  first layer's curves, which are of one length, else it is none: a frame's pose of a limb
+  is the limb's own with, for each curve node joined to it, the property the node is joined
+  to given the node's three values, each a curve's value at the frame where the curve
+  changes and the curve's one value or the node's own where it does not ("`if(c->varies())
+  curves[i] = c; else if(c->vals.length()) val[i] = c->vals[0];`"). What is read is turned
+  a quarter about x, "`erotate *= Quat(M_PI/2, Vec3(1, 0, 0));`": a position `(x, y, z)`
+  is `(x, -z, y)`, which stands a file whose y is up on z.
+- **MDL-10.5** Where ours differs from the converter. A polygon of more than three corners
+  is a fan from its first corner, each triangle kept as MDL-10.4 says, where the converter
+  takes each three corners in turn for a triangle whatever the polygons are (Justin,
+  2026-11-21: programs write quads unless told not to, and the converter's reading of one
+  is not its faces). The binary form of `.fbx`, which the converter does not read either,
+  and a file of another version are refused, where the converter reads nothing and says
+  nothing. A geometry's normals and colours, materials, and a cluster's transforms are not
+  read: a model has none of them. A file whose mesh model is turned and whose geometry
+  has no normals, at which the converter fails, is read. A name is kept whole, where the
+  converter keeps 63 bytes of it. A caller that says the file's z is up has it left
+  unturned. The converter's turn keeps a file's x, where an `.obj`'s y-up turn (MDL-9.1)
+  takes its -z for forward: the same model faces a quarter apart from the two.
+
+### Constants
+
+| Name | Value | Source |
+| --- | --- | --- |
+| `BLEND_MIN` | 0.001 | `iqm/iqm.cpp`, `blendcombo::addweight` |
+| `BLEND_MAX` | 4 | `blendcombo`, `weights[4]` |
+| `SMD_VERSION` | 1 | `loadsmd` |
+| `SMD_MAX_JOINT` | 255 | `smd::readnodes` |
+| `FBX_VERSION` | `FBX 7` | `fbx::checkversion` |
+| `FBX_MAX_LIMB` | 255 | `fbx::clusternode::process` |
+| `MD5_MAX_COUNT` | 65536 | Ours |
+| `SMD_MAX_TIME` | 65535 | Ours |
+
+### Test vectors
+
+`crates/qs-mdl/src/mesh/fixtures/` holds one model in each format, each file named with
+`.txt` after its own ending, written by `scripts/model-formats/samples.py`: two joints, a root at the origin and an arm 8 along x
+under it; five vertices, three of the root's, one of the arm's at `(16, 0, 0)` and one of
+both in halves at `(8, 2, 0)`; five triangles; and an animation of three frames in which
+the arm turns 0, 45 and 90 degrees about z and the root rises 0, 1 and 2. The `hard-` files
+are the same model with, in md5, the arm's joint turned a quarter in the base pose; in smd,
+the base pose turned, the animation's second time left out and the arm given no pose in its
+last frame; and in fbx, a pre-rotation of the arm and a mesh model moved, turned and scaled.
+
+**Checked:** on 2026-11-21 the converter was built from `iqm/iqm.cpp` at the pinned commit
+on its own (`c++ -O1 -std=gnu++11 iqm.cpp`) and run on each of the six
+(`iqmtool out.iqm arm.md5mesh wave.md5anim`, and so for smd and fbx).
+`scripts/model-formats/iqm.py` posed each `.iqm` it wrote, frame by frame, into the
+`*.fteqw.txt` files beside the fixtures: each triangle's three corners, each a position and
+a texture coordinate. The readers' tests hold each mesh to its file: as many frames, each
+of as many triangles, each triangle one of the converter's with its corners in the same
+order, within 0.05, the converter's weights being bytes. The greatest difference was 0.004
+for five of the six and 0.041 for the scaled fbx. In the last frame the arm's vertex is at
+`(8, 8, 2)` and the vertex of both at `(7, 1, 2)`.

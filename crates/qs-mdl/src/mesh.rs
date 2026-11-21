@@ -6,8 +6,14 @@
 //! [`Mesh::model`] makes the `.mdl`: with texture coordinates the mesh's own lie on the skin,
 //! and without them the skin is laid out as id's modelgen lays one (MDL-8.3, MDL-8.4).
 
+pub mod fbx;
 pub mod iqe;
+pub mod md5;
 pub mod obj;
+#[cfg(test)]
+mod recorded;
+mod rig;
+pub mod smd;
 
 use core::fmt;
 use std::collections::BTreeMap;

@@ -8,6 +8,8 @@
 
 use std::collections::BTreeSet;
 
+use super::super::Corner;
+use super::super::rig::frame_stem;
 use super::*;
 
 /// An arm: a root joint at the origin and a joint one unit along x, a triangle whose first
@@ -146,13 +148,16 @@ fn poses_are_read_as_the_format_says() {
 #[test]
 fn frames_are_named_by_animation_and_number() {
     let none = BTreeSet::new();
-    assert_eq!(frame_stem("run", 3, &none).unwrap(), "run");
+    assert_eq!(frame_stem("run", 3, IQE_ANIMATION, &none).unwrap(), "run");
     assert_eq!(
-        frame_stem("a long animation name", 12, &none).unwrap(),
+        frame_stem("a long animation name", 12, IQE_ANIMATION, &none).unwrap(),
         "alonganimatio"
     );
-    assert_eq!(frame_stem("", 1, &none).unwrap(), "anim");
-    assert_eq!(frame_stem("death (b)", 7, &none).unwrap(), "deathb");
+    assert_eq!(frame_stem("", 1, IQE_ANIMATION, &none).unwrap(), "anim");
+    assert_eq!(
+        frame_stem("death (b)", 7, IQE_ANIMATION, &none).unwrap(),
+        "deathb"
+    );
 
     // run has eleven frames, and run1's first would be run11 too; two have no name.
     let frames = |count: usize| "frame\n".repeat(count);

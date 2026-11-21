@@ -154,7 +154,8 @@ and `maps`. The built-in agent reads the same text.
 A monster's, a weapon's or an item's shape, skin and poses are its `.mdl` model (L-47). The
 `model.*` tools read one and change it, each change one step with undo: `model.inspect`;
 `model.copy_from_game`, which makes a project's own file of a model of the game;
-`model.import`, which makes one of a mesh in an `.obj` or an `.iqe` file;
+`model.import`, which makes one of a mesh in an `.obj`, `.iqe`, text `.fbx`, `.md5mesh` or
+`.smd` file;
 `model.recolor`, `model.export_skin` and `model.set_skin` for its skins; `model.scale` and
 `model.move`; and `model.rename_frames`, `model.remove_frames` and `model.add_frames`. The
 reference's `models` topic says what a model is and how to give a monster a look of its own.

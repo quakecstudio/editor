@@ -40,6 +40,10 @@ Rules that are easy to miss:
   control flow and CONV-17 throughout; one implementation with dialect profiles; the oracle
   differentials stay as the proof. Its copyright line is `Copyright (c) 2004-2025 FTE's team
   and its contributors`.
+- FTEQW's model converter (`fte-team/fteqw`, `iqm/`) is portable for model import under the
+  same policy (ADR-0030). It is Lee Salzman's IQM exporter under the MIT license with FTE's
+  changes: a port keeps `Copyright (c) 2010-2016 Lee Salzman` and FTE's line above ours, and
+  the MIT notice stays in `crates/qs-mdl/LICENSE-iqm.txt`.
 - QuakeSpasm (`sezero/quakespasm`), Ironwail (`andrei-drexler/ironwail`) and vkQuake
   (`Novum/vkQuake`) are portable for the preview host under the same policy (ADR-0018), but
   only files whose own header grants GPL "version 2 ... or (at your option) any later

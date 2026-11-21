@@ -1,0 +1,35 @@
+MD5Version 10
+commandline ""
+
+numFrames 3
+numJoints 2
+frameRate 10
+numAnimatedComponents 2
+
+hierarchy {
+	"root" -1 4 0
+	"arm" 0 32 1
+}
+
+bounds {
+	( -1 -1 -1 ) ( 20 20 20 )
+	( -1 -1 -1 ) ( 20 20 20 )
+	( -1 -1 -1 ) ( 20 20 20 )
+}
+
+baseframe {
+	( 0 0 0 ) ( 0 0 0 )
+	( 8 0 0 ) ( 0 0 -0.707106781 )
+}
+
+frame 0 {
+	0 -0.707106781
+}
+
+frame 1 {
+	1 -0.923879533
+}
+
+frame 2 {
+	2 -1.000000000
+}
