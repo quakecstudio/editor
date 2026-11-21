@@ -960,7 +960,7 @@ fn an_smd_model_is_imported_with_its_animations() {
     );
 }
 
-// spec MDL-10.4: a text .fbx is imported with the animations it holds, its y made z; it
+// spec MDL-10.6: a text .fbx is imported with the animations it holds, its y made z; it
 // takes no animation files
 #[test]
 fn an_fbx_model_is_imported_with_its_animations() {

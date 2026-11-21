@@ -646,19 +646,27 @@ and frames, which become a mesh of poses as MDL-9.2 says an `.iqe`'s do.
   a file without is an animation of the same joints. Ours: a joint with no pose in a
   file's first frame, which the converter leaves unset, keeps the model's base pose; a
   `time` past 65535 starts no frame; a file with no triangles is no model.
-- **MDL-10.4** A text `.fbx` file is read when its first line holds "`FBX 7`". Its tokens:
+- **MDL-10.4** **Withdrawn** 2026-11-21: a y-up file is turned as an `.obj` is, not the
+  converter's quarter, an object's number is kept whole, and only a `Mesh` geometry is a
+  mesh (L-50); replaced by MDL-10.6.
+- **MDL-10.5** **Withdrawn** 2026-11-21: the binary form is read, corners share vertices,
+  and an animation's curves are sampled by their keys' times (L-50); replaced by MDL-10.7.
+- **MDL-10.6** A text `.fbx` file is read when its first line holds "`FBX 7`". Its tokens:
   spaces and commas are passed over, a `;` starts a comment to the end of its line, `{`
   and `}` open and close a block, text in double quotes is one token, a number is one,
   `*` and a count come before an array, any other word is a property's name, with the
   colon after it, and the end of a line is a token. A number is read as `strtod` reads one, and 0 with
   one byte taken where there is none. Of the file's top properties `Objects`
-  and `Connections` are read. An object is `Geometry` (its `Vertices`, its
+  and `Connections` are read. An object's number is
+  kept as it is written, whole, so that two objects whose numbers differ are two. A block
+  that is not read is passed over to the brace that closes it, however deep it nests. An
+  object is `Geometry` of the kind `Mesh` (its `Vertices`, its
   `PolygonVertexIndex`, whose last corner of a polygon is written `-(vertex + 1)`, and of
   `LayerElementUV` its `UV` and `UVIndex`); `Model` of the kind `Mesh` or `LimbNode`, with,
   from the `P` lines of its `Properties70`, `Lcl Translation`, `Lcl Rotation`, `Lcl
   Scaling`, `PreRotation` and, for a mesh, `GeometricTranslation`; `Deformer` of the kind
   `Skin` or `Cluster`, a cluster with its `Indexes` and `Weights`; `AnimationCurve` with
-  its `KeyValueFloat`; `AnimationCurveNode` with `d|X`, `d|Y` and `d|Z`;
+  its `KeyValueFloat` and its `KeyTime`; `AnimationCurveNode` with `d|X`, `d|Y` and `d|Z`;
   `AnimationLayer`; and `AnimationStack`, named after `AnimStack::`. A `C` line joins two
   objects (`"OO"`): a geometry to its mesh model, a limb to its parent limb, a skin to its
   geometry, a cluster to its skin, a limb to its cluster, a curve node to its layer and a
@@ -682,21 +690,28 @@ and frames, which become a mesh of poses as MDL-9.2 says an `.iqe`'s do.
   curves[i] = c; else if(c->vals.length()) val[i] = c->vals[0];`"). The converter then
   turns what it read a quarter about x, "`erotate *= Quat(M_PI/2, Vec3(1, 0, 0));`": a
   position `(x, y, z)` is `(x, -z, y)`.
-- **MDL-10.5** Where ours differs from the converter, each by Justin's word of 2026-11-21
+- **MDL-10.7** Where ours differs from the converter, each by Justin's word of 2026-11-21
   that a model's import be what a modder expects. A polygon of more than three corners is
-  a fan from its first corner, each triangle kept as MDL-10.4 says, where the converter
+  a fan from its first corner, each triangle kept as MDL-10.6 says, where the converter
   takes each three corners in turn for a triangle whatever the polygons are: programs write
   quads unless told not to. A file whose y is up is turned as an `.obj` is (MDL-9.1), a
   position `(x, y, z)` being `(-z, -x, y)`, so that a model facing -z faces Quake's +x
   whichever of the two it came from, where the converter's quarter turn leaves it facing
   left; a caller that says the file's z is up has it left unturned. The corners that are
   one vertex of a geometry with one texture coordinate are one vertex of the mesh, where
-  the converter makes a vertex of each corner and joins them later. An animation whose
-  curves are not of one length, which the converter makes no animation of, is sampled by
-  its keys' times (`KeyTime`, in ticks of which a second has 46186158000, "`#define FBX_SEC
-  46186158000.0`"): a pose ten times a second from its first key to its last, at most 4096,
-  each curve read in a straight line between the keys around the time; a curve without a
-  time for each of its values makes it no animation. The binary form is read (MDL-11),
+  the converter makes a vertex of each corner and joins them later. A geometry of
+  another kind than `Mesh` is not a mesh: Blender writes a shape key as a `Geometry` of the
+  kind `Shape` ("`geom.add_string(b"Shape")`", `export_fbx_bin.py` of
+  blender/blender@`6a155ceab55287238f3d2532965d47a4c4591cca`), whose `Vertices` are
+  differences. An animation's curves are a frame for each key, as the converter has them,
+  only when they are of one length and their keys are at the same times (`KeyTime`, in
+  ticks of which a second has 46186158000, "`#define FBX_SEC 46186158000.0`"), or have no
+  times. Any other, which the converter makes no animation of when the lengths differ and
+  pairs key with key when they do not, is sampled by its keys' times: a pose ten times a
+  second from its first key while that is before its last, and a pose at its last key, at
+  most 4096, each curve read in a straight line between the keys around the time; a curve
+  without a time for each of its values makes it no animation, and so does a first or a
+  last key at a time that is no finite number. The binary form is read (MDL-11),
   where the converter reads none, and a file of another version is refused, where the
   converter reads nothing and says nothing. A geometry's normals and colours, materials,
   and a cluster's transforms are not read: a model has none of them, and the skeleton's
@@ -755,7 +770,7 @@ is and not ported. Autodesk publishes no description of the format. Implemented 
 ([#1089](https://github.com/quakecstudio/editor/issues/1089), L-50).
 
 A binary file holds the tree the text form writes. It is written out as that text, and
-read as MDL-10.4 and MDL-10.5 say a text file is.
+read as MDL-10.6 and MDL-10.7 say a text file is.
 
 ### Behaviour
 
@@ -790,13 +805,13 @@ read as MDL-10.4 and MDL-10.5 say a text file is.
 - **MDL-11.4** Ours, where the two forms write one thing two ways. A binary file writes an
   object's name and its class as the name, a NUL, a byte of 1 and the class, which is the
   text form's `Class::Name`; a quote or a control character in a string is written as a
-  space. An object's number is a 64-bit integer and the text form's reader keeps numbers
-  as doubles: one past 2 to the 53rd, which a double does not hold exactly, is written as a
-  number of its own that no whole number is, so that two objects are never taken for one.
-  A number that is not finite is 0.
+  space. An integer is written as it is, whole: the text form's reader keeps an object's
+  number exactly (MDL-10.6). A float or a double is written with an exponent, so that none
+  is longer than its digits; one that is not finite is 0.
 - **MDL-11.5** Ours: a file cut short, a record that ends before it starts or past the list
-  it is in, records nested more than 64 deep, a property of no kind, an array that does not
-  inflate to its length, and arrays of more than 64 MiB in all are refused as damaged.
+  it is in, a record whose properties run past its own end, records nested more than 64
+  deep, a property of no kind, an array that does not inflate to its length, and arrays of
+  more than 64 MiB in all are refused as damaged.
 
 ### Constants
 

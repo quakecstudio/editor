@@ -36,6 +36,9 @@ Reads Quake's models other than brush models, and writes and makes alias models.
   of FTEQW at the pinned commit (ADR-0030), Lee Salzman's IQM exporter with FTE's changes,
   whose MIT notice is `LICENSE-iqm.txt`; the tests hold each to what the converter itself
   made of the fixtures.
+- **The binary form of fbx** (`mesh::fbx::binary`, MDL-11): a binary `.fbx` is written out
+  as the text form and read by the same reader. Written from Blender's public description
+  of the format, quoted in the spec; nothing is ported.
 - **Sprites** (`spr`): `Sprite::read` is id's `Mod_LoadSpriteModel`, with
   `Mod_LoadSpriteFrame` and `Mod_LoadSpriteGroup`, plus the bounds checks id's engine leaves
   out. It returns a zero-copy view whose frames borrow the file's bytes, and rejects

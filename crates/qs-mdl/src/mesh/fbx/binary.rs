@@ -7,7 +7,6 @@
 //! objects and connections serves both.
 
 use core::fmt::Write as _;
-use std::collections::BTreeMap;
 
 use super::{FBX_VERSION, FbxError};
 
@@ -35,9 +34,6 @@ const NARROW: usize = 4;
 /// An array's `Encoding` when its contents are deflated: "If Encoding is 1, the Contents is
 /// a deflate/zip-compressed buffer".
 const DEFLATED: u32 = 1;
-/// The greatest whole number a double holds exactly, 2 to the 53rd: an object's number
-/// above it is given a number of its own.
-const EXACT: i64 = 1 << 53;
 
 /// The bytes of a file being read.
 struct Bytes<'a> {
@@ -86,30 +82,21 @@ enum Width {
 /// What is written of a file as it is read.
 struct Writer {
     out: String,
-    /// The object numbers too great for a double, each with the number it is written as.
-    renumbered: BTreeMap<i64, usize>,
     /// How many bytes of arrays may still be inflated.
     budget: usize,
 }
 
 impl Writer {
-    /// A whole number as the text form has one. An object's number is a 64-bit integer, and
-    /// the text form's reader keeps numbers as doubles: one too great to be kept exactly is
-    /// written as a number no whole number is, its own, so that two are never taken for one.
+    /// A whole number, as it is: the text form's reader keeps an object's number exactly.
     fn whole(&mut self, value: i64) {
-        if value.unsigned_abs() <= EXACT.unsigned_abs() {
-            let _infallible = write!(self.out, "{value}");
-        } else {
-            let next = self.renumbered.len();
-            let number = *self.renumbered.entry(value).or_insert(next);
-            let _infallible = write!(self.out, "-{number}.5");
-        }
+        let _infallible = write!(self.out, "{value}");
     }
 
-    /// A number with a fraction; one that is no number is 0.
+    /// A number with a fraction, with an exponent, so that it is never long however small
+    /// or great it is; one that is no number is 0.
     fn real(&mut self, value: f64) {
         let value = if value.is_finite() { value } else { 0.0 };
-        let _infallible = write!(self.out, "{value}");
+        let _infallible = write!(self.out, "{value:e}");
     }
 
     /// A string as the text form quotes one. A binary file writes an object's name and its
@@ -249,6 +236,10 @@ impl Writer {
                 has_array |= code.is_ascii_lowercase();
                 self.property(bytes, code)?;
             }
+            // A record's properties end where the record does, or before.
+            if bytes.at > record_end {
+                return None;
+            }
             if bytes.at < record_end {
                 self.out.push_str(" {\n");
                 self.records(bytes, width, record_end, depth.saturating_add(1))?;
@@ -290,7 +281,6 @@ pub(super) fn text(bytes: &[u8]) -> Result<String, FbxError> {
     };
     let mut writer = Writer {
         out: format!("; {FBX_VERSION} binary file\n"),
-        renumbered: BTreeMap::new(),
         budget: FBX_MAX_ARRAY_BYTES,
     };
     let mut bytes = Bytes {
