@@ -21,6 +21,7 @@ use crate::export::ExportProject;
 use crate::files_changed::FilesChangedCommand;
 use crate::map_check::register_map;
 use crate::map_filter::MapFilter;
+use crate::models::register_models;
 use crate::open_paths::register_open_paths;
 use crate::reference::register_reference;
 use crate::search::register_search;
@@ -156,6 +157,7 @@ pub fn register<C: HasWorkbench + 'static>(
     register_tools(registry)?;
     register_entities(registry)?;
     register_reference(registry)?;
+    register_models(registry)?;
     register_map(registry)?;
     register_map_edit(registry)?;
     registry.register(FilesChangedCommand)?;

@@ -28,6 +28,7 @@ pub mod map_check;
 pub mod map_compile;
 pub mod map_filter;
 pub mod map_profile;
+pub mod models;
 pub mod open_paths;
 mod preview;
 mod recent;

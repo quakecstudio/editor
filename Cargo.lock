@@ -4067,6 +4067,7 @@ dependencies = [
  "qs-map-edit",
  "qs-map-light",
  "qs-map-vis",
+ "qs-mdl",
  "qs-pak",
  "qs-sim",
  "qs-vfs",

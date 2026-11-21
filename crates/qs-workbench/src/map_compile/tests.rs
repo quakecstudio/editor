@@ -27,6 +27,13 @@ pub(crate) struct Context {
     preview: Preview,
 }
 
+impl Context {
+    /// A context of `workbench` and `preview`.
+    pub(crate) const fn new(workbench: Workbench<FsLoader>, preview: Preview) -> Self {
+        Self { workbench, preview }
+    }
+}
+
 impl crate::HasMap for Context {
     type Project = Workbench<FsLoader>;
     type Live = Preview;
