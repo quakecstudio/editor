@@ -4,7 +4,8 @@
     clippy::unwrap_used,
     clippy::indexing_slicing,
     clippy::panic,
-    reason = "test code: a failed unwrap, index or panic is a failed test"
+    clippy::arithmetic_side_effects,
+    reason = "test code: a failed unwrap, index, sum or panic is a failed test"
 )]
 
 use super::*;
