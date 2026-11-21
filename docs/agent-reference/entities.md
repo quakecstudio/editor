@@ -23,8 +23,11 @@ The program never runs by itself: the engine calls into it.
   **`SetChangeParms`** (`defs.qc`, "required prog functions").
 
 The globals the engine sets (`defs.qc`): `self`, `other`, `world`, `time`, `frametime`,
-`mapname`, `deathmatch`, `coop`, `teamplay`, `serverflags`, the counts `total_secrets`,
-`total_monsters`, `found_secrets` and `killed_monsters`, and `parm1` to `parm16`.
+`mapname`, `deathmatch`, `coop`, `teamplay`, `serverflags` and `parm1` to `parm16`. Four
+more it only reads, for the status bar and the intermission, and the mod must keep:
+`total_monsters` and `total_secrets`, counted as each spawns (`walkmonster_start` adds one),
+and `killed_monsters` and `found_secrets`, counted as each is killed or found (`Killed` in
+`combat.qc`).
 
 ## How an entity moves and collides
 
@@ -82,9 +85,11 @@ Three fields decide it, set in the spawn function before `setmodel` and `setsize
 
 In the vanilla dialect, from the language spec:
 
-- `&&` and `||` evaluate both sides (QC-15.10): `if (e && e.health > 0)` reads `e.health`
-  when `e` is the world too. That is safe, the world's fields read as 0, but a call on the
-  right side always runs.
+- `&&` and `||` evaluate both sides (QC-15.10): in `if (self.health > 0 && CheckAttack ())`
+  the call runs whatever the health is. Nest the `if`s where the second test must not run.
+- `&&`, `||`, `&` and `|` take floats only (QC-16.2): `if (e && a)` with an entity `e` is
+  "type mismatch for &&". Test an entity, a string or a function in an `if` of its own, or
+  compare it: `if (self.enemy != world && self.enemy.health > 0)`.
 - `&` and `|` bind as tightly as `*` and `/`, and `!` takes the whole comparison after it:
   `!a == b` is `!(a == b)` (QC-15.2, QC-15.6). Use parentheses.
 - `=` binds tighter than `&&`: `a = b && c` stores `b` (QC-15.3).

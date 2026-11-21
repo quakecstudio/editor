@@ -78,7 +78,9 @@ each function shows one frame and names the next:
 
 ```c
 $frame stand1 stand2 stand3 stand4 stand5 stand6 stand7 stand8
+// ... the death, deathc, load, pain, painb and painc frames, 65 of them, in order ...
 $frame run1 run2 run3 run4 run5 run6 run7 run8
+// ... the shoot and prowl frames ...
 
 void() army_stand1 =[ $stand1, army_stand2 ] {ai_stand();};
 // ...
@@ -112,7 +114,9 @@ From `ai.qc` and `fight.qc`:
   units by a random amount scaled by 3 (`fight.qc`).
 - `ai_pain(dist)` and `ai_back(dist)` step back; `ai_painforward(dist)` and
   `ai_forward(dist)` step forward.
-- `SUB_CheckRefire(first)` starts the attack again when the enemy is still in sight.
+- `SUB_CheckRefire(first)` (`subs.qc`) makes `first` the next think, once, only on skill 3
+  and only while the enemy is in sight: `if (skill != 3) return; if (self.cnt == 1) return;`.
+  On the other skills it does nothing, and the chain goes on to the run.
 
 The distances are the units moved in that tenth of a second: copy a similar monster's
 numbers so the feet match the floor.
@@ -153,6 +157,7 @@ void(entity attacker, float damage) army_pain =
 {
     if (self.pain_finished > time)
         return;
+    // ... id's picks one of three pain chains by random(); this is the first ...
     self.pain_finished = time + 0.6;
     army_pain1 ();
     sound (self, CHAN_VOICE, "soldier/pain1.wav", 1, ATTN_NORM);
@@ -165,9 +170,11 @@ void() army_die =
         sound (self, CHAN_VOICE, "player/udeath.wav", 1, ATTN_NORM);
         ThrowHead ("progs/h_guard.mdl", self.health);
         ThrowGib ("progs/gib1.mdl", self.health);
+        // ... and gib2 and gib3 ...
         return;
     }
     sound (self, CHAN_VOICE, "soldier/death1.wav", 1, ATTN_NORM);
+    // ... id's picks army_die1 or army_cdie1 by random() ...
     army_die1 ();
 };
 ```

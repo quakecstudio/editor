@@ -95,6 +95,9 @@ fn spec_statements_and_vectors_are_full() {
         "docs/spec/vm.md",
         "docs/spec/requirements.tsv",
         "docs/spec/vectors/vm/add.txt",
+        // The agent reference is embedded and tested by qs-workbench.
+        "docs/agent-reference/monsters.md",
+        "docs/agent-reference/README.md",
     ] {
         assert_eq!(classify(&[path]), "full\n", "{path}");
     }

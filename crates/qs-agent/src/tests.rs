@@ -1047,3 +1047,19 @@ fn a_call_to_a_tool_not_offered_is_refused_as_such() {
     assert!(is_error);
     assert_eq!(refused, json!("edit.stage_change is not one of your tools"));
 }
+
+// No spec statement: L-45, AGT-9: the reference in every run's prompt is the text
+// `project.reference` serves for the same topics, so the built-in agent and an agent over MCP
+// read the same thing
+#[test]
+fn the_prompt_carries_what_the_reference_serves() {
+    use qs_workbench::reference::Topic;
+    for (mine, topic) in [
+        (super::QUAKEC_REFERENCE, Topic::Quakec),
+        (super::WORKFLOW_REFERENCE, Topic::Workflow),
+        (super::MAPS_REFERENCE, Topic::Maps),
+    ] {
+        assert_eq!(mine, topic.text(), "{topic:?}");
+        assert!(super::system_prompt().contains(mine), "{topic:?}");
+    }
+}

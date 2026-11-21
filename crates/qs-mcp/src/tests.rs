@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use qc_project::FsLoader;
 use qs_commands::remote::Host;
 use qs_commands::{Registry, Session};
+use qs_workbench::reference::Topic;
 use qs_workbench::{
     Config, HasPreview, HasWorkbench, Preview, PreviewConfig, Workbench, register, register_preview,
 };
@@ -860,8 +861,10 @@ fn the_instructions_name_every_kind_of_tool() {
     // L-45: the instructions send an agent to the reference before it writes QuakeC, and
     // the reference is a tool the server has.
     assert!(super::INSTRUCTIONS.contains("project.reference"));
-    for topic in ["quakec", "entities", "monsters", "workflow", "maps"] {
-        assert!(super::INSTRUCTIONS.contains(topic), "{topic}");
+    for topic in Topic::ALL {
+        let name = serde_json::to_value(topic).unwrap();
+        let phrase = format!("topic {}", name.as_str().unwrap());
+        assert!(super::INSTRUCTIONS.contains(&phrase), "{phrase}");
     }
     assert!(server.tool_names().contains(&"project.reference"));
     // The app's own kinds, which the server offers only with `--connect`.

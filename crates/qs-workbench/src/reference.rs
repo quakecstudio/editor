@@ -159,24 +159,28 @@ mod tests {
         let mut registry: Registry<Context> = Registry::new();
         register(&mut registry).unwrap();
         register_preview(&mut registry).unwrap();
-        let kinds = [
-            "project.",
-            "map.",
-            "preview.",
-            "engine.",
-            "vm.",
-            "scenario.",
-            "edit.",
-            "file.",
-            "symbol.",
-        ];
+        // The kinds of command there are: what each id starts with, up to its first dot.
+        let kinds: std::collections::BTreeSet<String> = registry
+            .commands()
+            .filter_map(|info| info.id().as_str().split_once('.'))
+            .map(|(kind, _)| format!("{kind}."))
+            .collect();
+        assert!(kinds.len() > 10, "{kinds:?}");
+        let mut named = 0;
         for topic in Topic::ALL {
             for word in topic.text().split('`').skip(1).step_by(2) {
                 let id = word.split_whitespace().next().unwrap_or_default();
-                if kinds.iter().any(|kind| id.starts_with(kind)) && !id.ends_with(".qc") {
+                // A file of a mod is named as a command is: `ai.qc`, `progs.src`.
+                let file = id.ends_with(".qc") || id.ends_with(".src") || id.ends_with(".md");
+                if kinds.iter().any(|kind| id.starts_with(kind.as_str())) && !file {
                     assert!(registry.get(id).is_some(), "{topic:?} names {id}");
+                    named += 1;
                 }
             }
         }
+        assert!(
+            named > 20,
+            "the check read the commands the reference names: {named}"
+        );
     }
 }

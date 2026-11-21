@@ -2594,3 +2594,24 @@ groups:
     - 'A test holds `project.reference` to serving each topic and to naming only commands there are, and the server''s instructions to naming it and its topics'
     verify:
     - 'cargo nextest run -p qs-mcp -p qs-agent -p qs-workbench; the recorded run in the PR'
+  - key: L-46
+    title: Write the rest of the agent's QuakeC reference
+    labels:
+    - L6-agent
+    - area:agent
+    - type:feature
+    size: M
+    reqs:
+    - PRIN-6
+    - AGT-9
+    summary: |
+      What L-45 left of Justin's ask of 2026-11-20, "i want agents to know how to write QuakeC code as well as you know how to write Rust and Python". L-45 served the reference to any agent and wrote the engine's entity model and monsters; an agent then added a monster to LibreQuake from one request. Not yet written: the language in depth for each dialect, and how a weapon, an item and a trigger are written.
+    depends:
+    - L-45
+    deliverable:
+    - 'docs/agent-reference/: a topic for the language in each dialect our compiler takes (vanilla, FTEQCC and the rerelease''s), from docs/spec/language.md and the dialect specs, with the mistakes a model makes named; and topics for a weapon, an item and a trigger, each from id''s QuakeC 1.01, served by `project.reference`'
+    acceptance:
+    - 'Claude Code, asked through the MCP server for a new weapon, a new item and a new trigger in LibreQuake''s QuakeC, writes each so that it compiles clean and works in a played map, recorded in the PR'
+    - 'The test that holds the reference to naming real commands covers the new topics'
+    verify:
+    - 'cargo nextest run -p qs-workbench -p qs-mcp; the recorded runs in the PR'

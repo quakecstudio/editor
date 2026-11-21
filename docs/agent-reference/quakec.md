@@ -14,7 +14,7 @@ QC-13 functions); id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca
   `void() SUB_Remove = {remove(self);};` (`subs.qc`).
 - A frame function `void() name = [$frame, next] { ... };` sets the frame and makes `next`
   think a tenth of a second later (QC-13); `$frame` and `$cd` lines name the model's frames (QC-8).
-- FTEQCC projects accept more (the dialect in the brief says which):
+- FTEQCC projects accept more (`project.info` says which dialect a module is in):
   [`docs/spec/dialect-fteqcc.md`](../spec/dialect-fteqcc.md). Do not use FTEQCC syntax in a
   vanilla project; the compiler refuses it.
 
@@ -33,7 +33,7 @@ Sources: id's `qcc/v101qc` (`world.qc`, `client.qc`, `subs.qc`, `combat.qc`).
   `self` around a call made on another entity's behalf.
 - Damage goes through `T_Damage (targ, inflictor, attacker, damage)` (`combat.qc`); weapons
   are in `weapons.qc` (`W_FireAxe` and the others), the player's frames in `player.qc`.
-- A builtin is declared `type name = #n;` with the engine's number; the brief lists the
+- A builtin is declared `type name = #n;` with the engine's number; `engine.builtins` lists the
   target engine's builtins with their numbers and signatures. Call only those.
 
 ## Pitfalls

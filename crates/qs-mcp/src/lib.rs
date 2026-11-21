@@ -527,9 +527,9 @@ const INSTRUCTIONS: &str = "Every command of QuakeC Studio over the project this
     to open and what changed on disk. A server connected to the running app (--connect) \
     also has the app's window: view.*, editor.*, settings.* and help.*. Before you write or \
     debug QuakeC, read project.reference: topic quakec for the language and how a mod runs, \
-    entities for what the engine calls, how entities move and collide, the builtins and \
-    debugging, monsters before adding a monster, workflow for tests and scenarios; and \
-    topic maps before building a map. Then read the project's own code for the same thing \
+    topic entities for what the engine calls, how entities move and collide, the builtins \
+    and debugging, topic monsters before adding a monster, topic workflow for tests and \
+    scenarios; and topic maps before building a map. Then read the project's own code for the same thing \
     (project.search, project.symbols, file.read) and follow it. In short: \
     compile, test, run QuakeC in the VM, play scenarios, inspect and drive the running game, \
     read files, stage edits as hunks and keep checkpoints; make or open a map, place and \
