@@ -112,6 +112,7 @@ impl Preview {
         let scenario = Scenario::parse(&text)
             .map_err(|error| ScenarioRunError::Parse(path.to_path_buf(), error))?;
         let built = workbench.built_program()?;
+        built.place_map(workbench, &scenario.map)?;
         let (base, flavour) = game_base(self.config.game.as_deref(), built.flavour)?;
         let run_root = prepare_run_root(&built.project, flavour, &base, &built.mod_name)
             .map_err(ScenarioRunError::RunRoot)?;

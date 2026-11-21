@@ -662,17 +662,8 @@ impl Preview {
         map: Option<String>,
     ) -> Result<(), PreviewError> {
         let built = workbench.built_program()?;
-        // P6-44: a map the project compiled is read from where the game reads maps.
         if let Some(name) = &map {
-            let beside = workbench
-                .map()
-                .filter(|open| {
-                    open.path()
-                        .file_stem()
-                        .is_some_and(|stem| stem == name.as_str())
-                })
-                .and_then(|open| open.path().parent().map(Path::to_path_buf));
-            place_project_map(&built.project, &built.mod_name, name, beside.as_deref())?;
+            built.place_map(workbench, name)?;
         }
         self.play_built(built, map, GameStart::Running)
     }
@@ -1373,6 +1364,23 @@ pub(crate) struct BuiltProgram {
     pub(crate) progs: PathBuf,
     pub(crate) mod_name: String,
     pub(crate) flavour: Flavour,
+}
+
+impl BuiltProgram {
+    /// Puts the map `name` where the game reads maps when the project compiled it (P6-44),
+    /// from beside the map open in `workbench` when that is the one: what Play and a
+    /// scenario do before they start a game on a map.
+    pub(crate) fn place_map<L: Loader>(
+        &self,
+        workbench: &Workbench<L>,
+        name: &str,
+    ) -> Result<(), PreviewError> {
+        let beside = workbench
+            .map()
+            .filter(|open| open.path().file_stem().is_some_and(|stem| stem == name))
+            .and_then(|open| open.path().parent().map(Path::to_path_buf));
+        place_project_map(&self.project, &self.mod_name, name, beside.as_deref())
+    }
 }
 
 /// Puts the map `name` the project compiled where the game reads maps, the mod's `maps` under

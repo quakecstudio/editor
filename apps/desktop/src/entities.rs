@@ -48,12 +48,47 @@ impl Outliner {
     }
 }
 
+/// The text in a field's box while the game is paused, and the game's value it was made
+/// from.
+#[derive(Debug)]
+struct Edit {
+    text: String,
+    from: String,
+}
+
 /// The Properties panel's own state: the text of each field being edited.
 #[derive(Debug, Default)]
 pub(crate) struct Properties {
-    edits: BTreeMap<String, String>,
+    edits: BTreeMap<String, Edit>,
     /// The edict the edits are for; another selection drops them.
     edict: Option<Edict>,
+}
+
+impl Properties {
+    /// Keeps the boxes' texts for `edict` while the game is paused, and for nothing else:
+    /// what was typed is for one pause of one edict, so a box never shows a value read
+    /// before the game last ran.
+    fn follow(&mut self, edict: Option<Edict>, game: PlayState) {
+        if self.edict != edict || game != PlayState::Paused {
+            self.edits.clear();
+        }
+        self.edict = edict;
+    }
+
+    /// The text of `field`'s box, the game's value `shown` until something is typed in it,
+    /// and again once the game's value changes under it, as a step or a set field changes
+    /// it.
+    fn text(&mut self, field: &str, shown: &str) -> &mut String {
+        let fresh = || Edit {
+            text: shown.to_owned(),
+            from: shown.to_owned(),
+        };
+        let edit = self.edits.entry(field.to_owned()).or_insert_with(fresh);
+        if edit.from != shown {
+            *edit = fresh();
+        }
+        &mut edit.text
+    }
 }
 
 /// The live count and the edicts by classname, filtered; a click selects an edict.
@@ -152,15 +187,11 @@ pub(crate) fn properties(
 ) -> Option<EntityAction> {
     let entities = preview.entities();
     let Some(selected) = entities.selected() else {
-        state.edits.clear();
-        state.edict = None;
+        state.follow(None, preview.state());
         ui.label(RichText::new(Text::NothingSelected.get()).color(theme.color(Token::TextMuted)));
         return None;
     };
-    if state.edict != Some(selected.edict) {
-        state.edits.clear();
-        state.edict = Some(selected.edict);
-    }
+    state.follow(Some(selected.edict), preview.state());
     let paused = preview.state() == PlayState::Paused;
     ui.label(
         RichText::new(format!("{}  #{}", selected.classname, selected.edict))
@@ -201,10 +232,7 @@ pub(crate) fn properties(
                             .pending(selected.edict, &field.name)
                             .map_or_else(|| entities.show(&field.value), str::to_owned);
                         if paused {
-                            let text = state
-                                .edits
-                                .entry(field.name.clone())
-                                .or_insert_with(|| shown.clone());
+                            let text = state.text(&field.name, &shown);
                             let response = ui.add(
                                 egui::TextEdit::singleline(text)
                                     .code_editor()
@@ -251,4 +279,39 @@ pub(crate) fn properties(
         state.edits.clear();
     }
     action
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Edict, PlayState, Properties};
+
+    // No spec statement: L-53: a paused field's box holds the game's value now: what a box
+    // held in an earlier pause is not kept through the game's running, nor for another
+    // edict, and a value the game changes while paused, by a step, is followed; what is
+    // typed stays while the value under it does
+    #[test]
+    fn a_paused_fields_box_shows_the_games_value() {
+        let grunt = Some(Edict::new(7));
+        let mut panel = Properties::default();
+        panel.follow(grunt, PlayState::Paused);
+        assert_eq!(panel.text("health", "30"), "30");
+        // Typed, and kept while the game's value is the same.
+        panel.text("health", "30").push('0');
+        panel.follow(grunt, PlayState::Paused);
+        assert_eq!(panel.text("health", "30"), "300");
+        // A step changes the value under it: the box follows.
+        assert_eq!(panel.text("health", "25"), "25");
+        // The game runs, the grunt is shot, the game is paused again.
+        panel.follow(grunt, PlayState::Playing);
+        panel.follow(grunt, PlayState::Paused);
+        assert_eq!(panel.text("health", "6"), "6");
+        // Typed again, then another edict is selected, and nothing.
+        panel.text("health", "6").push('1');
+        panel.follow(Some(Edict::new(8)), PlayState::Paused);
+        assert_eq!(panel.text("health", "6"), "6");
+        panel.text("health", "6").push('1');
+        panel.follow(None, PlayState::Paused);
+        panel.follow(Some(Edict::new(8)), PlayState::Paused);
+        assert_eq!(panel.text("health", "6"), "6");
+    }
 }
