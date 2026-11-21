@@ -2587,10 +2587,10 @@ groups:
     depends:
     - L-43
     deliverable:
-    - 'docs/agent-reference/quakec.md: the language as our compiler takes it in each dialect, the engine''s entity model and frame loop, the builtins by what they are for, and how a monster, a weapon, an item and a trigger are written, each from id''s QuakeC 1.01 and the engine specs, with the mistakes a model makes named'
-    - 'crates/qs-mcp: the references are served to an outside agent, and the server''s instructions tell it to read the one for its task first'
+    - 'docs/agent-reference/entities.md and monsters.md: what the engine calls, how an entity moves and collides, the builtins by what they are for, what the language does that C does not, and debugging; and how a monster is written and every place a new one is added, each from id''s QuakeC 1.01 and the engine''s specs'
+    - 'crates/qs-workbench/src/reference.rs: `project.reference` serves each topic of the agent reference to any agent; crates/qs-mcp: the server''s instructions tell an agent to read the one for its task first'
     acceptance:
-    - 'Claude Code, asked through the MCP server for a new monster in LibreQuake''s QuakeC, writes one that compiles clean, spawns from a map and attacks the player in a scenario or a played map, recorded in the PR'
-    - 'A test holds the server to serving each reference and to naming them in its instructions'
+    - 'Claude Code, asked through the MCP server for a new monster in LibreQuake''s QuakeC, writes one that compiles clean, spawns from a map and attacks the player in a played map, recorded in the PR'
+    - 'A test holds `project.reference` to serving each topic and to naming only commands there are, and the server''s instructions to naming it and its topics'
     verify:
-    - 'cargo nextest run -p qs-mcp -p qs-agent; the recorded run in the PR'
+    - 'cargo nextest run -p qs-mcp -p qs-agent -p qs-workbench; the recorded run in the PR'
