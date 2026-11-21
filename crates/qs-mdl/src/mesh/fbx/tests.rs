@@ -25,7 +25,7 @@ fn as_the_converter_turns(mut mesh: Mesh) -> Mesh {
     mesh
 }
 
-// spec MDL-10.1, MDL-10.6: a text fbx, turned as the converter turns one, is the mesh
+// spec MDL-10.8, MDL-10.9: a text fbx, turned as the converter turns one, is the mesh
 // FTEQW's converter makes of it, for a plain model and for one whose arm has a pre-rotation
 // and whose mesh model stands moved, turned and scaled
 #[test]
@@ -52,7 +52,7 @@ fn an_fbx_model_is_the_converters() {
     }
 }
 
-// spec MDL-10.7: a file whose y is up is turned as an .obj is, so that a model facing -z
+// spec MDL-10.10: a file whose y is up is turned as an .obj is, so that a model facing -z
 // faces +x: a position (x, y, z) is (-z, -x, y), where the converter's is (x, -z, y); a file
 // whose z is up is left as it is
 #[test]
@@ -91,7 +91,7 @@ fn square(polygons: &str) -> String {
     )
 }
 
-// spec MDL-10.7: a polygon of more than three corners is a fan from its first, each
+// spec MDL-10.10: a polygon of more than three corners is a fan from its first, each
 // triangle turned around as a triangle is; a file with no polygons has its vertices three
 // to a triangle; with no animation the mesh is one pose, base
 #[test]
@@ -120,7 +120,7 @@ fn a_polygon_is_a_fan() {
     assert_eq!(faces(&bare), [[b, a, c]]);
 }
 
-// spec MDL-10.6: commas are passed over, a semicolon starts a comment, a quoted name is one
+// spec MDL-10.9: commas are passed over, a semicolon starts a comment, a quoted name is one
 // token, an array's count is one, and a property a reader does not know is passed over with
 // the block it opens
 #[test]
@@ -167,7 +167,7 @@ fn tokens_are_read_as_the_converter_reads_them() {
     assert_eq!(tokens.token().map(plain), Some(Token::Number(3.0, 0)));
 }
 
-// spec MDL-10.6, MDL-10.7: a file whose first line does not say FBX 7, as a binary file's
+// spec MDL-10.9, MDL-10.10: a file whose first line does not say FBX 7, as a binary file's
 // does not, is refused; a file with no geometry is a mesh with no triangle
 #[test]
 fn what_is_no_text_fbx_is_refused() {
@@ -190,7 +190,7 @@ fn what_is_no_text_fbx_is_refused() {
     assert!(empty.triangles.is_empty());
 }
 
-// spec MDL-10.6: a number is a sign, digits with a point among them and an exponent when
+// spec MDL-10.9: a number is a sign, digits with a point among them and an exponent when
 // digits follow its e; a long run of signs is as many zeros, each one byte
 #[test]
 fn a_number_is_read_as_strtod_reads_one() {
@@ -216,7 +216,7 @@ fn a_number_is_read_as_strtod_reads_one() {
     assert_eq!(count, 200_000);
 }
 
-// spec MDL-10.1, MDL-10.6: a limb written before its parent follows it all the same
+// spec MDL-10.8, MDL-10.9: a limb written before its parent follows it all the same
 #[test]
 fn a_limb_before_its_parent_follows_it() {
     let text = include_str!("../fixtures/arm.fbx.txt");
@@ -249,7 +249,7 @@ fn a_limb_before_its_parent_follows_it() {
 }
 
 proptest::proptest! {
-    // spec MDL-10.6, MDL-10.7: whatever follows the first line, a mesh is made or the file
+    // spec MDL-10.9, MDL-10.10: whatever follows the first line, a mesh is made or the file
     // is refused
     #[test]
     fn any_fbx_is_read_or_refused(
@@ -410,7 +410,7 @@ proptest::proptest! {
     }
 }
 
-// spec MDL-10.7: the corners that are one vertex of a geometry with one texture coordinate
+// spec MDL-10.10: the corners that are one vertex of a geometry with one texture coordinate
 // are one vertex of the mesh: fifteen corners of five vertices are five
 #[test]
 fn corners_of_one_vertex_are_one() {
@@ -431,7 +431,7 @@ fn corners_of_one_vertex_are_one() {
     assert_eq!(mesh.frames[0].positions.len(), 6);
 }
 
-// spec MDL-10.7: an animation whose curves are not of one length, which the converter makes
+// spec MDL-10.10: an animation whose curves are not of one length, which the converter makes
 // none of, is sampled ten times a second by its keys' times, each curve read in a straight
 // line between its keys: a turn of 0 to 90 degrees in two keys a second apart, with a lift
 // in three, is eleven frames, the sixth half way
@@ -536,7 +536,7 @@ fn a_property_past_its_record_is_refused() {
     assert_eq!(read_bytes(&file, Up::Y).unwrap_err(), FbxError::Binary);
 }
 
-// spec MDL-10.7: curves with as many keys at other times are sampled by time, not paired
+// spec MDL-10.10: curves with as many keys at other times are sampled by time, not paired
 // key with key; a pose is made at the last key however short the animation is
 #[test]
 fn keys_at_other_times_are_sampled() {
@@ -564,7 +564,7 @@ fn keys_at_other_times_are_sampled() {
     assert_eq!(read(&short, Up::Z).unwrap().frames.len(), 2);
 }
 
-// spec MDL-10.6: a block is passed over by its braces however deep they go; a geometry of
+// spec MDL-10.9: a block is passed over by its braces however deep they go; a geometry of
 // the kind Shape, a shape key's, is no mesh; two objects whose numbers differ past what a
 // double holds are two
 #[test]
@@ -590,7 +590,7 @@ fn deep_blocks_shape_keys_and_great_numbers_are_read() {
     assert_eq!(read(&great, Up::Z).unwrap(), read(text, Up::Z).unwrap());
 }
 
-// spec MDL-10.7: curves without a time for each value are a frame for each key when they
+// spec MDL-10.10: curves without a time for each value are a frame for each key when they
 // are of one length and no animation when they are not; keys at no time that is a number
 // are no animation
 #[test]
@@ -616,4 +616,235 @@ fn curves_without_times_or_with_none_that_are_numbers() {
         );
         assert_eq!(with(&turn_now, lift), 1, "{first} to {last}");
     }
+}
+
+// spec MDL-10.9, MDL-10.10, MDL-10.8: limbs under an armature that is moved, turned, scaled
+// and animated, a mesh model with a geometric turn and scale, a bind pose that is not the
+// limbs' own and a vertex of five weights are posed as Blender poses the file, from its
+// text and from its binary form
+#[test]
+fn a_rigged_model_is_posed_as_blender_poses_it() {
+    let recorded = include_str!("../fixtures/rig.blender.txt");
+    let text = read(include_str!("../fixtures/rig.fbx.txt"), Up::Z).unwrap();
+    assert_eq!(text.frames.len(), 5);
+    agrees(&text, recorded);
+    let binary = unhex(include_str!("../fixtures/rig-7400.fbx.hex"));
+    agrees(&read_bytes(&binary, Up::Z).unwrap(), recorded);
+}
+
+/// A file of one triangle in the plane z = 0, the geometry 100 of the mesh model 200, with
+/// `objects` after them and `joins` among its connections.
+fn triangle(objects: &str, joins: &str) -> String {
+    format!(
+        "; FBX 7.3.0 project file\nObjects:  {{\n\
+         Geometry: 100, \"Geometry::t\", \"Mesh\" {{\nVertices: *9 {{\na: 0,0,0,4,0,0,0,4,0\n}}\n\
+         PolygonVertexIndex: *3 {{\na: 0,1,-3\n}}\n}}\n\
+         Model: 200, \"Model::t\", \"Mesh\" {{\n}}\n{objects}}}\n\
+         Connections:  {{\nC: \"OO\",100,200\n{joins}}}\n"
+    )
+}
+
+/// The corners of `mesh`'s frame `frame` in hundredths, least first.
+fn corners(mesh: &Mesh, frame: usize) -> Vec<[i32; 3]> {
+    let mut corners: Vec<[i32; 3]> = mesh.frames[frame]
+        .positions
+        .iter()
+        .map(|at| at.map(|part| format!("{:.0}", part * 100.0).parse().unwrap()))
+        .collect();
+    corners.sort_unstable();
+    corners
+}
+
+// spec MDL-10.9: a skinned geometry stands where its cluster's Transform says, after where
+// the cluster's model stood: its TransformLink, or without one its place at rest; a matrix
+// that is not sixteen numbers is none
+#[test]
+fn a_skinned_geometry_stands_where_it_was_bound() {
+    let limb = "Model: 300, \"Model::l\", \"LimbNode\" {\nProperties70:  {\n\
+                P: \"Lcl Translation\", \"Lcl Translation\", \"\", \"A\",10,0,0\n}\n}\n\
+                Deformer: 400, \"Deformer::\", \"Skin\" {\n}\n";
+    let joins = "C: \"OO\",400,100\nC: \"OO\",401,400\nC: \"OO\",300,401\n";
+    let cluster = |matrices: &str| {
+        format!(
+            "{limb}Deformer: 401, \"SubDeformer::\", \"Cluster\" {{\nIndexes: *3 {{\na: 0,1,2\n}}\n\
+             Weights: *3 {{\na: 1,1,1\n}}\n{matrices}}}\n"
+        )
+    };
+    // The mesh 5 up its limb's z, the limb bound at the file's origin: the limb, which
+    // stands 10 along x, has carried the mesh there.
+    let moved = "Transform: *16 {\na: 1,0,0,0,0,1,0,0,0,0,1,0,0,0,5,1\n}\n";
+    let link = "TransformLink: *16 {\na: 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1\n}\n";
+    let both = read(&triangle(&cluster(&format!("{moved}{link}")), joins), Up::Z).unwrap();
+    assert_eq!(
+        corners(&both, 0),
+        [[1000, 0, 500], [1000, 400, 500], [1400, 0, 500]]
+    );
+    // With no TransformLink the limb was bound where it stands, and the mesh is 5 up it.
+    let alone = read(&triangle(&cluster(moved), joins), Up::Z).unwrap();
+    assert_eq!(corners(&alone, 0), corners(&both, 0));
+    // With neither, and with a Transform of fifteen numbers, the mesh is where its model is.
+    let short = "Transform: *15 {\na: 1,0,0,0,0,1,0,0,0,0,1,0,0,0,5\n}\n";
+    for matrices in ["", short] {
+        let plain = read(&triangle(&cluster(matrices), joins), Up::Z).unwrap();
+        assert_eq!(
+            corners(&plain, 0),
+            [[0, 0, 0], [0, 400, 0], [400, 0, 0]],
+            "{matrices:?}"
+        );
+    }
+}
+
+// spec MDL-10.9: a geometry with no skin follows its model, and its model the model above
+// it, of whatever kind, as that one's curves move it; a model nothing follows is no joint,
+// so one of no size refuses nothing, where one a geometry follows does
+#[test]
+fn a_geometry_with_no_skin_follows_its_model() {
+    let above = |scaling: &str| {
+        format!(
+            "Model: 250, \"Model::group\", \"Null\" {{\nProperties70:  {{\n\
+             P: \"Lcl Translation\", \"Lcl Translation\", \"\", \"A\",0,0,2\n\
+             P: \"Lcl Scaling\", \"Lcl Scaling\", \"\", \"A\",{scaling}\n}}\n}}\n\
+             Model: 260, \"Model::idle\", \"Light\" {{\nProperties70:  {{\n\
+             P: \"Lcl Scaling\", \"Lcl Scaling\", \"\", \"A\",0,0,0\n}}\n}}\n\
+             AnimationStack: 500, \"AnimStack::rise\", \"\" {{\n}}\n\
+             AnimationLayer: 501, \"AnimLayer::\", \"\" {{\n}}\n\
+             AnimationCurveNode: 510, \"AnimCurveNode::\", \"\" {{\nProperties70:  {{\n\
+             P: \"d|X\", \"Number\", \"\", \"A\",0\nP: \"d|Y\", \"Number\", \"\", \"A\",0\n\
+             P: \"d|Z\", \"Number\", \"\", \"A\",2\n}}\n}}\n\
+             AnimationCurve: 520, \"AnimCurve::\", \"\" {{\nKeyTime: *2 {{\na: 0,1\n}}\n\
+             KeyValueFloat: *2 {{\na: 2,7\n}}\n}}\n"
+        )
+    };
+    let joins = "C: \"OO\",200,250\nC: \"OO\",501,500\nC: \"OO\",510,501\n\
+                 C: \"OP\",510,250, \"Lcl Translation\"\nC: \"OP\",520,510, \"d|Z\"\n";
+    let mesh = read(&triangle(&above("3,3,3"), joins), Up::Z).unwrap();
+    assert_eq!(mesh.frames.len(), 2);
+    // Three times the size, 2 up and then 7 up.
+    assert_eq!(
+        corners(&mesh, 0),
+        [[0, 0, 200], [0, 1200, 200], [1200, 0, 200]]
+    );
+    assert_eq!(
+        corners(&mesh, 1),
+        [[0, 0, 700], [0, 1200, 700], [1200, 0, 700]]
+    );
+    // The model above of no size is one the geometry follows.
+    assert_eq!(
+        read(&triangle(&above("0,0,0"), joins), Up::Z).unwrap_err(),
+        FbxError::Flat
+    );
+}
+
+// spec MDL-10.9: the curves of a model no vertex follows, a camera's, are none of the mesh's
+// animation: its frames are the limbs' keys as before; and two models written with one
+// number leave the others their own joints
+#[test]
+fn what_no_vertex_follows_changes_nothing() {
+    let text = include_str!("../fixtures/arm.fbx.txt");
+    let camera = text
+        .replacen(
+            "\tAnimationStack: 500,",
+            "\tModel: 900, \"Model::cam\", \"Camera\" {\n\t}\n\
+             \tAnimationCurveNode: 910, \"AnimCurveNode::n\", \"\" {\n\t}\n\
+             \tAnimationCurve: 920, \"AnimCurve::\", \"\" {\n\t\tKeyTime: *2 {\n\t\t\ta: 0,4618615800000\n\t\t}\n\
+             \t\tKeyValueFloat: *2 {\n\t\t\ta: 0,5\n\t\t}\n\t}\n\tAnimationStack: 500,",
+            1,
+        )
+        .replacen(
+            "\tC: \"OO\",501,500\n",
+            "\tC: \"OO\",501,500\n\tC: \"OO\",910,501\n\
+             \tC: \"OP\",910,900, \"Lcl Translation\"\n\tC: \"OP\",920,910, \"d|X\"\n",
+            1,
+        );
+    assert!(camera.contains("Model::cam") && camera.contains("\"OP\",920,910"));
+    assert_eq!(read(&camera, Up::Z).unwrap(), read(text, Up::Z).unwrap());
+
+    let twice = "\tModel: 999, \"Model::a\", \"Null\" {\n\t}\n";
+    let doubled = text.replacen("\tModel: 200,", &format!("{twice}{twice}\tModel: 200,"), 1);
+    assert_ne!(doubled, text);
+    assert_eq!(read(&doubled, Up::Z).unwrap(), read(text, Up::Z).unwrap());
+}
+
+// spec MDL-10.9: two geometries bound to one model where it stood in two places are each
+// taken from where their own cluster had it
+#[test]
+fn two_geometries_are_bound_to_one_model_in_two_places() {
+    let skin = |skin: u32, cluster: u32, x: u32| {
+        format!(
+            "Deformer: {skin}, \"Deformer::\", \"Skin\" {{\n}}\n\
+             Deformer: {cluster}, \"SubDeformer::\", \"Cluster\" {{\nIndexes: *3 {{\na: 0,1,2\n}}\n\
+             Weights: *3 {{\na: 1,1,1\n}}\n\
+             Transform: *16 {{\na: 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1\n}}\n\
+             TransformLink: *16 {{\na: 1,0,0,0,0,1,0,0,0,0,1,0,{x},0,0,1\n}}\n}}\n"
+        )
+    };
+    let objects = format!(
+        "Geometry: 101, \"Geometry::u\", \"Mesh\" {{\nVertices: *9 {{\na: 0,0,1,4,0,1,0,4,1\n}}\n\
+         PolygonVertexIndex: *3 {{\na: 0,1,-3\n}}\n}}\n\
+         Model: 201, \"Model::u\", \"Mesh\" {{\n}}\n\
+         Geometry: 102, \"Geometry::v\", \"Mesh\" {{\nVertices: *9 {{\na: 0,0,2,4,0,2,0,4,2\n}}\n\
+         PolygonVertexIndex: *3 {{\na: 0,1,-3\n}}\n}}\n\
+         Model: 202, \"Model::v\", \"Mesh\" {{\n}}\n\
+         Model: 300, \"Model::l\", \"LimbNode\" {{\n}}\n{}{}{}{}",
+        skin(400, 401, 0),
+        skin(410, 411, 10),
+        skin(420, 421, 20),
+        // A fourth cluster, of the second geometry's skin, where the second had the limb.
+        skin(430, 431, 10)
+    );
+    let joins = "C: \"OO\",101,201\nC: \"OO\",400,100\nC: \"OO\",401,400\nC: \"OO\",300,401\n\
+                 C: \"OO\",410,101\nC: \"OO\",411,410\nC: \"OO\",300,411\n\
+                 C: \"OO\",102,202\nC: \"OO\",420,102\nC: \"OO\",421,420\nC: \"OO\",300,421\n\
+                 C: \"OO\",431,410\nC: \"OO\",300,431\n";
+    let mesh = read(&triangle(&objects, joins), Up::Z).unwrap();
+    // The limb stands at the origin. The first triangle was bound with it there; the second
+    // with it 10 along x and the third 20, each triangle then there with it, and each has
+    // come back with it.
+    assert_eq!(
+        corners(&mesh, 0),
+        [
+            [0, 0, 0],
+            [0, 0, 100],
+            [0, 0, 200],
+            [0, 400, 0],
+            [0, 400, 100],
+            [0, 400, 200],
+            [400, 0, 0],
+            [400, 0, 100],
+            [400, 0, 200]
+        ]
+    );
+}
+
+// spec MDL-10.9: a vertex of a skinned geometry that no cluster names follows the armature,
+// the first model above the cluster's model that is no limb, and not the limbs between
+#[test]
+fn a_vertex_no_cluster_names_follows_the_armature() {
+    // The geometry's skin names its second vertex alone, by the child limb. The root limb
+    // turns a quarter about z; the armature above it rises 5.
+    let objects = "Model: 300, \"Model::root\", \"LimbNode\" {\n}\n\
+        Model: 301, \"Model::child\", \"LimbNode\" {\n}\n\
+        Model: 250, \"Model::Armature\", \"Null\" {\n}\n\
+        Deformer: 400, \"Deformer::\", \"Skin\" {\n}\n\
+        Deformer: 401, \"SubDeformer::\", \"Cluster\" {\nIndexes: *1 {\na: 1\n}\nWeights: *1 {\na: 1\n}\n}\n\
+        AnimationStack: 500, \"AnimStack::go\", \"\" {\n}\n\
+        AnimationLayer: 501, \"AnimLayer::\", \"\" {\n}\n\
+        AnimationCurveNode: 510, \"AnimCurveNode::\", \"\" {\n}\n\
+        AnimationCurveNode: 511, \"AnimCurveNode::\", \"\" {\n}\n\
+        AnimationCurve: 520, \"AnimCurve::\", \"\" {\nKeyTime: *2 {\na: 0,1\n}\n\
+        KeyValueFloat: *2 {\na: 0,90\n}\n}\n\
+        AnimationCurve: 521, \"AnimCurve::\", \"\" {\nKeyTime: *2 {\na: 0,1\n}\n\
+        KeyValueFloat: *2 {\na: 0,5\n}\n}\n";
+    let joins = "C: \"OO\",300,250\nC: \"OO\",301,300\nC: \"OO\",400,100\nC: \"OO\",401,400\n\
+        C: \"OO\",301,401\nC: \"OO\",501,500\nC: \"OO\",510,501\nC: \"OO\",511,501\n\
+        C: \"OP\",510,300, \"Lcl Rotation\"\nC: \"OP\",511,250, \"Lcl Translation\"\n\
+        C: \"OP\",520,510, \"d|Z\"\nC: \"OP\",521,511, \"d|Z\"\n";
+    let mesh = read(&triangle(objects, joins), Up::Z).unwrap();
+    assert_eq!(mesh.frames.len(), 2);
+    // The second vertex, (4, 0, 0), turns with the limbs to (0, 4, 0) and rises; the first
+    // and the third only rise with the armature, the third staying at (0, 4, 0).
+    assert_eq!(
+        corners(&mesh, 1),
+        [[0, 0, 500], [0, 400, 500], [0, 400, 500]]
+    );
 }

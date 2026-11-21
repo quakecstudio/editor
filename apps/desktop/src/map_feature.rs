@@ -624,7 +624,7 @@ impl MapFeature {
         let played = commands.attempt(
             MAP_PLAY_FROM_HERE,
             &PlayFromHereParams {
-                eye: camera.origin.map(f64::from),
+                eye: Some(camera.origin.map(f64::from)),
                 angles: Some([
                     f64::from(camera.pitch.get()),
                     f64::from(camera.yaw.get()),

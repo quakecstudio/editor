@@ -49,7 +49,9 @@ with, and every model's own bounds are the same to the engine (MDL-1.7).
   skeleton and animations. A model has no skeleton, so every frame of every animation
   becomes a frame of the model, named by its animation and its number (`run1`, `run2`): the
   answer's `frame_line` is the QuakeC's `$frame` line.
-- **An `.fbx` file** of version 7, binary or text, with the animations it holds. Its y is
+- **An `.fbx` file** of version 7, binary or text, with the animations it holds. A rig as
+  Blender exports it, its bones under an armature that is scaled and turned, is posed as
+  Blender shows it: nothing need be applied or baked first. Its y is
   taken to be up, as an `.obj`'s is, and it faces the same way as the same mesh as an
   `.obj`; give `up` as `z` for one whose z is. An animation whose curves have a key for
   each frame gives a frame for each key; any other is sampled ten times a second, the rate

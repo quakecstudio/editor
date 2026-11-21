@@ -597,7 +597,9 @@ fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`, FTE's fork of Lee Sal
 exporter ([ADR-0030](../adr/0030-fteqw-iqm-porting-upstream.md)): `blendcombo::addweight`,
 `blendcombo::finalize`, `buildmd5verts`, `makerelativebasepose`, `loadmd5mesh`,
 `loadmd5anim`, the `smd` namespace and `loadsmd`, the `fbx` namespace and `loadfbx`;
-`Quat::fromangles`, `Quat::fromdegrees`. Implemented by `crates/qs-mdl`'s `mesh::rig`,
+`Quat::fromangles`, `Quat::fromdegrees`; and, for what a cluster's matrices are, Blender's
+exporter, `scripts/addons_core/io_scene_fbx/export_fbx_bin.py` of
+blender/blender@`6a155ceab55287238f3d2532965d47a4c4591cca`, read and not ported. Implemented by `crates/qs-mdl`'s `mesh::rig`,
 `mesh::md5`, `mesh::smd` and `mesh::fbx`
 ([#1081](https://github.com/quakecstudio/editor/issues/1081), L-47). The converter's own
 output is an `.iqm` file; what is ported is how it reads each format into vertices, joints
@@ -605,18 +607,13 @@ and frames, which become a mesh of poses as MDL-9.2 says an `.iqe`'s do.
 
 ### Behaviour
 
-- **MDL-10.1** A vertex's blends are kept as `blendcombo` keeps them: "`if(weight <= 1e-3)
-  return;`" leaves a weight of a thousandth or less out, the four heaviest are kept,
-  heaviest first, one given earlier before another as heavy, and `finalize` divides them by
-  their sum. A pose is its scale, then its rotation, then its move, in its joint's parent's
-  space, and a mesh of poses is made of the joints, the blends and the frames as MDL-9.2
-  says. Ours: a joint may come before its parent in a file and follows it all the same,
-  and one whose parents come round to itself, or whose parent is no joint, stands as a root.
+- **MDL-10.1** **Withdrawn** 2026-11-21: a vertex keeps every weight, not the four heaviest
+  (L-51); replaced by MDL-10.8.
 - **MDL-10.2** An `.md5mesh` and its `.md5anim` files, read as MD5-1 to MD5-3 say, are a
   mesh as `buildmd5verts` and `loadmd5anim` make one. A vertex is "`pos +=
   (j.orient.transform(w.pos) + j.pos)*w.bias;`" over its weights, by the mesh's joints,
   which the file gives in the model's space; its texture coordinate is the file's; it is
-  blended to its weights' joints by their biases (MDL-10.1). A triangle's corners are kept
+  blended to its weights' joints by their biases (MDL-10.8). A triangle's corners are kept
   in the file's order. `makerelativebasepose` makes each joint's pose its parent's:
   "`child.pos = (-parent.orient).transform(child.pos - parent.pos); child.orient =
   (-parent.orient)*child.orient;`". A frame's pose of a joint is the animation's base frame
@@ -639,7 +636,7 @@ and frames, which become a mesh of poses as MDL-9.2 says an `.iqe`'s do.
   weight; the section ends at a vertex's line of fewer than nine numbers. "`tc->y = 1 -
   tc->y;`": `v` is measured up the picture. A vertex's links to its own joint are summed,
   with what the links' weights lack of 1 ("`if(tweight < 1) pweight += 1 - tweight;`"), and
-  it is blended to its own joint by that and to the others by theirs (MDL-10.1). The three
+  it is blended to its own joint by that and to the others by theirs (MDL-10.8). The three
   vertices are kept last first, which turns the triangle around. `vertexanimation` is
   passed over. A file with triangles is the model, its base pose the first frame of its
   own skeleton and its other frames no poses of the mesh ("`eframes.setsize(firstframe);`");
@@ -651,7 +648,23 @@ and frames, which become a mesh of poses as MDL-9.2 says an `.iqe`'s do.
   mesh (L-50); replaced by MDL-10.6.
 - **MDL-10.5** **Withdrawn** 2026-11-21: the binary form is read, corners share vertices,
   and an animation's curves are sampled by their keys' times (L-50); replaced by MDL-10.7.
-- **MDL-10.6** A text `.fbx` file is read when its first line holds "`FBX 7`". Its tokens:
+- **MDL-10.6** **Withdrawn** 2026-11-21: every model is a node of one tree, and a skinned
+  geometry is bound by its clusters' matrices (L-51); replaced by MDL-10.9.
+- **MDL-10.7** **Withdrawn** 2026-11-21: models of every kind, the clusters' matrices and the
+  geometric turn and scale are read (L-51); replaced by MDL-10.10.
+- **MDL-10.8** A vertex's blends are every weight that is a number above 0, in the order
+  the file gives them, each divided by their sum. Ours, by Justin's word of 2026-11-21: the
+  converter's `blendcombo` leaves out a weight of a thousandth or less ("`if(weight <= 1e-3)
+  return;`") and keeps the four heaviest, as its `.iqm` holds four to a vertex; a `.mdl`
+  holds a pose's vertices, and a pose of every weight is the one the program that wrote
+  the file shows. A pose is its scale, then its rotation, then its move, in its joint's parent's
+  space, and a mesh of poses is made of the joints, the blends and the frames as MDL-9.2
+  says. Ours: a joint may come before its parent in a file and follows it all the same,
+  and one whose parents come round to itself, or whose parent is no joint, stands as a root.
+  A file may say where a joint stood in the model's space when the mesh was bound to it: a
+  vertex is then taken by that joint from there, and by a joint with no such place from
+  its base pose.
+- **MDL-10.9** A text `.fbx` file is read when its first line holds "`FBX 7`". Its tokens:
   spaces and commas are passed over, a `;` starts a comment to the end of its line, `{`
   and `}` open and close a block, text in double quotes is one token, a number is one,
   `*` and a count come before an array, any other word is a property's name, with the
@@ -662,37 +675,55 @@ and frames, which become a mesh of poses as MDL-9.2 says an `.iqe`'s do.
   that is not read is passed over to the brace that closes it, however deep it nests. An
   object is `Geometry` of the kind `Mesh` (its `Vertices`, its
   `PolygonVertexIndex`, whose last corner of a polygon is written `-(vertex + 1)`, and of
-  `LayerElementUV` its `UV` and `UVIndex`); `Model` of the kind `Mesh` or `LimbNode`, with,
-  from the `P` lines of its `Properties70`, `Lcl Translation`, `Lcl Rotation`, `Lcl
-  Scaling`, `PreRotation` and, for a mesh, `GeometricTranslation`; `Deformer` of the kind
-  `Skin` or `Cluster`, a cluster with its `Indexes` and `Weights`; `AnimationCurve` with
+  `LayerElementUV` its `UV` and `UVIndex`); `Model` of any kind, with, from the `P`
+  lines of its `Properties70`, `Lcl Translation`, `Lcl Rotation`, `Lcl Scaling`,
+  `PreRotation`, `GeometricTranslation`, `GeometricRotation` and `GeometricScaling`; `Deformer` of the kind
+  `Skin` or `Cluster`, a cluster with its `Indexes`, its `Weights`, its `Transform` and
+  its `TransformLink`; `AnimationCurve` with
   its `KeyValueFloat` and its `KeyTime`; `AnimationCurveNode` with `d|X`, `d|Y` and `d|Z`;
   `AnimationLayer`; and `AnimationStack`, named after `AnimStack::`. A `C` line joins two
-  objects (`"OO"`): a geometry to its mesh model, a limb to its parent limb, a skin to its
-  geometry, a cluster to its skin, a limb to its cluster, a curve node to its layer and a
+  objects (`"OO"`): a geometry to its model, a model to the model above it, a skin to its
+  geometry, a cluster to its skin, a model to its cluster, a curve node to its layer and a
   layer to its stack; or an object to a property (`"OP"`): a curve to `d|X`, `d|Y` or
   `d|Z` of a curve node, and a curve node to `Lcl Translation`, `Lcl Rotation` or `Lcl
-  Scaling` of a limb. The limbs are the joints, in the file's order, each posed by its
-  scaling, its rotation after its pre-rotation ("`eposes[i].orient = prequat *
+  Scaling` of a model. The models are one tree, each posed in the space of the model above
+  it by its scaling, its rotation after its pre-rotation ("`eposes[i].orient = prequat *
   eposes[i].orient;`"), and its translation; angles are degrees, about x, then y, then z
-  (`Quat::fromdegrees`). The mesh has a vertex for each corner of each polygon, at its
-  geometry's vertex moved by the mesh model's geometric translation, scaled, turned by its
-  rotation and then its pre-rotation, and moved by its translation; with a texture
+  (`Quat::fromdegrees`). A geometry stands in its model's space scaled, turned and
+  moved by the geometric three. The mesh has a vertex for each corner of each polygon, at
+  its geometry's vertex where the geometry stands; with a texture
   coordinate, `v` measured up the picture ("`1-uvs[idx+1]`"), by the corner's `UVIndex`,
   else by its vertex when the file has a coordinate for each vertex, else by its place. A
-  cluster whose limb's number is at most 255 blends the vertices its `Indexes` name to its
-  limb by its `Weights` (MDL-10.1). A triangle of corners `a b c` is kept as `b a c`
+  cluster blends the vertices its `Indexes` name to its model by its `Weights` (MDL-10.8).
+  Its `TransformLink` is where its model stood in the file's space when the mesh was bound,
+  and its `Transform` the mesh in that model's space, each a matrix of four columns of
+  four: Blender's exporter writes `Transform` as "`mat_world_bones[bo_obj].inverted_safe() @
+  mat_world_obj`", noting "`Even though official FBX API presents Transform in global
+  space,`" "`**it is stored in bone space in FBX data!**`", and `TransformLink` as
+  "`matrix4_to_array(mat_world_bones[bo_obj])`" (`export_fbx_bin.py` of
+  blender/blender@`6a155ceab55287238f3d2532965d47a4c4591cca`). A skinned geometry stands where
+  the first of its clusters with a `Transform` says: that matrix after where the cluster's
+  model stood, its `TransformLink` or, without one, its place with nothing animated. A
+  cluster's model takes a vertex from where its `TransformLink` had it, or without one from
+  its place with nothing animated (MDL-10.8). A model two geometries were bound to in two places
+  takes each from where its own cluster had it. A vertex of a skinned geometry that no
+  cluster names follows the skeleton's armature, the first model above the first cluster's
+  model that is no `LimbNode`, as Blender moves it, or with none its geometry's model. A
+  geometry with no skin stands where its model does with nothing animated and follows it.
+  The mesh's joints are the models a vertex follows and the models above them, and only
+  their curves are an animation's: a camera's keys neither add frames to it nor lengthen
+  it. Two models written with one number are one, the later. A triangle of corners `a b c` is kept as `b a c`
   ("`etriangle(i+1, i, i+2)`"). An animation stack is an animation of the frames of its
-  first layer's curves, which are of one length, else it is none: a frame's pose of a limb
-  is the limb's own with, for each curve node joined to it, the property the node is joined
+  first layer's curves, which are of one length, else it is none: a frame's pose of a model
+  is the model's own with, for each curve node joined to it, the property the node is joined
   to given the node's three values, each a curve's value at the frame where the curve
   changes and the curve's one value or the node's own where it does not ("`if(c->varies())
   curves[i] = c; else if(c->vals.length()) val[i] = c->vals[0];`"). The converter then
   turns what it read a quarter about x, "`erotate *= Quat(M_PI/2, Vec3(1, 0, 0));`": a
   position `(x, y, z)` is `(x, -z, y)`.
-- **MDL-10.7** Where ours differs from the converter, each by Justin's word of 2026-11-21
+- **MDL-10.10** Where ours differs from the converter, each by Justin's word of 2026-11-21
   that a model's import be what a modder expects. A polygon of more than three corners is
-  a fan from its first corner, each triangle kept as MDL-10.6 says, where the converter
+  a fan from its first corner, each triangle kept as MDL-10.9 says, where the converter
   takes each three corners in turn for a triangle whatever the polygons are: programs write
   quads unless told not to. A file whose y is up is turned as an `.obj` is (MDL-9.1), a
   position `(x, y, z)` being `(-z, -x, y)`, so that a model facing -z faces Quake's +x
@@ -713,9 +744,18 @@ and frames, which become a mesh of poses as MDL-9.2 says an `.iqe`'s do.
   without a time for each of its values makes it no animation, and so does a first or a
   last key at a time that is no finite number. The binary form is read (MDL-11),
   where the converter reads none, and a file of another version is refused, where the
-  converter reads nothing and says nothing. A geometry's normals and colours, materials,
-  and a cluster's transforms are not read: a model has none of them, and the skeleton's
-  base pose is its limbs' own, as the converter has it. A file whose mesh model is turned
+  converter reads nothing and says nothing. Every `Model` is a node of the tree and may be a
+  joint, where the converter reads those of the kinds `Mesh` and `LimbNode` and makes joints
+  of the limbs alone: limbs under an armature, a `Null` that Blender scales by 100, turns
+  and animates, stand and move as Blender shows them. A cluster's `Transform` and
+  `TransformLink` place the mesh as it was bound, where the converter takes the limbs' own
+  poses for the bind pose. A mesh model's `GeometricRotation` and `GeometricScaling` are
+  read with its `GeometricTranslation`, a model above a mesh model moves it, a cluster of
+  any model is read, where the converter leaves out one whose limb's number is past 255, and
+  a geometry with no skin follows its model. A geometry's normals and colours and materials
+  are not read: a model has none of them. A model's `PostRotation`, its pivots and offsets
+  and its `RotationOrder` are not read, as the converter reads none: a model turns about x,
+  then y, then z, after its pre-rotation. A file whose mesh model is turned
   and whose geometry has no normals, at which the converter fails, is read. A name is kept
   whole, where the converter keeps 63 bytes of it.
 
@@ -723,12 +763,9 @@ and frames, which become a mesh of poses as MDL-9.2 says an `.iqe`'s do.
 
 | Name | Value | Source |
 | --- | --- | --- |
-| `BLEND_MIN` | 0.001 | `iqm/iqm.cpp`, `blendcombo::addweight` |
-| `BLEND_MAX` | 4 | `blendcombo`, `weights[4]` |
 | `SMD_VERSION` | 1 | `loadsmd` |
 | `SMD_MAX_JOINT` | 255 | `smd::readnodes` |
 | `FBX_VERSION` | `FBX 7` | `fbx::checkversion` |
-| `FBX_MAX_LIMB` | 255 | `fbx::clusternode::process` |
 | `FBX_SAMPLE_RATE` | 10 | Ours: the rate of MD5-3.10 |
 | `FBX_MAX_FRAMES` | 4096 | Ours |
 | `MD5_MAX_COUNT` | 65536 | Ours |
@@ -756,6 +793,27 @@ order, within 0.05, the converter's weights being bytes. The greatest difference
 for five of the six and 0.041 for the scaled fbx. In the last frame the arm's vertex is at
 `(8, 8, 2)` and the vertex of both at `(7, 1, 2)`.
 
+`rig.fbx.txt` and `rig-7400.fbx.hex`, written by `scripts/model-formats/rig.py`, are one
+model as Blender writes one (MDL-10.9, MDL-10.10): five limbs under an armature, a `Null`
+that is moved, turned a quarter, scaled by 2 and rises over the animation; a mesh model
+with a geometric turn and scale; a bind pose in which three limbs are turned otherwise than
+they stand; a quad; a vertex of five weights; and an animation of five keys a tenth of a
+second apart for the limbs and two for the armature, so that it is sampled.
+
+**Checked:** on 2026-11-21 Blender 5.2.4, run with `-b`, read `rig-7400.fbx.hex`'s bytes
+with its importer built on ufbx (`wm.fbx_import`), and `scripts/model-formats/blender.py`
+wrote each pose's triangles, in the file's own space, into `rig.blender.txt`. The fbx
+reader's tests hold the text and the binary file to it as they hold the others to the
+converter's. Two rigged files of assimp's test models that Blender wrote
+(`test/models/FBX/huesitos.fbx` and `animation_with_skeleton.fbx`) were posed the same way
+with that importer and with Blender's older one (`import_scene.fbx`), which agree with each
+other, and every vertex of every pose compared with the reader's: `animation_with_skeleton`
+is the same in all ten poses, and `huesitos` in the nine of its seventeen that are at its
+keys; in the eight between keys it is at most 0.154% of the model's size away, Blender
+turning a limb between two keys by its own rotation and the reader by the file's three
+angles. The six other files of that directory read for MDL-11 are the same at rest. None
+of the eight is in the repository: their licences are their authors'.
+
 ## MDL-11 The binary form of fbx
 
 **Sources:** "FBX binary file format specification", Alexander Gessler, August 2013,
@@ -770,7 +828,7 @@ is and not ported. Autodesk publishes no description of the format. Implemented 
 ([#1089](https://github.com/quakecstudio/editor/issues/1089), L-50).
 
 A binary file holds the tree the text form writes. It is written out as that text, and
-read as MDL-10.6 and MDL-10.7 say a text file is.
+read as MDL-10.9 and MDL-10.10 say a text file is.
 
 ### Behaviour
 
@@ -806,7 +864,7 @@ read as MDL-10.6 and MDL-10.7 say a text file is.
   object's name and its class as the name, a NUL, a byte of 1 and the class, which is the
   text form's `Class::Name`; a quote or a control character in a string is written as a
   space. An integer is written as it is, whole: the text form's reader keeps an object's
-  number exactly (MDL-10.6). A float or a double is written with an exponent, so that none
+  number exactly (MDL-10.9). A float or a double is written with an exponent, so that none
   is longer than its digits; one that is not finite is 0.
 - **MDL-11.5** Ours: a file cut short, a record that ends before it starts or past the list
   it is in, a record whose properties run past its own end, records nested more than 64

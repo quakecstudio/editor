@@ -120,7 +120,7 @@ The tools an agent's loop most often uses:
 | `map.brush_clip`, `map.brush_vertex`, `map.brush_vertices`, `map.brush_split_edge`, `map.brush_split_face`, `map.brush_chamfer`, `map.brush_extrude`, `map.brush_scale`, `map.brush_shear`, `map.brush_sweep` | Reshapes a brush: clips it by a plane, moves its corners, splits, chamfers, extrudes, scales, shears or sweeps it |
 | `map.brush_subtract`, `map.brush_merge`, `map.brush_intersect`, `map.brush_hollow` | CSG: carves a brush out of the others of its entity, merges brushes into their convex hull, keeps their common solid, hollows a brush into walls |
 | `map.compile`, `map.find_leaks` | Compiles the map as it is in the editor to a BSP beside it, with its portal and leak files; reports whether it leaks without writing a file |
-| `map.save`, `map.play_from_here` | Saves the open map; compiles and lights it and plays it with the player at a point |
+| `map.save`, `map.play_from_here` | Saves the open map; compiles and lights it and plays it with the player at a point, or at the map's own start |
 
 A map tool that edits makes its edit at once, as an outside agent's edit of a file is made
 (L-43): the server begins no review for it, so nothing waits for a person when the agent is

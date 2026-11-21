@@ -120,7 +120,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.paste`](#mappaste) | Adds a .map's text to the open map, its world's brushes to the world and its other entities after the map's: where the text has them, or with the middle of their floor at a point on the grid. |
 | [`map.place_entity`](#mapplace_entity) | Places a point entity of a classname at an origin in the open map, with the keys given, and selects it. |
 | [`map.place_prefab`](#mapplace_prefab) | Copies a prefab into the open map with its origin at a point on the grid: its world's brushes into the world, its other entities after the map's. |
-| [`map.play_from_here`](#mapplay_from_here) | Compiles the open map fast, with no vis and fast light, into the project's build, starts the game on it and puts the player's eye at a point, facing a way: the map view's camera (MAP-13). It answers where the player was put, the light there and the entities that stand in the dark; with start paused the game waits there with its monsters not yet awake, for a screenshot of the map as it was built. |
+| [`map.play_from_here`](#mapplay_from_here) | Compiles the open map fast, with no vis and fast light, into the project's build, starts the game on it and puts the player's eye at a point, facing a way: the map view's camera (MAP-13), or with no eye the map's own player start. It answers where the player was put, the light there and the entities that stand in the dark; with start paused the game waits there with its monsters not yet awake, for a screenshot of the map as it was built. |
 | [`map.portals`](#mapportals) | Reads the portal file the open map's last compile wrote beside it, each portal's points, to show where the map's leaves meet. |
 | [`map.prefabs`](#mapprefabs) | Lists the .map files in the project's prefabs folder. |
 | [`map.profiles`](#mapprofiles) | Lists the compile profiles: the built-in Full and Fast, then the project's own from compile-profiles.toml, each its name and its tasks. |
@@ -6183,7 +6183,7 @@ Parameters:
 
 ## `map.play_from_here`
 
-Compiles the open map fast, with no vis and fast light, into the project's build, starts the game on it and puts the player's eye at a point, facing a way: the map view's camera (MAP-13). It answers where the player was put, the light there and the entities that stand in the dark; with start paused the game waits there with its monsters not yet awake, for a screenshot of the map as it was built.
+Compiles the open map fast, with no vis and fast light, into the project's build, starts the game on it and puts the player's eye at a point, facing a way: the map view's camera (MAP-13), or with no eye the map's own player start. It answers where the player was put, the light there and the entities that stand in the dark; with start paused the game waits there with its monsters not yet awake, for a screenshot of the map as it was built.
 
 Parameters:
 
@@ -6278,7 +6278,7 @@ Parameters:
   "properties": {
     "angles": {
       "default": null,
-      "description": "Which way the player faces, pitch, yaw and roll in degrees; ahead along x when not\ngiven.",
+      "description": "Which way the player faces, pitch, yaw and roll in degrees; when not given, the way\nthe player start faces with no eye, and ahead along x with one.",
       "items": {
         "format": "double",
         "type": "number"
@@ -6291,14 +6291,18 @@ Parameters:
       ]
     },
     "eye": {
-      "description": "Where the player's eye goes: the map view's camera. The player's origin is\n`view_ofs` below it, moved up or down to the nearest place its box fits.",
+      "default": null,
+      "description": "Where the player's eye goes: the map view's camera. The player's origin is\n`view_ofs` below it, moved up or down to the nearest place its box fits. When not\ngiven the player starts where the map's own first `info_player_start` stands, as\nthe game starts the map; a map with none is refused.",
       "items": {
         "format": "double",
         "type": "number"
       },
       "maxItems": 3,
       "minItems": 3,
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ]
     },
     "region": {
       "anyOf": [
@@ -6318,9 +6322,6 @@ Parameters:
       "description": "Whether the game runs or is left paused where the player was put. Paused, the game\nstarts paused, the player is put in place and one frame is run to show the view from\nthere: `engine.screenshot` then shows the map with every monster where the map put\nit, not yet awake, which is the picture to review a room by; `preview.resume` plays\non. Running when not given."
     }
   },
-  "required": [
-    "eye"
-  ],
   "title": "PlayFromHereParams",
   "type": "object"
 }

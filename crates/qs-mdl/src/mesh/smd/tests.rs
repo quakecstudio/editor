@@ -9,7 +9,7 @@
 use super::super::recorded::agrees;
 use super::*;
 
-// spec MDL-10.1, MDL-10.3: an smd model and its animation are the mesh FTEQW's converter
+// spec MDL-10.8, MDL-10.3: an smd model and its animation are the mesh FTEQW's converter
 // makes of them, for a plain model and for one whose base pose is turned, whose animation
 // skips a time and whose last frame gives the arm no pose
 #[test]
@@ -68,13 +68,13 @@ fn a_triangle_is_read_as_the_converter_reads_one() {
     );
     assert_eq!(made.texcoords, [[1.0, 1.0], [0.5, 0.5], [0.25, 0.25]]);
     // The second line's links: 0.25 of its own joint and 0.25 of the arm, and the half the
-    // weights lack is its own joint's: three quarters and a quarter.
-    assert_eq!(model.vertices[1].blends, [(0, 0.75), (1, 0.25)]);
-    // The third's: its own joint, the arm, twice, 0.7 in all, and the root 0.3.
+    // weights lack is its own joint's: a quarter of the arm, then three quarters its own.
+    assert_eq!(model.vertices[1].blends, [(1, 0.25), (0, 0.75)]);
+    // The third's: the root 0.3, then its own joint, the arm, twice, 0.7 in all.
     let third = &model.vertices[0].blends;
-    assert_eq!(third[0].0, 1);
+    assert_eq!([third[0].0, third[1].0], [0, 1]);
     assert!(
-        (third[0].1 - 0.7).abs() < 1e-9 && (third[1].1 - 0.3).abs() < 1e-9,
+        (third[0].1 - 0.3).abs() < 1e-9 && (third[1].1 - 0.7).abs() < 1e-9,
         "{third:?}"
     );
     // A vertex with no links follows its own joint alone.
@@ -115,7 +115,7 @@ fn a_time_past_the_bound_starts_no_frame() {
     assert_eq!(most.frames.len(), 65_536);
 }
 
-// spec MDL-10.1, MDL-10.3: a joint may come before its parent, and follows it all the same;
+// spec MDL-10.8, MDL-10.3: a joint may come before its parent, and follows it all the same;
 // a joint an animation gives no pose at all keeps the model's base pose
 #[test]
 fn a_joint_before_its_parent_follows_it() {

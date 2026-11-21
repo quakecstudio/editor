@@ -219,6 +219,7 @@ impl Md5Mesh {
             parents,
             base,
             animations: posed,
+            bind: Vec::new(),
             rest: MD5_FRAME,
             unnamed: MD5_ANIMATION,
         }

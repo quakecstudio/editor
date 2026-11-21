@@ -6,7 +6,8 @@
 // Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: iqm/iqm.cpp, addweight, finalize
 // Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: iqm/util.h, fromangles
 
-//! A mesh with a skeleton, as the formats that have one give it (MDL-9.2, MDL-10): joints
+//! A mesh with a skeleton, as the formats that have one give it (MDL-9.2, MDL-10):
+//! joints
 //! each with a parent and a base pose, vertices blended to joints, and animations of poses.
 //! An alias model has no skeleton, so [`Boned::mesh`] makes every frame of every animation a
 //! pose of the mesh.
@@ -127,40 +128,24 @@ pub(super) fn scaled(rotation: Mat3, [sx, sy, sz]: Vec3, moved: Vec3) -> Affine 
 /// A single-precision position.
 #[expect(
     clippy::cast_possible_truncation,
-    reason = "spec MDL-9.2, MDL-10.1: a posed position is stored in single precision, the nearest"
+    reason = "spec MDL-9.2, MDL-10.8: a posed position is stored in single precision, the nearest"
 )]
 pub(super) fn single(point: Vec3) -> [f32; 3] {
     point.map(|part| part as f32)
 }
 
-/// The least weight a blend is kept for, `1e-3` in `blendcombo::addweight` (MDL-10.1).
-pub(super) const BLEND_MIN: f64 = 1e-3;
-/// The most joints a vertex is blended to, the four of `blendcombo` (MDL-10.1).
-pub(super) const BLEND_MAX: usize = 4;
-
-/// A vertex's blends as the converter keeps them: `blendcombo::addweight` and `finalize`.
-/// A weight of [`BLEND_MIN`] or less is left out, the [`BLEND_MAX`] heaviest are kept,
-/// heaviest first, one given earlier before another as heavy, and their weights are divided
-/// by their sum.
+/// A vertex's blends: every weight that is a number above 0, in the order given, each
+/// divided by their sum. The converter's `blendcombo` keeps the four heaviest above a
+/// thousandth, as its own format holds four; a pose made of every weight is the one the
+/// program that wrote the file shows.
 ///
-/// Implements MDL-10.1.
+/// Implements MDL-10.8.
 pub(super) fn blend(pairs: &[(usize, f64)]) -> Vec<(usize, f64)> {
-    let mut kept: Vec<(usize, f64)> = Vec::with_capacity(BLEND_MAX);
-    for &(joint, weight) in pairs {
-        // "if(weight <= 1e-3) return;", which a weight that is no number passes in C and is
-        // left out with here.
-        if weight.is_nan() || weight <= BLEND_MIN {
-            continue;
-        }
-        let place = kept
-            .iter()
-            .position(|(_, other)| weight > *other)
-            .unwrap_or(kept.len());
-        if place < BLEND_MAX {
-            kept.insert(place, (joint, weight));
-            kept.truncate(BLEND_MAX);
-        }
-    }
+    let mut kept: Vec<(usize, f64)> = pairs
+        .iter()
+        .copied()
+        .filter(|(_, weight)| weight.is_finite() && *weight > 0.0)
+        .collect();
     let total: f64 = kept.iter().map(|(_, weight)| weight).sum();
     for (_, weight) in &mut kept {
         *weight /= total;
@@ -187,7 +172,8 @@ pub(super) fn from_angles([rx, ry, rz]: Vec3) -> [f64; 4] {
 /// Why a mesh with a skeleton is no mesh of poses.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum RigError {
-    /// A joint's base pose flattens space, so nothing can be taken back out of it.
+    /// The pose a joint was bound in flattens space, so nothing can be taken back out of
+    /// it.
     Flat,
     /// More animations have one name than can be told apart in a frame's name.
     Names,
@@ -208,6 +194,10 @@ pub(super) struct Boned {
     pub(super) parents: Vec<Option<usize>>,
     /// Each joint's base pose, in its parent's space.
     pub(super) base: Vec<Affine>,
+    /// Where each joint stood in the model's space when the mesh was bound to it, for a
+    /// file that says so; a joint with none, or past the end, was bound as the base poses
+    /// have it.
+    pub(super) bind: Vec<Option<Affine>>,
     /// The animations: a name and, for each frame, a pose for each joint in turn, in its
     /// parent's space.
     pub(super) animations: Vec<(String, Vec<Vec<Affine>>)>,
@@ -218,11 +208,84 @@ pub(super) struct Boned {
 }
 
 impl Boned {
+    /// Which joints a vertex follows: those something is blended to and those above them.
+    pub(super) fn followed(&self) -> Vec<bool> {
+        let mut kept = vec![false; self.parents.len()];
+        for (joint, _) in self.blends.iter().flatten() {
+            // Up from the joint until one already kept, or the top; a ring of parents
+            // ends at its first joint kept.
+            let mut above = Some(*joint);
+            while let Some(slot) = above.and_then(|joint| kept.get_mut(joint)) {
+                if *slot {
+                    break;
+                }
+                *slot = true;
+                above = above
+                    .and_then(|joint| self.parents.get(joint))
+                    .copied()
+                    .flatten();
+            }
+        }
+        kept
+    }
+
+    /// The mesh with only the joints something is blended to and those above them, in
+    /// their order: a file's other nodes, which move nothing, are no joints of it.
+    pub(super) fn without_idle_joints(mut self) -> Self {
+        let count = self.parents.len();
+        let kept = self.followed();
+        // Each kept joint's new number.
+        let mut next = 0_usize;
+        let numbers: Vec<Option<usize>> = kept
+            .iter()
+            .map(|kept| {
+                kept.then(|| {
+                    let number = next;
+                    next = next.saturating_add(1);
+                    number
+                })
+            })
+            .collect();
+        let number = |joint: usize| numbers.get(joint).copied().flatten();
+        let keep = |list: Vec<Affine>| -> Vec<Affine> {
+            list.into_iter()
+                .zip(&kept)
+                .filter_map(|(pose, kept)| kept.then_some(pose))
+                .collect()
+        };
+        for blends in &mut self.blends {
+            for (joint, _) in blends.iter_mut() {
+                // A joint past the file's is left past the kept ones'.
+                *joint = number(*joint).unwrap_or(next);
+            }
+        }
+        self.parents = self
+            .parents
+            .iter()
+            .zip(&kept)
+            .filter(|(_, kept)| **kept)
+            .map(|(parent, _)| parent.and_then(number))
+            .collect();
+        self.bind = (0..count)
+            .zip(&kept)
+            .filter(|(_, kept)| **kept)
+            .map(|(joint, _)| self.bind.get(joint).copied().flatten())
+            .collect();
+        // A list shorter than the joints is one for each of the first of them.
+        self.base = keep(self.base);
+        for (_, frames) in &mut self.animations {
+            for frame in frames.iter_mut() {
+                *frame = keep(core::mem::take(frame));
+            }
+        }
+        self
+    }
+
     /// Each joint's pose in the model's space, of `poses`, each in its parent's: a joint the
     /// frame gives no pose keeps its base pose. A joint may come before its parent: each is
     /// placed once its parent is, and a joint whose parents come round to itself, or whose
     /// parent is no joint, stands as a root.
-    fn world(&self, poses: &[Affine]) -> Vec<Affine> {
+    pub(super) fn world(&self, poses: &[Affine]) -> Vec<Affine> {
         let own = |joint: usize| {
             poses
                 .get(joint)
@@ -277,10 +340,15 @@ impl Boned {
                 })
             })
             .collect();
-        let bind = self.world(&self.base);
-        let unbind: Vec<Affine> = bind
+        // What takes a point of the bound mesh into each joint's own space.
+        let unbind: Vec<Affine> = self
+            .world(&self.base)
             .iter()
-            .map(|joint| joint.inverse().ok_or(RigError::Flat))
+            .enumerate()
+            .map(|(joint, base)| {
+                let bound = self.bind.get(joint).copied().flatten();
+                bound.unwrap_or(*base).inverse().ok_or(RigError::Flat)
+            })
             .collect::<Result<_, _>>()?;
         let no_blends = Vec::new();
         let posed = |poses: &[Affine]| -> Vec<[f32; 3]> {
@@ -377,21 +445,22 @@ pub(super) fn frame_stem(
 mod tests {
     use super::*;
 
-    // spec MDL-10.1: a weight of 0.001 or less is left out, the four heaviest are kept
-    // heaviest first, one given earlier before another as heavy, and they are divided by
-    // their sum; no weight at all is no blend
+    // spec MDL-10.8: every weight that is a number above 0 is kept, in the order given,
+    // and they are divided by their sum; no weight at all is no blend
     #[test]
-    fn blends_are_the_four_heaviest() {
+    fn blends_are_every_weight_over_their_sum() {
         assert_eq!(blend(&[(3, 0.5), (1, 0.5)]), [(3, 0.5), (1, 0.5)]);
-        assert_eq!(blend(&[(0, 0.001), (2, 0.002)]), [(2, 1.0)]);
+        assert_eq!(blend(&[(0, 0.001), (2, 0.003)]), [(0, 0.25), (2, 0.75)]);
         let five = blend(&[(0, 1.0), (1, 5.0), (2, 2.0), (3, 0.5), (4, 1.5)]);
         let joints: Vec<usize> = five.iter().map(|(joint, _)| *joint).collect();
-        assert_eq!(joints, [1, 2, 4, 0], "the lightest of five is left out");
+        assert_eq!(joints, [0, 1, 2, 3, 4], "a fifth weight is kept");
         let total: f64 = five.iter().map(|(_, weight)| weight).sum();
         assert!((total - 1.0).abs() < 1e-12);
-        assert!((five.first().map_or(0.0, |(_, weight)| *weight) - 5.0 / 9.5).abs() < 1e-12);
+        assert!((five.get(1).map_or(0.0, |(_, weight)| *weight) - 0.5).abs() < 1e-12);
         assert!(blend(&[]).is_empty());
-        assert!(blend(&[(0, f64::NAN), (1, -1.0)]).is_empty());
+        let none = [(0, f64::NAN), (1, -1.0), (2, 0.0), (3, f64::INFINITY)];
+        assert!(blend(&none).is_empty());
+        assert_eq!(blend(&[(0, f64::INFINITY), (1, 2.0)]), [(1, 1.0)]);
     }
 
     // spec MDL-10.3: angles turn about x, then y, then z: a quarter about z takes x to y,

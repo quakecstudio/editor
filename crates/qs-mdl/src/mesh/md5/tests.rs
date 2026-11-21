@@ -20,7 +20,7 @@ fn model(mesh: &str, animation: &str) -> (Md5Mesh, Vec<(String, Md5Anim)>) {
     )
 }
 
-// spec MDL-10.1, MDL-10.2: an md5 model and its animation are the mesh FTEQW's converter
+// spec MDL-10.8, MDL-10.2: an md5 model and its animation are the mesh FTEQW's converter
 // makes of them: every triangle of every frame, with its texture coordinates, for a model
 // whose joints stand straight and for one whose arm's joint is turned in the base pose
 #[test]

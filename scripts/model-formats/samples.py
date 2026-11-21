@@ -85,38 +85,8 @@ fbx = ['; FBX 7.3.0 project file', 'FBXHeaderExtension:  {', '\tFBXHeaderVersion
 open(f"{out}/arm.fbx.txt", "w").write("\n".join(fbx))
 
 # ---- fbx, binary: the same tree as the text file, as records
-import struct, zlib
-def prop(v):
-    if isinstance(v, bool):
-        return b"C" + struct.pack("<B", v)
-    if isinstance(v, int):
-        return b"L" + struct.pack("<q", v) if abs(v) >= 2 ** 31 else b"I" + struct.pack("<i", v)
-    if isinstance(v, float):
-        return b"D" + struct.pack("<d", v)
-    if isinstance(v, str):
-        raw = v.encode()
-        return b"S" + struct.pack("<I", len(raw)) + raw
-    kind, vals = v                                 # an array: its kind and its values
-    # The file's "l" is a 64-bit integer, which struct calls "q".
-    raw = struct.pack("<%d%s" % (len(vals), "q" if kind == "l" else kind), *vals)
-    packed = zlib.compress(raw)
-    return kind.encode() + struct.pack("<III", len(vals), 1, len(packed)) + packed
-def record(name, props, children, wide, at):
-    """A record that starts at the file's byte `at`."""
-    head = "<QQQB" if wide else "<IIIB"
-    body = b"".join(prop(v) for v in props)
-    start = at + struct.calcsize(head) + len(name)
-    nested = b""
-    for child in children:
-        nested += record(*child, wide, start + len(body) + len(nested))
-    if children:
-        nested += bytes(struct.calcsize(head))
-    end = start + len(body) + len(nested)
-    return struct.pack(head, end, len(props), len(body), len(name)) + name.encode() + body + nested
-def named(name, cls):
-    return name + "\x00\x01" + cls
-def p70(*lines):
-    return ("Properties70", [], [("P", list(line), []) for line in lines])
+import struct
+from fbxbin import hexed, named, p70, record
 def binary(wide, ids):
     """`ids` is added to every object's number: a great one is past what a double holds."""
     def limb_node(idn, name, t):
@@ -165,8 +135,6 @@ def binary(wide, ids):
         out += record(*node, wide, len(out))
     out += bytes(25 if wide else 13) + b"\xfa\xbc\xab\x09 a footer the readers pass over"
     return out
-def hexed(data):
-    return "\n".join(data[i:i + 32].hex() for i in range(0, len(data), 32)) + "\n"
 # Version 7.4 with 32-bit counts, and 7.5 with 64-bit counts and object numbers past 2 to the 53rd.
 open(f"{out}/arm-7400.fbx.hex", "w").write(hexed(binary(False, 0)))
 open(f"{out}/arm-7500.fbx.hex", "w").write(hexed(binary(True, 2 ** 62)))

@@ -116,6 +116,8 @@ milestone (`MVP-3`). All of them wait for the MVP gate.
 | A random playable map from one button | Map editor (MAP-3, MAP-16), PRIN-6; asked for by Justin on 2026-11-20 | [L-48](https://github.com/quakecstudio/editor/issues/1082) Generate a random playable map from one button |
 | The room shapes of id's maps for an agent to build with | Map editor (MAP-16), PRIN-6; asked for by Justin on 2026-11-20 | [L-49](https://github.com/quakecstudio/editor/issues/1083) Give an agent the room shapes of id's maps to build with |
 | Binary fbx models, and fbx facing as obj does | Agent harness (PRIN-6), MAP-4; asked for by Justin on 2026-11-21 | [L-50](https://github.com/quakecstudio/editor/issues/1089) Import binary fbx models, facing the way obj models do |
+| Rigged fbx models from Blender posed as Blender poses them | Agent harness (PRIN-6), MAP-4; found by comparing with Blender on 2026-11-21 | [L-51](https://github.com/quakecstudio/editor/issues/1091) A rigged fbx from Blender imports with its animation's poses wrong |
+| Play plays the map open in the Map tab | Map editor (MAP-13), UI-14; asked for by Justin on 2026-11-21 | [L-52](https://github.com/quakecstudio/editor/issues/1092) Play plays the map open in the Map tab |
 | In-app update check | Quality, testing and release; moved out of the MVP by [ADR-0007](adr/0007-mvp-scope.md) | [P4-19](https://github.com/quakecstudio/editor/issues/130) Update mechanism |
 | Editor integrations for VS Code, Zed and Neovim | Language server; moved out of Phase 2 by Justin on 2026-10-29, as it serves other editors and not the IDE or the engine | [P2-16](https://github.com/quakecstudio/editor/issues/72) Package editor integrations for VS Code, Zed and Neovim |
 
