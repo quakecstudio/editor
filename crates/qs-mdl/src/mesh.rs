@@ -7,8 +7,10 @@
 //! and without them the skin is laid out as id's modelgen lays one (MDL-8.3, MDL-8.4).
 
 pub mod iqe;
+pub mod md5;
 pub mod obj;
 mod rig;
+pub mod smd;
 
 use core::fmt;
 use std::collections::BTreeMap;

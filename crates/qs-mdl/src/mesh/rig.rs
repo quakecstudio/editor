@@ -1,4 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2010-2016 Lee Salzman
+// Copyright (c) 2004-2025 FTE's team and its contributors
+// Copyright (C) 2026 QuakeC Studio contributors
+//
+// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: iqm/iqm.cpp, addweight, finalize
+// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: iqm/util.h, fromangles
 
 //! A mesh with a skeleton, as the formats that have one give it (MDL-9.2, MDL-10): joints
 //! each with a parent and a base pose, vertices blended to joints, and animations of poses.
@@ -125,6 +131,57 @@ pub(super) fn scaled(rotation: Mat3, [sx, sy, sz]: Vec3, moved: Vec3) -> Affine 
 )]
 pub(super) fn single(point: Vec3) -> [f32; 3] {
     point.map(|part| part as f32)
+}
+
+/// The least weight a blend is kept for, `1e-3` in `blendcombo::addweight` (MDL-10.1).
+pub(super) const BLEND_MIN: f64 = 1e-3;
+/// The most joints a vertex is blended to, the four of `blendcombo` (MDL-10.1).
+pub(super) const BLEND_MAX: usize = 4;
+
+/// A vertex's blends as the converter keeps them: `blendcombo::addweight` and `finalize`.
+/// A weight of [`BLEND_MIN`] or less is left out, the [`BLEND_MAX`] heaviest are kept,
+/// heaviest first, one given earlier before another as heavy, and their weights are divided
+/// by their sum.
+///
+/// Implements MDL-10.1.
+pub(super) fn blend(pairs: &[(usize, f64)]) -> Vec<(usize, f64)> {
+    let mut kept: Vec<(usize, f64)> = Vec::with_capacity(BLEND_MAX);
+    for &(joint, weight) in pairs {
+        // "if(weight <= 1e-3) return;", which a weight that is no number passes in C and is
+        // left out with here.
+        if weight.is_nan() || weight <= BLEND_MIN {
+            continue;
+        }
+        let place = kept
+            .iter()
+            .position(|(_, other)| weight > *other)
+            .unwrap_or(kept.len());
+        if place < BLEND_MAX {
+            kept.insert(place, (joint, weight));
+            kept.truncate(BLEND_MAX);
+        }
+    }
+    let total: f64 = kept.iter().map(|(_, weight)| weight).sum();
+    for (_, weight) in &mut kept {
+        *weight /= total;
+    }
+    kept
+}
+
+/// The quaternion `(x, y, z, w)` of a turn by `rot`'s x, then y, then z, in radians:
+/// `Quat::fromangles`, but for the sign it gives the whole, which turns nothing.
+///
+/// Implements MDL-10.3.
+pub(super) fn from_angles([rx, ry, rz]: Vec3) -> [f64; 4] {
+    let (sx, cx) = (rx / 2.0).sin_cos();
+    let (sy, cy) = (ry / 2.0).sin_cos();
+    let (sz, cz) = (rz / 2.0).sin_cos();
+    [
+        sx * cy * cz - cx * sy * sz,
+        cx * sy * cz + sx * cy * sz,
+        cx * cy * sz - sx * sy * cz,
+        cx * cy * cz + sx * sy * sz,
+    ]
 }
 
 /// Why a mesh with a skeleton is no mesh of poses.
