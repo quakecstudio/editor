@@ -2658,12 +2658,12 @@ groups:
     depends:
     - L-45
     deliverable:
-    - 'crates/qs-map-gen: `generate`, from a seed, a size and the texture names and entity classes there are, to a `.map`: one seed, one map; rooms of several shapes (a pillared hall, an eight-sided chamber with a stepped dome, a hall over a pit of liquid crossed by a bridge, a room on two levels joined by stairs, a courtyard under the sky), joined by passages with flat or chamfered arches, stairs where the floors differ, doors, and one locked door whose key is in a room before it; a player start, an exit, lights, monsters, weapons, ammunition and health; textures by a theme chosen from the names the game has'
-    - 'crates/qs-map-edit: `map.generate` writes such a map into the project and opens it; apps/desktop: a New Random Map entry in the File menu and a button on the Welcome page''s and the map view''s way in'
+    - 'crates/qs-map-gen: `generate`, from a seed, a size and the texture names and entity classes there are, to a `.map`: one seed, one map; rooms of several shapes (a pillared hall, an eight-sided chamber with a stepped dome, a hall over a pit of liquid crossed by bridges, a room on two levels joined by stairs, a courtyard under the sky, two aisles crossing under a lantern, a long room under a pitched vault), joined by passages with flat or chamfered arches, stairs where the floors differ, doors, and one locked door whose key is in a room before it; a player start, an exit, lights, monsters, weapons, ammunition and health; textures by a theme chosen from the names the game has'
+    - 'crates/qs-map-edit: `map.generate` writes such a map into the project and opens it; apps/desktop: a New Random Map entry in the File menu, and a button in the map tab while a project is open and no map is'
     acceptance:
-    - 'For 50 seeds and each size, the map generated compiles with no leak and no error, `map.check` finds no issue, and the player''s box is in open space at the start, the exit and the middle of every room, checked by a test over id''s and LibreQuake''s texture names'
+    - 'For 50 seeds and each size, 25 painted from id''s texture names and 25 from LibreQuake''s, the map generated compiles with no leak and no error, the map''s checks find no issue, the player''s box is in open space at the start, at the exit and where each room is stood in, and a player who walks reaches each from the start: checked by a test that runs 4 seeds of each on every run and all 50 with QS_RANDOM_LEVEL_SEEDS=25, whose run is recorded in the PR; `map.issues` finds none in a level of each size, checked by a test'
     - 'One seed gives one map, byte for byte, and two seeds give two, checked by a test'
-    - 'A map generated in the running app from the button is compiled and played from the start to the exit, with screenshots of each kind of room, recorded in the PR'
+    - 'The File menu''s entry and the map tab''s button make a level and show it, checked by a test of the window; a level generated through the MCP server compiles with no issue, is played in each kind of room and at its exit, which ends the level, with screenshots, recorded in the PR'
     verify:
     - 'cargo nextest run -p qs-map-gen -p qs-map-edit -p qs-tests -p quakec-studio; the recorded run in the PR'
   - key: L-49

@@ -73,3 +73,17 @@ Source: `qutils/QBSP/OUTSIDE.C` (`FillOutside`) and `QBSP.C` at the same commit.
   slow and wrong.
 - Seal the world with brushes on every side. Each entity's origin, other than the world's,
   must lie inside, and an entity at `'0 0 0'` is not counted (`FillOutside` skips it).
+
+## A whole level at once
+
+Source: [`crates/qs-map-gen`](../../crates/qs-map-gen/README.md) (L-48).
+
+- `map.generate` makes a random playable level in the project and opens it: rooms joined by
+  passages from a player start to an exit, with lights, monsters, weapons and, behind a
+  locked door, a key. One `seed` and `size` (`small`, `medium`, `large`) give one level.
+- It answers each room's `shape` and a place to `stand` in it. Look at a room with
+  `map.play_from_here`, the eye 22 units above that place, and `engine.screenshot`.
+- The level is a map like any other: edit it with the map tools, and `map.compile` and
+  `map.issues` check it. Its rooms show what a room can be other than a box: pillars, a
+  raised ceiling, cut corners, a dome of steps, a pit crossed by bridges, two floors joined by
+  stairs, an open sky, arches.

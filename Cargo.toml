@@ -200,6 +200,7 @@ qc-codegen = { path = "crates/qc-codegen" }
 qs-map-bsp = { path = "crates/qs-map-bsp" }
 qs-map-light = { path = "crates/qs-map-light" }
 qs-map-vis = { path = "crates/qs-map-vis" }
+qs-map-gen = { path = "crates/qs-map-gen" }
 qc-diag = { path = "crates/qc-diag" }
 qc-entities = { path = "crates/qc-entities" }
 qc-lexer = { path = "crates/qc-lexer" }

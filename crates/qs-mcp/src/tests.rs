@@ -684,6 +684,34 @@ fn a_map_is_made_and_saved_over_mcp() {
     );
 }
 
+// No spec statement: L-48: map.generate needs no map open, as map.new needs none: it runs,
+// and with no game to take textures from says that and makes nothing
+#[test]
+fn a_level_is_generated_with_no_map_open() {
+    let (server, map) = map_server("map-generate", false);
+    let [init, initialized] = opening("2025-11-25");
+    let answers = exchange(
+        server,
+        &[
+            init,
+            initialized,
+            call(1, "map.generate", &json!({ "seed": 3 })),
+        ],
+    );
+    let answer = &answers["1"]["result"];
+    let said = answer["content"][0]["text"].as_str().unwrap();
+    assert!(!said.contains("no map is open"), "{said}");
+    let made = map.with_file_name("random3.map");
+    // A machine with the game installed where the server looks makes the level; one
+    // without says why it made none.
+    if answer["isError"] == true {
+        assert!(said.contains("no game was found"), "{said}");
+        assert!(!made.exists());
+    } else {
+        assert!(made.exists());
+    }
+}
+
 // No spec statement: L-43: edit.repeat makes a map edit again, at once as the edit's own tool
 // does: both are in the map and neither waits for review
 #[test]

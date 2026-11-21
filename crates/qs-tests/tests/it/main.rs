@@ -15,6 +15,7 @@ mod map_tools;
 mod pak_written;
 mod paths;
 mod play_from_here;
+mod random_levels;
 mod scenario_numbers;
 mod shape_stairs;
 mod spec_coverage;

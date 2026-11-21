@@ -112,6 +112,7 @@ The tools an agent's loop most often uses:
 | `preview.play`, `preview.reload`, `preview.stop`, `preview.poll` | The live game: start it, reload the program, stop it, read its events |
 | `engine.inspect`, `engine.console`, `engine.screenshot` | The running game's edicts, globals and stack; a console command and its output; a frame as a PNG |
 | `map.open`, `map.new`, `map.list_entities`, `map.staged_hunks` | Opens a `.map` file; makes a new one in the project, holding a world with the keys given, and opens it; its rooms and entities; the map edits waiting for review |
+| `map.generate` | Makes a random playable level in the project and opens it (L-48): rooms of seven shapes joined by passages, stairs and doors, from a start to an exit, with lights, monsters, weapons and a key, textured from the game's own levels; one seed and size give one level, and its answer names each room's shape and a place to stand in it |
 | `map.brushes`, `map.summary` | An entity's brushes, each with its place, the box around it and its textures; the map in short: its bounds, brush and entity counts, entities by classname and textures by face |
 | `map.place_entity`, `map.set_key` | Places an entity; sets one of an entity's keys |
 | `map.brush_create`, `map.brush_shape`, `map.brush_delete`, `map.brush_move`, `map.brush_texture` | Adds a box brush, or a shape of brushes (cylinder, cone, arch, spheroid, rock, curve, stairs); deletes, moves or retextures brushes |
@@ -129,7 +130,7 @@ map edits are the ones staged as hunks (P6-21). `map.stage`, `map.accept_hunks` 
 `map.reject_hunks` are still tools: an agent that wants its own edits held for a look can
 begin a review and decide it.
 
-`map.open` and `map.new` write, since they replace the open map, its unsaved and staged edits
+`map.open`, `map.new` and `map.generate` write, since they replace the open map, its unsaved and staged edits
 with it. A map tool that edits, compiles, saves or plays also needs the open map's file under
 a write root, since `map.compile` and `map.save` write beside it: the server asks `map.list_entities`
 for it first. `map.save` writes the map as it is in the editor. `preview.play` of a map the

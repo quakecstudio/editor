@@ -1,0 +1,202 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! The passage between two rooms: a space from one's wall to the other's, square or under an
+//! arch whose corners are cut at half a right angle, with stairs where the floors differ and
+//! a door at its higher end when it has one.
+
+use qs_map::{Brush, BrushError};
+
+use crate::layout::{Doorway, Link, Plan, Side};
+use crate::mass::{Bounds, Coat, Mass, Point};
+use crate::theme::Paints;
+
+/// Half a passage's width: a large monster's box is 64 wide.
+const HALF_WIDTH: f64 = 56.0;
+/// A passage's height above its higher floor.
+const HEIGHT: f64 = 128.0;
+/// How much of an arch's upper corners is cut.
+const ARCH_CUT: f64 = 32.0;
+/// A step's height, which a walking player climbs (PHYS-8.3), and the depths a step may
+/// have, the easiest first.
+const STEP_RISE: f64 = 16.0;
+const STEP_DEPTHS: [f64; 3] = [32.0, 24.0, 16.0];
+/// The level floor a passage keeps at each end, before its stairs.
+const LANDING: f64 = 32.0;
+/// Where a door stands from the end of its passage, and how thick it is.
+const DOOR_FROM_END: f64 = 8.0;
+const DOOR_THICK: f64 = 16.0;
+/// How bright a passage's light is, and how far under its ceiling it hangs.
+const LIGHT: f64 = 200.0;
+const LIGHT_DROP: f64 = 24.0;
+
+/// A passage being built.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Passage {
+    /// Where it leaves its first room: the middle of that room's wall, at height 0.
+    start: [f64; 2],
+    /// The side of the first room it leaves by.
+    side: Side,
+    /// How long it is.
+    length: f64,
+    /// The floor at its start and at its end.
+    floors: [f64; 2],
+    /// What stands in it.
+    doorway: Doorway,
+}
+
+/// What a passage adds to the level besides its space.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Passed {
+    /// Solid brushes of the world: its steps.
+    pub(crate) solids: Vec<Brush>,
+    /// Its door, with whether it needs the key.
+    pub(crate) door: Option<(Brush, Doorway)>,
+    /// Its light.
+    pub(crate) light: Option<(Point, f64)>,
+}
+
+impl Passage {
+    /// The passage of `link` in `plan`; `None` for a link to a room that is not there.
+    pub(crate) fn of(plan: &Plan, link: &Link) -> Option<Self> {
+        let from = plan.room_of(link.from)?;
+        let to = plan.room_of(link.to)?;
+        let [fx, fy] = link.side.facing();
+        let [ax, ay] = from.cell.middle();
+        let [bx, by] = to.cell.middle();
+        let between = (bx - ax) * fx + (by - ay) * fy;
+        let reach = from.reach(link.side);
+        Some(Self {
+            start: [ax + fx * reach, ay + fy * reach],
+            side: link.side,
+            length: between - reach - to.reach(link.side.opposite()),
+            floors: [
+                from.door_floor(link.side),
+                to.door_floor(link.side.opposite()),
+            ],
+            doorway: link.doorway,
+        })
+    }
+
+    /// The box from `along[0]` to `along[1]` down the passage, `over` across it, between the
+    /// heights `z`.
+    fn bounds(&self, along: [f64; 2], over: [f64; 2], z: [f64; 2]) -> Bounds {
+        let ([a0, a1], [o0, o1], [z0, z1]) = (along, over, z);
+        let [a, b] = [self.point(a0, o0, z0), self.point(a1, o1, z1)];
+        let mut min = a;
+        let mut max = a;
+        for ((low, high), at) in min.iter_mut().zip(&mut max).zip(b) {
+            *low = low.min(at);
+            *high = high.max(at);
+        }
+        Bounds { min, max }
+    }
+
+    /// The point `along` down the passage and `over` across it, at height `z`.
+    fn point(&self, along: f64, over: f64, z: f64) -> Point {
+        let [fx, fy] = self.side.facing();
+        let [sx, sy] = self.start;
+        // Across is a quarter turn from along.
+        [sx + fx * along - fy * over, sy + fy * along + fx * over, z]
+    }
+
+    /// The lower and the higher of its two floors.
+    fn low_high(&self) -> [f64; 2] {
+        let [a, b] = self.floors;
+        [a.min(b), a.max(b)]
+    }
+
+    /// Takes the passage out of `mass` and builds its steps and its door.
+    ///
+    /// # Errors
+    ///
+    /// The [`BrushError`] of a brush that could not be made.
+    pub(crate) fn build(&self, mass: &mut Mass, paints: &Paints) -> Result<Passed, BrushError> {
+        let [low, high] = self.low_high();
+        let top = high + HEIGHT;
+        let space = Coat::space(&paints.floor, &paints.ceiling, &paints.trim);
+        let across = [-HALF_WIDTH, HALF_WIDTH];
+        let void = match self.doorway {
+            Doorway::Arch => {
+                let mut corners = Vec::new();
+                for along in [0.0, self.length] {
+                    for (over, z) in [
+                        (-HALF_WIDTH, low),
+                        (HALF_WIDTH, low),
+                        (HALF_WIDTH, top - ARCH_CUT),
+                        (HALF_WIDTH - ARCH_CUT, top),
+                        (-HALF_WIDTH + ARCH_CUT, top),
+                        (-HALF_WIDTH, top - ARCH_CUT),
+                    ] {
+                        corners.push(self.point(along, over, z));
+                    }
+                }
+                space.hull(&corners)?
+            }
+            Doorway::Open | Doorway::Door | Doorway::Locked => {
+                space.boxed(self.bounds([0.0, self.length], across, [low, top]))?
+            }
+        };
+        mass.carve(&void)?;
+        let mut passed = Passed {
+            light: Some((self.point(self.length / 2.0, 0.0, top - LIGHT_DROP), LIGHT)),
+            ..Passed::default()
+        };
+        self.steps(paints, &mut passed.solids)?;
+        let [first, _] = self.floors;
+        // The door stands at the higher end, where the passage is no taller than it.
+        let door_at = if first >= high {
+            [DOOR_FROM_END, DOOR_FROM_END + DOOR_THICK]
+        } else {
+            [
+                self.length - DOOR_FROM_END - DOOR_THICK,
+                self.length - DOOR_FROM_END,
+            ]
+        };
+        match self.doorway {
+            Doorway::Open | Doorway::Arch => {}
+            Doorway::Door | Doorway::Locked => {
+                let door =
+                    Coat::all(&paints.door).boxed(self.bounds(door_at, across, [high, top]))?;
+                passed.door = Some((door, self.doorway));
+            }
+        }
+        Ok(passed)
+    }
+
+    /// The steps from its lower floor to its higher, each a slab from its own edge to the
+    /// higher end.
+    fn steps(&self, paints: &Paints, solids: &mut Vec<Brush>) -> Result<(), BrushError> {
+        let [low, high] = self.low_high();
+        let climb = high - low;
+        if climb <= 0.0 {
+            return Ok(());
+        }
+        let count = climb / STEP_RISE;
+        let room = self.length - LANDING - LANDING;
+        let depth = STEP_DEPTHS
+            .into_iter()
+            .find(|depth| depth * count <= room)
+            .unwrap_or(STEP_RISE);
+        let step = Coat::deck(&paints.floor, &paints.trim);
+        let [first, _] = self.floors;
+        let rises_along = first < high;
+        // How far the first step's edge is from the lower end.
+        let mut edge = (self.length - depth * count) / 2.0;
+        let mut foot = low;
+        while foot < high {
+            let along = if rises_along {
+                [edge, self.length]
+            } else {
+                [0.0, self.length - edge]
+            };
+            solids.push(step.boxed(self.bounds(
+                along,
+                [-HALF_WIDTH, HALF_WIDTH],
+                [foot, foot + STEP_RISE],
+            ))?);
+            edge += depth;
+            foot += STEP_RISE;
+        }
+        Ok(())
+    }
+}

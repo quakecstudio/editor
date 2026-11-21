@@ -71,6 +71,7 @@ map.entities_removed_by_skill
 map.export
 map.extract_linked
 map.flip
+map.generate
 map.group
 map.hide
 map.isolate

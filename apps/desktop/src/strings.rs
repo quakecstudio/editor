@@ -425,6 +425,12 @@ pub enum Text {
     OpenFolderButton,
     /// File, New Project, and the button of the same name: opens the New Project dialog (L-28).
     NewProjectMenu,
+    /// File, New Random Map, and the map tab's button with no map open (L-48).
+    NewRandomMapMenu,
+    /// Under that button: what it makes.
+    NewRandomMapHow,
+    /// Why New Random Map made none while the open map has edits not saved.
+    RandomMapUnsaved,
     /// The New Project dialog's title.
     NewProjectHeading,
     /// The New Project dialog's question.
@@ -1107,7 +1113,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 545] = [
+    pub const ALL: [Self; 548] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1249,6 +1255,9 @@ impl Text {
         Self::OpenFolderTitle,
         Self::OpenFolderButton,
         Self::NewProjectMenu,
+        Self::NewRandomMapMenu,
+        Self::NewRandomMapHow,
+        Self::RandomMapUnsaved,
         Self::NewProjectHeading,
         Self::NewProjectWhich,
         Self::GameOriginal,
@@ -1816,6 +1825,11 @@ impl Text {
             Self::OpenFolderTitle => "Open a QuakeC project folder",
             Self::OpenFolderButton => "Open Folder",
             Self::NewProjectMenu => "New Project\u{2026}",
+            Self::NewRandomMapMenu => "New Random Map",
+            Self::RandomMapUnsaved => "Save the open map first: a new map takes its place.",
+            Self::NewRandomMapHow => {
+                "Makes a level of several rooms with monsters, weapons and an exit, in the project's maps folder."
+            }
             Self::NewProjectHeading => "New project",
             Self::NewProjectWhich => "Which game is the mod for?",
             Self::GameOriginal => "Original Quake",
