@@ -153,7 +153,7 @@ A command that answers a question is read by a panel, the agent or MCP. A comman
 | Command | Why | Summary |
 | --- | --- | --- |
 | `checkpoint.list` | answers a question | Lists the open project's checkpoints, oldest first. |
-| `checkpoint.restore` | needs a value | Puts every file of the open project back as a checkpoint holds it, removing the files made since and dropping unsaved edits. |
+| `checkpoint.restore` | needs a value | Puts every file of the open project back as a checkpoint holds it, removing the files made since and dropping unsaved edits, the open map's among them: the map is read again from its file, or closed when the file was made since. |
 | `code.actions` | needs a value | Lists the quick fixes for the diagnostics at a place in a file: a missing builtin declared, a misspelled field corrected, an unused local removed, a missing precache added. |
 | `code.fix` | needs a value | Applies a quick fix for the diagnostics at a place in a file, the first unless one is named by its index in code.actions' list; the file is not saved. |
 | `commands.list` | answers a question | Lists every command with its id, summary and parameter schema. |

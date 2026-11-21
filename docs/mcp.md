@@ -122,7 +122,9 @@ The tools an agent's loop most often uses:
 
 A map tool that edits makes its edit at once, as an outside agent's edit of a file is made
 (L-43): the server begins no review for it, so nothing waits for a person when the agent is
-done, and `edit.undo`, or a checkpoint the client keeps, takes it back. The built-in agent's
+done, and `edit.undo`, or a restored checkpoint, which reads the open map again from its
+file, takes it back. `edit.undo` and `edit.redo` are held to the write roots as the map
+tools are while a map is open, since what they change may be the map. The built-in agent's
 map edits are the ones staged as hunks (P6-21). `map.stage`, `map.accept_hunks` and
 `map.reject_hunks` are still tools: an agent that wants its own edits held for a look can
 begin a review and decide it.

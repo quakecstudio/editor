@@ -753,7 +753,7 @@ fn a_read_only_server_refuses_the_map_tools_that_write() {
 
 // No spec statement: P6-36, P4-13: connected to the app, a map tool that writes is refused when
 // the map the app has open lies outside the write roots, since it may write beside it, and
-// nothing waits for review
+// nothing waits for review; so is edit.undo, which may take back an edit of that map
 #[test]
 fn a_map_outside_the_write_roots_is_not_written() {
     let root = project("map-outside", WORLD);
@@ -781,7 +781,8 @@ fn a_map_outside_the_write_roots_is_not_written() {
         session
             .execute("map.open", json!({ "path": opened }))
             .unwrap();
-        for _ in 0..2 {
+        // The list, then the inspect before the edit and the one before the undo.
+        for _ in 0..3 {
             assert!(host.answer_next(&mut session));
         }
         session.execute("map.staged_hunks", json!({})).unwrap()
@@ -809,12 +810,31 @@ fn a_map_outside_the_write_roots_is_not_written() {
                 "map.place_entity",
                 &json!({ "classname": "light", "origin": [0.0, 0.0, 64.0] }),
             ),
+            // The history's last change may be the person's edit of that map.
+            call(2, "edit.undo", &json!({})),
         ],
     );
-    let answer = &answers["1"]["result"];
-    assert_eq!(answer["isError"], true, "{answer}");
-    assert!(answer.to_string().contains("outside the roots"), "{answer}");
+    for id in ["1", "2"] {
+        let answer = &answers[id]["result"];
+        assert_eq!(answer["isError"], true, "{id}: {answer}");
+        assert!(answer.to_string().contains("outside the roots"), "{answer}");
+    }
     assert_eq!(app.join().unwrap(), json!([]));
+}
+
+// No spec statement: L-43 (the review's findings): with no map open, undo is the session's to
+// answer: the server asks nothing of a map and adds no refusal of its own
+#[test]
+fn undo_with_no_map_open_is_the_sessions_to_answer() {
+    let root = project("undo-no-map", "void() worldspawn = {};\n");
+    let [init, initialized] = opening("2025-11-25");
+    let answers = exchange(
+        server(&root, false),
+        &[init, initialized, call(1, "edit.undo", &json!({}))],
+    );
+    let answer = answers["1"]["result"].to_string();
+    assert!(!answer.contains("outside the roots"), "{answer}");
+    assert!(!answer.contains("no map"), "{answer}");
 }
 
 // No spec statement: L-42: an agent whose client defers the tool list reads the server's

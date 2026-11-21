@@ -179,9 +179,11 @@ it too.
   - The Properties panel subtracts the selected brush from the other brushes of its entity
     (`map.brush_subtract`), merges the selected brushes of one entity into their hull
     (`map.brush_merge`), and deletes the selected brushes (`map.brush_delete`).
-- **Reviewing the agent's map edits (P6-21, MAP-29):** the agent builds geometry with the same
-  brush, shape and CSG commands as the editor (`map.brush_create`, `map.brush_shape`,
-  `map.brush_subtract` and the rest). Its first map command begins a review (`map.stage`): the
+- **Reviewing the agent's map edits (P6-21, MAP-29):** the built-in agent builds geometry with
+  the same brush, shape and CSG commands as the editor (`map.brush_create`, `map.brush_shape`,
+  `map.brush_subtract` and the rest). An outside agent's map edits, through the MCP server,
+  are made at once and begin no review (L-43); undo, or the agent panel's Restore checkpoint,
+  takes them back. The built-in agent's first map command begins a review (`map.stage`): the
   map is edited at once, so a compile and the game see the change, and each run of changed parts
   since, an entity's keys or one of its brushes, waits as a hunk (`map.staged_hunks`). The Properties
   panel lists them with Accept and Reject, and both for every hunk; a rejected hunk's parts are

@@ -12,6 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use qc_project::{Loader, normalize};
 use qs_checkpoint::{Checkpoint, Restored, Store};
 use qs_commands::{Command, NoParams, Outcome, RegisterError, Registry};
+use qs_map_edit::map_put_back;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -228,7 +229,9 @@ struct RestoreCheckpoint;
 impl<C: HasWorkbench + 'static> Command<C> for RestoreCheckpoint {
     const ID: &'static str = RESTORE_CHECKPOINT;
     const SUMMARY: &'static str = "Puts every file of the open project back as a checkpoint \
-        holds it, removing the files made since and dropping unsaved edits.";
+        holds it, removing the files made since and dropping unsaved edits, the open map's \
+        among them: the map is read again from its file, or closed when the file was made \
+        since.";
     type Params = RestoreCheckpointParams;
     type Output = CheckpointRestored;
     type Error = WorkbenchError;
@@ -239,6 +242,8 @@ impl<C: HasWorkbench + 'static> Command<C> for RestoreCheckpoint {
         params: RestoreCheckpointParams,
     ) -> Result<Outcome<CheckpointRestored, C>, WorkbenchError> {
         let restored = context.workbench().restore_checkpoint(params.number)?;
+        // The open map's edits are not files: they are dropped with the rest (L-43).
+        map_put_back(context).map_err(WorkbenchError::MapEdit)?;
         Ok(Outcome::outside_history(restored))
     }
 }

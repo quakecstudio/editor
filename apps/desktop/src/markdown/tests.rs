@@ -8,7 +8,7 @@
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 
-use super::show;
+use super::{Part, show};
 use crate::theme::{Mode, Theme};
 
 /// `text` drawn as Markdown in a panel's width, once the theme's fonts are the window's: the
@@ -19,7 +19,7 @@ fn drawn(text: &'static str) -> Harness<'static, bool> {
     let mut harness = Harness::builder().with_size([320.0, 600.0]).build_ui_state(
         move |ui, ready: &mut bool| {
             if *ready {
-                show(ui, &theme, text);
+                show(ui, &theme, Part::Message(0), text);
             }
         },
         false,
@@ -32,7 +32,7 @@ fn drawn(text: &'static str) -> Harness<'static, bool> {
 }
 
 /// Whether a label with exactly `text` is drawn, once or more.
-fn has(harness: &Harness<'_, bool>, text: &str) -> bool {
+fn has<S>(harness: &Harness<'_, S>, text: &str) -> bool {
     harness.query_all_by_label(text).next().is_some()
 }
 
@@ -69,7 +69,8 @@ fn a_reply_is_drawn_without_its_marks() {
 }
 
 // No spec statement: L-43: a table's cells are drawn each by itself, its rule of dashes not
-// at all; a task list's boxes are marks, and a link whose text is its address is drawn once
+// at all; a task list's boxes are drawn as they are typed, which every bundled font can
+// draw, and a link whose text is its address is drawn once
 #[test]
 fn tables_tasks_and_bare_links_are_drawn() {
     let harness = drawn(
@@ -81,14 +82,13 @@ fn tables_tasks_and_bare_links_are_drawn() {
         "Builds",
         "id 1.01",
         "yes",
-        "\u{2611} sealed",
-        "\u{2610} lit",
+        "[x] sealed",
+        "[ ] lit",
         "https://example.com",
     ] {
         assert!(has(&harness, text), "{text:?} is drawn");
     }
     assert!(harness.query_by_label_contains("---").is_none());
-    assert!(harness.query_by_label_contains("[x]").is_none());
 }
 
 // No spec statement: L-43: a reply still arriving is drawn as far as it reads: a code block
@@ -113,4 +113,100 @@ fn nested_lists_and_quotes_are_drawn() {
     for text in ["rooms", "west", "east", "as the map says"] {
         assert!(has(&harness, text), "{text:?} is drawn");
     }
+}
+
+// No spec statement: L-43 (the review's findings): an item's text ends where a heading in it
+// begins; a link around an image shows both addresses; and a code block of a list item is
+// drawn, set in under the item
+#[test]
+fn blocks_in_items_and_links_in_links_are_drawn() {
+    let harness = drawn(
+        "- foo\n  # bar\n\n1. Run this:\n\n   ```\n   make ci\n   ```\n2. Push\n\n\
+         [![build](badge.svg)](https://ci.example/run)\n",
+    );
+    for text in [
+        "foo",
+        "bar",
+        "Run this:",
+        "make ci",
+        "Push",
+        "build (badge.svg) (https://ci.example/run)",
+    ] {
+        assert!(has(&harness, text), "{text:?} is drawn");
+    }
+    assert!(!has(&harness, "foobar"));
+    let left = |text: &str| harness.get_by_label(text).rect().left();
+    assert!(
+        left("make ci") > left("1."),
+        "the code is set in past the number"
+    );
+}
+
+// No spec statement: L-43 (the review's findings): two replies drawn one after the other keep
+// their code blocks apart: each is drawn, under its own id
+#[test]
+fn two_replies_keep_their_blocks_apart() {
+    let theme = Theme::load(Mode::Dark).unwrap();
+    let fonts = theme.clone();
+    let mut harness = Harness::builder().with_size([320.0, 600.0]).build_ui_state(
+        move |ui, ready: &mut bool| {
+            if *ready {
+                for (place, text) in ["one\n\n```\nfirst\n```\n", "two\n\n```\nsecond\n```\n"]
+                    .into_iter()
+                    .enumerate()
+                {
+                    show(ui, &theme, Part::Message(place), text);
+                }
+            }
+        },
+        false,
+    );
+    fonts.apply(&harness.ctx);
+    harness.run();
+    *harness.state_mut() = true;
+    harness.run();
+    assert!(has(&harness, "first") && has(&harness, "second"));
+    let top = |text: &str| harness.get_by_label(text).rect().top();
+    assert!(top("second") > top("first"));
+}
+
+// No spec statement: L-43 (the review's findings): a text scrolled out of sight is not laid
+// out again: once it has been drawn, its room is kept and nothing of it is drawn, so a long
+// thread costs a frame what shows of it; a text that changed, as one still arriving does, is
+// drawn again
+#[test]
+fn a_text_out_of_sight_keeps_its_room_and_is_not_drawn() {
+    let theme = Theme::load(Mode::Dark).unwrap();
+    let fonts = theme.clone();
+    // What is drawn, and how far the thread is scrolled.
+    let mut harness = Harness::builder().with_size([320.0, 200.0]).build_ui_state(
+        move |ui, (text, offset): &mut (&'static str, f32)| {
+            if text.is_empty() {
+                return;
+            }
+            eframe::egui::ScrollArea::vertical()
+                .vertical_scroll_offset(*offset)
+                .show(ui, |ui| {
+                    show(ui, &theme, Part::Message(0), text);
+                    for place in 1..40 {
+                        show(ui, &theme, Part::Message(place), "filler");
+                    }
+                });
+        },
+        ("", 0.0),
+    );
+    fonts.apply(&harness.ctx);
+    harness.run();
+    harness.state_mut().0 = "the first reply";
+    harness.run();
+    assert!(has(&harness, "the first reply"));
+    // Scrolled past: its room is kept, so the rest stays where it was, and it is not drawn.
+    harness.state_mut().1 = 400.0;
+    harness.run();
+    assert!(!has(&harness, "the first reply"));
+    assert!(has(&harness, "filler"));
+    // Back in sight, and changed: drawn again as it now reads.
+    *harness.state_mut() = ("the first reply, longer", 0.0);
+    harness.run();
+    assert!(has(&harness, "the first reply, longer"));
 }

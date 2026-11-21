@@ -122,9 +122,11 @@ subprocess with its own model and account, so no provider is set up for it.
   Code's ACP adapter, run by `npx` at a pinned version, to `agent.external` in the user's
   settings (it needs Node 22 or later and the `claude` command, signed in). Other agents are
   added there by hand; with more than one agent to run, a list beside the threads chooses.
-- **What a thread shows:** what the agent says and reasons as it streams, each tool call with
-  its state, the agent's own permission options as buttons, Stop while it runs, and how the turn
-  ended.
+- **What a thread shows:** what the agent says, drawn as Markdown (`src/markdown.rs`, L-43),
+  and reasons as it streams, each tool call with its state, the agent's own permission options
+  as buttons, Stop while it runs, and how the turn ended. Its map edits, made through the
+  app's tools, apply at once with no review; Restore checkpoint puts the project's files and
+  the open map back.
 - **The IDE's tools** reach the agent as an MCP server: `quakec-ide mcp --connect`, beside the
   app.
 - **Edits:** the IDE offers ACP's file methods. An agent that uses them reads the editor's text,
@@ -147,8 +149,8 @@ The right panel's Agent section (P4-09, UI-5, PRIN-4), modelled on Zed's agent p
   the reply's text, and the window takes each reply between frames
   (`AgentPanel::pump`). The run's tool calls go through the window's own session, so the
   window shows what the agent does.
-- **What it shows:** the model's text as it is written, each call with whether it ran, and how
-  the run ended (done, or the reasons it is not). There is also a button that restores the
+- **What it shows:** the model's text as it is written, drawn as Markdown, each call with
+  whether it ran, and how the run ended (done, or the reasons it is not). There is also a button that restores the
   checkpoint the run recorded first.
 - **Permissions (P4-30):** a picker beside Start chooses the profile: Ask, Write or Full. It is
   kept in the project's settings, which also hold the tool rules (`docs/settings.md`). A call
