@@ -176,6 +176,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`project.info`](#projectinfo) | Describes the open project: its directory and each module's kind, dialect, target engine and output. |
 | [`project.new`](#projectnew) | Makes a new project from a starter template, id's QuakeC 1.01 or the rerelease's, with quakec.toml, a sample test and the GPLv2 notices; it builds and plays at once. |
 | [`project.open`](#projectopen) | Opens the QuakeC project in a directory: its quakec.toml, or its progs.src and csprogs.src. |
+| [`project.reference`](#projectreference) | The reference to read before writing or debugging QuakeC or building a map, by topic: quakec (the language, how a mod runs, pitfalls), entities (what the engine calls, movetype and solid, the builtins by purpose, what QuakeC does that C does not, debugging), monsters (how a monster is written and every place a new one is added), maps, workflow (tests and scenarios). Written from id's QuakeC and the engine's specs; a mod's own code comes first where it differs. |
 | [`project.search`](#projectsearch) | Finds every match of a text in the open project's files, unsaved edits included, by file, line and byte range; matching case, whole words only or as a regular expression. |
 | [`project.symbols`](#projectsymbols) | Lists the open project's global definitions, functions, globals and fields, each with where its name is first written; a query keeps those whose name contains it. |
 | [`project.take_checked`](#projecttake_checked) | Takes the problems, symbols and highlighting the background check worked out for the latest edit, if it has finished; says whether anything changed. |
@@ -7592,6 +7593,63 @@ Parameters:
     "path"
   ],
   "title": "OpenProjectParams",
+  "type": "object"
+}
+```
+
+## `project.reference`
+
+The reference to read before writing or debugging QuakeC or building a map, by topic: quakec (the language, how a mod runs, pitfalls), entities (what the engine calls, movetype and solid, the builtins by purpose, what QuakeC does that C does not, debugging), monsters (how a monster is written and every place a new one is added), maps, workflow (tests and scenarios). Written from id's QuakeC and the engine's specs; a mod's own code comes first where it differs.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "Topic": {
+      "description": "A topic of the agent reference.",
+      "oneOf": [
+        {
+          "const": "quakec",
+          "description": "The language, how a mod is laid out and run, and its pitfalls.",
+          "type": "string"
+        },
+        {
+          "const": "entities",
+          "description": "What the engine calls, how an entity moves and collides, the builtins by what they\nare for, what the language does that C does not, and debugging.",
+          "type": "string"
+        },
+        {
+          "const": "monsters",
+          "description": "How a monster is written, from id's own, and where a new one must be added.",
+          "type": "string"
+        },
+        {
+          "const": "maps",
+          "description": "The `.map` format, units, the entities a map needs, textures and leaks.",
+          "type": "string"
+        },
+        {
+          "const": "workflow",
+          "description": "How to work in QuakeC Studio: finding code, changing it, tests and scenarios.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `project.reference`.",
+  "properties": {
+    "topic": {
+      "$ref": "#/$defs/Topic",
+      "description": "The topic to read."
+    }
+  },
+  "required": [
+    "topic"
+  ],
+  "title": "ReferenceParams",
   "type": "object"
 }
 ```

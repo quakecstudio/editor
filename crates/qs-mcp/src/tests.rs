@@ -857,6 +857,13 @@ fn the_instructions_name_every_kind_of_tool() {
             .all(|kind| kinds.contains(kind)),
         "{kinds:?}"
     );
+    // L-45: the instructions send an agent to the reference before it writes QuakeC, and
+    // the reference is a tool the server has.
+    assert!(super::INSTRUCTIONS.contains("project.reference"));
+    for topic in ["quakec", "entities", "monsters", "workflow", "maps"] {
+        assert!(super::INSTRUCTIONS.contains(topic), "{topic}");
+    }
+    assert!(server.tool_names().contains(&"project.reference"));
     // The app's own kinds, which the server offers only with `--connect`.
     for kind in kinds
         .into_iter()

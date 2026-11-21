@@ -31,6 +31,7 @@ pub mod map_profile;
 pub mod open_paths;
 mod preview;
 mod recent;
+pub mod reference;
 pub mod search;
 pub mod staged;
 pub mod terminal;

@@ -157,6 +157,7 @@ project.export
 project.files
 project.info
 project.open
+project.reference
 project.search
 project.symbols
 project.take_checked

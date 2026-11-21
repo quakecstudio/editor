@@ -43,3 +43,7 @@ Sources: id's `qcc/v101qc` (`world.qc`, `client.qc`, `subs.qc`, `combat.qc`).
 - Strings from builtins such as `ftos` and `vtos` share one buffer in id's engine: use one
   before calling the next ([`docs/spec/builtins.md`](../spec/builtins.md)).
 - Keep the project's existing style and file order; add new files to `progs.src`.
+- `&&` and `||` run both sides, `&` and `|` bind as tightly as `*`, and `!a == b` is
+  `!(a == b)` (QC-15): use parentheses, and nest `if`s where the second test must not run.
+- More, when the task needs it: `project.reference` with topic `entities` (the engine's entity
+  model, the builtins, debugging) or `monsters` (adding a monster).
