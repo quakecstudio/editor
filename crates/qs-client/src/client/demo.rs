@@ -15,11 +15,14 @@ use std::io::{self, Write};
 
 use qs_sim::{Message, Overflow};
 
+use qs_sim::protocol::ProtocolVersion;
+
 use super::{
     CLIENT_MAX_LIGHTSTYLES, CLIENT_SIGNONS, Client, Event, Models, ParseError, Random,
-    SVC_DISCONNECT, SVC_LIGHTSTYLE, SVC_NOP, SVC_SETVIEW, SVC_SIGNONNUM, SVC_UPDATECOLORS,
-    SVC_UPDATEFRAGS, SVC_UPDATENAME, SVC_UPDATESTAT, stat,
+    SVC_DISCONNECT, SVC_LIGHTSTYLE, SVC_NOP, SVC_PRINT, SVC_SERVERINFO, SVC_SETVIEW, SVC_SIGNONNUM,
+    SVC_UPDATECOLORS, SVC_UPDATEFRAGS, SVC_UPDATENAME, SVC_UPDATESTAT, stat,
 };
+use crate::message::Reader;
 
 /// `MAX_MSGLEN` of `quakedef.h`, the longest message a demo may hold (CLIENT-10.4).
 pub const DEMO_MAX_MESSAGE: usize = 64000;
@@ -140,14 +143,16 @@ pub struct DemoMessage<'a> {
     pub data: &'a [u8],
 }
 
-/// A `.dem` file being played: its forced CD track and the messages left.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Demo<'a> {
+/// A `.dem` file being played: its forced CD track, its bytes and how far it has been
+/// read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Demo {
     forcetrack: i32,
-    rest: &'a [u8],
+    bytes: Vec<u8>,
+    at: usize,
 }
 
-impl<'a> Demo<'a> {
+impl Demo {
     /// `CL_PlayDemo_f`'s read of the file's first line: "`if (fscanf (cls.demofile, "%i",
     /// &cls.forcetrack) != 1 || fgetc (cls.demofile) != '\n')`" the demo is invalid.
     ///
@@ -156,12 +161,16 @@ impl<'a> Demo<'a> {
     /// # Errors
     ///
     /// [`DemoError::Invalid`].
-    pub fn open(bytes: &'a [u8]) -> Result<Self, DemoError> {
-        let (forcetrack, used) = scan_int(bytes).ok_or(DemoError::Invalid)?;
-        match bytes.get(used..).and_then(<[u8]>::split_first) {
-            Some((b'\n', rest)) => Ok(Self { forcetrack, rest }),
-            _ => Err(DemoError::Invalid),
+    pub fn open(bytes: Vec<u8>) -> Result<Self, DemoError> {
+        let (forcetrack, used) = scan_int(&bytes).ok_or(DemoError::Invalid)?;
+        if bytes.get(used) != Some(&b'\n') {
+            return Err(DemoError::Invalid);
         }
+        Ok(Self {
+            forcetrack,
+            bytes,
+            at: used.saturating_add(1),
+        })
     }
 
     /// The CD track the demo forces, or [`DEMO_NO_TRACK`].
@@ -180,37 +189,71 @@ impl<'a> Demo<'a> {
     ///
     /// [`DemoError::Read`] when the file ends where a length should be, and
     /// [`DemoError::TooLong`] for a length past [`DEMO_MAX_MESSAGE`].
-    pub fn next_message(&mut self) -> Result<Option<DemoMessage<'a>>, DemoError> {
-        let word = |bytes: &'a [u8]| -> Option<([u8; WORD], &'a [u8])> {
-            let (word, rest) = bytes.split_first_chunk::<WORD>()?;
-            Some((*word, rest))
+    pub fn next_message(&mut self) -> Result<Option<DemoMessage<'_>>, DemoError> {
+        let word = |bytes: &[u8], at: usize| -> Option<[u8; WORD]> {
+            bytes.get(at..)?.first_chunk::<WORD>().copied()
         };
-        let (length, rest) = word(self.rest).ok_or(DemoError::Read)?;
+        let end = self.bytes.len();
+        let length = word(&self.bytes, self.at).ok_or(DemoError::Read)?;
         let length = i32::from_le_bytes(length);
+        let mut at = self.at.saturating_add(WORD);
         let mut viewangles = [0.0_f32; 3];
-        let mut rest = rest;
         for angle in &mut viewangles {
             // The file ending within the angles leaves no message to read after them.
-            let Some((bytes, after)) = word(rest) else {
-                self.rest = &[];
+            let Some(bytes) = word(&self.bytes, at) else {
+                self.at = end;
                 return Ok(None);
             };
             *angle = f32::from_le_bytes(bytes);
-            rest = after;
+            at = at.saturating_add(WORD);
         }
         let Ok(length) = usize::try_from(length) else {
-            self.rest = &[];
+            self.at = end;
             return Ok(None);
         };
         if length > DEMO_MAX_MESSAGE {
             return Err(DemoError::TooLong);
         }
-        let (Some(data), true) = (rest.get(..length), length > 0) else {
-            self.rest = &[];
+        let after = at.saturating_add(length);
+        if length == 0 || after > end {
+            self.at = end;
             return Ok(None);
-        };
-        self.rest = rest.get(length..).unwrap_or_default();
-        Ok(Some(DemoMessage { viewangles, data }))
+        }
+        self.at = after;
+        Ok(self
+            .bytes
+            .get(at..after)
+            .map(|data| DemoMessage { viewangles, data }))
+    }
+
+    /// The map the demo is of: the world's model of its first message's serverinfo,
+    /// `maps/<map>.bsp`, which a host that draws it loads. None when the first message
+    /// holds no serverinfo after its prints, or the file has none.
+    #[must_use]
+    pub fn map(&self) -> Option<String> {
+        let first = self.clone().next_message().ok()??.data.to_vec();
+        let mut reader = Reader::new(&first);
+        loop {
+            match reader.byte() {
+                SVC_NOP => {}
+                SVC_PRINT => drop(reader.string()),
+                SVC_SERVERINFO => break,
+                _ => return None,
+            }
+        }
+        let version = ProtocolVersion::from_number(reader.long())?;
+        if version == ProtocolVersion::Rmq {
+            // The protocol's flags.
+            reader.long();
+        }
+        // The client slots, the game's kind and the level's name.
+        reader.byte();
+        reader.byte();
+        drop(reader.string());
+        let world = reader.string();
+        let world = String::from_utf8(world).ok()?;
+        let map = world.strip_prefix("maps/")?.strip_suffix(".bsp")?;
+        (!map.is_empty()).then(|| map.to_owned())
     }
 }
 
@@ -491,7 +534,7 @@ impl Client {
     pub fn demo_frame(
         &mut self,
         frametime: f32,
-        demo: &mut Demo<'_>,
+        demo: &mut Demo,
         pace: DemoPace,
         models: &mut dyn Models,
         rand: &mut dyn Random,

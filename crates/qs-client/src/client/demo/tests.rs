@@ -191,7 +191,7 @@ fn a_demo_plays_back_what_was_recorded_in_each_protocol() {
         let bytes = file.0.borrow().clone();
         assert!(bytes.starts_with(b"-1\n"));
 
-        let mut demo = Demo::open(&bytes).unwrap();
+        let mut demo = Demo::open(bytes).unwrap();
         assert_eq!(demo.forcetrack(), DEMO_NO_TRACK);
         let mut playing = client();
         let mut read = 0;
@@ -246,7 +246,7 @@ fn a_playing_demo_takes_its_messages_by_its_pace() {
     live(&frames, &mut recorder, &mut client(), 0);
     let bytes = file.0.borrow().clone();
     let play = |pace: DemoPace, frametime: f32, count: usize| -> Vec<usize> {
-        let mut demo = Demo::open(&bytes).unwrap();
+        let mut demo = Demo::open(bytes.clone()).unwrap();
         let mut playing = client();
         (0..count)
             .map(|_| {
@@ -280,7 +280,7 @@ fn a_playing_demos_view_turns_between_its_messages() {
         .unwrap();
     live(&frames, &mut recorder, &mut client(), 0);
     let bytes = file.0.borrow().clone();
-    let mut demo = Demo::open(&bytes).unwrap();
+    let mut demo = Demo::open(bytes).unwrap();
     let mut playing = client();
     let mut frame = |frametime: f32, pace: DemoPace| {
         playing
@@ -355,7 +355,7 @@ fn a_recording_started_while_connected_plays() {
         let rest = live(&frames, &mut recorder, &mut recording, 6);
         recorder.stop(recording.viewangles()).unwrap();
         let bytes = file.0.borrow().clone();
-        let mut demo = Demo::open(&bytes).unwrap();
+        let mut demo = Demo::open(bytes).unwrap();
         assert_eq!(demo.forcetrack(), 7);
         let mut playing = client();
         let mut read = 0;
@@ -396,7 +396,7 @@ fn a_recording_started_while_connected_plays() {
         .record(Box::new(file.clone()), DemoTrack::None, Some(&recording))
         .unwrap();
     let bytes = file.0.borrow().clone();
-    let mut demo = Demo::open(&bytes).unwrap();
+    let mut demo = Demo::open(bytes).unwrap();
     assert_eq!(
         demo.next_message().unwrap().unwrap().data,
         recording.demo_state()
@@ -495,9 +495,13 @@ fn a_demos_first_line_is_a_number_and_a_newline() {
     for none in [&b""[..], b"-", b"x", b"\n"] {
         assert_eq!(scan_int(none), None, "{none:?}");
     }
-    assert_eq!(Demo::open(b"3\nrest").unwrap().forcetrack(), 3);
+    assert_eq!(Demo::open(b"3\nrest".to_vec()).unwrap().forcetrack(), 3);
     for invalid in [&b""[..], b"3", b"3 \n", b"3\r\n", b"three\n"] {
-        assert_eq!(Demo::open(invalid), Err(DemoError::Invalid), "{invalid:?}");
+        assert_eq!(
+            Demo::open(invalid.to_vec()),
+            Err(DemoError::Invalid),
+            "{invalid:?}"
+        );
     }
     assert_eq!(DemoError::Invalid.to_string(), "the demo is invalid");
 }
@@ -515,12 +519,12 @@ fn a_damaged_demo_ends_or_is_refused() {
         file
     };
     let whole = message(2, &[1, 1]);
-    let mut demo = Demo::open(&whole).unwrap();
+    let mut demo = Demo::open(whole.clone()).unwrap();
     assert_eq!(demo.next_message().unwrap().unwrap().data, [1, 1]);
     assert_eq!(demo.next_message(), Err(DemoError::Read));
     assert_eq!(DemoError::Read.to_string(), "Demo read error");
     for cut in [3 + 2, 3 + 4 + 5, 3 + 4 + 12 + 1] {
-        let mut demo = Demo::open(&whole[..cut]).unwrap();
+        let mut demo = Demo::open(whole[..cut].to_vec()).unwrap();
         let ends = demo.next_message();
         if cut < 3 + 4 {
             assert_eq!(ends, Err(DemoError::Read), "{cut}");
@@ -532,7 +536,7 @@ fn a_damaged_demo_ends_or_is_refused() {
     for length in [0, -1, i32::MIN] {
         let file = message(length, &[1, 1]);
         assert_eq!(
-            Demo::open(&file).unwrap().next_message(),
+            Demo::open(file).unwrap().next_message(),
             Ok(None),
             "{length}"
         );
@@ -540,12 +544,12 @@ fn a_damaged_demo_ends_or_is_refused() {
     let most = i32::try_from(DEMO_MAX_MESSAGE).unwrap();
     let long = message(most + 1, &[]);
     assert_eq!(
-        Demo::open(&long).unwrap().next_message(),
+        Demo::open(long).unwrap().next_message(),
         Err(DemoError::TooLong)
     );
     assert_eq!(DemoError::TooLong.to_string(), "Demo message > MAX_MSGLEN");
     let fits = message(most, &vec![1; DEMO_MAX_MESSAGE]);
-    let mut demo = Demo::open(&fits).unwrap();
+    let mut demo = Demo::open(fits).unwrap();
     assert_eq!(
         demo.next_message().unwrap().unwrap().data.len(),
         DEMO_MAX_MESSAGE
@@ -553,7 +557,7 @@ fn a_damaged_demo_ends_or_is_refused() {
 
     // A playing client stops at the end of the file, and says a read error past it.
     let mut playing = client();
-    let mut demo = Demo::open(&whole[..3 + 4 + 12 + 1]).unwrap();
+    let mut demo = Demo::open(whole[..3 + 4 + 12 + 1].to_vec()).unwrap();
     let frame = playing
         .demo_frame(
             0.0,
@@ -581,7 +585,7 @@ fn a_damaged_demo_ends_or_is_refused() {
     let error = client()
         .demo_frame(
             0.0,
-            &mut Demo::open(&bad).unwrap(),
+            &mut Demo::open(bad).unwrap(),
             DemoPace::Timed,
             &mut TestModels,
             &mut NoRandom,
