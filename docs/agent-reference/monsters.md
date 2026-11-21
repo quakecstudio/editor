@@ -179,7 +179,7 @@ void() army_die =
 
 ## Where a new monster must be added
 
-id's code names monsters in four places beyond their own file. Search the mod for each and
+id's code names monsters in five places beyond their own file. Search the mod for each and
 add yours where its neighbours are:
 
 1. **`progs.src`**: the monster's file, after `ai.qc`, `fight.qc` and `monsters.qc`.
@@ -189,6 +189,10 @@ add yours where its neighbours are:
    for most. Add yours only when it needs its own rule.
 4. **`ClientObituary` (`client.qc`)**: the line printed when the monster kills the player.
    A classname not in it prints no cause.
+5. **`T_Damage` (`combat.qc`)**: a monster hurt by another turns on it "unless of the same
+   class (except for soldiers)": `(self.classname != attacker.classname) ||
+   (self.classname == "monster_army")`. Two of a new class do not fight each other unless
+   it is added there.
 
 A model must also be in the game's files: reuse a model the game ships, with its frames, or
 the map shows nothing.
