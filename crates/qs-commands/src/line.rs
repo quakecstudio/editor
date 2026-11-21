@@ -66,9 +66,16 @@ impl<C: 'static> Registry<C> {
     /// The commands `typed` names: the one whose id it is; else those whose name after the
     /// last `.` it is (`undo` for `edit.undo`); else those whose id or name starts with it.
     /// One is the command; several are a choice to narrow.
+    ///
+    /// One `/` before the name, and the space around it, are no part of it.
     #[must_use]
     pub fn named(&self, typed: &str) -> Vec<&CommandInfo> {
-        let typed = spoken(typed);
+        self.named_plain(spoken(typed))
+    }
+
+    /// As [`Registry::named`], of a name with its `/` and the space around it taken off
+    /// already, so that they are taken off once.
+    fn named_plain(&self, typed: &str) -> Vec<&CommandInfo> {
         if typed.is_empty() {
             return Vec::new();
         }
@@ -98,7 +105,7 @@ impl<C: 'static> Registry<C> {
         if typed.is_empty() {
             return self.commands().collect();
         }
-        let mut listed = self.named(typed);
+        let mut listed = self.named_plain(typed);
         for found in search(self.commands(), typed) {
             if !listed.iter().any(|info| info.id() == found.info.id()) {
                 listed.push(found.info);
@@ -180,7 +187,7 @@ impl CommandLine {
             // A command's name may follow a `/`; a parameter's value is taken as typed, a path
             // that starts with one among them.
             let typed = spoken(typed);
-            let found = registry.named(typed);
+            let found = registry.named_plain(typed);
             let info = match found.as_slice() {
                 [] if typed.is_empty() => return Entered::Nothing,
                 [] => return Entered::Unknown(typed.to_owned()),

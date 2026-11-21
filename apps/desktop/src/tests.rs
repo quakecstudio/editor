@@ -5715,6 +5715,58 @@ fn the_command_line_completes_runs_recalls_and_asks() {
     type_text(&mut harness, "no.such.command");
     press(&mut harness, egui::Key::Enter);
     harness.get_by_label(&command_unknown("no.such.command"));
+    press(&mut harness, egui::Key::Escape);
+    // L-44 (the review's findings): Tab puts the caret after the completed name, so what
+    // is typed next goes on at its end.
+    type_text(&mut harness, "toggle_emb");
+    press(&mut harness, egui::Key::Tab);
+    harness.run();
+    type_text(&mut harness, "!");
+    assert_eq!(typed(&harness), "view.toggle_embedded_game!");
+    press(&mut harness, egui::Key::Escape);
+    // A name the list only finds by its summary, or in another case, has no row marked,
+    // and Enter does not run one.
+    type_text(&mut harness, "Undo");
+    harness.get_by_label("edit.undo");
+    assert!(
+        harness
+            .query_all_by_role(Role::Button)
+            .all(|row| !row.accesskit_node().is_selected().unwrap_or(false)),
+        "no row is marked"
+    );
+    press(&mut harness, egui::Key::Enter);
+    harness.get_by_label(&command_unknown("Undo"));
+    press(&mut harness, egui::Key::Escape);
+    // Down and Tab complete to the second command; the mark then goes back to the first
+    // of what the completed name lists, so Enter enters that very command.
+    type_text(&mut harness, "view.toggle");
+    press(&mut harness, egui::Key::ArrowDown);
+    press(&mut harness, egui::Key::Tab);
+    let second = typed(&harness);
+    assert_eq!(Some(&second), toggles.get(1));
+    press(&mut harness, egui::Key::Enter);
+    let line = &harness.state().as_ref().unwrap().shell().command_line;
+    let (prompt, _, noted) = line.state();
+    match prompt {
+        Some(prompt) => assert_eq!(prompt.command, second),
+        None => {
+            assert!(noted);
+            harness.get_by_label(&command_ran(&second));
+        }
+    }
+}
+
+// No spec statement: L-44, the acceptance criterion: the status bar's and the command line's
+// labels are read, not typed in: the pointer over them is the arrow, not the text cursor
+#[test]
+fn the_status_bars_labels_show_the_arrow() {
+    let mut harness = accessible();
+    for label in [Text::PreviewStopped.get(), Text::CommandLinePrompt.get()] {
+        harness.get_by_label(label).hover();
+        harness.run();
+        let icon = harness.output().platform_output.cursor_icon;
+        assert_eq!(icon, egui::CursorIcon::Default, "{label}");
+    }
 }
 
 // UI-23, #971: the 3D view is driven from the keyboard alone: Alt and a digit turns it to each

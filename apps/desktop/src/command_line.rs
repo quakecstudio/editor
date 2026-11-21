@@ -61,6 +61,9 @@ pub(crate) struct CommandLineView {
     /// Whether Up or Down put the mark where it is: Enter then runs the marked command
     /// whatever was typed, where a mark nobody moved runs only a command the text names.
     mark_moved: MarkMoved,
+    /// Where the field's caret goes before the next frame: to the end, after the line put a
+    /// text of its own in the field.
+    caret: Caret,
     /// Where the list of offers was drawn in the last frame: a press on it takes the keyboard
     /// from the field a frame before the click is read, and the list must still be there.
     offers_at: Option<egui::Rect>,
@@ -91,8 +94,7 @@ impl CommandLineView {
         self.typed.clear();
         self.note = None;
         self.recalled = None;
-        self.marked = 0;
-        self.mark_moved = MarkMoved::No;
+        self.unmark();
     }
 
     /// The command `id` the line made ran.
@@ -185,8 +187,18 @@ impl CommandLineView {
         }
         if response.changed() {
             self.recalled = None;
-            self.marked = 0;
-            self.mark_moved = MarkMoved::No;
+            self.unmark();
+        }
+        if core::mem::take(&mut self.caret) == Caret::ToEnd
+            && let Some(mut state) = TextEdit::load_state(ui.ctx(), field)
+        {
+            // The field's caret keeps its place by count, which a text put in whole leaves
+            // in the middle: after it, typing goes on at the end.
+            let end = egui::text::CCursor::new(self.typed.chars().count());
+            state
+                .cursor
+                .set_char_range(Some(egui::text::CCursorRange::one(end)));
+            state.store(ui.ctx(), field);
         }
         if run.is_none() {
             run = self.offers_list(ui, theme, registry, &response);
@@ -231,6 +243,18 @@ impl CommandLineView {
         }
     }
 
+    /// Whether Enter runs the marked command: when the text names it, or a key put the mark
+    /// on it.
+    fn takes_mark<C: 'static>(&self, registry: &Registry<C>) -> bool {
+        self.mark_moved == MarkMoved::Yes || self.marked < registry.named(&self.typed).len()
+    }
+
+    /// Puts the mark back on the first command offered, as when the text changes.
+    const fn unmark(&mut self) {
+        self.marked = 0;
+        self.mark_moved = MarkMoved::No;
+    }
+
     /// The ids of the commands offered for what is typed, best first: none while a parameter
     /// is asked for, while an entered line is shown again, or with nothing typed.
     fn offers<C: 'static>(&self, registry: &Registry<C>) -> Vec<String> {
@@ -254,10 +278,14 @@ impl CommandLineView {
         registry: &Registry<C>,
         field: &egui::Response,
     ) -> Option<(String, Value)> {
-        let on_list = self
-            .offers_at
-            .zip(ui.ctx().pointer_interact_pos())
-            .is_some_and(|(rect, pointer)| rect.contains(pointer));
+        // A press on the list takes the keyboard from the field a frame before its click is
+        // read: the list stays for that press alone, not for a pointer resting on it.
+        let pressing = ui.input(|i| i.pointer.primary_down() || i.pointer.primary_released());
+        let on_list = pressing
+            && self
+                .offers_at
+                .zip(ui.ctx().pointer_interact_pos())
+                .is_some_and(|(rect, pointer)| rect.contains(pointer));
         let offers = self.offers(registry);
         if offers.is_empty() || !(field.has_focus() || on_list) {
             self.offers_at = None;
@@ -266,6 +294,9 @@ impl CommandLineView {
         self.marked = self.marked.min(offers.len().saturating_sub(1));
         // The mark is kept in sight: the list starts where it must to show it.
         let first = self.marked.saturating_add(1).saturating_sub(OFFERED);
+        // The row Enter would run is the one marked; a list found by summaries alone has
+        // none until a key puts the mark on a row.
+        let takes_mark = self.takes_mark(registry);
         let muted = theme.color(Token::TextMuted);
         let mut clicked = None;
         let area = egui::Area::new(Id::new(Area::CommandLineField).with(Text::CommandLineOffers))
@@ -280,7 +311,8 @@ impl CommandLineView {
                         let summary = registry.get(id).map_or_default(|info| info.summary());
                         ui.horizontal(|ui| {
                             let name = RichText::new(id).monospace();
-                            if ui.selectable_label(index == self.marked, name).clicked() {
+                            let marked = takes_mark && index == self.marked;
+                            if ui.selectable_label(marked, name).clicked() {
                                 clicked = Some(id.clone());
                             }
                             let what = RichText::new(summary).small().color(muted);
@@ -300,6 +332,7 @@ impl CommandLineView {
         self.offers_at = Some(area.response.rect);
         let id = clicked?;
         self.typed = id;
+        self.unmark();
         field.request_focus();
         self.enter(registry)
     }
@@ -338,10 +371,15 @@ impl CommandLineView {
             ui.memory_mut(|memory| memory.move_focus(egui::FocusDirection::Next));
         } else if tab {
             match offers.get(self.marked) {
-                // The marked command, whole.
-                Some(marked) => marked.clone_into(&mut self.typed),
+                // The marked command, whole: the text now names it, so the mark goes back
+                // to the first of what it lists.
+                Some(marked) => {
+                    marked.clone_into(&mut self.typed);
+                    self.unmark();
+                }
                 None => self.complete(registry),
             }
+            self.caret = Caret::ToEnd;
         }
         // Down goes into the list and Up back out of it; Up from its top brings back the
         // lines entered before, and Down then comes forward through them to what was typed.
@@ -368,12 +406,12 @@ impl CommandLineView {
         if enter {
             // The marked command, when the text names it or the mark was put on it: a
             // command the list only found by its summary is not run for a slip of the keys.
-            let named = registry.named(&self.typed).len();
-            if (self.marked < named || self.mark_moved == MarkMoved::Yes)
+            if self.takes_mark(registry)
                 && let Some(marked) = offers.get(self.marked)
             {
                 marked.clone_into(&mut self.typed);
             }
+            self.unmark();
             return self.enter(registry);
         }
         None
@@ -442,6 +480,7 @@ impl CommandLineView {
             (Recall::Newer, None) => return,
             (Recall::Newer, Some(0)) => {
                 self.typed = core::mem::take(&mut self.draft);
+                self.caret = Caret::ToEnd;
                 self.recalled = None;
                 return;
             }
@@ -455,8 +494,19 @@ impl CommandLineView {
             self.draft = core::mem::take(&mut self.typed);
         }
         line.clone_into(&mut self.typed);
+        self.caret = Caret::ToEnd;
         self.recalled = Some(back);
     }
+}
+
+/// Where the field's caret is put.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Caret {
+    /// Where the field has it.
+    #[default]
+    AsIs,
+    /// After the last character.
+    ToEnd,
 }
 
 /// Whether Up or Down moved the mark in the list of offers since the text last changed.

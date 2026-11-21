@@ -231,9 +231,12 @@ while a pane of the view has the keyboard they come before a key taken anywhere.
 
 **The command line (UI-23).** `command_line.rs` draws `qs_commands::line::CommandLine` in a
 strip above the status bar, as AutoCAD's command window: Cmd+; brings the keyboard to it, a
-command is typed by its id, its name or a start of either, Tab completes it, Enter runs it or
-asks for its parameters one at a time, Up and Down bring back earlier lines and Escape gives
-up. While it asks for an entity, a brush, a face or a point (`pick.rs` reads which from the
+command is typed by its id, its name or a start of either, after a `/` or not. As it is typed
+the commands that match are listed above the line with what each does (L-44), the one Enter
+would run marked: Down and Up move the mark, Tab completes to the marked command, and Enter
+or a click runs it or asks for its parameters one at a time. Up from the top of the list
+brings back earlier lines and Escape gives up. The status bar's error and warning counts are
+a button that shows the Problems panel. While it asks for an entity, a brush, a face or a point (`pick.rs` reads which from the
 parameter's schema), a click in the map view answers it.
 
 While the game in the Game tab has the keyboard its keys are its own. On macOS the window
