@@ -152,7 +152,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`model.add_frames`](#modeladd_frames) | Adds frames of another model of the same vertices to the end of a model's own, each by its name: QuakeC's $frame list gains the same names at its end. |
 | [`model.copy_from_game`](#modelcopy_from_game) | Copies a model of the game, by its name there such as progs/soldier.mdl, into the project as a file of its own to change: a mod's file of the same name takes the game's place, and one of a new name is a new model. |
 | [`model.export_skin`](#modelexport_skin) | Writes a skin of a model as a PNG, in the game's palette, to look at or to paint on and give back with model.set_skin. |
-| [`model.import`](#modelimport) | Makes a .mdl model in the project of a mesh in an .obj file (one pose), or an .iqe, text .fbx, .md5mesh or .smd file (a frame for each frame of each animation, posed by its skeleton). A mesh with texture coordinates keeps them, on a PNG given as its skin or one colour; one without is laid out front and back, to export, paint and set. |
+| [`model.import`](#modelimport) | Makes a .mdl model in the project of a mesh in an .obj file (one pose), or an .iqe, .fbx, .md5mesh or .smd file (a frame for each frame of each animation, posed by its skeleton). A mesh with texture coordinates keeps them, on a PNG given as its skin or one colour; one without is laid out front and back, to export, paint and set. |
 | [`model.inspect`](#modelinspect) | Reads a .mdl model: its skins, their size and the rows of the palette each is of, its vertices and triangles, the box it fills, and its frames by name in the order QuakeC numbers them, as a $frame line lists them. |
 | [`model.move`](#modelmove) | Moves a model against its origin, the point the entity's origin is at: its vertices keep their packed places and the header's origin moves. |
 | [`model.recolor`](#modelrecolor) | Recolours a skin of a model by rows of the palette: every pixel of a row becomes the same shade of another row, as the game recolours a player's shirt and trousers. |
@@ -7451,7 +7451,7 @@ Parameters:
 
 ## `model.import`
 
-Makes a .mdl model in the project of a mesh in an .obj file (one pose), or an .iqe, text .fbx, .md5mesh or .smd file (a frame for each frame of each animation, posed by its skeleton). A mesh with texture coordinates keeps them, on a PNG given as its skin or one colour; one without is laid out front and back, to export, paint and set.
+Makes a .mdl model in the project of a mesh in an .obj file (one pose), or an .iqe, .fbx, .md5mesh or .smd file (a frame for each frame of each animation, posed by its skeleton). A mesh with texture coordinates keeps them, on a PNG given as its skin or one colour; one without is laid out front and back, to export, paint and set.
 
 Parameters:
 
@@ -7533,7 +7533,7 @@ Parameters:
       ]
     },
     "source_path": {
-      "description": "The mesh to read: an `.obj` file, one pose; an `.iqe` or a text `.fbx` file, a pose\nfor each frame of each of its animations; or an `.md5mesh` or an `.smd` model, posed\nby the files of `animation_paths`.",
+      "description": "The mesh to read: an `.obj` file, one pose; an `.iqe` or an `.fbx` file, a pose\nfor each frame of each of its animations; or an `.md5mesh` or an `.smd` model, posed\nby the files of `animation_paths`.",
       "type": "string"
     },
     "up": {
@@ -7546,7 +7546,7 @@ Parameters:
         }
       ],
       "default": null,
-      "description": "Which axis of the file is up: y for an `.obj` and an `.fbx`, and z for the others,\nwhen not given. A y-up `.obj` is turned so that its -z is forward; a y-up `.fbx` is\nturned a quarter about x, as FTEQW's converter turns it, and keeps its x: turn the\nentity, or the mesh before it is written, when it faces the wrong way."
+      "description": "Which axis of the file is up: y for an `.obj` and an `.fbx`, and z for the others,\nwhen not given. A y-up file is turned so that its -z is forward, Quake's +x, which\nis how programs write a model that faces its viewer's way."
     }
   },
   "required": [

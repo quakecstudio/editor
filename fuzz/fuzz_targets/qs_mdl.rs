@@ -185,6 +185,13 @@ fn meshes(data: &[u8]) {
     let _iqe = iqe::read(&format!("{}\n{text}", iqe::IQE_HEADER), Up::Z);
     let _fbx = fbx::read(&text, Up::Y);
     let _fbx = fbx::read(&format!("; {} project file\n{text}", fbx::FBX_VERSION), Up::Y);
+    let _fbx = fbx::read_bytes(data, Up::Y);
+    for version in [7400_u32, 7500] {
+        let mut binary = b"Kaydara FBX Binary  \0\x1a\0".to_vec();
+        binary.extend(version.to_le_bytes());
+        binary.extend_from_slice(data);
+        let _fbx = fbx::read_bytes(&binary, Up::Y);
+    }
     for smd in [text.to_string(), format!("version 1\nnodes\n0 \"a\" -1\nend\n{text}")] {
         if let Ok(file) = Smd::read(&smd) {
             let _made = file.mesh(&[("a".to_owned(), file.clone())], Up::Z);

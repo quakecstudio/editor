@@ -12,6 +12,9 @@ publish.workspace = true
 # The shared fixed-size reads of id's little-endian formats.
 qc-progs = { workspace = true }
 
+# Inflates the arrays of a binary fbx (MDL-11.3); already linked for PAK and git objects.
+miniz_oxide = { workspace = true, features = ["with-alloc"] }
+
 [dev-dependencies]
 proptest = { workspace = true, features = ["std"] }
 

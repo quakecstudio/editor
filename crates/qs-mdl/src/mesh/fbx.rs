@@ -8,7 +8,10 @@
 //! Autodesk's `.fbx` files in their text form, version 7, as a mesh of poses (MDL-10.4), read
 //! as FTEQW's model converter reads them: the objects of the file (geometries, the models
 //! they belong to, limbs, skin clusters, animation curves, layers and stacks) and the
-//! connections among them. The binary form is not read.
+//! connections among them. The binary form (MDL-11) is written out as text first, by
+//! [`binary`], and read the same way.
+
+mod binary;
 
 use core::fmt;
 use std::collections::BTreeMap;
@@ -31,6 +34,13 @@ const P_BEFORE_VALUES: usize = 3;
 const CORNERS: usize = 3;
 /// The numbers of a texture coordinate.
 const UV: usize = 2;
+/// The ticks of an animation key's time in a second, "`#define FBX_SEC 46186158000.0`".
+const FBX_SEC: f64 = 46_186_158_000.0;
+/// How many poses a second an animation whose curves are not of one length is sampled at.
+/// Ours: the rate QuakeC steps a model's frames at (MD5-3.10).
+pub const FBX_SAMPLE_RATE: f64 = 10.0;
+/// The most poses an animation is sampled to. Ours.
+pub const FBX_MAX_FRAMES: usize = 4096;
 /// Half a turn in degrees.
 const HALF_TURN: f64 = 180.0;
 /// No move, no turn, and a scale of one.
@@ -40,9 +50,11 @@ const ONE: Vec3 = [1.0, 1.0, 1.0];
 /// Why an `.fbx` file was not read, or is no mesh of poses.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FbxError {
-    /// The file's first line does not say [`FBX_VERSION`]: it is the binary form, or another
-    /// version.
+    /// The file is not of FBX 7: a text file whose first line does not say [`FBX_VERSION`],
+    /// or a binary one of another version.
     Version,
+    /// A binary file is cut short, or holds a record, a property or an array that cannot be.
+    Binary,
     /// A limb's base pose has no size on an axis.
     Flat,
     /// More animations have one name than can be told apart in a frame's name.
@@ -52,9 +64,8 @@ pub enum FbxError {
 impl fmt::Display for FbxError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::Version => {
-                "the file is not a text FBX of version 7: export it as ASCII, not binary"
-            }
+            Self::Version => "the file is not an FBX of version 7",
+            Self::Binary => "the binary file is cut short or damaged",
             Self::Flat => "a limb's base pose has no size on an axis",
             Self::Names => "too many animations have one name for their frames to be named",
         })
@@ -311,6 +322,46 @@ struct Xform {
     curves: [Option<u64>; 3],
 }
 
+/// An animation curve: its keys' times, in ticks, and their values.
+#[derive(Clone, Debug, Default)]
+struct Curve {
+    times: Vec<f64>,
+    values: Vec<f64>,
+}
+
+impl Curve {
+    /// The curve's value at the time `at`: the value of the key at that time, a value
+    /// between the two keys around it, in a straight line, or the first or last key's
+    /// outside them. `None` for a curve that has not a time for each value.
+    fn at(&self, at: f64) -> Option<f64> {
+        if self.times.len() != self.values.len() {
+            return None;
+        }
+        let after = self.times.partition_point(|time| *time < at);
+        let key = |place: usize| {
+            self.times
+                .get(place)
+                .copied()
+                .zip(self.values.get(place).copied())
+        };
+        match (after.checked_sub(1).and_then(key), key(after)) {
+            (Some((t0, v0)), Some((t1, v1))) if t1 > t0 => {
+                Some(v0 + (v1 - v0) * (at - t0) / (t1 - t0))
+            }
+            (_, Some((_, value))) | (Some((_, value)), None) => Some(value),
+            (None, None) => None,
+        }
+    }
+}
+
+/// When a pose of an animation is: at one of its curves' keys, by its place, where the
+/// curves are of one length, or at a time.
+#[derive(Clone, Copy, Debug)]
+enum Moment {
+    Key(usize),
+    Time(f64),
+}
+
 /// An object of the file.
 #[derive(Clone, Debug)]
 enum Node {
@@ -320,8 +371,8 @@ enum Node {
     Cluster(Cluster),
     /// A skin deformer, and the geometry it deforms.
     Skin(Option<u64>),
-    /// An animation curve: its value at each frame.
-    Curve(Vec<f64>),
+    /// An animation curve.
+    Curve(Curve),
     Xform(Xform),
     /// An animation layer: its curve nodes.
     Layer(Vec<u64>),
@@ -533,24 +584,25 @@ impl Scene {
         Some(())
     }
 
-    /// `AnimationCurve: id, ... { KeyValueFloat: ... }`.
+    /// `AnimationCurve: id, ... { KeyTime: ..., KeyValueFloat: ... }`.
     fn curve(&mut self, tokens: &mut Tokens<'_>) {
         let Some(Token::Number(number)) = tokens.token() else {
             tokens.skip_prop();
             return;
         };
-        let mut values = Vec::new();
+        let mut curve = Curve::default();
         while let Some(token) = tokens.token() {
             match token {
                 Token::End => break,
-                Token::Prop("KeyValueFloat") => values = tokens.array(),
+                Token::Prop("KeyTime") => curve.times = tokens.array(),
+                Token::Prop("KeyValueFloat") => curve.values = tokens.array(),
                 Token::Prop(_) => {
                     tokens.skip_prop();
                 }
                 _ => {}
             }
         }
-        self.nodes.insert(id(number), Node::Curve(values));
+        self.nodes.insert(id(number), Node::Curve(curve));
     }
 
     /// The `P` lines of a `Properties70` block, each given to `take` with its name once the
@@ -735,14 +787,15 @@ impl Scene {
                     _ => None,
                 };
                 // A curve that changes is the axis's; one that does not is its value.
-                let varies = curve.iter().any(|value| Some(value) != curve.first());
+                let values = &curve.values;
+                let varies = values.iter().any(|value| Some(value) != values.first());
                 if let (Some(axis), Some(Node::Xform(xform))) = (axis, self.nodes.get_mut(&to)) {
                     if varies {
                         if let Some(slot) = xform.curves.get_mut(axis) {
                             *slot = Some(from);
                         }
                     } else if let (Some(value), Some(first)) =
-                        (xform.value.get_mut(axis), curve.first())
+                        (xform.value.get_mut(axis), values.first())
                     {
                         *value = *first;
                     }
@@ -831,21 +884,42 @@ impl Scene {
                 })
                 .collect();
             let curve = |number: Option<u64>| match self.nodes.get(&number?) {
-                Some(Node::Curve(values)) => Some(values),
+                Some(Node::Curve(curve)) => Some(curve),
                 _ => None,
             };
-            // The curves of a layer are of one length, the animation's frames.
-            let lengths: Vec<usize> = xforms
+            let curves: Vec<&Curve> = xforms
                 .iter()
                 .flat_map(|(_, xform)| xform.curves)
-                .filter_map(|number| curve(number).map(Vec::len))
+                .filter_map(curve)
                 .collect();
-            let count = lengths.first().copied().unwrap_or(0);
-            if lengths.iter().any(|length| *length != count) {
-                continue;
-            }
-            let frames = (0..count)
-                .map(|frame| {
+            // Curves of one length are the animation's frames, a key each, as the converter
+            // has them. Curves of other lengths, which the converter makes no animation of,
+            // are sampled by their keys' times (MDL-10.5).
+            let count = curves.first().map_or(0, |curve| curve.values.len());
+            let moments: Vec<Moment> = if curves.iter().all(|curve| curve.values.len() == count) {
+                (0..count).map(Moment::Key).collect()
+            } else {
+                let ends = |pick: fn(&Curve) -> Option<f64>| -> Vec<f64> {
+                    curves.iter().filter_map(|curve| pick(curve)).collect()
+                };
+                let starts = ends(|curve| curve.times.first().copied());
+                let stops = ends(|curve| curve.times.last().copied());
+                let timed = curves.iter().all(|curve| curve.at(0.0).is_some());
+                let start = starts.iter().copied().fold(f64::INFINITY, f64::min);
+                let stop = stops.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                let step = FBX_SEC / FBX_SAMPLE_RATE;
+                if !timed || !(stop - start).is_finite() {
+                    continue;
+                }
+                core::iter::successors(Some(start), |at| Some(at + step))
+                    .take_while(|at| *at <= stop + step / 2.0)
+                    .take(FBX_MAX_FRAMES)
+                    .map(Moment::Time)
+                    .collect()
+            };
+            let frames = moments
+                .iter()
+                .map(|moment| {
                     limbs
                         .iter()
                         .map(|limb| {
@@ -853,8 +927,12 @@ impl Scene {
                             for (_, xform) in xforms.iter().filter(|(own, _)| *own == limb.index) {
                                 let mut value = xform.value;
                                 for (part, number) in value.iter_mut().zip(xform.curves) {
-                                    if let Some(at) = curve(number).and_then(|c| c.get(frame)) {
-                                        *part = *at;
+                                    let found = curve(number).and_then(|curve| match moment {
+                                        Moment::Key(key) => curve.values.get(*key).copied(),
+                                        Moment::Time(at) => curve.at(*at),
+                                    });
+                                    if let Some(found) = found {
+                                        *part = found;
                                     }
                                 }
                                 let [translation, rotation, scaling] = &mut parts;
@@ -896,18 +974,14 @@ impl Scene {
             let Node::Geometry(geometry) = node else {
                 continue;
             };
-            let first = positions.len();
             let corners = geometry.corners();
-            let place = match geometry.model.and_then(|model| self.nodes.get(&model)) {
+            let model = match geometry.model.and_then(|model| self.nodes.get(&model)) {
                 Some(Node::Mesh(model)) => Some(*model),
                 _ => None,
             };
+            let place_of = |at: Vec3| model.map_or(at, |model| model.placed(at));
             let (verts, _) = geometry.verts.as_chunks::<CORNERS>();
-            for (vertex, _) in &corners {
-                let at = verts.get(*vertex).copied().unwrap_or(NONE);
-                positions.push(place.map_or(at, |model| model.placed(at)));
-            }
-            texcoords.extend(geometry.texcoords(&corners));
+            let coordinates = geometry.texcoords(&corners);
             // What each of the geometry's own vertices is blended to, by its skin's clusters.
             let mut weights: Vec<Vec<(usize, f64)>> = vec![Vec::new(); verts.len()];
             for cluster in self.nodes.values() {
@@ -934,13 +1008,27 @@ impl Scene {
                     }
                 }
             }
-            for (vertex, _) in &corners {
-                blends.push(blend(weights.get(*vertex).map_or(&[], Vec::as_slice)));
+            // The corners that are one of the geometry's vertices with one texture
+            // coordinate are one vertex of the mesh (MDL-10.5).
+            let mut welded: BTreeMap<(usize, [u32; 2]), usize> = BTreeMap::new();
+            let mut places = Vec::with_capacity(corners.len());
+            for (corner, (vertex, _)) in corners.iter().enumerate() {
+                let coordinate = coordinates.get(corner).copied();
+                let key = (*vertex, coordinate.unwrap_or_default().map(f32::to_bits));
+                let next = positions.len();
+                let place = *welded.entry(key).or_insert(next);
+                if place == next {
+                    let at = verts.get(*vertex).copied().unwrap_or(NONE);
+                    positions.push(place_of(at));
+                    texcoords.extend(coordinate);
+                    blends.push(blend(weights.get(*vertex).map_or(&[], Vec::as_slice)));
+                }
+                places.push(place);
             }
             // A polygon is a fan from its first corner, each triangle turned around.
             let mut polygon: Vec<usize> = Vec::new();
-            for (corner, (_, last)) in corners.iter().enumerate() {
-                polygon.push(first.saturating_add(corner));
+            for (place, (_, last)) in places.iter().zip(&corners) {
+                polygon.push(*place);
                 if !last {
                     continue;
                 }
@@ -1059,10 +1147,10 @@ impl Geometry {
 /// Reads a text `.fbx` file as a mesh: a pose for each frame of each of its animation
 /// stacks, or one of the mesh as it is.
 ///
-/// The converter turns what it reads a quarter about x, "`erotate *= Quat(M_PI/2, Vec3(1, 0,
-/// 0));`", which stands a file whose y is up on Quake's z: a position `(x, y, z)` is `(x, -z,
-/// y)`. That is what [`Up::Y`] is here; [`Up::Z`] is for a file whose z is up already, which
-/// is left as it is.
+/// Its axes are turned as `up` says, as an `.obj`'s are (MDL-9.1): with y up, a position
+/// `(x, y, z)` is Quake's `(-z, -x, y)`, so that a model facing -z faces forward. The
+/// converter turns a file a quarter about x instead, "`erotate *= Quat(M_PI/2, Vec3(1, 0,
+/// 0));`", which leaves such a model facing left (MDL-10.5).
 ///
 /// Implements MDL-10.4.
 ///
@@ -1087,21 +1175,26 @@ pub fn read(text: &str, up: Up) -> Result<Mesh, FbxError> {
             _ => {}
         }
     }
-    let mut mesh = scene.boned().mesh(Up::Z).map_err(|error| match error {
+    scene.boned().mesh(up).map_err(|error| match error {
         RigError::Flat => FbxError::Flat,
         RigError::Names => FbxError::Names,
-    })?;
-    if up == Up::Y {
-        for position in mesh
-            .frames
-            .iter_mut()
-            .flat_map(|frame| &mut frame.positions)
-        {
-            let [x, y, z] = *position;
-            *position = [x, -z, y];
-        }
+    })
+}
+
+/// Reads an `.fbx` file of either form as a mesh: a binary file, known by its first bytes,
+/// is written out as the text form and read as [`read`] reads one.
+///
+/// Implements MDL-10.4, MDL-10.5 and MDL-11.
+///
+/// # Errors
+///
+/// As [`read`], and [`FbxError::Binary`] for a binary file that is cut short or damaged.
+pub fn read_bytes(bytes: &[u8], up: Up) -> Result<Mesh, FbxError> {
+    if binary::is_binary(bytes) {
+        read(&binary::text(bytes)?, up)
+    } else {
+        read(&String::from_utf8_lossy(bytes), up)
     }
-    Ok(mesh)
 }
 
 #[cfg(test)]

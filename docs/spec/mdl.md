@@ -679,21 +679,30 @@ and frames, which become a mesh of poses as MDL-9.2 says an `.iqe`'s do.
   is the limb's own with, for each curve node joined to it, the property the node is joined
   to given the node's three values, each a curve's value at the frame where the curve
   changes and the curve's one value or the node's own where it does not ("`if(c->varies())
-  curves[i] = c; else if(c->vals.length()) val[i] = c->vals[0];`"). What is read is turned
-  a quarter about x, "`erotate *= Quat(M_PI/2, Vec3(1, 0, 0));`": a position `(x, y, z)`
-  is `(x, -z, y)`, which stands a file whose y is up on z.
-- **MDL-10.5** Where ours differs from the converter. A polygon of more than three corners
-  is a fan from its first corner, each triangle kept as MDL-10.4 says, where the converter
-  takes each three corners in turn for a triangle whatever the polygons are (Justin,
-  2026-11-21: programs write quads unless told not to, and the converter's reading of one
-  is not its faces). The binary form of `.fbx`, which the converter does not read either,
-  and a file of another version are refused, where the converter reads nothing and says
-  nothing. A geometry's normals and colours, materials, and a cluster's transforms are not
-  read: a model has none of them. A file whose mesh model is turned and whose geometry
-  has no normals, at which the converter fails, is read. A name is kept whole, where the
-  converter keeps 63 bytes of it. A caller that says the file's z is up has it left
-  unturned. The converter's turn keeps a file's x, where an `.obj`'s y-up turn (MDL-9.1)
-  takes its -z for forward: the same model faces a quarter apart from the two.
+  curves[i] = c; else if(c->vals.length()) val[i] = c->vals[0];`"). The converter then
+  turns what it read a quarter about x, "`erotate *= Quat(M_PI/2, Vec3(1, 0, 0));`": a
+  position `(x, y, z)` is `(x, -z, y)`.
+- **MDL-10.5** Where ours differs from the converter, each by Justin's word of 2026-11-21
+  that a model's import be what a modder expects. A polygon of more than three corners is
+  a fan from its first corner, each triangle kept as MDL-10.4 says, where the converter
+  takes each three corners in turn for a triangle whatever the polygons are: programs write
+  quads unless told not to. A file whose y is up is turned as an `.obj` is (MDL-9.1), a
+  position `(x, y, z)` being `(-z, -x, y)`, so that a model facing -z faces Quake's +x
+  whichever of the two it came from, where the converter's quarter turn leaves it facing
+  left; a caller that says the file's z is up has it left unturned. The corners that are
+  one vertex of a geometry with one texture coordinate are one vertex of the mesh, where
+  the converter makes a vertex of each corner and joins them later. An animation whose
+  curves are not of one length, which the converter makes no animation of, is sampled by
+  its keys' times (`KeyTime`, in ticks of which a second has 46186158000, "`#define FBX_SEC
+  46186158000.0`"): a pose ten times a second from its first key to its last, at most 4096,
+  each curve read in a straight line between the keys around the time; a curve without a
+  time for each of its values makes it no animation. The binary form is read (MDL-11),
+  where the converter reads none, and a file of another version is refused, where the
+  converter reads nothing and says nothing. A geometry's normals and colours, materials,
+  and a cluster's transforms are not read: a model has none of them, and the skeleton's
+  base pose is its limbs' own, as the converter has it. A file whose mesh model is turned
+  and whose geometry has no normals, at which the converter fails, is read. A name is kept
+  whole, where the converter keeps 63 bytes of it.
 
 ### Constants
 
@@ -705,6 +714,8 @@ and frames, which become a mesh of poses as MDL-9.2 says an `.iqe`'s do.
 | `SMD_MAX_JOINT` | 255 | `smd::readnodes` |
 | `FBX_VERSION` | `FBX 7` | `fbx::checkversion` |
 | `FBX_MAX_LIMB` | 255 | `fbx::clusternode::process` |
+| `FBX_SAMPLE_RATE` | 10 | Ours: the rate of MD5-3.10 |
+| `FBX_MAX_FRAMES` | 4096 | Ours |
 | `MD5_MAX_COUNT` | 65536 | Ours |
 | `SMD_MAX_TIME` | 65535 | Ours |
 
@@ -724,8 +735,89 @@ on its own (`c++ -O1 -std=gnu++11 iqm.cpp`) and run on each of the six
 (`iqmtool out.iqm arm.md5mesh wave.md5anim`, and so for smd and fbx).
 `scripts/model-formats/iqm.py` posed each `.iqm` it wrote, frame by frame, into the
 `*.fteqw.txt` files beside the fixtures: each triangle's three corners, each a position and
-a texture coordinate. The readers' tests hold each mesh to its file: as many frames, each
+a texture coordinate. The readers' tests hold each mesh to its file, an fbx's turned as the converter turns it: as many frames, each
 of as many triangles, each triangle one of the converter's with its corners in the same
 order, within 0.05, the converter's weights being bytes. The greatest difference was 0.004
 for five of the six and 0.041 for the scaled fbx. In the last frame the arm's vertex is at
 `(8, 8, 2)` and the vertex of both at `(7, 1, 2)`.
+
+## MDL-11 The binary form of fbx
+
+**Sources:** "FBX binary file format specification", Alexander Gessler, August 2013,
+"Published by Blender Foundation, as public domain information",
+<https://code.blender.org/2013/08/fbx-binary-file-format-specification/> (fetched
+2026-11-21, SHA-256 of the page
+`74dbdc0781917d9ef36463ea46dc1a3d7c654990e7da79817b890059601b9586`); and, for what it does
+not cover, the comments of Blender's own reader, `scripts/addons_core/io_scene_fbx/parse_fbx.py`
+of blender/blender@`6a155ceab55287238f3d2532965d47a4c4591cca`, read for what the format
+is and not ported. Autodesk publishes no description of the format. Implemented by
+`crates/qs-mdl`'s `mesh::fbx::binary`
+([#1089](https://github.com/quakecstudio/editor/issues/1089), L-50).
+
+A binary file holds the tree the text form writes. It is written out as that text, and
+read as MDL-10.4 and MDL-10.5 say a text file is.
+
+### Behaviour
+
+- **MDL-11.1** A binary file starts "Bytes 0 - 20: Kaydara FBX Binary  \x00 (file-magic,
+  with 2 spaces at the end, then a NULL terminator)", two more bytes, and "Bytes 23 - 26:
+  unsigned int, the version number. 7300 for version 7.3 for example." A file that starts
+  so is read as binary and any other as text. A version from 7000 to under 8000 is read;
+  any other is refused as no FBX of version 7.
+- **MDL-11.2** A node record is its `EndOffset`, "the distance from the beginning of the
+  file to the end of the node record", its `NumProperties`, its `PropertyListLen`, a byte
+  of `NameLen`, its name, its properties, and its nested records. The three counts are
+  32 bits each, and from version 7500 64 bits: "FBX 7500 (aka FBX2016) introduces
+  incompatible changes at binary level: The NULL block marking end of nested stuff switches
+  from 13 bytes long to 25 bytes long. The FBX element metadata (end_offset, prop_count and
+  prop_length) switch from uint32 to uint64." A record whose counts are all zero ends a
+  list: "NestedList is the nested list, presence of which is indicated by a NULL-record at
+  the very end", and a record has nested records when "there is bytes left until the
+  EndOffset is reached". The file's top records follow the header, to a record of zeros;
+  what follows that, "a footer with unknown contents", is passed over. A record is written
+  as `Name: properties`, its name's letters, digits and underscores, with its nested
+  records between `{` and `}`.
+- **MDL-11.3** A property is a byte of its kind and its data, "in little-endian byte order":
+  "Y: 2 byte signed Integer", "C: 1 bit boolean", "I: 4 byte signed Integer", "F: 4 byte
+  single-precision IEEE 754 number", "D: 8 byte double-precision IEEE 754 number", "L: 8
+  byte signed Integer"; of Blender's reader, `Z`, a byte, and `B`, a boolean. An array, `f`,
+  `d`, `l`, `i` or `b`, and of Blender's reader `c`, is its `ArrayLength`, its `Encoding`
+  and its `CompressedLength`, then its contents: "If Encoding is 0, the Contents is just
+  ArrayLength times the array data type. If Encoding is 1, the Contents is a
+  deflate/zip-compressed buffer of length CompressedLength bytes." It is written as the text
+  form's `*N { a: ... }`. `S`, a string, and `R`, raw bytes, are a length of 4 bytes and
+  that many bytes; raw bytes are written as an empty string.
+- **MDL-11.4** Ours, where the two forms write one thing two ways. A binary file writes an
+  object's name and its class as the name, a NUL, a byte of 1 and the class, which is the
+  text form's `Class::Name`; a quote or a control character in a string is written as a
+  space. An object's number is a 64-bit integer and the text form's reader keeps numbers
+  as doubles: one past 2 to the 53rd, which a double does not hold exactly, is written as a
+  number of its own that no whole number is, so that two objects are never taken for one.
+  A number that is not finite is 0.
+- **MDL-11.5** Ours: a file cut short, a record that ends before it starts or past the list
+  it is in, records nested more than 64 deep, a property of no kind, an array that does not
+  inflate to its length, and arrays of more than 64 MiB in all are refused as damaged.
+
+### Constants
+
+| Name | Value | Source |
+| --- | --- | --- |
+| `FBX_BINARY_MAGIC` | `Kaydara FBX Binary  \0` | The description, "Binary File Structure" |
+| `FBX_MAX_ARRAY_BYTES` | 67108864 | Ours |
+
+### Test vectors
+
+`scripts/model-formats/samples.py` writes the model of MDL-10's fixtures as binary files
+too, with its own writer of the format: `arm-7400.fbx.hex`, of version 7400 with 32-bit
+counts, `arm-7500.fbx.hex`, of version 7500 with 64-bit counts and every object's number
+past 2 to the 62nd, and `hard-arm-7400.fbx.hex`; every array is deflated. Each is the mesh
+its text file is.
+
+**Checked:** on 2026-11-21 eight files of assimp's test models (assimp/assimp, `test/models/FBX/`:
+`box.fbx`, `phong_cube.fbx`, `huesitos.fbx`, `spider.fbx`, `animation_with_skeleton.fbx`,
+`global_settings.fbx`, all binary of version 7400; `boxWithCompressedCTypeArray.FBX`, binary
+of version 7500; `cubes_with_names.fbx`, text of version 7.5), written by other programs,
+were each read and made a model of. `huesitos.fbx`, a chain of bones with an animation
+whose curves are of several lengths, was imported with `model.import` over the MCP server
+as 17 frames and stood in a played room at its first, ninth and last: each a whole chain of
+bones, bent differently. None of the eight is a fixture: their licences are their authors'.

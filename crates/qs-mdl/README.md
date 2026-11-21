@@ -32,7 +32,7 @@ Reads Quake's models other than brush models, and writes and makes alias models.
   or laid out as modelgen lays a base.
 - **Reading a mesh as FTEQW's converter does** (`mesh::md5`, `mesh::smd`, `mesh::fbx`,
   MDL-10): an `.md5mesh` with its `.md5anim` files, Valve's `.smd` models and animations,
-  and Autodesk's text `.fbx`, each to a `Mesh` of poses. Ported from the `iqm/` directory
+  and Autodesk's `.fbx`, each to a `Mesh` of poses. Ported from the `iqm/` directory
   of FTEQW at the pinned commit (ADR-0030), Lee Salzman's IQM exporter with FTE's changes,
   whose MIT notice is `LICENSE-iqm.txt`; the tests hold each to what the converter itself
   made of the fixtures.

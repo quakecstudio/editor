@@ -802,7 +802,7 @@ fn an_import_that_fails_says_why() {
     let binary = write("binary.fbx", "Kaydara FBX Binary  ");
     let error = refused(json!({ "source_path": binary, "path": path }));
     assert!(
-        error.contains("binary.fbx: the file is not a text FBX of version 7"),
+        error.contains("binary.fbx: the file is not an FBX of version 7"),
         "{error}"
     );
     let obj = write("bad.obj", "v 0 0 0\nf 1 2 3\n");
@@ -978,7 +978,7 @@ fn an_fbx_model_is_imported_with_its_animations() {
     for (at, want) in arm_tip(&path, 2).iter().zip([8.0, 8.0, 2.0]) {
         assert!((at - want).abs() < 0.1, "{:?}", arm_tip(&path, 2));
     }
-    // With y up, as an fbx is taken to be, the file's z is the model's -y.
+    // With y up, as an fbx is taken to be, the file's -z is the model's +x, as an obj's is.
     let turned = root.join("progs/turned.mdl");
     session
         .execute(
@@ -986,7 +986,7 @@ fn an_fbx_model_is_imported_with_its_animations() {
             json!({ "source_path": root.join("arm.fbx"), "path": turned }),
         )
         .unwrap();
-    for (at, want) in arm_tip(&turned, 2).iter().zip([8.0, -2.0, 8.0]) {
+    for (at, want) in arm_tip(&turned, 2).iter().zip([-2.0, -8.0, 8.0]) {
         assert!((at - want).abs() < 0.1, "{:?}", arm_tip(&turned, 2));
     }
     let error = session
@@ -1018,4 +1018,37 @@ fn an_fbx_model_is_imported_with_its_animations() {
         .unwrap_err()
         .to_string();
     assert!(error.contains("thing.gltf: is no .obj"), "{error}");
+}
+
+// spec MDL-11.1: a binary .fbx is imported as the text file of the same model is, by the
+// file's own first bytes
+#[test]
+fn a_binary_fbx_is_imported_as_its_text_is() {
+    let (root, mut session) = project("import-binary-fbx", &[]);
+    let hex = include_str!("../../../qs-mdl/src/mesh/fixtures/arm-7500.fbx.hex");
+    let digits: Vec<u8> = hex.bytes().filter(u8::is_ascii_hexdigit).collect();
+    let bytes: Vec<u8> = digits
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| u8::from_str_radix(core::str::from_utf8(pair).unwrap(), 16).unwrap())
+        .collect();
+    std::fs::write(root.join("binary.fbx"), bytes).unwrap();
+    std::fs::write(root.join("text.fbx"), ARM_FBX).unwrap();
+    for name in ["binary", "text"] {
+        let made = session
+            .execute(
+                MODEL_IMPORT,
+                json!({
+                    "source_path": root.join(format!("{name}.fbx")),
+                    "path": root.join(format!("progs/{name}.mdl")),
+                }),
+            )
+            .unwrap();
+        assert_eq!(made["frame_line"], "wave1 wave2 wave3", "{name}");
+    }
+    assert_eq!(
+        std::fs::read(root.join("progs/binary.mdl")).unwrap(),
+        std::fs::read(root.join("progs/text.mdl")).unwrap()
+    );
 }

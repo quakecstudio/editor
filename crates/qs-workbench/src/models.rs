@@ -1185,7 +1185,7 @@ pub enum SkinLayout {
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ImportParams {
-    /// The mesh to read: an `.obj` file, one pose; an `.iqe` or a text `.fbx` file, a pose
+    /// The mesh to read: an `.obj` file, one pose; an `.iqe` or an `.fbx` file, a pose
     /// for each frame of each of its animations; or an `.md5mesh` or an `.smd` model, posed
     /// by the files of `animation_paths`.
     pub source_path: PathBuf,
@@ -1198,9 +1198,8 @@ pub struct ImportParams {
     /// The `.mdl` file to make of it, in the project; one that is there already is refused.
     pub path: PathBuf,
     /// Which axis of the file is up: y for an `.obj` and an `.fbx`, and z for the others,
-    /// when not given. A y-up `.obj` is turned so that its -z is forward; a y-up `.fbx` is
-    /// turned a quarter about x, as FTEQW's converter turns it, and keeps its x: turn the
-    /// entity, or the mesh before it is written, when it faces the wrong way.
+    /// when not given. A y-up file is turned so that its -z is forward, Quake's +x, which
+    /// is how programs write a model that faces its viewer's way.
     #[serde(default)]
     pub up: Option<UpAxis>,
     /// What every position is multiplied by, to make the model the size Quake's are (a
@@ -1285,7 +1284,7 @@ impl ImportParams {
             }
             Some("fbx") => {
                 alone()?;
-                fbx::read(&text, up(Up::Y)).map_err(|error| ModelError::Fbx {
+                fbx::read_bytes(&bytes, up(Up::Y)).map_err(|error| ModelError::Fbx {
                     path: source.clone(),
                     error,
                 })?
@@ -1364,7 +1363,7 @@ struct ModelImport;
 impl<C: HasWorkbench + HasMap + 'static> Command<C> for ModelImport {
     const ID: &'static str = MODEL_IMPORT;
     const SUMMARY: &'static str = "Makes a .mdl model in the project of a mesh in an .obj \
-        file (one pose), or an .iqe, text .fbx, .md5mesh or .smd file (a frame for each frame \
+        file (one pose), or an .iqe, .fbx, .md5mesh or .smd file (a frame for each frame \
         of each animation, posed by its skeleton). A mesh with texture coordinates keeps them, on a PNG given as its skin \
         or one colour; one without is laid out front and back, to export, paint and set.";
     type Params = ImportParams;
