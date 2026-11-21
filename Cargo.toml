@@ -146,6 +146,9 @@ cpal = { version = "=0.18.2", default-features = false }
 clap = { version = "=4.6.7", default-features = false }
 criterion = { version = "=0.8.2", default-features = false }
 eframe = { version = "=0.36.2", default-features = false }
+# The Markdown an agent's reply is written in, read as CommonMark for the agent panel (L-43):
+# the parser alone, with no HTML output and no command-line program.
+pulldown-cmark = { version = "=0.13.6", default-features = false }
 egui = { version = "=0.36.2", default-features = false }
 egui-wgpu = { version = "=0.36.2", default-features = false }
 egui_kittest = { version = "=0.36.2", default-features = false }

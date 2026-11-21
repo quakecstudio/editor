@@ -28,6 +28,8 @@ clap = { workspace = true, features = ["std", "derive", "help", "usage", "error-
 eframe = { workspace = true, features = ["accesskit", "wayland", "wgpu", "x11"] }
 # The PNG decoder, for the About window's icon; the map editor's texture import links it already.
 image = { workspace = true, features = ["png"] }
+# What an agent says is Markdown: the agent panel draws it (L-43).
+pulldown-cmark = { workspace = true }
 qc-project = { workspace = true }
 qs-acp = { workspace = true }
 qs-agent = { workspace = true }

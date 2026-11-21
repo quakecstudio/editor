@@ -2528,3 +2528,25 @@ groups:
     - 'A test holds the server''s instructions to naming each kind of tool'
     verify:
     - 'cargo xtask ci; the search recorded in the PR'
+  - key: L-43
+    title: Show the agent's reply as Markdown and apply an outside agent's map edits at once
+    labels:
+    - L7-ui
+    - area:agent
+    - type:feature
+    size: S
+    reqs:
+    - UI-11
+    - PRIN-6
+    summary: |
+      Found on 2026-11-20 when Claude Code built a map from the agent panel over ACP. Its reply showed its Markdown as typed, `**One fix along the way:**` with the asterisks. And after it had saved the map the status bar still said one edit waited for review: the MCP server staged each map edit as a hunk, the whole map was one hunk, and nothing in the agent panel showed it. Justin, 2026-11-20: render the Markdown, and an outside agent's map edits are not staged; they apply at once, as its file edits do, and undo and the panel's Restore checkpoint take them back. The built-in agent keeps staging its edits.
+    depends:
+    - L-42
+    deliverable:
+    - 'apps/desktop/src/markdown.rs: what an agent says is drawn as Markdown in the agent panel, for an outside agent and the built-in one: headings, bold, italic, inline code, code blocks, lists, links and rules; text that is still arriving is drawn as far as it reads'
+    - 'crates/qs-mcp: a map tool that edits runs with no review begun; the server''s instructions and docs/mcp.md say so'
+    acceptance:
+    - 'A reply with a heading, bold text, a list, inline code and a code block is drawn with none of its marks showing, checked by a kittest test, and a reply in the running app is recorded in the PR'
+    - 'A map edit through the MCP server leaves nothing waiting for review and is taken back by undo, checked by a test of the server'
+    verify:
+    - 'cargo nextest run -p quakec-studio -p qs-mcp; the recorded run in the PR'

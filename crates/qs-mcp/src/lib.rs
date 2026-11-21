@@ -23,7 +23,7 @@
 //!
 //! The tools run on [`Commands`]: a [`Session`] the server makes for itself (headless), or
 //! [`Connected`], the running app's session over its socket (`--connect`), so that a game the
-//! agent plays or an edit it stages is the one the window shows.
+//! agent plays or an edit it makes is the one the window shows.
 
 use std::path::{Path, PathBuf};
 
@@ -58,12 +58,8 @@ pub struct Tool {
     pub access: Access,
 }
 
-/// The prefix of the map's commands, whose edits wait for review (P6-21).
+/// The prefix of the map's commands.
 const MAP_COMMANDS: &str = "map.";
-/// The workbench's command that begins review of the open map's edits.
-const STAGE_MAP: &str = "map.stage";
-/// The workbench's command that ends the open map's review when nothing waits in it.
-const UNSTAGE_MAP: &str = "map.unstage";
 /// The workbench's command that names the open map's file.
 const INSPECT_MAP: &str = "map.list_entities";
 /// The workbench's command that opens a map in place of the open one.
@@ -72,36 +68,48 @@ const OPEN_MAP: &str = "map.open";
 const NEW_MAP: &str = "map.new";
 /// The workbench's command that makes the last map edit again: a map edit under another name.
 const REPEAT_EDIT: &str = "edit.repeat";
-/// The workbench's commands that write the open map's files but change no edit of it: its BSP
-/// beside it, the map itself, and its BSP where the game plays it.
-const WRITES_MAP_FILES: [&str; 3] = ["map.compile", "map.save", "map.play_from_here"];
+/// The workbench's commands that take back and make again the last change of the session's
+/// history, which may be an edit of the open map.
+const HISTORY: [&str; 2] = ["edit.undo", "edit.redo"];
 
 impl Tool {
-    /// Whether it changes the open map, whose edits wait for review (P6-21).
+    /// Whether it changes the open map or writes its files.
     fn edits_map(&self) -> bool {
         self.access == Access::Write
             && (self.id.starts_with(MAP_COMMANDS) || &*self.id == REPEAT_EDIT)
     }
+
+    /// Whether it changes whatever the session's history last changed: the open map's edit,
+    /// when that is it.
+    fn walks_history(&self) -> bool {
+        HISTORY.contains(&&*self.id)
+    }
 }
 
-/// Runs `tool` on `session` with `arguments`. A map tool that writes runs as the built-in
-/// agent's do (P6-21): only when the open map's file lies under a write root, since it may
-/// write beside it, and between `map.stage` and `map.unstage`, so its edits wait as hunks for
-/// a person to review and one that changed nothing leaves no review open. It is refused when
-/// review cannot begin, rather than run unreviewed. `map.open` and `map.new` replace the open
-/// map, and their path is checked as an argument; `map.compile`, `map.save` and
-/// `map.play_from_here` change no edit, so they open no review.
+/// Runs `tool` on `session` with `arguments`. A map tool that writes runs only when the open
+/// map's file lies under a write root, since it may write beside it; `map.open` and `map.new`
+/// replace the open map, and their path is checked as an argument; `edit.undo` and
+/// `edit.redo`, which may take back or make again an edit of the open map, are held to the
+/// same root while a map is open. Its edit is made at once,
+/// as an outside agent's edit of a file is (L-43): no review is begun for it, and undo, or a
+/// checkpoint restored, which reads the open map again from its file, takes it back. An edit made while a person has the map's
+/// review open in the app joins that review, as any edit there does.
 fn run_tool<K: Commands>(
     session: &mut K,
     tool: &Tool,
     arguments: Value,
     settings: &ServerSettings,
 ) -> Result<Value, ToolError> {
-    if !tool.edits_map() || &*tool.id == OPEN_MAP || &*tool.id == NEW_MAP {
+    let history = tool.walks_history();
+    if !(tool.edits_map() || history) || &*tool.id == OPEN_MAP || &*tool.id == NEW_MAP {
         return session.run(&tool.id, arguments);
     }
-    let none = || Value::Object(serde_json::Map::new());
-    let open = session.run(INSPECT_MAP, none())?;
+    let open = match session.run(INSPECT_MAP, Value::Object(serde_json::Map::new())) {
+        Ok(open) => open,
+        // With no map open, undo and redo have no map edit to reach.
+        Err(_) if history => return session.run(&tool.id, arguments),
+        Err(error) => return Err(error),
+    };
     let path = open.get("path").and_then(Value::as_str).unwrap_or_default();
     let full = lexical(Path::new(path));
     if !settings.write.iter().any(|root| lies_under(&full, root)) {
@@ -110,14 +118,7 @@ fn run_tool<K: Commands>(
             tool: tool.clone(),
         });
     }
-    if WRITES_MAP_FILES.contains(&&*tool.id) {
-        return session.run(&tool.id, arguments);
-    }
-    session.run(STAGE_MAP, none())?;
-    let result = session.run(&tool.id, arguments);
-    // A review with nothing in it is ended; one the edit filled stays for the person.
-    let _ended = session.run(UNSTAGE_MAP, none());
-    result
+    session.run(&tool.id, arguments)
 }
 
 /// What the server serves: its project, its roots and the name it gives.
@@ -527,8 +528,8 @@ const INSTRUCTIONS: &str = "Every command of QuakeC Studio over the project this
     also has the app's window: view.*, editor.*, settings.* and help.*. In short: \
     compile, test, run QuakeC in the VM, play scenarios, inspect and drive the running game, \
     read files, stage edits as hunks and keep checkpoints; make or open a map, place and \
-    key its entities, build its brushes, compile it and find its leaks, save it and play it, \
-    each map edit staged for review. Paths are the project's, absolute or relative to it. \
+    key its entities, build its brushes, compile it and find its leaks, save it and play it. \
+    A map edit is made at once and edit.undo takes it back. Paths are the project's, absolute or relative to it. \
     To build a map: map.new (or map.open), then map.list_textures for the texture names there \
     are. A room is map.brush_create for a box and map.brush_hollow for its walls; rooms are \
     joined by a box across the walls between them given to map.brush_subtract. The \

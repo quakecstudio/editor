@@ -23,6 +23,7 @@ use qs_workbench::{APPLY_EDIT, READ_FILE};
 use serde_json::json;
 
 use super::{CALL, FAILED, RAN, THREAD_MAX_HEIGHT, muted};
+use crate::markdown::{self, Part};
 use crate::strings::Text;
 use crate::theme::{Theme, Token};
 
@@ -483,8 +484,8 @@ impl ExternalThread {
             .stick_to_bottom(true)
             .show(ui, |ui| {
                 muted(ui, theme, &self.task);
-                for item in &self.items {
-                    item_view(ui, theme, item);
+                for (place, item) in self.items.iter().enumerate() {
+                    item_view(ui, theme, place, item);
                 }
             });
         let mut chosen = None;
@@ -525,11 +526,9 @@ impl ExternalThread {
 }
 
 /// One item of a thread.
-fn item_view(ui: &mut Ui, theme: &Theme, item: &Item) {
+fn item_view(ui: &mut Ui, theme: &Theme, place: usize, item: &Item) {
     match item {
-        Item::Said(text) => {
-            ui.add(egui::Label::new(text.as_str()).wrap());
-        }
+        Item::Said(text) => markdown::show(ui, theme, Part::Message(place), text),
         Item::Thought(text) => {
             ui.add(
                 egui::Label::new(

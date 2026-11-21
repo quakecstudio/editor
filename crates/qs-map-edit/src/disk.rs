@@ -160,6 +160,27 @@ pub fn map_files_changed<C: HasMap>(
     Ok(map)
 }
 
+/// Puts the open map of `context` back as its file is on disk, its unsaved edits dropped, as
+/// a restored checkpoint does to every file (L-43): the map is read again and its game told;
+/// a map whose file is gone, made after the checkpoint, is closed. Nothing with no map open.
+///
+/// # Errors
+///
+/// [`MapEditError`] when the map's file is there and no longer reads.
+pub fn map_put_back<C: HasMap>(context: &mut C) -> Result<MapOnDisk, MapEditError> {
+    let store = context.map_store();
+    let Some(path) = store.map().map(|open| open.path().to_path_buf()) else {
+        return Ok(MapOnDisk::Same);
+    };
+    if path.exists() {
+        store.reopen_map(&path)?;
+        out_of_step(context);
+    } else {
+        store.document = None;
+    }
+    Ok(MapOnDisk::Reloaded)
+}
+
 /// Tells the game playing the open map that the map was read again from disk, so its edits
 /// wait for the next compile (P5-07, P5-17).
 fn out_of_step<C: HasMap>(context: &mut C) {
