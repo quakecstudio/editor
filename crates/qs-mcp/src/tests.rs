@@ -571,8 +571,9 @@ const WALLS: [([f64; 3], [f64; 3]); 6] = [
 ];
 
 // No spec statement: P6-36, MAP-16, MAP-29: a sealed room built through MCP tool calls alone,
-// a player start and six brushes, finds no leak and compiles sealed, its edits waiting for
-// review
+// a player start and six brushes, finds no leak and compiles sealed. L-43, the acceptance
+// criterion: its edits are made at once, so nothing waits for review, and undo takes the last
+// one back
 #[test]
 fn a_room_built_over_mcp_compiles_sealed() {
     let (server, map) = map_server("map-room", false);
@@ -599,6 +600,9 @@ fn a_room_built_over_mcp_compiles_sealed() {
     messages.push(call(20, "map.find_leaks", &json!({})));
     messages.push(call(21, "map.compile", &json!({})));
     messages.push(call(22, "map.staged_hunks", &json!({})));
+    messages.push(call(23, "map.summary", &json!({})));
+    messages.push(call(24, "edit.undo", &json!({})));
+    messages.push(call(25, "map.summary", &json!({})));
     let answers = exchange(server, &messages);
     for id in 1..=8 {
         let answer = &answers[&id.to_string()]["result"];
@@ -621,13 +625,17 @@ fn a_room_built_over_mcp_compiles_sealed() {
     let staged = answers["22"]["result"]["content"][0]["text"]
         .as_str()
         .unwrap();
-    let hunks: Vec<Value> = serde_json::from_str(staged).unwrap();
-    let brushes: u64 = hunks
-        .iter()
-        .map(|h| h["brushes_added"].as_u64().unwrap())
-        .sum();
-    assert_eq!(brushes, 6, "{staged}");
-    assert!(staged.contains("info_player_start"), "{staged}");
+    assert_eq!(
+        serde_json::from_str::<Value>(staged).unwrap(),
+        json!([]),
+        "nothing waits for review"
+    );
+    let built = &answers["23"]["result"]["structuredContent"];
+    assert_eq!(built["world_brushes"], 6, "{built}");
+    assert!(built["classes"].to_string().contains("info_player_start"));
+    assert_eq!(answers["24"]["result"]["isError"], false);
+    let undone = &answers["25"]["result"]["structuredContent"];
+    assert_eq!(undone["world_brushes"], 5, "undo takes the last brush back");
 }
 
 // No spec statement: P6-44, MAP-16: a map is made, edited and saved through MCP tool calls
@@ -675,10 +683,10 @@ fn a_map_is_made_and_saved_over_mcp() {
     );
 }
 
-// No spec statement: P6-21: edit.repeat makes a map edit again, so its edit waits for review
-// as the edit's own tool's does
+// No spec statement: L-43: edit.repeat makes a map edit again, at once as the edit's own tool
+// does: both are in the map and neither waits for review
 #[test]
-fn a_repeated_map_edit_waits_for_review() {
+fn a_repeated_map_edit_is_made_at_once() {
     let (server, map) = map_server("map-repeat", false);
     let [init, initialized] = opening("2025-11-25");
     let answers = exchange(
@@ -692,10 +700,9 @@ fn a_repeated_map_edit_waits_for_review() {
                 "map.place_entity",
                 &json!({ "classname": "info_player_start", "origin": [0.0, 0.0, 24.0] }),
             ),
-            call(2, "map.accept_hunks", &json!({})),
+            call(2, "edit.repeat", &json!({})),
             call(3, "map.staged_hunks", &json!({})),
-            call(4, "edit.repeat", &json!({})),
-            call(5, "map.staged_hunks", &json!({})),
+            call(4, "map.summary", &json!({})),
         ],
     );
     let text = |id: &str| {
@@ -704,9 +711,9 @@ fn a_repeated_map_edit_waits_for_review() {
         let text = answer["content"][0]["text"].as_str().unwrap();
         serde_json::from_str::<Value>(text).unwrap()
     };
-    assert_eq!(text("3"), json!([]), "the first edit was accepted");
-    text("4");
-    assert_eq!(text("5").as_array().unwrap().len(), 1, "the repeat waits");
+    text("2");
+    assert_eq!(text("3"), json!([]), "nothing waits");
+    assert_eq!(text("4")["entities"], 3, "the world and two player starts");
 }
 
 // No spec statement: P6-36, P4-13: a read-only server refuses every map tool that writes,

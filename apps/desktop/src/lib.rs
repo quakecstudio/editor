@@ -52,6 +52,7 @@ mod map_shading;
 mod map_tools;
 mod map_uv;
 pub mod map_view;
+mod markdown;
 pub mod menu;
 mod multibuffer;
 mod new_project;

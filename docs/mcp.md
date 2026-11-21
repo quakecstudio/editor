@@ -120,20 +120,20 @@ The tools an agent's loop most often uses:
 | `map.compile`, `map.find_leaks` | Compiles the map as it is in the editor to a BSP beside it, with its portal and leak files; reports whether it leaks without writing a file |
 | `map.save`, `map.play_from_here` | Saves the open map; compiles and lights it and plays it with the player at a point |
 
-A map tool that edits runs as the built-in agent's do (P6-21): the server begins the map's
-review with `map.stage` before it and ends it with `map.unstage` after, so every edit waits as a
-hunk for a person to accept or reject in the app, and a call that changed nothing leaves no
-review open. When review cannot begin the edit is refused, not run unreviewed. The map tools that read open no review. `map.accept_hunks` and `map.reject_hunks` are tools as `edit.accept` and `edit.reject` are: whether an agent may decide its own hunks is the client's to ask its person.
+A map tool that edits makes its edit at once, as an outside agent's edit of a file is made
+(L-43): the server begins no review for it, so nothing waits for a person when the agent is
+done, and `edit.undo`, or a checkpoint the client keeps, takes it back. The built-in agent's
+map edits are the ones staged as hunks (P6-21). `map.stage`, `map.accept_hunks` and
+`map.reject_hunks` are still tools: an agent that wants its own edits held for a look can
+begin a review and decide it.
 
 `map.open` and `map.new` write, since they replace the open map, its unsaved and staged edits
 with it. A map tool that edits, compiles, saves or plays also needs the open map's file under
 a write root, since `map.compile` and `map.save` write beside it: the server asks `map.list_entities`
-for it first. `map.compile`, `map.save` and `map.play_from_here` change no edit and open no
-review; `map.save` writes the map as it is in the editor, the edits still waiting for review
-included. `preview.play` of a map the project compiled reads its BSP from beside the open map
-of that name, or from the project's `maps`. With `--connect`,
-the stage, the edit and the unstage are three calls to the app, so an edit the person makes in
-the app between them joins the review.
+for it first. `map.save` writes the map as it is in the editor. `preview.play` of a map the
+project compiled reads its BSP from beside the open map of that name, or from the project's
+`maps`. With `--connect`, an edit made while the person has the map's review open in the app
+joins that review, as an edit of theirs does.
 
 ### Building and reviewing a map
 
@@ -167,7 +167,7 @@ The server's instructions give an agent the order (L-40); it is the one a person
    names the light where the player stands and the entities that stand in the dark (`dark`),
    so an unlit room is found without a picture.
 
-Every edit of these waits as a hunk in the map's review, as above.
+Each edit of these is made at once, as above.
 
 `tools/list` gives each tool's input schema, the command's parameter schema. A tool whose
 command the server's registry lacks is not listed. A command that fails answers
@@ -197,7 +197,7 @@ refused as a tool error before the command runs.
 - a session that does not start;
 - a server connected to an app's session, its staged edit there;
 - the map tools listed with their schemas and the review's decisions not; a sealed room built
-  and compiled through them alone, its edits staged and a read opening no review; a read-only
+  and compiled through them alone, nothing left waiting for review and its last edit undone; a read-only
   server refusing every map tool that writes; and, connected to an app, an edit refused for a
   map outside the write roots.
 

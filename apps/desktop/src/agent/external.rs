@@ -23,6 +23,7 @@ use qs_workbench::{APPLY_EDIT, READ_FILE};
 use serde_json::json;
 
 use super::{CALL, FAILED, RAN, THREAD_MAX_HEIGHT, muted};
+use crate::markdown;
 use crate::strings::Text;
 use crate::theme::{Theme, Token};
 
@@ -527,9 +528,7 @@ impl ExternalThread {
 /// One item of a thread.
 fn item_view(ui: &mut Ui, theme: &Theme, item: &Item) {
     match item {
-        Item::Said(text) => {
-            ui.add(egui::Label::new(text.as_str()).wrap());
-        }
+        Item::Said(text) => markdown::show(ui, theme, text),
         Item::Thought(text) => {
             ui.add(
                 egui::Label::new(

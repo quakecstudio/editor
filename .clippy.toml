@@ -34,6 +34,7 @@ absolute-paths-allowed-crates = [
     "objc2_foundation",
     "pollster",
     "proptest",
+    "pulldown_cmark",
     "raw_window_handle",
     "rayon",
     "regex_lite",
