@@ -62,6 +62,8 @@ map.brush_texture
 map.brush_vertex
 map.brush_vertices
 map.brushes
+map.build_passage
+map.build_room
 map.check
 map.compare_with_disk
 map.copy

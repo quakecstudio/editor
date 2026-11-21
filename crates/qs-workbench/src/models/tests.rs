@@ -584,14 +584,14 @@ fn a_flat_model_takes_frames_in_its_plane() {
 /// A crate one unit a side as an `.obj` file with y up, its faces counterclockwise from
 /// outside, with texture vertices when `textured`.
 fn crate_obj(textured: bool) -> String {
-    let mut text = String::from("# a crate\no crate\n");
+    let mut lines = vec!["# a crate".to_owned(), "o crate".to_owned()];
     for z in [0, 1] {
         for (x, y) in [(0, 0), (1, 0), (1, 1), (0, 1)] {
-            text.push_str(&format!("v {x} {y} {z}\n"));
+            lines.push(format!("v {x} {y} {z}"));
         }
     }
     if textured {
-        text.push_str("vt 0 0\nvt 1 0\nvt 1 1\nvt 0 1\n");
+        lines.extend(["vt 0 0", "vt 1 0", "vt 1 1", "vt 0 1"].map(str::to_owned));
     }
     // Back, front, bottom, right, top, left.
     for face in [
@@ -602,17 +602,20 @@ fn crate_obj(textured: bool) -> String {
         [3, 4, 8, 7],
         [4, 1, 5, 8],
     ] {
-        text.push('f');
-        for (corner, vertex) in face.into_iter().enumerate() {
-            if textured {
-                text.push_str(&format!(" {vertex}/{}", corner + 1));
-            } else {
-                text.push_str(&format!(" {vertex}"));
-            }
-        }
-        text.push('\n');
+        let corners: Vec<String> = face
+            .into_iter()
+            .zip(1..)
+            .map(|(vertex, corner): (i32, i32)| {
+                if textured {
+                    format!("{vertex}/{corner}")
+                } else {
+                    vertex.to_string()
+                }
+            })
+            .collect();
+        lines.push(format!("f {}", corners.join(" ")));
     }
-    text
+    lines.join("\n")
 }
 
 // spec MDL-9.1, MDL-9.3: an .obj with texture vertices is imported as a model that keeps
@@ -628,7 +631,8 @@ fn an_obj_is_imported_with_its_own_skin() {
     let png = root.join("meshes/crate.png");
     let mut picture = image::RgbaImage::new(8, 4);
     for (x, y, pixel) in picture.enumerate_pixels_mut() {
-        let n = u8::try_from(y * 8 + x).unwrap() + 32;
+        // The pixel's place counted along the rows, from 32.
+        let n = u8::try_from(y.saturating_mul(8).saturating_add(x).saturating_add(32)).unwrap();
         *pixel = image::Rgba([n, !n, n >> 1, 255]);
     }
     picture.save(&png).unwrap();

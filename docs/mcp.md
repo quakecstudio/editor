@@ -112,6 +112,7 @@ The tools an agent's loop most often uses:
 | `preview.play`, `preview.reload`, `preview.stop`, `preview.poll` | The live game: start it, reload the program, stop it, read its events |
 | `engine.inspect`, `engine.console`, `engine.screenshot` | The running game's edicts, globals and stack; a console command and its output; a frame as a PNG |
 | `map.open`, `map.new`, `map.list_entities`, `map.staged_hunks` | Opens a `.map` file; makes a new one in the project, holding a world with the keys given, and opens it; its rooms and entities; the map edits waiting for review |
+| `map.build_room`, `map.build_passage` | Builds one room of a shape of id's levels into the open map (a pillared hall, an eight-sided domed chamber, a hall around a pit, a room on two levels, a courtyard, a cross, a vault), sealed but for the doorways asked for, with its lights, and answers its doorways and where things may stand; builds a passage between two doorways, with stairs where their floors differ and a door when asked (L-49) |
 | `map.generate` | Makes a random playable level in the project and opens it (L-48): rooms of seven shapes joined by passages, stairs and doors, from a start to an exit, with lights, monsters, weapons and a key, textured from the game's own levels; one seed and size give one level, and its answer names each room's shape and a place to stand in it |
 | `map.brushes`, `map.summary` | An entity's brushes, each with its place, the box around it and its textures; the map in short: its bounds, brush and entity counts, entities by classname and textures by face |
 | `map.place_entity`, `map.set_key` | Places an entity; sets one of an entity's keys |
@@ -165,7 +166,9 @@ The server's instructions give an agent the order (L-40); it is the one a person
 
 1. `map.new` makes the map, or `map.open` opens one; `map.list_textures` lists the textures there
    are, those of the game's own levels among them, so a map needs no WAD of its own.
-2. A room is a box (`map.brush_create`) hollowed into walls (`map.brush_hollow`). Rooms are
+2. A room is one of seven shapes built whole by `map.build_room`, joined to the next by
+   `map.build_passage` (L-49): the reference's `maps` topic says what each is and needs. Or
+   it is a box (`map.brush_create`) hollowed into walls (`map.brush_hollow`). Rooms are
    joined by a box across the walls between them given to `map.brush_subtract`, which carves
    it out of every brush it overlaps and removes it.
 3. The `map.brush_*` tools take a brush by its place among its entity's brushes, and each

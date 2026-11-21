@@ -50,7 +50,7 @@ const CHANCES: usize = 10;
 
 /// A side of a room, by the way it faces.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Side {
+pub enum Side {
     /// +x.
     East,
     /// +y.
@@ -104,6 +104,11 @@ impl Side {
     }
 }
 
+/// How far from the grid's middle a room may be, in cells each way. The game sends a position
+/// as the short `(int) (f * 8)` (NET-1.1), which holds less than 4096: four cells of 768 and
+/// half a cell more is 3456, and a fifth would pass it.
+const GRID_REACH: i32 = 4;
+
 /// A place on the grid.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Cell {
@@ -137,6 +142,11 @@ impl Cell {
         }
     }
 
+    /// Whether a room may be there: within [`GRID_REACH`] of the grid's middle.
+    const fn in_reach(self) -> bool {
+        self.x.abs() <= GRID_REACH && self.y.abs() <= GRID_REACH
+    }
+
     /// Its middle, in map units.
     pub(crate) fn middle(self) -> [f64; 2] {
         [f64::from(self.x) * CELL, f64::from(self.y) * CELL]
@@ -157,8 +167,8 @@ impl RoomId {
 /// A room as planned.
 #[derive(Clone, Debug)]
 pub(crate) struct RoomPlan {
-    /// Where it is.
-    pub(crate) cell: Cell,
+    /// Its middle on the map.
+    pub(crate) middle: [f64; 2],
     /// Its shape.
     pub(crate) shape: RoomShape,
     /// Its floor; the lower one of a room on two levels.
@@ -227,6 +237,8 @@ pub(crate) struct Link {
 pub(crate) struct Plan {
     /// The rooms: the path from the start to the exit, then the rooms off it.
     pub(crate) rooms: Vec<RoomPlan>,
+    /// Each room's place on the grid, in the rooms' order.
+    pub(crate) cells: Vec<Cell>,
     /// The passages.
     pub(crate) links: Vec<Link>,
     /// How many rooms the path has: the last of them holds the exit.
@@ -289,6 +301,7 @@ impl Plan {
             .ok_or(GenError::Layout)?;
         let mut plan = Self {
             rooms: Vec::new(),
+            cells: cells.clone(),
             links: Vec::new(),
             path,
             key: None,
@@ -329,7 +342,7 @@ impl Plan {
             let free: Vec<Cell> = Side::ALL
                 .into_iter()
                 .map(|side| last.beside(side))
-                .filter(|cell| !cells.contains(cell))
+                .filter(|cell| cell.in_reach() && !cells.contains(cell))
                 .collect();
             cells.push(*rng.pick(&free)?);
         }
@@ -388,7 +401,7 @@ impl Plan {
         };
         let turned = rng.pick(&Side::ALL).copied().unwrap_or(Side::East);
         RoomPlan {
-            cell,
+            middle: cell.middle(),
             shape,
             floor,
             half,
@@ -423,15 +436,17 @@ impl Plan {
             // Not off the exit's room: the level ends there.
             let mut parents: Vec<usize> = (0..self.path.saturating_sub(1)).collect();
             rng.shuffle(&mut parents);
-            let taken: Vec<Cell> = self.rooms.iter().map(|room| room.cell).collect();
+            let taken = self.cells.clone();
             let found = parents.into_iter().find_map(|parent| {
                 let room = self.rooms.get(parent)?;
+                let at = *taken.get(parent)?;
                 let mut sides = Side::ALL;
                 rng.shuffle(&mut sides);
-                let side = sides
-                    .into_iter()
-                    .find(|&side| !taken.contains(&room.cell.beside(side)))?;
-                Some((parent, side, room.cell.beside(side), room.floor, room.depth))
+                let side = sides.into_iter().find(|&side| {
+                    let beside = at.beside(side);
+                    beside.in_reach() && !taken.contains(&beside)
+                })?;
+                Some((parent, side, at.beside(side), room.floor, room.depth))
             });
             let Some((parent, side, cell, floor, depth)) = found else {
                 return;
@@ -439,6 +454,7 @@ impl Plan {
             let id = RoomId(self.rooms.len());
             let shape = Self::shape(has, rng);
             let floor = Self::next_floor(floor, rng);
+            self.cells.push(cell);
             self.rooms
                 .push(Self::room(cell, shape, floor, depth.saturating_add(1), rng));
             self.links.push(Link {
