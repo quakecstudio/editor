@@ -2754,7 +2754,7 @@ groups:
     - 'crates/qs-workbench: `map.play_from_here` with no eye starts the player at the map''s own `info_player_start`, and refuses a map that has none; docs/commands.md and docs/agent-reference/maps.md say so'
     - 'apps/desktop: Play, from the toolbar, the Run menu and its key, runs that while the Map tab shows an open map, and `preview.play` otherwise'
     acceptance:
-    - '`map.play_from_here` with no eye plays the open map with the player at its start, facing as the start says, checked by a test in the simulation; a map with no start is refused with an error that says so'
+    - '`map.play_from_here` with no eye gives the game the map''s first player start as the place and its facing as the facing, checked by a test; a map with no start is refused with an error that says so, before anything compiles'
     - 'Play with the Map tab showing an open map runs the map''s play, and with any other tab showing runs the project''s, checked by tests of the window'
     - 'Recorded in the PR: New Random Map then Play in the running app, with the screenshot of the game in the level'
     verify:

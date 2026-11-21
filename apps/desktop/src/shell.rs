@@ -37,6 +37,7 @@ use qs_workbench::TASK_LIST;
 use qs_workbench::dock::DockFrame;
 use qs_workbench::game_files::GameFiles;
 use qs_workbench::ids::ActionIndex;
+use qs_workbench::map_compile::{MAP_PLAY_FROM_HERE, PlayFromHereParams};
 use qs_workbench::map_profile::MAP_RUN_PROFILE;
 use qs_workbench::open_paths::{OPEN_PATHS, OpenPathsParams, PathsOpened, TAKE_OPENED_PATHS};
 use qs_workbench::search::{
@@ -1687,9 +1688,22 @@ impl Shell {
     }
 
     /// Runs the play-loop command `id` from the toolbar, keeping its error for the toolbar to
-    /// show until the next command.
+    /// show until the next command. Play, while the Map tab shows an open map, plays that
+    /// map from its own player start (L-52); anywhere else it plays the project.
     fn control(&mut self, id: &str) {
-        let result = if id == PLAY {
+        let map_shown =
+            self.centre_tab == CentreTab::Map && self.session.context().workbench.map().is_some();
+        let result = if id == PLAY && map_shown {
+            let params = PlayFromHereParams {
+                eye: None,
+                angles: None,
+                region: None,
+                start: qs_workbench::GameStart::Running,
+            };
+            serde_json::to_value(params)
+                .map_err(ShellError::from)
+                .and_then(|params| Ok(self.session.execute(MAP_PLAY_FROM_HERE, params)?))
+        } else if id == PLAY {
             serde_json::to_value(PlayParams::default())
                 .map_err(ShellError::from)
                 .and_then(|params| Ok(self.session.execute(id, params)?))

@@ -521,6 +521,57 @@ fn play_from_outside_the_region_is_refused() {
     assert!(!path.with_extension("bsp").exists(), "nothing was compiled");
 }
 
+// No spec statement: L-52: with no eye the map is played from its first player start, the eye
+// view_ofs above its origin and the facing the start's own unless one is given; an eye given
+// is the eye; a map with no start is refused before anything compiles, and plays from an eye
+#[test]
+fn with_no_eye_a_map_plays_from_its_own_start() {
+    use super::PlayFromHereParams;
+    use crate::preview::GameStart;
+    let params = |eye, angles| PlayFromHereParams {
+        eye,
+        angles,
+        region: None,
+        start: GameStart::default(),
+    };
+    let world = "{\n\"classname\" \"worldspawn\"\n}\n";
+    let starts = format!(
+        "{world}{{\n\"classname\" \"light\"\n\"origin\" \"1 1 1\"\n}}\n\
+         {{\n\"classname\" \"info_player_start\"\n\"origin\" \"8 -16 24\"\n\"angle\" \"90\"\n}}\n\
+         {{\n\"classname\" \"info_player_start\"\n\"origin\" \"99 99 99\"\n}}\n"
+    );
+    let file = MapFile::parse(starts.as_bytes()).unwrap();
+    assert_eq!(
+        params(None, None).view_in(&file).unwrap(),
+        ([8.0, -16.0, 46.0], Some([0.0, 90.0, 0.0]))
+    );
+    assert_eq!(
+        params(None, Some([10.0, 20.0, 0.0]))
+            .view_in(&file)
+            .unwrap(),
+        ([8.0, -16.0, 46.0], Some([10.0, 20.0, 0.0]))
+    );
+    assert_eq!(
+        params(Some([1.0, 2.0, 3.0]), None).view_in(&file).unwrap(),
+        ([1.0, 2.0, 3.0], None)
+    );
+    let none = MapFile::parse(world.as_bytes()).unwrap();
+    assert!(params(Some([1.0, 2.0, 3.0]), None).view_in(&none).is_ok());
+    let error = params(None, None).view_in(&none).unwrap_err();
+    assert!(error.to_string().contains("no player start"), "{error}");
+
+    let dir = std::env::temp_dir().join(format!("qs-wb-no-start-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("empty.map");
+    std::fs::write(&path, world).unwrap();
+    let mut session = open(&path);
+    let error = session
+        .execute(super::MAP_PLAY_FROM_HERE, json!({}))
+        .unwrap_err();
+    assert!(error.to_string().contains("no player start"), "{error}");
+    assert!(!path.with_extension("bsp").exists(), "nothing was compiled");
+}
+
 // spec MAP-16.1: the region of a layer is the box around its brushes: compiling it leaves out
 // the brushes of the map outside it
 #[test]

@@ -18,7 +18,6 @@ use qs_map::{Brush, Item, MapFile, Surface, TexDef};
 use qs_map_light::{Light, Sampling};
 use qs_sim::{LoadOptions, UserCmd, World};
 use qs_wad::write::WadBuilder;
-use qs_workbench::GameStart;
 use qs_workbench::map_compile::PlayFromHereParams;
 
 use crate::shape_stairs::{EYE, FRAME, progs};
@@ -218,15 +217,7 @@ fn the_player_is_put_where_its_box_fits() {
         .compile(&map(), None)
         .unwrap();
     let bsp = Bsp::read(&compiled.bsp, BspLoader::default()).unwrap();
-    let at = |eye: [f64; 3]| {
-        PlayFromHereParams {
-            eye,
-            angles: None,
-            region: None,
-            start: GameStart::default(),
-        }
-        .origin_in(&bsp)
-    };
+    let at = |eye: [f64; 3]| PlayFromHereParams::origin_in(eye, &bsp);
     assert_eq!(at([-96.0, 40.0, 80.0]).unwrap(), [-96.0, 40.0, 58.0]);
     let low = at([-96.0, 40.0, 30.0]).unwrap();
     assert_eq!([low[0], low[1]], [-96.0, 40.0]);

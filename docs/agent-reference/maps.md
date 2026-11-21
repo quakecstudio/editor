@@ -142,7 +142,8 @@ asked for, with its lights; `map.build_passage` joins two doorways. Each is one 
   row from -3072 to 3072; `map.issues` says when an entity is past it.
 - Build a level from these, no two rooms of it the same shape and size, and vary the
   floors: a room 64 up or down from the last is four steps in the passage. `map.compile`
-  says whether it is sealed, and `map.play_from_here` whether anything stands in the dark.
+  says whether it is sealed, and `map.play_from_here` whether anything stands in the dark. With no
+  `eye` it starts the player at the map's own `info_player_start`, as the game does.
 
 ## A whole level at once
 

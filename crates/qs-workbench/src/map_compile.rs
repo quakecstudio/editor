@@ -386,10 +386,13 @@ impl<C: HasPreview + 'static> Command<C> for MapPortalsCommand {
 #[serde(deny_unknown_fields)]
 pub struct PlayFromHereParams {
     /// Where the player's eye goes: the map view's camera. The player's origin is
-    /// `view_ofs` below it, moved up or down to the nearest place its box fits.
-    pub eye: [f64; 3],
-    /// Which way the player faces, pitch, yaw and roll in degrees; ahead along x when not
-    /// given.
+    /// `view_ofs` below it, moved up or down to the nearest place its box fits. When not
+    /// given the player starts where the map's own first `info_player_start` stands, as
+    /// the game starts the map; a map with none is refused.
+    #[serde(default)]
+    pub eye: Option<[f64; 3]>,
+    /// Which way the player faces, pitch, yaw and roll in degrees; when not given, the way
+    /// the player start faces with no eye, and ahead along x with one.
     #[serde(default)]
     pub angles: Option<[f64; 3]>,
     /// Only this part of the map, sealed, so the room being worked on compiles at once
@@ -413,18 +416,45 @@ const PLAYER_ROOM_SEARCH: u8 = 64;
 /// Hull 1, the clipping hull of the player's box, (-16, -16, -24) to (16, 16, 32) (BSP-11.3).
 const PLAYER_HULL: usize = 1;
 
+/// The classname of the entity a map starts its player at.
+const PLAYER_START: &[u8] = b"info_player_start";
+
 impl PlayFromHereParams {
-    /// Where the player's origin goes in `bsp`: `view_ofs` (id's `'0 0 22'`, NET-4.4) below
-    /// the eye, at the nearest height within [`PLAYER_ROOM_SEARCH`] units where hull 1, the
+    /// The eye and the facing to play `file` from: those given, or with no eye the map's
+    /// first `info_player_start`, the eye `view_ofs` above its origin and the facing its
+    /// own unless one is given (L-52).
+    ///
+    /// # Errors
+    ///
+    /// [`WorkbenchError::NoPlayerStart`] when no eye is given and the map has no start.
+    pub fn view_in(
+        &self,
+        file: &qs_map::MapFile,
+    ) -> Result<([f64; 3], Option<[f64; 3]>), WorkbenchError> {
+        if let Some(eye) = self.eye {
+            return Ok((eye, self.angles));
+        }
+        let start = file
+            .entities
+            .iter()
+            .find(|entity| entity.classname() == Some(PLAYER_START))
+            .ok_or(WorkbenchError::NoPlayerStart)?;
+        let [x, y, z] = start.origin();
+        let eye = [x, y, z + f64::from(DEFAULT_VIEWHEIGHT)];
+        Ok((eye, self.angles.or_else(|| start.angles())))
+    }
+
+    /// Where the player's origin goes in `bsp` for the eye `eye`: `view_ofs` (id's
+    /// `'0 0 22'`, NET-4.4) below the eye, at the nearest height within [`PLAYER_ROOM_SEARCH`] units where hull 1, the
     /// player's box, is not in solid; looked for first above, then below, a unit at a time.
     ///
     /// # Errors
     ///
     /// [`PreviewError::NoRoom`] when the box fits nowhere along that line, or the eye is not a
     /// point the game can hold.
-    pub fn origin_in(&self, bsp: &Bsp<'_>) -> Result<[f32; 3], PreviewError> {
-        let no_room = || PreviewError::NoRoom(self.eye);
-        let [x, y, eye] = self.eye.map(single);
+    pub fn origin_in(eye: [f64; 3], bsp: &Bsp<'_>) -> Result<[f32; 3], PreviewError> {
+        let no_room = || PreviewError::NoRoom(eye);
+        let [x, y, eye] = eye.map(single);
         let z = eye - DEFAULT_VIEWHEIGHT;
         if ![x, y, z].iter().all(|c| c.is_finite()) {
             return Err(no_room());
@@ -632,7 +662,8 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
     const ID: &'static str = MAP_PLAY_FROM_HERE;
     const SUMMARY: &'static str = "Compiles the open map fast, with no vis and fast light, into \
         the project's build, starts the game on it and puts the player's eye at a point, facing \
-        a way: the map view's camera (MAP-13). It answers where the player was put, the light \
+        a way: the map view's camera (MAP-13), or with no eye the map's own player start. It \
+        answers where the player was put, the light \
         there and the entities that stand in the dark; with start paused the game waits there \
         with its monsters not yet awake, for a screenshot of the map as it was built.";
     type Params = PlayFromHereParams;
@@ -645,14 +676,17 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
         params: PlayFromHereParams,
     ) -> Result<Outcome<PlayedHere, C>, PreviewError> {
         let (workbench, preview) = context.workbench_and_preview();
+        let document = workbench
+            .map()
+            .ok_or(PreviewError::Build(WorkbenchError::NoMap))?;
+        let (eye, angles) = params
+            .view_in(document.file())
+            .map_err(PreviewError::Build)?;
         // A region the camera is outside would put the player in the seal: refused before
         // anything is compiled or written.
         if let Some(region) = &params.region {
-            let document = workbench
-                .map()
-                .ok_or(PreviewError::Build(WorkbenchError::NoMap))?;
             let region = region.of(document.file()).map_err(PreviewError::Build)?;
-            if !region.holds(params.eye) {
+            if !region.holds(eye) {
                 return Err(PreviewError::Build(WorkbenchError::EyeOutsideRegion));
             }
         }
@@ -709,7 +743,7 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
         }
         // The map is written first, as a compile writes it; a camera with no room for the
         // player then plays nothing.
-        let origin = params.origin_in(&bsp)?;
+        let origin = PlayFromHereParams::origin_in(eye, &bsp)?;
         // What is drawn is what the QuakeC gives a model; read before the game starts, so
         // that nothing plays when it cannot be told.
         let drawn: HashSet<String> = workbench
@@ -730,7 +764,7 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
             PlaceLight::around(&bsp, origin, &|name| drawn.contains(name)).map_err(entity_lump)?;
         preview.play_built(built, Some(name.clone()), params.start)?;
         let client = preview.client().ok_or(PreviewError::NotRunning)?;
-        let angles = params.angles.unwrap_or_default().map(single);
+        let angles = angles.unwrap_or_default().map(single);
         // BRIDGE-4.19: the game puts the player where its box is free of the map's entities
         // too, which the BSP's hull does not hold, and says where.
         let origin = match client.place_player_near(origin, angles) {
@@ -742,7 +776,7 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
                 ..
             }) => {
                 preview.stop();
-                return Err(PreviewError::NoRoom(params.eye));
+                return Err(PreviewError::NoRoom(eye));
             }
             Err(error) => return Err(error.into()),
         };

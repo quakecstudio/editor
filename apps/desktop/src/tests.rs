@@ -4003,6 +4003,50 @@ fn play_from_here_writes_the_map_into_the_build() {
     assert!(bsp.visibility.is_empty(), "no vis");
 }
 
+// No spec statement: L-52: Play, from the toolbar, a key or the menu, plays the map open in the
+// Map tab while that tab shows, compiling it into the build as Play from here does; with
+// another tab showing it plays the project and compiles no map
+#[test]
+fn play_with_the_map_tab_showing_plays_the_open_map() {
+    let built = |dir: &Path| -> usize {
+        fs::read_dir(dir.join("build")).map_or(0, |entries| {
+            entries
+                .filter_map(Result::ok)
+                .filter(|entry| entry.path().join("maps/keep.bsp").exists())
+                .count()
+        })
+    };
+    for (name, tab) in [
+        ("play-map", CentreTab::Map),
+        ("play-project", CentreTab::Editor),
+    ] {
+        let dir = keep_copy(name);
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/keep/gfx/keep.wad");
+        fs::create_dir_all(dir.join("gfx")).unwrap();
+        fs::copy(fixture, dir.join("gfx/keep.wad")).unwrap();
+        let mut harness = accessible();
+        let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+        shell
+            .execute("project.open", json!({ "path": dir }))
+            .unwrap();
+        shell
+            .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+            .unwrap();
+        harness.run();
+        if tab == CentreTab::Editor {
+            let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+            shell.open_paths([dir.join("world.qc")]);
+            harness.run();
+        }
+        let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+        assert_eq!(shell.centre_tab(), tab);
+        shell.run_chosen(qs_workbench::PLAY);
+        harness.run();
+        // The open map is compiled into the build only when its tab shows.
+        assert_eq!(built(&dir), usize::from(tab == CentreTab::Map), "{name}");
+    }
+}
+
 // No spec statement: P6-20, MAP-28: Compile runs the chosen profile and says how it ended and
 // how long it took, Cmd+B as the button; Show portals draws the last compile's portals;
 // Restore the newest backup puts the backup in the editor
