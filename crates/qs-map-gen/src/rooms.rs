@@ -160,9 +160,21 @@ impl<'a> Room<'a> {
         Self { plan, part }
     }
 
+    /// How far below its floor and above its ceiling the room's space reaches: a pit, a
+    /// raised ceiling, a dome, a lantern.
+    pub(crate) fn beyond(&self) -> [f64; 2] {
+        match self.plan.shape {
+            RoomShape::Hall => [0.0, COFFER_RISE],
+            RoomShape::Chamber => [0.0, DOME_RISE + DOME_RISE],
+            RoomShape::Pit => [PIT_DEPTH, 0.0],
+            RoomShape::Cross => [0.0, LANTERN_RISE],
+            RoomShape::Split | RoomShape::Court | RoomShape::Vault => [0.0, 0.0],
+        }
+    }
+
     /// The room's middle on the map.
     fn middle(&self) -> [f64; 2] {
-        self.plan.cell.middle()
+        self.plan.middle
     }
 
     /// The box `x` by `y` about the room's middle, between the heights `z`.

@@ -290,6 +290,15 @@ impl MapDocument {
                 }
             }
         }
+        if let Some((e, line)) = past_reach(file) {
+            issues.push(MapIssue {
+                line,
+                message: PAST_REACH.to_owned(),
+                entity: Some(EntityIndex::new(e)),
+                brush: None,
+                fix: None,
+            });
+        }
         let has_start = file
             .entities
             .iter()
@@ -360,6 +369,30 @@ impl MapDocument {
 
 /// The message of a brush with no volume.
 const NO_VOLUME: &str = "a brush with no volume, which both compilers drop";
+
+/// How far from the map's middle a position is sent whole in 16 bits: a coordinate is the
+/// short `(int) (f * 8)` (NET-1.1), which holds -4096 and less than 4096.
+const COORD_REACH: f64 = 4096.0;
+
+/// The message of a map with an entity whose origin 16 bits do not hold.
+const PAST_REACH: &str = "an entity is 4096 units or more from the map's middle: the game's \
+    own protocol and FitzQuake's send a position in 16 bits (NET-1.1), so what is there, and a \
+    player or a monster that goes there, is drawn somewhere else; it plays only in an engine \
+    whose protocol sends wider coordinates (NET-6.2)";
+
+/// The first point entity of `file` whose origin a 16-bit coordinate does not hold, by its
+/// place and its line. An origin is what the game sends; the world's brushes are not sent,
+/// and a brush entity is sent by its origin, which is the map's middle until it moves.
+fn past_reach(file: &MapFile) -> Option<(usize, u32)> {
+    let held = |at: &f64| (-COORD_REACH..COORD_REACH).contains(at);
+    file.entities
+        .iter()
+        .enumerate()
+        .find_map(|(place, entity)| {
+            let far = !entity.has_brushes() && !entity.origin().iter().all(held);
+            far.then(|| (place, entity.line()))
+        })
+}
 
 /// The message of a map with no player start.
 const NO_START: &str = "no info_player_start: the game cannot put a player in the map";

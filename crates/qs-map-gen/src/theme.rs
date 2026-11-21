@@ -219,6 +219,31 @@ impl Paints {
         self.trigger.as_ref().unwrap_or(&self.wall)
     }
 
+    /// Paints of these surfaces, for a room or a passage built on its own: no level, so no
+    /// theme's name and no trigger.
+    pub(crate) fn named(
+        wall: Surface,
+        floor: Surface,
+        ceiling: Surface,
+        trim: Surface,
+        door: Surface,
+        liquid: Option<Surface>,
+        sky: Option<Surface>,
+    ) -> Self {
+        Self {
+            name: PLAIN_THEME,
+            world: WorldType::Medieval,
+            wall,
+            floor,
+            ceiling,
+            trim,
+            door,
+            liquid,
+            sky,
+            trigger: None,
+        }
+    }
+
     /// The paints for a level, from the names in `textures`: a theme whose walls, floors and
     /// ceilings are all there, chosen by `rng`, else any plain textures.
     ///

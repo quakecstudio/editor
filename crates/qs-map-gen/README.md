@@ -20,5 +20,12 @@ level.
   id's levels and for LibreQuake's, else any plain textures. **The entities** (`populate`) are
   id's classnames (`qcc/v101qc`), and only those the game defines are placed.
 
+- **The kit** (`kit`, L-49) builds one room or one passage on its own, for a map built by
+  hand or by an agent: `RoomKit::build` gives a room in a block of rock of its own, sealed but
+  for the doorways asked for, and `PassageKit::build` joins two doorways, with stairs where
+  their floors differ. Rooms and passages that meet at a doorway seal each other. The commands
+  are `map.build_room` and `map.build_passage`, in `qs-map-edit`; the shapes are compiled and
+  walked in `crates/qs-tests/tests/it/room_kit.rs`.
+
 Layer: L4. Nothing is ported. The command is `map.generate`, in `qs-map-edit`; the levels are
 compiled and walked in `crates/qs-tests/tests/it/random_levels.rs`.
