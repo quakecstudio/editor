@@ -2711,3 +2711,51 @@ groups:
     - 'A y-up model facing -z imports facing +x from fbx as it does from obj, checked by a test'
     verify:
     - 'cargo nextest run -p qs-mdl -p qs-workbench'
+  - key: L-51
+    title: A rigged fbx from Blender imports with its animation's poses wrong
+    labels:
+    - L0-formats
+    - area:editor
+    - type:bug
+    size: M
+    reqs:
+    - PRIN-6
+    - MAP-4
+    depends:
+    - L-50
+    summary: |
+      On 2026-11-21 two rigged files of assimp's test models, `huesitos.fbx` and `animation_with_skeleton.fbx`, both written by Blender, were posed by Blender 5.2.4 with each of its two fbx importers (`wm.fbx_import`, built on ufbx, and `import_scene.fbx`) at the times `qs_mdl::mesh::fbx` samples them, and every vertex compared. Blender's two importers agree with each other on every frame. Ours matches the first frame of `huesitos.fbx` and is then up to 105% of the model's size from the nearest vertex of Blender's, the model growing from 828 units to over 1300 while Blender's stays near 830; `animation_with_skeleton.fbx` is 9.5% off in its first frame. Both files have their bones under a `Model` of the kind `Null`, the armature, scaled by 100, turned -90 degrees about x and animated, and the reader makes joints of `LimbNode` models alone, as FTEQW's converter does, so a bone turns its vertices about the wrong point. The second file's bind pose is not its limbs' own values either: each cluster's `Transform` and `TransformLink` say where the mesh and the bone were when the mesh was bound, and MDL-10.7 leaves them unread. The fixtures did not show it: `samples.py` writes limbs with no model above them and a bind pose that is the limbs' own.
+    environment: |
+      macOS (Apple M5), main at 39f45bf6; assimp's `test/models/FBX/huesitos.fbx` and `animation_with_skeleton.fbx`; Blender 5.2.4 run with `-b`, the scene's rate as the file sets it, a pose every tenth of a second and at the last key
+    deliverable:
+    - 'crates/qs-mdl: every `Model` of an fbx is a node of one tree, a joint, whatever its kind, each posed in its parent''s space and animated by its curve nodes; a skinned geometry is bound by its clusters'' `Transform` and `TransformLink` where the file has them; a mesh model''s `GeometricRotation` and `GeometricScaling` are read; the statements in docs/spec/mdl.md, the changed ones withdrawn and restated'
+    - 'crates/qs-mdl/src/mesh/fixtures: a model with its limbs under a scaled, turned and animated `Null` and a bind pose other than its limbs'' own, written by scripts/model-formats/samples.py as text and binary, with the poses Blender makes of it recorded beside it'
+    acceptance:
+    - 'The reader''s poses of the new fixture are Blender''s recorded poses of it, every vertex of every frame, checked by a test that fails before the fix'
+    - 'Recorded in the PR: `huesitos.fbx` and `animation_with_skeleton.fbx` posed by the reader and by Blender at the same times, every vertex of every frame, with the greatest distance between them; and the six other files of assimp''s FBX test models used for L-50 compared at rest'
+    - 'The tests that hold the reader to FTEQW''s converter on the fixtures of L-47 still pass'
+    verify:
+    - 'cargo nextest run -p qs-mdl -p qs-workbench'
+  - key: L-52
+    title: Play plays the map open in the Map tab
+    labels:
+    - L7-ui
+    - area:map
+    - type:feature
+    size: S
+    reqs:
+    - MAP-13
+    - UI-14
+    depends:
+    - L-48
+    summary: |
+      Found on 2026-11-21 trying L-48 in the running app: File, New Random Map makes a level and shows it in the Map tab, and Play then starts the game's own first map, not the level just made. Playing it takes the map toolbar's Play from here icon, which starts at the camera, outside the level until the camera is flown in. Justin, 2026-11-21, asked whether Play with a map open in the Map tab should play that map: "yes". Prior art: TrenchBroom's Run, Launch Engine starts the game on the open map at its own start, and Roblox Studio's Play starts the open place at its spawn where Play Here starts at the camera. So Play, while the Map tab shows an open map, compiles that map as Play from here does and starts the game on it at the map's own player start; anywhere else Play is unchanged.
+    deliverable:
+    - 'crates/qs-workbench: `map.play_from_here` with no eye starts the player at the map''s own `info_player_start`, and refuses a map that has none; docs/commands.md and docs/agent-reference/maps.md say so'
+    - 'apps/desktop: Play, from the toolbar, the Run menu and its key, runs that while the Map tab shows an open map, and `preview.play` otherwise'
+    acceptance:
+    - '`map.play_from_here` with no eye plays the open map with the player at its start, facing as the start says, checked by a test in the simulation; a map with no start is refused with an error that says so'
+    - 'Play with the Map tab showing an open map runs the map''s play, and with any other tab showing runs the project''s, checked by tests of the window'
+    - 'Recorded in the PR: New Random Map then Play in the running app, with the screenshot of the game in the level'
+    verify:
+    - 'cargo nextest run -p qs-workbench -p quakec-studio'
