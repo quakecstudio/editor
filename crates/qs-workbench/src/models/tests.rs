@@ -580,3 +580,235 @@ fn a_flat_model_takes_frames_in_its_plane() {
         .to_string();
     assert!(error.contains("a move is a number on each axis"), "{error}");
 }
+
+/// A crate one unit a side as an `.obj` file with y up, its faces counterclockwise from
+/// outside, with texture vertices when `textured`.
+fn crate_obj(textured: bool) -> String {
+    let mut text = String::from("# a crate\no crate\n");
+    for z in [0, 1] {
+        for (x, y) in [(0, 0), (1, 0), (1, 1), (0, 1)] {
+            text.push_str(&format!("v {x} {y} {z}\n"));
+        }
+    }
+    if textured {
+        text.push_str("vt 0 0\nvt 1 0\nvt 1 1\nvt 0 1\n");
+    }
+    // Back, front, bottom, right, top, left.
+    for face in [
+        [4, 3, 2, 1],
+        [5, 6, 7, 8],
+        [1, 2, 6, 5],
+        [2, 3, 7, 6],
+        [3, 4, 8, 7],
+        [4, 1, 5, 8],
+    ] {
+        text.push('f');
+        for (corner, vertex) in face.into_iter().enumerate() {
+            if textured {
+                text.push_str(&format!(" {vertex}/{}", corner + 1));
+            } else {
+                text.push_str(&format!(" {vertex}"));
+            }
+        }
+        text.push('\n');
+    }
+    text
+}
+
+// spec MDL-9.1, MDL-9.3: an .obj with texture vertices is imported as a model that keeps
+// them, on the PNG given as its skin, scaled and with y made up; the model loads, has the
+// file's one pose, and is where the file's positions are
+#[test]
+fn an_obj_is_imported_with_its_own_skin() {
+    let (root, mut session) = project("import-obj", &[]);
+    let source = root.join("meshes/crate.obj");
+    std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+    std::fs::write(&source, crate_obj(true)).unwrap();
+    // A picture of 8 by 4, each pixel a colour of the palette: colour n is (n, 255 - n, n / 2).
+    let png = root.join("meshes/crate.png");
+    let mut picture = image::RgbaImage::new(8, 4);
+    for (x, y, pixel) in picture.enumerate_pixels_mut() {
+        let n = u8::try_from(y * 8 + x).unwrap() + 32;
+        *pixel = image::Rgba([n, !n, n >> 1, 255]);
+    }
+    picture.save(&png).unwrap();
+    let path = root.join("progs/crate.mdl");
+    let made = session
+        .execute(
+            MODEL_IMPORT,
+            json!({ "source": source, "path": path, "skin_png": png, "scale": 32.0 }),
+        )
+        .unwrap();
+    assert_eq!(made["layout"], "own");
+    assert_eq!(made["skin_size"], json!([8, 4]));
+    assert_eq!(made["triangles"], 12);
+    assert_eq!(made["frame_line"], "base");
+    let model = read(&path);
+    assert_eq!(model.skins, [ModelSkin::Single((32..64).collect())]);
+    // With y up, the file's z of 0 to 1 is Quake's x of -32 to 0, and its y is z.
+    let seen = session
+        .execute(MODEL_INSPECT, json!({ "path": path }))
+        .unwrap();
+    let bounds: [[f32; 3]; 2] = serde_json::from_value(seen["bounds"].clone()).unwrap();
+    for (at, want) in bounds
+        .iter()
+        .flatten()
+        .zip([-32.0, -32.0, 0.0, 0.0, 0.0, 32.0])
+    {
+        assert!((at - want).abs() < 0.2, "{bounds:?}");
+    }
+    // A file that is there is not written over.
+    let error = session
+        .execute(MODEL_IMPORT, json!({ "source": source, "path": path }))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("is there already"), "{error}");
+}
+
+// spec MDL-9.4: an .obj without texture vertices is imported laid out front and back, its
+// skin one colour of the size the layout needs; a PNG is refused for it; its skin can then
+// go out, be painted and come back
+#[test]
+fn an_obj_without_coordinates_is_laid_out() {
+    let (root, mut session) = project("import-flat", &[]);
+    let source = root.join("crate.obj");
+    std::fs::write(&source, crate_obj(false)).unwrap();
+    let path = root.join("progs/crate.mdl");
+    let made = session
+        .execute(
+            MODEL_IMPORT,
+            json!({ "source": source, "path": path, "up": "z", "scale": 16.0, "colour": 20 }),
+        )
+        .unwrap();
+    assert_eq!(made["layout"], "front_and_back");
+    // 16 units wide and high: 8 pixels a unit and 4 around, two halves.
+    assert_eq!(made["skin_size"], json!([264, 132]));
+    assert_eq!(
+        (made["vertices"].clone(), made["triangles"].clone()),
+        (json!(8), json!(12))
+    );
+    let model = read(&path);
+    assert_eq!(model.skins, [ModelSkin::Single(vec![20; 264 * 132])]);
+    // The face that looks back along x is on the skin's back half, the rest on the front.
+    let back = model
+        .triangles
+        .iter()
+        .filter(|triangle| triangle.facesfront == 0)
+        .count();
+    assert_eq!(back, 2);
+
+    let png = root.join("skin.png");
+    session
+        .execute(MODEL_EXPORT_SKIN, json!({ "path": path, "png_path": png }))
+        .unwrap();
+    session
+        .execute(MODEL_SET_SKIN, json!({ "path": path, "png_path": png }))
+        .unwrap();
+    let other = root.join("progs/other.mdl");
+    let error = session
+        .execute(
+            MODEL_IMPORT,
+            json!({ "source": source, "path": other, "skin_png": png }),
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("the mesh has no texture coordinates"),
+        "{error}"
+    );
+    assert!(!other.exists());
+}
+
+// spec MDL-9.2: an .iqe with an animation is imported with a frame for each of its frames,
+// named for QuakeC, each vertex where its joints take it
+#[test]
+fn an_iqe_is_imported_with_its_animation() {
+    let (root, mut session) = project("import-iqe", &[]);
+    let source = root.join("arm.iqe");
+    std::fs::write(
+        &source,
+        "# Inter-Quake Export\n\
+         joint \"root\" -1\n\tpq 0 0 0 0 0 0 1\n\
+         joint \"arm\" 0\n\tpq 8 0 0 0 0 0 1\n\
+         mesh \"arm\"\n\
+         vp 0 0 0\n\tvb 0 1\n\
+         vp 0 4 0\n\tvb 0 1\n\
+         vp 0 0 4\n\tvb 0 1\n\
+         vp 16 0 0\n\tvb 1 1\n\
+         fm 0 1 2\nfm 0 2 3\nfm 0 3 1\nfm 1 3 2\n\
+         animation \"wave\"\n\
+         frame\npq 0 0 0 0 0 0 1\npq 8 0 0 0 0 0 1\n\
+         frame\npq 0 0 0 0 0 0 1\npq 8 0 0 0 0 0.70710678 0.70710678\n",
+    )
+    .unwrap();
+    let path = root.join("progs/arm.mdl");
+    let made = session
+        .execute(MODEL_IMPORT, json!({ "source": source, "path": path }))
+        .unwrap();
+    assert_eq!(made["frame_line"], "wave1 wave2");
+    assert_eq!(made["layout"], "front_and_back");
+    let model = read(&path);
+    let bytes = std::fs::read(&path).unwrap();
+    let mdl = qs_mdl::Mdl::read(&bytes).unwrap();
+    let tip = |entry: usize| {
+        let ModelFrameEntry::Single(frame) = &model.frames[entry] else {
+            panic!("single");
+        };
+        mdl.position(frame.verts[3])
+    };
+    // The arm's vertex, 8 along the arm, is turned a quarter about the arm's joint.
+    for (at, want) in tip(0).iter().zip([16.0, 0.0, 0.0]) {
+        assert!((at - want).abs() < 0.1, "{:?}", tip(0));
+    }
+    for (at, want) in tip(1).iter().zip([8.0, 8.0, 0.0]) {
+        assert!((at - want).abs() < 0.1, "{:?}", tip(1));
+    }
+}
+
+// No spec statement: L-47, model.import says what it cannot read: a file that is no mesh
+// it reads, a line of an .obj or an .iqe that is wrong, a scale that is none, a file that is
+// not there; and it makes nothing then
+#[test]
+fn an_import_that_fails_says_why() {
+    let (root, mut session) = project("import-refused", &[]);
+    let write = |name: &str, text: &str| {
+        let path = root.join(name);
+        std::fs::write(&path, text).unwrap();
+        path
+    };
+    let path = root.join("progs/made.mdl");
+    let mut refused = |params: serde_json::Value| {
+        let error = session
+            .execute(MODEL_IMPORT, params)
+            .unwrap_err()
+            .to_string();
+        assert!(!path.exists(), "{error}");
+        error
+    };
+    let fbx = write("thing.fbx", "");
+    let error = refused(json!({ "source": fbx, "path": path }));
+    assert!(error.contains("is no .obj or .iqe file"), "{error}");
+    let obj = write("bad.obj", "v 0 0 0\nf 1 2 3\n");
+    let error = refused(json!({ "source": obj, "path": path }));
+    assert!(
+        error.contains("bad.obj: line 2: a face refers to a vertex"),
+        "{error}"
+    );
+    let iqe = write(
+        "bad.iqe",
+        "# Inter-Quake Export\njoint a -1\npa 0 0 0 0 0 0\n",
+    );
+    let error = refused(json!({ "source": iqe, "path": path }));
+    assert!(
+        error.contains("bad.iqe: line 3: a pa pose is not read"),
+        "{error}"
+    );
+    let empty = write("empty.obj", "v 0 0 0\n");
+    let error = refused(json!({ "source": empty, "path": path }));
+    assert!(error.contains("the mesh has no triangle"), "{error}");
+    let good = write("good.obj", &crate_obj(false));
+    let error = refused(json!({ "source": good, "path": path, "scale": 0.0 }));
+    assert!(error.contains("a scale is a number above 0"), "{error}");
+    let error = refused(json!({ "source": root.join("none.obj"), "path": path }));
+    assert!(error.contains("cannot be read"), "{error}");
+}

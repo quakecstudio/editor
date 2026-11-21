@@ -150,3 +150,5 @@ specs/lsp/3.18/includes/messages/exit.md	LSP 3.18	https://raw.githubusercontent.
 specs/lsp/3.18/includes/types/uri.md	LSP 3.18	https://raw.githubusercontent.com/microsoft/language-server-protocol/gh-pages/_includes/types/uri.md	900502290378b0c4b7514672597f6f97ee948a1cdcdc36ae81edb69ca8c29dbc	2175	2026-10-21
 specs/lsp/3.18/includes/messages/showMessage.md	LSP 3.18	https://raw.githubusercontent.com/microsoft/language-server-protocol/gh-pages/_includes/messages/3.18/showMessage.md	a8259291d057bd918f3eedc1938756a223b2745d043158fbab44fbf3e80979a5	1086	2026-10-21
 specs/jsonrpc/2.0/specification.html	JSON-RPC 2.0	https://www.jsonrpc.org/specification	8fe1edfdca511d309e712e47447457ea5159b728ec02071a84593aed692aefeb	24512	2026-11-03
+specs/iqe/iqe.txt	IQE	https://raw.githubusercontent.com/lsalzman/iqm/1077b9c195a7f76f9b26266562f6e36bb4d5dac9/iqe.txt	b15831b0ad463dbeabe2a52c1af8740e9f85d081443fc650339574f0787d4d37	9715	2026-11-21
+specs/iqe/LICENSE	IQE	https://raw.githubusercontent.com/lsalzman/iqm/1077b9c195a7f76f9b26266562f6e36bb4d5dac9/LICENSE	d59d3561309391e2f4a76255afd16d265d83fefb90924d2229ef1e0cb67cc965	1060	2026-11-21

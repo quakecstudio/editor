@@ -18,6 +18,7 @@ ericw-tools) is never cached here; builds fetch it by commit and checksum.
 | `mcp/2026-07-28/` | Model Context Protocol 2026-07-28, every specification page, plus `schema/schema.ts` and `schema/schema.json` | [modelcontextprotocol/modelcontextprotocol](https://github.com/modelcontextprotocol/modelcontextprotocol), branch `main`, `docs/specification/2026-07-28/` and `schema/2026-07-28/` | Apache-2.0 (specification), MIT for older contributions |
 | `jsonrpc/2.0/` | JSON-RPC 2.0, the specification page as served (HTML; it has no plain-text origin) | [jsonrpc.org/specification](https://www.jsonrpc.org/specification) | Its own terms: may be copied and distributed without restriction, unmodified, with its copyright notice |
 | `acp/v1/` | Agent Client Protocol v1 (stable), every protocol page, plus `schema/schema.json` and `schema/meta.json` | [agentclientprotocol/agent-client-protocol](https://github.com/agentclientprotocol/agent-client-protocol), branch `main`, `docs/protocol/v1/` and `schema/v1/` | Apache-2.0 |
+| `iqe/` | Inter-Quake Export, the text format of the Inter-Quake Model kit that `model.import` reads: `iqe.txt`, and the kit's `LICENSE`, which its terms have kept with a copy | [lsalzman/iqm](https://github.com/lsalzman/iqm) at commit `1077b9c195a7f76f9b26266562f6e36bb4d5dac9` | MIT, "Copyright (c) 2010-2026 Lee Salzman" |
 
 Left out on purpose: generated `schema.mdx` pages (the schema files they render are cached),
 images, examples, and draft versions. Add a draft only when an issue implements it.

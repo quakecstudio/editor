@@ -481,3 +481,94 @@ ours was the same file for each, but for the bytes modelgen leaves as its stack 
 frame's name after its NUL, and the `lightnormalindex` of a frame's and a group's bounds);
 the other 231 both refused. With `Q_rint`'s half made a quarter in ours, every script
 modelgen took differed.
+
+## MDL-9 Reading a mesh
+
+**Sources:** the `.obj` format's description, "Object Files (.obj)", appendix B1 of
+Wavefront's Advanced Visualizer manual, as transcribed at
+<http://www.martinreddy.net/gfx/3d/OBJ.spec> (fetched 2026-11-21, SHA-256
+`60e398c4ce8fa91dcba2cf414914da03a030e1379a82620e9d3a7b0ea813263f`); the `.iqe` format's
+description, [`specs/iqe/iqe.txt`](../../specs/iqe/iqe.txt), and the exporter the format's
+own kit ships, `blender-5.0/iqm_export.py` of
+lsalzman/iqm@`1077b9c195a7f76f9b26266562f6e36bb4d5dac9` (fetched 2026-11-21), for what the
+description leaves unsaid. Nothing here is ported: the readers are written from the
+descriptions. Implemented by `crates/qs-mdl`'s `mesh`, `mesh::obj` and `mesh::iqe`
+([#1081](https://github.com/quakecstudio/editor/issues/1081), L-47).
+
+A reader gives a mesh: triangles whose corners each name a position and, where the file has
+one, a texture coordinate; and one or more poses, each a place for every position. In a
+mesh a triangle's corners go clockwise as seen from outside (MDL-7.4), a texture coordinate
+is `u` across the skin from its left and `v` down it from its top, and the axes are Quake's:
+x forward, y left, z up.
+
+### Behaviour
+
+- **MDL-9.1** An `.obj` file is read for its polygonal geometry: "`v x y z w`", "Specifies a
+  geometric vertex and its x y z coordinates"; "`vt u v w`", where "u is the value for the
+  horizontal direction of the texture" and "v is the value for the vertical direction of the
+  texture. The default is 0."; and "`f v1/vt1/vn1 v2/vt2/vn2 v3/vt3/vn3 . . .`", "A minimum
+  of three vertices are required." Vertices of each kind are "numbered separately, starting
+  with 1", and "A reference number of -1 indicates the vertex immediately above the
+  element." A face of more than three corners is a fan from its first. "If vertices are
+  ordered counterclockwise around the face, both the face and the normal will point toward
+  the viewer", so each triangle's corners are turned around. The description does not say
+  which end of the picture `v` is measured from, nor which axis is up. Ours: `v` is up from
+  the picture's foot, so `1 - v` down from its top; and y is up and -z forward unless the
+  caller says z is up, a position `(x, y, z)` being Quake's `(-z, -x, y)`. A `#` starts a
+  comment; every other statement is passed over. A vertex without three numbers, a face of
+  fewer than three corners and a reference to a vertex the file does not have above the face
+  are refused, with the line. The mesh has one pose, `base`.
+- **MDL-9.2** An `.iqe` file "must" start with "`# Inter-Quake Export`", and "Any line
+  beginning with # is a comment". `vp X Y Z W` is a vertex's position, `vt U V` its texture
+  coordinate ("If U or V are unspecified, they default to 0") and `vb Ai Aw Bi Bw ...` the
+  joints it is blended to and their weights; "Each vertex array must either be absent, or
+  the same length as all other vertex arrays", so the mesh has texture coordinates when
+  every vertex has one. `fa A B C...` names vertices "starting from the first vertex in the
+  file at index 0", `fm` "from the first vertex defined after the last "mesh" command", and
+  for both "Negative indexes are relative to the last defined vertex which is at -1" and
+  more than three are "a convex, planar polygon", read as a fan. "If there is no triangle
+  data, then all vertex data between the preceding "mesh" command and the next is
+  interpreted as mesh local triangle data, where each group of 3 vertexes defines a
+  triangle." `joint NAME PARENT` adds a joint, with no parent "If PARENT is less than 0 or
+  unspecified"; poses before any `animation` are the base poses, "the Nth pose in the list
+  corresponds to the Nth specified joint", and after one they are its current frame's, a
+  `frame` starting the next. A pose is applied as "output = (input*scale)*rotation +
+  translation": `pq Tx Ty Tz Qx Qy Qz Qw Sx Sy Sz`, where "If Qw is unspecified, it is
+  generated such that it is a negative value", and `pm`, a translation, the three rows of a
+  rotation matrix and a scale. Everything after a `comment` line is left. The description
+  does not say which way a triangle's corners go or which end `v` is measured from; the
+  kit's exporter writes "`# flip V axis of texture space`" as `1.0 - uv[1]` and "`# Quake
+  winding is reversed`", so ours: corners are clockwise and `v` is down from the top, as a
+  mesh's are, and z is up unless the caller says y is. Ours as well: a name in double quotes
+  is one word, as the exporter writes one; a quaternion is made a unit one; a `pa` pose,
+  whose three rotations the description gives no order for, is refused, as are an argument
+  that is no number, a face that is not three vertices of the file, a joint whose parent is
+  not above it and a base pose that has no size on an axis. An alias model has no skeleton,
+  so each frame of each animation is a pose of the mesh: a joint's place is its pose in its
+  parent's, a joint without a pose in a frame keeps its base pose, and a vertex is the sum,
+  by its weights over their total, of where each joint it is blended to takes it from where
+  the base poses had it; a vertex with no blend stays. A frame is named by its animation's
+  letters, digits and underscores and its number from 1 (`run1`, `run2`), the name cut so
+  that both fit a frame's 15 bytes, `anim` for one with no name; a file with no animation
+  has one pose, `base`.
+- **MDL-9.3** Ours: a mesh every corner of which has a texture coordinate is a model whose
+  vertices are the pairs of a position and a texture coordinate its corners have, in the
+  order they come. A vertex is at the skin's pixel `floor(u * skinwidth)`, `floor(v *
+  skinheight)`, kept on the skin; no vertex is on the seam and every triangle has
+  `facesfront` `DT_FACES_FRONT`. The skin is the caller's picture, or one colour of the size
+  the caller gives. A triangle two of whose corners are one position is left out; a mesh
+  with no triangle left or no pose, and a corner past the mesh's positions or texture
+  coordinates, are refused. Each pose is a frame made as MDL-7 says.
+- **MDL-9.4** Ours: a mesh without a texture coordinate for every corner is laid out as
+  modelgen lays a base (MDL-8.1, MDL-8.3, MDL-8.4) from its first pose, turned so that the
+  layout is of the mesh as it stands: what faces -x is on the back, the skin's right half,
+  and the rest on the front, seen from +x with +y to the right. Its skin is one colour, of
+  the size the layout gives; a picture is refused, since where the layout puts a triangle
+  is not known before it is made.
+
+### Test vectors
+
+The arm of `crates/qs-mdl/src/mesh/iqe/tests.rs`: a joint at the origin and a joint one unit
+along x under it, with a vertex at `(2, 0, 0)` blended to the second. In a frame whose
+second joint is `pq 1 0 0 0 0 0.70710678 0.70710678`, a quarter turn about z, the vertex is
+at `(1, 1, 0)`; one blended half to each joint is at `(1.5, 0.5, 0)`.

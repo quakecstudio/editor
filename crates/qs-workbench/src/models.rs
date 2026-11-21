@@ -13,6 +13,9 @@ use qs_map_edit::HasMap;
 use qs_map_edit::textures::light_palette;
 use qs_mdl::mdl::write::{MdlWriteError, Model, ModelFrame, ModelFrameEntry, ModelSkin};
 use qs_mdl::mdl::{Mdl, MdlError, TriVertX};
+use qs_mdl::mesh::iqe::IqeError;
+use qs_mdl::mesh::obj::{ObjError, Up};
+use qs_mdl::mesh::{Mesh, MeshError, MeshSkin, iqe, obj};
 use qs_vfs::{StdFs, Vfs};
 use qs_wad::texture::{Palette, PaletteIndex, WAD_FULLBRIGHT_FIRST};
 use schemars::JsonSchema;
@@ -40,6 +43,8 @@ pub const MODEL_RENAME_FRAMES: &str = "model.rename_frames";
 pub const MODEL_REMOVE_FRAMES: &str = "model.remove_frames";
 /// The id of `model.add_frames`.
 pub const MODEL_ADD_FRAMES: &str = "model.add_frames";
+/// The id of `model.import`.
+pub const MODEL_IMPORT: &str = "model.import";
 
 /// The colours of a row of the palette, and its rows: a skin's colours come in rows of 16
 /// shades (REND-4.13).
@@ -55,6 +60,12 @@ const BACKWARDS_FROM: u8 = 128;
 const ORDINARY_LAST: u8 = WAD_FULLBRIGHT_FIRST - 1;
 /// The axes a vertex has.
 const AXES: usize = 3;
+/// The width and height of the skin an imported mesh with texture coordinates is given
+/// when the caller gives neither a picture nor a size.
+const IMPORT_SKIN_SIZE: [i32; 2] = [128, 128];
+/// The colour of the palette an imported model's skin is filled with when the caller gives
+/// neither a picture nor a colour: one of the palette's first row.
+const IMPORT_SKIN_COLOUR: u8 = 8;
 /// The bytes of a pixel of a PNG read or written here: red, green, blue and alpha.
 const RGBA: usize = 4;
 /// A pixel that shows all of its colour.
@@ -130,6 +141,27 @@ pub enum ModelError {
     Scale,
     /// A move that is no number.
     Move,
+    /// The file to import is no kind of mesh that is read.
+    Format {
+        /// The file.
+        path: PathBuf,
+    },
+    /// The `.obj` file to import could not be read as one.
+    Obj {
+        /// The file.
+        path: PathBuf,
+        /// Why.
+        error: ObjError,
+    },
+    /// The `.iqe` file to import could not be read as one.
+    Iqe {
+        /// The file.
+        path: PathBuf,
+        /// Why.
+        error: IqeError,
+    },
+    /// The mesh read is no model.
+    Mesh(MeshError),
     /// The two models do not have the same vertices, so a frame of one is none of the other.
     Vertices {
         /// How many the model has.
@@ -180,6 +212,14 @@ impl fmt::Display for ModelError {
             Self::Exists { path } => write!(f, "{}: is there already", path.display()),
             Self::Scale => f.write_str("a scale is a number above 0"),
             Self::Move => f.write_str("a move is a number on each axis"),
+            Self::Format { path } => write!(
+                f,
+                "{}: is no .obj or .iqe file, the meshes that are read",
+                path.display()
+            ),
+            Self::Obj { path, error } => write!(f, "{}: {error}", path.display()),
+            Self::Iqe { path, error } => write!(f, "{}: {error}", path.display()),
+            Self::Mesh(error) => write!(f, "{error}"),
             Self::Vertices { model, other } => write!(
                 f,
                 "the model has {model} vertices and the one the frames come from {other}: \
@@ -200,6 +240,9 @@ impl core::error::Error for ModelError {
             Self::Model { error, .. } => Some(error),
             Self::Unwritable(error) => Some(error),
             Self::Image(error) => Some(error),
+            Self::Obj { error, .. } => Some(error),
+            Self::Iqe { error, .. } => Some(error),
+            Self::Mesh(error) => Some(error),
             Self::NoProject
             | Self::NoSkin { .. }
             | Self::NoFrame { .. }
@@ -210,6 +253,7 @@ impl core::error::Error for ModelError {
             | Self::Exists { .. }
             | Self::Scale
             | Self::Move
+            | Self::Format { .. }
             | Self::Vertices { .. }
             | Self::OutsideBox { .. } => None,
         }
@@ -1070,6 +1114,200 @@ const fn whole_byte(steps: f32) -> u8 {
     steps as u8
 }
 
+/// Which axis of a mesh's file points up.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum UpAxis {
+    /// y is up and -z forward, as most programs write an `.obj`.
+    Y,
+    /// z is up and x forward, as Quake has them.
+    Z,
+}
+
+/// How an imported model's vertices lie on its skin.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SkinLayout {
+    /// By the mesh's own texture coordinates.
+    Own,
+    /// Laid out here: the model's front on the skin's left half and its back on the right.
+    FrontAndBack,
+}
+
+/// The parameters of `model.import`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ImportParams {
+    /// The mesh to read: an `.obj` file, one pose, or an `.iqe` file, a pose for each frame
+    /// of each of its animations.
+    pub source: PathBuf,
+    /// The `.mdl` file to make of it, in the project; one that is there already is refused.
+    pub path: PathBuf,
+    /// Which axis of the file is up: y for an `.obj` and z for an `.iqe` when not given.
+    #[serde(default)]
+    pub up: Option<UpAxis>,
+    /// What every position is multiplied by, to make the model the size Quake's are (a
+    /// player is 56 units high); 1 when not given.
+    #[serde(default)]
+    pub scale: Option<f32>,
+    /// A PNG for the skin of a mesh that has texture coordinates, each pixel matched to the
+    /// palette as `model.set_skin` matches one. Its width is a multiple of 4 and its height
+    /// at most 480.
+    #[serde(default)]
+    pub skin_png: Option<PathBuf>,
+    /// The skin's width and height for a mesh with texture coordinates and no PNG; 128 by
+    /// 128 when not given. A mesh without them has a skin of the size its layout needs.
+    #[serde(default)]
+    pub skin_size: Option<[i32; 2]>,
+    /// The colour of the palette the skin is filled with when no PNG is given; 8 when not
+    /// given.
+    #[serde(default)]
+    pub colour: Option<u8>,
+}
+
+/// What `model.import` answers.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ModelImported {
+    /// The model's file.
+    pub path: PathBuf,
+    /// How many vertices it has.
+    pub vertices: usize,
+    /// How many triangles.
+    pub triangles: usize,
+    /// Its skin's width and height.
+    pub skin_size: [i32; 2],
+    /// How its vertices lie on the skin.
+    pub layout: SkinLayout,
+    /// The names of its frames, as QuakeC's `$frame` line lists them.
+    pub frame_line: String,
+}
+
+/// `model.import`.
+struct ModelImport;
+
+impl<C: HasWorkbench + HasMap + 'static> Command<C> for ModelImport {
+    const ID: &'static str = MODEL_IMPORT;
+    const SUMMARY: &'static str = "Makes a .mdl model in the project of a mesh in an .obj \
+        file (one pose) or an .iqe file (a frame for each frame of each animation, posed by \
+        its skeleton). A mesh with texture coordinates keeps them, on a PNG given as its skin \
+        or one colour; one without is laid out front and back, to export, paint and set.";
+    type Params = ImportParams;
+    type Output = ModelImported;
+    type Error = ModelError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: ImportParams,
+    ) -> Result<Outcome<ModelImported, C>, ModelError> {
+        if context.workbench().root().is_none() {
+            return Err(ModelError::NoProject);
+        }
+        if params
+            .scale
+            .is_some_and(|scale| !(scale.is_finite() && scale > 0.0))
+        {
+            return Err(ModelError::Scale);
+        }
+        let source = &params.source;
+        let ending = source
+            .extension()
+            .map(|ending| ending.to_string_lossy().to_ascii_lowercase());
+        let text = std::fs::read(source).map_err(|error| ModelError::Read {
+            path: source.clone(),
+            error,
+        })?;
+        let text = String::from_utf8_lossy(&text);
+        let up = |or: Up| match params.up {
+            Some(UpAxis::Y) => Up::Y,
+            Some(UpAxis::Z) => Up::Z,
+            None => or,
+        };
+        let mut mesh: Mesh = match ending.as_deref() {
+            Some("obj") => obj::read(&text, up(Up::Y)).map_err(|error| ModelError::Obj {
+                path: source.clone(),
+                error,
+            })?,
+            Some("iqe") => iqe::read(&text, up(Up::Z)).map_err(|error| ModelError::Iqe {
+                path: source.clone(),
+                error,
+            })?,
+            Some(_) | None => {
+                return Err(ModelError::Format {
+                    path: source.clone(),
+                });
+            }
+        };
+        if let Some(scale) = params.scale {
+            for position in mesh
+                .frames
+                .iter_mut()
+                .flat_map(|frame| &mut frame.positions)
+            {
+                *position = position.map(|part| part * scale);
+            }
+        }
+        let colour = params.colour.unwrap_or(IMPORT_SKIN_COLOUR);
+        let skin = match &params.skin_png {
+            Some(png_path) => {
+                let palette = palette(context)?;
+                let png = std::fs::read(png_path).map_err(|error| ModelError::Read {
+                    path: png_path.clone(),
+                    error,
+                })?;
+                let image = image::load_from_memory_with_format(&png, image::ImageFormat::Png)
+                    .map_err(ModelError::Image)?
+                    .into_rgba8();
+                let side = |pixels: u32| i32::try_from(pixels).unwrap_or(i32::MAX);
+                let (colours, _) = image.as_raw().as_chunks::<RGBA>();
+                MeshSkin::Picture {
+                    size: [side(image.width()), side(image.height())],
+                    pixels: colours
+                        .iter()
+                        .map(|[red, green, blue, _]| {
+                            skin_index(&palette, colour, [*red, *green, *blue])
+                        })
+                        .collect(),
+                }
+            }
+            None => MeshSkin::Flat {
+                colour,
+                size: params.skin_size.unwrap_or(IMPORT_SKIN_SIZE),
+            },
+        };
+        let layout = if mesh.has_texcoords() {
+            SkinLayout::Own
+        } else {
+            SkinLayout::FrontAndBack
+        };
+        let model = mesh.model(&skin).map_err(ModelError::Mesh)?;
+        let bytes = model.to_bytes().map_err(ModelError::Unwritable)?;
+        let wrote = |error| ModelError::Write {
+            path: params.path.clone(),
+            error,
+        };
+        if let Some(folder) = params.path.parent() {
+            std::fs::create_dir_all(folder).map_err(wrote)?;
+        }
+        let mut made = match std::fs::File::create_new(&params.path) {
+            Ok(made) => made,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                return Err(ModelError::Exists { path: params.path });
+            }
+            Err(error) => return Err(wrote(error)),
+        };
+        std::io::Write::write_all(&mut made, &bytes).map_err(wrote)?;
+        Ok(Outcome::outside_history(ModelImported {
+            path: params.path,
+            vertices: model.stverts.len(),
+            triangles: model.triangles.len(),
+            skin_size: [model.header.skinwidth, model.header.skinheight],
+            layout,
+            frame_line: frames(&model).map(name_of).collect::<Vec<_>>().join(" "),
+        }))
+    }
+}
+
 /// Registers the `model.*` commands.
 ///
 /// # Errors
@@ -1087,7 +1325,8 @@ pub(crate) fn register_models<C: HasWorkbench + HasMap + 'static>(
     registry.register(ModelMove)?;
     registry.register(ModelRenameFrames)?;
     registry.register(ModelRemoveFrames)?;
-    registry.register(ModelAddFrames)
+    registry.register(ModelAddFrames)?;
+    registry.register(ModelImport)
 }
 
 #[cfg(test)]

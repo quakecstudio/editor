@@ -20,6 +20,16 @@ Reads Quake's models other than brush models, and writes and makes alias models.
   packed into three bytes, each vertex's normal matched to the nearest of the table's 162,
   and a group's intervals summed. Ported from `qutils/MODELGEN/MODELGEN.C` and
   `qutils/COMMON/MATHLIB.C` of id's tools at the pinned commit.
+- **Making an alias model as a script does** (`mdl::grab`, MDL-8): `Grab` is a modelgen
+  script with its files read, triangles for a base and for each frame, and `Grab::build`
+  the model modelgen writes of it: `Cmd_Base`'s vertices, `SetSkinValues`'s skin layout,
+  front on the left half and back on the right, and `GrabFrame`'s frames. Ported from
+  `qutils/MODELGEN/MODELGEN.C`; `cargo xtask oracles models` holds it to id's modelgen.
+- **Reading a mesh** (`mesh`, MDL-9): `mesh::obj` and `mesh::iqe` read a Wavefront `.obj`
+  and an Inter-Quake Export `.iqe` file, written from the formats' own descriptions
+  (`specs/iqe/`), to a `Mesh`; an `.iqe`'s animations are posed through its skeleton, a
+  pose each. `Mesh::model` makes the alias model, with the mesh's own texture coordinates
+  or laid out as modelgen lays a base.
 - **Sprites** (`spr`): `Sprite::read` is id's `Mod_LoadSpriteModel`, with
   `Mod_LoadSpriteFrame` and `Mod_LoadSpriteGroup`, plus the bounds checks id's engine leaves
   out. It returns a zero-copy view whose frames borrow the file's bytes, and rejects

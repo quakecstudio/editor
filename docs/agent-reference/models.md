@@ -1,6 +1,6 @@
 # Models for the agent
 
-Sources: [`docs/spec/mdl.md`](../spec/mdl.md) (MDL-1 to MDL-7); [`docs/spec/render.md`](../spec/render.md)
+Sources: [`docs/spec/mdl.md`](../spec/mdl.md) (MDL-1 to MDL-9); [`docs/spec/render.md`](../spec/render.md)
 (REND-4.13); the model commands (`crates/qs-workbench/src/models.rs`, L-47).
 
 ## What a model is
@@ -39,12 +39,35 @@ with, and every model's own bounds are the same to the engine (MDL-1.7).
   change. A file of the same name as the game's takes the game's place for every entity that
   uses it; a file of a new name is a new model, for the QuakeC that names it.
 
+## A model made elsewhere
+
+`model.import` makes a `.mdl` in the project of a mesh made in another program:
+
+- **An `.obj` file** is one pose, named `base`. Most programs write it with y up, which is
+  what is assumed; give `up` as `z` for one written with z up.
+- **An `.iqe` file** (Inter-Quake Export, which Blender's IQM exporter writes) may have a
+  skeleton and animations. A model has no skeleton, so every frame of every animation
+  becomes a frame of the model, named by its animation and its number (`run1`, `run2`): the
+  answer's `frame_line` is the QuakeC's `$frame` line.
+- **Size**: Quake's units are small, a player being 56 high. Give `scale` to make the mesh
+  that size, or `model.scale` it after; `model.inspect` answers the box it fills.
+- **Its skin**: a mesh with texture coordinates keeps them. Give `skin_png`, a picture whose
+  width is a multiple of 4 and whose height is at most 480, or it is one colour to paint
+  over. A mesh without them is laid out front and back, what faces forward (+x) on the
+  skin's left half and what faces back on its right: `model.export_skin` it, paint it and
+  `model.set_skin` it.
+- **Limits**: 2000 vertices at most, and 1024 vertices and 2048 triangles for engines made
+  from GLQuake. Make the mesh simpler in the program it came from when it has more.
+- To add poses to a model already imported, import the other poses as a model beside it
+  and `model.add_frames` from it.
+
 ## Changing one
 
 Each of these is one step that `edit.undo` takes back.
 
 | Command | What it does |
 | --- | --- |
+| `model.import` | Makes a model of a mesh in an `.obj` or an `.iqe` file |
 | `model.inspect` | The skins, their size and the rows of the palette each is of, the vertices and triangles, the box the frames fill, and the frames by name |
 | `model.recolor` | Recolours a skin by rows of the palette |
 | `model.export_skin`, `model.set_skin` | A skin out as a PNG, and a PNG of the same size back as a skin, each changed pixel the nearest of the palette's colours 0 to 223 |

@@ -291,6 +291,7 @@ fetching:
 - [Language Server Protocol 3.18](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification/): `specs/lsp/3.18/`
 - [Model Context Protocol 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28): `specs/mcp/2026-07-28/`
 - [Agent Client Protocol v1](https://agentclientprotocol.com/protocol/overview): `specs/acp/v1/`
+- [Inter-Quake Export](https://github.com/lsalzman/iqm/blob/master/iqe.txt), the mesh format `model.import` reads: `specs/iqe/`
 
 id's source, the specification for everything in L0 and L1, is pinned in
 [`docs/porting.md`](docs/porting.md#upstreams): `id-Software/Quake` and the `qcc/` directory of
