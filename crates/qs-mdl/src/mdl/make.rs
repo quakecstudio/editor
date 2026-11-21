@@ -94,7 +94,7 @@ fn normalize(v: &mut [f32; 3]) -> f64 {
         length += f64::from(part * part);
     }
     let length = length.sqrt();
-    // spec MDL-7.4: `if (length == 0) return 0;`, an exact comparison.
+    // MDL-7.4: `if (length == 0) return 0;`, an exact comparison.
     if length == 0.0 {
         return 0.0;
     }
