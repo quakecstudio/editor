@@ -217,7 +217,6 @@ impl NextEdits {
         let declared = symbols.iter().any(|symbol| {
             symbol.range.path == path
                 && symbol.range.span.start == first
-                && symbol.range.span.end == last
                 && symbol.name.as_bytes() == old
         });
         if !declared {
@@ -241,9 +240,7 @@ impl NextEdits {
             return None;
         }
         // The file being typed in first, top to bottom, then the others by path.
-        sites.sort_by(|a, b| {
-            (a.path != path, &a.path, a.start).cmp(&(b.path != path, &b.path, b.start))
-        });
+        sites.sort_by_cached_key(|site| (site.path != path, site.path.clone(), site.start));
         let mut pending = Pending {
             path: path.to_path_buf(),
             start: first,
@@ -321,13 +318,10 @@ impl<L: Loader> Workbench<L> {
             after.splice(site.start..site.end, new.bytes());
             let new_end = site.start.saturating_add(new.len());
             self.set_text(&site.path, after.clone(), Source::Elsewhere)?;
+            // The name typed over is where it is first declared, so no place is before it in
+            // its own file, and it stays where it is.
             let left = self.next_edits.pending.as_mut().map_or(0, |pending| {
                 pending.follow(&site.path, site.end, new_end);
-                // The typed name moves with a change before it in its own file.
-                if pending.path == site.path {
-                    pending.start = moved(pending.start, site.end, new_end);
-                    pending.end = moved(pending.end, site.end, new_end);
-                }
                 pending.sites.len()
             });
             if left == 0 {

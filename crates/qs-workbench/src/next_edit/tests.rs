@@ -23,13 +23,13 @@ fn path(name: &str) -> PathBuf {
     Path::new(ROOT).join(name)
 }
 
-const DEFS: &str =
-    "entity self;\n.float health;\nvoid end_sys_fields;\n.float charge;\nfloat speed;\n";
+const DEFS: &str = "entity self;\n.float health;\nvoid end_sys_fields;\n.float charge;\n\
+                    float speed;\nvoid() tick = { self.charge = 0; };\n";
 const WORLD: &str = "void() worldspawn = { self.charge = speed; };\n";
 const MORE: &str = "void() more = { if (self.charge) self.charge = self.charge + 2; };\n";
 
-/// A project whose field `charge` is declared in `defs.qc` and used once in `world.qc` and
-/// three times in `more.qc`, open in a session.
+/// A project whose field `charge` is declared in `defs.qc` and used once there, once in
+/// `world.qc` and three times in `more.qc`, open in a session.
 fn session() -> Session<Workbench<MemoryLoader>> {
     let mut loader = MemoryLoader::new();
     for (name, text) in [
@@ -119,13 +119,14 @@ fn renaming_a_field_suggests_every_use_and_each_is_taken_in_turn() {
     let first = next(&mut session).unwrap();
     assert_eq!(
         (first.old.as_str(), first.new.as_str(), first.left),
-        ("charge", "power", 4)
+        ("charge", "power", 5)
     );
     assert_eq!(first.typed_path, path("defs.qc"));
     assert_eq!(first.typed_end, defs.find("power").unwrap() + 5);
-    // The other files by path: more.qc, top to bottom, then world.qc.
-    assert_eq!(first.path, path("more.qc"));
-    assert_eq!(&MORE[first.start..first.end], "charge");
+    // The file typed in first, then the others by path: more.qc, top to bottom, then
+    // world.qc.
+    assert_eq!(first.path, path("defs.qc"));
+    assert_eq!(&defs[first.start..first.end], "charge");
     let mut left = Vec::new();
     while let Some(done) = session
         .execute(ACCEPT_NEXT_EDIT, json!({}))
@@ -134,11 +135,16 @@ fn renaming_a_field_suggests_every_use_and_each_is_taken_in_turn() {
     {
         left.push((done["path"].clone(), done["left"].as_u64().unwrap()));
     }
-    let files: Vec<(serde_json::Value, u64)> = [("more.qc", 3), ("more.qc", 2), ("more.qc", 1)]
-        .into_iter()
-        .chain([("world.qc", 0)])
-        .map(|(file, left)| (json!(path(file)), left))
-        .collect();
+    let files: Vec<(serde_json::Value, u64)> = [
+        ("defs.qc", 4),
+        ("more.qc", 3),
+        ("more.qc", 2),
+        ("more.qc", 1),
+    ]
+    .into_iter()
+    .chain([("world.qc", 0)])
+    .map(|(file, left)| (json!(path(file)), left))
+    .collect();
     assert_eq!(left, files);
     assert_eq!(
         text_of(&mut session, "more.qc"),
@@ -176,7 +182,7 @@ fn suggestions_wait_for_a_name_and_go_with_another_edit() {
         assert_eq!(next(&mut session), None, "{name:?}");
     }
     type_text(&mut session, "defs.qc", &with("p"));
-    assert_eq!(next(&mut session).map(|next| next.left), Some(4));
+    assert_eq!(next(&mut session).map(|next| next.left), Some(5));
     // A space in the name ends it.
     type_text(&mut session, "defs.qc", &with("p q"));
     assert_eq!(next(&mut session), None);
@@ -217,10 +223,19 @@ fn only_a_declaration_that_may_be_renamed_suggests() {
     // A rename moves the places of more.qc before they are taken: they no longer say the
     // old name where they were, and are passed over for the next that does.
     let mut session = self::session();
-    type_text(&mut session, "defs.qc", &DEFS.replace("charge", "power"));
+    type_text(
+        &mut session,
+        "defs.qc",
+        &DEFS.replacen("charge", "power", 1),
+    );
     let renamed =
         json!({ "path": path("more.qc"), "offset": MORE.find("more").unwrap(), "name": "extras" });
     session.execute(RENAME, renamed).unwrap();
+    let done = session.execute(ACCEPT_NEXT_EDIT, json!({})).unwrap();
+    assert_eq!(
+        (&done["path"], &done["left"]),
+        (&json!(path("defs.qc")), &json!(4))
+    );
     let done = session.execute(ACCEPT_NEXT_EDIT, json!({})).unwrap();
     assert_eq!(
         (&done["path"], &done["left"]),
