@@ -80,9 +80,7 @@ fn model(frames: &[(&str, [f32; 3])]) -> Vec<u8> {
 
 /// A palette whose colour `n` is `(n, 255 - n, n / 2)`: every colour its own.
 fn palette() -> Vec<u8> {
-    (0..=u8::MAX)
-        .flat_map(|n| [n, u8::MAX - n, n / 2])
-        .collect()
+    (0..=u8::MAX).flat_map(|n| [n, !n, n >> 1]).collect()
 }
 
 /// A project in a folder of its own, with a palette and the model `progs/thing.mdl` of two
@@ -240,7 +238,7 @@ fn a_skin_goes_out_as_a_png_and_comes_back() {
     assert_eq!(std::fs::read(&path).unwrap(), before, "the same skin back");
 
     // A painted pixel takes the nearest colour of the palette: (201, 54, 100) is colour 201.
-    let mut painted = image.clone();
+    let mut painted = image;
     painted.put_pixel(3, 2, image::Rgba([201, 54, 100, 255]));
     painted.save(&png).unwrap();
     session

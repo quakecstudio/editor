@@ -15,7 +15,7 @@ use qs_engine::Flavour;
 
 use super::{
     PlayState, Preview, PreviewConfig, PreviewError, PreviewStatus, SelectedEntity, mod_folder,
-    place_project_map,
+    place_project_assets, place_project_map,
 };
 use crate::ids::{Edict, WatchIndex};
 use crate::{Config, Workbench, WorkbenchError};
@@ -435,6 +435,88 @@ fn a_pick_that_misses_answers_no_edict() {
     assert_eq!((missed.edict, missed.classname), (None, None));
     let hit = SelectedEntity::picked(&game, Some(14));
     assert_eq!(hit.classname.as_deref(), Some("door"));
+}
+
+// No spec statement: L-47, ADR-0008: Play puts the project's own assets in the mod's folder,
+// where the game reads them: a model, a sound and a file in a folder of a folder; a file
+// changed since is placed again, one the project lost is taken away, and its maps, its map
+// sources and the programs at the folder's top are not touched
+#[test]
+fn a_projects_assets_are_put_where_the_game_reads_them() {
+    let project = root("place-assets");
+    let built = project.join("build").join("mod");
+    let write = |file: &str, bytes: &[u8]| {
+        let path = project.join(file);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, bytes).unwrap();
+    };
+    let placed = |file: &str| std::fs::read(built.join(file)).ok();
+    write("progs/brute.mdl", b"model one");
+    write("sound/brute/sight.wav", b"sound");
+    write("maps/room.map", b"a source");
+    write("maps/room.bsp", b"a map");
+    write("notes.txt", b"not an asset");
+    std::fs::create_dir_all(&built).unwrap();
+    std::fs::write(built.join("progs.dat"), b"the program").unwrap();
+    place_project_assets(&project, "mod").unwrap();
+    assert_eq!(
+        placed("progs/brute.mdl").as_deref(),
+        Some(b"model one".as_slice())
+    );
+    assert_eq!(
+        placed("sound/brute/sight.wav").as_deref(),
+        Some(b"sound".as_slice())
+    );
+    assert_eq!(
+        placed("progs.dat").as_deref(),
+        Some(b"the program".as_slice())
+    );
+    assert!(
+        placed("maps/room.bsp").is_none(),
+        "a map is placed when it is played"
+    );
+    assert!(placed("notes.txt").is_none());
+
+    // Placed again only when the project's file is the newer.
+    std::fs::write(built.join("progs/brute.mdl"), b"model built").unwrap();
+    place_project_assets(&project, "mod").unwrap();
+    assert_eq!(
+        placed("progs/brute.mdl").as_deref(),
+        Some(b"model built".as_slice())
+    );
+    let later = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
+    write("progs/brute.mdl", b"model two");
+    std::fs::File::options()
+        .write(true)
+        .open(project.join("progs/brute.mdl"))
+        .unwrap()
+        .set_modified(later)
+        .unwrap();
+    place_project_assets(&project, "mod").unwrap();
+    assert_eq!(
+        placed("progs/brute.mdl").as_deref(),
+        Some(b"model two".as_slice())
+    );
+
+    // A file the project no longer has is taken away; a map placed for a play stays.
+    std::fs::create_dir_all(built.join("maps")).unwrap();
+    std::fs::write(built.join("maps/room.bsp"), b"a played map").unwrap();
+    std::fs::remove_file(project.join("sound/brute/sight.wav")).unwrap();
+    place_project_assets(&project, "mod").unwrap();
+    assert!(placed("sound/brute/sight.wav").is_none());
+    assert_eq!(
+        placed("maps/room.bsp").as_deref(),
+        Some(b"a played map".as_slice())
+    );
+    assert_eq!(
+        placed("progs.dat").as_deref(),
+        Some(b"the program".as_slice())
+    );
+
+    // A project with no assets places nothing and fails nothing.
+    let bare = root("place-none");
+    place_project_assets(&bare, "mod").unwrap();
+    assert!(!bare.join("build").exists());
 }
 
 // No spec statement: P6-44, BSP-18.2, BSP-19.1: Play of a map the project compiled finds its

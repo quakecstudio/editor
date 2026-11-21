@@ -44,6 +44,9 @@ pub const MODEL_ADD_FRAMES: &str = "model.add_frames";
 /// The colours of a row of the palette, and its rows: a skin's colours come in rows of 16
 /// shades (REND-4.13).
 const ROW: u8 = 16;
+/// A colour's row is its high four bits, its shade its low four.
+const ROW_SHIFT: u32 = 4;
+const SHADE_MASK: u8 = 0x0F;
 /// The first colour of the rows whose shades run from bright to dark, "backwards ranges"
 /// (REND-4.13).
 const BACKWARDS_FROM: u8 = 128;
@@ -651,7 +654,8 @@ impl<C: 'static> Command<C> for ModelRecolor {
         let pixels = loaded.skin_mut(params.skin)?;
         let mut changed = 0_usize;
         for pixel in pixels.iter_mut() {
-            let (row, shade) = (*pixel / ROW, *pixel % ROW);
+            // A colour is its row in its high four bits and its shade in its low four.
+            let (row, shade) = (*pixel >> ROW_SHIFT, *pixel & SHADE_MASK);
             let Some(&[_, to]) = params.rows.iter().find(|[from, _]| *from == row) else {
                 continue;
             };

@@ -24,6 +24,7 @@ use serde_json::Value;
 use qs_commands::{Command, NoParams, Outcome, RegisterError, Registry};
 use schemars::JsonSchema;
 
+use crate::export::{MAPS_DIR, asset_files};
 use crate::full_build::{FullBuild, Start};
 use crate::ids::{BreakpointId, Edict, WatchIndex};
 use crate::map_compile::{MapCompile, MapLeaks, MapPlayFromHere, MapPortalsCommand};
@@ -684,6 +685,7 @@ impl Preview {
             flavour,
         } = built;
         self.stop();
+        place_project_assets(&project, &mod_name)?;
         // ADR-0008: the project's own game, the rerelease's files for a rerelease project.
         let (base, flavour) = game_base(self.config.game.as_deref(), flavour)?;
         self.flavour = flavour;
@@ -1365,9 +1367,6 @@ pub(crate) struct BuiltProgram {
     pub(crate) flavour: Flavour,
 }
 
-/// The directory of maps, in a project and in a game directory.
-const MAPS_DIR: &str = "maps";
-
 /// The files of a compiled map the game reads beside each other: the BSP, its coloured light
 /// (BSP-18.2) and the entities that override its own (BSP-19.1).
 const MAP_FILES: [&str; 3] = ["bsp", "lit", "ent"];
@@ -1428,6 +1427,51 @@ fn place_project_map(
             std::fs::copy(&source, &placed).map_err(written(placed))?;
         } else if placed.is_file() {
             std::fs::remove_file(&placed).map_err(written(placed))?;
+        }
+    }
+    Ok(())
+}
+
+/// Puts the project's own assets where the game reads them, the mod's folder under `build`
+/// (ADR-0008: the build output holds "the project's assets as the engine expects them"): each
+/// file under the project's `progs`, `sound`, `gfx`, `music`, `textures` and `env` that is
+/// not there or is older there, and takes away what is there of those folders that the
+/// project no longer has. Maps are placed as they are played ([`place_project_map`]), and the
+/// programs the build wrote at the folder's top are left.
+pub(crate) fn place_project_assets(project: &Path, mod_name: &str) -> Result<(), PreviewError> {
+    let to = project.join("build").join(mod_name);
+    let written = |path: &Path| {
+        let path = path.to_path_buf();
+        move |error| PreviewError::Write(path, error)
+    };
+    let made = |path: &Path| {
+        std::fs::metadata(path)
+            .and_then(|file| file.modified())
+            .ok()
+    };
+    let assets = asset_files(project).map_err(|error| {
+        PreviewError::Write(
+            project.to_path_buf(),
+            std::io::Error::other(error.to_string()),
+        )
+    })?;
+    for (name, from) in &assets {
+        let placed = to.join(name);
+        if made(&placed).is_some_and(|there| Some(there) >= made(from)) {
+            continue;
+        }
+        if let Some(folder) = placed.parent() {
+            std::fs::create_dir_all(folder).map_err(written(folder))?;
+        }
+        std::fs::copy(from, &placed).map_err(written(&placed))?;
+    }
+    // What was placed for a file the project has since lost.
+    let placed = asset_files(&to).map_err(|error| {
+        PreviewError::Write(to.clone(), std::io::Error::other(error.to_string()))
+    })?;
+    for (name, path) in placed {
+        if !assets.contains_key(&name) {
+            std::fs::remove_file(&path).map_err(written(&path))?;
         }
     }
     Ok(())

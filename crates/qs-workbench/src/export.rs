@@ -40,6 +40,9 @@ pub const PROJECT_EXPORT: &str = "project.export";
 /// The folders of a project holding its own assets, as a Quake game directory names them.
 pub const ASSET_DIRS: [&str; 7] = ["maps", "progs", "sound", "gfx", "music", "textures", "env"];
 
+/// The asset folder that holds maps.
+pub(crate) const MAPS_DIR: &str = "maps";
+
 /// The beginnings of the names of the project's license and notice files, matched without
 /// regard to case: `COPYING`, `LICENSE.txt`, `NOTICE.md`, `ATTRIBUTION.md` and the like.
 pub const NOTICE_PREFIXES: [&str; 5] = ["copying", "license", "licence", "notice", "attribution"];
@@ -304,6 +307,17 @@ fn collect_assets(root: &Path) -> Result<Vec<Piece>, ExportError> {
             })
         })
         .collect()
+}
+
+/// Every file of the project's own assets but its maps, by its path in the mod folder and
+/// where it is: what Play places where the game reads it (ADR-0008). Maps are placed as they
+/// are played, each with what its compile wrote.
+pub(crate) fn asset_files(root: &Path) -> Result<BTreeMap<String, PathBuf>, ExportError> {
+    let mut found = BTreeMap::new();
+    for dir in ASSET_DIRS.into_iter().filter(|dir| *dir != MAPS_DIR) {
+        walk(&root.join(dir), dir, &mut found)?;
+    }
+    Ok(found)
 }
 
 /// The files under `dir`, by `prefix/<path under dir>`; links and `.map` files are not taken.
