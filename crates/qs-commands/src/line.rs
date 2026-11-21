@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The command line (UI-21, P7-17), as AutoCAD's command window: a command is typed by its id or
-//! a short alias, and each of its parameters is asked for in turn from its schema, a required
-//! one until it is given and an optional one taking its default when nothing is typed. What the
-//! line makes is a command id and a parameter object, run as any other command is; the window
-//! draws the line and runs what it makes.
+//! a short alias, with a `/` before it or not, as a chat's slash commands are, and each of its
+//! parameters is asked for in turn from its schema, a required one until it is given and an
+//! optional one taking its default when nothing is typed. What the line makes is a command id
+//! and a parameter object, run as any other command is; the window draws the line, lists what
+//! [`Registry::listed`] finds for what is typed, and runs what the line makes.
 
 use serde_json::{Map, Value};
 
+use crate::palette::search;
 use crate::params::{Field, FieldKind, Input, ParamError, fields, object};
 use crate::registry::{CommandInfo, Registry};
 
@@ -66,7 +68,7 @@ impl<C: 'static> Registry<C> {
     /// One is the command; several are a choice to narrow.
     #[must_use]
     pub fn named(&self, typed: &str) -> Vec<&CommandInfo> {
-        let typed = typed.trim();
+        let typed = spoken(typed);
         if typed.is_empty() {
             return Vec::new();
         }
@@ -85,6 +87,34 @@ impl<C: 'static> Registry<C> {
             .filter(|info| info.id().as_str().starts_with(typed) || name(info).starts_with(typed))
             .collect()
     }
+
+    /// The commands to offer for what is `typed` (L-44): those it names ([`Registry::named`])
+    /// first, then those whose summary or id it matches as the palette matches
+    /// ([`search`]), best first, each once. With nothing typed, or `/` alone,
+    /// every command, in the registry's order.
+    #[must_use]
+    pub fn listed(&self, typed: &str) -> Vec<&CommandInfo> {
+        let typed = spoken(typed);
+        if typed.is_empty() {
+            return self.commands().collect();
+        }
+        let mut listed = self.named(typed);
+        for found in search(self.commands(), typed) {
+            if !listed.iter().any(|info| info.id() == found.info.id()) {
+                listed.push(found.info);
+            }
+        }
+        listed
+    }
+}
+
+/// The mark a command may be typed after, as a chat's slash commands are.
+const SLASH: char = '/';
+
+/// What `typed` says with the space around it and one [`SLASH`] before it taken off.
+fn spoken(typed: &str) -> &str {
+    let typed = typed.trim();
+    typed.strip_prefix(SLASH).unwrap_or(typed).trim_start()
 }
 
 impl CommandLine {
@@ -147,6 +177,9 @@ impl CommandLine {
     pub fn enter<C: 'static>(&mut self, registry: &Registry<C>, typed: &str) -> Entered {
         let typed = typed.trim();
         if self.entering.is_none() {
+            // A command's name may follow a `/`; a parameter's value is taken as typed, a path
+            // that starts with one among them.
+            let typed = spoken(typed);
             let found = registry.named(typed);
             let info = match found.as_slice() {
                 [] if typed.is_empty() => return Entered::Nothing,

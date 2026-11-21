@@ -1488,6 +1488,48 @@ fn the_command_line_names_a_command_by_its_id_its_name_or_a_start() {
     assert!(ids("doc.").len() > 1, "a start many share names them all");
     assert!(ids("nosuch").is_empty());
     assert!(ids("").is_empty());
+    // L-44: a `/` before the name is no part of it
+    assert_eq!(ids("/undo"), ["edit.undo"]);
+    assert_eq!(ids(" / doc.len"), ["doc.len"]);
+    assert!(ids("/").is_empty());
+}
+
+// No spec statement: L-44: the commands offered for what is typed are those it names first,
+// then those whose summary or id it matches as the palette does, each once; nothing typed, or
+// `/` alone, offers every command; and a line entered with a `/` runs as without it, while a
+// parameter's value keeps its own
+#[test]
+fn the_command_line_lists_what_it_offers() {
+    use crate::line::{CommandLine, Entered};
+    let session = session(&SessionSpec::default());
+    let registry = session.registry();
+    let ids = |typed: &str| -> Vec<&str> {
+        registry
+            .listed(typed)
+            .into_iter()
+            .map(|info| info.id().as_str())
+            .collect()
+    };
+    let all: Vec<&str> = registry.commands().map(|info| info.id().as_str()).collect();
+    assert_eq!(ids(""), all);
+    assert_eq!(ids("/"), all);
+    assert_eq!(ids("/undo").first(), Some(&"edit.undo"));
+    // A name's start first, then what only the palette's search finds.
+    let offered = ids("app");
+    assert_eq!(offered.first(), Some(&"doc.append"));
+    let mut once = offered.clone();
+    once.sort_unstable();
+    once.dedup();
+    assert_eq!(once.len(), offered.len(), "each command once: {offered:?}");
+    assert!(ids("zzzz").is_empty());
+
+    let mut line = CommandLine::new();
+    assert!(matches!(
+        line.enter(registry, "/edit.undo"),
+        Entered::Run { id, .. } if id == "edit.undo"
+    ));
+    assert_eq!(line.enter(registry, "/"), Entered::Nothing);
+    assert_eq!(line.history(), ["edit.undo"], "kept as the name alone");
 }
 
 // No spec statement: UI-21, #971: the command line asks for each parameter in turn from the

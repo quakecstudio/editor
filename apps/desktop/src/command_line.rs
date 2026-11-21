@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The command line docked above the status bar (UI-23, #971), as AutoCAD's command window:
-//! a command is typed by its id, its name or a start of either and run with Enter, and each of
-//! its parameters is asked for in turn. Tab completes what is typed, Up and Down bring back
-//! the lines entered before, and Escape gives up the command being entered. What is typed is
-//! read by [`qs_commands::line::CommandLine`]; this module draws it.
+//! a command is typed by its id, its name or a start of either, after a `/` or not, and run
+//! with Enter, and each of its parameters is asked for in turn. While a command is typed the
+//! commands that match are listed above the line with what each does (L-44), as a chat's slash
+//! menu and Zed's palette list theirs: the first is marked, Down and Up move the mark, Tab
+//! completes to the marked command, and Enter or a click runs it. Up from the top of the list
+//! brings back the lines entered before, and Escape gives up the command being entered. What
+//! is typed is read by [`qs_commands::line::CommandLine`]; this module draws it.
 //!
 //! Every string comes from [`crate::strings`]; a test fails on a string literal here.
 
@@ -22,6 +25,10 @@ use crate::theme::{Theme, Token};
 
 /// The most names listed when what is typed names several commands.
 const LISTED: usize = 6;
+/// The most commands the list above the line shows at once; the mark scrolls it.
+const OFFERED: usize = 8;
+/// The widest the list above the line is, in points.
+const OFFERS_WIDTH: f32 = 720.0;
 
 /// The share of the line's width the field takes; the note has the rest.
 const FIELD_SHARE: f32 = 0.4;
@@ -49,6 +56,11 @@ pub(crate) struct CommandLineView {
     /// typed before the first Up, which Down comes back to.
     recalled: Option<usize>,
     draft: String,
+    /// Which of the commands offered is marked, from the first.
+    marked: usize,
+    /// Where the list of offers was drawn in the last frame: a press on it takes the keyboard
+    /// from the field a frame before the click is read, and the list must still be there.
+    offers_at: Option<egui::Rect>,
 }
 
 impl CommandLineView {
@@ -76,6 +88,7 @@ impl CommandLineView {
         self.typed.clear();
         self.note = None;
         self.recalled = None;
+        self.marked = 0;
     }
 
     /// The command `id` the line made ran.
@@ -132,10 +145,13 @@ impl CommandLineView {
         let field = Id::new(Area::CommandLineField);
         let mut run = None;
         if ui.memory(|memory| memory.has_focus(field)) {
-            run = self.keys(ui, registry, field);
+            let offers = self.offers(registry);
+            run = self.keys(ui, registry, field, &offers);
         }
         let muted = theme.color(Token::TextMuted);
-        ui.label(RichText::new(self.asked()).monospace().color(muted));
+        // The prompt and the note are read, not typed in: the arrow, not the text cursor.
+        let fixed = |text: RichText| egui::Label::new(text).selectable(false);
+        ui.add(fixed(RichText::new(self.asked()).monospace().color(muted)));
         let hint = match self.asking(registry) {
             Some(_) => Text::CommandLinePick,
             None => Text::CommandLineHint,
@@ -165,20 +181,26 @@ impl CommandLineView {
         }
         if response.changed() {
             self.recalled = None;
+            self.marked = 0;
+        }
+        if run.is_none() {
+            run = self.offers_list(ui, theme, registry, &response);
         }
         match &self.note {
             Some(Note::Ran(id)) => {
-                ui.label(RichText::new(strings::command_ran(id)).small().color(muted));
+                ui.add(fixed(
+                    RichText::new(strings::command_ran(id)).small().color(muted),
+                ));
             }
             Some(Note::Problem(problem)) => {
                 let error = theme.color(Token::StatusError);
-                ui.label(RichText::new(problem).small().color(error));
+                ui.add(fixed(RichText::new(problem).small().color(error)));
             }
             Some(Note::Choices(names)) => {
                 let listed: Vec<&str> = names.iter().take(LISTED).map(String::as_str).collect();
                 let more = names.len().saturating_sub(listed.len());
                 let text = strings::command_choices(&listed, more);
-                ui.label(RichText::new(text).small().color(muted));
+                ui.add(fixed(RichText::new(text).small().color(muted)));
             }
             None => {}
         }
@@ -204,12 +226,87 @@ impl CommandLineView {
         }
     }
 
-    /// The keys the line takes while its field has the keyboard.
+    /// The ids of the commands offered for what is typed, best first: none while a parameter
+    /// is asked for, while an entered line is shown again, or with nothing typed.
+    fn offers<C: 'static>(&self, registry: &Registry<C>) -> Vec<String> {
+        if self.line.prompt().is_some() || self.recalled.is_some() || self.typed.trim().is_empty() {
+            return Vec::new();
+        }
+        registry
+            .listed(&self.typed)
+            .into_iter()
+            .map(|info| info.id().as_str().to_owned())
+            .collect()
+    }
+
+    /// Draws the commands offered above the field, the marked one marked, each with what it
+    /// does; a click on one runs it as Enter on it would. The list shows while the field has
+    /// the keyboard, and while the pointer that took it is still on the list.
+    fn offers_list<C: 'static>(
+        &mut self,
+        ui: &Ui,
+        theme: &Theme,
+        registry: &Registry<C>,
+        field: &egui::Response,
+    ) -> Option<(String, Value)> {
+        let on_list = self
+            .offers_at
+            .zip(ui.ctx().pointer_interact_pos())
+            .is_some_and(|(rect, pointer)| rect.contains(pointer));
+        let offers = self.offers(registry);
+        if offers.is_empty() || !(field.has_focus() || on_list) {
+            self.offers_at = None;
+            return None;
+        }
+        self.marked = self.marked.min(offers.len().saturating_sub(1));
+        // The mark is kept in sight: the list starts where it must to show it.
+        let first = self.marked.saturating_add(1).saturating_sub(OFFERED);
+        let muted = theme.color(Token::TextMuted);
+        let mut clicked = None;
+        let area = egui::Area::new(Id::new(Area::CommandLineField).with(Text::CommandLineOffers))
+            .order(egui::Order::Foreground)
+            .pivot(egui::Align2::LEFT_BOTTOM)
+            .fixed_pos(field.rect.left_top())
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    name_area(ui, accesskit::Role::ListBox, Text::CommandLineOffers);
+                    ui.set_max_width(OFFERS_WIDTH);
+                    for (index, id) in offers.iter().enumerate().skip(first).take(OFFERED) {
+                        let summary = registry.get(id).map_or_default(|info| info.summary());
+                        ui.horizontal(|ui| {
+                            let name = RichText::new(id).monospace();
+                            if ui.selectable_label(index == self.marked, name).clicked() {
+                                clicked = Some(id.clone());
+                            }
+                            let what = RichText::new(summary).small().color(muted);
+                            ui.add(egui::Label::new(what).truncate().selectable(false));
+                        });
+                    }
+                    let more = offers.len().saturating_sub(first.saturating_add(OFFERED));
+                    if more > 0 {
+                        let text = strings::more_commands(more);
+                        ui.add(
+                            egui::Label::new(RichText::new(text).small().color(muted))
+                                .selectable(false),
+                        );
+                    }
+                });
+            });
+        self.offers_at = Some(area.response.rect);
+        let id = clicked?;
+        self.typed = id;
+        field.request_focus();
+        self.enter(registry)
+    }
+
+    /// The keys the line takes while its field has the keyboard; `offers` are the commands
+    /// listed above it.
     fn keys<C: 'static>(
         &mut self,
         ui: &Ui,
         registry: &Registry<C>,
         field: Id,
+        offers: &[String],
     ) -> Option<(String, Value)> {
         let (enter, escape, back, tab, up, down) = ui.input_mut(|i| {
             (
@@ -235,15 +332,34 @@ impl CommandLineView {
         } else if tab && self.typed.trim().is_empty() && self.line.prompt().is_none() {
             ui.memory_mut(|memory| memory.move_focus(egui::FocusDirection::Next));
         } else if tab {
-            self.complete(registry);
+            match offers.get(self.marked) {
+                // The marked command, whole.
+                Some(marked) => marked.clone_into(&mut self.typed),
+                None => self.complete(registry),
+            }
         }
+        // Down goes into the list and Up back out of it; Up from its top brings back the
+        // lines entered before, and Down then comes forward through them to what was typed.
         if up {
-            self.recall(Recall::Older);
+            match self.marked.checked_sub(1) {
+                Some(above) if !offers.is_empty() => self.marked = above,
+                Some(_) | None => self.recall(Recall::Older),
+            }
         }
         if down {
-            self.recall(Recall::Newer);
+            if self.recalled.is_some() || offers.is_empty() {
+                self.recall(Recall::Newer);
+            } else {
+                self.marked = self
+                    .marked
+                    .saturating_add(1)
+                    .min(offers.len().saturating_sub(1));
+            }
         }
         if enter {
+            if let Some(marked) = offers.get(self.marked) {
+                marked.clone_into(&mut self.typed);
+            }
             return self.enter(registry);
         }
         None
