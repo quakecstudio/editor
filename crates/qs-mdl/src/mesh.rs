@@ -233,7 +233,7 @@ impl Mesh {
             stverts,
             triangles: faces,
             poses,
-            eye_position: [0.0; 3],
+            eye_position: [0.0, 0.0, 0.0],
             flags: 0,
             synctype: MDL_ST_RAND,
         }

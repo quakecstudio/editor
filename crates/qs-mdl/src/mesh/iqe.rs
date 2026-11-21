@@ -138,13 +138,31 @@ impl Affine {
     }
 }
 
+/// Where the parts of a `pq` pose's arguments start: its quaternion's x, y and z, its w, and
+/// its scale, after the translation's three.
+const PQ_ROTATION: usize = 3;
+const PQ_W: usize = 6;
+const PQ_SCALE: usize = 7;
+/// Where the rows of a `pm` pose's rotation matrix start, and its scale.
+const PM_ROWS: [usize; 3] = [3, 6, 9];
+const PM_SCALE: usize = 12;
+
+/// The three numbers of `values` from `from`, `or` for one not given.
+fn three(values: &[f64], from: usize, or: f64) -> Vec3 {
+    let at = |place: usize| values.get(place).copied().unwrap_or(or);
+    [
+        at(from),
+        at(from.saturating_add(1)),
+        at(from.saturating_add(2)),
+    ]
+}
+
 /// A `pq` pose: "output = (input*scale)*rotation + translation". A quaternion is made a unit
 /// one first; "If Qw is unspecified, it is generated such that it is a negative value".
 fn pose_quaternion(values: &[f64]) -> Affine {
-    let at = |place: usize, or: f64| values.get(place).copied().unwrap_or(or);
-    let (x, y, z) = (at(3, 0.0), at(4, 0.0), at(5, 0.0));
+    let [x, y, z] = three(values, PQ_ROTATION, 0.0);
     let w = values
-        .get(6)
+        .get(PQ_W)
         .copied()
         .unwrap_or_else(|| -(1.0 - x * x - y * y - z * z).max(0.0).sqrt());
     let length = (x * x + y * y + z * z + w * w).sqrt();
@@ -153,7 +171,6 @@ fn pose_quaternion(values: &[f64]) -> Affine {
     } else {
         (0.0, 0.0, 0.0, 1.0)
     };
-    let scale = [at(7, 1.0), at(8, 1.0), at(9, 1.0)];
     let rotation: Mat3 = [
         [
             1.0 - 2.0 * (y * y + z * z),
@@ -171,23 +188,19 @@ fn pose_quaternion(values: &[f64]) -> Affine {
             1.0 - 2.0 * (x * x + y * y),
         ],
     ];
-    scaled(rotation, scale, [at(0, 0.0), at(1, 0.0), at(2, 0.0)])
+    scaled(
+        rotation,
+        three(values, PQ_SCALE, 1.0),
+        three(values, 0, 0.0),
+    )
 }
 
 /// A `pm` pose: its translation, the rows of its rotation matrix and its scale.
 fn pose_matrix(values: &[f64]) -> Affine {
-    let at = |place: usize, or: f64| values.get(place).copied().unwrap_or(or);
-    let row = |from: usize| {
-        [
-            at(from, 0.0),
-            at(from.saturating_add(1), 0.0),
-            at(from.saturating_add(2), 0.0),
-        ]
-    };
     scaled(
-        [row(3), row(6), row(9)],
-        [at(12, 1.0), at(13, 1.0), at(14, 1.0)],
-        row(0),
+        PM_ROWS.map(|row| three(values, row, 0.0)),
+        three(values, PM_SCALE, 1.0),
+        three(values, 0, 0.0),
     )
 }
 
@@ -359,7 +372,7 @@ impl File {
                 .iter()
                 .map(|vertex| {
                     let total: f64 = vertex.blends.iter().map(|(_, weight)| weight).sum();
-                    let mut at = [0.0; 3];
+                    let mut at = [0.0, 0.0, 0.0];
                     for (joint, weight) in &vertex.blends {
                         let Some(moved) = moves.get(*joint) else {
                             continue;

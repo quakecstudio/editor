@@ -50,6 +50,13 @@ const ON_BACK: u8 = 2;
 const ON_BOTH: u8 = ON_FRONT | ON_BACK;
 /// The axes of a position.
 const AXES: usize = 3;
+/// What a skin's width is a multiple of, "some hardware requires this, and it ensures dword
+/// alignment for each scan" (MDL-8.3), and one less, what is added before the low bits are
+/// dropped.
+const WIDTH_STEP: i32 = 4;
+const WIDTH_ROUND: i32 = WIDTH_STEP - 1;
+/// The half `Q_rint` adds before it takes the floor.
+const HALF: f64 = 0.5;
 
 /// Why a model could not be made from triangles.
 #[derive(Debug, PartialEq)]
@@ -157,7 +164,7 @@ fn cross([[ax, ay, az], [cx, cy, cz]]: [[f32; 3]; 2]) -> [f32; 3] {
 /// `Q_rint` of a float, stored in an `int`: "`return floor (in + 0.5);`", the sum in double,
 /// answered as a float.
 fn rint(value: f32) -> i32 {
-    whole(f64::from(single((f64::from(value) + 0.5).floor())))
+    whole(f64::from(single((f64::from(value) + HALF).floor())))
 }
 
 /// What modelgen's `$base` derives from a model's triangles (MDL-8.1 to MDL-8.4): its
@@ -277,7 +284,7 @@ impl Base {
             stvert.onseam = if seam == ON_BOTH { MDL_ALIAS_ONSEAM } else { 0 };
         }
         // "make the width a multiple of 4"
-        let skin_width = iwidth.saturating_mul(2).saturating_add(3) & !3;
+        let skin_width = iwidth.saturating_mul(2).saturating_add(WIDTH_ROUND) & !WIDTH_ROUND;
         Ok(Self {
             verts,
             corners,
