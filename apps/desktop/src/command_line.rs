@@ -58,6 +58,9 @@ pub(crate) struct CommandLineView {
     draft: String,
     /// Which of the commands offered is marked, from the first.
     marked: usize,
+    /// Whether Up or Down put the mark where it is: Enter then runs the marked command
+    /// whatever was typed, where a mark nobody moved runs only a command the text names.
+    mark_moved: MarkMoved,
     /// Where the list of offers was drawn in the last frame: a press on it takes the keyboard
     /// from the field a frame before the click is read, and the list must still be there.
     offers_at: Option<egui::Rect>,
@@ -89,6 +92,7 @@ impl CommandLineView {
         self.note = None;
         self.recalled = None;
         self.marked = 0;
+        self.mark_moved = MarkMoved::No;
     }
 
     /// The command `id` the line made ran.
@@ -182,6 +186,7 @@ impl CommandLineView {
         if response.changed() {
             self.recalled = None;
             self.marked = 0;
+            self.mark_moved = MarkMoved::No;
         }
         if run.is_none() {
             run = self.offers_list(ui, theme, registry, &response);
@@ -342,7 +347,10 @@ impl CommandLineView {
         // lines entered before, and Down then comes forward through them to what was typed.
         if up {
             match self.marked.checked_sub(1) {
-                Some(above) if !offers.is_empty() => self.marked = above,
+                Some(above) if !offers.is_empty() => {
+                    self.marked = above;
+                    self.mark_moved = MarkMoved::Yes;
+                }
                 Some(_) | None => self.recall(Recall::Older),
             }
         }
@@ -354,10 +362,16 @@ impl CommandLineView {
                     .marked
                     .saturating_add(1)
                     .min(offers.len().saturating_sub(1));
+                self.mark_moved = MarkMoved::Yes;
             }
         }
         if enter {
-            if let Some(marked) = offers.get(self.marked) {
+            // The marked command, when the text names it or the mark was put on it: a
+            // command the list only found by its summary is not run for a slip of the keys.
+            let named = registry.named(&self.typed).len();
+            if (self.marked < named || self.mark_moved == MarkMoved::Yes)
+                && let Some(marked) = offers.get(self.marked)
+            {
                 marked.clone_into(&mut self.typed);
             }
             return self.enter(registry);
@@ -443,6 +457,16 @@ impl CommandLineView {
         line.clone_into(&mut self.typed);
         self.recalled = Some(back);
     }
+}
+
+/// Whether Up or Down moved the mark in the list of offers since the text last changed.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum MarkMoved {
+    /// The mark is where the list put it.
+    #[default]
+    No,
+    /// A key put it where it is.
+    Yes,
 }
 
 /// Which way Up and Down go through the entered lines.

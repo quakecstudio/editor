@@ -1356,29 +1356,8 @@ impl Shell {
         self.game_guide(ui);
         self.new_project_dialog(ui);
         self.about.show(ui.ctx(), &self.theme);
-        match self.status_bar(ui) {
-            Some(StatusAsk::Show(panel)) => {
-                let params = ShowPanelParams {
-                    panel,
-                    when_shown: WhenShown::Hide,
-                };
-                let _: Option<Docks> = self.run(qs_layout::SHOW_PANEL, &params);
-            }
-            Some(StatusAsk::Move(panel, dock)) => {
-                let params = MovePanelParams { panel, dock };
-                let _: Option<Docks> = self.run(qs_layout::MOVE_PANEL, &params);
-            }
-            Some(StatusAsk::Review) => self.open_review(),
-            Some(StatusAsk::Problems) => {
-                // Shown, and kept when it shows already: the counts are no toggle.
-                let params = ShowPanelParams {
-                    panel: DockPanel::Problems,
-                    when_shown: WhenShown::Keep,
-                };
-                let _: Option<Docks> = self.run(qs_layout::SHOW_PANEL, &params);
-            }
-            None => {}
-        }
+        let asked = self.status_bar(ui);
+        self.answer_status(asked);
         self.follow_review();
         let entered = self.command_line.show(
             ui,
@@ -1901,6 +1880,33 @@ impl Shell {
         }
         self.focus_applied = layout.focus_requests;
         Some(layout.focus)
+    }
+
+    /// Does what a click on the status bar asked for.
+    fn answer_status(&mut self, asked: Option<StatusAsk>) {
+        match asked {
+            Some(StatusAsk::Show(panel)) => {
+                let params = ShowPanelParams {
+                    panel,
+                    when_shown: WhenShown::Hide,
+                };
+                let _: Option<Docks> = self.run(qs_layout::SHOW_PANEL, &params);
+            }
+            Some(StatusAsk::Move(panel, dock)) => {
+                let params = MovePanelParams { panel, dock };
+                let _: Option<Docks> = self.run(qs_layout::MOVE_PANEL, &params);
+            }
+            Some(StatusAsk::Review) => self.open_review(),
+            Some(StatusAsk::Problems) => {
+                // Shown, and kept when it shows already: the counts are no toggle.
+                let params = ShowPanelParams {
+                    panel: DockPanel::Problems,
+                    when_shown: WhenShown::Keep,
+                };
+                let _: Option<Docks> = self.run(qs_layout::SHOW_PANEL, &params);
+            }
+            None => {}
+        }
     }
 
     /// The status bar: the panels' buttons, as Zed's, and the problems and the game's state;
