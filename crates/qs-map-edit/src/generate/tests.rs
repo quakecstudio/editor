@@ -75,7 +75,8 @@ fn a_level_is_made_in_the_project_and_opened() {
     let made = session
         .execute(MAP_GENERATE, json!({ "seed": 5, "size": "small" }))
         .unwrap();
-    let path = root.join("maps/random5.map");
+    // Joined part by part, as the command joins it: a path is compared as it is written.
+    let path = root.join("maps").join("random5.map");
     assert_eq!(made["path"], json!(path));
     assert_eq!(made["seed"], 5);
     assert_eq!(made["theme"], "plain");
@@ -124,7 +125,7 @@ fn a_seed_is_drawn_when_none_is_given() {
     let seed = made["seed"].as_u64().unwrap();
     assert_eq!(
         made["path"],
-        json!(root.join(format!("maps/random{seed}.map")))
+        json!(root.join("maps").join(format!("random{seed}.map")))
     );
     assert_eq!(made["rooms"].as_array().unwrap().len(), 8);
 }
