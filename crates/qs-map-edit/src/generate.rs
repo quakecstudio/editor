@@ -124,8 +124,7 @@ impl<C: HasMap + 'static> Command<C> for MapGenerate {
         let path = new_map_path(context, &path)?;
         let name = path
             .file_stem()
-            .map(|stem| stem.to_string_lossy().into_owned())
-            .unwrap_or_default();
+            .map_or_default(|stem| stem.to_string_lossy().into_owned());
         let game = context.game_folders();
         let textures: Vec<String> = game.base.as_deref().map_or_default(|base| {
             GameTextures::read(&Game::at(base))
@@ -183,3 +182,6 @@ fn drawn_seed() -> u64 {
         .unwrap_or_default();
     u64::from(since.subsec_nanos()) ^ since.as_secs()
 }
+
+#[cfg(test)]
+mod tests;

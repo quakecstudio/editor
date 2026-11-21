@@ -7,7 +7,7 @@
 
 use crate::mass::Point;
 use crate::rng::Rng;
-use crate::{Classes, KEY, TORCH};
+use crate::{Classes, DOOR, KEY, TORCH};
 
 /// The monsters of the first third of a level, of its middle, and of its end.
 const EASY: &[&str] = &["monster_army", "monster_dog", "monster_knight"];
@@ -121,7 +121,7 @@ impl Classes {
             .flatten()
             .copied()
             .chain(SUPPLIES.iter().map(|supply| supply.classname))
-            .chain([KEY, TORCH])
+            .chain([KEY, TORCH, DOOR])
     }
 
     /// Those of `wanted` the game defines.

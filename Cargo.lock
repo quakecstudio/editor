@@ -4161,6 +4161,7 @@ dependencies = [
  "qs-map-light",
  "qs-mdl",
  "qs-models",
+ "qs-pak",
  "qs-paths",
  "qs-render",
  "qs-settings",

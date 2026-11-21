@@ -467,6 +467,28 @@ impl Plan {
         }
     }
 
+    /// Takes the lock off its door and the key out of the plan, for a game with no key.
+    pub(crate) fn unlock(&mut self) {
+        self.key = None;
+        for link in &mut self.links {
+            link.doorway = match link.doorway {
+                Doorway::Locked => Doorway::Door,
+                Doorway::Open | Doorway::Arch | Doorway::Door => link.doorway,
+            };
+        }
+    }
+
+    /// Takes every door out of the plan, for a game with none.
+    pub(crate) fn open_doors(&mut self) {
+        self.unlock();
+        for link in &mut self.links {
+            link.doorway = match link.doorway {
+                Doorway::Door | Doorway::Locked => Doorway::Open,
+                Doorway::Open | Doorway::Arch => link.doorway,
+            };
+        }
+    }
+
     /// The room `id` names.
     pub(crate) fn room_of(&self, id: RoomId) -> Option<&RoomPlan> {
         self.rooms.get(id.0)

@@ -8,6 +8,7 @@
               and sizes are compared exactly as set"
 )]
 
+use qs_map_edit::testing::level_bsp;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -6335,4 +6336,76 @@ fn the_file_menu_has_one_new_project_item() {
     frame_with(&ctx, &mut app, Vec::new());
     let shown = frame_with(&ctx, &mut app, Vec::new());
     assert!(shown.iter().any(|text| text == which), "{shown:?}");
+}
+
+// No spec statement: L-48, the File menu's New Random Map and the map tab's button, shown
+// with a project open and no map, make a level from the game's textures and show it in the
+// map tab; with no game the tab says why none was made
+#[test]
+fn a_random_map_is_made_from_the_menu_and_the_map_tab() {
+    let file = menu::MENUS
+        .iter()
+        .find(|spec| spec.title == Text::File)
+        .unwrap();
+    assert!(file.items.contains(&Item::Choice(MenuChoice::RandomMap)));
+    assert_eq!(MenuChoice::RandomMap.command(), qs_map_edit::MAP_GENERATE);
+    assert_eq!(MenuChoice::RandomMap.title(), Text::NewRandomMapMenu);
+
+    let dir = TempDir::new("random-map");
+    let project = dir.path().join("mod");
+    fs::create_dir_all(&project).unwrap();
+    fs::write(project.join("progs.src"), "progs.dat\nworld.qc\n").unwrap();
+    fs::write(project.join("world.qc"), "void() worldspawn = {};\n").unwrap();
+    let mut harness = accessible();
+    let button = Text::NewRandomMapMenu.get();
+    // With no project open the map tab offers none: there is nowhere to make it.
+    let ctx = harness.ctx.clone();
+    let app = harness.state_mut().as_mut().unwrap();
+    app.carry_out(&ctx, menu::Chosen::Choice(MenuChoice::RandomMap));
+    harness.run();
+    assert_eq!(
+        harness.state().as_ref().unwrap().shell().centre_tab(),
+        CentreTab::Map
+    );
+    assert!(harness.query_by_label(button).is_none());
+
+    let app = harness.state_mut().as_mut().unwrap();
+    app.shell.open_project(&project).unwrap();
+    app.shell.new_random_map();
+    harness.run();
+    // No game is found, so no level is made, and the tab says why under its button.
+    harness.get_by_label(button);
+    harness.get_by_label(Text::NewRandomMapHow.get());
+    harness.get_by_label_contains("no texture to paint a wall with");
+    assert!(!project.join("maps").exists());
+
+    let game = game_folder(&dir);
+    // The game keeps its levels in a PAK, and is the full game, whose search path is read
+    // (FS-4.2): id's pop table in gfx/pop.lmp.
+    let level = level_bsp(&["brick", "stone"]);
+    let pop: Vec<u8> = qs_vfs::FS_POP_TABLE
+        .iter()
+        .flat_map(|value| value.to_be_bytes())
+        .collect();
+    let pak0 = qs_pak::write_pak(&[
+        (qs_vfs::FS_POP_PATH, pop.as_slice()),
+        ("maps/e1.bsp", level.as_slice()),
+    ])
+    .unwrap();
+    fs::write(game.join("id1/pak0.pak"), pak0).unwrap();
+    let pak1 = qs_pak::write_pak(&[("readme.txt", b"the rest".as_slice())]).unwrap();
+    fs::write(game.join("id1/pak1.pak"), pak1).unwrap();
+    let app = harness.state_mut().as_mut().unwrap();
+    app.shell
+        .set_settings_file(dir.path().join("config/settings.toml"));
+    assert!(app.shell.choose_game_folder(&game).unwrap().state.plays());
+    harness.get_by_label(button).click();
+    harness.run();
+    harness.run();
+    let shell = harness.state().as_ref().unwrap().shell();
+    assert_eq!(shell.random_map_error(), None);
+    let made = shell.session().context().workbench.map().unwrap().path();
+    assert!(made.starts_with(project.join("maps")), "{}", made.display());
+    assert!(made.exists());
+    assert!(harness.query_by_label(button).is_none(), "the map is shown");
 }

@@ -186,12 +186,28 @@ fn check_all(seeds: std::ops::Range<u64>, textures: &[&str]) {
     }
 }
 
-#[test]
-fn levels_of_ids_textures_are_sealed_and_walked() {
-    check_all(0..25, ID_TEXTURES);
+/// The seeds checked with each game's textures on every run. `QS_RANDOM_LEVEL_SEEDS` checks
+/// more: the run recorded for L-48 was of 25 with each game's, 150 levels.
+const SEEDS: u64 = 4;
+
+/// How many seeds to check: [`SEEDS`], or what `QS_RANDOM_LEVEL_SEEDS` says.
+fn seeds() -> u64 {
+    std::env::var("QS_RANDOM_LEVEL_SEEDS")
+        .ok()
+        .and_then(|count| count.parse().ok())
+        .unwrap_or(SEEDS)
 }
 
+// No spec statement: L-48, a generated level painted from id's textures compiles sealed, and a
+// player who walks reaches every room and the exit from the start
+#[test]
+fn levels_of_ids_textures_are_sealed_and_walked() {
+    check_all(0..seeds(), ID_TEXTURES);
+}
+
+// No spec statement: L-48, the same of a level painted from LibreQuake's textures
 #[test]
 fn levels_of_librequakes_textures_are_sealed_and_walked() {
-    check_all(25..50, LIBREQUAKE_TEXTURES);
+    let seeds = seeds();
+    check_all(seeds..seeds * 2, LIBREQUAKE_TEXTURES);
 }

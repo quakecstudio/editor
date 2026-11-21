@@ -92,8 +92,8 @@ impl Tool {
 }
 
 /// Runs `tool` on `session` with `arguments`. A map tool that writes runs only when the open
-/// map's file lies under a write root, since it may write beside it; `map.open` and `map.new`
-/// replace the open map, and their path is checked as an argument; `edit.undo` and
+/// map's file lies under a write root, since it may write beside it; `map.open`, `map.new` and
+/// `map.generate` replace the open map, and their path is checked as an argument; `edit.undo` and
 /// `edit.redo`, which may take back or make again an edit of the open map, are held to the
 /// same root while a map is open. Its edit is made at once,
 /// as an outside agent's edit of a file is (L-43): no review is begun for it, and undo, or a
@@ -540,6 +540,7 @@ const INSTRUCTIONS: &str = "Every command of QuakeC Studio over the project this
     read files, stage edits as hunks and keep checkpoints; make or open a map, place and \
     key its entities, build its brushes, compile it and find its leaks, save it and play it. \
     A map edit is made at once and edit.undo takes it back. Paths are the project's, absolute or relative to it. \
+    map.generate makes a whole random level to play or to start from. \
     To build a map: map.new (or map.open), then map.list_textures for the texture names there \
     are. A room is map.brush_create for a box and map.brush_hollow for its walls; rooms are \
     joined by a box across the walls between them given to map.brush_subtract. The \

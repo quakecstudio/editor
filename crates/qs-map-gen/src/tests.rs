@@ -44,6 +44,7 @@ fn level(seed: u64, size: Size) -> Level {
     .unwrap()
 }
 
+// No spec statement: L-48, one seed gives one level, byte for byte, and another seed another
 #[test]
 fn one_seed_is_one_level() {
     let a = level(7, Size::Medium).map.to_bytes();
@@ -53,6 +54,7 @@ fn one_seed_is_one_level() {
     assert_ne!(a, c);
 }
 
+// No spec statement: L-48, every brush of a level is a valid solid whose faces' points are whole (MAP-3.3)
 #[test]
 fn every_brush_is_valid_and_on_the_grid() {
     for seed in 0..40 {
@@ -74,6 +76,7 @@ fn every_brush_is_valid_and_on_the_grid() {
     }
 }
 
+// No spec statement: L-48, a level has its size's rooms, one start, one exit in a chamber, and a key when a door is locked
 #[test]
 fn a_level_has_a_start_an_exit_and_its_rooms() {
     for (size, rooms) in [(Size::Small, 5), (Size::Medium, 8), (Size::Large, 12)] {
@@ -96,39 +99,60 @@ fn a_level_has_a_start_an_exit_and_its_rooms() {
     }
 }
 
+// No spec statement: L-48, only classes the game defines are placed: no key locks no door, and no door class leaves none
 #[test]
 fn only_the_classes_there_are_placed() {
     let textures = id_names();
-    let classes = Classes::Named(
-        ["monster_dog", "item_health", "item_key1"]
-            .into_iter()
-            .map(str::to_owned)
-            .collect(),
-    );
-    let level = Request {
-        seed: 1,
-        size: Size::Large,
-        textures: &textures,
-        classes: &classes,
-        name: "random",
-    }
-    .generate()
-    .unwrap();
-    let allowed: &[&[u8]] = &[
+    let named =
+        |names: &[&str]| Classes::Named(names.iter().map(|name| (*name).to_owned()).collect());
+    let level = |classes: &Classes| {
+        Request {
+            seed: 1,
+            size: Size::Large,
+            textures: &textures,
+            classes,
+            name: "random",
+        }
+        .generate()
+        .unwrap()
+    };
+    let always: &[&[u8]] = &[
         b"worldspawn",
         b"info_player_start",
         b"trigger_changelevel",
         b"light",
-        b"func_door",
-        b"monster_dog",
-        b"item_health",
-        b"item_key1",
     ];
-    for entity in &level.map.entities {
-        assert!(allowed.contains(&entity.classname().unwrap()));
+    let holds = |level: &Level, classname: &[u8]| {
+        level
+            .map
+            .entities
+            .iter()
+            .any(|entity| entity.classname() == Some(classname))
+    };
+    // With every class, seed 1 has a locked door, its key and torches.
+    let whole = level(&Classes::Any);
+    assert!(whole.locked);
+    assert!(holds(&whole, b"item_key1") && holds(&whole, b"func_door"));
+    assert!(holds(&whole, b"light_torch_small_walltorch"));
+
+    // A game with doors and no key locks none; one with neither has no door.
+    let keyless = level(&named(&["monster_dog", "item_health", "func_door"]));
+    assert!(!keyless.locked);
+    assert!(holds(&keyless, b"func_door") && !holds(&keyless, b"item_key1"));
+    assert!(keyless.monsters > 0);
+    for entity in &keyless.map.entities {
+        let classname = entity.classname().unwrap();
+        let named: &[&[u8]] = &[b"monster_dog", b"item_health", b"func_door"];
+        assert!(always.contains(&classname) || named.contains(&classname));
+        // No lock is left on a door.
+        assert_eq!(entity.value(b"spawnflags"), None);
     }
+    let doorless = level(&named(&["monster_dog", "item_key1"]));
+    assert!(!doorless.locked);
+    assert!(!holds(&doorless, b"func_door") && !holds(&doorless, b"item_key1"));
 }
 
+// No spec statement: L-48, a game with no plain texture makes no level
 #[test]
 fn no_textures_is_an_error() {
     let request = Request {
@@ -141,6 +165,7 @@ fn no_textures_is_an_error() {
     assert!(matches!(request.generate(), Err(GenError::NoTextures)));
 }
 
+// No spec statement: L-48, a game with no theme's textures is painted from what it has, with no pit and no courtyard when it has no liquid and no sky
 #[test]
 fn a_game_with_no_theme_is_painted_plain() {
     let textures = names(&["brick", "stone", "wood"]);

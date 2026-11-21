@@ -78,6 +78,10 @@ winresource = { workspace = true }
 # The offscreen snapshot harness (P2-21): egui's own, rendering through wgpu with no window and
 # comparing PNGs.
 egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
+# A level's BSP for a test game folder (the map tab's New Random Map).
+qs-map-edit = { workspace = true, features = ["testing"] }
+# The PAK that level is in, as the game keeps its levels.
+qs-pak = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 muda = { workspace = true }

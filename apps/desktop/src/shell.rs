@@ -1522,9 +1522,18 @@ impl Shell {
         self.centre_tab = CentreTab::Map;
         self.random_map_error = self
             .session
-            .execute(MAP_GENERATE, serde_json::Value::Object(serde_json::Map::new()))
+            .execute(
+                MAP_GENERATE,
+                serde_json::Value::Object(serde_json::Map::new()),
+            )
             .err()
             .map(|error| error.to_string());
+    }
+
+    /// Why the last New Random Map made none, for tests.
+    #[cfg(test)]
+    pub(crate) fn random_map_error(&self) -> Option<&str> {
+        self.random_map_error.as_deref()
     }
 
     /// Runs the command `id` a key or a menu item chose, with no parameters. Play is run as
@@ -2846,33 +2855,33 @@ impl Shell {
             CentreTab::Search => (Token::SurfaceEditor, Text::NoSearchMatch),
         };
         // With a project open, the map tab offers a level made for it (L-48).
-        let offers_map = self.centre_tab == CentreTab::Map
-            && self.session.context().workbench.root().is_some();
+        let offers_map =
+            self.centre_tab == CentreTab::Map && self.session.context().workbench.root().is_some();
         let theme = &self.theme;
         let mut random_map = false;
         egui::Frame::NONE.fill(theme.color(fill)).show(ui, |ui| {
             let size = ui.available_size();
             if offers_map {
-                ui.allocate_ui_with_layout(
-                    size,
-                    EguiLayout::top_down(egui::Align::Center),
-                    |ui| {
-                        ui.add_space(size.y / EMPTY_MAP_DROP);
-                        let muted = theme.color(Token::TextMuted);
-                        ui.label(RichText::new(message.get()).color(muted));
-                        ui.add_space(theme.space(1));
-                        random_map = ui.button(Text::NewRandomMapMenu.get()).clicked();
-                        ui.label(RichText::new(Text::NewRandomMapHow.get()).small().color(muted));
-                        if let Some(error) = &self.random_map_error {
-                            ui.add(
-                                egui::Label::new(
-                                    RichText::new(error).color(theme.color(Token::StatusError)),
-                                )
-                                .wrap(),
-                            );
-                        }
-                    },
-                );
+                ui.allocate_ui_with_layout(size, EguiLayout::top_down(egui::Align::Center), |ui| {
+                    ui.add_space(size.y / EMPTY_MAP_DROP);
+                    let muted = theme.color(Token::TextMuted);
+                    ui.label(RichText::new(message.get()).color(muted));
+                    ui.add_space(theme.space(1));
+                    random_map = ui.button(Text::NewRandomMapMenu.get()).clicked();
+                    ui.label(
+                        RichText::new(Text::NewRandomMapHow.get())
+                            .small()
+                            .color(muted),
+                    );
+                    if let Some(error) = &self.random_map_error {
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(error).color(theme.color(Token::StatusError)),
+                            )
+                            .wrap(),
+                        );
+                    }
+                });
             } else {
                 ui.allocate_ui_with_layout(
                     size,

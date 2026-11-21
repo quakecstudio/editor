@@ -197,6 +197,8 @@ pub struct Level {
 /// `DOOR_SILVER_KEY = 16` (`doors.qc`).
 const KEY: &str = "item_key1";
 const DOOR_SILVER_KEY: &str = "16";
+/// The door (`doors.qc`).
+const DOOR: &str = "func_door";
 /// The torch on a wall (`misc.qc`), and how bright one is.
 const TORCH: &str = "light_torch_small_walltorch";
 const TORCH_LIGHT: &str = "250";
@@ -336,7 +338,13 @@ impl Request<'_> {
                 Sky::Missing
             },
         };
-        let plan = Plan::draw(self.size, has, &mut rng)?;
+        let mut plan = Plan::draw(self.size, has, &mut rng)?;
+        if !self.classes.has(KEY) {
+            plan.unlock();
+        }
+        if !self.classes.has(DOOR) {
+            plan.open_doors();
+        }
         let cells: Vec<_> = plan.rooms.iter().map(|room| room.cell).collect();
         let mut assembly = Assembly {
             request: self,
@@ -405,12 +413,12 @@ impl Request<'_> {
             }
             match passed.door {
                 Some((door, Doorway::Locked)) => assembly.place_brush(
-                    "func_door",
+                    DOOR,
                     door,
                     &[("angle", UP), ("spawnflags", DOOR_SILVER_KEY)],
                 )?,
                 Some((door, Doorway::Door | Doorway::Open | Doorway::Arch)) => {
-                    assembly.place_brush("func_door", door, &[("angle", UP)])?;
+                    assembly.place_brush(DOOR, door, &[("angle", UP)])?;
                 }
                 None => {}
             }
