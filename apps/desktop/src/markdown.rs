@@ -22,9 +22,13 @@ const INDENT: usize = 2;
 const GAP: usize = 0;
 /// The mark before an item of a list with no numbers.
 const BULLET: &str = "\u{2022}";
-/// The marks of a task list's items, done and not.
-const TASK_DONE: &str = "\u{2611} ";
-const TASK_OPEN: &str = "\u{2610} ";
+/// The marks of a task list's items, done and not, as they are typed: the bundled fonts have
+/// no ballot boxes, and these are in every one of them.
+const TASK_DONE: &str = "[x] ";
+const TASK_OPEN: &str = "[ ] ";
+/// The step of the spacing scale as wide as the column a list's marks are drawn in, which the
+/// later blocks of an item are set in by too.
+const MARK_COLUMN: usize = 4;
 
 /// The inline marks open where text is read.
 #[derive(Clone, Copy, Debug, Default)]
@@ -58,8 +62,9 @@ struct Draw<'a> {
     /// The text of the code block being read.
     code: Option<String>,
     table: Option<Table>,
-    /// Where the open link's text starts in the block's text, and its address.
-    link: Option<(usize, String)>,
+    /// The links open, outermost first: where each one's text starts in the block's text,
+    /// and its address. An image in a link is one in another.
+    links: Vec<(usize, String)>,
     /// How many blocks were drawn, for each one's id.
     drawn: usize,
 }
@@ -126,22 +131,27 @@ impl Draw<'_> {
         self.job.append(text, 0.0, format);
     }
 
-    /// Draws the block read so far, if it has text: after its list's mark, set in by its
-    /// lists and quotes.
+    /// Draws the block read so far, if it has text: set in by its lists and quotes, after
+    /// its list's mark, or under the text of the item it goes on.
     fn flush(&mut self) {
         let job = core::mem::take(&mut self.job);
         let marker = self.marker.take();
         if job.text.is_empty() && marker.is_none() {
             return;
         }
-        let indent = self.indent();
+        let inset = self.inset();
+        let column = self.mark_column();
         let muted = self.theme.color(Token::TextMuted);
         let id = self.next_id();
         self.ui.push_id(id, |ui| {
             ui.horizontal_top(|ui| {
-                ui.add_space(indent);
-                if let Some(marker) = marker {
-                    ui.label(egui::RichText::new(marker).color(muted));
+                ui.add_space(inset);
+                match marker {
+                    Some(marker) => {
+                        let mark = egui::RichText::new(marker).color(muted);
+                        ui.add_sized([column, 0.0], Label::new(mark).selectable(false));
+                    }
+                    None => ui.add_space(column),
                 }
                 ui.vertical(|ui| ui.add(Label::new(job).wrap()));
             });
@@ -149,8 +159,8 @@ impl Draw<'_> {
         self.ui.add_space(self.theme.space(GAP));
     }
 
-    /// How far a block is set in: a step for each list past the first and each quote.
-    fn indent(&self) -> f32 {
+    /// How far a block's row starts in: a step for each list past the first and each quote.
+    fn inset(&self) -> f32 {
         let steps = self
             .lists
             .len()
@@ -158,6 +168,20 @@ impl Draw<'_> {
             .saturating_add(self.quotes);
         let step = self.theme.space(INDENT);
         (0..steps).map(|_| step).sum()
+    }
+
+    /// The width of the column a list's marks are drawn in; none outside a list.
+    fn mark_column(&self) -> f32 {
+        if self.lists.is_empty() {
+            0.0
+        } else {
+            self.theme.space(MARK_COLUMN)
+        }
+    }
+
+    /// How far a block with no mark of its own is set in: under its item's text.
+    fn indent(&self) -> f32 {
+        self.inset() + self.mark_column()
     }
 
     /// An id for the next block drawn.
@@ -203,10 +227,11 @@ impl Draw<'_> {
     /// Draws a table: its head's cells above a rule, each column as wide as its widest cell.
     fn table(&mut self, table: Table) {
         let id = self.next_id();
+        let indent = self.indent();
         let columns = table.rows.iter().map(Vec::len).max().unwrap_or(0);
-        egui::ScrollArea::horizontal()
-            .id_salt(id)
-            .show(self.ui, |ui| {
+        self.ui.horizontal_top(|ui| {
+            ui.add_space(indent);
+            egui::ScrollArea::horizontal().id_salt(id).show(ui, |ui| {
                 egui::Grid::new(id).striped(true).show(ui, |ui| {
                     for (index, row) in table.rows.into_iter().enumerate() {
                         for cell in row {
@@ -222,13 +247,19 @@ impl Draw<'_> {
                     }
                 });
             });
+        });
         self.ui.add_space(self.theme.space(GAP));
     }
 
     /// Takes the start of a block or of a run of marked text.
     fn start(&mut self, tag: Tag<'_>) {
         match tag {
-            Tag::Heading { level, .. } => self.heading = Some(level),
+            Tag::Heading { level, .. } => {
+                // A list item's own text has no end of its own before a heading in it.
+                self.flush();
+                self.heading = Some(level);
+            }
+            Tag::HtmlBlock => self.flush(),
             Tag::BlockQuote(_) => {
                 self.flush();
                 self.quotes = self.quotes.saturating_add(1);
@@ -267,10 +298,10 @@ impl Draw<'_> {
             Tag::Strikethrough => self.marks.struck = self.marks.struck.saturating_add(1),
             Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. } => {
                 self.marks.link = self.marks.link.saturating_add(1);
-                self.link = Some((self.job.text.len(), dest_url.into_string()));
+                self.links
+                    .push((self.job.text.len(), dest_url.into_string()));
             }
             Tag::Paragraph
-            | Tag::HtmlBlock
             | Tag::FootnoteDefinition(_)
             | Tag::DefinitionList
             | Tag::DefinitionListTitle
@@ -325,7 +356,7 @@ impl Draw<'_> {
             TagEnd::Link | TagEnd::Image => {
                 self.marks.link = self.marks.link.saturating_sub(1);
                 // The address, when the link's text is not it.
-                if let Some((from, address)) = self.link.take() {
+                if let Some((from, address)) = self.links.pop() {
                     let shown = self.job.text.get(from..).unwrap_or_default();
                     if !address.is_empty() && shown != address {
                         let mut format = self.format();
@@ -387,7 +418,7 @@ impl Draw<'_> {
                 self.ui.separator();
             }
             Event::TaskListMarker(done) => {
-                let format = self.format();
+                let format = self.code_format();
                 self.push(if done { TASK_DONE } else { TASK_OPEN }, format);
             }
         }
@@ -404,11 +435,63 @@ const fn heading_index(level: HeadingLevel) -> usize {
     }
 }
 
-/// Draws `text` as Markdown down `ui`, wrapped to its width.
-pub(crate) fn show(ui: &mut Ui, theme: &Theme, text: &str) {
+/// Which of a thread's texts one is: what tells its code blocks and tables from another's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum Part {
+    /// A message or an item, by its place in the thread.
+    Message(usize),
+    /// The reply still arriving.
+    Streaming,
+    /// The run's summary.
+    Summary,
+}
+
+/// What a text took when it was last drawn: what tells whether it is the same text in the same
+/// width, and how tall it was.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Drawn {
+    /// The text's length and its hash.
+    text: (usize, u64),
+    /// The bits of the width it was wrapped to and of the height it took.
+    size: [u32; 2],
+}
+
+/// Draws `text` as Markdown down `ui`, wrapped to its width. `part` tells this text from the
+/// others drawn in the same place, a thread's other replies: each one's code blocks and tables
+/// keep their own scroll and their own columns. A text scrolled out of sight is not read or
+/// laid out again: the room it took when it was last drawn is left for it, so a long thread
+/// costs a frame only what shows of it.
+pub(crate) fn show(ui: &mut Ui, theme: &Theme, part: Part, text: &str) {
     let options =
         Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
-    ui.vertical(|ui| {
+    let id = ui.id().with(part);
+    let width = ui.available_width();
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    core::hash::Hash::hash(text, &mut hasher);
+    let same = (text.len(), core::hash::Hasher::finish(&hasher));
+    let known: Option<Drawn> = ui.data(|data| data.get_temp(id));
+    if let Some(known) = known.filter(|known| known.text == same)
+        && known.size[0] == width.to_bits()
+    {
+        let size = egui::vec2(width, f32::from_bits(known.size[1]));
+        if !ui.is_rect_visible(egui::Rect::from_min_size(ui.cursor().min, size)) {
+            ui.allocate_space(size);
+            return;
+        }
+    }
+    let drawn = ui.push_id(part, |ui| {
+        ui.vertical(|ui| draw(ui, theme, text, options));
+    });
+    let took = Drawn {
+        text: same,
+        size: [width.to_bits(), drawn.response.rect.height().to_bits()],
+    };
+    ui.data_mut(|data| data.insert_temp(id, took));
+}
+
+/// Reads `text` and draws each block of it.
+fn draw(ui: &mut Ui, theme: &Theme, text: &str, options: Options) {
+    {
         let mut draw = Draw {
             ui,
             theme,
@@ -420,7 +503,7 @@ pub(crate) fn show(ui: &mut Ui, theme: &Theme, text: &str) {
             quotes: 0,
             code: None,
             table: None,
-            link: None,
+            links: Vec::new(),
             drawn: 0,
         };
         for event in Parser::new_ext(text, options) {
@@ -431,7 +514,7 @@ pub(crate) fn show(ui: &mut Ui, theme: &Theme, text: &str) {
             draw.code_block(&code);
         }
         draw.flush();
-    });
+    }
 }
 
 #[cfg(test)]

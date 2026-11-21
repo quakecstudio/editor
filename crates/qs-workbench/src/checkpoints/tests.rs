@@ -146,3 +146,55 @@ fn the_checkpoint_commands() {
         Err(WorkbenchError::NoProject)
     ));
 }
+
+// No spec statement: L-43: restoring a checkpoint puts the open map back too, whose edits are
+// no files: an unsaved edit of it is dropped and the map read again from its file, and a map
+// made since the checkpoint, whose file the restore removes, is closed
+#[test]
+fn restoring_puts_the_open_map_back() {
+    let root = project("map");
+    std::fs::create_dir_all(root.join("maps")).unwrap();
+    let room = root.join("maps/room.map");
+    std::fs::write(&room, "{\n\"classname\" \"worldspawn\"\n}\n").unwrap();
+    let mut registry = Registry::new();
+    register(&mut registry).unwrap();
+    let mut session = Session::new(Workbench::new(FsLoader, Config::default()), registry);
+    session
+        .execute("project.open", json!({ "path": root }))
+        .unwrap();
+    session.execute(CREATE_CHECKPOINT, json!({})).unwrap();
+    let entities = |session: &mut Session<Workbench<FsLoader>>| {
+        let summary = session.execute("map.summary", json!({})).unwrap();
+        summary.get("entities").cloned().unwrap()
+    };
+    session
+        .execute("map.open", json!({ "path": room }))
+        .unwrap();
+    session
+        .execute(
+            "map.place_entity",
+            json!({ "classname": "light", "origin": [0.0, 0.0, 64.0] }),
+        )
+        .unwrap();
+    assert_eq!(entities(&mut session), json!(2));
+    session
+        .execute(RESTORE_CHECKPOINT, json!({ "number": 1 }))
+        .unwrap();
+    assert_eq!(
+        entities(&mut session),
+        json!(1),
+        "the unsaved light is gone"
+    );
+
+    let made = root.join("maps/made.map");
+    session.execute("map.new", json!({ "path": made })).unwrap();
+    assert!(made.exists());
+    session
+        .execute(RESTORE_CHECKPOINT, json!({ "number": 1 }))
+        .unwrap();
+    assert!(!made.exists());
+    assert!(
+        session.execute("map.summary", json!({})).is_err(),
+        "the map made since is closed"
+    );
+}

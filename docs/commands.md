@@ -8,7 +8,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | --- | --- |
 | [`checkpoint.create`](#checkpointcreate) | Records every file of the open project, as it is on disk, as a checkpoint to restore, in a git store of its own. |
 | [`checkpoint.list`](#checkpointlist) | Lists the open project's checkpoints, oldest first. |
-| [`checkpoint.restore`](#checkpointrestore) | Puts every file of the open project back as a checkpoint holds it, removing the files made since and dropping unsaved edits. |
+| [`checkpoint.restore`](#checkpointrestore) | Puts every file of the open project back as a checkpoint holds it, removing the files made since and dropping unsaved edits, the open map's among them: the map is read again from its file, or closed when the file was made since. |
 | [`code.actions`](#codeactions) | Lists the quick fixes for the diagnostics at a place in a file: a missing builtin declared, a misspelled field corrected, an unused local removed, a missing precache added. |
 | [`code.fix`](#codefix) | Applies a quick fix for the diagnostics at a place in a file, the first unless one is named by its index in code.actions' list; the file is not saved. |
 | [`commands.list`](#commandslist) | Lists every command with its id, summary and parameter schema. |
@@ -292,7 +292,7 @@ Parameters:
 
 ## `checkpoint.restore`
 
-Puts every file of the open project back as a checkpoint holds it, removing the files made since and dropping unsaved edits.
+Puts every file of the open project back as a checkpoint holds it, removing the files made since and dropping unsaved edits, the open map's among them: the map is read again from its file, or closed when the file was made since.
 
 Parameters:
 

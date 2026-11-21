@@ -44,6 +44,7 @@ pub use containers::{
 };
 pub use disk::{
     Keep, MAP_COMPARE, MAP_RESOLVE, MapDifference, MapOnDisk, ResolveParams, map_files_changed,
+    map_put_back,
 };
 pub use error::MapEditError;
 pub use flags::{FlagChange, MAP_SET_FLAG, SetFlagParams};

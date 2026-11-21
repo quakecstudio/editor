@@ -20,7 +20,7 @@ use qs_models::{KeyStore, Keychain, ProviderConfig, ProviderKind, ProviderModel,
 use qs_settings::ExternalAgent;
 use qs_workbench::{HunkId, StagedHunk};
 
-use crate::markdown;
+use crate::markdown::{self, Part};
 use crate::shell::name_field;
 use crate::strings::{Text, queued_count, tokens_used};
 
@@ -1205,12 +1205,12 @@ fn permission_request(
 /// modder's messages, and each image given.
 fn transcript_view(ui: &mut Ui, theme: &Theme, transcript: &[Message]) {
     let mono = theme.color(Token::TextMuted);
-    for message in transcript.iter().skip(1) {
+    for (place, message) in transcript.iter().enumerate().skip(1) {
         match message {
             Message::User { text } => muted(ui, theme, text),
             Message::Assistant { text, calls } => {
                 if !text.is_empty() {
-                    markdown::show(ui, theme, text);
+                    markdown::show(ui, theme, Part::Message(place), text);
                 }
                 for call in calls {
                     ui.label(
@@ -1297,7 +1297,7 @@ fn thread_view(
         .show(ui, |ui| {
             transcript_view(ui, theme, transcript);
             if !thread.streaming.is_empty() {
-                markdown::show(ui, theme, &thread.streaming);
+                markdown::show(ui, theme, Part::Streaming, &thread.streaming);
             } else if thread.running() && thread.run.as_ref().and_then(Run::asking).is_none() {
                 muted(ui, theme, Text::AgentWorking.get());
             }
@@ -1313,7 +1313,7 @@ fn thread_view(
         match &report.outcome {
             Outcome::Done { summary } => {
                 ui.label(RichText::new(Text::AgentDone.get()).strong());
-                markdown::show(ui, theme, summary);
+                markdown::show(ui, theme, Part::Summary, summary);
             }
             Outcome::NotDone { reasons } => {
                 ui.label(
