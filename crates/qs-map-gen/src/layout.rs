@@ -50,7 +50,7 @@ const CHANCES: usize = 10;
 
 /// A side of a room, by the way it faces.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Side {
+pub enum Side {
     /// +x.
     East,
     /// +y.
@@ -157,8 +157,8 @@ impl RoomId {
 /// A room as planned.
 #[derive(Clone, Debug)]
 pub(crate) struct RoomPlan {
-    /// Where it is.
-    pub(crate) cell: Cell,
+    /// Its middle on the map.
+    pub(crate) middle: [f64; 2],
     /// Its shape.
     pub(crate) shape: RoomShape,
     /// Its floor; the lower one of a room on two levels.
@@ -227,6 +227,8 @@ pub(crate) struct Link {
 pub(crate) struct Plan {
     /// The rooms: the path from the start to the exit, then the rooms off it.
     pub(crate) rooms: Vec<RoomPlan>,
+    /// Each room's place on the grid, in the rooms' order.
+    pub(crate) cells: Vec<Cell>,
     /// The passages.
     pub(crate) links: Vec<Link>,
     /// How many rooms the path has: the last of them holds the exit.
@@ -289,6 +291,7 @@ impl Plan {
             .ok_or(GenError::Layout)?;
         let mut plan = Self {
             rooms: Vec::new(),
+            cells: cells.clone(),
             links: Vec::new(),
             path,
             key: None,
@@ -388,7 +391,7 @@ impl Plan {
         };
         let turned = rng.pick(&Side::ALL).copied().unwrap_or(Side::East);
         RoomPlan {
-            cell,
+            middle: cell.middle(),
             shape,
             floor,
             half,
@@ -423,15 +426,16 @@ impl Plan {
             // Not off the exit's room: the level ends there.
             let mut parents: Vec<usize> = (0..self.path.saturating_sub(1)).collect();
             rng.shuffle(&mut parents);
-            let taken: Vec<Cell> = self.rooms.iter().map(|room| room.cell).collect();
+            let taken = self.cells.clone();
             let found = parents.into_iter().find_map(|parent| {
                 let room = self.rooms.get(parent)?;
+                let at = *taken.get(parent)?;
                 let mut sides = Side::ALL;
                 rng.shuffle(&mut sides);
                 let side = sides
                     .into_iter()
-                    .find(|&side| !taken.contains(&room.cell.beside(side)))?;
-                Some((parent, side, room.cell.beside(side), room.floor, room.depth))
+                    .find(|&side| !taken.contains(&at.beside(side)))?;
+                Some((parent, side, at.beside(side), room.floor, room.depth))
             });
             let Some((parent, side, cell, floor, depth)) = found else {
                 return;
@@ -439,6 +443,7 @@ impl Plan {
             let id = RoomId(self.rooms.len());
             let shape = Self::shape(has, rng);
             let floor = Self::next_floor(floor, rng);
+            self.cells.push(cell);
             self.rooms
                 .push(Self::room(cell, shape, floor, depth.saturating_add(1), rng));
             self.links.push(Link {

@@ -61,8 +61,8 @@ impl Passage {
         let from = plan.room_of(link.from)?;
         let to = plan.room_of(link.to)?;
         let [fx, fy] = link.side.facing();
-        let [ax, ay] = from.cell.middle();
-        let [bx, by] = to.cell.middle();
+        let [ax, ay] = from.middle;
+        let [bx, by] = to.middle;
         let between = (bx - ax) * fx + (by - ay) * fy;
         let reach = from.reach(link.side);
         Some(Self {
@@ -75,6 +75,40 @@ impl Passage {
             ],
             doorway: link.doorway,
         })
+    }
+
+    /// The passage from `start`, leaving by `side`, `length` long, between the floors
+    /// `floors` at its two ends, with `doorway` in it.
+    pub(crate) const fn new(
+        start: [f64; 2],
+        side: Side,
+        length: f64,
+        floors: [f64; 2],
+        doorway: Doorway,
+    ) -> Self {
+        Self {
+            start,
+            side,
+            length,
+            floors,
+            doorway,
+        }
+    }
+
+    /// The steps it needs, and the least length that holds them with a landing at each end.
+    pub(crate) fn least_length(climb: f64) -> f64 {
+        (climb.abs() / STEP_RISE) * STEP_RISE + LANDING + LANDING
+    }
+
+    /// The rock a passage alone is taken out of: its space with `wall` around it, above it
+    /// and below it, and none at its ends, which open onto what it joins.
+    pub(crate) fn shell(&self, wall: f64) -> Bounds {
+        let [low, high] = self.low_high();
+        self.bounds(
+            [0.0, self.length],
+            [-HALF_WIDTH - wall, HALF_WIDTH + wall],
+            [low - wall, high + HEIGHT + wall],
+        )
     }
 
     /// The box from `along[0]` to `along[1]` down the passage, `over` across it, between the

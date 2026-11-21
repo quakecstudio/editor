@@ -11,6 +11,7 @@
 //!
 //! One seed gives one level: nothing here reads a clock or the machine.
 
+mod kit;
 mod layout;
 mod mass;
 mod passage;
@@ -26,7 +27,13 @@ use std::fmt;
 
 use qs_map::{Brush, BrushError, Entity, Item, MapError, MapFile};
 
-use layout::{Doorway, Has, Liquid, Plan, Side, Sky};
+pub use kit::{
+    Arch, Door, KIT_DOORWAY_HEIGHT, KIT_DOORWAY_WIDTH, KIT_GRID, KIT_MAX_HALF, KIT_MAX_HEIGHT,
+    KIT_MAX_WALL, KIT_MIN_WALL, KIT_WALL, KitError, Opening, PassageKit, PassageParts, RoomKit,
+    RoomParts, Textures,
+};
+pub use layout::Side;
+use layout::{Doorway, Has, Liquid, Plan, Sky};
 use mass::{Coat, Mass, Point};
 use passage::Passage;
 use populate::{Depth, Placed};
@@ -113,6 +120,8 @@ pub enum GenError {
     Brush(BrushError),
     /// An entity could not be written.
     Map(MapError),
+    /// A room or a passage cannot be built as asked.
+    Kit(KitError),
 }
 
 impl fmt::Display for GenError {
@@ -122,6 +131,7 @@ impl fmt::Display for GenError {
             Self::Layout => write!(f, "no path of rooms could be drawn"),
             Self::Brush(error) => write!(f, "a brush could not be made: {error}"),
             Self::Map(error) => write!(f, "an entity could not be written: {error}"),
+            Self::Kit(error) => write!(f, "{error}"),
         }
     }
 }
@@ -132,6 +142,7 @@ impl std::error::Error for GenError {
             Self::NoTextures | Self::Layout => None,
             Self::Brush(error) => Some(error),
             Self::Map(error) => Some(error),
+            Self::Kit(error) => Some(error),
         }
     }
 }
@@ -196,14 +207,14 @@ pub struct Level {
 /// The key that opens a locked door: `item_key1` is the silver key (`items.qc`), and
 /// `DOOR_SILVER_KEY = 16` (`doors.qc`).
 const KEY: &str = "item_key1";
-const DOOR_SILVER_KEY: &str = "16";
+pub const DOOR_SILVER_KEY: &str = "16";
 /// The door (`doors.qc`).
-const DOOR: &str = "func_door";
+pub const DOOR: &str = "func_door";
 /// The torch on a wall (`misc.qc`), and how bright one is.
-const TORCH: &str = "light_torch_small_walltorch";
-const TORCH_LIGHT: &str = "250";
+pub const TORCH: &str = "light_torch_small_walltorch";
+pub const TORCH_LIGHT: &str = "250";
 /// The `angle` of a door that opens upward (`SetMovedir`, `subs.qc`).
-const UP: &str = "-1";
+pub const UP: &str = "-1";
 /// Half the width of the exit's trigger, its height, and its posts' place, half-width and
 /// height.
 const EXIT_HALF: f64 = 32.0;
@@ -345,10 +356,9 @@ impl Request<'_> {
         if !self.classes.has(DOOR) {
             plan.open_doors();
         }
-        let cells: Vec<_> = plan.rooms.iter().map(|room| room.cell).collect();
         let mut assembly = Assembly {
             request: self,
-            mass: Mass::of(&cells, &paints.wall)?,
+            mass: Mass::of(&plan.cells, &paints.wall)?,
             paints,
             solids: Vec::new(),
             entities: Vec::new(),

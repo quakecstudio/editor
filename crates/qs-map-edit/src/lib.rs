@@ -36,6 +36,10 @@ pub use brushes::{
     Keep as KeepPart, Lock, MAP_BRUSH_CLIP, MAP_BRUSH_CREATE, MAP_BRUSH_DELETE, MAP_BRUSH_HULL,
     MAP_BRUSH_MERGE, MAP_BRUSH_MOVE, MAP_BRUSH_SUBTRACT, MAP_BRUSH_TEXTURE, MAP_BRUSH_VERTEX,
 };
+pub use build::{
+    BuildPassageParams, BuildRoomParams, BuildTextures, DoorwayBuilt, Lighting, MAP_BUILD_PASSAGE,
+    MAP_BUILD_ROOM, PassageBuilt, PassageDoor, RoomBuilt, RoomKind, RoomSide, TopShape,
+};
 pub use classes::{ClassInfo, FlagInfo, KeyInfo};
 pub use containers::{
     AddLayerParams, ContainerParams, ExtractLinkedParams, GroupParams, MAP_ADD_LAYER,
@@ -80,6 +84,7 @@ pub use survey::{
 pub mod backup;
 mod brush_tools;
 mod brushes;
+mod build;
 mod classes;
 mod containers;
 mod disk;
@@ -1472,6 +1477,8 @@ pub fn register_map_edit<C: HasMap + 'static>(
     registry.register(MapOpen)?;
     registry.register(MapNew)?;
     registry.register(generate::MapGenerate)?;
+    registry.register(build::MapBuildRoom)?;
+    registry.register(build::MapBuildPassage)?;
     registry.register(review::MapStage)?;
     registry.register(review::MapUnstage)?;
     registry.register(review::MapStaged)?;

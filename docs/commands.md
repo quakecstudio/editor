@@ -83,6 +83,8 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.brush_vertex`](#mapbrush_vertex) | Moves a vertex of a brush of the open map to a point snapped to the grid; the brush becomes the convex hull of its vertices so moved. |
 | [`map.brush_vertices`](#mapbrush_vertices) | Moves several vertices of a brush at once, each to a point snapped to the grid; the brush becomes the hull of its vertices so moved (MAP-15.7). |
 | [`map.brushes`](#mapbrushes) | Lists the brushes of an entity of the open map, the world's when none is named: each brush's place, which the map.brush_* tools take, the box around it and its textures; all of them, or those touching a box. The brush tools answer the places of the brushes they make, so this is for brushes whose places are not known: a map someone else built, or after a tool that changed how many brushes the entity has. |
+| [`map.build_passage`](#mapbuild_passage) | Builds a passage between two doorways of the open map that face each other along x or along y, 112 wide and 128 high, with stairs where their floors differ, a light, and a door when one is asked for. |
+| [`map.build_room`](#mapbuild_room) | Builds one room of a shape of id's levels into the open map, sealed but for the doorways asked for, with its lights: a pillared hall, an eight-sided domed chamber, a hall around a pit crossed by bridges, a room on two levels, a courtyard, a cross of two aisles, or a vaulted room. Answers its doorways, for map.build_passage, and where things may stand. |
 | [`map.check`](#mapcheck) | Checks a .map: what id's qbsp and ericw-tools read otherwise, and its entities against the project's server QuakeC as the engine reads them: unknown classnames and keys with the closest name, values their field cannot read, and targets and targetnames nothing matches. It reads the file alone, so it says a world that names no WAD is one as id's qbsp does; map.issues and map.find_leaks say whether a texture of the open map is missing. |
 | [`map.choose_profile`](#mapchoose_profile) | Chooses the compile profile map.run_profile runs when given none; none given chooses Full again. |
 | [`map.compare_with_disk`](#mapcompare_with_disk) | How the open map's file, changed by another program, differs from the map being edited, entity by entity. |
@@ -4047,6 +4049,460 @@ Parameters:
     }
   },
   "title": "BrushesParams",
+  "type": "object"
+}
+```
+
+## `map.build_passage`
+
+Builds a passage between two doorways of the open map that face each other along x or along y, 112 wide and 128 high, with stairs where their floors differ, a light, and a door when one is asked for.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BuildTextures": {
+      "additionalProperties": false,
+      "description": "The textures to build with. What is not named is a theme's, chosen from the textures of\nthe game's levels: one `theme` number, one choice, so rooms built with the same number\nmatch.",
+      "properties": {
+        "ceiling": {
+          "default": null,
+          "description": "The ceilings' texture.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "door": {
+          "default": null,
+          "description": "The doors' texture.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "floor": {
+          "default": null,
+          "description": "The floors' texture.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "liquid": {
+          "default": null,
+          "description": "The texture of what a pit holds, such as `*lava1`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sky": {
+          "default": null,
+          "description": "The sky's texture, for a courtyard.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "theme": {
+          "default": 0,
+          "description": "The number the theme is chosen by; 0 when not given.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "trim": {
+          "default": null,
+          "description": "The texture of pillars, steps, frames and platforms' sides.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wall": {
+          "default": null,
+          "description": "The walls' texture.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "PassageDoor": {
+      "description": "What stands in a passage.",
+      "oneOf": [
+        {
+          "const": "none",
+          "description": "Nothing.",
+          "type": "string"
+        },
+        {
+          "const": "door",
+          "description": "A door that opens when walked up to.",
+          "type": "string"
+        },
+        {
+          "const": "locked",
+          "description": "A door that needs the silver key.",
+          "type": "string"
+        }
+      ]
+    },
+    "TopShape": {
+      "description": "How the top of a doorway or a passage is shaped.",
+      "oneOf": [
+        {
+          "const": "square",
+          "description": "Square.",
+          "type": "string"
+        },
+        {
+          "const": "arch",
+          "description": "Its upper corners cut at half a right angle.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.build_passage`.",
+  "properties": {
+    "arch": {
+      "$ref": "#/$defs/TopShape",
+      "default": "square",
+      "description": "How the passage's top is shaped; square when not given."
+    },
+    "door": {
+      "$ref": "#/$defs/PassageDoor",
+      "default": "none",
+      "description": "What stands in it; nothing when not given."
+    },
+    "from": {
+      "description": "One end: a doorway's `at`, as `map.build_room` answers it.",
+      "items": {
+        "format": "double",
+        "type": "number"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    },
+    "textures": {
+      "$ref": "#/$defs/BuildTextures",
+      "default": {
+        "ceiling": null,
+        "door": null,
+        "floor": null,
+        "liquid": null,
+        "sky": null,
+        "theme": 0,
+        "trim": null,
+        "wall": null
+      },
+      "description": "The textures; a theme's from the game's levels when not given."
+    },
+    "to": {
+      "description": "The other end: a doorway that faces the first along x or along y.",
+      "items": {
+        "format": "double",
+        "type": "number"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    },
+    "wall": {
+      "default": null,
+      "description": "How thick the rock around the passage is, 32 to 256; 64 when not given.",
+      "format": "double",
+      "type": [
+        "number",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "from",
+    "to"
+  ],
+  "title": "BuildPassageParams",
+  "type": "object"
+}
+```
+
+## `map.build_room`
+
+Builds one room of a shape of id's levels into the open map, sealed but for the doorways asked for, with its lights: a pillared hall, an eight-sided domed chamber, a hall around a pit crossed by bridges, a room on two levels, a courtyard, a cross of two aisles, or a vaulted room. Answers its doorways, for map.build_passage, and where things may stand.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BuildTextures": {
+      "additionalProperties": false,
+      "description": "The textures to build with. What is not named is a theme's, chosen from the textures of\nthe game's levels: one `theme` number, one choice, so rooms built with the same number\nmatch.",
+      "properties": {
+        "ceiling": {
+          "default": null,
+          "description": "The ceilings' texture.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "door": {
+          "default": null,
+          "description": "The doors' texture.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "floor": {
+          "default": null,
+          "description": "The floors' texture.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "liquid": {
+          "default": null,
+          "description": "The texture of what a pit holds, such as `*lava1`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sky": {
+          "default": null,
+          "description": "The sky's texture, for a courtyard.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "theme": {
+          "default": 0,
+          "description": "The number the theme is chosen by; 0 when not given.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "trim": {
+          "default": null,
+          "description": "The texture of pillars, steps, frames and platforms' sides.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wall": {
+          "default": null,
+          "description": "The walls' texture.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Lighting": {
+      "description": "Whether a room's lights are put in with it.",
+      "oneOf": [
+        {
+          "const": "placed",
+          "description": "Its lights and its wall torches are placed.",
+          "type": "string"
+        },
+        {
+          "const": "none",
+          "description": "None are: the room is dark until lights are placed.",
+          "type": "string"
+        }
+      ]
+    },
+    "RoomKind": {
+      "description": "The shape of a room to build.",
+      "oneOf": [
+        {
+          "const": "hall",
+          "description": "Four pillars in from its corners, the ceiling raised in the middle, pilasters with\ntorches. At least 192 in each half-width and 192 high.",
+          "type": "string"
+        },
+        {
+          "const": "chamber",
+          "description": "Eight walls under a dome of two steps, a dais of two steps in the middle; as wide as\nlong. At least 224 in each half-width and 192 high.",
+          "type": "string"
+        },
+        {
+          "const": "pit",
+          "description": "A walk around a pit of liquid, two bridges crossing in its middle. At least 224 in\neach half-width and 192 high.",
+          "type": "string"
+        },
+        {
+          "const": "split",
+          "description": "The part toward the side it is turned to raised by 64, stairs up to it in the middle.\nAt least 224 in each half-width and 256 high.",
+          "type": "string"
+        },
+        {
+          "const": "court",
+          "description": "High walls open to the sky, an obelisk in the middle. At least 192 in each half-width\nand 256 high.",
+          "type": "string"
+        },
+        {
+          "const": "cross",
+          "description": "Two aisles 256 wide through the middle, the one toward the side it is turned to the\nhigher, a lantern over their crossing. At least 224 in each half-width and 192 high.",
+          "type": "string"
+        },
+        {
+          "const": "vault",
+          "description": "A long room under a pitched ceiling, its ridge toward the side it is turned to. At\nleast 192 in each half-width and 224 high.",
+          "type": "string"
+        }
+      ]
+    },
+    "RoomSide": {
+      "description": "A side of a room.",
+      "oneOf": [
+        {
+          "const": "east",
+          "description": "Toward +x.",
+          "type": "string"
+        },
+        {
+          "const": "north",
+          "description": "Toward +y.",
+          "type": "string"
+        },
+        {
+          "const": "west",
+          "description": "Toward -x.",
+          "type": "string"
+        },
+        {
+          "const": "south",
+          "description": "Toward -y.",
+          "type": "string"
+        }
+      ]
+    },
+    "TopShape": {
+      "description": "How the top of a doorway or a passage is shaped.",
+      "oneOf": [
+        {
+          "const": "square",
+          "description": "Square.",
+          "type": "string"
+        },
+        {
+          "const": "arch",
+          "description": "Its upper corners cut at half a right angle.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.build_room`.",
+  "properties": {
+    "arch": {
+      "$ref": "#/$defs/TopShape",
+      "default": "square",
+      "description": "How the doorways' tops are shaped; square when not given."
+    },
+    "doors": {
+      "default": [],
+      "description": "The sides to open a doorway on, each 112 wide and 128 high, in the middle of its side;\nnone when not given, which leaves the room sealed.",
+      "items": {
+        "$ref": "#/$defs/RoomSide"
+      },
+      "type": "array"
+    },
+    "floor": {
+      "description": "The room's floor; the lower one of a `split`.",
+      "format": "double",
+      "type": "number"
+    },
+    "half": {
+      "description": "Half the room's width in x and in y.",
+      "items": {
+        "format": "double",
+        "type": "number"
+      },
+      "maxItems": 2,
+      "minItems": 2,
+      "type": "array"
+    },
+    "height": {
+      "description": "Floor to ceiling.",
+      "format": "double",
+      "type": "number"
+    },
+    "lights": {
+      "$ref": "#/$defs/Lighting",
+      "default": "placed",
+      "description": "Whether its lights are placed with it; placed when not given."
+    },
+    "middle": {
+      "description": "The room's middle, in x and y. Every number here is a multiple of 16.",
+      "items": {
+        "format": "double",
+        "type": "number"
+      },
+      "maxItems": 2,
+      "minItems": 2,
+      "type": "array"
+    },
+    "shape": {
+      "$ref": "#/$defs/RoomKind",
+      "description": "The room's shape."
+    },
+    "textures": {
+      "$ref": "#/$defs/BuildTextures",
+      "default": {
+        "ceiling": null,
+        "door": null,
+        "floor": null,
+        "liquid": null,
+        "sky": null,
+        "theme": 0,
+        "trim": null,
+        "wall": null
+      },
+      "description": "The textures; a theme's from the game's levels when not given."
+    },
+    "turned": {
+      "$ref": "#/$defs/RoomSide",
+      "default": "east",
+      "description": "The side the room is turned to, which a `split`, a `cross` and a `vault` use; east\nwhen not given."
+    },
+    "wall": {
+      "default": null,
+      "description": "How thick the rock around the room's space is, 32 to 256; 64 when not given. The\nroom takes this much more than its half-widths on every side, above and below.",
+      "format": "double",
+      "type": [
+        "number",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "shape",
+    "middle",
+    "floor",
+    "half",
+    "height"
+  ],
+  "title": "BuildRoomParams",
   "type": "object"
 }
 ```

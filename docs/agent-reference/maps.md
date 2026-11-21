@@ -74,6 +74,70 @@ Source: `qutils/QBSP/OUTSIDE.C` (`FillOutside`) and `QBSP.C` at the same commit.
 - Seal the world with brushes on every side. Each entity's origin, other than the world's,
   must lie inside, and an entity at `'0 0 0'` is not counted (`FillOutside` skips it).
 
+## What the rooms of id's and LibreQuake's levels are made of
+
+Source: the levels' BSPs, measured by [`scripts/measure-levels.py`](../../scripts/measure-levels.py)
+on 2026-11-21: id's from `id1/pak0.pak` of the original game, LibreQuake's from the test
+game's `pak0.pak` and `pak1.pak`. A height is taken where a monster, an item or a player
+start stands: from the floor under it to the ceiling over it, in the player's hull. A slanted
+face is one whose plane is on none of the three axes. A figure "of the middle level" is the
+median over the levels.
+
+| | id's 32 levels with monsters | LibreQuake's 10 |
+| --- | --- | --- |
+| Height where things stand: a quarter, half and three quarters of them, of the middle level | 136, 200, 288 | 184, 280, 360 |
+| Slanted faces, of all faces | 14% of the middle level; 4% (`e1m8`) to 33% (`end`) | 23%; 9% (`lq_e0m4`) to 51% (`lq_e0m3`) |
+| Lights | 260 in the middle level, half of them of brightness 200 or less | 100, of brightness 300 |
+| Monsters | 56 | 57 |
+| Doors, lifts and trains, buttons | 23, 3, 6 | 12, 1, 2 |
+
+- **No level is one height.** In `e1m1` half of what stands is under a ceiling of 184 or
+  less, a quarter under 128 or less and a quarter under 216 or more, up to 392; in `e1m2`
+  the same three are 160, 192 and 288, up to 576. A level of rooms all 128 high reads as a
+  corridor: give the rooms that matter 256 and more, and keep passages at 112 to 128.
+- **About one face in seven is slanted in id's levels**, one in four in LibreQuake's: cut
+  corners, arches, sloped ceilings and ramps. A level of boxes has none.
+- **Light is many small lights, not a few large ones**: `e1m1` has 252 lights for 6148
+  faces. A sample at distance `d` from a light gets `(light - d)` times the cosine of the
+  angle it is lit at (LIGHT-4.3, [`docs/spec/light.md`](../spec/light.md)), so a light of 200
+  gives a floor 100 below it half its brightness, and a light of 300 hung 300 above a floor
+  gives it none. Put lights within 150 of what they light.
+- **A level is busy with things that move**: `e1m1` has 21 doors, 2 lifts and 6 buttons.
+
+## Rooms other than boxes
+
+Source: [`crates/qs-map-gen`](../../crates/qs-map-gen/README.md) (L-49).
+
+`map.build_room` builds one room of a shape into the open map, sealed but for the doorways
+asked for, with its lights; `map.build_passage` joins two doorways. Each is one undo step.
+
+| Shape | What it is | Smallest half-width | Smallest height |
+| --- | --- | --- | --- |
+| `hall` | Four pillars in from its corners, the ceiling raised in the middle, pilasters with torches | 192 | 192 |
+| `chamber` | Eight walls under a dome of two steps, a dais of two steps in the middle; as wide as long | 224 | 192 |
+| `pit` | A walk around a pit of liquid, two bridges crossing in its middle, beams under the ceiling | 224 | 192 |
+| `split` | The part toward the side it is `turned` to raised by 64, stairs up to it in the middle | 224 | 256 |
+| `court` | High walls open to the sky, an obelisk in the middle | 192 | 256 |
+| `cross` | Two aisles 256 wide through the middle, the one toward `turned` the higher, a lantern over the crossing | 224 | 192 |
+| `vault` | A long room under a pitched ceiling, its ridge toward `turned` | 192 | 224 |
+
+- Give `map.build_room` the room's `middle`, `floor`, `half` widths and `height`, all
+  multiples of 16, and the `doors`: the sides (`east`, `north`, `west`, `south`) to open. The
+  room takes 64 of rock more than its half-widths on every side, so no other room or passage
+  may come within that; put the middles of two rooms side by side 1024 apart and there is
+  room between any two shapes for a passage with stairs.
+- It answers each doorway's place (`at`): the middle of the opening on the room's outer
+  face, at the floor there. A doorway of a `split` on the side it is turned to is 64 above
+  its floor.
+- `map.build_passage` takes two of those places that face each other along x or along y, and
+  builds the passage between them with stairs when their floors differ, 16 a step. It needs
+  a length of 64 and the climb: 128 for a climb of 64.
+- It also answers where things may stand (`spots`) and where the player does (`stand`): put
+  the player start, the monsters and the items there with `map.place_entity`.
+- Build a level from these, no two rooms of it the same shape and size, and vary the
+  floors: a room 64 up or down from the last is four steps in the passage. `map.compile`
+  says whether it is sealed, and `map.play_from_here` whether anything stands in the dark.
+
 ## A whole level at once
 
 Source: [`crates/qs-map-gen`](../../crates/qs-map-gen/README.md) (L-48).

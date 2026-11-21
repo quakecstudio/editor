@@ -16,6 +16,7 @@ mod pak_written;
 mod paths;
 mod play_from_here;
 mod random_levels;
+mod room_kit;
 mod scenario_numbers;
 mod shape_stairs;
 mod spec_coverage;
