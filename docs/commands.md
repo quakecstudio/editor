@@ -97,6 +97,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.face_uv`](#mapface_uv) | Fits, justifies, flips, resets, snaps or adjusts the texture of faces of the open map, at the size its WAD gives it (MAP-13). |
 | [`map.find_leaks`](#mapfind_leaks) | Compiles the open map in memory and reports whether it leaks, with the trail from the entity the outside reaches out to the void, and the textures its WADs lack. |
 | [`map.flip`](#mapflip) | Mirrors entities and brushes along an axis through the middle of their box: brushes and point entities' origins, and their facing, as TrenchBroom's Flip. |
+| [`map.generate`](#mapgenerate) | Makes a random playable level and opens it: rooms of several shapes joined by passages, stairs and doors, from a start to an exit, with lights, monsters, weapons and a key, textured from the game's own levels. One seed gives one level. |
 | [`map.group`](#mapgroup) | Puts entities and brushes of the world in a new group, in the layer or group the first is in, as TrenchBroom writes a group. |
 | [`map.hide`](#maphide) | Hides entities of the open map in the editor until map.show_all (TrenchBroom's Hide Selection); the map is not changed. |
 | [`map.isolate`](#mapisolate) | Hides every entity of the open map but these in the editor until map.show_all (TrenchBroom's Isolate Selection); the map is not changed. |
@@ -4938,6 +4939,69 @@ Parameters:
     "axis"
   ],
   "title": "FlipParams",
+  "type": "object"
+}
+```
+
+## `map.generate`
+
+Makes a random playable level and opens it: rooms of several shapes joined by passages, stairs and doors, from a start to an exit, with lights, monsters, weapons and a key, textured from the game's own levels. One seed gives one level.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "LevelSize": {
+      "description": "How large a generated level is.",
+      "oneOf": [
+        {
+          "const": "small",
+          "description": "Five rooms.",
+          "type": "string"
+        },
+        {
+          "const": "medium",
+          "description": "Eight rooms.",
+          "type": "string"
+        },
+        {
+          "const": "large",
+          "description": "Twelve rooms.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.generate`.",
+  "properties": {
+    "path": {
+      "default": null,
+      "description": "The `.map` file to make, in the open project; `maps/random<seed>.map` when not given.\nOne that is there already is refused.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "seed": {
+      "default": null,
+      "description": "The seed: one seed and size give one level. One is drawn when none is given.",
+      "format": "uint64",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "size": {
+      "$ref": "#/$defs/LevelSize",
+      "default": "medium",
+      "description": "How large the level is; medium when not given."
+    }
+  },
+  "title": "GenerateParams",
   "type": "object"
 }
 ```

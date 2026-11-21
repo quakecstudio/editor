@@ -8,6 +8,7 @@
               and sizes are compared exactly as set"
 )]
 
+use qs_map_edit::testing::level_bsp;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -6335,4 +6336,138 @@ fn the_file_menu_has_one_new_project_item() {
     frame_with(&ctx, &mut app, Vec::new());
     let shown = frame_with(&ctx, &mut app, Vec::new());
     assert!(shown.iter().any(|text| text == which), "{shown:?}");
+}
+
+// No spec statement: L-48, the File menu's New Random Map and the map tab's button, shown
+// with a project open and no map, make a level from the game's textures and show it in the
+// map tab; when none is made the toolbar says why, the guide to the game's files opens when
+// the game is what it lacked, and an open map with unsaved edits is not replaced
+#[test]
+fn a_random_map_is_made_from_the_menu_and_the_map_tab() {
+    let file = menu::MENUS
+        .iter()
+        .find(|spec| spec.title == Text::File)
+        .unwrap();
+    assert!(file.items.contains(&Item::Choice(MenuChoice::RandomMap)));
+    assert_eq!(MenuChoice::RandomMap.command(), qs_map_edit::MAP_GENERATE);
+    assert_eq!(MenuChoice::RandomMap.title(), Text::NewRandomMapMenu);
+
+    let dir = TempDir::new("random-map");
+    let project = dir.path().join("mod");
+    fs::create_dir_all(&project).unwrap();
+    fs::write(project.join("progs.src"), "progs.dat\nworld.qc\n").unwrap();
+    fs::write(project.join("world.qc"), "void() worldspawn = {};\n").unwrap();
+    let mut harness = accessible();
+    let button = Text::NewRandomMapMenu.get();
+    // With no project open there is nowhere to make it: the toolbar says so, and the centre
+    // stays where it was.
+    let ctx = harness.ctx.clone();
+    let app = harness.state_mut().as_mut().unwrap();
+    app.carry_out(&ctx, menu::Chosen::Choice(MenuChoice::RandomMap));
+    harness.run();
+    let shell = harness.state().as_ref().unwrap().shell();
+    assert_eq!(shell.centre_tab(), CentreTab::Editor);
+    let said = shell.toolbar_error().unwrap().to_owned();
+    assert!(said.ends_with("no project is open"), "{said}");
+    harness.get_by_label_contains("no project is open");
+
+    let app = harness.state_mut().as_mut().unwrap();
+    app.shell.open_project(&project).unwrap();
+    // A machine with the game installed where the app looks has one: only without it is
+    // this the case of no game.
+    if app
+        .shell
+        .session()
+        .context()
+        .preview
+        .game_base_path()
+        .is_none()
+    {
+        app.shell.new_random_map();
+        harness.run();
+        harness.run();
+        let shell = harness.state().as_ref().unwrap().shell();
+        let said = shell.toolbar_error().unwrap().to_owned();
+        assert!(said.contains("no game was found"), "{said}");
+        assert!(!project.join("maps").exists());
+        // The guide to the game's files is open, as after a Play with no game.
+        harness.get_by_label(Text::GameGuide.get());
+        harness.get_by_label(Text::NotNow.get()).click();
+        harness.run();
+    }
+
+    let game = game_folder(&dir);
+    // The game keeps its levels in a PAK, and is the full game, whose search path is read
+    // (FS-4.2): id's pop table in gfx/pop.lmp.
+    let level = level_bsp(&["brick", "stone"]);
+    let pop: Vec<u8> = qs_vfs::FS_POP_TABLE
+        .iter()
+        .flat_map(|value| value.to_be_bytes())
+        .collect();
+    let pak0 = qs_pak::write_pak(&[
+        (qs_vfs::FS_POP_PATH, pop.as_slice()),
+        ("maps/e1.bsp", level.as_slice()),
+    ])
+    .unwrap();
+    fs::write(game.join("id1/pak0.pak"), pak0).unwrap();
+    let pak1 = qs_pak::write_pak(&[("readme.txt", b"the rest".as_slice())]).unwrap();
+    fs::write(game.join("id1/pak1.pak"), pak1).unwrap();
+    let app = harness.state_mut().as_mut().unwrap();
+    app.shell
+        .set_settings_file(dir.path().join("config/settings.toml"));
+    assert!(app.shell.choose_game_folder(&game).unwrap().state.plays());
+    // The map tab, with a project open and no map, offers one.
+    harness.run();
+    assert!(harness.query_by_label(button).is_none());
+    harness
+        .get_all_by_label(Text::Map.get())
+        .next()
+        .unwrap()
+        .click();
+    harness.run();
+    harness.run();
+    harness.get_by_label(Text::NewRandomMapHow.get());
+    harness.get_by_label(button).click();
+    harness.run();
+    harness.run();
+    let shell = harness.state().as_ref().unwrap().shell();
+    assert_eq!(shell.toolbar_error(), None);
+    assert_eq!(shell.centre_tab(), CentreTab::Map);
+    let made = shell
+        .session()
+        .context()
+        .workbench
+        .map()
+        .unwrap()
+        .path()
+        .to_path_buf();
+    assert!(made.starts_with(project.join("maps")), "{}", made.display());
+    assert!(made.exists());
+    assert!(harness.query_by_label(button).is_none(), "the map is shown");
+
+    // With an edit of that map not saved, the menu's entry makes none: the map stays.
+    let app = harness.state_mut().as_mut().unwrap();
+    app.shell
+        .execute(
+            "map.set_key",
+            json!({ "entity": 0, "key": "message", "value": "mine" }),
+        )
+        .unwrap();
+    app.shell.new_random_map();
+    let shell = harness.state().as_ref().unwrap().shell();
+    assert_eq!(shell.toolbar_error(), Some(Text::RandomMapUnsaved.get()));
+    assert_eq!(
+        shell.session().context().workbench.map().unwrap().path(),
+        made
+    );
+    // Saved, it gives way to another.
+    let app = harness.state_mut().as_mut().unwrap();
+    app.shell.execute("map.save", json!({})).unwrap();
+    app.shell.new_random_map();
+    let shell = harness.state().as_ref().unwrap().shell();
+    assert_eq!(shell.toolbar_error(), None);
+    assert_ne!(
+        shell.session().context().workbench.map().unwrap().path(),
+        made
+    );
 }

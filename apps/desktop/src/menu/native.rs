@@ -210,6 +210,7 @@ impl MenuBar {
                         MenuChoice::Zoom(_) => Chosen::Choice(choice),
                         MenuChoice::OpenFolder
                         | MenuChoice::NewProject
+                        | MenuChoice::RandomMap
                         | MenuChoice::FileFinder
                         | MenuChoice::GameFiles
                         | MenuChoice::ExportMod

@@ -79,6 +79,7 @@ map.face_align
 map.face_uv
 map.find_leaks
 map.flip
+map.generate
 map.group
 map.hide
 map.isolate

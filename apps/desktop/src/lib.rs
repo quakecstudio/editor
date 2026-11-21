@@ -299,6 +299,7 @@ impl App {
             Chosen::Choice(choice) => match choice {
                 MenuChoice::OpenFolder => self.shell.open_folder(),
                 MenuChoice::NewProject => self.shell.ask_new_project(),
+                MenuChoice::RandomMap => self.shell.new_random_map(),
                 MenuChoice::GameFiles => self.shell.show_game_guide(),
                 MenuChoice::ExportMod => self.shell.export_mod(),
                 MenuChoice::Zoom(step) => self.shell.zoom(step),

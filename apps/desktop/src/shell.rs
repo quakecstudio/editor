@@ -29,7 +29,7 @@ use qs_layout::{
     MovePanelParams, Outline, Panel, RESIZE_PANEL, ResizePanelParams, ShowPanelParams, SoftWrap,
     Split, TOGGLE_PANEL, TogglePanelParams, WhenShown, Zoom, ZoomParams,
 };
-use qs_map_edit::opens_in_map_editor;
+use qs_map_edit::{MAP_GENERATE, opens_in_map_editor};
 use qs_render::{Camera, MapMesh};
 use qs_settings::SettingsFile;
 use qs_templates::GitHub;
@@ -284,7 +284,8 @@ pub struct Shell {
     focus_applied: u64,
     /// The edits waiting for review as of the last frame (P7-18).
     review_seen: usize,
-    /// The last play-loop command's error, shown on the toolbar until the next one.
+    /// The last play-loop command's error, or why New Random Map made no map (L-48), shown
+    /// on the toolbar until the next one.
     preview_error: Option<String>,
     /// Where the app's menu is: the system's menu bar, or the toolbar in the window (P3-44).
     menu: MenuPlace,
@@ -1511,6 +1512,50 @@ impl Shell {
             }
             self.run_chosen(&binding.command);
         }
+    }
+
+    /// Makes a random level in the open project and shows it in the map tab (L-48). When
+    /// none is made the toolbar says why, as it does for Play, and the guide to the game's
+    /// files opens when the game is what it lacked. An open map with unsaved edits is not
+    /// replaced: the level would take its place.
+    pub fn new_random_map(&mut self) {
+        let context = self.session.context();
+        let unsaved = context
+            .workbench
+            .map()
+            .is_some_and(qs_map_edit::MapDocument::is_unsaved);
+        let no_game =
+            context.workbench.root().is_some() && context.preview.game_base_path().is_none();
+        let result = if unsaved {
+            Err(Text::RandomMapUnsaved.get().to_owned())
+        } else {
+            self.session
+                .execute(
+                    MAP_GENERATE,
+                    serde_json::Value::Object(serde_json::Map::new()),
+                )
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        };
+        match result {
+            Ok(()) => {
+                self.centre_tab = CentreTab::Map;
+                self.preview_error = None;
+            }
+            Err(error) => {
+                tracing::warn!(%error, "no random map was made");
+                if no_game && !unsaved {
+                    self.show_game_guide();
+                }
+                self.preview_error = Some(error);
+            }
+        }
+    }
+
+    /// What the toolbar says went wrong, for tests.
+    #[cfg(test)]
+    pub(crate) fn toolbar_error(&self) -> Option<&str> {
+        self.preview_error.as_deref()
     }
 
     /// Runs the command `id` a key or a menu item chose, with no parameters. Play is run as
@@ -2831,18 +2876,40 @@ impl Shell {
             CentreTab::Map => (Token::SurfaceViewport, Text::NoMap),
             CentreTab::Search => (Token::SurfaceEditor, Text::NoSearchMatch),
         };
+        // With a project open, the map tab offers a level made for it (L-48).
+        let offers_map =
+            self.centre_tab == CentreTab::Map && self.session.context().workbench.root().is_some();
         let theme = &self.theme;
+        let mut random_map = false;
         egui::Frame::NONE.fill(theme.color(fill)).show(ui, |ui| {
             let size = ui.available_size();
-            ui.allocate_ui_with_layout(
-                size,
-                EguiLayout::centered_and_justified(egui::Direction::TopDown),
-                |ui| {
-                    ui.label(RichText::new(message.get()).color(theme.color(Token::TextMuted)));
-                },
-            );
+            if offers_map {
+                ui.allocate_ui_with_layout(size, EguiLayout::top_down(egui::Align::Center), |ui| {
+                    ui.add_space(size.y / EMPTY_MAP_DROP);
+                    let muted = theme.color(Token::TextMuted);
+                    ui.label(RichText::new(message.get()).color(muted));
+                    ui.add_space(theme.space(1));
+                    random_map = ui.button(Text::NewRandomMapMenu.get()).clicked();
+                    ui.label(
+                        RichText::new(Text::NewRandomMapHow.get())
+                            .small()
+                            .color(muted),
+                    );
+                });
+            } else {
+                ui.allocate_ui_with_layout(
+                    size,
+                    EguiLayout::centered_and_justified(egui::Direction::TopDown),
+                    |ui| {
+                        ui.label(RichText::new(message.get()).color(theme.color(Token::TextMuted)));
+                    },
+                );
+            }
             ui.allocate_response(egui::Vec2::ZERO, Sense::hover());
         });
+        if random_map {
+            self.new_random_map();
+        }
     }
 }
 
@@ -3268,6 +3335,8 @@ fn status_dot(ui: &mut Ui, colour: egui::Color32) {
 
 /// A status dot's radius as a part of the line's height: a quarter.
 const STATUS_DOT_PARTS: f32 = 4.0;
+/// How far down the map tab its words stand with no map open: this part of its height.
+const EMPTY_MAP_DROP: f32 = 3.0;
 
 /// The most of the window's width a side panel takes when the interface is zoomed in.
 const SIDE_PANEL_SHARE: f32 = 0.3;

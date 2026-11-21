@@ -29,6 +29,7 @@ qs-bsp = { workspace = true }
 qs-commands = { workspace = true }
 qs-map = { workspace = true }
 qs-map-bsp = { workspace = true }
+qs-map-gen = { workspace = true }
 qs-map-light = { workspace = true }
 qs-pak = { workspace = true }
 qs-paths = { workspace = true }

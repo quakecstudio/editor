@@ -48,6 +48,7 @@ pub use disk::{
 };
 pub use error::MapEditError;
 pub use flags::{FlagChange, MAP_SET_FLAG, SetFlagParams};
+pub use generate::{GenerateParams, LevelSize, MAP_GENERATE, MapGenerated, RoomMade};
 pub use groups::{
     EntityListParams, ExportParams, LAYER_KEY, LayerId, LayerInfo, LayerOption, MAP_EXPORT,
     MAP_HIDE, MAP_ISOLATE, MAP_LAYERS, MAP_LOCK, MAP_SET_LAYER, MAP_SHOW_ALL, MAP_UNLOCK_ALL,
@@ -84,6 +85,7 @@ mod containers;
 mod disk;
 mod error;
 mod flags;
+mod generate;
 mod groups;
 mod inspect;
 mod issues;
@@ -1061,27 +1063,7 @@ impl<C: HasMap + 'static> Command<C> for MapNew {
         context: &mut C,
         MapNewParams { path, keys }: MapNewParams,
     ) -> Result<Outcome<MapOpened, C>, MapEditError> {
-        // A `.map` in the open project, a relative path taken from it: any other file would
-        // not open as the map made. With no project open the path is the caller's to choose,
-        // as `map.open`'s is.
-        let root = context.map_project().project_root();
-        let path = root
-            .as_ref()
-            .map_or_else(|| path.clone(), |root| root.join(&path));
-        let is_map = path
-            .extension()
-            .is_some_and(|extension| extension.eq_ignore_ascii_case(MAP_EXTENSION));
-        // A `..` could leave the project again after the path began in it.
-        let leaves = path
-            .components()
-            .any(|part| part == std::path::Component::ParentDir);
-        if !is_map || leaves || root.is_some_and(|root| !path.starts_with(root)) {
-            return Err(MapEditError::NotNewMap { path });
-        }
-        // Before its folders are made, so a refused map leaves nothing behind.
-        if path.exists() {
-            return Err(MapEditError::Exists { path });
-        }
+        let path = new_map_path(context, &path)?;
         let mut world = Entity::new();
         let classname = (CLASSNAME.to_owned(), WORLD_CLASSNAME.to_owned());
         // The world's classname is its own: one among the keys is not taken.
@@ -1096,29 +1078,75 @@ impl<C: HasMap + 'static> Command<C> for MapNew {
         }
         let mut file = MapFile::new();
         file.push_entity(world);
-        let saved = |error| MapEditError::Save {
-            path: path.clone(),
-            error,
-        };
-        if let Some(folder) = path.parent() {
-            std::fs::create_dir_all(folder).map_err(saved)?;
-        }
-        // Made only when no file is there, so one made meanwhile is not written over.
-        let mut made = match std::fs::File::create_new(&path) {
-            Ok(made) => made,
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-                return Err(MapEditError::Exists { path });
-            }
-            Err(error) => return Err(saved(error)),
-        };
-        std::io::Write::write_all(&mut made, &file.to_bytes()).map_err(saved)?;
-        drop(made);
-        let document = context.map_store().open_map(&path)?;
-        Ok(Outcome::outside_history(MapOpened {
-            path: document.path.clone(),
-            entities: document.file.entities.len(),
-        }))
+        write_new_map(context, path, &file).map(Outcome::outside_history)
     }
+}
+
+/// Where a new map asked for at `path` is made: a `.map` in the open project, a relative path
+/// taken from it; any other file would not open as the map made. With no project open the
+/// path is the caller's to choose, as `map.open`'s is.
+///
+/// # Errors
+///
+/// [`MapEditError::NotNewMap`] for a file that is no `.map` or is outside the project, and
+/// [`MapEditError::Exists`] for one that is there already.
+pub(crate) fn new_map_path<C: HasMap>(
+    context: &mut C,
+    path: &Path,
+) -> Result<PathBuf, MapEditError> {
+    let root = context.map_project().project_root();
+    let path = root
+        .as_ref()
+        .map_or_else(|| path.to_path_buf(), |root| root.join(path));
+    let is_map = path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case(MAP_EXTENSION));
+    // A `..` could leave the project again after the path began in it.
+    let leaves = path
+        .components()
+        .any(|part| part == std::path::Component::ParentDir);
+    if !is_map || leaves || root.is_some_and(|root| !path.starts_with(root)) {
+        return Err(MapEditError::NotNewMap { path });
+    }
+    // Before its folders are made, so a refused map leaves nothing behind.
+    if path.exists() {
+        return Err(MapEditError::Exists { path });
+    }
+    Ok(path)
+}
+
+/// Writes `file` as the new map at `path`, which [`new_map_path`] gave, and opens it.
+///
+/// # Errors
+///
+/// [`MapEditError::Exists`] when a file was made there meanwhile, and [`MapEditError::Save`].
+pub(crate) fn write_new_map<C: HasMap>(
+    context: &mut C,
+    path: PathBuf,
+    file: &MapFile,
+) -> Result<MapOpened, MapEditError> {
+    let saved = |error| MapEditError::Save {
+        path: path.clone(),
+        error,
+    };
+    if let Some(folder) = path.parent() {
+        std::fs::create_dir_all(folder).map_err(saved)?;
+    }
+    // Made only when no file is there, so one made meanwhile is not written over.
+    let mut made = match std::fs::File::create_new(&path) {
+        Ok(made) => made,
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            return Err(MapEditError::Exists { path });
+        }
+        Err(error) => return Err(saved(error)),
+    };
+    std::io::Write::write_all(&mut made, &file.to_bytes()).map_err(saved)?;
+    drop(made);
+    let document = context.map_store().open_map(&path)?;
+    Ok(MapOpened {
+        path: document.path.clone(),
+        entities: document.file.entities.len(),
+    })
 }
 
 /// `map.select`.
@@ -1443,6 +1471,7 @@ pub fn register_map_edit<C: HasMap + 'static>(
 ) -> Result<(), RegisterError> {
     registry.register(MapOpen)?;
     registry.register(MapNew)?;
+    registry.register(generate::MapGenerate)?;
     registry.register(review::MapStage)?;
     registry.register(review::MapUnstage)?;
     registry.register(review::MapStaged)?;

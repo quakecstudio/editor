@@ -66,6 +66,11 @@ const INSPECT_MAP: &str = "map.list_entities";
 const OPEN_MAP: &str = "map.open";
 /// The workbench's command that makes a map and opens it in place of the open one.
 const NEW_MAP: &str = "map.new";
+/// The workbench's command that generates a level and opens it in place of the open one.
+const GENERATE_MAP: &str = "map.generate";
+/// The commands that open a map of their own, so need none open: the file each makes or
+/// opens is held to the project by the command itself.
+const OPENERS: [&str; 3] = [OPEN_MAP, NEW_MAP, GENERATE_MAP];
 /// The workbench's command that makes the last map edit again: a map edit under another name.
 const REPEAT_EDIT: &str = "edit.repeat";
 /// The workbench's commands that take back and make again the last change of the session's
@@ -87,8 +92,8 @@ impl Tool {
 }
 
 /// Runs `tool` on `session` with `arguments`. A map tool that writes runs only when the open
-/// map's file lies under a write root, since it may write beside it; `map.open` and `map.new`
-/// replace the open map, and their path is checked as an argument; `edit.undo` and
+/// map's file lies under a write root, since it may write beside it; `map.open`, `map.new` and
+/// `map.generate` replace the open map, and their path is checked as an argument; `edit.undo` and
 /// `edit.redo`, which may take back or make again an edit of the open map, are held to the
 /// same root while a map is open. Its edit is made at once,
 /// as an outside agent's edit of a file is (L-43): no review is begun for it, and undo, or a
@@ -101,7 +106,7 @@ fn run_tool<K: Commands>(
     settings: &ServerSettings,
 ) -> Result<Value, ToolError> {
     let history = tool.walks_history();
-    if !(tool.edits_map() || history) || &*tool.id == OPEN_MAP || &*tool.id == NEW_MAP {
+    if !(tool.edits_map() || history) || OPENERS.contains(&&*tool.id) {
         return session.run(&tool.id, arguments);
     }
     let open = match session.run(INSPECT_MAP, Value::Object(serde_json::Map::new())) {
@@ -539,6 +544,7 @@ const INSTRUCTIONS: &str = "Every command of QuakeC Studio over the project this
     To change how a monster, a weapon or an item looks: model.copy_from_game makes a file of \
     the project's own of a model of the game, model.inspect reads it, model.recolor, \
     model.scale and model.move change it, and the QuakeC names the new file. \
+    map.generate makes a whole random level to play or to start from. \
     To build a map: map.new (or map.open), then map.list_textures for the texture names there \
     are. A room is map.brush_create for a box and map.brush_hollow for its walls; rooms are \
     joined by a box across the walls between them given to map.brush_subtract. The \

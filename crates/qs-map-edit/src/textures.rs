@@ -217,6 +217,11 @@ impl GameTextures {
         any.and_then(|()| builder.to_bytes().ok())
     }
 
+    /// The names of the textures the levels hold, in the levels' order.
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.textures.iter().map(|(held, _)| held.name.as_str())
+    }
+
     /// How many textures the levels hold.
     #[must_use]
     pub fn len(&self) -> usize {

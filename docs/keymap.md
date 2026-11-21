@@ -243,6 +243,7 @@ A command that answers a question is read by a panel, the agent or MCP. A comman
 | `map.move_entity` | needs a value | Moves an entity of the open map: a point entity's origin, a brush entity's brushes. |
 | `map.move_to_layer_or_group` | needs a value | Moves an entity or a group of the open map into a layer or a group, or into the default layer given the world, as TrenchBroom writes it. |
 | `map.new` | needs a value | Makes a new .map holding a world with the keys given, and opens it in the map view; a file that is there already is refused. |
+| `map.generate` | run from a menu | Makes a random playable level and opens it: rooms of several shapes joined by passages, stairs and doors, from a start to an exit, with lights, monsters, weapons and a key, textured from the game's own levels. One seed gives one level. |
 | `map.open` | needs a value | Opens a .map in the map view, or a shipped .bsp's entities when the map has no .map source; nothing is selected. |
 | `map.outline` | answers a question | The open map's outline: the default layer and each layer, their groups and linked groups, then their entities by classname and targetname, with brush counts; with filter, only what holds the text and what is around it. |
 | `map.paste` | needs a value | Adds a .map's text to the open map, its world's brushes to the world and its other entities after the map's: where the text has them, or with the middle of their floor at a point on the grid. |
@@ -285,7 +286,7 @@ A command that answers a question is read by a panel, the agent or MCP. A comman
 | `model.add_frames` | needs a value | Adds frames of another model of the same vertices to the end of a model's own, each by its name: QuakeC's $frame list gains the same names at its end. |
 | `model.copy_from_game` | needs a value | Copies a model of the game, by its name there such as progs/soldier.mdl, into the project as a file of its own to change: a mod's file of the same name takes the game's place, and one of a new name is a new model. |
 | `model.export_skin` | needs a value | Writes a skin of a model as a PNG, in the game's palette, to look at or to paint on and give back with model.set_skin. |
-| `model.inspect` | answers a question | Reads a .mdl model: its skins and their size, its vertices and triangles, the box it fills, and its frames by name in the order QuakeC numbers them, as a $frame line lists them. |
+| `model.inspect` | answers a question | Reads a .mdl model: its skins, their size and the rows of the palette each is of, its vertices and triangles, the box it fills, and its frames by name in the order QuakeC numbers them, as a $frame line lists them. |
 | `model.move` | needs a value | Moves a model against its origin, the point the entity's origin is at: its vertices keep their packed places and the header's origin moves. |
 | `model.recolor` | needs a value | Recolours a skin of a model by rows of the palette: every pixel of a row becomes the same shade of another row, as the game recolours a player's shirt and trousers. |
 | `model.remove_frames` | needs a value | Takes frames out of a model, each by its name. The frames after one taken out are numbered one less, so QuakeC's $frame list loses the same names. |
