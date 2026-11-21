@@ -8,7 +8,7 @@ key and at its last, and writes each pose's triangles.
 `ufbx` is Blender's importer built on ufbx (`wm.fbx_import`), `legacy` its older one in
 Python (`import_scene.fbx`). A line `frame` starts a pose; each line after is a triangle,
 three corners of `x y z u v`. A polygon is a fan from its first corner and a triangle of
-corners `a b c` is written `b a c`, as the readers keep one (MDL-10.6); `v` is measured down
+corners `a b c` is written `b a c`, as the readers keep one (MDL-10.9); `v` is measured down
 the picture.
 
 Positions are written in the file's own space. Blender stands a file whose y is up on its

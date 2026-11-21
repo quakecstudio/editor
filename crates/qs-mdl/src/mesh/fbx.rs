@@ -5,10 +5,11 @@
 //
 // Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: iqm/iqm.cpp, loadfbx, checkversion, parse, skipprop, findbegin, readarray, parsegeometry, parsemodel, parsedeformer, parsecurve, parsexform, parseanimlayer, parseanimstack, parseobjects, parseconnection, parseconnections, process, finish, setcurve, numframes
 
-//! Autodesk's `.fbx` files in their text form, version 7, as a mesh of poses (MDL-10.6), read
-//! as FTEQW's model converter reads them: the objects of the file (geometries, the models
-//! they belong to, limbs, skin clusters, animation curves, layers and stacks) and the
-//! connections among them. The binary form (MDL-11) is written out as text first, by
+//! Autodesk's `.fbx` files in their text form, version 7, as a mesh of poses (MDL-10.9), read
+//! as FTEQW's model converter reads them: the objects of the file (geometries, models, skin
+//! clusters, animation curves, layers and stacks) and the connections among them. Where a
+//! file Blender wrote needs more than the converter reads, the models of every kind as one
+//! tree and the clusters' bind matrices, the reader is held to Blender's poses (MDL-10.10). The binary form (MDL-11) is written out as text first, by
 //! [`binary`], and read the same way.
 
 mod binary;
@@ -926,7 +927,7 @@ impl Scene {
                 .collect();
             // Curves with a key each at the same times are the animation's frames, a key
             // each, as the converter has them of curves of one length. Any others are
-            // sampled by their keys' times (MDL-10.7).
+            // sampled by their keys' times (MDL-10.10).
             let count = curves.first().map_or(0, |curve| curve.values.len());
             let ticks = |curve: &Curve| -> Vec<u64> {
                 curve.times.iter().map(|time| time.to_bits()).collect()
@@ -1085,7 +1086,7 @@ impl Scene {
                 .unwrap_or(Affine::IDENTITY);
             let placed = model.map_or(stood, |model| stood.after(&model.geometric()));
             // The corners that are one of the geometry's vertices with one texture
-            // coordinate are one vertex of the mesh (MDL-10.7).
+            // coordinate are one vertex of the mesh (MDL-10.10).
             let mut welded: BTreeMap<(usize, [u32; 2]), usize> = BTreeMap::new();
             let mut places = Vec::with_capacity(corners.len());
             for (corner, (vertex, _)) in corners.iter().enumerate() {
@@ -1174,7 +1175,7 @@ impl Geometry {
     /// none when the file has not one for each.
     #[expect(
         clippy::cast_possible_truncation,
-        reason = "spec MDL-10.6: a texture coordinate is kept in single precision"
+        reason = "spec MDL-10.9: a texture coordinate is kept in single precision"
     )]
     fn texcoords(&self, corners: &[(usize, bool)]) -> Vec<[f32; 2]> {
         let (uvs, _) = self.uvs.as_chunks::<UV>();
@@ -1206,9 +1207,9 @@ impl Geometry {
 /// Its axes are turned as `up` says, as an `.obj`'s are (MDL-9.1): with y up, a position
 /// `(x, y, z)` is Quake's `(-z, -x, y)`, so that a model facing -z faces forward. The
 /// converter turns a file a quarter about x instead, "`erotate *= Quat(M_PI/2, Vec3(1, 0,
-/// 0));`", which leaves such a model facing left (MDL-10.7).
+/// 0));`", which leaves such a model facing left (MDL-10.10).
 ///
-/// Implements MDL-10.6.
+/// Implements MDL-10.9.
 ///
 /// # Errors
 ///
@@ -1240,7 +1241,7 @@ pub fn read(text: &str, up: Up) -> Result<Mesh, FbxError> {
 /// Reads an `.fbx` file of either form as a mesh: a binary file, known by its first bytes,
 /// is written out as the text form and read as [`read`] reads one.
 ///
-/// Implements MDL-10.6, MDL-10.7 and MDL-11.
+/// Implements MDL-10.9, MDL-10.10 and MDL-11.
 ///
 /// # Errors
 ///

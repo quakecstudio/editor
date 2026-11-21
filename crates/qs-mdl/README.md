@@ -35,7 +35,8 @@ Reads Quake's models other than brush models, and writes and makes alias models.
   and Autodesk's `.fbx`, each to a `Mesh` of poses. Ported from the `iqm/` directory
   of FTEQW at the pinned commit (ADR-0030), Lee Salzman's IQM exporter with FTE's changes,
   whose MIT notice is `LICENSE-iqm.txt`; the tests hold each to what the converter itself
-  made of the fixtures.
+  made of the fixtures. An fbx as Blender writes one, its limbs under an armature and its
+  mesh bound by its clusters' matrices, is held to Blender's own poses of a fixture.
 - **The binary form of fbx** (`mesh::fbx::binary`, MDL-11): a binary `.fbx` is written out
   as the text form and read by the same reader. Written from Blender's public description
   of the format, quoted in the spec; nothing is ported.

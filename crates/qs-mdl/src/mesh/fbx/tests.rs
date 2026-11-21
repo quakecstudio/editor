@@ -25,7 +25,7 @@ fn as_the_converter_turns(mut mesh: Mesh) -> Mesh {
     mesh
 }
 
-// spec MDL-10.1, MDL-10.6: a text fbx, turned as the converter turns one, is the mesh
+// spec MDL-10.8, MDL-10.9: a text fbx, turned as the converter turns one, is the mesh
 // FTEQW's converter makes of it, for a plain model and for one whose arm has a pre-rotation
 // and whose mesh model stands moved, turned and scaled
 #[test]
@@ -52,7 +52,7 @@ fn an_fbx_model_is_the_converters() {
     }
 }
 
-// spec MDL-10.7: a file whose y is up is turned as an .obj is, so that a model facing -z
+// spec MDL-10.10: a file whose y is up is turned as an .obj is, so that a model facing -z
 // faces +x: a position (x, y, z) is (-z, -x, y), where the converter's is (x, -z, y); a file
 // whose z is up is left as it is
 #[test]
@@ -91,7 +91,7 @@ fn square(polygons: &str) -> String {
     )
 }
 
-// spec MDL-10.7: a polygon of more than three corners is a fan from its first, each
+// spec MDL-10.10: a polygon of more than three corners is a fan from its first, each
 // triangle turned around as a triangle is; a file with no polygons has its vertices three
 // to a triangle; with no animation the mesh is one pose, base
 #[test]
@@ -120,7 +120,7 @@ fn a_polygon_is_a_fan() {
     assert_eq!(faces(&bare), [[b, a, c]]);
 }
 
-// spec MDL-10.6: commas are passed over, a semicolon starts a comment, a quoted name is one
+// spec MDL-10.9: commas are passed over, a semicolon starts a comment, a quoted name is one
 // token, an array's count is one, and a property a reader does not know is passed over with
 // the block it opens
 #[test]
@@ -167,7 +167,7 @@ fn tokens_are_read_as_the_converter_reads_them() {
     assert_eq!(tokens.token().map(plain), Some(Token::Number(3.0, 0)));
 }
 
-// spec MDL-10.6, MDL-10.7: a file whose first line does not say FBX 7, as a binary file's
+// spec MDL-10.9, MDL-10.10: a file whose first line does not say FBX 7, as a binary file's
 // does not, is refused; a file with no geometry is a mesh with no triangle
 #[test]
 fn what_is_no_text_fbx_is_refused() {
@@ -190,7 +190,7 @@ fn what_is_no_text_fbx_is_refused() {
     assert!(empty.triangles.is_empty());
 }
 
-// spec MDL-10.6: a number is a sign, digits with a point among them and an exponent when
+// spec MDL-10.9: a number is a sign, digits with a point among them and an exponent when
 // digits follow its e; a long run of signs is as many zeros, each one byte
 #[test]
 fn a_number_is_read_as_strtod_reads_one() {
@@ -216,7 +216,7 @@ fn a_number_is_read_as_strtod_reads_one() {
     assert_eq!(count, 200_000);
 }
 
-// spec MDL-10.1, MDL-10.6: a limb written before its parent follows it all the same
+// spec MDL-10.8, MDL-10.9: a limb written before its parent follows it all the same
 #[test]
 fn a_limb_before_its_parent_follows_it() {
     let text = include_str!("../fixtures/arm.fbx.txt");
@@ -249,7 +249,7 @@ fn a_limb_before_its_parent_follows_it() {
 }
 
 proptest::proptest! {
-    // spec MDL-10.6, MDL-10.7: whatever follows the first line, a mesh is made or the file
+    // spec MDL-10.9, MDL-10.10: whatever follows the first line, a mesh is made or the file
     // is refused
     #[test]
     fn any_fbx_is_read_or_refused(
@@ -410,7 +410,7 @@ proptest::proptest! {
     }
 }
 
-// spec MDL-10.7: the corners that are one vertex of a geometry with one texture coordinate
+// spec MDL-10.10: the corners that are one vertex of a geometry with one texture coordinate
 // are one vertex of the mesh: fifteen corners of five vertices are five
 #[test]
 fn corners_of_one_vertex_are_one() {
@@ -431,7 +431,7 @@ fn corners_of_one_vertex_are_one() {
     assert_eq!(mesh.frames[0].positions.len(), 6);
 }
 
-// spec MDL-10.7: an animation whose curves are not of one length, which the converter makes
+// spec MDL-10.10: an animation whose curves are not of one length, which the converter makes
 // none of, is sampled ten times a second by its keys' times, each curve read in a straight
 // line between its keys: a turn of 0 to 90 degrees in two keys a second apart, with a lift
 // in three, is eleven frames, the sixth half way
@@ -536,7 +536,7 @@ fn a_property_past_its_record_is_refused() {
     assert_eq!(read_bytes(&file, Up::Y).unwrap_err(), FbxError::Binary);
 }
 
-// spec MDL-10.7: curves with as many keys at other times are sampled by time, not paired
+// spec MDL-10.10: curves with as many keys at other times are sampled by time, not paired
 // key with key; a pose is made at the last key however short the animation is
 #[test]
 fn keys_at_other_times_are_sampled() {
@@ -564,7 +564,7 @@ fn keys_at_other_times_are_sampled() {
     assert_eq!(read(&short, Up::Z).unwrap().frames.len(), 2);
 }
 
-// spec MDL-10.6: a block is passed over by its braces however deep they go; a geometry of
+// spec MDL-10.9: a block is passed over by its braces however deep they go; a geometry of
 // the kind Shape, a shape key's, is no mesh; two objects whose numbers differ past what a
 // double holds are two
 #[test]
@@ -590,7 +590,7 @@ fn deep_blocks_shape_keys_and_great_numbers_are_read() {
     assert_eq!(read(&great, Up::Z).unwrap(), read(text, Up::Z).unwrap());
 }
 
-// spec MDL-10.7: curves without a time for each value are a frame for each key when they
+// spec MDL-10.10: curves without a time for each value are a frame for each key when they
 // are of one length and no animation when they are not; keys at no time that is a number
 // are no animation
 #[test]

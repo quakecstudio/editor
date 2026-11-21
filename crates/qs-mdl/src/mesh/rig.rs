@@ -127,7 +127,7 @@ pub(super) fn scaled(rotation: Mat3, [sx, sy, sz]: Vec3, moved: Vec3) -> Affine 
 /// A single-precision position.
 #[expect(
     clippy::cast_possible_truncation,
-    reason = "spec MDL-9.2, MDL-10.1: a posed position is stored in single precision, the nearest"
+    reason = "spec MDL-9.2, MDL-10.8: a posed position is stored in single precision, the nearest"
 )]
 pub(super) fn single(point: Vec3) -> [f32; 3] {
     point.map(|part| part as f32)

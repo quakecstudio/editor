@@ -9,7 +9,7 @@
 use super::super::recorded::agrees;
 use super::*;
 
-// spec MDL-10.1, MDL-10.3: an smd model and its animation are the mesh FTEQW's converter
+// spec MDL-10.8, MDL-10.3: an smd model and its animation are the mesh FTEQW's converter
 // makes of them, for a plain model and for one whose base pose is turned, whose animation
 // skips a time and whose last frame gives the arm no pose
 #[test]
@@ -115,7 +115,7 @@ fn a_time_past_the_bound_starts_no_frame() {
     assert_eq!(most.frames.len(), 65_536);
 }
 
-// spec MDL-10.1, MDL-10.3: a joint may come before its parent, and follows it all the same;
+// spec MDL-10.8, MDL-10.3: a joint may come before its parent, and follows it all the same;
 // a joint an animation gives no pose at all keeps the model's base pose
 #[test]
 fn a_joint_before_its_parent_follows_it() {
