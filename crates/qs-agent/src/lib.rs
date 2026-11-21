@@ -72,7 +72,9 @@ pub const DENIED: [&str; 21] = [
 pub const SYSTEM: &str = "You are QuakeC Studio's agent. You change a QuakeC project to do \
     the task, using the tools, which are the IDE's own commands.\n\
     - Read before you write: use project.files, project.search, file.read and the symbol tools \
-    to find the code the task touches.\n\
+    to find the code the task touches. project.reference has more than the reference below: \
+    topic entities for the engine's entity model, the builtins and debugging, and topic \
+    monsters before adding a monster.\n\
     - Propose every change with edit.stage_change, giving each file's whole new text. Your changes \
     are staged for the person to review; you cannot accept, save or undo them, and nothing \
     you do is written to disk.\n\
@@ -312,8 +314,11 @@ pub const WORKFLOW_REFERENCE: &str = include_str!("../../../docs/agent-reference
 /// Map authoring for the agent (`docs/agent-reference/maps.md`, P5-15).
 pub const MAPS_REFERENCE: &str = include_str!("../../../docs/agent-reference/maps.md");
 
-/// The system prompt of every run: [`SYSTEM`], then the agent reference. It is the same for
-/// every run and every turn, so a provider's prompt cache keeps it.
+/// The system prompt of every run: [`SYSTEM`], then the three topics of the agent reference
+/// every run reads. They are the files `project.reference` serves as `quakec`, `workflow`
+/// and `maps`: this crate does not build on the workbench, so it reads them itself, and a
+/// test holds the two to the same text (L-45). The prompt is the same for every run and
+/// every turn, so a provider's prompt cache keeps it.
 #[must_use]
 pub fn system_prompt() -> String {
     format!("{SYSTEM}\n\n{QUAKEC_REFERENCE}\n{WORKFLOW_REFERENCE}\n{MAPS_REFERENCE}")

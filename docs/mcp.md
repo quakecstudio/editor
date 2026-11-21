@@ -137,6 +137,15 @@ project compiled reads its BSP from beside the open map of that name, or from th
 `maps`. With `--connect`, an edit made while the person has the map's review open in the app
 joins that review, as an edit of theirs does.
 
+### Writing QuakeC
+
+The server's instructions send an agent to `project.reference` before it writes or debugs
+QuakeC (L-45). It answers one topic of the agent reference (`docs/agent-reference/`): `quakec`,
+the language and how a mod runs; `entities`, what the engine calls, how an entity moves and
+collides, the builtins by what they are for, what the language does that C does not, and
+debugging; `monsters`, how a monster is written and every place a new one is added; `workflow`,
+tests and scenarios; and `maps`. The built-in agent reads the same text.
+
 ### Building and reviewing a map
 
 The server's instructions give an agent the order (L-40); it is the one a person follows:

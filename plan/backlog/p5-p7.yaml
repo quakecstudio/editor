@@ -2587,10 +2587,104 @@ groups:
     depends:
     - L-43
     deliverable:
-    - 'docs/agent-reference/quakec.md: the language as our compiler takes it in each dialect, the engine''s entity model and frame loop, the builtins by what they are for, and how a monster, a weapon, an item and a trigger are written, each from id''s QuakeC 1.01 and the engine specs, with the mistakes a model makes named'
-    - 'crates/qs-mcp: the references are served to an outside agent, and the server''s instructions tell it to read the one for its task first'
+    - 'docs/agent-reference/entities.md and monsters.md: what the engine calls, how an entity moves and collides, the builtins by what they are for, what the language does that C does not, and debugging; and how a monster is written and every place a new one is added, each from id''s QuakeC 1.01 and the engine''s specs'
+    - 'crates/qs-workbench/src/reference.rs: `project.reference` serves each topic of the agent reference to any agent; crates/qs-mcp: the server''s instructions tell an agent to read the one for its task first'
     acceptance:
-    - 'Claude Code, asked through the MCP server for a new monster in LibreQuake''s QuakeC, writes one that compiles clean, spawns from a map and attacks the player in a scenario or a played map, recorded in the PR'
-    - 'A test holds the server to serving each reference and to naming them in its instructions'
+    - 'Claude Code, asked through the MCP server for a new monster in LibreQuake''s QuakeC, writes one that compiles clean, spawns from a map and attacks the player in a played map, recorded in the PR'
+    - 'A test holds `project.reference` to serving each topic and to naming only commands there are, and the server''s instructions to naming it and its topics'
     verify:
-    - 'cargo nextest run -p qs-mcp -p qs-agent; the recorded run in the PR'
+    - 'cargo nextest run -p qs-mcp -p qs-agent -p qs-workbench; the recorded run in the PR'
+  - key: L-46
+    title: Write the rest of the agent's QuakeC reference
+    labels:
+    - L6-agent
+    - area:agent
+    - type:feature
+    size: M
+    reqs:
+    - PRIN-6
+    - AGT-9
+    summary: |
+      What L-45 left of Justin's ask of 2026-11-20, "i want agents to know how to write QuakeC code as well as you know how to write Rust and Python". L-45 served the reference to any agent and wrote the engine's entity model and monsters; an agent then added a monster to LibreQuake from one request. Not yet written: the language in depth for each dialect, and how a weapon, an item and a trigger are written.
+    depends:
+    - L-45
+    deliverable:
+    - 'docs/agent-reference/: a topic for the language in each dialect our compiler takes (vanilla, FTEQCC and the rerelease''s), from docs/spec/language.md and the dialect specs, with the mistakes a model makes named; and topics for a weapon, an item and a trigger, each from id''s QuakeC 1.01, served by `project.reference`'
+    acceptance:
+    - 'Claude Code, asked through the MCP server for a new weapon, a new item and a new trigger in LibreQuake''s QuakeC, writes each so that it compiles clean and works in a played map, recorded in the PR'
+    - 'The test that holds the reference to naming real commands covers the new topics'
+    verify:
+    - 'cargo nextest run -p qs-workbench -p qs-mcp; the recorded runs in the PR'
+  - key: L-47
+    title: Import, write and change models with commands
+    labels:
+    - L5-commands
+    - area:editor
+    - type:feature
+    size: L
+    reqs:
+    - PRIN-6
+    - MAP-4
+    - FND-11
+    summary: |
+      Justin, 2026-11-20, after an agent added a monster to LibreQuake but could only reuse the soldier's model: "create an issue for model importing and manipulation by porting modelgen and FTE's tools and introducing new commands for such to broaden what can be modified". A monster's geometry, skin and animation are its `.mdl` (skins in the palette, triangles, a position for every vertex in every frame), and `qs-mdl` only reads one. The prior art: id's `modelgen` (`Quake-Tools/qutils/MODELGEN`, portable since ADR-0029) writes a `.mdl` from a script naming its triangles, skins and frames, and FTE's model converter (the `iqm/` directory of `fte-team/fteqw`) reads md5mesh, md5anim, iqe, smd, fbx and obj and writes a Quake `.mdl` among others. TrenchBroom only shows models. fteqw's `iqm/` is not yet a listed upstream: its files' own headers decide whether it may be ported, and an ADR records that before any of it is.
+    depends:
+    - L-45
+    deliverable:
+    - 'docs/adr/: fteqw''s `iqm/` as a portable upstream, or why not, from its files'' own license headers; docs/porting.md lists it with its commit'
+    - 'crates/qs-mdl: a writer for `.mdl`, ported from id''s modelgen (`WriteModelFile` and what it calls), with its spec section in docs/spec/ and a round trip against the reader; frames, skins and triangles can be read, changed and written back'
+    - 'crates/qs-mdl or a crate beside it: readers for the formats a model is made in (obj and iqe first, then md5mesh and md5anim, smd and fbx as the ADR allows), each to one model in memory that the writer takes'
+    - 'Commands, offered to the UI, the command line, the agent and MCP: `model.inspect` (frames, skins, triangles, bounds, the `$frame` names its QuakeC needs), `model.import` (a source file to a `.mdl` in the project), `model.set_skin` and `model.export_skin` (a skin from and to a PNG, through the game''s palette), `model.scale`, `model.move`, `model.rename_frames`, `model.add_frames` and `model.remove_frames`; each with undo'
+    - 'docs/agent-reference/: a `models` topic served by `project.reference`'
+    acceptance:
+    - 'Every `.mdl` of the test game read and written back is byte for byte the file read, checked by a test; a model written by our writer from modelgen''s inputs equals id''s modelgen''s output on the same inputs, by the oracle'
+    - 'An obj and an iqe model import to a `.mdl` that the preview host draws, checked by a test of the imported model''s frames, triangles and skin and by a recorded run'
+    - 'Claude Code, asked through the MCP server to give LibreQuake a new monster with a skin of its own and a changed shape, does so with the model commands, and the monster is drawn so in a played map, recorded in the PR'
+    verify:
+    - 'cargo nextest run -p qs-mdl -p qs-workbench -p qs-tests; cargo xtask oracles; the recorded runs in the PR'
+  - key: L-48
+    title: Generate a random playable map from one button
+    labels:
+    - L5-commands
+    - area:map
+    - type:feature
+    size: L
+    reqs:
+    - PRIN-6
+    - MAP-3
+    - MAP-16
+    summary: |
+      Justin, 2026-11-20: "creating a 'random map' button to generate a random fully playable map", as another way to find defects by doing real work in the app, and "i also want to see maps with more creative geometry than just square rooms ... based on id's original map designs, the rerelease or the librequake map designs". The model followed is OBLIGE and Obsidian, the Doom and Quake level makers: rooms on a grid joined into a path from the start to the exit, a key and its door on the way, each room one of a set of shapes, the monsters and items placed by how far the room is from the start. The level is one solid block with every room and passage taken out of it (`Brush::subtract`), so it is sealed by construction.
+    depends:
+    - L-45
+    deliverable:
+    - 'crates/qs-map-gen: `generate`, from a seed, a size and the texture names and entity classes there are, to a `.map`: one seed, one map; rooms of several shapes (a pillared hall, an eight-sided chamber with a stepped dome, a hall over a pit of liquid crossed by a bridge, a room on two levels joined by stairs, a courtyard under the sky), joined by passages with flat or chamfered arches, stairs where the floors differ, doors, and one locked door whose key is in a room before it; a player start, an exit, lights, monsters, weapons, ammunition and health; textures by a theme chosen from the names the game has'
+    - 'crates/qs-map-edit: `map.generate` writes such a map into the project and opens it; apps/desktop: a New Random Map entry in the File menu and a button on the Welcome page''s and the map view''s way in'
+    acceptance:
+    - 'For 50 seeds and each size, the map generated compiles with no leak and no error, `map.check` finds no issue, and the player''s box is in open space at the start, the exit and the middle of every room, checked by a test over id''s and LibreQuake''s texture names'
+    - 'One seed gives one map, byte for byte, and two seeds give two, checked by a test'
+    - 'A map generated in the running app from the button is compiled and played from the start to the exit, with screenshots of each kind of room, recorded in the PR'
+    verify:
+    - 'cargo nextest run -p qs-map-gen -p qs-map-edit -p qs-tests -p quakec-studio; the recorded run in the PR'
+  - key: L-49
+    title: Give an agent the room shapes of id's maps to build with
+    labels:
+    - L5-commands
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - PRIN-6
+    - MAP-16
+    summary: |
+      Justin, 2026-11-20: "i also want to see maps with more creative geometry than just square rooms, can you build that too based on id's original map designs, the rerelease or the librequake map designs". The maps Claude Code built in the trials of L-40 and L-43 were boxes joined by boxes: an agent builds from `map.brush_create`, and nothing tells it what a Quake room looks like. L-48 builds the shapes for the generator; this gives them to an agent that is building a map of its own.
+    depends:
+    - L-48
+    deliverable:
+    - 'crates/qs-map-edit: `map.build_room` makes one room of a named shape in a box of the open map, sealed but for the doorways asked for on its sides, with undo; `map.build_passage` joins two doorways, with stairs where their floors differ'
+    - 'docs/agent-reference/maps.md: what the rooms of id''s and LibreQuake''s levels are made of (heights, floor changes, chamfers, arches, pillars, pits, light), measured from the levels'' BSPs and LibreQuake''s map sources and each figure naming its level, and how to build each with the commands'
+    acceptance:
+    - 'Each shape built in a box with a doorway on each side, alone and beside another joined by a passage, compiles with no leak, checked by a test'
+    - 'Claude Code, asked through the MCP server for a level of five rooms, builds one in which no two rooms have the same shape and none is a plain box, compiled and played, with screenshots, recorded in the PR'
+    verify:
+    - 'cargo nextest run -p qs-map-edit -p qs-tests; the recorded run in the PR'
