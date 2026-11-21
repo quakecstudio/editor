@@ -290,6 +290,15 @@ impl MapDocument {
                 }
             }
         }
+        if let Some((e, line)) = past_reach(file) {
+            issues.push(MapIssue {
+                line,
+                message: PAST_REACH.to_owned(),
+                entity: Some(EntityIndex::new(e)),
+                brush: None,
+                fix: None,
+            });
+        }
         let has_start = file
             .entities
             .iter()
@@ -360,6 +369,35 @@ impl MapDocument {
 
 /// The message of a brush with no volume.
 const NO_VOLUME: &str = "a brush with no volume, which both compilers drop";
+
+/// How far from the map's middle the game's own protocol sends a position: a coordinate is
+/// the short `(int) (f * 8)` (NET-1.1), which holds less than 4096.
+const COORD_REACH: f64 = 4096.0;
+
+/// The message of a map with something 4096 units or more from its middle.
+const PAST_REACH: &str = "the map reaches 4096 units or more from its middle: the game sends \
+    a position in 16 bits, so a player or a monster past that is drawn somewhere else; move the \
+    map to be within 4096 of 0 on every axis";
+
+/// The first entity of `file` that reaches [`COORD_REACH`] or more from the middle on an
+/// axis, by its place and its line: a point entity by its origin, a brush entity by a corner
+/// of a brush.
+fn past_reach(file: &MapFile) -> Option<(usize, u32)> {
+    let far = |point: [f64; 3]| point.iter().any(|at| at.abs() >= COORD_REACH);
+    file.entities
+        .iter()
+        .enumerate()
+        .find_map(|(place, entity)| {
+            let reaches = if entity.has_brushes() {
+                entity
+                    .brushes()
+                    .any(|brush| brush.vertices().into_iter().any(far))
+            } else {
+                far(entity.origin())
+            };
+            reaches.then(|| (place, entity.line()))
+        })
+}
 
 /// The message of a map with no player start.
 const NO_START: &str = "no info_player_start: the game cannot put a player in the map";

@@ -13,7 +13,8 @@ use qs_map::MapFile;
 use serde_json::json;
 
 use super::{
-    MAP_FIX, MAP_ISSUES, MAP_SEARCH, MapFound, MapIssue, MapIssues, NO_START, NO_VOLUME, QuickFix,
+    MAP_FIX, MAP_ISSUES, MAP_SEARCH, MapFound, MapIssue, MapIssues, NO_START, NO_VOLUME,
+    PAST_REACH, QuickFix,
 };
 use crate::testing::{MapContext, TestProject};
 use crate::{BrushIndex, ClassInfo, EntityIndex, EntityProblem, MAP_HIDE, MAP_LOCK, MAP_OPEN};
@@ -232,6 +233,38 @@ fn a_missing_start_is_placed() {
             .any(|issue| issue.message == NO_START),
         "a world with no brushes is no map to play"
     );
+}
+
+// spec NET-1.1: a position is sent as the short `(int) (f * 8)`, so a map with an entity or a
+// brush corner 4096 units or more from the middle is told so, and one just within is not
+#[test]
+fn a_map_past_the_games_reach_is_an_issue() {
+    let past = |issues: Vec<MapIssue>| -> Vec<Option<EntityIndex>> {
+        issues
+            .into_iter()
+            .filter(|issue| issue.message == PAST_REACH)
+            .map(|issue| issue.entity)
+            .collect()
+    };
+    let at =
+        |origin: &str| format!("{{\n\"classname\" \"monster_ogre\"\n\"origin\" \"{origin}\"\n}}\n");
+    // A level within 4096 on every axis has no such issue, up to the last eighth of a unit.
+    let within = format!("{START}{}", at("4095.875 -4095 24"));
+    assert!(past(issues(&mut session("within", &map(&room(), &within)))).is_empty());
+    // A point entity at 4096, on any axis and either side, is past it: the first is named.
+    for (name, origin) in [
+        ("east", "4096 0 24"),
+        ("south", "0 -4096 24"),
+        ("up", "0 0 5000"),
+    ] {
+        let rest = format!("{START}{}", at(origin));
+        let found = past(issues(&mut session(name, &map(&room(), &rest))));
+        assert_eq!(found, [Some(EntityIndex::new(2))], "{origin}");
+    }
+    // So is a brush that reaches there: the world is the entity named.
+    let wide = format!("{}{}", room(), cuboid([4000, -64, 0], [4096, 64, 64]));
+    let found = past(issues(&mut session("wide", &map(&wide, START))));
+    assert_eq!(found, [Some(EntityIndex::new(0))]);
 }
 
 // No spec statement: P6-19: a format diagnostic is listed with the entity and brush its line

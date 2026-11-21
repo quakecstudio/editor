@@ -134,6 +134,10 @@ asked for, with its lights; `map.build_passage` joins two doorways. Each is one 
   a length of 64 and the climb: 128 for a climb of 64.
 - It also answers where things may stand (`spots`) and where the player does (`stand`): put
   the player start, the monsters and the items there with `map.place_entity`.
+- Keep the whole level within 4096 units of 0 on every axis: the game sends a position as
+  the short `(int) (f * 8)` (NET-1.1, [`docs/spec/engine/net.md`](../spec/engine/net.md)), so
+  a player or a monster past that is drawn somewhere else. Rooms 1024 apart fit seven in a
+  row from -3072 to 3072; `map.issues` says when a map reaches past it.
 - Build a level from these, no two rooms of it the same shape and size, and vary the
   floors: a room 64 up or down from the last is four steps in the passage. `map.compile`
   says whether it is sealed, and `map.play_from_here` whether anything stands in the dark.
