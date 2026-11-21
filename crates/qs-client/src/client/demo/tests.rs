@@ -327,7 +327,8 @@ fn a_playing_demos_view_turns_between_its_messages() {
     playing.playback.as_mut().unwrap().pace = DemoPace::EveryFrame;
     playing.time = 1.925;
     playing.relink_entities(&mut NoRandom);
-    assert_eq!(playing.viewangles(), [0.0, 10.0, 0.0]);
+    // 20 on from 350, which is 10 a turn round: the angle is not brought back under 360.
+    assert_eq!(playing.viewangles(), [0.0, 370.0, 0.0]);
     assert!(near([playing.time(), 0.0, 0.0], [2.0, 0.0, 0.0]));
 }
 
