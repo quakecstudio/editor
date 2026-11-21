@@ -11,10 +11,11 @@
 mod fixtures;
 #[cfg(test)]
 mod tests;
+pub mod write;
 
 use core::fmt;
 
-use crate::cursor::{self, le_i32};
+use crate::cursor::{self, le_i32, read_array};
 
 /// The four bytes an alias model starts with, id's `IDPOLYHEADER` (MDL-1.2).
 pub const MDL_MAGIC: [u8; 4] = *b"IDPO";
@@ -74,6 +75,8 @@ pub const MDL_FRAME_SINGLE: i32 = 0;
 pub const MDL_FRAME_GROUP: i32 = 1;
 /// Bytes in a frame's header, `sizeof(daliasframe_t)` (MDL-5.2).
 pub const MDL_FRAME_HEADER_SIZE: usize = 24;
+/// Bytes in a frame's name, `daliasframe_t`'s `name[16]` (MDL-5.2).
+pub const MDL_FRAME_NAME_SIZE: usize = 16;
 /// Bytes in a frame group's header, `sizeof(daliasgroup_t)` (MDL-5.4).
 pub const MDL_GROUP_HEADER_SIZE: usize = 12;
 /// Entries in the renderer's normal table, `NUMVERTEXNORMALS` (MDL-5.3).
@@ -457,6 +460,9 @@ pub struct MdlFrame<'a> {
     pub bboxmax: TriVertX,
     /// The bytes before the first NUL of its 16-byte name, or all 16.
     pub name: Vec<u8>,
+    /// All 16 bytes of its name as stored: what follows the first NUL is whatever the tool
+    /// that wrote the file left there, and a file written back whole keeps it (MDL-6.1).
+    pub raw_name: [u8; MDL_FRAME_NAME_SIZE],
     verts: &'a [u8],
 }
 
@@ -548,6 +554,8 @@ pub struct Mdl<'a> {
     pub triangles: Vec<Triangle>,
     /// `numframes` frame entries.
     pub frames: Vec<MdlFrameEntry<'a>>,
+    /// Where the last frame entry ends: the bytes after it are ignored (MDL-5.7).
+    pub end: usize,
 }
 
 /// A cursor over an alias model.
@@ -690,6 +698,7 @@ impl<'a> Mdl<'a> {
             stverts,
             triangles,
             frames,
+            end: cursor.pos(),
         })
     }
 
@@ -817,13 +826,17 @@ fn mod_load_alias_frame<'a>(
     numverts: usize,
 ) -> Result<MdlFrame<'a>, MdlError> {
     let header = cursor.take(MDL_FRAME_HEADER_SIZE)?;
-    let raw_name = header.get(8..24).unwrap_or_default();
-    let name_len = raw_name.iter().position(|&byte| byte == 0).unwrap_or(16);
+    let raw_name: [u8; MDL_FRAME_NAME_SIZE] = read_array(header, 8).unwrap_or_default();
+    let name_len = raw_name
+        .iter()
+        .position(|&byte| byte == 0)
+        .unwrap_or(MDL_FRAME_NAME_SIZE);
     let verts = cursor.take(numverts.saturating_mul(4))?;
     Ok(MdlFrame {
         bboxmin: TriVertX::read(header, 0),
         bboxmax: TriVertX::read(header, 4),
         name: raw_name.get(..name_len).unwrap_or_default().to_vec(),
+        raw_name,
         verts,
     })
 }
