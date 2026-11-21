@@ -34,6 +34,9 @@ qs-map-bsp = { workspace = true }
 qs-map-light = { workspace = true }
 # map.run_profile: vis in a compile profile (P6-20).
 qs-map-vis = { workspace = true }
+# model.*: alias models read, changed and written back, and a skin as a PNG.
+image = { workspace = true, features = ["png"] }
+qs-mdl = { workspace = true }
 # project.export: the assets packed into pak0.pak, and id's PAKs read to refuse their files
 # (P4-28).
 qs-pak = { workspace = true }
@@ -60,8 +63,6 @@ toml = { workspace = true, features = ["parse", "serde", "std"] }
 tracing = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
-# An imported texture's PNG in the map compile tests.
-image = { workspace = true, features = ["png"] }
 # The map fixtures the map compile tests share with the map editor's.
 qs-map-edit = { workspace = true, features = ["testing"] }
 # A fake preview host for the engine tools' tests, as qs-engine's tests serve one.

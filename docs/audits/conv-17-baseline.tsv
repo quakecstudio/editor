@@ -889,8 +889,6 @@ magic-number	crates/qs-mdl/src/mdl.rs	Mdl::read:9
 magic-number	crates/qs-mdl/src/mdl.rs	MdlFrame::vertex:4
 magic-number	crates/qs-mdl/src/mdl.rs	MdlFrame::vertex_count:4
 magic-number	crates/qs-mdl/src/mdl.rs	TriVertX::read:3
-magic-number	crates/qs-mdl/src/mdl.rs	mod_load_alias_frame:16
-magic-number	crates/qs-mdl/src/mdl.rs	mod_load_alias_frame:24
 magic-number	crates/qs-mdl/src/mdl.rs	mod_load_alias_frame:4
 magic-number	crates/qs-mdl/src/mdl.rs	mod_load_alias_frame:8
 magic-number	crates/qs-mdl/src/mdl.rs	mod_load_alias_group:4

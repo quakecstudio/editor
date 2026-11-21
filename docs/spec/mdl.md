@@ -271,3 +271,110 @@ See [`vectors/mdl/`](vectors/mdl/README.md): `base` (MDL-3.1).
 
 See [`vectors/mdl/`](vectors/mdl/README.md): `base` (MDL-5.1, MDL-5.2, MDL-5.4),
 `frame-group-zero` and `frame-group-nan` (MDL-5.1, MDL-5.5).
+
+## MDL-6 Writing a model
+
+**Source:** `qutils/MODELGEN/MODELGEN.C`, `WriteModelFile`, `WriteFrame`, `WriteGroupBBox`
+(id-Software/Quake-Tools@`c0d1b91c74eb654365ac7755bc837e497caaca73`), the tool id's models
+were written by. Implemented by `crates/qs-mdl`'s `mdl::write`
+([#1081](https://github.com/quakecstudio/editor/issues/1081), L-47).
+
+### Behaviour
+
+- **MDL-6.1** `WriteModelFile` writes the header, then each skin entry (its type, then its
+  pixels), then the texture coordinates, then the triangles, then each frame entry (its type,
+  then a frame, or a group's `daliasgroup_t`, its intervals and its frames): the order and the
+  layout the loader reads (MDL-1 to MDL-5). So a model read whole and written with nothing
+  changed is the file it was read from, byte for byte, the bytes after its last frame entry
+  (MDL-5.7) with it.
+- **MDL-6.2** The header's `numskins`, `numverts`, `numtris` and `numframes` are the counts of
+  what is written (`modeltemp.numskins = LittleLong (model.numskins)` and the like), so they
+  follow the parts held when one is added or taken away; `numverts` is the count of texture
+  coordinates. The header's other fields are written as held.
+- **MDL-6.3** `WriteFrame` names a frame with `strcpy (aframe.name, frames[framenum].name)`
+  into a `daliasframe_t` on its stack, which sets the name and its NUL and leaves the bytes
+  after as they were. id's files hold such bytes: `progs/armor.mdl`'s frame is `armor`, a NUL,
+  0xE5, 0x3F, then NULs, and 1746 frames of the models in `id1/pak0.pak` have a byte that is
+  not NUL after their name's. The engine reads the name as a C string (MDL-5.2). A frame
+  keeps its 16 bytes as read; a name that is set is at most 15 bytes with no NUL among them,
+  and the rest of the 16 are NUL.
+- **MDL-6.4** Not from modelgen, which writes whatever its script built: a model the loader
+  would refuse is not written. A skin that is not `skinwidth * skinheight` bytes, a frame
+  without one vertex for each texture coordinate, a group without one interval for each of
+  its skins or frames, and a count past a 32-bit field are refused; so is whatever
+  `Mod_LoadAliasModel` would fail on (MDL-1.4, MDL-1.5, MDL-2.3, MDL-2.4, MDL-4.3, MDL-5.5,
+  MDL-5.6), with the loader's own error.
+
+### Test vectors
+
+The `base` vector of [`vectors/mdl/`](vectors/mdl/README.md), read and written, is itself
+(MDL-6.1). **Checked:** on 2026-11-21 every `.mdl` of LibreQuake's `pak0.pak` and `pak1.pak`
+(the test game) and of the original game's `id1/pak0.pak`, 160 models, was read and written
+back byte for byte by `QS_MDL_PAKS=<paks> cargo nextest run -p qs-mdl a_games_models`; 9 of
+LibreQuake's hold bytes after their last frame entry.
+
+## MDL-7 Making a model from positions
+
+**Source:** `qutils/MODELGEN/MODELGEN.C`, `ClearModel`, `GrabFrame`, `WriteModelFile`,
+`WriteFrame`, `WriteGroupBBox`; `qutils/COMMON/MATHLIB.C`, `CrossProduct`, `VectorNormalize`
+(id-Software/Quake-Tools@`c0d1b91c74eb654365ac7755bc837e497caaca73`). modelgen's `vec_t` is
+a `float` (`MATHLIB.H`). Implemented by `crates/qs-mdl`'s `mdl::make`
+([#1081](https://github.com/quakecstudio/editor/issues/1081), L-47).
+
+What is not here is modelgen's reading of its own inputs: Alias `.tri` triangle files, which
+it turns to face down +x, its `$scale` and `$origin`, and `SetSkinValues`, which lays a
+model's front and back on the two halves of a skin. A model made from a mesh with texture
+coordinates has its own.
+
+### Behaviour
+
+- **MDL-7.1** The box the frames fill, `framesmins` to `framesmaxs`, starts as the origin
+  alone (`ClearModel`: "`VectorCopy (vec3_origin, framesmins); VectorCopy (vec3_origin,
+  framesmaxs);`"), and `GrabFrame` grows it to every vertex of every frame. So it holds the
+  origin whatever the frames are.
+- **MDL-7.2** `WriteModelFile` sets, on each axis, `scale` to `(framesmaxs[i] -
+  framesmins[i]) / 255.9`, the difference of two floats divided in double by the double
+  `255.9` and stored in a float, and `scale_origin` to `framesmins[i]`. `boundingradius` is the
+  square root of the sum of the squares of, on each axis, `framesmins[i]` when `fabs
+  (framesmins[i]) > fabs (framesmaxs[i])` and `framesmaxs[i]` otherwise. `eyeposition`,
+  `flags` and `synctype` are as given; the skins' size is the header's.
+- **MDL-7.3** `WriteFrame` packs a vertex with "`v = (pframe[j].v[k] - model.scale_origin[k])
+  / model.scale[k]; tarray[j].v[k] = v;`": a float stored in a byte, its whole part. A
+  frame's `bboxmin` and `bboxmax` are the least and the greatest packed byte on each axis,
+  started from 255 and 0. Ours, where C's are undefined or unset: on an axis the box has no
+  extent on, the scale is 0 and the division is not a number, and the byte is 0; a value
+  outside 0 to 255 is the nearer end; and the `lightnormalindex` byte of the two bounds,
+  which modelgen leaves as its stack had it, is 0.
+- **MDL-7.4** `GrabFrame` takes a triangle's normal as `CrossProduct (v0 - v1, v2 - v1)` of
+  its three corners, made a unit vector by `VectorNormalize`, which sums the squares and
+  takes the root in a `double` and divides each part by it; a vector of no length is left.
+  A vertex's normal is the sum of its triangles' normals divided by how many there are, made
+  a unit vector, and its `lightnormalindex` is the entry of the normal table (MDL-5.3) with
+  the greatest dot product, the first of equals ("`if (dot > maxdot)`"). A vertex that is a
+  corner of no triangle stops modelgen ("`Vertex with no non-degenerate triangles
+  attached`") and is refused. So a triangle's corners go around it clockwise as seen from
+  outside the model.
+- **MDL-7.5** `size` is `totsize / model.numtris`: `GrabFrame` adds to `totsize`, for each
+  triangle of the first frame, half the length of that cross product before it is made a
+  unit vector, the triangle's area.
+- **MDL-7.6** A group's intervals are the times its frames end at: `WriteModelFile` writes
+  "`totinterval += frames[groupframe+1+j].interval; temp.interval = LittleFloat
+  (totinterval);`" for each. Its bounds (`WriteGroupBBox`) are the least and the greatest
+  packed byte over all its frames.
+- **MDL-7.7** Ours: a frame without a position for each texture coordinate, a name MDL-6.3
+  does not take and a model MDL-6.4 refuses are not made.
+
+### Constants
+
+| Name | Value | Source |
+| --- | --- | --- |
+| `MDL_SCALE_STEPS` | 255.9 | `qutils/MODELGEN/MODELGEN.C`, `WriteModelFile` |
+
+### Test vectors
+
+**Checked:** on 2026-11-21, for the first frame of every model of the original game's
+`id1/pak0.pak`, each vertex's normal was computed as MDL-7.4 says from the positions the
+file stores and compared with the entry the file stores: of 5824 vertices, 5819 are within
+45 degrees of it and none is opposite. The positions are those the file packed, so the
+match is not exact; it settles which way a triangle's corners go.
+

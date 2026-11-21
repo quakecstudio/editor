@@ -7,7 +7,7 @@
 //! The model is Roblox Studio's and Unity's Play button: one control starts the game on the
 //! project as it is, and a change saved while it plays reaches it without a restart.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -24,6 +24,7 @@ use serde_json::Value;
 use qs_commands::{Command, NoParams, Outcome, RegisterError, Registry};
 use schemars::JsonSchema;
 
+use crate::export::{MAP_FILES, MAPS_DIR, asset_files};
 use crate::full_build::{FullBuild, Start};
 use crate::ids::{BreakpointId, Edict, WatchIndex};
 use crate::map_compile::{MapCompile, MapLeaks, MapPlayFromHere, MapPortalsCommand};
@@ -684,6 +685,7 @@ impl Preview {
             flavour,
         } = built;
         self.stop();
+        place_project_assets(&project, &mod_name, map.as_deref())?;
         // ADR-0008: the project's own game, the rerelease's files for a rerelease project.
         let (base, flavour) = game_base(self.config.game.as_deref(), flavour)?;
         self.flavour = flavour;
@@ -1365,13 +1367,6 @@ pub(crate) struct BuiltProgram {
     pub(crate) flavour: Flavour,
 }
 
-/// The directory of maps, in a project and in a game directory.
-const MAPS_DIR: &str = "maps";
-
-/// The files of a compiled map the game reads beside each other: the BSP, its coloured light
-/// (BSP-18.2) and the entities that override its own (BSP-19.1).
-const MAP_FILES: [&str; 3] = ["bsp", "lit", "ent"];
-
 /// Puts the map `name` the project compiled where the game reads maps, the mod's `maps` under
 /// `build`, when none is there or an older one. The BSP is the one beside the open map, in
 /// `beside`, when that map is `name`, else the one in the project's `maps`; its `.lit` and
@@ -1429,6 +1424,140 @@ fn place_project_map(
         } else if placed.is_file() {
             std::fs::remove_file(&placed).map_err(written(placed))?;
         }
+    }
+    Ok(())
+}
+
+/// The list of what Play placed, in the mod's folder under `build`: a line for each file, its
+/// name, and the size and the time of the project's file it was made from.
+const PLACED_LIST: &str = ".placed";
+
+/// What a placed file was made from: the size of the project's file and when it was last
+/// changed, in nanoseconds since 1970. A file is placed again when either is no longer so,
+/// whether the file is newer or older than it was.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Stamp {
+    len: u64,
+    modified: u128,
+}
+
+impl Stamp {
+    /// The stamp of the file at `path`; `None` for one that cannot be read.
+    fn of(path: &Path) -> Option<Self> {
+        let file = std::fs::metadata(path).ok()?;
+        let modified = file
+            .modified()
+            .ok()?
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?
+            .as_nanos();
+        Some(Self {
+            len: file.len(),
+            modified,
+        })
+    }
+}
+
+/// What Play placed in the mod's folder, by name.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Placed(BTreeMap<String, Stamp>);
+
+impl Placed {
+    /// The list at `path`; empty when there is none. A line that is no name and two numbers,
+    /// or whose name is no path under the folder, is not taken: the list is a file anyone
+    /// can write, and what it names may be removed.
+    fn read(path: &Path) -> Self {
+        let text = std::fs::read_to_string(path).unwrap_or_default();
+        let entry = |line: &str| {
+            let mut parts = line.split('\t');
+            let name = parts.next()?;
+            let stamp = Stamp {
+                len: parts.next()?.parse().ok()?,
+                modified: parts.next()?.parse().ok()?,
+            };
+            let inside = Path::new(name)
+                .components()
+                .all(|part| matches!(part, std::path::Component::Normal(_)));
+            (inside && !name.is_empty()).then(|| (name.to_owned(), stamp))
+        };
+        Self(text.lines().filter_map(entry).collect())
+    }
+
+    /// The list as its file's text.
+    fn text(&self) -> String {
+        self.0
+            .iter()
+            .map(|(name, stamp)| format!("{name}\t{}\t{}\n", stamp.len, stamp.modified))
+            .collect::<Vec<_>>()
+            .concat()
+    }
+}
+
+/// Whether the asset `name` is a file of the map `played`: `maps/<played>.<ending>`.
+fn of_played_map(name: &str, played: Option<&str>) -> bool {
+    let name = Path::new(name);
+    name.parent() == Some(Path::new(MAPS_DIR))
+        && played.is_some_and(|played| name.file_stem().is_some_and(|stem| stem == played))
+}
+
+/// Puts the project's own assets where the game reads them, the mod's folder under `build`
+/// (ADR-0008: the build output holds "the project's assets as the engine expects them"): each
+/// file under the project's `progs`, `sound`, `gfx`, `music`, `textures` and `env`, and each
+/// compiled map under its `maps`.
+///
+/// The folder is a copy of the project's assets, kept by one rule: Play lists what it placed
+/// ([`PLACED_LIST`]) and what each was made from, places a file that is not there or whose
+/// project file is no longer the one it was made from, and takes away only what it placed
+/// and the project no longer has. A file put in the folder by other means is never touched,
+/// and neither are the programs the build wrote at its top. The files of the map `played`
+/// are [`place_project_map`]'s, which may take them from beside the open map.
+pub(crate) fn place_project_assets(
+    project: &Path,
+    mod_name: &str,
+    played: Option<&str>,
+) -> Result<(), PreviewError> {
+    let to = project.join("build").join(mod_name);
+    let written = |path: &Path| {
+        let path = path.to_path_buf();
+        move |error| PreviewError::Write(path, error)
+    };
+    let assets = asset_files(project).map_err(|error| {
+        PreviewError::Write(
+            project.to_path_buf(),
+            std::io::Error::other(error.to_string()),
+        )
+    })?;
+    let list = to.join(PLACED_LIST);
+    let before = Placed::read(&list);
+    // What was placed for a file the project has since lost goes first: on a file system
+    // that takes `Brute.mdl` for `brute.mdl`, a file named anew is then placed under its new
+    // name, not removed under its old one.
+    for name in before.0.keys().filter(|name| !assets.contains_key(*name)) {
+        let path = to.join(name);
+        if path.is_file() {
+            std::fs::remove_file(&path).map_err(written(&path))?;
+        }
+    }
+    let mut after = Placed::default();
+    for (name, from) in &assets {
+        let placed = to.join(name);
+        let was = before.0.get(name).copied();
+        let stamp = Stamp::of(from);
+        let kept =
+            of_played_map(name, played) || (stamp.is_some() && stamp == was && placed.is_file());
+        if !kept {
+            if let Some(folder) = placed.parent() {
+                std::fs::create_dir_all(folder).map_err(written(folder))?;
+            }
+            std::fs::copy(from, &placed).map_err(written(&placed))?;
+        }
+        if let Some(stamp) = if kept { was } else { stamp } {
+            after.0.insert(name.clone(), stamp);
+        }
+    }
+    if after != before {
+        std::fs::create_dir_all(&to).map_err(written(&to))?;
+        std::fs::write(&list, after.text()).map_err(written(&list))?;
     }
     Ok(())
 }

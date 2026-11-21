@@ -1132,7 +1132,7 @@ pub const VIEW_KEYS: [ViewKeyRow; 55] = [
 ];
 
 /// Every command with no key of its own, and why.
-pub const UNKEYED: [(&str, Unkeyed); 170] = [
+pub const UNKEYED: [(&str, Unkeyed); 180] = [
     ("checkpoint.list", Unkeyed::Query),
     ("checkpoint.restore", Unkeyed::Typed),
     ("code.actions", Unkeyed::Typed),
@@ -1266,6 +1266,16 @@ pub const UNKEYED: [(&str, Unkeyed); 170] = [
     ("preview.step_by", Unkeyed::Typed),
     ("preview.unwatch", Unkeyed::Typed),
     ("preview.watch", Unkeyed::Typed),
+    ("model.add_frames", Unkeyed::Typed),
+    ("model.copy_from_game", Unkeyed::Typed),
+    ("model.export_skin", Unkeyed::Typed),
+    ("model.inspect", Unkeyed::Query),
+    ("model.move", Unkeyed::Typed),
+    ("model.recolor", Unkeyed::Typed),
+    ("model.remove_frames", Unkeyed::Typed),
+    ("model.rename_frames", Unkeyed::Typed),
+    ("model.scale", Unkeyed::Typed),
+    ("model.set_skin", Unkeyed::Typed),
     ("project.entities", Unkeyed::Query),
     ("project.files", Unkeyed::Query),
     ("project.info", Unkeyed::Query),

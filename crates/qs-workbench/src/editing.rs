@@ -201,10 +201,15 @@ impl<L: Loader> Workbench<L> {
             .host
             .text(&path)
             .ok_or_else(|| WorkbenchError::NoFile { path: path.clone() })?;
-        std::fs::write(&path, text).map_err(|error| WorkbenchError::Save {
+        let unwritten = |error| WorkbenchError::Save {
             path: path.clone(),
             error,
-        })?;
+        };
+        // A new file may be in a folder that is not there yet.
+        if let Some(folder) = path.parent() {
+            std::fs::create_dir_all(folder).map_err(unwritten)?;
+        }
+        std::fs::write(&path, text).map_err(unwritten)?;
         self.unsaved.remove(&path);
         Ok(())
     }

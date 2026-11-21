@@ -44,6 +44,61 @@ fn an_open_file_no_module_compiles() {
     assert!(!host.files().contains(&path("scratch.qc")));
 }
 
+// spec PRJ-4.5: a module's source that cannot be read is an error; once the file is there,
+// given as an editor's text, the module compiles it: it is no file on its own
+#[test]
+fn a_listed_file_made_later_joins_its_module() {
+    let mut host = host(&ProjectSpec {
+        files: &[("a.qc", "float a;\n")],
+        extra: &[("progs.src", "../progs.dat\na.qc\nnew.qc\n")],
+        ..ProjectSpec::default()
+    });
+    assert_eq!(
+        host.project_modules()[0].names,
+        ["a.qc"],
+        "new.qc cannot be read yet"
+    );
+    host.set_overlay(
+        &path("new.qc"),
+        b"float b;\nvoid() f = { b = a; };\n".as_ref(),
+    )
+    .unwrap();
+    let modules = host.project_modules();
+    assert_eq!(modules.len(), 1);
+    assert_eq!(modules[0].names, ["a.qc", "new.qc"]);
+    // It is read in its module, after a.qc, whose name it uses.
+    assert!(host.diagnostics(&path("new.qc")).is_empty());
+    // A file no project file names is still analysed on its own.
+    host.set_overlay(&path("loose.qc"), b"float c;\n".as_ref())
+        .unwrap();
+    assert_eq!(host.project_modules()[0].names, ["a.qc", "new.qc"]);
+    assert!(host.files().contains(&path("loose.qc")));
+}
+
+// spec QC-12.5: only a file that may be QuakeC is analysed on its own: an open file of another
+// kind, such as a script or a text, has no QuakeC problems
+#[test]
+fn an_open_file_that_is_no_quakec_is_not_analysed() {
+    let mut host = one("");
+    for name in ["tools/px.py", "notes.txt", "maps/room.map", "README"] {
+        host.set_overlay(&path(name), b"import sys\n".as_ref())
+            .unwrap();
+        assert!(!host.files().contains(&path(name)), "{name}");
+        assert!(host.diagnostics(&path(name)).is_empty(), "{name}");
+        // Its text is still the editor's.
+        assert_eq!(
+            host.text(&path(name)),
+            Some(b"import sys\n".to_vec()),
+            "{name}"
+        );
+    }
+    for name in ["scratch.qc", "defs.QH", "shared.h", "frames.inc"] {
+        host.set_overlay(&path(name), b"float x\n".as_ref())
+            .unwrap();
+        assert!(host.files().contains(&path(name)), "{name}");
+    }
+}
+
 // spec PRJ-4.1: editing the progs.src changes which files the module compiles
 #[test]
 fn editing_the_progs_src_reads_the_project_again() {
@@ -232,6 +287,28 @@ fn typing_an_includelist_entry_reads_the_modules_files_again() {
     host.set_overlay(&path("a.qc"), b"#includelist\nb.qc\n#endlist\n".as_ref())
         .unwrap();
     assert!(host.files().contains(&path("b.qc")));
+}
+
+// spec QC-12.5: a file made while the project file does not open is analysed on its own, as
+// any file no module compiles
+#[test]
+fn a_file_made_while_the_project_does_not_open_is_analysed() {
+    let mut host = host(&ProjectSpec {
+        files: &[("a.qc", "float x;\n")],
+        ..ProjectSpec::default()
+    });
+    assert!(
+        host.set_overlay(&path("quakec.toml"), b"bad [".as_ref())
+            .is_err()
+    );
+    let text = "float y;\nvoid() g = { y = 1; };\n";
+    host.set_overlay(&path("scratch.qc"), text.as_bytes())
+        .unwrap();
+    assert!(host.files().contains(&path("scratch.qc")));
+    assert!(
+        host.definition(&path("scratch.qc"), nth(text, "y", 1))
+            .is_some()
+    );
 }
 
 // spec PRJ-1.2: an edit to a QuakeC file while the project file does not open keeps the

@@ -73,7 +73,7 @@ README says more.
 | L0 | `qs-install` | Finds the user's Quake game data from Steam, GOG and Heroic, checks it by checksum, and links it into run roots |
 | L0 | `qs-log` | Crash-safe logging for QuakeC Studio: a per-OS log directory, rotation and redaction of source text |
 | L0 | `qs-map` | Lossless .map reader and writer (standard and Valve 220), and a model of what id's qbsp reads from a .map |
-| L0 | `qs-mdl` | Model readers: id's alias model and sprite loaders (Mod_LoadAliasModel, Mod_LoadSpriteModel) with bounds checks, and the rerelease's MD5 meshes and animations |
+| L0 | `qs-mdl` | Models: id's alias model and sprite loaders (Mod_LoadAliasModel, Mod_LoadSpriteModel) with bounds checks, the rerelease's MD5 meshes and animations, and alias models written and made as id's modelgen does |
 | L0 | `qs-pak` | PAK archive reader: id's COM_LoadPackFile with bounds checks, in memory or from a seekable file |
 | L0 | `qs-paths` | The one place QuakeC Studio decides where its files live on each OS |
 | L0 | `qs-vfs` | The game filesystem: id's search path of game directories and PAK archives, and file lookup on it |

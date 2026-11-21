@@ -40,6 +40,9 @@ pub const PROJECT_EXPORT: &str = "project.export";
 /// The folders of a project holding its own assets, as a Quake game directory names them.
 pub const ASSET_DIRS: [&str; 7] = ["maps", "progs", "sound", "gfx", "music", "textures", "env"];
 
+/// The asset folder that holds maps.
+pub(crate) const MAPS_DIR: &str = "maps";
+
 /// The beginnings of the names of the project's license and notice files, matched without
 /// regard to case: `COPYING`, `LICENSE.txt`, `NOTICE.md`, `ATTRIBUTION.md` and the like.
 pub const NOTICE_PREFIXES: [&str; 5] = ["copying", "license", "licence", "notice", "attribution"];
@@ -304,6 +307,29 @@ fn collect_assets(root: &Path) -> Result<Vec<Piece>, ExportError> {
             })
         })
         .collect()
+}
+
+/// The files of a compiled map the game reads beside each other: the BSP, its coloured light
+/// (BSP-18.2) and the entities that override its own (BSP-19.1).
+pub(crate) const MAP_FILES: [&str; 3] = ["bsp", "lit", "ent"];
+
+/// Every file of the project's own assets, by its path in the mod folder and where it is:
+/// what Play places where the game reads it (ADR-0008). Of the `maps` folder these are the
+/// compiled maps alone, each a level or a model of an item (`maps/b_bh25.bsp`), with its
+/// [`MAP_FILES`]: not what a compile leaves beside them.
+pub(crate) fn asset_files(root: &Path) -> Result<BTreeMap<String, PathBuf>, ExportError> {
+    let mut found = BTreeMap::new();
+    for dir in ASSET_DIRS {
+        walk(&root.join(dir), dir, &mut found)?;
+    }
+    found.retain(|name, _| {
+        let name = Path::new(name);
+        !name.starts_with(MAPS_DIR)
+            || name
+                .extension()
+                .is_some_and(|ending| MAP_FILES.iter().any(|map| ending.eq_ignore_ascii_case(map)))
+    });
+    Ok(found)
 }
 
 /// The files under `dir`, by `prefix/<path under dir>`; links and `.map` files are not taken.

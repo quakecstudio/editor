@@ -533,13 +533,17 @@ const INSTRUCTIONS: &str = "Every command of QuakeC Studio over the project this
     also has the app's window: view.*, editor.*, settings.* and help.*. Before you write or \
     debug QuakeC, read project.reference: topic quakec for the language and how a mod runs, \
     topic entities for what the engine calls, how entities move and collide, the builtins \
-    and debugging, topic monsters before adding a monster, topic workflow for tests and \
+    and debugging, topic monsters before adding a monster, topic models before changing how \
+    something looks, topic workflow for tests and \
     scenarios; and topic maps before building a map. Then read the project's own code for the same thing \
     (project.search, project.symbols, file.read) and follow it. In short: \
     compile, test, run QuakeC in the VM, play scenarios, inspect and drive the running game, \
     read files, stage edits as hunks and keep checkpoints; make or open a map, place and \
     key its entities, build its brushes, compile it and find its leaks, save it and play it. \
     A map edit is made at once and edit.undo takes it back. Paths are the project's, absolute or relative to it. \
+    To change how a monster, a weapon or an item looks: model.copy_from_game makes a file of \
+    the project's own of a model of the game, model.inspect reads it, model.recolor, \
+    model.scale and model.move change it, and the QuakeC names the new file. \
     map.generate makes a whole random level to play or to start from. \
     map.build_room builds a room of a shape of id's levels (hall, chamber, pit, split, court, \
     cross, vault) with its lights and answers its doorways; map.build_passage joins two \

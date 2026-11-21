@@ -145,8 +145,19 @@ The server's instructions send an agent to `project.reference` before it writes 
 QuakeC (L-45). It answers one topic of the agent reference (`docs/agent-reference/`): `quakec`,
 the language and how a mod runs; `entities`, what the engine calls, how an entity moves and
 collides, the builtins by what they are for, what the language does that C does not, and
-debugging; `monsters`, how a monster is written and every place a new one is added; `workflow`,
-tests and scenarios; and `maps`. The built-in agent reads the same text.
+debugging; `monsters`, how a monster is written and every place a new one is added; `models`,
+what a model is and how to recolour, scale and reframe one; `workflow`, tests and scenarios;
+and `maps`. The built-in agent reads the same text.
+
+### Changing how something looks
+
+A monster's, a weapon's or an item's shape, skin and poses are its `.mdl` model (L-47). The
+`model.*` tools read one and change it, each change one step with undo: `model.inspect`;
+`model.copy_from_game`, which makes a project's own file of a model of the game;
+`model.recolor`, `model.export_skin` and `model.set_skin` for its skins; `model.scale` and
+`model.move`; and `model.rename_frames`, `model.remove_frames` and `model.add_frames`. The
+reference's `models` topic says what a model is and how to give a monster a look of its own.
+Play puts a project's own `progs`, `sound` and other asset files where the game reads them.
 
 ### Building and reviewing a map
 
