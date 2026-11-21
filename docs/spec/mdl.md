@@ -321,10 +321,8 @@ LibreQuake's hold bytes after their last frame entry.
 a `float` (`MATHLIB.H`). Implemented by `crates/qs-mdl`'s `mdl::make`
 ([#1081](https://github.com/quakecstudio/editor/issues/1081), L-47).
 
-What is not here is modelgen's reading of its own inputs: Alias `.tri` triangle files, which
-it turns to face down +x, its `$scale` and `$origin`, and `SetSkinValues`, which lays a
-model's front and back on the two halves of a skin. A model made from a mesh with texture
-coordinates has its own.
+How modelgen makes the frames it is given, from triangle files, is MDL-8; a model made
+from a mesh with texture coordinates of its own has those.
 
 ### Behaviour
 
@@ -378,3 +376,106 @@ file stores and compared with the entry the file stores: of 5824 vertices, 5819 
 45 degrees of it and none is opposite. The positions are those the file packed, so the
 match is not exact; it settles which way a triangle's corners go.
 
+## MDL-8 Making a model from triangles
+
+**Source:** `qutils/MODELGEN/MODELGEN.C`, `Cmd_Base`, `SetSkinValues`, `Cmd_Skin`,
+`Cmd_SkinGroupStart`, `GrabFrame`, `Cmd_Origin`, `Cmd_Eyeposition`, `Cmd_ScaleUp`,
+`WriteModelFile`; `qutils/COMMON/MATHLIB.C`, `VectorCompare`, `Q_rint`; `MATHLIB.H`,
+`EQUAL_EPSILON` (id-Software/Quake-Tools@`c0d1b91c74eb654365ac7755bc837e497caaca73`).
+Implemented by `crates/qs-mdl`'s `mdl::grab`
+([#1081](https://github.com/quakecstudio/editor/issues/1081), L-47).
+
+modelgen makes a model from a script naming triangle files: `$base` one, each `$frame`
+another with the same triangles in the same order, their corners moved. What it reads those
+files with (`TRILIB.C`, Alias's `.tri`; `LBMLIB.C`, a 320 by 200 `.lbm` picture) is not
+here: a triangle is its three corners and a picture its pixels. MDL-7 says how the frames
+grabbed become a file.
+
+### Behaviour
+
+- **MDL-8.1** `Cmd_Base` makes the model's vertices from the base's triangles in order:
+  each corner is the first vertex `VectorCompare` finds equal to it, "`if
+  (fabs(v1[i]-v2[i]) > EQUAL_EPSILON) return false;`" on each axis, else a new vertex at the
+  corner. A triangle two of whose own corners compare equal is degenerate; its corners are
+  vertices all the same.
+- **MDL-8.2** `WriteModelFile` writes the triangles that are not degenerate, in the base's
+  order, each with its three vertices and `facesfront` as `SetSkinValues` left it, 1 or 0,
+  and the header's `numtris` is their count ("`model.numtris - degeneratetris`").
+- **MDL-8.3** `SetSkinValues` takes the box of the base's vertices, its low side `floor`ed
+  and its high side `ceil`ed, and from it `width = maxs[0] - mins[0]` and `height = maxs[2]
+  - mins[2]` as `int`s. "`scale = 8; if (width*scale >= 150) scale = 150.0 / width; if
+  (height*scale >= 190) scale = 190.0 / height;`", then "`iwidth = ceil(width*scale) + 4;
+  iheight = ceil(height*scale) + 4;`". The skin is `(iwidth*2 + 3) & ~3` wide, "a multiple
+  of 4", and `iheight` high.
+- **MDL-8.4** A triangle whose normal, `CrossProduct (v0 - v1, v2 - v1)` of its vertices in
+  the base, has "`normal[1] > 0`" is on the back, `facesfront` 0, laid from `basex = iwidth
+  + 2`; any other is on the front, `facesfront` 1, laid from `basex = 2`; `basey` is 2.
+  Each of its vertices gains a seam bit, 1 for a front triangle and 2 for a back one, and
+  takes "`s = Q_rint((pbasevert[0] - mins[0]) * scale + basex); t = Q_rint((maxs[2] -
+  pbasevert[2]) * scale + basey);`" when the triangle is on the front or the vertex has no
+  front bit yet ("we want the front s value for seam vertices"). `Q_rint` is "`floor (in +
+  0.5)`". A vertex with both bits is written with `onseam` `ALIAS_ONSEAM`, any other with 0.
+  Degenerate triangles are laid as the rest are.
+- **MDL-8.5** `Cmd_Skin` takes a skin from the top left of its picture: `skinheight` rows of
+  `skinwidth` pixels. A skin group is not made: `Cmd_SkinGroupStart` gives the group's entry
+  a type and a count but no data, and `WriteModelFile` writes every entry as "`SafeWrite
+  (modelouthandle, skins[curskin].pdata, model.skinwidth * model.skinheight);`", so what
+  modelgen writes for a group is no skin group (MDL-2.1). Ours: a picture smaller than the
+  skin, where modelgen reads past it, is refused.
+- **MDL-8.6** `GrabFrame` puts each vertex where the corners of the frame's triangles that
+  are not degenerate in the base put it, the last one read: `v[0] = -y * scale_up +
+  adjust[0]`, `v[1] = x * scale_up + adjust[1]`, `v[2] = z * scale_up + adjust[2]` of a
+  corner `(x, y, z)` ("rotate the vertices so the model faces down the positive x axis").
+  `scale_up` is `$scale`, 1 when not given. `Cmd_Origin` reads `$origin a b c` as
+  "`adjust[1] = -atof (token); ... adjust[0] = atof (token); ... adjust[2] = -atof
+  (token);`", and `Cmd_Eyeposition` reads `$eyeposition a b c` as `eyeposition[1] = a`,
+  `eyeposition[0] = -b`, `eyeposition[2] = c`; the header's is `model.eyeposition[i] +
+  adjust[i]`.
+- **MDL-8.7** A vertex's normals are those of the frame's triangles it is a corner of, each
+  the triangle's own corners' `CrossProduct (v0 - v1, v2 - v1)` as the file has them, not
+  scaled, made a unit vector and then turned as the vertices are ("`normal[0] = -normal[1];
+  normal[1] = ftemp;`"), averaged and matched as MDL-7.4 says. modelgen keeps 20 for a
+  vertex (`float normals[20][3]`) and writes past them for more: ours, a vertex that is a
+  corner of more than 20 triangles is refused, as is one all of whose triangles are
+  degenerate, which modelgen stops at (MDL-7.4).
+- **MDL-8.8** The header's `size` is `totsize / model.numtris`, where `numtris` counts the
+  degenerate triangles: for the first frame the script grabs, each triangle that is not
+  degenerate adds half the length of the cross product of its two edges each multiplied by
+  `scale_up`, the square root taken in double and added in double. A frame of a group is
+  shown for the interval the script gives after its name, else "`frames[framecount].interval
+  = 0.1;`". A frame whose file has another number of triangles than the base's stops
+  modelgen ("number of triangles doesn't match") and is refused.
+- **MDL-8.9** Ours: a base with no triangle, whose box modelgen leaves at `9999999`, is
+  refused.
+
+### Constants
+
+| Name | Value | Source |
+| --- | --- | --- |
+| `MDL_GRAB_EQUAL_EPSILON` | 0.001 | `qutils/COMMON/MATHLIB.H`, `EQUAL_EPSILON` |
+| `MDL_GRAB_SKIN_SCALE` | 8 | `qutils/MODELGEN/MODELGEN.C`, `SetSkinValues` |
+| `MDL_GRAB_SKIN_WIDTH` | 150 | `SetSkinValues` |
+| `MDL_GRAB_SKIN_HEIGHT` | 190 | `SetSkinValues` |
+| `MDL_GRAB_SKIN_MARGIN` | 2 | `SetSkinValues`, `basex`, `basey` and half of the `+ 4` |
+| `MDL_GRAB_MAX_NORMALS` | 20 | `qutils/MODELGEN/MODELGEN.C`, `vertexnormals` |
+| `MDL_GRAB_INTERVAL` | 0.1 | `GrabFrame` |
+
+### Test vectors
+
+A pyramid: a foot with corners `a (-8, -8, 0)`, `b (8, -8, 0)`, `c (8, 8, 0)`, `e (-8, 8,
+0)` and a tip `t (0, 0, 16)`, as the triangles `abt`, `bct`, `cet`, `eat`, `acb`, `aec`,
+with a second frame whose tip is `(2, 1, 20.5)`. id's modelgen, built from the pinned commit
+and run on it on 2026-11-21, wrote a skin of 264 by 132; vertices `a, b, t, c, e` at `(s,
+t)` (2, 130), (130, 130), (66, 2), (130, 130), (2, 130), all but the tip on the seam; the
+triangles `abt` on the back and the other five on the front; the first frame's vertices
+packed as (255, 0, 0), (255, 255, 0), (127, 127, 199), (0, 255, 0), (0, 0, 0) with normals
+17, 118, 84, 139, 42, and the second frame's tip as (111, 159, 255); and a `size` of
+138.07224.
+
+**Checked:** on 2026-11-21, 4000 scripts made from a seed (2 to 19 triangles over a pool of
+4 to 15 points, one to three frame entries of which some are groups, with and without
+`$origin`, `$scale`, `$eyeposition`, `$flags` and `$sync`, and now and then a triangle of
+no area) were given to id's modelgen, built unchanged with the oracles' flags, and to
+`Grab::build`. modelgen wrote a model for 3146 and ours was the same file for each, but for
+the bytes modelgen leaves as its stack had them (a frame's name after its NUL, and the
+`lightnormalindex` of a frame's and a group's bounds); the other 854 both refused.

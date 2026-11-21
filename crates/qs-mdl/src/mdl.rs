@@ -9,6 +9,7 @@
 
 #[cfg(test)]
 mod fixtures;
+pub mod grab;
 pub mod make;
 #[cfg(test)]
 mod tests;
