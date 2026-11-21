@@ -8,10 +8,10 @@
 //! blended to.
 
 use core::fmt;
-use std::collections::BTreeSet;
 
+use super::Mesh;
 use super::obj::Up;
-use super::{Corner, Mesh, MeshFrame};
+use super::rig::{Affine, Boned, RigError, Vec3, scaled, single, turn};
 
 /// What a file's first line starts with: "The first line of an IQE file must be: # Inter-Quake
 /// Export".
@@ -20,8 +20,6 @@ pub const IQE_HEADER: &str = "# Inter-Quake Export";
 pub const IQE_FRAME: &str = "base";
 /// The name of an animation the file gives none.
 pub const IQE_ANIMATION: &str = "anim";
-/// The most bytes of a frame's name (MDL-6.3).
-const NAME_MAX: usize = 15;
 /// The corners of a triangle.
 const CORNERS: usize = 3;
 
@@ -73,75 +71,6 @@ impl fmt::Display for IqeError {
 
 impl core::error::Error for IqeError {}
 
-/// Three numbers.
-type Vec3 = [f64; 3];
-/// A matrix of three rows.
-type Mat3 = [Vec3; 3];
-
-/// A rotation and scale followed by a move: what a pose does to a point.
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct Affine {
-    matrix: Mat3,
-    moved: Vec3,
-}
-
-/// The dot product.
-fn dot([ax, ay, az]: Vec3, [bx, by, bz]: Vec3) -> f64 {
-    ax * bx + ay * by + az * bz
-}
-
-/// A matrix's columns as rows.
-const fn transposed([[a, b, c], [d, e, f], [g, h, i]]: Mat3) -> Mat3 {
-    [[a, d, g], [b, e, h], [c, f, i]]
-}
-
-/// The cross product.
-fn cross([ax, ay, az]: Vec3, [bx, by, bz]: Vec3) -> Vec3 {
-    [ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx]
-}
-
-impl Affine {
-    const IDENTITY: Self = Self {
-        matrix: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
-        moved: [0.0; 3],
-    };
-
-    /// Where `point` goes.
-    fn apply(&self, point: Vec3) -> Vec3 {
-        let [x, y, z] = self.matrix.map(|row| dot(row, point));
-        let [mx, my, mz] = self.moved;
-        [x + mx, y + my, z + mz]
-    }
-
-    /// `self` after `first`: what a joint's pose is in its parent's space.
-    fn after(&self, first: &Self) -> Self {
-        let columns = transposed(first.matrix);
-        Self {
-            matrix: self
-                .matrix
-                .map(|row| columns.map(|column| dot(row, column))),
-            moved: self.apply(first.moved),
-        }
-    }
-
-    /// What undoes `self`; `None` when it flattens space.
-    fn inverse(&self) -> Option<Self> {
-        let [a, b, c] = self.matrix;
-        let determinant = dot(a, cross(b, c));
-        if determinant.abs() < f64::MIN_POSITIVE {
-            return None;
-        }
-        // The inverse's columns are the cross products of the rows, over the determinant.
-        let matrix = transposed([cross(b, c), cross(c, a), cross(a, b)])
-            .map(|row| row.map(|part| part / determinant));
-        let [x, y, z] = matrix.map(|row| dot(row, self.moved));
-        Some(Self {
-            matrix,
-            moved: [-x, -y, -z],
-        })
-    }
-}
-
 /// Where the parts of a `pq` pose's arguments start: its quaternion's x, y and z, its w, and
 /// its scale, after the translation's three.
 const PQ_ROTATION: usize = 3;
@@ -169,29 +98,7 @@ fn pose_quaternion(values: &[f64]) -> Affine {
         .get(PQ_W)
         .copied()
         .unwrap_or_else(|| -(1.0 - x * x - y * y - z * z).max(0.0).sqrt());
-    let length = (x * x + y * y + z * z + w * w).sqrt();
-    let (x, y, z, w) = if length > 0.0 {
-        (x / length, y / length, z / length, w / length)
-    } else {
-        (0.0, 0.0, 0.0, 1.0)
-    };
-    let rotation: Mat3 = [
-        [
-            1.0 - 2.0 * (y * y + z * z),
-            2.0 * (x * y - z * w),
-            2.0 * (x * z + y * w),
-        ],
-        [
-            2.0 * (x * y + z * w),
-            1.0 - 2.0 * (x * x + z * z),
-            2.0 * (y * z - x * w),
-        ],
-        [
-            2.0 * (x * z - y * w),
-            2.0 * (y * z + x * w),
-            1.0 - 2.0 * (x * x + y * y),
-        ],
-    ];
+    let rotation = turn([x, y, z, w]);
     scaled(
         rotation,
         three(values, PQ_SCALE, 1.0),
@@ -206,14 +113,6 @@ fn pose_matrix(values: &[f64]) -> Affine {
         three(values, PM_SCALE, 1.0),
         three(values, 0, 0.0),
     )
-}
-
-/// The pose that scales a point, then turns it by `rotation`, then moves it by `moved`.
-fn scaled(rotation: Mat3, [sx, sy, sz]: Vec3, moved: Vec3) -> Affine {
-    Affine {
-        matrix: rotation.map(|[a, b, c]| [a * sx, b * sy, c * sz]),
-        moved,
-    }
 }
 
 /// A face as its line gives it, kept until the whole file is read: a face may come before
@@ -252,15 +151,6 @@ fn words(line: &str) -> Vec<&str> {
         rest = after.trim_start();
     }
     out
-}
-
-/// A single-precision position.
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "spec MDL-9.2: a posed position is stored in single precision, the nearest"
-)]
-fn single(point: Vec3) -> [f32; 3] {
-    point.map(|part| part as f32)
 }
 
 /// What is read of a file. Its vertex attributes are arrays of their own, which "may be
@@ -334,24 +224,6 @@ impl File {
         Ok(triangles)
     }
 
-    /// Each joint's pose in the model's space, of `poses`, each in its parent's: a joint the
-    /// frame gives no pose keeps its base pose.
-    fn world(&self, poses: &[Affine]) -> Vec<Affine> {
-        let mut world: Vec<Affine> = Vec::with_capacity(self.parents.len());
-        for (joint, parent) in self.parents.iter().enumerate() {
-            let own = poses
-                .get(joint)
-                .or_else(|| self.base.get(joint))
-                .copied()
-                .unwrap_or(Affine::IDENTITY);
-            let placed = parent
-                .and_then(|parent| world.get(parent))
-                .map_or(own, |parent| parent.after(&own));
-            world.push(placed);
-        }
-        world
-    }
-
     /// The mesh.
     fn mesh(self, up: Up) -> Result<Mesh, IqeError> {
         let whole = |fault| IqeError { line: 0, fault };
@@ -380,109 +252,31 @@ impl File {
         // "Each vertex array must either be absent, or the same length as all other vertex
         // arrays": a vertex has the texture coordinate of its own number.
         let textured = self.texcoords.len() == self.positions.len();
+        let triangles = faces;
         let blended = self.blends.len() == self.positions.len();
-        let no_blends = Vec::new();
-        let triangles = faces
-            .into_iter()
-            .map(|face| {
-                face.map(|vertex| Corner {
-                    position: vertex,
-                    texcoord: textured.then_some(vertex),
-                })
-            })
-            .collect();
-        let bind = self.world(&self.base);
-        let unbind: Vec<Affine> = bind
-            .iter()
-            .map(|joint| joint.inverse().ok_or_else(|| whole(IqeFault::Flat)))
-            .collect::<Result<_, _>>()?;
-        let posed = |poses: &[Affine]| -> Vec<[f32; 3]> {
-            let world = self.world(poses);
-            // What each joint does to a point of the mesh as it was bound.
-            let moves: Vec<Affine> = world
-                .iter()
-                .zip(&unbind)
-                .map(|(now, unbind)| now.after(unbind))
-                .collect();
-            self.positions
-                .iter()
-                .enumerate()
-                .map(|(vertex, position)| {
-                    let blends = self
-                        .blends
-                        .get(vertex)
-                        .filter(|_| blended)
-                        .unwrap_or(&no_blends);
-                    let total: f64 = blends.iter().map(|(_, weight)| weight).sum();
-                    let mut at = [0.0, 0.0, 0.0];
-                    for (joint, weight) in blends {
-                        let Some(moved) = moves.get(*joint) else {
-                            continue;
-                        };
-                        for (sum, part) in at.iter_mut().zip(moved.apply(*position)) {
-                            *sum += part * weight / total;
-                        }
-                    }
-                    let moved = total > 0.0 && blends.iter().all(|(joint, _)| *joint < moves.len());
-                    up.turned(single(if moved { at } else { *position }))
-                })
-                .collect()
-        };
-        let mut frames = Vec::new();
-        let mut used = BTreeSet::new();
-        for animation in &self.animations {
-            let stem = frame_stem(&animation.name, animation.frames.len(), &used)
-                .ok_or_else(|| whole(IqeFault::Names))?;
-            for (number, poses) in (1_usize..).zip(&animation.frames) {
-                let name = format!("{stem}{number}");
-                used.insert(name.clone());
-                frames.push(MeshFrame {
-                    name,
-                    positions: posed(poses),
-                });
-            }
-        }
-        if frames.is_empty() {
-            frames.push(MeshFrame {
-                name: IQE_FRAME.to_owned(),
-                positions: posed(&self.base),
-            });
-        }
-        Ok(Mesh {
-            triangles,
+        Boned {
+            positions: self.positions,
             texcoords: if textured { self.texcoords } else { Vec::new() },
-            frames,
+            blends: if blended { self.blends } else { Vec::new() },
+            triangles,
+            parents: self.parents,
+            base: self.base,
+            animations: self
+                .animations
+                .into_iter()
+                .map(|animation| (animation.name, animation.frames))
+                .collect(),
+            rest: IQE_FRAME,
+            unnamed: IQE_ANIMATION,
+        }
+        .mesh(up)
+        .map_err(|error| {
+            whole(match error {
+                RigError::Flat => IqeFault::Flat,
+                RigError::Names => IqeFault::Names,
+            })
         })
     }
-}
-
-/// What may follow an animation's name to tell it from another whose frames would have the
-/// same names: nothing, then a letter.
-const MARKS: [&str; 8] = ["", "b", "c", "d", "e", "f", "g", "h"];
-
-/// What the frames of the animation `animation` are named by, before each one's number from
-/// 1 (`run1`, `run2`, as QuakeC names frames): its name's letters, digits and underscores,
-/// `anim` for none, cut so that the name of its last frame, of `count`, fits a frame's name,
-/// and with a letter after it when a frame so named is in `used` already. `None` when no
-/// letter makes its frames' names its own.
-fn frame_stem(animation: &str, count: usize, used: &BTreeSet<String>) -> Option<String> {
-    let mut letters: String = animation
-        .chars()
-        .filter(|letter| letter.is_ascii_alphanumeric() || *letter == '_')
-        .collect();
-    if letters.is_empty() {
-        letters.push_str(IQE_ANIMATION);
-    }
-    let digits = count.max(1).to_string().len();
-    MARKS.iter().find_map(|mark| {
-        let room = NAME_MAX.saturating_sub(digits).saturating_sub(mark.len());
-        let mut stem = letters.clone();
-        stem.truncate(room);
-        stem.push_str(mark);
-        (1..=count.max(1))
-            .all(|number| !used.contains(&format!("{stem}{number}")))
-            .then_some(stem)
-    })
 }
 
 /// Reads an `.iqe` file as a mesh, its axes turned as `up` says: a pose for each frame of

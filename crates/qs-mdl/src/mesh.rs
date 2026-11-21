@@ -8,6 +8,7 @@
 
 pub mod iqe;
 pub mod obj;
+mod rig;
 
 use core::fmt;
 use std::collections::BTreeMap;
