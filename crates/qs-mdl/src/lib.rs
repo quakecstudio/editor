@@ -12,6 +12,7 @@
 mod cursor;
 pub mod md5;
 pub mod mdl;
+pub mod mesh;
 pub mod spr;
 
 pub use md5::{Md5Anim, Md5Error, Md5Mesh};

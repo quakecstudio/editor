@@ -300,6 +300,13 @@ impl Base {
         self.verts.len()
     }
 
+    /// Each of the base's triangles as vertices of the model, in the base's order, those of
+    /// no area among them.
+    #[must_use]
+    pub fn corners(&self) -> &[[usize; 3]] {
+        &self.corners
+    }
+
     /// Where each vertex lies on the skin, in the model's vertex order.
     #[must_use]
     pub fn stverts(&self) -> &[StVert] {
