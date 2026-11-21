@@ -747,6 +747,11 @@ jobs:
       - name: Drive the language server against the rerelease
         if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: cargo xtask lsp-corpus "$QS_TEST_ASSETS/codebase/rerelease"
+      # P4-11 (UI-7): a field of the rerelease retyped where it is declared is suggested at
+      # every use, and each suggestion taken leaves the new name written as often as the old.
+      - name: Walk the next-edit suggestions of a retyped field on the rerelease
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
+        run: cargo xtask next-edit-corpus "$QS_TEST_ASSETS/codebase/rerelease"
       # P4-34 (UI-18): formatting id 1.01 and the rerelease twice gives the same text as once,
       # and each module compiles to the same progs.dat before and after.
       - name: Format id 1.01 and the rerelease and compile them again

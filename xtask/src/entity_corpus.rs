@@ -172,7 +172,7 @@ fn entities(dir: &Path, dialect: Dialect) -> Result<(String, BTreeSet<String>), 
 }
 
 /// The dialect a codebase is read in: vanilla for [`VANILLA`], else FTEQCC's.
-fn dialect_of(dir: &Path) -> Result<Dialect, String> {
+pub(crate) fn dialect_of(dir: &Path) -> Result<Dialect, String> {
     let name = dir
         .file_name()
         .and_then(|n| n.to_str())

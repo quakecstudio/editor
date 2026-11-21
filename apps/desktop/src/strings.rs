@@ -325,6 +325,10 @@ pub enum Text {
     NothingSelected,
     /// The Properties panel while the game runs.
     ReadOnlyWhilePlaying,
+    /// The pill after a suggested edit in the code editor (P4-11, mockup 01).
+    NextEditAccept,
+    /// After the count of suggested edits left.
+    NextEditLeft,
     /// The Properties panel's link to the selected entity's spawn function.
     OpenSpawnFunction,
     /// The toolbar after a selection or a field's edit failed.
@@ -1113,7 +1117,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 548] = [
+    pub const ALL: [Self; 550] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1205,6 +1209,8 @@ impl Text {
         Self::Live,
         Self::NothingSelected,
         Self::ReadOnlyWhilePlaying,
+        Self::NextEditAccept,
+        Self::NextEditLeft,
         Self::OpenSpawnFunction,
         Self::EditFailed,
         Self::SentOnResume,
@@ -1770,6 +1776,8 @@ impl Text {
             Self::Live => "live",
             Self::NothingSelected => "Select an entity in the Entities list.",
             Self::ReadOnlyWhilePlaying => "Read only while playing. Pause to edit.",
+            Self::NextEditAccept => "Tab to accept",
+            Self::NextEditLeft => "left",
             Self::OpenSpawnFunction => "Open its spawn function",
             Self::EditFailed => "The game did not take the change; see the log",
             Self::SentOnResume => "edited, sent to the game on Resume",

@@ -277,6 +277,58 @@ fn f2_renames_the_name_everywhere() {
     );
 }
 
+// No spec statement: P4-11, UI-7, the acceptance criterion: a field's name typed over where
+// it is declared is suggested at every use, shown at the end of a line with the pill of the
+// mockup; Tab makes the next one and goes to it, in the file it is in, until none is left,
+// and is then the editor's own key again; Escape drops what is left
+#[test]
+fn tab_walks_through_the_uses_of_a_retyped_field() {
+    let mut harness = harness("defs.qc");
+    assert!(editor(&harness).view.suggestion().is_none());
+    caret_at(&mut harness, "bounces", 0, 7);
+    press(&mut harness, Modifiers::NONE, Key::Backspace);
+    harness.event(Event::Text("d".to_owned()));
+    harness.run();
+    assert!(text(&harness).contains(".float bounced;"));
+    let shown = editor(&harness).view.suggestion().unwrap().clone();
+    assert_eq!(shown.accept, Text::NextEditAccept.get());
+    assert!(
+        shown.text.starts_with("bounces \u{2192} bounced") && shown.text.contains("weapons.qc"),
+        "{}",
+        shown.text
+    );
+    assert!(
+        shown
+            .text
+            .ends_with(&format!("4 {}", Text::NextEditLeft.get()))
+    );
+
+    // Tab goes to the first use, in the other file, and changes it; then the next.
+    for left in [3, 2, 1, 0] {
+        press(&mut harness, Modifiers::NONE, Key::Tab);
+        harness.run();
+        assert!(editor(&harness).path.ends_with("src/weapons.qc"));
+        assert_eq!(text(&harness).matches("bounces").count(), left);
+        assert_eq!(editor(&harness).view.suggestion().is_some(), left > 0);
+    }
+    assert_eq!(text(&harness).matches("bounced").count(), 4);
+    // With none left Tab is the editor's own.
+    let before = text(&harness);
+    press(&mut harness, Modifiers::NONE, Key::Tab);
+    assert_ne!(text(&harness), before);
+
+    // Escape drops the suggestions, and Tab is then the editor's.
+    let mut harness = self::harness("defs.qc");
+    caret_at(&mut harness, "bounces", 0, 7);
+    press(&mut harness, Modifiers::NONE, Key::Backspace);
+    harness.run();
+    assert!(editor(&harness).view.suggestion().is_some());
+    press(&mut harness, Modifiers::NONE, Key::Escape);
+    harness.run();
+    assert!(editor(&harness).view.suggestion().is_none());
+    assert!(app(&harness).shell().workbench().next_edit().is_none());
+}
+
 #[test]
 fn a_refused_rename_says_so() {
     let mut harness = harness("src/weapons.qc");

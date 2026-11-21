@@ -94,6 +94,10 @@ pub(crate) enum Request {
     Fix(usize, usize),
     /// `file.format`.
     Format,
+    /// `edit.accept_next`: the suggested edit is made and the caret goes to it (P4-11).
+    AcceptNext,
+    /// `edit.dismiss_next`.
+    DismissNext,
     /// Ask the agent what the selected code does (P4-14).
     Explain {
         /// The selection's text.
@@ -385,6 +389,16 @@ impl Editor {
             }
         }
         let escape = KeyboardShortcut::new(Modifiers::NONE, Key::Escape);
+        // P4-11: with a suggested edit shown and no popup over it, Tab takes it and Escape
+        // drops it; with none, Tab is the view's.
+        if self.popup.is_none() && self.view.suggestion().is_some() {
+            if pressed(ui, &KeyboardShortcut::new(Modifiers::NONE, Key::Tab)) {
+                requests.push(Request::AcceptNext);
+            }
+            if self.find.is_none() && pressed(ui, &escape) {
+                requests.push(Request::DismissNext);
+            }
+        }
         if self.popup.is_some() && pressed(ui, &escape) {
             self.popup = None;
         } else if self.find.is_some() && pressed(ui, &escape) {
