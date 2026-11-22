@@ -6,7 +6,7 @@
 
 use qc_edict::EdictNumber;
 use qc_progs::Progs;
-use qs_bridge::{Answer, Capabilities, ErrorCode, Host, HostInfo, Id, RpcError};
+use qs_bridge::{Answer, Applied, Capabilities, ErrorCode, Host, HostInfo, Id, RpcError};
 use qs_render::{Camera, Degrees};
 use qs_sim::debug::BreakpointEdit;
 use qs_sim::{
@@ -177,22 +177,6 @@ enum Held {
         edict: usize,
         pairs: Vec<(String, String)>,
     },
-}
-
-/// When an edit applies, as its result says (BRIDGE-4.4).
-#[derive(Clone, Copy, Debug)]
-enum Applied {
-    Now,
-    OnResume,
-}
-
-impl Applied {
-    fn to_json(self) -> Value {
-        json!({ "applied": match self {
-            Self::Now => "now",
-            Self::OnResume => "on_resume",
-        } })
-    }
 }
 
 /// Whether anyone hears the game's events.

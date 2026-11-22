@@ -9,7 +9,7 @@
 
 use serde_json::json;
 
-use super::{ErrorCode, Id, Message, RpcError};
+use super::{Applied, ErrorCode, Id, Message, RpcError};
 
 fn error_of(content: &str) -> (Option<Id>, ErrorCode) {
     match *Message::parse(content.as_bytes()).unwrap_err() {
@@ -115,6 +115,48 @@ fn the_codes_are_the_specs() {
         (ErrorCode::StoppedInFrame, -32008),
     ] {
         assert_eq!(code.code(), number, "{code:?}");
+        assert_eq!(ErrorCode::of_code(number), code);
+        let response =
+            format!(r#"{{"jsonrpc":"2.0","id":1,"error":{{"code":{number},"message":"m"}}}}"#);
+        assert_eq!(
+            Message::parse(response.as_bytes()).unwrap(),
+            Message::Response {
+                id: Some(Id::Number(1)),
+                outcome: Err(RpcError::new(code, "m")),
+            },
+            "{code:?}"
+        );
+    }
+    // An application's own code is read as itself, not refused (JSON-RPC 2.0, section 5.1).
+    for number in [-32009, 0, 7] {
+        assert_eq!(ErrorCode::of_code(number), ErrorCode::Other(number));
+        assert_eq!(ErrorCode::Other(number).code(), number);
+        let response =
+            format!(r#"{{"jsonrpc":"2.0","id":2,"error":{{"code":{number},"message":"m"}}}}"#);
+        assert!(Message::parse(response.as_bytes()).is_ok(), "{number}");
+    }
+}
+
+// spec BRIDGE-4.4: a result says `now` or `on_resume`, and one that says neither is no answer
+#[test]
+fn applied_is_read_from_its_result() {
+    for applied in [Applied::Now, Applied::OnResume] {
+        assert_eq!(Applied::of_result(&applied.to_json()), Some(applied));
+        assert_eq!(
+            serde_json::to_value(applied).unwrap(),
+            json!(applied.name())
+        );
+    }
+    assert_eq!(
+        Applied::to_json(Applied::OnResume),
+        json!({ "applied": "on_resume" })
+    );
+    for neither in [
+        json!({}),
+        json!({ "applied": "later" }),
+        json!({ "applied": 1 }),
+    ] {
+        assert_eq!(Applied::of_result(&neither), None, "{neither}");
     }
 }
 

@@ -301,6 +301,12 @@ impl Host for Fake {
     }
 
     fn call(&mut self, _id: &Id, method: &str, params: &Value) -> Answer {
+        // BRIDGE-4.4: `field/set` says when it applies, here only for the edit the test sends.
+        let set =
+            json!({ "edict": 5, "field": "health", "value": { "type": "float", "value": 50.0 } });
+        if method == "field/set" && *params == set {
+            return Answer::Now(Ok(json!({ "applied": "on_resume" })));
+        }
         Answer::Now(Ok(json!({ "method": method, "params": params })))
     }
 
@@ -379,9 +385,16 @@ fn the_client_speaks_the_bridge() {
             &json!({ "type": "float", "value": 50.0 }),
         )
         .unwrap();
-    assert_eq!(
-        set["params"],
-        json!({ "edict": 5, "field": "health", "value": { "type": "float", "value": 50.0 } })
+    assert_eq!(set, crate::Applied::OnResume);
+    // An answer that says neither is no answer to field/set.
+    let unsaid = client.set_field(
+        qc_edict::EdictNumber::new(6),
+        "health",
+        &json!({ "type": "float", "value": 50.0 }),
+    );
+    assert!(
+        matches!(unsaid, Err(ClientError::Unreadable("field/set"))),
+        "{unsaid:?}"
     );
     let evaluated = client.evaluate("self.health").unwrap();
     assert_eq!(evaluated["params"], json!({ "expression": "self.health" }));
@@ -409,7 +422,7 @@ fn the_client_speaks_the_bridge() {
     );
     // Each answer, initialize's too, came after an event, kept in order.
     let events = client.take_events();
-    assert_eq!(events.len(), 8);
+    assert_eq!(events.len(), 9);
     assert!(events.iter().all(|e| e.method == "console/line"));
     // The host answers a step with bad parameters with -32602 (BRIDGE-4.2).
     let bad = client.request("step", json!({ "kind": "sideways" }));
@@ -440,6 +453,35 @@ fn a_missing_or_closed_host_is_an_error() {
         client.initialize("tests"),
         Err(ClientError::Closed)
     ));
+}
+
+// spec BRIDGE-7.1: every code is read back as itself, so a host's refusal with any of them is
+// an error for the command that was refused, and the connection stays open
+#[test]
+fn a_refusal_with_any_code_keeps_the_connection() {
+    let mut frames = Vec::new();
+    let refused = Message::Response {
+        id: Some(Id::Number(1)),
+        outcome: Err(qs_bridge::RpcError::new(
+            ErrorCode::StoppedInFrame,
+            "a frame is stopped at a statement",
+        )),
+    };
+    write_frame(&mut frames, &refused.to_bytes()).unwrap();
+    let line = event("console/line", json!({ "text": "after", "level": "print" }));
+    write_frame(&mut frames, &line.to_bytes()).unwrap();
+    let mut client = Client::over(std::io::Cursor::new(frames), std::io::sink());
+    assert!(matches!(
+        client.initialize("tests"),
+        Err(ClientError::Rpc {
+            code: ErrorCode::StoppedInFrame,
+            ..
+        })
+    ));
+    let waited = client
+        .wait_event("console/line", Duration::from_secs(5))
+        .unwrap();
+    assert_eq!(waited.params["text"], "after");
 }
 
 /// A host that sends `console/line` events without end and answers nothing.

@@ -8,6 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::ids::{BreakpointId, WatchIndex};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -27,7 +28,7 @@ pub struct Breakpoint {
 
 /// Where a run is: a function, and its file and line when the program has a `.lno`
 /// (BRIDGE-3.4); an engine frame names its function alone.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Location {
     /// The function.
     pub function: String,
@@ -59,7 +60,7 @@ impl Location {
 }
 
 /// A watch: an expression and its value when the game last stopped.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Watch {
     /// The expression, such as `self.owner.health`.
     pub expression: String,
@@ -68,7 +69,7 @@ pub struct Watch {
 }
 
 /// Why the game is stopped in a frame.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum StopReason {
     /// A breakpoint was reached.
