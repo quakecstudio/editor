@@ -120,6 +120,7 @@ milestone (`MVP-3`). All of them wait for the MVP gate.
 | Play plays the map open in the Map tab | Map editor (MAP-13), UI-14; asked for by Justin on 2026-11-21 | [L-52](https://github.com/quakecstudio/editor/issues/1092) Play plays the map open in the Map tab |
 | Properties shows the game's values while paused | UI-13; found by the showcase on 2026-11-21 | [L-53](https://github.com/quakecstudio/editor/issues/1096) Properties shows an entity's spawn-time fields while the game is paused |
 | The first shotgun shot always takes health | ENG-2; found by the showcase on 2026-11-21 | [L-54](https://github.com/quakecstudio/editor/issues/1097) The first shotgun shot sometimes draws blood without taking health |
+| A local struct given a brace initialiser compiles | COMP-3; found writing the agent reference on 2026-11-21 | [L-55](https://github.com/quakecstudio/editor/issues/1101) A local struct with a brace initialiser stops the compiler |
 | In-app update check | Quality, testing and release; moved out of the MVP by [ADR-0007](adr/0007-mvp-scope.md) | [P4-19](https://github.com/quakecstudio/editor/issues/130) Update mechanism |
 | Editor integrations for VS Code, Zed and Neovim | Language server; moved out of Phase 2 by Justin on 2026-10-29, as it serves other editors and not the IDE or the engine | [P2-16](https://github.com/quakecstudio/editor/issues/72) Package editor integrations for VS Code, Zed and Neovim |
 

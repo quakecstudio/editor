@@ -190,7 +190,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`project.info`](#projectinfo) | Describes the open project: its directory and each module's kind, dialect, target engine and output. |
 | [`project.new`](#projectnew) | Makes a new project from a starter template, id's QuakeC 1.01 or the rerelease's, with quakec.toml, a sample test and the GPLv2 notices; it builds and plays at once. |
 | [`project.open`](#projectopen) | Opens the QuakeC project in a directory: its quakec.toml, or its progs.src and csprogs.src. |
-| [`project.reference`](#projectreference) | The reference to read before writing or debugging QuakeC or building a map, by topic: quakec (the language, how a mod runs, pitfalls), entities (what the engine calls, movetype and solid, the builtins by purpose, what QuakeC does that C does not, debugging), monsters (how a monster is written and every place a new one is added), models (what a model is, and how to recolour, scale and reframe one), maps, workflow (tests and scenarios). Written from id's QuakeC and the engine's specs; a mod's own code comes first where it differs. |
+| [`project.reference`](#projectreference) | The reference to read before writing or debugging QuakeC or building a map, by topic: quakec (the language in short, how a mod runs, pitfalls); the project's dialect in full, which project.info names: vanilla (id's QuakeC), rerelease (FTEQCC for id's VM) or fteqcc (all of FTEQCC), each with the mistakes a model makes in it; entities (what the engine calls, movetype and solid, the builtins by purpose, debugging); monsters, weapons, items and triggers (how each is written, from id's own, and every place a new one is added); models (what a model is, and how to recolour, scale and reframe one); maps; workflow (tests and scenarios). Written from id's QuakeC and the engine's specs; a mod's own code comes first where it differs. |
 | [`project.search`](#projectsearch) | Finds every match of a text in the open project's files, unsaved edits included, by file, line and byte range; matching case, whole words only or as a regular expression. |
 | [`project.symbols`](#projectsymbols) | Lists the open project's global definitions, functions, globals and fields, each with where its name is first written; a query keeps those whose name contains it. |
 | [`project.take_checked`](#projecttake_checked) | Takes the problems, symbols and highlighting the background check worked out for the latest edit, if it has finished; says whether anything changed. |
@@ -8598,7 +8598,7 @@ Parameters:
 
 ## `project.reference`
 
-The reference to read before writing or debugging QuakeC or building a map, by topic: quakec (the language, how a mod runs, pitfalls), entities (what the engine calls, movetype and solid, the builtins by purpose, what QuakeC does that C does not, debugging), monsters (how a monster is written and every place a new one is added), models (what a model is, and how to recolour, scale and reframe one), maps, workflow (tests and scenarios). Written from id's QuakeC and the engine's specs; a mod's own code comes first where it differs.
+The reference to read before writing or debugging QuakeC or building a map, by topic: quakec (the language in short, how a mod runs, pitfalls); the project's dialect in full, which project.info names: vanilla (id's QuakeC), rerelease (FTEQCC for id's VM) or fteqcc (all of FTEQCC), each with the mistakes a model makes in it; entities (what the engine calls, movetype and solid, the builtins by purpose, debugging); monsters, weapons, items and triggers (how each is written, from id's own, and every place a new one is added); models (what a model is, and how to recolour, scale and reframe one); maps; workflow (tests and scenarios). Written from id's QuakeC and the engine's specs; a mod's own code comes first where it differs.
 
 Parameters:
 
@@ -8614,6 +8614,21 @@ Parameters:
           "type": "string"
         },
         {
+          "const": "vanilla",
+          "description": "The vanilla dialect in full: QuakeC as id's compiler reads it, and what a model gets\nwrong in it.",
+          "type": "string"
+        },
+        {
+          "const": "rerelease",
+          "description": "The rerelease's dialect: what FTEQCC adds for id's VM, and what stays as in vanilla.",
+          "type": "string"
+        },
+        {
+          "const": "fteqcc",
+          "description": "The FTEQCC dialect in full: integers, pointers, structs, classes, the preprocessor.",
+          "type": "string"
+        },
+        {
           "const": "entities",
           "description": "What the engine calls, how an entity moves and collides, the builtins by what they\nare for, what the language does that C does not, and debugging.",
           "type": "string"
@@ -8621,6 +8636,21 @@ Parameters:
         {
           "const": "monsters",
           "description": "How a monster is written, from id's own, and where a new one must be added.",
+          "type": "string"
+        },
+        {
+          "const": "weapons",
+          "description": "How a weapon is written, from id's own, and the six places a new one is added.",
+          "type": "string"
+        },
+        {
+          "const": "items",
+          "description": "How an item is written, from id's own: its spawn function and its touch.",
+          "type": "string"
+        },
+        {
+          "const": "triggers",
+          "description": "How a trigger is written, from id's own, and how targets are fired.",
           "type": "string"
         },
         {

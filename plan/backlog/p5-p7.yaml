@@ -2801,3 +2801,26 @@ groups:
     - 'The combat clip''s steps, run repeatedly with the grunt''s health read by `engine.inspect` and from Properties after the first shot, show the same health in both, below 30, every time; recorded in the PR'
     verify:
     - 'The recorded runs in the PR; the test of the cause, when one is found'
+  - key: L-55
+    title: A local struct with a brace initialiser stops the compiler
+    labels:
+    - L4-bridges
+    - area:compiler
+    - type:bug
+    size: S
+    reqs:
+    - COMP-3
+    depends:
+    - L-01
+    summary: |
+      Filed by hand on 2026-11-21 (#1101), found while writing the agent reference's FTEQCC topic (L-46). In the FTEQCC dialect a struct declared in a function body with a brace initialiser, `struct Pair p = { 1, 2 };`, a `typedef struct`'s and one that names its members too, stops the compiler: the module builds no program and the only message is `internal: the compiler stopped: Unfollowed` at the function's first line. The same initialiser at file level compiles, and so does a local struct whose members are assigned. FTEQCC initialises such a local as FTE-14.9 says.
+    environment: |
+      macOS, commit f30d24cd, `quakec-ide test` over the rerelease's QuakeC with one more file, target `rerelease` and target `fte`
+    deliverable:
+    - 'crates/qc-sema and crates/qc-codegen: a local struct''s brace initialiser followed and written as FTE-14.9 says, with tests citing it'
+    - 'docs/agent-reference/language-fteqcc.md no longer tells an agent to assign the members instead'
+    acceptance:
+    - 'The issue''s program compiles and its test passes for the targets `rerelease` and `fte`, in a test'
+    - 'The compiler differential (`cargo xtask compiler-diff`) stays green'
+    verify:
+    - 'cargo nextest run -p qc-codegen -p qc-sema; cargo xtask compiler-diff --fast'
