@@ -16,15 +16,17 @@ mod types;
 
 pub(crate) use body::{RawAlias, RawBody, RawLocal, RawParam, StatePart};
 pub(crate) use decl::{
-    ArrayDim, BuiltinFunction, ExternBase, RawAggregate, RawBraces, RawDecl, RawElement,
+    ArrayDim, BuiltinFunction, ExternBase, RawAggregate, RawBraces, RawDecl, RawElement, RawInit,
     RawParamInfo, RawValue,
 };
 pub use decl::{Binum, LiteralValue, Qualifier, ValueKind, declares};
 pub(crate) use expr::{MemberBase, RawUse, UseKind};
 pub(crate) use types::{
     EnumItem, IntConst, MemberKind, MemberStorage, Qualification, RawClass, RawMember, RawStruct,
-    StructMember, TypeKind,
+    StructMember, StructOrigin, TypeKind,
 };
+
+use core::fmt::Write as _;
 
 use qc_diag::{Diagnostic, Span};
 use qc_preproc::{Enabled, FteFlag};
@@ -397,7 +399,119 @@ pub fn lower_file(parse: &Parse, dialect: Dialect) -> FileDecls {
             _ => {}
         }
     }
+    // Only a profile that declares types makes array types.
+    if dialect.has_fteqcc_extensions() {
+        out.generate_array_types();
+    }
     out
+}
+
+impl FileDecls {
+    /// FTEF-5.2: each declarator of two or more dimensions, a global, a local or a struct's
+    /// member, is an array of its first size of the array type of the rest, which
+    /// `QCC_GenArrayType` makes of the element type: a union of one member, unnamed, of the
+    /// next size's elements of the type of the sizes after it. Each type is made once in the
+    /// file, at its start: its name, which no program can write, is no other type's, and the
+    /// type is made before any declaration reads it.
+    fn generate_array_types(&mut self) {
+        let mut made = ArrayTypes::default();
+        // A global's or a local's size of 0 makes rows of no words, as FTEQCC's do; only a
+        // struct member's is refused (FTEF-6.17).
+        for decl in &mut self.decls {
+            if !decl.inner_dims.is_empty() {
+                decl.ty = made.of(&decl.ty, &decl.inner_dims, decl.span);
+                // Its braces are read against the first size and the array type.
+                if let Some(aggregate) = &mut decl.aggregate {
+                    aggregate.sizes.truncate(1);
+                }
+            }
+            if let Some(RawInit::Body(body)) = &mut decl.init {
+                for local in &mut body.locals {
+                    if !local.inner_dims.is_empty() {
+                        local.ty = made.of(&local.ty, &local.inner_dims, local.span);
+                        if let Some(aggregate) = &mut local.aggregate {
+                            aggregate.sizes.truncate(1);
+                        }
+                    }
+                }
+            }
+        }
+        for st in &mut self.structs {
+            for member in &mut st.members {
+                let sizes: Option<Vec<u32>> =
+                    member.sizes.iter().skip(1).map(IntConst::size).collect();
+                // A size of 0 is left to the member's own check, "cannot cope with 0-sized
+                // arrays".
+                let Some(sizes) = sizes.filter(|sizes| !sizes.is_empty() && !sizes.contains(&0))
+                else {
+                    continue;
+                };
+                member.ty = made.of(&member.ty, &sizes, member.span);
+                member.array.truncate(1);
+                member.sizes.truncate(1);
+            }
+        }
+        self.structs.extend(made.0);
+        self.structs.sort_by_key(|st| (st.end, st.at));
+    }
+}
+
+/// The array types a file's declarators need (FTEF-5.2), each once.
+#[derive(Default)]
+struct ArrayTypes(Vec<RawStruct>);
+
+impl ArrayTypes {
+    /// The array type of `sizes` of `element` (`QCC_GenArrayType`), named for its element as
+    /// written and the sizes as C writes them, `float[3][4]`, made with the types inside it
+    /// unless made already; `at` is where the first declarator that needs it is written.
+    fn of(&mut self, element: &Type, sizes: &[u32], at: Span) -> Type {
+        let Some((&count, rest)) = sizes.split_first() else {
+            return element.clone();
+        };
+        let inner = self.of(element, rest, at);
+        // Its element as written, so that two C types FTEQCC names alike are two types.
+        let written = match element {
+            Type::Named(name) => name.to_string(),
+            other => other.fteqcc_name(),
+        };
+        let name = sizes.iter().fold(written, |mut name, size| {
+            let _infallible = write!(name, "[{size}]");
+            name
+        });
+        if !self
+            .0
+            .iter()
+            .any(|st| st.name.as_deref() == Some(name.as_str()))
+        {
+            self.0.push(RawStruct {
+                at: 0,
+                end: 0,
+                span: at,
+                name: Some(name.clone()),
+                union: true,
+                parent: None,
+                body: true,
+                local: false,
+                members: vec![StructMember {
+                    name: String::new(),
+                    span: at,
+                    ty: inner,
+                    array: vec![format!("[{count}]")],
+                    bits: None,
+                    is_static: false,
+                    is_virtual: false,
+                    initialized: false,
+                    width_uses: Vec::new(),
+                    width_integer: true,
+                    width_const: None,
+                    sizes: vec![IntConst::Integer(i64::from(count))],
+                    nested: Vec::new(),
+                }],
+                origin: StructOrigin::ArrayType,
+            });
+        }
+        Type::Named(name.into())
+    }
 }
 
 /// The text of a node's tokens, trivia left out, joined by a space.

@@ -286,6 +286,8 @@ void test_a_struct_at_file_level() { if (made.a != 1) error(\"a\"); if (made.b !
 void test_a_local_struct_assigned() { struct Pair p; p.a = 2; if (p.a != 2) error(\"p.a\"); }\n\
 void test_a_local_struct_in_braces() { struct Pair p = { .b = '1 2 3' }; if (p.a != 0) error(\"p.a\"); if (p.b != '1 2 3') error(\"p.b\"); struct Pair q = { 4, '0 0 5' }; vector w = q.b; if (q.a + w.z != 9) error(\"q\"); }\n\
 float set_then_go_on() { return = 6; hits = hits + 1; }\n\
+float grid[2][3];\n\
+void test_a_two_dimensional_array() { float i = 1; float j = 2; grid[1][2] = 5; if (grid[i][j] != 5) error(\"grid[i][j]\"); grid[i][0] = 3; if (grid[1][0] != 3) error(\"grid[i][0]\"); float m[2][2] = { {1, 2}, {3, 4} }; if (m[1][0] + m[i][1] != 7) error(\"braces\"); }\n\
 void test_return_equals() { hits = 0; if (set_then_go_on() != 6) error(\"return =\"); if (hits != 1) error(\"went on\"); }\n\
 void test_a_vector_of_expressions() { float n = 3; vector v = [1, 2, n]; if (v.z != 3) error(\"[x, y, z]\"); }\n\
 void test_adjacent_strings_join() { string s = \"a\" \"b\"; if (s != \"ab\") error(\"strings\"); }\n\

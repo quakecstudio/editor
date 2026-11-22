@@ -1165,6 +1165,7 @@ impl Checker<'_> {
     pub(super) fn index(&mut self, index: &ast::IndexExpr) -> Checked {
         let span = index.syntax().span();
         let base = self.expr_of(index.base())?;
+        let base = self.array_type_member(base, span)?;
         let after_base = self.generated.len();
         let at = self.value(index.index())?;
         self.end_of_construct()?;

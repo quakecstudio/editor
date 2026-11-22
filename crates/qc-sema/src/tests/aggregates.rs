@@ -262,6 +262,7 @@ fn a_braced_elements_error_stands_at_its_brace() {
 
 // spec FTEF-6.26: an element that should be braced is named by its first token, a comment before
 // it aside
+// spec FTEF-5.7: a value where a row of an array type's braces belong is "expected {"
 #[test]
 fn an_unbraced_element_is_named_by_its_first_token() {
     let expected = |found: &str| vec![d(Code::E0204, &format!("expected {{, found {found}"))];

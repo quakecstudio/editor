@@ -17,7 +17,7 @@ use qc_diag::Span;
 use qc_lexer::latin1_encode;
 use qc_progs::opcode::Opcode;
 use qc_progs::{CallPassing, Function, Op};
-use qc_sema::{DefId, FileId, FunctionType, Location, SimpleType, Type};
+use qc_sema::{DefId, FileId, FunctionType, Location, SimpleType, StructShape, Type};
 use qc_syntax::ast::{self, AstNode};
 use qc_types::Etype;
 
@@ -568,6 +568,32 @@ impl Compiler<'_> {
         at: u32,
     ) -> Lowered<()> {
         let span = item.span();
+        // FTEF-5.2: an array type's braces are its one member's elements, each at its index
+        // times the element's words.
+        if let ValueType::Of(t) = ty
+            && let Some(member) = self
+                .index
+                .struct_shape(t)
+                .and_then(StructShape::array_member)
+                .cloned()
+        {
+            let aggregate = ast::AggregateInit::cast(item.clone()).at(span)?;
+            let count = member.count();
+            let element = ValueType::Of(member.ty);
+            let size = type_words(self.index, &element);
+            let items: Vec<_> = aggregate.syntax().children().collect();
+            if u32::try_from(items.len()).ok().is_none_or(|n| n > count) {
+                return Err(Abort::Internal(Internal::Unsupported, span));
+            }
+            for (k, value) in (0_u32..).zip(&items) {
+                let to = k
+                    .checked_mul(size)
+                    .and_then(|w| w.checked_add(at))
+                    .at(span)?;
+                self.item_words(&element, value, words, to)?;
+            }
+            return Ok(());
+        }
         if let ValueType::Of(t) = ty
             && let Some(shape) = self.index.struct_shape(t).cloned()
         {
@@ -578,7 +604,7 @@ impl Compiler<'_> {
             if !names.is_empty() {
                 for (name, value) in names.iter().zip(aggregate.syntax().children()) {
                     let member = shape.members.iter().find(|m| m.name == *name).at(span)?;
-                    if member.count != 1 {
+                    if member.elements.is_some() {
                         return Err(Abort::Internal(Internal::Unsupported, span));
                     }
                     let to = at.checked_add(member.word).at(span)?;
@@ -590,7 +616,7 @@ impl Compiler<'_> {
                 return Err(Abort::Internal(Internal::Unsupported, span));
             }
             for (member, value) in shape.members.iter().zip(aggregate.syntax().children()) {
-                if member.count != 1 {
+                if member.elements.is_some() {
                     return Err(Abort::Internal(Internal::Unsupported, span));
                 }
                 let to = at.checked_add(member.word).at(span)?;

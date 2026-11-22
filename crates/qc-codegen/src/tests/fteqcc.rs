@@ -1812,7 +1812,7 @@ fn autoprototyping_makes_definitions_in_their_written_order() {
     assert!(global(&p, "first") < global(&p, "later"));
 }
 
-// spec FTE-13.13: an array writes no definition of its own, one for each element, and an array
+// spec FTE-13.19: an array writes no definition of its own, one for each element, and an array
 // of structs each element's members after it
 #[test]
 fn an_array_is_written_as_its_elements() {
@@ -1871,7 +1871,7 @@ fn a_variadic_function_copies_its_slots_to_va_list() {
     assert_eq!(elements, 24);
 }
 
-// spec FTE-13.13: a struct value is written as its members, with no definition of its own
+// spec FTE-13.19: a struct value is written as its members, with no definition of its own
 #[test]
 fn a_struct_value_is_written_as_its_members() {
     let p = fte_progs("typedef struct { string m; float f; } pose;\npose p;\nvoid() t = {};\n");

@@ -1081,7 +1081,6 @@ impl Checker<'_> {
             return Ok(());
         };
         let start = name.span().start;
-        let elements: Vec<ast::Expr> = aggregate.elements().collect();
         if self.global {
             return Ok(());
         }
@@ -1093,9 +1092,9 @@ impl Checker<'_> {
             && ty
                 .as_ref()
                 .is_some_and(|ty| self.etype(ty) == Some(Etype::Vector));
-        let nested = aggregate.syntax().children().count() != elements.len();
-        if array && !nested && !self.env.local_static(start) {
-            return self.array_aggregate(declarator, local, &elements);
+        if array && !self.env.local_static(start) {
+            let parts = aggregate.syntax().children().map(Part::of).collect();
+            return self.array_aggregate(declarator, local, parts);
         }
         // FTEF-32.21: a `static` local's aggregate is its initial value, written with the
         // globals, and generates no statement.
@@ -1726,7 +1725,7 @@ impl Checker<'_> {
         &mut self,
         declarator: &ast::Declarator,
         local: Option<crate::DefId>,
-        elements: &[ast::Expr],
+        parts: Vec<Option<Part>>,
     ) -> Result<(), Fatal> {
         let constant = declarator
             .syntax()
@@ -1745,9 +1744,23 @@ impl Checker<'_> {
             return Ok(());
         };
         let width = self.env.layout(&ty).map_or(1, |l| l.words);
-        for (at, element) in (0_u32..).zip(elements) {
-            let to = local.map(|def| ir::Name::Def(def, at.saturating_mul(width)));
-            self.store_part(element, to, &ty)?;
+        let vector = self.etype(&ty) == Some(Etype::Vector);
+        for (at, part) in (0_u32..).zip(parts) {
+            let at = at.saturating_mul(width);
+            let word = |word: u32| local.map(|def| ir::Name::Def(def, at.saturating_add(word)));
+            // An element's braces are read as its type's: a struct's, an array type's or a
+            // vector's.
+            match part {
+                Some(Part::Value(element)) => self.store_part(&element, word(0), &ty)?,
+                Some(Part::Braces(braces)) if self.aggregate_type(&ty) => {
+                    self.struct_aggregate(&braces, (local, at), &ty)?;
+                }
+                Some(Part::Braces(braces)) if vector => {
+                    let parts = braces.syntax().children().map(Part::of).collect();
+                    self.vector_parts(parts, word)?;
+                }
+                Some(Part::Braces(_)) | None => self.followed = false,
+            }
         }
         Ok(())
     }
@@ -1832,6 +1845,12 @@ impl Checker<'_> {
             self.followed = false;
             return Ok(());
         };
+        // FTEF-5.2: an array type's braces are its one unnamed member's elements.
+        if let [member] = members.as_slice()
+            && member.name.is_empty()
+        {
+            return self.member_braces(aggregate, (local, base), member);
+        }
         let names = aggregate.designated_names();
         // "designated initialisers require all members to be initialised the same way".
         if !names.is_empty() && names.len() != aggregate.syntax().children().count() {
@@ -1850,7 +1869,7 @@ impl Checker<'_> {
             };
             let member = at.and_then(|at| members.get(at));
             match (member, Part::of(part)) {
-                (Some(member), Some(Part::Value(element))) if member.count == 1 => {
+                (Some(member), Some(Part::Value(element))) if member.elements.is_none() => {
                     set.push(member.word);
                     self.store_part(&element, word(member.word), &member.ty)?;
                 }
@@ -1894,16 +1913,16 @@ impl Checker<'_> {
     ) -> Result<(), Fatal> {
         let word = |at: u32| local.map(|def| ir::Name::Def(def, base.saturating_add(at)));
         let parts: Vec<Option<Part>> = braces.syntax().children().map(Part::of).collect();
-        if member.count > 1 {
+        if let Some(count) = member.elements {
             let words = self.env.layout(&member.ty).map_or(1, |layout| layout.words);
             let element = crate::MemberShape {
-                count: 1,
+                elements: None,
                 ..member.clone()
             };
-            if parts.len() > usize::try_from(member.count).unwrap_or(usize::MAX) {
+            if parts.len() > usize::try_from(count).unwrap_or(usize::MAX) {
                 self.followed = false;
             }
-            for (at, part) in (0..member.count).zip(parts) {
+            for (at, part) in (0..count).zip(parts) {
                 let at = at.saturating_mul(words);
                 match part {
                     Some(Part::Value(value)) => {

@@ -42,7 +42,7 @@ use crate::check::constant::Constant;
 use crate::expand::{OriginMap, ProtoPlan};
 use crate::lower::{
     ArrayDim, BuiltinFunction, FileDecls, LiteralValue, RawBody, RawDecl, RawParam, RawParamInfo,
-    RawUse, RawValue, StructMember,
+    RawUse, RawValue, StructMember, StructOrigin,
 };
 use crate::symbol::{DefId, Definition, FileId, Location, Reference};
 use crate::ty::Type;
@@ -185,6 +185,18 @@ pub struct StructShape {
     pub members: Vec<MemberShape>,
 }
 
+impl StructShape {
+    /// The one member of an array type `QCC_GenArrayType` made, which has no name (FTEF-5.2);
+    /// `None` for any other struct or union, whose unnamed members a shape leaves out.
+    #[must_use]
+    pub fn array_member(&self) -> Option<&MemberShape> {
+        match self.members.as_slice() {
+            [member] if member.name.is_empty() => Some(member),
+            _ => None,
+        }
+    }
+}
+
 /// One member of a [`StructShape`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MemberShape {
@@ -194,8 +206,17 @@ pub struct MemberShape {
     pub ty: Type,
     /// The word of the struct it starts at.
     pub word: u32,
-    /// Its elements, 1 for no array.
-    pub count: u32,
+    /// Its elements, when it is an array (`arraysize`); `None` for no array, which an array of
+    /// one element is not.
+    pub elements: Option<u32>,
+}
+
+impl MemberShape {
+    /// The values of its type it holds: its elements, or one.
+    #[must_use]
+    pub fn count(&self) -> u32 {
+        self.elements.unwrap_or(1)
+    }
 }
 
 /// The value a global's initialiser folds to (FTEF-34.9, FTEF-26): the words it holds in the
@@ -763,6 +784,8 @@ struct StructDef {
     defined: bool,
     /// Whether it is a union (FTEF-6.7).
     union: bool,
+    /// Whether a body wrote it or it is an array type, whose one member is unnamed (FTEF-5.2).
+    origin: StructOrigin,
 }
 
 /// What the resolver knows of a definition beyond its [`Definition`], as `qcc` and FTEQCC keep

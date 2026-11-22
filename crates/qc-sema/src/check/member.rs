@@ -30,6 +30,12 @@ pub(super) const WORD_ALIGNMENT: u32 = 32;
 
 /// A word's 32 bits as a shift: a member's offset in bits, `>> 5`, is its word.
 const WORD_BITS_SHIFT: u32 = 5;
+/// The bits of a word below its start, `& 31`.
+const WORD_MASK: u32 = 31;
+/// The bits of an 8-bit integer (FTEF-2.12).
+const BYTE_BITS: u32 = 8;
+/// The bits of a 16-bit integer (FTEF-2.12).
+const SHORT_BITS: u32 = 16;
 
 /// How a vector component's base is written: `e.fv.y` or `(e.fv).y`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -63,14 +69,15 @@ impl Checker<'_> {
         let Some(selector) = field.field() else {
             return Ok(Value::unknown());
         };
+        // FTEF-5.2: a value of an array type is its member's array.
+        let base = self.array_type_member(base, field.syntax().span())?;
         // FTEF-24.8: an array's only member is `length`, an `int`; the resolver reports any
-        // other (FTE-13). FTEF-26.13: a definition's size the model knows is the value.
+        // other (FTE-13). FTEF-26.13: a size the model knows is the value, a member array's its
+        // own.
         if base.is_array_head() {
             return Ok(match selector_name(&selector) {
-                Some((name, _)) if name == "length" => base
-                    .sym
-                    .def()
-                    .and_then(|def| self.env.array_length(def))
+                Some((name, _)) if name == "length" => self
+                    .head_length(&base)
                     .and_then(|n| i32::try_from(n).ok())
                     .map_or_else(length, pointer::int),
                 Some(_) | None => Value::unknown(),
@@ -623,26 +630,31 @@ impl Checker<'_> {
         let Some((name, _)) = selector_name(selector) else {
             return (Value::unknown(), None);
         };
-        let Some(member) = self.env.struct_member(ty, &name) else {
+        self.struct_member_named(ty, &name)
+    }
+
+    /// [`Checker::struct_member`] of the member named `name`.
+    fn struct_member_named(&mut self, ty: &Type, name: &str) -> (Value, Option<(u32, u32)>) {
+        let Some(member) = self.env.struct_member(ty, name) else {
             return (Value::unknown(), None);
         };
         // FTEF-6.15: a bitfield of fewer than 32 bits is read and stored by its bits, and so is
         // an 8- or 16-bit integer, `ev_bitfld` (FTEF-2.12).
         let narrow = match member.ty.fteqcc_scalar() {
-            Some(CScalar::Int8 | CScalar::Uint8) => Some(8),
-            Some(CScalar::Int16 | CScalar::Uint16) => Some(16),
+            Some(CScalar::Int8 | CScalar::Uint8) => Some(BYTE_BITS),
+            Some(CScalar::Int16 | CScalar::Uint16) => Some(SHORT_BITS),
             _ => None,
         };
         // FTEQCC reads and stores an 8- or 16-bit member at bit 0 of the word that holds it.
         let bitfield = match (member.bits.or(narrow), member.position) {
-            (Some(bits), Some(position)) if bits != 32 => Some(Bitfield {
+            (Some(bits), Some(position)) if bits != WORD_ALIGNMENT => Some(Bitfield {
                 bits,
                 offset: if member.bits.is_some() {
-                    position & 31
+                    position & WORD_MASK
                 } else {
                     0
                 },
-                word: position >> 5,
+                word: position >> WORD_BITS_SHIFT,
                 signed: self.etype_of(&member.ty) != Some(Etype::Uint),
             }),
             _ => None,
@@ -664,7 +676,11 @@ impl Checker<'_> {
         let reference = if member.array {
             Reference::ArrayHead(Some(MemberArray {
                 length: member.length,
-                start: MemberStart::Word(member.position.map_or(0, |position| position >> 5)),
+                start: MemberStart::Word(
+                    member
+                        .position
+                        .map_or(0, |position| position >> WORD_BITS_SHIFT),
+                ),
                 through: None,
             }))
         } else {
@@ -692,6 +708,37 @@ impl Checker<'_> {
             return self.not_defined_yet(&base.ty, field.syntax().span());
         }
         let (member, offset) = self.struct_member(&base.ty, selector);
+        self.member_of(base, member, offset, field.syntax().span())
+    }
+
+    /// FTEF-5.2: a value of an array type `QCC_GenArrayType` made, an element of an array of two
+    /// or more dimensions, is its one unnamed member's array, the next dimension, which a
+    /// subscript then indexes (`QCC_PR_ParseInitializerType`'s and
+    /// `QCC_PR_ParseRefArrayPointer`'s array type, a union of one member with no name).
+    pub(super) fn array_type_member(&mut self, base: Value, span: Span) -> Checked {
+        if base.is_array_head()
+            || self.etype_of(&base.ty) != Some(Etype::Union)
+            || !self
+                .env
+                .struct_member(&base.ty, "")
+                .is_some_and(|member| member.array)
+        {
+            return Ok(base);
+        }
+        let (member, offset) = self.struct_member_named(&base.ty, "");
+        self.member_of(&base, member, offset, span)
+    }
+
+    /// The member `member` of the struct or union `base`, at `offset` (FTEF-6): through a
+    /// pointer, the member through it; else the definition's word at the member's offset, of
+    /// an element at an index no constant the index plus the word.
+    fn member_of(
+        &mut self,
+        base: &Value,
+        member: Value,
+        offset: Option<(u32, u32)>,
+        span: Span,
+    ) -> Checked {
         let word = member.bitfield.map_or_else(
             || {
                 offset.map_or(0, |(units, align)| {
@@ -703,7 +750,6 @@ impl Checker<'_> {
         Ok(match &base.reference {
             // `(*p).a` and `p[i].a` are members through the pointer.
             Reference::Pointer(pointer) => {
-                let span = field.syntax().span();
                 let before = self.generated.len();
                 let index = self.member_index(pointer.index.as_ref(), offset, span)?;
                 let (named, index) = self.read_pointer_last(pointer.named, index, before);
@@ -714,14 +760,10 @@ impl Checker<'_> {
             }
             // FTEF-31.32: a member array of a definition's struct is the definition's own
             // words from the member's, which its index counts from the definition's start.
-            _ if member.is_array_head() => {
-                let span = field.syntax().span();
-                self.member_array(base, member, word, span)?
-            }
+            _ if member.is_array_head() => self.member_array(base, member, word, span)?,
             // `a[i].f` of an index no constant is the element at the index plus the
             // member's word.
             Reference::Element(element) if element.index.known().is_none() && !self.global => {
-                let span = field.syntax().span();
                 self.element_member(base, element, member, word, span)?
             }
             // FTEF-6.34: a member of a struct that is an entity's field is the field at the

@@ -10,7 +10,7 @@ use crate::resolve::Init;
 use qc_diag::Code;
 
 use crate::check::StructMemberFacts;
-use crate::lower::{IntConst, MemberBase, RawStruct, StructMember};
+use crate::lower::{IntConst, MemberBase, RawStruct, StructMember, StructOrigin};
 use crate::resolve::{ComparedMember, MAX_CLASS_DEPTH, Resolver, Scope, StructDef, StructMatch};
 use crate::symbol::{FileId, Location};
 use crate::ty::Type;
@@ -40,11 +40,37 @@ impl<'a> Resolver<'a> {
         }
     }
 
+    /// FTEF-5.2: the array type `QCC_GenArrayType` makes, a union of one unnamed member, made
+    /// once, the first time a declaration needs it.
+    fn declare_array_type(&mut self, st: &RawStruct) {
+        if let Some(name) = &st.name {
+            self.type_names.insert(name.clone());
+            self.struct_defs
+                .entry(self.type_key(name))
+                .or_insert_with(|| StructDef {
+                    name: name.clone(),
+                    members: st.members.clone(),
+                    parent: None,
+                    defined: true,
+                    union: true,
+                    origin: StructOrigin::ArrayType,
+                });
+        }
+    }
+
     /// `QCC_PR_ParseStruct` (FTEF-6.7 to FTEF-6.10): a struct's parent, its redefinition and its
     /// members. A struct a function's body writes lasts to the block's end and is not followed
     /// here.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "QCC_PR_ParseStruct's checks in its order, read as one function"
+    )]
     pub(in crate::resolve) fn declare_struct(&mut self, file: FileId, st: &RawStruct) {
         if !self.profile.type_declarations() {
+            return;
+        }
+        if st.origin == StructOrigin::ArrayType {
+            self.declare_array_type(st);
             return;
         }
         let location = self.at(file, st.span);
@@ -121,6 +147,7 @@ impl<'a> Resolver<'a> {
                         parent: parent_key,
                         defined: false,
                         union: st.union,
+                        origin: StructOrigin::Written,
                     },
                 );
             }
@@ -203,6 +230,7 @@ impl<'a> Resolver<'a> {
                     parent: parent_key,
                     defined: true,
                     union: st.union,
+                    origin: StructOrigin::Written,
                 },
             );
         }
@@ -553,10 +581,7 @@ impl Resolver<'_> {
                 return Some(StructMemberFacts {
                     ty: member.ty.clone(),
                     array: !member.array.is_empty(),
-                    length: member.sizes.first().and_then(|size| match size {
-                        IntConst::Integer(length) => u32::try_from(*length).ok(),
-                        IntConst::NotInteger | IntConst::Name(_) | IntConst::Unfolded => None,
-                    }),
+                    length: member.sizes.first().and_then(IntConst::size),
                     bits,
                     position: self.member_position(ty, name),
                 });

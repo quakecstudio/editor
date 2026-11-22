@@ -19,7 +19,7 @@ use crate::ty::{Passing, SimpleType, Type};
 
 use super::body::{RawBody, RawParam, lower_body, next_think_of, omitted_type};
 use super::expr::{RawUse, lower_expr};
-use super::types::{EnumItem, RawClass, TypeKind, lower_enum};
+use super::types::{EnumItem, IntConst, RawClass, TypeKind, lower_enum};
 use super::{Cx, first_word, token_text};
 
 /// A name a file declares, before cross-file resolution.
@@ -69,6 +69,9 @@ pub struct RawDecl {
     pub(crate) array: Option<ArrayDim>,
     /// How many array suffixes the declarator has (FTEF-19.8).
     pub array_dims: usize,
+    /// The sizes of the dimensions after the first ([`inner_dims`]), which make its type an
+    /// array type (FTEF-5.2).
+    pub(crate) inner_dims: Vec<u32>,
     /// The first dimension's size when it is an expression the lowering does not read, which
     /// the check stage folds (FTEF-19.62).
     pub size_expr: Option<ast::Expr>,
@@ -327,6 +330,7 @@ impl RawDecl {
             value: None,
             array: None,
             array_dims: 0,
+            inner_dims: Vec::new(),
             size_expr: None,
             aggregate_first: None,
             aggregate: None,
@@ -747,6 +751,19 @@ pub(super) fn array_dim(
         text.parse::<u32>()
             .map_or(ArrayDim::Unknown, ArrayDim::Sized),
     )
+}
+
+/// The sizes of a declarator's array dimensions after its first, when it has two or more and
+/// each is an integer `QCC_PR_IntConstExpr` reads, as a struct member's are (FTEF-6.17):
+/// `QCC_PR_ParseArrayType` makes the element type an array type of each, the last innermost
+/// (`QCC_GenArrayType`, FTEF-5.2). Empty otherwise.
+pub(super) fn inner_dims(declarator: &ast::Declarator, cx: Cx<'_>) -> Vec<u32> {
+    let sizes: Option<Vec<u32>> = declarator
+        .array_suffixes()
+        .skip(1)
+        .map(|suffix| IntConst::of(&suffix.children().find_map(ast::Expr::cast)?, cx).size())
+        .collect();
+    sizes.unwrap_or_default()
 }
 
 /// Whether the declaration or local declaration `node` is written with `qualifier`
@@ -1226,6 +1243,7 @@ pub(super) fn lower_declarators(
         raw.scope = declarator.scope().map(|t| t.text_lossless());
         raw.array = array_dim(&declarator, init.as_ref());
         raw.array_dims = declarator.array_suffixes().count();
+        raw.inner_dims = inner_dims(&declarator, cx);
         raw.size_expr = size_expr(&declarator);
         raw.aggregate = raw_aggregate(&declarator, init.as_ref(), cx);
         if let Some(ast::Initializer::Aggregate(agg)) = &init {

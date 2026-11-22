@@ -12,7 +12,9 @@
 use qc_diag::Code;
 use qc_progs::{Op, OpcodeTarget};
 
-use crate::lower::{RawAggregate, RawBraces, RawElement, RawValue, ValueKind};
+use crate::lower::{
+    IntConst, RawAggregate, RawBraces, RawElement, RawValue, StructOrigin, ValueKind,
+};
 use crate::resolve::{Fatal, Holder, Resolver};
 use crate::symbol::FileId;
 use crate::ty::{SimpleType, Type};
@@ -105,6 +107,17 @@ impl Resolver<'_> {
             });
         }
         let ty = self.resolved(ty);
+        // FTEF-5.2: an array type's braces are its one member's elements,
+        // `QCC_PR_ParseInitializerType`'s "weird typedefed array hack", which a value where they
+        // belong is not.
+        if let Some(array) = self
+            .struct_def_of(&ty)
+            .filter(|array| array.origin == StructOrigin::ArrayType)
+            && let Some(member) = array.members.first()
+        {
+            let sizes: Vec<Option<u32>> = member.sizes.iter().map(IntConst::size).collect();
+            return self.read_element(file, &sizes, &member.ty, element, def, site);
+        }
         let braces = match element {
             RawElement::Value(value) => return self.read_value(file, &ty, value, def),
             RawElement::Braces(braces) => braces,

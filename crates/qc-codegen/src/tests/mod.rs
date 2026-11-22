@@ -18,6 +18,7 @@ mod api;
 mod declarations;
 mod expressions;
 mod fteqcc;
+mod multi_arrays;
 mod output;
 mod statements;
 
@@ -115,7 +116,7 @@ pub(crate) fn errors(source: &str) -> Vec<String> {
 }
 
 /// The lowest global offset of a definition named `name`; for an array or a struct,
-/// whose head FTEQCC does not write (FTE-13.13), its first element's, `name[0]`, or its first
+/// whose head FTEQCC does not write (FTE-13.19), its first element's, `name[0]`, or its first
 /// member's.
 pub(crate) fn global(progs: &ProgsFile, name: &str) -> i32 {
     let first = format!("{name}[0]");
