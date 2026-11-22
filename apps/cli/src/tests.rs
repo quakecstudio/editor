@@ -745,3 +745,27 @@ fn a_relative_project_is_the_directory_it_names() {
         std::fs::canonicalize(here.parent().unwrap()).unwrap()
     );
 }
+
+// spec PRJ-4.15: a source's `#include "/dev/zero"` is refused at once, once, with its reason, by
+// check and by build, which writes nothing
+#[cfg(unix)]
+#[test]
+fn an_include_of_a_device_is_one_error_with_its_reason() {
+    let dir = project(
+        "dev-zero",
+        &ProjectSpec {
+            world: "#include \"/dev/zero\"\nvoid() worldspawn = {};\n",
+        },
+    );
+    for verb in ["check", "build"] {
+        let (exit, out, err) = cli(&[verb, text(&dir)]);
+        assert_eq!(exit, Exit::Problems, "{verb}: {out}{err}");
+        let refusals: Vec<&str> = out.lines().filter(|l| l.contains("E0111")).collect();
+        assert_eq!(refusals.len(), 1, "{verb}: {out}");
+        assert!(
+            refusals[0].ends_with("cannot include /dev/zero: not a regular file"),
+            "{verb}: {out}"
+        );
+    }
+    assert!(!dir.join("build").exists());
+}

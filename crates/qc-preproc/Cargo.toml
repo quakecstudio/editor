@@ -10,6 +10,8 @@ publish.workspace = true
 
 [dependencies]
 qc-lexer = { workspace = true }
+# Reading a source's file: regular files only (PRJ-4.15).
+qs-paths = { workspace = true }
 qc-progs = { workspace = true }
 
 [dev-dependencies]

@@ -169,19 +169,13 @@ fn same_ignoring_case(a: &OsStr, b: &OsStr) -> bool {
 }
 
 /// Reads files from the file system: regular files only, so a device such as `/dev/zero` or a
-/// FIFO named by a source or an `#include` is refused rather than read without end.
+/// FIFO named by a source or an `#include` is refused rather than read without end (PRJ-4.15).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct FsLoader;
 
 impl Loader for FsLoader {
     fn load(&mut self, path: &Path) -> io::Result<Vec<u8>> {
-        if !fs::metadata(path)?.is_file() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "not a regular file",
-            ));
-        }
-        fs::read(path)
+        qs_paths::read_regular_file(path)
     }
 
     /// Lists the directory holding `path`, so the answer is the same whether or not the host

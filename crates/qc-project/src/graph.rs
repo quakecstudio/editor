@@ -7,7 +7,7 @@
 //! that decide which files are read are followed; everything else is the preprocessor's (QC-9)
 //! and the dialect profiles' work.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::io;
 use std::path::{Component, Path, PathBuf};
 
@@ -121,6 +121,10 @@ pub struct FileGraph {
     pub autoproto: Option<bool>,
     /// The problems found.
     pub diagnostics: Vec<Diagnostic>,
+    /// Each file a list entry or a directive named that could not be read, the first place it
+    /// was looked for, and why: missing, or not a regular file (PRJ-4.15). The compiler, which
+    /// reads only what the graph read, gives the same reason.
+    pub unread: BTreeMap<PathBuf, String>,
 }
 
 impl FileGraph {
@@ -1022,6 +1026,7 @@ impl<L: Loader> Builder<'_, L> {
         let Some((name, path, bytes)) = found else {
             let shown = candidates.first().map_or_default(|(_, path)| path.clone());
             let reason = first_error.map_or_else(String::new, |e| e.to_string());
+            self.graph.unread.insert(shown.clone(), reason.clone());
             let (code, message) = if via == Via::Include {
                 (
                     Code::E0111,

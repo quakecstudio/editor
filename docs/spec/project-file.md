@@ -281,6 +281,13 @@ FTEQCC `QCC_main` (the `#!` and `*qcc_token == '#'` tests, after `QCC_LoadFile`)
   FTEQCC's `attributes` (GMQ-16), `dblstarexp` (GMQ-18), `assumevar` (GMQ-5.1), `cpriority`
   (GMQ-7.1), `ifvector` and `vectorlogic` (GMQ-3.1) among its flags, and its warnings, with no
   `-std=` option in the project file.
+- **PRJ-4.15** A file the project, a source's `#include` or a command names is read only when it
+  is a regular file, links followed to what they name: a directory is refused as one, and a
+  device, a FIFO or anything else as not a regular file, with error E0402 or E0111 where a
+  source names it. A device such as `/dev/zero` never ends and a FIFO nothing writes to never
+  answers, so reading either would hang the compiler, the language server or the app; id's `qcc`
+  and FTEQCC open whatever the name gives (`SafeOpenRead`, `QCC_LoadFile`), and this project
+  refuses it instead.
 
 ## PRJ-5 Directives the graph follows
 

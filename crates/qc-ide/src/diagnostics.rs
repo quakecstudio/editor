@@ -47,7 +47,18 @@ impl<L: Loader> AnalysisHost<L> {
                         .push(diagnostic.clone());
                 }
             }
-            graph.extend(module.graph_diagnostics.iter().cloned());
+            // An include the preprocessor reads in a file it compiles is its own to report, with
+            // the graph's reason (PRJ-4.15): the graph's copy would say it twice.
+            graph.extend(
+                module
+                    .graph_diagnostics
+                    .iter()
+                    .filter(|d| {
+                        d.code != qc_project::Code::E0111
+                            || !module.files.contains(&normalize(&d.file))
+                    })
+                    .cloned(),
+            );
         }
         for d in &graph {
             let placed = self.graph_diagnostic(d);

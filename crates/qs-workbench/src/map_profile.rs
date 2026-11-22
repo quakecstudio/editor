@@ -593,7 +593,7 @@ impl<L: crate::Loader> Workbench<L> {
 /// The light task of the map whose BSP is at `bsp`, at `speed`: the BSP lit in place and its
 /// `.lit` written beside it, or taken away when the light has no colour.
 fn light<C: HasPreview>(context: &mut C, bsp: &Path, speed: LightSpeed) -> Result<(), TaskError> {
-    let read = |path: &Path| std::fs::read(path).map_err(io(path));
+    let read = |path: &Path| qs_paths::read_regular_file(path).map_err(io(path));
     let write = |path: &Path, bytes: &[u8]| std::fs::write(path, bytes).map_err(io(path));
     // The fast light is the quick one, without dirt and bounce (MAP-13, LIGHT-8.8); the full
     // light is the final one (MAP-14).
@@ -635,7 +635,7 @@ fn run_task<C: HasPreview>(
     expansions: &Expansions,
 ) -> Result<Option<MapReport>, TaskError> {
     let bsp = expansions.bsp();
-    let read = |path: &Path| std::fs::read(path).map_err(io(path));
+    let read = |path: &Path| qs_paths::read_regular_file(path).map_err(io(path));
     let write = |path: &Path, bytes: &[u8]| std::fs::write(path, bytes).map_err(io(path));
     let expand = |text: &str| expansions.expand(text).map_err(TaskError::Expand);
     match task {

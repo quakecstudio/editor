@@ -5,11 +5,16 @@ and logs on macOS, Windows and Linux. No other crate joins a path onto the home 
 
 - **Layer:** L0. It depends on nothing but `std` and `serde_json`, so any crate may use it.
 - **Decision:** native per-OS directories, [ADR-0011](../../docs/adr/0011-app-directories.md).
-- **Spec sections:** none; it implements an ADR, not engine behaviour.
+- **Spec sections:** PRJ-4.15 (`read_regular_file`); the directories implement an ADR, not engine
+  behaviour.
 - **Shipped:** yes.
 
 `qs_paths::current()` resolves the directories for the running OS; `Platform::dirs()` takes
 an environment lookup, which is how the tests cover every OS on every host.
+
+`qs_paths::read_regular_file()` reads a file a project, a source or a command names, and refuses
+anything but a regular file, links followed, so a device or a FIFO is never read without end
+(PRJ-4.15).
 
 `qs_paths::store_dirs()` (and `current_store_dirs()`) give the folders where game stores and
 launchers keep their files on each OS: the Steam client folders, GOG Galaxy's and the offline
