@@ -137,9 +137,11 @@ fn renaming_a_field_suggests_every_use_and_each_is_taken_in_turn() {
         .unwrap()
         .as_object()
     {
-        left.push((done["path"].clone(), done["left"].as_u64().unwrap()));
+        // As paths, not as text: the workbench names a file in the platform's own form.
+        let file = PathBuf::from(done["path"].as_str().unwrap());
+        left.push((file, done["left"].as_u64().unwrap()));
     }
-    let files: Vec<(serde_json::Value, u64)> = [
+    let files: Vec<(PathBuf, u64)> = [
         ("defs.qc", 4),
         ("more.qc", 3),
         ("more.qc", 2),
@@ -147,7 +149,7 @@ fn renaming_a_field_suggests_every_use_and_each_is_taken_in_turn() {
     ]
     .into_iter()
     .chain([("world.qc", 0)])
-    .map(|(file, left)| (json!(path(file)), left))
+    .map(|(file, left)| (path(file), left))
     .collect();
     assert_eq!(left, files);
     assert_eq!(
