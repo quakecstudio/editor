@@ -178,7 +178,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`preview.restart`](#previewrestart) | Starts the running game's map again. |
 | [`preview.resume`](#previewresume) | Resumes the paused game. |
 | [`preview.select`](#previewselect) | Selects an edict of the running game and reads its fields for the Properties panel. |
-| [`preview.set_field`](#previewset_field) | Sets a field of the selected edict while the game is paused, the value read as the field's type. |
+| [`preview.set_field`](#previewset_field) | Sets a field of the selected edict while the game is paused, the value read as the field's type. The game is given the value when it resumes, and reads the old one until then (`applied`: `on_resume`); each poll lists the fields waiting (`held`). |
 | [`preview.step`](#previewstep) | Runs one server frame of the game, pausing it first, and leaves it paused. |
 | [`preview.step_by`](#previewstep_by) | Steps the game stopped in a frame by a statement, into a call, over one or out to the caller. |
 | [`preview.stop`](#previewstop) | Stops the game. |
@@ -8260,7 +8260,7 @@ Parameters:
 
 ## `preview.set_field`
 
-Sets a field of the selected edict while the game is paused, the value read as the field's type.
+Sets a field of the selected edict while the game is paused, the value read as the field's type. The game is given the value when it resumes, and reads the old one until then (`applied`: `on_resume`); each poll lists the fields waiting (`held`).
 
 Parameters:
 

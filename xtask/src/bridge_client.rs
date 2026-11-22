@@ -11,7 +11,8 @@ use std::process::Command;
 use std::time::Duration;
 
 use qs_engine::{
-    Client, EntityTarget, Flavour, InspectWhat, LaunchSpec, StepKind, prepare_run_root,
+    Applied, Client, ClientError, EntityTarget, ErrorCode, Flavour, InspectWhat, LaunchSpec,
+    StepKind, prepare_run_root,
 };
 use qs_map_edit::{EntityIndex, LiveChange};
 use qs_vfs::{LoadedFile, StdFs, Vfs};
@@ -278,7 +279,7 @@ fn suite(
     // BRIDGE-6.2: a method the host does not know is answered with -32601 (method not found).
     let unknown = client.request("entity/teleport", json!({}));
     expect(
-        matches!(&unknown, Err(qs_engine::ClientError::Rpc { code, .. }) if *code == qs_engine::ErrorCode::MethodNotFound),
+        refused_with(&unknown, ErrorCode::MethodNotFound),
         "an unknown method is answered as not found",
     )?;
     steps.push("an unknown method is refused".to_owned());
@@ -310,7 +311,7 @@ fn suite(
     // BRIDGE-4.5: a breakpoint at a line no statement is on is refused.
     let missing = client.request("breakpoint/set", json!({ "file": "nosuch.qc", "line": 1 }));
     expect(
-        matches!(&missing, Err(qs_engine::ClientError::Rpc { code, .. }) if *code == qs_engine::ErrorCode::NoSuchBreakpoint),
+        refused_with(&missing, ErrorCode::NoSuchBreakpoint),
         "a breakpoint at no statement is refused",
     )?;
     steps.push("breakpoint/set".to_owned());
@@ -388,7 +389,7 @@ fn suite(
         )
         .map_err(|e| format!("entity/edit: {e}"))?;
     expect(
-        edit == json!({ "applied": "now" }),
+        Applied::of_result(&edit) == Some(Applied::Now),
         "running, entity/edit applies now",
     )?;
     let edited = client
@@ -552,16 +553,13 @@ fn map_entities(client: &mut Client, monster: u32) -> Result<(), String> {
 }
 
 /// BRIDGE-4.4, P3-14: paused, a monster's health set waits for the resume, then is the
-/// monster's in game.
+/// monster's in game; running, one set is the monster's at once.
 fn paused_health(client: &mut Client, monster: u32) -> Result<(), String> {
     let health = json!({ "type": "float", "value": 50.0 });
     let held = client
         .set_field(Edict::new(monster).into(), "health", &health)
         .map_err(|e| format!("field/set: {e}"))?;
-    expect(
-        held == json!({ "applied": "on_resume" }),
-        "paused, field/set waits",
-    )?;
+    expect(held == Applied::OnResume, "paused, field/set waits")?;
     let waiting = client
         .inspect(InspectWhat::Edict(Edict::new(monster).into()))
         .map_err(|e| e.to_string())?;
@@ -584,6 +582,18 @@ fn paused_health(client: &mut Client, monster: u32) -> Result<(), String> {
     expect(
         field(&edited, "health") == Some(health),
         "resumed, the monster's health is set",
+    )?;
+    let health = json!({ "type": "float", "value": 60.0 });
+    let set = client
+        .set_field(Edict::new(monster).into(), "health", &health)
+        .map_err(|e| format!("field/set: {e}"))?;
+    expect(set == Applied::Now, "running, field/set applies")?;
+    let edited = client
+        .inspect(InspectWhat::Edict(Edict::new(monster).into()))
+        .map_err(|e| e.to_string())?;
+    expect(
+        field(&edited, "health") == Some(health),
+        "running, the monster's health is set at once",
     )?;
     Ok(())
 }
@@ -638,7 +648,7 @@ fn player_is_put_where_it_fits(client: &mut Client) -> Result<(), String> {
     )?;
     let refused = client.place_player_near(NOWHERE, [0.0; 3]);
     expect(
-        matches!(&refused, Err(qs_engine::ClientError::Rpc { code, .. }) if *code == qs_engine::ErrorCode::InvalidParams),
+        refused_with(&refused, ErrorCode::InvalidParams),
         "player/spawn_at with no room is refused",
     )?;
     expect(
@@ -780,6 +790,23 @@ fn other_progs(client: &mut Client, progs: &Path, steps: &mut Vec<String>) -> Re
         .and_then(Value::as_array)
         .map_or(0, Vec::len);
     expect(frames > 0, "stopped, the stack has PlayerPreThink's frame")?;
+    // BRIDGE-4.6, BRIDGE-7.1: stopped, an edict is read, and a command that changes the world
+    // is refused with its code while the connection stays open.
+    let player = client
+        .inspect(InspectWhat::Edict(Edict::new(1).into()))
+        .map_err(|e| format!("inspect edict 1: {e}"))?;
+    expect(
+        text(&player, "classname") == "player",
+        "stopped, the player's edict is read",
+    )?;
+    let refused = client.place_player_near([0.0; 3], [0.0; 3]);
+    expect(
+        refused_with(&refused, ErrorCode::StoppedInFrame),
+        "stopped, player/spawn_at is refused as stopped in frame",
+    )?;
+    client
+        .inspect(InspectWhat::Stack)
+        .map_err(|e| format!("inspect stack after the refusal: {e}"))?;
     // P3-16: the Debugger tab's watch and step, against the stopped frame.
     let watched = client
         .evaluate("self.health")
@@ -822,6 +849,11 @@ fn other_progs(client: &mut Client, progs: &Path, steps: &mut Vec<String>) -> Re
         "breakpoint/set, hit, inspect the stack, watch, step and clear in client.qc".to_owned(),
     );
     Ok(())
+}
+
+/// Whether `answer` is the host's refusal with `code` (BRIDGE-7.1).
+fn refused_with<T>(answer: &Result<T, ClientError>, code: ErrorCode) -> bool {
+    matches!(answer, Err(ClientError::Rpc { code: given, .. }) if *given == code)
 }
 
 /// The string `key` of `value`, empty when it is not one.

@@ -113,8 +113,11 @@ In the vanilla dialect, from the language spec:
 - `vm.run` calls one function in a fresh VM with a mock engine, for logic with no map.
 - In the running game: `engine.inspect` reads any entity's fields and the globals;
   `preview.breakpoint` stops at a file and line, `preview.step` and `preview.step_by` go on,
-  `preview.watch` evaluates an expression where it stopped, and `preview.set_field` changes a
-  field.
+  and `preview.watch` adds an expression. Each `preview.poll` answers where the game stopped
+  (`stopped`) and every watch's value there (`watches`).
+- `preview.set_field` changes a field of the edict `preview.select` chose, while paused. The
+  game is given the value when it resumes and reads the old one until then: the answer says
+  `on_resume`, and each poll lists the fields waiting (`held`).
 - `dprint` lines show in the console (`preview.console`) when the `developer` setting is 1:
   `engine.console` with `developer 1`.
 - A QuakeC error stops the game and reports the function, file and line; `preview.poll`

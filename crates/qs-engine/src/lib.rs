@@ -13,7 +13,7 @@ pub use client::{
     WindowPlacement,
 };
 pub use launch::{EmbeddedHost, LaunchError, LaunchSpec, Running, locate_host};
-pub use qs_bridge::{ErrorCode, base64_decode};
+pub use qs_bridge::{Applied, ErrorCode, base64_decode};
 pub use run_root::{Flavour, RunRoot, RunRootError, prepare_run_root};
 
 #[cfg(test)]

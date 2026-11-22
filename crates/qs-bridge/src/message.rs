@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! BRIDGE-1.3, BRIDGE-1.4, BRIDGE-7: the JSON-RPC 2.0 request, notification and response, and
-//! the error codes.
+//! the error codes; and when an edit applies (BRIDGE-4.4).
 
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 /// A request's id: an integer or a string the sender chooses (BRIDGE-1.3).
@@ -61,6 +63,9 @@ pub enum ErrorCode {
     /// `-32008`: a command that changes the world while a frame is stopped at a statement
     /// (BRIDGE-4.6).
     StoppedInFrame,
+    /// A code the bridge does not name, which a client reads as the error it is: JSON-RPC 2.0
+    /// leaves "the remainder of the space" to the application (section 5.1).
+    Other(i64),
 }
 
 impl ErrorCode {
@@ -96,6 +101,29 @@ impl ErrorCode {
             Self::BadValue => Self::BAD_VALUE,
             Self::NoSuchBreakpoint => Self::NO_SUCH_BREAKPOINT,
             Self::StoppedInFrame => Self::STOPPED_IN_FRAME,
+            Self::Other(number) => number,
+        }
+    }
+
+    /// The code numbered `number` (BRIDGE-7.1), [`ErrorCode::Other`] for a number the bridge
+    /// does not name.
+    #[must_use]
+    pub const fn of_code(number: i64) -> Self {
+        match number {
+            Self::PARSE_ERROR => Self::ParseError,
+            Self::INVALID_REQUEST => Self::InvalidRequest,
+            Self::METHOD_NOT_FOUND => Self::MethodNotFound,
+            Self::INVALID_PARAMS => Self::InvalidParams,
+            Self::INTERNAL_ERROR => Self::InternalError,
+            Self::INCOMPATIBLE_VERSION => Self::IncompatibleVersion,
+            Self::NOT_PAUSED => Self::NotPaused,
+            Self::NOT_INITIALIZED => Self::NotInitialized,
+            Self::NO_SUCH_EDICT => Self::NoSuchEdict,
+            Self::UNSUPPORTED => Self::Unsupported,
+            Self::BAD_VALUE => Self::BadValue,
+            Self::NO_SUCH_BREAKPOINT => Self::NoSuchBreakpoint,
+            Self::STOPPED_IN_FRAME => Self::StoppedInFrame,
+            _ => Self::Other(number),
         }
     }
 }
@@ -241,7 +269,7 @@ impl Message {
             (None, Some(Value::Object(error))) => {
                 let number = error.get("code").and_then(Value::as_i64)?;
                 let message = error.get("message").and_then(Value::as_str)?;
-                let code = ALL_CODES.into_iter().find(|code| code.code() == number)?;
+                let code = ErrorCode::of_code(number);
                 Err(RpcError {
                     code,
                     message: message.to_owned(),
@@ -280,21 +308,41 @@ impl Message {
     }
 }
 
-/// Every error code, for reading a response's.
-const ALL_CODES: [ErrorCode; 12] = [
-    ErrorCode::ParseError,
-    ErrorCode::InvalidRequest,
-    ErrorCode::MethodNotFound,
-    ErrorCode::InvalidParams,
-    ErrorCode::InternalError,
-    ErrorCode::IncompatibleVersion,
-    ErrorCode::NotPaused,
-    ErrorCode::NotInitialized,
-    ErrorCode::NoSuchEdict,
-    ErrorCode::Unsupported,
-    ErrorCode::BadValue,
-    ErrorCode::NoSuchBreakpoint,
-];
+/// When an edit applies, as the result of `field/set` and `entity/edit` says (BRIDGE-4.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Applied {
+    /// Before the next server frame: the host was running.
+    Now,
+    /// When the game resumes: the host is paused, and the game reads the old value until then.
+    OnResume,
+}
+
+impl Applied {
+    /// The word the result gives.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Now => "now",
+            Self::OnResume => "on_resume",
+        }
+    }
+
+    /// The result that says it: `{"applied": NAME}`.
+    #[must_use]
+    pub fn to_json(self) -> Value {
+        json!({ "applied": self.name() })
+    }
+
+    /// What `result` says, `None` when it says neither.
+    #[must_use]
+    pub fn of_result(result: &Value) -> Option<Self> {
+        let name = result.get("applied")?.as_str()?;
+        [Self::Now, Self::OnResume]
+            .into_iter()
+            .find(|applied| applied.name() == name)
+    }
+}
 
 #[cfg(test)]
 mod tests;
