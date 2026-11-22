@@ -10,9 +10,11 @@
 
 use std::path::{Path, PathBuf};
 
-use qc_project::MemoryLoader;
+use qc_project::{FsLoader, MemoryLoader};
 use qs_commands::{Registry, Session};
 use serde_json::json;
+
+use crate::ids::CheckpointNumber;
 
 use super::{ACCEPT_NEXT_EDIT, DISMISS_NEXT_EDIT, NEXT_EDIT, NextEdit, changed, name_around};
 use crate::{
@@ -418,4 +420,50 @@ fn the_places_are_asked_for_when_the_edit_is_checked() {
     assert_eq!(workbench.next_edit(), None);
     assert!(workbench.wait_checked());
     assert_eq!(workbench.next_edit().map(|next| next.left), Some(2));
+}
+
+/// The project of `defs.qc` and `world.qc` on disk, open, with the field's name typed over
+/// and its two uses suggested.
+fn typed_on_disk(name: &str) -> (PathBuf, Workbench<FsLoader>) {
+    let root =
+        std::env::temp_dir().join(format!("qs-workbench-next-{name}-{}", std::process::id()));
+    let _gone = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    for (file, text) in [
+        ("progs.src", "progs.dat\ndefs.qc\nworld.qc\n"),
+        ("defs.qc", DEFS),
+        ("world.qc", WORLD),
+    ] {
+        std::fs::write(root.join(file), text).unwrap();
+    }
+    let mut workbench = Workbench::new(FsLoader, Config::default());
+    workbench.open_project(&root).unwrap();
+    (root, workbench)
+}
+
+// No spec statement: P4-11: files changed on disk, and a checkpoint restored, are not the
+// text the suggestions were made from, and drop them
+#[test]
+fn files_read_again_drop_the_suggestions() {
+    let typed = DEFS.replacen("charge", "power", 1).into_bytes();
+
+    let (root, mut workbench) = typed_on_disk("disk");
+    workbench
+        .update(&root.join("defs.qc"), typed.clone())
+        .unwrap();
+    assert_eq!(workbench.next_edit().map(|next| next.left), Some(2));
+    std::fs::write(root.join("world.qc"), format!("\n{WORLD}")).unwrap();
+    workbench.disk_changed().unwrap();
+    assert_eq!(workbench.next_edit(), None);
+    std::fs::remove_dir_all(root).unwrap();
+
+    let (root, mut workbench) = typed_on_disk("checkpoint");
+    workbench.create_checkpoint("before", 0).unwrap();
+    workbench.update(&root.join("defs.qc"), typed).unwrap();
+    assert_eq!(workbench.next_edit().map(|next| next.left), Some(2));
+    workbench
+        .restore_checkpoint(CheckpointNumber::FIRST)
+        .unwrap();
+    assert_eq!(workbench.next_edit(), None);
+    std::fs::remove_dir_all(root).unwrap();
 }
