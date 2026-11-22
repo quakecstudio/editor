@@ -9,7 +9,7 @@ them (NET), so the client knows exactly what id's client knows.
 - **Layer:** L4 bridges. It depends on `qc-builtins` and `qc-vm` (L1) and `qs-mdl` and
   `qs-bsp` (L0);
   its tests build packets with `qs-sim`'s writers.
-- **Spec sections:** CLIENT-1 to CLIENT-9 of [`client.md`](../../docs/spec/engine/client.md),
+- **Spec sections:** CLIENT-1 to CLIENT-10 of [`client.md`](../../docs/spec/engine/client.md),
   PART-1 to PART-3 of [`particles.md`](../../docs/spec/engine/particles.md) and VIEW-1 to
   VIEW-4 of [`view.md`](../../docs/spec/engine/view.md), and the rerelease's
   `svc_localsound` and `svc_achievement` (RRE-2.2, RRE-2.3, RRE-2.5); CON-1 to CON-5 of
@@ -20,7 +20,7 @@ them (NET), so the client knows exactly what id's client knows.
   (the readers), `console.c`, `keys.c` and `menu.c`, and `gl_rlight.c` (`R_LightPoint`,
   REND-4.10: the light at a point of a lit map, here so the layers below the renderer can
   say how dark a place is); and sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`:
-  `Quake/cl_parse.c` (the lerp flags), `console.c` (`Con_DrawConsole`, CON-5) and `r_alias.c` (`R_SetupAliasFrame`,
+  `Quake/cl_parse.c` (the lerp flags), `cl_demo.c` (demos, CLIENT-10), `console.c` (`Con_DrawConsole`, CON-5) and `r_alias.c` (`R_SetupAliasFrame`,
   `R_SetupEntityTransform`), under ADR-0018. Each file's header lists its functions.
 - **Shipped:** yes.
 
@@ -35,6 +35,10 @@ them (NET), so the client knows exactly what id's client knows.
   the host acts on: prints, sounds to start and stop, static sounds, the new map, the signon
   stages, the CD track. `models` describes each model the server names (`Models`); `rand` is
   the client's `rand ()` (`Random`).
+- `Demo`, `DemoRecorder` and `Client::demo_frame`, `Client::frame_recorded` and
+  `Client::pause_demo` (CLIENT-10): a `.dem` file read a message at a time; the recorder a
+  recording client's frame gives each message it reads; and a frame of a client playing a
+  demo, its messages in the server's place at the pace of `playdemo` or `timedemo`.
 - `Client::scene()`: the `Scene` the renderer draws: the visible entities with their pose and
   move blends, the statics, the eye and the weapon (VIEW-3), the blend over the view
   (VIEW-4.6), the lights and the particles.

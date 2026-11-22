@@ -415,8 +415,8 @@ fn path_prints_the_search_path() {
     );
 }
 
-// spec PHYS-13.8: where the preview host's console differs from id's on purpose: the Exe line,
-// a negative edict, map with no name, kick, and the demo and remote-server commands
+// spec PHYS-13.9: where the preview host's console differs from id's on purpose: the Exe line,
+// a negative edict, map with no name, kick, and the remote-server commands
 #[test]
 fn the_deliberate_differences_from_ids_host() {
     let mut run = connected();
@@ -428,9 +428,6 @@ fn the_deliberate_differences_from_ids_host() {
     assert!(console(&mut run, "map; kick player\n").is_empty());
     assert_eq!(run.world.take_host_command(), None);
     for name in [
-        "demos",
-        "startdemos",
-        "stopdemo",
         "connect",
         "reconnect",
         "changelevel2",
@@ -519,6 +516,44 @@ fn the_clients_commands_go_to_the_client() {
         ]
     );
     assert!(run.world.take_client_commands().is_empty(), "taken once");
+    // CLIENT-10.3, CLIENT-10.5, CLIENT-10.8, CLIENT-10.9: the demo commands, with their words.
+    let words = |line: &str| -> Vec<Vec<u8>> {
+        line.split(' ')
+            .map(|word| word.as_bytes().to_vec())
+            .collect()
+    };
+    for (line, command) in [
+        (
+            "record run e1m1 2",
+            ClientCommand::Record(words("record run e1m1 2")),
+        ),
+        ("stop", ClientCommand::StopDemo),
+        (
+            "playdemo run",
+            ClientCommand::PlayDemo(words("playdemo run")),
+        ),
+        (
+            "timedemo run",
+            ClientCommand::TimeDemo(words("timedemo run")),
+        ),
+        // CLIENT-10.11 to CLIENT-10.13: the demo loop's.
+        (
+            "startdemos a b",
+            ClientCommand::StartDemos(words("startdemos a b")),
+        ),
+        ("demos", ClientCommand::DemoLoop),
+        ("stopdemo", ClientCommand::StopPlayback),
+    ] {
+        assert!(console(&mut run, &format!("{line}\n")).is_empty());
+        assert_eq!(run.world.take_client_commands(), [command], "{line}");
+    }
+    // CLIENT-10.10: what the console forwarded to the server can be taken from it unread.
+    assert!(console(&mut run, "god\n").is_empty());
+    run.world.client_command("fly");
+    let sent = run.world.take_client_commands_sent();
+    assert_eq!(sent.len(), 2, "{sent:?}");
+    assert!(sent[0].starts_with(b"god") && sent[1] == b"fly");
+    assert!(run.world.take_client_commands_sent().is_empty());
     for (name, command) in ClientCommand::ALL {
         assert!(console(&mut run, &format!("{name}\n")).is_empty());
         assert_eq!(run.world.take_client_commands(), [command], "{name}");
