@@ -951,4 +951,15 @@ fn a_forced_track_is_the_one_played() {
     let own = track(&events);
     assert_eq!(own.len(), 1);
     assert_ne!(own, [5]);
+    // So it is while a recording forces none, and when a track was forced by a demo that
+    // is over.
+    let mut host = Host::new("record-no-track");
+    host.say("record run test");
+    host.asked();
+    host.demos
+        .before_level(Connection::New, &mut host.game, &host.client);
+    assert_eq!(track(&host.frame(0.0).unwrap()), own);
+    let mut host = Host::new("track-over");
+    host.demos.forcetrack = 5;
+    assert_eq!(track(&host.frame(0.0).unwrap()), own);
 }
