@@ -9,6 +9,7 @@ mod args;
 mod audio;
 mod bridge;
 mod contents;
+mod demos;
 mod error;
 mod game;
 mod headless;
@@ -49,7 +50,13 @@ impl args::Args {
                 ..args.clone()
             };
             let start = std::time::Instant::now();
-            let loaded = args.load_map(&args.map, None, Start::New(Startup::Bare), None, None)?;
+            let loaded = args.load_map(
+                &args.map,
+                None,
+                Start::New(Startup::Bare),
+                (None, None),
+                None,
+            )?;
             let line = loaded.timerefresh(start.elapsed(), eye)?;
             let mut out = std::io::stdout().lock();
             std::io::Write::write_all(&mut out, format!("{line}\n").as_bytes())
@@ -66,7 +73,13 @@ impl args::Args {
                 .map_err(Error::Load)?;
             let script = view_script::ViewScript::parse(&text)?;
             // `load` keeps the sound for a view script (VIEWDIFF-1.3).
-            let loaded = args.load_map(&script.map, None, Start::New(Startup::Bare), None, None)?;
+            let loaded = args.load_map(
+                &script.map,
+                None,
+                Start::New(Startup::Bare),
+                (None, None),
+                None,
+            )?;
             let size = args
                 .view_size
                 .as_deref()

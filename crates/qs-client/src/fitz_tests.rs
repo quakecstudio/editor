@@ -16,7 +16,7 @@ use crate::{
     Reader, SoundEntity, SoundRef, stat,
 };
 
-struct NoRandom;
+pub(crate) struct NoRandom;
 
 impl Random for NoRandom {
     fn rand(&mut self) -> i32 {
@@ -24,7 +24,7 @@ impl Random for NoRandom {
     }
 }
 
-struct TestModels;
+pub(crate) struct TestModels;
 
 impl Models for TestModels {
     fn describe(&mut self, name: &str) -> Option<ModelInfo> {
@@ -49,15 +49,15 @@ impl Models for TestModels {
     }
 }
 
-const THING: usize = 2;
+pub(crate) const THING: usize = 2;
 
-fn msg(protocol: Protocol) -> Message {
+pub(crate) fn msg(protocol: Protocol) -> Message {
     Message::new(65536, Overflow::Fatal).with_protocol(protocol)
 }
 
 /// A serverinfo naming `protocol`, the world and a thing, sounds `a.wav` and `b.wav`, then
 /// `svc_setview` 1.
-fn serverinfo(protocol: Protocol) -> Vec<u8> {
+pub(crate) fn serverinfo(protocol: Protocol) -> Vec<u8> {
     let mut m = msg(protocol);
     m.write_byte(11);
     m.write_long(protocol.version().number());
@@ -90,7 +90,7 @@ fn connected(protocol: Protocol, packets: &[Vec<u8>]) -> Result<Client, ParseErr
 }
 
 /// A datagram at `time` with a minimal client data, then `updates`.
-fn datagram(protocol: Protocol, time: f32, updates: &[Vec<u8>]) -> Vec<u8> {
+pub(crate) fn datagram(protocol: Protocol, time: f32, updates: &[Vec<u8>]) -> Vec<u8> {
     let mut m = msg(protocol);
     m.write_byte(7);
     m.write_float(time);
@@ -109,7 +109,7 @@ fn datagram(protocol: Protocol, time: f32, updates: &[Vec<u8>]) -> Vec<u8> {
 }
 
 /// `svc_spawnbaseline` for the thing, model 2 at (8, 0, 0).
-fn thing_baseline(protocol: Protocol) -> Vec<u8> {
+pub(crate) fn thing_baseline(protocol: Protocol) -> Vec<u8> {
     let mut m = msg(protocol);
     m.write_byte(22);
     m.write_short(i32::try_from(THING).unwrap());
@@ -125,7 +125,7 @@ fn thing_baseline(protocol: Protocol) -> Vec<u8> {
 
 /// An update of the thing with `bits` (`U_SIGNAL` and the more bits added, and under 666 and
 /// 999 the extend bits) and the bytes after its number.
-fn thing_update(protocol: Protocol, bits: i32, tail: &[u8]) -> Vec<u8> {
+pub(crate) fn thing_update(protocol: Protocol, bits: i32, tail: &[u8]) -> Vec<u8> {
     let fitz = !protocol.is_netquake();
     let mut bits = bits;
     if fitz && bits >= 1 << 16 {

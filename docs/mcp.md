@@ -142,10 +142,12 @@ joins that review, as an edit of theirs does.
 ### Writing QuakeC
 
 The server's instructions send an agent to `project.reference` before it writes or debugs
-QuakeC (L-45). It answers one topic of the agent reference (`docs/agent-reference/`): `quakec`,
-the language and how a mod runs; `entities`, what the engine calls, how an entity moves and
+QuakeC (L-45, L-46). It answers one topic of the agent reference (`docs/agent-reference/`):
+`quakec`, the language in short and how a mod runs; `vanilla`, `rerelease` and `fteqcc`,
+each dialect the compiler takes, in full, with the mistakes a model makes in it; `entities`, what the engine calls, how an entity moves and
 collides, the builtins by what they are for, what the language does that C does not, and
-debugging; `monsters`, how a monster is written and every place a new one is added; `models`,
+debugging; `monsters`, `weapons`, `items` and `triggers`, how each is written, from id's own,
+and every place a new one is added; `models`,
 what a model is and how to recolour, scale and reframe one; `workflow`, tests and scenarios;
 and `maps`. The built-in agent reads the same text.
 

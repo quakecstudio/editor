@@ -96,6 +96,7 @@ fn command_names() -> Vec<String> {
         .iter()
         .chain(ClientCommand::ALL.iter().map(|(name, _)| name))
         .chain(&KEY_COMMANDS)
+        .chain(&DEMO_COMMANDS)
         .map(|name| (*name).to_owned())
         .collect();
     for (button, _) in Button::ALL {
@@ -109,7 +110,19 @@ fn command_names() -> Vec<String> {
 /// The client's commands of `keys.c` and `cl_input.c` that take words (INPUT-1.2, INPUT-2.1).
 const KEY_COMMANDS: [&str; 4] = ["bind", "unbind", "unbindall", "impulse"];
 
-/// The client's command `name` with `words`, when it is one (CON-6.4, INPUT-1.2, INPUT-2.1).
+/// The client's commands of `cl_demo.c`, and the demo loop's of `host_cmd.c` (CLIENT-10).
+const DEMO_COMMANDS: [&str; 7] = [
+    "demos",
+    "playdemo",
+    "record",
+    "startdemos",
+    "stop",
+    "stopdemo",
+    "timedemo",
+];
+
+/// The client's command `name` with `words`, when it is one (CON-6.4, INPUT-1.2, INPUT-2.1,
+/// CLIENT-10).
 fn client_command(name: &str, words: &Words) -> Option<ClientCommand> {
     if let Some((_, command)) = ClientCommand::ALL.iter().find(|(n, _)| *n == name) {
         return Some(command.clone());
@@ -132,6 +145,13 @@ fn client_command(name: &str, words: &Words) -> Option<ClientCommand> {
         "bind" => Some(ClientCommand::Bind(words.argv.clone())),
         "unbind" => Some(ClientCommand::Unbind(words.argv.clone())),
         "unbindall" => Some(ClientCommand::UnbindAll),
+        "record" => Some(ClientCommand::Record(words.argv.clone())),
+        "stop" => Some(ClientCommand::StopDemo),
+        "playdemo" => Some(ClientCommand::PlayDemo(words.argv.clone())),
+        "timedemo" => Some(ClientCommand::TimeDemo(words.argv.clone())),
+        "startdemos" => Some(ClientCommand::StartDemos(words.argv.clone())),
+        "demos" => Some(ClientCommand::DemoLoop),
+        "stopdemo" => Some(ClientCommand::StopPlayback),
         "impulse" => {
             let n = words.argv.get(1).map_or(0, |word| atoi(word));
             Some(ClientCommand::Impulse(n.to_le_bytes()[0]))

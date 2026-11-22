@@ -121,7 +121,8 @@ pub(crate) const COLOR_SHIFT: u32 = 4;
 const DECIMAL: i32 = 10;
 
 /// C's `atoi`: leading whitespace, a sign, then decimal digits, stopping at anything else.
-pub(crate) fn atoi(text: &[u8]) -> i32 {
+#[must_use]
+pub fn atoi(text: &[u8]) -> i32 {
     let mut bytes = text
         .iter()
         .skip_while(|c| c.is_ascii_whitespace())

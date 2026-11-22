@@ -12,7 +12,9 @@ view.
 - **Spec sections:** the host's side of BRIDGE-1 to BRIDGE-7 of
   [`bridge-protocol.md`](../../docs/spec/bridge-protocol.md); WORLD-9 and WORLD-10's debugger
   and reload as the host drives them; INPUT-4's host files; VIEWDIFF-1 and VIEWDIFF-2's view
-  scripts. Its tests cite the statements they pin.
+  scripts; the console's demo commands of CLIENT-10 (`record`, `stop`, `playdemo`,
+  `timedemo`, `startdemos`, `demos`, `stopdemo`), ported from QuakeSpasm's `cl_demo.c` and
+  `host_cmd.c`. Its tests cite the statements they pin.
 - **Entry points:** `Args`, the host's command line, whose `run` does what it says (the
   window, `--headless`, `--timerefresh` or a view script); `GameView`, the same game drawn in a
   panel of another app's window, which the app draws each frame and lets answer its bridge

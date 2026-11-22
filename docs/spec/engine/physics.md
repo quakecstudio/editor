@@ -537,17 +537,20 @@ host: a client and a server in one process (`cmd_source == src_command`).
   (`pr_xfunction->profile++` for each statement), most first and the first of equals by
   index, `%7i` of the count and the name, then sets every count to 0. `path` prints "Current
   search path:" and each element, an archive as `<file> (<n> files)`.
-- **PHYS-13.8** Where the preview host differs from id's host, deliberately: `version`'s
+- **PHYS-13.8** **Withdrawn** 2026-11-21: it listed `demos`, `startdemos` and `stopdemo` among
+  the commands the preview host lacks because it played no demos; it plays them now
+  (CLIENT-10.11 to CLIENT-10.13). Replaced by PHYS-13.9.
+- **PHYS-13.9** Where the preview host differs from id's host, deliberately: `version`'s
   `Exe:` line names QuakeC Studio and its version instead of the build's `__TIME__` and
   `__DATE__`; `status` prints the connected time as `0:00:00`, since id's is
   `Sys_FloatTime`'s wall clock; `edict` with an `n` below 0 prints "Bad edict number", where
   id's `ED_PrintNum` reads outside the edicts; a field name of one byte is printed, where id's
   `name[strlen(name)-2]` reads before it; `map` with no name does nothing, where id's spawns
   `maps/.bsp` and fails; `kick` does nothing, where id's could drop the only client; and the
-  profile counts do not wrap at `2^31`. `demos`, `startdemos`, `stopdemo`, `connect`,
-  `reconnect`, `changelevel2`, `please`, `viewmodel`, `viewframe`, `viewnext`, `viewprev` and
-  `mcache` are not part of the preview host, which plays no demos and has no remote server,
-  and print `Unknown command`.
+  profile counts do not wrap at `2^31`. `connect`, `reconnect`, `changelevel2`, `please`,
+  `viewmodel`, `viewframe`, `viewnext`, `viewprev` and `mcache` are not part of the preview
+  host, which has no remote server, and print `Unknown command`. The demo commands are
+  CLIENT-10's.
 
 ## Constants
 
