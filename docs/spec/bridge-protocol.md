@@ -307,6 +307,9 @@ A command is a request from the client, answered with a result on success or an 
   not id's: a teleporter's `setorigin` checks nothing, and `SV_CheckStuck` then moves a player in
   solid back to its `oldorigin` (PHYS-8.7), the last place it was free, so a player put beside a
   button was found at the map's start.
+- **BRIDGE-4.20** Paused by a run error (BRIDGE-3.3), `inspect` with `stack` answers the stack
+  of the run that failed, the one its `qc/error` carried, and `evaluate` reads in that stack's
+  frames, as at a stop; the next server frame that runs forgets it.
 
 ## BRIDGE-5 Values
 

@@ -36,9 +36,10 @@ pub use docks::{
 };
 pub use editor::{
     ABOUT, CLOSE_SPLIT, EditorRequest, FOLD, FOLD_ALL, GO_TO_LINE, GO_TO_SYMBOL, GamePlace,
-    GoToLineParams, OPEN_SETTINGS, Outline, PROJECT_SEARCH_VIEW, REPORT_ISSUE, SPLIT_DOWN,
-    SPLIT_RIGHT, SoftWrap, Split, TAB_SWITCHER, TOGGLE_EMBEDDED_GAME, TOGGLE_OUTLINE,
-    TOGGLE_SOFT_WRAP, UNFOLD, UNFOLD_ALL, USER_GUIDE,
+    GameScreen, GoToLineParams, OPEN_SETTINGS, Outline, POP_IN_GAME, POP_OUT_GAME,
+    PROJECT_SEARCH_VIEW, REPORT_ISSUE, SPLIT_DOWN, SPLIT_RIGHT, SoftWrap, Split, TAB_SWITCHER,
+    TOGGLE_EMBEDDED_GAME, TOGGLE_GAME_FULL_SCREEN, TOGGLE_OUTLINE, TOGGLE_SOFT_WRAP, UNFOLD,
+    UNFOLD_ALL, USER_GUIDE,
 };
 pub use keys::{
     DEFAULT_KEYS, DefaultKey, Follows, KeyContext, TextureStep, UNKEYED, Unkeyed, VIEW_KEYS,
@@ -136,6 +137,8 @@ pub struct Layout {
     pub outline: Outline,
     /// Where the running game is shown (ADR-0028).
     pub game_place: GamePlace,
+    /// How a popped-out game's window is shown (L-73).
+    pub game_screen: GameScreen,
     /// How the map view is split into panes (P6-09).
     pub map_panes: MapPanes,
     /// How the map view's 3D pane draws the map (P7-13).
@@ -186,7 +189,8 @@ impl Default for Layout {
             split: Split::None,
             soft_wrap: SoftWrap::Off,
             outline: Outline::Hidden,
-            game_place: GamePlace::Window,
+            game_place: GamePlace::Tab,
+            game_screen: GameScreen::Windowed,
             map_panes: MapPanes::Single,
             map_shading: MapShading::Lines,
             map_grid: MapGrid::DEFAULT,

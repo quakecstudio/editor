@@ -200,7 +200,11 @@ fn run(args: &Args) -> Result<String, String> {
         "project.open",
         json!({ "path": args.project }),
     )?;
-    let place = command(&mut harness, qs_layout::TOGGLE_EMBEDDED_GAME, json!({}))?;
+    // The Game tab is the layout's default; a layout file may have chosen the window.
+    let mut place = command(&mut harness, qs_layout::TOGGLE_EMBEDDED_GAME, json!({}))?;
+    if place != json!("tab") {
+        place = command(&mut harness, qs_layout::TOGGLE_EMBEDDED_GAME, json!({}))?;
+    }
     if place != json!("tab") {
         return Err(format!("the game's place is {place}, not the tab"));
     }

@@ -25,9 +25,9 @@ use qs_editor_view::{
     Fixable, KeyMode, LineNote, LineSuggestion, NoteSeverity, Position, Selection, ViewStyle, Wrap,
 };
 use qs_layout::{
-    DockPanel, Docks, EditorRequest, FOCUS_COMMANDS, Focus, GO_TO_LINE, HasLayout, Layout,
-    MovePanelParams, Outline, Panel, RESIZE_PANEL, ResizePanelParams, ShowPanelParams, SoftWrap,
-    Split, TOGGLE_PANEL, TogglePanelParams, WhenShown, Zoom, ZoomParams,
+    DockPanel, Docks, EditorRequest, FOCUS_COMMANDS, Focus, GO_TO_LINE, GamePlace, GameScreen,
+    HasLayout, Layout, MovePanelParams, Outline, Panel, RESIZE_PANEL, ResizePanelParams,
+    ShowPanelParams, SoftWrap, Split, TOGGLE_PANEL, TogglePanelParams, WhenShown, Zoom, ZoomParams,
 };
 use qs_map_edit::{MAP_GENERATE, opens_in_map_editor};
 use qs_render::{Camera, MapMesh};
@@ -149,6 +149,8 @@ impl HasLayout for Workspace {
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) enum Area {
     Toolbar,
+    /// The window a game popped out of the Game tab is drawn in (L-73).
+    PoppedGame,
     /// The notice below the toolbar while a reload waits (P3-10).
     ResetNotice,
     StatusBar,
@@ -251,6 +253,19 @@ impl FocusNow {
 pub(crate) const EDITOR_AREA: Area = Area::Editor;
 /// How often the open map is backed up while it has unsaved edits, in seconds (P6-20).
 pub(crate) const MAP_BACKUP_INTERVAL: f64 = 60.0;
+/// macOS's own full-screen key, Ctrl+Cmd+F, also taken in the popped-out game's window (L-73).
+const MAC_FULL_SCREEN: egui::KeyboardShortcut = egui::KeyboardShortcut::new(
+    egui::Modifiers {
+        alt: false,
+        ctrl: true,
+        shift: false,
+        mac_cmd: true,
+        command: true,
+    },
+    egui::Key::F,
+);
+/// The size of a popped-out game's window when it opens, in points: the preview host's own.
+const POPPED_GAME_SIZE: [f32; 2] = [1280.0, 800.0];
 
 /// What Play last played.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -290,6 +305,12 @@ pub struct Shell {
     game: GameSlot,
     /// Whether the Game tab was shown for the game that runs in it, once for each Play.
     game_shown: bool,
+    /// Where the game was shown last frame, so a game put back from its own window is shown
+    /// in the Game tab (L-73).
+    game_place_shown: GamePlace,
+    /// Whether the popped-out game's window said it was full screen last frame: a change the
+    /// window makes itself, through its own controls, is followed (L-73).
+    popped_full_seen: Option<bool>,
     /// The count of focus commands the shell has applied (`Layout::focus_requests`): the
     /// layout's when the window opens, so the keyboard moves only when a focus command runs.
     focus_applied: u64,
@@ -364,6 +385,8 @@ impl Shell {
             render_state: None,
             game,
             game_shown: false,
+            game_place_shown: GamePlace::default(),
+            popped_full_seen: None,
             focus_applied: layout.focus_requests,
             review_seen: 0,
             preview_error: None,
@@ -809,7 +832,13 @@ impl Shell {
     /// game that runs in the other place is stopped, and a game started in the Game tab is
     /// shown.
     fn follow_game_place(&mut self, ctx: &egui::Context) {
-        self.game.set_place(self.layout().game_place);
+        let place = self.layout().game_place;
+        self.game.set_place(place);
+        if self.game_place_shown == GamePlace::Popped && place == GamePlace::Tab && self.game.runs()
+        {
+            self.centre_tab = CentreTab::Game;
+        }
+        self.game_place_shown = place;
         self.game.follow(ctx, self.centre_tab);
         let preview = &self.session.context().preview;
         if preview.state() == PlayState::Stopped {
@@ -825,6 +854,64 @@ impl Shell {
         if embedded && !self.game_shown {
             self.game_shown = true;
             self.centre_tab = CentreTab::Game;
+        }
+    }
+
+    /// Draws a game popped out of the Game tab in a window of its own (L-73), a viewport of
+    /// this process, full screen when the layout says so. Closing the window puts the game back
+    /// in the tab; leaving full screen through the window's own controls is followed.
+    fn popped_game(&mut self, ctx: &egui::Context) {
+        let layout = self.layout();
+        if layout.game_place != GamePlace::Popped || !self.game.runs() {
+            return;
+        }
+        let full = layout.game_screen == GameScreen::Full;
+        let builder = egui::ViewportBuilder::default()
+            .with_title(Text::PoppedGameTitle.get())
+            .with_inner_size(POPPED_GAME_SIZE)
+            .with_fullscreen(full);
+        let game = self.game.clone();
+        let keys: Vec<egui::KeyboardShortcut> = self
+            .keymap
+            .in_match_order()
+            .into_iter()
+            .filter(|binding| binding.command == qs_layout::TOGGLE_GAME_FULL_SCREEN)
+            .map(|binding| binding.shortcut)
+            .chain((Platform::HERE == Platform::Mac).then_some(MAC_FULL_SCREEN))
+            .collect();
+        let mut closed = false;
+        let mut asked_full = false;
+        let mut shown_full = None;
+        ctx.show_viewport_immediate(
+            egui::ViewportId::from_hash_of(Area::PoppedGame),
+            builder,
+            |ctx, _| {
+                // The full-screen keys are taken from the game here, where the main window's
+                // keymap does not reach; nothing else leaves borderless full screen.
+                asked_full = ctx.input_mut(|input| {
+                    keys.iter().any(|shortcut| input.consume_shortcut(shortcut))
+                });
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::NONE)
+                    .show(ctx, |ui| {
+                        game.ui(ui);
+                    });
+                closed = ctx.input(|input| input.viewport().close_requested());
+                shown_full = ctx.input(|input| input.viewport().fullscreen);
+            },
+        );
+        // Only a change the window reports since the last frame is its own; a mismatch while it
+        // carries out the layout's request is not.
+        let changed_by_window = shown_full.is_some()
+            && self.popped_full_seen.is_some()
+            && shown_full != self.popped_full_seen
+            && shown_full != Some(full);
+        self.popped_full_seen = shown_full;
+        if closed {
+            self.popped_full_seen = None;
+            self.run_chosen(qs_layout::POP_IN_GAME);
+        } else if asked_full || changed_by_window {
+            self.run_chosen(qs_layout::TOGGLE_GAME_FULL_SCREEN);
         }
     }
 
@@ -1346,6 +1433,7 @@ impl Shell {
         }
         self.follow_stop();
         self.follow_game_place(ui.ctx());
+        self.popped_game(ui.ctx());
         // The Properties panel's boxes are for one pause of one edict, drawn or not.
         let preview = &self.session.context().preview;
         let selected = preview.entities().selected().map(|selected| selected.edict);
@@ -1600,20 +1688,26 @@ impl Shell {
         let mut open_guide = false;
         let mut export_asked = false;
         let mut control = None;
+        let mut layout_command = None;
         let preview = &self.session.context().preview;
         let state = preview.state();
-        let docked = if preview.is_embedded() {
+        let place = self.session.context().layout.game_place;
+        // Where a game runs, or a Play would start one: in this window when the layout puts it
+        // here and the window has a device to draw on, else in the preview host's window.
+        let here =
+            preview.is_embedded() || (preview.state() == PlayState::Stopped && self.game.shows());
+        let docked = if here && place == GamePlace::Popped && self.game.runs() {
+            Text::PreviewPoppedOut
+        } else if here && place == GamePlace::Popped {
+            Text::PreviewPopsOut
+        } else if here {
             Text::PreviewInTab
         } else if preview.docks() {
             Text::PreviewDocked
         } else {
             Text::PreviewOwnWindow
         };
-        let failed = self.preview_error.is_some();
-        let status = self
-            .preview_error
-            .clone()
-            .or_else(|| preview.status().map(str::to_owned));
+        let shown = ToolbarStatus::of(state, self.preview_error.as_deref(), preview.status());
         egui::Panel::top(Id::new(Area::Toolbar))
             .exact_size(theme.size.toolbar)
             .frame(egui::Frame::NONE.fill(fill).inner_margin(theme.space(1)))
@@ -1629,11 +1723,34 @@ impl Shell {
                             .small()
                             .color(theme.color(Token::TextMuted)),
                     );
-                    if let Some(status) = &status {
-                        let colour = if failed {
-                            theme.color(Token::StatusError)
+                    // L-73: the game in this process pops out of the Game tab, and fills the
+                    // screen.
+                    if here {
+                        let (text, id) = if place == GamePlace::Popped {
+                            (Text::PopIn, qs_layout::POP_IN_GAME)
                         } else {
-                            theme.color(Token::StatusOk)
+                            (Text::PopOut, qs_layout::POP_OUT_GAME)
+                        };
+                        let pop = Button::new(RichText::new(text.get()).small()).frame(false);
+                        if ui.add(pop).on_hover_text(Text::PopOutHint.get()).clicked() {
+                            layout_command = Some(id);
+                        }
+                        let full =
+                            Button::new(RichText::new(Text::FullScreen.get()).small()).frame(false);
+                        if ui
+                            .add(full)
+                            .on_hover_text(Text::FullScreenHint.get())
+                            .clicked()
+                        {
+                            layout_command = Some(qs_layout::TOGGLE_GAME_FULL_SCREEN);
+                        }
+                    }
+                    if let Some(shown) = &shown {
+                        let (status, colour) = match shown {
+                            ToolbarStatus::Ok(status) => (status, theme.color(Token::StatusOk)),
+                            ToolbarStatus::Failed(status) => {
+                                (status, theme.color(Token::StatusError))
+                            }
                         };
                         status_dot(ui, colour);
                         ui.label(RichText::new(status.as_str()).color(colour));
@@ -1702,6 +1819,9 @@ impl Shell {
         }
         if let Some(id) = control {
             self.control(id);
+        }
+        if let Some(id) = layout_command {
+            self.run_chosen(id);
         }
     }
 
@@ -1946,7 +2066,10 @@ impl Shell {
     /// Where it is Ctrl the focus keys are Ctrl with 1 to 4, Quake's fire with a weapon's
     /// number, so there the game keeps every key and a click outside it takes the keyboard.
     pub(crate) fn leaves_the_game(command: &str) -> bool {
-        Platform::HERE == Platform::Mac && FOCUS_COMMANDS.contains(&command)
+        // L-73: the full-screen key is the IDE's on every platform; Quake has no use for
+        // Alt+Enter.
+        command == qs_layout::TOGGLE_GAME_FULL_SCREEN
+            || (Platform::HERE == Platform::Mac && FOCUS_COMMANDS.contains(&command))
     }
 
     /// Runs the command the command line made, and tells the line how it went.
@@ -2763,8 +2886,9 @@ impl Shell {
     )]
     fn centre(&mut self, ui: &mut Ui, focus: FocusNow) {
         self.sync_editor();
-        if self.centre_tab != CentreTab::Game {
-            // ADR-0028: the game goes on while another tab is shown.
+        // ADR-0028: the game goes on while another tab is shown; popped out, its own window
+        // runs it (L-73).
+        if self.centre_tab != CentreTab::Game && self.layout().game_place != GamePlace::Popped {
             self.game.run_hidden(ui);
         }
         self.with_map(MapFeature::sync_map);
@@ -2942,7 +3066,8 @@ impl Shell {
             self.search_tab(ui);
             return;
         }
-        if self.centre_tab == CentreTab::Game && self.game.ui(ui) {
+        let popped = self.layout().game_place == GamePlace::Popped;
+        if self.centre_tab == CentreTab::Game && !popped && self.game.ui(ui) {
             return;
         }
         if self.centre_tab == CentreTab::Editor && self.session.context().workbench.root().is_none()
@@ -2952,6 +3077,9 @@ impl Shell {
         }
         let (fill, message) = match self.centre_tab {
             CentreTab::Editor => (Token::SurfaceEditor, Text::NoFileOpen),
+            CentreTab::Game if popped && self.game.runs() => {
+                (Token::SurfaceViewport, Text::GamePoppedOut)
+            }
             CentreTab::Game => (Token::SurfaceViewport, Text::GameStopped),
             CentreTab::Map => (Token::SurfaceViewport, Text::NoMap),
             CentreTab::Search => (Token::SurfaceEditor, Text::NoSearchMatch),
@@ -3384,6 +3512,31 @@ pub(crate) fn line_index(line: u32) -> usize {
     usize::try_from(line.saturating_sub(1)).unwrap_or(usize::MAX)
 }
 
+/// What the toolbar says of the game beside its play controls.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ToolbarStatus {
+    /// The play loop's own status, such as the game it plays.
+    Ok(String),
+    /// A failure: a host that does not answer, or the last error a control met.
+    Failed(String),
+}
+
+impl ToolbarStatus {
+    /// The status for a game in `state`: a host that does not answer first, since nothing it
+    /// was doing before still holds; else the last `error` a control met; else the play loop's
+    /// own `status`; `None` when there is nothing to say.
+    fn of(state: PlayState, error: Option<&str>, status: Option<&str>) -> Option<Self> {
+        match state {
+            PlayState::NotAnswering => {
+                Some(Self::Failed(Text::PreviewNotAnswering.get().to_owned()))
+            }
+            PlayState::Stopped | PlayState::Playing | PlayState::Paused => error
+                .map(|error| Self::Failed(error.to_owned()))
+                .or_else(|| status.map(|status| Self::Ok(status.to_owned()))),
+        }
+    }
+}
+
 /// The toolbar's play controls for the game's `state`: the command a click chose, if any.
 /// Play starts a stopped game and stops a running one; Pause pauses it and shows it paused;
 /// Resume takes Play's place while paused; Step and Restart map need a running game.
@@ -3529,5 +3682,41 @@ impl std::error::Error for ShellError {
             Self::Params(error) => Some(error),
             Self::Command(error) => Some(error),
         }
+    }
+}
+
+#[cfg(test)]
+mod toolbar_tests {
+    use qs_workbench::PlayState;
+
+    use super::ToolbarStatus;
+    use crate::strings::Text;
+
+    // No spec statement: L-72: a host that does not answer is shown as a failure beside the play
+    // controls, above an error a control met before, and not as the game it was playing
+    #[test]
+    fn a_host_that_does_not_answer_is_shown_as_failing() {
+        let playing = Some(Text::PreviewRunning.get());
+        let error = Text::ReloadFailed.get();
+        let not_answering = Some(ToolbarStatus::Failed(
+            Text::PreviewNotAnswering.get().to_owned(),
+        ));
+        assert_eq!(
+            ToolbarStatus::of(PlayState::Playing, None, playing),
+            Some(ToolbarStatus::Ok(Text::PreviewRunning.get().to_owned()))
+        );
+        assert_eq!(
+            ToolbarStatus::of(PlayState::Playing, Some(error), playing),
+            Some(ToolbarStatus::Failed(error.to_owned()))
+        );
+        assert_eq!(
+            ToolbarStatus::of(PlayState::NotAnswering, None, playing),
+            not_answering
+        );
+        assert_eq!(
+            ToolbarStatus::of(PlayState::NotAnswering, Some(error), playing),
+            not_answering
+        );
+        assert_eq!(ToolbarStatus::of(PlayState::Stopped, None, None), None);
     }
 }

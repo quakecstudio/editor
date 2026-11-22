@@ -6,6 +6,7 @@
 
 use qc_edict::EdictNumber;
 use qc_progs::Progs;
+use qc_vm::StackEntry;
 use qs_bridge::{Answer, Applied, Capabilities, ErrorCode, Host, HostInfo, Id, RpcError};
 use qs_render::{Camera, Degrees};
 use qs_sim::debug::BreakpointEdit;
@@ -284,6 +285,9 @@ pub(crate) struct Game {
     loading: Loading,
     /// Where the frame stopped, while it is stopped.
     halted: Option<Stopped>,
+    /// The stack of the run a frame failed in, while the game is paused at that run error, which
+    /// `inspect` and `evaluate` read as a stop's (BRIDGE-4.20).
+    failed: Option<Vec<StackEntry>>,
     /// Reads a file of the game's search path, for `reload`; `None` until the host gives it.
     files: Option<qs_sim::ModelFiles>,
     /// The name the progs was read by, which `reload` reads again by default.
@@ -320,6 +324,7 @@ impl Game {
             snapshot: None,
             loading: Loading::Done,
             halted: None,
+            failed: None,
             files: None,
             progs_path: "progs.dat".to_owned(),
             swap: None,
@@ -610,6 +615,7 @@ impl Game {
         params.insert("time".to_owned(), json!(time));
         let mut location = None;
         if let WorldError::Frame(run) = error {
+            self.failed = Some(run.trace.clone());
             // BRIDGE-3.4: with a .lno each frame names its file and line. The progs are the
             // caller's, or read again when it holds none.
             let bytes = self.progs.clone();

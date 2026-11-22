@@ -1190,9 +1190,14 @@ impl Preview {
                     .unwrap_or("print");
                 self.push_line(text, level);
             }
+            // BRIDGE-3.1: the run error's message, where it stopped and its stack.
             "qc/error" => {
                 let message = params.get("message").and_then(Value::as_str).unwrap_or("");
                 self.debugger.failed(message);
+                // One with no stack, a failure no QuakeC run made, leaves the stack shown.
+                if params.get("stack").is_some_and(Value::is_array) {
+                    self.debugger.set_stack(params);
+                }
                 self.push_line(message, "error");
             }
             // BRIDGE-3.5: a click in the paused game's window picked an edict; it is selected,

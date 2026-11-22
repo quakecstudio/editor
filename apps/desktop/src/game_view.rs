@@ -43,9 +43,19 @@ impl GameSlot {
         *self.state.borrow_mut() = state;
     }
 
-    /// Where the layout puts the game, as the next Play reads it.
+    /// Where the layout puts the game, as the next Play reads it. A game that moves between the
+    /// Game tab and its own window gives the mouse back first: the grab is the window's it
+    /// was taken in, which the other window cannot undo (L-73).
     pub(crate) fn set_place(&self, place: GamePlace) {
-        self.place.set(place);
+        let was = self.place.replace(place);
+        if was != place
+            && (was == GamePlace::Popped || place == GamePlace::Popped)
+            && let Some(ctx) = &*self.ctx.borrow()
+            && let Ok(mut slot) = self.game.try_borrow_mut()
+            && let Some(game) = slot.as_mut()
+        {
+            game.release_pointer(ctx);
+        }
     }
 
     /// The host the preview starts the game through.
@@ -78,12 +88,14 @@ impl GameSlot {
     }
 
     /// Follows the window: its context is kept, and while `tab`, the centre's, is not the Game
-    /// tab a game that holds the mouse gives it back, since nothing there would free it.
+    /// tab and the game is not popped out, a game that holds the mouse gives it back, since
+    /// nothing there would free it.
     pub(crate) fn follow(&self, ctx: &Context, tab: CentreTab) {
         if self.ctx.borrow().is_none() {
             *self.ctx.borrow_mut() = Some(ctx.clone());
         }
         if tab != CentreTab::Game
+            && self.place.get() != GamePlace::Popped
             && let Ok(mut slot) = self.game.try_borrow_mut()
             && let Some(game) = slot.as_mut()
         {
@@ -91,10 +103,15 @@ impl GameSlot {
         }
     }
 
-    /// Whether the window shows the game now: the layout puts it in the Game tab, and the
-    /// window has a device to draw it on.
+    /// Whether the window shows the game now: the layout puts it in the Game tab or popped out
+    /// of it, and the window has a device to draw it on.
     pub(crate) fn shows(&self) -> bool {
-        self.place.get() == GamePlace::Tab && self.state.borrow().is_some()
+        self.place.get().in_process() && self.state.borrow().is_some()
+    }
+
+    /// Whether a game runs in this process now.
+    pub(crate) fn runs(&self) -> bool {
+        self.game.try_borrow().is_ok_and(|slot| slot.is_some())
     }
 
     /// Runs a frame of the game while its tab is not the one shown, drawn nowhere and given no
@@ -195,16 +212,22 @@ mod tests {
 
     use super::GameSlot;
 
-    // No spec statement: ENG-10, ADR-0028: the window shows the game only when the layout puts
-    // it in the Game tab and the window has a device to draw on; without one a start is
-    // refused, and the preview host's own window is used
+    // No spec statement: ENG-10, ADR-0028, L-73: the window shows the game only when the layout
+    // puts it in this process, the Game tab by default or popped out, and the window has a
+    // device to draw on; without one a start is refused, and the preview host's own window is
+    // used
     #[test]
-    fn the_window_shows_the_game_only_in_the_tab_and_on_a_device() {
+    fn the_window_shows_the_game_only_in_this_process_and_on_a_device() {
         let slot = GameSlot::default();
         let mut host = slot.host();
-        assert!(!host.shows(), "the preview host's window at first");
+        assert!(
+            !host.shows(),
+            "the Game tab at first, but no device to draw on"
+        );
+        slot.set_place(GamePlace::Popped);
+        assert!(!host.shows(), "popped out, but no device to draw on");
         slot.set_place(GamePlace::Tab);
-        assert!(!host.shows(), "no device to draw on");
+        assert!(!slot.runs(), "nothing runs");
         let spec = LaunchSpec {
             host: PathBuf::new(),
             run_root: RunRoot {

@@ -282,6 +282,7 @@ impl Game {
             return FrameEnd::Stopped;
         }
         self.halted = None;
+        self.failed = None;
         self.snapshot = None;
         if let Some(debugger) = self.world.debugger_mut() {
             debugger.run_to_breakpoint(0);
@@ -362,11 +363,20 @@ impl Game {
         self.replay(progs) == FrameEnd::Ran
     }
 
-    /// `inspect` with `stack` (BRIDGE-4.9): the stopped frame's, empty between frames.
+    /// The stack the game is paused in: a stop's, or the run's a run error ended
+    /// (BRIDGE-4.20); `None` between frames.
+    fn paused_stack(&self) -> Option<&[StackEntry]> {
+        match &self.halted {
+            Some(stopped) => Some(&stopped.stack),
+            None => self.failed.as_deref(),
+        }
+    }
+
+    /// `inspect` with `stack` (BRIDGE-4.9, BRIDGE-4.20): the stopped or failed frame's, empty
+    /// between frames.
     pub(super) fn stack_now(&self, progs: &Progs<'_>) -> Vec<Value> {
-        self.halted
-            .as_ref()
-            .map_or_default(|s| self.stack_json(progs, &s.stack))
+        self.paused_stack()
+            .map_or_default(|stack| self.stack_json(progs, stack))
     }
 
     /// `evaluate` (BRIDGE-4.9, WORLD-9.5) in stack frame `frame`, 0 the innermost.
@@ -382,9 +392,8 @@ impl Game {
             .and_then(|f| usize::try_from(f).ok())
             .unwrap_or(0);
         let function = self
-            .halted
-            .as_ref()
-            .and_then(|s| s.stack.get(frame))
+            .paused_stack()
+            .and_then(|stack| stack.get(frame))
             .map(|entry| entry.function);
         let value = self
             .world
