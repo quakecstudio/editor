@@ -354,8 +354,7 @@ impl<L: Loader> Workbench<L> {
             return;
         }
         match renamed.map(|rename| pending.sites_of(rename)) {
-            Ok(sites) if !sites.is_empty() => pending.sites = Sites::Offered(sites),
-            Ok(_) => self.next_edits.forget(),
+            Ok(sites) => pending.sites = Sites::Offered(sites),
             Err(error) => {
                 tracing::debug!(%error, "no suggestions for the name as typed");
                 pending.sites = Sites::Refused;
@@ -404,6 +403,7 @@ impl<L: Loader> Workbench<L> {
             return Ok(None);
         };
         if sites.is_empty() {
+            self.next_edits.pending = Some(pending);
             return Ok(None);
         }
         let site = sites.remove(0);
@@ -425,9 +425,7 @@ impl<L: Loader> Workbench<L> {
         // its own file, and it stays where it is.
         pending.follow(&site.path, site.end, new_end);
         pending.taken = pending.taken.saturating_add(1);
-        if left > 0 {
-            self.next_edits.pending = Some(pending);
-        }
+        self.next_edits.pending = Some(pending);
         Ok(Some(Accepted {
             change: Change {
                 path: site.path,
