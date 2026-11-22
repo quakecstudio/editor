@@ -51,10 +51,10 @@ use std::collections::HashMap;
 use qc_diag::{Severity, Span};
 use qc_lexer::LineIndex;
 use qc_lno::LnoFile;
-use qc_progs::{Format, ProgsFile, WriteError};
+use qc_progs::{Format, ProgsFile, TableId, WriteError};
 use qc_sema::lower::{FileDecls, lower_file};
 use qc_sema::{
-    Db, FileDiagnostic, FileId, ModuleInput, ResolveOptions, resolve_module,
+    Db, FileDiagnostic, FileId, ModuleIndex, ModuleInput, ResolveOptions, resolve_module,
     resolve_module_at_targets,
 };
 use qc_syntax::{Dialect, Parse};
@@ -333,6 +333,8 @@ fn compile_lowered(
     } else {
         write::Records::Qcc
     };
+    // QCD-6.12: where each statement came from, to place one the format cannot hold.
+    let origins = compiler.program.origins.clone();
     let mut progs =
         write::progs(compiler.program, crc, &index, records).map_err(CompileError::unlocated)?;
     if compiler.dialect == Dialect::Fteqcc {
@@ -363,7 +365,9 @@ fn compile_lowered(
     }
     // PROGS-22.4: a table or operand past the version 6 format's integers is refused here,
     // not when the caller writes the file.
-    qc_progs::write(&progs).map_err(CompileError::Write)?;
+    if let Err(error) = qc_progs::write(&progs) {
+        return Err(does_not_fit(&progs, &origins, &index, error));
+    }
     let count = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
     let lno = LnoFile {
         numglobaldefs: count(progs.global_defs.len()),
@@ -444,6 +448,100 @@ pub fn compile_module(
     // The analysis's warnings are at their source spans.
     compiled.warnings = warnings;
     Ok(compiled)
+}
+
+/// Why `progs` does not fit its format, `error` (PROGS-22.4), as the diagnostic QCD-6.12
+/// gives: a definition at the declaration of its name, a statement at the source statement it
+/// came from, by `origins`. An error of no table's limit stays the writer's.
+fn does_not_fit(
+    progs: &ProgsFile,
+    origins: &[Option<(FileId, usize)>],
+    index: &ModuleIndex,
+    error: WriteError,
+) -> CompileError {
+    let diagnostic = |location: Option<(FileId, Span)>, message: String| {
+        let (file, span) = location.unwrap_or((FileId::new(0), Span::new(0, 0)));
+        CompileError::Diagnostics(vec![FileDiagnostic {
+            file,
+            diagnostic: qc_diag::Diagnostic {
+                code: qc_diag::Code::E0512,
+                message,
+                span,
+            },
+        }])
+    };
+    match error {
+        WriteError::DefOutOfRange { table, index: at } => {
+            let (defs, kind) = match table {
+                TableId::FieldDefs => (&progs.field_defs, "fields"),
+                TableId::GlobalDefs
+                | TableId::Statements
+                | TableId::Functions
+                | TableId::Strings
+                | TableId::Globals
+                | TableId::LineNumbers
+                | TableId::BodylessFunctions => (&progs.global_defs, "globals"),
+            };
+            let Some(def) = defs.get(at) else {
+                return CompileError::Write(error);
+            };
+            let name = usize::try_from(def.s_name)
+                .ok()
+                .and_then(|from| progs.strings.get(from..))
+                .and_then(|rest| rest.split(|&b| b == 0).next())
+                .map_or_default(|bytes| String::from_utf8_lossy(bytes).into_owned());
+            // A global before a local of the same name, as the program's own scope reads it.
+            let mut found = None;
+            for (_, definition) in index.definitions() {
+                if definition.name == name && (found.is_none() || definition.owner.is_none()) {
+                    found = Some((definition.location.file, definition.location.span));
+                    if definition.owner.is_none() {
+                        break;
+                    }
+                }
+            }
+            diagnostic(
+                found,
+                format!(
+                    "too many {kind} for progs.dat: {name} is at slot {}, which a \
+                     definition's 16-bit offset cannot hold",
+                    def.ofs
+                ),
+            )
+        }
+        WriteError::StatementOutOfRange { index: at } => {
+            let operand = progs.statements.get(at).map_or(0, |statement| {
+                let mut widest = statement.a;
+                for operand in [statement.b, statement.c] {
+                    if operand.unsigned_abs() > widest.unsigned_abs() {
+                        widest = operand;
+                    }
+                }
+                widest
+            });
+            let place = origins
+                .get(at)
+                .copied()
+                .flatten()
+                .map(|(file, start)| (file, Span::new(start, start)));
+            diagnostic(
+                place,
+                format!(
+                    "too many globals for progs.dat: this statement's operand {operand} does \
+                     not fit its 16-bit operands (too many globals, or a jump over too many \
+                     statements)"
+                ),
+            )
+        }
+        WriteError::TooLarge { table } => diagnostic(
+            None,
+            format!("the {table} table is too large for progs.dat"),
+        ),
+        WriteError::FtePartsInV6
+        | WriteError::LineNumberCount { .. }
+        | WriteError::NulInBodylessName { .. }
+        | WriteError::OpaqueTableWithoutLayout => CompileError::Write(error),
+    }
 }
 
 /// `error` with each file and span of a unit's text located in its source file (QC-9.7).

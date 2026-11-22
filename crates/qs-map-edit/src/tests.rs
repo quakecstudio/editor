@@ -542,3 +542,29 @@ fn a_new_map_holds_a_world_and_is_open() {
         .unwrap();
     assert!(dir.join("maps/relative.map").is_file());
 }
+
+// spec MAP-8.10: map.place_entity and map.set_key refuse an empty classname, saying the game
+// stops on it, and the map is unchanged
+#[test]
+fn an_empty_classname_is_not_written() {
+    let (dir, mut session) = project("empty-classname");
+    let path = dir.join("maps/test.map");
+    session.execute(MAP_OPEN, json!({ "path": path })).unwrap();
+    for (id, params) in [
+        (
+            MAP_PLACE,
+            json!({ "classname": "", "origin": [0.0, 0.0, 0.0] }),
+        ),
+        (
+            crate::MAP_SET_KEY,
+            json!({ "entity": 1, "key": "classname", "value": "" }),
+        ),
+    ] {
+        let error = session.execute(id, params).unwrap_err().to_string();
+        assert!(
+            error.contains("an empty classname stops the game"),
+            "{id}: {error}"
+        );
+        assert_eq!(text(&session), MAP, "{id}: nothing changed");
+    }
+}

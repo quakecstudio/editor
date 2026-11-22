@@ -489,3 +489,36 @@ fn tasks_are_named_commands() {
     .unwrap();
     assert!(bare.tasks.is_empty());
 }
+
+// spec PRJ-2.12: a module whose src cannot be read is E0402 on line 0 of quakec.toml, naming the
+// module and the file, and the project still opens with its other modules
+#[test]
+fn a_module_whose_src_is_missing_is_the_manifests_error() {
+    let manifest = "[[module]]\nkind = \"ssqc\"\nsrc = \"progs.src\"\n\n\
+                    [[module]]\nkind = \"csqc\"\nsrc = \"nope.src\"\n";
+    let project = open_manifest(
+        manifest,
+        &[("proj/progs.src", "x.dat a.qc"), ("proj/a.qc", "")],
+    )
+    .unwrap();
+    let [ssqc, csqc] = project.modules.as_slice() else {
+        panic!("two modules");
+    };
+    assert!(
+        ssqc.graph.diagnostics.is_empty(),
+        "{:?}",
+        ssqc.graph.diagnostics
+    );
+    let [missing] = csqc.graph.diagnostics.as_slice() else {
+        panic!("one diagnostic: {:?}", csqc.graph.diagnostics);
+    };
+    assert_eq!(missing.code, crate::Code::E0402);
+    assert_eq!(missing.file, Path::new("proj/quakec.toml"));
+    assert_eq!(missing.line, 0);
+    assert!(
+        missing.message.starts_with("module csqc: "),
+        "{}",
+        missing.message
+    );
+    assert!(missing.message.contains("nope.src"), "{}", missing.message);
+}

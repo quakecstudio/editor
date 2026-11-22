@@ -495,8 +495,9 @@ fn origin_maps_keep_the_first_origin_out_of_order() {
     assert_eq!(at.span, Span::new(30, 32));
 }
 
-// spec PRJ-5.3: a graph's files are compiled in order, except an include, which the
-// preprocessor reads where it is included, and a source-form root, which is the prelude.
+// spec PRJ-5.3: a graph's files are compiled in order, except an include of another file, which
+// the preprocessor reads where it is included, and a source-form root, which is the prelude.
+// spec PRJ-5.2: an include of a list-form progs.src, which no file includes, is compiled there
 #[test]
 fn module_input_from_a_graph() {
     let file = |path: &str, via| GraphFile {
@@ -505,12 +506,16 @@ fn module_input_from_a_graph() {
         via,
         parent: None,
     };
+    let included = |path: &str, parent: usize| GraphFile {
+        parent: Some(qc_project::GraphIndex::new(parent)),
+        ..file(path, Via::Include)
+    };
     let mut graph = FileGraph {
         form: Some(Form::Source),
         files: vec![
             file("progs.src", Via::Root),
             file("a.qc", Via::IncludeList),
-            file("a.qh", Via::Include),
+            included("a.qh", 1),
             file("b.qc", Via::IncludeList),
         ],
         ..FileGraph::default()
@@ -523,6 +528,17 @@ fn module_input_from_a_graph() {
     let input = ModuleInput::from_graph(&graph);
     assert!(input.prelude.is_empty());
     assert_eq!(input.compiled, [FileId::new(0), FileId::new(1)]);
+    graph.files = vec![
+        file("defs.qc", Via::Listed),
+        file("a.qc", Via::Include),
+        included("a.qh", 1),
+        file("world.qc", Via::Listed),
+    ];
+    let input = ModuleInput::from_graph(&graph);
+    assert_eq!(
+        input.compiled,
+        [FileId::new(0), FileId::new(1), FileId::new(3)]
+    );
     graph.files = vec![file("main.qc", Via::Root)];
     assert_eq!(ModuleInput::from_graph(&graph).compiled, [FileId::new(0)]);
     let module = qc_project::Module {
@@ -555,7 +571,10 @@ fn a_gmqcc_source_form_root_is_compiled() {
         form: Some(Form::Source),
         files: vec![
             file("progs.inc", Via::Root),
-            file("defs.qh", Via::Include),
+            GraphFile {
+                parent: Some(qc_project::GraphIndex::new(0)),
+                ..file("defs.qh", Via::Include)
+            },
             file("listed.qc", Via::IncludeList),
         ],
         ..FileGraph::default()

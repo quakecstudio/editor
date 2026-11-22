@@ -60,8 +60,8 @@ pub struct ModuleInput {
 impl ModuleInput {
     /// The input for a module's file graph, each file named by its index in
     /// `graph.files` (as [`Location::file`] is): the root `progs.src` of the source form is
-    /// the prelude, and every file the graph lists but did not reach by `#include` is
-    /// compiled, in the graph's order, by the graph's name for it, in the graph's directory
+    /// the prelude, and every file the graph lists but did not reach by an `#include` of
+    /// another file is compiled, in the graph's order, by the graph's name for it, in the graph's directory
     /// (FTEF-14.75).
     #[must_use]
     pub fn from_graph(graph: &FileGraph) -> Self {
@@ -72,7 +72,10 @@ impl ModuleInput {
         for (index, file) in graph.files.iter().enumerate() {
             let id = FileId::new(index);
             match file.via {
-                Via::Include => continue,
+                // PRJ-5.2: a file included by a compiled file is read where that file includes
+                // it; one a list-form `progs.src` includes is compiled at that point.
+                Via::Include if file.parent.is_some() => continue,
+                Via::Include => input.compiled.push(id),
                 Via::Root if graph.form == Some(Form::Source) => input.prelude.push(id),
                 Via::Root | Via::Listed | Via::IncludeList => input.compiled.push(id),
             }

@@ -115,6 +115,9 @@ fn run_tool<K: Commands>(
         Err(_) if history => return session.run(&tool.id, arguments),
         Err(error) => return Err(error),
     };
+    if settings.write.is_empty() {
+        return Err(ToolError::ReadOnly { tool: tool.clone() });
+    }
     let path = open.get("path").and_then(Value::as_str).unwrap_or_default();
     let full = lexical(Path::new(path));
     if !settings.write.iter().any(|root| lies_under(&full, root)) {
@@ -181,6 +184,11 @@ pub enum ToolError {
         /// The tool.
         tool: Tool,
     },
+    /// A tool that writes, on a server with no root to write under (`--read-only`).
+    ReadOnly {
+        /// The tool.
+        tool: Tool,
+    },
 }
 
 impl std::fmt::Display for ToolError {
@@ -201,6 +209,11 @@ impl std::fmt::Display for ToolError {
                     tool.id
                 )
             }
+            Self::ReadOnly { tool } => write!(
+                f,
+                "the server is read only (--read-only): {} writes, and nothing may be written",
+                tool.id
+            ),
         }
     }
 }
@@ -436,6 +449,9 @@ impl Server {
     /// tool that writes, the project too.
     fn check_roots(&self, tool: &Tool, arguments: &Value) -> Result<(), ToolError> {
         let settings = &self.settings;
+        if tool.access == Access::Write && settings.write.is_empty() {
+            return Err(ToolError::ReadOnly { tool: tool.clone() });
+        }
         let roots: Vec<&PathBuf> = match tool.access {
             Access::Read => settings.read.iter().chain(&settings.write).collect(),
             Access::Write => settings.write.iter().collect(),

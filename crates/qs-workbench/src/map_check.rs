@@ -133,6 +133,7 @@ fn entity_problems(schema: &EntitySchema, map: &MapFile) -> Vec<EntityProblem> {
                     suggestion: None, ..
                 }
                 | MapDiagnosticKind::NoClassname
+                | MapDiagnosticKind::EmptyClassname
                 | MapDiagnosticKind::BadValue { .. }
                 | MapDiagnosticKind::NoTarget { .. }
                 | MapDiagnosticKind::Untargeted { .. } => None,
@@ -201,6 +202,7 @@ impl<L: crate::Loader> Workbench<L> {
                 MapDiagnosticKind::UnknownClass { suggestion, .. }
                 | MapDiagnosticKind::UnknownKey { suggestion, .. } => suggestion.clone(),
                 MapDiagnosticKind::NoClassname
+                | MapDiagnosticKind::EmptyClassname
                 | MapDiagnosticKind::BadValue { .. }
                 | MapDiagnosticKind::NoTarget { .. }
                 | MapDiagnosticKind::Untargeted { .. } => None,

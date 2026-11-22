@@ -624,3 +624,126 @@ fn a_pumped_client_lets_a_host_on_its_own_thread_answer() {
     assert_eq!(answer["method"], "evaluate");
     assert!(*pumps.borrow() >= 2, "each wait pumped the host");
 }
+
+// spec BRIDGE-3.4: a host that stops before its bridge connects is reported with the error it
+// printed, not only its exit status; one that printed nothing, with its status
+#[cfg(unix)]
+#[test]
+fn a_host_that_stops_as_it_starts_says_why() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = std::env::temp_dir().join(format!("qs-engine-exits-{}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    let launch = |name: &str, script: &str| {
+        let host = dir.join(name);
+        fs::write(&host, script).unwrap();
+        fs::set_permissions(&host, fs::Permissions::from_mode(0o755)).unwrap();
+        let spec = LaunchSpec {
+            host,
+            run_root: RunRoot {
+                path: dir.clone(),
+                game: None,
+                kpf: None,
+            },
+            map: None,
+            socket: dir.join(format!("{name}.sock")),
+            extra: Vec::new(),
+        };
+        spec.launch("test")
+            .err()
+            .map_or_else(|| format!("{name} connected"), |error| error.to_string())
+    };
+    let said = launch(
+        "says",
+        "#!/bin/sh\necho 'loading' >&2\n\
+         echo 'quakec-engine: a spawn function failed: worldspawn exploded, in worldspawn at \
+         world.qc:3' >&2\nexit 1\n",
+    );
+    assert_eq!(
+        said,
+        "the preview host stopped as it started: a spawn function failed: worldspawn exploded, \
+         in worldspawn at world.qc:3"
+    );
+    // The last line said wins, prefixed or not, and bytes that are not UTF-8 neither stop the
+    // relay nor the host.
+    let panicked = launch(
+        "panics",
+        "#!/bin/sh\necho 'quakec-engine: logging is off: no home' >&2\n\
+         printf 'caf\\351\\n' >&2\necho \"thread 'main' panicked at load.rs\" >&2\nexit 101\n",
+    );
+    assert_eq!(
+        panicked,
+        "the preview host stopped as it started: thread 'main' panicked at load.rs"
+    );
+    let silent = launch("silent", "#!/bin/sh\nexit 1\n");
+    assert!(
+        silent.starts_with("the preview host stopped as it started: exit status: 1"),
+        "{silent}"
+    );
+}
+
+/// A connection's read side fed by the test, frame by frame; it ends when the sender drops.
+struct Fed(std::sync::mpsc::Receiver<Vec<u8>>, Vec<u8>);
+
+impl std::io::Read for Fed {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.1.is_empty() {
+            match self.0.recv() {
+                Ok(bytes) => self.1 = bytes,
+                Err(_) => return Ok(0),
+            }
+        }
+        let n = buf.len().min(self.1.len());
+        buf[..n].copy_from_slice(&self.1[..n]);
+        self.1.drain(..n);
+        Ok(n)
+    }
+}
+
+// spec BRIDGE-7.1: a request the host does not answer in time is a timeout, and until its
+// answer comes no other request is sent or waited for; once it comes the host answers again
+#[test]
+fn a_host_that_does_not_answer_is_not_waited_for_again() {
+    let (feed, fed) = std::sync::mpsc::channel();
+    let written = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    struct Sink(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+    impl std::io::Write for Sink {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0
+                .lock()
+                .map_err(|_| std::io::Error::other("poisoned"))?
+                .extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut client = Client::over(Fed(fed, Vec::new()), Sink(written.clone()));
+    client.answer_within(Duration::ZERO);
+    assert!(client.is_answering());
+    assert!(matches!(client.shutdown(), Err(ClientError::Timeout)));
+    assert!(!client.is_answering());
+    let sent = written.lock().unwrap().len();
+    assert!(matches!(client.shutdown(), Err(ClientError::NotAnswering)));
+    assert_eq!(written.lock().unwrap().len(), sent, "nothing more was sent");
+    assert_eq!(
+        ClientError::NotAnswering.to_string(),
+        "the preview host is not answering: it has not answered an earlier command"
+    );
+    // The late answer to the first request.
+    let late = Message::Response {
+        id: Some(Id::Number(1)),
+        outcome: Ok(json!({})),
+    };
+    let mut frame = Vec::new();
+    qs_bridge::write_frame(&mut frame, &late.to_bytes()).unwrap();
+    feed.send(frame).unwrap();
+    for _ in 0..1_000_000 {
+        client.poll_events().unwrap();
+        if client.is_answering() {
+            break;
+        }
+        std::thread::yield_now();
+    }
+    assert!(client.is_answering(), "the late answer was read");
+}

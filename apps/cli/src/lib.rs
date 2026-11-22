@@ -31,7 +31,7 @@ mod doctor;
 
 use std::ffi::OsString;
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use clap::error::ErrorKind;
@@ -456,6 +456,13 @@ impl core::fmt::Display for Stopped {
     }
 }
 
+/// The project directory `path` names, made absolute against the working directory, so `.` is
+/// the directory the command runs in, with its name (PRJ-1.7); the project's own reading
+/// takes `..` away.
+fn project_dir(path: &Path) -> std::io::Result<PathBuf> {
+    std::path::absolute(path)
+}
+
 /// Runs `request` in `session`, printing to `out`.
 fn execute<L: Loader + 'static>(
     session: &mut Session<Cli<L>>,
@@ -468,14 +475,26 @@ fn execute<L: Loader + 'static>(
     let mut open = |open: &Open| {
         // A command's parameters are JSON, whose strings are Unicode: a path that is not is
         // refused here, before the registry is asked.
-        let path = open
-            .path
+        // PRJ-1.7: a relative path, `.` above all, is the directory it names, whose name the
+        // project takes.
+        let absolute = project_dir(&open.path).map_err(Stopped::Write)?;
+        let path = absolute
             .to_str()
             .ok_or_else(|| Stopped::NotUnicode(open.path.clone()))?;
         let opened = call(OPEN_PROJECT, json!({ "path": path }))?;
-        match opened.get("files").and_then(Value::as_u64) {
-            Some(0) => Err(Stopped::NoProject(open.path.clone())),
-            _ => Ok(()),
+        if opened.get("files").and_then(Value::as_u64) != Some(0) {
+            return Ok(());
+        }
+        // A project whose every module's source is missing reads no file, but its problems
+        // say why (PRJ-2.12); only a directory with none has no project.
+        let problems = call(CHECK_PROJECT, json!({}))?;
+        let has_error = problems
+            .as_array()
+            .is_some_and(|found| found.iter().any(|p| p["gravity"] == "error"));
+        if has_error {
+            Ok(())
+        } else {
+            Err(Stopped::NoProject(open.path.clone()))
         }
     };
     match request {

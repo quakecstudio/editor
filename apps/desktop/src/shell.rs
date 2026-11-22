@@ -2057,6 +2057,7 @@ impl Shell {
                         PlayState::Stopped => Text::PreviewStopped,
                         PlayState::Playing => Text::PreviewRunning,
                         PlayState::Paused => Text::PreviewPaused,
+                        PlayState::NotAnswering => Text::PreviewNotAnswering,
                     };
                     // What the bar says is read, not typed in or copied: the arrow, not the
                     // text cursor (L-44).
@@ -3392,11 +3393,13 @@ fn play_controls(ui: &mut Ui, theme: &Theme, state: PlayState) -> Option<&'stati
         PlayState::Stopped => (Icon::Play, Text::Play, PLAY),
         PlayState::Playing => (Icon::Play, Text::Playing, STOP),
         PlayState::Paused => (Icon::Play, Text::Resume, RESUME),
+        // A host that does not answer can only be stopped.
+        PlayState::NotAnswering => (Icon::Play, Text::Playing, STOP),
     };
     let primary =
         Button::new(RichText::new(labelled(icon, text)).color(theme.color(Token::TextOnAccent)))
             .fill(theme.color(Token::Accent));
-    let hover = if state == PlayState::Playing {
+    let hover = if matches!(state, PlayState::Playing | PlayState::NotAnswering) {
         Text::StopHint
     } else {
         text
@@ -3404,7 +3407,8 @@ fn play_controls(ui: &mut Ui, theme: &Theme, state: PlayState) -> Option<&'stati
     if ui.add(primary).on_hover_text(hover.get()).clicked() {
         chosen = Some(id);
     }
-    let running = state != PlayState::Stopped;
+    // Step and Restart map need a host that answers.
+    let running = matches!(state, PlayState::Playing | PlayState::Paused);
     let pause_text = if state == PlayState::Paused {
         Text::Paused
     } else {

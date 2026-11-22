@@ -369,13 +369,21 @@ fn from_manifest<L: Loader>(
             |o| normalize(&root.join(o)),
         );
         let module_dialect = module.dialect.unwrap_or(dialect);
-        let graph = build_graph(
+        let mut graph = build_graph(
             loader,
             &src,
             &module.defines,
             &include_dirs,
             module_dialect.into(),
         );
+        // PRJ-2.12: a module whose source cannot be read is the manifest's problem, named by
+        // the module that declares it.
+        for d in &mut graph.diagnostics {
+            if d.code == Code::E0402 && d.line == 0 && d.file == src {
+                d.file = path.to_path_buf();
+                d.message = format!("module {}: {}", module.name, d.message);
+            }
+        }
         out.push(Module {
             name: module.name,
             kind: module.kind,

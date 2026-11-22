@@ -553,3 +553,136 @@ fn a_play_starts_the_game_in_the_apps_own_window_when_it_shows_it() {
     shown.stop();
     let _gone = std::fs::remove_dir_all(&dir);
 }
+
+/// A connection's read side that never gives a byte while the sender lives.
+#[cfg(unix)]
+struct Silent(std::sync::mpsc::Receiver<Vec<u8>>);
+
+#[cfg(unix)]
+impl std::io::Read for Silent {
+    fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+        // Blocks until the test ends and drops the sender.
+        drop(self.0.recv());
+        Ok(0)
+    }
+}
+
+// spec BRIDGE-7.1: after one command the host does not answer, the preview says the host is not
+// answering, later commands fail at once, and Stop ends the host without waiting for it
+#[cfg(unix)]
+#[test]
+fn a_host_that_stops_answering_is_shown_and_stopped_at_once() {
+    let (_keep, silent) = std::sync::mpsc::channel();
+    let child = std::process::Command::new("/bin/sleep")
+        .arg("600")
+        .spawn()
+        .unwrap();
+    let mut client = Client::over(Silent(silent), std::io::sink());
+    client.answer_within(Duration::ZERO);
+    let mut preview = Preview::playing(Running { child, client }, "start", &[]);
+    assert_eq!(crate::PreviewStatus::of(&preview).state, "playing");
+    let first = preview.client().unwrap().initialize("test").unwrap_err();
+    assert!(
+        first.to_string().contains("did not answer in time"),
+        "{first}"
+    );
+    assert_eq!(preview.state(), crate::PlayState::NotAnswering);
+    assert_eq!(crate::PreviewStatus::of(&preview).state, "not answering");
+    let next = preview.pause().unwrap_err().to_string();
+    assert!(next.contains("is not answering"), "{next}");
+    preview.stop();
+    assert_eq!(preview.state(), crate::PlayState::Stopped);
+}
+
+/// A connection's read side holding the frames given, then silent while `_keep` lives.
+#[cfg(unix)]
+struct Answers(std::io::Cursor<Vec<u8>>, std::sync::mpsc::Receiver<Vec<u8>>);
+
+#[cfg(unix)]
+impl std::io::Read for Answers {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.0.read(buf)?;
+        if n == 0 {
+            drop(self.1.recv());
+        }
+        Ok(n)
+    }
+}
+
+// spec BRIDGE-4.9: a breakpoint the running game refuses is not kept, so asking again is refused
+// again rather than taking away one that was never set
+#[cfg(unix)]
+#[test]
+fn a_breakpoint_the_game_refuses_is_not_kept() {
+    let welcome = Message::Response {
+        id: Some(Id::Number(1)),
+        outcome: Ok(json!({ "capabilities": { "breakpoint/set": true } })),
+    };
+    let mut frames = Vec::new();
+    write_frame(&mut frames, &welcome.to_bytes()).unwrap();
+    for id in 2..=4 {
+        let refusal = Message::Response {
+            id: Some(Id::Number(id)),
+            outcome: Err(RpcError::new(
+                ErrorCode::InvalidParams,
+                "no statement is on line 285 of weapons.qc",
+            )),
+        };
+        write_frame(&mut frames, &refusal.to_bytes()).unwrap();
+    }
+    let shutdown = Message::Response {
+        id: Some(Id::Number(5)),
+        outcome: Ok(json!({})),
+    };
+    write_frame(&mut frames, &shutdown.to_bytes()).unwrap();
+    let (_keep, wait) = std::sync::mpsc::channel();
+    // A host that takes `shutdown` and exits, so Stop does not wait for it.
+    let child = std::process::Command::new("/usr/bin/true").spawn().unwrap();
+    let mut client = Client::over(Answers(std::io::Cursor::new(frames), wait), std::io::sink());
+    client.initialize("test").unwrap();
+    let mut preview = Preview::playing(Running { child, client }, "start", &[]);
+    for _ in 0..3 {
+        let refused = preview
+            .toggle_breakpoint(std::path::Path::new("weapons.qc"), 285)
+            .unwrap_err();
+        assert!(
+            refused.to_string().contains("no statement is on line 285"),
+            "{refused}"
+        );
+        assert!(preview.debugger().breakpoints().is_empty());
+    }
+    preview.stop();
+}
+
+// spec BRIDGE-4.9: a breakpoint the host did not answer in time is kept, without an id, since the
+// host may still set it and stop the game there
+#[cfg(unix)]
+#[test]
+fn a_breakpoint_the_host_did_not_answer_is_kept() {
+    // The host answers initialize, offering breakpoints, then nothing more.
+    let welcome = Message::Response {
+        id: Some(Id::Number(1)),
+        outcome: Ok(json!({ "capabilities": { "breakpoint/set": true } })),
+    };
+    let mut frames = Vec::new();
+    write_frame(&mut frames, &welcome.to_bytes()).unwrap();
+    let (_keep, wait) = std::sync::mpsc::channel();
+    let child = std::process::Command::new("/bin/sleep")
+        .arg("600")
+        .spawn()
+        .unwrap();
+    let mut client = Client::over(Answers(std::io::Cursor::new(frames), wait), std::io::sink());
+    client.initialize("test").unwrap();
+    client.answer_within(Duration::ZERO);
+    let mut preview = Preview::playing(Running { child, client }, "start", &[]);
+    let late = preview.toggle_breakpoint(std::path::Path::new("weapons.qc"), 286);
+    assert!(
+        late.unwrap_err()
+            .to_string()
+            .contains("did not answer in time")
+    );
+    let kept = preview.debugger().breakpoints();
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0].id, None);
+    preview.stop();
+}

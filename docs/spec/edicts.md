@@ -378,6 +378,12 @@ can cause the client to think the entity morphed into something else".
   0.1 seconds each (EDICT-10), so play starts with the clock at 1.2. The `frametime` global is
   not set for these two frames: it keeps the progs file's value, or whatever the spawn
   functions stored.
+- **EDICT-8.10** An entity whose `classname` is the empty string is not one with no classname:
+  `ED_ParseEpair` stores it as a new string (`*(string_t *)d = ED_NewString (s) - pr_strings;`),
+  which is not 0, so `if (!ent->v.classname)` does not free it. `ED_FindFunction` then matches
+  function 0, whose name is the empty string, since qcc starts the table with an empty function
+  (`numfunctions = 1;`, `qcc/qcc.c`), and `PR_ExecuteProgram (0)` is `Host_Error
+  ("PR_ExecuteProgram: NULL function")`, which ends the map.
 
 ### Constants
 

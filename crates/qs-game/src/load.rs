@@ -15,10 +15,11 @@ use qs_mdl::spr::Sprite;
 use qs_render::{
     Camera, Degrees, Extras, Look, MapMesh, MeshBuilder, Palette, Pics, Placement, Play, Surface,
 };
-use qs_sim::debug::Debugger;
+use qs_sim::debug::{Debugger, locate};
 use qs_sim::localization::{Localization, RRE_LOC_FILE};
 use qs_sim::rerelease::patch_builtins;
-use qs_sim::{HostState, LoadOptions, SaveGame, SpawnParms, World};
+use qs_sim::spawn::LoadError;
+use qs_sim::{HostState, LoadOptions, SaveGame, SpawnParms, World, WorldError};
 use qs_vfs::zip::Zip;
 use qs_vfs::{Element, LoadedFile, StdFs, Vfs};
 
@@ -646,34 +647,37 @@ impl Args {
             protocol: self.protocol.version(),
             startup,
         };
+        // BRIDGE-3.4, WORLD-9.4: the line of each statement, from the `.lno` beside the progs when
+        // it is one for this progs (LNO-4.1).
+        let lines = read("progs.lno")
+            .ok()
+            .and_then(|bytes| LnoFile::read(&bytes).ok())
+            .filter(|lno| lno.matches_header(progs.header()).is_ok())
+            .map_or_default(|lno| lno.lines);
+        // BRIDGE-3.4: a load the QuakeC stops says where, as a failed frame's qc/error does.
+        let failed = |error: WorldError| Error::Load(load_failure(&progs, &lines, &error));
         let mut world = World::prepare(&progs, &map, &bsp, files()?, options)
             .map_err(|e| Error::Load(e.to_string()))?;
         // WORLD-9.6, WORLD-9.7: a level started from a debugged one spawns watched by its
         // breakpoints; a stop holds the load, and the rest of it waits for the spawning to end.
         let held = match watched {
             Some(Watched { debugger, level }) => HeldSpawn::spawn(&mut world, &progs, debugger)
-                .map_err(|e| Error::Load(e.to_string()))?
+                .map_err(failed)?
                 .map(|spawn| (spawn, level)),
             None => {
-                world
-                    .spawn_map(&progs)
-                    .map_err(|e| Error::Load(e.to_string()))?;
+                world.spawn_map(&progs).map_err(failed)?;
                 None
             }
         };
         if held.is_none() {
-            world
-                .settle(&progs)
-                .map_err(|e| Error::Load(e.to_string()))?;
+            world.settle(&progs).map_err(failed)?;
             // PHYS-10.5: a saved game is read over the settled map before the client enters.
             if let Some(save) = save {
                 world
                     .restore(&progs, save)
                     .map_err(|e| Error::Load(e.to_string()))?;
             }
-            world
-                .connect(&progs)
-                .map_err(|e| Error::Load(e.to_string()))?;
+            world.connect(&progs).map_err(failed)?;
         }
         let reporting = if self.bridge.is_some() {
             Reporting::Bridge
@@ -683,13 +687,6 @@ impl Args {
         let mut game = Game::new(world, progs_bytes.clone(), reporting);
         // INPUT-3.7: what the startup configuration printed, shown as the map starts.
         game.report_console();
-        // BRIDGE-3.4, WORLD-9.4: the line of each statement, from the `.lno` beside the progs when
-        // it is one for this progs (LNO-4.1).
-        let lines = read("progs.lno")
-            .ok()
-            .and_then(|bytes| LnoFile::read(&bytes).ok())
-            .filter(|lno| lno.matches_header(progs.header()).is_ok())
-            .map_or_default(|lno| lno.lines);
         game.set_lines(lines);
         game.set_files(files()?);
         match held {
@@ -826,5 +823,25 @@ impl Args {
     pub(crate) fn saves(&self) -> [Option<Vec<u8>>; MENU_SAVEGAMES] {
         let dir = self.game_dir();
         core::array::from_fn(|n| std::fs::read(dir.join(format!("s{n}.sav"))).ok())
+    }
+}
+
+/// What a load `error` stopped by the QuakeC says: its message, then the function it stopped in
+/// and, with the `.lno`'s `lines`, its file and line (BRIDGE-3.4), as a failed frame's
+/// `qc/error` names them, so the IDE can say where a spawn function failed.
+pub(crate) fn load_failure(progs: &Progs<'_>, lines: &[i32], error: &WorldError) -> String {
+    let run = match error {
+        WorldError::Spawn(LoadError::Run(run)) | WorldError::Frame(run) => run,
+        WorldError::Spawn(LoadError::Spawn(_)) | WorldError::Progs(_) => return error.to_string(),
+    };
+    let Some(inner) = run.trace.iter().find(|entry| entry.function > 0) else {
+        return error.to_string();
+    };
+    let place = locate(progs, lines, inner.function, inner.statement);
+    match place.source {
+        Some((file, line)) if line > 0 && !file.is_empty() => {
+            format!("{error}, in {} at {file}:{line}", place.function)
+        }
+        Some(_) | None => format!("{error}, in {}", place.function),
     }
 }

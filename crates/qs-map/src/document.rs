@@ -68,6 +68,8 @@ pub enum MapError {
     },
     /// A number to write is infinite or NaN.
     NotFinite,
+    /// An empty `classname`, which stops the game as the level loads (MAP-8.10, EDICT-8.10).
+    EmptyClassname,
 }
 
 impl fmt::Display for MapError {
@@ -93,6 +95,9 @@ impl fmt::Display for MapError {
                 write!(f, "{} cannot be written as a token", text.escape_ascii())
             }
             Self::NotFinite => f.write_str("a number to write is infinite or NaN"),
+            Self::EmptyClassname => f.write_str(
+                "an empty classname stops the game as the level loads: give the entity a class",
+            ),
         }
     }
 }
@@ -600,8 +605,12 @@ impl Entity {
     ///
     /// # Errors
     ///
-    /// [`MapError::Unwritable`] when either holds `"` or NUL.
+    /// [`MapError::Unwritable`] when either holds `"` or NUL, and [`MapError::EmptyClassname`]
+    /// for an empty `classname` (MAP-8.10).
     pub fn set(&mut self, key: &[u8], value: &[u8]) -> Result<(), MapError> {
+        if key == b"classname" && value.is_empty() {
+            return Err(MapError::EmptyClassname);
+        }
         let mut last_pair = None;
         let mut found = None;
         for (index, item) in self.items.iter().enumerate() {

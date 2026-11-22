@@ -362,7 +362,8 @@ key when the map loads (`WinQuake/pr_edict.c`, `ED_ParseEdict`, `ED_ParseEpair`,
 The engine reads a map's entities against the progs, not against a list of classes: a key
 works when it names a field, and an entity spawns when its `classname` names a function. So
 the editor checks a map the same way, and says what the engine will do. These are the
-editor's diagnostics; none of them stops the engine but MAP-8.4's function and field values.
+editor's diagnostics; none of them stops the engine but MAP-8.4's function and field values
+and MAP-8.10's empty classname.
 
 ### Behaviour
 
@@ -399,6 +400,9 @@ editor's diagnostics; none of them stops the engine but MAP-8.4's function and f
 - **MAP-8.9** A key of MAP-8.8 whose value no entity's `targetname` holds is reported: what it
   fires does not exist. A `targetname` that no such key names is reported: nothing in the map
   fires it.
+- **MAP-8.10** An entity whose `classname` is empty is reported: the engine stops loading the
+  map with `PR_ExecuteProgram: NULL function` (EDICT-8.10). The editor refuses to write an empty
+  `classname`, whatever command would write it.
 
 ## MAP-9 Rooms: TrenchBroom's layers and groups
 

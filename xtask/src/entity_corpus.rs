@@ -206,6 +206,7 @@ fn check_maps(dir: &Path, maps: &[(String, MapFile)]) -> Result<bool, String> {
         for diagnostic in schema.check(map) {
             let kind = match diagnostic.kind {
                 MapDiagnosticKind::NoClassname => "no classname",
+                MapDiagnosticKind::EmptyClassname => "empty classname",
                 MapDiagnosticKind::UnknownClass { .. } => "unknown classname",
                 MapDiagnosticKind::UnknownKey { .. } => "unknown key",
                 MapDiagnosticKind::BadValue { .. } => "bad value",
