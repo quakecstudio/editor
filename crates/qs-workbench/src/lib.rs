@@ -29,6 +29,7 @@ pub mod map_compile;
 pub mod map_filter;
 pub mod map_profile;
 pub mod models;
+pub mod next_edit;
 pub mod open_paths;
 mod preview;
 mod recent;
@@ -352,6 +353,8 @@ pub struct Workbench<L> {
     sent: u64,
     /// The staged edits waiting for a decision (P4-04).
     staged: staged::Staged,
+    /// The edits the editor's last one implies (P4-11).
+    next_edits: next_edit::NextEdits,
     /// The terminal tabs (P4-36).
     terminals: terminal::Terminals,
     /// The map open in the map view (P5-06).
@@ -380,6 +383,7 @@ impl<L: Loader> Workbench<L> {
             checker: None,
             sent: 0,
             staged: staged::Staged::default(),
+            next_edits: next_edit::NextEdits::default(),
             terminals: terminal::Terminals::default(),
             maps: MapStore::default(),
             profile: None,
@@ -444,6 +448,8 @@ impl<L: Loader> Workbench<L> {
         }
         self.problems = checked.problems;
         self.symbols = checked.symbols;
+        // The edit has been checked: the typing has paused long enough to ask the rename.
+        self.settle_next_edit();
         if let (Some(open), Some(file)) = (self.open.as_mut(), checked.file)
             && open.path == file.path
         {
@@ -494,6 +500,7 @@ impl<L: Loader> Workbench<L> {
         self.tabs.clear();
         self.history.clear();
         self.unsaved.clear();
+        self.next_edits.forget();
         Ok(())
     }
 

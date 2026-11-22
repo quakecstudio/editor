@@ -156,6 +156,8 @@ impl<L: Loader> Workbench<L> {
                 .map_err(WorkbenchError::Project)?;
             self.unsaved.remove(path);
         }
+        // The files are not the ones the suggestions were made from.
+        self.next_edits.forget();
         self.tree = tree(&self.host.files(), &root);
         self.problems = problems(&mut self.host);
         self.symbols = self.host.workspace_symbols();

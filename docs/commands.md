@@ -13,6 +13,9 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`code.fix`](#codefix) | Applies a quick fix for the diagnostics at a place in a file, the first unless one is named by its index in code.actions' list; the file is not saved. |
 | [`commands.list`](#commandslist) | Lists every command with its id, summary and parameter schema. |
 | [`edit.accept`](#editaccept) | Accepts staged hunks: their lines stay in the editor's text, unsaved, once each hunk of their file is decided. |
+| [`edit.accept_next`](#editaccept_next) | Makes the next suggested edit, giving the next place that says the old name the new one, in the editor's text of its file; nothing is saved. Tab in the code editor runs it. |
+| [`edit.dismiss_next`](#editdismiss_next) | Drops the suggested edits. Escape in the code editor runs it. |
+| [`edit.next`](#editnext) | Answers the next edit the last one implies: after a field's, a function's or a global's name is typed over where it is first declared, the next place that still says the old name, and how many are left. |
 | [`edit.redo`](#editredo) | Makes the most recently undone change again. |
 | [`edit.reject`](#editreject) | Rejects staged hunks: the lines they replaced come back, byte for byte. |
 | [`edit.repeat`](#editrepeat) | Makes the most recent map edit once more: same command, same arguments. |
@@ -490,6 +493,54 @@ Parameters:
     "hunks"
   ],
   "title": "HunksParams",
+  "type": "object"
+}
+```
+
+## `edit.accept_next`
+
+Makes the next suggested edit, giving the next place that says the old name the new one, in the editor's text of its file; nothing is saved. Tab in the code editor runs it.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `edit.dismiss_next`
+
+Drops the suggested edits. Escape in the code editor runs it.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `edit.next`
+
+Answers the next edit the last one implies: after a field's, a function's or a global's name is typed over where it is first declared, the next place that still says the old name, and how many are left.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
   "type": "object"
 }
 ```

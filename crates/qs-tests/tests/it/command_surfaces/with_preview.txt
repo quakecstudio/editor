@@ -5,6 +5,9 @@ code.actions
 code.fix
 commands.list
 edit.accept
+edit.accept_next
+edit.dismiss_next
+edit.next
 edit.redo
 edit.reject
 edit.repeat

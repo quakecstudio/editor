@@ -166,6 +166,19 @@ pub struct LineNote {
     pub fixable: Fixable,
 }
 
+/// An edit suggested at a line's end, in faint text, and after it the words that say which
+/// key takes it, in a pill, as the approved play-loop mockup shows a next-edit suggestion
+/// (P4-11, UI-7).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LineSuggestion {
+    /// The line, from 0.
+    pub line: usize,
+    /// What is suggested.
+    pub text: String,
+    /// The pill's words.
+    pub accept: String,
+}
+
 /// Whether long lines wrap at the view's width (P4-32).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Wrap {
@@ -239,6 +252,8 @@ pub struct EditorView {
     inlay_revision: u64,
     /// The notes at the ends of lines, by line (P4-34).
     notes: BTreeMap<usize, LineNote>,
+    /// The suggested edit shown at a line's end, in place of that line's note (P4-11).
+    suggestion: Option<LineSuggestion>,
     /// Where each fixable note was drawn in the last frame, and its line.
     note_rects: Vec<(Rect, usize)>,
     /// The line of the fixable note a click landed on, not yet taken.
@@ -278,6 +293,7 @@ impl EditorView {
             inlays: BTreeMap::new(),
             inlay_revision: 0,
             notes: BTreeMap::new(),
+            suggestion: None,
             note_rects: Vec::new(),
             note_click: None,
             wrap_width: f32::INFINITY,
@@ -306,6 +322,28 @@ impl EditorView {
         for note in notes {
             self.notes.entry(note.line).or_insert(note);
         }
+    }
+
+    /// Shows `suggestion` at the end of its line, in place of that line's note, or none.
+    pub fn set_suggestion(&mut self, suggestion: Option<LineSuggestion>) {
+        self.suggestion = suggestion;
+    }
+
+    /// Whether `line` is one of the rows the view draws: scrolled to, and in no closed
+    /// fold.
+    pub fn shows_line(&mut self, line: usize) -> bool {
+        let first = self
+            .first_line
+            .min(self.state.buffer().line_count().saturating_sub(1));
+        self.rows(first, self.visible)
+            .iter()
+            .any(|row| matches!(row, Row::Line { line: shown, .. } if *shown == line))
+    }
+
+    /// The suggestion shown, if one is.
+    #[must_use]
+    pub const fn suggestion(&self) -> Option<&LineSuggestion> {
+        self.suggestion.as_ref()
     }
 
     /// The line whose fixable note a click landed on since this was last asked.
@@ -1288,12 +1326,14 @@ impl EditorView {
                 (text_left, text_x),
                 number,
             );
-            if let Some(note) = self.notes.get(&line) {
-                let end = galley.rows.last().map_or(0.0, |row| row.rect().right());
-                let at = Pos2::new(text_x + end + NOTE_GAP, text_top);
-                if let Some(clickable) = paint_note(&text_painter, style, note, at, row_height) {
-                    note_rects.push((clickable, line));
-                }
+            let end = galley.rows.last().map_or(0.0, |row| row.rect().right());
+            let at = Pos2::new(text_x + end + NOTE_GAP, text_top);
+            if let Some(suggestion) = self.suggestion.as_ref().filter(|s| s.line == line) {
+                paint_suggestion(&text_painter, style, suggestion, at, row_height);
+            } else if let Some(note) = self.notes.get(&line)
+                && let Some(clickable) = paint_note(&text_painter, style, note, at, row_height)
+            {
+                note_rects.push((clickable, line));
             }
             if let Some(fold) = self.folds.start_at(line) {
                 fold_mark(
@@ -1625,6 +1665,48 @@ fn paint_note(
         color,
     );
     (note.fixable == Fixable::Yes).then(|| Rect::from_min_max(at, drawn.max))
+}
+
+/// The space between a suggestion's text and its pill, and the pill's padding at each side
+/// and its corners' radius, in points: the mockup's 12, 6 and 4.
+const PILL_GAP: f32 = 12.0;
+const PILL_PAD: f32 = 6.0;
+const PILL_RADIUS: f32 = 4.0;
+
+/// Paints `suggestion` from `at`: its text in the inlay hints' faint colour, then its pill,
+/// a rounded outline around the key's words.
+fn paint_suggestion(
+    painter: &egui::Painter,
+    style: &ViewStyle,
+    suggestion: &LineSuggestion,
+    at: Pos2,
+    row_height: f32,
+) {
+    let text = painter.text(
+        at,
+        egui::Align2::LEFT_TOP,
+        &suggestion.text,
+        style.font.clone(),
+        style.inlay,
+    );
+    let words = Pos2::new(text.right() + PILL_GAP + PILL_PAD, at.y);
+    let words = painter.text(
+        words,
+        egui::Align2::LEFT_TOP,
+        &suggestion.accept,
+        style.font.clone(),
+        style.inlay,
+    );
+    let pill = Rect::from_min_max(
+        Pos2::new(words.left() - PILL_PAD, at.y),
+        Pos2::new(words.right() + PILL_PAD, at.y + row_height),
+    );
+    painter.rect_stroke(
+        pill,
+        PILL_RADIUS,
+        egui::Stroke::new(1.0, style.indent_guide),
+        egui::StrokeKind::Inside,
+    );
 }
 
 /// The width of a change mark in the gutter, in points.

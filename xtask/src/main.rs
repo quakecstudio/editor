@@ -108,6 +108,7 @@ mod light_diff;
 mod lsp_corpus;
 mod map_corpus;
 mod map_diff;
+mod next_edit_corpus;
 mod notices;
 mod offline;
 mod oracles;
@@ -199,6 +200,8 @@ enum Task {
     Notices(notices::Args),
     /// The language server over a codebase, against its golden file.
     LspCorpus(lsp_corpus::Args),
+    /// Next-edit suggestions over a codebase: a field retyped, each use suggested and taken.
+    NextEditCorpus(next_edit_corpus::Args),
     /// Every .map round-trips.
     MapCorpus(map_corpus::Args),
     /// The map compiler differential: qs-map-bsp against id's and ericw-tools' qbsp.
@@ -258,6 +261,7 @@ fn run(root: &Path, task: &Task, ci_steps: &[ci::Step]) -> bool {
         Task::Fuzz(args) => ("fuzz", fuzz::main(root, args)),
         Task::LexCorpus(args) => ("lex-corpus", lex_corpus::main(root, args)),
         Task::LspCorpus(args) => ("lsp-corpus", lsp_corpus::main(root, args)),
+        Task::NextEditCorpus(args) => ("next-edit-corpus", next_edit_corpus::main(root, args)),
         Task::MapCorpus(args) => ("map-corpus", map_corpus::main(root, args)),
         Task::MapDiff(args) => (
             "map-diff",
