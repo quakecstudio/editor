@@ -49,7 +49,8 @@ fn d(code: Code, message: &str) -> (Code, String) {
 }
 
 // spec FTEF-34.1: `return;` in a function that returns a value warns once, and not after
-// `return =`; a value is cast to the return type; a value returned from a `void` function warns;
+// `return =`, which stores its value with no cast; a value is cast to the return type; a value
+// returned from a `void` function warns;
 // `__NULL__` returns from any function
 // spec QCD-7.98: W0256 for a bare `return;` in a function that returns a value
 // spec QCD-7.99: W0257 for a value returned from a `void` function
@@ -64,13 +65,18 @@ fn returns() {
     assert_eq!(function("float", "if (a) return 1; return;"), [nothing]);
     for quiet in [
         "return = 1; return;",
-        "return = s;",
+        "return = a;",
         "return __NULL__;",
         "return 0;",
         "return a;",
     ] {
         assert_eq!(function("float", quiet), [], "{quiet}");
     }
+    // FTEF-34.1: `return =` stores with no cast, so another type warns as a store does.
+    assert_eq!(
+        function("float", "return = s;"),
+        [d(Code::W0240, "type mismatch: string s to float ret*")]
+    );
     assert_eq!(
         function("float", "return s;"),
         [d(Code::E0213, "Cannot cast from string to float")]

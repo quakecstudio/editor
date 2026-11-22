@@ -33,9 +33,8 @@ compiler read it.
 - **Arrays** with a size, `float xs[8];` (FTEF-5.1).
 - **`struct` and `union`** by name: `struct Name { float a; vector b; };`, a child `struct
   Child : Parent { ... }`, members that are arrays, pointers, functions or bitfields, and
-  `{ .a = 1, .b = '0 0 1' }` to initialise by member (FTEF-6.1 to FTEF-6.5, FTEF-16.11).
-  Give a struct its `{ ... }` at file level; in a function body declare it and assign its
-  members, since this compiler stops on a local struct with a brace initialiser.
+  `{ .a = 1, .b = '0 0 1' }` to initialise by member (FTEF-6.1 to FTEF-6.5, FTEF-16.11), at
+  file level or in a function body.
 - **`typedef OldType NewName;`** for any type (FTEF-7.1).
 - **`enumflags { A, B, C };`** are 1, 2, 4: each unvalued name doubles the last (FTEF-8.1).
   `enum class Name : int { ... }` needs its base type (FTEF-8.5).
@@ -89,6 +88,8 @@ void() Barrel::Barrel =
 - A `for` header may hold several expressions separated by `,` (FTEF-16.9), and so may an
   expression statement (FTEF-18.5).
 - A global's initialiser may be any expression (FTEF-18.1).
+- `return = e;` sets the value the function returns and goes on; the function returns it at
+  its end or at a bare `return;` (FTEF-18.7).
 - A function type may return a function (FTEF-18.15).
 - `$framesave` names frames as `$frame` does (FTEF-18.14).
 
@@ -108,7 +109,6 @@ other files need in the header the project already has for it.
 | a class, a pointer or an FTE builtin in a mod for id's VM | compiles to something the engine cannot run, or an error | what the files around yours use; check `project.info` and `engine.builtins` |
 | `int` counters in a mod for id's VM | `E0320`: the VM has no integer opcodes | floats |
 | `float f = 5 / 2;` expected to be 2 | 2.5: plain numbers are floats | `floor (5 / 2)` |
-| `struct Pair p = { 1, 2 };` in a body | this compiler stops | declare, then assign the members |
 | `if (a && b ())` to guard `b` | `b` runs anyway | nested `if`s |
 | a new declaration in a `.qc` file that another file needs | unknown there | the project's header, included by both |
 | vanilla habits kept out of caution, `local`, `v_x`, `0 - x` | they compile, and stand out | the file's own style |

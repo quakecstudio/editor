@@ -420,6 +420,38 @@ impl Resolver<'_> {
         })
     }
 
+    /// The members of the struct or union `ty` names, its parent's first, as its braces walk
+    /// them (`type->params`, FTE-14.10), when each starts at a word and the model lays the type
+    /// out: `None` for one with a bitfield, an 8- or 16-bit integer or an unnamed member, which
+    /// no word places.
+    pub(in crate::resolve) fn members(&self, ty: &Type) -> Option<Vec<MemberShape>> {
+        let shape = self.struct_shape(ty, MAX_CLASS_DEPTH)?;
+        (Some(shape.members.len()) == self.declared_members(ty, MAX_CLASS_DEPTH))
+            .then_some(shape.members)
+    }
+
+    /// How many members the struct or union `ty` names declares, its parent's with them, a
+    /// `static` one, a global, left out.
+    fn declared_members(&self, ty: &Type, depth: usize) -> Option<usize> {
+        let depth = depth.checked_sub(1)?;
+        let Type::Named(name) = self.resolved(ty) else {
+            return None;
+        };
+        let def = self
+            .struct_defs
+            .get(&self.type_key(self.struct_type_name(&name)?))?;
+        let parent = match &def.parent {
+            Some(parent) => self.declared_members(&Type::Named(parent.as_str().into()), depth)?,
+            None => 0,
+        };
+        let own = def
+            .members
+            .iter()
+            .filter(|member| !member.is_static)
+            .count();
+        parent.checked_add(own)
+    }
+
     /// The layout of the struct or union `ty` names, when the model lays it out.
     fn struct_shape(&self, ty: &Type, depth: usize) -> Option<StructShape> {
         let depth = depth.checked_sub(1)?;

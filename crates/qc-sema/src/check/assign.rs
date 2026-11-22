@@ -28,9 +28,28 @@ use crate::check::reference::word_type;
 use crate::check::truth::{Test, is_truth};
 use crate::check::{Constness, Fold, Reference, Sym, Value, ValueUse};
 use crate::ir;
+
 use crate::lower::{Qualifier, declares};
 use crate::ty::{SimpleType, Type};
 use crate::{VECTOR_WORDS, VECTOR_WORDS_FLOAT};
+
+/// One part of an initialiser's braces: a value, or braces of its own.
+enum Part {
+    /// An expression.
+    Value(ast::Expr),
+    /// `{ ... }`.
+    Braces(ast::AggregateInit),
+}
+
+impl Part {
+    /// The part `node` of some braces is, none for a node that is neither.
+    fn of(node: SyntaxNode) -> Option<Self> {
+        match ast::AggregateInit::cast(node.clone()) {
+            Some(braces) => Some(Self::Braces(braces)),
+            None => ast::Expr::cast(node).map(Self::Value),
+        }
+    }
+}
 
 /// What a compound assignment updates in place through an address (FTEF-29.17, FTEF-29.22).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -418,7 +437,7 @@ impl Checker<'_> {
             let message = format!("Assignment to constant {}", lhs.label());
             self.env.report(Code::W0241, span, message);
         }
-        self.store_mismatch(&stored, &lhs, &target, span)?;
+        self.store_mismatch(&stored, &lhs.place(), &target, span)?;
         let packed = self
             .narrow_bitfield(&lhs, span)
             .unwrap_or_else(|| lhs.clone());
@@ -815,10 +834,10 @@ impl Checker<'_> {
     /// or a parent's is the target's by `typecmp_lax`, or one is a `variant` or the value a
     /// `void*` or `variant*` stored into a pointer, a number is converted to the target's type and
     /// anything else is the warning "type mismatch: A NAME to B TARGET".
-    fn store_mismatch(
+    pub(super) fn store_mismatch(
         &mut self,
         value: &Value,
-        lhs: &Value,
+        place: &str,
         target: &Type,
         span: Span,
     ) -> Result<(), Fatal> {
@@ -843,7 +862,7 @@ impl Checker<'_> {
             self.env.type_name(&value.ty),
             value.label(),
             self.env.type_name(target),
-            lhs.place()
+            place
         );
         self.env.report(Code::W0240, span, message);
         Ok(())
@@ -856,7 +875,7 @@ impl Checker<'_> {
     /// (`QCC_SupplyConversion(QCC_PR_GenerateLogicalTruth(source, "cannot convert to
     /// boolean"), dest->cast->parentclass->type, true)`). A value the cast already made a
     /// number of the truth value's parent is compared again here, as FTEQCC compares it.
-    fn store_converted(&mut self, value: Value, target: &Type, span: Span) -> Checked {
+    pub(super) fn store_converted(&mut self, value: Value, target: &Type, span: Span) -> Checked {
         if value.known().is_some_and(Constant::null) {
             return Ok(value);
         }
@@ -1032,7 +1051,7 @@ impl Checker<'_> {
         } else {
             operand.ty.clone()
         };
-        self.store_mismatch(&updated, operand, &target, span)?;
+        self.store_mismatch(&updated, &operand.place(), &target, span)?;
         // FTEF-6.15: a step of a bitfield or a packed element is not followed.
         if operand.packs() && !self.global {
             self.followed = false;
@@ -1043,6 +1062,11 @@ impl Checker<'_> {
         self.not_an_lvalue(operand, span);
         self.freed_again(operand, span);
         Ok(copy.or(loaded))
+    }
+
+    /// Whether `ty` is a struct or a union.
+    fn aggregate_type(&self, ty: &Type) -> bool {
+        matches!(self.etype(ty), Some(Etype::Struct | Etype::Union))
     }
 
     /// FTE-13.1: `vector v = {x, y, z};` of a local not `static`, each element read and
@@ -1063,12 +1087,12 @@ impl Checker<'_> {
         }
         let local = self.env.reference(start);
         let array = local.is_some_and(|def| self.env.is_array(def));
+        let ty = self.env.local_type(start);
         // A vector's own braces are its components'; an array of vectors' are its elements'.
         let vector = !array
-            && self
-                .env
-                .local_type(start)
-                .is_some_and(|ty| self.etype(&ty) == Some(Etype::Vector));
+            && ty
+                .as_ref()
+                .is_some_and(|ty| self.etype(ty) == Some(Etype::Vector));
         let nested = aggregate.syntax().children().count() != elements.len();
         if array && !nested && !self.env.local_static(start) {
             return self.array_aggregate(declarator, local, &elements);
@@ -1082,20 +1106,58 @@ impl Checker<'_> {
             }
             return Ok(());
         }
-        if !vector || elements.len() != qc_types::PROGS_VECTOR_SLOTS {
+        if let Some(ty) = ty.filter(|ty| !array && self.aggregate_type(ty)) {
+            // A `const` local's braces are its value at compile time, as an array's are.
+            if declarator
+                .syntax()
+                .parent()
+                .is_some_and(|decl| declares(&decl, &Qualifier::Const))
+            {
+                self.constant_local(local);
+                return Ok(());
+            }
+            return self.struct_aggregate(aggregate, (local, 0), &ty);
+        }
+        if !vector {
             self.followed = false;
             return Ok(());
         }
-        let local = self.env.reference(start);
-        for (word, element) in (0_u32..).zip(elements) {
-            let value = self.value(Some(element))?;
-            self.generated.push(ir::BodyStatement {
-                a: self.name_of(&value),
-                b: local.map(|def| ir::Name::Def(def, word)),
-                ..ir::BodyStatement::bare(Op::StoreF)
-            });
-            self.read_returned(&value);
-            self.last_temp = None;
+        let parts: Vec<Option<Part>> = aggregate.syntax().children().map(Part::of).collect();
+        self.vector_parts(parts, |word| local.map(|def| ir::Name::Def(def, word)))
+    }
+
+    /// The local `local`'s value at compile time, which the code generator writes from its
+    /// initialiser (FTEF-32.13).
+    fn constant_local(&mut self, local: Option<crate::DefId>) {
+        match local {
+            Some(local) => {
+                let at = self.next_made();
+                self.effects
+                    .push((at, ir::Effect::Constant(ir::Name::Def(local, 0))));
+            }
+            None => self.followed = false,
+        }
+    }
+
+    /// A vector's braces, read as an array of up to three floats ("vectors can be treated as
+    /// an array of 3 floats", FTE-14.10): each value cast to a float and stored to the word
+    /// `to` gives, or folded into the statement that made it; a word none is given is not
+    /// filled. More parts, or braces of their own, are not followed.
+    fn vector_parts(
+        &mut self,
+        parts: Vec<Option<Part>>,
+        to: impl Fn(u32) -> Option<ir::Name>,
+    ) -> Result<(), Fatal> {
+        if parts.len() > qc_types::PROGS_VECTOR_SLOTS {
+            self.followed = false;
+            return Ok(());
+        }
+        let float = Type::Simple(SimpleType::Float);
+        for (word, part) in (0_u32..).zip(parts) {
+            match part {
+                Some(Part::Value(element)) => self.store_part(&element, to(word), &float)?,
+                Some(Part::Braces(_)) | None => self.followed = false,
+            }
         }
         Ok(())
     }
@@ -1672,14 +1734,7 @@ impl Checker<'_> {
             .is_some_and(|decl| declares(&decl, &Qualifier::Const));
         // Its words are its value at compile time, which the code generator writes.
         if constant {
-            match local {
-                Some(local) => {
-                    let at = self.next_made();
-                    self.effects
-                        .push((at, ir::Effect::Constant(ir::Name::Def(local, 0))));
-                }
-                None => self.followed = false,
-            }
+            self.constant_local(local);
             return Ok(());
         }
         let Some(ty) = declarator
@@ -1690,29 +1745,187 @@ impl Checker<'_> {
             return Ok(());
         };
         let width = self.env.layout(&ty).map_or(1, |l| l.words);
-        let span = declarator.syntax().span();
         for (at, element) in (0_u32..).zip(elements) {
-            let value = self.value(Some(element.clone()))?;
-            // An element of another type is converted as it is stored, which the body does not
-            // follow; the check reports one no cast takes.
-            if self.etype(&value.ty) != self.etype(&ty) {
-                self.followed = false;
-            }
             let to = local.map(|def| ir::Name::Def(def, at.saturating_mul(width)));
-            let wider = self.generated.last().is_some_and(|last| {
-                let made = opcodes::row(last.op).map(|row| row.types[2].etype());
-                made.map_or(1, Etype::words) > self.etype(&ty).map_or(1, Etype::words)
-            });
-            if value.temp.is_some() && value.temp == self.last_temp && !wider {
-                self.fold_into(&value, to);
-            } else {
-                // FTE-14.9: each element is stored as a local's initialiser is.
-                self.store_initialiser((&value, self.name_of(&value)), to, &ty, span);
-            }
-            self.read_returned(&value);
-            self.last_temp = None;
+            self.store_part(element, to, &ty)?;
         }
         Ok(())
+    }
+
+    /// `return = e;` (FTEF-18.7): `value` stored to the `ret*` local of the function's return
+    /// type `ret`, by the store of the type, or folded into the statement that made it
+    /// (FTEF-29.13).
+    pub(super) fn store_returned(&mut self, value: &Value, ret: &Type, span: Span) {
+        let to = Some(ir::Name::RetLocal);
+        if value.temp.is_some() && value.temp == self.last_temp && !self.wider_than(ret) {
+            self.fold_into(value, to);
+        } else {
+            let op = self.store_of(ret, span);
+            self.generated.push(ir::BodyStatement {
+                a: self.store_source(op, value),
+                b: to,
+                ..ir::BodyStatement::bare(op)
+            });
+        }
+        self.read_returned(value);
+        self.last_temp = None;
+    }
+
+    /// `value`, read from the initialiser `init`, converted to `ty` with the cast's warning
+    /// (FTEF-32.4); the resolver reports the cast of a literal, a name, a cast of a literal and
+    /// `_()` itself ([`resolver_casts`]), so here they are only converted.
+    fn initialiser_cast(&mut self, value: &Value, init: &ast::Expr, ty: &Type) -> Checked {
+        let span = init.syntax().span();
+        if resolver_casts(init) {
+            self.convert_to(value, ty, span)
+        } else {
+            self.cast_to(value, ty, span)
+        }
+    }
+
+    /// One value of a local's braces, `part`, read and stored to the words `to` of the local, of
+    /// type `ty`: by the `STORE_*` of [`Checker::initialiser_steps`], as a local's initialiser
+    /// is (FTE-14.9), or folded into the statement that made it (FTEF-29.13). A value of
+    /// another type is cast to `ty` first, with the cast's warning, as a local's initialiser's
+    /// is (FTEF-32.4): a float for a vector member is `'1 1 1'` times it, or a vector constant.
+    fn store_part(
+        &mut self,
+        part: &ast::Expr,
+        to: Option<ir::Name>,
+        ty: &Type,
+    ) -> Result<(), Fatal> {
+        let span = part.syntax().span();
+        let value = self.value(Some(part.clone()))?;
+        if value.ty == Type::Unknown {
+            self.followed = false;
+            return Ok(());
+        }
+        let value = if self.etype(&value.ty) == self.etype(ty) {
+            value
+        } else {
+            self.initialiser_cast(&value, part, ty)?
+        };
+        // DIFF-14.11: no store folds into a statement whose result is wider than the member.
+        if value.temp.is_some() && value.temp == self.last_temp && !self.wider_than(ty) {
+            self.fold_into(&value, to);
+        } else {
+            self.store_initialiser((&value, self.name_of(&value)), to, ty, span);
+        }
+        self.read_returned(&value);
+        self.last_temp = None;
+        Ok(())
+    }
+
+    /// A local struct's or union's braces, as `QCC_PR_ParseInitializerType` reads them
+    /// (FTE-14.10), stored from the word `base` of `local`: each part is its member's, in the
+    /// members' order or the one a `.name =` gives it, a value read and stored to the member's
+    /// words and a member's own braces read as its type's; then each member at a word no
+    /// part was stored at is stored a zero, so a union's other members are not. Braces of
+    /// more parts than members, and a value for a member that is an array, are not followed.
+    fn struct_aggregate(
+        &mut self,
+        aggregate: &ast::AggregateInit,
+        (local, base): (Option<crate::DefId>, u32),
+        ty: &Type,
+    ) -> Result<(), Fatal> {
+        let Some(members) = self.env.members(ty) else {
+            self.followed = false;
+            return Ok(());
+        };
+        let names = aggregate.designated_names();
+        // "designated initialisers require all members to be initialised the same way".
+        if !names.is_empty() && names.len() != aggregate.syntax().children().count() {
+            self.followed = false;
+            return Ok(());
+        }
+        let span = aggregate.syntax().span();
+        let word = |at: u32| local.map(|def| ir::Name::Def(def, base.saturating_add(at)));
+        // `isinited`: the words a part has been stored at, a union's members sharing one.
+        let mut set: Vec<u32> = Vec::new();
+        for (place, part) in aggregate.syntax().children().enumerate() {
+            let at = match names.get(place) {
+                Some(name) => members.iter().position(|member| member.name == *name),
+                None if names.is_empty() => Some(place),
+                None => None,
+            };
+            let member = at.and_then(|at| members.get(at));
+            match (member, Part::of(part)) {
+                (Some(member), Some(Part::Value(element))) if member.count == 1 => {
+                    set.push(member.word);
+                    self.store_part(&element, word(member.word), &member.ty)?;
+                }
+                (Some(member), Some(Part::Braces(braces))) => {
+                    set.push(member.word);
+                    let at = base.saturating_add(member.word);
+                    self.member_braces(&braces, (local, at), member)?;
+                }
+                // A part with no member is still read, for what the check reports of it.
+                (_, Some(Part::Value(element))) => {
+                    self.value(Some(element))?;
+                    self.followed = false;
+                }
+                (None, _) | (_, None) => self.followed = false,
+            }
+        }
+        // "anything not already set needs to be filled with a default value."
+        let zero = Value::constant(Constant::int(0));
+        for member in &members {
+            if !set.contains(&member.word) {
+                set.push(member.word);
+                // One store of the member's type, an array's too: FTEQCC's fill gives
+                // `QCC_PR_GenerateInitializerType` the member's type and no array size, so of
+                // an array only the first element is stored.
+                self.store_initialiser((&zero, None), word(member.word), &member.ty, span);
+            }
+        }
+        self.last_temp = None;
+        Ok(())
+    }
+
+    /// The braces of one member of a struct's braces, stored from the word `base` of
+    /// `local`: a struct's or a union's are its own members' ([`Checker::struct_aggregate`]),
+    /// a vector's up to three floats, each stored by `STORE_F` (FTE-13.1), and an array's its
+    /// elements, each a value or braces of the element's type. Any other is not followed.
+    fn member_braces(
+        &mut self,
+        braces: &ast::AggregateInit,
+        (local, base): (Option<crate::DefId>, u32),
+        member: &crate::MemberShape,
+    ) -> Result<(), Fatal> {
+        let word = |at: u32| local.map(|def| ir::Name::Def(def, base.saturating_add(at)));
+        let parts: Vec<Option<Part>> = braces.syntax().children().map(Part::of).collect();
+        if member.count > 1 {
+            let words = self.env.layout(&member.ty).map_or(1, |layout| layout.words);
+            let element = crate::MemberShape {
+                count: 1,
+                ..member.clone()
+            };
+            if parts.len() > usize::try_from(member.count).unwrap_or(usize::MAX) {
+                self.followed = false;
+            }
+            for (at, part) in (0..member.count).zip(parts) {
+                let at = at.saturating_mul(words);
+                match part {
+                    Some(Part::Value(value)) => {
+                        self.store_part(&value, word(at), &member.ty)?;
+                    }
+                    Some(Part::Braces(inner)) => {
+                        let at = base.saturating_add(at);
+                        self.member_braces(&inner, (local, at), &element)?;
+                    }
+                    None => self.followed = false,
+                }
+            }
+            return Ok(());
+        }
+        if self.aggregate_type(&member.ty) {
+            return self.struct_aggregate(braces, (local, base), &member.ty);
+        }
+        if self.etype(&member.ty) != Some(Etype::Vector) {
+            self.followed = false;
+            return Ok(());
+        }
+        self.vector_parts(parts, word)
     }
 
     /// A store's read of `value`: a call's value is then out of the return global's keeping.
@@ -2189,20 +2402,8 @@ impl Checker<'_> {
             self.followed = false;
         }
         let span = init.syntax().span();
-        let resolver_casts = match &init {
-            ast::Expr::Literal(_) | ast::Expr::Name(_) => true,
-            ast::Expr::Cast(cast) => matches!(cast.operand(), Some(ast::Expr::Literal(_))),
-            ast::Expr::Call(call) => matches!(
-                call.callee(),
-                Some(ast::Expr::Name(name)) if name.name().is_some_and(|t| t.text_lossless() == "_")
-            ),
-            _ => false,
-        };
-        let value = if resolver_casts {
-            self.convert_to(&value, &ty, span)?
-        } else {
-            self.cast_to(&value, &ty, span)?
-        };
+        let resolver_casts = resolver_casts(&init);
+        let value = self.initialiser_cast(&value, &init, &ty)?;
         // FTEF-19.70: a `static` local's value is a constant, which the resolver checks of a
         // name and an element of one.
         let element = matches!(
@@ -2422,5 +2623,19 @@ impl Zeroes {
             kind: ir::ImmediateKind::Integer,
             words: [0, 0, 0],
         })
+    }
+}
+
+/// Whether the resolver's initialiser check reports the cast of `init`: a literal, a name, a
+/// cast of a literal or `_()` (FTEF-32.4).
+fn resolver_casts(init: &ast::Expr) -> bool {
+    match init {
+        ast::Expr::Literal(_) | ast::Expr::Name(_) => true,
+        ast::Expr::Cast(cast) => matches!(cast.operand(), Some(ast::Expr::Literal(_))),
+        ast::Expr::Call(call) => matches!(
+            call.callee(),
+            Some(ast::Expr::Name(name)) if name.name().is_some_and(|t| t.text_lossless() == "_")
+        ),
+        _ => false,
     }
 }

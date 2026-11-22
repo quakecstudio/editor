@@ -198,6 +198,9 @@ pub(crate) trait Env {
     /// The size of `ty` as FTEQCC lays it out (FTEF-6.13), `None` when the model does not follow
     /// it.
     fn layout(&self, ty: &Type) -> Option<Layout>;
+    /// The members of the struct or union `ty` as its braces walk them, each starting at a
+    /// word, `None` when one does not or the model does not lay the type out.
+    fn members(&self, ty: &Type) -> Option<Vec<crate::MemberShape>>;
     /// Whether an error, which ends FTEQCC's parse of the function (`QCC_PR_ParseError`), was
     /// reported in the body; a warning made an error is none.
     fn failed(&self) -> bool;

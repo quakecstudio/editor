@@ -1107,6 +1107,8 @@ fn a_generated_for_stores_the_local_its_clause_declares() {
 
 // FTE-13.1, FTEF-31.8: a vector local's aggregate stores each element to its component, and a
 // `.vector` field at a constant index is its component's field, read by `LOAD_F`
+// spec FTE-14.10: a vector's braces are floats each folded into the statement that made it, as
+// the pinned FTEQCC folds the `LOAD_F` here into the first component (`-Tid`, 2026-11-22)
 #[test]
 fn a_generated_aggregate_stores_each_component() {
     use crate::ir::Name;
@@ -1126,11 +1128,11 @@ fn a_generated_aggregate_stores_each_component() {
     let v = body.locals().first().map(|&(_, id)| id).unwrap();
     assert_eq!(generated[0].op, Op::LoadF);
     assert_eq!(generated[0].b, Some(Name::Def(def("md_x"), 0)));
-    let stores: Vec<_> = generated[1..4].iter().map(|s| (s.op, s.b)).collect();
+    assert_eq!(generated[0].c, Some(Name::Def(v, 0)));
+    let stores: Vec<_> = generated[1..3].iter().map(|s| (s.op, s.b)).collect();
     assert_eq!(
         stores,
         [
-            (Op::StoreF, Some(Name::Def(v, 0))),
             (Op::StoreF, Some(Name::Def(v, 1))),
             (Op::StoreF, Some(Name::Def(v, 2))),
         ]

@@ -273,6 +273,7 @@ void test_default_parameter() { if (with_default(1) != 5) error(\"default\"); if
 
     /// What the `fteqcc` topic says compiles and runs for id's VM, beyond the rerelease's.
     const FTEQCC: &str = "\
+float hits;\n\
 void(string e) error = #10;\n\
 class Barrel : entity { float charge; virtual void() Explode; void() Barrel; };\n\
 void() Barrel::Explode = { charge = 0; };\n\
@@ -283,6 +284,9 @@ struct Pair made = { .a = 1, .b = '0 0 1' };\n\
 void test_enumflags_double() { if (FA + FB + FC != 7) error(\"enumflags\"); }\n\
 void test_a_struct_at_file_level() { if (made.a != 1) error(\"a\"); if (made.b != '0 0 1') error(\"b\"); }\n\
 void test_a_local_struct_assigned() { struct Pair p; p.a = 2; if (p.a != 2) error(\"p.a\"); }\n\
+void test_a_local_struct_in_braces() { struct Pair p = { .b = '1 2 3' }; if (p.a != 0) error(\"p.a\"); if (p.b != '1 2 3') error(\"p.b\"); struct Pair q = { 4, '0 0 5' }; vector w = q.b; if (q.a + w.z != 9) error(\"q\"); }\n\
+float set_then_go_on() { return = 6; hits = hits + 1; }\n\
+void test_return_equals() { hits = 0; if (set_then_go_on() != 6) error(\"return =\"); if (hits != 1) error(\"went on\"); }\n\
 void test_a_vector_of_expressions() { float n = 3; vector v = [1, 2, n]; if (v.z != 3) error(\"[x, y, z]\"); }\n\
 void test_adjacent_strings_join() { string s = \"a\" \"b\"; if (s != \"ab\") error(\"strings\"); }\n\
 void test_the_short_ternary() { float e = 0 ?: 7; if (e != 7) error(\"a ?: b\"); }\n\
@@ -293,6 +297,10 @@ void test_a_case_range() { float r = 0; switch (5) { case 1 .. 3: r = 1; break; 
     /// A project file of the FTEQCC dialect for the rerelease's engine.
     const FOR_IDS_VM: &str = "[project]\ndialect = \"fteqcc\"\ntarget = \"rerelease\"\n\n\
                               [[module]]\nkind = \"ssqc\"\nsrc = \"progs.src\"\n";
+
+    /// A project file of the FTEQCC dialect for FTE's engine, whose opcodes the program may use.
+    const FOR_FTE: &str = "[project]\ndialect = \"fteqcc\"\ntarget = \"fte\"\n\n\
+                           [[module]]\nkind = \"ssqc\"\nsrc = \"progs.src\"\n";
 
     /// Runs the `test_` functions of `code` in a project with `manifest` for its
     /// `quakec.toml`, and returns each that did not pass.
@@ -328,6 +336,11 @@ void test_a_case_range() { float r = 0; switch (5) { case 1 .. 3: r = 1; break; 
         );
         assert_eq!(
             failures("reference-fteqcc", Some(FOR_IDS_VM), FTEQCC),
+            Vec::<String>::new()
+        );
+        // The same program for FTE's engine: what the topic says holds on either target.
+        assert_eq!(
+            failures("reference-fteqcc-fte", Some(FOR_FTE), FTEQCC),
             Vec::<String>::new()
         );
     }

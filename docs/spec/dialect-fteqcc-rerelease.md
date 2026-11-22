@@ -583,6 +583,31 @@ Vanilla `qcc` has `void`, `float`, `vector`, `string` and `entity` only (QC-10.1
   assignment of one copies it by its size (FTEF-2.13). An assignment `a = b;` of struct
   values is FTE-14.6's. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_GenerateInitializerType`.
+- **FTE-14.10** A local struct's or union's braces, `P p = { a, b };`, are read by
+  `QCC_PR_ParseInitializerType_Internal` ("structs go recursive") a member at a time: each
+  value is its member's, in the members' order, or with `{ .name = value, ... }` the member
+  named ("designated initialisers"), read by `QCC_PR_Expression(TOP_PRIORITY,
+  EXPR_DISALLOW_COMMA)` and cast to the member's type by `QCC_EvaluateCast(tmp, type, true)`
+  with the cast's warning (a float for a vector member is `OP_MUL_FV` by `'1 1 1'`, or a
+  vector constant), and is stored to the member's words by
+  `QCC_PR_GenerateInitializerType` as FTE-14.9 says, or folded into the statement that made
+  it, unless that statement's result is wider (DIFF-14.11); a `const` local's braces are its
+  value at compile time instead, as an array's are. A member's own braces are read as its
+  type's: a struct's or a union's so, a vector's as up to three floats ("vectors can be
+  treated as an array of 3 floats"), each cast and stored or folded so and a word none is
+  given not filled, as a vector local's own braces are, an array's as its elements'. Each member is marked at its word, `isinited[def.ofs] |= ...`, and then
+  "anything not already set needs to be filled with a default value": each member at a word
+  not marked is stored `QCC_MakeIntConst(0)` by its own type, once, so a union's other
+  members are not stored, and of an array member only the first element is. So `struct Out {
+  float a; struct In in; vector v; float xs[2]; }` with `Out o = { 1 };` is `STORE_F`, two
+  `STORE_FLD` for the two words of `in` on the standard target, `STORE_V` and one `STORE_F`.
+  The parts are positional, walking every member of `type->params`, or all designated ("designated
+  initialisers require all members to be initialised the same way"); the model follows only
+  braces whose every member starts at a word, and refuses those of a struct with a bitfield, an
+  8- or 16-bit integer or an unnamed member, which it does not place.
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseInitializerType_Internal`,
+  `QCC_PR_GenerateInitializerType`.
 
 ## FTE-15 `enum`
 

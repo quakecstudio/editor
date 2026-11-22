@@ -307,6 +307,10 @@ impl Env for BodyEnv<'_, '_> {
         self.resolver.layout(ty)
     }
 
+    fn members(&self, ty: &Type) -> Option<Vec<crate::MemberShape>> {
+        self.resolver.members(ty)
+    }
+
     fn failed(&self) -> bool {
         self.resolver
             .index

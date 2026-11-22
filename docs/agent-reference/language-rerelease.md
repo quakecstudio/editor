@@ -41,9 +41,10 @@ is compiled down to them, so none needs a newer engine.
   function the compiler writes for the array (FTE-13.12, FTE-13.11): correct, and slower than
   a field. An array is a global, not a field: for a value on each entity use a field.
 - **`typedef struct { string mdl; float frame; } pose;`**, `pose p;`, `p.mdl`, and `{ a, b }`
-  to initialise one or each element of an array of them (FTE-14.1 to FTE-14.3). Give a
-  struct its `{ ... }` at file level; in a function body declare it and assign its members,
-  since this compiler stops on a local struct with a brace initialiser.
+  to initialise one or each element of an array of them (FTE-14.1 to FTE-14.3), at file
+  level or in a function body (FTE-14.10). In a body a member left out is set to 0, but of an
+  array member only the first element, and a vector given fewer than three numbers keeps
+  whatever its other parts held: give every part you will read.
 - **`enum { A, B, C };`**, float constants from 0, with `A = n` to set the next value;
   `enum Name { ... }` also names a type that is a float (FTE-15.1, FTE-15.2, FTE-15.4).
 - **Parameters.** A default value, `void spawn_gib(string mdl, float speed = 200)`, used
@@ -94,7 +95,6 @@ These were checked by running this compiler on the rerelease's own code with the
 | `if (s)` to test for an empty string | `""` is true | `if (s != "")` |
 | `int i`, `i / 2` | an error: id's VM has no integer opcodes | `float i`, and `floor (i / 2)` to truncate |
 | `a + b & c`, `!a == b` | `a + (b & c)`, `!(a == b)`: not C's | parentheses |
-| `pose p = { "a", 1 };` in a body | this compiler stops | declare, then assign the members |
 | an array as an entity's own data | one array for every entity | a field, `.float charge;` |
 | `float count = 0;` at file level for a counter | FTEQCC takes an initialised global for a constant (FTE-11.2) | `var float count = 0;` or `float count;` |
 | a new file not in `progs.src` | never compiled | add it after the files it uses |

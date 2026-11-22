@@ -6421,6 +6421,173 @@ fn a_locals_initialiser_is_stored_by_threes_a_pair_and_a_word() {
     );
 }
 
+// spec FTE-14.10: a local struct's braces store each value to its member in turn, by the
+// store of the member's type, in the members' order or the one a `.name =` gives; then each
+// member no value was stored at is stored a zero, a union's other members not, and of an
+// array member only its first element; a value of another type is cast to its member's, a
+// float for a vector `'1 1 1'` times it or a vector constant, and an array member's braces are
+// its elements', each braces of its own type. The opcodes are the pinned FTEQCC's for these
+// bodies (`-Tid`), recorded on 2026-11-21
+#[test]
+fn a_local_structs_braces_store_each_member() {
+    use qc_progs::Op::{AddF, Call0, MulF, MulFv, MulVf, StoreF, StoreFld, StoreS, StoreV};
+    let progs = compile_fteqcc(
+        "struct In { float x; float y; };\n\
+         struct Out { float a; struct In in; vector v; float xs[2]; };\n\
+         struct Pair { float a; vector b; string s; };\n\
+         struct Two { float a; float b; };\n\
+         union U { float a; float b; };\n\
+         float() two = { return 2; };\n\
+         void() d_two = { struct Two p = { 1, 2 }; };\n\
+         void() d_mixed = { struct Pair p = { 1, '0 0 1', \"x\" }; };\n\
+         void() d_designated = { struct Pair q = { .s = \"y\" }; };\n\
+         void() d_values = { float n = 3; struct Two p = { n + 1, two() }; struct Two q = { 5 }; };\n\
+         void() d_union = { union U u = { 3 }; };\n\
+         void() d_nested = { float n = 9; struct Out o = { 1, { 2, 3 }, { 4, 5, n }, { 7, 8 } }; };\n\
+         void() d_partial = { struct Out o = { 1 }; };\n\
+         struct SA { float a[2]; float b; };\n\
+         struct SV { vector v[2]; float c; };\n\
+         void() d_exact = { struct SA s = { {1, 2}, 3 }; };\n\
+         void() d_fewer = { struct SA s = { {1}, 3 }; };\n\
+         void() d_vecs = { struct SV s = { { '1 2 3', {4, 5, 6} }, 7 }; };\n\
+         void(vector v) d_wide = { struct Pair s = { 1, v * 2 }; };\n\
+         void(float x) d_narrow = { struct Pair s = { 1, x * 2 }; };\n\
+         void() d_lit = { struct Pair s = { 1, 2 }; };\n\
+         void(float x) d_name = { struct Pair s = { 1, x }; };\n\
+         void() d_short = { struct Pair s = { 1, {1, 2} }; };\n\
+         void(float x) d_vl = { vector v = { x + 1, 2, 3 }; };\n\
+         void(float x) d_vm = { struct Pair p = { 1, { x * 2, 5, 6 }, \"q\" }; };\n\
+         void(float x) d_vs = { vector v = { x, 2 }; };\n\
+         void() d_const = { const struct Pair p = { 1, '0 0 1', \"x\" }; };\n",
+    )
+    .unwrap()
+    .progs;
+    let ops = |name: &str| -> Vec<u32> {
+        let mut ops: Vec<u32> = body(&progs, name).iter().map(|s| s.op).collect();
+        ops.pop();
+        ops
+    };
+    assert_eq!(ops("d_two"), numbers([StoreF, StoreF]));
+    assert_eq!(ops("d_mixed"), numbers([StoreF, StoreV, StoreS]));
+    assert_eq!(ops("d_designated"), numbers([StoreS, StoreF, StoreV]));
+    assert_eq!(
+        ops("d_values"),
+        numbers([StoreF, AddF, Call0, StoreF, StoreF, StoreF])
+    );
+    assert_eq!(ops("d_union"), numbers([StoreF]));
+    assert_eq!(ops("d_nested"), numbers([StoreF; 9]));
+    assert_eq!(
+        ops("d_partial"),
+        numbers([StoreF, StoreFld, StoreFld, StoreV, StoreF])
+    );
+    // An array member's braces, as many as its elements or fewer, the rest not filled.
+    assert_eq!(ops("d_exact"), numbers([StoreF, StoreF, StoreF]));
+    assert_eq!(ops("d_fewer"), numbers([StoreF, StoreF]));
+    // Each element of an array of vectors, a value or its own braces of three floats.
+    assert_eq!(
+        ops("d_vecs"),
+        numbers([StoreV, StoreF, StoreF, StoreF, StoreF])
+    );
+    // The member's own type folded into it; a float cast to a vector member, then folded.
+    assert_eq!(ops("d_wide"), numbers([StoreF, MulVf, StoreS]));
+    assert_eq!(ops("d_narrow"), numbers([StoreF, MulF, MulFv, StoreS]));
+    assert_eq!(ops("d_lit"), numbers([StoreF, StoreV, StoreS]));
+    assert_eq!(ops("d_name"), numbers([StoreF, MulFv, StoreS]));
+    // A vector's braces of fewer than three floats store those, and fill no other word.
+    assert_eq!(ops("d_short"), numbers([StoreF, StoreF, StoreF, StoreS]));
+    // A vector's braces, a local's or a member's, each value folded into what made it.
+    assert_eq!(ops("d_vl"), numbers([AddF, StoreF, StoreF]));
+    assert_eq!(ops("d_vm"), numbers([StoreF, MulF, StoreF, StoreF, StoreS]));
+    assert_eq!(ops("d_vs"), numbers([StoreF, StoreF]));
+    let vl = body(&progs, "d_vl");
+    assert_eq!((vl[1].b, vl[2].b), (vl[0].c + 1, vl[0].c + 2));
+    // A `const` local's braces are its value at compile time: no statement.
+    assert_eq!(ops("d_const"), Vec::<u32>::new());
+    // Each value goes to its member's own words.
+    let p = body(&progs, "d_two");
+    assert_eq!(p[1].b, p[0].b + 1);
+    let mixed = body(&progs, "d_mixed");
+    assert_eq!((mixed[1].b, mixed[2].b), (mixed[0].b + 1, mixed[0].b + 4));
+    let named = body(&progs, "d_designated");
+    assert_eq!((named[1].b, named[2].b), (named[0].b - 4, named[0].b - 3));
+    let nested = body(&progs, "d_nested");
+    let first = nested[1].b;
+    let stored: Vec<i32> = nested[1..9].iter().map(|s| s.b).collect();
+    assert_eq!(stored, (first..first + 8).collect::<Vec<i32>>());
+    // The sum is folded into the member, and the call's value stored from the return global.
+    let values = body(&progs, "d_values");
+    assert_eq!(values[1].c + 1, values[3].b);
+}
+
+// spec FTE-14.10: braces of a struct with a member that starts at no word, a bitfield, are not
+// followed and are refused, not stored to the wrong members; nor are designated and positional
+// parts mixed
+#[test]
+fn braces_the_model_cannot_place_are_refused() {
+    for body in [
+        "struct Bits { float a; int b:4; float c; };\nvoid() f = { struct Bits p = { 1, 2 }; };\n",
+        "struct P { float a; string s; };\nvoid() f = { struct P p = { 1, .s = \"y\" }; };\n",
+    ] {
+        assert!(compile_fteqcc(body).is_err(), "{body}");
+    }
+}
+
+// spec FTEF-18.7: `return = e;` stores the value to the `ret*` local, by the store of the
+// return type or folded into the statement that made it, and does not return; a bare
+// `return;` and the body's end then return the local (FTE-18.10). The opcodes are the pinned
+// FTEQCC's for these bodies (`-Tid`), recorded on 2026-11-21
+// spec FTEF-34.1: `return = e;` stores a value of another type with no cast
+#[test]
+fn return_equals_stores_the_value_the_function_returns() {
+    use qc_progs::Op::{AddF, MulF, Return, StoreEnt, StoreF, StoreS, StoreV};
+    let progs = compile_fteqcc(
+        "entity world;\n\
+         float(float x) d_pick = { return = 4; return; };\n\
+         float() d_str = { local string s; s = \"a\"; return = s; };\n\
+         float() d_wide = { local vector v; v = '1 2 3'; return = v; };\n\
+         vector() d_narrow = { local float f; f = 2; return = f; };\n\
+         float() d_ent = { local entity e; e = world; return = e; return; };\n\
+         float(float x) d_end = { return = x + 1; };\n\
+         vector() d_vec = { return = '1 2 3'; return; };\n\
+         float(float x) d_twice = { return = 1; if (x) return = x * 2; };\n\
+         float(float x) d_early = { return = 1; if (x) return 9; };\n\
+         struct T3 { float a; float b; float c; };\nT3 gt;\n\
+         T3() d_struct = { local T3 t; t = gt; return = t; };\n",
+    )
+    .unwrap()
+    .progs;
+    let ops = |name: &str| -> Vec<u32> {
+        let mut ops: Vec<u32> = body(&progs, name).iter().map(|s| s.op).collect();
+        ops.pop();
+        ops
+    };
+    assert_eq!(ops("d_pick"), numbers([StoreF, Return, Return]));
+    assert_eq!(ops("d_end"), numbers([AddF, Return]));
+    assert_eq!(ops("d_vec"), numbers([StoreV, Return, Return]));
+    // FTEF-34.1: a value of another type is stored with no cast, by the return type's store.
+    assert_eq!(ops("d_str"), numbers([StoreS, StoreF, Return]));
+    assert_eq!(ops("d_wide"), numbers([StoreV, StoreF, Return]));
+    assert_eq!(ops("d_narrow"), numbers([StoreF, StoreV, Return]));
+    assert_eq!(ops("d_ent"), numbers([StoreEnt, StoreF, Return, Return]));
+    // A struct is stored whole, by its size's store.
+    assert_eq!(ops("d_struct"), numbers([StoreV, StoreV, Return]));
+    let if_not = u32::from(Opcode::IfNot as u16);
+    let [store, mul, ret] = numbers([StoreF, MulF, Return])[..] else {
+        panic!("three opcodes");
+    };
+    assert_eq!(ops("d_twice"), [store, if_not, mul, ret]);
+    assert_eq!(ops("d_early"), [store, if_not, ret, ret]);
+    // The store's target is what both returns return, and the folded sum's result too.
+    let pick = body(&progs, "d_pick");
+    assert_eq!((pick[1].a, pick[2].a), (pick[0].b, pick[0].b));
+    let end = body(&progs, "d_end");
+    assert_eq!(end[1].a, end[0].c);
+    // An early `return e;` returns its own value, the end the local.
+    let early = body(&progs, "d_early");
+    assert_ne!(early[2].a, early[0].b);
+    assert_eq!(early[3].a, early[0].b);
+}
+
 // spec FTEF-27.20: on a target without `OP_STORE_I64` a 64-bit integer is stored by
 // `OP_STORE_FLD` of each of its two words, a constant 0 from the 64-bit zero's, to a definition
 // and to an element at a constant index alike

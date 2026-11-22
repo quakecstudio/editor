@@ -129,7 +129,8 @@ pub enum Name {
     VaList(u32),
     /// The default value of this parameter of the function the next `CALL` calls (FTE-18.7).
     Default(u8),
-    /// The function's `ret*` local, which a bare `return` returns (FTE-18.10).
+    /// The function's `ret*` local, which a bare `return` returns (FTE-18.10), named
+    /// [`Name::RET_LOCAL`].
     RetLocal,
     /// The function a `__wrap` body wraps, its `prior` (FTEF-15.11).
     Prior,
@@ -151,6 +152,12 @@ pub enum Name {
     /// The immediate holding the number of the nested function the local definition is given,
     /// which the code generator numbers (FTEF-18.2).
     Nested(DefId),
+}
+
+impl Name {
+    /// The name FTEQCC gives the `ret*` local (`QCC_PR_GetSRef (pr_scope->type->aux_type,
+    /// "ret*", ...)`), which its warnings name.
+    pub const RET_LOCAL: &str = "ret*";
 }
 
 /// What a body makes without a statement of its own that reads it (`TypedBody::effects`).
