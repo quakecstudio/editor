@@ -713,8 +713,16 @@ fn read_messages(read: impl Read, sender: &Sender<Option<Message>>) {
     let mut reader = BufReader::new(read);
     loop {
         let message = match read_frame(&mut reader) {
-            Ok(Some(content)) => Message::parse(&content).ok(),
-            Ok(None) | Err(_) => None,
+            Ok(Some(content)) => Message::parse(&content)
+                .inspect_err(|answer| {
+                    tracing::warn!(?answer, "the host sent a message that does not read");
+                })
+                .ok(),
+            Ok(None) => None,
+            Err(error) => {
+                tracing::warn!(%error, "the host's connection failed");
+                None
+            }
         };
         let closed = message.is_none();
         if sender.send(message).is_err() || closed {

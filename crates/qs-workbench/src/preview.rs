@@ -41,7 +41,7 @@ pub mod entities;
 pub mod game_files;
 pub mod scenario;
 
-use debug::{Debugger, Location, StopReason};
+use debug::{Debugger, Location, StopReason, Watch};
 use dock::DockFrame;
 
 use entities::Entities;
@@ -586,14 +586,16 @@ impl Preview {
     }
 
     /// Sets field `field` of the selected edict to the value `text` names, read as the
-    /// field's type, while the game is paused (`field/set`); the edict is then read again.
+    /// field's type, while the game is paused (`field/set`), and when the host applies it; an
+    /// edit the host holds until the game resumes is listed in [`PreviewStatus`]'s `held`, and
+    /// one it applied at once has the edict read again.
     ///
     /// # Errors
     ///
     /// [`PreviewError::NotPaused`] while the game runs, [`PreviewError::NoField`] for a field
     /// the selected edict lacks, [`PreviewError::BadValue`] for text that is not of its type,
     /// or the bridge's error.
-    pub fn set_field(&mut self, field: &str, text: &str) -> Result<(), PreviewError> {
+    pub fn set_field(&mut self, field: &str, text: &str) -> Result<Applied, PreviewError> {
         if self.state != PlayState::Paused {
             return Err(PreviewError::NotPaused);
         }
@@ -613,13 +615,14 @@ impl Preview {
             kind,
         })?;
         let answer = self.live_client()?.set_field(edict.into(), field, &value)?;
-        // BRIDGE-4.4: while paused between frames the host holds the edit until it resumes.
+        // BRIDGE-4.4: while paused the host holds the edit until it resumes.
         if answer.get("applied").and_then(Value::as_str) == Some("on_resume") {
             self.pending
                 .push((edict.get(), field.to_owned(), text.trim().to_owned()));
-            return Ok(());
+            return Ok(Applied::OnResume);
         }
-        self.select(edict)
+        self.select(edict)?;
+        Ok(Applied::Now)
     }
 
     /// Whether the game runs, is paused or is stopped.
@@ -1794,6 +1797,37 @@ pub struct PreviewStatus {
     /// What the reload held back would reset, each as `kind name: reason` (P3-10).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub would_reset: Vec<String>,
+    /// Where and why the game is stopped in a frame: at a breakpoint, after a step or at a
+    /// run error (BRIDGE-3.3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stopped: Option<Stopped>,
+    /// Each watch, with its value when the game last stopped in a frame.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub watches: Vec<Watch>,
+    /// The fields set while paused, which the host sets when the game resumes (BRIDGE-4.4);
+    /// until then the game reads the old values.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub held: Vec<HeldEdit>,
+}
+
+/// Where and why the game is stopped in a frame.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Stopped {
+    /// Why it stopped.
+    pub reason: StopReason,
+    /// The statement it stopped at.
+    pub location: Location,
+}
+
+/// A field set while paused, waiting for the game to resume (BRIDGE-4.4).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct HeldEdit {
+    /// The edict.
+    pub edict: Edict,
+    /// Its field.
+    pub field: String,
+    /// The value, as it was typed.
+    pub value: String,
 }
 
 impl PreviewStatus {
@@ -1808,6 +1842,23 @@ impl PreviewStatus {
             status: preview.status.clone(),
             picked: preview.picked.clone(),
             would_reset: preview.would_reset.clone(),
+            stopped: preview
+                .debugger
+                .stopped()
+                .map(|(reason, location)| Stopped {
+                    reason: *reason,
+                    location: location.clone(),
+                }),
+            watches: preview.debugger.watches().to_vec(),
+            held: preview
+                .pending
+                .iter()
+                .map(|(edict, field, value)| HeldEdit {
+                    edict: Edict::new(*edict),
+                    field: field.clone(),
+                    value: value.clone(),
+                })
+                .collect(),
         }
     }
 }
@@ -1926,25 +1977,50 @@ impl<C: HasPreview + 'static> Command<C> for PickCommand {
     }
 }
 
+/// When a field set takes effect, as the host answers (BRIDGE-4.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Applied {
+    /// Before the next server frame: the game was running.
+    Now,
+    /// When the game resumes: it is paused, and reads the old value until then.
+    OnResume,
+}
+
+/// What `preview.set_field` answers: the selected edict, and when the value takes effect.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct FieldSet {
+    /// The selected edict.
+    #[serde(flatten)]
+    pub entity: SelectedEntity,
+    /// When the value takes effect.
+    pub applied: Applied,
+}
+
 /// `preview.set_field`: sets a field of the selected edict while the game is paused.
 struct SetFieldCommand;
 
 impl<C: HasPreview + 'static> Command<C> for SetFieldCommand {
     const ID: &'static str = SET_FIELD;
     const SUMMARY: &'static str = "Sets a field of the selected edict while the game is \
-        paused, the value read as the field's type.";
+        paused, the value read as the field's type. The game is given the value when it \
+        resumes, and reads the old one until then (`applied`: `on_resume`); each poll lists the \
+        fields waiting (`held`).";
     type Params = SetFieldParams;
-    type Output = SelectedEntity;
+    type Output = FieldSet;
     type Error = PreviewError;
 
     fn run(
         &self,
         context: &mut C,
         SetFieldParams { field, value }: SetFieldParams,
-    ) -> Result<Outcome<SelectedEntity, C>, PreviewError> {
+    ) -> Result<Outcome<FieldSet, C>, PreviewError> {
         let (_, preview) = context.workbench_and_preview();
-        preview.set_field(&field, &value)?;
-        Ok(Outcome::outside_history(SelectedEntity::of(preview)))
+        let applied = preview.set_field(&field, &value)?;
+        Ok(Outcome::outside_history(FieldSet {
+            entity: SelectedEntity::of(preview),
+            applied,
+        }))
     }
 }
 

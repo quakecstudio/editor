@@ -68,15 +68,16 @@ pub use crate::build::{Gravity, ModuleBuilt, Reported};
 pub use crate::commands::*;
 pub use crate::editing::{Change, Renamed};
 pub use crate::preview::{
+    Applied, CHOOSE_GAME, ChooseGameParams, ConsoleLine, FieldSet, GAME, GameStart, HasPreview,
+    HeldEdit, OnLoss, PAUSE, PICK, PLAY, POLL, PickParams, PlayParams, PlayState, Preview,
+    PreviewConfig, PreviewError, PreviewStatus, RELOAD, RESTART, RESUME, ReloadParams, SELECT,
+    SET_FIELD, STEP, STOP, SelectParams, SelectedEntity, SendLive, SetFieldParams, Stopped,
+    entities, register_preview,
+};
+pub use crate::preview::{
     BREAKPOINT, BreakpointParams, CONSOLE, ConsoleParams, DOCK, SCENARIO_RUN, STEP_BY,
     ScenarioRunParams, StepBy, StepByParams, UNWATCH, UnwatchParams, WATCH, WatchParams, debug,
     dock, engine, game_files, scenario,
-};
-pub use crate::preview::{
-    CHOOSE_GAME, ChooseGameParams, ConsoleLine, GAME, GameStart, HasPreview, OnLoss, PAUSE, PICK,
-    PLAY, POLL, PickParams, PlayParams, PlayState, Preview, PreviewConfig, PreviewError,
-    PreviewStatus, RELOAD, RESTART, RESUME, ReloadParams, SELECT, SET_FIELD, STEP, STOP,
-    SelectParams, SelectedEntity, SendLive, SetFieldParams, entities, register_preview,
 };
 pub use crate::recent::{RECENT_LIMIT, RecentProjects, recent_path};
 pub use crate::staged::{

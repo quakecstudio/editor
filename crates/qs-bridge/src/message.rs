@@ -98,6 +98,27 @@ impl ErrorCode {
             Self::StoppedInFrame => Self::STOPPED_IN_FRAME,
         }
     }
+
+    /// The code numbered `number` (BRIDGE-7.1), `None` for a number the bridge does not use.
+    #[must_use]
+    pub const fn of_code(number: i64) -> Option<Self> {
+        Some(match number {
+            Self::PARSE_ERROR => Self::ParseError,
+            Self::INVALID_REQUEST => Self::InvalidRequest,
+            Self::METHOD_NOT_FOUND => Self::MethodNotFound,
+            Self::INVALID_PARAMS => Self::InvalidParams,
+            Self::INTERNAL_ERROR => Self::InternalError,
+            Self::INCOMPATIBLE_VERSION => Self::IncompatibleVersion,
+            Self::NOT_PAUSED => Self::NotPaused,
+            Self::NOT_INITIALIZED => Self::NotInitialized,
+            Self::NO_SUCH_EDICT => Self::NoSuchEdict,
+            Self::UNSUPPORTED => Self::Unsupported,
+            Self::BAD_VALUE => Self::BadValue,
+            Self::NO_SUCH_BREAKPOINT => Self::NoSuchBreakpoint,
+            Self::STOPPED_IN_FRAME => Self::StoppedInFrame,
+            _ => return None,
+        })
+    }
 }
 
 /// An error a response carries: its code, a message for the person and optional data
@@ -241,7 +262,7 @@ impl Message {
             (None, Some(Value::Object(error))) => {
                 let number = error.get("code").and_then(Value::as_i64)?;
                 let message = error.get("message").and_then(Value::as_str)?;
-                let code = ALL_CODES.into_iter().find(|code| code.code() == number)?;
+                let code = ErrorCode::of_code(number)?;
                 Err(RpcError {
                     code,
                     message: message.to_owned(),
@@ -279,22 +300,6 @@ impl Message {
         self.to_json().to_string().into_bytes()
     }
 }
-
-/// Every error code, for reading a response's.
-const ALL_CODES: [ErrorCode; 12] = [
-    ErrorCode::ParseError,
-    ErrorCode::InvalidRequest,
-    ErrorCode::MethodNotFound,
-    ErrorCode::InvalidParams,
-    ErrorCode::InternalError,
-    ErrorCode::IncompatibleVersion,
-    ErrorCode::NotPaused,
-    ErrorCode::NotInitialized,
-    ErrorCode::NoSuchEdict,
-    ErrorCode::Unsupported,
-    ErrorCode::BadValue,
-    ErrorCode::NoSuchBreakpoint,
-];
 
 #[cfg(test)]
 mod tests;

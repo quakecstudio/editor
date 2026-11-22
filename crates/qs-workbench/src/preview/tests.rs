@@ -13,6 +13,7 @@ use serde_json::json;
 
 use qs_engine::Flavour;
 
+use super::debug::StopReason;
 use super::{
     PlayState, Preview, PreviewConfig, PreviewError, PreviewStatus, SelectedEntity, mod_folder,
     place_project_assets, place_project_map,
@@ -242,6 +243,9 @@ fn events_set_the_state_and_the_console() {
             status: None,
             picked: None,
             would_reset: Vec::new(),
+            stopped: None,
+            watches: Vec::new(),
+            held: Vec::new(),
         }
     );
 }
@@ -361,6 +365,17 @@ fn edits_held_until_resume_are_shown() {
     game.pending.push((3, "health".to_owned(), "6".to_owned()));
     game.pending.push((4, "armor".to_owned(), "1".to_owned()));
     assert_eq!(game.pending(Edict::new(3), "health"), Some("6"));
+    // A status lists them, for a client that reads the game's fields and finds the old values.
+    let held = PreviewStatus::of(&game).held;
+    assert_eq!(held.len(), 3);
+    assert_eq!(
+        (
+            held[1].edict,
+            held[1].field.as_str(),
+            held[1].value.as_str()
+        ),
+        (Edict::new(3), "health", "6")
+    );
     assert_eq!(game.pending(Edict::new(4), "health"), None);
     assert_eq!(game.pending(Edict::new(3), "armor"), None);
 }
@@ -377,12 +392,17 @@ fn stops_reach_the_debugger_and_the_console() {
     );
     assert_eq!(game.state(), PlayState::Paused);
     assert_eq!(game.debugger().stopped().unwrap().1.function, "Ember_Touch");
+    // A status says where and why, for a client that only polls.
+    let stopped = PreviewStatus::of(&game).stopped.unwrap();
+    assert_eq!(stopped.reason, StopReason::Breakpoint);
+    assert_eq!(stopped.location.line, Some(33));
     game.take_event(
         "state/changed",
         &json!({ "state": "paused", "reason": "pause" }),
     );
     game.take_event("state/changed", &json!({ "state": "running" }));
     assert!(game.debugger().stopped().is_none());
+    assert_eq!(PreviewStatus::of(&game).stopped, None);
     game.take_event("qc/error", &json!({ "message": "NULL function" }));
     assert!(game.console().last().unwrap().is_error());
     assert_eq!(game.debugger().error(), Some("NULL function"));
@@ -395,6 +415,7 @@ fn stops_reach_the_debugger_and_the_console() {
     ));
     game.watch("time").unwrap();
     assert_eq!(game.debugger().watches().len(), 1);
+    assert_eq!(PreviewStatus::of(&game).watches[0].expression, "time");
     game.unwatch(WatchIndex::new(0));
     assert!(game.step_by(qs_engine::StepKind::Over).is_err());
 }

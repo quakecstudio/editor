@@ -115,7 +115,20 @@ fn the_codes_are_the_specs() {
         (ErrorCode::StoppedInFrame, -32008),
     ] {
         assert_eq!(code.code(), number, "{code:?}");
+        assert_eq!(ErrorCode::of_code(number), Some(code));
+        let response =
+            format!(r#"{{"jsonrpc":"2.0","id":1,"error":{{"code":{number},"message":"m"}}}}"#);
+        assert_eq!(
+            Message::parse(response.as_bytes()).unwrap(),
+            Message::Response {
+                id: Some(Id::Number(1)),
+                outcome: Err(RpcError::new(code, "m")),
+            },
+            "{code:?}"
+        );
     }
+    assert_eq!(ErrorCode::of_code(-32009), None);
+    assert_eq!(ErrorCode::of_code(0), None);
 }
 
 // spec BRIDGE-1.4: a message written and read again is the same message

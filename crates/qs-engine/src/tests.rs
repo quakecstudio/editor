@@ -442,6 +442,35 @@ fn a_missing_or_closed_host_is_an_error() {
     ));
 }
 
+// spec BRIDGE-7.1: every code is read back as itself, so a host's refusal with any of them is
+// an error for the command that was refused, and the connection stays open
+#[test]
+fn a_refusal_with_any_code_keeps_the_connection() {
+    let mut frames = Vec::new();
+    let refused = Message::Response {
+        id: Some(Id::Number(1)),
+        outcome: Err(qs_bridge::RpcError::new(
+            ErrorCode::StoppedInFrame,
+            "a frame is stopped at a statement",
+        )),
+    };
+    write_frame(&mut frames, &refused.to_bytes()).unwrap();
+    let line = event("console/line", json!({ "text": "after", "level": "print" }));
+    write_frame(&mut frames, &line.to_bytes()).unwrap();
+    let mut client = Client::over(std::io::Cursor::new(frames), std::io::sink());
+    assert!(matches!(
+        client.initialize("tests"),
+        Err(ClientError::Rpc {
+            code: ErrorCode::StoppedInFrame,
+            ..
+        })
+    ));
+    let waited = client
+        .wait_event("console/line", Duration::from_secs(5))
+        .unwrap();
+    assert_eq!(waited.params["text"], "after");
+}
+
 /// A host that sends `console/line` events without end and answers nothing.
 struct Chatty {
     frame: Vec<u8>,

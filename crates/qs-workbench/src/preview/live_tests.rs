@@ -17,8 +17,8 @@ use interprocess::local_socket::traits::Listener as _;
 use interprocess::local_socket::{GenericFilePath, ListenerOptions, ToFsName as _};
 use qc_project::FsLoader;
 use qs_bridge::{
-    Answer, Capabilities, Host, HostInfo, Id, Message, Session as BridgeSession, read_frame,
-    write_frame,
+    Answer, Capabilities, ErrorCode, Host, HostInfo, Id, Message, RpcError,
+    Session as BridgeSession, read_frame, write_frame,
 };
 use qs_commands::{Registry, Session};
 use qs_engine::{Client, Running};
@@ -34,7 +34,12 @@ const MAP: &str = "{\n\"classname\" \"worldspawn\"\n}\n\
     {\n\"classname\" \"monster_army\"\n\"origin\" \"0 0 24\"\n\"angle\" \"90\"\n}\n\
     {\n\"classname\" \"light\"\n\"origin\" \"0 0 64\"\n}\n";
 
-/// A host that records each request it is sent and answers `entity/spawn` with edict 9.
+/// The word in a BSP's path that makes [`Recording`] refuse to swap it in.
+const STOPPED: &str = "stopped-in-frame";
+
+/// A host that records each request it is sent and answers `entity/spawn` with edict 9; it
+/// refuses a `map/swap` of a BSP under a folder named for [`STOPPED`], as id's host refuses
+/// one while a frame is stopped at a statement (BRIDGE-4.6).
 struct Recording(Seen);
 
 impl Host for Recording {
@@ -55,6 +60,16 @@ impl Host for Recording {
             .lock()
             .unwrap()
             .push((method.to_owned(), params.clone()));
+        if method == "map/swap"
+            && params["bsp"]
+                .as_str()
+                .is_some_and(|path| path.contains(STOPPED))
+        {
+            return Answer::Now(Err(RpcError::new(
+                ErrorCode::StoppedInFrame,
+                "a frame is stopped at a statement; step or resume to its end first",
+            )));
+        }
         Answer::Now(Ok(match method {
             "entity/spawn" => json!({ "edict": 9 }),
             _ => json!({}),
@@ -336,6 +351,39 @@ fn a_full_build_is_swapped_into_the_running_game() {
         !dir.0.join("other.full.bsp").exists(),
         "its file taken away"
     );
+}
+
+// spec BRIDGE-4.6: a full compile the host refuses while the game is stopped at a statement is
+// kept for another try, and the game plays on: the refusal is an answer, not a closed host
+#[test]
+fn a_full_build_refused_while_stopped_in_a_frame_is_kept() {
+    let dir = Scratch::new(STOPPED);
+    let target = dir.0.join("test.bsp");
+    std::fs::write(&target, b"the fast compile").unwrap();
+    let (preview, seen) = &mut playing_test();
+    preview.start_full_build("test".to_owned(), target.clone(), room_inputs());
+    preview.wait_for_full_build();
+    let sent = std::mem::take(&mut *seen.lock().unwrap());
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert_eq!(sent[0].0, "map/swap");
+    preview.poll();
+    assert_eq!(preview.state(), crate::PlayState::Playing);
+    assert_ne!(preview.status(), Some("The game closed"));
+    assert!(preview.full_build.is_some(), "kept for another try");
+    assert!(dir.0.join("test.full.bsp").exists());
+    assert_eq!(std::fs::read(&target).unwrap(), b"the fast compile");
+    assert!(
+        !preview
+            .console()
+            .any(|line| line.text.contains("not swapped in")),
+        "nothing to say yet"
+    );
+    // Each poll tries again, the one above and this one.
+    preview.poll();
+    let sent = std::mem::take(&mut *seen.lock().unwrap());
+    let methods: Vec<&str> = sent.iter().map(|(method, _)| method.as_str()).collect();
+    assert_eq!(methods, ["map/swap", "map/swap"]);
+    assert!(preview.full_build.is_some());
 }
 
 // No spec statement: P7-02: a full compile is not swapped in when the map's entities were edited
