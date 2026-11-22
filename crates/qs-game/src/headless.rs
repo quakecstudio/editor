@@ -60,7 +60,8 @@ impl Args {
         };
         let mut world = Headless::new(loaded, offscreen.as_ref());
         let frame = Duration::from_secs_f64(FRAME);
-        let mut next = Instant::now();
+        let started = Instant::now();
+        let mut next = started;
         loop {
             if !bridge.serve(&mut world.game) {
                 return Ok(());
@@ -97,7 +98,10 @@ impl Args {
                 }
             }
             // The client's clock stands while the server's does, as the window's.
-            world.read_messages(if ran { FRAME } else { 0.0 });
+            world.read_messages(
+                if ran { FRAME } else { 0.0 },
+                started.elapsed().as_secs_f64(),
+            );
             if world.game.wants_screenshot() {
                 match offscreen.as_mut().map(|drawer| world.draw(drawer)) {
                     Some(Ok(frame)) => world.game.screenshot_taken(&frame),
@@ -166,7 +170,8 @@ impl Loaded {
                     "the map changed level, started a game or quit in its first second".to_owned(),
                 ));
             }
-            world.read_messages(if ran { FRAME } else { 0.0 });
+            // No demo is played here, so the clock a `timedemo` reads stands.
+            world.read_messages(if ran { FRAME } else { 0.0 }, 0.0);
         }
         let map = world.game.world().map().to_owned();
         let yaw = |i: u16| f32::from(i) / f32::from(TIMEREFRESH_FRAMES) * FULL_TURN;
@@ -243,7 +248,8 @@ impl Loaded {
                                 "the map changed level, started a game or quit".to_owned(),
                             ));
                         }
-                        world.read_messages(if ran { FRAME } else { 0.0 });
+                        // No demo is played here, so the clock a `timedemo` reads stands.
+                        world.read_messages(if ran { FRAME } else { 0.0 }, 0.0);
                         overlay.frame(screen);
                     }
                 }
@@ -616,7 +622,7 @@ impl Headless {
 
     /// The client's frame: it reads what the server wrote, and the eye `pick` looks from is
     /// the client's view.
-    fn read_messages(&mut self, frametime: f64) {
+    fn read_messages(&mut self, frametime: f64, realtime: f64) {
         // The console on the screen is the window's; with none, what it would show goes.
         self.game.take_printed();
         let packets = self.game.world_mut().take_messages().packets;
@@ -625,7 +631,7 @@ impl Headless {
         // played is read in their place.
         match self.demos.frame(
             &mut self.client,
-            (seconds, &packets),
+            (seconds, realtime, &packets),
             (&mut self.describer, &mut self.rand),
             &mut self.game,
         ) {

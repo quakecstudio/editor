@@ -194,7 +194,7 @@ const CRATE: &str = "{\n\"classname\" \"item_crate\"\n\"origin\" \"0 0 40\"\n}\n
 
 /// The game of the test progs on the floor with `entities`, its player in the game, and an
 /// initialized session.
-fn game_with(entities: &str) -> (Game, Session) {
+pub(crate) fn game_with(entities: &str) -> (Game, Session) {
     let (bytes, lines) = progs_with_lines();
     let progs = Progs::read(&bytes).unwrap();
     let lump = format!("{{\n\"classname\" \"worldspawn\"\n}}\n{entities}");

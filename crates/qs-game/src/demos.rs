@@ -11,7 +11,6 @@
 //! played before it is started again when it ends.
 
 use std::path::{Path, PathBuf};
-use std::time::Instant;
 
 use qs_client::{
     Client, Demo, DemoError, DemoFrameError, DemoPace, DemoRecorder, DemoState, DemoTrack, Event,
@@ -68,9 +67,10 @@ struct Playing {
     stage: Stage,
     /// The map played before it, started again when it ends.
     back: String,
-    /// The frames it has played, and when its second began: `timedemo`'s count and clock.
+    /// The frames it has played, and the host's time when its second began: `timedemo`'s
+    /// count and clock.
     frames: u32,
-    second: Option<Instant>,
+    second: Option<f64>,
 }
 
 /// The host's demos: one being recorded, one being played.
@@ -389,8 +389,8 @@ impl Demos {
 
     /// The client's frame: the playing demo's messages in the place of the server's
     /// `packets`, or the packets, each recorded as it is read. A demo that ends, or does
-    /// not read, stops, `timedemo` says its speed, and the map played before it starts
-    /// again.
+    /// not read, stops, `timedemo` says its speed by the host's clock `realtime`, and the
+    /// map played before it starts again.
     ///
     /// # Errors
     ///
@@ -399,7 +399,7 @@ impl Demos {
     pub(crate) fn frame(
         &mut self,
         client: &mut Client,
-        (frametime, packets): (f32, &[Vec<u8>]),
+        (frametime, realtime, packets): (f32, f64, &[Vec<u8>]),
         (models, rand): (&mut dyn Models, &mut dyn Random),
         game: &mut Game,
     ) -> Result<Vec<Event>, DemoFrameError> {
@@ -415,7 +415,7 @@ impl Demos {
         // "if this is the second frame, grab the real td_starttime so the bogus time on
         // the first frame doesn't count".
         if playing.frames == 1 {
-            playing.second = Some(Instant::now());
+            playing.second = Some(realtime);
         }
         playing.frames = playing.frames.saturating_add(1);
         let played = client.demo_frame(frametime, &mut playing.demo, playing.pace, models, rand);
@@ -424,14 +424,14 @@ impl Demos {
             Err(_) => true,
         };
         if ended {
-            self.finish(client, game);
+            self.finish(client, game, realtime);
         }
         played.map(|frame| frame.events)
     }
 
     /// `CL_StopPlayback`: the demo is over, `timedemo`'s speed is said (`CL_FinishTimeDemo`),
     /// and the map played before the demo starts again.
-    fn finish(&mut self, client: &mut Client, game: &mut Game) {
+    fn finish(&mut self, client: &mut Client, game: &mut Game, realtime: f64) {
         client.stop_playback();
         let Some(playing) = self.playing.take() else {
             return;
@@ -439,11 +439,10 @@ impl Demos {
         if playing.pace == DemoPace::EveryFrame {
             // "the first frame didn't count".
             let frames = playing.frames.saturating_sub(1);
-            let seconds = playing
-                .second
-                .map_or(0.0, |second| second.elapsed().as_secs_f32());
-            let seconds = if seconds > 0.0 { seconds } else { 1.0 };
-            let rate = f64::from(frames) / f64::from(seconds);
+            // "if (!time) time = 1;".
+            let seconds = playing.second.map_or(0.0, |second| realtime - second);
+            let seconds = if seconds == 0.0 { 1.0 } else { seconds };
+            let rate = f64::from(frames) / seconds;
             game.console_line(&format!(
                 "{frames} frames {seconds:5.1} seconds {rate:5.1} fps\n"
             ));

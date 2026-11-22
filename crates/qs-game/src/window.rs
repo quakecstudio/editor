@@ -493,7 +493,11 @@ impl Viewer {
         // played is read in their place.
         match self.demos.frame(
             &mut self.client,
-            (frametime_f32(frametime), &packets),
+            (
+                frametime_f32(frametime),
+                self.started.elapsed().as_secs_f64(),
+                &packets,
+            ),
             (&mut self.describer, &mut self.rand),
             &mut self.game,
         ) {
