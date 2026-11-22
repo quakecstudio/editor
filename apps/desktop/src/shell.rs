@@ -253,6 +253,17 @@ impl FocusNow {
 pub(crate) const EDITOR_AREA: Area = Area::Editor;
 /// How often the open map is backed up while it has unsaved edits, in seconds (P6-20).
 pub(crate) const MAP_BACKUP_INTERVAL: f64 = 60.0;
+/// macOS's own full-screen key, Ctrl+Cmd+F, also taken in the popped-out game's window (L-73).
+const MAC_FULL_SCREEN: egui::KeyboardShortcut = egui::KeyboardShortcut::new(
+    egui::Modifiers {
+        alt: false,
+        ctrl: true,
+        shift: false,
+        mac_cmd: true,
+        command: true,
+    },
+    egui::Key::F,
+);
 /// The size of a popped-out game's window when it opens, in points: the preview host's own.
 const POPPED_GAME_SIZE: [f32; 2] = [1280.0, 800.0];
 
@@ -294,6 +305,12 @@ pub struct Shell {
     game: GameSlot,
     /// Whether the Game tab was shown for the game that runs in it, once for each Play.
     game_shown: bool,
+    /// Where the game was shown last frame, so a game put back from its own window is shown
+    /// in the Game tab (L-73).
+    game_place_shown: GamePlace,
+    /// Whether the popped-out game's window said it was full screen last frame: a change the
+    /// window makes itself, through its own controls, is followed (L-73).
+    popped_full_seen: Option<bool>,
     /// The count of focus commands the shell has applied (`Layout::focus_requests`): the
     /// layout's when the window opens, so the keyboard moves only when a focus command runs.
     focus_applied: u64,
@@ -368,6 +385,8 @@ impl Shell {
             render_state: None,
             game,
             game_shown: false,
+            game_place_shown: GamePlace::default(),
+            popped_full_seen: None,
             focus_applied: layout.focus_requests,
             review_seen: 0,
             preview_error: None,
@@ -813,7 +832,13 @@ impl Shell {
     /// game that runs in the other place is stopped, and a game started in the Game tab is
     /// shown.
     fn follow_game_place(&mut self, ctx: &egui::Context) {
-        self.game.set_place(self.layout().game_place);
+        let place = self.layout().game_place;
+        self.game.set_place(place);
+        if self.game_place_shown == GamePlace::Popped && place == GamePlace::Tab && self.game.runs()
+        {
+            self.centre_tab = CentreTab::Game;
+        }
+        self.game_place_shown = place;
         self.game.follow(ctx, self.centre_tab);
         let preview = &self.session.context().preview;
         if preview.state() == PlayState::Stopped {
@@ -846,12 +871,26 @@ impl Shell {
             .with_inner_size(POPPED_GAME_SIZE)
             .with_fullscreen(full);
         let game = self.game.clone();
+        let keys: Vec<egui::KeyboardShortcut> = self
+            .keymap
+            .in_match_order()
+            .into_iter()
+            .filter(|binding| binding.command == qs_layout::TOGGLE_GAME_FULL_SCREEN)
+            .map(|binding| binding.shortcut)
+            .chain((Platform::HERE == Platform::Mac).then_some(MAC_FULL_SCREEN))
+            .collect();
         let mut closed = false;
+        let mut asked_full = false;
         let mut shown_full = None;
         ctx.show_viewport_immediate(
             egui::ViewportId::from_hash_of(Area::PoppedGame),
             builder,
             |ctx, _| {
+                // The full-screen keys are taken from the game here, where the main window's
+                // keymap does not reach; nothing else leaves borderless full screen.
+                asked_full = ctx.input_mut(|input| {
+                    keys.iter().any(|shortcut| input.consume_shortcut(shortcut))
+                });
                 egui::CentralPanel::default()
                     .frame(egui::Frame::NONE)
                     .show(ctx, |ui| {
@@ -861,9 +900,17 @@ impl Shell {
                 shown_full = ctx.input(|input| input.viewport().fullscreen);
             },
         );
+        // Only a change the window reports since the last frame is its own; a mismatch while it
+        // carries out the layout's request is not.
+        let changed_by_window = shown_full.is_some()
+            && self.popped_full_seen.is_some()
+            && shown_full != self.popped_full_seen
+            && shown_full != Some(full);
+        self.popped_full_seen = shown_full;
         if closed {
+            self.popped_full_seen = None;
             self.run_chosen(qs_layout::POP_IN_GAME);
-        } else if shown_full.is_some_and(|shown| shown != full) {
+        } else if asked_full || changed_by_window {
             self.run_chosen(qs_layout::TOGGLE_GAME_FULL_SCREEN);
         }
     }
@@ -1649,8 +1696,10 @@ impl Shell {
         // here and the window has a device to draw on, else in the preview host's window.
         let here =
             preview.is_embedded() || (preview.state() == PlayState::Stopped && self.game.shows());
-        let docked = if here && place == GamePlace::Popped {
+        let docked = if here && place == GamePlace::Popped && self.game.runs() {
             Text::PreviewPoppedOut
+        } else if here && place == GamePlace::Popped {
+            Text::PreviewPopsOut
         } else if here {
             Text::PreviewInTab
         } else if preview.docks() {
@@ -2017,7 +2066,10 @@ impl Shell {
     /// Where it is Ctrl the focus keys are Ctrl with 1 to 4, Quake's fire with a weapon's
     /// number, so there the game keeps every key and a click outside it takes the keyboard.
     pub(crate) fn leaves_the_game(command: &str) -> bool {
-        Platform::HERE == Platform::Mac && FOCUS_COMMANDS.contains(&command)
+        // L-73: the full-screen key is the IDE's on every platform; Quake has no use for
+        // Alt+Enter.
+        command == qs_layout::TOGGLE_GAME_FULL_SCREEN
+            || (Platform::HERE == Platform::Mac && FOCUS_COMMANDS.contains(&command))
     }
 
     /// Runs the command the command line made, and tells the line how it went.
@@ -2834,8 +2886,9 @@ impl Shell {
     )]
     fn centre(&mut self, ui: &mut Ui, focus: FocusNow) {
         self.sync_editor();
-        if self.centre_tab != CentreTab::Game {
-            // ADR-0028: the game goes on while another tab is shown.
+        // ADR-0028: the game goes on while another tab is shown; popped out, its own window
+        // runs it (L-73).
+        if self.centre_tab != CentreTab::Game && self.layout().game_place != GamePlace::Popped {
             self.game.run_hidden(ui);
         }
         self.with_map(MapFeature::sync_map);

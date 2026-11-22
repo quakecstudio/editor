@@ -31,7 +31,7 @@ Every command's default key (UI-21). A key follows TrenchBroom's default where T
 | `view.split_down` | `secondary-alt-\` | anywhere | ours: the split key with Alt |
 | `view.close_split` | `secondary-shift-\` | anywhere | ours: the split key with Shift |
 | `view.toggle_embedded_game` | `secondary-alt-g` | anywhere | ours: G for the game |
-| `view.toggle_game_full_screen` | `f11` | anywhere | ours: F11, the full-screen key of Windows and Linux applications |
+| `view.toggle_game_full_screen` | `alt-enter` | anywhere | ours: Alt+Enter, the full-screen key of Windows games; Quake binds F11 to zoom, and macOS takes F11 for Show Desktop |
 | `preview.play` | `f5` | anywhere | ours: VS Code's Start Debugging |
 | `preview.stop` | `shift-f5` | anywhere | ours: VS Code's Stop |
 | `preview.restart` | `secondary-shift-f5` | anywhere | ours: VS Code's Restart |
@@ -333,7 +333,7 @@ A command that answers a question is read by a panel, the agent or MCP. A comman
 | `view.map_shading` | needs a value | Draws the map view's 3D pane as the brushes' edges, as their textured faces, or lit by the last compile's lightmaps. |
 | `view.move_panel` | needs a value | Moves a panel to another dock, where it shows, as Zed's status-bar menu moves one. |
 | `view.pop_in_game` | run from a menu | Puts a popped-out game back in the Game tab, where it keeps running. |
-| `view.pop_out_game` | run from a menu | Pops the game out of the Game tab into a window of its own, still run in the editor's process, so it keeps running; closing the window puts it back. |
+| `view.pop_out_game` | run from a menu | Pops the game out of the Game tab into a window of its own, still run in the editor's process, so it keeps running; closing the window puts it back. A game in the preview host's own window stays there. |
 | `view.resize_panel` | needs a value | Sets the width of the left or right panel, or the height of the bottom panel, in points. |
 | `view.show_panel` | needs a value | Shows a panel in its dock, opening the dock; when the dock already shows it, hides the dock, as a click on Zed's status-bar button does, unless when_shown is keep. |
 | `view.toggle_panel` | needs a value | Shows or hides a panel: Project and Entities on the left, Properties and the agent on the right, or Problems, Console and the debugger at the bottom. |

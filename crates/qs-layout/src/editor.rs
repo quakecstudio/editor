@@ -382,14 +382,18 @@ struct PopOutGame;
 impl<C: HasLayout + 'static> Command<C> for PopOutGame {
     const ID: &'static str = POP_OUT_GAME;
     const SUMMARY: &'static str = "Pops the game out of the Game tab into a window of its own, \
-        still run in the editor's process, so it keeps running; closing the window puts it back.";
+        still run in the editor's process, so it keeps running; closing the window puts it back. \
+        A game in the preview host's own window stays there.";
     type Params = NoParams;
     type Output = GamePlace;
     type Error = !;
 
     fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<GamePlace, C>, !> {
         let layout = context.layout_mut();
-        layout.game_place = GamePlace::Popped;
+        // The docked host's game is not this process's to pop out; it is left running.
+        if layout.game_place == GamePlace::Tab {
+            layout.game_place = GamePlace::Popped;
+        }
         Ok(Outcome::outside_history(layout.game_place))
     }
 }
@@ -421,18 +425,26 @@ struct ToggleGameFullScreen;
 impl<C: HasLayout + 'static> Command<C> for ToggleGameFullScreen {
     const ID: &'static str = TOGGLE_GAME_FULL_SCREEN;
     const SUMMARY: &'static str = "Shows the game full screen, popping it out of the Game tab \
-        first, or its popped-out window as a window again.";
+        first, or its popped-out window as a window again. A game in the preview host's own \
+        window is left as it is.";
     type Params = NoParams;
     type Output = GameScreen;
     type Error = !;
 
     fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<GameScreen, C>, !> {
         let layout = context.layout_mut();
-        layout.game_screen = match (layout.game_place, layout.game_screen) {
-            (GamePlace::Popped, GameScreen::Full) => GameScreen::Windowed,
-            (GamePlace::Window | GamePlace::Tab | GamePlace::Popped, _) => GameScreen::Full,
-        };
-        layout.game_place = GamePlace::Popped;
+        match (layout.game_place, layout.game_screen) {
+            // The docked host's game is not this process's to show; it is left running.
+            (GamePlace::Window, _) => {}
+            (GamePlace::Popped, GameScreen::Full) => layout.game_screen = GameScreen::Windowed,
+            (GamePlace::Tab | GamePlace::Popped, GameScreen::Windowed) => {
+                layout.game_place = GamePlace::Popped;
+                layout.game_screen = GameScreen::Full;
+            }
+            (GamePlace::Tab, GameScreen::Full) => {
+                layout.game_place = GamePlace::Popped;
+            }
+        }
         Ok(Outcome::outside_history(layout.game_screen))
     }
 }
@@ -624,57 +636,79 @@ mod tests {
 
     // No spec statement: L-73: the game pops out of the Game tab into a window of its own and
     // back, and goes full screen, popping out first; each changes where the layout shows the
-    // game and nothing else, and is kept with the layout
+    // game and nothing else, and is kept with the layout; a game in the preview host's own
+    // window is left there
     #[test]
     fn the_game_pops_out_goes_full_screen_and_comes_back() {
+        use super::{GamePlace, GameScreen};
         let mut s = session();
         let before = *s.context();
-        assert_eq!(
-            s.execute(super::POP_OUT_GAME, json!({})).unwrap(),
-            json!("popped")
+        let mut step = |id: &str, place: GamePlace, screen: GameScreen| {
+            s.execute(id, json!({})).unwrap();
+            let after = *s.context();
+            assert_eq!(
+                (after.game_place, after.game_screen),
+                (place, screen),
+                "{id}"
+            );
+            assert_eq!(
+                Layout {
+                    game_place: before.game_place,
+                    game_screen: before.game_screen,
+                    ..after
+                },
+                before,
+                "{id} changed nothing else"
+            );
+            after
+        };
+        step(super::POP_OUT_GAME, GamePlace::Popped, GameScreen::Windowed);
+        step(
+            super::TOGGLE_GAME_FULL_SCREEN,
+            GamePlace::Popped,
+            GameScreen::Full,
         );
-        let popped = *s.context();
-        assert_eq!(
-            Layout {
-                game_place: before.game_place,
-                ..popped
-            },
-            before,
-            "nothing else changed"
+        let full = step(
+            super::TOGGLE_GAME_FULL_SCREEN,
+            GamePlace::Popped,
+            GameScreen::Windowed,
         );
-        let text = toml::to_string(&s.context().as_written()).unwrap();
+        let text = toml::to_string(&full.as_written()).unwrap();
         assert!(text.contains("game_place = \"popped\""), "{text}");
-        assert_eq!(
-            s.execute(super::TOGGLE_GAME_FULL_SCREEN, json!({}))
-                .unwrap(),
-            json!("full")
+        step(
+            super::TOGGLE_GAME_FULL_SCREEN,
+            GamePlace::Popped,
+            GameScreen::Full,
         );
-        assert_eq!(
-            s.execute(super::TOGGLE_GAME_FULL_SCREEN, json!({}))
-                .unwrap(),
-            json!("windowed")
-        );
-        s.execute(super::TOGGLE_GAME_FULL_SCREEN, json!({}))
-            .unwrap();
-        assert_eq!(
-            s.execute(super::POP_IN_GAME, json!({})).unwrap(),
-            json!("tab")
-        );
-        assert_eq!(s.context().game_screen, super::GameScreen::Windowed);
+        step(super::POP_IN_GAME, GamePlace::Tab, GameScreen::Windowed);
         // Full screen from the tab pops the game out first.
-        assert_eq!(
-            s.execute(super::TOGGLE_GAME_FULL_SCREEN, json!({}))
-                .unwrap(),
-            json!("full")
+        step(
+            super::TOGGLE_GAME_FULL_SCREEN,
+            GamePlace::Popped,
+            GameScreen::Full,
         );
-        assert_eq!(s.context().game_place, super::GamePlace::Popped);
-        // From the docked window's place, popping in leaves the game there.
-        s.execute(super::TOGGLE_EMBEDDED_GAME, json!({})).unwrap();
-        assert_eq!(s.context().game_place, super::GamePlace::Window);
-        assert_eq!(
-            s.execute(super::POP_IN_GAME, json!({})).unwrap(),
-            json!("window")
+        step(
+            super::TOGGLE_EMBEDDED_GAME,
+            GamePlace::Window,
+            GameScreen::Windowed,
         );
+        // The docked host's game stays where it is.
+        step(super::POP_OUT_GAME, GamePlace::Window, GameScreen::Windowed);
+        step(
+            super::TOGGLE_GAME_FULL_SCREEN,
+            GamePlace::Window,
+            GameScreen::Windowed,
+        );
+        step(super::POP_IN_GAME, GamePlace::Window, GameScreen::Windowed);
         assert_eq!(s.undo_depth(), 0, "none is an edit");
+    }
+
+    // No spec statement: ADR-0028, L-73: the game runs in this process in the tab and popped
+    // out, in the preview host's process in its window
+    #[test]
+    fn the_tab_and_the_popped_window_are_this_process() {
+        assert!(super::GamePlace::Tab.in_process());
+        assert!(super::GamePlace::Popped.in_process());
+        assert!(!super::GamePlace::Window.in_process());
     }
 }

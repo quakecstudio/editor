@@ -255,7 +255,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`view.map_zoom_out`](#viewmap_zoom_out) | Moves the map editor's 3D view 64 units back along its view. |
 | [`view.move_panel`](#viewmove_panel) | Moves a panel to another dock, where it shows, as Zed's status-bar menu moves one. |
 | [`view.pop_in_game`](#viewpop_in_game) | Puts a popped-out game back in the Game tab, where it keeps running. |
-| [`view.pop_out_game`](#viewpop_out_game) | Pops the game out of the Game tab into a window of its own, still run in the editor's process, so it keeps running; closing the window puts it back. |
+| [`view.pop_out_game`](#viewpop_out_game) | Pops the game out of the Game tab into a window of its own, still run in the editor's process, so it keeps running; closing the window puts it back. A game in the preview host's own window stays there. |
 | [`view.project_search`](#viewproject_search) | Opens the project search: every match in the project's files as a multibuffer of editable excerpts, to edit or replace in place. |
 | [`view.resize_panel`](#viewresize_panel) | Sets the width of the left or right panel, or the height of the bottom panel, in points. |
 | [`view.show_panel`](#viewshow_panel) | Shows a panel in its dock, opening the dock; when the dock already shows it, hides the dock, as a click on Zed's status-bar button does, unless when_shown is keep. |
@@ -263,7 +263,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`view.split_right`](#viewsplit_right) | Splits the editor into two panes side by side, the second showing the open file. |
 | [`view.tab_switcher`](#viewtab_switcher) | Opens the tab switcher: the open files, the one used most recently first. |
 | [`view.toggle_embedded_game`](#viewtoggle_embedded_game) | Shows the running game in the window's Game tab, run in the editor's own process, or in the preview host's window beside it; a game that runs is stopped, and the next Play starts it in the place chosen. |
-| [`view.toggle_game_full_screen`](#viewtoggle_game_full_screen) | Shows the game full screen, popping it out of the Game tab first, or its popped-out window as a window again. |
+| [`view.toggle_game_full_screen`](#viewtoggle_game_full_screen) | Shows the game full screen, popping it out of the Game tab first, or its popped-out window as a window again. A game in the preview host's own window is left as it is. |
 | [`view.toggle_outline`](#viewtoggle_outline) | Shows or hides the outline panel beside the editor: the open file's symbols, the one the caret is in marked. |
 | [`view.toggle_panel`](#viewtoggle_panel) | Shows or hides a panel: Project and Entities on the left, Properties and the agent on the right, or Problems, Console and the debugger at the bottom. |
 | [`view.zoom`](#viewzoom) | Draws the interface's text and icons larger or smaller, from 0.5 (50 percent) to 3 (300 percent); 1 is the actual size. |
@@ -10520,7 +10520,7 @@ Parameters:
 
 ## `view.pop_out_game`
 
-Pops the game out of the Game tab into a window of its own, still run in the editor's process, so it keeps running; closing the window puts it back.
+Pops the game out of the Game tab into a window of its own, still run in the editor's process, so it keeps running; closing the window puts it back. A game in the preview host's own window stays there.
 
 Parameters:
 
@@ -10776,7 +10776,7 @@ Parameters:
 
 ## `view.toggle_game_full_screen`
 
-Shows the game full screen, popping it out of the Game tab first, or its popped-out window as a window again.
+Shows the game full screen, popping it out of the Game tab first, or its popped-out window as a window again. A game in the preview host's own window is left as it is.
 
 Parameters:
 

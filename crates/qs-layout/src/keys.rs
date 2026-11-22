@@ -207,9 +207,12 @@ pub const DEFAULT_KEYS: [DefaultKey; 76] = [
     },
     DefaultKey {
         command: "view.toggle_game_full_screen",
-        keys: "f11",
+        keys: "alt-enter",
         context: KeyContext::Window,
-        follows: Follows::Own("F11, the full-screen key of Windows and Linux applications"),
+        follows: Follows::Own(
+            "Alt+Enter, the full-screen key of Windows games; Quake binds F11 to zoom, and macOS \
+             takes F11 for Show Desktop",
+        ),
     },
     DefaultKey {
         command: "preview.play",

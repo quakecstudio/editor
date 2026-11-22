@@ -38,6 +38,8 @@ pub enum Text {
     PreviewInTab,
     /// The toolbar while the game is popped out of the Game tab (L-73).
     PreviewPoppedOut,
+    /// The toolbar while no game runs and the layout pops the next one out (L-73).
+    PreviewPopsOut,
     /// The toolbar's button that pops the game out of the Game tab.
     PopOut,
     /// The toolbar's button that puts a popped-out game back in the Game tab.
@@ -1137,7 +1139,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 560] = [
+    pub const ALL: [Self; 561] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1151,6 +1153,7 @@ impl Text {
         Self::MapLayerSettingHelp,
         Self::PreviewInTab,
         Self::PreviewPoppedOut,
+        Self::PreviewPopsOut,
         Self::PopOut,
         Self::PopIn,
         Self::PopOutHint,
@@ -1721,6 +1724,7 @@ impl Text {
             Self::MapLayerSettingHelp => "Click to switch it for this layer",
             Self::PreviewInTab => "in the Game tab",
             Self::PreviewPoppedOut => "popped out of the Game tab",
+            Self::PreviewPopsOut => "pops out of the Game tab when played",
             Self::PopOut => "Pop Out",
             Self::PopIn => "Pop In",
             Self::PopOutHint => "Play the game in a window of its own, or back in the Game tab",
